@@ -96,7 +96,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 **首屏性能：** 首帧只画 canvas 纯色（`html` / 首屏内联样式负责，图片层此时 `opacity: 0`）；`.app-backdrop` 的图片由 JS 在 mount 后预解码，完成后才加 `.is-ready` 淡入，背景图不进入首屏关键路径。`prefers-reduced-motion: reduce` 下不做透明度过渡。主题切换时重新等待对应季节图，CSS token 已同步换图，不保留上一主题的图。
 
-**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
+**内容表面边界（当前实现）**：页面级卡片/面板（首页卡片、文档正文、坦克详情区块、筛选面板、空状态上传区、管理后台提示条等）使用 `--color-surface-{1,2,3}-glass`（对应表面色 82%–90% 不透明）加 `backdrop-filter: blur(16px) saturate(1.2)`，让背景隐约透出。当前表格、数据密集区、输入框、回放 HUD 使用纯色 `--color-surface-*`；2D/3D 回放、装甲查看器和地图 3D 场景根保持不透明底色，非全屏时场景外围的页面区域可透出环境背景。这是已实施状态，不排除未来经过验证的材料调整。浏览器不支持 `backdrop-filter` 时玻璃表面回退为对应纯色。系统级可访问性偏好同样在 `app-shell.css` 整体降级：`prefers-reduced-transparency: reduce` 与 `prefers-contrast: more` 下玻璃表面关闭 `backdrop-filter` 并退化为对应纯色 `--color-surface-{1,2,3}`，`more` 另将边界提为 `--color-border-strong`；默认视觉不变（浏览器门禁 `home-glass-accessibility`）。实际应用玻璃表面必须先按真实 wide/portrait 背景图逐像素叠加 `--theme-backdrop-scrim`，再与玻璃 alpha 合成，取亮度最小/最大像素进入 §3 最差值计算；不能只用 canvas 等效色替代。
 
 **素材来源：** 四季原图为 AI 生成画面与真实 WoTB 十级车型参考融合，写实电影风格；原图保留在 `frontend/art-source/backdrops/backdrop-<季节>-{wide,portrait}.webp`，不得修改。发布产物由 `frontend/scripts/build-theme-backdrops.mjs`（`pnpm run assets:backdrops`）生成：wide Lanczos 放大到 2560 宽、portrait 到 1080 宽，轻度锐化，WebP 初始 quality 80；单张超过 300KB 时脚本按预算自适应下调 quality（产物实测约 q29–q80，均 ≤ 300KB）。
 
@@ -383,7 +383,9 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 控制条与 HUD 仍不得压入中心 60% 盒，并须满足规则 3 的可达性；
 - 例外只看紧凑控制条形态（`.pb-root.compact-bar`），不看设备类型：手机横屏与高度 ≤ 700px 的工作台（含矮窗口下的平板与桌面）里，名册车道与击杀流贴边、可由 Display 一键隐藏（击杀流还会短时淡出且不可交互），这些形态放不进 20% 边带，各自允许占 **≤ 中心盒的 15%**。其余形态没有这个例外，车道宽度与击杀流行数都按场景收口。
 
-2D 的地图不是这种形态：它的常驻控件归控制条，地图盒里不放常驻 UI。
+2D 的地图不是这种形态：它的常驻控件归控制条，地图盒里不放常驻 UI（2026-11 名册浮层化后，2D
+横屏展开的名册是用户经传输条 roster 入口显式展开的**瞬态浮层**、贴 Stage 左右边缘，默认收纳，
+不占常驻 §5 预算；收纳态的常驻覆盖仍由 `ws2d-*` 遮挡门禁把关）。
 
 > 5% 的来历：2D 手机横屏实测基线，三个文字 quick action 在 740×360 下占地图 9.52%、844×390 下 6.94%（绝对像素恒定 ≈5.2–5.7k px²，视口越小占比越高）；收成单个图标入口后在 244px 地图上约 3.25%、竖屏约 1.27%。阈值取在两者之间，双向都有余量。
 
@@ -500,7 +502,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **DataTable** | — | 数字右对齐 + 等宽数字；表头吸顶；首列可冻结（手机上只冻结一列）；可排序列用 `<button>` 并带 `aria-sort`；容器 < 560px 时自动切换成卡片列表 |
 | **Stat** | — | 标签（caption）+ 数值（h2，等宽数字）+ 可选的变化量 |
 | **Dialog** | 确认 / 表单 | 焦点陷阱，Esc 关闭，关闭后焦点回到触发元素，`aria-modal`；同时打开多个时按打开顺序叠放，后打开的在上层；手机上变为底部 sheet；**禁止 `window.confirm`**。交互机制由 `AppDialog`（内部 Reka Dialog）提供，页面只用 `AppDialog` |
-| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 `AppSheet`（内部 Reka Drawer，统一 `--z-sheet`、`--color-scrim`、安全区与下滑关闭）；吸附高度只在有产品场景时启用 |
+| **Sheet** | 底部 / 侧边 | 手机上的筛选、详情、面板都用 `AppSheet`（内部 Reka Drawer，统一 `--z-sheet`、`--color-scrim`、安全区与下滑关闭）；关闭走 `data-state="closed"` 的 CSS keyframes 退场（Reka Presence 等它 `animationend` 再卸载），swipe 释放后从当前位移继续滑出（时长随 `--drawer-swipe-strength` 匹配释放速度），reduced-motion 下不做动画等待直接关闭；吸附高度只在有产品场景时启用 |
 | **Drawer** | — | 桌面上是常驻侧栏，平板上是推开式侧栏（不遮盖内容），手机上变成全屏 sheet |
 | **Menu** | — | 下拉菜单，支持方向键导航和 Esc 关闭；由 `MenuButton`（内部 Reka DropdownMenu）提供 |
 | **Tooltip** | — | icon-only 按钮必须有 `aria-label`，并用 `AppTooltip`（内部 Reka Tooltip，`--z-tooltip`）补充悬停 / 聚焦提示；触屏不依赖 tooltip 传达信息 |
@@ -596,7 +598,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
-- **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
+- **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页（装甲查看器、地图 3D）时原生锁横屏，离开 / KeepAlive 停用即释放；**回放工作台的 2D / 3D / 射击复现例外**：非全屏锁竖屏，成功就绪后自动进入横屏全屏、退出回竖屏（见 `replay-workspace.md`「Android 手机 App：自动横屏全屏」）；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
 - **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。该 reserve 由场景外的外壳菜单按钮决定，场景短视口横屏紧凑档不把它改成 40 + 6，否则返回键会压住仍是 44px 的菜单按钮。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
 - **短视口紧凑档**：手机横屏高度 ≤ 520px 时，上述场景改用 §5 的场景紧凑档 token（控件 32/36/40、命中区 40、间距 0.75×、正文 14/18），让传输条、底栏和 HUD 不再按 44/48px 撑高；竖屏与桌面完全沿用常规触控档。装甲查看器在 `height <= 500px` 的短横屏胶囊（下方一条）另有 36/38px 视觉尺寸，是本档 40px 命中区的唯一显式例外，由 `browser-armor-mobile` 单独锁定。

@@ -167,9 +167,9 @@ export interface NativeBridgeMethods {
       phone: boolean
     }
   }
-  setLandscapeLock: {
+  setOrientationLock: {
     request: {
-      locked: boolean
+      orientation: 'landscape' | 'portrait' | 'unspecified'
     }
     response: boolean
   }

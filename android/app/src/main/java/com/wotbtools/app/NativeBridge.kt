@@ -46,7 +46,7 @@ class NativeBridge(private val host: MainActivity) {
                 "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
                 "getScreenForm" -> reply(envelope(id, host.bridgeScreenForm()))
                 "haptic" -> reply(envelope(id, host.bridgeHaptic(params?.opt("kind") as? String)))
-                "setLandscapeLock" -> reply(envelope(id, host.bridgeSetLandscapeLock(params?.optBoolean("locked", false) == true)))
+                "setOrientationLock" -> reply(envelope(id, host.bridgeSetOrientationLock(params?.optString("orientation", ""))))
                 "getPendingReplay" -> reply(envelope(id, host.bridgePendingReplayJson()))
                 "consumePendingReplay" ->
                     reply(envelope(id, host.bridgeConsumePendingReplay(params?.optString("expectedPendingId"))))

@@ -401,4 +401,11 @@ function linkAttrs(id) {
   .sidebar-close:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
   .sidebar-link:not(.is-active):hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 }
+
+/* 按压反馈（DC-CMP-01 active 状态）：比悬停的 surface-2 深一档；触屏没有 hover，这是按下时唯一的视觉反馈。
+   放在悬停规则之后并以 :not(.is-active) 对齐特异性，保证按下一定压过悬停色。
+   当前页（is-active）按压时在既有强调底色上加深、不丢失高亮。均为即时色彩变化，Reduced Motion 下不受影响。 */
+.sidebar-link:not(.is-active):active { background: var(--color-surface-3); color: var(--color-text-primary); }
+.sidebar-link.is-active:active { background: color-mix(in oklab, var(--color-accent) 20%, var(--color-surface-1)); }
+.sidebar-close:active { background: var(--color-surface-3); color: var(--color-text-primary); }
 </style>

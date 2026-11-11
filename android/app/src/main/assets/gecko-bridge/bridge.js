@@ -1,5 +1,5 @@
 "use strict";
-// Native Bridge transport for GeckoView（contracts/android-native-bridge.json，bridge v3）。
+// Native Bridge transport for GeckoView（contracts/android-native-bridge.json，bridge v4）。
 //
 // 向页面暴露与 2.x（Bridge v2，System WebView 注入）完全同形的 `window.WotbNative`
 // （postMessage(string) / addEventListener('message') / removeEventListener），

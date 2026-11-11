@@ -65,7 +65,7 @@ const props = defineProps({
   /** 当前能力是否激活：false 时停帧、停键盘，但不销毁会话 */
   active: { type: Boolean, default: false },
   /** 工作台给出的不可用原因（多文件未选场次等）；非空时不解析 */
-  blockedReason: { type: String, default: '' },
+  blockedReason: { type: String, default: '' }, autoFullscreenToken: { type: Number, default: 0 },
 })
 
 const { t, locale } = useI18n()
@@ -783,8 +783,8 @@ watch([controlsEl, hudEl], (elements) => {
 const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => rootEl.value,
   isPhone,
-  // capability 切走（active=false）时不该再锁着方向
-  isActive: () => props.active,
+  isActive: () => props.active, // capability 切走（active=false）时不该再锁着方向
+  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: props.active, ready: !!props.file && !props.blockedReason && props.file === startedFile.value && !store.err && !!store.hasData }), // 成功就绪（非 paneReady：终态错误时它也为 true）
 })
 
 /** ?debug：几何门禁 / 人工排查的状态注入点（与场景内核的 ?debug 钩子同一口径，只暴露

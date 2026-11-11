@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick, ref } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key) => key) }))
 const connectivityState = vi.hoisted(() => ({ state: null }))
@@ -59,6 +59,8 @@ class ResizeObserverStub {
   emit(width) { this.cb([{ contentRect: { width } }]) }
 }
 globalThis.ResizeObserver = ResizeObserverStub
+
+vi.mock('../platform/screenForm.js', () => ({ forcedLandscapeDevice: async () => 'android-phone-app' }))
 
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import ReplayShotsPane from './ReplayShotsPane.vue'
@@ -1076,4 +1078,158 @@ it('compact shot inspector traps Tab focus and returns focus when closed', async
   await wrapper.get('[data-testid="shot-detail-close"]').trigger('click')
   expect(document.activeElement).toBe(wrapper.get('[data-testid="shot-row-1"]').element)
   wrapper.unmount()
+})
+
+
+describe('ReplayShotsPane 自动全屏与连续性（Android 手机 App）', () => {
+  const shotsResult = {
+    shots: [7, 8].map(index => ({
+      index, time_s: 30 + index, damage: 100, is_kill: false,
+      shooter_eid: 100, shooter_name: 'A158', shooter_tank_id: 1,
+      target_name: 'Maus', target_eid: 200, target_tank_id: 2,
+      hit_flags: 16, game_hit_result: 3, shell_id: 79242, shell_kind: 'APCR', shell: { type: 'APCR', penetration: 245 },
+      ball_a: [0, 0, 0], ball_b: [0, 0, 300],
+    })),
+    author_path: 'ok', author_eid: 100, others: baseOthers,
+  }
+
+  /** happy-dom 没有 Fullscreen API：request 成功时设置 fullscreenElement 并派发 fullscreenchange */
+  function stubFullscreen(root, { reject = false, deferred = null } = {}) {
+    const request = vi.fn(async () => {
+      if (deferred) await deferred.promise
+      if (reject) throw new TypeError('Permission check failed')
+      Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    root.requestFullscreen = request
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    document.exitFullscreen = vi.fn(async () => {
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    return request
+  }
+  const exitFullscreen = async () => { await document.exitFullscreen(); await flushPromises() }
+
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', (query) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }))
+    parseAgentShotsFromBytes.mockResolvedValue(shotsResult)
+  })
+  afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+
+  async function mountAuto(props, fullscreenOptions) {
+    const wrapper = mount(ReplayShotsPane, {
+      props: { file: mkFile(), active: true, autoFullscreenToken: 1, ...props },
+      global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
+      attachTo: document.body,
+    })
+    const request = stubFullscreen(wrapper.get('[data-testid="replay-shots-pane"]').element, fullscreenOptions)
+    return { wrapper, request }
+  }
+  const waitRows = (wrapper) => vi.waitFor(() => { if (!wrapper.findAll('.shot-row').length) throw new Error('parsing') }, { timeout: 3000 })
+
+  it('成功就绪后自动进入一次；退出后不重入，且不重解析、选中与筛选保持', async () => {
+    const { wrapper, request } = await mountAuto()
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shots-fullscreen"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('[data-testid="shot-row-8"]').trigger('click')
+    await wrapper.get('[data-testid="shots-shooter-select"]').setValue('all')
+    await flushPromises()
+    await exitFullscreen()
+
+    expect(wrapper.find('[data-testid="shots-fullscreen"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-testid="shot-row-8"]').attributes('aria-current')).toBe('true')
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledTimes(1)
+    // 仍 Ready、重渲染、再次点击行都不会自动重入
+    await wrapper.setProps({ blockedReason: '' })
+    await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('新的进入事件（token 递增）再次自动进入；手动全屏按钮保持可用', async () => {
+    const { wrapper, request } = await mountAuto()
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    await exitFullscreen()
+    await wrapper.setProps({ autoFullscreenToken: 2 })
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    await flushPromises()
+    await exitFullscreen()
+    await wrapper.get('[data-testid="shots-fullscreen"]').trigger('click')
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
+  })
+
+  it('被浏览器拒绝：静默失败、不重试，手动按钮可用，列表照常', async () => {
+    const { wrapper, request } = await mountAuto({}, { reject: true })
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="shots-fullscreen"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.findAll('.shot-row')).toHaveLength(2)
+    await wrapper.setProps({ autoFullscreenToken: 1 })
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('迟到的成功不会让已失活的查看器留在全屏', async () => {
+    let release
+    const deferred = { promise: new Promise((resolve) => { release = resolve }) }
+    const { wrapper, request } = await mountAuto({}, { deferred })
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    await wrapper.setProps({ active: false })
+    release()
+    await flushPromises()
+    expect(document.fullscreenElement).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('KeepAlive 停用：已进入的全屏被交还；请求挂起期间停用则迟到完成也交还；重新激活不自动重入', async () => {
+    const show = ref(true)
+    const stableFile = mkFile()
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, show.value ? [h(ReplayShotsPane, { file: stableFile, active: true, autoFullscreenToken: 1 })] : []),
+    })
+    const wrapper = mount(Host, { global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } }, attachTo: document.body })
+    const root = wrapper.get('[data-testid="replay-shots-pane"]').element
+    const request = stubFullscreen(root, { deferred: { promise: gate } })
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    show.value = false
+    await flushPromises()
+    release()
+    await flushPromises()
+    expect(document.fullscreenElement).toBeNull()
+    show.value = true
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('非成功就绪（无射击 / 解析失败 / 未激活）不触发', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({ ...shotsResult, shots: [] })
+    const empty = await mountAuto()
+    await vi.waitFor(() => expect(empty.wrapper.text()).toContain('agentShots.no_shots'))
+    await flushPromises()
+    expect(empty.request).not.toHaveBeenCalled()
+    empty.wrapper.unmount()
+
+    parseAgentShotsFromBytes.mockRejectedValue(new Error('boom'))
+    const failed = await mountAuto()
+    await vi.waitFor(() => expect(failed.wrapper.find('[data-testid="shots-error"]').exists()).toBe(true))
+    expect(failed.request).not.toHaveBeenCalled()
+    failed.wrapper.unmount()
+  })
 })

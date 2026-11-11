@@ -25,6 +25,40 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
   .surface-glass-2 { background: var(--color-surface-2); }
   .surface-glass-3 { background: var(--color-surface-3); }
 }
+/* 系统级可访问性偏好（design-language §2 D10 降级路径的 media 查询面）：
+   用户要求减少透明度时玻璃必须整体退化为纯色表面，而不是只降模糊——
+   半透明背景叠在环境光/底纹上仍会让复杂背景透过文字区。
+   两块都放在 @supports fallback 之后，覆盖同特异性的玻璃默认背景；
+   contrast 块最后，叠加两种偏好时由它给出更强的边界。 */
+@media (prefers-reduced-transparency: reduce) {
+  .surface-glass-1,
+  .surface-glass-2,
+  .surface-glass-3 {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .surface-glass-1 { background: var(--color-surface-1); }
+  .surface-glass-2 { background: var(--color-surface-2); }
+  .surface-glass-3 { background: var(--color-surface-3); }
+}
+@media (prefers-contrast: more) {
+  .surface-glass-1,
+  .surface-glass-2,
+  .surface-glass-3 {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .surface-glass-1 { background: var(--color-surface-1); }
+  .surface-glass-2 { background: var(--color-surface-2); }
+  .surface-glass-3 { background: var(--color-surface-3); }
+  /* 组件 scoped 样式的 border 简写是 (0,2,0) 且晚于本文件注入；
+     重复类名抬到 (0,3,0)，在无 !important 约束下仍能覆盖边界色。 */
+  .surface-glass-1.surface-glass-1.surface-glass-1,
+  .surface-glass-2.surface-glass-2.surface-glass-2,
+  .surface-glass-3.surface-glass-3.surface-glass-3 {
+    border-color: var(--color-border-strong);
+  }
+}
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
 /* 交互控件文字不可被长按选中：GeckoView 下一旦存在活动选区，落在文字上的拖动会被引擎解释为
