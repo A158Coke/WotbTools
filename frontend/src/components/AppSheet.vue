@@ -124,9 +124,10 @@ watch(() => props.open, async (open) => {
    判断「正在退场」并等它的 animationend 再卸载，因此两者各占一个 data-state，互不遮蔽。
    退场 from 省略 = 从当前 computed transform 起手：swipe 释放后位移变量仍持有实时位置，
    退出动画从那里继续滑出（不跳回初始位）；非 swipe 关闭位移变量为 0，从原位滑出。
-   swipe dismiss 时 Reka 写入 --drawer-swipe-strength（0.1~1，甩得越快越小）以匹配释放速度。 */
+   swipe dismiss 时 Reka 写入 --drawer-swipe-strength（时长系数，快甩越小）：
+   用乘法缩短快甩退场，不能做除法把快甩放大成超长动画。 */
 .sheet[data-state="open"] { animation: sheet-in var(--duration-slow) var(--ease-standard); }
-.sheet[data-state="closed"] { animation: sheet-out calc(var(--duration-slow) / var(--drawer-swipe-strength, 1)) var(--ease-standard) forwards; }
+.sheet[data-state="closed"] { animation: sheet-out calc(var(--duration-slow) * var(--drawer-swipe-strength, 1)) var(--ease-standard) forwards; }
 .sheet.is-start[data-state="closed"] { animation-name: sheet-out-start; }
 .sheet.is-end[data-state="closed"] { animation-name: sheet-out-end; }
 /* forwards 托住终点态，animationend 与卸载之间不回跳 */

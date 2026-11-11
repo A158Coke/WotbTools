@@ -9,7 +9,7 @@ import { callPageFunction } from './browser-page.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 import { MOBILE_PAGE_SCENARIOS, SHELL_OVERLAY_SCENARIOS, runMobilePageScenario, runShellOverlayScenario } from './browser-shell-overlays.mjs'
-import { DIALOG_SHEET_SCENARIOS, runDialogSheetScenario } from './browser-dialog-sheet.mjs'
+import { DIALOG_SHEET_SCENARIOS, DRAWER_EXIT_SCENARIOS, runDialogSheetScenario, runDrawerExitScenario } from './browser-dialog-sheet.mjs'
 import { DRAWER_TABLE_SCENARIOS, runDrawerTableScenario } from './browser-drawer-tables.mjs'
 import { CATALOG_HOF_DOC_SCENARIOS, runCatalogHofDocScenario } from './browser-catalog-hof-docs.mjs'
 import { detailsPlacementPreserved } from '../src/utils/detailsPlacementBounds.ts'
@@ -3614,8 +3614,9 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, sheetReach.sampled > 0, 'battle picker sheet 可达性断言空跑：没有任何选项被实际命中采样')
     await hit('[data-testid="battle-picker-option"][data-value="r1"]', { touch: true })
     await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
-    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
-      'mobile battle picker sheet did not close after selection')
+    // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），等待真实卸载再断言（比同步判更强）
+    await page.waitForValue(`!document.querySelector('[data-testid="battle-picker-panel"]')`, Boolean,
+      { timeout: 10_000, label: 'mobile battle picker sheet unmount after selection' })
 
     // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏，地图拿走顶栏高度；
     // 转回竖屏 / 切到数据 capability 立即恢复，地图回到竖屏契约（= 视口宽）。
@@ -5049,6 +5050,7 @@ try {
     ...SHELL_OVERLAY_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runShellOverlayScenario(env, scenario)) })),
     ...MOBILE_PAGE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runMobilePageScenario(env, scenario)) })),
     ...DIALOG_SHEET_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDialogSheetScenario(env, scenario)) })),
+    ...DRAWER_EXIT_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDrawerExitScenario(env, scenario)) })),
     ...DRAWER_TABLE_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runDrawerTableScenario(env, scenario)) })),
     ...CATALOG_HOF_DOC_SCENARIOS.map(scenario => ({ scenario, run: async () => results.push(await runCatalogHofDocScenario(env, scenario)) })),
     ...MENU_VIEWPORT_SCENARIOS.map(scenario => ({ scenario, run: () => runMenuViewportScenario(env, scenario) })),

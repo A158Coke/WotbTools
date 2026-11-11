@@ -125,8 +125,11 @@ try {
       const drawerRect = drawer.getBoundingClientRect(); if (drawerRect.left < -1 || drawerRect.right > innerWidth + 1) throw Error('drawer overflows viewport')
       if (innerWidth >= 768 && Math.abs(drawerRect.right - innerWidth) > 1) throw Error('drawer is not docked to the right edge')
       if (![...drawer.querySelectorAll('pre')].some(x => x.textContent === 'note')) throw Error('detail mismatch')
-      document.querySelector('[data-testid=admin-drawer-close]').click(); await wait(150)
-      if (document.querySelector('[data-testid=admin-detail-drawer]')) throw Error('drawer did not close')
+      document.querySelector('[data-testid=admin-drawer-close]').click()
+      // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），等待真实卸载再断言
+      let drawerGone = false
+      for (let i = 0; i < 30 && !drawerGone; i++) { await wait(50); drawerGone = !document.querySelector('[data-testid=admin-detail-drawer]') }
+      if (!drawerGone) throw Error('drawer did not close')
       document.querySelector('[data-testid=feedback-row-open]').click(); await wait(150)
       document.querySelector('[data-testid=admin-danger-start]').click(); await wait(100)
       const confirm = document.querySelector('[data-testid=admin-danger-confirm]'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()
@@ -168,8 +171,11 @@ try {
       const drawerRect = drawer.getBoundingClientRect(); if (drawerRect.left < -1 || drawerRect.right > innerWidth + 1) throw Error('drawer overflows viewport')
       if (innerWidth >= 768 && Math.abs(drawerRect.right - innerWidth) > 1) throw Error('drawer is not docked to the right edge')
       if (![...drawer.querySelectorAll('pre')].some(x => x.textContent === 'exact\\nreply')) throw Error('detail mismatch')
-      document.querySelector('[data-testid=admin-drawer-close]').click(); await sleep(150)
-      if (document.querySelector('[data-testid=admin-detail-drawer]')) throw Error('drawer did not close')
+      document.querySelector('[data-testid=admin-drawer-close]').click()
+      // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），等待真实卸载再断言
+      let drawerGone = false
+      for (let i = 0; i < 30 && !drawerGone; i++) { await sleep(50); drawerGone = !document.querySelector('[data-testid=admin-detail-drawer]') }
+      if (!drawerGone) throw Error('drawer did not close')
       document.querySelector('[data-testid=feedback-row-open]').click(); await sleep(150)
       document.querySelector('[data-testid=admin-danger-start]').click(); await sleep(100)
       const confirm = document.querySelector('[data-testid=admin-danger-confirm]'); if (!confirm) throw Error('delete confirmation missing'); confirm.click()

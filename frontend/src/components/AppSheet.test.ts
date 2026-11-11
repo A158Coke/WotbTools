@@ -113,6 +113,9 @@ describe('AppSheet', () => {
     expect(style).toContain('.sheet.is-start[data-state="closed"] { animation-name: sheet-out-start; }')
     expect(style).toContain('.sheet.is-end[data-state="closed"] { animation-name: sheet-out-end; }')
     expect(style).toContain('.sheet-scrim[data-state="closed"] { animation: sheet-scrim-out')
+    // swipe strength 是时长系数（快甩越小）：退场时长必须用乘法缩短，不得除法反转速度关系
+    expect(style).toContain('calc(var(--duration-slow) * var(--drawer-swipe-strength, 1))')
+    expect(style).not.toContain('var(--duration-slow) /')
     // swipe 释放后从当前位置继续退出（keyframes 引用实时位移变量），不能从初始位置重新开始
     expect(style).toContain('translateY(calc(var(--drawer-swipe-movement-y, 0px) + 100%))')
     expect(style).toContain('translateX(calc(var(--drawer-swipe-movement-x, 0px) - 100%))')
