@@ -9,7 +9,7 @@
 | frontend/src/scene/sceneryMaterials.test.js | 48 | 48 | 8 | 5 | 0 | 13 |
 | frontend/src/scene/groundPass.test.js | 5 | 2 | 8 | 7 | 0 | 1 |
 | frontend/src/scene/playbackScene.occlusion.test.js | 18 | 17 | 0 | 7 | 0 | 3 |
-| frontend/src/scene/playbackScene.staticFreeze.test.js | 7 | 7 | 0 | 0 | 1 | 0 |
+| frontend/src/scene/playbackScene.staticFreeze.test.js | 7 | 7 | 1 | 0 | 0 | 0 |
 | frontend/src/scene/labelOcclusion.test.js | 7 | 5 | 0 | 1 | 0 | 1 |
 | frontend/src/scene/pickDebug.test.js | 6 | 6 | 0 | 1 | 0 | 0 |
 | frontend/src/scene/seekPointer.test.js | 5 | 4 | 0 | 1 | 0 | 2 |
@@ -19,14 +19,14 @@
 | frontend/src/scene/tankViewer.distance.test.js | 0 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/scene/tankViewer.cameraPreset.test.js | 0 | 0 | 3 | 0 | 0 | 0 |
 | frontend/src/scene/tankViewer.collisionBoxFailsafe.test.js | 0 | 4 | 0 | 0 | 0 | 0 |
-| frontend/src/scene/armorCollisionPack.test.js | 1 | 1 | 0 | 0 | 1 | 0 |
+| frontend/src/scene/armorCollisionPack.test.js | 1 | 1 | 1 | 0 | 0 | 0 |
 | frontend/src/scene/heHeatmapProjection.test.js | 1 | 7 | 0 | 1 | 0 | 3 |
 | frontend/src/scene/heSplash.test.js | 1 | 0 | 0 | 0 | 0 | 1 |
 | frontend/src/scene/viewer/collisionView.test.js | 0 | 0 | 0 | 0 | 0 | 1 |
 | frontend/src/components/MapPreview3DPane.wiring.test.js | 8 | 8 | 0 | 0 | 0 | 0 |
-| frontend/src/components/BattlePlaybackHud.test.js | 3 | 0 | 0 | 0 | 2 | 1 |
-| frontend/src/components/PlaybackRoster.test.js | 2 | 0 | 0 | 0 | 2 | 1 |
-| frontend/src/components/TankConfigPanel.layout.test.js | 2 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/BattlePlaybackHud.test.js | 3 | 0 | 2 | 0 | 0 | 1 |
+| frontend/src/components/PlaybackRoster.test.js | 2 | 0 | 2 | 0 | 0 | 1 |
+| frontend/src/components/TankConfigPanel.layout.test.js | 2 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/styles/agent-theme-css.test.js | 4 | 4 | 2 | 1 | 0 | 0 |
 | frontend/src/styles/light-theme-source-regression.test.js | 3 | 3 | 3 | 0 | 0 | 0 |
 | frontend/src/styles/glass-accessibility.test.js | 1 | 2 | 0 | 4 | 0 | 0 |
@@ -39,18 +39,18 @@
 | frontend/src/app/navigationPressedFeedback.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/components/AgentArmorView.dom-contract.test.js | 22 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/components/AgentTankopedia.baseline.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
-| frontend/src/components/AppSheet.test.ts | 1 | 0 | 0 | 0 | 1 | 0 |
-| frontend/src/components/PlayerRatingRadar.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/AppSheet.test.ts | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/components/PlayerRatingRadar.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/components/ProfilePage.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
-| frontend/src/components/Replay3DPane.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/Replay3DPane.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/components/ReplayWorkspace.test.js | 2 | 0 | 2 | 0 | 0 | 0 |
-| frontend/src/components/TankResearchPanel.layout.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/TankResearchPanel.layout.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/data-version-wiring.test.js | 2 | 0 | 2 | 0 | 0 | 0 |
 | frontend/src/index-firstpaint.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/shared/tabular/csv/encode.test.ts | 1 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/vehicle-models/extractor.test.js | 6 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/vehicle-models/texture-bake.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
-| **合计（已映射 28 文件）** | — | **136** | **44** | **34** | **11** | **28** |
+| **合计（已映射 28 文件）** | — | **136** | **55** | **34** | **0** | **28** |
 
 ## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）
 
