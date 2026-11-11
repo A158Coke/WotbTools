@@ -434,6 +434,18 @@
    不共享选择器（这里只命中 2D .pb-transport-main）。 */
 @container (inline-size < 640px) {
   .battle-playback.playback-workspace .pb-transport-main .pb-time { display: none; }
+  /* F6：HUD 时钟不可用（showTopbar 关 / HUD 隐藏 → root 无 .pb-hud-clock-off 时钟前提不成立）
+     时保留传输条时钟，否则播放期间没有任何可见时间。时钟换行成独立一行，不与折叠入口抢宽；
+     特异性与手机横屏单行规则同阶（(0,6,0)）且声明在后，覆盖其 flex-basis / margin。 */
+  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-main .pb-controls .pb-time {
+    display: block;
+    flex-basis: 100%;
+    margin-inline: 0;
+    text-align: center;
+  }
+  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-main .pb-controls { flex-wrap: wrap; }
+  /* 时钟换行后主行变高：折叠按钮从垂直居中改顶对齐，避免与换行的时钟行相交。 */
+  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-row { align-items: flex-start; }
   /* 与手机横屏单行规则（--pb-timeline-min-w）同特异性、声明在后：窄容器下限收缩生效。 */
   :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"],
     .battle-playback.playback-workspace .pb-transport-main) > .pb-progress { min-inline-size: 6rem; }

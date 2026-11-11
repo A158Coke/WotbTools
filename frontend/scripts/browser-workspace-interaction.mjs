@@ -3113,6 +3113,16 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, collapsed.map.width >= expanded.map.width - 1,
     `collapsing must not shrink the map square (expanded=${expanded.map.width} collapsed=${collapsed.map.width})`)
 
+  // —— Step 3b'：fallback 导航按钮**真实触控**打开抽屉（P3：不能只靠 elementFromPoint 判命中）——
+  const fallbackClick = await hit('.immersive-nav')
+  check(failures, fallbackClick?.testId === 'nav-menu', `fallback nav tap missed: ${JSON.stringify(fallbackClick)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open from fallback' })
+  check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry while the fallback opens the drawer')
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await delay(300)
+  check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the drawer opened from the fallback')
+
   // —— Step 3c：恢复 → 所有权回到传输条 ——
   await hit('[data-test="pb-transport-toggle"]')
   await alignWorkspace()
@@ -3142,6 +3152,39 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, !rosterOpen.pageOverflow, `page-level horizontal overflow with lanes open: ${JSON.stringify(rosterOpen)}`)
   await hit('[data-test="pb-roster-entry"]')
   check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-team-lane-left"]')`), 'roster entry must collapse the overlay lanes')
+
+  // —— Step 4（F6）：showTopbar 关闭 → HUD 时钟消失，窄容器必须保留可见的传输条时钟 ——
+  await hit('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface open' })
+  await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)
+  await delay(300)
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]').click()`)
+  await delay(300)
+  await alignWorkspace()
+  const noHud = await page.probe(playbackShellNavProbe)
+  check(failures, await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-hud-clock-off')`),
+    'top bar off must put the workspace in the pb-hud-clock-off clock-fallback state')
+  check(failures, !noHud.controls.hudClock.some(r => r.visible), 'the HUD clock must be gone after turning the top bar off')
+  check(failures, noHud.controls.clock.some(r => r.visible && r.hitSelf),
+    `narrow viewport with the top bar off must keep a visible, hit-testable transport clock: ${JSON.stringify(noHud.controls.clock)}`)
+  for (const key of ['gear', 'toggle']) {
+    const a = noHud.controls.clock.find(r => r.visible)
+    const b = (noHud.controls[key] || []).find(r => r.visible)
+    check(failures, !(a && b && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5
+      && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5),
+      `transport clock must not overlap the ${key} with the top bar off: clock=${JSON.stringify(a)} ${key}=${JSON.stringify(b)}`)
+  }
+  check(failures, !noHud.pageOverflow, `page-level horizontal overflow with the top bar off: ${JSON.stringify(noHud)}`)
+  // 恢复 showTopbar → 传输条时钟回到让位态（HUD 时钟接管）
+  await hit('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface reopen' })
+  await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)
+  await delay(300)
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]').click()`)
+  await delay(300)
+  const hudRestored = await page.probe(playbackShellNavProbe)
+  check(failures, hudRestored.controls.clock.every(r => !r.visible) && hudRestored.controls.hudClock.some(r => r.visible),
+    're-enabling the top bar must hand the clock back to the HUD')
 
   console.log(`[browser-interaction] ${scenario.name} map=${Math.round(expanded.map?.width)}x${Math.round(expanded.map?.height)} share=${expanded.mapShare?.toFixed(3)} navHandoff=OK`)
   await env.chrome.client.send('Target.closeTarget', { targetId })

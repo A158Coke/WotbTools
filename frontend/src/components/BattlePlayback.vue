@@ -831,6 +831,12 @@ const destroyedNow = computed(() => new Set(
 const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortrait.value && rosterLanesOpen.value)
 /** 名册浮层入口（传输条上的 roster 按钮）：竖屏纵向流里的名册始终可见，不需要这个入口。 */
 const rosterEntryVisible = computed(() => showRosterPresentation.value && !isPhonePortrait.value)
+/**
+ * §2d-shellnav 窄容器时钟让位的前提：HUD 里真的有同一时钟（showSummary = showTopbar）。
+ * showTopbar 关闭（或 HUD 隐藏）时窄容器 CSS 必须保留传输条时钟，否则播放期间没有任何可见时间
+ * （F6）：root class 驱动 playback-workspace.css 的窄容器分支。
+ */
+const hudClockVisible = computed(() => !uiHidden.value && uiPrefs.showTopbar === true)
 /** 竖屏的纵向流里，名册排在传输控件之后的 `.pb-inline-area`；详情则是流内内容块。
     竖屏以外，详情是 workspace 顶层的可拖动浮窗。 */
 const inlineStack = computed(() => isPhonePortrait.value)
@@ -1047,7 +1053,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口：竖屏保持右上角浮动（与 Map Preview 3D / Replay 3D 同一位置）；
          手机横屏普通播放并入传输条；标注编辑隐藏传输条时，同一按钮移到标注行右端，
          隐藏全部 UI 时仍作为唯一可达入口留在右上角。三态互斥，DOM 里只有一个入口。 -->
