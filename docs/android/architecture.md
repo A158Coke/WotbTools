@@ -433,7 +433,7 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 系统触感：可选 `haptics` capability 提供 `haptic`（事件种类 selection / primary / success / error / endpoint → `Haptics.feedbackConstant` 映射到系统 `HapticFeedbackConstants`，随系统触摸反馈设置），用户偏好由页面拥有（默认开）。
 
-场景页强制横屏：可选 `screen-form` capability 提供 `getScreenForm`（`smallestScreenWidthDp < 600` 即手机，`ScreenForm.isPhone`）与 `setLandscapeLock`。手机上的场景页（2D / 3D 回放、装甲查看器、射击复现、地图 3D）进入时由页面申请 `SENSOR_LANDSCAPE`、离开时释放；平板一律返回 false 不锁方向。HTML 全屏期间只更新全屏退出后要恢复的方向。前端判定与旋转提示见 [`design-language.md`](../frontend/design-language.md) §9「强制横屏」。
+场景页强制横屏：可选 `screen-form` capability 提供 `getScreenForm`（`smallestScreenWidthDp < 600` 即手机，`ScreenForm.isPhone`）与 `setOrientationLock {orientation: landscape|portrait|unspecified}`。手机上的装甲查看器、地图 3D 进入时由页面申请 `landscape`（`SENSOR_LANDSCAPE`）、离开时释放；回放工作台的 2D / 3D / 射击复现在非全屏时申请 `portrait`（`PORTRAIT`），全屏由 `enterFullscreen()` 锁横屏、退出时还原为该竖屏锁；平板与未知取值返回 false 不锁方向。HTML 全屏期间只更新全屏退出后要恢复的方向。前端判定与旋转提示见 [`design-language.md`](../frontend/design-language.md) §9「强制横屏」。
 
 手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定同源 stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
 

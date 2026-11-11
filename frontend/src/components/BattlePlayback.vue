@@ -83,6 +83,8 @@ const props = defineProps({
    * 工作台用 v-show 保留实例，隐藏的回放不能再抢空格 / 方向键。
    */
   active: { type: Boolean, default: true },
+  /** 工作台的自动全屏事件 { token, key }（Android 手机 App；组件挂载即 V2 成功就绪）。 */
+  autoFullscreen: { type: Object, default: null },
 })
 
 const { t, locale } = useI18n()
@@ -318,6 +320,7 @@ const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.
 const { controlsCollapsed, controlsContentId, toggleControlsCollapsed, rosterLanesOpen, toggleRosterLanes } =
   usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse: () => { displayOpen.value = false; closeAnnotation() } })
 let playbackLifecycleActive = true
+const lifecycleVisible = ref(true)
 let wideLayoutQuery = null
 function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
@@ -332,10 +335,11 @@ function onWideLayoutChange(event) {
 const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
-  isActive: () => playbackLifecycleActive,
+  isActive: () => playbackLifecycleActive && props.active && lifecycleVisible.value,
   // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）。
   // fitViewIfReady 由下方相机提供（函数声明提升，调用时相机已创建）。
   onChange: () => nextTick(() => fitViewIfReady(true)),
+  auto: () => ({ token: props.autoFullscreen?.token ?? 0, key: props.autoFullscreen?.key, ready: true, active: props.active && lifecycleVisible.value }),
 })
 
 const {
@@ -560,8 +564,7 @@ function dragEnd() {
   transport.scrubEnd()
 }
 
-// KeepAlive 停用（切到别的页面）时同样视为不可见
-const lifecycleVisible = ref(true)
+// KeepAlive 停用（切到别的页面）时同样视为不可见（声明在全屏 composable 之前：其 isActive / auto 谓词会读它）
 // 离开（能力切走 / 页面停用）时退出本回放拥有的全屏：组件被 v-show / KeepAlive 缓存不会卸载，
 // 不主动退出的话 fullscreen root 仍是旧回放元素，新页面被挡在全屏层后面
 onDeactivated(() => { lifecycleVisible.value = false; pause(); exitOwnedFullscreen() })

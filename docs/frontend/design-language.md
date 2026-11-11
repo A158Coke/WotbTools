@@ -598,7 +598,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 - **适用设备只有两类**（`platform/screenForm.ts`，判定只看设备、不看视口）：Android 手机上的 App（Native Bridge 可选能力 `screen-form` 报告 phone）与 iPhone 上的 Safari（UA 含 iPhone 且不是 iPad）。桌面（含缩窄窗口）、所有平板、Android 手机浏览器都不受影响，竖屏照常用小屏布局。
 - **适用页面**：2D 回放、3D 回放、装甲查看器、射击复现、地图预览 3D。科技树、直播与推荐视频、比赛截图、AI 复盘、名人堂、管理页不强制。
-- **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页时原生锁横屏，离开 / KeepAlive 停用即释放；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
+- **行为**（`useForcedLandscape`）：Android 手机 App 进入场景页（装甲查看器、地图 3D）时原生锁横屏，离开 / KeepAlive 停用即释放；**回放工作台的 2D / 3D / 射击复现例外**：非全屏锁竖屏，成功就绪后自动进入横屏全屏、退出回竖屏（见 `replay-workspace.md`「Android 手机 App：自动横屏全屏」）；iPhone Safari 竖屏时整块显示 `RotatePrompt`（场景保持挂载，横过来即继续），提示里给出退出动作：2D / 3D 回到「看赛后数据」，装甲查看器回到坦克百科 / 射击分析，地图 3D 切到 2D。HTML 全屏在 Android App 里也只在手机上锁横屏。
 - **横屏沉浸**：没有顶栏，菜单入口仍在：2D / 3D 回放由传输条第一项承载（`PlaybackTransport` 经 `shellChrome.hostNav` 声明，7 人名册车道保持不滚动；控制条被 `v-show` 收起、能力切走或 KeepAlive 停用时经 `navEligible` / 生命周期交还，外壳重新画悬浮菜单）；其余场景（装甲查看器、射击复现）由外壳在左上放悬浮菜单按钮（`AppShell` 的 `.immersive-nav`），场景用 `--immersive-nav-reserve`（沉浸态 44 + 8，其余为 0）让出：返回键与信息卡右移。该 reserve 由场景外的外壳菜单按钮决定，场景短视口横屏紧凑档不把它改成 40 + 6，否则返回键会压住仍是 44px 的菜单按钮。两者打开同一个抽屉。
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
 - **短视口紧凑档**：手机横屏高度 ≤ 520px 时，上述场景改用 §5 的场景紧凑档 token（控件 32/36/40、命中区 40、间距 0.75×、正文 14/18），让传输条、底栏和 HUD 不再按 44/48px 撑高；竖屏与桌面完全沿用常规触控档。装甲查看器在 `height <= 500px` 的短横屏胶囊（下方一条）另有 36/38px 视觉尺寸，是本档 40px 命中区的唯一显式例外，由 `browser-armor-mobile` 单独锁定。

@@ -21,7 +21,7 @@ import {
 } from './usePlatformBridge.js'
 
 /** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件。 */
-function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 3, overrides = {}) {
+function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 4, overrides = {}) {
   const listeners = []
   const calls = []
   const results = {
@@ -70,9 +70,9 @@ describe('usePlatformBridge', () => {
     await expect(getCapabilities()).resolves.toEqual(['replay-share', 'replay-open', 'app-update'])
     await expect(supports('replay-share')).resolves.toBe(true)
     await expect(supports('does-not-exist')).resolves.toBe(false)
-    await expect(getNativeBridgeVersion()).resolves.toBe(3)
-    expect(isNativeBridgeCompatible(3)).toBe(true)
-    expect(isNativeBridgeCompatible(2)).toBe(false)
+    await expect(getNativeBridgeVersion()).resolves.toBe(4)
+    expect(isNativeBridgeCompatible(4)).toBe(true)
+    expect(isNativeBridgeCompatible(3)).toBe(false)
     expect(isNativeBridgeCompatible(1)).toBe(false)
     await expect(getPendingReplay()).resolves.toEqual({ pendingId: 'pid-0', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 1 })
     await expect(consumePendingReplay('pid-0')).resolves.toBe(true)

@@ -97,9 +97,9 @@ assert connectivity_methods == ["connectivityGetState"], connectivity_methods
 assert [name for name in base["capabilities"] if name == "connectivity"] == ["connectivity"]
 assert base["methods"]["connectivityGetState"]["response"]["enum"] == ["online", "offline"]
 
-# 更新状态是 capability-gated additive surface，旧 Boolean 方法与 bridge v3 保持不变。
+# 更新状态是 capability-gated additive surface，旧 Boolean 方法保持不变（bridge v4）。
 update_methods = ["getUpdateStatus", "refreshUpdateStatus", "beginUpdateDownload", "installUpdate", "dismissOptionalUpdate"]
-assert base["bridgeVersion"] == 3
+assert base["bridgeVersion"] == 4
 assert "app-update" in base["capabilities"] and "app-update-status" in base["capabilities"]
 for method in ("checkForUpdate", "startUpdate"):
     assert base["methods"][method] == {"request": {"fields": {}}, "response": {"type": "boolean"}}, method

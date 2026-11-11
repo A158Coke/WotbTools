@@ -2,7 +2,6 @@ package com.wotbtools.app
 
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
@@ -187,7 +186,7 @@ class MainActivity : Activity() {
 
     /** HTML Fullscreen API：Gecko 经 ContentDelegate.onFullScreen 通知，宿主只管系统 UI 与方向。 */
     private var fullscreen = false
-    private var fullscreenPreviousOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private val fullscreenOrientation = FullscreenOrientation()
     private var fullscreenPreviousSystemUiVisibility: Int = View.SYSTEM_UI_FLAG_VISIBLE
 
     /** 认证变更监听：`AuthManager` 的 listener 需要能注销，所以留一个稳定引用。 */
@@ -419,10 +418,9 @@ class MainActivity : Activity() {
     private fun enterFullscreen() {
         if (fullscreen) return
         fullscreen = true
-        fullscreenPreviousOrientation = requestedOrientation
         fullscreenPreviousSystemUiVisibility = window.decorView.systemUiVisibility
-        // 只在手机上锁横屏（design-language §9「强制横屏」）；平板保持系统方向
-        if (isPhone()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // 只在手机上锁横屏（design-language §9「强制横屏」）；平板保持系统方向。页面方向锁（如回放查看器的竖屏锁）由状态机保存并在退出时还原
+        fullscreenOrientation.enter(requestedOrientation, isPhone())?.let { requestedOrientation = it }
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -436,7 +434,7 @@ class MainActivity : Activity() {
     private fun exitFullscreen() {
         if (!fullscreen) return
         fullscreen = false
-        requestedOrientation = fullscreenPreviousOrientation
+        fullscreenOrientation.exit()?.let { requestedOrientation = it }
         window.decorView.systemUiVisibility = fullscreenPreviousSystemUiVisibility
     }
 
@@ -820,13 +818,13 @@ class MainActivity : Activity() {
     fun bridgeScreenForm(): JSONObject = JSONObject().put("phone", isPhone())
 
     /**
-     * `setLandscapeLock`：手机上的场景页进入时锁横屏、离开时释放；平板一律不锁（返回 false）。
+     * `setOrientationLock`：手机上的页面方向锁（landscape / portrait / unspecified）；平板一律不锁（返回 false）。
      * HTML 全屏期间只更新全屏退出后要恢复的方向，不打断全屏自己的横屏。
      */
-    fun bridgeSetLandscapeLock(locked: Boolean): Boolean {
+    fun bridgeSetOrientationLock(mode: String?): Boolean {
         if (!isPhone()) return false
-        val orientation = ScreenForm.pageOrientation(locked)
-        if (fullscreen) fullscreenPreviousOrientation = orientation else requestedOrientation = orientation
+        val orientation = ScreenForm.pageOrientation(mode) ?: return false
+        fullscreenOrientation.setPageOrientation(orientation)?.let { requestedOrientation = it }
         return true
     }
 

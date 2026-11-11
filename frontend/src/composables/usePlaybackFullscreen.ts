@@ -23,6 +23,7 @@
  */
 import { computed, onScopeDispose, readonly, ref } from 'vue'
 import type { Ref } from 'vue'
+import { useReplayAutoFullscreen } from './useReplayAutoFullscreen.js'
 
 // Orientation is browser-global; only the consumer that requested its current
 // lock may release it. Hidden keep-alive panes must not unlock the visible pane.
@@ -38,9 +39,15 @@ export interface PlaybackFullscreenOptions {
   isActive?: () => boolean
   /** 全屏状态变化后的布局反应（2D 需要在新形态下重算几何）。唯一的 fullscreenchange 监听点 */
   onChange?: (fullscreen: boolean) => void
+  /**
+   * 回放查看器的「成功就绪 → 自动全屏」（仅 Android 手机 App 生效，见 useReplayAutoFullscreen）。
+   * 响应式 getter：`token` 是工作台的进入事件序号，`key` 是回放身份，`ready` 必须是**成功**就绪
+   * （不是 data-pane-ready），`active` 是能力是否仍激活。省略 = 不自动进入。
+   */
+  auto?: () => { token: number; key: unknown; ready: boolean; active: boolean }
 }
 
-export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange }: PlaybackFullscreenOptions) {
+export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange, auto }: PlaybackFullscreenOptions) {
   /** 与 `document.fullscreenElement` 同步；由 fullscreenchange 驱动 */
   const isFullscreen = ref(ownsFullscreen())
   const owner = Symbol('playback-fullscreen')
@@ -120,6 +127,32 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     } catch { /* unsupported browsers may throw */ }
   }
 
+  /** 卸载 / 失活后迟到的 requestFullscreen 完成不得让非激活查看器留在全屏 */
+  let disposed = false
+  onScopeDispose(() => { disposed = true })
+
+  /**
+   * 幂等的「进入」。**resolve 的是真实结果，不是「请求已发出」**：
+   * 仅当 `requestFullscreen()` 成功且完成时本回放根确实是 `document.fullscreenElement`、生命周期仍有效才 `true`；
+   * 已全屏 / 别的元素在全屏 / 失活 / API 缺失 / 被拒绝都 `false`（不抛出，不重试）。
+   * 全屏状态仍只由 `fullscreenchange` 驱动（isFullscreen），这里的结果只用于观察。
+   * 迟到的成功（期间已失活或卸载）会立刻退出本回放拥有的全屏。`toggleFullscreen` 行为不变。
+   */
+  async function enterFullscreen(): Promise<boolean> {
+    if (typeof document === 'undefined' || !isActive() || disposed) return false
+    const el = target()
+    if (!el || document.fullscreenElement || typeof el.requestFullscreen !== 'function') return false
+    try {
+      await el.requestFullscreen()
+    } catch { return false }
+    if (disposed || !isActive() || !ownsFullscreen()) {
+      if (ownsFullscreen()) exitOwnedFullscreen()
+      return false
+    }
+    lockOrientation()
+    return true
+  }
+
   function toggleFullscreen() {
     if (typeof document === 'undefined') return
     const el = target()
@@ -146,10 +179,21 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     } catch { /* unsupported browsers may throw */ }
   }
 
+  if (auto) {
+    useReplayAutoFullscreen({
+      token: () => auto().token,
+      key: () => auto().key,
+      ready: () => auto().ready,
+      active: () => auto().active,
+      enter: enterFullscreen,
+    })
+  }
+
   return {
     isFullscreen: readonly(isFullscreen),
     fullscreenSupported,
     toggleFullscreen,
+    enterFullscreen,
     exitOwnedFullscreen,
     /** 供测试与外部退出路径显式解锁 */
     unlockOrientation,

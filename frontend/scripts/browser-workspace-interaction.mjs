@@ -634,6 +634,7 @@ const AUTH_CAPABILITY_SCENARIOS = [
   { name: 'capability-normal-shots-armor-handoff', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1600, height: 900, touch: false, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-mobile', cap: 'shots', view: 'agent-shots', authenticated: true, width: 390, height: 844, touch: true, reconstruct: true },
   { name: 'capability-normal-shots-armor-handoff-tablet', cap: 'shots', view: 'agent-shots', authenticated: true, width: 1024, height: 768, touch: false, reconstruct: true },
+  { name: 'capability-normal-shots-fullscreen-landscape-740x360', profile: 'summer', cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, shotsFullscreen: true },
   ...['summer', 'winter'].map(profile => ({ name: `capability-normal-shots-armor-handoff-landscape-${profile}`, profile, cap: 'shots', view: 'agent-shots', authenticated: true, width: 740, height: 360, touch: true, reconstruct: true })),
 ]
 
@@ -706,6 +707,35 @@ async function runAuthCapabilityScenario(env, scenario) {
       })()`)
       await page.waitFor(() => !document.querySelector('[data-testid="shot-row-2"]'), { label: 'restore recorder filter' })
       check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot list must not overflow the viewport')
+      if (scenario.shotsFullscreen) {
+        // 射击复现全屏（Android 手机横屏尺寸）：退出按钮可达、不裁切、列表与详情可达、退出后状态保持
+        const enter = await page.evaluate(clickCenterExpression('[data-testid="shots-fullscreen"]'))
+        if (!enter) throw new Error('shots fullscreen button must be hit-testable')
+        await page.tap({ ...enter, touch: scenario.touch })
+        await page.waitForValue('document.fullscreenElement?.getAttribute("data-testid")', (id) => id === 'replay-shots-pane', { label: 'shots fullscreen entered' })
+        const inView = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false
+          const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5 && !!hit && (hit === el || el.contains(hit)) })()`
+        check(failures, await page.evaluate(inView('[data-testid="shots-fullscreen"]')), 'fullscreen exit button must be fully visible and hit-testable')
+        check(failures, await page.evaluate(inView('[data-testid="shots-shooter-select"]')), 'fullscreen shooter filter must be visible and hit-testable')
+        check(failures, await page.evaluate(`(() => { const root = document.fullscreenElement
+          return root.scrollWidth <= root.clientWidth + 1 && getComputedStyle(root).overflowY === 'auto' })()`), 'fullscreen pane must not clip horizontally and must scroll vertically')
+        await page.evaluate(`document.querySelector('[data-testid="shot-row-3"]').scrollIntoView({ block: 'center' })`)
+        check(failures, await page.evaluate(inView('[data-testid="shot-row-3"]')), 'fullscreen shot list row must be reachable')
+        const row = await page.evaluate(clickCenterExpression('[data-testid="shot-row-3"]'))
+        await page.tap({ ...row, touch: scenario.touch })
+        await page.waitFor(() => !!document.querySelector('[data-testid="shot-inspector"]'), { label: 'fullscreen shot inspector' })
+        check(failures, await page.evaluate(`(() => { const r = document.querySelector('[data-testid="shot-inspector"]').getBoundingClientRect()
+          return r.left >= -0.5 && r.right <= innerWidth + 0.5 && r.width > 0 && r.height > 0 })()`), 'fullscreen inspector must stay inside the viewport')
+        await page.evaluate(`document.fullscreenElement.scrollTo(0, 0)`)
+        const exit = await page.evaluate(clickCenterExpression('[data-testid="shots-fullscreen"]'))
+        if (!exit) throw new Error('fullscreen exit button must be hit-testable with the inspector open')
+        await page.tap({ ...exit, touch: scenario.touch })
+        await page.waitForValue('document.fullscreenElement === null', Boolean, { label: 'shots fullscreen exited' })
+        check(failures, await page.evaluate(`document.querySelector('[data-testid="shot-row-3"]')?.getAttribute('aria-current') === 'true'`), 'selection must survive fullscreen exit')
+        check(failures, await page.evaluate(`document.querySelector('[data-testid="shots-shooter-select"]')?.value === 'own'`), 'filter must survive fullscreen exit')
+        check(failures, await page.evaluate('window.__wsShotParse.playback === 1 && window.__wsShotParse.shots === 1'), 'fullscreen round trip must not reparse')
+      }
     }
     if (scenario.reconstruct) {
       const row = await page.evaluate(clickCenterExpression('[data-testid="shot-row-1"]'))
