@@ -163,6 +163,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .menu-button[aria-expanded="true"] { background: var(--color-surface-2); }
+/* 按压反馈（DC-CMP-01 active 状态）：比悬停/展开的 surface-2 深一档；触屏没有 hover，这是按下时唯一的视觉反馈 */
+.menu-button:active { background: var(--color-surface-3); }
 
 .brand { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: var(--control-h-lg); }
 .brand-logo { height: 24px; }
