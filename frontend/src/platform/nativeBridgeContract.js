@@ -7,7 +7,7 @@ import { ANDROID_APP_ORIGIN } from './runtime.js'
 // Additive 方法由 capability 区分；这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [3]；
 // 旧 v2 客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
 // 绝不在页面里静默回退到 keycloak-js。
-export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([3])
+export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([4])
 
 /** Capability that makes the native OIDC session (not the page) the auth owner. */
 export const NATIVE_AUTH_CAPABILITY = 'native-auth'

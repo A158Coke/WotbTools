@@ -16,7 +16,7 @@ const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.
 function stubNative(
   pending,
   consumeResult = true,
-  bridgeVersion = 3,
+  bridgeVersion = 4,
   capabilities = bridgeVersion === null ? ['replay-open', 'replay-share'] : [],
 ) {
   const listeners = []
@@ -92,7 +92,7 @@ describe('useNativeReplayImport', () => {
     expect(importing.value).toBe(false)
   })
 
-  it.each([null, 1, 2, 4])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
+  it.each([null, 1, 2, 3, 5])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
     const native = stubNative(PENDING_A, true, bridgeVersion)
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)

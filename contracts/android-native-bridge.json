@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "bridgeVersion": 3,
+  "bridgeVersion": 4,
   "origin": "http://127.0.0.1:21653",
   "allowedOrigins": [
     "http://127.0.0.1:21653"
