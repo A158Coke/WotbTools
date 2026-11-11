@@ -10,7 +10,7 @@
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick, ref } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key) => key) }))
 const connectivityState = vi.hoisted(() => ({ state: null }))
@@ -1191,6 +1191,30 @@ describe('ReplayShotsPane 自动全屏与连续性（Android 手机 App）', () 
     release()
     await flushPromises()
     expect(document.fullscreenElement).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('KeepAlive 停用：已进入的全屏被交还；请求挂起期间停用则迟到完成也交还；重新激活不自动重入', async () => {
+    const show = ref(true)
+    const stableFile = mkFile()
+    let release
+    const gate = new Promise((resolve) => { release = resolve })
+    const Host = defineComponent({
+      setup: () => () => h(KeepAlive, null, show.value ? [h(ReplayShotsPane, { file: stableFile, active: true, autoFullscreenToken: 1 })] : []),
+    })
+    const wrapper = mount(Host, { global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } }, attachTo: document.body })
+    const root = wrapper.get('[data-testid="replay-shots-pane"]').element
+    const request = stubFullscreen(root, { deferred: { promise: gate } })
+    await waitRows(wrapper)
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1))
+    show.value = false
+    await flushPromises()
+    release()
+    await flushPromises()
+    expect(document.fullscreenElement).toBeNull()
+    show.value = true
+    await flushPromises()
+    expect(request).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

@@ -11,7 +11,7 @@
  * 焦点在打开时进入面板、Esc / 关闭后回到触发它的那一行。
  * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
  */
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { Feature } from '../app/featureCapabilities.js'
@@ -83,6 +83,9 @@ const guideInset = ref(0)
 /** 已解析的文件：同一文件不重复解码 */
 let parsedFile = null
 const paneRoot = ref(null)
+/** KeepAlive 停用（切到别的页面）时同样视为不可见：挂起的全屏请求迟到完成也必须交还 */
+const lifecycleVisible = ref(true)
+const viewerActive = () => props.active && lifecycleVisible.value
 const { isPhone } = usePlaybackPhoneForm()
 /**
  * 全屏目标是本面板根：筛选 / 选中 / 详情都是本组件状态，全屏只换容器尺寸，不重解析、不重置。
@@ -91,11 +94,14 @@ const { isPhone } = usePlaybackPhoneForm()
 const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => paneRoot.value,
   isPhone,
-  isActive: () => props.active,
+  isActive: viewerActive,
   // 成功就绪 = 当前文件已解析完成、无错误、至少一发射击（空结果只是空态）；解析中 / 终态错误 / 被阻断都不触发。
-  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: props.active, ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFile === props.file && shots.value.length > 0 }),
+  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: viewerActive(), ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFile === props.file && shots.value.length > 0 }),
 })
-watch(() => props.active, (active) => { if (!active) { unlockOrientation(); exitOwnedFullscreen() } })
+const releaseFullscreen = () => { unlockOrientation(); exitOwnedFullscreen() }
+watch(() => props.active, (active) => { if (!active) releaseFullscreen() })
+onDeactivated(() => { lifecycleVisible.value = false; releaseFullscreen() })
+onActivated(() => { lifecycleVisible.value = true })
 /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
 let parseSeq = 0
 let decoding = Promise.resolve()
