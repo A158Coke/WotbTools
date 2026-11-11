@@ -292,4 +292,30 @@ export const blocks = [
     [189,'D','case','browser-battle-data-spawn-bar.mjs:63-65 computed 严格包含','MED'],
     [205,'K','case','寒冬继承 bug 守卫+计算半句','MED'],
   ]},
+
+  // ---- scope 缺口分诊（2026-11-12）：审计 251 例之外新发现的读源用例 ----
+  // 处置依据：Issue #827 范围 =「3D 与 CSS 的纯文本断言」；所有权守卫与数据契约明文不在范围。
+  // 数据契约/产物读取（extractor/texture-bake/data-version/csv）= 审计保留组；
+  // 组件 DOM 契约（AgentArmorView.dom-contract 等）= 所有权/集成契约类，逐例深改写不在本轮范围。
+  { file: 'replay-capabilities.test', rows: [[16,'K','case','审计范围外：负面/契约守卫（server 无 parser 不拉产物）','LOW']] },
+  { file: 'navigation-context.test', rows: [[28,'K','case','审计范围外：magic-string 负面守卫','LOW']] },
+  { file: 'navigationPressedFeedback.test', rows: [[27,'K','case','CSS 顺序契约（pressed>hover），stylelint 不可表达；PR #953 已有取消语义取证','LOW']] },
+  { file: 'AgentArmorView.dom-contract.test', rows: [
+    [{from:37,to:900},'K','case','审计范围外：组件 DOM/集成契约组（材质口径/判定 fail-closed/配置接线/tooltip i18n）+ shader 公式 PK 子句；逐例深改写随组件契约专题另行评估','MED'],
+  ] },
+  { file: 'AgentTankopedia.baseline.test', rows: [[7,'K','case','审计范围外：组件状态契约（delta 基线清空）','LOW']] },
+  { file: 'AppSheet.test', rows: [[106,'PK','case','退场动画源码契约（reduced-motion 语义）；CSS/动画类提请复核','LOW']] },
+  { file: 'PlayerRatingRadar.test', rows: [[165,'PK','case','CSS 几何（grid 可见半径）；无 JS owner','LOW']] },
+  { file: 'ProfilePage.test', rows: [[1071,'K','case','源码不变量守卫（finally pending 清理身份检查）','MED']] },
+  { file: 'Replay3DPane.test', rows: [[1412,'PK','case','DOM 结构契约（名册非独立滚动容器）；PR #946 已有遮挡收纳态测','LOW']] },
+  { file: 'ReplayWorkspace.test', rows: [[405,'K','case','确认替换/取消语义（guide 流程契约）','MED'],
+    [425,'K','case','取消中止在途采样（guide 流程契约）','MED']] },
+  { file: 'TankResearchPanel.layout.test', rows: [[14,'PK','case','移动布局 CSS（归 browser gate）','LOW']] },
+  { file: 'data-version-wiring.test', rows: [
+    [30,'K','case','审计范围外：资产 origin 统一经 assetBase（接线守卫）','MED'],
+    [47,'K','case','审计范围外：侧栏/More 页布局接线','LOW']] },
+  { file: 'index-firstpaint.test', rows: [[49,'K','case','审计范围外：首屏主题覆盖契约','LOW']] },
+  { file: 'encode.test', rows: [[39,'K','case','审计范围外：CSV BOM 契约（编码器行为面另有单测）','LOW']] },
+  { file: 'extractor.test', rows: [[{from:241,to:640},'K','case','审计范围外：数据契约组（资产产物/_metadata 契约，审计明文保留）','LOW']] },
+  { file: 'texture-bake.test', rows: [[165,'K','case','审计范围外：数据契约（bake 库无网络调用负面守卫）','LOW']] },
 ];
