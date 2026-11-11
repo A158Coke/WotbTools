@@ -16,7 +16,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root="$tmp/root"
-mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/bin"
+mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/releases/r_slot" "$root/bin"
 
 cat > "$root/bin/asset_release.py" <<'PY'
 import hashlib, json, os, pathlib, sys
