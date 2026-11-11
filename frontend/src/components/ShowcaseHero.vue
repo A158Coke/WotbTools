@@ -122,6 +122,25 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 }
 .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h2); }
 
+/* Full 档统一响应式高度（Replay compact 已验证策略的推广，同族 clamp）：
+   cover 的可见纵向带占比 = (容器高/宽)×原图宽高比，与源图无关；纯内容撑出的 Full 档
+   最矮只有 123px（league-broadcasts 标题页），1440 下可见带 ~19%，主体被上下裁成碎片；
+   20vw 在 1440 下 ≈288px，可见带 ≈45%，与 Replay 验收过的完整带一致。
+   矮桌面窗口（height < 700px）回退内容密度，横幅不挤压首屏工作区；
+   手机断点不参与——portrait 焦点下可见带已 57%+，加高只会浪费首屏 */
+@media (width >= 768px) {
+  /* align-content 必须显式置 center：grid 默认 normal(stretch) 会把加高出来的空间
+     分摊进 auto 行，kicker/标题/说明被各自拉成 ~100px 的空行（review P1 复现）；
+     center 让行保持自然高度、整体在横幅内垂直居中 */
+  .showcase-hero:not(.is-compact) .showcase-hero-content {
+    min-block-size: clamp(240px, 20vw, 384px);
+    align-content: center;
+  }
+}
+@media (width >= 768px) and (height < 700px) {
+  .showcase-hero:not(.is-compact) .showcase-hero-content { min-block-size: 0; }
+}
+
 @media (width < 768px) {
   .showcase-hero-art { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 70% / cover; }
   .showcase-hero-art--section { background: var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1); }
