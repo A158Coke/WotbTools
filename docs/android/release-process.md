@@ -5,14 +5,14 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**5.1.1 / 5001001**（`android/gradle.properties`，版本变更内容见 [5.1.1](releases/5.1.1.md)）。Native Bridge 保持 v3（能力集不变）；patch 版本，最低支持版本保持 5000000（5.0.0），不抬升。
+当前源码版本：**5.1.2 / 5001002**（`android/gradle.properties`，版本变更内容见 [5.1.2](releases/5.1.2.md)）。Native Bridge v4（`setLandscapeLock` → `setOrientationLock`）；最低支持版本保持 5000000（5.0.0），不抬升。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
 `http://127.0.0.1:21653`，transport 是 GeckoView 内置扩展；RPC 方法 / 参数 / 结果 / capability 与 v2 完全相同。
 v2 → v3 只因 origin 与 synthetic resource URL 改变（`android_contract.py` 把 origin 变化判为 breaking）。
-前端随 APK 打包、与 Native 同版本发布，因此只声明 `[3]`；`guard_bridge_covered` 因此要求
-`ANDROID_MIN_SUPPORTED_VERSION_CODE ≥ 3000000`，与 major 规则一致。注意该守卫在 **stage preflight 与
+前端随 APK 打包、与 Native 同版本发布，因此只声明 `[4]`；`guard_bridge_covered` 因此要求
+`ANDROID_MIN_SUPPORTED_VERSION_CODE ≥ 4000000`，与 major 规则一致。注意该守卫在 **stage preflight 与
 publish 两处都执行**：floor 是 stage prerequisite，必须在合并（触发自动 stage）之前设好，见下节
 「强制更新门槛（minSupportedVersionCode）的抬升」。删除方法、改变参数/字段类型等
 breaking 变更仍须递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、immutable origin APK

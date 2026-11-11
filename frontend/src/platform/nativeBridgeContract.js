@@ -3,9 +3,9 @@ import { ANDROID_APP_ORIGIN } from './runtime.js'
 // The JSON contract is authoritative. This is the FE compatibility declaration;
 // CI fails if it drifts from contracts/android-native-bridge.json.
 //
-// Bridge v3 = Android 3.0 GeckoView runtime（本机 loopback origin + 内置扩展 transport），
-// Additive 方法由 capability 区分；这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [3]；
-// 旧 v2 客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
+// Bridge v4 = Android 3.0 GeckoView runtime + setOrientationLock（v3 的 setLandscapeLock 被移除）（本机 loopback origin + 内置扩展 transport），
+// Additive 方法由 capability 区分；这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [4]；
+// 旧 v3 及更早客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
 // 绝不在页面里静默回退到 keycloak-js。
 export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([4])
 
