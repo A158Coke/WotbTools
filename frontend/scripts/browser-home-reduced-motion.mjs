@@ -198,6 +198,140 @@ async function runMotionEnabled(env) {
   return failures
 }
 
+/* ---------------------------------------------------- glass accessibility */
+
+/**
+ * F-05 玻璃表面可访问性门禁：prefers-reduced-transparency / prefers-contrast
+ * 必须在真实浏览器里验证——源码正则看不到媒体查询命中与真实层叠，
+ * 且必须区分「浏览器不支持该 feature」（matchMedia 为 false）与
+ * 「偏好已启用但 CSS 未生效」两种失败，不能把不支持误判为通过。
+ */
+
+const THEMES = ['summer', 'spring', 'autumn', 'winter']
+
+function glassProbe() {
+  const card = document.querySelector('.home-card')
+  if (!card) return null
+  const style = getComputedStyle(card)
+  // 用临时元素把 token 解析成 computed 颜色，与卡片背景逐值比较。
+  const resolveToken = (token) => {
+    const probe = document.createElement('div')
+    probe.style.display = 'none'
+    probe.style.background = `var(${token})`
+    document.body.append(probe)
+    const value = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return value
+  }
+  return {
+    media: {
+      reducedTransparency: matchMedia('(prefers-reduced-transparency: reduce)').matches,
+      supportedTransparency: matchMedia('(prefers-reduced-transparency)').media !== 'not all',
+      contrastMore: matchMedia('(prefers-contrast: more)').matches,
+      supportedContrast: matchMedia('(prefers-contrast)').media !== 'not all',
+    },
+    background: style.backgroundColor,
+    backdrop: style.backdropFilter,
+    border: style.borderColor,
+    opaque1: resolveToken('--color-surface-1'),
+    opaque2: resolveToken('--color-surface-2'),
+    borderStrong: resolveToken('--color-border-strong'),
+    theme: document.documentElement.dataset.uiProfile || 'summer(default)',
+  }
+}
+
+const rgbaAlpha = (rgb) => {
+  const match = /rgba\(([^)]+)\)/.exec(rgb || '')
+  if (!match) return 1 // rgb() 形态即完全不透明
+  return Number(match[1].trim().split(/\s+/)[3] ?? 1)
+}
+
+async function setPreferences(chrome, sessionId, features) {
+  await chrome.client.send('Emulation.setEmulatedMedia', { media: '', features }, sessionId)
+}
+
+async function runGlassAccessibility(env) {
+  const failures = []
+  const { page, targetId } = await openHome(env, 'no-preference')
+  const probe = async () => page.probe(glassProbe)
+  const gate = (ok, message) => { if (!ok) failures.push(message) }
+  try {
+    const P = (name, value) => [{ name, value }]
+
+    // 1) Default：玻璃必须保持原样——半透明 + blur，未开启任何偏好。
+    await setPreferences(env.chrome, page.sessionId, [])
+    let state = await probe()
+    gate(state.media.reducedTransparency === false && state.media.contrastMore === false, 'default: emulation did not clear preferences')
+    gate(rgbaAlpha(state.background) < 1, `default: glass background must stay translucent (got ${state.background})`)
+    gate(state.backdrop.includes('blur(16px)'), `default: glass must keep backdrop blur (got ${state.backdrop})`)
+    const defaultSummer = state
+
+    // 2) Reduced transparency：不透明语义表面 + blur 归零（不是只降模糊）。
+    await setPreferences(env.chrome, page.sessionId, P('prefers-reduced-transparency', 'reduce'))
+    state = await probe()
+    gate(state.media.supportedTransparency, 'prefers-reduced-transparency unsupported in this browser: scenario UNVERIFIED, cannot gate')
+    gate(state.media.reducedTransparency === true, 'emulation did not enable prefers-reduced-transparency: reduce')
+    gate(state.backdrop === 'none', `reduce-transparency: backdrop-filter must be off (got ${state.backdrop})`)
+    gate(state.background === state.opaque1, `reduce-transparency: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
+
+    // 3) More contrast：不透明表面 + strong 边界，默认视觉关闭。
+    await setPreferences(env.chrome, page.sessionId, P('prefers-contrast', 'more'))
+    state = await probe()
+    gate(state.media.supportedContrast, 'prefers-contrast unsupported in this browser: scenario UNVERIFIED, cannot gate')
+    gate(state.media.contrastMore === true, 'emulation did not enable prefers-contrast: more')
+    gate(state.backdrop === 'none', `contrast-more: backdrop-filter must be off (got ${state.backdrop})`)
+    gate(state.background === state.opaque1, `contrast-more: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
+    gate(state.border === state.borderStrong, `contrast-more: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
+
+    // 4) Combined：reduce + contrast 同时开启，更强规则胜出且无 blur。
+    await setPreferences(env.chrome, page.sessionId, [
+      { name: 'prefers-reduced-transparency', value: 'reduce' },
+      { name: 'prefers-contrast', value: 'more' },
+    ])
+    state = await probe()
+    gate(state.backdrop === 'none', `combined: backdrop-filter must be off (got ${state.backdrop})`)
+    gate(state.background === state.opaque1, `combined: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
+    gate(state.border === state.borderStrong, `combined: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
+
+    // 5) Reduced motion + contrast：玻璃规则只受 contrast 影响，不得互相踩踏。
+    await setPreferences(env.chrome, page.sessionId, [
+      { name: 'prefers-reduced-motion', value: 'reduce' },
+      { name: 'prefers-contrast', value: 'more' },
+    ])
+    state = await probe()
+    gate(state.media.contrastMore === true, 'combined motion+contrast: emulation lost prefers-contrast')
+    gate(state.background === state.opaque1, `motion+contrast: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
+    gate(state.border === state.borderStrong, `motion+contrast: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
+
+    // 6) 四主题回归：default 保持玻璃、reduce 退化为该主题的纯色表面。
+    await setPreferences(env.chrome, page.sessionId, [])
+    for (const theme of THEMES) {
+      await page.waitForValue(
+        `(() => { document.documentElement.dataset.uiProfile = ${JSON.stringify(theme)}; return document.documentElement.dataset.uiProfile })()`,
+        (value) => value === theme,
+        { label: `theme switch ${theme}` },
+      )
+      state = await probe()
+      gate(state.theme === theme, `theme ${theme}: attribute not applied`)
+      gate(rgbaAlpha(state.background) < 1, `theme ${theme} default: glass must stay translucent (got ${state.background})`)
+      gate(state.backdrop === defaultSummer.backdrop, `theme ${theme} default: blur regressed (got ${state.backdrop})`)
+      await setPreferences(env.chrome, page.sessionId, P('prefers-reduced-transparency', 'reduce'))
+      const reduced = await probe()
+      gate(reduced.background === reduced.opaque1, `theme ${theme} reduce-transparency: background must equal --color-surface-1 (got ${reduced.background}, want ${reduced.opaque1})`)
+      gate(reduced.backdrop === 'none', `theme ${theme} reduce-transparency: blur must be off (got ${reduced.backdrop})`)
+      await setPreferences(env.chrome, page.sessionId, [])
+    }
+    await page.waitForValue(
+      `(() => { delete document.documentElement.dataset.uiProfile; return document.documentElement.dataset.uiProfile || '' })()`,
+      (value) => value === '',
+      { label: 'restore default theme' },
+    )
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  return failures
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chromeBinary = findChrome()
@@ -221,7 +355,7 @@ try {
     ],
   })
   const env = { origin, chrome: chromeCdp }
-  for (const [name, run] of [['home-reduced-motion', runReducedMotion], ['home-motion-enabled', runMotionEnabled]]) {
+  for (const [name, run] of [['home-reduced-motion', runReducedMotion], ['home-motion-enabled', runMotionEnabled], ['home-glass-accessibility', runGlassAccessibility]]) {
     try {
       results.push({ name, failures: await run(env) })
     } catch (error) {
