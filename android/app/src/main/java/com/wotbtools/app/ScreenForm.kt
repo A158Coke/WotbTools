@@ -14,7 +14,15 @@ object ScreenForm {
     fun isPhone(smallestScreenWidthDp: Int): Boolean =
         smallestScreenWidthDp in 1 until PHONE_MAX_SMALLEST_WIDTH_DP
 
-    /** 页面方向锁对应的 requestedOrientation：锁定 = 随传感器在两个横向之间切换，释放 = 不指定。 */
-    fun pageOrientation(locked: Boolean): Int =
-        if (locked) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    /**
+     * 页面方向锁对应的 requestedOrientation：landscape = 随传感器在两个横向之间切换，
+     * portrait = 固定竖屏（回放工作台查看器非全屏时；Manifest 未声明方向，UNSPECIFIED 不会回竖屏），
+     * unspecified = 释放。未知取值返回 null（Bridge 拒绝，不改方向）。
+     */
+    fun pageOrientation(mode: String?): Int? = when (mode) {
+        "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        "unspecified" -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        else -> null
+    }
 }

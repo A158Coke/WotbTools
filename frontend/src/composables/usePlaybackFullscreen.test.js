@@ -331,3 +331,69 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     stop()
   })
 })
+
+describe('usePlaybackFullscreen.enterFullscreen：幂等的自动进入入口（resolve 真实结果）', () => {
+  it('成功才 true 并锁横屏；已全屏时再调用 false；退出后可再进入', async () => {
+    stubMatchMedia({ [PLAYBACK_PHONE_QUERY]: true })
+    const { calls } = stubBrowserApis()
+    const { api, stop } = mountFullscreen()
+    expect(await api.enterFullscreen()).toBe(true)
+    expect(api.isFullscreen.value).toBe(true)
+    expect(calls.lock).toEqual(['landscape'])
+    expect(await api.enterFullscreen()).toBe(false)
+    expect(calls.request).toBe(1)
+    api.toggleFullscreen()
+    expect(api.isFullscreen.value).toBe(false)
+    expect(await api.enterFullscreen()).toBe(true)
+    expect(calls.request).toBe(2)
+    stop()
+  })
+
+  it('失活 / API 缺失 / 被拒绝都 resolve false，不抛出，也不锁方向', async () => {
+    stubMatchMedia({ [PLAYBACK_PHONE_QUERY]: true })
+    stubBrowserApis()
+    const inactive = mountFullscreen({ isActive: () => false })
+    expect(await inactive.api.enterFullscreen()).toBe(false)
+    inactive.stop()
+    document.body.innerHTML = ''
+    const { root, calls } = stubBrowserApis()
+    root.requestFullscreen = vi.fn(() => Promise.reject(new Error('Permission denied')))
+    const rejected = mountFullscreen()
+    expect(await rejected.api.enterFullscreen()).toBe(false)
+    expect(rejected.api.isFullscreen.value).toBe(false)
+    expect(calls.lock).toEqual([])
+    rejected.stop()
+    document.body.innerHTML = ''
+    stubBrowserApis({ fullscreen: false })
+    const missing = mountFullscreen()
+    expect(await missing.api.enterFullscreen()).toBe(false)
+    missing.stop()
+  })
+
+  it('迟到的成功：请求期间已失活或卸载 → 立刻退出本回放拥有的全屏并 resolve false', async () => {
+    stubMatchMedia({ [PLAYBACK_PHONE_QUERY]: true })
+    const { root, calls } = stubBrowserApis()
+    let release
+    root.requestFullscreen = vi.fn(async () => {
+      await new Promise((resolve) => { release = resolve })
+      Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    let active = true
+    const lateInactive = mountFullscreen({ isActive: () => active })
+    const pendingInactive = lateInactive.api.enterFullscreen()
+    active = false
+    release()
+    expect(await pendingInactive).toBe(false)
+    expect(calls.exit).toBe(1)
+    expect(calls.lock).toEqual([])
+    lateInactive.stop()
+
+    const lateDisposed = mountFullscreen()
+    const pendingDisposed = lateDisposed.api.enterFullscreen()
+    lateDisposed.stop()
+    release()
+    expect(await pendingDisposed).toBe(false)
+    expect(calls.exit).toBe(2)
+  })
+})

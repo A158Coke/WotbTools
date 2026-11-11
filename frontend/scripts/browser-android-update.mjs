@@ -27,7 +27,7 @@ function nativeBoundary({ promptSuppressed = false, installPermissionRequired = 
       window.updateFixture.calls.push(request)
       let result = null
       if (request.method === 'getCapabilities') result = ['app-update', 'app-update-status', 'connectivity']
-      if (request.method === 'getBridgeVersion') result = 3
+      if (request.method === 'getBridgeVersion') result = 4
       if (request.method === 'connectivityGetState') result = 'online'
       if (request.method === 'getUpdateStatus') result = structuredClone(status)
       if (request.method === 'refreshUpdateStatus') {

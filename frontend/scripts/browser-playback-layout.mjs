@@ -45,11 +45,18 @@ if (battleMapSource.includes('screenOffsetToSvgDelta')
 const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
 const scenarios = [
+  // §roster-overlay：遮挡基线场景默认**名册收纳**（手机横屏的生产默认；遮挡契约量的是常驻 UI，
+  // 用户主动展开的浮层车道不参与 §5 上限）。名册展开的几何由 roster-open 场景单独锁。
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc', occlusion: true },
+  { name: 'pc-1600x900-roster-open', form: 'pc', width: 1600, height: 900, check: 'pc', rosterOpen: true },
+  { name: 'desktop-1280x900-roster-open', form: 'pc', width: 1280, height: 900, check: 'pc', rosterOpen: true },
   { name: 'tablet-1024x768', form: 'tablet', width: 1024, height: 768, check: 'tablet', occlusion: true },
+  { name: 'tablet-1024x768-roster-open', form: 'tablet', width: 1024, height: 768, check: 'tablet', rosterOpen: true },
   { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile', occlusion: true },
   { name: 'phone-landscape-740x360', form: 'mobile', width: 740, height: 360, check: 'wide', occlusion: true },
   { name: 'phone-landscape-844x390', form: 'mobile', width: 844, height: 390, check: 'wide', occlusion: true },
+  { name: 'phone-landscape-844x390-roster-open', form: 'mobile', width: 844, height: 390, check: 'wide', rosterOpen: true },
+  { name: 'phone-landscape-600x320', form: 'mobile', width: 600, height: 320, check: 'wide' },
   // 负向对照：同一形态下故意加一块盖住地图的常驻控件，断言遮挡探针**必须**失败。
   { name: 'occlusion-negative-740x360', form: 'mobile', width: 740, height: 360, check: 'wide', occlusion: true, occlusionNegative: true },
   { name: 'wide-fullscreen-1792x922', form: 'pc', width: 1792, height: 922, check: 'wide', fullscreen: true },
@@ -107,9 +114,10 @@ function reachabilitySelfTestHtml() {
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
-  const lanes = !['mobile', 'raster', 'true-position'].includes(scenario.check)
+  // §roster-overlay：名册浮层是否展开由场景显式声明（生产默认：手机横屏收纳、其余展开）。
+  const lanes = !!scenario.rosterOpen
   // 手机横屏在真实宿主里还会带 pb-phone-landscape（PlaybackWorkspace 的 phoneLandscape）。
-  // 夹具必须带上同一个类，才能真正量到手机横屏的窄车道规则，而不是继续量桌面 2fr/6fr/2fr。
+  // 夹具必须带上同一个类，才能真正量到手机横屏的浮层车道 token，而不是继续量桌面宽档。
   const phoneLandscape = scenario.form === 'mobile' && scenario.width > scenario.height
   const rootClasses = [
     'battle-playback',
@@ -176,12 +184,12 @@ ${productionCss}
       <div class="pb-hud-team pb-hud-enemy pb-hud-column-enemy">Enemy HP<span class="pb-hud-track"></span></div>
     </div>
   </section>
-    ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     <div class="pb-map-stage">
       ${negativeOverlayMarkup(scenario)}
       <div class="pb-map"${scenario.check === 'true-position' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'true-position' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
         ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'true-position' ? `<svg class="pb-svg" viewBox="0 0 769 763"><circle class="pb-true-anchor" cx="384.5" cy="381.5" r="2"></circle></svg><div class="pb-markers"><div class="pb-marker" style="left:50%;top:50%"></div></div>` : ''}
       </div></div>
+      ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     </div>
     <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsMarkup}</div></div>
   </main>
@@ -209,32 +217,51 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
     let metrics = null
     const require = (ok, message) => { if (!ok) failures.push(message) }
 
-    if (${JSON.stringify(lanes)}) {
-      const main = root.querySelector('.pb-main').getBoundingClientRect()
-      const left = root.querySelector('.pb-team-lane-left').getBoundingClientRect()
-      const right = root.querySelector('.pb-team-lane-right').getBoundingClientRect()
+    // §roster-overlay 时代的基本几何：HUD / Stage / 传输三行单列，Stage 全宽。
+    // mapShare（地图正方形面积 / 视口面积）是本任务的独立验收度量——每个形态都记录。
+    {
       const mapRect = map.getBoundingClientRect()
+      const main = root.querySelector('.pb-main').getBoundingClientRect()
       const controlsRect = overlayContent.getBoundingClientRect()
-      const centerWidth = right.left - left.right - 8
       const availableHeight = innerHeight - hud.getBoundingClientRect().height - controlsRect.height - 8
-      require(left.right <= mapRect.left && right.left >= mapRect.right, 'physical lanes must flank the Stage')
-      require(Math.abs(mapRect.width - mapRect.height) <= 1, 'wide Stage must remain square')
-      require(mapRect.width >= Math.min(centerWidth, availableHeight) - 2, 'Stage must maximize the available square')
-      require(controlsRect.top >= mapRect.bottom - 1 && controlsRect.top - mapRect.bottom <= 8, 'transport must sit tightly below Stage')
-      metrics = {
-        laneWidth: left.width,
-        laneRight: right.width,
-        stageSide: mapRect.width,
-        centerWidth,
+      const baseMetrics = {
+        mapSide: mapRect.width,
+        mapShare: (mapRect.width * mapRect.height) / (innerWidth * innerHeight),
         availableHeight,
-        gridColumns: rootStyle.gridTemplateColumns,
-        laneToken: rootStyle.getPropertyValue('--pb-lane-w').trim(),
         hudWidth: hud.getBoundingClientRect().width,
         hudLeft: hud.getBoundingClientRect().left,
         hudRight: hud.getBoundingClientRect().right,
         mainWidth: main.width,
         mainRight: main.right,
+        gridColumns: rootStyle.gridTemplateColumns,
       }
+      if (['pc', 'tablet', 'wide'].includes(${JSON.stringify(scenario.check)})) {
+        require(Math.abs(mapRect.width - mapRect.height) <= 1, 'Stage must remain square')
+        require(controlsRect.top >= mapRect.bottom - 1 && controlsRect.top - mapRect.bottom <= 8, 'transport must sit tightly below Stage')
+        require(Math.abs(baseMetrics.hudWidth - baseMetrics.mainWidth) <= 1, 'HUD must span the full single-column workspace (roster must not own grid columns)')
+      }
+      metrics = baseMetrics
+    }
+
+    if (${JSON.stringify(lanes)}) {
+      const stageRect = stage.getBoundingClientRect()
+      const left = root.querySelector('.pb-team-lane-left').getBoundingClientRect()
+      const right = root.querySelector('.pb-team-lane-right').getBoundingClientRect()
+      const mapRect = map.getBoundingClientRect()
+      const laneToken = parseFloat(rootStyle.getPropertyValue('--pb-overlay-lane-w')) || parseFloat(getComputedStyle(root.querySelector('.pb-team-lane-left')).width)
+      require(left.width > 0 && Math.abs(left.width - right.width) <= 0.5, 'both roster lanes must share one width')
+      require(left.left >= stageRect.left - 0.5 && right.right <= stageRect.right + 0.5, 'roster lanes must stay inside the map stage')
+      require(left.top >= stageRect.top - 0.5 && left.bottom <= stageRect.bottom + 0.5, 'roster lanes must stay inside the map stage vertically (never cover HUD/transport)')
+      require(left.width <= laneToken + 0.5, 'roster lane must respect --pb-overlay-lane-w')
+      require(left.right <= mapRect.left + mapRect.width, 'lane is an overlay: it may cover map edges but must never push the map narrower')
+      require(Math.abs(mapRect.width - Math.min(root.querySelector('.pb-main').getBoundingClientRect().width, innerHeight - hud.getBoundingClientRect().height - overlayContent.getBoundingClientRect().height - 8)) <= 2,
+        'map square must be sized by the vertical budget, never by roster lanes')
+      Object.assign(metrics, {
+        laneWidth: left.width,
+        laneRight: right.width,
+        stageSide: mapRect.width,
+        laneToken: rootStyle.getPropertyValue('--pb-overlay-lane-w').trim(),
+      })
     }
     if (['pc', 'tablet'].includes(${JSON.stringify(scenario.check)})) {
       const mapRect = map.getBoundingClientRect()
@@ -706,62 +733,60 @@ try {
     console.log(`[browser-layout] ${scenario.name} OK (${result.width}x${result.height})${result.metrics ? ` ${JSON.stringify(result.metrics)}` : ''}`)
   }
   const tablet = geometryByName.get('tablet-1024x768')
+  const tabletOpen = geometryByName.get('tablet-1024x768-roster-open')
   const desktop = geometryByName.get('pc-1600x900')
-  const fullscreen = geometryByName.get('wide-fullscreen-1792x922')
+  const desktopOpen = geometryByName.get('pc-1600x900-roster-open')
+  const desktop1280Open = geometryByName.get('desktop-1280x900-roster-open')
   const phoneLandscape = geometryByName.get('phone-landscape-844x390')
-  // Equal roster lanes absorb width beyond the maximum square while retaining their floor.
-  if (!(tablet.laneWidth >= 9 * 16 - 0.5 && desktop.laneWidth > tablet.laneWidth)) {
-    throw new Error('Roster lanes must keep their readable floor and grow with the workspace')
-  }
+  const phoneLandscapeOpen = geometryByName.get('phone-landscape-844x390-roster-open')
+  const phoneLandscapeSmall = geometryByName.get('phone-landscape-600x320')
 
-  // —— 横向空间归属：桌面中心贴合正方形、车道承接余量 ——
+  // —— §roster-overlay 空间归属契约 ——
   //
-  // 用比例 / 恒等式而不是像素宽度做验收：断点只决定形态，尺寸由 fr 连续决定，
-  // 所以「center 相对 lane 有多宽」才是要锁的契约，具体 px 会随视口自由变化。
-  const LANE_GAP_PX = 8 // --space-2：三栏之间的 gutter，由 --space-* token 决定
-  const ROSTER_MIN_PX = 9 * 16 // --pb-roster-min（桌面 / 平板 2fr 车道的可读下限）
-  // 手机横屏的 dense 名单是两行 12px 文本 + 44px 细血条，不需要桌面的 9rem；
-  // 新规则 minmax(8.5rem, 1fr) minmax(0, 4fr) ... 把宽度让给地图（844 下实测 141px）。
-  const PHONE_LANDSCAPE_LANE_MIN_PX = 8.5 * 16
+  // 名册不再拥有 Grid 列：地图正方形只由纵向预算决定，名册浮层的开合**不得改变地图面积**；
+  // 浮层车道有可读下限并随视口增长（封顶 15rem），且只覆盖 Stage 侧带。
   const contractFailures = []
   const requireContract = (ok, message) => { if (!ok) contractFailures.push(message) }
 
   for (const [name, metrics] of geometryByName) {
-    if (!metrics?.hudWidth) continue // 非三栏场景（mobile portrait / raster / leader）不参与
-    const label = `${name}: lane=${metrics.laneWidth} center=${metrics.centerWidth} stage=${metrics.stageSide}`
-    // 两条 lane 等宽，且不低于可读下限（2/6/2 的窄档 fallback 就是守在 --pb-roster-min 上）
-    requireContract(Math.abs(metrics.laneWidth - metrics.laneRight) <= 0.5, `both lanes must share one width: ${label}`)
-    const laneFloor = metrics.phoneLandscape ? PHONE_LANDSCAPE_LANE_MIN_PX : ROSTER_MIN_PX
-    requireContract(metrics.laneWidth >= laneFloor - 0.5, `roster lane must keep its readable floor (${laneFloor}px): ${label}`)
-    // center 必须吃掉**全部**剩余宽度：等于 整宽 − 两条 lane − 一条 gutter。
-    // 这条恒等式才是「center 没有额外 max-width / 固定宽度 / 多余 margin」的直接证据。
-    // 注意 `centerWidth` 量的是 right.left − left.right − LANE_GAP_PX：右 lane 的 gutter
-    // 已经内含在这段距离里，所以再减一条就重复了。
-    const expectedCenter = metrics.mainWidth - 2 * metrics.laneWidth - LANE_GAP_PX
-    requireContract(Math.abs(metrics.centerWidth - expectedCenter) <= 1,
-      `center column must consume all remaining width (expected ${expectedCenter}): ${label}`)
-    // Desktop keeps the center twice as wide as either roster.
-    if (metrics.mainWidth >= 1200) requireContract(Math.abs(metrics.centerWidth - metrics.laneWidth * 2) <= 2,
-      `desktop center must be twice the roster lane width: ${label}`)
-    requireContract(metrics.stageSide <= metrics.centerWidth + 0.5, `Stage must fit inside the center column: ${label}`)
-    // HUD 属于整个 center column，而不是按内容收缩成中间小块
-    requireContract(Math.abs(metrics.hudWidth - metrics.centerWidth) <= 1,
-      `HUD must span the whole center column (hud=${metrics.hudWidth} center=${metrics.centerWidth}): ${label}`)
-    // center 横向居中，且不产生水平溢出
-    requireContract(Math.abs((metrics.hudLeft + metrics.hudRight) / 2 - metrics.mainWidth / 2) <= 1,
-      `center column must stay centered: ${label}`)
-    requireContract(metrics.stageSide <= metrics.availableHeight + 1,
-      `Stage must never exceed the measured vertical budget: ${label}`)
+    if (!metrics?.hudWidth) continue // 非 workspace 场景（raster / marker-true-position）不参与
+    const label = `${name}: map=${metrics.mapSide} hud=${metrics.hudWidth} main=${metrics.mainWidth}`
+    // 单列 workspace：HUD 吃满整行（名册没有列可分）。
+    requireContract(Math.abs(metrics.hudWidth - metrics.mainWidth) <= 1,
+      `HUD must span the full workspace (roster must not own grid columns): ${label}`)
+    requireContract(metrics.mapSide <= metrics.availableHeight + 1,
+      `map square must never exceed the measured vertical budget: ${label}`)
+    requireContract(metrics.mapShare > 0 && metrics.mapShare <= 1,
+      `map viewport share must be measured: ${label} share=${metrics.mapShare}`)
   }
 
-  // Wide viewport surplus is assigned to the roster lanes.
-  requireContract(fullscreen.laneWidth > desktop.laneWidth,
-    `extra wide-viewport width must grow the roster lanes: desktop=${desktop.centerWidth}/${desktop.laneWidth} fullscreen=${fullscreen.centerWidth}/${fullscreen.laneWidth}`)
-  // 短横屏（844x390）与平板仍保持三栏 + 可读 roster
-  requireContract(phoneLandscape.centerWidth > phoneLandscape.stageSide,
-    `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
+  // 浮层车道的可读下限：宽档 11rem 起、随视口增长（16vw），封顶 15rem；
+  // 手机横屏 dense 行 clamp(8.25rem, 17vw, 9rem)。
+  requireContract(tabletOpen.laneWidth >= 11 * 16 - 0.5,
+    `tablet roster overlay must keep its readable floor (176px): ${tabletOpen.laneWidth}`)
+  requireContract(desktopOpen.laneWidth > tabletOpen.laneWidth,
+    `desktop roster overlay must grow with the workspace: tablet=${tabletOpen.laneWidth} desktop=${desktopOpen.laneWidth}`)
+  requireContract(desktopOpen.laneWidth <= 15 * 16 + 0.5,
+    `desktop roster overlay must stay inside its 15rem cap: ${desktopOpen.laneWidth}`)
+  requireContract(phoneLandscapeOpen.laneWidth >= 8.25 * 16 - 0.5 && phoneLandscapeOpen.laneWidth <= 9 * 16 + 0.5,
+    `phone landscape roster overlay must respect clamp(8.25rem, 17vw, 9rem): ${phoneLandscapeOpen.laneWidth}`)
+
+  // 名册开合不得改变地图正方形：开 = 浮层覆盖侧带；收 = 地图独占全宽。面积必须相等。
+  for (const [closed, open, label] of [
+    [desktop, desktopOpen, 'desktop-1600'],
+    [tablet, tabletOpen, 'tablet-1024'],
+    [phoneLandscape, phoneLandscapeOpen, 'phone-landscape-844'],
+  ]) {
+    requireContract(Math.abs(closed.mapSide - open.mapSide) <= 1,
+      `roster expand/collapse must not change the map square (${label}): closed=${closed.mapSide} open=${open.mapSide}`)
+  }
+  // 地图 viewport 占比独立度量（PR 验收数据）：宽度受限形态在名册浮层化后正方形吃满全宽。
+  requireContract(desktop.mapSide >= desktopOpen.laneWidth,
+    `desktop map must be at least as wide as a roster overlay lane (roster no longer shrinks the map): map=${desktop.mapSide}`)
+  requireContract(phoneLandscapeSmall.mapSide > 0,
+    `phone landscape 600x320 must render a measurable map square: ${phoneLandscapeSmall.mapSide}`)
   if (contractFailures.length) {
-    throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
+    throw new Error(`workspace roster overlay contract:\n- ${contractFailures.join('\n- ')}`)
   }
 
   // —— 可达性探针自测：探针自己必须能发现 #727 这一类问题，同时不能误伤 ——

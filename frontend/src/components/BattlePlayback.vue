@@ -2,9 +2,10 @@
 import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { mapLabel } from '../utils/helpers.js'
-import { PencilRuler, ScanEye } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PencilRuler, ScanEye } from 'lucide-vue-next'
 import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackWorkspaceToggles } from '../composables/usePlaybackWorkspaceToggles'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
@@ -82,6 +83,8 @@ const props = defineProps({
    * 工作台用 v-show 保留实例，隐藏的回放不能再抢空格 / 方向键。
    */
   active: { type: Boolean, default: true },
+  /** 工作台的自动全屏事件 { token, key }（Android 手机 App；组件挂载即 V2 成功就绪）。 */
+  autoFullscreen: { type: Object, default: null },
 })
 
 const { t, locale } = useI18n()
@@ -281,55 +284,62 @@ const battlefieldWorkspaceEl = ref(null)
 const mapComponent = ref(null)
 const mapStageEl = ref(null)
 
-// ---- Fullscreen：原生 Fullscreen API；document.fullscreenElement + fullscreenchange 为事实源
-//（不维护手工 isFullscreen = !isFullscreen，ESC/浏览器 UI 退出后状态自动同步）。
-// 生命周期与方向锁已抽到 composables/usePlaybackFullscreen.js（与 3D 共用同一套产品语义：
-// 手机形态才锁横屏、锁在全屏成功之后、退出/卸载解锁、平板与桌面绝不请求方向锁）。----
+// Fullscreen API 与方向锁生命周期归 usePlaybackFullscreen。
 const pbRoot = ref(null)
-/* §three-forms：PC / tablet / mobile 三套互斥的布局形态，由 JS 判定后写成根类。
-   互斥性由「只挂一个类」保证，而不是靠媒体查询之间的算术——旧写法里
-   .pb-device-mobile(0,4,0) 会压掉宽度键控的规则(0,3,0)，一档的改动因此
-   反复打穿另一档。三档与旧行为逐条等价：
-     mobile = isMobileDevice（宽 <768，或触屏且高 <=500；见 shared/breakpoints PLAYBACK_MOBILE_QUERY）
-     pc     = 非 mobile 且 >=1200
-     tablet = 非 mobile 且 <1200（含 iPad / Android 平板；触屏只放大点击区域，不改形态） */
+// 三档互斥：手机由 usePlaybackPhoneForm 判定；非手机以 1200px 分 PC / tablet。
 const wideLayout = ref(false)
 const formFactor = computed(() => {
   if (isMobileDevice.value) return 'mobile'
   return wideLayout.value ? 'pc' : 'tablet'
 })
 
-// §mobile-contract：设备是否为「移动端」（primary pointer=coarse 且视口 <=1200px）。手机在
-// fullscreen + landscape 时内宽可 >768，因此移动端判定不得只依赖 innerWidth<768；一旦判定为
-// 移动端，无论全屏/横竖屏都保持 mobile playback mode（HUD+Stage 为主、bottom overlay controls、
-// 紧凑控件密度）；几何本身仍由朝向决定，两种形态都没有常驻侧栏。
-// §three-forms：与 wideLayoutQuery('(min-width: 1200px)') 必须严格互补。
-// 手机形态由共享 contract 判定，横屏/全屏后与 3D 保持同一紧凑呈现。
+// 手机判定沿用共享 contract，全屏横屏不能仅按宽度判定为桌面。
 const { isPhone: isMobileDevice } = usePlaybackPhoneForm()
 /* §square-stage：正方形 Stage 的两种呈现由**视口朝向**决定，不由宽度决定（见
    composables/usePlaybackPortraitViewport.js）。竖屏是纵向流，横屏与宽档才是三段式。 */
 const { isPortrait: isPhonePortrait } = usePlaybackPortraitViewport()
 const phoneLandscape = computed(() => isMobileDevice.value && !isPhonePortrait.value)
 const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.value)
+
+// 折叠/名册状态归 usePlaybackWorkspaceToggles；下方关闭函数通过惰性闭包调用。
+const { controlsCollapsed, controlsContentId, toggleControlsCollapsed, rosterLanesOpen, toggleRosterLanes } =
+  usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse: () => { displayOpen.value = false; closeAnnotation() } })
+// Presentation-only height bookkeeping: the existing disclosure ref remains the sole state owner.
+const transportToggleEl = ref(null)
+const transportContentEl = ref(null)
+function freezeTransportHeight(el) { el.style.height = `${el.getBoundingClientRect().height}px` }
+function startTransportEnter(el) {
+  // A cancelled leave has already frozen the current visible height.
+  if (!el.style.height) el.style.height = '0px'
+}
+function openTransportHeight(el) {
+  void el.offsetHeight
+  el.style.height = `${el.scrollHeight}px`
+}
+function closeTransportHeight(el) {
+  void el.offsetHeight
+  el.style.height = '0px'
+}
+function clearTransportHeight(el) { el.style.height = '' }
+function toggleTransport() {
+  if (!controlsCollapsed.value && transportContentEl.value?.contains(document.activeElement)) {
+    transportToggleEl.value?.focus({ preventScroll: true })
+  }
+  toggleControlsCollapsed()
+}
 let playbackLifecycleActive = true
+const lifecycleVisible = ref(true)
 let wideLayoutQuery = null
 function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
 }
-/**
- * 全屏 / 方向锁生命周期与 3D 共用同一实现（composables/usePlaybackFullscreen）：
- * 事实源 `document.fullscreenElement`、手机形态才锁横屏、锁在全屏成功之后、退出与卸载解锁。
- * 这里只保留 2D 自己的**布局**反应：全屏进出后等 Vue 把控件搬进新的容器尺寸，
- * 用新 mode 的真实几何 force 一次 authoritative fit（geometry-signature 也会捕获 bottom inset 变化）。
- * 不用 setTimeout magic delay。
- */
+// 全屏变化后等 Vue 更新布局再 force fit；事件与方向锁仍由共享 composable 所有。
 const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
   isPhone: isMobileDevice,
-  isActive: () => playbackLifecycleActive,
-  // fullscreenchange 只由 composable 监听；这里注入 2D 的布局反应（等 Vue 搬完 controls 再 force fit）。
-  // fitViewIfReady 由下方相机提供（函数声明提升，调用时相机已创建）。
+  isActive: () => playbackLifecycleActive && props.active && lifecycleVisible.value,
   onChange: () => nextTick(() => fitViewIfReady(true)),
+  auto: () => ({ token: props.autoFullscreen?.token ?? 0, key: props.autoFullscreen?.key, ready: true, active: props.active && lifecycleVisible.value }),
 })
 
 const {
@@ -554,19 +564,12 @@ function dragEnd() {
   transport.scrubEnd()
 }
 
-// KeepAlive 停用（切到别的页面）时同样视为不可见
-const lifecycleVisible = ref(true)
-// 离开（能力切走 / 页面停用）时退出本回放拥有的全屏：组件被 v-show / KeepAlive 缓存不会卸载，
-// 不主动退出的话 fullscreen root 仍是旧回放元素，新页面被挡在全屏层后面
+// 能力切换或 KeepAlive 停用时暂停并退出本回放拥有的全屏。
 onDeactivated(() => { lifecycleVisible.value = false; pause(); exitOwnedFullscreen() })
 onActivated(() => { lifecycleVisible.value = true })
 watch(() => props.active, (value) => { if (!value) { pause(); exitOwnedFullscreen() } })
 
-/**
- * 播放传输行为与 3D 共用：空格 / ←→ 的键位、输入框不劫持、拖动暂停后自动继续。
- * 键盘监听仍由本组件在 onMounted / onBeforeUnmount 挂卸（与其它全局监听同一处管理），
- * 所以 keyboard: false，只借用 handleKeydown。
- */
+// 共享播放键位/拖动语义；键盘监听由本组件挂卸，避免重复注册。
 const transport = usePlaybackTransport({
   isPlaying: () => playing.value,
   // 播放时钟在下方解构（声明顺序晚于本调用）——惰性闭包避免 TDZ；事件期才求值。
@@ -816,13 +819,21 @@ const destroyedNow = computed(() => new Set(
 /**
  * 正方形 Stage 的呈现决策（见 styles/playback-workspace.css 的权威契约）：
  *
- *   三段式（Team 1 | Stage | Team 2）＝ 名册开着 且 不是手机竖屏。
- *     宽档、平板、手机横屏都走这一条——横屏本来就有左右空白可用。
+ *   名册浮层 ＝ showRoster 开 且 不是手机竖屏 且 会话级浮层开关展开。
+ *     浮层锚在 `.pb-map-stage` 内侧左右边缘，不再占据固定 Grid 列——地图列始终是全宽。
  *   手机竖屏 ＝ 纵向流：名册排在传输控件之下的 `.pb-inline-area`，跟着页面滚。
  *
  * 名册**只是呈现**：关掉不重置名册数据、选中车辆、跟随目标、时间轴与相机。
  */
-const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortrait.value)
+const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortrait.value && rosterLanesOpen.value)
+/** 名册浮层入口（传输条上的 roster 按钮）：竖屏纵向流里的名册始终可见，不需要这个入口。 */
+const rosterEntryVisible = computed(() => showRosterPresentation.value && !isPhonePortrait.value)
+/**
+ * §2d-shellnav 窄容器时钟让位的前提：HUD 里真的有同一时钟（showSummary = showTopbar）。
+ * showTopbar 关闭（或 HUD 隐藏）时窄容器 CSS 必须保留传输条时钟，否则播放期间没有任何可见时间
+ * （F6）：root class 驱动 playback-workspace.css 的窄容器分支。
+ */
+const hudClockVisible = computed(() => !uiHidden.value && uiPrefs.showTopbar === true)
 /** 竖屏的纵向流里，名册排在传输控件之后的 `.pb-inline-area`；详情则是流内内容块。
     竖屏以外，详情是 workspace 顶层的可拖动浮窗。 */
 const inlineStack = computed(() => isPhonePortrait.value)
@@ -1039,7 +1050,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口：竖屏保持右上角浮动（与 Map Preview 3D / Replay 3D 同一位置）；
          手机横屏普通播放并入传输条；标注编辑隐藏传输条时，同一按钮移到标注行右端，
          隐藏全部 UI 时仍作为唯一可达入口留在右上角。三态互斥，DOM 里只有一个入口。 -->
@@ -1070,12 +1081,8 @@ const mapStyle = computed(() => ({
       :hp-no-transition="hpNoTransition"
       :compact="phoneLandscape"
     />
-      <!-- §square-stage 三段式：己方 | 正方形 Stage | 敌方。
-           两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
-           Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
-      </div>
+      <!-- §roster-overlay：名册不再占据固定 Grid 列（地图列始终全宽）。展开时它是锚在
+           Stage 内侧左右边缘的浮层，收纳后只剩传输条上的 roster 入口。 -->
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
           data-tour="playback-map"
@@ -1124,6 +1131,15 @@ const mapStyle = computed(() => ({
         <!-- 审计 PB-04：未与地图交互时滚轮交给页面，这里短暂提示如何缩放 -->
         <div v-if="wheelHintVisible" class="pb-wheel-hint" role="status" data-test="pb-wheel-hint">{{ t('workspace.map_wheel_hint') }}</div>
 
+        <!-- §roster-overlay 浮层车道：只覆盖 Stage 的侧带，不盖 HUD、传输控件与详情浮窗；
+             收纳（rosterLanesOpen=false 或 showRoster=false）时整体移除，地图恢复全宽。 -->
+        <div v-if="rosterLanes" id="pb-roster-lane-left" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
+          <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
+        </div>
+        <div v-if="rosterLanes" id="pb-roster-lane-right" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
+          <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
+        </div>
+
 
       </div>
 
@@ -1152,19 +1168,24 @@ const mapStyle = computed(() => ({
         @close="closeSidebar"
       />
 
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
-      </div>
-
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing" :fullscreen="isFullscreen">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
+        <!-- One measured disclosure region; the persistent restore entry stays outside it. -->
+        <div v-show="!compactAnnotation" class="pb-transport-row">
+        <Transition name="pb-transport-slide"
+          @before-enter="startTransportEnter" @enter="openTransportHeight"
+          @after-enter="clearTransportHeight" @enter-cancelled="freezeTransportHeight"
+          @before-leave="freezeTransportHeight" @leave="closeTransportHeight"
+          @after-leave="clearTransportHeight" @leave-cancelled="freezeTransportHeight"
+        >
+        <div v-show="!compactAnnotation && !controlsCollapsed" ref="transportContentEl" :id="controlsContentId"
+          :inert="controlsCollapsed" class="pb-transport-main" data-test="pb-transport-controls">
         <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
           <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
             <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
           </button>
           <span>{{ $t(annotationOpen ? 'recon.map.playback.annot.mode_hint' : 'recon.map.playback.annot.watch_hint') }}</span>
         </div>
-        <div v-show="!compactAnnotation" data-test="pb-transport-controls">
         <PlaybackControls
           :playing="playing"
           :speed="speed"
@@ -1175,7 +1196,10 @@ const mapStyle = computed(() => ({
           :floating-fullscreen="isMobileDevice && !phoneLandscape"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
-          :nav-eligible="active && lifecycleVisible && !compactAnnotation"
+          :nav-eligible="active && lifecycleVisible && !compactAnnotation && !controlsCollapsed"
+          :roster-entry-visible="rosterEntryVisible"
+          :roster-open="rosterLanes"
+          @toggle-roster="toggleRosterLanes"
           @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
           @toggle-play="transport.togglePlay()"
@@ -1188,8 +1212,19 @@ const mapStyle = computed(() => ({
           @seek="seek"
         />
         </div>
+        </Transition>
+        <!-- Persistent restore entry, independent of the animated content's height. -->
+        <button ref="transportToggleEl" type="button" class="pb-transport-toggle pb-quick-action" data-test="pb-transport-toggle"
+          :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
+          :aria-label="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          :title="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          @click="toggleTransport"
+        >
+          <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
+        </button>
+        </div>
         <!-- One annotation toolbar in the transport flow in every form. -->
-        <div v-if="annotationOpen" class="pb-annotation-surface">
+        <div v-if="annotationOpen && !controlsCollapsed" class="pb-annotation-surface">
           <AnnotationToolbar
             :open="annotationOpen"
             :compact="compactAnnotation"

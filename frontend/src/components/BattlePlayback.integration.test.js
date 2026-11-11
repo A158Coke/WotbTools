@@ -10,7 +10,7 @@
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -28,6 +28,8 @@ const i18n = vi.hoisted(() => ({
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
+
+vi.mock('../platform/screenForm.js', () => ({ forcedLandscapeDevice: async () => 'android-phone-app' }))
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -1552,6 +1554,9 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-annotation-entry"]').exists()).toBe(!compact)
     expect(wrapper.findAll('[data-test="pb-annot-close"]')).toHaveLength(1)
     expect(wrapper.get('[data-test="pb-transport-controls"]').element.style.display === 'none').toBe(compact)
+    // F2：紧凑标注态整行隐藏（含折叠按钮）——标注工具条接替传输行，不额外占一行；
+    // 隐藏的折叠按钮不再暴露 aria-expanded（其指向的内容此时不可见）。
+    expect(wrapper.get('.pb-transport-row').element.style.display === 'none').toBe(compact)
     expect(controls.props('playing')).toBe(false)
     await wrapper.get('[data-test="pb-annot-TD"]').trigger('click')
     const viewport = wrapper.get('[data-test="pb-viewport"]')
@@ -2993,5 +2998,217 @@ describe('2D 位姿与 3D 同源（poseFacet 通道）', () => {
     }
     expect(await leftAt(20)).toBeCloseTo(pctOf(0), 1)     // 覆盖外 → canonical 的 x=0（不是 eid 2 的 150）
     expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)   // 进入覆盖（raw 135）→ eid 2 的通道值
+  })
+})
+
+describe('2D 工具栏折叠与名册浮层（§2d-toolbar-collapse / §roster-overlay）', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('底部工具栏折叠后只留恢复入口，再展开恢复原内容；折叠会关闭 Display 面', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const toggle = () => wrapper.get('[data-test="pb-transport-toggle"]')
+    const content = () => wrapper.get('[data-test="pb-transport-controls"]')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(content().attributes('style') || '').not.toContain('display: none')
+    // 打开 Display 面后折叠：折叠必须同时收起二级面（与 3D 同语义）
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.displayOpened()).toBe(true)
+    await toggle().trigger('click')
+    await flushPromises()
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(content().attributes('style')).toContain('display: none')
+    expect(wrapper.vm.displayOpened()).toBe(false)
+    // 折叠时 aria-controls 指向仍在 DOM 的传输内容（可达恢复入口）
+    expect(content().attributes('id')).toBe(toggle().attributes('aria-controls'))
+    // 恢复：内容回来了，播放时间不变
+    const time = wrapper.vm.currentTime
+    await toggle().trigger('click')
+    await flushPromises()
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(content().attributes('style') || '').not.toContain('display: none')
+    expect(wrapper.vm.currentTime).toBe(time)
+  })
+
+  it('名册浮层收纳/展开不改变选中与时间；手机横屏默认收纳', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.classes()).toContain('pb-roster-lanes')
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    const time = wrapper.vm.currentTime
+    const selected = wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')
+    const entry = () => wrapper.get('[data-test="pb-roster-entry"]')
+    expect(entry().attributes('aria-pressed')).toBe('true')
+    await entry().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('pb-roster-lanes')
+    expect(entry().attributes('aria-pressed')).toBe('false')
+    expect(wrapper.vm.currentTime).toBe(time)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+    await entry().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+  })
+
+  it('手机横屏（phoneLandscape）默认收纳名册浮层，入口仍是传输条上的 roster 按钮', async () => {
+    stubRaf()
+    vi.stubGlobal('innerWidth', 844)
+    const mql = (query) => ({
+      matches: query === PLAYBACK_MOBILE_QUERY,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    vi.stubGlobal('matchMedia', mql)
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.classes()).toContain('pb-phone-landscape')
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-roster-entry"]').attributes('aria-pressed')).toBe('false')
+    await wrapper.get('[data-test="pb-roster-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-roster-entry"]').attributes('aria-pressed')).toBe('true')
+  })
+})
+
+
+describe('2D 自动全屏（Android 手机 App）：退出不打断回放', () => {
+  const file = new File(['x'], 'a.wotbreplay')
+  function installFullscreen() {
+    const state = { request: 0, exit: 0 }
+    Element.prototype.requestFullscreen = vi.fn(async function () {
+      state.request++
+      Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true, writable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    document.exitFullscreen = vi.fn(async () => {
+      state.exit++
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+    return state
+  }
+  afterEach(() => {
+    delete Element.prototype.requestFullscreen
+    delete document.exitFullscreen
+    delete document.fullscreenElement
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('挂载即成功就绪：自动进入一次；退出后时间 / 播放态 / 选中 / 组件实例保持且不重入', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    vi.stubGlobal('matchMedia', (query) => ({ matches: query === PLAYBACK_MOBILE_QUERY, media: query, addEventListener() {}, removeEventListener() {} }))
+    const fs = installFullscreen()
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })
+    await flushPromises()
+    await vi.waitFor(() => expect(fs.request).toBe(1))
+    await flushPromises()
+    const root = wrapper.find('[data-test="battle-playback"]').element
+    expect(document.fullscreenElement).toBe(root)
+
+    await wrapper.find('.pb-range').setValue(12)
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    const before = {
+      time: wrapper.find('.pb-time').text(),
+      playLabel: wrapper.get('[data-test="pb-play"]').attributes('aria-label'),
+      info: wrapper.find('[data-test="pb-info"]').text(),
+    }
+    // 退出按钮与 Back/系统手势最终都是 fullscreenchange(null)
+    await document.exitFullscreen()
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').element).toBe(root)
+    expect(wrapper.find('.pb-time').text()).toBe(before.time)
+    expect(wrapper.get('[data-test="pb-play"]').attributes('aria-label')).toBe(before.playLabel)
+    expect(wrapper.find('[data-test="pb-info"]').text()).toBe(before.info)
+    expect(fs.request).toBe(1)
+    await wrapper.setProps({ seekTo: 12 })
+    await flushPromises()
+    expect(fs.request).toBe(1)
+    // 新的进入事件才会再次自动进入
+    await wrapper.setProps({ autoFullscreen: { token: 2, key: file } })
+    await vi.waitFor(() => expect(fs.request).toBe(2))
+    wrapper.unmount()
+  })
+
+  describe('请求挂起期间失活：迟到的完成必须立刻交还全屏，且不留方向锁', () => {
+    function deferredFullscreen() {
+      let release
+      const gate = new Promise((resolve) => { release = resolve })
+      const exit = vi.fn(async () => {
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+      })
+      Element.prototype.requestFullscreen = vi.fn(async function () {
+        await gate
+        Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true, writable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+      })
+      document.exitFullscreen = exit
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+      const lock = vi.fn(async () => {})
+      vi.stubGlobal('screen', { orientation: { lock, unlock: vi.fn() } })
+      return { release, exit, lock }
+    }
+    const phoneMedia = () => vi.stubGlobal('matchMedia', (query) => ({ matches: query === PLAYBACK_MOBILE_QUERY, media: query, addEventListener() {}, removeEventListener() {} }))
+
+    it('切走能力（props.active=false）后请求才完成：旧 2D 根立刻退出全屏，不锁方向', async () => {
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      vi.stubGlobal('cancelAnimationFrame', () => {})
+      phoneMedia()
+      const fs = deferredFullscreen()
+      const wrapper = mountBattlePlayback({ overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })
+      await flushPromises()
+      await vi.waitFor(() => expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1))
+      await wrapper.setProps({ active: false })
+      fs.release()
+      await flushPromises()
+      expect(document.fullscreenElement).toBeNull()
+      expect(fs.exit).toHaveBeenCalledTimes(1)
+      expect(fs.lock).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('KeepAlive 停用后请求才完成：同样交还全屏；重新激活不会自动重入', async () => {
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      vi.stubGlobal('cancelAnimationFrame', () => {})
+      phoneMedia()
+      const fs = deferredFullscreen()
+      const show = ref(true)
+      const Host = defineComponent({
+        setup: () => () => h(KeepAlive, null, show.value
+          ? [h(BattlePlayback, { overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })]
+          : []),
+      })
+      const wrapper = mount(Host, { attachTo: document.body, global: { mocks: { $t: i18n.t } } })
+      await flushPromises()
+      await vi.waitFor(() => expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1))
+      show.value = false
+      await flushPromises()
+      fs.release()
+      await flushPromises()
+      expect(document.fullscreenElement).toBeNull()
+      expect(fs.lock).not.toHaveBeenCalled()
+      show.value = true
+      await flushPromises()
+      expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
   })
 })

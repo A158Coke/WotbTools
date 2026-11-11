@@ -11,7 +11,6 @@
      没有这一行时 1–9 会和组件里的裸 25/30/40/45 在页面外壳的上下文里裸比大小，
      文档声明的"局部刻度"并不成立（实测：Display surface 的 9 被 transport 的 25 盖住）。 */
   isolation: isolate;
-  --pb-lane-w: var(--pb-roster-min);
 }
 
 .pb-quick-action {
@@ -63,16 +62,8 @@
   padding: 0;
   min-block-size: 0;
 }
-/* 宽档三列 2 / 6 / 2：中心列 = 两条 2fr 车道之外的全部剩余空间。2D `.pb-main` 与 3D
-   `.pb-root` 共用同一条声明，两者不可能再各自漂移。 */
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main {
-  grid-template-columns:
-    minmax(var(--pb-roster-min), 2fr)
-    minmax(0, 6fr)
-    minmax(var(--pb-roster-min), 2fr);
-}
-/* 2D 的 `.pb-main` 三列 2/6/2 由下面的共享选择器给出（与 3D `.pb-root` 同一条规则）——
-   必须在这里之后声明，否则会被上面那条更高特异性的单列 `.pb-main` 规则盖掉。 */
+/* §roster-overlay：2D 名册不再占据固定 Grid 列——`.pb-main` 恒为单列（HUD / Stage / 传输），
+   地图 Stage 吃满整行；展开的名册是 Stage 内侧左右边缘的浮层（几何见 .pb-team-lane 规则）。 */
 .battle-playback.playback-workspace .pb-main > .pb-map-stage {
   display: block;
   position: relative;
@@ -83,19 +74,30 @@
   min-block-size: 0;
   margin: 0;
 }
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main > .pb-map-stage { grid-column: 2; }
+/* §roster-overlay 浮层车道：锚在 Stage（地图盒）内侧左右边缘，只覆盖地图侧带，
+   不进 HUD 行、不盖传输控件（那两行在 Stage 之外）。展开上限让出底部一行，
+   收纳时整个元素由模板移除，地图不再有任何侧栏。 */
 .battle-playback.playback-workspace .pb-team-lane {
-  position: static;
-  inset: auto;
-  grid-row: 1 / -1;
-  /* 用容器高度而不是 `100%`：`.pb-main` 是 `align-content: start` 的固定高网格，
-     内容溢出时它的「100%」会跟着内容长（实测 740×360 上车道量到 394px 而不是 256px），
-     于是名册把传输控件顶下去。`--pb-workspace-h` 才是真正的可用高度。 */
-  max-block-size: var(--pb-workspace-h, var(--pb-workspace-fallback-h));
+  position: absolute;
+  inset-block-start: 0;
+  inset-block-end: 0;
+  z-index: var(--pb-z-hud);
+  inline-size: var(--pb-overlay-lane-w);
   min-block-size: 0;
   min-inline-size: 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
+/* 宽形态车道不进地图中心 60% 盒（design-language §5），按行内容需求取宽并封顶；
+   手机横屏用 dense 行，车道压到 8.25rem 起（与 3D roster-side 同一 token 契约）。 */
+.battle-playback.playback-workspace {
+  --pb-overlay-lane-w: min(clamp(11rem, 16vw, 15rem), 20%);
+}
+.battle-playback.playback-workspace.pb-phone-landscape {
+  --pb-overlay-lane-w: clamp(8.25rem, 17vw, 9rem);
+}
+.battle-playback.playback-workspace .pb-team-lane-left { inset-inline-start: var(--space-1); }
+.battle-playback.playback-workspace .pb-team-lane-right { inset-inline-end: var(--space-1); }
 .battle-playback.playback-workspace .pb-main > .pb-mobile-overlay {
   position: relative;
   inset: auto;
@@ -106,7 +108,6 @@
   pointer-events: auto;
   padding: 0;
 }
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main > .pb-mobile-overlay { grid-column: 2; }
 .battle-playback.playback-workspace .pb-mobile-overlay .pb-mobile-overlay-content {
   position: relative;
   inset: auto;
@@ -123,27 +124,16 @@
   grid-row: 1;
   padding: var(--space-1);
 }
-.battle-playback.playback-workspace.pb-roster-lanes .pb-main > .pb-hud { grid-column: 2; }
 /* 手机横屏的高度账：正方形 Stage 只受纵向预算约束，所以把所有非地图的行压到最小——
-   名册车道只跨 HUD + Stage 两行，传输条（时间轴 + 按钮）合成一行横跨三列，放在最底部。
-   不浮在地图上：地图盒里不放常驻 UI（design-language §5）。 */
+   传输条（时间轴 + 按钮）合成一行放在最底部。不浮在地图上：地图盒里不放常驻 UI（design-language §5）。 */
 .battle-playback.playback-workspace.pb-phone-landscape .pb-main {
   flex: 1 1 auto;
   grid-template-rows: max-content minmax(0, 1fr) max-content;
-}
-.battle-playback.playback-workspace.pb-phone-landscape .pb-team-lane {
-  grid-row: 1 / 3;
-  max-block-size: 100%;
-}
-/* 手机横屏把两侧车道压到 136px 起、地图吃满剩余；仍保持 lane 等宽（browser layout 契约）。 */
-.battle-playback.playback-workspace.pb-phone-landscape.pb-roster-lanes .pb-main {
-  grid-template-columns: minmax(8.5rem, 1fr) minmax(0, 4fr) minmax(8.5rem, 1fr);
 }
 /* 沉浸态横屏（非全屏）同样贴到屏幕左右边缘：刘海 / 圆角侧的 safe-area 与全屏路径一致（:fullscreen 另有自己的 padding-inline） */
 .battle-playback.playback-workspace.pb-phone-landscape:not(:fullscreen) {
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
-.battle-playback.playback-workspace.pb-phone-landscape.pb-roster-lanes .pb-main > .pb-mobile-overlay { grid-column: 1 / -1; }
 /* 紧凑档按钮视觉高度 36px，命中区靠上下各 2px 的伪元素补到 40px。传输条此前贴视口底：
    下缘 2px 落到 viewport 之外，真实命中测试会在 b.bottom + 1.5 处取到 null。留 4px 后
    40×40 命中区完整落在屏内，同时不改变按钮视觉尺寸。 */
@@ -423,9 +413,6 @@
   position: absolute;
   z-index: var(--pb-z-transient);
 }
-.battle-playback.playback-workspace .pb-team-lane-left { grid-column: 1; }
-.battle-playback.playback-workspace .pb-team-lane-right { grid-column: 3; }
-
 .battle-playback.playback-workspace:fullscreen {
   inline-size: 100%;
   margin: 0;
@@ -434,14 +421,36 @@
   overflow: hidden;
 }
 
-/* Desktop roster lanes share approximately 25 / 50 / 25 of the available width. */
-@media (width >= 1200px) {
-  .battle-playback.playback-workspace.pb-roster-lanes .pb-main {
-    grid-template-columns:
-      minmax(var(--pb-roster-min), 1fr)
-      minmax(0, 2fr)
-      minmax(var(--pb-roster-min), 1fr);
+/* The content keeps its natural width during height transitions; the restore entry stays right. */
+.battle-playback.playback-workspace .pb-transport-slot { display: flex; flex-direction: column; gap: var(--space-1); }
+.battle-playback.playback-workspace .pb-transport-row { display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-1); min-inline-size: 0; }
+.battle-playback.playback-workspace .pb-transport-main { display: flex; flex-direction: column; gap: var(--space-1); flex: 1 1 auto; min-inline-size: 0; }
+.battle-playback.playback-workspace .pb-transport-toggle { flex: none; order: 1; margin-inline-start: auto; }
+.pb-transport-slide-enter-active,
+.pb-transport-slide-leave-active {
+  overflow: hidden;
+  transition: height calc(var(--duration-slow) * 2) var(--ease-standard);
+}
+/* §2d-shellnav 窄容器宽度账（600×320 沉浸态 + 真实 Shell 实测）：导航托管 + 九个 36px 控件 +
+   时间轴 + 折叠入口的 min-content 超出行宽——时钟溢出视口右缘并与折叠按钮重叠（gear 亦越界）。
+   紧凑 HUD 中心列已有同一时钟（pb-hud-time，可触达替代），窄视口隐藏传输条时钟；时间轴下限
+   同步收缩（120 → 96px，仍可拖动）。640px 以下都适用（含窄窗口桌面），与 3D 的 .pb-time 规则
+   不共享选择器（这里只命中 2D .pb-transport-main）。 */
+@container (inline-size < 640px) {
+  .battle-playback.playback-workspace .pb-transport-main .pb-time { display: none; }
+  /* F6：HUD 时钟不可用（showTopbar 关 / HUD 隐藏 → root 无 .pb-hud-clock-off 时钟前提不成立）
+     时保留传输条时钟，否则播放期间没有任何可见时间。时钟换行成独立一行，不与折叠入口抢宽；
+     特异性与手机横屏单行规则同阶（(0,6,0)）且声明在后，覆盖其 flex-basis / margin。 */
+  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-main .pb-controls .pb-time {
+    display: block;
+    flex-basis: 100%;
+    margin-inline: 0;
+    text-align: center;
   }
+  .battle-playback.playback-workspace.pb-hud-clock-off .pb-transport-main .pb-controls { flex-wrap: wrap; }
+  /* 与手机横屏单行规则（--pb-timeline-min-w）同特异性、声明在后：窄容器下限收缩生效。 */
+  :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"],
+    .battle-playback.playback-workspace .pb-transport-main) > .pb-progress { min-inline-size: 6rem; }
 }
 
 /* 短视口横屏紧凑档（§9「强制横屏」）：scale.css 已把场景 token 收紧到 32/36/40。

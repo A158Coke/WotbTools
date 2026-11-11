@@ -3,6 +3,7 @@ package com.wotbtools.app
 import android.content.pm.ActivityInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,8 +24,16 @@ class ScreenFormTest {
     }
 
     @Test
-    fun pageLockMapsToSensorLandscapeAndReleaseToUnspecified() {
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, ScreenForm.pageOrientation(true))
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, ScreenForm.pageOrientation(false))
+    fun pageLockMapsLandscapePortraitAndRelease() {
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, ScreenForm.pageOrientation("landscape"))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, ScreenForm.pageOrientation("portrait"))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, ScreenForm.pageOrientation("unspecified"))
+    }
+
+    @Test
+    fun unknownOrientationModeIsRejected() {
+        assertNull(ScreenForm.pageOrientation(""))
+        assertNull(ScreenForm.pageOrientation(null))
+        assertNull(ScreenForm.pageOrientation("sensor"))
     }
 }
