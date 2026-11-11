@@ -132,7 +132,10 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
     color: var(--theme-hero-title-color, var(--color-text-primary));
     text-shadow: var(--theme-hero-text-shadow, none);
   }
-  .showcase-hero-description { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
+  .showcase-hero-description {
+    color: var(--theme-hero-description-color, var(--color-text-secondary));
+    text-shadow: var(--theme-hero-text-shadow, none);
+  }
   .showcase-hero-stats { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
   /* 槽内的 stat 标签（.lb-hero-stat-label / .tp-hero-stat-label）显式设了深色，继承打不开，强制跟随容器浅色 */
   .showcase-hero-stats :deep(span) { color: inherit; }
