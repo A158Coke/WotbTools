@@ -16,7 +16,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root="$tmp/root"
-mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/bin"
+mkdir -p "$root/releases/r1" "$root/releases/r2" "$root/releases/r3" "$root/releases/r4" "$root/releases/r5" "$root/releases/r6" "$root/releases/r_slot" "$root/bin"
 
 cat > "$root/bin/asset_release.py" <<'PY'
 import hashlib, json, os, pathlib, sys
@@ -171,6 +171,17 @@ run unlink --dataset supertest >/dev/null
 [[ ! -e "$root/datasets/supertest" ]] || { echo "unlink must remove the dataset symlink" >&2; exit 1; }
 grep -q '"action":"unlink"' "$root/release-log.jsonl" || { echo "unlink audit line missing" >&2; exit 1; }
 [[ -d "$root/releases/r3" ]] || { echo "unlink must keep the release directory" >&2; exit 1; }
+assert_catalog_default "11.21.0"
+
+# --- dataset_id 含 `_`（客户端 SmartDLC 槽位命名，2026-11-11 放宽）也要整链可用 ---
+make_release "$root/releases/r_slot" "11.21.0_1" "payload-slot"
+run link --dataset 11.21.0_1 --release r_slot >/dev/null
+assert_link "$root/datasets/11.21.0_1" "../releases/r_slot"
+run default --dataset 11.21.0_1 >/dev/null
+assert_catalog_default "11.21.0_1"
+run default --dataset 11.21.0 >/dev/null
+run unlink --dataset 11.21.0_1 >/dev/null
+[[ ! -e "$root/datasets/11.21.0_1" ]] || { echo "underscore dataset unlink must remove the link" >&2; exit 1; }
 assert_catalog_default "11.21.0"
 
 # --- 故障注入：模拟缺失依赖与 catalog/verify 失败，在线状态必须原样恢复 ---

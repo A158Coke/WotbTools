@@ -16,7 +16,8 @@ import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 export const DATA_VERSION_QUERY = 'data'
 export const DATA_VERSION_STORAGE = 'wotb_data_version'
 export const ASSET_BASE_STORAGE = 'wotb_asset_base'
-const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
+// `_` 供客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）；与 Agent 仓 asset_release.py 同款契约。
+const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/
 
 const productionDefault = (import.meta.env.VITE_ASSET_BASE_URL ?? '').replace(/\/+$/, '')
 
@@ -67,13 +68,13 @@ function browserStorage(): Storage | null {
 
 /** 去掉 `?assets=` 基址尾部的 `/v/<id>`，让选择器可以改回 origin + ?data=。 */
 export function stripDatasetSuffix(origin: string): string {
-  return origin.replace(/\/v\/[a-z0-9.-]+\/?$/, '')
+  return origin.replace(/\/v\/[a-z0-9._-]+\/?$/, '')
 }
 
 function withDataset(origin: string): string {
   if (!origin) return ''
   // ?assets= 已经是完整版本基址：escape hatch 优先，不再叠加 ?data=。
-  if (/\/v\/[a-z0-9.-]+\/?$/.test(origin)) return origin.replace(/\/+$/, '')
+  if (/\/v\/[a-z0-9._-]+\/?$/.test(origin)) return origin.replace(/\/+$/, '')
   const id = dataVersionId()
   return id ? `${origin.replace(/\/+$/, '')}/v/${id}` : origin
 }
