@@ -71,7 +71,6 @@ for (const f of inventory.files) {
         sourceMap.get(abs).testFiles.add(f.testFile);
       }
     }
-    if (s.varName === undefined) sourceMap.get(abs).testFiles.add(f.testFile);
   }
 }
 
