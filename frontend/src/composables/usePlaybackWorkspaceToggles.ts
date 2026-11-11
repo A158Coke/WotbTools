@@ -1,4 +1,4 @@
-import { ref, useId, watch } from 'vue'
+import { ref, useId, watch, type Ref } from 'vue'
 
 /**
  * 2D 回放工作台的会话级视图开关（不持久化）：底部工具栏折叠 + 横屏名册浮层开合。
@@ -11,7 +11,10 @@ import { ref, useId, watch } from 'vue'
  *
  * §roster-overlay：名册浮层开关（手机横屏默认收纳、其余形态默认展开；形态切换回到该形态默认）。
  */
-export function usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse }) {
+export function usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse }: {
+  phoneLandscape: Ref<boolean>
+  onCollapse: () => void
+}) {
   const controlsCollapsed = ref(false)
   const controlsContentId = useId()
   function toggleControlsCollapsed() {

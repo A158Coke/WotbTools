@@ -427,6 +427,17 @@
 .battle-playback.playback-workspace .pb-transport-row { display: flex; flex-direction: row; align-items: center; gap: var(--space-1); min-inline-size: 0; }
 .battle-playback.playback-workspace .pb-transport-main { flex: 1 1 auto; min-inline-size: 0; }
 .battle-playback.playback-workspace .pb-transport-toggle { flex: none; order: 1; }
+/* §2d-shellnav 窄容器宽度账（600×320 沉浸态 + 真实 Shell 实测）：导航托管 + 九个 36px 控件 +
+   时间轴 + 折叠入口的 min-content 超出行宽——时钟溢出视口右缘并与折叠按钮重叠（gear 亦越界）。
+   紧凑 HUD 中心列已有同一时钟（pb-hud-time，可触达替代），窄视口隐藏传输条时钟；时间轴下限
+   同步收缩（120 → 96px，仍可拖动）。640px 以下都适用（含窄窗口桌面），与 3D 的 .pb-time 规则
+   不共享选择器（这里只命中 2D .pb-transport-main）。 */
+@container (inline-size < 640px) {
+  .battle-playback.playback-workspace .pb-transport-main .pb-time { display: none; }
+  /* 与手机横屏单行规则（--pb-timeline-min-w）同特异性、声明在后：窄容器下限收缩生效。 */
+  :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"],
+    .battle-playback.playback-workspace .pb-transport-main) > .pb-progress { min-inline-size: 6rem; }
+}
 
 /* 短视口横屏紧凑档（§9「强制横屏」）：scale.css 已把场景 token 收紧到 32/36/40。
   传输按钮保持 36px 的视觉高度，用透明伪元素把命中区补到 40×40：绝对定位的包含块是
