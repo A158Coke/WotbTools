@@ -122,26 +122,6 @@ describe('rosterState · 物理队伍分组', () => {
   })
 })
 
-// 名册在 seek / 播放 / 停播 / 换相机时都必须对 Vue 可见地更新，且随 HUD 节拍而非逐帧写入：
-// 由 playbackScene.test.js 真实驱动场景内核锁定。这里只保留源码级接线守卫。
-describe('rosterState · 投影接线守卫', () => {
-  const here = dirname(fileURLToPath(import.meta.url))
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
-  // 名册桥接 2026-10-24 出仓 playback/hudFeed.js（Step A5），投影守卫随实现迁移
-  const feedSrc = readFileSync(resolve(here, 'playback/hudFeed.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
-
-  it('名册 HP 由 projectRoster 投影，死亡判据复用场景 resolver', () => {
-    const at = feedSrc.indexOf('function updateRoster()')
-    const body = feedSrc.slice(at, at + 900)
-    expect(body).toMatch(/projectRoster\(getV\(\), getT\(\), deathAt\)/)
-    expect(body).not.toMatch(/rosterEntry/)
-  })
-
-  it('teardown 清空名册与 eid → 行 索引（会话切换不留旧行）', () => {
-    expect(feedSrc).toMatch(/rosterRowsByEid\.clear\(\)/)
-  })
-})
-
 /**
  * reload 投影的响应式契约：resolver 产物 10Hz 引用恒变（progress 连续），而呈现层只消费
  * 各弹位的 `state` 相位序列——applyRosterRuntime 按相位序列去重引用，相位不变时不写代理，

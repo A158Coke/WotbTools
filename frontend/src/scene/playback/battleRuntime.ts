@@ -101,6 +101,16 @@ export interface BattleRuntimeHandle {
   dispose(): void
 }
 
+/** 阵营色分派（唯一规则，#827 出仓可测）：按射手阵营 → green / red / white；
+ *  未知阵营一律白（unknown ≠ enemy）；炮线亮色板由宿主注入（colors.friendly/enemy）。 */
+export function teamTracerColor(
+  t: number | null | undefined,
+  ft: number | null | undefined,
+  colors: { unknown: number; friendly: number; enemy: number },
+): number {
+  if ((t !== 1 && t !== 2) || (ft !== 1 && ft !== 2)) return colors.unknown;
+  return t === ft ? colors.friendly : colors.enemy;
+}
 export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandle {
   const tracerColors = { unknown: deps.colorUnknown, friendly: deps.tracerFriendly, enemy: deps.tracerEnemy };
   const tracers: TracerRuntime[] = [];
@@ -228,10 +238,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     const data = deps.getData();
     if (!data) return tracerColors.unknown;
     const d = data.vehicles.find((x) => x.eid === s.shooter_eid);
-    const t = d ? d.team : 0;
-    const ft = data.meta.friendly_team;
-    if ((t !== 1 && t !== 2) || (ft !== 1 && ft !== 2)) return tracerColors.unknown;
-    return t === ft ? tracerColors.friendly : tracerColors.enemy;
+    return teamTracerColor(d ? d.team : 0, data.meta.friendly_team, tracerColors);
   }
   // 命中类型 → 写实命中特效（全部 transient，无 decal/弹孔；外观见 battleFx.js）：
   //   pen（击穿）= 小火光 + 橙色余火 + 暗烟；nonpen = 亮白火花回溅 + 灰烟；

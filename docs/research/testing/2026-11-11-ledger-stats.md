@@ -34,28 +34,29 @@
 | frontend/src/styles/hof-admin-tabs-css.test.js | 2 | 1 | 1 | 0 | 0 | 0 |
 | frontend/src/styles/replay3d-hud-layout.test.js | 0 | 2 | 0 | 0 | 0 | 0 |
 | frontend/src/styles/tokens/color-contrast.test.ts | 1 | 0 | 3 | 1 | 0 | 0 |
-| **合计（已映射 28 文件）** | — | **136** | **30** | **34** | **7** | **28** |
+| frontend/src/api/replay-capabilities.test.ts | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/app/navigation-context.test.ts | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/app/navigationPressedFeedback.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/components/AgentArmorView.dom-contract.test.js | 22 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/components/AgentTankopedia.baseline.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/components/AppSheet.test.ts | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/PlayerRatingRadar.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/ProfilePage.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/components/Replay3DPane.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/components/ReplayWorkspace.test.js | 2 | 0 | 2 | 0 | 0 | 0 |
+| frontend/src/components/TankResearchPanel.layout.test.js | 1 | 0 | 0 | 0 | 1 | 0 |
+| frontend/src/data-version-wiring.test.js | 2 | 0 | 2 | 0 | 0 | 0 |
+| frontend/src/index-firstpaint.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/shared/tabular/csv/encode.test.ts | 1 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/vehicle-models/extractor.test.js | 6 | 0 | 1 | 0 | 0 | 0 |
+| frontend/src/vehicle-models/texture-bake.test.js | 1 | 0 | 1 | 0 | 0 | 0 |
+| **合计（已映射 28 文件）** | — | **136** | **44** | **34** | **11** | **28** |
 
 ## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）
 
-- frontend/src/api/replay-capabilities.test.ts（1 例）
-- frontend/src/app/navigation-context.test.ts（1 例）
-- frontend/src/app/navigationPressedFeedback.test.js（1 例）
-- frontend/src/components/AgentArmorView.dom-contract.test.js（22 例）
-- frontend/src/components/AgentTankopedia.baseline.test.js（1 例）
-- frontend/src/components/AppSheet.test.ts（1 例）
-- frontend/src/components/PlayerRatingRadar.test.js（1 例）
-- frontend/src/components/ProfilePage.test.js（1 例）
-- frontend/src/components/Replay3DPane.test.js（1 例）
-- frontend/src/components/ReplayWorkspace.test.js（2 例）
-- frontend/src/components/TankResearchPanel.layout.test.js（1 例）
-- frontend/src/data-version-wiring.test.js（2 例）
-- frontend/src/index-firstpaint.test.js（1 例）
-- frontend/src/shared/tabular/csv/encode.test.ts（1 例）
-- frontend/src/vehicle-models/extractor.test.js（6 例）
-- frontend/src/vehicle-models/texture-bake.test.js（1 例）
+（无）
 
-scope 缺口合计 44 例 / inventory 全量 181 例。
+scope 缺口合计 0 例 / inventory 全量 181 例。
 
 ## D 项安全门禁（F2）
 

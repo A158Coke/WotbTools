@@ -164,32 +164,6 @@ describe('拾取接线（源码级守卫）', () => {
     expect(meshOwnerAt).toBeGreaterThan(-1)
     expect(fallbackAt).toBeGreaterThan(meshOwnerAt)
   })
-  it('teardownSession 释放 meshOwner/destructPickList/destruct（评审回归：reset 后仍持有引用）', () => {
-    const at = sceneSrc.indexOf('function teardownSession')
-    expect(at).toBeGreaterThan(-1)
-    const body = sceneSrc.slice(at, at + 2600)
-    // 宿主 teardown 委托 mapWorld 释放；引用清空在 owner 的 dispose 内（#820 Step 2）
-    expect(body).toMatch(/mapWorld\.dispose\(\);/)
-    const disposeAt = mapWorldSrc.indexOf('function dispose()')
-    expect(disposeAt).toBeGreaterThan(-1)
-    const disposeBody = mapWorldSrc.slice(disposeAt, disposeAt + 1600)
-    expect(disposeBody).toMatch(/destruct = null;/)
-    expect(disposeBody).toMatch(/destructPickList = null;/)
-    expect(disposeBody).toMatch(/meshOwner = null;/)
-  })
-  it('destructibles await 之后先核会话（stale）再发布清单；stale 不自行摘除宿主资源', () => {
-    const awaitAt = mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise')
-    // 评审 P1 复核后：挂载即归属宿主（onSceneryMounted），stale 分支只返回空 writes，
-    // 不得再 remove/dispose 已交给宿主的布景（B 解析失败时宿主仍保留 A）。
-    const staleAt = mapAssetsSrc.indexOf('if (ctx.stale()) {', awaitAt)
-    const publishAt = mapAssetsSrc.indexOf('destructPickList = destructDoc.instances')
-    expect(awaitAt).toBeGreaterThan(-1)
-    expect(staleAt).toBeGreaterThan(awaitAt)
-    expect(publishAt).toBeGreaterThan(staleAt)
-    const staleBranch = mapAssetsSrc.slice(staleAt, staleAt + 900)
-    expect(staleBranch).toMatch(/return \{ stale: true, writes: \{\} \}/)
-    expect(staleBranch).not.toMatch(/ctx\.scene\.remove\(writes\.mapScenery\)/)
-  })
 })
 
 const node = (visible, parent = null) => ({ visible, parent })

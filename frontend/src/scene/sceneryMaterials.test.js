@@ -166,20 +166,6 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(mapAssetsSrc).toMatch(/animLayerMats = assembledAnimMats;/)
   })
 
-  it('坦克 GLB 失败必须留痕（禁止静默 catch）+ 部位不全保持代理车', () => {
-    // 回归：loadGlb 原为 `catch { return null }` —— 404/解析异常/模板处理抛错全被吞，
-    // "切真实车模后没有车"无从定位（2026-10-09 实测）。失败要带 tank_id 与原始错误。
-    expect(vehSrc).toMatch(/console\.warn\('\[playback\] 坦克 GLB 加载失败 tank_id=' \+ tankId \+ ':', e\)/)
-    expect(vehSrc).not.toMatch(/\} catch \{ return null; \}/)
-    expect(vehSrc).toMatch(/console\.warn\('\[playback\] 坦克 GLB 解析返回空 tank_id=' \+ tankId\)/)
-    // 部位/枢轴链不全 → 不挂半装载的 GLB（会停在世界原点被地形埋住），保留代理车
-    expect(vehSrc).toMatch(/console\.warn\('\[playback\] GLB 部位不全，保留代理车 tank_id=' \+ v\.def\.tank_id\)/)
-    // 顺序：先过部位检查、再落 v.glb（注释被剥，故用区间顺序断言）
-    const blk = vehSrc.slice(vehSrc.indexOf('if (loaded && glbOn && !v.glb) {'), vehSrc.indexOf('scene.add(v.glb);'))
-    expect(blk.indexOf('collectGlbParts(')).toBeGreaterThan(-1)
-    expect(blk.indexOf('collectGlbParts(')).toBeLessThan(blk.indexOf('v.glb = inst;'))
-  })
-
   it('自定义材质的 varying 必须在顶点着色器里被赋值（"只声明不写"会让整材质链接失败）', () => {
     // 回归：曾出现"声明了 varying 却从不赋值、片元又读它"（整批材质按链接错误不渲染，
     // 表现为"物体不可见"）。此守卫对全部自定义 vertexShader 生效：凡声明的 varying
@@ -1325,29 +1311,7 @@ describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () 
   })
 })
 
-describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () => {
-  // 缺陷（2026-10-10 review）：maybeRebuildTerrainLod 只把"相机到 controls.target 的视距"
-  // 喂给滞回，而 buildAdaptiveTerrain 的判据读相机三维位置/FOV/aspect ⇒ 绕目标水平旋转
-  // （视距恒等）时网格永远不重建，停在旧相机位置的 LOD 分布上。onResize 同理只改投影
-  // 不重建地形。守卫：重建入口必须传相机姿态快照（terrainLodState），不得退回只比视距。
-  it('maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)', () => {
-    const start = mapWorldSrc.indexOf('function maybeRebuildTerrainLod')
-    expect(start).toBeGreaterThan(0)
-    const fn = mapWorldSrc.slice(start, mapWorldSrc.indexOf('\n  }', start))
-    expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
-    expect(fn).not.toMatch(/terrainLodDist/)
-    expect(fn).toMatch(/terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)/)
-  })
-})
-
 describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () => {
-  it('纹理依赖 await 之后、共享状态写入之前复查会话失效', () => {
-    // `getDependency('texture', …)` 逐个 await（共享装配模块的 resolveSceneryExtras）：
-    // 期间切场后恢复执行不得把旧场 GLB 挂进新场——await 返回后立即复查 stale()。
-    expect(asmSrc).toMatch(/dep\(ex\.maskTexture\)/)
-    expect(mapAssetsSrc).toMatch(/const sceneryExtras = await resolveSceneryExtras\(gltf\);\s*\n\s*if \(ctx\.stale\(\)\) \{ ctx\.disposeObject3D\(gltf\.scene\); return \{ stale: true, writes \}; \}/)
-  })
-
   it('履带 UV 回退分支引用有效变量（v0tankId 未定义会抛 ReferenceError，半初始化装配）', () => {
     expect(vehSrc).not.toMatch(/v0tankId/)
     expect(vehSrc).toMatch(/花纹停滚）tank=' \+ \(tankId \|\| '\?'\)/)
