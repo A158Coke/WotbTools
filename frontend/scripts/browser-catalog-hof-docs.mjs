@@ -148,6 +148,16 @@ export async function runCatalogHofDocScenario(env, scenario) {
       await page.waitForValue('!document.querySelector("[data-testid=filter-chip][data-key=tier]")', Boolean)
       await tap('[data-tank-id="9002"]')
       await page.waitForValue('document.querySelector("[data-testid=catalog-selected]").textContent', value => value === '9002')
+      // 收藏车 / 金币车边框 precedence（agent-theme-css.test.js E 的 computed 接替）：
+      // 上游数据两者互斥（tanks.pb field13），但 consumer 不依赖上游保证——双 true 的行
+      // 必须确定性地落回金币（warning 色系）边框，由 `.is-collector:not(.is-premium)`
+      // 选择器决定，不依赖 CSS 规则先后顺序。
+      const borders = await page.evaluate(`(() => {
+        const border = (id) => getComputedStyle(document.querySelector('.tp-card[data-tank-id="' + id + '"]')).borderColor
+        return { premium: border(9001), collector: border(9002), both: border(9003) }
+      })()`)
+      assert.equal(borders.both, borders.premium, `双 true（premium+collector）必须与纯金币车同色（premium 胜出）: ${JSON.stringify(borders)}`)
+      assert.notEqual(borders.collector, borders.premium, `纯收藏车边框必须不同于金币车（info 而非 warning）: ${JSON.stringify(borders)}`)
     } else if (scenario.mode === 'hof') {
       for (const [tab, nth] of [['single', 1], ['hundred', 2], ['mark3', 3]]) {
         if (nth > 1) await tap(`[data-tour=hof-tabs] button:nth-child(${nth})`)

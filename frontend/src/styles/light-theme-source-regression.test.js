@@ -14,7 +14,6 @@ import { describe, expect, it } from 'vitest'
 const read = (name) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8')
 
 const app = read('./app-shell.css')
-const admin = read('../components/AdminUsersPage.vue')
 const adminList = read('../components/admin-list.css')
 const profile = read('../components/ProfilePage.vue')
 const md = read('../components/MarkdownContent.vue')
@@ -33,26 +32,25 @@ function ruleBody(src, selector) {
 }
 
 describe('浅色主题 residual-dark 回归（语义 token 契约）', () => {
-  it('应用壳列面板/列面板头/列列表 不得再写死深色面', () => {
+  // 「不再写死深色」的负半句由 stylelint（color-no-hex / function-disallowed-list）接管：
+  // app-shell.css、AdminUsersPage.vue、admin-list.css、PlayerDetailDrawer.vue 均不在
+  // stylelint.legacy.json 基线内，受严格规则约束；这里只保留正半句（正向 token 映射），
+  // 三组合并为一条断言（stylelint 表达不了正向映射，见 #827）。
+  it('应用壳 / 管理列表 / 导出评分卡的关键表面消费语义 token', () => {
     expect(ruleBody(app, '\\.colpanel ')).toContain('background: var(--color-surface-1)')
     expect(ruleBody(app, '\\.colpanel-head')).toContain('background: var(--color-surface-2)')
     expect(ruleBody(app, '\\.cph-title')).toContain('color: var(--color-text-primary)')
     expect(ruleBody(app, 'tr:hover td, \\.collist li:hover')).toContain('background: var(--color-surface-2)')
-    expect(ruleBody(app, '\\.colpanel ')).not.toContain('rgba(15, 21, 25')
-    expect(ruleBody(app, '\\.colpanel-head')).not.toContain('#171e22')
-  })
-
-  it('AdminUsersPage 搜索/表格/按钮 不得再写死深色面', () => {
-    // 设计语言组件：只用语义 token（--color-*），不写死任何色值
     // 表格 / 输入的共享样式在管理列表模板 admin-list.css
-    expect(admin).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
-    expect(adminList).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
     expect(ruleBody(adminList, '\\.admin-list-table-wrap')).toContain('background: var(--color-surface-1)')
     expect(ruleBody(adminList, '\\.admin-list-table th')).toContain('background: var(--color-surface-2)')
     expect(ruleBody(adminList, '\\.admin-list-input')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(drawer, '\\.rp-card')).toContain('background: var(--color-surface-1)')
+    expect(ruleBody(drawer, '\\.rp-vehicle')).toContain('background: var(--color-surface-2)')
+    expect(ruleBody(drawer, '\\.rp-player')).toContain('color: var(--color-text-primary)')
   })
 
-  it('ProfilePage 编辑输入/记录表 不得再写死深色面', () => {
+  it('ProfilePage 编辑输入/记录表不得再写死深色面（legacy 基线文件，负半句仍在此守护）', () => {
     expect(ruleBody(profile, '\\.edit-input')).toContain('background: var(--bg-card)')
     expect(ruleBody(profile, '\\.records-table tbody tr:hover')).toContain('background: var(--bg-list-hover)')
     expect(ruleBody(profile, '\\.records-table td')).toContain('border-bottom: 1px solid var(--border-light)')
