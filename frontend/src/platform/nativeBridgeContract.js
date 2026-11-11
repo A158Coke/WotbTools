@@ -62,7 +62,7 @@ export const NATIVE_REPLAY_FOLDER_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native
 export const NATIVE_SCREEN_FORM_CAPABILITY = 'screen-form'
 export const NATIVE_SCREEN_FORM_METHODS = Object.freeze({
   getForm: 'getScreenForm',
-  setLandscapeLock: 'setLandscapeLock',
+  setOrientationLock: 'setOrientationLock',
 })
 
 /** Optional haptics capability: system haptic feedback constants mapped from a fixed event kind. */

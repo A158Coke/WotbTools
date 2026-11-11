@@ -31,9 +31,12 @@ export function forcedLandscapeDevice(): Promise<ForcedLandscapeDevice> {
   return cached
 }
 
+/** 页面方向锁：横屏（场景页）/ 竖屏（回放工作台查看器非全屏）/ 释放。 */
+export type NativeOrientationLock = 'landscape' | 'portrait' | 'unspecified'
+
 /** 只在 Android 手机 App 上有效；其它设备 resolve false。 */
-export async function setNativeLandscapeLock(locked: boolean): Promise<boolean> {
-  return (await forcedLandscapeDevice()) === 'android-phone-app' && (await callBridge(NATIVE_SCREEN_FORM_METHODS.setLandscapeLock, { locked })) === true
+export async function setNativeOrientationLock(orientation: NativeOrientationLock): Promise<boolean> {
+  return (await forcedLandscapeDevice()) === 'android-phone-app' && (await callBridge(NATIVE_SCREEN_FORM_METHODS.setOrientationLock, { orientation })) === true
 }
 
 export function __resetForcedLandscapeDeviceForTest() {
