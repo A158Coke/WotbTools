@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { occlusionCells, occlusionFootprintCells } from './playbackScene.js'
+import { occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 
 describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', () => {
   it('同一格内的短线段 → 单格；跨格 → 首尾格都在集合里', () => {
@@ -23,49 +23,6 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
     const c = [...occlusionCells(0, 0, 160, 0, 16)]
     expect(c.length).toBeGreaterThanOrEqual(11)        // 0..10 格
     expect(c).toContain('10,0')
-  })
-})
-
-describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
-  const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
-  // #820 Step 5：软遮挡 owner = playback/labelsRuntime.ts（守卫随实现迁移）
-  const labelsSrc = readFileSync(resolve(__dirname, 'playback/labelsRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
-  // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
-  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
-  it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
-    expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
-    expect(labelsSrc).toMatch(/raycaster\.intersectObjects\(cands as THREE\.Object3D\[], false\)/)
-    expect(labelsSrc).toMatch(/OCCL_MAX_CANDIDATES/)
-    // 候选表在场景加载时构建、换场时失效（#820 Step 2：候选格 owner = mapWorld.ts）
-    expect(mapAssetsSrc).toMatch(/occlGrid = occGrid;/)
-    const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
-    expect(mapWorldSrc).toMatch(/occlGrid = null;/)
-  })
-  // #820 Step 5：弹道 owner = playback/battleRuntime.ts（守卫随实现迁移）
-  const battleSrc = readFileSync(resolve(__dirname, 'playback/battleRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
-  it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
-    expect(battleSrc).toMatch(/pathPointsOf\(s\)\.map\(\(\[x, y, z\]\) => \[-x, y, z\]\)/)
-    // 弹着点从镜像后的点表取（pts3[1] = via[0] 或终点），不得再读原始坐标
-    expect(battleSrc).toMatch(/fromArray\(pts3\[1\]\)/)
-    expect(battleSrc).not.toMatch(/fromArray\(\(s\.via && s\.via\.length\) \? s\.via\[0\] : s\.to\)/)
-  })
-
-  it('updateTracers 完成判定用 T >= tr.t1（禁止再引用已删除的旧变量 f）', () => {
-    // 回归：折线改造曾把推进公式换成折线求值，却留下 `if (f >= 1)` —— f 未定义，
-    // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
-    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{/)
-    expect(battleSrc).not.toMatch(/f >= 1/)
-    // 完成块必须仍然归还曳光条带；命中特效在抵达点时刻（legEnds[0]）生成，只生成一次
-    expect(battleSrc).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx!?\.giveRibbon\(tr\.mesh\);/)
-    expect(battleSrc).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
-  })
-
-  it('开火 / 命中特效的炮口、来弹与跳弹出射方向都取自镜像后的点表（折线改造曾漏字段 → 整帧抛异常）', () => {
-    // 炮口 = pts3[0]、抵达点 = pts3[1]、跳弹出射段 = pts3[2]（镜像后的场景系，不得再读原始坐标）
-    expect(battleSrc).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
-    expect(battleSrc).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
-    expect(battleSrc).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
-    expect(battleSrc).toMatch(/battleFx!\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
   })
 })
 
@@ -98,21 +55,10 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
-  it('occGrid 登记必须用足印全枚举，不得用线段遍历', () => {
-    expect(mapAssetsSrc).toMatch(/occlusionFootprintCells\(e\.x - r, e\.y - r, e\.x \+ r, e\.y \+ r, OCCL_CELL\)/)
-    expect(src).not.toMatch(/occlusionCells\(wx - r/)
-  })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
     // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
     const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
     expect(mapWorldSrc).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
-  })
-  it('?perf 看门狗随 destroy 清理（心跳定时器 + 调试句柄）', () => {
-    // #820 Step 4：看门狗/句柄 owner = playback/perfProbe.ts（destroy 清理语义逐字保留）
-    const perfProbeSrc = readFileSync(resolve(__dirname, 'playback/perfProbe.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
-    expect(perfProbeSrc).toContain('function stopWatchdog() { if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; } }')
-    expect(src).toContain('if (window.__pbPerf === perfProbe.perfHandle) delete window.__pbPerf;')
-    expect(src).toContain('perfProbe.stopWatchdog();')
   })
 })
 

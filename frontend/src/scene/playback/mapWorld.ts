@@ -978,6 +978,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
     annotationSurfaceGrid = null;
+    occlGrid = null;   // 标签遮挡候选格属会话场景，随会话释放（与 annotationSurfaceGrid 同纪律）
     clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
     // 逐图 IBL：先摘 scene.environment 再 dispose（three 的 PMREM 缓存随纹理释放）；
