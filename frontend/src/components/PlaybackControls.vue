@@ -22,11 +22,14 @@ const props = defineProps({
   formatClock: { type: Function, required: true },
   /** 透传给 PlaybackTransport：控制条当前是否可见（决定是否托管菜单入口）。 */
   navEligible: { type: Boolean, default: true },
+  /** 名册浮层入口（横屏 / 桌面才有）：竖屏名册在纵向流里，不需要这个入口。 */
+  rosterEntryVisible: { type: Boolean, default: false },
+  rosterOpen: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
   'toggle-play', 'step', 'set-speed', 'toggle-fullscreen',
-  'toggle-panels', 'drag-start', 'drag-end', 'seek', 'toggle-annotation',
+  'toggle-panels', 'drag-start', 'drag-end', 'seek', 'toggle-annotation', 'toggle-roster',
 ])
 </script>
 
@@ -48,6 +51,9 @@ const emit = defineEmits([
     :compact="isPhone"
     :format-clock="props.formatClock"
     :nav-eligible="props.navEligible"
+    :roster-entry-visible="props.rosterEntryVisible"
+    :roster-open="props.rosterOpen"
+    @toggle-roster="emit('toggle-roster')"
     @toggle-play="emit('toggle-play')"
     @step="emit('step', $event)"
     @set-speed="emit('set-speed', $event)"

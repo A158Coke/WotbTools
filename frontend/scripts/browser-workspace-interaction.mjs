@@ -2772,6 +2772,173 @@ async function runRotationScenario(env, scenario) {
  * 早先「148px navigation rail | map」的模型已整体移除，这里锁的是替代它的契约：
  * 全屏本身不产生任何常驻侧栏，⚙ 的浮面既不离开 gear 也不越出视口。
  */
+/**
+ * §2d-toolbar-collapse / §roster-overlay：2D 工具栏折叠与名册浮层的真浏览器交互回归。
+ * 夹具 = playback-controls.html（生产 BattlePlayback + 生产 CSS）：
+ *   · 手机横屏默认收纳名册、Desktop / 平板默认展开；
+ *   · 传输条折叠后只剩恢复入口（命中测试必须命中按钮本身）；
+ *   · 名册浮层开合不得改变地图正方形面积（mapShare 独立度量），浮层不得盖住传输控件；
+ *   · 展开状态下选中名册行、+5s seek 与播放都必须继续正确。
+ */
+const PLAYBACK_COLLAPSE_SCENARIOS = [
+  { name: 'pb-collapse-844x390-landscape-coarse', width: 844, height: 390, touch: true, duration: 60 },
+  { name: 'pb-collapse-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
+  { name: 'pb-collapse-600x320-landscape-coarse', width: 600, height: 320, touch: true, duration: 60 },
+  { name: 'pb-collapse-390x844-portrait-coarse', width: 390, height: 844, touch: true, duration: 60 },
+  { name: 'pb-collapse-1280x900-desktop', width: 1280, height: 900, touch: false, duration: 60 },
+]
+
+function playbackCollapseProbe() {
+  const root = document.querySelector('[data-test="battle-playback"]')
+  if (!root) return { found: false }
+  const rect = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }
+  }
+  const rectOf = (sel) => rect(document.querySelector(sel))
+  const laneLeft = document.querySelector('[data-test="pb-team-lane-left"]')
+  const laneRight = document.querySelector('[data-test="pb-team-lane-right"]')
+  const entry = document.querySelector('[data-test="pb-roster-entry"]')
+  const transportContent = document.querySelector('[data-test="pb-transport-controls"]')
+  const toggle = document.querySelector('[data-test="pb-transport-toggle"]')
+  const map = document.querySelector('.pb-map')
+  const hitSelf = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const cx = Math.round(r.left + r.width / 2)
+    const cy = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(Math.min(Math.max(cx, 1), innerWidth - 1), Math.min(Math.max(cy, 1), innerHeight - 1))
+    return hit === el || el.contains(hit)
+  }
+  const mapRect = rect(map)
+  return {
+    found: true,
+    phoneLandscape: root.classList.contains('pb-phone-landscape'),
+    formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
+    lanes: !!laneLeft && !!laneRight,
+    laneRect: rect(laneLeft),
+    laneRectRight: rect(laneRight),
+    stageRect: rectOf('.pb-map-stage'),
+    mapRect,
+    mapShare: mapRect ? (mapRect.width * mapRect.height) / (innerWidth * innerHeight) : null,
+    transportRect: rectOf('[data-test="pb-transport-slot"]'),
+    rosterEntry: entry ? { pressed: entry.getAttribute('aria-pressed'), hitSelf: hitSelf(entry) } : null,
+    rosterRows: document.querySelectorAll('[data-test="pb-roster-row"]').length,
+    selectedRows: document.querySelectorAll('[data-test="pb-roster-row"][aria-pressed="true"]').length,
+    transportContentHidden: transportContent ? getComputedStyle(transportContent).display === 'none' : null,
+    transportToggle: toggle ? { expanded: toggle.getAttribute('aria-expanded'), hitSelf: hitSelf(toggle), controls: toggle.getAttribute('aria-controls') } : null,
+    time: document.querySelector('[data-test="pb-time"]') ? document.querySelector('[data-test="pb-time"]').textContent.trim() : null,
+    pageScrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: innerWidth,
+    viewportHeight: innerHeight,
+  }
+}
+
+async function runPlaybackCollapseScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+
+  await page.goto(env.origin + '/scripts/browser-fixtures/playback-controls.html?duration=' + scenario.duration + '&players=2')
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-play"]'), { label: 'playback controls' })
+  await delay(300)
+  const portrait = scenario.height > scenario.width
+
+  const base = await page.probe(playbackCollapseProbe)
+  check(failures, base.found, 'fixture must mount the production BattlePlayback')
+  check(failures, base.pageScrollWidth <= base.viewportWidth + 1,
+    'page-level horizontal overflow at default state: ' + base.pageScrollWidth + ' > ' + base.viewportWidth)
+
+  if (base.phoneLandscape) {
+    check(failures, base.lanes === false, 'phone landscape must collapse the roster overlay by default (map first)')
+    check(failures, !!base.rosterEntry && base.rosterEntry.pressed === 'false' && base.rosterEntry.hitSelf === true,
+      'phone landscape must keep a reachable roster entry in the transport bar (off by default)')
+  } else if (!portrait) {
+    check(failures, base.lanes === true, 'desktop / tablet landscape must expand the roster overlay by default')
+    check(failures, !!base.rosterEntry && base.rosterEntry.pressed === 'true' && base.rosterEntry.hitSelf === true,
+      'desktop / tablet roster entry must exist, be pressed and hit-testable')
+  }
+
+  const collapsedMapWidth = base.mapRect ? base.mapRect.width : null
+
+  if (!portrait) {
+    // Desktop / 平板默认展开：先归位到「收纳」基线，再从它验证展开语义。
+    if (base.lanes) {
+      const resetRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+      check(failures, clicked(resetRes), 'roster entry baseline collapse click failed: ' + resetRes)
+    }
+    const collapsedShare = (await page.probe(playbackCollapseProbe)).mapShare
+    const expandRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+    check(failures, clicked(expandRes), 'roster entry click failed: ' + expandRes)
+    const open = await page.probe(playbackCollapseProbe)
+    check(failures, open.lanes === true, 'roster entry must expand both overlay lanes')
+    check(failures, open.rosterEntry.pressed === 'true', 'roster entry must report aria-pressed=true while open')
+    check(failures, Math.abs(open.mapRect.width - collapsedMapWidth) <= 1,
+      'roster overlay must not change the map square (collapsed=' + collapsedMapWidth + ' open=' + open.mapRect.width + ')')
+    check(failures, open.mapShare >= collapsedShare - 0.001,
+      'roster overlay must not reduce map viewport share (' + collapsedShare + ' -> ' + open.mapShare + ')')
+    check(failures, open.laneRect.left >= open.stageRect.left - 0.5 && open.laneRectRight.right <= open.stageRect.right + 0.5,
+      'roster lanes must stay inside the map stage horizontally')
+    check(failures, open.laneRect.bottom <= open.transportRect.top + 1,
+      'expanded roster lane must not cover the transport controls (lane.bottom=' + open.laneRect.bottom + ' transport.top=' + open.transportRect.top + ')')
+    check(failures, Math.abs(open.laneRect.width - open.laneRectRight.width) <= 0.5, 'both roster lanes must share one width')
+
+    const rowRes = await clickElement(page, '[data-test="pb-team-lane-left"] [data-test="pb-roster-row"]')
+    check(failures, clicked(rowRes), 'roster row click failed: ' + rowRes)
+    const selected = await page.probe(playbackCollapseProbe)
+    check(failures, selected.selectedRows >= 1, 'clicking an expanded roster row must select that vehicle')
+    const timeBeforeSeek = selected.time
+    const seekRes = await clickElement(page, '[data-test="pb-fwd5"]')
+    check(failures, clicked(seekRes), '+5s click failed: ' + seekRes)
+    const afterSeek = await page.waitForValue(
+      'document.querySelector(\'[data-test="pb-time"]\').textContent.trim()',
+      (value) => value !== timeBeforeSeek,
+      { timeout: 5000, label: 'clock after +5s with roster open' },
+    ).catch(() => null)
+    check(failures, afterSeek !== null, '+5s was a silent no-op with the roster overlay open: clock stayed ' + timeBeforeSeek)
+
+    const collapseRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+    check(failures, clicked(collapseRes), 'roster entry collapse click failed: ' + collapseRes)
+    const closed = await page.probe(playbackCollapseProbe)
+    check(failures, closed.lanes === false, 'roster entry must collapse both overlay lanes')
+    check(failures, Math.abs(closed.mapRect.width - collapsedMapWidth) <= 1,
+      'collapsing the roster must restore the map square (' + collapsedMapWidth + ' -> ' + closed.mapRect.width + ')')
+    check(failures, closed.pageScrollWidth <= closed.viewportWidth + 1,
+      'page-level horizontal overflow with the roster expanded: ' + closed.pageScrollWidth + ' > ' + closed.viewportWidth)
+  }
+
+  const timeBeforeCollapse = (await page.probe(playbackCollapseProbe)).time
+  const toggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
+  check(failures, clicked(toggleRes), 'transport toggle click failed: ' + toggleRes)
+  const collapsed = await page.probe(playbackCollapseProbe)
+  check(failures, collapsed.transportContentHidden === true, 'collapsing the toolbar must hide the transport content (v-show)')
+  check(failures, collapsed.transportToggle.expanded === 'false' && collapsed.transportToggle.hitSelf === true,
+    'the collapsed toolbar must leave a reachable restore entry that hit-tests to itself')
+  check(failures, collapsed.time === timeBeforeCollapse, 'collapsing the toolbar must not move the clock (' + timeBeforeCollapse + ' -> ' + collapsed.time + ')')
+  const expandToggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
+  check(failures, clicked(expandToggleRes), 'transport restore click failed: ' + expandToggleRes)
+  const restored = await page.probe(playbackCollapseProbe)
+  check(failures, restored.transportContentHidden === false, 'restoring the toolbar must show the transport content again')
+  check(failures, restored.time === timeBeforeCollapse, 'restoring the toolbar must not move the clock')
+
+  await clickElement(page, '[data-test="pb-play"]')
+  const advanced = await page
+    .waitForValue('document.querySelector(\'[data-test="pb-time"]\').textContent.trim()', (value) => value !== timeBeforeCollapse,
+      { timeout: 5000, label: 'clock advancing after restore + play' })
+    .catch(() => null)
+  check(failures, advanced !== null, 'play after collapse/restore was a silent no-op: clock stayed ' + timeBeforeCollapse)
+  const final = await page.probe(playbackCollapseProbe)
+  check(failures, final.pageScrollWidth <= final.viewportWidth + 1,
+    'page-level horizontal overflow at the end: ' + final.pageScrollWidth + ' > ' + final.viewportWidth)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: scenario.width + 'x' + scenario.height, mapShare: base.mapShare })
+}
+
 const MOBILE_FULLSCREEN_SCENARIOS = [
   { name: 'fullscreen-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
 ]
@@ -3657,6 +3824,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
   // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
   // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
+  { name: 'ws2d-600x320-landscape-coarse', width: 600, height: 320, touch: true, layout: 'lanes', minMap: 170 },
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
   // 紧凑 HUD 宽度竞争：非空四基地 + 完整 5 位 HP 数字 + 超长地图名；mixed 再加 PARTIAL/UNKNOWN。
   { name: 'ws2d-667x375-hud-exact', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270, hudStress: 'exact' },
@@ -4062,7 +4230,17 @@ async function runWorkspace2DScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
-  await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-transport-toggle"]'), { label: '2D transport toggle' })
+  // §roster-overlay：手机横屏默认**收纳**名册浮层（地图优先），桌面 / 平板默认展开。
+  const defaultLanes = await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`)
+  const defaultPhoneLandscape = await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-phone-landscape')`)
+  if (scenario.width > scenario.height) {
+    check(failures, defaultLanes === !defaultPhoneLandscape,
+      `roster overlay default state wrong (phoneLandscape=${defaultPhoneLandscape} lanes=${defaultLanes})`)
+  }
+  // §5 遮挡契约按**生产默认态**测量（F4）：手机横屏默认收纳（常驻控件 = HUD/传输条）；
+  // 桌面 / 平板默认展开的浮层落在地图两侧空隙里，这里同时守住「用户首屏看到的默认呈现
+  // 没有实质遮挡」，不允许为了通过而把桌面名册藏起来再量。
   await delay(300)
 
   // —— #727 主内容遮挡（design-language §5）：常驻 quick actions 不得实质占住地图 ——
@@ -4078,6 +4256,12 @@ async function runWorkspace2DScenario(env, scenario) {
   for (const failure of mapOcclusion.failures) {
     check(failures, false, `地图遮挡（上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）: ${failure}`)
   }
+  // 手机横屏默认收纳：为后续名册 / 选车断言展开浮层；桌面已处于默认展开态，不要动它（F4）。
+  if (scenario.width > scenario.height && !(await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`))) {
+    await page.evaluate(`document.querySelector('[data-test="pb-roster-entry"]')?.click()`)
+  }
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
+  await delay(300)
 
   if (scenario.fullscreen) {
     await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
@@ -4298,7 +4482,10 @@ async function runWorkspace2DScenario(env, scenario) {
   }
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
-  check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
+  // §roster-overlay：车道是 Stage 内侧的浮层——贴 Stage 左右边缘（地图居中时落在侧带空隙里），
+  // 任何形态都不得越过地图中心，也不得把地图压窄（地图正方形仍由纵向预算决定）。
+  check(failures, g.left.box.r <= (g.map.l + g.map.r) / 2 + 1 && g.right.box.l >= (g.map.l + g.map.r) / 2 - 1,
+    `overlay lanes must stay on their own side of the map center: left=${JSON.stringify(g.left.box)} right=${JSON.stringify(g.right.box)} map=${JSON.stringify(g.map)}`)
   check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
   check(failures, !g.left.scrollsX && !g.right.scrollsX && g.left.rowsFit && g.right.rowsFit,
     'long player/tank labels must shrink within each lane without horizontal scrolling or clipping the HP bar')
@@ -5052,6 +5239,7 @@ try {
     { scenario: { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }, run: () => runSceneActivityScenario(env, { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }) },
     ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
+    ...PLAYBACK_COLLAPSE_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackCollapseScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
     ...WORKSPACE_2D_SCENARIOS.map((scenario) => ({ scenario, run: () => runWorkspace2DScenario(env, scenario) })),

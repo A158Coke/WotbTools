@@ -2,9 +2,10 @@
 import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { mapLabel } from '../utils/helpers.js'
-import { PencilRuler, ScanEye } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PencilRuler, ScanEye } from 'lucide-vue-next'
 import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { usePlaybackWorkspaceToggles } from '../composables/usePlaybackWorkspaceToggles.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { useI18n } from 'vue-i18n'
 import { usePlaybackPreferences } from '../composables/usePlaybackPreferences.js'
@@ -311,6 +312,11 @@ const { isPhone: isMobileDevice } = usePlaybackPhoneForm()
 const { isPortrait: isPhonePortrait } = usePlaybackPortraitViewport()
 const phoneLandscape = computed(() => isMobileDevice.value && !isPhonePortrait.value)
 const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.value)
+
+// §2d-toolbar-collapse / §roster-overlay 的会话级开关：唯一 owner = usePlaybackWorkspaceToggles
+//（状态与形态默认值语义见该文件；displayOpen / closeAnnotation 在下方声明，惰性闭包避免 TDZ）。
+const { controlsCollapsed, controlsContentId, toggleControlsCollapsed, rosterLanesOpen, toggleRosterLanes } =
+  usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse: () => { displayOpen.value = false; closeAnnotation() } })
 let playbackLifecycleActive = true
 let wideLayoutQuery = null
 function onWideLayoutChange(event) {
@@ -816,13 +822,15 @@ const destroyedNow = computed(() => new Set(
 /**
  * 正方形 Stage 的呈现决策（见 styles/playback-workspace.css 的权威契约）：
  *
- *   三段式（Team 1 | Stage | Team 2）＝ 名册开着 且 不是手机竖屏。
- *     宽档、平板、手机横屏都走这一条——横屏本来就有左右空白可用。
+ *   名册浮层 ＝ showRoster 开 且 不是手机竖屏 且 会话级浮层开关展开。
+ *     浮层锚在 `.pb-map-stage` 内侧左右边缘，不再占据固定 Grid 列——地图列始终是全宽。
  *   手机竖屏 ＝ 纵向流：名册排在传输控件之下的 `.pb-inline-area`，跟着页面滚。
  *
  * 名册**只是呈现**：关掉不重置名册数据、选中车辆、跟随目标、时间轴与相机。
  */
-const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortrait.value)
+const rosterLanes = computed(() => showRosterPresentation.value && !isPhonePortrait.value && rosterLanesOpen.value)
+/** 名册浮层入口（传输条上的 roster 按钮）：竖屏纵向流里的名册始终可见，不需要这个入口。 */
+const rosterEntryVisible = computed(() => showRosterPresentation.value && !isPhonePortrait.value)
 /** 竖屏的纵向流里，名册排在传输控件之后的 `.pb-inline-area`；详情则是流内内容块。
     竖屏以外，详情是 workspace 顶层的可拖动浮窗。 */
 const inlineStack = computed(() => isPhonePortrait.value)
@@ -1070,12 +1078,8 @@ const mapStyle = computed(() => ({
       :hp-no-transition="hpNoTransition"
       :compact="phoneLandscape"
     />
-      <!-- §square-stage 三段式：己方 | 正方形 Stage | 敌方。
-           两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
-           Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
-      </div>
+      <!-- §roster-overlay：名册不再占据固定 Grid 列（地图列始终全宽）。展开时它是锚在
+           Stage 内侧左右边缘的浮层，收纳后只剩传输条上的 roster 入口。 -->
       <div class="pb-map-stage" ref="mapStageEl">
         <BattleMap
           data-tour="playback-map"
@@ -1124,6 +1128,15 @@ const mapStyle = computed(() => ({
         <!-- 审计 PB-04：未与地图交互时滚轮交给页面，这里短暂提示如何缩放 -->
         <div v-if="wheelHintVisible" class="pb-wheel-hint" role="status" data-test="pb-wheel-hint">{{ t('workspace.map_wheel_hint') }}</div>
 
+        <!-- §roster-overlay 浮层车道：只覆盖 Stage 的侧带，不盖 HUD、传输控件与详情浮窗；
+             收纳（rosterLanesOpen=false 或 showRoster=false）时整体移除，地图恢复全宽。 -->
+        <div v-if="rosterLanes" id="pb-roster-lane-left" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
+          <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
+        </div>
+        <div v-if="rosterLanes" id="pb-roster-lane-right" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
+          <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
+        </div>
+
 
       </div>
 
@@ -1152,19 +1165,18 @@ const mapStyle = computed(() => ({
         @close="closeSidebar"
       />
 
-      <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
-        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" :dense="phoneLandscape" @select="selectFromRoster" />
-      </div>
-
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing" :fullscreen="isFullscreen">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
-        <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
+        <div v-if="!phoneLandscape" v-show="!controlsCollapsed" class="pb-replay-mode-bar">
           <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
             <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
           </button>
           <span>{{ $t(annotationOpen ? 'recon.map.playback.annot.mode_hint' : 'recon.map.playback.annot.watch_hint') }}</span>
         </div>
-        <div v-show="!compactAnnotation" data-test="pb-transport-controls">
+        <!-- §2d-toolbar-collapse + §mobile-panels：紧凑标注态整行隐藏——标注工具条接替传输行，
+             不多占一行高度；折叠切换随之消失（其 aria-expanded 只在被渲染时才有意义）。 -->
+        <div v-show="!compactAnnotation" class="pb-transport-row">
+        <div v-show="!compactAnnotation && !controlsCollapsed" :id="controlsContentId" class="pb-transport-main" data-test="pb-transport-controls">
         <PlaybackControls
           :playing="playing"
           :speed="speed"
@@ -1175,7 +1187,10 @@ const mapStyle = computed(() => ({
           :floating-fullscreen="isMobileDevice && !phoneLandscape"
           :display-open="displayOpen"
           :annotation-enabled="phoneLandscape && !annotationOpen"
-          :nav-eligible="active && lifecycleVisible && !compactAnnotation"
+          :nav-eligible="active && lifecycleVisible && !compactAnnotation && !controlsCollapsed"
+          :roster-entry-visible="rosterEntryVisible"
+          :roster-open="rosterLanes"
+          @toggle-roster="toggleRosterLanes"
           @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
           @toggle-play="transport.togglePlay()"
@@ -1188,8 +1203,19 @@ const mapStyle = computed(() => ({
           @seek="seek"
         />
         </div>
+        <!-- §2d-toolbar-collapse：折叠后唯一的恢复入口（与 3D controls-toggle 同语义），
+             aria-controls 指向 v-show 的传输内容；折叠时它仍留在流内，始终可触达。 -->
+        <button type="button" class="pb-transport-toggle pb-quick-action" data-test="pb-transport-toggle"
+          :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
+          :aria-label="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          :title="$t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+          @click="toggleControlsCollapsed"
+        >
+          <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
+        </button>
+        </div>
         <!-- One annotation toolbar in the transport flow in every form. -->
-        <div v-if="annotationOpen" class="pb-annotation-surface">
+        <div v-if="annotationOpen && !controlsCollapsed" class="pb-annotation-surface">
           <AnnotationToolbar
             :open="annotationOpen"
             :compact="compactAnnotation"
