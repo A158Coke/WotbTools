@@ -3763,8 +3763,24 @@ async function runReplayCollectionScenario(env) {
     check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
     const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
-    const toolbarVisible = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); return t ? t.top >= 0 && t.bottom <= innerHeight : false })()`
-    check(failures, await page.evaluate(toolbarVisible), 'replay toolbar must be fully visible at 1440x900')
+    // ReplayWorkspace.centerReplayPane() intentionally scrolls the ready pane into view.
+    // Check the toolbar's document-relative position: it must fit the initial viewport
+    // when entering from the page top, even if pane auto-centering has already scrolled it away.
+    // Unlike resetting scrollY, this does not interfere with the product scroll contract.
+    const toolbarAtDocumentTop = await page.evaluate(`(() => {
+      const rect = document.querySelector('.workspace-toolbar')?.getBoundingClientRect()
+      if (!rect) return null
+      return {
+        top: rect.top + window.scrollY,
+        bottom: rect.bottom + window.scrollY,
+        viewportHeight: innerHeight,
+        scrollY: window.scrollY,
+      }
+    })()`)
+    check(failures, !!toolbarAtDocumentTop
+      && toolbarAtDocumentTop.top >= 0
+      && toolbarAtDocumentTop.bottom <= toolbarAtDocumentTop.viewportHeight,
+    `replay toolbar must fit within the initial 1440x900 viewport: ${JSON.stringify(toolbarAtDocumentTop)}`)
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
