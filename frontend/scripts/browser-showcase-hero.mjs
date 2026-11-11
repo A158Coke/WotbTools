@@ -80,17 +80,19 @@ function heroProbe() {
   }
 }
 
-/** 完整档 Hero 探针：额外取 description 颜色（冬季手机端全档文字可读性门禁用）。 */
+/** 完整档 Hero 探针：额外取 description / stat 标签颜色（冬季手机端全档文字可读性门禁用）。 */
 function fullHeroProbe() {
   const section = document.querySelector('.showcase-hero')
   const h1 = section?.querySelector('h1')
   const description = section?.querySelector('.showcase-hero-description')
+  const statsLabel = section?.querySelector('.showcase-hero-stats span')
   if (!section || !h1) return null
   return {
     section: section.dataset.section ?? null,
     compact: section.classList.contains('is-compact'),
     titleColor: getComputedStyle(h1).color,
     descriptionColor: description ? getComputedStyle(description).color : null,
+    statsLabelColor: statsLabel ? getComputedStyle(statsLabel).color : null,
   }
 }
 
@@ -210,6 +212,41 @@ try {
       const passFraction = backgroundContrastFraction(raw, info.channels, textLum)
       assert.ok(passFraction >= 0.9, `winter full hero description background must keep 4.5:1 over >=90% of its area: ${(passFraction * 100).toFixed(1)}%`)
       console.log(`[browser-showcase-hero] winter full hero (contact 390x844): description light + background contrast ${(passFraction * 100).toFixed(1)}% area passed`)
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  // 冬季手机端带统计数字的完整档 Hero（HoF 同构）：stat 标签类显式设了深色，
+  // 必须被 <768px 断点的 :deep(span) inherit 覆盖为浅色。夹具环境无榜单数据时，
+  // 复制 HoF / Hero 两个组件的真实 scope 属性合成同一结构，让两条 scoped 规则
+  // 真实参与层叠后取 computed color（不是只查源码正则）。
+  {
+    const { targetId, page } = await openAppPage({ width: 390, height: 844, profile: 'winter', view: 'hof' })
+    try {
+      const hero = await page.probe(fullHeroProbe)
+      let statsLabelColor = hero.statsLabelColor
+      if (!statsLabelColor) {
+        statsLabelColor = await page.evaluate(`(() => {
+          const section = document.querySelector('.showcase-hero')
+          const content = section?.querySelector('.showcase-hero-content')
+          if (!content) return null
+          const scopeName = root => [...root.querySelectorAll('*')].find(el => el.getAttributeNames().some(n => n.startsWith('data-v-')))?.getAttributeNames().find(n => n.startsWith('data-v-'))
+          const pageScope = scopeName(document.querySelector('.app-main') ?? document.body)
+          const heroScope = [...section.attributes].find(a => a.name.startsWith('data-v-'))?.name
+          const stats = document.createElement('div')
+          stats.className = 'showcase-hero-stats'
+          if (heroScope) stats.setAttribute(heroScope, '')
+          const span = document.createElement('span')
+          span.className = 'lb-hero-stat-label'
+          if (pageScope) span.setAttribute(pageScope, '')
+          span.textContent = 'stats'
+          stats.appendChild(span)
+          content.appendChild(stats)
+          return getComputedStyle(span).color
+        })()`)
+      }
+      assert.notEqual(statsLabelColor, 'rgb(59, 84, 112)', `winter full hero stat label must not stay dark: ${statsLabelColor}`)
+      assert.equal(statsLabelColor, 'rgb(216, 230, 244)', `winter full hero stat label must follow the light container color: ${statsLabelColor}`)
+      console.log(`[browser-showcase-hero] winter full hero (hof 390x844): stat label color=${statsLabelColor} passed`)
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }
 
