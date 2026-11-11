@@ -131,9 +131,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
 | `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
 
-**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 97% → 86% → 24%，把下半部留给坦克）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
+**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 15% → 0%，几乎全撤，画面完整透出；标题可读性改由白色文字 + 深色描边承担——只在手机断点生效，桌面左侧仍有 90° 白色遮罩，深色标题保持原样）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
 
-**紧凑档（compact）：** 工具页与后台使用紧凑档，桌面最小高度 132px、手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
+**紧凑档（compact）：** 工具页与后台使用紧凑档，默认桌面 132px / 手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。Replay 是唯一例外：约 12:1 的 132px 窄条在 cover 下只剩 ~12% 可见带（可见占比 = 容器高宽比 × 原图宽高比，与源图无关），坦克被裁成炮管残片，因此桌面放宽到 clamp(132px, 20vw, 384px)（~43% 可见带容纳坦克整体），矮桌面窗口（height < 700px，flex scrollport 会被压缩）与手机（可见带已近一半）回退默认密度。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
 
 **验收：** 每个分区至少一个页面，四套主题 × 1440×900 / 390×844 截图人工确认：坦克主体可见、未被标题压住、标题可读、无横向滚动；`ShowcaseHero.test.ts` 覆盖 `section` 映射与紧凑档结构。
 
@@ -560,7 +560,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
-| DC-ARC-02 | MUST | 工作区 / 工具页 | 页头用 `ShowcaseHero` 的 `compact` 档：横幅只保留 kicker + h1（桌面 132px / 手机 96px），操作放横幅下方工具条；kicker + h1 + 说明 + 标签块不得占掉首屏 | 内容型页面用完整档 Showcase Hero | 人工；`ShowcaseHero.test.ts` |
+| DC-ARC-02 | MUST | 工作区 / 工具页 | 页头用 `ShowcaseHero` 的 `compact` 档：横幅只保留 kicker + h1（桌面 132px / 手机 96px；replay 桌面放宽到 clamp(132px, 20vw, 384px)，矮窗口回退默认），操作放横幅下方工具条；kicker + h1 + 说明 + 标签块不得占掉首屏 | 内容型页面用完整档 Showcase Hero | 人工；`ShowcaseHero.test.ts` |
 | DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
 | DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
 | DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |

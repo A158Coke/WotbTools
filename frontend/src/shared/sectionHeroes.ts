@@ -34,14 +34,16 @@ interface SectionHero {
   image: string
   position: string
   mobilePosition: string
+  /** 紧凑横幅的焦点位置：可见带约 43%，对准主体中线；缺省回退 position */
+  compactPosition?: string
 }
 
 export const SECTION_HEROES: Record<SectionHeroId, SectionHero> = {
   hof: { image: heroHof, position: 'center 45%', mobilePosition: '22% center' },
   mark3: { image: heroMark3, position: 'center 45%', mobilePosition: '18% center' },
-  replay: { image: heroReplay, position: 'center 48%', mobilePosition: '45% center' },
+  replay: { image: heroReplay, position: 'center 48%', mobilePosition: '45% center', compactPosition: 'center 50%' },
   tankopedia: { image: heroTankopedia, position: 'center 45%', mobilePosition: '18% center' },
-  techtree: { image: heroTechtree, position: 'center 45%', mobilePosition: '42% center' },
+  techtree: { image: heroTechtree, position: 'center 45%', mobilePosition: '42% center', compactPosition: 'center 58%' },
   maps: { image: heroMaps, position: 'center 45%', mobilePosition: '22% center' },
   events: { image: heroEvents, position: 'center 45%', mobilePosition: '40% center' },
   community: { image: heroCommunity, position: 'center 45%', mobilePosition: '45% center' },
@@ -57,5 +59,6 @@ export function sectionHeroStyle(section: SectionHeroId): Record<string, string>
     '--hero-image': `url("${hero.image}")`,
     '--hero-pos': hero.position,
     '--hero-pos-mobile': hero.mobilePosition,
+    ...(hero.compactPosition ? { '--hero-pos-compact': hero.compactPosition } : {}),
   }
 }

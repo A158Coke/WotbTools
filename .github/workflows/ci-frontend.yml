@@ -151,6 +151,9 @@ jobs:
           # Battle Data 出生侧胜率分段条：四季 + 俄文的 computed style 映射 / 几何门禁
           - label: Battle data spawn bar themes
             script: test:browser-battle-data
+          # ShowcaseHero 紧凑横幅：桌面 compactPosition / 手机 portrait 遮罩层叠 / Replay 高度与矮窗降级
+          - label: Showcase hero compact computed styles
+            script: test:browser-showcase-hero
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

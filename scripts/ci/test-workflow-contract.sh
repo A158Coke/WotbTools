@@ -273,6 +273,7 @@ assert [gate["label"] for gate in unsharded_gates] == [
     "Creator recommendations",
     "Map preview mobile layout",
     "Battle data spawn bar themes",
+    "Showcase hero compact computed styles",
 ], unsharded_gates
 assert [gate["script"] for gate in unsharded_gates] == [
     "test:browser-armor-aiming",
@@ -280,9 +281,10 @@ assert [gate["script"] for gate in unsharded_gates] == [
     "test:browser-creators",
     "test:browser-map-preview",
     "test:browser-battle-data",
+    "test:browser-showcase-hero",
 ], unsharded_gates
 assert all("args" not in gate for gate in unsharded_gates), unsharded_gates
-assert len(browser_matrix) == 11, browser_matrix
+assert len(browser_matrix) == 12, browser_matrix
 
 # R2：对真实 Required Gate 聚合逻辑（ci-gate.yml 内嵌 Python）做失败传播测试，
 # 断言具体失败原因，而不是只断言任意非零退出。

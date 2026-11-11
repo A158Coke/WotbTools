@@ -3339,9 +3339,22 @@ async function runReplayCollectionScenario(env) {
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
     const singleHero = await page.evaluate(heroHeight)
-    check(failures, singleHero >= 120 && singleHero <= 140, `compact hero must stay 120-140px at 1440: ${singleHero}`)
+    // Replay 紧凑横幅是密度预算的唯一例外（design-language §2）：桌面放宽到 clamp(132px, min(20vw, 42vh), 384px)，
+    // 1440×900 实测 288px——~43% 可见带容纳坦克整体；其余 compact 页保持 132px 密度。
+    check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
+    const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
+    check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
+    const toolbarVisible = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); return t ? t.top >= 0 && t.bottom <= innerHeight : false })()`
+    check(failures, await page.evaluate(toolbarVisible), 'replay toolbar must be fully visible at 1440x900')
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
+
+    // 矮桌面窗口降级：height < 700px 回退默认密度，横幅让出工作区空间，收集入口仍可直接点到。
+    await page.emulate({ width: 1920, height: 540, touch: false })
+    const shortHero = await page.evaluate(heroHeight)
+    check(failures, shortHero >= 120 && shortHero <= 140, `replay hero must fall back to compact density in short windows: ${shortHero}`)
+    check(failures, await page.evaluate(`(() => { const t = document.querySelector('[data-testid="collection-trigger"]')?.getBoundingClientRect(); return !!t && t.top >= 0 && t.bottom <= innerHeight })()`), 'collection trigger must stay visible in short windows')
+    await page.emulate({ width: 1440, height: 900, touch: false })
 
     // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
     const broken = join(tempDir, 'broken.wotbreplay')

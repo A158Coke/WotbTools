@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShowcaseHero from './ShowcaseHero.vue'
-import { SECTION_HERO_IDS } from '../shared/sectionHeroes'
+import { SECTION_HERO_IDS, SECTION_HEROES, sectionHeroStyle } from '../shared/sectionHeroes'
 
 describe('ShowcaseHero', () => {
   it('只渲染给出的标题区内容；主视觉层是装饰（aria-hidden）', () => {
@@ -42,6 +42,25 @@ describe('ShowcaseHero', () => {
     const art = wrapper.get('.showcase-hero-art')
     expect(art.classes()).not.toContain('showcase-hero-art--section')
     expect(art.attributes('style')).toBeUndefined()
+  })
+
+  it('声明了 compactPosition 的分区注入 --hero-pos-compact，其余分区不注入（回退 position）', () => {
+    expect(sectionHeroStyle('replay')['--hero-pos-compact']).toBe('center 50%')
+    expect(sectionHeroStyle('techtree')['--hero-pos-compact']).toBe('center 58%')
+    for (const section of SECTION_HERO_IDS) {
+      const style = sectionHeroStyle(section)
+      if (SECTION_HEROES[section].compactPosition) continue
+      expect(style['--hero-pos-compact']).toBeUndefined()
+    }
+  })
+
+  it('compact 横幅的分区主视觉注入 compactPosition，窄横幅焦点对准主体带', () => {
+    const wrapper = mount(ShowcaseHero, {
+      props: { title: '回放工作台', section: 'replay', compact: true },
+    })
+    const style = wrapper.get('.showcase-hero-art').attributes('style') || ''
+    expect(style).toContain('--hero-pos-compact')
+    expect(style).toContain('hero-replay.webp')
   })
 
   it('compact 的横幅只保留 kicker / 标题，操作移到横幅外的工具条', () => {

@@ -118,6 +118,13 @@
   background: color-mix(in srgb, var(--color-surface-1) 50%, transparent) !important;
   backdrop-filter: blur(8px);
 }
+/* 在 ShowcaseHero 内部（横幅盖在主视觉图上）撤掉玻璃底板：浅色主题的半透明白底
+   在遮罩全撤后会变成一大块灰白玻璃（2026-11-11 用户反馈）；底板只属于页面表面。 */
+.showcase-hero .lb-submit-row {
+  background: transparent !important;
+  border-color: transparent !important;
+  backdrop-filter: none !important;
+}
 .lb-wrap .h100-pending-card {
   border-color: var(--showcase-tactical-border) !important;
   background: var(--showcase-tactical-soft) !important;

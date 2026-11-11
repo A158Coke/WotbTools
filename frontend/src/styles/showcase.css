@@ -122,4 +122,14 @@
       var(--color-surface-1) !important;
   }
   .profile-page .hero-name { font-size: 1.35rem !important; }
+  /* 共享竖屏遮罩在冬季已几乎全撤（.15 → 0）：Profile 横幅文字与 ShowcaseHero 同样
+     切浅色 + 深色描边；token 只在冬季定义，其他主题保持原深色 */
+  .profile-page .hero-name {
+    color: var(--theme-hero-title-color, var(--text-heading)) !important;
+    text-shadow: var(--theme-hero-text-shadow, none);
+  }
+  .profile-page .hero-subtitle {
+    color: var(--theme-hero-description-color, var(--text-sub)) !important;
+    text-shadow: var(--theme-hero-text-shadow, none);
+  }
 }

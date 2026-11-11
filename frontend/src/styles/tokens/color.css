@@ -313,9 +313,19 @@
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
     /* 分区主视觉在寒冬要露出坦克：桌面左侧文字仍压 90%+，右侧留给画面；
-       手机改成从上到下的遮罩，文字所在的上半部更实，坦克所在的下半部透出。 */
+       手机改成从上到下的遮罩，文字所在的上半部更实，坦克所在的下半部透出。
+       上半部不透明度压到 .86 以下：再高会把整幅画面洗白（2026-11-10 反馈），
+       深色标题在 .86 白底上的对比度仍有约 12:1，可读性不受影响。 */
     --theme-hero-section-scrim: linear-gradient(90deg, rgb(238 243 248 / .94) 0%, rgb(238 243 248 / .78) 48%, rgb(238 243 248 / .12) 100%);
-    --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .97) 0%, rgb(238 243 248 / .86) 48%, rgb(238 243 248 / .24) 100%);
+    --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .15) 0%, rgb(238 243 248 / 0) 45%);
+    /* 竖屏遮罩已几乎全撤（.15 → 0，画面 100% 清晰），冬季手机横幅的全部文字
+       （kicker / 标题 / 说明 / 关键数字）改浅色 + 深色描边，只在手机断点由组件启用；
+       桌面左侧仍有 90° 白色遮罩，深色文字保持原样 */
+    --theme-hero-title-color: #f2f7fb;
+    --theme-hero-kicker-color: #cfe3f5;
+    --theme-hero-description-color: #d8e6f4;
+    --theme-hero-stat-color: #ffd166;
+    --theme-hero-text-shadow: 0 1px 2px rgb(4 10 18 / .85), 0 0 8px rgb(4 10 18 / .6);
     --theme-glass: rgb(255 255 255 / .72);
     --theme-backdrop-image: url("../../assets/theme/backdrop-winter-wide.webp");
     --theme-backdrop-image-portrait: url("../../assets/theme/backdrop-winter-portrait.webp");
