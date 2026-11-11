@@ -93,6 +93,35 @@ describe('useDataVersion', () => {
     expect(state.datasets.map((entry) => entry.id)).toEqual(['11.21.0', '11.21.0-t11-preview'])
   })
 
+  it('accepts client SmartDLC slot ids with underscore and still rejects URL-unsafe ids', async () => {
+    // 2026-11-11 放宽 `_`：客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）
+    const catalog = {
+      schema: 1,
+      default: '11.21.0',
+      datasets: [
+        { id: '11.21.0', label: '11.21.0', content_digest: 'sha256:a', status: 'active' },
+        { id: '11.21.0_1', label: '11.21.0_1', content_digest: 'sha256:b', status: 'active' },
+        { id: '11.4.0.130', label: '超测服', content_digest: 'sha256:c', status: 'active' },
+      ],
+    }
+    const ok = await load({ fetchImpl: vi.fn(async () => ({ ok: true, json: async () => catalog })) })
+    const state = await ok.loadDataVersionCatalog()
+    expect(state.status).toBe('ready')
+    expect(state.datasets.map((entry) => entry.id)).toEqual(['11.21.0', '11.21.0_1', '11.4.0.130'])
+
+    const bad = {
+      ...catalog,
+      datasets: [
+        { id: '11.21.0', label: '11.21.0', content_digest: 'sha256:a', status: 'active' },
+        { id: '11.21.0+x', label: 'bad', content_digest: 'sha256:d', status: 'active' },
+      ],
+    }
+    const rejected = await load({ fetchImpl: vi.fn(async () => ({ ok: true, json: async () => bad })) })
+    const badState = await rejected.loadDataVersionCatalog()
+    expect(badState.status).toBe('error')
+    expect(badState.error).toContain('非法')
+  })
+
   it('strips a versioned ?assets= base before fetching the catalog', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))
     const { loadDataVersionCatalog } = await load({
