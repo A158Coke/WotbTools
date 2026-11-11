@@ -3094,7 +3094,8 @@ async function runPlaybackShellNavScenario(env, scenario) {
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open' })
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
-  await delay(300)
+  // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），限时等待真实卸载再断言
+  await page.waitFor(() => !document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer unmount after Escape' })
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the navigation drawer')
   check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry must remain after closing the drawer')
 
@@ -3120,7 +3121,7 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry while the fallback opens the drawer')
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
-  await delay(300)
+  await page.waitFor(() => !document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'fallback drawer unmount after Escape' })
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the drawer opened from the fallback')
 
   // —— Step 3c：恢复 → 所有权回到传输条 ——
