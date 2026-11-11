@@ -1678,6 +1678,8 @@
     "display_battlefield": "Интерфейс боя",
     "display_topbar": "Верхняя панель",
     "display_roster": "Состав команд",
+    "roster_show": "Показать составы",
+    "roster_hide": "Скрыть составы",
     "display_killfeed": "Лента уничтожений",
     "display_base": "Статус баз / превосходства",
     "display_labels": "Метки техники",

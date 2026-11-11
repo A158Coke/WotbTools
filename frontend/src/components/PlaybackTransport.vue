@@ -3,7 +3,7 @@
 import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
-import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
+import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal, Users } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -34,6 +34,9 @@ const props = defineProps({
   formatClock: { type: Function, default: formatPlaybackClock },
   /** 本条此刻是否真的看得见：宿主用 v-show 收起控制条、能力切走时传 false，菜单入口交还外壳。 */
   navEligible: { type: Boolean, default: true },
+  /** 名册浮层入口：宿主决定是否需要（2D 横屏 / 桌面浮层形态；3D 与竖屏纵向流不需要）。 */
+  rosterEntryVisible: { type: Boolean, default: false },
+  rosterOpen: { type: Boolean, default: false },
 })
 
 // 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
@@ -49,7 +52,7 @@ onDeactivated(() => { alive.value = false })
 const hostsNav = computed(() => alive.value && props.navEligible && !!openNav && !!shellChrome?.immersive.value)
 watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
-const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])
+const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation', 'toggle-roster'])
 
 /** 紧凑档的速度菜单开合；选中或点空白即收起（与 MenuButton 同口径的渐进披露） */
 const speedOpen = ref(false)
@@ -128,6 +131,9 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     </button>
     <button v-if="props.annotationEnabled" type="button" class="pb-btn" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-label="$t('recon.map.playback.annot.mode')" :title="$t('recon.map.playback.annot.mode')" @click="emit('toggle-annotation')">
       <PencilRuler :size="16" aria-hidden="true" />
+    </button>
+    <button v-if="props.rosterEntryVisible" type="button" class="pb-btn" data-test="pb-roster-entry" :aria-pressed="props.rosterOpen" :aria-label="$t(props.rosterOpen ? 'agentReplay.roster_hide' : 'agentReplay.roster_show')" :title="$t(props.rosterOpen ? 'agentReplay.roster_hide' : 'agentReplay.roster_show')" @click="emit('toggle-roster')">
+      <Users :size="16" aria-hidden="true" />
     </button>
     <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" data-tour="playback-display" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
       <SlidersHorizontal :size="16" aria-hidden="true" />
