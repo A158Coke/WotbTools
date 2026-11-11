@@ -92,25 +92,26 @@ describe('边界 fail-closed（PR #411 P0-2）', () => {
   })
 })
 
-describe('相机距离钳制（PR #411 P1-3）', () => {
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
-  // 钳制实现 2026-11-05 出仓 playback/cameraTerrainClamp.ts（#820 Wave B6A），
-  // 守卫随实现迁移（与边界带同纪律）；场景侧只保留注入与调用。
-  const clampSrc = readFileSync(resolve(here, 'playback/cameraTerrainClamp.ts'), 'utf8')
-  // 相机钳制调用 2026-11-06 出仓 playback/cameraRuntime.ts（#820 Step 2）
-  const cameraSrc = readFileSync(resolve(here, 'playback/cameraRuntime.ts'), 'utf8')
+describe('边界带调用点权威来源（#827 窄化：Integration Contract）', () => {
+  // 行为语义已接替：
+  //   - buildBoundary null → createBoundaryBand 行为测试（上方）
+  //   - 相机钳制 min/max 推导 → playback/cameraTerrainClamp.clamp.test.js（行为测试）
+  // 调用点约束（mapWorld 只准传 playableBoundsFor()、宿主只保留 applyCameraClamp() 注入）
+  // 是跨模块 call-site 契约，宿主无注入点（F3 标注），保留窄化源码守卫。
+  const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
+  const playbackSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 
-  it('设置 controls.minDistance / maxDistance 且基于 ext', () => {
-    expect(clampSrc).toMatch(/baseMinDistance = Math\.max\(20, ext \* 0\.08\)/)
-    expect(clampSrc).toMatch(/controls\.minDistance = baseMinDistance/)
-    expect(clampSrc).toMatch(/controls\.maxDistance = ext \* 2\.2/)
-    expect(cameraSrc).toMatch(/controls\.minDistance = deps\.baseMinDistance\(\)/)
-    expect(src).toMatch(/applyCameraClamp\(\);/)
+  it('调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底', () => {
+    const calls = [...mapWorldSrc.matchAll(/buildBoundary\(([^;]*?), BOUNDARY_THICK\)/gs)].map((m) => m[1].trim())
+    expect(calls.length).toBeGreaterThan(0)
+    for (const arg of calls) expect(arg).toBe('playableBoundsFor()')
+    // 兜底对象（车辆 ext / terrain span）不得再出现在边界构造里
+    expect(mapWorldSrc).not.toMatch(/buildBoundary\(\{\s*cx, cz, hx: ext/)
+    expect(mapWorldSrc).not.toMatch(/hx: \(\(heightMeta && heightMeta\.span\)/)
   })
 
-  it('基准距离只有模块一处分份状态，场景侧经 accessor 读取', () => {
-    expect(src).toMatch(/baseMinDistance: \(\) => cameraTerrainClamp\.baseMinDistance\(\),/)
-    expect(cameraSrc).toMatch(/controls\.minDistance = deps\.baseMinDistance\(\)/)
-    expect(src).not.toMatch(/let baseMinDistance/)
+  it('宿主保留钳制注入（clamp owner = cameraTerrainClamp，行为见 clamp.test）', () => {
+    expect(playbackSrc).toMatch(/applyCameraClamp\(\);/)
+    expect(playbackSrc).not.toMatch(/let baseMinDistance/)
   })
 })
