@@ -450,10 +450,24 @@ internal class GeckoWebRuntime(
         private var installedExtension: WebExtension? = null
         private var installing: MutableList<Pair<(WebExtension) -> Unit, () -> Unit>>? = null
 
+        /** 回放自动全屏需要关闭 Gecko 的 trusted-request 限制（见 GeckoRuntimeConfig）；写失败则不传配置，退化为手动全屏。 */
+        private fun writeRuntimeConfig(context: Context): String {
+            val file = java.io.File(context.filesDir, GeckoRuntimeConfig.FILE_NAME)
+            return try {
+                val body = GeckoRuntimeConfig.yaml()
+                if (!file.exists() || file.readText() != body) file.writeText(body)
+                file.absolutePath
+            } catch (e: java.io.IOException) {
+                Log.w(TAG, "gecko config write failed category=${e.javaClass.simpleName}")
+                ""
+            }
+        }
+
         /** GeckoRuntime 每进程只能创建一次；只在主线程、首次需要时创建。 */
         fun runtime(context: Context): GeckoRuntime = runtime ?: GeckoRuntime.create(
             context.applicationContext,
             GeckoRuntimeSettings.Builder()
+                .configFilePath(writeRuntimeConfig(context.applicationContext))
                 .remoteDebuggingEnabled(BuildConfig.DEBUG)
                 .consoleOutput(BuildConfig.DEBUG)
                 .aboutConfigEnabled(false)

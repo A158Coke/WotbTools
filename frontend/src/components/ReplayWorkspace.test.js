@@ -95,7 +95,7 @@ function paneMock(name, testid) {
     __esModule: true,
     default: {
       name,
-      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession'],
+      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken'],
       template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }
@@ -1459,5 +1459,24 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     await switchTo(wrapper, 'data')
     expect(scrollCalls.length).toBe(before)
     wrapper.unmount()
+  })
+
+  describe('自动全屏的进入事件序号（Android 手机 App 边沿触发身份）', () => {
+    const tokenOf = (wrapper, name) => wrapper.findComponent({ name }).props('autoFullscreenToken')
+
+    it('每次切入查看器递增一次；停留 / 重渲染 / 回到数据页都不递增', async () => {
+      withBattles(1)
+      const wrapper = mountWorkspace('data')
+      await flushPromises()
+      await switchTo(wrapper, 'playback')
+      const first = tokenOf(wrapper, 'BattlePlaybackPanelMock')
+      expect(first).toBeGreaterThan(0)
+      await wrapper.vm.$nextTick()
+      expect(tokenOf(wrapper, 'BattlePlaybackPanelMock')).toBe(first)
+      await switchTo(wrapper, 'data')
+      expect(tokenOf(wrapper, 'BattlePlaybackPanelMock')).toBe(first)
+      await switchTo(wrapper, 'playback')
+      expect(tokenOf(wrapper, 'BattlePlaybackPanelMock')).toBe(first + 1)
+    })
   })
 })

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "bridgeVersion": 3,
+  "bridgeVersion": 4,
   "origin": "http://127.0.0.1:21653",
   "allowedOrigins": [
     "http://127.0.0.1:21653"
@@ -610,15 +610,15 @@
         "notes": "Optional screen-form capability. phone = Configuration.smallestScreenWidthDp < 600; tablets report false. The page uses it only to decide whether scene pages (2D / 3D playback, armor viewer, shot replay, map 3D) force landscape."
       }
     },
-    "setLandscapeLock": {
+    "setOrientationLock": {
       "request": {
         "fields": {
-          "locked": { "type": "boolean", "required": true }
+          "orientation": { "type": "string", "required": true, "enum": ["landscape", "portrait", "unspecified"] }
         }
       },
       "response": {
         "type": "boolean",
-        "notes": "Phones only: locked=true requests SENSOR_LANDSCAPE while a scene page is shown; locked=false releases it. Returns false (no-op) on tablets. HTML fullscreen keeps its own orientation handling and restores to the page lock state on exit."
+        "notes": "Phones only: landscape requests SENSOR_LANDSCAPE (scene pages), portrait requests PORTRAIT (replay workspace viewers while not fullscreen), unspecified releases the page lock. Returns false (no-op) on tablets or an unknown value. HTML fullscreen forces landscape itself and restores to the page lock state on exit."
       }
     },
     "haptic": {

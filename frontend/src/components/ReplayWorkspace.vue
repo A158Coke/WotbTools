@@ -488,9 +488,20 @@ watch(wantsImmersive, (on) => {
   // 进入沉浸态时把回放区对齐到视口顶端（仅边沿触发一次，不监听滚动）
   if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
 }, { immediate: true })
-// 强制横屏（design-language §9）：2D / 3D 回放显示时，Android 手机 App 原生锁横屏，iPhone Safari 竖屏提示旋转；
-// 提示里的退出动作回到赛后数据，主要数据能力在竖屏仍可达。其它设备不受影响。
-const forcedLandscape = useForcedLandscape(computed(() => pageActive.value && workspaceReady.value && replayPaneShown.value))
+// 强制横屏（design-language §9）：iPhone Safari 在 2D / 3D 回放显示且竖屏时提示旋转（退出动作回到赛后数据，主要数据能力在竖屏仍可达）；
+// 其它设备（桌面、平板、Android 浏览器）不受影响。
+// Android 手机 App（4.x）：查看器内非全屏锁竖屏，全屏由 MainActivity.enterFullscreen 锁横屏并在退出时还原；
+// 空查看器 / 解析中也锁竖屏，所以 androidActive 不依赖 workspaceReady。iPhone Safari 的旋转提示仍按原条件。
+const VIEWER_CAPABILITIES = new Set(['playback', '3d', 'shots'])
+const viewerCapabilityShown = computed(() => VIEWER_CAPABILITIES.has(activeCapability.value))
+const forcedLandscape = useForcedLandscape(
+  computed(() => pageActive.value && workspaceReady.value && replayPaneShown.value),
+  { androidOrientation: 'portrait', androidActive: computed(() => pageActive.value && viewerCapabilityShown.value) },
+)
+// 自动全屏的「进入查看器」事件序号：每次切入 2D / 3D / 射击复现（含从赛果解析 / AI 复盘跳入）递增一次；
+// 查看器在成功就绪时按 (序号, 回放身份) 消费，主动退出全屏后不会因仍然 Ready 再次进入。
+const autoFullscreenToken = ref(0)
+watch(activeCapability, (cap) => { if (VIEWER_CAPABILITIES.has(cap)) autoFullscreenToken.value++ }, { immediate: true })
 onActivated(() => { pageActive.value = true })
 onDeactivated(() => {
   pageActive.value = false
@@ -626,6 +637,7 @@ watch(() => props.initialCapability, (val) => {
           :file="targetFile"
           :active="activeCapability === 'playback'"
           :seek-to="playbackSeek"
+          :auto-fullscreen-token="autoFullscreenToken"
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
@@ -656,6 +668,7 @@ watch(() => props.initialCapability, (val) => {
           :file="targetFile"
           :active="pageActive && activeCapability === '3d' && threeAvailability.available"
           :blocked-reason="threeBlocked"
+          :auto-fullscreen-token="autoFullscreenToken"
         />
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
@@ -677,6 +690,7 @@ watch(() => props.initialCapability, (val) => {
           :file="targetFile"
           :active="activeCapability === 'shots'"
           :navigate="navigate"
+          :auto-fullscreen-token="autoFullscreenToken"
         />
       </div>
       <div v-show="activeCapability === 'ai'" class="capability-pane" data-testid="ws-ai">
