@@ -1678,6 +1678,8 @@
     "display_battlefield": "Battlefield UI",
     "display_topbar": "Top status bar",
     "display_roster": "Roster",
+    "roster_show": "Show roster",
+    "roster_hide": "Hide roster",
     "display_killfeed": "Kill feed",
     "display_base": "Base / supremacy status",
     "display_labels": "Vehicle labels",

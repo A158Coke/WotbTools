@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated": "2026-11-06T01:21:34+00:00",
+ "updated": "2026-11-11T04:08:01+00:00",
  "default": "11.21.0",
  "datasets": [
   {
@@ -8,28 +8,42 @@
    "label": "11.21.0",
    "game_version": "release/11.21.0",
    "variant": null,
-   "release": "initial-20261019",
+   "release": "11.21.0-20261106-r2",
    "tank_count": 738,
-   "generated": "2026-10-18T10:21:47+00:00",
-   "content_digest": "sha256:5b80884bd8003246abb7796c42af6420013a6a51dadde01883185f0f19869d84",
-   "manifest_sha256": "fa7450bf865c4f0b4d7f92205e78bd48201fae18121307acc8b71a0c6d99fa99",
+   "generated": "2026-11-06T08:36:44+00:00",
+   "content_digest": "sha256:9198d0ca1561a85d7fd58f02896f6b0ec6121063f03b8044fb6a38006ce7e197",
+   "manifest_sha256": "5c83d1e5d8223050828df82fd5c90b8db1371218f519ddf839515e70cb0da79d",
    "min_client": null,
    "status": "active",
-   "notes": "initial 11.21 baseline (2026-10-19); lacks later map2d/cover/research increments"
+   "notes": "全量重建（2026-11-06）：11.21 基线 738 辆；补齐 7 个变体的 2D 底图与封面（43/43）；manifest 5965 件；相对 11.21.0-20261106 仅新增 14 个派生文件 + 3 个索引"
   },
   {
-   "id": "supertest",
+   "id": "11.21.0_1",
+   "label": "11.21.0_1",
+   "game_version": "release/11.21.0",
+   "variant": null,
+   "release": "11.21.0_1-20261111-r1",
+   "tank_count": 738,
+   "generated": "2026-11-06T08:36:44+00:00",
+   "content_digest": "sha256:9198d0ca1561a85d7fd58f02896f6b0ec6121063f03b8044fb6a38006ce7e197",
+   "manifest_sha256": "5c83d1e5d8223050828df82fd5c90b8db1371218f519ddf839515e70cb0da79d",
+   "min_client": null,
+   "status": "active",
+   "notes": "对应客户端 SmartDLC s11.21.0_1（dc 构建 7405732/3/4，2026-11-10 发布：dx11/astc 贴图 + 活动/offer 文案 + 新收藏车 Relic 注册文案）。动态内容走客户端运行时通道，不进资产包数据面；本 release 数据面与 11.21.0-20261106-r2 逐字节一致（同 content_digest），待 11.21.1 客户端数据后充实。"
+  },
+  {
+   "id": "11.4.0.130",
    "label": "超测服",
    "game_version": "release/11.21.0",
    "variant": "t11p2",
-   "release": "t11p2-20261106",
+   "release": "t11p2-20261106-r9",
    "tank_count": 743,
-   "generated": "2026-11-05T16:48:34+00:00",
-   "content_digest": "sha256:ea489ff10f6f475506ac4fb302bb51537a00c58cbf76801ced537bf82ace9c86",
-   "manifest_sha256": "3450c39318b088e8e556a4c0338e85bd86798a9c0aae9a37088d27eca435e8e5",
+   "generated": "2026-11-06T16:50:40+00:00",
+   "content_digest": "sha256:97f46b5a9b9f381a00d0c7b16a5d96861605550a434555c4864f1feb2b3ad4be",
+   "manifest_sha256": "1378b1a47d3573e10c7fac6b169b5697af37af2b01e63a3b6309df21d8fe2547",
    "min_client": null,
    "status": "active",
-   "notes": "supertest channel: t11p2 preview, 5 XI tanks on 11.21 base; shell ballistics from shells.xml (t11p2 moved piercingPower/speed out of gun shots)"
+   "notes": "supertest r8: XI upgradeProgression layout fields (matrix/gridPosition/xpCost/requiredNodes) for china/usa/ussr + meta；2026-11-11 dataset id supertest→11.4.0.130（超测客户端自身版本号 11.4.0.130_7400742，label 仍为超测服；数据面与 r8 逐字节一致，本 release 为改名载体）。"
   }
  ]
 }

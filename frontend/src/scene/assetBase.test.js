@@ -115,6 +115,18 @@ describe('assetBase data version', () => {
     expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0')
   })
 
+  it('accepts client SmartDLC slot ids with underscore in ?data= and /v/ bases', async () => {
+    // 2026-11-11 放宽 `_`：客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）
+    const { assetBase, stripDatasetSuffix } = await loadAssetBase({
+      url: '/?data=11.21.0_1',
+      productionDefault: PROD,
+    })
+    expect(assetBase()).toBe(`${PROD}/v/11.21.0_1`)
+    expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0_1')
+    expect(stripDatasetSuffix(`${PROD}/v/11.21.0_1`)).toBe(PROD)
+    expect(stripDatasetSuffix(`${PROD}/v/11.4.0.130/`)).toBe(PROD)
+  })
+
   it('reads the persisted dataset selection when the URL has no ?data=', async () => {
     const { assetBase } = await loadAssetBase({
       dataStorage: '11.21.0-t11-preview',

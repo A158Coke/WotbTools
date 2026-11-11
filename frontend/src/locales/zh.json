@@ -1678,6 +1678,8 @@
     "display_battlefield": "战场 UI",
     "display_topbar": "顶部战况",
     "display_roster": "阵容",
+    "roster_show": "显示阵容",
+    "roster_hide": "收起阵容",
     "display_killfeed": "击杀信息",
     "display_base": "基地 / 争霸状态",
     "display_labels": "车辆标签",
