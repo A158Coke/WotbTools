@@ -28,6 +28,9 @@ import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
 import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
+import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
+import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
 import StatStrip from './StatStrip.vue'
@@ -48,6 +51,8 @@ const props = defineProps({
   blockedReason: { type: String, default: '' },
   /** 工作台注入的导航（router owner 不变）：在 3D 装甲查看器里打开这一发 */
   navigate: { type: Function, default: null },
+  /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
+  autoFullscreenToken: { type: Number, default: 0 },
 })
 const { t } = useI18n()
 const onboarding = inject(ONBOARDING_KEY, null)
@@ -77,6 +82,20 @@ const selectedIndex = ref(null)
 const guideInset = ref(0)
 /** 已解析的文件：同一文件不重复解码 */
 let parsedFile = null
+const paneRoot = ref(null)
+const { isPhone } = usePlaybackPhoneForm()
+/**
+ * 全屏目标是本面板根：筛选 / 选中 / 详情都是本组件状态，全屏只换容器尺寸，不重解析、不重置。
+ * 全屏事实源仍是 usePlaybackFullscreen（document.fullscreenElement），无第二套状态。
+ */
+const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
+  target: () => paneRoot.value,
+  isPhone,
+  isActive: () => props.active,
+  // 成功就绪 = 当前文件已解析完成、无错误、至少一发射击（空结果只是空态）；解析中 / 终态错误 / 被阻断都不触发。
+  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: props.active, ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFile === props.file && shots.value.length > 0 }),
+})
+watch(() => props.active, (active) => { if (!active) { unlockOrientation(); exitOwnedFullscreen() } })
 /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
 let parseSeq = 0
 let decoding = Promise.resolve()
@@ -511,7 +530,6 @@ function hasEquipment(s) {
  * 列表 / 详情分档由**容器宽度**决定（design-language §9：expanded 常驻、medium 推开式、
  * compact 全屏），不看视口——工作台可能被侧栏或抽屉挤窄。
  */
-const paneRoot = ref(null)
 const layout = ref('expanded')
 const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
 /** compact 直达复现：手机上点一发直接进入射击复现（design-language §9「射击分析」）；导航期间不弹出检视面板 */
@@ -717,6 +735,14 @@ onBeforeUnmount(() => {
           <h2>{{ scopeTitle }}</h2>
           <p>{{ scopeSubtitle }}</p>
         </div>
+        <SceneFullscreenButton
+          v-if="isPhone && fullscreenSupported"
+          class="shots-fullscreen"
+          :is-fullscreen="isFullscreen"
+          :floating="false"
+          data-testid="shots-fullscreen"
+          @toggle="toggleFullscreen()"
+        />
         <!-- compact：射击者先给两项分段（我的 / 全部），按玩家筛选保留在下方下拉里 -->
         <SegmentedControl
           v-if="layout === 'compact'"
@@ -881,6 +907,7 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 配色一律走语义 token（两档主题同一份规则）；容器查询决定 Master–Detail 分档，
    不按视口——工作台可能被抽屉挤窄。 */
+.shots-pane:fullscreen { padding: var(--space-3); background: var(--color-canvas); overflow-y: auto; }
 .shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); min-width: 0; }
 .shots-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .shots-scope { min-width: 0; }

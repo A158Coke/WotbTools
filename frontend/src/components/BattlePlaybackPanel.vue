@@ -23,6 +23,8 @@ const props = defineProps({
   seekTo: { type: Number, default: null },
   /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
   blockedReason: { type: String, default: '' },
+  /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
+  autoFullscreenToken: { type: Number, default: 0 },
 })
 
 const mapOverview = ref<Record<string, any> | null>(null)
@@ -219,6 +221,7 @@ onMounted(() => {
             :reload-telemetry="reloadTelemetry || undefined"
             :seek-to="mapSeek ?? undefined"
             :active="active && panelView === 'playback'"
+            :auto-fullscreen="{ token: autoFullscreenToken, key: file }"
           />
 
           <!-- 2.5D directly upgrades the map background. BattleMap still owns all

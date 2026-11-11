@@ -25,6 +25,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 let Replay3DPane
 
 const canonical = vi.hoisted(() => ({ load: vi.fn(), portrait: vi.fn() }))
+vi.mock('../platform/screenForm.js', () => ({ forcedLandscapeDevice: async () => 'android-phone-app' }))
 vi.mock('../vehicle-portraits/runtime.js', () => ({ loadVehiclePortrait: canonical.portrait }))
 const playback = vi.hoisted(() => ({ api: null, init: null, apis: [] }))
 /**
@@ -1281,6 +1282,47 @@ describe('Replay3DPane', () => {
         expect(store.time).toBe(42)
         expect(store.speed).toBe(4)
         expect(store.cam).toBe('follow')
+        wrapper.unmount()
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      })
+    })
+
+    it('Android 手机 App 自动全屏：已开播且有数据才进入一次；退出后不重入，会话与相机不变，新事件才再进入', async () => {
+      await withRequestFullscreen(true, async () => {
+        mockWebGL('webgl2')
+        const wrapper = mountPane({ autoFullscreenToken: 1 })
+        const { store } = playback.api
+        await flush()
+        // 待开播（用户未按开始）、尚无数据：不触发
+        expect(fullscreenCalls.request).toBe(0)
+        await start(wrapper)
+        store.time = 42
+        store.speed = 4
+        store.cam = 'follow'
+        Object.defineProperty(document, 'exitFullscreen', {
+          configurable: true,
+          value: vi.fn(() => {
+            Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+            document.dispatchEvent(new Event('fullscreenchange'))
+            return Promise.resolve()
+          }),
+        })
+        store.hasData = true
+        await flush()
+        expect(fullscreenCalls.request).toBe(1)
+        const initCalls = playback.init.mock.calls.length
+        const loadCalls = playback.api.loadData.mock.calls.length
+        await document.exitFullscreen()
+        await flush()
+        expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('false')
+        expect(playback.init.mock.calls.length).toBe(initCalls)
+        expect(playback.api.loadData.mock.calls.length).toBe(loadCalls)
+        expect(playback.api.reset).not.toHaveBeenCalled()
+        expect([store.time, store.speed, store.cam]).toEqual([42, 4, 'follow'])
+        expect(fullscreenCalls.request).toBe(1)
+        await wrapper.setProps({ autoFullscreenToken: 2 })
+        await flush()
+        expect(fullscreenCalls.request).toBe(2)
         wrapper.unmount()
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
       })

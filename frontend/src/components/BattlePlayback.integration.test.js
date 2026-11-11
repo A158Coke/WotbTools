@@ -10,7 +10,7 @@
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -28,6 +28,8 @@ const i18n = vi.hoisted(() => ({
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
+
+vi.mock('../platform/screenForm.js', () => ({ forcedLandscapeDevice: async () => 'android-phone-app' }))
 
 vi.mock('../data/mapImages', () => ({
   mapImages: {
@@ -3079,5 +3081,134 @@ describe('2D 工具栏折叠与名册浮层（§2d-toolbar-collapse / §roster-o
     await flushPromises()
     expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="pb-roster-entry"]').attributes('aria-pressed')).toBe('true')
+  })
+})
+
+
+describe('2D 自动全屏（Android 手机 App）：退出不打断回放', () => {
+  const file = new File(['x'], 'a.wotbreplay')
+  function installFullscreen() {
+    const state = { request: 0, exit: 0 }
+    Element.prototype.requestFullscreen = vi.fn(async function () {
+      state.request++
+      Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true, writable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    document.exitFullscreen = vi.fn(async () => {
+      state.exit++
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+      document.dispatchEvent(new Event('fullscreenchange'))
+    })
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+    return state
+  }
+  afterEach(() => {
+    delete Element.prototype.requestFullscreen
+    delete document.exitFullscreen
+    delete document.fullscreenElement
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('挂载即成功就绪：自动进入一次；退出后时间 / 播放态 / 选中 / 组件实例保持且不重入', async () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    vi.stubGlobal('matchMedia', (query) => ({ matches: query === PLAYBACK_MOBILE_QUERY, media: query, addEventListener() {}, removeEventListener() {} }))
+    const fs = installFullscreen()
+    const wrapper = mountBattlePlayback({ overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })
+    await flushPromises()
+    await vi.waitFor(() => expect(fs.request).toBe(1))
+    await flushPromises()
+    const root = wrapper.find('[data-test="battle-playback"]').element
+    expect(document.fullscreenElement).toBe(root)
+
+    await wrapper.find('.pb-range').setValue(12)
+    await wrapper.find('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    await flushPromises()
+    const before = {
+      time: wrapper.find('.pb-time').text(),
+      playLabel: wrapper.get('[data-test="pb-play"]').attributes('aria-label'),
+      info: wrapper.find('[data-test="pb-info"]').text(),
+    }
+    // 退出按钮与 Back/系统手势最终都是 fullscreenchange(null)
+    await document.exitFullscreen()
+    await flushPromises()
+    expect(wrapper.find('[data-test="battle-playback"]').element).toBe(root)
+    expect(wrapper.find('.pb-time').text()).toBe(before.time)
+    expect(wrapper.get('[data-test="pb-play"]').attributes('aria-label')).toBe(before.playLabel)
+    expect(wrapper.find('[data-test="pb-info"]').text()).toBe(before.info)
+    expect(fs.request).toBe(1)
+    await wrapper.setProps({ seekTo: 12 })
+    await flushPromises()
+    expect(fs.request).toBe(1)
+    // 新的进入事件才会再次自动进入
+    await wrapper.setProps({ autoFullscreen: { token: 2, key: file } })
+    await vi.waitFor(() => expect(fs.request).toBe(2))
+    wrapper.unmount()
+  })
+
+  describe('请求挂起期间失活：迟到的完成必须立刻交还全屏，且不留方向锁', () => {
+    function deferredFullscreen() {
+      let release
+      const gate = new Promise((resolve) => { release = resolve })
+      const exit = vi.fn(async () => {
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+      })
+      Element.prototype.requestFullscreen = vi.fn(async function () {
+        await gate
+        Object.defineProperty(document, 'fullscreenElement', { value: this, configurable: true, writable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+      })
+      document.exitFullscreen = exit
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true, writable: true })
+      const lock = vi.fn(async () => {})
+      vi.stubGlobal('screen', { orientation: { lock, unlock: vi.fn() } })
+      return { release, exit, lock }
+    }
+    const phoneMedia = () => vi.stubGlobal('matchMedia', (query) => ({ matches: query === PLAYBACK_MOBILE_QUERY, media: query, addEventListener() {}, removeEventListener() {} }))
+
+    it('切走能力（props.active=false）后请求才完成：旧 2D 根立刻退出全屏，不锁方向', async () => {
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      vi.stubGlobal('cancelAnimationFrame', () => {})
+      phoneMedia()
+      const fs = deferredFullscreen()
+      const wrapper = mountBattlePlayback({ overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })
+      await flushPromises()
+      await vi.waitFor(() => expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1))
+      await wrapper.setProps({ active: false })
+      fs.release()
+      await flushPromises()
+      expect(document.fullscreenElement).toBeNull()
+      expect(fs.exit).toHaveBeenCalledTimes(1)
+      expect(fs.lock).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('KeepAlive 停用后请求才完成：同样交还全屏；重新激活不会自动重入', async () => {
+      vi.stubGlobal('requestAnimationFrame', () => 0)
+      vi.stubGlobal('cancelAnimationFrame', () => {})
+      phoneMedia()
+      const fs = deferredFullscreen()
+      const show = ref(true)
+      const Host = defineComponent({
+        setup: () => () => h(KeepAlive, null, show.value
+          ? [h(BattlePlayback, { overview: makeOverview(), seekTo: 12, playbackV2: makePlaybackV2(), autoFullscreen: { token: 1, key: file }, active: true })]
+          : []),
+      })
+      const wrapper = mount(Host, { attachTo: document.body, global: { mocks: { $t: i18n.t } } })
+      await flushPromises()
+      await vi.waitFor(() => expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1))
+      show.value = false
+      await flushPromises()
+      fs.release()
+      await flushPromises()
+      expect(document.fullscreenElement).toBeNull()
+      expect(fs.lock).not.toHaveBeenCalled()
+      show.value = true
+      await flushPromises()
+      expect(Element.prototype.requestFullscreen).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
   })
 })
