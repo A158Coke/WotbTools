@@ -7,6 +7,8 @@
  *   桌面 compact 覆盖规则与手机规则同优先级、靠媒体查询内更晚声明获胜，这里用 computed style 证明；
  * - Replay compact 桌面高度放宽到 clamp(132px, 20vw, 384px)，矮窗口（height < 700px）回退默认密度；
  * - 非 Replay compact（techtree / admin）保持 132px 密度；
+ * - Full 档统一响应式高度：桌面 1440 用 clamp(240px, 20vw, 384px) 保主体完整带（与 Replay 同族），
+ *   矮桌面窗口（height < 700px）回退内容密度，手机断点不参与（portrait 焦点可见带已足够）；
  * - 冬季 portrait 遮罩实际生效（浅色 rgba(238 243 248 / …)，非深色主题遮罩）；
  * - 无 section 的普通 ShowcaseHero 不注入分区遮罩层。
  */
@@ -190,6 +192,36 @@ try {
       assert.ok(hero.height >= 120 && hero.height <= 140, `replay hero must fall back to compact density in short windows: ${hero.height}`)
       assert.ok(hero.titleBottom <= hero.heroBottom, 'replay title must stay inside the degraded banner')
       console.log(`[browser-showcase-hero] short-window replay: height=${hero.height} at 1920x540 passed`)
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
+  // Full 档统一响应式高度（Replay 同族 clamp 推广）：真实渲染断言，不是 CSS 字符串。
+  // league-broadcasts 是纯标题页（内容只撑出 ~123px，可见带 19%，主体被裁成炮管碎片），
+  // 是该策略的目标场景；hof 自带 stats/actions（内容 ~249px），验证 clamp 不压内容。
+  for (const [view, extraAuth] of [['league-broadcasts', ''], ['hof', '']]) {
+    const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
+    try {
+      const probe = heroProbe
+      const desktop = await page.probe(probe)
+      assert.ok(!desktop.compact, `desktop full hero on ${view} must not be compact`)
+      // 1440 下 20vw = 288px（clamp 上限 384 不命中）：主体完整带 ≈45%，与 Replay 验收值一致
+      assert.ok(desktop.height >= 280 && desktop.height <= 400, `desktop full hero on ${view} must take the 20vw clamp height at 1440: ${desktop.height}`)
+      assert.ok(desktop.titleBottom <= desktop.heroBottom, `desktop ${view} title must stay inside the banner`)
+      // 矮桌面窗口回退内容密度：横幅不挤压首屏
+      await page.emulate({ width: 1920, height: 540, touch: false })
+      await page.waitForValue(`window.innerHeight`, v => v === 540, { timeout: 20_000, label: 'short window applied' })
+      const short = await page.probe(probe)
+      assert.ok(short.height <= 260, `full hero on ${view} must fall back to content height in short windows: ${short.height}`)
+      assert.ok(short.titleBottom <= short.heroBottom, `short-window ${view} title must stay inside the banner`)
+      // 手机断点不参与：portrait 焦点可见带已足够，横幅不白白吃首屏
+      await page.emulate({ width: 390, height: 844, touch: true })
+      await page.waitForValue(`window.innerWidth`, v => v === 390, { timeout: 20_000, label: 'mobile viewport applied' })
+      const mobile = await page.probe(probe)
+      assert.ok(mobile.height <= 280, `mobile full hero on ${view} must keep the portrait density: ${mobile.height}`)
+      console.log(`[browser-showcase-hero] full-hero height ${view}: desktop=${desktop.height} short=${short.height} mobile=${mobile.height} passed`)
+    } catch (error) {
+      console.error(await page.diagnose(heroProbe))
+      throw error
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }
 
