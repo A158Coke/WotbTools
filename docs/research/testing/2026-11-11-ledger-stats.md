@@ -12,7 +12,7 @@
 | frontend/src/scene/playbackScene.staticFreeze.test.js | 7 | 7 | 0 | 0 | 1 | 0 |
 | frontend/src/scene/labelOcclusion.test.js | 7 | 5 | 0 | 1 | 0 | 1 |
 | frontend/src/scene/pickDebug.test.js | 6 | 6 | 0 | 1 | 0 | 0 |
-| frontend/src/scene/seekPointer.test.js | 5 | 5 | 0 | 1 | 0 | 1 |
+| frontend/src/scene/seekPointer.test.js | 5 | 4 | 0 | 1 | 0 | 2 |
 | frontend/src/scene/supremacyPoints.test.js | 3 | 4 | 1 | 1 | 0 | 0 |
 | frontend/src/scene/rosterState.test.js | 2 | 2 | 0 | 2 | 0 | 0 |
 | frontend/src/scene/treadMarks.test.js | 6 | 7 | 0 | 2 | 0 | 1 |
@@ -34,7 +34,7 @@
 | frontend/src/styles/hof-admin-tabs-css.test.js | 2 | 1 | 1 | 0 | 0 | 0 |
 | frontend/src/styles/replay3d-hud-layout.test.js | 0 | 2 | 0 | 0 | 0 | 0 |
 | frontend/src/styles/tokens/color-contrast.test.ts | 1 | 0 | 3 | 1 | 0 | 0 |
-| **合计（已映射 28 文件）** | — | **137** | **30** | **34** | **7** | **27** |
+| **合计（已映射 28 文件）** | — | **136** | **30** | **34** | **7** | **28** |
 
 ## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）
 

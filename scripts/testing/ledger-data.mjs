@@ -165,9 +165,9 @@ export const blocks = [
     [59,'R','case','transientFeedback3d/battleRuntime seek 游标 → DONE：battleRuntime.seek.test.ts + 故障注入验证（Wave 1 Pilot）','HIGH'],
     [66,'R','case','clear 清态不回放 → DONE：battleRuntime.seek.test.ts + 故障注入验证（Wave 1 Pilot）','HIGH'],
     [79,'R','case','buildBoundary null → DONE：createBoundaryBand 行为测试（Wave 1 Pilot）','MED'],
-    [83,'R','case','playableBounds 来源','MED'],
-    [101,'R','case','cameraTerrainClamp clamp','MED'],
-    [109,'D','clause','并入 101 fixture','MED'],
+    [83,'R','clause','调用点权威来源守卫窄化（Integration Contract，F3）→ DONE（窄化保留）','MED'],
+    [101,'R','case','相机钳制 → DONE：playback/cameraTerrainClamp.clamp.test.js（行为测试）','MED'],
+    [109,'D','clause','并入 101 行为 fixture → DONE','MED'],
   ]},
   { file: 'supremacyPoints.test', rows: [
     [18,'D','case','pointsAt 已是行为','MED'],
@@ -202,10 +202,10 @@ export const blocks = [
     [116,'K','case','完整 preset（纯 math 已由 cameraPresets.test.ts 覆盖）','MED'],
   ]},
   { file: 'tankViewer.collisionBoxFailsafe.test', rows: [
-    [15,'R','case','collision box fail-closed','HIGH'],
-    [26,'R','case','shotResultCard 不可概率重开','MED'],
-    [32,'R','case','无 mesh-AABB 回退','HIGH'],
-    [37,'R','case','1/255 量化分母','MED'],
+    [15,'R','case','缺盒 fail-closed → PARTIAL：窄化 Integration Contract 守卫（window 旗标闭包无注入点，F3）；行为面由 shotResultCard/armorInspectorChance 覆盖','HIGH'],
+    [26,'R','case','blockedNoPrimary → DONE：行为面由 shotResultCard.test.ts:191 + armorInspectorChance.test.js:220 覆盖；宿主接线子句保留在窄化守卫','MED'],
+    [32,'R','case','无 mesh-AABB 回退 → PARTIAL：并入 :15 窄化守卫（负面断言）','HIGH'],
+    [37,'R','case','1/255 量化 → DONE：viewer/shotReplay.quantization.test.ts（decodeB255 等价抽取）','MED'],
   ]},
   { file: 'armorCollisionPack.test', rows: [
     [710,'R','case','初始接受阈值（行为在 :722，viewer 侧 judgment harness）','MED'],
