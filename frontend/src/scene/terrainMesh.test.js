@@ -3,7 +3,7 @@ import {
   MAX_QUADS, PATCH_QUADS, SUBDIVISION_METRICS, TERRAIN_LAYOUT_ENGINE_VERTEX, buildAdaptiveTerrain,
   CLIENT_NORMAL_CAMERA_FOV_H, buildRefineMask,
   decodeTerrainField, morphFunc, subdivisionMetrics, groundMapUv, subdivMorphOf, terrainLodState,
-  terrainLodStale, pairedTerrainBinUrl, terrainBinMatchesMeta,
+  terrainLodStale, terrainLodStaleReason, pairedTerrainBinUrl, terrainBinMatchesMeta,
   terrainFieldMetaValid, terrainBoundsOk, terrainSurfaceHeightAt,
 } from './terrainMesh.js'
 import { createHash } from 'node:crypto'
@@ -286,6 +286,25 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(terrainLodStale(st(), st({ d: 90, py: 90 }), 50)).toBe(false)    // 但受 120 ms 节流
     expect(terrainLodStale(st(), st({ d: 110, py: 110 }), 500)).toBe(false) // 拉远仅 10% ⇒ 允许（仍够细）
     expect(terrainLodStale(st(), st({ d: 150, py: 150 }), 500)).toBe(true)  // 拉远 ≥40% ⇒ 可变粗
+  })
+
+  it('terrainLodStaleReason：给出触发判据，布尔 terrainLodStale 由它派生（判据数值不变）', () => {
+    const st = (o = {}) => ({
+      d: 100, px: 0, py: 100, pz: 0, ux: 0, uy: 1, uz: 0, fovY: 0.8, aspect: 16 / 9, ...o,
+    })
+    expect(terrainLodStaleReason(null, st(), 0)).toBe('first')
+    expect(terrainLodStaleReason(st(), st({ d: 90, py: 90 }), 500)).toBe('distance')
+    expect(terrainLodStaleReason(st(), st({ d: 150, py: 150 }), 500)).toBe('distance')
+    expect(terrainLodStaleReason(st(), st({ px: 6 }), 500)).toBe('lateral')          // 侧向 6% ≥ 5%
+    expect(terrainLodStaleReason(st(), st({ fovY: 0.81 }), 500)).toBe('fov')
+    expect(terrainLodStaleReason(st(), st({ aspect: 16 / 9 * 1.01 }), 500)).toBe('aspect')
+    expect(terrainLodStaleReason(st(), st({ d: 96, py: 96 }), 500)).toBeNull()
+    expect(terrainLodStaleReason(st(), st({ d: 90, py: 90 }), 50)).toBeNull()        // 节流挡住
+    for (const cur of [st(), st({ d: 90, py: 90 }), st({ px: 6 }), st({ fovY: 0.81 }), st({ aspect: 2 })]) {
+      for (const since of [0, 50, 500]) {
+        expect(terrainLodStale(st(), cur, since)).toBe(terrainLodStaleReason(st(), cur, since) !== null)
+      }
+    }
   })
 
   it('groundMapUv：回退/低档底图朝向契约（旧 PlaneGeometry+rotπ 逐点等价；review P1 回归锁）', () => {

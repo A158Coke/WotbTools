@@ -1,0 +1,5 @@
+env:
+  MOZ_LOG: ""
+args:
+  - --marionette
+  - --remote-allow-system-access

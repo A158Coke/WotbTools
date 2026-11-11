@@ -15,13 +15,13 @@ import { mapBases } from '../../data/mapBases.js'
 import { playableBounds } from '../../data/playableBounds.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
-  terrainLodState, terrainLodStale, terrainSurfaceHeightAt,
+  terrainLodState, terrainLodStaleReason, terrainSurfaceHeightAt,
 } from '../terrainMesh.js'
 import { treeFrame } from '../destructibles.js'
 import type { DestructibleFoldState } from '../destructibles.js'
 import { writeHiddenInstance, fallMatrix } from '../sceneryInstancing.js'
 import { clearSceneryMatCache } from '../sceneryMaterials.js'
-import { loadTerrain, buildGroundGeometry, makeGroundMaterial,
+import { loadTerrain, buildGroundGeometry, groundGeometryFromData, makeGroundMaterial,
          groundLayerKeys, setupGroundTextures } from '../groundPass.js'
 import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore } from '../mapLighting.js'
 import type { MapLightingData } from '../mapLighting.js'
@@ -33,6 +33,8 @@ import { BOUNDARY_THICK } from './boundary.js'
 import { assetProvider } from '../assetProvider.js'
 import { createLoadProgress } from '../loadProgress.js'
 import { createPerf } from './perf.ts'
+import { createTerrainLodScheduler } from './terrainLodScheduler.ts'
+import type { TerrainLodScheduler, TerrainLodJob, GroundGeometryData, TerrainSwapInfo } from './terrainLodScheduler.ts'
 
 type PerfHandle = ReturnType<typeof createPerf>
 
@@ -65,6 +67,8 @@ interface GroundGeometryArgs {
   onDiagnostics: ((d: Record<string, unknown>) => void) | null | undefined
 }
 const buildGroundGeometryTyped = buildGroundGeometry as (a: GroundGeometryArgs) => THREE.BufferGeometry
+
+const groundGeometryFromDataTyped = groundGeometryFromData as (d: GroundGeometryData) => THREE.BufferGeometry
 
 const makeGroundMaterialTyped = makeGroundMaterial as (a: {
   layers: unknown
@@ -210,6 +214,10 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
   // 动画混合层材质（uTime 每帧写回放秒数；随 mapScenery dispose，会话失效）
   let animLayerMats: ShaderMaterial[] = [];
   let terrainLodPrev: unknown = null, terrainLodAt = 0;
+  // 运行期 LOD 重建在 Worker 里跑（Issue #728）；Worker 不可用 / 出错后整个页面回退同步路径。
+  let terrainScheduler: TerrainLodScheduler<unknown> | null = null;
+  let terrainWorkerFailed = false;
+  let terrainSrcField: unknown = null, terrainSrcMask: unknown = null;   // 已告知 Worker 的来源（引用比较）
   let perfTerrainChecks = 0, perfTerrainRebuilds = 0;
   // 场景遮挡候选格（**性能关键**）：早先对整个 `mapScenery` 做**递归全量**射线检测，
   // 会遍历**整张场景 GLB**（本工程实测 3000+ 节点、含全部树卡片批次）——
@@ -342,6 +350,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
+    terrainScheduler?.invalidate();   // 在途 Worker 结果按代号作废
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     annotationSurfaceGrid = null;   // 3D annotation 表面候选格同样属于会话场景
     groundLayers = null;
@@ -760,33 +769,94 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     }
     return (2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI;
   }
-  function buildTerrainGeometry() {
-    const perf = deps.perf()
-    const n = heightMeta?.size || 512;
-    const span = terrainSpanOf();
-    // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
+  /** 一次地形构建的相机侧参数（同步与 Worker 路径共用，逐值一致）。 */
+  function terrainBuildRequest() {
     const camera = deps.getCamera()
-    return buildGroundGeometryTyped({
-      field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
-      cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
+    return {
+      cam: camera ? { x: camera.position.x, y: camera.position.y, z: camera.position.z } : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
       // 阈值插值的 fov 按**客户端口径**传：引擎 `GetFOV()` 是相机配置的水平 fov、与画面宽高比无关
       // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
       // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
-      hFovDeg: terrainHFovDeg(),
+      hFovDeg: terrainHFovDeg() as number | null,
+      measure: !!deps.perf(),
+    }
+  }
+  function buildTerrainGeometry(reason = 'first', mode = 'sync') {
+    const perf = deps.perf()
+    const n = heightMeta?.size || 512;
+    const span = terrainSpanOf();
+    // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
+    const r = terrainBuildRequest()
+    return buildGroundGeometryTyped({
+      field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
+      cam: r.cam, fovY: r.fovY, aspect: r.aspect, hFovDeg: r.hFovDeg,
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
       refineMask: terrainRefineMask,
-      onDiagnostics: perf ? (data: Record<string, unknown>) => perf.event({ stage: 'terrain-build', ...data }) : undefined,
+      onDiagnostics: perf ? (data: Record<string, unknown>) => perf.event({ stage: 'terrain-build', ...data, mode, reason }) : undefined,
       cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,
     });
+  }
+  /** Worker 来源同步：高度场 / 走廊掩码的引用变了才重发（各自新代号，在途旧结果作废）。 */
+  function syncTerrainWorkerSource(sch: TerrainLodScheduler<unknown>) {
+    if (terrainSrcField !== heightField) {
+      terrainSrcField = heightField; terrainSrcMask = terrainRefineMask
+      sch.setSource({
+        field: heightField as Float32Array, n: heightMeta?.size || 512, span: terrainSpanOf(),
+        cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0, refineMask: terrainRefineMask,
+      })
+    } else if (terrainSrcMask !== terrainRefineMask) {
+      terrainSrcMask = terrainRefineMask
+      sch.setMask(terrainRefineMask)
+    }
+  }
+  function ensureTerrainScheduler() {
+    if (terrainScheduler || terrainWorkerFailed) return terrainScheduler
+    terrainScheduler = createTerrainLodScheduler<unknown>({
+      createWorker: () => (typeof Worker === 'undefined' ? null
+        : new Worker(new URL('./terrainBuild.worker.ts', import.meta.url), { type: 'module' }) as never),
+      onSwap: applyTerrainSwap,
+      // 待发快照相对刚换上的网格仍过期才再发（节流间隔已在换装时重置，这里只比较判据）
+      stillStale: (applied, next) => terrainLodStaleReason(applied, next, Infinity) !== null,
+      onWorkerLost: (_job, reason) => {
+        terrainWorkerFailed = true
+        terrainScheduler = null
+        terrainSrcField = null; terrainSrcMask = null
+        const perf = deps.perf()
+        if (perf) perf.event({ stage: 'terrain-build', mode: 'sync-fallback', reason: 'worker-lost', detail: reason })
+      },
+    })
+    return terrainScheduler
+  }
+  /** Worker 结果换装：主线程只做包装 + 换几何 + 后处理钩子。 */
+  function applyTerrainSwap(data: GroundGeometryData, job: TerrainLodJob<unknown>, info: TerrainSwapInfo) {
+    if (!terrainMesh || deps.destroyed()) return
+    const perf = deps.perf()
+    const t0 = performance.now()
+    const old = terrainMesh.geometry
+    terrainMesh.geometry = groundGeometryFromDataTyped(data)
+    old.dispose()
+    // 过期判定相对「屏幕上那张网格」：换装时才更新为该结果对应的相机快照
+    terrainLodPrev = job.snapshot
+    terrainLodAt = performance.now()
+    if (perf) perfTerrainRebuilds++
+    deps.constrainFreeCameraAltitude()
+    deps.reprojectAnnotationHeights()
+    deps.onTerrainReground()
+    if (perf) {
+      const swapMs = performance.now() - t0
+      perf.event({ stage: 'terrain-build', ...(data.diagnostics ?? {}), mode: 'worker', reason: job.reason, queueMs: info.queueMs, workerMs: info.workerMs, swapMs })
+      perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: swapMs })
+    }
   }
   /** 相机姿态变化时重建地形几何（见 terrainMesh.js `terrainLodStale`——滞回输入与
    *  `buildAdaptiveTerrain` 的判据同源：相机位置/视距/FOV/aspect）。视距单向滞回（拉近立即细化、
    *  拉远 ≥40% 才允许变粗）+ 侧向绕转（≥5% 视距）与 FOV/aspect 变化按新相机位置重算，两次重建
    *  至少隔 120 ms。保证网格**永不比客户端判据（同一相机位置）允许的层级更粗**——否则粗格插值会
    *  把地形抬到贴地薄结构之上（2026-10-10 用户"铁轨被盖、转视角又正常"）。重建成本 ≈ 一次四叉
-   *  遍历（~18 ms/帧预算内节流）。 */
+   *  遍历；实测整张网格（~15 万顶点）构建 240–570 ms（GeckoView 模拟器），所以运行期重建
+   *  在 Worker 里跑、结果晚 ~0.25–0.5 s 换上（Worker 不可用时回退同步）。 */
   function maybeRebuildTerrainLod(now = performance.now()) {
     const perf = deps.perf()
     const camera = deps.getCamera()
@@ -794,13 +864,21 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     if (perf) perfTerrainChecks++;
     if (!terrainMesh || !heightField || !camera || !controls) return;
     const cur = terrainLodState(camera, controls.target, camera.aspect);
-    if (!terrainLodStale(terrainLodPrev, cur, now - terrainLodAt)) return;
+    const reason = terrainLodStaleReason(terrainLodPrev, cur, now - terrainLodAt);
+    if (!reason) return;
+    // 异步路径：请求发给 Worker，网格在结果返回的那一帧换上（见 terrainLodScheduler.ts）
+    const sch = ensureTerrainScheduler()
+    if (sch) {
+      syncTerrainWorkerSource(sch)
+      if (sch.request({ request: terrainBuildRequest(), snapshot: cur, reason })) return
+    }
+    // 同步路径（Worker 不可用 / 出错的回退）：与异步前的行为逐字节一致
     terrainLodPrev = cur;
     terrainLodAt = now;
     if (perf) perfTerrainRebuilds++;
     const old = terrainMesh.geometry;
     const perfRebuildAt = perf ? performance.now() : 0;
-    terrainMesh.geometry = buildTerrainGeometry();
+    terrainMesh.geometry = buildTerrainGeometry(reason, 'sync-fallback');
     old.dispose();
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
@@ -978,6 +1056,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
     annotationSurfaceGrid = null;
+    terrainScheduler?.dispose(); terrainScheduler = null;   // 随 mapWorld 销毁 terminate Worker
     clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }
     // 逐图 IBL：先摘 scene.environment 再 dispose（three 的 PMREM 缓存随纹理释放）；
