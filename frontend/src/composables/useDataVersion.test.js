@@ -172,7 +172,8 @@ describe('useDataVersion', () => {
     const { options } = mod.useDataVersion()
     expect(options.value.map((option) => [option.value, option.preview])).toEqual([
       ['11.21.0', false],
-      ['supertest', true],
+      ['11.21.0_1', false],
+      ['11.4.0.130', true],
     ])
   })
 
