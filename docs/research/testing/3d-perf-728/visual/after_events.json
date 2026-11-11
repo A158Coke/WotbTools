@@ -1,0 +1,58 @@
+[
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 109.20000000018626,
+  "swapMs": 0.20000000018626451,
+  "vertices": 145225
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 81.90000000037253,
+  "swapMs": 0.09999999962747097,
+  "vertices": 145225
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 71.09999999962747,
+  "swapMs": 0.2999999998137355,
+  "vertices": 145225
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 73.69999999925494,
+  "swapMs": 0.20000000018626451,
+  "vertices": 146385
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 68.79999999981374,
+  "swapMs": 0.20000000018626451,
+  "vertices": 146945
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 101.79999999981374,
+  "swapMs": 0.2999999998137355,
+  "vertices": 151569
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 138.6000000005588,
+  "swapMs": 0.20000000018626451,
+  "vertices": 151169
+ },
+ {
+  "mode": "worker",
+  "reason": "lateral",
+  "queueMs": 106.3999999994412,
+  "swapMs": 0.10000000055879354,
+  "vertices": 150433
+ }
+]

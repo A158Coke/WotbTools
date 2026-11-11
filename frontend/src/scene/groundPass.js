@@ -15,9 +15,13 @@
 //     细分级不影响成像，故烘焙传 refineMask=null）。
 import * as THREE from 'three';
 import {
-  buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,
+  buildRefineMask, decodeTerrainField,
   pairedTerrainBinUrl, terrainBinMatchesMeta, terrainBoundsOk, terrainFieldMetaValid,
 } from './terrainMesh.js';
+import { buildGroundGeometryData } from './groundGeometryData.js';
+
+// 纯数据阶段（无 THREE 依赖，Worker 可直接 import）在 groundGeometryData.js；此处再导出，调用面不变。
+export { buildGroundGeometryData, groundGeometryTransferables } from './groundGeometryData.js';
 
 /** 分层地表纹理键集（客户端 `height_blend` 决定是否带 hmap 对）。 */
 export function groundLayerKeys(L) {
@@ -122,33 +126,29 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
   return out(null);
 }
 
-/** 地形几何装配（客户端同构自适应细分；算法与 UV 契约在 terrainMesh.js）。几何直接建在场景系。 */
+/** 纯数据 → `BufferGeometry`（主线程换装用；不做任何数值计算）。 */
+export function groundGeometryFromData(data) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
+  g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+  g.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  g.userData.terrainBuild = data.terrainBuild;
+  const bs = data.boundingSphere;
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(bs.center[0], bs.center[1], bs.center[2]), bs.radius);
+  return g;
+}
+
+/** 地形几何装配（客户端同构自适应细分；算法与 UV 契约在 terrainMesh.js）。几何直接建在场景系。
+ *  = 纯数据阶段 + 包装的同步组合（俯视烘焙脚本与回退路径用；签名与行为不变）。 */
 export function buildGroundGeometry({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
   onDiagnostics = null,
 }) {
-  let start = onDiagnostics ? performance.now() : 0;
-  const { positions, indices, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
-    field, n, span, cam, fovY, aspect, hFovDeg, refineMask,
-  });
-  const adaptiveMs = onDiagnostics ? performance.now() - start : 0;
-  if (onDiagnostics) start = performance.now();
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // 底图 UV：回退档（无分层）把 `ground.webp` 直接摊在地形上——分层着色的 UV 在
-  // 片元由世界坐标反推，但回退材质吃几何 `uv`，缺了整张图退化成单 texel 常量（2026-10-10 review P1）
-  g.setAttribute('uv', new THREE.BufferAttribute(groundMapUv(positions, span, cx, cz), 2));
-  g.setIndex(new THREE.BufferAttribute(indices, 1));
-  g.userData.terrainBuild = { positions, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget, n, span };
-  const assemblyMs = onDiagnostics ? performance.now() - start : 0;
-  if (onDiagnostics) start = performance.now();
-  g.computeVertexNormals();
-  const normalsMs = onDiagnostics ? performance.now() - start : 0;
-  if (onDiagnostics) start = performance.now();
-  g.computeBoundingSphere();
+  const data = buildGroundGeometryData({ field, n, span, cam, fovY, aspect, hFovDeg, refineMask, cx, cz, measure: !!onDiagnostics });
+  const g = groundGeometryFromData(data);
   if (onDiagnostics) {
-    const boundsMs = performance.now() - start;
-    try { onDiagnostics({ adaptiveMs, assemblyMs, normalsMs, boundsMs, vertices: positions.length / 3, triangles: indices.length / 3, overBudget }); }
+    try { onDiagnostics(data.diagnostics); }
     catch { /* 诊断消费者不得改变地形构建行为 */ }
   }
   return g;

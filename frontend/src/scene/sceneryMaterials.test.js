@@ -43,6 +43,7 @@ const asmSrc = readSrc(resolve(here, 'sceneryAssembly.ts'), 'utf8')
 // 地面 pass SSOT（2026-10-14 抽层：地形数据/几何、分层地表材质、水面海岸线资源——运行时与
 // 俯视烘焙共用同一份，见 groundPass.js 头部；地面相关守卫随迁读取新源）
 const gpSrc = readSrc(resolve(here, 'groundPass.js'), 'utf8')
+const gdSrc = readSrc(resolve(here, 'groundGeometryData.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // #913 拆分后的运行时 owner（守卫随实现迁移）：地面/LOD/IBL/照明 → mapWorld，
@@ -504,21 +505,23 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 2026-10-14 地面 pass 抽层后：内核从 groundPass.js 引地形入口，地形内核（buildAdaptiveTerrain/
     // decodeTerrainField/groundMapUv/配对）在 groundPass 内消费（份额单实现见 groundPass.test.js）
     expect(mapWorldSrc).toMatch(/import \{[^}]*\bloadTerrain\b[^}]*\bbuildGroundGeometry\b[^}]*\} from '\.\.\/groundPass\.js'/)
-    expect(mapWorldSrc).toMatch(/import \{[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\.\/terrainMesh\.js'/)
-    expect(gpSrc).toMatch(/buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,/)
+    expect(mapWorldSrc).toMatch(/import \{[^}]*\bterrainLodState\b[^}]*\bterrainLodStaleReason\b[^}]*\} from '\.\.\/terrainMesh\.js'/)
+    expect(gpSrc).toMatch(/buildRefineMask, decodeTerrainField,/)
+    expect(gdSrc).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv \} from '\.\/terrainMesh\.js'/)   // 纯数据阶段（Worker 共用，无 THREE）
     expect(mapWorldSrc).toMatch(/const geo = buildTerrainGeometry\(\);/)
-    expect(mapWorldSrc).toMatch(/function buildTerrainGeometry\(\) \{/)
+    expect(mapWorldSrc).toMatch(/function buildTerrainGeometry\(reason = 'first', mode = 'sync'\) \{/)
     expect(mapWorldSrc).toMatch(/field: heightField, n, span,/)
     expect(mapWorldSrc).toMatch(/maybeRebuildTerrainLod\(\);/)
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
     // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
-    expect(mapWorldSrc).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
+    expect(mapWorldSrc).toMatch(/const reason = terrainLodStaleReason\(terrainLodPrev, cur, now - terrainLodAt\);\s+if \(!reason\) return;/)
     expect(mapWorldSrc).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
     // 回退/低档底图 UV（review P1）：几何必须带 uv——分层着色在片元反推 UV，
     // 但回退材质 `MeshBasicMaterial({ map })` 吃几何属性，缺了整张底图退化成单 texel
-    expect(gpSrc).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(groundMapUv\(positions, span, cx, cz\), 2\)\)/)
+    expect(gdSrc).toMatch(/const uvs = groundMapUv\(positions, span, cx, cz\)/)
+    expect(gpSrc).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(data\.uvs, 2\)\)/)
     // sampleHeight 采引擎口径（除 n，非 n−1）
     expect(mapWorldSrc).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
     // 几何已建在场景系：不得再有 PlaneGeometry 地形 + sampleHeight 位移 + 旋转/平移放置
@@ -557,7 +560,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⇒ 运行时恒传客户端正常相机；不传的话窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑到
     // 狙击镜档（放松最多 ~1.8×），同一机位我们的网格比客户端更粗（2026-10-14 用户报障）
     expect(meshSrc).toMatch(/export const CLIENT_NORMAL_CAMERA_FOV_H = 70/)
-    expect(mapWorldSrc).toMatch(/hFovDeg: terrainHFovDeg\(\),/)
+    expect(mapWorldSrc).toMatch(/hFovDeg: terrainHFovDeg\(\)( as number \| null)?,/)
     expect(mapWorldSrc).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\.\/terrainMesh\.js'/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
@@ -766,7 +769,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
-    expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
+    expect(gdSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundGeometryData（groundPass 同步组合 + Worker 共用，俯视烘焙同一份）
     expect(mapWorldSrc).toMatch(/buildGroundGeometryTyped\(\{/)
   })
 
@@ -1336,7 +1339,7 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
     const fn = mapWorldSrc.slice(start, mapWorldSrc.indexOf('\n  }', start))
     expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
     expect(fn).not.toMatch(/terrainLodDist/)
-    expect(fn).toMatch(/terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)/)
+    expect(fn).toMatch(/terrainLodStaleReason\(terrainLodPrev, cur, now - terrainLodAt\)/)
   })
 })
 

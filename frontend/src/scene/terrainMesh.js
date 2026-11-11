@@ -156,16 +156,24 @@ export function terrainLodState(camera, target, aspect) {
  *    只改投影不重建地形，窗口/名册布局变化后同样会残留过期 LOD。
  *  全部触发共用 `minIntervalMs` 节流（重建 ≈ 一次四叉遍历，帧预算上限 ≈1 次/120 ms）。 */
 export function terrainLodStale(prev, cur, sinceMs, minIntervalMs = 120) {
-  if (!prev || !(prev.d > 0)) return true;                 // 首帧
+  return terrainLodStaleReason(prev, cur, sinceMs, minIntervalMs) !== null;
+}
+
+/** `terrainLodStale` 的原因旁路：返回命中的判据（`first` / `distance` / `lateral` / `fov` / `aspect`），
+ *  不过期或被节流挡住时返回 null。判据数值与先后顺序是 `terrainLodStale` 的唯一来源——
+ *  布尔结果由本函数派生（`!== null`），诊断只读原因，不影响是否重建。 */
+export function terrainLodStaleReason(prev, cur, sinceMs, minIntervalMs = 120) {
+  if (!prev || !(prev.d > 0)) return 'first';                 // 首帧
+  const gate = (reason) => (sinceMs >= minIntervalMs ? reason : null);
   const rel = (cur.d - prev.d) / Math.max(1, prev.d);
-  if (rel <= -0.05 || rel >= 0.40) return sinceMs >= minIntervalMs;
+  if (rel <= -0.05 || rel >= 0.40) return gate('distance');
   const dx = cur.px - prev.px, dy = cur.py - prev.py, dz = cur.pz - prev.pz;
   const along = dx * cur.ux + dy * cur.uy + dz * cur.uz;
   const lat = Math.hypot(dx - along * cur.ux, dy - along * cur.uy, dz - along * cur.uz);
-  if (lat >= 0.05 * Math.max(1, cur.d)) return sinceMs >= minIntervalMs;
-  if (Math.abs(cur.fovY - prev.fovY) > 1e-3 * Math.max(1e-3, prev.fovY)) return sinceMs >= minIntervalMs;
-  if (Math.abs(cur.aspect - prev.aspect) > 1e-3 * Math.max(1e-3, prev.aspect)) return sinceMs >= minIntervalMs;
-  return false;
+  if (lat >= 0.05 * Math.max(1, cur.d)) return gate('lateral');
+  if (Math.abs(cur.fovY - prev.fovY) > 1e-3 * Math.max(1e-3, prev.fovY)) return gate('fov');
+  if (Math.abs(cur.aspect - prev.aspect) > 1e-3 * Math.max(1e-3, prev.aspect)) return gate('aspect');
+  return null;
 }
 
 /** 底图贴图 UV（低档/均衡档与分层材质不可用时回退：**契约化的 `ground.webp`** 摊在**地形网格**上）。
