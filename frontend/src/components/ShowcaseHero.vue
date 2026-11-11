@@ -134,6 +134,8 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   }
   .showcase-hero-description { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
   .showcase-hero-stats { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
+  /* 槽内的 stat 标签（.lb-hero-stat-label / .tp-hero-stat-label）显式设了深色，继承打不开，强制跟随容器浅色 */
+  .showcase-hero-stats :deep(span) { color: inherit; }
   .showcase-hero-stats :deep(strong) { color: var(--theme-hero-stat-color, var(--color-accent-text)); }
   .showcase-hero-content { padding: var(--space-10) var(--space-4) var(--space-4); }
   .showcase-hero-title { font: var(--type-h1); }
