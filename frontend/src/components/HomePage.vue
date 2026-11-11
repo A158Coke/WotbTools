@@ -241,7 +241,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
    按 .home-callouts 的 canvas 衬底先例垫同色底板 + 环形 box-shadow（纯绘制，不产生布局位移），
    强调色文字保留。其余主题遮罩厚，实测达标，不加（不改无关主题）。
    #1d63b8 × winter canvas #eef3f8 = 实测 5.33:1 ≥ 4.5（AA）。 */
-[data-ui-profile='winter'] .home-hero-kicker { background: var(--color-canvas); box-shadow: 0 0 0 var(--space-2) var(--color-canvas); }
+[data-ui-profile='winter'] .home-hero-kicker { align-self: flex-start; background: var(--color-canvas); box-shadow: 0 0 0 var(--space-2) var(--color-canvas); }
 .home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-showcase); letter-spacing: -0.03em; }
 /* 中文不收字距：负字距会让「一」贴到下一个字上，看起来像破折号（「—站式」） */
 .home-hero h1:lang(zh) { letter-spacing: 0; }

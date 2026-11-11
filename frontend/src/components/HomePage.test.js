@@ -304,6 +304,9 @@ describe('HomePage winter kicker backing and CTA hierarchy', () => {
     expect(rule, 'winter kicker backing rule must exist').toBeTruthy()
     expect(rule[0]).toContain('background: var(--color-canvas)')
     expect(rule[0]).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    // kicker 是 .home-hero-inner（flex column）的 child：必须显式取消 stretch，
+    // 否则衬底横向铺满 Hero（review F1）；真实渲染宽度由浏览器验收覆盖
+    expect(rule[0]).toContain('align-self: flex-start')
     // 只限冬季：其余主题遮罩厚、实测达标，不允许顺手改无关主题
     expect(style.match(/\[data-ui-profile='winter'\] \.home-hero-kicker/g)).toHaveLength(1)
   })
