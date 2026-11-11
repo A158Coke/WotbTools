@@ -43,41 +43,43 @@ describe('firstIndexAfter（seek 游标语义）', () => {
 })
 
 describe('playbackScene.seekTo 的游标接线（防回归）', () => {
-  // 场景内核依赖 WebGL，无法直接实例化；此仓已有源码级契约测试的先例
-  // （见 AgentReplay3D 主题契约测试）。此处断言 seekTo 把**三个**游标都重定——
-  // 只重定 shotPtr 是 PR #411 的 P0：transient 游标被 clearEffects 归零后会被
-  // 紧随的 tick() 补播全部历史事件。
+  // 行为语义已由行为测试接替（#827 Wave 1 Pilot）：
+  //   - 游标重定/不补播历史/事件不丢弃 → playback/battleRuntime.seek.test.ts（运行生产代码）
+  //   - rewind/clear 内部实现 → playback/transientFeedback3d.test.ts（既有模块行为测试）
+  // 此处仅保留 façade seekTo 三行 glue 的 Integration Contract 守卫：场景内核依赖 WebGL
+  // 无法实例化、宿主无注入点（F3 分类标注）。只重定 shotPtr 是 PR #411 的 P0——
+  // transient 游标被 clearEffects 归零后会被紧随的 tick() 补播全部历史事件。
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
-  // 伤害/击毁游标 2026-11-05 随事件源出仓 playback/transientFeedback3d.ts（#820 Wave B6B），
-  // 守卫随实现迁移（与边界带同纪律）：场景侧只保留 rewind/clear 接线。
-  const transientSrc = readFileSync(resolve(here, 'playback/transientFeedback3d.ts'), 'utf8')
-  // 射击游标与动态层清除 2026-11-06 出仓 playback/battleRuntime.ts（#820 Step 5），
-  // 宿主 seekTo 只保留编排接线
-  const battleSrc = readFileSync(resolve(here, 'playback/battleRuntime.ts'), 'utf8')
   const seekTo = src.slice(src.indexOf('function seekTo'), src.indexOf('function seekTo') + 900)
 
-  it('三个游标（射击/伤害/击毁）都重定到 seek 时刻之后', () => {
+  it('façade glue：seekTo 依次接线 resetShotsTo 与 transients.rewind（行为语义见 battleRuntime.seek.test.ts）', () => {
     expect(seekTo).toMatch(/battle\.resetShotsTo\(firstIndexAfter\(DATA\.shots, T,/)
     expect(seekTo).toMatch(/transients\.rewind\(T\)/)
-    // rewind 内部把两个游标都放到 t 之后
-    expect(transientSrc).toMatch(/function rewind\(t: number\): void \{[\s\S]{0,200}?dmgPtr = firstIndexAfter\(dmgEvents, t\)[\s\S]{0,120}?burstPtr = firstIndexAfter\(burstEvents, t\)/)
-  })
-
-  it('clearEffects 会清空 transient 状态与游标（seek 不补播的另一半）', () => {
-    expect(battleSrc).toMatch(/function clearEffects\(\)[\s\S]{0,1200}?transients\.clear\(\)/)
-    // 两张 Map + 两个游标归零的实现随状态出仓
-    expect(transientSrc).toMatch(/ghostByEid\.clear\(\)[\s\S]{0,200}?dmgPtr = 0[\s\S]{0,120}?burstPtr = 0/)
   })
 })
 
 describe('边界 fail-closed（PR #411 P0-2）', () => {
-  // 边界带 2026-10-24 出仓 playback/boundary.js（工厂持有 boundaryGroup），守卫随实现迁移
-  const bandSrc = readFileSync(resolve(here, 'playback/boundary.ts'), 'utf8')
-  // 边界带重建调用 2026-11-06 随地图资产段出仓 playback/mapWorld.ts（#820 Step 2）
+  // buildBoundary 空边界语义已行为化（#827）：createBoundaryBand 工厂无需 WebGL，
+  // 直接断言 build(null) 清空已有条带且不新增对象。调用点权威来源守卫（:83）随
+  // mapWorld harness 移交 Wave 2。
   const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
 
-  it('buildBoundary 对空边界只清理不绘制', () => {
-    expect(bandSrc).toMatch(/function build\(bounds: BoundaryBounds \| null \| undefined, thick: number\): void \{\s*clear\(\);\s*if \(!bounds\) return;/)
+  it('buildBoundary 对空边界只清理不绘制（行为测试）', async () => {
+    const { createBoundaryBand } = await import('./playback/boundary.ts')
+    const added = []
+    const band = createBoundaryBand({
+      getScene: () => ({ add: (o) => added.push(o), remove: () => {} }),
+      disposeObject3D: () => {},
+      groundY: () => 0,
+    })
+    const bounds = { cx: 0, cz: 0, hx: 50, hz: 50 }
+    band.build(bounds, 2)
+    const countAfterBuild = added.length
+    expect(countAfterBuild).toBeGreaterThan(0)
+    band.build(null, 2)
+    expect(added.length).toBe(countAfterBuild) // 只清理，不新增对象
+    band.build(undefined, 2)
+    expect(added.length).toBe(countAfterBuild)
   })
 
   it('调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底', () => {

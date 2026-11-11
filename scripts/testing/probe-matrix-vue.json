@@ -1044,6 +1044,63 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "ms": 23350
+    },
+    {
+      "source": "src/components/TankResearchPanel.vue",
+      "testFiles": [
+        "frontend/src/components/TankResearchPanel.layout.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 2861,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 2264,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 16043,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 2387,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 2225,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 3205,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "ms": 24383
     }
   ]
 }
