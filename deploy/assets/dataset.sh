@@ -39,7 +39,8 @@ CATALOG="$ROOT/versions.json"
 AUDIT="$ROOT/release-log.jsonl"
 TOOL="${ASSET_RELEASE_TOOL:-$ROOT/bin/asset_release.py}"
 PYTHON="${PYTHON:-python3}"
-DATASET_ID_RE='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
+# `_` = client SmartDLC slot naming (s11.21.0_1.yaml -> 11.21.0_1); mirrors asset_release.py
+DATASET_ID_RE='^[a-z0-9]([a-z0-9._-]*[a-z0-9])?$'
 
 CATALOG_SNAPSHOT=""
 

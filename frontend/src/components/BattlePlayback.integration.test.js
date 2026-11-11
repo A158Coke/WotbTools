@@ -1552,6 +1552,9 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-annotation-entry"]').exists()).toBe(!compact)
     expect(wrapper.findAll('[data-test="pb-annot-close"]')).toHaveLength(1)
     expect(wrapper.get('[data-test="pb-transport-controls"]').element.style.display === 'none').toBe(compact)
+    // F2：紧凑标注态整行隐藏（含折叠按钮）——标注工具条接替传输行，不额外占一行；
+    // 隐藏的折叠按钮不再暴露 aria-expanded（其指向的内容此时不可见）。
+    expect(wrapper.get('.pb-transport-row').element.style.display === 'none').toBe(compact)
     expect(controls.props('playing')).toBe(false)
     await wrapper.get('[data-test="pb-annot-TD"]').trigger('click')
     const viewport = wrapper.get('[data-test="pb-viewport"]')
@@ -2993,5 +2996,88 @@ describe('2D 位姿与 3D 同源（poseFacet 通道）', () => {
     }
     expect(await leftAt(20)).toBeCloseTo(pctOf(0), 1)     // 覆盖外 → canonical 的 x=0（不是 eid 2 的 150）
     expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)   // 进入覆盖（raw 135）→ eid 2 的通道值
+  })
+})
+
+describe('2D 工具栏折叠与名册浮层（§2d-toolbar-collapse / §roster-overlay）', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('底部工具栏折叠后只留恢复入口，再展开恢复原内容；折叠会关闭 Display 面', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    const toggle = () => wrapper.get('[data-test="pb-transport-toggle"]')
+    const content = () => wrapper.get('[data-test="pb-transport-controls"]')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(content().attributes('style') || '').not.toContain('display: none')
+    // 打开 Display 面后折叠：折叠必须同时收起二级面（与 3D 同语义）
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.displayOpened()).toBe(true)
+    await toggle().trigger('click')
+    await flushPromises()
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(content().attributes('style')).toContain('display: none')
+    expect(wrapper.vm.displayOpened()).toBe(false)
+    // 折叠时 aria-controls 指向仍在 DOM 的传输内容（可达恢复入口）
+    expect(content().attributes('id')).toBe(toggle().attributes('aria-controls'))
+    // 恢复：内容回来了，播放时间不变
+    const time = wrapper.vm.currentTime
+    await toggle().trigger('click')
+    await flushPromises()
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(content().attributes('style') || '').not.toContain('display: none')
+    expect(wrapper.vm.currentTime).toBe(time)
+  })
+
+  it('名册浮层收纳/展开不改变选中与时间；手机横屏默认收纳', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.classes()).toContain('pb-roster-lanes')
+    await wrapper.get('[data-test="pb-marker-1001"]').trigger('click', { clientX: 0, clientY: 0 })
+    const time = wrapper.vm.currentTime
+    const selected = wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')
+    const entry = () => wrapper.get('[data-test="pb-roster-entry"]')
+    expect(entry().attributes('aria-pressed')).toBe('true')
+    await entry().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('pb-roster-lanes')
+    expect(entry().attributes('aria-pressed')).toBe('false')
+    expect(wrapper.vm.currentTime).toBe(time)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+    await entry().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
+  })
+
+  it('手机横屏（phoneLandscape）默认收纳名册浮层，入口仍是传输条上的 roster 按钮', async () => {
+    stubRaf()
+    vi.stubGlobal('innerWidth', 844)
+    const mql = (query) => ({
+      matches: query === PLAYBACK_MOBILE_QUERY,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    vi.stubGlobal('matchMedia', mql)
+    const wrapper = mountPlayback(makeOverview(), 12)
+    await flushPromises()
+    expect(wrapper.classes()).toContain('pb-phone-landscape')
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-roster-entry"]').attributes('aria-pressed')).toBe('false')
+    await wrapper.get('[data-test="pb-roster-entry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="pb-roster-entry"]').attributes('aria-pressed')).toBe('true')
   })
 })

@@ -2772,6 +2772,425 @@ async function runRotationScenario(env, scenario) {
  * 早先「148px navigation rail | map」的模型已整体移除，这里锁的是替代它的契约：
  * 全屏本身不产生任何常驻侧栏，⚙ 的浮面既不离开 gear 也不越出视口。
  */
+/**
+ * §2d-toolbar-collapse / §roster-overlay：2D 工具栏折叠与名册浮层的真浏览器交互回归。
+ * 夹具 = playback-controls.html（生产 BattlePlayback + 生产 CSS）：
+ *   · 手机横屏默认收纳名册、Desktop / 平板默认展开；
+ *   · 传输条折叠后只剩恢复入口（命中测试必须命中按钮本身）；
+ *   · 名册浮层开合不得改变地图正方形面积（mapShare 独立度量），浮层不得盖住传输控件；
+ *   · 展开状态下选中名册行、+5s seek 与播放都必须继续正确。
+ */
+const PLAYBACK_COLLAPSE_SCENARIOS = [
+  { name: 'pb-collapse-844x390-landscape-coarse', width: 844, height: 390, touch: true, duration: 60 },
+  { name: 'pb-collapse-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
+  { name: 'pb-collapse-600x320-landscape-coarse', width: 600, height: 320, touch: true, duration: 60 },
+  { name: 'pb-collapse-390x844-portrait-coarse', width: 390, height: 844, touch: true, duration: 60 },
+  { name: 'pb-collapse-1280x900-desktop', width: 1280, height: 900, touch: false, duration: 60 },
+]
+
+function playbackCollapseProbe() {
+  const root = document.querySelector('[data-test="battle-playback"]')
+  if (!root) return { found: false }
+  const rect = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }
+  }
+  const rectOf = (sel) => rect(document.querySelector(sel))
+  const laneLeft = document.querySelector('[data-test="pb-team-lane-left"]')
+  const laneRight = document.querySelector('[data-test="pb-team-lane-right"]')
+  const entry = document.querySelector('[data-test="pb-roster-entry"]')
+  const transportContent = document.querySelector('[data-test="pb-transport-controls"]')
+  const toggle = document.querySelector('[data-test="pb-transport-toggle"]')
+  const map = document.querySelector('.pb-map')
+  const hitSelf = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    const cx = Math.round(r.left + r.width / 2)
+    const cy = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(Math.min(Math.max(cx, 1), innerWidth - 1), Math.min(Math.max(cy, 1), innerHeight - 1))
+    return hit === el || el.contains(hit)
+  }
+  const mapRect = rect(map)
+  return {
+    found: true,
+    phoneLandscape: root.classList.contains('pb-phone-landscape'),
+    formClass: Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null,
+    lanes: !!laneLeft && !!laneRight,
+    laneRect: rect(laneLeft),
+    laneRectRight: rect(laneRight),
+    stageRect: rectOf('.pb-map-stage'),
+    mapRect,
+    mapShare: mapRect ? (mapRect.width * mapRect.height) / (innerWidth * innerHeight) : null,
+    transportRect: rectOf('[data-test="pb-transport-slot"]'),
+    rosterEntry: entry ? { pressed: entry.getAttribute('aria-pressed'), hitSelf: hitSelf(entry) } : null,
+    rosterRows: document.querySelectorAll('[data-test="pb-roster-row"]').length,
+    selectedRows: document.querySelectorAll('[data-test="pb-roster-row"][aria-pressed="true"]').length,
+    transportContentHidden: transportContent ? getComputedStyle(transportContent).display === 'none' : null,
+    transportToggle: toggle ? { expanded: toggle.getAttribute('aria-expanded'), hitSelf: hitSelf(toggle), controls: toggle.getAttribute('aria-controls') } : null,
+    time: document.querySelector('[data-test="pb-time"]') ? document.querySelector('[data-test="pb-time"]').textContent.trim() : null,
+    pageScrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: innerWidth,
+    viewportHeight: innerHeight,
+  }
+}
+
+async function runPlaybackCollapseScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+
+  await page.goto(env.origin + '/scripts/browser-fixtures/playback-controls.html?duration=' + scenario.duration + '&players=2')
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-play"]'), { label: 'playback controls' })
+  await delay(300)
+  const portrait = scenario.height > scenario.width
+
+  const base = await page.probe(playbackCollapseProbe)
+  check(failures, base.found, 'fixture must mount the production BattlePlayback')
+  check(failures, base.pageScrollWidth <= base.viewportWidth + 1,
+    'page-level horizontal overflow at default state: ' + base.pageScrollWidth + ' > ' + base.viewportWidth)
+
+  if (base.phoneLandscape) {
+    check(failures, base.lanes === false, 'phone landscape must collapse the roster overlay by default (map first)')
+    check(failures, !!base.rosterEntry && base.rosterEntry.pressed === 'false' && base.rosterEntry.hitSelf === true,
+      'phone landscape must keep a reachable roster entry in the transport bar (off by default)')
+  } else if (!portrait) {
+    check(failures, base.lanes === true, 'desktop / tablet landscape must expand the roster overlay by default')
+    check(failures, !!base.rosterEntry && base.rosterEntry.pressed === 'true' && base.rosterEntry.hitSelf === true,
+      'desktop / tablet roster entry must exist, be pressed and hit-testable')
+  }
+
+  const collapsedMapWidth = base.mapRect ? base.mapRect.width : null
+
+  if (!portrait) {
+    // Desktop / 平板默认展开：先归位到「收纳」基线，再从它验证展开语义。
+    if (base.lanes) {
+      const resetRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+      check(failures, clicked(resetRes), 'roster entry baseline collapse click failed: ' + resetRes)
+    }
+    const collapsedShare = (await page.probe(playbackCollapseProbe)).mapShare
+    const expandRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+    check(failures, clicked(expandRes), 'roster entry click failed: ' + expandRes)
+    const open = await page.probe(playbackCollapseProbe)
+    check(failures, open.lanes === true, 'roster entry must expand both overlay lanes')
+    check(failures, open.rosterEntry.pressed === 'true', 'roster entry must report aria-pressed=true while open')
+    check(failures, Math.abs(open.mapRect.width - collapsedMapWidth) <= 1,
+      'roster overlay must not change the map square (collapsed=' + collapsedMapWidth + ' open=' + open.mapRect.width + ')')
+    check(failures, open.mapShare >= collapsedShare - 0.001,
+      'roster overlay must not reduce map viewport share (' + collapsedShare + ' -> ' + open.mapShare + ')')
+    check(failures, open.laneRect.left >= open.stageRect.left - 0.5 && open.laneRectRight.right <= open.stageRect.right + 0.5,
+      'roster lanes must stay inside the map stage horizontally')
+    check(failures, open.laneRect.bottom <= open.transportRect.top + 1,
+      'expanded roster lane must not cover the transport controls (lane.bottom=' + open.laneRect.bottom + ' transport.top=' + open.transportRect.top + ')')
+    check(failures, Math.abs(open.laneRect.width - open.laneRectRight.width) <= 0.5, 'both roster lanes must share one width')
+
+    const rowRes = await clickElement(page, '[data-test="pb-team-lane-left"] [data-test="pb-roster-row"]')
+    check(failures, clicked(rowRes), 'roster row click failed: ' + rowRes)
+    const selected = await page.probe(playbackCollapseProbe)
+    check(failures, selected.selectedRows >= 1, 'clicking an expanded roster row must select that vehicle')
+    const timeBeforeSeek = selected.time
+    const seekRes = await clickElement(page, '[data-test="pb-fwd5"]')
+    check(failures, clicked(seekRes), '+5s click failed: ' + seekRes)
+    const afterSeek = await page.waitForValue(
+      'document.querySelector(\'[data-test="pb-time"]\').textContent.trim()',
+      (value) => value !== timeBeforeSeek,
+      { timeout: 5000, label: 'clock after +5s with roster open' },
+    ).catch(() => null)
+    check(failures, afterSeek !== null, '+5s was a silent no-op with the roster overlay open: clock stayed ' + timeBeforeSeek)
+
+    const collapseRes = await clickElement(page, '[data-test="pb-roster-entry"]')
+    check(failures, clicked(collapseRes), 'roster entry collapse click failed: ' + collapseRes)
+    const closed = await page.probe(playbackCollapseProbe)
+    check(failures, closed.lanes === false, 'roster entry must collapse both overlay lanes')
+    check(failures, Math.abs(closed.mapRect.width - collapsedMapWidth) <= 1,
+      'collapsing the roster must restore the map square (' + collapsedMapWidth + ' -> ' + closed.mapRect.width + ')')
+    check(failures, closed.pageScrollWidth <= closed.viewportWidth + 1,
+      'page-level horizontal overflow with the roster expanded: ' + closed.pageScrollWidth + ' > ' + closed.viewportWidth)
+  }
+
+  const timeBeforeCollapse = (await page.probe(playbackCollapseProbe)).time
+  const toggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
+  check(failures, clicked(toggleRes), 'transport toggle click failed: ' + toggleRes)
+  const collapsed = await page.probe(playbackCollapseProbe)
+  check(failures, collapsed.transportContentHidden === true, 'collapsing the toolbar must hide the transport content (v-show)')
+  check(failures, collapsed.transportToggle.expanded === 'false' && collapsed.transportToggle.hitSelf === true,
+    'the collapsed toolbar must leave a reachable restore entry that hit-tests to itself')
+  check(failures, collapsed.time === timeBeforeCollapse, 'collapsing the toolbar must not move the clock (' + timeBeforeCollapse + ' -> ' + collapsed.time + ')')
+  const expandToggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
+  check(failures, clicked(expandToggleRes), 'transport restore click failed: ' + expandToggleRes)
+  const restored = await page.probe(playbackCollapseProbe)
+  check(failures, restored.transportContentHidden === false, 'restoring the toolbar must show the transport content again')
+  check(failures, restored.time === timeBeforeCollapse, 'restoring the toolbar must not move the clock')
+
+  await clickElement(page, '[data-test="pb-play"]')
+  const advanced = await page
+    .waitForValue('document.querySelector(\'[data-test="pb-time"]\').textContent.trim()', (value) => value !== timeBeforeCollapse,
+      { timeout: 5000, label: 'clock advancing after restore + play' })
+    .catch(() => null)
+  check(failures, advanced !== null, 'play after collapse/restore was a silent no-op: clock stayed ' + timeBeforeCollapse)
+  const final = await page.probe(playbackCollapseProbe)
+  check(failures, final.pageScrollWidth <= final.viewportWidth + 1,
+    'page-level horizontal overflow at the end: ' + final.pageScrollWidth + ' > ' + final.viewportWidth)
+
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: scenario.width + 'x' + scenario.height, mapShare: base.mapShare })
+}
+
+/**
+ * §2d-shellnav：600×320 沉浸态下的**真实 Shell 导航所有权**回归。
+ *
+ * 与 pb-collapse-* 的差别：这里挂载的是**真实应用**（startFixtureServer({ realReplay: true })，
+ * 只有 auth 边界替身，AppShell / shellChrome / AppNavDrawer / 回放解析全部是生产实现），
+ * 不是 playback-controls.html 那种直接挂 BattlePlayback 的夹具——只有真实 AppShell 才能
+ * 证明 `SHELL_CHROME_KEY` / `OPEN_NAV_DRAWER_KEY` 的注入与 `hostNav` 所有权交接：
+ *   · 传输条展开时承载唯一可见导航入口（fallback .immersive-nav 必须不存在）；
+ *   · 传输条折叠后所有权交还 AppShell（fallback 出现且可点，传输条内导航隐藏）；
+ *   · 恢复后所有权回到传输条（fallback 消失）。
+ * 任何一侧漏渲染 / 双渲染（两个 nav-menu 同时可见）都会让 navCount 断言失败。
+ */
+const PLAYBACK_SHELLNAV_SCENARIOS = [
+  { name: 'pb-shellnav-600x320-landscape-coarse', width: 600, height: 320, touch: true, duration: 60 },
+]
+
+function playbackShellNavProbe() {
+  const rectOf = (el) => {
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    if (!(r.width > 0 && r.height > 0)) return { visible: false }
+    const cx = Math.min(Math.max(Math.round(r.left + r.width / 2), 1), innerWidth - 1)
+    const cy = Math.min(Math.max(Math.round(r.top + r.height / 2), 1), innerHeight - 1)
+    const hit = document.elementFromPoint(cx, cy)
+    return {
+      visible: true,
+      left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height,
+      hitSelf: !!(hit && (hit === el || el.contains(hit) || (hit.contains(el) && hit.tagName !== 'BODY'))),
+    }
+  }
+  const controlSelectors = [
+    ['nav', '[data-testid="nav-menu"]'],
+    ['back5', '[data-test="pb-back5"]'],
+    ['play', '[data-test="pb-play"]'],
+    ['fwd5', '[data-test="pb-fwd5"]'],
+    ['speed', '[data-test="pb-speed-current"]'],
+    ['fullscreen', '[data-test="pb-fullscreen"]'],
+    ['annotation', '[data-test="pb-annotation-entry"]'],
+    ['roster', '[data-test="pb-roster-entry"]'],
+    ['gear', '[data-test="pb-secondary-entry"]'],
+    ['clock', '[data-test="pb-time"]'],
+    ['hudClock', '[data-test="pb-hud-time"]'],
+    ['timeline', '[data-test="pb-progress"]'],
+    ['toggle', '[data-test="pb-transport-toggle"]'],
+  ]
+  const controls = {}
+  for (const [key, selector] of controlSelectors) {
+    // 同名入口可能有多个（传输条导航 vs 外壳 fallback）：全部收集，命中状态按「存在任一可见且可点」计。
+    const rects = [...document.querySelectorAll(selector)].map(rectOf).filter(Boolean)
+    controls[key] = rects
+  }
+  const navVisible = [...document.querySelectorAll('[data-testid="nav-menu"]')]
+    .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+  const fallback = document.querySelector('.immersive-nav')
+  const fallbackRect = fallback ? fallback.getBoundingClientRect() : null
+  const map = document.querySelector('.pb-map')
+  const mapRect = map ? map.getBoundingClientRect() : null
+  const rootEl = document.querySelector('[data-test="battle-playback"]')
+  const rootStyle = rootEl ? getComputedStyle(rootEl) : null
+  return {
+    immersive: document.documentElement.dataset.shellChrome === 'immersive',
+    navCount: navVisible.length,
+    navInTransport: navVisible.some(el => !!el.closest('.pb-controls')),
+    navFallbackVisible: !!(fallbackRect && fallbackRect.width > 0 && fallbackRect.height > 0),
+    controls,
+    map: mapRect ? { width: mapRect.width, height: mapRect.height, top: mapRect.top, bottom: mapRect.bottom } : null,
+    mapShare: mapRect ? (mapRect.width * mapRect.height) / (innerWidth * innerHeight) : null,
+    availH: rootStyle ? rootStyle.getPropertyValue('--pb-square-avail-h').trim() : null,
+    workspaceH: rootStyle ? rootStyle.getPropertyValue('--pb-workspace-h').trim() : null,
+    pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
+    clock: document.querySelector('[data-test="pb-time"]')?.textContent.trim() || null,
+  }
+}
+
+let shellNavServer = null
+async function runPlaybackShellNavScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  if (!shellNavServer) shellNavServer = await startFixtureServer({ realReplay: true })
+
+  // 真实应用：示例回放 → 2D 战局回放 tab；沉浸态由 ReplayWorkspace 向真实 AppShell 申请。
+  await page.goto(`${shellNavServer.origin}/?view=replay&ws-auth=0`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="workspace-demo"]'), { label: 'workspace demo entry' })
+  await page.evaluate(`document.querySelector('[data-testid="workspace-demo"]').scrollIntoView({ block: 'center' })`)
+  await delay(200)
+  await page.tap({ ...await page.waitForValue(clickCenterExpression('[data-testid="workspace-demo"]'), Boolean, { label: 'demo center' }), touch: true })
+  await page.waitFor(() => !!document.querySelector('[data-testid="workspace-demo-label"]'), { timeout: 90000, label: 'real sample analyzed' })
+  await page.tap({ ...await page.waitForValue(clickCenterExpression('[data-testid="ws-tab"][data-cap="playback"]'), Boolean, { label: 'playback tab center' }), touch: true })
+  await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 30000, label: 'battle playback pane' })
+  await delay(1000)
+
+  const hit = async (selector) => {
+    await alignWorkspace()
+    const center = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
+    await page.installInputTrace()
+    await page.tap({ ...center, touch: true })
+    const trace = await page.inputTrace()
+    return trace?.click
+  }
+
+  // —— Step 1/2：沉浸态 + 传输条承载唯一导航入口 + 全控件几何 ——
+  // 横屏地图可高于视口（仓库既有契约：控件允许滚动触达），命中测试前先把工作台对齐到视口。
+  const alignWorkspace = async () => {
+    await page.evaluate(`(() => {
+      const slot = document.querySelector('[data-test="pb-transport-slot"]')
+      if (!slot) return
+      const r = slot.getBoundingClientRect()
+      if (r.top < 0 || r.bottom > innerHeight) slot.scrollIntoView({ block: 'nearest' })
+    })()`)
+    await delay(250)
+  }
+  await alignWorkspace()
+  const expanded = await page.probe(playbackShellNavProbe)
+  check(failures, expanded.immersive, 'immersive mode must be active (real AppShell shellChrome)')
+  check(failures, expanded.navCount === 1 && expanded.navInTransport,
+    `expanded transport must host exactly one visible navigation entry (count=${expanded.navCount} inTransport=${expanded.navInTransport})`)
+  check(failures, !expanded.navFallbackVisible, 'shell fallback nav must be hidden while the transport hosts navigation')
+  // §2d-shellnav：窄视口（<640px）传输条时钟让位（紧凑 HUD 中心列有同一时钟），时间轴下限收缩——
+  // 否则 min-content 超宽，时钟溢出视口并与折叠按钮重叠（真实缺陷，已由本场景复现）。
+  check(failures, expanded.controls.clock.every(r => !r.visible) && expanded.controls.hudClock.some(r => r.visible && r.hitSelf),
+    `narrow viewport must hide the transport clock and keep the HUD clock reachable: clock=${JSON.stringify(expanded.controls.clock)} hud=${JSON.stringify(expanded.controls.hudClock)}`)
+  const expandedControls = ['nav', 'back5', 'play', 'fwd5', 'speed', 'fullscreen', 'annotation', 'roster', 'gear', 'timeline', 'toggle']
+  for (const key of expandedControls) {
+    const rects = expanded.controls[key] || []
+    check(failures, rects.some(r => r.visible && r.hitSelf),
+      `${key} control must be visible and hit-testable at 600x320 immersive: ${JSON.stringify(rects)}`)
+    for (const r of rects.filter(r => r.visible)) {
+      check(failures, r.left >= -0.5 && r.right <= scenario.width + 0.5,
+        `${key} control must not be clipped by the viewport: ${JSON.stringify(r)}`)
+    }
+  }
+  const visibleRects = expandedControls.flatMap(key => (expanded.controls[key] || []).filter(r => r.visible))
+  for (let i = 0; i < visibleRects.length; i++) {
+    for (let j = i + 1; j < visibleRects.length; j++) {
+      const a = visibleRects[i], b = visibleRects[j]
+      const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+      check(failures, !(overlapX > 0.5 && overlapY > 0.5),
+        `controls must not overlap: [${i}] ${JSON.stringify(a)} vs [${j}] ${JSON.stringify(b)}`)
+    }
+  }
+  check(failures, !expanded.pageOverflow, `page-level horizontal overflow: ${JSON.stringify(expanded)}`)
+  check(failures, expanded.map && expanded.map.width >= 170 && expanded.map.height >= 170,
+    `map stage must stay usable at 600x320 immersive: ${JSON.stringify(expanded.map)}`)
+
+  // —— Step 3a：抽屉打开 / 关闭（真实 AppNavDrawer，Esc 关闭） ——
+  const navClick = await hit('[data-testid="nav-menu"]')
+  check(failures, navClick?.testId === 'nav-menu', `navigation tap missed the hosted nav entry: ${JSON.stringify(navClick)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open' })
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await delay(300)
+  check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the navigation drawer')
+  check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry must remain after closing the drawer')
+
+  // —— Step 3b：折叠 → 所有权交还 AppShell ——
+  const clockBefore = (await page.probe(playbackShellNavProbe)).clock
+  const toggleClick = await hit('[data-test="pb-transport-toggle"]')
+  check(failures, toggleClick?.test === 'pb-transport-toggle', `collapse tap missed the toggle: ${JSON.stringify(toggleClick)}`)
+  await alignWorkspace()
+  const collapsed = await page.probe(playbackShellNavProbe)
+  check(failures, collapsed.controls.play.every(r => !r.visible), 'collapsing must hide the primary transport controls')
+  check(failures, collapsed.controls.toggle.some(r => r.visible && r.hitSelf), 'the collapsed restore entry must stay reachable')
+  check(failures, collapsed.navCount === 1 && collapsed.navFallbackVisible && collapsed.controls.nav.some(r => r.hitSelf),
+    `collapsed state must return navigation ownership to AppShell (count=${collapsed.navCount} fallback=${collapsed.navFallbackVisible})`)
+  check(failures, collapsed.clock === clockBefore, 'collapsing must not move the clock')
+  // 折叠释放传输条高度 → 纵向预算变大：地图正方形只能变大或不变（不能因折叠而缩小）。
+  check(failures, collapsed.map.width >= expanded.map.width - 1,
+    `collapsing must not shrink the map square (expanded=${expanded.map.width} collapsed=${collapsed.map.width})`)
+
+  // —— Step 3b'：fallback 导航按钮**真实触控**打开抽屉（P3：不能只靠 elementFromPoint 判命中）——
+  const fallbackClick = await hit('.immersive-nav')
+  check(failures, fallbackClick?.testId === 'nav-menu', `fallback nav tap missed: ${JSON.stringify(fallbackClick)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open from fallback' })
+  check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry while the fallback opens the drawer')
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+  await delay(300)
+  check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the drawer opened from the fallback')
+
+  // —— Step 3c：恢复 → 所有权回到传输条 ——
+  await hit('[data-test="pb-transport-toggle"]')
+  await alignWorkspace()
+  const restored = await page.probe(playbackShellNavProbe)
+  check(failures, restored.navCount === 1 && restored.navInTransport && !restored.navFallbackVisible,
+    `restored transport must reclaim navigation ownership (count=${restored.navCount} fallback=${restored.navFallbackVisible})`)
+
+  // —— Step 3d：播放 / seek / 名册开合仍然正确 ——
+  await hit('[data-test="pb-play"]')
+  const advanced = await page
+    .waitForValue('document.querySelector(\'[data-test="pb-time"]\').textContent.trim()', (value) => value !== clockBefore,
+      { timeout: 5000, label: 'clock advancing after restore + play' })
+    .catch(() => null)
+  check(failures, advanced !== null, `play after the nav handoff round-trip was a silent no-op: clock stayed ${clockBefore}`)
+  const clockAfterPlay = advanced ?? clockBefore
+  await hit('[data-test="pb-fwd5"]')
+  const afterSeek = await page
+    .waitForValue('document.querySelector(\'[data-test="pb-time"]\').textContent.trim()', (value) => value !== clockAfterPlay,
+      { timeout: 5000, label: 'clock after +5s' })
+    .catch(() => null)
+  check(failures, afterSeek !== null, `+5s seek was a silent no-op: clock stayed ${clockAfterPlay}`)
+  const rosterClick = await hit('[data-test="pb-roster-entry"]')
+  check(failures, rosterClick?.test === 'pb-roster-entry', `roster entry tap missed: ${JSON.stringify(rosterClick)}`)
+  const rosterOpen = await page.probe(playbackShellNavProbe)
+  check(failures, !!await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`), 'roster entry must expand the overlay lanes')
+  check(failures, rosterOpen.controls.roster.some(r => r.hitSelf), 'roster entry must stay hit-testable while lanes are open')
+  check(failures, !rosterOpen.pageOverflow, `page-level horizontal overflow with lanes open: ${JSON.stringify(rosterOpen)}`)
+  await hit('[data-test="pb-roster-entry"]')
+  check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-team-lane-left"]')`), 'roster entry must collapse the overlay lanes')
+
+  // —— Step 4（F6）：showTopbar 关闭 → HUD 时钟消失，窄容器必须保留可见的传输条时钟 ——
+  await hit('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface open' })
+  await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)
+  await delay(300)
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]').click()`)
+  await delay(300)
+  await alignWorkspace()
+  const noHud = await page.probe(playbackShellNavProbe)
+  check(failures, await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-hud-clock-off')`),
+    'top bar off must put the workspace in the pb-hud-clock-off clock-fallback state')
+  check(failures, !noHud.controls.hudClock.some(r => r.visible), 'the HUD clock must be gone after turning the top bar off')
+  check(failures, noHud.controls.clock.some(r => r.visible && r.hitSelf),
+    `narrow viewport with the top bar off must keep a visible, hit-testable transport clock: ${JSON.stringify(noHud.controls.clock)}`)
+  for (const key of ['gear', 'toggle']) {
+    const a = noHud.controls.clock.find(r => r.visible)
+    const b = (noHud.controls[key] || []).find(r => r.visible)
+    check(failures, !(a && b && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5
+      && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5),
+      `transport clock must not overlap the ${key} with the top bar off: clock=${JSON.stringify(a)} ${key}=${JSON.stringify(b)}`)
+  }
+  check(failures, !noHud.pageOverflow, `page-level horizontal overflow with the top bar off: ${JSON.stringify(noHud)}`)
+  // 恢复 showTopbar → 传输条时钟回到让位态（HUD 时钟接管）
+  await hit('[data-test="pb-secondary-entry"]')
+  await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface reopen' })
+  await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)
+  await delay(300)
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]').click()`)
+  await delay(300)
+  const hudRestored = await page.probe(playbackShellNavProbe)
+  check(failures, hudRestored.controls.clock.every(r => !r.visible) && hudRestored.controls.hudClock.some(r => r.visible),
+    're-enabling the top bar must hand the clock back to the HUD')
+
+  console.log(`[browser-interaction] ${scenario.name} map=${Math.round(expanded.map?.width)}x${Math.round(expanded.map?.height)} share=${expanded.mapShare?.toFixed(3)} navHandoff=OK`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, mapShare: expanded.mapShare })
+}
+
 const MOBILE_FULLSCREEN_SCENARIOS = [
   { name: 'fullscreen-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60 },
 ]
@@ -3344,8 +3763,24 @@ async function runReplayCollectionScenario(env) {
     check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
     const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
-    const toolbarVisible = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); return t ? t.top >= 0 && t.bottom <= innerHeight : false })()`
-    check(failures, await page.evaluate(toolbarVisible), 'replay toolbar must be fully visible at 1440x900')
+    // ReplayWorkspace.centerReplayPane() intentionally scrolls the ready pane into view.
+    // Check the toolbar's document-relative position: it must fit the initial viewport
+    // when entering from the page top, even if pane auto-centering has already scrolled it away.
+    // Unlike resetting scrollY, this does not interfere with the product scroll contract.
+    const toolbarAtDocumentTop = await page.evaluate(`(() => {
+      const rect = document.querySelector('.workspace-toolbar')?.getBoundingClientRect()
+      if (!rect) return null
+      return {
+        top: rect.top + window.scrollY,
+        bottom: rect.bottom + window.scrollY,
+        viewportHeight: innerHeight,
+        scrollY: window.scrollY,
+      }
+    })()`)
+    check(failures, !!toolbarAtDocumentTop
+      && toolbarAtDocumentTop.top >= 0
+      && toolbarAtDocumentTop.bottom <= toolbarAtDocumentTop.viewportHeight,
+    `replay toolbar must fit within the initial 1440x900 viewport: ${JSON.stringify(toolbarAtDocumentTop)}`)
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
@@ -3670,6 +4105,7 @@ const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
   // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
   // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
+  { name: 'ws2d-600x320-landscape-coarse', width: 600, height: 320, touch: true, layout: 'lanes', minMap: 170 },
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
   // 紧凑 HUD 宽度竞争：非空四基地 + 完整 5 位 HP 数字 + 超长地图名；mixed 再加 PARTIAL/UNKNOWN。
   { name: 'ws2d-667x375-hud-exact', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270, hudStress: 'exact' },
@@ -4075,7 +4511,17 @@ async function runWorkspace2DScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
-  await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-transport-toggle"]'), { label: '2D transport toggle' })
+  // §roster-overlay：手机横屏默认**收纳**名册浮层（地图优先），桌面 / 平板默认展开。
+  const defaultLanes = await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`)
+  const defaultPhoneLandscape = await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-phone-landscape')`)
+  if (scenario.width > scenario.height) {
+    check(failures, defaultLanes === !defaultPhoneLandscape,
+      `roster overlay default state wrong (phoneLandscape=${defaultPhoneLandscape} lanes=${defaultLanes})`)
+  }
+  // §5 遮挡契约按**生产默认态**测量（F4）：手机横屏默认收纳（常驻控件 = HUD/传输条）；
+  // 桌面 / 平板默认展开的浮层落在地图两侧空隙里，这里同时守住「用户首屏看到的默认呈现
+  // 没有实质遮挡」，不允许为了通过而把桌面名册藏起来再量。
   await delay(300)
 
   // —— #727 主内容遮挡（design-language §5）：常驻 quick actions 不得实质占住地图 ——
@@ -4091,6 +4537,12 @@ async function runWorkspace2DScenario(env, scenario) {
   for (const failure of mapOcclusion.failures) {
     check(failures, false, `地图遮挡（上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）: ${failure}`)
   }
+  // 手机横屏默认收纳：为后续名册 / 选车断言展开浮层；桌面已处于默认展开态，不要动它（F4）。
+  if (scenario.width > scenario.height && !(await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`))) {
+    await page.evaluate(`document.querySelector('[data-test="pb-roster-entry"]')?.click()`)
+  }
+  await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
+  await delay(300)
 
   if (scenario.fullscreen) {
     await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
@@ -4311,7 +4763,10 @@ async function runWorkspace2DScenario(env, scenario) {
   }
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
-  check(failures, g.left.box.r <= g.map.l + 1 && g.right.box.l >= g.map.r - 1, 'lanes must flank the square Stage')
+  // §roster-overlay：车道是 Stage 内侧的浮层——贴 Stage 左右边缘（地图居中时落在侧带空隙里），
+  // 任何形态都不得越过地图中心，也不得把地图压窄（地图正方形仍由纵向预算决定）。
+  check(failures, g.left.box.r <= (g.map.l + g.map.r) / 2 + 1 && g.right.box.l >= (g.map.l + g.map.r) / 2 - 1,
+    `overlay lanes must stay on their own side of the map center: left=${JSON.stringify(g.left.box)} right=${JSON.stringify(g.right.box)} map=${JSON.stringify(g.map)}`)
   check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
   check(failures, !g.left.scrollsX && !g.right.scrollsX && g.left.rowsFit && g.right.rowsFit,
     'long player/tank labels must shrink within each lane without horizontal scrolling or clipping the HP bar')
@@ -5065,6 +5520,8 @@ try {
     { scenario: { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }, run: () => runSceneActivityScenario(env, { name: 'scene-activity-lifecycle-desktop', width: 1600, height: 900, touch: false }) },
     ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
     ...PLAYBACK_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackControlScenario(env, scenario) })),
+    ...PLAYBACK_COLLAPSE_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackCollapseScenario(env, scenario) })),
+    ...PLAYBACK_SHELLNAV_SCENARIOS.map((scenario) => ({ scenario, run: () => runPlaybackShellNavScenario(env, scenario) })),
     { scenario: ROTATION_SCENARIO, run: () => runRotationScenario(env, ROTATION_SCENARIO) },
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
     ...WORKSPACE_2D_SCENARIOS.map((scenario) => ({ scenario, run: () => runWorkspace2DScenario(env, scenario) })),
@@ -5148,5 +5605,6 @@ try {
   if (chromeCdp) await chromeCdp.close()
   if (onboardingServer) await onboardingServer.server.close()
   if (fakeAnalysisServer) await fakeAnalysisServer.server.close()
+  if (shellNavServer) await shellNavServer.server.close()
   await server.close()
 }
