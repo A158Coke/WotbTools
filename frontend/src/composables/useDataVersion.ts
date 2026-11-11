@@ -20,7 +20,8 @@ import {
  */
 
 const CATALOG_SCHEMA = 1
-const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
+// `_` 供客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）；与 Agent 仓 asset_release.py 同款契约。
+const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/
 const STATUSES = new Set(['active', 'deprecated', 'revoked'])
 
 export type DatasetStatus = 'active' | 'deprecated' | 'revoked'
