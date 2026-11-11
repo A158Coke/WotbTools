@@ -92,6 +92,7 @@ function fullHeroProbe() {
     compact: section.classList.contains('is-compact'),
     titleColor: getComputedStyle(h1).color,
     descriptionColor: description ? getComputedStyle(description).color : null,
+    descriptionShadow: description ? getComputedStyle(description).textShadow : null,
     statsLabelColor: statsLabel ? getComputedStyle(statsLabel).color : null,
   }
 }
@@ -199,6 +200,9 @@ try {
     try {
       const hero = await page.probe(fullHeroProbe)
       assert.equal(hero.descriptionColor, 'rgb(216, 230, 244)', `winter full hero description must switch to light: ${hero.descriptionColor}`)
+      // 阴影负向断言：撤掉 text-shadow（回归到无描边）时这里必然失败——
+      // 亮区（补光灯/屏幕）的可读性兜底不允许被静默移除。
+      assert.ok(hero.descriptionShadow.includes('rgba(4, 10, 18'), `winter full hero description must keep its dark text-shadow: ${hero.descriptionShadow}`)
       assert.equal(hero.titleColor, WINTER_TITLE_COLOR, `winter full hero title must switch to white: ${hero.titleColor}`)
       // 像素级验收：隐藏文字（含描边）后截取说明文字矩形 = 纯背景；逐像素 sRGB 线性化亮度
       // 与文字亮度逐一算对比度。双条件：中位数背景对比度 ≥ 4.5:1，且不达标（不利亮区）
