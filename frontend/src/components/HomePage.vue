@@ -236,6 +236,12 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-hero-inner { position: relative; display: flex; flex-direction: column; padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-12)) var(--space-12) var(--space-10); }
 
 .home-hero-kicker { margin: 0 0 var(--space-5); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .22em; }
+/* F-01（仅冬季）：冬季遮罩是浅色且末端高透，kicker 段落同时跨亮遮罩与照片纹理
+   （实测 median 4.06:1 / worst 1.09:1，mobile 3.52:1），任何单一文字色都无法两头达标；
+   按 .home-callouts 的 canvas 衬底先例垫同色底板 + 环形 box-shadow（纯绘制，不产生布局位移），
+   强调色文字保留。其余主题遮罩厚，实测达标，不加（不改无关主题）。
+   #1d63b8 × winter canvas #eef3f8 = 实测 5.33:1 ≥ 4.5（AA）。 */
+[data-ui-profile='winter'] .home-hero-kicker { background: var(--color-canvas); box-shadow: 0 0 0 var(--space-2) var(--color-canvas); }
 .home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-showcase); letter-spacing: -0.03em; }
 /* 中文不收字距：负字距会让「一」贴到下一个字上，看起来像破折号（「—站式」） */
 .home-hero h1:lang(zh) { letter-spacing: 0; }
@@ -291,7 +297,10 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-sponsor-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
 .home-sponsor-text strong { font: var(--type-h3); }
 .home-sponsor-text span { color: var(--color-text-secondary); font: var(--type-caption); }
-.home-sponsor-cta { display: inline-flex; flex: none; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-4); border-radius: var(--radius-md); background: var(--color-accent); color: var(--color-on-accent); font: var(--type-body); font-weight: 700; }
+/* F-02 主次层级：Replay 是唯一 Primary（实心 accent）；Sponsor 降为设计语言 secondary
+   （surface-1 底 + border-strong 描边 + 正文色），不再与 Replay 竞争同等视觉权重，
+   描边 + 卡片内位置保持可发现性（AppButton .is-secondary 同一 token 组合） */
+.home-sponsor-cta { display: inline-flex; flex: none; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .home-feedback {
   display: flex;
   align-items: center;

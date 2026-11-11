@@ -286,6 +286,44 @@ describe('HomePage accent gradient capability fallback', () => {
   })
 })
 
+// F-01 / F-02 窄静态门（不冒充浏览器验证：真实像素对比度 / 主次层级由浏览器门禁与
+// 真机截图验收覆盖，同上面 gradient 门的角色分工）。锁两件事不被静默回退：
+// ① 冬季 hero kicker 的 canvas 衬底——它是 #1d63b8 × #eef3f8 实测 5.33:1 达标的唯一来源，
+//    且只允许语义 token，不允许借「补色」硬编码色值或扩散到其他主题；
+// ② Sponsor CTA 保持 secondary token 组合（surface-1 + border-strong + text-primary，
+//    与 AppButton .is-secondary 同组），Replay 仍是页面上唯一的 variant="primary"。
+describe('HomePage winter kicker backing and CTA hierarchy', () => {
+  const styleOf = async () => {
+    const { default: source } = await import('./HomePage.vue?raw')
+    return source.slice(source.indexOf('<style scoped>') + '<style scoped>'.length, source.indexOf('</style>'))
+  }
+
+  it('winter hero kicker keeps its semantic-token canvas backing (F-01)', async () => {
+    const style = await styleOf()
+    const rule = style.match(/\[data-ui-profile='winter'\] \.home-hero-kicker \{[^}]*\}/)
+    expect(rule, 'winter kicker backing rule must exist').toBeTruthy()
+    expect(rule[0]).toContain('background: var(--color-canvas)')
+    expect(rule[0]).not.toMatch(/#[0-9a-fA-F]{3,8}/)
+    // 只限冬季：其余主题遮罩厚、实测达标，不允许顺手改无关主题
+    expect(style.match(/\[data-ui-profile='winter'\] \.home-hero-kicker/g)).toHaveLength(1)
+  })
+
+  it('sponsor CTA stays secondary while Replay keeps the only primary (F-02)', async () => {
+    const { default: source } = await import('./HomePage.vue?raw')
+    const style = await styleOf()
+    const rule = style.match(/\.home-sponsor-cta \{[^}]*\}/)
+    expect(rule, 'sponsor cta rule must exist').toBeTruthy()
+    expect(rule[0]).toContain('background: var(--color-surface-1)')
+    expect(rule[0]).toContain('color: var(--color-text-primary)')
+    expect(rule[0]).toContain('var(--color-border-strong)')
+    expect(rule[0]).not.toContain('var(--color-accent)')
+    const primaryVariants = [...source.matchAll(/variant="primary"/g)]
+    expect(primaryVariants).toHaveLength(1)
+    expect(source).toContain('class="home-cta" variant="primary"')
+    expect(source).toContain('data-testid="home-sponsor"')
+  })
+})
+
 describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
     api.hofList.mockReset()
