@@ -197,8 +197,24 @@ try {
 
   // Full 档统一响应式高度（Replay 同族 clamp 推广）：真实渲染断言，不是 CSS 字符串。
   // league-broadcasts 是纯标题页（内容只撑出 ~123px，可见带 19%，主体被裁成炮管碎片），
-  // 是该策略的目标场景；hof 自带 stats/actions（内容 ~249px），验证 clamp 不压内容。
-  for (const [view, extraAuth] of [['league-broadcasts', ''], ['hof', '']]) {
+  // 是该策略的目标场景；hof 自带 stats/actions（内容 ~249px），验证 clamp 不压内容；
+  // tournament-points 带说明 + 操作按钮，验证第三种完整档形态。
+  const fullTextProbe = () => {
+    const section = document.querySelector('.showcase-hero')
+    if (!section) return null
+    const pick = sel => {
+      const el = section.querySelector(sel)
+      return el ? Math.round(el.getBoundingClientRect().height) : null
+    }
+    return {
+      kickerH: pick('.showcase-hero-kicker'),
+      titleH: pick('h1'),
+      descriptionH: pick('.showcase-hero-description'),
+      textH: Math.round(section.querySelector('.showcase-hero-text')?.getBoundingClientRect().height ?? 0),
+      contentH: Math.round(section.querySelector('.showcase-hero-content')?.getBoundingClientRect().height ?? 0),
+    }
+  }
+  for (const [view, extraAuth] of [['league-broadcasts', ''], ['hof', ''], ['tournament-points', '']]) {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
       const probe = heroProbe
@@ -207,6 +223,12 @@ try {
       // 1440 下 20vw = 288px（clamp 上限 384 不命中）：主体完整带 ≈45%，与 Replay 验收值一致
       assert.ok(desktop.height >= 280 && desktop.height <= 400, `desktop full hero on ${view} must take the 20vw clamp height at 1440: ${desktop.height}`)
       assert.ok(desktop.titleBottom <= desktop.heroBottom, `desktop ${view} title must stay inside the banner`)
+      // min-height 加高不得把 grid auto 行拉伸成空行（review P1）：kicker/标题/说明必须保持自然行高
+      const text = await page.probe(fullTextProbe)
+      assert.ok(text.kickerH === null || text.kickerH <= 30, `full hero kicker on ${view} must keep its natural row height (grid rows must not stretch): ${text.kickerH}`)
+      assert.ok(text.titleH <= 90, `full hero title on ${view} must keep its natural row height (grid rows must not stretch): ${text.titleH}`)
+      assert.ok(text.descriptionH === null || text.descriptionH <= 60, `full hero description on ${view} must keep its natural row height: ${text.descriptionH}`)
+      assert.ok(text.textH <= text.contentH, `full hero text block on ${view} must fit inside the content grid`)
       // 矮桌面窗口回退内容密度：横幅不挤压首屏
       await page.emulate({ width: 1920, height: 540, touch: false })
       await page.waitForValue(`window.innerHeight`, v => v === 540, { timeout: 20_000, label: 'short window applied' })
@@ -218,7 +240,7 @@ try {
       await page.waitForValue(`window.innerWidth`, v => v === 390, { timeout: 20_000, label: 'mobile viewport applied' })
       const mobile = await page.probe(probe)
       assert.ok(mobile.height <= 280, `mobile full hero on ${view} must keep the portrait density: ${mobile.height}`)
-      console.log(`[browser-showcase-hero] full-hero height ${view}: desktop=${desktop.height} short=${short.height} mobile=${mobile.height} passed`)
+      console.log(`[browser-showcase-hero] full-hero height ${view}: desktop=${desktop.height} short=${short.height} mobile=${mobile.height} kicker=${text.kickerH} title=${text.titleH} desc=${text.descriptionH} passed`)
     } catch (error) {
       console.error(await page.diagnose(heroProbe))
       throw error

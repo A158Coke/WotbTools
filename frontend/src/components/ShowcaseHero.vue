@@ -129,7 +129,13 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
    矮桌面窗口（height < 700px）回退内容密度，横幅不挤压首屏工作区；
    手机断点不参与——portrait 焦点下可见带已 57%+，加高只会浪费首屏 */
 @media (width >= 768px) {
-  .showcase-hero:not(.is-compact) .showcase-hero-content { min-block-size: clamp(240px, 20vw, 384px); }
+  /* align-content 必须显式置 center：grid 默认 normal(stretch) 会把加高出来的空间
+     分摊进 auto 行，kicker/标题/说明被各自拉成 ~100px 的空行（review P1 复现）；
+     center 让行保持自然高度、整体在横幅内垂直居中 */
+  .showcase-hero:not(.is-compact) .showcase-hero-content {
+    min-block-size: clamp(240px, 20vw, 384px);
+    align-content: center;
+  }
 }
 @media (width >= 768px) and (height < 700px) {
   .showcase-hero:not(.is-compact) .showcase-hero-content { min-block-size: 0; }
