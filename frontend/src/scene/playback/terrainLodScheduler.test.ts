@@ -128,6 +128,18 @@ describe('terrainLodScheduler', () => {
     expect(s.request(job('later'))).toBe(false)
   })
 
+  it('Worker 主动返回 error 消息：onWorkerLost 同样带上未完成任务（与 onerror 是两条故障路径）', () => {
+    const lostJobs: Array<string | null> = []
+    const w = new FakeWorker()
+    const s = createTerrainLodScheduler<string>({ createWorker: () => w, onSwap: () => {}, onWorkerLost: (j) => lostJobs.push(j ? j.snapshot : null) })
+    s.setSource(SRC)
+    s.request(job('inflight'))
+    w.onmessage?.({ data: { type: 'error', id: w.builds()[0].id, message: 'build failed' } })
+    expect(lostJobs).toEqual(['inflight'])
+    expect(w.terminated).toBe(true)
+    expect(s.request(job('later'))).toBe(false)
+  })
+
   it('init / mask 的 postMessage 同步抛错：进回退而不是向调用方抛异常', () => {
     for (const failOn of ['init', 'mask'] as const) {
       const w = new FakeWorker()
