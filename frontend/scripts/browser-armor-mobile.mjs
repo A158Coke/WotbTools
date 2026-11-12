@@ -1460,6 +1460,8 @@ const SHOT_LANDSCAPE_SCENARIOS = [
   { name: 'armor-shot-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
   { name: 'armor-shot-landscape-phone', width: 740, height: 360, touch: true },
   { name: 'armor-shot-landscape-600x320', width: 600, height: 320, touch: true },
+  { name: 'armor-shot-landscape-667x375', width: 667, height: 375, touch: true },
+  { name: 'armor-shot-landscape-915x412', width: 915, height: 412, touch: true },
 ]
 /** 单发分析页右下/左上 chrome 的几何快照：射击参数面板（#corner-tr）与视角切换
     （#corner-br = .armor-shot-view-switch）必须两两不相交，且视角按钮是真实触控目标。 */
@@ -1625,6 +1627,24 @@ async function runShotLandscapeScenario(env, scenario) {
     `${label}: 操作提示节没有在手机横屏让位（${JSON.stringify(layout.interactionHelp)}）`)
   check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
   checkCommonGeometry(failures, layout, label)
+  // 沉浸态悬浮菜单（.immersive-nav）不得盖住「返回射击分析」：包围盒不相交，
+  // 且返回键最左缘 / 中心的真实命中目标都是返回键自己（点击不会误开导航）。
+  const backNav = await page.evaluate(`(() => {
+    const back = document.querySelector('.armor-shot-back')
+    const nav = document.querySelector('.immersive-nav')
+    if (!back || !nav) return { missing: { back: !back, nav: !nav } }
+    const b = back.getBoundingClientRect(), n = nav.getBoundingClientRect()
+    const hitsBack = (x, y) => { const el = document.elementFromPoint(x, y); return !!el && (el === back || back.contains(el)) }
+    const midY = b.top + b.height / 2
+    return {
+      back: { left: b.left, right: b.right, top: b.top, bottom: b.bottom },
+      nav: { left: n.left, right: n.right, top: n.top, bottom: n.bottom },
+      overlap: b.left < n.right && n.left < b.right && b.top < n.bottom && n.top < b.bottom,
+      leftEdgeHit: hitsBack(b.left + 1, midY), centerHit: hitsBack(b.left + b.width / 2, midY),
+    }
+  })()`)
+  check(failures, !backNav.missing && backNav.overlap === false && backNav.leftEdgeHit === true && backNav.centerHit === true,
+    `${label}: 沉浸态菜单按钮遮挡了返回射击分析（${JSON.stringify(backNav)}）`)
   const shot = await page.probe(shotLandscapeProbe)
   /** F1：四个 HUD 区域先显式断言存在且可见（缺失 = fail，而不是静默跳过对应互斥断言）；
       shot 页姿态面板 #turret-controls 由场景隐藏（标注交给 3D），锁定其不可见契约后，

@@ -1098,7 +1098,7 @@ onBeforeUnmount(() => {
 .armor-view #tank-picker > .tank-catalog-menu { flex: 1; min-block-size: 0; }
 /* 共享菜单的控件在装甲页内沿用场景命中尺寸（含搜索框；百科页保持全站控件高度） */
 .armor-view #tank-picker :is(button, select, input) { min-block-size: var(--scene-hit); }
-.armor-view .armor-shot-header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); border-block-end: 1px solid var(--border); background: var(--color-surface-1); z-index: calc(var(--z-sticky) + 1); }
+.armor-view .armor-shot-header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); padding-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); border-block-end: 1px solid var(--border); background: var(--color-surface-1); z-index: calc(var(--z-sticky) + 1); }
 .armor-view .armor-shot-header button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: var(--scene-hit); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
 .armor-view .armor-navigation-error { margin: 0; color: var(--color-danger); font: var(--type-caption); }
 .armor-view .armor-shot-context { flex: 1; min-inline-size: 0; }
@@ -1167,7 +1167,7 @@ onBeforeUnmount(() => {
     .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: var(--scene-hit); block-size: var(--scene-hit); padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
     .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
-    .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
+    .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); padding-inline-start: calc(max(var(--space-2), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); }
     .armor-view .armor-shot-back span { display: none; }
     .armor-view .armor-shot-context { flex-basis: calc(100% - 60px); }
     .armor-view .armor-shot-matchup { font: var(--type-body); }
