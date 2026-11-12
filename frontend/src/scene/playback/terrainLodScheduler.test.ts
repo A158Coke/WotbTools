@@ -37,25 +37,31 @@ function make(extra: Partial<Opts> = {}) {
 }
 
 describe('terrainLodScheduler', () => {
-  it('在途时多次命中只覆盖待发快照：结果返回后只发一个后续请求，且是最新的', () => {
+  it('在途时的新请求被忽略（不排队、不另发）；换装后下一次请求才发出，节流基准由调用方决定', () => {
     const { w, s, swaps } = make()
     expect(s.request(job('a'))).toBe(true)
-    s.request(job('b')); s.request(job('c')); s.request(job('d', { cam: { x: 1, y: 2, z: 3 } }))
+    expect(s.request(job('b'))).toBe(true); s.request(job('c')); s.request(job('d'))
     expect(w.builds()).toHaveLength(1)
     w.reply(w.builds()[0].id, 'a')
     expect(swaps).toEqual(['a'])
+    // 结果返回后调度器自己不再发任何请求（120 ms 节流由调用方每帧判据 + 换装时刻控制，不被绕过）
+    expect(w.builds()).toHaveLength(1)
+    expect(s.busy).toBe(false)
+    expect(s.request(job('d', { cam: { x: 1, y: 2, z: 3 } }))).toBe(true)
     expect(w.builds()).toHaveLength(2)
     expect(w.builds()[1].cam).toEqual({ x: 1, y: 2, z: 3 })
     w.reply(w.builds()[1].id, 'd')
     expect(swaps).toEqual(['a', 'd'])
-    expect(w.builds()).toHaveLength(2)   // 无更多待发
   })
 
-  it('待发快照相对刚换上的网格不再过期则不发', () => {
-    const { w, s } = make({ stillStale: (applied, next) => applied !== next })
-    s.request(job('a')); s.request(job('a'))
+  it('快速完成的任务不会让调度器在同一时刻连发（fake clock：换装后无自发请求）', () => {
+    let t = 0
+    const { w, s } = make({ now: () => t })
+    s.request(job('a')); s.request(job('b'))
+    t = 5
     w.reply(w.builds()[0].id, 'a')
-    expect(w.builds()).toHaveLength(1)
+    t = 50
+    expect(w.builds()).toHaveLength(1)   // 120 ms 窗口内没有自发请求
   })
 
   it('代号不符的结果被丢弃（invalidate / setSource / setMask 各自作废在途）', () => {
@@ -71,19 +77,6 @@ describe('terrainLodScheduler', () => {
       w.reply(w.builds()[1].id, 'new')
       expect(swaps).toEqual(['new'])
     }
-  })
-
-  it('作废期间排队的新代号任务，在旧结果丢弃后才发出（同时只有一个在途）', () => {
-    const { w, s, swaps } = make()
-    s.request(job('old'))
-    s.setMask(null)
-    s.request(job('fresh'))
-    expect(w.builds()).toHaveLength(1)
-    w.reply(w.builds()[0].id, 'old')
-    expect(swaps).toEqual([])
-    expect(w.builds()).toHaveLength(2)
-    w.reply(w.builds()[1].id, 'fresh')
-    expect(swaps).toEqual(['fresh'])
   })
 
   it('init / mask 消息先于 build 送达同一 Worker（按发送顺序）', () => {
@@ -121,6 +114,43 @@ describe('terrainLodScheduler', () => {
     expect(m2.lost).toEqual(['worker-error'])
   })
 
+  it('构建中出错：onWorkerLost 带上未完成任务，之后 request 返回 false（调用方同步重建当前状态）', () => {
+    const lostJobs: Array<string | null> = []
+    const w = new FakeWorker()
+    const s = createTerrainLodScheduler<string>({ createWorker: () => w, onSwap: () => {}, onWorkerLost: (j) => lostJobs.push(j ? j.snapshot : null) })
+    s.setSource(SRC)
+    s.request(job('inflight'))
+    s.request(job('ignored'))
+    w.onerror?.({})
+    expect(lostJobs).toEqual(['inflight'])
+    expect(w.terminated).toBe(true)
+    expect(s.busy).toBe(false)
+    expect(s.request(job('later'))).toBe(false)
+  })
+
+  it('init / mask 的 postMessage 同步抛错：进回退而不是向调用方抛异常', () => {
+    for (const failOn of ['init', 'mask'] as const) {
+      const w = new FakeWorker()
+      const orig = w.postMessage.bind(w)
+      w.postMessage = (m) => { if (m.type === failOn) throw new Error('clone failed'); orig(m) }
+      const lost: string[] = []
+      const s = createTerrainLodScheduler<string>({ createWorker: () => w, onSwap: () => {}, onWorkerLost: (_j, r) => lost.push(r) })
+      if (failOn === 'mask') {
+        s.setSource(SRC)
+        expect(s.request(job('a'))).toBe(true)   // init 发出、build 在途
+        expect(() => s.setMask(new Uint8Array(1))).not.toThrow()
+      } else {
+        s.setSource(SRC)
+        expect(() => s.request(job('a'))).not.toThrow()   // ensureWorker 里发 init 时抛错
+      }
+      expect(lost).toEqual(['post-failed'])
+      expect(w.terminated).toBe(true)
+      expect(s.available).toBe(false)
+      expect(s.request(job('b'))).toBe(false)
+      expect(() => s.setSource(SRC)).not.toThrow()
+    }
+  })
+
   it('销毁后：terminate、不再换装、不再发请求', () => {
     const { w, s, swaps } = make()
     s.request(job('a'))
@@ -131,10 +161,12 @@ describe('terrainLodScheduler', () => {
     expect(s.request(job('b'))).toBe(false)
   })
 
-  it('换装回调抛错不破坏调度：待发任务仍然发出', () => {
+  it('换装回调抛错不破坏调度：在途已清空，之后仍可发新请求', () => {
     const { w, s } = make({ onSwap: () => { throw new Error('swap failed') } })
-    s.request(job('a')); s.request(job('b'))
+    s.request(job('a'))
     expect(() => w.reply(w.builds()[0].id, 'a')).toThrow()
+    expect(s.busy).toBe(false)
+    expect(s.request(job('b'))).toBe(true)
     expect(w.builds()).toHaveLength(2)
   })
 })
