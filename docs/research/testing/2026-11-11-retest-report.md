@@ -49,6 +49,21 @@
 - **故障注入验证**：移除 `battleRuntime.clearEffects()` 中的 `transients.clear()` → 新测试立即变红（`hasActive()` 预期 false 实际 true），还原后复绿。证明新测试对 PR #411 P0 故障模式有真实捕获能力。
 - 台账 validation_status：`seekPointer:59/66/79` 置 DONE（见 ledger-stats 重新生成）。
 
+## Wave 2 sceneryMaterials 拆解结果
+
+- `sceneryMaterials.test.js` 删除 23 个源码文本用例（含 1 个 describe 块），其余按 F3 窄化为带标注的 Integration Contract / K-shader 公式守卫；接替者为 10 个新行为测试文件（`sceneryMaterials.materials.test.ts`、`mapWorld.behavior.test.ts`、`groundPass.behavior.test.ts`、`playback/{battleRuntime.fx,hudFeed.behavior,labelsRuntime.gating,markers.toneMapped,sessionLifecycle.prewarm,util.behavior,vehicleRuntime.pose}.test.ts`），均直接 import 生产模块、不读源码；本批无生产代码改动。
+- **故障注入验证（5 项，临时改生产源 → 跑接替测试 → 还原）**：
+
+  | # | 注入 | 接替测试 | 结果 |
+  |---|---|---|---|
+  | 1 | `sessionLifecycle.startPlayback` 删 `deps.prewarmShaders()` | sessionLifecycle.prewarm | 变红 |
+  | 2 | `mapWorld` 会话拆除不 dispose IBL 环境贴图 | mapWorld.behavior | 变红 |
+  | 3 | `hudFeed.updateScore` team 1 阵亡不计分 | hudFeed.behavior | 首轮**存活**（fixture 只有 team 2 阵亡）→ 补 team 1 阵亡 fixture 后变红 |
+  | 4 | `applyGlbToggle(false)` 不释放悬挂克隆几何 | vehicleRuntime.pose | 变红 |
+  | 5 | 悬挂部件恒不挂载（`collectSuspensionParts` → null） | vehicleRuntime.pose | 变红 |
+
+- 台账 `sceneryMaterials.test` 56 行回填 DONE / PARTIAL（PARTIAL = 宿主闭包无注入点，窄化保留接线子句）。
+
 ## 台账
 
 逐例处置（改写 / 保留 / 删除 + 接替者）见 `2026-11-11-disposition-ledger.md`（人工映射全文）；统计与 D 项门禁见 `2026-11-11-ledger-stats.md`（由 `scripts/testing/ledger-stats.mjs` 自动生成，稳定 ID）。

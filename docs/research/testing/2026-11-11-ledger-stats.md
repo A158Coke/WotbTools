@@ -64,11 +64,11 @@ scope 缺口合计 0 例 / inventory 全量 181 例。
 
 | case ID | 优先级 | 接替者证据 | validation_status |
 |---|---|---|---|
-| sceneryMaterials:1229 | MED | 与 1222 同行为，删除重复 | PENDING |
-| sceneryMaterials:1229 | MED | tracerSpanSecs 已是行为（删源码半句） | PENDING |
-| sceneryMaterials:1263 | MED | disposeSceneGroup 已是行为 | PENDING |
-| sceneryMaterials:1349 | LOW | 源码卫生守卫（行为并入 1007 改写） | PENDING |
-| sceneryMaterials:1354 | MED | 与 1035 同行为，删除重复 | PENDING |
+| sceneryMaterials:1229 | MED | 与 1222 同行为，删除重复 → DONE（重复删除） | PENDING |
+| sceneryMaterials:1229 | MED | tracerSpanSecs 已是行为（删源码半句） → DONE（源码半句已删，行为由 battleFx.test.js 覆盖） | PENDING |
+| sceneryMaterials:1263 | MED | disposeSceneGroup 已是行为 → DONE（已是行为，删源码半句） | PENDING |
+| sceneryMaterials:1349 | LOW | 源码卫生守卫（行为并入 1007 改写） → DONE：并入 playback/vehicleRuntime.pose.test.ts（beltW 声明序） | PENDING |
+| sceneryMaterials:1354 | MED | 与 1035 同行为，删除重复 → DONE（与 1035 重复删除） | PENDING |
 | (未对齐) | LOW | 导出形状由行为测试消费（loadTerrain 等） | PENDING |
 | (未对齐) | LOW | :116-134 已行为 | PENDING |
 | groundPass:394 | LOW | 已是行为 | PENDING |
