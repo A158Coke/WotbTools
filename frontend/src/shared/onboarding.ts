@@ -36,3 +36,6 @@ export interface OnboardingContext {
 }
 
 export const ONBOARDING_KEY: InjectionKey<OnboardingContext> = Symbol('wotbtools.onboarding')
+
+/** 工作区的「替换当前回放」确认被用户拒绝时 loadDemo 抛出的错误名：不是加载失败，教程应直接结束。 */
+export const REPLACE_DECLINED = 'ReplaceDeclinedError'

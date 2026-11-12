@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { REPLACE_DECLINED } from '../shared/onboarding.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -75,6 +76,16 @@ describe('onboarding receipt policy', () => {
     await h.controller.resume()
     expect(h.loadDemo).toHaveBeenCalledTimes(2)
     expect(h.controller.index.value).toBe(1)
+    h.wrapper.unmount()
+  })
+
+  it('ends the guide without an error when the user keeps their replay in the replace confirmation', async () => {
+    const h = harness({ files: true })
+    h.loadDemo.mockRejectedValueOnce(Object.assign(new Error('declined'), { name: REPLACE_DECLINED }))
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.mode.value).toBe('idle')
+    expect(h.controller.issue.value).not.toBe('unavailable')
     h.wrapper.unmount()
   })
 
