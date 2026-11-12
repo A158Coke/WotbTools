@@ -77,10 +77,10 @@ export function createTerrainLodScheduler<S>(opts: TerrainLodSchedulerOptions<S>
   let source: TerrainSourceInit | null = null
   let inflight: { id: number; gen: number; job: TerrainLodJob<S>; sentAt: number } | null = null
 
-  function lose(reason: string) {
+  function lose(reason: string, lostJob: TerrainLodJob<S> | null = inflight?.job ?? null) {
     if (broken) return
     broken = true
-    const lost = inflight?.job ?? null
+    const lost = lostJob
     inflight = null
     try { worker?.terminate() } catch { /* ignore */ }
     worker = null
@@ -121,7 +121,7 @@ export function createTerrainLodScheduler<S>(opts: TerrainLodSchedulerOptions<S>
     const cur = inflight
     if (!cur || cur.id !== msg.id) return
     inflight = null
-    if (msg.type === 'error') { lose(`build-error: ${msg.message}`); return }
+    if (msg.type === 'error') { lose(`build-error: ${msg.message}`, cur.job); return }
     // 代号不符：过期结果丢弃（TypedArray 是 Worker 转移来的，无 GPU 资源，交给 GC）；
     // 下一帧调用方会按当前相机重新发起
     if (cur.gen !== generation) return
