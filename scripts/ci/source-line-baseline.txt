@@ -1,0 +1,70 @@
+# Source-line baseline: every first-party frontend production file over 500
+# physical lines, with a per-file cap. Enforced by
+# scripts/ci/check-repository-hygiene.sh.
+#
+# Scope: frontend/src/**/*.{js,ts,vue,mjs,cjs,css}, excluding *.test.*,
+# *.spec.*, *.d.ts and frontend/src/api/generated/** (same scope as
+# source-line-allowlist.txt, which separately admits files over 1500 lines).
+#
+# Format: "<cap> <path>". The cap is the file's line count rounded up to 100.
+# One-way ratchet:
+# - new files must stay within 500 lines; this list never grows;
+# - a file may not exceed its cap, and a cap may not rise;
+# - shrinking past a 100-line boundary requires tightening the cap;
+# - a file at or below 500 lines must leave the list;
+# - a Git-detected rename may carry its entry to the new path.
+1900 frontend/src/api/agent-replay-facets.ts
+800 frontend/src/components/AdminUsersPage.vue
+1500 frontend/src/components/AgentArmorView.vue
+1100 frontend/src/components/AgentTankopedia.vue
+700 frontend/src/components/AgentTechTree.vue
+600 frontend/src/components/AiReviewPanel.vue
+1500 frontend/src/components/BattlePlayback.vue
+1900 frontend/src/components/HoFAdminPage.vue
+2300 frontend/src/components/HoFPage.vue
+1300 frontend/src/components/MapPreview2DPane.vue
+900 frontend/src/components/MapPreview3DPane.vue
+600 frontend/src/components/MapPreviewPage.vue
+1100 frontend/src/components/PlayerDetailDrawer.vue
+900 frontend/src/components/ProfilePage.vue
+1500 frontend/src/components/Replay3DPane.vue
+1000 frontend/src/components/ReplayPage.vue
+1100 frontend/src/components/ReplayShotsPane.vue
+800 frontend/src/components/ReplayWorkspace.vue
+700 frontend/src/components/TankCatalogMenu.vue
+1100 frontend/src/components/TankConfigPanel.vue
+600 frontend/src/components/TankResearchPanel.vue
+600 frontend/src/components/VehicleMarker.vue
+600 frontend/src/composables/useAuth.ts
+800 frontend/src/composables/useOnboarding.ts
+800 frontend/src/data/vehicleSizes.js
+800 frontend/src/replay-local/canonical/facts.ts
+700 frontend/src/replay-local/compute/characteristics.ts
+600 frontend/src/replay-local/compute/league-rating.ts
+900 frontend/src/replay-local/compute/tankSetup.ts
+600 frontend/src/replay-local/export/sheets.ts
+900 frontend/src/replay-local/playback/toBattlePlaybackDataset.ts
+1300 frontend/src/scene/armorCollisionPack.ts
+900 frontend/src/scene/battleFx.ts
+900 frontend/src/scene/penetration.js
+900 frontend/src/scene/playback/annotation3d.ts
+1100 frontend/src/scene/playback/annotationScene.ts
+1000 frontend/src/scene/playback/armorHighlight.ts
+1400 frontend/src/scene/playback/cameraRuntime.ts
+1100 frontend/src/scene/playback/mapWorld.ts
+1100 frontend/src/scene/playback/vehicleRuntime.ts
+1500 frontend/src/scene/playbackScene.js
+600 frontend/src/scene/reloadBar.ts
+600 frontend/src/scene/replaySource.ts
+1100 frontend/src/scene/sceneryMaterials.ts
+1500 frontend/src/scene/tankViewer.js
+800 frontend/src/scene/terrainMesh.js
+600 frontend/src/scene/viewer/armorPlateModel.ts
+700 frontend/src/scene/viewer/armorShaders.ts
+600 frontend/src/scene/viewer/diagnosticProbe.ts
+900 frontend/src/scene/viewer/heatmap.ts
+1000 frontend/src/scene/viewer/judgment.ts
+1500 frontend/src/scene/viewer/shotReplay.ts
+800 frontend/src/utils/annotation.js
+700 frontend/src/utils/battlePlayback.ts
+800 frontend/src/utils/battlePlaybackV2.ts
