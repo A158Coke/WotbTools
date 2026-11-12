@@ -817,8 +817,6 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
       createWorker: () => (typeof Worker === 'undefined' ? null
         : new Worker(new URL('./terrainBuild.worker.ts', import.meta.url), { type: 'module' }) as never),
       onSwap: applyTerrainSwap,
-      // 待发快照相对刚换上的网格仍过期才再发（节流间隔已在换装时重置，这里只比较判据）
-      stillStale: (applied, next) => terrainLodStaleReason(applied, next, Infinity) !== null,
       onWorkerLost: (_job, reason) => {
         terrainWorkerFailed = true
         terrainScheduler = null
