@@ -1,7 +1,7 @@
-<script setup>
+<script setup lang="ts">
 // 名人堂「单场」榜：筛选 / 分页 / 榜单行 / 回放上传与下载的唯一 owner。
 // URL query 归 HoFPage：本组件只在加载时 emit('query-change')，并通过 expose 的 queryState / applyQuery 收发。
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
 import { useHofReplayUpload } from '../composables/useHofReplayUpload.js'
@@ -12,7 +12,8 @@ import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import { formatGameVersion } from '../utils/gameVersion.js'
 import { resolveVehicleName, vehicleNameIndex } from '../utils/hofVehicles.js'
 import * as api from '../api/hall-of-fame.js'
-import { pageTotalItems, rankClass, scrollBoardIntoView, uniqueValues, useHofAccess, useHofEpoch, vehicleChips, vehicleHint, vehicleValueLabel as valueLabel } from './hofBoardShared.js'
+import type { components } from '../api/generated/http-contract.js'
+import { compactChips, pageTotalItems, rankClass, scrollBoardIntoView, uniqueValues, useHofAccess, useHofEpoch, vehicleChips, vehicleHint, vehicleValueLabel as valueLabel, type HofQuery, type PickerOption } from './hofBoardShared.js'
 import FilterChips from './FilterChips.vue'
 import AppSheet from './AppSheet.vue'
 import AppDialog from './AppDialog.vue'
@@ -22,43 +23,43 @@ import HofPodium from './HofPodium.vue'
 import HofPager from './HofPager.vue'
 import VehiclePicker from './VehiclePicker.vue'
 
-defineProps({
-  active: { type: Boolean, default: false },
-  filterOpen: { type: Boolean, default: false },
-  sheetTarget: { type: Object, default: null },
-})
-const emit = defineEmits(['query-change', 'toggle-filters', 'close-filters'])
+type HofRecord = components['schemas']['HallOfFameRecord']
+type VehicleOption = components['schemas']['HofVehicleOption']
+
+defineProps<{ active?: boolean, filterOpen?: boolean, sheetTarget?: HTMLElement | null }>()
+const emit = defineEmits<{ 'query-change': [], 'toggle-filters': [], 'close-filters': [] }>()
 
 const { locale, t, te } = useI18n()
 const { isCompact } = useBreakpoint()
 const { hofAvailability, requireLogin } = useHofAccess()
 const [DefineFilters, ReuseFilters] = createReusableTemplate()
-const pane = ref(null)
+const pane = ref<HTMLElement | null>(null)
 
-const rows = ref([])
+const rows = ref<HofRecord[]>([])
 const loading = ref(false)
 const error = ref('')
 const limit = ref(50)
 const page = ref(1)
 const totalPages = ref(0)
-const totalItems = ref(null)
+const totalItems = ref<number | null>(null)
 const showUploadModal = ref(false)
-const downloadingId = ref(null)
+const downloadingId = ref<number | null>(null)
 const downloadErr = ref('')
 
 const battleType = ref('')
-const selectedTankId = ref(null)
+const selectedTankId = ref<number | null>(null)
 const selectedTankName = ref('')
 const nickname = ref('')
-const vehicleOptions = ref([])
+const vehicleOptions = ref<VehicleOption[]>([])
 const vehicleOptionsLoading = ref(false)
 const vehicleOptionsError = ref('')
 const nation = ref('')
 const vehicleType = ref('')
 const vehicleTier = ref('')
 let loadGeneration = 0
-const { uploading, uploadMsg, uploadOk, dragging, fileInput, onUploadButtonClick, onFileChange, onDrop } = useHofReplayUpload({
+const { uploading, uploadMsg, uploadOk, dragging, onUploadButtonClick, onFileChange, onDrop } = useHofReplayUpload({
   requireLogin,
+  fileInput: useTemplateRef<HTMLInputElement>('replayFileInput'),
   afterUpload: () => load(),
 })
 const currentEpoch = useHofEpoch(hofAvailability, () => {
@@ -66,13 +67,10 @@ const currentEpoch = useHofEpoch(hofAvailability, () => {
   loading.value = vehicleOptionsLoading.value = false
 })
 
-const vehicleValueLabel = value => valueLabel(t, te, value)
+const vehicleValueLabel = (value: string | null | undefined) => valueLabel(t, te, value)
 const nations = computed(() => uniqueValues(vehicleOptions.value.map(vehicle => vehicle.nation)))
 const vehicleTypes = computed(() => uniqueValues(vehicleOptions.value.map(vehicle => vehicle.type)))
-const vehicleTiers = computed(() => uniqueValues(vehicleOptions.value
-  .map(vehicle => vehicle.tier)
-  .filter(tier => tier != null))
-  .sort((a, b) => a - b))
+const vehicleTiers = computed(() => uniqueValues(vehicleOptions.value.map(vehicle => vehicle.tier)).sort((a, b) => a - b))
 const filteredVehicles = computed(() => vehicleOptions.value
   .filter(vehicle => (!nation.value || vehicle.nation === nation.value)
     && (!vehicleType.value || vehicle.type === vehicleType.value)
@@ -81,11 +79,11 @@ const filteredVehicles = computed(() => vehicleOptions.value
 // ── 车辆显示名（审计 BZ-17）：后端查不到车名时回退为 `#4657`，前端再用 Tier X 车表与已加载榜单行补全 ──
 const tier10NameById = vehicleNameIndex(HUNDRED_VEHICLES)
 const rowNameById = computed(() => vehicleNameIndex(rows.value, 'tankId', 'tankName'))
-function knownTankName(tankId, ...candidates) {
+function knownTankName(tankId: number | null, ...candidates: (string | null | undefined)[]): string {
   const id = Number(tankId)
   return resolveVehicleName(...candidates, tier10NameById.get(id), rowNameById.value.get(id))
 }
-const pickerOptions = computed(() => filteredVehicles.value
+const pickerOptions = computed<PickerOption[]>(() => filteredVehicles.value
   .map(vehicle => ({
     id: vehicle.tankId,
     label: knownTankName(vehicle.tankId, vehicle.tankName) || t('vehiclePicker.unknownId', { id: vehicle.tankId }),
@@ -98,6 +96,8 @@ const selectedTankLabel = computed(() => {
   const option = pickerOptions.value.find(item => item.id === Number(selectedTankId.value))
   return option?.label || knownTankName(selectedTankId.value, selectedTankName.value) || `#${selectedTankId.value}`
 })
+/** 领奖台只用前三行；mapName 的 null 按「无地图」传给 HofPodium。 */
+const podiumRows = computed(() => rows.value.slice(0, 3).map(row => ({ ...row, mapName: row.mapName ?? undefined })))
 
 async function load() {
   if (!hofAvailability.value.available) return
@@ -136,7 +136,7 @@ function reloadFirstPage() {
   load()
 }
 
-function filterByTank(tankId, tankName) {
+function filterByTank(tankId: number, tankName: string) {
   nation.value = ''
   vehicleType.value = ''
   vehicleTier.value = ''
@@ -171,7 +171,7 @@ function onVehicleConditionChange() {
   reloadFirstPage()
 }
 
-function vehicleNameFromOptions(tankId, options = vehicleOptions.value) {
+function vehicleNameFromOptions(tankId: number | null, options: readonly VehicleOption[] = vehicleOptions.value) {
   const vehicle = options.find(option => option.tankId === Number(tankId))
   return vehicle ? knownTankName(vehicle.tankId, vehicle.tankName) : ''
 }
@@ -182,10 +182,10 @@ function onVehicleChange() {
 }
 
 // ── 版本列（审计 BZ-17）：只展示游戏版本号，忽略平台 / 渠道后缀 ──
-const fmtVersion = value => formatGameVersion(value) || '-'
-const fmtTime = value => formatDateTimeMinute(value, 2014)
+const fmtVersion = (value: string | null) => formatGameVersion(value) || '-'
+const fmtTime = (value: string | null) => formatDateTimeMinute(value, 2014)
 
-function battleTypeLabel(tp) {
+function battleTypeLabel(tp: string) {
   if (tp === 'RATING') return t('hof.battleType.rating')
   if (tp === 'RANDOM') return t('hof.battleType.random')
   return ''
@@ -197,13 +197,13 @@ function clearFilter() {
   reloadFirstPage()
 }
 
-function goPage(p) {
+function goPage(p: number) {
   page.value = p
   load()
   scrollBoardIntoView(pane)
 }
 
-async function download(id) {
+async function download(id: number) {
   if (downloadingId.value) return
   if (!requireLogin()) return
   downloadErr.value = ''
@@ -225,15 +225,15 @@ watch(vehicleOptions, (options) => {
 })
 
 // ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet，已生效条件显示为 chip ──
-const chips = computed(() => [
+const chips = computed(() => compactChips([
   ...vehicleChips(t, te, nation.value, vehicleType.value, ''),
   vehicleTier.value && { key: 'tier', label: `T${vehicleTier.value}` },
   selectedTankId.value && { key: 'vehicle', label: selectedTankLabel.value },
   battleType.value && { key: 'bt', label: battleTypeLabel(battleType.value) },
   nickname.value.trim() && { key: 'nick', label: nickname.value.trim() },
-].filter(Boolean))
+]))
 
-function removeFilter(key) {
+function removeFilter(key: string) {
   if (key === 'nation') nation.value = ''
   if (key === 'type') vehicleType.value = ''
   if (key === 'tier') vehicleTier.value = ''
@@ -249,7 +249,7 @@ defineExpose({
     tab: 'single', page: page.value, tank: selectedTankId.value, nation: nation.value, type: vehicleType.value,
     tier: vehicleTier.value, bt: battleType.value, nick: nickname.value.trim(), limit: limit.value,
   }),
-  applyQuery(q) {
+  applyQuery(q: HofQuery) {
     nation.value = q.nation
     vehicleType.value = q.type
     vehicleTier.value = q.tier
@@ -257,7 +257,7 @@ defineExpose({
     selectedTankName.value = vehicleNameFromOptions(q.tank)
     battleType.value = q.bt
     nickname.value = q.nick
-    limit.value = q.limit
+    limit.value = q.limit ?? limit.value
     page.value = q.page
     load()
   },
@@ -282,7 +282,7 @@ defineExpose({
       </template>
     </ShowcaseHero>
 
-    <HofPodium v-if="page === 1 && rows.length >= 3 && !error" :rows="rows.slice(0, 3)" :compact="isCompact" :locale="locale" />
+    <HofPodium v-if="page === 1 && rows.length >= 3 && !error" :rows="podiumRows" :compact="isCompact" :locale="locale" />
 
     <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
     <AppDialog :open="showUploadModal" :title="$t('hof.upload_title')" class="hof-upload-modal" @close="showUploadModal = false">
@@ -301,7 +301,7 @@ defineExpose({
             <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
             <div class="up-title">{{ $t('hof.upload_title') }}</div>
             <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
-            <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" tabindex="-1" aria-hidden="true" @change="onFileChange" :disabled="uploading" />
+            <input ref="replayFileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" tabindex="-1" aria-hidden="true" @change="onFileChange" :disabled="uploading" />
             <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
               <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
               {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}
@@ -338,7 +338,7 @@ defineExpose({
         </select>
       </label>
       <div class="lb-limit"><label class="lb-label" for="hof-single-vehicle">{{ $t('hof.selectVehicle') }}</label>
-        <VehiclePicker v-model="selectedTankId" class="hof-vehicle-select" input-id="hof-single-vehicle"
+        <VehiclePicker :model-value="selectedTankId ?? undefined" @update:model-value="selectedTankId = $event" class="hof-vehicle-select" input-id="hof-single-vehicle"
                        :options="pickerOptions" :null-label="$t('hof.all_tanks')" :fallback-label="selectedTankLabel"
                        :disabled="vehicleOptionsLoading" @change="onVehicleChange" />
       </div>

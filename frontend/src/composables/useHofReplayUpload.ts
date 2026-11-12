@@ -1,24 +1,31 @@
 // 名人堂单场榜的回放上传流程（选择 / 拖拽 → 登录门禁 → 上传 → 结果提示 → 刷新榜单）。
 // 状态由调用它的 HofSingleBoard 实例持有；结果提示同时显示在页头与上传弹窗里。
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { showToast } from './useToast.js'
 import { notify } from './useNotifications.js'
 import { apiErrorLabel } from '../utils/display.js'
 import * as api from '../api/hall-of-fame.js'
 
-export function useHofReplayUpload({ requireLogin, afterUpload }) {
+interface ReplayUploadOptions {
+  requireLogin: () => boolean
+  /** 隐藏的 `<input type=file>`（调用方的模板 ref） */
+  fileInput: Readonly<Ref<HTMLInputElement | null>>
+  /** 上传成功（含「已上榜」）后刷新榜单 */
+  afterUpload: () => Promise<void>
+}
+
+export function useHofReplayUpload({ requireLogin, fileInput, afterUpload }: ReplayUploadOptions) {
   const { t, te } = useI18n()
   const uploading = ref(false)
   const uploadMsg = ref('')
   const uploadOk = ref(false)
   const dragging = ref(false)
-  const fileInput = ref(null)
 
-  async function upload(file) {
+  async function upload(file: File) {
     if (uploading.value) return
     if (!requireLogin()) return
-    if (!file || !file.name.toLowerCase().endsWith('.wotbreplay')) {
+    if (!file.name.toLowerCase().endsWith('.wotbreplay')) {
       uploadMsg.value = t('hof.invalid_file')
       return
     }
@@ -63,18 +70,18 @@ export function useHofReplayUpload({ requireLogin, afterUpload }) {
     fileInput.value?.click()
   }
 
-  function onFileChange(e) {
-    const f = e.target.files?.[0]
-    if (f) upload(f)
+  function onFileChange(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0]
+    if (file) upload(file)
   }
 
   // 未登录拖拽回放 → 立即 login，不读取/不发送文件。
-  function onDrop(e) {
+  function onDrop(event: DragEvent) {
     dragging.value = false
     if (!requireLogin()) return
-    const f = e.dataTransfer.files?.[0]
-    if (f) upload(f)
+    const file = event.dataTransfer?.files?.[0]
+    if (file) upload(file)
   }
 
-  return { uploading, uploadMsg, uploadOk, dragging, fileInput, onUploadButtonClick, onFileChange, onDrop }
+  return { uploading, uploadMsg, uploadOk, dragging, onUploadButtonClick, onFileChange, onDrop }
 }

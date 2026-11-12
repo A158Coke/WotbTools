@@ -1,25 +1,27 @@
-<script setup>
+<script setup lang="ts">
 // 百场人工提交弹窗：表单草稿 / 证据 / 本地校验 / 提交的唯一 owner。弹窗 keep-mounted，关闭后草稿保留。
 // 个人状态（pending / current）与候选车辆归 HofHundredBoard，这里只读。
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { apiErrorLabel } from '../utils/display.js'
-import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../api/hall-of-fame.js'
-import { findVehicleStatus, formatHofNumber, mergeReplayFiles, replayFileKey, tierXPickerOption, useHofAccess, REPLAY_EVIDENCE_COUNT } from './hofBoardShared.js'
+import type { components } from '../api/generated/http-contract.js'
+import { errorCode, findVehicleStatus, formatHofNumber, mergeReplayFiles, replayFileKey, takeInputFiles, tierXPickerOption, useHofAccess, withDraftVehicle, REPLAY_EVIDENCE_COUNT, type TierXVehicle } from './hofBoardShared.js'
 import AppDialog from './AppDialog.vue'
 import ImageDataUploader from './ImageDataUploader.vue'
 import VehiclePicker from './VehiclePicker.vue'
 
-const props = defineProps({
+type SubmissionSummary = components['schemas']['HundredSubmissionSummary']
+
+const props = defineProps<{
   /** 百场榜当前筛选后的候选车辆 */
-  vehicles: { type: Array, required: true },
-  pendingList: { type: Array, required: true },
-  currentList: { type: Array, required: true },
+  vehicles: readonly TierXVehicle[]
+  pendingList: readonly SubmissionSummary[]
+  currentList: readonly SubmissionSummary[]
   /** 提交成功（草稿已清空、弹窗已关闭）后由榜单刷新；提交中状态持续到它完成 */
-  afterSubmit: { type: Function, required: true },
-})
+  afterSubmit: () => Promise<void>
+}>()
 
 const { t, te } = useI18n()
 const { requireLogin } = useHofAccess()
@@ -30,16 +32,16 @@ const submitError = ref('')
 const needProfile = ref(false)
 const screenshotErr = ref('')
 const replayErr = ref('')
-const screenshotUploader = ref(null)
-const replaysInput = ref(null)
+const screenshotUploader = ref<InstanceType<typeof ImageDataUploader> | null>(null)
+const replaysInput = ref<HTMLInputElement | null>(null)
 const screenshotName = ref('')
 const screenshotReading = ref(false)
 const form = reactive({
-  vehicleId: null,
-  averageDamage: '',
-  battleCount: '',
+  vehicleId: null as number | null,
+  averageDamage: '' as number | '',
+  battleCount: '' as number | '',
   screenshot: '',
-  replays: []
+  replays: [] as File[],
 })
 
 const hasDraft = computed(() => Boolean(
@@ -50,14 +52,7 @@ const hasDraft = computed(() => Boolean(
   || form.replays.length
 ))
 
-const pickerOptions = computed(() => {
-  const candidates = props.vehicles
-  const draftVehicle = HUNDRED_VEHICLES.find(vehicle => vehicle.id === Number(form.vehicleId))
-  const list = !draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)
-    ? candidates
-    : [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
-  return list.map(vehicle => tierXPickerOption(t, te, vehicle))
-})
+const pickerOptions = computed(() => withDraftVehicle(props.vehicles, form.vehicleId).map(vehicle => tierXPickerOption(t, te, vehicle)))
 
 /**
  * 提交弹窗里的当前门槛（审计 BZ-18）：门槛是「你在该车的当前纪录」。没有纪录时明确说明这是第一条纪录，
@@ -78,7 +73,7 @@ const threshold = computed(() => {
   }
 })
 
-function open(defaultVehicleId) {
+function open(defaultVehicleId: number | null) {
   if (!requireLogin()) return
   show.value = true
   submitting.value = false
@@ -116,7 +111,7 @@ async function clearDraft() {
   resetDraft()
 }
 
-function onScreenshotSelected(images) {
+function onScreenshotSelected(images: { data: string, name: string }[]) {
   const screenshot = images[0]
   if (!screenshot) return
   screenshotErr.value = ''
@@ -124,11 +119,11 @@ function onScreenshotSelected(images) {
   screenshotName.value = screenshot.name
 }
 
-function onScreenshotUploadError(code) {
-  const errorKey = {
+function onScreenshotUploadError(code: string) {
+  const errorKey = ({
     'invalid-type': 'hundred.invalidImageType',
     'too-large': 'hundred.invalidImageSize',
-  }[code] || 'hundred.imageReadError'
+  } as Record<string, string | undefined>)[code] || 'hundred.imageReadError'
   screenshotErr.value = t(errorKey)
 }
 
@@ -140,10 +135,8 @@ function removeScreenshot() {
   screenshotErr.value = ''
 }
 
-function onReplaysChange(e) {
-  const input = e.target
-  const files = Array.from(input.files || [])
-  input.value = ''
+function onReplaysChange(event: Event) {
+  const files = takeInputFiles(event)
   if (!files.length) return
   const { error, additions, duplicateCount } = mergeReplayFiles(form.replays, files)
   if (error) {
@@ -154,7 +147,7 @@ function onReplaysChange(e) {
   replayErr.value = duplicateCount ? t('hundred.replayDuplicateIgnored') : ''
 }
 
-function removeReplay(index) {
+function removeReplay(index: number) {
   form.replays.splice(index, 1)
   replayErr.value = ''
 }
@@ -191,7 +184,7 @@ async function submit() {
     show.value = false
     await props.afterSubmit()
   } catch (e) {
-    const code = e?.code
+    const code = errorCode(e)
     if (code === 'HUNDRED_PROFILE_GAME_ID_REQUIRED' || code === 'HUNDRED_PROFILE_NICKNAME_REQUIRED') {
       needProfile.value = true
       submitError.value = t('hundred.needProfile')
@@ -221,7 +214,7 @@ defineExpose({ open })
 
       <div class="h100-field">
         <label class="h100-field-label" for="h100-submit-vehicle">{{ $t('hundred.selectVehicle') }}</label>
-        <VehiclePicker v-model="form.vehicleId" class="h100-submit-vehicle" input-id="h100-submit-vehicle"
+        <VehiclePicker :model-value="form.vehicleId ?? undefined" @update:model-value="form.vehicleId = $event" class="h100-submit-vehicle" input-id="h100-submit-vehicle"
                        :options="pickerOptions" :placeholder="$t('hundred.chooseVehicle')" />
         <p class="hof-threshold" :class="{ 'is-blocked': threshold.blocked }" data-testid="hundred-threshold">
           <strong>{{ $t('hofRules.threshold.title') }}</strong>{{ $t(threshold.key, threshold.params || {}) }}

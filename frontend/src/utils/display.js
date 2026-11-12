@@ -51,7 +51,11 @@ export function replayValueLabel(t, te, value, fallback = '--') {
   return te(key) ? t(key) : String(value)
 }
 
-/** 页面统一的本地分钟级时间格式；可选 minYear 用于过滤回放中的无效纪元时间。 */
+/**
+ * 页面统一的本地分钟级时间格式；可选 minYear 用于过滤回放中的无效纪元时间。
+ * @param {string | number | Date | null | undefined} value
+ * @param {number | null} [minYear]
+ */
 export function formatDateTimeMinute(value, minYear = null) {
   if (!value) return ''
   const date = new Date(value)

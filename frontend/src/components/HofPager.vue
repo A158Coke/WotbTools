@@ -1,18 +1,18 @@
-<script setup>
+<script setup lang="ts">
 // 名人堂榜单分页条：上一页 / 页码摘要 / 直接跳页 / 下一页。页码本身归所属榜单，这里只持有跳页输入草稿。
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps({
-  page: { type: Number, required: true },
-  totalPages: { type: Number, required: true },
-  totalItems: { type: Number, default: null },
-  prevKey: { type: String, required: true },
-  nextKey: { type: String, required: true },
-})
-const emit = defineEmits(['go'])
+const props = withDefaults(defineProps<{
+  page: number
+  totalPages: number
+  totalItems?: number | null
+  prevKey: string
+  nextKey: string
+}>(), { totalItems: null })
+const emit = defineEmits<{ go: [page: number] }>()
 const { t } = useI18n()
-const jumpPage = ref('')
+const jumpPage = ref<number | string>('')
 
 function pagerLabel() {
   const { page, totalPages, totalItems } = props

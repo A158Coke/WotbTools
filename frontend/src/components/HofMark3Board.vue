@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // 名人堂「三环」榜：筛选 / 分页 / 榜单行 / 个人三环状态（current / pending）/ 撤回的唯一 owner。
 // URL query 归 HoFPage：本组件只在加载时 emit('query-change')，并通过 expose 的 queryState / applyQuery 收发。
 import { computed, ref } from 'vue'
@@ -9,7 +9,8 @@ import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import * as api from '../api/hall-of-fame.js'
-import { findVehicleStatus, fmtDate, formatHofNumber, formatHofWinRate, pageTotalItems, rankClass, scrollBoardIntoView, tierXPickerOption, uniqueValues, useHofAccess, useHofEpoch, vehicleChips, vehicleValueLabel as valueLabel } from './hofBoardShared.js'
+import type { components } from '../api/generated/http-contract.js'
+import { findVehicleStatus, fmtDate, formatHofNumber, formatHofWinRate, pageTotalItems, rankClass, scrollBoardIntoView, tierXPickerOption, uniqueValues, useHofAccess, useHofEpoch, vehicleChips, vehicleValueLabel as valueLabel, type HofQuery } from './hofBoardShared.js'
 import FilterChips from './FilterChips.vue'
 import AppSheet from './AppSheet.vue'
 import AppButton from './AppButton.vue'
@@ -18,32 +19,31 @@ import HofPager from './HofPager.vue'
 import HofMark3SubmitDialog from './HofMark3SubmitDialog.vue'
 import VehiclePicker from './VehiclePicker.vue'
 
-defineProps({
-  active: { type: Boolean, default: false },
-  filterOpen: { type: Boolean, default: false },
-  sheetTarget: { type: Object, default: null },
-})
-const emit = defineEmits(['query-change', 'toggle-filters', 'close-filters'])
+type LeaderboardItem = components['schemas']['Mark3LeaderboardItem']
+type SubmissionSummary = components['schemas']['Mark3SubmissionSummary']
+
+defineProps<{ active?: boolean, filterOpen?: boolean, sheetTarget?: HTMLElement | null }>()
+const emit = defineEmits<{ 'query-change': [], 'toggle-filters': [], 'close-filters': [] }>()
 
 const { locale, t, te } = useI18n()
 const { isCompact } = useBreakpoint()
 const { hofAvailability, isAuthenticated, requireHofOnline } = useHofAccess()
 const [DefineFilters, ReuseFilters] = createReusableTemplate()
-const pane = ref(null)
-const submitDialog = ref(null)
+const pane = ref<HTMLElement | null>(null)
+const submitDialog = ref<InstanceType<typeof HofMark3SubmitDialog> | null>(null)
 
 // 三环与百场共用 Tier X 车辆分类，但只允许人工证据审核。
 const vehicles = HUNDRED_VEHICLES
-const vehicleId = ref(null)
+const vehicleId = ref<number | null>(null)
 const vehicleName = ref('')
 const nation = ref('')
 const vehicleType = ref('')
-const rows = ref([])
+const rows = ref<LeaderboardItem[]>([])
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
 const totalPages = ref(0)
-const totalItems = ref(null)
+const totalItems = ref<number | null>(null)
 const PAGE_SIZE = 50
 let loadGeneration = 0
 const currentEpoch = useHofEpoch(hofAvailability, () => {
@@ -51,13 +51,13 @@ const currentEpoch = useHofEpoch(hofAvailability, () => {
   loading.value = false
 })
 
-const currentList = ref([])
-const pendingList = ref([])
-const withdrawingId = ref(null)
+const currentList = ref<SubmissionSummary[]>([])
+const pendingList = ref<SubmissionSummary[]>([])
+const withdrawingId = ref<number | null>(null)
 const msg = ref('')
 const msgErr = ref(false)
 
-const vehicleValueLabel = value => valueLabel(t, te, value)
+const vehicleValueLabel = (value: string | null | undefined) => valueLabel(t, te, value)
 const nations = uniqueValues(vehicles.map(vehicle => vehicle.nation))
 const vehicleTypes = uniqueValues(vehicles.map(vehicle => vehicle.vehicleType))
 const filteredVehicles = computed(() => vehicles.filter(vehicle =>
@@ -142,7 +142,7 @@ function onVehicleFilterChange() {
   reloadFirstPage()
 }
 
-function goPage(nextPage) {
+function goPage(nextPage: number) {
   page.value = nextPage
   loadList()
   scrollBoardIntoView(pane)
@@ -155,7 +155,7 @@ async function onSubmitted() {
   await loadStatus()
 }
 
-async function withdrawPending(submission) {
+async function withdrawPending(submission: SubmissionSummary) {
   if (!requireHofOnline()) return
   if (withdrawingId.value) return
   if (!(await confirm({ title: t('mark3.withdrawConfirm'), confirmLabel: t('mark3.withdraw'), danger: true }))) return
@@ -176,7 +176,7 @@ async function withdrawPending(submission) {
 }
 
 const chips = computed(() => vehicleChips(t, te, nation.value, vehicleType.value, vehicleLabel.value))
-function removeFilter(key) {
+function removeFilter(key: string) {
   if (key === 'nation') nation.value = ''
   if (key === 'type') vehicleType.value = ''
   if (key === 'vehicle') { vehicleId.value = null; return onVehicleChange() }
@@ -185,7 +185,7 @@ function removeFilter(key) {
 
 defineExpose({
   queryState: () => ({ tab: 'mark3', page: page.value, tank: vehicleId.value, nation: nation.value, type: vehicleType.value }),
-  applyQuery(q) {
+  applyQuery(q: HofQuery) {
     nation.value = q.nation
     vehicleType.value = q.type
     vehicleId.value = q.tank
@@ -233,7 +233,7 @@ defineExpose({
         </select>
       </label>
       <div class="lb-limit mark3-vehicle-filter"><label class="lb-label" for="hof-mark3-vehicle">{{ $t('mark3.selectVehicle') }}</label>
-        <VehiclePicker v-model="vehicleId" class="mark3-vehicle-select" input-id="hof-mark3-vehicle"
+        <VehiclePicker :model-value="vehicleId ?? undefined" @update:model-value="vehicleId = $event" class="mark3-vehicle-select" input-id="hof-mark3-vehicle"
                        :options="pickerOptions" :null-label="$t('mark3.default')" :fallback-label="vehicleLabel"
                        @change="onVehicleChange" />
       </div>
