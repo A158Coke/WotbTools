@@ -14,9 +14,11 @@
   background: var(--color-surface-1);
 }
 
-.hof-admin input:not([type="checkbox"]),
-.hof-admin select,
-.hof-admin textarea,
+/* 只用分区自己渲染的容器限定，不借父组件 .hof-admin 根。命中集合与拆分前生产渲染一致：
+ * 筛选栏、每页条数、DELETE 确认框；对话框经 AppDialog 传送到 body，原规则本就不作用于其中的 select / textarea。 */
+.hof-admin-filters input,
+.hof-admin-filters select,
+.page-size select,
 .admin-confirm-input {
   box-sizing: border-box;
   min-width: 0;
@@ -28,8 +30,6 @@
   color: var(--color-text-primary);
   font: var(--type-body);
 }
-
-.hof-admin textarea { min-height: auto; padding-block: var(--space-2); }
 
 /* 表格：容器横向滚动，表头吸顶；操作列吸附在右侧，手机上不会被滚出视口（审计 PG-10）。
  * isolation 建立局部层叠上下文，表头 / 操作列的 z-index 不参与全局竞争（§5） */

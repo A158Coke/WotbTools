@@ -3,7 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { compileStyle, parse } from 'vue/compiler-sfc'
 import HoFAdminPage from './HoFAdminPage.vue'
+import HoFAdminBulkDeleteDialog from './HoFAdminBulkDeleteDialog.vue'
+import HoFAdminModeration from './HoFAdminModeration.vue'
+import HoFAdminRecords from './HoFAdminRecords.vue'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
 // Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
@@ -1042,5 +1049,69 @@ describe('HoFAdminPage', () => {
     expect(wrapper.find('.hof-admin-table').text()).not.toMatch(/[⬇🗑✓✗]/u)
     // 操作列表头与单元格同一 class：吸附在右侧（PG-10），不会被横向滚动带出视口
     expect(wrapper.find('th.actions').exists()).toBe(true)
+  })
+
+  // 分区的 scoped 样式按真实编译产物（vue/compiler-sfc，组件自己的 scope id）注入文档，
+  // 由 happy-dom 级联算出 computed style：选择器若依赖分区之外的祖先或 scope 不匹配，这里就拿不到控件样式。
+  it('applies the shared control styles to section-owned filters, page-size and bulk confirm controls', async () => {
+    const sheets = []
+    const inject = (component, file) => {
+      expect(component.__scopeId).toMatch(/^data-v-/)
+      const path = fileURLToPath(new URL(file, import.meta.url))
+      const { descriptor } = parse(readFileSync(path, 'utf8'), { filename: path })
+      for (const block of descriptor.styles) {
+        const source = block.src ? readFileSync(resolve(dirname(path), block.src), 'utf8') : block.content
+        const { code, errors } = compileStyle({ source, id: component.__scopeId, scoped: block.scoped, filename: path })
+        expect(errors).toEqual([])
+        const sheet = document.createElement('style')
+        sheet.textContent = code
+        document.head.appendChild(sheet)
+        sheets.push(sheet)
+      }
+    }
+    inject(HoFAdminRecords, './HoFAdminRecords.vue')
+    inject(HoFAdminModeration, './HoFAdminModeration.vue')
+    inject(HoFAdminBulkDeleteDialog, './HoFAdminBulkDeleteDialog.vue')
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({ items: [pendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1 })
+    const wrapper = mount(HoFAdminPage, {
+      attachTo: document.body,
+      global: { mocks: { $t: translate, $tm: optionMessages }, provide: { [DIALOG_INLINE_KEY]: true } },
+    })
+    wrappers.push(wrapper)
+    try {
+      await flushPromises()
+      const styled = (element) => {
+        const style = getComputedStyle(element.element)
+        return { boxSizing: style.boxSizing, minWidth: style.minWidth }
+      }
+      const control = { boxSizing: 'border-box', minWidth: '0' }
+      const sectionControls = () => [
+        ...wrapper.findAll('.hof-admin-filters input'),
+        ...wrapper.findAll('.hof-admin-filters select'),
+        wrapper.find('.page-size select'),
+      ]
+
+      const records = sectionControls()
+      expect(records.length).toBeGreaterThan(10)
+      for (const element of records) expect(styled(element)).toEqual(control)
+
+      await switchToHundred(wrapper)
+      const hundred = sectionControls()
+      expect(hundred).toHaveLength(5)
+      for (const element of hundred) expect(styled(element)).toEqual(control)
+      await wrapper.find('.hof-hundred .hof-queue-all input').setValue(true)
+      await wrapper.findAll('.hof-hundred .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
+      const modal = wrapper.find('.bulk-delete-modal')
+      expect(styled(modal.find('.admin-confirm-input'))).toEqual(control)
+      expect(getComputedStyle(modal.find('select').element).width).toBe('100%')
+      await modal.findAll('button').find(button => button.text() === 'hofAdmin.cancel').trigger('click')
+
+      await switchToMark3(wrapper)
+      const mark3 = sectionControls()
+      expect(mark3).toHaveLength(5)
+      for (const element of mark3) expect(styled(element)).toEqual(control)
+    } finally {
+      for (const sheet of sheets) sheet.remove()
+    }
   })
 })
