@@ -12,5 +12,4 @@
 # Legacy over-budget files outside #820's three-file scope. Each needs its own
 # split issue before it can leave this list.
 frontend/src/components/HoFPage.vue
-frontend/src/components/HoFAdminPage.vue
 frontend/src/api/agent-replay-facets.ts

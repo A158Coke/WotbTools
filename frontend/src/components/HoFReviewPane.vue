@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 百场 / 三环审核详情（design-language §7 / current-plan Step 11「审核模板」）：
-// 证据 + 「用户申报 / 管理员确认」对照 + Replay 校验清单，底部固定决定栏。纯展示组件，状态与请求都在 HoFAdminPage。
+// 证据 + 「用户申报 / 管理员确认」对照 + Replay 校验清单，底部固定决定栏。纯展示组件，状态与请求都在 HoFAdminModeration（每个领域一个实例）。
 // 大屏内联在队列右侧；小屏经 Teleport 成为一屏全屏详情，顶部上一条 / 下一条，底部是拇指区决定栏。
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, ChevronLeft, ChevronRight, Download, X } from 'lucide-vue-next'
