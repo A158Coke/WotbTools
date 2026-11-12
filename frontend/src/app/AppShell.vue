@@ -378,6 +378,14 @@ watch(uiProfile, async () => {
   margin-top: auto;
 }
 
+/* 回放伪全屏（原生 Fullscreen API 不可用 / 被拒时的降级，见 usePlaybackFullscreen）：
+   工作台是局部层叠上下文，压不过 fixed 的宽屏侧栏，页脚也还在文档流里——伪全屏期间一并摘掉。
+   抽屉面板（div.app-sidebar.is-drawer）不受影响。 */
+:global(html[data-pb-pseudo-fullscreen] aside.app-sidebar),
+:global(html[data-pb-pseudo-fullscreen] .app-footer) {
+  display: none;
+}
+
 /* 沉浸态悬浮菜单：玻璃底胶囊，避开刘海与圆角安全区；场景外壳用 --immersive-nav-reserve 让出这一块 */
 .immersive-nav {
   position: fixed;

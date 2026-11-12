@@ -334,13 +334,19 @@ function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
 }
 // 全屏变化后等 Vue 更新布局再 force fit；事件与方向锁仍由共享 composable 所有。
-const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
+const { isFullscreen, pseudoFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => pbRoot.value,
+  // 原生全屏不可用 / 被拒时降级为 CSS 伪全屏（iPhone Safari、受限嵌入环境）
+  pseudoFallback: true,
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive && props.active && lifecycleVisible.value,
   onChange: () => nextTick(() => fitViewIfReady(true)),
   auto: () => ({ token: props.autoFullscreen?.token ?? 0, key: props.autoFullscreen?.key, ready: true, active: props.active && lifecycleVisible.value }),
 })
+
+// 竖屏手机的浮动全屏按钮自占顶部一行（见 playback-workspace.css .pb-fs-reserve），HUD 因此不被压住。
+// 与模板里按钮的 v-if 同源；uiHidden 时没有 HUD，不预留。
+const floatingFullscreenRow = computed(() => isMobileDevice.value && fullscreenSupported.value && !phoneLandscape.value && !uiHidden.value)
 
 const {
   mapEl,
@@ -442,6 +448,10 @@ function writeSquareAvailHeight() {
 
 // 外壳沉浸态切换改的是 --header-h（不触发任何元素 resize），显式重算高度预算与默认 fit。
 const shellChrome = inject(SHELL_CHROME_KEY, null)
+// 伪全屏盖不住外壳顶栏（工作台自己是局部层叠上下文，z-index 压不过 fixed 顶栏），
+// 所以与手机横屏沉浸态同口径：伪全屏期间向外壳申请沉浸（摘掉顶栏、--header-h 归零），退出即释放。
+const pseudoShellOwner = Symbol('battle-playback-pseudo-fullscreen')
+watch(pseudoFullscreen, (on) => shellChrome?.request(pseudoShellOwner, on), { immediate: true })
 watch(() => shellChrome?.immersive.value, () => nextTick(() => { writeSquareAvailHeight(); fitViewIfReady(true) }))
 
 watch(() => mapStageEl.value, (el) => {
@@ -604,6 +614,7 @@ function onKeydown(e) {
 }
 
 onBeforeUnmount(() => {
+  shellChrome?.request(pseudoShellOwner, false)
   playbackLifecycleActive = false
   paletteRequestToken += 1
   disposeClock()
@@ -1050,7 +1061,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-pseudo-fullscreen': pseudoFullscreen, 'pb-fs-reserve': floatingFullscreenRow, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口：竖屏保持右上角浮动（与 Map Preview 3D / Replay 3D 同一位置）；
          手机横屏普通播放并入传输条；标注编辑隐藏传输条时，同一按钮移到标注行右端，
          隐藏全部 UI 时仍作为唯一可达入口留在右上角。三态互斥，DOM 里只有一个入口。 -->

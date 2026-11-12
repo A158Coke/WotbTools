@@ -42,8 +42,8 @@
   order: 0;
 }
 
-.battle-playback.playback-workspace:not(:fullscreen),
-.battle-playback.playback-workspace:fullscreen {
+.battle-playback.playback-workspace:not(:fullscreen, .pb-pseudo-fullscreen),
+.battle-playback.playback-workspace:is(:fullscreen, .pb-pseudo-fullscreen) {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -131,7 +131,7 @@
   grid-template-rows: max-content minmax(0, 1fr) max-content;
 }
 /* 沉浸态横屏（非全屏）同样贴到屏幕左右边缘：刘海 / 圆角侧的 safe-area 与全屏路径一致（:fullscreen 另有自己的 padding-inline） */
-.battle-playback.playback-workspace.pb-phone-landscape:not(:fullscreen) {
+.battle-playback.playback-workspace.pb-phone-landscape:not(:fullscreen, .pb-pseudo-fullscreen) {
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
 /* 紧凑档按钮视觉高度 36px，命中区靠上下各 2px 的伪元素补到 40px。传输条此前贴视口底：
@@ -413,13 +413,32 @@
   position: absolute;
   z-index: var(--pb-z-transient);
 }
-.battle-playback.playback-workspace:fullscreen {
+.battle-playback.playback-workspace:is(:fullscreen, .pb-pseudo-fullscreen) {
   inline-size: 100%;
   margin: 0;
   padding-block-start: env(safe-area-inset-top);
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   overflow: hidden;
 }
+
+/* 竖屏手机的浮动全屏按钮：自占顶部一行（右对齐），不再压在战况栏的战斗时间 / 敌方总血量上。
+   与 :fullscreen 的 safe-area 顶边叠加（刘海下方）；按钮仍是绝对定位，位置随之下移到安全区内。 */
+.battle-playback.playback-workspace.pb-fs-reserve {
+  padding-block-start: calc(env(safe-area-inset-top) + var(--control-h-sm) + var(--space-2) + var(--space-1));
+}
+.battle-playback.playback-workspace.pb-fs-reserve .scene-fs-btn.floating {
+  top: calc(env(safe-area-inset-top) + var(--space-2));
+}
+
+/* 伪全屏（原生 Fullscreen API 不可用 / 被拒时的降级，见 usePlaybackFullscreen）：
+   铺满视口并盖住外壳顶栏与页脚（顶栏 z-header，抽屉 z-drawer 仍在其上，菜单 / 对话框不受影响）；
+   文档滚动由 html 属性锁住，Esc / 全屏按钮退出后整页布局恢复。 */
+.battle-playback.playback-workspace.pb-pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-header) + 1);
+}
+html[data-pb-pseudo-fullscreen] { overflow: hidden; }
 
 /* The content keeps its natural width during height transitions; the restore entry stays right. */
 .battle-playback.playback-workspace .pb-transport-slot { display: flex; flex-direction: column; gap: var(--space-1); }
