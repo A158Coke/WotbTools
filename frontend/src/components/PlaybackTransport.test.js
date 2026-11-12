@@ -89,6 +89,32 @@ describe('PlaybackTransport', () => {
       expect(wrapper.get('[data-test="pb-speed-current"]').attributes('aria-expanded')).toBe('false')
     })
 
+    it('焦点在档位上按 Esc：关闭菜单、焦点还给触发按钮，且不冒泡给外层 Esc 处理', async () => {
+      const outer = vi.fn()
+      document.addEventListener('keydown', outer)
+      const wrapper = mount(PlaybackTransport, {
+        props: { currentTime: 0, duration: 60, speed: 1, compact: true },
+        global: { mocks: { $t: (k) => k } },
+        attachTo: document.body,
+      })
+      const trigger = wrapper.get('[data-test="pb-speed-current"]')
+      await trigger.trigger('click')
+      const item = wrapper.get('[data-test="pb-speed-2"]')
+      item.element.focus()
+      expect(document.activeElement).toBe(item.element)
+      await item.trigger('keydown', { key: 'Escape' })
+      expect(wrapper.find('[data-test="pb-speed-menu"]').exists()).toBe(false)
+      expect(trigger.attributes('aria-expanded')).toBe('false')
+      expect(document.activeElement).toBe(trigger.element)
+      expect(outer).not.toHaveBeenCalled()
+      expect(wrapper.emitted('set-speed')).toBeUndefined()
+      // 菜单未打开时 Esc 不被吞，仍交给外层
+      await trigger.trigger('keydown', { key: 'Escape' })
+      expect(outer).toHaveBeenCalledTimes(1)
+      document.removeEventListener('keydown', outer)
+      wrapper.unmount()
+    })
+
     it('当前档位在菜单里被标记为选中（aria-checked），语义不变', async () => {
       const wrapper = mountTransport({ currentTime: 0, duration: 60, speed: 4, compact: true })
       await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
