@@ -47,12 +47,20 @@ export function findChrome() {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** 极简 CDP 客户端：浏览器级 endpoint + flatten session 复用同一条 WebSocket。 */
-class CdpClient {
+export class CdpClient {
   constructor(socket) {
     this.socket = socket
     this.nextId = 1
     this.pending = new Map()
     this.listeners = new Map()
+    this.closed = false
+    // Browser.close may disconnect before its response arrives. Settle pending
+    // commands so teardown cannot wait forever on a dead WebSocket.
+    socket.addEventListener('close', () => {
+      this.closed = true
+      for (const entry of this.pending.values()) entry.reject(new Error(`CDP websocket closed during ${entry.method}`))
+      this.pending.clear()
+    })
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data)
       if (message.id != null) {
@@ -76,6 +84,7 @@ class CdpClient {
   }
 
   send(method, params = {}, sessionId) {
+    if (this.closed) return Promise.reject(new Error(`CDP websocket closed before ${method}`))
     const id = this.nextId++
     const payload = sessionId ? { id, method, params, sessionId } : { id, method, params }
     return new Promise((resolve, reject) => {
