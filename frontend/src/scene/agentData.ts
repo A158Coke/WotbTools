@@ -351,8 +351,9 @@ export function shotBallisticLength(shot: { ball_a?: unknown; via?: unknown; bal
   return len
 }
 
-export function storeShotsForViewer(shots: unknown) {
-  const payload = JSON.stringify({ at: Date.now(), shots })
+export function storeShotsForViewer(shots: unknown, meta: { battleStartRaw?: number } = {}) {
+  // battleStartRaw：开战原始时钟，查看器据此把 time_s 换算成与射击分析一致的开战相对时间
+  const payload = JSON.stringify({ at: Date.now(), shots, battleStartRaw: meta.battleStartRaw ?? 0 })
   try {
     localStorage.setItem(SHOTS_KEY, payload)
   } catch { /* 配额/隐私模式：剩余通道兜底 */ }
@@ -375,7 +376,8 @@ export async function fetchReplayShots() {
       const shots = Array.isArray(parsed) ? parsed : parsed.shots
       const at = Array.isArray(parsed) ? 0 : parsed.at || 0
       if (Array.isArray(shots) && shots.length && Date.now() - at < SHOTS_TTL_MS) {
-        return { shots }
+        const start = Array.isArray(parsed) ? 0 : Number(parsed.battleStartRaw)
+        return { shots, battleStartRaw: Number.isFinite(start) ? start : 0 }
       }
     } catch { /* 损坏条目按下个通道处理 */ }
   }

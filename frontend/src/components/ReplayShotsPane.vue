@@ -24,7 +24,7 @@ import {
 import { resolveMountedConfig } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
-import { formatPlaybackClock } from '../utils/playbackClock.js'
+import { formatShotBattleClock } from '../utils/playbackClock.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
 import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
@@ -369,7 +369,7 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
 }, { immediate: true })
 
 /** 射击时刻（开战相对）：与 2D / 3D 时间轴同一时钟 */
-const shotClock = (shot) => formatPlaybackClock(Math.max(0, shot.time_s - battleStartRaw.value))
+const shotClock = (shot) => formatShotBattleClock(shot.time_s, battleStartRaw.value)
 
 const shellBadge = (s) => {
   const kindOf = (value) => {
@@ -683,7 +683,7 @@ async function openInViewer(s) {
   // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
   s = JSON.parse(JSON.stringify(s))
   const sequence = parseSeq
-  storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))))
+  storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))), { battleStartRaw: battleStartRaw.value })
   const query = await shotViewerQuery(s)
   if (sequence !== parseSeq || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return false
   // Routing remains owned by the workspace. Both entry and viewer navigation share one config resolver.

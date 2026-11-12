@@ -17,7 +17,7 @@ import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, Mo
 import { fetchReplayShots, shotViewerQuery, fetchTankData } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
-import { formatPlaybackClock } from '../utils/playbackClock.js'
+import { formatShotBattleClock } from '../utils/playbackClock.js'
 import { shouldResetShellOnConfigChange } from '../utils/armorShellSelection.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { loadDevices, loadTankModules } from '../utils/researchCatalog.js'
@@ -42,6 +42,7 @@ const isShotPage = computed(() => route.query.shot != null)
 // 普通装甲检视缺省交给 resolveUpgradeSelection（XI→top）。
 const armorUpgrade = value => (isShotPage.value ? (value ?? 'stock') : value)
 const shotSnapshot = ref([])
+const battleStartRaw = ref(0)
 const activeShot = computed(() => shotSnapshot.value.find(shot => String(shot.index) === String(route.query.shot)))
 const shotPosition = computed(() => shotSnapshot.value.indexOf(activeShot.value))
 const recordedResult = computed(() => activeShot.value ? shotResultBadge(activeShot.value, t) : null)
@@ -55,7 +56,10 @@ async function readShotSnapshot(seq) {
     if (!isShotPage.value) { shotSnapshot.value = []; return }
     try {
         const data = await fetchReplayShots()
-        if (alive && seq === navigationSeq) shotSnapshot.value = data.shots
+        if (alive && seq === navigationSeq) {
+            shotSnapshot.value = data.shots
+            battleStartRaw.value = data.battleStartRaw ?? 0
+        }
     } catch { if (alive && seq === navigationSeq) shotSnapshot.value = [] } // The scene reports the actionable missing-handoff error.
 }
 function shotTankName(role) {
@@ -612,7 +616,7 @@ onBeforeUnmount(() => {
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
         <div class="armor-shot-context">
             <div class="armor-shot-matchup"><strong>{{ shotTankName('shooter') }}</strong><ArrowRight :size="18" aria-hidden="true" /><strong>{{ activeShot?.target_eid == null ? $t('agentShots.no_target') : shotTankName('target') }}</strong></div>
-            <div v-if="activeShot" class="armor-shot-meta"><span>{{ $t('armor.recorded_shot') }} · {{ formatPlaybackClock(activeShot.time_s) }}</span><span>{{ $t('agentShots.recorded_damage') }} <b>{{ activeShot.damage ?? '—' }}</b></span><span v-if="recordedResult" :class="`armor-shot-result is-${recordedResult.tone}`">{{ recordedResult.text }}</span><span v-if="activeShot.shell_kind">{{ shellLabel({ type: activeShot.shell_kind }) }}</span></div>
+            <div v-if="activeShot" class="armor-shot-meta"><span>{{ $t('armor.recorded_shot') }} · {{ formatShotBattleClock(activeShot.time_s, battleStartRaw) }}</span><span>{{ $t('agentShots.recorded_damage') }} <b>{{ activeShot.damage ?? '—' }}</b></span><span v-if="recordedResult" :class="`armor-shot-result is-${recordedResult.tone}`">{{ recordedResult.text }}</span><span v-if="activeShot.shell_kind">{{ shellLabel({ type: activeShot.shell_kind }) }}</span></div>
         </div>
         <nav class="armor-shot-navigation" :aria-label="$t('armor.shot_navigation')">
             <button type="button" :disabled="navigating || shotPosition <= 0" :aria-label="$t('armor.previous_shot')" :title="$t('armor.previous_shot')" @click="adjacentShot(-1)"><ChevronLeft :size="20" aria-hidden="true" /></button>
