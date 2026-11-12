@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { usePlaybackAnnotations } from './usePlaybackAnnotations.js'
-import type { PlaybackAnnotation } from './usePlaybackAnnotations.js'
+import { useAnnotationState } from './useAnnotationState.js'
+import type { MapAnnotation } from './useAnnotationState.js'
 
-function pen(id: string): PlaybackAnnotation {
+function pen(id: string): MapAnnotation {
   return { type: 'pen', color: '#ff0000', id, points: [{ x: 0, y: 0 }, { x: 10, y: 10 }] }
 }
 
-function historyIds(history: PlaybackAnnotation[][]): (string | undefined)[][] {
+function historyIds(history: MapAnnotation[][]): (string | undefined)[][] {
   return history.map((snap) => snap.map((a) => a.id as string | undefined))
 }
 
-describe('usePlaybackAnnotations', () => {
+describe('useAnnotationState', () => {
   it('starts empty with a single initial snapshot', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     expect(s.annotations.value).toEqual([])
     expect(s.history.value).toEqual([[]])
     expect(s.historyIndex.value).toBe(0)
@@ -21,7 +21,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('commitDraft appends and grows the snapshot stack', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.commitDraft(pen('b'))
     expect(s.annotations.value.map((a) => a.id)).toEqual(['a', 'b'])
@@ -30,7 +30,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('undo / redo move along snapshots and clear the selection', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.commitDraft(pen('b'))
     s.selectedAnnotationIndex.value = 1
@@ -50,7 +50,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('commit after undo discards the redo side', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.commitDraft(pen('b'))
     s.undo()
@@ -60,7 +60,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('clearAll commits an empty snapshot only when there is something to clear', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.clearAll()
     expect(s.history.value).toEqual([[]])
     s.commitDraft(pen('a'))
@@ -72,7 +72,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('updateSelected patches only the selected annotation snapshot', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.commitDraft(pen('b'))
     s.selectedAnnotationIndex.value = 1
@@ -83,7 +83,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('deleteSelected removes the selected annotation and clears the selection', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.commitDraft(pen('b'))
     s.selectedAnnotationIndex.value = 0
@@ -96,7 +96,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('renameSelected writes text for text annotations and label otherwise, trimmed to 60 chars', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.selectedAnnotationIndex.value = 0
     s.renameSelected('  alpha  ')
@@ -109,8 +109,8 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('finishRoute commits a route of >= 2 points and selects it; shorter routes are rejected', () => {
-    let route: PlaybackAnnotation | null = null
-    const s = usePlaybackAnnotations({ getRouteDraft: () => route })
+    let route: MapAnnotation | null = null
+    const s = useAnnotationState({ getRouteDraft: () => route })
     route = { type: 'route', color: '#fff', points: [{ x: 0, y: 0 }] }
     expect(s.finishRoute()).toBe(false)
     expect(s.history.value).toEqual([[]])
@@ -122,7 +122,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('an out-of-range selection yields no selected annotation and update/delete are no-ops', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.selectedAnnotationIndex.value = 5
     expect(s.selectedAnnotation.value).toBeNull()
@@ -134,7 +134,7 @@ describe('usePlaybackAnnotations', () => {
   })
 
   it('reset returns history, draft and selection to the initial state (file switch)', () => {
-    const s = usePlaybackAnnotations()
+    const s = useAnnotationState()
     s.commitDraft(pen('a'))
     s.draft.value = pen('draft')
     s.selectedAnnotationIndex.value = 0
