@@ -162,6 +162,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         const cleanups = [];
+        let lastPresetTarget = null; // 最近一次相机预设的炮轴基准点（pose.target，门禁量炮线俯角用）
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
         let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
@@ -455,6 +456,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             getCameraMotion: () => ({ cameraMovedAt, frameIntervalMs }),
             getRcLastClick: () => rcLastClick,
             setRcLastClick: (v) => { rcLastClick = v; },
+            getLastPresetTarget: () => lastPresetTarget,
         });
         // 瞄准输入：Pointer Events 会话与炮塔/炮管拖拽灵敏度（#820 Agent A 出仓）
         const aim = createAimInput({
@@ -684,6 +686,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rig.updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(rig.getArmorPivotGun() || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
+            // 炮轴基准点 = 炮线枢轴（pose.target）：门禁量"炮管指向镜头"以它为基准——
+            // placement.target 是（不动的）轨道中心，不是炮线上的点。
+            lastPresetTarget = pose.target.clone();
             // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
             // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
             // 按钮（preserveView）的两个约束（2026-11-13 反馈定稿）：旋转中心保持

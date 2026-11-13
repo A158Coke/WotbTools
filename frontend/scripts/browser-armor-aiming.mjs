@@ -929,7 +929,8 @@ try {
     try {
       await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${tiltedPack.origin}`)
       await page.waitFor(() => !document.querySelector('[data-testid="armor-camera-front"]')?.disabled
-        && !!window.__armorRicochet?.rigState?.().guns.length,
+        && !!window.__armorRicochet?.rigState?.().guns.length
+        && !!window.__armorRicochet?.rigState?.().pivots?.gun,
         { timeout: 30000, label: 'tilted Minotauro pose fixture ready' })
       for (const [name, local, expectedWorld] of [['hull-down', -7, -10], ['front', 0, -3]]) {
         const point = await page.evaluate(`(() => {
@@ -940,7 +941,10 @@ try {
         await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', value => value === local,
           { timeout: 5000, label: 'preset local gun angle' })
         const world = await page.evaluate(`(() => {
-          const c=window.__DBG__.controls, d=c.object.position.clone().sub(c.target);
+          const c=window.__DBG__.controls;
+          const pt=window.__armorRicochet.rigState().presetTarget;
+          const wp=new window.__DBG__.THREE.Vector3(pt.x,pt.y,pt.z);
+          const d=c.object.position.clone().sub(wp);
           return Math.atan2(d.y, Math.hypot(d.x,d.z))*180/Math.PI;
         })()`)
         check(Math.abs(world - expectedWorld) < .01,
@@ -1000,6 +1004,8 @@ try {
       // 用户反馈（0x5f3759df，2026-11-08；2026-11-13 定稿）：预设同时满足
       // ①旋转中心保持默认（不得移动）②机位在炮轴线上（炮管正对镜头，俯角 = 夹具
       // 局部俯角；夹具无 initial_turret_rotation 且 turret=0）③距离按中心保留。
+      await page.waitFor(() => !!window.__armorRicochet?.rigState?.()?.pivots?.gun,
+        { timeout: 30000, label: 'turretless gun pivot installed' })
       const orbitBefore = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target), t: c.target.toArray() } })()')
       await mouseTap(await presetPoint('hull-down'))
       const low = await page.waitForValue('window.__armorRicochet.aimingState()',
@@ -1007,14 +1013,14 @@ try {
         { timeout: 5000, label: 'hull-down preset uses fixture depression' })
       const orbitAfter = await page.evaluate(`(() => {
         const c = window.__DBG__.controls;
-        const p = window.__armorRicochet.rigState().pivots.gun;
-        const wp = p ? new window.__DBG__.THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(window.__DBG__.tankModel.matrixWorld).toArray() : null;
+        const pt = window.__armorRicochet.rigState().presetTarget;
+        const wp = pt ? new window.__DBG__.THREE.Vector3(pt.x, pt.y, pt.z) : null;
         const rel = wp ? c.object.position.clone().sub(wp) : null;
         const elev = rel ? Math.atan2(rel.y, Math.hypot(rel.x, rel.z)) * 180 / Math.PI : null;
         return { d: c.object.position.distanceTo(c.target), t: c.target.toArray(),
                  onAxisElev: elev, axisDist: rel ? rel.length() : null };
       })()`)
-      check(!!orbitAfter.axisDist, '压坡卖头预设：rigState 暴露炮线枢轴（models.pb）')
+      check(orbitAfter.axisDist != null && orbitAfter.axisDist > 0, '压坡卖头预设：pose 暴露炮轴基准点（presetTarget）')
       check(low.controlsEnabled && Math.abs(orbitAfter.d - orbitBefore.d) < 0.01
         && orbitAfter.t.every((v, i) => Math.abs(v - orbitBefore.t[i]) < 1e-6),
         `压坡卖头预设：旋转中心保持默认（${orbitBefore.t.map(v => v.toFixed(2)).join(', ')}）、距离保留（${orbitBefore.d.toFixed(2)}m → ${orbitAfter.d.toFixed(2)}m）`)
