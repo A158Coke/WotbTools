@@ -13,9 +13,10 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  AUGMENT_CELL, buildAugmentLayout, isPercentAttribute,
+  AUGMENT_CELL, buildAugmentLayout,
   parseAugmentProgression, researchGroupChoice, researchWithPrerequisites, rollbackSubtree,
 } from '../replay-local/compute/tankAugmentTree'
+import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 import type { AugmentGroup } from '../replay-local/compute/tankAugmentTree'
 
 interface UpgradeAttribute { name: string; value: number | boolean }
@@ -120,19 +121,8 @@ const mechIconUrl = computed(() => iconUrl('', `mech_${mechanicKey.value}`))
 function effectText(attr: UpgradeAttribute): string {
   const name = attr.name
   const label = t(`agentTanks.configurator.upgrade_attributes.${name}`)
-  const value = attr.value
-  if (typeof value === 'boolean') {
-    if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT') return `${label} ${t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)}`
-    return `${label} ${t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)}`
-  }
-  // 口径与 TankConfigPanel.upgradeAmount 一致：MODIFIER_MULTIPLY 是系数（×0.98
-  // = 散布乘 0.98 即降 2%），不能渲染成 +0.98 的加法。
-  if (progression.value?.attributeDefinitions[name]?.modifier === 'MODIFIER_MULTIPLY') {
-    return `${label} ×${value}`
-  }
-  const sign = value > 0 ? '+' : ''
-  const text = isPercentAttribute(name) ? `${sign}${Math.round(value * 100)} %` : `${sign}${value}`
-  return `${label} ${text}`
+  const modifier = progression.value?.attributeDefinitions[name]?.modifier
+  return `${label} ${formatUpgradeValue(t, name, attr.value, typeof modifier === 'string' ? modifier : 'MODIFIER_ADD')}`
 }
 function nodeEffectLines(node: AugmentNodeView | null | undefined): string[] {
   return (node?.attributes ?? []).map(effectText)

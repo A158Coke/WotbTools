@@ -18,6 +18,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
+import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
 import { resolveUpgradeSelection, upgradeMechanicEffects } from '../replay-local/compute/tankUpgrades'
@@ -46,7 +47,7 @@ const props = defineProps({
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 const { isCompact } = useBreakpoint()
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 const GROUPS = ['attack', 'defence', 'specialization']
 const LEVELS = [0, 1, 2]
@@ -68,38 +69,21 @@ const upgradeOptions = computed(() => [
   { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
   { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
 ])
-// 同版 hangarAbilityParamsConfig 明确标注 PERCENT 的三项；其他机制系数不做统一百分化。
-const PERCENT_MECHANIC_ATTRIBUTES = new Set([
-  'COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK', 'SAS_AIMING_SPEED', 'SAS_GUN_DISPERSION',
-])
-function upgradeAmount(value, modifier = 'MODIFIER_ADD', name) {
-  if (value == null) return '—'
-  if (typeof value === 'boolean') return upgradeValue(value, name)
-  const points = modifier === 'MODIFIER_ADD' && PERCENT_MECHANIC_ATTRIBUTES.has(name)
-  const amount = `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(points ? value * 100 : value, 3)}`
-  return points ? t('agentTanks.configurator.upgrade_percentage_points', { value: amount }) : amount
-}
-function upgradeValue(value, name) {
-  if (value == null) return '—'
-  if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' && typeof value === 'boolean') {
-    return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
-  }
-  if (name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' && typeof value === 'boolean') {
-    return t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)
-  }
-  if (typeof value === 'number' && PERCENT_MECHANIC_ATTRIBUTES.has(name)) return `${fmtNum(value * 100, 3)}%`
-  return typeof value === 'boolean' ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`) : fmtNum(value, 3)
-}
 const mechanicEffects = computed(() => upgradeMechanicEffects(upgrades.value, props.modules, props.catalog))
+const mechanicMessage = computed(() => {
+  const stem = props.modules?.vehicleAbilities?.[0]
+  const path = `agentTanks.configurator.augment_mechanics.${stem}`
+  return stem && te(`${path}.name`) ? { name: t(`${path}.name`), description: t(`${path}.description`) } : null
+})
 const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, groupIndex) => ({
   ...group,
-  label: itemName(group) || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
-  description: group[`description_${lang.value}`] || group.description_en || '',
+  label: itemName(group) || mechanicMessage.value?.name || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
+  description: group[`description_${lang.value}`] || group.description_en || mechanicMessage.value?.description || '',
   options: group.choices.map((id, index) => {
     const node = upgrades.value.nodes.find(node => node.id === id)
     const effects = (node?.attributes || []).map(({ name, value }) => ({
       name, label: t(`agentTanks.configurator.upgrade_attributes.${name}`),
-      amount: upgradeAmount(value, upgrades.value.attributeDefinitions[name]?.modifier, name),
+      amount: formatUpgradeValue(t, name, value, upgrades.value.attributeDefinitions[name]?.modifier || 'MODIFIER_ADD'),
     }))
     return {
       value: String(id),
@@ -529,9 +513,9 @@ const camoBonusParts = computed(() => {
               <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
             <tbody><tr v-for="effect in mechanicEffects" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
               <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
-              <td>{{ upgradeValue(effect.initial, effect.name) }}</td>
-              <td class="tp-effect-current"><strong>{{ upgradeValue(effect.value, effect.name) }}</strong>
-                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: upgradeAmount(effect.current, effect.modifier, effect.name) }) }}</span>
+              <td>{{ formatUpgradeValue(t, effect.name, effect.initial) }}</td>
+              <td class="tp-effect-current"><strong>{{ formatUpgradeValue(t, effect.name, effect.value) }}</strong>
+                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: formatUpgradeValue(t, effect.name, effect.current, effect.modifier) }) }}</span>
               </td>
             </tr></tbody>
           </table>

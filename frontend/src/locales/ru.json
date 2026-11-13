@@ -1821,7 +1821,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "Прочность орудия",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "Прочность наблюдательного прибора",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "Прочность гусениц",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Прочность механизма поворота башни"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Прочность механизма поворота башни",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "Перезарядка между выстрелами в усиленном магазине",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "Условие активации усиленного магазина",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "Время перезарядки вспомогательного орудия",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "Урон за выстрел вспомогательного орудия",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "Интервал между выстрелами вспомогательного орудия",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "Максимальная скорость для накопления заряда",
+        "SHELL_OVERHEAT_CHARGE_TIME": "Время до полного заряда",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "Задержка перед накоплением заряда",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "Бонус к минимальному урону",
+        "UNGUIDED_ROCKET_ACCELERATION": "Ускорение ракеты",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "Начальная скорость ракеты",
+        "UNGUIDED_ROCKET_DAMAGE": "Урон одной ракеты",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "Перезарядка между пусками ракет",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "Время полной перезарядки пусковой установки",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "Предельная скорость заднего хода",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "Скорость поворота башни",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "Пробитие снаряда 1 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "Пробитие снаряда 2 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "Пробитие снаряда 3 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "Пробитие снаряда 1 на 500 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "Пробитие снаряда 2 на 500 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "Пробитие снаряда 3 на 500 м"
       },
       "title": "Комплектация",
       "reset": "Сбросить",
@@ -1912,6 +1934,22 @@
         "steadyAimSystem": {
           "name": "Система точного прицеливания",
           "description": "Временно сужает разброс орудия и ускоряет сведение."
+        },
+        "externalAmmoModule": {
+          "name": "Модуль подачи боеприпасов",
+          "description": "Если все три выстрела из магазина выполнят условие активации, в следующем магазине будет четыре снаряда. После опустошения или перезарядки усиленного магазина ёмкость вернётся к трём снарядам."
+        },
+        "auxilliaryWeapons": {
+          "name": "Вспомогательное вооружение",
+          "description": "При активации вспомогательные орудия делают два выстрела подряд. Они перезаряжаются независимо от основного орудия."
+        },
+        "shellOverheat": {
+          "name": "Терморегуляция снаряда",
+          "description": "Пока скорость машины находится в допустимом диапазоне, накапливается заряд, повышающий минимальный урон следующего выстрела. Выстрел расходует весь заряд."
+        },
+        "unguidedRocket": {
+          "name": "Неуправляемая ракета",
+          "description": "Пусковая установка заряжена двумя неуправляемыми ракетами. Между пусками есть короткая перезарядка, а после второй ракеты установка перезаряжается полностью."
         }
       }
     },
@@ -2006,7 +2044,9 @@
       "HORSE_POWER_PER_TON": "л.с./т",
       "SECOND": "с",
       "METER": "м",
-      "CUBIC_METER": "м³"
+      "CUBIC_METER": "м³",
+      "HIT_POINTS": "ед.",
+      "METER_PER_SECOND_SQUARED": "м/с²"
     },
     "module_dmg": "Урон по модулям",
     "normalization": "Нормализация",

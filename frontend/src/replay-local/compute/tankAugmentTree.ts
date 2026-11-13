@@ -446,13 +446,3 @@ export function buildAugmentLayout(progression: AugmentProgression): AugmentLayo
     wires,
   }
 }
-
-/** 单位口径：客户端参数面板明示 % 的白名单（hangarAbilityParamsConfig + tank_descr_param）。 */
-const PERCENT_ATTRIBUTES = new Set([
-  'COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK', 'SAS_AIMING_SPEED', 'SAS_GUN_DISPERSION',
-  'ATTRIBUTE_NAME_FIRE_START_CHANCE',
-])
-
-export function isPercentAttribute(name: string): boolean {
-  return PERCENT_ATTRIBUTES.has(name)
-}

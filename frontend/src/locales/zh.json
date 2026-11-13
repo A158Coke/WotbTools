@@ -1821,7 +1821,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "火炮耐久",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "观瞄设备耐久",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "履带耐久",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "炮塔旋转机耐久"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "炮塔旋转机耐久",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "强化弹匣夹内装填时间",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "强化弹匣触发条件",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "副炮装填时间",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "副炮单发伤害",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "副炮两发射击间隔",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "可蓄能的最高车速",
+        "SHELL_OVERHEAT_CHARGE_TIME": "充满能量所需时间",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "开始蓄能前的延迟",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "最低伤害加成",
+        "UNGUIDED_ROCKET_ACCELERATION": "火箭加速度",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "火箭初速",
+        "UNGUIDED_ROCKET_DAMAGE": "火箭单发伤害",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "两枚火箭发射间隔",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "火箭发射器整组装填时间",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "倒车速度上限",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "炮塔转向速度",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "弹种 1 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "弹种 2 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "弹种 3 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "弹种 1 在 500 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "弹种 2 在 500 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "弹种 3 在 500 米的穿深"
       },
       "title": "配置",
       "reset": "重置",
@@ -1912,6 +1934,22 @@
         "steadyAimSystem": {
           "name": "精准瞄准系统",
           "description": "激活后短时间收紧炮弹散布并加快瞄准速度。"
+        },
+        "externalAmmoModule": {
+          "name": "弹药补给模块",
+          "description": "三发弹匣中的每发炮弹都满足触发条件后，下一匣增加为四发。打空强化弹匣或主动装填后，下一匣恢复为三发。"
+        },
+        "auxilliaryWeapons": {
+          "name": "副武器",
+          "description": "启动副炮后连续发射两发炮弹。副炮独立于主炮装填。"
+        },
+        "shellOverheat": {
+          "name": "炮弹热控",
+          "description": "车速在允许范围内时为下一发炮弹蓄能。蓄能越多，保底伤害越高。开火会消耗全部已积蓄的能量。"
+        },
+        "unguidedRocket": {
+          "name": "无制导火箭",
+          "description": "发射器装有两枚无制导火箭。两枚火箭之间有短暂的装填间隔，两枚均已发射后需重新装填整组。"
         }
       }
     },
@@ -2006,7 +2044,9 @@
       "HORSE_POWER_PER_TON": "马力/吨",
       "SECOND": "秒",
       "METER": "米",
-      "CUBIC_METER": "立方米"
+      "CUBIC_METER": "立方米",
+      "HIT_POINTS": "点",
+      "METER_PER_SECOND_SQUARED": "米/秒²"
     },
     "module_dmg": "模块伤害",
     "normalization": "转正角",
