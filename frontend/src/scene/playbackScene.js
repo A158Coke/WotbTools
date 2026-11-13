@@ -45,7 +45,7 @@ import { visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 // playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
 import { hpPercentText } from './rosterState.js'
 import { resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
-import { pointsAt } from './supremacyPoints.js'
+import { applySupremacyPointsToStore } from './supremacyPoints.js'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 //（FLASH_MS/FLOAT_DMG_MS/GHOST_MS 随战斗反馈 transient 出仓 playback/battleRuntime.ts）
@@ -89,6 +89,22 @@ import { createSpawnMarkers } from './playback/spawns.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 
+// 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
+// 中立与未知阵营一律 white（unknown ≠ enemy）。
+// 阵营色深色板（2026-10-05 加深）：原亮绿/亮红在明亮地表上对比不足；
+// 统一到与车辆 tint 同源的深绿/深红（「与上游 Agent 同值」，`teamColor` 原已用此对），
+// 炮线与车辆着色共用一个事实源。
+export const COLOR_FRIENDLY = 0x26794a;   // 深绿
+export const COLOR_ENEMY = 0x98322a;      // 深红
+export const COLOR_UNKNOWN = 0xf5f5f5;
+// 炮线专用亮色（与车辆 tint **分离**，2026-10-05 用户反馈"亮度/鲜艳度不够"）：
+// 两者取色目标相反——车辆 tint 要压得住（亮色在明亮地表上刺眼且车体显脏，已回退），
+// 炮线是细长高动态、只存在一两秒的物体，需要**字面亮度**才看得清（材质 toneMapped=false
+// 直出字面色，故提亮只能靠颜色本身与不透明度）。保持"绿=友 / 红=敌"色相，仅提亮提饱和。
+// 车辆/基地/标签**不得**改用这两个值（回退即车辆 tint 变亮）。
+export const TRACER_FRIENDLY = 0x3ee08a;  // 亮绿（同色相提亮 #26794a）
+export const TRACER_ENEMY = 0xff5a45;     // 亮红（同色相提亮 #98322a）
+
 // 兜底灯光（读不到 lighting.json 时用，= 上游硬编码时代的两盏灯，保证无数据也不变样）
 // 出屏口径（A2）：客户端发布版**没有任何 filmic 出屏曲线**。证据（客户端 Materials/Shaders
 // 解出的 tmp_analysis/shaders，逐行核过）：
@@ -123,21 +139,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts）。
    *  唯一 owner 仍在本闭包（canonical 事实域），按引用共享给 vehicleRuntime。 */
   const POSE_GRID = { tStart: 0, samples: 0 };
-  // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
-  // 中立与未知阵营一律 white（unknown ≠ enemy）。
-  // 阵营色深色板（2026-10-05 加深）：原亮绿/亮红在明亮地表上对比不足；
-  // 统一到与车辆 tint 同源的深绿/深红（「与上游 Agent 同值」，`teamColor` 原已用此对），
-  // 炮线与车辆着色共用一个事实源。
-  const COLOR_FRIENDLY = 0x26794a;   // 深绿
-  const COLOR_ENEMY = 0x98322a;      // 深红
-  const COLOR_UNKNOWN = 0xf5f5f5;
-  // 炮线专用亮色（与车辆 tint **分离**，2026-10-05 用户反馈"亮度/鲜艳度不够"）：
-  // 两者取色目标相反——车辆 tint 要压得住（亮色在明亮地表上刺眼且车体显脏，已回退），
-  // 炮线是细长高动态、只存在一两秒的物体，需要**字面亮度**才看得清（材质 toneMapped=false
-  // 直出字面色，故提亮只能靠颜色本身与不透明度）。保持"绿=友 / 红=敌"色相，仅提亮提饱和。
-  // 车辆/基地/标签**不得**改用这两个值（回退即车辆 tint 变亮）。
-  const TRACER_FRIENDLY = 0x3ee08a;  // 亮绿（同色相提亮 #26794a）
-  const TRACER_ENEMY = 0xff5a45;     // 亮红（同色相提亮 #98322a）
+  // 阵营/炮线调色常量（COLOR_* / TRACER_*）已提到模块顶层（唯一事实源，注释见该处）。
   // 车辆运行时（{def, group, turretG, gunPivot, labelAnchor, meshHull, glb}）与 GLB 模板缓存、
   // 履带印缓存的唯一 owner = playback/vehicleRuntime.ts / playback/treadRuntime.ts
   //（#820 Step 4 出仓；本闭包经 vehicles/tread 句柄读写，语义与拆分前逐字一致）
@@ -932,13 +934,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
     // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
     // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
-    {
-      const pts = pointsAt(DATA.supremacy_points, T, DATA.meta.friendly_team);
-      // 变更守卫与 updateScore 同款：点数在两次占领事件间恒定，60Hz 无守卫写是仅存的
-      // 每 tick reactive 写入（Vue 同值短路只免 trigger，不免 proxy set 本身）。
-      if (store.pointsFriend !== pts.friend) store.pointsFriend = pts.friend;
-      if (store.pointsEnemy !== pts.enemy) store.pointsEnemy = pts.enemy;
-    }
+    applySupremacyPointsToStore(store, DATA, T);
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     writeHud();
     if (!winnerShown && T >= END - 1e-3 && DATA.meta.winner_team) {

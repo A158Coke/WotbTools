@@ -37,3 +37,18 @@ export function pointsAt(
   }
   return out
 }
+
+/**
+ * 每 tick 无条件重算 + 变更守卫写入 store（playbackScene.tick 的接替落点，#827）：
+ * 无论 `DATA.supremacy_points` 有无都写入——从争霸场切到普通场（无采样）时靠这里
+ * 把 null 推上屏清残值。同值守卫避免 60Hz 的无效 reactive 写入（语义与 updateScore 同款）。
+ */
+export function applySupremacyPointsToStore(
+  store: { pointsFriend: number | null; pointsEnemy: number | null },
+  data: { supremacy_points?: SupremacySample[] | null; meta: { friendly_team?: number | null } },
+  t: number,
+): void {
+  const pts = pointsAt(data.supremacy_points, t, data.meta.friendly_team);
+  if (store.pointsFriend !== pts.friend) store.pointsFriend = pts.friend;
+  if (store.pointsEnemy !== pts.enemy) store.pointsEnemy = pts.enemy;
+}

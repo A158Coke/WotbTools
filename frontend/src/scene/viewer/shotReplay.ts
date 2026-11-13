@@ -94,6 +94,11 @@ export interface ShotReplayDeps {
     getCurrentShooterId(): number | string | null
 }
 
+/** 客户端 BWUtils::DecodeShotSegment 的 1/255 量化解码（纯函数，行为测试锚）：b=0→min、b=255→max。 */
+export function decodeB255(b: number, min: number, size: number): number {
+    return min + size * (b / 255)
+}
+
 export function runShotReplay(deps: ShotReplayDeps): void {
     const {
         rig, hm, tc, jc, ml, QP, L, getTankData,
@@ -751,7 +756,7 @@ export function runShotReplay(deps: ShotReplayDeps): void {
                                         const szv = [boxMax[0] - boxMin[0], boxMax[1] - boxMin[1], boxMax[2] - boxMin[2]];
                                         // 客户端 DecodeShotSegment 用 255.0f（@0x364B110）：b=0→min、
                                         // b=255→max，两端都可表示；不能用 /256（max 面永远差一步）。
-                                        const qc = (b: number, ax: number): number => boxMin[ax] + szv[ax] * (b / 255);
+                                        const qc = (b: number, ax: number): number => decodeB255(b, boxMin[ax], szv[ax]);
                                         const mkP1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.12),
                                             new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.95, depthTest: false }));
                                         const mkP2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10),

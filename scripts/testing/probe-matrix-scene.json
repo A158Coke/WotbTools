@@ -1,0 +1,1774 @@
+{
+  "seed": 827,
+  "generatedAt": "2026-11-11",
+  "maxSemantic": 6,
+  "maxRename": 3,
+  "sources": [
+    {
+      "source": "src/scene/armorCollisionPack.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js",
+        "frontend/src/scene/armorCollisionPack.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "dolly-zoom world-overview scope guard mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）",
+        "dolly-zoom world-overview scope guard dollyZoomFov 纯函数与视锥锚点回归"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/assetBase.ts",
+      "testFiles": [
+        "frontend/src/data-version-wiring.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 2654,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 3709,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 1915,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 2855,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 1562,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 1096,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "origin",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "resolveDataVersion",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "productionDefault",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 46023
+    },
+    {
+      "source": "src/scene/groundPass.js",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 8167,
+          "killed": true,
+          "failedTests": [
+            "场景 GLB 材质管线（对齐上游的渲染实现） 水面\"海岸线\"coastLine：按客户端 water-fp.sl 的相对深度差口径淡出反射（距离无关、随相机高低自适应）",
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 9528,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5952,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 12582,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 12387,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 10616,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "from",
+          "falsePositive": true,
+          "failedTests": [
+            "场景 GLB 材质管线（对齐上游的渲染实现） 地形网格客户端同构（texel 原位取原值）——错位会让地形穿出挡土墙/桥台",
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "ren-1",
+          "name": "texels",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "steps",
+          "falsePositive": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        }
+      ],
+      "semanticKilled": 5,
+      "semanticTotal": 6,
+      "renameFalsePositives": 2,
+      "renameTotal": 3,
+      "ms": 101475
+    },
+    {
+      "source": "src/scene/heSplash.ts",
+      "testFiles": [
+        "frontend/src/scene/heSplash.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 10961,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 3159,
+          "killed": true,
+          "failedTests": [
+            "HE 溅射采样（Armor Inspector func7695） 固定 800 条世界空间方向，全部单位向量"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 7381,
+          "killed": true,
+          "failedTests": [
+            "HE 溅射采样（Armor Inspector func7695） sampleStats 按射线顺序暴露 armor/upper/valid，供方向化热力图",
+            "HE 溅射采样（Armor Inspector func7695） T-34 单层 50mm 主装 @0.0495m → 21.59 / 69.32",
+            "HE 溅射采样（Armor Inspector func7695） liningFactor 乘到每层装甲（强化装甲 1.04 与判定链同口径）",
+            "HE 溅射采样（Armor Inspector func7695） 履带+主装 20+20 @0.3542m → 10.63 / 44.38（层装甲直接相加）",
+            "HE 溅射采样（Armor Inspector func7695） he_min/max 是两个 roll 界各自的最大值（可来自不同射线）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 5833,
+          "killed": false,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 3005,
+          "killed": true,
+          "failedTests": [
+            "HE 溅射采样（Armor Inspector func7695） 固定 800 条世界空间方向，全部单位向量"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 12679,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "hitPrimary",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "lean",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "twoSidedSpaced",
+          "falsePositive": true,
+          "failedTests": [
+            "HE 溅射采样（Armor Inspector func7695） 热力图方向子集仍走同一网格 DDA；没有网格同样 fail-closed"
+          ]
+        }
+      ],
+      "semanticKilled": 3,
+      "semanticTotal": 6,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 75467
+    },
+    {
+      "source": "src/scene/mapLighting.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/penetration.js",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "dolly-zoom world-overview scope guard mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/armorHighlight.ts",
+      "testFiles": [
+        "frontend/src/scene/playbackScene.occlusion.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 29347,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 12271,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 2704,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 12051,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 10995,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 34243,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "savedViewport",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "mounted",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "clearColor",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 305532
+    },
+    {
+      "source": "src/scene/playback/bases.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js",
+        "frontend/src/scene/supremacyPoints.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/battleRuntime.ts",
+      "testFiles": [
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/seekPointer.test.js",
+        "frontend/src/scene/supremacyPoints.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 11831,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 16464,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 7546,
+          "killed": true,
+          "failedTests": [
+            "标签遮挡：只对候选格做 raycast（禁止整场景递归检测） 开火 / 命中特效的炮口、来弹与跳弹出射方向都取自镜像后的点表（折线改造曾漏字段 → 整帧抛异常）",
+            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 3069,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 8623,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 7803,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "wreckClock",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "since",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "spawnImpact",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 180446
+    },
+    {
+      "source": "src/scene/playback/boundary.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 2765,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 3363,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 3202,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 3423,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 3261,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 2388,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "half",
+          "falsePositive": true,
+          "failedTests": [
+            "播放时钟与速度档位（对齐上游的纯函数入口） 特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放",
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "ren-1",
+          "name": "clear",
+          "falsePositive": true,
+          "failedTests": [
+            "播放时钟与速度档位（对齐上游的纯函数入口） 特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放",
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "BOUNDARY_COLOR",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 6,
+      "semanticTotal": 6,
+      "renameFalsePositives": 2,
+      "renameTotal": 3,
+      "ms": 104200
+    },
+    {
+      "source": "src/scene/playback/cameraRuntime.ts",
+      "testFiles": [
+        "frontend/src/components/MapPreview3DPane.wiring.test.js",
+        "frontend/src/scene/pickDebug.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/seekPointer.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 52999,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 14682,
+          "killed": true,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 21513,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 39577,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 33480,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 54305,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "projectToStage",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "onFlyCaptureDown",
+          "falsePositive": true,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "FLY_LOOK_RAD_PER_PX",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 152036
+    },
+    {
+      "source": "src/scene/playback/cameraTerrainClamp.ts",
+      "testFiles": [
+        "frontend/src/scene/seekPointer.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 5158,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 6405,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 6127,
+          "killed": true,
+          "failedTests": [
+            "相机距离钳制（PR #411 P1-3） 设置 controls.minDistance / maxDistance 且基于 ext"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 4874,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 6794,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 6137,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "applyCameraClamp",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "lift",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "controls",
+          "falsePositive": true,
+          "failedTests": [
+            "相机距离钳制（PR #411 P1-3） 设置 controls.minDistance / maxDistance 且基于 ext"
+          ]
+        }
+      ],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 92606
+    },
+    {
+      "source": "src/scene/playback/glbParts.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/hudFeed.ts",
+      "testFiles": [
+        "frontend/src/scene/rosterState.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/labelsRuntime.ts",
+      "testFiles": [
+        "frontend/src/scene/labelOcclusion.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 1877,
+          "killed": true,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 9563,
+          "killed": true,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 3408,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 5791,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 14444,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 14465,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "resetSessionState",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "occlCursor",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "list",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 2,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 307834
+    },
+    {
+      "source": "src/scene/playback/mapAssets.ts",
+      "testFiles": [
+        "frontend/src/scene/groundPass.test.js",
+        "frontend/src/scene/pickDebug.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/playbackScene.staticFreeze.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/mapWorld.ts",
+      "testFiles": [
+        "frontend/src/scene/pickDebug.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/playbackScene.staticFreeze.test.js",
+        "frontend/src/scene/seekPointer.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 42396,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 11140,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 42514,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 15622,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 11210,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 32370,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "updateDestructibles",
+          "falsePositive": true,
+          "failedTests": [
+            "playbackScene 场景 GLB 实例化合批接线 树倒走逐实例矩阵（fallMatrix）且与 settled 自校验的 fallQuat 同步维护",
+            "playbackScene 场景 GLB 实例化合批接线 实例矩阵上传按帧合并（dirty 集合 → needsUpdate），不许逐树逐帧全量上传"
+          ]
+        },
+        {
+          "id": "ren-1",
+          "name": "mapUrlPlanned",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "resetTerrainCounters",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 102377
+    },
+    {
+      "source": "src/scene/playback/pickReport.ts",
+      "testFiles": [
+        "frontend/src/scene/pickDebug.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 6248,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 3380,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5930,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 1944,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 3753,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "heightField",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "terrain",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "worldPos",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 49124
+    },
+    {
+      "source": "src/scene/playback/renderer.ts",
+      "testFiles": [
+        "frontend/src/scene/playbackScene.staticFreeze.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 3349,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 2928,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 1978,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 5168,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 3352,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "dynResCtl",
+          "falsePositive": true,
+          "failedTests": [
+            "playbackScene 动态分辨率接线（?dynres） 装配有空间判定（DPR 无下调空间则跳过）、只喂实际渲染帧、调整即重设尺寸"
+          ]
+        },
+        {
+          "id": "ren-1",
+          "name": "baseDpr",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "raycaster",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 2,
+      "semanticTotal": 5,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 83959
+    },
+    {
+      "source": "src/scene/playback/sessionLifecycle.ts",
+      "testFiles": [
+        "frontend/src/components/MapPreview3DPane.wiring.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 7118,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 6932,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5421,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 13841,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 3502,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 995,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "perfMapAt",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "ownsLoading",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "current",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 67098
+    },
+    {
+      "source": "src/scene/playback/transientFeedback3d.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js",
+        "frontend/src/scene/seekPointer.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 3965,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 4670,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 4922,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 3985,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 4746,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 3141,
+          "killed": true,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "resyncBursts",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "buildBurstSources",
+          "falsePositive": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "fromFrac",
+          "falsePositive": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+          ]
+        }
+      ],
+      "semanticKilled": 4,
+      "semanticTotal": 6,
+      "renameFalsePositives": 2,
+      "renameTotal": 3,
+      "ms": 116083
+    },
+    {
+      "source": "src/scene/playback/util.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/playback/vehicleRuntime.ts",
+      "testFiles": [
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/playbackScene.staticFreeze.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 15615,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 13262,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 36907,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 12913,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 29854,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 10981,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "dNorm",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "hullG",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "localAxis",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 150329
+    },
+    {
+      "source": "src/scene/playbackScene.js",
+      "testFiles": [
+        "frontend/src/components/MapPreview3DPane.wiring.test.js",
+        "frontend/src/scene/labelOcclusion.test.js",
+        "frontend/src/scene/pickDebug.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/playbackScene.staticFreeze.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js",
+        "frontend/src/scene/seekPointer.test.js",
+        "frontend/src/scene/supremacyPoints.test.js",
+        "frontend/src/scene/treadMarks.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "悬挂接线（轮/带逐帧解算，客户端同构） 数据来自包内 suspension/<id>.json（取证失败回落刚体），求解器独立成模块",
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/replaySource.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/sceneryAssembly.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/sceneryInstancing.ts",
+      "testFiles": [
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": true,
+      "baselineFailed": [
+        "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）"
+      ],
+      "semantic": [],
+      "rename": []
+    },
+    {
+      "source": "src/scene/sceneryMaterials.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 39529,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 26266,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 2671,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 42862,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 2980,
+          "killed": true,
+          "failedTests": [
+            "炮线渲染守卫（阵营语义色直出） 飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）",
+            "disposeSceneGroup —— 双图资源生命周期（评审 P2） 释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 13309,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "useAdj",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "uniforms",
+          "falsePositive": true,
+          "failedTests": [
+            "disposeSceneGroup —— 双图资源生命周期（评审 P2） 释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "hasVC",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "ms": 84794
+    },
+    {
+      "source": "src/scene/tankViewer.js",
+      "testFiles": [
+        "frontend/src/scene/armorCollisionPack.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 38484,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 48044,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 5401,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 48195,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 52798,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 11206,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "readThemeColor",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "getPlateThickness",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "pitch",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 38808
+    },
+    {
+      "source": "src/scene/viewer/armorPlateModel.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 10212,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 21016,
+          "killed": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）",
+            "dolly-zoom world-overview scope guard dollyZoomFov 纯函数与视锥锚点回归"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 12534,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 12272,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 8006,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 8041,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "activeTur",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "cmat",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "sec2",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 52853
+    },
+    {
+      "source": "src/scene/viewer/armorShaders.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 24656,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 18398,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 24383,
+          "killed": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 26082,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 24650,
+          "killed": true,
+          "failedTests": [
+            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
+          ]
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 24248,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "SPACED_VERT",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "SPACED_FRAG",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "depth",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 2,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 79224
+    },
+    {
+      "source": "src/scene/viewer/shotResultCard.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js",
+        "frontend/src/scene/heHeatmapProjection.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 4993,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 14753,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 2515,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 6489,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 12763,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 1497,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "heMin",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "fmtBest",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "segNo",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "ms": 49019
+    }
+  ]
+}

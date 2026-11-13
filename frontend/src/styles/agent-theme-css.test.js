@@ -6,12 +6,14 @@
 // 下灰字落在白底上对比度仅 ~2.6:1（"文字发淡"），面板/按钮/边框则是突兀深色块。
 //
 // 3D / 射击回放面板和装甲查看器已迁到设计语言语义 token，两档主题共用同一份规则。
-// 装甲查看器保留的短名仅为全局 token 的别名，供场景脚本的内联样式继承。本文件固化四类契约：
-//   A) 组件不得引用"本仓任何地方都没定义"的 token（含 JS 内联样式）；
-//   B) 装甲查看器的本地别名必须引用全局 token，不再自建独立浅色调色板；
-//   C) 组件样式块里不得出现裸色（#hex/rgb/rgba/hsl），白名单只放"非主题色"——
-//      即 three.js 视口底这类场景色；
-//   D) tankViewer 的 JS 内联色只允许白名单里的标记/图例色。
+// 装甲查看器保留的短名仅为全局 token 的别名，供场景脚本的内联样式继承。本文件固化三类契约：
+//   1) var() 完整性 + 别名契约 + 回放面板不自建调色板（合并为一条数据驱动断言，
+//      token 目录即数据源；stylelint 无法表达正向 token 映射，见 #827）；
+//   2) token 自检 meta（防契约测试自身空跑）；
+//   3) tankViewer 内联标记色白名单（与 three.js 标记材质一一对应，不能 token 化）。
+//
+// 裸色（#hex/rgb/hsl）禁令已由 stylelint（color-no-hex + function-disallowed-list +
+// declaration-strict-value）在非 legacy 文件上接管，不再在 vitest 里逐文件重扫。
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +22,7 @@ import { describe, expect, it } from 'vitest'
 const stylesDir = fileURLToPath(new URL('.', import.meta.url))
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 
-/** 参与本契约的视觉面文件 */
+/** 参与契约的视觉面文件 */
 const AGENT_FILES = {
   'Replay3DPane.vue': '../components/Replay3DPane.vue',
   'ReplayShotsPane.vue': '../components/ReplayShotsPane.vue',
@@ -31,18 +33,7 @@ const AGENT_FILES = {
 }
 
 /**
- * C) 样式块里允许出现裸色的选择器（**非主题色**，硬编码是对的）。
- * 每项都必须写明理由；往里加东西前先问：这是数据/场景色，还是本该跟随主题的 UI 色？
- */
-const BARE_COLOR_SELECTOR_ALLOWLIST = {
-  'AgentArmorView.vue': [
-    '#canvas-container', // three.js 视口底色（游戏视觉，场景色，不随主题）
-  ],
-  'Replay3DPane.vue': [], // 3D 场景由 three.js 画进 canvas，CSS 层不应有裸色
-}
-
-/**
- * D) tankViewer 内联色白名单：与 three.js 标记材质 / 图例圆点**一一对应**的调色板
+ * tankViewer 内联色白名单：与 three.js 标记材质 / 图例圆点**一一对应**的调色板
  * （改这里必须同步改标记材质，故不能 token 化）。
  */
 const MARKER_COLOR_ALLOWLIST = [
@@ -87,14 +78,6 @@ function declarationsIn(rawSource, fragment) {
   return out
 }
 
-/** 规则切分：正则只匹配最内层声明块，@media 内的规则同样被取出（选择器取块前最后一行） */
-function rulesIn(css) {
-  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
-    selector: m[1].trim().split('\n').map((s) => s.trim()).filter(Boolean).pop() ?? '',
-    body: m[2],
-  }))
-}
-
 describe('Agent 视觉面配色契约', () => {
   // 含设计语言 token 目录（styles/tokens/*.css：--header-h / --color-* 等）
   const cssFiles = [
@@ -109,16 +92,12 @@ describe('Agent 视觉面配色契约', () => {
     expect(repoDefined.size).toBeGreaterThan(80)
   })
 
-  it('回放工作台的 3D / 射击面板不再自建颜色调色板（两档主题共用同一份规则）', () => {
-    for (const label of ['Replay3DPane.vue', 'ReplayShotsPane.vue']) {
-      const colorTokens = [...stripComments(read(AGENT_FILES[label])).matchAll(DECLARATION)]
-        .filter((m) => looksLikeColor(m[2]))
-        .map((m) => m[1])
-      expect(colorTokens, `${label} 仍在自建颜色 palette（应只用语义色 token）`).toEqual([])
-    }
-  })
+  // var() 完整性 ×6 + 回放面板不自建调色板 + 装甲查看器别名契约：合并为一条断言，
+  // 以 token 目录为数据源逐文件归集违规——stylelint（declaration-strict-value/color-no-hex）
+  // 只能禁值，表达不了「引用的 token 必须有定义」与「别名必须指向全局 token」。
+  it('组件只引用已定义 token、回放面板不自建调色板、装甲查看器别名指向全局 token', () => {
+    const violations = []
 
-  describe('A) 组件只引用已定义的 token', () => {
     // tankViewer.js 无样式块：它的面板 DOM 渲染在 .armor-view 子树内，
     // 因此可以合法继承这些语义别名（其余文件仍只认"仓库定义 + 自身**默认**档定义"）。
     const armorPalette = new Set(
@@ -126,97 +105,59 @@ describe('Agent 视觉面配色契约', () => {
     )
 
     for (const [label, rel] of Object.entries(AGENT_FILES)) {
-      it(`${label} 不引用未定义 token`, () => {
-        const src = read(rel)
-        // 只统计浅色档覆盖块**之前**的声明：仅在浅色档定义的 token 不算"有定义"
-        // （否则 A 会把"默认档缺失、只有浅色档有"的 token 误判为合法）
-        const lightAt = src.indexOf(LIGHT_PREFIX)
-        const defaultPart = lightAt > 0 ? src.slice(0, lightAt) : src
-        const selfDefined = new Set([...defaultPart.matchAll(DECLARATION)].map((m) => m[1]))
-        const permitted = label === 'tankViewer.js'
-          ? new Set([...repoDefined, ...selfDefined, ...armorPalette])
-          : new Set([...repoDefined, ...selfDefined])
-        const undefinedRefs = [...new Set([...src.matchAll(REFERENCED)].map((m) => m[1]))]
-          .filter((t) => !permitted.has(t))
-        expect(
-          undefinedRefs,
-          `${label} 引用了仓库与自身都未定义的 token（浅色档会落到深色 fallback）`,
-        ).toEqual([])
-      })
-    }
-  })
-
-  describe('B) 装甲查看器继承全局语义 token', () => {
-    it('每个本地别名引用已定义的全局 token，且不含裸色或独立浅色覆盖', () => {
-      const src = read(AGENT_FILES['AgentArmorView.vue'])
-      const aliases = declarationsIn(src, '.armor-view')
-      expect(aliases, '未解析到装甲查看器别名块').not.toBeNull()
-      expect(Object.keys(aliases).length, '别名契约不得空跑').toBeGreaterThan(0)
-      for (const [name, value] of Object.entries(aliases)) {
-        expect(value, `${name} 不得自建颜色值或深色 fallback`).not.toMatch(BARE_COLOR)
-        const refs = [...value.matchAll(REFERENCED)].map((m) => m[1])
-        expect(refs.length, `${name} 必须引用全局 token`).toBeGreaterThan(0)
-        expect(refs.filter((token) => !repoDefined.has(token)), `${name} 引用了非全局 token`).toEqual([])
+      const src = read(rel)
+      // 只统计浅色档覆盖块**之前**的声明：仅在浅色档定义的 token 不算"有定义"
+      // （否则会把"默认档缺失、只有浅色档有"的 token 误判为合法）
+      const lightAt = src.indexOf(LIGHT_PREFIX)
+      const defaultPart = lightAt > 0 ? src.slice(0, lightAt) : src
+      const selfDefined = new Set([...defaultPart.matchAll(DECLARATION)].map((m) => m[1]))
+      const permitted = label === 'tankViewer.js'
+        ? new Set([...repoDefined, ...selfDefined, ...armorPalette])
+        : new Set([...repoDefined, ...selfDefined])
+      const undefinedRefs = [...new Set([...src.matchAll(REFERENCED)].map((m) => m[1]))]
+        .filter((t) => !permitted.has(t))
+      if (undefinedRefs.length > 0) {
+        violations.push(`${label} 引用了仓库与自身都未定义的 token（浅色档会落到深色 fallback）: ${undefinedRefs.join(', ')}`)
       }
-      expect(declarationsIn(src, `${LIGHT_PREFIX} .armor-view`), '主题映射由全局 Profile token 所有').toBeNull()
-    })
-  })
 
-  describe('C) 组件样式块不留裸色（除白名单的非主题色）', () => {
-    const scanned = {
-      'AgentArmorView.vue': { file: '../components/AgentArmorView.vue' },
-      'TankCatalogMenu.vue': { file: '../components/TankCatalogMenu.vue' },
-      'Replay3DPane.vue': { file: '../components/Replay3DPane.vue' },
-      'ReplayShotsPane.vue': { file: '../components/ReplayShotsPane.vue' },
-    }
-    for (const [label, { file }] of Object.entries(scanned)) {
-      it(`${label} 的规则只经 token 取色`, () => {
-        const css = styleBlockOf(read(file))
-        expect(css, `${label} 未解析到样式块`).not.toBe('')
+      if (label === 'Replay3DPane.vue' || label === 'ReplayShotsPane.vue') {
+        const colorTokens = [...stripComments(src).matchAll(DECLARATION)]
+          .filter((m) => looksLikeColor(m[2]))
+          .map((m) => m[1])
+        if (colorTokens.length > 0) violations.push(`${label} 仍在自建颜色 palette（应只用语义色 token）: ${colorTokens.join(', ')}`)
+      }
 
-        const allowed = BARE_COLOR_SELECTOR_ALLOWLIST[label] ?? []
-        const offenders = []
-        for (const { selector, body } of rulesIn(css)) {
-          if (allowed.some((frag) => selector.includes(frag))) continue
-          for (const decl of body.split(';')) {
-            const [prop, ...rest] = decl.split(':')
-            const value = rest.join(':')
-            if (!prop || !value) continue
-            if (prop.trim().startsWith('--')) continue   // 自定义属性=token 定义，允许放颜色
-            if (BARE_COLOR.test(value)) offenders.push(`${selector} { ${prop.trim()}:${value.trim()} }`)
+      if (label === 'AgentArmorView.vue') {
+        const aliases = declarationsIn(src, '.armor-view')
+        if (!aliases || Object.keys(aliases).length === 0) {
+          violations.push('AgentArmorView.vue 未解析到装甲查看器别名块（别名契约空跑）')
+        } else {
+          for (const [name, value] of Object.entries(aliases)) {
+            if (BARE_COLOR.test(value)) violations.push(`AgentArmorView.vue ${name} 自建颜色值或深色 fallback`)
+            const refs = [...value.matchAll(REFERENCED)].map((m) => m[1])
+            if (refs.length === 0) violations.push(`AgentArmorView.vue ${name} 未引用全局 token`)
+            const foreign = refs.filter((token) => !repoDefined.has(token))
+            if (foreign.length > 0) violations.push(`AgentArmorView.vue ${name} 引用了非全局 token: ${foreign.join(', ')}`)
           }
         }
-        expect(
-          offenders,
-          `${label} 的 UI/HUD 规则里出现裸色——浅色档不会跟随主题。请 token 化；`
-          + '确属数据/场景色时加入 BARE_COLOR_SELECTOR_ALLOWLIST 并写明理由',
-        ).toEqual([])
-      })
+        if (declarationsIn(src, `${LIGHT_PREFIX} .armor-view`) !== null) {
+          violations.push('AgentArmorView.vue 存在独立浅色档覆盖（主题映射应由全局 Profile token 所有）')
+        }
+      }
     }
+    expect(violations, 'Agent 视觉面 token 契约违规').toEqual([])
   })
 
-  describe('E) 金币 / 收藏车边框 precedence：异常双 true 也不依赖 CSS 规则顺序', () => {
-    it('收藏车边框规则带 `:not(.is-premium)`——premium > collector 由选择器确定', () => {
-      const css = read(AGENT_FILES['TankCatalogMenu.vue'])
-      expect(css).toContain('.tp-card.is-collector:not(.is-premium)')
-      // 上游数据两者互斥（tanks.pb field13：1=金币 2=收藏），但 consumer 不依赖上游保证：
-      // 双 true 的行必须确定性地落回金币（警告色）边框。
-      expect(css, '出现无门槛的收藏车规则会让双 true 行的边框取决于规则先后顺序').not.toMatch(/\.tp-card\.is-collector\s*\{/)
-    })
-  })
-
-  describe('D) tankViewer 内联色只用标记/图例白名单', () => {
-    it('内联 color 均为 three.js 标记/图例色', () => {
-      const src = read(AGENT_FILES['tankViewer.js'])
-      const used = [...new Set([...src.matchAll(/color:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1].toLowerCase()))]
-      // 白名单同样按小写比较（源码里大小写混用）
-      const allowed = new Set(MARKER_COLOR_ALLOWLIST.map((c) => c.toLowerCase()))
-      const offenders = used.filter((c) => !allowed.has(c))
-      expect(
-        offenders,
-        'tankViewer 内联色出现白名单外的裸色——HUD 文本请用 token（var(--muted)/var(--blue)…），'
-        + '确属标记色则加入 MARKER_COLOR_ALLOWLIST 并与标记材质同步',
-      ).toEqual([])
-    })
+  it('tankViewer 内联色只用标记/图例白名单', () => {
+    const src = read(AGENT_FILES['tankViewer.js'])
+    const used = [...new Set([...src.matchAll(/color:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1].toLowerCase()))]
+    // 白名单同样按小写比较（源码里大小写混用）
+    const allowed = new Set(MARKER_COLOR_ALLOWLIST.map((c) => c.toLowerCase()))
+    const offenders = used.filter((c) => !allowed.has(c))
+    expect(
+      offenders,
+      'tankViewer 内联色出现白名单外的裸色——HUD 文本请用 token（var(--muted)/var(--blue)…），'
+      + '确属标记色则加入 MARKER_COLOR_ALLOWLIST 并与标记材质同步',
+    ).toEqual([])
   })
 })

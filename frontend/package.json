@@ -39,7 +39,9 @@
     "test:shader-check": "node scripts/check-scenery-shaders.mjs",
     "test:browser-map-preview": "node scripts/browser-map-preview-layout.mjs",
     "test:browser-battle-data": "node scripts/browser-battle-data-spawn-bar.mjs",
-    "test:browser-showcase-hero": "node scripts/browser-showcase-hero.mjs"
+    "test:browser-showcase-hero": "node scripts/browser-showcase-hero.mjs",
+    "test:browser-hof-admin-tabs": "node scripts/browser-hof-admin-tabs.mjs",
+    "test:browser-replay3d-hud": "node scripts/browser-replay3d-hud.mjs"
   },
   "dependencies": {
     "@vueuse/core": "^14.4.0",

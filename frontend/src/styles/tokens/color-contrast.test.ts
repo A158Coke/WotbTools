@@ -185,22 +185,9 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     expect(failures).toEqual([])
   })
 
-  /** 组件真实映射契约：spawn 分段条三段必须精确使用固定出生侧 token，不允许主题相关色（如 accent）。 */
-  it('BattleDataAdminPage 出生侧分段条 CSS 映射：first=danger、draw=border-strong、second=info', () => {
-    const component = readFileSync(resolve(HERE, '../../components/BattleDataAdminPage.vue'), 'utf8')
-    const expected: [string, string][] = [
-      ['.spawn-seg.is-first', '--color-danger'],
-      ['.spawn-seg.is-draw', '--color-border-strong'],
-      ['.spawn-seg.is-second', '--color-info'],
-    ]
-    for (const [selector, token] of expected) {
-      const declaration = component.match(new RegExp(`${selector.replace(/\./g, '\\.')} \\{ background: var\\((--color-[\\w-]+)\\); \\}`))
-      expect(declaration, `BattleDataAdminPage.vue ${selector} background`).not.toBeNull()
-      expect(declaration![1], `BattleDataAdminPage.vue ${selector} background`).toBe(token)
-    }
-    expect(component).not.toContain('--color-chart-series-2')
-    expect(component).not.toMatch(/\.spawn-seg\.is-(?:first|second)[^}]*--color-accent/)
-  })
+  // 组件映射契约（first=danger / draw=border-strong / second=info）的 computed 严格包含
+  // 由 scripts/browser-battle-data-spawn-bar.mjs 四季门禁逐 token 比对接管（#827），
+  // 源码正则形态不再重复维护。
 
   it('寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标', () => {
     expect(css).toMatch(/:root\[data-ui-profile="winter"\] \{\s*color-scheme: light;/)

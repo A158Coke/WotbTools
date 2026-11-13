@@ -20,53 +20,12 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
   it('tick() 必须驱动游标泵 updateTrails()（否则印记只在 seek 时出现）', () => {
     expect(sceneSrc).toMatch(/mapWorld\.updateDestructibles\(T\);\s*\n\s*tread\.updateTrails\(\);/)
   })
-  it('开关必须经场景 API 落到 store.treadOn（唯一 owner，不得在组件里另立状态）', () => {
-    expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{\s*store\.treadOn = !!on;/)
-  })
-  it('暂停态开关必须立即生效：setter 内同步驱动游标泵（review P2 2026-10-11）', () => {
-    // 只改 store + invalidate 时，暂停（animate 不 tick）下 mesh.visible/重算要等继续
-    // 播放或 seek 才更新——实测 setTreadMarks(false) 后 mesh.visible 仍为 true。
-    expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{[\s\S]{0,700}?tread\.updateTrails\(\);/)
-  })
-  it('客户端槽位模型接线：50 槽含活戳（write 槽）+ 全窗口显式隐藏（0x727b80 同构）', () => {
-    // 反汇编定案（落锚函数 0x727b80）：`head=write; write=(write+1)%50; count 封顶 50`
-    // ——活戳占 write 槽（= total % cap），**没有独立第 51 槽**。
-    expect(treadSrc).toMatch(/const TRAIL_CAP_PER_SIDE = TREAD_RING;/)
-    expect(treadSrc).not.toMatch(/TRAIL_OPEN_SLOT/)
-    expect(treadSrc).toMatch(/const TRAIL_SLOTS = TRAIL_CAP_PER_SIDE \* 2;/)
-    expect(writerSrc).toMatch(/const openSlot = st\.total % cap;/)
-    // 绘制窗口 = 全部槽位（不再按 min/max(L,R) 取窗互相截断），无效槽显式隐藏
-    expect(writerSrc).toMatch(/geometry\.setDrawRange\(0, input\.slots \* 6\);/)
-    expect(writerSrc).toMatch(/const open = openStampOf\(st\);/)
-    expect(writerSrc).toMatch(/hideQuads\(/)
-  })
   it('激活门 = 客户端 0x3632a54（0.3 m 净位移才开始拉伸活戳）', () => {
     expect(TREAD_ACTIVATE).toBeCloseTo(0.3, 6)
   })
-  it('淡出窗 = 客户端引擎常数（TREAD_FADE.start/end；老化逐槽独立、无有序假设）', () => {
-    // review P2 2026-10-12：回压重占改单槽 t + null 清空槽 ⇒ "按序号时间有序"的二分老化
-    // 前提不成立（重占后的新戳会被当过期前缀清 0）——老化必须是逐槽按自身 t 独立计算。
-    expect(treadSrc).not.toMatch(/const cutoff = T - TREAD_FADE\.end;/)
-    expect(writerSrc).toMatch(/逐槽独立老化，不做任何时间有序假设/)
-    expect(writerSrc).toMatch(/const a = seg \? Math\.fround\(treadAlphaAt\(input\.now - seg\.t\)/)
-  })
-  it('关断重开必须复位两侧路径态（不只回退 builtT；review P2 2026-10-11）', () => {
-    expect(treadSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
-  })
-  it('alpha 比较必须走 Math.fround 量化门控（review P3 2026-10-11：double 严格比较恒为脏）', () => {
-    // 客户端口径：alpha = 淡出系数 × per-stem 归一化，**无全局压暗系数**（2026-10-12 裁示）
-    expect(writerSrc).toMatch(/Math\.fround\(treadAlphaAt\(input\.now - t\) \* \(input\.texScale \|\| 1\)\)/)
-    expect(treadSrc).not.toMatch(/TREAD_OPACITY/)
-    expect(writerSrc).toMatch(/parr\[pos0 \+ i\] !== Math\.fround\(c12\[i\]\)/)
-  })
-  it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
-    expect(treadSrc).toMatch(/v\.treadMesh\.geometry\.dispose\(\)/)
-    expect(treadSrc).toMatch(/const mat = v\.treadMesh\.material as THREE\.Material\s*mat\.dispose\(\);/)
-    expect(treadSrc).toMatch(/for \(const tex of treadTexCache\.values\(\)\) tex\.dispose\(\)/)
-    // 宿主 teardown 委托 tread 句柄（先 tread 后 vehicles，保持原相对顺序）
-    expect(sceneSrc).toMatch(/tread\.dispose\(\);/)
-    expect(sceneSrc.indexOf('tread.dispose();')).toBeLessThan(sceneSrc.indexOf('vehicles.dispose();'))
-  })
+  // 开关/暂停/槽位/老化/fround/teardown 的行为接替者：
+  //   playback/treadRuntime.behavior.test.ts（关断立即生效、重开全量重建、dispose 释放）
+  //   playback/treadBufferWriter.test.ts（槽位模型、逐槽老化、fround 量化门控）
 })
 
 /** 直线路径采样点：从 (x0,z0) 沿单位方向 (dx,dz) 走 step × n 米（t = 采样序号） */

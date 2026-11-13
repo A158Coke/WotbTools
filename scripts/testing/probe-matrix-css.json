@@ -1,0 +1,124 @@
+{
+  "seed": 827,
+  "generatedAt": "2026-11-11",
+  "maxSemantic": 6,
+  "maxRename": 3,
+  "sources": [
+    {
+      "source": "src/components/admin-list.css",
+      "testFiles": [
+        "frontend/src/styles/light-theme-source-regression.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 911,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 407,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 1074,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 1829,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 5021,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 2504,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "ms": 22591
+    },
+    {
+      "source": "src/styles/app-shell.css",
+      "testFiles": [
+        "frontend/src/styles/glass-accessibility.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 14250,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 1711,
+          "killed": true,
+          "failedTests": [
+            "app-shell.css 玻璃表面可访问性降级（F-05） reduce 块关闭两种 backdrop-filter 并映射到 --color-surface-1/2/3"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 9965,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 3686,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 7750,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 6828,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "ms": 16830
+    }
+  ]
+}

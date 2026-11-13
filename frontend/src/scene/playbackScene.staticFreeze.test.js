@@ -12,28 +12,6 @@ const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），冻结/合批守卫随实现迁移
 const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
-describe('playbackScene 静态子树矩阵冻结（场景 GLB）', () => {
-  it('场景加载定型后 bake 世界矩阵并关全树 matrixAutoUpdate（含 mapScenery 根组）', () => {
-    // 根组必须一并冻结：它保持 autoUpdate 会每帧置脏 + force 传播，把冻结整个击穿
-    expect(mapAssetsSrc).toMatch(/mapScenery\.updateMatrixWorld\(true\)/)
-    expect(mapAssetsSrc).toMatch(/gltf\.scene\.traverse\(\(o\) => \{ o\.matrixAutoUpdate = false; \}\)/)
-    expect(mapAssetsSrc).toMatch(/mapScenery\.matrixAutoUpdate = false/)
-  })
-
-  it('poseGlb 不再逐车强制全树 updateMatrixWorld（renderer 场景遍历已从根强制传播）', () => {
-    // #820 Step 2：poseGlb owner = playback/vehicleRuntime.ts
-    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
-    const at = vehicleSrc.indexOf('function poseGlb(')
-    expect(at).toBeGreaterThan(0)
-    // poseGlb 与 poseGlbRig 之间不得强制全树刷新（collectSuspensionParts 的
-    // root.updateMatrixWorld 是 clone 未入 scene 的一次性收集，不在帧路径）
-    const body = vehicleSrc.slice(at, vehicleSrc.indexOf('function glbTurretMatrix', at))
-    // 注释里的「scene.updateMatrixWorld()」是解释性文本；守卫的是**代码调用**
-    const bodyCode = body.replace(/\/\/[^\n]*/g, '')
-    expect(bodyCode).not.toMatch(/updateMatrixWorld/)
-  })
-})
-
 describe('playbackScene 手写 shader 的实例化接线', () => {
   // 场景 GLB 合批后，所有自定义 ShaderMaterial 都可能被 InstancedMesh 消费：
   // 手写 vertexShader 直接乘 modelViewMatrix/modelMatrix 而不带 USE_INSTANCING 分支，
@@ -52,48 +30,6 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
     for (const sh of usingModelMatrix) {
       expect(sh).toMatch(/USE_INSTANCING/)
     }
-  })
-})
-
-describe('playbackScene 场景 GLB 实例化合批接线', () => {
-  it('合批后原节点必须摘除渲染图（漏摘 = 优化失效：原 Mesh 照常画一遍）', () => {
-    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[]')
-    expect(at).toBeGreaterThan(0)
-    const body = mapAssetsSrc.slice(at, at + 600)
-    expect(body).toMatch(/for \(const b of batches\) \{ b\.mesh = buildInstancedMesh\(b\); gltf\.scene\.add\(b\.mesh\); \}/)
-    expect(body).toMatch(/for \(const e of entries\) e\.node\.removeFromParent\(\)/)
-  })
-
-  it('D_ 损毁态实例必须初始隐藏（writeHiddenInstance），且隐藏实例不进遮挡候选', () => {
-    const at = mapAssetsSrc.indexOf('const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[]')
-    const body = mapAssetsSrc.slice(at, mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise', at))
-    expect(body).toMatch(/if \(e\.name && e\.name\.startsWith\('D_'\)\) \{ writeHiddenInstance\(e\.batch\.mesh, e\.idx\); e\.hidden = true; \}/)
-    // 遮挡足印登记跳过 hidden / 无名字实例
-    expect(body).toMatch(/if \(e\.hidden \|\| !e\.name\) continue;/)
-  })
-
-  it('树倒走逐实例矩阵（fallMatrix）且与 settled 自校验的 fallQuat 同步维护', () => {
-    // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
-    const worldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
-    const at = worldSrc.indexOf('function updateDestructibles(')
-    expect(at).toBeGreaterThan(0)
-    // mapWorld 内 scratch（_tmpFallAxis 等）声明在函数之前，body 以下一个 function 为界
-    const body = worldSrc.slice(at, worldSrc.indexOf('\n  function ', at + 10))
-    // 倒伏写入 + 倒带复位，两条路径都要置脏上传
-    expect(body).toMatch(/fallMatrix\(s\.base, st\.pivotPos\.x, st\.pivotPos\.y, st\.pivotPos\.z, _tmpFallAxis, f\.angle, _tmpInstM\)/)
-    expect(body).toMatch(/s\.mesh\.setMatrixAt\(s\.idx, s\.base\); mark\(s\.mesh\)/)
-    expect(body).toMatch(/st\.fallQuat\.w = _tmpFallQ\.w/)
-    expect(body).toMatch(/st\.fallQuat\.w = 1/)
-    // 不再写 pivot 四元数（旧装配已移除；残留即双写）
-    expect(body).not.toMatch(/\.pivot\.quaternion/)
-  })
-
-  it('实例矩阵上传按帧合并（dirty 集合 → needsUpdate），不许逐树逐帧全量上传', () => {
-    const worldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
-    const at = worldSrc.indexOf('function updateDestructibles(')
-    const body = worldSrc.slice(at, worldSrc.indexOf('\n  function ', at + 10))
-    expect(body).toMatch(/const mark = \(mesh: THREE\.InstancedMesh\) => \{ \(dirty \|\| \(dirty = new Set\(\)\)\)\.add\(mesh\); \};/)
-    expect(body).toMatch(/if \(dirty\) for \(const mesh of dirty\) mesh\.instanceMatrix\.needsUpdate = true;/)
   })
 })
 
