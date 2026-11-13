@@ -13,7 +13,7 @@ import TANK_ALIASES from '../../../common/tank_aliases.json'
 describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
     expect(parseTankopediaQuery({})).toEqual({
-      q: '', tier: '', nation: '', type: '', sort: 'tier', tank: null, config: null,
+      q: '', tier: '', nation: '', type: '', category: '', sort: 'tier', tank: null, config: null,
       engine: null, track: null, shell: null, dev: '', eq: null, cons: null, prov: null, skills: {}, conditionalSkills: false, camo: false,
       upgrade: null, abilities: [],
     })
@@ -26,6 +26,19 @@ describe('parseTankopediaQuery', () => {
     expect(parseTankopediaQuery({ tier: '10', sort: 'pen', tank: '5', config: '-1' })).toMatchObject({
       tier: '10', sort: 'pen', tank: 5, config: null,
     })
+  })
+
+  it('类别白名单兼容旧链接，数组取首项，非法值回落全部', () => {
+    expect(parseTankopediaQuery({ nation: 'china' }).category).toBe('')
+    for (const category of ['regular', 'premium', 'collector']) {
+      expect(parseTankopediaQuery({ category }).category).toBe(category)
+      expect(serializeTankopediaQuery(parseTankopediaQuery({ category }))).toEqual({ category })
+    }
+    expect(parseTankopediaQuery({ category: ['collector', 'premium'] }).category).toBe('collector')
+    for (const category of ['', 'unknown', 'lightTank', 'true', true, 1, null]) {
+      expect(parseTankopediaQuery({ category }).category).toBe('')
+      expect(serializeTankopediaQuery({ category })).toEqual({})
+    }
   })
 
   it('条件技能触发独立于训练等级，仅详情链接显式 1 生效', () => {
@@ -98,7 +111,7 @@ describe('serializeTankopediaQuery', () => {
 
   it('往返保持一致', () => {
     const query = {
-      q: 'e100', tier: '10', nation: 'germany', type: 'heavyTank', sort: 'hp', tank: '9', config: '2',
+      q: 'e100', tier: '10', nation: 'germany', type: 'heavyTank', category: 'collector', sort: 'hp', tank: '9', config: '2',
       engine: '1', track: '0', shell: '1', dev: '01-1', cons: 'afterburning,berserk', prov: 'ration', skills: 'smooth_driving:7,camouflage:3', camo: '1',
     }
     expect(serializeTankopediaQuery(parseTankopediaQuery(query))).toEqual(query)
@@ -132,9 +145,18 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
     expect(next).toEqual({ view: 'agent-tankopedia', lang: 'en', q: 'new' })
   })
 
+  it('类别参与 URL 比较，清除类别保留数据集和语言', () => {
+    expect(sameTankopediaQuery({ category: 'premium' }, { category: 'collector' })).toBe(false)
+    expect(sameTankopediaQuery({ category: 'invalid' }, {})).toBe(true)
+    expect(withTankopediaState(
+      { view: 'agent-tankopedia', category: 'premium', data: '11.4.0.138', lang: 'ru' },
+      { category: '', tier: '11' },
+    )).toEqual({ view: 'agent-tankopedia', data: '11.4.0.138', lang: 'ru', tier: '11' })
+  })
+
   it('导出的键清单覆盖序列化的全部键', () => {
     const all = serializeTankopediaQuery({
-      q: 'x', tier: 1, nation: 'a', type: 'b', sort: 'hp', tank: 1, config: 0,
+      q: 'x', tier: 1, nation: 'a', type: 'b', category: 'regular', sort: 'hp', tank: 1, config: 0,
       engine: 0, track: 0, shell: 0, dev: '0', cons: [], prov: [], skills: { smooth_turn: 7 }, conditionalSkills: true, camo: true,
       eq: [103], upgrade: 'top', abilities: [23],
     })
@@ -371,7 +393,7 @@ describe('国服名称快照 — 默认搜索接线', () => {
 describe('normalizeTankCache', () => {
   it('对象与数组两种形状都能转换，最大穿深取弹种最大值', () => {
     const fromObject = normalizeTankCache({ 7: { name: 'A', tier: 3, shells: [{ penetration: 50 }, { penetration: 80 }] } })
-    expect(fromObject).toEqual([{ id: 7, name: 'A', aliases: [], tier: 3, nation: 'unknown', type: 'unknown', is_premium: false, is_collector: false, hp: null, pen_max: 80 }])
+    expect(fromObject).toEqual([{ id: 7, name: 'A', aliases: [], tier: 3, nation: 'unknown', type: 'unknown', category: 'unknown', is_premium: false, is_collector: false, hp: null, pen_max: 80 }])
     expect(normalizeTankCache([{ id: 8, name: 'B', is_premium: 1 }])[0]).toMatchObject({ id: 8, is_premium: true, pen_max: null })
   })
 
@@ -384,11 +406,50 @@ describe('normalizeTankCache', () => {
   })
 
   it('异常输入双 true 时 normalize 不改写上游字段（互斥不在这里伪造）', () => {
-    // 上游正常数据两者互斥（tanks.pb field13：1=金币 2=收藏），但 projection 的职责只是
-    // 布尔归一化：两个 flag 都原样透传。视觉 precedence 由样式层确定（premium > collector，
-    // 见 AgentTankopedia.vue 的 `.tp-card.is-collector:not(.is-premium)` 及其 source 级 gate）。
+    // 两个源标志继续透传；单独派生的类别用于筛选和卡片，沿用金币优先。
     expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_collector: 1, is_premium: 1 }])[0])
-      .toMatchObject({ is_collector: true, is_premium: true })
+      .toMatchObject({ is_collector: true, is_premium: true, category: 'premium' })
+  })
+
+  it.each([
+    [{ is_premium: false, is_collector: false }, 'regular'],
+    [{ is_premium: 0, is_collector: 0 }, 'regular'],
+    [{ is_premium: true, is_collector: false }, 'premium'],
+    [{ is_premium: 1, is_collector: 1 }, 'premium'],
+    [{ is_premium: true }, 'premium'],
+    [{ is_premium: false, is_collector: true }, 'collector'],
+    [{ is_premium: 0, is_collector: 1 }, 'collector'],
+    [{ is_collector: true }, 'collector'],
+    [{}, 'unknown'],
+    [{ is_premium: false }, 'unknown'],
+    [{ is_premium: null, is_collector: true }, 'unknown'],
+    [{ is_premium: 'false', is_collector: true }, 'unknown'],
+    [{ is_premium: false, is_collector: 'false' }, 'unknown'],
+    [{ is_premium: '', is_collector: false }, 'unknown'],
+    [{ is_premium: 2, is_collector: 1 }, 'unknown'],
+  ])('从原始布尔证据 %j 派生类别 %s', (flags, category) => {
+    const row = normalizeTankCache([{ id: 1, name: 'Tank', ...flags }])[0]
+    expect(row.category).toBe(category)
+    expect(row.is_premium).toBe(!!flags.is_premium)
+    expect(row.is_collector).toBe(!!flags.is_collector)
+  })
+
+  it('类别与国家、等级、车种、名称 AND 组合，未知仅在全部出现', () => {
+    const tanks = normalizeTankCache([
+      { id: 1, name: 'WZ-111', tier: 8, nation: 'china', type: 'heavyTank', is_premium: false, is_collector: true },
+      { id: 2, name: 'Type 59', tier: 8, nation: 'china', type: 'mediumTank', is_premium: false, is_collector: true },
+      { id: 3, name: 'BZ-79', tier: 11, nation: 'china', type: 'heavyTank', is_premium: false, is_collector: false },
+      { id: 4, name: 'T-34', tier: 5, nation: 'ussr', type: 'mediumTank', is_premium: true, is_collector: false },
+      { id: 5, name: 'Unknown', tier: 8, nation: 'china', type: 'heavyTank' },
+    ], {})
+    const ids = state => selectTanks(tanks, state).map(tank => tank.id)
+    expect(ids({ category: 'collector', nation: 'china', tier: '8', type: 'heavyTank', q: 'wz111' })).toEqual([1])
+    expect(ids({ category: 'regular', tier: '11' })).toEqual([3])
+    expect(ids({ category: 'premium' })).toEqual([4])
+    expect(ids({ category: 'collector', nation: 'ussr' })).toEqual([])
+    expect(ids({ category: 'invalid' })).toEqual(ids({}))
+    expect(ids({})).toContain(5)
+    for (const category of ['regular', 'premium', 'collector']) expect(ids({ category })).not.toContain(5)
   })
 
   it('丢掉无效条目', () => {

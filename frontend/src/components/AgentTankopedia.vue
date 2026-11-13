@@ -5,7 +5,7 @@
  * 经 agentData → assetProvider 走配置的 remote asset origin（client-only，无同源回退）。
  *
  * URL 是筛选 / 详情状态的唯一 owner（utils/tankopediaQuery.js 解析与序列化）：
- * q / tier / nation / type / sort 用 replace 写入（不堆历史），?tank= 详情用 push（返回键回到列表），
+ * q / tier / nation / type / category / sort 用 replace 写入（不堆历史），?tank= 详情用 push（返回键回到列表），
  * ?config= 记录详情页选中的配置下标并联动装甲查看器入口。
  * 列表增量渲染（审计 3D-18）：首屏一页，滚动到底由 IntersectionObserver 追加，按钮兜底。
  * 坦克百科中的 3D 检视入口保留当前角色显示策略；装甲页面本身只要求登录。
@@ -75,6 +75,7 @@ const listFilters = computed(() => ({
   tier: urlState.value.tier,
   nation: urlState.value.nation,
   type: urlState.value.type,
+  category: urlState.value.category,
   sort: urlState.value.sort,
 }))
 function writeFilters(filters) {
@@ -83,6 +84,7 @@ function writeFilters(filters) {
     tier: filters.tier,
     nation: filters.nation,
     type: filters.type,
+    category: filters.category,
     sort: filters.sort,
   })
 }

@@ -522,8 +522,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-SEL-01 | MUST | 单选 | 按下表取默认控件；候选数按数据域的可能上限判断，不按当前条数；「请选择」「全部」这类空值项不算候选 | DC-SEL-04 | 人工 |
 | DC-SEL-02 | MUST | 2 个互斥选项 | 不用下拉 | `selection-policy.test.ts` 的只减不增名单 | `src/shared/selection-policy.test.ts`（静态选项）+ 人工（`v-for` 选项） |
-| DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | 无 | 人工 |
-| DC-SEL-04 | MAY | 固定有序域 | Tier I–X 这类固定、有序的集合直接平铺，即使有 10 项 | 无 | 人工 |
+| DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | DC-SEL-04 的有序等级域 | 人工 |
+| DC-SEL-04 | MAY | 固定有序域 | 车辆 Tier I–XI 固定有序域可平铺，紧凑布局可使用 Select，无需搜索 | 无 | 人工 |
 | DC-SEL-05 | MAY | 高信息熵集合 | 不到 10 项也可提前提供搜索，例如 `BattlePicker` 超过 6 项显示搜索 | 无 | 人工 |
 | DC-SEL-06 | MUST | Switch | 只用于立即生效的布尔状态，不是「两选项」的通用组件；随表单提交用 Checkbox | 无 | 人工 |
 | DC-SEL-07 | MUST | 响应式 | 窄屏可换呈现（平铺转 sheet），不改变单选 / 多选语义 | 无 | 人工 |
@@ -540,6 +540,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 多选 | Checkbox Group / multi-choice / searchable multi-select |
 
 单选 Choice Group 由 `SegmentedControl`（radiogroup 语义、方向键、Home / End）承载，呈现用 `presentation` 选择。级联筛选的固定候选域保持全部选项可见，上一级未选或当前无数据的选项置灰。
+坦克目录和科技树的九个游戏系别允许图标加名称平铺，目录在空间受限时可切为单选菜单或 sheet。此例外仅覆盖该游戏分类域。目录车种、类别在中等容器宽度可收为带图单选列表，所有布局保持同一筛选值。系别扩展后重新评估候选数与搜索需求。
+
 
 ---
 
