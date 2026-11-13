@@ -997,9 +997,9 @@ try {
         const r = b.getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       })()`)
-      // 用户反馈（0x5f3759df，2026-11-08；2026-11-13 旋转中心口径回调）：预设保留**距离**
-      // 与**旋转中心**（默认轨道中心不得移动——挪到炮线枢轴会改变环绕语义），只接管
-      // 观察方向与炮管俯角。
+      // 用户反馈（0x5f3759df，2026-11-08；2026-11-13 定稿）：预设同时满足
+      // ①旋转中心保持默认（不得移动）②机位在炮轴线上（炮管正对镜头，俯角 = 夹具
+      // 局部俯角；夹具无 initial_turret_rotation 且 turret=0）③距离按中心保留。
       const orbitBefore = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target), t: c.target.toArray() } })()')
       await mouseTap(await presetPoint('hull-down'))
       const low = await page.waitForValue('window.__armorRicochet.aimingState()',
@@ -1007,13 +1007,19 @@ try {
         { timeout: 5000, label: 'hull-down preset uses fixture depression' })
       const orbitAfter = await page.evaluate(`(() => {
         const c = window.__DBG__.controls;
-        const d = c.object.position.clone().sub(c.target);
-        return { d: c.object.position.distanceTo(c.target), t: c.target.toArray(), moved: c.object.position.length() };
+        const p = window.__armorRicochet.rigState().pivots.gun;
+        const wp = p ? new window.__DBG__.THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(window.__DBG__.tankModel.matrixWorld).toArray() : null;
+        const rel = wp ? c.object.position.clone().sub(wp) : null;
+        const elev = rel ? Math.atan2(rel.y, Math.hypot(rel.x, rel.z)) * 180 / Math.PI : null;
+        return { d: c.object.position.distanceTo(c.target), t: c.target.toArray(),
+                 onAxisElev: elev, axisDist: rel ? rel.length() : null };
       })()`)
+      check(!!orbitAfter.axisDist, '压坡卖头预设：rigState 暴露炮线枢轴（models.pb）')
       check(low.controlsEnabled && Math.abs(orbitAfter.d - orbitBefore.d) < 0.01
-        && orbitAfter.t.every((v, i) => Math.abs(v - orbitBefore.t[i]) < 1e-6)
-        && Math.abs(orbitAfter.moved) > 0,
+        && orbitAfter.t.every((v, i) => Math.abs(v - orbitBefore.t[i]) < 1e-6),
         `压坡卖头预设：旋转中心保持默认（${orbitBefore.t.map(v => v.toFixed(2)).join(', ')}）、距离保留（${orbitBefore.d.toFixed(2)}m → ${orbitAfter.d.toFixed(2)}m）`)
+      check(orbitAfter.onAxisElev != null && Math.abs(orbitAfter.onAxisElev - (-20)) < 0.01,
+        `压坡卖头预设：机位在炮轴线上、炮管正对镜头（相机相对炮线枢轴俯角 ${orbitAfter.onAxisElev?.toFixed(1)}°）`)
       const depressed = await page.evaluate('window.__armorRicochet.rigState()')
       await mouseTap(await presetPoint('front'))
       await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', g => g === 0,
