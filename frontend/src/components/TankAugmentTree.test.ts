@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 import TankAugmentTree from './TankAugmentTree.vue'
 import { messages } from '../locales/messages.js'
 import TANKS from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import t11r3 from '../replay-local/compute/__fixtures__/upgrades/t11r3.json'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
 
@@ -23,6 +24,23 @@ function render(overrides: {
 }
 
 describe('TankAugmentTree（XI 研发树复刻）机制文案', () => {
+  it.each(t11r3.tanks)('resolves the t11r3 mechanic and three alternative labels in every locale for $modules.tankId', async ({ modules }) => {
+    for (const locale of ['zh', 'en', 'ru']) {
+      const wrapper = mount(TankAugmentTree, { props: { modules, installed: [], chosen: {} },
+        global: { plugins: [createI18n({ legacy: false, locale, messages })] } })
+      const info = wrapper.get('[data-testid="tank-augment-info"]')
+      expect(info.text()).not.toContain(modules.vehicleAbilities[0])
+      await wrapper.get('[data-testid="tank-augment-group"]').trigger('click')
+      const choices = wrapper.findAll('.at-optrow')
+      expect(choices).toHaveLength(3)
+      for (const choice of choices) {
+        expect(choice.text().trim()).not.toBe('')
+        expect(choice.text()).not.toMatch(/agentTanks\.|\/Upgrades\//)
+      }
+      wrapper.unmount()
+    }
+  })
+
   it('机制名/描述按真实 stem（vehicleAbilities）读三语表，不显示原始键', () => {
     const wrapper = render({ vehicleAbilities: ['rechargeableNitro'] })
     const text = wrapper.get('[data-testid="tank-augment-info"]').text()

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 import TANKS from './__fixtures__/upgrades/tanks.json'
+import T11R3 from './__fixtures__/upgrades/t11r3.json'
 import MECHANICS from './__fixtures__/upgrades/mechanics.json'
 import ORDINARY from './__fixtures__/modules/ussr.json'
 import { computeCharacteristics } from './characteristics'
@@ -462,5 +463,84 @@ describe('定义驱动扩展与错误边界', () => {
       expect(projectTankUpgrades(bz.detail, modules, 'stock').detail).toBe(bz.detail)
     }
     expect(resolveUpgradeSelection(hacker.modules, 'top', [24]).mechanicsAttributes.SAS_GUN_DISPERSION).toBe(.25)
+  })
+})
+
+
+describe('t11r3 的四种内建机制', () => {
+  const catalog = { ...T11R3, consumablesGameVersion: T11R3.gameVersion, provisionsGameVersion: T11R3.gameVersion }
+  // 数组依次是 stock 与三种备选的 top，顺序来自客户端 alternativeGroups.choices。
+  const values: Record<number, Record<string, Array<number | boolean>>> = {
+    23361: {
+      EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME: [3, 2, 3, 3],
+      EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS: [false, false, false, true],
+    },
+    30737: {
+      AUXILLIARY_WEAPONS_GUN_RELOAD_TIME: [19, 16.8, 14, 16.8],
+      AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL: [1.5, .48, 1, 1],
+      AUXILLIARY_WEAPONS_GUN_DAMAGE: [150, 170, 170, 190],
+    },
+    30993: {
+      SHELL_OVERHEAT_ACTIVATION_DELAY: [2, 1, 1, 1],
+      SHELL_OVERHEAT_CHARGE_TIME: [9, 7, 7, 3],
+      SHELL_OVERHEAT_MAX_TANK_SPEED: [25, 30, 60, 30],
+      SHELL_OVERHEAT_MIN_ALPHA_BOOST: [.25, .35, .25, .25],
+    },
+    10593: {
+      UNGUIDED_ROCKET_ACCELERATION: [20, 40, 40, 40],
+      UNGUIDED_ROCKET_INITIAL_SPEED: [40, 70, 70, 70],
+      UNGUIDED_ROCKET_CONTAINER_RELOAD: [37, 37, 37, 27],
+      UNGUIDED_ROCKET_INTERCLIP_RELOAD: [15, 15, 10, 15],
+      UNGUIDED_ROCKET_DAMAGE: [320, 360, 320, 320],
+    },
+  }
+
+  it.each(T11R3.tanks)('$modules.tankId 的 3 种备选读取同版实装值并在深链中往返', ({ modules, detail }) => {
+    const progression = parseAugmentProgression(modules)!
+    const group = progression.alternativeGroups[0]!
+    const expected = values[modules.tankId]!
+    const stock = resolveUpgradeSelection(modules, 'stock')
+    const stockRows = upgradeMechanicEffects(stock, modules, catalog)
+    expect(Object.fromEntries(stockRows.map(row => [row.name, row.initial]))).toEqual(
+      Object.fromEntries(Object.entries(expected).map(([name, stages]) => [name, stages[0]])))
+    for (const [index, choice] of group.choices.entries()) {
+      const projected = projectTankUpgrades(detail, modules, 'top', [choice])
+      expect(projected.selection.unsupported).toEqual([])
+      const rows = upgradeMechanicEffects(projected.selection, modules, catalog)
+      for (const row of rows) {
+        const value = expected[row.name]![index + 1]
+        if (typeof value === 'number') expect(row.value, row.name).toBeCloseTo(value)
+        else expect(row.value, row.name).toBe(value)
+      }
+      const installed = researchGroupChoice(progression, group.id, choice, new Set())
+      const query = parseTankopediaQuery({ tank: String(modules.tankId), upgrade: 'custom', abilities: [...installed].join(',') })
+      const partial = resolveUpgradeSelection(modules, query.upgrade, query.abilities)
+      expect(partial.unsupported).toEqual([])
+      expect(new Set(partial.abilities)).toEqual(installed)
+      expect(upgradeMechanicEffects(partial, modules, catalog).every(row => row.initial != null)).toBe(true)
+      // 所有三个备选在德系/日系车上都只改机制，不能把副武器或条件收益注入主炮。
+      if (modules.tankId !== 23361) {
+        expect(projected.detail).toEqual(projectTankUpgrades(detail, modules, 'top', [group.choices[0]]).detail)
+      }
+    }
+  })
+
+  it('拒绝跨版、缺绑定、错炮引用、多弹种、非法射速和不明确的主炮', () => {
+    const rocket = T11R3.tanks.find(tank => tank.modules.tankId === 10593)!.modules
+    const rows = (modules: unknown, source: unknown) =>
+      upgradeMechanicEffects(resolveUpgradeSelection(modules, 'stock'), modules, source)
+    expect(rows(rocket, { ...catalog, consumablesGameVersion: 'old' }).every(row => row.initial == null)).toBe(true)
+    expect(rows({ ...rocket, vehicleAbilities: [] }, catalog).every(row => row.initial == null)).toBe(true)
+    const item = catalog.consumables.find(i => i.stem === 'unguidedRocket')!
+    for (const auxiliaryGun of [undefined, { ...item.auxiliaryGun, reference: 'wrong' }]) {
+      expect(rows(rocket, { ...catalog, consumables: [{ ...item, auxiliaryGun }] }).every(row => row.initial == null)).toBe(true)
+    }
+    const invalid = { ...item.auxiliaryGun, shots: [...item.auxiliaryGun.shots, ...item.auxiliaryGun.shots],
+      clip: { count: 2, rate: 0 } }
+    const result = rows(rocket, { ...catalog, consumables: [{ ...item, auxiliaryGun: invalid }] })
+    expect(result.filter(row => row.name !== 'UNGUIDED_ROCKET_CONTAINER_RELOAD').every(row => row.initial == null)).toBe(true)
+    const external = T11R3.tanks.find(tank => tank.modules.tankId === 23361)!.modules
+    const ambiguous = { ...external, turrets: [...external.turrets, ...external.turrets] }
+    expect(rows(ambiguous, catalog).find(row => row.name === 'EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME')?.initial).toBeNull()
   })
 })

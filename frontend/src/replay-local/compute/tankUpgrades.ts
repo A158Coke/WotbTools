@@ -251,8 +251,52 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
-/** 客户端属性与内建机制 script 参数的已核对映射；不按车辆名称或等级猜绑定。 */
-const MECHANIC_PARAMETERS: Record<string, [string, string, string]> = {
+function shotInterval(clip: unknown): number | null {
+  if (!record(clip) || !finite(clip.count) || !Number.isInteger(clip.count) || clip.count < 2
+    || !finite(clip.rate) || clip.rate <= 0) return null
+  const seconds = 60 / clip.rate
+  return finite(seconds) ? seconds : null
+}
+
+function mainGunClipInterval(_item: Data, modules: Data): number | null {
+  const guns = records(modules.turrets).flatMap(turret => records(turret.guns))
+  // 车辆级机制只展示唯一主炮的参数，多炮时不能猜正在使用哪一门。
+  return guns.length === 1 ? shotInterval(child(guns[0], 'stats')?.clip) : null
+}
+
+type MechanicParameter = string | ((item: Data, modules: Data) => number | null)
+
+function auxiliaryValue(field: 'reloadTime' | 'clip' | 'burst' | 'damage' | 'speed' | 'acceleration'): MechanicParameter {
+  return item => {
+    const reference = child(child(item, 'script'), 'params')?.gun
+    const gun = child(item, 'auxiliaryGun')
+    if (typeof reference !== 'string' || !reference.trim() || !gun || gun.reference !== reference) return null
+    if (field === 'clip' || field === 'burst') return shotInterval(gun[field])
+    if (field === 'reloadTime') return finite(gun.reloadTime) ? gun.reloadTime : null
+    // 当前两门副武器各有一发明确引用的弹种。若将来有多弹种，需要选择上下文。
+    if (!Array.isArray(gun.shots) || gun.shots.length !== 1) return null
+    const shot = gun.shots[0]
+    if (!record(shot) || typeof shot.stem !== 'string' || !shot.stem.trim()) return null
+    return finite(shot[field]) ? shot[field] : null
+  }
+}
+
+/** 客户端属性与内建机制来源的已核对映射；不按车辆名称或等级猜绑定。 */
+const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> = {
+  EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME: ['provisions', 'externalAmmoModule', mainGunClipInterval],
+  EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS: ['provisions', 'externalAmmoModule', 'allowNonDamagingHits'],
+  SHELL_OVERHEAT_ACTIVATION_DELAY: ['provisions', 'shellOverheat', 'chargeActivationDelay'],
+  SHELL_OVERHEAT_CHARGE_TIME: ['provisions', 'shellOverheat', 'maxChargeAccumulationTimeFromStart'],
+  SHELL_OVERHEAT_MAX_TANK_SPEED: ['provisions', 'shellOverheat', 'maxSpeedForChargeAccumulation'],
+  SHELL_OVERHEAT_MIN_ALPHA_BOOST: ['provisions', 'shellOverheat', 'maxBoostToMinimumAlpha'],
+  AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL: ['consumables', 'auxilliaryWeapons', auxiliaryValue('burst')],
+  AUXILLIARY_WEAPONS_GUN_DAMAGE: ['consumables', 'auxilliaryWeapons', auxiliaryValue('damage')],
+  AUXILLIARY_WEAPONS_GUN_RELOAD_TIME: ['consumables', 'auxilliaryWeapons', auxiliaryValue('reloadTime')],
+  UNGUIDED_ROCKET_ACCELERATION: ['consumables', 'unguidedRocket', auxiliaryValue('acceleration')],
+  UNGUIDED_ROCKET_CONTAINER_RELOAD: ['consumables', 'unguidedRocket', auxiliaryValue('reloadTime')],
+  UNGUIDED_ROCKET_DAMAGE: ['consumables', 'unguidedRocket', auxiliaryValue('damage')],
+  UNGUIDED_ROCKET_INITIAL_SPEED: ['consumables', 'unguidedRocket', auxiliaryValue('speed')],
+  UNGUIDED_ROCKET_INTERCLIP_RELOAD: ['consumables', 'unguidedRocket', auxiliaryValue('clip')],
   BURST_MODE_REQUIRED_PENETRATIONS: ['provisions', 'burstMode', 'requiredDamagingPenetrations'],
   BURST_MODE_INTERVAL: ['provisions', 'burstMode', 'burstInterval'],
   BURST_MODE_TARGET_ORDER: ['provisions', 'burstMode', 'targetOrder'],
@@ -280,7 +324,8 @@ function mechanicInitial(name: string, modifier: UpgradeDefinition['modifier'], 
     || catalog[`${kind}GameVersion`] !== modules.gameVersion
     || !Array.isArray(modules.vehicleAbilities) || !modules.vehicleAbilities.includes(ability)) return null
   const item = records(catalog[kind]).find(item => item.stem === ability && item.isAbility === true)
-  const raw = child(child(item, 'script'), 'params')?.[parameter]
+  if (!item) return null
+  const raw = typeof parameter === 'function' ? parameter(item, modules) : child(child(item, 'script'), 'params')?.[parameter]
   if (modifier === 'MODIFIER_BOOLEAN') {
     if (typeof raw === 'boolean') return raw
     if (typeof raw === 'string' && /^(true|false)$/i.test(raw.trim())) return raw.trim().toLowerCase() === 'true'
