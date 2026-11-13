@@ -1265,11 +1265,22 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     expect(wrapper.find('[data-test="pb-fullscreen"]').attributes('aria-label')).toContain('enter_fullscreen')
   })
 
-  it('6：API 不可用 → 按钮隐藏，不抛错', async () => {
+  it('6：元素级 Fullscreen API 不可用（iPhone Safari）→ 按钮保留，点击进入 CSS 伪全屏，再点退出，不抛错', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    expect(wrapper.find('[data-test="pb-fullscreen"]').exists()).toBe(false)
+    const btn = () => wrapper.find('[data-test="pb-fullscreen"]')
+    expect(btn().exists()).toBe(true)
+    expect(wrapper.find('.battle-playback').classes()).not.toContain('pb-pseudo-fullscreen')
+    await btn().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.battle-playback').classes()).toContain('pb-pseudo-fullscreen')
+    expect(btn().attributes('aria-label')).toContain('exit_fullscreen')
+    expect(document.documentElement.hasAttribute('data-pb-pseudo-fullscreen')).toBe(true)
+    await btn().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.battle-playback').classes()).not.toContain('pb-pseudo-fullscreen')
+    expect(document.documentElement.hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
   })
 
   it('7/8/9/10：进入/退出 fullscreen 不 reset currentTime/speed/selected/zoom/pan', async () => {
