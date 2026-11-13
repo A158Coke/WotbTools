@@ -114,6 +114,38 @@ describe('装甲相机预设保留用户取景（preserveView）', () => {
     }
   })
 
+  it.each(['hull_down', 'front'])('%s：真实 OrbitControls 不可达场景（中心远离炮轴）：中心不动、机位仍在轴上', kind => {
+    const { canvas, camera, controls } = makeScene()
+    const preset = bindPreset(camera, controls)
+    try {
+      // 用户平移到远离炮轴的位置（垂距 50m > maxDistance 内的用户距离 15m）：
+      // 站位策略取安全站位（枢轴 + 炮线方向 × 15m），中心保持不动。
+      controls.target.set(50, 0, 0)
+      camera.position.set(50, 0, 15)
+      controls.update()
+      const distanceAtClick = camera.position.distanceTo(controls.target)
+      const targetAtClick = controls.target.clone()
+
+      expect(preset.setCameraPreset(kind, { preserveView: true })).toBe(true)
+
+      expect(controls.target.distanceTo(targetAtClick)).toBeLessThan(1e-9)
+      // stub 炮轴 = x=0、z=2 的竖线：机位在轴上且在枢轴前方。
+      expect(camera.position.x).toBeCloseTo(0, 6)
+      expect(camera.position.z).toBeCloseTo(2, 6)
+      expect(camera.position.y).toBeGreaterThan(2)
+      // 不可达时距离让位于指向：由站位策略给出（≥ 安全站位 15m，≤ maxDistance）。
+      const d = camera.position.distanceTo(controls.target)
+      expect(d).toBeGreaterThanOrEqual(15)
+      expect(d).toBeLessThanOrEqual(500)
+      void distanceAtClick
+    } finally {
+      canvas.remove()
+      document.getElementById('turret-val')?.remove()
+      document.getElementById('gun-val')?.remove()
+      controls.dispose()
+    }
+  })
+
   it('无 preserveView（URL 首载）保持完整预设摆位：target = 炮线枢轴、距离 = 15m', () => {
     const { canvas, camera, controls } = makeScene()
     const preset = bindPreset(camera, controls)

@@ -71,18 +71,18 @@ describe('armor preset view placement', () => {
   // world = Rx(-90°)：局部 (0,0,2) 枢轴 → 世界 (0,2,0)，局部炮线 (0,1,0) → 世界 (0,0,-1)。
   const pivotWorld = new Vector3(0, 2, 0)
   const gunDirection = new Vector3(0, 0, -1)
+  const MAXD = 500
 
   it('rotation center unchanged AND camera on the gun axis at the user distance', () => {
     const pose = gunLine()
     const prevTarget = new Vector3(3, 1, 4)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7)) // 用户距离 7m
-    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
     // 约束 1：旋转中心不动。
     expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
     // 约束 2：机位在炮轴线上（x=0, y=2 的竖线）→ 炮管正对镜头。
     expect(placement.position.x).toBeCloseTo(0, 9)
     expect(placement.position.y).toBeCloseTo(pivotWorld.y, 9)
-    // 机位在枢轴前方（沿炮线方向）。
     expect(placement.position.clone().sub(pivotWorld).dot(gunDirection)).toBeGreaterThan(0)
     // 距中心 = 用户距离（缩放层级保留）。
     expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(7, 6)
@@ -91,35 +91,50 @@ describe('armor preset view placement', () => {
   it('zero user offset falls back to the preset stand-off distance (15m from center)', () => {
     const pose = gunLine()
     const prevTarget = new Vector3(3, 1, 4)
-    const placement = armorPresetViewPlacement(prevTarget, prevTarget.clone(), pose)
+    const placement = armorPresetViewPlacement(prevTarget, prevTarget.clone(), pose, MAXD)
     expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
     expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(15, 6)
     expect(placement.position.x).toBeCloseTo(0, 9)
   })
 
-  it('gun axis unreachable at the user distance: closest point on the axis (aiming wins over distance)', () => {
+  it('unreachable (D < perp): center kept, camera on the axis at the safe station', () => {
     const pose = gunLine()
-    // 中心远离炮轴（垂距 > 用户距离 7m）：取垂足，中心不动、炮管仍指向镜头。
+    // 中心 (50,2,0)：到炮轴垂距 50m > 用户距离 7m → 垂足不可达，取安全站位 15m。
     const prevTarget = new Vector3(50, 2, 0)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
-    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
     expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
     expect(placement.position.x).toBeCloseTo(0, 9)
     expect(placement.position.y).toBeCloseTo(pivotWorld.y, 9)
+    expect(placement.position.clone().sub(pivotWorld).dot(gunDirection)).toBeCloseTo(15, 6)
     expect(placement.position.distanceTo(prevTarget)).toBeGreaterThan(7)
   })
 
-  it('pathological center behind the breech falls back to the full preset pose', () => {
+  it('station beyond OrbitControls maxDistance is not chosen (update() would break aiming)', () => {
     const pose = gunLine()
-    // 中心在炮线后方（proj<0）且炮轴在其用户距离内不可达 → 完整预设。
-    const prevTarget = new Vector3(50, 2, 100)
+    // 中心 (600,2,0)：炮轴垂距 600m > maxDistance 500m——轴上任何站位都会被
+    // controls.update() 拉回 500m 内而破坏指向 → 不摆位，保持用户当前取景。
+    const prevTarget = new Vector3(600, 2, 0)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
-    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
-    expect(placement).toBe(pose)
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
+    expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
+    expect(placement.position.distanceTo(prevCamera)).toBeCloseTo(0)
+  })
+
+  it('center behind the breech: exact user distance still solvable on the forward axis', () => {
+    const pose = gunLine()
+    // 中心在枢轴后方（proj = -3）：前向轴上仍有精确解 t = 4 → 距中心 7m。
+    const prevTarget = new Vector3(0, 2, 3)
+    const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
+    expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
+    expect(placement.position.x).toBeCloseTo(0, 9)
+    expect(placement.position.y).toBeCloseTo(pivotWorld.y, 9)
+    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(7, 6)
   })
 
   it('zero-length preset direction falls back to the full preset pose', () => {
     const pose = { target: new Vector3(1, 2, 3), position: new Vector3(1, 2, 3) }
-    expect(armorPresetViewPlacement(new Vector3(0, 0, 0), new Vector3(5, 0, 0), pose)).toBe(pose)
+    expect(armorPresetViewPlacement(new Vector3(0, 0, 0), new Vector3(5, 0, 0), pose, MAXD)).toBe(pose)
   })
 })

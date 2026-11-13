@@ -702,7 +702,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             controls.enableDamping = false;
             controls.update();
             const placement = preserveView
-                ? armorPresetViewPlacement(userView.target, userView.position, pose)
+                ? armorPresetViewPlacement(userView.target, userView.position, pose, controls.maxDistance)
                 : pose;
             controls.target.copy(placement.target);
             camera.position.copy(placement.position);
