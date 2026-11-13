@@ -78,3 +78,46 @@ KR-1/BZ 的其他技术系数不属于这份百分数白名单，不做统一乘
 同版 `Strings/en.yaml` 的 `tank_descr_param_combatFrenzy_allowSwitchAfterKill`
 在第 929 行明确为 `Keep stacks after destroying a target`，后两行是 Yes/No。
 它表示击毁目标后是否保留层数，不是是否允许切换目标；三语界面明确标注该收益并显示是/否。
+
+## t11r3 四辆新增 XI 车
+
+客户端为 `11.4.0.138_7408695 11.22_supertest_tier11_6 WOTB_Win7`。下表的初值是同版配置原值，满级列以客户端备选节点 ID 标注。所有数值使用 `MODIFIER_ADD`，触发条件使用 `MODIFIER_BOOLEAN`。节点可以部分研发，普通节点和已选备选的累计加成分别按照实际选择计算。[客户端 ZIP](https://cdn.static.wotb.app/win7/WotBlitz_11.4.0.138_t11r3.zip)
+
+| 车辆 | 机制字段 | 源字段和初值 | 满级示例 |
+|---|---|---|---|
+| AS-XX 40 t | EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME | 本车唯一主炮 `_118mm_D_1507AS` 的车辆 XML 覆盖 `clip.count=3, rate=20`，增强弹匣的夹内间隔 60/20 = 3 秒 | 选 22 得 2 秒 |
+| AS-XX 40 t | EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS | `externalAmmoModule.allowNonDamagingHits=false`，条件为自己的射击造成伤害 | 选 24 后命中即可 |
+| Taschenratte | AUXILLIARY_WEAPONS_GUN_RELOAD_TIME | 副炮 `reloadTime=19` 秒 | 选 26 得 14 秒 |
+| Taschenratte | AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL | 副炮 `burst.count=2, rate=40`，连发间隔 1.5 秒 | 选 25 得 0.48 秒 |
+| Taschenratte | AUXILLIARY_WEAPONS_GUN_DAMAGE | 副炮弹 `damage.armor=150` HP | 选 27 得 190 HP |
+| Hirschkäfer | SHELL_OVERHEAT_ACTIVATION_DELAY | `shellOverheat.chargeActivationDelay=2` 秒 | 任意备选得 1 秒 |
+| Hirschkäfer | SHELL_OVERHEAT_CHARGE_TIME | `maxChargeAccumulationTimeFromStart=9` 秒 | 选 24 得 3 秒 |
+| Hirschkäfer | SHELL_OVERHEAT_MAX_TANK_SPEED | `maxSpeedForChargeAccumulation=25` km/h，充能时允许的最高车速 | 选 23 得 60 km/h |
+| Hirschkäfer | SHELL_OVERHEAT_MIN_ALPHA_BOOST | `maxBoostToMinimumAlpha=0.25`，充能完成时对最低伤害的加成 | 选 22 得 0.35，即 25%→35%，增加 10 个百分点 |
+| Ho-Ri 4 | UNGUIDED_ROCKET_CONTAINER_RELOAD | 发射器 `reloadTime=37` 秒 | 选 24 得 27 秒 |
+| Ho-Ri 4 | UNGUIDED_ROCKET_INTERCLIP_RELOAD | 发射器 `clip.count=2, rate=4`，两枚火箭间隔 15 秒 | 选 23 得 10 秒 |
+| Ho-Ri 4 | UNGUIDED_ROCKET_DAMAGE | 火箭弹 `damage.armor=320` HP | 选 22 得 360 HP |
+| Ho-Ri 4 | UNGUIDED_ROCKET_INITIAL_SPEED | 火箭弹 `speed=40` m/s | 任意备选得 70 m/s |
+| Ho-Ri 4 | UNGUIDED_ROCKET_ACCELERATION | 火箭弹 `acceleration=20` m/s² | 任意备选得 40 m/s² |
+
+`auxilliaryWeapons` 和 `unguidedRocket` 从各自车辆 `extras` 绑定到消耗品定义。每项的 `script.params.gun` 指向本国 `components/guns.xml` 的 `shared` 枪定义，枪的 `shots` 子元素再索引本国 `components/shells.xml`。本版的两条引用分别为：
+
+- 德系 `_taschenratte_secondary_gun_placeholder` → `taschenratte_secondary_shell_placeholder`。
+- 日系 `_70mm_rocket_launcher_placeholder` → `_70mm_rocket_placeholder`。
+
+法车增强弹匣保留车辆主炮的夹内射速，技能物品定义提供 `clipSizeBonus=1` 和 `allowNonDamagingHits`。德系充能的 XML 同时指定 `requireLoadedGun=true` 和 `resetOnShot=true`。客户端 `hangarAbilityParamsConfig.yaml` 和 `Strings/en.yaml` 明确列出三个装填时长单位、充能速度单位、火箭速率单位，以及增强弹匣的 `On damage` / `On hit`。这 14 个字段只计入对应机制的展示。法车另一个备选 23 的主炮装填按其单独的静态脚本计算。
+
+资产附带的 `auxiliaryGun.reference` 必须与上述物品的原始引用匹配；弹种属性只接受唯一一发引用。主炮夹内间隔要求唯一主炮及有效的弹夹数量和射速。旧版或缺字段时仍显示节点改变量，初值和依赖该初值的当前值留空。四车回归的真实物品、车辆、升级树和详情位于 `frontend/src/replay-local/compute/__fixtures__/upgrades/t11r3.json`。
+
+以下 SHA-256 均针对解码 DVPL 后的内容。XML 路径相对于 `Data/XML/item_defs/vehicles/`。
+
+| 路径 | SHA-256 |
+|---|---|
+| common/consumables/common.xml | `5c0c41edd209561c61c0a8661132aeaf1f5eff248f38966872bf5afe0503ccd9` |
+| common/provisions/common.xml | `fc1d2230cc20ce930656c6518730b6300eda0c10b3029029b41fb2d0546f6822` |
+| france/F135_AS_XX_40_t.xml | `5a71868b671ca1eaeaa2badb100231645a5ed26d18b9cf7fc21d6c02e4b230a9` |
+| germany/components/guns.xml | `b3f983c7eacb8752faec072225dbc55d01cde9fd435836f1917db25126029e3f` |
+| germany/components/shells.xml | `703c26635ac7b711b7db5dd964d386c7e29e4ae76430dea3f516bfefc4ad9b43` |
+| japan/components/guns.xml | `4508b4c575fbe686e6fe232a3cce13701dfcd996a50b6e68c3632739f3c09513` |
+| japan/components/shells.xml | `1592ec7f0afbf7932dc7cfa2dc846d667955c1d55369a50d16da9de627328a7c` |
+| Data/hangarAbilityParamsConfig.yaml | `effb42aa74c63098dfc43f3ae28d7352cafbb35932fffc4deff21121620d9113` |

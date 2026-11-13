@@ -1821,7 +1821,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "Gun Durability",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "Surveying Device Durability",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "Track Durability",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Turret Rotator Durability"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Turret Rotator Durability",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "Reload between shots in the enhanced magazine",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "Enhanced magazine activation condition",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "Auxiliary gun reload time",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "Auxiliary gun damage per shot",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "Interval between auxiliary shots",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "Maximum speed while charging",
+        "SHELL_OVERHEAT_CHARGE_TIME": "Time to reach full charge",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "Delay before charging starts",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "Minimum damage bonus",
+        "UNGUIDED_ROCKET_ACCELERATION": "Rocket acceleration",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "Initial rocket speed",
+        "UNGUIDED_ROCKET_DAMAGE": "Damage per rocket",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "Reload between rockets",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "Full launcher reload time",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "Reverse speed limit",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "Turret traverse speed",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "Shell 1 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "Shell 2 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "Shell 3 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "Shell 1 penetration at 500 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "Shell 2 penetration at 500 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "Shell 3 penetration at 500 m"
       },
       "title": "Loadout",
       "reset": "Reset",
@@ -1912,6 +1934,22 @@
         "steadyAimSystem": {
           "name": "Steady Aim System",
           "description": "Temporarily tightens shell dispersion and speeds up aiming when activated."
+        },
+        "externalAmmoModule": {
+          "name": "Ammunition Supply Module",
+          "description": "When all three shots in a magazine meet the activation condition, the next magazine holds four shells. Emptying or reloading the enhanced magazine restores the three-shell magazine."
+        },
+        "auxilliaryWeapons": {
+          "name": "Auxiliary Weapons",
+          "description": "Activate the auxiliary guns to fire two shots in quick succession. They reload independently of the main gun."
+        },
+        "shellOverheat": {
+          "name": "Shell Thermal Control",
+          "description": "While the vehicle stays within the charging speed range, the next shot gains a higher minimum damage roll. Firing spends the entire charge."
+        },
+        "unguidedRocket": {
+          "name": "Unguided Rocket",
+          "description": "The launcher carries two unguided rockets. It reloads briefly between launches and fully reloads after the second rocket."
         }
       }
     },
@@ -2006,7 +2044,9 @@
       "HORSE_POWER_PER_TON": "hp/t",
       "SECOND": "s",
       "METER": "m",
-      "CUBIC_METER": "m³"
+      "CUBIC_METER": "m³",
+      "HIT_POINTS": "HP",
+      "METER_PER_SECOND_SQUARED": "m/s²"
     },
     "module_dmg": "Module damage",
     "normalization": "Normalization",

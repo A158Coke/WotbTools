@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 import TankConfigPanel from './TankConfigPanel.vue'
 import { baseSelection } from '../replay-local/compute/tankSetup'
 import tanks from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import t11r3 from '../replay-local/compute/__fixtures__/upgrades/t11r3.json'
 import mechanics from '../replay-local/compute/__fixtures__/upgrades/mechanics.json'
 import crew from '../replay-local/compute/__fixtures__/research/skills.json'
 import { messages } from '../locales/messages'
@@ -77,6 +78,29 @@ describe('配置器紧凑呈现保持交互', () => {
 })
 
 describe('XI 技能选择卡与效果反馈', () => {
+  it.each(t11r3.tanks)('t11r3 $modules.tankId reads each initial value and applies one upgrade option at a time', async tank => {
+    const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables,
+      provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion } })
+    const rows = wrapper.get('[data-testid="tank-mechanic-effects"]').findAll('tbody tr')
+    const fields = new Set(tank.modules.upgradeProgression.nodes.flatMap(node => node.attributes)
+      .map(attr => attr.name).filter(name => !name.startsWith('ATTRIBUTE_NAME_')))
+    expect(rows).toHaveLength(fields.size)
+    for (const row of rows) {
+      expect(row.get('th').text()).not.toContain('agentTanks.')
+      expect(row.get('td').text()).not.toBe('—')
+    }
+    const group = tank.modules.upgradeProgression.alternativeGroups[0]
+    for (const id of [...group.choices.slice(1), group.choices[0]]) {
+      const button = wrapper.get(`[data-testid="tank-ability-${id}"]`)
+      await button.trigger('click')
+      await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+      expect(button.attributes('aria-checked')).toBe('true')
+      expect(wrapper.get('.tp-ability-options').findAll('[aria-checked="true"]')).toHaveLength(1)
+      for (const row of rows) expect(row.get('strong').text()).not.toBe('—')
+    }
+    wrapper.unmount()
+  })
+
   it.each([
     ['zh', ' 个百分点', '累计变化', '击毁目标后保留层数', '是', '否'],
     ['en', ' pp', 'Total change', 'Keep stacks after destroying a target', 'Yes', 'No'],
