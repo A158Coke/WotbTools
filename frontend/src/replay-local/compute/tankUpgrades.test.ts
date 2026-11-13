@@ -466,6 +466,7 @@ describe('定义驱动扩展与错误边界', () => {
   })
 })
 
+<<<<<<< HEAD
 
 describe('t11r3 的四种内建机制', () => {
   const catalog = { ...T11R3, consumablesGameVersion: T11R3.gameVersion, provisionsGameVersion: T11R3.gameVersion }
@@ -493,6 +494,22 @@ describe('t11r3 的四种内建机制', () => {
       UNGUIDED_ROCKET_INTERCLIP_RELOAD: [15, 15, 10, 15],
       UNGUIDED_ROCKET_DAMAGE: [320, 360, 320, 320],
     },
+=======
+describe('t11r3 新机制（副炮/火箭/热控/弹药补给）的基值绑定', () => {
+  // 合成最小数据面：属性定义 + 单个 COMMON 节点 + 物品 script 参数
+  // （真实值取自资产包 11.4.0.138 的 provisions/consumables 与车辆升级树）。
+  function tankModules(ability: string, defs: Record<string, unknown>, attr: string, value: number | boolean) {
+    return {
+      tankId: 90000, tier: 11, gameVersion: 'v1', vehicleAbilities: [ability],
+      upgradeProgression: {
+        matrix: { rows: 1, columns: 1 },
+        nodes: [{ id: 1, techName: 'n1', type: 'NODETYPE_COMMON', gridPosition: [1, 1], xpCost: 1,
+          attributes: [{ name: attr, value }] }],
+        alternativeGroups: [], attributeDefinitions: defs,
+        provenance: { gameVersion: 'v1' },
+      },
+    } as any
+>>>>>>> c7c8388cb (fix(ci): typecheck 覆盖测试文件 + 5.2.1 发布注记接入 release-process)
   }
 
   it.each(T11R3.tanks)('$modules.tankId 的 3 种备选读取同版实装值并在深链中往返', ({ modules, detail }) => {
