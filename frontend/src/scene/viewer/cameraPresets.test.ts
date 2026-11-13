@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Euler, Matrix4, Vector3 } from 'three'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './cameraPresets'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './cameraPresets'
 import EUROPEAN from '../../replay-local/compute/__fixtures__/modules/european.json'
 import { pitchAtBearing } from '../../replay-local/compute/tankSetup'
 
@@ -65,33 +65,34 @@ describe('armor camera presets', () => {
   })
 })
 
-describe('armor preset placement', () => {
+describe('armor preset view placement', () => {
   const world = new Matrix4().makeRotationX(-Math.PI / 2)
   const gunLine = () => armorCameraPreset(pivot, world, 15)
 
-  it('camera stays on the gun axis past the muzzle; user distance preserved', () => {
+  it('rotation center stays at the previous target; only the view direction is taken over', () => {
     const pose = gunLine()
-    // 炮长 5m：机位在炮口之外（距离 > 5m 时），炮管正对镜头。
-    const barrelLength = 5
-    const placement = armorPresetPlacement(pose, 7.5)
+    const prevTarget = new Vector3(3, 1, 4)
+    const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
+    const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose)
+    // 旋转中心不动（2026-11-13 反馈）：保持默认/用户当前轨道中心。
+    expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
+    // 机位 = 旧中心 + 预设观察方向 × 用户距离。
     const gunDirection = pose.position.clone().sub(pose.target).normalize()
-    expect(placement.target.distanceTo(pose.target)).toBeCloseTo(0)
-    expect(placement.position.distanceTo(placement.target)).toBeCloseTo(7.5)
-    expect(placement.position.clone().sub(placement.target).normalize().distanceTo(gunDirection)).toBeCloseTo(0)
-    expect(placement.position.distanceTo(pose.target.clone().addScaledVector(gunDirection, barrelLength))).toBeCloseTo(2.5)
+    expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(7)
+    expect(placement.position.clone().sub(prevTarget).normalize().distanceTo(gunDirection)).toBeCloseTo(0)
   })
 
-  it('non-finite or non-positive user distance falls back to the preset distance', () => {
+  it('user distance survives; zero user offset falls back to the preset distance', () => {
     const pose = gunLine()
-    for (const bad of [0, -3, NaN, Infinity]) {
-      const placement = armorPresetPlacement(pose, bad)
-      expect(placement.position.distanceTo(placement.target)).toBeCloseTo(15)
-    }
+    const prevTarget = new Vector3(3, 1, 4)
+    const at = (d: number) => armorPresetViewPlacement(prevTarget, prevTarget.clone().add(new Vector3(0, 0, d)), pose)
+    expect(at(9).position.distanceTo(prevTarget)).toBeCloseTo(9)
+    // 偏移零向量（距离不可知）→ 用预设摆位距离。
+    expect(at(0).position.distanceTo(prevTarget)).toBeCloseTo(15)
   })
 
   it('zero-length preset direction falls back to the full preset pose', () => {
     const pose = { target: new Vector3(1, 2, 3), position: new Vector3(1, 2, 3) }
-    const placement = armorPresetPlacement(pose, 8)
-    expect(placement).toBe(pose)
+    expect(armorPresetViewPlacement(new Vector3(0, 0, 0), new Vector3(5, 0, 0), pose)).toBe(pose)
   })
 })

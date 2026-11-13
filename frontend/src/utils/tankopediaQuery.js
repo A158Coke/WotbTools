@@ -253,7 +253,12 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
   return entries
     .filter(([id, value]) => Number.isFinite(Number(id)) && value)
     .map(([id, value]) => {
-      const pens = Array.isArray(value.shells) ? value.shells.map(shell => shell?.penetration || 0) : []
+      // 卡片显示口径 = 无配件 + 强化树点满（与 hp_top 同一约定）：XI 逐弹带
+      // `penetration_top`（基础穿深 + 强化树 ShellPiercingPowerUpgrade 近距加成），
+      // 缺失（普通车 / 旧包）回落基础 `penetration`。
+      const pens = Array.isArray(value.shells)
+        ? value.shells.map(shell => shell?.penetration_top ?? shell?.penetration ?? 0)
+        : []
       const penMax = pens.length ? Math.max(0, ...pens) : 0
       return {
         id: Number(id),

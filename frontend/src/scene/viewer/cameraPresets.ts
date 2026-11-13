@@ -14,24 +14,22 @@ export function armorCameraPreset(gunPivot: Vector3, gunWorldMatrix: Matrix4, di
 }
 
 /**
- * 视角预设保证炮管指向镜头：机位放在炮轴线上（枢轴 + 炮线方向 × 距离），
- * 旋转中心 = 炮线枢轴，后续环绕即绕炮线检视。距离归用户（缩放层级不回跳，
- * 0x5f3759df 反馈）——不保留旧轨道中心：炮轴线穿过枢轴而非车体中心，
- * 沿旧中心摆位会让炮管指向镜头之外（2026-11-10 反馈）。
- * userDistance 非正数/非有限时退回预设摆位距离；direction 为零向量时
- * 退回完整预设姿态（target + preset position）。
+ * 视角预设只接管观察方向：旋转中心（轨道 target）保持默认/用户当前值，**不得移动**
+ * （2026-11-13 反馈：把中心挪到炮线枢轴会改变环绕语义，用户不要）；距离同样归用户
+ * （缩放层级不回跳，0x5f3759df 反馈）。机位 = 旧中心 + 预设观察方向 × 用户距离。
+ * 用户偏移为零向量时距离退回预设摆位距离；预设方向为零向量时退回完整预设姿态。
  */
-export function armorPresetPlacement(
+export function armorPresetViewPlacement(
+  prevTarget: Vector3,
+  prevCamera: Vector3,
   pose: { target: Vector3; position: Vector3 },
-  userDistance: number,
 ) {
   const direction = pose.position.clone().sub(pose.target)
   if (direction.lengthSq() === 0) return pose
-  const distance = Number.isFinite(userDistance) && userDistance > 0
-    ? userDistance
-    : direction.length()
+  const offset = prevCamera.clone().sub(prevTarget)
+  const distance = offset.length() > 0 ? offset.length() : direction.length()
   return {
-    target: pose.target.clone(),
-    position: pose.target.clone().addScaledVector(direction.normalize(), distance),
+    target: prevTarget.clone(),
+    position: prevTarget.clone().addScaledVector(direction.normalize(), distance),
   }
 }

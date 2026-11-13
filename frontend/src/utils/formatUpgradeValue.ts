@@ -1,4 +1,5 @@
 import { fmtNum } from '../scene/tankMeta'
+import { HIT_TRIGGER_ATTRIBUTES } from '../replay-local/compute/tankUpgrades'
 
 type Translate = (key: string, params?: Record<string, string>) => string
 
@@ -28,7 +29,8 @@ export function formatUpgradeValue(
 ): string {
   if (value == null) return '—'
   if (typeof value === 'boolean') {
-    if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' || name === 'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS') {
+    // 命中触发二态属性走共享枚举（SSOT = tankUpgrades.ts），新增属性名只改一处。
+    if (HIT_TRIGGER_ATTRIBUTES.has(name)) {
       return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
     }
     const key = name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' ? (value ? 'yes' : 'no') : (value ? 'enabled' : 'disabled')

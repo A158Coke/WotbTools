@@ -254,6 +254,24 @@ describe('normalizeTankCache — alias 投影', () => {
     expect(rows.find(row => row.id === 1).hp).toBe(680)
   })
 
+  it('卡片穿深优先 penetration_top（XI 强化树点满），普通车/旧包回落 penetration', () => {
+    const rows = normalizeTankCache({
+      // t11r3 Ho-Ri 4：基础 298/363/84，点满强化树 320/390/90（包内 *_top）
+      10593: {
+        name: 'Ho-Ri 4', tier: 11,
+        shells: [
+          { shell_type: 'ap', penetration: 298, penetration_top: 320 },
+          { shell_type: 'ap_premium', penetration: 363, penetration_top: 390 },
+          { shell_type: 'he', penetration: 84, penetration_top: 90 },
+        ],
+      },
+      // 旧包格式（无 *_top）：回落基础值
+      1: { name: 'T-34', tier: 5, shells: [{ shell_type: 'ap', penetration: 120 }] },
+    })
+    expect(rows.find(row => row.id === 10593).pen_max).toBe(390)
+    expect(rows.find(row => row.id === 1).pen_max).toBe(120)
+  })
+
   it('稀疏数据集：只有配置过的车辆拿到 alias，其余一律 []', () => {
     const cache = {}
     for (let id = 1; id <= 200; id += 1) cache[id] = { name: `Tank ${id}` }

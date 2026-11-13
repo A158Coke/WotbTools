@@ -251,6 +251,11 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
+export const HIT_TRIGGER_ATTRIBUTES = new Set([
+  'SAS_ALLOW_ACTIVATE_ON_HIT',
+  'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS',
+])
+
 function shotInterval(clip: unknown): number | null {
   if (!record(clip) || !finite(clip.count) || !Number.isInteger(clip.count) || clip.count < 2
     || !finite(clip.rate) || clip.rate <= 0) return null
@@ -508,5 +513,37 @@ export function projectTankUpgrades<D, M>(detail: D, modules: M, mode?: unknown,
       }
     }
   }
+  // 弹种伤害/装填被节点改过之后，`dpm` 与 `standard_damage` 必须同一次重算——否则
+  // 同一页会出现“伤害 600 / 装填 11.5 / DPM 2732”这种三量互不成立的组合（2732 是
+  // stock 的 560×60/12.3）。口径与包内 `dump-tank-data` 完全一致：标准弹 = 优先 ap、
+  // 否则首个非金币弹、再否则最大伤害；DPM = 标准弹伤害 × 60 / 装填（连发炮恒为 null）。
+  if (configs.length) {
+    configs.forEach(cfg => {
+      if (!record(cfg) || !Array.isArray(cfg.shells)) return
+      const standard = standardDamageOf(cfg.shells)
+      if (standard != null) change(cfg, 'standard_damage', () => standard)
+      // 连发炮（包内 `is_burst`）的 dpm 恒为 null——投影同样置空，不保留可能过期的数字。
+      if (cfg.is_burst === true) { cfg.dpm = null; return }
+      const reload = cfg.reload_time
+      if (!finite(reload) || reload <= 0) return
+      if (standard != null) change(cfg, 'dpm', () => Math.round(standard * 60 / reload))
+    })
+  }
   return { detail: projectedDetail, modules: projectedModules, selection }
+}
+
+/**
+ * 配置的“标准弹”伤害（DPM/Alpha 基准）：与 Rust `dump-tank-data` 同序——优先 `ap`、
+ * 否则首个非金币弹（type 含 premium 不算）、再否则最大伤害；整表不可解析返回 null。
+ */
+function standardDamageOf(shells: unknown[]): number | null {
+  const rows = shells.filter(record)
+  if (!rows.length) return null
+  const damage = (row: Data): number | null => (typeof row.type === 'string' && finite(row.damage) ? row.damage : null)
+  const ap = rows.find(row => row.type === 'ap')
+  if (ap) { const d = damage(ap); if (d != null) return d }
+  const nonPremium = rows.find(row => typeof row.type === 'string' && !row.type.includes('premium'))
+  if (nonPremium) { const d = damage(nonPremium); if (d != null) return d }
+  const values = rows.map(damage).filter((v): v is number => v != null)
+  return values.length ? Math.max(...values) : null
 }
