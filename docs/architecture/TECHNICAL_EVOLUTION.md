@@ -814,6 +814,14 @@ Kotlin `ScreenForm.kt`）与 `haptics`（`haptic {kind}`，`Haptics.kt`）；旧
 边界：Android 端 `screen-form` / `haptics` 的 Kotlin 实现只有单元测试与契约测试，真机行为需人工验收；`ui_locales`
 在生产授权端点的效果未在线验证；登录模板在本地以 FreeMarker 离线渲染核对，未在 Keycloak 容器内渲染。
 
+## 35. 2026-11-11 — 3D 地形 LOD 重建离开主线程（#728）
+
+3D 回放在相机随车移动（跟随、录像者视角）时，地形 LOD 重建原本同步跑在渲染帧里：整张网格约 15 万顶点，GeckoView 模拟器上单次 240–570 ms，所有 >100 ms 帧都落在重建帧上。研究先发现早期桌面采集因 URL 里带空的 `assets=` 而没有加载地形和模型，那一轮结论作废；修正后桌面同样复现。
+
+决定不改细分判据和任何阈值（#857 与「和客户端对齐」的裁示不变），只改执行位置：`groundPass.js` 的几何装配拆出无 THREE 依赖的纯数据阶段（`groundGeometryData.js`，法线与包围球是 three 实现的逐步等价版本，字节相等由测试锁住），运行期重建交给 Worker，主线程在帧边界换装；代价是网格晚约 0.25–0.5 s 换上。Worker 不可用时回退同步路径，俯视烘焙脚本仍使用同步 `buildGroundGeometry`。
+
+边界：真机（OnePlus Ace Pro 的反馈）是否同因、换装延迟的视觉可接受性，需要用户本人验证，见研究报告与 PR 说明。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
