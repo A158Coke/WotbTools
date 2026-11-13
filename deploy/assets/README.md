@@ -91,7 +91,9 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 
 资产 origin 按游戏版本维护 dataset。可选版本与默认版本以 [线上目录](https://assets.wotbtools.com/versions.json) 为准。超测版本须显式选择。
 
-XI 级真实封面的公开路径使用 `/v/11.4.0.138-r5/`。选择器显示「超测服 11.4.0.138 · XI 封面」。原始 `/v/11.4.0.138/` 保留 r4，已打开的页面可继续用同一版图片及裁剪框。两个版本的车型与配置相同，r5 改动 8 张 WebP 和 `tank_images/crops.json`。切换版本会整页重载，浏览器与 Android 代理都按不同路径缓存。该次发布以 `dataset.sh link` 新增路径；回退时选择旧路径，核实后用 `dataset.sh unlink --dataset 11.4.0.138-r5` 撤下新目录项。
+超测目录只列最新一项「超测服 11.4.0.138」。其公开 ID 为 `11.4.0.138-r5`，release 为 `t11r3-20261113-r6`，保留了 8 张 XI 车辆新图。原先的 `11.4.0.130` 和 `11.4.0.138` 现在都是该公开 ID 的同级相对符号链接，旧书签也能访问最新数据。目录按规范 ID 生成，历史 release 留在源站供回退。
+
+预览换代时先用 `dataset.sh link` 发布并校验新路径，再用 `dataset.sh unlink --dataset <旧 ID> --redirect-to <新 ID>` 让旧路径指向新数据。已有别名也应直接指向最新规范 ID，避免别名链。新版 `asset_release.py` 会在生成目录时核查这些路径及对应 release 的身份。
 
 `datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset
 （`11.21.0`），旧客户端兼容入口不受影响。

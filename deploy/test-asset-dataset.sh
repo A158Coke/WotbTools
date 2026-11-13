@@ -37,6 +37,8 @@ if cmd == "catalog":
     default = opt("--default")
     items = []
     for child in sorted(root.iterdir()):
+        if child.is_symlink() and len(child.readlink().parts) == 1:
+            continue  # Retired URL alias; it serves the canonical payload.
         if not (child / "version.json").is_file():
             continue
         version = json.loads((child / "version.json").read_text(encoding="utf-8"))
@@ -187,6 +189,16 @@ assert_catalog_default "11.21.0"
 # --- 故障注入：模拟缺失依赖与 catalog/verify 失败，在线状态必须原样恢复 ---
 run link --dataset supertest --release r3 >/dev/null
 cat_before="$(sha256sum "$root/versions.json" | awk '{print $1}')"
+
+if FAIL_CATALOG=1 run unlink --dataset supertest --redirect-to 11.21.0 >/dev/null 2>&1; then
+  echo "failed alias publication must restore the previous route" >&2; exit 1
+fi
+assert_link "$root/datasets/supertest" "../releases/r3"
+run unlink --dataset supertest --redirect-to 11.21.0 >/dev/null
+assert_link "$root/datasets/supertest" "11.21.0"
+cmp "$root/datasets/supertest/version.json" "$root/datasets/11.21.0/version.json"
+python3 -c 'import json,sys; assert not any(x["id"] == "supertest" for x in json.load(open(sys.argv[1]))["datasets"])' "$root/versions.json"
+run link --dataset supertest --release r3 >/dev/null
 
 # 缺工具：unlink 必须在 rm 之前 fail-closed（旧实现是 rm 后才 require_tool）
 mv "$root/bin/asset_release.py" "$root/bin/asset_release.py.off"

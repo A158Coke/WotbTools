@@ -100,6 +100,35 @@ export function dataVersionUrl(href: string, id: string): string {
   return url.toString()
 }
 
+function requestedDatasetId(): string {
+  const base = assetOrigin()
+  const origin = stripDatasetSuffix(base)
+  return origin === base ? dataVersionId() ?? '' : base.slice(origin.length + '/v/'.length)
+}
+
+function persistDataset(value: string): void {
+  if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
+  else localStorage.removeItem(DATA_VERSION_STORAGE)
+  // A versioned dev override takes precedence over ?data= in assetBase.
+  const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
+  if (storedBase && storedBase !== stripDatasetSuffix(storedBase)) {
+    localStorage.setItem(ASSET_BASE_STORAGE, stripDatasetSuffix(storedBase))
+  }
+}
+
+async function resolveUnlistedDataset(origin: string, requested: string, datasets: DatasetEntry[]): Promise<string | null> {
+  if (!requested || datasets.some(entry => entry.id === requested)) return null
+  try {
+    const response = await fetch(`${origin}/v/${requested}/version.json`, { cache: 'no-cache' })
+    if (!response.ok) return null
+    const stamp = await response.json()
+    return datasets.find(entry => entry.id === stamp?.dataset_id && entry.status !== 'revoked')?.id ?? null
+  } catch {
+    // An offline or removed path must leave the catalog usable for manual selection.
+    return null
+  }
+}
+
 export function loadDataVersionCatalog({ force = false }: { force?: boolean } = {}): Promise<CatalogState> {
   if (inflight && !force) return inflight
   const origin = stripDatasetSuffix(assetOrigin())
@@ -113,13 +142,20 @@ export function loadDataVersionCatalog({ force = false }: { force?: boolean } = 
       if (!response.ok) throw new Error(`versions.json: HTTP ${response.status}`)
       return response.json() as Promise<unknown>
     })
-    .then((doc) => {
+    .then(async (doc) => {
       if (!isCatalog(doc)) throw new Error('versions.json schema 不支持')
       if (!doc.datasets.every(validDataset)) throw new Error('versions.json 含非法 dataset')
       const defaultId = typeof doc.default === 'string' ? doc.default : null
+      const datasets = doc.datasets.filter(validDataset)
+      const canonical = await resolveUnlistedDataset(origin, requestedDatasetId(), datasets)
+      if (canonical) {
+        // Rebuild page-scoped asset and crop caches from the listed path; Back skips the alias.
+        persistDataset(canonical)
+        location.replace(dataVersionUrl(location.href, canonical))
+      }
       state.value = {
         status: 'ready',
-        datasets: doc.datasets.filter(validDataset),
+        datasets,
         defaultId,
         error: null,
       }
@@ -143,7 +179,7 @@ export function loadDataVersionCatalog({ force = false }: { force?: boolean } = 
 export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
-  const selected = ref<string>(dataVersionId() ?? '')
+  const selected = ref(requestedDatasetId())
   const options = computed<DatasetOption[]>(() => state.value.datasets.map((entry) => ({
     value: entry.id,
     label: entry.label,
@@ -163,17 +199,7 @@ export function useDataVersion() {
   /** 切换并重载；id 为空 = 默认。 */
   function select(id: string): void {
     const value = id && DATASET_ID_RE.test(id) ? id : ''
-    if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
-    else localStorage.removeItem(DATA_VERSION_STORAGE)
-    // 持久化的 ?assets= override 若还带着旧 dataset 段（如曾访问
-    // ?assets=https://origin/v/11.21.0），必须同步剥掉：否则重载后 withDataset
-    // 走 escape hatch 原样使用旧 /v/<id>，选择器显示新 dataset、资产却仍从旧
-    // dataset 取（review 复现案例）。URL 上的 assets 参数由 dataVersionUrl 剥。
-    const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
-    if (storedBase) {
-      const stripped = stripDatasetSuffix(storedBase)
-      if (stripped !== storedBase) localStorage.setItem(ASSET_BASE_STORAGE, stripped)
-    }
+    persistDataset(value)
     location.assign(dataVersionUrl(location.href, value))
   }
 
