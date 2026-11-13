@@ -319,13 +319,6 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> =
   RECHARGEABLE_NITRO_HEATING_DURATION: ['consumables', 'rechargeableNitro', 'duration'],
   RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR: ['consumables', 'rechargeableNitro', 'fwdSpeedLimitFactor'],
   RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR: ['consumables', 'rechargeableNitro', 'rotationSpeedFactor'],
-  // t11r3 四个新机制：只登记物品 `<script>` 里确有同义参数的属性（副炮/火箭的伤害、
-  // 装填来自各自 gun 定义，物品脚本无此参数 → 不登记，面板只显示升级改变量）。
-  SHELL_OVERHEAT_MAX_TANK_SPEED: ['provisions', 'shellOverheat', 'maxSpeedForChargeAccumulation'],
-  SHELL_OVERHEAT_ACTIVATION_DELAY: ['provisions', 'shellOverheat', 'chargeActivationDelay'],
-  SHELL_OVERHEAT_CHARGE_TIME: ['provisions', 'shellOverheat', 'maxChargeAccumulationTimeFromStart'],
-  SHELL_OVERHEAT_MIN_ALPHA_BOOST: ['provisions', 'shellOverheat', 'maxBoostToMinimumAlpha'],
-  EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS: ['provisions', 'externalAmmoModule', 'allowNonDamagingHits'],
 }
 
 function mechanicInitial(name: string, modifier: UpgradeDefinition['modifier'], modules: unknown, catalog: unknown): UpgradeValue | null {
