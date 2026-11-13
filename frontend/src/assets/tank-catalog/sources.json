@@ -19,17 +19,17 @@
       "derivation": "Proportionally resized to 512px width, WebP quality 95, alpha quality 100; transparency preserved"
     },
     "nation-germany": {
-      "file": "flags/flag_notification_germany@2x.packed.webp",
-      "sha256": "25f16060f15cd0d9538d3056739dc21a91b2fb8804a703ccf3933103a4f11174",
+      "file": "flags/flag_carousel_germany@2x.packed.webp",
+      "sha256": "8654b144f7ad0afa64bded302e12300e362afc1f9f24d4ecee58a3f09bbebe70",
       "canvas": [
-        256,
+        512,
         256
       ],
       "bounds": [
         0,
         0,
-        201,
-        145
+        337,
+        209
       ]
     },
     "nation-text-ussr": {

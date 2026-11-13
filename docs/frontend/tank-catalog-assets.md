@@ -2,7 +2,7 @@
 
 `frontend/src/assets/tank-catalog/sources.json` 记录客户端版本、原始路径、源文件 SHA-256、纹理画布和可见边界。20 张客户端图保持原文件字节，来自本机 Microsoft Store 版 World of Tanks Blitz 11.21.216.0 的 `Data/Gfx/Lobby/`。常规系别采用 `flags/flag_text_*` 与 `flags/flag_filter_*`，类别采用车库实际引用的 `icons/icon_tank-normal|premium|collectible`，车种采用 `icons/icon_tank-class_*`。游戏素材权利归 Wargaming 及对应权利人。
 
-德国使用同版客户端的 flags/flag_notification_germany@2x.packed.webp，原始画布 256×256，可见区域 201×145，四角为完整矩形旗面，原文件字节保留。横排、下拉和科技树共用这份高清纹理。
+德国使用同版客户端的 flags/flag_carousel_germany@2x.packed.webp，原始画布 512×256，可见区域 337×209，采用用户选定的 1 号车库轮播版，原文件字节保留。横排、下拉和科技树共用这份高清纹理。
 
 美国使用用户于 2026-11-14 提供的 wotb-icons-v5-part1.zip 中 png/nations/usa.png。该包来源说明将其列为生成的精修系列图。原始 PNG 为 1536×1024 RGBA，原图哈希与随包 manifest 核对；按比例缩为 512px WebP，保留透明度。横排和下拉共用一份 nation-usa 文件，来源清单同时记录原图与编码后哈希。
 
