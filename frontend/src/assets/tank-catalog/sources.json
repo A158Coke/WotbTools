@@ -1,60 +1,35 @@
 {
   "clientVersion": "11.21.216.0",
   "assets": {
-    "nation-text-usa": {
-      "file": "flags/flag_text_usa@2x.packed.webp",
-      "sha256": "50215bcf4d43ec9a4e02a064237407ad8f5e3132eab358215f17e5a7b7570ff7",
+    "nation-usa": {
+      "file": "wotb-icons-v5/png/nations/usa.png",
+      "archive": "user-supplied wotb-icons-v5-part1.zip, 2026-11-14",
+      "sha256": "10fcb1afa2e7747754b170baa6e15c517da32043d32028451f843f7eacb1899a",
+      "outputSha256": "6015c59e66075b4ecde03fc0547fb5d3885f330ad35b20e7b629347b4a824f30",
       "canvas": [
-        64,
-        32
+        512,
+        341
       ],
       "bounds": [
         0,
         0,
-        49,
-        32
-      ]
+        498,
+        336
+      ],
+      "derivation": "Proportionally resized to 512px width, WebP quality 95, alpha quality 100; transparency preserved"
     },
-    "nation-filter-usa": {
-      "file": "flags/flag_filter_usa@2x.packed.webp",
-      "sha256": "30ae0bd210c5628aba40e1df4f510c7a074e778f4677a22a6fd30d7fbb37f54d",
+    "nation-germany": {
+      "file": "flags/flag_tutor-tank_germany@2x.packed.webp",
+      "sha256": "93d899bf6802c5bda788589e73bf6cd3f87a135d4162ec9cbc9d34731b4e53b0",
       "canvas": [
-        256,
-        128
+        1024,
+        512
       ],
       "bounds": [
         0,
         0,
-        145,
-        113
-      ]
-    },
-    "nation-text-germany": {
-      "file": "flags/flag_text_germany@2x.packed.webp",
-      "sha256": "3b33636ddfce78c29344d73382762cf06c97e8845d0c5ab4574e15f3b0575709",
-      "canvas": [
-        64,
-        32
-      ],
-      "bounds": [
-        0,
-        0,
-        49,
-        32
-      ]
-    },
-    "nation-filter-germany": {
-      "file": "flags/flag_filter_germany@2x.packed.webp",
-      "sha256": "aafa49e8fbf52b3adfe3bc69af961f0f4e619559c1c681f69c7e2908fb90f9d0",
-      "canvas": [
-        256,
-        128
-      ],
-      "bounds": [
-        0,
-        0,
-        145,
-        113
+        884,
+        496
       ]
     },
     "nation-text-ussr": {

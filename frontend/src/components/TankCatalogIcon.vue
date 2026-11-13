@@ -12,7 +12,10 @@ const assets: Record<string, { canvas: number[], bounds: number[] }> = sources.a
 const files = import.meta.glob<string>('../assets/tank-catalog/*.{webp,png}', { eager: true, query: '?url', import: 'default' })
 const classStems: Record<string, string> = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
 const key = computed(() => {
-  if (props.kind === 'nation') return props.value === 'china' ? 'nation-china' : `nation-${props.variant}-${props.value}`
+  if (props.kind === 'nation') {
+    const shared = `nation-${props.value}`
+    return assets[shared] ? shared : `nation-${props.variant}-${props.value}`
+  }
   if (props.kind === 'type') return `type-${classStems[tankClassIcon(props.value)?.key || '']}`
   return `category-${props.value}`
 })
