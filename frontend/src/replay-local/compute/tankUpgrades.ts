@@ -251,6 +251,7 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
+<<<<<<< HEAD
 function shotInterval(clip: unknown): number | null {
   if (!record(clip) || !finite(clip.count) || !Number.isInteger(clip.count) || clip.count < 2
     || !finite(clip.rate) || clip.rate <= 0) return null
@@ -297,6 +298,21 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> =
   UNGUIDED_ROCKET_DAMAGE: ['consumables', 'unguidedRocket', auxiliaryValue('damage')],
   UNGUIDED_ROCKET_INITIAL_SPEED: ['consumables', 'unguidedRocket', auxiliaryValue('speed')],
   UNGUIDED_ROCKET_INTERCLIP_RELOAD: ['consumables', 'unguidedRocket', auxiliaryValue('clip')],
+=======
+/** 客户端属性与内建机制 script 参数的已核对映射；不按车辆名称或等级猜绑定。 */
+/**
+ * 布尔属性里语义是「命中即触发 / 需造成伤害」二态的那一组（客户端
+ * `tank_descr_param_*_allowNonDamagingHits_true/false` = On hit / On damage）。
+ * 展示层据此渲染 On hit / On damage，而不是 yes/no——名字一律按客户端属性名
+ * 全量枚举，不做前缀/正则猜测（同名前缀在别的机制上语义可能不同）。
+ */
+export const HIT_TRIGGER_ATTRIBUTES = new Set([
+  'SAS_ALLOW_ACTIVATE_ON_HIT',
+  'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS',
+])
+
+const MECHANIC_PARAMETERS: Record<string, [string, string, string]> = {
+>>>>>>> 297e53b22 (feat(tankopedia): t11r3（11.4.0.138）XI 强化树资源补全 + 卡片满强化穿深)
   BURST_MODE_REQUIRED_PENETRATIONS: ['provisions', 'burstMode', 'requiredDamagingPenetrations'],
   BURST_MODE_INTERVAL: ['provisions', 'burstMode', 'burstInterval'],
   BURST_MODE_TARGET_ORDER: ['provisions', 'burstMode', 'targetOrder'],
@@ -314,6 +330,13 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> =
   RECHARGEABLE_NITRO_HEATING_DURATION: ['consumables', 'rechargeableNitro', 'duration'],
   RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR: ['consumables', 'rechargeableNitro', 'fwdSpeedLimitFactor'],
   RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR: ['consumables', 'rechargeableNitro', 'rotationSpeedFactor'],
+  // t11r3 四个新机制：只登记物品 `<script>` 里确有同义参数的属性（副炮/火箭的伤害、
+  // 装填来自各自 gun 定义，物品脚本无此参数 → 不登记，面板只显示升级改变量）。
+  SHELL_OVERHEAT_MAX_TANK_SPEED: ['provisions', 'shellOverheat', 'maxSpeedForChargeAccumulation'],
+  SHELL_OVERHEAT_ACTIVATION_DELAY: ['provisions', 'shellOverheat', 'chargeActivationDelay'],
+  SHELL_OVERHEAT_CHARGE_TIME: ['provisions', 'shellOverheat', 'maxChargeAccumulationTimeFromStart'],
+  SHELL_OVERHEAT_MIN_ALPHA_BOOST: ['provisions', 'shellOverheat', 'maxBoostToMinimumAlpha'],
+  EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS: ['provisions', 'externalAmmoModule', 'allowNonDamagingHits'],
 }
 
 function mechanicInitial(name: string, modifier: UpgradeDefinition['modifier'], modules: unknown, catalog: unknown): UpgradeValue | null {

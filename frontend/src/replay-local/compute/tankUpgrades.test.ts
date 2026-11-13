@@ -8,7 +8,7 @@ import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
 import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
 import { parseAugmentProgression, researchGroupChoice } from './tankAugmentTree'
-import { projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
+import { HIT_TRIGGER_ATTRIBUTES, projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
 const object432 = TANKS.find(t => t.modules.tankId === 27905)!
