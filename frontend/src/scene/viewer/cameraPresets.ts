@@ -14,10 +14,12 @@ export function armorCameraPreset(gunPivot: Vector3, gunWorldMatrix: Matrix4, di
 }
 
 /**
- * 视角预设只接管观察方向：旋转中心（轨道 target）保持默认/用户当前值，**不得移动**
- * （2026-11-13 反馈：把中心挪到炮线枢轴会改变环绕语义，用户不要）；距离同样归用户
- * （缩放层级不回跳，0x5f3759df 反馈）。机位 = 旧中心 + 预设观察方向 × 用户距离。
- * 用户偏移为零向量时距离退回预设摆位距离；预设方向为零向量时退回完整预设姿态。
+ * 视角预设同时满足两个约束（2026-11-13 反馈定稿）：
+ * 1. 旋转中心（轨道 target）保持默认/用户当前值，**不得移动**；
+ * 2. 炮管仍指向镜头：机位放到炮轴线（枢轴 + 炮线方向 × t）上，且距中心 = 用户距离
+ *    （缩放层级不回跳，0x5f3759df 反馈）——解 |pivot + t·dir − center| = distance 取正根。
+ * 距中心不可达（炮轴与中心距离 > 用户距离）时取炮轴上距中心最近点（指向优先于距离）；
+ * 炮线方向为零向量、或正向炮轴上无解（交点在枢轴后方）时退回完整预设姿态。
  */
 export function armorPresetViewPlacement(
   prevTarget: Vector3,
@@ -26,10 +28,23 @@ export function armorPresetViewPlacement(
 ) {
   const direction = pose.position.clone().sub(pose.target)
   if (direction.lengthSq() === 0) return pose
+  direction.normalize()
   const offset = prevCamera.clone().sub(prevTarget)
-  const distance = offset.length() > 0 ? offset.length() : direction.length()
+  const distance = offset.length() > 0 ? offset.length() : pose.position.distanceTo(pose.target)
+  const toCenter = prevTarget.clone().sub(pose.target)
+  const proj = toCenter.dot(direction)
+  const disc = proj * proj - toCenter.lengthSq() + distance * distance
+  let t: number
+  if (disc < 0) {
+    // 炮轴上距中心最近的点（垂足）：炮管指向镜头优先，用户距离让位。
+    t = Math.max(proj, 0)
+    if (t === 0) return pose // 垂足在枢轴上/后方且再无正向点：唯一保指向的姿态是完整预设
+  } else {
+    t = proj + Math.sqrt(disc)
+    if (t <= 0) return pose // 交点都在枢轴后方：同上
+  }
   return {
     target: prevTarget.clone(),
-    position: prevTarget.clone().addScaledVector(direction.normalize(), distance),
+    position: pose.target.clone().addScaledVector(direction, t),
   }
 }

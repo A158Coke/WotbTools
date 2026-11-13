@@ -686,9 +686,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
             // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
             // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
-            // 按钮（preserveView）只换观察方向：旋转中心保持默认/用户当前值**不得移动**
-            //（2026-11-13 反馈：挪到炮线枢轴会改变环绕语义），距离同样归用户，平移/缩放
-            // 不被重置；URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
+            // 按钮（preserveView）的两个约束（2026-11-13 反馈定稿）：旋转中心保持
+            // 默认/用户当前值**不得移动**；同时机位移到炮轴线上（距中心 = 用户距离），
+            // 炮管正对镜头。URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
             const userView = preserveView
                 ? { target: controls.target.clone(), position: camera.position.clone() }
                 : null;
