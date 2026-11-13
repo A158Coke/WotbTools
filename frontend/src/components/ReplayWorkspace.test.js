@@ -17,7 +17,7 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { createShellChrome } from '../app/shellChrome.js'
 import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
@@ -400,6 +400,45 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     expect(replayState.files.value).toBe(files)
     expect(replayState.analyze).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('guide: confirming the replacement makes the official sample the current replay', async () => {
+    serveDemo()
+    withBattles(1)
+    analyzeDemo()
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding })
+    await flushPromises()
+    const commands = onboarding.registerWorkspace.mock.calls[0][0]
+    const loading = commands.loadDemo()
+    await flushPromises()
+    expect(useConfirmHost().request.value).toMatchObject({ title: 'onboarding.demo_replace_title' })
+    useConfirmHost().settle(true)
+    await loading
+    expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
+    expect(replayState.isDemoSelection.value).toBe(true)
+    expect(replayState.files.value).toHaveLength(1)
+    expect(replayState.files.value[0].name).toBe(OFFICIAL_DEMO.filename)
+    wrapper.unmount()
+  })
+
+  it('guide: declining the replacement rejects as declined and keeps the user replay', async () => {
+    const fetch = serveDemo()
+    withBattles(1)
+    const files = replayState.files.value
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding })
+    await flushPromises()
+    const commands = onboarding.registerWorkspace.mock.calls[0][0]
+    const loading = commands.loadDemo()
+    await flushPromises()
+    useConfirmHost().settle(false)
+    await expect(loading).rejects.toMatchObject({ name: REPLACE_DECLINED })
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.updateDemoFile).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
     wrapper.unmount()
   })

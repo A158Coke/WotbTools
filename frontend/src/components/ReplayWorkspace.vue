@@ -3,7 +3,7 @@ import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated
 import { useI18n } from 'vue-i18n'
 import { CircleHelp, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useForcedLandscape } from '../composables/useForcedLandscape.js'
 import { loadOfficialDemo } from '../replay-local/demo.js'
@@ -105,10 +105,15 @@ async function loadDemo(signal) {
   demoError.value = ''
   try {
     controller.signal.throwIfAborted()
-    if (files.value.length && !isDemoSelection.value && !(await confirm({
-      title: t('onboarding.demo_replace_title'), message: t('onboarding.demo_replace_message'),
-      confirmLabel: t('onboarding.demo_replace_confirm'), cancelLabel: t('onboarding.demo_replace_cancel'),
-    }))) throw new DOMException('Official replay cancelled', 'AbortError')
+    if (files.value.length && !isDemoSelection.value) {
+      const confirmed = await confirm({
+        title: t('onboarding.demo_replace_title'), message: t('onboarding.demo_replace_message'),
+        confirmLabel: t('onboarding.demo_replace_confirm'), cancelLabel: t('onboarding.demo_replace_cancel'),
+        signal: controller.signal,
+      })
+      controller.signal.throwIfAborted()
+      if (!confirmed) throw new DOMException('Official replay replacement declined', REPLACE_DECLINED)
+    }
     controller.signal.throwIfAborted()
     if (!isDemoSelection.value) {
       const file = await loadOfficialDemo(controller.signal)
@@ -126,7 +131,7 @@ async function loadDemo(signal) {
     if (disposed || selectionRevision.value !== demoRevision) throw new DOMException('Official replay superseded', 'AbortError')
     if (!result?.completed || !resp.value) throw new Error('Official replay analysis failed')
   } catch (e) {
-    if (e?.name !== 'AbortError') demoError.value = t('onboarding.demo_failed')
+    if (e?.name !== 'AbortError' && e?.name !== REPLACE_DECLINED) demoError.value = t('onboarding.demo_failed')
     throw e
   } finally {
     signal?.removeEventListener('abort', abort)

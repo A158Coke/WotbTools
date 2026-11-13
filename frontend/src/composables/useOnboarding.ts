@@ -6,6 +6,7 @@ import { profileBackendAllowed } from '../app/featureCapabilities.js'
 import { useAuth } from './useAuth.js'
 import { useConnectivity } from './useConnectivity.js'
 import { useBusinessUserBootstrap, whenBusinessUserSettled } from './useBusinessUserBootstrap.js'
+import { REPLACE_DECLINED } from '../shared/onboarding.js'
 import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, OnboardingTopic, OnboardingWorkspace } from '../shared/onboarding.js'
 import type { ReplayCapability } from '../types/workspace.js'
 
@@ -14,6 +15,7 @@ const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentR
 export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
 export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
 const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
+const isReplaceDeclined = (e: unknown) => (e as { name?: string } | null)?.name === REPLACE_DECLINED
 const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-shots', 'ai-review'])
 type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
 export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
@@ -627,7 +629,9 @@ export function useOnboarding(options: {
       const generation = ++runGeneration
       try {
         await beginDemoLoad()
-      } catch {
+      } catch (e) {
+        // 用户在「替换当前回放」确认里选了保留：不是加载失败，直接结束教程，原回放原样保留。
+        if (generation === runGeneration && mode.value === 'tour' && isReplaceDeclined(e)) { skip(); return }
         if (generation === runGeneration && mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
         return
       }
@@ -652,8 +656,9 @@ export function useOnboarding(options: {
     const owns = () => generation === demoGeneration && mode.value === 'tour'
     try {
       await load
-    } catch {
+    } catch (e) {
       if (!owns()) return
+      if (isReplaceDeclined(e)) { skip(); return }
       issue.value = 'unavailable'
       demoFailed.value = true
       return
