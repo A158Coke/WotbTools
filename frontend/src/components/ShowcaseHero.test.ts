@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShowcaseHero from './ShowcaseHero.vue'
-import { SECTION_HERO_IDS, SECTION_HEROES, sectionHeroStyle } from '../shared/sectionHeroes'
+import showcaseHeroSource from './ShowcaseHero.vue?raw'
+import { SECTION_HERO_IDS, sectionHeroStyle } from '../shared/sectionHeroes'
 
 describe('ShowcaseHero', () => {
   it('只渲染给出的标题区内容；主视觉层是装饰（aria-hidden）', () => {
@@ -44,23 +45,29 @@ describe('ShowcaseHero', () => {
     expect(art.attributes('style')).toBeUndefined()
   })
 
-  it('声明了 compactPosition 的分区注入 --hero-pos-compact，其余分区不注入（回退 position）', () => {
-    expect(sectionHeroStyle('replay')['--hero-pos-compact']).toBe('center 50%')
-    expect(sectionHeroStyle('techtree')['--hero-pos-compact']).toBe('center 58%')
+  it('compactPosition 已随 contain 化删除，任何分区都不再注入 --hero-pos-compact', () => {
     for (const section of SECTION_HERO_IDS) {
       const style = sectionHeroStyle(section)
-      if (SECTION_HEROES[section].compactPosition) continue
       expect(style['--hero-pos-compact']).toBeUndefined()
     }
   })
 
-  it('compact 横幅的分区主视觉注入 compactPosition，窄横幅焦点对准主体带', () => {
+  it('compact 横幅的分区主视觉注入分区图片（contain 完整显示，浏览器门禁负责像素级验收）', () => {
     const wrapper = mount(ShowcaseHero, {
       props: { title: '回放工作台', section: 'replay', compact: true },
     })
     const style = wrapper.get('.showcase-hero-art').attributes('style') || ''
-    expect(style).toContain('--hero-pos-compact')
     expect(style).toContain('hero-replay.webp')
+  })
+
+  // 源码形状守卫（真实像素级验收在 browser-showcase-hero.mjs）：分区主视觉必须是
+  // contain + no-repeat（100% 原图可见、不变形），分区层不允许回退到 cover 裁切。
+  it('分区主视觉图层只使用 contain no-repeat，不允许 cover 裁切', () => {
+    const source = showcaseHeroSource
+    for (const match of source.matchAll(/\.showcase-hero-art--section[^{]*\{[^}]*\}/g)) {
+      expect(match[0]).toContain('/ contain no-repeat')
+      expect(match[0]).not.toContain('/ cover')
+    }
   })
 
   it('compact 的横幅只保留 kicker / 标题，操作移到横幅外的工具条', () => {
