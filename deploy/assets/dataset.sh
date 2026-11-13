@@ -27,7 +27,7 @@
 #   dataset.sh default --dataset 11.21.0 [--dry-run]
 #   dataset.sh catalog [--default <id>] [--dry-run]   # default 从 current 推导，仅作校验
 #   dataset.sh rollback --dataset 11.21.0 --release 20261015-aaaaaaaa [--dry-run]
-#   dataset.sh unlink --dataset 11.21.0 [--dry-run]
+#   dataset.sh unlink --dataset 11.21.0 [--redirect-to <active-id>] [--dry-run]
 #   dataset.sh list
 #   dataset.sh verify [--full]
 set -Eeuo pipefail
@@ -322,10 +322,11 @@ cmd_unlink() {
   # Remove a dataset entry (symlink only; the release directory stays for rollback).
   # Fail closed when the dataset is the current default: repoint `default` first,
   # otherwise legacy clients reading /current would start failing.
-  local dataset="" dry_run=0
+  local dataset="" redirect="" dry_run=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dataset) dataset="$2"; shift 2 ;;
+      --redirect-to) redirect="$2"; require_dataset "$redirect"; shift 2 ;;
       --dry-run) dry_run=1; shift ;;
       *) die "未知参数: $1" ;;
     esac
@@ -346,14 +347,25 @@ cmd_unlink() {
   local catalog_default
   catalog_default="$(current_default)"
   [[ -n "$catalog_default" ]] || die "无法确定 catalog default（current 缺失）"
+  if [[ -n "$redirect" ]]; then
+    [[ "$dataset" != "$redirect" ]] || die "不能将 dataset 重定向给自己"
+    local target
+    target="$(readlink "$DATASETS/$redirect")" || die "目标 dataset 不存在"
+    [[ "$target" == ../releases/* ]] || die "目标须为直接发布的 dataset"
+    verify_release "$redirect" "${target#../releases/}"
+  fi
   if [[ "$dry_run" == "1" ]]; then
-    note "would unlink $link (-> $(readlink "$link"))"
+    note "would retire $link (currently $(readlink "$link"), replacement: ${redirect:-none})"
     return 0
   fi
   local previous
   previous="$(readlink "$link")"
   snapshot_catalog
-  rm "$link"
+  if [[ -n "$redirect" ]]; then
+    switch_symlink "$link" "$redirect" 0
+  else
+    rm "$link"
+  fi
   if ! "$PYTHON" "$TOOL" catalog --root "$DATASETS" --out "$CATALOG" --default "$catalog_default"; then
     rollback_online "$link" "$previous"
     die "versions.json 生成失败（dataset 已恢复）"
@@ -362,7 +374,7 @@ cmd_unlink() {
     rollback_online "$link" "$previous"
     die "发布后 verify 失败（dataset 已恢复）"
   fi
-  audit "unlink" "$dataset" "" "$previous"
+  audit "unlink" "$dataset" "$redirect" "$previous"
   note "unlinked dataset=$dataset (was $previous)"
 }
 

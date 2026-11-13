@@ -162,6 +162,59 @@ describe('useDataVersion', () => {
     expect(currentDataset.value.id).toBe('11.21.0-t11-preview')
   })
 
+  it.each(['bookmark', 'saved', 'versioned origin'])('migrates an unlisted %s onto the official dataset path', async (source) => {
+    const origin = 'https://dev.example.com/assets'
+    const canonical = CATALOG.datasets[1].id
+    const url = new URL('https://localhost/?view=agent-tankopedia&tank=42')
+    if (source === 'bookmark') url.searchParams.set('data', 'superseded')
+    if (source === 'versioned origin') {
+      url.searchParams.set('assets', `${origin}/v/superseded`)
+      url.searchParams.set('data', CATALOG.default)
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => CATALOG })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ dataset_id: canonical }) })
+    const mod = await load({ origin, url: url.pathname + url.search, fetchImpl: fetchMock })
+    if (source === 'saved') localStorage.setItem('wotb_data_version', 'superseded')
+    const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
+    try {
+      await mod.loadDataVersionCatalog()
+      expect(fetchMock).toHaveBeenLastCalledWith(`${origin}/v/superseded/version.json`, { cache: 'no-cache' })
+      expect(replace).toHaveBeenCalledTimes(1)
+      const dest = new URL(replace.mock.calls[0][0])
+      expect(dest.searchParams.get('data')).toBe(canonical)
+      expect(dest.searchParams.get('tank')).toBe('42')
+      expect(localStorage.getItem('wotb_data_version')).toBe(canonical)
+      if (source === 'versioned origin') {
+        expect(dest.searchParams.get('assets')).toBe(origin)
+        expect(localStorage.getItem('wotb_asset_base')).toBe(origin)
+      }
+    } finally {
+      replace.mockRestore()
+    }
+  })
+
+  it.each([
+    () => Promise.reject(new Error('offline')),
+    () => Promise.resolve({ ok: false, status: 404 }),
+    () => Promise.resolve({ ok: true, json: async () => ({ dataset_id: 'not-in-catalog' }) }),
+  ])('keeps the requested path and usable selector when the canonical id cannot be resolved', async (aliasResponse) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => CATALOG })
+      .mockImplementationOnce(aliasResponse)
+    const mod = await load({ url: '/?data=unlisted', fetchImpl: fetchMock })
+    const replace = vi.spyOn(window.location, 'replace')
+    try {
+      const catalog = await mod.loadDataVersionCatalog()
+      expect(catalog.status).toBe('ready')
+      expect(mod.useDataVersion().selected.value).toBe('unlisted')
+      expect(localStorage.getItem('wotb_data_version')).toBe('unlisted')
+      expect(replace).not.toHaveBeenCalled()
+    } finally {
+      replace.mockRestore()
+    }
+  })
+
   it('真实生产 catalog（无 preview 字段）也用 variant 标记预览通道', async () => {
     // 夹具来自 Assets Host 的实际 versions.json：Agent collect_datasets 不输出
     // version.json.preview，因此消费契约只能依赖 catalog 已有的字段。

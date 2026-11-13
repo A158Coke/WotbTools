@@ -574,7 +574,7 @@ onMounted(() => {
     place-items: center;
   }
   .tt-tier-cell .tt-card-icon {
-    position: static;
+    position: relative;
     inset: auto;
     inline-size: 43.65px;
     block-size: 27px;
