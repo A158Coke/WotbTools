@@ -147,13 +147,20 @@ async function assertCatalogMenu(page, trigger) {
 }
 
 async function assertCatalogControls(page, label) {
+  // Shared-layout indicators may temporarily extend beyond their destination button.
+  // Geometry belongs to the settled controls, after both native and projection animations.
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))')
+  await page.animationsSettled()
+  await page.waitFor(() => [...document.querySelectorAll('.tank-catalog-menu .segmented-indicator')]
+    .every(indicator => getComputedStyle(indicator).transform === 'none'), { label: 'catalog selection projection settled' })
   const clipped = await page.probe(() => [...document.querySelectorAll('.tank-catalog-menu button, .tank-catalog-menu summary, .tank-catalog-menu select')].filter(element => {
     const rect = element.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return false
     const field = element.closest('.tp-field')?.getBoundingClientRect()
     return rect.left < -1 || rect.right > innerWidth + 1 || element.scrollWidth > element.clientWidth + 1
       || (field && (rect.left < field.left - 1 || rect.right > field.right + 1))
-  }).map(element => element.textContent))
+  }).map(element => ({ text: element.textContent, width: element.clientWidth, scrollWidth: element.scrollWidth,
+    indicators: [...element.querySelectorAll('.segmented-indicator')].map(indicator => getComputedStyle(indicator).transform) })))
   assert.deepEqual(clipped, [], `${label}: filter controls fit their fields and remain reachable`)
 }
 
