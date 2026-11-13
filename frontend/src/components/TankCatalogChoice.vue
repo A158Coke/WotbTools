@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 // Catalog-only presentation. State belongs to TankCatalogMenu, keyboard semantics to existing primitives.
 import { computed, ref, watch } from 'vue'
 import { SelectRoot, SelectTrigger, SelectContent, SelectViewport, SelectItem, SelectItemText, SelectItemIndicator } from 'reka-ui'
@@ -6,14 +6,18 @@ import { Check, ChevronDown } from 'lucide-vue-next'
 import SegmentedControl from './SegmentedControl.vue'
 import TankCatalogIcon from './TankCatalogIcon.vue'
 
-const props = defineProps({
-  modelValue: { type: String, required: true },
-  options: { type: Array, required: true },
-  label: { type: String, required: true },
-  kind: { type: String, required: true },
-  mode: { type: String, default: 'inline' },
-})
-const emit = defineEmits(['update:modelValue'])
+interface ChoiceOption {
+  value: string
+  label: string
+}
+const props = withDefaults(defineProps<{
+  modelValue: string
+  options: ChoiceOption[]
+  label: string
+  kind: 'nation' | 'type' | 'category'
+  mode?: 'inline' | 'menu' | 'sheet'
+}>(), { mode: 'inline' })
+const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 defineOptions({ inheritAttrs: false })
 const menuOpen = ref(false)
 watch(() => props.mode, () => { menuOpen.value = false })
@@ -40,12 +44,12 @@ const value = computed({ get: () => props.modelValue || ALL, set: next => emit('
   </SelectRoot>
   <details v-else-if="mode === 'sheet'" v-bind="$attrs" class="catalog-details">
     <summary class="catalog-trigger" :aria-label="`${label} ${selected?.label || ''}`"><TankCatalogIcon :kind="kind" :value="selected?.value" /><span>{{ selected?.label }}</span><ChevronDown :size="16" aria-hidden="true" /></summary>
-    <SegmentedControl :model-value="modelValue" :options="options" :aria-label="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
-      <template #option="{ option }"><TankCatalogIcon :kind="kind" :value="option.value" /><span>{{ option.label }}</span></template>
+    <SegmentedControl :model-value="modelValue" :options="options" :ariaLabel="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
+      <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" /><span>{{ options[index].label }}</span></template>
     </SegmentedControl>
   </details>
-  <SegmentedControl v-else v-bind="$attrs" :model-value="modelValue" :options="options" :aria-label="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
-    <template #option="{ option }"><TankCatalogIcon :kind="kind" :value="option.value" /><span>{{ option.label }}</span></template>
+  <SegmentedControl v-else v-bind="$attrs" :model-value="modelValue" :options="options" :ariaLabel="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
+    <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" /><span>{{ options[index].label }}</span></template>
   </SegmentedControl>
 </template>
 

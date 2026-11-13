@@ -1,21 +1,22 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import sources from '../assets/tank-catalog/sources.json'
 import { tankClassIcon } from '../utils/tankClassIcon.js'
 
-const props = defineProps({
-  kind: { type: String, required: true },
-  value: { type: String, default: '' },
-  variant: { type: String, default: 'text' },
-})
-const files = import.meta.glob('../assets/tank-catalog/*.{webp,png}', { eager: true, query: '?url', import: 'default' })
-const classStems = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
+const props = withDefaults(defineProps<{
+  kind: 'nation' | 'type' | 'category'
+  value?: string
+  variant?: 'text' | 'filter'
+}>(), { value: '', variant: 'text' })
+const assets: Record<string, { canvas: number[], bounds: number[] }> = sources.assets
+const files = import.meta.glob<string>('../assets/tank-catalog/*.{webp,png}', { eager: true, query: '?url', import: 'default' })
+const classStems: Record<string, string> = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
 const key = computed(() => {
   if (props.kind === 'nation') return props.value === 'china' ? 'nation-china' : `nation-${props.variant}-${props.value}`
-  if (props.kind === 'type') return `type-${classStems[tankClassIcon(props.value)?.key]}`
+  if (props.kind === 'type') return `type-${classStems[tankClassIcon(props.value)?.key || '']}`
   return `category-${props.value}`
 })
-const asset = computed(() => sources.assets[key.value])
+const asset = computed(() => assets[key.value])
 const url = computed(() => files[`../assets/tank-catalog/${key.value}.webp`] ?? files[`../assets/tank-catalog/${key.value}.png`])
 const failed = ref(false)
 watch(url, () => { failed.value = false })
