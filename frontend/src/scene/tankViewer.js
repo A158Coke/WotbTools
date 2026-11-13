@@ -26,7 +26,7 @@ import { defaultStateId } from '../data/armorStates.js'
 // URL 契约基线（urlContract.test.js）经此 re-export；实现 owner = viewer/viewerMath.js
 export { dollyZoomFov, mirrorShotData } from './viewer/viewerMath.js'
 import { dollyZoomFov } from './viewer/viewerMath.js'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 import { createTurretRig } from './viewer/turretRig.js'
 import { createModelLifecycle } from './viewer/modelLifecycle.js'
 import { createHeatmapPipeline } from './viewer/heatmap.js'
@@ -684,21 +684,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rig.updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(rig.getArmorPivotGun() || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
-            // preserveView 在清惯性**之前**取距离快照：无阻尼 update 会把残余 panOffset 一次性
+            // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
             // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
-            // 按钮（preserveView）保留用户缩放距离，但机位必须放到炮轴线上、看向炮线枢轴：
-            // 炮轴线穿过枢轴而非车体中心，沿旧轨道中心摆位会让炮管指不到镜头上
-            //（2026-11-10 反馈）；轨道中心随炮线枢轴，后续环绕即绕炮线检视。
-            // URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
-            const userDistance = preserveView
-                ? camera.position.distanceTo(controls.target)
+            // 按钮（preserveView）只换观察方向：旋转中心保持默认/用户当前值**不得移动**
+            //（2026-11-13 反馈：挪到炮线枢轴会改变环绕语义），距离同样归用户，平移/缩放
+            // 不被重置；URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
+            const userView = preserveView
+                ? { target: controls.target.clone(), position: camera.position.clone() }
                 : null;
             // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
             const placement = preserveView
-                ? armorPresetPlacement(pose, userDistance)
+                ? armorPresetViewPlacement(userView.target, userView.position, pose)
                 : pose;
             controls.target.copy(placement.target);
             camera.position.copy(placement.position);
