@@ -11,9 +11,9 @@ const SRC = fileURLToPath(new URL('../', import.meta.url))
 
 // 存量例外，只减不增：每项是一处具体 <select>（文件#绑定=候选），页面迁移到 Choice Group 时删除。
 const BASELINE = [
-  'components/HoFAdminPage.vue#fBattleType=RANDOM|RATING',
-  'components/HoFAdminPage.vue#fReplayAvailable=true|false',
-  'components/HoFAdminPage.vue#fSort=battle_time|upload_time',
+  'components/HoFAdminRecords.vue#fBattleType=RANDOM|RATING',
+  'components/HoFAdminRecords.vue#fReplayAvailable=true|false',
+  'components/HoFAdminRecords.vue#fSort=battle_time|upload_time',
   'components/HoFPage.vue#battleType=RANDOM|RATING',
   'components/TournamentPointsConfigPage.vue#=GLOBAL',
 ]

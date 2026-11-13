@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 审核队列（左栏）：状态色徽标、当前条左边框高亮；复选框保留批量删除入口。纯展示，选中与翻页由 HoFAdminPage 持有。
+// 审核队列（左栏）：状态色徽标、当前条左边框高亮；复选框保留批量删除入口。纯展示，选中与翻页由 HoFAdminModeration 持有。
 interface QueueItem { id: number; title: string; status: string; statusLabel: string; sub: string; time: string; checked: boolean }
 /** busy：当前条的审核请求在途，队列暂不可切换（页面同样在 API 前拦截） */
 defineProps<{ items: QueueItem[]; currentId: number | null; allSelected: boolean; label: string; busy?: boolean }>()

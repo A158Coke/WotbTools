@@ -256,7 +256,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 | `HundredAdminListItemDto` / `HundredAdminDetailDto` | `wotbServer` + `wotbAccountId` | 百场审核列表 + 详情（`{{ wotbServer }}·{{ wotbAccountId }}`） |
 | `Mark3AdminListItemDto` / `Mark3AdminDetailDto` | `wotbServer` + `wotbAccountId` | 三环审核列表 + 详情（同上） |
 
-`HoFAdminPage.vue` 在百场/三环的列表与详情共 4 处使用 `{{ wotbServer }}·{{ wotbAccountId }}`；`wotbServer` 的取值域是 `CN|ASIA|EU|NA`（DB CHECK 约束）。
+`HoFAdminModeration.vue`（百场 / 三环审核分区共用）在审核详情中以 `wotbServer·wotbAccountId` 展示；`wotbServer` 的取值域是 `CN|ASIA|EU|NA`（DB CHECK 约束）。
 
 League Rating 的适用范围、完整性门槛、公式、批次汇总与导出语义由 [`features/league-rating.md`](features/league-rating.md) 与 [`WotBTools_League_Rating_V6.md`](WotBTools_League_Rating_V6.md) 拥有。实现只在客户端 `frontend/src/replay-local/compute/` 与 `export/`；必须复用这一份，禁止为某个 UI 再造第二套。
 

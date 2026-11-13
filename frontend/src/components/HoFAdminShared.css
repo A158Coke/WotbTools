@@ -1,0 +1,214 @@
+/* 名人堂管理各分区共用的外观（docs/frontend/design-language.md token）。不是全局样式表：
+ * HoFAdminPage 与各 HoFAdmin* 分区以 <style scoped src> 引用，每个组件按自己的 scope 编译，
+ * 不会泄漏进 HoFReviewPane / HoFReviewQueue（审核详情外观由 HoFReviewPane 自身持有）。
+ * Tab 条与页面容器只由 HoFAdminPage.vue 定义。 */
+
+.hof-admin-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
+/* 只用分区自己渲染的容器限定，不借父组件 .hof-admin 根。命中集合与拆分前生产渲染一致：
+ * 筛选栏、每页条数、DELETE 确认框；对话框经 AppDialog 传送到 body，原规则本就不作用于其中的 select / textarea。 */
+.hof-admin-filters input,
+.hof-admin-filters select,
+.page-size select,
+.admin-confirm-input {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+
+/* 表格：容器横向滚动，表头吸顶；操作列吸附在右侧，手机上不会被滚出视口（审计 PG-10）。
+ * isolation 建立局部层叠上下文，表头 / 操作列的 z-index 不参与全局竞争（§5） */
+.tablewrap {
+  isolation: isolate;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+}
+
+.hof-admin-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.hof-admin-table th,
+.hof-admin-table td {
+  height: var(--row-h);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.hof-admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+}
+
+.hof-admin-table td { background: var(--color-surface-1); color: var(--color-text-primary); }
+.hof-admin-table .dmg { color: var(--color-accent-text); font-weight: 600; }
+.hof-admin-table .muted { padding: 0 var(--space-3); color: var(--color-text-secondary); }
+.hof-admin-table .hash { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+
+.hof-admin-table .actions {
+  position: sticky;
+  right: 0;
+  z-index: var(--z-base);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.hof-admin-table td.actions > * + * { margin-left: var(--space-1); }
+.hof-icon { vertical-align: middle; }
+.val-ok { color: var(--color-success); }
+
+/* 复选框：放大到控件尺寸 token，单元格保证最小点击区域 */
+.hof-check { width: var(--hit-min); text-align: center; }
+
+.hof-check input {
+  inline-size: var(--control-check);
+  block-size: var(--control-check);
+  margin: 0;
+  accent-color: var(--color-accent);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.hof-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.hof-bulk-count,
+.hof-bulk-summary { color: var(--color-text-primary); font-weight: 600; }
+.hof-bulk-failures ul { margin: var(--space-1) 0 0; padding-left: var(--space-5); color: var(--color-text-secondary); }
+
+/* 徽章 */
+.bt-badge,
+.audit-action {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bt-random { background: color-mix(in oklab, var(--color-success) 14%, var(--color-surface-1)); color: var(--color-success); }
+.bt-rating { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
+.audit-action { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); color: var(--color-warning); }
+
+/* 按钮 */
+.btn-sm,
+.pagination button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  cursor: pointer;
+}
+
+.btn-icon { min-width: var(--control-h-sm); padding: 0; }
+.btn-sm.danger { border-color: var(--color-danger); color: var(--color-danger); }
+
+.btn-sm:disabled,
+.pagination button:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn-sm:focus-visible,
+.pagination button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+@media (hover: hover) {
+  .hof-admin-table tbody tr:hover td { background: var(--color-surface-2); }
+
+  .btn-sm:hover:not(:disabled),
+  .pagination button:hover:not(:disabled) { background: var(--color-surface-2); }
+
+  .btn-sm.danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1)); }
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  color: var(--color-text-secondary);
+}
+
+.page-size { display: inline-flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); color: var(--color-text-secondary); }
+
+.error {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in oklab, var(--color-danger) 45%, var(--color-border-subtle));
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--color-danger) 14%, var(--color-surface-1));
+  color: var(--color-danger);
+}
+
+.muted { padding: var(--space-6) var(--space-1); color: var(--color-text-secondary); }
+
+/* 对话框内容（外壳由 AppDialog 负责） */
+.hof-delete-table { width: 100%; margin: var(--space-3) 0; border-collapse: collapse; }
+
+.hof-delete-table th,
+.hof-delete-table td { padding: var(--space-1) var(--space-2); text-align: left; vertical-align: top; }
+
+.hof-delete-table th { width: 40%; color: var(--color-text-secondary); font-weight: 600; }
+.hof-delete-table td { color: var(--color-text-primary); overflow-wrap: anywhere; }
+.hof-delete-msg { margin: var(--space-2) 0; color: var(--color-warning); }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+.hundred-reason-label { display: block; margin: var(--space-2) 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+
+.hof-delete-modal select,
+.hof-delete-modal textarea { width: 100%; margin: var(--space-1) 0 var(--space-2); }
+
+.admin-confirm-input { width: 100%; margin-top: var(--space-1); }
+.screenshot-zoom-img { display: block; max-width: 100%; max-height: 70dvh; margin: 0 auto; border-radius: var(--radius-md); }
+
+/* 审核工作区：队列 + 详情并排；详情在大屏吸附于视口，小屏由 HoFReviewPane 自身变成全屏层 */
+.hof-review-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.hof-review-layout > :deep(.hof-review-pane) { position: sticky; top: calc(var(--header-h) + var(--space-12)); max-block-size: calc(100dvh - var(--header-h) - var(--space-12) - var(--space-4)); }
+.hof-review-empty { display: grid; place-items: center; min-block-size: calc(var(--form-field-min) * 1.5); margin: 0; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-tertiary); }
+@media (width < 1200px) { .hof-review-layout { grid-template-columns: minmax(0, 1fr); } .hof-review-empty { display: none; } }
+@media (width < 768px) { .hof-admin-filters { grid-template-columns: 1fr 1fr; } }
