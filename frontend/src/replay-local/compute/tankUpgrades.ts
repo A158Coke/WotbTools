@@ -251,7 +251,11 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
-<<<<<<< HEAD
+export const HIT_TRIGGER_ATTRIBUTES = new Set([
+  'SAS_ALLOW_ACTIVATE_ON_HIT',
+  'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS',
+])
+
 function shotInterval(clip: unknown): number | null {
   if (!record(clip) || !finite(clip.count) || !Number.isInteger(clip.count) || clip.count < 2
     || !finite(clip.rate) || clip.rate <= 0) return null
@@ -298,21 +302,6 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> =
   UNGUIDED_ROCKET_DAMAGE: ['consumables', 'unguidedRocket', auxiliaryValue('damage')],
   UNGUIDED_ROCKET_INITIAL_SPEED: ['consumables', 'unguidedRocket', auxiliaryValue('speed')],
   UNGUIDED_ROCKET_INTERCLIP_RELOAD: ['consumables', 'unguidedRocket', auxiliaryValue('clip')],
-=======
-/** 客户端属性与内建机制 script 参数的已核对映射；不按车辆名称或等级猜绑定。 */
-/**
- * 布尔属性里语义是「命中即触发 / 需造成伤害」二态的那一组（客户端
- * `tank_descr_param_*_allowNonDamagingHits_true/false` = On hit / On damage）。
- * 展示层据此渲染 On hit / On damage，而不是 yes/no——名字一律按客户端属性名
- * 全量枚举，不做前缀/正则猜测（同名前缀在别的机制上语义可能不同）。
- */
-export const HIT_TRIGGER_ATTRIBUTES = new Set([
-  'SAS_ALLOW_ACTIVATE_ON_HIT',
-  'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS',
-])
-
-const MECHANIC_PARAMETERS: Record<string, [string, string, string]> = {
->>>>>>> 297e53b22 (feat(tankopedia): t11r3（11.4.0.138）XI 强化树资源补全 + 卡片满强化穿深)
   BURST_MODE_REQUIRED_PENETRATIONS: ['provisions', 'burstMode', 'requiredDamagingPenetrations'],
   BURST_MODE_INTERVAL: ['provisions', 'burstMode', 'burstInterval'],
   BURST_MODE_TARGET_ORDER: ['provisions', 'burstMode', 'targetOrder'],
