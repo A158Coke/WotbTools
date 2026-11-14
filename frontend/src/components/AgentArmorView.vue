@@ -1079,7 +1079,8 @@ onBeforeUnmount(() => {
     z-index: var(--pb-z-modal);
 }
 .armor-view #click-info > .row { display: flex; justify-content: space-between; gap: var(--space-3); }
-.armor-view #click-info > .row > span:last-child { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; }
+/* 通用数值色排除结果字段：结果列按语义着色（pen/bounce/ricochet 三个 class 由脚本写入）。 */
+.armor-view #click-info > .row > span:last-child:not(#click-result) { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; }
 .armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font-size: clamp(11px, 0.6vw + 9px, 13px); font-weight: 700; }
 .armor-view #click-info .pen { color: var(--green); }
 .armor-view #click-info .bounce { color: var(--red); }

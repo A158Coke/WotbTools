@@ -768,7 +768,11 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         const num = (value: unknown): number | null =>
                             typeof value === 'number' && Number.isFinite(value) ? value : null
                         writeClickInfo({
-                            part: firstLayer.name || '—',
+                            // 部件名必须走与轨迹卡同一套本地化映射（厚度模式已用），否则
+                            // 中文/西语界面会退回 'Hull Plate 12' 这类英文内部名（评审 P2）。
+                            part: firstLayer.name
+                                ? (L.partName ? L.partName(firstLayer.name) : firstLayer.name)
+                                : '—',
                             armor: num(firstLayer.thickness),
                             angle: num(firstLayer.angle),
                             effective: num(firstLayer.eff),

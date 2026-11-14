@@ -1131,6 +1131,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 camera.updateProjectionMatrix();
                 renderer.setSize(view.clientWidth, view.clientHeight);
                 hm.refreshPenetrationResolution();
+                // 点选卡跟随点击位置（绝对像素坐标）：容器尺寸变化后旧坐标可能落到
+                // 场景外并被 .armor-view 的 overflow 裁掉（评审 P2）。旧点击点在新布局
+                // 下也不再对应同一块装甲，因此直接隐藏，等用户重新点击——不猜新位置。
+                const clickInfo = document.getElementById('click-info');
+                if (clickInfo) clickInfo.style.display = 'none';
             };
             onWin('resize', resizeView);
             // The recorded-shot header can wrap without a window resize (locale / error message).

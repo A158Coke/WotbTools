@@ -59,6 +59,12 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     // 判定路径取首层并经 L.resultLabel 做三语文案（不得在内核直拼中文）
     expect(kernel).toMatch(/const firstLayer = trajLayers\[0\]/)
     expect(kernel).toMatch(/L\.resultLabel \? L\.resultLabel\(resultCode\) : resultCode/)
+    // 部件名同样走 L.partName（否则中文/西语界面退回 Hull Plate 这类英文内部名）
+    expect(kernel).toMatch(/L\.partName \? L\.partName\(firstLayer\.name\) : firstLayer\.name/)
+    // 容器尺寸变化后旧点击坐标失效：resize 必须隐藏点选卡（否则被 overflow 裁掉）
+    const viewer = read('../scene/tankViewer.js')
+    expect(viewer).toContain("const clickInfo = document.getElementById('click-info');")
+    expect(viewer).toMatch(/if \(clickInfo\) clickInfo\.style\.display = 'none';/)
     // 停靠规则只属于判定卡 #traj-info；#click-info 由脚本定位（不再固定顶部正中）
     const dockCss = template.slice(template.indexOf('.armor-view #traj-info {'))
     const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
@@ -69,6 +75,9 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(template).toMatch(/\.armor-view #click-info \{[^}]*max-inline-size: min\(15rem, calc\(100% - var\(--space-4\)\)\)/)
     expect(template).toMatch(/\.armor-view #click-info \{[^}]*font-size: clamp\(/)
     expect(template).toMatch(/pointer-events: none/)
+    // 结果列语义色不得被通用数值色覆盖（通用规则 :not(#click-result)）
+    expect(template).toMatch(/> span:last-child:not\(#click-result\)/)
+    expect(template).toMatch(/\.armor-view #click-info \.pen \{ color: var\(--green\)/)
     // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
     expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
     expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
