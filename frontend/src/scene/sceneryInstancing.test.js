@@ -535,6 +535,33 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     expect(entries[1].material).toBe(withoutLm)   // 逐实例光照语义不得被并掉
   })
 
+  it('仅 annotationSurface 策略不同的材质不合并（评审 P2：薄片贴花 vs 实体可绘制面）', () => {
+    // sceneryAssembly.markNotDrawable 给薄片贴花写 userData.annotationSurface=false，
+    // 实体（如贴花桥）保持 undefined/true；两者渲染签名可以完全相同，策略必须进身份，
+    // 否则代表材质决定整批 → traversal 顺序左右标注可选中性。
+    const sharedTex = new THREE.Texture()
+    const sharedTint = new THREE.Color(0xffffff)
+    const mk = (annotationSurface) => {
+      const m = new THREE.ShaderMaterial({
+        uniforms: { colormapLm: { value: sharedTex }, uTint: { value: sharedTint } },
+        vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
+      })
+      if (annotationSurface !== undefined) m.userData.annotationSurface = annotationSurface
+      return m
+    }
+    const solid = mk(undefined)          // 可绘制（消费口径：undefined 等价 true）
+    const overlay = mk(false)            // 不可绘制
+    const entries = [entryOf(solid), entryOf(overlay)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(solid)
+    expect(entries[1].material).toBe(overlay)   // 策略差异不得被并掉
+    // undefined 与显式 true 等价（同一策略）→ 可以合并
+    const explicitTrue = mk(true)
+    const merged = [entryOf(mk(undefined)), entryOf(explicitTrue)]
+    canonicalizeEntryMaterials(merged)
+    expect(merged[1].material).toBe(merged[0].material)
+  })
+
   it('仅渲染状态（side / depthWrite / transparent）不同的 ShaderMaterial 不合并', () => {
     // 同样隔离变量：共享 uniform 对象，差异只在渲染状态
     const sharedTex = new THREE.Texture()

@@ -74,6 +74,17 @@ function renderStateSignature(m: Material): string {
   return RENDER_STATE_FIELDS.map((f) => `${f}=${materialSignatureValue(m, f)}`).join(',')
 }
 
+/** 3D annotation 可绘制策略签名（装配期 `sceneryAssembly.markNotDrawable` 写入
+ *  `userData.annotationSurface`；消费口径见 `annotationSurface.isDrawableSurfaceHit`：
+ *  **只有显式 false 排除**，undefined 与 true 等价 = 可绘制）。
+ *  **必须进身份**：薄片贴花 overlay 与实体（如贴花桥）可以共享同一套源码/uniforms/
+ *  defines/渲染状态，仅此策略不同；规整忽略它会让代表材质的标记决定整批，
+ *  traversal 顺序就可能让桥不可标注、或让薄片变成可选中（评审 P2）。 */
+function annotationPolicySignature(m: Material): string {
+  const policy = (m as unknown as { userData?: { annotationSurface?: unknown } }).userData?.annotationSurface
+  return policy === false ? 'annotation:false' : 'annotation:true'
+}
+
 function materialSignatureValue(m: Material, field: string): string {
   const value = (m as unknown as Record<string, unknown>)[field]
   if (value == null) return '-'
@@ -124,6 +135,7 @@ function shaderMaterialSignature(m: Material): string | null {
     String(anyM.fragmentShader ?? ''),
     `defines:${definesSignature(m)}`,
     `state:${renderStateSignature(m)}`,
+    annotationPolicySignature(m),
   ]
   for (const name of Object.keys(uniforms).sort()) {
     parts.push(`${name}=${uniformValueSignature(uniforms[name]?.value)}`)
@@ -142,7 +154,7 @@ function materialSignature(m: Material | Material[]): string | null {
   if (anyM.uniforms && typeof anyM.uniforms === 'object') return shaderMaterialSignature(m)
   // 内建材质同样可能有 defines（走不同编译分支）→ 一并进键
   return [...MATERIAL_SIGNATURE_FIELDS.map((f) => materialSignatureValue(m, f)),
-    `defines:${definesSignature(m)}`].join('|')
+    `defines:${definesSignature(m)}`, annotationPolicySignature(m)].join('|')
 }
 
 /** 材质签名规整：导出器给每个节点各建一份材质对象，属性相同也会把 (geometry,
