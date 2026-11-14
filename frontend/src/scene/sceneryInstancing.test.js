@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh,
   writeHiddenInstance, fallMatrix, hasTransparentMaterial, buildStandaloneLightmappedMeshes,
+  canonicalizeEntryMaterials,
 } from './sceneryInstancing.js'
 
 const geo = (h = 1) => {
@@ -98,12 +99,55 @@ describe('sceneryInstancing · 收集与分组', () => {
       root.add(a)
     }
     root.updateMatrixWorld(true)
-    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    // 小三角量组（12 tri × 4 = 48 ≤ 预算）默认整组合并单批（见 SCENERY_COLLAPSE_MAX_TRIS）；
+    // 逐格分片语义用 maxCollapseTris: 0 显式开启（性能对照/诊断形态）
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75, { maxCollapseTris: 0 })
     // 4 实例相距 ≥200m → 每格一片 = 4 片（整批形态是 1 片跨全图）
     expect(batches).toHaveLength(4)
     for (const b of batches) expect(b.items).toHaveLength(1)
     // 不传 cellSize = 单批（兼容形态）
     expect(groupInstanceBatches(collectInstanceEntries(root))).toHaveLength(1)
+  })
+
+  it('小三角量稀疏组跨宫格合并单批：省 draw call，实例矩阵完整（2026-11-14 帧率优化）', () => {
+    const root = new THREE.Object3D()
+    const shared = geo(2), m1 = mat()
+    for (let i = 0; i < 4; i++) {
+      const a = new THREE.Mesh(shared, m1)
+      a.position.set(i * 200 - 300, 0, 0)
+      root.add(a)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    // 12 tri × 4 实例 = 48 ≤ 预算 → 跨 4 格合并为 1 批
+    expect(batches).toHaveLength(1)
+    expect(batches[0].items).toHaveLength(4)
+    const mesh = buildInstancedMesh(batches[0])
+    expect(mesh.count).toBe(4)
+    const m = new THREE.Matrix4()
+    batches[0].items.forEach((it, i) => {
+      mesh.getMatrixAt(i, m)
+      expect(m).toEqual(it.matrix)
+    })
+  })
+
+  it('大几何密集组不合并：总三角超预算仍按宫格分片（剔除粒度保留）', () => {
+    const root = new THREE.Object3D()
+    // 10000 三角的几何 × 4 实例 = 40000 > 预算 → 不合并
+    const bigGeo = new THREE.BufferGeometry()
+    bigGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3))
+    const idx = []
+    for (let i = 0; i < 10000; i++) idx.push(0, 1, 2)
+    bigGeo.setIndex(idx)
+    const m1 = mat()
+    for (let i = 0; i < 4; i++) {
+      const a = new THREE.Mesh(bigGeo, m1)
+      a.position.set(i * 200 - 300, 0, 0)
+      root.add(a)
+    }
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
+    expect(batches).toHaveLength(4)
   })
 
   it('收集展平父链变换；分组按 (geometry, material)，共享几何进同批', () => {
@@ -390,5 +434,85 @@ describe('批次 AABB（开镜装甲高亮遮挡剔除）', () => {
     refreshBatchSphere(mesh, batch, () => false)
     expect(box.containsPoint(new THREE.Vector3(120, 0, 0))).toBe(true)
     expect(mesh.userData.occluderBox).toBe(box)   // 复用同一实例，不逐批新分配
+  })
+})
+
+describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率优化）', () => {
+  const entryOf = (material) => ({ node: null, name: 'n', geometry: null, material, matrix: null, x: 0, y: 0, z: 0, lm: null })
+
+  it('同配置不同对象的材质收敛到同一代表对象', () => {
+    const a = mat(), b = mat()
+    const entries = [entryOf(a), entryOf(b)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(entries[1].material)
+    // 代表 = 首个出现的原对象
+    expect(entries[0].material).toBe(a)
+  })
+
+  it('渲染相关属性任一不同都不合并（纹理/颜色/透明/双面/透明度）', () => {
+    const base = mat()
+    const tex1 = new THREE.Texture()
+    const tex2 = new THREE.Texture()
+    const variants = [
+      () => Object.assign(mat(), { map: tex1 }),
+      () => Object.assign(mat(), { map: tex2 }),
+      () => Object.assign(mat(), { color: new THREE.Color(0xff0000) }),
+      () => Object.assign(mat(), { transparent: true }),
+      () => Object.assign(mat(), { opacity: 0.5 }),
+      () => Object.assign(mat(), { side: THREE.DoubleSide }),
+      () => Object.assign(mat(), { alphaTest: 0.1 }),
+    ]
+    const entries = [entryOf(base), ...variants.map(v => entryOf(v()))]
+    canonicalizeEntryMaterials(entries)
+    const mats = entries.map(e => e.material)
+    expect(new Set(mats).size).toBe(mats.length)   // 全部互不相同
+  })
+
+  it('多材质叶子（契约外）原样跳过，不抛错', () => {
+    const m = [mat(), mat()]
+    const entries = [entryOf(m), entryOf(m)]
+    expect(canonicalizeEntryMaterials(entries)[0].material).toBe(m)
+  })
+
+  it('几何不做内容级签名：同签名不同 uuid 的几何仍分属不同组（形状差异不可凭签名断言）', () => {
+    // 该不变量由分组键 = geometry.uuid 锁定：两份同形几何不合并
+    const root = new THREE.Object3D()
+    root.add(new THREE.Mesh(geo(2), mat()))
+    root.add(new THREE.Mesh(geo(2), mat()))
+    root.updateMatrixWorld(true)
+    const batches = groupInstanceBatches(collectInstanceEntries(root))
+    expect(batches).toHaveLength(2)   // 两个几何对象 = 两批（宁可少合不错合）
+  })
+
+  it('ShaderMaterial 按 uniforms+着色器签名：uniform 不同不合并（2026-11-14 建筑物贴图串图回归）', () => {
+    // 回归根因：标准属性白名单读不到 ShaderMaterial 的 uniforms——光照图建筑材质
+    // （makeLightmappedMaterial）全部同签名并到第一个对象上，全图贴图串到一张。
+    const shaderOf = (tex, tint) => {
+      const m = new THREE.ShaderMaterial({
+        uniforms: { map: { value: tex }, uTint: { value: tint }, uOpacity: { value: 1 } },
+        vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
+      })
+      return m
+    }
+    const texA = new THREE.Texture(), texB = new THREE.Texture()
+    const sA = shaderOf(texA, new THREE.Color(0xffffff))
+    const sB = shaderOf(texB, new THREE.Color(0xffffff))      // 仅 map 不同 → 不合并
+    const sC = shaderOf(texA, new THREE.Color(0x808080))      // 仅 tint 不同 → 不合并
+    const sD = shaderOf(texA, new THREE.Color(0xffffff))      // 全同 → 合并
+    const entries = [entryOf(sA), entryOf(sB), entryOf(sC), entryOf(sD)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(sA)
+    expect(entries[1].material).toBe(sB)
+    expect(entries[2].material).toBe(sC)
+    expect(entries[3].material).toBe(sA)   // 与 sA 全同 → 并入代表
+  })
+
+  it('带 onBeforeCompile 注入的材质一律不合并（无法静态签名）', () => {
+    const mk = () => Object.assign(new THREE.MeshLambertMaterial(), { onBeforeCompile: () => {} })
+    const a = mk(), b = mk()
+    const entries = [entryOf(a), entryOf(b)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(a)
+    expect(entries[1].material).toBe(b)
   })
 })
