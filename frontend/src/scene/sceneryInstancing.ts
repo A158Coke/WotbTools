@@ -38,6 +38,163 @@ export function hasTransparentMaterial(material: Material | Material[] | null | 
   return ms.some((m) => !!(m && m.transparent))
 }
 
+/** 材质签名的**保守白名单**（只收直接影响渲染输出的属性；不在表里的差异不会被
+ *  合并——宁少合不错合）。纹理按 uuid 进键：同图同参才合并。 */
+const MATERIAL_SIGNATURE_FIELDS: ReadonlyArray<string> = Object.freeze([
+  'type', 'map', 'lightMap', 'aoMap', 'alphaMap', 'normalMap', 'emissiveMap', 'envMap',
+  'color', 'emissive', 'specular', 'shininess', 'roughness', 'metalness',
+  'opacity', 'transparent', 'alphaTest', 'side', 'vertexColors', 'flatShading',
+  'blending', 'depthWrite', 'depthTest', 'wireframe',
+  'premultipliedAlpha', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
+])
+
+/** 渲染状态字段（ShaderMaterial 与内建材质共用 Material 基类上的这些属性）。
+ *  ShaderMaterial 分支必须显式拼上：它的 uniforms/源码相同但 transparent/depthWrite/
+ *  side 等仍可能不同，只比 uniforms 会把不同渲染状态的材质并成一份。 */
+const RENDER_STATE_FIELDS: ReadonlyArray<string> = Object.freeze([
+  'transparent', 'opacity', 'alphaTest', 'side', 'blending', 'vertexColors', 'flatShading',
+  'depthWrite', 'depthTest', 'colorWrite', 'premultipliedAlpha',
+  'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
+  'visible',
+])
+
+/** 着色器编译期 define 签名。**必须进键**：同源码同 uniforms、只有 `defines` 不同的
+ *  材质走不同编译分支——实例如 `makeDecalMaterial` 的 `DECAL_SEPARATE_LM`：不论
+ *  `separateLm` 值如何 `colormapLm` uniform 都存在，只有 define 决定是否乘光照图；
+ *  漏判会把逐实例光照语义并成首个材质的一份（评审 P2 反例）。 */
+/** 读材质上的运行期扩展属性（uniforms/defines/userData/onBeforeCompile）。用
+ *  `Reflect.get` 而非 `as unknown as` 断言：three 的 Material 类型不含这些字段，
+ *  而本仓的 TypeScript escape-hatch 基线**只减不增**（typescript-ownership.test.ts），
+ *  新增断言会被门禁拒绝。语义等价：都是读自有/继承属性（getter 亦按需触发）。 */
+function materialProp(m: Material, key: string): unknown {
+  return Reflect.get(m, key)
+}
+
+/** 颜色签名：**原始 r/g/b 浮点**，不经 `getHexString()`——后者把颜色钳到 8-bit
+ *  显示域，HDR tint（如 1.77）会与 1.0 得到同一个 hex，而 lightmapped/decal 的
+ *  着色器直接用原始 `uTint` 乘算 → 亮度不同却被并成一份（评审 P2）。 */
+function colorSignature(color: { r: number, g: number, b: number }): string {
+  return `c:${color.r.toFixed(6)},${color.g.toFixed(6)},${color.b.toFixed(6)}`
+}
+
+function definesSignature(m: Material): string {
+  const defines = materialProp(m, 'defines')
+  if (!defines || typeof defines !== 'object') return '-'
+  const record = defines as Record<string, unknown>
+  return Object.keys(record).sort().map((k) => `${k}=${String(record[k])}`).join(',')
+}
+
+function renderStateSignature(m: Material): string {
+  return RENDER_STATE_FIELDS.map((f) => `${f}=${materialSignatureValue(m, f)}`).join(',')
+}
+
+/** 3D annotation 可绘制策略签名（装配期 `sceneryAssembly.markNotDrawable` 写入
+ *  `userData.annotationSurface`；消费口径见 `annotationSurface.isDrawableSurfaceHit`：
+ *  **只有显式 false 排除**，undefined 与 true 等价 = 可绘制）。
+ *  **必须进身份**：薄片贴花 overlay 与实体（如贴花桥）可以共享同一套源码/uniforms/
+ *  defines/渲染状态，仅此策略不同；规整忽略它会让代表材质的标记决定整批，
+ *  traversal 顺序就可能让桥不可标注、或让薄片变成可选中（评审 P2）。 */
+function annotationPolicySignature(m: Material): string {
+  const userData = materialProp(m, 'userData')
+  const policy = userData && typeof userData === 'object'
+    ? (userData as { annotationSurface?: unknown }).annotationSurface
+    : undefined
+  return policy === false ? 'annotation:false' : 'annotation:true'
+}
+
+function materialSignatureValue(m: Material, field: string): string {
+  const value = materialProp(m, field)
+  if (value == null) return '-'
+  if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') return String(value)
+  // 纹理：uuid 即身份（同图对象共享 uuid）；颜色：hex
+  if (typeof value === 'object' && 'uuid' in (value as object)) return `tex:${(value as { uuid: string }).uuid}`
+  if (typeof value === 'object' && (value as { isColor?: boolean }).isColor === true) {
+    return colorSignature(value as { r: number, g: number, b: number })
+  }
+  return String(value)
+}
+
+/** uniforms 值签名（ShaderMaterial 族的渲染状态全在 uniforms 里：光照图建筑材质
+ *  makeLightmappedMaterial 的 map/lightmap/atlas/uTint/uEnv* 等）。纹理按 uuid、
+ *  颜色按 hex、向量/数组按值；未认识的类型按字符串化值保守进键。 */
+function uniformValueSignature(value: unknown): string {
+  if (value == null) return 'null'
+  const v = value as Record<string, unknown>
+  if (v.isTexture === true) return `tex:${String(v.uuid)}`
+  if (v.isColor === true) return colorSignature(value as { r: number, g: number, b: number })
+  if (v.isVector2 === true || v.isVector3 === true || v.isVector4 === true) {
+    return `v:${(value as { toArray?(): number[] }).toArray?.().join(',') ?? String(value)}`
+  }
+  if (v.isMatrix3 === true || v.isMatrix4 === true) {
+    return `m:${Array.from((value as { elements: number[] }).elements).join(',')}`
+  }
+  if (Array.isArray(value)) return `a:${value.join(',')}`
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') return String(value)
+  return `opaque:${String(value)}`
+}
+
+/** onBeforeCompile 的**原型默认实现**（three 给每个材质都挂了空函数；不与原型默认
+ *  比较的话，所有材质都会被误判成"有自定义注入"而拒绝规整）。 */
+const DEFAULT_ON_BEFORE_COMPILE = THREE.Material.prototype.onBeforeCompile
+
+/** 自定义 program 注入（运行期改着色器）无法静态签名 → 该材质拒绝规整。 */
+function hasCustomProgramHook(m: Material): boolean {
+  const hook = materialProp(m, 'onBeforeCompile')
+  return typeof hook === 'function' && hook !== DEFAULT_ON_BEFORE_COMPILE
+}
+
+/** ShaderMaterial 族签名：着色器源码 + uniforms + defines + 渲染状态。四者缺一都可能
+ *  把走不同编译分支/不同混合状态的材质并成一份（defines 反例见 definesSignature）。 */
+function shaderMaterialSignature(m: Material): string | null {
+  const uniforms = materialProp(m, 'uniforms')
+  if (!uniforms || typeof uniforms !== 'object') return null
+  const parts = [
+    'shader',
+    String(materialProp(m, 'vertexShader') ?? ''),
+    String(materialProp(m, 'fragmentShader') ?? ''),
+    `defines:${definesSignature(m)}`,
+    `state:${renderStateSignature(m)}`,
+    annotationPolicySignature(m),
+  ]
+  for (const name of Object.keys(uniforms as Record<string, unknown>).sort()) {
+    const uniform = (uniforms as Record<string, { value?: unknown } | undefined>)[name]
+    parts.push(`${name}=${uniformValueSignature(uniform?.value)}`)
+  }
+  return parts.join('|')
+}
+
+/** 材质签名 → key；多材质叶子（契约外）或不可静态签名者返回 null = 不规整。 */
+function materialSignature(m: Material | Material[]): string | null {
+  if (Array.isArray(m)) return null
+  if (hasCustomProgramHook(m)) return null
+  // ShaderMaterial 族（光照图建筑/环境反射/细节层等）：标准属性白名单读不到
+  // uniforms——用 uniforms+着色器源码签名；这里漏判会把同族不同贴图的实例并到
+  // 第一个材质对象上（2026-11-14 实测：建筑物贴图全串）。
+  const uniforms = materialProp(m, 'uniforms')
+  if (uniforms && typeof uniforms === 'object') return shaderMaterialSignature(m)
+  // 内建材质同样可能有 defines（走不同编译分支）→ 一并进键
+  return [...MATERIAL_SIGNATURE_FIELDS.map((f) => materialSignatureValue(m, f)),
+    `defines:${definesSignature(m)}`, annotationPolicySignature(m)].join('|')
+}
+
+/** 材质签名规整：导出器给每个节点各建一份材质对象，属性相同也会把 (geometry,
+ *  material) 分组键撕开（幽灵工厂实测 170 材质对象 / 27 种真实配置），批次数被
+ *  人为抬高一倍、GL 状态切换同步膨胀。这里把同配置材质收敛到**同一个代表对象**：
+ *  代表对象是入参之一、其余引用直接换成代表（原对象随后随节点丢弃，未渲染过
+ *  不会进 GPU 缓存，无 dispose 负担）。分组键合并依赖本步；合批键是
+ *  geometry.uuid（几何不做内容级去重——形状差异不可凭签名断言）。 */
+export function canonicalizeEntryMaterials<T extends { material: Material | Material[] }>(entries: T[]): T[] {
+  const byKey = new Map<string, Material>()
+  for (const e of entries) {
+    const key = materialSignature(e.material)
+    if (key === null) continue
+    const rep = byKey.get(key)
+    if (rep === undefined) { byKey.set(key, e.material as Material); continue }
+    if (rep !== e.material) e.material = rep
+  }
+  return entries
+}
+
 export function collectInstanceEntries(root: Object3D): InstanceEntry[] {
   const out: InstanceEntry[] = []
   const stack: Array<{ node: Object3D; parent: Matrix4 }> = [{ node: root, parent: new THREE.Matrix4() }]
@@ -80,12 +237,38 @@ export interface InstanceBatch {
   items: InstanceEntry[]
 }
 
+/** 单批合并的三角量预算（性能旋钮，非语义开关；0 = 关闭合并，恢复逐格分片形态）。
+ *
+ *  (geometry, material) 一组的**总三角量**（几何三角 × 实例数）≤ 预算时，整组合并
+ *  为一个跨宫格单批：常驻提交这些三角的顶点处理成本远低于「每格一个 draw call」
+ *  的固定成本（幽灵工厂实测 1294 批 / 2678 实例 = 批均 2.1 实例，每帧 1449 调用
+ *  的主体是这批小几何稀疏种；合并后 scenery 批次 ≈ 1/4，材质状态切换随材质规整
+ *  再降一档）。大几何密集种（林荫图树海：几何大、实例多，逐实例剔除有真实渲染量
+ *  收益——「镜头看半张图视野外实例全量提交」正是它实测卡顿的主因）超预算，
+ *  仍按宫格分片保留剔除粒度。 */
+export const SCENERY_COLLAPSE_MAX_TRIS = 20000
+
+/** 几何三角数（index 优先；非索引几何按 position 顶点数折算）。 */
+function geometryTriCount(geometry: BufferGeometry): number {
+  const idx = geometry.index
+  if (idx) return idx.count / 3
+  const pos = geometry.attributes?.position
+  return pos ? pos.count / 3 : 0
+}
+
 /** 按 (geometry, material, 宫格) 分组：每片独立 InstancedMesh。
  *  cellSize 有限时按世界坐标宫格分片——整批一个跨全图的包围球会失去逐实例
  *  视锥剔除（镜头看半张图，视野外的实例也全量提交，林荫图实测减半的树渲染
- *  量全靠它）；分片后每片包围球局部化，剔除恢复到格粒度，draw call 总量
- *  仍 ≈ 片数（远小于实例数）。cellSize = Infinity 关闭分片（单批，兼容旧形态）。 */
-export function groupInstanceBatches(entries: readonly InstanceEntry[], cellSize = Infinity): InstanceBatch[] {
+ *  量全靠它）；分片后每片包围球局部化，剔除恢复到格粒度。
+ *  小三角量组（总三角 ≤ SCENERY_COLLAPSE_MAX_TRIS，可被 opts.maxCollapseTris 覆盖，
+ *  0 关闭）无视宫格退化为整组单批——见该常量注释。cellSize = Infinity 关闭分片
+ * （单批，兼容旧形态）。 */
+export function groupInstanceBatches(
+  entries: readonly InstanceEntry[],
+  cellSize = Infinity,
+  opts: { maxCollapseTris?: number } = {},
+): InstanceBatch[] {
+  const maxCollapseTris = opts.maxCollapseTris ?? SCENERY_COLLAPSE_MAX_TRIS
   const out: InstanceBatch[] = []
   const byGeoMat = new Map<string, { geometry: BufferGeometry; material: Material; cells: Map<string, InstanceEntry[]> }>()
   for (const e of entries) {
@@ -103,6 +286,19 @@ export function groupInstanceBatches(entries: readonly InstanceEntry[], cellSize
     items.push(e)
   }
   for (const g of byGeoMat.values()) {
+    // 小三角量组：整组合并单批（常驻提交总三角 ≤ 预算，换取调用数合并；
+    // 只在跨多格时有意义——单格组本来就是单批）
+    if (maxCollapseTris > 0 && g.cells.size > 1) {
+      const trisEach = geometryTriCount(g.geometry)
+      let total = 0
+      for (const items of g.cells.values()) total += items.length
+      if (trisEach * total <= maxCollapseTris) {
+        const items: InstanceEntry[] = []
+        for (const cell of g.cells.values()) items.push(...cell)
+        out.push({ geometry: g.geometry, material: g.material, items })
+        continue
+      }
+    }
     for (const items of g.cells.values()) {
       out.push({ geometry: g.geometry, material: g.material, items })
     }

@@ -114,6 +114,7 @@ OTA）解析**；禁止直接读 `ANDROID_ASSET_BASE` / `VITE_ASSET_BASE_URL`，
 - 切换 = `location.assign` 整页重载；`assetProvider` / `agentData` / `replaySource` /
   `researchCatalog` 的模块级 Promise 缓存随页面重置
 - Android `AgentAssetProxy` 磁盘缓存 key = 完整请求路径（含 `/v/<id>/`），不同 dataset 不串
+- 查询已从目录移除的版本时，Android 将上游 `/v/<id>/version.json` 的 404/410 传给选择器，并清除旧的版本元数据缓存，选择器据此回到默认版本。临时网络故障沿用缓存；无缓存时返回 502，保留用户选择。
 - Android map2d localStorage 索引按 dataset 隔离（`wotb.map2d.index.v1:<id>`；未选择时保留旧键）
 - map2d OTA 仍是“不降级”通道：dataset 的 map2d 旧于包内内容时不会覆盖 bundled
   （防 APK 升级后回退）；这是刻意策略

@@ -212,17 +212,48 @@ describe('AgentTankopedia', () => {
     const { wrapper, router } = await mountAt({ nation: 'germany', tier: '5' })
     const names = wrapper.findAll('[data-testid="tank-card"]')
     expect(names.length).toBeGreaterThan(0)
-    expect(wrapper.find('[data-testid="filter-nation"]').element.value).toBe('germany')
+    expect(wrapper.find('#tp-nation [data-value="germany"]').attributes('aria-checked')).toBe('true')
     // 显示名走 i18n，不直接显示原始枚举值
     expect(wrapper.find('[data-testid="filter-nation"]').text()).toContain('agentTanks.nations.ussr')
 
     const replace = vi.spyOn(router, 'replace')
-    const tier = wrapper.find('[data-testid="filter-tier"]')
-    tier.element.value = ''
-    await tier.trigger('change')
+    await wrapper.find('#tp-tier [data-value=""]').trigger('click')
     await flushPromises()
     expect(replace).toHaveBeenCalled()
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'germany' })
+  })
+
+  it('车辆类别从 URL 恢复并筛选，点选类别 replace 写回且保留其他筛选', async () => {
+    const cache = makeCache()
+    for (const tank of Object.values(cache)) {
+      tank.is_premium = false
+      tank.is_collector = false
+    }
+    cache[4].is_collector = true
+    cache[14].is_premium = true
+    data.fetchTankEncyclopedia.mockResolvedValue(cache)
+    const { wrapper, router } = await mountAt({ nation: 'germany', tier: '5', category: 'collector' })
+    const visibleIds = () => wrapper.findAll('[data-testid="tank-card"]').map(card => card.attributes('data-tank-id'))
+
+    expect(wrapper.find('#tp-category [data-value="collector"]').attributes('aria-checked')).toBe('true')
+    expect(visibleIds()).toEqual(['4'])
+    expect(wrapper.find('[data-testid="tank-card"]').classes()).toContain('is-collector')
+
+    const replace = vi.spyOn(router, 'replace')
+    await wrapper.find('#tp-category [data-value="premium"]').trigger('click')
+    await flushPromises()
+    expect(replace).toHaveBeenCalled()
+    expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'germany', tier: '5', category: 'premium' })
+    expect(visibleIds()).toEqual(['14'])
+    expect(wrapper.find('[data-testid="tank-card"]').classes()).toContain('is-premium')
+
+    await wrapper.find('#tp-category [data-value=""]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'germany', tier: '5' })
+    expect(visibleIds()).toContain('4')
+    expect(visibleIds()).toContain('14')
+    expect(visibleIds().length).toBeGreaterThan(2)
+    wrapper.unmount()
   })
 
   it('搜索即时筛选，防抖后写进 URL；无结果时显示空状态并可清除', async () => {

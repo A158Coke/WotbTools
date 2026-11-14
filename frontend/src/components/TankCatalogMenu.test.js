@@ -123,7 +123,7 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
 
   it('筛选/排序 emit 完整 filters', async () => {
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
-    await wrapper.find('#tp-nation').setValue('germany')
+    await wrapper.find('#tp-nation [data-value="germany"]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0]).toMatchObject({ nation: 'germany', tier: '10', sort: 'name' })
     // sort / type 是 Choice Group（DC-SEL-01）：点选而非 <select>.setValue
     await wrapper.find('#tp-sort [data-value="hp"]').trigger('click')
@@ -135,4 +135,20 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0].type).toBe('')
     wrapper.unmount()
   })
+  it('类别参与组合和重置，筛选不触发选车', async () => {
+    layout.compact = true
+    const tanks = TANKS.map((tank, index) => ({ ...tank, category: index === 2 ? 'collector' : 'regular' }))
+    const wrapper = mountMenu({ tanks })
+    await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('#tp-category [data-value="collector"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="tank-card"]').map(card => card.find('.tp-card-name').text())).toEqual(['E 100'])
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.emitted('update:filters').at(-1)[0].category).toBe('collector')
+    await wrapper.find('[data-testid="catalog-clear"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(3)
+    expect(wrapper.emitted('update:filters').at(-1)[0].category).toBe('')
+    wrapper.unmount()
+  })
+
 })

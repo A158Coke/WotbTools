@@ -76,6 +76,9 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
         <div class="more-setting" data-testid="more-sound">
           <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" :description="$t('feedbackPrefs.soundHint')" @update:model-value="value => setFeedbackPref('sound', value)" />
         </div>
+        <div class="more-setting" data-testid="more-battle-sound">
+          <AppSwitch :model-value="feedbackPrefs.battleSound" :label="$t('feedbackPrefs.battleSound')" :description="$t('feedbackPrefs.battleSoundHint')" @update:model-value="value => setFeedbackPref('battleSound', value)" />
+        </div>
       </div>
     </section>
 

@@ -290,6 +290,9 @@ try {
   ]
   targetResponse = emptyCfgAmmo
   const assertHudMatchesNative = async () => {
+    // Geometry can be ready before the scene distance reaches the reactive HUD.
+    await page.waitFor(() => /\d+\s*mm/.test(document.querySelector('[data-testid="hud-penetration"]')?.textContent || ''),
+      { timeout: 10000, label: 'HUD penetration resolves at the scene distance' })
     const state = await page.evaluate(`(() => {
       const pens = texts => texts.map(text => (text.match(/(\\d+)mm/) || [])[1])
       return {

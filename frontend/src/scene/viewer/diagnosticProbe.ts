@@ -86,6 +86,8 @@ export interface DiagnosticProbeDeps {
     aimPartAt: (clientX: number, clientY: number) => 'gun' | 'turret' | null
     getCameraMotion: () => ProbeCameraMotion
     getRcLastClick: () => ProbePointerClick | null
+    /** 最近一次相机预设的炮轴基准点（pose.target；未应用过预设时 null）。 */
+    getLastPresetTarget?: () => { x: number; y: number; z: number } | null
     setRcLastClick: (v: ProbePointerClick | null) => void
 }
 
@@ -99,6 +101,7 @@ export function createDiagnosticProbe(deps: DiagnosticProbeDeps) {
         getWorldOverviewMode, getTurretDeg, getGunDeg, getPenetrationMode, shellPenMul,
         getAimSession, aimPartAt, getCameraMotion,
         getRcLastClick,
+        getLastPresetTarget,
     } = deps
 
 interface ArmorPixelRoi {
@@ -390,6 +393,10 @@ const probe = {
                         turret: pivotTurret ? pivotTurret.toArray() : null,
                         gun: pivotGun ? pivotGun.toArray() : null,
                     },
+                    // 最近一次相机预设的炮轴基准点（pose.target）：门禁量"炮管指向镜头"
+                    // 用它作基准——armorPivots 的模型系常量枢轴在带 initial_turret_rotation
+                    // 的车上与 pose 时的真实炮线枢轴差一个枪架视差（Minotauro 实测 0.019°）。
+                    presetTarget: getLastPresetTarget?.() ?? null,
                 };
             },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
