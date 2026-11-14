@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const gate = vi.hoisted(() => ({ bytesDelay: null as Promise<void> | null }))
+const gate = vi.hoisted(() => ({
+  bytesDelay: null as Promise<void> | null,
+  /** 接下来 N 次 json 请求失败；permanent=true 时抛 404（不可恢复），否则 503（可恢复） */
+  jsonFail: { remaining: 0, permanent: false },
+  jsonRequests: 0,
+}))
 const assets = vi.hoisted(() => ({
   index: {
     main: { close: ['main_close_01.ogg', 'main_close_02.ogg'], far: ['main_far_01.ogg'] },
@@ -20,6 +25,11 @@ const assets = vi.hoisted(() => ({
 vi.mock('../assetProvider.js', () => ({
   assetProvider: {
     json: async (path: string) => {
+      gate.jsonRequests++
+      if (gate.jsonFail.remaining > 0) {
+        gate.jsonFail.remaining--
+        throw new Error(`asset ${path}: HTTP ${gate.jsonFail.permanent ? 404 : 503}`)
+      }
       if (path === '/sound/wpn/index.json') return assets.index
       if (path === '/sound/wpn/gun_class.json') return assets.gunClass
       throw new Error(`unexpected ${path}`)
@@ -84,6 +94,9 @@ beforeEach(() => {
   audio.started.length = 0
   audio.stopped = 0
   gate.bytesDelay = null
+  gate.jsonFail.remaining = 0
+  gate.jsonFail.permanent = false
+  gate.jsonRequests = 0
   vi.stubGlobal('AudioContext', FakeContext)
 })
 afterEach(() => {
@@ -181,6 +194,33 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     gate.bytesDelay = null
     await new Promise(r => setTimeout(r, 30))
     expect(audio.started).toHaveLength(0)
+  })
+
+  it('元数据临时失败可恢复：503 后下一次开炮重新请求并播放（评审 P2）', async () => {
+    const { gunfire, defs } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })
+    gate.jsonFail.remaining = 1        // 第一次 gun_class.json 请求 503（可恢复）
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 20))
+    expect(audio.started).toHaveLength(0)   // 本次失败：静音
+    // 网络恢复：下一次开炮应重新请求元数据并正常播放（此前实现会永久 disabled）
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
+  })
+
+  it('元数据 404 视为资产缺失：保持禁用，不再重复请求', async () => {
+    const { gunfire, defs } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })
+    gate.jsonFail.remaining = 1
+    gate.jsonFail.permanent = true     // 404：资产不存在
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 20))
+    expect(audio.started).toHaveLength(0)
+    const requestsAfterMiss = gate.jsonRequests
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 20))
+    expect(audio.started).toHaveLength(0)
+    expect(gate.jsonRequests).toBe(requestsAfterMiss)   // 404 后不再重试
   })
 
   it('seek（invalidatePending）：在飞请求作废、在响声源停止，之后新开炮仍可播（评审 P2）', async () => {

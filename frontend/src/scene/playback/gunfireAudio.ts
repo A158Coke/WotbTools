@@ -88,15 +88,43 @@ let gunClassTablePromise: Promise<GunClassTable> | null = null
 const bufferCache = new Map<string, Promise<AudioBuffer[]>>() // key = `${class}:${layer}`
 let disabled = false
 
-async function loadSoundIndex(): Promise<SoundIndex> {
-  soundIndexPromise ??= assetProvider.json<SoundIndex>('/sound/wpn/index.json')
-    .catch(e => { disabled = true; throw e })
-  return soundIndexPromise
+/** 资产**确实不存在**（HTTP 404）才算永久禁用；网络抖动 / 5xx / 解码错误都是可恢复的。 */
+function isPermanentAssetMiss(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e)
+  // 生产格式：assetProvider.json 抛 `asset <path>: HTTP <status>`
+  return message.includes("HTTP 404")
 }
-async function loadGunClassTable(): Promise<GunClassTable> {
-  gunClassTablePromise ??= assetProvider.json<GunClassTable>('/sound/wpn/gun_class.json')
-    .catch(e => { disabled = true; throw e })
-  return gunClassTablePromise
+
+/** 元数据加载（可恢复失败）：失败时清空缓存的 Promise，下一次 prepare/onShot 会重试；
+ *  只有 404 才置 `disabled`。此前每次失败都 `disabled = true` 且保留 rejected Promise，
+ *  一次临时网络故障就让后续所有回放静音直到整页刷新（评审 P2）。 */
+async function loadMetadata<T>(load: () => Promise<T>, slot: () => Promise<T> | null, assign: (v: Promise<T> | null) => void): Promise<T> {
+  const cached = slot()
+  if (cached) return cached
+  const request = load()
+  assign(request)
+  try {
+    return await request
+  } catch (e) {
+    assign(null)   // 允许重试（网络恢复后下一次调用重新请求）
+    if (isPermanentAssetMiss(e)) disabled = true
+    throw e
+  }
+}
+
+function loadSoundIndex(): Promise<SoundIndex> {
+  return loadMetadata(
+    () => assetProvider.json<SoundIndex>('/sound/wpn/index.json'),
+    () => soundIndexPromise,
+    (v) => { soundIndexPromise = v },
+  )
+}
+function loadGunClassTable(): Promise<GunClassTable> {
+  return loadMetadata(
+    () => assetProvider.json<GunClassTable>('/sound/wpn/gun_class.json'),
+    () => gunClassTablePromise,
+    (v) => { gunClassTablePromise = v },
+  )
 }
 
 function loadBuffers(cls: string, layer: string): Promise<AudioBuffer[]> {
