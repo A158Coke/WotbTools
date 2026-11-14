@@ -45,6 +45,31 @@ export interface RendererCaps {
   stencil: boolean
 }
 
+/** 软件光栅检测（一次性探针上下文，仅在主渲染器创建前调用一次）：
+ *  只认 UNMASKED 渲染器串里的真软件光栅器（SwiftShader / llvmpipe / softpipe）。
+ *  ⚠️ 无 WEBGL_debug_renderer_info 扩展时的 MASKED 串（"WebKit WebGL"）**不是**
+ *  软件渲染证据——那是 Chromium 的掩码默认值（2026-11-14 实测：核显 ANGLE 环境的
+ *  掩码串同样报它），按硬件处理（fail-open：宁可少关不错关）。 */
+export function isSoftwareRasterizer(): boolean {
+  let gl: WebGLRenderingContext | null = null
+  try {
+    const probe = document.createElement('canvas')
+    gl = (probe.getContext('webgl2') ?? probe.getContext('webgl')) as WebGLRenderingContext | null
+    if (!gl) return false
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info') as { UNMASKED_RENDERER_WEBGL?: number } | null
+    if (!dbg?.UNMASKED_RENDERER_WEBGL) return false
+    // 必须先读参数再释放上下文：loseContext 之后 getParameter 返回 null，渲染器串
+    // 变成 "null" → 真软渲染环境会被漏判、MSAA 旁路不生效（评审 P2：探针时序）。
+    const renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL))
+    return /swiftshader|llvmpipe|softpipe|software/i.test(renderer)
+  } catch {
+    return false
+  } finally {
+    // 无论读参数成败都释放探针上下文（一次性探针不应常驻 GPU 资源）
+    try { gl?.getExtension('WEBGL_lose_context')?.loseContext() } catch { /* 已失效上下文：忽略 */ }
+  }
+}
+
 export interface SceneCore {
   scene: Scene
   camera: PerspectiveCamera
@@ -95,8 +120,12 @@ export function createSceneCore({
   // powerPreference：多 GPU 设备（核显 + RTX 等独显）上 Windows 按 per-app 分配
   // GPU，Chrome 缺省可能落在核显——3D 回放是本页唯一的重负载任务，显式请求
   // 高性能独显（移动端/单 GPU 设备该提示被忽略，无副作用）。
+  // 软件光栅适配（2026-11-14 帧率优化）：真软件光栅器（SwiftShader/llvmpipe，见
+  // isSoftwareRasterizer 的判定口径）上 MSAA 是纯倍增的光栅成本——高清/均衡档的
+  // antialias 在该环境下从画质项变成帧率税。硬件环境（含核显 ANGLE）行为零变化。
+  const softwareGL = isSoftwareRasterizer();
   const renderer = new THREE.WebGLRenderer({
-    antialias: Q.antialias,
+    antialias: Q.antialias && !softwareGL,
     logarithmicDepthBuffer: LOGDEPTH,
     stencil: STENCIL,
     powerPreference: 'high-performance',

@@ -2156,7 +2156,9 @@
     "haptics": "按键震动",
     "hapticsHint": "Android 上切换、确认和出错时轻震一下",
     "sound": "按键音效",
-    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放"
+    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放",
+    "battleSound": "3D 回放炮声",
+    "battleSoundHint": "开炮时播放客户端内置炮声（按镜头距离衰减）"
   },
   "notifications": {
     "title": "通知",

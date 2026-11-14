@@ -187,7 +187,7 @@ XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的
 
 交互机制由成熟库提供，WotbTools 组件保持自己的 API 与视觉 policy：
 
-- `reka-ui`（headless 交互 primitive）只出现在 `AppDialog`、`AppSheet`、`AppTooltip`、`MenuButton`、`BattlePicker`、`DataVersionMenu`、`SegmentedControl` 内；`motion-v` 只出现在 `App.vue`（`MotionConfig`）与 `SegmentedControl`、`FilterChips`、`AgentTankopedia` 的过渡中。页面与 feature 不直接 import 它们，由 `src/shared/ui-dependency-ownership.test.ts` 强制。
+- `reka-ui`（headless 交互 primitive）只出现在 `AppDialog`、`AppSheet`、`AppTooltip`、`MenuButton`、`BattlePicker`、`DataVersionMenu`、`SegmentedControl`、`TankCatalogChoice` 内；`motion-v` 只出现在 `App.vue`（`MotionConfig`）与 `SegmentedControl`、`FilterChips`、`AgentTankopedia` 的过渡中。页面与 feature 不直接 import 它们，由 `src/shared/ui-dependency-ownership.test.ts` 强制。
 - `@vueuse/core` 承担浏览器 / Vue 管线（事件监听生命周期、`createReusableTemplate` 等）。breakpoint 只由 `useBreakpoint()` 拥有，带迁移与校验的持久化只由各自 owner 拥有，因此 `useStorage` / `useLocalStorage` / `useSessionStorage` / `useBreakpoints` 被 guard 禁用。
 - `motion-v` 的时长与缓动只来自 `src/shared/motion/motionPolicy.ts` 读取的 CSS token；不得在 Vue/JS 中散落 duration 字面量，也不得进入播放帧路径。
 - 手机端 overlay 统一使用 `AppSheet`；`DIALOG_INLINE_KEY` 为 true 时 `AppDialog`、`AppSheet`、`MenuButton`、`BattlePicker` 原地渲染（组件测试与 fullscreen 宿主）。

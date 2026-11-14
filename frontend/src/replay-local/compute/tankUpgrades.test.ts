@@ -544,3 +544,52 @@ describe('t11r3 的四种内建机制', () => {
     expect(rows(ambiguous, catalog).find(row => row.name === 'EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME')?.initial).toBeNull()
   })
 })
+
+describe('XI 投影后的 DPM 与伤害/装填自洽', () => {
+  it('ShellDamageUpgrade 与装填加成落地后，dpm/standard_damage 同步重算', () => {
+    const modules = {
+      tankId: 90001, tier: 11, gameVersion: 'v1',
+      // 装填加成（VehicleDataMiscAttrAdditiveBonus）的可投影性校验要求炮有 reloadTime
+      turrets: [{ guns: [{ stats: { reloadTime: 12.3 } }] }],
+      upgradeProgression: {
+        matrix: { rows: 1, columns: 2 },
+        nodes: [
+          { id: 1, techName: 'dmg', type: 'NODETYPE_COMMON', gridPosition: [1, 1], xpCost: 1,
+            attributes: [{ name: 'SHELL_DAMAGE_SLOT_1', value: 40 }] },
+          { id: 2, techName: 'reload', type: 'NODETYPE_COMMON', gridPosition: [1, 2], xpCost: 1,
+            attributes: [{ name: 'GUN_RELOAD', value: -0.8 }] },
+        ],
+        alternativeGroups: [],
+        attributeDefinitions: {
+          SHELL_DAMAGE_SLOT_1: { modifier: 'MODIFIER_ADD', params: { slotIndex: '0' }, script: 'ShellDamageUpgrade' },
+          GUN_RELOAD: { modifier: 'MODIFIER_ADD', script: 'VehicleDataMiscAttrAdditiveBonus', params: { attrName: 'gunReloadTimeAdditiveBonus' } },
+        },
+        provenance: { gameVersion: 'v1' },
+      },
+    } as any
+    const detail = {
+      tier: 11, hp: 2000,
+      configs: [{
+        id: 0, shells: [
+          { type: 'ap', damage: 560, penetration: 298 },
+          { type: 'ap_premium', damage: 540, penetration: 363 },
+        ],
+        standard_damage: 560, dpm: 2732, reload_time: 12.3, is_burst: false,
+      }],
+    } as any
+    const { detail: projected } = projectTankUpgrades(detail, modules, 'top', [])
+    const cfg = projected.configs[0]
+    expect(cfg.shells[0].damage).toBe(600)
+    expect(cfg.reload_time).toBeCloseTo(11.5, 5)
+    expect(cfg.standard_damage).toBe(600)
+    // 600 × 60 / 11.5 = 3130.4 → 与 Rust dump-tank-data 同口径取整
+    expect(cfg.dpm).toBe(3130)
+    // stock 保持包内原值（不重算、不改写）
+    const stock = projectTankUpgrades(detail, modules, 'stock', []).detail.configs[0]
+    expect(stock.dpm).toBe(2732)
+    expect(stock.standard_damage).toBe(560)
+    // 连发炮的 dpm 恒为 null（与包内一致），不得被补成数字
+    const burstDetail = { ...detail, configs: [{ ...detail.configs[0], is_burst: true }] }
+    expect(projectTankUpgrades(burstDetail, modules, 'top', []).detail.configs[0].dpm).toBeNull()
+  })
+})

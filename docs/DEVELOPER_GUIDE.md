@@ -27,6 +27,8 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 
 ---
 
+车辆目录共用 `TankCatalogMenu`，包含国家/系别、等级、车种与普通/金币/典藏筛选。车辆类别在原始缓存归一化时投影，URL 与清除白名单由 `tankopediaQuery` 和 `tankopediaQueryKeys` 维护。图标来源及 CN 素材处理见 [车辆目录素材](frontend/tank-catalog-assets.md)。
+
 ## 环境与工具链
 
 - **JDK 25** 必需（parent Enforcer 限制 `[25,26)`）；Maven 3.9.0 或更新的 Maven 3 版本（Maven 4 不在支持范围内）。Maven 必须显式使用 settings 文件：在 `java/` 下为 `-s settings.xml`，仓库根为 `-s java/settings.xml`；容器构建使用 `java/settings-docker.xml`，其插件解析以 Central 优先、Aliyun 备用，备用源校验和不符直接失败。Parent POM 会拒绝重复 dependency 声明与 `org.projectlombok:lombok`（enforcer `bannedDependencies`，不引入 Lombok），并在 `mvn test` 执行 advisory dependency analysis；analysis warnings 不会令构建失败，当前未启用 `dependencyConvergence`。SpotBugs Maven Plugin 4.10.5.0 在 `verify` 分析 production classes：High 阻断、Medium/Low 报告但不阻断，分析进程/执行失败会阻断；测试 class 排除。SpotBugs 对可恢复的单 class 扫描诊断会记录后继续。Targeted/module `test` 不执行 SpotBugs，Business API 与 AI Service PR owner 使用 `verify`。Suppression 仅用于经证据确认的 false positive，限定到最小 class/member 范围并记录原因和安全 invariant。

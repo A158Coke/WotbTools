@@ -2156,7 +2156,9 @@
     "haptics": "Haptics",
     "hapticsHint": "A short buzz on Android when you switch, confirm or hit an error",
     "sound": "Sounds",
-    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on"
+    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on",
+    "battleSound": "3D replay gun sounds",
+    "battleSoundHint": "Client-built-in cannon sounds on fire, attenuated by camera distance"
   },
   "notifications": {
     "title": "Notifications",

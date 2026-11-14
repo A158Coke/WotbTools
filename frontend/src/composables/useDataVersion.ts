@@ -1,4 +1,5 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { orderDatasetsForDisplay } from '../utils/datasetOrder.js'
 import {
   ASSET_BASE_STORAGE,
   DATA_VERSION_QUERY,
@@ -66,6 +67,7 @@ const state = ref<CatalogState>({
 })
 
 let inflight: Promise<CatalogState> | null = null
+let resolvingStaleSelection = false
 
 function validDataset(entry: unknown): entry is DatasetEntry {
   if (!entry || typeof entry !== 'object') return false
@@ -117,14 +119,13 @@ function persistDataset(value: string): void {
 }
 
 async function resolveUnlistedDataset(origin: string, requested: string, datasets: DatasetEntry[]): Promise<string | null> {
-  if (!requested || datasets.some(entry => entry.id === requested)) return null
   try {
     const response = await fetch(`${origin}/v/${requested}/version.json`, { cache: 'no-cache' })
-    if (!response.ok) return null
+    if (!response.ok) return response.status === 404 || response.status === 410 ? '' : null
     const stamp = await response.json()
-    return datasets.find(entry => entry.id === stamp?.dataset_id && entry.status !== 'revoked')?.id ?? null
+    return datasets.find(entry => entry.id === stamp?.dataset_id && entry.status !== 'revoked')?.id ?? ''
   } catch {
-    // An offline or removed path must leave the catalog usable for manual selection.
+    // A transient network failure leaves the current selection intact.
     return null
   }
 }
@@ -142,17 +143,11 @@ export function loadDataVersionCatalog({ force = false }: { force?: boolean } = 
       if (!response.ok) throw new Error(`versions.json: HTTP ${response.status}`)
       return response.json() as Promise<unknown>
     })
-    .then(async (doc) => {
+    .then((doc) => {
       if (!isCatalog(doc)) throw new Error('versions.json schema 不支持')
       if (!doc.datasets.every(validDataset)) throw new Error('versions.json 含非法 dataset')
       const defaultId = typeof doc.default === 'string' ? doc.default : null
       const datasets = doc.datasets.filter(validDataset)
-      const canonical = await resolveUnlistedDataset(origin, requestedDatasetId(), datasets)
-      if (canonical) {
-        // Rebuild page-scoped asset and crop caches from the listed path; Back skips the alias.
-        persistDataset(canonical)
-        location.replace(dataVersionUrl(location.href, canonical))
-      }
       state.value = {
         status: 'ready',
         datasets,
@@ -180,7 +175,23 @@ export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
   const selected = ref(requestedDatasetId())
-  const options = computed<DatasetOption[]>(() => state.value.datasets.map((entry) => ({
+  // The catalog may already be ready at mount. Resolve an alias before falling back
+  // to the default, and allow only one navigation across selector instances.
+  watch(state, async (snapshot) => {
+    const requested = selected.value
+    if (resolvingStaleSelection || snapshot.status !== 'ready' || !requested) return
+    if (snapshot.datasets.some(entry => entry.id === requested)) return
+    resolvingStaleSelection = true
+    const target = await resolveUnlistedDataset(stripDatasetSuffix(assetOrigin()), requested, snapshot.datasets)
+    if (target === null) {
+      resolvingStaleSelection = false
+      return
+    }
+    persistDataset(target)
+    location.replace(dataVersionUrl(location.href, target))
+  }, { immediate: true })
+  // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式 → 其余版本号递降。
+  const options = computed<DatasetOption[]>(() => orderDatasetsForDisplay(state.value.datasets).map((entry) => ({
     value: entry.id,
     label: entry.label,
     tankCount: typeof entry.tank_count === 'number' ? entry.tank_count : null,

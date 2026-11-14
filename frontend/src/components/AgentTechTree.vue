@@ -27,6 +27,7 @@ import ShowcaseHero from './ShowcaseHero.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import TankCatalogIcon from './TankCatalogIcon.vue'
 
 const VIEW = 'agent-techtree'
 const NATIONS = techTreeNations()
@@ -44,6 +45,28 @@ function writeState(patch) {
 }
 
 const nationLabel = nation => tankNationLabel(t, te, nation)
+
+const nationTabs = ref(null)
+const focusedNation = ref(urlNation.value)
+watch([urlNation, nationTabs], ([nation, tabs]) => {
+  focusedNation.value = nation
+  tabs?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}, { flush: 'post' })
+
+function onNationKeydown(event) {
+  const tabs = [...event.currentTarget.querySelectorAll('[role="tab"]')]
+  const index = tabs.indexOf(event.target)
+  const offsets = { ArrowRight: 1, ArrowLeft: -1 }
+  let target
+  if (event.key in offsets) target = tabs[(index + offsets[event.key] + tabs.length) % tabs.length]
+  if (event.key === 'Home') target = tabs[0]
+  if (event.key === 'End') target = tabs.at(-1)
+  if (!target) return
+  event.preventDefault()
+  focusedNation.value = target.dataset.nation
+  target.focus()
+  target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}
 
 // ---------- 科技树数据 ----------
 const tree = ref(null)
@@ -223,7 +246,7 @@ onMounted(() => {
 
     <!-- ================= 树态 ================= -->
     <div class="tt-filters" :class="{ 'is-sticky': tierRows }">
-    <div class="tt-tabs" role="tablist" :aria-label="t('research.nation_tabs')">
+    <div ref="nationTabs" class="tt-tabs" role="tablist" @keydown="onNationKeydown" :aria-label="t('research.nation_tabs')">
         <button
           v-for="nation in NATIONS"
           :key="nation"
@@ -231,11 +254,14 @@ onMounted(() => {
           role="tab"
           class="tt-tab"
           :class="{ 'is-on': nation === urlNation }"
+          :tabindex="nation === focusedNation ? 0 : -1"
+          :data-nation="nation"
+          @focus="focusedNation = nation"
           :aria-selected="nation === urlNation ? 'true' : 'false'"
           :data-testid="`techtree-nation-${nation}`"
           @click="writeState({ nation, tank: null })"
         >
-          {{ nationLabel(nation) }}
+          <TankCatalogIcon kind="nation" :value="nation" />{{ nationLabel(nation) }}
         </button>
       </div>
       <SegmentedControl
@@ -246,7 +272,9 @@ onMounted(() => {
         :aria-label="t('research.type_filter')"
         data-testid="techtree-type-filter"
         @update:model-value="value => typeFilter = value"
-      />
+      >
+        <template #option="{ option }"><TankCatalogIcon kind="type" :value="option.value" />{{ option.label }}</template>
+      </SegmentedControl>
     </div>
 
       <p v-if="treeState === 'loading'" class="tt-status" role="status">{{ t('research.loading') }}</p>
@@ -389,6 +417,7 @@ onMounted(() => {
 .techtree :deep(.showcase-hero-host) { flex: none; }
 .tt-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
+.tt-tab { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); }
 .tt-tabs { display: flex; flex: none; flex-wrap: wrap; gap: var(--space-1); }
 .tt-tab {
   padding: var(--space-1) var(--space-3);

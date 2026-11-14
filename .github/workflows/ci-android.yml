@@ -47,6 +47,12 @@ jobs:
       # 只断言「能构建」不够 —— 这里构建 bundle、校验 commit-addressed WASM 产物，再把 bundle 复制进
       # assets，最后在 assembleDebug 之后直接检查 APK 内容。
       - name: Build the local-first frontend bundle into APK assets
+        env:
+          # 匿名 GitHub API 在共享 runner IP 上共用 60 req/h 配额：被打满时 release
+          # 元数据请求返回 403，而 fetch-agent-wasm.sh 把 403 判为永久错误 → 本 job
+          # 直接失败（2026-11-14 run 43602762417 实测）。与 ci-frontend.yml 的
+          # fetch step 同口径传 token（配额 5000/h）；脚本只在 API 域附带该头。
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/fetch-agent-wasm.sh
