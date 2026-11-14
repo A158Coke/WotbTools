@@ -1762,10 +1762,92 @@
       "upgrade_skill_group": "Tier XI ability {index}",
       "upgrade_skill_option": "Ability {index}",
       "mechanic_summary": "Base mechanic · {name}",
+      "summary_copy": {
+        "built_in": "Built in",
+        "clip_title": "Enhanced magazine",
+        "gun_title": "Burst secondary gun",
+        "rounds": "{n} rounds",
+        "normal_clip": "Standard magazine",
+        "next_clip": "Next magazine",
+        "default_damage": "By default, every shot in a magazine must deal damage to enhance the next one.",
+        "default_hits": "By default, every shot in a magazine must hit to enhance the next one.",
+        "clip_rule": "Meet the condition with every shot in one magazine to enhance the next.",
+        "trigger": "Current condition",
+        "all_damage": "Deal damage with every shot",
+        "all_hit": "Hit with every shot",
+        "unknown": "Data unavailable",
+        "rules": "Detailed rules",
+        "reset_clip": "Emptying the enhanced magazine or manually reloading it returns the next magazine to standard capacity.",
+        "rockets": "{n} rockets",
+        "salvo": "One activation · {n} shots",
+        "rocket_cycle": "Fire rockets individually with an interval between launches. They cannot be steered in flight. The launcher reloads after the salvo.",
+        "gun_cycle": "Activation fires an automatic burst. The secondary gun reloads independently of the main gun.",
+        "weapon_base": "Secondary weapon · base values",
+        "damage_floor": "Raise the next shot’s minimum damage",
+        "charge_rule": "With the gun loaded, stay within the speed limit to charge. More charge raises the damage floor. Firing consumes the charge.",
+        "ceiling": "Maximum damage stays unchanged at full charge."
+      },
+      "branch_copy": {
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": {
+          "title": "Faster follow-up shots",
+          "scope": "Within the enhanced magazine"
+        },
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+          "title": "Faster magazine reload",
+          "scope": "Main gun reload in normal stats"
+        },
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": {
+          "title": "Easier activation",
+          "scope": "A hit can qualify without damage"
+        },
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": {
+          "title": "Faster secondary burst",
+          "scope": "Time between secondary shots"
+        },
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": {
+          "title": "Faster secondary reload",
+          "scope": "Time until the next burst"
+        },
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": {
+          "title": "More secondary damage",
+          "scope": "Per secondary shell"
+        },
+        "UNGUIDED_ROCKET_DAMAGE": {
+          "title": "More rocket damage",
+          "scope": "Per rocket"
+        },
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": {
+          "title": "Faster follow-up launch",
+          "scope": "Time between rockets"
+        },
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": {
+          "title": "Faster launcher reload",
+          "scope": "After firing the salvo"
+        },
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": {
+          "title": "Higher damage floor",
+          "scope": "Minimum damage at full charge"
+        },
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": {
+          "title": "Charge at higher speeds",
+          "scope": "Maximum speed while charging"
+        },
+        "SHELL_OVERHEAT_CHARGE_TIME": {
+          "title": "Faster charging",
+          "scope": "Time to full charge"
+        }
+      },
+      "choice_preview": "Option {n} · pending",
+      "choice_applied": "Option {n} · active",
+      "choice_unresearched": "No option researched",
+      "choice_unavailable": "Upgrade status unavailable",
+      "choice_number": "Option {n}",
+      "missing_mechanic_values": "A dash marks a base value missing from this dataset.",
+      "upgrade_effect_delta_note": "Current values include regular upgrades and the selected option. Conditional bonuses apply when triggered in battle.",
+      "upgrade_custom": "Partially researched",
       "mechanic_choices": "Choose an upgrade",
       "mechanic_ammunition": "Secondary ammunition",
       "mechanic_firing": "Firing and reload",
-      "upgrade_skill_hint": "Choose one upgrade per group. It applies at full upgrade, or when researched in a custom build.",
       "upgrade_effects": "Mechanic parameters",
       "upgrade_effect_attribute": "Attribute",
       "upgrade_effect_current": "Current",
@@ -1773,13 +1855,10 @@
       "upgrade_percentage_points": "{value} pp",
       "upgrade_yes": "Yes",
       "upgrade_no": "No",
-      "upgrade_relax_clip": "Relax enhanced magazine condition",
       "upgrade_all_hits": "Hit with every shot",
       "upgrade_trigger_hit": "On hit",
       "upgrade_trigger_damage": "On damage",
       "upgrade_inactive": "Stock · upgrades inactive",
-      "upgrade_custom": "Partially researched · active",
-      "upgrade_effect_delta_note": "Current values combine same-version ability data and upgrades. Missing base values show — and known changes only. Battle effects require activation and do not enter normal stats.",
       "upgrade_unsupported": "Upgrade data is incomplete. Fully upgraded stats are unavailable.",
       "upgrade_unavailable": "This asset pack has no upgrade data for this vehicle. Initial stats are shown.",
       "upgrade_enabled": "On",

@@ -78,6 +78,52 @@ describe('配置器紧凑呈现保持交互', () => {
 })
 
 describe('XI 技能选择卡与效果反馈', () => {
+  it('AS-XX uses the effective trigger in stock, top and partial configurations', async () => {
+    const tank = t11r3.tanks.find(({ modules }) => modules.tankId === 23361)
+    const sameVersion = { ...catalog, ...t11r3, provisionsGameVersion: t11r3.gameVersion }
+    const wrapper = panel('zh', tank, { catalog: sameVersion })
+    const selection = wrapper.props('selection')
+    const condition = () => wrapper.get('[data-testid="tank-current-trigger"]').text()
+    const effect = () => wrapper.get('[data-testid="tank-mechanic-EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS"] strong').text()
+    const status = () => wrapper.get('[data-testid="tank-upgrade-skills"] header').text()
+    for (const upgrade of ['stock', 'top', 'custom']) {
+      for (const id of [22, 23, 24]) {
+        await wrapper.setProps({ selection: { ...selection, upgrade, abilities: [id] } })
+        const relaxed = upgrade !== 'stock' && id === 24
+        expect(condition()).toContain(relaxed ? '每发命中即可' : '每发均造成伤害')
+        expect(effect()).toBe(relaxed ? '命中' : '造成伤害')
+        expect(status()).toContain(upgrade === 'stock' ? '待生效' : '已生效')
+        expect(wrapper.get(`[data-testid="tank-ability-${id}"]`).attributes('aria-checked')).toBe('true')
+      }
+    }
+    await wrapper.setProps({ selection: { ...selection, upgrade: 'custom', abilities: [9999] } })
+    expect(status()).toContain('尚未研发')
+    expect(condition()).toContain('每发均造成伤害')
+    await wrapper.setProps({ catalog: { ...sameVersion, provisionsGameVersion: 'other' } })
+    expect(condition()).toContain('当前数据不足')
+    expect(wrapper.find('.tp-base-mechanic .origin').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="tank-mechanic-effects"]').text()).toContain('表中以 — 标记')
+    await wrapper.setProps({ catalog: sameVersion, upgradeSupported: false })
+    expect(condition()).toContain('当前数据不足')
+    expect(status()).toContain('强化状态未知')
+    await wrapper.setProps({ ...t11r3.tanks.find(({ modules }) => modules.tankId === 30993) })
+    expect(wrapper.find('[data-testid="tank-current-trigger"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([10593, 30737])('keeps the base weapon facts stable across branches for %i', async id => {
+    const tank = t11r3.tanks.find(({ modules }) => modules.tankId === id)
+    const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables, consumablesGameVersion: t11r3.gameVersion } })
+    const facts = wrapper.get('.tp-base-mechanic dl')
+    const initial = facts.text()
+    expect(initial).toContain(id === 10593 ? '342 毫米' : '276 毫米')
+    for (const choice of tank.modules.upgradeProgression.alternativeGroups[0].choices) {
+      await wrapper.setProps({ selection: { ...wrapper.props('selection'), abilities: [choice] } })
+      expect(facts.text()).toBe(initial)
+    }
+    wrapper.unmount()
+  })
+
   it.each(t11r3.tanks)('t11r3 $modules.tankId reads each initial value and applies one upgrade option at a time', async tank => {
     const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables,
       provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion } })

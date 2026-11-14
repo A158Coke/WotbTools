@@ -14,6 +14,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Zap } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
+import TankMechanicSummary from './TankMechanicSummary.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
@@ -21,7 +22,7 @@ import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tan
 import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
-import { resolveUpgradeSelection, mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
+import { boundAbility, resolveUpgradeSelection, mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
 import { parseAugmentProgression, researchGroupChoice } from '../replay-local/compute/tankAugmentTree'
 import { isConditionalCrewSkill } from '../replay-local/compute/crewStats'
 
@@ -74,7 +75,8 @@ const mechanicMessages = computed(() => {
   const abilities = props.modules?.vehicleAbilities
   const messages = (Array.isArray(abilities) ? abilities : []).flatMap(stem => {
     const path = `agentTanks.configurator.augment_mechanics.${stem}`
-    return te(`${path}.name`) ? [{ name: t(`${path}.name`), description: t(`${path}.description`) }] : []
+    const item = boundAbility(props.modules, props.catalog, 'consumables', stem) || boundAbility(props.modules, props.catalog, 'provisions', stem)
+    return te(`${path}.name`) ? [{ stem, item, name: t(`${path}.name`), description: t(`${path}.description`) }] : []
   })
   for (const group of upgrades.value.groups || []) {
     const description = group[`description_${lang.value}`] || group.description_en
@@ -86,6 +88,7 @@ const mechanicMessages = computed(() => {
 })
 const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, groupIndex) => ({
   ...group,
+  number: group.choices.indexOf(upgrades.value.choices[group.id]) + 1,
   label: itemName(group) || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
   options: group.choices.map((id, index) => {
     const node = upgrades.value.nodes.find(node => node.id === id)
@@ -95,11 +98,15 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
     }))
     const relaxesClip = effects.length === 1 && effects[0].name === 'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS'
       && node.attributes[0].value === true
+    const copy = effects.length === 1 ? `agentTanks.configurator.branch_copy.${effects[0].name}` : ''
+    const hasCopy = copy && te(`${copy}.title`)
+      && (effects[0].name !== 'ATTRIBUTE_NAME_GUN_RELOAD_TIME' || props.modules.vehicleAbilities?.includes('externalAmmoModule'))
+      && (effects[0].name !== 'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS' || relaxesClip)
     if (relaxesClip) effects[0].amount = t('agentTanks.configurator.upgrade_all_hits')
     return {
       value: String(id),
-      label: relaxesClip ? t('agentTanks.configurator.upgrade_relax_clip') : itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
-      description: node?.[`description_${lang.value}`] || node?.description_en || '',
+      label: hasCopy ? t(`${copy}.title`) : itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
+      description: hasCopy ? t(`${copy}.scope`) : node?.[`description_${lang.value}`] || node?.description_en || '',
       disabled: !upgrades.value.supported,
       effects,
       testid: `tank-ability-${id}`,
@@ -109,6 +116,17 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
 /** 升级状态文案：custom（部分研发）效果已生效，不能沿用 stock 的「未生效」。 */
 const upgradeStatusKey = computed(() => (upgrades.value.mode === 'top' ? 'upgrade_top'
   : upgrades.value.mode === 'custom' ? 'upgrade_custom' : 'upgrade_inactive'))
+const hasMissingValues = computed(() => parameterGroups.value.some(section =>
+  section.rows.some(row => row.initial == null || row.value == null)))
+const effectiveGroup = computed(() => abilityGroups.value.length === 1 && abilityGroups.value[0].number
+  && upgrades.value.mode !== 'stock' ? abilityGroups.value[0] : null)
+function choiceStatus(group) {
+  const cfg = 'agentTanks.configurator'
+  if (!upgrades.value.supported) return t(`${cfg}.choice_unavailable`)
+  if (!group.number) return t(`${cfg}.choice_unresearched`)
+  const key = upgrades.value.mode === 'stock' ? 'choice_preview' : 'choice_applied'
+  return t(`${cfg}.${key}`, { n: String(group.number).padStart(2, '0') })
+}
 function selectAbility(group, value) {
   // custom（研发树联动）：abilities 即已研发表——选卡 = 组内换选，其余已研发节点保留。
   // 组前置必须与研发树同口径补齐（共享 researchGroupChoice），否则配置卡能装出
@@ -483,10 +501,11 @@ const camoBonusParts = computed(() => {
       </div>
     </header>
 
-    <section v-if="upgrades.available" class="tp-config-block" data-testid="tank-upgrades">
+    <section v-if="upgrades.available" class="tp-config-block tp-upgrades" data-testid="tank-upgrades">
       <h3 v-if="!embedded">{{ t('agentTanks.configurator.upgrade_title') }}</h3>
       <SegmentedControl
         v-if="!embedded"
+        class="tp-upgrade-mode"
         :model-value="upgrades.mode"
         :options="upgradeOptions"
         :aria-label="t('agentTanks.configurator.upgrade_title')"
@@ -494,13 +513,13 @@ const camoBonusParts = computed(() => {
       />
       <p v-if="!embedded" class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
       <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
-      <div v-for="message in mechanicMessages" :key="message.name" class="tp-config-block tp-base-mechanic" data-testid="tank-base-mechanic">
-        <h3>{{ t('agentTanks.configurator.mechanic_summary', { name: message.name }) }}</h3>
-        <p>{{ message.description }}</p>
-      </div>
+      <TankMechanicSummary v-for="message in mechanicMessages" :key="`${modules.tankId}-${message.name}`"
+        :message="message" :sections="parameterGroups" />
       <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
-        <h3>{{ abilityGroups.length === 1 ? t('agentTanks.configurator.mechanic_choices') : group.label }}</h3>
-        <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
+        <header class="tp-block-head">
+          <h3>{{ abilityGroups.length === 1 ? t('agentTanks.configurator.mechanic_choices') : group.label }}</h3>
+          <span class="tp-ability-status" aria-live="polite">{{ choiceStatus(group) }}</span>
+        </header>
         <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
           :options="group.options" :model-value="String(upgrades.choices[group.id])"
           @update:model-value="selectAbility(group, $event)">
@@ -518,7 +537,7 @@ const camoBonusParts = computed(() => {
       </div>
       <section v-if="parameterGroups.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
         <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
-          <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}</span>
+          <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}<template v-if="effectiveGroup"> · {{ t('agentTanks.configurator.choice_number', { n: String(effectiveGroup.number).padStart(2, '0') }) }}</template></span>
         </header>
         <component :is="section.label ? 'details' : 'div'" v-for="(section, index) in parameterGroups"
           :key="`${modules.tankId}-${index}`" :open="section.label ? true : undefined">
@@ -537,6 +556,7 @@ const camoBonusParts = computed(() => {
           </table>
         </component>
         <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
+        <p v-if="hasMissingValues" class="tp-muted">{{ t('agentTanks.configurator.missing_mechanic_values') }}</p>
       </section>
     </section>
 
@@ -795,7 +815,9 @@ const camoBonusParts = computed(() => {
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
-.tp-base-mechanic p { margin: 0; }
+.tp-upgrades { grid-template-columns: minmax(0, 1fr); }
+.tp-upgrade-mode { justify-self: start; max-inline-size: 100%; }
+.tp-upgrade-mode :deep(.segmented-option) { flex: 0 1 auto; white-space: normal; }
 .tp-ability-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 .tp-ability-options :deep(.segmented-option) {
   display: flex;
@@ -818,13 +840,13 @@ const camoBonusParts = computed(() => {
 .tp-ability-options :deep(.segmented-label) { flex: 1; }
 .tp-ability-top { display: flex; align-items: center; justify-content: space-between; color: var(--color-accent-text); }
 .tp-ability-number { font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.tp-ability-name { flex: 1; font: var(--type-caption); overflow-wrap: anywhere; }
+.tp-ability-name { flex: 1; font: var(--type-caption); font-weight: 600; overflow-wrap: anywhere; }
 .tp-ability-value { font: var(--type-h3); font-variant-numeric: tabular-nums; color: var(--color-accent-text); }
-.tp-mechanic-effects { display: grid; gap: var(--space-2); min-inline-size: 0; padding-block-start: var(--space-2); }
+.tp-mechanic-effects { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); min-inline-size: 0; padding-block-start: var(--space-2); }
 .tp-ability-status { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-mechanic-effects summary { cursor: pointer; align-content: center; min-block-size: var(--hit-min-comfortable); font-weight: 600; }
 .tp-mechanic-effects table { inline-size: 100%; border-collapse: collapse; font: var(--type-caption); }
-.tp-mechanic-effects th, .tp-mechanic-effects td { padding: var(--space-2) var(--space-1); border-block-end: 1px solid var(--color-border-subtle); text-align: end; font-variant-numeric: tabular-nums; }
+.tp-mechanic-effects th, .tp-mechanic-effects td { white-space: normal; overflow-wrap: anywhere; padding: var(--space-2) var(--space-1); border-block-end: 1px solid var(--color-border-subtle); text-align: end; font-variant-numeric: tabular-nums; }
 .tp-mechanic-effects th:first-child { text-align: start; font-weight: 400; overflow-wrap: anywhere; }
 .tp-mechanic-effects thead { color: var(--color-text-secondary); }
 .tp-effect-current { color: var(--color-accent-text); font-weight: 600; }
@@ -1008,6 +1030,15 @@ const camoBonusParts = computed(() => {
 .tp-camo { display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--hit-min-comfortable); font: var(--type-body); cursor: pointer; }
 .tp-camo-summary { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
+
+/* Share row tracks so a wrapped title or scope cannot shift one option’s benefit. */
+@media (width >= 768px) {
+  .tp-ability-options { grid-template-rows: repeat(4, auto); }
+  .tp-ability-options :deep(.segmented-option),
+  .tp-ability-options :deep(.segmented-label),
+  .tp-ability-content { display: grid; grid-row: span 4; grid-template-rows: subgrid; align-items: start; }
+  .tp-ability-content { block-size: auto; }
+}
 
 @media (width < 768px) {
   .tp-ability-options.is-tiles { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }

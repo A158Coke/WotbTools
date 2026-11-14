@@ -326,7 +326,7 @@ const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> =
   RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR: ['consumables', 'rechargeableNitro', 'rotationSpeedFactor'],
 }
 
-function boundAbility(modules: unknown, catalog: unknown, kind: string, ability: string): Data | undefined {
+export function boundAbility(modules: unknown, catalog: unknown, kind: string, ability: string): Data | undefined {
   if (!record(modules) || !record(catalog) || typeof modules.gameVersion !== 'string' || !modules.gameVersion
     || catalog[`${kind}GameVersion`] !== modules.gameVersion
     || !Array.isArray(modules.vehicleAbilities) || !modules.vehicleAbilities.includes(ability)) return undefined
