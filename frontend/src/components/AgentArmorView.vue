@@ -315,7 +315,7 @@ const tankList = ref([])
 const tankListState = ref('loading')
 const selectedShooterId = ref(null)
 const selectedTargetId = ref(null)
-const pickerFilters = ref({ q: '', tier: '', nation: '', type: '', sort: 'name' })
+const pickerFilters = ref({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
 const pickerTitle = computed(() => pickerMode.value === 'shooter' ? t('armor.select_shooter') : t('armor.select_target'))
 const pickerSelectedId = computed(() => pickerMode.value === 'shooter' ? selectedShooterId.value : selectedTargetId.value)
 // 选车器换车不写 route；子编辑器按 tank-id 重建，就绪标志必须随车重置，

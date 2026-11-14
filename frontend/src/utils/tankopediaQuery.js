@@ -3,7 +3,7 @@
  * 返回 / 分享 / 刷新都能恢复。纯函数：只做校验、序列化与列表筛选，读写路由由 AgentTankopedia 负责。
  * 默认值不写进 URL，保持链接干净。
  *
- * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
+ * 键：q（搜索词）· tier · nation · type · category · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
  * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· skillTriggers（模拟条件技能触发 0/1）· camo（涂装 0/1）
  * · upgrade（XI，缺省 stock / top）· abilities（XI 互斥技能节点 ID 逗号表）
@@ -18,6 +18,7 @@ import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
 export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
+export const TANKOPEDIA_CATEGORIES = Object.freeze(['regular', 'premium', 'collector'])
 /** 坦克百科默认按等级降序（同级按名称升序）；显式 sort 仍按 URL 恢复。 */
 const DEFAULT_SORT = 'tier'
 /** 搜索词上限：防止超长 query 拖慢模糊匹配 */
@@ -104,6 +105,7 @@ function deviceSlots(value) {
 /** route.query → 已校验的状态；非法值回落到默认值。 */
 export function parseTankopediaQuery(query = {}) {
   const sort = text(query.sort)
+  const category = text(query.category)
   const tier = positiveInt(query.tier)
   const tank = positiveInt(query.tank)
   // XI 缺省 = top（由 resolveUpgradeSelection 的 tier 默认决定）；这里保留 tri-state：
@@ -114,6 +116,7 @@ export function parseTankopediaQuery(query = {}) {
     tier: tier ? String(tier) : '',
     nation: text(query.nation),
     type: text(query.type),
+    category: TANKOPEDIA_CATEGORIES.includes(category) ? category : '',
     sort: TANKOPEDIA_SORTS.includes(sort) ? sort : DEFAULT_SORT,
     tank,
     // 以下只在详情态有意义
@@ -141,6 +144,7 @@ export function serializeTankopediaQuery(state = {}) {
   if (state.tier) query.tier = String(state.tier)
   if (state.nation) query.nation = state.nation
   if (state.type) query.type = state.type
+  if (TANKOPEDIA_CATEGORIES.includes(state.category)) query.category = state.category
   if (state.sort && state.sort !== DEFAULT_SORT && TANKOPEDIA_SORTS.includes(state.sort)) query.sort = state.sort
   if (state.tank) {
     query.tank = String(state.tank)
@@ -216,14 +220,16 @@ function tankSearchScore(tank, query) {
 }
 
 /**
- * 列表筛选 + 排序：tier / nation / type 精确匹配，q 走模糊打分（正式车名 + alias）。
+ * 列表筛选 + 排序：tier / nation / type / category 精确匹配，q 走模糊打分（正式车名 + alias）。
  * 有搜索词时精确正式车名优先，其后按相关度及正式车名排序；否则按 sort。
  */
 export function selectTanks(tanks, state = {}) {
+  const category = TANKOPEDIA_CATEGORIES.includes(state.category) ? state.category : ''
   const base = tanks.filter(tank =>
     (!state.tier || String(tank.tier) === String(state.tier))
     && (!state.nation || tank.nation === state.nation)
-    && (!state.type || tank.type === state.type),
+    && (!state.type || tank.type === state.type)
+    && (!category || tank.category === category),
   )
   const query = (state.q || '').trim().toLowerCase()
   if (query) {
@@ -239,6 +245,20 @@ export function selectTanks(tanks, state = {}) {
       .map(entry => entry.tank)
   }
   return base.slice().sort(COMPARATORS[state.sort] || COMPARATORS[DEFAULT_SORT] || byName)
+}
+
+/**
+ * 类别在原始记录上判定，避免 !! 把缺失标志误当作普通车。
+ * 数值 0/1 兼容旧缓存；双真沿用金币优先，缺 premium 的旧典藏记录仍可识别。
+ */
+function tankCategory(value) {
+  const premium = value.is_premium
+  const collector = value.is_collector
+  if (premium === true || premium === 1) return 'premium'
+  const premiumFalse = premium === false || premium === 0
+  if ((premiumFalse || premium === undefined) && (collector === true || collector === 1)) return 'collector'
+  if (premiumFalse && (collector === false || collector === 0)) return 'regular'
+  return 'unknown'
 }
 
 /**
@@ -267,10 +287,11 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
         tier: value.tier ?? 0,
         nation: value.nation || 'unknown',
         type: value.type || 'unknown',
+        category: tankCategory(value),
         is_premium: !!value.is_premium,
         // 收藏车（tanks.pb field13 == 2；与 is_premium == 1 在上游数据里互斥）。
         // projection 只做布尔归一化，**不**替上游强制互斥；异常双 true 原样透传，
-        // 视觉 precedence 由样式层确定（AgentTankopedia：premium > collector）。
+        // category 单独保留严格证据判定，筛选与卡片外观共用它。
         is_collector: !!value.is_collector,
         // XI 卡片默认顶级血量：hp_top 由上游按升级树 MAX_HEALTH 节点算好；
         // 普通车没有该字段，继续用 hp（车体 + 顶炮塔）。
