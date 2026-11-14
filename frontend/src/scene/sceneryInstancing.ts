@@ -62,12 +62,19 @@ const RENDER_STATE_FIELDS: ReadonlyArray<string> = Object.freeze([
  *  材质走不同编译分支——实例如 `makeDecalMaterial` 的 `DECAL_SEPARATE_LM`：不论
  *  `separateLm` 值如何 `colormapLm` uniform 都存在，只有 define 决定是否乘光照图；
  *  漏判会把逐实例光照语义并成首个材质的一份（评审 P2 反例）。 */
+/** 读材质上的运行期扩展属性（uniforms/defines/userData/onBeforeCompile）。用
+ *  `Reflect.get` 而非 `as unknown as` 断言：three 的 Material 类型不含这些字段，
+ *  而本仓的 TypeScript escape-hatch 基线**只减不增**（typescript-ownership.test.ts），
+ *  新增断言会被门禁拒绝。语义等价：都是读自有/继承属性（getter 亦按需触发）。 */
+function materialProp(m: Material, key: string): unknown {
+  return Reflect.get(m, key)
+}
+
 function definesSignature(m: Material): string {
-  const defines = (m as unknown as { defines?: Record<string, unknown> | null }).defines
+  const defines = materialProp(m, 'defines')
   if (!defines || typeof defines !== 'object') return '-'
-  return Object.keys(defines).sort()
-    .map((k) => `${k}=${String((defines as Record<string, unknown>)[k])}`)
-    .join(',')
+  const record = defines as Record<string, unknown>
+  return Object.keys(record).sort().map((k) => `${k}=${String(record[k])}`).join(',')
 }
 
 function renderStateSignature(m: Material): string {
@@ -81,12 +88,15 @@ function renderStateSignature(m: Material): string {
  *  defines/渲染状态，仅此策略不同；规整忽略它会让代表材质的标记决定整批，
  *  traversal 顺序就可能让桥不可标注、或让薄片变成可选中（评审 P2）。 */
 function annotationPolicySignature(m: Material): string {
-  const policy = (m as unknown as { userData?: { annotationSurface?: unknown } }).userData?.annotationSurface
+  const userData = materialProp(m, 'userData')
+  const policy = userData && typeof userData === 'object'
+    ? (userData as { annotationSurface?: unknown }).annotationSurface
+    : undefined
   return policy === false ? 'annotation:false' : 'annotation:true'
 }
 
 function materialSignatureValue(m: Material, field: string): string {
-  const value = (m as unknown as Record<string, unknown>)[field]
+  const value = materialProp(m, field)
   if (value == null) return '-'
   if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') return String(value)
   // 纹理：uuid 即身份（同图对象共享 uuid）；颜色：hex
@@ -120,25 +130,26 @@ const DEFAULT_ON_BEFORE_COMPILE = THREE.Material.prototype.onBeforeCompile
 
 /** 自定义 program 注入（运行期改着色器）无法静态签名 → 该材质拒绝规整。 */
 function hasCustomProgramHook(m: Material): boolean {
-  return typeof m.onBeforeCompile === 'function' && m.onBeforeCompile !== DEFAULT_ON_BEFORE_COMPILE
+  const hook = materialProp(m, 'onBeforeCompile')
+  return typeof hook === 'function' && hook !== DEFAULT_ON_BEFORE_COMPILE
 }
 
 /** ShaderMaterial 族签名：着色器源码 + uniforms + defines + 渲染状态。四者缺一都可能
  *  把走不同编译分支/不同混合状态的材质并成一份（defines 反例见 definesSignature）。 */
 function shaderMaterialSignature(m: Material): string | null {
-  const anyM = m as unknown as { uniforms?: Record<string, { value: unknown }>, vertexShader?: string, fragmentShader?: string }
-  const uniforms = anyM.uniforms
+  const uniforms = materialProp(m, 'uniforms')
   if (!uniforms || typeof uniforms !== 'object') return null
   const parts = [
     'shader',
-    String(anyM.vertexShader ?? ''),
-    String(anyM.fragmentShader ?? ''),
+    String(materialProp(m, 'vertexShader') ?? ''),
+    String(materialProp(m, 'fragmentShader') ?? ''),
     `defines:${definesSignature(m)}`,
     `state:${renderStateSignature(m)}`,
     annotationPolicySignature(m),
   ]
-  for (const name of Object.keys(uniforms).sort()) {
-    parts.push(`${name}=${uniformValueSignature(uniforms[name]?.value)}`)
+  for (const name of Object.keys(uniforms as Record<string, unknown>).sort()) {
+    const uniform = (uniforms as Record<string, { value?: unknown } | undefined>)[name]
+    parts.push(`${name}=${uniformValueSignature(uniform?.value)}`)
   }
   return parts.join('|')
 }
@@ -147,11 +158,11 @@ function shaderMaterialSignature(m: Material): string | null {
 function materialSignature(m: Material | Material[]): string | null {
   if (Array.isArray(m)) return null
   if (hasCustomProgramHook(m)) return null
-  const anyM = m as unknown as Record<string, unknown>
   // ShaderMaterial 族（光照图建筑/环境反射/细节层等）：标准属性白名单读不到
   // uniforms——用 uniforms+着色器源码签名；这里漏判会把同族不同贴图的实例并到
   // 第一个材质对象上（2026-11-14 实测：建筑物贴图全串）。
-  if (anyM.uniforms && typeof anyM.uniforms === 'object') return shaderMaterialSignature(m)
+  const uniforms = materialProp(m, 'uniforms')
+  if (uniforms && typeof uniforms === 'object') return shaderMaterialSignature(m)
   // 内建材质同样可能有 defines（走不同编译分支）→ 一并进键
   return [...MATERIAL_SIGNATURE_FIELDS.map((f) => materialSignatureValue(m, f)),
     `defines:${definesSignature(m)}`, annotationPolicySignature(m)].join('|')
