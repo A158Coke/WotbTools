@@ -45,6 +45,23 @@ describe('chooseClickInfoPosition', () => {
     expect(overlaps(above, 160, 100, band)).toBe(false)
   })
 
+  it('评审反例 2：三面板夹击、点击在中部，仍能找到空位（网格搜索，不只单轴贴边）', () => {
+    const panels: ClickInfoRect[] = [
+      { left: 60, top: 20, right: 284, bottom: 58 },
+      { left: 340, top: 168, right: 580, bottom: 312 },
+      { left: 20, top: 240, right: 260, bottom: 312 },
+    ]
+    const pos = chooseClickInfoPosition({
+      clickX: 155, clickY: 125, width: 190, height: 120,
+      viewportWidth: 600, viewportHeight: 320, panels,
+    })
+    for (const panel of panels) expect(overlaps(pos, 190, 120, panel), JSON.stringify(pos)).toBe(false)
+    expect(pos.left).toBeGreaterThanOrEqual(8)
+    expect(pos.top).toBeGreaterThanOrEqual(8)
+    expect(pos.left + 190).toBeLessThanOrEqual(600 - 8 + 1)
+    expect(pos.top + 120).toBeLessThanOrEqual(320 - 8 + 1)
+  })
+
   it('四个角都被面板占满时仍返回视口内的钳制位（读数优先，不越界）', () => {
     const panels: ClickInfoRect[] = [
       { left: 0, top: 0, right: 400, bottom: 200 },

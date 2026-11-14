@@ -57,13 +57,20 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(kernel).toMatch(/input\.viewportHeight - h - pad/)
     // 避让固定 HUD 面板（browser-armor-mobile 门禁：四块互不相交）：候选位逐个测交
     expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
-    expect(kernel).toMatch(/if \(!hitsPanel\(x, y\)\) \{ chosen = \{ left: x, top: y \}; break \}/)
+    expect(kernel).toMatch(/const accept = \(rawX: number, rawY: number\): \{ left: number, top: number \} \| null =>/)
+    expect(kernel).toMatch(/return hitsPanel\(x, y\) \? null : \{ left: Math\.round\(x\), top: Math\.round\(y\) \}/)
+    // 由近及远网格兜底：单轴贴边找不到空位时仍能搜索到（评审反例 2）
+    expect(kernel).toMatch(/const offsets: Array<\[number, number, number\]> = \[\]/)
+    expect(kernel).toMatch(/offsets\.sort\(\(a, b\) => a\[0\] - b\[0\] \|\| a\[1\] - b\[1\] \|\| a\[2\] - b\[2\]\)/)
     // 两条路径都写：厚度模式（几何量）与判定模式（判定首层）
     expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBeGreaterThanOrEqual(2)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
     // 判定路径取首层并经 L.resultLabel 做三语文案（不得在内核直拼中文）
     expect(kernel).toMatch(/const firstLayer = trajLayers\[0\]/)
     expect(kernel).toMatch(/L\.resultLabel \? L\.resultLabel\(resultCode\) : resultCode/)
+    // 整体 ERROR 优先于首层布尔值（HE 半径缺失/采样失败时不得显示成"击穿"）
+    expect(kernel).toMatch(/const resultCode = clickInfoResultCode\(res\.result, firstLayer\)/)
+    expect(kernel).toMatch(/export function clickInfoResultCode\(/)
     // 部件名同样走 L.partName（否则中文/西语界面退回 Hull Plate 这类英文内部名）
     expect(kernel).toMatch(/L\.partName \? L\.partName\(firstLayer\.name\) : firstLayer\.name/)
     // 容器尺寸变化后旧点击坐标失效：resize 必须隐藏点选卡（否则被 overflow 裁掉）

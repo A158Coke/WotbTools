@@ -120,10 +120,16 @@ export function faceAngleAndEffective(
     return { angleDeg, effective: Number.isFinite(effective) ? effective : null }
 }
 
-/** 点选卡位置选择（纯函数）：跟随点击点，并在 6 个候选位中取第一个
- *  「完整落在视口内 + 不与任何可见 HUD 面板相交」的位置。
- *  候选顺序固定（右下 → 右上 → 左下 → 左上 → 正上 → 正下），不是统计打分；
- *  全部被占时返回第一个钳制位（读数优先于美观，正常布局不会走到）。 */
+/** 点选卡位置选择（纯函数）：跟随点击点，并在确认无遮挡的位置里取**离点击点最近**的。
+ *
+ *  搜索顺序固定、无统计打分：
+ *   1. 点击点 6 个候选（右下/右上/左下/左上/正上/正下）；
+ *   2. 贴面板边缘的候选（每个面板的下沿/上沿/右沿/左沿）；
+ *   3. 由近及远的网格：以 gap 为步长枚举 (dx, dy)，按 |dx|+|dy| 升序逐层扫描
+ *      ——保证只要视口里存在能容纳卡片的空位就一定找到（评审反例：单轴贴边会漏掉
+ *      需要同时调整横纵坐标的空位，如 (100,72)）；
+ *   4. 全部被占时才退回首个钳制位（读数优先于美观，正常布局不会走到）。
+ */
 export interface ClickInfoRect { left: number, top: number, right: number, bottom: number }
 
 export function chooseClickInfoPosition(input: {
@@ -142,7 +148,21 @@ export function chooseClickInfoPosition(input: {
     const { clickX: cx, clickY: cy, width: w, height: h } = input
     const clampX = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportWidth - w - pad))
     const clampY = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportHeight - h - pad))
-    const candidates: Array<[number, number]> = [
+    const hitsPanel = (x: number, y: number): boolean => input.panels.some(panel =>
+        x + w > panel.left && x < panel.right && y + h > panel.top && y < panel.bottom)
+
+    const tested = new Set<string>()
+    const accept = (rawX: number, rawY: number): { left: number, top: number } | null => {
+        const x = clampX(rawX)
+        const y = clampY(rawY)
+        const key = `${x},${y}`
+        if (tested.has(key)) return null
+        tested.add(key)
+        return hitsPanel(x, y) ? null : { left: Math.round(x), top: Math.round(y) }
+    }
+
+    // 1) 点击点附近
+    const nearby: Array<[number, number]> = [
         [cx + gap, cy + gap],
         [cx + gap, cy - h - gap],
         [cx - w - gap, cy + gap],
@@ -150,25 +170,48 @@ export function chooseClickInfoPosition(input: {
         [cx - w / 2, cy - h - gap],
         [cx - w / 2, cy + gap],
     ]
-    // 点击点附近全被面板占住时（例如点击贴近左上胶囊），退到「贴着面板边缘」的
-    // 位置：面板下沿/上沿/右沿/左沿各一个候选，保证总能找到一个不压在 HUD 上的
-    // 最近可用位。仍是确定性顺序（按面板出现次序），不是打分。
+    for (const [x, y] of nearby) {
+        const hit = accept(x, y)
+        if (hit) return hit
+    }
+    // 2) 贴面板边缘（同时调整横纵坐标的情形交给下面的网格）
     for (const panel of input.panels) {
-        candidates.push([cx, panel.bottom + gap])
-        candidates.push([cx, panel.top - h - gap])
-        candidates.push([panel.right + gap, cy])
-        candidates.push([panel.left - w - gap, cy])
+        for (const [x, y] of [[cx, panel.bottom + gap], [cx, panel.top - h - gap],
+            [panel.right + gap, cy], [panel.left - w - gap, cy]] as Array<[number, number]>) {
+            const hit = accept(x, y)
+            if (hit) return hit
+        }
     }
-    const hitsPanel = (x: number, y: number): boolean => input.panels.some(panel =>
-        x + w > panel.left && x < panel.right && y + h > panel.top && y < panel.bottom)
-    const first = candidates[0]
-    let chosen = { left: clampX(first[0]), top: clampY(first[1]) }
-    for (const [rawX, rawY] of candidates) {
-        const x = clampX(rawX)
-        const y = clampY(rawY)
-        if (!hitsPanel(x, y)) { chosen = { left: x, top: y }; break }
+    // 3) 由近及远网格：|dx|+|dy| 升序，同层按 (dy, dx) 固定序
+    const maxStep = Math.ceil(Math.max(input.viewportWidth, input.viewportHeight) / gap) + 1
+    const offsets: Array<[number, number, number]> = []
+    for (let sx = -maxStep; sx <= maxStep; sx++) {
+        for (let sy = -maxStep; sy <= maxStep; sy++) {
+            offsets.push([Math.abs(sx) + Math.abs(sy), sy * gap, sx * gap])
+        }
     }
-    return { left: Math.round(chosen.left), top: Math.round(chosen.top) }
+    offsets.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
+    for (const [, dy, dx] of offsets) {
+        const hit = accept(cx + dx, cy + dy)
+        if (hit) return hit
+    }
+    // 4) 回退：首个钳制位
+    return { left: Math.round(clampX(cx + gap)), top: Math.round(clampY(cy + gap)) }
+}
+
+/** 点选卡「结果」列的结果码（纯函数）。**整体判定为 ERROR 时优先于首层布尔值**：
+ *  HE 爆炸半径缺失 / 溅射采样器失败时 penetration.js 返回 `result: 'ERROR'` 与零伤害，
+ *  但仍保留带 `penetrated` 的几何层；若直接读首层会把「判定不可用」显示成绿色"击穿"，
+ *  与轨迹卡的错误提示矛盾（评审 P2）。返回码由调用方经 `L.resultLabel` 本地化。 */
+export function clickInfoResultCode(
+    overallResult: string | null | undefined,
+    first: { penetrated?: boolean, ricochet?: boolean } | null | undefined,
+): 'ERROR' | 'PENETRATION' | 'RICOCHET' | 'BLOCKED' {
+    if (overallResult === 'ERROR') return 'ERROR'
+    if (!first) return 'BLOCKED'
+    if (first.ricochet) return 'RICOCHET'
+    if (first.penetrated) return 'PENETRATION'
+    return 'BLOCKED'
 }
 
 export function createJudgment(deps: JudgmentDeps) {
@@ -808,8 +851,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 {
                     const firstLayer = trajLayers[0]
                     if (firstLayer) {
-                        const resultCode = firstLayer.ricochet ? 'RICOCHET'
-                            : firstLayer.penetrated ? 'PENETRATION' : 'BLOCKED'
+                        // 整体 ERROR（HE 半径缺失/采样失败）优先，避免把不可用判定显示成击穿
+                        const resultCode = clickInfoResultCode(res.result, firstLayer)
                         const num = (value: unknown): number | null =>
                             typeof value === 'number' && Number.isFinite(value) ? value : null
                         writeClickInfo({
@@ -824,7 +867,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                             pen: num(firstLayer.remainBefore) ?? pen,
                             result: L.resultLabel ? L.resultLabel(resultCode) : resultCode,
                             resultClass: resultCode === 'PENETRATION' ? 'pen'
-                                : resultCode === 'RICOCHET' ? 'ricochet' : 'bounce',
+                                : resultCode === 'RICOCHET' ? 'ricochet'
+                                    : resultCode === 'ERROR' ? '' : 'bounce',
                         })
                         if (lastClickClient) placeClickInfo(lastClickClient.x, lastClickClient.y)
                     }
