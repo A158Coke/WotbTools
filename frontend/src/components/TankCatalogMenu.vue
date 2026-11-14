@@ -512,12 +512,16 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
-.tp-card.is-collector:not(.is-premium) { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
+/* 高级 / 收藏战车：整卡着色（2026-11-14 反馈，不再用边框）——底色混入 warning/info，
+   边框保持默认 subtle；hover 在各自底色上加深，选中态仍以 accent 边框区分。 */
+.tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 14%, var(--color-surface-1)); }
+.tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 
 @media (hover: hover) {
   .tp-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
+  .tp-card.is-premium:hover { background: color-mix(in oklab, var(--color-warning) 22%, var(--color-surface-1)); }
+  .tp-card.is-collector:not(.is-premium):hover { background: color-mix(in oklab, var(--color-info) 22%, var(--color-surface-1)); }
 }
 
 .tp-media {

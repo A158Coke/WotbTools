@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { orderDatasetsForDisplay } from '../utils/datasetOrder.js'
 import {
   ASSET_BASE_STORAGE,
   DATA_VERSION_QUERY,
@@ -144,7 +145,8 @@ export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
   const selected = ref<string>(dataVersionId() ?? '')
-  const options = computed<DatasetOption[]>(() => state.value.datasets.map((entry) => ({
+  // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式 → 其余版本号递降。
+  const options = computed<DatasetOption[]>(() => orderDatasetsForDisplay(state.value.datasets).map((entry) => ({
     value: entry.id,
     label: entry.label,
     tankCount: typeof entry.tank_count === 'number' ? entry.tank_count : null,
