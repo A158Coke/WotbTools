@@ -233,6 +233,8 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
 
+- **5004000（5.4.0；2026-11-14 用户要求，随本候选 publish 生效）** —— 用户指令的 minor 强制更新例外：生产全体客户端（≤5.1.0）内置 bundle 早于 2026-11-11 dataset id `_` 字符集放宽，资产 origin 的 `11.21.0_1` 使其版本选择器整目录 fail-closed（用户反馈「版本列表加载失败」）；且前端已只支持 Native Bridge 4，`guard_min_supported` fail-closed 要求 floor 强制 bridge-3 客户端升级。目标为 `latestVersionCode = minSupportedVersionCode = 5004000`（候选 versionCode）。仓库变量已在 5.4.0 候选 stage 前设置（2026-11-14）；设置变量不等于线上门槛已生效。
+
 - **4001000（4.1.0；2026-11-04 用户明确要求，随候选 publish 生效）** —— 用户选择 minor 版本强制更新例外，要求低于 4.1.0 的客户端升级，以取得完整场景立体结构。仓库变量需在该候选合并前设置；设置变量不等于线上门槛已生效。
 
 - **3017007（3.17.7；2026-10-27 用户要求，随本候选 publish 生效）** —— 用户指令的 patch 强制更新例外延续：所有低于 3.17.7 的客户端必须升级，以取得隐藏段（盲炮）掉血在二次点亮兑现的血量链修复。目标为 `latestVersionCode = minSupportedVersionCode = 3017007`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
