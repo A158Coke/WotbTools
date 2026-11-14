@@ -40,11 +40,12 @@ object AgentAssetProxy {
     private const val READ_TIMEOUT_MS = 30_000
     private const val DEFAULT_CONTENT_TYPE = "application/octet-stream"
     private val NO_STORE = mapOf("Cache-Control" to "no-store")
+    private val datasetStampPath = Regex("${LOCAL_PATH_PREFIX}v/[^/]+/version\\.json")
 
     /** 在 LocalRuntimeServer worker 线程调用（允许网络 I/O）。 */
-    internal fun intercept(context: Context, path: String): ReplayIntentHandler.StreamResponse {
+    internal fun intercept(context: Context, path: String, upstream: URL = URL(upstreamUrl(path))): ReplayIntentHandler.StreamResponse {
         return try {
-            fetchAndServe(context, path, conditional = true)
+            fetchAndServe(context, path, upstream, conditional = true)
         } catch (_: IOException) {
             val cached = entry(context, path)
             if (cached != null) {
@@ -57,13 +58,13 @@ object AgentAssetProxy {
         }
     }
 
-    private fun fetchAndServe(context: Context, path: String, conditional: Boolean): ReplayIntentHandler.StreamResponse {
+    private fun fetchAndServe(context: Context, path: String, upstream: URL, conditional: Boolean): ReplayIntentHandler.StreamResponse {
         val dir = cacheDir(context)
         dir.mkdirs()
         val entry = entry(context, path)
-        val conn = open(path, entry?.etag.takeIf { conditional && it != null })
+        val conn = open(upstream, entry?.etag.takeIf { conditional && it != null })
         try {
-            when (conn.responseCode) {
+            when (val status = conn.responseCode) {
                 HttpURLConnection.HTTP_NOT_MODIFIED -> {
                     // 304：回放缓存。但等待上游响应期间，条目可能已被 trimCache 或系统
                     // cacheDir 回收删除（getCacheDir 契约允许随时清理）——此时 entry 仍
@@ -78,22 +79,32 @@ object AgentAssetProxy {
                             // 缓存文件在等待期间消失：无条件重取一次。
                         }
                     }
-                    return fetchAndServe(context, path, conditional = false)
+                    return fetchAndServe(context, path, upstream, conditional = false)
                 }
                 HttpURLConnection.HTTP_OK -> {
                     val stored = store(context, path, conn)
                     trimCache(dir)
                     return stored.response()
                 }
-                else -> throw IOException("asset upstream HTTP ${conn.responseCode}")
+                HttpURLConnection.HTTP_NOT_FOUND, HttpURLConnection.HTTP_GONE -> {
+                    // A removed version stamp tells the selector to recover to the default dataset.
+                    if (!datasetStampPath.matches(path)) throw IOException("asset upstream HTTP $status")
+                    if (entry != null) {
+                        metaFile(context, path).delete()
+                        entry.body.delete()
+                    }
+                    val reason = if (status == HttpURLConnection.HTTP_NOT_FOUND) "Not Found" else "Gone"
+                    return ReplayIntentHandler.StreamResponse(status, reason, headers = NO_STORE)
+                }
+                else -> throw IOException("asset upstream HTTP $status")
             }
         } finally {
             conn.disconnect()
         }
     }
 
-    private fun open(path: String, etag: String?): HttpURLConnection =
-        (URL(upstreamUrl(path)).openConnection() as HttpURLConnection).apply {
+    private fun open(upstream: URL, etag: String?): HttpURLConnection =
+        (upstream.openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true

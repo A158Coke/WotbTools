@@ -67,7 +67,7 @@ const state = ref<CatalogState>({
 })
 
 let inflight: Promise<CatalogState> | null = null
-let healedStaleSelection = false
+let resolvingStaleSelection = false
 
 function validDataset(entry: unknown): entry is DatasetEntry {
   if (!entry || typeof entry !== 'object') return false
@@ -102,6 +102,34 @@ export function dataVersionUrl(href: string, id: string): string {
   return url.toString()
 }
 
+function requestedDatasetId(): string {
+  const base = assetOrigin()
+  const origin = stripDatasetSuffix(base)
+  return origin === base ? dataVersionId() ?? '' : base.slice(origin.length + '/v/'.length)
+}
+
+function persistDataset(value: string): void {
+  if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
+  else localStorage.removeItem(DATA_VERSION_STORAGE)
+  // A versioned dev override takes precedence over ?data= in assetBase.
+  const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
+  if (storedBase && storedBase !== stripDatasetSuffix(storedBase)) {
+    localStorage.setItem(ASSET_BASE_STORAGE, stripDatasetSuffix(storedBase))
+  }
+}
+
+async function resolveUnlistedDataset(origin: string, requested: string, datasets: DatasetEntry[]): Promise<string | null> {
+  try {
+    const response = await fetch(`${origin}/v/${requested}/version.json`, { cache: 'no-cache' })
+    if (!response.ok) return response.status === 404 || response.status === 410 ? '' : null
+    const stamp = await response.json()
+    return datasets.find(entry => entry.id === stamp?.dataset_id && entry.status !== 'revoked')?.id ?? ''
+  } catch {
+    // A transient network failure leaves the current selection intact.
+    return null
+  }
+}
+
 export function loadDataVersionCatalog({ force = false }: { force?: boolean } = {}): Promise<CatalogState> {
   if (inflight && !force) return inflight
   const origin = stripDatasetSuffix(assetOrigin())
@@ -119,9 +147,10 @@ export function loadDataVersionCatalog({ force = false }: { force?: boolean } = 
       if (!isCatalog(doc)) throw new Error('versions.json schema 不支持')
       if (!doc.datasets.every(validDataset)) throw new Error('versions.json 含非法 dataset')
       const defaultId = typeof doc.default === 'string' ? doc.default : null
+      const datasets = doc.datasets.filter(validDataset)
       state.value = {
         status: 'ready',
-        datasets: doc.datasets.filter(validDataset),
+        datasets,
         defaultId,
         error: null,
       }
@@ -145,17 +174,21 @@ export function loadDataVersionCatalog({ force = false }: { force?: boolean } = 
 export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
-  const selected = ref<string>(dataVersionId() ?? '')
-  // 目录就绪后自愈：持久化选中值已从目录下线（如 supertest → 11.4.0.130 改名）时，
-  // 旧 id 会让触发器显示幽灵条目、资产按 /v/<旧id> 404——回默认并整页重载一次
-  //（select 本身就是重载语义； healed 标记防多实例重复触发）。
-  // immediate：目录在先前的挂载周期里已经就绪（移动端抽屉开合会卸载/重建实例）时，
-  // 新实例注册 watcher 不触发变更——注册时也要检查当前快照，否则下线 id 持续 404。
-  watch(state, (snapshot) => {
-    if (healedStaleSelection || snapshot.status !== 'ready' || !selected.value) return
-    if (snapshot.datasets.some(entry => entry.id === selected.value)) return
-    healedStaleSelection = true
-    select('')
+  const selected = ref(requestedDatasetId())
+  // The catalog may already be ready at mount. Resolve an alias before falling back
+  // to the default, and allow only one navigation across selector instances.
+  watch(state, async (snapshot) => {
+    const requested = selected.value
+    if (resolvingStaleSelection || snapshot.status !== 'ready' || !requested) return
+    if (snapshot.datasets.some(entry => entry.id === requested)) return
+    resolvingStaleSelection = true
+    const target = await resolveUnlistedDataset(stripDatasetSuffix(assetOrigin()), requested, snapshot.datasets)
+    if (target === null) {
+      resolvingStaleSelection = false
+      return
+    }
+    persistDataset(target)
+    location.replace(dataVersionUrl(location.href, target))
   }, { immediate: true })
   // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式 → 其余版本号递降。
   const options = computed<DatasetOption[]>(() => orderDatasetsForDisplay(state.value.datasets).map((entry) => ({
@@ -177,17 +210,7 @@ export function useDataVersion() {
   /** 切换并重载；id 为空 = 默认。 */
   function select(id: string): void {
     const value = id && DATASET_ID_RE.test(id) ? id : ''
-    if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
-    else localStorage.removeItem(DATA_VERSION_STORAGE)
-    // 持久化的 ?assets= override 若还带着旧 dataset 段（如曾访问
-    // ?assets=https://origin/v/11.21.0），必须同步剥掉：否则重载后 withDataset
-    // 走 escape hatch 原样使用旧 /v/<id>，选择器显示新 dataset、资产却仍从旧
-    // dataset 取（review 复现案例）。URL 上的 assets 参数由 dataVersionUrl 剥。
-    const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
-    if (storedBase) {
-      const stripped = stripDatasetSuffix(storedBase)
-      if (stripped !== storedBase) localStorage.setItem(ASSET_BASE_STORAGE, stripped)
-    }
+    persistDataset(value)
     location.assign(dataVersionUrl(location.href, value))
   }
 
