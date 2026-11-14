@@ -274,13 +274,13 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
 
   /**
    * 坦克卡片高级/收藏底色（TankCatalogMenu .tp-card.is-*，2026-11-14 评审）：
-   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色，车名继承
-   * text-primary。此前尝试的语义名色（含 90% 语义 + 10% text-primary 混色）对
-   * 自身底色只有 3.27–3.95:1——语义色与底色同源，任何比例都到不了 4.5。
-   * 这里按组件实际 CSS 复算全部主题 × 语义 × 常态/hover 的名字对比度，
-   * 并锁定「车名不得覆盖继承色」的映射契约。
+   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色。语义色与底色同源，
+   * 任何比例的语义文字（含向 text-primary 混色）在该底色上都到不了 4.5——车名继承
+   * text-primary（实测 4.91–9.19），属性标签在染色卡上覆写为 text-primary（常态卡
+   * 仍用 tertiary，由上方主测试覆盖）。这里从组件实际规则提取各文字元素的 token，
+   * 按全部主题 × 语义 × 常态/hover 复算，并锁定映射契约。
    */
-  it('坦克卡片高级/收藏底色：车名（继承 text-primary）对 36%/46% 语义底 ≥ 4.5', () => {
+  it('坦克卡片高级/收藏底色：车名与属性标签对 36%/46% 语义底 ≥ 4.5，语义 pill 对自绘 16% 底 ≥ 4.5', () => {
     const component = readFileSync(resolve(HERE, '../../components/TankCatalogMenu.vue'), 'utf8')
     const style = component.slice(component.indexOf('<style'))
     // 映射契约：任何指向 .tp-card-name 的规则都不得声明 color（含 background-color 之外的
@@ -289,15 +289,37 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
       .filter(match => match[1].includes('.tp-card-name') && /(?:^|[^-])color\s*:/.test(match[2]))
       .map(match => match[1].trim())
     expect(colorRules).toEqual([])
+    // 属性标签：染色卡（is-premium / is-collector:not(.is-premium)）必须覆写颜色，
+    // token 从实际规则提取——评审二轮指出 tertiary 在混色底上 1.96–3.53，secondary
+    // 亦不达标（2.85–5.26），当前方案为 text-primary。
+    // 两条染色卡选择器共用一个声明块（分组规则），正则按声明块提取出一份 token。
+    const labelTokens = [...style.matchAll(/\.tp-card\.is-(?:premium|collector(?::not\(\.is-premium\))?) \.tp-stat-label[^{]*\{[^}]*color:\s*var\((--color-[\w-]+)\)/g)].map(match => match[1])
+    expect(labelTokens, '染色卡属性标签覆写规则缺失').toEqual(['--color-text-primary'])
     const failures: string[] = []
     for (const [name, selector] of Object.entries(THEMES)) {
       const tokens = block(selector)
       for (const semantic of ['--color-warning', '--color-info']) {
         for (const alpha of [0.36, 0.46]) {
           const bg = oklabMix(tokens[semantic], tokens['--color-surface-1'], alpha)
-          const value = ratio(tokens['--color-text-primary'], bg)
-          if (value < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${value.toFixed(2)}`)
+          const name_ = ratio(tokens['--color-text-primary'], bg)
+          if (name_ < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${name_.toFixed(2)}`)
+          for (const labelToken of labelTokens) {
+            const value = ratio(tokens[labelToken], bg)
+            if (value < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% ${labelToken} ${value.toFixed(2)}`)
+          }
         }
+      }
+    }
+    // 语义 pill（is-tier/is-premium/t-light/t-medium/t-heavy）自绘 16% 语义底，
+    // 与卡片底色无关；组合同样从组件实际规则提取，防止比例或 token 漂移。
+    const pillCombos = [...style.matchAll(/\.tp-pill[\w.:-]*\s*\{[^}]*background:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*16%,\s*var\(--color-surface-1\)\);\s*color:\s*var\((--color-[\w-]+)\);/g)]
+      .map(match => [match[2], match[1]] as const)
+    expect(pillCombos.length, '语义 pill 组合提取数量').toBeGreaterThanOrEqual(4)
+    for (const [textToken, bgToken] of pillCombos) {
+      for (const [name, selector] of Object.entries(THEMES)) {
+        const tokens = block(selector)
+        const value = ratio(tokens[textToken], oklabMix(tokens[bgToken], tokens['--color-surface-1'], 0.16))
+        if (value < 4.5) failures.push(`${name} pill ${textToken} on 16% ${bgToken} ${value.toFixed(2)}`)
       }
     }
     expect(failures).toEqual([])
