@@ -47,8 +47,12 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     // 跟随点击位置：脚本写 left/top（相对场景容器，带边界钳制）
     expect(kernel).toMatch(/card\.style\.left = /)
     expect(kernel).toMatch(/card\.style\.top = /)
-    expect(kernel).toMatch(/if \(x \+ w > rect\.width - pad\)/)
-    expect(kernel).toMatch(/if \(y \+ h > rect\.height - pad\)/)
+    // 视口钳制（clampX/clampY）：卡片不越出容器余量
+    expect(kernel).toMatch(/rect\.width - w - pad/)
+    expect(kernel).toMatch(/rect\.height - h - pad/)
+    // 避让固定 HUD 面板（browser-armor-mobile 门禁：四块互不相交）：候选位逐个测交
+    expect(kernel).toMatch(/for \(const selector of \['#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    expect(kernel).toMatch(/if \(!hitsPanel\(x, y\)\) \{ chosen = \[x, y\]; break \}/)
     // 两条路径都写：厚度模式（几何量）与判定模式（判定首层）
     expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBeGreaterThanOrEqual(2)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)

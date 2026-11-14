@@ -1074,7 +1074,6 @@ onBeforeUnmount(() => {
     color: var(--muted);
     font: var(--type-caption);
     font-size: clamp(10px, 0.55vw + 8.2px, 12px);
-    line-height: 1.35;
     white-space: nowrap;
     pointer-events: none;
     z-index: var(--pb-z-modal);
@@ -1085,13 +1084,17 @@ onBeforeUnmount(() => {
 .armor-view #click-info .pen { color: var(--green); }
 .armor-view #click-info .bounce { color: var(--red); }
 .armor-view #click-info .ricochet { color: var(--orange); }
-/* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距与字号，结果卡不压车体。 */
+/* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距、字号与行距。
+   五行读数在 320–390px 高的视口里必须明显小于半屏（browser-armor-mobile 的
+   resultHeightBudget 上限 = 视口高 45%），否则会压住车体与右下射击面板。 */
 @media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .armor-view #click-info {
-        padding: var(--space-1) var(--space-2);
-        font-size: clamp(10px, 2.6vw, 12px);
+        gap: 0;
+        padding: 3px var(--space-2);
+        font-size: clamp(9px, 2.3vw, 11px);
         max-inline-size: min(12rem, calc(100% - var(--space-3)));
     }
+    .armor-view #click-info h3 { margin-block-end: 1px; font-size: clamp(10px, 2.4vw, 12px); }
 }
 .armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; cursor: pointer; }
 .armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }

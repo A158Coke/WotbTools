@@ -387,6 +387,13 @@ function checkTouchTargets(failures, layout, label) {
 }
 
 /** 两个可见矩形是否相交（边缘相接不算）。 */
+/** 结果卡高度预算（2026-11-14 用户裁示恢复五行读数后重定）：窄横屏下结果卡从单行胶囊
+ *  变成「部件名 + 五行读数」，40px 上限不再适用。预算 = 视口高的 45%（下限仍 40px），
+ *  既给五行留出空间，又保证卡片不超过小视口的一半——超出即视为布局退化。 */
+function resultHeightBudget(viewportHeight) {
+  return Math.max(40, Math.round((viewportHeight || 0) * 0.45))
+}
+
 function rectsOverlap(a, b) {
   if (!a?.visible || !b?.visible) return false
   return Math.min(a.right, b.right) > Math.max(a.left, b.left) + 0.5
@@ -394,7 +401,7 @@ function rectsOverlap(a, b) {
 }
 
 /** 手机横屏短视口专用几何：紧凑胶囊 / 结果胶囊 / 右下射击 / 左下姿态四块互不相交。 */
-function checkCompactLandscapeHud(failures, layout, label) {
+function checkCompactLandscapeHud(failures, layout, label, viewportHeight) {
   checkCommonGeometry(failures, layout, label)
   const missing = (layout.requiredNodes || []).filter(node => !node.present).map(node => node.selector)
   check(failures, missing.length === 0, `${label}: 场景脚本依赖的 DOM 节点缺失：${missing.join(', ')}`)
@@ -436,7 +443,8 @@ function checkCompactLandscapeHud(failures, layout, label) {
     check(failures, layout.capsule.right + 2 <= result.left,
       `${label}: 结果胶囊没有排在左上胶囊右侧（capsule right=${layout.capsule.right} result left=${result.left}）`)
   }
-  check(failures, result.height <= 40, `${label}: 结果胶囊高度 ${result.height}px，超过 40px`)
+  check(failures, result.height <= resultHeightBudget(viewportHeight),
+    `${label}: 结果卡高度 ${result.height}px，超过预算 ${resultHeightBudget(viewportHeight)}px`)
 
   check(failures, layout.bottomBar.width <= 280,
     `${label}: 右下射击面板宽 ${layout.bottomBar.width}px，超过 280px`)
@@ -1088,7 +1096,7 @@ async function runCompactLandscapeScenario(env, scenario) {
   await page.animationsSettled()
   await delay(100)
   const layout = await page.probe(armorLayoutProbe)
-  checkCompactLandscapeHud(failures, layout, label)
+  checkCompactLandscapeHud(failures, layout, label, scenario.height)
   // 抽屉与厚度过滤行也在场景根内，命中区按紧凑档 token（40）校验。
   const compactFloor = layout.sceneTokens?.hitComfortable ?? 44
 
@@ -1258,8 +1266,8 @@ async function runCompactLandscapeScenario(env, scenario) {
     check(failures, valueLayout.clickInfo?.clipped === false
       && valueLayout.clickRow?.scrollWidth <= (valueLayout.clickInfo?.contentWidth ?? 0) + 1,
       `${label}: 厚度数值行横向溢出结果卡（row=${JSON.stringify(valueLayout.clickRow)} card=${JSON.stringify(valueLayout.clickInfo)}）`)
-    check(failures, valueLayout.clickInfo.height <= 40,
-      `${label}: 厚度结果卡高 ${valueLayout.clickInfo.height}px，超过 40px`)
+    check(failures, valueLayout.clickInfo.height <= resultHeightBudget(scenario.height),
+      `${label}: 厚度结果卡高 ${valueLayout.clickInfo.height}px，超过预算 ${resultHeightBudget(scenario.height)}px`)
     console.log(`[browser-armor-mobile] ${label} thickness "${part} / ${armor}": card=${JSON.stringify(valueLayout.clickInfo)} value=${JSON.stringify(valueLayout.clickArmor)}`)
   }
   await checkThicknessValue('Hull', '200 mm', '200 mm', 'Base armor')
@@ -1287,7 +1295,7 @@ async function runCompactLandscapeScenario(env, scenario) {
   await page.probe(applyCompactResultBadge)
   await page.animationsSettled()
   const finalLayout = await page.probe(armorLayoutProbe)
-  checkCompactLandscapeHud(failures, finalLayout, label)
+  checkCompactLandscapeHud(failures, finalLayout, label, scenario.height)
 
   await captureCompactScreenshot(env, page, scenario.name)
 
