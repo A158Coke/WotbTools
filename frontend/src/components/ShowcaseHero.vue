@@ -22,7 +22,7 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   <div class="showcase-hero-host" :class="{ 'is-compact-host': compact }">
     <section
       class="showcase-hero"
-      :class="{ 'is-compact': compact }"
+      :class="{ 'is-compact': compact, 'has-section': section }"
       :data-section="section"
       data-testid="showcase-hero"
     >
@@ -64,16 +64,25 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   background: var(--theme-hero-scrim), var(--theme-hero-image) right center / cover;
 }
 
-/* 分区主视觉：四套主题共用同一张图，只换遮罩；位置由 sectionHeroes.ts 的唯一映射表驱动 */
-.showcase-hero-art--section {
-  background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--hero-image) var(--hero-pos, right center) / cover, var(--color-surface-1);
+/* 分区图与文字各占一列；遮罩只装饰剩余空间，不盖住原图。 */
+.showcase-hero.has-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--color-surface-1);
 }
-
-/* 紧凑档横幅接近 12:1，cover 只能露出很窄的纵向带：焦点切换到 sectionHeroes 的
-   compactPosition（对准主体带），缺省回退桌面 position。
-   只在桌面断点生效；手机断点在下方用同优先级、更晚声明的规则恢复 portrait 遮罩与 mobilePosition */
-.showcase-hero.is-compact .showcase-hero-art--section {
-  background: var(--theme-hero-section-scrim, var(--theme-hero-scrim)), var(--hero-image) var(--hero-pos-compact, var(--hero-pos, right center)) / cover, var(--color-surface-1);
+.showcase-hero-art--section {
+  position: relative;
+  inset: auto;
+  grid-area: 1 / 2;
+  min-inline-size: 0;
+  margin: var(--space-2);
+  background: var(--hero-image) center / contain no-repeat;
+}
+.showcase-hero.has-section .showcase-hero-content {
+  grid-area: 1 / 1;
+  min-inline-size: 0;
+  max-inline-size: none;
+  overflow-wrap: anywhere;
 }
 
 .showcase-hero-content {
@@ -92,12 +101,7 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 .showcase-hero-stats :deep(strong) { display: block; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
 .showcase-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-block-start: var(--space-3); }
 
-/* 紧凑档：默认保持原有内容密度（桌面 132px、手机 96px 起）；
-   Replay 是经视觉验收确认的例外——cover 的可见纵向占比 = (容器高/宽)×原图宽高比，与源图无关，
-   约 12:1 的 132px 窄条只剩 ~12% 可见带，坦克被裁成炮管残片；
-   ~43% 可见带恰好装下坦克整体。矮桌面窗口（height < 700px，科技树等 flex scrollport
-   会被高横幅压缩）回退默认密度；手机可见带已近一半，不参与放宽。
-   横幅只显示 kicker + 标题，操作在下方工具条 */
+/* 紧凑档保留现有高度与外置工具条。图片列在可用空间内 contain，优先完整性和工作区密度。 */
 .showcase-hero-host.is-compact-host { display: grid; gap: var(--space-2); margin-block-end: var(--space-4); }
 .showcase-hero-host.is-compact-host .showcase-hero { margin-block-end: 0; }
 .showcase-hero-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
@@ -122,12 +126,7 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 }
 .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h2); }
 
-/* Full 档统一响应式高度（Replay compact 已验证策略的推广，同族 clamp）：
-   cover 的可见纵向带占比 = (容器高/宽)×原图宽高比，与源图无关；纯内容撑出的 Full 档
-   最矮只有 123px（league-broadcasts 标题页），1440 下可见带 ~19%，主体被上下裁成碎片；
-   20vw 在 1440 下 ≈288px，可见带 ≈45%，与 Replay 验收过的完整带一致。
-   矮桌面窗口（height < 700px）回退内容密度，横幅不挤压首屏工作区；
-   手机断点不参与——portrait 焦点下可见带已 57%+，加高只会浪费首屏 */
+/* 完整档保留既有桌面高度；矮窗回退内容高度。图片实际大小同时受列宽与高度限制。 */
 @media (width >= 768px) {
   /* align-content 必须显式置 center：grid 默认 normal(stretch) 会把加高出来的空间
      分摊进 auto 行，kicker/标题/说明被各自拉成 ~100px 的空行（review P1 复现）；
@@ -142,33 +141,28 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
 }
 
 @media (width < 768px) {
-  .showcase-hero-art { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 70% / cover; }
-  .showcase-hero-art--section { background: var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1); }
+  .showcase-hero:not(.has-section) .showcase-hero-art { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 70% / cover; }
   /* 浅色主题（冬季）竖屏遮罩几乎全撤后，横幅文字改白色 + 深色描边保住可读性；
      只在手机断点生效——桌面左侧仍有 90° 白色遮罩，深色标题保持原样 */
-  .showcase-hero-kicker { color: var(--theme-hero-kicker-color, var(--color-accent-text)); }
-  .showcase-hero-title {
+  .showcase-hero:not(.has-section) .showcase-hero-kicker { color: var(--theme-hero-kicker-color, var(--color-accent-text)); }
+  .showcase-hero:not(.has-section) .showcase-hero-title {
     color: var(--theme-hero-title-color, var(--color-text-primary));
     text-shadow: var(--theme-hero-text-shadow, none);
   }
-  .showcase-hero-description {
+  .showcase-hero:not(.has-section) .showcase-hero-description {
     color: var(--theme-hero-description-color, var(--color-text-secondary));
     text-shadow: var(--theme-hero-text-shadow, none);
   }
-  .showcase-hero-stats { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
+  .showcase-hero:not(.has-section) .showcase-hero-stats { color: var(--theme-hero-description-color, var(--color-text-secondary)); }
   /* 槽内的 stat 标签（.lb-hero-stat-label / .tp-hero-stat-label）显式设了深色，继承打不开，强制跟随容器浅色 */
-  .showcase-hero-stats :deep(span) { color: inherit; }
-  .showcase-hero-stats :deep(strong) { color: var(--theme-hero-stat-color, var(--color-accent-text)); }
+  .showcase-hero:not(.has-section) .showcase-hero-stats :deep(span) { color: inherit; }
+  .showcase-hero:not(.has-section) .showcase-hero-stats :deep(strong) { color: var(--theme-hero-stat-color, var(--color-accent-text)); }
   .showcase-hero-content { padding: var(--space-10) var(--space-4) var(--space-4); }
+  .showcase-hero.has-section .showcase-hero-content { padding: var(--space-6) var(--space-4); }
   .showcase-hero-title { font: var(--type-h1); }
   .showcase-hero.is-compact .showcase-hero-content {
     min-block-size: 96px;
     padding: var(--space-3) var(--space-4);
-  }
-  /* 与桌面 compact 覆盖规则同优先级（0,3,0），但声明在媒体查询内更晚命中：
-     恢复 portrait 遮罩与 mobilePosition，桌面 compactPosition 不影响手机端 */
-  .showcase-hero.is-compact .showcase-hero-art--section {
-    background: var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)), var(--hero-image) var(--hero-pos-mobile, center) / cover, var(--color-surface-1);
   }
   .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h3); }
   .showcase-hero-toolbar { justify-content: flex-start; }

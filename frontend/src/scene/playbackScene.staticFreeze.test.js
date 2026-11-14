@@ -109,3 +109,13 @@ describe('playbackScene 动态分辨率接线（?dynres）', () => {
     expect(src).toMatch(/renderer\.setPixelRatio\(nd\);/)
   })
 })
+
+describe('炮声 seek 失效接线（评审 P2）', () => {
+  it('resetShotsTo（宿主 seekTo 的唯一游标入口）必须调 gunfire.invalidatePending', () => {
+    // 源码级守卫：seek 不经过 prepare/dispose，会话代号不会变；漏接这一句会让
+    // seek 前发起的异步 onShot 在 seek 后播放（旧时间点炮声落到新时间点）。
+    // 行为侧由 gunfireAudio.test.ts 的 invalidatePending 用例覆盖。
+    const src = readFileSync(resolve(here, 'playback/battleRuntime.ts'), 'utf8')
+    expect(src).toMatch(/resetShotsTo\(index: number\) \{ shotPtr = index; gunfire\.invalidatePending\(\); \},/)
+  })
+})

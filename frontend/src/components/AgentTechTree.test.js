@@ -189,3 +189,18 @@ describe('坦克入口', () => {
     expect(router.currentRoute.value.query).toMatchObject({ view: 'agent-tankopedia', tank: '1' })
   })
 })
+
+it('nation keyboard navigation moves focus until activation', async () => {
+  const { wrapper, router } = await mountView()
+  const tabs = wrapper.findAll('[role="tab"]')
+  await tabs[0].trigger('keydown', { key: 'End' })
+  expect(tabs.at(-1).attributes('tabindex')).toBe('0')
+  expect(router.currentRoute.value.query.nation).toBeUndefined()
+  await tabs[1].trigger('click')
+  await flushPromises()
+  expect(wrapper.findAll('[role="tab"][tabindex="0"]')).toHaveLength(1)
+  await tabs.at(-1).trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.query.nation).toBe('european')
+  wrapper.unmount()
+})

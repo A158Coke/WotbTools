@@ -14,24 +14,58 @@ export function armorCameraPreset(gunPivot: Vector3, gunWorldMatrix: Matrix4, di
 }
 
 /**
- * 视角预设保证炮管指向镜头：机位放在炮轴线上（枢轴 + 炮线方向 × 距离），
- * 旋转中心 = 炮线枢轴，后续环绕即绕炮线检视。距离归用户（缩放层级不回跳，
- * 0x5f3759df 反馈）——不保留旧轨道中心：炮轴线穿过枢轴而非车体中心，
- * 沿旧中心摆位会让炮管指向镜头之外（2026-11-10 反馈）。
- * userDistance 非正数/非有限时退回预设摆位距离；direction 为零向量时
- * 退回完整预设姿态（target + preset position）。
+ * 视角预设同时满足两个约束（2026-11-13 反馈定稿 + review 修正）：
+ * 1. 旋转中心（轨道 target）保持默认/用户当前值，**任何回退都不得移动**；
+ * 2. 炮管指向镜头：机位放在炮轴线（枢轴 + 炮线方向 × t，t > 0）上。
+ * 距离是尽力而为：优先精确等于用户距离（缩放层级不回跳），不可达时取垂足站位
+ * （指向优先于距离），且站位受 OrbitControls `maxDistance` 约束——超出上限的机位
+ * 会被 `controls.update()` 沿中心方向拉回，反而破坏指向，因此一并纳入选址。
+ *
+ * 炮轴上到中心的距离 d(t)² = (t − proj)² + perp²（proj = toCenter·dir，perp = 垂距）。
+ * 站位优先级：①精确用户距离（t_D = proj + √(D² − perp²)，需 D ≥ perp、t_D > 0、
+ * D ≤ maxDistance）②垂足/安全站位（t = max(proj, standOff)，防机位贴炮尾；指向优先，
+ * 距离让位）③距离上限内的最大炮轴站位（t = proj + √(maxDistance² − perp²)）。
+ * 全部不可用（炮轴整体在 maxDistance 之外/正向无解）→ 保持用户当前取景不动
+ * （中心契约 + 当前视图保住，指向性降级——此时炮管姿态仍按预设改变）。
  */
-export function armorPresetPlacement(
+export function armorPresetViewPlacement(
+  prevTarget: Vector3,
+  prevCamera: Vector3,
   pose: { target: Vector3; position: Vector3 },
-  userDistance: number,
+  maxDistance?: number,
 ) {
   const direction = pose.position.clone().sub(pose.target)
   if (direction.lengthSq() === 0) return pose
-  const distance = Number.isFinite(userDistance) && userDistance > 0
-    ? userDistance
-    : direction.length()
-  return {
-    target: pose.target.clone(),
-    position: pose.target.clone().addScaledVector(direction.normalize(), distance),
+  direction.normalize()
+  const offset = prevCamera.clone().sub(prevTarget)
+  const distance = offset.length() > 0 ? offset.length() : pose.position.distanceTo(pose.target)
+
+  const toCenter = prevTarget.clone().sub(pose.target)
+  const proj = toCenter.dot(direction)
+  const perp2 = Math.max(toCenter.lengthSq() - proj * proj, 0)
+  const perp = Math.sqrt(perp2)
+  const standOff = pose.position.distanceTo(pose.target) // 预设摆位距离（15m）
+  const maxD = Number.isFinite(maxDistance) && maxDistance! > 0 ? maxDistance! : Infinity
+
+  const candidates: number[] = []
+  if (distance >= perp) {
+    const tExact = proj + Math.sqrt(distance * distance - perp2)
+    if (tExact > 0 && distance <= maxD) candidates.push(tExact)
   }
+  const tSafe = Math.max(proj, standOff)
+  if (Math.hypot(tSafe - proj, perp) <= maxD) candidates.push(tSafe)
+  if (perp <= maxD) {
+    const tAtMax = proj + Math.sqrt(maxD * maxD - perp2)
+    if (tAtMax > 0) candidates.push(tAtMax)
+  }
+  for (const t of candidates) {
+    if (t > 0) {
+      return {
+        target: prevTarget.clone(),
+        position: pose.target.clone().addScaledVector(direction, t),
+      }
+    }
+  }
+  // 炮轴上无合规站位：保持用户当前取景（中心不动；枪姿态已按预设改变，指向性降级）。
+  return { target: prevTarget.clone(), position: prevCamera.clone() }
 }

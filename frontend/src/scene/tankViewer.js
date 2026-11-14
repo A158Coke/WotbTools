@@ -26,7 +26,7 @@ import { defaultStateId } from '../data/armorStates.js'
 // URL 契约基线（urlContract.test.js）经此 re-export；实现 owner = viewer/viewerMath.js
 export { dollyZoomFov, mirrorShotData } from './viewer/viewerMath.js'
 import { dollyZoomFov } from './viewer/viewerMath.js'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 import { createTurretRig } from './viewer/turretRig.js'
 import { createModelLifecycle } from './viewer/modelLifecycle.js'
 import { createHeatmapPipeline } from './viewer/heatmap.js'
@@ -162,6 +162,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         const cleanups = [];
+        let lastPresetTarget = null; // 最近一次相机预设的炮轴基准点（pose.target，门禁量炮线俯角用）
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
         let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
@@ -455,6 +456,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             getCameraMotion: () => ({ cameraMovedAt, frameIntervalMs }),
             getRcLastClick: () => rcLastClick,
             setRcLastClick: (v) => { rcLastClick = v; },
+            getLastPresetTarget: () => lastPresetTarget,
         });
         // 瞄准输入：Pointer Events 会话与炮塔/炮管拖拽灵敏度（#820 Agent A 出仓）
         const aim = createAimInput({
@@ -684,21 +686,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rig.updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(rig.getArmorPivotGun() || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
-            // preserveView 在清惯性**之前**取距离快照：无阻尼 update 会把残余 panOffset 一次性
+            // 炮轴基准点 = 炮线枢轴（pose.target）：门禁量"炮管指向镜头"以它为基准——
+            // placement.target 是（不动的）轨道中心，不是炮线上的点。
+            lastPresetTarget = pose.target.clone();
+            // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
             // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
-            // 按钮（preserveView）保留用户缩放距离，但机位必须放到炮轴线上、看向炮线枢轴：
-            // 炮轴线穿过枢轴而非车体中心，沿旧轨道中心摆位会让炮管指不到镜头上
-            //（2026-11-10 反馈）；轨道中心随炮线枢轴，后续环绕即绕炮线检视。
-            // URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
-            const userDistance = preserveView
-                ? camera.position.distanceTo(controls.target)
+            // 按钮（preserveView）的两个约束（2026-11-13 反馈定稿）：旋转中心保持
+            // 默认/用户当前值**不得移动**；同时机位移到炮轴线上（距中心 = 用户距离），
+            // 炮管正对镜头。URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
+            const userView = preserveView
+                ? { target: controls.target.clone(), position: camera.position.clone() }
                 : null;
             // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
             const placement = preserveView
-                ? armorPresetPlacement(pose, userDistance)
+                ? armorPresetViewPlacement(userView.target, userView.position, pose, controls.maxDistance)
                 : pose;
             controls.target.copy(placement.target);
             camera.position.copy(placement.position);

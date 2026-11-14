@@ -1761,17 +1761,23 @@
       "upgrade_hint": "Stats, armor and gun limits follow the upgrade state.",
       "upgrade_skill_group": "Tier XI ability {index}",
       "upgrade_skill_option": "Ability {index}",
-      "upgrade_skill_hint": "Choose one ability per group. It applies when fully upgraded; conditional effects require their battle trigger.",
-      "upgrade_effects": "Ability upgrades",
+      "mechanic_summary": "Base mechanic · {name}",
+      "mechanic_choices": "Choose an upgrade",
+      "mechanic_ammunition": "Secondary ammunition",
+      "mechanic_firing": "Firing and reload",
+      "upgrade_skill_hint": "Choose one upgrade per group. It applies at full upgrade, or when researched in a custom build.",
+      "upgrade_effects": "Mechanic parameters",
       "upgrade_effect_attribute": "Attribute",
       "upgrade_effect_current": "Current",
       "upgrade_effect_change": "Total change {value}",
       "upgrade_percentage_points": "{value} pp",
       "upgrade_yes": "Yes",
       "upgrade_no": "No",
+      "upgrade_relax_clip": "Relax enhanced magazine condition",
+      "upgrade_all_hits": "Hit with every shot",
       "upgrade_trigger_hit": "On hit",
       "upgrade_trigger_damage": "On damage",
-      "upgrade_inactive": "Stock · inactive",
+      "upgrade_inactive": "Stock · upgrades inactive",
       "upgrade_custom": "Partially researched · active",
       "upgrade_effect_delta_note": "Current values combine same-version ability data and upgrades. Missing base values show — and known changes only. Battle effects require activation and do not enter normal stats.",
       "upgrade_unsupported": "Upgrade data is incomplete. Fully upgraded stats are unavailable.",
@@ -1797,7 +1803,16 @@
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "Reload speed bonus per stack",
         "COMBAT_FRENZY_MAX_STACKS": "Maximum stacks",
         "ATTRIBUTE_NAME_MAX_HEALTH": "Hit Points",
-        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Reload Time",
+        "AUX_SHELL_TYPE": "Shell type",
+        "AUX_PENETRATION": "Nominal penetration",
+        "AUX_PENETRATION_FAR": "Far penetration (500 m reference)",
+        "AUX_SPEED": "Initial velocity",
+        "AUX_RANGE": "Maximum range",
+        "AUX_MAX_SPEED": "Maximum velocity",
+        "AUX_COUNT": "Rounds per salvo",
+        "CLIP_CAPACITY": "Standard magazine capacity",
+        "ENHANCED_CLIP_CAPACITY": "Enhanced magazine capacity",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Main gun reload time",
         "ATTRIBUTE_NAME_FIRE_START_CHANCE": "Chance of Fire When Engine Is Hit",
         "ATTRIBUTE_NAME_ENGINE_POWER": "Engine Power",
         "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "Forward Speed Limit",
@@ -1821,7 +1836,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "Gun Durability",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "Surveying Device Durability",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "Track Durability",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Turret Rotator Durability"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Turret Rotator Durability",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "Reload between shots in the enhanced magazine",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "Enhanced magazine activation condition",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "Auxiliary gun reload time",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "Auxiliary gun damage per shot",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "Interval between auxiliary shots",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "Maximum speed while charging",
+        "SHELL_OVERHEAT_CHARGE_TIME": "Time to reach full charge",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "Delay before charging starts",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "Minimum damage bonus",
+        "UNGUIDED_ROCKET_ACCELERATION": "Rocket acceleration",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "Initial rocket speed",
+        "UNGUIDED_ROCKET_DAMAGE": "Damage per rocket",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "Reload between rockets",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "Full launcher reload time",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "Reverse speed limit",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "Turret traverse speed",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "Shell 1 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "Shell 2 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "Shell 3 penetration at 100 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "Shell 1 penetration at 500 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "Shell 2 penetration at 500 m",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "Shell 3 penetration at 500 m"
       },
       "title": "Loadout",
       "reset": "Reset",
@@ -1912,6 +1949,22 @@
         "steadyAimSystem": {
           "name": "Steady Aim System",
           "description": "Temporarily tightens shell dispersion and speeds up aiming when activated."
+        },
+        "externalAmmoModule": {
+          "name": "Ammunition Supply Module",
+          "description": "By default, dealing damage with all three shots gives the next magazine four rounds. Emptying the enhanced magazine or reloading manually restores three rounds."
+        },
+        "auxilliaryWeapons": {
+          "name": "Auxiliary Weapons",
+          "description": "Activate the auxiliary guns to fire two shots in quick succession. They reload independently of the main gun."
+        },
+        "shellOverheat": {
+          "name": "Shell Thermal Control",
+          "description": "With the gun loaded, staying within the speed limit charges the next shot. More charge raises its minimum damage. Firing consumes all charge."
+        },
+        "unguidedRocket": {
+          "name": "Unguided Rocket",
+          "description": "The launcher carries two unguided rockets. It reloads briefly between launches and fully reloads after the second rocket."
         }
       }
     },
@@ -2006,7 +2059,9 @@
       "HORSE_POWER_PER_TON": "hp/t",
       "SECOND": "s",
       "METER": "m",
-      "CUBIC_METER": "m³"
+      "CUBIC_METER": "m³",
+      "HIT_POINTS": "HP",
+      "METER_PER_SECOND_SQUARED": "m/s²"
     },
     "module_dmg": "Module damage",
     "normalization": "Normalization",
@@ -2116,7 +2171,9 @@
     "haptics": "Haptics",
     "hapticsHint": "A short buzz on Android when you switch, confirm or hit an error",
     "sound": "Sounds",
-    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on"
+    "soundHint": "Short tones for main actions, completions and errors; muted when reduced motion is on",
+    "battleSound": "3D replay gun sounds",
+    "battleSoundHint": "Client-built-in cannon sounds on fire, attenuated by camera distance"
   },
   "notifications": {
     "title": "Notifications",

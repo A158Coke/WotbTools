@@ -18,9 +18,10 @@ import SegmentedControl from './SegmentedControl.vue'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { availableItems, itemIconUrl, moduleIconUrl, resolveDeviceIds, skillIconUrl } from '../utils/researchCatalog.js'
 import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tankRef } from '../replay-local/compute/tankSetup'
+import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
-import { resolveUpgradeSelection, upgradeMechanicEffects } from '../replay-local/compute/tankUpgrades'
+import { resolveUpgradeSelection, mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
 import { parseAugmentProgression, researchGroupChoice } from '../replay-local/compute/tankAugmentTree'
 import { isConditionalCrewSkill } from '../replay-local/compute/crewStats'
 
@@ -46,7 +47,7 @@ const props = defineProps({
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 const { isCompact } = useBreakpoint()
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 
 const GROUPS = ['attack', 'defence', 'specialization']
 const LEVELS = [0, 1, 2]
@@ -68,42 +69,36 @@ const upgradeOptions = computed(() => [
   { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
   { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
 ])
-// 同版 hangarAbilityParamsConfig 明确标注 PERCENT 的三项；其他机制系数不做统一百分化。
-const PERCENT_MECHANIC_ATTRIBUTES = new Set([
-  'COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK', 'SAS_AIMING_SPEED', 'SAS_GUN_DISPERSION',
-])
-function upgradeAmount(value, modifier = 'MODIFIER_ADD', name) {
-  if (value == null) return '—'
-  if (typeof value === 'boolean') return upgradeValue(value, name)
-  const points = modifier === 'MODIFIER_ADD' && PERCENT_MECHANIC_ATTRIBUTES.has(name)
-  const amount = `${modifier === 'MODIFIER_MULTIPLY' ? '×' : value > 0 ? '+' : ''}${fmtNum(points ? value * 100 : value, 3)}`
-  return points ? t('agentTanks.configurator.upgrade_percentage_points', { value: amount }) : amount
-}
-function upgradeValue(value, name) {
-  if (value == null) return '—'
-  if (name === 'SAS_ALLOW_ACTIVATE_ON_HIT' && typeof value === 'boolean') {
-    return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
+const parameterGroups = computed(() => mechanicParameterGroups(upgrades.value, props.modules, props.catalog))
+const mechanicMessages = computed(() => {
+  const abilities = props.modules?.vehicleAbilities
+  const messages = (Array.isArray(abilities) ? abilities : []).flatMap(stem => {
+    const path = `agentTanks.configurator.augment_mechanics.${stem}`
+    return te(`${path}.name`) ? [{ name: t(`${path}.name`), description: t(`${path}.description`) }] : []
+  })
+  for (const group of upgrades.value.groups || []) {
+    const description = group[`description_${lang.value}`] || group.description_en
+    if (description && !messages.some(message => message.description === description)) {
+      messages.push({ name: itemName(group), description })
+    }
   }
-  if (name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' && typeof value === 'boolean') {
-    return t(`agentTanks.configurator.upgrade_${value ? 'yes' : 'no'}`)
-  }
-  if (typeof value === 'number' && PERCENT_MECHANIC_ATTRIBUTES.has(name)) return `${fmtNum(value * 100, 3)}%`
-  return typeof value === 'boolean' ? t(`agentTanks.configurator.upgrade_${value ? 'enabled' : 'disabled'}`) : fmtNum(value, 3)
-}
-const mechanicEffects = computed(() => upgradeMechanicEffects(upgrades.value, props.modules, props.catalog))
+  return messages
+})
 const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, groupIndex) => ({
   ...group,
   label: itemName(group) || t('agentTanks.configurator.upgrade_skill_group', { index: groupIndex + 1 }),
-  description: group[`description_${lang.value}`] || group.description_en || '',
   options: group.choices.map((id, index) => {
     const node = upgrades.value.nodes.find(node => node.id === id)
     const effects = (node?.attributes || []).map(({ name, value }) => ({
       name, label: t(`agentTanks.configurator.upgrade_attributes.${name}`),
-      amount: upgradeAmount(value, upgrades.value.attributeDefinitions[name]?.modifier, name),
+      amount: formatUpgradeValue(t, name, value, upgrades.value.attributeDefinitions[name]?.modifier || 'MODIFIER_ADD'),
     }))
+    const relaxesClip = effects.length === 1 && effects[0].name === 'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS'
+      && node.attributes[0].value === true
+    if (relaxesClip) effects[0].amount = t('agentTanks.configurator.upgrade_all_hits')
     return {
       value: String(id),
-      label: itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
+      label: relaxesClip ? t('agentTanks.configurator.upgrade_relax_clip') : itemName(node) || effects.map(effect => effect.label).join(' · ') || t('agentTanks.configurator.upgrade_skill_option', { index: index + 1 }),
       description: node?.[`description_${lang.value}`] || node?.description_en || '',
       disabled: !upgrades.value.supported,
       effects,
@@ -488,7 +483,7 @@ const camoBonusParts = computed(() => {
       </div>
     </header>
 
-    <section v-if="upgrades.available && (!embedded || showCrew || !upgrades.supported)" class="tp-config-block" data-testid="tank-upgrades">
+    <section v-if="upgrades.available" class="tp-config-block" data-testid="tank-upgrades">
       <h3 v-if="!embedded">{{ t('agentTanks.configurator.upgrade_title') }}</h3>
       <SegmentedControl
         v-if="!embedded"
@@ -499,45 +494,50 @@ const camoBonusParts = computed(() => {
       />
       <p v-if="!embedded" class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
       <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
-      <template v-if="showCrew">
-        <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
-          <h3>{{ group.label }}</h3>
-          <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
-            :options="group.options" :model-value="String(upgrades.choices[group.id])"
-            @update:model-value="selectAbility(group, $event)">
-            <template #option="{ option, index, selected }">
-            <span class="tp-ability-content">
-              <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
-                <Check v-if="selected" :size="16" aria-hidden="true" />
-              </span>
-              <span class="tp-ability-name">{{ option.label }}</span>
-              <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
-              <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
+      <div v-for="message in mechanicMessages" :key="message.name" class="tp-config-block tp-base-mechanic" data-testid="tank-base-mechanic">
+        <h3>{{ t('agentTanks.configurator.mechanic_summary', { name: message.name }) }}</h3>
+        <p>{{ message.description }}</p>
+      </div>
+      <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
+        <h3>{{ abilityGroups.length === 1 ? t('agentTanks.configurator.mechanic_choices') : group.label }}</h3>
+        <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
+        <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
+          :options="group.options" :model-value="String(upgrades.choices[group.id])"
+          @update:model-value="selectAbility(group, $event)">
+          <template #option="{ option, index, selected }">
+          <span class="tp-ability-content">
+            <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
+              <Check v-if="selected" :size="16" aria-hidden="true" />
             </span>
-            </template>
-          </SegmentedControl>
-          <p v-if="group.description" class="tp-muted">{{ group.description }}</p>
-        </div>
-        <p v-if="abilityGroups.length" class="tp-muted">{{ t('agentTanks.configurator.upgrade_skill_hint') }}</p>
-        <section v-if="mechanicEffects.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
-          <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
-            <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}</span>
-          </header>
+            <span class="tp-ability-name">{{ option.label }}</span>
+            <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
+            <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
+          </span>
+          </template>
+        </SegmentedControl>
+      </div>
+      <section v-if="parameterGroups.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
+        <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
+          <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}</span>
+        </header>
+        <component :is="section.label ? 'details' : 'div'" v-for="(section, index) in parameterGroups"
+          :key="`${modules.tankId}-${index}`" :open="section.label ? true : undefined">
+          <summary v-if="section.label">{{ t(`agentTanks.configurator.${section.label}`) }} {{ section.index }}</summary>
           <table>
             <thead><tr><th scope="col">{{ t('agentTanks.configurator.upgrade_effect_attribute') }}</th>
               <th scope="col">{{ t('agentTanks.configurator.upgrade_stock') }}</th>
               <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
-            <tbody><tr v-for="effect in mechanicEffects" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
+            <tbody><tr v-for="effect in section.rows" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
               <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
-              <td>{{ upgradeValue(effect.initial, effect.name) }}</td>
-              <td class="tp-effect-current"><strong>{{ upgradeValue(effect.value, effect.name) }}</strong>
-                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: upgradeAmount(effect.current, effect.modifier, effect.name) }) }}</span>
+              <td>{{ formatUpgradeValue(t, effect.name, effect.initial) }}</td>
+              <td :class="{ 'tp-effect-current': effect.value !== effect.initial }"><strong>{{ formatUpgradeValue(t, effect.name, effect.value) }}</strong>
+                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: formatUpgradeValue(t, effect.name, effect.current, effect.modifier) }) }}</span>
               </td>
             </tr></tbody>
           </table>
-          <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
-        </section>
-      </template>
+        </component>
+        <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
+      </section>
     </section>
 
     <!-- 桌面/平板：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
@@ -795,6 +795,7 @@ const camoBonusParts = computed(() => {
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
+.tp-base-mechanic p { margin: 0; }
 .tp-ability-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 .tp-ability-options :deep(.segmented-option) {
   display: flex;
@@ -821,6 +822,7 @@ const camoBonusParts = computed(() => {
 .tp-ability-value { font: var(--type-h3); font-variant-numeric: tabular-nums; color: var(--color-accent-text); }
 .tp-mechanic-effects { display: grid; gap: var(--space-2); min-inline-size: 0; padding-block-start: var(--space-2); }
 .tp-ability-status { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-mechanic-effects summary { cursor: pointer; align-content: center; min-block-size: var(--hit-min-comfortable); font-weight: 600; }
 .tp-mechanic-effects table { inline-size: 100%; border-collapse: collapse; font: var(--type-caption); }
 .tp-mechanic-effects th, .tp-mechanic-effects td { padding: var(--space-2) var(--space-1); border-block-end: 1px solid var(--color-border-subtle); text-align: end; font-variant-numeric: tabular-nums; }
 .tp-mechanic-effects th:first-child { text-align: start; font-weight: 400; overflow-wrap: anywhere; }
@@ -1008,6 +1010,10 @@ const camoBonusParts = computed(() => {
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
 @media (width < 768px) {
+  .tp-ability-options.is-tiles { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }
+  .tp-ability-content { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .tp-ability-content > .tp-muted { flex-basis: 100%; }
+  .tp-ability-value { font: var(--type-body); font-weight: 600; }
   /* 手机：类型分组 2×2（炮塔|火炮 // 发动机|履带），每组标题 + 纵向选项 */
   .tp-module-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
   .tp-module-group { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; }

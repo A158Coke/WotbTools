@@ -1761,17 +1761,23 @@
       "upgrade_hint": "Параметры, броня и углы орудия зависят от модернизации.",
       "upgrade_skill_group": "Умение XI уровня {index}",
       "upgrade_skill_option": "Умение {index}",
-      "upgrade_skill_hint": "Выберите одно умение в группе. Оно действует при полной модернизации; условные эффекты требуют активации в бою.",
-      "upgrade_effects": "Улучшения умения",
+      "mechanic_summary": "Базовая механика · {name}",
+      "mechanic_choices": "Выбор улучшения",
+      "mechanic_ammunition": "Боеприпасы доп. орудия",
+      "mechanic_firing": "Стрельба и перезарядка",
+      "upgrade_skill_hint": "Выберите одно улучшение в группе. Оно действует при полной прокачке или после исследования узла при частичной прокачке.",
+      "upgrade_effects": "Параметры механики",
       "upgrade_effect_attribute": "Параметр",
       "upgrade_effect_current": "Сейчас",
       "upgrade_effect_change": "Общее изменение {value}",
       "upgrade_percentage_points": "{value} п. п.",
       "upgrade_yes": "Да",
       "upgrade_no": "Нет",
+      "upgrade_relax_clip": "Смягчение условия усиленного магазина",
+      "upgrade_all_hits": "Достаточно всех попаданий",
       "upgrade_trigger_hit": "При попадании",
       "upgrade_trigger_damage": "При нанесении урона",
-      "upgrade_inactive": "Начальное · неактивно",
+      "upgrade_inactive": "Начальное · улучшения не действуют",
       "upgrade_custom": "Частично исследовано · активно",
       "upgrade_effect_delta_note": "Текущие значения рассчитаны по данным умения и улучшений одной версии. Без исходного значения показаны — и известное изменение. Боевые эффекты не входят в обычные параметры.",
       "upgrade_unsupported": "Данные модернизации неполные. Итоговые параметры недоступны.",
@@ -1797,7 +1803,16 @@
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "Бонус перезарядки за уровень",
         "COMBAT_FRENZY_MAX_STACKS": "Максимум уровней",
         "ATTRIBUTE_NAME_MAX_HEALTH": "Прочность",
-        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Перезарядка",
+        "AUX_SHELL_TYPE": "Тип снаряда",
+        "AUX_PENETRATION": "Номинальное пробитие",
+        "AUX_PENETRATION_FAR": "Пробитие на дистанции (база 500 м)",
+        "AUX_SPEED": "Начальная скорость",
+        "AUX_RANGE": "Максимальная дальность",
+        "AUX_MAX_SPEED": "Максимальная скорость",
+        "AUX_COUNT": "Снарядов в залпе",
+        "CLIP_CAPACITY": "Ёмкость обычного магазина",
+        "ENHANCED_CLIP_CAPACITY": "Ёмкость усиленного магазина",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Перезарядка основного орудия",
         "ATTRIBUTE_NAME_FIRE_START_CHANCE": "Шанс пожара",
         "ATTRIBUTE_NAME_ENGINE_POWER": "Мощность двигателя",
         "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "Макс. скорость вперёд",
@@ -1821,7 +1836,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "Прочность орудия",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "Прочность наблюдательного прибора",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "Прочность гусениц",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Прочность механизма поворота башни"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "Прочность механизма поворота башни",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "Перезарядка между выстрелами в усиленном магазине",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "Условие активации усиленного магазина",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "Время перезарядки вспомогательного орудия",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "Урон за выстрел вспомогательного орудия",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "Интервал между выстрелами вспомогательного орудия",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "Максимальная скорость для накопления заряда",
+        "SHELL_OVERHEAT_CHARGE_TIME": "Время до полного заряда",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "Задержка перед накоплением заряда",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "Бонус к минимальному урону",
+        "UNGUIDED_ROCKET_ACCELERATION": "Ускорение ракеты",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "Начальная скорость ракеты",
+        "UNGUIDED_ROCKET_DAMAGE": "Урон одной ракеты",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "Перезарядка между пусками ракет",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "Время полной перезарядки пусковой установки",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "Предельная скорость заднего хода",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "Скорость поворота башни",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "Пробитие снаряда 1 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "Пробитие снаряда 2 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "Пробитие снаряда 3 на 100 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "Пробитие снаряда 1 на 500 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "Пробитие снаряда 2 на 500 м",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "Пробитие снаряда 3 на 500 м"
       },
       "title": "Комплектация",
       "reset": "Сбросить",
@@ -1912,6 +1949,22 @@
         "steadyAimSystem": {
           "name": "Система точного прицеливания",
           "description": "Временно сужает разброс орудия и ускоряет сведение."
+        },
+        "externalAmmoModule": {
+          "name": "Модуль подачи боеприпасов",
+          "description": "По умолчанию, если все три выстрела нанесли урон, следующий магазин вмещает четыре снаряда. После опустошения усиленного магазина или ручной перезарядки ёмкость возвращается к трём."
+        },
+        "auxilliaryWeapons": {
+          "name": "Вспомогательное вооружение",
+          "description": "При активации вспомогательные орудия делают два выстрела подряд. Они перезаряжаются независимо от основного орудия."
+        },
+        "shellOverheat": {
+          "name": "Терморегуляция снаряда",
+          "description": "При заряженном орудии и допустимой скорости следующий выстрел накапливает заряд. Заряд повышает минимальный урон. Выстрел расходует весь заряд."
+        },
+        "unguidedRocket": {
+          "name": "Неуправляемая ракета",
+          "description": "Пусковая установка заряжена двумя неуправляемыми ракетами. Между пусками есть короткая перезарядка, а после второй ракеты установка перезаряжается полностью."
         }
       }
     },
@@ -2006,7 +2059,9 @@
       "HORSE_POWER_PER_TON": "л.с./т",
       "SECOND": "с",
       "METER": "м",
-      "CUBIC_METER": "м³"
+      "CUBIC_METER": "м³",
+      "HIT_POINTS": "ед.",
+      "METER_PER_SECOND_SQUARED": "м/с²"
     },
     "module_dmg": "Урон по модулям",
     "normalization": "Нормализация",
@@ -2116,7 +2171,9 @@
     "haptics": "Вибрация",
     "hapticsHint": "Короткая вибрация на Android при переключении, подтверждении и ошибке",
     "sound": "Звуки",
-    "soundHint": "Короткие сигналы для основных действий, завершения и ошибок; не звучат при уменьшении движения"
+    "soundHint": "Короткие сигналы для основных действий, завершения и ошибок; не звучат при уменьшении движения",
+    "battleSound": "Звук выстрелов в 3D-повторе",
+    "battleSoundHint": "Встроенные звуки орудий при выстреле, с затуханием по расстоянию"
   },
   "notifications": {
     "title": "Уведомления",

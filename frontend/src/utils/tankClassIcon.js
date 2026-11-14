@@ -9,7 +9,7 @@ export const TANK_CLASS_ICONS = Object.freeze([
   { key: 'MT', path: 'M12 2 22 12 17.8 16.2 7.8 6.2Z M6.2 7.8 16.2 17.8 12 22 2 12Z' },
   { key: 'HT', path: 'M12 2 22 12 19 15 9 5Z M8.25 5.75 18.25 15.75 15.75 18.25 5.75 8.25Z M5 9 15 19 12 22 2 12Z' },
   { key: 'TD', path: 'M2 4H22L12 22Z' },
-].map(Object.freeze))
+].map(icon => Object.freeze(icon)))
 
 // Source spellings: annotation keys, playback Tankopedia classes, Agent types.
 const CLASS_KEYS = Object.freeze({
