@@ -155,10 +155,11 @@ describe('useDataVersion', () => {
     await mod.loadDataVersionCatalog()
     const { options, selected, currentDataset } = mod.useDataVersion()
     expect(selected.value).toBe('11.21.0-t11-preview')
-    expect(options.value.map((option) => option.value)).toEqual(['11.21.0', '11.21.0-t11-preview'])
-    expect(options.value[1].tankCount).toBe(740)
-    expect(options.value[0].preview).toBe(false)
-    expect(options.value[1].preview).toBe(true)
+    // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式
+    expect(options.value.map((option) => option.value)).toEqual(['11.21.0-t11-preview', '11.21.0'])
+    expect(options.value[0].tankCount).toBe(740)
+    expect(options.value[0].preview).toBe(true)
+    expect(options.value[1].preview).toBe(false)
     expect(currentDataset.value.id).toBe('11.21.0-t11-preview')
   })
 
@@ -170,11 +171,28 @@ describe('useDataVersion', () => {
     const mod = await load({ fetchImpl: fetchMock })
     await mod.loadDataVersionCatalog()
     const { options } = mod.useDataVersion()
+    // 陈列顺序：最新超测（11.4.0.130）→ 最新正式 → 其余版本递降
     expect(options.value.map((option) => [option.value, option.preview])).toEqual([
+      ['11.4.0.130', true],
       ['11.21.0', false],
       ['11.21.0_1', false],
-      ['11.4.0.130', true],
     ])
+  })
+
+  it('目录先就绪、选择器后挂载：下线的持久化 id 自愈回默认（watch immediate）', async () => {
+    // 移动端抽屉开合会卸载/重建实例：目录请求在上一实例卸载后完成，新实例挂载时
+    // 目录已就绪、watcher 不会再触发变更——注册时必须检查当前快照（immediate）。
+    const assign = vi.fn()
+    vi.spyOn(window.location, 'assign').mockImplementation(assign)
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))
+    const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock }) // load 会 clear localStorage
+    localStorage.setItem('wotb_data_version', 'supertest') // 已从目录下线的 id（clear 之后写入）
+    const { selected } = mod.useDataVersion()
+    await mod.loadDataVersionCatalog() // 目录就绪 → immediate watcher 检查当前快照
+    // select() 的语义 = 写存储 + 整页重载（不原地改 ref）；重载后即回默认。
+    expect(localStorage.getItem('wotb_data_version')).toBeNull()
+    expect(assign).toHaveBeenCalledTimes(1)
+    expect(assign.mock.calls[0][0]).not.toContain('data=supertest')
   })
 
   it('strips a persisted versioned ?assets= override when selecting a dataset', async () => {

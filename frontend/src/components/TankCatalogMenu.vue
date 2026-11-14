@@ -516,8 +516,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
    hover 在各自底色上加深；选中态仍以 accent 边框区分。 */
 .tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
 .tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
-.tp-card.is-premium .tp-card-name { color: var(--color-warning); }
-.tp-card.is-collector:not(.is-premium) .tp-card-name { color: var(--color-info); }
+/* 车名 = 语义色 90% + text-primary 10%：纯语义色在 36%/46% 混色底上
+   （夏冬两季实测 2.94–3.87:1）不满足 4.5:1，向 text-primary 微调后
+   全组合 ≥4.78:1（tokens/color-contrast.test.ts 锁定）。 */
+.tp-card.is-premium .tp-card-name { color: color-mix(in oklab, var(--color-warning) 90%, var(--color-text-primary)); }
+.tp-card.is-collector:not(.is-premium) .tp-card-name { color: color-mix(in oklab, var(--color-info) 90%, var(--color-text-primary)); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 
 @media (hover: hover) {
