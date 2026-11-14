@@ -306,6 +306,13 @@ jobs:
       - name: Fetch pinned Agent WASM for frontend validation
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
+        env:
+          # 匿名 GitHub API 在共享 runner IP 上是 60 req/h 的公共配额：一旦被同 IP 的其他
+          # 负载打满，release 元数据请求返回 403，而 fetch-agent-wasm.sh 把 403 判为永久错误
+          # → 整个 Android 发布失败（2026-11-14 run 43602762417 实测，release v0.4.23 本身
+          # 匿名可访问 200）。GITHUB_TOKEN 把它抬到 5000/h；脚本只在 API 域附带该头，
+          # 跨主机重定向到对象存储时会丢弃。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/fetch-agent-wasm.sh
 
       - name: Frontend tests + build validation
