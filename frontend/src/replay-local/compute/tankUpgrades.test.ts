@@ -8,7 +8,7 @@ import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
 import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
 import { parseAugmentProgression, researchGroupChoice } from './tankAugmentTree'
-import { mechanicParameterGroups, projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
+import { fullResearchXp, mechanicParameterGroups, projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
 const object432 = TANKS.find(t => t.modules.tankId === 27905)!
@@ -611,5 +611,46 @@ describe('XI 投影后的 DPM 与伤害/装填自洽', () => {
     // 连发炮的 dpm 恒为 null（与包内一致），不得被补成数字
     const burstDetail = { ...detail, configs: [{ ...detail.configs[0], is_burst: true }] }
     expect(projectTankUpgrades(burstDetail, modules, 'top', []).detail.configs[0].dpm).toBeNull()
+  })
+})
+
+describe('full XI research cost', () => {
+  const price = (modules: unknown) => fullResearchXp(resolveUpgradeSelection(modules, 'stock'))
+  it.each([[23361, 414000], [30993, 414000], [30737, 320000], [10593, 320000]])('counts shared prerequisites and each group once for %i', (id, expected) => {
+    const modules = T11R3.tanks.find(tank => tank.modules.tankId === id)!.modules
+    expect(price(modules)).toBe(expected)
+    for (const mode of ['stock', 'custom', 'top']) {
+      for (const choice of modules.upgradeProgression.alternativeGroups[0]!.choices)
+        expect(fullResearchXp(resolveUpgradeSelection(modules, mode, [choice]))).toBe(expected)
+    }
+  })
+  const sample = () => resolveUpgradeSelection(T11R3.tanks[0]!.modules, 'top')
+  it('distinguishes free research from missing or invalid prices', () => {
+    const s = sample()
+    const paid = [...s.nodes.filter(n => n.type !== 'NODETYPE_ALTERNATIVE_MECHANIC'), ...s.groups]
+    for (const entry of paid) entry.xpCost = 0
+    expect(fullResearchXp(s)).toBe(0)
+    for (const invalid of [undefined, null, -1, Infinity, NaN, '100']) {
+      paid[0]!.xpCost = invalid
+      expect(fullResearchXp(s)).toBeNull()
+    }
+    paid[0]!.xpCost = 0
+    delete s.groups[0]!.xpCost
+    expect(fullResearchXp(s)).toBeNull()
+  })
+  it('rejects unknown contracts, broken dependencies, and mismatched versions', () => {
+    const s = sample()
+    const choice = s.nodes.find(n => n.type === 'NODETYPE_ALTERNATIVE_MECHANIC')!
+    choice.xpCost = 0
+    expect(fullResearchXp(s)).toBeNull()
+    delete choice.xpCost
+    const node = s.nodes[0]!
+    for (const req of [[node.techName], ['missing'], [choice.techName], 'broken']) {
+      node.requiredNodes = req
+      expect(fullResearchXp(s)).toBeNull()
+    }
+    const modules = T11R3.tanks[0]!.modules
+    expect(price({ ...modules, gameVersion: 'other' })).toBeNull()
+    expect(price({ tier: 11 })).toBeNull()
   })
 })
