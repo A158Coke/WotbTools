@@ -47,12 +47,17 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     // 跟随点击位置：脚本写 left/top（相对场景容器，带边界钳制）
     expect(kernel).toMatch(/card\.style\.left = /)
     expect(kernel).toMatch(/card\.style\.top = /)
-    // 视口钳制（clampX/clampY）：卡片不越出容器余量
-    expect(kernel).toMatch(/rect\.width - w - pad/)
-    expect(kernel).toMatch(/rect\.height - h - pad/)
+    // 定位委托纯函数 chooseClickInfoPosition（可单测：clickInfoPosition.test.ts 覆盖
+    // 评审的左上胶囊反例、面板边缘回退与四角占满时的钳制）
+    expect(kernel).toMatch(/chooseClickInfoPosition\(\{/)
+    expect(kernel).toMatch(/viewportWidth: rect\.width/)
+    expect(kernel).toMatch(/viewportHeight: rect\.height/)
+    // 视口钳制在纯函数里（viewportWidth/Height - w/h - pad）
+    expect(kernel).toMatch(/input\.viewportWidth - w - pad/)
+    expect(kernel).toMatch(/input\.viewportHeight - h - pad/)
     // 避让固定 HUD 面板（browser-armor-mobile 门禁：四块互不相交）：候选位逐个测交
-    expect(kernel).toMatch(/for \(const selector of \['#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
-    expect(kernel).toMatch(/if \(!hitsPanel\(x, y\)\) \{ chosen = \[x, y\]; break \}/)
+    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    expect(kernel).toMatch(/if \(!hitsPanel\(x, y\)\) \{ chosen = \{ left: x, top: y \}; break \}/)
     // 两条路径都写：厚度模式（几何量）与判定模式（判定首层）
     expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBeGreaterThanOrEqual(2)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)

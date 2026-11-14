@@ -120,6 +120,57 @@ export function faceAngleAndEffective(
     return { angleDeg, effective: Number.isFinite(effective) ? effective : null }
 }
 
+/** 点选卡位置选择（纯函数）：跟随点击点，并在 6 个候选位中取第一个
+ *  「完整落在视口内 + 不与任何可见 HUD 面板相交」的位置。
+ *  候选顺序固定（右下 → 右上 → 左下 → 左上 → 正上 → 正下），不是统计打分；
+ *  全部被占时返回第一个钳制位（读数优先于美观，正常布局不会走到）。 */
+export interface ClickInfoRect { left: number, top: number, right: number, bottom: number }
+
+export function chooseClickInfoPosition(input: {
+    clickX: number
+    clickY: number
+    width: number
+    height: number
+    viewportWidth: number
+    viewportHeight: number
+    panels: readonly ClickInfoRect[]
+    gap?: number
+    pad?: number
+}): { left: number, top: number } {
+    const gap = input.gap ?? 14
+    const pad = input.pad ?? 8
+    const { clickX: cx, clickY: cy, width: w, height: h } = input
+    const clampX = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportWidth - w - pad))
+    const clampY = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportHeight - h - pad))
+    const candidates: Array<[number, number]> = [
+        [cx + gap, cy + gap],
+        [cx + gap, cy - h - gap],
+        [cx - w - gap, cy + gap],
+        [cx - w - gap, cy - h - gap],
+        [cx - w / 2, cy - h - gap],
+        [cx - w / 2, cy + gap],
+    ]
+    // 点击点附近全被面板占住时（例如点击贴近左上胶囊），退到「贴着面板边缘」的
+    // 位置：面板下沿/上沿/右沿/左沿各一个候选，保证总能找到一个不压在 HUD 上的
+    // 最近可用位。仍是确定性顺序（按面板出现次序），不是打分。
+    for (const panel of input.panels) {
+        candidates.push([cx, panel.bottom + gap])
+        candidates.push([cx, panel.top - h - gap])
+        candidates.push([panel.right + gap, cy])
+        candidates.push([panel.left - w - gap, cy])
+    }
+    const hitsPanel = (x: number, y: number): boolean => input.panels.some(panel =>
+        x + w > panel.left && x < panel.right && y + h > panel.top && y < panel.bottom)
+    const first = candidates[0]
+    let chosen = { left: clampX(first[0]), top: clampY(first[1]) }
+    for (const [rawX, rawY] of candidates) {
+        const x = clampX(rawX)
+        const y = clampY(rawY)
+        if (!hitsPanel(x, y)) { chosen = { left: x, top: y }; break }
+    }
+    return { left: Math.round(chosen.left), top: Math.round(chosen.top) }
+}
+
 export function createJudgment(deps: JudgmentDeps) {
     const {
         models, hm, tc, cvs,
@@ -207,39 +258,33 @@ function placeClickInfo(clientX: number, clientY: number): void {
     card.style.display = 'flex'
     const w = card.offsetWidth
     const h = card.offsetHeight
-    const cx = clientX - rect.left
-    const cy = clientY - rect.top
-    // 固定 HUD 面板（与 browser-armor-mobile 的门禁口径一致）
-    const panelRects: Array<{ left: number, top: number, right: number, bottom: number }> = []
-    for (const selector of ['#corner-tr', '#turret-controls', '.armor-back']) {
+    // 固定 HUD 面板（与 browser-armor-mobile 的门禁口径一致）：
+    // #corner-tl = 左上信息胶囊（车名/参数入口），.armor-back = 返回键，
+    // #corner-tr = 右下射击卡，#turret-controls = 左下姿态卡。漏掉 #corner-tl 会让
+    // 靠近左上的点击把点选卡压到车名与参数入口上（评审 P2 反例：600×320 点击 (100,5)）。
+    const panels: ClickInfoRect[] = []
+    for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
         const el = document.querySelector(selector) as HTMLElement | null
         if (!el) continue
         const style = getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden') continue
         const r = el.getBoundingClientRect()
         if (r.width <= 0 || r.height <= 0) continue
-        panelRects.push({ left: r.left - rect.left, top: r.top - rect.top, right: r.right - rect.left, bottom: r.bottom - rect.top })
+        panels.push({ left: r.left - rect.left, top: r.top - rect.top, right: r.right - rect.left, bottom: r.bottom - rect.top })
     }
-    const clampX = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, rect.width - w - pad))
-    const clampY = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, rect.height - h - pad))
-    const candidates: Array<[number, number]> = [
-        [cx + gap, cy + gap],            // 右下
-        [cx + gap, cy - h - gap],        // 右上
-        [cx - w - gap, cy + gap],        // 左下
-        [cx - w - gap, cy - h - gap],    // 左上
-        [cx - w / 2, cy - h - gap],      // 正上
-        [cx - w / 2, cy + gap],          // 正下
-    ]
-    const hitsPanel = (x: number, y: number): boolean => panelRects.some(panel =>
-        x + w > panel.left && x < panel.right && y + h > panel.top && y < panel.bottom)
-    let chosen: [number, number] = [clampX(candidates[0][0]), clampY(candidates[0][1])]
-    for (const [rawX, rawY] of candidates) {
-        const x = clampX(rawX)
-        const y = clampY(rawY)
-        if (!hitsPanel(x, y)) { chosen = [x, y]; break }
-    }
-    card.style.left = `${Math.round(chosen[0])}px`
-    card.style.top = `${Math.round(chosen[1])}px`
+    const chosen = chooseClickInfoPosition({
+        clickX: clientX - rect.left,
+        clickY: clientY - rect.top,
+        width: w,
+        height: h,
+        viewportWidth: rect.width,
+        viewportHeight: rect.height,
+        panels,
+        gap,
+        pad,
+    })
+    card.style.left = `${chosen.left}px`
+    card.style.top = `${chosen.top}px`
 }
 
 // 第一个参数保留调用签名（onClick 统一传 event），停靠后不再按点击坐标摆位
