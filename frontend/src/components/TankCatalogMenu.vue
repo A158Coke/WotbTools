@@ -2,7 +2,7 @@
 /**
  * 坦克目录菜单（单一实现）：坦克百科列表与装甲查看器选车弹窗共用。
  * 数据面由父级提供已 normalizeTankCache 的车辆（含 search aliases / hp / pen_max）；
- * 本组件只负责搜索（模糊 + 别名）、tier/nation/type 精确筛选、排序、筛选 chips/sheet、
+ * 本组件只负责搜索（模糊 + 别名）、tier/nation/type/category 精确筛选、排序、筛选 chips/sheet、
  * 增量卡片网格、空/加载/错误态与选择事件。URL 状态、详情与弹窗壳归父级。
  *
  * layout="page"：随页面文档滚动（坦克百科）；layout="dialog"：结果区在弹窗内滚动
@@ -15,7 +15,7 @@ import { RotateCcw, Search, SearchX, TriangleAlert, X } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { TYPE_CLS, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
-import { selectTanks } from '../utils/tankopediaQuery.js'
+import { selectTanks, TANKOPEDIA_CATEGORIES } from '../utils/tankopediaQuery.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
 import EmptyState from './EmptyState.vue'
@@ -23,9 +23,12 @@ import AppButton from './AppButton.vue'
 import FilterChips from './FilterChips.vue'
 import AppSheet from './AppSheet.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import { createReusableTemplate } from '@vueuse/core'
+import { createReusableTemplate, useElementSize, useMediaQuery } from '@vueuse/core'
+import { BREAKPOINT_MEDIUM, SHELL_DRAWER_QUERY } from '../shared/breakpoints.js'
+import TankCatalogChoice from './TankCatalogChoice.vue'
+import TankCatalogIcon from './TankCatalogIcon.vue'
 
-const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', sort: 'name' })
+const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
 const SEARCH_DEBOUNCE_MS = 250
 const ICON_BOX_ASPECT = 8 / 5 // 与 .tp-media 的 aspect-ratio 一致
 
@@ -50,7 +53,12 @@ const emit = defineEmits(['update:filters', 'select', 'retry', 'close'])
 const { t, te, locale } = useI18n()
 const statFormat = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
 const formatStat = value => value == null || !Number.isFinite(Number(value)) ? '—' : statFormat.value.format(Number(value))
-const { isCompact } = useBreakpoint()
+const { isCompact: compactViewport, isExpanded } = useBreakpoint()
+const root = ref(null)
+const { width: containerWidth } = useElementSize(root)
+const shortTouch = useMediaQuery(SHELL_DRAWER_QUERY)
+const isCompact = computed(() => compactViewport.value || shortTouch.value || (containerWidth.value > 0 && containerWidth.value < BREAKPOINT_MEDIUM))
+const choiceMode = computed(() => isCompact.value ? 'sheet' : isExpanded.value ? 'inline' : 'menu')
 
 const local = reactive({ ...DEFAULT_FILTERS, ...props.filters })
 // 只回灌“外部值真的变了”的字段：父级在详情/无关路由变化时会生成新的 filters 对象，
@@ -96,7 +104,7 @@ const filtered = computed(() => selectTanks(props.tanks, local))
 
 const { visible, hasMore, loadMore, sentinel } = useIncrementalList(filtered, {
   pageSize: props.pageSize,
-  resetKey: () => [local.q, local.tier, local.nation, local.type, local.sort].join('|'),
+  resetKey: () => [local.q, local.tier, local.nation, local.type, local.category, local.sort].join('|'),
 })
 const remaining = computed(() => filtered.value.length - visible.value.length)
 
@@ -105,9 +113,19 @@ const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
 const countText = computed(() => t('agentTanks.count', { shown: filtered.value.length, total: props.tanks.length }))
 
-// 选择控件（design-language §7.1 DC-SEL-01）：type / sort 是固定短候选域（各 4 项，
-// 空值「全部」不计候选）→ Choice Group，由 SegmentedControl 承载；tier 是 I–X 有序域
-// （5–10 档）、nation 是可变域，按表保持 Select。
+// Ordered tiers and the nine game nations have a catalog-specific flat-choice exception.
+const tierOptions = computed(() => [
+  { value: '', label: t('agentTanks.all') },
+  ...tiers.value.map(tier => ({ value: String(tier), label: tierLabel(tier) })),
+])
+const nationOptions = computed(() => [
+  { value: '', label: t('agentTanks.all') },
+  ...nations.value.map(nation => ({ value: nation, label: nationLabel(nation) })),
+])
+const categoryOptions = computed(() => [
+  { value: '', label: t('agentTanks.all') },
+  ...TANKOPEDIA_CATEGORIES.map(value => ({ value, label: t('agentTanks.categories.' + value) })),
+])
 const typeOptions = computed(() => [
   { value: '', label: t('agentTanks.all') },
   ...types.value.map(type => ({ value: type, label: typeLabel(type) })),
@@ -119,11 +137,12 @@ const sortOptions = computed(() => [
   { value: 'pen', label: t('agentTanks.sort_pen') },
 ])
 
-const hasFilters = computed(() => !!(local.q.trim() || local.tier || local.nation || local.type))
+const hasFilters = computed(() => !!(local.q.trim() || local.tier || local.nation || local.type || local.category))
 const chips = computed(() => [
   local.tier && { key: 'tier', label: tierLabel(local.tier) },
   local.nation && { key: 'nation', label: nationLabel(local.nation) },
   local.type && { key: 'type', label: typeLabel(local.type) },
+  local.category && { key: 'category', label: t('agentTanks.categories.' + local.category) },
 ].filter(Boolean))
 
 function clearFilters() {
@@ -132,6 +151,7 @@ function clearFilters() {
   local.tier = ''
   local.nation = ''
   local.type = ''
+  local.category = ''
   emitFilters()
 }
 
@@ -141,6 +161,13 @@ const sheetOpen = ref(false)
 let sheetOpener = null
 // 筛选行：桌面内联，手机放进 AppSheet；同一份模板只写一次
 const [DefineFilters, ReuseFilters] = createReusableTemplate()
+watch(isCompact, async compact => {
+  if (compact || !sheetOpen.value) return
+  sheetOpen.value = false
+  sheetOpener = null
+  await nextTick()
+  searchInput.value?.focus()
+})
 function toggleSheet() {
   if (sheetOpen.value) return closeSheet()
   sheetOpener = document.activeElement
@@ -178,7 +205,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 </script>
 
 <template>
-  <section class="tank-catalog-menu" :class="{ 'is-dialog': layout === 'dialog' }" data-testid="tank-catalog-menu">
+  <section ref="root" class="tank-catalog-menu" :class="{ 'is-dialog': layout === 'dialog' }" data-testid="tank-catalog-menu">
     <div v-if="title" class="tc-dialog-head">
       <span id="tp-title">{{ title }}</span>
       <span id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
@@ -205,43 +232,37 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       </label>
       <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="key => setFilter(key, '')" />
       <span v-if="!title" id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
+      <AppButton v-if="hasFilters" size="sm" data-testid="catalog-clear" @click="clearFilters">{{ t('agentTanks.clear_filters') }}</AppButton>
     </div>
 
     <DefineFilters>
     <div
       class="tp-filters"
-      :class="{ 'is-sheet': isCompact }"
+      :class="{ 'is-sheet': isCompact, 'is-flat': choiceMode === 'inline' }"
       data-testid="tank-filters" data-tour="tankopedia-filters"
     >
       <div v-if="isCompact" class="tp-sheet-head">
         <strong>{{ t('filters.title') }}</strong>
         <AppButton size="sm" variant="primary" data-testid="filter-sheet-done" @click="closeSheet">{{ t('filters.done') }}</AppButton>
       </div>
-      <label class="tp-field">
-        <span class="tp-field-label">{{ t('agentTanks.tier') }}</span>
-        <select id="tp-tier" data-testid="filter-tier" :value="local.tier" @change="setFilter('tier', $event.target.value)">
-          <option value="">{{ t('agentTanks.all') }}</option>
-          <option v-for="tier in tiers" :key="tier" :value="String(tier)">{{ tierLabel(tier) }}</option>
-        </select>
-      </label>
-      <label class="tp-field">
+      <div class="tp-field tp-nations">
         <span class="tp-field-label">{{ t('agentTanks.nation') }}</span>
-        <select id="tp-nation" data-testid="filter-nation" :value="local.nation" @change="setFilter('nation', $event.target.value)">
-          <option value="">{{ t('agentTanks.all') }}</option>
-          <option v-for="nation in nations" :key="nation" :value="nation">{{ nationLabel(nation) }}</option>
+        <TankCatalogChoice id="tp-nation" data-testid="filter-nation" :model-value="local.nation" :options="nationOptions" :label="t('agentTanks.nation')" kind="nation" :mode="choiceMode" @update:model-value="value => setFilter('nation', value)" />
+      </div>
+      <div class="tp-field tp-tiers">
+        <span class="tp-field-label">{{ t('agentTanks.tier') }}</span>
+        <select v-if="choiceMode !== 'inline'" id="tp-tier" data-testid="filter-tier" :value="local.tier" @change="setFilter('tier', $event.target.value)" :aria-label="t('agentTanks.tier')">
+          <option v-for="option in tierOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
         </select>
-      </label>
+        <SegmentedControl v-else id="tp-tier" data-testid="filter-tier" :model-value="local.tier" :options="tierOptions" :aria-label="t('agentTanks.tier')" presentation="chips" @update:model-value="value => setFilter('tier', value)" />
+      </div>
       <div class="tp-field">
         <span class="tp-field-label">{{ t('agentTanks.type') }}</span>
-        <SegmentedControl
-          id="tp-type"
-          data-testid="filter-type"
-          :model-value="local.type || ''"
-          :options="typeOptions"
-          presentation="chips"
-          :aria-label="t('agentTanks.type')"
-          @update:model-value="value => setFilter('type', value)"
-        />
+        <TankCatalogChoice id="tp-type" data-testid="filter-type" :model-value="local.type" :options="typeOptions" :label="t('agentTanks.type')" kind="type" :mode="choiceMode" @update:model-value="value => setFilter('type', value)" />
+      </div>
+      <div class="tp-field">
+        <span class="tp-field-label">{{ t('agentTanks.category') }}</span>
+        <TankCatalogChoice id="tp-category" data-testid="filter-category" :model-value="local.category" :options="categoryOptions" :label="t('agentTanks.category')" kind="category" :mode="choiceMode" @update:model-value="value => setFilter('category', value)" />
       </div>
       <div class="tp-field">
         <span class="tp-field-label">{{ t('agentTanks.sort') }}</span>
@@ -302,8 +323,8 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
               type="button"
               class="tp-card tank-card"
               :class="{
-                'is-premium': tank.is_premium,
-                'is-collector': tank.is_collector,
+                'is-premium': tank.category === 'premium',
+                'is-collector': tank.category === 'collector',
                 sel: isSelected(tank),
               }"
               :data-tank-id="tank.id"
@@ -326,7 +347,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
               <span class="tp-badges">
                 <span class="tp-pill is-tier">{{ tierLabel(tank.tier) }}</span>
                 <span class="tp-pill">{{ nationLabel(tank.nation) }}</span>
-                <span class="tp-pill" :class="TYPE_CLS[tank.type] || 't-unknown'">{{ typeLabel(tank.type) }}</span>
+                <span class="tp-pill" :class="TYPE_CLS[tank.type] || 't-unknown'"><TankCatalogIcon kind="type" :value="tank.type" />{{ typeLabel(tank.type) }}</span>
               </span>
               <span class="tp-card-stats">
                 <span><span class="tp-stat-label">{{ t('agentTanks.hp') }}</span>{{ formatStat(tank.hp) }}</span>
@@ -438,6 +459,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 .tp-filters { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-3); flex: none; padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
 
 .tp-field { display: grid; gap: var(--space-1); min-inline-size: min(100%, var(--form-field-min)); flex: 1; }
+.tp-filters.is-flat .tp-nations, .tp-filters.is-flat .tp-tiers { flex-basis: 100%; }
 .tp-field-inline { max-inline-size: 360px; }
 .tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
@@ -458,13 +480,16 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 .is-sheet .tp-field { min-inline-size: 0; }
+.is-sheet .tp-nations { grid-column: 1 / -1; }
+.tp-pill { display: inline-flex; align-items: center; gap: var(--space-1); }
 
 /* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 保底：
    在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。portal 到 body 后不再
    继承场景紧凑档，--scene-hit 保持 :root 的 44px，符合全站舒适命中区。 */
 .tp-filters.is-sheet :deep(button),
 .tp-filters.is-sheet :deep(select),
-.tp-filters.is-sheet :deep(input) {
+.tp-filters.is-sheet :deep(input),
+.tp-filters.is-sheet :deep(summary) {
   min-block-size: var(--scene-hit);
 }
 

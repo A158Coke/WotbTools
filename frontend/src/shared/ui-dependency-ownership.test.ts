@@ -15,6 +15,7 @@ const OWNERS: Record<string, string[]> = {
     'components/DataVersionMenu.vue',
     'components/MenuButton.vue',
     'components/SegmentedControl.vue',
+    'components/TankCatalogChoice.vue',
   ],
   'motion-v': [
     'App.vue',

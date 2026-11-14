@@ -1,5 +1,5 @@
 /**
- * 科技树 / compact 页头布局门禁（真实浏览器几何，不是源码正则）。
+ * 科技树 / 车辆目录布局门禁（真实浏览器几何和输入）。
  *
  * 锁定的 invariant：
  * - 竖屏手机按等级从高到低一行一级（无等级标尺），分区主视觉紧凑横幅（88–112px），国别页签单行横滑；
@@ -7,6 +7,8 @@
  * - 外壳没有底部常驻栏（L1）：科技树滚动区与吸底等级条都停在视口底边之内；
  * - 矮横屏树视口至少约两行；平板 / 桌面等级条保持在滚动视口内；
  * - 任何形态都没有页面级横向溢出。
+ * - 目录类别与国家/等级组合保持 URL 和结果一致；横排、下拉、sheet 以及旋转共享筛选状态。
+ * - 客户端与 CN 图标成功加载，透明边缘裁剪保留原始比例。
  *
  * 负向对照：在手机场景注入固定高度实现 `max-block-size: calc(100dvh + 120px)`，断言探针
  * 必须抓到「等级条落到视口外」——防止断言在旧 bug 上仍然变绿。
@@ -14,6 +16,8 @@
  * 数据面用确定性夹具资产包（科技树 JSON + tank_cache + crops），不依赖真实资产。
  */
 import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
@@ -36,10 +40,15 @@ function fixtureTechTree() {
       const stem = `Fixture_${y}_${x}`
       const id = tankId++
       nodes.push({ stem, tankId: id, tier: y, x, y })
-      tankCache[id] = { id, name: `Fixture ${y}-${x}`, tier: y, nation: NATION, type: 'mediumTank' }
+      tankCache[id] = {
+        id, name: `Fixture ${y}-${x}`, tier: y, nation: NATION, type: 'mediumTank',
+        is_premium: x === 2, is_collector: x === 1,
+      }
       if (x > 1) edges.push({ from: `Fixture_${y}_${x - 1}`, to: stem, cost: { xp: 1000 * x } })
     }
   }
+  // 目录需要同时覆盖客户端旗标和用户提供的 CN 图片；这辆车不参与科技树节点布局。
+  tankCache[9200] = { id: 9200, name: 'Fixture China', tier: 8, nation: 'china', type: 'heavyTank', is_premium: false, is_collector: true }
   return {
     tree: { meta: { nation: NATION, premiumRows: 1 }, nodes, pending: [], edges },
     tankCache,
@@ -55,6 +64,174 @@ const SCENARIOS = [
   { name: 'tablet-768x1024', width: 768, height: 1024, touch: true, compact: false },
   { name: 'desktop-1440x900', width: 1440, height: 900, touch: false, compact: false },
 ]
+
+const CATALOG_SCENARIOS = [
+  { name: 'catalog-desktop', width: 1440, height: 900, touch: false, mode: 'inline' },
+  { name: 'catalog-tablet-menu', width: 1024, height: 768, touch: false, mode: 'menu', profile: 'winter', locale: 'ru' },
+  { name: 'catalog-phone-sheet', width: 390, height: 844, touch: true, mode: 'sheet', rotate: true },
+  { name: 'catalog-short-landscape', width: 844, height: 390, touch: true, mode: 'sheet' },
+]
+
+async function catalogState(page, category, ids) {
+  await page.waitForValue(`new URLSearchParams(location.search).get('category')`, value => value === category, { label: `category URL ${category}` })
+  await page.waitForValue(`Array.from(document.querySelectorAll('[data-testid="tank-card"]'), card => card.dataset.tankId)`, value => JSON.stringify(value) === JSON.stringify(ids), { label: `catalog results ${ids}` })
+}
+
+/** Verify loaded source images and visible crop geometry without relying on a screenshot assertion. */
+async function assertCatalogIcons(page) {
+  await page.waitFor(() => [...document.querySelectorAll('.catalog-icon img')].every(image => image.complete && image.naturalWidth > 0), { label: 'catalog icon images loaded' })
+  const icons = await page.probe(() => [...document.querySelectorAll('.catalog-icon-crop')].map(crop => {
+    const image = crop.querySelector('img')
+    const rect = crop.getBoundingClientRect()
+    const imageRect = image.getBoundingClientRect()
+    return {
+      source: image.currentSrc,
+      width: rect.width,
+      height: rect.height,
+      expectedCropAspect: Number(getComputedStyle(crop).getPropertyValue('--catalog-image-aspect')),
+      imageAspect: imageRect.width / imageRect.height,
+      naturalAspect: image.naturalWidth / image.naturalHeight,
+    }
+  }))
+  assert.ok(icons.some(icon => icon.source.includes('nation-china')), 'CN asset is present')
+  assert.ok(icons.some(icon => icon.source.includes('nation-text-ussr') || icon.source.includes('nation-filter-ussr')), 'client USSR icon is present')
+  for (const icon of icons.filter(icon => icon.width > 0 && icon.height > 0)) {
+    assert.ok(Math.abs(icon.width / icon.height - icon.expectedCropAspect) < 0.03, `visible icon crop distorted: ${icon.source}`)
+    assert.ok(Math.abs(icon.imageAspect - icon.naturalAspect) < 0.03, `source image distorted: ${icon.source}`)
+  }
+}
+
+async function saveCatalogScreenshot(page, name) {
+  const directory = fileURLToPath(new URL('../../tmp/issue-973-catalog/', import.meta.url))
+  await mkdir(directory, { recursive: true })
+  const { data } = await page.client.send('Page.captureScreenshot', { format: 'png' }, page.sessionId)
+  await writeFile(`${directory}/${name}.png`, Buffer.from(data, 'base64'))
+}
+
+async function nationKeyboardNavigation(page) {
+  const visibleSelection = () => {
+    const tabs = document.querySelector('.tt-tabs').getBoundingClientRect()
+    const selected = document.querySelector('.tt-tabs [aria-selected="true"]').getBoundingClientRect()
+    return selected.left >= tabs.left - 1 && selected.right <= tabs.right + 1
+  }
+  assert.equal(await page.probe(visibleSelection), true, 'initial URL nation is visible in horizontal navigation')
+  await page.callWith(() => document.querySelector('.tt-tabs [aria-selected="true"]').focus())
+  const press = async (key, code, virtualCode) => {
+    for (const type of ['keyDown', 'keyUp']) {
+      await page.client.send('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode: virtualCode, ...(type === 'keyDown' && key === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : {}) }, page.sessionId)
+    }
+  }
+  await press('End', 'End', 35)
+  await page.waitFor(() => document.activeElement?.dataset.nation === 'european', { label: 'End focuses final nation' })
+  assert.equal(await page.evaluate(`new URLSearchParams(location.search).get('nation')`), NATION, 'focus movement alone preserves selected nation')
+  assert.equal(await page.evaluate(`document.querySelectorAll('.tt-tabs [tabindex="0"]').length`), 1, 'only focused nation is in the tab order')
+  await press('Enter', 'Enter', 13)
+  await page.waitForValue(`new URLSearchParams(location.search).get('nation')`, value => value === 'european', { label: 'Enter activates focused nation' })
+  assert.equal(await page.probe(visibleSelection), true, 'newly selected nation stays in view')
+  assert.equal(await page.evaluate(`document.querySelectorAll('.tt-tabs [tabindex="0"]').length`), 1, 'activation keeps one tab stop')
+  await press('Home', 'Home', 36)
+  await press('Enter', 'Enter', 13)
+  await page.waitForValue(`new URLSearchParams(location.search).get('nation')`, value => value === NATION, { label: 'Home and Enter restore first nation' })
+  await page.waitForValue('document.querySelectorAll(".tt-cell").length', count => count >= ROWS * COLS, { label: 'USSR tree restored after keyboard navigation' })
+}
+
+async function assertCatalogMenu(page, trigger) {
+  const layout = await page.callWith(selector => {
+    const panel = document.querySelector('.catalog-select')
+    const trigger = document.querySelector(selector)
+    return { background: getComputedStyle(panel).backgroundColor, panelWidth: panel.getBoundingClientRect().width, triggerWidth: trigger.getBoundingClientRect().width }
+  }, trigger)
+  assert.notEqual(layout.background, 'rgba(0, 0, 0, 0)', 'menu surface must be opaque')
+  assert.notEqual(layout.background, 'transparent', 'menu surface must be opaque')
+  assert.ok(layout.panelWidth >= layout.triggerWidth - 1, 'menu must be at least as wide as its trigger')
+}
+
+async function assertCatalogControls(page, label) {
+  // Shared-layout indicators may temporarily extend beyond their destination button.
+  // Geometry belongs to the settled controls, after both native and projection animations.
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))')
+  await page.animationsSettled()
+  await page.waitFor(() => [...document.querySelectorAll('.tank-catalog-menu .segmented-indicator')]
+    .every(indicator => getComputedStyle(indicator).transform === 'none'), { label: 'catalog selection projection settled' })
+  const clipped = await page.probe(() => [...document.querySelectorAll('.tank-catalog-menu button, .tank-catalog-menu summary, .tank-catalog-menu select')].filter(element => {
+    const rect = element.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return false
+    const field = element.closest('.tp-field')?.getBoundingClientRect()
+    return rect.left < -1 || rect.right > innerWidth + 1 || element.scrollWidth > element.clientWidth + 1
+      || (field && (rect.left < field.left - 1 || rect.right > field.right + 1))
+  }).map(element => ({ text: element.textContent, width: element.clientWidth, scrollWidth: element.scrollWidth,
+    indicators: [...element.querySelectorAll('.segmented-indicator')].map(indicator => getComputedStyle(indicator).transform) })))
+  assert.deepEqual(clipped, [], `${label}: filter controls fit their fields and remain reachable`)
+}
+
+async function catalogScenario(page, scenario) {
+  await page.waitForValue('document.querySelectorAll("[data-testid=tank-card]").length', count => count === 1, { label: `${scenario.name}: catalog ready` })
+  await catalogState(page, 'collector', ['9128'])
+  await page.animationsSettled()
+  await assertCatalogControls(page, `${scenario.name} initial collector`)
+
+  if (scenario.mode === 'inline') {
+    assert.equal(await page.evaluate('document.querySelector("#tp-category [data-value=collector]")?.getAttribute("aria-checked")'), 'true')
+    await assertCatalogIcons(page)
+    await saveCatalogScreenshot(page, scenario.name)
+    await page.tapSelector('#tp-category [data-value=premium]', false)
+    await catalogState(page, 'premium', ['9129'])
+    await page.tapSelector('#tp-category [data-value=collector]', false)
+    await page.tapSelector('#tp-nation [data-value=china]', false)
+    await catalogState(page, 'collector', ['9200'])
+    assert.equal(await page.evaluate(`new URLSearchParams(location.search).get('nation')`), 'china')
+  } else if (scenario.mode === 'menu') {
+    await page.tapSelector('#tp-nation', false)
+    await page.waitFor(() => !!document.querySelector('[role="option"][data-state="checked"]'), { label: 'nation menu open' })
+    await assertCatalogMenu(page, '#tp-nation')
+    await assertCatalogIcons(page)
+    await saveCatalogScreenshot(page, scenario.name)
+    await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+    await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
+    await page.waitFor(() => !document.querySelector('[role="option"]'), { label: 'nation menu closes on Escape' })
+    assert.equal(await page.evaluate('document.activeElement?.id'), 'tp-nation', 'Escape returns focus to nation trigger')
+    await page.tapSelector('#tp-category', false)
+    await page.waitFor(() => !!document.querySelector('.catalog-select [role="option"]'), { label: 'category menu open' })
+    await assertCatalogMenu(page, '#tp-category')
+    await page.tapSelector('[role="option"][data-value=premium]', false)
+    await catalogState(page, 'premium', ['9129'])
+  } else {
+    await page.tapSelector('[data-testid=tank-search]')
+    await page.client.send('Input.insertText', { text: 'Fixture' }, page.sessionId)
+    await page.waitForValue(`new URLSearchParams(location.search).get('q')`, value => value === 'Fixture', { label: 'search committed' })
+    await page.tapSelector('[data-testid=filter-toggle]')
+    await page.tapSelector('#tp-category summary')
+    await page.tapSelector('#tp-category [data-value=premium]')
+    await catalogState(page, 'premium', ['9129'])
+    await page.tapSelector('#tp-nation summary')
+    await assertCatalogIcons(page)
+    await saveCatalogScreenshot(page, scenario.name)
+    if (scenario.rotate) {
+      await page.emulate({ width: 844, height: 390, touch: true })
+      await page.animationsSettled()
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=tank-search]").value'), 'Fixture')
+      await catalogState(page, 'premium', ['9129'])
+    }
+    await page.tapSelector('[data-testid=filter-sheet-done]')
+    await page.waitFor(() => !document.querySelector('[role="dialog"]'), { label: 'filter sheet closed' })
+    await catalogState(page, 'premium', ['9129'])
+    assert.equal(await page.evaluate('document.querySelector("[data-testid=tank-search]").value'), 'Fixture')
+    if (scenario.rotate) {
+      await page.tapSelector('[data-testid=filter-toggle]')
+      await page.emulate({ width: 1440, height: 900, touch: false })
+      await page.waitFor(() => !document.querySelector('[role="dialog"]'), { label: 'sheet closes when rotating into wide layout' })
+      await catalogState(page, 'premium', ['9129'])
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=tank-search]").value'), 'Fixture')
+    }
+  }
+  assert.equal(await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `${scenario.name}: no horizontal overflow`)
+  await assertCatalogControls(page, scenario.name)
+  if (scenario.profile) {
+    assert.equal(await page.evaluate('document.documentElement.dataset.uiProfile'), scenario.profile, 'requested UI profile is active')
+    assert.equal(await page.evaluate('document.documentElement.dataset.theme'), 'light', 'winter renders the light theme')
+    assert.equal(await page.evaluate('document.documentElement.lang'), scenario.locale, 'requested language is active')
+  }
+}
 
 /** 页面内几何探针（Page.probe 会序列化，不能引用模块作用域）。 */
 function layoutProbe() {
@@ -178,6 +355,7 @@ try {
       await page.animationsSettled()
       const layout = await page.probe(layoutProbe)
       assertScenario(scenario, layout)
+      if (scenario.name === 'phone-390x844') await nationKeyboardNavigation(page)
       console.log(`[browser-techtree-layout] ${scenario.name} PASS ${JSON.stringify({
         header: layout.header.height,
         tabs: layout.tabRows,
@@ -208,6 +386,22 @@ try {
       try { await cdp.client.send('Target.closeTarget', { targetId }) } catch { /* page already gone */ }
     }
   }
+  for (const scenario of CATALOG_SCENARIOS) {
+    const { targetId, sessionId } = await cdp.openPage()
+    const page = new Page(cdp.client, sessionId)
+    try {
+      await page.enable()
+      await page.emulate(scenario)
+      await cdp.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile ?? 'summer')});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale ?? 'zh')});` }, sessionId)
+      await page.goto(`${origin}/?view=agent-tankopedia&nation=${NATION}&tier=8&category=collector&assets=${encodeURIComponent(assets.origin)}`)
+      await catalogScenario(page, scenario)
+      console.log(`[browser-techtree-layout] ${scenario.name} PASS`)
+    } catch (error) {
+      failures.push(`${scenario.name}: ${error.message}; ${(await page.diagnose()).join('; ')}`)
+    } finally {
+      try { await cdp.client.send('Target.closeTarget', { targetId }) } catch { /* page already gone */ }
+    }
+  }
 } finally {
   await cdp.close()
   await assets.close()
@@ -219,5 +413,5 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log(`[browser-techtree-layout] PASS ${SCENARIOS.length} scenarios`)
+  console.log(`[browser-techtree-layout] PASS ${SCENARIOS.length + CATALOG_SCENARIOS.length} scenarios`)
 }

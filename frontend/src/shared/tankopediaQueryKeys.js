@@ -5,6 +5,6 @@
  * 都必须消费这一份；此模块不引入任何场景/资产依赖，可安全进入应用壳。
  */
 export const TANKOPEDIA_QUERY_KEYS = Object.freeze([
-  'q', 'tier', 'nation', 'type', 'sort', 'tank', 'config',
+  'q', 'tier', 'nation', 'type', 'category', 'sort', 'tank', 'config',
   'engine', 'track', 'shell', 'dev', 'cons', 'prov', 'skills', 'skillTriggers', 'camo', 'eq', 'upgrade', 'abilities',
 ])

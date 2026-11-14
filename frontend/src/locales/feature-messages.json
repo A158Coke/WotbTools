@@ -287,6 +287,8 @@
       "performance_options": "性能选项"
     },
     "agentTanks": {
+      "category": "车辆类别",
+      "categories": {"regular": "普通", "premium": "金币", "collector": "典藏"},
       "title": "坦克百科",
       "hint": "全部坦克图鉴。点击卡片查看弹种与机动数据。",
       "search_label": "搜索坦克",
@@ -323,7 +325,7 @@
         "china": "中国",
         "france": "法国",
         "european": "欧洲",
-        "other": "其他",
+        "other": "闪电系",
         "unknown": "未知"
       },
       "types": {
@@ -1295,6 +1297,8 @@
       "performance_options": "Performance options"
     },
     "agentTanks": {
+      "category": "Vehicle category",
+      "categories": {"regular": "Regular", "premium": "Premium", "collector": "Collector"},
       "title": "Tankopedia",
       "hint": "Every tank. Open a card for shells and mobility.",
       "search_label": "Search tanks",
@@ -1331,7 +1335,7 @@
         "china": "China",
         "france": "France",
         "european": "Europe",
-        "other": "Other",
+        "other": "Hybrid nation",
         "unknown": "Unknown"
       },
       "types": {
@@ -2303,6 +2307,8 @@
       "performance_options": "Параметры производительности"
     },
     "agentTanks": {
+      "category": "Категория техники",
+      "categories": {"regular": "Обычная", "premium": "Премиум", "collector": "Коллекционная"},
       "title": "Энциклопедия танков",
       "hint": "Все танки. Откройте карточку, чтобы увидеть снаряды и подвижность.",
       "search_label": "Поиск танков",
@@ -2339,7 +2345,7 @@
         "china": "Китай",
         "france": "Франция",
         "european": "Европа",
-        "other": "Другие",
+        "other": "Сборная нация",
         "unknown": "Неизвестно"
       },
       "types": {
