@@ -535,6 +535,28 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     expect(entries[1].material).toBe(withoutLm)   // 逐实例光照语义不得被并掉
   })
 
+  it('HDR tint 不合并：颜色签名用原始 RGB，不经 8-bit hex（评审 P2）', () => {
+    // (1,1,1) 与 (1.77,1.77,1.77) 的 getHexString() 都是 "ffffff"，但着色器用原始
+    // uTint 乘算 → 亮度不同；必须按原始 r/g/b 进签名。
+    const sharedTex = new THREE.Texture()
+    const mk = (tint) => new THREE.ShaderMaterial({
+      uniforms: { colormapLm: { value: sharedTex }, uTint: { value: tint } },
+      vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
+    })
+    const unit = mk(new THREE.Color(1, 1, 1))
+    const hdr = mk(new THREE.Color(1.77, 1.77, 1.77))
+    expect(unit.uniforms.uTint.value.getHexString()).toBe(hdr.uniforms.uTint.value.getHexString())
+    const entries = [entryOf(unit), entryOf(hdr)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(unit)
+    expect(entries[1].material).toBe(hdr)   // 亮度语义不同，不得并成一份
+    // 相同原始 RGB（不同对象）仍可合并
+    const same = mk(new THREE.Color(1.77, 1.77, 1.77))
+    const pair = [entryOf(mk(new THREE.Color(1.77, 1.77, 1.77))), entryOf(same)]
+    canonicalizeEntryMaterials(pair)
+    expect(pair[1].material).toBe(pair[0].material)
+  })
+
   it('仅 annotationSurface 策略不同的材质不合并（评审 P2：薄片贴花 vs 实体可绘制面）', () => {
     // sceneryAssembly.markNotDrawable 给薄片贴花写 userData.annotationSurface=false，
     // 实体（如贴花桥）保持 undefined/true；两者渲染签名可以完全相同，策略必须进身份，

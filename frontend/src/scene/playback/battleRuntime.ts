@@ -386,7 +386,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
       while (shotPtr < shots.length && shots[shotPtr].t_fire <= t) { spawnShot(shots[shotPtr], shotPtr); shotPtr++; }
     },
     resetShotPtr() { shotPtr = 0; },
-    resetShotsTo(index: number) { shotPtr = index; },
+    resetShotsTo(index: number) { shotPtr = index; gunfire.invalidatePending(); },
     flushMuzzles,
     updateTracers,
     updateBattleFx,

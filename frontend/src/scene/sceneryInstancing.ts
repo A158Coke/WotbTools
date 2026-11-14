@@ -70,6 +70,13 @@ function materialProp(m: Material, key: string): unknown {
   return Reflect.get(m, key)
 }
 
+/** 颜色签名：**原始 r/g/b 浮点**，不经 `getHexString()`——后者把颜色钳到 8-bit
+ *  显示域，HDR tint（如 1.77）会与 1.0 得到同一个 hex，而 lightmapped/decal 的
+ *  着色器直接用原始 `uTint` 乘算 → 亮度不同却被并成一份（评审 P2）。 */
+function colorSignature(color: { r: number, g: number, b: number }): string {
+  return `c:${color.r.toFixed(6)},${color.g.toFixed(6)},${color.b.toFixed(6)}`
+}
+
 function definesSignature(m: Material): string {
   const defines = materialProp(m, 'defines')
   if (!defines || typeof defines !== 'object') return '-'
@@ -101,7 +108,9 @@ function materialSignatureValue(m: Material, field: string): string {
   if (typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string') return String(value)
   // 纹理：uuid 即身份（同图对象共享 uuid）；颜色：hex
   if (typeof value === 'object' && 'uuid' in (value as object)) return `tex:${(value as { uuid: string }).uuid}`
-  if (typeof value === 'object' && 'getHexString' in (value as object)) return (value as { getHexString(): string }).getHexString()
+  if (typeof value === 'object' && (value as { isColor?: boolean }).isColor === true) {
+    return colorSignature(value as { r: number, g: number, b: number })
+  }
   return String(value)
 }
 
@@ -112,7 +121,7 @@ function uniformValueSignature(value: unknown): string {
   if (value == null) return 'null'
   const v = value as Record<string, unknown>
   if (v.isTexture === true) return `tex:${String(v.uuid)}`
-  if (v.isColor === true) return `c:${(value as { getHexString(): string }).getHexString()}`
+  if (v.isColor === true) return colorSignature(value as { r: number, g: number, b: number })
   if (v.isVector2 === true || v.isVector3 === true || v.isVector4 === true) {
     return `v:${(value as { toArray?(): number[] }).toArray?.().join(',') ?? String(value)}`
   }

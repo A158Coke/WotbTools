@@ -73,7 +73,10 @@ export interface GunfireAudioDeps {
 export interface GunfireAudio {
   /** 会话装载后预热：按上阵车辆的 (tank_id, gun_local) 解析等级并预取 buffer（fire-and-forget）。 */
   prepare(defs: readonly GunfireVehicleDef[]): void
-  /** 会话 teardown：停掉在响的声源（预取的 buffer 跨会话复用，不释放）。 */
+  /** seek 边界（宿主 seekTo 调用）：作废在飞请求并停止在响声源——旧时间点的炮声
+   *  不得落到新时间点；seek 之后的新开炮照常（取新代号）。 */
+  invalidatePending(): void
+  /** 会话 teardown：作废在飞请求 + 停掉在响的声源（预取的 buffer 跨会话复用，不释放）。 */
   dispose(): void
   /** battleRuntime 每发开火回调（muzzle = 场景系炮口世界坐标）。 */
   onShot(shot: AgentPlaybackShot, muzzle: THREE.Vector3): void
@@ -195,6 +198,12 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     src.start()
   }
 
+  /** 停掉所有在响声源（seek 与 teardown 共用；buffer 缓存不在此释放）。 */
+  function stopVoices(): void {
+    for (const v of voices) { try { v.stop() } catch { /* already stopped */ } }
+    voices.clear()
+  }
+
   return {
     prepare(defs) {
       // 纯预热（fire-and-forget）：onShot 不依赖本调用（缺资产/缺映射 → 当发静音 + 留痕）。
@@ -229,11 +238,15 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
         })
         .catch(() => { /* resolveClass 内已置缓存，静默 */ })
     },
-    dispose() {
-      // 递增会话代：让所有未完成的 resolve/load Promise 在下一个边界自行作废
+    invalidatePending() {
+      // 递增会话代：在飞的 resolve/load Promise 在下一个边界自行作废；
+      // 同时停掉已响的声源（它们属于被跳过的旧时间点）
       generation++
-      for (const v of voices) { try { v.stop() } catch { /* already stopped */ } }
-      voices.clear()
+      stopVoices()
+    },
+    dispose() {
+      generation++
+      stopVoices()
     },
   }
 }

@@ -7,12 +7,14 @@ const assets = vi.hoisted(() => ({
     main: { close: ['main_close_01.ogg', 'main_close_02.ogg'], far: ['main_far_01.ogg'] },
     huge: { close: ['huge_close_01.ogg'] },
     auto: { close: ['auto_close_01.ogg'] },
+    small: { close: ['small_close_01.ogg'] },
   },
   gunClass: {
     '1': { '5': 'wpn_shot_main_mb' },      // 合法 tag（_mb 变体 → 同等级）
     '2': { '7': 'wpn_shot_huge' },
     '3': { '9': 'wpn_Oth50_STT' },         // 词表外 → 不播（fail-closed）
     '5': { '13': 'wpn_shot_auto' },
+    '6': { '15': 'wpn_shot_small' },
   },
 }))
 vi.mock('../assetProvider.js', () => ({
@@ -179,6 +181,28 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     gate.bytesDelay = null
     await new Promise(r => setTimeout(r, 30))
     expect(audio.started).toHaveLength(0)
+  })
+
+  it('seek（invalidatePending）：在飞请求作废、在响声源停止，之后新开炮仍可播（评审 P2）', async () => {
+    const { gunfire, defs } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })   // auto：先正常播一发，制造"在响声源"
+    defs.set(2, { tank_id: 6, gun_local: 15 })   // small：独立未缓存的 class，可卡在 bytes 上
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
+    // 再发起一发并卡在 bytes await 上（small 未被缓存）
+    let release!: () => void
+    gate.bytesDelay = new Promise<void>((r) => { release = r })
+    gunfire.onShot(shotOf(2), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 10))
+    gunfire.invalidatePending()   // === 宿主 seekTo 路径
+    expect(audio.stopped).toBe(1) // 在响的旧声源被停
+    release()
+    gate.bytesDelay = null
+    await new Promise(r => setTimeout(r, 30))
+    expect(audio.started).toHaveLength(1)   // 迟到的旧请求不播
+    // seek 之后的新开炮照常（新代号）
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(2))
   })
 
   it('异步等待期间换场（prepare 新会话）：旧会话的迟到请求不 start', async () => {
