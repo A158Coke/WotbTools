@@ -516,6 +516,9 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
    边框保持默认 subtle；hover 在各自底色上加深，选中态仍以 accent 边框区分。 */
 .tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
 .tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
+/* 车名用对应语义色：与底色同源，深色主题下 warning/info 本身即可读 */
+.tp-card.is-premium .tp-card-name { color: var(--color-warning); }
+.tp-card.is-collector:not(.is-premium) .tp-card-name { color: var(--color-info); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 
 @media (hover: hover) {
