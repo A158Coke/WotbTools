@@ -76,22 +76,6 @@ function metaParts(option: DatasetOption): MetaPart[] {
         :collision-padding="8"
       >
         <SelectViewport class="dv-viewport">
-          <SelectItem
-            :value="DEFAULT_VALUE"
-            class="dv-item"
-          >
-            <span class="dv-item-body">
-              <SelectItemText class="dv-item-label">{{ $t('dataVersion.default') }}</SelectItemText>
-              <span v-if="defaultId" class="dv-item-meta">
-                {{ $t('dataVersion.serverDefault', { id: defaultId }) }}
-              </span>
-            </span>
-            <SelectItemIndicator class="dv-check">
-              <Check :size="16" aria-hidden="true" />
-            </SelectItemIndicator>
-          </SelectItem>
-
-          <SelectSeparator v-if="options.length" class="dv-separator" />
 
           <SelectItem
             v-for="option in options"
@@ -118,6 +102,22 @@ function metaParts(option: DatasetOption): MetaPart[] {
               <Check :size="16" aria-hidden="true" />
             </SelectItemIndicator>
           </SelectItem>
+          <SelectSeparator v-if="options.length" class="dv-separator" />
+          <SelectItem
+            :value="DEFAULT_VALUE"
+            class="dv-item"
+          >
+            <span class="dv-item-body">
+              <SelectItemText class="dv-item-label">{{ $t('dataVersion.default') }}</SelectItemText>
+              <span v-if="defaultId" class="dv-item-meta">
+                {{ $t('dataVersion.serverDefault', { id: defaultId }) }}
+              </span>
+            </span>
+            <SelectItemIndicator class="dv-check">
+              <Check :size="16" aria-hidden="true" />
+            </SelectItemIndicator>
+          </SelectItem>
+
         </SelectViewport>
       </SelectContent>
     </SelectPortal>

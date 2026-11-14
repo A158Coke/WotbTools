@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { orderDatasetsForDisplay } from '../utils/datasetOrder.js'
 import {
   ASSET_BASE_STORAGE,
@@ -67,6 +67,7 @@ const state = ref<CatalogState>({
 })
 
 let inflight: Promise<CatalogState> | null = null
+let healedStaleSelection = false
 
 function validDataset(entry: unknown): entry is DatasetEntry {
   if (!entry || typeof entry !== 'object') return false
@@ -145,6 +146,15 @@ export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
   const selected = ref<string>(dataVersionId() ?? '')
+  // 目录就绪后自愈：持久化选中值已从目录下线（如 supertest → 11.4.0.130 改名）时，
+  // 旧 id 会让触发器显示幽灵条目、资产按 /v/<旧id> 404——回默认并整页重载一次
+  //（select 本身就是重载语义； healed 标记防多实例重复触发）。
+  watch(state, (snapshot) => {
+    if (healedStaleSelection || snapshot.status !== 'ready' || !selected.value) return
+    if (snapshot.datasets.some(entry => entry.id === selected.value)) return
+    healedStaleSelection = true
+    select('')
+  })
   // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式 → 其余版本号递降。
   const options = computed<DatasetOption[]>(() => orderDatasetsForDisplay(state.value.datasets).map((entry) => ({
     value: entry.id,
