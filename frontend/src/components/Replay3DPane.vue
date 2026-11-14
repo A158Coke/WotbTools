@@ -44,11 +44,7 @@ import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
-import {
-  ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
-  ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  applyEraser, canRedo, canUndo, commit, redo, undo,
-} from '../utils/annotation.js'
+import { useSceneAnnotations } from '../composables/useSceneAnnotations.js'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
@@ -185,97 +181,6 @@ const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
 
-// ---------- 3D annotation（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
-// history/tool/color/width/visibility 的唯一 owner 是本面板；scene 只消费 projection 与
-// interaction 配置。V1 不持久化，换文件 / 场景销毁即清空（与 2D 的临时标注语义一致）。
-const annotationOpen = ref(false)
-const annotationTool = ref(null)
-const annotationColor = ref(ANNOT_COLORS[0])
-const annotationWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
-const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
-const annotationsVisible = ref(true)
-const annotationHistory = ref([[]])
-const annotationIndex = ref(0)
-const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
-
-function pushAnnotationProjection() {
-  sceneApi?.setAnnotations?.(annotations.value)
-}
-function pushAnnotationInteraction() {
-  sceneApi?.setAnnotationInteraction?.({
-    enabled: annotationOpen.value && !!annotationTool.value && store.hasData,
-    tool: annotationTool.value,
-    color: annotationColor.value,
-    width: annotationWidthSlider.value,
-    eraserWidth: annotationEraserRadius.value,
-  })
-}
-function pushAnnotationVisibility() {
-  sceneApi?.setAnnotationsVisible?.(annotationsVisible.value)
-}
-function replaceAnnotations(next) {
-  const state = commit(annotationHistory.value, annotationIndex.value, next)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function commitAnnotationFromScene(annotation) {
-  replaceAnnotations([...annotations.value, annotation])
-}
-function eraseFromScene(path) {
-  const next = applyEraser(annotations.value, path.points, path.radius)
-  if (next !== annotations.value) replaceAnnotations(next)
-}
-function undoAnnotation() {
-  const state = undo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function redoAnnotation() {
-  const state = redo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function clearAnnotations() {
-  if (annotations.value.length) replaceAnnotations([])
-}
-function toggleAnnotationsVisible() {
-  annotationsVisible.value = !annotationsVisible.value
-}
-function setAnnotationTool(tool) {
-  annotationTool.value = tool
-  if (!annotationsVisible.value) annotationsVisible.value = true
-}
-function openAnnotation() {
-  if (annotationOpen.value || store.cam === 'recorder') return
-  // Drawing owns pointer interaction only; playback transport keeps its own state.
-  displayOpen.value = false
-  annotationOpen.value = true
-  annotationTool.value = 'pen'
-  annotationsVisible.value = true
-  pushAnnotationProjection()
-  pushAnnotationInteraction()
-  pushAnnotationVisibility()
-}
-function closeAnnotation() {
-  annotationOpen.value = false
-  annotationTool.value = null
-  pushAnnotationInteraction()
-}
-function toggleAnnotation() {
-  if (annotationOpen.value) closeAnnotation()
-  else openAnnotation()
-}
-function resetAnnotationState() {
-  annotationHistory.value = [[]]
-  annotationIndex.value = 0
-  annotationOpen.value = false
-  annotationTool.value = null
-  annotationsVisible.value = true
-  sceneApi?.setAnnotations?.([])
-  sceneApi?.setAnnotationInteraction?.({ enabled: false, tool: null })
-  sceneApi?.setAnnotationsVisible?.(true)
-}
-
 /**
  * 名册行点击 = **跟随该玩家坦克**（2026-10-05 需求）：不再打开详情窗。
  * 选中高亮照旧（selectedEid），相机跟随由场景内核 setFollow 独占（它同时切 follow 档）。
@@ -365,6 +270,19 @@ const stage = ref(null)
 const labelOverlay = ref(null)
 const recorderReticle = ref(null)
 let sceneApi = null
+// 3D annotation（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）：会话唯一 owner =
+// useSceneAnnotations（与地图预览 3D 共用）；scene 只消费 projection 与 interaction 配置。
+// V1 不持久化，换文件 / 场景销毁即清空。recorder 镜头不开 drawing；Display 与 drawing 互斥。
+const {
+  annotationOpen, annotationTool, pushAnnotationProjection, pushAnnotationInteraction, pushAnnotationVisibility,
+  commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation, resetAnnotationState,
+  toolbarProps: annotationToolbarProps, toolbarHandlers: annotationToolbarHandlers,
+} = useSceneAnnotations({
+  getSceneApi: () => sceneApi,
+  interactionReady: () => store.hasData,
+  canOpen: () => store.cam !== 'recorder',
+  onOpen: () => { displayOpen.value = false },
+})
 const transport = usePlaybackTransport({
   isPlaying: () => store.playing,
   play: () => sceneApi?.setPlaying(true),
@@ -404,14 +322,6 @@ function pushLabelPrefs() {
   })
 }
 watch([labelPrefs, hpPrefs, markerPrefs, uiHidden], pushLabelPrefs, { deep: true })
-// annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）。
-watch(annotations, pushAnnotationProjection)
-watch(
-  [annotationOpen, annotationTool, annotationColor, annotationWidthSlider, annotationEraserRadius, () => store.hasData],
-  pushAnnotationInteraction,
-)
-watch(annotationsVisible, pushAnnotationVisibility)
-watch(() => store.hasData, (has) => { if (!has && annotationOpen.value) closeAnnotation() })
 // 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
 watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
 
@@ -984,34 +894,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
           <!-- Drawing 面板在传输控件之上，占用 camera/GLB 行的同一份高度预算；不遮 play/timeline。 -->
           <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
-            <AnnotationToolbar
-              :open="annotationOpen"
-              compact
-              :active-tool="annotationTool"
-              :annot-colors="ANNOT_COLORS"
-              :annot-color="annotationColor"
-              :annot-visible="annotationsVisible"
-              :annot-width-slider="annotationWidthSlider"
-              :annot-width-min="ANNOT_WIDTH_MIN"
-              :annot-width-max="ANNOT_WIDTH_MAX"
-              :allowed-tools="['pen', 'eraser']"
-              :eraser-radius-slider="annotationEraserRadius"
-              :eraser-radius-min="ANNOT_ERASER_RADIUS_MIN"
-              :eraser-radius-max="ANNOT_ERASER_RADIUS_MAX"
-              :history-index="annotationIndex"
-              :history="annotationHistory"
-              :can-undo="canUndo"
-              :can-redo="canRedo"
-              @toggle-tool="setAnnotationTool"
-              @set-annot-color="annotationColor = $event"
-              @update:annot-width="annotationWidthSlider = $event"
-              @update:eraser-radius="annotationEraserRadius = $event"
-              @undo="undoAnnotation"
-              @redo="redoAnnotation"
-              @clear-annotations="clearAnnotations"
-              @toggle-annotations="toggleAnnotationsVisible"
-              @close="closeAnnotation"
-            />
+            <AnnotationToolbar v-bind="annotationToolbarProps" compact v-on="annotationToolbarHandlers" />
           </div>
           <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
           <PlaybackTransport

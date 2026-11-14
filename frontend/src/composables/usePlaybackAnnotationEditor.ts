@@ -9,13 +9,12 @@ import {
   hitTestAnnotation,
   isDegenerateAnnotation,
   translateAnnotation,
-  projectAnnotationToSvg,
   screenToSemantic,
   svgToScreen,
-  semanticWidthFromSlider,
 } from '../utils/annotation.js'
-import { usePlaybackAnnotations } from './usePlaybackAnnotations.js'
-import type { PlaybackAnnotation } from './usePlaybackAnnotations.js'
+import { useAnnotationState } from './useAnnotationState.js'
+import { useAnnotationSvgProjection } from './useAnnotationSvgProjection.js'
+import type { MapAnnotation } from './useAnnotationState.js'
 import type { PlaybackCamera, PlaybackMapViewLike } from './usePlaybackCamera.js'
 
 /** 语义坐标点（回放地图用户坐标系）。 */
@@ -35,7 +34,7 @@ export interface TextSession {
 /**
  * 2D 回放标注编辑器（#820 Agent C 拆分）：工具/绘制手势/文字会话/route 的**唯一 owner**。
  *
- * - 历史快照 / 草稿 / 选中项的唯一事实源仍是 usePlaybackAnnotations（#820 Wave B5B），
+ * - 历史快照 / 草稿 / 选中项的唯一事实源仍是 useAnnotationState（#820 Wave B5B），
  *   本 composable 是它的唯一消费者，持有 gesture 临时状态（工具、颜色/宽度、routePoints、
  *   绘制采样、文字会话）；
  * - 标注几何一律存语义坐标；坐标换算复用 usePlaybackCamera 的 view/MapRenderRect（同一视口），
@@ -68,28 +67,15 @@ export function usePlaybackAnnotationEditor(
 const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
 
   // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
-  // 历史快照 / 草稿 / 选中项的唯一 owner 是 usePlaybackAnnotations（#820 Wave B5B）；
+  // 历史快照 / 草稿 / 选中项的唯一 owner 是 useAnnotationState（#820 Wave B5B）；
   // 工具、颜色/宽度、routePoints 等 gesture 临时状态在本 composable。
   const annotationOpen = ref(false)
   const activeTool = ref<string | null>(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
   const routePoints = ref<SemanticPoint[]>([])
-  let moveOriginal: PlaybackAnnotation | null = null
+  let moveOriginal: MapAnnotation | null = null
   const annotColor = ref(ANNOT_COLORS[0])
   const annotVisible = ref(true)
   const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
-  // 语义单位/每 SVG 像素（x/y 轴因 preserveAspectRatio:none 比例可能不同；线宽/字号/半径按 x 轴换算）
-  const semPerSvgX = computed(() => {
-    const b = mapView.value.renderBounds
-    return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
-  })
-  const semPerSvgY = computed(() => {
-    const b = mapView.value.renderBounds
-    return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
-  })
-  const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
-    semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
-    logicalSpan: mapView.value.W,
-  }))
   const {
     history,
     historyIndex,
@@ -108,7 +94,16 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     deleteSelected,
     renameSelected,
     finishRoute: finishRouteCommit,
-  } = usePlaybackAnnotations({ getRouteDraft: () => routeDraft() })
+  } = useAnnotationState({ getRouteDraft: () => routeDraft() })
+  // SVG 投影（语义↔SVG 比例、滑块线宽、渲染列表）唯一 owner = useAnnotationSvgProjection。
+  const { semPerSvgX, semPerSvgY, annotWidth, renderedAnnotations } = useAnnotationSvgProjection(mapView, {
+    widthSlider: annotWidthSlider,
+    annotations,
+    draft,
+    selectedIndex: selectedAnnotationIndex,
+    replacingSelected: () => !!moveOriginal,
+    showSelection: () => annotationOpen.value,
+  })
   const textSession = ref<TextSession | null>(null) // reactive({ point, text })，文字输入会话
   const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
   let drawStart: SemanticPoint | null = null // 绘制起点（语义坐标）
@@ -267,7 +262,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
         drawScreen.push({ x: e.clientX, y: e.clientY })
         drawPoints.push(p)
         // route 草稿在采点过程中始终携带 points 列（原实现同形状）。
-        draft.value = { ...(draft.value as PlaybackAnnotation), points: [...drawPoints] }
+        draft.value = { ...(draft.value as MapAnnotation), points: [...drawPoints] }
       }
     } else if (drawStart) {
       draft.value = draftFromTool(tool as string, drawStart, p)
@@ -345,24 +340,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     )
     if (!s) return null
     return { left: `${s.x}px`, top: `${s.y}px` }
-  })
-
-  /** 渲染用标注列表：语义坐标 → SVG 像素（含进行中的 draft），尺寸按 x/y 轴比例换算。 */
-  const renderedAnnotations = computed(() => {
-    const toX = mapView.value.toX
-    const toY = mapView.value.toY
-    const invX = 1 / Math.max(1e-9, semPerSvgX.value)
-    const invY = 1 / Math.max(1e-9, semPerSvgY.value)
-    const list = [...annotations.value]
-    if (draft.value) {
-      if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
-      else list.push(draft.value)
-    }
-    const toSvgOptions = { toX, toY, invX, invY, widthFallback: annotWidth.value } as Parameters<typeof projectAnnotationToSvg>[1] & { toX: typeof toX; toY: typeof toY }
-    return list.map((ann: PlaybackAnnotation, index: number) => ({
-      ...projectAnnotationToSvg(ann, toSvgOptions),
-      selected: annotationOpen.value && index === selectedAnnotationIndex.value,
-    }))
   })
 
   return {
