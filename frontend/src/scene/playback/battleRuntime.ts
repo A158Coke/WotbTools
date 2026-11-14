@@ -16,6 +16,7 @@ import { TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from '..
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../../utils/battlePlayback.js'
 import { tracerSpanSecs } from './pure.js'
+import { createGunfireAudio } from './gunfireAudio.js'
 import { createTransientFeedback3d } from './transientFeedback3d.js'
 import type { TransientFeedback3d, TransientLabelOverlay, TransientVehicle } from './transientFeedback3d.js'
 import type { RuntimeVehicle } from './vehicleRuntime.js'
@@ -97,12 +98,22 @@ export interface BattleRuntimeHandle {
   tracerCount(): number
   trajLineCount(): number
   fxStats(): { impacts: number; bursts: number } | null
-  /** 会话 teardown：clearEffects + battleFx.dispose + battleFx=null + window.__battleFx 删除。 */
+  /** 3D 回放炮声预热（owner = 本模块内的 gunfireAudio；会话装载后按上阵车辆预取等级与 buffer）。 */
+  prepareGunfire(defs: readonly { tank_id?: number | null, gun_local?: unknown, config_idx?: unknown }[]): void
+  /** 会话 teardown：clearEffects + battleFx.dispose + battleFx=null + window.__battleFx 删除
+   *（含炮声在响声源停止）。 */
   dispose(): void
 }
 
 export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandle {
   const tracerColors = { unknown: deps.colorUnknown, friendly: deps.tracerFriendly, enemy: deps.tracerEnemy };
+  // 3D 回放炮声（gunfireAudio owner）：与弹道特效同一 owner 与同一触发点（spawnShot）。
+  // 射手车辆字段经 deps.vehicles.vehicleByEid 读（本模块已有该句柄，无需宿主额外接线）；
+  // 资产/映射缺失时 gunfireAudio 自行静默降级，不影响战斗表现。
+  const gunfire = createGunfireAudio({
+    getCamera: deps.getCamera,
+    getVehicleDef: (shot) => deps.vehicles.vehicleByEid(shot.shooter_eid)?.def ?? null,
+  });
   const tracers: TracerRuntime[] = [];
   const pendingMuzzles: PendingMuzzle[] = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
   // 战斗反馈显示时长倍率（**只作用于 3D 场景**）：掉血飘字、HP 条幽灵/受击闪乘这个系数——
@@ -176,6 +187,9 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
       t0: s.t_fire, t1, shot: s, color, seed, impactPos, dir, out, head: from.clone(), hit: false,
       s0: 0, inBarrel: false };
     tracers.push(tracer);
+    // 炮声（可选注入，gunfireAudio owner；muzzle = 场景系弹道折线起点，与相机同系）。
+    // seek 经 resetShotsTo 只前移游标，本函数不会被历史弹重放调用——与弹道特效同一游标语义。
+    gunfire.onShot(s, from);
     // 弹道光迹（逐段一条：折线在跳弹处拐弯）：段起点时刻起随弹头显现，弹头走完全程后
     // 停留再淡出（trailOpacityAt，回放时钟；暂停时一直留着，seek 清空）。
     let firstTrail: TrajLine | null = null;
@@ -358,6 +372,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     clearEffects();
     battleFx?.dispose();   // 战斗特效（粒子批次 / 条带 / 图集）随会话一次性释放
     battleFx = null;
+    gunfire.dispose();     // 炮声 teardown：停在响声源（buffer/映射缓存跨会话复用，不释放）
     if (deps.debug) delete debugWindow.__battleFx;
   }
 
@@ -384,6 +399,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     tracerCount: () => tracers.length,
     trajLineCount: () => trajLines.length,
     fxStats() { return battleFx ? battleFx.stats() : null; },
+    prepareGunfire: (defs) => gunfire.prepare(defs),
     dispose,
   };
 }
