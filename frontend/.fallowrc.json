@@ -3,7 +3,11 @@
   "entry": [
     "src/index.{js,jsx,mjs}",
     "src/main.{js,jsx,mjs}",
-    "scripts/*.mjs"
+    "scripts/*.mjs",
+    // Pages served by vite as module URLs or swapped in through fixture-server
+    // aliases: loaded at runtime by browser gates, never through an import.
+    "scripts/browser-fixtures/*.{js,mjs}",
+    "scripts/shader-check-page.js"
   ],
   "duplicates": {
     // Hide pair-only clones; focus on widespread copy-paste
