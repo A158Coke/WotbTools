@@ -537,15 +537,13 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-/* 高级 / 收藏战车：整卡底色 + 车名语义色（2026-11-14 反馈：底色保留、封面底框去除）。
-   hover 在各自底色上加深；选中态仍以 accent 边框区分。 */
+/* 高级 / 收藏战车：整卡底色标识（2026-11-14 反馈：底色保留、封面底框去除）。
+   hover 在各自底色上加深；选中态仍以 accent 边框区分。车名不单独设色：
+   语义名色（含向 text-primary 混色）对自身 36%/46% 底色达不到 4.5:1
+   （评审实测冬季收藏车 3.89/3.27、冬季金币车 3.95/3.32），继承的
+   text-primary 由 tokens/color-contrast.test.ts 对全部主题×常态/hover 锁定。 */
 .tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
 .tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
-/* 车名 = 语义色 90% + text-primary 10%：纯语义色在 36%/46% 混色底上
-   （夏冬两季实测 2.94–3.87:1）不满足 4.5:1，向 text-primary 微调后
-   全组合 ≥4.78:1（tokens/color-contrast.test.ts 锁定）。 */
-.tp-card.is-premium .tp-card-name { color: color-mix(in oklab, var(--color-warning) 90%, var(--color-text-primary)); }
-.tp-card.is-collector:not(.is-premium) .tp-card-name { color: color-mix(in oklab, var(--color-info) 90%, var(--color-text-primary)); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 
 @media (hover: hover) {

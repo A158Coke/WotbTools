@@ -14,7 +14,9 @@ import { describe, expect, it } from 'vitest'
  * 目前只有 surface-1-glass 实际用于页面级面板；2/3 档位未应用，仍校验 alpha 与 canvas 混合。
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
-const css = readFileSync(resolve(HERE, 'color.css'), 'utf8')
+// Windows 工作副本按 autocrlf 检出为 CRLF，而 THEMES.summer 的多行选择器用字面 \n
+// 匹配——读取时统一成 LF，避免同一份内容在 CI（LF）与本地（CRLF）结论不同。
+const css = readFileSync(resolve(HERE, 'color.css'), 'utf8').replace(/\r\n/g, '\n')
 const BACKDROP_DIR = resolve(HERE, '../../assets/theme')
 
 type Rgba = { r: number; g: number; b: number; a: number }
@@ -113,6 +115,58 @@ async function glassBackdropExtrema(season: string, glass: Rgba, canvas: Rgb, sc
 function ratio(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
   return (hi + 0.05) / (lo + 0.05)
+}
+
+/* CSS color-mix(in oklab, …) 的等效实现（CSS Color 4）：卡片高级/收藏底色用语义色对
+   surface-1 做 Oklab 混色，组合对比度必须在测试里复算而不是只在浏览器里目测。 */
+function srgbToLinear(channel: number): number {
+  const value = channel / 255
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+function linearToSrgbChannel(value: number): number {
+  const c = value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055
+  return Math.round(Math.min(1, Math.max(0, c)) * 255)
+}
+
+function oklabOf(rgb: Rgb): [number, number, number] {
+  const [r, g, b] = rgb.map(srgbToLinear)
+  const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b
+  const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b
+  const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
+  const l_ = Math.cbrt(l)
+  const m_ = Math.cbrt(m)
+  const s_ = Math.cbrt(s)
+  return [
+    0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+    1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+    0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+  ]
+}
+
+function oklabToRgb([L, a, b]: [number, number, number]): Rgb {
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b
+  const l = l_ ** 3
+  const m = m_ ** 3
+  const s = s_ ** 3
+  return [
+    linearToSrgbChannel(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s),
+    linearToSrgbChannel(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s),
+    linearToSrgbChannel(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s),
+  ]
+}
+
+/** color-mix(in oklab, fg alpha%, bg) —— alpha 为 fg 占比（0–1）。 */
+function oklabMix(fg: string, bg: string, alpha: number): string {
+  const [l1, a1, b1] = oklabOf(channels(fg))
+  const [l2, a2, b2] = oklabOf(channels(bg))
+  return rgbToHex(oklabToRgb([
+    l1 * alpha + l2 * (1 - alpha),
+    a1 * alpha + a2 * (1 - alpha),
+    b1 * alpha + b2 * (1 - alpha),
+  ]))
 }
 
 const TEXT = ['--color-text-primary', '--color-text-secondary', '--color-text-tertiary', '--color-accent-text',
@@ -216,5 +270,36 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
       const surfaces = [...SURFACES.map(surface => scene[surface]), ...glassSurfaces]
       expect(Math.min(...surfaces.map(surface => ratio(scene[token], surface))), token).toBeGreaterThanOrEqual(4.5)
     }
+  })
+
+  /**
+   * 坦克卡片高级/收藏底色（TankCatalogMenu .tp-card.is-*，2026-11-14 评审）：
+   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色，车名继承
+   * text-primary。此前尝试的语义名色（含 90% 语义 + 10% text-primary 混色）对
+   * 自身底色只有 3.27–3.95:1——语义色与底色同源，任何比例都到不了 4.5。
+   * 这里按组件实际 CSS 复算全部主题 × 语义 × 常态/hover 的名字对比度，
+   * 并锁定「车名不得覆盖继承色」的映射契约。
+   */
+  it('坦克卡片高级/收藏底色：车名（继承 text-primary）对 36%/46% 语义底 ≥ 4.5', () => {
+    const component = readFileSync(resolve(HERE, '../../components/TankCatalogMenu.vue'), 'utf8')
+    const style = component.slice(component.indexOf('<style'))
+    // 映射契约：任何指向 .tp-card-name 的规则都不得声明 color（含 background-color 之外的
+    // color/border-color 系）——否则绕过本测试的继承色假设。
+    const colorRules = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(match => match[1].includes('.tp-card-name') && /(?:^|[^-])color\s*:/.test(match[2]))
+      .map(match => match[1].trim())
+    expect(colorRules).toEqual([])
+    const failures: string[] = []
+    for (const [name, selector] of Object.entries(THEMES)) {
+      const tokens = block(selector)
+      for (const semantic of ['--color-warning', '--color-info']) {
+        for (const alpha of [0.36, 0.46]) {
+          const bg = oklabMix(tokens[semantic], tokens['--color-surface-1'], alpha)
+          const value = ratio(tokens['--color-text-primary'], bg)
+          if (value < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${value.toFixed(2)}`)
+        }
+      }
+    }
+    expect(failures).toEqual([])
   })
 })

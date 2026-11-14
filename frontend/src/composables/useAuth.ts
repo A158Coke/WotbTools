@@ -77,35 +77,7 @@ function platformName() {
  * - Android 壳但 bridge 版本不受支持 / 版本未知 / 缺能力 → unsupported provider：只暴露失败，
  *   绝不退化成「WebView 里跑 keycloak-js」——那正是本次 cutover 要消灭的路径。
  */
-// ===== 本机免登录测试桩（docs/frontend/local-testing.md §4.1；本机自备，不入库）=====
-// dev 构建 + URL ?localuser 时以本机桩替代 Keycloak：authenticated=true、角色恰为
-// ['wotbtools-user']、sub 固定 local-dev；token() 恒空、ensureToken() 恒 false ⇒
-// 一切真实鉴权的后端调用照常 401（fail-closed 不变），只解锁纯本机能力（3D / 射击）。
-// 不做任何权限升级；模块加载时读取 URL，不持久化。任何提交前必须还原本文件。
-const DEV_LOCAL_USER = import.meta.env.DEV
-  && typeof window !== 'undefined'
-  && new URLSearchParams(window.location.search).has('localuser')
-
-function createLocalDevAuthProvider(): AuthProvider {
-  const claims = Object.freeze({
-    sub: 'local-dev', preferred_username: 'local-dev', displayName: 'local-dev',
-    realm_access: Object.freeze({ roles: Object.freeze(['wotbtools-user']) }),
-  })
-  return {
-    name: 'local-dev',
-    async init() {},
-    get authenticated() { return true },
-    get tokenParsed() { return claims },
-    token() { return '' },
-    login() { return Promise.resolve() },
-    logout() { return Promise.resolve() },
-    async ensureToken() { return false },
-    onAuthChanged() { return () => {} },
-  } as unknown as AuthProvider
-}
-
 async function resolveAuthProvider(): Promise<AuthProvider> {
-  if (DEV_LOCAL_USER) return createLocalDevAuthProvider()
   if (!isAndroidApp()) return createBrowserAuthProvider()
 
   const bridgeVersion = await getNativeBridgeVersion()

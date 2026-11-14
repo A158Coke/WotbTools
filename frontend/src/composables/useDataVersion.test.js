@@ -179,17 +179,32 @@ describe('useDataVersion', () => {
     ])
   })
 
-  it('目录先就绪、选择器后挂载：下线的持久化 id 自愈回默认（watch immediate）', async () => {
+  it('目录就绪后选择器才挂载：下线的持久化 id 注册即自愈回默认（watch immediate）', async () => {
     // 移动端抽屉开合会卸载/重建实例：目录请求在上一实例卸载后完成，新实例挂载时
     // 目录已就绪、watcher 不会再触发变更——注册时必须检查当前快照（immediate）。
     const assign = vi.fn()
     vi.spyOn(window.location, 'assign').mockImplementation(assign)
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))
     const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock }) // load 会 clear localStorage
+    await mod.loadDataVersionCatalog() // 上一实例周期：目录已就绪
     localStorage.setItem('wotb_data_version', 'supertest') // 已从目录下线的 id（clear 之后写入）
-    const { selected } = mod.useDataVersion()
-    await mod.loadDataVersionCatalog() // 目录就绪 → immediate watcher 检查当前快照
+    const { selected } = mod.useDataVersion() // 新实例挂载：watcher 以 immediate 注册，注册即自愈
     // select() 的语义 = 写存储 + 整页重载（不原地改 ref）；重载后即回默认。
+    expect(localStorage.getItem('wotb_data_version')).toBeNull()
+    expect(assign).toHaveBeenCalledTimes(1)
+    expect(assign.mock.calls[0][0]).not.toContain('data=supertest')
+  })
+
+  it('选择器先挂载、目录后才就绪：快照就绪同样触发自愈', async () => {
+    // 同一自愈的另一半时序：单实例先挂载、目录请求后完成。watcher 依赖的是
+    // 快照状态变化，而不是挂载动作本身——两条时序都必须收敛到回默认。
+    const assign = vi.fn()
+    vi.spyOn(window.location, 'assign').mockImplementation(assign)
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))
+    const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock })
+    localStorage.setItem('wotb_data_version', 'supertest')
+    const { selected } = mod.useDataVersion()
+    await mod.loadDataVersionCatalog() // 目录就绪 → watcher 检查当前快照
     expect(localStorage.getItem('wotb_data_version')).toBeNull()
     expect(assign).toHaveBeenCalledTimes(1)
     expect(assign.mock.calls[0][0]).not.toContain('data=supertest')
