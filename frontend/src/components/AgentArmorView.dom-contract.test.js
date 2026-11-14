@@ -33,45 +33,41 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 点选结果只留装甲名称 + 基础装甲值（2026-10-29）；5.0 起固定停靠在场景顶部正中（design-language §9
-  // 「强制横屏与场景 HUD」），不再按命中点摆位；右上角 HUD/模式/装甲组成合并为一块整卡片。
-  it('点选结果只显示装甲名称与基础装甲值，停靠在场景顶部正中；右上角合并为一块整体面板', () => {
-    expect(template).toContain('id="click-part"')
-    expect(template).toContain('id="click-armor"')
-    expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
-    expect(kernel).not.toContain("document.getElementById('click-angle')")
-    expect(kernel).not.toContain("document.getElementById('click-effective')")
-    expect(kernel).toMatch(/document\.getElementById\('click-part'\)!?\.textContent = L\.partName/)
+  // 2026-11-14 用户裁示：点选结果恢复五行读数（基础装甲/入射角/等效装甲/穿深/结果），
+  // 跟随点击位置显示，并随视口自适应缩放（手机下不占大面积）。数值语义：
+  // 厚度模式 = 几何量（穿深/结果为 '—'，该模式不判定）；判定模式 = 判定首层量，与判定卡同源。
+  it('点选结果五行读数、跟随点击位置、按视口自适应缩放', () => {
+    for (const id of ['click-part', 'click-armor', 'click-angle', 'click-effective', 'click-pen', 'click-result']) {
+      expect(template, `模板缺 ${id}`).toContain(`id="${id}"`)
+      expect(kernel, `内核未写入 ${id}`).toContain(`'${id}'`)
+    }
+    // 写入入口唯一：writeClickInfo 统一 set() 六行，不允许各处直写 textContent 绕过配色/格式化
+    expect(kernel).toMatch(/function writeClickInfo\(fields: \{/)
+    expect(kernel).toMatch(/function placeClickInfo\(clientX: number, clientY: number\): void \{/)
+    // 跟随点击位置：脚本写 left/top（相对场景容器，带边界钳制）
+    expect(kernel).toMatch(/card\.style\.left = /)
+    expect(kernel).toMatch(/card\.style\.top = /)
+    expect(kernel).toMatch(/if \(x \+ w > rect\.width - pad\)/)
+    expect(kernel).toMatch(/if \(y \+ h > rect\.height - pad\)/)
+    // 两条路径都写：厚度模式（几何量）与判定模式（判定首层）
+    expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBeGreaterThanOrEqual(2)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(_?event: MouseEvent, ndcX: number, ndcY: number\): void/)
-    // 5.0 停靠胶囊（design-language §9 场景 HUD）：场景脚本不写位置，只切换显示
-    expect(kernel).not.toMatch(/card\.style\.left = /)
-    expect(kernel).not.toMatch(/card\.style\.top = /)
-    expect(kernel).toMatch(/card\.style\.display = 'flex'/)
-    // 停靠位置由样式所有：固定顶部正中（不跟随命中点）
-    const dockCss = template.slice(template.indexOf('.armor-view :is(#click-info, #traj-info) {'))
+    // 判定路径取首层并经 L.resultLabel 做三语文案（不得在内核直拼中文）
+    expect(kernel).toMatch(/const firstLayer = trajLayers\[0\]/)
+    expect(kernel).toMatch(/L\.resultLabel \? L\.resultLabel\(resultCode\) : resultCode/)
+    // 停靠规则只属于判定卡 #traj-info；#click-info 由脚本定位（不再固定顶部正中）
+    const dockCss = template.slice(template.indexOf('.armor-view #traj-info {'))
     const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
     expect(dockRule).toContain('position: absolute')
-    expect(dockRule).toContain('inset-block-start: var(--space-5)')
     expect(dockRule).toContain('inset-inline-start: 50%')
-    expect(dockRule).toContain('transform: translateX(-50%)')
-    expect(template).toMatch(/\.armor-view #click-info \{[^}]*pointer-events: none/)
+    expect(template).not.toMatch(/\.armor-view :is\(#click-info, #traj-info\)/)
+    // 自适应缩放：尺寸上限 + 字号 clamp + 小屏收紧
+    expect(template).toMatch(/\.armor-view #click-info \{[^}]*max-inline-size: min\(15rem, calc\(100% - var\(--space-4\)\)\)/)
+    expect(template).toMatch(/\.armor-view #click-info \{[^}]*font-size: clamp\(/)
+    expect(template).toMatch(/pointer-events: none/)
     // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
     expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
     expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
-    // 右上角卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
-    const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
-    const cornerTrRule = cornerTrCss.slice(0, cornerTrCss.indexOf('}'))
-    expect(cornerTrRule).toContain('background: var(--panel)')
-    expect(cornerTrRule).toContain('border: 1px solid var(--border)')
-    // 面板固定宽度：进入厚度视图出现过滤行时不撑宽（手机竖屏整条底栏不固定）
-    expect(cornerTrRule).toContain('inline-size: var(--armor-shot-card-width)')
-    expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
-    const shotHud = read('./ArmorShotHud.vue')
-    const shotHudRule = shotHud.slice(shotHud.indexOf('.shot-hud {'), shotHud.indexOf('.hud-row'))
-    expect(shotHudRule).not.toContain('background: var(--panel)')
-    expect(template).toMatch(/\.armor-view \.armor-filters \{[^}]*flex: 1 1 100%;/)
-    expect(template).not.toMatch(/\.armor-view \.armor-filters \{[^}]*position: absolute;/)
   })
 
   // 2026-10-29 用户报障（114 SP2 / 11057）：履带上表面位置不对。源 GLB 履带材质是
