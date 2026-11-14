@@ -515,4 +515,34 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     expect(entries[0].material).toBe(a)
     expect(entries[1].material).toBe(b)
   })
+
+  it('仅 defines 不同的 ShaderMaterial 不合并（评审 P2：makeDecalMaterial 的 DECAL_SEPARATE_LM）', () => {
+    // 反例形态：colormapLm uniform 两种材质都存在，只有 defines 决定是否乘光照图
+    const mk = (separateLm) => new THREE.ShaderMaterial({
+      uniforms: { colormapLm: { value: new THREE.Texture() }, uTint: { value: new THREE.Color(0xffffff) } },
+      defines: separateLm ? { DECAL_SEPARATE_LM: 1 } : {},
+      vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
+    })
+    const withLm = mk(true), withoutLm = mk(false)
+    const entries = [entryOf(withLm), entryOf(withoutLm)]
+    canonicalizeEntryMaterials(entries)
+    expect(entries[0].material).toBe(withLm)
+    expect(entries[1].material).toBe(withoutLm)   // 逐实例光照语义不得被并掉
+  })
+
+  it('仅渲染状态（side / depthWrite / transparent）不同的 ShaderMaterial 不合并', () => {
+    const mk = (patch) => Object.assign(new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: new THREE.Texture() } },
+      vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
+    }), patch)
+    const base = mk({})
+    const variants = [
+      mk({ side: THREE.DoubleSide }),
+      mk({ depthWrite: false }),
+      mk({ transparent: true }),
+    ]
+    const entries = [entryOf(base), ...variants.map(entryOf)]
+    canonicalizeEntryMaterials(entries)
+    expect(new Set(entries.map(e => e.material)).size).toBe(4)   // 四种状态互不相同
+  })
 })

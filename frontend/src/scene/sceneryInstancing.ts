@@ -48,6 +48,32 @@ const MATERIAL_SIGNATURE_FIELDS: ReadonlyArray<string> = Object.freeze([
   'premultipliedAlpha', 'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
 ])
 
+/** 渲染状态字段（ShaderMaterial 与内建材质共用 Material 基类上的这些属性）。
+ *  ShaderMaterial 分支必须显式拼上：它的 uniforms/源码相同但 transparent/depthWrite/
+ *  side 等仍可能不同，只比 uniforms 会把不同渲染状态的材质并成一份。 */
+const RENDER_STATE_FIELDS: ReadonlyArray<string> = Object.freeze([
+  'transparent', 'opacity', 'alphaTest', 'side', 'blending', 'vertexColors', 'flatShading',
+  'depthWrite', 'depthTest', 'colorWrite', 'premultipliedAlpha',
+  'polygonOffset', 'polygonOffsetFactor', 'polygonOffsetUnits',
+  'visible',
+])
+
+/** 着色器编译期 define 签名。**必须进键**：同源码同 uniforms、只有 `defines` 不同的
+ *  材质走不同编译分支——实例如 `makeDecalMaterial` 的 `DECAL_SEPARATE_LM`：不论
+ *  `separateLm` 值如何 `colormapLm` uniform 都存在，只有 define 决定是否乘光照图；
+ *  漏判会把逐实例光照语义并成首个材质的一份（评审 P2 反例）。 */
+function definesSignature(m: Material): string {
+  const defines = (m as unknown as { defines?: Record<string, unknown> | null }).defines
+  if (!defines || typeof defines !== 'object') return '-'
+  return Object.keys(defines).sort()
+    .map((k) => `${k}=${String((defines as Record<string, unknown>)[k])}`)
+    .join(',')
+}
+
+function renderStateSignature(m: Material): string {
+  return RENDER_STATE_FIELDS.map((f) => `${f}=${materialSignatureValue(m, f)}`).join(',')
+}
+
 function materialSignatureValue(m: Material, field: string): string {
   const value = (m as unknown as Record<string, unknown>)[field]
   if (value == null) return '-'
@@ -86,12 +112,19 @@ function hasCustomProgramHook(m: Material): boolean {
   return typeof m.onBeforeCompile === 'function' && m.onBeforeCompile !== DEFAULT_ON_BEFORE_COMPILE
 }
 
-/** ShaderMaterial 族签名：uniforms 逐项进键 + 着色器源码进键。 */
+/** ShaderMaterial 族签名：着色器源码 + uniforms + defines + 渲染状态。四者缺一都可能
+ *  把走不同编译分支/不同混合状态的材质并成一份（defines 反例见 definesSignature）。 */
 function shaderMaterialSignature(m: Material): string | null {
   const anyM = m as unknown as { uniforms?: Record<string, { value: unknown }>, vertexShader?: string, fragmentShader?: string }
   const uniforms = anyM.uniforms
   if (!uniforms || typeof uniforms !== 'object') return null
-  const parts = ['shader', String(anyM.vertexShader ?? ''), String(anyM.fragmentShader ?? '')]
+  const parts = [
+    'shader',
+    String(anyM.vertexShader ?? ''),
+    String(anyM.fragmentShader ?? ''),
+    `defines:${definesSignature(m)}`,
+    `state:${renderStateSignature(m)}`,
+  ]
   for (const name of Object.keys(uniforms).sort()) {
     parts.push(`${name}=${uniformValueSignature(uniforms[name]?.value)}`)
   }
@@ -107,7 +140,9 @@ function materialSignature(m: Material | Material[]): string | null {
   // uniforms——用 uniforms+着色器源码签名；这里漏判会把同族不同贴图的实例并到
   // 第一个材质对象上（2026-11-14 实测：建筑物贴图全串）。
   if (anyM.uniforms && typeof anyM.uniforms === 'object') return shaderMaterialSignature(m)
-  return MATERIAL_SIGNATURE_FIELDS.map((f) => materialSignatureValue(m, f)).join('|')
+  // 内建材质同样可能有 defines（走不同编译分支）→ 一并进键
+  return [...MATERIAL_SIGNATURE_FIELDS.map((f) => materialSignatureValue(m, f)),
+    `defines:${definesSignature(m)}`].join('|')
 }
 
 /** 材质签名规整：导出器给每个节点各建一份材质对象，属性相同也会把 (geometry,

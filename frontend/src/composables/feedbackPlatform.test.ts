@@ -24,13 +24,23 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('feedback preferences', () => {
-  it('默认触感开、音效关；写入后持久化，非法值回落默认', () => {
-    expect(feedbackPrefs.value).toEqual({ haptics: true, sound: false })
+  it('默认触感开、音效关、回放炮声开；写入后持久化，非法值回落默认', () => {
+    expect(feedbackPrefs.value).toEqual({ haptics: true, sound: false, battleSound: true })
     setFeedbackPref('sound', true)
-    expect(JSON.parse(window.localStorage.getItem(FEEDBACK_PREFS_STORAGE_KEY) ?? 'null')).toEqual({ haptics: true, sound: true })
+    expect(JSON.parse(window.localStorage.getItem(FEEDBACK_PREFS_STORAGE_KEY) ?? 'null')).toEqual({ haptics: true, sound: true, battleSound: true })
     window.localStorage.setItem(FEEDBACK_PREFS_STORAGE_KEY, JSON.stringify({ haptics: 'yes' }))
     __reloadFeedbackPrefsForTest()
-    expect(feedbackPrefs.value).toEqual({ haptics: true, sound: false })
+    expect(feedbackPrefs.value).toEqual({ haptics: true, sound: false, battleSound: true })
+  })
+
+  it('battleSound 可关闭并持久化（3D 回放炮声独立于按键音）', () => {
+    setFeedbackPref('battleSound', false)
+    expect(feedbackPrefs.value.battleSound).toBe(false)
+    __reloadFeedbackPrefsForTest()
+    expect(feedbackPrefs.value.battleSound).toBe(false)
+    window.localStorage.setItem(FEEDBACK_PREFS_STORAGE_KEY, JSON.stringify({ battleSound: 'no' }))
+    __reloadFeedbackPrefsForTest()
+    expect(feedbackPrefs.value.battleSound).toBe(true)
   })
 })
 
