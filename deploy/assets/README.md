@@ -89,13 +89,11 @@ manual; Git tracks configuration, not the multi-GB asset pack.
 
 ## Dataset versions
 
-资产 origin 按**游戏版本通道**维护 dataset。当前通道（2026-11-05 起）：
+资产 origin 按游戏版本维护 dataset。可选版本与默认版本以 [线上目录](https://assets.wotbtools.com/versions.json) 为准。超测版本须显式选择。
 
-- `11.21.0`——11.21 现役客户端（**默认通道**：`current` 指向它，未选择 dataset
-  的用户与旧客户端都读正式服数据）。
-- `supertest`（超测服）——超测预览通道，随预览轮次**整体重指**到最新预览
-  release（t11b → t11p2 → …），不按预览轮次堆 dataset；只有显式选择才使用。
-- `11.22`——预留；11.22 正式服包发布时加入（终态三通道：11.21 / 超测服 / 11.22）。
+超测目录只列最新一项「超测服 11.4.0.138」。其公开 ID 为 `11.4.0.138-r5`，release 为 `t11r3-20261113-r6`，保留了 8 张 XI 车辆新图。原先的 `11.4.0.130` 和 `11.4.0.138` 现在都是该公开 ID 的同级相对符号链接，旧书签也能访问最新数据。目录按规范 ID 生成，历史 release 留在源站供回退。
+
+预览换代时先用 `dataset.sh link` 发布并校验新路径，再用 `dataset.sh unlink --dataset <旧 ID> --redirect-to <新 ID>` 让旧路径指向新数据。已有别名也应直接指向最新规范 ID，避免别名链。新版 `asset_release.py` 会在生成目录时核查这些路径及对应 release 的身份。
 
 `datasets/<id>` 是指向不可变 release 的符号链接；`current` 指向默认 dataset
 （`11.21.0`），旧客户端兼容入口不受影响。

@@ -253,6 +253,7 @@ function layoutProbe() {
   const header = q('.techtree .showcase-hero.is-compact')
   const legacyHeader = q('.techtree .page-header')
   const tabs = q('.tt-tabs')
+  const icon = q('.tt-tier-cell[data-testid="techtree-cell-Fixture_10_1"] .tt-card-icon')
   return {
     viewport: { width: innerWidth, height: innerHeight },
     document: {
@@ -269,6 +270,8 @@ function layoutProbe() {
     tabBar: !!q('[data-testid="app-tab-bar"]'),
     cells: document.querySelectorAll('.tt-cell').length,
     tierRows: document.querySelectorAll('.tt-tier-row').length,
+    iconFrame: rect(icon),
+    iconImage: rect(icon?.querySelector('img')),
     typeFilter: rect(q('[data-testid="techtree-type-filter"]')),
     smallestCell: [...document.querySelectorAll('.tt-tier-cell')].reduce((min, el) => { const r = el.getBoundingClientRect(); return Math.min(min, r.height, r.width) }, Infinity),
   }
@@ -303,6 +306,7 @@ function assertScenario(scenario, layout) {
     assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
     assert.ok(layout.typeFilter && layout.typeFilter.bottom <= layout.scroll.top + 1, `${label}: 车种分段必须在等级列表之上`)
     assert.ok(layout.smallestCell >= 44, `${label}: 坦克卡片触控尺寸不足（${layout.smallestCell}px）`)
+    assert.deepEqual(layout.iconImage, layout.iconFrame, `${label}: 无裁剪变换的封面图应恰好填满自己的图标盒`)
     assert.ok(
       layout.header.height >= 88 && layout.header.height <= 112,
       `${label}: compact 横幅 ${layout.header.height}px 不在 88–112px 区间`,
@@ -329,11 +333,16 @@ function assertScenario(scenario, layout) {
 }
 
 const { server, origin } = await startFixtureServer()
+const topVehicle = tree.nodes.find(node => node.stem === 'Fixture_10_1')
 const assets = await startFixtureAssetPack({
   tankCache,
   extraRoutes: {
     [`/research/tech_tree/${NATION}.json`]: { type: 'application/json', body: JSON.stringify(tree) },
     '/tank_images/crops.json': { type: 'application/json', body: '{}' },
+    [`/tank_images/${topVehicle.tankId}.webp`]: {
+      type: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="128"><rect width="256" height="128"/></svg>',
+    },
   },
 })
 const chrome = findChrome()
@@ -353,6 +362,10 @@ try {
         { timeout: 30_000, label: `${scenario.name}: tech tree rendered` },
       )
       await page.animationsSettled()
+      if (scenario.portrait) {
+        await page.waitFor(() => document.querySelector('[data-testid="techtree-cell-Fixture_10_1"] img')?.naturalWidth === 256,
+          { label: `${scenario.name}: fixture cover loaded` })
+      }
       const layout = await page.probe(layoutProbe)
       assertScenario(scenario, layout)
       if (scenario.name === 'phone-390x844') await nationKeyboardNavigation(page)
