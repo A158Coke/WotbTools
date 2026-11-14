@@ -1,21 +1,23 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowRight } from 'lucide-vue-next'
 import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 
-const props = defineProps({
-  message: { type: Object, required: true },
-  sections: { type: Array, required: true },
-})
+import type { mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
+
+const props = defineProps<{
+  message: { name: string; description: string; stem?: string; item?: { script?: { params?: { maxBoostToMaxAlpha?: unknown } } } }
+  sections: ReturnType<typeof mechanicParameterGroups>
+}>()
 const { t } = useI18n()
-const copy = (key, params) => t(`agentTanks.configurator.summary_copy.${key}`, params)
+const copy = (key: string, params: Record<string, unknown> = {}) => t(`agentTanks.configurator.summary_copy.${key}`, params)
 const stem = computed(() => props.message.stem)
 const clip = computed(() => stem.value === 'externalAmmoModule')
 const rocket = computed(() => stem.value === 'unguidedRocket')
 const secondary = computed(() => rocket.value || stem.value === 'auxilliaryWeapons')
 const rows = computed(() => props.sections.flatMap(section => section.rows))
-function row(name) {
+function row(name: string) {
   // A summary has no selected projectile. Leave ambiguous multi-shot values in their individual tables.
   const matches = rows.value.filter(entry => entry.name === name)
   return matches.length === 1 ? matches[0] : undefined

@@ -124,9 +124,23 @@ describe('XI 技能选择卡与效果反馈', () => {
     wrapper.unmount()
   })
 
+  it('refreshes the XP label when an embedded panel changes vehicle or dataset', async () => {
+    const tank = t11r3.tanks.find(t => t.modules.tankId === 23361)
+    const wrapper = panel('ru', tank, { embedded: true })
+    const xp = () => wrapper.get('[data-testid="tank-full-xp"]').text()
+    expect(xp()).toContain((414000).toLocaleString('ru'))
+    await wrapper.setProps({ modules: { ...tank.modules, gameVersion: 'other' } })
+    expect(xp()).toContain('неполные данные')
+    await wrapper.setProps(t11r3.tanks.find(t => t.modules.tankId === 10593))
+    expect(xp()).toContain((320000).toLocaleString('ru'))
+    wrapper.unmount()
+  })
+
   it.each(t11r3.tanks)('t11r3 $modules.tankId reads each initial value and applies one upgrade option at a time', async tank => {
     const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables,
       provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion } })
+    const xp = wrapper.get('[data-testid="tank-full-xp"]')
+    expect(xp.text()).toContain([23361, 30993].includes(tank.modules.tankId) ? '414,000 XP' : '320,000 XP')
     const rows = wrapper.get('[data-testid="tank-mechanic-effects"]').findAll('tbody tr')
     const fields = new Set(tank.modules.upgradeProgression.nodes.flatMap(node => node.attributes)
       .map(attr => attr.name).filter(name => !name.startsWith('ATTRIBUTE_NAME_')))

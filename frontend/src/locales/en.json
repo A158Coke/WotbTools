@@ -1757,6 +1757,9 @@
     "configurator": {
       "upgrade_title": "Tier XI upgrades",
       "upgrade_stock": "Initial",
+      "full_xp": "XP to fully upgrade",
+      "xp_value": "{value} XP",
+      "xp_incomplete": "— (incomplete data)",
       "upgrade_top": "Fully upgraded",
       "upgrade_hint": "Stats, armor and gun limits follow the upgrade state.",
       "upgrade_skill_group": "Tier XI ability {index}",

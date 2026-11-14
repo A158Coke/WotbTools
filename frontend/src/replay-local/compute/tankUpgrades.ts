@@ -251,6 +251,46 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
+/** Cost from stock to full research. The validated selection owns node identities and group membership. */
+export function fullResearchXp(selection: UpgradeSelection): number | null {
+  if (!selection.available || !selection.supported) return null
+  const required = new Map(selection.nodes.map(node => [node.techName, node]))
+  if (required.size !== selection.nodes.length) return null
+
+  const paid = new Set<string>()
+  const visiting = new Set<string>()
+  let total = 0
+  function charge(cost: unknown): boolean {
+    if (typeof cost !== 'number' || !Number.isSafeInteger(cost) || cost < 0) return false
+    total += cost
+    return Number.isSafeInteger(total)
+  }
+  function prerequisitesValid(refs: unknown): boolean {
+    return refs === undefined || (Array.isArray(refs) && refs.every(name => {
+      const node = required.get(name)
+      return node && node.type !== 'NODETYPE_ALTERNATIVE_MECHANIC' && visit(node)
+    }))
+  }
+  function visit(node: UpgradeNode): boolean {
+    if (paid.has(node.techName)) return true
+    if (visiting.has(node.techName)) return false
+    visiting.add(node.techName)
+    if (!prerequisitesValid(node.requiredNodes)) return false
+    if (node.type === 'NODETYPE_ALTERNATIVE_MECHANIC') {
+      if ('xpCost' in node) return false
+    } else if (!charge(node.xpCost)) return false
+    visiting.delete(node.techName)
+    paid.add(node.techName)
+    return true
+  }
+
+  if (!selection.nodes.every(visit)) return null
+  for (const group of selection.groups) {
+    if (!prerequisitesValid(group.requiredNodes) || !charge(group.xpCost)) return null
+  }
+  return total
+}
+
 export const HIT_TRIGGER_ATTRIBUTES = new Set([
   'SAS_ALLOW_ACTIVATE_ON_HIT',
   'EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS',

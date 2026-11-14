@@ -1757,6 +1757,9 @@
     "configurator": {
       "upgrade_title": "XI 车辆升级",
       "upgrade_stock": "初始值",
+      "full_xp": "满级所需经验",
+      "xp_value": "{value} XP",
+      "xp_incomplete": "—（数据不完整）",
       "upgrade_top": "升满级",
       "upgrade_hint": "参数、装甲和俯角随升级状态联动。",
       "upgrade_skill_group": "XI 专属技能 {index}",

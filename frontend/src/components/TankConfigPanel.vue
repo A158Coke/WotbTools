@@ -22,7 +22,7 @@ import { configIndexFor, consumableTiming, pickGun, pickTurret, presetSlots, tan
 import { formatUpgradeValue } from '../utils/formatUpgradeValue'
 import { fmtNum } from '../scene/tankMeta.js'
 import { romanLevel } from '../utils/tierFormat.js'
-import { boundAbility, resolveUpgradeSelection, mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
+import { fullResearchXp, boundAbility, resolveUpgradeSelection, mechanicParameterGroups } from '../replay-local/compute/tankUpgrades'
 import { parseAugmentProgression, researchGroupChoice } from '../replay-local/compute/tankAugmentTree'
 import { isConditionalCrewSkill } from '../replay-local/compute/crewStats'
 
@@ -66,6 +66,10 @@ const upgrades = computed(() => {
   const state = resolveUpgradeSelection(props.modules, props.selection.upgrade, props.selection.abilities)
   return { ...state, supported: state.supported && props.upgradeSupported }
 })
+const fullXp = computed(() => fullResearchXp(upgrades.value))
+const fullXpText = computed(() => fullXp.value == null
+  ? t('agentTanks.configurator.xp_incomplete')
+  : t('agentTanks.configurator.xp_value', { value: fullXp.value.toLocaleString(locale.value) }))
 const upgradeOptions = computed(() => [
   { value: 'stock', label: t('agentTanks.configurator.upgrade_stock'), testid: 'tank-upgrade-stock' },
   { value: 'top', label: t('agentTanks.configurator.upgrade_top'), testid: 'tank-upgrade-top', disabled: !upgrades.value.supported },
@@ -479,15 +483,8 @@ const camoBonusParts = computed(() => {
 
 <template>
   <section class="tp-config" :class="{ 'is-embedded': embedded }" :aria-label="t('agentTanks.configurator.title')" data-testid="tank-configurator">
-    <header class="tp-config-head">
+    <header v-if="!embedded || !upgrades.available" class="tp-config-head">
       <h2 v-if="!embedded" class="tp-section-title">{{ t('agentTanks.configurator.title') }}</h2>
-      <SegmentedControl
-        v-if="embedded && upgrades.available"
-        :model-value="upgrades.mode"
-        :options="upgradeOptions"
-        :aria-label="t('agentTanks.configurator.upgrade_title')"
-        @update:model-value="emit('update', { upgrade: $event })"
-      />
       <div class="tp-config-actions">
         <AppButton v-if="!upgrades.available" variant="ghost" size="sm" data-testid="tank-preset-stock" @click="emit('preset', 'stock')">
           {{ t('agentTanks.configurator.stock') }}
@@ -503,14 +500,14 @@ const camoBonusParts = computed(() => {
 
     <section v-if="upgrades.available" class="tp-config-block tp-upgrades" data-testid="tank-upgrades">
       <h3 v-if="!embedded">{{ t('agentTanks.configurator.upgrade_title') }}</h3>
-      <SegmentedControl
-        v-if="!embedded"
-        class="tp-upgrade-mode"
-        :model-value="upgrades.mode"
-        :options="upgradeOptions"
-        :aria-label="t('agentTanks.configurator.upgrade_title')"
-        @update:model-value="emit('update', { upgrade: $event })"
-      />
+      <div class="tp-upgrade-row">
+        <SegmentedControl class="tp-upgrade-mode" :model-value="upgrades.mode" :options="upgradeOptions"
+          :aria-label="t('agentTanks.configurator.upgrade_title')" @update:model-value="emit('update', { upgrade: $event })" />
+        <span class="tp-upgrade-xp" data-testid="tank-full-xp">{{ t('agentTanks.configurator.full_xp') }} <strong>{{ fullXpText }}</strong></span>
+        <AppButton v-if="embedded" variant="ghost" size="sm" data-testid="tank-config-reset" @click="emit('reset')">
+          {{ t('agentTanks.configurator.reset') }}
+        </AppButton>
+      </div>
       <p v-if="!embedded" class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
       <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
       <TankMechanicSummary v-for="message in mechanicMessages" :key="`${modules.tankId}-${message.name}`"
@@ -559,6 +556,10 @@ const camoBonusParts = computed(() => {
         <p v-if="hasMissingValues" class="tp-muted">{{ t('agentTanks.configurator.missing_mechanic_values') }}</p>
       </section>
     </section>
+
+    <p v-if="Number(detail.tier) === 11 && !upgrades.available" class="tp-upgrade-xp" data-testid="tank-full-xp">
+      {{ t('agentTanks.configurator.full_xp') }} <strong>{{ fullXpText }}</strong>
+    </p>
 
     <!-- 桌面/平板：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
          下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
@@ -807,7 +808,7 @@ const camoBonusParts = computed(() => {
 }
 .tp-config.is-embedded { gap: var(--space-2); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .tp-config.is-embedded .tp-config-head { justify-content: flex-end; }
-.tp-config.is-embedded .tp-config-head > .segmented { margin-inline-end: auto; }
+
 
 .tp-config-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .tp-config-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
@@ -816,7 +817,10 @@ const camoBonusParts = computed(() => {
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
 .tp-upgrades { grid-template-columns: minmax(0, 1fr); }
-.tp-upgrade-mode { justify-self: start; max-inline-size: 100%; }
+.tp-upgrade-row { display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
+.tp-upgrade-xp { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.tp-upgrade-xp strong { color: var(--color-accent-text); font-variant-numeric: tabular-nums; }
+.tp-upgrade-mode { flex: 0 0 auto; max-inline-size: 100%; }
 .tp-upgrade-mode :deep(.segmented-option) { flex: 0 1 auto; white-space: normal; }
 .tp-ability-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 .tp-ability-options :deep(.segmented-option) {
@@ -1041,6 +1045,7 @@ const camoBonusParts = computed(() => {
 }
 
 @media (width < 768px) {
+  .tp-upgrade-row .tp-upgrade-xp { order: 1; flex-basis: 100%; }
   .tp-ability-options.is-tiles { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; }
   .tp-ability-content { flex-direction: row; align-items: center; flex-wrap: wrap; }
   .tp-ability-content > .tp-muted { flex-basis: 100%; }

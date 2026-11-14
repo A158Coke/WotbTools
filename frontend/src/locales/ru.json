@@ -1757,6 +1757,9 @@
     "configurator": {
       "upgrade_title": "Модернизация XI уровня",
       "upgrade_stock": "Начальные",
+      "full_xp": "Опыт до полной прокачки",
+      "xp_value": "{value} XP",
+      "xp_incomplete": "— (неполные данные)",
       "upgrade_top": "Полная модернизация",
       "upgrade_hint": "Параметры, броня и углы орудия зависят от модернизации.",
       "upgrade_skill_group": "Умение XI уровня {index}",
