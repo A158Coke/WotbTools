@@ -14,3 +14,4 @@
 /java/wotb-ai/src/test/resources/prompts/_test/line-endings.zh.md binary
 /scripts/ci/publish-data-update.sh text eol=lf
 /scripts/ci/test-workflow-contract.sh text eol=lf
+frontend/scripts/verify-agent-wasm-dist.mjs text eol=lf
