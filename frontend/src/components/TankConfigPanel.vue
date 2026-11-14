@@ -44,6 +44,7 @@ const props = defineProps({
   showProvisions: { type: Boolean, default: true },
   /** 嵌入查看器已有分区，只调整表面与标题，不复制配置状态。 */
   embedded: { type: Boolean, default: false },
+  showUpgradeDetails: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skills', 'clear-skills'])
 const { isCompact } = useBreakpoint()
@@ -503,61 +504,63 @@ const camoBonusParts = computed(() => {
       <div class="tp-upgrade-row">
         <SegmentedControl class="tp-upgrade-mode" :model-value="upgrades.mode" :options="upgradeOptions"
           :aria-label="t('agentTanks.configurator.upgrade_title')" @update:model-value="emit('update', { upgrade: $event })" />
-        <span class="tp-upgrade-xp" data-testid="tank-full-xp">{{ t('agentTanks.configurator.full_xp') }} <strong>{{ fullXpText }}</strong></span>
+        <span v-if="showUpgradeDetails" class="tp-upgrade-xp" data-testid="tank-full-xp">{{ t('agentTanks.configurator.full_xp') }} <strong>{{ fullXpText }}</strong></span>
         <AppButton v-if="embedded" variant="ghost" size="sm" data-testid="tank-config-reset" @click="emit('reset')">
           {{ t('agentTanks.configurator.reset') }}
         </AppButton>
       </div>
       <p v-if="!embedded" class="tp-muted">{{ t('agentTanks.configurator.upgrade_hint') }}</p>
       <p v-if="!upgrades.supported" class="tp-muted" role="status">{{ t('agentTanks.configurator.upgrade_unsupported') }}</p>
-      <TankMechanicSummary v-for="message in mechanicMessages" :key="`${modules.tankId}-${message.name}`"
-        :message="message" :sections="parameterGroups" />
-      <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
-        <header class="tp-block-head">
-          <h3>{{ abilityGroups.length === 1 ? t('agentTanks.configurator.mechanic_choices') : group.label }}</h3>
-          <span class="tp-ability-status" aria-live="polite">{{ choiceStatus(group) }}</span>
-        </header>
-        <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
-          :options="group.options" :model-value="String(upgrades.choices[group.id])"
-          @update:model-value="selectAbility(group, $event)">
-          <template #option="{ option, index, selected }">
-          <span class="tp-ability-content">
-            <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
-              <Check v-if="selected" :size="16" aria-hidden="true" />
+      <template v-if="showUpgradeDetails">
+        <TankMechanicSummary v-for="message in mechanicMessages" :key="`${modules.tankId}-${message.name}`"
+          :message="message" :sections="parameterGroups" />
+        <div v-for="group in abilityGroups" :key="group.id" class="tp-config-block" data-testid="tank-upgrade-skills">
+          <header class="tp-block-head">
+            <h3>{{ abilityGroups.length === 1 ? t('agentTanks.configurator.mechanic_choices') : group.label }}</h3>
+            <span class="tp-ability-status" aria-live="polite">{{ choiceStatus(group) }}</span>
+          </header>
+          <SegmentedControl class="tp-ability-options" presentation="tiles" :aria-label="group.label"
+            :options="group.options" :model-value="String(upgrades.choices[group.id])"
+            @update:model-value="selectAbility(group, $event)">
+            <template #option="{ option, index, selected }">
+            <span class="tp-ability-content">
+              <span class="tp-ability-top"><span class="tp-ability-number">{{ String(index + 1).padStart(2, '0') }}</span>
+                <Check v-if="selected" :size="16" aria-hidden="true" />
+              </span>
+              <span class="tp-ability-name">{{ option.label }}</span>
+              <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
+              <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
             </span>
-            <span class="tp-ability-name">{{ option.label }}</span>
-            <strong class="tp-ability-value">{{ option.effects.map(effect => effect.amount).join(' / ') }}</strong>
-            <span v-if="option.description" class="tp-muted">{{ option.description }}</span>
-          </span>
-          </template>
-        </SegmentedControl>
-      </div>
-      <section v-if="parameterGroups.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
-        <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
-          <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}<template v-if="effectiveGroup"> · {{ t('agentTanks.configurator.choice_number', { n: String(effectiveGroup.number).padStart(2, '0') }) }}</template></span>
-        </header>
-        <component :is="section.label ? 'details' : 'div'" v-for="(section, index) in parameterGroups"
-          :key="`${modules.tankId}-${index}`" :open="section.label ? true : undefined">
-          <summary v-if="section.label">{{ t(`agentTanks.configurator.${section.label}`) }} {{ section.index }}</summary>
-          <table>
-            <thead><tr><th scope="col">{{ t('agentTanks.configurator.upgrade_effect_attribute') }}</th>
-              <th scope="col">{{ t('agentTanks.configurator.upgrade_stock') }}</th>
-              <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
-            <tbody><tr v-for="effect in section.rows" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
-              <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
-              <td>{{ formatUpgradeValue(t, effect.name, effect.initial) }}</td>
-              <td :class="{ 'tp-effect-current': effect.value !== effect.initial }"><strong>{{ formatUpgradeValue(t, effect.name, effect.value) }}</strong>
-                <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: formatUpgradeValue(t, effect.name, effect.current, effect.modifier) }) }}</span>
-              </td>
-            </tr></tbody>
-          </table>
-        </component>
-        <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
-        <p v-if="hasMissingValues" class="tp-muted">{{ t('agentTanks.configurator.missing_mechanic_values') }}</p>
-      </section>
+            </template>
+          </SegmentedControl>
+        </div>
+        <section v-if="parameterGroups.length" class="tp-mechanic-effects" aria-live="polite" data-testid="tank-mechanic-effects">
+          <header class="tp-block-head"><h3>{{ t('agentTanks.configurator.upgrade_effects') }}</h3>
+            <span class="tp-ability-status">{{ t(`agentTanks.configurator.${upgradeStatusKey}`) }}<template v-if="effectiveGroup"> · {{ t('agentTanks.configurator.choice_number', { n: String(effectiveGroup.number).padStart(2, '0') }) }}</template></span>
+          </header>
+          <component :is="section.label ? 'details' : 'div'" v-for="(section, index) in parameterGroups"
+            :key="`${modules.tankId}-${index}`" :open="section.label ? true : undefined">
+            <summary v-if="section.label">{{ t(`agentTanks.configurator.${section.label}`) }} {{ section.index }}</summary>
+            <table>
+              <thead><tr><th scope="col">{{ t('agentTanks.configurator.upgrade_effect_attribute') }}</th>
+                <th scope="col">{{ t('agentTanks.configurator.upgrade_stock') }}</th>
+                <th scope="col">{{ t('agentTanks.configurator.upgrade_effect_current') }}</th></tr></thead>
+              <tbody><tr v-for="effect in section.rows" :key="effect.name" :data-testid="`tank-mechanic-${effect.name}`">
+                <th scope="row">{{ t(`agentTanks.configurator.upgrade_attributes.${effect.name}`) }}</th>
+                <td>{{ formatUpgradeValue(t, effect.name, effect.initial) }}</td>
+                <td :class="{ 'tp-effect-current': effect.value !== effect.initial }"><strong>{{ formatUpgradeValue(t, effect.name, effect.value) }}</strong>
+                  <span v-if="effect.current != null" class="tp-effect-delta">{{ t('agentTanks.configurator.upgrade_effect_change', { value: formatUpgradeValue(t, effect.name, effect.current, effect.modifier) }) }}</span>
+                </td>
+              </tr></tbody>
+            </table>
+          </component>
+          <p class="tp-muted">{{ t('agentTanks.configurator.upgrade_effect_delta_note') }}</p>
+          <p v-if="hasMissingValues" class="tp-muted">{{ t('agentTanks.configurator.missing_mechanic_values') }}</p>
+        </section>
+      </template>
     </section>
 
-    <p v-if="Number(detail.tier) === 11 && !upgrades.available" class="tp-upgrade-xp" data-testid="tank-full-xp">
+    <p v-if="showUpgradeDetails && Number(detail.tier) === 11 && !upgrades.available" class="tp-upgrade-xp" data-testid="tank-full-xp">
       {{ t('agentTanks.configurator.full_xp') }} <strong>{{ fullXpText }}</strong>
     </p>
 

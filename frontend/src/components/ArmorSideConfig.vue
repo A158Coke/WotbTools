@@ -1,7 +1,7 @@
 <script setup>
 /**
  * 装甲查看器一侧（射击方 / 受击方）的**模块选择**：与坦克百科详情页**同一个
- * `TankConfigPanel`**（模块矩阵与 XI 机制共用；装备/消耗品/补给/乘员/涂装在装甲页隐藏）。
+ * `TankConfigPanel`**（模块矩阵与 XI 升级状态共用；装备/消耗品/补给/乘员/涂装在装甲页隐藏）。
  * 选择态来自这一侧的 URL 键（射击方 scfg/sengine/strack/sdev，受击方
  * config/engine/track/dev），改动经 `apply` 交给宿主写 URL 并驱动场景。
  */
@@ -147,6 +147,7 @@ function resetAll() {
       :modules="modules"
       :selection="selection"
       :catalog="catalog"
+      :show-upgrade-details="false"
       :show-crew="false"
       :show-equipment="false"
       :show-consumables="false"
