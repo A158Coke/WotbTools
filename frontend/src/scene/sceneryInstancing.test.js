@@ -517,9 +517,14 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('仅 defines 不同的 ShaderMaterial 不合并（评审 P2：makeDecalMaterial 的 DECAL_SEPARATE_LM）', () => {
-    // 反例形态：colormapLm uniform 两种材质都存在，只有 defines 决定是否乘光照图
+    // 反例形态：colormapLm uniform 两种材质都存在，只有 defines 决定是否乘光照图。
+    // **隔离变量（评审复核）**：两种材质共享同一个 Texture/Color 对象，源码与 uniforms
+    // 完全相同——差异只剩 defines；否则纹理 uuid 天然不同，旧 uniform 签名也会让它们
+    // 不合并，用例就证明不了 defines 进签名的必要性。
+    const sharedLmTex = new THREE.Texture()
+    const sharedTint = new THREE.Color(0xffffff)
     const mk = (separateLm) => new THREE.ShaderMaterial({
-      uniforms: { colormapLm: { value: new THREE.Texture() }, uTint: { value: new THREE.Color(0xffffff) } },
+      uniforms: { colormapLm: { value: sharedLmTex }, uTint: { value: sharedTint } },
       defines: separateLm ? { DECAL_SEPARATE_LM: 1 } : {},
       vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
     })
@@ -531,8 +536,10 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('仅渲染状态（side / depthWrite / transparent）不同的 ShaderMaterial 不合并', () => {
+    // 同样隔离变量：共享 uniform 对象，差异只在渲染状态
+    const sharedTex = new THREE.Texture()
     const mk = (patch) => Object.assign(new THREE.ShaderMaterial({
-      uniforms: { uMap: { value: new THREE.Texture() } },
+      uniforms: { uMap: { value: sharedTex } },
       vertexShader: 'void main(){}', fragmentShader: 'void main(){}',
     }), patch)
     const base = mk({})

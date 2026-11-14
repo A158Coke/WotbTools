@@ -167,6 +167,20 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     expect(audio.started).toHaveLength(0)   // 不得在 dispose 之后发声
   })
 
+  it('异步取 buffer 期间关闭 battleSound：release 后不 start（评审 P2 中途静音）', async () => {
+    const { gunfire, defs } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })
+    let release!: () => void
+    gate.bytesDelay = new Promise<void>((r) => { release = r })
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 10))
+    setFeedbackPref('battleSound', false)   // 会话代号不变，只有偏好转静音
+    release()
+    gate.bytesDelay = null
+    await new Promise(r => setTimeout(r, 30))
+    expect(audio.started).toHaveLength(0)
+  })
+
   it('异步等待期间换场（prepare 新会话）：旧会话的迟到请求不 start', async () => {
     const { gunfire, defs } = makeHarness()
     defs.set(1, { tank_id: 5, gun_local: 13 })

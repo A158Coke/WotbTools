@@ -51,17 +51,22 @@ export interface RendererCaps {
  *  软件渲染证据——那是 Chromium 的掩码默认值（2026-11-14 实测：核显 ANGLE 环境的
  *  掩码串同样报它），按硬件处理（fail-open：宁可少关不错关）。 */
 export function isSoftwareRasterizer(): boolean {
+  let gl: WebGLRenderingContext | null = null
   try {
     const probe = document.createElement('canvas')
-    const gl = (probe.getContext('webgl2') ?? probe.getContext('webgl')) as WebGLRenderingContext | null
+    gl = (probe.getContext('webgl2') ?? probe.getContext('webgl')) as WebGLRenderingContext | null
     if (!gl) return false
     const dbg = gl.getExtension('WEBGL_debug_renderer_info') as { UNMASKED_RENDERER_WEBGL?: number } | null
-    gl.getExtension('WEBGL_lose_context')?.loseContext()
     if (!dbg?.UNMASKED_RENDERER_WEBGL) return false
+    // 必须先读参数再释放上下文：loseContext 之后 getParameter 返回 null，渲染器串
+    // 变成 "null" → 真软渲染环境会被漏判、MSAA 旁路不生效（评审 P2：探针时序）。
     const renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL))
     return /swiftshader|llvmpipe|softpipe|software/i.test(renderer)
   } catch {
     return false
+  } finally {
+    // 无论读参数成败都释放探针上下文（一次性探针不应常驻 GPU 资源）
+    try { gl?.getExtension('WEBGL_lose_context')?.loseContext() } catch { /* 已失效上下文：忽略 */ }
   }
 }
 

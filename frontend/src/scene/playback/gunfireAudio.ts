@@ -173,8 +173,10 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     const distance = muzzle.distanceTo(camera.position)
     if (distance >= GUN_MAX_ATTENUATION_M) return
     const buffers = await loadBuffers(cls, 'close')
-    // 取 buffer 可能跨网络 + 解码：期间 dispose/换场 → 弃播（不 start）
-    if (gen !== generation) return
+    // 取 buffer 可能跨网络 + 解码：期间 dispose/换场 → 弃播（不 start）；
+    // 同时复查静音偏好与 disabled——关闭 battleSound 不改变会话代，只查 gen 会把
+    // 「等待期间用户关掉炮声」的请求照常发声（评审 P2：中途静音分支）。
+    if (gen !== generation || disabled || !feedbackPrefs.value.battleSound) return
     if (!buffers.length || voices.size >= MAX_VOICES) return
     const audio = acquireContext()
     // 相机空间水平方向 → pan（场景系坐标与相机同系，直接投影）
