@@ -1761,17 +1761,23 @@
       "upgrade_hint": "参数、装甲和俯角随升级状态联动。",
       "upgrade_skill_group": "XI 专属技能 {index}",
       "upgrade_skill_option": "技能 {index}",
-      "upgrade_skill_hint": "每组选择一个技能，升满级后生效。动态技能的效果需在战斗中触发。",
-      "upgrade_effects": "技能升级效果",
+      "mechanic_summary": "基础机制 · {name}",
+      "mechanic_choices": "三选一强化",
+      "mechanic_ammunition": "副武器弹药",
+      "mechanic_firing": "发射与装填",
+      "upgrade_skill_hint": "每组选择一项强化，满级时生效。部分研发时按已研发节点生效。",
+      "upgrade_effects": "机制参数",
       "upgrade_effect_attribute": "属性",
       "upgrade_effect_current": "当前值",
       "upgrade_effect_change": "累计变化 {value}",
       "upgrade_percentage_points": "{value} 个百分点",
       "upgrade_yes": "是",
       "upgrade_no": "否",
+      "upgrade_relax_clip": "放宽强化弹匣触发条件",
+      "upgrade_all_hits": "每发命中即可",
       "upgrade_trigger_hit": "命中",
       "upgrade_trigger_damage": "造成伤害",
-      "upgrade_inactive": "初始状态 · 未生效",
+      "upgrade_inactive": "初始状态 · 强化未生效",
       "upgrade_custom": "部分研发 · 已生效",
       "upgrade_effect_delta_note": "当前值来自同版技能基础值与升级加成；缺少基础值的项目显示 — 和已知变化。战斗效果需触发，不计入常态参数。",
       "upgrade_unsupported": "当前升级数据不完整，暂时无法计算满级数值。",
@@ -1797,7 +1803,16 @@
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "每层装填速度加成",
         "COMBAT_FRENZY_MAX_STACKS": "最大层数",
         "ATTRIBUTE_NAME_MAX_HEALTH": "生命值",
-        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "装填时间",
+        "AUX_SHELL_TYPE": "弹种",
+        "AUX_PENETRATION": "标称穿深",
+        "AUX_PENETRATION_FAR": "远距穿深（500 米基准）",
+        "AUX_SPEED": "初速",
+        "AUX_RANGE": "最大射程",
+        "AUX_MAX_SPEED": "最高弹速",
+        "AUX_COUNT": "每组弹数",
+        "CLIP_CAPACITY": "普通弹匣容量",
+        "ENHANCED_CLIP_CAPACITY": "强化弹匣容量",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "主炮装填时间",
         "ATTRIBUTE_NAME_FIRE_START_CHANCE": "引擎被击中起火几率",
         "ATTRIBUTE_NAME_ENGINE_POWER": "引擎功率",
         "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "前进极速",
@@ -1937,7 +1952,7 @@
         },
         "externalAmmoModule": {
           "name": "弹药补给模块",
-          "description": "三发弹匣中的每发炮弹都满足触发条件后，下一匣增加为四发。打空强化弹匣或主动装填后，下一匣恢复为三发。"
+          "description": "默认三发均造成伤害后，下一匣增至四发。打空强化弹匣或主动装填后，下一匣恢复三发。"
         },
         "auxilliaryWeapons": {
           "name": "副武器",
@@ -1945,7 +1960,7 @@
         },
         "shellOverheat": {
           "name": "炮弹热控",
-          "description": "车速在允许范围内时为下一发炮弹蓄能。蓄能越多，保底伤害越高。开火会消耗全部已积蓄的能量。"
+          "description": "炮弹装填完毕且车速在允许范围内时，为下一发蓄能。蓄能越多，伤害下限越高。开火消耗全部能量。"
         },
         "unguidedRocket": {
           "name": "无制导火箭",

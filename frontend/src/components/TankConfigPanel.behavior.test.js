@@ -23,14 +23,14 @@ function panel(locale = 'zh', tank = black, props = {}) {
 }
 
 describe('配置器紧凑呈现保持交互', () => {
-  it.each(['zh', 'en', 'ru'])('%s 嵌入已有面板时只保留一组升级控件、重置与必要警告', async locale => {
+  it.each(['zh', 'en', 'ru'])('%s 嵌入已有面板时复用升级控件、机制参数、重置与必要警告', async locale => {
     const wrapper = panel(locale, black, {
       embedded: true, showCrew: false, showEquipment: false, showConsumables: false, showProvisions: false,
     })
     expect(wrapper.get('[data-testid="tank-configurator"]').attributes('aria-label')).toBeTruthy()
     expect(wrapper.find('h2').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
-    expect(wrapper.findAll('[role="radiogroup"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="tank-mechanic-effects"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="tank-upgrade-top"]')).toHaveLength(1)
     await wrapper.get('[data-testid="tank-upgrade-stock"]').trigger('click')
     expect(wrapper.emitted('update').at(-1)[0]).toEqual({ upgrade: 'stock' })
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), upgrade: 'stock' } })
@@ -84,7 +84,8 @@ describe('XI 技能选择卡与效果反馈', () => {
     const rows = wrapper.get('[data-testid="tank-mechanic-effects"]').findAll('tbody tr')
     const fields = new Set(tank.modules.upgradeProgression.nodes.flatMap(node => node.attributes)
       .map(attr => attr.name).filter(name => !name.startsWith('ATTRIBUTE_NAME_')))
-    expect(rows).toHaveLength(fields.size)
+    for (const field of fields) expect(wrapper.find(`[data-testid="tank-mechanic-${field}"]`).exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="tank-base-mechanic"]')).toHaveLength(1)
     for (const row of rows) {
       expect(row.get('th').text()).not.toContain('agentTanks.')
       expect(row.get('td').text()).not.toBe('—')

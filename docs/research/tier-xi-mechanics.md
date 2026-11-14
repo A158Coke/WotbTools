@@ -121,3 +121,9 @@ KR-1/BZ 的其他技术系数不属于这份百分数白名单，不做统一乘
 | japan/components/guns.xml | `4508b4c575fbe686e6fe232a3cce13701dfcd996a50b6e68c3632739f3c09513` |
 | japan/components/shells.xml | `1592ec7f0afbf7932dc7cfa2dc846d667955c1d55369a50d16da9de627328a7c` |
 | Data/hangarAbilityParamsConfig.yaml | `effb42aa74c63098dfc43f3ae28d7352cafbb35932fffc4deff21121620d9113` |
+
+## 副武器弹药与配置面板
+
+`11.4.0.138-r5` 的 `t11r3-20261114-r7-ballistics` 修订补全同版 `auxiliaryGun.shots`。囊鼠的 AP 副炮标称穿深 276 毫米、弹速 1200 米/秒、射程 720 米。神官的 HEAT 火箭标称穿深 342 毫米、初速 40 米/秒、加速度 20 米/秒²、最高弹速 300 米/秒、射程 350 米。两者近远穿深源值分别相同，合并显示一行。炮弹类型来自 shell.kind 枚举。AS-XX 节点 23 的主炮装填加法单位为秒。
+
+两个配置器入口共用基础摘要、分支选择和参数表；旧包缺少的弹药字段逐项以 — 展示。备选与普通节点共同决定当前值。对多弹种按源顺序分组，未指定弹种归属的升级只展示独立的已知改变量。

@@ -1,3 +1,4 @@
+import { parseShellType } from '../scene/penetration.js'
 import { fmtNum } from '../scene/tankMeta'
 import { HIT_TRIGGER_ATTRIBUTES } from '../replay-local/compute/tankUpgrades'
 
@@ -5,6 +6,12 @@ type Translate = (key: string, params?: Record<string, string>) => string
 
 // Units for XI values in the client hangar and the vehicle's upgrade attributes.
 const units: Record<string, string> = {
+  ATTRIBUTE_NAME_GUN_RELOAD_TIME: 'SECOND',
+  AUX_PENETRATION: 'MILLIMETER',
+  AUX_PENETRATION_FAR: 'MILLIMETER',
+  AUX_SPEED: 'METER_PER_SECOND',
+  AUX_MAX_SPEED: 'METER_PER_SECOND',
+  AUX_RANGE: 'METER',
   AUXILLIARY_WEAPONS_GUN_RELOAD_TIME: 'SECOND',
   AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL: 'SECOND',
   AUXILLIARY_WEAPONS_GUN_DAMAGE: 'HIT_POINTS',
@@ -36,6 +43,8 @@ export function formatUpgradeValue(
     const key = name === 'COMBAT_FRENZY_ALLOW_SWITCH_AFTER_KILL' ? (value ? 'yes' : 'no') : (value ? 'enabled' : 'disabled')
     return t(`agentTanks.configurator.upgrade_${key}`)
   }
+  if (name === 'AUX_SHELL_TYPE') return Number.isInteger(value) && value >= 0 && value <= 3
+    ? parseShellType('', value).toUpperCase() : '—'
   if (modifier === 'MODIFIER_MULTIPLY') return `×${fmtNum(value, 3)}`
   const sign = modifier && value > 0 ? '+' : ''
   const percent = `${sign}${fmtNum(value * 100, 3)}`

@@ -8,7 +8,7 @@ import { computeCharacteristics } from './characteristics'
 import { baseSelection, buildComputeInput } from './tankSetup'
 import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
 import { parseAugmentProgression, researchGroupChoice } from './tankAugmentTree'
-import { projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
+import { mechanicParameterGroups, projectTankUpgrades, resolveUpgradeSelection, upgradeMechanicEffects, type UpgradeDefinition, type UpgradeNode } from './tankUpgrades'
 
 const bz = TANKS.find(t => t.modules.tankId === 15153)!
 const object432 = TANKS.find(t => t.modules.tankId === 27905)!
@@ -523,6 +523,26 @@ describe('t11r3 的四种内建机制', () => {
         expect(projected.detail).toEqual(projectTankUpgrades(detail, modules, 'top', [group.choices[0]]).detail)
       }
     }
+  })
+
+  it('keeps each auxiliary shot with its own ballistics and refuses ambiguous upgrade attribution', () => {
+    const modules = T11R3.tanks.find(tank => tank.modules.tankId === 10593)!.modules
+    const selection = resolveUpgradeSelection(modules, 'top')
+    const item = catalog.consumables.find(i => i.stem === 'unguidedRocket')!
+    const first = item.auxiliaryGun.shots[0]!
+    const second = { ...first, stem: 'other', type_id: 0, penetration: 210, penetration_far: 190, damage: 155 }
+    const groups = mechanicParameterGroups(selection, modules, { ...catalog, consumables: [
+      { ...item, auxiliaryGun: { ...item.auxiliaryGun, shots: [first, second] } },
+    ] })
+    expect(groups[0]?.index).toBe(1)
+    expect(groups[1]?.index).toBe(2)
+    const lookup = (i: number, name: string) => groups[i]?.rows.find(row => row.name === name)
+    expect(lookup(0, 'AUX_SHELL_TYPE')?.value).toBe(2)
+    expect(lookup(1, 'AUX_PENETRATION_FAR')?.value).toBe(190)
+    expect(lookup(1, 'UNGUIDED_ROCKET_DAMAGE')?.value).toBe(155)
+    expect(lookup(3, 'UNGUIDED_ROCKET_DAMAGE')).toMatchObject({ initial: null, value: null, current: 40 })
+    const old = mechanicParameterGroups(selection, modules, { ...catalog, consumablesGameVersion: 'older' })
+    expect(old.flatMap(g => g.rows).some(row => row.name === 'AUX_PENETRATION')).toBe(false)
   })
 
   it('拒绝跨版、缺绑定、错炮引用、多弹种、非法射速和不明确的主炮', () => {
