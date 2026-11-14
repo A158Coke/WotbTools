@@ -1761,17 +1761,23 @@
       "upgrade_hint": "Stats, armor and gun limits follow the upgrade state.",
       "upgrade_skill_group": "Tier XI ability {index}",
       "upgrade_skill_option": "Ability {index}",
-      "upgrade_skill_hint": "Choose one ability per group. It applies when fully upgraded; conditional effects require their battle trigger.",
-      "upgrade_effects": "Ability upgrades",
+      "mechanic_summary": "Base mechanic · {name}",
+      "mechanic_choices": "Choose an upgrade",
+      "mechanic_ammunition": "Secondary ammunition",
+      "mechanic_firing": "Firing and reload",
+      "upgrade_skill_hint": "Choose one upgrade per group. It applies at full upgrade, or when researched in a custom build.",
+      "upgrade_effects": "Mechanic parameters",
       "upgrade_effect_attribute": "Attribute",
       "upgrade_effect_current": "Current",
       "upgrade_effect_change": "Total change {value}",
       "upgrade_percentage_points": "{value} pp",
       "upgrade_yes": "Yes",
       "upgrade_no": "No",
+      "upgrade_relax_clip": "Relax enhanced magazine condition",
+      "upgrade_all_hits": "Hit with every shot",
       "upgrade_trigger_hit": "On hit",
       "upgrade_trigger_damage": "On damage",
-      "upgrade_inactive": "Stock · inactive",
+      "upgrade_inactive": "Stock · upgrades inactive",
       "upgrade_custom": "Partially researched · active",
       "upgrade_effect_delta_note": "Current values combine same-version ability data and upgrades. Missing base values show — and known changes only. Battle effects require activation and do not enter normal stats.",
       "upgrade_unsupported": "Upgrade data is incomplete. Fully upgraded stats are unavailable.",
@@ -1797,7 +1803,16 @@
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "Reload speed bonus per stack",
         "COMBAT_FRENZY_MAX_STACKS": "Maximum stacks",
         "ATTRIBUTE_NAME_MAX_HEALTH": "Hit Points",
-        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Reload Time",
+        "AUX_SHELL_TYPE": "Shell type",
+        "AUX_PENETRATION": "Nominal penetration",
+        "AUX_PENETRATION_FAR": "Far penetration (500 m reference)",
+        "AUX_SPEED": "Initial velocity",
+        "AUX_RANGE": "Maximum range",
+        "AUX_MAX_SPEED": "Maximum velocity",
+        "AUX_COUNT": "Rounds per salvo",
+        "CLIP_CAPACITY": "Standard magazine capacity",
+        "ENHANCED_CLIP_CAPACITY": "Enhanced magazine capacity",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "Main gun reload time",
         "ATTRIBUTE_NAME_FIRE_START_CHANCE": "Chance of Fire When Engine Is Hit",
         "ATTRIBUTE_NAME_ENGINE_POWER": "Engine Power",
         "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "Forward Speed Limit",
@@ -1937,7 +1952,7 @@
         },
         "externalAmmoModule": {
           "name": "Ammunition Supply Module",
-          "description": "When all three shots in a magazine meet the activation condition, the next magazine holds four shells. Emptying or reloading the enhanced magazine restores the three-shell magazine."
+          "description": "By default, dealing damage with all three shots gives the next magazine four rounds. Emptying the enhanced magazine or reloading manually restores three rounds."
         },
         "auxilliaryWeapons": {
           "name": "Auxiliary Weapons",
@@ -1945,7 +1960,7 @@
         },
         "shellOverheat": {
           "name": "Shell Thermal Control",
-          "description": "While the vehicle stays within the charging speed range, the next shot gains a higher minimum damage roll. Firing spends the entire charge."
+          "description": "With the gun loaded, staying within the speed limit charges the next shot. More charge raises its minimum damage. Firing consumes all charge."
         },
         "unguidedRocket": {
           "name": "Unguided Rocket",

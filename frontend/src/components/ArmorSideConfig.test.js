@@ -85,7 +85,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(wrapper.get('[data-testid="armor-side-config"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="tank-upgrade-top"]').attributes('aria-checked')).toBe('true')
     expect(wrapper.findAll('.tp-module-tile')).toHaveLength(0)
-    expect(wrapper.find('[data-testid="tank-upgrade-skills"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tank-upgrade-skills"]').exists()).toBe(true)
     await wrapper.get('[data-testid="tank-upgrade-stock"]').trigger('click')
     const stock = wrapper.emitted('apply').at(-1)[0]
     expect(stock).toMatchObject({ config: 0, configChanged: false, upgrade: 'stock' })
@@ -95,6 +95,8 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
   })
 
   it.each(t11r3.tanks)('keeps the t11r3 $modules.tankId configuration and ability IDs on stock/top switches', async ({ detail, modules }) => {
+    research.loadResearchCatalog.mockResolvedValueOnce({ ...CATALOG, consumables: t11r3.consumables,
+      provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion })
     const choice = modules.upgradeProgression.alternativeGroups[0].choices.at(-1)
     data.fetchTankData.mockResolvedValueOnce(detail)
     research.loadTankModules.mockResolvedValueOnce({ tanks: { [modules.stem]: modules } })
@@ -102,6 +104,11 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
       global: { mocks: { $t: key => key } } })
     await flushPromises()
     expect(wrapper.emitted('ready').at(-1)).toEqual([true])
+    const ballistics = { 10593: ['HEAT', '342'], 30737: ['AP', '276'] }[modules.tankId]
+    if (ballistics) {
+      expect(wrapper.get('[data-testid="tank-mechanic-AUX_SHELL_TYPE"]').text()).toContain(ballistics[0])
+      expect(wrapper.get('[data-testid="tank-mechanic-AUX_PENETRATION"]').text()).toContain(ballistics[1])
+    }
     for (const mode of ['stock', 'top']) {
       await wrapper.get(`[data-testid="tank-upgrade-${mode}"]`).trigger('click')
       expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: mode, abilities: [choice], configChanged: false })
