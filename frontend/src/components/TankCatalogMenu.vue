@@ -537,12 +537,22 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 }
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
-.tp-card.is-collector:not(.is-premium) { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
+/* 高级 / 收藏战车：整卡底色标识（2026-11-14 反馈：底色保留、封面底框去除）。
+   hover 在各自底色上加深；选中态仍以 accent 边框区分。混色底上的文字不单独调暗：
+   车名继承 text-primary；属性标签常态用 tertiary，染色底上覆写为 text-primary——
+   tertiary（1.96–3.53）与 secondary（2.85–5.26）对自身 36%/46% 底色都到不了 4.5:1
+   （语义色与底色同源，任何比例混色亦然），由 tokens/color-contrast.test.ts 按
+   全部主题×语义×常态/hover 锁定。 */
+.tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
+.tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
+.tp-card.is-premium .tp-stat-label,
+.tp-card.is-collector:not(.is-premium) .tp-stat-label { color: var(--color-text-primary); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 
 @media (hover: hover) {
   .tp-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
+  .tp-card.is-premium:hover { background: color-mix(in oklab, var(--color-warning) 46%, var(--color-surface-1)); }
+  .tp-card.is-collector:not(.is-premium):hover { background: color-mix(in oklab, var(--color-info) 46%, var(--color-surface-1)); }
 }
 
 .tp-media {
@@ -553,7 +563,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   inline-size: 100%;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
+  background: transparent; /* 封面四周不再露出底色框（2026-11-14 反馈：去边框） */
 }
 
 .tp-media img {

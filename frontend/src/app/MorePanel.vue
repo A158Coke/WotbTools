@@ -100,6 +100,8 @@ watch(() => props.open, async (open) => {
       <div class="more-panel-setting" data-testid="more-panel-feedback">
         <AppSwitch :model-value="feedbackPrefs.haptics" :label="$t('feedbackPrefs.haptics')" @update:model-value="value => setFeedbackPref('haptics', value)" />
         <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" @update:model-value="value => setFeedbackPref('sound', value)" />
+        <!-- 3D 回放炮声：与 MorePage 同名开关（桌面/平板侧栏走本面板，是这些布局的正常设置入口） -->
+        <AppSwitch :model-value="feedbackPrefs.battleSound" :label="$t('feedbackPrefs.battleSound')" :description="$t('feedbackPrefs.battleSoundHint')" @update:model-value="value => setFeedbackPref('battleSound', value)" />
       </div>
     </section>
 
