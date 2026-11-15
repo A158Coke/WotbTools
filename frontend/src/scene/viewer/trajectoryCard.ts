@@ -1,9 +1,12 @@
 // 轨迹与结果卡（#820 Agent A 出仓）：trajGroup/trajInfoPos 的唯一 owner、
 // 结果卡 DOM 摆位与 dev armor-debug 面板。原 tankViewer.js 闭包内对应函数整体平移。
+// 判定结果卡是判定模式唯一结果窗口（2026-11-15 用户裁示）：有点击锚点时跟随点击，
+// 用共享 resultCardPosition 避让固定 HUD；无点击锚点（射击复现/初始判定）保持顶部停靠。
 import * as THREE from 'three'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './shotTrajectoryGeometry.js'
-import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics } from '../../utils/shotResultCardMetrics.js'
+import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics, shotResultCardScale } from '../../utils/shotResultCardMetrics.js'
 import { renderShotResultCardHtml } from './shotResultCard.js'
+import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from '../armorInspectorChance.js'
 import type { ProbabilityChainLayer } from '../armorInspectorChance.js'
 import type { ShotResultCardHeInfo, ShotResultCardLabels, ShotResultCardLayer } from './shotResultCard.js'
@@ -20,6 +23,8 @@ export interface TrajectoryCardOptions {
     probabilityMode?: boolean
     heInfo?: ShotResultCardHeInfo | null
     heDirectHit?: { name: string; thickness: number } | null
+    /** 触发本次判定的点击位置（client 坐标）。缺省/复现模式 = 停靠顶部，不跟随。 */
+    clickAnchor?: { x: number; y: number } | null
 }
 
 /** 轨迹/结果卡 owner 的公开句柄（调用方只通过这些方法访问本模块状态）。 */
@@ -41,6 +46,8 @@ export interface TrajectoryCardHandle {
         options?: TrajectoryCardOptions,
     ): void
     updateTrajInfoPos(): void
+    /** 卡片尺寸/视口变化后标记重新定位（resize、展开/收起）。 */
+    markTrajInfoDirty(): void
     armorDebugPanel(snapshot: NonNullable<Window['__armorDebugLast']>): void
     tidyTrajectory(): void
     clearTrajInfoPos(): void
@@ -70,6 +77,10 @@ export function createTrajectoryCard(deps: TrajectoryCardDeps): TrajectoryCardHa
     const { isDestroyed, clearShotError, clearHeBlast, getFxScene, getCamera, L, armorDebug } = deps
     let trajGroup: THREE.Group | null = null;
     let trajInfoPos: THREE.Vector3 | null = null;
+    /** 本次判定的点击锚点（相对 #canvas-container）；null = 停靠顶部（复现/自动判定）。 */
+    let trajClickAnchor: { x: number; y: number } | null = null;
+    /** 位置/宽度需要重算（内容更新、resize、展开/收起）。渲染循环每帧调用时据此跳过布局。 */
+    let trajLayoutDirty = true;
 
 function tidyTrajectory(): void {
             if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; }
@@ -235,8 +246,19 @@ function showTrajectory(
             const cardHost = document.getElementById('canvas-container');
             const cardHostRect = cardHost ? cardHost.getBoundingClientRect() : null;
             const compactCard = isCompactShotResultCard(window.innerWidth, window.innerHeight);
-            const cardMetrics = shotResultCardMetrics(compactCard);
+            // 手机端按视口短边比例缩小字号/间距（2026-11-15 用户裁示），桌面档恒为 1。
+            const cardMetrics = shotResultCardMetrics(compactCard, shotResultCardScale(window.innerWidth, window.innerHeight));
             const cardMaxWidth = resultCardMaxWidth(cardHostRect ? cardHostRect.width : 0, window.innerWidth, window.innerHeight);
+            // 点击锚点换算到 #canvas-container 坐标系（卡片 absolute 定位祖先即该容器所在的
+            // .armor-stage；两者同尺寸同原点）。无点击（射击复现/初始判定）= null → 停靠回退。
+            trajClickAnchor = null;
+            if (options.clickAnchor && cardHostRect && cardHostRect.width > 0) {
+                trajClickAnchor = {
+                    x: options.clickAnchor.x - cardHostRect.left,
+                    y: options.clickAnchor.y - cardHostRect.top,
+                };
+            }
+            trajLayoutDirty = true;
             // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色（最终段 1–99% 时标题是
             // “可能击穿”）：概率链累计是领域计算，在调用方预算后交给 renderer 着色。
             const partialChainLayers = !probabilityMode && chancePartial
@@ -262,30 +284,84 @@ function showTrajectory(
         }
 
 function updateTrajInfoPos(): void {
-            if (!trajInfoPos) {
-                const hidden = document.getElementById('traj-info');
-                if (hidden) hidden.style.display = 'none';
-                return;
-            }
+            // 无判定结果时不做任何事：隐藏由清理路径（tidyTrajectory / 无结果出口）显式负责。
+            // 这里若顺手隐藏，宿主在“卡片只是被夹具/外部显示”时会被误清（门禁与调试夹具）。
+            if (!trajInfoPos) return;
             const div = document.getElementById('traj-info');
             if (!div) return;
             const host = document.getElementById('canvas-container');
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
+            // 渲染循环每帧都会调到这里（历史上用于跟随世界点）。布局只在 dirty 时重算：
+            // 内容更新（showTrajectory）、resize、展开/收起都会 markTrajInfoDirty。
+            if (!trajLayoutDirty) return;
+            trajLayoutDirty = false;
             // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
-            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px，避免横屏里铺满整屏。
+            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px 且不超过画布宽 82%，
+            // 跟随点击后不能铺满手机视口（2026-11-15 用户裁示）。
             const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
-            if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
+            if (maxWidth) {
+                // 物理 + 逻辑两个方向都写：紧凑横屏的停靠规则用 max-inline-size 收窄，
+                // 跟随点击时必须由脚本宽度口径接管，避免被停靠几何压成窄条。
+                div.style.maxWidth = `${maxWidth}px`;
+                div.style.maxInlineSize = `${maxWidth}px`;
+            }
             div.style.whiteSpace = 'normal';
             div.style.boxSizing = 'border-box';
-            // 结果固定停靠在场景顶部正中（AgentArmorView 样式所有），不再按命中点投影摆位：
-            // 不压车体、不避让四角，页面滚动时随场景容器一起移动。
             div.style.display = 'block';
+            if (!trajClickAnchor) {
+                // 停靠回退（射击复现 / 初始自动判定）：清掉脚本定位，交还 CSS 的顶部停靠规则。
+                div.style.left = '';
+                div.style.top = '';
+                div.style.insetInlineStart = '';
+                div.style.insetBlockStart = '';
+                div.style.transform = '';
+                return;
+            }
+            // 卡片是 absolute，left/top 相对 offsetParent；点击锚点存的是 #canvas-container
+            // 坐标系（与 offsetParent 同尺寸同原点）。参考系不一致时显式换算，避免偏移误差。
+            const anchor = (div.offsetParent as HTMLElement | null) ?? div.parentElement;
+            if (!anchor) return;
+            const anchorRect = anchor.getBoundingClientRect();
+            // 固定 HUD 面板（与 browser-armor-mobile 门禁同口径）：
+            // #corner-tl = 左上信息胶囊 + 参数入口，.armor-back = 返回键，
+            // #corner-tr = 右下射击卡，#turret-controls = 左下姿态卡。
+            const panels: ResultCardRect[] = [];
+            for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+                const el = document.querySelector(selector) as HTMLElement | null;
+                if (!el) continue;
+                const style = getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') continue;
+                const r = el.getBoundingClientRect();
+                if (r.width <= 0 || r.height <= 0) continue;
+                panels.push({ left: r.left - anchorRect.left, top: r.top - anchorRect.top, right: r.right - anchorRect.left, bottom: r.bottom - anchorRect.top });
+            }
+            const chosen = chooseResultCardPosition({
+                clickX: trajClickAnchor.x + (rect.left - anchorRect.left),
+                clickY: trajClickAnchor.y + (rect.top - anchorRect.top),
+                width: div.offsetWidth,
+                height: div.offsetHeight,
+                viewportWidth: anchorRect.width,
+                viewportHeight: anchorRect.height,
+                panels,
+                gap: 14,
+                pad: 8,
+            });
+            // CSS 的停靠规则用 logical inset + translateX(-50%)：物理与逻辑两个方向都写同一
+            // 像素值并覆盖 transform。**不能写 inset-*: auto**：同一内联声明块里逻辑属性若
+            // 排在物理 left/top 之后，会按声明顺序覆盖它们（used left/top 变回 auto → 卡片
+            // 落到静态位置、跑到场景下方；browser-armor-aiming 实际抓到过）。
+            div.style.insetInlineStart = `${chosen.left}px`;
+            div.style.insetBlockStart = `${chosen.top}px`;
+            div.style.left = `${chosen.left}px`;
+            div.style.top = `${chosen.top}px`;
+            div.style.transform = 'none';
         }
     return {
         showTrajectory, updateTrajInfoPos, armorDebugPanel, tidyTrajectory,
         clearTrajInfoPos() { trajInfoPos = null; },
-        setTrajInfoPos(v) { trajInfoPos = v; },
+        setTrajInfoPos(v) { trajInfoPos = v; trajLayoutDirty = true; },
+        markTrajInfoDirty() { trajLayoutDirty = true; },
         clearTrajGroup() { if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; } trajInfoPos = null; },
         getTrajInfoPos: () => trajInfoPos,
     };

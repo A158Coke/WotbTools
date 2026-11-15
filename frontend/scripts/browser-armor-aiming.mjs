@@ -568,7 +568,8 @@ try {
   }
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
-  // #traj-info 停靠在场景容器顶部正中（absolute）；页面滚动后必须随画布一起移动。
+  // #traj-info 是场景容器内的 absolute 卡片（判定模式跟随点击位置，无点击时停靠顶部）；
+  // 页面滚动后必须随画布一起移动——位置由容器坐标写入，不随视口 fixed。
   //
   // 同步契约（2026-10-19）：这个 scroll-layout 用例真正需要的不变量是「卡片锚定在画布上」，
   // 不是「卡片绝对屏幕坐标连续 5 帧不动」。旧实现把后者当成相机停止的判据，等于要求
@@ -649,14 +650,34 @@ try {
     })()`)
     const before = await readRects()
     if (!before) throw new Error('result card / canvas rect missing before scroll test')
-    // 结果停靠契约（design-language §9「强制横屏与场景 HUD」）：卡片固定在场景顶部正中，不按命中点摆位
-    const docked = await page.evaluate(`(() => {
+    // 跟随点击契约（2026-11-15 用户裁示）：判定结果卡跟随点击位置（脚本写入容器坐标），
+    // 必须完整落在场景容器内且不压固定 HUD（左上胶囊/返回/右下射击/左下姿态）。
+    // 无点击的射击复现仍停靠顶部（由 browser-armor-mobile 的停靠夹具覆盖）。
+    const follow = await page.evaluate(`(() => {
       const card = document.getElementById('traj-info')?.getBoundingClientRect()
       const stage = document.querySelector('[data-testid="armor-stage"]')?.getBoundingClientRect()
-      return card && stage ? { centerDelta: (card.left + card.width / 2) - (stage.left + stage.width / 2), top: card.top - stage.top } : null
+      if (!card || !stage) return null
+      const panels = ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back'].map((selector) => {
+        const el = document.querySelector(selector)
+        if (!el) return null
+        const style = getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden') return null
+        const r = el.getBoundingClientRect()
+        return r.width > 0 && r.height > 0 ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null
+      }).filter(Boolean)
+      const inside = card.left >= stage.left - 1 && card.right <= stage.right + 1
+        && card.top >= stage.top - 1 && card.bottom <= stage.bottom + 1
+      const overlap = panels.filter((p) => card.right > p.left + 0.5 && card.left < p.right - 0.5
+        && card.bottom > p.top + 0.5 && card.top < p.bottom - 0.5)
+      return {
+        inside,
+        overlap: overlap.length,
+        card: { left: Math.round(card.left), top: Math.round(card.top), right: Math.round(card.right), bottom: Math.round(card.bottom) },
+        stage: { left: Math.round(stage.left), top: Math.round(stage.top), right: Math.round(stage.right), bottom: Math.round(stage.bottom) },
+      }
     })()`)
-    check(!!docked && Math.abs(docked.centerDelta) <= 2 && docked.top >= 0 && docked.top <= 40,
-      `结果卡没有停靠在场景顶部正中（${JSON.stringify(docked)}）`)
+    check(!!follow && follow.inside && follow.overlap === 0,
+      `结果卡没有跟随点击的几何契约（须完整落在场景内且不压固定 HUD；${JSON.stringify(follow)}）`)
     await page.evaluate(`(() => {
       const d = document.createElement('div');
       d.id = 'scroll-fixture';
