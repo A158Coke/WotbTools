@@ -344,3 +344,11 @@ function installedKeys(modules, selection) {
   if (track?.stem) set.add(`chassis:${track.stem}`)
   return set
 }
+
+/**
+ * 「无研发链」注记的 i18n 键：零解锁边只说明“无研发链”，不等于 XI 超测车
+ * （如 X 级 Leopard 1 同样零边）；只有等级确为 XI 才用超测措辞。
+ */
+export function noChainNoteKey(tier) {
+  return Number(tier) === 11 ? 'research.no_chain_note' : 'research.no_chain_note_generic'
+}
