@@ -68,6 +68,17 @@ function onDocPointerDown(event) {
 }
 useEventListener(() => (typeof document === 'undefined' ? undefined : document), 'pointerdown', onDocPointerDown, { capture: true })
 
+const speedTrigger = ref(null)
+/** Esc：焦点在触发按钮或任一档位上都收起菜单并把焦点还给触发按钮；
+    stopPropagation 避免同一次按键继续冒泡触发播放器的其他 Esc 行为（标注退出等）。 */
+function onSpeedKeydown(event) {
+  if (event.key !== 'Escape' || !speedOpen.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  speedOpen.value = false
+  speedTrigger.value?.focus()
+}
+
 /**
  * 时间轴不可用（duration 不大于起点）时，播放 / 跳秒 / 进度条都是 silent no-op——
  * 必须显式 disabled 并说明原因，不保留"看起来可用但什么都不发生"的控件。
@@ -105,9 +116,9 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
       <component :is="props.playing ? Pause : Play" class="pb-icon" :size="16" aria-hidden="true" />
     </button>
     <button v-if="props.stepSeconds > 0" type="button" class="pb-btn" data-test="pb-fwd5" :disabled="!timelineUsable" :aria-label="$t('recon.map.playback.forward_seconds', { seconds: props.stepSeconds })" @click="emit('step', props.stepSeconds)">+{{ props.stepSeconds }}</button>
-    <div ref="speedRoot" class="pb-speed-picker">
+    <div ref="speedRoot" class="pb-speed-picker" @keydown="onSpeedKeydown">
       <button
-        type="button" class="pb-btn pb-speed-current" :aria-expanded="speedOpen"
+        ref="speedTrigger" type="button" class="pb-btn pb-speed-current" :aria-expanded="speedOpen"
         aria-haspopup="menu" data-test="pb-speed-current"
         :aria-label="$t('recon.map.playback.speed_option', { speed: props.speed })"
         @click="speedOpen = !speedOpen"
