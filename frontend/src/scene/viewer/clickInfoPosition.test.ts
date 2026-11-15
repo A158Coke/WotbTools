@@ -62,6 +62,24 @@ describe('chooseClickInfoPosition', () => {
     expect(pos.top + 120).toBeLessThanOrEqual(320 - 8 + 1)
   })
 
+  it('评审反例 3：面板夹缝恰好等于卡片尺寸时命中无缝贴合位', () => {
+    // 反例来源（评审）：600×320、190×120、点击 (155,125)，四面板把中间夹成
+    // x∈[100,290] × y∈[72,192] 的缝；唯一可行位是 (100,72)（右沿贴左面板、上沿贴上方面板）。
+    // 固定 gap 网格会漏掉它（dx=-55 / dy=-53 都不是步长整数倍），必须靠边缘坐标交叉积。
+    const panels: ClickInfoRect[] = [
+      { left: 0, top: 0, right: 600, bottom: 72 },
+      { left: 0, top: 192, right: 600, bottom: 320 },
+      { left: 0, top: 72, right: 100, bottom: 192 },
+      { left: 290, top: 72, right: 600, bottom: 192 },
+    ]
+    const pos = chooseClickInfoPosition({
+      clickX: 155, clickY: 125, width: 190, height: 120,
+      viewportWidth: 600, viewportHeight: 320, panels,
+    })
+    expect(pos).toEqual({ left: 100, top: 72 })
+    for (const panel of panels) expect(overlaps(pos, 190, 120, panel), JSON.stringify(pos)).toBe(false)
+  })
+
   it('四个角都被面板占满时仍返回视口内的钳制位（读数优先，不越界）', () => {
     const panels: ClickInfoRect[] = [
       { left: 0, top: 0, right: 400, bottom: 200 },

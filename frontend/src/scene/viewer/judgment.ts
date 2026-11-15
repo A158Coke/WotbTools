@@ -122,13 +122,15 @@ export function faceAngleAndEffective(
 
 /** 点选卡位置选择（纯函数）：跟随点击点，并在确认无遮挡的位置里取**离点击点最近**的。
  *
- *  搜索顺序固定、无统计打分：
- *   1. 点击点 6 个候选（右下/右上/左下/左上/正上/正下）；
- *   2. 贴面板边缘的候选（每个面板的下沿/上沿/右沿/左沿）；
- *   3. 由近及远的网格：以 gap 为步长枚举 (dx, dy)，按 |dx|+|dy| 升序逐层扫描
- *      ——保证只要视口里存在能容纳卡片的空位就一定找到（评审反例：单轴贴边会漏掉
- *      需要同时调整横纵坐标的空位，如 (100,72)）；
- *   4. 全部被占时才退回首个钳制位（读数优先于美观，正常布局不会走到）。
+ *  搜索面 = 面板边缘与容器边界构造的 **X/Y 候选交叉积**（评审要求：单轴贴边与固定步长
+ *  网格都无法覆盖"需要同时调整横纵坐标"的空位）。候选类别：
+ *   - 点击点附近：四象限偏移 + 正上 / 正下；
+ *   - 容器边界：pad、viewport - card - pad；
+ *   - 每个面板四条边：留缝（±gap）与**无缝**（贴合）两档 —— 无缝档是必要的：
+ *     两个面板之间恰好留出卡片宽度时，唯一可行位就是右沿贴左面板、左沿贴右面板。
+ *  排序按到点击点的曼哈顿距离升序（几何距离，不是统计打分），同距离按 (y, x) 固定序。
+ *  交叉积全部被占时退到由近及远网格（gap 步长）兜底，仍无解才用首个钳制位
+ *  （读数优先于美观，正常布局不会走到）。
  */
 export interface ClickInfoRect { left: number, top: number, right: number, bottom: number }
 
@@ -161,28 +163,45 @@ export function chooseClickInfoPosition(input: {
         return hitsPanel(x, y) ? null : { left: Math.round(x), top: Math.round(y) }
     }
 
-    // 1) 点击点附近
-    const nearby: Array<[number, number]> = [
+    // 1) 点击点附近（最近优先）
+    for (const [x, y] of [
         [cx + gap, cy + gap],
         [cx + gap, cy - h - gap],
         [cx - w - gap, cy + gap],
         [cx - w - gap, cy - h - gap],
         [cx - w / 2, cy - h - gap],
         [cx - w / 2, cy + gap],
-    ]
-    for (const [x, y] of nearby) {
+    ] as Array<[number, number]>) {
         const hit = accept(x, y)
         if (hit) return hit
     }
-    // 2) 贴面板边缘（同时调整横纵坐标的情形交给下面的网格）
+
+    // 2) 面板边缘 × 容器边界的 X/Y 交叉积
+    const xs = new Set<number>([pad, input.viewportWidth - w - pad])
+    const ys = new Set<number>([pad, input.viewportHeight - h - pad])
     for (const panel of input.panels) {
-        for (const [x, y] of [[cx, panel.bottom + gap], [cx, panel.top - h - gap],
-            [panel.right + gap, cy], [panel.left - w - gap, cy]] as Array<[number, number]>) {
-            const hit = accept(x, y)
-            if (hit) return hit
+        xs.add(panel.right + gap)
+        xs.add(panel.right)                 // 无缝：卡片左沿贴面板右沿
+        xs.add(panel.left - w - gap)
+        xs.add(panel.left - w)              // 无缝：卡片右沿贴面板左沿
+        ys.add(panel.bottom + gap)
+        ys.add(panel.bottom)                // 无缝：卡片上沿贴面板下沿
+        ys.add(panel.top - h - gap)
+        ys.add(panel.top - h)               // 无缝：卡片下沿贴面板上沿
+    }
+    const cross: Array<[number, number, number]> = []
+    for (const x of xs) {
+        for (const y of ys) {
+            cross.push([Math.abs(x - cx) + Math.abs(y - cy), y, x])
         }
     }
-    // 3) 由近及远网格：|dx|+|dy| 升序，同层按 (dy, dx) 固定序
+    cross.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
+    for (const [, y, x] of cross) {
+        const hit = accept(x, y)
+        if (hit) return hit
+    }
+
+    // 3) 兜底：由近及远网格（自由区域里不在任何面板边缘上的空位）
     const maxStep = Math.ceil(Math.max(input.viewportWidth, input.viewportHeight) / gap) + 1
     const offsets: Array<[number, number, number]> = []
     for (let sx = -maxStep; sx <= maxStep; sx++) {
