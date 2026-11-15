@@ -386,7 +386,7 @@ watch(uiProfile, async () => {
   display: none;
 }
 
-:global(html[data-pb-pseudo-fullscreen]) .immersive-nav {
+:global(html[data-pb-pseudo-fullscreen] .immersive-nav) {
   z-index: calc(var(--z-header) + 2);
 }
 
