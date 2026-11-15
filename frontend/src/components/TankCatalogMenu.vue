@@ -545,6 +545,12 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
    全部主题×语义×常态/hover 锁定。 */
 .tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
 .tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
+/* 车名语义色（2026-11-14 用户裁示恢复）：90% 语义 + 10% text-primary 的 Oklab 混色，
+   在同源混色底上是可读性最好的语义色形态。实测对 36%/46% 自身底色为 3.27–3.89，
+   低于 WCAG AA 正文 4.5——这是**有意的产品取舍**（车名辨识优先于 AA 正文门槛），
+   契约见 tokens/color-contrast.test.ts：车名门槛为 3.0，规则 token/比例进映射契约。 */
+.tp-card.is-premium .tp-card-name { color: color-mix(in oklab, var(--color-warning) 90%, var(--color-text-primary)); }
+.tp-card.is-collector:not(.is-premium) .tp-card-name { color: color-mix(in oklab, var(--color-info) 90%, var(--color-text-primary)); }
 .tp-card.is-premium .tp-stat-label,
 .tp-card.is-collector:not(.is-premium) .tp-stat-label { color: var(--color-text-primary); }
 .tp-card.sel { border-color: var(--color-accent); box-shadow: var(--elevation-2); }

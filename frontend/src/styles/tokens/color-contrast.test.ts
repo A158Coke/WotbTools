@@ -273,22 +273,36 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
   })
 
   /**
-   * 坦克卡片高级/收藏底色（TankCatalogMenu .tp-card.is-*，2026-11-14 评审）：
-   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色。语义色与底色同源，
-   * 任何比例的语义文字（含向 text-primary 混色）在该底色上都到不了 4.5——车名继承
-   * text-primary（实测 4.91–9.19），属性标签在染色卡上覆写为 text-primary（常态卡
-   * 仍用 tertiary，由上方主测试覆盖）。这里从组件实际规则提取各文字元素的 token，
-   * 按全部主题 × 语义 × 常态/hover 复算，并锁定映射契约。
+   * 坦克卡片高级/收藏底色（TankCatalogMenu .tp-card.is-*，2026-11-14 评审 / 用户裁示）：
+   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色。
+   *
+   * **车名门槛 = 3.0（DC-CLR-01 例外 E1，2026-11-14 用户裁示）**：车名是 14–15px/600
+   * 正文，不适用大字/UI 图形口径；保留语义色（90% 语义 + 10% text-primary 的 Oklab
+   * 混色）以维持高级/收藏辨识度，对同源混色底实测 3.27–3.89，低于正文 4.5。
+   * 该偏离已按仓库流程登记在 `docs/frontend/design-language.md` §3.0.1（DC-CLR-01
+   * 例外 E1，含授权来源），这里只是执行门槛：比例或 token 漂移导致再降时仍然
+   * fail-closed（规则形态与混色比例进映射契约）。
+   *
+   * 属性标签在染色卡上覆写为 text-primary（常态卡仍用 tertiary，由上方主测试覆盖），
+   * 该组仍按 4.5 复算。车名与标签的 token/比例全部从组件实际规则提取（映射契约），
+   * 按全部主题 × 语义 × 常态/hover 复算。
    */
-  it('坦克卡片高级/收藏底色：车名与属性标签对 36%/46% 语义底 ≥ 4.5，语义 pill 对自绘 16% 底 ≥ 4.5', () => {
+  it('坦克卡片高级/收藏底色：车名对 36%/46% 语义底 ≥ 3（用户裁示例外）、属性标签 ≥ 4.5、语义 pill 对自绘 16% 底 ≥ 4.5', () => {
     const component = readFileSync(resolve(HERE, '../../components/TankCatalogMenu.vue'), 'utf8')
     const style = component.slice(component.indexOf('<style'))
-    // 映射契约：任何指向 .tp-card-name 的规则都不得声明 color（含 background-color 之外的
-    // color/border-color 系）——否则绕过本测试的继承色假设。
-    const colorRules = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    // 映射契约：车名色必须来自**恰好两条**染色卡规则，且形态固定为
+    // color-mix(in oklab, var(--color-<语义>) <比例>%, var(--color-text-primary))。
+    // 比例从组件实际规则读取后参与复算——改成不达标的比例/换 token 都会在这里失败。
+    const nameRules = [...style.matchAll(
+      /\.tp-card\.is-(premium|collector(?::not\(\.is-premium\))?) \.tp-card-name[^{]*\{[^}]*color:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*(\d+(?:\.\d+)?)%,\s*var\(--color-text-primary\)\)/g,
+    )].map(match => ({ card: match[1], semantic: match[2], mix: Number(match[3]) / 100 }))
+    expect(nameRules.map(rule => rule.semantic).sort(), '车名语义色规则缺失或形态漂移')
+      .toEqual(['--color-info', '--color-warning'])
+    for (const rule of nameRules) expect(rule.mix, '车名语义混色比例').toBeGreaterThan(0)
+    // 不允许存在绕过上面的其它 .tp-card-name 颜色声明（第二处 color 覆盖会让复算失真）
+    const nameColorDecls = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(match => match[1].includes('.tp-card-name') && /(?:^|[^-])color\s*:/.test(match[2]))
-      .map(match => match[1].trim())
-    expect(colorRules).toEqual([])
+    expect(nameColorDecls.length, '.tp-card-name 颜色声明数量（应为 2 条染色卡规则）').toBe(2)
     // 属性标签：染色卡（is-premium / is-collector:not(.is-premium)）必须覆写颜色，
     // token 从实际规则提取——评审二轮指出 tertiary 在混色底上 1.96–3.53，secondary
     // 亦不达标（2.85–5.26），当前方案为 text-primary。
@@ -301,8 +315,12 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
       for (const semantic of ['--color-warning', '--color-info']) {
         for (const alpha of [0.36, 0.46]) {
           const bg = oklabMix(tokens[semantic], tokens['--color-surface-1'], alpha)
-          const name_ = ratio(tokens['--color-text-primary'], bg)
-          if (name_ < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${name_.toFixed(2)}`)
+          const rule = nameRules.find(candidate => candidate.semantic === semantic)
+          if (!rule) continue   // 另一条语义规则缺失已由映射契约断言覆盖
+          const nameColor = oklabMix(tokens[semantic], tokens['--color-text-primary'], rule.mix)
+          const name_ = ratio(nameColor, bg)
+          // 车名门槛 3.0：用户裁示的语义色例外（见本用例文档注释）
+          if (name_ < 3) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${name_.toFixed(2)}`)
           for (const labelToken of labelTokens) {
             const value = ratio(tokens[labelToken], bg)
             if (value < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% ${labelToken} ${value.toFixed(2)}`)

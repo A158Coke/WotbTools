@@ -488,6 +488,7 @@ function startViewer(preserveSelection = false) {
             replayEquipmentAutoTitle: t('armor.equipment_auto'),
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
+            resultLabel: (result) => armorResultLabel(result, t),
             shotDamage: t('armor.shot_damage'),
             shotPenChance: t('armor.penetration_chance'),
             shotPenDamage: t('armor.penetration_damage'),
@@ -756,13 +757,15 @@ onBeforeUnmount(() => {
                 @close="closePicker"
             />
         </div>
-        <!-- 装甲厚度模式点选结果：停靠在场景顶部正中的胶囊（不跟随命中点），只显示部件名 + 基础装甲值 -->
+        <!-- 点选结果（基础/角度/等效/穿深/结果五行）：跟随点击位置，小屏按视口自适应缩放。
+             数值由 scene/viewer/judgment.ts 写入（厚度模式 = 几何量；判定模式 = 判定首层量）。 -->
         <div id="click-info">
             <h3 id="click-part">—</h3>
-            <div class="row">
-                <span>{{ $t('armor.base_armor') }}</span>
-                <span id="click-armor">—</span>
-            </div>
+            <div class="row"><span>{{ $t('armor.base_armor') }}</span><span id="click-armor">—</span></div>
+            <div class="row"><span>{{ $t('armor.angle') }}</span><span id="click-angle">—</span></div>
+            <div class="row"><span>{{ $t('armor.effective') }}</span><span id="click-effective">—</span></div>
+            <div class="row"><span>{{ $t('armor.penetration') }}</span><span id="click-pen">—</span></div>
+            <div class="row"><span>{{ $t('armor.result') }}</span><span id="click-result">—</span></div>
         </div>
         <div class="armor-bottom-controls">
         <div id="corner-tr">
@@ -1048,34 +1051,58 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 点选结果（厚度 #click-info、击穿 #traj-info）：固定停靠在场景顶部正中的胶囊，不跟随命中点、
-   不压车体（design-language §9「强制横屏」场景 HUD）。场景脚本只切换显示与写入内容。 */
-.armor-view :is(#click-info, #traj-info) {
+/* 击穿判定 #traj-info：固定停靠在场景顶部正中的胶囊（design-language §9 场景 HUD）。 */
+.armor-view #traj-info {
     position: absolute;
     inset-block-start: var(--space-5);
     inset-inline-start: 50%;
     transform: translateX(-50%);
     z-index: var(--pb-z-hud);
 }
+/* 点选结果 #click-info（2026-11-14 用户裁示）：跟随点击位置显示五行读数
+   （基础装甲 / 入射角 / 等效装甲 / 穿深 / 结果）。位置由 scene/viewer/judgment.ts 写入
+   left/top（按容器坐标、含视口边界钳制）；尺寸随视口自适应，手机横屏/竖屏都不占大面积。 */
 .armor-view #click-info {
+    position: absolute;
     display: none;
-    align-items: center;
-    gap: var(--space-3);
-    min-block-size: var(--hit-min-comfortable);
-    padding: 0 var(--space-3);
+    flex-direction: column;
+    gap: 1px;
+    /* 视口自适应：宽度不超过容器余量，字号在小屏收缩（不影响点击命中区）。 */
+    inline-size: max-content;
+    max-inline-size: min(15rem, calc(100% - var(--space-4)));
+    padding: var(--space-2) var(--space-3);
     color: var(--muted);
     font: var(--type-caption);
+    font-size: clamp(10px, 0.55vw + 8.2px, 12px);
     white-space: nowrap;
     pointer-events: none;
+    z-index: var(--pb-z-modal);
 }
-.armor-view #click-info h3 { margin: 0; color: var(--txt); font: var(--type-caption); font-weight: 600; }
-.armor-view #click-info .row { display: flex; gap: var(--space-2); }
-.armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 700; }
+.armor-view #click-info > .row { display: flex; justify-content: space-between; gap: var(--space-3); }
+/* 通用数值色排除结果字段：结果列按语义着色（pen/bounce/ricochet 三个 class 由脚本写入）。 */
+.armor-view #click-info > .row > span:last-child:not(#click-result) { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; }
+.armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font-size: clamp(11px, 0.6vw + 9px, 13px); font-weight: 700; }
+.armor-view #click-info .pen { color: var(--green); }
+.armor-view #click-info .bounce { color: var(--red); }
+.armor-view #click-info .ricochet { color: var(--orange); }
+/* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距、字号与行距。
+   五行读数在 320–390px 高的视口里必须明显小于半屏（browser-armor-mobile 的
+   resultHeightBudget 上限 = 视口高 45%），否则会压住车体与右下射击面板。 */
+@media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #click-info {
+        gap: 0;
+        padding: 3px var(--space-2);
+        font-size: clamp(9px, 2.3vw, 11px);
+        max-inline-size: min(12rem, calc(100% - var(--space-3)));
+    }
+    .armor-view #click-info h3 { margin-block-end: 1px; font-size: clamp(10px, 2.4vw, 12px); }
+}
 .armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; cursor: pointer; }
 .armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 /* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */
 @media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
-    .armor-view :is(#click-info, #traj-info) { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
+    /* 只有停靠式判定卡排在信息条下面；#click-info 跟随点击位置，由脚本定位。 */
+    .armor-view #traj-info { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
 }
 /* 小屏（竖屏手机 / 手机横屏）：收起态只留最终判定一行作为胶囊，点开看逐层明细 */
 @media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
@@ -1289,30 +1316,16 @@ onBeforeUnmount(() => {
         background: transparent;
     }
     .armor-view #corner-tl .armor-tools-label { display: none; }
-    /* 结果胶囊贴左上胶囊右侧，不再固定 50%：740px 视口下也不会压到右下射击面板。 */
-    .armor-view :is(#click-info, #traj-info) {
+    /* 判定卡贴左上胶囊右侧，不再固定 50%：740px 视口下也不会压到右下射击面板。
+       #click-info 跟随点击位置（脚本定位），不参与这里的分栏排布。 */
+    .armor-view #traj-info {
         inset-block-start: calc(var(--space-5) + 5px);
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 14rem + 8px);
         transform: none;
     }
-    .armor-view.has-back :is(#click-info, #traj-info) {
+    .armor-view.has-back #traj-info {
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px + 14rem + 8px);
     }
-    .armor-view #click-info {
-        min-block-size: 28px;
-        max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
-        padding: 0 8px;
-        gap: 6px;
-        overflow: hidden;
-        font: var(--type-caption);
-    }
-    /* 厚度值 #click-armor 永不参与收缩；部件名与「基础装甲」标签可省略。 */
-    .armor-view #click-info h3 { flex: 1 1 0; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-    /* 结果卡最窄时也先保证厚度数值：部件名以 0 为 flex 基准完全让位，
-       行拿到剩余宽度后只压缩标签；#click-armor 不收缩。 */
-    .armor-view #click-info .row { flex: 0 1 auto; min-inline-size: 0; }
-    .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-    .armor-view #click-info #click-armor { flex: none; }
     .armor-view #traj-info { max-block-size: 72px; }
     /* 展开态明细卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进
        右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
@@ -1442,8 +1455,8 @@ onBeforeUnmount(() => {
 /* 600×320 级窄横屏：左上胶囊已占掉近半宽度，结果胶囊改到胶囊下方第二行；
    右下面板从 168px 起、左下面板从 ~240px 起，与 28px 高的结果行保持分离。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) and (width < 768px) {
-    .armor-view :is(#click-info, #traj-info),
-    .armor-view.has-back :is(#click-info, #traj-info) {
+    .armor-view #traj-info,
+    .armor-view.has-back #traj-info {
         inset-block-start: calc(var(--space-5) + 44px);
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve));
         max-inline-size: calc(100% - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)) - var(--immersive-nav-reserve));
