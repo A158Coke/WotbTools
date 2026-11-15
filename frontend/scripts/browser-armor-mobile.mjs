@@ -980,15 +980,15 @@ function applyCompactHeaderFixture() {
   return true
 }
 
-/** 真实结果卡的收缩态：只保留最终判定行，其余明细由 AgentArmorView 的 ≤500px 规则隐藏。 */
+/** 真实结果卡的默认展开态（2026-11-16 用户反馈：手机端不能只给极简一行）；点卡片可收起。 */
 function applyCompactResultBadge() {
   const click = document.getElementById('click-info')
   if (click) click.style.display = 'none'
   const traj = document.getElementById('traj-info')
   if (!traj) return false
   traj.style.display = 'block'
-  traj.classList.remove('is-expanded')
-  traj.setAttribute('aria-expanded', 'false')
+  traj.classList.add('is-expanded')
+  traj.setAttribute('aria-expanded', 'true')
   traj.innerHTML = '<div style="background:var(--tooltip-bg);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--elevation-2);padding:4px 8px;box-sizing:border-box;max-width:360px;">'
     + '<div data-card-title="final" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:3px;font:700 14px/16px var(--font-family-sans);color:var(--color-success);">'
     + '击穿<span style="font:400 var(--font-size-caption-xs)/var(--line-height-caption-xs) var(--font-family-sans);color:var(--color-text-secondary);">· 420</span></div>'
@@ -1299,12 +1299,11 @@ async function runCompactLandscapeScenario(env, scenario) {
 
   await captureCompactScreenshot(env, page, scenario.name)
 
-  // 结果卡展开态：真实点击 #traj-info 后才显示明细行；高度受限且不能压到其他 HUD 面板。
+  // 结果卡默认展开：明细行无需点击即可见；点卡片收起为一行，再点恢复展开。
   const badge = await compactTarget(page, '#traj-info')
   check(failures, badge?.hit === true && badge?.inside === true,
-    `${label}: 展开前结果卡不可触达（${JSON.stringify(badge)}）`)
-  await page.tap({ x: badge.x, y: badge.y, touch: true })
-  const expandedState = await page.waitForValue(`(() => {
+    `${label}: 默认展开态结果卡不可触达（${JSON.stringify(badge)}）`)
+  const defaultExpanded = await page.evaluate(`(() => {
     const el = document.querySelector('#traj-info')
     const segment = el.querySelector('[data-card-title="segment"]')
     const r = el.getBoundingClientRect()
@@ -1316,23 +1315,25 @@ async function runCompactLandscapeScenario(env, scenario) {
       segmentVisible: !!segment && getComputedStyle(segment).display !== 'none' && sr.width > 0 && sr.height > 0,
       segmentText: segment?.textContent,
     }
-  })()`, (value) => value.expanded === true, { label: 'result details expanded' })
-  check(failures, expandedState.aria === 'true' && expandedState.segmentVisible && /击穿概率/.test(expandedState.segmentText || ''),
-    `${label}: 结果卡展开后明细行不可见（${JSON.stringify(expandedState)}）`)
-  check(failures, expandedState.height <= 72,
-    `${label}: 展开结果卡高 ${expandedState.height}px，超过 72px`)
+  })()`)
+  check(failures, defaultExpanded.expanded === true && defaultExpanded.aria === 'true'
+    && defaultExpanded.segmentVisible && /击穿概率/.test(defaultExpanded.segmentText || ''),
+    `${label}: 默认展开态明细行不可见（${JSON.stringify(defaultExpanded)}）`)
+  check(failures, defaultExpanded.height <= 72,
+    `${label}: 默认展开结果卡高 ${defaultExpanded.height}px，超过 72px`)
   const expandedLayout = await page.probe(armorLayoutProbe)
   check(failures, expandedLayout.trajInfo?.visible === true,
-    `${label}: 展开结果卡不可见（${JSON.stringify(expandedLayout.trajInfo)}）`)
+    `${label}: 默认展开结果卡不可见（${JSON.stringify(expandedLayout.trajInfo)}）`)
   for (const [name, rect] of [
     ['左上胶囊', expandedLayout.capsule],
     ['右下射击面板', expandedLayout.bottomBar],
     ['左下姿态面板', expandedLayout.turretControls],
   ]) {
     check(failures, !rectsOverlap(expandedLayout.trajInfo, rect),
-      `${label}: 展开结果卡与${name}相交（result=${JSON.stringify(expandedLayout.trajInfo)} other=${JSON.stringify(rect)}）`)
+      `${label}: 默认展开结果卡与${name}相交（result=${JSON.stringify(expandedLayout.trajInfo)} other=${JSON.stringify(rect)}）`)
   }
   await captureCompactScreenshot(env, page, `${scenario.name}-expanded`)
+
   await page.tap({ x: badge.x, y: badge.y, touch: true })
   const collapsedState = await page.waitForValue(`(() => {
     const el = document.querySelector('#traj-info')
@@ -1341,6 +1342,29 @@ async function runCompactLandscapeScenario(env, scenario) {
   })()`, (value) => value.expanded === false, { label: 'result details collapsed' })
   check(failures, collapsedState.aria === 'false' && collapsedState.height <= 40,
     `${label}: 结果卡收起异常（${JSON.stringify(collapsedState)}）`)
+
+  // 收起后卡片变矮，触控点必须按新矩形重取；再点一次恢复默认展开。
+  const collapsedBadge = await compactTarget(page, '#traj-info')
+  check(failures, collapsedBadge?.hit === true && collapsedBadge?.inside === true,
+    `${label}: 收起态结果卡不可触达（${JSON.stringify(collapsedBadge)}）`)
+  await page.tap({ x: collapsedBadge.x, y: collapsedBadge.y, touch: true })
+  const reopenedCard = await page.waitForValue(`(() => {
+    const el = document.querySelector('#traj-info')
+    const segment = el.querySelector('[data-card-title="segment"]')
+    const r = el.getBoundingClientRect()
+    const sr = segment?.getBoundingClientRect()
+    return {
+      expanded: el.classList.contains('is-expanded'),
+      aria: el.getAttribute('aria-expanded'),
+      height: Math.round(r.height),
+      segmentVisible: !!segment && getComputedStyle(segment).display !== 'none' && sr.width > 0 && sr.height > 0,
+      segmentText: segment?.textContent,
+    }
+  })()`, (value) => value.expanded === true, { label: 'result details expanded again' })
+  check(failures, reopenedCard.aria === 'true' && reopenedCard.segmentVisible && /击穿概率/.test(reopenedCard.segmentText || ''),
+    `${label}: 结果卡重新展开后明细行不可见（${JSON.stringify(reopenedCard)}）`)
+  check(failures, reopenedCard.height <= 72,
+    `${label}: 重新展开结果卡高 ${reopenedCard.height}px，超过 72px`)
 
   check(failures, page.consoleErrors.length === 0, `${label}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
@@ -1681,7 +1705,7 @@ async function runShotLandscapeScenario(env, scenario) {
   await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
   await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
     { timeout: 15000, label: 'overview restored after full round trip' })
-  // F2：结果胶囊展开（逐层明细）在最小视口也不得压到右下列；展开后收起恢复胶囊。
+  // F2：射击复现顶部停靠卡保持默认收起（空间受限）；点开逐层明细后不得压到右下列，再点收起。
   await page.tap({ ...shot.resultCenter, touch: scenario.touch })
   await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === true,
     { label: 'result details expanded' })
