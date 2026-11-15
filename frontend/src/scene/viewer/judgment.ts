@@ -19,6 +19,7 @@ import { sampleHeSplash, HE_SAMPLE } from '../heSplash.js'
 import { evaluateProbabilityChain } from '../armorInspectorChance.js'
 import { RC } from '../armorCollisionPack.js'
 import type { HeSplashResult } from '../heSplash.js'
+import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
 
 /** 判定链依赖（composition root 注入）；字段语义见原 tankViewer 闭包。 */
 export interface JudgmentDeps {
@@ -54,7 +55,7 @@ export interface JudgmentDeps {
     effectiveCalibrated: (shell: ShellSpec | null) => number
     effectiveEnhanced: (shell: ShellSpec | null) => number
     shellPenMul: (shell: ShellSpec | null) => number
-    L: { partName?: (name: string) => string; shellUnavailable: string; resultLabel?: (code: string) => string }
+    L: { partName?: (name: string) => string; shellUnavailable: string }
     showShotError: (msg: string) => void
 }
 
@@ -118,119 +119,6 @@ export function faceAngleAndEffective(
     // cos→0（掠射）时等效趋于无穷：按 0.05 下限钳制（≈87°），与判定卡的量级口径一致
     const effective = thickness / Math.max(0.05, Math.cos((angleDeg * Math.PI) / 180))
     return { angleDeg, effective: Number.isFinite(effective) ? effective : null }
-}
-
-/** 点选卡位置选择（纯函数）：跟随点击点，并在确认无遮挡的位置里取**离点击点最近**的。
- *
- *  搜索面 = 面板边缘与容器边界构造的 **X/Y 候选交叉积**（评审要求：单轴贴边与固定步长
- *  网格都无法覆盖"需要同时调整横纵坐标"的空位）。候选类别：
- *   - 点击点附近：四象限偏移 + 正上 / 正下；
- *   - 容器边界：pad、viewport - card - pad；
- *   - 每个面板四条边：留缝（±gap）与**无缝**（贴合）两档 —— 无缝档是必要的：
- *     两个面板之间恰好留出卡片宽度时，唯一可行位就是右沿贴左面板、左沿贴右面板。
- *  排序按到点击点的曼哈顿距离升序（几何距离，不是统计打分），同距离按 (y, x) 固定序。
- *  交叉积全部被占时退到由近及远网格（gap 步长）兜底，仍无解才用首个钳制位
- *  （读数优先于美观，正常布局不会走到）。
- */
-export interface ClickInfoRect { left: number, top: number, right: number, bottom: number }
-
-export function chooseClickInfoPosition(input: {
-    clickX: number
-    clickY: number
-    width: number
-    height: number
-    viewportWidth: number
-    viewportHeight: number
-    panels: readonly ClickInfoRect[]
-    gap?: number
-    pad?: number
-}): { left: number, top: number } {
-    const gap = input.gap ?? 14
-    const pad = input.pad ?? 8
-    const { clickX: cx, clickY: cy, width: w, height: h } = input
-    const clampX = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportWidth - w - pad))
-    const clampY = (value: number): number => Math.min(Math.max(pad, value), Math.max(pad, input.viewportHeight - h - pad))
-    const hitsPanel = (x: number, y: number): boolean => input.panels.some(panel =>
-        x + w > panel.left && x < panel.right && y + h > panel.top && y < panel.bottom)
-
-    const tested = new Set<string>()
-    const accept = (rawX: number, rawY: number): { left: number, top: number } | null => {
-        const x = clampX(rawX)
-        const y = clampY(rawY)
-        const key = `${x},${y}`
-        if (tested.has(key)) return null
-        tested.add(key)
-        return hitsPanel(x, y) ? null : { left: Math.round(x), top: Math.round(y) }
-    }
-
-    // 1) 点击点附近（最近优先）
-    for (const [x, y] of [
-        [cx + gap, cy + gap],
-        [cx + gap, cy - h - gap],
-        [cx - w - gap, cy + gap],
-        [cx - w - gap, cy - h - gap],
-        [cx - w / 2, cy - h - gap],
-        [cx - w / 2, cy + gap],
-    ] as Array<[number, number]>) {
-        const hit = accept(x, y)
-        if (hit) return hit
-    }
-
-    // 2) 面板边缘 × 容器边界的 X/Y 交叉积
-    const xs = new Set<number>([pad, input.viewportWidth - w - pad])
-    const ys = new Set<number>([pad, input.viewportHeight - h - pad])
-    for (const panel of input.panels) {
-        xs.add(panel.right + gap)
-        xs.add(panel.right)                 // 无缝：卡片左沿贴面板右沿
-        xs.add(panel.left - w - gap)
-        xs.add(panel.left - w)              // 无缝：卡片右沿贴面板左沿
-        ys.add(panel.bottom + gap)
-        ys.add(panel.bottom)                // 无缝：卡片上沿贴面板下沿
-        ys.add(panel.top - h - gap)
-        ys.add(panel.top - h)               // 无缝：卡片下沿贴面板上沿
-    }
-    const cross: Array<[number, number, number]> = []
-    for (const x of xs) {
-        for (const y of ys) {
-            cross.push([Math.abs(x - cx) + Math.abs(y - cy), y, x])
-        }
-    }
-    cross.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
-    for (const [, y, x] of cross) {
-        const hit = accept(x, y)
-        if (hit) return hit
-    }
-
-    // 3) 兜底：由近及远网格（自由区域里不在任何面板边缘上的空位）
-    const maxStep = Math.ceil(Math.max(input.viewportWidth, input.viewportHeight) / gap) + 1
-    const offsets: Array<[number, number, number]> = []
-    for (let sx = -maxStep; sx <= maxStep; sx++) {
-        for (let sy = -maxStep; sy <= maxStep; sy++) {
-            offsets.push([Math.abs(sx) + Math.abs(sy), sy * gap, sx * gap])
-        }
-    }
-    offsets.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
-    for (const [, dy, dx] of offsets) {
-        const hit = accept(cx + dx, cy + dy)
-        if (hit) return hit
-    }
-    // 4) 回退：首个钳制位
-    return { left: Math.round(clampX(cx + gap)), top: Math.round(clampY(cy + gap)) }
-}
-
-/** 点选卡「结果」列的结果码（纯函数）。**整体判定为 ERROR 时优先于首层布尔值**：
- *  HE 爆炸半径缺失 / 溅射采样器失败时 penetration.js 返回 `result: 'ERROR'` 与零伤害，
- *  但仍保留带 `penetrated` 的几何层；若直接读首层会把「判定不可用」显示成绿色"击穿"，
- *  与轨迹卡的错误提示矛盾（评审 P2）。返回码由调用方经 `L.resultLabel` 本地化。 */
-export function clickInfoResultCode(
-    overallResult: string | null | undefined,
-    first: { penetrated?: boolean, ricochet?: boolean } | null | undefined,
-): 'ERROR' | 'PENETRATION' | 'RICOCHET' | 'BLOCKED' {
-    if (overallResult === 'ERROR') return 'ERROR'
-    if (!first) return 'BLOCKED'
-    if (first.ricochet) return 'RICOCHET'
-    if (first.penetrated) return 'PENETRATION'
-    return 'BLOCKED'
 }
 
 export function createJudgment(deps: JudgmentDeps) {
@@ -300,13 +188,12 @@ function writeClickInfo(fields: {
     if (result) result.className = fields.resultClass ?? ''
 }
 
-/** 点选卡定位：跟随点击位置（相对场景容器），并**避让固定 HUD 面板**。
+/** 厚度模式点选卡定位：跟随点击位置（相对场景容器），并**避让固定 HUD 面板**。
  *
  *  小视口（手机横屏 600×320 等）下四角都被面板占着：左上胶囊（返回/信息/参数）、
- *  右下射击卡（#corner-tr）、左下姿态卡（#turret-controls）。这里按固定顺序尝试
- *  点击点四象限 + 正上/正下共 6 个候选位，取第一个"完整在视口内且不与任何可见
- *  面板相交"的位置（确定性几何排布，非统计判断）。全部候选都被占时退回第一个
- *  钳制位——读数优先于美观，但正常布局下不会走到这一步（browser gate 锁四块互不相交）。 */
+ *  右下射击卡（#corner-tr）、左下姿态卡（#turret-controls）。候选位与排序由共享纯函数
+ *  `chooseResultCardPosition` 决定（判定结果卡 #traj-info 用同一套几何语义）。
+ *  判定模式不再写这张五行卡（2026-11-15 用户裁示：单结果窗口 = 逐层结果卡）。 */
 function placeClickInfo(clientX: number, clientY: number): void {
     const card = document.getElementById('click-info')
     if (!card) return
@@ -324,7 +211,7 @@ function placeClickInfo(clientX: number, clientY: number): void {
     // #corner-tl = 左上信息胶囊（车名/参数入口），.armor-back = 返回键，
     // #corner-tr = 右下射击卡，#turret-controls = 左下姿态卡。漏掉 #corner-tl 会让
     // 靠近左上的点击把点选卡压到车名与参数入口上（评审 P2 反例：600×320 点击 (100,5)）。
-    const panels: ClickInfoRect[] = []
+    const panels: ResultCardRect[] = []
     for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
         const el = document.querySelector(selector) as HTMLElement | null
         if (!el) continue
@@ -334,7 +221,7 @@ function placeClickInfo(clientX: number, clientY: number): void {
         if (r.width <= 0 || r.height <= 0) continue
         panels.push({ left: r.left - rect.left, top: r.top - rect.top, right: r.right - rect.left, bottom: r.bottom - rect.top })
     }
-    const chosen = chooseClickInfoPosition({
+    const chosen = chooseResultCardPosition({
         clickX: clientX - rect.left,
         clickY: clientY - rect.top,
         width: w,
@@ -585,7 +472,6 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
                 // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
                 // 面板/轨迹，避免旧结论被误读成本次点击的结论
-                document.getElementById('click-info')!.style.display = 'none';
                 document.getElementById('traj-info')!.style.display = 'none';
                 tc.clearTrajInfoPos();
                 tc.clearTrajGroup()
@@ -842,6 +728,9 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
+            // 结果卡跟随触发本次判定的点击位置（2026-11-15 用户裁示）。射击复现/世界模式的
+            // 初始自动判定没有点击（isCameraClick=false）→ null，卡片保持顶部停靠。
+            const resultClickAnchor = isCameraClick && lastClickClient ? { ...lastClickClient } : null;
             judgePenetration(req).then(async res => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck) as Array<JudgmentHit | undefined>;
@@ -863,35 +752,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         seg: 0,
                     };
                 });
-                // 点选卡五行读数（2026-11-14 用户裁示恢复）：取**判定首层**，与判定卡同源。
-                // 基础装甲 = 首层名义厚度；入射角/等效 = 判定给出的 angle_deg / effective
-                //（含转正与 2× 口径规则）；穿深 = 该层剩余穿深（首层即弹种在该距离的穿深）；
-                // 结果 = 首层判定结果。数值缺失保持 '—'（fail-closed，不猜）。
-                {
-                    const firstLayer = trajLayers[0]
-                    if (firstLayer) {
-                        // 整体 ERROR（HE 半径缺失/采样失败）优先，避免把不可用判定显示成击穿
-                        const resultCode = clickInfoResultCode(res.result, firstLayer)
-                        const num = (value: unknown): number | null =>
-                            typeof value === 'number' && Number.isFinite(value) ? value : null
-                        writeClickInfo({
-                            // 部件名必须走与轨迹卡同一套本地化映射（厚度模式已用），否则
-                            // 中文/西语界面会退回 'Hull Plate 12' 这类英文内部名（评审 P2）。
-                            part: firstLayer.name
-                                ? (L.partName ? L.partName(firstLayer.name) : firstLayer.name)
-                                : '—',
-                            armor: num(firstLayer.thickness),
-                            angle: num(firstLayer.angle),
-                            effective: num(firstLayer.eff),
-                            pen: num(firstLayer.remainBefore) ?? pen,
-                            result: L.resultLabel ? L.resultLabel(resultCode) : resultCode,
-                            resultClass: resultCode === 'PENETRATION' ? 'pen'
-                                : resultCode === 'RICOCHET' ? 'ricochet'
-                                    : resultCode === 'ERROR' ? '' : 'bounce',
-                        })
-                        if (lastClickClient) placeClickInfo(lastClickClient.x, lastClickClient.y)
-                    }
-                }
+                // 判定模式不再写五行点选卡（2026-11-15 用户裁示：只保留更详细的逐层
+                // 结果卡；两张卡同时出现属于重复窗口）。厚度模式仍走 showArmorPartInfo。
                 // 概率必须使用完整命中链（res.probability_layers），不能复用上面会在
                 // 首个未穿透层截断的确定性 layers。显示层仍保持 BlitzKit 语义不变。
                 const probabilityLayers: ProbabilityChainLayer[] = Array.isArray(res.probability_layers) && res.probability_layers.length
@@ -1140,6 +1002,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         tc.showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
                             ...(heInfo ? { heInfo, heDirectHit } : {}),
                             blockedNoPrimary: res.blocked_no_primary === true,
+                            clickAnchor: resultClickAnchor,
                         });
                         return;
                     }
@@ -1147,14 +1010,14 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
                 const blockedNoPrimary = res.blocked_no_primary === true;
                 if (useProbabilityMode) {
-                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary, clickAnchor: resultClickAnchor });
                 } else {
-                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary, clickAnchor: resultClickAnchor });
                 }
             }).catch(err => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false);
+                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false, { clickAnchor: resultClickAnchor });
             });
         }
     return {

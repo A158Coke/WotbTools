@@ -14,7 +14,7 @@ const plateModel = read('../scene/viewer/armorPlateModel.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('内核 getElementById 的静态 ID 全部由模板提供', () => {
     const kernelLookups = new Set([...kernel.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]))
@@ -33,61 +33,61 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 2026-11-14 用户裁示：点选结果恢复五行读数（基础装甲/入射角/等效装甲/穿深/结果），
-  // 跟随点击位置显示，并随视口自适应缩放（手机下不占大面积）。数值语义：
-  // 厚度模式 = 几何量（穿深/结果为 '—'，该模式不判定）；判定模式 = 判定首层量，与判定卡同源。
-  it('点选结果五行读数、跟随点击位置、按视口自适应缩放', () => {
+  // 2026-11-15 用户裁示：判定模式出现两张结果窗口（五行点选卡 + 逐层结果卡）属于重复；
+  // 只保留更详细的逐层结果卡 #traj-info，并改为跟随点击位置、手机端按比例缩小。
+  // 五行点选卡 #click-info 只在厚度模式保留（该模式不做击穿判定，没有第二张卡）。
+  it('判定模式单结果窗口：逐层卡跟随点击并缩放，五行卡只在厚度模式', () => {
+    // 厚度模式的五行读数仍在（模板 + 唯一写入入口）
     for (const id of ['click-part', 'click-armor', 'click-angle', 'click-effective', 'click-pen', 'click-result']) {
       expect(template, `模板缺 ${id}`).toContain(`id="${id}"`)
       expect(kernel, `内核未写入 ${id}`).toContain(`'${id}'`)
     }
-    // 写入入口唯一：writeClickInfo 统一 set() 六行，不允许各处直写 textContent 绕过配色/格式化
     expect(kernel).toMatch(/function writeClickInfo\(fields: \{/)
     expect(kernel).toMatch(/function placeClickInfo\(clientX: number, clientY: number\): void \{/)
-    // 跟随点击位置：脚本写 left/top（相对场景容器，带边界钳制）
-    expect(kernel).toMatch(/card\.style\.left = /)
-    expect(kernel).toMatch(/card\.style\.top = /)
-    // 定位委托纯函数 chooseClickInfoPosition（可单测：clickInfoPosition.test.ts 覆盖
-    // 评审的左上胶囊反例、面板边缘回退与四角占满时的钳制）
-    expect(kernel).toMatch(/chooseClickInfoPosition\(\{/)
-    expect(kernel).toMatch(/viewportWidth: rect\.width/)
-    expect(kernel).toMatch(/viewportHeight: rect\.height/)
-    // 视口钳制在纯函数里（viewportWidth/Height - w/h - pad）
-    expect(kernel).toMatch(/input\.viewportWidth - w - pad/)
-    expect(kernel).toMatch(/input\.viewportHeight - h - pad/)
-    // 避让固定 HUD 面板（browser-armor-mobile 门禁：四块互不相交）：候选位逐个测交
-    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
-    expect(kernel).toMatch(/const accept = \(rawX: number, rawY: number\): \{ left: number, top: number \} \| null =>/)
-    expect(kernel).toMatch(/return hitsPanel\(x, y\) \? null : \{ left: Math\.round\(x\), top: Math\.round\(y\) \}/)
-    // 由近及远网格兜底：单轴贴边找不到空位时仍能搜索到（评审反例 2）
-    expect(kernel).toMatch(/const offsets: Array<\[number, number, number\]> = \[\]/)
-    expect(kernel).toMatch(/offsets\.sort\(\(a, b\) => a\[0\] - b\[0\] \|\| a\[1\] - b\[1\] \|\| a\[2\] - b\[2\]\)/)
-    // 两条路径都写：厚度模式（几何量）与判定模式（判定首层）
-    expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBeGreaterThanOrEqual(2)
+    // 判定路径不再写五行卡：writeClickInfo 只剩厚度模式一个调用点
+    expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBe(1)
+    expect(kernel).not.toMatch(/clickInfoResultCode/)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    // 判定路径取首层并经 L.resultLabel 做三语文案（不得在内核直拼中文）
-    expect(kernel).toMatch(/const firstLayer = trajLayers\[0\]/)
-    expect(kernel).toMatch(/L\.resultLabel \? L\.resultLabel\(resultCode\) : resultCode/)
-    // 整体 ERROR 优先于首层布尔值（HE 半径缺失/采样失败时不得显示成"击穿"）
-    expect(kernel).toMatch(/const resultCode = clickInfoResultCode\(res\.result, firstLayer\)/)
-    expect(kernel).toMatch(/export function clickInfoResultCode\(/)
-    // 部件名同样走 L.partName（否则中文/西语界面退回 Hull Plate 这类英文内部名）
-    expect(kernel).toMatch(/L\.partName \? L\.partName\(firstLayer\.name\) : firstLayer\.name/)
-    // 容器尺寸变化后旧点击坐标失效：resize 必须隐藏点选卡（否则被 overflow 裁掉）
-    const viewer = read('../scene/tankViewer.js')
-    expect(viewer).toContain("const clickInfo = document.getElementById('click-info');")
-    expect(viewer).toMatch(/if \(clickInfo\) clickInfo\.style\.display = 'none';/)
-    // 停靠规则只属于判定卡 #traj-info；#click-info 由脚本定位（不再固定顶部正中）
+    // 判定结果卡：点击锚点经 isCameraClick 门控，四种展示分支全部透传
+    expect(kernel).toMatch(/const resultClickAnchor = isCameraClick && lastClickClient \? \{ \.\.\.lastClickClient \} : null;/)
+    expect(kernel.match(/clickAnchor: resultClickAnchor/g)?.length, 'clickAnchor 透传点').toBe(4)
+    // 定位实现唯一：共享纯函数 + 脚本写 left/top；无锚点时清掉内联定位交还 CSS 停靠
+    expect(kernel).toMatch(/export function chooseResultCardPosition\(/)
+    expect(kernel).toMatch(/chooseResultCardPosition\(\{/)
+    expect(kernel).toMatch(/div\.style\.left = /)
+    expect(kernel).toMatch(/div\.style\.top = /)
+    expect(kernel).toMatch(/div\.style\.insetInlineStart = ''/)
+    expect(kernel).toMatch(/div\.style\.transform = ''/)
+    // 跟随定位使用画布容器坐标（点击锚点换算）并避让固定 HUD 面板
+    expect(kernel).toMatch(/options\.clickAnchor\.x - cardHostRect\.left/)
+    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    // 停靠规则保留为无点击回退（射击复现/初始判定）；#click-info 仍由脚本定位
     const dockCss = template.slice(template.indexOf('.armor-view #traj-info {'))
     const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
     expect(dockRule).toContain('position: absolute')
     expect(dockRule).toContain('inset-inline-start: 50%')
     expect(template).not.toMatch(/\.armor-view :is\(#click-info, #traj-info\)/)
-    // 自适应缩放：尺寸上限 + 字号 clamp + 小屏收紧
-    expect(template).toMatch(/\.armor-view #click-info \{[^}]*max-inline-size: min\(15rem, calc\(100% - var\(--space-4\)\)\)/)
+    // resize：厚度卡隐藏（旧坐标失效）；判定卡是主结果窗口，标记 dirty 后按新容器重排
+    const viewer = read('../scene/tankViewer.js')
+    expect(viewer).toContain("const clickInfo = document.getElementById('click-info');")
+    expect(viewer).toMatch(/if \(clickInfo\) clickInfo\.style\.display = 'none';/)
+    expect(viewer).toMatch(/tc\.markTrajInfoDirty\(\);/)
+    expect(viewer).toMatch(/repositionResultCard: \(\) => \{ tc\.markTrajInfoDirty\(\); tc\.updateTrajInfoPos\(\); \}/)
+    // 固定 HUD 面板自身变尺寸（参数抽屉展开/模块加载）也要触发结果卡重排
+    expect(viewer).toMatch(/new ResizeObserver\(\(\) => tc\.markTrajInfoDirty\(\)\)/)
+    expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    // 宿主：展开/收起后按新高度重新避让；手机端按视口短边比例缩小字号/间距
+    expect(template).toMatch(/watch\(resultExpanded, \(\) => nextTick\(\(\) => viewer\?\.repositionResultCard\?\.\(\)\)\)/)
+    expect(kernel).toMatch(/shotResultCardMetrics\(compactCard, shotResultCardScale\(/)
+    const metrics = read('../utils/shotResultCardMetrics.js')
+    expect(metrics).toMatch(/export function shotResultCardScale\(/)
+    expect(metrics).toMatch(/Math\.min\(fitted, 360, Math\.round\(width \* 0\.82\)\)/)
+    // 桌面卡片不拦截场景点击（已展开全部明细）；小屏收起态才可点开
+    expect(template).toMatch(/\.armor-view #traj-info \{[^}]*pointer-events: none;/)
+    expect(template).toMatch(/\.armor-view #traj-info \{ pointer-events: auto; cursor: pointer; \}/)
+    // 厚度卡自适应缩放与语义色仍由模板样式拥有
     expect(template).toMatch(/\.armor-view #click-info \{[^}]*font-size: clamp\(/)
     expect(template).toMatch(/pointer-events: none/)
-    // 结果列语义色不得被通用数值色覆盖（通用规则 :not(#click-result)）
     expect(template).toMatch(/> span:last-child:not\(#click-result\)/)
     expect(template).toMatch(/\.armor-view #click-info \.pen \{ color: var\(--green\)/)
     // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
@@ -367,18 +367,34 @@ describe('dolly-zoom world-overview scope guard', () => {
   })
 })
 
-// 结果卡片是 position:fixed，left/top 是视口坐标；投影必须基于画布实际矩形。
-// 若用 window.innerWidth/Height，页面/容器滚动或窗口缩放时画布移动而卡片停在旧视口位置。
-describe('traj-info docking', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  it('结果卡不再按命中点投影摆位：停靠位置由样式所有（真实几何由 browser-armor-aiming 断言）', () => {
+// 结果卡定位：跟随点击（2026-11-15 用户裁示），但**不按 3D 命中点做屏幕投影**——
+// 位置是「点击时的视口坐标 + 固定 HUD 面板避让」，画布滚动/缩放时以容器 rect 重算。
+// 无点击锚点（射击复现/初始自动判定）仍交还 CSS 顶部停靠（真实几何由 browser armor 门禁断言）。
+describe('traj-info click-follow layout', () => {
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  it('跟随点击位置（容器坐标 + 面板避让），无锚点回退 CSS 停靠', () => {
     const start = kernel.indexOf('function updateTrajInfoPos()')
     expect(start).toBeGreaterThan(-1)
     const fn = kernel.slice(start, kernel.indexOf('function ', start + 10))
-    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现投影摆位
+    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现 3D 命中点投影摆位
     expect(fn).not.toMatch(/project\((camera|getCamera\(\))\)/)
-    expect(fn).not.toMatch(/div\.style\.(left|top|transform) =/)
-    // 停靠容器宽度仍按画布容器测量（侧栏/窄画布不能按视口算）——保留这部分既有口径
+    // 点击锚点 → 共享定位纯函数；脚本写 left/top 并覆盖停靠的 logical inset/transform
+    expect(fn).toMatch(/chooseResultCardPosition\(\{/)
+    expect(fn).toMatch(/div\.style\.left = /)
+    expect(fn).toMatch(/div\.style\.top = /)
+    // 逻辑与物理 inset 写同一个像素值；inset-*: auto 会把 left/top 打回静态位置
+    expect(fn).toMatch(/div\.style\.insetInlineStart = `\$\{chosen\.left\}px`/)
+    expect(fn).toMatch(/div\.style\.insetBlockStart = `\$\{chosen\.top\}px`/)
+    expect(fn).not.toMatch(/div\.style\.insetInlineStart = 'auto'/)
+    expect(fn).toMatch(/div\.style\.transform = 'none'/)
+    // 内容被高度上限裁剪时必须恢复指针事件（滚轮/触控可滚动），否则桌面滚轮穿透到场景
+    expect(fn).toMatch(/div\.style\.pointerEvents = div\.scrollHeight > div\.clientHeight \+ 1 \? 'auto' : ''/)
+    // 无锚点：清掉内联定位与逻辑宽度覆盖，交还样式停靠（紧凑横屏上限）
+    expect(fn).toMatch(/div\.style\.insetInlineStart = ''/)
+    expect(fn).toMatch(/div\.style\.maxInlineSize = ''/)
+    // 逻辑宽度覆盖只在跟随点击时写（停靠态由 CSS 拥有）
+    expect(fn).toMatch(/div\.style\.maxInlineSize = `\$\{maxWidth\}px`/)
+    // 容器宽度/坐标系按画布容器测量（侧栏/窄画布不能按视口算）
     expect(fn).toMatch(/getElementById\('canvas-container'\)/)
     expect(fn).toMatch(/getBoundingClientRect\(\)/)
   })
