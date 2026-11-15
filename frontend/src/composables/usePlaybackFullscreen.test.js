@@ -399,11 +399,11 @@ describe('usePlaybackFullscreen.enterFullscreen：幂等的自动进入入口（
 })
 
 describe('伪全屏降级（pseudoFallback，2D 回放开启）', () => {
-  function mountPseudo({ pseudoFallback = true, onChange } = {}) {
+  function mountPseudo({ pseudoFallback = true, onChange, isActive } = {}) {
     const root = document.body.lastElementChild
     const scope = effectScope()
     let api
-    scope.run(() => { api = usePlaybackFullscreen({ target: () => root, pseudoFallback, onChange }) })
+    scope.run(() => { api = usePlaybackFullscreen({ target: () => root, pseudoFallback, onChange, isActive }) })
     return { api, root, stop: () => scope.stop() }
   }
   const html = () => document.documentElement
@@ -447,15 +447,16 @@ describe('伪全屏降级（pseudoFallback，2D 回放开启）', () => {
     stop()
   })
 
-  it('Esc 退出伪全屏；别的层已处理（defaultPrevented）的 Esc 不抢', () => {
+  it('Esc 退出伪全屏；别的层已处理（defaultPrevented）的 Esc 不抢', async () => {
     stubBrowserApis({ fullscreen: false })
     const { api, stop } = mountPseudo()
     api.toggleFullscreen()
-    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true })
     handled.preventDefault()
     document.dispatchEvent(handled)
     expect(api.pseudoFullscreen.value).toBe(true)
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await Promise.resolve()
     expect(api.pseudoFullscreen.value).toBe(false)
     expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
     stop()
@@ -470,6 +471,53 @@ describe('伪全屏降级（pseudoFallback，2D 回放开启）', () => {
     first.api.toggleFullscreen()
     first.stop()
     expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+  })
+
+  it.each(['exit', 'deactivate', 'dispose'])('%s 使重复点击的悬挂请求及迟到拒绝失效', async (mode) => {
+    vi.useFakeTimers()
+    stubBrowserApis()
+    let active = true
+    const rejects = []
+    document.body.lastElementChild.requestFullscreen = vi.fn(() => new Promise((_, reject) => rejects.push(reject)))
+    const { api, stop } = mountPseudo({ isActive: () => active })
+    try {
+      api.toggleFullscreen()
+      vi.advanceTimersByTime(300)
+      api.toggleFullscreen()
+      if (mode === 'exit') {
+        vi.advanceTimersByTime(700)
+        expect(api.pseudoFullscreen.value).toBe(true)
+        api.toggleFullscreen()
+      } else {
+        active = false
+        if (mode === 'dispose') stop()
+        else api.exitOwnedFullscreen()
+        active = true
+      }
+      rejects.forEach(reject => reject(new Error('late rejection')))
+      await Promise.resolve()
+      await Promise.resolve()
+      vi.runAllTimers()
+      expect(api.isFullscreen.value).toBe(false)
+      expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+    } finally { stop(); vi.useRealTimers() }
+  })
+
+  it('window 标注快捷键消费 Esc 后保留伪全屏', async () => {
+    stubBrowserApis({ fullscreen: false })
+    const { api, stop } = mountPseudo()
+    const annotationHandler = event => event.preventDefault()
+    window.addEventListener('keydown', annotationHandler)
+    api.toggleFullscreen()
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await Promise.resolve()
+      expect(api.pseudoFullscreen.value).toBe(true)
+      window.removeEventListener('keydown', annotationHandler)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await Promise.resolve()
+      expect(api.pseudoFullscreen.value).toBe(false)
+    } finally { window.removeEventListener('keydown', annotationHandler); stop() }
   })
 
   it('默认不开降级：API 缺失时按钮不受支持、点击无副作用（3D / Map Preview 等沿用旧语义）', () => {

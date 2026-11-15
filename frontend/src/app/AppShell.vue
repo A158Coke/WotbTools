@@ -386,6 +386,10 @@ watch(uiProfile, async () => {
   display: none;
 }
 
+:global(html[data-pb-pseudo-fullscreen]) .immersive-nav {
+  z-index: calc(var(--z-header) + 2);
+}
+
 /* 沉浸态悬浮菜单：玻璃底胶囊，避开刘海与圆角安全区；场景外壳用 --immersive-nav-reserve 让出这一块 */
 .immersive-nav {
   position: fixed;

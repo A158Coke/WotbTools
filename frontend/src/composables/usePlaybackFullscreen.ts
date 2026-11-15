@@ -68,6 +68,14 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   // 伪全屏盖不住外壳顶栏（工作台是局部层叠上下文）：伪全屏期间向外壳申请沉浸（摘顶栏、--header-h 归零），退出即释放
   const shellChrome = inject(SHELL_CHROME_KEY, null)
 
+  let requestGeneration = 0
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+  function cancelPendingRequest() {
+    requestGeneration += 1
+    if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+    fallbackTimer = null
+  }
+
   const phoneForm = () => !!isPhone?.value
   function ownsFullscreen() {
     const el = target()
@@ -123,10 +131,10 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     if (typeof document !== 'undefined') {
       if (on) {
         document.documentElement.setAttribute(PSEUDO_SCROLL_LOCK_ATTR, '')
-        document.addEventListener('keydown', onPseudoKeydown)
+        window.addEventListener('keydown', onPseudoKeydown)
       } else {
         document.documentElement.removeAttribute(PSEUDO_SCROLL_LOCK_ATTR)
-        document.removeEventListener('keydown', onPseudoKeydown)
+        window.removeEventListener('keydown', onPseudoKeydown)
       }
     }
     onChange?.(isFullscreen.value)
@@ -134,12 +142,14 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   /** Esc 退出伪全屏；别的层（菜单 / 对话框）已处理的 Esc 不抢 */
   function onPseudoKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape' || event.defaultPrevented) return
-    setPseudoFullscreen(false)
+    // 进入伪全屏时才注册 window listener，排在宿主挂载的标注快捷键之后。
+    exitOwnedFullscreen()
   }
 
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   onScopeDispose(() => {
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
+    cancelPendingRequest()
     setPseudoFullscreen(false)
     // 卸载时绝不把应用留在锁死方向上
     unlockOrientation()
@@ -163,6 +173,7 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
    * 供宿主在能力切走 / KeepAlive 停用时调用：被缓存的组件不会卸载，卸载路径的兜底退出不会发生。
    */
   function exitOwnedFullscreen() {
+    cancelPendingRequest()
     setPseudoFullscreen(false)
     if (!ownsFullscreen() || typeof document.exitFullscreen !== 'function') return
     try {
@@ -198,12 +209,13 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   }
 
   function toggleFullscreen() {
-    if (typeof document === 'undefined') return
+    if (typeof document === 'undefined' || disposed || !isActive()) return
     const el = target()
     if (!el) return
-    if (pseudoFullscreen.value) { setPseudoFullscreen(false); return }
+    if (pseudoFullscreen.value) { exitOwnedFullscreen(); return }
     if (document.fullscreenElement && document.fullscreenElement !== el) return
     if (document.fullscreenElement === el) {
+      cancelPendingRequest()
       if (typeof document.exitFullscreen === 'function') {
         try {
           const p = document.exitFullscreen()
@@ -214,19 +226,32 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
     }
     // 原生请求失败（API 缺失 / 同步抛出 / Promise 被拒）或悬挂不落定（部分嵌入 / 自动化环境实测既不
     // resolve 也不 reject，按钮表现为「点了没反应」）→ 伪全屏降级；不开降级则保持原行为（静默）。
+    cancelPendingRequest()
+    const generation = requestGeneration
     let settled = false
     const fallback = () => {
-      if (settled) return
+      if (settled || generation !== requestGeneration) return
       settled = true
-      if (pseudoFallback && isActive() && !disposed && !ownsFullscreen()) setPseudoFullscreen(true)
+      if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+      fallbackTimer = null
+      if (pseudoFallback && isActive() && !disposed && !document.fullscreenElement) setPseudoFullscreen(true)
     }
     if (typeof el.requestFullscreen !== 'function') { fallback(); return }
     try {
       const p = el.requestFullscreen()
       // 顺序要求：**全屏成功之后**才请求方向锁
       if (p && typeof p.then === 'function') {
-        const timer = pseudoFallback ? setTimeout(fallback, PSEUDO_FALLBACK_DELAY_MS) : null
-        p.then(() => { settled = true; if (timer) clearTimeout(timer); lockOrientation() }).catch(() => { if (timer) clearTimeout(timer); fallback() })
+        fallbackTimer = pseudoFallback ? setTimeout(fallback, PSEUDO_FALLBACK_DELAY_MS) : null
+        p.then(() => {
+          if (generation !== requestGeneration || disposed || !isActive()) {
+            if (ownsFullscreen()) exitOwnedFullscreen()
+            return
+          }
+          settled = true
+          if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+          fallbackTimer = null
+          lockOrientation()
+        }).catch(fallback)
       } else {
         lockOrientation()
       }
