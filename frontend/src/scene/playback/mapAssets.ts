@@ -17,7 +17,7 @@ import { pruneForeignVariantsDetailed } from '../variantFilter.js'
 import { makeWaterCoast, buildCorridorRefineMask } from '../groundPass.js'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes,
-  writeHiddenInstance, refreshBatchSphere, hasTransparentMaterial,
+  writeHiddenInstance, refreshBatchSphere, hasTransparentMaterial, canonicalizeEntryMaterials,
 } from '../sceneryInstancing.js'
 import { buildMeshOwnerMap } from '../pickDebug.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle } from '../destructibles.js'
@@ -236,7 +236,9 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
   // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
   // frustumCulled=false 的无限远语义。
-  const allEntries: SlottedEntry[] = collectInstanceEntries(gltf.scene);
+  const allEntries: SlottedEntry[] = canonicalizeEntryMaterials(collectInstanceEntries(gltf.scene));
+  // 材质规整（见 canonicalizeEntryMaterials）：导出器逐节点建材质对象，同配置不同
+  // 对象会把分组键撕开——规整必须在 batchable 过滤（transparent 进签名）与分组之前。
   const batchable = (e: SlottedEntry) =>
     !(e.node.userData && e.node.userData.isSky)
       && !isWaterNode(e.name, e.material)

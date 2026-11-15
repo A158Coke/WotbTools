@@ -14,7 +14,7 @@ const BASELINE = [
   'components/HoFAdminRecords.vue#fBattleType=RANDOM|RATING',
   'components/HoFAdminRecords.vue#fReplayAvailable=true|false',
   'components/HoFAdminRecords.vue#fSort=battle_time|upload_time',
-  'components/HoFPage.vue#battleType=RANDOM|RATING',
+  'components/HofSingleBoard.vue#battleType=RANDOM|RATING',
   'components/TournamentPointsConfigPage.vue#=GLOBAL',
 ]
 

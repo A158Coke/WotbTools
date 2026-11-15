@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import ArmorSideConfig from './ArmorSideConfig.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
 import upgradeFixtures from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import t11r3 from '../replay-local/compute/__fixtures__/upgrades/t11r3.json'
 
 const data = vi.hoisted(() => ({ fetchTankData: vi.fn() }))
 vi.mock('../scene/agentData.js', () => data)
@@ -91,6 +92,28 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(stock.abilities.every(Number.isInteger)).toBe(true)
     await wrapper.get('[data-testid="tank-config-reset"]').trigger('click')
     expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: 'top', abilities: [] })
+  })
+
+  it.each([...t11r3.tanks, upgradeFixtures.find(t => t.modules.tankId === 30241)])('keeps the XI $modules.tankId configuration and ability IDs on stock/top switches', async ({ detail, modules }) => {
+    research.loadResearchCatalog.mockResolvedValueOnce({ ...CATALOG, consumables: t11r3.consumables,
+      provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion })
+    const choice = modules.upgradeProgression.alternativeGroups[0].choices.at(-1)
+    data.fetchTankData.mockResolvedValueOnce(detail)
+    research.loadTankModules.mockResolvedValueOnce({ tanks: { [modules.stem]: modules } })
+    const wrapper = mount(ArmorSideConfig, { props: { tankId: detail.tank_id, upgrade: 'top', abilities: String(choice) },
+      global: { mocks: { $t: key => key } } })
+    await flushPromises()
+    expect(wrapper.emitted('ready').at(-1)).toEqual([true])
+    for (const testId of ['tank-base-mechanic', 'tank-upgrade-skills', 'tank-mechanic-effects', 'tank-full-xp']) {
+      expect(wrapper.find(`[data-testid="${testId}"]`).exists()).toBe(false)
+    }
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    for (const mode of ['stock', 'top']) {
+      await wrapper.get(`[data-testid="tank-upgrade-${mode}"]`).trigger('click')
+      expect(wrapper.emitted('apply').at(-1)[0]).toMatchObject({ upgrade: mode, abilities: [choice], configChanged: false })
+      await wrapper.setProps({ upgrade: mode })
+    }
+    wrapper.unmount()
   })
 
   it('keeps ordinary modules collapsed until expanded', async () => {

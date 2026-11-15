@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { moduleTreeLayout, techTreeGrid, techTreeNations } from './techTreeLayout.js'
+import { moduleTreeLayout, noChainNoteKey, techTreeGrid, techTreeNations } from './techTreeLayout.js'
 
 describe('techTreeNations', () => {
   it('与上游导出器 NATIONS 同序（9 国）', () => {
@@ -276,5 +276,13 @@ describe('moduleTreeLayout（客户端分行规则）', () => {
 
   it('空模块 → null（不渲染半残图）', () => {
     expect(moduleTreeLayout(null)).toBeNull()
+  })
+})
+
+describe('noChainNoteKey', () => {
+  it('仅 XI 用超测措辞；X 级（如 Leopard 1）及其他等级用通用说明', () => {
+    expect(noChainNoteKey(11)).toBe('research.no_chain_note')
+    expect(noChainNoteKey(10)).toBe('research.no_chain_note_generic')
+    expect(noChainNoteKey(null)).toBe('research.no_chain_note_generic')
   })
 })

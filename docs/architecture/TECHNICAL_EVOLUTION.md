@@ -814,6 +814,48 @@ Kotlin `ScreenForm.kt`）与 `haptics`（`haptic {kind}`，`Haptics.kt`）；旧
 边界：Android 端 `screen-form` / `haptics` 的 Kotlin 实现只有单元测试与契约测试，真机行为需人工验收；`ui_locales`
 在生产授权端点的效果未在线验证；登录模板在本地以 FreeMarker 离线渲染核对，未在 Keycloak 容器内渲染。
 
+## 35. 2026-11-14 — 战斗炮声消费面与场景合批的材质身份口径
+
+**炮声（新的资产消费面）**。3D 回放此前没有任何音频。新增的 owner 是
+`scene/playback/gunfireAudio.ts`，触发点只有一处：`battleRuntime.spawnShot`（回放时钟推进到
+`shots[].t_fire` 时）。选这个触发点的原因与弹道特效同源——`resetShotsTo` 只前移游标，
+seek 不重放历史，因此**历史炮声不会补播**，不需要额外去重。
+
+数据面全部来自资产包（Agent 仓 `tools/export_gun_sounds.py` / `export_gun_class.py`）：
+
+- `sound/wpn/gun_class.json`：`tank_id → gun_local → <effects> tag`，等级映射的权威是客户端
+  车辆 XML 的逐炮声明（`wpn_shot_*`，`_mb` 为同等级变体），不是按口径/弹速推断。未映射的
+  车/炮静默（fail-closed），不做近似。
+- `sound/wpn/index.json`：`class → layer → 文件`。客户端按距离切 Close/Mid/Far 的 HIRC
+  阈值未取证，故固定取 close 层 + WebAudio 距离增益（500 m 上限，与事件
+  `MaxAttenuation` 一致）；层参数保留在索引里，取证后可平移。
+
+**场景合批（性能）**。幽灵工厂实测每帧 1449 draw calls，其中 1294 个是植被/可破坏物
+InstancedMesh 批、平均每批仅 2.1 个实例——分片粒度远细于实例密度。两处修正：
+
+1. 小三角量组跨宫格合并：`(geometry, material)` 组的总三角 ≤
+   `SCENERY_COLLAPSE_MAX_TRIS`（默认 20000）时整组合并单批。大几何密集种（林荫图树海）
+   仍保留宫格分片——逐宫格剔除对它们是真实渲染量收益。实测 1294 → 585 批，实例数不变。
+2. 材质签名规整：导出器逐节点建材质对象，属性相同也会把 `(geometry, material)` 键撕开
+   （幽灵工厂 170 个对象 / 27 种真实配置）。规整按签名收敛到同一代表对象。
+
+**材质身份口径（一次实测事故的教训）**。第一版签名只读标准材质属性白名单，于是
+`makeLightmappedMaterial` 造的 **ShaderMaterial 全部同签名**——贴图都在 `uniforms`
+里，白名单读到的全是默认值。结果全图光照图建筑并到第一个材质对象上，建筑物贴图整体
+串图。现在的口径分三支：
+
+- 标准材质：白名单属性签名（纹理按 uuid、颜色按 hex）；
+- ShaderMaterial 族（`uniforms` 存在）：uniforms 逐项 + 顶点/片元源码签名；
+- `onBeforeCompile` 与**原型默认实现不同**（真自定义 program 注入）：不合并。
+
+另加软渲染检测（`isSoftwareRasterizer`）：只认真 `UNMASKED` 串里的 SwiftShader /
+llvmpipe；无 debug 扩展时的掩码串 `"WebKit WebGL"` **不是**软渲染证据（核显 ANGLE
+同样报它，曾据此误判）。真软渲染环境关闭 MSAA，硬件环境行为不变。
+
+边界：客户端距离分层的阈值未取证；炮声资产是 Wargaming 客户端资产，发布口径属产品决策；
+几何碎片化（plant 图 343 个 mesh 定义、2680 个节点、1534 个可破坏候选）决定进一步合并需要
+动可破坏槽位与标签遮挡两条链路，本轮不做。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

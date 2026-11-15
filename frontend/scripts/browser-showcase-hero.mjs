@@ -1,325 +1,277 @@
-/**
- * ShowcaseHero 紧凑横幅 computed-style 门禁（真实浏览器，不是源码正则 / inline CSS 变量断言）。
- *
- * 锁定的 invariant（2026-11-10 PR #941 review F1）：
- * - 桌面 compact 分区主视觉使用 section-scrim + compactPosition（replay 50% / techtree 58%）；
- * - 手机断点（width < 768px）compact 恢复 portrait 分区遮罩 + mobilePosition——
- *   桌面 compact 覆盖规则与手机规则同优先级、靠媒体查询内更晚声明获胜，这里用 computed style 证明；
- * - Replay compact 桌面高度放宽到 clamp(132px, 20vw, 384px)，矮窗口（height < 700px）回退默认密度；
- * - 非 Replay compact（techtree / admin）保持 132px 密度；
- * - Full 档统一响应式高度：桌面 1440 用 clamp(240px, 20vw, 384px) 保主体完整带（与 Replay 同族），
- *   矮桌面窗口（height < 700px）回退内容密度，手机断点不参与（portrait 焦点可见带已足够）；
- * - 冬季 portrait 遮罩实际生效（浅色 rgba(238 243 248 / …)，非深色主题遮罩）；
- * - 无 section 的普通 ShowcaseHero 不注入分区遮罩层。
+/** Real Chrome gate: original-image geometry, ancestor clipping and text exclusion.
+ * --baseline renders the exact origin/main component through Vite, without changing files.
+ * Evidence: tmp/showcase-hero/{before,after}-matrix.json and matching screenshots.
  */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// 冬季竖屏分区遮罩已几乎全撤：两处停靠点（.15 → 0，Chrome computed style 归一化为 rgba(...)）。
-// 完整 backgroundImage 逐一比对完整 opacity——旧遮罩（.97/.86/.24）不含这两个停靠点，
-// 负向可捕获泛白回归；标题可读性由手机断点的浅色文字 + 深色描边承担（无玻璃底板）。
-const WINTER_PORTRAIT_STOPS = ['rgba(238, 243, 248, 0.15)', 'rgba(238, 243, 248, 0)']
-const WINTER_TITLE_COLOR = 'rgb(242, 247, 251)'
+const BASELINE = process.argv.includes('--baseline')
+const PHASE = BASELINE ? 'before' : 'after'
+const COMPARE_ONLY = process.argv.includes('--compare-only')
+const SCREENSHOTS = !process.argv.includes('--geometry-only')
+const DIR = 'tmp/showcase-hero'
+const VIEWPORTS = [[1440, 900], [1920, 1080], [1920, 540], [390, 844], [844, 390]]
+const PROFILES = ['spring', 'summer', 'autumn', 'winter']
+// Routes, not image mappings. Assets and section IDs are imported from production SSOT below.
+const ROUTES = [
+  ['replay', true], ['agent-techtree', true], ['map-preview', true],
+  ['agent-tankopedia', false], ['hof', false], ['hof', false, '&tab=hundred'],
+  ['hof', false, '&tab=mark3'], ['league-broadcasts', false], ['tournament-points', false],
+  ['admin-users', true], ['admin-battle-data', true], ['admin-ai-review-feedback', true],
+  ['admin-site-feedback', true], ['hof-admin', true], ['tournament-points-admin', true],
+  ['tournament-points-config', true], ['creators-config', true],
+  ['history', false], ['technical-evolution', false], ['rating-docs', false],
+  ['contact', false], ['more', false], ['recommendations', false], ['creators', false],
+  ['sponsor', false], ['android', false],
+]
 
-// sRGB 逐通道线性化后的相对亮度（WCAG）。
-function relativeLuminance([r, g, b]) {
-  const rel = c => (c /= 255) <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-  return 0.2126 * rel(r) + 0.7152 * rel(g) + 0.0722 * rel(b)
-}
-
-// 纯背景像素中对比度 ≥ 4.5:1 的面积占比（浅色文字对不利亮背景的确定性检查）。
-function backgroundContrastFraction(raw, channels, textLum) {
-  let pass = 0
-  let total = 0
-  for (let i = 0; i < raw.length; i += channels) {
-    const bgLum = relativeLuminance([raw[i], raw[i + 1], raw[i + 2]])
-    if ((Math.max(bgLum, textLum) + 0.05) / (Math.min(bgLum, textLum) + 0.05) >= 4.5) pass += 1
-    total += 1
-  }
-  return total ? pass / total : 0
-}
-
-// 负向自检：11% 黑 + 89% 白的背景（浅色文字）必须不达标——防止检查退化成
-// 只看最暗分位的漏检。此断言在每次运行时确定性执行。
-{
-  const white = [255, 255, 255]
-  const black = [0, 0, 0]
-  const mixed = []
-  for (let i = 0; i < 1000; i++) mixed.push(...(i % 9 === 0 ? black : white))
-  const fraction = backgroundContrastFraction(mixed, 3, relativeLuminance([216, 230, 244]))
-  assert.ok(fraction < 0.9, `contrast self-test must reject a mostly-white background: ${(fraction * 100).toFixed(1)}%`)
-  const dark = []
-  for (let i = 0; i < 3000; i++) dark.push(...[10, 14, 20])
-  assert.equal(backgroundContrastFraction(dark, 3, relativeLuminance([216, 230, 244])), 1, 'contrast self-test must accept a uniformly dark background')
-}
-
-/** 页面内探针：取紧凑横幅的 computed style 与几何（Page.probe 会序列化，不能引用模块作用域）。 */
-function heroProbe() {
-  const host = document.querySelector('.showcase-hero-host.is-compact-host') ?? document.querySelector('.showcase-hero-host')
-  const section = host?.querySelector('.showcase-hero')
-  const art = section?.querySelector('.showcase-hero-art')
-  if (!section || !art) return null
-  const cs = getComputedStyle(art)
-  // backgroundImage 不做拆分：linear-gradient 内部的逗号会被顶层 split 打碎，
-  // 遮罩断言必须基于完整 computed 值（多个停靠点逐一比对）。
-  const positions = cs.backgroundPosition.split(',').map(s => s.trim())
-  const rect = section.getBoundingClientRect()
-  return {
-    section: section.dataset.section ?? null,
-    compact: section.classList.contains('is-compact'),
-    height: Math.round(rect.height),
-    width: Math.round(rect.width),
-    backgroundImage: cs.backgroundImage,
-    imagePosition: positions[1] ?? null,
-    backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[1] ?? null,
-    titleColor: getComputedStyle(section.querySelector('h1')).color,
-
-
-    titleBottom: Math.round(section.querySelector('h1').getBoundingClientRect().bottom),
-    heroBottom: Math.round(rect.bottom),
-  }
-}
-
-/** 完整档 Hero 探针：额外取 description / stat 标签颜色（冬季手机端全档文字可读性门禁用）。 */
-function fullHeroProbe() {
+// Executed in the real page. Keep helpers inside the serialized probe.
+async function completenessProbe() {
   const section = document.querySelector('.showcase-hero')
-  const h1 = section?.querySelector('h1')
-  const description = section?.querySelector('.showcase-hero-description')
-  const statsLabel = section?.querySelector('.showcase-hero-stats span')
-  if (!section || !h1) return null
+  const art = section?.querySelector('.showcase-hero-art')
+  if (!art) return null
+  const rect = section.getBoundingClientRect()
+  if (!rect.width || !rect.height) return { section: section.dataset.section, hidden: true }
+  const layers = value => {
+    let depth = 0, start = 0
+    const parts = []
+    for (let i = 0; i < value.length; i++) {
+      if (value[i] === '(') depth++
+      if (value[i] === ')') depth--
+      if (value[i] === ',' && !depth) { parts.push(value.slice(start, i).trim()); start = i + 1 }
+    }
+    parts.push(value.slice(start).trim())
+    return parts
+  }
+  const cs = getComputedStyle(art)
+  const backgrounds = layers(cs.backgroundImage)
+  const index = backgrounds.findIndex(v => v.startsWith('url('))
+  if (index < 0) throw new Error('missing image layer')
+  const url = backgrounds[index].match(/^url\(["']?(.*?)["']?\)$/)[1]
+  const image = new Image()
+  image.src = url
+  await image.decode()
+  const r = art.getBoundingClientRect()
+  const sizes = layers(cs.backgroundSize), positions = layers(cs.backgroundPosition)
+  const size = sizes[index % sizes.length], pos = positions[index % positions.length]
+  // Background origin: padding-box by default. Our art is untransformed, without border/padding.
+  const origin = layers(cs.backgroundOrigin)[index % layers(cs.backgroundOrigin).length]
+  if (origin !== 'padding-box' || art.clientWidth !== art.offsetWidth || art.clientHeight !== art.offsetHeight || cs.transform !== 'none') throw new Error('unsupported background coordinate system')
+  const nw = image.naturalWidth, nh = image.naturalHeight
+  let rw, rh
+  if (size === 'contain' || size === 'cover') {
+    const scale = Math[size === 'contain' ? 'min' : 'max'](r.width / nw, r.height / nh)
+    rw = nw * scale; rh = nh * scale
+  } else {
+    const parts = size.split(/\s+/)
+    const length = (v, total) => v.endsWith('%') ? parseFloat(v) * total / 100 : v.endsWith('px') ? parseFloat(v) : v === 'auto' ? null : NaN
+    rw = length(parts[0], r.width); rh = length(parts[1] ?? 'auto', r.height)
+    if (rw === null && rh === null) { rw = nw; rh = nh }
+    else if (rw === null) rw = rh * nw / nh
+    else if (rh === null) rh = rw * nh / nw
+    if (!Number.isFinite(rw + rh)) throw new Error(`unsupported background-size ${size}`)
+  }
+  const offset = (value, free) => value.endsWith('%') ? parseFloat(value) * free / 100 : value.endsWith('px') ? parseFloat(value) : NaN
+  const [px, py] = pos.split(/\s+/)
+  const left = r.left + offset(px, r.width - rw), top = r.top + offset(py, r.height - rh)
+  if (!Number.isFinite(left + top)) throw new Error(`unsupported background-position ${pos}`)
+  const rendered = { left, top, right: left + rw, bottom: top + rh, width: rw, height: rh }
+  const visible = { left: Math.max(left, r.left), top: Math.max(top, r.top), right: Math.min(left + rw, r.right), bottom: Math.min(top + rh, r.bottom) }
+  const clips = []
+  const roundedClips = []
+  // Scrollports clip the image if it cannot fit even after scrolling to the hero.
+  // Do not count ordinary page scrolling below the viewport as loss of original content.
+  for (let el = art.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+    const style = getComputedStyle(el), box = el.getBoundingClientRect()
+    const clipX = /hidden|clip|auto|scroll/.test(style.overflowX)
+    const clipY = /hidden|clip|auto|scroll/.test(style.overflowY)
+    if (clipX || clipY) {
+      const bounds = { left: box.left + el.clientLeft, top: box.top + el.clientTop }
+      bounds.right = bounds.left + el.clientWidth; bounds.bottom = bounds.top + el.clientHeight
+      if (clipX) { visible.left = Math.max(visible.left, bounds.left); visible.right = Math.min(visible.right, bounds.right) }
+      if (clipY) { visible.top = Math.max(visible.top, bounds.top); visible.bottom = Math.min(visible.bottom, bounds.bottom) }
+      clips.push({ class: el.className, ...bounds, clipX, clipY })
+      if (clipX && clipY) {
+        const corners = [
+          ['TopLeft', left, top, bounds.left, bounds.top, 1, 1],
+          ['TopRight', left + rw, top, bounds.right, bounds.top, -1, 1],
+          ['BottomLeft', left, top + rh, bounds.left, bounds.bottom, 1, -1],
+          ['BottomRight', left + rw, top + rh, bounds.right, bounds.bottom, -1, -1],
+        ]
+        for (const [corner, x, y, edgeX, edgeY, sx, sy] of corners) {
+          const values = style[`border${corner}Radius`].split(/\s+/)
+          const length = (v, total) => parseFloat(v) * (v.endsWith('%') ? total / 100 : 1)
+          const rx = Math.max(0, length(values[0], box.width) - parseFloat(style[sx === 1 ? 'borderLeftWidth' : 'borderRightWidth']))
+          const ry = Math.max(0, length(values[1] ?? values[0], box.height) - parseFloat(style[sy === 1 ? 'borderTopWidth' : 'borderBottomWidth']))
+          const dx = (x - edgeX) * sx, dy = (y - edgeY) * sy
+          if (rx && ry && dx < rx && dy < ry && ((dx - rx) / rx) ** 2 + ((dy - ry) / ry) ** 2 > 1 + 1e-6) roundedClips.push({ class: el.className, corner })
+        }
+      }
+    }
+  }
+  const area = box => Math.max(0, box.right - box.left) * Math.max(0, box.bottom - box.top)
+  const textOverlap = [...section.querySelectorAll('.showcase-hero-content h1, .showcase-hero-content p, .showcase-hero-stats, .showcase-hero-actions')].reduce((sum, el) => {
+    const box = el.getBoundingClientRect()
+    return sum + area({ left: Math.max(box.left, left), right: Math.min(box.right, left + rw), top: Math.max(box.top, top), bottom: Math.min(box.bottom, top + rh) })
+  }, 0)
+  const title = section.querySelector('h1'), titleBox = title.getBoundingClientRect()
+  const color = value => value.match(/[\d.]+/g).slice(0, 3).map(Number)
+  const lum = rgb => rgb.map(v => (v /= 255) <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [.2126, .7152, .0722][i], 0)
+  const surface = getComputedStyle(section).getPropertyValue('--color-surface-1').trim()
+  const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d')
+  ctx.fillStyle = surface; ctx.fillRect(0, 0, 1, 1)
+  const bg = lum([...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3))
+  const fg = lum(color(getComputedStyle(title).color))
   return {
-    section: section.dataset.section ?? null,
-    compact: section.classList.contains('is-compact'),
-    titleColor: getComputedStyle(h1).color,
-    descriptionColor: description ? getComputedStyle(description).color : null,
-    descriptionShadow: description ? getComputedStyle(description).textShadow : null,
-    statsLabelColor: statsLabel ? getComputedStyle(statsLabel).color : null,
+    section: section.dataset.section, compact: section.classList.contains('is-compact'),
+    width: rect.width, height: rect.height, artWidth: r.width, artHeight: r.height,
+    naturalWidth: nw, naturalHeight: nh, size, position: pos,
+    scaleX: rw / nw, scaleY: rh / nh, rendered,
+    originalVisible: { x: (visible.left - left) / (rw / nw), y: (visible.top - top) / (rh / nh), width: Math.max(0, visible.right - visible.left) / (rw / nw), height: Math.max(0, visible.bottom - visible.top) / (rh / nh) },
+    fraction: area(visible) / (rw * rh),
+    edges: { left: visible.left <= left + .01, top: visible.top <= top + .01, right: visible.right >= left + rw - .01, bottom: visible.bottom >= top + rh - .01 },
+    textOverlap, clips, roundedClips, titleFits: titleBox.left >= rect.left && titleBox.right <= rect.right && titleBox.bottom <= rect.bottom,
+    titleColor: getComputedStyle(title).color, titleContrastOnSurface: (Math.max(bg, fg) + .05) / (Math.min(bg, fg) + .05),
+    hScroll: document.scrollingElement.scrollWidth > innerWidth + 1 || (matchMedia('(pointer: coarse)').matches && innerWidth > visualViewport.width + 1),
+    profile: document.documentElement.dataset.uiProfile,
+    imageLayers: backgrounds.length,
   }
 }
-
-function assertDesktopCompact(hero, { section, position }) {
-  assert.equal(hero.section, section, `desktop ${section} must use its section hero`)
-  assert.ok(hero.compact, `desktop ${section} must render compact`)
-  assert.match(hero.backgroundImage, /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
-  assert.equal(hero.imagePosition, position, `desktop ${section} compact focus must be ${position}`)
-  assert.equal(hero.backgroundSize, 'cover', `desktop ${section} must keep cover (no distortion)`)
-  assert.ok(hero.titleBottom <= hero.heroBottom, `desktop ${section} title must stay inside the banner`)
+function assertGeometry(m, label) {
+  assert.ok(m && !m.hidden, `${label}: expected visible hero`)
+  assert.ok(m.fraction >= 1 - 1e-6, `${label}: original completeness ${m.fraction}`)
+  for (const [edge, visible] of Object.entries(m.edges)) assert.ok(visible, `${label}: ${edge} edge clipped`)
+  assert.deepEqual(m.roundedClips, [], `${label}: rounded ancestor clips image corners`)
+  assert.ok(Math.abs(m.scaleX - m.scaleY) < 1e-8, `${label}: nonuniform scaling`)
+}
+function assertAfter(m, label) {
+  assertGeometry(m, label)
+  assert.equal(m.size, 'contain', `${label}: use contain`)
+  assert.equal(m.textOverlap, 0, `${label}: text intersects image`)
+  assert.equal(m.imageLayers, 1, `${label}: image must not be washed out by scrim`)
+  assert.ok(m.titleFits, `${label}: title clipped`)
+  assert.ok(!m.hScroll, `${label}: horizontal overflow`)
+  assert.ok(m.titleContrastOnSurface >= 4.5, `${label}: title contrast ${m.titleContrastOnSurface}`)
 }
 
-function assertMobileCompact(hero, { section, position }) {
-  assert.equal(hero.section, section, `mobile ${section} must use its section hero`)
-  assert.ok(hero.compact, `mobile ${section} must render compact`)
-  assert.equal(hero.imagePosition, position, `mobile ${section} must fall back to mobilePosition ${position}`)
-  assert.equal(hero.backgroundSize, 'cover', `mobile ${section} must keep cover`)
-}
-
-const { server, origin } = await startFixtureServer()
+mkdirSync(DIR, { recursive: true })
+const source = BASELINE ? execFileSync('git', ['show', 'origin/main:frontend/src/components/ShowcaseHero.vue'], { encoding: 'utf8' }) : null
+const { server, origin } = await startFixtureServer({ plugins: [{ name: 'hero-test-module', resolveId(id) { if (id === 'virtual:hero-test') return id }, load(id) { if (id === 'virtual:hero-test') return `export * as v from 'vue';export {default as Hero} from '/src/components/ShowcaseHero.vue';export {SECTION_HERO_IDS} from '/src/shared/sectionHeroes.ts'` } }, ...(source ? [{ name: 'showcase-baseline', enforce: 'pre', transform(code, id) {
+  if (id.replaceAll('\\', '/').endsWith('/src/components/ShowcaseHero.vue')) return source
+} }] : [])] })
 let chrome
+const results = []
 try {
+  console.log(`[showcase] ${PHASE} server ${origin}`)
   chrome = await launchChromeForCdp(findChrome())
-
-  async function openAppPage({ width, height = 900, profile = 'summer', view, extraAuth = '' }) {
+  console.log('[showcase] Chrome connected')
+  async function open(view, width, height, extra = '') {
     const { targetId, sessionId } = await chrome.openPage()
     const page = new Page(chrome.client, sessionId)
     await page.enable()
-    await page.emulate({ width, height, touch: width < 1200 })
-    await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', 'zh');`,
-    }, sessionId)
-    await chrome.client.send('Page.navigate', { url: `${origin}/?view=${view}${extraAuth}` }, sessionId)
-    await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
-    await page.waitForValue(`!!document.querySelector('[data-testid="showcase-hero"]')`, value => value === true, { timeout: 90_000, label: `showcase hero on ${view}` })
-    return { targetId, page }
+    await page.emulate({ width, height, touch: width < 1000 })
+    await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile','summer');localStorage.setItem('wotb-lang','zh')` }, sessionId)
+    await chrome.client.send('Page.navigate', { url: `${origin}/?view=${view}&ws-auth=1&ws-roles=wotbtools-admin,tournament-admin,content-admin${extra}` }, sessionId)
+    try { await page.waitForValue(`!!document.querySelector('.showcase-hero')`, Boolean, { timeout: 30000, label: `${view} hero` }) } catch (error) { console.error(await page.diagnose(() => document.body.innerText)); throw error }
+    await page.evaluate('document.fonts.ready')
+    return { page, targetId }
   }
-
-  // 桌面：Replay 放宽、TechTree/Admin 保持默认密度、compactPosition 生效。
-  for (const [view, extraAuth, section, position] of [
-    ['replay', '', 'replay', '50% 50%'],
-    ['agent-techtree', '', 'techtree', '50% 58%'],
-    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '50% 45%'],
-  ]) {
-    const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
-    try {
-      const hero = await page.probe(heroProbe)
-      assertDesktopCompact(hero, { section, position })
-      const [lo, hi] = section === 'replay' ? [240, 400] : [120, 140]
-      assert.ok(hero.height >= lo && hero.height <= hi, `desktop ${section} hero height must stay ${lo}-${hi}px at 1440: ${hero.height}`)
-      console.log(`[browser-showcase-hero] desktop ${section}: height=${hero.height} pos=${hero.imagePosition} scrim=${hero.backgroundImage.slice(0, 48)}… passed`)
-    } catch (error) {
-      console.error(await page.diagnose(heroProbe))
-      throw error
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  async function screenshot(page, name) {
+    if (!SCREENSHOTS) return
+    const rect = await page.evaluate(`(() => {const r=document.querySelector('.showcase-hero').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`)
+    if (rect.width <= 0 || rect.height <= 0) return
+    const { data } = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...rect, scale: 1 } }, page.sessionId)
+    writeFileSync(`${DIR}/${PHASE}-${name}.png`, Buffer.from(data, 'base64'))
   }
-
-  // 桌面 → 手机断点切换（同一场景先后断言，证明媒体查询层叠）：手机恢复 portrait 遮罩 + mobilePosition。
-  for (const [view, extraAuth, section, mobilePosition, heightLo, heightHi] of [
-    ['replay', '', 'replay', '45% 50%', 88, 112],
-    ['agent-techtree', '', 'techtree', '42% 50%', 88, 112],
-    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '40% 50%', 88, 112],
-  ]) {
-    const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
-    try {
-      const desktop = await page.probe(heroProbe)
-      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '50% 45%' })
-      await page.emulate({ width: 390, height: 844, touch: true })
-      await page.waitForValue(`window.innerWidth`, value => value === 390, { timeout: 20_000, label: 'mobile viewport applied' })
-      const mobile = await page.probe(heroProbe)
-      assertMobileCompact(mobile, { section, position: mobilePosition })
-      assert.ok(mobile.height >= heightLo && mobile.height <= heightHi, `mobile ${section} hero height must stay ${heightLo}-${heightHi}px: ${mobile.height}`)
-      // 冬季 portrait 遮罩实际生效：两处停靠点（.15 → 0）逐一比对（完整 backgroundImage，不拆层）——
-      // 旧遮罩 .97/.86/.24 不含这两个停靠点，负向可捕获泛白回归。
-      await page.evaluate(`localStorage.setItem('wotb-ui-profile', 'winter'); document.documentElement.setAttribute('data-ui-profile', 'winter'); document.documentElement.setAttribute('data-theme', 'light')`)
-      await page.waitForValue(`getComputedStyle(document.querySelector('.showcase-hero-art')).backgroundImage`, value => value.includes(WINTER_PORTRAIT_STOPS[0]), { timeout: 20_000, label: 'winter portrait scrim' })
-      const winter = await page.probe(heroProbe)
-      for (const stop of WINTER_PORTRAIT_STOPS) {
-        assert.ok(winter.backgroundImage.includes(stop), `mobile ${section} winter portrait scrim must contain ${stop}: ${winter.backgroundImage}`)
-      }
-      assert.equal(winter.titleColor, WINTER_TITLE_COLOR, `mobile ${section} winter title must switch to white: ${winter.titleColor}`)
-      console.log(`[browser-showcase-hero] breakpoint ${section}: desktop pos=${desktop.imagePosition} → mobile pos=${mobile.imagePosition} height=${mobile.height}, winter scrim stops ok passed`)
-    } catch (error) {
-      console.error(await page.diagnose(heroProbe))
-      throw error
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
-  }
-
-  // Replay 矮桌面窗口降级：height < 700px 回退默认密度，横幅不把工作区压到不可用。
-  {
-    const { targetId, page } = await openAppPage({ width: 1920, height: 540, view: 'replay' })
-    try {
-      const hero = await page.probe(heroProbe)
-      assert.ok(hero.height >= 120 && hero.height <= 140, `replay hero must fall back to compact density in short windows: ${hero.height}`)
-      assert.ok(hero.titleBottom <= hero.heroBottom, 'replay title must stay inside the degraded banner')
-      console.log(`[browser-showcase-hero] short-window replay: height=${hero.height} at 1920x540 passed`)
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
-  }
-
-  // Full 档统一响应式高度（Replay 同族 clamp 推广）：真实渲染断言，不是 CSS 字符串。
-  // league-broadcasts 是纯标题页（内容只撑出 ~123px，可见带 19%，主体被裁成炮管碎片），
-  // 是该策略的目标场景；hof 自带 stats/actions（内容 ~249px），验证 clamp 不压内容；
-  // tournament-points 带说明 + 操作按钮，验证第三种完整档形态。
-  const fullTextProbe = () => {
-    const section = document.querySelector('.showcase-hero')
-    if (!section) return null
-    const pick = sel => {
-      const el = section.querySelector(sel)
-      return el ? Math.round(el.getBoundingClientRect().height) : null
+  async function record(page, metadata) {
+    await page.evaluate(`(async()=>{document.querySelector('.showcase-hero').scrollIntoView({block:'start',behavior:'instant'});await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)})()`)
+    const m = await page.probe(completenessProbe)
+    assert.ok(m, `${JSON.stringify(metadata)}: missing hero`)
+    results.push({ ...metadata, ...m })
+    if (!BASELINE) {
+      if (m.hidden) assert.ok(metadata.kind === 'route' && metadata.viewport === '844x390' && ['replay', 'agent-techtree', 'map-preview'].includes(metadata.view), `unexpected hidden hero: ${JSON.stringify(metadata)}`)
+      else assertAfter(m, JSON.stringify(metadata))
     }
-    return {
-      kickerH: pick('.showcase-hero-kicker'),
-      titleH: pick('h1'),
-      descriptionH: pick('.showcase-hero-description'),
-      textH: Math.round(section.querySelector('.showcase-hero-text')?.getBoundingClientRect().height ?? 0),
-      contentH: Math.round(section.querySelector('.showcase-hero-content')?.getBoundingClientRect().height ?? 0),
-    }
+    return m
   }
-  for (const [view, extraAuth] of [['league-broadcasts', ''], ['hof', ''], ['tournament-points', '']]) {
-    const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
+  // All real call sites, all requested viewports. Shared CSS has no profile-specific layout;
+  // exhaustive profiles/sections/variants are tested separately with the real mounted component.
+  for (const [view, compact, extra = ''] of (COMPARE_ONLY ? [] : ROUTES)) {
+    const { page, targetId } = await open(view, 1440, 900, extra)
     try {
-      const probe = heroProbe
-      const desktop = await page.probe(probe)
-      assert.ok(!desktop.compact, `desktop full hero on ${view} must not be compact`)
-      // 1440 下 20vw = 288px（clamp 上限 384 不命中）：主体完整带 ≈45%，与 Replay 验收值一致
-      assert.ok(desktop.height >= 280 && desktop.height <= 400, `desktop full hero on ${view} must take the 20vw clamp height at 1440: ${desktop.height}`)
-      assert.ok(desktop.titleBottom <= desktop.heroBottom, `desktop ${view} title must stay inside the banner`)
-      // min-height 加高不得把 grid auto 行拉伸成空行（review P1）：kicker/标题/说明必须保持自然行高
-      const text = await page.probe(fullTextProbe)
-      assert.ok(text.kickerH === null || text.kickerH <= 30, `full hero kicker on ${view} must keep its natural row height (grid rows must not stretch): ${text.kickerH}`)
-      assert.ok(text.titleH <= 90, `full hero title on ${view} must keep its natural row height (grid rows must not stretch): ${text.titleH}`)
-      assert.ok(text.descriptionH === null || text.descriptionH <= 60, `full hero description on ${view} must keep its natural row height: ${text.descriptionH}`)
-      assert.ok(text.textH <= text.contentH, `full hero text block on ${view} must fit inside the content grid`)
-      // 矮桌面窗口回退内容密度：横幅不挤压首屏
-      await page.emulate({ width: 1920, height: 540, touch: false })
-      await page.waitForValue(`window.innerHeight`, v => v === 540, { timeout: 20_000, label: 'short window applied' })
-      const short = await page.probe(probe)
-      assert.ok(short.height <= 260, `full hero on ${view} must fall back to content height in short windows: ${short.height}`)
-      assert.ok(short.titleBottom <= short.heroBottom, `short-window ${view} title must stay inside the banner`)
-      // 手机断点不参与：portrait 焦点可见带已足够，横幅不白白吃首屏
-      await page.emulate({ width: 390, height: 844, touch: true })
-      await page.waitForValue(`window.innerWidth`, v => v === 390, { timeout: 20_000, label: 'mobile viewport applied' })
-      const mobile = await page.probe(probe)
-      assert.ok(mobile.height <= 280, `mobile full hero on ${view} must keep the portrait density: ${mobile.height}`)
-      console.log(`[browser-showcase-hero] full-hero height ${view}: desktop=${desktop.height} short=${short.height} mobile=${mobile.height} kicker=${text.kickerH} title=${text.titleH} desc=${text.descriptionH} passed`)
-    } catch (error) {
-      console.error(await page.diagnose(heroProbe))
-      throw error
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
-  }
-
-  // 冬季手机端完整档 Hero（ContactPage 同构）：遮罩几乎全撤后 description / kicker / 标题
-  // 必须切浅色，且文字区域的实测背景像素对比度 ≥ 4.5:1（不只查 computed color）。
-  {
-    const { targetId, page } = await openAppPage({ width: 390, height: 844, profile: 'winter', view: 'contact' })
-    try {
-      const hero = await page.probe(fullHeroProbe)
-      assert.equal(hero.descriptionColor, 'rgb(216, 230, 244)', `winter full hero description must switch to light: ${hero.descriptionColor}`)
-      // 阴影负向断言：撤掉 text-shadow（回归到无描边）时这里必然失败——
-      // 亮区（补光灯/屏幕）的可读性兜底不允许被静默移除。
-      assert.ok(hero.descriptionShadow.includes('rgba(4, 10, 18'), `winter full hero description must keep its dark text-shadow: ${hero.descriptionShadow}`)
-      assert.equal(hero.titleColor, WINTER_TITLE_COLOR, `winter full hero title must switch to white: ${hero.titleColor}`)
-      // 像素级验收：隐藏文字（含描边）后截取说明文字矩形 = 纯背景；逐像素 sRGB 线性化亮度
-      // 与文字亮度逐一算对比度。双条件：中位数背景对比度 ≥ 4.5:1，且不达标（不利亮区）
-      // 面积 ≤ 20%——11% 黑 + 89% 白的负向自检仍然必失败；照片中的小面积镜面高光
-      // （补光灯/屏幕，实测 ~11%）由描述文字自带的深色描边兜底，不构成大面积失效。
-      const rect = await page.evaluate(`(() => { const el = document.querySelector('.showcase-hero-description'); el.style.visibility = 'hidden'; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`)
-      const { data } = await chrome.client.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 2 } }, page.sessionId)
-      await page.evaluate(`(() => { document.querySelector('.showcase-hero-description').style.visibility = '' })()`)
-      const { default: sharp } = await import('sharp')
-      const { info, data: raw } = await sharp(Buffer.from(data, 'base64')).raw().toBuffer({ resolveWithObject: true })
-      const textLum = relativeLuminance([216, 230, 244])
-      const lums = []
-      for (let i = 0; i < raw.length; i += info.channels) lums.push(relativeLuminance([raw[i], raw[i + 1], raw[i + 2]]))
-      lums.sort((a, b) => a - b)
-      const medianLum = lums[Math.floor(lums.length / 2)]
-      const medianRatio = (Math.max(medianLum, textLum) + 0.05) / (Math.min(medianLum, textLum) + 0.05)
-      const passFraction = backgroundContrastFraction(raw, info.channels, textLum)
-      assert.ok(medianRatio >= 4.5, `winter full hero description median background contrast must be >= 4.5:1: ${medianRatio.toFixed(2)}:1`)
-      assert.ok(passFraction >= 0.8, `winter full hero description contrast must hold over >=80% of its area (unfavorable bright area <=20%): ${(passFraction * 100).toFixed(1)}%`)
-      console.log(`[browser-showcase-hero] winter full hero (contact 390x844): description light + median ${medianRatio.toFixed(2)}:1 + ${(passFraction * 100).toFixed(1)}% area passed`)
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
-  }
-
-  // 冬季手机端带统计数字的完整档 Hero（HoF 同构）：stat 标签类显式设了深色，
-  // 必须被 <768px 断点的 :deep(span) inherit 覆盖为浅色。夹具环境无榜单数据时，
-  // 复制 HoF / Hero 两个组件的真实 scope 属性合成同一结构，让两条 scoped 规则
-  // 真实参与层叠后取 computed color（不是只查源码正则）。
-  {
-    const { targetId, page } = await openAppPage({ width: 390, height: 844, profile: 'winter', view: 'hof' })
-    try {
-      const hero = await page.probe(fullHeroProbe)
-      let statsLabelColor = hero.statsLabelColor
-      if (!statsLabelColor) {
-        statsLabelColor = await page.evaluate(`(() => {
-          const section = document.querySelector('.showcase-hero')
-          const content = section?.querySelector('.showcase-hero-content')
-          if (!content) return null
-          const scopeName = root => [...root.querySelectorAll('*')].find(el => el.getAttributeNames().some(n => n.startsWith('data-v-')))?.getAttributeNames().find(n => n.startsWith('data-v-'))
-          const pageScope = scopeName(document.querySelector('.app-main') ?? document.body)
-          const heroScope = [...section.attributes].find(a => a.name.startsWith('data-v-'))?.name
-          const stats = document.createElement('div')
-          stats.className = 'showcase-hero-stats'
-          if (heroScope) stats.setAttribute(heroScope, '')
-          const span = document.createElement('span')
-          span.className = 'lb-hero-stat-label'
-          if (pageScope) span.setAttribute(pageScope, '')
-          span.textContent = 'stats'
-          stats.appendChild(span)
-          content.appendChild(stats)
-          return getComputedStyle(span).color
-        })()`)
+      for (const [width, height] of VIEWPORTS) {
+        await page.emulate({ width, height, touch: width < 1000 })
+        const m = await record(page, { kind: 'route', view, extra, viewport: `${width}x${height}` })
+        if (!m.hidden) assert.equal(m.compact, compact, `${view}: variant`)
+        await screenshot(page, `${view}${extra.replaceAll(/[^a-z0-9]/g, '-')}-${width}x${height}`)
       }
-      assert.notEqual(statsLabelColor, 'rgb(59, 84, 112)', `winter full hero stat label must not stay dark: ${statsLabelColor}`)
-      assert.equal(statsLabelColor, 'rgb(216, 230, 244)', `winter full hero stat label must follow the light container color: ${statsLabelColor}`)
-      console.log(`[browser-showcase-hero] winter full hero (hof 390x844): stat label color=${statsLabelColor} passed`)
+      console.log(`[showcase] ${PHASE} route ${view}${extra} passed`)
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
   }
-
-
-  // 无 section 的普通 ShowcaseHero 由 ShowcaseHero.test.ts 覆盖（无公开非分区页面可直达）。
-
-  console.log('[browser-showcase-hero] all scenarios passed')
+  // Compare only bounded alternatives on the same real route and data; no candidate CSS ships.
+  if (!BASELINE) {
+    const comparisons = []
+    const { page, targetId } = await open('contact', 390, 844)
+    try {
+      for (const [width, height] of [[1440, 900], [390, 844]]) {
+        await page.emulate({ width, height, touch: width < 1000 })
+        for (const candidate of ['A', 'B', 'C']) {
+          await page.evaluate(`(()=>{const hero=document.querySelector('.showcase-hero'),art=hero.querySelector('.showcase-hero-art'),content=hero.querySelector('.showcase-hero-content');window.__candidateOriginal ??= [hero.style.cssText,art.style.cssText,content.style.cssText];[hero,art,content].forEach((el,i)=>el.style.cssText=window.__candidateOriginal[i]);if(${JSON.stringify(candidate)}!=='C'){hero.style.display='block';Object.assign(art.style,{position:'absolute',inset:'0',margin:'0',backgroundPosition:'right center'});content.style.maxInlineSize='42rem';if(${JSON.stringify(candidate)}==='B')content.style.minBlockSize='320px'}})()`)
+          const m = await page.probe(completenessProbe)
+          comparisons.push({ candidate, viewport: `${width}x${height}`, ...m })
+          await screenshot(page, `candidate-${candidate}-${width}x${height}`)
+        }
+      }
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+    writeFileSync(`${DIR}/candidates.json`, JSON.stringify(comparisons, null, 2))
+  }
+  // Import the production mapping and actual SFC, rather than copying IDs or assets into tests.
+  if (!COMPARE_ONLY) {
+    const { page, targetId } = await open('contact', 1440, 900)
+    try {
+      const ids = await page.evaluate(`(async()=>{const {v,Hero,SECTION_HERO_IDS}=await import('/@id/virtual:hero-test');window.__heroFixture={v,Hero};document.querySelector('#app').__vue_app__.unmount();document.body.innerHTML='<main id="hero-matrix"></main>';return SECTION_HERO_IDS})()`)
+      for (const profile of PROFILES) {
+        await page.evaluate(`document.documentElement.dataset.uiProfile=${JSON.stringify(profile)};document.documentElement.dataset.theme=${JSON.stringify(profile === 'winter' ? 'light' : 'dark')}`)
+        for (const compact of [false, true]) {
+          for (const section of ids) {
+            await page.evaluate(`(()=>{window.__heroApp?.unmount();const {v,Hero}=window.__heroFixture;window.__heroApp=v.createApp({render:()=>v.h(Hero,{section:${JSON.stringify(section)},compact:${compact},kicker:'WOTBTOOLS',title:'分区主视觉',description:'保持完整图片与清晰的信息层级'},{stats:()=>v.h('strong','10,483'),actions:()=>v.h('button','操作')})});window.__heroApp.mount('#hero-matrix')})()`)
+            for (const [width, height] of VIEWPORTS) {
+              await page.emulate({ width, height, touch: width < 1000 })
+              const m = await record(page, { kind: 'component', viewport: `${width}x${height}`, profile, section, compact })
+              if (!BASELINE && compact) assert.ok(m.height < height * .6, 'compact must leave workspace visible')
+              await screenshot(page, `component-${section}-${compact ? 'compact' : 'full'}-${profile}-${width}x${height}`)
+            }
+          }
+        }
+        console.log(`[showcase] ${PHASE} all 11 sections / both variants / 5 viewports: ${profile} passed`)
+      }
+      if (!BASELINE) {
+        await page.emulate({ width: 1440, height: 900, touch: false })
+        await page.evaluate(`document.querySelector('.showcase-hero-art').style.backgroundSize='cover'`)
+        const cover = await page.probe(completenessProbe)
+        assert.throws(() => assertGeometry(cover, 'cover negative control'), /original completeness|edge clipped/)
+        await page.evaluate(`document.querySelector('.showcase-hero-art').style.backgroundSize=''`)
+        assertAfter(await page.probe(completenessProbe), 'restore contain')
+        await page.evaluate(`document.querySelector('.showcase-hero-art').style.minHeight='132px';document.querySelector('.showcase-hero').style.maxHeight='40px'`)
+        const clipped = await page.probe(completenessProbe)
+        assert.throws(() => assertGeometry(clipped, 'ancestor negative control'), /original completeness|edge clipped/)
+        await page.evaluate(`document.querySelector('.showcase-hero-art').style.minHeight='';document.querySelector('.showcase-hero').style.maxHeight=''`)
+        await chrome.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, page.sessionId)
+        assertAfter(await page.probe(completenessProbe), 'reduced motion')
+        console.log(`[showcase] cover rejected (${cover.fraction}); ancestor clipping rejected; reduced motion passed`)
+      }
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+  console.log(`[showcase] ${PHASE}: ${results.length} measurements passed`)
 } finally {
+  if (!COMPARE_ONLY) writeFileSync(`${DIR}/${PHASE}-matrix.json`, JSON.stringify(results, null, 2))
+  console.log('[showcase] closing Chrome')
   if (chrome) await chrome.close()
+  console.log('[showcase] closing fixture server')
   await server.close()
+  console.log('[showcase] cleanup complete')
 }
