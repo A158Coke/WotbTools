@@ -51,6 +51,13 @@ const hofAdminApi = vi.hoisted(() => ({
 let roles = ['HoF-admin']
 let authenticated = true
 
+const breakpointState = vi.hoisted(() => ({ expanded: null }))
+vi.mock('../composables/useBreakpoint.js', async () => {
+  const { ref } = await import('vue')
+  breakpointState.expanded = ref(true)
+  return { useBreakpoint: () => ({ isExpanded: breakpointState.expanded }) }
+})
+
 const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
@@ -184,6 +191,7 @@ describe('HoFAdminPage', () => {
   const wrappers = []
   afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
   beforeEach(() => {
+    breakpointState.expanded.value = true
     connectivityState.state.value = 'online'
     roles = ['HoF-admin']
     authenticated = true
@@ -967,6 +975,44 @@ describe('HoFAdminPage', () => {
   })
 
   // —— PG-09 / PG-10：对话框统一 AppDialog，图标按钮有可访问名称，Tab 可滚动 ——
+  it.each(['hundred', 'mark3'])('releases inactive %s overlays across breakpoints and caches its list', async (kind) => {
+    const list = kind === 'hundred' ? hofAdminApi.hofAdminHundredList : hofAdminApi.hofAdminMark3List
+    const detail = kind === 'hundred' ? hofAdminApi.hofAdminHundredDetail : hofAdminApi.hofAdminMark3Detail
+    list.mockResolvedValue({ items: [pendingItem], totalPages: 1, totalItems: 1 })
+    detail.mockResolvedValue(pendingDetail)
+    const app = document.createElement('div')
+    app.id = 'app'
+    document.body.appendChild(app)
+    const wrapper = mount(HoFAdminPage, { attachTo: app, global: { mocks: { $t: translate, $tm: optionMessages } } })
+    try {
+      await flushPromises()
+      const tab = kind === 'hundred' ? 2 : 3
+      await wrapper.findAll('.hof-admin-tabs button')[tab].trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-testid="hof-queue-open"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('.hof-review-pane').exists()).toBe(true)
+      await wrapper.findAll('.hof-admin-tabs button')[0].trigger('click')
+      await flushPromises()
+      breakpointState.expanded.value = false
+      await flushPromises()
+      expect(document.body.querySelector('.hof-review-pane')).toBeNull()
+      expect(app.inert).not.toBe(true)
+      await wrapper.findAll('.hof-admin-tabs button')[tab].trigger('click')
+      await flushPromises()
+      expect(list).toHaveBeenCalledTimes(1)
+      expect(document.body.querySelector('.hof-review-pane[role="dialog"]')).not.toBeNull()
+      expect(app.inert).toBe(true)
+      await wrapper.findAll('.hof-admin-tabs button')[0].trigger('click')
+      await flushPromises()
+      expect(document.body.querySelector('.hof-review-pane')).toBeNull()
+      expect(app.inert).toBe(false)
+    } finally {
+      wrapper.unmount()
+      app.remove()
+    }
+  })
+
   it('review detail is a labelled region with step controls that closes on Escape inside the pane', async () => {
     const wrapper = mountPage()
     await openReviewWithEvidence(wrapper)

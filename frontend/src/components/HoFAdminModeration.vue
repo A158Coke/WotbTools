@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 名人堂管理 · 百场 / 三环审核分区（kind 选领域）。每个实例各自持有列表、筛选、选择集与审核详情状态；
 // 工作区 = 队列（左）+ HoFReviewPane（证据 / 申报确认对照 / 校验清单 / 决定栏）；小屏单条全屏详情。
-import { computed, nextTick, onActivated, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -357,7 +357,14 @@ const openById = (id: number) => {
 }
 const toggleById = (id: number, on: boolean) => selection.toggle(rows.value.find(row => row.id === id), on)
 
-onActivated(() => { if (!rows.value.length) load() })
+// KeepAlive caches the queue; inactive partitions must release modal effects.
+const active = ref(true)
+onActivated(() => { active.value = true; if (!rows.value.length) load() })
+onDeactivated(() => {
+  active.value = false
+  bulkOpen.value = false
+  zoomSrc.value = ''
+})
 defineExpose({ reload: load })
 </script>
 
@@ -393,7 +400,7 @@ defineExpose({ reload: load })
     <div v-else class="hof-review-layout">
       <HoFReviewQueue :items="queue" :current-id="target?.id ?? null" :all-selected="selection.allSelected()" :label="$t('hofAdmin.reviewQueue')" :busy="busy"
         @open="openById" @toggle="toggleById" @toggle-all="selection.toggleAll($event)" />
-      <HoFReviewPane v-if="target" v-bind="pane" v-model:reject-reason="rejectReason" v-model:reject-text="rejectText" v-model:delete-reason="deleteReason" v-model:delete-text="deleteText"
+      <HoFReviewPane v-if="active && target" v-bind="pane" v-model:reject-reason="rejectReason" v-model:reject-text="rejectText" v-model:delete-reason="deleteReason" v-model:delete-text="deleteText"
         @close="closeReview" @prev="step(-1)" @next="step(1)" @ask-reject="setPhase('reject-form')" @ask-approve="setPhase('approve-confirm')" @ask-delete="setPhase('delete-form')" @cancel="setPhase('view')"
         @confirm-approve="decide('approve')" @confirm-reject="decide('reject')" @confirm-delete="decide('delete')" @download-screenshot="downloadScreenshot" @zoom="zoomSrc = screenshots[$event] || ''" @download-replay="downloadReplay" />
       <p v-else class="hof-review-empty">{{ $t('hofAdmin.reviewPick') }}</p>
@@ -413,7 +420,7 @@ defineExpose({ reload: load })
 
     <!-- 截图放大（lightbox） -->
     <AppDialog
-      :open="!!zoomSrc"
+      :open="active && !!zoomSrc"
       :title="zoomTitle"
       size="lg"
       scrim-class="screenshot-zoom"
