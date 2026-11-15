@@ -76,7 +76,10 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     // 固定 HUD 面板自身变尺寸（参数抽屉展开/模块加载）也要触发结果卡重排
     expect(viewer).toMatch(/new ResizeObserver\(\(\) => tc\.markTrajInfoDirty\(\)\)/)
     expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
-    // 宿主：展开/收起后按新高度重新避让；手机端按视口短边比例缩小字号/间距
+    // 宿主：装甲查看器默认展开逐层明细（2026-11-16 用户反馈：手机端不能只给极简一行）；
+    // 射击复现顶部停靠空间受限，保持默认收起；展开/收起后按新高度重新避让
+    expect(template).toMatch(/const resultExpanded = ref\(!isShotPage\.value\)/)
+    expect(template).toMatch(/watch\(isShotPage, shot => \{ resultExpanded\.value = !shot \}\)/)
     expect(template).toMatch(/watch\(resultExpanded, \(\) => nextTick\(\(\) => viewer\?\.repositionResultCard\?\.\(\)\)\)/)
     expect(kernel).toMatch(/shotResultCardMetrics\(compactCard, shotResultCardScale\(/)
     const metrics = read('../utils/shotResultCardMetrics.js')

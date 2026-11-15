@@ -295,9 +295,11 @@ onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
 // 强制横屏（design-language §9）：只在 Android 手机 App（原生锁定）与 iPhone Safari（竖屏提示旋转）生效；
 // 桌面、平板与 Android 浏览器沿用小屏布局。场景在提示下保持挂载，转到横屏即继续。
 const forcedLandscape = useForcedLandscape(computed(() => webgl.supported))
-// 击穿判定结果卡（跟随点击位置；小屏默认只显示最终判定一行，点开看逐层明细）。
-// 这是判定模式下唯一的结果窗口（2026-11-15 用户裁示：五行点选卡只在厚度模式保留）。
-const resultExpanded = ref(false)
+// 击穿判定结果卡（跟随点击位置）。判定模式唯一结果窗口（2026-11-15 用户裁示：五行点选卡
+// 只在厚度模式保留）；装甲查看器手机端默认展开逐层明细（2026-11-16 用户反馈：不能只给
+// 极简一行），小屏点卡片可收起为一行胶囊；射击复现页顶部停靠空间受限，保持默认收起。
+const resultExpanded = ref(!isShotPage.value)
+watch(isShotPage, shot => { resultExpanded.value = !shot })
 // 展开/收起改变卡片高度：DOM 更新后让场景按新尺寸重新定位（避让固定 HUD 面板）。
 watch(resultExpanded, () => nextTick(() => viewer?.repositionResultCard?.()))
 const onboarding = inject(ONBOARDING_KEY, null)
@@ -1119,7 +1121,7 @@ onBeforeUnmount(() => {
     /* 只给「无点击的停靠态」排位：判定结果卡有点击锚点时由脚本写 left/top；#click-info 同理。 */
     .armor-view #traj-info { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
 }
-/* 小屏（竖屏手机 / 手机横屏）：收起态只留最终判定一行作为胶囊，点开看逐层明细 */
+/* 小屏（竖屏手机 / 手机横屏）：默认展开逐层明细；点卡片收起为最终判定一行胶囊 */
 @media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .armor-view #traj-info { pointer-events: auto; cursor: pointer; }
     .armor-view #traj-info:not(.is-expanded) > div > :not([data-card-title="final"]) { display: none; }
@@ -1343,9 +1345,9 @@ onBeforeUnmount(() => {
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px + 14rem + 8px);
     }
     .armor-view #traj-info { max-block-size: 72px; }
-    /* 展开态明细卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进
-       右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
-       同公式，任何 Judge 视口都不与右下列相交。 */
+    /* 射击复现顶部停靠的展开态必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）
+       会伸进右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
+       同公式，任何 Judge 视口都不与右下列相交。装甲查看器跟随时由脚本避让面板。 */
     .armor-view #traj-info.is-expanded {
         max-block-size: 48px;
         max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
