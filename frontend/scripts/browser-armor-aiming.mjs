@@ -924,6 +924,113 @@ try {
       check(!/击穿概率[:：]?\s*100%/.test(partial.card.text),
         `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.text}）`)
     }
+
+    // —— 溢出结果卡仍可滚动（评审 P2）——
+    // 桌面/平板默认 pointer-events:none（结果卡跟随点击后可能盖住车体，场景点击必须穿透）；
+    // 一旦明细被 max-block-size 裁剪，必须恢复指针事件，滚轮/触控能滚到剩余行；内容回落后
+    // 再交还穿透。夹具只追加卡片行并通过真实 resize 走产品自己的 dirty 重排路径。
+    await page.evaluate(`(() => {
+      const card = document.getElementById('traj-info')?.querySelector('div');
+      if (!card) return false;
+      for (let i = 0; i < 80; i++) {
+        const row = document.createElement('div');
+        row.dataset.scrollFixture = '1';
+        row.textContent = 'fixture layer ' + i + ' — 200mm @ 45°';
+        row.style.cssText = 'font-size:12px;line-height:18px;';
+        card.append(row);
+      }
+      window.dispatchEvent(new Event('resize'));
+      return true;
+    })()`)
+    const overflow = await page.waitForValue(`(() => {
+      const el = document.getElementById('traj-info');
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return {
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        pointerEvents: getComputedStyle(el).pointerEvents,
+        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      };
+    })()`, (value) => !!value && value.scrollHeight > value.clientHeight + 1 && value.pointerEvents === 'auto',
+    { timeout: 5000, label: 'overflow result card accepts pointer events' })
+    check(overflow.scrollHeight > overflow.clientHeight + 1 && overflow.pointerEvents === 'auto',
+      `溢出结果卡没有恢复指针事件（${JSON.stringify(overflow)}）`)
+    await chromeCdp.client.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: Math.round(overflow.center.x), y: Math.round(overflow.center.y), deltaX: 0, deltaY: 160,
+    }, sessionId)
+    const scrolledTop = await page.waitForValue('document.getElementById("traj-info").scrollTop',
+      (value) => typeof value === 'number' && value > 0, { timeout: 3000, label: 'overflow result card wheel scroll' })
+      .catch(() => null)
+    check(typeof scrolledTop === 'number' && scrolledTop > 0,
+      `溢出结果卡无法用滚轮滚动（scrollTop=${JSON.stringify(scrolledTop)}）`)
+    await page.evaluate(`(() => {
+      document.querySelectorAll('#traj-info [data-scroll-fixture]').forEach((node) => node.remove());
+      window.dispatchEvent(new Event('resize'));
+    })()`)
+    const restored = await page.waitForValue(`(() => {
+      const el = document.getElementById('traj-info');
+      return el ? { overflowing: el.scrollHeight > el.clientHeight + 1, pointerEvents: getComputedStyle(el).pointerEvents } : null;
+    })()`, (value) => !!value && value.overflowing === false && value.pointerEvents === 'none',
+    { timeout: 5000, label: 'result card restores click-through' })
+    check(restored.overflowing === false && restored.pointerEvents === 'none',
+      `溢出消除后结果卡未恢复点击穿透（${JSON.stringify(restored)}）`)
+
+    // —— 固定 HUD 面板变大时结果卡必须重排（评审 P2）——
+    // 参数面板在 #corner-tl 内展开时画布尺寸不变；ResizeObserver 必须观察面板本身，
+    // 把结果卡从即将被覆盖的位置重新避让出去（强制夹具：先把卡片放进面板展开区）。
+    {
+      const toolsPoint = await page.evaluate(`(() => {
+        const r = document.querySelector('[data-testid="armor-tools"]').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`)
+      await mouseTap(toolsPoint)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value !== 'none', { timeout: 5000, label: 'tools panel expanded' })
+      await page.evaluate(`(() => {
+        const r = document.getElementById('tank-selectors').getBoundingClientRect();
+        window.__expandedToolsRect = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      })()`)
+      await page.evaluate(`document.querySelector('[data-testid="armor-tools-close"]').click()`)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value === 'none', { timeout: 5000, label: 'tools panel collapsed' })
+      await page.evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await page.evaluate(`(() => {
+        const card = document.getElementById('traj-info');
+        const stage = document.querySelector('[data-testid="armor-stage"]');
+        const stageRect = stage.getBoundingClientRect();
+        const left = window.__expandedToolsRect.left - stageRect.left + 24;
+        const top = window.__expandedToolsRect.top - stageRect.top + 24;
+        card.style.insetInlineStart = left + 'px';
+        card.style.insetBlockStart = top + 'px';
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+        card.style.transform = 'none';
+      })()`)
+      await mouseTap(toolsPoint)
+      const avoided = await page.waitForValue(`(() => {
+        const card = document.getElementById('traj-info');
+        const panel = document.getElementById('corner-tl');
+        const stage = document.querySelector('[data-testid="armor-stage"]');
+        const c = card.getBoundingClientRect(), p = panel.getBoundingClientRect(), s = stage.getBoundingClientRect();
+        const expanded = getComputedStyle(document.querySelector('#tank-selectors')).display !== 'none';
+        const overlap = c.right > p.left + 0.5 && c.left < p.right - 0.5 && c.bottom > p.top + 0.5 && c.top < p.bottom - 0.5;
+        const inside = c.left >= s.left - 1 && c.right <= s.right + 1 && c.top >= s.top - 1 && c.bottom <= s.bottom + 1;
+        return {
+          expanded,
+          overlap,
+          inside,
+          card: { left: Math.round(c.left), top: Math.round(c.top) },
+          panel: { left: Math.round(p.left), top: Math.round(p.top), right: Math.round(p.right), bottom: Math.round(p.bottom) },
+        };
+      })()`, (value) => !!value && value.expanded === true && value.overlap === false && value.inside === true,
+      { timeout: 5000, label: 'result card avoids expanded tools panel' })
+      check(avoided.expanded === true && avoided.overlap === false && avoided.inside === true,
+        `结果卡没有避开展开后的参数面板（${JSON.stringify(avoided)}）`)
+      await page.evaluate(`document.querySelector('[data-testid="armor-tools-close"]').click()`)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value === 'none', { timeout: 5000, label: 'tools panel collapsed after avoidance test' })
+    }
   }
 
   // 相机预设不能覆盖显式 URL 炮塔/炮管姿态。

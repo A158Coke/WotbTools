@@ -1109,7 +1109,9 @@ onBeforeUnmount(() => {
     .armor-view #click-info h3 { margin-block-end: 1px; font-size: clamp(10px, 2.4vw, 12px); }
 }
 /* 桌面/平板卡片已展开全部明细，点卡片没有可展开内容——不拦截场景点击
-   （卡片跟随点击后可能盖住车体，桌面点击必须继续判定）。小屏收起态才可点开。 */
+   （卡片跟随点击后可能盖住车体，桌面点击必须继续判定）。小屏收起态才可点开。
+   卡片内容被 max-block-size 裁剪时，scene/viewer/trajectoryCard.ts 会恢复内联
+   pointer-events:auto，保证明细仍可滚轮/触控滚动（评审 P2）。 */
 .armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; pointer-events: none; }
 .armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 /* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */

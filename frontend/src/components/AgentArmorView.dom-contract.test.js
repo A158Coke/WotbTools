@@ -73,6 +73,9 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(viewer).toMatch(/if \(clickInfo\) clickInfo\.style\.display = 'none';/)
     expect(viewer).toMatch(/tc\.markTrajInfoDirty\(\);/)
     expect(viewer).toMatch(/repositionResultCard: \(\) => \{ tc\.markTrajInfoDirty\(\); tc\.updateTrajInfoPos\(\); \}/)
+    // 固定 HUD 面板自身变尺寸（参数抽屉展开/模块加载）也要触发结果卡重排
+    expect(viewer).toMatch(/new ResizeObserver\(\(\) => tc\.markTrajInfoDirty\(\)\)/)
+    expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
     // 宿主：展开/收起后按新高度重新避让；手机端按视口短边比例缩小字号/间距
     expect(template).toMatch(/watch\(resultExpanded, \(\) => nextTick\(\(\) => viewer\?\.repositionResultCard\?\.\(\)\)\)/)
     expect(kernel).toMatch(/shotResultCardMetrics\(compactCard, shotResultCardScale\(/)
@@ -384,8 +387,13 @@ describe('traj-info click-follow layout', () => {
     expect(fn).toMatch(/div\.style\.insetBlockStart = `\$\{chosen\.top\}px`/)
     expect(fn).not.toMatch(/div\.style\.insetInlineStart = 'auto'/)
     expect(fn).toMatch(/div\.style\.transform = 'none'/)
-    // 无锚点：清掉内联定位，交还样式停靠
+    // 内容被高度上限裁剪时必须恢复指针事件（滚轮/触控可滚动），否则桌面滚轮穿透到场景
+    expect(fn).toMatch(/div\.style\.pointerEvents = div\.scrollHeight > div\.clientHeight \+ 1 \? 'auto' : ''/)
+    // 无锚点：清掉内联定位与逻辑宽度覆盖，交还样式停靠（紧凑横屏上限）
     expect(fn).toMatch(/div\.style\.insetInlineStart = ''/)
+    expect(fn).toMatch(/div\.style\.maxInlineSize = ''/)
+    // 逻辑宽度覆盖只在跟随点击时写（停靠态由 CSS 拥有）
+    expect(fn).toMatch(/div\.style\.maxInlineSize = `\$\{maxWidth\}px`/)
     // 容器宽度/坐标系按画布容器测量（侧栏/窄画布不能按视口算）
     expect(fn).toMatch(/getElementById\('canvas-container'\)/)
     expect(fn).toMatch(/getBoundingClientRect\(\)/)

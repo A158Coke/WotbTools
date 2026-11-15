@@ -1147,6 +1147,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 observer.observe(document.getElementById('canvas-container'));
                 cleanups.push(() => observer.disconnect());
             }
+            // 结果卡避让的固定 HUD 面板自身会变尺寸（参数抽屉展开、模块区加载/收起、射击 HUD
+            // 换行），而 #canvas-container 尺寸不变，上面的观察器收不到。直接观察面板并在尺寸
+            // 变化时标记结果卡重排，避免卡片压到展开后的面板（评审 P2，2026-11-15）。
+            if (typeof ResizeObserver === 'function') {
+                const hudObserver = new ResizeObserver(() => tc.markTrajInfoDirty());
+                for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+                    const el = document.querySelector(selector);
+                    if (el) hudObserver.observe(el);
+                }
+                cleanups.push(() => hudObserver.disconnect());
+            }
         }
 
         async function init() {

@@ -300,17 +300,18 @@ function updateTrajInfoPos(): void {
             // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px 且不超过画布宽 82%，
             // 跟随点击后不能铺满手机视口（2026-11-15 用户裁示）。
             const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
-            if (maxWidth) {
-                // 物理 + 逻辑两个方向都写：紧凑横屏的停靠规则用 max-inline-size 收窄，
-                // 跟随点击时必须由脚本宽度口径接管，避免被停靠几何压成窄条。
-                div.style.maxWidth = `${maxWidth}px`;
-                div.style.maxInlineSize = `${maxWidth}px`;
-            }
+            if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
             div.style.whiteSpace = 'normal';
             div.style.boxSizing = 'border-box';
             div.style.display = 'block';
+            // 桌面/平板默认 pointer-events:none（结果卡跟随点击后可能盖住车体，场景点击必须
+            // 继续判定）；但被 max-block-size 裁剪的明细必须仍可滚动——内容溢出时恢复指针
+            // 事件（滚轮/触控/滚动条），内容回落再交还穿透（评审 P2，2026-11-15）。
+            div.style.pointerEvents = div.scrollHeight > div.clientHeight + 1 ? 'auto' : '';
             if (!trajClickAnchor) {
-                // 停靠回退（射击复现 / 初始自动判定）：清掉脚本定位，交还 CSS 的顶部停靠规则。
+                // 停靠回退（射击复现 / 初始自动判定）：清掉脚本定位与逻辑宽度覆盖，交还 CSS
+                // 的顶部停靠规则（紧凑横屏的停靠宽度上限依赖 max-inline-size）。
+                div.style.maxInlineSize = '';
                 div.style.left = '';
                 div.style.top = '';
                 div.style.insetInlineStart = '';
@@ -318,6 +319,9 @@ function updateTrajInfoPos(): void {
                 div.style.transform = '';
                 return;
             }
+            // 只有跟随点击的卡片由脚本接管逻辑宽度；停靠态保留 CSS 的窄横屏上限
+            // （评审 P2：无锚点分支曾遗留内联 max-inline-size，压掉停靠规则并越过右下控件边界）。
+            if (maxWidth) div.style.maxInlineSize = `${maxWidth}px`;
             // 卡片是 absolute，left/top 相对 offsetParent；点击锚点存的是 #canvas-container
             // 坐标系（与 offsetParent 同尺寸同原点）。参考系不一致时显式换算，避免偏移误差。
             const anchor = (div.offsetParent as HTMLElement | null) ?? div.parentElement;
