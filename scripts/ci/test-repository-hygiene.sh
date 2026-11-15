@@ -187,7 +187,7 @@ PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized first-party source file'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-unlisted "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-unlisted "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Exactly at the budget passes: the limit is inclusive.
 git switch -q -C source-line-at-limit "$base"
@@ -199,7 +199,7 @@ PY
 git add frontend/src/at-limit.ts
 git commit -q -m 'add source file exactly at the line budget'
 head=$(git rev-parse HEAD)
-expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Tests, declaration files and generated transport are not production source
 # and stay out of scope even when they are large.
@@ -214,7 +214,7 @@ PY
 git add frontend/src
 git commit -q -m 'add large test, declaration and generated files'
 head=$(git rev-parse HEAD)
-expect_pass source-line-exempt env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-exempt env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # An exact allowlist entry admits an existing over-budget file.
 git switch -q -C source-line-allowlisted "$base"
@@ -223,11 +223,12 @@ python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/oversized.js\n")
+Path("scripts/ci/source-line-baseline.txt").write_text("1600 frontend/src/oversized.js\n")
 PY
-git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt
+git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt scripts/ci/source-line-baseline.txt
 git commit -q -m 'add allowlisted oversized source file'
 head=$(git rev-parse HEAD)
-expect_pass source-line-allowlisted env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-allowlisted env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # The allowlist is a one-way ratchet: a new entry added in the event range fails
 # even when every individual file is allowlisted in the head tree.
@@ -251,7 +252,7 @@ PY
 git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'grow the source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Once the gate exists, retiring the last exception (deleting the allowlist)
 # must not reset the ratchet: a later change that recreates the file with a new
@@ -278,7 +279,7 @@ PY
 git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'recreate the deleted source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A limit that Bash would parse as octal must abort the gate, not disable the
 # comparison. The 1501-line file proves the gate did not silently pass.
@@ -291,7 +292,7 @@ PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized file for an invalid-limit fixture'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-invalid-limit "MAX_SOURCE_LINES must be a non-negative decimal integer without leading zeros" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES=08 bash "$CHECK"
+expect_fail_msg source-line-invalid-limit "MAX_SOURCE_LINES must be a non-negative decimal integer without leading zeros" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES=08 bash "$CHECK"
 
 # --- Source-line gate increments (PR #889 on top of #883) ---
 # The normal split flow must pass even though early commits still hold the
@@ -318,7 +319,7 @@ git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/legacy.js
 git commit -q -m 'shrink the legacy file and retire its entry'
 head=$(git rev-parse HEAD)
-expect_pass source-line-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$split_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$split_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A branch forked before main split a legacy file, then merged the newer main:
 # its early commits still carry the over-budget blob, while BASE (new main) and
@@ -350,7 +351,7 @@ new_main=$(git rev-parse HEAD)
 git switch -q source-line-merged-newer-main-feature
 git merge -q --no-edit "$new_main"
 head=$(git rev-parse HEAD)
-expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # The fork-point rule must not admit a branch-only entry: a feature commit that
 # adds an oversized blob shielded by its own temporary entry still fails after
@@ -372,7 +373,7 @@ git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'shrink and drop the temporary entry'
 git merge -q --no-edit "$new_main"
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-fork-evasion "frontend/src/flash.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-fork-evasion "frontend/src/flash.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # An oversized blob committed together with a temporary allowlist entry that is
 # removed later must still fail: entries that exist neither at the base nor at
@@ -394,7 +395,7 @@ git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/flash.js
 git commit -q -m 'shrink the file and remove the temporary entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-history-evasion "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-history-evasion "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Deleting a legacy file without retiring its entry leaves a dead exception
 # that could shield a future re-created file at the same path.
@@ -411,7 +412,7 @@ deleted_base=$(git rev-parse HEAD)
 git rm -q frontend/src/legacy.js
 git commit -q -m 'delete the legacy file but keep its allowlist entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-entry-deleted "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$deleted_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-entry-deleted "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$deleted_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # The same dead-entry rule covers a file that was shrunk below the budget
 # without retiring its entry.
@@ -432,7 +433,7 @@ PY
 git add frontend/src/legacy.js
 git commit -q -m 'shrink the legacy file below the budget but keep its entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-entry-shrunk "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$shrunk_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-entry-shrunk "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$shrunk_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A duplicated allowlist entry silently inflates the entry count the ratchet
 # compares, so duplicates must abort the gate (exit 2), never pass.
@@ -448,7 +449,7 @@ PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'duplicate the same allowlist entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-duplicate "duplicate source-line allowlist entry" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-duplicate "duplicate source-line allowlist entry" env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # User-configurable numeric values that Bash would misread (octal, negative,
 # non-numeric) or that overflow intmax_t must abort the gate, never disable it.
@@ -463,8 +464,165 @@ git commit -q -m 'add oversized file for invalid numeric limit fixtures'
 head=$(git rev-parse HEAD)
 for bad_limit in 01609 1912345678901234567 -1 15o0; do
   expect_fail_msg "source-line-invalid-limit-forms-${bad_limit}" "MAX_SOURCE_LINES" \
-    env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" \
+    env REPOSITORY_HYGIENE_TEST_CHILD=1 SOURCE_LINE_TARGET=1500 BASE_SHA="$base" HEAD_SHA="$head" \
     LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES="$bad_limit" bash "$CHECK"
 done
+
+
+# --- Source-line baseline tier (500-line target below the 1500 ceiling) ---
+# These fixtures run with the default SOURCE_LINE_TARGET (500).
+run_check() {
+  env REPOSITORY_HYGIENE_TEST_CHILD=1 LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" "$@" bash "$CHECK"
+}
+
+# Writes N comment lines to a path (python keeps line counts exact).
+write_lines() {
+  python3 - "$1" "$2" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("// line\n" * int(sys.argv[2]))
+PY
+}
+
+# A new production file over 500 lines fails; exactly 500 passes.
+git switch -q -C baseline-new-501 "$base"
+write_lines frontend/src/fresh.js 501
+git add frontend/src/fresh.js
+git commit -q -m 'add a 501-line source file'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-new-501 "exceeds 500 lines and is not in the baseline" run_check BASE_SHA="$base" HEAD_SHA="$head"
+
+git switch -q -C baseline-new-500 "$base"
+write_lines frontend/src/fresh.js 500
+git add frontend/src/fresh.js
+git commit -q -m 'add a 500-line source file'
+head=$(git rev-parse HEAD)
+expect_pass baseline-new-500 run_check BASE_SHA="$base" HEAD_SHA="$head"
+
+# Stylesheets are in scope.
+git switch -q -C baseline-new-css "$base"
+write_lines frontend/src/styles/fresh.css 501
+git add frontend/src/styles/fresh.css
+git commit -q -m 'add a 501-line stylesheet'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-new-css "frontend/src/styles/fresh.css" run_check BASE_SHA="$base" HEAD_SHA="$head"
+
+# Seed: a pinned 650-line legacy file with a tight cap of 700.
+git switch -q -C baseline-seed "$base"
+write_lines frontend/src/legacy.js 650
+mkdir -p scripts/ci
+printf '700 frontend/src/legacy.js\n' > scripts/ci/source-line-baseline.txt
+git add frontend/src/legacy.js scripts/ci/source-line-baseline.txt
+git commit -q -m 'seed the source-line baseline'
+seed=$(git rev-parse HEAD)
+expect_pass baseline-seed run_check BASE_SHA="$base" HEAD_SHA="$seed"
+
+# Growing past the cap fails.
+git switch -q -C baseline-over-cap "$seed"
+write_lines frontend/src/legacy.js 701
+git add frontend/src/legacy.js
+git commit -q -m 'grow the legacy file past its cap'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-over-cap "exceeds its baseline cap" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Raising the cap along with the growth still fails against the base.
+git switch -q -C baseline-cap-rise "$seed"
+write_lines frontend/src/legacy.js 701
+printf '800 frontend/src/legacy.js\n' > scripts/ci/source-line-baseline.txt
+git add frontend/src/legacy.js scripts/ci/source-line-baseline.txt
+git commit -q -m 'grow the legacy file and raise its cap'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-cap-rise "cap must not rise" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Growth within the cap passes.
+git switch -q -C baseline-within-cap "$seed"
+write_lines frontend/src/legacy.js 700
+git add frontend/src/legacy.js
+git commit -q -m 'grow the legacy file within its cap'
+head=$(git rev-parse HEAD)
+expect_pass baseline-within-cap run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Admitting another file grows the list and fails, even with a tight cap.
+git switch -q -C baseline-growth "$seed"
+write_lines frontend/src/second.js 600
+printf '700 frontend/src/legacy.js\n600 frontend/src/second.js\n' > scripts/ci/source-line-baseline.txt
+git add frontend/src/second.js scripts/ci/source-line-baseline.txt
+git commit -q -m 'grow the source-line baseline'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-growth "source-line baseline must not grow" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Shrinking to 500 or below without retiring the entry fails; retiring passes.
+git switch -q -C baseline-shrunk-kept "$seed"
+write_lines frontend/src/legacy.js 500
+git add frontend/src/legacy.js
+git commit -q -m 'shrink the legacy file but keep its entry'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-shrunk-kept "no longer points at a tracked first-party source over 500 lines" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+git switch -q -C baseline-shrunk-retired "$seed"
+write_lines frontend/src/legacy.js 500
+git rm -q scripts/ci/source-line-baseline.txt
+git add frontend/src/legacy.js
+git commit -q -m 'shrink the legacy file and retire its entry'
+head=$(git rev-parse HEAD)
+expect_pass baseline-shrunk-retired run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Shrinking across a 100-line boundary requires tightening the cap.
+git switch -q -C baseline-stale-cap "$seed"
+write_lines frontend/src/legacy.js 550
+git add frontend/src/legacy.js
+git commit -q -m 'shrink the legacy file but keep a loose cap'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-stale-cap "Tighten the entry to: 600 frontend/src/legacy.js" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# A Git-detected rename may carry the entry to the new path.
+git switch -q -C baseline-rename "$seed"
+git mv frontend/src/legacy.js frontend/src/renamed.js
+printf '700 frontend/src/renamed.js\n' > scripts/ci/source-line-baseline.txt
+git add scripts/ci/source-line-baseline.txt
+git commit -q -m 'rename the legacy file and swap its entry'
+head=$(git rev-parse HEAD)
+expect_pass baseline-rename run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Swapping a retired entry for an unrelated new file is not a rename and fails.
+git switch -q -C baseline-swap-in "$seed"
+write_lines frontend/src/legacy.js 400
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/other.js").write_text("".join(f"const v{i} = {i};\n" for i in range(600)))
+PY
+printf '600 frontend/src/other.js\n' > scripts/ci/source-line-baseline.txt
+git add frontend/src/legacy.js frontend/src/other.js scripts/ci/source-line-baseline.txt
+git commit -q -m 'swap a retired entry for an unrelated file'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-swap-in "not a rename of a retired base entry" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Malformed baseline lines abort the gate instead of being skipped.
+git switch -q -C baseline-malformed "$seed"
+printf '0700 frontend/src/legacy.js\n' > scripts/ci/source-line-baseline.txt
+git add scripts/ci/source-line-baseline.txt
+git commit -q -m 'write a malformed baseline line'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-malformed "malformed source-line baseline line" run_check BASE_SHA="$seed" HEAD_SHA="$head"
+
+# Once the gate exists at the base, deleting the baseline does not reset the
+# ratchet: recreating it with an entry is growth from zero.
+git switch -q -C baseline-recreated "$base"
+mkdir -p scripts/ci
+cp "$CHECK" scripts/ci/check-repository-hygiene.sh
+git add scripts/ci/check-repository-hygiene.sh
+git commit -q -m 'introduce the baseline gate with no entries'
+gate_base=$(git rev-parse HEAD)
+write_lines frontend/src/fresh.js 600
+printf '600 frontend/src/fresh.js\n' > scripts/ci/source-line-baseline.txt
+git add frontend/src/fresh.js scripts/ci/source-line-baseline.txt
+git commit -q -m 'recreate the baseline with a new entry'
+head=$(git rev-parse HEAD)
+expect_fail_msg baseline-recreated "source-line baseline must not grow" run_check BASE_SHA="$gate_base" HEAD_SHA="$head"
+
+# An invalid target aborts the gate rather than disabling the tier.
+expect_fail_msg baseline-invalid-target "SOURCE_LINE_TARGET must be a non-negative decimal integer" run_check BASE_SHA="$seed" HEAD_SHA="$seed" SOURCE_LINE_TARGET=0500
 
 echo "repository hygiene regression tests: PASS"

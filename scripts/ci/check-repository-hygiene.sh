@@ -5,6 +5,12 @@ MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
 MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
 SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
+# Second tier below the absolute ceiling: new or growing files stay within
+# SOURCE_LINE_TARGET lines; existing larger files are pinned in the baseline
+# with a per-file cap rounded up to SOURCE_LINE_CAP_STEP.
+SOURCE_LINE_TARGET="${SOURCE_LINE_TARGET:-500}"
+SOURCE_LINE_BASELINE_FILE="${SOURCE_LINE_BASELINE_FILE:-scripts/ci/source-line-baseline.txt}"
+SOURCE_LINE_CAP_STEP=100
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
@@ -27,6 +33,7 @@ validate_decimal_limit() {
 
 validate_decimal_limit MAX_TRACKED_FILE_BYTES "$MAX_TRACKED_FILE_BYTES"
 validate_decimal_limit MAX_SOURCE_LINES "$MAX_SOURCE_LINES"
+validate_decimal_limit SOURCE_LINE_TARGET "$SOURCE_LINE_TARGET"
 
 is_allowlisted() {
   local candidate="$1"
@@ -53,9 +60,39 @@ is_source_line_candidate() {
     *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
   esac
   case "$path" in
-    *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
+    *.js|*.ts|*.vue|*.mjs|*.cjs|*.css) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+# Reads the source-line baseline ("<cap> <path>" per line, # comments) from
+# stdin into the named assoc array (path -> cap). Malformed or duplicate lines
+# abort the gate: a silently skipped line would read as a retired entry.
+load_source_line_baseline() {
+  local destination_name="$1"
+  local -n caps="$destination_name"
+  local line cap path
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if ! [[ "$line" =~ ^([1-9][0-9]{0,17})\ (frontend/src/.+)$ ]]; then
+      echo "ERROR: malformed source-line baseline line in $SOURCE_LINE_BASELINE_FILE (expected '<cap> <frontend/src/path>'): $line" >&2
+      exit 2
+    fi
+    cap="${BASH_REMATCH[1]}"
+    path="${BASH_REMATCH[2]}"
+    if [[ -n "${caps[$path]+x}" ]]; then
+      echo "ERROR: duplicate source-line baseline entry for $path in $SOURCE_LINE_BASELINE_FILE; keep exactly one line." >&2
+      exit 2
+    fi
+    caps["$path"]="$cap"
+  done
+}
+
+# The cap a baseline entry must carry: line count rounded up to the step.
+source_line_expected_cap() {
+  local lines="$1"
+  printf '%s\n' $(( (lines + SOURCE_LINE_CAP_STEP - 1) / SOURCE_LINE_CAP_STEP * SOURCE_LINE_CAP_STEP ))
 }
 
 is_source_line_allowlisted() {
@@ -415,6 +452,121 @@ else
 fi
 
 echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
+
+# Baseline tier (below the absolute ceiling). Every in-scope file over
+# SOURCE_LINE_TARGET must carry a baseline entry whose cap equals its line
+# count rounded up to SOURCE_LINE_CAP_STEP: the cap can never sit above the
+# file (over cap) or leave slack after a shrink (stale cap), so the entry is a
+# tight record of the file's size. Growth is caught against the base below.
+declare -A source_line_head_caps=()
+if [[ -f "$SOURCE_LINE_BASELINE_FILE" ]]; then
+  load_source_line_baseline source_line_head_caps < "$SOURCE_LINE_BASELINE_FILE"
+fi
+
+source_line_baseline_over=0
+for candidate_path in "${!source_line_head_lines[@]}"; do
+  candidate_lines="${source_line_head_lines[$candidate_path]}"
+  (( candidate_lines > SOURCE_LINE_TARGET )) || continue
+  source_line_baseline_over=$((source_line_baseline_over + 1))
+  if [[ -z "${source_line_head_caps[$candidate_path]+x}" ]]; then
+    echo "ERROR: first-party frontend source exceeds ${SOURCE_LINE_TARGET} lines and is not in the baseline: $(printable_path "$candidate_path") (${candidate_lines} lines)" >&2
+    echo "       New files must stay within ${SOURCE_LINE_TARGET} lines; split by responsibility. The baseline in $SOURCE_LINE_BASELINE_FILE only shrinks." >&2
+    violations=$((violations + 1))
+  fi
+done
+
+for baseline_path in "${!source_line_head_caps[@]}"; do
+  baseline_cap="${source_line_head_caps[$baseline_path]}"
+  if [[ -z "${source_line_head_lines[$baseline_path]+x}" ]] \
+    || (( source_line_head_lines[$baseline_path] <= SOURCE_LINE_TARGET )); then
+    echo "ERROR: source-line baseline entry no longer points at a tracked first-party source over ${SOURCE_LINE_TARGET} lines (deleted, renamed, shrunk, or out of scope); remove it from $SOURCE_LINE_BASELINE_FILE: $(printable_path "$baseline_path")" >&2
+    violations=$((violations + 1))
+    continue
+  fi
+  baseline_lines="${source_line_head_lines[$baseline_path]}"
+  expected_cap=$(source_line_expected_cap "$baseline_lines")
+  if (( baseline_lines > baseline_cap )); then
+    echo "ERROR: first-party frontend source exceeds its baseline cap: $(printable_path "$baseline_path") (${baseline_lines} lines > cap ${baseline_cap})" >&2
+    echo "       Baseline files may only shrink; split the growth out instead of raising the cap." >&2
+    violations=$((violations + 1))
+  elif (( baseline_cap != expected_cap )); then
+    echo "ERROR: stale source-line baseline cap for $(printable_path "$baseline_path"): ${baseline_lines} lines need cap ${expected_cap}, found ${baseline_cap}." >&2
+    echo "       Tighten the entry to: ${expected_cap} ${baseline_path}" >&2
+    violations=$((violations + 1))
+  fi
+done
+echo "Source-line baseline checked $source_line_baseline_over file(s) over ${SOURCE_LINE_TARGET} lines against ${#source_line_head_caps[@]} entry(ies)."
+
+# Baseline ratchet against the base: the entry count may not grow, an entry's
+# cap may not rise, and a path absent at the base is admitted only as the Git
+# rename target of a base entry retired in the same change (cap not above the
+# source's). Introduction rules mirror the allowlist growth guard above.
+source_line_baseline_gate_present_at_base() {
+  [[ -n "$BASE_SHA" ]] || return 1
+  local base_script
+  base_script=$(git show "${BASE_SHA}:${SOURCE_LINE_GATE_SCRIPT}" 2>/dev/null) || return 1
+  [[ "$base_script" == *"load_source_line_baseline()"* ]]
+}
+
+if [[ -n "$BASE_SHA" ]]; then
+  declare -A source_line_base_caps=()
+  baseline_ratchet_checked=0
+  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_BASELINE_FILE}" 2>/dev/null; then
+    git show "${BASE_SHA}:${SOURCE_LINE_BASELINE_FILE}" > "$ignore_work/base-source-line-baseline" || {
+      echo "ERROR: unable to read ${SOURCE_LINE_BASELINE_FILE} at ${BASE_SHA}." >&2
+      exit 2
+    }
+    load_source_line_baseline source_line_base_caps < "$ignore_work/base-source-line-baseline"
+    baseline_ratchet_checked=1
+  elif source_line_baseline_gate_present_at_base; then
+    baseline_ratchet_checked=1
+  fi
+
+  if (( baseline_ratchet_checked )); then
+    if (( ${#source_line_head_caps[@]} > ${#source_line_base_caps[@]} )); then
+      echo "ERROR: source-line baseline must not grow (base=${#source_line_base_caps[@]}, head=${#source_line_head_caps[@]} entries)." >&2
+      echo "       Keep new files within ${SOURCE_LINE_TARGET} lines; a rename may swap one entry for another." >&2
+      violations=$((violations + 1))
+    fi
+
+    declare -A source_line_renamed_from=()
+    while IFS= read -r -d '' rename_status; do
+      IFS= read -r -d '' rename_old || break
+      IFS= read -r -d '' rename_new || break
+      [[ "$rename_status" == R* ]] && source_line_renamed_from["$rename_new"]="$rename_old"
+    done < <(git diff -z -M --name-status --diff-filter=R "$BASE_SHA" "$HEAD_SHA")
+
+    declare -A source_line_rename_consumed=()
+    for baseline_path in "${!source_line_head_caps[@]}"; do
+      head_cap="${source_line_head_caps[$baseline_path]}"
+      if [[ -n "${source_line_base_caps[$baseline_path]+x}" ]]; then
+        base_cap="${source_line_base_caps[$baseline_path]}"
+        if (( head_cap > base_cap )); then
+          echo "ERROR: source-line baseline cap must not rise for $(printable_path "$baseline_path") (base cap ${base_cap}, head cap ${head_cap})." >&2
+          violations=$((violations + 1))
+        fi
+        continue
+      fi
+      rename_source="${source_line_renamed_from[$baseline_path]:-}"
+      if [[ -n "$rename_source" \
+        && -n "${source_line_base_caps[$rename_source]+x}" \
+        && -z "${source_line_head_caps[$rename_source]+x}" \
+        && -z "${source_line_rename_consumed[$rename_source]+x}" ]] \
+        && (( head_cap <= source_line_base_caps[$rename_source] )); then
+        source_line_rename_consumed["$rename_source"]=1
+        continue
+      fi
+      echo "ERROR: new source-line baseline entry is not a rename of a retired base entry: $(printable_path "$baseline_path") (cap ${head_cap})" >&2
+      echo "       Only a Git-detected rename may carry an existing entry to a new path, at a cap no higher than its source." >&2
+      violations=$((violations + 1))
+    done
+    echo "Source-line baseline ratchet checked ${#source_line_base_caps[@]} -> ${#source_line_head_caps[@]} entries."
+  else
+    echo "Source-line baseline ratchet skipped: gate is introduced by this change (no base gate in ${BASE_SHA})."
+  fi
+else
+  echo "Source-line baseline ratchet skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
+fi
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
