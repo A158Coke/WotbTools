@@ -13,7 +13,7 @@
 
 复现方式：干净 checkout → `node scripts/testing/classify-source-text-tests.mjs` → `node scripts/testing/source-text-probes.mjs --inventory ... --out ...`。探针在独立检出上运行（会临时改写生产源文件），不要在未提交工作区运行。
 
-快照口径：本报告的数字以 PR #957 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **442 个测试文件 / 69 个读取生产源码 / 193 个文本断言用例**（parseAnomalies=0；含 `.toContain` 断言形式）；矩阵在同一棵树上用 seed=827 重新生成。历史 181 例是 Wave 0/Pilot 前口径（另存为 `scripts/testing/source-text-inventory-wave0.json`，只用于历史台账对齐），不与当前 193 例直接比较。
+快照口径：本报告的数字以 PR #957 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **442 个测试文件 / 69 个读取生产源码 / 203 个文本断言用例**（parseAnomalies=0；含 `.toContain` 与包装器 `stripComments(readSrc(...))` 的读取变量）；矩阵在同一棵树上用 seed=827 重新生成。历史基线用修正后的分类器在历史提交 67fdb2be 的树上重建为 `scripts/testing/source-text-inventory-wave0.json`（269 个文本用例），只用于历史台账对齐，不与当前 203 例直接比较。
 
 ## 规模与裁剪说明
 
@@ -22,9 +22,9 @@
 
 ## Inventory 结果（PR #957 head，2026-11-16）
 
-- 扫描 442 个测试文件；69 个读取生产源码；其中 **193 个用例**的断言引用源码文本（parseAnomalies=0）。
-- 集中地：`scene/sceneryMaterials.test.js`（42）、`components/AgentArmorView.dom-contract.test.js`（29）、`scene/playbackScene.occlusion.test.js`（15）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（7）、`app/navigationPressedFeedback.test.js` / `scene/pickDebug.test.js` / `styles/light-theme-source-regression.test.js`（各 5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
-- 旧审计 251 例与 Wave 0 的 181 例差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**181 不与 251 直接可比**；当前 193 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
+- 扫描 442 个测试文件；69 个读取生产源码；其中 **203 个用例**的断言引用源码文本（parseAnomalies=0）。
+- 集中地：`scene/sceneryMaterials.test.js`（52）、`components/AgentArmorView.dom-contract.test.js`（29）、`scene/playbackScene.occlusion.test.js`（15）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（7）、`app/navigationPressedFeedback.test.js` / `scene/pickDebug.test.js` / `styles/light-theme-source-regression.test.js`（各 5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
+- 旧审计 251 例与历史基线 269 例的差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**旧 181 不与 251 直接可比**；当前 203 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
 
 ## 探针 Baseline（PR #957 head，seed=827，2026-11-16 重生成）
 
@@ -48,8 +48,8 @@
 
 - **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / 对外导出名 / import 关键字 / 字符串不动。shorthand（`{ name }`）与无别名 `export { name }` 的 checker symbol 不是变量绑定，必须在 symbol 相等判断**之前**用 `getShorthandAssignmentValueSymbol` / `getExportSpecifierLocalTargetSymbol` 解析，命中即保守跳过整条绑定；`export { local as publicName }` 只改 local、保留对外名。内置 `from` 负面控制（整词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败）+ shorthand / 无别名 export / 有别名 export 三个独立反例，见矩阵 `selfCheck.negativeControl` 与 `selfCheck.bindingSafety`。
 - **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 scene invalid=14、inconclusive=0。
-- **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；新增 `.toContain` / `.toContainEqual` 断言形式（`light-theme-source-regression` 2→5 例，并恢复 `app-shell.css` / `admin-list.css` / `ProfilePage.vue` / `MarkdownContent.vue` 等读取方进入探针）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
-- **台账统计**：对齐基线固定为 `source-text-inventory-wave0.json`（Wave 0 快照，181 例）；当前 inventory 只服务探针，不参与历史行号对齐。区间行按实际映射 case 数计、单行按 1 计、同一 case 同类处置去重；**未映射单行单独计数且不混入 R/K/D**，同一 case 跨处置列入独立冲突清单。当前 R=99 / K=69 / D=17（处置覆盖），唯一 case=165，跨处置冲突=20，未映射单行=31；详见重新生成的 `2026-11-11-ledger-stats.md`。
+- **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；新增 `.toContain` / `.toContainEqual`，并识别 `stripComments(readSrc(...))` 这类包装器读取变量（`lblSrc` / `vehSrc` 等）。inventory 159→181（旧基线）→203（当前树）；`light-theme-source-regression` 2→5，`groundPass.test` 历史树上 5→13。未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
+- **台账统计**：对齐基线改为用**修正后的分类器**在历史提交 67fdb2be 的树上重建的快照 `source-text-inventory-wave0.json`（269 个文本用例，保留历史行号）；映射使用完整 baseline cases（含改写后的行为测试），floor 距离超出容差即未映射，不再先过滤 `textAssertion` 再向前借 case。review 指定三例已加断言：`1128→sceneryMaterials:1127`、`1306→sceneryMaterials:1305`、`1375→sceneryMaterials:1373`。当前台账：R=136 / K=160 / D=79（处置覆盖），唯一 case=373，跨处置冲突=2，未映射单行=0，映射到行为 case 159 行（单列人工确认），scope 缺口 17 / 269。详见重新生成的 `2026-11-11-ledger-stats.md`。
 - **Wave 2 被删守卫接替**：新增真实 extras 解析链路（`resolveSceneryExtras` → `makeTexResolvers` → 装配，含漏登记负向对照）、GLB 根四元数三轴断言、prewarm 等待未完成 GLB Promise、roster reset 后旧行不被 stale 投影写入。
 
 ## Wave 1 Pilot 结果（seek 游标语义）

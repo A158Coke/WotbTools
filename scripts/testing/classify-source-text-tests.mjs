@@ -75,8 +75,10 @@ function findSourceReaders(text) {
     readers.push({ varName: name, sourcePath: target || '(dynamic)', kind: target ? 'direct' : 'dynamic-inline' });
   }
   if (helperNames.length) {
+    // 允许一层或多层包装器（如 `const lblSrc = stripComments(readSrc(...))`），
+    // 否则这些源码变量不会被登记，引用它们的文本用例会被误判为非文本测试。
     const callRe = new RegExp(
-      `(?:const|let|var)\\s+(\\w[\\w$]*)\\s*=\\s*(?:${helperNames.map((h) => `${h}\\b`).join('|')})\\s*\\(([^;\\n]*)\\)`,
+      `(?:const|let|var)\\s+(\\w[\\w$]*)\\s*=\\s*(?:\\w+\\s*\\(\\s*)*(?:${helperNames.map((h) => `${h}\\b`).join('|')})\\s*\\(([^;\\n]*)\\)`,
       'g',
     );
     for (const m of text.matchAll(callRe)) {

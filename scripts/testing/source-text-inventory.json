@@ -3,7 +3,7 @@
   "scannedTestFiles": 442,
   "sourceReadingTestFiles": 69,
   "totalCases": 1169,
-  "totalTextAssertionCases": 193,
+  "totalTextAssertionCases": 203,
   "parseAnomalies": [],
   "files": [
     {
@@ -9833,6 +9833,38 @@
           "varName": "gpSrc"
         },
         {
+          "sourcePath": "playback/mapWorld.ts",
+          "varName": "mapWorldSrc"
+        },
+        {
+          "sourcePath": "playback/vehicleRuntime.ts",
+          "varName": "vehSrc"
+        },
+        {
+          "sourcePath": "playback/battleRuntime.ts",
+          "varName": "battleSrc"
+        },
+        {
+          "sourcePath": "playback/labelsRuntime.ts",
+          "varName": "lblSrc"
+        },
+        {
+          "sourcePath": "playback/perfProbe.ts",
+          "varName": "perfSrc"
+        },
+        {
+          "sourcePath": "materialDispose.ts",
+          "varName": "matDisposeSrc"
+        },
+        {
+          "sourcePath": "playback/treadRuntime.ts",
+          "varName": "treadSrc"
+        },
+        {
+          "sourcePath": "playback/sessionLifecycle.ts",
+          "varName": "lifecycleSrc"
+        },
+        {
           "sourcePath": "bake-ground-overhead.mjs",
           "varName": "bakeSrcBlend"
         },
@@ -9878,7 +9910,7 @@
         }
       ],
       "caseCount": 54,
-      "textAssertionCases": 42,
+      "textAssertionCases": 52,
       "parseAnomalies": [],
       "cases": [
         {
@@ -9904,7 +9936,8 @@
           "startLine": 76,
           "textAssertion": true,
           "usesVars": [
-            "src"
+            "src",
+            "matDisposeSrc"
           ],
           "patterns": [
             "toMatch",
@@ -9919,7 +9952,8 @@
           "startLine": 86,
           "textAssertion": true,
           "usesVars": [
-            "src"
+            "src",
+            "mapWorldSrc"
           ],
           "patterns": [
             "toMatch",
@@ -10071,7 +10105,8 @@
           "startLine": 278,
           "textAssertion": true,
           "usesVars": [
-            "matSrc"
+            "matSrc",
+            "vehSrc"
           ],
           "patterns": [
             "toMatch",
@@ -10117,7 +10152,8 @@
           "startLine": 331,
           "textAssertion": true,
           "usesVars": [
-            "matSrc"
+            "matSrc",
+            "mapWorldSrc"
           ],
           "patterns": [
             "toMatch"
@@ -10141,9 +10177,15 @@
           "id": "sceneryMaterials:364",
           "name": "地形客户端同构：K 余量（负面守卫 + 唯一高度场）——构建/LOD 行为已由 terrainMesh.test.js 与 mapWorld.lifecycle.test.ts 接替",
           "startLine": 364,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "mapWorldSrc"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
@@ -10211,6 +10253,7 @@
           "usesVars": [
             "asmSrc",
             "gpSrc",
+            "mapWorldSrc",
             "wSrc"
           ],
           "patterns": [
@@ -10238,6 +10281,7 @@
           "startLine": 531,
           "textAssertion": true,
           "usesVars": [
+            "mapWorldSrc",
             "meshSrc",
             "gdSrc"
           ],
@@ -10378,9 +10422,13 @@
           "id": "sceneryMaterials:726",
           "name": "底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体",
           "startLine": 726,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10400,9 +10448,13 @@
           "id": "sceneryMaterials:750",
           "name": "只动底盘节点（chassis_wheel_* / chassis_track_*）：轮数/链数不符即 fail-closed",
           "startLine": 750,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10480,9 +10532,13 @@
           "id": "sceneryMaterials:809",
           "name": "装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）",
           "startLine": 809,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "lblSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10504,9 +10560,14 @@
           "id": "sceneryMaterials:824",
           "name": "资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）",
           "startLine": 824,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "mapWorldSrc",
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10515,6 +10576,7 @@
           "startLine": 830,
           "textAssertion": true,
           "usesVars": [
+            "vehSrc",
             "bake"
           ],
           "patterns": [
@@ -10543,18 +10605,26 @@
           "id": "sceneryMaterials:865",
           "name": "侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）",
           "startLine": 865,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "sceneryMaterials:873",
           "name": "位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退",
           "startLine": 873,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10570,9 +10640,13 @@
           "id": "sceneryMaterials:899",
           "name": "标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色",
           "startLine": 899,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "vehSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -10601,18 +10675,30 @@
           "id": "sceneryMaterials:959",
           "name": "maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)",
           "startLine": 959,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "mapWorldSrc"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
           "id": "sceneryMaterials:970",
           "name": "换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒",
           "startLine": 970,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "mapWorldSrc"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         }
       ]
