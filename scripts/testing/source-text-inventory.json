@@ -1,9 +1,9 @@
 {
   "generatedAt": "2026-11-16",
-  "scannedTestFiles": 433,
-  "sourceReadingTestFiles": 67,
-  "totalCases": 1118,
-  "totalTextAssertionCases": 153,
+  "scannedTestFiles": 438,
+  "sourceReadingTestFiles": 69,
+  "totalCases": 1167,
+  "totalTextAssertionCases": 159,
   "parseAnomalies": [],
   "files": [
     {
@@ -906,8 +906,12 @@
           "varName": "template"
         },
         {
-          "sourcePath": "./ArmorShotHud.vue",
-          "varName": "shotHud"
+          "sourcePath": "../scene/tankViewer.js",
+          "varName": "viewer"
+        },
+        {
+          "sourcePath": "../utils/shotResultCardMetrics.js",
+          "varName": "metrics"
         },
         {
           "sourcePath": "./AgentArmorView.vue",
@@ -963,7 +967,7 @@
         }
       ],
       "caseCount": 64,
-      "textAssertionCases": 23,
+      "textAssertionCases": 26,
       "parseAnomalies": [],
       "cases": [
         {
@@ -980,20 +984,19 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:37",
-          "name": "点选结果只显示装甲名称与基础装甲值，停靠在场景顶部正中；右上角合并为一块整体面板",
-          "startLine": 37,
+          "id": "AgentArmorView.dom-contract:38",
+          "name": "判定模式单结果窗口：逐层卡跟随点击并缩放，五行卡只在厚度模式",
+          "startLine": 38,
           "textAssertion": true,
           "usesVars": [
             "template",
-            "shotHud",
+            "viewer",
+            "metrics",
             "view",
             "view",
             "view",
-            "card",
             "pen",
             "view",
-            "hud",
             "template",
             "template"
           ],
@@ -1005,9 +1008,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:79",
+          "id": "AgentArmorView.dom-contract:103",
           "name": "模块替换材质沿用客户端材质的双面口径",
-          "startLine": 79,
+          "startLine": 103,
           "textAssertion": true,
           "usesVars": [
             "plateModel"
@@ -1018,36 +1021,36 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:96",
+          "id": "AgentArmorView.dom-contract:120",
           "name": "guards every bootstrap continuation before the next asset or DOM step",
-          "startLine": 96,
+          "startLine": 120,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:119",
+          "id": "AgentArmorView.dom-contract:143",
           "name": "guards shot handoff, shooter models and delayed callbacks after scene disposal",
-          "startLine": 119,
+          "startLine": 143,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:134",
+          "id": "AgentArmorView.dom-contract:158",
           "name": "animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态还原原生 50°",
-          "startLine": 134,
+          "startLine": 158,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:139",
+          "id": "AgentArmorView.dom-contract:163",
           "name": "单车装甲检视与 shot replay 共用 Armor Inspector 实测标定",
-          "startLine": 139,
+          "startLine": 163,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -1061,9 +1064,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:158",
+          "id": "AgentArmorView.dom-contract:182",
           "name": "场景风格跟随网页 UI：透明画布、无地面网格、半球光主题表面色",
-          "startLine": 158,
+          "startLine": 182,
           "textAssertion": false,
           "usesVars": [
             "view",
@@ -1075,26 +1078,8 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:166",
-          "name": "worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）",
-          "startLine": 166,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:176",
-          "name": "mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）",
-          "startLine": 176,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
           "id": "AgentArmorView.dom-contract:190",
-          "name": "dollyZoomFov 纯函数与视锥锚点回归",
+          "name": "worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）",
           "startLine": 190,
           "textAssertion": false,
           "usesVars": [],
@@ -1102,9 +1087,27 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:238",
+          "id": "AgentArmorView.dom-contract:200",
+          "name": "mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）",
+          "startLine": 200,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:214",
+          "name": "dollyZoomFov 纯函数与视锥锚点回归",
+          "startLine": 214,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:262",
           "name": "WebGL context lost 显示带 GPU 信息的错误态，retry 重建 renderer",
-          "startLine": 238,
+          "startLine": 262,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1119,32 +1122,37 @@
             "indexOf",
             "slice"
           ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:352",
-          "name": "结果卡不再按命中点投影摆位：停靠位置由样式所有（真实几何由 browser-armor-aiming 断言）",
-          "startLine": 352,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:369",
-          "name": "结果卡距离行插值 L.shotDistance / L.distanceUnit",
-          "startLine": 369,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:377",
-          "name": "labels 装配与三语键在位（en/ru 结果卡不再出中文）",
+          "name": "跟随点击位置（容器坐标 + 面板避让），无锚点回退 CSS 停靠",
           "startLine": 377,
           "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:409",
+          "name": "结果卡距离行插值 L.shotDistance / L.distanceUnit",
+          "startLine": 409,
+          "textAssertion": true,
           "usesVars": [
+            "viewer"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:417",
+          "name": "labels 装配与三语键在位（en/ru 结果卡不再出中文）",
+          "startLine": 417,
+          "textAssertion": false,
+          "usesVars": [
+            "viewer",
             "view",
             "view",
             "view",
@@ -1155,9 +1163,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:406",
+          "id": "AgentArmorView.dom-contract:446",
           "name": "逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加",
-          "startLine": 406,
+          "startLine": 446,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1172,9 +1180,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:465",
+          "id": "AgentArmorView.dom-contract:505",
           "name": "热力图用 flat vNormal 面法线 + highp 视线方向（移动端 mediump 回归）",
-          "startLine": 465,
+          "startLine": 505,
           "textAssertion": true,
           "usesVars": [
             "plateModel"
@@ -1185,27 +1193,27 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:482",
+          "id": "AgentArmorView.dom-contract:522",
           "name": "管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）",
-          "startLine": 482,
+          "startLine": 522,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:492",
+          "id": "AgentArmorView.dom-contract:532",
           "name": "累计格式：半浮点 RT 保留 >1 累计 + 能力检测 + 8 位回退饱和守卫（review 2026-10-13 P2）",
-          "startLine": 492,
+          "startLine": 532,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:508",
+          "id": "AgentArmorView.dom-contract:548",
           "name": "累计格式：逐层 normalized R 可 >1；8 位饱和按整穿深保守处理",
-          "startLine": 508,
+          "startLine": 548,
           "textAssertion": false,
           "usesVars": [
             "pen"
@@ -1214,9 +1222,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:528",
+          "id": "AgentArmorView.dom-contract:568",
           "name": "rcContinue 双实现：每个非外部层独立转正（BlitzKit）",
-          "startLine": 528,
+          "startLine": 568,
           "textAssertion": true,
           "usesVars": [
             "packSrc",
@@ -1228,9 +1236,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:534",
+          "id": "AgentArmorView.dom-contract:574",
           "name": "点击链：每个非外部层独立转正（BlitzKit）",
-          "startLine": 534,
+          "startLine": 574,
           "textAssertion": true,
           "usesVars": [
             "pen"
@@ -1241,38 +1249,43 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:543",
+          "id": "AgentArmorView.dom-contract:583",
           "name": "主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）",
-          "startLine": 543,
+          "startLine": 583,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:549",
+          "id": "AgentArmorView.dom-contract:589",
           "name": "AP/APCR/HEAT 使用概率链统一判定；HE/跳弹保留确定性分支",
-          "startLine": 549,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:569",
-          "name": "HE 零/缺失 explosion_radius 不进入 generic probability card",
-          "startLine": 569,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:576",
-          "name": "HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底",
-          "startLine": 576,
+          "startLine": 589,
           "textAssertion": true,
           "usesVars": [
+            "viewer"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:609",
+          "name": "HE 零/缺失 explosion_radius 不进入 generic probability card",
+          "startLine": 609,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:616",
+          "name": "HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底",
+          "startLine": 616,
+          "textAssertion": true,
+          "usesVars": [
+            "viewer",
             "pen"
           ],
           "patterns": [
@@ -1281,9 +1294,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:593",
+          "id": "AgentArmorView.dom-contract:633",
           "name": "判定输入缺数据时 fail-closed：无 120mm 静默默认、未知弹种不落到 HE",
-          "startLine": 593,
+          "startLine": 633,
           "textAssertion": true,
           "usesVars": [
             "plateModel"
@@ -1294,44 +1307,8 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:602",
-          "name": "爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF",
-          "startLine": 602,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:612",
-          "name": "单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间",
-          "startLine": 612,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:630",
-          "name": "PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane",
-          "startLine": 630,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:638",
-          "name": "无效 HE 概率行走 resolveCardChance fail-closed",
-          "startLine": 638,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
           "id": "AgentArmorView.dom-contract:642",
-          "name": "非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签",
+          "name": "爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF",
           "startLine": 642,
           "textAssertion": false,
           "usesVars": [],
@@ -1339,27 +1316,18 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:646",
-          "name": "跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0",
-          "startLine": 646,
+          "id": "AgentArmorView.dom-contract:652",
+          "name": "单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间",
+          "startLine": 652,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:651",
-          "name": "跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）",
-          "startLine": 651,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:667",
-          "name": "updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵",
-          "startLine": 667,
+          "id": "AgentArmorView.dom-contract:670",
+          "name": "PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane",
+          "startLine": 670,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -1367,7 +1335,7 @@
         },
         {
           "id": "AgentArmorView.dom-contract:678",
-          "name": "传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）",
+          "name": "无效 HE 概率行走 resolveCardChance fail-closed",
           "startLine": 678,
           "textAssertion": false,
           "usesVars": [],
@@ -1375,12 +1343,12 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:685",
-          "name": "卡片盒是固定 8:5 比例、无固定高度尺寸",
-          "startLine": 685,
+          "id": "AgentArmorView.dom-contract:682",
+          "name": "非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签",
+          "startLine": 682,
           "textAssertion": true,
           "usesVars": [
-            "menu"
+            "viewer"
           ],
           "patterns": [
             "toMatch"
@@ -1388,31 +1356,27 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:690",
-          "name": "共享菜单以同一比例常数应用内容框变换，并驱动迟到表补样式",
-          "startLine": 690,
-          "textAssertion": true,
-          "usesVars": [
-            "menu"
-          ],
-          "patterns": [
-            "toMatch"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:703",
-          "name": "求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复",
-          "startLine": 703,
+          "id": "AgentArmorView.dom-contract:686",
+          "name": "跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0",
+          "startLine": 686,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:709",
-          "name": "同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）",
-          "startLine": 709,
+          "id": "AgentArmorView.dom-contract:691",
+          "name": "跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）",
+          "startLine": 691,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:707",
+          "name": "updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵",
+          "startLine": 707,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -1420,7 +1384,7 @@
         },
         {
           "id": "AgentArmorView.dom-contract:718",
-          "name": "点击主链与跳弹续飞共用同一双面求交/收集",
+          "name": "传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）",
           "startLine": 718,
           "textAssertion": false,
           "usesVars": [],
@@ -1428,18 +1392,71 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:731",
+          "id": "AgentArmorView.dom-contract:725",
+          "name": "卡片盒是固定 8:5 比例、无固定高度尺寸",
+          "startLine": 725,
+          "textAssertion": true,
+          "usesVars": [
+            "menu"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:730",
+          "name": "共享菜单以同一比例常数应用内容框变换，并驱动迟到表补样式",
+          "startLine": 730,
+          "textAssertion": true,
+          "usesVars": [
+            "menu"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:743",
+          "name": "求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复",
+          "startLine": 743,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:749",
+          "name": "同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）",
+          "startLine": 749,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:758",
+          "name": "点击主链与跳弹续飞共用同一双面求交/收集",
+          "startLine": 758,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:771",
           "name": "换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照",
-          "startLine": 731,
+          "startLine": 771,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:736",
+          "id": "AgentArmorView.dom-contract:776",
           "name": "选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config",
-          "startLine": 736,
+          "startLine": 776,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -1454,9 +1471,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:746",
+          "id": "AgentArmorView.dom-contract:786",
           "name": "原生回退控件把选择写回 URL，避免 HUD 与场景各用一套状态",
-          "startLine": 746,
+          "startLine": 786,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -1470,115 +1487,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:762",
+          "id": "AgentArmorView.dom-contract:802",
           "name": "空 scfg 视同缺省，射击方配置不再回落受击方 config",
-          "startLine": 762,
-          "textAssertion": true,
-          "usesVars": [
-            "view",
-            "view",
-            "view",
-            "view"
-          ],
-          "patterns": [
-            "toMatch"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:765",
-          "name": "射击方配置独立：不回落受击方 config，双方同车型也不共享主炮配置",
-          "startLine": 765,
-          "textAssertion": true,
-          "usesVars": [
-            "view",
-            "view",
-            "view",
-            "view"
-          ],
-          "patterns": [
-            "toMatch"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:770",
-          "name": "HUD readiness 双向跟随弹表，切到无弹表配置交还原生控件",
-          "startLine": 770,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:775",
-          "name": "HUD 只加载 devices 轻目录，不拉整份配置器目录",
-          "startLine": 775,
-          "textAssertion": true,
-          "usesVars": [
-            "hud"
-          ],
-          "patterns": [
-            "toMatch"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:780",
-          "name": "普通检视换射手/换炮清掉上一发结果与 HE 可视化",
-          "startLine": 780,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:783",
-          "name": "射击复现换装备/换配置沿权威 launch/lvDir 重跑",
-          "startLine": 783,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:789",
-          "name": "目标配置切换清空旧结果并使在途判定失效",
-          "startLine": 789,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:792",
-          "name": "射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载",
-          "startLine": 792,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:797",
-          "name": "只重建场景时保留已挂载子组件的 readiness",
-          "startLine": 797,
-          "textAssertion": true,
-          "usesVars": [
-            "view",
-            "view",
-            "view",
-            "view"
-          ],
-          "patterns": [
-            "toMatch"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "AgentArmorView.dom-contract:801",
-          "name": "只换射手发动机/履带不凭空建立 scfg；换炮才写 scfg",
-          "startLine": 801,
+          "startLine": 802,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -1593,8 +1504,114 @@
         },
         {
           "id": "AgentArmorView.dom-contract:805",
-          "name": "HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断",
+          "name": "射击方配置独立：不回落受击方 config，双方同车型也不共享主炮配置",
           "startLine": 805,
+          "textAssertion": true,
+          "usesVars": [
+            "view",
+            "view",
+            "view",
+            "view"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:810",
+          "name": "HUD readiness 双向跟随弹表，切到无弹表配置交还原生控件",
+          "startLine": 810,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:815",
+          "name": "HUD 只加载 devices 轻目录，不拉整份配置器目录",
+          "startLine": 815,
+          "textAssertion": true,
+          "usesVars": [
+            "hud"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:820",
+          "name": "普通检视换射手/换炮清掉上一发结果与 HE 可视化",
+          "startLine": 820,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:823",
+          "name": "射击复现换装备/换配置沿权威 launch/lvDir 重跑",
+          "startLine": 823,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:829",
+          "name": "目标配置切换清空旧结果并使在途判定失效",
+          "startLine": 829,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:832",
+          "name": "射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载",
+          "startLine": 832,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:837",
+          "name": "只重建场景时保留已挂载子组件的 readiness",
+          "startLine": 837,
+          "textAssertion": true,
+          "usesVars": [
+            "view",
+            "view",
+            "view",
+            "view"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:841",
+          "name": "只换射手发动机/履带不凭空建立 scfg；换炮才写 scfg",
+          "startLine": 841,
+          "textAssertion": true,
+          "usesVars": [
+            "view",
+            "view",
+            "view",
+            "view"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "AgentArmorView.dom-contract:845",
+          "name": "HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断",
+          "startLine": 845,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -1609,9 +1626,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:826",
+          "id": "AgentArmorView.dom-contract:866",
           "name": "间隙甲材质/状态材质/深度占位的既有渲染状态",
-          "startLine": 826,
+          "startLine": 866,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1623,9 +1640,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:833",
+          "id": "AgentArmorView.dom-contract:873",
           "name": "间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）",
-          "startLine": 833,
+          "startLine": 873,
           "textAssertion": false,
           "usesVars": [
             "shaders"
@@ -1634,18 +1651,18 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:837",
+          "id": "AgentArmorView.dom-contract:877",
           "name": "厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide",
-          "startLine": 837,
+          "startLine": 877,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:846",
+          "id": "AgentArmorView.dom-contract:886",
           "name": "onPickerKeydown 在 #tank-picker 之外的 dialog 内直接放行",
-          "startLine": 846,
+          "startLine": 886,
           "textAssertion": true,
           "usesVars": [
             "template",
@@ -1659,36 +1676,36 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:862",
+          "id": "AgentArmorView.dom-contract:902",
           "name": "瞄准/判定上下文按当前目标过滤回放装备真值",
-          "startLine": 862,
+          "startLine": 902,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:866",
+          "id": "AgentArmorView.dom-contract:906",
           "name": "换目标后原生勾选回到手动且不保留上一辆车的勾选态",
-          "startLine": 866,
+          "startLine": 906,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:883",
+          "id": "AgentArmorView.dom-contract:923",
           "name": "eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice",
-          "startLine": 883,
+          "startLine": 923,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:891",
+          "id": "AgentArmorView.dom-contract:931",
           "name": "宿主经 initTankViewer 的 labels 传三语 pitchDevice",
-          "startLine": 891,
+          "startLine": 931,
           "textAssertion": false,
           "usesVars": [
             "template",
@@ -1699,9 +1716,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:896",
+          "id": "AgentArmorView.dom-contract:936",
           "name": "勾选框回放判定 tooltip 不得硬编码：走 L.replayEquipmentAutoTitle",
-          "startLine": 896,
+          "startLine": 936,
           "textAssertion": true,
           "usesVars": [
             "template",
@@ -3042,6 +3059,393 @@
           "patterns": [
             "indexOf",
             "slice"
+          ],
+          "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/components/HoFAdminPage.test.js",
+      "sources": [
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "source"
+        }
+      ],
+      "caseCount": 41,
+      "textAssertionCases": 1,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "HoFAdminPage:218",
+          "name": "admin deep mount in %s gates before login and all backend reads",
+          "startLine": 218,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:228",
+          "name": "HoF-admin sees admin content and loads records",
+          "startLine": 228,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:236",
+          "name": "renders the four admin tabs (records / audit / hundred / mark3) for authorized users",
+          "startLine": 236,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:247",
+          "name": "uses optional readable vehicle filters as real search conditions and intersects the selected tank",
+          "startLine": 247,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:298",
+          "name": "wotbtools-admin sees admin content",
+          "startLine": 298,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:306",
+          "name": "normal user sees denied state and no admin API call",
+          "startLine": 306,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:314",
+          "name": "anonymous triggers login before rendering admin content",
+          "startLine": 314,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:323",
+          "name": "delete requires confirmation then calls delete API",
+          "startLine": 323,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:345",
+          "name": "hundred tab renders submission list with status filter",
+          "startLine": 345,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:388",
+          "name": "hundred summary shows approved values instead of claimed values",
+          "startLine": 388,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:408",
+          "name": "PENDING row opens review modal with screenshot and validation items",
+          "startLine": 408,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:439",
+          "name": "approve flow confirms then calls approve API and refreshes list",
+          "startLine": 439,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:467",
+          "name": "通过请求在途时队列里的其它记录不可切换，结果不会落到别的记录上",
+          "startLine": 467,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:493",
+          "name": "reject select renders stable category values from $tm object",
+          "startLine": 493,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:518",
+          "name": "reject OTHER requires text and sends it with category value",
+          "startLine": 518,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:545",
+          "name": "delete current renders stable category values from $tm object",
+          "startLine": 545,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:572",
+          "name": "rejected submission keeps reason text but no longer requests or exposes evidence",
+          "startLine": 572,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:618",
+          "name": "review modal loads 5 replay evidence rows with filename/size and per-row download",
+          "startLine": 618,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:636",
+          "name": "legacy PENDING without replay evidence shows explicit warning and no JS error",
+          "startLine": 636,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:646",
+          "name": "evidence API failure shows error message",
+          "startLine": 646,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:662",
+          "name": "screenshot click opens zoom lightbox and close button dismisses it",
+          "startLine": 662,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:674",
+          "name": "download screenshot triggers browser download of the data URL",
+          "startLine": 674,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:688",
+          "name": "legacy PENDING with 0 evidence disables approve but keeps reject available",
+          "startLine": 688,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:702",
+          "name": "evidence API failure disables approve",
+          "startLine": 702,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:718",
+          "name": "4 evidence disables approve",
+          "startLine": 718,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:724",
+          "name": "manual PENDING without a screenshot stays blocked even with exactly 5 replays",
+          "startLine": 724,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:730",
+          "name": "exactly 5 evidence enables approve",
+          "startLine": 730,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:736",
+          "name": "loads the Mark 3 review tab with the same filters and no SUPERSEDED status",
+          "startLine": 736,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:755",
+          "name": "reviews two Mark 3 screenshots and five replays, then approves without a score payload",
+          "startLine": 755,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:785",
+          "name": "limits the Mark 3 reject detail field to the backend maximum",
+          "startLine": 785,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:835",
+          "name": "bulk deletes Hall of Fame records behind one DELETE confirmation and lists per-record failures",
+          "startLine": 835,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:872",
+          "name": "reuses the existing Hundred delete-reason rule for bulk deletion",
+          "startLine": 872,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:920",
+          "name": "bulk deletes Mark 3 submissions with the same moderation payload shape",
+          "startLine": 920,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:948",
+          "name": "renders the WotB server together with the account id in the Hundred and Mark 3 tables and details",
+          "startLine": 948,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:977",
+          "name": "releases inactive %s overlays across breakpoints and caches its list",
+          "startLine": 977,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1014",
+          "name": "review detail is a labelled region with step controls that closes on Escape inside the pane",
+          "startLine": 1014,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1028",
+          "name": "steps through the queue with previous and next and keeps the current item highlighted",
+          "startLine": 1028,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1045",
+          "name": "shows the claimed and confirmed columns side by side",
+          "startLine": 1045,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1053",
+          "name": "screenshot lightbox is its own dialog; Escape closes only the lightbox",
+          "startLine": 1053,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1064",
+          "name": "renders tabs as a tablist and icon-only row actions with accessible names (no emoji glyphs)",
+          "startLine": 1064,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "HoFAdminPage:1101",
+          "name": "applies the shared control styles to section-owned filters, page-size and bulk confirm controls",
+          "startLine": 1101,
+          "textAssertion": true,
+          "usesVars": [
+            "source"
+          ],
+          "patterns": [
+            "toMatch"
           ],
           "parseError": null
         }
@@ -5525,7 +5929,7 @@
           "varName": "demoBytes"
         }
       ],
-      "caseCount": 61,
+      "caseCount": 63,
       "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
@@ -5603,21 +6007,26 @@
         },
         {
           "id": "ReplayWorkspace:405",
-          "name": "requires confirmed replacement and does not overwrite a selection changed during download",
+          "name": "guide: confirming the replacement makes the official sample the current replay",
           "startLine": 405,
-          "textAssertion": true,
-          "usesVars": [
-            "demoBytes"
-          ],
-          "patterns": [
-            "slice"
-          ],
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
           "parseError": null
         },
         {
           "id": "ReplayWorkspace:425",
-          "name": "guide cancellation aborts the pending sample before selecting or analyzing it",
+          "name": "guide: declining the replacement rejects as declined and keeps the user replay",
           "startLine": 425,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "ReplayWorkspace:444",
+          "name": "requires confirmed replacement and does not overwrite a selection changed during download",
+          "startLine": 444,
           "textAssertion": true,
           "usesVars": [
             "demoBytes"
@@ -5628,216 +6037,202 @@
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:442",
+          "id": "ReplayWorkspace:464",
+          "name": "guide cancellation aborts the pending sample before selecting or analyzing it",
+          "startLine": 464,
+          "textAssertion": true,
+          "usesVars": [
+            "demoBytes"
+          ],
+          "patterns": [
+            "slice"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "ReplayWorkspace:481",
           "name": "Ready has no upload card; loading hides content without remounting and failures stay visible",
-          "startLine": 442,
+          "startLine": 481,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:471",
+          "id": "ReplayWorkspace:510",
           "name": "shows native read failures in the replay error surface and retries without starting analysis",
-          "startLine": 471,
+          "startLine": 510,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:506",
+          "id": "ReplayWorkspace:545",
           "name": "offline deep link keeps %s discoverable but never mounts its online pane",
-          "startLine": 506,
+          "startLine": 545,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:529",
+          "id": "ReplayWorkspace:568",
           "name": "offline %s pane shows connectivity (not the auth gate) even when authenticated",
-          "startLine": 529,
+          "startLine": 568,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:541",
+          "id": "ReplayWorkspace:580",
           "name": "reconnect activates a blocked pane once; disconnect preserves the replay and disables its active props",
-          "startLine": 541,
+          "startLine": 580,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:562",
+          "id": "ReplayWorkspace:601",
           "name": "cold-start deep link to %s shows no connectivity verdict until detection settles ONLINE",
-          "startLine": 562,
+          "startLine": 601,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:587",
+          "id": "ReplayWorkspace:626",
           "name": "cold-start anonymous 3d deep link reaches the login gate only after detection settles ONLINE",
-          "startLine": 587,
+          "startLine": 626,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:608",
+          "id": "ReplayWorkspace:647",
           "name": "cold-start ai deep link settling %s shows the real connectivity banner",
-          "startLine": 608,
+          "startLine": 647,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:628",
+          "id": "ReplayWorkspace:667",
           "name": "%s sees the same five capabilities",
-          "startLine": 628,
+          "startLine": 667,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:641",
+          "id": "ReplayWorkspace:680",
           "name": "anonymous %s deep link gates before mounting; login restores selected replay",
-          "startLine": 641,
+          "startLine": 680,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:668",
+          "id": "ReplayWorkspace:707",
           "name": "logout removes %s pane (hidden=%s) without clearing replay session",
-          "startLine": 668,
+          "startLine": 707,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:692",
+          "id": "ReplayWorkspace:731",
           "name": "AI 不是 admin-only：普通用户也能切到 AI 复盘",
-          "startLine": 692,
+          "startLine": 731,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:702",
+          "id": "ReplayWorkspace:741",
           "name": "2D and 3D receive the same workspace playback session owner",
-          "startLine": 702,
+          "startLine": 741,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:714",
+          "id": "ReplayWorkspace:753",
           "name": "能力面板首次进入才挂载（按需拆包），切走只隐藏、不销毁",
-          "startLine": 714,
+          "startLine": 753,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:727",
+          "id": "ReplayWorkspace:766",
           "name": "选中一次文件：data → 2D → 3D → 射击 → AI 全过程不重新选文件、selection identity 不变",
-          "startLine": 727,
+          "startLine": 766,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:746",
+          "id": "ReplayWorkspace:785",
           "name": "切走 3D 时面板收到 active=false（停渲染但保留会话），切回 active=true",
-          "startLine": 746,
+          "startLine": 785,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:758",
+          "id": "ReplayWorkspace:797",
           "name": "deactivating a kept-alive workspace suspends its retained 3D pane",
-          "startLine": 758,
+          "startLine": 797,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:779",
+          "id": "ReplayWorkspace:818",
           "name": "能力切换写 URL（router owner）：五个能力各自的 view",
-          "startLine": 779,
+          "startLine": 818,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:798",
+          "id": "ReplayWorkspace:837",
           "name": "深链初始能力：3d / shots / playback / ai 各自直达",
-          "startLine": 798,
+          "startLine": 837,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:809",
+          "id": "ReplayWorkspace:848",
           "name": "single-battle capabilities select the first finalized battle without reparsing",
-          "startLine": 809,
+          "startLine": 848,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:821",
+          "id": "ReplayWorkspace:860",
           "name": "四个单场能力共用 workspace 的 selectBattle：选 #2 后都拿 f2",
-          "startLine": 821,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "ReplayWorkspace:835",
-          "name": "匿名数据能力立即渲染投放区与数据面板，不请求登录",
-          "startLine": 835,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "ReplayWorkspace:845",
-          "name": "anonymous 2D capability mounts with selected replay without requesting login",
-          "startLine": 845,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "ReplayWorkspace:855",
-          "name": "五个能力都是同一个回放集合：添加是追加，不是替换",
-          "startLine": 855,
+          "startLine": 860,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -5845,7 +6240,7 @@
         },
         {
           "id": "ReplayWorkspace:874",
-          "name": "%s 选文件即加载并切局；追加不换场，清空回到空态",
+          "name": "匿名数据能力立即渲染投放区与数据面板，不请求登录",
           "startLine": 874,
           "textAssertion": false,
           "usesVars": [],
@@ -5853,236 +6248,310 @@
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:943",
+          "id": "ReplayWorkspace:884",
+          "name": "anonymous 2D capability mounts with selected replay without requesting login",
+          "startLine": 884,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "ReplayWorkspace:894",
+          "name": "五个能力都是同一个回放集合：添加是追加，不是替换",
+          "startLine": 894,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "ReplayWorkspace:913",
+          "name": "%s 选文件即加载并切局；追加不换场，清空回到空态",
+          "startLine": 913,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "ReplayWorkspace:982",
           "name": "%s opens on the first finalized battle without another parse",
-          "startLine": 943,
+          "startLine": 982,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:961",
+          "id": "ReplayWorkspace:1000",
           "name": "%s selects sparse finalized sources after failure and duplicate holes",
-          "startLine": 961,
+          "startLine": 1000,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:991",
+          "id": "ReplayWorkspace:1030",
           "name": "%s shows the partial failure until acknowledged; a new result reminds again",
-          "startLine": 991,
+          "startLine": 1030,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1009",
+          "id": "ReplayWorkspace:1048",
           "name": "background adding during a partial failure never offers the first-load Cancel",
-          "startLine": 1009,
+          "startLine": 1048,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1022",
+          "id": "ReplayWorkspace:1061",
           "name": "removing a replay asks first once results exist; a failed batch removes directly",
-          "startLine": 1022,
+          "startLine": 1061,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1045",
+          "id": "ReplayWorkspace:1084",
           "name": "marks the current battle only where one exists: Data summary has none",
-          "startLine": 1045,
+          "startLine": 1084,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1058",
+          "id": "ReplayWorkspace:1097",
           "name": "a single replay shows static battle context instead of a raw file name",
-          "startLine": 1058,
+          "startLine": 1097,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1069",
+          "id": "ReplayWorkspace:1108",
           "name": "when nothing opens the failure replaces the content, across capabilities, until an explicit retry",
-          "startLine": 1069,
+          "startLine": 1108,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1099",
+          "id": "ReplayWorkspace:1138",
           "name": "cancelling the first load returns to Empty",
-          "startLine": 1099,
+          "startLine": 1138,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1115",
+          "id": "ReplayWorkspace:1154",
           "name": "opening another replay after a failure clears first, so the failed files are not merged",
-          "startLine": 1115,
+          "startLine": 1154,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1131",
+          "id": "ReplayWorkspace:1170",
           "name": "capability navigation does not call analyze again while the batch is parsing",
-          "startLine": 1131,
+          "startLine": 1170,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1151",
+          "id": "ReplayWorkspace:1190",
           "name": "a dropped file anywhere on the workspace goes through the same preflight",
-          "startLine": 1151,
+          "startLine": 1190,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1161",
+          "id": "ReplayWorkspace:1200",
           "name": "上传区的 selection 变更交给工作台唯一 session owner",
-          "startLine": 1161,
+          "startLine": 1200,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1172",
+          "id": "ReplayWorkspace:1211",
           "name": "Data page 通过显式 props 消费 Workspace 唯一 replay/session owner",
-          "startLine": 1172,
+          "startLine": 1211,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1188",
+          "id": "ReplayWorkspace:1227",
           "name": "Android pending import：挂载即消费（isReady 恒 true），替换 selection 并本机分析 exactly once",
-          "startLine": 1188,
+          "startLine": 1227,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1205",
+          "id": "ReplayWorkspace:1244",
           "name": "Android pending replay ACK 只看 completed：%j → %s",
-          "startLine": 1205,
+          "startLine": 1244,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1218",
+          "id": "ReplayWorkspace:1257",
           "name": "键盘：方向键 / Home / End 在能力间移动并激活（canonical SegmentedControl 的 radiogroup 模型）",
-          "startLine": 1218,
+          "startLine": 1257,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1239",
+          "id": "ReplayWorkspace:1278",
           "name": "Case2（生产）：data READY → 3D → data，resp/files/analysis 保留、无空状态",
-          "startLine": 1239,
+          "startLine": 1278,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1256",
+          "id": "ReplayWorkspace:1295",
           "name": "触屏手机横屏 + 回放就绪才申请；离开 capability / 转竖屏 / 卸载立即释放",
-          "startLine": 1256,
+          "startLine": 1295,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1291",
+          "id": "ReplayWorkspace:1330",
           "name": "还没有回放文件时不隐藏外壳；没有外壳 provider 时静默无操作",
-          "startLine": 1291,
+          "startLine": 1330,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1376",
+          "id": "ReplayWorkspace:1415",
           "name": "多阶段加载：加载外壳有高度但不就绪 → 不滚动；真实视窗就绪后按最终高度定位一次",
-          "startLine": 1376,
+          "startLine": 1415,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1403",
+          "id": "ReplayWorkspace:1442",
           "name": "就绪后视窗矮于视口 → 垂直居中",
-          "startLine": 1403,
+          "startLine": 1442,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1413",
+          "id": "ReplayWorkspace:1452",
           "name": "切走时撤销未完成的等待（迟到的就绪不再触发滚动）",
-          "startLine": 1413,
+          "startLine": 1452,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1428",
+          "id": "ReplayWorkspace:1467",
           "name": "批次目标准备中（多文件未解析）不定位；落定后按真实视窗定位",
-          "startLine": 1428,
+          "startLine": 1467,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1453",
+          "id": "ReplayWorkspace:1492",
           "name": "切到数据视图不触发居中（不动用户的数据页滚动位置）",
-          "startLine": 1453,
+          "startLine": 1492,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ReplayWorkspace:1465",
+          "id": "ReplayWorkspace:1504",
           "name": "每次切入查看器递增一次；停留 / 重渲染 / 回到数据页都不递增",
-          "startLine": 1465,
+          "startLine": 1504,
           "textAssertion": false,
           "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/components/TankAugmentTree.assets.test.ts",
+      "sources": [
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "fixture"
+        }
+      ],
+      "caseCount": 3,
+      "textAssertionCases": 0,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "TankAugmentTree.assets:30",
+          "name": "每个属性名在三语表里都有标签（不回落原始键）",
+          "startLine": 30,
+          "textAssertion": false,
+          "usesVars": [
+            "fixture"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "TankAugmentTree.assets:40",
+          "name": "每个机制 stem 在三语表里都有名称/描述，且有 mech_<stem> 图标",
+          "startLine": 40,
+          "textAssertion": false,
+          "usesVars": [
+            "fixture"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "TankAugmentTree.assets:58",
+          "name": "数据面引用的每个强化图标都有 webp（缺图 = 树上一格空白）",
+          "startLine": 58,
+          "textAssertion": false,
+          "usesVars": [
+            "fixture"
+          ],
           "patterns": [],
           "parseError": null
         }
@@ -9177,10 +9646,14 @@
         {
           "sourcePath": "playback/renderer.ts",
           "varName": "rendererSrc"
+        },
+        {
+          "sourcePath": "playback/battleRuntime.ts",
+          "varName": "src"
         }
       ],
-      "caseCount": 2,
-      "textAssertionCases": 2,
+      "caseCount": 3,
+      "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
         {
@@ -9203,7 +9676,22 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "rendererSrc"
+            "rendererSrc",
+            "src"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "playbackScene.staticFreeze:49",
+          "name": "resetShotsTo（宿主 seekTo 的唯一游标入口）必须调 gunfire.invalidatePending",
+          "startLine": 49,
+          "textAssertion": true,
+          "usesVars": [
+            "src",
+            "src"
           ],
           "patterns": [
             "toMatch"
@@ -10246,13 +10734,13 @@
           "varName": "source"
         }
       ],
-      "caseCount": 3,
+      "caseCount": 4,
       "textAssertionCases": 0,
       "parseAnomalies": [],
       "cases": [
         {
           "id": "tankViewer.cameraPreset:61",
-          "name": "%s：平移惯性在途时点击，机位上炮轴线、炮管指向镜头，距离不跳变",
+          "name": "%s：平移惯性在途时点击，旋转中心保持不变、只换观察方向，距离不跳变",
           "startLine": 61,
           "textAssertion": false,
           "usesVars": [],
@@ -10260,18 +10748,27 @@
           "parseError": null
         },
         {
-          "id": "tankViewer.cameraPreset:100",
+          "id": "tankViewer.cameraPreset:101",
           "name": "%s：炮管姿态切换为预设俯角",
-          "startLine": 100,
+          "startLine": 101,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "tankViewer.cameraPreset:114",
+          "id": "tankViewer.cameraPreset:115",
+          "name": "%s：真实 OrbitControls 不可达场景（中心远离炮轴）：中心不动、机位仍在轴上",
+          "startLine": 115,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "tankViewer.cameraPreset:147",
           "name": "无 preserveView（URL 首载）保持完整预设摆位：target = 炮线枢轴、距离 = 15m",
-          "startLine": 114,
+          "startLine": 147,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -10880,18 +11377,18 @@
       "parseAnomalies": [],
       "cases": [
         {
-          "id": "ui-dependency-ownership:56",
+          "id": "ui-dependency-ownership:57",
           "name": "${pkg} 只在 WotbTools 组件边界内被 import",
-          "startLine": 56,
+          "startLine": 57,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "ui-dependency-ownership:61",
+          "id": "ui-dependency-ownership:62",
           "name": "@vueuse/core 不接管 breakpoint 与持久化 owner",
-          "startLine": 61,
+          "startLine": 62,
           "textAssertion": true,
           "usesVars": [
             "source"
@@ -11034,9 +11531,9 @@
       "parseAnomalies": [],
       "cases": [
         {
-          "id": "hof-admin-tabs-css:20",
+          "id": "hof-admin-tabs-css:21",
           "name": "全局样式表不定义 Tab 条 / 筛选 / 管理表格规则",
-          "startLine": 20,
+          "startLine": 21,
           "textAssertion": true,
           "usesVars": [
             "css"
@@ -11159,34 +11656,38 @@
         {
           "sourcePath": "color.css",
           "varName": "css"
+        },
+        {
+          "sourcePath": "../../components/TankCatalogMenu.vue",
+          "varName": "component"
         }
       ],
-      "caseCount": 3,
-      "textAssertionCases": 1,
+      "caseCount": 4,
+      "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
         {
-          "id": "color-contrast:135",
+          "id": "color-contrast:189",
           "name": "${name}: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）",
-          "startLine": 135,
+          "startLine": 189,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "color-contrast:169",
+          "id": "color-contrast:223",
           "name": "四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3",
-          "startLine": 169,
+          "startLine": 223,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "color-contrast:190",
+          "id": "color-contrast:244",
           "name": "寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标",
-          "startLine": 190,
+          "startLine": 244,
           "textAssertion": true,
           "usesVars": [
             "css"
@@ -11194,6 +11695,21 @@
           "patterns": [
             "toMatch",
             "newRegExp"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "color-contrast:276",
+          "name": "坦克卡片高级/收藏底色：车名对 36%/46% 语义底 ≥ 3（用户裁示例外）、属性标签 ≥ 4.5、语义 pill 对自绘 16% 底 ≥ 4.5",
+          "startLine": 276,
+          "textAssertion": true,
+          "usesVars": [
+            "component"
+          ],
+          "patterns": [
+            "indexOf",
+            "includes",
+            "slice"
           ],
           "parseError": null
         }

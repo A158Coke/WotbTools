@@ -211,15 +211,17 @@ function bindingRenamePlans(text, file) {
   const checker = program.getTypeChecker();
 
   function hasExportModifier(node) {
-    let n = node;
-    while (n && !ts.isSourceFile(n)) {
-      if (ts.isVariableStatement(n) || ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) {
-        const mods = ts.canHaveModifiers(n) ? ts.getModifiers(n) : undefined;
-        if (mods && mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) return true;
-      }
-      n = n.parent;
+    // 只看**声明所属语句**的修饰符：不能一路走到 SourceFile，否则「导出函数内部的
+    // 局部 const」会继承外层函数的 export，整片局部绑定被误判为导出而全部跳过。
+    let statement = node;
+    if (ts.isVariableDeclaration(node)) {
+      let n = node.parent;
+      while (n && !ts.isVariableStatement(n) && !ts.isSourceFile(n)) n = n.parent;
+      statement = n;
     }
-    return false;
+    if (!statement || ts.isSourceFile(statement)) return false;
+    const mods = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
+    return !!mods && mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DefaultKeyword);
   }
   /** 该位置不是「绑定引用」：属性名 / 方法名 / 属性键 / shorthand 键 / JSX 属性名 / import/export 名。 */
   function isNonBindingPosition(node) {

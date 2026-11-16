@@ -11,7 +11,7 @@
 | frontend/src/scene/sceneryMaterials.test.js | 42 | 18 | 5 | 1 | 0 | 13 | 0 |
 | frontend/src/scene/groundPass.test.js | 13 | 2 | 8 | 4 | 0 | 1 | 0 |
 | frontend/src/scene/playbackScene.occlusion.test.js | 14 | 11 | 0 | 7 | 0 | 3 | 6 |
-| frontend/src/scene/playbackScene.staticFreeze.test.js | 2 | 3 | 1 | 0 | 0 | 0 | 1 |
+| frontend/src/scene/playbackScene.staticFreeze.test.js | 3 | 3 | 1 | 0 | 0 | 0 | 1 |
 | frontend/src/scene/labelOcclusion.test.js | 1 | 1 | 0 | 1 | 0 | 1 | 0 |
 | frontend/src/scene/pickDebug.test.js | 5 | 4 | 0 | 1 | 0 | 0 | 0 |
 | frontend/src/scene/seekPointer.test.js | 3 | 4 | 0 | 1 | 0 | 2 | 4 |
@@ -33,31 +33,32 @@
 | frontend/src/styles/glass-accessibility.test.js | 0 | 2 | 0 | 4 | 0 | 0 | 6 |
 | frontend/src/styles/corner-shape.test.js | 1 | 2 | 0 | 0 | 0 | 0 | 1 |
 | frontend/src/styles/hof-admin-tabs-css.test.js | 1 | 1 | 1 | 0 | 0 | 0 | 1 |
-| frontend/src/styles/tokens/color-contrast.test.ts | 1 | 0 | 2 | 1 | 0 | 0 | 3 |
+| frontend/src/styles/tokens/color-contrast.test.ts | 2 | 0 | 2 | 1 | 0 | 0 | 4 |
 | frontend/src/api/replay-capabilities.test.ts | 2 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/app/navigation-context.test.ts | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/app/navigationPressedFeedback.test.js | 2 | 0 | 1 | 0 | 0 | 0 | 0 |
-| frontend/src/components/AgentArmorView.dom-contract.test.js | 23 | 0 | 23 | 0 | 0 | 0 | 0 |
+| frontend/src/components/AgentArmorView.dom-contract.test.js | 26 | 0 | 25 | 0 | 0 | 0 | 0 |
 | frontend/src/components/AgentTankopedia.baseline.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/components/AppSheet.test.ts | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/components/PlayerRatingRadar.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/components/ProfilePage.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/components/Replay3DPane.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
-| frontend/src/components/ReplayWorkspace.test.js | 2 | 0 | 2 | 0 | 0 | 0 | 0 |
+| frontend/src/components/ReplayWorkspace.test.js | 2 | 0 | 2 | 0 | 0 | 0 | 2 |
 | frontend/src/components/TankResearchPanel.layout.test.js | 2 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/data-version-wiring.test.js | 3 | 0 | 2 | 0 | 0 | 0 | 0 |
 | frontend/src/index-firstpaint.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/shared/tabular/csv/encode.test.ts | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
 | frontend/src/vehicle-models/extractor.test.js | 6 | 0 | 6 | 0 | 0 | 0 | 0 |
 | frontend/src/vehicle-models/texture-bake.test.js | 1 | 0 | 1 | 0 | 0 | 0 | 0 |
-| **合计（已映射 42 文件）** | — | **70** | **80** | **24** | **0** | **28** | **46** |
+| **合计（已映射 42 文件）** | — | **70** | **82** | **24** | **0** | **28** | **49** |
 
 ## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）
 
+- frontend/src/components/HoFAdminPage.test.js（1 例）
 - frontend/src/components/PlaybackTimeline.test.js（1 例）
 - frontend/src/shared/ui-dependency-ownership.test.ts（1 例）
 
-scope 缺口合计 2 例 / inventory 全量 153 例。
+scope 缺口合计 3 例 / inventory 全量 159 例。
 
 ## D 项安全门禁（F2）
 
@@ -138,3 +139,6 @@ D 项合计 24；BLOCKED 0。
 - color-contrast.test:136-160 [K] 未对齐任何 text case
 - color-contrast.test:170-170 [K] 未对齐任何 text case
 - color-contrast.test:189-189 [D] 未对齐任何 text case
+- color-contrast.test:205-205 [K] 未对齐任何 text case
+- ReplayWorkspace.test:405-405 [K] 未对齐任何 text case
+- ReplayWorkspace.test:425-425 [K] 未对齐任何 text case

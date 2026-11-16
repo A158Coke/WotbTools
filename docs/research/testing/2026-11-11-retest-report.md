@@ -1,46 +1,56 @@
-# 测试效力复测（2026-11-11，main `7b4285870`，Issue #827 Step 0）
+# 测试效力复测（2026-11-11 baseline / 2026-11-16 复审更新，Issue #827 Step 0）
 
-本文是 Issue #827 的当前 baseline 重建设，替代 `2026-11-test-effectiveness.md`（基线 `1cefa174c`，dated 证据）作为**当前**参照；不修改旧文档的历史结论。
+本文是 Issue #827 的 baseline 重建设，替代 `2026-11-test-effectiveness.md`（基线 `1cefa174c`，dated 证据）作为当前参照；不修改旧文档的历史结论。2026-11-16 复审在 PR #957 head（已合并最新 main）上重新生成 inventory 与三组探针矩阵，并修复了等价重命名、变异有效性分类、分类器正则切块与台账区间计数四处口径问题（见「评审跟进」）。
 
 ## 工具（已提交，可重复）
 
 | 脚本 | 作用 |
 |---|---|
-| `scripts/testing/classify-source-text-tests.mjs` | 结构化扫描 frontend/src 全部 `*.test.*`，按用例粒度分类「引用生产源码文本」的断言；输出逐例清单 JSON。判定方式为用例切块 + 词法引用匹配（非完整 AST，逐例处置仍需人工复核，见台账）。 |
-| `scripts/testing/source-text-probes.mjs` | 对每个「生产源文件 → 读取方测试集合」执行语义变异探针（FLIP_CMP 比较符翻转 / NUM_OFF 数值 ±1，变异点必须落在注释/字符串区间外）与等价重命名探针（未导出局部标识符重命名）。固定 seed=827；变异点先随机洗牌再截取；未变异基线必须全绿否则跳过该源并如实记录。 |
-| `scripts/testing/source-text-inventory.json` | 分类器输出快照（生成于 2026-11-11）。 |
-| `scripts/testing/probe-matrix-*.json` | 探针原始矩阵（scene / css / vue 三组）。 |
+| `scripts/testing/classify-source-text-tests.mjs` | 结构化扫描 frontend/src 全部 `*.test.*`，按用例粒度分类「引用生产源码文本」的断言；输出逐例清单 JSON。用例切块会跳过注释、字符串与正则字面量（源码守卫常用的 `/...\{.../` 不再截断用例体）；边界未闭合的用例记入 `parseAnomalies`，不静默判成非文本测试；Windows CRLF 检出统一归一为 LF。仍非完整 AST，逐例处置需人工复核（见台账）。 |
+| `scripts/testing/source-text-probes.mjs` | 对每个「生产源文件 → 读取方测试集合」执行语义变异探针（FLIP_CMP / NUM_OFF，变异点必须落在注释/字符串区间外）与等价重命名探针。变异先过解析校验：不可解析的变异记 invalid，不计入捕获率；vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive。等价重命名按 TypeScript symbol 的绑定身份，只改声明与同 symbol 引用（保留关键字、属性键、字符串与对外导出名）；内置 `from` 负面控制自检（整词替换会破坏 import，绑定重命名不会）。固定 seed=827；未变异基线必须全绿否则跳过该源并如实记录。 |
+| `scripts/testing/source-text-inventory.json` | 分类器输出快照（生成于 2026-11-16，PR #957 head）。 |
+| `scripts/testing/probe-matrix-*.json` | 探针原始矩阵（scene / css / vue 三组，2026-11-16 在同一棵树重新生成）。 |
 
 复现方式：干净 checkout → `node scripts/testing/classify-source-text-tests.mjs` → `node scripts/testing/source-text-probes.mjs --inventory ... --out ...`。探针在独立检出上运行（会临时改写生产源文件），不要在未提交工作区运行。
 
-快照口径：`source-text-inventory.json` 与台账基于 Wave 1 Pilot 之前的树（181 例）；Pilot 已删除 seekPointer.test.js 的 2 个文本用例并新增行为测试，当前树重跑为 179 例。baseline 探针矩阵同样基于 Pilot 前状态。可复现性已验证（css 簇重跑两次输出一致；scene/vue 全量重跑因运行时长未做，确定性由固定 seed 保证）。
+快照口径：本报告的数字以 PR #957 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **438 个测试文件 / 69 个读取生产源码 / 159 个文本断言用例**（parseAnomalies=0）；矩阵在同一棵树上用 seed=827 重新生成。历史 181 例是 Wave 0/Pilot 前口径，不再与当前数字直接比较。
 
 ## 规模与裁剪说明
 
 - 本轮每源文件探针上限：语义 6、重命名 3（旧审计为 40+15，按本会话运行时长裁剪；脚本可用 `--max-semantic/--max-rename` 调高，结论梯度见 Known Risks）。原审计「每模块簇 ≥20 语义 + 10 重命名」的下限在 per-source 视角下由 scene 簇聚合近似覆盖（scene 簇含 ~26 个源文件）。
 - 探针范围：`src/scene/` 读取的生产源、`.css`、`.vue`。数据契约（读 `.json` 产物）、`api/*` 与 ownership/config 守卫不在范围。
 
-## Inventory 结果（当前 main）
+## Inventory 结果（PR #957 head，2026-11-16）
 
-- 扫描 411 个测试文件；69 个读取生产源码；其中 **181 个用例**的断言引用源码文本。
-- 集中地：`scene/sceneryMaterials.test.js`（48）、`components/AgentArmorView.dom-contract.test.js`（22）、`scene/playbackScene.occlusion.test.js`（18）、`MapPreview3DPane.wiring.test.js`（8）、`scene/labelOcclusion.test.js`（7）、`scene/playbackScene.staticFreeze.test.js`（7）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
-- 旧审计 251 例与本轮 181 例的差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**181 不与 251 直接可比**。
+- 扫描 438 个测试文件；69 个读取生产源码；其中 **159 个用例**的断言引用源码文本（parseAnomalies=0）。
+- 集中地：`scene/sceneryMaterials.test.js`（42）、`components/AgentArmorView.dom-contract.test.js`（26）、`scene/playbackScene.occlusion.test.js`（14）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（6）、`scene/pickDebug.test.js`（5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
+- 旧审计 251 例与 Wave 0 的 181 例差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**181 不与 251 直接可比**；当前 159 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
 
-## 探针 Baseline（本轮，seed=827）
+## 探针 Baseline（PR #957 head，seed=827，2026-11-16 重生成）
 
-| 簇 | 探测源 | 跳过（baselineRed） | 语义捕获 | 等价重命名误报 |
-|---|---|---|---|---|
-| scene | 20 | 12 | **29/118（24.6%）** | **12/60（20.0%）** |
-| css | 2 | 0 | 1/12（8.3%） | 0/0（.vue/.css 跳过重命名探针） |
-| vue | 20 | 0 | **0/114（0.0%）** | 0/0 |
-| 合计 | 42 | 12 | 30/244（12.3%） | 12/60（20.0%） |
+| 簇 | 探测源 | 跳过（baselineRed） | 语义捕获（有效变异） | invalid | inconclusive | 等价重命名误报 |
+|---|---|---|---|---|---|---|
+| scene | 23 | 0 | **6/123（4.9%）** | 12 | 0 | **10/69（14.5%）** |
+| css | 1 | 0 | 1/6（16.7%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
+| vue | 17 | 0 | **1/96（1.0%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
+| 合计 | 41 | 0 | 8/225（3.6%） | 12 | 0 | 10/69（14.5%） |
 
 逐源矩阵：`scripts/testing/probe-matrix-{scene,css,vue}.json`。要点：
 
-- **组件源（.vue）的文本断言对语义变异捕获为 0/114**——变异点（数值偏移）落在模板/样式内，没有任何测试变红：组件源码字面量守卫目前对数值语义零保护。
-- scene 簇捕获率 24.6% 显著高于旧审计的 7.5%：口径不同（本轮只含比较符翻转与数值偏移两类算子、只测读取方测试文件），不可直接对比；重命名误报 20.0% 与旧 28% 同量级。
-- 被杀最多的源：`playback/boundary.ts` 6/6、`sceneryMaterials.ts` 1/6、`battleRuntime.ts` 1/6、`labelsRuntime.ts` 2/6、`renderer.ts` 2/5——多为常量/守卫数值，文本断言抓得到；而接线类语义（调用存在性）多数存活。
-- **baselineRed 12 源定性：负载超时**——全部由同一批用例（`飞行段时长 = 真实飞行时长`、`mirrorShotData 镜像` 等重型 façade import 用例）在探针连续 vitest 进程下 5s 超时导致（单跑该用例 5160ms 边缘超时），非语义失败。这些源的守卫本轮无法评估，台账需单独标注；后续批次可在空载环境补测。
+- 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源与文本用例都比 Wave 0 少（23 源 / 159 文本用例），因此与旧 24.6% 不可直接对比。
+- **组件源（.vue）仍接近零捕获（1/96）**：唯一被杀的是 `TankConfigPanel.vue` 的数值变异；模板/样式内的字面量语义基本没有读取方文本守卫。
+- scene 被杀最多的源：`heSplash.ts` 2/6；`penetration.js` / `playbackScene.js` / `tankViewer.js` / `viewer/armorPlateModel.ts` 各 1/6。接线类语义（调用存在性）多数存活。
+- 等价重命名误报 10/69：`groundPass.js`、`heSplash.ts`、`playback/mapAssets.ts`、`playback/renderer.ts` 各 2/3，其余 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。
+- **invalid 12 个变异**（parse 校验失败，未计入捕获率）：`sceneryAssembly.ts` 3、`mapAssets.ts` 2、`sceneryMaterials.ts` 2、`armorHighlight.ts` / `renderer.ts` / `sceneryInstancing.ts` / `shotResultCard.ts` / `shotTrajectoryGeometry.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
+- 本轮 baselineRed=0、inconclusive=0：23+1+17 个源的读取方测试基线全部全绿，失败的探针都能归入断言失败 / 解析失败两类。
+
+## 评审跟进（2026-11-16）
+
+- **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / shorthand / 对外导出名 / import 关键字 / 字符串不动。内置 `from` 负面控制：整文件词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败，绑定重命名保留 import 且解析通过（`selfCheck.ok=true`，见任一矩阵的 `selfCheck.negativeControl`）。
+- **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 invalid=12、inconclusive=0。
+- **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
+- **台账统计**：区间行展开为实际映射的 case ID 并按去重后的 case 计数（`AgentArmorView.dom-contract` K 1→23、`extractor` K 1→6），未对齐行单列（当前 49 行，见 ledger-stats 对齐异常清单）。
+- **Wave 2 被删守卫接替**：新增真实 extras 解析链路（`resolveSceneryExtras` → `makeTexResolvers` → 装配，含漏登记负向对照）、GLB 根四元数三轴断言、prewarm 等待未完成 GLB Promise、roster reset 后旧行不被 stale 投影写入。
 
 ## Wave 1 Pilot 结果（seek 游标语义）
 
@@ -70,8 +80,9 @@
 
 ## Known Risks / 诚实降级
 
-- 分类器为结构化扫描非完整 AST：fixture 读取（如 `texture-bake.test.js` 读 bake-report.json）会进入清单，由台账人工剔除；`it.each` 按块计 1 例。
-- 小样本探针（6+3）对单源的检测率方差大，单源数字只用于排序优先级；簇级汇总才可与旧基线对比。
-- 语义探针只含两类算子（比较符翻转、数值偏移），少于旧审计的 40 个手工语义改动；捕获率是**下限**估计。
-- Windows 上通过 `shell:true` 调用 vitest；exit code 语义已在冒烟中人工验证（变异后测试红→exit≠0）。
-- baselineRed 的源被跳过，其守卫效力无法用本工具评估，台账需单独标注。
+- 分类器仍为结构化扫描而非完整 AST：fixture 读取（如 `texture-bake.test.js` 读 bake-report.json）会进入清单，由台账人工剔除；`it.each` 按块计 1 例。用例切块已跳过注释/字符串/正则，但模板字符串里的 `${}` 仍按字符串整体处理。
+- 小样本探针（6+3）对单源的检测率方差大，单源数字只用于排序优先级；簇级汇总才可与旧基线对比。探针只跑「读取生产源码文本」的读取方测试，**不评估新行为测试**；捕获率是剩余文本守卫的下限估计。
+- 语义探针只含两类算子（比较符翻转、数值偏移），少于旧审计的 40 个手工语义改动；解析不可表示的变异记 invalid，不进入分母。
+- 等价重命名只在单文件内按 TS symbol 重命名；`.vue` 跳过（模板引用不在同一 AST），跨文件导出名不改。shorthand / 直接 export / 新名冲突一律 fail-closed 跳过该绑定。
+- Windows 上通过 `shell:true` 调用 vitest；超时/转换错误与断言失败已分开记录（invalid/inconclusive），不再把非零退出一律计 killed。
+- baselineRed 的源仍会被跳过（本轮 0）；其守卫效力无法用本工具评估，台账需单独标注。

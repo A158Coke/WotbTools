@@ -21,14 +21,62 @@
       "testFiles": [
         "frontend/src/styles/tokens/color-contrast.test.ts"
       ],
-      "baselineRed": true,
-      "baselineInconclusive": false,
-      "baselineFailed": [
-        "theme token contrast (WCAG 2.2 AA) summer: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）",
-        "theme token contrast (WCAG 2.2 AA) 四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3"
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 8089,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 16944,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 8534,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 6264,
+          "killed": true,
+          "failedTests": [
+            "theme token contrast (WCAG 2.2 AA) spring: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）"
+          ]
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 10575,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 13478,
+          "killed": false,
+          "failedTests": []
+        }
       ],
-      "semantic": [],
-      "rename": []
+      "rename": [],
+      "semanticKilled": 1,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "renameInvalid": 0,
+      "ms": 63952
     }
   ]
 }
