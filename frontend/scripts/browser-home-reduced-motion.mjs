@@ -306,11 +306,11 @@ async function runGlassAccessibility(env) {
     // 6) 四主题回归：default 保持玻璃、reduce 退化为该主题的纯色表面。
     await setPreferences(env.chrome, page.sessionId, [])
     for (const theme of THEMES) {
-      await page.waitForValue(
-        `(() => { document.documentElement.dataset.uiProfile = ${JSON.stringify(theme)}; return document.documentElement.dataset.uiProfile })()`,
-        (value) => value === theme,
-        { label: `theme switch ${theme}` },
-      )
+      await page.callWith((value) => {
+        document.documentElement.dataset.uiProfile = value
+        return document.documentElement.dataset.uiProfile
+      }, theme)
+      await page.waitForValue('document.documentElement.dataset.uiProfile', (value) => value === theme, { label: `theme switch ${theme}` })
       state = await probe()
       gate(state.theme === theme, `theme ${theme}: attribute not applied`)
       gate(rgbaAlpha(state.background) < 1, `theme ${theme} default: glass must stay translucent (got ${state.background})`)
