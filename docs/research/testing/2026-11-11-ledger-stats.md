@@ -1,6 +1,6 @@
 # Issue #827 台账统计与 D 项门禁（F1/F2 交付，2026-11-11）
 
-统计单位统一为 **test case**（u=case 的台账行）；clause 行附着到所属 case，不单独计数。稳定 ID = `<文件slug>:<case起始行>`。**对齐基线固定为 `scripts/testing/source-text-inventory-wave0.json`（历史提交 67fdb2be 的树，用修正后的分类器重新生成，269 个文本用例）**——保留历史行号，但不冻结旧分类器的漏判。映射使用**完整 baseline cases**（含改写后的行为测试），不再先过滤 `textAssertion` 再向前借 case；floor 距离超出容差即记未映射。当前树 inventory 只服务探针，不与历史台账混用。`validation_status` 初始 PENDING：删除批次实际执行 + 接替测试本地/CI 绿 + 故障注入抽查通过后才置 DONE。
+统计单位统一为 **test case**（u=case 的台账行）；clause 行附着到所属 case，不单独计数。稳定 ID = `<文件slug>:<case起始行>`。**对齐基线固定为 `scripts/testing/source-text-inventory-wave0.json`（历史提交 67fdb2be 的树，用修正后的分类器重新生成，300 个文本用例）**——保留历史行号，但不冻结旧分类器的漏判。映射使用**完整 baseline cases**（含改写后的行为测试），不再先过滤 `textAssertion` 再向前借 case；floor 距离超出容差即记未映射。当前树 inventory 只服务探针，不与历史台账混用。`validation_status` 初始 PENDING：删除批次实际执行 + 接替测试本地/CI 绿 + 故障注入抽查通过后才置 DONE。
 
 ## 统计（case 单位）
 
@@ -39,7 +39,7 @@
 | frontend/src/api/replay-capabilities.test.ts | 3/3 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
 | frontend/src/app/navigation-context.test.ts | 1/1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
 | frontend/src/app/navigationPressedFeedback.test.js | 5/5 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
-| frontend/src/components/AgentArmorView.dom-contract.test.js | 64/26 | 0 | 63 | 0 | 0 | 0 | 0 | 0 | 63 | 0 |
+| frontend/src/components/AgentArmorView.dom-contract.test.js | 64/57 | 0 | 63 | 0 | 0 | 0 | 0 | 0 | 63 | 0 |
 | frontend/src/components/AgentTankopedia.baseline.test.js | 1/1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
 | frontend/src/components/AppSheet.test.ts | 7/1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
 | frontend/src/components/PlayerRatingRadar.test.js | 13/1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
@@ -54,7 +54,7 @@
 | frontend/src/vehicle-models/texture-bake.test.js | 23/1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
 | **合计（已映射 44 文件）** | — | **136** | **160** | **79** | **0** | **28** | **0** | **0** | **373** | **2** |
 
-> R/K/D/PK 是**处置覆盖计数**（同一 case 跨处置会重复计入，不能相加当唯一 case 数）。全表唯一 case（按 `testFile:caseId` 并集）= **373**；跨处置冲突 **2** 例；未映射单行 **0** 行（未计入 R/K/D）。映射到非文本（行为）case 的台账行 **159** 行，见下节人工确认。
+> R/K/D/PK 是**处置覆盖计数**（同一 case 跨处置会重复计入，不能相加当唯一 case 数）。全表唯一 case（按 `testFile:caseId` 并集）= **373**；跨处置冲突 **2** 例；未映射单行 **0** 行（未计入 R/K/D）。映射到非文本（行为）case 的台账行 **128** 行，见下节人工确认。
 
 ## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）
 
@@ -70,7 +70,7 @@
 - frontend/src/shared/ui-dependency-ownership.test.ts（1 例）
 - frontend/src/vite-proxy.test.js（1 例）
 
-scope 缺口合计 17 例 / baseline inventory 全量 269 例。
+scope 缺口合计 17 例 / baseline inventory 全量 300 例。
 
 ## D 项安全门禁（F2）
 
@@ -249,43 +249,12 @@ D 项处置覆盖 79；BLOCKED 0。
 - replay3d-hud-layout.test:21 → replay3d-hud-layout:19
 - color-contrast.test:136 → color-contrast:135
 - color-contrast.test:170 → color-contrast:169
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:96
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:119
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:134
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:166
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:176
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:190
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:352
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:369
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:482
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:492
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:508
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:543
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:549
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:569
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:602
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:612
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:630
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:638
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:642
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:646
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:651
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:667
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:678
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:703
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:709
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:718
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:731
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:770
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:780
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:783
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:789
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:792
 - AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:833
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:837
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:862
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:866
-- AgentArmorView.dom-contract.test:37 → AgentArmorView.dom-contract:883
 - extractor.test:241 → extractor:260
 - extractor.test:241 → extractor:269
 - extractor.test:241 → extractor:278

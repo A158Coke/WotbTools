@@ -98,7 +98,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 18961
+      "ms": 19910
     },
     {
       "source": "src/scene/assetBase.ts",
@@ -177,7 +177,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11895
+      "ms": 12765
     },
     {
       "source": "src/scene/groundGeometryData.ts",
@@ -261,7 +261,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10770
+      "ms": 11444
     },
     {
       "source": "src/scene/groundPass.js",
@@ -345,7 +345,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12867
+      "ms": 13552
     },
     {
       "source": "src/scene/heSplash.ts",
@@ -440,7 +440,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10894
+      "ms": 11679
     },
     {
       "source": "src/scene/materialDispose.ts",
@@ -555,7 +555,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 4869
+      "ms": 5424
     },
     {
       "source": "src/scene/penetration.js",
@@ -636,7 +636,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 19214
+      "ms": 20877
     },
     {
       "source": "src/scene/playback/armorHighlight.ts",
@@ -720,7 +720,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 14119
+      "ms": 13180
     },
     {
       "source": "src/scene/playback/battleRuntime.ts",
@@ -813,7 +813,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 9172
+      "ms": 10446
     },
     {
       "source": "src/scene/playback/cameraRuntime.ts",
@@ -897,7 +897,7 @@
       "renameFalsePositives": 2,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15398
+      "ms": 16569
     },
     {
       "source": "src/scene/playback/labelsRuntime.ts",
@@ -985,7 +985,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11005
+      "ms": 11511
     },
     {
       "source": "src/scene/playback/mapAssets.ts",
@@ -1074,7 +1074,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 13885
+      "ms": 13076
     },
     {
       "source": "src/scene/playback/mapWorld.ts",
@@ -1175,7 +1175,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10939
+      "ms": 10304
     },
     {
       "source": "src/scene/playback/pickReport.ts",
@@ -1261,7 +1261,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10137
+      "ms": 10266
     },
     {
       "source": "src/scene/playback/renderer.ts",
@@ -1352,7 +1352,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11103
+      "ms": 11115
     },
     {
       "source": "src/scene/playback/vehicleRuntime.ts",
@@ -1441,7 +1441,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 14190
+      "ms": 12752
     },
     {
       "source": "src/scene/playbackScene.js",
@@ -1526,7 +1526,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 16576
+      "ms": 15237
     },
     {
       "source": "src/scene/sceneryAssembly.ts",
@@ -1632,7 +1632,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 7293
+      "ms": 7349
     },
     {
       "source": "src/scene/sceneryInstancing.ts",
@@ -1723,7 +1723,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12260
+      "ms": 11167
     },
     {
       "source": "src/scene/sceneryMaterials.ts",
@@ -1803,7 +1803,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12138
+      "ms": 12266
     },
     {
       "source": "src/scene/tankViewer.js",
@@ -1871,7 +1871,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15642
+      "ms": 16165
     },
     {
       "source": "src/scene/terrainMesh.js",
@@ -1950,7 +1950,93 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12777
+      "ms": 11971
+    },
+    {
+      "source": "src/scene/viewer/aimInput.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 2853,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 7255,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected.",
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 1838,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 1823,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 6018,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 1858,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "aimPitchEnabled",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "part",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "hits",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 17526
     },
     {
       "source": "src/scene/viewer/armorPlateModel.ts",
@@ -1962,42 +2048,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 13747,
+          "index": 4165,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "FLIP_CMP",
-          "index": 3377,
+          "index": 22102,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 2162,
+          "op": "FLIP_CMP",
+          "index": 14928,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 2683,
+          "index": 14668,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 22855,
+          "op": "FLIP_CMP",
+          "index": 13773,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 2662,
+          "index": 2099,
           "killed": false,
           "failedTests": []
         }
@@ -2005,19 +2091,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "applySpacedBackStencil",
+          "name": "TURRET_ARMOR_NAME",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "openBits",
+          "name": "name",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "node",
+          "name": "openSpacedKeys",
           "falsePositive": false,
           "failedTests": []
         }
@@ -2029,7 +2115,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 19535
+      "ms": 19610
     },
     {
       "source": "src/scene/viewer/armorShaders.ts",
@@ -2042,46 +2128,53 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 25366,
+          "index": 25449,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 29601,
-          "killed": false,
-          "failedTests": []
+          "index": 26414,
+          "killed": true,
+          "failedTests": [
+            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
+          ]
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 27620,
+          "index": 26121,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 24687,
+          "index": 24743,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 24155,
+          "index": 29670,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 26414,
-          "killed": true,
-          "failedTests": [
-            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
-          ]
+          "op": "FLIP_CMP",
+          "index": 24248,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected.",
+            "',' expected.",
+            "',' expected."
+          ],
+          "failedTests": []
         }
       ],
       "rename": [
@@ -2093,152 +2186,65 @@
         },
         {
           "id": "ren-1",
-          "name": "EXTERNAL_FRAG",
+          "name": "_emptySpacedTex",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "spacedCommonUniforms",
+          "name": "EXTERNAL_FRAG",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 1,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 19493
+      "ms": 18517
     },
     {
-      "source": "src/scene/viewer/shotReplay.ts",
+      "source": "src/scene/viewer/collisionView.ts",
       "testFiles": [
-        "frontend/src/scene/tankViewer.collisionBoxFailsafe.test.js"
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
       ],
       "baselineRed": false,
       "semantic": [
         {
           "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 94953,
+          "op": "FLIP_CMP",
+          "index": 21945,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 51940,
+          "index": 11884,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 67878,
+          "op": "FLIP_CMP",
+          "index": 5944,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "FLIP_CMP",
-          "index": 48951,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 94699,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 26426,
-          "killed": false,
-          "failedTests": []
-        }
-      ],
-      "rename": [
-        {
-          "id": "ren-0",
-          "name": "ctxLvSpd",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-1",
-          "name": "SHOW_TRAJ_ANNO",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-2",
-          "name": "mkP1",
-          "falsePositive": false,
-          "failedTests": []
-        }
-      ],
-      "semanticKilled": 0,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
-      "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
-      "renameTotal": 3,
-      "renameInvalid": 0,
-      "ms": 11468
-    },
-    {
-      "source": "src/scene/viewer/shotResultCard.ts",
-      "testFiles": [
-        "frontend/src/components/AgentArmorView.dom-contract.test.js",
-        "frontend/src/scene/heHeatmapProjection.test.js"
-      ],
-      "baselineRed": false,
-      "semantic": [
-        {
-          "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 14845,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 15582,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 7749,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 14546,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 17035,
+          "index": 11259,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 14902,
+          "index": 5922,
           "killed": false,
           "failedTests": []
         }
@@ -2246,91 +2252,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "heMin",
+          "name": "armorStateCurrent",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "finalSeg",
+          "name": "stateEntries",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "damageHtml",
-          "falsePositive": false,
-          "failedTests": []
-        }
-      ],
-      "semanticKilled": 0,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
-      "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
-      "renameTotal": 3,
-      "renameInvalid": 0,
-      "ms": 20131
-    },
-    {
-      "source": "src/scene/viewer/shotTrajectoryGeometry.ts",
-      "testFiles": [
-        "frontend/src/scene/heHeatmapProjection.test.js"
-      ],
-      "baselineRed": false,
-      "semantic": [
-        {
-          "id": "sem-0",
-          "op": "FLIP_CMP",
-          "index": 4157,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 3532,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 2965,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 2944,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 2976,
-          "killed": false,
-          "failedTests": []
-        }
-      ],
-      "rename": [
-        {
-          "id": "ren-0",
-          "name": "curve",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-1",
-          "name": "ricLayer",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-2",
-          "name": "reflected",
+          "name": "applyArmorStateToHeatmapClonesFn",
           "falsePositive": false,
           "failedTests": []
         }
@@ -2342,7 +2276,1316 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10709
+      "ms": 18206
+    },
+    {
+      "source": "src/scene/viewer/dataLoader.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 16657,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 15806,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 12923,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 4148,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 12852,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 18588,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "currentTargetId",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "cfgArr",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "shells",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 18158
+    },
+    {
+      "source": "src/scene/viewer/debugUi.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 1882,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 5807,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 1860,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 5900,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 5390,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 5996,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "issues",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "heading",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "NAMES",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 19443
+    },
+    {
+      "source": "src/scene/viewer/diagnosticProbe.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 11889,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 26807,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 10971,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 4176,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 20484,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 23969,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "',' expected.",
+            "',' expected."
+          ],
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "camera",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "angle",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "grid",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 18253
+    },
+    {
+      "source": "src/scene/viewer/equipmentState.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 2048,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected.",
+            "';' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 2066,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5871,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 5295,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 5526,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "enhOn",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "shellLabel",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "pitchDeviceBonusValue",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 3,
+      "semanticInvalid": 2,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 14281
+    },
+    {
+      "source": "src/scene/viewer/heatmap.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 15396,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 27406,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 22799,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 17533,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 27882,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 29756,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "inject",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "disposeRicochetGrid",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "applyTo",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 20041
+    },
+    {
+      "source": "src/scene/viewer/judgment.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 19985,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 12323,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 4806,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 47675,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 47589,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 43781,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "origSection",
+          "falsePositive": true,
+          "failedTests": [
+            "spaced armor double-sided judgment 同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）"
+          ]
+        },
+        {
+          "id": "ren-1",
+          "name": "shellRicoDeg",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "checkHits",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 20122
+    },
+    {
+      "source": "src/scene/viewer/modelLifecycle.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 14704,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 5418,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 10470,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 9772,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 11806,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 11879,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "_retagArmorModel",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "modelMaxDim",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "fxScene",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 19909
+    },
+    {
+      "source": "src/scene/viewer/resultCardAnchor.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 797,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 1198,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 1359,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 1353,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 774,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 1398,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "near",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "nearPlane",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "view",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 19747
+    },
+    {
+      "source": "src/scene/viewer/resultCardPosition.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 3103,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 1455,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 2300,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 2093,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 1545,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 2369,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "hitsPanel",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "accept",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "tested",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 18301
+    },
+    {
+      "source": "src/scene/viewer/shotReplay.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js",
+        "frontend/src/scene/tankViewer.collisionBoxFailsafe.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 29894,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 82530,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 56082,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 68176,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 1279,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected.",
+            "';' expected.",
+            "Declaration or statement expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 33742,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "tlDt",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "iHits",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "missDeps",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 18572
+    },
+    {
+      "source": "src/scene/viewer/shotReplayMiss.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 14444,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 15799,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 11763,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 16295,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 15786,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 12206,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "perp2",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "sRel2",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "gunNode2",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 20124
+    },
+    {
+      "source": "src/scene/viewer/shotResultCard.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js",
+        "frontend/src/scene/heHeatmapProjection.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 14673,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 4474,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5223,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 14830,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 5221,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 5264,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "cardChanceCss",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "more",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "fmtBest",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 20863
+    },
+    {
+      "source": "src/scene/viewer/shotTrajectoryGeometry.ts",
+      "testFiles": [
+        "frontend/src/scene/heHeatmapProjection.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 4159,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 3965,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 2965,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 2976,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 3274,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "trajMat",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "ricLayer",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "incoming",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 10028
+    },
+    {
+      "source": "src/scene/viewer/trajectoryCard.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 9052,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 9731,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 7257,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected.",
+            "';' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 16888,
+          "killed": true,
+          "failedTests": [
+            "traj-info hit-follow layout 世界命中点逐帧投影（容器坐标 + 面板避让），相机后方隐藏"
+          ]
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 10693,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 17845,
+          "killed": true,
+          "failedTests": [
+            "traj-info hit-follow layout 世界命中点逐帧投影（容器坐标 + 面板避让），相机后方隐藏"
+          ]
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "title",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "lastAnchor",
+          "falsePositive": true,
+          "failedTests": [
+            "traj-info hit-follow layout 世界命中点逐帧投影（容器坐标 + 面板避让），相机后方隐藏"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "moved",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 2,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 18107
+    },
+    {
+      "source": "src/scene/viewer/turretRig.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 5211,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 7349,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 2429,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 4805,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 4416,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 4420,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "_aimPivotT",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "mesh",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "armorPivotTurret",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 19886
+    },
+    {
+      "source": "src/scene/viewer/viewerMath.ts",
+      "testFiles": [
+        "frontend/src/components/AgentArmorView.dom-contract.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 1011,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 1070,
+          "killed": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard dollyZoomFov 纯函数与视锥锚点回归"
+          ]
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 1162,
+          "killed": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard dollyZoomFov 纯函数与视锥锚点回归"
+          ]
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 1598,
+          "killed": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）"
+          ]
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 2568,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 990,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "scale",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "product",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-2",
+          "name": "negAng",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 3,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 20222
     }
   ]
 }

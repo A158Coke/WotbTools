@@ -90,7 +90,31 @@ function findSourceReaders(text) {
       readers.push({ varName: helperNames[0], sourcePath: '(dynamic)', kind: 'helper-dynamic' });
     }
   }
-  return readers;
+  // 数组拼接读取：`const kernel = [read('a.ts'), read('b.ts')].join('\n')`。
+  // 只识别单赋值/直接 helper 调用时，数组里的每个读取目标都漏登记，接收变量（kernel）
+  // 也不在 readers 中——该文件的源码文本守卫会整类消失
+  // （AgentArmorView.dom-contract.test.js 正是此形态）。逐元素登记到同一接收变量：
+  // 用例体引用该变量即视为读取了数组里所有源文本（聚合文本的既有口径）。
+  for (const m of text.matchAll(/(?:const|let|var)\s+(\w[\w$]*)\s*=\s*\[([\s\S]*?)\]/g)) {
+    const [, name, body] = m;
+    const targets = [];
+    for (const h of helperNames) {
+      const callRe = new RegExp(`${h}\\b\\s*\\(([^)]*)\\)`, 'g');
+      for (const call of body.matchAll(callRe)) targets.push(extractTarget(call[1]));
+    }
+    for (const call of body.matchAll(/readFileSync\s*\(([^)]*)\)/g)) targets.push(extractTarget(call[1]));
+    for (const target of targets) {
+      readers.push({ varName: name, sourcePath: target || '(dynamic)', kind: 'array' });
+    }
+  }
+  // 同一接收变量可能被单行/数组/helper 多条规则登记；按“变量+目标”去重（保留首个来源类型）。
+  const seen = new Set();
+  return readers.filter((r) => {
+    const key = `${r.varName}|${r.sourcePath}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** 正则字面量起点的上下文判定（`/` 既可能是除法，也可能是正则）：只看前一个非空白

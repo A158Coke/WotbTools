@@ -3,7 +3,7 @@
   "scannedTestFiles": 411,
   "sourceReadingTestFiles": 69,
   "totalCases": 1210,
-  "totalTextAssertionCases": 269,
+  "totalTextAssertionCases": 300,
   "parseAnomalies": [],
   "files": [
     {
@@ -925,14 +925,6 @@
           "varName": "view"
         },
         {
-          "sourcePath": "./AgentArmorView.vue",
-          "varName": "view"
-        },
-        {
-          "sourcePath": "./AgentArmorView.vue",
-          "varName": "view"
-        },
-        {
           "sourcePath": "../scene/viewer/shotResultCard.ts",
           "varName": "card"
         },
@@ -945,16 +937,8 @@
           "varName": "packSrc"
         },
         {
-          "sourcePath": "../scene/armorCollisionPack.ts",
-          "varName": "packSrc"
-        },
-        {
           "sourcePath": "./TankCatalogMenu.vue",
           "varName": "menu"
-        },
-        {
-          "sourcePath": "./AgentArmorView.vue",
-          "varName": "view"
         },
         {
           "sourcePath": "./ArmorShotHud.vue",
@@ -965,16 +949,68 @@
           "varName": "shaders"
         },
         {
-          "sourcePath": "./AgentArmorView.vue",
-          "varName": "template"
+          "sourcePath": "../scene/tankViewer.js",
+          "varName": "kernel"
         },
         {
-          "sourcePath": "./AgentArmorView.vue",
-          "varName": "template"
+          "sourcePath": "../scene/viewer/turretRig.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/modelLifecycle.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/heatmap.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/judgment.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/trajectoryCard.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/diagnosticProbe.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplay.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplayMiss.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/debugUi.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/equipmentState.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/collisionView.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/viewerMath.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/dataLoader.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/aimInput.ts",
+          "varName": "kernel"
         }
       ],
       "caseCount": 64,
-      "textAssertionCases": 26,
+      "textAssertionCases": 57,
       "parseAnomalies": [],
       "cases": [
         {
@@ -984,8 +1020,21 @@
           "textAssertion": false,
           "usesVars": [
             "template",
-            "template",
-            "template"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [],
           "parseError": null
@@ -999,14 +1048,24 @@
             "template",
             "shotHud",
             "view",
-            "view",
-            "view",
             "card",
             "pen",
-            "view",
             "hud",
-            "template",
-            "template"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch",
@@ -1022,7 +1081,22 @@
           "startLine": 79,
           "textAssertion": true,
           "usesVars": [
-            "plateModel"
+            "plateModel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch"
@@ -1033,27 +1107,83 @@
           "id": "AgentArmorView.dom-contract:96",
           "name": "guards every bootstrap continuation before the next asset or DOM step",
           "startLine": 96,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:119",
           "name": "guards shot handoff, shooter models and delayed callbacks after scene disposal",
           "startLine": 119,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:134",
           "name": "animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态还原原生 50°",
           "startLine": 134,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1063,9 +1193,21 @@
           "textAssertion": true,
           "usesVars": [
             "view",
-            "view",
-            "view",
-            "view"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch"
@@ -1079,9 +1221,21 @@
           "textAssertion": true,
           "usesVars": [
             "view",
-            "view",
-            "view",
-            "view"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toContain"
@@ -1092,9 +1246,28 @@
           "id": "AgentArmorView.dom-contract:166",
           "name": "worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）",
           "startLine": 166,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf"
+          ],
           "parseError": null
         },
         {
@@ -1123,10 +1296,22 @@
           "usesVars": [
             "plateModel",
             "view",
-            "view",
-            "view",
             "card",
-            "view"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch",
@@ -1140,18 +1325,57 @@
           "id": "AgentArmorView.dom-contract:352",
           "name": "结果卡不再按命中点投影摆位：停靠位置由样式所有（真实几何由 browser-armor-aiming 断言）",
           "startLine": 352,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:369",
           "name": "结果卡距离行插值 L.shotDistance / L.distanceUnit",
           "startLine": 369,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -1161,10 +1385,7 @@
           "textAssertion": true,
           "usesVars": [
             "view",
-            "view",
-            "view",
-            "card",
-            "view"
+            "card"
           ],
           "patterns": [
             "toContain"
@@ -1179,7 +1400,21 @@
           "usesVars": [
             "plateModel",
             "packSrc",
-            "packSrc"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch",
@@ -1195,7 +1430,22 @@
           "startLine": 465,
           "textAssertion": true,
           "usesVars": [
-            "plateModel"
+            "plateModel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch"
@@ -1215,9 +1465,29 @@
           "id": "AgentArmorView.dom-contract:492",
           "name": "累计格式：半浮点 RT 保留 >1 累计 + 能力检测 + 8 位回退饱和守卫（review 2026-10-13 P2）",
           "startLine": 492,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
@@ -1237,7 +1507,6 @@
           "startLine": 528,
           "textAssertion": true,
           "usesVars": [
-            "packSrc",
             "packSrc"
           ],
           "patterns": [
@@ -1262,27 +1531,81 @@
           "id": "AgentArmorView.dom-contract:543",
           "name": "主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）",
           "startLine": 543,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:549",
           "name": "AP/APCR/HEAT 使用概率链统一判定；HE/跳弹保留确定性分支",
           "startLine": 549,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:569",
           "name": "HE 零/缺失 explosion_radius 不进入 generic probability card",
           "startLine": 569,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1291,7 +1614,22 @@
           "startLine": 576,
           "textAssertion": true,
           "usesVars": [
-            "pen"
+            "pen",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch",
@@ -1305,7 +1643,22 @@
           "startLine": 593,
           "textAssertion": true,
           "usesVars": [
-            "plateModel"
+            "plateModel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch",
@@ -1317,81 +1670,245 @@
           "id": "AgentArmorView.dom-contract:602",
           "name": "爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF",
           "startLine": 602,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:612",
           "name": "单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间",
           "startLine": 612,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:630",
           "name": "PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane",
           "startLine": 630,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:638",
           "name": "无效 HE 概率行走 resolveCardChance fail-closed",
           "startLine": 638,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:642",
           "name": "非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签",
           "startLine": 642,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:646",
           "name": "跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0",
           "startLine": 646,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:651",
           "name": "跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）",
           "startLine": 651,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:667",
           "name": "updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵",
           "startLine": 667,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:678",
           "name": "传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）",
           "startLine": 678,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1424,36 +1941,108 @@
           "id": "AgentArmorView.dom-contract:703",
           "name": "求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复",
           "startLine": 703,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:709",
           "name": "同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）",
           "startLine": 709,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:718",
           "name": "点击主链与跳弹续飞共用同一双面求交/收集",
           "startLine": 718,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:731",
           "name": "换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照",
           "startLine": 731,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1462,9 +2051,6 @@
           "startLine": 736,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view",
             "hud"
           ],
@@ -1481,9 +2067,21 @@
           "textAssertion": true,
           "usesVars": [
             "view",
-            "view",
-            "view",
-            "view"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch"
@@ -1496,9 +2094,6 @@
           "startLine": 762,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view"
           ],
           "patterns": [
@@ -1512,9 +2107,6 @@
           "startLine": 765,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view"
           ],
           "patterns": [
@@ -1548,36 +2140,108 @@
           "id": "AgentArmorView.dom-contract:780",
           "name": "普通检视换射手/换炮清掉上一发结果与 HE 可视化",
           "startLine": 780,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:783",
           "name": "射击复现换装备/换配置沿权威 launch/lvDir 重跑",
           "startLine": 783,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:789",
           "name": "目标配置切换清空旧结果并使在途判定失效",
           "startLine": 789,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:792",
           "name": "射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载",
           "startLine": 792,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1586,9 +2250,6 @@
           "startLine": 797,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view"
           ],
           "patterns": [
@@ -1602,9 +2263,6 @@
           "startLine": 801,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view"
           ],
           "patterns": [
@@ -1618,9 +2276,6 @@
           "startLine": 805,
           "textAssertion": true,
           "usesVars": [
-            "view",
-            "view",
-            "view",
             "view",
             "hud"
           ],
@@ -1636,7 +2291,22 @@
           "textAssertion": true,
           "usesVars": [
             "plateModel",
-            "shaders"
+            "shaders",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toMatch"
@@ -1658,9 +2328,27 @@
           "id": "AgentArmorView.dom-contract:837",
           "name": "厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide",
           "startLine": 837,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
@@ -1669,8 +2357,6 @@
           "startLine": 846,
           "textAssertion": true,
           "usesVars": [
-            "template",
-            "template",
             "template"
           ],
           "patterns": [
@@ -1684,27 +2370,85 @@
           "id": "AgentArmorView.dom-contract:862",
           "name": "瞄准/判定上下文按当前目标过滤回放装备真值",
           "startLine": 862,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:866",
           "name": "换目标后原生勾选回到手动且不保留上一辆车的勾选态",
           "startLine": 866,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toContain",
+            "slice"
+          ],
           "parseError": null
         },
         {
           "id": "AgentArmorView.dom-contract:883",
           "name": "eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice",
           "startLine": 883,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
+          "textAssertion": true,
+          "usesVars": [
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
+          ],
+          "patterns": [
+            "toMatch",
+            "toContain",
+            "indexOf",
+            "slice"
+          ],
           "parseError": null
         },
         {
@@ -1714,8 +2458,21 @@
           "textAssertion": true,
           "usesVars": [
             "template",
-            "template",
-            "template"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toContain"
@@ -1729,8 +2486,21 @@
           "textAssertion": true,
           "usesVars": [
             "template",
-            "template",
-            "template"
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel",
+            "kernel"
           ],
           "patterns": [
             "toContain",
@@ -1939,10 +2709,6 @@
         {
           "sourcePath": "src/composables/usePlaybackVehicleProjection.ts",
           "varName": "projectionSrc"
-        },
-        {
-          "sourcePath": "src/components/BattlePlayback.vue",
-          "varName": "src"
         }
       ],
       "caseCount": 106,
@@ -2162,7 +2928,6 @@
           "startLine": 608,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [
@@ -2194,7 +2959,6 @@
           "startLine": 702,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [
@@ -2208,7 +2972,6 @@
           "startLine": 729,
           "textAssertion": false,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [],
@@ -2338,8 +3101,7 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "projectionSrc",
-            "src"
+            "projectionSrc"
           ],
           "patterns": [
             "toContain"
@@ -2352,7 +3114,6 @@
           "startLine": 1196,
           "textAssertion": false,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [],
@@ -2607,7 +3368,6 @@
           "startLine": 2089,
           "textAssertion": false,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [],
@@ -3236,14 +3996,6 @@
         {
           "sourcePath": "src/components/PlaybackRoster.vue",
           "varName": "source"
-        },
-        {
-          "sourcePath": "src/components/PlaybackRoster.vue",
-          "varName": "source"
-        },
-        {
-          "sourcePath": "src/components/PlaybackRoster.vue",
-          "varName": "source"
         }
       ],
       "caseCount": 16,
@@ -3310,8 +4062,6 @@
           "startLine": 140,
           "textAssertion": true,
           "usesVars": [
-            "source",
-            "source",
             "source"
           ],
           "patterns": [
@@ -3326,8 +4076,6 @@
           "startLine": 159,
           "textAssertion": true,
           "usesVars": [
-            "source",
-            "source",
             "source"
           ],
           "patterns": [
@@ -3351,8 +4099,6 @@
           "startLine": 183,
           "textAssertion": true,
           "usesVars": [
-            "source",
-            "source",
             "source"
           ],
           "patterns": [
@@ -3703,10 +4449,6 @@
         {
           "sourcePath": "src/components/PlayerDetailDrawer.vue",
           "varName": "source"
-        },
-        {
-          "sourcePath": "src/components/PlayerDetailDrawer.vue",
-          "varName": "source"
         }
       ],
       "caseCount": 53,
@@ -3962,7 +4704,6 @@
           "startLine": 448,
           "textAssertion": true,
           "usesVars": [
-            "source",
             "source"
           ],
           "patterns": [
@@ -4066,7 +4807,6 @@
           "startLine": 589,
           "textAssertion": true,
           "usesVars": [
-            "source",
             "source"
           ],
           "patterns": [
@@ -6733,10 +7473,6 @@
         {
           "sourcePath": "(dynamic)",
           "varName": "rules"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "docker"
         }
       ],
       "caseCount": 2,
@@ -6758,7 +7494,6 @@
           "startLine": 89,
           "textAssertion": false,
           "usesVars": [
-            "docker",
             "docker"
           ],
           "patterns": [],
@@ -7054,18 +7789,6 @@
         {
           "sourcePath": "(dynamic)",
           "varName": "bytes"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "bytes"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "bytes"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "bytes"
         }
       ],
       "caseCount": 10,
@@ -7105,9 +7828,6 @@
           "startLine": 83,
           "textAssertion": true,
           "usesVars": [
-            "bytes",
-            "bytes",
-            "bytes",
             "bytes"
           ],
           "patterns": [
@@ -7121,9 +7841,6 @@
           "startLine": 91,
           "textAssertion": false,
           "usesVars": [
-            "bytes",
-            "bytes",
-            "bytes",
             "bytes"
           ],
           "patterns": [],
@@ -7135,9 +7852,6 @@
           "startLine": 113,
           "textAssertion": false,
           "usesVars": [
-            "bytes",
-            "bytes",
-            "bytes",
             "bytes"
           ],
           "patterns": [],
@@ -8786,10 +9500,6 @@
         {
           "sourcePath": "playback/pickReport.ts",
           "varName": "src"
-        },
-        {
-          "sourcePath": "playback/pickReport.ts",
-          "varName": "src"
         }
       ],
       "caseCount": 21,
@@ -9004,7 +9714,6 @@
           "startLine": 232,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [
@@ -9018,7 +9727,6 @@
           "startLine": 236,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [
@@ -9052,18 +9760,6 @@
           "varName": "battleSrc"
         },
         {
-          "sourcePath": "playbackScene.js",
-          "varName": "src"
-        },
-        {
-          "sourcePath": "playback/mapAssets.ts",
-          "varName": "mapAssetsSrc"
-        },
-        {
-          "sourcePath": "playback/mapWorld.ts",
-          "varName": "mapWorldSrc"
-        },
-        {
           "sourcePath": "playback/perfProbe.ts",
           "varName": "perfProbeSrc"
         },
@@ -9092,28 +9788,8 @@
           "varName": "mapAssets"
         },
         {
-          "sourcePath": "playback/armorHighlight.ts",
-          "varName": "hl"
-        },
-        {
           "sourcePath": "viewer/armorShaders.ts",
           "varName": "shaders"
-        },
-        {
-          "sourcePath": "playback/armorHighlight.ts",
-          "varName": "hl"
-        },
-        {
-          "sourcePath": "playback/armorHighlight.ts",
-          "varName": "hl"
-        },
-        {
-          "sourcePath": "playback/armorHighlight.ts",
-          "varName": "hl"
-        },
-        {
-          "sourcePath": "playback/armorHighlight.ts",
-          "varName": "hl"
         }
       ],
       "caseCount": 27,
@@ -9155,9 +9831,6 @@
           "usesVars": [
             "src",
             "labelsSrc",
-            "mapAssetsSrc",
-            "mapWorldSrc",
-            "src",
             "mapAssetsSrc",
             "mapWorldSrc"
           ],
@@ -9239,8 +9912,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "mapAssetsSrc",
-            "src",
             "mapAssetsSrc"
           ],
           "patterns": [
@@ -9254,7 +9925,6 @@
           "startLine": 104,
           "textAssertion": true,
           "usesVars": [
-            "mapWorldSrc",
             "mapWorldSrc"
           ],
           "patterns": [
@@ -9268,7 +9938,6 @@
           "startLine": 109,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src",
             "perfProbeSrc"
           ],
@@ -9391,12 +10060,7 @@
           "usesVars": [
             "hl",
             "inst",
-            "mapAssets",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
-            "hl"
+            "mapAssets"
           ],
           "patterns": [
             "toMatch"
@@ -9410,12 +10074,7 @@
           "textAssertion": true,
           "usesVars": [
             "hl",
-            "hl",
-            "shaders",
-            "hl",
-            "hl",
-            "hl",
-            "hl"
+            "shaders"
           ],
           "patterns": [
             "toMatch"
@@ -9430,11 +10089,6 @@
           "usesVars": [
             "source",
             "cameraSrc",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
             "hl"
           ],
           "patterns": [
@@ -9449,11 +10103,6 @@
           "textAssertion": true,
           "usesVars": [
             "cameraSrc",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
             "hl"
           ],
           "patterns": [
@@ -9485,11 +10134,6 @@
           "startLine": 228,
           "textAssertion": true,
           "usesVars": [
-            "hl",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
             "hl"
           ],
           "patterns": [
@@ -9503,11 +10147,6 @@
           "startLine": 236,
           "textAssertion": true,
           "usesVars": [
-            "hl",
-            "hl",
-            "hl",
-            "hl",
-            "hl",
             "hl"
           ],
           "patterns": [
@@ -9535,10 +10174,6 @@
         {
           "sourcePath": "sceneryMaterials.ts",
           "varName": "matSrc"
-        },
-        {
-          "sourcePath": "playback/mapWorld.ts",
-          "varName": "worldSrc"
         },
         {
           "sourcePath": "playback/mapWorld.ts",
@@ -9630,7 +10265,6 @@
           "startLine": 73,
           "textAssertion": true,
           "usesVars": [
-            "worldSrc",
             "worldSrc"
           ],
           "patterns": [
@@ -9646,7 +10280,6 @@
           "startLine": 89,
           "textAssertion": true,
           "usesVars": [
-            "worldSrc",
             "worldSrc"
           ],
           "patterns": [
@@ -10007,20 +10640,12 @@
           "varName": "bake"
         },
         {
-          "sourcePath": "replaySource.ts",
-          "varName": "rs"
-        },
-        {
           "sourcePath": "terrainMesh.js",
           "varName": "meshSrc"
         },
         {
           "sourcePath": "sceneryMaterials.ts",
           "varName": "wSrc"
-        },
-        {
-          "sourcePath": "terrainMesh.js",
-          "varName": "meshSrc"
         },
         {
           "sourcePath": "bake-ground-overhead.mjs",
@@ -10033,10 +10658,6 @@
         {
           "sourcePath": "bake-ground-overhead.mjs",
           "varName": "bakeSrc"
-        },
-        {
-          "sourcePath": "playback/renderer.ts",
-          "varName": "rendererSrc"
         },
         {
           "sourcePath": "playback/hudFeed.ts",
@@ -10247,7 +10868,6 @@
           "usesVars": [
             "mlSrc",
             "mapWorldSrc",
-            "rs",
             "rs"
           ],
           "patterns": [
@@ -10299,9 +10919,7 @@
             "rendererSrc",
             "mlSrc",
             "mapWorldSrc",
-            "rs",
-            "rs",
-            "rendererSrc"
+            "rs"
           ],
           "patterns": [
             "toMatch"
@@ -10362,7 +10980,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "rendererSrc",
             "rendererSrc"
           ],
           "patterns": [
@@ -10427,7 +11044,6 @@
             "asmSrc",
             "gpSrc",
             "mapWorldSrc",
-            "meshSrc",
             "meshSrc"
           ],
           "patterns": [
@@ -10535,7 +11151,6 @@
           "usesVars": [
             "gpSrc",
             "mapWorldSrc",
-            "meshSrc",
             "meshSrc"
           ],
           "patterns": [
@@ -10563,8 +11178,7 @@
           "textAssertion": true,
           "usesVars": [
             "rendererSrc",
-            "mlSrc",
-            "rendererSrc"
+            "mlSrc"
           ],
           "patterns": [
             "toMatch"
@@ -10597,8 +11211,7 @@
             "src",
             "rendererSrc",
             "matSrc",
-            "gpSrc",
-            "rendererSrc"
+            "gpSrc"
           ],
           "patterns": [
             "toMatch",
@@ -10838,7 +11451,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "rendererSrc",
             "rendererSrc"
           ],
           "patterns": [
@@ -11197,10 +11809,6 @@
           "varName": "mapWorldSrc"
         },
         {
-          "sourcePath": "playbackScene.js",
-          "varName": "src"
-        },
-        {
           "sourcePath": "playback/cameraTerrainClamp.ts",
           "varName": "clampSrc"
         },
@@ -11309,7 +11917,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "src",
             "clampSrc",
             "cameraSrc"
           ],
@@ -11325,7 +11932,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "src",
             "cameraSrc"
           ],
           "patterns": [
@@ -11338,14 +11944,6 @@
     {
       "testFile": "frontend/src/scene/supremacyPoints.test.js",
       "sources": [
-        {
-          "sourcePath": "playbackScene.js",
-          "varName": "src"
-        },
-        {
-          "sourcePath": "playback/bases.ts",
-          "varName": "basesSrc"
-        },
         {
           "sourcePath": "playbackScene.js",
           "varName": "src"
@@ -11424,8 +12022,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "basesSrc",
-            "src",
             "basesSrc"
           ],
           "patterns": [
@@ -11442,8 +12038,6 @@
           "textAssertion": true,
           "usesVars": [
             "src",
-            "basesSrc",
-            "src",
             "basesSrc"
           ],
           "patterns": [
@@ -11457,7 +12051,6 @@
           "startLine": 94,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src"
           ],
           "patterns": [
@@ -11471,7 +12064,6 @@
           "startLine": 103,
           "textAssertion": true,
           "usesVars": [
-            "src",
             "src",
             "battleSrc"
           ],
@@ -12951,47 +13543,7 @@
         },
         {
           "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
           "varName": "buf"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "buf"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "buf"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "buf"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
         }
       ],
       "caseCount": 92,
@@ -13085,13 +13637,6 @@
           "startLine": 121,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13187,14 +13732,7 @@
           "textAssertion": true,
           "usesVars": [
             "meta",
-            "hull",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta"
+            "hull"
           ],
           "patterns": [
             "slice"
@@ -13207,13 +13745,6 @@
           "startLine": 252,
           "textAssertion": true,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [
@@ -13390,9 +13921,6 @@
           "textAssertion": true,
           "usesVars": [
             "hull",
-            "buf",
-            "buf",
-            "buf",
             "buf"
           ],
           "patterns": [
@@ -13406,9 +13934,6 @@
           "startLine": 439,
           "textAssertion": true,
           "usesVars": [
-            "buf",
-            "buf",
-            "buf",
             "buf"
           ],
           "patterns": [
@@ -13422,13 +13947,6 @@
           "startLine": 444,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13531,9 +14049,6 @@
           "textAssertion": true,
           "usesVars": [
             "hull",
-            "buf",
-            "buf",
-            "buf",
             "buf"
           ],
           "patterns": [
@@ -13575,14 +14090,7 @@
           "textAssertion": false,
           "usesVars": [
             "meta",
-            "hull",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta"
+            "hull"
           ],
           "patterns": [],
           "parseError": null
@@ -13614,9 +14122,6 @@
           "textAssertion": true,
           "usesVars": [
             "hull",
-            "buf",
-            "buf",
-            "buf",
             "buf"
           ],
           "patterns": [
@@ -13631,13 +14136,6 @@
           "startLine": 648,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13649,13 +14147,6 @@
           "startLine": 658,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13667,13 +14158,6 @@
           "startLine": 667,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13685,13 +14169,6 @@
           "startLine": 680,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -13988,34 +14465,6 @@
         },
         {
           "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "meta"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "rep"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "rep"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "rep"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "rep"
-        },
-        {
-          "sourcePath": "(dynamic)",
-          "varName": "rep"
-        },
-        {
-          "sourcePath": "(dynamic)",
           "varName": "rep"
         }
       ],
@@ -14086,8 +14535,6 @@
             "report",
             "meta",
             "report",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -14102,8 +14549,6 @@
             "report",
             "meta",
             "report",
-            "meta",
-            "meta",
             "meta"
           ],
           "patterns": [],
@@ -14153,9 +14598,7 @@
           "usesVars": [
             "meta",
             "meta",
-            "src",
-            "meta",
-            "meta"
+            "src"
           ],
           "patterns": [
             "toMatch"
@@ -14186,11 +14629,6 @@
           "startLine": 211,
           "textAssertion": false,
           "usesVars": [
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
@@ -14202,11 +14640,6 @@
           "startLine": 225,
           "textAssertion": false,
           "usesVars": [
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
@@ -14218,11 +14651,6 @@
           "startLine": 235,
           "textAssertion": false,
           "usesVars": [
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
@@ -14236,13 +14664,6 @@
           "usesVars": [
             "meta",
             "meta",
-            "meta",
-            "meta",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
@@ -14274,13 +14695,6 @@
           "usesVars": [
             "meta",
             "meta",
-            "meta",
-            "meta",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
@@ -14294,13 +14708,6 @@
           "usesVars": [
             "meta",
             "meta",
-            "meta",
-            "meta",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
-            "rep",
             "rep"
           ],
           "patterns": [],
