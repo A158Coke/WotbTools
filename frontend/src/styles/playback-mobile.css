@@ -1,13 +1,21 @@
 /* Phone portrait topology. Shared columns/sizing belong to playback-workspace.css;
    control geometry belongs to PlaybackTransport, independent of viewport breakpoints. */
 @media (orientation: portrait) and (width < 768px) {
-  .battle-playback.playback-workspace.pb-form-mobile:not(:fullscreen) {
+  .battle-playback.playback-workspace.pb-form-mobile:not(:fullscreen, .pb-pseudo-fullscreen) {
     block-size: auto;
   }
   .battle-playback.playback-workspace.pb-form-mobile .pb-main {
     display: flex;
     flex-direction: column;
   }
+  /* 竖屏全屏（原生 / 伪全屏）：根容器被钉成视口高度，.pb-main 若仍是可收缩的 flex 子项，
+     纵向流（HUD / 地图 / 传输 / 名册）会把方形舞台压成 0 高。让 .pb-main 按内容走，
+     名册等长内容在全屏根内部滚动，地图保持整宽方形。 */
+  .battle-playback.playback-workspace.pb-form-mobile:is(:fullscreen, .pb-pseudo-fullscreen) {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .battle-playback.playback-workspace.pb-form-mobile:is(:fullscreen, .pb-pseudo-fullscreen) .pb-main { flex: none; }
   .battle-playback.playback-workspace.pb-form-mobile .pb-main > .pb-map-stage { inline-size: 100%; }
   .battle-playback.playback-workspace.pb-form-mobile .pb-main .pb-map { inline-size: 100%; }
   .battle-playback.playback-workspace.pb-form-mobile .pb-inline-area { display: flex; flex-direction: column; gap: var(--space-2); }
