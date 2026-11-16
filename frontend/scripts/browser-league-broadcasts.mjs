@@ -109,8 +109,11 @@ try {
       const drawerShell = clicked.includes('nav-drawer-panel')
       if (drawerShell) await page.openNavDrawer(scenario.touch)
       const activeEntry = drawerShell ? '[data-testid=nav-drawer-panel] [data-testid=nav-league-broadcasts]' : '[data-testid=nav-league-broadcasts]'
-      assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(activeEntry)}).getAttribute('aria-current')`), 'page')
-      const navLabel = await page.evaluate(`(() => { const link = document.querySelector(${JSON.stringify(activeEntry)}); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
+      assert.equal(await page.callWith((sel) => document.querySelector(sel).getAttribute('aria-current'), activeEntry), 'page')
+      const navLabel = await page.callWith((sel) => {
+        const link = document.querySelector(sel)
+        return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }
+      }, activeEntry)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (drawerShell) await page.closeNavDrawer()
       await page.waitForValue('!!document.querySelector("[data-testid=broadcast-round-30]")', Boolean, { label: 'first server and latest season open by default' })

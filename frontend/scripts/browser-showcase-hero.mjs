@@ -17,6 +17,15 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
+// 新增文档脚本在页面脚本前执行：profile 只能取白名单里的静态脚本，
+// 不把运行时值拼进 source（CodeQL script-injection 面）。
+const PROFILE_INIT_SCRIPTS = {
+  spring: "localStorage.setItem('wotb-ui-profile', 'spring'); localStorage.setItem('wotb-lang', 'zh');",
+  summer: "localStorage.setItem('wotb-ui-profile', 'summer'); localStorage.setItem('wotb-lang', 'zh');",
+  autumn: "localStorage.setItem('wotb-ui-profile', 'autumn'); localStorage.setItem('wotb-lang', 'zh');",
+  winter: "localStorage.setItem('wotb-ui-profile', 'winter'); localStorage.setItem('wotb-lang', 'zh');",
+}
+
 // 冬季竖屏分区遮罩已几乎全撤：两处停靠点（.15 → 0，Chrome computed style 归一化为 rgba(...)）。
 // 完整 backgroundImage 逐一比对完整 opacity——旧遮罩（.97/.86/.24）不含这两个停靠点，
 // 负向可捕获泛白回归；标题可读性由手机断点的浅色文字 + 深色描边承担（无玻璃底板）。
@@ -125,8 +134,10 @@ try {
     const page = new Page(chrome.client, sessionId)
     await page.enable()
     await page.emulate({ width, height, touch: width < 1200 })
+    const initScript = PROFILE_INIT_SCRIPTS[profile]
+    if (!initScript) throw new Error(`unknown UI profile: ${profile}`)
     await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', 'zh');`,
+      source: initScript,
     }, sessionId)
     await chrome.client.send('Page.navigate', { url: `${origin}/?view=${view}${extraAuth}` }, sessionId)
     await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
