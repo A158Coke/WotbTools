@@ -25,12 +25,14 @@ vi.mock('./components/ReplayWorkspace.vue', () => ({
     // ws-immersive-request：仅全屏兜底菜单用例点击——模拟播放器申请沉浸态但暂不 hostNav
     //（对应 3D 工具栏收起交还托管的状态），其余用例不受影响。
     // ws-desktop-pseudo-nav + 自带 nav-menu：模拟平板 / 桌面伪全屏里的 PlaybackTransport——申请沉浸
-    // 并托管菜单入口；AppShell 必须仍挂载抽屉，否则这个入口点了没反应。
+    // 并托管菜单入口；ws-desktop-pseudo-nav-release 模拟控制条收起 / UI 隐藏时 hostNav(false)，
+    // 外壳必须接回兜底入口与抽屉。
     template: `<div :data-cap="initialCapability" data-test="view-replay">
       <button data-testid="ws-tab" @click="navigate('ai-review')">ai</button>
       <button data-testid="ws-armor-handoff" @click="navigate({ query: { view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2', shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1' } })">viewer</button>
       <button data-testid="ws-immersive-request" @click="chrome?.request('app-test-immersive', true)" />
       <button data-testid="ws-desktop-pseudo-nav" @click="chrome?.request('app-test-pseudo', true); chrome?.hostNav('app-test-pseudo-nav', true)" />
+      <button data-testid="ws-desktop-pseudo-nav-release" @click="chrome?.hostNav('app-test-pseudo-nav', false)" />
       <button v-if="chrome?.navHosted?.value" data-testid="nav-menu" @click="openNav($event.currentTarget)">menu</button>
     </div>`,
   },
@@ -642,6 +644,22 @@ describe('App shell navigation, 更多 and account', () => {
     await wrapper.get('[data-testid="nav-menu"]').trigger('click')
     await settle()
     // 抽屉必须真实挂载并打开；只改 navDrawerOpen 而没有 AppNavDrawer 就是死按钮。
+    expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
+  })
+
+  it('桌面伪全屏：播放器交还导航托管（控制条收起 / UI 隐藏）后备用菜单与抽屉仍可用', async () => {
+    layoutState.isCompact.value = false
+    layoutState.isDrawerShell.value = false
+    const { wrapper } = await mountApp('/?view=replay')
+    await wrapper.get('[data-testid="ws-desktop-pseudo-nav"]').trigger('click')
+    await settle()
+    expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)   // 播放器托管中
+    // 控制条收起 / UI 隐藏 → PlaybackTransport hostNav(false)；桌面侧栏仍被伪全屏 CSS 隐藏。
+    await wrapper.get('[data-testid="ws-desktop-pseudo-nav-release"]').trigger('click')
+    await settle()
+    expect(wrapper.findAll('[data-testid="nav-menu"]')).toHaveLength(1)    // 外壳兜底入口接上
+    await wrapper.get('[data-testid="nav-menu"]').trigger('click')
+    await settle()
     expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
   })
 

@@ -265,10 +265,12 @@ watch(uiProfile, async () => {
     @open-nav="openNavDrawer(null)"
   />
   <AppSidebar v-if="!isDrawerShell" />
-  <!-- 沉浸态（手机横屏回放 / 装甲查看器）没有顶栏：左上保留同一个菜单入口打开抽屉 -->
+  <!-- 沉浸态（手机横屏回放 / 装甲查看器 / 桌面伪全屏）没有顶栏：左上保留同一个菜单入口打开抽屉。
+       桌面伪全屏时播放器托管入口可能随控制条收起 / UI 隐藏而释放（navHosted=false），
+       此时外壳必须接回兜底入口；该条件不能再要求 isDrawerShell。 -->
   <Teleport :to="fullscreenRoot ?? 'body'" :disabled="!fullscreenRoot">
     <button
-      v-if="isDrawerShell && shellChrome.immersive.value && !shellChrome.navHosted.value"
+      v-if="shellChrome.immersive.value && !shellChrome.navHosted.value"
       ref="immersiveMenu"
       type="button"
       class="immersive-nav"
@@ -281,10 +283,10 @@ watch(uiProfile, async () => {
       <Menu :size="20" aria-hidden="true" />
     </button>
   </Teleport>
-  <!-- 抽屉入口不只属于抽屉外壳：平板 / 桌面进入伪全屏后侧边栏被隐藏，播放器托管的菜单入口
-       仍要能打开同一个导航抽屉（navHosted 只在该入口真实存在时为 true）。 -->
+  <!-- 抽屉入口不只属于抽屉外壳：平板 / 桌面进入伪全屏后侧边栏被 CSS 隐藏，无论入口来自
+       播放器托管（navHosted）还是外壳兜底，同一个抽屉都必须真实存在。 -->
   <AppNavDrawer
-    v-if="isDrawerShell || shellChrome.navHosted.value"
+    v-if="isDrawerShell || shellChrome.immersive.value"
     :open="navDrawerOpen"
     :return-focus-to="navReturnFocus"
     @close="navDrawerOpen = false"
