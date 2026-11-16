@@ -287,6 +287,37 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     stop()
   })
 
+  it('过期请求的迟到成功不得退出更新请求建立的全屏（同一 target 元素）', async () => {
+    stubMatchMedia({})
+    const { root, calls } = stubBrowserApis()
+    const pending = []
+    // 浏览器里 requestFullscreen() 在用户手势后可能长时间悬挂；两次请求指向同一个 target，
+    // ownsFullscreen() 无法区分新旧会话，只能由请求代次判断谁建立了当前会话。
+    root.requestFullscreen = vi.fn(() => new Promise((resolve) => {
+      pending.push(() => {
+        Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+        resolve()
+      })
+    }))
+    const { api, stop } = mountFullscreen()
+    api.toggleFullscreen()                  // 请求 A 悬挂
+    expect(pending).toHaveLength(1)
+    api.exitOwnedFullscreen()               // 失活 / 宿主退出：取消 A，代次前进
+    api.toggleFullscreen()                  // 请求 B
+    expect(pending).toHaveLength(2)
+    pending[1]()                            // B 成功建立会话
+    await flush()
+    expect(api.isFullscreen.value).toBe(true)
+    expect(calls.exit).toBe(0)
+
+    pending[0]()                            // A 迟到 resolve：不得补刀 B 的会话
+    await flush()
+    expect(api.isFullscreen.value).toBe(true)
+    expect(calls.exit).toBe(0)
+    stop()
+  })
+
   it('生命周期失活（capability 切走）后不再锁横屏', async () => {
     stubMatchMedia({ [PLAYBACK_PHONE_QUERY]: true })
     const { calls } = stubBrowserApis()

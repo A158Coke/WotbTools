@@ -281,8 +281,10 @@ watch(uiProfile, async () => {
       <Menu :size="20" aria-hidden="true" />
     </button>
   </Teleport>
+  <!-- 抽屉入口不只属于抽屉外壳：平板 / 桌面进入伪全屏后侧边栏被隐藏，播放器托管的菜单入口
+       仍要能打开同一个导航抽屉（navHosted 只在该入口真实存在时为 true）。 -->
   <AppNavDrawer
-    v-if="isDrawerShell"
+    v-if="isDrawerShell || shellChrome.navHosted.value"
     :open="navDrawerOpen"
     :return-focus-to="navReturnFocus"
     @close="navDrawerOpen = false"

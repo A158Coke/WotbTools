@@ -69,6 +69,9 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   const shellChrome = inject(SHELL_CHROME_KEY, null)
 
   let requestGeneration = 0
+  // 当前原生全屏会话由哪一代请求建立：`ownsFullscreen()` 只认元素，跟不上「同一元素的新会话」。
+  // 过期请求的成功回调只有在本代请求**就是**当前会话的建立者时才允许退出，避免补刀更新的会话。
+  let sessionGeneration: number | null = null
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null
   function cancelPendingRequest() {
     requestGeneration += 1
@@ -115,7 +118,10 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   /** 唯一的状态同步点：任何来源的全屏变化都经这里 */
   function onFullscreenChange() {
     nativeFullscreen.value = ownsFullscreen()
-    if (!nativeFullscreen.value) unlockOrientation()
+    if (!nativeFullscreen.value) {
+      sessionGeneration = null
+      unlockOrientation()
+    }
     // 迟到的原生全屏成功时让位给它（不再叠着伪全屏）
     if (nativeFullscreen.value && pseudoFullscreen.value) { setPseudoFullscreen(false); return }
     onChange?.(isFullscreen.value)
@@ -244,10 +250,13 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
         fallbackTimer = pseudoFallback ? setTimeout(fallback, PSEUDO_FALLBACK_DELAY_MS) : null
         p.then(() => {
           if (generation !== requestGeneration || disposed || !isActive()) {
-            if (ownsFullscreen()) exitOwnedFullscreen()
+            // 过期请求的迟到成功：只有当前全屏仍由本代请求建立时才退出。若更新的请求已经建立了
+            // 会话（同一 target 元素，ownsFullscreen() 分不出来），这里退出就是误杀新会话。
+            if (ownsFullscreen() && (sessionGeneration === null || sessionGeneration === generation)) exitOwnedFullscreen()
             return
           }
           settled = true
+          sessionGeneration = generation
           if (fallbackTimer !== null) clearTimeout(fallbackTimer)
           fallbackTimer = null
           lockOrientation()
