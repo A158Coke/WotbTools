@@ -30,24 +30,24 @@
 
 | 簇 | 探测源 | 跳过（baselineRed） | 语义捕获（有效变异） | invalid | inconclusive | 等价重命名误报 |
 |---|---|---|---|---|---|---|
-| scene | 23 | 0 | **6/123（4.9%）** | 12 | 0 | **10/69（14.5%）** |
+| scene | 23 | 0 | **3/112（2.7%）** | 23 | 0 | **3/69（4.3%）** |
 | css | 1 | 0 | 1/6（16.7%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
-| vue | 17 | 0 | **1/96（1.0%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
-| 合计 | 41 | 0 | 8/225（3.6%） | 12 | 0 | 10/69（14.5%） |
+| vue | 17 | 1（inconclusive） | **1/90（1.1%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
+| 合计 | 41 | 1 | 5/208（2.4%） | 23 | 0 | 3/69（4.3%） |
 
 逐源矩阵：`scripts/testing/probe-matrix-{scene,css,vue}.json`。要点：
 
 - 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源与文本用例都比 Wave 0 少（23 源 / 159 文本用例），因此与旧 24.6% 不可直接对比。
-- **组件源（.vue）仍接近零捕获（1/96）**：唯一被杀的是 `TankConfigPanel.vue` 的数值变异；模板/样式内的字面量语义基本没有读取方文本守卫。
-- scene 被杀最多的源：`heSplash.ts` 2/6；`penetration.js` / `playbackScene.js` / `tankViewer.js` / `viewer/armorPlateModel.ts` 各 1/6。接线类语义（调用存在性）多数存活。
-- 等价重命名误报 10/69：`groundPass.js`、`heSplash.ts`、`playback/mapAssets.ts`、`playback/renderer.ts` 各 2/3，其余 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。
-- **invalid 12 个变异**（parse 校验失败，未计入捕获率）：`sceneryAssembly.ts` 3、`mapAssets.ts` 2、`sceneryMaterials.ts` 2、`armorHighlight.ts` / `renderer.ts` / `sceneryInstancing.ts` / `shotResultCard.ts` / `shotTrajectoryGeometry.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
-- 本轮 baselineRed=0、inconclusive=0：23+1+17 个源的读取方测试基线全部全绿，失败的探针都能归入断言失败 / 解析失败两类。
+- **组件源（.vue）仍接近零捕获（1/90）**：唯一被杀的是 `TankResearchPanel.vue` 的数值变异；模板/样式内的字面量语义基本没有读取方文本守卫。
+- scene 被杀最多的源：`heSplash.ts` 1/6、`playbackScene.js` 1/6、`tankViewer.js` 1/5。接线类语义（调用存在性）多数存活。
+- 等价重命名误报 3/69：`groundPass.js`、`heSplash.ts`、`viewer/armorPlateModel.ts` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
+- **invalid 23 个变异**（parse 校验失败，未计入捕获率）：`sceneryAssembly.ts` 4、`armorHighlight.ts` / `mapWorld.ts` 各 3、`mapAssets.ts` / `sceneryMaterials.ts` / `shotResultCard.ts` 各 2，`battleRuntime.ts` / `cameraRuntime.ts` / `renderer.ts` / `vehicleRuntime.ts` / `sceneryInstancing.ts` / `armorPlateModel.ts` / `armorShaders.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
+- 本轮 scene/css 的读取方基线全绿；vue 的 `BattlePlaybackPanel.vue` 基线为 **inconclusive**（无断言失败，集合/超时类异常），按跳过处理并保留在矩阵 `baselineInconclusive`，不冒充通过。
 
 ## 评审跟进（2026-11-16）
 
 - **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / 对外导出名 / import 关键字 / 字符串不动。shorthand（`{ name }`）与无别名 `export { name }` 的 checker symbol 不是变量绑定，必须在 symbol 相等判断**之前**用 `getShorthandAssignmentValueSymbol` / `getExportSpecifierLocalTargetSymbol` 解析，命中即保守跳过整条绑定；`export { local as publicName }` 只改 local、保留对外名。内置 `from` 负面控制（整词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败）+ shorthand / 无别名 export / 有别名 export 三个独立反例，见矩阵 `selfCheck.negativeControl` 与 `selfCheck.bindingSafety`。
-- **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 invalid=12、inconclusive=0。
+- **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 scene invalid=23、inconclusive=0。
 - **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
 - **台账统计**：区间行展开为实际映射的 case ID 并按去重后的 case 计数（`AgentArmorView.dom-contract` K 1→23、`extractor` K 1→6），未对齐行单列（当前 49 行，见 ledger-stats 对齐异常清单）。
 - **Wave 2 被删守卫接替**：新增真实 extras 解析链路（`resolveSceneryExtras` → `makeTexResolvers` → 装配，含漏登记负向对照）、GLB 根四元数三轴断言、prewarm 等待未完成 GLB Promise、roster reset 后旧行不被 stale 投影写入。
@@ -83,6 +83,6 @@
 - 分类器仍为结构化扫描而非完整 AST：fixture 读取（如 `texture-bake.test.js` 读 bake-report.json）会进入清单，由台账人工剔除；`it.each` 按块计 1 例。用例切块已跳过注释/字符串/正则，但模板字符串里的 `${}` 仍按字符串整体处理。
 - 小样本探针（6+3）对单源的检测率方差大，单源数字只用于排序优先级；簇级汇总才可与旧基线对比。探针只跑「读取生产源码文本」的读取方测试，**不评估新行为测试**；捕获率是剩余文本守卫的下限估计。
 - 语义探针只含两类算子（比较符翻转、数值偏移），少于旧审计的 40 个手工语义改动；解析不可表示的变异记 invalid，不进入分母。
-- 等价重命名只在单文件内按 TS symbol 重命名；`.vue` 跳过（模板引用不在同一 AST），跨文件导出名不改。shorthand / 直接 export / 新名冲突一律 fail-closed 跳过该绑定。
+- 等价重命名只在单文件内按 TS symbol 重命名；`.vue` 跳过（模板引用不在同一 AST），跨文件导出名不改。shorthand / 无别名 export / 新名冲突的绑定整条 fail-closed 跳过，**不进入 rename 分母**；有别名 export 只改 local、保留对外名（见 `selfCheck.bindingSafety`）。
 - Windows 上通过 `shell:true` 调用 vitest；超时/转换错误与断言失败已分开记录（invalid/inconclusive），不再把非零退出一律计 killed。
 - baselineRed 的源仍会被跳过（本轮 0）；其守卫效力无法用本工具评估，台账需单独标注。

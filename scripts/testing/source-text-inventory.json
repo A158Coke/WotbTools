@@ -1,8 +1,8 @@
 {
   "generatedAt": "2026-11-16",
-  "scannedTestFiles": 438,
+  "scannedTestFiles": 442,
   "sourceReadingTestFiles": 69,
-  "totalCases": 1167,
+  "totalCases": 1169,
   "totalTextAssertionCases": 159,
   "parseAnomalies": [],
   "files": [
@@ -9792,7 +9792,7 @@
           "varName": "poseSrc"
         }
       ],
-      "caseCount": 52,
+      "caseCount": 54,
       "textAssertionCases": 42,
       "parseAnomalies": [],
       "cases": [
@@ -10507,6 +10507,24 @@
           "id": "sceneryMaterials:929",
           "name": "释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例",
           "startLine": 929,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "sceneryMaterials:956",
+          "name": "maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)",
+          "startLine": 956,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "sceneryMaterials:967",
+          "name": "换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒",
+          "startLine": 967,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],

@@ -6,13 +6,18 @@
   "selfCheck": {
     "ok": true,
     "negativeControl": {
-      "wholeFileReplace": "import * as THREE from__r 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\n",
+      "wholeFileReplace": "import * as THREE from__r 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\nconst localName = 1\nconsole.log({ localName })\nconst exportedName = 2\nexport { exportedName }\nconst aliasedName = 3\nexport { aliasedName as publicName }\n",
       "parseIssues": [
         "'from' expected.",
         "';' expected."
       ],
-      "bindingRename": "import * as THREE from 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\n",
+      "bindingRename": "import * as THREE from 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\nconst localName = 1\nconsole.log({ localName })\nconst exportedName = 2\nexport { exportedName }\nconst aliasedName = 3\nexport { aliasedName as publicName }\n",
       "bindingRenameParseIssues": []
+    },
+    "bindingSafety": {
+      "shorthandSkipped": true,
+      "unaliasedExportSkipped": true,
+      "aliasedExportRenamed": "import * as THREE from 'three'\nconst from = THREE.x\nexport function use() { return from }\nconst localName = 1\nconsole.log({ localName })\nconst exportedName = 2\nexport { exportedName }\nconst aliasedName__r = 3\nexport { aliasedName__r as publicName }\n"
     }
   },
   "sources": [
@@ -76,7 +81,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 63952
+      "ms": 69206
     }
   ]
 }

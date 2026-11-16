@@ -540,7 +540,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
-    expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
+    // #954 后纯数据阶段在 groundGeometryData.ts（Worker 与俯视烘焙共用同一份），
+    // 不再直接出现在 groundPass.js 的闭包里。
+    const gdSrc = readSrc(resolve(here, 'groundGeometryData.ts'), 'utf8')
+    expect(gdSrc).toMatch(/buildAdaptiveTerrain\(\{/)
     expect(mapWorldSrc).toMatch(/buildGroundGeometryTyped\(\{/)
   })
 
