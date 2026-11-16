@@ -65,7 +65,6 @@
     "src/components/GunArcDiagram.vue",
     "src/components/GunMarksBadge.vue",
     "src/components/HistoryPage.vue",
-    "src/components/HoFAdminPage.vue",
     "src/components/HoFPage.vue",
     "src/components/HomePage.vue",
     "src/components/ImageDataUploader.vue",
