@@ -5,8 +5,15 @@
  * 对每个「生产源文件 → 读取它的测试文件集合」执行：
  *  - 语义变异探针：翻转比较运算符 / 数值字面量偏移（真实语义变更），
  *    跑读取方测试，变红 = 捕获（killed）。
- *  - 等价重命名探针：重命名一个未导出的局部标识符（语义不变），
- *    变红 = 误报（false positive）。
+ *  - 等价重命名探针：按 **AST 绑定身份** 重命名一个未导出的局部标识符
+ *    （语义不变；不再做整文件词替换——那会改 import 关键字、对象键、
+ *    字符串和对外导出名），变红 = 误报（false positive）。
+ *
+ * 诚实分类（#827 复测 review P2）：
+ *  - 变异后源码先过解析校验；解析失败 = invalid，不计入捕获率；
+ *  - vitest 退出码非零但没有任何断言失败（转换/收集错误、超时、基础设施
+ *    异常）= invalid/inconclusive，不计入捕获率；
+ *  - 只有真实断言失败才算 killed。
  *
  * 基线先行：源文件未变异时读取方测试必须全绿；否则该源标记 baselineRed 并跳过。
  * 固定 seed，可重复；变异只在工作区文件上临时生效，每个探针后立即还原。
@@ -17,12 +24,19 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FRONTEND = path.join(REPO, 'frontend');
+const requireFromFrontend = createRequire(path.join(FRONTEND, 'package.json'));
+let ts = null;
+try { ts = requireFromFrontend('typescript'); } catch { ts = null; }
+let vueSfc = null;
+try { vueSfc = requireFromFrontend('vue/compiler-sfc'); } catch { vueSfc = null; }
 
 function arg(name, def) {
   const i = process.argv.indexOf(`--${name}`);
@@ -150,33 +164,173 @@ function applySemantic(text, site) {
   return text.slice(0, site.index) + mutated + text.slice(site.index + site.len);
 }
 
-function renameTargets(text) {
-  const targets = [];
-  const re = /\b(?:function|class)\s+([A-Za-z_$][\w$]*)|\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const name = m[1] || m[2];
-    if (name.length < 4) continue;
-    // 跳过导出符号（重命名导出会破坏 importer，不是等价重命名）
-    const prefix = text.slice(Math.max(0, m.index - 8), m.index);
-    if (/\bexport\b/.test(prefix)) continue;
-    if (/^(useState|useRef|useMemo)$/.test(name)) continue;
-    targets.push(name);
-  }
-  return [...new Set(targets)];
+// ---------- 解析校验（变异是否仍是一份可解析的程序） ----------
+function scriptKindFor(file) {
+  if (!ts) return null;
+  if (/\.tsx$/.test(file)) return ts.ScriptKind.TSX;
+  if (/\.ts$/.test(file)) return ts.ScriptKind.TS;
+  if (/\.jsx$/.test(file)) return ts.ScriptKind.JSX;
+  return ts.ScriptKind.JS;
 }
 
-function applyRename(text, name) {
-  const re = new RegExp(`\\b${name}\\b`, 'g');
-  return text.replace(re, `${name}__r`);
+/** 返回解析诊断文本数组；`null` = 当前环境无法校验（不据此判 invalid）。 */
+function parseIssues(text, file) {
+  if (/\.(css|html)$/.test(file)) return [];        // 探针只做数值偏移；无廉价解析器
+  if (/\.vue$/.test(file)) {
+    if (!vueSfc || typeof vueSfc.parse !== 'function') return null;
+    try {
+      const { errors } = vueSfc.parse(text, { filename: file });
+      return (errors || []).map((e) => String(e));
+    } catch (e) { return [String(e)]; }
+  }
+  if (!ts) return null;
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, scriptKindFor(file));
+  return (sf.parseDiagnostics || []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+}
+
+// ---------- 等价重命名：AST 绑定身份，而不是整文件词替换 ----------
+/**
+ * 收集「可安全重命名的局部绑定」。安全条件（任一不满足即跳过该绑定）：
+ *  - 声明未被 export（导出名是对外契约）；
+ *  - 该绑定在文件中没有 shorthand property（`{ name }` 改名会改对象键）；
+ *  - 该绑定没有被 `export { name }` 直接导出（改的会是导出名；`as` 别名可保留）；
+ *  - 不选 import/export specifier 自身、属性名、关键字位置（AST 身份天然排除）；
+ *  - 新名字不与文件内已有 `name__r` 标识符冲突。
+ * 返回 [{ name, to, positions }]（positions 为声明 + 全部同 symbol 引用）。
+ */
+function bindingRenamePlans(text, file) {
+  if (!ts || /\.vue$/.test(file)) return [];
+  const options = {
+    allowJs: true, checkJs: false, noResolve: true, skipLibCheck: true,
+    target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.Preserve,
+  };
+  let program;
+  try { program = ts.createProgram([file], options); } catch { return []; }
+  const sf = program.getSourceFile(file);
+  if (!sf) return [];
+  const checker = program.getTypeChecker();
+
+  function hasExportModifier(node) {
+    let n = node;
+    while (n && !ts.isSourceFile(n)) {
+      if (ts.isVariableStatement(n) || ts.isFunctionDeclaration(n) || ts.isClassDeclaration(n)) {
+        const mods = ts.canHaveModifiers(n) ? ts.getModifiers(n) : undefined;
+        if (mods && mods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword || m.kind === ts.SyntaxKind.DefaultKeyword)) return true;
+      }
+      n = n.parent;
+    }
+    return false;
+  }
+  /** 该位置不是「绑定引用」：属性名 / 方法名 / 属性键 / shorthand 键 / JSX 属性名 / import/export 名。 */
+  function isNonBindingPosition(node) {
+    const p = node.parent;
+    if (!p) return true;
+    if ((ts.isPropertyAccessExpression(p) || ts.isQualifiedName(p)) && p.name === node) return true;
+    if ((ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p) || ts.isPropertyDeclaration(p)
+      || ts.isGetAccessor(p) || ts.isSetAccessor(p) || ts.isEnumMember(p)) && p.name === node) return true;
+    if (ts.isShorthandPropertyAssignment(p) && p.name === node) return true;
+    if (ts.isJsxAttribute(p) && p.name === node) return true;
+    if (ts.isBindingElement(p) && p.propertyName === node) return true;
+    if (ts.isImportSpecifier(p) && p.name === node) return true;
+    if (ts.isImportClause(p) && p.name === node) return true;
+    if (ts.isNamespaceImport(p) || ts.isNamespaceExport(p)) return true;
+    return false;
+  }
+
+  const candidates = [];
+  function collect(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      if (!hasExportModifier(node)) candidates.push(node.name);
+    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name && ts.isIdentifier(node.name)) {
+      if (!hasExportModifier(node)) candidates.push(node.name);
+    }
+    ts.forEachChild(node, collect);
+  }
+  collect(sf);
+
+  const plans = [];
+  const seen = new Set();
+  for (const nameNode of candidates) {
+    const name = nameNode.text;
+    if (name.length < 4 || seen.has(name)) continue;
+    if (/^(useState|useRef|useMemo)$/.test(name)) continue;
+    seen.add(name);
+    if (text.includes(`${name}__r`)) continue;            // 新名冲突 → fail-closed
+    const symbol = checker.getSymbolAtLocation(nameNode);
+    if (!symbol) continue;
+    const positions = [];
+    let disqualified = null;
+    function walk(node) {
+      if (disqualified) return;
+      if (ts.isIdentifier(node) && node.text === name && checker.getSymbolAtLocation(node) === symbol) {
+        const p = node.parent;
+        if (ts.isShorthandPropertyAssignment(p) && p.name === node) { disqualified = 'shorthand-property'; return; }
+        if (ts.isExportSpecifier(p) && p.name === node && p.propertyName == null) { disqualified = 'export-name'; return; }
+        if (!isNonBindingPosition(node)) positions.push({ pos: node.getStart(sf), len: node.getText(sf).length });
+      }
+      ts.forEachChild(node, walk);
+    }
+    walk(sf);
+    if (!disqualified && positions.length) plans.push({ name, to: `${name}__r`, positions });
+  }
+  return plans;
+}
+
+function applyRename(text, plan) {
+  let out = text;
+  for (const { pos, len } of [...plan.positions].sort((a, b) => b.pos - a.pos)) {
+    out = out.slice(0, pos) + plan.to + out.slice(pos + len);
+  }
+  return out;
+}
+
+/** 自检 / 负面控制：整文件词替换会把 `import ... from` 改坏，AST 绑定重命名必须只改局部变量。 */
+function renameSelfCheck() {
+  if (!ts) return { ok: false, reason: 'typescript unavailable' };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wotb-probe-selfcheck-'));
+  const file = path.join(dir, 'sample.js');
+  const sample = [
+    "import * as THREE from 'three'",
+    'const from = THREE.x',
+    'export function use() { return from }',
+    '',
+  ].join('\n');
+  try {
+    fs.writeFileSync(file, sample);
+    const plans = bindingRenamePlans(sample, file);
+    const plan = plans.find((p) => p.name === 'from');
+    if (!plan) return { ok: false, reason: 'from binding not discovered' };
+    const renamed = applyRename(sample, plan);
+    const naive = sample.replace(/\bfrom\b/g, 'from__r');
+    const naiveIssues = parseIssues(naive, file);
+    const renamedIssues = parseIssues(renamed, file);
+    const ok = renamed.includes("import * as THREE from 'three'")
+      && renamed.includes('const from__r = THREE.x')
+      && renamed.includes('return from__r')
+      && renamedIssues.length === 0
+      && (naiveIssues === null || naiveIssues.length > 0 || naive.includes("from__r 'three'"));
+    return {
+      ok,
+      negativeControl: {
+        wholeFileReplace: naive,
+        parseIssues: naiveIssues,
+        bindingRename: renamed,
+        bindingRenameParseIssues: renamedIssues,
+      },
+    };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // ---------- vitest 执行 ----------
-const tmpOut = path.join(REPO, 'scripts', 'testing', '.probe-last-run.json');
+// vitest JSON 报告写到系统临时目录：这是运行期草稿，不属于仓库内容。
+const tmpOut = path.join(os.tmpdir(), 'wotb-probe-last-run.json');
 function runVitest(testFilesRel) {
   const files = [...testFilesRel].map((f) => f.replace(/^frontend\//, ''));
   if (fs.existsSync(tmpOut)) fs.rmSync(tmpOut);
   let status = 0;
+  let timedOut = false;
   try {
     execFileSync('pnpm', ['exec', 'vitest', 'run', ...files, '--reporter=json', `--outputFile=${tmpOut}`], {
       cwd: FRONTEND,
@@ -186,26 +340,48 @@ function runVitest(testFilesRel) {
     });
   } catch (e) {
     status = e.status ?? 1;
+    timedOut = !!(e.signal || e.killed || e.code === 'ETIMEDOUT');
+  }
+  let report = null;
+  if (fs.existsSync(tmpOut)) {
+    try { report = JSON.parse(fs.readFileSync(tmpOut, 'utf8')); } catch { report = null; }
   }
   const failed = [];
-  if (fs.existsSync(tmpOut)) {
-    try {
-      const j = JSON.parse(fs.readFileSync(tmpOut, 'utf8'));
-      for (const tr of j.testResults || []) {
-        for (const ar of tr.assertionResults || []) {
-          if (ar.status === 'failed') failed.push(ar.fullName?.slice(0, 160) || ar.title?.slice(0, 160) || '(unknown)');
+  let assertionFailures = 0;
+  let suiteErrors = 0;
+  if (report) {
+    for (const tr of report.testResults || []) {
+      const assertionResults = tr.assertionResults || [];
+      for (const ar of assertionResults) {
+        if (ar.status === 'failed') {
+          assertionFailures++;
+          failed.push(ar.fullName?.slice(0, 160) || ar.title?.slice(0, 160) || '(unknown)');
         }
       }
-    } catch { /* json 缺失时仅用 exit code */ }
+      if (tr.status === 'failed' && !assertionResults.some((a) => a.status === 'failed')) suiteErrors++;
+    }
+    if (typeof report.numFailedTests === 'number' && report.numFailedTests > assertionFailures) {
+      assertionFailures = report.numFailedTests;
+    }
   }
-  return { red: status !== 0, failed };
+  const red = status !== 0;
+  const killed = assertionFailures > 0;                        // 真正的断言失败
+  const invalid = !killed && red && !timedOut && (suiteErrors > 0 || !report);   // 变异本身编译/收集失败
+  const inconclusive = !killed && !invalid && red;              // 其余非零退出：超时/基础设施异常，不计 killed
+  return { red, killed, failed, timedOut, suiteErrors, invalid, inconclusive, status };
 }
 
 // ---------- 主循环 ----------
-const matrix = { seed: SEED, generatedAt: new Date().toISOString().slice(0, 10), maxSemantic: MAX_SEMANTIC, maxRename: MAX_RENAME, sources: [] };
+const matrix = {
+  seed: SEED, generatedAt: new Date().toISOString().slice(0, 10),
+  maxSemantic: MAX_SEMANTIC, maxRename: MAX_RENAME,
+  selfCheck: renameSelfCheck(),
+  sources: [],
+};
 function saveMatrix() {
   fs.writeFileSync(outPath, JSON.stringify(matrix, null, 2));
 }
+if (!matrix.selfCheck.ok) console.error(`# SELF-CHECK FAILED ${JSON.stringify(matrix.selfCheck)}`);
 // 逐源增量落盘：单源异常不丢已完成的矩阵
 process.on('uncaughtException', (err) => {
   console.error(`# CRASH ${err.stack}`);
@@ -217,8 +393,12 @@ for (const e of entries) {
   const t0 = Date.now();
   const baseline = runVitest(e.testFiles);
   if (baseline.red) {
-    matrix.sources.push({ source: e.rel, testFiles: [...e.testFiles], baselineRed: true, baselineFailed: baseline.failed, semantic: [], rename: [] });
-    console.error(`# SKIP ${e.rel} baseline red (${baseline.failed.length} failed)`);
+    matrix.sources.push({
+      source: e.rel, testFiles: [...e.testFiles], baselineRed: true,
+      baselineInconclusive: baseline.red && !baseline.killed,
+      baselineFailed: baseline.failed, semantic: [], rename: [],
+    });
+    console.error(`# SKIP ${e.rel} baseline red (${baseline.failed.length} assertion failures)`);
     continue;
   }
 
@@ -231,28 +411,69 @@ for (const e of entries) {
   for (const [i, site] of semSites.entries()) {
     const mutated = applySemantic(original, site);
     if (mutated === original) continue;
+    const parse = parseIssues(mutated, e.abs);
+    if (parse && parse.length) {
+      semantic.push({
+        id: `sem-${i}`, op: site.op, index: site.index,
+        killed: false, invalid: true, reason: 'parse-error', parseIssues: parse.slice(0, 3), failedTests: [],
+      });
+      continue;
+    }
     fs.writeFileSync(e.abs, mutated);
     const r = runVitest(e.testFiles);
-    semantic.push({ id: `sem-${i}`, op: site.op, index: site.index, killed: r.red, failedTests: r.failed.slice(0, 5) });
+    semantic.push({
+      id: `sem-${i}`, op: site.op, index: site.index,
+      killed: r.killed,
+      ...(r.killed ? {} : r.timedOut ? { inconclusive: true, reason: 'timeout' } : {}),
+      ...(!r.killed && !r.timedOut && r.invalid ? { invalid: true, reason: 'run-invalid' } : {}),
+      ...(!r.killed && !r.timedOut && r.inconclusive ? { inconclusive: true, reason: 'run-inconclusive' } : {}),
+      failedTests: r.failed.slice(0, 5),
+    });
     fs.writeFileSync(e.abs, original);
   }
 
   const rename = [];
-  // .vue：脚本标识符也被模板引用，整词重命名会破坏绑定而非等价，跳过（FP 指标不纳入）
-  const renTargets = e.abs.endsWith('.vue')
+  // .vue：脚本标识符也被模板引用；模板引用不在同一 AST，重命名必须同时改模板，跳过（FP 指标不纳入）
+  const renPlans = e.abs.endsWith('.vue')
     ? []
-    : shuffle(renameTargets(original)).slice(0, MAX_RENAME);
-  for (const [i, name] of renTargets.entries()) {
-    fs.writeFileSync(e.abs, applyRename(original, name));
+    : shuffle(bindingRenamePlans(original, e.abs)).slice(0, MAX_RENAME);
+  for (const [i, plan] of renPlans.entries()) {
+    const renamed = applyRename(original, plan);
+    const parse = parseIssues(renamed, e.abs);
+    if (parse && parse.length) {
+      rename.push({ id: `ren-${i}`, name: plan.name, falsePositive: false, invalid: true, reason: 'parse-error', parseIssues: parse.slice(0, 3), failedTests: [] });
+      continue;
+    }
+    fs.writeFileSync(e.abs, renamed);
     const r = runVitest(e.testFiles);
-    rename.push({ id: `ren-${i}`, name, falsePositive: r.red, failedTests: r.failed.slice(0, 5) });
+    rename.push({
+      id: `ren-${i}`, name: plan.name,
+      falsePositive: r.killed,
+      ...(r.killed ? {} : r.timedOut ? { inconclusive: true, reason: 'timeout' } : {}),
+      ...(!r.killed && !r.timedOut && r.invalid ? { invalid: true, reason: 'run-invalid' } : {}),
+      failedTests: r.failed.slice(0, 5),
+    });
     fs.writeFileSync(e.abs, original);
   }
 
   const killed = semantic.filter((p) => p.killed).length;
+  const semanticInvalid = semantic.filter((p) => p.invalid).length;
+  const semanticInconclusive = semantic.filter((p) => p.inconclusive).length;
   const fps = rename.filter((p) => p.falsePositive).length;
-  matrix.sources.push({ source: e.rel, testFiles: [...e.testFiles], baselineRed: false, semantic, rename, semanticKilled: killed, semanticTotal: semantic.length, renameFalsePositives: fps, renameTotal: rename.length, ms: Date.now() - t0 });
-  console.error(`# ${e.rel} sem ${killed}/${semantic.length} rename-fp ${fps}/${rename.length}`);
+  const renameInvalid = rename.filter((p) => p.invalid).length;
+  matrix.sources.push({
+    source: e.rel, testFiles: [...e.testFiles], baselineRed: false,
+    semantic, rename,
+    semanticKilled: killed,
+    semanticTotal: semantic.length - semanticInvalid - semanticInconclusive,
+    semanticInvalid,
+    semanticInconclusive,
+    renameFalsePositives: fps,
+    renameTotal: rename.filter((p) => !p.invalid && !p.inconclusive).length,
+    renameInvalid,
+    ms: Date.now() - t0,
+  });
+  console.error(`# ${e.rel} sem ${killed}/${semantic.length - semanticInvalid - semanticInconclusive} (invalid ${semanticInvalid}, inconclusive ${semanticInconclusive}) rename-fp ${fps}/${rename.filter((p) => !p.invalid && !p.inconclusive).length}`);
   saveMatrix();
 }
 
@@ -260,6 +481,8 @@ saveMatrix();
 const tot = matrix.sources.filter((s) => !s.baselineRed);
 const semK = tot.reduce((a, s) => a + s.semanticKilled, 0);
 const semT = tot.reduce((a, s) => a + s.semanticTotal, 0);
+const semI = tot.reduce((a, s) => a + s.semanticInvalid, 0);
+const semC = tot.reduce((a, s) => a + s.semanticInconclusive, 0);
 const renFp = tot.reduce((a, s) => a + s.renameFalsePositives, 0);
 const renT = tot.reduce((a, s) => a + s.renameTotal, 0);
-console.error(`# SUMMARY semantic ${semK}/${semT} (${semT ? ((100 * semK) / semT).toFixed(1) : 0}%) rename-fp ${renFp}/${renT} (${renT ? ((100 * renFp) / renT).toFixed(1) : 0}%)`);
+console.error(`# SUMMARY semantic ${semK}/${semT} (${semT ? ((100 * semK) / semT).toFixed(1) : 0}%; invalid ${semI}, inconclusive ${semC}) rename-fp ${renFp}/${renT} (${renT ? ((100 * renFp) / renT).toFixed(1) : 0}%)`);

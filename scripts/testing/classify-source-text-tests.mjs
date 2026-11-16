@@ -91,7 +91,60 @@ function findSourceReaders(text) {
   return readers;
 }
 
-/** 把测试文件切成用例块：it/test（含 .each）+ 用例名 + 花括号配对体。 */
+/** 正则字面量起点的上下文判定（`/` 既可能是除法，也可能是正则）：只看前一个非空白
+ *  代码字符/关键字，覆盖测试体里最常见的 `expect(x).toMatch(/.../)` 与 `return /.../`。 */
+function regexAllowed(text, i) {
+  const before = text.slice(0, i).trimEnd();
+  if (!before) return true;
+  const prev = before[before.length - 1];
+  if ('([{,;:=!&|?+-*%^~<>'.includes(prev)) return true;
+  const word = /([A-Za-z_$][\w$]*)$/.exec(before)?.[1];
+  return !!word && ['return', 'case', 'typeof', 'delete', 'void', 'instanceof', 'in', 'of', 'new', 'yield', 'await', 'throw'].includes(word);
+}
+
+/** 跳过注释 / 字符串 / 正则字面量；返回下一个「代码」字符的索引。 */
+function skipNonCode(text, i) {
+  const c = text[i];
+  if (c === '/' && text[i + 1] === '/') {
+    const end = text.indexOf('\n', i);
+    return end < 0 ? text.length : end + 1;
+  }
+  if (c === '/' && text[i + 1] === '*') {
+    const end = text.indexOf('*/', i + 2);
+    return end < 0 ? text.length : end + 2;
+  }
+  if (c === '/' && regexAllowed(text, i)) {
+    let j = i + 1;
+    let inClass = false;
+    for (; j < text.length; j++) {
+      if (text[j] === '\\') { j++; continue; }
+      if (text[j] === '[') { inClass = true; continue; }
+      if (text[j] === ']') { inClass = false; continue; }
+      if (text[j] === '\n') return j;             // 未闭合：按行尾结束，避免吞掉后续代码
+      if (text[j] === '/' && !inClass) {
+        j++;
+        while (/[a-z]/i.test(text[j] ?? '')) j++;  // flags
+        return j;
+      }
+    }
+    return j;
+  }
+  if (c === "'" || c === '"' || c === '`') {
+    const q = c;
+    let j = i + 1;
+    for (; j < text.length; j++) {
+      if (text[j] === '\\') { j++; continue; }
+      if (text[j] === q) return j + 1;
+      if (q !== '`' && text[j] === '\n') return j; // 未闭合的单引号：停在行尾
+    }
+    return j;
+  }
+  return i;
+}
+
+/** 把测试文件切成用例块：it/test（含 .each）+ 用例名 + 花括号配对体。
+ *  配对扫描必须跳过注释/字符串/正则字面量——源码守卫断言本身常用 `/...\{.../`
+ *  这类正则，把它们当代码花括号会截断用例体（#827 复测 review P2）。 */
 function sliceCases(text) {
   const cases = [];
   const re = /(?:^|\n)(\s*)(it|test)(\.each(?:\s*\([^)]*\))?)?\s*\(\s*(['"`])([\s\S]*?)\4/g;
@@ -102,32 +155,25 @@ function sliceCases(text) {
     // 从用例名结束处向后扫描到回调体首个 '{'（中间隔着 `, () =>` 等结构）
     let i = text.indexOf(m[4], m.index) + 1;
     i = text.indexOf(m[4], i) + m[4].length;
-    let depth = 0, start = -1, end = -1;
+    let start = -1;
     for (; i < text.length; i++) {
-      const c = text[i];
-      if (c === "'" || c === '"' || c === '`') {
-        const q = c; i++;
-        for (; i < text.length; i++) {
-          if (text[i] === '\\') { i++; continue; }
-          if (text[i] === q) break;
-        }
-        continue;
-      }
-      if (c === '{') { start = i; break; }
+      const skipped = skipNonCode(text, i);
+      if (skipped !== i) { i = skipped - 1; continue; }
+      if (text[i] === '{') { start = i; break; }
     }
-    if (start < 0) { cases.push({ name: m[5], start: m.index, body: '' }); continue; }
-    depth = 0; end = start;
+    if (start < 0) { cases.push({ name: m[5], start: m.index, body: '', parseError: 'no-body-brace' }); continue; }
+    let depth = 0;
+    let end = -1;
     for (i = start; i < text.length; i++) {
+      const skipped = skipNonCode(text, i);
+      if (skipped !== i) { i = skipped - 1; continue; }
       const c = text[i];
       if (c === '{') depth++;
       else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
-      else if (c === "'" || c === '"' || c === '`') { // 跳过字符串
-        const q = c; i++;
-        for (; i < text.length; i++) {
-          if (text[i] === '\\') { i++; continue; }
-          if (text[i] === q) break;
-        }
-      }
+    }
+    if (end < 0) {
+      cases.push({ name: m[5], start: m.index, body: '', parseError: 'unclosed-body' });
+      continue;
     }
     cases.push({ name: m[5], start: m.index, body: text.slice(start, end + 1) });
   }
@@ -135,7 +181,9 @@ function sliceCases(text) {
 }
 
 function classifyFile(file) {
-  const text = fs.readFileSync(file, 'utf8');
+  // 统一 LF：Windows 检出为 CRLF 时，行级正则的 `$` 不会匹配在 `\r` 之前，
+  // helper/reader 检测会整片失效（同一文件在 CI 的 LF 检出上却正常）。
+  const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const readers = findSourceReaders(text);
   if (!readers.length) return null;
   const relFile = path.relative(REPO, file).replaceAll('\\', '/');
@@ -160,11 +208,17 @@ function classifyFile(file) {
       id: `${path.basename(file).replace(/\.test\.(js|ts|mjs)$/, '')}:${lineOf(c.start)}`,
       name: c.name,
       startLine: lineOf(c.start),
-      textAssertion: isTextAssertion,
+      // 用例体边界解析失败时宁可不分类（fail-closed）：静默判成「非文本测试」会让
+      // 台账与探针一起漏掉真实守卫。
+      textAssertion: isTextAssertion && !c.parseError,
       usesVars: usedVars,
       patterns,
+      parseError: c.parseError || null,
     };
   });
+  const parseAnomalies = cases
+    .filter((c) => c.parseError)
+    .map((c) => ({ case: c.name, line: c.startLine, reason: c.parseError }));
   return {
     testFile: relFile,
     sources: readers.map((r) => ({
@@ -174,6 +228,7 @@ function classifyFile(file) {
     })),
     caseCount: cases.length,
     textAssertionCases: cases.filter((c) => c.textAssertion).length,
+    parseAnomalies,
     cases,
   };
 }
@@ -191,6 +246,7 @@ const summary = {
   sourceReadingTestFiles: results.length,
   totalCases: results.reduce((a, r) => a + r.caseCount, 0),
   totalTextAssertionCases: results.reduce((a, r) => a + r.textAssertionCases, 0),
+  parseAnomalies: results.flatMap((r) => r.parseAnomalies.map((a) => ({ testFile: r.testFile, ...a }))),
   files: results,
 };
 
@@ -199,5 +255,6 @@ if (outFile) fs.writeFileSync(outFile, json);
 else console.log(json);
 console.error(
   `# scanned=${summary.scannedTestFiles} sourceReadingFiles=${summary.sourceReadingTestFiles} ` +
-    `cases=${summary.totalCases} textAssertionCases=${summary.totalTextAssertionCases}`,
+    `cases=${summary.totalCases} textAssertionCases=${summary.totalTextAssertionCases} ` +
+    `parseAnomalies=${summary.parseAnomalies.length}`,
 );

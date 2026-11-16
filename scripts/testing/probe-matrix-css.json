@@ -1,124 +1,34 @@
 {
   "seed": 827,
-  "generatedAt": "2026-11-11",
+  "generatedAt": "2026-11-16",
   "maxSemantic": 6,
   "maxRename": 3,
+  "selfCheck": {
+    "ok": true,
+    "negativeControl": {
+      "wholeFileReplace": "import * as THREE from__r 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\n",
+      "parseIssues": [
+        "'from' expected.",
+        "';' expected."
+      ],
+      "bindingRename": "import * as THREE from 'three'\nconst from__r = THREE.x\nexport function use() { return from__r }\n",
+      "bindingRenameParseIssues": []
+    }
+  },
   "sources": [
     {
-      "source": "src/components/admin-list.css",
+      "source": "src/styles/tokens/color.css",
       "testFiles": [
-        "frontend/src/styles/light-theme-source-regression.test.js"
+        "frontend/src/styles/tokens/color-contrast.test.ts"
       ],
-      "baselineRed": false,
-      "semantic": [
-        {
-          "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 911,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 407,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 1074,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 1829,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 5021,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 2504,
-          "killed": false,
-          "failedTests": []
-        }
+      "baselineRed": true,
+      "baselineInconclusive": false,
+      "baselineFailed": [
+        "theme token contrast (WCAG 2.2 AA) summer: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）",
+        "theme token contrast (WCAG 2.2 AA) 四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3"
       ],
-      "rename": [],
-      "semanticKilled": 0,
-      "semanticTotal": 6,
-      "renameFalsePositives": 0,
-      "renameTotal": 0,
-      "ms": 22591
-    },
-    {
-      "source": "src/styles/app-shell.css",
-      "testFiles": [
-        "frontend/src/styles/glass-accessibility.test.js"
-      ],
-      "baselineRed": false,
-      "semantic": [
-        {
-          "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 14250,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 1711,
-          "killed": true,
-          "failedTests": [
-            "app-shell.css 玻璃表面可访问性降级（F-05） reduce 块关闭两种 backdrop-filter 并映射到 --color-surface-1/2/3"
-          ]
-        },
-        {
-          "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 9965,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 3686,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 7750,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 6828,
-          "killed": false,
-          "failedTests": []
-        }
-      ],
-      "rename": [],
-      "semanticKilled": 1,
-      "semanticTotal": 6,
-      "renameFalsePositives": 0,
-      "renameTotal": 0,
-      "ms": 16830
+      "semantic": [],
+      "rename": []
     }
   ]
 }

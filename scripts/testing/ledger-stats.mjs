@@ -32,14 +32,18 @@ for (const b of blocks) {
   const cases = f.cases.filter((c) => c.textAssertion);
   const starts = cases.map((c) => ({ id: c.id, line: c.startLine, name: c.name }));
   const counts = { R: 0, K: 0, D: 0, PK: 0 };
+  // 统计单位是 test case：区间行按区间内实际映射到的 case 数计（去重），
+  // 单行按 1 计；同一 case 在同类处置的多行里只计一次（review P2）。
+  const seenIds = { R: new Set(), K: new Set(), D: new Set(), PK: new Set() };
   let clauseRows = 0;
+  let unmappedRows = 0;
   const dGate = [];
+  const seenGate = new Set();
   for (const row of b.rows) {
     const [key, d, u, t, p] = row;
     const from = typeof key === 'object' ? key.from : key;
     const to = typeof key === 'object' ? key.to : key;
     if (u === 'clause') { clauseRows++; continue; }
-    counts[d]++;
     // 对齐到 floor case（供稳定 ID 与人工复核；区间行取区间内 case）
     const TOL = 8;
     const floorLine = Math.max(...starts.filter((x) => x.line <= from).map((x) => x.line), -1);
@@ -49,14 +53,31 @@ for (const b of blocks) {
     } else if (floorLine >= 0) {
       aligned = [starts.find((x) => x.line === floorLine).id];
     }
-    if (!aligned || !aligned.length) anomalies.push(`${b.file}:${from}-${to} [${d}] 未对齐任何 text case`);
+    const unique = [...new Set(aligned ?? [])];
+    if (!unique.length) {
+      anomalies.push(`${b.file}:${from}-${to} [${d}] 未对齐任何 text case`);
+      unmappedRows++;
+    }
+    if (typeof key === 'object') {
+      const fresh = unique.filter((id) => !seenIds[d].has(id));
+      for (const id of fresh) seenIds[d].add(id);
+      counts[d] += fresh.length;
+    } else {
+      const id = unique[0];
+      if (!id || !seenIds[d].has(id)) {
+        counts[d] += 1;
+        if (id) seenIds[d].add(id);
+      }
+    }
     if (d === 'D') {
-      for (const id of aligned?.length ? aligned : ['(未对齐)']) {
+      for (const id of unique.length ? unique : ['(未对齐)']) {
+        if (seenGate.has(id)) continue;
+        seenGate.add(id);
         dGate.push({ id, t, p });
       }
     }
   }
-  perFile.push({ file: f.testFile, textCases: cases.length, counts, clauseRows, dGate });
+  perFile.push({ file: f.testFile, textCases: cases.length, counts, clauseRows, unmappedRows, dGate });
 }
 
 // 台账未覆盖的 text 文件（scope 缺口）
@@ -69,16 +90,18 @@ let tot = { R: 0, K: 0, D: 0, PK: 0 };
 let md = '# Issue #827 台账统计与 D 项门禁（F1/F2 交付，2026-11-11）\n\n';
 md += '统计单位统一为 **test case**（u=case 的台账行）；clause 行附着到所属 case，不单独计数。稳定 ID = `<文件slug>:<case起始行>`。台账行与 classifier text case 的出入列入「对齐异常」，人工复核后以台账为准。`validation_status` 初始 PENDING：删除批次实际执行 + 接替测试本地/CI 绿 + 故障注入抽查通过后才置 DONE。\n\n';
 
-md += '## 统计（case 单位）\n\n| 文件 | inventory text cases | R | K | D | PK | clause 行 |\n|---|---|---|---|---|---|---|\n';
+md += '## 统计（case 单位）\n\n统计单位统一为 **test case**：区间台账行按区间内实际映射到的 case 数计（去重），单行按 1 计；同一 case 在同类处置的多行里只计一次。\n\n| 文件 | inventory text cases | R | K | D | PK | clause 行 | 未对齐行 |\n|---|---|---|---|---|---|---|---|\n';
 for (const p of perFile) {
-  md += `| ${p.file} | ${p.textCases} | ${p.counts.R} | ${p.counts.K} | ${p.counts.D} | ${p.counts.PK} | ${p.clauseRows} |\n`;
+  md += `| ${p.file} | ${p.textCases} | ${p.counts.R} | ${p.counts.K} | ${p.counts.D} | ${p.counts.PK} | ${p.clauseRows} | ${p.unmappedRows} |\n`;
   tot.R += p.counts.R; tot.K += p.counts.K; tot.D += p.counts.D; tot.PK += p.counts.PK;
 }
-md += `| **合计（已映射 28 文件）** | — | **${tot.R}** | **${tot.K}** | **${tot.D}** | **${tot.PK}** | **${perFile.reduce((a, p) => a + p.clauseRows, 0)}** |\n\n`;
+md += `| **合计（已映射 ${perFile.length} 文件）** | — | **${tot.R}** | **${tot.K}** | **${tot.D}** | **${tot.PK}** | **${perFile.reduce((a, p) => a + p.clauseRows, 0)}** | **${perFile.reduce((a, p) => a + p.unmappedRows, 0)}** |\n\n`;
 
 md += '## 台账未覆盖的 text 断言文件（scope 缺口，Wave 2/3 前需补映射）\n\n';
 md += scopeGaps.length ? scopeGaps.map((g) => `- ${g.file}（${g.n} 例）`).join('\n') + '\n' : '（无）\n';
-md += `\nscope 缺口合计 ${scopeGaps.reduce((a, g) => a + g.n, 0)} 例 / inventory 全量 181 例。\n\n`;
+const inventoryTextCases = inv.totalTextAssertionCases
+  ?? inv.files.reduce((a, f) => a + (f.textAssertionCases || 0), 0);
+md += `\nscope 缺口合计 ${scopeGaps.reduce((a, g) => a + g.n, 0)} 例 / inventory 全量 ${inventoryTextCases} 例。\n\n`;
 
 md += '## D 项安全门禁（F2）\n\n删除前置：① 接替者证据存在；② 接替测试实际执行（本地/CI）；③ 旧守卫独有失败模式抽查（故障注入）；④ validation_status 置 DONE。任何 BLOCKED 项不得删除。\n\n| case ID | 优先级 | 接替者证据 | validation_status |\n|---|---|---|---|\n';
 let blocked = 0;
@@ -94,4 +117,4 @@ md += '## 对齐异常（人工复核清单）\n\n';
 md += anomalies.length ? anomalies.map((a) => `- ${a}`).join('\n') + '\n' : '（无）\n';
 
 fs.writeFileSync(path.join(REPO, 'docs/research/testing/2026-11-11-ledger-stats.md'), md);
-console.error(`# files=${perFile.length} R=${tot.R} K=${tot.K} D=${tot.D} PK=${tot.PK} clauseRows=${perFile.reduce((a, p) => a + p.clauseRows, 0)} scopeGaps=${scopeGaps.reduce((a, g) => a + g.n, 0)} anomalies=${anomalies.length}`);
+console.error(`# files=${perFile.length} R=${tot.R} K=${tot.K} D=${tot.D} PK=${tot.PK} clauseRows=${perFile.reduce((a, p) => a + p.clauseRows, 0)} unmappedRows=${perFile.reduce((a, p) => a + p.unmappedRows, 0)} scopeGaps=${scopeGaps.reduce((a, g) => a + g.n, 0)} anomalies=${anomalies.length}`);
