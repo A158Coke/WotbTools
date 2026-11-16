@@ -248,9 +248,13 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
       ['.spawn-seg.is-second', '--color-info'],
     ]
     for (const [selector, token] of expected) {
-      const declaration = component.match(new RegExp(`${selector.replace(/\./g, '\\.')} \\{ background: var\\((--color-[\\w-]+)\\); \\}`))
-      expect(declaration, `BattleDataAdminPage.vue ${selector} background`).not.toBeNull()
-      expect(declaration![1], `BattleDataAdminPage.vue ${selector} background`).toBe(token)
+      // selector 是数据，不拼进正则源码（CodeQL js/incomplete-sanitization）：按精确文本定位声明。
+      const marker = `${selector} { background: var(`
+      const start = component.indexOf(marker)
+      expect(start, `BattleDataAdminPage.vue ${selector} background`).toBeGreaterThanOrEqual(0)
+      const end = component.indexOf('); }', start + marker.length)
+      expect(end, `BattleDataAdminPage.vue ${selector} background`).toBeGreaterThanOrEqual(0)
+      expect(component.slice(start + marker.length, end), `BattleDataAdminPage.vue ${selector} background`).toBe(token)
     }
     expect(component).not.toContain('--color-chart-series-2')
     expect(component).not.toMatch(/\.spawn-seg\.is-(?:first|second)[^}]*--color-accent/)

@@ -713,15 +713,21 @@ async function runAuthCapabilityScenario(env, scenario) {
         if (!enter) throw new Error('shots fullscreen button must be hit-testable')
         await page.tap({ ...enter, touch: scenario.touch })
         await page.waitForValue('document.fullscreenElement?.getAttribute("data-testid")', (id) => id === 'replay-shots-pane', { label: 'shots fullscreen entered' })
-        const inView = (selector) => `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false
-          const r = el.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-          return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5 && !!hit && (hit === el || el.contains(hit)) })()`
-        check(failures, await page.evaluate(inView('[data-testid="shots-fullscreen"]')), 'fullscreen exit button must be fully visible and hit-testable')
-        check(failures, await page.evaluate(inView('[data-testid="shots-shooter-select"]')), 'fullscreen shooter filter must be visible and hit-testable')
+        const inView = (selector) => page.callWith((sel) => {
+          const el = document.querySelector(sel)
+          if (!el) return false
+          const r = el.getBoundingClientRect()
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0
+            && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5
+            && !!hit && (hit === el || el.contains(hit))
+        }, selector)
+        check(failures, await inView('[data-testid="shots-fullscreen"]'), 'fullscreen exit button must be fully visible and hit-testable')
+        check(failures, await inView('[data-testid="shots-shooter-select"]'), 'fullscreen shooter filter must be visible and hit-testable')
         check(failures, await page.evaluate(`(() => { const root = document.fullscreenElement
           return root.scrollWidth <= root.clientWidth + 1 && getComputedStyle(root).overflowY === 'auto' })()`), 'fullscreen pane must not clip horizontally and must scroll vertically')
         await page.evaluate(`document.querySelector('[data-testid="shot-row-3"]').scrollIntoView({ block: 'center' })`)
-        check(failures, await page.evaluate(inView('[data-testid="shot-row-3"]')), 'fullscreen shot list row must be reachable')
+        check(failures, await inView('[data-testid="shot-row-3"]'), 'fullscreen shot list row must be reachable')
         const row = await page.evaluate(clickCenterExpression('[data-testid="shot-row-3"]'))
         await page.tap({ ...row, touch: scenario.touch })
         await page.waitFor(() => !!document.querySelector('[data-testid="shot-inspector"]'), { label: 'fullscreen shot inspector' })

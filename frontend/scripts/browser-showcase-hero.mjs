@@ -220,7 +220,20 @@ try {
       for (const [width, height] of [[1440, 900], [390, 844]]) {
         await page.emulate({ width, height, touch: width < 1000 })
         for (const candidate of ['A', 'B', 'C']) {
-          await page.evaluate(`(()=>{const hero=document.querySelector('.showcase-hero'),art=hero.querySelector('.showcase-hero-art'),content=hero.querySelector('.showcase-hero-content');window.__candidateOriginal ??= [hero.style.cssText,art.style.cssText,content.style.cssText];[hero,art,content].forEach((el,i)=>el.style.cssText=window.__candidateOriginal[i]);if(${JSON.stringify(candidate)}!=='C'){hero.style.display='block';Object.assign(art.style,{position:'absolute',inset:'0',margin:'0',backgroundPosition:'right center'});content.style.maxInlineSize='42rem';if(${JSON.stringify(candidate)}==='B')content.style.minBlockSize='320px'}})()`)
+          await page.callWith((value) => {
+            const hero = document.querySelector('.showcase-hero')
+            const art = hero.querySelector('.showcase-hero-art')
+            const content = hero.querySelector('.showcase-hero-content')
+            window.__candidateOriginal ??= [hero.style.cssText, art.style.cssText, content.style.cssText]
+            const elements = [hero, art, content]
+            elements.forEach((el, i) => { el.style.cssText = window.__candidateOriginal[i] })
+            if (value !== 'C') {
+              hero.style.display = 'block'
+              Object.assign(art.style, { position: 'absolute', inset: '0', margin: '0', backgroundPosition: 'right center' })
+              content.style.maxInlineSize = '42rem'
+              if (value === 'B') content.style.minBlockSize = '320px'
+            }
+          }, candidate)
           const m = await page.probe(completenessProbe)
           comparisons.push({ candidate, viewport: `${width}x${height}`, ...m })
           await screenshot(page, `candidate-${candidate}-${width}x${height}`)
@@ -235,10 +248,23 @@ try {
     try {
       const ids = await page.evaluate(`(async()=>{const {v,Hero,SECTION_HERO_IDS}=await import('/@id/virtual:hero-test');window.__heroFixture={v,Hero};document.querySelector('#app').__vue_app__.unmount();document.body.innerHTML='<main id="hero-matrix"></main>';return SECTION_HERO_IDS})()`)
       for (const profile of PROFILES) {
-        await page.evaluate(`document.documentElement.dataset.uiProfile=${JSON.stringify(profile)};document.documentElement.dataset.theme=${JSON.stringify(profile === 'winter' ? 'light' : 'dark')}`)
+        await page.callWith((value) => {
+          document.documentElement.dataset.uiProfile = value
+          document.documentElement.dataset.theme = value === 'winter' ? 'light' : 'dark'
+        }, profile)
         for (const compact of [false, true]) {
           for (const section of ids) {
-            await page.evaluate(`(()=>{window.__heroApp?.unmount();const {v,Hero}=window.__heroFixture;window.__heroApp=v.createApp({render:()=>v.h(Hero,{section:${JSON.stringify(section)},compact:${compact},kicker:'WOTBTOOLS',title:'分区主视觉',description:'保持完整图片与清晰的信息层级'},{stats:()=>v.h('strong','10,483'),actions:()=>v.h('button','操作')})});window.__heroApp.mount('#hero-matrix')})()`)
+            await page.callWith((value, compact) => {
+              window.__heroApp?.unmount()
+              const { v, Hero } = window.__heroFixture
+              window.__heroApp = v.createApp({
+                render: () => v.h(Hero, { section: value, compact, kicker: 'WOTBTOOLS', title: '分区主视觉', description: '保持完整图片与清晰的信息层级' }, {
+                  stats: () => v.h('strong', '10,483'),
+                  actions: () => v.h('button', '操作'),
+                }),
+              })
+              window.__heroApp.mount('#hero-matrix')
+            }, section, compact)
             for (const [width, height] of VIEWPORTS) {
               await page.emulate({ width, height, touch: width < 1000 })
               const m = await record(page, { kind: 'component', viewport: `${width}x${height}`, profile, section, compact })
