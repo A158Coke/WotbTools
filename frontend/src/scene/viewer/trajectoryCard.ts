@@ -374,7 +374,11 @@ function updateTrajInfoPos(): void {
                 gap: 14,
                 pad: 8,
             });
-            if (!lastCardPos || lastCardPos.left !== chosen.left || lastCardPos.top !== chosen.top) {
+            // dirty 重排必须强制写一次：HUD 面板展开/收起或外部写入可能已改变卡片位置，
+            // 此时即使 chooser 结果与上次相同，也要把产品位置重新落回 DOM（门禁夹具会手动
+            // 把卡片放进将展开的面板区域，再断言产品把它移出）。非 dirty 的锚点移动帧才
+            // 允许跳过相同位置，避免相机静止时重复写样式。
+            if (trajLayoutDirty || !lastCardPos || lastCardPos.left !== chosen.left || lastCardPos.top !== chosen.top) {
                 // CSS 的停靠规则用 logical inset + translateX(-50%)：物理与逻辑两个方向都写同一
                 // 像素值并覆盖 transform。**不能写 inset-*: auto**：同一内联声明块里逻辑属性若
                 // 排在物理 left/top 之后，会按声明顺序覆盖它们（used left/top 变回 auto → 卡片

@@ -114,4 +114,32 @@ describe('traj-info 命中点跟随', () => {
     const overlap = box.right > 300 && box.left < 800 && box.bottom > 200 && box.top < 600
     expect(overlap).toBe(false)
   })
+
+  it('面板在定位后展开（dirty 重排）：强制重新落位，不留在面板覆盖区', () => {
+    const { card } = mount()
+    const panel = document.getElementById('corner-tl') as HTMLElement
+    panel.getBoundingClientRect = () => rect(0, 0, 0, 0)
+    const camera = makeCamera()
+    const tc = createTrajectoryCard({
+      isDestroyed: () => false,
+      clearShotError: () => {},
+      clearHeBlast: () => {},
+      getFxScene: () => new THREE.Scene(),
+      getCamera: () => camera,
+      L: {} as never,
+      armorDebug: () => false,
+    })
+    tc.setTrajInfoPos(new THREE.Vector3(0, 0, 0))
+    tc.updateTrajInfoPos()
+    expect(card.style.display).toBe('block')
+    // 模拟 HUD 面板展开覆盖原来的卡片区域（browser-armor-aiming 的门禁夹具同样会外部
+    // 写入卡片位置，再断言产品在 dirty 后把它移出）。
+    panel.getBoundingClientRect = () => rect(0, 0, 600, 600)
+    tc.markTrajInfoDirty()
+    tc.updateTrajInfoPos()
+    const left = parseFloat(card.style.left)
+    const top = parseFloat(card.style.top)
+    const overlapsPanel = left + 180 > 0.5 && left < 599.5 && top + 90 > 0.5 && top < 599.5
+    expect(overlapsPanel).toBe(false)
+  })
 })
