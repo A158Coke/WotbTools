@@ -1,7 +1,7 @@
 {
  "schema": 1,
- "updated": "2026-11-11T04:08:01+00:00",
- "default": "11.21.0",
+ "updated": "2026-11-14T15:15:48+00:00",
+ "default": "11.21.0_1",
  "datasets": [
   {
    "id": "11.21.0",
@@ -22,28 +22,28 @@
    "label": "11.21.0_1",
    "game_version": "release/11.21.0",
    "variant": null,
-   "release": "11.21.0_1-20261111-r1",
-   "tank_count": 738,
-   "generated": "2026-11-06T08:36:44+00:00",
-   "content_digest": "sha256:9198d0ca1561a85d7fd58f02896f6b0ec6121063f03b8044fb6a38006ce7e197",
-   "manifest_sha256": "5c83d1e5d8223050828df82fd5c90b8db1371218f519ddf839515e70cb0da79d",
+   "release": "11.21.0_1-20261114-r1",
+   "tank_count": 739,
+   "generated": "2026-11-13T16:08:09+00:00",
+   "content_digest": "sha256:4944aea49fff06a2dc87191b8956e0bc39e78993ee97665f1c67e5927a9e5718",
+   "manifest_sha256": "15d69a99adfd51741f73d25948dc4655332159ee604f4d299c83c33f0d5977ef",
    "min_client": null,
    "status": "active",
-   "notes": "对应客户端 SmartDLC s11.21.0_1（dc 构建 7405732/3/4，2026-11-10 发布：dx11/astc 贴图 + 活动/offer 文案 + 新收藏车 Relic 注册文案）。动态内容走客户端运行时通道，不进资产包数据面；本 release 数据面与 11.21.0-20261106-r2 逐字节一致（同 content_digest），待 11.21.1 客户端数据后充实。"
+   "notes": "SmartDLC s11.21.0_1 充实：新增收藏车 Relic D3 (25201, 9级AT-SPG, 弹鼓泵动炮)；It115_Rinoceronte(17793) 基础模型随 DLC 皮肤更新重导；738 基线逐字节复用；26 图场景替换显式延期(maps-deferred, 场景引用新 00_shared_content 布局, 定性待全链重导)"
   },
   {
-   "id": "11.4.0.130",
-   "label": "超测服",
+   "id": "11.4.0.138-r5",
+   "label": "超测服 11.4.0.138",
    "game_version": "release/11.21.0",
-   "variant": "t11p2",
-   "release": "t11p2-20261106-r9",
-   "tank_count": 743,
-   "generated": "2026-11-06T16:50:40+00:00",
-   "content_digest": "sha256:97f46b5a9b9f381a00d0c7b16a5d96861605550a434555c4864f1feb2b3ad4be",
-   "manifest_sha256": "1378b1a47d3573e10c7fac6b169b5697af37af2b01e63a3b6309df21d8fe2547",
+   "variant": "t11r3",
+   "release": "t11r3-20261114-r7-ballistics",
+   "tank_count": 747,
+   "generated": "2026-11-14T15:14:44+00:00",
+   "content_digest": "sha256:dc4a5a7e96d5178356148d504722e15b6fbe7c4d882d25f7101e2e8b2e96fc76",
+   "manifest_sha256": "5f536762da78c385a6582e9cfd1b20a3926644e4a707bf98a61b9d786fe8d2a7",
    "min_client": null,
    "status": "active",
-   "notes": "supertest r8: XI upgradeProgression layout fields (matrix/gridPosition/xpCost/requiredNodes) for china/usa/ussr + meta；2026-11-11 dataset id supertest→11.4.0.130（超测客户端自身版本号 11.4.0.130_7400742，label 仍为超测服；数据面与 r8 逐字节一致，本 release 为改名载体）。"
+   "notes": "补齐神官和囊鼠副武器弹种、穿深及弹道参数。"
   }
  ]
 }
