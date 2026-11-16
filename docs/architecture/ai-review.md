@@ -5,6 +5,15 @@ AI Service 的 Java 所有权位于 `com.wotb.ai`：`config` 管服务配置，`
 `tournament` 管军团赛组识别。Review 与 Tournament 共享 gateway，但彼此不依赖；`AiServiceApplication`
 从根包自然扫描，HTTP/security 行为保持原有契约。
 
+生产适配入口 `SpringAiChatGateway` 保持 `AiChatGateway` API 并组合内部职责：`AiGatewayModelFactory`
+创建 Spring AI/OpenAI 客户端；`AiGatewayRuntimeState` 是配置与活动 attempt context 的唯一 owner；
+`AiGatewayChatExecutor` / `AiGatewayStreamExecutor` 分别执行聊天重试与流式响应；
+`AiGatewayResponseMapper` 投影 prompt/response/usage，`AiGatewayStreamChunker` 分句分块超大 delta，
+`AiGatewayMetrics` 记录低基数指标，
+`AiGatewayFailurePolicy` 分类错误并写脱敏事件；由 gateway bean 的 `@PreDestroy` 关闭
+`AiGatewayLifecycle` 持有的 watchdog。`AiRequestContext` 与 `AttemptBudgetContext` 继续分别拥有
+request scoped 和单 attempt 的取消/预算数据。
+
 > 输入边界：**服务器没有 parser**。浏览器用锁定版本的上游 Agent WASM 解析回放，
 > 经 WotbTools canonical replay facts 产出 **client canonical AI projection**，以 `AiReviewRequest`（gzip）提交给
 > Yecao 独立 `ai-service`；ai-service 由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）把投影装配成
