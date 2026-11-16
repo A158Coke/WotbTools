@@ -34,7 +34,7 @@
 | css | 快照提交 `38703d3db7d7dc447db8edd884ab73931b9717d1` | 保留旧基线，未在当前 head 重跑。 |
 | vue | 运行提交 `133e7ef8d38d3000c00c92f4fe63de12ecf60cfe` | 本轮完整重跑 20 个源及实际读取方测试；覆盖更新后的 AgentArmorView 源与断言。 |
 
-Vue 矩阵记录 `sourceCommit`、inventory SHA-256，以及逐源/读取方文件的 SHA-256（按运行时文件原始字节，包括换行）；变异 index 对应这些字节解码后的源码字符串。重跑验证 20 个源的未变异基线通过，114 个 NUM_OFF 位置均指向数字，invalid/inconclusive 均为 0。
+Vue 矩阵由 `source-text-probes.mjs` 写出 `sourceCommit`、inventory SHA-256，以及逐源/读取方文件的 SHA-256（按运行时文件原始字节，包括换行）；变异 index 对应这些字节解码后的源码字符串。重跑验证 20 个源的未变异基线通过，114 个 NUM_OFF 位置均指向数字，invalid/inconclusive 均为 0。脚本的 provenance 输出已随本 PR 提交；抽样复跑首个源（AppSidebar）与已提交矩阵逐字段一致（仅耗时 `ms` 与键序不同）。
 
 快照提交表示该提交保存的原始证据，不倒推其运行时工作区 SHA。读取方路径集合不变不能证明源码/断言内容不变，也不能据此沿用旧测量作为当前结果。
 

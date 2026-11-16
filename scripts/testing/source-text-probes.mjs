@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -420,9 +421,17 @@ function runVitest(testFilesRel) {
 }
 
 // ---------- 主循环 ----------
+const sha256File = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const matrix = {
   seed: SEED, generatedAt: new Date().toISOString().slice(0, 10),
   maxSemantic: MAX_SEMANTIC, maxRename: MAX_RENAME,
+  // 证据来源：矩阵结果只对这两个输入成立（源码树提交 + inventory 字节）。
+  // 变异 index 是源码 UTF-8 文本的字符偏移；读取方/源内容变化后必须重跑，不能沿用旧矩阵。
+  sourceCommit: (() => {
+    try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim(); }
+    catch { return null; }
+  })(),
+  inventorySha256: sha256File(inventoryPath),
   selfCheck: renameSelfCheck(),
   sources: [],
 };
@@ -443,6 +452,8 @@ for (const e of entries) {
   if (baseline.red) {
     matrix.sources.push({
       source: e.rel, testFiles: [...e.testFiles], baselineRed: true,
+      sourceSha256: sha256File(e.abs),
+      testFileSha256: Object.fromEntries([...e.testFiles].map((tf) => [tf, sha256File(path.join(REPO, tf))])),
       baselineInconclusive: baseline.red && !baseline.killed,
       baselineFailed: baseline.failed, semantic: [], rename: [],
     });
@@ -511,6 +522,8 @@ for (const e of entries) {
   const renameInvalid = rename.filter((p) => p.invalid).length;
   matrix.sources.push({
     source: e.rel, testFiles: [...e.testFiles], baselineRed: false,
+    sourceSha256: sha256File(e.abs),
+    testFileSha256: Object.fromEntries([...e.testFiles].map((tf) => [tf, sha256File(path.join(REPO, tf))])),
     semantic, rename,
     semanticKilled: killed,
     semanticTotal: semantic.length - semanticInvalid - semanticInconclusive,
