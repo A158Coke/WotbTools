@@ -149,7 +149,7 @@ class SpringAiChatGatewayStreamTest {
                 Flux.just(chunk("x", null, null)));
         // The watchdog fires before the first chunk arrives (attempt start hook
         // simulates the deadline passing): the drain must stop immediately.
-        gateway.attemptStartHook = context -> now.set(START_NANOS + 315_000_000_000L);
+        gateway.state.attemptStartHook = context -> now.set(START_NANOS + 315_000_000_000L);
 
         final AiUpstreamException e = assertThrows(
                 AiUpstreamException.class, () -> gateway.stream(request(), received::append));
@@ -254,14 +254,14 @@ class SpringAiChatGatewayStreamTest {
     @Test
     void splitChunksKeepsSentenceBoundariesAndPieceCap() {
         final String text = "第一句。第二句！第三句？\n第四段";
-        final List<String> pieces = SpringAiChatGateway.splitChunks(text, 128);
+        final List<String> pieces = AiGatewayStreamChunker.splitChunks(text, 128);
         assertEquals(text, String.join("", pieces), "split must preserve the full text");
         assertTrue(pieces.stream().allMatch(p -> p.length() <= 128),
                 "every piece must respect maxPiece: " + pieces);
 
         final String longText = "x".repeat(2000);
-        final List<String> capped = SpringAiChatGateway.splitChunks(longText, 128);
-        assertTrue(capped.size() <= SpringAiChatGateway.CHUNK_MAX_PIECES,
+        final List<String> capped = AiGatewayStreamChunker.splitChunks(longText, 128);
+        assertTrue(capped.size() <= AiGatewayStreamChunker.CHUNK_MAX_PIECES,
                 "piece count must not exceed cap: " + capped.size());
         assertEquals(longText, String.join("", capped));
     }

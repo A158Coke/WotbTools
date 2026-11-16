@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
 /**
  * admin delete 治理语义单元测试（mock，无 DB）：
  * 单事务 audit + delete、404、共享 hash 保留文件、最后引用删除文件、hash null 无文件清理、
- * audit 失败中止删除（不产生假删除）。真实 PG 并发 invariant 见 WebApiTest。
+ * audit 失败中止删除（不产生假删除）。真实 PG 并发 invariant 见 HallOfFameConcurrencyIntegrationTest。
  */
 class HallOfFameAdminServiceTest {
 

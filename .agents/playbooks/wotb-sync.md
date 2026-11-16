@@ -121,7 +121,7 @@
 3. **分层**（真实调用链）：查询端点 `HallOfFameController` → `HallOfFameService` → `HallOfFameRecordRepository`；上传端点 `HallOfFameController` → `HallOfFameUploadService` → `HallOfFameService` → `HallOfFameRecordRepository`（Service 只调自己域的 Repository）；admin 域 `HallOfFameAdminController` → `HallOfFameAdminService`（audit + delete 单事务，ReplayHashLock 串行化文件清理）。
 4. **API 纯英文稳定 key**（snake_case）；前端三语 label 在 `locales/*.json` 的 `hof` 与 `hofAdmin` 块。
 5. **前端上传/调用**：`api.hofUpload(file)` → `POST /api/hof/upload`；统一查询 `api.hofList(params)` → `GET /api/hof`；新增端点同步前端 API 调用函数。
-6. **测试 + 文档**：改了 Java 才跑 `mvn -pl wotb-web -Dtest=WebApiTest test`（`WebApiTest` 保留，只覆盖需要真实 PostgreSQL/回放的集成路径）；前端改则跑相关 Vitest；并更新文档。
+6. **测试 + 文档**：改了 Java 才跑 `mvn -s settings.xml -pl wotb-web -am -Dtest=HallOfFameReplayApiIntegrationTest,HallOfFameConcurrencyIntegrationTest,PublicSearchIntegrationTest,HallOfFameAdminApiIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test`（从 `java/` 执行；这四个职责测试共同覆盖原 API 的真实 PostgreSQL/回放集成路径）；前端改则跑相关 Vitest；并更新文档。
 
 ## 配方 I：新增跨站点状态（主题/语言/偏好）
 
@@ -158,13 +158,13 @@ cd frontend && pnpm exec vitest run <related-test-files>
 cd frontend && pnpm run build        # 仅当触及路由/依赖/Vite/动态 import/资产管线
 
 # Java（只有真的改了 java/ 才需要）
-cd java && JAVA_HOME=<JDK 25> mvn -pl wotb-web -am -Dtest=WebApiTest test
+cd java && JAVA_HOME=<JDK 25> mvn -s settings.xml -pl wotb-web -am -Dtest=HallOfFameReplayApiIntegrationTest,HallOfFameConcurrencyIntegrationTest,PublicSearchIntegrationTest,HallOfFameAdminApiIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 > 分层验证口径：Targeted（直接相关最小测试集）→ Module / Feature（affected 范围回归）→
 > Regression（review/fix 后）；repository full validation 由 PR CI 的 `CI / Required Gate` 负责。
 > JDK 版本是 **25**（不是 21）；系统默认 `java` 可能不是 JDK 25，跑 mvn 必须先把 `JAVA_HOME` 指向 JDK 25。
-> 本环境/沙箱可能无法真正监听端口，用 MockMvc 测试（`WebApiTest`）即可，不必起服务。
+> 本环境/沙箱可能无法真正监听端口，用上述四个 MockMvc 集成测试即可，不必起服务。
 
 ## 收尾检查
 

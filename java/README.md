@@ -204,9 +204,9 @@ mvn -s settings.xml test
 - 客户端 golden 基线在 `frontend/src/replay-local/__golden__/`（`compute.golden.test.ts` / `export.golden.test.ts` / `playback.golden.test.ts`）。
 - `wotb-web` 的 hof / security / API 契约单元测试都会执行；无需数据库的 controller 契约已拆出，始终运行。
 - 架构测试：`CoreArchitectureTest` / `WebArchitectureTest`（ArchUnit）守护模块边界与分层，随 `mvn test` 自动执行。
-- `WebApiTest` 只保留 PostgreSQL/真实回放集成路径；无 Docker 或无 `common/data` 时按条件跳过。
+- `HallOfFameReplayApiIntegrationTest`、`HallOfFameConcurrencyIntegrationTest`、`PublicSearchIntegrationTest` 与 `HallOfFameAdminApiIntegrationTest` 覆盖原 `WebApiTest` 的 PostgreSQL/真实回放集成路径；无 Docker 或缺少所需真实回放夹具时按条件跳过。
 
-测试样本来自仓库根目录的 `common/data/`。
+测试优先使用仓库根目录的 `common/fixtures/replays/`，`common/data/` 可用于本地扩充样本。
 
 前端测试与构建：
 
