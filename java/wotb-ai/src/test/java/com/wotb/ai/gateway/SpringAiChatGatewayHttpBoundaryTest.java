@@ -170,7 +170,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
                     null, "deepseek-v4-flash", new SimpleMeterRegistry(),
                     new AiRetryPolicy(1, 0, 0, 2.0),
                     5_000_000_000L, System::nanoTime, Thread::sleep);
-            gateway.chatModel = SpringAiChatGateway.buildModel(modelProperties, gateway);
+            gateway.state.chatModel = AiGatewayModelFactory.buildModel(modelProperties, gateway.state.activeContext);
             final long startNanos = System.nanoTime();
             final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                     () -> gateway.chat(request()));
@@ -212,7 +212,7 @@ class SpringAiChatGatewayHttpBoundaryTest {
                     new SimpleMeterRegistry());
             // Deterministically fire the watchdog before the attempt starts, i.e.
             // before the okhttp interceptor captures the Call.
-            gateway.attemptStartHook = AttemptBudgetContext::expireAndCancel;
+            gateway.state.attemptStartHook = AttemptBudgetContext::expireAndCancel;
 
             final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                     () -> gateway.chat(request()));

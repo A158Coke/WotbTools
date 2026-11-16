@@ -396,7 +396,7 @@ class SpringAiChatGatewayTest {
         final SpringAiChatGateway configured = SpringAiChatGateway.fromProperties(
                 properties("sk-test", "https://custom.example.com", "deepseek-v4-flash"), null);
         assertTrue(configured.isConfigured());
-        final OpenAiChatModel model = (OpenAiChatModel) configured.chatModel();
+        final OpenAiChatModel model = (OpenAiChatModel) configured.state.chatModel;
         assertEquals("https://custom.example.com", model.getOptions().getBaseUrl());
         assertEquals("sk-test", model.getOptions().getApiKey());
         assertEquals("deepseek-v4-flash", model.getOptions().getModel());

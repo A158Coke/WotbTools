@@ -80,7 +80,7 @@ class SpringAiChatGatewayCancellationTest {
     @Test
     void cancelDuringAttemptStopsRetryLoopEvenForRetryableFailure() {
         when(chatModel.call(any(Prompt.class))).thenThrow(upstream("AI_RATE_LIMITED", 429));
-        gateway.attemptStartHook = context -> cancellation.cancel();
+        gateway.state.attemptStartHook = context -> cancellation.cancel();
 
         final AiUpstreamException e =
                 assertThrows(AiUpstreamException.class, () -> gateway.chat(request()));
@@ -95,7 +95,7 @@ class SpringAiChatGatewayCancellationTest {
     @Test
     void cancelDuringResponseConversionNeverRecordsSuccessOrUsage() {
         when(chatModel.call(any(Prompt.class))).thenReturn(okResponse());
-        gateway.attemptStartHook = context -> cancellation.cancel();
+        gateway.state.attemptStartHook = context -> cancellation.cancel();
 
         final AiUpstreamException e =
                 assertThrows(AiUpstreamException.class, () -> gateway.chat(request()));
