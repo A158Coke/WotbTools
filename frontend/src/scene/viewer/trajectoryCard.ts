@@ -1,12 +1,15 @@
 // 轨迹与结果卡（#820 Agent A 出仓）：trajGroup/trajInfoPos 的唯一 owner、
 // 结果卡 DOM 摆位与 dev armor-debug 面板。原 tankViewer.js 闭包内对应函数整体平移。
-// 判定结果卡是判定模式唯一结果窗口（2026-11-15 用户裁示）：有点击锚点时跟随点击，
-// 用共享 resultCardPosition 避让固定 HUD；无点击锚点（射击复现/初始判定）保持顶部停靠。
+// 判定结果卡是判定模式唯一结果窗口（2026-11-15 用户裁示）。定位契约（2026-11-16 用户裁示）：
+// 卡片跟随**世界命中点的屏幕投影**——每帧用当前相机重投影，旋转视角时贴着命中点移动；
+// 命中点转到相机后方时隐藏（没有可解释的屏幕位置），不再固定点击坐标或顶部停靠。
+// 避让固定 HUD 仍由共享 resultCardPosition 纯函数负责。
 import * as THREE from 'three'
 import { createShotTrajectoryGroup, trajectoryChanceColor } from './shotTrajectoryGeometry.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics, shotResultCardScale } from '../../utils/shotResultCardMetrics.js'
 import { renderShotResultCardHtml } from './shotResultCard.js'
 import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
+import { projectCardAnchor } from './resultCardAnchor.js'
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from '../armorInspectorChance.js'
 import type { ProbabilityChainLayer } from '../armorInspectorChance.js'
 import type { ShotResultCardHeInfo, ShotResultCardLabels, ShotResultCardLayer } from './shotResultCard.js'
@@ -23,8 +26,6 @@ export interface TrajectoryCardOptions {
     probabilityMode?: boolean
     heInfo?: ShotResultCardHeInfo | null
     heDirectHit?: { name: string; thickness: number } | null
-    /** 触发本次判定的点击位置（client 坐标）。缺省/复现模式 = 停靠顶部，不跟随。 */
-    clickAnchor?: { x: number; y: number } | null
 }
 
 /** 轨迹/结果卡 owner 的公开句柄（调用方只通过这些方法访问本模块状态）。 */
@@ -77,14 +78,20 @@ export function createTrajectoryCard(deps: TrajectoryCardDeps): TrajectoryCardHa
     const { isDestroyed, clearShotError, clearHeBlast, getFxScene, getCamera, L, armorDebug } = deps
     let trajGroup: THREE.Group | null = null;
     let trajInfoPos: THREE.Vector3 | null = null;
-    /** 本次判定的点击锚点（相对 #canvas-container）；null = 停靠顶部（复现/自动判定）。 */
-    let trajClickAnchor: { x: number; y: number } | null = null;
+    /** 本次判定的世界命中点（轨迹首点）；每帧投影到画布容器，旋转视角时卡片随命中点移动。 */
+    let trajAnchorWorld: THREE.Vector3 | null = null;
+    /** 上次投影锚点/写入位置：仅锚点移动或 dirty 时重排，静止帧不写样式。 */
+    let lastAnchor: { x: number; y: number } | null = null;
+    let lastCardPos: { left: number; top: number } | null = null;
     /** 位置/宽度需要重算（内容更新、resize、展开/收起）。渲染循环每帧调用时据此跳过布局。 */
     let trajLayoutDirty = true;
 
 function tidyTrajectory(): void {
             if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; }
             trajInfoPos = null;
+            trajAnchorWorld = null;
+            lastAnchor = null;
+            lastCardPos = null;
             const trajInfo = document.getElementById('traj-info');
             if (trajInfo) trajInfo.style.display = 'none';
             const clickInfo = document.getElementById('click-info');
@@ -249,15 +256,11 @@ function showTrajectory(
             // 手机端按视口短边比例缩小字号/间距（2026-11-15 用户裁示），桌面档恒为 1。
             const cardMetrics = shotResultCardMetrics(compactCard, shotResultCardScale(window.innerWidth, window.innerHeight));
             const cardMaxWidth = resultCardMaxWidth(cardHostRect ? cardHostRect.width : 0, window.innerWidth, window.innerHeight);
-            // 点击锚点换算到 #canvas-container 坐标系（卡片 absolute 定位祖先即该容器所在的
-            // .armor-stage；两者同尺寸同原点）。无点击（射击复现/初始判定）= null → 停靠回退。
-            trajClickAnchor = null;
-            if (options.clickAnchor && cardHostRect && cardHostRect.width > 0) {
-                trajClickAnchor = {
-                    x: options.clickAnchor.x - cardHostRect.left,
-                    y: options.clickAnchor.y - cardHostRect.top,
-                };
-            }
+            // 世界命中点即定位锚点（轨迹首点 = 首触/爆点）：旋转视角后由渲染循环重新投影。
+            // 射击复现/初始自动判定同样有世界命中点，不再走顶部停靠（2026-11-16 用户裁示）。
+            trajAnchorWorld = firstPoint.clone();
+            lastAnchor = null;
+            lastCardPos = null;
             trajLayoutDirty = true;
             // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色（最终段 1–99% 时标题是
             // “可能击穿”）：概率链累计是领域计算，在调用方预算后交给 renderer 着色。
@@ -292,25 +295,15 @@ function updateTrajInfoPos(): void {
             const host = document.getElementById('canvas-container');
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
-            // 渲染循环每帧都会调到这里（历史上用于跟随世界点）。布局只在 dirty 时重算：
-            // 内容更新（showTrajectory）、resize、展开/收起都会 markTrajInfoDirty。
-            if (!trajLayoutDirty) return;
-            trajLayoutDirty = false;
-            // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
-            // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px 且不超过画布宽 82%，
-            // 跟随点击后不能铺满手机视口（2026-11-15 用户裁示）。
-            const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
-            if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
-            div.style.whiteSpace = 'normal';
-            div.style.boxSizing = 'border-box';
-            div.style.display = 'block';
-            // 桌面/平板默认 pointer-events:none（结果卡跟随点击后可能盖住车体，场景点击必须
-            // 继续判定）；但被 max-block-size 裁剪的明细必须仍可滚动——内容溢出时恢复指针
-            // 事件（滚轮/触控/滚动条），内容回落再交还穿透（评审 P2，2026-11-15）。
-            div.style.pointerEvents = div.scrollHeight > div.clientHeight + 1 ? 'auto' : '';
-            if (!trajClickAnchor) {
-                // 停靠回退（射击复现 / 初始自动判定）：清掉脚本定位与逻辑宽度覆盖，交还 CSS
-                // 的顶部停靠规则（紧凑横屏的停靠宽度上限依赖 max-inline-size）。
+            // 渲染循环每帧都会调到这里：锚点 = 世界命中点，相机一旋转投影就变，必须逐帧重排。
+            // 静止帧仅在 dirty（内容/resize/展开）或锚点移动 ≥0.5px 时写样式。
+            if (!trajAnchorWorld) {
+                // 防御回退：正常路径（showTrajectory/setTrajInfoPos）总会同时设置世界锚点；
+                // 没有锚点时交还 CSS 顶部停靠，而不是留下上一次的脚本定位。
+                if (!trajLayoutDirty) return;
+                trajLayoutDirty = false;
+                lastAnchor = null;
+                lastCardPos = null;
                 div.style.maxInlineSize = '';
                 div.style.left = '';
                 div.style.top = '';
@@ -319,19 +312,49 @@ function updateTrajInfoPos(): void {
                 div.style.transform = '';
                 return;
             }
-            // 只有跟随点击的卡片由脚本接管逻辑宽度；停靠态保留 CSS 的窄横屏上限
-            // （评审 P2：无锚点分支曾遗留内联 max-inline-size，压掉停靠规则并越过右下控件边界）。
-            if (maxWidth) div.style.maxInlineSize = `${maxWidth}px`;
-            // 卡片是 absolute，left/top 相对 offsetParent；点击锚点存的是 #canvas-container
-            // 坐标系（与 offsetParent 同尺寸同原点）。参考系不一致时显式换算，避免偏移误差。
+            const projected = projectCardAnchor(trajAnchorWorld, getCamera(), rect.width, rect.height);
+            if (!projected || !projected.inFront) {
+                // 命中点不可解释（非有限值 / 在相机后方或近平面内）：隐藏卡片。
+                // 旋转视角经过背面时不做“固定到某个边角”的假跟随，转到正面会重新显示。
+                div.style.display = 'none';
+                lastAnchor = null;
+                lastCardPos = null;
+                return;
+            }
+            const moved = !lastAnchor
+                || Math.abs(projected.x - lastAnchor.x) >= 0.5
+                || Math.abs(projected.y - lastAnchor.y) >= 0.5;
+            if (!trajLayoutDirty && !moved) return;
+            lastAnchor = { x: projected.x, y: projected.y };
+            if (trajLayoutDirty) {
+                // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
+                // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px 且不超过画布宽 82%，
+                // 跟随命中点后不能铺满手机视口（2026-11-15 用户裁示）。
+                const maxWidth = resultCardMaxWidth(rect.width, window.innerWidth, window.innerHeight);
+                if (maxWidth) div.style.maxWidth = `${maxWidth}px`;
+                div.style.whiteSpace = 'normal';
+                div.style.boxSizing = 'border-box';
+                div.style.display = 'block';
+                // 桌面/平板默认 pointer-events:none（结果卡跟随命中点后可能盖住车体，场景点击
+                // 必须继续判定）；但被 max-block-size 裁剪的明细必须仍可滚动——内容溢出时恢复
+                // 指针事件（滚轮/触控/滚动条），内容回落再交还穿透（评审 P2，2026-11-15）。
+                div.style.pointerEvents = div.scrollHeight > div.clientHeight + 1 ? 'auto' : '';
+                // 只有脚本接管的跟随态写逻辑宽度；停靠回退由 CSS 的窄横屏上限拥有。
+                if (maxWidth) div.style.maxInlineSize = `${maxWidth}px`;
+            } else if (div.style.display === 'none') {
+                // 从相机后方转回可见：恢复显示，沿用现有尺寸。
+                div.style.display = 'block';
+            }
+            // 卡片是 absolute，left/top 相对 offsetParent；投影锚点在 #canvas-container 坐标系
+            // （与 offsetParent 同尺寸同原点）。参考系不一致时显式换算，避免偏移误差。
             const anchor = (div.offsetParent as HTMLElement | null) ?? div.parentElement;
             if (!anchor) return;
             const anchorRect = anchor.getBoundingClientRect();
-            // 固定 HUD 面板（与 browser-armor-mobile 门禁同口径）：
-            // #corner-tl = 左上信息胶囊 + 参数入口，.armor-back = 返回键，
-            // #corner-tr = 右下射击卡，#turret-controls = 左下姿态卡。
+            // 固定 HUD 面板（与 browser armor 门禁同口径）：#corner-tl = 左上信息胶囊 + 参数入口，
+            // .armor-back = 返回键，#corner-tr = 右下射击卡，#turret-controls = 左下姿态卡，
+            // .armor-shot-view-switch = 单发分析页右下视角切换（不与结果卡相交）。
             const panels: ResultCardRect[] = [];
-            for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+            for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back', '.armor-shot-view-switch']) {
                 const el = document.querySelector(selector) as HTMLElement | null;
                 if (!el) continue;
                 const style = getComputedStyle(el);
@@ -341,8 +364,8 @@ function updateTrajInfoPos(): void {
                 panels.push({ left: r.left - anchorRect.left, top: r.top - anchorRect.top, right: r.right - anchorRect.left, bottom: r.bottom - anchorRect.top });
             }
             const chosen = chooseResultCardPosition({
-                clickX: trajClickAnchor.x + (rect.left - anchorRect.left),
-                clickY: trajClickAnchor.y + (rect.top - anchorRect.top),
+                clickX: projected.x + (rect.left - anchorRect.left),
+                clickY: projected.y + (rect.top - anchorRect.top),
                 width: div.offsetWidth,
                 height: div.offsetHeight,
                 viewportWidth: anchorRect.width,
@@ -351,22 +374,39 @@ function updateTrajInfoPos(): void {
                 gap: 14,
                 pad: 8,
             });
-            // CSS 的停靠规则用 logical inset + translateX(-50%)：物理与逻辑两个方向都写同一
-            // 像素值并覆盖 transform。**不能写 inset-*: auto**：同一内联声明块里逻辑属性若
-            // 排在物理 left/top 之后，会按声明顺序覆盖它们（used left/top 变回 auto → 卡片
-            // 落到静态位置、跑到场景下方；browser-armor-aiming 实际抓到过）。
-            div.style.insetInlineStart = `${chosen.left}px`;
-            div.style.insetBlockStart = `${chosen.top}px`;
-            div.style.left = `${chosen.left}px`;
-            div.style.top = `${chosen.top}px`;
-            div.style.transform = 'none';
+            if (!lastCardPos || lastCardPos.left !== chosen.left || lastCardPos.top !== chosen.top) {
+                // CSS 的停靠规则用 logical inset + translateX(-50%)：物理与逻辑两个方向都写同一
+                // 像素值并覆盖 transform。**不能写 inset-*: auto**：同一内联声明块里逻辑属性若
+                // 排在物理 left/top 之后，会按声明顺序覆盖它们（used left/top 变回 auto → 卡片
+                // 落到静态位置、跑到场景下方；browser-armor-aiming 实际抓到过）。
+                div.style.insetInlineStart = `${chosen.left}px`;
+                div.style.insetBlockStart = `${chosen.top}px`;
+                div.style.left = `${chosen.left}px`;
+                div.style.top = `${chosen.top}px`;
+                div.style.transform = 'none';
+                lastCardPos = chosen;
+            }
+            trajLayoutDirty = false;
         }
     return {
         showTrajectory, updateTrajInfoPos, armorDebugPanel, tidyTrajectory,
-        clearTrajInfoPos() { trajInfoPos = null; },
-        setTrajInfoPos(v) { trajInfoPos = v; trajLayoutDirty = true; },
+        clearTrajInfoPos() { trajInfoPos = null; trajAnchorWorld = null; lastAnchor = null; lastCardPos = null; },
+        setTrajInfoPos(v) {
+            trajInfoPos = v;
+            // 世界模式“当前 tick 不相交”提示把锚点设到观察目标：卡片同样跟随该世界点。
+            trajAnchorWorld = v ? v.clone() : null;
+            lastAnchor = null;
+            lastCardPos = null;
+            trajLayoutDirty = true;
+        },
         markTrajInfoDirty() { trajLayoutDirty = true; },
-        clearTrajGroup() { if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; } trajInfoPos = null; },
+        clearTrajGroup() {
+            if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; }
+            trajInfoPos = null;
+            trajAnchorWorld = null;
+            lastAnchor = null;
+            lastCardPos = null;
+        },
         getTrajInfoPos: () => trajInfoPos,
     };
 }

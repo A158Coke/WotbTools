@@ -14,7 +14,7 @@ const plateModel = read('../scene/viewer/armorPlateModel.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/resultCardAnchor.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('内核 getElementById 的静态 ID 全部由模板提供', () => {
     const kernelLookups = new Set([...kernel.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]))
@@ -34,7 +34,8 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   })
 
   // 2026-11-15 用户裁示：判定模式出现两张结果窗口（五行点选卡 + 逐层结果卡）属于重复；
-  // 只保留更详细的逐层结果卡 #traj-info，并改为跟随点击位置、手机端按比例缩小。
+  // 只保留更详细的逐层结果卡 #traj-info，手机端按比例缩放；定位自 2026-11-16 起跟随
+  // 世界命中点的屏幕投影（旋转视角同步移动，见 resultCardAnchor/trajectoryCard 行为测试）。
   // 五行点选卡 #click-info 只在厚度模式保留（该模式不做击穿判定，没有第二张卡）。
   it('判定模式单结果窗口：逐层卡跟随点击并缩放，五行卡只在厚度模式', () => {
     // 厚度模式的五行读数仍在（模板 + 唯一写入入口）
@@ -48,19 +49,20 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBe(1)
     expect(kernel).not.toMatch(/clickInfoResultCode/)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    // 判定结果卡：点击锚点经 isCameraClick 门控，四种展示分支全部透传
-    expect(kernel).toMatch(/const resultClickAnchor = isCameraClick && lastClickClient \? \{ \.\.\.lastClickClient \} : null;/)
-    expect(kernel.match(/clickAnchor: resultClickAnchor/g)?.length, 'clickAnchor 透传点').toBe(4)
-    // 定位实现唯一：共享纯函数 + 脚本写 left/top；无锚点时清掉内联定位交还 CSS 停靠
+    // 判定结果卡：锚点 = 世界命中点（showTrajectory 内设置并逐帧投影），点击屏幕坐标不再参与
+    expect(kernel).not.toMatch(/clickAnchor/)
+    expect(kernel).toMatch(/trajAnchorWorld = firstPoint\.clone\(\)/)
+    expect(kernel).toMatch(/export function projectCardAnchor\(/)
+    // 定位实现唯一：共享纯函数 + 脚本写 left/top；无世界锚点时清掉内联定位交还 CSS 回退
     expect(kernel).toMatch(/export function chooseResultCardPosition\(/)
     expect(kernel).toMatch(/chooseResultCardPosition\(\{/)
     expect(kernel).toMatch(/div\.style\.left = /)
     expect(kernel).toMatch(/div\.style\.top = /)
     expect(kernel).toMatch(/div\.style\.insetInlineStart = ''/)
     expect(kernel).toMatch(/div\.style\.transform = ''/)
-    // 跟随定位使用画布容器坐标（点击锚点换算）并避让固定 HUD 面板
-    expect(kernel).toMatch(/options\.clickAnchor\.x - cardHostRect\.left/)
-    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    // 跟随定位把世界命中点投影到画布容器坐标，并避让固定 HUD 面板（含单发分析页视角切换）
+    expect(kernel).toMatch(/projectCardAnchor\(trajAnchorWorld, getCamera\(\), rect\.width, rect\.height\)/)
+    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back', '\.armor-shot-view-switch'\]\)/)
     // 停靠规则保留为无点击回退（射击复现/初始判定）；#click-info 仍由脚本定位
     const dockCss = template.slice(template.indexOf('.armor-view #traj-info {'))
     const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
@@ -75,9 +77,9 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     expect(viewer).toMatch(/repositionResultCard: \(\) => \{ tc\.markTrajInfoDirty\(\); tc\.updateTrajInfoPos\(\); \}/)
     // 固定 HUD 面板自身变尺寸（参数抽屉展开/模块加载）也要触发结果卡重排
     expect(viewer).toMatch(/new ResizeObserver\(\(\) => tc\.markTrajInfoDirty\(\)\)/)
-    expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back', '\.armor-shot-view-switch'\]\)/)
     // 宿主：装甲查看器默认展开逐层明细（2026-11-16 用户反馈：手机端不能只给极简一行）；
-    // 射击复现顶部停靠空间受限，保持默认收起；展开/收起后按新高度重新避让
+    // 射击复现结果卡空间受限，保持默认收起；展开/收起后按新高度重新避让
     expect(template).toMatch(/const resultExpanded = ref\(!isShotPage\.value\)/)
     expect(template).toMatch(/watch\(isShotPage, shot => \{ resultExpanded\.value = !shot \}\)/)
     expect(template).toMatch(/watch\(resultExpanded, \(\) => nextTick\(\(\) => viewer\?\.repositionResultCard\?\.\(\)\)\)/)
@@ -370,18 +372,23 @@ describe('dolly-zoom world-overview scope guard', () => {
   })
 })
 
-// 结果卡定位：跟随点击（2026-11-15 用户裁示），但**不按 3D 命中点做屏幕投影**——
-// 位置是「点击时的视口坐标 + 固定 HUD 面板避让」，画布滚动/缩放时以容器 rect 重算。
-// 无点击锚点（射击复现/初始自动判定）仍交还 CSS 顶部停靠（真实几何由 browser armor 门禁断言）。
-describe('traj-info click-follow layout', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  it('跟随点击位置（容器坐标 + 面板避让），无锚点回退 CSS 停靠', () => {
+// 结果卡定位（2026-11-16 用户裁示）：锚点 = 世界命中点，每帧用当前相机投影到画布容器，
+// 旋转视角时卡片随命中点移动；命中点转到相机后方时隐藏。固定 HUD 面板仍由共享纯函数避让。
+// 行为断言见 resultCardAnchor.test.ts / trajectoryCard.anchor.test.ts，本处只锁内核接线。
+describe('traj-info hit-follow layout', () => {
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/resultCardAnchor.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  it('世界命中点逐帧投影（容器坐标 + 面板避让），相机后方隐藏', () => {
     const start = kernel.indexOf('function updateTrajInfoPos()')
     expect(start).toBeGreaterThan(-1)
     const fn = kernel.slice(start, kernel.indexOf('function ', start + 10))
-    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现 3D 命中点投影摆位
-    expect(fn).not.toMatch(/project\((camera|getCamera\(\))\)/)
-    // 点击锚点 → 共享定位纯函数；脚本写 left/top 并覆盖停靠的 logical inset/transform
+    // 每帧把世界命中点投到画布容器；相机旋转后同一命中点的屏幕位置改变。
+    expect(fn).toMatch(/projectCardAnchor\(trajAnchorWorld, getCamera\(\), rect\.width, rect\.height\)/)
+    // 锚点移动不是 dirty-only：≥0.5px 即重排（相机旋转帧必须跟随）。
+    expect(fn).toMatch(/Math\.abs\(projected\.x - lastAnchor\.x\) >= 0\.5/)
+    // 命中点在相机后方/投影非法：隐藏，不固定到边角。
+    expect(fn).toMatch(/if \(!projected \|\| !projected\.inFront\)/)
+    expect(fn).toMatch(/div\.style\.display = 'none'/)
+    // 锚点 → 共享定位纯函数；脚本写 left/top 并覆盖回退的 logical inset/transform
     expect(fn).toMatch(/chooseResultCardPosition\(\{/)
     expect(fn).toMatch(/div\.style\.left = /)
     expect(fn).toMatch(/div\.style\.top = /)
@@ -392,10 +399,10 @@ describe('traj-info click-follow layout', () => {
     expect(fn).toMatch(/div\.style\.transform = 'none'/)
     // 内容被高度上限裁剪时必须恢复指针事件（滚轮/触控可滚动），否则桌面滚轮穿透到场景
     expect(fn).toMatch(/div\.style\.pointerEvents = div\.scrollHeight > div\.clientHeight \+ 1 \? 'auto' : ''/)
-    // 无锚点：清掉内联定位与逻辑宽度覆盖，交还样式停靠（紧凑横屏上限）
+    // 无世界锚点：清掉内联定位与逻辑宽度覆盖，交还样式回退（紧凑横屏上限）
     expect(fn).toMatch(/div\.style\.insetInlineStart = ''/)
     expect(fn).toMatch(/div\.style\.maxInlineSize = ''/)
-    // 逻辑宽度覆盖只在跟随点击时写（停靠态由 CSS 拥有）
+    // 逻辑宽度覆盖只在跟随态写（回退态由 CSS 拥有）
     expect(fn).toMatch(/div\.style\.maxInlineSize = `\$\{maxWidth\}px`/)
     // 容器宽度/坐标系按画布容器测量（侧栏/窄画布不能按视口算）
     expect(fn).toMatch(/getElementById\('canvas-container'\)/)

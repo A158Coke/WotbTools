@@ -1725,12 +1725,35 @@ async function runShotLandscapeScenario(env, scenario) {
   await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
   await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
     { timeout: 15000, label: 'overview restored after full round trip' })
-  // F2：射击复现顶部停靠卡保持默认收起（空间受限）；点开逐层明细后不得压到右下列，再点收起。
-  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  // F2：射击复现结果卡保持默认收起（空间受限）；点开逐层明细后不得压到右下列，再点收起。
+  // 结果卡现在跟随世界命中点的屏幕投影（2026-11-16 用户裁示）：视图切换会改变卡片位置，
+  // tap 前必须重新测量并等锚点稳定；旧夹具复用切换前的 resultCenter 只在固定停靠版成立。
+  const settleResultCard = () => page.evaluate(`new Promise((resolve) => {
+    const started = performance.now()
+    let prev = null
+    let stable = 0
+    const tick = () => {
+      const r = document.getElementById('traj-info')?.getBoundingClientRect()
+      const now = r && r.width > 0 ? { x: r.x, y: r.y } : null
+      stable = now && prev && Math.abs(now.x - prev.x) < 0.5 && Math.abs(now.y - prev.y) < 0.5 ? stable + 1 : 0
+      prev = now
+      if (stable >= 2) resolve(true)
+      else if (performance.now() - started > 5000) resolve(false)
+      else requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })`)
+  check(failures, await settleResultCard() === true, `${label}: 结果卡位置未稳定`)
+  const shotResult = await page.probe(shotLandscapeProbe)
+  check(failures, !!shotResult.resultCenter, `${label}: 射击结果卡无有效中心（${JSON.stringify(shotResult.result)}）`)
+  await page.tap({ ...shotResult.resultCenter, touch: scenario.touch })
   await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === true,
     { label: 'result details expanded' })
   assertShotGeometry(await page.probe(shotLandscapeProbe), ' 结果展开')
-  await page.tap({ ...shot.resultCenter, touch: scenario.touch })
+  check(failures, await settleResultCard() === true, `${label} 结果展开: 结果卡位置未稳定`)
+  const expandedResult = await page.probe(shotLandscapeProbe)
+  check(failures, !!expandedResult.resultCenter, `${label} 结果展开: 射击结果卡无有效中心（${JSON.stringify(expandedResult.result)}）`)
+  await page.tap({ ...expandedResult.resultCenter, touch: scenario.touch })
   await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === false,
     { label: 'result details collapsed' })
   // F2：参数面板展开/关闭（参数抽屉）后右下共享布局仍成立；关闭后重新执行几何与触摸命中。

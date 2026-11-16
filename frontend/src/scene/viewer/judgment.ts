@@ -728,9 +728,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
-            // 结果卡跟随触发本次判定的点击位置（2026-11-15 用户裁示）。射击复现/世界模式的
-            // 初始自动判定没有点击（isCameraClick=false）→ null，卡片保持顶部停靠。
-            const resultClickAnchor = isCameraClick && lastClickClient ? { ...lastClickClient } : null;
+            // 结果卡锚点 = 命中点世界坐标（showTrajectory 内设置），不再透传点击屏幕坐标；
+            // 点击判定与射击复现/世界模式同样跟随命中点（2026-11-16 用户裁示）。
             judgePenetration(req).then(async res => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck) as Array<JudgmentHit | undefined>;
@@ -1002,7 +1001,6 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         tc.showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
                             ...(heInfo ? { heInfo, heDirectHit } : {}),
                             blockedNoPrimary: res.blocked_no_primary === true,
-                            clickAnchor: resultClickAnchor,
                         });
                         return;
                     }
@@ -1010,14 +1008,14 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
                 const blockedNoPrimary = res.blocked_no_primary === true;
                 if (useProbabilityMode) {
-                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary, clickAnchor: resultClickAnchor });
+                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
                 } else {
-                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary, clickAnchor: resultClickAnchor });
+                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
                 }
             }).catch(err => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false, { clickAnchor: resultClickAnchor });
+                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false);
             });
         }
     return {
