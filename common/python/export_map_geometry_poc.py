@@ -10,333 +10,27 @@ requested value or are ``-1`` (shared/wildcard). Initial scene visibility is a
 separate RenderObject contract: the serialized ``ro.flags`` VISIBLE bit must be
 set. This exporter mirrors both rules instead of inferring state from filenames.
 """
-
 from __future__ import annotations
-
 import argparse
 import json
 import pathlib
-import struct
 import sys
 import zipfile
-from collections import Counter
-from typing import Any, Iterator
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-
 from wotb_sc2 import Sc2ParseError, decode_dvpl, entity_components, read_sc2  # noqa: E402
 from wotb_scg import (  # noqa: E402
-    decode_polygon_indices,
-    decode_polygon_positions,
-    polygon_group_vertex_stride,
-    polygon_groups_by_id,
-    position_aabb,
-    read_scg,
+    decode_polygon_indices, decode_polygon_positions, polygon_group_vertex_stride,
+    polygon_groups_by_id, position_aabb, read_scg,
 )
-
-SHARED_BATCH_INDEX = -1
-RENDER_OBJECT_VISIBLE_FLAG = 1 << 0
-
-
-class ExportMapGeometryError(RuntimeError):
-    """Actionable map-geometry export error."""
-
-
-def normalize_member(name: str) -> str:
-    return name.replace("\\", "/").lstrip("/")
-
-
-def archive_files(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
-    return [info for info in archive.infolist() if not info.is_dir()]
-
-
-def select_scene_member(archive: zipfile.ZipFile, map_id: str) -> zipfile.ZipInfo:
-    by_name = {
-        normalize_member(info.filename).lower(): info
-        for info in archive_files(archive)
-    }
-    for candidate in (
-        f"Maps/{map_id}/{map_id}.sc2.dvpl",
-        f"{map_id}/{map_id}.sc2.dvpl",
-        f"Maps/{map_id}/{map_id}.sc2",
-        f"{map_id}/{map_id}.sc2",
-    ):
-        match = by_name.get(candidate.lower())
-        if match is not None:
-            return match
-    raise ExportMapGeometryError(f"main SC2 not found for map: {map_id}")
-
-
-def select_companion_scg(
-    archive: zipfile.ZipFile,
-    scene_member: zipfile.ZipInfo,
-) -> zipfile.ZipInfo:
-    scene_name = normalize_member(scene_member.filename)
-    lower = scene_name.lower()
-    if lower.endswith(".sc2.dvpl"):
-        candidates = (scene_name[:-9] + ".scg.dvpl", scene_name[:-9] + ".scg")
-    elif lower.endswith(".sc2"):
-        candidates = (scene_name[:-4] + ".scg", scene_name[:-4] + ".scg.dvpl")
-    else:
-        candidates = ()
-
-    by_name = {
-        normalize_member(info.filename).lower(): info
-        for info in archive_files(archive)
-    }
-    for candidate in candidates:
-        match = by_name.get(candidate.lower())
-        if match is not None:
-            return match
-    raise ExportMapGeometryError(
-        f"companion SCG not found for main scene: {scene_name}"
-    )
-
-
-def iter_entities_recursive(
-    container: dict[str, Any], path: str = "$"
-) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Yield all SC2 entities, including nested ``#hierarchy`` children."""
-
-    hierarchy = container.get("#hierarchy")
-    if not isinstance(hierarchy, list):
-        return
-    for index, entity in enumerate(hierarchy):
-        if not isinstance(entity, dict):
-            continue
-        entity_path = f"{path}.#hierarchy[{index}]"
-        yield entity_path, entity
-        yield from iter_entities_recursive(entity, entity_path)
-
-
-def component_by_type(
-    entity: dict[str, Any], type_name: str
-) -> dict[str, Any] | None:
-    return next(
-        (
-            component
-            for component in entity_components(entity)
-            if component.get("comp.typename") == type_name
-        ),
-        None,
-    )
-
-
-def vector(
-    component: dict[str, Any] | None,
-    key: str,
-    size: int,
-    default: tuple[float, ...],
-) -> list[float]:
-    if component is None:
-        return list(default)
-    value = component.get(key)
-    if not isinstance(value, list) or len(value) != size:
-        return list(default)
-    return [float(item) for item in value]
-
-
-def world_transform(entity: dict[str, Any]) -> dict[str, list[float]]:
-    transform = component_by_type(entity, "TransformComponent")
-    return {
-        "translation": vector(
-            transform, "tc.worldTranslation", 3, (0.0, 0.0, 0.0)
-        ),
-        "scale": vector(transform, "tc.worldScale", 3, (1.0, 1.0, 1.0)),
-        "rotationQuaternionXYZW": vector(
-            transform, "tc.worldRotation", 4, (0.0, 0.0, 0.0, 1.0)
-        ),
-    }
-
-
-def iter_render_batches(
-    render_object: dict[str, Any],
-) -> Iterator[tuple[int, dict[str, Any]]]:
-    """Yield batch index + archive while preserving DAVA GenKeyFromIndex ids."""
-
-    batches = render_object.get("ro.batches")
-    if isinstance(batches, dict):
-        for raw_index, batch in batches.items():
-            if not isinstance(batch, dict):
-                continue
-            text = str(raw_index)
-            if not text.isdigit():
-                raise ExportMapGeometryError(
-                    f"RenderObject has non-numeric ro.batches key {raw_index!r}"
-                )
-            yield int(text), batch
-    elif isinstance(batches, list):
-        for index, batch in enumerate(batches):
-            if isinstance(batch, dict):
-                yield index, batch
-
-
-def batch_option(render_object: dict[str, Any], batch_index: int, name: str) -> int:
-    """Read DAVA batch option; SceneFileV2 load defaults missing values to -1."""
-
-    value = render_object.get(f"rb{batch_index}.{name}", SHARED_BATCH_INDEX)
-    if not isinstance(value, int):
-        raise ExportMapGeometryError(
-            f"RenderObject rb{batch_index}.{name} must be int, got {type(value).__name__}"
-        )
-    return value
-
-
-def batch_is_active(batch_index: int, requested_index: int) -> bool:
-    """Mirror RenderObject::UpdateActiveRenderBatchesFromCollection."""
-
-    return batch_index == requested_index or batch_index == SHARED_BATCH_INDEX
-
-
-def render_object_is_visible(render_object: dict[str, Any]) -> bool:
-    """Mirror the serialized DAVA RenderObject VISIBLE flag for initial state.
-
-    RenderObject::Load defaults a missing ``ro.flags`` field to its serialization
-    criteria, which includes VISIBLE. Therefore absence means visible; an
-    explicit flags value must be an integer and bit 0 controls visibility.
-    """
-
-    flags = render_object.get("ro.flags")
-    if flags is None:
-        return True
-    if not isinstance(flags, int):
-        raise ExportMapGeometryError(
-            f"RenderObject ro.flags must be int, got {type(flags).__name__}"
-        )
-    return (flags & RENDER_OBJECT_VISIBLE_FLAG) == RENDER_OBJECT_VISIBLE_FLAG
-
-
-def collect_instances(
-    scene: dict[str, Any],
-    target_lod: int,
-    target_switch: int,
-) -> tuple[list[dict[str, Any]], Counter[str]]:
-    """Collect initially visible active Mesh batches without baking transforms."""
-
-    instances: list[dict[str, Any]] = []
-    skipped: Counter[str] = Counter()
-    seen: set[tuple[str, int, int]] = set()
-
-    for entity_path, entity in iter_entities_recursive(scene):
-        render = component_by_type(entity, "RenderComponent")
-        if render is None:
-            continue
-        render_object = render.get("rc.renderObj")
-        if not isinstance(render_object, dict):
-            skipped["render_object_missing"] += 1
-            continue
-        render_class = str(render_object.get("##name", "<unknown>"))
-        if render_class != "Mesh":
-            skipped[f"render_class:{render_class}"] += 1
-            continue
-        if not render_object_is_visible(render_object):
-            skipped["invisible_render_object"] += 1
-            continue
-        if render_object.get("ro.notShadowOnly") is False:
-            skipped["shadow_only"] += 1
-            continue
-
-        entity_name = entity.get("name")
-        transform = world_transform(entity)
-        for batch_index, batch in iter_render_batches(render_object):
-            datasource = batch.get("rb.datasource")
-            if not isinstance(datasource, int):
-                skipped["batch_without_datasource"] += 1
-                continue
-
-            lod_index = batch_option(render_object, batch_index, "lodIndex")
-            switch_index = batch_option(render_object, batch_index, "switchIndex")
-            if not batch_is_active(lod_index, target_lod):
-                skipped["inactive_lod"] += 1
-                continue
-            if not batch_is_active(switch_index, target_switch):
-                skipped["inactive_switch"] += 1
-                continue
-
-            signature = (entity_path, datasource, batch_index)
-            if signature in seen:
-                skipped["duplicate_signature"] += 1
-                continue
-            seen.add(signature)
-            instances.append(
-                {
-                    "entityPath": entity_path,
-                    "entityName": entity_name if isinstance(entity_name, str) else None,
-                    "datasourceId": datasource,
-                    "datasourceIdHex": f"0x{datasource:016x}",
-                    "batchIndex": batch_index,
-                    "lodIndex": lod_index,
-                    "switchIndex": switch_index,
-                    "worldTransform": transform,
-                }
-            )
-
-    return instances, skipped
-
-
-def write_geometry_buffers(
-    groups_by_id: dict[int, dict[str, Any]],
-    required_ids: list[int],
-    positions_path: pathlib.Path,
-    indices_path: pathlib.Path,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Decode each used PolygonGroup once and write shared derived buffers."""
-
-    geometry_records: list[dict[str, Any]] = []
-    position_float_offset = 0
-    index_offset = 0
-    total_positions = 0
-    total_indices = 0
-    primitive_types: Counter[str] = Counter()
-
-    with positions_path.open("wb") as positions_file, indices_path.open("wb") as indices_file:
-        for datasource_id in required_ids:
-            group = groups_by_id.get(datasource_id)
-            if group is None:
-                raise ExportMapGeometryError(
-                    f"SC2 datasource {datasource_id} has no companion SCG PolygonGroup"
-                )
-
-            positions = decode_polygon_positions(group)
-            indices = decode_polygon_indices(group)
-            primitive_type = group.get("rhi_primitiveType")
-            primitive_types[str(primitive_type)] += 1
-
-            for x, y, z in positions:
-                positions_file.write(struct.pack("<fff", x, y, z))
-            if indices:
-                indices_file.write(struct.pack(f"<{len(indices)}I", *indices))
-
-            geometry_records.append(
-                {
-                    "id": datasource_id,
-                    "idHex": f"0x{datasource_id:016x}",
-                    "vertexFormat": group.get("vertexFormat"),
-                    "sourceVertexStrideBytes": polygon_group_vertex_stride(group),
-                    "vertexCount": len(positions),
-                    "positionFloatOffset": position_float_offset,
-                    "positionFloatCount": len(positions) * 3,
-                    "indexCount": len(indices),
-                    "indexOffset": index_offset,
-                    "primitiveType": primitive_type,
-                    "primitiveCount": group.get("primitiveCount"),
-                    "localAabb": position_aabb(positions),
-                }
-            )
-            position_float_offset += len(positions) * 3
-            index_offset += len(indices)
-            total_positions += len(positions)
-            total_indices += len(indices)
-
-    return geometry_records, {
-        "geometryCount": len(geometry_records),
-        "totalDecodedPositions": total_positions,
-        "totalDecodedIndices": total_indices,
-        "primitiveTypes": dict(primitive_types.most_common()),
-        "positionsBytes": positions_path.stat().st_size,
-        "indicesBytes": indices_path.stat().st_size,
-    }
-
+from _export_map_geometry_scene import (  # noqa: E402
+    ExportMapGeometryError, RENDER_OBJECT_VISIBLE_FLAG, SHARED_BATCH_INDEX,
+    archive_files, batch_is_active, batch_option, collect_instances,
+    component_by_type, iter_entities_recursive, iter_render_batches,
+    normalize_member, render_object_is_visible, select_companion_scg,
+    select_scene_member, vector, world_transform,
+)
+from _export_map_geometry_buffers import write_geometry_buffers  # noqa: E402
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -357,7 +51,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Requested active switch/state index",
     )
     return parser
-
 
 def main() -> int:
     args = build_parser().parse_args()
@@ -508,7 +201,6 @@ def main() -> int:
         f"{len(instances)} Mesh instances -> {manifest_path}"
     )
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

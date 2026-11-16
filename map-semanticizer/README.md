@@ -1,6 +1,8 @@
 # WotB Map Semanticizer
 
-这是一个单文件、无第三方依赖的 WotB 客户端地图语义化脚本。
+这是一个无第三方依赖的 WotB 客户端地图语义化工具，命令行入口仍是 `map_semanticizer.py`。
+
+入口保留现有导入接口；相邻的 `_semanticizer_*` 模块分别负责二进制/DVPL、KeyedArchive/SC2、场景事实、高程网格、区域、关系与出生点、资源定位、输出和流程编排。每项实现只有一个 owner，命令、输出结构和坐标校验规则保持一致。
 
 它读取地图目录或单张地图 ZIP 中的：
 

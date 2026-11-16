@@ -223,7 +223,7 @@ maintenance workflow, which require only an ID and name:
 - **`tank_id` ↔ authoritative name only.** No tier, no stats, no images. Vehicle facts stay in the
   tier files (tiers 1-10) and in the asset plane (`tank_cache.json`, all tiers); the roster is a
   join-key reference, not a data source, and must never be read for vehicle properties.
-- **Generated, never hand-edited.** `common/python/update_tankopedia.py:roster_payload` builds it
+- **Generated, never hand-edited.** `common/python/_tankopedia_roster.py:roster_payload` builds it
   from the *unfiltered* `parse_tanks` result of the same stable BlitzKit snapshot that produces the
   tier files, so roster and tier files always describe one game version.
 - **Refreshed by the existing data sync.** The `Update Tankopedia` workflow
@@ -232,7 +232,7 @@ maintenance workflow, which require only an ID and name:
   `sync_tankopedia_snapshot.py` run does the same. No separate fetch script, no second upstream.
 - **Fail closed.** `validate_roster` rejects an empty roster and a count drop beyond
   `MIN_TIER_COUNT_RATIO` (the same threshold the tier data uses). `RosterTest` in
-  `common/python/tests/test_update_tankopedia.py` additionally asserts that every vehicle in the
+  `common/python/tests/test_update_tankopedia_roster.py` additionally asserts that every vehicle in the
   committed tier files appears in the committed roster **under the same name**, and that the roster
   covers at least the tier-file population. The reverse is deliberately not asserted: the roster
   may come from a newer snapshot than the tier files.
