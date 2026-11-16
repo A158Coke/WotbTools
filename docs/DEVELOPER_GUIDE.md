@@ -36,6 +36,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 - **pnpm**：版本由 `frontend/package.json` 的 `packageManager` 钉住；Node 24 自带 corepack，执行一次 `corepack enable` 后，`frontend/` 下的 `pnpm` 自动使用该版本。本地安装依赖用 `pnpm install`，CI 与 Docker 用 `pnpm install --frozen-lockfile`；`frontend/pnpm-lock.yaml` 是唯一 lockfile。`node_modules` 使用 pnpm 默认的隔离布局，代码只能 import `package.json` 中声明的依赖。
 - **依赖安装安全策略**（`frontend/pnpm-workspace.yaml`）：依赖的安装脚本默认禁止，只有 `allowBuilds` 中显式为 `true` 的包可以执行；存在未审查的安装脚本时安装失败（`strictDepBuilds`）；发布不足 24 小时的版本不会被解析（`minimumReleaseAge`，紧急安全补丁按包写入 `minimumReleaseAgeExclude` 并在 PR 中说明）。新增带安装脚本的依赖时，在同一 PR 里把它写进 `allowBuilds` 并说明理由；不得启用 `dangerouslyAllowAllBuilds`，也不得关闭 `strictDepBuilds`。
 - **Python 3**：`common/python/update_tankopedia.py` 使用标准库从 BlitzKit 客户端定义同步车辆数据。
+  命令行与已有导入入口保持稳定，内部由相邻 `_tankopedia_*` 模块分别拥有 protobuf、车型、物资装备、数据保留/完整性和名册投影；测试按同一职责拆分。地图研究工具也保留原入口，`inspect_map_scene.py` 的 archive/data/scene/auxiliary 职责与 `export_map_geometry_poc.py` 的 scene/buffers 职责位于各自相邻私有模块。
 - **ripgrep（`rg`）**：Agent / Skill 的仓库搜索、reuse audit 与 review gate 的本地前置，必须在 `PATH` 中可调用（自检 `rg --version`）；这里只声明能力依赖，不固定具体二进制版本。搜索必须显式列出目标路径：默认根递归会跳过 `.github/`、`.agents/`、`.opencodereview/` 等隐藏目录，所以零命中不能证明「无引用」。不要用无差别的 `rg --hidden .` 替代定向搜索——它会把 `.worktrees/**` 等工作副本带进结果，产生重复证据。
 - 不要使用任何公司 token、凭据或基础设施。
 
