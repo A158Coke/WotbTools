@@ -264,11 +264,33 @@ function bindingRenamePlans(text, file) {
     let disqualified = null;
     function walk(node) {
       if (disqualified) return;
-      if (ts.isIdentifier(node) && node.text === name && checker.getSymbolAtLocation(node) === symbol) {
+      if (ts.isIdentifier(node) && node.text === name) {
         const p = node.parent;
-        if (ts.isShorthandPropertyAssignment(p) && p.name === node) { disqualified = 'shorthand-property'; return; }
-        if (ts.isExportSpecifier(p) && p.name === node && p.propertyName == null) { disqualified = 'export-name'; return; }
-        if (!isNonBindingPosition(node)) positions.push({ pos: node.getStart(sf), len: node.getText(sf).length });
+        if (ts.isShorthandPropertyAssignment(p) && p.name === node) {
+          // shorthand 的 checker symbol 是属性符号，不是变量绑定：必须在 symbol 相等判断之前
+          // 用 value symbol 解析。解析不到也 fail-closed（改名会让 `{ name }` 读不到变量）。
+          const value = typeof checker.getShorthandAssignmentValueSymbol === 'function'
+            ? checker.getShorthandAssignmentValueSymbol(p)
+            : undefined;
+          if (value === symbol || value === undefined) { disqualified = 'shorthand-property'; return; }
+        } else if (ts.isExportSpecifier(p)) {
+          const local = p.propertyName ?? p.name;
+          if (local === node) {
+            // 无别名 export 的 symbol 是别名符号：解析 local target 后再判断。
+            const resolved = typeof checker.getExportSpecifierLocalTargetSymbol === 'function'
+              ? checker.getExportSpecifierLocalTargetSymbol(p)
+              : undefined;
+            if (p.propertyName == null) {
+              // 解析不到时保守跳过：宁可少探针，也不能把破坏程序的重命名算作等价。
+              if (resolved === symbol || resolved === undefined) { disqualified = 'export-name'; return; }
+            } else if (resolved === symbol) {
+              // `export { local as publicName }`：改 local 不改对外名，安全。
+              positions.push({ pos: node.getStart(sf), len: node.getText(sf).length });
+            }
+          }
+        } else if (checker.getSymbolAtLocation(node) === symbol && !isNonBindingPosition(node)) {
+          positions.push({ pos: node.getStart(sf), len: node.getText(sf).length });
+        }
       }
       ts.forEachChild(node, walk);
     }
@@ -286,7 +308,8 @@ function applyRename(text, plan) {
   return out;
 }
 
-/** 自检 / 负面控制：整文件词替换会把 `import ... from` 改坏，AST 绑定重命名必须只改局部变量。 */
+/** 自检 / 负面控制：整文件词替换会把 `import ... from` 改坏，AST 绑定重命名必须只改局部变量；
+ *  另含 shorthand / 无别名 export / 有别名 export 三个独立反例（review P2）。 */
 function renameSelfCheck() {
   if (!ts) return { ok: false, reason: 'typescript unavailable' };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wotb-probe-selfcheck-'));
@@ -295,6 +318,12 @@ function renameSelfCheck() {
     "import * as THREE from 'three'",
     'const from = THREE.x',
     'export function use() { return from }',
+    'const localName = 1',
+    'console.log({ localName })',
+    'const exportedName = 2',
+    'export { exportedName }',
+    'const aliasedName = 3',
+    'export { aliasedName as publicName }',
     '',
   ].join('\n');
   try {
@@ -306,11 +335,23 @@ function renameSelfCheck() {
     const naive = sample.replace(/\bfrom\b/g, 'from__r');
     const naiveIssues = parseIssues(naive, file);
     const renamedIssues = parseIssues(renamed, file);
+    // shorthand 与无别名 export 必须整条跳过：只改声明会让 `{ localName }` / export 失效。
+    const shorthandPlan = plans.find((p) => p.name === 'localName');
+    const unaliasedExportPlan = plans.find((p) => p.name === 'exportedName');
+    // 有别名 export 可以安全重命名 local（对外名 publicName 不变）。
+    const aliasedPlan = plans.find((p) => p.name === 'aliasedName');
+    const aliasedRenamed = aliasedPlan ? applyRename(sample, aliasedPlan) : '';
     const ok = renamed.includes("import * as THREE from 'three'")
       && renamed.includes('const from__r = THREE.x')
       && renamed.includes('return from__r')
       && renamedIssues.length === 0
-      && (naiveIssues === null || naiveIssues.length > 0 || naive.includes("from__r 'three'"));
+      && (naiveIssues === null || naiveIssues.length > 0 || naive.includes("from__r 'three'"))
+      && !shorthandPlan
+      && !unaliasedExportPlan
+      && !!aliasedPlan
+      && aliasedRenamed.includes('const aliasedName__r = 3')
+      && aliasedRenamed.includes('export { aliasedName__r as publicName }')
+      && (parseIssues(aliasedRenamed, file) || []).length === 0;
     return {
       ok,
       negativeControl: {
@@ -318,6 +359,11 @@ function renameSelfCheck() {
         parseIssues: naiveIssues,
         bindingRename: renamed,
         bindingRenameParseIssues: renamedIssues,
+      },
+      bindingSafety: {
+        shorthandSkipped: !shorthandPlan,
+        unaliasedExportSkipped: !unaliasedExportPlan,
+        aliasedExportRenamed: aliasedRenamed,
       },
     };
   } finally {

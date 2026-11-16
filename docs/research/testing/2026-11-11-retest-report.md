@@ -46,7 +46,7 @@
 
 ## 评审跟进（2026-11-16）
 
-- **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / shorthand / 对外导出名 / import 关键字 / 字符串不动。内置 `from` 负面控制：整文件词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败，绑定重命名保留 import 且解析通过（`selfCheck.ok=true`，见任一矩阵的 `selfCheck.negativeControl`）。
+- **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / 对外导出名 / import 关键字 / 字符串不动。shorthand（`{ name }`）与无别名 `export { name }` 的 checker symbol 不是变量绑定，必须在 symbol 相等判断**之前**用 `getShorthandAssignmentValueSymbol` / `getExportSpecifierLocalTargetSymbol` 解析，命中即保守跳过整条绑定；`export { local as publicName }` 只改 local、保留对外名。内置 `from` 负面控制（整词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败）+ shorthand / 无别名 export / 有别名 export 三个独立反例，见矩阵 `selfCheck.negativeControl` 与 `selfCheck.bindingSafety`。
 - **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 invalid=12、inconclusive=0。
 - **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
 - **台账统计**：区间行展开为实际映射的 case ID 并按去重后的 case 计数（`AgentArmorView.dom-contract` K 1→23、`extractor` K 1→6），未对齐行单列（当前 49 行，见 ledger-stats 对齐异常清单）。
