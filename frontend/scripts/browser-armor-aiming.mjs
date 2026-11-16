@@ -568,7 +568,8 @@ try {
   }
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
-  // #traj-info 停靠在场景容器顶部正中（absolute）；页面滚动后必须随画布一起移动。
+  // #traj-info 是场景容器内的 absolute 卡片（判定模式跟随点击位置，无点击时停靠顶部）；
+  // 页面滚动后必须随画布一起移动——位置由容器坐标写入，不随视口 fixed。
   //
   // 同步契约（2026-10-19）：这个 scroll-layout 用例真正需要的不变量是「卡片锚定在画布上」，
   // 不是「卡片绝对屏幕坐标连续 5 帧不动」。旧实现把后者当成相机停止的判据，等于要求
@@ -649,14 +650,34 @@ try {
     })()`)
     const before = await readRects()
     if (!before) throw new Error('result card / canvas rect missing before scroll test')
-    // 结果停靠契约（design-language §9「强制横屏与场景 HUD」）：卡片固定在场景顶部正中，不按命中点摆位
-    const docked = await page.evaluate(`(() => {
+    // 跟随点击契约（2026-11-15 用户裁示）：判定结果卡跟随点击位置（脚本写入容器坐标），
+    // 必须完整落在场景容器内且不压固定 HUD（左上胶囊/返回/右下射击/左下姿态）。
+    // 无点击的射击复现仍停靠顶部（由 browser-armor-mobile 的停靠夹具覆盖）。
+    const follow = await page.evaluate(`(() => {
       const card = document.getElementById('traj-info')?.getBoundingClientRect()
       const stage = document.querySelector('[data-testid="armor-stage"]')?.getBoundingClientRect()
-      return card && stage ? { centerDelta: (card.left + card.width / 2) - (stage.left + stage.width / 2), top: card.top - stage.top } : null
+      if (!card || !stage) return null
+      const panels = ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back'].map((selector) => {
+        const el = document.querySelector(selector)
+        if (!el) return null
+        const style = getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden') return null
+        const r = el.getBoundingClientRect()
+        return r.width > 0 && r.height > 0 ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : null
+      }).filter(Boolean)
+      const inside = card.left >= stage.left - 1 && card.right <= stage.right + 1
+        && card.top >= stage.top - 1 && card.bottom <= stage.bottom + 1
+      const overlap = panels.filter((p) => card.right > p.left + 0.5 && card.left < p.right - 0.5
+        && card.bottom > p.top + 0.5 && card.top < p.bottom - 0.5)
+      return {
+        inside,
+        overlap: overlap.length,
+        card: { left: Math.round(card.left), top: Math.round(card.top), right: Math.round(card.right), bottom: Math.round(card.bottom) },
+        stage: { left: Math.round(stage.left), top: Math.round(stage.top), right: Math.round(stage.right), bottom: Math.round(stage.bottom) },
+      }
     })()`)
-    check(!!docked && Math.abs(docked.centerDelta) <= 2 && docked.top >= 0 && docked.top <= 40,
-      `结果卡没有停靠在场景顶部正中（${JSON.stringify(docked)}）`)
+    check(!!follow && follow.inside && follow.overlap === 0,
+      `结果卡没有跟随点击的几何契约（须完整落在场景内且不压固定 HUD；${JSON.stringify(follow)}）`)
     await page.evaluate(`(() => {
       const d = document.createElement('div');
       d.id = 'scroll-fixture';
@@ -903,6 +924,113 @@ try {
       check(!/击穿概率[:：]?\s*100%/.test(partial.card.text),
         `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.text}）`)
     }
+
+    // —— 溢出结果卡仍可滚动（评审 P2）——
+    // 桌面/平板默认 pointer-events:none（结果卡跟随点击后可能盖住车体，场景点击必须穿透）；
+    // 一旦明细被 max-block-size 裁剪，必须恢复指针事件，滚轮/触控能滚到剩余行；内容回落后
+    // 再交还穿透。夹具只追加卡片行并通过真实 resize 走产品自己的 dirty 重排路径。
+    await page.evaluate(`(() => {
+      const card = document.getElementById('traj-info')?.querySelector('div');
+      if (!card) return false;
+      for (let i = 0; i < 80; i++) {
+        const row = document.createElement('div');
+        row.dataset.scrollFixture = '1';
+        row.textContent = 'fixture layer ' + i + ' — 200mm @ 45°';
+        row.style.cssText = 'font-size:12px;line-height:18px;';
+        card.append(row);
+      }
+      window.dispatchEvent(new Event('resize'));
+      return true;
+    })()`)
+    const overflow = await page.waitForValue(`(() => {
+      const el = document.getElementById('traj-info');
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      return {
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        pointerEvents: getComputedStyle(el).pointerEvents,
+        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      };
+    })()`, (value) => !!value && value.scrollHeight > value.clientHeight + 1 && value.pointerEvents === 'auto',
+    { timeout: 5000, label: 'overflow result card accepts pointer events' })
+    check(overflow.scrollHeight > overflow.clientHeight + 1 && overflow.pointerEvents === 'auto',
+      `溢出结果卡没有恢复指针事件（${JSON.stringify(overflow)}）`)
+    await chromeCdp.client.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: Math.round(overflow.center.x), y: Math.round(overflow.center.y), deltaX: 0, deltaY: 160,
+    }, sessionId)
+    const scrolledTop = await page.waitForValue('document.getElementById("traj-info").scrollTop',
+      (value) => typeof value === 'number' && value > 0, { timeout: 3000, label: 'overflow result card wheel scroll' })
+      .catch(() => null)
+    check(typeof scrolledTop === 'number' && scrolledTop > 0,
+      `溢出结果卡无法用滚轮滚动（scrollTop=${JSON.stringify(scrolledTop)}）`)
+    await page.evaluate(`(() => {
+      document.querySelectorAll('#traj-info [data-scroll-fixture]').forEach((node) => node.remove());
+      window.dispatchEvent(new Event('resize'));
+    })()`)
+    const restored = await page.waitForValue(`(() => {
+      const el = document.getElementById('traj-info');
+      return el ? { overflowing: el.scrollHeight > el.clientHeight + 1, pointerEvents: getComputedStyle(el).pointerEvents } : null;
+    })()`, (value) => !!value && value.overflowing === false && value.pointerEvents === 'none',
+    { timeout: 5000, label: 'result card restores click-through' })
+    check(restored.overflowing === false && restored.pointerEvents === 'none',
+      `溢出消除后结果卡未恢复点击穿透（${JSON.stringify(restored)}）`)
+
+    // —— 固定 HUD 面板变大时结果卡必须重排（评审 P2）——
+    // 参数面板在 #corner-tl 内展开时画布尺寸不变；ResizeObserver 必须观察面板本身，
+    // 把结果卡从即将被覆盖的位置重新避让出去（强制夹具：先把卡片放进面板展开区）。
+    {
+      const toolsPoint = await page.evaluate(`(() => {
+        const r = document.querySelector('[data-testid="armor-tools"]').getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`)
+      await mouseTap(toolsPoint)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value !== 'none', { timeout: 5000, label: 'tools panel expanded' })
+      await page.evaluate(`(() => {
+        const r = document.getElementById('tank-selectors').getBoundingClientRect();
+        window.__expandedToolsRect = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      })()`)
+      await page.evaluate(`document.querySelector('[data-testid="armor-tools-close"]').click()`)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value === 'none', { timeout: 5000, label: 'tools panel collapsed' })
+      await page.evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await page.evaluate(`(() => {
+        const card = document.getElementById('traj-info');
+        const stage = document.querySelector('[data-testid="armor-stage"]');
+        const stageRect = stage.getBoundingClientRect();
+        const left = window.__expandedToolsRect.left - stageRect.left + 24;
+        const top = window.__expandedToolsRect.top - stageRect.top + 24;
+        card.style.insetInlineStart = left + 'px';
+        card.style.insetBlockStart = top + 'px';
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+        card.style.transform = 'none';
+      })()`)
+      await mouseTap(toolsPoint)
+      const avoided = await page.waitForValue(`(() => {
+        const card = document.getElementById('traj-info');
+        const panel = document.getElementById('corner-tl');
+        const stage = document.querySelector('[data-testid="armor-stage"]');
+        const c = card.getBoundingClientRect(), p = panel.getBoundingClientRect(), s = stage.getBoundingClientRect();
+        const expanded = getComputedStyle(document.querySelector('#tank-selectors')).display !== 'none';
+        const overlap = c.right > p.left + 0.5 && c.left < p.right - 0.5 && c.bottom > p.top + 0.5 && c.top < p.bottom - 0.5;
+        const inside = c.left >= s.left - 1 && c.right <= s.right + 1 && c.top >= s.top - 1 && c.bottom <= s.bottom + 1;
+        return {
+          expanded,
+          overlap,
+          inside,
+          card: { left: Math.round(c.left), top: Math.round(c.top) },
+          panel: { left: Math.round(p.left), top: Math.round(p.top), right: Math.round(p.right), bottom: Math.round(p.bottom) },
+        };
+      })()`, (value) => !!value && value.expanded === true && value.overlap === false && value.inside === true,
+      { timeout: 5000, label: 'result card avoids expanded tools panel' })
+      check(avoided.expanded === true && avoided.overlap === false && avoided.inside === true,
+        `结果卡没有避开展开后的参数面板（${JSON.stringify(avoided)}）`)
+      await page.evaluate(`document.querySelector('[data-testid="armor-tools-close"]').click()`)
+      await page.waitForValue(`getComputedStyle(document.querySelector('#tank-selectors')).display`,
+        (value) => value === 'none', { timeout: 5000, label: 'tools panel collapsed after avoidance test' })
+    }
   }
 
   // 相机预设不能覆盖显式 URL 炮塔/炮管姿态。
@@ -929,7 +1057,8 @@ try {
     try {
       await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${tiltedPack.origin}`)
       await page.waitFor(() => !document.querySelector('[data-testid="armor-camera-front"]')?.disabled
-        && !!window.__armorRicochet?.rigState?.().guns.length,
+        && !!window.__armorRicochet?.rigState?.().guns.length
+        && !!window.__armorRicochet?.rigState?.().pivots?.gun,
         { timeout: 30000, label: 'tilted Minotauro pose fixture ready' })
       for (const [name, local, expectedWorld] of [['hull-down', -7, -10], ['front', 0, -3]]) {
         const point = await page.evaluate(`(() => {
@@ -940,7 +1069,10 @@ try {
         await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', value => value === local,
           { timeout: 5000, label: 'preset local gun angle' })
         const world = await page.evaluate(`(() => {
-          const c=window.__DBG__.controls, d=c.object.position.clone().sub(c.target);
+          const c=window.__DBG__.controls;
+          const pt=window.__armorRicochet.rigState().presetTarget;
+          const wp=new window.__DBG__.THREE.Vector3(pt.x,pt.y,pt.z);
+          const d=c.object.position.clone().sub(wp);
           return Math.atan2(d.y, Math.hypot(d.x,d.z))*180/Math.PI;
         })()`)
         check(Math.abs(world - expectedWorld) < .01,
@@ -997,29 +1129,31 @@ try {
         const r = b.getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       })()`)
-      // 用户反馈（0x5f3759df，2026-11-08 + 2026-11-10）：预设保留**距离**（缩放层级不回跳），
-      // 但机位必须放到炮轴线上、旋转中心 = 炮线枢轴——炮轴线穿过枢轴而非车体中心，
-      // 沿旧中心摆位炮管指不到镜头上（a12a0c641 的"只换观察方向"语义随之废止）。
-      // 世界枢轴 = tankModel.matrixWorld × 模型系枢轴：gunPoseMatrix 绕枢轴旋转，枢轴点不变；
-      // 俯角断言同 Minotauro 段口径：夹具无 initial_turret_rotation，世界炮线 = 局部俯角。
-      const orbitBefore = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target) } })()')
+      // 用户反馈（0x5f3759df，2026-11-08；2026-11-13 定稿）：预设同时满足
+      // ①旋转中心保持默认（不得移动）②机位在炮轴线上（炮管正对镜头，俯角 = 夹具
+      // 局部俯角；夹具无 initial_turret_rotation 且 turret=0）③距离按中心保留。
+      await page.waitFor(() => !!window.__armorRicochet?.rigState?.()?.pivots?.gun,
+        { timeout: 30000, label: 'turretless gun pivot installed' })
+      const orbitBefore = await page.evaluate('(() => { const c = window.__DBG__.controls; return { d: c.object.position.distanceTo(c.target), t: c.target.toArray() } })()')
       await mouseTap(await presetPoint('hull-down'))
       const low = await page.waitForValue('window.__armorRicochet.aimingState()',
         s => s.turretDeg === 0 && s.gunDeg === -20,
         { timeout: 5000, label: 'hull-down preset uses fixture depression' })
       const orbitAfter = await page.evaluate(`(() => {
         const c = window.__DBG__.controls;
-        const p = window.__armorRicochet.rigState().pivots.gun;
-        const wp = p ? new window.__DBG__.THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(window.__DBG__.tankModel.matrixWorld).toArray() : null;
-        const d = c.object.position.clone().sub(c.target);
-        const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * 180 / Math.PI;
-        return { d: c.object.position.distanceTo(c.target), t: c.target.toArray(), wp, elev };
+        const pt = window.__armorRicochet.rigState().presetTarget;
+        const wp = pt ? new window.__DBG__.THREE.Vector3(pt.x, pt.y, pt.z) : null;
+        const rel = wp ? c.object.position.clone().sub(wp) : null;
+        const elev = rel ? Math.atan2(rel.y, Math.hypot(rel.x, rel.z)) * 180 / Math.PI : null;
+        return { d: c.object.position.distanceTo(c.target), t: c.target.toArray(),
+                 onAxisElev: elev, axisDist: rel ? rel.length() : null };
       })()`)
-      check(!!orbitAfter.wp, '压坡卖头预设：rigState 暴露炮线枢轴（models.pb）')
+      check(orbitAfter.axisDist != null && orbitAfter.axisDist > 0, '压坡卖头预设：pose 暴露炮轴基准点（presetTarget）')
       check(low.controlsEnabled && Math.abs(orbitAfter.d - orbitBefore.d) < 0.01
-        && orbitAfter.wp && orbitAfter.t.every((v, i) => Math.abs(v - orbitAfter.wp[i]) < 1e-6)
-        && Math.abs(orbitAfter.elev - (-20)) < 0.01,
-        `压坡卖头预设：机位上炮轴线（俯角 ${orbitAfter.elev.toFixed(1)}°）、旋转中心 = 炮线枢轴、距离保留（${orbitBefore.d.toFixed(2)}m → ${orbitAfter.d.toFixed(2)}m）`)
+        && orbitAfter.t.every((v, i) => Math.abs(v - orbitBefore.t[i]) < 1e-6),
+        `压坡卖头预设：旋转中心保持默认（${orbitBefore.t.map(v => v.toFixed(2)).join(', ')}）、距离保留（${orbitBefore.d.toFixed(2)}m → ${orbitAfter.d.toFixed(2)}m）`)
+      check(orbitAfter.onAxisElev != null && Math.abs(orbitAfter.onAxisElev - (-20)) < 0.01,
+        `压坡卖头预设：机位在炮轴线上、炮管正对镜头（相机相对炮线枢轴俯角 ${orbitAfter.onAxisElev?.toFixed(1)}°）`)
       const depressed = await page.evaluate('window.__armorRicochet.rigState()')
       await mouseTap(await presetPoint('front'))
       await page.waitForValue('window.__armorRicochet.aimingState().gunDeg', g => g === 0,

@@ -17,7 +17,7 @@ import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, Mo
 import { fetchReplayShots, shotViewerQuery, fetchTankData } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
-import { formatPlaybackClock } from '../utils/playbackClock.js'
+import { formatShotBattleClock } from '../utils/playbackClock.js'
 import { shouldResetShellOnConfigChange } from '../utils/armorShellSelection.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { loadDevices, loadTankModules } from '../utils/researchCatalog.js'
@@ -42,6 +42,7 @@ const isShotPage = computed(() => route.query.shot != null)
 // 普通装甲检视缺省交给 resolveUpgradeSelection（XI→top）。
 const armorUpgrade = value => (isShotPage.value ? (value ?? 'stock') : value)
 const shotSnapshot = ref([])
+const battleStartRaw = ref(0)
 const activeShot = computed(() => shotSnapshot.value.find(shot => String(shot.index) === String(route.query.shot)))
 const shotPosition = computed(() => shotSnapshot.value.indexOf(activeShot.value))
 const recordedResult = computed(() => activeShot.value ? shotResultBadge(activeShot.value, t) : null)
@@ -55,7 +56,10 @@ async function readShotSnapshot(seq) {
     if (!isShotPage.value) { shotSnapshot.value = []; return }
     try {
         const data = await fetchReplayShots()
-        if (alive && seq === navigationSeq) shotSnapshot.value = data.shots
+        if (alive && seq === navigationSeq) {
+            shotSnapshot.value = data.shots
+            battleStartRaw.value = data.battleStartRaw ?? 0
+        }
     } catch { if (alive && seq === navigationSeq) shotSnapshot.value = [] } // The scene reports the actionable missing-handoff error.
 }
 function shotTankName(role) {
@@ -291,8 +295,13 @@ onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
 // 强制横屏（design-language §9）：只在 Android 手机 App（原生锁定）与 iPhone Safari（竖屏提示旋转）生效；
 // 桌面、平板与 Android 浏览器沿用小屏布局。场景在提示下保持挂载，转到横屏即继续。
 const forcedLandscape = useForcedLandscape(computed(() => webgl.supported))
-// 点选结果胶囊（顶部正中）：小屏默认只显示最终判定一行，点开看逐层明细；新判定回到收起态。
-const resultExpanded = ref(false)
+// 击穿判定结果卡（跟随点击位置）。判定模式唯一结果窗口（2026-11-15 用户裁示：五行点选卡
+// 只在厚度模式保留）；装甲查看器手机端默认展开逐层明细（2026-11-16 用户反馈：不能只给
+// 极简一行），小屏点卡片可收起为一行胶囊；射击复现页顶部停靠空间受限，保持默认收起。
+const resultExpanded = ref(!isShotPage.value)
+watch(isShotPage, shot => { resultExpanded.value = !shot })
+// 展开/收起改变卡片高度：DOM 更新后让场景按新尺寸重新定位（避让固定 HUD 面板）。
+watch(resultExpanded, () => nextTick(() => viewer?.repositionResultCard?.()))
 const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('armor', {
     ready: () => load.value.state === 'ready',
@@ -315,7 +324,7 @@ const tankList = ref([])
 const tankListState = ref('loading')
 const selectedShooterId = ref(null)
 const selectedTargetId = ref(null)
-const pickerFilters = ref({ q: '', tier: '', nation: '', type: '', sort: 'name' })
+const pickerFilters = ref({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
 const pickerTitle = computed(() => pickerMode.value === 'shooter' ? t('armor.select_shooter') : t('armor.select_target'))
 const pickerSelectedId = computed(() => pickerMode.value === 'shooter' ? selectedShooterId.value : selectedTargetId.value)
 // 选车器换车不写 route；子编辑器按 tank-id 重建，就绪标志必须随车重置，
@@ -612,7 +621,7 @@ onBeforeUnmount(() => {
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
         <div class="armor-shot-context">
             <div class="armor-shot-matchup"><strong>{{ shotTankName('shooter') }}</strong><ArrowRight :size="18" aria-hidden="true" /><strong>{{ activeShot?.target_eid == null ? $t('agentShots.no_target') : shotTankName('target') }}</strong></div>
-            <div v-if="activeShot" class="armor-shot-meta"><span>{{ $t('armor.recorded_shot') }} · {{ formatPlaybackClock(activeShot.time_s) }}</span><span>{{ $t('agentShots.recorded_damage') }} <b>{{ activeShot.damage ?? '—' }}</b></span><span v-if="recordedResult" :class="`armor-shot-result is-${recordedResult.tone}`">{{ recordedResult.text }}</span><span v-if="activeShot.shell_kind">{{ shellLabel({ type: activeShot.shell_kind }) }}</span></div>
+            <div v-if="activeShot" class="armor-shot-meta"><span>{{ $t('armor.recorded_shot') }} · {{ formatShotBattleClock(activeShot.time_s, battleStartRaw) }}</span><span>{{ $t('agentShots.recorded_damage') }} <b>{{ activeShot.damage ?? '—' }}</b></span><span v-if="recordedResult" :class="`armor-shot-result is-${recordedResult.tone}`">{{ recordedResult.text }}</span><span v-if="activeShot.shell_kind">{{ shellLabel({ type: activeShot.shell_kind }) }}</span></div>
         </div>
         <nav class="armor-shot-navigation" :aria-label="$t('armor.shot_navigation')">
             <button type="button" :disabled="navigating || shotPosition <= 0" :aria-label="$t('armor.previous_shot')" :title="$t('armor.previous_shot')" @click="adjacentShot(-1)"><ChevronLeft :size="20" aria-hidden="true" /></button>
@@ -756,13 +765,17 @@ onBeforeUnmount(() => {
                 @close="closePicker"
             />
         </div>
-        <!-- 装甲厚度模式点选结果：停靠在场景顶部正中的胶囊（不跟随命中点），只显示部件名 + 基础装甲值 -->
+        <!-- 厚度模式点选结果（基础装甲/入射角/等效装甲五行）：跟随点击位置，小屏自适应缩放。
+             判定模式不再使用这张卡（2026-11-15 用户裁示：只保留逐层判定结果卡 #traj-info），
+             数值由 scene/viewer/judgment.ts 的 showArmorPartInfo 写入（该模式不做判定，
+             穿深/结果保持 '—'，不猜）。 -->
         <div id="click-info">
             <h3 id="click-part">—</h3>
-            <div class="row">
-                <span>{{ $t('armor.base_armor') }}</span>
-                <span id="click-armor">—</span>
-            </div>
+            <div class="row"><span>{{ $t('armor.base_armor') }}</span><span id="click-armor">—</span></div>
+            <div class="row"><span>{{ $t('armor.angle') }}</span><span id="click-angle">—</span></div>
+            <div class="row"><span>{{ $t('armor.effective') }}</span><span id="click-effective">—</span></div>
+            <div class="row"><span>{{ $t('armor.penetration') }}</span><span id="click-pen">—</span></div>
+            <div class="row"><span>{{ $t('armor.result') }}</span><span id="click-result">—</span></div>
         </div>
         <div class="armor-bottom-controls">
         <div id="corner-tr">
@@ -1048,37 +1061,69 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 点选结果（厚度 #click-info、击穿 #traj-info）：固定停靠在场景顶部正中的胶囊，不跟随命中点、
-   不压车体（design-language §9「强制横屏」场景 HUD）。场景脚本只切换显示与写入内容。 */
-.armor-view :is(#click-info, #traj-info) {
+/* 击穿判定 #traj-info（判定模式唯一结果窗口）：跟随点击位置，由 scene/viewer/trajectoryCard.ts
+   写入 left/top 并避让固定 HUD 面板（共享 resultCardPosition 纯函数）；无点击的射击复现/
+   初始自动判定仍用这里的顶部停靠规则（脚本会清掉内联定位，交还 CSS）。 */
+.armor-view #traj-info {
     position: absolute;
     inset-block-start: var(--space-5);
     inset-inline-start: 50%;
     transform: translateX(-50%);
     z-index: var(--pb-z-hud);
 }
+/* 厚度模式点选结果 #click-info：跟随点击位置显示五行读数（基础装甲 / 入射角 / 等效装甲 /
+   穿深 / 结果；该模式不判定，后两行保持 '—'）。位置由 scene/viewer/judgment.ts 的
+   showArmorPartInfo 写入 left/top（与判定结果卡共用 resultCardPosition 定位）；
+   尺寸随视口自适应，手机横屏/竖屏都不占大面积。判定模式不再显示这张卡。 */
 .armor-view #click-info {
+    position: absolute;
     display: none;
-    align-items: center;
-    gap: var(--space-3);
-    min-block-size: var(--hit-min-comfortable);
-    padding: 0 var(--space-3);
+    flex-direction: column;
+    gap: 1px;
+    /* 视口自适应：宽度不超过容器余量，字号在小屏收缩（不影响点击命中区）。 */
+    inline-size: max-content;
+    max-inline-size: min(15rem, calc(100% - var(--space-4)));
+    padding: var(--space-2) var(--space-3);
     color: var(--muted);
     font: var(--type-caption);
+    font-size: clamp(10px, 0.55vw + 8.2px, 12px);
     white-space: nowrap;
     pointer-events: none;
+    z-index: var(--pb-z-modal);
 }
-.armor-view #click-info h3 { margin: 0; color: var(--txt); font: var(--type-caption); font-weight: 600; }
-.armor-view #click-info .row { display: flex; gap: var(--space-2); }
-.armor-view #click-info #click-armor { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 700; }
-.armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; cursor: pointer; }
+.armor-view #click-info > .row { display: flex; justify-content: space-between; gap: var(--space-3); }
+/* 通用数值色排除结果字段：结果列按语义着色（pen/bounce/ricochet 三个 class 由脚本写入）。 */
+.armor-view #click-info > .row > span:last-child:not(#click-result) { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; }
+.armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font-size: clamp(11px, 0.6vw + 9px, 13px); font-weight: 700; }
+.armor-view #click-info .pen { color: var(--green); }
+.armor-view #click-info .bounce { color: var(--red); }
+.armor-view #click-info .ricochet { color: var(--orange); }
+/* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距、字号与行距。
+   五行读数在 320–390px 高的视口里必须明显小于半屏（browser-armor-mobile 的
+   resultHeightBudget 上限 = 视口高 45%），否则会压住车体与右下射击面板。 */
+@media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #click-info {
+        gap: 0;
+        padding: 3px var(--space-2);
+        font-size: clamp(9px, 2.3vw, 11px);
+        max-inline-size: min(12rem, calc(100% - var(--space-3)));
+    }
+    .armor-view #click-info h3 { margin-block-end: 1px; font-size: clamp(10px, 2.4vw, 12px); }
+}
+/* 桌面/平板卡片已展开全部明细，点卡片没有可展开内容——不拦截场景点击
+   （卡片跟随点击后可能盖住车体，桌面点击必须继续判定）。小屏收起态才可点开。
+   卡片内容被 max-block-size 裁剪时，scene/viewer/trajectoryCard.ts 会恢复内联
+   pointer-events:auto，保证明细仍可滚轮/触控滚动（评审 P2）。 */
+.armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; pointer-events: none; }
 .armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 /* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */
 @media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
-    .armor-view :is(#click-info, #traj-info) { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
+    /* 只给「无点击的停靠态」排位：判定结果卡有点击锚点时由脚本写 left/top；#click-info 同理。 */
+    .armor-view #traj-info { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
 }
-/* 小屏（竖屏手机 / 手机横屏）：收起态只留最终判定一行作为胶囊，点开看逐层明细 */
+/* 小屏（竖屏手机 / 手机横屏）：默认展开逐层明细；点卡片收起为最终判定一行胶囊 */
 @media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #traj-info { pointer-events: auto; cursor: pointer; }
     .armor-view #traj-info:not(.is-expanded) > div > :not([data-card-title="final"]) { display: none; }
     .armor-view #traj-info:not(.is-expanded) > div > [data-card-title="final"] { margin: 0; }
 }
@@ -1289,34 +1334,20 @@ onBeforeUnmount(() => {
         background: transparent;
     }
     .armor-view #corner-tl .armor-tools-label { display: none; }
-    /* 结果胶囊贴左上胶囊右侧，不再固定 50%：740px 视口下也不会压到右下射击面板。 */
-    .armor-view :is(#click-info, #traj-info) {
+    /* 停靠态（无点击锚点 / 射击复现）贴左上胶囊右侧，不再固定 50%：740px 视口下也不会
+       压到右下射击面板。有点击锚点时由脚本定位并显式覆盖这些 inset 与宽度上限。 */
+    .armor-view #traj-info {
         inset-block-start: calc(var(--space-5) + 5px);
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 14rem + 8px);
         transform: none;
     }
-    .armor-view.has-back :is(#click-info, #traj-info) {
+    .armor-view.has-back #traj-info {
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px + 14rem + 8px);
     }
-    .armor-view #click-info {
-        min-block-size: 28px;
-        max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
-        padding: 0 8px;
-        gap: 6px;
-        overflow: hidden;
-        font: var(--type-caption);
-    }
-    /* 厚度值 #click-armor 永不参与收缩；部件名与「基础装甲」标签可省略。 */
-    .armor-view #click-info h3 { flex: 1 1 0; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-    /* 结果卡最窄时也先保证厚度数值：部件名以 0 为 flex 基准完全让位，
-       行拿到剩余宽度后只压缩标签；#click-armor 不收缩。 */
-    .armor-view #click-info .row { flex: 0 1 auto; min-inline-size: 0; }
-    .armor-view #click-info .row > span:first-child { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
-    .armor-view #click-info #click-armor { flex: none; }
     .armor-view #traj-info { max-block-size: 72px; }
-    /* 展开态明细卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进
-       右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
-       同公式，任何 Judge 视口都不与右下列相交。 */
+    /* 射击复现顶部停靠的展开态必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）
+       会伸进右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
+       同公式，任何 Judge 视口都不与右下列相交。装甲查看器跟随时由脚本避让面板。 */
     .armor-view #traj-info.is-expanded {
         max-block-size: 48px;
         max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));
@@ -1442,8 +1473,8 @@ onBeforeUnmount(() => {
 /* 600×320 级窄横屏：左上胶囊已占掉近半宽度，结果胶囊改到胶囊下方第二行；
    右下面板从 168px 起、左下面板从 ~240px 起，与 28px 高的结果行保持分离。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) and (width < 768px) {
-    .armor-view :is(#click-info, #traj-info),
-    .armor-view.has-back :is(#click-info, #traj-info) {
+    .armor-view #traj-info,
+    .armor-view.has-back #traj-info {
         inset-block-start: calc(var(--space-5) + 44px);
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve));
         max-inline-size: calc(100% - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right)) - var(--immersive-nav-reserve));

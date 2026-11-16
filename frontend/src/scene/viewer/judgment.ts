@@ -19,6 +19,7 @@ import { sampleHeSplash, HE_SAMPLE } from '../heSplash.js'
 import { evaluateProbabilityChain } from '../armorInspectorChance.js'
 import { RC } from '../armorCollisionPack.js'
 import type { HeSplashResult } from '../heSplash.js'
+import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
 
 /** 判定链依赖（composition root 注入）；字段语义见原 tankViewer 闭包。 */
 export interface JudgmentDeps {
@@ -101,6 +102,25 @@ interface BounceDebugEntry {
     }>
 }
 
+/** 入射角与几何等效装甲（纯函数，确定性几何，不含转正/口径规则）：
+ *  angle = acos(|n·d|)（近背远正/背face 都用绝对值），effective = thickness / cos(angle)。
+ *  法线或方向缺失/退化时返回 null（fail-closed，UI 显示 '—'）。
+ *  厚度模式用它（该模式不做击穿判定）；判定模式的等效来自判定结果，不经过本函数。 */
+export function faceAngleAndEffective(
+    thickness: number,
+    normal: { x: number, y: number, z: number } | null | undefined,
+    dir: { x: number, y: number, z: number } | null | undefined,
+): { angleDeg: number | null, effective: number | null } {
+    if (!normal || !dir || !Number.isFinite(thickness)) return { angleDeg: null, effective: null }
+    const cosRaw = Math.abs(normal.x * dir.x + normal.y * dir.y + normal.z * dir.z)
+    if (!Number.isFinite(cosRaw)) return { angleDeg: null, effective: null }
+    const cos = Math.min(1, Math.max(0, cosRaw))
+    const angleDeg = (Math.acos(cos) * 180) / Math.PI
+    // cos→0（掠射）时等效趋于无穷：按 0.05 下限钳制（≈87°），与判定卡的量级口径一致
+    const effective = thickness / Math.max(0.05, Math.cos((angleDeg * Math.PI) / 180))
+    return { angleDeg, effective: Number.isFinite(effective) ? effective : null }
+}
+
 export function createJudgment(deps: JudgmentDeps) {
     const {
         models, hm, tc, cvs,
@@ -120,9 +140,12 @@ export function createJudgment(deps: JudgmentDeps) {
     // 普通检视最后一次点击的 NDC：切弹种时重跑判定，避免球/热力图用新弹参数
     // 而结果卡仍是旧弹（评审 P2 切 HE 弹种场景）。
     let lastClickNdc: { x: number; y: number } | null = null;
+    // 最近一次点击的视口坐标：点选卡跟随点击位置（判定完成后再定位，用点击时的坐标而非结果到达时的鼠标位置）
+    let lastClickClient: { x: number; y: number } | null = null;
 
 function onClick(event: MouseEvent): void {
             if (!models.armorModel) return;
+            lastClickClient = { x: event.clientX, y: event.clientY };
             // 世界模式(射击复现)：判定结果锁定——初始判定射线已切换为 DecodeShotSegment
             // 基准（P1 位置 + P1→P2 弹向），点击不重跑判定，始终显示该初始结果
             if (window.__worldPenMode) return;
@@ -135,6 +158,83 @@ function onClick(event: MouseEvent): void {
             lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
         }
+
+/** 点选卡（#click-info）写入：五行读数。数值语义按调用方定：
+ *  - 厚度模式：基础装甲/入射角/等效装甲是**几何量**（不含转正），穿深/结果保持 '—'
+ *    ——该模式不做击穿判定，不猜；
+ *  - 判定模式：全部取判定首层（含转正后的等效与剩余穿深），与判定卡同源。 */
+function writeClickInfo(fields: {
+    part: string
+    armor: number | null
+    angle: number | null
+    effective: number | null
+    pen: number | null
+    result: string
+    resultClass?: string
+}): void {
+    const set = (id: string, text: string): void => {
+        const el = document.getElementById(id)
+        if (el) el.textContent = text
+    }
+    const mm = (v: number | null): string => (v != null && Number.isFinite(v) ? `${Math.round(v * 100) / 100} mm` : '—')
+    const deg = (v: number | null): string => (v != null && Number.isFinite(v) ? `${Math.round(v * 10) / 10}°` : '—')
+    set('click-part', fields.part)
+    set('click-armor', mm(fields.armor))
+    set('click-angle', deg(fields.angle))
+    set('click-effective', mm(fields.effective))
+    set('click-pen', mm(fields.pen))
+    set('click-result', fields.result)
+    const result = document.getElementById('click-result')
+    if (result) result.className = fields.resultClass ?? ''
+}
+
+/** 厚度模式点选卡定位：跟随点击位置（相对场景容器），并**避让固定 HUD 面板**。
+ *
+ *  小视口（手机横屏 600×320 等）下四角都被面板占着：左上胶囊（返回/信息/参数）、
+ *  右下射击卡（#corner-tr）、左下姿态卡（#turret-controls）。候选位与排序由共享纯函数
+ *  `chooseResultCardPosition` 决定（判定结果卡 #traj-info 用同一套几何语义）。
+ *  判定模式不再写这张五行卡（2026-11-15 用户裁示：单结果窗口 = 逐层结果卡）。 */
+function placeClickInfo(clientX: number, clientY: number): void {
+    const card = document.getElementById('click-info')
+    if (!card) return
+    // 参考系必须与 CSS 定位祖先一致：卡片是 absolute，left/top 相对 offsetParent；
+    // 用 offsetParent 的 rect 换算，避免 canvas 容器的 padding/偏移带入误差。
+    const anchor = (card.offsetParent as HTMLElement | null) ?? card.parentElement
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    const gap = 14
+    const pad = 8
+    card.style.display = 'flex'
+    const w = card.offsetWidth
+    const h = card.offsetHeight
+    // 固定 HUD 面板（与 browser-armor-mobile 的门禁口径一致）：
+    // #corner-tl = 左上信息胶囊（车名/参数入口），.armor-back = 返回键，
+    // #corner-tr = 右下射击卡，#turret-controls = 左下姿态卡。漏掉 #corner-tl 会让
+    // 靠近左上的点击把点选卡压到车名与参数入口上（评审 P2 反例：600×320 点击 (100,5)）。
+    const panels: ResultCardRect[] = []
+    for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+        const el = document.querySelector(selector) as HTMLElement | null
+        if (!el) continue
+        const style = getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden') continue
+        const r = el.getBoundingClientRect()
+        if (r.width <= 0 || r.height <= 0) continue
+        panels.push({ left: r.left - rect.left, top: r.top - rect.top, right: r.right - rect.left, bottom: r.bottom - rect.top })
+    }
+    const chosen = chooseResultCardPosition({
+        clickX: clientX - rect.left,
+        clickY: clientY - rect.top,
+        width: w,
+        height: h,
+        viewportWidth: rect.width,
+        viewportHeight: rect.height,
+        panels,
+        gap,
+        pad,
+    })
+    card.style.left = `${chosen.left}px`
+    card.style.top = `${chosen.top}px`
+}
 
 // 第一个参数保留调用签名（onClick 统一传 event），停靠后不再按点击坐标摆位
 function showArmorPartInfo(_event: MouseEvent, ndcX: number, ndcY: number): void {
@@ -156,10 +256,19 @@ function showArmorPartInfo(_event: MouseEvent, ndcX: number, ndcY: number): void
             if (!card) return;
             cvs.applyArmorHighlight(info.object);
             const thickness = Number(info.thickness);
-            document.getElementById('click-part')!.textContent = L.partName ? L.partName(info.partName) : info.partName;
-            document.getElementById('click-armor')!.textContent = Number.isFinite(thickness) ? `${Math.round(thickness * 100) / 100} mm` : '—';
-            // 结果停靠在场景顶部正中的固定胶囊（AgentArmorView 样式所有），不跟随命中点、不压车体。
-            card.style.display = 'flex';
+            // 几何入射角/等效：只做确定性几何换算，不含转正/口径规则——本模式不做
+            // 击穿判定，穿深与结果保持 '—'，不猜（fail-closed）。
+            const geom = faceAngleAndEffective(thickness, info.normal, rayDir)
+            writeClickInfo({
+                part: L.partName ? L.partName(info.partName) : info.partName,
+                armor: Number.isFinite(thickness) ? thickness : null,
+                angle: geom.angleDeg,
+                effective: geom.effective,
+                pen: null,
+                result: '—',
+            })
+            // 跟随点击位置（厚度模式是同步判定，直接用本次点击坐标）
+            if (lastClickClient) placeClickInfo(lastClickClient.x, lastClickClient.y)
         }
 
 function isEffectivelyVisible(node: THREE.Object3D): boolean {
@@ -363,7 +472,6 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
                 // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
                 // 面板/轨迹，避免旧结论被误读成本次点击的结论
-                document.getElementById('click-info')!.style.display = 'none';
                 document.getElementById('traj-info')!.style.display = 'none';
                 tc.clearTrajInfoPos();
                 tc.clearTrajGroup()
@@ -620,6 +728,9 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
+            // 结果卡跟随触发本次判定的点击位置（2026-11-15 用户裁示）。射击复现/世界模式的
+            // 初始自动判定没有点击（isCameraClick=false）→ null，卡片保持顶部停靠。
+            const resultClickAnchor = isCameraClick && lastClickClient ? { ...lastClickClient } : null;
             judgePenetration(req).then(async res => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck) as Array<JudgmentHit | undefined>;
@@ -641,6 +752,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         seg: 0,
                     };
                 });
+                // 判定模式不再写五行点选卡（2026-11-15 用户裁示：只保留更详细的逐层
+                // 结果卡；两张卡同时出现属于重复窗口）。厚度模式仍走 showArmorPartInfo。
                 // 概率必须使用完整命中链（res.probability_layers），不能复用上面会在
                 // 首个未穿透层截断的确定性 layers。显示层仍保持 BlitzKit 语义不变。
                 const probabilityLayers: ProbabilityChainLayer[] = Array.isArray(res.probability_layers) && res.probability_layers.length
@@ -889,6 +1002,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                         tc.showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
                             ...(heInfo ? { heInfo, heDirectHit } : {}),
                             blockedNoPrimary: res.blocked_no_primary === true,
+                            clickAnchor: resultClickAnchor,
                         });
                         return;
                     }
@@ -896,14 +1010,14 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
                 const blockedNoPrimary = res.blocked_no_primary === true;
                 if (useProbabilityMode) {
-                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary, clickAnchor: resultClickAnchor });
                 } else {
-                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary, clickAnchor: resultClickAnchor });
                 }
             }).catch(err => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false);
+                tc.showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false, { clickAnchor: resultClickAnchor });
             });
         }
     return {

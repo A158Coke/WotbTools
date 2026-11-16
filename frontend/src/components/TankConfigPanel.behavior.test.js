@@ -5,6 +5,7 @@ import { createI18n } from 'vue-i18n'
 import TankConfigPanel from './TankConfigPanel.vue'
 import { baseSelection } from '../replay-local/compute/tankSetup'
 import tanks from '../replay-local/compute/__fixtures__/upgrades/tanks.json'
+import t11r3 from '../replay-local/compute/__fixtures__/upgrades/t11r3.json'
 import mechanics from '../replay-local/compute/__fixtures__/upgrades/mechanics.json'
 import crew from '../replay-local/compute/__fixtures__/research/skills.json'
 import { messages } from '../locales/messages'
@@ -22,14 +23,14 @@ function panel(locale = 'zh', tank = black, props = {}) {
 }
 
 describe('配置器紧凑呈现保持交互', () => {
-  it.each(['zh', 'en', 'ru'])('%s 嵌入已有面板时只保留一组升级控件、重置与必要警告', async locale => {
+  it.each(['zh', 'en', 'ru'])('%s 嵌入已有面板时复用升级控件、机制参数、重置与必要警告', async locale => {
     const wrapper = panel(locale, black, {
       embedded: true, showCrew: false, showEquipment: false, showConsumables: false, showProvisions: false,
     })
     expect(wrapper.get('[data-testid="tank-configurator"]').attributes('aria-label')).toBeTruthy()
     expect(wrapper.find('h2').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="tank-upgrades"]').exists()).toBe(false)
-    expect(wrapper.findAll('[role="radiogroup"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="tank-mechanic-effects"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="tank-upgrade-top"]')).toHaveLength(1)
     await wrapper.get('[data-testid="tank-upgrade-stock"]').trigger('click')
     expect(wrapper.emitted('update').at(-1)[0]).toEqual({ upgrade: 'stock' })
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), upgrade: 'stock' } })
@@ -77,6 +78,90 @@ describe('配置器紧凑呈现保持交互', () => {
 })
 
 describe('XI 技能选择卡与效果反馈', () => {
+  it('AS-XX uses the effective trigger in stock, top and partial configurations', async () => {
+    const tank = t11r3.tanks.find(({ modules }) => modules.tankId === 23361)
+    const sameVersion = { ...catalog, ...t11r3, provisionsGameVersion: t11r3.gameVersion }
+    const wrapper = panel('zh', tank, { catalog: sameVersion })
+    const selection = wrapper.props('selection')
+    const condition = () => wrapper.get('[data-testid="tank-current-trigger"]').text()
+    const effect = () => wrapper.get('[data-testid="tank-mechanic-EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS"] strong').text()
+    const status = () => wrapper.get('[data-testid="tank-upgrade-skills"] header').text()
+    for (const upgrade of ['stock', 'top', 'custom']) {
+      for (const id of [22, 23, 24]) {
+        await wrapper.setProps({ selection: { ...selection, upgrade, abilities: [id] } })
+        const relaxed = upgrade !== 'stock' && id === 24
+        expect(condition()).toContain(relaxed ? '每发命中即可' : '每发均造成伤害')
+        expect(effect()).toBe(relaxed ? '命中' : '造成伤害')
+        expect(status()).toContain(upgrade === 'stock' ? '待生效' : '已生效')
+        expect(wrapper.get(`[data-testid="tank-ability-${id}"]`).attributes('aria-checked')).toBe('true')
+      }
+    }
+    await wrapper.setProps({ selection: { ...selection, upgrade: 'custom', abilities: [9999] } })
+    expect(status()).toContain('尚未研发')
+    expect(condition()).toContain('每发均造成伤害')
+    await wrapper.setProps({ catalog: { ...sameVersion, provisionsGameVersion: 'other' } })
+    expect(condition()).toContain('当前数据不足')
+    expect(wrapper.find('.tp-base-mechanic .origin').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="tank-mechanic-effects"]').text()).toContain('表中以 — 标记')
+    await wrapper.setProps({ catalog: sameVersion, upgradeSupported: false })
+    expect(condition()).toContain('当前数据不足')
+    expect(status()).toContain('强化状态未知')
+    await wrapper.setProps({ ...t11r3.tanks.find(({ modules }) => modules.tankId === 30993) })
+    expect(wrapper.find('[data-testid="tank-current-trigger"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([10593, 30737])('keeps the base weapon facts stable across branches for %i', async id => {
+    const tank = t11r3.tanks.find(({ modules }) => modules.tankId === id)
+    const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables, consumablesGameVersion: t11r3.gameVersion } })
+    const facts = wrapper.get('.tp-base-mechanic dl')
+    const initial = facts.text()
+    expect(initial).toContain(id === 10593 ? '342 毫米' : '276 毫米')
+    for (const choice of tank.modules.upgradeProgression.alternativeGroups[0].choices) {
+      await wrapper.setProps({ selection: { ...wrapper.props('selection'), abilities: [choice] } })
+      expect(facts.text()).toBe(initial)
+    }
+    wrapper.unmount()
+  })
+
+  it('refreshes the XP label when an embedded panel changes vehicle or dataset', async () => {
+    const tank = t11r3.tanks.find(t => t.modules.tankId === 23361)
+    const wrapper = panel('ru', tank, { embedded: true })
+    const xp = () => wrapper.get('[data-testid="tank-full-xp"]').text()
+    expect(xp()).toContain((414000).toLocaleString('ru'))
+    await wrapper.setProps({ modules: { ...tank.modules, gameVersion: 'other' } })
+    expect(xp()).toContain('неполные данные')
+    await wrapper.setProps(t11r3.tanks.find(t => t.modules.tankId === 10593))
+    expect(xp()).toContain((320000).toLocaleString('ru'))
+    wrapper.unmount()
+  })
+
+  it.each(t11r3.tanks)('t11r3 $modules.tankId reads each initial value and applies one upgrade option at a time', async tank => {
+    const wrapper = panel('zh', tank, { catalog: { ...catalog, consumables: t11r3.consumables,
+      provisions: t11r3.provisions, consumablesGameVersion: t11r3.gameVersion, provisionsGameVersion: t11r3.gameVersion } })
+    const xp = wrapper.get('[data-testid="tank-full-xp"]')
+    expect(xp.text()).toContain([23361, 30993].includes(tank.modules.tankId) ? '414,000 XP' : '320,000 XP')
+    const rows = wrapper.get('[data-testid="tank-mechanic-effects"]').findAll('tbody tr')
+    const fields = new Set(tank.modules.upgradeProgression.nodes.flatMap(node => node.attributes)
+      .map(attr => attr.name).filter(name => !name.startsWith('ATTRIBUTE_NAME_')))
+    for (const field of fields) expect(wrapper.find(`[data-testid="tank-mechanic-${field}"]`).exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="tank-base-mechanic"]')).toHaveLength(1)
+    for (const row of rows) {
+      expect(row.get('th').text()).not.toContain('agentTanks.')
+      expect(row.get('td').text()).not.toBe('—')
+    }
+    const group = tank.modules.upgradeProgression.alternativeGroups[0]
+    for (const id of [...group.choices.slice(1), group.choices[0]]) {
+      const button = wrapper.get(`[data-testid="tank-ability-${id}"]`)
+      await button.trigger('click')
+      await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...wrapper.emitted('update').at(-1)[0] } })
+      expect(button.attributes('aria-checked')).toBe('true')
+      expect(wrapper.get('.tp-ability-options').findAll('[aria-checked="true"]')).toHaveLength(1)
+      for (const row of rows) expect(row.get('strong').text()).not.toBe('—')
+    }
+    wrapper.unmount()
+  })
+
   it.each([
     ['zh', ' 个百分点', '累计变化', '击毁目标后保留层数', '是', '否'],
     ['en', ' pp', 'Total change', 'Keep stacks after destroying a target', 'Yes', 'No'],

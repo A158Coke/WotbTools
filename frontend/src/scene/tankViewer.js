@@ -26,7 +26,7 @@ import { defaultStateId } from '../data/armorStates.js'
 // URL 契约基线（urlContract.test.js）经此 re-export；实现 owner = viewer/viewerMath.js
 export { dollyZoomFov, mirrorShotData } from './viewer/viewerMath.js'
 import { dollyZoomFov } from './viewer/viewerMath.js'
-import { armorCameraPreset, armorPresetGunPitch, armorPresetPlacement } from './viewer/cameraPresets.js'
+import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 import { createTurretRig } from './viewer/turretRig.js'
 import { createModelLifecycle } from './viewer/modelLifecycle.js'
 import { createHeatmapPipeline } from './viewer/heatmap.js'
@@ -162,6 +162,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         const cleanups = [];
+        let lastPresetTarget = null; // 最近一次相机预设的炮轴基准点（pose.target，门禁量炮线俯角用）
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
         let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
@@ -455,6 +456,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             getCameraMotion: () => ({ cameraMovedAt, frameIntervalMs }),
             getRcLastClick: () => rcLastClick,
             setRcLastClick: (v) => { rcLastClick = v; },
+            getLastPresetTarget: () => lastPresetTarget,
         });
         // 瞄准输入：Pointer Events 会话与炮塔/炮管拖拽灵敏度（#820 Agent A 出仓）
         const aim = createAimInput({
@@ -684,21 +686,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rig.updateTurretGun(currentTurretDeg, currentGunDeg);
             const pose = armorCameraPreset(rig.getArmorPivotGun() || new THREE.Vector3(0, 0, 2),
                 new THREE.Matrix4().copy(ml.models.tankModel.matrixWorld).multiply(rig.gunPoseMatrix), ARMOR_REF_DIST);
-            // preserveView 在清惯性**之前**取距离快照：无阻尼 update 会把残余 panOffset 一次性
+            // 炮轴基准点 = 炮线枢轴（pose.target）：门禁量"炮管指向镜头"以它为基准——
+            // placement.target 是（不动的）轨道中心，不是炮线上的点。
+            lastPresetTarget = pose.target.clone();
+            // preserveView 在清惯性**之前**取景快照：无阻尼 update 会把残余 panOffset 一次性
             // 应用（target 跳到平移终点），与 setDistance 同口径——快照 → 清惯性 → 用快照摆位。
-            // 按钮（preserveView）保留用户缩放距离，但机位必须放到炮轴线上、看向炮线枢轴：
-            // 炮轴线穿过枢轴而非车体中心，沿旧轨道中心摆位会让炮管指不到镜头上
-            //（2026-11-10 反馈）；轨道中心随炮线枢轴，后续环绕即绕炮线检视。
-            // URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
-            const userDistance = preserveView
-                ? camera.position.distanceTo(controls.target)
+            // 按钮（preserveView）的两个约束（2026-11-13 反馈定稿）：旋转中心保持
+            // 默认/用户当前值**不得移动**；同时机位移到炮轴线上（距中心 = 用户距离），
+            // 炮管正对镜头。URL 首载路径没有用户取景，仍由预设完整摆位（15m 基准）。
+            const userView = preserveView
+                ? { target: controls.target.clone(), position: camera.position.clone() }
                 : null;
             // 先清除轨道惯性，再设置预设；后续拖动仍由 OrbitControls 正常接管。
             const damping = controls.enableDamping;
             controls.enableDamping = false;
             controls.update();
             const placement = preserveView
-                ? armorPresetPlacement(pose, userDistance)
+                ? armorPresetViewPlacement(userView.target, userView.position, pose, controls.maxDistance)
                 : pose;
             controls.target.copy(placement.target);
             camera.position.copy(placement.position);
@@ -1127,6 +1131,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 camera.updateProjectionMatrix();
                 renderer.setSize(view.clientWidth, view.clientHeight);
                 hm.refreshPenetrationResolution();
+                // 厚度点选卡跟随点击位置（绝对像素坐标）：容器尺寸变化后旧坐标可能落到
+                // 场景外并被 .armor-view 的 overflow 裁掉（评审 P2）。旧点击点在新布局
+                // 下也不再对应同一块装甲，因此直接隐藏，等用户重新点击——不猜新位置。
+                const clickInfo = document.getElementById('click-info');
+                if (clickInfo) clickInfo.style.display = 'none';
+                // 判定结果卡是主结果窗口，不能因 resize 消失：标记 dirty 后按新容器尺寸
+                // 重新定位（点击锚点已换算成容器坐标，钳制交给共享定位函数）。
+                tc.markTrajInfoDirty();
             };
             onWin('resize', resizeView);
             // The recorded-shot header can wrap without a window resize (locale / error message).
@@ -1134,6 +1146,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const observer = new ResizeObserver(resizeView);
                 observer.observe(document.getElementById('canvas-container'));
                 cleanups.push(() => observer.disconnect());
+            }
+            // 结果卡避让的固定 HUD 面板自身会变尺寸（参数抽屉展开、模块区加载/收起、射击 HUD
+            // 换行），而 #canvas-container 尺寸不变，上面的观察器收不到。直接观察面板并在尺寸
+            // 变化时标记结果卡重排，避免卡片压到展开后的面板（评审 P2，2026-11-15）。
+            if (typeof ResizeObserver === 'function') {
+                const hudObserver = new ResizeObserver(() => tc.markTrajInfoDirty());
+                for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+                    const el = document.querySelector(selector);
+                    if (el) hudObserver.observe(el);
+                }
+                cleanups.push(() => hudObserver.disconnect());
             }
         }
 
@@ -1393,6 +1416,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             destroy, retry, canPick: () => dl.canPick(), isContextLost,
             selectTank: (...a) => dl.selectTank(...a),
             setCameraPreset, setDistance,
+            // 结果卡展开/收起后尺寸变化：由宿主在 nextTick 调一次，按新高度重新避让面板。
+            repositionResultCard: () => { tc.markTrajInfoDirty(); tc.updateTrajInfoPos(); },
             setConfig: (...a) => dl.applyConfig(...a),
             setConfigUiVisible: (...a) => dl.setConfigUiVisible(...a), setShellUiVisible: (...a) => dl.setShellUiVisible(...a),
             setShell, setShooterConfig, setEquipmentOverride,

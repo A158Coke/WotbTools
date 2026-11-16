@@ -1757,23 +1757,111 @@
     "configurator": {
       "upgrade_title": "XI 车辆升级",
       "upgrade_stock": "初始值",
+      "full_xp": "满级所需经验",
+      "xp_value": "{value} XP",
+      "xp_incomplete": "—（数据不完整）",
       "upgrade_top": "升满级",
       "upgrade_hint": "参数、装甲和俯角随升级状态联动。",
       "upgrade_skill_group": "XI 专属技能 {index}",
       "upgrade_skill_option": "技能 {index}",
-      "upgrade_skill_hint": "每组选择一个技能，升满级后生效。动态技能的效果需在战斗中触发。",
-      "upgrade_effects": "技能升级效果",
+      "mechanic_summary": "基础机制 · {name}",
+      "summary_copy": {
+        "built_in": "车辆自带",
+        "clip_title": "强化弹匣",
+        "gun_title": "连发副炮",
+        "rounds": "{n} 发",
+        "normal_clip": "普通弹匣",
+        "next_clip": "下一匣强化",
+        "default_damage": "默认情况下，同一匣的每发炮弹均造成伤害，下一匣就会强化。",
+        "default_hits": "默认情况下，同一匣的每发炮弹均命中，下一匣就会强化。",
+        "clip_rule": "同一匣的每发炮弹都满足条件后，强化下一匣。",
+        "trigger": "当前触发条件",
+        "all_damage": "每发均造成伤害",
+        "all_hit": "每发命中即可",
+        "unknown": "当前数据不足",
+        "rules": "详细规则",
+        "reset_clip": "打空强化弹匣，或在使用强化弹匣时主动装填，下一匣恢复普通容量。",
+        "rockets": "{n} 枚火箭",
+        "salvo": "一次启动，连射 {n} 发",
+        "rocket_cycle": "火箭逐枚发射，飞行中无法操控。两次发射之间有间隔，打完后整组装填。",
+        "gun_cycle": "启动后自动连续射击。副炮独立装填，主炮可以继续装填。",
+        "weapon_base": "副武器初始参数",
+        "damage_floor": "提高下一发的伤害下限",
+        "charge_rule": "主炮装填完毕后，在允许车速内蓄能。蓄能越多，保底伤害越高。开火消耗全部能量。",
+        "ceiling": "满蓄能时，伤害上限保持原值。"
+      },
+      "branch_copy": {
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": {
+          "title": "强化弹匣快射",
+          "scope": "缩短强化匣内的弹间装填"
+        },
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": {
+          "title": "整匣装填加速",
+          "scope": "缩短主炮常态装填时间"
+        },
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": {
+          "title": "放宽强化条件",
+          "scope": "无须造成伤害"
+        },
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": {
+          "title": "副炮连射加速",
+          "scope": "缩短两发副炮之间的间隔"
+        },
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": {
+          "title": "副炮装填加速",
+          "scope": "更快发起下一轮连射"
+        },
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": {
+          "title": "提高副炮伤害",
+          "scope": "每发副炮弹的伤害"
+        },
+        "UNGUIDED_ROCKET_DAMAGE": {
+          "title": "提高火箭伤害",
+          "scope": "仅作用于火箭弹"
+        },
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": {
+          "title": "缩短发射间隔",
+          "scope": "更快发射下一枚火箭"
+        },
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": {
+          "title": "加快整组装填",
+          "scope": "打完整组后更快装填"
+        },
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": {
+          "title": "提高底伤加成",
+          "scope": "满蓄能时的最低伤害"
+        },
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": {
+          "title": "提高蓄能限速",
+          "scope": "允许以更高车速蓄能"
+        },
+        "SHELL_OVERHEAT_CHARGE_TIME": {
+          "title": "加快蓄能",
+          "scope": "缩短蓄满所需时间"
+        }
+      },
+      "choice_preview": "选项 {n} · 待生效",
+      "choice_applied": "选项 {n} · 已生效",
+      "choice_unresearched": "尚未研发强化选项",
+      "choice_unavailable": "强化状态未知",
+      "choice_number": "选项 {n}",
+      "missing_mechanic_values": "当前数据缺少部分基础值，表中以 — 标记。",
+      "upgrade_effect_delta_note": "当前值包含普通升级和所选强化。条件触发的额外效果需在战斗中满足条件后生效。",
+      "upgrade_custom": "部分研发",
+      "mechanic_choices": "三选一强化",
+      "mechanic_ammunition": "副武器弹药",
+      "mechanic_firing": "发射与装填",
+      "upgrade_effects": "机制参数",
       "upgrade_effect_attribute": "属性",
       "upgrade_effect_current": "当前值",
       "upgrade_effect_change": "累计变化 {value}",
       "upgrade_percentage_points": "{value} 个百分点",
       "upgrade_yes": "是",
       "upgrade_no": "否",
+      "upgrade_all_hits": "每发命中即可",
       "upgrade_trigger_hit": "命中",
       "upgrade_trigger_damage": "造成伤害",
-      "upgrade_inactive": "初始状态 · 未生效",
-      "upgrade_custom": "部分研发 · 已生效",
-      "upgrade_effect_delta_note": "当前值来自同版技能基础值与升级加成；缺少基础值的项目显示 — 和已知变化。战斗效果需触发，不计入常态参数。",
+      "upgrade_inactive": "初始状态 · 强化未生效",
       "upgrade_unsupported": "当前升级数据不完整，暂时无法计算满级数值。",
       "upgrade_unavailable": "当前资产包尚未提供这辆车的升级数据，显示初始值。",
       "upgrade_enabled": "开启",
@@ -1797,7 +1885,16 @@
         "COMBAT_FRENZY_RELOAD_SPEED_BONUS_PER_STACK": "每层装填速度加成",
         "COMBAT_FRENZY_MAX_STACKS": "最大层数",
         "ATTRIBUTE_NAME_MAX_HEALTH": "生命值",
-        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "装填时间",
+        "AUX_SHELL_TYPE": "弹种",
+        "AUX_PENETRATION": "标称穿深",
+        "AUX_PENETRATION_FAR": "远距穿深（500 米基准）",
+        "AUX_SPEED": "初速",
+        "AUX_RANGE": "最大射程",
+        "AUX_MAX_SPEED": "最高弹速",
+        "AUX_COUNT": "每组弹数",
+        "CLIP_CAPACITY": "普通弹匣容量",
+        "ENHANCED_CLIP_CAPACITY": "强化弹匣容量",
+        "ATTRIBUTE_NAME_GUN_RELOAD_TIME": "主炮装填时间",
         "ATTRIBUTE_NAME_FIRE_START_CHANCE": "引擎被击中起火几率",
         "ATTRIBUTE_NAME_ENGINE_POWER": "引擎功率",
         "ATTRIBUTE_NAME_FORWARD_MAX_SPEED": "前进极速",
@@ -1821,7 +1918,29 @@
         "ATTRIBUTE_NAME_MODULES_GUN_MAX_HEALTH_FACTOR": "火炮耐久",
         "ATTRIBUTE_NAME_MODULES_SURVEYING_DEVICE_MAX_HEALTH_FACTOR": "观瞄设备耐久",
         "ATTRIBUTE_NAME_MODULES_TRACK_MAX_HEALTH_FACTOR": "履带耐久",
-        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "炮塔旋转机耐久"
+        "ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR": "炮塔旋转机耐久",
+        "EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME": "强化弹匣夹内装填时间",
+        "EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS": "强化弹匣触发条件",
+        "AUXILLIARY_WEAPONS_GUN_RELOAD_TIME": "副炮装填时间",
+        "AUXILLIARY_WEAPONS_GUN_DAMAGE": "副炮单发伤害",
+        "AUXILLIARY_WEAPONS_GUN_BURST_INTERVAL": "副炮两发射击间隔",
+        "SHELL_OVERHEAT_MAX_TANK_SPEED": "可蓄能的最高车速",
+        "SHELL_OVERHEAT_CHARGE_TIME": "充满能量所需时间",
+        "SHELL_OVERHEAT_ACTIVATION_DELAY": "开始蓄能前的延迟",
+        "SHELL_OVERHEAT_MIN_ALPHA_BOOST": "最低伤害加成",
+        "UNGUIDED_ROCKET_ACCELERATION": "火箭加速度",
+        "UNGUIDED_ROCKET_INITIAL_SPEED": "火箭初速",
+        "UNGUIDED_ROCKET_DAMAGE": "火箭单发伤害",
+        "UNGUIDED_ROCKET_INTERCLIP_RELOAD": "两枚火箭发射间隔",
+        "UNGUIDED_ROCKET_CONTAINER_RELOAD": "火箭发射器整组装填时间",
+        "ATTRIBUTE_NAME_BACKWARD_MAX_SPEED": "倒车速度上限",
+        "ATTRIBUTE_NAME_TURRET_ROTATION_SPEED_FACTOR_BONUS": "炮塔转向速度",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_1": "弹种 1 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_2": "弹种 2 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_100_SLOT_3": "弹种 3 在 100 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_1": "弹种 1 在 500 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_2": "弹种 2 在 500 米的穿深",
+        "ATTRIBUTE_NAME_SHELL_PIERCING_POWER_500_SLOT_3": "弹种 3 在 500 米的穿深"
       },
       "title": "配置",
       "reset": "重置",
@@ -1912,6 +2031,22 @@
         "steadyAimSystem": {
           "name": "精准瞄准系统",
           "description": "激活后短时间收紧炮弹散布并加快瞄准速度。"
+        },
+        "externalAmmoModule": {
+          "name": "弹药补给模块",
+          "description": "默认三发均造成伤害后，下一匣增至四发。打空强化弹匣或主动装填后，下一匣恢复三发。"
+        },
+        "auxilliaryWeapons": {
+          "name": "副武器",
+          "description": "启动副炮后连续发射两发炮弹。副炮独立于主炮装填。"
+        },
+        "shellOverheat": {
+          "name": "炮弹热控",
+          "description": "炮弹装填完毕且车速在允许范围内时，为下一发蓄能。蓄能越多，伤害下限越高。开火消耗全部能量。"
+        },
+        "unguidedRocket": {
+          "name": "无制导火箭",
+          "description": "发射器装有两枚无制导火箭。两枚火箭之间有短暂的装填间隔，两枚均已发射后需重新装填整组。"
         }
       }
     },
@@ -2006,7 +2141,9 @@
       "HORSE_POWER_PER_TON": "马力/吨",
       "SECOND": "秒",
       "METER": "米",
-      "CUBIC_METER": "立方米"
+      "CUBIC_METER": "立方米",
+      "HIT_POINTS": "点",
+      "METER_PER_SECOND_SQUARED": "米/秒²"
     },
     "module_dmg": "模块伤害",
     "normalization": "转正角",
@@ -2116,7 +2253,9 @@
     "haptics": "按键震动",
     "hapticsHint": "Android 上切换、确认和出错时轻震一下",
     "sound": "按键音效",
-    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放"
+    "soundHint": "主要操作、完成和出错时的短音；系统减少动态效果时不播放",
+    "battleSound": "3D 回放炮声",
+    "battleSoundHint": "开炮时播放客户端内置炮声（按镜头距离衰减）"
   },
   "notifications": {
     "title": "通知",

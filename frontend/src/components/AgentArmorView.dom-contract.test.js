@@ -14,7 +14,7 @@ const plateModel = read('../scene/viewer/armorPlateModel.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('内核 getElementById 的静态 ID 全部由模板提供', () => {
     const kernelLookups = new Set([...kernel.matchAll(/getElementById\('([^']+)'\)/g)].map((m) => m[1]))
@@ -33,45 +33,69 @@ describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
     ).toEqual([])
   })
 
-  // 点选结果只留装甲名称 + 基础装甲值（2026-10-29）；5.0 起固定停靠在场景顶部正中（design-language §9
-  // 「强制横屏与场景 HUD」），不再按命中点摆位；右上角 HUD/模式/装甲组成合并为一块整卡片。
-  it('点选结果只显示装甲名称与基础装甲值，停靠在场景顶部正中；右上角合并为一块整体面板', () => {
-    expect(template).toContain('id="click-part"')
-    expect(template).toContain('id="click-armor"')
-    expect(template).not.toMatch(/id="click-(?:angle|effective|pen|result)"/)
-    expect(kernel).not.toContain("document.getElementById('click-angle')")
-    expect(kernel).not.toContain("document.getElementById('click-effective')")
-    expect(kernel).toMatch(/document\.getElementById\('click-part'\)!?\.textContent = L\.partName/)
+  // 2026-11-15 用户裁示：判定模式出现两张结果窗口（五行点选卡 + 逐层结果卡）属于重复；
+  // 只保留更详细的逐层结果卡 #traj-info，并改为跟随点击位置、手机端按比例缩小。
+  // 五行点选卡 #click-info 只在厚度模式保留（该模式不做击穿判定，没有第二张卡）。
+  it('判定模式单结果窗口：逐层卡跟随点击并缩放，五行卡只在厚度模式', () => {
+    // 厚度模式的五行读数仍在（模板 + 唯一写入入口）
+    for (const id of ['click-part', 'click-armor', 'click-angle', 'click-effective', 'click-pen', 'click-result']) {
+      expect(template, `模板缺 ${id}`).toContain(`id="${id}"`)
+      expect(kernel, `内核未写入 ${id}`).toContain(`'${id}'`)
+    }
+    expect(kernel).toMatch(/function writeClickInfo\(fields: \{/)
+    expect(kernel).toMatch(/function placeClickInfo\(clientX: number, clientY: number\): void \{/)
+    // 判定路径不再写五行卡：writeClickInfo 只剩厚度模式一个调用点
+    expect(kernel.match(/writeClickInfo\(\{/g)?.length, 'writeClickInfo 调用点').toBe(1)
+    expect(kernel).not.toMatch(/clickInfoResultCode/)
     expect(kernel).toMatch(/if \(getCollisionMode\(\)\) \{ showArmorPartInfo\(event, ndcX, ndcY\); return; \}/)
-    expect(kernel).toMatch(/function showArmorPartInfo\(_?event: MouseEvent, ndcX: number, ndcY: number\): void/)
-    // 5.0 停靠胶囊（design-language §9 场景 HUD）：场景脚本不写位置，只切换显示
-    expect(kernel).not.toMatch(/card\.style\.left = /)
-    expect(kernel).not.toMatch(/card\.style\.top = /)
-    expect(kernel).toMatch(/card\.style\.display = 'flex'/)
-    // 停靠位置由样式所有：固定顶部正中（不跟随命中点）
-    const dockCss = template.slice(template.indexOf('.armor-view :is(#click-info, #traj-info) {'))
+    // 判定结果卡：点击锚点经 isCameraClick 门控，四种展示分支全部透传
+    expect(kernel).toMatch(/const resultClickAnchor = isCameraClick && lastClickClient \? \{ \.\.\.lastClickClient \} : null;/)
+    expect(kernel.match(/clickAnchor: resultClickAnchor/g)?.length, 'clickAnchor 透传点').toBe(4)
+    // 定位实现唯一：共享纯函数 + 脚本写 left/top；无锚点时清掉内联定位交还 CSS 停靠
+    expect(kernel).toMatch(/export function chooseResultCardPosition\(/)
+    expect(kernel).toMatch(/chooseResultCardPosition\(\{/)
+    expect(kernel).toMatch(/div\.style\.left = /)
+    expect(kernel).toMatch(/div\.style\.top = /)
+    expect(kernel).toMatch(/div\.style\.insetInlineStart = ''/)
+    expect(kernel).toMatch(/div\.style\.transform = ''/)
+    // 跟随定位使用画布容器坐标（点击锚点换算）并避让固定 HUD 面板
+    expect(kernel).toMatch(/options\.clickAnchor\.x - cardHostRect\.left/)
+    expect(kernel).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    // 停靠规则保留为无点击回退（射击复现/初始判定）；#click-info 仍由脚本定位
+    const dockCss = template.slice(template.indexOf('.armor-view #traj-info {'))
     const dockRule = dockCss.slice(0, dockCss.indexOf('}'))
     expect(dockRule).toContain('position: absolute')
-    expect(dockRule).toContain('inset-block-start: var(--space-5)')
     expect(dockRule).toContain('inset-inline-start: 50%')
-    expect(dockRule).toContain('transform: translateX(-50%)')
-    expect(template).toMatch(/\.armor-view #click-info \{[^}]*pointer-events: none/)
+    expect(template).not.toMatch(/\.armor-view :is\(#click-info, #traj-info\)/)
+    // resize：厚度卡隐藏（旧坐标失效）；判定卡是主结果窗口，标记 dirty 后按新容器重排
+    const viewer = read('../scene/tankViewer.js')
+    expect(viewer).toContain("const clickInfo = document.getElementById('click-info');")
+    expect(viewer).toMatch(/if \(clickInfo\) clickInfo\.style\.display = 'none';/)
+    expect(viewer).toMatch(/tc\.markTrajInfoDirty\(\);/)
+    expect(viewer).toMatch(/repositionResultCard: \(\) => \{ tc\.markTrajInfoDirty\(\); tc\.updateTrajInfoPos\(\); \}/)
+    // 固定 HUD 面板自身变尺寸（参数抽屉展开/模块加载）也要触发结果卡重排
+    expect(viewer).toMatch(/new ResizeObserver\(\(\) => tc\.markTrajInfoDirty\(\)\)/)
+    expect(viewer).toMatch(/for \(const selector of \['#corner-tl', '#corner-tr', '#turret-controls', '\.armor-back'\]\)/)
+    // 宿主：装甲查看器默认展开逐层明细（2026-11-16 用户反馈：手机端不能只给极简一行）；
+    // 射击复现顶部停靠空间受限，保持默认收起；展开/收起后按新高度重新避让
+    expect(template).toMatch(/const resultExpanded = ref\(!isShotPage\.value\)/)
+    expect(template).toMatch(/watch\(isShotPage, shot => \{ resultExpanded\.value = !shot \}\)/)
+    expect(template).toMatch(/watch\(resultExpanded, \(\) => nextTick\(\(\) => viewer\?\.repositionResultCard\?\.\(\)\)\)/)
+    expect(kernel).toMatch(/shotResultCardMetrics\(compactCard, shotResultCardScale\(/)
+    const metrics = read('../utils/shotResultCardMetrics.js')
+    expect(metrics).toMatch(/export function shotResultCardScale\(/)
+    expect(metrics).toMatch(/Math\.min\(fitted, 360, Math\.round\(width \* 0\.82\)\)/)
+    // 桌面卡片不拦截场景点击（已展开全部明细）；小屏收起态才可点开
+    expect(template).toMatch(/\.armor-view #traj-info \{[^}]*pointer-events: none;/)
+    expect(template).toMatch(/\.armor-view #traj-info \{ pointer-events: auto; cursor: pointer; \}/)
+    // 厚度卡自适应缩放与语义色仍由模板样式拥有
+    expect(template).toMatch(/\.armor-view #click-info \{[^}]*font-size: clamp\(/)
+    expect(template).toMatch(/pointer-events: none/)
+    expect(template).toMatch(/> span:last-child:not\(#click-result\)/)
+    expect(template).toMatch(/\.armor-view #click-info \.pen \{ color: var\(--green\)/)
     // 浮层不是右上角面板的子节点：DOM 顺序在 #corner-tr 之前，外观由共享面板规则提供
     expect(template.indexOf('id="click-info"')).toBeLessThan(template.indexOf('id="corner-tr"'))
     expect(template).toMatch(/:is\(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info\)/)
-    // 右上角卡片外观由 #corner-tr 提供；射击 HUD 与模式切换只排布内容，过滤行是面板内静态第二行
-    const cornerTrCss = template.slice(template.indexOf('.armor-view #corner-tr {'))
-    const cornerTrRule = cornerTrCss.slice(0, cornerTrCss.indexOf('}'))
-    expect(cornerTrRule).toContain('background: var(--panel)')
-    expect(cornerTrRule).toContain('border: 1px solid var(--border)')
-    // 面板固定宽度：进入厚度视图出现过滤行时不撑宽（手机竖屏整条底栏不固定）
-    expect(cornerTrRule).toContain('inline-size: var(--armor-shot-card-width)')
-    expect(template).toMatch(/\.armor-view #corner-tr \{[^}]*inline-size: auto;/)
-    const shotHud = read('./ArmorShotHud.vue')
-    const shotHudRule = shotHud.slice(shotHud.indexOf('.shot-hud {'), shotHud.indexOf('.hud-row'))
-    expect(shotHudRule).not.toContain('background: var(--panel)')
-    expect(template).toMatch(/\.armor-view \.armor-filters \{[^}]*flex: 1 1 100%;/)
-    expect(template).not.toMatch(/\.armor-view \.armor-filters \{[^}]*position: absolute;/)
   })
 
   // 2026-10-29 用户报障（114 SP2 / 11057）：履带上表面位置不对。源 GLB 履带材质是
@@ -346,18 +370,34 @@ describe('dolly-zoom world-overview scope guard', () => {
   })
 })
 
-// 结果卡片是 position:fixed，left/top 是视口坐标；投影必须基于画布实际矩形。
-// 若用 window.innerWidth/Height，页面/容器滚动或窗口缩放时画布移动而卡片停在旧视口位置。
-describe('traj-info docking', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  it('结果卡不再按命中点投影摆位：停靠位置由样式所有（真实几何由 browser-armor-aiming 断言）', () => {
+// 结果卡定位：跟随点击（2026-11-15 用户裁示），但**不按 3D 命中点做屏幕投影**——
+// 位置是「点击时的视口坐标 + 固定 HUD 面板避让」，画布滚动/缩放时以容器 rect 重算。
+// 无点击锚点（射击复现/初始自动判定）仍交还 CSS 顶部停靠（真实几何由 browser armor 门禁断言）。
+describe('traj-info click-follow layout', () => {
+  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  it('跟随点击位置（容器坐标 + 面板避让），无锚点回退 CSS 停靠', () => {
     const start = kernel.indexOf('function updateTrajInfoPos()')
     expect(start).toBeGreaterThan(-1)
     const fn = kernel.slice(start, kernel.indexOf('function ', start + 10))
-    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现投影摆位
+    // 拆分后相机经 getCamera() 取得：两种写法都不允许出现 3D 命中点投影摆位
     expect(fn).not.toMatch(/project\((camera|getCamera\(\))\)/)
-    expect(fn).not.toMatch(/div\.style\.(left|top|transform) =/)
-    // 停靠容器宽度仍按画布容器测量（侧栏/窄画布不能按视口算）——保留这部分既有口径
+    // 点击锚点 → 共享定位纯函数；脚本写 left/top 并覆盖停靠的 logical inset/transform
+    expect(fn).toMatch(/chooseResultCardPosition\(\{/)
+    expect(fn).toMatch(/div\.style\.left = /)
+    expect(fn).toMatch(/div\.style\.top = /)
+    // 逻辑与物理 inset 写同一个像素值；inset-*: auto 会把 left/top 打回静态位置
+    expect(fn).toMatch(/div\.style\.insetInlineStart = `\$\{chosen\.left\}px`/)
+    expect(fn).toMatch(/div\.style\.insetBlockStart = `\$\{chosen\.top\}px`/)
+    expect(fn).not.toMatch(/div\.style\.insetInlineStart = 'auto'/)
+    expect(fn).toMatch(/div\.style\.transform = 'none'/)
+    // 内容被高度上限裁剪时必须恢复指针事件（滚轮/触控可滚动），否则桌面滚轮穿透到场景
+    expect(fn).toMatch(/div\.style\.pointerEvents = div\.scrollHeight > div\.clientHeight \+ 1 \? 'auto' : ''/)
+    // 无锚点：清掉内联定位与逻辑宽度覆盖，交还样式停靠（紧凑横屏上限）
+    expect(fn).toMatch(/div\.style\.insetInlineStart = ''/)
+    expect(fn).toMatch(/div\.style\.maxInlineSize = ''/)
+    // 逻辑宽度覆盖只在跟随点击时写（停靠态由 CSS 拥有）
+    expect(fn).toMatch(/div\.style\.maxInlineSize = `\$\{maxWidth\}px`/)
+    // 容器宽度/坐标系按画布容器测量（侧栏/窄画布不能按视口算）
     expect(fn).toMatch(/getElementById\('canvas-container'\)/)
     expect(fn).toMatch(/getBoundingClientRect\(\)/)
   })

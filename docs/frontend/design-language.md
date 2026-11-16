@@ -64,7 +64,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | DC-THM-09 | MUST | 全站环境背景 | 全站只由 `AppShell.vue` 的 `.app-backdrop` 渲染环境背景层：`position: fixed; inset: 0; pointer-events: none`，层级低于内容；环境光、背景图、遮罩、位置全部读 `--theme-backdrop*` token；禁止在 `body` 上用 `background-attachment: fixed` | 无 | 人工；`pnpm run test:browser-home`、`test:browser-view-transition` |
 | DC-THM-10 | MUST | 首屏与主题切换 | 环境背景先显示 `--color-canvas` 纯色，图片解码后淡入，不得阻塞首屏；`prefers-reduced-motion: reduce` 下直接显示、不做过渡；切换主题时背景随 token 同步切换 | 无 | 人工；`src/index-firstpaint.test.js` 保持通过 |
 | DC-THM-11 | MUST | 生产内容表面 | 当前页面级卡片/面板采用 `--color-surface-{1,2,3}-glass`（表面色 82%–90% 不透明 + `backdrop-filter: blur(16px) saturate(1.2)`），当前表格、数据密集区、输入框、回放 HUD 采用纯色；这是实现事实而非未来设计禁令。任何扩展玻璃材质的生产变更必须先证明真实背景对比度、合成性能和不支持 `backdrop-filter` 时的纯色降级；场景根必须保持不透明（DC-THM-08） | 受控设计原型可先探索，生产需独立验收 | `color-contrast.test.ts` 的真实背景取样 + 浏览器/设备审查 |
-| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；标题必须落在主题遮罩压出的可读区 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`ShowcaseHero.test.ts` |
+| DC-THM-12 | MUST | 分区主视觉 | 每个导航分区用一张固定 key visual（与季节无关），由 `ShowcaseHero` 的 `section` prop 选择；图片经 `import` 由 Vite 生成 hash URL，只加载当前页面用到的一张；分区图必须 contain 100% 完整显示且保持原始宽高比（§2.2，不得用 cover 裁切）；标题与完整图片分列，文字和主题装饰遮罩不得覆盖图片 | 首页继续使用季节主视觉 | 人工四主题 × 双视口截图；`browser-showcase-hero.mjs` 完整度门禁；`ShowcaseHero.test.ts` |
 
 | | **春 · 青山** `spring` | **夏 · 盛夏** `summer`（默认） | **秋 · 金秋** `autumn` | **冬 · 寒冬** `winter` |
 |---|---|---|---|---|
@@ -111,11 +111,11 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 ### 2.2 分区主视觉（section key visual）
 
-**定义：** 导航分区的固定主视觉。和四季主视觉不同，每张图不随主题/季节换图，只换压在图上的主题遮罩；一张图对应一个导航分区，同一分区的所有页面复用同一张。季节只影响氛围，不改变页面身份。
+**定义：** 导航分区的固定主视觉。和四季主视觉不同，每张图不随主题/季节换图，主题影响周围的底色与装饰；一张图对应一个导航分区，同一分区的所有页面复用同一张。季节只影响氛围，不改变页面身份。
 
 **素材与产物：** 原图在 `frontend/art-source/heroes/hero-<分区>.webp`（1672×941，16:9，不得修改），由 `frontend/scripts/build-section-heroes.mjs`（`pnpm run assets:heroes`）输出到 `frontend/src/assets/theme/hero-<分区>.webp`：Lanczos 放大到 2400 宽、轻度锐化、WebP q≈80 且单张 ≤ 250KB。运行时通过 `src/shared/sectionHeroes.ts` 的 `import` 拿到 Vite hash URL，不复制到每套主题，也不在 CSS 里写死路径。
 
-**唯一映射表：** 代码里的 `SECTION_HEROES` 是唯一事实源，本表是它的文档镜像。`--hero-pos` / `--hero-pos-mobile` 是 `background-position` 的焦点，用来保证坦克主体不被左侧标题压住：桌面横幅很宽，横向焦点恒为 `center`，只调纵向；手机竖版把主体推到右侧。
+**唯一映射表：** 代码里的 `SECTION_HEROES` 是唯一事实源，本表是文档镜像。ShowcaseHero 分区主视觉必须 100% 完整显示，保持原始宽高比，四条边不裁切、不拉伸，不以可见带或主体大部分可见验收。Full 与 Compact、桌面与手机、四套主题一律使用独立图层 `contain no-repeat`。文字与图片共享两列布局，图片居中并在图框内留 `space-2`，避免圆角裁边；标题、说明、统计与操作均不得覆盖图片。剩余区域由主题底色和装饰遮罩填充，遮罩不能叠在原图上。组件不再消费 `--hero-pos*`；焦点变量仅保留给 BattleTable/Profile 等原有卡片消费者（其 cover 不属于 ShowcaseHero）。
 
 | 分区 `section` | 使用页面 | 原图 | 桌面焦点 | 手机焦点 |
 |---|---|---|---|---|
@@ -131,11 +131,13 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
 | `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
 
-**遮罩与可读性：** 分区图默认仍用 `--theme-hero-scrim`（手机 `--theme-hero-scrim-portrait`）压出纯色文字区，因此 DC-THM-05 的四主题对比度要求不变。寒冬是浅色主题，白色遮罩会把图洗淡，所以只在寒冬定义更轻的分区遮罩：`--theme-hero-section-scrim`（横版，左侧 94% → 78% → 12%）和 `--theme-hero-section-scrim-portrait`（竖版，自上而下 15% → 0%，几乎全撤，画面完整透出；标题可读性改由白色文字 + 深色描边承担——只在手机断点生效，桌面左侧仍有 90° 白色遮罩，深色标题保持原样）。其它主题不定义这两个 token，组件用 `var(--theme-hero-section-scrim, var(--theme-hero-scrim))` 回退。验收时坦克主体必须仍可辨认，标题区域取样点满足 §3。
+**遮罩与可读性：** ShowcaseHero 的分区图层只绘制原图，不叠季节或分区 scrim。主题 scrim 留在容器底色上，文字使用原 semantic tokens，四季主题仍遵循 DC-THM-05 与 §3。手机冬季分区标题无需强制白字/描边，因为标题已离开照片；无 section 的季节 Hero 保持原行为。分区遮罩 token 仍供现有卡片消费者使用。
 
-**紧凑档（compact）：** 工具页与后台使用紧凑档，默认桌面 132px / 手机 96px，横幅里只保留 kicker + 标题；操作（能力切换、搜索、刷新等）放在横幅下方独立的工具条里，不挤压下方操作区。Replay 是唯一例外：约 12:1 的 132px 窄条在 cover 下只剩 ~12% 可见带（可见占比 = 容器高宽比 × 原图宽高比，与源图无关），坦克被裁成炮管残片，因此桌面放宽到 clamp(132px, 20vw, 384px)（~43% 可见带容纳坦克整体），矮桌面窗口（height < 700px，flex scrollport 会被压缩）与手机（可见带已近一半）回退默认密度。完整档保留说明、关键数字与操作。标题复用页面原有 i18n 文案；如果横幅已经承担页面标题，就删除原独立页头，避免同屏两个一级标题。
+**紧凑档（compact）：** 工具页与后台保持默认桌面 132px / 手机 96px 最小高度（长标题可自然增高），只显示 kicker + h1，操作留在横幅下方工具条。Replay 桌面保留 clamp(132px, 20vw, 384px)，矮桌面窗口（height < 700px）回退默认密度。图片与文字各占一列，图片按可用宽高等比缩放。手机与较矮 compact 图中的主体会较小；这是完整图片、无文字遮挡与首屏密度之间的明确取舍，不声称同时满足大主体。
 
-**验收：** 每个分区至少一个页面，四套主题 × 1440×900 / 390×844 截图人工确认：坦克主体可见、未被标题压住、标题可读、无横向滚动；`ShowcaseHero.test.ts` 覆盖 `section` 映射与紧凑档结构。
+**完整档（full）：** 保留说明、统计与操作，桌面保留 clamp(240px, 20vw, 384px) 最小高度与 align-content: center；矮桌面回退内容高度。手机使用同一分列规则，文字自然换行，不逐页硬编码高度。图片实际大小取列宽与可用高度的较小约束，不通过 cover 或加大横幅掩盖宽高比冲突。
+
+**验收：** `browser-showcase-hero.mjs` 从真实 computed CSS、图片 naturalWidth/naturalHeight、实际渲染框及裁切祖先计算原图可见比例，必须为 100%；四边可见，横纵缩放一致，文字矩形与图片零交叠，无图片上方遮罩，无横向滚动。全部实际调用页面覆盖 1440×900、1920×1080、1920×540、390×844 与 844×390；真实组件额外覆盖唯一映射中全部 11 张图片 × Full/Compact × 五视口 × 四主题。横屏工作区主动隐藏的横幅明确记录 hidden，不当作完整度通过。必须有 cover 注入和祖先裁切的几何失败对照，并检查 Reduced Motion。Before/After PNG 与 JSON 矩阵存入 `frontend/tmp/showcase-hero/`，人工复核代表性截图。`ShowcaseHero.test.ts` 负责 props/slots/映射/结构，不能替代浏览器几何验收。
 
 ---
 
@@ -143,13 +145,21 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 | ID | 强度 | 范围 | 规则 | 例外 | 验证 |
 |---|---|---|---|---|---|
-| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，四套主题都成立 | 无 | token 由 `src/styles/tokens/color-contrast.test.ts` 断言；组件组合人工 |
+| DC-CLR-01 | MUST | 全站 | 正文 ≥ 4.5:1，大字与 UI 图形 ≥ 3:1，四套主题都成立 | **E1**（见 §3.0.1） | token 由 `src/styles/tokens/color-contrast.test.ts` 断言；组件组合人工 |
 | DC-CLR-02 | MUST | 单个视图 | 只保留一个强调色填充主操作 | 无 | 人工 |
 | DC-CLR-03 | MUST | 阵营表达 | 不能只靠红绿区分，必须再用位置、文字或形状表达一次 | 无 | 人工 |
 | DC-CLR-04 | MUST | 物理队伍色 | Team 1 / Team 2 颜色不随录像者交换 | 无 | 人工 |
 
 **依据：** WCAG 2.2 AA。正文 ≥ 4.5:1；大字（≥ 24px，或 ≥ 18.66px 且加粗）≥ 3:1；UI 组件和图形 ≥ 3:1（1.4.11）。
 下表每个值都已用脚本验证：在该主题的**全部纯色表面与实际应用的玻璃表面**上取最差的一层，结果仍然达标。当前页面级实现只应用 `surface-1-glass`；它按真实 wide / portrait 背景图逐像素叠加 `--theme-backdrop-scrim` 后再与玻璃 alpha 合成，取亮度最小 / 最大像素参与比较。`surface-2/3-glass` 是保留档位，仍校验 alpha 与 canvas 混合；新增使用处时必须把该档位加入真实背景取样。
+
+#### 3.0.1 例外登记
+
+| ID | 范围 | 规则偏离 | 授权 | 复核 |
+|---|---|---|---|---|
+| E1 | 坦克目录卡片（`TankCatalogMenu`）在高级/收藏染色底上的**车名**（`.tp-card.is-premium/.is-collector .tp-card-name`） | 最低对比度 **3.0:1**（正文要求 4.5:1）。车名是 14–15px/600 字号，按 DC-CLR-01 属正文，**不适用**大字或 UI 图形口径 | 2026-11-14 用户要求车名保留语义色；2026-11-15 用户就「接受低于 AA 正文的对比度」明确确认（经会话转达，记录于 PR #983 讨论） | `color-contrast.test.ts` 按全部主题 × 语义 × 常态/hover 复算，门槛 3.0（实测 3.27–3.89）；规则形态与混色比例进映射契约，比例漂移即失败 |
+
+> 例外必须是**显式登记的产品决定**，不是把正文误称为"非正文/大文本"。新增语义色文字组合若达不到 4.5:1，先调配色；确需保留的按本表登记。
 
 ### 3.1 表面与文字
 
@@ -520,8 +530,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-SEL-01 | MUST | 单选 | 按下表取默认控件；候选数按数据域的可能上限判断，不按当前条数；「请选择」「全部」这类空值项不算候选 | DC-SEL-04 | 人工 |
 | DC-SEL-02 | MUST | 2 个互斥选项 | 不用下拉 | `selection-policy.test.ts` 的只减不增名单 | `src/shared/selection-policy.test.ts`（静态选项）+ 人工（`v-for` 选项） |
-| DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | 无 | 人工 |
-| DC-SEL-04 | MAY | 固定有序域 | Tier I–X 这类固定、有序的集合直接平铺，即使有 10 项 | 无 | 人工 |
+| DC-SEL-03 | MUST | 超过 10 个候选 | 必须可搜索 | DC-SEL-04 的有序等级域 | 人工 |
+| DC-SEL-04 | MAY | 固定有序域 | 车辆 Tier I–XI 固定有序域可平铺，紧凑布局可使用 Select，无需搜索 | 无 | 人工 |
 | DC-SEL-05 | MAY | 高信息熵集合 | 不到 10 项也可提前提供搜索，例如 `BattlePicker` 超过 6 项显示搜索 | 无 | 人工 |
 | DC-SEL-06 | MUST | Switch | 只用于立即生效的布尔状态，不是「两选项」的通用组件；随表单提交用 Checkbox | 无 | 人工 |
 | DC-SEL-07 | MUST | 响应式 | 窄屏可换呈现（平铺转 sheet），不改变单选 / 多选语义 | 无 | 人工 |
@@ -538,6 +548,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 多选 | Checkbox Group / multi-choice / searchable multi-select |
 
 单选 Choice Group 由 `SegmentedControl`（radiogroup 语义、方向键、Home / End）承载，呈现用 `presentation` 选择。级联筛选的固定候选域保持全部选项可见，上一级未选或当前无数据的选项置灰。
+坦克目录和科技树的九个游戏系别允许图标加名称平铺，目录在空间受限时可切为单选菜单或 sheet。此例外仅覆盖该游戏分类域。目录车种、类别在中等容器宽度可收为带图单选列表，所有布局保持同一筛选值。系别扩展后重新评估候选数与搜索需求。
+
 
 ---
 
@@ -573,7 +585,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | 模式 | 规则 |
 |---|---|
 | **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 数据版本 · 首页 · 按战斗、资料、赛事、社区分组的主栏目（`group`，图标栏用分隔线代替分组名）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机竖屏与手机横屏（抽屉外壳，见下方 L1 / L3）：48px 顶栏（菜单 · Logo · 当前栏目名 · 账户）+ 左侧抽屉（`AppNavDrawer`，内容是侧边栏的同一份分组、管理组与数据版本，底部「更多」整页链接与账户）。Logo 回默认落地页：主站回首页，APK / 本地回回放。手机横屏的回放工作台（2D / 3D，回放就绪）与装甲查看器（WebGL 可用）进入沉浸态：顶栏让出，`--header-block` / `--header-h` 归零，转竖屏或离开页面即恢复。当前侧边栏宽度写入 `--sidebar-w`（抽屉外壳为 0）；顶栏为内容让出的固定空间是 `--header-block`，吸顶偏移与高度预算读 `--header-h` |
-| **Showcase Hero** | `components/ShowcaseHero.vue`：页面数据区之上的主视觉（DC-THM-03…06、DC-THM-12）。不传 `section` 时用当前主题的季节主视觉；传 `section` 时用该导航分区的固定 key visual（§2.2），四套主题只换遮罩。`compact` 档只保留 kicker + 标题，操作在横幅下方工具条 |
+| **Showcase Hero** | `components/ShowcaseHero.vue`：页面数据区之上的主视觉（DC-THM-03…06、DC-THM-12）。不传 `section` 时用当前主题的季节主视觉；传 `section` 时用该导航分区的固定 key visual（§2.2），四套主题改变周围底色与装饰，图片完整显示。`compact` 档只保留 kicker + 标题，操作在横幅下方工具条 |
 | **控制条** | `app-shell.css` 的 `.control-bar`：数据区之上的筛选 / 排序 / 搜索一行，窄屏换行，`.control-bar-end` 推到行尾，`.is-sticky` 吸顶读 `--header-h` |
 | **紧凑页头** | 工作区、工具页与后台用 `ShowcaseHero` 的 `compact` 档：横幅只显示 kicker + h1，操作 / 搜索 / 刷新放在下方工具条。原 `PageHeader.vue` 已由本档取代并删除；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
@@ -603,7 +615,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - **验收**：`pnpm run test:browser-interaction forced-landscape`（iPhone 竖屏出提示并能回到赛后数据；iPad 竖屏与缩窄的桌面浏览器不出提示；iPhone 横屏 844×340 沉浸且菜单可打开抽屉；装甲查看器 `armor-forced-landscape-*`：iPhone 竖屏出提示并带返回动作，iPhone 横屏、iPad 竖屏与缩窄的桌面浏览器不出）。
 - **短视口紧凑档**：手机横屏高度 ≤ 520px 时，上述场景改用 §5 的场景紧凑档 token（控件 32/36/40、命中区 40、间距 0.75×、正文 14/18），让传输条、底栏和 HUD 不再按 44/48px 撑高；竖屏与桌面完全沿用常规触控档。装甲查看器在 `height <= 500px` 的短横屏胶囊（下方一条）另有 36/38px 视觉尺寸，是本档 40px 命中区的唯一显式例外，由 `browser-armor-mobile` 单独锁定。
 - **场景 HUD（装甲查看器、射击复现）**：手机横屏时常驻控件只在四角——左上返回 + 车名 / 参数，右下拇指区是射击快捷项（弹种、距离、厚度 / 击穿），左下是姿态与角度；完整设置是右侧参数面板（约 19rem + 安全区），打开时场景仍在左侧可见。短横屏（`height <= 500px`）再启用紧凑档：左上收成 38px 胶囊（返回图标 + 可截断车名 + 参数图标），右下射击卡片收到 15rem × ≤45dvh 并把距离滑条与穿深数值并排，左下姿态压成两行，参数面板头部提供 sticky 的 40px 关闭按钮（紧凑档命中区）。单发分析页（shot=）的右下由 armor-bottom-controls 统一接管：射击参数卡片在上、「查看弹着点 / 查看双方位置」视角切换排在下方，同一列共享右下空间且锚点带左右 safe-area。该列与左上胶囊同为 HUD 层（--pb-z-hud）；参数抽屉展开时其所属上下文提升到 --z-dialog（高于射击复现顶栏的 --z-sticky+1），保证抽屉绘制在 HUD 与顶栏之上、抽屉内控件触摸不被拦截；触摸验收以 elementFromPoint 命中归属为准（bounding box 不证明绘制/命中顺序）。
-- **点选结果**（厚度 `#click-info`、击穿 `#traj-info`）：固定停靠在场景顶部，不跟随命中点、不压车体；宽屏 / 竖屏在顶部居中；短横屏 ≥768px 紧贴左上胶囊右侧并与其垂直对齐，<768px 落到胶囊下方第二行；小屏收起态只显示最终判定一行（胶囊），点开看逐层明细。
+- **结果卡（单窗口，2026-11-15 用户裁示）**：判定模式只保留逐层结果卡 `#traj-info`（交战距离 / 有效穿深 / 击穿概率 / 伤害 + 逐层明细），厚度模式保留五行点选卡 `#click-info`（基础装甲 / 入射角 / 等效装甲；该模式不判定，穿深与结果保持 `—`）。两张卡都跟随点击位置：脚本按容器坐标写 `left/top`，用共享 `resultCardPosition` 纯函数避让四角固定 HUD 面板并在容器内钳制；无点击的射击复现 / 初始判定 `#traj-info` 仍停靠顶部（宽屏 / 竖屏居中；短横屏 ≥768px 紧贴左上胶囊右侧并与其垂直对齐，<768px 落到胶囊下方第二行）。装甲查看器小屏默认展开逐层明细（2026-11-16 用户反馈：手机端不能只给极简一行），点卡片可收起为最终判定一行胶囊；射击复现的顶部停靠卡空间受限，保持默认收起、点开看明细（展开高度上限 48px）；桌面 / 平板卡片同样展开全部明细，`pointer-events: none` 不拦截场景点击，明细被高度上限裁剪时自动恢复指针事件以支持滚轮 / 触控滚动；手机档字号 / 间距按视口短边比例缩小，卡片宽度不超过画布 82%、紧凑横屏高度上限 72px，不铺满视口。
 
 ### 射击分析与科技树（小屏）
 

@@ -115,6 +115,13 @@ describe('Armor recorded-shot navigation', () => {
     scenes[0].options.onLoadState({ state: 'error', message: 'stale error' }); await flushPromises()
     expect(wrapper.text()).not.toContain('stale error')
   })
+  it('射击时间减去开战原始时钟，与射击分析列表同口径（回归：02:06 vs 02:20）', async () => {
+    mocks.fetch.mockResolvedValue({ shots, battleStartRaw: 14 })
+    const { wrapper } = await setup()
+    const header = wrapper.get('[data-testid="armor-shot-header"]')
+    expect(header.text()).toContain('00:58')
+    expect(header.text()).not.toContain('01:12')
+  })
   it('reports failed navigation without destroying the current scene', async () => {
     const { wrapper, router } = await setup(); mocks.query.mockRejectedValueOnce(new Error('unavailable'))
     await wrapper.get('[aria-label="armor.next_shot"]').trigger('click'); await flushPromises()

@@ -17,7 +17,7 @@ import { ArrowLeft, Check } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { moduleIconUrl } from '../utils/researchCatalog.js'
-import { moduleTreeLayout } from '../utils/techTreeLayout.js'
+import { moduleTreeLayout, noChainNoteKey } from '../utils/techTreeLayout.js'
 import { formatXpCompact } from '../utils/xpFormat.js'
 import { romanLevel } from '../utils/tierFormat.js'
 
@@ -235,7 +235,7 @@ function activate(node) {
       <p v-if="!layout" class="tr-empty" role="alert">{{ t('research.layout_unavailable') }}</p>
       <template v-else>
         <p v-if="!layout.hasChain" class="tr-empty" data-testid="research-no-chain">
-          {{ t('research.no_chain_note') }}
+          {{ t(noChainNoteKey(detail.tier)) }}
         </p>
         <div class="tr-scroll">
           <div class="tr-canvas" :style="canvasStyle">

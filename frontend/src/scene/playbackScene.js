@@ -1196,6 +1196,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     POSE_GRID.tStart = data.meta.t_start;
     POSE_GRID.samples = data.meta.samples;
     store.playbackSession = playbackSession;
+    battle.prepareGunfire(data.vehicles || []);   // 炮声预热（owner = battleRuntime）
   }
   /** 地图预览 stub 发布（空车队，minimalData 同款形状；startPlayback 只走地图资产前缀）。 */
   function publishMapOnlyData(mapId, mapName) {
