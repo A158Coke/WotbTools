@@ -24,25 +24,25 @@
 
 - 扫描 442 个测试文件；69 个读取生产源码；其中 **203 个用例**的断言引用源码文本（parseAnomalies=0）。
 - 集中地：`scene/sceneryMaterials.test.js`（52）、`components/AgentArmorView.dom-contract.test.js`（29）、`scene/playbackScene.occlusion.test.js`（15）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（7）、`app/navigationPressedFeedback.test.js` / `scene/pickDebug.test.js` / `styles/light-theme-source-regression.test.js`（各 5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
-- 旧审计 251 例与历史基线 269 例的差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**旧 181 不与 251 直接可比**；当前 203 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
+- 旧审计 251 例、旧分类器快照 181 例与重建后的历史基线 269 例不是同一口径：181 与 269 是**同一历史树（67fdb2be）**上的分类器前后结果，181→269 的增量来自漏判修正（正则切块截断用例体、缺 `.toContain`、`stripComments(readSrc(...))` 包装器读取变量未登记）；251 是更早审计的独立口径，不与二者直接比较。当前树 203 例则是 Wave 1–3 改写/删除文本守卫后的剩余（部分文件如 tankViewer.distance/cameraPreset 已是混合行为测试）。三组数字只在各自口径内使用。
 
 ## 探针 Baseline（PR #957 head，seed=827，2026-11-16 重生成）
 
 | 簇 | 探测源 | 跳过（baselineRed） | 语义捕获（有效变异） | invalid | inconclusive | 等价重命名误报 |
 |---|---|---|---|---|---|---|
-| scene | 25 | 0 | **8/132（6.1%）** | 14 | 0 | **4/75（5.3%）** |
+| scene | 27 | 0 | **6/134（4.5%）** | 25 | 0 | **12/81（14.8%）** |
 | css | 4 | 0 | 1/24（4.2%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
 | vue | 20 | 0 | **0/114（0.0%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
-| 合计 | 49 | 0 | 9/270（3.3%） | 14 | 0 | 4/75（5.3%） |
+| 合计 | 51 | 0 | 7/272（2.6%） | 25 | 0 | 12/81（14.8%） |
 
 逐源矩阵：`scripts/testing/probe-matrix-{scene,css,vue}.json`。要点：
 
-- 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源 25、文本用例 193（含 `.toContain` 恢复的读取方），与旧 24.6% 不可直接对比。
+- 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源 27、文本用例 203（含 `.toContain` 与包装器读取变量），与旧 24.6% 不可直接对比。
 - **组件源（.vue）仍零捕获（0/114）**：模板/样式内的字面量语义没有读取方文本守卫（新增的 `.toContain` 读取方均未被语义变异杀死）。
-- scene 被杀最多的源：`heSplash.ts` 3/5；`groundPass.js` / `penetration.js` / `playbackScene.js` / `viewer/armorPlateModel.ts` / `viewer/armorShaders.ts` 各 1。接线类语义（调用存在性）多数存活。
-- 等价重命名误报 4/75：`groundPass.js`、`playback/cameraRuntime.ts`、`playback/renderer.ts`、`playbackScene.js` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
-- **invalid 14 个变异**（parse 校验失败，未计入捕获率）：`sceneryInstancing.ts` 4、`renderer.ts` / `vehicleRuntime.ts` / `shotResultCard.ts` 各 2，`groundGeometryData.ts` / `heSplash.ts` / `mapAssets.ts` / `sceneryAssembly.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
-- 本轮 49 个源的读取方基线全部全绿（baselineRed=0、inconclusive=0）；失败探针都能归入断言失败 / 解析失败两类。
+- scene 被杀最多的源：`heSplash.ts` 3/5；`groundPass.js` / `playback/renderer.ts` / `viewer/armorShaders.ts` 各 1；其余源本轮 0 捕获（`materialDispose.ts` 6 个语义候选全部 parse-invalid，记 0/0——**无有效证据，不解释为受保护**）。接线类语义（调用存在性）多数存活。
+- 等价重命名误报 12/81（14.8%）：`playback/cameraRuntime.ts` 2/3，`groundPass.js` / `materialDispose.ts` / `penetration.js` / `playback/labelsRuntime.ts` / `playback/mapAssets.ts` / `playback/mapWorld.ts` / `playback/renderer.ts` / `playback/vehicleRuntime.ts` / `sceneryAssembly.ts` / `tankViewer.js` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言；`sceneryMaterials.test.js` 的文本守卫覆盖多个 scene 源，是新增误报的主要来源。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
+- **invalid 25 个变异**（parse 校验失败，未计入捕获率）：`materialDispose.ts` 6、`sceneryAssembly.ts` 4、`playback/mapWorld.ts` 3、`playback/battleRuntime.ts` / `sceneryInstancing.ts` 各 2，`groundGeometryData.ts` / `heSplash.ts` / `playback/armorHighlight.ts` / `playback/labelsRuntime.ts` / `playback/mapAssets.ts` / `playback/pickReport.ts` / `playback/renderer.ts` / `playback/vehicleRuntime.ts` 各 1。全部是 FLIP_CMP 命中 TS 泛型/类型实参（`<T>` 被当作比较符），解析校验正确拒收；这些位点不进入分母，也不记为“存活”。
+- 本轮 51 个源的读取方基线全部全绿（baselineRed=0、inconclusive=0）；失败探针都能归入断言失败 / 解析失败两类。
 
 ## 评审跟进（2026-11-16）
 

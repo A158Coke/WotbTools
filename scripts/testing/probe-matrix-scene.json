@@ -98,7 +98,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 18999
+      "ms": 18961
     },
     {
       "source": "src/scene/assetBase.ts",
@@ -177,7 +177,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11909
+      "ms": 11895
     },
     {
       "source": "src/scene/groundGeometryData.ts",
@@ -261,7 +261,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10750
+      "ms": 10770
     },
     {
       "source": "src/scene/groundPass.js",
@@ -345,7 +345,7 @@
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12716
+      "ms": 12867
     },
     {
       "source": "src/scene/heSplash.ts",
@@ -440,7 +440,122 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10872
+      "ms": 10894
+    },
+    {
+      "source": "src/scene/materialDispose.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 723,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "'{' or ';' expected.",
+            "':' expected.",
+            "',' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 517,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "'{' or ';' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 1852,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "FLIP_CMP",
+          "index": 987,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "FLIP_CMP",
+          "index": 1816,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 696,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected.",
+            "';' expected."
+          ],
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "uniforms",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "texs",
+          "falsePositive": true,
+          "failedTests": [
+            "场景 GLB 材质管线（对齐上游的渲染实现） disposeObject3D 经 collectMaterialTextures 回收纹理（含 ShaderMaterial uniforms）"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "mats",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 0,
+      "semanticInvalid": 6,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 4869
     },
     {
       "source": "src/scene/penetration.js",
@@ -451,45 +566,43 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "FLIP_CMP",
-          "index": 13757,
+          "op": "NUM_OFF",
+          "index": 25878,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "FLIP_CMP",
-          "index": 2364,
+          "index": 26223,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 15202,
+          "index": 12771,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 13017,
+          "index": 25708,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "FLIP_CMP",
-          "index": 10105,
-          "killed": true,
-          "failedTests": [
-            "gap-armor first-layer ricochet surfacing (heatmap) 点击链：每个非外部层独立转正（BlitzKit）"
-          ]
+          "index": 23610,
+          "killed": false,
+          "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 12828,
+          "index": 11457,
           "killed": false,
           "failedTests": []
         }
@@ -497,31 +610,33 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "ricochetDeg",
+          "name": "moduleVariant",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "invalidHitReason",
+          "name": "coeff",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "invalidHits",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "heData",
+          "falsePositive": true,
+          "failedTests": [
+            "gap-armor first-layer ricochet surfacing (heatmap) HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底"
+          ]
         }
       ],
-      "semanticKilled": 1,
+      "semanticKilled": 0,
       "semanticTotal": 6,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
+      "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 18884
+      "ms": 19214
     },
     {
       "source": "src/scene/playback/armorHighlight.ts",
@@ -533,42 +648,47 @@
         {
           "id": "sem-0",
           "op": "FLIP_CMP",
-          "index": 13814,
+          "index": 16596,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 20289,
+          "index": 13038,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 31207,
+          "index": 12082,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 12985,
+          "op": "FLIP_CMP",
+          "index": 9100,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 33951,
+          "index": 40915,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 12051,
+          "index": 26634,
           "killed": false,
           "failedTests": []
         }
@@ -576,31 +696,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "disposeTarget",
+          "name": "scissorRect",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "meshNode",
+          "name": "minZ",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "_occluderOffset",
+          "name": "moduleMeshes",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15088
+      "ms": 14119
     },
     {
       "source": "src/scene/playback/battleRuntime.ts",
@@ -611,43 +731,57 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 10022,
+          "op": "FLIP_CMP",
+          "index": 6951,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected.",
+            "Expression expected.",
+            "An element access expression should take an argument."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "FLIP_CMP",
-          "index": 12911,
+          "index": 5376,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 13511,
+          "index": 17272,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 8977,
+          "op": "FLIP_CMP",
+          "index": 9005,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 3124,
+          "op": "FLIP_CMP",
+          "index": 6473,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected.",
+            "';' expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 9846,
+          "index": 18955,
           "killed": false,
           "failedTests": []
         }
@@ -655,31 +789,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "shotTeamColor",
+          "name": "wreckClock",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "parts",
+          "name": "spawnBurst",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "emitReplayFx",
+          "name": "since",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
+      "semanticTotal": 4,
+      "semanticInvalid": 2,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10972
+      "ms": 9172
     },
     {
       "source": "src/scene/playback/cameraRuntime.ts",
@@ -691,43 +825,43 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 37382,
+          "op": "FLIP_CMP",
+          "index": 38269,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
-          "op": "FLIP_CMP",
-          "index": 21139,
+          "op": "NUM_OFF",
+          "index": 36546,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "FLIP_CMP",
-          "index": 59651,
+          "op": "NUM_OFF",
+          "index": 51255,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 13511,
+          "op": "FLIP_CMP",
+          "index": 35674,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "FLIP_CMP",
-          "index": 56549,
+          "op": "NUM_OFF",
+          "index": 27558,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 21499,
+          "index": 13285,
           "killed": false,
           "failedTests": []
         }
@@ -735,33 +869,123 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "scoped",
+          "name": "movedPick",
           "falsePositive": true,
           "failedTests": [
-            "Sniper 穿深着色接线 SNIPER 进入时补预取敌方 armor 模板（tankData 晚到缺口）"
+            "拾取接线（源码级守卫） onScenePointerUp 先处理调试拾取再走选中语义"
           ]
         },
         {
           "id": "ren-1",
-          "name": "_recorderLastQuat",
+          "name": "onFlyCaptureCancel",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "distance",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "recorderAimPoint",
+          "falsePositive": true,
+          "failedTests": [
+            "Sniper 穿深着色接线 选目标与准星同源（Type39 瞄准点），不取相机正前方"
+          ]
         }
       ],
       "semanticKilled": 0,
       "semanticTotal": 6,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
+      "renameFalsePositives": 2,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 15398
+    },
+    {
+      "source": "src/scene/playback/labelsRuntime.ts",
+      "testFiles": [
+        "frontend/src/scene/sceneryMaterials.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 14208,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "FLIP_CMP",
+          "index": 1897,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected.",
+            "',' expected.",
+            "';' expected."
+          ],
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 5791,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 14982,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 5807,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 13145,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "labelsTime",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "LABEL_INTERVAL_IDLE_MS",
+          "falsePositive": true,
+          "failedTests": [
+            "播放时钟与速度档位（对齐上游的纯函数入口） 装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "labelsWrittenMs",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15079
+      "ms": 11005
     },
     {
       "source": "src/scene/playback/mapAssets.ts",
@@ -775,28 +999,97 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 15754,
+          "index": 15810,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 16180,
+          "index": 13060,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "FLIP_CMP",
-          "index": 20566,
+          "op": "NUM_OFF",
+          "index": 19472,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 21062,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
           "op": "FLIP_CMP",
-          "index": 3861,
+          "index": 16341,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 22171,
+          "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "'=>' expected.",
+            "Expression expected."
+          ],
+          "failedTests": []
+        }
+      ],
+      "rename": [
+        {
+          "id": "ren-0",
+          "name": "readyDestruct",
+          "falsePositive": false,
+          "failedTests": []
+        },
+        {
+          "id": "ren-1",
+          "name": "aniso",
+          "falsePositive": true,
+          "failedTests": [
+            "场景 GLB 材质管线（对齐上游的渲染实现） 场景 GLB 贴图各向异性随画质档（此前场景侧漏设=默认 1，掠射角发糊闪烁）"
+          ]
+        },
+        {
+          "id": "ren-2",
+          "name": "areasByEid",
+          "falsePositive": false,
+          "failedTests": []
+        }
+      ],
+      "semanticKilled": 0,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 1,
+      "renameTotal": 3,
+      "renameInvalid": 0,
+      "ms": 13885
+    },
+    {
+      "source": "src/scene/playback/mapWorld.ts",
+      "testFiles": [
+        "frontend/src/scene/groundPass.test.js",
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js",
+        "frontend/src/scene/seekPointer.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 3204,
           "killed": false,
           "invalid": true,
           "reason": "parse-error",
@@ -806,129 +1099,83 @@
           "failedTests": []
         },
         {
-          "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 13024,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 7884,
-          "killed": false,
-          "failedTests": []
-        }
-      ],
-      "rename": [
-        {
-          "id": "ren-0",
-          "name": "index",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-1",
-          "name": "areasByEid",
-          "falsePositive": false,
-          "failedTests": []
-        },
-        {
-          "id": "ren-2",
-          "name": "volatileBatches",
-          "falsePositive": false,
-          "failedTests": []
-        }
-      ],
-      "semanticKilled": 0,
-      "semanticTotal": 5,
-      "semanticInvalid": 1,
-      "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
-      "renameTotal": 3,
-      "renameInvalid": 0,
-      "ms": 13715
-    },
-    {
-      "source": "src/scene/playback/mapWorld.ts",
-      "testFiles": [
-        "frontend/src/scene/groundPass.test.js",
-        "frontend/src/scene/playbackScene.occlusion.test.js",
-        "frontend/src/scene/seekPointer.test.js"
-      ],
-      "baselineRed": false,
-      "semantic": [
-        {
-          "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 12179,
-          "killed": false,
-          "failedTests": []
-        },
-        {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 34499,
+          "index": 39050,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 33656,
+          "op": "FLIP_CMP",
+          "index": 38560,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "Expression expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 12355,
+          "index": 45678,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 12204,
+          "op": "FLIP_CMP",
+          "index": 30921,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 12740,
+          "op": "FLIP_CMP",
+          "index": 26623,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "',' expected.",
+            "Expression expected."
+          ],
           "failedTests": []
         }
       ],
       "rename": [
         {
           "id": "ren-0",
-          "name": "blob",
+          "name": "mapScenery",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "ground",
+          "name": "dirty",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "_tmpInstM",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "terrainLodPrev",
+          "falsePositive": true,
+          "failedTests": [
+            "地形 LOD 滞回与构建判据同源（review P2 回归锁） maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)",
+            "地形 LOD 滞回与构建判据同源（review P2 回归锁） 换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒"
+          ]
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 6,
-      "semanticInvalid": 0,
+      "semanticTotal": 3,
+      "semanticInvalid": 3,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
+      "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15311
+      "ms": 10939
     },
     {
       "source": "src/scene/playback/pickReport.ts",
@@ -940,35 +1187,49 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 10424,
+          "index": 9163,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 5835,
+          "index": 9393,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 6442,
+          "index": 6377,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 8466,
+          "op": "FLIP_CMP",
+          "index": 1141,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected.",
+            "Property or signature expected.",
+            "An element access expression should take an argument."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 6377,
+          "index": 8539,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 9096,
           "killed": false,
           "failedTests": []
         }
@@ -976,31 +1237,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "inst",
+          "name": "text",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "build",
+          "name": "chain",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "hits",
+          "name": "pickMarker",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
       "semanticTotal": 5,
-      "semanticInvalid": 0,
+      "semanticInvalid": 1,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10013
+      "ms": 10137
     },
     {
       "source": "src/scene/playback/renderer.ts",
@@ -1013,19 +1274,28 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 6735,
+          "index": 4467,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 4080,
+          "index": 6739,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
+          "op": "FLIP_CMP",
+          "index": 6023,
+          "killed": true,
+          "failedTests": [
+            "playbackScene 动态分辨率接线（?dynres） 装配有空间判定（DPR 无下调空间则跳过）、只喂实际渲染帧、调整即重设尺寸"
+          ]
+        },
+        {
+          "id": "sem-3",
           "op": "FLIP_CMP",
           "index": 3110,
           "killed": false,
@@ -1039,42 +1309,30 @@
           "failedTests": []
         },
         {
-          "id": "sem-3",
-          "op": "FLIP_CMP",
-          "index": 7738,
-          "killed": false,
-          "failedTests": []
-        },
-        {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 4509,
+          "index": 7318,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 3130,
+          "index": 7738,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "Expression expected."
-          ],
           "failedTests": []
         }
       ],
       "rename": [
         {
           "id": "ren-0",
-          "name": "softwareGL",
+          "name": "probe",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "renderer",
+          "name": "softwareGL",
           "falsePositive": false,
           "failedTests": []
         },
@@ -1087,74 +1345,69 @@
           ]
         }
       ],
-      "semanticKilled": 0,
-      "semanticTotal": 4,
-      "semanticInvalid": 2,
+      "semanticKilled": 1,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
       "semanticInconclusive": 0,
       "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 9536
+      "ms": 11103
     },
     {
       "source": "src/scene/playback/vehicleRuntime.ts",
       "testFiles": [
-        "frontend/src/scene/playbackScene.occlusion.test.js"
+        "frontend/src/scene/playbackScene.occlusion.test.js",
+        "frontend/src/scene/sceneryMaterials.test.js"
       ],
       "baselineRed": false,
       "semantic": [
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 11486,
+          "index": 23704,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 42718,
+          "index": 13817,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "FLIP_CMP",
-          "index": 10386,
+          "op": "NUM_OFF",
+          "index": 36917,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "FLIP_CMP",
-          "index": 5458,
+          "index": 3091,
           "killed": false,
           "invalid": true,
           "reason": "parse-error",
           "parseIssues": [
             "';' expected.",
-            "Property or signature expected.",
-            "Expression expected."
+            "Expression expected.",
+            "']' expected."
           ],
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "FLIP_CMP",
-          "index": 10180,
+          "op": "NUM_OFF",
+          "index": 12796,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "',' expected.",
-            "Expression expected."
-          ],
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 37621,
+          "index": 38405,
           "killed": false,
           "failedTests": []
         }
@@ -1162,31 +1415,33 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "startRaw",
+          "name": "ring",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "trackGeo",
+          "name": "separated",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "_spQ",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "poseStash",
+          "falsePositive": true,
+          "failedTests": [
+            "车体横滚（hull_roll）接线守卫 侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）"
+          ]
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 4,
-      "semanticInvalid": 2,
+      "semanticTotal": 5,
+      "semanticInvalid": 1,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
+      "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 12032
+      "ms": 14190
     },
     {
       "source": "src/scene/playbackScene.js",
@@ -1202,39 +1457,44 @@
       "baselineRed": false,
       "semantic": [
         {
+          "id": "sem-0",
+          "op": "FLIP_CMP",
+          "index": 13767,
+          "killed": false,
+          "failedTests": []
+        },
+        {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 35158,
-          "killed": true,
-          "failedTests": [
-            "场景 GLB 材质管线（对齐上游的渲染实现） 动画混合层：双采样器（albedo 走 UV0+位移 / 掩码走 UV1）+ 回放时钟驱动"
-          ]
+          "index": 51561,
+          "killed": false,
+          "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 55878,
+          "index": 65244,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 60862,
+          "op": "FLIP_CMP",
+          "index": 54385,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "FLIP_CMP",
-          "index": 16662,
+          "index": 54046,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 44758,
+          "index": 42643,
           "killed": false,
           "failedTests": []
         }
@@ -1242,33 +1502,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "DATA",
-          "falsePositive": true,
-          "failedTests": [
-            "playbackScene.seekTo 的游标接线（防回归） façade glue：seekTo 依次接线 resetShotsTo 与 transients.rewind（行为语义见 battleRuntime.seek.test.ts）"
-          ]
+          "name": "mobile",
+          "falsePositive": false,
+          "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "DEBUG",
+          "name": "tmpV",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "rebuildRenderer",
+          "name": "identityTime",
           "falsePositive": false,
           "failedTests": []
         }
       ],
-      "semanticKilled": 1,
-      "semanticTotal": 5,
+      "semanticKilled": 0,
+      "semanticTotal": 6,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 1,
+      "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 14399
+      "ms": 16576
     },
     {
       "source": "src/scene/sceneryAssembly.ts",
@@ -1279,36 +1537,55 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 18374,
+          "op": "FLIP_CMP",
+          "index": 1604,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 16040,
+          "op": "FLIP_CMP",
+          "index": 4706,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "'>' expected.",
+            "Variable declaration expected.",
+            "')' expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 12947,
+          "op": "FLIP_CMP",
+          "index": 1816,
           "killed": false,
+          "invalid": true,
+          "reason": "parse-error",
+          "parseIssues": [
+            "';' expected.",
+            "';' expected.",
+            "Declaration or statement expected."
+          ],
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 19088,
+          "index": 6562,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "FLIP_CMP",
-          "index": 2563,
+          "index": 2112,
           "killed": false,
           "invalid": true,
           "reason": "parse-error",
@@ -1320,8 +1597,8 @@
         },
         {
           "id": "sem-5",
-          "op": "FLIP_CMP",
-          "index": 3200,
+          "op": "NUM_OFF",
+          "index": 8316,
           "killed": false,
           "failedTests": []
         }
@@ -1329,9 +1606,11 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "blendLayer",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "underWater",
+          "falsePositive": true,
+          "failedTests": [
+            "场景 GLB 材质管线（对齐上游的渲染实现） 水下静态件不接光照图：按客户端折射通道口径（VIEW_DIFFUSE=0 ⇒ albedo，不受光、不乘 2）"
+          ]
         },
         {
           "id": "ren-1",
@@ -1341,19 +1620,19 @@
         },
         {
           "id": "ren-2",
-          "name": "softAlpha",
+          "name": "total",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 5,
-      "semanticInvalid": 1,
+      "semanticTotal": 2,
+      "semanticInvalid": 4,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
+      "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10644
+      "ms": 7293
     },
     {
       "source": "src/scene/sceneryInstancing.ts",
@@ -1366,41 +1645,28 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 12354,
+          "index": 13663,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "FLIP_CMP",
-          "index": 11682,
+          "index": 6742,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "',' expected.",
-            "Expression expected.",
-            "Expression expected."
-          ],
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "FLIP_CMP",
-          "index": 3570,
+          "index": 6415,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "',' expected.",
-            "Expression expected."
-          ],
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "FLIP_CMP",
-          "index": 2221,
+          "index": 1596,
           "killed": false,
           "invalid": true,
           "reason": "parse-error",
@@ -1411,20 +1677,21 @@
         },
         {
           "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 13541,
+          "op": "FLIP_CMP",
+          "index": 4433,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 5391,
+          "index": 7179,
           "killed": false,
           "invalid": true,
           "reason": "parse-error",
           "parseIssues": [
-            "',' expected."
+            "')' expected.",
+            "Expression expected."
           ],
           "failedTests": []
         }
@@ -1432,31 +1699,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "_idQ",
+          "name": "tmpBox",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "uniformValueSignature",
+          "name": "geometryTriCount",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "policy",
+          "name": "_idQ",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 2,
-      "semanticInvalid": 4,
+      "semanticTotal": 4,
+      "semanticInvalid": 2,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 9115
+      "ms": 12260
     },
     {
       "source": "src/scene/sceneryMaterials.ts",
@@ -1469,42 +1736,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 15044,
+          "index": 12980,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 13357,
+          "index": 33971,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 18873,
+          "index": 39486,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
-          "op": "NUM_OFF",
-          "index": 33006,
+          "op": "FLIP_CMP",
+          "index": 26345,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 42340,
+          "index": 2743,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 2743,
+          "index": 39274,
           "killed": false,
           "failedTests": []
         }
@@ -1512,19 +1779,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "prev",
+          "name": "sceneryMatCache",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "anim",
+          "name": "CARD_ALPHA_CUT",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "occRaw",
+          "name": "occMean",
           "falsePositive": false,
           "failedTests": []
         }
@@ -1536,7 +1803,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11850
+      "ms": 12138
     },
     {
       "source": "src/scene/tankViewer.js",
@@ -1547,37 +1814,30 @@
       "baselineRed": false,
       "semantic": [
         {
-          "id": "sem-0",
-          "op": "NUM_OFF",
-          "index": 37597,
-          "killed": false,
-          "failedTests": []
-        },
-        {
-          "id": "sem-1",
-          "op": "FLIP_CMP",
-          "index": 24602,
-          "killed": false,
-          "failedTests": []
-        },
-        {
           "id": "sem-2",
-          "op": "NUM_OFF",
-          "index": 49759,
+          "op": "FLIP_CMP",
+          "index": 38804,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 24741,
+          "index": 34828,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 48222,
+          "index": 34371,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "FLIP_CMP",
+          "index": 50828,
           "killed": false,
           "failedTests": []
         }
@@ -1585,31 +1845,33 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "heatFrames",
-          "falsePositive": false,
-          "failedTests": []
+          "name": "view",
+          "falsePositive": true,
+          "failedTests": [
+            "dolly-zoom world-overview scope guard 单车装甲检视与 shot replay 共用 Armor Inspector 实测标定"
+          ]
         },
         {
           "id": "ren-1",
-          "name": "gunGroups",
+          "name": "shot",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "initScene",
+          "name": "isShotReplay",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 5,
+      "semanticTotal": 4,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
-      "renameFalsePositives": 0,
+      "renameFalsePositives": 1,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 16948
+      "ms": 15642
     },
     {
       "source": "src/scene/terrainMesh.js",
@@ -1620,43 +1882,43 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "FLIP_CMP",
-          "index": 13493,
+          "op": "NUM_OFF",
+          "index": 18979,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 30866,
+          "index": 26868,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "FLIP_CMP",
-          "index": 9371,
+          "op": "NUM_OFF",
+          "index": 7091,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 25030,
+          "index": 10155,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "NUM_OFF",
-          "index": 16210,
+          "op": "FLIP_CMP",
+          "index": 25682,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 28737,
+          "index": 19440,
           "killed": false,
           "failedTests": []
         }
@@ -1664,19 +1926,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "digest",
+          "name": "cell",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "table",
+          "name": "emitPatch",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "emitPatch",
+          "name": "rErr",
           "falsePositive": false,
           "failedTests": []
         }
@@ -1688,7 +1950,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 11883
+      "ms": 12777
     },
     {
       "source": "src/scene/viewer/armorPlateModel.ts",
@@ -1700,76 +1962,74 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 10212,
+          "index": 13747,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
-          "op": "NUM_OFF",
-          "index": 14975,
+          "op": "FLIP_CMP",
+          "index": 3377,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 15049,
+          "index": 2162,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 10078,
+          "index": 2683,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
-          "op": "FLIP_CMP",
-          "index": 3447,
+          "op": "NUM_OFF",
+          "index": 22855,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
-          "op": "NUM_OFF",
-          "index": 11753,
-          "killed": true,
-          "failedTests": [
-            "dolly-zoom world-overview scope guard WebGL context lost 显示带 GPU 信息的错误态，retry 重建 renderer"
-          ]
+          "op": "FLIP_CMP",
+          "index": 2662,
+          "killed": false,
+          "failedTests": []
         }
       ],
       "rename": [
         {
           "id": "ren-0",
-          "name": "openSpacedKeys",
+          "name": "applySpacedBackStencil",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "turSet",
+          "name": "openBits",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "installPivot",
+          "name": "node",
           "falsePositive": false,
           "failedTests": []
         }
       ],
-      "semanticKilled": 1,
+      "semanticKilled": 0,
       "semanticTotal": 6,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 18743
+      "ms": 19535
     },
     {
       "source": "src/scene/viewer/armorShaders.ts",
@@ -1782,64 +2042,64 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 26417,
-          "killed": true,
-          "failedTests": [
-            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
-          ]
+          "index": 25366,
+          "killed": false,
+          "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 25943,
+          "index": 29601,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 27579,
+          "index": 27620,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 24819,
+          "index": 24687,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 29604,
+          "index": 24155,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 24784,
-          "killed": false,
-          "failedTests": []
+          "index": 26414,
+          "killed": true,
+          "failedTests": [
+            "Sniper 穿深着色接线 装甲 RT 按目标矩形分配：视口偏移相机 + spacedRect 采样映射（full → rect 局部）"
+          ]
         }
       ],
       "rename": [
         {
           "id": "ren-0",
-          "name": "MODULE_STATE_FRAG",
+          "name": "SPACED_STATE_FRAG",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "SPACED_VERT",
+          "name": "EXTERNAL_FRAG",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "_emptySpacedTex",
+          "name": "spacedCommonUniforms",
           "falsePositive": false,
           "failedTests": []
         }
@@ -1851,7 +2111,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 18923
+      "ms": 19493
     },
     {
       "source": "src/scene/viewer/shotReplay.ts",
@@ -1862,43 +2122,43 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "FLIP_CMP",
-          "index": 68153,
+          "op": "NUM_OFF",
+          "index": 94953,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 43050,
+          "index": 51940,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 59264,
+          "index": 67878,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "FLIP_CMP",
-          "index": 43817,
+          "index": 48951,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 93460,
+          "index": 94699,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 67878,
+          "index": 26426,
           "killed": false,
           "failedTests": []
         }
@@ -1906,19 +2166,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "dirTraj",
+          "name": "ctxLvSpd",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "sHit",
+          "name": "SHOW_TRAJ_ANNO",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "turretPivotMissing",
+          "name": "mkP1",
           "falsePositive": false,
           "failedTests": []
         }
@@ -1930,7 +2190,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 10975
+      "ms": 11468
     },
     {
       "source": "src/scene/viewer/shotResultCard.ts",
@@ -1942,55 +2202,43 @@
       "semantic": [
         {
           "id": "sem-0",
-          "op": "FLIP_CMP",
-          "index": 638,
+          "op": "NUM_OFF",
+          "index": 14845,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "';' expected."
-          ],
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 14832,
+          "index": 15582,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
-          "op": "FLIP_CMP",
-          "index": 2495,
+          "op": "NUM_OFF",
+          "index": 7749,
           "killed": false,
-          "invalid": true,
-          "reason": "parse-error",
-          "parseIssues": [
-            "';' expected.",
-            "';' expected.",
-            "Expression expected."
-          ],
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 4529,
+          "index": 14546,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 16415,
+          "index": 17035,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "FLIP_CMP",
-          "index": 10873,
+          "index": 14902,
           "killed": false,
           "failedTests": []
         }
@@ -1998,31 +2246,31 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "fmtNum",
+          "name": "heMin",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "colorHex",
+          "name": "finalSeg",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "probabilityColorCss",
+          "name": "damageHtml",
           "falsePositive": false,
           "failedTests": []
         }
       ],
       "semanticKilled": 0,
-      "semanticTotal": 4,
-      "semanticInvalid": 2,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 15064
+      "ms": 20131
     },
     {
       "source": "src/scene/viewer/shotTrajectoryGeometry.ts",
@@ -2034,35 +2282,35 @@
         {
           "id": "sem-0",
           "op": "FLIP_CMP",
-          "index": 3270,
+          "index": 4157,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 3812,
+          "index": 3532,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 3590,
+          "index": 2965,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 2976,
+          "index": 2944,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 4159,
+          "index": 2976,
           "killed": false,
           "failedTests": []
         }
@@ -2070,19 +2318,19 @@
       "rename": [
         {
           "id": "ren-0",
-          "name": "camDir",
+          "name": "curve",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-1",
-          "name": "sawRicPoint",
+          "name": "ricLayer",
           "falsePositive": false,
           "failedTests": []
         },
         {
           "id": "ren-2",
-          "name": "dotGeo",
+          "name": "reflected",
           "falsePositive": false,
           "failedTests": []
         }
@@ -2094,7 +2342,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 3,
       "renameInvalid": 0,
-      "ms": 9903
+      "ms": 10709
     }
   ]
 }
