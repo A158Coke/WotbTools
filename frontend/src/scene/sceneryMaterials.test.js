@@ -1341,6 +1341,24 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
     expect(fn).not.toMatch(/terrainLodDist/)
     expect(fn).toMatch(/terrainLodStaleReason\(terrainLodPrev, cur, now - terrainLodAt\)/)
   })
+
+  // PR #954 评审 F3/F4：宿主停手后不再有帧会走到 maybeRebuildTerrainLod，换装/异步失败
+  // 都必须显式安排一次最终姿态复查，不能只依赖「下一帧」。
+  it('换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒', () => {
+    const swapStart = mapWorldSrc.indexOf('function applyTerrainSwap')
+    expect(swapStart).toBeGreaterThan(0)
+    const swap = mapWorldSrc.slice(swapStart, mapWorldSrc.indexOf('function maybeRebuildTerrainLod', swapStart))
+    // 换装快照与当前相机不一致 → 节流到期唤醒；一致 → 撤销旧唤醒。
+    expect(swap).toMatch(/terrainLodPoseReason\(job\.snapshot, terrainLodState\(camera, controls\.target, camera\.aspect\)\)/)
+    expect(swap).toMatch(/terrainLodWake\.scheduleElapsed\(/)
+    expect(swap).toMatch(/terrainLodWake\.cancel\(\)/)
+    // 异步 Worker 失败：停手时也要有脏帧才能进同步回退。
+    expect(mapWorldSrc).toMatch(/onWorkerLost:[\s\S]{0,800}?deps\.invalidate\(\)/)
+    // 已按当前姿态发出 / 同步回退 / 会话重置 / 销毁：待唤醒不再需要。
+    expect(mapWorldSrc.match(/terrainLodWake\.cancel\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
+    expect(mapWorldSrc).toMatch(/if \(sch\.request\([^\n]*\)\) \{[^}]*terrainLodWake\.cancel\(\)/)
+    expect(mapWorldSrc).toMatch(/terrainLodWake\.cancel\(\);\s*\n\s*terrainLodPrev = cur;/)
+  })
 })
 
 describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () => {

@@ -15,7 +15,7 @@ import { mapBases } from '../../data/mapBases.js'
 import { playableBounds } from '../../data/playableBounds.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
-  terrainLodState, terrainLodStaleReason, terrainSurfaceHeightAt,
+  terrainLodState, terrainLodPoseReason, terrainLodStaleReason, terrainSurfaceHeightAt,
 } from '../terrainMesh.js'
 import { treeFrame } from '../destructibles.js'
 import type { DestructibleFoldState } from '../destructibles.js'
@@ -35,6 +35,7 @@ import { createLoadProgress } from '../loadProgress.js'
 import { createPerf } from './perf.ts'
 import { createTerrainLodScheduler } from './terrainLodScheduler.ts'
 import type { TerrainLodScheduler, TerrainLodJob, GroundGeometryData, TerrainSwapInfo } from './terrainLodScheduler.ts'
+import { createTerrainLodWake } from './terrainLodWake.ts'
 
 type PerfHandle = ReturnType<typeof createPerf>
 
@@ -219,6 +220,9 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
   let terrainWorkerFailed = false;
   let terrainSrcField: unknown = null, terrainSrcMask: unknown = null;   // 已告知 Worker 的来源（引用比较）
   let perfTerrainChecks = 0, perfTerrainRebuilds = 0;
+  /** 换装后的最终姿态兜底（见 terrainLodWake.ts）：换上的可能是在途期间旧机位的结果，
+   *  此时宿主已停手；节流到期必须再唤醒一帧判定当前相机。 */
+  const terrainLodWake = createTerrainLodWake(() => deps.invalidate(), () => deps.destroyed());
   // 场景遮挡候选格（**性能关键**）：早先对整个 `mapScenery` 做**递归全量**射线检测，
   // 会遍历**整张场景 GLB**（本工程实测 3000+ 节点、含全部树卡片批次）——
   // 单次可达数十~数百毫秒。它在"标签可见 + 正在播放"时按轮转触发，于是表现为
@@ -350,6 +354,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
+    terrainLodWake.cancel();   // 旧场景的最终姿态复查随场景作废
     terrainScheduler?.invalidate();   // 在途 Worker 结果按代号作废
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     annotationSurfaceGrid = null;   // 3D annotation 表面候选格同样属于会话场景
@@ -823,6 +828,8 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
         terrainSrcField = null; terrainSrcMask = null
         const perf = deps.perf()
         if (perf) perf.event({ stage: 'terrain-build', mode: 'sync-fallback', reason: 'worker-lost', detail: reason })
+        // 异步失败可能发生在宿主停手之后：没有脏帧就不会有人跑到同步回退。显式唤醒一帧。
+        deps.invalidate()
       },
     })
     return terrainScheduler
@@ -842,6 +849,15 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     deps.constrainFreeCameraAltitude()
     deps.reprojectAnnotationHeights()
     deps.onTerrainReground()
+    // 当前相机若已不符合刚换上的快照（在途期间移动后停手），节流窗内不会再有提交：
+    // 到期唤醒一帧，让最终姿态得到一次判定；已匹配则撤销旧的待唤醒。
+    const camera = deps.getCamera()
+    const controls = deps.getControls()
+    if (camera && controls && terrainLodPoseReason(job.snapshot, terrainLodState(camera, controls.target, camera.aspect))) {
+      terrainLodWake.scheduleElapsed(performance.now() - terrainLodAt)
+    } else {
+      terrainLodWake.cancel()
+    }
     if (perf) {
       const swapMs = performance.now() - t0
       perf.event({ stage: 'terrain-build', ...(data.diagnostics ?? {}), mode: 'worker', reason: job.reason, queueMs: info.queueMs, workerMs: info.workerMs, swapMs })
@@ -868,9 +884,14 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     const sch = ensureTerrainScheduler()
     if (sch) {
       syncTerrainWorkerSource(sch)
-      if (sch.request({ request: terrainBuildRequest(), snapshot: cur, reason })) return
+      if (sch.request({ request: terrainBuildRequest(), snapshot: cur, reason })) {
+        // 已按当前姿态发出（或在途已有更新的任务）：待唤醒的最终姿态复查不再需要。
+        terrainLodWake.cancel()
+        return
+      }
     }
     // 同步路径（Worker 不可用 / 出错的回退）：与异步前的行为逐字节一致
+    terrainLodWake.cancel();
     terrainLodPrev = cur;
     terrainLodAt = now;
     if (perf) perfTerrainRebuilds++;
@@ -1054,6 +1075,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
     annotationSurfaceGrid = null;
+    terrainLodWake.cancel();
     terrainScheduler?.dispose(); terrainScheduler = null;   // 随 mapWorld 销毁 terminate Worker
     clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）
     if (mapTexture) { mapTexture.dispose(); mapTexture = null; }

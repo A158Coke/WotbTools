@@ -159,21 +159,32 @@ export function terrainLodStale(prev, cur, sinceMs, minIntervalMs = 120) {
   return terrainLodStaleReason(prev, cur, sinceMs, minIntervalMs) !== null;
 }
 
-/** `terrainLodStale` 的原因旁路：返回命中的判据（`first` / `distance` / `lateral` / `fov` / `aspect`），
- *  不过期或被节流挡住时返回 null。判据数值与先后顺序是 `terrainLodStale` 的唯一来源——
- *  布尔结果由本函数派生（`!== null`），诊断只读原因，不影响是否重建。 */
-export function terrainLodStaleReason(prev, cur, sinceMs, minIntervalMs = 120) {
+/** 两次地形 LOD 重建的最小间隔。调用方的节流判据与「换装后的最终姿态复查」共用同一个值。 */
+export const TERRAIN_LOD_MIN_INTERVAL_MS = 120;
+
+/** 纯姿态判据（不含节流）：返回命中的判据原因，未过期返回 null。
+ *  `terrainLodStaleReason` 在它之上只加节流门；换装后需要知道「当前相机是否仍不符合已换装快照」
+ *  时不传 sinceMs，直接用本函数。 */
+export function terrainLodPoseReason(prev, cur) {
   if (!prev || !(prev.d > 0)) return 'first';                 // 首帧
-  const gate = (reason) => (sinceMs >= minIntervalMs ? reason : null);
   const rel = (cur.d - prev.d) / Math.max(1, prev.d);
-  if (rel <= -0.05 || rel >= 0.40) return gate('distance');
+  if (rel <= -0.05 || rel >= 0.40) return 'distance';
   const dx = cur.px - prev.px, dy = cur.py - prev.py, dz = cur.pz - prev.pz;
   const along = dx * cur.ux + dy * cur.uy + dz * cur.uz;
   const lat = Math.hypot(dx - along * cur.ux, dy - along * cur.uy, dz - along * cur.uz);
-  if (lat >= 0.05 * Math.max(1, cur.d)) return gate('lateral');
-  if (Math.abs(cur.fovY - prev.fovY) > 1e-3 * Math.max(1e-3, prev.fovY)) return gate('fov');
-  if (Math.abs(cur.aspect - prev.aspect) > 1e-3 * Math.max(1e-3, prev.aspect)) return gate('aspect');
+  if (lat >= 0.05 * Math.max(1, cur.d)) return 'lateral';
+  if (Math.abs(cur.fovY - prev.fovY) > 1e-3 * Math.max(1e-3, prev.fovY)) return 'fov';
+  if (Math.abs(cur.aspect - prev.aspect) > 1e-3 * Math.max(1e-3, prev.aspect)) return 'aspect';
   return null;
+}
+
+/** `terrainLodStale` 的原因旁路：返回命中的判据（`first` / `distance` / `lateral` / `fov` / `aspect`），
+ *  不过期或被节流挡住时返回 null。判据数值与先后顺序是 `terrainLodStale` 的唯一来源——
+ *  布尔结果由本函数派生（`!== null`），诊断只读原因，不影响是否重建。 */
+export function terrainLodStaleReason(prev, cur, sinceMs, minIntervalMs = TERRAIN_LOD_MIN_INTERVAL_MS) {
+  const reason = terrainLodPoseReason(prev, cur);
+  if (!reason || reason === 'first') return reason;           // 首帧不等节流
+  return sinceMs >= minIntervalMs ? reason : null;
 }
 
 /** 底图贴图 UV（低档/均衡档与分层材质不可用时回退：**契约化的 `ground.webp`** 摊在**地形网格**上）。
