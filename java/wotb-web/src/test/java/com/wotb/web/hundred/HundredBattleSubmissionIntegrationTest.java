@@ -210,7 +210,7 @@ class HundredBattleSubmissionIntegrationTest {
      * storeAll 落盘 5 文件 → attach 恰好 5 行（slot 1..5）→ admin list/download 可读 →
      * REJECT 后清空截图、删除 metadata，并清理无引用物理文件。
      * createSubmission 的 facts 解析/校验部分由单元测试覆盖
-     * （{@code HundredBattleSubmissionServiceTest}，用 {@code testsupport/ReplayFactsJson} 构造客户端结算事实；
+     * （{@code HundredSubmissionValidationTest}/{@code HundredSubmissionTestSupport}，用 {@code testsupport/ReplayFactsJson} 构造客户端结算事实；
      * 服务器没有 parser，不存在 ReplayParser mock）。
      */
     @Test
