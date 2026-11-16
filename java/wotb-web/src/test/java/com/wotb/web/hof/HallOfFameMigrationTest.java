@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 迁移验证（真实旧 schema 启动）：V1..V15 建旧 leaderboard_record → 插入历史行（含 replay metadata）→
  * 迁移到最新（V16/V17）→ 校验 rename-in-place、历史数据保留、battle_type/arena_bonus_type backfill、
- * 约束/索引重命名、JPA validate 由 WebApiTest 覆盖。
+ * 约束/索引重命名、JPA validate 由 HallOfFameReplayApiIntegrationTest 覆盖。
  */
 @Testcontainers(disabledWithoutDocker = true)
 class HallOfFameMigrationTest {

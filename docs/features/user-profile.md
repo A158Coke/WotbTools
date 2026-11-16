@@ -53,7 +53,7 @@
 - 解绑 / 切换绑定账号会清空验证时间（陈旧验证不得被继承）。
 
 守卫：`ReplayVerificationBadgeBoundaryTest`（`wotbAccountVerifiedAt` 只允许出现在 user 域的实体 / DTO / Mapper /
-Service，任何授权代码读取它都会失败）、`UserProfileServiceTest#verificationIsAClientAssertedComparisonNotAReplayAuthenticityCheck`。
+Service，任何授权代码读取它都会失败）、`UserProfileBindingVerificationTest#verificationIsAClientAssertedComparisonNotAReplayAuthenticityCheck`。
 想让徽章影响权限，必须先推翻本决策并重新设计验真机制——而服务器没有 parser。
 
 ## 资料失败与认证失败
