@@ -45,7 +45,6 @@ import {
   MARKER_CORE_PX,
   computeLabelLayout,
 } from '../utils/labelLayout'
-import { usePlaybackAnnotations } from '../composables/usePlaybackAnnotations.js'
 
 /**
  * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
@@ -486,7 +485,7 @@ const {
 })
 
 // ---- 地图标注：工具/绘制手势/文字会话/route 的唯一 owner = usePlaybackAnnotationEditor
-// （#820 Agent C Step 2）；历史快照 / 草稿 / 选中项的事实源仍是 usePlaybackAnnotations。
+// （#820 Agent C Step 2）；历史快照 / 草稿 / 选中项的事实源仍是 useAnnotationState。
 const {
   annotationOpen,
   activeTool,

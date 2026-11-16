@@ -24,10 +24,12 @@ import { createMapView } from '../utils/mapView.js'
 import {
   ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
   ANNOT_FONT_SIZE, ANNOT_TANK_CLASSES, ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  annotationDraftFromTool, applyEraser, canRedo, canUndo, commit, hitTestAnnotation, isDegenerateAnnotation,
-  isValidAnnotation, projectAnnotationToSvg, redo, screenToSemantic, semanticWidthFromSlider, svgToScreen,
-  translateAnnotation, undo,
+  annotationDraftFromTool, applyEraser, canRedo, canUndo, hitTestAnnotation, isDegenerateAnnotation,
+  isValidAnnotation, screenToSemantic, svgToScreen, translateAnnotation,
 } from '../utils/annotation.js'
+import { useAnnotationState } from '../composables/useAnnotationState.js'
+import { useAnnotationSvgProjection } from '../composables/useAnnotationSvgProjection.js'
+import { useMapPreviewAnnotationFile } from '../composables/useMapPreviewAnnotationFile.js'
 import { clampViewPan, zoomViewAt } from '../utils/battlePlayback.js'
 import { computeExportDimensions, downloadBlob, sanitizeFilename } from '../utils/exportReplayPng.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
@@ -187,19 +189,7 @@ onBeforeUnmount(() => {
 })
 // 底图解析的 watch 注册在标注状态声明之后（见文件后部）——immediate 首评需要完整状态
 
-const semPerSvgX = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.W > 0 ? (b.xMax - b.xMin) / mapView.value.W : 1
-})
-const semPerSvgY = computed(() => {
-  const b = mapView.value.renderBounds
-  return b && mapView.value.H > 0 ? (b.yMax - b.yMin) / mapView.value.H : 1
-})
 const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
-const annotWidth = computed(() => semanticWidthFromSlider(annotWidthSlider.value, {
-  semanticSpan: mapView.value.renderBounds ? mapView.value.renderBounds.xMax - mapView.value.renderBounds.xMin : 0,
-  logicalSpan: mapView.value.W,
-}))
 // 橡皮半径独立于画笔宽度（与回放同一语义）：allowedTools 让 toolbar 走 3D 形态
 // （宽度滑条隐藏），橡皮尺寸必须显式供给，否则没有任何尺寸控制可用。
 const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
@@ -406,14 +396,8 @@ const annotationOpen = ref(false)
 const annotationTool = ref(null)
 const annotationColor = ref(ANNOT_COLORS[0])
 const annotationsVisible = ref(true)
-const annotationHistory = ref([[]])
-const annotationIndex = ref(0)
-const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
-const selectedAnnotationIndex = ref(-1)
-const selectedAnnotation = computed(() => annotations.value[selectedAnnotationIndex.value] || null)
 const routePoints = ref([])
 const textSession = ref(null)
-const draft = ref(null)
 let moveOriginal = null
 let drawStart = null
 let drawPoints = []
@@ -423,51 +407,37 @@ let drawingStartScreen = null
 const exportingImage = ref(false)
 const exportError = ref('')
 
-function replaceAnnotations(next) {
-  const state = commit(annotationHistory.value, annotationIndex.value, next)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function commitDraft(annotation) {
-  replaceAnnotations([...annotations.value, annotation])
-}
-function updateSelected(patch) {
-  if (!selectedAnnotation.value) return
-  const index = selectedAnnotationIndex.value
-  replaceAnnotations(annotations.value.map((annotation, i) => i === index ? { ...annotation, ...patch } : annotation))
-}
+// 历史快照 / 草稿 / 选中项的唯一 owner = useAnnotationState（与回放 2D/3D、预览 3D 共用）；
+// SVG 投影 owner = useAnnotationSvgProjection（与回放 2D 编辑器共用）。
+const {
+  history: annotationHistory, historyIndex: annotationIndex, annotations, draft, selectedAnnotationIndex,
+  selectedAnnotation, reset: resetAnnotationHistory, replaceAnnotations, commitDraft, undo: undoHistory,
+  redo: redoHistory, clearAll, deleteSelected, renameSelected: renameSelectedState, updateSelected,
+} = useAnnotationState()
+const { semPerSvgX, annotWidth, renderedAnnotations } = useAnnotationSvgProjection(mapView, {
+  widthSlider: annotWidthSlider,
+  annotations,
+  draft,
+  selectedIndex: selectedAnnotationIndex,
+  replacingSelected: () => !!moveOriginal,
+  showSelection: () => annotationOpen.value,
+})
 function undoAnnotation() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  const state = undo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
+  undoHistory()
 }
 function redoAnnotation() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  const state = redo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
+  redoHistory()
 }
 function clearAnnotations() {
   cancelRoute()
-  selectedAnnotationIndex.value = -1
-  if (annotations.value.length) replaceAnnotations([])
-}
-function deleteSelected() {
-  if (!selectedAnnotation.value) return
-  replaceAnnotations(annotations.value.filter((_, index) => index !== selectedAnnotationIndex.value))
-  selectedAnnotationIndex.value = -1
+  clearAll()
 }
 function renameSelected(label) {
-  const value = String(label).trim().slice(0, 60)
-  if (!selectedAnnotation.value) return
-  if (selectedAnnotation.value.type === 'text') {
-    // 空 text 不是可持久化 schema；保持原值，避免导出的 JSON 无法重新导入。
-    if (!value) return
-    updateSelected({ text: value })
-  } else updateSelected({ label: value })
+  // 空 text 不是可持久化 schema；保持原值，避免导出的 JSON 无法重新导入。
+  if (selectedAnnotation.value?.type === 'text' && !String(label).trim()) return
+  renameSelectedState(label)
 }
 function setAnnotationTool(tool) {
   if (textSession.value) commitTextSession(textSession.value)
@@ -500,16 +470,13 @@ function closeAnnotation() {
   selectedAnnotationIndex.value = -1
 }
 function resetAnnotationState() {
-  annotationHistory.value = [[]]
-  annotationIndex.value = 0
+  resetAnnotationHistory()
   annotationOpen.value = false
   annotationTool.value = null
   annotationsVisible.value = true
-  selectedAnnotationIndex.value = -1
   routePoints.value = []
   if (textSession.value) cancelTextSession(textSession.value)
   textSession.value = null
-  draft.value = null
   exportError.value = ''
   exportingImage.value = false
   pointers.clear()
@@ -786,22 +753,6 @@ const textInputStyle = computed(() => {
   return { left: `${point.x}px`, top: `${point.y}px` }
 })
 
-/** 渲染输入：全类型 semantic → SVG；draft 覆盖被拖动的原 annotation。 */
-const renderedAnnotations = computed(() => {
-  const toX = mapView.value.toX
-  const toY = mapView.value.toY
-  const invX = 1 / Math.max(1e-9, semPerSvgX.value)
-  const invY = 1 / Math.max(1e-9, semPerSvgY.value)
-  const list = [...annotations.value]
-  if (draft.value) {
-    if (moveOriginal && selectedAnnotationIndex.value >= 0) list[selectedAnnotationIndex.value] = draft.value
-    else list.push(draft.value)
-  }
-  return list.map((annotation, index) => ({
-    ...projectAnnotationToSvg(annotation, { toX, toY, invX, invY, widthFallback: annotWidth.value }),
-    selected: annotationOpen.value && index === selectedAnnotationIndex.value,
-  }))
-})
 const mapTouchPan = computed(() => !annotationOpen.value && view.scale <= fitScale() + 1e-3)
 
 // ---------- 底图切换 = 换图：标注清空（语义随图）+ 重解析底图 + 重新 fit ----------
@@ -812,66 +763,18 @@ watch(() => props.basemap, (bm) => {
 }, { immediate: true })
 
 // ---------- 标注导入 / 导出（完整 schema；旧 pen-only / -2d / -3d 兼容）----------
-const IMPORT_KIND = 'map-preview-annotations'
-const IMPORT_KINDS = new Set([
-  IMPORT_KIND,
-  'map-preview-annotations-2d',
-  'map-preview-annotations-3d',
-])
-const importMessage = ref('')
-let importMessageTimer = 0
-function flashImportMessage(key, values) {
-  importMessage.value = t(key, values)
-  clearTimeout(importMessageTimer)
-  importMessageTimer = setTimeout(() => { importMessage.value = '' }, 4000)
-}
-function exportAnnotations() {
-  if (!annotations.value.length) {
-    flashImportMessage('mapPreview.annotations.noAnnotations')
-    return
-  }
-  const payload = {
-    version: 1,
-    kind: IMPORT_KIND,
-    mapKey: props.mapKey,
-    exportedAt: new Date().toISOString(),
-    annotations: annotations.value,
-  }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `map-annotations-${props.mapKey}-2d.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-async function importAnnotations(event) {
-  const file = event.target.files?.[0] || null
-  event.target.value = ''
-  if (!file) return
-  let payload = null
-  try {
-    payload = JSON.parse(await file.text())
-  } catch {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  if (!payload || payload.version !== 1 || !IMPORT_KINDS.has(payload.kind) || !Array.isArray(payload.annotations)) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  if (payload.mapKey !== props.mapKey) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
-    return
-  }
-  if (!payload.annotations.every(isValidAnnotation)) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  replaceAnnotations(payload.annotations)
-  selectedAnnotationIndex.value = -1
-  flashImportMessage('mapPreview.annotations.importedCount', { count: payload.annotations.length })
-}
+// 文件 schema owner = useMapPreviewAnnotationFile（与 3D 预览共用，可互导）。
+const { importMessage, exportAnnotations, importAnnotations } = useMapPreviewAnnotationFile({
+  mapKey: () => props.mapKey,
+  annotations,
+  validate: isValidAnnotation,
+  suffix: '2d',
+  apply: (items) => {
+    replaceAnnotations(items)
+    selectedAnnotationIndex.value = -1
+  },
+  t,
+})
 
 // ---------- 当前视角 PNG 导出（html2canvas 捕获 BattleMap 的 .pb-map）----------
 function mapPngFilename() {
