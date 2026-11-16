@@ -9,6 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import _tankopedia_items as items
 import update_tankopedia as ut
 from _tankopedia_test_fixtures import (
     shell, gun, turret, tank_data, root, filter_tiers, filter_categories,
@@ -47,9 +48,11 @@ class EquipmentTest(unittest.TestCase):
                     {"id": 103, "code": "CALIBRATED_SHELLS"},
                     {"id": 122, "code": "IMPROVED_VERTICAL_STABILIZER"},
                     {"id": 123, "code": "IMPROVED_SUSPENSION"},
+                    {"id": 999991, "code": "TEST_ONLY_EQUIPMENT"},
                 ]}, f)
-            with mock.patch.object(ut, "CATALOG_DIR", catalog):
+            with mock.patch.object(items, "CATALOG_DIR", catalog):
                 equipment_map = ut.load_equipment_catalog()
+                self.assertEqual(equipment_map[999991], "TEST_ONLY_EQUIPMENT")
 
         vehicles = ut.apply_equipment(ut.parse_tanks(tanks_pb), presets, equipment_map)
         vehicle = vehicles["58641"]
@@ -128,14 +131,18 @@ class ItemFilterTest(unittest.TestCase):
                 json.dump({"items": [
                     {"id": "SMALL_FOOD", "sourceIds": [0]},
                     {"id": "STANDARD_FUEL", "sourceIds": [18]},
+                    {"id": "TEST_ONLY_PROVISION", "sourceIds": [999992]},
                 ]}, f)
             with open(os.path.join(catalog, "consumables.json"), "w", encoding="utf-8") as f:
                 json.dump({"items": [
                     {"id": 1, "code": "AUTOMATIC_FIRE_EXTINGUISHER"},
                     {"id": 18, "code": "ADRENALINE"},
+                    {"id": 999993, "code": "TEST_ONLY_CONSUMABLE"},
                 ]}, f)
-            with mock.patch.object(ut, "CATALOG_DIR", catalog):
+            with mock.patch.object(items, "CATALOG_DIR", catalog):
                 prov_map, cons_map = ut.load_catalog()
+                self.assertEqual(prov_map[999992], "TEST_ONLY_PROVISION")
+                self.assertEqual(cons_map[999993], "TEST_ONLY_CONSUMABLE")
                 vehicles = ut.apply_items(
                     {"49": self.vehicle(nation="other")},
                     ut.parse_item_defs(provisions_pb),
