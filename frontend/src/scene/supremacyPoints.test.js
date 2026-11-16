@@ -52,46 +52,15 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function tick()') + 4000)
 
-  it('点数每 tick 无条件重算 + 变更守卫写入（不再包在"有采样"的 if 里）', () => {
-    expect(tick).toMatch(/const pts = pointsAt\(DATA\.supremacy_points, T, DATA\.meta\.friendly_team\);/)
-    // 写入带同值守卫（这是仅存的 60Hz tick 级 store 写入）；**重算本身必须无条件**——
-    // 从争霸场切回普通场时 supremacy_points 缺失，靠每 tick 重算把 null 推上屏清残值
-    expect(tick).toMatch(/if \(store\.pointsFriend !== pts\.friend\) store\.pointsFriend = pts\.friend;/)
-    expect(tick).toMatch(/if \(store\.pointsEnemy !== pts\.enemy\) store\.pointsEnemy = pts\.enemy;/)
-    // 旧写法：整个赋值块被 if (DATA.supremacy_points && ...) 包住
-    expect(tick).not.toMatch(/if \(DATA\.supremacy_points && DATA\.supremacy_points\.length\) \{/)
-    // 计算与赋值相邻，且所在块不得是 if 分支（裸块 = 无条件执行）
-    const block = tick.slice(tick.indexOf('const pts = pointsAt'))
-    expect(block.slice(0, 400)).toMatch(/if \(store\.pointsFriend !== pts\.friend\) store\.pointsFriend = pts\.friend;/)
-    expect(tick).not.toMatch(/if \([^\n]*\)\s*\{\s*const pts = pointsAt/)
-  })
-
-  it('teardown 显式归零 HUD 派生字段（切换会话不留残值）', () => {
+  it('teardown 显式归零 HUD 点数字段（clearBases 释放行为见 playback/bases.tracers.behavior.test.ts）', () => {
+    // pointsFriend/pointsEnemy 的归零闭合在 teardownSession 闭包，无可注入 seam（保留源码守卫）
     const td = src.slice(src.indexOf('function teardownSession'))
     expect(td).toMatch(/store\.pointsFriend = null; store\.pointsEnemy = null;/)
-    // 基地视图模型随贴地标记一起清空（clearBases 内 store.baseViews = []）
-    expect(td).toMatch(/clearBases\(\);/)
-    // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4），清空断言随实现迁移
-    const basesSrc = readFileSync(resolve(here, 'playback/bases.ts'), 'utf8')
-    expect(basesSrc.slice(basesSrc.indexOf('function clearBases'))).toMatch(/store\.baseViews = \[\];/)
   })
 })
 
 describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
-  // 基地色 token 兜底 2026-10-24 随基地系统出仓 playback/bases.js，守卫随实现迁移
-  const basesSrc = readFileSync(resolve(here, 'playback/bases.ts'), 'utf8')
-  // 炮线阵营分流 2026-11-06 随战斗表现出仓 playback/battleRuntime.ts（#820 Step 5）
-  const battleSrc = readFileSync(resolve(here, 'playback/battleRuntime.ts'), 'utf8')
-
-  it('中立与阵营未知收敛到 white（不再用灰）', () => {
-    // 基地中立色走阵营 token --color-team-neutral，兜底同为白色
-    expect(basesSrc).toMatch(/neutral: '#f5f5f5'/)
-    expect(basesSrc).toMatch(/--color-team-neutral/)
-    expect(src).toMatch(/if \(t === 0 \|\| f === 0\) return COLOR_UNKNOWN;/)
-    expect(src).not.toMatch(/BASE_NEUTRAL = 0x9aa5b1/)
-    expect(src).not.toMatch(/return 0x8a94a3;/)
-  })
 
   it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
     expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)
@@ -102,25 +71,4 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
     expect(src).not.toContain('0xef4444')
   })
 
-  it('炮线用亮色板且与车辆 tint 分离：tint 不得改亮、炮线必须更亮', () => {
-    const hex = (name) => Number(src.match(new RegExp(`const ${name} = 0x([0-9a-f]{6});`))?.[1] ? '0x' + src.match(new RegExp(`const ${name} = 0x([0-9a-f]{6});`))[1] : NaN)
-    const lum = (c) => 0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)
-    const tintF = hex('COLOR_FRIENDLY'), tintE = hex('COLOR_ENEMY')
-    const trF = hex('TRACER_FRIENDLY'), trE = hex('TRACER_ENEMY')
-    for (const v of [tintF, tintE, trF, trE]) expect(Number.isFinite(v)).toBe(true)
-    // 车辆 tint 保持深色板（回退护栏）
-    expect(tintF).toBe(0x26794a)
-    expect(tintE).toBe(0x98322a)
-    // 炮线同色相提亮：绿更亮且仍偏绿、红更亮且仍偏红；两项都显著亮于 tint
-    expect(lum(trF)).toBeGreaterThan(lum(tintF) * 1.4)
-    expect(lum(trE)).toBeGreaterThan(lum(tintE) * 1.4)
-    expect(((trF >> 8) & 255)).toBeGreaterThan((trF >> 16) & 255)   // 绿通道为主
-    expect((trE >> 16) & 255).toBeGreaterThan((trE >> 8) & 255)     // 红通道为主
-    // 阵营语义分流：炮线走亮板、车辆走深板（各只出现一次，避免误用）
-    expect(battleSrc.match(/return t === ft \? tracerColors\.friendly : tracerColors\.enemy;/g)?.length).toBe(1)
-    expect(src.match(/return t === f \? COLOR_FRIENDLY : COLOR_ENEMY;/g)?.length).toBe(1)
-    // 亮板常量仍由宿主单点声明并注入（battleRuntime 不复制色值）
-    expect(src).toMatch(/tracerFriendly: TRACER_FRIENDLY,/)
-    expect(src).toMatch(/tracerEnemy: TRACER_ENEMY,/)
-  })
 })

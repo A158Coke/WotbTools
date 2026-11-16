@@ -1152,7 +1152,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 变化时标记结果卡重排，避免卡片压到展开后的面板（评审 P2，2026-11-15）。
             if (typeof ResizeObserver === 'function') {
                 const hudObserver = new ResizeObserver(() => tc.markTrajInfoDirty());
-                for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back']) {
+                for (const selector of ['#corner-tl', '#corner-tr', '#turret-controls', '.armor-back', '.armor-shot-view-switch']) {
                     const el = document.querySelector(selector);
                     if (el) hudObserver.observe(el);
                 }

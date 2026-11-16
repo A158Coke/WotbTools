@@ -1,0 +1,288 @@
+#!/usr/bin/env node
+/**
+ * Issue #827 Step 0 — 源码文本断言测试分类器。
+ *
+ * 扫描 frontend/src 下所有 *.test.* 文件，找出读取生产源码（readFileSync）
+ * 的测试文件，按测试用例粒度分类哪些用例的断言实际依赖源码文本，
+ * 输出 JSON 清单（含 测试文件 → 被读源文件 的映射，供探针脚本反向消费）。
+ *
+ * 用法: node scripts/testing/classify-source-text-tests.mjs [--out <file.json>]
+ *
+ * 诚实降级说明：本脚本用结构化扫描（用例切块 + 词法引用判定），
+ * 不是完整 AST 解析；判定结果是「用例体引用了源码文本变量」，
+ * 供人工逐例复核，不单独作为架构判决。
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const FRONTEND_SRC = path.join(REPO, 'frontend', 'src');
+
+const args = process.argv.slice(2);
+const outIdx = args.indexOf('--out');
+const outFile = outIdx >= 0 ? path.resolve(args[outIdx + 1]) : null;
+
+function walk(dir, acc = []) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(p, acc);
+    else if (/\.test\.(js|ts|mjs)$/.test(entry.name)) acc.push(p);
+  }
+  return acc;
+}
+
+/** 从读取参数里提取源码目标路径（new URL 形态优先，其次最后一个带源码扩展名的字面量）。 */
+function extractTarget(arg) {
+  const url = arg.match(/new URL\(\s*['"]([^'"]+)['"]/);
+  if (url) return url[1];
+  const lits = [...arg.matchAll(/['"]([^'"]+\.(?:js|ts|mjs|css|vue))['"]/g)];
+  return lits.length ? lits[lits.length - 1][1] : null;
+}
+
+/**
+ * 找出测试文件里读取生产源码的 readFileSync 及其接收变量名。
+ * 覆盖四种仓内形态：
+ * 1) const X = readFileSync(new URL('./a.ts', import.meta.url), 'utf8')
+ * 2) const X = fs.readFileSync(new URL('./a.ts', import.meta.url), 'utf8')（用例体内联）
+ * 3) const X = strip(readFileSync(resolve(here, 'a.js'), 'utf8'))
+ * 4) helper：const read = (rel) => readFileSync(...)，调用点 const X = read('./a.css')
+ */
+function findSourceReaders(text) {
+  const readers = [];
+  const helpers = [];
+  for (const line of text.split('\n')) {
+    const hm =
+      line.match(/(?:const|let|var)\s+(\w[\w$]*)\s*=\s*(?:\(([^)]*)\)|\w[\w$]*)\s*=>\s*(.*)$/) ||
+      line.match(/function\s+(\w[\w$]*)\s*\(([^)]*)\)/);
+    if (hm && /readFileSync/.test(line)) helpers.push({ name: hm[1], param: hm[2] || '' });
+  }
+  const helperNames = helpers.map((h) => h.name);
+  for (const line of text.split('\n')) {
+    const m = line.match(/(?:const|let|var)\s+(\w[\w$]*)\s*=\s*(.*?);?\s*$/);
+    if (!m) continue;
+    const [, name, init] = m;
+    if (!/readFileSync/.test(init)) continue;
+    if (helperNames.some((h) => h === name)) continue;
+    // 一行可能拼接多个 new URL(...) 源（如 armorCollisionPack.test.js:715-718）
+    const urlTargets = [...init.matchAll(/new URL\(\s*['"]([^'"]+)['"]/g)].map((u) => u[1]);
+    if (urlTargets.length > 1) {
+      for (const t of urlTargets) readers.push({ varName: name, sourcePath: t, kind: 'direct' });
+      continue;
+    }
+    const target = extractTarget(init);
+    readers.push({ varName: name, sourcePath: target || '(dynamic)', kind: target ? 'direct' : 'dynamic-inline' });
+  }
+  if (helperNames.length) {
+    // 允许一层或多层包装器（如 `const lblSrc = stripComments(readSrc(...))`），
+    // 否则这些源码变量不会被登记，引用它们的文本用例会被误判为非文本测试。
+    const callRe = new RegExp(
+      `(?:const|let|var)\\s+(\\w[\\w$]*)\\s*=\\s*(?:\\w+\\s*\\(\\s*)*(?:${helperNames.map((h) => `${h}\\b`).join('|')})\\s*\\(([^;\\n]*)\\)`,
+      'g',
+    );
+    for (const m of text.matchAll(callRe)) {
+      const target = extractTarget(m[2]);
+      readers.push({ varName: m[1], sourcePath: target || '(dynamic)', kind: 'helper-call' });
+    }
+    // 未赋值的 helper 内联调用（如 agent-theme-css 直接 read(dir + f)）也计数
+    if (readers.length === 0) {
+      readers.push({ varName: helperNames[0], sourcePath: '(dynamic)', kind: 'helper-dynamic' });
+    }
+  }
+  // 数组拼接读取：`const kernel = [read('a.ts'), read('b.ts')].join('\n')`。
+  // 只识别单赋值/直接 helper 调用时，数组里的每个读取目标都漏登记，接收变量（kernel）
+  // 也不在 readers 中——该文件的源码文本守卫会整类消失
+  // （AgentArmorView.dom-contract.test.js 正是此形态）。逐元素登记到同一接收变量：
+  // 用例体引用该变量即视为读取了数组里所有源文本（聚合文本的既有口径）。
+  for (const m of text.matchAll(/(?:const|let|var)\s+(\w[\w$]*)\s*=\s*\[([\s\S]*?)\]/g)) {
+    const [, name, body] = m;
+    const targets = [];
+    for (const h of helperNames) {
+      const callRe = new RegExp(`${h}\\b\\s*\\(([^)]*)\\)`, 'g');
+      for (const call of body.matchAll(callRe)) targets.push(extractTarget(call[1]));
+    }
+    for (const call of body.matchAll(/readFileSync\s*\(([^)]*)\)/g)) targets.push(extractTarget(call[1]));
+    for (const target of targets) {
+      readers.push({ varName: name, sourcePath: target || '(dynamic)', kind: 'array' });
+    }
+  }
+  // 同一接收变量可能被单行/数组/helper 多条规则登记；按“变量+目标”去重（保留首个来源类型）。
+  const seen = new Set();
+  return readers.filter((r) => {
+    const key = `${r.varName}|${r.sourcePath}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** 正则字面量起点的上下文判定（`/` 既可能是除法，也可能是正则）：只看前一个非空白
+ *  代码字符/关键字，覆盖测试体里最常见的 `expect(x).toMatch(/.../)` 与 `return /.../`。 */
+function regexAllowed(text, i) {
+  const before = text.slice(0, i).trimEnd();
+  if (!before) return true;
+  const prev = before[before.length - 1];
+  if ('([{,;:=!&|?+-*%^~<>'.includes(prev)) return true;
+  const word = /([A-Za-z_$][\w$]*)$/.exec(before)?.[1];
+  return !!word && ['return', 'case', 'typeof', 'delete', 'void', 'instanceof', 'in', 'of', 'new', 'yield', 'await', 'throw'].includes(word);
+}
+
+/** 跳过注释 / 字符串 / 正则字面量；返回下一个「代码」字符的索引。 */
+function skipNonCode(text, i) {
+  const c = text[i];
+  if (c === '/' && text[i + 1] === '/') {
+    const end = text.indexOf('\n', i);
+    return end < 0 ? text.length : end + 1;
+  }
+  if (c === '/' && text[i + 1] === '*') {
+    const end = text.indexOf('*/', i + 2);
+    return end < 0 ? text.length : end + 2;
+  }
+  if (c === '/' && regexAllowed(text, i)) {
+    let j = i + 1;
+    let inClass = false;
+    for (; j < text.length; j++) {
+      if (text[j] === '\\') { j++; continue; }
+      if (text[j] === '[') { inClass = true; continue; }
+      if (text[j] === ']') { inClass = false; continue; }
+      if (text[j] === '\n') return j;             // 未闭合：按行尾结束，避免吞掉后续代码
+      if (text[j] === '/' && !inClass) {
+        j++;
+        while (/[a-z]/i.test(text[j] ?? '')) j++;  // flags
+        return j;
+      }
+    }
+    return j;
+  }
+  if (c === "'" || c === '"' || c === '`') {
+    const q = c;
+    let j = i + 1;
+    for (; j < text.length; j++) {
+      if (text[j] === '\\') { j++; continue; }
+      if (text[j] === q) return j + 1;
+      if (q !== '`' && text[j] === '\n') return j; // 未闭合的单引号：停在行尾
+    }
+    return j;
+  }
+  return i;
+}
+
+/** 把测试文件切成用例块：it/test（含 .each）+ 用例名 + 花括号配对体。
+ *  配对扫描必须跳过注释/字符串/正则字面量——源码守卫断言本身常用 `/...\{.../`
+ *  这类正则，把它们当代码花括号会截断用例体（#827 复测 review P2）。 */
+function sliceCases(text) {
+  const cases = [];
+  const re = /(?:^|\n)(\s*)(it|test)(\.each(?:\s*\([^)]*\))?)?\s*\(\s*(['"`])([\s\S]*?)\4/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const bodyStart = text.indexOf('(', m.index + m[0].length - 1);
+    if (bodyStart < 0) continue;
+    // 从用例名结束处向后扫描到回调体首个 '{'（中间隔着 `, () =>` 等结构）
+    let i = text.indexOf(m[4], m.index) + 1;
+    i = text.indexOf(m[4], i) + m[4].length;
+    let start = -1;
+    for (; i < text.length; i++) {
+      const skipped = skipNonCode(text, i);
+      if (skipped !== i) { i = skipped - 1; continue; }
+      if (text[i] === '{') { start = i; break; }
+    }
+    if (start < 0) { cases.push({ name: m[5], start: m.index, body: '', parseError: 'no-body-brace' }); continue; }
+    let depth = 0;
+    let end = -1;
+    for (i = start; i < text.length; i++) {
+      const skipped = skipNonCode(text, i);
+      if (skipped !== i) { i = skipped - 1; continue; }
+      const c = text[i];
+      if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end < 0) {
+      cases.push({ name: m[5], start: m.index, body: '', parseError: 'unclosed-body' });
+      continue;
+    }
+    cases.push({ name: m[5], start: m.index, body: text.slice(start, end + 1) });
+  }
+  return cases;
+}
+
+function classifyFile(file) {
+  // 统一 LF：Windows 检出为 CRLF 时，行级正则的 `$` 不会匹配在 `\r` 之前，
+  // helper/reader 检测会整片失效（同一文件在 CI 的 LF 检出上却正常）。
+  const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  const readers = findSourceReaders(text);
+  if (!readers.length) return null;
+  const relFile = path.relative(REPO, file).replaceAll('\\', '/');
+  const varNames = readers.map((r) => r.varName);
+  // case 起始行号（台账稳定 ID 用）
+  const lineOf = (idx) => text.slice(0, idx).split('\n').length;
+  const cases = sliceCases(text).map((c) => {
+    const body = c.body;
+    const usedVars = varNames.filter((v) => new RegExp(`\\b${v}\\b`).test(body));
+    const patterns = [];
+    if (usedVars.length) {
+      if (/\.toMatch\(/.test(body)) patterns.push('toMatch');
+      if (/\.toContain\(/.test(body)) patterns.push('toContain');
+      if (/\.toContainEqual\(/.test(body)) patterns.push('toContainEqual');
+      if (/\.indexOf\(/.test(body)) patterns.push('indexOf');
+      if (/\.includes\(/.test(body)) patterns.push('includes');
+      if (/\.slice\(/.test(body)) patterns.push('slice');
+      if (/new Function\(/.test(body)) patterns.push('newFunction');
+      if (/new RegExp\(/.test(body)) patterns.push('newRegExp');
+      if (/\beval\b/.test(body)) patterns.push('eval');
+    }
+    const isTextAssertion = usedVars.length > 0 && patterns.length > 0;
+    return {
+      id: `${path.basename(file).replace(/\.test\.(js|ts|mjs)$/, '')}:${lineOf(c.start)}`,
+      name: c.name,
+      startLine: lineOf(c.start),
+      // 用例体边界解析失败时宁可不分类（fail-closed）：静默判成「非文本测试」会让
+      // 台账与探针一起漏掉真实守卫。
+      textAssertion: isTextAssertion && !c.parseError,
+      usesVars: usedVars,
+      patterns,
+      parseError: c.parseError || null,
+    };
+  });
+  const parseAnomalies = cases
+    .filter((c) => c.parseError)
+    .map((c) => ({ case: c.name, line: c.startLine, reason: c.parseError }));
+  return {
+    testFile: relFile,
+    sources: readers.map((r) => ({
+      sourcePath: r.sourcePath,
+      varName: r.varName,
+      targetArg: r.targetArg,
+    })),
+    caseCount: cases.length,
+    textAssertionCases: cases.filter((c) => c.textAssertion).length,
+    parseAnomalies,
+    cases,
+  };
+}
+
+const testFiles = walk(FRONTEND_SRC);
+const results = [];
+for (const f of testFiles) {
+  const r = classifyFile(f);
+  if (r) results.push(r);
+}
+
+const summary = {
+  generatedAt: new Date().toISOString().slice(0, 10),
+  scannedTestFiles: testFiles.length,
+  sourceReadingTestFiles: results.length,
+  totalCases: results.reduce((a, r) => a + r.caseCount, 0),
+  totalTextAssertionCases: results.reduce((a, r) => a + r.textAssertionCases, 0),
+  parseAnomalies: results.flatMap((r) => r.parseAnomalies.map((a) => ({ testFile: r.testFile, ...a }))),
+  files: results,
+};
+
+const json = JSON.stringify(summary, null, 2);
+if (outFile) fs.writeFileSync(outFile, json);
+else console.log(json);
+console.error(
+  `# scanned=${summary.scannedTestFiles} sourceReadingFiles=${summary.sourceReadingTestFiles} ` +
+    `cases=${summary.totalCases} textAssertionCases=${summary.totalTextAssertionCases} ` +
+    `parseAnomalies=${summary.parseAnomalies.length}`,
+);

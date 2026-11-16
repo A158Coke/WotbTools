@@ -295,9 +295,10 @@ onBeforeUnmount(() => shellChrome?.request(shellOwner, false))
 // 强制横屏（design-language §9）：只在 Android 手机 App（原生锁定）与 iPhone Safari（竖屏提示旋转）生效；
 // 桌面、平板与 Android 浏览器沿用小屏布局。场景在提示下保持挂载，转到横屏即继续。
 const forcedLandscape = useForcedLandscape(computed(() => webgl.supported))
-// 击穿判定结果卡（跟随点击位置）。判定模式唯一结果窗口（2026-11-15 用户裁示：五行点选卡
-// 只在厚度模式保留）；装甲查看器手机端默认展开逐层明细（2026-11-16 用户反馈：不能只给
-// 极简一行），小屏点卡片可收起为一行胶囊；射击复现页顶部停靠空间受限，保持默认收起。
+// 击穿判定结果卡（跟随世界命中点的屏幕投影，2026-11-16 用户裁示）。判定模式唯一结果窗口
+// （2026-11-15 用户裁示：五行点选卡只在厚度模式保留）；装甲查看器手机端默认展开逐层明细
+// （2026-11-16 用户反馈：不能只给极简一行），小屏点卡片可收起为一行胶囊；射击复现页结果卡
+// 空间受限，保持默认收起。
 const resultExpanded = ref(!isShotPage.value)
 watch(isShotPage, shot => { resultExpanded.value = !shot })
 // 展开/收起改变卡片高度：DOM 更新后让场景按新尺寸重新定位（避让固定 HUD 面板）。
@@ -1061,9 +1062,10 @@ onBeforeUnmount(() => {
 .armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
 .armor-view .dbg-name { flex: none; color: var(--muted); }
 .armor-view .dbg-val { min-inline-size: 0; }
-/* 击穿判定 #traj-info（判定模式唯一结果窗口）：跟随点击位置，由 scene/viewer/trajectoryCard.ts
-   写入 left/top 并避让固定 HUD 面板（共享 resultCardPosition 纯函数）；无点击的射击复现/
-   初始自动判定仍用这里的顶部停靠规则（脚本会清掉内联定位，交还 CSS）。 */
+/* 击穿判定 #traj-info（判定模式唯一结果窗口）：跟随世界命中点的屏幕投影，由
+   scene/viewer/trajectoryCard.ts 每帧重投影并写入 left/top，避让固定 HUD 面板（共享
+   resultCardPosition 纯函数）；旋转视角时随命中点移动，命中点转到相机后方时脚本隐藏。
+   这里的顶部停靠只是无世界锚点时的防御回退。 */
 .armor-view #traj-info {
     position: absolute;
     inset-block-start: var(--space-5);
@@ -1118,7 +1120,7 @@ onBeforeUnmount(() => {
 .armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 /* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */
 @media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
-    /* 只给「无点击的停靠态」排位：判定结果卡有点击锚点时由脚本写 left/top；#click-info 同理。 */
+    /* 只给「无世界锚点的回退态」排位：判定结果卡正常路径由脚本按命中点投影写 left/top；#click-info 按点击坐标写 left/top。 */
     .armor-view #traj-info { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
 }
 /* 小屏（竖屏手机 / 手机横屏）：默认展开逐层明细；点卡片收起为最终判定一行胶囊 */
@@ -1334,8 +1336,8 @@ onBeforeUnmount(() => {
         background: transparent;
     }
     .armor-view #corner-tl .armor-tools-label { display: none; }
-    /* 停靠态（无点击锚点 / 射击复现）贴左上胶囊右侧，不再固定 50%：740px 视口下也不会
-       压到右下射击面板。有点击锚点时由脚本定位并显式覆盖这些 inset 与宽度上限。 */
+    /* 回退态（无世界锚点）贴左上胶囊右侧，不再固定 50%：740px 视口下也不会压到右下射击
+       面板。正常路径由脚本按命中点投影定位并显式覆盖这些 inset 与宽度上限。 */
     .armor-view #traj-info {
         inset-block-start: calc(var(--space-5) + 5px);
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 14rem + 8px);
@@ -1345,9 +1347,9 @@ onBeforeUnmount(() => {
         inset-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve) + 40px + 14rem + 8px);
     }
     .armor-view #traj-info { max-block-size: 72px; }
-    /* 射击复现顶部停靠的展开态必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）
-       会伸进右下共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态
-       同公式，任何 Judge 视口都不与右下列相交。装甲查看器跟随时由脚本避让面板。 */
+    /* 回退态的展开卡必须留在左上 / 左中带：780×360 实测展开卡（top 79 + 72px）会伸进右下
+       共享列的参数面板。高度收到 48px（overflow-y 继承基础滚动），宽度与收起态同公式。
+       正常路径由脚本按命中点投影避让面板。 */
     .armor-view #traj-info.is-expanded {
         max-block-size: 48px;
         max-inline-size: max(6rem, calc(100% - 32.5rem - var(--immersive-nav-reserve) - max(var(--space-5), env(safe-area-inset-left)) - max(var(--space-5), env(safe-area-inset-right))));

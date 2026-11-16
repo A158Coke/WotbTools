@@ -46,8 +46,11 @@
   document.documentElement.dataset.theme = profile === 'winter' ? 'light' : 'dark'
   const mode = query.get('mode') || 'catalog'
   const tanks = [
-    { id: 9001, name: '测试重坦', tier: 10, nation: 'germany', type: 'heavyTank', aliases: [], hp: 2000, pen_max: 250 },
-    { id: 9002, name: '测试中坦', tier: 9, nation: 'usa', type: 'mediumTank', aliases: [], hp: 1500, pen_max: 220 },
+    // category 是卡片消费口径（normalizeTankCache: premium 胜出）；is_* 保留上游字段形状。
+    { id: 9001, name: '测试重坦', tier: 10, nation: 'germany', type: 'heavyTank', aliases: [], hp: 2000, pen_max: 250, category: 'premium', is_premium: true },
+    { id: 9002, name: '测试中坦', tier: 9, nation: 'usa', type: 'mediumTank', aliases: [], hp: 1500, pen_max: 220, category: 'collector', is_collector: true },
+    // 双 true（premium+collector）：normalizeTankCache 的 category 口径 premium 胜出，卡片按 category 取语义底色。
+    { id: 9003, name: '测试双标坦', tier: 10, nation: 'germany', type: 'mediumTank', aliases: [], hp: 1600, pen_max: 230, category: 'premium', is_premium: true, is_collector: true },
   ]
   const fixture = UPGRADE_TANKS.find(tank => tank.modules.tankId === 30241)
   const catalog = {

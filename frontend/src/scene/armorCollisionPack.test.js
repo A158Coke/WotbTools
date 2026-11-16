@@ -707,16 +707,11 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(RC_GLSL_FUNCS).not.toContain('tCur + RC_ADV_EPS');
         expect(RC_GLSL_FUNCS).toContain('tCur = bestT + RC_ADV_EPS;');
     });
-    it('JS 参考入口与 click 路径使用同一初始接受阈（源码级锁，防回归到 +eps 口径）', () => {
-        const src = require('fs').readFileSync(new URL('./armorCollisionPack.ts', import.meta.url), 'utf8');
-        expect(src).toContain('raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);');
-        expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
-        // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）
+    it('click 路径续飞链与 pack 参考入口同一接受阈（#827 窄化：行为侧由下方 0.15/0.05mm 行为锁定；collectJudgmentHits 困于 judgment 闭包，保留 F3 Integration Contract 子句）', () => {
+        // pack 侧调用点源码子句已删（下方行为锁定覆盖同一阈值口径）
         const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
-            + require('fs').readFileSync(new URL('./viewer/judgment.ts', import.meta.url), 'utf8')
-            + require('fs').readFileSync(new URL('./viewer/heatmap.ts', import.meta.url), 'utf8')
-            + require('fs').readFileSync(new URL('./viewer/shotReplayMiss.ts', import.meta.url), 'utf8');
-        expect(viewer).toMatch(/minDistance = 0\)|ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
+            + require('fs').readFileSync(new URL('./viewer/judgment.ts', import.meta.url), 'utf8');
+        expect(viewer).toMatch(/ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
         expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
     });
     it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {

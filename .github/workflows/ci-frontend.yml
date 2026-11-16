@@ -154,6 +154,13 @@ jobs:
           # ShowcaseHero 紧凑横幅：桌面 compactPosition / 手机 portrait 遮罩层叠 / Replay 高度与矮窗降级
           - label: Showcase hero compact computed styles
             script: test:browser-showcase-hero
+          # HoF 管理页吸顶 Tab 条：computed sticky / top==顶栏+space / z-index / 窄屏横向可滚动
+          # （生产「百场审核 Tab 不可见」回归，#827）
+          - label: HoF admin sticky tabs
+            script: test:browser-hof-admin-tabs
+          # Replay3D HUD SegmentedControl：受限宽度下 flex:none 不收缩 + 横向滚动 + coarse 命中面积
+          - label: Replay3D HUD segmented control
+            script: test:browser-replay3d-hud
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

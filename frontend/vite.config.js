@@ -222,6 +222,10 @@ export default defineConfig(({ command, mode }) => {
   // 禁止为 Android 建第二套 frontend 源码树。
   const outDir = resolve(configDirectory, mode === 'android' ? 'dist-android' : 'dist')
   return {
+    // Vitest：重 façade import / 126×126 地形 oracle 的用例单跑 1–3s，但 446 个测试文件
+    // 并行时偶发贴 5s 默认超时（本轮复测已知，见 docs/research/testing/2026-11-11-retest-report.md
+    // Known Risks）。10s 只给并发留余量；真实挂起仍会失败。
+    test: { testTimeout: 10000, hookTimeout: 20000 },
     plugins: [
       vue(),
       ...(mode === 'android' ? [{

@@ -568,8 +568,8 @@ try {
   }
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
-  // #traj-info 是场景容器内的 absolute 卡片（判定模式跟随点击位置，无点击时停靠顶部）；
-  // 页面滚动后必须随画布一起移动——位置由容器坐标写入，不随视口 fixed。
+  // #traj-info 是场景容器内的 absolute 卡片（判定模式跟随世界命中点的屏幕投影，旋转视角时
+  // 同步移动）；页面滚动后必须随画布一起移动——位置由容器坐标写入，不随视口 fixed。
   //
   // 同步契约（2026-10-19）：这个 scroll-layout 用例真正需要的不变量是「卡片锚定在画布上」，
   // 不是「卡片绝对屏幕坐标连续 5 帧不动」。旧实现把后者当成相机停止的判据，等于要求
@@ -650,9 +650,9 @@ try {
     })()`)
     const before = await readRects()
     if (!before) throw new Error('result card / canvas rect missing before scroll test')
-    // 跟随点击契约（2026-11-15 用户裁示）：判定结果卡跟随点击位置（脚本写入容器坐标），
-    // 必须完整落在场景容器内且不压固定 HUD（左上胶囊/返回/右下射击/左下姿态）。
-    // 无点击的射击复现仍停靠顶部（由 browser-armor-mobile 的停靠夹具覆盖）。
+    // 命中点跟随契约（2026-11-16 用户裁示）：判定结果卡跟随世界命中点的屏幕投影（每帧重投影，
+    // 旋转视角时同步移动），必须完整落在场景容器内且不压固定 HUD（左上胶囊/返回/右下射击/
+    // 左下姿态/右下视角切换）。
     const follow = await page.evaluate(`(() => {
       const card = document.getElementById('traj-info')?.getBoundingClientRect()
       const stage = document.querySelector('[data-testid="armor-stage"]')?.getBoundingClientRect()

@@ -1078,6 +1078,7 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
     annotationSurfaceGrid = null;
+    occlGrid = null;   // 标签遮挡候选格属会话场景，随会话释放（与 annotationSurfaceGrid 同纪律）
     terrainLodWake.cancel();
     terrainScheduler?.dispose(); terrainScheduler = null;   // 随 mapWorld 销毁 terminate Worker
     clearSceneryMatCache();   // 材质已随 mapScenery dispose，缓存须清空（勿复用已 dispose 实例）

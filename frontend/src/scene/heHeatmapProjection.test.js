@@ -73,13 +73,7 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).toMatch(/clearHeBlast\(\);[\s\S]{0,120}?disposePenetrationResources\(\);/);
         expect(viewer).toContain('else if (hmRef().getPrimaryArmorScene()) { hmRef().disposePenetrationResources(); hmRef().syncHeatOverlay(); }');
     });
-    it('叠加层释放后清空 Scene 引用，模式往返能重建（评审 P2）', () => {
-        // 只 clear() 不置 null：释放后 primaryArmorScene 仍是 truthy 空场景，
-        // heGradientWanted() 恢复时只会更新空场景 uniform，重建永不发生。
-        expect(viewer).toMatch(/function disposePenetrationResources\(\) \{[\s\S]*?primaryArmorScene = null;\s*\n\s*spacedArmorScene = null;\s*\n\s*spacedStateScene = null;/);
-        // 「已构建」判断依赖同一引用：null 时走 rebuildHeatmapScenes。
-        expect(viewer).toMatch(/if \(heGradientWanted\(\)\) \{\s*\n\s*if \(primaryArmorScene\) updateHeatMaskUniforms\(false\);\s*\n\s*else rebuildHeatmapScenes\(\);/);
-        // 逐帧管线同样只在机械真的建好时才走热力图分支。
+    it('逐帧管线只在机械真的建好时才走热力图分支（释放/重建生命周期行为见 viewer/heatmap.lifecycle.test.ts）', () => {
         expect(viewer).toContain('if ((penetrationMode || (!!hm.getPrimaryArmorScene() && hm.heGradientWanted())) && ml.models.armorModel) {');
     });
     it('普通检视的换弹/换装备清理与叠加层资源解耦（评审 + Codex 复核 P2）', () => {

@@ -235,7 +235,19 @@ function glassProbe() {
     border: style.borderColor,
     opaque1: resolveToken('--color-surface-1'),
     opaque2: resolveToken('--color-surface-2'),
+    opaque3: resolveToken('--color-surface-3'),
     borderStrong: resolveToken('--color-border-strong'),
+    // 三个玻璃档位逐一探测（app-shell.css 是全局样式，合成元素即可命中真实层叠）：
+    // reduce/contrast 降级块按档位映射 --color-surface-1/2/3 与 --color-border-strong。
+    glass: [1, 2, 3].map((tier) => {
+      const probe = document.createElement('div')
+      probe.className = `surface-glass-${tier}`
+      document.body.append(probe)
+      const computed = getComputedStyle(probe)
+      const state = { background: computed.backgroundColor, border: computed.borderColor, backdrop: computed.backdropFilter }
+      probe.remove()
+      return state
+    }),
     theme: document.documentElement.dataset.uiProfile || 'summer(default)',
   }
 }
@@ -273,6 +285,12 @@ async function runGlassAccessibility(env) {
     gate(state.media.reducedTransparency === true, 'emulation did not enable prefers-reduced-transparency: reduce')
     gate(state.backdrop === 'none', `reduce-transparency: backdrop-filter must be off (got ${state.backdrop})`)
     gate(state.background === state.opaque1, `reduce-transparency: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
+    // 每个玻璃档位各自退化到对应的不透明表面 token（F-05，接替 glass-accessibility.test.js 的 computed 半句）。
+    for (const tier of [1, 2, 3]) {
+      const glass = state.glass[tier - 1]
+      gate(glass.backdrop === 'none', `reduce-transparency: glass tier ${tier} backdrop-filter must be off (got ${glass.backdrop})`)
+      gate(glass.background === state[`opaque${tier}`], `reduce-transparency: glass tier ${tier} background must equal --color-surface-${tier} (got ${glass.background}, want ${state[`opaque${tier}`]})`)
+    }
 
     // 3) More contrast：不透明表面 + strong 边界，默认视觉关闭。
     await setPreferences(env.chrome, page.sessionId, P('prefers-contrast', 'more'))
@@ -282,6 +300,11 @@ async function runGlassAccessibility(env) {
     gate(state.backdrop === 'none', `contrast-more: backdrop-filter must be off (got ${state.backdrop})`)
     gate(state.background === state.opaque1, `contrast-more: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
     gate(state.border === state.borderStrong, `contrast-more: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
+    for (const tier of [1, 2, 3]) {
+      const glass = state.glass[tier - 1]
+      gate(glass.background === state[`opaque${tier}`], `contrast-more: glass tier ${tier} background must equal --color-surface-${tier} (got ${glass.background}, want ${state[`opaque${tier}`]})`)
+      gate(glass.border === state.borderStrong, `contrast-more: glass tier ${tier} border must equal --color-border-strong (got ${glass.border}, want ${state.borderStrong})`)
+    }
 
     // 4) Combined：reduce + contrast 同时开启，更强规则胜出且无 blur。
     await setPreferences(env.chrome, page.sessionId, [
