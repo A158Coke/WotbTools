@@ -30,11 +30,9 @@ import Scene3DStatus from './Scene3DStatus.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import SceneDistanceSlider from './SceneDistanceSlider.vue'
-import {
-  ANNOT_COLORS, ANNOT_ERASER_RADIUS_DEFAULT, ANNOT_ERASER_RADIUS_MAX, ANNOT_ERASER_RADIUS_MIN,
-  ANNOT_WIDTH_DEFAULT, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN,
-  applyEraser, canRedo, canUndo, commit, redo, undo, stripSurfaceAnchors,
-} from '../utils/annotation.js'
+import { stripSurfaceAnchors } from '../utils/annotation.js'
+import { useSceneAnnotations } from '../composables/useSceneAnnotations.js'
+import { useMapPreviewAnnotationFile } from '../composables/useMapPreviewAnnotationFile.js'
 
 const props = defineProps({
   /** 资产面数字地图 id（loadMapOnly 'id=' 解析入口） */
@@ -110,154 +108,26 @@ const fly = useSceneFlyControls({
 })
 
 // ---------- 标注（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
-const annotationOpen = ref(false)
-const annotationTool = ref(null)
-const annotationColor = ref(ANNOT_COLORS[0])
-const annotationWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
-const annotationEraserRadius = ref(ANNOT_ERASER_RADIUS_DEFAULT)
-const annotationsVisible = ref(true)
-const annotationHistory = ref([[]])
-const annotationIndex = ref(0)
-const annotations = computed(() => annotationHistory.value[annotationIndex.value] || [])
-
-function pushAnnotationProjection() {
-  sceneApi?.setAnnotations?.(annotations.value)
-}
-function pushAnnotationInteraction() {
-  sceneApi?.setAnnotationInteraction?.({
-    enabled: annotationOpen.value && !!annotationTool.value && store.mapReady,
-    tool: annotationTool.value,
-    color: annotationColor.value,
-    width: annotationWidthSlider.value,
-    eraserWidth: annotationEraserRadius.value,
-  })
-}
-function pushAnnotationVisibility() {
-  sceneApi?.setAnnotationsVisible?.(annotationsVisible.value)
-}
-function replaceAnnotations(next) {
-  const state = commit(annotationHistory.value, annotationIndex.value, next)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function commitAnnotationFromScene(annotation) {
-  replaceAnnotations([...annotations.value, annotation])
-}
-function eraseFromScene(path) {
-  const next = applyEraser(annotations.value, path.points, path.radius)
-  if (next !== annotations.value) replaceAnnotations(next)
-}
-function undoAnnotation() {
-  const state = undo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function redoAnnotation() {
-  const state = redo(annotationHistory.value, annotationIndex.value)
-  annotationHistory.value = state.history
-  annotationIndex.value = state.index
-}
-function clearAnnotations() {
-  if (annotations.value.length) replaceAnnotations([])
-}
-function toggleAnnotationsVisible() {
-  annotationsVisible.value = !annotationsVisible.value
-}
-function setAnnotationTool(tool) {
-  annotationTool.value = tool
-  if (!annotationsVisible.value) annotationsVisible.value = true
-}
-function openAnnotation() {
-  if (annotationOpen.value) return
-  annotationOpen.value = true
-  annotationTool.value = 'pen'
-  annotationsVisible.value = true
-  pushAnnotationProjection()
-  pushAnnotationInteraction()
-  pushAnnotationVisibility()
-}
-function closeAnnotation() {
-  annotationOpen.value = false
-  annotationTool.value = null
-  pushAnnotationInteraction()
-}
-function resetAnnotationState() {
-  annotationHistory.value = [[]]
-  annotationIndex.value = 0
-  annotationOpen.value = false
-  annotationTool.value = null
-  annotationsVisible.value = true
-  sceneApi?.setAnnotations?.([])
-  sceneApi?.setAnnotationInteraction?.({ enabled: false, tool: null })
-  sceneApi?.setAnnotationsVisible?.(true)
-}
+// 会话唯一 owner = useSceneAnnotations（与 3D 回放共用）；就绪门 = store.mapReady。
+const {
+  annotationOpen, annotations, replaceAnnotations, pushAnnotationProjection, pushAnnotationInteraction,
+  pushAnnotationVisibility, commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation,
+  resetAnnotationState, toolbarProps: annotationToolbarProps, toolbarHandlers: annotationToolbarHandlers,
+} = useSceneAnnotations({ getSceneApi: () => sceneApi, interactionReady: () => store.mapReady })
 
 // ---------- 标注导入 / 导出（会话内的文件落盘；fail-closed 校验）----------
-// kind 不区分视角：2D/3D 标注同为 ±300 语义系 pen 点列，同一张地图即可互导。
-// 兼容合入前旧导出的 -2d/-3d 后缀 kind。
-const IMPORT_KIND = 'map-preview-annotations'
-const IMPORT_KINDS = new Set([
-  IMPORT_KIND,
-  'map-preview-annotations-2d',
-  'map-preview-annotations-3d',
-])
-const importMessage = ref('')
-let importMessageTimer = 0
-function flashImportMessage(key, values) {
-  importMessage.value = t(key, values)
-  clearTimeout(importMessageTimer)
-  importMessageTimer = setTimeout(() => { importMessage.value = '' }, 4000)
-}
-function exportAnnotations() {
-  if (!annotations.value.length) {
-    flashImportMessage('mapPreview.annotations.noAnnotations')
-    return
-  }
-  const payload = {
-    version: 1,
-    kind: IMPORT_KIND,
-    mapKey: props.mapKey,
-    exportedAt: new Date().toISOString(),
-    annotations: stripSurfaceAnchors(annotations.value),
-  }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `map-annotations-${props.mapKey}-3d.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-async function importAnnotations(event) {
-  const file = event.target.files?.[0] || null
-  event.target.value = ''
-  if (!file) return
-  let payload = null
-  try {
-    payload = JSON.parse(await file.text())
-  } catch {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  if (!payload || payload.version !== 1 || !IMPORT_KINDS.has(payload.kind) || !Array.isArray(payload.annotations)) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  if (payload.mapKey !== props.mapKey) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonMap') })
-    return
-  }
-  // 几何逐条校验（fail-closed，整份拒绝；与 2D 导入同一口径）：内核标注只支持
-  // pen，半校验条目（如 route+null 点）会在渲染或 applyEraser 里 TypeError。
-  if (!payload.annotations.every(isImportableAnnotation)) {
-    flashImportMessage('mapPreview.annotations.importFailed', { reason: t('mapPreview.annotations.importReasonFormat') })
-    return
-  }
-  // surfaceY / surfaceN 是 session-local 3D 锚点，不进入文件 schema；导入时同样剥离。
-  const items = stripSurfaceAnchors(payload.annotations)
-  replaceAnnotations(items)
-  flashImportMessage('mapPreview.annotations.importedCount', { count: items.length })
-}
+// 文件 schema owner = useMapPreviewAnnotationFile（与 2D 预览共用，可互导）。
+// surfaceY / surfaceN 是 session-local 3D 锚点，不进入文件 schema：导入导出都剥离。
+const { importMessage, exportAnnotations, importAnnotations } = useMapPreviewAnnotationFile({
+  mapKey: () => props.mapKey,
+  annotations,
+  // 内核标注只支持 pen，半校验条目（如 route+null 点）会在渲染或 applyEraser 里 TypeError。
+  validate: isImportableAnnotation,
+  sanitize: stripSurfaceAnchors,
+  suffix: '3d',
+  apply: replaceAnnotations,
+  t,
+})
 
 /** 本面板的标注几何只有 pen（表面锚定画笔，缺锚点时回落地形）：点列 ≥2、坐标有限、宽度为正。 */
 function isImportableAnnotation(a) {
@@ -336,15 +206,6 @@ watch(renderActive, (active) => {
 watch(() => props.active, (active) => {
   if (!active && annotationOpen.value) closeAnnotation()
 })
-// annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）——与 Replay3DPane
-// 同一接线。没有这组 watch，画笔提交/导入/撤销/擦除/工具与可见性变化只改 refs，
-// 内核侧画面永远不更新。
-watch(annotations, pushAnnotationProjection)
-watch(
-  [annotationOpen, annotationTool, annotationColor, annotationWidthSlider, annotationEraserRadius, () => store.mapReady],
-  pushAnnotationInteraction,
-)
-watch(annotationsVisible, pushAnnotationVisibility)
 watch(() => props.basesKind, pushBasesKind)
 watch(() => props.spawnPoints, pushSpawnPoints)
 // UI Profile 切换（四季主题切换，不 reload/remount）：2D 出生点
@@ -353,8 +214,8 @@ watch(() => props.spawnPoints, pushSpawnPoints)
 watch(uiProfile, () => {
   sceneApi?.refreshSpawnColors?.()
 })
+// 就绪门关闭时收起 drawing 由 useSceneAnnotations 负责（同一门控）。
 watch(() => store.mapReady, (ready) => {
-  if (!ready && annotationOpen.value) closeAnnotation()
   // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
   // 撤销栈是权威——就绪后把当前标注整体补推回内核（换图/画质重建同样经过这里）。
   if (ready) {
@@ -493,34 +354,7 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
       </div>
       <div v-if="!uiHidden" class="map3d-controls">
         <div v-if="annotationOpen" class="map3d-annotations" data-testid="map-3d-annotations">
-          <AnnotationToolbar
-            :open="annotationOpen"
-            compact
-            :active-tool="annotationTool"
-            :annot-colors="ANNOT_COLORS"
-            :annot-color="annotationColor"
-            :annot-visible="annotationsVisible"
-            :annot-width-slider="annotationWidthSlider"
-            :annot-width-min="ANNOT_WIDTH_MIN"
-            :annot-width-max="ANNOT_WIDTH_MAX"
-            :allowed-tools="['pen', 'eraser']"
-            :eraser-radius-slider="annotationEraserRadius"
-            :eraser-radius-min="ANNOT_ERASER_RADIUS_MIN"
-            :eraser-radius-max="ANNOT_ERASER_RADIUS_MAX"
-            :history-index="annotationIndex"
-            :history="annotationHistory"
-            :can-undo="canUndo"
-            :can-redo="canRedo"
-            @toggle-tool="setAnnotationTool"
-            @set-annot-color="annotationColor = $event"
-            @update:annot-width="annotationWidthSlider = $event"
-            @update:eraser-radius="annotationEraserRadius = $event"
-            @undo="undoAnnotation"
-            @redo="redoAnnotation"
-            @clear-annotations="clearAnnotations"
-            @toggle-annotations="toggleAnnotationsVisible"
-            @close="closeAnnotation"
-          />
+          <AnnotationToolbar v-bind="annotationToolbarProps" compact v-on="annotationToolbarHandlers" />
         </div>
         <div v-else class="map3d-toolrow">
           <button

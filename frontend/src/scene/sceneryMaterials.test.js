@@ -949,4 +949,37 @@ describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () 
   })
 })
 
+describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () => {
+  // 缺陷（2026-10-10 review）：maybeRebuildTerrainLod 只把"相机到 controls.target 的视距"
+  // 喂给滞回，而 buildAdaptiveTerrain 的判据读相机三维位置/FOV/aspect ⇒ 绕目标水平旋转
+  // （视距恒等）时网格永远不重建，停在旧相机位置的 LOD 分布上。onResize 同理只改投影
+  // 不重建地形。守卫：重建入口必须传相机姿态快照（terrainLodState），不得退回只比视距。
+  it('maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)', () => {
+    const start = mapWorldSrc.indexOf('function maybeRebuildTerrainLod')
+    expect(start).toBeGreaterThan(0)
+    const fn = mapWorldSrc.slice(start, mapWorldSrc.indexOf('\n  }', start))
+    expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
+    expect(fn).not.toMatch(/terrainLodDist/)
+    expect(fn).toMatch(/terrainLodStaleReason\(terrainLodPrev, cur, now - terrainLodAt\)/)
+  })
 
+  // PR #954 评审 F3/F4：宿主停手后不再有帧会走到 maybeRebuildTerrainLod，换装/异步失败
+  // 都必须显式安排一次最终姿态复查，不能只依赖「下一帧」。
+  it('换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒', () => {
+    const swapStart = mapWorldSrc.indexOf('function applyTerrainSwap')
+    expect(swapStart).toBeGreaterThan(0)
+    const swap = mapWorldSrc.slice(swapStart, mapWorldSrc.indexOf('function maybeRebuildTerrainLod', swapStart))
+    // 换装快照与当前相机不一致 → 节流到期唤醒；一致 → 撤销旧唤醒。
+    expect(swap).toMatch(/terrainLodPoseReason\(job\.snapshot, terrainLodState\(camera, controls\.target, camera\.aspect\)\)/)
+    expect(swap).toMatch(/terrainLodWake\.scheduleElapsed\(/)
+    expect(swap).toMatch(/terrainLodWake\.cancel\(\)/)
+    // 异步 Worker 失败：停手时也要有脏帧才能进同步回退。
+    expect(mapWorldSrc).toMatch(/onWorkerLost:[\s\S]{0,800}?deps\.invalidate\(\)/)
+    // 在途结果被 setMask/setSource 作废后：丢弃路径同样要唤醒宿主重评估（停手没有下一帧）。
+    expect(mapWorldSrc).toMatch(/onDiscard: \(\) => deps\.invalidate\(\)/)
+    // 已按当前姿态发出 / 同步回退 / 会话重置 / 销毁：待唤醒不再需要。
+    expect(mapWorldSrc.match(/terrainLodWake\.cancel\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
+    expect(mapWorldSrc).toMatch(/if \(sch\.request\([^\n]*\)\) \{[^}]*terrainLodWake\.cancel\(\)/)
+    expect(mapWorldSrc).toMatch(/terrainLodWake\.cancel\(\);\s*\n\s*terrainLodPrev = cur;/)
+  })
+})

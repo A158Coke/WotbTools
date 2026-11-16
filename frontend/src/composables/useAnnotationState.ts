@@ -3,35 +3,36 @@ import type { ComputedRef, Ref } from 'vue'
 import { commit, redo as redoSnapshot, undo as undoSnapshot } from '../utils/annotation.js'
 
 /** 标注记录的结构最小集（schema 几何由 utils/annotation 权威，这里只要求可辨识）。 */
-export interface PlaybackAnnotation {
+export interface MapAnnotation {
   type: string
   color: string
   [key: string]: unknown
 }
 
-interface UsePlaybackAnnotationsOptions {
+interface UseAnnotationStateOptions {
   /** route 草稿由宿主 gesture 状态派生（routePoints + 颜色/宽度），route 提交时取值。 */
-  getRouteDraft?: () => PlaybackAnnotation | null
+  getRouteDraft?: () => MapAnnotation | null
 }
 
 /**
- * 2D 标注编辑状态的唯一 owner（#820 Wave B5B）：
+ * 地图标注编辑状态的唯一 owner（#820 Wave B5B 起；回放 2D / 回放 3D / 地图预览 2D / 地图预览 3D 共用）：
  * 快照历史（history + historyIndex）+ 当前标注列表 + 进行中草稿 + 选中项，
  * 以及 commit / undo / redo / clear / updateSelected / delete / rename / route 提交 / reset。
  *
  * 边界（不在此处，也不做双向同步）：
  * - 几何与历史算法的权威仍是 `utils/annotation`（只消费，不复制）；
  * - pointer gesture 临时状态（routePoints、drawStart/points、moveOriginal）、工具与颜色/宽度、
- *   textSession、地图 viewport、播放时钟归宿主 BattlePlayback；gesture 产生的草稿通过
- *   写 `draft` ref 进入同一 owner，不建第二份草稿状态。
+ *   textSession、地图 viewport 归各表面的宿主（回放 2D = usePlaybackAnnotationEditor，
+ *   3D = useSceneAnnotations，预览 2D = MapPreview2DPane）；gesture 产生的草稿通过
+ *   写 `draft` ref 进入同一 owner，不建第二份草稿状态。3D 不用 draft / 选中（选中恒为 -1）。
  */
-export function usePlaybackAnnotations(options: UsePlaybackAnnotationsOptions = {}) {
-  const history: Ref<PlaybackAnnotation[][]> = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
+export function useAnnotationState(options: UseAnnotationStateOptions = {}) {
+  const history: Ref<MapAnnotation[][]> = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
   const historyIndex = ref(0)
-  const annotations: ComputedRef<PlaybackAnnotation[]> = computed(() => history.value[historyIndex.value] || [])
-  const draft: Ref<PlaybackAnnotation | null> = ref(null) // 进行中的标注（未提交）
+  const annotations: ComputedRef<MapAnnotation[]> = computed(() => history.value[historyIndex.value] || [])
+  const draft: Ref<MapAnnotation | null> = ref(null) // 进行中的标注（未提交）
   const selectedAnnotationIndex = ref(-1)
-  const selectedAnnotation: ComputedRef<PlaybackAnnotation | null> = computed(
+  const selectedAnnotation: ComputedRef<MapAnnotation | null> = computed(
     () => annotations.value[selectedAnnotationIndex.value] || null
   )
 
@@ -48,13 +49,13 @@ export function usePlaybackAnnotations(options: UsePlaybackAnnotationsOptions = 
   }
 
   /** 快照式提交：next 成为新历史项（utils/annotation.commit 权威）。 */
-  function replaceAnnotations(next: PlaybackAnnotation[]) {
+  function replaceAnnotations(next: MapAnnotation[]) {
     const s = commit(history.value, historyIndex.value, next)
     history.value = s.history
     historyIndex.value = s.index
   }
 
-  function commitDraft(ann: PlaybackAnnotation) {
+  function commitDraft(ann: MapAnnotation) {
     replaceAnnotations([...annotations.value, ann])
   }
 
@@ -77,7 +78,7 @@ export function usePlaybackAnnotations(options: UsePlaybackAnnotationsOptions = 
     if (annotations.value.length) replaceAnnotations([])
   }
 
-  function updateSelected(patch: Partial<PlaybackAnnotation>) {
+  function updateSelected(patch: Partial<MapAnnotation>) {
     if (!selectedAnnotation.value) return
     const index = selectedAnnotationIndex.value
     replaceAnnotations(annotations.value.map((ann, i) => (i === index ? { ...ann, ...patch } : ann)))
@@ -102,7 +103,7 @@ export function usePlaybackAnnotations(options: UsePlaybackAnnotationsOptions = 
     const routeDraft = options.getRouteDraft?.() || null
     const points = (routeDraft?.points as unknown[] | undefined) || []
     if (points.length < 2) return false
-    commitDraft(routeDraft as PlaybackAnnotation)
+    commitDraft(routeDraft as MapAnnotation)
     selectedAnnotationIndex.value = annotations.value.length - 1
     return true
   }
