@@ -27,7 +27,7 @@ const texs = {
 
 describe('makeGroundMaterial（分层地表）', () => {
   it(':773 HEIGHT_BLEND 下发值 uHbSoft/uHbScale/uHbOffset 均为 Vector4（声明类型对齐）', () => {
-    const mat = makeGroundMaterial({ layers, texs, size: 600 }) as THREE.ShaderMaterial
+    const mat = makeGroundMaterial({ layers, texs, size: 600 } as never) as THREE.ShaderMaterial
     expect(mat.isShaderMaterial).toBe(true)
     for (const u of ['uHbSoft', 'uHbScale', 'uHbOffset']) {
       expect(mat.uniforms[u].value).toBeInstanceOf(THREE.Vector4)
@@ -43,7 +43,7 @@ describe('makeGroundMaterial（分层地表）', () => {
 
   it('无分层（旧包）→ 回退底图 MeshBasicMaterial', () => {
     const mapTexture = new THREE.Texture()
-    const mat = makeGroundMaterial({ size: 600, mapTexture }) as THREE.MeshBasicMaterial
+    const mat = makeGroundMaterial({ size: 600, mapTexture } as never) as THREE.MeshBasicMaterial
     expect(mat.isMeshBasicMaterial).toBe(true)
     expect(mat.map).toBe(mapTexture)
   })

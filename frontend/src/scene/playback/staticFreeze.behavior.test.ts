@@ -19,7 +19,7 @@ const provider = vi.hoisted(() => ({
   configured: () => true,
 }))
 vi.mock('../assetProvider.js', () => ({ assetProvider: provider }))
-const gltfMock = vi.hoisted(() => ({ mode: 'idle' as 'idle' | 'load-scene' }))
+const gltfMock = vi.hoisted(() => ({ mode: 'idle' as 'idle' | 'load-scene', scene: null as THREE.Object3D | null }))
 vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
   GLTFLoader: class {
     load(_url: string, onLoad: (g: { scene: THREE.Object3D }) => void, _p: unknown, onError: (e: unknown) => void) {
@@ -28,7 +28,6 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
     }
   },
 }))
-gltfMock.scene = null as THREE.Object3D | null
 vi.mock('../groundPass.js', async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>
   return {
@@ -84,9 +83,10 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
       scene.add(m)
       originals.push(m)
     }
-    const dNode = new THREE.Mesh(geo, mat)
+    const dMat = new THREE.MeshBasicMaterial()   // 独立材质 + 独立 geometry：主线的小批跨宫格合并按 geometry/material uuid 分组，位置不再决定批次
+    const dNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), dMat)
     dNode.name = 'D_tree_001'
-    dNode.position.set(10, 300, 0)   // 远隔宫格（gltf 地面系 x/y）：独立批次
+    dNode.position.set(10, 300, 0)   // 远隔宫格（gltf 地面系 x/y）；独立材质保证 D_ 独占批次
     scene.add(dNode)
     const ctx: MapAssemblyContext = {
       DATA: { meta: { map_id: 6 }, destructible_areas: [], destructible_events: [] },
@@ -239,7 +239,7 @@ describe('updateDestructibles：逐实例矩阵倒伏 + 倒带复位 + needsUpda
     handle.updateDestructibles(11)
     expect(setSpy).toHaveBeenCalledTimes(1)
     expect(nu).toBe(true)
-    const st0 = states[0] as { pivotPos: { x: number }; fallQuat: { w: number }; stopRad: number; heightM: number; clock: number }
+    const st0 = states[0] as { pivotPos: { x: number; y: number; z: number }; fallQuat: { w: number }; stopRad: number; heightM: number; clock: number }
     const frame = treeFrame(st0 as never, true, 11)!
     expect(frame).toBeTruthy()
     const axis = new THREE.Vector3(frame.axis[0], frame.axis[1], frame.axis[2])

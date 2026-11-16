@@ -63,7 +63,7 @@ vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
 }))
 
 import { createVehicleRuntime } from './vehicleRuntime.js'
-import type { VehicleRuntimeDeps, RuntimeVehicle } from './vehicleRuntime.js'
+import type { VehicleRuntimeDeps } from './vehicleRuntime.js'
 
 function makeData(vehicleCount = 1) {
   return {

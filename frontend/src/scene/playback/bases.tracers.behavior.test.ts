@@ -3,7 +3,7 @@
 // - 基地 teardown：clear() 清空贴地标记（场景/几何/材质/纹理释放）+ HUD 派生 baseViews 归零；
 // - 中立/无主基地 → 白 token（--color-team-neutral 消费，不再用灰）；
 // - 炮线亮色板与车辆 tint 分离（注入契约）：宿主常量亮度 + battleRuntime 阵营分流。
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import * as THREE from 'three'
 import { createBaseMarkers } from './bases.js'
 import { teamTracerColor } from './battleRuntime.js'
@@ -12,13 +12,12 @@ import { COLOR_FRIENDLY, COLOR_ENEMY, TRACER_FRIENDLY, TRACER_ENEMY } from '../p
 function makeBases(overrides = {}) {
   const scene = new THREE.Scene()
   const store = { baseViews: [] as unknown[] }
-  const disposeSpy = vi.fn()
   const handle = createBaseMarkers({
     getScene: () => scene,
     getCamera: () => new THREE.PerspectiveCamera(),
     getData: () => ({ meta: { friendly_team: 1 }, supremacy_bases: [], assault_bases: [] }) as never,
     getMapBases: () => ({ supremacy: [{ baseId: 'A', x: 10, y: 20, radius: 15 }], assault: [] }) as never,
-    store,
+    store: store as never,
     groundY: () => 0,
     ...overrides,
   })

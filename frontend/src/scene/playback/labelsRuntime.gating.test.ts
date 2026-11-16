@@ -34,7 +34,7 @@ function makeDeps(labelsOn: boolean, overrides: Partial<LabelsRuntimeDeps> = {})
     heightMeta: () => null,
     mapScenery: () => null,
     occlGrid: () => null,
-    transients: { ghostOf: () => null, hasFlash: () => false },
+    transients: { ghostOf: () => undefined, hasFlash: () => false },
     fxScale: () => 2,
     getLabelOverlay: () => overlay,
     canonicalVehicles: () => [],
@@ -53,7 +53,6 @@ beforeEach(() => {
 describe(':1128 装填条求值门控', () => {
   it('同一 T 只解析发布一次；setLabelPrefs 强制重发；节流窗过后新 T 重发', () => {
     let now = 0
-    let t = 42
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now)
     try {
       const { deps, overlay, setT } = makeDeps(true)

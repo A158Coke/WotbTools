@@ -67,7 +67,7 @@ function makePipeline() {
     getShooterShells: () => [],
     getPenetrationMode: () => false,
     getCollisionMode: () => false,
-    equipmentCoeffs: () => ({ thickMul: 1 }),
+    equipmentCoeffs: () => ({ thickMul: 1, penMul: 1 }),
     resolveCaliberFor: () => 0,
     applyArmorViewStyle: vi.fn(),
     getFxScene: () => new THREE.Scene(),

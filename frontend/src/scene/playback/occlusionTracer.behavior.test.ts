@@ -121,7 +121,7 @@ describe('tracer 折线生命周期（行为）', () => {
 describe('?perf 看门狗（行为）', () => {
   it('50ms 心跳抓主线程停顿（gap > 100ms 记录）；stopWatchdog 清理心跳定时器', async () => {
     window.history.replaceState(null, '', '?perf=1')
-    const timers: Array<(fn: () => void) => number> = []
+    const timers: Array<() => void> = []
     const setSpy = vi.spyOn(window, 'setInterval').mockImplementation(((fn: () => void) => {
       timers.push(fn)
       return 4321 as unknown as ReturnType<typeof setInterval>

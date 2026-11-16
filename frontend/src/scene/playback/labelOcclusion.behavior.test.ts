@@ -32,11 +32,12 @@ function makeDeps({ vehicles, sampleHeight, occlGrid, mapScenery, raycaster }: {
   sampleHeight?: (x: number, z: number) => number
   occlGrid?: Map<string, unknown[]> | null
   mapScenery?: THREE.Object3D | null
-  raycaster: THREE.Raycaster
+  raycaster?: THREE.Raycaster
 }) {
   const container = document.createElement('div')
   const camera = new THREE.PerspectiveCamera()
   camera.position.set(0, 2, 0)
+  const ray = raycaster ?? new THREE.Raycaster()
   const store = {
     killfeed: [], scoreFriend: 0, scoreEnemy: 0, friendlyTeam: null,
     roster: { team1: [], team2: [], unknown: [] }, labelsOn: true,
@@ -47,7 +48,7 @@ function makeDeps({ vehicles, sampleHeight, occlGrid, mapScenery, raycaster }: {
     store: store as never,
     container,
     getCamera: () => camera,
-    getRaycaster: () => raycaster,
+    getRaycaster: () => ray,
     getData: () => ({ meta: { friendly_team: 1 }, kills: [] }),
     getT: () => 0,
     getVehicles: () => vehicles as never,
@@ -79,7 +80,7 @@ beforeEach(() => {
 describe('createLabelsRuntime 标签软遮挡（行为）', () => {
   it('遮挡发布只打 occluded 标志：地形脊后 labelOccluded=true 并随 anchor 发布；脊前为 false', () => {
     // 高度场解析步进：z=-50 处一道 20m 山脊（camera 在 z=0，脊后锚点 z=-100）
-    const sampleHeight = (x: number, z: number) => (Math.abs(z + 50) < 40 ? 20 : 0)
+    const sampleHeight = (_x: number, z: number) => (Math.abs(z + 50) < 40 ? 20 : 0)
     const blocked = makeVehicle(1, { x: 0, y: 0, z: -100 })
     const { deps, setAnchor } = makeDeps({ vehicles: [blocked], sampleHeight })
     createLabelsRuntime(deps).updateLabels()

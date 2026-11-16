@@ -149,7 +149,7 @@ describe(':354 逐图太阳（lighting.json 驱动）', () => {
 
 describe(':260 逐图 IBL（等距柱状环境贴图 + 会话释放）', () => {
   it('加载：scene.environment = Equirect + SRGB + environmentIntensity；dispose：摘环境 + dispose 纹理', async () => {
-    const { handle, scene, deps } = makeWorld()
+    const { handle, scene } = makeWorld()
     urls.map = { lighting: 'http://assets/lighting.json', ibl: 'http://assets/ibl.webp' }
     provider.fetch.mockImplementation((u: string) => {
       if (u === 'http://assets/ibl.webp') {

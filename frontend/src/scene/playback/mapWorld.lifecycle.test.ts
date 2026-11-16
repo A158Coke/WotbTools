@@ -197,7 +197,7 @@ describe('assembleMapScenery 会话失效复查（每个 await 之后）', () =>
   it('destructDoc 晚 resolve + stale：只返回空 writes，不摘除已挂载宿主布景', async () => {
     let resolveDoc!: (d: unknown) => void
     const destructDocPromise = new Promise((res) => { resolveDoc = res })
-    const { ctx, scene, setStale } = makeCtx({ destructDocPromise })
+    const { ctx, scene, setStale } = makeCtx({ destructDocPromise: destructDocPromise as never })
     const gltf = minimalGltf()
     const pending = assembleMapScenery(gltf as never, ctx)
     // 让 extras await 落定、装配段推进到 destructDoc 悬挂点（挂载即归属宿主：onSceneryMounted 无条件发生）

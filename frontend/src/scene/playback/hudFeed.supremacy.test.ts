@@ -3,7 +3,7 @@
 //（与 hudFeed 同批出仓的 HUD 派生域；每 tick 由宿主无条件调用）。
 // 行为契约：有采样 → 按阵营视角写入；会话切换（无 supremacy_points）→ 写 null 清残值；
 // 同值守卫：值不变不产生 store 写入。
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { applySupremacyPointsToStore } from '../supremacyPoints.js'
 
 function makeStore() {
