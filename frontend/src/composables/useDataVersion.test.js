@@ -226,11 +226,11 @@ describe('useDataVersion', () => {
     const mod = await load({ fetchImpl: fetchMock })
     await mod.loadDataVersionCatalog()
     const { options } = mod.useDataVersion()
-    // 陈列顺序：最新超测（11.4.0.130）→ 最新正式 → 其余版本递降
+    // 陈列顺序：最新超测（11.4.0.138-r5）→ 最新现行版本（11.21.0_1）→ 11.21.0
     expect(options.value.map((option) => [option.value, option.preview])).toEqual([
-      ['11.4.0.130', true],
-      ['11.21.0', false],
+      ['11.4.0.138-r5', true],
       ['11.21.0_1', false],
+      ['11.21.0', false],
     ])
   })
 
