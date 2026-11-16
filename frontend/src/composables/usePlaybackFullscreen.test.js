@@ -287,6 +287,37 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     stop()
   })
 
+  it('过期请求的迟到成功不得退出更新请求建立的全屏（同一 target 元素）', async () => {
+    stubMatchMedia({})
+    const { root, calls } = stubBrowserApis()
+    const pending = []
+    // 浏览器里 requestFullscreen() 在用户手势后可能长时间悬挂；两次请求指向同一个 target，
+    // ownsFullscreen() 无法区分新旧会话，只能由请求代次判断谁建立了当前会话。
+    root.requestFullscreen = vi.fn(() => new Promise((resolve) => {
+      pending.push(() => {
+        Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+        document.dispatchEvent(new Event('fullscreenchange'))
+        resolve()
+      })
+    }))
+    const { api, stop } = mountFullscreen()
+    api.toggleFullscreen()                  // 请求 A 悬挂
+    expect(pending).toHaveLength(1)
+    api.exitOwnedFullscreen()               // 失活 / 宿主退出：取消 A，代次前进
+    api.toggleFullscreen()                  // 请求 B
+    expect(pending).toHaveLength(2)
+    pending[1]()                            // B 成功建立会话
+    await flush()
+    expect(api.isFullscreen.value).toBe(true)
+    expect(calls.exit).toBe(0)
+
+    pending[0]()                            // A 迟到 resolve：不得补刀 B 的会话
+    await flush()
+    expect(api.isFullscreen.value).toBe(true)
+    expect(calls.exit).toBe(0)
+    stop()
+  })
+
   it('生命周期失活（capability 切走）后不再锁横屏', async () => {
     stubMatchMedia({ [PLAYBACK_PHONE_QUERY]: true })
     const { calls } = stubBrowserApis()
@@ -395,5 +426,137 @@ describe('usePlaybackFullscreen.enterFullscreen：幂等的自动进入入口（
     release()
     expect(await pendingDisposed).toBe(false)
     expect(calls.exit).toBe(2)
+  })
+})
+
+describe('伪全屏降级（pseudoFallback，2D 回放开启）', () => {
+  function mountPseudo({ pseudoFallback = true, onChange, isActive } = {}) {
+    const root = document.body.lastElementChild
+    const scope = effectScope()
+    let api
+    scope.run(() => { api = usePlaybackFullscreen({ target: () => root, pseudoFallback, onChange, isActive }) })
+    return { api, root, stop: () => scope.stop() }
+  }
+  const html = () => document.documentElement
+
+  it('原生请求被拒绝 → 进入伪全屏（锁文档滚动），再点一次退出并解锁', async () => {
+    stubBrowserApis()
+    document.body.lastElementChild.requestFullscreen = vi.fn(() => Promise.reject(new Error('Permissions check failed')))
+    const changes = []
+    const { api, stop } = mountPseudo({ onChange: (v) => changes.push(v) })
+    api.toggleFullscreen()
+    await flush()
+    expect(api.pseudoFullscreen.value).toBe(true)
+    expect(api.isFullscreen.value).toBe(true)
+    expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(true)
+    api.toggleFullscreen()
+    expect(api.isFullscreen.value).toBe(false)
+    expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+    expect(changes).toEqual([true, false])
+    stop()
+  })
+
+  it('原生请求悬挂不落定（既不 resolve 也不 reject）→ 超时后降级，不是「点了没反应」', async () => {
+    vi.useFakeTimers()
+    stubBrowserApis()
+    document.body.lastElementChild.requestFullscreen = vi.fn(() => new Promise(() => {}))
+    const { api, stop } = mountPseudo()
+    api.toggleFullscreen()
+    expect(api.isFullscreen.value).toBe(false)
+    vi.advanceTimersByTime(1000)
+    expect(api.pseudoFullscreen.value).toBe(true)
+    stop()
+    vi.useRealTimers()
+  })
+
+  it('元素不支持 requestFullscreen（iPhone Safari）→ 直接伪全屏，且按钮视为受支持', () => {
+    stubBrowserApis({ fullscreen: false })
+    const { api, stop } = mountPseudo()
+    expect(api.fullscreenSupported.value).toBe(true)
+    api.toggleFullscreen()
+    expect(api.pseudoFullscreen.value).toBe(true)
+    stop()
+  })
+
+  it('Esc 退出伪全屏；别的层已处理（defaultPrevented）的 Esc 不抢', async () => {
+    stubBrowserApis({ fullscreen: false })
+    const { api, stop } = mountPseudo()
+    api.toggleFullscreen()
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true })
+    handled.preventDefault()
+    document.dispatchEvent(handled)
+    expect(api.pseudoFullscreen.value).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await Promise.resolve()
+    expect(api.pseudoFullscreen.value).toBe(false)
+    expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+    stop()
+  })
+
+  it('exitOwnedFullscreen（能力切走 / KeepAlive 停用）与卸载都会退出伪全屏', () => {
+    stubBrowserApis({ fullscreen: false })
+    const first = mountPseudo()
+    first.api.toggleFullscreen()
+    first.api.exitOwnedFullscreen()
+    expect(first.api.pseudoFullscreen.value).toBe(false)
+    first.api.toggleFullscreen()
+    first.stop()
+    expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+  })
+
+  it.each(['exit', 'deactivate', 'dispose'])('%s 使重复点击的悬挂请求及迟到拒绝失效', async (mode) => {
+    vi.useFakeTimers()
+    stubBrowserApis()
+    let active = true
+    const rejects = []
+    document.body.lastElementChild.requestFullscreen = vi.fn(() => new Promise((_, reject) => rejects.push(reject)))
+    const { api, stop } = mountPseudo({ isActive: () => active })
+    try {
+      api.toggleFullscreen()
+      vi.advanceTimersByTime(300)
+      api.toggleFullscreen()
+      if (mode === 'exit') {
+        vi.advanceTimersByTime(700)
+        expect(api.pseudoFullscreen.value).toBe(true)
+        api.toggleFullscreen()
+      } else {
+        active = false
+        if (mode === 'dispose') stop()
+        else api.exitOwnedFullscreen()
+        active = true
+      }
+      rejects.forEach(reject => reject(new Error('late rejection')))
+      await Promise.resolve()
+      await Promise.resolve()
+      vi.runAllTimers()
+      expect(api.isFullscreen.value).toBe(false)
+      expect(html().hasAttribute('data-pb-pseudo-fullscreen')).toBe(false)
+    } finally { stop(); vi.useRealTimers() }
+  })
+
+  it('window 标注快捷键消费 Esc 后保留伪全屏', async () => {
+    stubBrowserApis({ fullscreen: false })
+    const { api, stop } = mountPseudo()
+    const annotationHandler = event => event.preventDefault()
+    window.addEventListener('keydown', annotationHandler)
+    api.toggleFullscreen()
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await Promise.resolve()
+      expect(api.pseudoFullscreen.value).toBe(true)
+      window.removeEventListener('keydown', annotationHandler)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      await Promise.resolve()
+      expect(api.pseudoFullscreen.value).toBe(false)
+    } finally { window.removeEventListener('keydown', annotationHandler); stop() }
+  })
+
+  it('默认不开降级：API 缺失时按钮不受支持、点击无副作用（3D / Map Preview 等沿用旧语义）', () => {
+    stubBrowserApis({ fullscreen: false })
+    const { api, stop } = mountPseudo({ pseudoFallback: false })
+    expect(api.fullscreenSupported.value).toBe(false)
+    api.toggleFullscreen()
+    expect(api.isFullscreen.value).toBe(false)
+    stop()
   })
 })

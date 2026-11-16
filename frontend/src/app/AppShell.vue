@@ -265,10 +265,12 @@ watch(uiProfile, async () => {
     @open-nav="openNavDrawer(null)"
   />
   <AppSidebar v-if="!isDrawerShell" />
-  <!-- 沉浸态（手机横屏回放 / 装甲查看器）没有顶栏：左上保留同一个菜单入口打开抽屉 -->
+  <!-- 沉浸态（手机横屏回放 / 装甲查看器 / 桌面伪全屏）没有顶栏：左上保留同一个菜单入口打开抽屉。
+       桌面伪全屏时播放器托管入口可能随控制条收起 / UI 隐藏而释放（navHosted=false），
+       此时外壳必须接回兜底入口；该条件不能再要求 isDrawerShell。 -->
   <Teleport :to="fullscreenRoot ?? 'body'" :disabled="!fullscreenRoot">
     <button
-      v-if="isDrawerShell && shellChrome.immersive.value && !shellChrome.navHosted.value"
+      v-if="shellChrome.immersive.value && !shellChrome.navHosted.value"
       ref="immersiveMenu"
       type="button"
       class="immersive-nav"
@@ -281,8 +283,10 @@ watch(uiProfile, async () => {
       <Menu :size="20" aria-hidden="true" />
     </button>
   </Teleport>
+  <!-- 抽屉入口不只属于抽屉外壳：平板 / 桌面进入伪全屏后侧边栏被 CSS 隐藏，无论入口来自
+       播放器托管（navHosted）还是外壳兜底，同一个抽屉都必须真实存在。 -->
   <AppNavDrawer
-    v-if="isDrawerShell"
+    v-if="isDrawerShell || shellChrome.immersive.value"
     :open="navDrawerOpen"
     :return-focus-to="navReturnFocus"
     @close="navDrawerOpen = false"
@@ -376,6 +380,18 @@ watch(uiProfile, async () => {
 
 .app-footer {
   margin-top: auto;
+}
+
+/* 回放伪全屏（原生 Fullscreen API 不可用 / 被拒时的降级，见 usePlaybackFullscreen）：
+   工作台是局部层叠上下文，压不过 fixed 的宽屏侧栏，页脚也还在文档流里——伪全屏期间一并摘掉。
+   抽屉面板（div.app-sidebar.is-drawer）不受影响。 */
+:global(html[data-pb-pseudo-fullscreen] aside.app-sidebar),
+:global(html[data-pb-pseudo-fullscreen] .app-footer) {
+  display: none;
+}
+
+:global(html[data-pb-pseudo-fullscreen] .immersive-nav) {
+  z-index: calc(var(--z-header) + 2);
 }
 
 /* 沉浸态悬浮菜单：玻璃底胶囊，避开刘海与圆角安全区；场景外壳用 --immersive-nav-reserve 让出这一块 */

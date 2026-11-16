@@ -21,7 +21,8 @@
  *        （2D 需要在新形态下重算几何）。**唯一的 fullscreenchange 监听点就在这里**——
  *        调用方不要再自己 addEventListener，否则同一事件会有两个监听、且退出解锁路径分叉。
  */
-import { computed, onScopeDispose, readonly, ref } from 'vue'
+import { computed, inject, onScopeDispose, readonly, ref } from 'vue'
+import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import type { Ref } from 'vue'
 import { useReplayAutoFullscreen } from './useReplayAutoFullscreen.js'
 
@@ -40,6 +41,12 @@ export interface PlaybackFullscreenOptions {
   /** 全屏状态变化后的布局反应（2D 需要在新形态下重算几何）。唯一的 fullscreenchange 监听点 */
   onChange?: (fullscreen: boolean) => void
   /**
+   * 元素级 Fullscreen API 不可用（iPhone Safari 的 `<div>`）或请求被拒绝（权限 / 嵌入环境 / 自动化浏览器）时，
+   * 降级为 CSS 伪全屏：由宿主按 `pseudoFullscreen` 给 target 绑 `pb-pseudo-fullscreen` 类（样式见 playback-workspace.css，铺满视口；不在这里手动改 class，Vue 重渲染会覆盖）、锁住文档滚动、Esc 退出。
+   * 默认关闭——只有宿主 CSS 已支持该类的场景（2D 回放）才开启，其余场景保持「API 不可用就不画按钮」。
+   */
+  pseudoFallback?: boolean
+  /**
    * 回放查看器的「成功就绪 → 自动全屏」（仅 Android 手机 App 生效，见 useReplayAutoFullscreen）。
    * 响应式 getter：`token` 是工作台的进入事件序号，`key` 是回放身份，`ready` 必须是**成功**就绪
    * （不是 data-pane-ready），`active` 是能力是否仍激活。省略 = 不自动进入。
@@ -47,10 +54,30 @@ export interface PlaybackFullscreenOptions {
   auto?: () => { token: number; key: unknown; ready: boolean; active: boolean }
 }
 
-export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange, auto }: PlaybackFullscreenOptions) {
+/** 原生全屏请求悬挂超过此时长仍未进入 → 降级伪全屏 */
+const PSEUDO_FALLBACK_DELAY_MS = 700
+const PSEUDO_SCROLL_LOCK_ATTR = 'data-pb-pseudo-fullscreen'
+
+export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, onChange, auto, pseudoFallback = false }: PlaybackFullscreenOptions) {
   /** 与 `document.fullscreenElement` 同步；由 fullscreenchange 驱动 */
-  const isFullscreen = ref(ownsFullscreen())
+  const nativeFullscreen = ref(ownsFullscreen())
+  /** CSS 伪全屏（仅 pseudoFallback 开启且原生全屏不可用 / 被拒时进入） */
+  const pseudoFullscreen = ref(false)
+  const isFullscreen = computed(() => nativeFullscreen.value || pseudoFullscreen.value)
   const owner = Symbol('playback-fullscreen')
+  // 伪全屏盖不住外壳顶栏（工作台是局部层叠上下文）：伪全屏期间向外壳申请沉浸（摘顶栏、--header-h 归零），退出即释放
+  const shellChrome = inject(SHELL_CHROME_KEY, null)
+
+  let requestGeneration = 0
+  // 当前原生全屏会话由哪一代请求建立：`ownsFullscreen()` 只认元素，跟不上「同一元素的新会话」。
+  // 过期请求的成功回调只有在本代请求**就是**当前会话的建立者时才允许退出，避免补刀更新的会话。
+  let sessionGeneration: number | null = null
+  let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+  function cancelPendingRequest() {
+    requestGeneration += 1
+    if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+    fallbackTimer = null
+  }
 
   const phoneForm = () => !!isPhone?.value
   function ownsFullscreen() {
@@ -90,14 +117,46 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
 
   /** 唯一的状态同步点：任何来源的全屏变化都经这里 */
   function onFullscreenChange() {
-    isFullscreen.value = ownsFullscreen()
-    if (!isFullscreen.value) unlockOrientation()
+    nativeFullscreen.value = ownsFullscreen()
+    if (!nativeFullscreen.value) {
+      sessionGeneration = null
+      unlockOrientation()
+    }
+    // 迟到的原生全屏成功时让位给它（不再叠着伪全屏）
+    if (nativeFullscreen.value && pseudoFullscreen.value) { setPseudoFullscreen(false); return }
     onChange?.(isFullscreen.value)
+  }
+
+  /** 伪全屏：类 + 文档滚动锁都挂在这里，进出对称，卸载时一并清掉 */
+  function setPseudoFullscreen(on: boolean) {
+    if (pseudoFullscreen.value === on) return
+    const el = target()
+    if (on && (!el || typeof document === 'undefined')) return
+    pseudoFullscreen.value = on
+    shellChrome?.request(owner, on)
+    if (typeof document !== 'undefined') {
+      if (on) {
+        document.documentElement.setAttribute(PSEUDO_SCROLL_LOCK_ATTR, '')
+        window.addEventListener('keydown', onPseudoKeydown)
+      } else {
+        document.documentElement.removeAttribute(PSEUDO_SCROLL_LOCK_ATTR)
+        window.removeEventListener('keydown', onPseudoKeydown)
+      }
+    }
+    onChange?.(isFullscreen.value)
+  }
+  /** Esc 退出伪全屏；别的层（菜单 / 对话框）已处理的 Esc 不抢 */
+  function onPseudoKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    // 进入伪全屏时才注册 window listener，排在宿主挂载的标注快捷键之后。
+    exitOwnedFullscreen()
   }
 
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   onScopeDispose(() => {
     if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
+    cancelPendingRequest()
+    setPseudoFullscreen(false)
     // 卸载时绝不把应用留在锁死方向上
     unlockOrientation()
   })
@@ -112,7 +171,7 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
    */
   const fullscreenSupported = computed(() => {
     const el = target()
-    return typeof document !== 'undefined' && el != null && typeof el.requestFullscreen === 'function'
+    return typeof document !== 'undefined' && el != null && (pseudoFallback || typeof el.requestFullscreen === 'function')
   })
 
   /**
@@ -120,6 +179,8 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
    * 供宿主在能力切走 / KeepAlive 停用时调用：被缓存的组件不会卸载，卸载路径的兜底退出不会发生。
    */
   function exitOwnedFullscreen() {
+    cancelPendingRequest()
+    setPseudoFullscreen(false)
     if (!ownsFullscreen() || typeof document.exitFullscreen !== 'function') return
     try {
       const p = document.exitFullscreen()
@@ -154,11 +215,13 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   }
 
   function toggleFullscreen() {
-    if (typeof document === 'undefined') return
+    if (typeof document === 'undefined' || disposed || !isActive()) return
     const el = target()
     if (!el) return
+    if (pseudoFullscreen.value) { exitOwnedFullscreen(); return }
     if (document.fullscreenElement && document.fullscreenElement !== el) return
     if (document.fullscreenElement === el) {
+      cancelPendingRequest()
       if (typeof document.exitFullscreen === 'function') {
         try {
           const p = document.exitFullscreen()
@@ -167,16 +230,41 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
       }
       return
     }
-    if (typeof el.requestFullscreen !== 'function') return
+    // 原生请求失败（API 缺失 / 同步抛出 / Promise 被拒）或悬挂不落定（部分嵌入 / 自动化环境实测既不
+    // resolve 也不 reject，按钮表现为「点了没反应」）→ 伪全屏降级；不开降级则保持原行为（静默）。
+    cancelPendingRequest()
+    const generation = requestGeneration
+    let settled = false
+    const fallback = () => {
+      if (settled || generation !== requestGeneration) return
+      settled = true
+      if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+      fallbackTimer = null
+      if (pseudoFallback && isActive() && !disposed && !document.fullscreenElement) setPseudoFullscreen(true)
+    }
+    if (typeof el.requestFullscreen !== 'function') { fallback(); return }
     try {
       const p = el.requestFullscreen()
       // 顺序要求：**全屏成功之后**才请求方向锁
       if (p && typeof p.then === 'function') {
-        p.then(() => lockOrientation()).catch(() => {})
+        fallbackTimer = pseudoFallback ? setTimeout(fallback, PSEUDO_FALLBACK_DELAY_MS) : null
+        p.then(() => {
+          if (generation !== requestGeneration || disposed || !isActive()) {
+            // 过期请求的迟到成功：只有当前全屏仍由本代请求建立时才退出。若更新的请求已经建立了
+            // 会话（同一 target 元素，ownsFullscreen() 分不出来），这里退出就是误杀新会话。
+            if (ownsFullscreen() && (sessionGeneration === null || sessionGeneration === generation)) exitOwnedFullscreen()
+            return
+          }
+          settled = true
+          sessionGeneration = generation
+          if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+          fallbackTimer = null
+          lockOrientation()
+        }).catch(fallback)
       } else {
         lockOrientation()
       }
-    } catch { /* unsupported browsers may throw */ }
+    } catch { fallback() }
   }
 
   if (auto) {
@@ -190,7 +278,9 @@ export function usePlaybackFullscreen({ target, isPhone, isActive = () => true, 
   }
 
   return {
-    isFullscreen: readonly(isFullscreen),
+    isFullscreen,
+    /** 当前处于 CSS 伪全屏（宿主据此绑定 pb-pseudo-fullscreen 类） */
+    pseudoFullscreen: readonly(pseudoFullscreen),
     fullscreenSupported,
     toggleFullscreen,
     enterFullscreen,

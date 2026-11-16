@@ -241,6 +241,14 @@ jobs:
         timeout-minutes: 10
         working-directory: frontend
         run: pnpm run test:shader-check
+      # 伪全屏 / 沉浸态导航：按 Vue scoped 编译真实 AppShell 样式后做命中测试。
+      # 选择器在 scoped 编译中丢失（:global 差异）时菜单按钮仍可见但不可点，
+      # 普通单测抓不到；该门禁锁住编译产物 + 安全区定位。
+      - name: Real-browser Pseudo fullscreen navigation regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-pseudo-nav
 
   # 一分钟量级的门禁，失败语义与 browser-fast 相同。
   browser-medium:
