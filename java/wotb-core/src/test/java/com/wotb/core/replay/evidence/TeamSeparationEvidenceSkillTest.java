@@ -13,7 +13,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.*;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.battle;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.engagement;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.features;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.member;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.move;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.phases;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.stationary;
+import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.twoClusterPhase;
 
 /**
  * TeamSeparationEvidenceSkill — Backend Evidence Boundary 回归测试。
