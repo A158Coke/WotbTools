@@ -82,7 +82,6 @@ export function createTrajectoryCard(deps: TrajectoryCardDeps): TrajectoryCardHa
     let trajAnchorWorld: THREE.Vector3 | null = null;
     /** 上次投影锚点/写入位置：仅锚点移动或 dirty 时重排，静止帧不写样式。 */
     let lastAnchor: { x: number; y: number } | null = null;
-    let lastCardPos: { left: number; top: number } | null = null;
     /** 位置/宽度需要重算（内容更新、resize、展开/收起）。渲染循环每帧调用时据此跳过布局。 */
     let trajLayoutDirty = true;
 
@@ -91,7 +90,6 @@ function tidyTrajectory(): void {
             trajInfoPos = null;
             trajAnchorWorld = null;
             lastAnchor = null;
-            lastCardPos = null;
             const trajInfo = document.getElementById('traj-info');
             if (trajInfo) trajInfo.style.display = 'none';
             const clickInfo = document.getElementById('click-info');
@@ -260,7 +258,6 @@ function showTrajectory(
             // 射击复现/初始自动判定同样有世界命中点，不再走顶部停靠（2026-11-16 用户裁示）。
             trajAnchorWorld = firstPoint.clone();
             lastAnchor = null;
-            lastCardPos = null;
             trajLayoutDirty = true;
             // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色（最终段 1–99% 时标题是
             // “可能击穿”）：概率链累计是领域计算，在调用方预算后交给 renderer 着色。
@@ -303,7 +300,6 @@ function updateTrajInfoPos(): void {
                 if (!trajLayoutDirty) return;
                 trajLayoutDirty = false;
                 lastAnchor = null;
-                lastCardPos = null;
                 div.style.maxInlineSize = '';
                 div.style.left = '';
                 div.style.top = '';
@@ -318,7 +314,6 @@ function updateTrajInfoPos(): void {
                 // 旋转视角经过背面时不做“固定到某个边角”的假跟随，转到正面会重新显示。
                 div.style.display = 'none';
                 lastAnchor = null;
-                lastCardPos = null;
                 return;
             }
             const moved = !lastAnchor
@@ -326,6 +321,7 @@ function updateTrajInfoPos(): void {
                 || Math.abs(projected.y - lastAnchor.y) >= 0.5;
             if (!trajLayoutDirty && !moved) return;
             lastAnchor = { x: projected.x, y: projected.y };
+            const wasHidden = div.style.display === 'none';
             if (trajLayoutDirty) {
                 // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新；
                 // 紧凑档（竖屏手机 / 横屏矮视口）再封顶 360px 且不超过画布宽 82%，
@@ -363,44 +359,62 @@ function updateTrajInfoPos(): void {
                 if (r.width <= 0 || r.height <= 0) continue;
                 panels.push({ left: r.left - anchorRect.left, top: r.top - anchorRect.top, right: r.right - anchorRect.left, bottom: r.bottom - anchorRect.top });
             }
-            const chosen = chooseResultCardPosition({
+            // 旧 left 会约束 absolute + width:auto 卡片的 shrink-to-fit 宽度：卡片隐藏期间画布
+            // 变窄后恢复时，先按旧位置量宽会把卡片量小，落位后实际更宽/更高，而静止帧不再
+            // 重排 → HUD 避让永久失效。dirty/恢复显示时先把位置归零再测量，解除旧位置约束；
+            // 落位后再用实际尺寸做有界重排（普通跟随帧也只多一次测量）。
+            if (trajLayoutDirty || wasHidden) {
+                div.style.left = '0px';
+                div.style.top = '0px';
+                div.style.insetInlineStart = '0px';
+                div.style.insetBlockStart = '0px';
+                div.style.transform = 'none';
+            }
+            const place = (width: number, height: number) => chooseResultCardPosition({
                 clickX: projected.x + (rect.left - anchorRect.left),
                 clickY: projected.y + (rect.top - anchorRect.top),
-                width: div.offsetWidth,
-                height: div.offsetHeight,
+                width,
+                height,
                 viewportWidth: anchorRect.width,
                 viewportHeight: anchorRect.height,
                 panels,
                 gap: 14,
                 pad: 8,
             });
-            // dirty 重排必须强制写一次：HUD 面板展开/收起或外部写入可能已改变卡片位置，
-            // 此时即使 chooser 结果与上次相同，也要把产品位置重新落回 DOM（门禁夹具会手动
-            // 把卡片放进将展开的面板区域，再断言产品把它移出）。非 dirty 的锚点移动帧才
-            // 允许跳过相同位置，避免相机静止时重复写样式。
-            if (trajLayoutDirty || !lastCardPos || lastCardPos.left !== chosen.left || lastCardPos.top !== chosen.top) {
+            const writePosition = (pos: { left: number; top: number }): void => {
                 // CSS 的停靠规则用 logical inset + translateX(-50%)：物理与逻辑两个方向都写同一
                 // 像素值并覆盖 transform。**不能写 inset-*: auto**：同一内联声明块里逻辑属性若
                 // 排在物理 left/top 之后，会按声明顺序覆盖它们（used left/top 变回 auto → 卡片
                 // 落到静态位置、跑到场景下方；browser-armor-aiming 实际抓到过）。
-                div.style.insetInlineStart = `${chosen.left}px`;
-                div.style.insetBlockStart = `${chosen.top}px`;
-                div.style.left = `${chosen.left}px`;
-                div.style.top = `${chosen.top}px`;
+                div.style.insetInlineStart = `${pos.left}px`;
+                div.style.insetBlockStart = `${pos.top}px`;
+                div.style.left = `${pos.left}px`;
+                div.style.top = `${pos.top}px`;
                 div.style.transform = 'none';
-                lastCardPos = chosen;
+            };
+            let cardW = div.offsetWidth;
+            let cardH = div.offsetHeight;
+            let chosen = place(cardW, cardH);
+            writePosition(chosen);
+            for (let i = 0; i < 2; i++) {
+                const actualW = div.offsetWidth;
+                const actualH = div.offsetHeight;
+                if (actualW === cardW && actualH === cardH) break;
+                cardW = actualW;
+                cardH = actualH;
+                chosen = place(cardW, cardH);
+                writePosition(chosen);
             }
             trajLayoutDirty = false;
         }
     return {
         showTrajectory, updateTrajInfoPos, armorDebugPanel, tidyTrajectory,
-        clearTrajInfoPos() { trajInfoPos = null; trajAnchorWorld = null; lastAnchor = null; lastCardPos = null; },
+        clearTrajInfoPos() { trajInfoPos = null; trajAnchorWorld = null; lastAnchor = null; },
         setTrajInfoPos(v) {
             trajInfoPos = v;
             // 世界模式“当前 tick 不相交”提示把锚点设到观察目标：卡片同样跟随该世界点。
             trajAnchorWorld = v ? v.clone() : null;
             lastAnchor = null;
-            lastCardPos = null;
             trajLayoutDirty = true;
         },
         markTrajInfoDirty() { trajLayoutDirty = true; },
@@ -409,7 +423,6 @@ function updateTrajInfoPos(): void {
             trajInfoPos = null;
             trajAnchorWorld = null;
             lastAnchor = null;
-            lastCardPos = null;
         },
         getTrajInfoPos: () => trajInfoPos,
     };

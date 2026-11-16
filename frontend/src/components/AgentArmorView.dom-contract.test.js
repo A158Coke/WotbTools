@@ -393,8 +393,8 @@ describe('traj-info hit-follow layout', () => {
     expect(fn).toMatch(/div\.style\.left = /)
     expect(fn).toMatch(/div\.style\.top = /)
     // 逻辑与物理 inset 写同一个像素值；inset-*: auto 会把 left/top 打回静态位置
-    expect(fn).toMatch(/div\.style\.insetInlineStart = `\$\{chosen\.left\}px`/)
-    expect(fn).toMatch(/div\.style\.insetBlockStart = `\$\{chosen\.top\}px`/)
+    expect(fn).toMatch(/div\.style\.insetInlineStart = `\$\{pos\.left\}px`/)
+    expect(fn).toMatch(/div\.style\.insetBlockStart = `\$\{pos\.top\}px`/)
     expect(fn).not.toMatch(/div\.style\.insetInlineStart = 'auto'/)
     expect(fn).toMatch(/div\.style\.transform = 'none'/)
     // 内容被高度上限裁剪时必须恢复指针事件（滚轮/触控可滚动），否则桌面滚轮穿透到场景

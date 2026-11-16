@@ -142,4 +142,36 @@ describe('traj-info 命中点跟随', () => {
     const overlapsPanel = left + 180 > 0.5 && left < 599.5 && top + 90 > 0.5 && top < 599.5
     expect(overlapsPanel).toBe(false)
   })
+
+  it('隐藏期间容器变窄：恢复时按实际宽度重排，不按旧 left 量宽', () => {
+    const { card } = mount()
+    // 位置相关宽度（absolute + width:auto 的 shrink-to-fit）：旧 left=700 时只能量到 100；
+    // 归零/正常位置量到 360。旧实现对隐藏恢复先按旧 left 量宽，落位后实际 360 会覆盖右侧 HUD。
+    Object.defineProperty(card, 'offsetWidth', {
+      configurable: true,
+      get() {
+        const left = parseFloat(card.style.left)
+        return Number.isFinite(left) && left > 600 ? 100 : 360
+      },
+    })
+    const camera = makeCamera()
+    const panel = document.getElementById('corner-tr') as HTMLElement
+    panel.getBoundingClientRect = () => rect(600, 0, 200, 600)
+    const tc = createTrajectoryCard({
+      isDestroyed: () => false,
+      clearShotError: () => {},
+      clearHeBlast: () => {},
+      getFxScene: () => new THREE.Scene(),
+      getCamera: () => camera,
+      L: {} as never,
+      armorDebug: () => false,
+    })
+    card.style.left = '700px'
+    card.style.top = '0px'
+    card.style.display = 'none'
+    tc.setTrajInfoPos(new THREE.Vector3(0, 0, 0))
+    tc.updateTrajInfoPos()
+    const left = parseFloat(card.style.left)
+    expect(left + card.offsetWidth <= 600).toBe(true)
+  })
 })
