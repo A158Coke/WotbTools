@@ -10,7 +10,7 @@ import {
   makeBillboardMaterial, makeSpeedtreeStaticMaterial, patchTankMaterial,
   applyMaterialTextureAnisotropy, clearSceneryMatCache, SCENERY_LAMBERT_EXPOSURE,
 } from './sceneryMaterials.ts'
-import { assembleSceneryMaterials } from './sceneryAssembly.ts'
+import { assembleSceneryMaterials, resolveSceneryExtras, makeTexResolvers } from './sceneryAssembly.ts'
 import type { SceneryTexResolvers } from './sceneryAssembly.ts'
 
 const NO_TEX = () => null
@@ -376,5 +376,111 @@ describe(':457 采样空间（显示内容 vs 原样采样）', () => {
     expect(canvasTex.length).toBeGreaterThan(0)
     expect(canvasTex[0].colorSpace).toBe(THREE.SRGBColorSpace)
     markers.clear()
+  })
+})
+
+/**
+ * PR #957 评审 P2：上面的材质用例都用 `masks()` 注入**已解析**贴图，绕过了生产路径的
+ * `resolveSceneryExtras`（parser.getDependency）与 `makeTexResolvers`（associations→材质下标）。
+ * 这里用真实 parser 形状走完整链路——预解析若不再登记 mask/lightmap/detail/water/env，
+ * 材质会落到回落分支，下面的断言即变红。
+ */
+describe('extras 真实解析链路（resolveSceneryExtras → makeTexResolvers → 装配）', () => {
+  const addUv1 = (mesh: THREE.Mesh) => mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
+    new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
+  ))
+
+  function fixture() {
+    const root = new THREE.Group()
+    const textures = new Map<number, THREE.Texture>()
+    const deps: number[] = []
+    const tex = (index: number) => {
+      const t = new THREE.Texture()
+      t.name = `tex-${index}`
+      textures.set(index, t)
+      return t
+    }
+    const maskMat = new THREE.MeshStandardMaterial({ name: 'mask' })
+    maskMat.userData.blendLayer = { tex0ShiftPerSecond: [0, 0] }
+    const lmMat = new THREE.MeshStandardMaterial({ name: 'lm' })
+    lmMat.userData.lightmap = true
+    lmMat.userData.env = {}
+    lmMat.userData.detail = { scale: [2, 3] }
+    const waterMat = new THREE.MeshStandardMaterial({ name: 'water' })
+    waterMat.userData.water = { props: {} }
+    const maskMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), maskMat)
+    addUv1(maskMesh)
+    const lmMesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), lmMat)
+    addUv1(lmMesh)
+    lmMesh.position.x = 10
+    const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), waterMat)
+    waterMesh.position.set(100, 100, 0)   // 与其它件不重叠：避免 underWater 分流
+    root.add(maskMesh, lmMesh, waterMesh)
+    const gltf = {
+      scene: root,
+      parser: {
+        json: { materials: [
+          { extras: { maskTexture: 10 } },
+          { extras: { lightmap: 11, envMask: 12, envCube: 13, detail: { texture: 14 } } },
+          { extras: { water: { normal: 15, cube: 16 } } },
+        ] },
+        associations: new Map<object, { materials: number }>([
+          [maskMat, { materials: 0 }], [lmMat, { materials: 1 }], [waterMat, { materials: 2 }],
+        ]),
+        getDependency: async (_type: 'texture', index: number) => {
+          deps.push(index)
+          return textures.get(index) ?? tex(index)
+        },
+      },
+    }
+    return { gltf, textures, deps, maskMat, lmMat, maskMesh, lmMesh, waterMesh }
+  }
+
+  it(':98/:282/:333 预解析登记 mask/lightmap/detail/water/env，装配材质实际挂上对应贴图', async () => {
+    const f = fixture()
+    const maps = await resolveSceneryExtras(f.gltf as never)
+    // 每个 extras 贴图下标都必须被 getDependency 请求（不再登记 = 后续材质回落）
+    expect([...f.deps].sort((a, b) => a - b)).toEqual([10, 11, 12, 13, 14, 15, 16])
+    expect(maps.maskTexByMatIndex.get(0)).toBe(f.textures.get(10))
+    expect(maps.lmTexByMatIndex.get(1)).toBe(f.textures.get(11))
+    expect(maps.detailTexByMatIndex.get(1)).toBe(f.textures.get(14))
+    expect(maps.envTexByMatIndex.get(1)).toEqual([f.textures.get(12), f.textures.get(13)])
+    expect(maps.waterTexByMatIndex.get(2)).toEqual([f.textures.get(15), f.textures.get(16)])
+
+    const res = makeTexResolvers(f.gltf as never, maps)
+    expect(res.maskTexOf(f.maskMat as never)).toBe(f.textures.get(10))
+    expect(res.lmTexOf(f.lmMat as never)).toBe(f.textures.get(11))
+    expect(res.detailTexOf(f.lmMat as never)).toBe(f.textures.get(14))
+    expect(res.envTexOf(f.lmMat as never)).toEqual([f.textures.get(12), f.textures.get(13)])
+
+    clearSceneryMatCache()
+    assembleSceneryMaterials(f.gltf as never, { strictSurfaces: false, masks: res })
+    const maskOut = f.maskMesh.material as THREE.ShaderMaterial
+    expect(maskOut.isShaderMaterial).toBe(true)
+    expect(maskOut.uniforms.mask.value).toBe(f.textures.get(10))
+    const lmOut = f.lmMesh.material as THREE.ShaderMaterial
+    expect(lmOut.isShaderMaterial).toBe(true)
+    expect(lmOut.uniforms.lightmap.value).toBe(f.textures.get(11))
+    expect(lmOut.uniforms.uDetailTex.value).toBe(f.textures.get(14))
+    expect(lmOut.uniforms.envMask.value).toBe(f.textures.get(12))
+    expect(lmOut.uniforms.envCube.value).toBe(f.textures.get(13))
+    const waterOut = f.waterMesh.material as THREE.ShaderMaterial
+    expect(waterOut.isShaderMaterial).toBe(true)
+    expect(waterOut.uniforms.normalmap.value).toBe(f.textures.get(15))
+    expect(waterOut.uniforms.cubemap.value).toBe(f.textures.get(16))
+  })
+
+  it('负向对照：预解析漏登记 mask → 装配回落到无掩码（被删源码守卫保护的故障模式）', async () => {
+    const f = fixture()
+    const maps = await resolveSceneryExtras(f.gltf as never)
+    maps.maskTexByMatIndex.delete(0)
+    clearSceneryMatCache()
+    const res = makeTexResolvers(f.gltf as never, maps)
+    assembleSceneryMaterials(f.gltf as never, { strictSurfaces: false, masks: res })
+    const maskOut = f.maskMesh.material as THREE.MeshLambertMaterial
+    // 掩码未登记 → 不再进入 blendLayer 分支，回落到普通 Lambert（无 uniforms.mask）
+    expect(maskOut.isShaderMaterial ?? false).toBe(false)
+    expect(maskOut.isMeshLambertMaterial).toBe(true)
+    expect((maskOut as unknown as { uniforms?: unknown }).uniforms).toBeUndefined()
   })
 })

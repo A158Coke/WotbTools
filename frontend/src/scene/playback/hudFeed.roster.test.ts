@@ -15,8 +15,9 @@ function makeVehicle(eid: number, team: number, nickname: string) {
 function makeFeed({ vehicles, deathAt, t }: {
   vehicles: Array<ReturnType<typeof makeVehicle>>
   deathAt?: (v: unknown, t: number) => boolean
-  t: number
+  t: number | (() => number)
 }) {
+  const getT = typeof t === 'function' ? t : () => t
   const store = {
     killfeed: [],
     scoreFriend: 0,
@@ -27,8 +28,7 @@ function makeFeed({ vehicles, deathAt, t }: {
   const feed = createHudFeed({
     store,
     getData: () => ({ meta: { friendly_team: 1 }, kills: [] }) as never,
-    getT: () => t,
-    getV: () => vehicles as never,
+    getT,    getV: () => vehicles as never,
     getSessionGen: () => 0,
     deathAt: (deathAt ?? (() => false)) as never,
     getReloadStateAt: () => null,
@@ -64,15 +64,30 @@ describe('createHudFeed 名册投影（行为）', () => {
 
   it('resetRoster 清空 eid → 行 索引：其后 updateRoster 不写旧会话的行（teardown 语义）', () => {
     const vehicles = [makeVehicle(1, 1, 'ally')]
-    const { feed, store } = makeFeed({ vehicles, deathAt: () => false, t: 5 })
-    feed.buildRoster()
-    feed.updateRoster()
-    const row = store.roster.team1[0] as { hp: number; dead: boolean; followed: boolean }
-    expect(row.hp).toBe(600)
+    const deathAt = vi.fn((_v, time) => time >= 12)
+    // 正控：索引未清空时，同一时间跳变确实会改写行（证明下面的断言不是恒真）。
+    let t = 5
+    const live = makeFeed({ vehicles, deathAt, t: () => t })
+    live.feed.buildRoster()
+    live.feed.updateRoster()
+    const liveRow = live.store.roster.team1[0] as { hp: number; dead: boolean }
+    expect(liveRow.hp).toBe(600)
+    t = 12
+    live.feed.updateRoster()
+    expect(liveRow.hp).toBe(0)
+    expect(liveRow.dead).toBe(true)
+
     // teardown：索引清空。旧行对象仍被外部持有（store 已被新会话重建），但
     // 旧 hudFeed 的 updateRoster 不再触碰它们（无索引即跳过）。
-    feed.resetRoster()
-    feed.updateRoster()
+    t = 5
+    const torn = makeFeed({ vehicles, deathAt, t: () => t })
+    torn.feed.buildRoster()
+    torn.feed.updateRoster()
+    const row = torn.store.roster.team1[0] as { hp: number; dead: boolean; followed: boolean }
+    expect(row.hp).toBe(600)
+    torn.feed.resetRoster()
+    t = 12                     // 旧索引若未清空，这一跳会把旧行写成 hp=0/dead=true
+    torn.feed.updateRoster()
     expect(row.hp).toBe(600)   // 未被 stale 投影污染
     expect(row.dead).toBe(false)
   })

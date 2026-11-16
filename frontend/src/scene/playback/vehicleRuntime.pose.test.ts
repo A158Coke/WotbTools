@@ -81,6 +81,8 @@ function posColumn() {
   return out
 }
 const col = (v: number) => Array.from({ length: 101 }, () => v)
+/** 逐样本线性变化（GRID_DT=0.1：t=2 → index 20，t=3 → index 30）。 */
+const ramp = (start: number, step: number) => Array.from({ length: 101 }, (_, i) => start + step * i)
 
 function makeDeps(data: ReturnType<typeof makeData>, overrides: Partial<VehicleRuntimeDeps> = {}) {
   const scene = new THREE.Scene()
@@ -236,10 +238,12 @@ describe(':1035 关闭 GLB / 会话结束', () => {
 })
 
 describe(':984 恒等姿态 + :1222 记录位姿带负号', () => {
-  it('GLB 挂载后 __hullGroup 恒归单位（拆分组不改变摆放）；hull_roll/yaw 场景系取负', async () => {
+  it('GLB 根四元数 = poseFromYPR(−yaw, pitch, −roll)（非零 yaw/pitch/roll + 随时间变化）；__hullGroup 恒归单位', async () => {
     const data = makeData()
-    data.vehicles[0].hull_yaw = col(1)          // 1 rad
-    data.vehicles[0].hull_roll = col(Math.PI / 18)  // 10°
+    // 三轴都非零且随时间变化：漏传/写反 roll（或 yaw/pitch）都会让根四元数断言失败。
+    data.vehicles[0].hull_yaw = ramp(0.2, 0.01)
+    data.vehicles[0].hull_pitch = ramp(-0.05, 0.001)
+    data.vehicles[0].hull_roll = ramp(0.05, -0.0005)
     let t = 2
     const { deps } = makeDeps(data, { getT: () => t })
     const rt = createVehicleRuntime(deps)
@@ -247,17 +251,28 @@ describe(':984 恒等姿态 + :1222 记录位姿带负号', () => {
     jsonRoutes()
     await rt.applyGlbToggle(true)
     const v = rt.getVehicles()[0]
-    rt.applyPose(v)
-    // GLB 拆分组：恒单位（记录位姿在根上）
-    const hg = v.glbParts!.hullGroup!
-    expect(hg.quaternion.x).toBe(0); expect(hg.quaternion.y).toBe(0)
-    expect(hg.quaternion.z).toBe(0); expect(hg.quaternion.w).toBe(1)
-    expect(hg.position.x).toBe(0); expect(hg.position.y).toBe(0); expect(hg.position.z).toBe(0)
-    // 低模侧同口径：y = −yaw / x = pitch / z = −roll（镜像约定，与 −yaw 同号）
-    expect(v.group.rotation.order).toBe('YXZ')
-    expect(v.group.rotation.y).toBeCloseTo(-1, 10)
-    expect(v.group.rotation.z).toBeCloseTo(-Math.PI / 18, 10)
-    void t
+    for (const [time, sample] of [[2, 20], [3, 30]] as const) {
+      t = time
+      rt.applyPose(v)
+      const yaw = 0.2 + 0.01 * sample
+      const pitch = -0.05 + 0.001 * sample
+      const roll = 0.05 - 0.0005 * sample
+      const expected = poseFromYPR(-yaw, pitch, -roll, new THREE.Quaternion())
+      // GLB 根：实际车模根节点（不是内部 hullGroup）必须消费三轴与符号。
+      expect(v.glb!.quaternion.angleTo(expected)).toBeLessThan(1e-6)
+      // 符号反例：把 −roll 写成 +roll 必须得到不同姿态（原测试只查低模 yaw/roll，抓不到漏传）。
+      expect(v.glb!.quaternion.angleTo(poseFromYPR(-yaw, pitch, roll, new THREE.Quaternion()))).toBeGreaterThan(1e-3)
+      // GLB 拆分组：恒单位（记录位姿在根上）
+      const hg = v.glbParts!.hullGroup!
+      expect(hg.quaternion.x).toBe(0); expect(hg.quaternion.y).toBe(0)
+      expect(hg.quaternion.z).toBe(0); expect(hg.quaternion.w).toBe(1)
+      expect(hg.position.x).toBe(0); expect(hg.position.y).toBe(0); expect(hg.position.z).toBe(0)
+      // 低模侧同口径：y = −yaw / x = pitch / z = −roll（镜像约定，与 −yaw 同号）
+      expect(v.group.rotation.order).toBe('YXZ')
+      expect(v.group.rotation.y).toBeCloseTo(-yaw, 10)
+      expect(v.group.rotation.x).toBeCloseTo(pitch, 10)
+      expect(v.group.rotation.z).toBeCloseTo(-roll, 10)
+    }
     rt.dispose()
   })
 })
