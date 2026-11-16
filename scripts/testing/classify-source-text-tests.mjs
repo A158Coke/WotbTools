@@ -196,6 +196,8 @@ function classifyFile(file) {
     const patterns = [];
     if (usedVars.length) {
       if (/\.toMatch\(/.test(body)) patterns.push('toMatch');
+      if (/\.toContain\(/.test(body)) patterns.push('toContain');
+      if (/\.toContainEqual\(/.test(body)) patterns.push('toContainEqual');
       if (/\.indexOf\(/.test(body)) patterns.push('indexOf');
       if (/\.includes\(/.test(body)) patterns.push('includes');
       if (/\.slice\(/.test(body)) patterns.push('slice');

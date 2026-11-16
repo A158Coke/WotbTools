@@ -13,7 +13,7 @@
 
 复现方式：干净 checkout → `node scripts/testing/classify-source-text-tests.mjs` → `node scripts/testing/source-text-probes.mjs --inventory ... --out ...`。探针在独立检出上运行（会临时改写生产源文件），不要在未提交工作区运行。
 
-快照口径：本报告的数字以 PR #957 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **438 个测试文件 / 69 个读取生产源码 / 159 个文本断言用例**（parseAnomalies=0）；矩阵在同一棵树上用 seed=827 重新生成。历史 181 例是 Wave 0/Pilot 前口径，不再与当前数字直接比较。
+快照口径：本报告的数字以 PR #957 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **442 个测试文件 / 69 个读取生产源码 / 193 个文本断言用例**（parseAnomalies=0；含 `.toContain` 断言形式）；矩阵在同一棵树上用 seed=827 重新生成。历史 181 例是 Wave 0/Pilot 前口径（另存为 `scripts/testing/source-text-inventory-wave0.json`，只用于历史台账对齐），不与当前 193 例直接比较。
 
 ## 规模与裁剪说明
 
@@ -22,34 +22,34 @@
 
 ## Inventory 结果（PR #957 head，2026-11-16）
 
-- 扫描 438 个测试文件；69 个读取生产源码；其中 **159 个用例**的断言引用源码文本（parseAnomalies=0）。
-- 集中地：`scene/sceneryMaterials.test.js`（42）、`components/AgentArmorView.dom-contract.test.js`（26）、`scene/playbackScene.occlusion.test.js`（14）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（6）、`scene/pickDebug.test.js`（5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
-- 旧审计 251 例与 Wave 0 的 181 例差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**181 不与 251 直接可比**；当前 159 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
+- 扫描 442 个测试文件；69 个读取生产源码；其中 **193 个用例**的断言引用源码文本（parseAnomalies=0）。
+- 集中地：`scene/sceneryMaterials.test.js`（42）、`components/AgentArmorView.dom-contract.test.js`（29）、`scene/playbackScene.occlusion.test.js`（15）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（7）、`app/navigationPressedFeedback.test.js` / `scene/pickDebug.test.js` / `styles/light-theme-source-regression.test.js`（各 5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
+- 旧审计 251 例与 Wave 0 的 181 例差值来源：#820 拆分后部分守卫已随 #888 迁移为模块行为测试；部分文件（如 tankViewer.distance/cameraPreset）已是混合行为测试；分类口径差异（本轮为「用例体引用源码文本变量 + 断言形态」）。**181 不与 251 直接可比**；当前 193 例还包含 Wave 1–3 已接替但尚未删除的窄化守卫。
 
 ## 探针 Baseline（PR #957 head，seed=827，2026-11-16 重生成）
 
 | 簇 | 探测源 | 跳过（baselineRed） | 语义捕获（有效变异） | invalid | inconclusive | 等价重命名误报 |
 |---|---|---|---|---|---|---|
-| scene | 23 | 0 | **3/112（2.7%）** | 23 | 0 | **3/69（4.3%）** |
-| css | 1 | 0 | 1/6（16.7%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
-| vue | 17 | 1（inconclusive） | **1/90（1.1%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
-| 合计 | 41 | 1 | 5/208（2.4%） | 23 | 0 | 3/69（4.3%） |
+| scene | 25 | 0 | **8/132（6.1%）** | 14 | 0 | **4/75（5.3%）** |
+| css | 4 | 0 | 1/24（4.2%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
+| vue | 20 | 0 | **0/114（0.0%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
+| 合计 | 49 | 0 | 9/270（3.3%） | 14 | 0 | 4/75（5.3%） |
 
 逐源矩阵：`scripts/testing/probe-matrix-{scene,css,vue}.json`。要点：
 
-- 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源与文本用例都比 Wave 0 少（23 源 / 159 文本用例），因此与旧 24.6% 不可直接对比。
-- **组件源（.vue）仍接近零捕获（1/90）**：唯一被杀的是 `TankResearchPanel.vue` 的数值变异；模板/样式内的字面量语义基本没有读取方文本守卫。
-- scene 被杀最多的源：`heSplash.ts` 1/6、`playbackScene.js` 1/6、`tankViewer.js` 1/5。接线类语义（调用存在性）多数存活。
-- 等价重命名误报 3/69：`groundPass.js`、`heSplash.ts`、`viewer/armorPlateModel.ts` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
-- **invalid 23 个变异**（parse 校验失败，未计入捕获率）：`sceneryAssembly.ts` 4、`armorHighlight.ts` / `mapWorld.ts` 各 3、`mapAssets.ts` / `sceneryMaterials.ts` / `shotResultCard.ts` 各 2，`battleRuntime.ts` / `cameraRuntime.ts` / `renderer.ts` / `vehicleRuntime.ts` / `sceneryInstancing.ts` / `armorPlateModel.ts` / `armorShaders.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
-- 本轮 scene/css 的读取方基线全绿；vue 的 `BattlePlaybackPanel.vue` 基线为 **inconclusive**（无断言失败，集合/超时类异常），按跳过处理并保留在矩阵 `baselineInconclusive`，不冒充通过。
+- 本表是 **Wave 1–3 改写后的剩余源码文本断言** 的效力，不是新行为测试的效力；scene 探测源 25、文本用例 193（含 `.toContain` 恢复的读取方），与旧 24.6% 不可直接对比。
+- **组件源（.vue）仍零捕获（0/114）**：模板/样式内的字面量语义没有读取方文本守卫（新增的 `.toContain` 读取方均未被语义变异杀死）。
+- scene 被杀最多的源：`heSplash.ts` 3/5；`groundPass.js` / `penetration.js` / `playbackScene.js` / `viewer/armorPlateModel.ts` / `viewer/armorShaders.ts` 各 1。接线类语义（调用存在性）多数存活。
+- 等价重命名误报 4/75：`groundPass.js`、`playback/cameraRuntime.ts`、`playback/renderer.ts`、`playbackScene.js` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
+- **invalid 14 个变异**（parse 校验失败，未计入捕获率）：`sceneryInstancing.ts` 4、`renderer.ts` / `vehicleRuntime.ts` / `shotResultCard.ts` 各 2，`groundGeometryData.ts` / `heSplash.ts` / `mapAssets.ts` / `sceneryAssembly.ts` 各 1。这批正是旧矩阵里被误记为「捕获」的 TS 泛型/语法破坏。
+- 本轮 49 个源的读取方基线全部全绿（baselineRed=0、inconclusive=0）；失败探针都能归入断言失败 / 解析失败两类。
 
 ## 评审跟进（2026-11-16）
 
 - **等价重命名改为 TypeScript symbol 绑定重命名**：只改声明与同 symbol 引用，属性名 / 对外导出名 / import 关键字 / 字符串不动。shorthand（`{ name }`）与无别名 `export { name }` 的 checker symbol 不是变量绑定，必须在 symbol 相等判断**之前**用 `getShorthandAssignmentValueSymbol` / `getExportSpecifierLocalTargetSymbol` 解析，命中即保守跳过整条绑定；`export { local as publicName }` 只改 local、保留对外名。内置 `from` 负面控制（整词替换会产出 `import * as THREE from__r 'three'` 且 parse 失败）+ shorthand / 无别名 export / 有别名 export 三个独立反例，见矩阵 `selfCheck.negativeControl` 与 `selfCheck.bindingSafety`。
-- **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 scene invalid=23、inconclusive=0。
-- **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
-- **台账统计**：区间行展开为实际映射的 case ID 并按去重后的 case 计数（`AgentArmorView.dom-contract` K 1→23、`extractor` K 1→6），未对齐行单列（当前 49 行，见 ledger-stats 对齐异常清单）。
+- **变异有效性分类**：变异先过 TS/SFC 解析校验；不可解析记 invalid，vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive；只有真实断言失败计 killed。本轮 scene invalid=14、inconclusive=0。
+- **分类器**：用例切块跳过注释 / 字符串 / 正则字面量；`setSpeed 只接受档位表内的值`（正则里含 `\{`）重新分类为 `textAssertion=true`（`usesVars=[src]`）；新增 `.toContain` / `.toContainEqual` 断言形式（`light-theme-source-regression` 2→5 例，并恢复 `app-shell.css` / `admin-list.css` / `ProfilePage.vue` / `MarkdownContent.vue` 等读取方进入探针）；未闭合边界会进 `parseAnomalies`（当前 0）；Windows CRLF 检出归一为 LF。
+- **台账统计**：对齐基线固定为 `source-text-inventory-wave0.json`（Wave 0 快照，181 例）；当前 inventory 只服务探针，不参与历史行号对齐。区间行按实际映射 case 数计、单行按 1 计、同一 case 同类处置去重；**未映射单行单独计数且不混入 R/K/D**，同一 case 跨处置列入独立冲突清单。当前 R=99 / K=69 / D=17（处置覆盖），唯一 case=165，跨处置冲突=20，未映射单行=31；详见重新生成的 `2026-11-11-ledger-stats.md`。
 - **Wave 2 被删守卫接替**：新增真实 extras 解析链路（`resolveSceneryExtras` → `makeTexResolvers` → 装配，含漏登记负向对照）、GLB 根四元数三轴断言、prewarm 等待未完成 GLB Promise、roster reset 后旧行不被 stale 投影写入。
 
 ## Wave 1 Pilot 结果（seek 游标语义）

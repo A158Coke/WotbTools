@@ -3,7 +3,7 @@
   "scannedTestFiles": 442,
   "sourceReadingTestFiles": 69,
   "totalCases": 1169,
-  "totalTextAssertionCases": 159,
+  "totalTextAssertionCases": 193,
   "parseAnomalies": [],
   "files": [
     {
@@ -200,7 +200,7 @@
         }
       ],
       "caseCount": 14,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -218,11 +218,13 @@
           "id": "agent-wasm-loader:54",
           "name": "不存在 stable /wasm/wotb_replay_wasm.js 引用",
           "startLine": 54,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "source"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -667,7 +669,7 @@
         }
       ],
       "caseCount": 3,
-      "textAssertionCases": 2,
+      "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
         {
@@ -696,7 +698,8 @@
             "panel"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -704,11 +707,13 @@
           "id": "replay-capabilities:27",
           "name": "keeps AI Review on its own transport boundary and out of the dataset era",
           "startLine": 27,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "ai"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -753,40 +758,46 @@
         }
       ],
       "caseCount": 5,
-      "textAssertionCases": 2,
+      "textAssertionCases": 5,
       "parseAnomalies": [],
       "cases": [
         {
           "id": "navigationPressedFeedback:13",
           "name": "menu button has an :active pressed state",
           "startLine": 13,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "topBar"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "navigationPressedFeedback:16",
           "name": "sidebar close button has an :active pressed state",
           "startLine": 16,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "sidebar"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "navigationPressedFeedback:20",
           "name": "sidebar links have an :active pressed state and keep the active highlight while pressed",
           "startLine": 20,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "sidebar"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -967,7 +978,7 @@
         }
       ],
       "caseCount": 64,
-      "textAssertionCases": 26,
+      "textAssertionCases": 29,
       "parseAnomalies": [],
       "cases": [
         {
@@ -1002,6 +1013,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1067,14 +1079,16 @@
           "id": "AgentArmorView.dom-contract:182",
           "name": "场景风格跟随网页 UI：透明画布、无地面网格、半球光主题表面色",
           "startLine": 182,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "view",
             "view",
             "view",
             "view"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -1119,6 +1133,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1142,7 +1157,8 @@
             "viewer"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -1150,7 +1166,7 @@
           "id": "AgentArmorView.dom-contract:417",
           "name": "labels 装配与三语键在位（en/ru 结果卡不再出中文）",
           "startLine": 417,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "viewer",
             "view",
@@ -1159,7 +1175,9 @@
             "card",
             "view"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -1174,6 +1192,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1289,7 +1308,8 @@
             "pen"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -1302,7 +1322,8 @@
             "plateModel"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -1466,7 +1487,8 @@
             "hud"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -1670,6 +1692,7 @@
             "template"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1706,13 +1729,15 @@
           "id": "AgentArmorView.dom-contract:931",
           "name": "宿主经 initTankViewer 的 labels 传三语 pitchDevice",
           "startLine": 931,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "template",
             "template",
             "template"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -1726,6 +1751,7 @@
             "template"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1835,6 +1861,7 @@
             "source"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -1871,45 +1898,51 @@
         }
       ],
       "caseCount": 3,
-      "textAssertionCases": 0,
+      "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
         {
           "id": "BattlePlayback.coordinate:17",
           "name": "uses the active terrain relief projection for marker/collision/transient anchors",
           "startLine": 17,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src",
             "selectionSrc",
             "replayDataSrc",
             "projectionSrc"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "BattlePlayback.coordinate:29",
           "name": "uses inverse terrain projection for annotation input and projected text placement",
           "startLine": 29,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "editorSrc",
             "replayDataSrc"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "BattlePlayback.coordinate:35",
           "name": "keeps MapRenderRect as the screen-space owner around the projected terrain",
           "startLine": 35,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "cameraSrc",
             "projectionSrc"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -1931,7 +1964,7 @@
         }
       ],
       "caseCount": 106,
-      "textAssertionCases": 0,
+      "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
         {
@@ -2145,12 +2178,14 @@
           "id": "BattlePlayback.integration:608",
           "name": "friendly and enemy destroyed markers share the same structure at the same timestamp",
           "startLine": 608,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src",
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -2175,12 +2210,14 @@
           "id": "BattlePlayback.integration:702",
           "name": "Tier X turreted：渲染 dedicated hull + turret assembly（嵌套 transform），非 generic",
           "startLine": 702,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src",
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -2316,13 +2353,15 @@
           "id": "BattlePlayback.integration:1182",
           "name": "车体不再参与防重叠布局（marker 只按真实位置摆放；位移与虚线整体删除）",
           "startLine": 1182,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src",
             "projectionSrc",
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -2366,7 +2405,7 @@
         },
         {
           "id": "BattlePlayback.integration:1266",
-          "name": "6：API 不可用 → 按钮隐藏，不抛错",
+          "name": "6：元素级 Fullscreen API 不可用（iPhone Safari）→ 按钮保留，点击进入 CSS 伪全屏，再点退出，不抛错",
           "startLine": 1266,
           "textAssertion": false,
           "usesVars": [],
@@ -2374,216 +2413,216 @@
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1273",
+          "id": "BattlePlayback.integration:1284",
           "name": "7/8/9/10：进入/退出 fullscreen 不 reset currentTime/speed/selected/zoom/pan",
-          "startLine": 1273,
+          "startLine": 1284,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1308",
+          "id": "BattlePlayback.integration:1319",
           "name": "preserves user zoom/pan when actual Stage dimensions change and fullscreen toggles",
-          "startLine": 1308,
+          "startLine": 1319,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1345",
+          "id": "BattlePlayback.integration:1356",
           "name": "§fullscreen-exit：退出 fullscreen 后以 page-mode 几何重新 fit（不带回 fullscreen camera），持久状态保留",
-          "startLine": 1345,
+          "startLine": 1356,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1401",
+          "id": "BattlePlayback.integration:1412",
           "name": "external HUD/Transport never reserve an inset inside the square raster viewport",
-          "startLine": 1401,
+          "startLine": 1412,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1477",
+          "id": "BattlePlayback.integration:1488",
           "name": "shared roster presentation hides/restores both physical teams without clearing selection/time",
-          "startLine": 1477,
+          "startLine": 1488,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1500",
+          "id": "BattlePlayback.integration:1511",
           "name": "one-click declutter changes only presentation and restores custom options around an unchanged paused frame",
-          "startLine": 1500,
+          "startLine": 1511,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1530",
+          "id": "BattlePlayback.integration:1541",
           "name": "uses one compact marking row only for phone landscape ($width px)",
-          "startLine": 1530,
+          "startLine": 1541,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1580",
+          "id": "BattlePlayback.integration:1591",
           "name": "§mobile-fullscreen-contract：手机 fullscreen + landscape（内宽>768）仍保持 mobile mode（bottom-overlay controls、无 rail/details）",
-          "startLine": 1580,
+          "startLine": 1591,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1624",
+          "id": "BattlePlayback.integration:1635",
           "name": "§mobile-pointer-regression：未选车辆 mobile fullscreen 下 map pan + marker click 可操作（空 shell 不阻挡 pointer）",
-          "startLine": 1624,
+          "startLine": 1635,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1678",
+          "id": "BattlePlayback.integration:1689",
           "name": "§zoom：放大后再缩小能回到完整地图 fit（不再卡在 1x）",
-          "startLine": 1678,
+          "startLine": 1689,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1718",
+          "id": "BattlePlayback.integration:1729",
           "name": "secondary Reset View remains reachable and preserves replay time",
-          "startLine": 1718,
+          "startLine": 1729,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1728",
+          "id": "BattlePlayback.integration:1739",
           "name": "§3 Right Details：右侧仅保留点击车辆后的详情；未选车辆时无战局/提示重复",
-          "startLine": 1728,
+          "startLine": 1739,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1748",
+          "id": "BattlePlayback.integration:1759",
           "name": "11/12/13：ResizeObserver 容器宽变化 → markerScreen/labelLayout 使用新尺寸（标签恒可见）",
-          "startLine": 1748,
+          "startLine": 1759,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1774",
+          "id": "BattlePlayback.integration:1785",
           "name": "14：Resize 后 selectAt/hitbox 使用新尺寸（同一视觉位置点击选中最近车辆）",
-          "startLine": 1774,
+          "startLine": 1785,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1792",
+          "id": "BattlePlayback.integration:1803",
           "name": "15：fullscreen（1600）+ 1×/2× zoom → collision 使用新 viewport 继续正确（标签恒可见）",
-          "startLine": 1792,
+          "startLine": 1803,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1827",
+          "id": "BattlePlayback.integration:1838",
           "name": "16：重复进入/退出 fullscreen 不累积 fullscreenchange listener；unmount 移除",
-          "startLine": 1827,
+          "startLine": 1838,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1865",
+          "id": "BattlePlayback.integration:1876",
           "name": "§4/§5/§6 HP HUD：数字+bar 随 timeline 确定性重建；UNKNOWN 显示 —；destroyed 隐藏单车 HP",
-          "startLine": 1865,
+          "startLine": 1876,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1894",
+          "id": "BattlePlayback.integration:1905",
           "name": "§4.3 HP HUD 开关：默认开启、localStorage 持久化、关闭隐藏数字/bar/ghost",
-          "startLine": 1894,
+          "startLine": 1905,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1919",
+          "id": "BattlePlayback.integration:1930",
           "name": "§10/§20 floating damage：播放跨过 DAMAGE 触发 -400；seek 不触发；wall-clock 到期消失",
-          "startLine": 1919,
+          "startLine": 1930,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:1965",
+          "id": "BattlePlayback.integration:1976",
           "name": "hidden AoI DamageLoss keeps canonical stats/log but suppresses all transient feedback",
-          "startLine": 1965,
+          "startLine": 1976,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2007",
+          "id": "BattlePlayback.integration:2018",
           "name": "§10.3/§11 HP transition：跨过 DAMAGE 产生 ghost（同阵营浅版）+ fill 立即到新值",
-          "startLine": 2007,
+          "startLine": 2018,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2029",
+          "id": "BattlePlayback.integration:2040",
           "name": "§16 kill feed：只显示受害者被击毁（§15.2 无攻击者名）；最多 2 条可见队列（§17）",
-          "startLine": 2029,
+          "startLine": 2040,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2055",
+          "id": "BattlePlayback.integration:2066",
           "name": "§8 detail sidebar：点击打开/切换、seek 保持选中、× 关闭、destroyed 可选",
-          "startLine": 2055,
+          "startLine": 2066,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2089",
+          "id": "BattlePlayback.integration:2100",
           "name": "Details Panel 按 tankId 懒加载 BlitzKit 车型图；缺图时静默降级",
-          "startLine": 2089,
+          "startLine": 2100,
           "textAssertion": false,
           "usesVars": [
             "src",
@@ -2593,315 +2632,315 @@
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2108",
+          "id": "BattlePlayback.integration:2119",
           "name": "§8.4/§8.5/§9/§18/§20 sidebar：current-state only——无最终战绩分区、无协助伤害行、无最大HP/百分比",
-          "startLine": 2108,
+          "startLine": 2119,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2135",
+          "id": "BattlePlayback.integration:2146",
           "name": "伤害记录：hpLoss 驱动；未点亮攻击者显示「来源未知」，不泄露身份",
-          "startLine": 2135,
+          "startLine": 2146,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2191",
+          "id": "BattlePlayback.integration:2202",
           "name": "B1-1 Event Panel：真实事件与 deterministic stats 使用同一 authoritative source",
-          "startLine": 2191,
+          "startLine": 2202,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2225",
+          "id": "BattlePlayback.integration:2236",
           "name": "issue557: 2D Details reads the recorded recorder total without leaking a future broadcast",
-          "startLine": 2225,
+          "startLine": 2236,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2235",
+          "id": "BattlePlayback.integration:2246",
           "name": "B1-1 recorder/team scope：presentation scope 不截断 sidebar 当前统计（authoritative 全量）",
-          "startLine": 2235,
+          "startLine": 2246,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2271",
+          "id": "BattlePlayback.integration:2282",
           "name": "B1-1 combat feedback 不依赖 Event Panel 折叠状态：播放跨过仍触发",
-          "startLine": 2271,
+          "startLine": 2282,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2295",
+          "id": "BattlePlayback.integration:2306",
           "name": "B1-2 damage log 无 future leak：只显示 <= currentTime 的事件，backward seek 后未来事件消失",
-          "startLine": 2295,
+          "startLine": 2306,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2340",
+          "id": "BattlePlayback.integration:2351",
           "name": "B1-3 enemy last-known HP 冻结：HUD 与 sidebar 一致；恢复 coverage 跳到最新可信值；friendly 不受影响",
-          "startLine": 2340,
+          "startLine": 2351,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2401",
+          "id": "BattlePlayback.integration:2412",
           "name": "B2 末尾事件消费：播放跨到 duration 时 (prev, duration] 内事件 exactly-once；seek 到末尾不补播",
-          "startLine": 2401,
+          "startLine": 2412,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2448",
+          "id": "BattlePlayback.integration:2459",
           "name": "B2 loop：末尾事件消费一次后回绕 0；下一轮不重复上一轮末尾事件",
-          "startLine": 2448,
+          "startLine": 2459,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2496",
+          "id": "BattlePlayback.integration:2507",
           "name": "B5A-fix kill feed 隐藏时不无限续约暂停时钟；恢复显示重启时钟并展示队列",
-          "startLine": 2496,
+          "startLine": 2507,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2569",
+          "id": "BattlePlayback.integration:2580",
           "name": "known+unknown team：enemy 含未知车辆 → PARTIAL 数值，不伪造全队分数",
-          "startLine": 2569,
+          "startLine": 2580,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2579",
+          "id": "BattlePlayback.integration:2590",
           "name": "无 health evidence 的己方队伍保持 relative-full presentation；敌方仍 UNKNOWN",
-          "startLine": 2579,
+          "startLine": 2590,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2589",
+          "id": "BattlePlayback.integration:2600",
           "name": "LAST_KNOWN：hidden interval 冻结 HP、不泄漏未来值；Details 标 LAST_KNOWN",
-          "startLine": 2589,
+          "startLine": 2600,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2627",
+          "id": "BattlePlayback.integration:2638",
           "name": "marker 百分比 + Details HP 一致性：pct=current/displayCapacityHp",
-          "startLine": 2627,
+          "startLine": 2638,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2649",
+          "id": "BattlePlayback.integration:2660",
           "name": "destroyed：隐藏单车 HP + Details 显示 0 与 destroyed_at",
-          "startLine": 2649,
+          "startLine": 2660,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2667",
+          "id": "BattlePlayback.integration:2678",
           "name": "队伍阵容：从 result 名单取，不依赖事件流（无位置的敌方也列出）",
-          "startLine": 2667,
+          "startLine": 2678,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2687",
+          "id": "BattlePlayback.integration:2698",
           "name": "opens Events through Display and keeps event seek/pause behavior reachable",
-          "startLine": 2687,
+          "startLine": 2698,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2702",
+          "id": "BattlePlayback.integration:2713",
           "name": "opens one closeable annotation toolbar under Transport in wide form",
-          "startLine": 2702,
+          "startLine": 2713,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2717",
+          "id": "BattlePlayback.integration:2728",
           "name": "map selection displays and updates HP from the current replay time",
-          "startLine": 2717,
+          "startLine": 2728,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2735",
+          "id": "BattlePlayback.integration:2746",
           "name": "switches HP presentation and applies the ring declutter preset without changing playback",
-          "startLine": 2735,
+          "startLine": 2746,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2760",
+          "id": "BattlePlayback.integration:2771",
           "name": "honors shared HUD/base/killfeed/Reload preferences without changing replay state",
-          "startLine": 2760,
+          "startLine": 2771,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2780",
+          "id": "BattlePlayback.integration:2791",
           "name": "hides all UI transiently and restores retained time, selection and preferences via H",
-          "startLine": 2780,
+          "startLine": 2791,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2825",
+          "id": "BattlePlayback.integration:2836",
           "name": "位姿通道在场：标记位置/朝向取通道值（canonical 原始观测被覆盖）",
-          "startLine": 2825,
+          "startLine": 2836,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2853",
+          "id": "BattlePlayback.integration:2864",
           "name": "无位姿通道：回退 canonical 原始观测（与既往行为一致）",
-          "startLine": 2853,
+          "startLine": 2864,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2868",
+          "id": "BattlePlayback.integration:2879",
           "name": "失察即冻结：观测段结束后标记停在最后观测点，不跟随滤波器继续移动",
-          "startLine": 2868,
+          "startLine": 2879,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2913",
+          "id": "BattlePlayback.integration:2924",
           "name": "位姿通道缺该车 / 缺时钟偏移：该车回退 canonical，其余车不受影响",
-          "startLine": 2913,
+          "startLine": 2924,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2932",
+          "id": "BattlePlayback.integration:2943",
           "name": "多实体账号（AoI 重入 / 复活换实体）：按 canonical 身份证据选活跃实体，后一实体不得泄漏到重入之前",
-          "startLine": 2932,
+          "startLine": 2943,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:2966",
+          "id": "BattlePlayback.integration:2977",
           "name": "实体身份证据早于位姿覆盖（HP 先见）→ 覆盖外的采样回落 canonical，不泄漏该实体未来首帧（review P2）",
-          "startLine": 2966,
+          "startLine": 2977,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3010",
+          "id": "BattlePlayback.integration:3021",
           "name": "底部工具栏折叠后只留恢复入口，再展开恢复原内容；折叠会关闭 Display 面",
-          "startLine": 3010,
+          "startLine": 3021,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3038",
+          "id": "BattlePlayback.integration:3049",
           "name": "名册浮层收纳/展开不改变选中与时间；手机横屏默认收纳",
-          "startLine": 3038,
+          "startLine": 3049,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3063",
+          "id": "BattlePlayback.integration:3074",
           "name": "手机横屏（phoneLandscape）默认收纳名册浮层，入口仍是传输条上的 roster 按钮",
-          "startLine": 3063,
+          "startLine": 3074,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3111",
+          "id": "BattlePlayback.integration:3122",
           "name": "挂载即成功就绪：自动进入一次；退出后时间 / 播放态 / 选中 / 组件实例保持且不重入",
-          "startLine": 3111,
+          "startLine": 3122,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3169",
+          "id": "BattlePlayback.integration:3180",
           "name": "切走能力（props.active=false）后请求才完成：旧 2D 根立刻退出全屏，不锁方向",
-          "startLine": 3169,
+          "startLine": 3180,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "BattlePlayback.integration:3186",
+          "id": "BattlePlayback.integration:3197",
           "name": "KeepAlive 停用后请求才完成：同样交还全屏；重新激活不会自动重入",
-          "startLine": 3186,
+          "startLine": 3197,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -3057,6 +3096,7 @@
             "hudSource"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -3460,7 +3500,7 @@
         }
       ],
       "caseCount": 9,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -3539,11 +3579,13 @@
           "id": "MapPreview3DPane.wiring:336",
           "name": "触屏 pan/look/pinch 全部在内核 capture 链（与回放同一实现）",
           "startLine": 336,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "cameraSrc"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -3633,6 +3675,7 @@
             "source"
           ],
           "patterns": [
+            "toContain",
             "newRegExp"
           ],
           "parseError": null
@@ -3648,7 +3691,8 @@
             "source"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -3672,6 +3716,7 @@
             "source"
           ],
           "patterns": [
+            "toContain",
             "newRegExp"
           ],
           "parseError": null
@@ -3780,7 +3825,8 @@
             "source"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         }
@@ -3795,7 +3841,7 @@
         }
       ],
       "caseCount": 23,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -3901,11 +3947,13 @@
           "id": "PlaybackVehicleLabel:160",
           "name": "HP 与 reload 消费同一宽度 token",
           "startLine": 160,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "scaleTokens"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -4022,7 +4070,7 @@
         }
       ],
       "caseCount": 53,
-      "textAssertionCases": 0,
+      "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
         {
@@ -4272,12 +4320,14 @@
           "id": "PlayerDetailDrawer:448",
           "name": "桌面 / 平板侧栏从顶栏下方开始（--header-h）；手机全屏 sheet 提升到 sheet 层",
           "startLine": 448,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "source",
             "source"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -4374,12 +4424,14 @@
           "id": "PlayerDetailDrawer:589",
           "name": "导出卡包含坦克信息（与 Drawer 同数据源）+ 动态 import runtime",
           "startLine": 589,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "source",
             "source"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -4644,6 +4696,7 @@
             "tokens"
           ],
           "patterns": [
+            "toContain",
             "includes"
           ],
           "parseError": null
@@ -5564,7 +5617,8 @@
             "src"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -6648,7 +6702,8 @@
             "source"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -6676,7 +6731,7 @@
         }
       ],
       "caseCount": 26,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -6908,11 +6963,13 @@
           "id": "map2dOverlay:343",
           "name": "该清单确实被写出并进 bundle 清单",
           "startLine": 343,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "script"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -7021,7 +7078,7 @@
         }
       ],
       "caseCount": 4,
-      "textAssertionCases": 3,
+      "textAssertionCases": 4,
       "parseAnomalies": [],
       "cases": [
         {
@@ -7051,6 +7108,7 @@
             "morePage"
           ],
           "patterns": [
+            "toContain",
             "indexOf"
           ],
           "parseError": null
@@ -7074,12 +7132,14 @@
           "id": "data-version-wiring:96",
           "name": "assetBase appends /v/<id> and map2d uses the version-aware Android base",
           "startLine": 96,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "assetBase",
             "map2d"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -7231,7 +7291,8 @@
             "html"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -7259,7 +7320,7 @@
         }
       ],
       "caseCount": 5,
-      "textAssertionCases": 0,
+      "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
         {
@@ -7293,22 +7354,26 @@
           "id": "geckoBridgeOriginGate:79",
           "name": "checks protocol, hostname and port explicitly and pins the local port literal",
           "startLine": 79,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "source"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "geckoBridgeOriginGate:92",
           "name": "keeps the coarse host match pattern because Gecko cannot match a port",
           "startLine": 92,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "manifest"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -7429,7 +7494,7 @@
         }
       ],
       "caseCount": 10,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -7463,14 +7528,16 @@
           "id": "agent-wasm-smoke:83",
           "name": "parseShotReplays 入口可用（author_path ∈ ok|error，shots 是数组）",
           "startLine": 83,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "bytes",
             "bytes",
             "bytes",
             "bytes"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -8232,7 +8299,8 @@
             "viewer"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -8731,7 +8799,7 @@
         }
       ],
       "caseCount": 11,
-      "textAssertionCases": 2,
+      "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
         {
@@ -8761,6 +8829,7 @@
             "card"
           ],
           "patterns": [
+            "toContain",
             "indexOf"
           ],
           "parseError": null
@@ -8810,7 +8879,8 @@
             "trajectoryGeometry"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -8818,11 +8888,13 @@
           "id": "heHeatmapProjection:122",
           "name": "800 射线采样走空间网格，不在 UI 线程全扫三角形",
           "startLine": 122,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "splash"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -8884,6 +8956,7 @@
             "splashSource"
           ],
           "patterns": [
+            "toContain",
             "slice"
           ],
           "parseError": null
@@ -9326,7 +9399,7 @@
         }
       ],
       "caseCount": 21,
-      "textAssertionCases": 14,
+      "textAssertionCases": 15,
       "parseAnomalies": [],
       "cases": [
         {
@@ -9406,6 +9479,7 @@
             "cameraSrc"
           ],
           "patterns": [
+            "toContain",
             "indexOf"
           ],
           "parseError": null
@@ -9419,6 +9493,7 @@
             "cameraSrc"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -9443,11 +9518,13 @@
           "id": "playbackScene.occlusion:93",
           "name": "着色默认关闭，?armorhl=1 可打开",
           "startLine": 93,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "source"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -9460,6 +9537,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -9475,6 +9553,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -9490,6 +9569,7 @@
             "cameraSrc"
           ],
           "patterns": [
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -9570,6 +9650,7 @@
           ],
           "patterns": [
             "toMatch",
+            "toContain",
             "indexOf",
             "slice"
           ],
@@ -9770,6 +9851,10 @@
         {
           "sourcePath": "terrainMesh.js",
           "varName": "meshSrc"
+        },
+        {
+          "sourcePath": "groundGeometryData.ts",
+          "varName": "gdSrc"
         },
         {
           "sourcePath": "bake-ground-overhead.mjs",
@@ -10153,8 +10238,8 @@
           "startLine": 531,
           "textAssertion": true,
           "usesVars": [
-            "gpSrc",
-            "meshSrc"
+            "meshSrc",
+            "gdSrc"
           ],
           "patterns": [
             "toMatch"
@@ -10162,9 +10247,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:545",
+          "id": "sceneryMaterials:548",
           "name": "地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）",
-          "startLine": 545,
+          "startLine": 548,
           "textAssertion": true,
           "usesVars": [
             "gpSrc"
@@ -10175,9 +10260,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:559",
+          "id": "sceneryMaterials:562",
           "name": "逐图光照亮度归一：保留方向/色相，曝光 = 基准太阳强度 / 该图太阳强度（模拟客户端自动曝光）",
-          "startLine": 559,
+          "startLine": 562,
           "textAssertion": true,
           "usesVars": [
             "rendererSrc",
@@ -10189,9 +10274,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:570",
+          "id": "sceneryMaterials:573",
           "name": "水体：透明面写深度 + 双面 + 不设 renderOrder",
-          "startLine": 570,
+          "startLine": 573,
           "textAssertion": true,
           "usesVars": [
             "mapAssetsSrc",
@@ -10205,9 +10290,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:594",
+          "id": "sceneryMaterials:597",
           "name": "对数深度缓冲：默认开启 + ?logdepth=0 逃生开关 + 两自定义 ShaderMaterial 挂 logdepthbuf 块（#827 F3: Integration Contract（无注入点）+ shader-lint PK）",
-          "startLine": 594,
+          "startLine": 597,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10224,9 +10309,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:623",
+          "id": "sceneryMaterials:626",
           "name": "天空穹：unlit + 无限远方向投影 + 不写深度/不参与雾（此前整节点隐藏）",
-          "startLine": 623,
+          "startLine": 626,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10244,9 +10329,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:662",
+          "id": "sceneryMaterials:665",
           "name": "场景 GLB 贴图各向异性随画质档（此前场景侧漏设=默认 1，掠射角发糊闪烁）",
-          "startLine": 662,
+          "startLine": 665,
           "textAssertion": true,
           "usesVars": [
             "mapAssetsSrc"
@@ -10257,9 +10342,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:669",
+          "id": "sceneryMaterials:672",
           "name": "场景材质用几何 authored 法线（不设 flatShading——旧行为把它整条丢掉）",
-          "startLine": 669,
+          "startLine": 672,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10272,9 +10357,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:680",
+          "id": "sceneryMaterials:683",
           "name": "俯视烘焙页消费同一装配 SSOT：convMat/键指纹/分派只有一处实现（两侧无本地副本）",
-          "startLine": 680,
+          "startLine": 683,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10290,18 +10375,18 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:723",
+          "id": "sceneryMaterials:726",
           "name": "底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体",
-          "startLine": 723,
+          "startLine": 726,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:740",
+          "id": "sceneryMaterials:743",
           "name": "悬挂逐帧解算宿主接线（#827 F3：无注入点）：markSeekSnap → tick → clearSnap、frameTiming 喂帧",
-          "startLine": 740,
+          "startLine": 743,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10312,18 +10397,18 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:747",
+          "id": "sceneryMaterials:750",
           "name": "只动底盘节点（chassis_wheel_* / chassis_track_*）：轮数/链数不符即 fail-closed",
-          "startLine": 747,
+          "startLine": 750,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:761",
+          "id": "sceneryMaterials:764",
           "name": "推进走 advancePlaybackTime（NaN/负增量不污染时钟），终点钳制仍生效（#827 F3：宿主接线子句；纯函数行为见 playback/util.behavior.test.ts）",
-          "startLine": 761,
+          "startLine": 764,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10334,9 +10419,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:765",
+          "id": "sceneryMaterials:768",
           "name": "setSpeed 只接受档位表内的值（#827 F3: Integration Contract（无注入点）；宿主闭包函数无独立 owner）",
-          "startLine": 765,
+          "startLine": 768,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10347,9 +10432,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:769",
+          "id": "sceneryMaterials:772",
           "name": "onResize 单画布取整尺寸 + 置脏重绘（#827 F3: Integration Contract（无注入点）；宿主闭包函数）",
-          "startLine": 769,
+          "startLine": 772,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10362,9 +10447,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:777",
+          "id": "sceneryMaterials:780",
           "name": "覆盖层并入主画布：不再有第二个 WebGL 上下文，也没有第二次 render",
-          "startLine": 777,
+          "startLine": 780,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10379,9 +10464,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:790",
+          "id": "sceneryMaterials:793",
           "name": "特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放",
-          "startLine": 790,
+          "startLine": 793,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10392,18 +10477,18 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:806",
+          "id": "sceneryMaterials:809",
           "name": "装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）",
-          "startLine": 806,
+          "startLine": 809,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:813",
+          "id": "sceneryMaterials:816",
           "name": "HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次（#827 F3: Integration Contract（无注入点））",
-          "startLine": 813,
+          "startLine": 816,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10416,18 +10501,18 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:821",
+          "id": "sceneryMaterials:824",
           "name": "资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）",
-          "startLine": 821,
+          "startLine": 824,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:827",
+          "id": "sceneryMaterials:830",
           "name": "GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch",
-          "startLine": 827,
+          "startLine": 830,
           "textAssertion": true,
           "usesVars": [
             "bake"
@@ -10440,9 +10525,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:841",
+          "id": "sceneryMaterials:844",
           "name": "按需渲染：脏帧判定覆盖播放/相机/特效/幽灵闪，跳帧时不跑更新与 render",
-          "startLine": 841,
+          "startLine": 844,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10455,45 +10540,45 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:862",
+          "id": "sceneryMaterials:865",
           "name": "侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）",
-          "startLine": 862,
+          "startLine": 865,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:870",
+          "id": "sceneryMaterials:873",
           "name": "位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退",
-          "startLine": 870,
+          "startLine": 873,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:883",
+          "id": "sceneryMaterials:886",
           "name": "飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）",
-          "startLine": 883,
+          "startLine": 886,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:896",
+          "id": "sceneryMaterials:899",
           "name": "标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色",
-          "startLine": 896,
+          "startLine": 899,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:911",
+          "id": "sceneryMaterials:914",
           "name": "着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）",
-          "startLine": 911,
+          "startLine": 914,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10504,27 +10589,27 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:929",
+          "id": "sceneryMaterials:932",
           "name": "释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例",
-          "startLine": 929,
+          "startLine": 932,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:956",
+          "id": "sceneryMaterials:959",
           "name": "maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)",
-          "startLine": 956,
+          "startLine": 959,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:967",
+          "id": "sceneryMaterials:970",
           "name": "换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒",
-          "startLine": 967,
+          "startLine": 970,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
@@ -10666,7 +10751,7 @@
         }
       ],
       "caseCount": 7,
-      "textAssertionCases": 1,
+      "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
         {
@@ -10734,12 +10819,14 @@
           "id": "supremacyPoints:63",
           "name": "调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）",
           "startLine": 63,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src",
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -10803,29 +10890,33 @@
         }
       ],
       "caseCount": 2,
-      "textAssertionCases": 0,
+      "textAssertionCases": 2,
       "parseAnomalies": [],
       "cases": [
         {
           "id": "tankViewer.collisionBoxFailsafe:21",
           "name": "缺盒 fail-closed：不解码、置旗标、阻断世界判定；无网格盒回退",
           "startLine": 21,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "tankViewer.collisionBoxFailsafe:30",
           "name": "结果卡不可概率重开：宿主把 blockedNoPrimary 传进 allowChance 链（行为见 shotResultCard.test.ts）",
           "startLine": 30,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "src"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]
@@ -11203,7 +11294,7 @@
         }
       ],
       "caseCount": 6,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -11246,11 +11337,13 @@
           "id": "collisionView:196",
           "name": "toggles categories through collisionView instead of mutating a second state map",
           "startLine": 196,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "facade"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -11351,6 +11444,7 @@
             "fixture"
           ],
           "patterns": [
+            "toContain",
             "slice"
           ],
           "parseError": null
@@ -11600,42 +11694,48 @@
         }
       ],
       "caseCount": 5,
-      "textAssertionCases": 2,
+      "textAssertionCases": 5,
       "parseAnomalies": [],
       "cases": [
         {
           "id": "light-theme-source-regression:38",
           "name": "应用壳 / 管理列表 / 导出评分卡的关键表面消费语义 token",
           "startLine": 38,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "app",
             "adminList",
             "drawer"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "light-theme-source-regression:51",
           "name": "ProfilePage 编辑输入/记录表不得再写死深色面（legacy 基线文件，负半句仍在此守护）",
           "startLine": 51,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "profile"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
           "id": "light-theme-source-regression:58",
           "name": "MarkdownContent 表格/代码/引用 不得再写死深色面",
           "startLine": 58,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "md"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -11647,7 +11747,8 @@
             "drawer"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         },
@@ -11662,7 +11763,8 @@
             "bpPanel"
           ],
           "patterns": [
-            "toMatch"
+            "toMatch",
+            "toContain"
           ],
           "parseError": null
         }
@@ -11928,7 +12030,7 @@
         }
       ],
       "caseCount": 92,
-      "textAssertionCases": 6,
+      "textAssertionCases": 7,
       "parseAnomalies": [],
       "cases": [
         {
@@ -12827,11 +12929,13 @@
           "id": "extractor:932",
           "name": "turreted：只选 selected turret/gun（alternate 模块排除）",
           "startLine": 932,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "hull"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         },
         {
@@ -13248,7 +13352,7 @@
         }
       ],
       "caseCount": 10,
-      "textAssertionCases": 0,
+      "textAssertionCases": 1,
       "parseAnomalies": [],
       "cases": [
         {
@@ -13336,11 +13440,13 @@
           "id": "vite-proxy:113",
           "name": "proves the two facts the Android publish gate requires",
           "startLine": 113,
-          "textAssertion": false,
+          "textAssertion": true,
           "usesVars": [
             "bridgeContract"
           ],
-          "patterns": [],
+          "patterns": [
+            "toContain"
+          ],
           "parseError": null
         }
       ]

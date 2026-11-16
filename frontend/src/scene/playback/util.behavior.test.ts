@@ -17,7 +17,8 @@ describe(':1160 资产加载有限并发', () => {
       inFlight--
       return i * 2
     })
-    expect(maxInFlight).toBeLessThanOrEqual(ASSET_CONCURRENCY)
+    expect(ASSET_CONCURRENCY).toBe(4)   // 独立锁定生产常量（asset 下载/解析的主线程保护）
+    expect(maxInFlight).toBe(4)          // 实测在飞峰值必须恰为固定上限，不能只跟生产常量自证
     expect(maxInFlight).toBeGreaterThan(1)   // 确实并发（非串行）
     expect(out).toEqual(items.map((i) => i * 2))   // 结果顺序 = 输入顺序（资产键序语义）
     // 少于 limit 的清单不空转（workers = min(limit, items)）

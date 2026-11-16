@@ -64,7 +64,12 @@ describe(':1128 装填条求值门控', () => {
       expect(overlay.setLabels).toHaveBeenCalledTimes(1)
       rt.setLabelPrefs()       // 名牌偏好变化：labelsTime=null + force 立即重发
       expect(overlay.setLabels).toHaveBeenCalledTimes(2)
-      now = 150; setT(43)      // 节流窗（100ms）过后 + 新 T：恢复发布
+      // 节流窗外（>100ms）、同一回放时间：只有时间戳门控能拦下；删掉 T===labelsTime
+      // 会让这里重发全部标签（暂停时空转每 100ms 重算的回归）。
+      now = 250
+      rt.publishLabels()
+      expect(overlay.setLabels).toHaveBeenCalledTimes(2)
+      now = 400; setT(43)      // 节流窗过后 + 新 T：恢复发布
       rt.publishLabels()
       expect(overlay.setLabels).toHaveBeenCalledTimes(3)
     } finally {

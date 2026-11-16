@@ -80,7 +80,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 16346
+      "ms": 8419
     },
     {
       "source": "src/app/AppTopBar.vue",
@@ -140,7 +140,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 14085
+      "ms": 7703
     },
     {
       "source": "src/app/SidebarDataVersion.vue",
@@ -200,7 +200,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 15684
+      "ms": 8368
     },
     {
       "source": "src/components/AgentArmorView.vue",
@@ -260,7 +260,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 26177
+      "ms": 13158
     },
     {
       "source": "src/components/AgentTankopedia.vue",
@@ -320,7 +320,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 14134
+      "ms": 7561
     },
     {
       "source": "src/components/ArmorShotHud.vue",
@@ -380,18 +380,127 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 25963
+      "ms": 13039
+    },
+    {
+      "source": "src/components/BattlePlayback.vue",
+      "testFiles": [
+        "frontend/src/components/BattlePlayback.coordinate.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 64335,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 18594,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 66589,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 65960,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 24114,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 62366,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "renameInvalid": 0,
+      "ms": 7616
     },
     {
       "source": "src/components/BattlePlaybackPanel.vue",
       "testFiles": [
         "frontend/src/styles/light-theme-source-regression.test.js"
       ],
-      "baselineRed": true,
-      "baselineInconclusive": true,
-      "baselineFailed": [],
-      "semantic": [],
-      "rename": []
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 1350,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 11193,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 14062,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 13851,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 13100,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 11764,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "renameInvalid": 0,
+      "ms": 7569
     },
     {
       "source": "src/components/DataVersionSelect.vue",
@@ -403,42 +512,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 3119,
+          "index": 4966,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 3321,
+          "index": 3307,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 3304,
+          "index": 943,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 3678,
+          "index": 4716,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 3442,
+          "index": 4458,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 3225,
+          "index": 3238,
           "killed": false,
           "failedTests": []
         }
@@ -451,7 +560,67 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 230460
+      "ms": 8289
+    },
+    {
+      "source": "src/components/MarkdownContent.vue",
+      "testFiles": [
+        "frontend/src/styles/light-theme-source-regression.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 2979,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 1889,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 3247,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 2862,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 1992,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 1736,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "renameInvalid": 0,
+      "ms": 7576
     },
     {
       "source": "src/components/MorePage.vue",
@@ -463,42 +632,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 8038,
+          "index": 6476,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 8137,
+          "index": 6198,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 8503,
+          "index": 8642,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 7155,
+          "index": 8123,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 7197,
+          "index": 6161,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 7667,
+          "index": 8758,
           "killed": false,
           "failedTests": []
         }
@@ -511,7 +680,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7677
+      "ms": 8259
     },
     {
       "source": "src/components/PlaybackVehicleLabels3D.vue",
@@ -523,42 +692,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 12831,
+          "index": 12456,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 8192,
+          "index": 4478,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 12329,
+          "index": 2878,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 2959,
+          "index": 2852,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 12691,
+          "index": 12948,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 2955,
+          "index": 11613,
           "killed": false,
           "failedTests": []
         }
@@ -571,7 +740,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7098
+      "ms": 7618
     },
     {
       "source": "src/components/PlayerDetailDrawer.vue",
@@ -583,42 +752,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 36126,
+          "index": 34607,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 3060,
+          "index": 12524,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 47178,
+          "index": 46274,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 35910,
+          "index": 38392,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 12394,
+          "index": 6522,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 34568,
+          "index": 41806,
           "killed": false,
           "failedTests": []
         }
@@ -631,7 +800,67 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7845
+      "ms": 7633
+    },
+    {
+      "source": "src/components/ProfilePage.vue",
+      "testFiles": [
+        "frontend/src/styles/light-theme-source-regression.test.js"
+      ],
+      "baselineRed": false,
+      "semantic": [
+        {
+          "id": "sem-0",
+          "op": "NUM_OFF",
+          "index": 35039,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-1",
+          "op": "NUM_OFF",
+          "index": 10448,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-2",
+          "op": "NUM_OFF",
+          "index": 39890,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-3",
+          "op": "NUM_OFF",
+          "index": 32727,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-4",
+          "op": "NUM_OFF",
+          "index": 34107,
+          "killed": false,
+          "failedTests": []
+        },
+        {
+          "id": "sem-5",
+          "op": "NUM_OFF",
+          "index": 32740,
+          "killed": false,
+          "failedTests": []
+        }
+      ],
+      "rename": [],
+      "semanticKilled": 0,
+      "semanticTotal": 6,
+      "semanticInvalid": 0,
+      "semanticInconclusive": 0,
+      "renameFalsePositives": 0,
+      "renameTotal": 0,
+      "renameInvalid": 0,
+      "ms": 7647
     },
     {
       "source": "src/components/Replay3DPane.vue",
@@ -643,42 +872,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 61425,
+          "index": 56632,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 51997,
+          "index": 27727,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 57455,
+          "index": 55531,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 56632,
+          "index": 61288,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 60995,
+          "index": 59319,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 27727,
+          "index": 57364,
           "killed": false,
           "failedTests": []
         }
@@ -691,7 +920,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 132558
+      "ms": 106765
     },
     {
       "source": "src/components/ReplayCapabilityTabs.vue",
@@ -708,7 +937,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 1111
+      "ms": 1104
     },
     {
       "source": "src/components/SegmentedControl.vue",
@@ -720,42 +949,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 3789,
+          "index": 4315,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 5990,
+          "index": 4990,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 5793,
+          "index": 6150,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 5096,
+          "index": 4343,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 5655,
+          "index": 4612,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 2133,
+          "index": 4443,
           "killed": false,
           "failedTests": []
         }
@@ -768,7 +997,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7693
+      "ms": 7590
     },
     {
       "source": "src/components/TankCatalogMenu.vue",
@@ -781,42 +1010,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 2239,
+          "index": 19860,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 17855,
+          "index": 17588,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 17400,
+          "index": 22207,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 19860,
+          "index": 16284,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 18253,
+          "index": 23993,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 24858,
+          "index": 24986,
           "killed": false,
           "failedTests": []
         }
@@ -829,7 +1058,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 73708
+      "ms": 56125
     },
     {
       "source": "src/components/TankConfigPanel.vue",
@@ -841,42 +1070,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 41413,
+          "index": 42830,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 50555,
+          "index": 49906,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 11662,
+          "index": 39903,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 40364,
+          "index": 43928,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 49797,
+          "index": 32492,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 40374,
+          "index": 12835,
           "killed": false,
           "failedTests": []
         }
@@ -889,7 +1118,7 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7602
+      "ms": 7587
     },
     {
       "source": "src/components/TankResearchPanel.vue",
@@ -901,57 +1130,55 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 17944,
+          "index": 19799,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 19702,
-          "killed": true,
-          "failedTests": [
-            "TankResearchPanel layout 窄屏覆盖 has-side，前驱车与研发图纵向堆叠"
-          ]
+          "index": 19796,
+          "killed": false,
+          "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 15781,
+          "index": 16062,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 14874,
+          "index": 3806,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 14271,
+          "index": 3407,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 19083,
+          "index": 17747,
           "killed": false,
           "failedTests": []
         }
       ],
       "rename": [],
-      "semanticKilled": 1,
+      "semanticKilled": 0,
       "semanticTotal": 6,
       "semanticInvalid": 0,
       "semanticInconclusive": 0,
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7574
+      "ms": 7572
     }
   ]
 }
