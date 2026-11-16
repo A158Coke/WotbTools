@@ -334,14 +334,15 @@ function onWideLayoutChange(event) {
   wideLayout.value = !!(event && event.matches)
 }
 // 全屏变化后等 Vue 更新布局再 force fit；事件与方向锁仍由共享 composable 所有。
-const { isFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
-  target: () => pbRoot.value,
+const { isFullscreen, pseudoFullscreen, fullscreenSupported, toggleFullscreen, exitOwnedFullscreen } = usePlaybackFullscreen({
+  target: () => pbRoot.value, pseudoFallback: true, // 原生全屏不可用 / 被拒时降级为 CSS 伪全屏
   isPhone: isMobileDevice,
   isActive: () => playbackLifecycleActive && props.active && lifecycleVisible.value,
   onChange: () => nextTick(() => fitViewIfReady(true)),
   auto: () => ({ token: props.autoFullscreen?.token ?? 0, key: props.autoFullscreen?.key, ready: true, active: props.active && lifecycleVisible.value }),
 })
 
+const floatingFullscreenRow = computed(() => isMobileDevice.value && fullscreenSupported.value && !phoneLandscape.value && !uiHidden.value) // 竖屏手机浮动全屏按钮自占一行（.pb-fs-reserve）
 const {
   mapEl,
   mapWidth,
@@ -1050,7 +1051,7 @@ const mapStyle = computed(() => ({
 </script>
 
 <template>
-  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
+  <div v-if="image && playback" ref="pbRoot" class="battle-playback playback-workspace" :class="{ 'pb-device-mobile': isMobileDevice, 'pb-phone-landscape': phoneLandscape, 'pb-controls-bottom': true, 'pb-pseudo-fullscreen': pseudoFullscreen, 'pb-fs-reserve': floatingFullscreenRow, 'pb-roster-lanes': rosterLanes, 'pb-hud-clock-off': !hudClockVisible, ['pb-form-' + formFactor]: true }" :style="mapStyle" data-scene-surface data-test="battle-playback">
     <!-- 移动端全屏入口：竖屏保持右上角浮动（与 Map Preview 3D / Replay 3D 同一位置）；
          手机横屏普通播放并入传输条；标注编辑隐藏传输条时，同一按钮移到标注行右端，
          隐藏全部 UI 时仍作为唯一可达入口留在右上角。三态互斥，DOM 里只有一个入口。 -->
@@ -1064,7 +1065,6 @@ const mapStyle = computed(() => ({
       data-tour="playback-floating-fullscreen"
       @toggle="toggleFullscreen"
     />
-
 
     <div ref="battlefieldWorkspaceEl" class="pb-main" :class="{ 'pb-roster-lanes': rosterLanes }" data-test="pb-main">
     <BattlePlaybackHud
