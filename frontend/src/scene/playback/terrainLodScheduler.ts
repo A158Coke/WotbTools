@@ -51,6 +51,9 @@ export interface TerrainLodSchedulerOptions<S> {
   onSwap: (data: GroundGeometryData, job: TerrainLodJob<S>, info: TerrainSwapInfo) => void
   /** Worker 构造失败 / 运行出错（调用方改走同步路径；`job` 为未能完成的那个任务）。 */
   onWorkerLost: (job: TerrainLodJob<S> | null, reason: string) => void
+  /** 在途结果因代号失效被丢弃（setSource / setMask / invalidate）：宿主应重新评估当前状态。
+   *  调度器不自行重发（节流与当前相机归宿主）；若宿主已停手，此回调负责唤醒一帧。 */
+  onDiscard?: (job: TerrainLodJob<S>) => void
 }
 
 export interface TerrainLodScheduler<S> {
@@ -122,9 +125,13 @@ export function createTerrainLodScheduler<S>(opts: TerrainLodSchedulerOptions<S>
     if (!cur || cur.id !== msg.id) return
     inflight = null
     if (msg.type === 'error') { lose(`build-error: ${msg.message}`, cur.job); return }
-    // 代号不符：过期结果丢弃（TypedArray 是 Worker 转移来的，无 GPU 资源，交给 GC）；
-    // 下一帧调用方会按当前相机重新发起
-    if (cur.gen !== generation) return
+    // 代号不符：过期结果丢弃（TypedArray 是 Worker 转移来的，无 GPU 资源，交给 GC）。
+    // 此时在途状态已解除，但宿主可能已经停手（暂停 / 地图预览静止）——注释里的「下一帧」
+    // 不会自己到来，必须显式通知宿主重新评估（由宿主决定节流与当前相机快照）。
+    if (cur.gen !== generation) {
+      try { opts.onDiscard?.(cur.job) } catch { /* 宿主回调异常不得破坏调度状态 */ }
+      return
+    }
     opts.onSwap(msg.data, cur.job, { queueMs: now() - cur.sentAt, workerMs: msg.workerMs })
   }
 

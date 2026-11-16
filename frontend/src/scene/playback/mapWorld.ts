@@ -822,6 +822,9 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
       createWorker: () => (typeof Worker === 'undefined' ? null
         : new Worker(new URL('./terrainBuild.worker.ts', import.meta.url), { type: 'module' }) as never),
       onSwap: applyTerrainSwap,
+      // 在途结果被 setMask / setSource / invalidate 作废后，宿主可能已停手：
+      // 必须唤醒一帧重新按当前掩码与相机提交（调度器不自行重发）。
+      onDiscard: () => deps.invalidate(),
       onWorkerLost: (_job, reason) => {
         terrainWorkerFailed = true
         terrainScheduler = null

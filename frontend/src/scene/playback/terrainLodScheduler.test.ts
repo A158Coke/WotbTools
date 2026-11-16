@@ -26,14 +26,16 @@ function make(extra: Partial<Opts> = {}) {
   const w = new FakeWorker()
   const swaps: string[] = []
   const lost: string[] = []
+  const discarded: string[] = []
   const s = createTerrainLodScheduler<string>({
     createWorker: () => w,
     onSwap: (_d, j) => { swaps.push(j.snapshot) },
     onWorkerLost: (_j, r) => { lost.push(r) },
+    onDiscard: (j) => { discarded.push(j.snapshot) },
     ...extra,
   })
   s.setSource(SRC)
-  return { w, s, swaps, lost }
+  return { w, s, swaps, lost, discarded }
 }
 
 describe('terrainLodScheduler', () => {
@@ -64,19 +66,38 @@ describe('terrainLodScheduler', () => {
     expect(w.builds()).toHaveLength(1)   // 120 ms 窗口内没有自发请求
   })
 
-  it('代号不符的结果被丢弃（invalidate / setSource / setMask 各自作废在途）', () => {
+  it('代号不符的结果被丢弃（invalidate / setSource / setMask 各自作废在途），并通知宿主重评估', () => {
     type S = ReturnType<typeof make>['s']
     const bumps: Array<(s: S) => void> = [(s) => s.invalidate(), (s) => s.setSource(SRC), (s) => s.setMask(new Uint8Array(1))]
     for (const bump of bumps) {
-      const { w, s, swaps } = make()
+      const { w, s, swaps, discarded } = make()
       s.request(job('old'))
       bump(s)
       w.reply(w.builds()[0].id, 'old')
       expect(swaps).toEqual([])
+      expect(discarded).toEqual(['old'])   // 宿主据此唤醒一帧（停手场景没有「下一帧」）
       expect(s.request(job('new'))).toBe(true)
       w.reply(w.builds()[1].id, 'new')
       expect(swaps).toEqual(['new'])
     }
+  })
+
+  it('在途时 mask/source 失效：busy 期间的新请求被忽略，旧结果丢弃后由宿主重新 request 才发出新任务', () => {
+    const { w, s, swaps, discarded } = make()
+    expect(s.request(job('old'))).toBe(true)
+    s.setMask(new Uint8Array(1))
+    // 宿主在掩码完成后立刻请求：在途 → 返回 true 但不发新任务（调用方不能据此认为已排队）
+    expect(s.request(job('new'))).toBe(true)
+    expect(w.builds()).toHaveLength(1)
+    w.reply(w.builds()[0].id, 'old')
+    expect(swaps).toEqual([])
+    expect(discarded).toEqual(['old'])
+    expect(s.busy).toBe(false)
+    // 宿主收到 onDiscard → 重新评估 → 此时才真正发出携带新掩码的任务
+    expect(s.request(job('new'))).toBe(true)
+    expect(w.builds()).toHaveLength(2)
+    w.reply(w.builds()[1].id, 'new')
+    expect(swaps).toEqual(['new'])
   })
 
   it('init / mask 消息先于 build 送达同一 Worker（按发送顺序）', () => {

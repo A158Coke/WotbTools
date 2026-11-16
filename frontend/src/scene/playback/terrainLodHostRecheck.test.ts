@@ -55,6 +55,10 @@ function host() {
       scheduler = null
       invalidate()
     },
+    onDiscard: () => {
+      // 生产 mapWorld.onDiscard 的同一条唤醒：作废的在途结果返回后没有「下一帧」。
+      invalidate()
+    },
   })
   scheduler.setSource(SRC)
 
@@ -71,14 +75,17 @@ function host() {
     }
     const reason = terrainLodStaleReason(prev, state(), now - prevAt)
     if (!reason) return false
-    builds.push(state().d)
-    scheduler.request({ request: buildRequest(), snapshot: state(), reason })
+    const wasBusy = scheduler.busy
+    const accepted = scheduler.request({ request: buildRequest(), snapshot: state(), reason })
+    if (!wasBusy && accepted) builds.push(state().d)
     wake.cancel()
     return true
   }
 
   return {
     camera, worker, wake, frame, invalidate,
+    /** 生产 onRefineMaskBuilt：terrainLodPrev=null + invalidate + scheduler.setMask。 */
+    setMask(mask: unknown) { prev = null; invalidate(); scheduler?.setMask(mask) },
     get builds() { return builds },
     get syncBuilds() { return syncBuilds },
     get dirty() { return dirty },
@@ -117,6 +124,26 @@ describe('地形 LOD 换装后的最终姿态复查', () => {
     expect(h.worker.builds()[1].cam.z).toBe(40)
 
     // 新结果与当前相机一致：不再安排下一次唤醒。
+    h.worker.reply(h.worker.builds()[1].id)
+    expect(h.wake.pending).toBe(false)
+  })
+
+  it('在途时掩码失效：busy 期间的新请求被忽略，旧结果丢弃后唤醒并提交新掩码构建', () => {
+    vi.useFakeTimers()
+    const h = host()
+    h.invalidate()
+    expect(h.frame()).toBe(true)
+    const first = h.worker.builds()[0].id
+    // 构建期间走廊掩码完成：setMask 作废旧代号；宿主立刻请求仍被 busy 忽略。
+    h.setMask(new Uint8Array(1))
+    expect(h.frame()).toBe(true)
+    expect(h.worker.builds()).toHaveLength(1)
+    // 旧结果返回：不换装，但 onDiscard 必须唤醒宿主（停手时没有「下一帧」）。
+    h.worker.reply(first)
+    expect(h.dirty).toBe(true)
+    expect(h.frame()).toBe(true)
+    expect(h.worker.builds()).toHaveLength(2)
+    expect(h.worker.sent.some((m) => m.type === 'mask')).toBe(true)
     h.worker.reply(h.worker.builds()[1].id)
     expect(h.wake.pending).toBe(false)
   })

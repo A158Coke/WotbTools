@@ -1354,6 +1354,8 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
     expect(swap).toMatch(/terrainLodWake\.cancel\(\)/)
     // 异步 Worker 失败：停手时也要有脏帧才能进同步回退。
     expect(mapWorldSrc).toMatch(/onWorkerLost:[\s\S]{0,800}?deps\.invalidate\(\)/)
+    // 在途结果被 setMask/setSource 作废后：丢弃路径同样要唤醒宿主重评估（停手没有下一帧）。
+    expect(mapWorldSrc).toMatch(/onDiscard: \(\) => deps\.invalidate\(\)/)
     // 已按当前姿态发出 / 同步回退 / 会话重置 / 销毁：待唤醒不再需要。
     expect(mapWorldSrc.match(/terrainLodWake\.cancel\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(4)
     expect(mapWorldSrc).toMatch(/if \(sch\.request\([^\n]*\)\) \{[^}]*terrainLodWake\.cancel\(\)/)
