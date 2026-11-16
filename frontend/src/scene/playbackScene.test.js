@@ -268,6 +268,20 @@ describe('opt-in profiler ownership', () => {
     expect(window.__pbPerf).toBeUndefined()
   })
 
+  it('stops the ?perf watchdog through the host destroy path', () => {
+    // 看门狗由 createPerfProbe 在 ?perf 下启动（50ms setInterval）；销毁必须清表，
+    // 否则每个已销毁实例永久空转。这里走真实 initPlayback().destroy()，不是直接调
+    // probe.stopWatchdog()——验证宿主接线（playbackScene 销毁段）而不是清理函数自身。
+    window.history.replaceState(null, '', '/?perf&q=low')
+    const setSpy = vi.spyOn(window, 'setInterval').mockImplementation(() => 777)
+    const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
+    const { api } = createScene()
+    expect(setSpy).toHaveBeenCalled()
+    const timerId = setSpy.mock.results[0].value
+    api.destroy()
+    expect(clearSpy).toHaveBeenCalledWith(timerId)
+  })
+
   it('reads all annotation metrics from the existing owner without changing its state', async () => {
     window.history.replaceState(null, '', '/?perf&debug&q=low')
     const { api } = createScene()
