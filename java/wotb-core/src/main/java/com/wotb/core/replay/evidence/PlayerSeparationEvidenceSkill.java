@@ -41,7 +41,7 @@ public final class PlayerSeparationEvidenceSkill {
 
     private static final int MAX_EVIDENCE = 6;
     /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
-    public static final float MIN_MOVEMENT_COVERAGE_RATIO = 0.5f;
+    public static final float MIN_MOVEMENT_COVERAGE_RATIO = SeparationThresholds.MIN_MOVEMENT_COVERAGE_RATIO;
 
     private PlayerSeparationEvidenceSkill() {
     }
@@ -219,7 +219,7 @@ public final class PlayerSeparationEvidenceSkill {
             final float duration = overlapEnd - overlapStart;
             covered += duration;
             if (segment.type() == MovementType.STATIONARY
-                    || segment.averageSpeed() < TeamSeparationEvidenceSkill.STATIONARY_SPEED_MPS) {
+                    || segment.averageSpeed() < SeparationThresholds.STATIONARY_SPEED_MPS) {
                 stationary += duration;
             }
         }
