@@ -80,7 +80,12 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 8419
+      "ms": 18569,
+      "sourceSha256": "a3b4e4c331cbe09b0e75ca1502ad98a9d640aa70b3d1cebc89480a5f32083ef2",
+      "testFileSha256": {
+        "frontend/src/app/navigationPressedFeedback.test.js": "9815026e42004e617bc98bc823f0dff5cb2ff4f82dacddab60818b0af90544c6",
+        "frontend/src/data-version-wiring.test.js": "ba88c1cdae464ca787af33088589ec3a275e2bce28e082b39d69ca19cd72f47d"
+      }
     },
     {
       "source": "src/app/AppTopBar.vue",
@@ -140,7 +145,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7703
+      "ms": 17089,
+      "sourceSha256": "f20cfaac18d93677c5c2fc37351a5eb56c04d8168e271a9b2c56dfaf16f11c1e",
+      "testFileSha256": {
+        "frontend/src/app/navigationPressedFeedback.test.js": "9815026e42004e617bc98bc823f0dff5cb2ff4f82dacddab60818b0af90544c6"
+      }
     },
     {
       "source": "src/app/SidebarDataVersion.vue",
@@ -200,7 +209,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 8368
+      "ms": 17963,
+      "sourceSha256": "dcc9b097bf03745f09c5d9c64bed14b84ade0be953ec2b508155951a41efc9fa",
+      "testFileSha256": {
+        "frontend/src/data-version-wiring.test.js": "ba88c1cdae464ca787af33088589ec3a275e2bce28e082b39d69ca19cd72f47d"
+      }
     },
     {
       "source": "src/components/AgentArmorView.vue",
@@ -212,42 +225,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 78754,
+          "index": 77509,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 72188,
+          "index": 71052,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 63526,
+          "index": 62457,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 72884,
+          "index": 71745,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 59379,
+          "index": 58344,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 46674,
+          "index": 45817,
           "killed": false,
           "failedTests": []
         }
@@ -260,7 +273,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 13158
+      "ms": 25582,
+      "sourceSha256": "df9e8ffeb94ba539f7b36ec6b8871477cb8104d5292b791c8c6b62f2ddc5541c",
+      "testFileSha256": {
+        "frontend/src/components/AgentArmorView.dom-contract.test.js": "a1f4de1c36ff14b95ca6f25bf3542f813618cddf4d635258a6485caff6c93579"
+      }
     },
     {
       "source": "src/components/AgentTankopedia.vue",
@@ -320,7 +337,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7561
+      "ms": 17095,
+      "sourceSha256": "266ddfc93dce432be7d1c0b004d8bf7ee97dcb2e11a9b5e2d5c37b4b4cf6c52d",
+      "testFileSha256": {
+        "frontend/src/components/AgentTankopedia.baseline.test.js": "6715e726c3f98dda3ede46c997a933b35bee32fb735dca97a76f558d09868924"
+      }
     },
     {
       "source": "src/components/ArmorShotHud.vue",
@@ -380,7 +401,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 13039
+      "ms": 25583,
+      "sourceSha256": "5cdb49911b447eedf4278267503bcb1993451b8acff690aca0101a4153749518",
+      "testFileSha256": {
+        "frontend/src/components/AgentArmorView.dom-contract.test.js": "a1f4de1c36ff14b95ca6f25bf3542f813618cddf4d635258a6485caff6c93579"
+      }
     },
     {
       "source": "src/components/BattlePlayback.vue",
@@ -392,42 +417,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 64335,
+          "index": 62909,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 18594,
+          "index": 18169,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 66589,
+          "index": 65095,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 65960,
+          "index": 64491,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 24114,
+          "index": 23536,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 62366,
+          "index": 60982,
           "killed": false,
           "failedTests": []
         }
@@ -440,7 +465,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7616
+      "ms": 17009,
+      "sourceSha256": "c340afa33606949d3e6f6a5af4e8436586ae730ce2ff2c25ed13336f8744cbb9",
+      "testFileSha256": {
+        "frontend/src/components/BattlePlayback.coordinate.test.js": "e7dc3118f85d2672bd9288207538edb0f48caf86413bb6017073ed871b553b58"
+      }
     },
     {
       "source": "src/components/BattlePlaybackPanel.vue",
@@ -500,7 +529,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7569
+      "ms": 17614,
+      "sourceSha256": "aae26d7d410643dcd7c28c0949c2d14ee7b5c6a1f3041cab71ea30880a53fcf6",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/DataVersionSelect.vue",
@@ -560,7 +593,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 8289
+      "ms": 18483,
+      "sourceSha256": "52db4aa7cc9e8e02e0f7934cf3e1948dea9aa2e89b9298b4b4169ff6adf6f145",
+      "testFileSha256": {
+        "frontend/src/data-version-wiring.test.js": "ba88c1cdae464ca787af33088589ec3a275e2bce28e082b39d69ca19cd72f47d"
+      }
     },
     {
       "source": "src/components/MarkdownContent.vue",
@@ -620,7 +657,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7576
+      "ms": 17454,
+      "sourceSha256": "21f2e1eb5ba5e4015449d014b622cda7b717641f871f5873e8659d0390568a22",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/MorePage.vue",
@@ -680,7 +721,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 8259
+      "ms": 18647,
+      "sourceSha256": "b8f37ebde5fcf7c29c33c9c838b3b7284d7e39f33a5c9a79d4095dd2f39d4e5b",
+      "testFileSha256": {
+        "frontend/src/data-version-wiring.test.js": "ba88c1cdae464ca787af33088589ec3a275e2bce28e082b39d69ca19cd72f47d"
+      }
     },
     {
       "source": "src/components/PlaybackVehicleLabels3D.vue",
@@ -740,7 +785,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7618
+      "ms": 17651,
+      "sourceSha256": "2fd2f5dce09943ecb38e26debd60cd03fbdbc70736dcd354106bd0ca6fcbae58",
+      "testFileSha256": {
+        "frontend/src/scene/labelOcclusion.test.js": "4501892d221f3e0cd0f458ef422158f293a16e306f4d13fb89577179145dc1f1"
+      }
     },
     {
       "source": "src/components/PlayerDetailDrawer.vue",
@@ -800,7 +849,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7633
+      "ms": 17322,
+      "sourceSha256": "9f6d6c04d3c0177a886fa9192a2b929ded0cece92801dff8c549ee2c4a4654de",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/ProfilePage.vue",
@@ -860,7 +913,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7647
+      "ms": 17285,
+      "sourceSha256": "0dbab2d6ffc166de190b03e6ac9f6b2600806e878296400e56041780b19fa3c8",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/Replay3DPane.vue",
@@ -872,42 +929,42 @@
         {
           "id": "sem-0",
           "op": "NUM_OFF",
-          "index": 56632,
+          "index": 55409,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-1",
           "op": "NUM_OFF",
-          "index": 27727,
+          "index": 27064,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-2",
           "op": "NUM_OFF",
-          "index": 55531,
+          "index": 54330,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-3",
           "op": "NUM_OFF",
-          "index": 61288,
+          "index": 59954,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-4",
           "op": "NUM_OFF",
-          "index": 59319,
+          "index": 58028,
           "killed": false,
           "failedTests": []
         },
         {
           "id": "sem-5",
           "op": "NUM_OFF",
-          "index": 57364,
+          "index": 56122,
           "killed": false,
           "failedTests": []
         }
@@ -920,7 +977,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 106765
+      "ms": 116799,
+      "sourceSha256": "c4176db1f7c5ff21030201f299947b4928face34cff00434c40f7b373552225a",
+      "testFileSha256": {
+        "frontend/src/components/Replay3DPane.test.js": "1c22b39c4bd7063b3738b798986d41435a6937e2e1bfc324f8f67f7b681496fa"
+      }
     },
     {
       "source": "src/components/ReplayCapabilityTabs.vue",
@@ -937,7 +998,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 1104
+      "ms": 2423,
+      "sourceSha256": "b108d610023b9de1cb2525a06412d2235f3b2b419510110b47993226a4534a87",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/SegmentedControl.vue",
@@ -997,7 +1062,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7590
+      "ms": 16958,
+      "sourceSha256": "72349402dc2e225464d9fe09932b1324c171b9642255bb1d1bd5d04771dee312",
+      "testFileSha256": {
+        "frontend/src/styles/light-theme-source-regression.test.js": "5768cdaa2b9560e60ff7339a41b92a15e4bea78d90566f69d834ef4f198d32f4"
+      }
     },
     {
       "source": "src/components/TankCatalogMenu.vue",
@@ -1058,7 +1127,12 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 56125
+      "ms": 87332,
+      "sourceSha256": "7f1a3dda9441299b6f1df60d85fa1c884ec45b02ac6d6b5ed7995a7b34807af7",
+      "testFileSha256": {
+        "frontend/src/components/AgentArmorView.dom-contract.test.js": "a1f4de1c36ff14b95ca6f25bf3542f813618cddf4d635258a6485caff6c93579",
+        "frontend/src/styles/tokens/color-contrast.test.ts": "96704ce008b8313e3231d2dbdd8944915cb4cba58d20f49d752064163e74dd4c"
+      }
     },
     {
       "source": "src/components/TankConfigPanel.vue",
@@ -1118,7 +1192,11 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7587
+      "ms": 16909,
+      "sourceSha256": "6ccd10cb478ba9fd4028d1af619fd5fa90d8984ed8df38a529c999af04568e01",
+      "testFileSha256": {
+        "frontend/src/components/TankConfigPanel.layout.test.js": "30ea28b35eaa5aa8180a89ab504c19f2c52f31a9b843ddb682d92b88d6f02e3f"
+      }
     },
     {
       "source": "src/components/TankResearchPanel.vue",
@@ -1178,7 +1256,13 @@
       "renameFalsePositives": 0,
       "renameTotal": 0,
       "renameInvalid": 0,
-      "ms": 7572
+      "ms": 16825,
+      "sourceSha256": "59dc3b243ec13f7eab7c474678204472ef71d4be2ae0e91656370bff98bcad5f",
+      "testFileSha256": {
+        "frontend/src/components/TankResearchPanel.layout.test.js": "121c5cf30381e1f3d1826b67834c8736ee491f7d9b98c9b29daaac72ba6a06fb"
+      }
     }
-  ]
+  ],
+  "sourceCommit": "133e7ef8d38d3000c00c92f4fe63de12ecf60cfe",
+  "inventorySha256": "8cbfbe2b8c35f463f7d9bb99a6f776c9a0cee9c3ffabd2e035f1126f25a4ed67"
 }

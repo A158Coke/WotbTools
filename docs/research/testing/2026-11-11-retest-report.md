@@ -1,6 +1,6 @@
 # 测试效力复测（2026-11-11 baseline / 2026-11-16 复审更新，Issue #827 Step 0）
 
-本文是 Issue #827 的 baseline 重建设，替代 `2026-11-test-effectiveness.md`（基线 `1cefa174c`，dated 证据）作为当前参照；不修改旧文档的历史结论。2026-11-16 复审在 PR #957 head（已合并最新 main）上重新生成 inventory 与三组探针矩阵，并修复了等价重命名、变异有效性分类、分类器正则切块与台账区间计数四处口径问题（见「评审跟进」）。
+本文是 Issue #827 的 baseline 重建设，替代 `2026-11-test-effectiveness.md`（基线 `1cefa174c`，dated 证据）作为当前参照；不修改旧文档的历史结论。2026-11-16 复审修复了等价重命名、变异有效性分类、分类器正则切块与台账区间计数四处口径问题（见「评审跟进」）。
 
 ## 工具（已提交，可重复）
 
@@ -9,11 +9,11 @@
 | `scripts/testing/classify-source-text-tests.mjs` | 结构化扫描 frontend/src 全部 `*.test.*`，按用例粒度分类「引用生产源码文本」的断言；输出逐例清单 JSON。用例切块会跳过注释、字符串与正则字面量（源码守卫常用的 `/...\{.../` 不再截断用例体）；边界未闭合的用例记入 `parseAnomalies`，不静默判成非文本测试；Windows CRLF 检出统一归一为 LF。仍非完整 AST，逐例处置需人工复核（见台账）。 |
 | `scripts/testing/source-text-probes.mjs` | 对每个「生产源文件 → 读取方测试集合」执行语义变异探针（FLIP_CMP / NUM_OFF，变异点必须落在注释/字符串区间外）与等价重命名探针。变异先过解析校验：不可解析的变异记 invalid，不计入捕获率；vitest 非零退出但无断言失败（转换/收集错误、超时）记 invalid/inconclusive。等价重命名按 TypeScript symbol 的绑定身份，只改声明与同 symbol 引用（保留关键字、属性键、字符串与对外导出名）；内置 `from` 负面控制自检（整词替换会破坏 import，绑定重命名不会）。固定 seed=827；未变异基线必须全绿否则跳过该源并如实记录。 |
 | `scripts/testing/source-text-inventory.json` | 分类器输出快照（生成于 2026-11-16，PR #957 head）。 |
-| `scripts/testing/probe-matrix-*.json` | 探针原始矩阵（scene / css / vue 三组，2026-11-16 在同一棵树重新生成）。 |
+| `scripts/testing/probe-matrix-*.json` | 探针原始矩阵；各组来源提交见下表，不代表同一棵树。 |
 
 复现方式：干净 checkout → `node scripts/testing/classify-source-text-tests.mjs` → `node scripts/testing/source-text-probes.mjs --inventory ... --out ...`。探针在独立检出上运行（会临时改写生产源文件），不要在未提交工作区运行。
 
-快照口径：本报告的数字以 PR #957 最终 head 的树为准（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **444 个测试文件 / 69 个读取生产源码 / 231 个文本断言用例**（parseAnomalies=0；含 `.toContain`、`stripComments(readSrc(...))` 包装器与 `[read(...), ...].join()` 数组聚合读取变量）；矩阵在同一棵树上用 seed=827 重新生成。历史基线用同一分类器在历史提交 67fdb2be 的树上重建为 `scripts/testing/source-text-inventory-wave0.json`（300 个文本用例），只用于历史台账对齐，不与当前 231 例直接比较。
+快照口径：当前 inventory 固定到 `133e7ef8d38d3000c00c92f4fe63de12ecf60cfe` 的树（Wave 1–3 已改写 / 删除文本守卫后的树，且已合并最新 main）。inventory 重跑为 **444 个测试文件 / 69 个读取生产源码 / 231 个文本断言用例**（parseAnomalies=0；含 `.toContain`、`stripComments(readSrc(...))` 包装器与 `[read(...), ...].join()` 数组聚合读取变量）；矩阵使用 seed=827；各组来源独立记录，不能把跨提交数字汇总为当前 head 的测量结果。历史基线用同一分类器在历史提交 67fdb2be 的树上重建为 `scripts/testing/source-text-inventory-wave0.json`（300 个文本用例），只用于历史台账对齐，不与当前 231 例直接比较。
 
 ## 规模与裁剪说明
 
@@ -26,14 +26,23 @@
 - 集中地：`components/AgentArmorView.dom-contract.test.js`（57）、`scene/sceneryMaterials.test.js`（52）、`scene/playbackScene.occlusion.test.js`（15）、`scene/groundPass.test.js`（13）、`vehicle-models/extractor.test.js`（7）、`app/navigationPressedFeedback.test.js` / `scene/pickDebug.test.js` / `styles/light-theme-source-regression.test.js`（各 5）等。完整清单见 `scripts/testing/source-text-inventory.json` 与台账草稿 `2026-11-11-disposition-ledger-draft.md`。
 - 旧审计 251 例、早期分类器快照 181 例与重建后的历史基线 300 例不是同一口径：181 与 300 是**同一历史树（67fdb2be）**上的分类器前后结果，181→300 的增量来自漏判修正（正则切块截断用例体、缺 `.toContain`、`stripComments(readSrc(...))` 包装器与 `[read(...), ...].join()` 数组聚合读取未登记）；251 是更早审计的独立口径，不与二者直接比较。当前树 231 例则是 Wave 1–3 改写/删除文本守卫后的剩余（部分文件如 tankViewer.distance/cameraPreset 已是混合行为测试）。三组数字只在各自口径内使用。
 
-## 探针 Baseline（PR #957 head，seed=827，2026-11-16 重生成）
+## 探针 Baseline（seed=827，按来源提交区分）
+
+| 矩阵 | 来源 | 证据边界 |
+|---|---|---|
+| scene | 快照提交 `9831be9cdb01da2dfa4e1d800e7d23a0230ffc71` | 保留该提交的原始矩阵；不代表后续结果卡尺寸修复的同树测量。 |
+| css | 快照提交 `38703d3db7d7dc447db8edd884ab73931b9717d1` | 保留旧基线，未在当前 head 重跑。 |
+| vue | 运行提交 `133e7ef8d38d3000c00c92f4fe63de12ecf60cfe` | 本轮完整重跑 20 个源及实际读取方测试；覆盖更新后的 AgentArmorView 源与断言。 |
+
+Vue 矩阵记录 `sourceCommit`、inventory SHA-256，以及逐源/读取方文件的 SHA-256（按运行时文件原始字节，包括换行）；变异 index 对应这些字节解码后的源码字符串。重跑验证 20 个源的未变异基线通过，114 个 NUM_OFF 位置均指向数字，invalid/inconclusive 均为 0。
+
+快照提交表示该提交保存的原始证据，不倒推其运行时工作区 SHA。读取方路径集合不变不能证明源码/断言内容不变，也不能据此沿用旧测量作为当前结果。
 
 | 簇 | 探测源 | 跳过（baselineRed） | 语义捕获（有效变异） | invalid | inconclusive | 等价重命名误报 |
 |---|---|---|---|---|---|---|
 | scene | 42 | 0 | **11/213（5.2%）** | 34 | 0 | **14/126（11.1%）** |
 | css | 4 | 0 | 1/24（4.2%） | 0 | 0 | 0/0（.css 跳过重命名探针） |
 | vue | 20 | 0 | **0/114（0.0%）** | 0 | 0 | 0/0（模板引用不在同一 AST，跳过） |
-| 合计 | 66 | 0 | 12/351（3.4%） | 34 | 0 | 14/126（11.1%） |
 
 逐源矩阵：`scripts/testing/probe-matrix-{scene,css,vue}.json`。要点：
 
@@ -42,7 +51,7 @@
 - scene 被杀最多的源：`heSplash.ts` 3/5、`viewer/viewerMath.ts` 3/6、`viewer/trajectoryCard.ts` 2/5；`groundPass.js` / `playback/renderer.ts` / `viewer/armorShaders.ts` 各 1；其余源本轮 0 捕获（`materialDispose.ts` 6 个语义候选全部 parse-invalid，记 0/0——**无有效证据，不解释为受保护**）。接线类语义（调用存在性）多数存活。
 - 等价重命名误报 14/126（11.1%）：`playback/cameraRuntime.ts` 2/3，`groundPass.js` / `materialDispose.ts` / `penetration.js` / `playback/labelsRuntime.ts` / `playback/mapAssets.ts` / `playback/mapWorld.ts` / `playback/renderer.ts` / `playback/vehicleRuntime.ts` / `sceneryAssembly.ts` / `tankViewer.js` / `viewer/judgment.ts` / `viewer/trajectoryCard.ts` 各 1/3——说明这些读取方测试仍依赖局部标识符的**名字**（例如源码正则里出现变量名），不是行为断言；`AgentArmorView.dom-contract.test.js` 的 `kernel` 是多个 scene 源的聚合文本，其文本守卫同时关联轨迹/结果卡等源，是新增误报的主要来源（聚合读取的过近似见 Known Risks）。含 shorthand / 无别名 export 的候选已整条跳过，不进入分母。
 - **invalid 34 个变异**（parse 校验失败，未计入捕获率）：`materialDispose.ts` 6、`sceneryAssembly.ts` 4、`playback/mapWorld.ts` 3，`playback/battleRuntime.ts` / `sceneryInstancing.ts` / `viewer/equipmentState.ts` 各 2，其余 15 个源各 1（`groundGeometryData` / `heSplash` / `armorHighlight` / `labelsRuntime` / `mapAssets` / `pickReport` / `renderer` / `vehicleRuntime` / `viewer/aimInput` / `viewer/armorShaders` / `viewer/dataLoader` / `viewer/diagnosticProbe` / `viewer/resultCardPosition` / `viewer/shotReplay` / `viewer/trajectoryCard`）。全部是 FLIP_CMP 命中 TS 泛型/类型实参（`<T>` 被当作比较符），解析校验正确拒收；这些位点不进入分母，也不记为“存活”。
-- 本轮 66 个源的读取方基线全部全绿（baselineRed=0、inconclusive=0）；失败探针都能归入断言失败 / 解析失败两类。
+- 各组快照内的读取方基线均记录为全绿（baselineRed=0、inconclusive=0）；这些记录属于上表各自来源，不是当前 head 的 66 源同树运行。
 
 ## 评审跟进（2026-11-16）
 
