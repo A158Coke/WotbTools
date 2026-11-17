@@ -2,8 +2,8 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchTankData, tankImageUrl } from '../scene/agentData.js'
-import { loadResearchCatalog, loadTankModules } from '../utils/researchCatalog.js'
-import { buildComputeInput, resolveSetup, findTankModules } from '../replay-local/compute/tankSetup'
+import { availableItems, loadResearchCatalog, loadTankModules } from '../utils/researchCatalog.js'
+import { tankRef, buildComputeInput, resolveSetup, findTankModules } from '../replay-local/compute/tankSetup'
 import { effectivePower, terrains } from '../replay-local/compute/mobility'
 import { vehicleColor, describeSetup, matchesSnapshot, mobilityVehicle, moduleIdentity, selectionQuery } from '../composables/tankMobility'
 import AppDialog from './AppDialog.vue'
@@ -14,8 +14,9 @@ import MobilityActivations from './MobilityActivations.vue'
 
 import type { ComparisonEntry } from '../composables/tankMobility'
 import type { SetupSelection } from '../replay-local/compute/tankSetup'
+import type { BatchSetup } from '../composables/mobilityBatch'
 const props = defineProps<{ entry: ComparisonEntry; dataset?: string | null }>()
-const emit = defineEmits(['update', 'remove', 'move', 'curve'])
+const emit = defineEmits(['update', 'remove', 'move', 'curve', 'context', 'batch'])
 const { t, n, locale } = useI18n()
 const editing = ref(false)
 type VehicleData = {
@@ -26,7 +27,7 @@ type VehicleData = {
 const loaded = shallowRef<VehicleData | null>(null)
 const error = ref(false)
 const retry = ref(0)
-watch(() => [props.entry.tank, retry.value], async ([tank], _, onCleanup) => {
+watch([() => props.entry.tank, retry], async ([tank], _, onCleanup) => {
   let stale = false
   onCleanup(() => { stale = true })
   loaded.value = null
@@ -40,6 +41,16 @@ watch(() => [props.entry.tank, retry.value], async ([tank], _, onCleanup) => {
 const setup = computed(() => loaded.value && resolveSetup({ ...loaded.value, url: props.entry.config || {} }))
 const compatible = computed(() => loaded.value && props.dataset && props.entry.dataset === props.dataset && setup.value?.canConfigure &&
   (!props.entry.config || matchesSnapshot(props.entry, loaded.value.modules, setup.value, loaded.value.catalog)))
+const batchContext = computed<BatchSetup | undefined>(() => {
+  if (!compatible.value || !loaded.value || !setup.value) return
+  const { modules, catalog, detail } = loaded.value
+  const vehicle = tankRef(detail, modules)
+  return { entry: props.entry, name: String(detail.name || props.entry.tank), selection: setup.value, modules, devices: catalog.devices,
+    slots: catalog.devicePresets?.[modules.optDevicePreset || 'defaultPreset'] || [],
+    provisions: availableItems(catalog.provisions, vehicle), consumables: availableItems(catalog.consumables, vehicle),
+    provisionSlots: Number(modules.provisionSlots), consumableSlots: Number(modules.consumableSlots) }
+})
+watch(batchContext, context => emit('context', context), { immediate: true })
 const input = computed(() => {
   if (!compatible.value || !setup.value || !loaded.value) return null
   try { return buildComputeInput({ ...loaded.value, selection: setup.value }) } catch { return null }
@@ -97,21 +108,26 @@ function skill(id: string, max: boolean) {
       <small v-else-if="!compatible || !input">{{ t('mobility.invalid') }}</small>
     </header>
     <span v-for="(value, i) in values" :key="i">{{ Number.isFinite(value) ? n(value, {maximumFractionDigits: 2}) : '—' }}</span>
-    <AppDialog :open="editing" :title="label" size="xl" @close="editing = false">
+    <AppDialog v-if="editing" :open="editing" :title="label" size="xl" @close="editing = false">
       <template v-if="loaded && compatible && setup">
-        <label>{{ t('mobility.alias') }} <input :value="entry.alias" @change="patch({ alias: ($event.target as HTMLInputElement).value.trim() })" /></label>
+        <label class="mob-alias">{{ t('mobility.alias') }} <input class="mob-field" :value="entry.alias" @change="patch({ alias: ($event.target as HTMLInputElement).value.trim() })" /></label>
         <TankConfigPanel v-bind="loaded" :selection="setup" @update="updateSelection" @reset="updateSelection({}, true)" @preset="preset" @cycle-skill="skill"
           @clear-skills="updateSelection({skills: {}, conditionalSkills:false})"
-          @max-skills="updateSelection({skills: Object.fromEntries(Object.keys(loaded.catalog.skills).map(k => [k,7]))})" />
+          @max-skills="updateSelection({skills: Object.fromEntries(Object.keys(loaded.catalog.skills).map(k => [k,7]))})">
+          <template v-for="group in (['devices', 'provisions', 'consumables'] as const)" :key="group" #[group]>
+            <AppButton size="sm" @click="emit('batch', group)">{{ t('mobBulk.applyAll') }}</AppButton>
+          </template>
+        </TankConfigPanel>
         <MobilityActivations :model-value="entry.activations" :options="curve.options" :catalog="loaded.catalog" @update:model-value="patch({activations:$event})" />
       </template>
     </AppDialog>
   </div>
 </template>
 <style scoped>
+.mob-alias { display: grid; gap: var(--space-1); margin-bottom: var(--space-3); }
 .mob-col { display: grid; grid-template-rows: subgrid; grid-row: 1 / span 8; min-width: 13rem; text-align: center; border-inline-start: 1px solid var(--color-border-subtle); }
 .mob-col header { display: grid; align-content: end; justify-items: center; padding: var(--space-3); gap: var(--space-1); }
-.mob-col strong { border-bottom: var(--space-1) solid; }
+.mob-col strong { max-inline-size: 100%; overflow-wrap: anywhere; border-bottom: var(--space-1) solid; }
 .mob-col-actions { display: flex; align-items: center; justify-content: center; gap: var(--space-1); }
 .mob-col-actions :deep(.is-ghost) { padding-inline: var(--space-2); }
 .mob-col > span { font-variant-numeric: tabular-nums; border-top: 1px solid var(--color-border-subtle); padding: var(--space-2); }
