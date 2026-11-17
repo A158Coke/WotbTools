@@ -37,6 +37,9 @@ import TankCatalogMenu from './TankCatalogMenu.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
 import TankResearchPanel from './TankResearchPanel.vue'
 import TankAugmentTree from './TankAugmentTree.vue'
+import MobilityChart from './MobilityChart.vue'
+import MobilityActivations from './MobilityActivations.vue'
+import { mobilityVehicle, saveComparison, snapshot, useMobilityDataset, describeSetup } from '../composables/tankMobility'
 import TankParamPanel from './TankParamPanel.vue'
 import AppDialog from './AppDialog.vue'
 import { Motion } from 'motion-v'
@@ -380,6 +383,30 @@ const computeInput = computed(() => (setup.value.canConfigure && detail.value &&
     detail: detail.value, modules: modules.value, selection: setup.value, catalog: catalog.value,
   })
   : null))
+const dataset = useMobilityDataset()
+const activations = ref({})
+watch(detailId, () => { activations.value = {} }, { flush: 'sync' })
+watch(() => setup.value.consumables, stems => {
+  for (const stem of Object.keys(activations.value)) if (!stems.includes(stem)) delete activations.value[stem]
+})
+const vehicle = computed(() => mobilityVehicle({
+  id: String(detailId.value), name: detail.value?.name, catalog: catalog.value,
+  input: dataset.value ? computeInput.value : null, activations: activations.value,
+  color: 'var(--color-accent)', summary: describeSetup(modules.value, setup.value, catalog.value, locale.value, t),
+}))
+function openMobility(withVehicle) {
+  const target = locationForView('agent-mobility', route)
+  delete target.query.comparison
+  delete target.query.mobilitySeed
+  if (withVehicle) {
+    const entry = snapshot(detailId.value, modules.value, setup.value, dataset.value, activations.value)
+    const key = crypto.randomUUID()
+    saveComparison(key, [entry])
+    target.query.comparison = key
+    target.query.mobilitySeed = JSON.stringify({ v: 1, vehicle: entry })
+  }
+  router.push(target)
+}
 const characteristics = computed(() => (computeInput.value ? computeCharacteristics(computeInput.value) : null))
 /** 上一次渲染的特性（BK useDelta 同逻辑）：delta = 当前值 − 上一次值；初次加载无 delta。 */
 const previousCharacteristics = ref(null)
@@ -788,8 +815,8 @@ onMounted(() => {
           <p v-else class="tp-muted">{{ t('research.modules_unavailable') }}</p>
         </AppDialog>
 
+        <div class="tp-workbench-right">
         <TankParamPanel
-          class="tp-workbench-right"
           v-if="characteristics"
           :groups="paramTable"
           :current="characteristics"
@@ -802,7 +829,7 @@ onMounted(() => {
           @select-shell="selectShell"
         />
 
-        <section v-else class="tp-card-section tp-workbench-right surface-glass-1">
+        <section v-else class="tp-card-section surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
@@ -817,6 +844,13 @@ onMounted(() => {
             <div v-if="curCfg?.aim_time != null"><dt>{{ t('agentTanks.aim_time') }}</dt><dd>{{ fmt(curCfg.aim_time, 1) }} s</dd></div>
           </dl>
         </section>
+
+        <MobilityChart single :vehicles="[vehicle]" :dataset="dataset">
+          <AppButton :disabled="!dataset || !setup.canConfigure" @click="openMobility(true)">{{ t('mobility.join') }}</AppButton>
+        </MobilityChart>
+        <MobilityActivations v-model="activations" :options="vehicle.options" :catalog="catalog" />
+        </div>
+
         </div>
 
         <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
@@ -859,6 +893,7 @@ onMounted(() => {
     <ShowcaseHero v-if="listMounted" v-show="detailId == null" section="tankopedia" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
       <template v-if="tanks.length" #stats><div><span class="tp-hero-stat-label">{{ t('tankopedia.heroCount') }}</span><strong data-testid="tankopedia-count">{{ tanks.length.toLocaleString(locale) }}</strong></div></template>
       <template #actions>
+        <AppButton v-if="detailId == null" @click="openMobility(false)">{{ t('mobility.compare') }}</AppButton>
         <AppButton
           v-if="detailId == null"
           variant="primary"

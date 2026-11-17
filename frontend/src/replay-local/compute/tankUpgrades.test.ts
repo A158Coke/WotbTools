@@ -140,6 +140,7 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
     expect(withBaseline.stockEnginePower).toBe(Number(bz.modules.engines[0].stats.power))
     // 功率比基准必须来自初始发动机，而不是投影后的功率
     expect(withBaseline.stockEnginePower).toBeLessThan(Number(withBaseline.modules.engines[0].stats.power))
+    expect(computeCharacteristics(withBaseline)._mobility.power).toBe(Number(withBaseline.modules.engines[0].stats.power))
   })
 })
 
@@ -377,6 +378,8 @@ describe('真实五车静态升级投影', () => {
     expect(top.stockEnginePower).toBe(830)
     expect(stock.stockEnginePower).toBeUndefined()
     expect(topStats.enginePower).toBe(880)
+    expect(topStats._mobility.power).toBe(880)
+    expect(topStats._mobility.power).toBeGreaterThan(stockStats._mobility.power)
     // 保留现有乘员系数；升级相对初始的独立变化为 1.11 × 880/830。
     expect(topStats.chassiRotationSpeed / stockStats.chassiRotationSpeed).toBeCloseTo(1.11 * 880 / 830, 4)
     expect(topStats.chassiRotationSpeed).toBeCloseTo(30.683, 3)
