@@ -352,13 +352,89 @@ describe('60TP（7297）履带塌陷回归：支承点按客户端 chain flag �
     expect(checked).toBeGreaterThan(30)   // 本车 63 点里 40+ 点落在悬挂跨距内
   })
 
-  it('三对托带轮支承点（24/25、35/36、46/47）都挂在轮上', () => {
+  it('三对托带轮支承点（24/25、35/36、46/47）挂在各自的托带轮上', () => {
     const attach = attachChainToWheels(chain, wheels, 0.45, flags)
-    for (const i of [24, 25, 35, 36, 46, 47]) expect(attach[i]).toBeGreaterThanOrEqual(0)
+    // 精确轮号：托带轮 2（lon 1.86）、5（lon −0.05）、8（lon −1.94）。判据改成「轮缘残差为主」
+    // 之后仍必须选中托带轮（它虽是本车最近圆周，但与带面留有约 0.15 m 模型间隙）。
+    expect([attach[24], attach[25]]).toEqual([2, 2])
+    expect([attach[35], attach[36]]).toEqual([5, 5])
+    expect([attach[46], attach[47]]).toEqual([8, 8])
     // 底段/弧上的支承点也照常挂接（flag 路径不是只认上支段）
     for (const i of [0, 2, 4, 6, 12, 17, 53, 58]) expect(attach[i]).toBeGreaterThanOrEqual(0)
     // 非支承点一律不挂（悬空段内点由垂弧/铺地决定形状）
     for (const i of [8, 9, 18, 26, 37, 48, 59, 62]) expect(attach[i]).toBe(-1)
+  })
+})
+
+/**
+ * 跨车型回归（PR review，2026-11-17）：支承点判据必须看**轮缘**而不是「纵向最近」。
+ *
+ * VK 30.02 (M)（tank_id 15889）左链 idx 8 = `[2.1930, 0.0391]` 是底段支承点，物理上压在
+ * 负重轮 `L_03`（y=1.9680, z=0.5014, r=0.4499；轮缘残差 0.064 m）。但它纵向距上方托带轮
+ * `L_02`（y=2.3940, z=0.9870, r=0.1261）只有 0.201 m，比到 L_03 的 0.225 m 更近——按纵向
+ * 选轮会挂到托带轮（残差 0.843 m），而托带轮 flag=0 ⇒ 行程恒 0，底段支承点被钉住、
+ * 与压缩中的负重轮分离（链点脱开轮子）。
+ *
+ * 资产值来源：`suspension/15889.json` 的 `chains.left[0]` 与 `model.glb` 的
+ * `chassis_wheel_L_*`（按 `vehicleRuntime.collectSuspensionParts` 同口径：子树 AABB 中心 +
+ * `(size.y+size.z)/4`）。
+ */
+describe('VK 30.02 (M)（15889）支承点必须挂轮缘最近的轮，而非纵向最近的轮', () => {
+  const CHAIN = [
+    [-1.9874, 0.0152, 1], [-1.3914, 0.0152, 1], [-0.8339, 0.0152, 1],
+    [-0.2716, 0.0152, 1], [0.286, 0.0152, 1], [0.8482, 0.0152, 1],
+    [1.4058, 0.0152, 1], [1.987, 0.0152, 1], [2.193, 0.0391, 1],
+    [2.4365, 0.1726, 0], [2.577, 0.2532, 0], [2.7175, 0.3338, 0],
+    [3.0104, 0.5133, 1], [3.162, 0.7305, 1], [3.14, 1.0206, 1],
+    [2.9961, 1.22, 1], [2.7838, 1.2853, 1], [2.6219, 1.2785, 1],
+    [2.4601, 1.2717, 0], [2.2983, 1.2648, 0], [2.1364, 1.258, 0],
+    [1.9746, 1.2512, 0], [1.8128, 1.2443, 0], [1.6509, 1.2375, 0],
+    [1.4891, 1.2307, 0], [1.3273, 1.2238, 0], [1.1654, 1.217, 0],
+    [1.0036, 1.2102, 0], [0.8418, 1.2033, 0], [0.6799, 1.1965, 0],
+    [0.5181, 1.1897, 0], [0.3563, 1.1828, 0], [0.1944, 1.176, 0],
+    [0.0326, 1.1691, 0], [-0.1293, 1.1623, 0], [-0.2911, 1.1555, 0],
+    [-0.4529, 1.1486, 0], [-0.6148, 1.1418, 0], [-0.7766, 1.135, 0],
+    [-0.9384, 1.1281, 0], [-1.1003, 1.1213, 0], [-1.2621, 1.1145, 0],
+    [-1.4239, 1.1077, 0], [-1.5858, 1.1008, 0], [-1.7476, 1.094, 0],
+    [-1.9094, 1.0871, 0], [-2.0713, 1.0803, 0], [-2.2331, 1.0735, 0],
+    [-2.5538, 1.0472, 1], [-2.7277, 1.0319, 1], [-2.892, 0.9124, 1],
+    [-2.9724, 0.7, 1], [-2.9326, 0.5127, 1], [-2.798, 0.3608, 1],
+    [-2.6009, 0.2529, 0], [-2.4557, 0.1811, 0], [-2.0945, 0.0228, 1],
+  ]
+  const flags = CHAIN.map((p) => p[2])
+  const chain = CHAIN.map(([x, z]) => [x, z])
+  // chassis_wheel_L_01 … L_11（模型根系 AABB 中心 + 半径，4 位小数）
+  const wheels = [
+    { longitudinal: 2.7352, centerZ: 0.8347, radius: 0.4045 },   // 0: L_01 前端导向轮
+    { longitudinal: 2.394, centerZ: 0.987, radius: 0.1261 },     // 1: L_02 托带轮
+    { longitudinal: 1.968, centerZ: 0.5014, radius: 0.4499 },    // 2: L_03 负重轮
+    { longitudinal: 1.4058, centerZ: 0.5014, radius: 0.44 },     // 3: L_04
+    { longitudinal: 0.8482, centerZ: 0.5014, radius: 0.4499 },   // 4: L_05
+    { longitudinal: 0.286, centerZ: 0.5014, radius: 0.44 },      // 5: L_06
+    { longitudinal: -0.2716, centerZ: 0.5014, radius: 0.4499 },  // 6: L_07
+    { longitudinal: -0.8339, centerZ: 0.5014, radius: 0.44 },    // 7: L_08
+    { longitudinal: -1.3914, centerZ: 0.5014, radius: 0.4499 },  // 8: L_09
+    { longitudinal: -1.9537, centerZ: 0.5014, radius: 0.44 },    // 9: L_10
+    { longitudinal: -2.5829, centerZ: 0.6592, radius: 0.293 },   // 10: L_11 后驱动轮
+  ]
+  const bend = { upper_factor: 0.62882, length_power: 0.61261 }
+
+  it('底段 idx 8 挂在负重轮 L_03（索引 2），不是纵向更近的托带轮 L_02（索引 1）', () => {
+    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    expect(attach[8]).toBe(2)
+    // 纵向距离与轮缘残差在这里给出相反的答案——用例存在的理由
+    const dLong = (w) => Math.abs(chain[8][0] - wheels[w].longitudinal)
+    expect(dLong(1)).toBeLessThan(dLong(2))   // 托带轮纵向更近
+  })
+
+  it('负重轮压缩 0.06 m 时，底段支承点跟着上移（不被固定托带轮钉住）', () => {
+    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    const delta = new Array(wheels.length).fill(0)
+    delta[2] = 0.06                       // L_03 上行 0.06（该车 wheels 记录 up=0.06）
+    const out = new Float64Array(chain.length)
+    solveChain(out, chain, attach, delta, new Array(chain.length).fill(0), wheels, bend)
+    expect(out[8] - chain[8][1]).toBeCloseTo(0.06, 9)   // 与负重轮同动
+    expect(out[7] - chain[7][1]).toBeCloseTo(0.06, 9)   // 相邻支承点同理
   })
 })
 

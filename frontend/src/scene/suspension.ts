@@ -111,7 +111,7 @@ export type ChainPoint = [number, number]
  *
  * **权威语义 = 客户端链折线自带的 `flag`**（`tools/export_tank_suspension.py` 原样透出的
  * 第 3 分量）：`flag=1` 的点是**支承点**（作者的「点→轮」分组），`flag=0` 是悬空段内点。
- * 有 flag 时按它建表——支承点挂到**纵向最近**的轮（同纵向并列时取圆周残差更小者）。
+ * 有 flag 时按它建表——支承点挂到**轮缘残差最小**的轮（并列时取纵向更近者；见 `attachByFlags`）。
  *
  * 为什么不靠几何就近推断（2026-11-17 60TP 实证）：上支段的托带轮与带面之间留有约 0.1 m
  * 的模型间隙（7297：辊顶 0.89+0.14=1.03，带面 1.135），`|‖p−c‖−r| ≤ tol` 的容差永远够不着，
@@ -163,20 +163,37 @@ function hasSupportFlags(flags: ArrayLike<number> | null | undefined, n: number)
   return ones > 0 && zeros > 0;
 }
 
-/** 按作者 flag 建表：支承点 → 纵向最近的轮（并列时取圆周残差更小者）。 */
+/**
+ * 按作者 flag 建表：支承点 → **轮缘残差最小**的轮（并列时取纵向更近者）。
+ *
+ * 判据必须是「点落在该轮圆周上」而不是「纵向最近」：同一条带在底段与上支段可能纵向很近，
+ * 而两者的支承轮完全不同。实测反例（PR review，VK 30.02 (M) / 15889）：链点
+ * `[2.1930, 0.0391]`（底段，应压在负重轮 `L_03`：y=1.9680, z=0.5014, r=0.4499 上，
+ * 残差 0.064 m）纵向距上方托带轮 `L_02`（y=2.3940, z=0.9870, r=0.1261）只有 0.201 m、
+ * 比到负重轮的 0.225 m 更近——按纵向选会挂到托带轮（残差 0.843 m），底段被一个不参与
+ * 贴地（flag=0、行程恒 0）的托带轮钉住，与压缩中的负重轮分离。
+ *
+ * 残差为主键同时保留 60TP 的间隙容忍：其托带轮与带面之间留有约 0.15 m 模型间隙，
+ * 但仍是**最近的那条圆周**（其它候选差 0.4 m 以上），所以不需要任何容差常数。
+ *
+ * 已知边界（实测 1089：18 个底部小轮 r=0.1、上支段在 z≈1.5）：作者 flag 标出的上支段支承
+ * 点在模型里**没有对应的 chassis_wheel 节点**（托带轮未导出），最近圆周也有 0.7–1.3 m。
+ * 此时仍然挂接——代价只是该点跟随那个轮的小行程（该车 ±0.03 m），而留空会让整段重新变成
+ * 数米级悬挂跨距并被拉平；两者相比挂接造成的形变更小、且静止形状保持。不设残差阈值门：
+ * 任何绝对值阈值要么破坏上述 60TP 的间隙容忍，要么把这类型号推回拉平。 */
 function attachByFlags(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], flags: ArrayLike<number>): Int32Array {
   const out = new Int32Array(chain.length).fill(-1);
   for (let i = 0; i < chain.length; i++) {
     if (flags[i] !== 1) continue;
     const [cy, cz] = chain[i];
-    let best = -1, bestLong = Infinity, bestErr = Infinity;
+    let best = -1, bestErr = Infinity, bestLong = Infinity;
     for (let w = 0; w < wheels.length; w++) {
       const wh = wheels[w];
       const dLong = Math.abs(cy - wh.longitudinal);
       const r = wh.radius || 0.3;
       const err = Math.abs(Math.hypot(cy - wh.longitudinal, cz - (wh.centerZ || 0)) - r);
-      if (dLong < bestLong - 1e-9 || (Math.abs(dLong - bestLong) <= 1e-9 && err < bestErr)) {
-        best = w; bestLong = dLong; bestErr = err;
+      if (err < bestErr - 1e-9 || (Math.abs(err - bestErr) <= 1e-9 && dLong < bestLong)) {
+        best = w; bestErr = err; bestLong = dLong;
       }
     }
     out[i] = best;
