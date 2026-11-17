@@ -69,6 +69,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'agent-replay': ReplayWorkspace,
   'agent-shots': ReplayWorkspace,
   'agent-tankopedia': AgentTankopediaPage,
+  'agent-mobility': defineLazyView(() => import('../components/AgentMobility.vue')),
   'agent-armor': AgentArmorViewPage,
   'agent-techtree': AgentTechTreePage,
   'map-preview': MapPreviewPage,

@@ -12,7 +12,7 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, required: true },
   /** 宽度档：sm 确认（420）· md 表单（560）· lg 复杂表单（760）· xl 数据面板（1120） */
-  size: { type: String, default: 'md', validator: v => ['sm', 'md', 'lg', 'xl'].includes(v) },
+  size: { type: String, default: 'md', validator: v => ['sm', 'md', 'lg', 'xl', 'viewport'].includes(v) },
   /** 点遮罩是否关闭（表单有未保存内容时可关掉） */
   closeOnScrim: { type: Boolean, default: true },
   /** 危险操作：标题前显示警示色 */
@@ -148,6 +148,7 @@ onBeforeUnmount(() => syncLayer(false))
 .is-md { max-width: 560px; }
 .is-lg { max-width: 760px; }
 .is-xl { max-width: 1120px; }
+.is-viewport { max-width: none; height: calc(100dvh - var(--space-8)); }
 
 .dialog-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-4) var(--space-2) var(--space-5); }
 .dialog-title { flex: 1 1 auto; min-width: 0; margin: 0; font: var(--type-h3); }

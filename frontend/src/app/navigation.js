@@ -13,7 +13,7 @@ export const LEGACY_VIEW_ALIASES = Object.freeze({
 export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback', 'history', 'technical-evolution', 'contact',
-  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots', 'agent-techtree',
+  'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-mobility', 'agent-armor', 'agent-shots', 'agent-techtree',
   'map-preview',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
@@ -76,6 +76,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-shots': 'replay',
   hof: 'hof',
   'agent-tankopedia': 'tankopedia',
+  'agent-mobility': 'tankopedia',
   'agent-armor': 'tankopedia',
   'agent-techtree': 'techtree',
   'map-preview': 'maps',
@@ -179,6 +180,10 @@ export function locationForView(view, route) {
   // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]
+  }
+  if (view !== 'agent-mobility') {
+    delete query.comparison
+    delete query.mobilitySeed
   }
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]

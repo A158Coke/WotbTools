@@ -72,6 +72,20 @@ function setup(overrides: Partial<ComputeInput>): ComputeInput {
 }
 
 describe('computeCharacteristics（T-34 golden，双实现对拍）', () => {
+  // Fixed BF statsByLoadout (WG 11.21.0_1, ussr-T-34) against project module fixtures.
+  it.each([
+    [0, 0, 0, 0, 28.512, 400, 44.849, 94.81818181818181],
+    [0, 0, 1, 0, 28.512, 470, 52.697575, 94.81818181818181],
+    [0, 0, 0, 1, 28.512, 400, 47.978, 104.3],
+    [1, 3, 1, 1, 29.942, 470, 53.67456408813877, 104.3],
+  ])('BF T-34 turret %i gun %i engine %i chassis %i', (turretIdx, gunIdx, engineIdx, trackIdx, mass, power, turn, firm) => {
+    const { _mobility: m } = computeCharacteristics(setup({ turretIdx, gunIdx, engineIdx, trackIdx }))
+    expect(m.mass).toBeCloseTo(mass, 8)
+    expect(m.power).toBe(power)
+    expect(m.limit).toBe(48)
+    expect(m.traverse.Firm).toBeCloseTo(turn, 8)
+    expect(m.permeability.Firm).toBeCloseTo(firm, 8)
+  })
   it('S1：顶级配置 + 输弹机 + 改进装配 + 高级油料 + 肾上腺素', () => {
     const out = computeCharacteristics(setup({
       deviceIds: [100, 111],

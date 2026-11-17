@@ -380,8 +380,8 @@ export function normalizeSetup(
   const skillIds = new Set(Object.keys(catalog.skills || {}))
   return {
     ...selection,
-    consumables: selection.consumables.filter(stem => consStems.has(stem)).slice(0, consSlots),
-    provisions: selection.provisions.filter(stem => provStems.has(stem)).slice(0, slots),
+    consumables: [...new Set(selection.consumables)].filter(stem => consStems.has(stem)).slice(0, consSlots),
+    provisions: [...new Set(selection.provisions)].filter(stem => provStems.has(stem)).slice(0, slots),
     skills: Object.fromEntries(Object.entries(selection.skills || {}).filter(([id]) => skillIds.has(id))),
   }
 }
@@ -637,6 +637,12 @@ const PARAM_FORMAT_OVERRIDES: Record<string, any> = {
   // BK/BI 都展示、客户端 params/format 未收录的行（引擎派生）
   gunClipDamage: { digits: 0, biggerIsBetter: true },
   gunEffectiveDamagePerMin: { digits: 0, biggerIsBetter: true },
+  effectivePowerFirm: { digits: 2, units: 'HORSE_POWER_PER_TON', biggerIsBetter: true },
+  effectiveTraverseFirm: { digits: 2, units: 'DEGREE_PER_SECOND', biggerIsBetter: true },
+  effectivePowerMedium: { digits: 2, units: 'HORSE_POWER_PER_TON', biggerIsBetter: true },
+  effectiveTraverseMedium: { digits: 2, units: 'DEGREE_PER_SECOND', biggerIsBetter: true },
+  effectivePowerSoft: { digits: 2, units: 'HORSE_POWER_PER_TON', biggerIsBetter: true },
+  effectiveTraverseSoft: { digits: 2, units: 'DEGREE_PER_SECOND', biggerIsBetter: true },
   gunTraverseSpeed: { digits: 2, units: 'DEGREE_PER_SECOND', biggerIsBetter: true },
   tankWidth: { digits: 2, units: 'METER', biggerIsBetter: false },
   tankLength: { digits: 2, units: 'METER', biggerIsBetter: false },
@@ -709,6 +715,12 @@ const PARAM_ROWS: Array<{ group: string; key: string }> = [
   { group: 'mobility', key: 'maxBackSpeed' },
   { group: 'mobility', key: 'weight' },
   { group: 'mobility', key: 'thrustToWeightRatio' },
+  { group: 'mobility', key: 'effectivePowerFirm' },
+  { group: 'mobility', key: 'effectivePowerMedium' },
+  { group: 'mobility', key: 'effectivePowerSoft' },
+  { group: 'mobility', key: 'effectiveTraverseFirm' },
+  { group: 'mobility', key: 'effectiveTraverseMedium' },
+  { group: 'mobility', key: 'effectiveTraverseSoft' },
   { group: 'mobility', key: 'enginePower' },
   { group: 'mobility', key: 'turretRotationSpeed' },
   { group: 'mobility', key: 'gunTraverseSpeed' },
