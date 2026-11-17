@@ -1,5 +1,7 @@
 {
   "mob1016": {
+    "holdAlt": "Hold Alt to expand and hold this time",
+    "releaseAlt": "Scroll to browse; release Alt to collapse",
     "noSkills": "No trained skills",
     "standardPower": "Standard power-to-weight",
     "neutral": "Medium ground",

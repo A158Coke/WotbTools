@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import zh from '../locales/zh.json'
@@ -116,5 +117,116 @@ it('exits isolation when loading ends with the isolated curve still absent', asy
     await wrapper.setProps({ loading: false })
     expect(wrapper.vm.snapshotView().isolated).toBe('')
     expect(wrapper.findAll('polyline')).toHaveLength(1)
+  } finally { wrapper.unmount() }
+})
+
+function interactiveChart() {
+  return mount(MobilityChart, {
+    attachTo: document.body,
+    props: { vehicles: Array.from({ length: 19 }, (_, i) => vehicle(String(i))),
+      initialView: { ...defaultChartView(), zoom: [0, 20], cursor: 1.38 } },
+    global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh } })],
+      stubs: { AppDialog: { name: 'AppDialog', props: { open: Boolean }, template: '<div v-if="open" role="dialog"><slot /></div>' } } },
+  })
+}
+function alt(type, target = window, modifiers = {}) {
+  const event = new KeyboardEvent(type, { key: 'Alt', altKey: type === 'keydown', bubbles: true, cancelable: true, ...modifiers })
+  target.dispatchEvent(event)
+  return event
+}
+
+it('expands all readings only while Alt is held over this chart, without changing curves or time', async () => {
+  const wrapper = interactiveChart()
+  try {
+    expect(alt('keydown').defaultPrevented).toBe(false)
+    await wrapper.get('svg[role=img]').trigger('pointerenter')
+    expect(wrapper.findAll('.mob-tip > div')).toHaveLength(4)
+    expect(alt('keydown', window, { ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(alt('keydown', wrapper.get('input[type=search]').element).defaultPrevented).toBe(false)
+    expect(alt('keydown').defaultPrevented).toBe(true)
+    await nextTick()
+    expect(wrapper.findAll('.mob-tip > div')).toHaveLength(19)
+    await wrapper.get('svg[role=img]').trigger('pointermove', { clientX: 500 })
+    await wrapper.get('.mob-tip').trigger('wheel', { deltaY: 100 })
+    expect(wrapper.vm.snapshotView().cursor).toBe(1.38)
+    expect(wrapper.findAll('polyline')).toHaveLength(19)
+    expect(alt('keyup').defaultPrevented).toBe(true)
+    await nextTick()
+    expect(wrapper.findAll('.mob-tip > div')).toHaveLength(4)
+    await wrapper.get('.mob-visibility').trigger('click')
+    alt('keydown')
+    await nextTick()
+    expect(wrapper.findAll('.mob-tip > div')).toHaveLength(18)
+    expect(wrapper.findAll('polyline')).toHaveLength(18)
+  } finally { wrapper.unmount() }
+  expect(alt('keydown').defaultPrevented).toBe(false)
+})
+
+it.each(['blur', 'visibilitychange', 'leave', 'dialog'])('clears temporary Alt expansion on %s', async reason => {
+  const wrapper = interactiveChart()
+  try {
+    await wrapper.get('svg[role=img]').trigger('pointerenter')
+    alt('keydown')
+    await nextTick()
+    expect(wrapper.find('.mob-tip.is-expanded').exists()).toBe(true)
+    if (reason === 'blur') window.dispatchEvent(new Event('blur'))
+    else if (reason === 'visibilitychange') document.dispatchEvent(new Event('visibilitychange'))
+    else if (reason === 'leave') await wrapper.get('.mob-area').trigger('pointerleave')
+    else await wrapper.get('.mob-readings-button').trigger('click')
+    await nextTick()
+    expect(wrapper.find('.mob-tip.is-expanded').exists()).toBe(false)
+    alt('keyup')
+    if (reason !== 'dialog') {
+      await wrapper.get('svg[role=img]').trigger('pointerenter')
+      expect(wrapper.findAll('.mob-tip > div')).toHaveLength(4)
+    }
+  } finally { wrapper.unmount() }
+})
+
+it('coalesces range inputs per frame, commits the last value on release, and refreshes the covered plot on close', async () => {
+  const frames = new Map()
+  let id = 0
+  vi.stubGlobal('requestAnimationFrame', callback => { frames.set(++id, callback); return id })
+  vi.stubGlobal('cancelAnimationFrame', frame => frames.delete(frame))
+  const wrapper = interactiveChart()
+  try {
+    await wrapper.get('.mob-readings-button').trigger('click')
+    let range = wrapper.get('[role=dialog] input[type=range]')
+    const input = async value => { range.element.value = String(value); await range.trigger('input') }
+    await input(1.4)
+    await input(1.42)
+    await input(1.98)
+    expect(frames.size).toBe(1)
+    expect(wrapper.get('[role=dialog] output').text()).toBe('1.38 s')
+    for (const callback of [...frames.values()]) callback()
+    await nextTick()
+    expect(wrapper.get('[role=dialog] output').text()).toBe('1.98 s')
+    expect(wrapper.get('.mob-plot .mob-scrubber output').text()).toBe('1.38 s')
+    await input(2.02)
+    await range.trigger('pointerup')
+    expect(frames.size).toBe(0)
+    expect(wrapper.vm.snapshotView().cursor).toBe(2.02)
+    wrapper.findAllComponents({ name: 'AppDialog' }).at(-1).vm.$emit('close')
+    await nextTick()
+    expect(wrapper.get('.mob-plot .mob-scrubber output').text()).toBe('2.02 s')
+    await wrapper.get('.mob-readings-button').trigger('click')
+    range = wrapper.get('[role=dialog] input[type=range]')
+    await input(10.02)
+    wrapper.vm.restoreView({ ...defaultChartView(), zoom: [0, 2], cursor: 1 })
+    await nextTick()
+    expect(frames.size).toBe(0)
+    expect(wrapper.vm.snapshotView().cursor).toBe(1)
+  } finally { wrapper.unmount(); vi.unstubAllGlobals() }
+})
+
+it('preserves a restored time while loading and clamps to the available extent when loading completes', async () => {
+  const wrapper = interactiveChart()
+  try {
+    await wrapper.setProps({ loading: true })
+    wrapper.vm.restoreView({ ...defaultChartView(), cursor: 25 })
+    await nextTick()
+    expect(wrapper.vm.snapshotView().cursor).toBe(25)
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.vm.snapshotView().cursor).toBeLessThanOrEqual(Number(wrapper.get('input[type=range]').attributes('max')))
   } finally { wrapper.unmount() }
 })

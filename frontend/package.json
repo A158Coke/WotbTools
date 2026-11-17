@@ -12,6 +12,7 @@
     "dev:production-remote": "vite --mode production-remote",
     "test": "vitest run",
     "test:browser-layout": "node scripts/browser-playback-layout.mjs",
+    "test:browser-mobility-readings": "node scripts/browser-mobility-readings.mjs",
     "test:browser-pseudo-nav": "node scripts/browser-playback-pseudo-nav.mjs",
     "test:browser-broadcasts": "node scripts/browser-league-broadcasts.mjs",
     "test:browser-creators": "node scripts/browser-creators.mjs",
