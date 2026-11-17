@@ -131,7 +131,7 @@ public final class TacticalReviewPromptBuilder {
             includeEngagements = false;
         }
         final String damageWindowsSection = recorder != null && recorder.accountId() != null
-                ? PlayerEvidenceFormatter.recorderDamageReceivedWindowsSection(
+                ? PlayerCombatEvidenceFormatter.recorderDamageReceivedWindowsSection(
                         battle, recon, recorder.accountId(), damagePartial)
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();

@@ -26,7 +26,7 @@ class RecorderShotEvidenceTest {
         final TargetingShotPair pair = new TargetingShotPair(
                 9001, 0.1, -0.05, 2.158, 1.0, 1.5, 0.5);
         final StringBuilder sb = new StringBuilder();
-        PlayerEvidenceFormatter.appendRecorderShotEvidence(sb, List.of(shot), List.of(pair));
+        PlayerReplayEventFormatter.appendRecorderShotEvidence(sb, List.of(shot), List.of(pair));
 
         final String out = sb.toString();
         assertTrue(out.contains("RECORDER_COMBAT_FACTS_BACKEND_COMPUTED"));
@@ -48,7 +48,7 @@ class RecorderShotEvidenceTest {
                 new Vector3(0f, 0f, 0f), new Vector3(1f, 0f, 0f),
                 null, null, null, null, null, true);
         final StringBuilder sb = new StringBuilder();
-        PlayerEvidenceFormatter.appendRecorderShotEvidence(sb, List.of(shot), List.of());
+        PlayerReplayEventFormatter.appendRecorderShotEvidence(sb, List.of(shot), List.of());
         final String out = sb.toString();
         assertTrue(out.contains("弹药选择=UNKNOWN"), "无 Type28 → UNKNOWN，不得伪造 0");
         assertTrue(out.contains("命中结果=UNKNOWN"), "无 method38 → UNKNOWN");
@@ -61,7 +61,7 @@ class RecorderShotEvidenceTest {
                 new Vector3(0f, 0f, 0f), new Vector3(1f, 0f, 0f),
                 null, null, null, null, null, false);
         final StringBuilder sb = new StringBuilder();
-        PlayerEvidenceFormatter.appendRecorderShotEvidence(sb, List.of(enemy), List.of());
+        PlayerReplayEventFormatter.appendRecorderShotEvidence(sb, List.of(enemy), List.of());
         assertTrue(sb.isEmpty(), "全局弹丸流中的非 recorder 射击不得渲染为「你」的射击");
     }
 }

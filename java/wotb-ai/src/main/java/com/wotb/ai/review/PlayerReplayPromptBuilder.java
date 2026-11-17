@@ -14,7 +14,7 @@ import java.util.List;
  * Player Replay 的 prompt 构建入口（facade）。
  * <p>提供 prepareFallback / prepareFullNoRecon / prepareFull 公开入口与
  * buildPlayerContextSummary / buildSummary 等测试入口；实际实现已拆分到
- * {@link PlayerPromptRules}（规则/多语言/system prompt）、{@link PlayerEvidenceFormatter}（证据格式化）
+ * {@link PlayerPromptRules}（规则/多语言/system prompt）、PlayerCombatEvidenceFormatter、PlayerRosterEvidenceFormatter、PlayerReplayEventFormatter（证据格式化）
  * 与 {@link PlayerSummaryBuilder}（prepare* 编排与摘要构建）。</p>
  */
 public final class PlayerReplayPromptBuilder {
@@ -105,21 +105,21 @@ public final class PlayerReplayPromptBuilder {
                                                 final Battle battle,
                                                 final ReplayReconstruction recon,
                                                 final PlayerResult rec) {
-        return PlayerEvidenceFormatter.appendRecorderDamageExchange(sb, battle, recon, rec);
+        return PlayerCombatEvidenceFormatter.appendRecorderDamageExchange(sb, battle, recon, rec);
     }
 
     static boolean appendDamageExchangeByOpponent(final StringBuilder sb,
                                                   final Battle battle,
                                                   final long recorderAccountId,
                                                   final ReplayReconstruction recon) {
-        return PlayerEvidenceFormatter.appendDamageExchangeByOpponent(sb, battle, recorderAccountId, recon);
+        return PlayerCombatEvidenceFormatter.appendDamageExchangeByOpponent(sb, battle, recorderAccountId, recon);
     }
 
     static boolean appendPerHitDamageEvents(final StringBuilder sb,
                                             final Battle battle,
                                             final long recorderAccountId,
                                             final ReplayReconstruction recon) {
-        return PlayerEvidenceFormatter.appendPerHitDamageEvents(sb, battle, recorderAccountId, recon);
+        return PlayerCombatEvidenceFormatter.appendPerHitDamageEvents(sb, battle, recorderAccountId, recon);
     }
 
     static boolean appendRecorderDamageReceivedWindows(final StringBuilder sb,
@@ -127,7 +127,7 @@ public final class PlayerReplayPromptBuilder {
                                                        final ReplayReconstruction recon,
                                                        final long recorderAccountId,
                                                        final boolean suppressObservedNumbers) {
-        return PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+        return PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 sb, battle, recon, recorderAccountId, suppressObservedNumbers);
     }
 
@@ -135,43 +135,43 @@ public final class PlayerReplayPromptBuilder {
                                          final Battle battle,
                                          final ReplayReconstruction recon,
                                          final PlayerResult rec) {
-        return PlayerEvidenceFormatter.appendKillAttribution(sb, battle, recon, rec);
+        return PlayerCombatEvidenceFormatter.appendKillAttribution(sb, battle, recon, rec);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p, final boolean isFriendly) {
-        PlayerEvidenceFormatter.appendPlayerLine(sb, p, isFriendly);
+        PlayerRosterEvidenceFormatter.appendPlayerLine(sb, p, isFriendly);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final Battle battle,
                                  final PlayerResult p, final boolean isFriendly) {
-        PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly);
+        PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final PlayerResult p,
                                  final boolean isFriendly, final boolean isYou) {
-        PlayerEvidenceFormatter.appendPlayerLine(sb, p, isFriendly, isYou);
+        PlayerRosterEvidenceFormatter.appendPlayerLine(sb, p, isFriendly, isYou);
     }
 
     static void appendPlayerLine(final StringBuilder sb, final Battle battle, final PlayerResult p,
                                  final boolean isFriendly, final boolean isYou) {
-        PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly, isYou);
+        PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, p, isFriendly, isYou);
     }
 
     static void appendAggregates(final StringBuilder sb, final Battle battle,
                                  final List<PlayerResult> friendlies,
                                  final List<PlayerResult> enemies,
                                  final List<PlayerResult> unknowns) {
-        PlayerEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
+        PlayerRosterEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
     }
 
     static void appendDeathTimeline(final StringBuilder sb, final Battle battle) {
-        PlayerEvidenceFormatter.appendDeathTimeline(sb, battle);
+        PlayerRosterEvidenceFormatter.appendDeathTimeline(sb, battle);
     }
 
     static void appendRecorderMovementEvidence(final StringBuilder sb,
                                                final List<MovementSegment> movements,
                                                final String mapCode) {
-        PlayerEvidenceFormatter.appendRecorderMovementEvidence(sb, movements, mapCode);
+        PlayerReplayEventFormatter.appendRecorderMovementEvidence(sb, movements, mapCode);
     }
 
 }

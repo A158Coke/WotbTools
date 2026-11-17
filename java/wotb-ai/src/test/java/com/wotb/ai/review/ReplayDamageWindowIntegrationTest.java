@@ -92,7 +92,7 @@ class ReplayDamageWindowIntegrationTest {
 
         // Player 证据段：覆盖完整时输出真实数字；partial 时抑制并输出 UNAVAILABLE
         final StringBuilder full = new StringBuilder();
-        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+        PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 full, battle, result.reconstruction(), recorderAccount, false);
         final String fullEvidence = full.toString();
         assertTrue(fullEvidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), fullEvidence);
@@ -104,7 +104,7 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(fullEvidence.contains("致死"), "不得输出生产中恒为 false 的致死宣称");
 
         final StringBuilder partial = new StringBuilder();
-        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+        PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 partial, battle, result.reconstruction(), recorderAccount, true);
         final String partialEvidence = partial.toString();
         assertTrue(partialEvidence.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), partialEvidence);
