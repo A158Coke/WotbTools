@@ -176,4 +176,3 @@ describe('Layer B — visual surface merging（HIGH-FIDELITY，Blocker 1/2/4）'
     expect(buildFeatureAudit(input)).toEqual(buildFeatureAudit(input))
   })
 })
-

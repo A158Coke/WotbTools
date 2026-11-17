@@ -1,9 +1,9 @@
 {
   "generatedAt": "2026-11-17",
-  "scannedTestFiles": 452,
-  "sourceReadingTestFiles": 71,
-  "totalCases": 1169,
-  "totalTextAssertionCases": 230,
+  "scannedTestFiles": 461,
+  "sourceReadingTestFiles": 73,
+  "totalCases": 1178,
+  "totalTextAssertionCases": 234,
   "parseAnomalies": [],
   "files": [
     {
@@ -9900,6 +9900,63 @@
       ]
     },
     {
+      "testFile": "frontend/src/scene/mapPreviewAmbientClock.test.js",
+      "sources": [
+        {
+          "sourcePath": "playbackScene.js",
+          "varName": "src"
+        },
+        {
+          "sourcePath": "sceneryAssembly.ts",
+          "varName": "asmSrc"
+        }
+      ],
+      "caseCount": 3,
+      "textAssertionCases": 3,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "mapPreviewAmbientClock:17",
+          "name": "只在回放模式写 uTime；地图模式保持静态",
+          "startLine": 17,
+          "textAssertion": true,
+          "usesVars": [
+            "src"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "mapPreviewAmbientClock:23",
+          "name": "水面材质不登记进动画材质表（uTime 固定 0）",
+          "startLine": 23,
+          "textAssertion": true,
+          "usesVars": [
+            "asmSrc"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "mapPreviewAmbientClock:27",
+          "name": "换图/重载复位回放时钟",
+          "startLine": 27,
+          "textAssertion": true,
+          "usesVars": [
+            "src"
+          ],
+          "patterns": [
+            "toMatch"
+          ],
+          "parseError": null
+        }
+      ]
+    },
+    {
       "testFile": "frontend/src/scene/pickDebug.test.js",
       "sources": [
         {
@@ -10125,6 +10182,88 @@
           ],
           "patterns": [
             "toMatch"
+          ],
+          "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/scene/playback/quality.test.ts",
+      "sources": [
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "src"
+        }
+      ],
+      "caseCount": 7,
+      "textAssertionCases": 1,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "quality:17",
+          "name": "每档都有语义表条目，未知档回落均衡档",
+          "startLine": 17,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:21",
+          "name": "与 QUALITY_PRESETS 重叠字段一致（单一语义来源，不允许两表打架）",
+          "startLine": 21,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:35",
+          "name": "水面档位：低/均衡 MEDIUM，高清 HIGH，极致 ULTRA；间隔随档收紧",
+          "startLine": 35,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:45",
+          "name": "草：低/均衡不加载，高清/极致按实例预算（几何统一 500 档 = 导出档）",
+          "startLine": 45,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:53",
+          "name": "坦克阴影：接触/轮廓只在有资格档启用（与 shadowQualityEligible 同口径）",
+          "startLine": 53,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:61",
+          "name": "未实现能力固定 false（表不得提前宣布支持）",
+          "startLine": 61,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "quality:72",
+          "name": "playbackScene 只经 qualityFeatures() 消费语义，不再读原始档位布尔",
+          "startLine": 72,
+          "textAssertion": true,
+          "usesVars": [
+            "src"
+          ],
+          "patterns": [
+            "toContain",
+            "includes"
           ],
           "parseError": null
         }
@@ -10539,10 +10678,6 @@
           "varName": "pbUtilSrc"
         },
         {
-          "sourcePath": "playback/boundary.ts",
-          "varName": "bandSrc"
-        },
-        {
           "sourcePath": "playback/transientFeedback3d.ts",
           "varName": "transientSrc"
         },
@@ -10656,9 +10791,9 @@
       "parseAnomalies": [],
       "cases": [
         {
-          "id": "sceneryMaterials:64",
+          "id": "sceneryMaterials:63",
           "name": "材质实例按 key 去重：convMat 经 cachedSceneryMat，键含 alphaTest/transparent",
-          "startLine": 64,
+          "startLine": 63,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10673,9 +10808,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:76",
+          "id": "sceneryMaterials:75",
           "name": "disposeObject3D 经 collectMaterialTextures 回收纹理（含 ShaderMaterial uniforms）",
-          "startLine": 76,
+          "startLine": 75,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10689,9 +10824,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:86",
+          "id": "sceneryMaterials:85",
           "name": "材质缓存随会话释放（勿复用已 dispose 实例）",
-          "startLine": 86,
+          "startLine": 85,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10705,9 +10840,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:96",
+          "id": "sceneryMaterials:95",
           "name": "真混合层（extras.blendLayer）保留软 alpha：不被伪透明分流削成硬边卡片",
-          "startLine": 96,
+          "startLine": 95,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10720,9 +10855,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:110",
+          "id": "sceneryMaterials:109",
           "name": "动画混合层：双采样器（albedo 走 UV0+位移 / 掩码走 UV1）+ 回放时钟驱动",
-          "startLine": 110,
+          "startLine": 109,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10736,9 +10871,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:131",
+          "id": "sceneryMaterials:130",
           "name": "自定义材质的 varying 必须在顶点着色器里被赋值（\"只声明不写\"会让整材质链接失败）",
-          "startLine": 131,
+          "startLine": 130,
           "textAssertion": true,
           "usesVars": [
             "matSrc"
@@ -10749,9 +10884,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:156",
+          "id": "sceneryMaterials:155",
           "name": "环境反射（ENVIRONMENT_MAPPING）：遮罩×菲涅尔×天空立方图，含高光项",
-          "startLine": 156,
+          "startLine": 155,
           "textAssertion": true,
           "usesVars": [
             "matSrc"
@@ -10764,12 +10899,14 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:179",
+          "id": "sceneryMaterials:178",
           "name": "水面（MEDIUM 档）：双层滚动法线 + UDN + 菲涅尔 alpha + 逐图立方图",
-          "startLine": 179,
+          "startLine": 178,
           "textAssertion": true,
           "usesVars": [
-            "matSrc"
+            "src",
+            "matSrc",
+            "asmSrc"
           ],
           "patterns": [
             "toMatch",
@@ -10779,9 +10916,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:199",
+          "id": "sceneryMaterials:206",
           "name": "烘焙光照图：albedo × lightmap(UV1×逐实例变换) × 2、不受光、镂空保留",
-          "startLine": 199,
+          "startLine": 206,
           "textAssertion": true,
           "usesVars": [
             "matSrc",
@@ -10795,9 +10932,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:223",
+          "id": "sceneryMaterials:230",
           "name": "细节层（B1）：uv0×scale 采样 ×2 乘入，位置在环境反射之后；两条路径都接线",
-          "startLine": 223,
+          "startLine": 230,
           "textAssertion": true,
           "usesVars": [
             "matSrc",
@@ -10811,9 +10948,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:253",
+          "id": "sceneryMaterials:260",
           "name": "逐图太阳宿主接线（#827 F3：无注入点）：target 入场景图、会话拆除复位",
-          "startLine": 253,
+          "startLine": 260,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10825,9 +10962,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:260",
+          "id": "sceneryMaterials:267",
           "name": "ST| 静态几何走伽马直通 ShaderMaterial（与叶卡同方程，防同树双色）",
-          "startLine": 260,
+          "startLine": 267,
           "textAssertion": true,
           "usesVars": [
             "matSrc",
@@ -10841,9 +10978,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:278",
+          "id": "sceneryMaterials:285",
           "name": "坦克环境光隔离：清零 three 的环境/半球 irradiance、保留 IBL 与直接光",
-          "startLine": 278,
+          "startLine": 285,
           "textAssertion": true,
           "usesVars": [
             "matSrc",
@@ -10857,9 +10994,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:296",
+          "id": "sceneryMaterials:303",
           "name": "出屏口径（A2）：线性 × 曝光 1.0 → sRGB 编码 = 客户端口径；不引入调参旋钮（#827 F3: Integration Contract（无注入点）：createSceneCore 需真实 WebGLRenderer，无法 headless 行为化）",
-          "startLine": 296,
+          "startLine": 303,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10871,9 +11008,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:309",
+          "id": "sceneryMaterials:316",
           "name": "内联着色器的 varying 必须在**该段**声明（地面着色器是内联字符串，漏声明=整材质不画）",
-          "startLine": 309,
+          "startLine": 316,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10887,9 +11024,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:331",
+          "id": "sceneryMaterials:338",
           "name": "采样空间（C3）：自定义材质一律原样采样；SRGB 解码只许出现在显示内容链",
-          "startLine": 331,
+          "startLine": 338,
           "textAssertion": true,
           "usesVars": [
             "matSrc",
@@ -10901,9 +11038,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:356",
+          "id": "sceneryMaterials:363",
           "name": "地面弹着痕迹（D2）已撤除：客户端贴图不在可得数据面 ⇒ 不留程序化替代",
-          "startLine": 356,
+          "startLine": 363,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10914,9 +11051,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:364",
+          "id": "sceneryMaterials:371",
           "name": "地形客户端同构：K 余量（负面守卫 + 唯一高度场）——构建/LOD 行为已由 terrainMesh.test.js 与 mapWorld.lifecycle.test.ts 接替",
-          "startLine": 364,
+          "startLine": 371,
           "textAssertion": true,
           "usesVars": [
             "mapWorldSrc"
@@ -10929,9 +11066,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:385",
+          "id": "sceneryMaterials:392",
           "name": "贴花材质（客户端 MATERIAL_DECAL）：UV1 采 colormap、不受光、×2.0，且接线在受光兜底之前",
-          "startLine": 385,
+          "startLine": 392,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -10945,9 +11082,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:414",
+          "id": "sceneryMaterials:421",
           "name": "共面接缝不做人工补偿（客户端无深度偏移、数据同样共面；2026-10-10 撤掉 ?poff 与 ?seamfix）",
-          "startLine": 414,
+          "startLine": 421,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10958,9 +11095,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:427",
+          "id": "sceneryMaterials:434",
           "name": "禁止按逐网格三角形/顶点比删几何（统计启发式；损坏应由导出器语义标记/报错）",
-          "startLine": 427,
+          "startLine": 434,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -10971,9 +11108,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:436",
+          "id": "sceneryMaterials:443",
           "name": "视角淡出效果片（AlphaBlend + BLEND_BY_ANGLE）：软混合 + 客户端视角因子，不被裁切",
-          "startLine": 436,
+          "startLine": 443,
           "textAssertion": true,
           "usesVars": [
             "matSrc"
@@ -10986,9 +11123,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:454",
+          "id": "sceneryMaterials:461",
           "name": "水面\"海岸线\"coastLine：按客户端 water-fp.sl 的相对深度差口径淡出反射（距离无关、随相机高低自适应）",
-          "startLine": 454,
+          "startLine": 461,
           "textAssertion": true,
           "usesVars": [
             "asmSrc",
@@ -11002,9 +11139,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:500",
+          "id": "sceneryMaterials:515",
           "name": "水下静态件不接光照图：按客户端折射通道口径（VIEW_DIFFUSE=0 ⇒ albedo，不受光、不乘 2）",
-          "startLine": 500,
+          "startLine": 515,
           "textAssertion": true,
           "usesVars": [
             "mapAssetsSrc",
@@ -11016,9 +11153,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:531",
+          "id": "sceneryMaterials:546",
           "name": "细分判据回到客户端三条：playbackScene 不再计算/传递岸线标高表（第四条判据 2026-10-11 评审删除）",
-          "startLine": 531,
+          "startLine": 546,
           "textAssertion": true,
           "usesVars": [
             "mapWorldSrc",
@@ -11031,9 +11168,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:548",
+          "id": "sceneryMaterials:563",
           "name": "地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）",
-          "startLine": 548,
+          "startLine": 563,
           "textAssertion": true,
           "usesVars": [
             "gpSrc"
@@ -11044,9 +11181,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:562",
+          "id": "sceneryMaterials:577",
           "name": "逐图光照亮度归一：保留方向/色相，曝光 = 基准太阳强度 / 该图太阳强度（模拟客户端自动曝光）",
-          "startLine": 562,
+          "startLine": 577,
           "textAssertion": true,
           "usesVars": [
             "rendererSrc"
@@ -11057,9 +11194,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:573",
+          "id": "sceneryMaterials:588",
           "name": "水体：透明面写深度 + 双面 + 不设 renderOrder",
-          "startLine": 573,
+          "startLine": 588,
           "textAssertion": true,
           "usesVars": [
             "mapAssetsSrc",
@@ -11073,9 +11210,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:597",
+          "id": "sceneryMaterials:612",
           "name": "对数深度缓冲：默认开启 + ?logdepth=0 逃生开关 + 两自定义 ShaderMaterial 挂 logdepthbuf 块（#827 F3: Integration Contract（无注入点）+ shader-lint PK）",
-          "startLine": 597,
+          "startLine": 612,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -11091,9 +11228,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:626",
+          "id": "sceneryMaterials:641",
           "name": "天空穹：unlit + 无限远方向投影 + 不写深度/不参与雾（此前整节点隐藏）",
-          "startLine": 626,
+          "startLine": 641,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -11111,9 +11248,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:665",
+          "id": "sceneryMaterials:680",
           "name": "场景 GLB 贴图各向异性随画质档（此前场景侧漏设=默认 1，掠射角发糊闪烁）",
-          "startLine": 665,
+          "startLine": 680,
           "textAssertion": true,
           "usesVars": [
             "mapAssetsSrc"
@@ -11124,9 +11261,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:672",
+          "id": "sceneryMaterials:687",
           "name": "场景材质用几何 authored 法线（不设 flatShading——旧行为把它整条丢掉）",
-          "startLine": 672,
+          "startLine": 687,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -11139,9 +11276,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:683",
+          "id": "sceneryMaterials:698",
           "name": "俯视烘焙页消费同一装配 SSOT：convMat/键指纹/分派只有一处实现（两侧无本地副本）",
-          "startLine": 683,
+          "startLine": 698,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -11157,9 +11294,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:726",
+          "id": "sceneryMaterials:741",
           "name": "底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体",
-          "startLine": 726,
+          "startLine": 741,
           "textAssertion": true,
           "usesVars": [
             "vehSrc"
@@ -11170,9 +11307,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:743",
+          "id": "sceneryMaterials:758",
           "name": "悬挂逐帧解算宿主接线（#827 F3：无注入点）：markSeekSnap → tick → clearSnap、frameTiming 喂帧",
-          "startLine": 743,
+          "startLine": 758,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11183,9 +11320,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:750",
+          "id": "sceneryMaterials:765",
           "name": "只动底盘节点（chassis_wheel_* / chassis_track_*）：轮数/链数不符即 fail-closed",
-          "startLine": 750,
+          "startLine": 765,
           "textAssertion": true,
           "usesVars": [
             "vehSrc"
@@ -11196,9 +11333,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:764",
+          "id": "sceneryMaterials:779",
           "name": "推进走 advancePlaybackTime（NaN/负增量不污染时钟），终点钳制仍生效（#827 F3：宿主接线子句；纯函数行为见 playback/util.behavior.test.ts）",
-          "startLine": 764,
+          "startLine": 779,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11209,9 +11346,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:768",
+          "id": "sceneryMaterials:783",
           "name": "setSpeed 只接受档位表内的值（#827 F3: Integration Contract（无注入点）；宿主闭包函数无独立 owner）",
-          "startLine": 768,
+          "startLine": 783,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11222,9 +11359,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:772",
+          "id": "sceneryMaterials:787",
           "name": "onResize 单画布取整尺寸 + 置脏重绘（#827 F3: Integration Contract（无注入点）；宿主闭包函数）",
-          "startLine": 772,
+          "startLine": 787,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11237,9 +11374,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:780",
+          "id": "sceneryMaterials:795",
           "name": "覆盖层并入主画布：不再有第二个 WebGL 上下文，也没有第二次 render",
-          "startLine": 780,
+          "startLine": 795,
           "textAssertion": true,
           "usesVars": [
             "src",
@@ -11253,9 +11390,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:793",
+          "id": "sceneryMaterials:808",
           "name": "特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放",
-          "startLine": 793,
+          "startLine": 808,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11266,9 +11403,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:809",
+          "id": "sceneryMaterials:824",
           "name": "装填条求值：关标签或 T 未变时跳过（暂停/关标签不再每车每帧全量求值）",
-          "startLine": 809,
+          "startLine": 824,
           "textAssertion": true,
           "usesVars": [
             "lblSrc"
@@ -11279,9 +11416,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:816",
+          "id": "sceneryMaterials:831",
           "name": "HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次（#827 F3: Integration Contract（无注入点））",
-          "startLine": 816,
+          "startLine": 831,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11294,9 +11431,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:824",
+          "id": "sceneryMaterials:839",
           "name": "资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）",
-          "startLine": 824,
+          "startLine": 839,
           "textAssertion": true,
           "usesVars": [
             "mapWorldSrc",
@@ -11308,9 +11445,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:830",
+          "id": "sceneryMaterials:845",
           "name": "GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch",
-          "startLine": 830,
+          "startLine": 845,
           "textAssertion": true,
           "usesVars": [
             "vehSrc",
@@ -11324,9 +11461,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:844",
+          "id": "sceneryMaterials:859",
           "name": "按需渲染：脏帧判定覆盖播放/相机/特效/幽灵闪，跳帧时不跑更新与 render",
-          "startLine": 844,
+          "startLine": 859,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11339,9 +11476,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:865",
+          "id": "sceneryMaterials:880",
           "name": "侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）",
-          "startLine": 865,
+          "startLine": 880,
           "textAssertion": true,
           "usesVars": [
             "vehSrc"
@@ -11352,9 +11489,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:873",
+          "id": "sceneryMaterials:888",
           "name": "位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退",
-          "startLine": 873,
+          "startLine": 888,
           "textAssertion": true,
           "usesVars": [
             "vehSrc"
@@ -11365,20 +11502,21 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:886",
+          "id": "sceneryMaterials:901",
           "name": "飞行段时长 = 真实飞行时长（不得再有\"最小显示时长\"拖慢炮弹）",
-          "startLine": 886,
+          "startLine": 901,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:899",
+          "id": "sceneryMaterials:914",
           "name": "标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色",
-          "startLine": 899,
+          "startLine": 914,
           "textAssertion": true,
           "usesVars": [
+            "basesSrc",
             "vehSrc"
           ],
           "patterns": [
@@ -11387,9 +11525,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:914",
+          "id": "sceneryMaterials:930",
           "name": "着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）",
-          "startLine": 914,
+          "startLine": 930,
           "textAssertion": true,
           "usesVars": [
             "src"
@@ -11400,18 +11538,18 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:932",
+          "id": "sceneryMaterials:948",
           "name": "释放 uniforms 纹理与材质，并清空材质缓存使下一图拿到新实例",
-          "startLine": 932,
+          "startLine": 948,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:959",
+          "id": "sceneryMaterials:975",
           "name": "maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)",
-          "startLine": 959,
+          "startLine": 975,
           "textAssertion": true,
           "usesVars": [
             "mapWorldSrc"
@@ -11424,9 +11562,9 @@
           "parseError": null
         },
         {
-          "id": "sceneryMaterials:970",
+          "id": "sceneryMaterials:986",
           "name": "换装后的最终姿态与异步失败都会唤醒宿主，提交/回退后撤销待唤醒",
-          "startLine": 970,
+          "startLine": 986,
           "textAssertion": true,
           "usesVars": [
             "mapWorldSrc"
@@ -11453,10 +11591,18 @@
         },
         {
           "sourcePath": "playbackScene.js",
+          "varName": "sceneSrc"
+        },
+        {
+          "sourcePath": "sceneryAssembly.ts",
+          "varName": "assemblySrc"
+        },
+        {
+          "sourcePath": "playbackScene.js",
           "varName": "playbackSrc"
         }
       ],
-      "caseCount": 9,
+      "caseCount": 8,
       "textAssertionCases": 3,
       "parseAnomalies": [],
       "cases": [
@@ -11506,21 +11652,13 @@
           "parseError": null
         },
         {
-          "id": "seekPointer:65",
-          "name": "buildBoundary 对空边界只清理不绘制（行为测试）",
-          "startLine": 65,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "seekPointer:83",
-          "name": "调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底",
-          "startLine": 83,
+          "id": "seekPointer:66",
+          "name": "旧边界带（buildBoundary / BOUNDARY_THICK / boundary.js）零残留",
+          "startLine": 66,
           "textAssertion": true,
           "usesVars": [
-            "mapWorldSrc"
+            "mapWorldSrc",
+            "sceneSrc"
           ],
           "patterns": [
             "toMatch"
@@ -11528,12 +11666,12 @@
           "parseError": null
         },
         {
-          "id": "seekPointer:102",
-          "name": "调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底",
-          "startLine": 102,
+          "id": "seekPointer:74",
+          "name": "客户端边界走 scenery extras.mapBorder（导出器 collect_map_border）",
+          "startLine": 74,
           "textAssertion": true,
           "usesVars": [
-            "mapWorldSrc"
+            "assemblySrc"
           ],
           "patterns": [
             "toMatch"
@@ -11541,9 +11679,9 @@
           "parseError": null
         },
         {
-          "id": "seekPointer:111",
+          "id": "seekPointer:86",
           "name": "宿主保留钳制注入（clamp owner = cameraTerrainClamp，行为见 clamp.test）",
-          "startLine": 111,
+          "startLine": 86,
           "textAssertion": true,
           "usesVars": [
             "playbackSrc"

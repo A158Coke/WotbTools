@@ -437,4 +437,3 @@ describe('Layer B — Maus 生成资产细节（Layer 正确性）', () => {
     expect(a).toEqual(b)
   })
 })
-
