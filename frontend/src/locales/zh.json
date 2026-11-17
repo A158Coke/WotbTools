@@ -1,5 +1,7 @@
 {
   "mob1016": {
+    "holdAlt": "按住 Alt 展开并固定时刻",
+    "releaseAlt": "可滚动查看，松开 Alt 收起",
     "noSkills": "尚未设置技能",
     "standardPower": "标准推重比",
     "neutral": "中性地",
