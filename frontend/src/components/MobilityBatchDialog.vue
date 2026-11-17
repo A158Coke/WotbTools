@@ -85,7 +85,8 @@ function list(stems: string[], id: string) {
 .mb-target-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-block: var(--space-3); }
 .mb-targets { list-style: none; padding: 0; }
 .mb-targets > li { padding: var(--space-3); border-top: 1px solid var(--color-border-subtle); }
-.mb-targets label { font-weight: 600; }
+.mb-targets label { display: flex; align-items: center; gap: var(--space-2); min-inline-size: var(--hit-min); min-block-size: var(--hit-min); font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+.mb-targets label input { flex: none; accent-color: var(--color-accent); }
 .mb-targets small, .mb-targets li span { margin-inline-start: var(--space-2); color: var(--color-text-secondary); }
 .mb-targets ul { padding-inline-start: var(--space-5); overflow-wrap: anywhere; }
 </style>
