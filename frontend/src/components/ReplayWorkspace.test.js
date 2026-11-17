@@ -103,6 +103,7 @@ function paneMock(name, testid) {
 vi.mock('./BattlePlaybackPanel.vue', () => paneMock('BattlePlaybackPanelMock', 'ws-playback-pane'))
 vi.mock('./Replay3DPane.vue', () => paneMock('Replay3DPaneMock', 'ws-3d-pane'))
 vi.mock('./ReplayShotsPane.vue', () => paneMock('ReplayShotsPaneMock', 'ws-shots-pane'))
+vi.mock('./ReplayEventStreamPane.vue', () => paneMock('ReplayEventStreamPaneMock', 'ws-event-stream'))
 vi.mock('./AiReviewWorkspacePane.vue', () => paneMock('AiReviewPaneMock', 'ws-ai-pane'))
 vi.mock('./ReplayProcessingPanel.vue', () => ({
   default: {
@@ -551,7 +552,7 @@ describe('ReplayWorkspace', () => {
     const file = replayState.files.value[0]
     const wrapper = mountWorkspace(cap, { authenticated: false })
     await flushPromises()
-    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'events', 'shots', 'ai'])
     // 匿名 + 离线：连通性提示优先于登录门禁，且不触发任何 login。
     expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
     expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
@@ -670,12 +671,36 @@ describe('ReplayWorkspace', () => {
     ['anonymous', false, false],
     ['authenticated normal user', true, false],
     ['admin', true, true],
-  ])('%s sees the same five capabilities', async (_, authenticated, isAdmin) => {
+  ])('%s sees the same six capabilities', async (_, authenticated, isAdmin) => {
     authState.isAdmin.value = isAdmin
     const wrapper = mountWorkspace('data', { authenticated })
     await flushPromises()
-    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'shots', 'ai'])
+    expect(capKeys(wrapper)).toEqual(['data', 'playback', '3d', 'events', 'shots', 'ai'])
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('events capability mounts the event stream pane and routes to agent-events', async () => {
+    withBattles(1)
+    const navigate = vi.fn()
+    const wrapper = mountWorkspace('events', { navigate })
+    await flushPromises()
+    // 懒加载组件必须绑定到模板标识符（仅声明 module 会让 <ReplayEventStreamPane> 解析失败）
+    expect(wrapper.find('[data-test="ws-event-stream"]').exists()).toBe(true)
+    // capability → view 必须可双向表示（agent-events），否则 navigate('replay') 会被
+    // ViewHost 映射回 data，切过去立刻被路由同步撤销
+    await switchTo(wrapper, '3d')
+    await switchTo(wrapper, 'events')
+    expect(navigate).toHaveBeenLastCalledWith('agent-events')
+    wrapper.unmount()
+  })
+
+  it('shows the battle picker on events even when online capabilities are unavailable', async () => {
+    withBattles(2)
+    connectivityState.state.value = 'offline'
+    const wrapper = mountWorkspace('events')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="events-battle-picker"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1290,6 +1315,8 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="data-pane"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+
   describe('手机横屏沉浸态（外壳让出高度）', () => {
     const landscapePhone = () => { formState.isPhone.value = true; formState.isPortrait.value = false; formState.coarse.value = true }
     afterEach(() => { formState.isPhone.value = false; formState.isPortrait.value = false; formState.coarse.value = false })

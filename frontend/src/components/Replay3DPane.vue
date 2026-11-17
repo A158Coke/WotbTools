@@ -48,6 +48,7 @@ import { useSceneAnnotations } from '../composables/useSceneAnnotations.js'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
+import { buildKillTicks, buildShotTicks, findNextShotTime, findPrevShotTime, rosterRideTarget } from '../utils/playbackShortcuts.ts'
 import { useSceneActivity } from '../composables/useSceneActivity'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
@@ -62,6 +63,8 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   /** 工作台给出的不可用原因（多文件未选场次等）；非空时不解析 */
   blockedReason: { type: String, default: '' }, autoFullscreenToken: { type: Number, default: 0 },
+  /** 事件流「跳到此刻」的一次性请求 `{ id, sec }`：按 id 只消费一次（切回 3D 不重放） */
+  pendingSeek: { type: Object, default: null },
 })
 
 const { t, locale } = useI18n()
@@ -91,7 +94,7 @@ const online = computed(() => availability(Feature.PLAYBACK_3D))
  * 呈现偏好（标签行 / 战场 UI 分块）的**唯一 owner** 是 usePlaybackPreferences——
  * 与 2D Playback 共用同一份持久化偏好，3D 不再自建第二套 localStorage 状态。
  */
-const { labelPrefs, hpPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
+const { labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, declutterActive, toggleDeclutter } = usePlaybackPreferences()
 
 /**
  * 「隐藏全部 UI」：**不写入持久化偏好**（刷新后回到常规界面，不会把用户永久关在空白场景里），
@@ -283,6 +286,50 @@ const {
   canOpen: () => store.cam !== 'recorder',
   onOpen: () => { displayOpen.value = false },
 })
+/**
+ * 事件刻度 / 跳炮击 / 数字键骑乘（借鉴 blitzinfo）的数据面：
+ * AgentPlaybackFacet（shots[].t_fire、kills[].t、vehicles[].team）由工作台解析，
+ * 经场景生命周期发布到 store.playbackSession（与 canonical 同一个工作台状态对象）。
+ * 时间轴刻度的 t→百分比换算在 utils/playbackShortcuts.js 纯函数里，与滑块 min/max 同语义。
+ */
+const playbackFacet = computed(() => store.playbackSession?.scenePlayback ?? null)
+const facetShots = computed(() => Array.isArray(playbackFacet.value?.shots) ? playbackFacet.value.shots : [])
+const facetKills = computed(() => Array.isArray(playbackFacet.value?.kills) ? playbackFacet.value.kills : [])
+/** 刻度高亮的「当前跟随者」：仅 follow 相机档下才存在（setFollow 被 free/top/recorder 清零，
+ *  selectedEid 只代表选中）。未跟随时不传 eid，作者本人的炮击仍按 facet 的 is_author 高亮。 */
+const timelineHighlightEid = computed(() => (store.cam === 'follow' && selectedEid.value != null) ? selectedEid.value : null)
+const shotTicks = computed(() => buildShotTicks(facetShots.value, store.startTime, store.duration, timelineHighlightEid.value))
+const killTicks = computed(() => buildKillTicks(facetKills.value, store.startTime, store.duration))
+
+/** `,` 上一发 / `.` 下一发：以 shots[].t_fire 为序列（纯函数查最近邻），无更多炮击则保持不动。
+ *  seekTime 不改播放态：暂停中跳完仍是暂停，播放中跳完继续播。 */
+function jumpShot(direction) {
+  const shots = facetShots.value
+  const target = direction < 0
+    ? findPrevShotTime(shots, store.time)
+    : findNextShotTime(shots, store.time)
+  if (target == null) return
+  // seekTo 用 firstIndexAfter(严格晚于 T) 定位弹道游标：跳到精确 t_fire 会把该发
+  // 排除（炮线/炮声不出现）。回退一小步（0.05s，半个包钟量子）让游标停在目标发之前。
+  const seekTo = Math.max(store.startTime, target - 0.05)
+  sceneApi?.seekTime(seekTo)
+}
+
+/** 骑乘名册序：按物理队伍合并 team1+team2（buildRosterRows 顺序 = 名册呈现顺序）；
+ *  unknown 阵营无侧别，rosterRideTarget 自动排除。 */
+const rideRoster = computed(() => {
+  const groups = store.roster
+  return [...(groups.team1 || []), ...(groups.team2 || [])]
+})
+/** 己方权威阵营：unknown（null）时整体 fail-closed——骑乘键不猜「team 1 = 己方」。 */
+const rideAllyTeam = computed(() => (store.friendlyTeam === 1 || store.friendlyTeam === 2) ? store.friendlyTeam : null)
+/** 数字键骑乘（1–7 己方 / Shift+1–7 敌方）：与名册点击同一入口（选中 + follow 档跟随）。 */
+function rideVehicle(digit, isShift) {
+  const eid = rosterRideTarget(rideRoster.value, digit, isShift, rideAllyTeam.value)
+  if (eid == null) return
+  followFromRoster(eid)
+}
+
 const transport = usePlaybackTransport({
   isPlaying: () => store.playing,
   play: () => sceneApi?.setPlaying(true),
@@ -293,6 +340,12 @@ const transport = usePlaybackTransport({
   isReady: () => store.hasData,
   // 工作台切到别的能力时不再劫持空格 / 方向键（2D 回放面板同时激活会争抢）
   isActive: () => props.active,
+  // `,` / `.` 跳炮击；1–7 / Shift+1–7 数字键骑乘
+  jumpShot,
+  rideVehicle,
+  // 数字键冲突消解的 fly 激活判定：自由相机（FPS 飞行）激活时数字键归飞行速率
+  // （useSceneFlyControls 的 1–6 档，现状不动），否则归骑乘。
+  isFlyMode: () => store.cam === 'free',
 })
 // 键盘自由视角（WASD 平移 / Q 升 E 降 / 1–6 速率）：PC 键盘用户的分析飞行。
 // 键位与播放传输并行不冲突；速率写场景（store.flySpeed），位移在场景 flyTick 推进。
@@ -319,11 +372,26 @@ function pushLabelPrefs() {
     showReload: labelPrefs.showReload,
     classIcons: markerPrefs.classIcons,
     showStatus: markerPrefs.showStatus,
+    // 可视性诚实呈现（离场坦克显示最后已知位置；偏好持久化归 usePlaybackPreferences）
+    lastKnown: lastKnownPrefs.showLastKnown,
   })
 }
-watch([labelPrefs, hpPrefs, markerPrefs, uiHidden], pushLabelPrefs, { deep: true })
+watch([labelPrefs, hpPrefs, markerPrefs, lastKnownPrefs, uiHidden], pushLabelPrefs, { deep: true })
 // 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
 watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
+
+/** 事件流 → seek 转交：一次性消费（按请求 id）。执行后记下已消费 id——切走再切回 3D、
+ *  或 hasData 重新就绪都不会重放旧请求；换文件时工作台已把请求清空。 */
+const consumedSeekId = ref(null)
+watch(() => [props.pendingSeek, props.active, store.hasData], ([req]) => {
+  const r = req
+  if (!r || typeof r.sec !== 'number' || typeof r.id !== 'number') return
+  if (r.id === consumedSeekId.value) return
+  if (!props.active || !store.hasData || !sceneApi?.seekTime) return
+  sceneApi.seekTime(r.sec)
+  consumedSeekId.value = r.id
+})
+// 换文件：作废已消费标记（新场的请求 id 仍单调，标记本身可不重置；保留以便审计）
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
 let lastFile = null
@@ -796,7 +864,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
-          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
+          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :last-known-label="t('agentReplay.label_last_known')" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
           <RecorderReticle ref="recorderReticle" :suppressed="uiHidden" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
@@ -914,6 +982,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
             :step-seconds="PLAYBACK_STEP_SECONDS"
             :compact="isPhone"
             :nav-eligible="active && !controlsCollapsed"
+            :shot-ticks="shotTicks"
+            :kill-ticks="killTicks"
+            :shortcuts-hint="t('agentReplay.shortcuts_hint')"
             @toggle-play="transport.togglePlay()"
             @step="sceneApi.seekBy($event)"
             @set-speed="sceneApi.setSpeed($event)"
@@ -965,6 +1036,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}
         </label>
+        <!-- 可视性诚实呈现（默认开）：离场坦克显示最后已知位置（幽灵名牌 + 半透明代理） -->
+        <label class="toggle">
+          <input type="checkbox" data-testid="disp-last-known" :checked="lastKnownPrefs.showLastKnown" @change="lastKnownPrefs.showLastKnown = $event.target.checked"> {{ t('agentReplay.display_last_known') }}
+        </label>
+        <!-- 回放事实边界的一行固定说明（帮助区）：紧跟该开关，语义可循 -->
+        <p class="dp-note" data-testid="replay3d-visibility-note">{{ t('agentReplay.visibility_note') }}</p>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
@@ -981,6 +1058,8 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <label class="toggle"><input type="checkbox" data-testid="disp-reload" :checked="labelPrefs.showReload" @change="labelPrefs.showReload = $event.target.checked"> {{ t('agentReplay.display_reload') }}</label>
         <!-- 画质在紧凑档是只读徽标（档位在播放前定型，运行中不可改），宽档同样只在工具条展示 -->
         <p class="q-badge dp-quality" :title="t('agentReplay.q_title')">{{ qualityBadge }}</p>
+        <!-- 快捷键速查（帮助区；触屏没有 tooltip，可见帮助区兜底）：与时间轴 tooltip 同一份文案 -->
+        <p class="dp-shortcuts" data-testid="replay3d-shortcuts">{{ t('agentReplay.shortcuts_hint') }}</p>
         <button
           type="button" class="tool-btn dp-hide" data-testid="hide-all-ui"
           @click="setUiHidden(true)"
@@ -1308,6 +1387,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
 /* Display content appearance; placement belongs to PlaybackDisplaySurface. */
 .dp-title { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+/* 快捷键速查段：与时间轴 tooltip 同一份 i18n 文案，触屏用户的可见兜底 */
+.dp-shortcuts { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+/* 回放事实边界说明（一行固定小字，帮助区；与 dp-shortcuts 同级呈现） */
+.dp-note { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 .dp-declutter { inline-size: 100%; }
 .dp-hide { margin-block-start: var(--space-2); inline-size: 100%; }
 

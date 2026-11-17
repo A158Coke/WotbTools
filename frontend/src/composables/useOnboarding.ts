@@ -16,7 +16,7 @@ export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
 export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
 const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
 const isReplaceDeclined = (e: unknown) => (e as { name?: string } | null)?.name === REPLACE_DECLINED
-const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-shots', 'ai-review'])
+const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-events', 'agent-shots', 'ai-review'])
 type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
 export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
 /** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */

@@ -32,7 +32,7 @@ function makeDeps() {
     detached_turrets: [],
   }
   const deps: VehicleRuntimeDeps = {
-    store: { glbOn: false },
+    store: { glbOn: false, lastKnownOn: false },
     destroyed: () => false,
     sessionGen: () => 0,
     getScene: () => scene,

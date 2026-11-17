@@ -54,6 +54,10 @@ export function createPlaybackStore() {
     glbOn: false,
     glbAllowed: true,
     labelsOn: true,
+    // 最后已知呈现（可视性诚实呈现，见 scene/playback/lastKnown.ts）：离场坦克显示
+    // 最后已知位置（幽灵名牌 + 半透明代理）。初值 = 默认开；实际偏好由面板从
+    // usePlaybackPreferences 推入（唯一方向：偏好 → 场景，场景只读）。
+    lastKnownOn: true,
     treadOn: true,     // 地面履带印（TreadSystem 碾压痕；数据面 tread/，上游 feasibility-track-marks.md）
     treadAllowed: true, // 画质档门禁（仅高清/极致；applyGlbGate 随档位写入，UI 据此禁用开关）
     // 渲染性能偏好（初值是内核 prefOf 解析前的占位；initPlayback 会按

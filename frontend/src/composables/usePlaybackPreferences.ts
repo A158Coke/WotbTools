@@ -37,11 +37,20 @@ export interface PlaybackUiPreferences {
   showBaseStatus: boolean
 }
 
+/**
+ * 「可视性诚实呈现」开关（离场坦克显示最后已知位置；默认开）。独立成组、不进防遮预设：
+ * 它是回放事实边界的呈现约定（未记录时段不重建位置），不是可被「一键防遮」重置的杂物偏好。
+ */
+export interface PlaybackLastKnownPreferences {
+  showLastKnown: boolean
+}
+
 const LABEL_PREFS_KEY = 'wotb.pb.label-prefs'
 const HP_PREFS_KEY = 'wotb.pb.hp-prefs'
 const TRAIL_PREFS_KEY = 'wotb.pb.trail-prefs'
 const UI_PREFS_KEY = 'wotb.pb.ui-prefs'
 const MARKER_PREFS_KEY = 'wotb.pb.marker-prefs'
+const LAST_KNOWN_PREFS_KEY = 'wotb.pb.last-known-prefs'
 
 function readJson<T>(key: string, fallback: T, normalize: (value: unknown) => T): T {
   try {
@@ -116,6 +125,16 @@ function createPlaybackPreferences() {
     },
   ))
 
+  const lastKnownPrefs = reactive<PlaybackLastKnownPreferences>(readJson(
+    LAST_KNOWN_PREFS_KEY,
+    { showLastKnown: true },
+    (value) => {
+      const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+      // 新增字段：老持久化值（无该键）默认开启，不重置用户已有偏好
+      return { showLastKnown: record.showLastKnown !== false }
+    },
+  ))
+
   const declutterActive = ref(false)
   const capture = () => ({
     labels: { ...labelPrefs }, hp: { ...hpPrefs }, trails: { ...trailPrefs }, markers: { ...markerPrefs },
@@ -162,8 +181,9 @@ function createPlaybackPreferences() {
     persistPresentation()
   }, { deep: true, flush: 'sync' })
   watch(uiPrefs, (value) => persistJson(UI_PREFS_KEY, value), { deep: true })
+  watch(lastKnownPrefs, (value) => persistJson(LAST_KNOWN_PREFS_KEY, value), { deep: true })
 
-  return { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive: readonly(declutterActive), toggleDeclutter }
+  return { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, lastKnownPrefs, declutterActive: readonly(declutterActive), toggleDeclutter }
 }
 
 // Initialize lazily so persisted values hydrate on the first consumer. A detached

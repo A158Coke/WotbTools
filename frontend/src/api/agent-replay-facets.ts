@@ -509,6 +509,88 @@ export interface AgentPlaybackFacet {
   /** 可破坏地形（上游 2026-10-05 起 additive；旧产物缺失 = 特性禁用） */
   destructible_areas?: AgentDestructibleArea[]
   destructible_events?: AgentDestructibleEvent[]
+  /** 聊天频道表（上游 v0.5.0 additive；Avatar method 0x2f pickle，开局状态非时序事件） */
+  chat_channels?: AgentChatChannel[]
+  /** 聊天文本消息（上游 v0.5.0 additive；Avatar method 0x2b，形状门禁产物）。
+   *  `tag`/`seq` 原样透传、语义未定（单样本 provenance）——消费方不得命名/猜测。 */
+  chat_messages?: AgentChatMessageEvent[]
+  /** 单发通知（上游 v0.5.0 additive；Avatar method 0x12）。`code` 语义未定，原样透传。 */
+  notifications?: AgentNotificationEvent[]
+  /** 聊天域动作事件（上游 v0.5.1 additive；Avatar method 0x2f 全类型）——战斗聊天正文、
+   *  快捷指令、成员进出、频道建立。**战斗聊天正文以此为准**（0x2b 是另域）。 */
+  chat_events?: AgentChatEvent[]
+  /** 逐模块损伤（上游 v0.5.1 additive；method38 组件 token，作者路径） */
+  module_damage_events?: AgentModuleDamageEvent[]
+  /** 逐次掉血事件（上游 v0.5.2 additive；method1 血量链）——blitzinfo ev-damage 等价物 */
+  damage_events?: AgentDamageEvent[]
+}
+
+/** 掉血事件：damage = prev_hp − hp（0 = 该事件未掉血，如治疗/复位） */
+export interface AgentDamageEvent {
+  t: number
+  victim_eid: number
+  damage: number
+  hp: number
+  /** 伤害来源（0 = 未归属/环境） */
+  source_eid: number
+  /** 与 kills.cause 同域：0=炮弹 1=火焰 2=撞击 3=世界 5=溺水 */
+  cause: number
+}
+
+/** 0x2f 动作事件类别（未命名类别 = other，raw_type 原样保留） */
+export type AgentChatEventKind = 'message' | 'command' | 'join' | 'leave' | 'channel_created' | 'other'
+
+export interface AgentChatEvent {
+  t: number
+  kind: AgentChatEventKind
+  /** 原始事件码（未命名类别的唯一证据） */
+  raw_type: number
+  /** 频道句柄（与 chat_channels[].id 同域） */
+  channel: number
+  sender: string
+  /** 聊天正文（仅 kind=message） */
+  text?: string
+  /** 快捷指令码（仅 kind=command；语义未闭合，原样透传） */
+  command?: number
+  /** 指令目标（仅 kind=command；0 = 无目标） */
+  target?: number
+}
+
+/** 逐模块损伤（method38 组件 token；rawState 0=无新负面 1=受损 2=critical） */
+export interface AgentModuleDamageEvent {
+  clock: number
+  victim_eid: number
+  component_code: number
+  component: string
+  state_code: number
+  state: 'damaged' | 'critical' | 'no_change' | 'unknown'
+}
+
+/** 聊天频道表条目（pickle 字典已证实子集；缺键省略。见上游 docs/replay-chat-events.md） */
+export interface AgentChatChannel {
+  channel_name: string
+  id: number
+  db_id?: number
+  owner?: number
+  flags?: number
+  is_system?: boolean
+  is_read_only?: boolean
+  is_secured?: boolean
+}
+
+/** 聊天文本消息（发送者昵称不在包内——UI 需另行联表或留空） */
+export interface AgentChatMessageEvent {
+  t: number
+  tag: number
+  seq: number
+  text: string
+}
+
+/** 单发通知（观测 code：11515/26109；语义未定） */
+export interface AgentNotificationEvent {
+  t: number
+  subject: number
+  code: number
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------

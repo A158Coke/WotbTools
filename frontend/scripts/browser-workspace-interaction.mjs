@@ -2600,8 +2600,8 @@ async function runAppScenario(env, scenario) {
     check(failures, hit.coarsePointer && hit.hoverNone, `device emulation missed pointer:coarse/hover:none (coarse=${hit.coarsePointer} hoverNone=${hit.hoverNone})`)
   }
   const layout = await page.probe(capabilityLayoutProbe)
-  check(failures, layout?.buttons.length === 5 && !layout.overflow,
-    `five capability buttons must fit without horizontal scrolling: ${JSON.stringify(layout)}`)
+  check(failures, layout?.buttons.length === 6 && !layout.overflow,
+    `six capability buttons must fit without horizontal scrolling: ${JSON.stringify(layout)}`)
   check(failures, layout?.buttons.every(button => button.inside && button.labelFits && button.hit),
     `every capability label must be visible and its button directly reachable: ${JSON.stringify(layout)}`)
   // 最窄夹具验证换行；375/390px 的中文标签在 Linux 字体下可能刚好容纳一行。
@@ -2641,7 +2641,7 @@ async function runAppScenario(env, scenario) {
   }
 
   // 五项能力对所有身份公开可见，身份只决定受保护能力是否挂载。
-  const expectedCaps = ['data', 'playback', '3d', 'shots', 'ai']
+  const expectedCaps = ['data', 'playback', '3d', 'events', 'shots', 'ai']
   check(failures, JSON.stringify(state.tabs.map((t) => t.cap)) === JSON.stringify(expectedCaps),
     `capability set=${JSON.stringify(state.tabs.map((t) => t.cap))}, expected ${JSON.stringify(expectedCaps)}`)
   if (scenario.touch) {

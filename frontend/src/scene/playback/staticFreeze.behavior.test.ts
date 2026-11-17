@@ -289,7 +289,7 @@ describe('poseGlb：逐帧姿态不强制全树 updateMatrixWorld（renderer 根
       },
     } as never
     const deps: VehicleRuntimeDeps = {
-      store: { glbOn: false },
+      store: { glbOn: false, lastKnownOn: false },
       destroyed: () => false,
       sessionGen: () => 0,
       getScene: () => new THREE.Scene(),
