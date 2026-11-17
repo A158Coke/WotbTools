@@ -33,6 +33,7 @@ import MapPreview2DPane from './MapPreview2DPane.vue'
 import RotatePrompt from './RotatePrompt.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import { useForcedLandscape } from '../composables/useForcedLandscape.js'
+import { assaultSelectable, resolveBasesKind } from './mapBasesKind.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -89,27 +90,39 @@ async function loadMaps() {
   const preferDatasetBasemap = Boolean(dataVersionId())
   for (const [id, m] of entries) {
     const key = String(m.key || '')
-    if (!key || byKey.has(key)) continue   // 变体空间归并基础图（首个出现的 id = 基础 id）
-    const bundled = mapImages[key] || null
-    byKey.set(key, {
-      key,
-      mapId: Number(id),
-      packDisplay: m.display || '',
-      // 底图双源（2D 面板用）：默认 bundled 打包注册表优先（离线 + 逐图校准），
-      // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）；
-      // 显式选择 dataset 时反转为 dataset map2d 优先、bundled 兜底。
-      basemap: (preferDatasetBasemap || !bundled)
-        ? { kind: 'map2d', mapKey: key, ...(bundled ? { fallbackImage: bundled } : {}) }
-        : { kind: 'bundled', image: bundled },
-      // 封面统一 cover.webp（512² 战术风格，43/43 同源同风格，~100KB/张）；
-      // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
-      thumb: safeCoverUrl(key),
-      thumbFallback: bundled ? bundled.src : null,
-      // 点位（遭遇/争霸基地）：仅打包注册表收录的 29 张有（客户端 .sc2 提取），
-      // 未收录图无几何数据——fail-closed 不显示点位开关，不做统计猜测。
-      bases: mapBases[key] || null,
+    if (!key) continue
+    // 同一资产 key 的多个 index 条目 = 同一场景的地图变体（诺曼底/Hills/Beach 等）：
+    // 资产只物化一份，但每个 id 带自己的 variant 标签（GLB scene extras 的
+    // variantByMapId）。全部保留，页面用变体切换选择其中一个 id（3D 边界按 id 裁剪）。
+    let group = byKey.get(key)
+    if (!group) {
+      const bundled = mapImages[key] || null
+      group = {
+        key,
+        packDisplay: m.display || '',
+        // 底图双源（2D 面板用）：默认 bundled 打包注册表优先（离线 + 逐图校准），
+        // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）；
+        // 显式选择 dataset 时反转为 dataset map2d 优先、bundled 兜底。
+        basemap: (preferDatasetBasemap || !bundled)
+          ? { kind: 'map2d', mapKey: key, ...(bundled ? { fallbackImage: bundled } : {}) }
+          : { kind: 'bundled', image: bundled },
+        // 封面统一 cover.webp（512² 战术风格，43/43 同源同风格，~100KB/张）；
+        // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
+        thumb: safeCoverUrl(key),
+        thumbFallback: bundled ? bundled.src : null,
+        variants: [],
+      }
+      byKey.set(key, group)
+    }
+    group.variants.push({
+      id: Number(id),
+      display: m.display || '',
+      variantKey: String(m.variantKey || ''),
+      variant: typeof m.variant === 'string' ? m.variant : null,
     })
   }
+  // 基础变体 = 首个 index 条目（注册表基础 key 在前）；缺省选中它。
+  for (const group of byKey.values()) group.mapId = group.variants[0]?.id ?? null
   rawMaps.value = [...byKey.values()]
   indexLoaded.value = true
 }
@@ -150,6 +163,20 @@ watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { imm
 
 // ---- URL 契约：?map=<key> &mode=3d|2d（缺省 2d） &bases=supremacy|encounter ----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
+/** 当前变体条目（?variant=<map_id>；缺省/非法值回落到基础变体）。 */
+const selectedVariant = computed(() => {
+  const variants = selected.value?.variants || []
+  const id = Number(route.query.variant)
+  return variants.find((v) => v.id === id) || variants[0] || null
+})
+/** 当前变体的展示名：变体条目自带 pack display（Normandy - Hills 等）。 */
+const selectedName = computed(() => selectedVariant.value?.display || selected.value?.name || '')
+/** 当前变体的基地点位：mapBases[key].variants[label]（标签由 index 下发）。 */
+const selectedBases = computed(() => {
+  const entry = selected.value ? mapBases[selected.value.key] : null
+  const label = selectedVariant.value?.variant
+  return (label && entry?.variants?.[label]) || entry || null
+})
 const mode = computed(() => (route.query.mode === '3d' ? '3d' : '2d'))
 
 /**
@@ -159,26 +186,9 @@ const mode = computed(() => (route.query.mode === '3d' ? '3d' : '2d'))
  * 的 assault 组（攻防/遭遇共用，客户端 .sc2 提取）。无几何 → null（不显示、
  * 不显示切换），绝不由内容猜。
  */
-const BASES_QUERY_KINDS = { supremacy: 'supremacy', encounter: 'assault' }
-/**
- * 遭遇的可用性判据与 renderer 同一口径（选项 / URL 接受 / fallback 三处共用）：
- * assault 组**恰好 1 个 candidate** 才可选——多 candidate（攻防/遭遇条目无法
- * 归属，回放同式 fail-closed 不画）的图不提供遭遇选项，否则选中后两端渲染
- * 0 个点位、得到必然空白的假选项。renderer 内部的防御性判据原样保留。
- */
-function assaultSelectable(bases) {
-  return bases?.assault?.length === 1
-}
-const basesKind = computed(() => {
-  const bases = selected.value?.bases
-  if (!bases) return null
-  const fromUrl = BASES_QUERY_KINDS[route.query.bases]
-  if (fromUrl === 'supremacy' && bases.supremacy?.length) return 'supremacy'
-  if (fromUrl === 'assault' && assaultSelectable(bases)) return 'assault'
-  if (bases.supremacy?.length) return 'supremacy'
-  if (assaultSelectable(bases)) return 'assault'
-  return null
-})
+// 遭遇可用性（assault 恰 1 个 candidate）与 URL→组键解析在 mapBasesKind.js
+// （纯函数可单测；renderer 内部防御性判据原样保留）。
+const basesKind = computed(() => resolveBasesKind(selectedBases.value, route.query.bases))
 /**
  * 出生点（#835）：语义档案 sceneEvidence.battlePoints 的 spawnpoint 条目
  * （parseMapGridProfile 解析，非有限坐标/缺档已在其内 fail-closed）。3D 预览
@@ -190,7 +200,7 @@ const spawnPoints = computed(() => {
   return mapGridProfile(selected.value.key)?.spawnPoints ?? null
 })
 const basesOptions = computed(() => {
-  const bases = selected.value?.bases
+  const bases = selectedBases.value
   if (!bases) return []
   return [
     ...(bases.supremacy?.length
@@ -203,8 +213,19 @@ const basesOptions = computed(() => {
 })
 
 function openMap(entry) {
-  router.replace({ query: { ...route.query, map: entry.key, mode: mode.value } })
+  const query = { ...route.query, map: entry.key, mode: mode.value }
+  delete query.variant   // 打开地图 = 基础变体
+  router.replace({ query })
 }
+/** 变体切换：只改 variant（3D 边界按 map_id 裁剪，基地按 variant 标签取）。 */
+function setVariant(value) {
+  router.replace({ query: { ...route.query, variant: String(value) } })
+}
+const variantOptions = computed(() => (selected.value?.variants || []).map((v) => ({
+  value: String(v.id),
+  label: v.display || String(v.id),
+  testid: `map-variant-${v.id}`,
+})))
 // 强制横屏只针对 3D 场景（design-language §9）：2D 战术图是正方形，竖屏放得下；地图选择列表也不强制。
 const forcedLandscape = useForcedLandscape(computed(() => mode.value === '3d' && !!selected.value))
 
@@ -219,6 +240,7 @@ function backToPicker() {
   delete query.map
   delete query.mode
   delete query.bases
+  delete query.variant
   router.replace({ query })
 }
 
@@ -323,7 +345,15 @@ const modeOptions = computed(() => [
             <ArrowLeft aria-hidden="true" />
             {{ $t('mapPreview.backToPicker') }}
           </AppButton>
-          <h1 class="map-stage-name">{{ selected.name }}</h1>
+          <h1 class="map-stage-name">{{ selectedName }}</h1>
+          <SegmentedControl
+            v-if="variantOptions.length > 1"
+            class="map-variant-switch"
+            :model-value="selectedVariant ? String(selectedVariant.id) : ''"
+            :options="variantOptions"
+            :aria-label="$t('mapPreview.variantsSwitch')"
+            @update:model-value="setVariant"
+          />
           <SegmentedControl
             v-if="basesOptions.length"
             class="map-bases-switch"
@@ -348,10 +378,10 @@ const modeOptions = computed(() => [
           @action="setMode('2d')"
         />
         <div v-show="mode === '3d'" class="map-stage-pane">
-          <MapPreview3DPane :map-id="selected.mapId" :map-name="selected.name" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
+          <MapPreview3DPane :map-id="selectedVariant?.id ?? selected.mapId" :map-name="selectedName" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases-kind="basesKind" :active="mode === '2d'" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases="selectedBases" :bases-kind="basesKind" :active="mode === '2d'" />
         </div>
       </div>
     </template>

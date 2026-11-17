@@ -54,6 +54,11 @@ const props = defineProps({
    * null / 组无几何 → 不渲染（fail-closed，绝不从内容猜坐标）。
    */
   basesKind: { type: String, default: null },
+  /**
+   * 该变体的基地点位条目（页面按 index 的 variant 标签从 mapBases[key].variants 解析）；
+   * 缺省回退 mapBases[mapKey]（单变体地图/旧调用）。
+   */
+  bases: { type: Object, default: null },
   /** 页面 v-show 生命周期闸门：失活时退出全屏，避免全屏落在隐藏面板上 */
   active: { type: Boolean, default: true },
 })
@@ -87,7 +92,7 @@ const mapView = computed(() => createMapView(image.value, overview.value))
 const baseMarkers = computed(() => {
   const kind = props.basesKind
   if (kind !== 'supremacy' && kind !== 'assault') return []
-  const pts = mapBases[props.mapKey]?.[kind] || []
+  const pts = (props.bases || mapBases[props.mapKey])?.[kind] || []
   if (kind === 'assault' && pts.length !== 1) return []
   return pts.map((b) => ({
     baseId: kind === 'supremacy' ? b.baseId : 'BASE',

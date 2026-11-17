@@ -14,6 +14,25 @@ vi.mock('../utils/exportReplayPng.js', async (importOriginal) => ({
 }))
 vi.mock('html2canvas', () => ({ default: h2cMock }))
 
+// 多 candidate 的 fail-closed 夹具：真实 mapBases 经变体过滤后每图恰 1 条 assault，
+// 规则本身仍需可测（合成 probe_multi，不依赖生产数据恰好含歧义样本）。
+vi.mock('../data/mapBases.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    mapBases: {
+      ...actual.mapBases,
+      probe_multi: {
+        supremacy: [],
+        assault: [
+          { x: 0, y: 0, radius: null, team: 1 },
+          { x: 10, y: 0, radius: null, team: 1 },
+          { x: 20, y: 0, radius: null, team: 1 },
+        ],
+      },
+    },
+  }
+})
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     locale: { value: 'zh' },
@@ -215,14 +234,17 @@ describe('MapPreview2DPane 基地点位（与 2D 回放同一 :bases 口径）',
     ])
   })
 
-  it('assault：组内多 candidate 无证据 fail-closed（erlenberg 3 条 → 不画）', async () => {
-    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: 'assault' })
+  it('assault：组内多 candidate 无证据 fail-closed（合成 probe_multi 3 条 → 不画）', async () => {
+    const wrapper = mountPane(
+      { kind: 'bundled', image: mapImages.erlenberg },
+      { mapKey: 'probe_multi', basesKind: 'assault' },
+    )
     expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('')
   })
 
   it('assault 单条 candidate → BASE 圆标 + 20m 缺省（与回放同一 presentation fallback）', async () => {
-    const wrapper = mountPane({ kind: 'bundled', image: mapImages.canyon }, { mapKey: 'canyon', basesKind: 'assault' })
-    // canyon.assault 恰 1 条且未声明 radius（null）→ 呈现兜底 20m
+    // erlenberg 的基础变体（er0）恰 1 条遭遇 candidate、未声明 radius → 20m 兜底
+    const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: 'assault' })
     expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('BASE:20:neutral')
   })
 

@@ -12,6 +12,7 @@ import type { Scene, PerspectiveCamera, WebGLRenderer, Texture, ShaderMaterial,
                DirectionalLight, HemisphereLight } from 'three'
 import { mapStaticUrl, resolveMapKey } from '../replaySource.js'
 import { mapBases } from '../../data/mapBases.js'
+import { basesForVariant, type MapBasesEntry } from './bases.js'
 import { playableBounds } from '../../data/playableBounds.js'
 import {
   CLIENT_NORMAL_CAMERA_FOV_H,
@@ -23,13 +24,20 @@ import { writeHiddenInstance, fallMatrix } from '../sceneryInstancing.js'
 import { clearSceneryMatCache } from '../sceneryMaterials.js'
 import { loadTerrain, buildGroundGeometry, groundGeometryFromData, makeGroundMaterial,
          groundLayerKeys, setupGroundTextures } from '../groundPass.js'
-import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore } from '../mapLighting.js'
+import {
+  applyMapLighting as applyMapLightingCore,
+  resetMapLighting as resetMapLightingCore,
+  updateDynamicLights as updateDynamicLightsCore,
+} from '../mapLighting.js'
+import { buildDecalMeshes, type DecalDoc } from './deferredDecals.js'
+import {
+  buildGrassMeshes, extractGrassPrototypes, parseGrassBin, type GrassDoc,
+} from './mapGrass.js'
 import type { MapLightingData } from '../mapLighting.js'
 import { assembleMapScenery } from './mapAssets.js'
 import type { ParsedGltf, GroundLayersField } from '../sceneryAssembly.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { ASSET_CONCURRENCY, mapLimit } from './util.js'
-import { BOUNDARY_THICK } from './boundary.js'
 import { assetProvider } from '../assetProvider.js'
 import { createLoadProgress } from '../loadProgress.js'
 import { createPerf } from './perf.ts'
@@ -152,6 +160,8 @@ export interface MapWorldDeps {
   getData(): WorldPlaybackData | null
   /** 画质档（宿主持有 QUALITY_PRESETS 解析结果）。 */
   quality(): { groundLayers?: boolean; scenery?: boolean; anisotropy: number }
+  /** 草实例预算（QUALITY_FEATURES.grass.instances；0 = 不加载草层）。 */
+  grassInstanceBudget(): number
   getScene(): Scene | null
   getCamera(): PerspectiveCamera | null
   getRenderer(): WebGLRenderer | null
@@ -184,7 +194,7 @@ export interface BoundaryBandHost {
   clear(): void
 }
 
-export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHost) {
+export function createMapWorld(deps: MapWorldDeps) {
   const store = deps.store
   let mapPlane: THREE.Mesh | null = null;
   let mapTexture: Texture | null = null, mapMetaInfo: MapMetaSurface | null = null;          // 底图贴图 + 铺设参数
@@ -194,6 +204,10 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
   let terrainMesh: THREE.Mesh | null = null, heightField: Float32Array | null = null, heightMeta: HeightMetaSurface | null = null;  // 3D 地形
   let waterTexDispose: { dispose(): void } | null = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
   let mapScenery: THREE.Object3D | null = null;                              // 静态场景 GLB（建筑等）
+  let decalGroup: ReturnType<typeof buildDecalMeshes> | null = null;         // 投影贴花（decals.json；见 deferredDecals.ts）
+  let decalAtlas: THREE.Texture | null = null;                               // 贴花图集（会话 teardown 释放）
+  let grassLayer: { group: THREE.Group; materials: THREE.ShaderMaterial[]; dispose(): void } | null = null
+  let grassProtoScene: THREE.Object3D | null = null;                          // 草原型 GLB（几何所有权）
   // 贴地薄构件走廊掩码（terrainMesh.buildRefineMask 产物；随场景 GLB 一起失效）：
   // 语义判据 = 材质 extras.decal（客户端 MATERIAL_DECAL，"objects colored with landscape"——
   // 铁轨基板/压顶/铺装）。这些件只有 ~0.3 m 厚、净空常仅 3–30 cm，远视距会被自适应粗格插值
@@ -211,6 +225,8 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
   let groundMesh: THREE.Mesh | null = null, gridHelper: THREE.GridHelper | null = null;           // buildWorld 的占位地面/网格（会话拥有）
   let currentMapKey: string | null = null;        // 资产面 map key（playableBounds 表索引）
   let currentMapBases: unknown = null;
+  let waterMeshes: THREE.Object3D[] = [];
+  let waterLevel: number | null = null;
   let WORLD_CENTER: { cx: number; cz: number; ext: number } = { cx: 0, cz: 0, ext: 300 };
   // 动画混合层材质（uTime 每帧写回放秒数；随 mapScenery dispose，会话失效）
   let animLayerMats: ShaderMaterial[] = [];
@@ -241,7 +257,8 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
 
   // ---------- 点击拾取 ctx 的世界事实（getter 快照） ----------
 
-  // 地图边界带（几何在 playback/boundary.js 工厂；本处只留可玩范围解析）
+  // 可玩范围解析（边界几何由客户端 MapBorderRenderObject 随 scenery.glb 导出；
+  // 旧程序化边界带 2026-11-17 已按用户裁示删除）
 
   // 优先 terrain meta 的 playableBounds（打包器从场景 MapBorderComponent 提取，新地图自带）；
   // 否则回退 mapCode 表。两者皆缺 → null（不画，不用车辆范围猜）
@@ -254,7 +271,6 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
              hx: (sxMax - sxMin) / 2, hz: (pb.yMax - pb.yMin) / 2 };
   }
 
-  function buildBoundary(bounds: unknown, thick: number) { boundaryBand.build(bounds, thick); }
 
   function buildWorld() {
     const DATA_ = deps.getData()
@@ -304,9 +320,6 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     grid.visible = false;
     scene.add(grid);
     gridHelper = grid;
-    // 边界只按权威可玩范围画（见 buildBoundary 的 fail-closed 说明）：此处地图资产
-    // 尚未加载，命中 mapCode 表则先画，否则不画；rebuildGround 再按 terrain meta 重建
-    buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
     WORLD_CENTER = { cx, cz, ext };
     deps.buildWorldCameraPlacement(WORLD_CENTER)
   }
@@ -347,6 +360,10 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     if (mapPlane) { scene?.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene?.remove(terrainMesh); terrainMesh = null; if (DEBUG) debugWindow.__terrain = null; }
     if (mapScenery) { scene?.remove(mapScenery); mapScenery = null; }
+    if (decalGroup) { scene?.remove(decalGroup.group); decalGroup.dispose(); decalGroup = null; }
+    if (decalAtlas) { decalAtlas.dispose(); decalAtlas = null; }
+    if (grassLayer) { scene?.remove(grassLayer.group); grassLayer.dispose(); grassLayer = null; }
+    if (grassProtoScene) { deps.disposeObject3D(grassProtoScene); grassProtoScene = null; }
     terrainRefineMask = null;   // 走廊掩码属场景 GLB，随它失效
     destruct = null;
     destructPickList = null;
@@ -462,6 +479,53 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
         }
       }
     } catch (e) { noteAsset('lighting', 'failed', errorMessage(e)); }
+    // 投影贴花（上游 decals.json + 解码图集，2026-11-17 审计 B9；当前内容仅 plant 有）。
+    // 可选资产：缺文件/旧包 → 无贴花层，不阻断。静态近似语义与坐标帧见 deferredDecals.ts
+    // （几何顶点 = 客户端世界系，组上施加与 mapScenery 同款 qFrame）。
+    try {
+      const decalUrl = mapStaticUrl('decals', undefined, resolvedKey);
+      if (decalUrl) {
+        const dresp = await assetProvider.fetch(decalUrl);
+        if (stale()) return;
+        if (dresp.ok) {
+          const doc = await dresp.json() as DecalDoc | null;
+          if (stale()) return;
+          if (doc && Array.isArray(doc.decals) && doc.decals.length && doc.textures) {
+            const texPath = doc.decals[0]?.texture;
+            const texFile = texPath ? doc.textures[texPath] : undefined;
+            if (texFile) {
+              const texUrl = assetProvider.url(`/map/${resolvedKey}/${texFile}`);
+              const texResp = await assetProvider.fetch(texUrl);
+              if (stale()) return;
+              if (texResp.ok) {
+                const blob = await texResp.blob();
+                if (stale()) return;
+                const objUrl = URL.createObjectURL(blob);
+                let atlas: THREE.Texture | undefined;
+                try {
+                  atlas = await new THREE.TextureLoader().loadAsync(objUrl);
+                } finally {
+                  URL.revokeObjectURL(objUrl);
+                }
+                if (stale()) { atlas.dispose(); return; }
+                atlas.colorSpace = THREE.NoColorSpace;   // legacy 链原样采样（与场景 GLB 同口径）
+                atlas.flipY = false;                      // 上游按"文件原始行序"嵌入，v=0 = 首行
+                const built = buildDecalMeshes(doc, atlas);
+                built.group.rotation.order = 'YXZ';
+                built.group.rotation.set(-Math.PI / 2, Math.PI, 0);   // qFrame，与 mapScenery 同帧
+                scene.add(built.group);
+                decalGroup = built;
+                decalAtlas = atlas;
+              } else {
+                noteAsset('decals', `tex-http-${texResp.status}`, '贴花图集获取失败（无贴花层）', { optional: true });
+              }
+            }
+          }
+        } else {
+          noteAsset('decals', `http-${dresp.status}`, '无贴花数据', { optional: true });
+        }
+      }
+    } catch (e) { noteAsset('decals', 'failed', errorMessage(e), { optional: true }); }
     // 逐图 IBL（环境反射）：客户端 IBLComponent 的 specular 立方图（上游转等距柱状投影）。
     // 只影响 glTF PBR 材质（坦克）——自定义 ShaderMaterial（场景/地面/植被）不吃 enviroment。
     // `ibl.environmentMultiplier`（逐图 0.8–4.0）经 scene.environmentIntensity 施加（three r163+）。
@@ -674,7 +738,15 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
         const w = asm.writes;
         if ('waterTexDispose' in w) waterTexDispose = w.waterTexDispose!;
         if ('animLayerMats' in w) animLayerMats = w.animLayerMats!;
+        if ('variantLabel' in w) {
+          // 基地点位按当前变体取：多变体场景的 mapBases[key].variants[label]；
+          // 无该变体数据时回退基础变体（basesForVariant）。
+          const entry = resolvedKey ? (mapBasesTable[resolvedKey] as MapBasesEntry | null) : null;
+          currentMapBases = basesForVariant(entry, w.variantLabel);
+        }
         if ('mapScenery' in w) mapScenery = w.mapScenery!;
+        if ('waterMeshes' in w) waterMeshes = w.waterMeshes || [];
+        if ('waterLevel' in w) waterLevel = w.waterLevel ?? null;
         if ('terrainRefineMask' in w) terrainRefineMask = w.terrainRefineMask;
         if ('occlGrid' in w) occlGrid = w.occlGrid!;
         if ('annotationSurfaceGrid' in w) annotationSurfaceGrid = w.annotationSurfaceGrid;
@@ -688,9 +760,93 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
       // 装配/变体裁剪/实例化等后续步骤抛错同样意味着建筑缺失，必须进入降级状态
       noteAsset('scenery', 'failed', errorMessage(e));
     }
+    // 草层（上游 grass.{json,bin,glb}，2026-11-17 审计 H1）：可选资产，实例预算来自
+    // 画质档语义表（QUALITY_FEATURES.grass.instances；低/均衡 = 0，高清/极致 = 60k）——
+    // 低/均衡档走俯视烘焙底图，立体草与俯视观感冲突。
+    // 实例是客户端世界系（z 上）；高度经 heightAt 采样渲染用地形（scene 坐标 ↔ 客户端
+    // 坐标 = (−x, y) 的 qFrame 逆映射）。
+    const grassStage = (s: string) => { if (DEBUG) (window as unknown as Record<string, unknown>).__grassStage = s; };
+    const grassBudget = deps.grassInstanceBudget();
+    if (grassBudget > 0) try {
+      grassStage('start');
+      const gdocUrl = mapStaticUrl('grass', undefined, resolvedKey);
+      const gbinUrl = mapStaticUrl('grassbin', undefined, resolvedKey);
+      const gprotoUrl = mapStaticUrl('grassproto', undefined, resolvedKey);
+      grassStage('urls=' + Boolean(gdocUrl) + '/' + Boolean(gbinUrl) + '/' + Boolean(gprotoUrl));
+      if (gdocUrl && gbinUrl && gprotoUrl) {
+        const [dresp, bresp] = await Promise.all([
+          assetProvider.fetch(gdocUrl), assetProvider.fetch(gbinUrl),
+        ]);
+        if (stale()) return;
+        grassStage('fetch=' + dresp.status + '/' + bresp.status);
+        if (dresp.ok && bresp.ok) {
+          const gdoc = (await dresp.json()) as GrassDoc | null;
+          const gbin = await bresp.arrayBuffer();
+          if (stale()) return;
+          const instances = gdoc ? parseGrassBin(gdoc, gbin) : null;
+          grassStage('parsed=' + (gdoc ? 'doc' : 'nodoc') + ':' + (instances ? instances.length : 'null'));
+          if (gdoc && instances && instances.length) {
+            const protoGltf = await new Promise<ParsedGltf | null>((res) => {
+              new GLTFLoader().load(gprotoUrl, (g) => res(g), undefined, () => res(null));
+            });
+            if (stale()) {
+              if (protoGltf?.scene) deps.disposeObject3D(protoGltf.scene);
+              return;
+            }
+            grassStage('gltf=' + Boolean(protoGltf && protoGltf.scene));
+            if (protoGltf && protoGltf.scene) {
+              const { geometries, albedo } = extractGrassPrototypes(protoGltf.scene);
+              grassStage('geoms=' + geometries.length + ' albedo=' + Boolean(albedo));
+              if (geometries.length) {
+                const heightAtProbe = (cx: number, cy: number) => sampleHeight(-cx, cy);
+                const built = buildGrassMeshes(gdoc, instances, geometries, {
+                  albedo,
+                  maxInstances: grassBudget,
+                  // 客户端 (x, y) → 渲染 scene (x=−clientX, z=clientY) 的地形高度
+                  heightAt: heightAtProbe,
+                });
+                scene.add(built.group);
+                grassLayer = built;
+                grassProtoScene = protoGltf.scene;
+                animLayerMats.push(...built.materials);
+                if (DEBUG) {
+                  (window as unknown as Record<string, unknown>).__grass = {
+                    instances: instances.length, meshes: built.group.children.length,
+                    variations: geometries.length,
+                    // 原型顶点/索引数：低档 60k 是 27/7/7/3 顶点稀疏三角，高档 500 档
+                    // 才是 38/39/26/5（54–81 索引）的完整草簇——用于确认加载的是哪一档
+                    prototypeVerts: geometries.map((g) => g.getAttribute('position')?.count ?? 0),
+                    prototypeTris: geometries.map((g) => Math.floor((g.getIndex()?.count ?? 0) / 3)),
+                    colorSample: [Math.round(instances[0].r * 255), Math.round(instances[0].g * 255),
+                                  Math.round(instances[0].b * 255)],
+                    firstInstanceScene: (() => {
+                      const i0 = instances[0];
+                      // qFrame：scene = (−x, z, y)；heightAt 已按同一映射取样
+                      return [-i0.x, heightAtProbe(i0.x, i0.y), i0.y];
+                    })(),
+                    groupAttached: built.group.parent !== null,
+                    heightField: !!heightField,
+                    ySamples: [sampleHeight(-300, -300), sampleHeight(0, 0), sampleHeight(300, 300)],
+                  };
+                }
+              } else {
+                deps.disposeObject3D(protoGltf.scene);
+              }
+            }
+          }
+        } else {
+          noteAsset('grass', `http-${dresp.status}/${bresp.status}`, '无草层数据', { optional: true });
+        }
+      }
+    } catch (e) {
+      grassStage('error=' + errorMessage(e));
+      console.warn('草层加载失败（已跳过）:', e);
+      noteAsset('grass', 'failed', errorMessage(e), { optional: true });
+    }
     if (stale()) return;
     progress.complete('scenery');
   }
+
 
   // 双线性采样世界 (x,z) 处高度（米）；无高度场/元数据不完整返回 0
   function sampleHeight(x: number, z: number) {
@@ -960,9 +1116,6 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
       mapPlane.position.set(meta.x || 0, 0.04, meta.z || 0);
       scene.add(mapPlane);
     }
-    // 边界按权威可玩范围重建（terrain meta 的 playableBounds 优先，否则 mapCode 表）；
-    // 两者皆缺则不画（fail-closed，绝不用 terrain span 冒充战场边界）
-    buildBoundary(playableBoundsFor(), BOUNDARY_THICK);
     // 地形异步就绪后把基地环带/HUD 与出生点标记重新贴回地表
     deps.regroundBases();
     deps.regroundSpawns();
@@ -1077,6 +1230,10 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
       if (o) { scene?.remove(o); disposeObject3D(o); }
     }
     mapPlane = null; terrainMesh = null; mapScenery = null; groundMesh = null; gridHelper = null;
+    if (decalGroup) { scene?.remove(decalGroup.group); decalGroup.dispose(); decalGroup = null; }
+    if (decalAtlas) { decalAtlas.dispose(); decalAtlas = null; }
+    if (grassLayer) { scene?.remove(grassLayer.group); grassLayer.dispose(); grassLayer = null; }
+    if (grassProtoScene) { disposeObject3D(grassProtoScene); grassProtoScene = null; }
     annotationSurfaceGrid = null;
     occlGrid = null;   // 标签遮挡候选格属会话场景，随会话释放（与 annotationSurfaceGrid 同纪律）
     terrainLodWake.cancel();
@@ -1099,6 +1256,8 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     animLayerMats = [];
     currentMapKey = null;
     currentMapBases = null;
+    waterMeshes = [];
+    waterLevel = null;
   }
 
   // perf 帧统计读取面（宿主 perfFrame 消费）
@@ -1126,6 +1285,10 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     // getter 快照（其余模块消费的世界事实；不允许副本状态）
     mapKey: () => currentMapKey,
     mapBases: () => currentMapBases,
+    waterMeshes: () => waterMeshes,
+    waterLevel: () => waterLevel,
+    /** 草层根（反射 pass 剔除；未加载为 null） */
+    grassRoot: () => grassLayer?.group ?? null,
     mapPlane: () => mapPlane,
     mapTexture: () => mapTexture,
     mapMetaInfo: () => mapMetaInfo,
@@ -1143,6 +1306,11 @@ export function createMapWorld(deps: MapWorldDeps, boundaryBand: BoundaryBandHos
     gridHelper: () => gridHelper,
     worldCenter: () => WORLD_CENTER,
     animLayerMats: () => animLayerMats,
+    // 动态光源池逐帧换绑（相机近邻；142 盏数据因此都能在靠近时亮起）
+    tickDynamicLights: (camPos: { x: number; y: number; z: number } | null | undefined) => {
+      const scene = deps.getScene();
+      if (scene) updateDynamicLightsCore(scene, camPos);
+    },
     occlGrid: () => occlGrid,
     annotationSurfaceGrid: () => annotationSurfaceGrid,
     envTexture: () => envTexture,

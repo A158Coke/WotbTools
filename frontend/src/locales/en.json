@@ -91,6 +91,7 @@
     "mode3d": "3D Scene",
     "mode2d": "2D Tactical Map",
     "basesSwitch": "Base markers",
+    "variantsSwitch": "Map variant",
     "basesSupremacy": "Supremacy",
     "basesEncounter": "Encounter",
     "backToPicker": "Choose another map",

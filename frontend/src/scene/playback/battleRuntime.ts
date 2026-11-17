@@ -94,6 +94,8 @@ export interface BattleRuntimeHandle {
   transients: TransientFeedback3d
   /** 3D 反馈显示时长倍率（labelsRuntime 的 GHOST_MS 乘数）。 */
   fxScale(): number
+  /** 战斗特效根（反射 pass 剔除；未创建为 null） */
+  fxRoot(): THREE.Object3D | null
   /** perf 帧统计读取面（原 tracers.length / trajLines.length / battleFx.stats()）。 */
   tracerCount(): number
   trajLineCount(): number
@@ -403,6 +405,8 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     ensureBattleFx,
     transients,
     fxScale: () => FX_SCALE,
+    /** 战斗特效根（反射 pass 剔除；未创建为 null） */
+    fxRoot: () => battleFx?.root ?? null,
     tracerCount: () => tracers.length,
     trajLineCount: () => trajLines.length,
     fxStats() { return battleFx ? battleFx.stats() : null; },
