@@ -57,8 +57,8 @@ const lines = computed(() => props.vehicles.flatMap(car =>
     color: props.single ? singleColors[ground] : car.color,
     label: car.name + ' · ' + t('mobility.' + ground),
   }))))
-watch(() => lines.value.map(line => line.key), keys => {
-  if (isolated.value && !keys.includes(isolated.value)) isolated.value = ''
+watch(() => [lines.value.map(line => line.key), props.loading] as const, ([keys, loading]) => {
+  if (!loading && isolated.value && !keys.includes(isolated.value)) isolated.value = ''
 })
 const visible = computed(() => lines.value.filter(l => !hidden.value.includes(l.key) && (!isolated.value || l.key === isolated.value)))
 const readings = computed(() => rankCurveReadings(visible.value, cursor.value))

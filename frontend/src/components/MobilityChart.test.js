@@ -79,3 +79,42 @@ it('keeps a restored cursor while only a fast partial curve has loaded', async (
     expect(wrapper.vm.snapshotView().cursor).toBe(4.88)
   }finally{wrapper.unmount()}
 })
+
+it.each(['initial view', 'recalculation'])('preserves isolation during partial loading from %s', async source => {
+  const [early, late] = ['early', 'late'].map(vehicle)
+  const view = { ...defaultChartView(), isolated: 'lateFirm' }
+  const wrapper = mount(MobilityChart, {
+    props: source === 'initial view'
+      ? { vehicles: [], loading: true, initialView: view }
+      : { vehicles: [early, late] },
+    global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh } })] },
+  })
+  try {
+    if (source === 'recalculation') {
+      wrapper.vm.restoreView(view)
+      await wrapper.setProps({ vehicles: [], loading: true })
+    }
+    await wrapper.setProps({ vehicles: [early] })
+    expect(wrapper.vm.snapshotView().isolated).toBe('lateFirm')
+    expect(wrapper.findAll('polyline')).toHaveLength(0)
+    await wrapper.setProps({ vehicles: [early, late], loading: false })
+    expect(wrapper.vm.snapshotView().isolated).toBe('lateFirm')
+    expect(wrapper.findAll('polyline')).toHaveLength(1)
+    expect(wrapper.findAll('.mob-solo').at(-1).attributes('aria-pressed')).toBe('true')
+  } finally { wrapper.unmount() }
+})
+
+it('exits isolation when loading ends with the isolated curve still absent', async () => {
+  const early = vehicle('early')
+  const wrapper = mount(MobilityChart, {
+    props: { vehicles: [], loading: true, initialView: { ...defaultChartView(), isolated: 'missingFirm' } },
+    global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh } })] },
+  })
+  try {
+    await wrapper.setProps({ vehicles: [early] })
+    expect(wrapper.vm.snapshotView().isolated).toBe('missingFirm')
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.vm.snapshotView().isolated).toBe('')
+    expect(wrapper.findAll('polyline')).toHaveLength(1)
+  } finally { wrapper.unmount() }
+})
