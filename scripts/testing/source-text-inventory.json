@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-16",
-  "scannedTestFiles": 444,
-  "sourceReadingTestFiles": 69,
+  "generatedAt": "2026-11-17",
+  "scannedTestFiles": 452,
+  "sourceReadingTestFiles": 71,
   "totalCases": 1169,
-  "totalTextAssertionCases": 231,
+  "totalTextAssertionCases": 230,
   "parseAnomalies": [],
   "files": [
     {
@@ -12785,7 +12785,344 @@
       ]
     },
     {
-      "testFile": "frontend/src/vehicle-models/extractor.test.js",
+      "testFile": "frontend/src/vehicle-models/extractor.asset-contracts.test.js",
+      "sources": [
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "buf"
+        },
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "meta"
+        }
+      ],
+      "caseCount": 34,
+      "textAssertionCases": 1,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "extractor.asset-contracts:38",
+          "name": "hull.webp / turret.webp / metadata.json / bake-report.json 存在且通过 validateModelEntry",
+          "startLine": 38,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:51",
+          "name": "正式资产契约：WebP 二进制 / 320 logical + 640 physical / 无 base64 内嵌",
+          "startLine": 51,
+          "textAssertion": true,
+          "usesVars": [
+            "buf"
+          ],
+          "patterns": [
+            "includes",
+            "slice"
+          ],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:59",
+          "name": "metadata.json：source.provider=blitzkit、tankId=6929、turretPivot 在画布内",
+          "startLine": 59,
+          "textAssertion": false,
+          "usesVars": [
+            "meta"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:69",
+          "name": "turretPivot 稳定性：0/90/180/270 旋转不动点（任务 11）",
+          "startLine": 69,
+          "textAssertion": false,
+          "usesVars": [
+            "meta"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:78",
+          "name": "高保真：真实比例无夸大——gun 宽度与模型投影一致（faithful geometry scale，bake 无放大）",
+          "startLine": 78,
+          "textAssertion": false,
+          "usesVars": [
+            "meta"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:91",
+          "name": "高保真：Source-faithful 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）",
+          "startLine": 91,
+          "textAssertion": false,
+          "usesVars": [
+            "meta"
+          ],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:100",
+          "name": "确定性：extractor 纯函数相同输入两次输出一致",
+          "startLine": 100,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:156",
+          "name": "matched render node 的 hide_elements child 会被采集（BlitzKit 实际渲染整个子树）",
+          "startLine": 156,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:163",
+          "name": "非 TankModel layer 的无关 mask 节点不会被采集",
+          "startLine": 163,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:169",
+          "name": "不是通过名字黑名单提前删除 hide 命名节点",
+          "startLine": 169,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:202",
+          "name": "node 自身 TRS 作用于自己的 mesh（parent mesh 顶点 = P·v）",
+          "startLine": 202,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:211",
+          "name": "parent + child matrix composition 正确（child mesh 顶点 = P·C·v）",
+          "startLine": 211,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:221",
+          "name": "child 子树再嵌套：worldMatrix 逐级合成（P·C·G·v）",
+          "startLine": 221,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:233",
+          "name": "与 collectNodeTriangles 同一 hierarchy 语义（同树顶点一致）",
+          "startLine": 233,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:249",
+          "name": "真实长条（3.5m × 0.087m）保留——320px 下 110×2.7px 可见，不能算 noise",
+          "startLine": 249,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:255",
+          "name": "数值 sliver（3.5m × 0.001m）过滤（bbox 窄边 < 5mm）",
+          "startLine": 255,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:261",
+          "name": "自交 ring（bowtie，polygon-clipping 数值伪影）过滤",
+          "startLine": 261,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:267",
+          "name": "完全重合的 duplicate polygon 去重",
+          "startLine": 267,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:274",
+          "name": "near-zero 面积过滤",
+          "startLine": 274,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:280",
+          "name": "确定性：相同输入两次输出一致",
+          "startLine": 280,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:290",
+          "name": "被上层完全遮挡的三角形可见像素 = 0（tracks 语义）",
+          "startLine": 290,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:295",
+          "name": "部分可见的组件保留（可见像素 > 0）",
+          "startLine": 295,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:299",
+          "name": "按输入索引对齐（非 top-facing = 0）",
+          "startLine": 299,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:305",
+          "name": "groups 参数：按组累计赢家像素（surface 级可见性）",
+          "startLine": 305,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:310",
+          "name": "确定性：相同输入两次输出一致 + visibleMask 可用",
+          "startLine": 310,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:322",
+          "name": "turrets/tracks/guns 数组最后 = 默认配置（不假设 turret_01/gun_01 永远最终模块）",
+          "startLine": 322,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:334",
+          "name": "缺 model_id 显式报错",
+          "startLine": 334,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:343",
+          "name": "turreted：只选 selected turret/gun（alternate 模块排除）",
+          "startLine": 343,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:352",
+          "name": "turretless：gun/mantlet（casemate）全部 bake 进 hull 场景，无独立 turret 层",
+          "startLine": 352,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:359",
+          "name": "不依赖 display name（纯节点名匹配，无名称推断）",
+          "startLine": 359,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:365",
+          "name": "modelPivot = correctZYTuple(hullOrigin) + correctZYTuple(turretOrigin)",
+          "startLine": 365,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:372",
+          "name": "hullOrigin 与 turretOrigin 向量相加（含非零 track origin 情形）",
+          "startLine": 372,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:381",
+          "name": "缺失 origin 按零向量处理（track origin 常缺失）",
+          "startLine": 381,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.asset-contracts:388",
+          "name": "不消费 initial_turret_rotation（仅影响初始朝向角，不影响顶视 pivot——minotauro pitch=3° 证据）",
+          "startLine": 388,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/vehicle-models/extractor.geometry.test.js",
       "sources": [
         {
           "sourcePath": "(dynamic)",
@@ -12800,40 +13137,76 @@
           "varName": "buf"
         }
       ],
-      "caseCount": 92,
-      "textAssertionCases": 7,
+      "caseCount": 43,
+      "textAssertionCases": 4,
       "parseAnomalies": [],
       "cases": [
         {
-          "id": "extractor:64",
+          "id": "extractor.geometry:41",
           "name": "DAVA (x, y高, z长) → 模型 (x, z, y)",
-          "startLine": 64,
+          "startLine": 41,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:71",
+          "id": "extractor.geometry:48",
           "name": "非零 turretOrigin 案例（炮塔座圈在车体前部）",
-          "startLine": 71,
+          "startLine": 48,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:78",
+          "id": "extractor.geometry:55",
           "name": "矩形点集凸包 = 4 顶点",
-          "startLine": 78,
+          "startLine": 55,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:85",
+          "id": "extractor.geometry:62",
           "name": "确定性：相同输入两次输出一致",
+          "startLine": 62,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:66",
+          "name": "bounds2D 正确",
+          "startLine": 66,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:74",
+          "name": "fit 保持长宽比且居中（scale 由几何决定）",
+          "startLine": 74,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:79",
+          "name": "车头（+y）朝 SVG 12 点",
+          "startLine": 79,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:85",
+          "name": "hullToPath 输出闭合 path",
           "startLine": 85,
           "textAssertion": false,
           "usesVars": [],
@@ -12841,54 +13214,18 @@
           "parseError": null
         },
         {
-          "id": "extractor:89",
-          "name": "bounds2D 正确",
-          "startLine": 89,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:97",
-          "name": "fit 保持长宽比且居中（scale 由几何决定）",
-          "startLine": 97,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:102",
-          "name": "车头（+y）朝 SVG 12 点",
-          "startLine": 102,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:108",
-          "name": "hullToPath 输出闭合 path",
-          "startLine": 108,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:115",
+          "id": "extractor.geometry:92",
           "name": "fit bounds 无效（零面积）抛错",
-          "startLine": 115,
+          "startLine": 92,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:121",
+          "id": "extractor.geometry:98",
           "name": "输出 source.provider=blitzkit + generation.method",
-          "startLine": 121,
+          "startLine": 98,
           "textAssertion": false,
           "usesVars": [
             "meta"
@@ -12897,9 +13234,9 @@
           "parseError": null
         },
         {
-          "id": "extractor:148",
+          "id": "extractor.geometry:125",
           "name": "L 形凹轮廓不被 convex hull 填平（union ≠ hull）",
-          "startLine": 148,
+          "startLine": 125,
           "textAssertion": false,
           "usesVars": [
             "hull"
@@ -12908,8 +13245,35 @@
           "parseError": null
         },
         {
-          "id": "extractor:160",
+          "id": "extractor.geometry:137",
           "name": "projectTriangles 过滤退化（垂直面投影为线）",
+          "startLine": 137,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:145",
+          "name": "polygon union 确定性：相同输入两次输出一致",
+          "startLine": 145,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:148",
+          "name": "silhouetteToSvgPaths 输出 evenodd path（含洞支持）",
+          "startLine": 148,
+          "textAssertion": false,
+          "usesVars": [],
+          "patterns": [],
+          "parseError": null
+        },
+        {
+          "id": "extractor.geometry:160",
+          "name": "索引网格按 indices 构建三角形",
           "startLine": 160,
           "textAssertion": false,
           "usesVars": [],
@@ -12917,8 +13281,8 @@
           "parseError": null
         },
         {
-          "id": "extractor:168",
-          "name": "polygon union 确定性：相同输入两次输出一致",
+          "id": "extractor.geometry:168",
+          "name": "无索引网格按连续 3 顶点",
           "startLine": 168,
           "textAssertion": false,
           "usesVars": [],
@@ -12926,63 +13290,36 @@
           "parseError": null
         },
         {
-          "id": "extractor:171",
-          "name": "silhouetteToSvgPaths 输出 evenodd path（含洞支持）",
-          "startLine": 171,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:183",
-          "name": "索引网格按 indices 构建三角形",
-          "startLine": 183,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:191",
-          "name": "无索引网格按连续 3 顶点",
-          "startLine": 191,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:199",
+          "id": "extractor.geometry:176",
           "name": "simplifyRing 合并共线点且保持形状",
-          "startLine": 199,
+          "startLine": 176,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:207",
+          "id": "extractor.geometry:184",
           "name": "simplifyRing 去重相邻/闭合重复点且不丢真实角点（polygon-clipping 退化修复）",
-          "startLine": 207,
+          "startLine": 184,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:225",
+          "id": "extractor.geometry:202",
           "name": "simplifyRing 不缩小 polygon（bbox 保持不变）",
-          "startLine": 225,
+          "startLine": 202,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:241",
+          "id": "extractor.geometry:218",
           "name": "Maus 资产：hide_elements 纳入后 turretBounds 保持（hide 在炮塔内，不改变轮廓；mantlet 独立）",
-          "startLine": 241,
+          "startLine": 218,
           "textAssertion": true,
           "usesVars": [
             "meta",
@@ -12994,9 +13331,9 @@
           "parseError": null
         },
         {
-          "id": "extractor:252",
+          "id": "extractor.geometry:229",
           "name": "metadata.generation.method = blitzkit-model-topdown-texture-bake（正式契约）",
-          "startLine": 252,
+          "startLine": 229,
           "textAssertion": true,
           "usesVars": [
             "meta"
@@ -13007,171 +13344,171 @@
           "parseError": null
         },
         {
-          "id": "extractor:260",
+          "id": "extractor.geometry:237",
           "name": "水平/垂直/倾斜三角形的 top-facing 判定（normal.z 阈值）",
-          "startLine": 260,
+          "startLine": 237,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:269",
+          "id": "extractor.geometry:246",
           "name": "高度层聚类：不同高度平面分离，连续曲面合并",
-          "startLine": 269,
+          "startLine": 246,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:278",
+          "id": "extractor.geometry:255",
           "name": "小区域（minAreaM2）被过滤，大区域保留",
-          "startLine": 278,
+          "startLine": 255,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:285",
+          "id": "extractor.geometry:262",
           "name": "高度层内碎片 polygon 单独过滤（防碎块混入）",
-          "startLine": 285,
+          "startLine": 262,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:298",
+          "id": "extractor.geometry:275",
           "name": "平台边缘边（顶面 + 垂直壁邻居）→ 结构边；同高度共面 → 无边",
-          "startLine": 298,
+          "startLine": 275,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:313",
+          "id": "extractor.geometry:290",
           "name": "共享边去重（一条边只输出一次）",
-          "startLine": 313,
+          "startLine": 290,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:324",
+          "id": "extractor.geometry:301",
           "name": "短边（minEdgeLenM）被过滤",
-          "startLine": 324,
+          "startLine": 301,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:332",
+          "id": "extractor.geometry:309",
           "name": "高度差驱动：法线突变但高度差小（格栅凹槽）→ 不输出",
-          "startLine": 332,
+          "startLine": 309,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:341",
+          "id": "extractor.geometry:318",
           "name": "确定性：相同输入两次输出一致",
-          "startLine": 341,
+          "startLine": 318,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:348",
+          "id": "extractor.geometry:325",
           "name": "clusterEdges：近乎平行且位置重合的边聚类为一条（斜切台阶交叉线去重）",
-          "startLine": 348,
+          "startLine": 325,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:363",
+          "id": "extractor.geometry:340",
           "name": "clusterEdges：真实平行台阶（距离 > maxDistM）保持独立",
-          "startLine": 363,
+          "startLine": 340,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:373",
+          "id": "extractor.geometry:350",
           "name": "高保真：同一平滑曲面内共享边（tessellation）不输出",
-          "startLine": 373,
+          "startLine": 350,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:382",
+          "id": "extractor.geometry:359",
           "name": "高保真：真实 feature boundary（高度不连续）保留，无数量上限",
-          "startLine": 382,
+          "startLine": 359,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:393",
+          "id": "extractor.geometry:370",
           "name": "高保真：surface-edge 需要显著壁高（> heightDeltaM）——低模斜面面片台阶壁不输出",
-          "startLine": 393,
+          "startLine": 370,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:411",
+          "id": "extractor.geometry:388",
           "name": "silhouette/track/mantlet/gun 恒为 vehicle-primary",
-          "startLine": 411,
+          "startLine": 388,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:417",
+          "id": "extractor.geometry:394",
           "name": "surface 按面积分级（primary ≥ 0.5 m²、secondary 0.1-0.5、micro < 0.1）",
-          "startLine": 417,
+          "startLine": 394,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:422",
+          "id": "extractor.geometry:399",
           "name": "bump 按面积分级（secondary ≥ 0.1、micro < 0.1——真实小 hatch 归 micro 而非删除）",
-          "startLine": 422,
+          "startLine": 399,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:426",
+          "id": "extractor.geometry:403",
           "name": "edge 按长度分级（secondary ≥ 3m、micro < 3m）",
-          "startLine": 426,
+          "startLine": 403,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:433",
+          "id": "extractor.geometry:410",
           "name": "正式资产：hull.webp 为 WebP 二进制（texture-bake 契约，非 SVG）",
-          "startLine": 433,
+          "startLine": 410,
           "textAssertion": true,
           "usesVars": [
             "hull",
@@ -13183,9 +13520,9 @@
           "parseError": null
         },
         {
-          "id": "extractor:439",
+          "id": "extractor.geometry:416",
           "name": "turreted 正式资产：turret.webp 存在（turret + mantlet + gun 刚性层）",
-          "startLine": 439,
+          "startLine": 416,
           "textAssertion": true,
           "usesVars": [
             "buf"
@@ -13196,9 +13533,9 @@
           "parseError": null
         },
         {
-          "id": "extractor:444",
+          "id": "extractor.geometry:421",
           "name": "turretPivot 稳定（0/90/180/270 旋转不动点）且 metadata method = texture-bake",
-          "startLine": 444,
+          "startLine": 421,
           "textAssertion": false,
           "usesVars": [
             "meta"
@@ -13207,102 +13544,119 @@
           "parseError": null
         },
         {
-          "id": "extractor:455",
+          "id": "extractor.geometry:432",
           "name": "同源同输出：再次生成（纯函数路径）结果一致",
-          "startLine": 455,
+          "startLine": 432,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/vehicle-models/extractor.surface-merging.test.js",
+      "sources": [
+        {
+          "sourcePath": "(dynamic)",
+          "varName": "buf"
         },
         {
-          "id": "extractor:464",
+          "sourcePath": "(dynamic)",
+          "varName": "meta"
+        }
+      ],
+      "caseCount": 15,
+      "textAssertionCases": 1,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "extractor.surface-merging:17",
           "name": "projectTopFacingPolygons：每个 top-facing 三角形独立投影（raw ground truth，无 merge）",
-          "startLine": 464,
+          "startLine": 17,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:478",
+          "id": "extractor.surface-merging:31",
           "name": "projectTopFacingPolygons 确定性：相同输入两次输出一致",
-          "startLine": 478,
+          "startLine": 31,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:485",
+          "id": "extractor.surface-merging:38",
           "name": "共面相邻三角形合并为一个矩形表面（共享对角线不得输出）",
-          "startLine": 485,
+          "startLine": 38,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:498",
+          "id": "extractor.surface-merging:51",
           "name": "近共面连续曲面合并（环带式斜面不炸成三角马赛克）",
-          "startLine": 498,
+          "startLine": 51,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:514",
+          "id": "extractor.surface-merging:67",
           "name": "真实高度台阶保留为两个表面",
-          "startLine": 514,
+          "startLine": 67,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:524",
+          "id": "extractor.surface-merging:77",
           "name": "隔离凸起（hatch，与基底隔垂直壁）保留为独立表面",
-          "startLine": 524,
+          "startLine": 77,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:534",
+          "id": "extractor.surface-merging:87",
           "name": "小凸起（只占主面 4%）不因相对占比被拒——保留为独立表面",
-          "startLine": 534,
+          "startLine": 87,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:544",
+          "id": "extractor.surface-merging:97",
           "name": "遮挡过滤：被高处表面完全覆盖的 hidden geometry 剔除",
-          "startLine": 544,
+          "startLine": 97,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:556",
+          "id": "extractor.surface-merging:109",
           "name": "mergeVisualSurfaces 确定性：相同输入两次输出一致",
-          "startLine": 556,
+          "startLine": 109,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:565",
+          "id": "extractor.surface-merging:118",
           "name": "正式资产 hull.webp / turret.webp 为 WebP 二进制（texture-bake 契约取代 SVG）",
-          "startLine": 565,
+          "startLine": 118,
           "textAssertion": true,
           "usesVars": [
-            "hull",
             "buf"
           ],
           "patterns": [
@@ -13311,384 +13665,49 @@
           "parseError": null
         },
         {
-          "id": "extractor:572",
+          "id": "extractor.surface-merging:125",
           "name": "不同 component/node boundary：无共享边的独立表面不合并（除非显式允许）",
-          "startLine": 572,
+          "startLine": 125,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:581",
+          "id": "extractor.surface-merging:134",
           "name": "低噪声高度差（斜面面片间）合并——连续曲面不炸碎",
-          "startLine": 581,
+          "startLine": 134,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:591",
+          "id": "extractor.surface-merging:144",
           "name": "真实 deck step（垂直壁分隔）→ 不合并",
-          "startLine": 591,
+          "startLine": 144,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:600",
+          "id": "extractor.surface-merging:153",
           "name": "bounding-box projection fidelity：turret source bbox 与 bake turretBounds 比例一致",
-          "startLine": 600,
+          "startLine": 153,
           "textAssertion": false,
           "usesVars": [
-            "meta",
-            "hull"
+            "meta"
           ],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "extractor:613",
+          "id": "extractor.surface-merging:166",
           "name": "feature-fidelity-report 确定性：相同输入两次输出一致",
-          "startLine": 613,
+          "startLine": 166,
           "textAssertion": false,
           "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:627",
-          "name": "hull.webp / turret.webp / metadata.json / bake-report.json 存在且通过 validateModelEntry",
-          "startLine": 627,
-          "textAssertion": false,
-          "usesVars": [
-            "hull"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:640",
-          "name": "正式资产契约：WebP 二进制 / 320 logical + 640 physical / 无 base64 内嵌",
-          "startLine": 640,
-          "textAssertion": true,
-          "usesVars": [
-            "hull",
-            "buf"
-          ],
-          "patterns": [
-            "includes",
-            "slice"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "extractor:648",
-          "name": "metadata.json：source.provider=blitzkit、tankId=6929、turretPivot 在画布内",
-          "startLine": 648,
-          "textAssertion": false,
-          "usesVars": [
-            "meta"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:658",
-          "name": "turretPivot 稳定性：0/90/180/270 旋转不动点（任务 11）",
-          "startLine": 658,
-          "textAssertion": false,
-          "usesVars": [
-            "meta"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:667",
-          "name": "高保真：真实比例无夸大——gun 宽度与模型投影一致（faithful geometry scale，bake 无放大）",
-          "startLine": 667,
-          "textAssertion": false,
-          "usesVars": [
-            "meta"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:680",
-          "name": "高保真：Source-faithful 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）",
-          "startLine": 680,
-          "textAssertion": false,
-          "usesVars": [
-            "meta"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:689",
-          "name": "确定性：extractor 纯函数相同输入两次输出一致",
-          "startLine": 689,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:745",
-          "name": "matched render node 的 hide_elements child 会被采集（BlitzKit 实际渲染整个子树）",
-          "startLine": 745,
-          "textAssertion": false,
-          "usesVars": [
-            "hull"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:752",
-          "name": "非 TankModel layer 的无关 mask 节点不会被采集",
-          "startLine": 752,
-          "textAssertion": false,
-          "usesVars": [
-            "hull"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:758",
-          "name": "不是通过名字黑名单提前删除 hide 命名节点",
-          "startLine": 758,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:791",
-          "name": "node 自身 TRS 作用于自己的 mesh（parent mesh 顶点 = P·v）",
-          "startLine": 791,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:800",
-          "name": "parent + child matrix composition 正确（child mesh 顶点 = P·C·v）",
-          "startLine": 800,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:810",
-          "name": "child 子树再嵌套：worldMatrix 逐级合成（P·C·G·v）",
-          "startLine": 810,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:822",
-          "name": "与 collectNodeTriangles 同一 hierarchy 语义（同树顶点一致）",
-          "startLine": 822,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:838",
-          "name": "真实长条（3.5m × 0.087m）保留——320px 下 110×2.7px 可见，不能算 noise",
-          "startLine": 838,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:844",
-          "name": "数值 sliver（3.5m × 0.001m）过滤（bbox 窄边 < 5mm）",
-          "startLine": 844,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:850",
-          "name": "自交 ring（bowtie，polygon-clipping 数值伪影）过滤",
-          "startLine": 850,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:856",
-          "name": "完全重合的 duplicate polygon 去重",
-          "startLine": 856,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:863",
-          "name": "near-zero 面积过滤",
-          "startLine": 863,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:869",
-          "name": "确定性：相同输入两次输出一致",
-          "startLine": 869,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:879",
-          "name": "被上层完全遮挡的三角形可见像素 = 0（tracks 语义）",
-          "startLine": 879,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:884",
-          "name": "部分可见的组件保留（可见像素 > 0）",
-          "startLine": 884,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:888",
-          "name": "按输入索引对齐（非 top-facing = 0）",
-          "startLine": 888,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:894",
-          "name": "groups 参数：按组累计赢家像素（surface 级可见性）",
-          "startLine": 894,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:899",
-          "name": "确定性：相同输入两次输出一致 + visibleMask 可用",
-          "startLine": 899,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:911",
-          "name": "turrets/tracks/guns 数组最后 = 默认配置（不假设 turret_01/gun_01 永远最终模块）",
-          "startLine": 911,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:923",
-          "name": "缺 model_id 显式报错",
-          "startLine": 923,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:932",
-          "name": "turreted：只选 selected turret/gun（alternate 模块排除）",
-          "startLine": 932,
-          "textAssertion": true,
-          "usesVars": [
-            "hull"
-          ],
-          "patterns": [
-            "toContain"
-          ],
-          "parseError": null
-        },
-        {
-          "id": "extractor:941",
-          "name": "turretless：gun/mantlet（casemate）全部 bake 进 hull 场景，无独立 turret 层",
-          "startLine": 941,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:948",
-          "name": "不依赖 display name（纯节点名匹配，无名称推断）",
-          "startLine": 948,
-          "textAssertion": false,
-          "usesVars": [
-            "hull"
-          ],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:954",
-          "name": "modelPivot = correctZYTuple(hullOrigin) + correctZYTuple(turretOrigin)",
-          "startLine": 954,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:961",
-          "name": "hullOrigin 与 turretOrigin 向量相加（含非零 track origin 情形）",
-          "startLine": 961,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:970",
-          "name": "缺失 origin 按零向量处理（track origin 常缺失）",
-          "startLine": 970,
-          "textAssertion": false,
-          "usesVars": [],
-          "patterns": [],
-          "parseError": null
-        },
-        {
-          "id": "extractor:977",
-          "name": "不消费 initial_turret_rotation（仅影响初始朝向角，不影响顶视 pivot——minotauro pitch=3° 证据）",
-          "startLine": 977,
-          "textAssertion": false,
-          "usesVars": [
-            "hull"
-          ],
           "patterns": [],
           "parseError": null
         }
