@@ -267,6 +267,15 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 <style scoped>
 .vehicle-label-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: var(--pb-z-canvas); }
 .vehicle-label-overlay[hidden], .vehicle-label-anchor[hidden] { display: none; }
+/* 3D 覆盖层：名牌卡不用 backdrop-filter。它背后的画布每帧都在变，磨砂玻璃会让合成器
+   每帧对 14 块名牌重新采样并模糊底下的 WebGL 画面——1440p 实测帧间隔 p50 32.9 ms
+   （15 个 >50 ms 帧），去掉后 16.0 ms；而同窗口场景自身的 GPU 主 pass 只有 ~9 ms、
+   animate 总计 ~4 ms。代价是失去「磨砂玻璃」质感，改用更实的平面底色（比 2D 的 45%
+   磨砂底高一档）压住亮地形；2D 战术图是静态底图，仍用 PlaybackVehicleLabel 的磨砂呈现。 */
+.vehicle-label-overlay :deep(.pb-labels) {
+  backdrop-filter: none;
+  background: color-mix(in oklab, var(--color-canvas) 58%, transparent);
+}
 .vehicle-label-overlay.label-layer-static .vehicle-class-button { pointer-events: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
 .label-occluded { opacity: var(--pb-label-occluded-opacity, .35); }
