@@ -495,12 +495,18 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-variant-59"]').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('mapId')).toBe(42)
     expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    // 基础变体：标题走本地化 mapLabel（不是资产 display），出生点用 nt0 档案
+    expect(wrapper.find('.map-stage-name').text()).toBe('滩涂阵地')
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')?.length).toBeGreaterThan(0)
     await wrapper.find('[data-testid="map-variant-58"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query.variant).toBe('58')
     const pane = wrapper.findComponent({ name: 'MapPreview3DPane' })
     expect(pane.props('mapId')).toBe(58)            // 3D 变体裁剪按 map_id
     expect(pane.props('basesKind')).toBe('assault') // nt1 只有控制点 → 遭遇
+    // 额外变体：本地化未登记 → 回退资产 display；nt1 无已验证出生点档案 → 隐藏
+    expect(wrapper.find('.map-stage-name').text()).toBe('Normandy - Hills')
+    expect(pane.props('spawnPoints')).toBe(null)
     await wrapper.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query.variant).toBeUndefined()

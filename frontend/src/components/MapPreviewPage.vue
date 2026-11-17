@@ -20,7 +20,7 @@ import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
 import { dataVersionId } from '../scene/assetBase.js'
 import { mapImages } from '../data/mapImages.js'
 import { mapBases } from '../data/mapBases.js'
-import { mapGridProfile } from '../data/mapSemantics.js'
+import { mapGridProfile, profileMatchesVariant } from '../data/mapSemantics.js'
 import { hasChineseMapName, mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
 import AppButton from './AppButton.vue'
@@ -169,8 +169,20 @@ const selectedVariant = computed(() => {
   const id = Number(route.query.variant)
   return variants.find((v) => v.id === id) || variants[0] || null
 })
-/** 当前变体的展示名：变体条目自带 pack display（Normandy - Hills 等）。 */
-const selectedName = computed(() => selectedVariant.value?.display || selected.value?.name || '')
+/**
+ * 当前变体的展示名：基础变体沿用已本地化的 selected.name（切语言即时更新）；
+ * 额外变体先按 variantKey 本地化，未登记（如 neptune_01）再回退资产 display。
+ */
+const selectedName = computed(() => {
+  const base = selected.value
+  const variant = selectedVariant.value
+  if (!base) return ''
+  const baseVariantId = base.variants?.[0]?.id
+  if (!variant || variant.id === baseVariantId) return base.name
+  const key = variant.variantKey || ''
+  const localized = key ? mapLabel(key, locale.value) : key
+  return localized && localized !== key ? localized : (variant.display || base.name)
+})
 /** 当前变体的基地点位：mapBases[key].variants[label]（标签由 index 下发）。 */
 const selectedBases = computed(() => {
   const entry = selected.value ? mapBases[selected.value.key] : null
@@ -197,7 +209,12 @@ const basesKind = computed(() => resolveBasesKind(selectedBases.value, route.que
  */
 const spawnPoints = computed(() => {
   if (!selected.value) return null
-  return mapGridProfile(selected.value.key)?.spawnPoints ?? null
+  const profile = mapGridProfile(selected.value.key)
+  // 语义档案标注了 battleVariant（如 neptune=nt0）时，只有该变体可用；
+  // nt1/nt2 没有已验证数据 ⇒ 隐藏，不能把基础档位的出生点当成变体事实。
+  return profileMatchesVariant(profile, selectedVariant.value?.variant)
+    ? (profile?.spawnPoints ?? null)
+    : null
 })
 const basesOptions = computed(() => {
   const bases = selectedBases.value
@@ -381,7 +398,7 @@ const modeOptions = computed(() => [
           <MapPreview3DPane :map-id="selectedVariant?.id ?? selected.mapId" :map-name="selectedName" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases="selectedBases" :bases-kind="basesKind" :active="mode === '2d'" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases="selectedBases" :bases-kind="basesKind" :variant="selectedVariant?.variant ?? null" :active="mode === '2d'" />
         </div>
       </div>
     </template>

@@ -18,7 +18,7 @@ import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import { mapBases } from '../data/mapBases.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { mapGridProfile } from '../data/mapSemantics.js'
+import { mapGridProfile, profileMatchesVariant } from '../data/mapSemantics.js'
 import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
@@ -59,6 +59,8 @@ const props = defineProps({
    * 缺省回退 mapBases[mapKey]（单变体地图/旧调用）。
    */
   bases: { type: Object, default: null },
+  /** 当前变体标签（nt0/nt1…）：与语义档案 battleVariant 不符时隐藏该档出生点/边界。 */
+  variant: { type: String, default: null },
   /** 页面 v-show 生命周期闸门：失活时退出全屏，避免全屏落在隐藏面板上 */
   active: { type: Boolean, default: true },
 })
@@ -76,10 +78,14 @@ const image = computed(() => basemapImage.value)
 const overview = computed(() => {
   const key = String(props.mapKey).toLowerCase()
   const bounds = playableBounds[key]
+  const profile = mapGridProfile(key)
+  // 语义档案的 battleVariant 只代表该变体；不匹配 = 该变体没有已验证的出生点/可玩
+  // 边界 ⇒ 两者都隐藏（不能把 nt0 的档案画到 nt1/nt2 上）。
+  const variantOk = profileMatchesVariant(profile, props.variant)
   return {
     mapCode: props.mapKey,
-    spawnPoints: mapGridProfile(key)?.spawnPoints ?? [],
-    ...(bounds ? { playableBounds: bounds } : {}),
+    spawnPoints: variantOk ? (profile?.spawnPoints ?? []) : [],
+    ...(variantOk && bounds ? { playableBounds: bounds } : {}),
   }
 })
 const mapView = computed(() => createMapView(image.value, overview.value))

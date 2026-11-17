@@ -126,6 +126,7 @@ export function makeGrassMaterial(map: THREE.Texture | null, params: GrassDoc['p
     },
     vertexShader: `
       #include <common>
+      #include <logdepthbuf_pars_vertex>
       uniform float uTime;
       uniform float uAmp;
       uniform float uSpring;
@@ -148,14 +149,18 @@ export function makeGrassMaterial(map: THREE.Texture | null, params: GrassDoc['p
         float sway = sin(uTime * uSpring + phase) * uAmp * h * h;
         p.xy += vec2(sway, sway * 0.45);
         gl_Position = projectionMatrix * viewMatrix * im * vec4(p, 1.0);
+        #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `
+      #include <common>
+      #include <logdepthbuf_pars_fragment>
       uniform sampler2D map;
       uniform float uColorMul;
       uniform float uAlphaCutoff;
       varying vec2 vUv;
       varying vec3 vVegColor;
       void main() {
+        #include <logdepthbuf_fragment>
         vec4 c = texture2D(map, vUv);
         if (c.a < uAlphaCutoff) discard;
         // 客户端 grass-fp.sl:103（isLit=false 分支）：
@@ -237,6 +242,7 @@ export function buildGrassMeshes(
   const material = makeGrassMaterial(opts.albedo || null, doc.params, maxZ)
   const materials = [material]
   const ownedGeometries: THREE.BufferGeometry[] = []
+  const instancedMeshes: THREE.InstancedMesh[] = []
   for (const bucket of buckets.values()) {
     const proto = geometries[bucket.variation]
     if (!proto) continue
@@ -246,6 +252,7 @@ export function buildGrassMeshes(
       new Float32Array(bucket.colors), 3))
     ownedGeometries.push(geo)
     const mesh = new THREE.InstancedMesh(geo, material, bucket.matrices.length)
+    instancedMeshes.push(mesh)
     for (let k = 0; k < bucket.matrices.length; k++) mesh.setMatrixAt(k, bucket.matrices[k])
     mesh.instanceMatrix.needsUpdate = true
     if (typeof mesh.computeBoundingSphere === 'function') mesh.computeBoundingSphere()
@@ -258,6 +265,7 @@ export function buildGrassMeshes(
     materials,
     dispose() {
       material.dispose()
+      for (const mesh of instancedMeshes) mesh.dispose()   // 释放 instanceMatrix GPU 缓冲
       for (const g of ownedGeometries) g.dispose()
       group.clear()
     },

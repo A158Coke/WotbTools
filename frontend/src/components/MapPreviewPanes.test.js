@@ -60,6 +60,7 @@ import { mapImages } from '../data/mapImages.js'
 import { playableBounds } from '../data/playableBounds.js'
 import mountainSemantic from '../../../common/map-semantics/21_mountain_mnt.semantic.json'
 import milbaseSemantic from '../../../common/map-semantics/24_milibase_mlb.semantic.json'
+import neptuneSemantic from '../../../common/map-semantics/33_neptune_nt.semantic.json'
 
 /**
  * 地图预览 2D 标注契约：
@@ -279,6 +280,17 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
     const overview = wrapper.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(overview.playableBounds).toEqual(playableBounds.mountain)
     expect(overview.playableBounds).toEqual(mountainSemantic.playableBoundsMeters)
+  })
+
+  it('变体与语义 battleVariant 不符：基础 nt0 档案不得画到 nt1（spawn/边界都隐藏）', () => {
+    const base = mountPane({ kind: 'bundled', image: mapImages.neptune }, { mapKey: 'neptune', variant: 'nt0' })
+    const baseOverview = base.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(baseOverview.spawnPoints).toEqual(rawSpawns(neptuneSemantic))
+    expect(baseOverview.playableBounds).toBeTruthy()
+    const hills = mountPane({ kind: 'bundled', image: mapImages.neptune }, { mapKey: 'neptune', variant: 'nt1' })
+    const hillsOverview = hills.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(hillsOverview.spawnPoints).toEqual([])
+    expect('playableBounds' in hillsOverview).toBe(false)
   })
 
   it('moon（无语义 mapCodes）：spawn 为空且 overview 不带 playableBounds（fail-closed）', () => {

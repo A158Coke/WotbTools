@@ -17,3 +17,20 @@ export function mapGridProfile(mapKey: string | number): MapGridProfile | null {
   }) as Record<string, unknown>))
   return gridProfiles.get(String(mapKey).toLowerCase()) ?? null
 }
+
+/**
+ * 语义档案是否可代表当前变体。档案带 `battleVariant`（如 neptune=nt0）时只能用于该
+ * 变体；选中变体与档案不一致 ⇒ 该变体的出生点/可玩边界没有已验证数据，调用方必须
+ * 隐藏（fail-closed），不能把 nt0 的 battlePoints 当作 nt1/nt2 的地图事实。
+ * 任一侧未标注（单变体旧档案 / 未选变体）→ 允许，保持既有单变体行为。
+ */
+export function profileMatchesVariant(
+  profile: MapGridProfile | null | undefined,
+  variant: string | null | undefined,
+): boolean {
+  if (!profile) return false
+  const tagged = (profile.battleVariant || '').trim().toLowerCase()
+  const selected = String(variant || '').trim().toLowerCase()
+  if (!tagged || !selected) return true
+  return tagged === selected
+}

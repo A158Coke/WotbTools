@@ -16,6 +16,8 @@ export interface WaterReflectionRuntime {
   /** 按当前画质档重配 RT 比例 / 更新间隔 / 开关（建场景与运行时切档共用）。 */
   apply(): void
   update(renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera): void
+  /** 单次 dirty frame（seek / 静态地图切图）强制刷新反射。 */
+  requestRefresh(): void
   dispose(): void
 }
 
@@ -37,5 +39,5 @@ export function createWaterReflectionRuntime(deps: WaterReflectionRuntimeDeps): 
   if (deps.debug && typeof window !== 'undefined') {
     window.__waterReflection = reflection
   }
-  return { apply, update: reflection.update, dispose: reflection.dispose }
+  return { apply, update: reflection.update, requestRefresh: reflection.requestRefresh, dispose: reflection.dispose }
 }

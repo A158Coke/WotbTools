@@ -29,6 +29,8 @@ export interface WaterReflection {
   /** 每帧主渲染前调用；内部负责 resize / 镜像渲染 / uniform 回填。 */
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void
   setEnabled(on: boolean): void
+  /** 请求下一帧强制刷新一次（seek / 按需渲染的单次 dirty frame；不受隔帧间隔限制）。 */
+  requestRefresh(): void
   /** 运行时按画质档调整 RT 比例/更新间隔（RT 尺寸在下一帧按新比例惰性重建）。 */
   configure(options: { scale?: number; intervalFrames?: number }): void
   /** 诊断/单测：当前反射 RT（未创建时为 null）。 */
@@ -98,6 +100,7 @@ export function createWaterReflection({
 }: WaterReflectionOptions): WaterReflection {
   let enabled = false
   let frame = 0
+  let forceRefresh = false
   let rtScale = scale
   let updateInterval = Math.max(1, Math.floor(intervalFrames) || 1)
   let target: THREE.WebGLRenderTarget | null = null
@@ -148,7 +151,11 @@ export function createWaterReflection({
       if (!enabled) return
       frame++
       // 画质档可把反射降为隔帧更新（W3）：跳过帧保留上一张 RT/uniform，不重建。
-      if (updateInterval > 1 && (frame - 1) % updateInterval !== 0) return
+      // 但按需渲染的 seek/相机静止场景只有一次 dirty frame，不能吞掉——requestRefresh
+      // 让该帧无条件刷新；否则反射会停在 seek 前的车辆位置（下一次 rAF 也不再画）。
+      const due = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
+      forceRefresh = false
+      if (!due) return
       const level = getWaterLevel()
       const meshes = getWaterMeshes()
       if (level == null || !meshes || !meshes.length) {
@@ -207,7 +214,12 @@ export function createWaterReflection({
         targetW = 0
         targetH = 0
         lastReflectionTex.value = null
+        frame = 0
+        forceRefresh = false
       }
+    },
+    requestRefresh() {
+      forceRefresh = true
     },
     configure(options) {
       if (typeof options?.scale === 'number' && Number.isFinite(options.scale)) rtScale = options.scale
@@ -223,6 +235,8 @@ export function createWaterReflection({
       target = null
       targetW = 0
       targetH = 0
+      frame = 0
+      forceRefresh = false
     },
   }
 }

@@ -199,3 +199,32 @@ describe('createWaterReflection 关档释放', () => {
     refl.dispose()
   })
 })
+
+describe('createWaterReflection 按需渲染强制刷新', () => {
+  it('requestRefresh 让隔帧中的单次 dirty frame 也刷新；关档重置首帧', () => {
+    const mesh = waterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({
+      getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2,
+    })
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)      // frame 1 → render
+    refl.update(renderer, scene, cam)      // frame 2 → skip（连续渲染）
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.requestRefresh()                  // seek / 孤立 dirty frame
+    refl.update(renderer, scene, cam)      // 本应 skip，仍强制刷新
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    // 关档再开档：frame 归零，首个 update 必须建 RT/渲染（不能命中旧间隔）
+    refl.setEnabled(false)
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    // 会话 teardown 后再用同一运行时（换图）：dispose 归零帧计数，新图首帧必须重建 RT
+    refl.dispose()
+    refl.update(renderer, scene, cam)
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.dispose()
+  })
+})

@@ -5,7 +5,7 @@
 //   u8 r / u8 g / u8 b（逐实例植被色）；位置按 meta.bounds 归一化；
 //   scale = 0.4 + q/255×1.2；rot = q/65535×2π。
 // fail-closed：stride 不符 / 长度非整数倍 / bounds 缺失或退化 ⇒ null（不渲染半截草层）。
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { buildGrassMeshes, makeGrassMaterial, parseGrassBin } from './mapGrass.js'
 
@@ -103,6 +103,12 @@ describe('makeGrassMaterial（作者风参数）', () => {
     expect(m.uniforms.uMaxZ.value).toBeCloseTo(1.3, 6)
     expect(m.side).toBe(THREE.DoubleSide)
     expect(m.transparent).toBe(false)
+    // 对数深度：与地形/场景 shader 同一深度域（?logdepth=1 时草不会被地形盖掉）
+    expect(m.vertexShader).toMatch(/#include <common>/)
+    expect(m.vertexShader).toMatch(/#include <logdepthbuf_pars_vertex>/)
+    expect(m.vertexShader).toMatch(/#include <logdepthbuf_vertex>/)
+    expect(m.fragmentShader).toMatch(/#include <logdepthbuf_pars_fragment>/)
+    expect(m.fragmentShader).toMatch(/#include <logdepthbuf_fragment>/)
     m.dispose()
   })
 })
@@ -149,8 +155,11 @@ describe('buildGrassMeshes（变体 × 世界分块 InstancedMesh）', () => {
       expect(attr).toBeTruthy()
       expect(attr.count).toBe(child.count)
     }
+    const children = [...built.group.children]
+    const disposeSpies = children.map((c) => vi.spyOn(c, 'dispose'))
     built.dispose()
     expect(built.group.children.length).toBe(0)
+    for (const spy of disposeSpies) expect(spy).toHaveBeenCalledTimes(1)   // InstancedMesh 实例缓冲
     for (const g of geos) g.dispose()
   })
 

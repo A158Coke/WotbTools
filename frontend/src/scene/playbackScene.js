@@ -235,8 +235,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store, qualityKey: () => QKEY, getScene: () => scene, getSunLight: () => sunLight,
     surfaceHeightAt: (x, z) => mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!rendererCaps?.stencil,
   });
-  // 由下方装配段替换为真正的 feature 应用器（建场景后才有反射句柄）。
+  // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
   let applyQualityFeatures = () => {};
+  let requestWaterReflectionRefresh = () => {};
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -438,7 +439,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     debug: DEBUG,
   })
   applyQualityFeatures = () => waterReflection.apply();
-
+  requestWaterReflectionRefresh = () => waterReflection.requestRefresh();
   // 车辆运行时 owner（#820 Step 4 出仓）：buildVehicles / 位姿采样 / GLB / 悬挂 /
   // applyPose 与车辆 teardown 的唯一归属。canonical 生命事实（sceneLifeAt/visibleAt）
   // 与调色板仍在本闭包，按 deps 注入；POSE_GRID 按引用共享同一可变对象。
@@ -708,7 +709,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
   // 否则那一帧的静止状态会一直停留在旧画面上。
   let frameDirty = true;
-  function invalidate() { frameDirty = true; }
+  function invalidate() { frameDirty = true; requestWaterReflectionRefresh(); }
 
   // 实时帧率（FPS 覆盖层）：rAF 回调间隔的 500ms 窗口均值，每窗口写一次 store
   //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
