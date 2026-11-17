@@ -50,7 +50,7 @@ field4 阵营语义 UNKNOWN。Supremacy 仍独立使用 wrapper12/root11。
   - 以上 unsupported 证据均使对应 HP-loss attribution 与 killer attribution 都 fail-closed（掉血事实保留、attacker=null、attackerReliable=false、observedHpLoss=null、致死窗口 killer=null；victim 仍无法解析的证据不得静默视为「无冲突」）；身份字段只填确实能够解析的部分、confidence 恒 PARTIAL（不得标 EXACT/PROVEN），绝不进入生产伤害统计；
   - 真正截断（payload < 8，无法确认 damage method）→ MALFORMED + TRUNCATED_PAYLOAD，不产出事件。
 
-**证据**：BattlePlaybackHpDamageProbeTest（非 CI 手动探针，-Dprobe.replay=<file>）输出逐车 hpSamples / hpLosses / DAMAGE raw / DESTROYED / KILL；PlaybackCombatReconstructionTest 覆盖 attribution 边界（单攻击者/混合/无通知/窗口左右开闭/击毁击杀推导）。
+**证据**：BattlePlaybackHpDamageProbeTest（非 CI 手动探针，-Dprobe.replay=<file>）输出逐车 hpSamples / hpLosses / DAMAGE raw / DESTROYED / KILL；PlaybackCombatReconstructionTest 与 PlaybackCombatKillerAttributionTest 覆盖 attribution 边界（单攻击者/混合/无通知/窗口左右开闭/击毁击杀推导）。
 
 ## 包格式
 
