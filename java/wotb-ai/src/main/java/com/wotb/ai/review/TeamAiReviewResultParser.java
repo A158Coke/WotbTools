@@ -24,12 +24,8 @@ public final class TeamAiReviewResultParser {
 
     /** Bounded UTF-16 envelope for one provider completion (8192 output tokens by default). */
     private static final int MAX_PROVIDER_OUTPUT_CHARS = 256_000;
-    private static final int MAX_ID_CHARS = 64;
-    private static final int MAX_TITLE_CHARS = 240;
-    private static final int MAX_REASON_CHARS = 2_000;
     private static final int MAX_SUMMARY_CHARS = 4_000;
     private static final int MAX_ANALYSIS_CHARS = 8_000;
-    private static final int MAX_SUGGESTION_CHARS = 6_000;
     private static final int MAX_PLAYER_KEYS_PER_EPISODE = 8;
 
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
@@ -94,9 +90,11 @@ public final class TeamAiReviewResultParser {
                 }
                 collectUnknownFields(node, Set.of("id", "startSec", "endSec", "title", "analysis",
                         "playerKeys"), path, failures, normalizations);
-                final String id = optionalText(node, "id", MAX_ID_CHARS);
-                final String title = optionalText(node, "title", MAX_TITLE_CHARS);
-                final String analysis = optionalText(node, "analysis", MAX_ANALYSIS_CHARS);
+                final String id = TeamAiReviewParserSupport.optionalText(
+                        node, "id", TeamAiReviewParserSupport.MAX_ID_CHARS);
+                final String title = TeamAiReviewParserSupport.optionalText(
+                        node, "title", TeamAiReviewParserSupport.MAX_TITLE_CHARS);
+                final String analysis = TeamAiReviewParserSupport.optionalText(node, "analysis", MAX_ANALYSIS_CHARS);
                 if (id == null || title == null || analysis == null) {
                     dropOptional(Failure.MISSING_REQUIRED_FIELD, path,
                             "episode id, title and analysis must be non-empty strings",
@@ -145,167 +143,24 @@ public final class TeamAiReviewResultParser {
                         title, analysis, validPlayers));
             }
 
-            final List<TeamAiReviewResult.TrainingSuggestion> suggestions = new ArrayList<>();
-            for (int index = 0; index < suggestionNodes.size(); index++) {
-                final JsonNode node = suggestionNodes.get(index);
-                final String path = "trainingSuggestions[" + index + "]";
-                if (node == null || !node.isObject()) {
-                    failures.add(failure(Failure.INVALID_FIELD, path,
-                            FailureCategory.OPTIONAL_REFERENCE, "suggestion object required"));
-                    normalizations.add(new Normalization("training_suggestion_dropped", path));
-                    continue;
-                }
-                if (!hasOnlyFields(node, Set.of("title", "content", "episodeId"))) {
-                    dropOptional(Failure.INVALID_FIELD, path, "unsupported suggestion field",
-                            failures, normalizations);
-                    continue;
-                }
-                final String title = requiredText(node, "title", MAX_TITLE_CHARS);
-                final String content = requiredText(node, "content", MAX_SUGGESTION_CHARS);
-                if (title == null || content == null) {
-                    failures.add(failure(Failure.INVALID_FIELD, path,
-                            FailureCategory.OPTIONAL_REFERENCE,
-                            "title and content must be non-empty strings"));
-                    normalizations.add(new Normalization("training_suggestion_dropped", path));
-                    continue;
-                }
-                final JsonNode episodeIdNode = node.get("episodeId");
-                if (episodeIdNode == null || episodeIdNode.isNull()) {
-                    if (episodeIdNode == null) {
-                        failures.add(failure(Failure.MISSING_REQUIRED_FIELD, path + ".episodeId",
-                                FailureCategory.OPTIONAL_REFERENCE, "nullable episodeId field required"));
-                        normalizations.add(new Normalization("training_suggestion_episode_cleared", path));
-                    }
-                    suggestions.add(new TeamAiReviewResult.TrainingSuggestion(title, content, null));
-                    continue;
-                }
-                final String episodeId = optionalText(node, "episodeId", MAX_ID_CHARS);
-                if (episodeId == null || !episodeIdNode.isTextual()) {
-                    failures.add(failure(Failure.INVALID_FIELD, path + ".episodeId",
-                            FailureCategory.OPTIONAL_REFERENCE, "episodeId must be a string or null"));
-                    normalizations.add(new Normalization("training_suggestion_episode_cleared", path));
-                    suggestions.add(new TeamAiReviewResult.TrainingSuggestion(title, content, null));
-                } else if (!episodeIds.contains(episodeId)) {
-                    failures.add(failure(Failure.INVALID_REFERENCE, path + ".episodeId",
-                            FailureCategory.OPTIONAL_REFERENCE,
-                            "must reference an existing episode id or null"));
-                    normalizations.add(new Normalization("training_suggestion_episode_cleared", path));
-                    suggestions.add(new TeamAiReviewResult.TrainingSuggestion(title, content, null));
-                } else {
-                    suggestions.add(new TeamAiReviewResult.TrainingSuggestion(title, content, episodeId));
-                }
-            }
-
-            final List<TeamAiReviewResult.ReviewFocus> focus = new ArrayList<>();
-            for (int index = 0; index < focusNodes.size(); index++) {
-                final TeamAiReviewResult.ReviewFocus item = parseFocus(
-                        focusNodes.get(index), index, episodeIds, roster, failures, normalizations);
-                if (item != null) {
-                    focus.add(item);
-                }
-            }
-            final List<TeamAiReviewResult.HighContributor> contributors = new ArrayList<>();
-            for (int index = 0; index < contributorNodes.size(); index++) {
-                final TeamAiReviewResult.HighContributor item = parseContributor(
-                        contributorNodes.get(index), index, episodeIds, roster, failures, normalizations);
-                if (item != null) {
-                    contributors.add(item);
-                }
-            }
+            final TeamAiReviewOptionalSectionsParser.Sections optionalSections =
+                    TeamAiReviewOptionalSectionsParser.parse(suggestionNodes, focusNodes,
+                            contributorNodes, episodeIds, roster);
+            optionalSections.failures().forEach(issue -> failures.add(new ParseFailure(
+                    mapFailureCode(issue.code()), issue.path(), FailureCategory.OPTIONAL_REFERENCE,
+                    issue.constraint())));
+            optionalSections.normalizations().forEach(item -> normalizations.add(
+                    new Normalization(item.type(), item.path(), item.count())));
             final TeamAiReviewResult result = new TeamAiReviewResult(
                     new TeamAiReviewResult.Summary(verdict, diagnosis),
-                    List.copyOf(episodes), List.copyOf(suggestions), List.copyOf(focus),
-                    List.copyOf(contributors));
+                    List.copyOf(episodes), optionalSections.suggestions(), optionalSections.focus(),
+                    optionalSections.contributors());
             return normalizations.isEmpty()
                     ? valid(result)
                     : normalized(result, failures, normalizations);
         } catch (final RuntimeException e) {
             return fatal(Failure.INVALID_JSON, "root", "JSON could not be parsed");
         }
-    }
-
-    private static TeamAiReviewResult.ReviewFocus parseFocus(
-            final JsonNode node, final int index, final Set<String> episodeIds,
-            final Set<String> roster, final List<ParseFailure> failures,
-            final List<Normalization> normalizations) {
-        final String path = "reviewFocus[" + index + "]";
-        if (node == null || !node.isObject()) {
-            dropOptional(Failure.INVALID_FIELD, path, "focus object required", failures, normalizations);
-            return null;
-        }
-        if (!hasOnlyFields(node, Set.of("playerKey", "episodeId", "reason"))) {
-            dropOptional(Failure.INVALID_FIELD, path, "unsupported focus field", failures, normalizations);
-            return null;
-        }
-        final String playerKey = requiredText(node, "playerKey", MAX_ID_CHARS);
-        final String episodeId = requiredText(node, "episodeId", MAX_ID_CHARS);
-        final String reason = requiredText(node, "reason", MAX_REASON_CHARS);
-        if (playerKey == null || episodeId == null || reason == null) {
-            dropOptional(Failure.INVALID_FIELD, path, "focus fields are invalid", failures, normalizations);
-            return null;
-        }
-        if (!roster.contains(playerKey)) {
-            addDropFailure(Failure.INVALID_REFERENCE, path + ".playerKey",
-                    "must reference an authoritative roster playerKey", failures, normalizations, path);
-            return null;
-        }
-        if (!episodeIds.contains(episodeId)) {
-            addDropFailure(Failure.INVALID_REFERENCE, path + ".episodeId",
-                    "must reference an existing episode id", failures, normalizations, path);
-            return null;
-        }
-        return new TeamAiReviewResult.ReviewFocus(playerKey, episodeId, reason);
-    }
-
-    private static TeamAiReviewResult.HighContributor parseContributor(
-            final JsonNode node, final int index, final Set<String> episodeIds,
-            final Set<String> roster, final List<ParseFailure> failures,
-            final List<Normalization> normalizations) {
-        final String path = "highContributors[" + index + "]";
-        if (node == null || !node.isObject()) {
-            dropOptional(Failure.INVALID_FIELD, path, "contributor object required", failures, normalizations);
-            return null;
-        }
-        if (!hasOnlyFields(node, Set.of("playerKey", "episodeId", "reason"))) {
-            dropOptional(Failure.INVALID_FIELD, path, "unsupported contributor field",
-                    failures, normalizations);
-            return null;
-        }
-        final String playerKey = requiredText(node, "playerKey", MAX_ID_CHARS);
-        final String episodeId = requiredText(node, "episodeId", MAX_ID_CHARS);
-        final String reason = requiredText(node, "reason", MAX_REASON_CHARS);
-        if (playerKey == null || episodeId == null || reason == null) {
-            dropOptional(Failure.INVALID_FIELD, path, "contributor fields are invalid", failures, normalizations);
-            return null;
-        }
-        if (!roster.contains(playerKey)) {
-            addDropFailure(Failure.INVALID_REFERENCE, path + ".playerKey",
-                    "must reference an authoritative roster playerKey", failures, normalizations, path);
-            return null;
-        }
-        if (!episodeIds.contains(episodeId)) {
-            addDropFailure(Failure.INVALID_REFERENCE, path + ".episodeId",
-                    "must reference an existing episode id", failures, normalizations, path);
-            return null;
-        }
-        return new TeamAiReviewResult.HighContributor(playerKey, episodeId, reason);
-    }
-
-    private static void dropOptional(final Failure code, final String path, final String constraint,
-                                     final List<ParseFailure> failures,
-                                     final List<Normalization> normalizations) {
-        addDropFailure(code, path, constraint, failures, normalizations, path);
-    }
-
-    private static void addDropFailure(final Failure code, final String path, final String constraint,
-                                       final List<ParseFailure> failures,
-                                       final List<Normalization> normalizations,
-                                       final String normalizationPath) {
-        failures.add(failure(code, path, FailureCategory.OPTIONAL_REFERENCE, constraint));
-        final String type = path.startsWith("reviewFocus") ? "review_focus_item_dropped"
-                : path.startsWith("highContributors") ? "high_contributor_item_dropped"
-                : "optional_item_dropped";
-        normalizations.add(new Normalization(type, normalizationPath));
     }
 
     private static void collectUnknownFields(final JsonNode node, final Set<String> allowed,
@@ -324,11 +179,19 @@ public final class TeamAiReviewResultParser {
         }
     }
 
-    private static boolean hasOnlyFields(final JsonNode node, final Set<String> allowed) {
-        for (final var entry : node.properties()) {
-            if (!allowed.contains(entry.getKey())) return false;
-        }
-        return true;
+    private static Failure mapFailureCode(final TeamAiReviewOptionalSectionsParser.FailureCode code) {
+        return switch (code) {
+            case MISSING_REQUIRED_FIELD -> Failure.MISSING_REQUIRED_FIELD;
+            case INVALID_FIELD -> Failure.INVALID_FIELD;
+            case INVALID_REFERENCE -> Failure.INVALID_REFERENCE;
+        };
+    }
+
+    private static void dropOptional(final Failure code, final String path, final String constraint,
+                                     final List<ParseFailure> failures,
+                                     final List<Normalization> normalizations) {
+        failures.add(failure(code, path, FailureCategory.OPTIONAL_REFERENCE, constraint));
+        normalizations.add(new Normalization("optional_item_dropped", path));
     }
 
     private static List<JsonNode> boundedNodes(final List<JsonNode> nodes, final int max,
@@ -419,7 +282,7 @@ public final class TeamAiReviewResultParser {
         for (int index = 0; index < limit; index++) {
             final JsonNode item = value.get(index);
             if (item == null || !item.isTextual() || item.asText().isBlank()
-                    || item.asText().length() > MAX_ID_CHARS) {
+                    || item.asText().length() > TeamAiReviewParserSupport.MAX_ID_CHARS) {
                 failures.add(failure(Failure.INVALID_FIELD, path + "." + name + "[" + index + "]",
                         FailureCategory.SALVAGEABLE, "invalid playerKey dropped"));
                 normalizations.add(new Normalization("episode_player_key_dropped",
@@ -441,7 +304,7 @@ public final class TeamAiReviewResultParser {
             normalizations.add(new Normalization(normalizationType, "summary." + name));
             return null;
         }
-        final String value = optionalText(parent, name, max);
+        final String value = TeamAiReviewParserSupport.optionalText(parent, name, max);
         if (value == null || value.isBlank()) {
             failures.add(failure(Failure.INVALID_FIELD, "summary." + name,
                     FailureCategory.SALVAGEABLE, "non-empty text omitted"));
@@ -464,18 +327,6 @@ public final class TeamAiReviewResultParser {
             return null;
         }
         return optionalInt(parent, name);
-    }
-
-    private static String requiredText(final JsonNode parent, final String name, final int max) {
-        final String value = optionalText(parent, name, max);
-        return value == null || value.isBlank() ? null : value;
-    }
-
-    private static String optionalText(final JsonNode parent, final String name, final int max) {
-        final JsonNode value = parent.get(name);
-        if (value == null || value.isNull()) return null;
-        if (!value.isTextual() || value.asText().length() > max) return null;
-        return value.asText();
     }
 
     private static Integer optionalInt(final JsonNode parent, final String name) {
