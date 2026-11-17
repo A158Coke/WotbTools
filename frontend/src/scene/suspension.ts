@@ -107,12 +107,23 @@ export interface SuspensionWheel {
 export type ChainPoint = [number, number]
 
 /**
- * 链点 → 负重轮 挂接表（客户端 `SuspensionGenerator` 的「点→轮」映射的等价重建）：
- * 按**纵向**距离就近挂接，容差 = `tolFactor × 轮半径`；未被任何轮覆盖的点返回 −1
- * （上支段/悬空段——由垂弧与铺地步骤决定形状）。
+ * 链点 → 轮 挂接表：**轮缘几何**判据——链点落在该轮圆周上（`|‖p−c‖ − r|` 在履带板厚容差内）。
+ * 未被任何轮覆盖的点返回 −1（悬空段内点）。
+ *
+ * 为什么不用客户端链折线的逐点 `flag` 选轮（2026-11-17 两轮实测）：
+ * - 上游逆向文档对该 flag 的结论是**语义未定**（`docs/tank-suspension-client-re.md` §五：
+ *   「`flag` 分布与小轮/托带位置相关……语义仍未定」），而 `Suspension::HangingSegment`
+ *   的语义**已定**为「支座轮之间的履带段」。把 flag 当「点→轮」分组是对它的过读；
+ *   实测反例 VK 30.02 (M)/15889 左链 idx 8 `[2.1930, 0.0391]`：纵向距上方托带轮 `L_02`
+ *   0.201 m、距负重轮 `L_03` 0.225 m，按 flag+纵向选会挂到托带轮（轮缘残差 0.843 m、
+ *   且 flag=0 行程恒 0），底段被钉住、与压缩中的负重轮分离（PR review P2）。
+ * - 还有一类型号（实测 1089 = 法国 B1：18 个底部小轮 r=0.1、上支段在 z≈1.5，而模型里
+ *   z 1.15–1.70 **没有任何几何体**）根本没有对应的托带轮节点，flag 点无处可挂。
+ * 因此 flag 只用于**分段**（见 `chainSpanBoundaries`，不覆盖轮接触关系），挂接保持历史几何判据。
  *
  * @param {Array<[number, number]>} chain 静止链路，每点 `[纵向 y, 高度 z]`（m）
  * @param {Array<{longitudinal:number, radius:number}>} wheels 逐轮（纵向位置 = 链坐标系里的 y）
+ * @param {number} tolFactor 容差系数（`max(0.10, tolFactor × 轮半径)`）
  * @returns {Int32Array} 每点的轮号，−1 = 无
  */
 export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], tolFactor = 0.45): Int32Array {
@@ -139,6 +150,40 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
 }
 
 /**
+ * 悬空段（`Suspension::HangingSegment`）的边界：**挂接点 ∪ 作者 flag 点**（升序去重）。
+ *
+ * 客户端的段表是 `{kind; i0; i1; aux}`（垂弧 kind==4 / 包轮其它），由客户端自己枚举，
+ * 我们的导出里没有段表，只有链点上的 flag（语义未定，但「分布与小轮/托带位置相关」）。
+ * 因此只把 flag 当作**额外的分段标记**：取并集意味着**只会把历史跨距切得更细、绝不合并**
+ * （历史边界 = 挂接点，全部保留）——零行程/零贴地时的形变只会更小或不变。实测 20 个车型：
+ * 相对历史口径的最大偏差 0 或负值（7297 60TP 0.92→0.06；1089 B1 0.32→0.01）。
+ *
+ * flag 列不可用（缺失 / 长度不符 / **任一**取值非 0-1，含 `NaN`——混合旧/异常链会给出缺列）
+ * 时**整列不参与**分段：先整列校验，再一次性并入，绝不会留下半列的边界
+ * （评审 P2：曾边加边校验，遇到中段非法值会把前半列的 flag 边界留在结果里）。
+ */
+export function chainSpanBoundaries(attach: ArrayLike<number>, flags: ArrayLike<number> | null | undefined): number[] | null {
+  const n = attach.length;
+  const set = new Set<number>();
+  for (let i = 0; i < n; i++) if (attach[i] >= 0) set.add(i);
+  if (flagsUsable(flags, n)) {
+    for (let i = 0; i < n; i++) if ((flags as ArrayLike<number>)[i] === 1) set.add(i);
+  }
+  const out = [...set].sort((a, b) => a - b);
+  return out.length >= 2 ? out : null;
+}
+
+/** flag 列是否整列可用：长度一致且每个取值都是 0 或 1（`NaN` / 缺列 / 其它值 ⇒ 不可用）。 */
+function flagsUsable(flags: ArrayLike<number> | null | undefined, n: number): boolean {
+  if (!flags || flags.length !== n) return false;
+  for (let i = 0; i < n; i++) {
+    const f = flags[i];
+    if (f !== 0 && f !== 1) return false;
+  }
+  return true;
+}
+
+/**
  * 链路解算（客户端顺序：逐轮偏移 → 悬空段垂弧 → 铺地）。
  *
  * @param {Float64Array|number[]} out 输出高度（长度 = 链点数；写入后由调用方转成位移量）
@@ -148,9 +193,11 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
  * @param {number[]} groundDrop 逐点"贴地所需局部 z 位移"（≤0 = 地面在下方，不接触）
  * @param {Array<{centerZ:number, longitudinal:number, radius:number}>} wheels 逐轮几何
  * @param {{upper_factor:number, length_power:number}} bend 垂弧系数
+ * @param {number[]|null} [spans] 悬空段边界（升序索引，见 `chainSpanBoundaries`）。缺省时按
+ *   「相邻挂接点」枚举（历史口径）；给出时只在相邻边界之间垂弧——边界可以不是挂接点。
  * @returns {{maxAbs:number}} 本次解算的最大绝对位移（脏判据用）
  */
-export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[] | Float64Array, groundDrop: readonly number[] | Float64Array, wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined): { maxAbs: number } {
+export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[] | Float64Array, groundDrop: readonly number[] | Float64Array, wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined, spans?: readonly number[] | null): { maxAbs: number } {
   const n = rest.length;
   let maxAbs = 0;
   // 1) 逐轮偏移：挂接点随轮移动（客户端 `chain[i] += wheelInfo.offset`）
@@ -158,24 +205,30 @@ export function solveChain(out: Float64Array | number[], rest: readonly ChainPoi
     const w = attach[i];
     out[i] = rest[i][1] + (w >= 0 ? (wheelDelta[w] ?? 0) : 0);
   }
-  // 2) 悬空段垂弧：在**支承点**（挂接点）之间按 `(t − t²)` 抛物线向下垂
+  // 2) 悬空段垂弧：在**段边界**之间按 `(t − t²)` 抛物线向下垂
   const sagFactor = bend && typeof bend.upper_factor === 'number' && Number.isFinite(bend.upper_factor) ? Math.max(0, bend.upper_factor) : 0;
-  const sagPow = bend && typeof bend.length_power === 'number' && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
-  let i = 0;
-  while (i < n) {
-    if (attach[i] < 0) { i++; continue; }
-    let j = i + 1;
-    while (j < n && attach[j] < 0) j++;
-    if (j < n && j > i + 1) {
-      const span = Math.abs(rest[j][0] - rest[i][0]);
-      const sag = sagFactor * Math.pow(Math.max(span, 1e-3), sagPow);
-      const y0 = out[i], y1 = out[j];
-      for (let k = i + 1; k < j; k++) {
-        const t = (k - i) / (j - i);
-        out[k] = y0 + (y1 - y0) * t - sag * (t - t * t);
-      }
+  const sagPow = bend && typeof bend.length_power === 'number' && bend.length_power !== undefined && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
+  const sagSpan = (i: number, j: number) => {
+    if (!(j > i + 1) || j >= n) return;
+    const span = Math.abs(rest[j][0] - rest[i][0]);
+    const sag = sagFactor * Math.pow(Math.max(span, 1e-3), sagPow);
+    const y0 = out[i], y1 = out[j];
+    for (let k = i + 1; k < j; k++) {
+      const t = (k - i) / (j - i);
+      out[k] = y0 + (y1 - y0) * t - sag * (t - t * t);
     }
-    i = j;
+  };
+  if (spans && spans.length >= 2) {
+    for (let s = 0; s + 1 < spans.length; s++) sagSpan(spans[s], spans[s + 1]);
+  } else {
+    let i = 0;
+    while (i < n) {
+      if (attach[i] < 0) { i++; continue; }
+      let j = i + 1;
+      while (j < n && attach[j] < 0) j++;
+      sagSpan(i, j);
+      i = j;
+    }
   }
   // 3) 包轮约束：**经过轮顶**的链点不得切进轮胎圆（客户端 `y = max(y, cy + sqrt(r² − dx²))`）。
   //    只对静止高度在轮心以上的点生效——底段在轮心**以下**（履带板厚），套用会把它顶到轮顶。

@@ -26,7 +26,7 @@ import { sampleVehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
 import type { PoseGrid, PoseDef, VehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
+  attachChainToWheels, chainSpanBoundaries, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from '../suspension.js'
@@ -126,6 +126,8 @@ export interface SuspensionTrackPart {
   chain: Array<[number, number]>
   restZ: number[]
   attach: Int32Array
+  /** 悬空段边界（挂接点 ∪ 链点 flag 的升序索引）；null = 沿用历史的「相邻挂接点」口径 */
+  spans: number[] | null
   wheelCfg: Array<{ longitudinal: number; centerZ: number; radius: number }>
   lateral: number
   beltW: number
@@ -559,6 +561,10 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
           longitudinal: w.centerHull.y, centerZ: w.centerHull.z, radius: w.radius,
         }));
         const attach = attachChainToWheels(chain2, wheelCfg);
+        // 悬空段边界 = 挂接点 ∪ 客户端链点 flag（1 = 分段标记；语义未定，只作**额外**细分，
+        // 不参与选轮——见 suspension.ts `chainSpanBoundaries` / `attachChainToWheels` 注释）。
+        const spans = chainSpanBoundaries(attach,
+          chain.some((pt) => Number.isFinite(pt[2])) ? chain.map((pt) => Number(pt[2])) : null);
         const parts: SuspensionTrackPart['parts'] = [];
         for (const mesh of meshes) {
           mesh.geometry = mesh.geometry.clone();      // 形变逐车独立（模板几何共享）
@@ -602,7 +608,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
             + ' pairs=' + uvFit.pairs);
         }
         tracks.push({
-          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral, beltW,
+          node, parts, chain: chain2, restZ, attach, spans, wheelCfg, lateral, beltW,
           groundDrop: new Float64Array(chain2.length),
           chainZ: new Float64Array(chain2.length),
           appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
@@ -679,7 +685,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
           const terr = deps.sampleHeight(_spP.x, _spP.z);
           tg.groundDrop[i] = groundDropLocal(terr, _spP.y, upY);
         }
-        solveChain(tg.chainZ, tg.chain, tg.attach, side.wheelDelta, tg.groundDrop, tg.wheelCfg, sp.bend);
+        solveChain(tg.chainZ, tg.chain, tg.attach, side.wheelDelta, tg.groundDrop, tg.wheelCfg, sp.bend, tg.spans);
         // 花纹：每米 V 变化 = 网格实测 dV/ds（见收集期注释）
         const uv = (dS && tg.dvPerM)
           ? (tg.uv = treadScrollStep(tg.uv, dS, tg.dvPerM))
