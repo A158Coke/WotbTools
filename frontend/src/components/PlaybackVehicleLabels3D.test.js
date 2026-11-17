@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
+import overlaySource from './PlaybackVehicleLabels3D.vue?raw'
 
 const i18n = createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false, messages: { en: {} } })
 
@@ -499,4 +500,34 @@ it('late marks use accountId rather than scene eid and disappear with hidden tan
   await nextTick()
   expect(wrapper.find('.vehicle-label-anchor').exists()).toBe(false)
   wrapper.unmount()
+})
+
+/**
+ * 3D 名牌卡的绘制成本契约（2026-11-17，2560×1440 实测）。
+ *
+ * 名牌卡在 2D / 3D 共用一个组件，但两边的**背景**代价完全不同：3D 覆盖层背后是每帧都在
+ * 变化的 WebGL 画布，`backdrop-filter` 会让合成器每帧重新采样并模糊 14 块背景
+ * （帧间隔 p50 32.9 ms、8 s 窗口内 >50 ms 帧 15 个；去掉后 16.0 ms），而同窗口场景自身的
+ * GPU 主 pass 只有 ~9 ms、animate 总计 ~4 ms——瓶颈完全在这条 CSS，不在 3D 渲染。
+ *
+ * 只能锁在源码上：happy-dom 不跑合成器，`getComputedStyle` 拿不到真实渲染成本，
+ * 浏览器里也只能靠帧率统计间接观察。3D 覆盖层因此用平面底色替换磨砂玻璃，
+ * 且底色继续走 `--color-canvas`（winter 主题会在 `[data-scene-surface]` 上重定义它）。
+ */
+describe('3D 名牌卡不得使用 backdrop-filter', () => {
+  const source = overlaySource
+
+  it('覆盖层用平面底色替换磨砂玻璃', () => {
+    const block = /\.vehicle-label-overlay :deep\(\.pb-labels\) \{([\s\S]*?)\}/.exec(source)?.[1] ?? ''
+    expect(block, '缺少 .vehicle-label-overlay :deep(.pb-labels) 覆盖规则').not.toBe('')
+    expect(block).toMatch(/backdrop-filter:\s*none/)
+    expect(block).not.toMatch(/backdrop-filter:\s*blur/)
+    expect(block).toMatch(/background:\s*color-mix\(in oklab, var\(--color-canvas\)/)
+  })
+
+  it('本文件样式里不得再引入任何模糊滤镜', () => {
+    const style = /<style scoped>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? ''
+    expect(style).not.toMatch(/backdrop-filter:\s*blur/)
+    expect(style).not.toMatch(/-webkit-backdrop-filter:\s*blur/)
+  })
 })
