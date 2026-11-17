@@ -125,7 +125,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     // 边界变体验证探针：裁剪后仍在本图的 MapBorder 节点（应只剩本变体那条）
     const borderNames: string[] = [];
     gltf.scene.traverse((o) => { const n = (o as { name?: string }).name || ''; if (n.startsWith('MapBorder')) borderNames.push(n); });
-    (window as unknown as Record<string, unknown>).__mapBorderNodes = borderNames;
+    window.__mapBorderNodes = borderNames;
   }
   if (variantMappingIncomplete || variantPrune.failClosed) {
     // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
@@ -199,7 +199,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   // 互不包含的水面合成一个 draw（索引顺序固定，不再随相机距离翻转）。
   const waterMerge = mergeCoincidentWaterMeshes(gltf.scene);
   if (DEBUG && (waterMerge.merged || waterMerge.dropped)) {
-    (window as unknown as Record<string, unknown>).__waterMerged = waterMerge;
+    window.__waterMerged = waterMerge;
   }
 
   // 水面反射（HIGH/ULTRA 动态平面反射）：合并后的水面网格 + 水面高度。
@@ -238,7 +238,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
         if (sm?.userData?.water && sm.uniforms && !waterMats.includes(sm)) waterMats.push(sm);
       }
     });
-    (window as unknown as Record<string, unknown>).__waterMats = waterMats;
+    window.__waterMats = waterMats;
   }
 
   // 场景 GLB 贴图各向异性：地面（分层地表）早按画质档设了，场景侧此前漏设 ——

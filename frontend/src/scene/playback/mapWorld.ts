@@ -765,7 +765,7 @@ export function createMapWorld(deps: MapWorldDeps) {
     // 低/均衡档走俯视烘焙底图，立体草与俯视观感冲突。
     // 实例是客户端世界系（z 上）；高度经 heightAt 采样渲染用地形（scene 坐标 ↔ 客户端
     // 坐标 = (−x, y) 的 qFrame 逆映射）。
-    const grassStage = (s: string) => { if (DEBUG) (window as unknown as Record<string, unknown>).__grassStage = s; };
+    const grassStage = (s: string) => { if (DEBUG) window.__grassStage = s; };
     const grassBudget = deps.grassInstanceBudget();
     if (grassBudget > 0) try {
       grassStage('start');
@@ -810,7 +810,7 @@ export function createMapWorld(deps: MapWorldDeps) {
                 grassProtoScene = protoGltf.scene;
                 animLayerMats.push(...built.materials);
                 if (DEBUG) {
-                  (window as unknown as Record<string, unknown>).__grass = {
+                  window.__grass = {
                     instances: instances.length, meshes: built.group.children.length,
                     variations: geometries.length,
                     // 原型顶点/索引数：低档 60k 是 27/7/7/3 顶点稀疏三角，高档 500 档

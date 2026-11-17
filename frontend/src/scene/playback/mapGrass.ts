@@ -248,8 +248,7 @@ export function buildGrassMeshes(
     const mesh = new THREE.InstancedMesh(geo, material, bucket.matrices.length)
     for (let k = 0; k < bucket.matrices.length; k++) mesh.setMatrixAt(k, bucket.matrices[k])
     mesh.instanceMatrix.needsUpdate = true
-    const compute = (mesh as unknown as { computeBoundingSphere?: () => void }).computeBoundingSphere
-    if (typeof compute === 'function') compute.call(mesh)
+    if (typeof mesh.computeBoundingSphere === 'function') mesh.computeBoundingSphere()
     else mesh.frustumCulled = false
     mesh.userData.annotationSurface = false
     group.add(mesh)

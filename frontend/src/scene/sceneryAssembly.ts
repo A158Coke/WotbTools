@@ -355,7 +355,7 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
       // 距离淡出），不受光。extras.mapBorder 由导出器写入。
       if (ud.mapBorder && typeof ud.mapBorder === 'object') {
         annotationSurface = false;
-        if (debug && typeof window !== 'undefined') { const dbg = window as unknown as Record<string, unknown>; dbg.__mapBorderMaterials = ((dbg.__mapBorderMaterials as number) || 0) + 1; }
+        if (debug && typeof window !== 'undefined') { window.__mapBorderMaterials = (window.__mapBorderMaterials || 0) + 1; }
         return makeMapBorderMaterial(m, ud.mapBorder as Parameters<typeof makeMapBorderMaterial>[1]);
       }
       // 水面（客户端 water-fp.sl 的 **MEDIUM 档**）：导出器带数据时走专用材质；
@@ -363,7 +363,7 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
       if (ud.water && typeof ud.water === 'object') {
         const wt = waterTexOf(m);
         if (wt) {
-          if (debug && typeof window !== 'undefined') { const dbg = window as unknown as Record<string, unknown>; dbg.__waterMaterials = ((dbg.__waterMaterials as number) || 0) + 1; }
+          if (debug && typeof window !== 'undefined') { window.__waterMaterials = (window.__waterMaterials || 0) + 1; }
           if (debug && typeof window !== 'undefined' && window.__waterCoast) window.__waterCoast.materials = (window.__waterCoast.materials || 0) + 1;
           annotationSurface = false;
           o.renderOrder = 10 + waterRenderOrder++;   // 固定顺序（不随相机距离翻转）

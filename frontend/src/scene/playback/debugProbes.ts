@@ -1,5 +1,5 @@
 // ?debug 诊断探针（#820 行数预算拆分，2026-11-17）：从 playbackScene.js 抽出
-// window.__renderInfo/__scene/__renderer/__threeCamera/__camera/__debugView/__rows/
+// windowindow.__renderInfo/__scene/__renderer/__threeCamera/__camera/__debugView/__rows/
 // __forceFrame 的安装逻辑。仅显式 ?debug 时调用，生产构建不挂任何长生命周期引用。
 import type { PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 
@@ -11,36 +11,33 @@ export interface DebugProbeArgs {
   cameraRuntime: { cam?: () => string } | null
 }
 
-type DebugWindow = Window & Record<string, unknown>
-
 export function installDebugProbes({ renderer, scene, camera, controls, cameraRuntime }: DebugProbeArgs): void {
-  const w = window as unknown as DebugWindow
   // 上一帧的 draw call / 三角形数——用来确认某层是否真的进了渲染
   // （例：草层 60k×9 三角形，存在时应看到 +~54 万）
-  w.__renderInfo = () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles })
+  window.__renderInfo = () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles })
   // 诊断强引用（仅 debug）：水面材质/拾取取证用，生产构建不挂
-  w.__scene = scene
-  w.__renderer = renderer
-  w.__threeCamera = camera
+  window.__scene = scene
+  window.__renderer = renderer
+  window.__threeCamera = camera
   // __camera 必须保持**相机对象**（renderer 先写入，测试/诊断直接读 position）；
   // 位置/模式探针另挂 __cameraInfo，不能覆盖对象引用。
-  w.__camera = camera
-  w.__cameraInfo = () => ({
+  window.__camera = camera
+  window.__cameraInfo = () => ({
     pos: camera ? camera.position.toArray() : null,
     mode: cameraRuntime && cameraRuntime.cam ? cameraRuntime.cam() : null,
   })
   // 诊断取帧：把相机放到指定点/朝向并立刻渲一帧，回读中心像素 + 绘制统计。
   // 仅 ?debug；不改变会话状态（调用方用完刷新页面即可复原）。
-  w.__debugView = (px: number, py: number, pz: number, tx: number, ty: number, tz: number) => {
+  window.__debugView = (px: number, py: number, pz: number, tx: number, ty: number, tz: number) => {
     if (!camera || !renderer) return false
     camera.position.set(px, py, pz)
-    if (controls) { controls.target.set(tx, ty, tz); camera.lookAt(controls.target as never) }
-    else camera.lookAt(tx, ty, tz)
+    if (controls) controls.target.set(tx, ty, tz)
+    camera.lookAt(tx, ty, tz)
     camera.updateMatrixWorld(true)
     return true
   }
   // 远端闪烁度量：按屏幕行读回像素，降采样成 64 段亮度，便于对两帧做差分。
-  w.__rows = (fracs: number[]) => {
+  window.__rows = (fracs: number[]) => {
     if (!renderer) return null
     const gl = renderer.getContext()
     const width = gl.drawingBufferWidth
@@ -60,7 +57,7 @@ export function installDebugProbes({ renderer, scene, camera, controls, cameraRu
     }
     return out
   }
-  w.__forceFrame = () => {
+  window.__forceFrame = () => {
     if (!renderer || !scene || !camera) return null
     renderer.render(scene, camera)
     const gl = renderer.getContext()

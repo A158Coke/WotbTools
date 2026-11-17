@@ -35,7 +35,7 @@ export function createWaterReflectionRuntime(deps: WaterReflectionRuntimeDeps): 
   }
   apply()
   if (deps.debug && typeof window !== 'undefined') {
-    (window as unknown as Record<string, unknown>).__waterReflection = reflection
+    window.__waterReflection = reflection
   }
   return { apply, update: reflection.update, dispose: reflection.dispose }
 }

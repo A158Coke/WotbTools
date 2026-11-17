@@ -25,10 +25,10 @@ export function persistBoolPref(key: string, on: boolean): void {
 export function resolveQualityKey(): string {
   const usp = new URLSearchParams(location.search)
   let q = (usp.get('q') || '').toLowerCase()
-  const presets = QUALITY_PRESETS as unknown as Record<string, unknown>
-  if (!presets[q]) { try { q = localStorage.getItem('pb_quality') || '' } catch (e) {} }
-  if (!presets[q]) {
-    const tauri = (window as unknown as { __TAURI__?: unknown }).__TAURI__
+  const known = (key: string): boolean => Object.prototype.hasOwnProperty.call(QUALITY_PRESETS, key)
+  if (!known(q)) { try { q = localStorage.getItem('pb_quality') || '' } catch (e) {} }
+  if (!known(q)) {
+    const tauri = window.__TAURI__
     const mobile = !!tauri || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)
     q = mobile ? 'mid' : 'high'
   }
