@@ -175,12 +175,14 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
         && Math.abs((r.time_s ?? 0) - ev!.t) <= 0.05,
     )
     if (!row) return
-    // 搭载配置富化只针对**选中行**的射手/目标车型（全场 Promise.all 无界等待会被
-    // 无关车辆的慢请求卡死本次导航——评审 4595675888）；再加有界等待兜底。
+    // 搭载配置富化覆盖**全部可导航行**（交接数组包含它们，缺证据 = 查看器回退
+    // 顶级炮管/弹表——评审 4597024398），选中行排最前（其证据最先就绪）；
+    // 1500ms 有界等待兜底：超时行按无证据降级，不阻塞导航（评审 4595675888）。
     // annotate 原地改写 row（config_idx），快照在其后取即包含。
     const vehicles = facetSnap?.vehicles
+    const ordered = [row, ...shotsCache.rows.filter((r) => r !== row)]
     await Promise.race([
-      annotateMountedConfigs([row] as never[], vehicles),
+      annotateMountedConfigs(ordered as never[], vehicles),
       new Promise((r) => setTimeout(r, 1500)),
     ])
     if (!stillCurrent()) return
@@ -251,6 +253,13 @@ function eventTitle(ev: PlaybackEventRow): string {
     case 'command': {
       const ch = ev.channelName ? ` · ${ev.channelName}` : ''
       const who = ev.sender || '?'
+      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
+        // 这两类指令的 payload 域上游契约未闭合 → 显示原始目标值，不宣称是据点编号
+        return t(`eventStream.cmd_${ev.commandName}_raw`, {
+          who,
+          target: ev.commandTarget ?? '?',
+        }) + ch
+      }
       if (ev.commandName) {
         // 客户端权威语义（未映射 id 保留 raw）
         return t(`eventStream.cmd_${ev.commandName}`, {
@@ -261,10 +270,11 @@ function eventTitle(ev: PlaybackEventRow): string {
       }
       return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
     }
-    case 'presence': return t(`eventStream.presence_${ev.action ?? 'join'}`, {
-      who: ev.sender || '?',
-      channel: ev.channelName || '-',
-    })
+    case 'presence': {
+      // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
+      const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
+      return t(key, { who: ev.sender || '?', channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
+    }
     case 'moduleDamage':
     case 'module':
       return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`

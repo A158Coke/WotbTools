@@ -222,6 +222,57 @@ describe('ReplayEventStreamPane', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
+  it('catch/defend 指令显示原始目标（payload 域未闭合，不宣称据点号）', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [
+        { t: 15, kind: 'command', raw_type: 20, channel: 1549648, sender: 'A', command: 57, command_name: 'catch_point', target: 2 },
+        { t: 16, kind: 'command', raw_type: 20, channel: 1549648, sender: 'A', command: 58, command_name: 'defend_point', target: 3 },
+      ],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const titles = w.findAll('[data-kind="command"]').map((n) => n.text())
+    expect(titles.some((x) => x.includes('cmd_catch_point_raw') && x.includes('target=2'))).toBe(true)
+    expect(titles.some((x) => x.includes('cmd_defend_point_raw') && x.includes('target=3'))).toBe(true)
+  })
+
+  it('未知在场动作显示中性提示 + 原始码（不冒充进入频道）', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [{ t: 10, kind: 'other', raw_type: 22, channel: 1549648, sender: 'Alpha' }],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const row = w.find('[data-kind="presence"]')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('raw=22')
+    expect(row.text()).not.toContain('presence_join')
+  })
+
+  it('搭载配置富化覆盖全部可导航行（下一发也有证据，评审 4597024398）', async () => {
+    const navigate = vi.fn()
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [
+        { time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 10005, target_tank_id: 10017 },
+        { time_s: 45, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 10005, target_tank_id: 10017 },
+      ],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [
+        { time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 10005, target_tank_id: 10017 },
+        { time_s: 45, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 10005, target_tank_id: 10017 },
+      ],
+    })
+    shotViewerQuery.mockResolvedValue({ shooter: '10005', shot: '0' })
+    const w = mountPane({ navigate })
+    await flushPromises()
+    await w.find('[data-kind="shot"]').trigger('click')
+    await flushPromises()
+    // 交接数组包含全部两行（都带 config 证据），而非只有选中行
+    expect(handoff.annotateMountedConfigs.mock.calls[0][0]).toHaveLength(2)
+  })
+
   it('join/leave/channel_created 保留动作区别（评审 4595675895）', async () => {
     const facet = {
       ...FACET,
