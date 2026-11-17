@@ -93,7 +93,7 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('着色默认关闭，?armorhl=1 可打开', () => {
-    expect(source).toContain("prefOf('pb_armor_highlight', 'armorhl', false)")
+    expect(source).toContain("boolPref('pb_armor_highlight', 'armorhl', false)")
   })
 
   it('配置解析不走带回退的 resolveMountedConfig', () => {

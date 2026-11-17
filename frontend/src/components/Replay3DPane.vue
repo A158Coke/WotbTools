@@ -13,7 +13,7 @@ import { gunMarksByAccount } from '../utils/gunMarks.js'
  */
 import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -595,7 +595,7 @@ let loadedFile = null
  * 画质必须在渲染器创建前定型（内核 `startPlayback()` 惰性建渲染器、首帧按当前档位），
  * 所以这一步不能省成"加载中也能切档"。`startedFile` = 用户已按过开始的那一场。
  */
-const startedFile = ref(null)
+const startedFile = shallowRef(null)
 const qualityOptions = computed(() =>
   QUALITY_ORDER.map((k) => ({ value: k, label: t('agentReplay.q_' + k) })),
 )

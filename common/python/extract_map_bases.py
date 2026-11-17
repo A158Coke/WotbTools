@@ -96,7 +96,9 @@ class SceneSource:
         return None
 
 
-def capture_points(raw: bytes) -> Iterator[tuple[str, dict[str, Any], tuple[float, float, float]]]:
+def capture_points(
+    raw: bytes,
+) -> Iterator[tuple[str, dict[str, Any], tuple[float, float, float], str | None]]:
     for entity in scene_entities(read_sc2(decode_dvpl(raw))):
         properties = entity_properties(entity)
         point_type = properties.get("type")
@@ -105,17 +107,71 @@ def capture_points(raw: bytes) -> Iterator[tuple[str, dict[str, Any], tuple[floa
         position = entity_position(entity)
         if position is None:
             continue
-        yield str(point_type), properties, position
+        # 变体标签（LabelComponent，形如 nt0/am1/cn0）：同一场景文件里，不同地图变体
+        # （基础图与 _01/_02 子图）各有一组点位；不按标签过滤会把所有变体的点位
+        # 混成一组（诺曼底遭遇点变 3 个 candidate ⇒ 预览端 fail-closed 不提供遭遇选项）。
+        label = None
+        components = entity.get("components") or {}
+        if isinstance(components, dict):
+            for component in components.values():
+                if not isinstance(component, dict):
+                    continue
+                if component.get("comp.typename") != "LabelComponent":
+                    continue
+                labels = component.get("lc.labels") or []
+                if len(labels) == 1:
+                    label = str(labels[0])
+        yield str(point_type), properties, position, label
+
+
+VARIANT_LABEL_RE = re.compile(r"^([A-Za-z]+)(\d+)$")
+
+
+def base_variant_label(
+    points: list[tuple[str, dict[str, Any], tuple[float, float, float], str | None]],
+    map_code: str,
+) -> str | None:
+    """场景内**基础地图变体**的标签（组序最小者）。
+
+    与 GLB 变体打标同一契约（`tools/export_map_glb.resolve_variant_map`）：场景标签按
+    数字后缀升序，注册表 key 基础图在前、_NN 后缀按序配组 ⇒ 基础图 ↔ 最小后缀标签
+    （nt0/am1/cn0）。`mapImages.js` 每个场景只注册基础 mapCode，故这里取最小标签即可。
+    """
+    suffixes: list[tuple[int, str]] = []
+    for _point_type, _properties, _position, label in points:
+        if label is None:
+            continue
+        match = VARIANT_LABEL_RE.match(label)
+        if not match:
+            raise ExtractError(f"{map_code}: variant label {label!r} is not <letters><number>")
+        suffixes.append((int(match.group(2)), label))
+    return min(suffixes)[1] if suffixes else None
+
+
+def select_base_variant_points(
+    points: list[tuple[str, dict[str, Any], tuple[float, float, float], str | None]],
+    map_code: str,
+) -> list[tuple[str, dict[str, Any], tuple[float, float, float], str | None]]:
+    """只保留基础变体的点位（其它 `_NN` 子图点位不属于该 mapCode；无标签为共用）。"""
+    base_label = base_variant_label(points, map_code)
+    return [
+        point for point in points
+        if point[3] is None or base_label is None or point[3] == base_label
+    ]
 
 
 def round4(value: float) -> float:
     return round(float(value), 4)
 
 
-def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
+def group_points(
+    points: list[tuple[str, dict[str, Any], tuple[float, float, float], str | None]],
+    map_code: str,
+) -> dict[str, Any]:
+    """一组点位（同一变体）→ {supremacy, assault}（排序 + baseID 连续性校验）。"""
     supremacy: list[dict[str, Any]] = []
     assault: list[dict[str, Any]] = []
-    for point_type, properties, (x, y, _z) in capture_points(raw):
+    for point_type, properties, (x, y, _z), _label in points:
         radius = properties.get("radius")
         if point_type == "strategicpoint":
             index = properties.get("baseID")
@@ -146,6 +202,38 @@ def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
     return {"supremacy": supremacy, "assault": assault}
 
 
+def variant_groups(
+    points: list[tuple[str, dict[str, Any], tuple[float, float, float], str | None]],
+    map_code: str,
+) -> dict[str, dict[str, Any]]:
+    """按变体标签分组的全套点位（`nt0/nt1/nt2` → 该变体的争霸/遭遇点）。
+
+    无标签点位为所有变体共用；无标签场景返回 {}（调用方用整体点位，不造变体壳）。
+    """
+    labels = sorted(
+        {point[3] for point in points if point[3] is not None},
+        key=lambda label: int(VARIANT_LABEL_RE.match(label).group(2)),  # type: ignore[union-attr]
+    )
+    groups: dict[str, dict[str, Any]] = {}
+    for label in labels:
+        subset = [point for point in points if point[3] is None or point[3] == label]
+        groups[label] = group_points(subset, map_code)
+    return groups
+
+
+def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
+    points = list(capture_points(raw))
+    base_label = base_variant_label(points, map_code)
+    groups = variant_groups(points, map_code)
+    base = groups[base_label] if base_label is not None else group_points(points, map_code)
+    result = dict(base)
+    if groups:
+        # 完整变体表：预览端按当前地图 id 对应的标签取自己那套点位；
+        # 顶层 supremacy/assault 保留基础变体（回放/旧消费者契约不变）。
+        result["variants"] = groups
+    return result
+
+
 def render_js(data: dict[str, dict[str, Any]], source_name: str) -> str:
     def base_line(base: dict[str, Any]) -> str:
         fields = ", ".join(
@@ -167,6 +255,8 @@ def render_js(data: dict[str, dict[str, Any]], source_name: str) -> str:
         " *   与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源。",
         " * assault 攻防战/遭遇战：每种模式配置一个基地，`team` 为守方；",
         " *   场景未声明半径时为 null，调用方自行取默认值。",
+        " * variants：多变体场景（nt0/nt1/...）的全套点位；顶层两组 = 基础变体",
+        " *   （最小数字后缀，与 GLB 变体打标同契约）。",
         " */",
         "export const mapBases = {",
     ]
@@ -181,6 +271,8 @@ def render_js(data: dict[str, dict[str, Any]], source_name: str) -> str:
             for base in bases:
                 lines.append(f"      {base_line(base)},")
             lines.append("    ],")
+        if entry.get("variants"):
+            lines.append("    variants: " + json.dumps(entry["variants"], ensure_ascii=False) + ",")
         lines.append("  },")
     lines.append("}")
     lines.append("")

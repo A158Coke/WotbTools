@@ -167,7 +167,33 @@ export function makeGroundMaterial({ layers = null, texs = null, size, cx = 0, c
  *  真值高度场做成可线性滤波的浮点纹理 + near/far/深度位深（淡出阈值的量纲）。
  *  `depthBits` 由调用方按各自上下文实测（运行时/烘焙同一个探测法）。 */
 export function makeWaterCoast({ field, n, span, near, far, depthBits = 24 }) {
-  const htex = new THREE.DataTexture(field, n, n, THREE.RedFormat, THREE.FloatType);
+  // 岸线高度只取**带限低频**版本：逐像素采原始高度场（无 mip 的浮点纹理）在远处会混叠，
+  // 岸线 alpha 随相机移动逐像素抖（2026-11-17 用户"较远处移动视角水面闪烁"）。
+  // 128² 盒式降采样 + 世界空间淡出带（shader 的 uCoastFade）把这条判据变成稳定量。
+  const COAST_N = 128;
+  let data = field;
+  let size = n;
+  if (Number.isFinite(n) && n > COAST_N && field && field.length === n * n) {
+    const dst = new Float32Array(COAST_N * COAST_N);
+    const k = n / COAST_N;
+    for (let j = 0; j < COAST_N; j++) {
+      const y0 = Math.floor(j * k);
+      const y1 = Math.max(y0 + 1, Math.floor((j + 1) * k));
+      for (let i = 0; i < COAST_N; i++) {
+        const x0 = Math.floor(i * k);
+        const x1 = Math.max(x0 + 1, Math.floor((i + 1) * k));
+        let sum = 0;
+        let count = 0;
+        for (let yy = y0; yy < y1 && yy < n; yy++) {
+          for (let xx = x0; xx < x1 && xx < n; xx++) { sum += field[yy * n + xx]; count++; }
+        }
+        dst[j * COAST_N + i] = count ? sum / count : 0;
+      }
+    }
+    data = dst;
+    size = COAST_N;
+  }
+  const htex = new THREE.DataTexture(data, size, size, THREE.RedFormat, THREE.FloatType);
   htex.minFilter = THREE.LinearFilter;
   htex.magFilter = THREE.LinearFilter;
   htex.wrapS = THREE.ClampToEdgeWrapping;
@@ -178,6 +204,7 @@ export function makeWaterCoast({ field, n, span, near, far, depthBits = 24 }) {
     heightTex: htex, mapSpan: span,
     near, far,
     depthUlp: 2 / Math.pow(2, depthBits),
+    coastFade: 0.5,
   };
 }
 

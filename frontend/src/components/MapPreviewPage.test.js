@@ -434,16 +434,16 @@ describe('MapPreviewPage', () => {
   })
 
   // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
-  it('遭遇选项只在 assault 恰好 1 candidate 时提供：erlenberg（3 条）不出现，canyon（1 条）可选', async () => {
+  it('遭遇选项在 assault 恰 1 candidate 时提供：erlenberg/canyon 可选，moon 无几何不显示切换', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    // erlenberg：supremacy 3 条 + assault 3 条（攻防/遭遇条目无法归属）→
-    // 默认回落 supremacy，且**不提供**遭遇选项（选中即 0 点位的假选项不给用户）
+    // erlenberg：base 变体（er0）恰 1 条遭遇 candidate（其它变体点位已在生成期过滤）
+    // → 提供遭遇选项；缺省仍按「有争霸先争霸」回落 supremacy
     const wrapper = await openAt({ map: 'erlenberg' })
     expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
     expect(wrapper.find('.map-bases-switch').exists()).toBe(true)
     expect(wrapper.find('[data-testid="map-bases-supremacy"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="map-bases-encounter"]').exists()).toBe(true)
     // canyon：assault 恰 1 条 candidate → 遭遇可选，kind 下发 assault
     const w2 = await openAt({ map: 'canyon' })
     expect(w2.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
@@ -457,13 +457,13 @@ describe('MapPreviewPage', () => {
     expect(w3.find('.map-bases-switch').exists()).toBe(false)
   })
 
-  it('?bases=encounter 指向多 candidate 组 → 拒绝并回落 supremacy（URL 接受同一判据）', async () => {
+  it('?bases=encounter 在单 candidate 图（erlenberg）被接受；多 candidate 拒绝规则见 mapBasesKind 单测', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt({ map: 'erlenberg', bases: 'encounter' })
-    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('assault')
     const w2d = await openAt({ map: 'erlenberg', mode: '2d', bases: 'encounter' })
-    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('supremacy')
+    expect(w2d.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
     // 单 candidate 图上 URL 正常接受：2D/3D 同步下发 assault
     const w3 = await openAt({ map: 'canyon', mode: '2d', bases: 'encounter' })
     expect(w3.findComponent({ name: 'MapPreview2DPane' }).props('basesKind')).toBe('assault')
@@ -480,6 +480,55 @@ describe('MapPreviewPage', () => {
     await wrapper.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toEqual({ view: 'map-preview' })
+  })
+
+  it('多变体：同一 key 的条目全保留，切变体改 mapId 与基地组（边界随 id 裁剪）', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue({ maps: {
+      42: { key: 'neptune', display: 'Normandy', variantKey: 'neptune', variant: 'nt0' },
+      58: { key: 'neptune', display: 'Normandy - Hills', variantKey: 'neptune_01', variant: 'nt1' },
+      59: { key: 'neptune', display: 'Normandy - Beach', variantKey: 'neptune_02', variant: 'nt2' },
+    } })
+    const wrapper = await openAt({ map: 'neptune' })
+    // 变体选择器 3 项（资产 key 仍只物化一份）
+    expect(wrapper.find('[data-testid="map-variant-42"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="map-variant-59"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('mapId')).toBe(42)
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('basesKind')).toBe('supremacy')
+    // 基础变体：标题走本地化 mapLabel（不是资产 display），出生点用 nt0 档案
+    expect(wrapper.find('.map-stage-name').text()).toBe('滩涂阵地')
+    expect(wrapper.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')?.length).toBeGreaterThan(0)
+    await wrapper.find('[data-testid="map-variant-58"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query.variant).toBe('58')
+    const pane = wrapper.findComponent({ name: 'MapPreview3DPane' })
+    expect(pane.props('mapId')).toBe(58)            // 3D 变体裁剪按 map_id
+    expect(pane.props('basesKind')).toBe('assault') // nt1 只有控制点 → 遭遇
+    // 额外变体：本地化未登记 → 回退资产 display；nt1 无已验证出生点档案 → 隐藏
+    expect(wrapper.find('.map-stage-name').text()).toBe('Normandy - Hills')
+    expect(pane.props('spawnPoints')).toBe(null)
+    await wrapper.find('[data-testid="map-back"]').trigger('click')
+    await flushPromises()
+    expect(ROUTER.currentRoute.value.query.variant).toBeUndefined()
+  })
+
+  it('额外变体缺 variant 标签（旧索引形状）：不得复用基础语义档案（fail-closed）', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // IDX 的 erlenberg：id3（基础）与 id54（额外，无 variant）同 key；erlenberg 语义
+    // 档案带 battleVariant=er0 ⇒ 只服务基础条目，id54 不能拿 28 个 er0 出生点/边界。
+    const w = await openAt({ map: 'erlenberg', variant: '54' })
+    expect(ROUTER.currentRoute.value.query.variant).toBe('54')
+    expect(w.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')).toBe(null)
+    const pane2d = w.findComponent({ name: 'MapPreview2DPane' })
+    expect(pane2d.props('variant')).toBe(null)
+    expect(pane2d.props('variantIsBase')).toBe(false)
+    const overview = pane2d.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(overview.spawnPoints).toEqual([])
+    expect('playableBounds' in overview).toBe(false)
+    // 基础条目（id3）照常可用
+    const base = await openAt({ map: 'erlenberg' })
+    expect(base.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')?.length).toBeGreaterThan(0)
   })
 
   it('?bases= 指向无几何的组 → 回落（有争霸先争霸），不显示空选项', async () => {

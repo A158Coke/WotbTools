@@ -14,7 +14,8 @@ export type BaseView = ReturnType<typeof baseView>
 
 /** 地图静态基地几何（data/mapBases.js 注册表条目；游戏坐标，scene 侧 x 镜像）。 */
 export interface MapBasePoint {
-  baseId: string
+  /** 争霸基地 A–D；遭遇/攻防 controlpoint 无此字段（运行时统一记为 BASE）。 */
+  baseId?: string
   x: number
   y: number
   radius?: number
@@ -24,6 +25,18 @@ export interface MapBasePoint {
 export interface MapBasesEntry {
   supremacy?: MapBasePoint[]
   assault?: MapBasePoint[]
+  /** 多变体场景的全套点位（nt0/nt1/...）；顶层两组 = 基础变体。 */
+  variants?: Record<string, { supremacy?: MapBasePoint[]; assault?: MapBasePoint[] }>
+}
+
+/** 取指定变体的点位；无标签/该变体无数据时回退基础变体（顶层字段）。 */
+export function basesForVariant(
+  entry: MapBasesEntry | null | undefined,
+  variant: string | null | undefined,
+): MapBasesEntry | null {
+  if (!entry) return null
+  const picked = variant ? entry.variants?.[variant] : null
+  return picked || entry
 }
 
 /** DATA 中本模块消费的基地状态字段（playbackData facet 面）。 */
@@ -235,9 +248,10 @@ function buildBases() {
     const seen = new Set(tracks.map((tr) => SUPREMACY_BASE_IDS[tr.base_id]).filter(Boolean));
     const pts = getMapBases()?.supremacy ?? [];
     for (const p of pts) {
-      if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
-      seen.add(p.baseId);
-      addBaseMarker(p.baseId, 'supremacy', -p.x, p.y, p.radius || 15);
+      const id = p.baseId;
+      if (!id || !SUPREMACY_BASE_IDS.includes(id)) continue;
+      seen.add(id);
+      addBaseMarker(id, 'supremacy', -p.x, p.y, p.radius || 15);
     }
     supremacyBaseIds = SUPREMACY_BASE_IDS.filter((id) => seen.has(id));
   }
@@ -263,8 +277,9 @@ function buildStatic(kind: 'supremacy' | 'assault' | null): void {
   const pts = getMapBases()?.[staticKind] ?? [];
   if (staticKind === 'supremacy') {
     for (const p of pts) {
-      if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
-      addBaseMarker(p.baseId, 'supremacy', -p.x, p.y, p.radius || 15);
+      const id = p.baseId;
+      if (!id || !SUPREMACY_BASE_IDS.includes(id)) continue;
+      addBaseMarker(id, 'supremacy', -p.x, p.y, p.radius || 15);
     }
     return;
   }

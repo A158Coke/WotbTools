@@ -116,6 +116,8 @@ export interface AnnotationSceneHandle {
   /** 宿主公开 API 的委托目标（语义见宿主端 doc 注释）。 */
   setAnnotations(annotations: unknown): void
   setAnnotationInteraction(config?: AnnotationInteractionConfig): void
+  /** 3D 标注根（反射 pass 剔除；尚未建立为 null） */
+  annotationRoot(): THREE.Object3D | null
   setAnnotationsVisible(visible: boolean): void
   /** ?perf 报告的 annotation 统计面（原 annotationStats 引用）。 */
   stats(): AnnotationStats
@@ -994,6 +996,8 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
       applyAnnotationTouchMode()
       deps.invalidate()
     },
+    /** 3D 标注根（反射 pass 剔除；尚未建立为 null） */
+    annotationRoot: () => annotationGroup,
     setAnnotationsVisible(visible: boolean) {
       annotationsVisible = visible !== false
       if (!annotationsVisible) cancelAnnotationGesture()
