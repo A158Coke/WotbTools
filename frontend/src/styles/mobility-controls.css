@@ -1,0 +1,17 @@
+/* Shared by the comparison page and by the chart in the tank detail workbench. */
+.mob-field {
+  box-sizing: border-box;
+  min-height: var(--control-h-sm);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.mob-field:focus-visible, .mob-action:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+.mob-action.app-button { corner-shape: round; background-clip: padding-box; }
+.mob-action.app-button.is-primary { border-color: var(--color-accent); background-clip: border-box; }
