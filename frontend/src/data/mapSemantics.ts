@@ -27,10 +27,15 @@ export function mapGridProfile(mapKey: string | number): MapGridProfile | null {
 export function profileMatchesVariant(
   profile: MapGridProfile | null | undefined,
   variant: string | null | undefined,
+  /** 选中条目是否该 key 的基础（首个）条目：语义档案的 mapId 就是基础 space。 */
+  isBase = true,
 ): boolean {
   if (!profile) return false
+  // 基础条目：档案（无论是否带 battleVariant）就是在基础 space 上验证的 ⇒ 可用。
+  if (isBase) return true
   const tagged = (profile.battleVariant || '').trim().toLowerCase()
   const selected = String(variant || '').trim().toLowerCase()
-  if (!tagged || !selected) return true
+  // 额外条目必须有显式变体归属，且与档案标注一致；缺任一 ⇒ 数据未经该变体验证。
+  if (!tagged || !selected) return false
   return tagged === selected
 }

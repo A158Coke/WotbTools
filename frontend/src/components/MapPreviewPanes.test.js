@@ -287,7 +287,8 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
     const baseOverview = base.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(baseOverview.spawnPoints).toEqual(rawSpawns(neptuneSemantic))
     expect(baseOverview.playableBounds).toBeTruthy()
-    const hills = mountPane({ kind: 'bundled', image: mapImages.neptune }, { mapKey: 'neptune', variant: 'nt1' })
+    // 页面契约：额外条目（非首个 index 条目）下发 variantIsBase=false
+    const hills = mountPane({ kind: 'bundled', image: mapImages.neptune }, { mapKey: 'neptune', variant: 'nt1', variantIsBase: false })
     const hillsOverview = hills.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(hillsOverview.spawnPoints).toEqual([])
     expect('playableBounds' in hillsOverview).toBe(false)

@@ -61,6 +61,8 @@ const props = defineProps({
   bases: { type: Object, default: null },
   /** 当前变体标签（nt0/nt1…）：与语义档案 battleVariant 不符时隐藏该档出生点/边界。 */
   variant: { type: String, default: null },
+  /** 选中条目是否基础（首个）index 条目：额外条目缺变体归属时不得复用基础档案。 */
+  variantIsBase: { type: Boolean, default: true },
   /** 页面 v-show 生命周期闸门：失活时退出全屏，避免全屏落在隐藏面板上 */
   active: { type: Boolean, default: true },
 })
@@ -81,7 +83,7 @@ const overview = computed(() => {
   const profile = mapGridProfile(key)
   // 语义档案的 battleVariant 只代表该变体；不匹配 = 该变体没有已验证的出生点/可玩
   // 边界 ⇒ 两者都隐藏（不能把 nt0 的档案画到 nt1/nt2 上）。
-  const variantOk = profileMatchesVariant(profile, props.variant)
+  const variantOk = profileMatchesVariant(profile, props.variant, props.variantIsBase)
   return {
     mapCode: props.mapKey,
     spawnPoints: variantOk ? (profile?.spawnPoints ?? []) : [],

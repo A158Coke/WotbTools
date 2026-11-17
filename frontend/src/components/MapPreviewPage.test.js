@@ -512,6 +512,25 @@ describe('MapPreviewPage', () => {
     expect(ROUTER.currentRoute.value.query.variant).toBeUndefined()
   })
 
+  it('额外变体缺 variant 标签（旧索引形状）：不得复用基础语义档案（fail-closed）', async () => {
+    auth.authenticated.value = true
+    source.loadMapIndex.mockResolvedValue(IDX)
+    // IDX 的 erlenberg：id3（基础）与 id54（额外，无 variant）同 key；erlenberg 语义
+    // 档案带 battleVariant=er0 ⇒ 只服务基础条目，id54 不能拿 28 个 er0 出生点/边界。
+    const w = await openAt({ map: 'erlenberg', variant: '54' })
+    expect(ROUTER.currentRoute.value.query.variant).toBe('54')
+    expect(w.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')).toBe(null)
+    const pane2d = w.findComponent({ name: 'MapPreview2DPane' })
+    expect(pane2d.props('variant')).toBe(null)
+    expect(pane2d.props('variantIsBase')).toBe(false)
+    const overview = pane2d.findComponent({ name: 'BattleMap' }).props('pbOverview')
+    expect(overview.spawnPoints).toEqual([])
+    expect('playableBounds' in overview).toBe(false)
+    // 基础条目（id3）照常可用
+    const base = await openAt({ map: 'erlenberg' })
+    expect(base.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')?.length).toBeGreaterThan(0)
+  })
+
   it('?bases= 指向无几何的组 → 回落（有争霸先争霸），不显示空选项', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)

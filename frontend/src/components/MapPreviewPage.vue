@@ -212,7 +212,12 @@ const spawnPoints = computed(() => {
   const profile = mapGridProfile(selected.value.key)
   // 语义档案标注了 battleVariant（如 neptune=nt0）时，只有该变体可用；
   // nt1/nt2 没有已验证数据 ⇒ 隐藏，不能把基础档位的出生点当成变体事实。
-  return profileMatchesVariant(profile, selectedVariant.value?.variant)
+  const variants = selected.value.variants || []
+  return profileMatchesVariant(
+    profile,
+    selectedVariant.value?.variant,
+    selectedVariant.value?.id === variants[0]?.id,
+  )
     ? (profile?.spawnPoints ?? null)
     : null
 })
@@ -398,7 +403,7 @@ const modeOptions = computed(() => [
           <MapPreview3DPane :map-id="selectedVariant?.id ?? selected.mapId" :map-name="selectedName" :map-key="selected.key" :bases-kind="basesKind" :spawn-points="spawnPoints" :active="mode === '3d'" />
         </div>
         <div v-show="mode === '2d'" class="map-stage-pane">
-          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases="selectedBases" :bases-kind="basesKind" :variant="selectedVariant?.variant ?? null" :active="mode === '2d'" />
+          <MapPreview2DPane :map-key="selected.key" :basemap="selected.basemap" :bases="selectedBases" :bases-kind="basesKind" :variant="selectedVariant?.variant ?? null" :variant-is-base="selectedVariant?.id === selected.variants?.[0]?.id" :active="mode === '2d'" />
         </div>
       </div>
     </template>
