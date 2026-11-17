@@ -141,7 +141,8 @@ cd frontend && pnpm run build && node scripts/check-bundle-separation.mjs
 cd frontend && node scripts/check-webp-orientation.mjs         # 真实 WebP 方向校验（developer-only）
 ```
 
-CI（coverage.test.js + validate.test.js + extractor.test.js + texture-bake.test.js）强制：
+CI（coverage.test.js + validate.test.js + extractor.geometry.test.js +
+extractor.surface-merging.test.js + extractor.asset-contracts.test.js + texture-bake.test.js）强制：
 Tier X 100% mapping 覆盖、metadata source/method 契约、资产完整性、turretPivot 稳定性、
 **raster 方向（RASTER_Y_AXIS_CONTRACT 指纹）**。CI 不访问 BlitzKit 网络。
 

@@ -30,7 +30,7 @@ import java.util.Objects;
  * Player 复盘 prompt 编排与摘要构建器。
  * <p>从 {@link PlayerReplayPromptBuilder} 拆出，职责：prepareFallback / prepareFullNoRecon /
  * prepareFull 三条入口、单场上下文摘要 {@link #buildPlayerContextSummary}、
- * 死亡时间线事件构建；证据渲染委托 {@link PlayerEvidenceFormatter}，
+ * 死亡时间线事件构建；证据渲染委托 PlayerCombatEvidenceFormatter、PlayerRosterEvidenceFormatter、PlayerReplayEventFormatter，
  * 规则/多语言来自 {@link PlayerPromptRules}。</p>
  * <p>纯静态工具类，不引入 Spring AI，不包含 API key 或 {@code Map<String,Object>} Provider 请求体。</p>
  */
@@ -187,23 +187,23 @@ final class PlayerSummaryBuilder {
         // OBSERVED_DAMAGE_IS_PARTIAL 只计算一次：逐对手、逐炮、掉血窗口三段统一抑制，
         // 覆盖完整时三段正常输出（不一边输出数字一边声明已抑制）。
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
-        PlayerEvidenceFormatter.appendDamageExchangeByOpponent(
+        PlayerCombatEvidenceFormatter.appendDamageExchangeByOpponent(
                 summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial);
-        if (!PlayerEvidenceFormatter.appendPerHitDamageEvents(
+        if (!PlayerCombatEvidenceFormatter.appendPerHitDamageEvents(
                 summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial)) {
             summaryBuilder.append("- PER_HIT_DAMAGE_EVENTS_UNAVAILABLE\n");
         }
-        PlayerEvidenceFormatter.appendRecorderDamageReceivedWindows(
+        PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         // 7b/7c：逐目标伤害交换与击杀归因需要事件流（recon）——仅在含重建路径输出
         final PlayerResult rec = ctx.battle() == null ? null : ctx.battle().recorderResult();
         if (rec != null) {
-            PlayerEvidenceFormatter.appendRecorderDamageExchange(
+            PlayerCombatEvidenceFormatter.appendRecorderDamageExchange(
                     summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
-            PlayerEvidenceFormatter.appendKillAttribution(
+            PlayerCombatEvidenceFormatter.appendKillAttribution(
                     summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
         }
-        PlayerEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
+        PlayerCombatEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
         // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
         final String behindLine = RelativeDepthHpEvidence.renderPlayerSection(
                 ctx.battle(), recon, recorderAccountId, observedDamagePartial);
@@ -296,13 +296,13 @@ final class PlayerSummaryBuilder {
         // 玩家本人单独成段，绝不再以「友方/队友」身份出现在队友阵容里
         if (rec != null) {
             sb.append("\n=== YOU_AUTHORITATIVE（你的战绩·权威结算） ===\n");
-            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, rec, true, true);
+            PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, rec, true, true);
         }
         sb.append("\n=== TEAMMATE_LINEUP_AUTHORITATIVE（你的队友阵容·权威结算，不含你本人） ===\n");
         boolean anyTeammate = false;
         for (final PlayerResult p : friendlies) {
             if (PlayerAnalysisPromptFormatter.isSamePlayer(p, rec)) continue;
-            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, true);
+            PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, p, true);
             anyTeammate = true;
         }
         if (!anyTeammate) {
@@ -310,7 +310,7 @@ final class PlayerSummaryBuilder {
         }
         sb.append("=== ENEMY_LINEUP_AUTHORITATIVE（敌方阵容·权威结算） ===\n");
         for (final PlayerResult p : enemies) {
-            PlayerEvidenceFormatter.appendPlayerLine(sb, battle, p, false);
+            PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, p, false);
         }
         if (!unknowns.isEmpty()) {
             sb.append("=== UNKNOWN_LINEUP_AUTHORITATIVE（未确定阵营·权威结算） ===\n");
@@ -325,22 +325,22 @@ final class PlayerSummaryBuilder {
         }
 
         // ====== 5. Class counts (backend-computed) ======
-        PlayerEvidenceFormatter.appendClassSummary(sb, friendlies, enemies, unknowns, battle);
+        PlayerRosterEvidenceFormatter.appendClassSummary(sb, friendlies, enemies, unknowns, battle);
 
         // ====== 6. Backend-computed aggregates ======
-        PlayerEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
+        PlayerRosterEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
 
         // ====== 7. Recorder ranking ======
         if (rec != null && !friendlies.isEmpty()) {
-            PlayerEvidenceFormatter.appendRecorderRanking(sb, rec, friendlies, battle);
+            PlayerRosterEvidenceFormatter.appendRecorderRanking(sb, rec, friendlies, battle);
         }
 
         // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");
-        PlayerEvidenceFormatter.appendDeathTimeline(sb, battle);
+        PlayerRosterEvidenceFormatter.appendDeathTimeline(sb, battle);
 
         // ====== 9. Event stream evidence ======
-        PlayerEvidenceFormatter.appendEventStreamEvidence(sb, ctx, battle);
+        PlayerReplayEventFormatter.appendEventStreamEvidence(sb, ctx, battle);
 
         // ====== 10. Side-based limitations ======
         if (!unknowns.isEmpty()) {
