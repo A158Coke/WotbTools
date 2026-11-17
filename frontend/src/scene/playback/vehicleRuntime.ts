@@ -558,7 +558,11 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
         const wheelCfg = wheels.map((w) => ({
           longitudinal: w.centerHull.y, centerZ: w.centerHull.z, radius: w.radius,
         }));
-        const attach = attachChainToWheels(chain2, wheelCfg);
+        const attach = attachChainToWheels(chain2, wheelCfg, 0.45,
+          // 客户端链折线第 3 分量 = 逐点 flag（1 = 支承点）。权威语义：有它就按作者分组建表，
+          // 不做几何推断（托带轮与带面之间的模型间隙会让「贴轮缘」判据漏掉整条上支段的支承，
+          // 见 suspension.ts attachChainToWheels 注释）。
+          chain.some((pt) => Number.isFinite(pt[2])) ? chain.map((pt) => Number(pt[2])) : null);
         const parts: SuspensionTrackPart['parts'] = [];
         for (const mesh of meshes) {
           mesh.geometry = mesh.geometry.clone();      // 形变逐车独立（模板几何共享）

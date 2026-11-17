@@ -107,15 +107,26 @@ export interface SuspensionWheel {
 export type ChainPoint = [number, number]
 
 /**
- * 链点 → 负重轮 挂接表（客户端 `SuspensionGenerator` 的「点→轮」映射的等价重建）：
- * 按**纵向**距离就近挂接，容差 = `tolFactor × 轮半径`；未被任何轮覆盖的点返回 −1
- * （上支段/悬空段——由垂弧与铺地步骤决定形状）。
+ * 链点 → 轮 挂接表。
+ *
+ * **权威语义 = 客户端链折线自带的 `flag`**（`tools/export_tank_suspension.py` 原样透出的
+ * 第 3 分量）：`flag=1` 的点是**支承点**（作者的「点→轮」分组），`flag=0` 是悬空段内点。
+ * 有 flag 时按它建表——支承点挂到**纵向最近**的轮（同纵向并列时取圆周残差更小者）。
+ *
+ * 为什么不靠几何就近推断（2026-11-17 60TP 实证）：上支段的托带轮与带面之间留有约 0.1 m
+ * 的模型间隙（7297：辊顶 0.89+0.14=1.03，带面 1.135），`|‖p−c‖−r| ≤ tol` 的容差永远够不着，
+ * 于是三个托带轮支承点全被漏掉 ⇒ `solveChain` 把**整条上支段**（idx 8→52，5.57 m）
+ * 当成一个悬挂跨距、按端点绝对高度插值，履带被拉成一条斜线（表现为「前端塌成一个顶点」）。
+ * 几何推断只作回落：无 flag 数据（旧包/长度不符）时行为与历史一致。
  *
  * @param {Array<[number, number]>} chain 静止链路，每点 `[纵向 y, 高度 z]`（m）
  * @param {Array<{longitudinal:number, radius:number}>} wheels 逐轮（纵向位置 = 链坐标系里的 y）
+ * @param {number} tolFactor 几何回落的容差系数（`tolFactor × 轮半径`）
+ * @param {ArrayLike<number>|null} [flags] 每点 flag（1 = 支承点）；缺失或不含 0/1 混合时回落几何
  * @returns {Int32Array} 每点的轮号，−1 = 无
  */
-export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], tolFactor = 0.45): Int32Array {
+export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], tolFactor = 0.45, flags?: ArrayLike<number> | null): Int32Array {
+  if (hasSupportFlags(flags, chain.length)) return attachByFlags(chain, wheels, flags as ArrayLike<number>);
   const out = new Int32Array(chain.length).fill(-1);
   // 判据 = 「链点在**该轮圆周上**」：|‖p − c‖ − r| 落在履带板厚容差内。
   // 单看纵向会误挂——上支段与底段同纵向，但上支段在轮顶上方一个直径处（客户端真正的
@@ -137,6 +148,42 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
   }
   return out;
 }
+
+/** flag 数据是否可用：长度与链一致且**同时**含 0 与 1（全 1/全 0/缺列 = 不可用）。 */
+function hasSupportFlags(flags: ArrayLike<number> | null | undefined, n: number): boolean {
+  if (!flags || flags.length !== n || n === 0) return false;
+  let ones = 0, zeros = 0;
+  for (let i = 0; i < n; i++) {
+    const f = flags[i];
+    if (!Number.isFinite(f)) return false;
+    if (f === 0) zeros++;
+    else if (f === 1) ones++;
+    else return false;      // 未知取值：不猜语义，回落几何
+  }
+  return ones > 0 && zeros > 0;
+}
+
+/** 按作者 flag 建表：支承点 → 纵向最近的轮（并列时取圆周残差更小者）。 */
+function attachByFlags(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], flags: ArrayLike<number>): Int32Array {
+  const out = new Int32Array(chain.length).fill(-1);
+  for (let i = 0; i < chain.length; i++) {
+    if (flags[i] !== 1) continue;
+    const [cy, cz] = chain[i];
+    let best = -1, bestLong = Infinity, bestErr = Infinity;
+    for (let w = 0; w < wheels.length; w++) {
+      const wh = wheels[w];
+      const dLong = Math.abs(cy - wh.longitudinal);
+      const r = wh.radius || 0.3;
+      const err = Math.abs(Math.hypot(cy - wh.longitudinal, cz - (wh.centerZ || 0)) - r);
+      if (dLong < bestLong - 1e-9 || (Math.abs(dLong - bestLong) <= 1e-9 && err < bestErr)) {
+        best = w; bestLong = dLong; bestErr = err;
+      }
+    }
+    out[i] = best;
+  }
+  return out;
+}
+
 
 /**
  * 链路解算（客户端顺序：逐轮偏移 → 悬空段垂弧 → 铺地）。
