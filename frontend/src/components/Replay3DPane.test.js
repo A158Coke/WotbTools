@@ -950,6 +950,37 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('暂停时连续按下一发可持续前进（评审 4595575859）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.hasData = true
+    Object.assign(store, { startTime: 5, duration: 100, time: 5, cam: 'follow' })
+    // 真实契约：seekTime 同步把回放时钟写回 store（场景每 tick 发布）
+    playback.api.seekTime.mockImplementation((v) => { store.time = v })
+    const workspaceState = wrapper.props('playbackSession').getState(wrapper.props('file'))
+    workspaceState.scenePlayback = {
+      shots: [
+        { t_fire: 10, shooter_eid: 11, is_author: true },
+        { t_fire: 20, shooter_eid: 11, is_author: true },
+        { t_fire: 30, shooter_eid: 11, is_author: true },
+      ],
+      kills: [],
+    }
+    await flush()
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(9.95)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(19.95)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(29.95)
+    wrapper.unmount()
+  })
+
   it('bounds transient kill events independently of persistent HUD content', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()

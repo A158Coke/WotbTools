@@ -4,7 +4,7 @@
 // 数据源 = playbackSession.loadScene(file)（与 3D 面板同一缓存解析，不重复跑 WASM）。
 // 射击事件的「装甲检视」走现有射击复现入口（storeShotsForViewer + shotViewerQuery，
 // 与 ReplayShotsPane.openInViewer 同一交接通道），本 pane 不自建任何 viewer 契约。
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -38,7 +38,9 @@ const props = withDefaults(defineProps<{
   playbackSession?: PlaybackSessionLike | null
   /** 与 ReplayShotsPane 同一导航通道（armor 查看器路由由工作台拥有） */
   navigate?: NavigateFn | null
-}>(), { file: null, active: false, playbackSession: null, navigate: null })
+  /** 工作台页面是否在前台（离页 = 在途装甲交接作废；默认 true 便于独立挂载） */
+  pageActive?: boolean
+}>(), { file: null, active: false, playbackSession: null, navigate: null, pageActive: true })
 const emit = defineEmits(['view-3d'])
 
 const { t } = useI18n()
@@ -53,12 +55,17 @@ let loadGen = 0
 /** 装甲交接代次：换文件/离开事件流/新点击即作废在途请求。 */
 let handoffSeq = 0
 const filter = ref<EventFilterKey>('all')
+/** 单次渲染上限与「显示更多」步长：事件全量可达（分页，不靠缩小过滤片） */
 const RenderCap = 800
+const showCount = ref(RenderCap)
 
 const events = computed(() => buildEventStream(facet.value))
 const filtered = computed(() => filterEvents(events.value, filter.value))
-const shown = computed(() => filtered.value.slice(0, RenderCap))
+const shown = computed(() => filtered.value.slice(0, showCount.value))
 const overflow = computed(() => Math.max(0, filtered.value.length - shown.value.length))
+// 切过滤片/换场：分页回到首屏
+watch(filter, () => { showCount.value = RenderCap })
+function showMore() { showCount.value += RenderCap }
 const counts = computed<Record<string, number>>(() => {
   const out: Record<string, number> = {}
   for (const e of events.value) out[e.filter] = (out[e.filter] || 0) + 1
@@ -110,6 +117,11 @@ watch(
   },
   { immediate: true },
 )
+// 工作台离页（pageActive=false）同样作废在途交接
+watch(() => props.pageActive, (on) => { if (!on) handoffSeq++ })
+// KeepAlive 切走 / v-if 卸载：异步续体不得再导航（评审 4595575111）
+onDeactivated(() => { handoffSeq++ })
+onBeforeUnmount(() => { handoffSeq++ })
 
 /** 点击事件 → seek 该时刻。seek 属于 3D 场景（sceneApi 由 Replay3DPane 持有），
  *  本 pane 只发出（工作台切 tab + 转交），不直接触碰场景。 */
@@ -135,7 +147,7 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
   const file = props.file
   const facetSnap = facet.value
   const seq = ++handoffSeq
-  const stillCurrent = () => seq === handoffSeq && file === props.file && props.active
+  const stillCurrent = () => seq === handoffSeq && file === props.file && props.active && props.pageActive
   shotsBusy.value = true
   try {
     // 射击复现消费 shots facet 行（含 ball_a/ball_b 段与配件串）——按需解析一次并缓存
@@ -260,8 +272,8 @@ function eventTitle(ev: PlaybackEventRow): string {
     case 'notice': return t('eventStream.notice_label', { code: ev.code ?? '?' })
     case 'consumable':
       return `${actorText(ev.actor)} · ${ev.text || t('eventStream.consumable_label')}`
-    case 'death': return t('eventStream.death_label')
-    case 'revive': return t('eventStream.revive_label')
+    case 'death': return t('eventStream.death_label_actor', { who: actorText(ev.actor) })
+    case 'revive': return t('eventStream.revive_label_actor', { who: actorText(ev.actor) })
     case 'kill': return t('eventStream.kill_label', { from: actorText(ev.actor), to: actorText(ev.target) })
     default: return t('eventStream.shot_label')
   }
@@ -310,6 +322,9 @@ function filterCount(key: EventFilterKey): number {
         </div>
         <p v-if="overflow > 0" class="es-overflow">
           {{ $t('eventStream.overflow', { n: overflow }) }}
+          <button type="button" class="es-more" data-testid="es-more" @click="showMore">
+            {{ $t('eventStream.show_more') }}
+          </button>
         </p>
         <ul class="es-list" data-testid="event-list">
           <li v-for="(ev, i) in shown" :key="`${ev.t}-${ev.kind}-${i}`" class="es-row">
@@ -398,4 +413,5 @@ function filterCount(key: EventFilterKey): number {
 .es-status, .es-empty { padding: var(--space-3) var(--space-1); color: var(--color-text-secondary); }
 .es-err { color: var(--color-danger); }
 .es-overflow { font: var(--type-caption); color: var(--color-text-tertiary); margin: 0; }
+.es-more { margin-inline-start: var(--space-2); font: var(--type-caption); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: none; color: var(--color-text-primary); padding: 0 var(--space-2); cursor: pointer; }
 </style>

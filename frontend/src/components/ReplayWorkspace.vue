@@ -719,6 +719,7 @@ watch(() => props.initialCapability, (val) => {
           v-if="canUseDemoCapabilities && eventsMounted && !eventsLoadError"
           :file="targetFile"
           :active="activeCapability === 'events'"
+          :page-active="pageActive"
           :playback-session="workspace.playbackSession"
           :navigate="navigate"
           @view-3d="view3dAt"

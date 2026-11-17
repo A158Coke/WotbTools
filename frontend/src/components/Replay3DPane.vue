@@ -305,15 +305,25 @@ const killTicks = computed(() => buildKillTicks(facetKills.value, store.startTim
  *  seekTime 不改播放态：暂停中跳完仍是暂停，播放中跳完继续播。 */
 function jumpShot(direction) {
   const shots = facetShots.value
+  // 连续跳转基准：上一次跳到的炮击时刻（暂停时 store.time 停在 t-0.05，若直接以它为
+  // 基准会反复选中同一发）。普通 seek/播放使时间离开该位置后基准失效（见 watch）。
+  const base = jumpBase ?? store.time
   const target = direction < 0
-    ? findPrevShotTime(shots, store.time)
-    : findNextShotTime(shots, store.time)
+    ? findPrevShotTime(shots, base)
+    : findNextShotTime(shots, base)
   if (target == null) return
+  jumpBase = target
   // seekTo 用 firstIndexAfter(严格晚于 T) 定位弹道游标：跳到精确 t_fire 会把该发
   // 排除（炮线/炮声不出现）。回退一小步（0.05s，半个包钟量子）让游标停在目标发之前。
   const seekTo = Math.max(store.startTime, target - 0.05)
   sceneApi?.seekTime(seekTo)
 }
+// 跳转基准失效：时间离开「上次跳转落点（target-0.05）」超过一个步长容差
+let jumpBase = null
+watch(() => store.time, (t) => {
+  if (jumpBase == null) return
+  if (Math.abs(t - (jumpBase - 0.05)) > 0.11) jumpBase = null
+})
 
 /** 骑乘名册序：按物理队伍合并 team1+team2（buildRosterRows 顺序 = 名册呈现顺序）；
  *  unknown 阵营无侧别，rosterRideTarget 自动排除。 */

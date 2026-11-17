@@ -161,6 +161,63 @@ describe('ReplayEventStreamPane', () => {
     expect(texts.some((x) => x.includes('left_track'))).toBe(true)
   })
 
+  it('超过单次渲染上限可「显示更多」继续到达（评审 4595548573）', async () => {
+    const facet = { ...FACET, notifications: Array.from({ length: 810 }, (_, i) => ({ t: 1 + i * 0.01, subject: 1, code: 11515 })) }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    await w.find('[data-filter="all"]').trigger('click')
+    expect(w.findAll('.es-row').length).toBe(800)
+    await w.find('[data-testid="es-more"]').trigger('click')
+    expect(w.findAll('.es-row').length).toBeGreaterThan(800)
+  })
+
+  it('死亡/复活行带车辆身份（评审 4595548578）', async () => {
+    const facet = {
+      ...FACET,
+      vehicles: [
+        { eid: 1, nickname: 'Alpha', tank_name: 'T-62A', team: 1 },
+        { eid: 2, nickname: 'Bravo', tank_name: 'E 100', team: 2, death_times: [32, 60], resurrection_times: [45] },
+      ],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const death = w.find('[data-kind="death"]')
+    expect(death.text()).toContain('Bravo')
+    expect(death.text()).toContain('E 100')
+    const revive = w.find('[data-kind="revive"]')
+    expect(revive.text()).toContain('Bravo')
+  })
+
+  it('离页（pageActive=false）后迟到 query 不导航（评审 4595575111）', async () => {
+    const navigate = vi.fn()
+    let resolveQuery
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0] }] })
+    shotViewerQuery.mockImplementation(() => new Promise((res) => { resolveQuery = res }))
+    const w = mountPane({ navigate })
+    await flushPromises()
+    await w.find('[data-kind="shot"]').trigger('click')
+    await flushPromises()
+    await w.setProps({ pageActive: false })
+    resolveQuery({ shooter: '10005', shot: '0' })
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('卸载后迟到 query 不导航（评审 4595575111）', async () => {
+    const navigate = vi.fn()
+    let resolveQuery
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0] }] })
+    shotViewerQuery.mockImplementation(() => new Promise((res) => { resolveQuery = res }))
+    const w = mountPane({ navigate })
+    await flushPromises()
+    await w.find('[data-kind="shot"]').trigger('click')
+    await flushPromises()
+    w.unmount()
+    resolveQuery({ shooter: '10005', shot: '0' })
+    await flushPromises()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('switching file reloads and cleared stale facet (review P1)', async () => {
     const sessions = []
     const makeSession2 = (facet) => {

@@ -424,10 +424,10 @@ export function buildEventStream(
   }
   for (const v of Array.isArray(facet.vehicles) ? facet.vehicles : []) {
     for (const dt of Array.isArray(v?.death_times) ? v.death_times : []) {
-      push('death', dt, { eid: v?.eid })
+      push('death', dt, { eid: v?.eid, actor: actorOf(v?.eid) })
     }
     for (const rt of Array.isArray(v?.resurrection_times) ? v.resurrection_times : []) {
-      push('revive', rt, { eid: v?.eid })
+      push('revive', rt, { eid: v?.eid, actor: actorOf(v?.eid) })
     }
   }
   out.sort((a, b) => a.t - b.t || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0))
