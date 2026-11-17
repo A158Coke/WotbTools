@@ -265,6 +265,103 @@ describe('链路解算：三步顺序与方向性（逐轮偏移 → 垂弧 → 
   })
 })
 
+/**
+ * 60TP Lewandowskiego（tank_id 7297）履带塌陷回归（2026-11-17 用户实测）。
+ *
+ * 现象：对局里该车前部履带被拉成一个「三角形的顶点」。链路数据无 NaN、行程也在范围内——
+ * 塌的不是数值，而是**上支段的支承关系**：托带轮（r=0.14，centerZ=0.89）顶面只到 1.03 m，
+ * 而带面中心线在 1.135 m，模型本身留了约 0.1 m 间隙，于是「点在轮圆周上」的几何判据
+ * （容差 max(0.10, 0.45·r)）永远够不着，idx 24/25、35/36、46/47 三对托带轮支承点全被漏掉。
+ * `solveChain` 第 2 步于是把 idx 8→52（5.57 m，整条上支段）当成一个悬挂跨距、按**端点绝对
+ * 高度**插值，把上支段从 z≈1.14 拉成一条斜线（实测中点被压到 0.13 m ≈ −1.0 m），而前端导向
+ * 轮弧保持原位 ⇒ 前部看起来塌成一个顶点。
+ *
+ * 权威语义 = 客户端链折线自带的逐点 `flag`（1 = 支承点），数据面已原样导出
+ * （`tools/export_tank_suspension.py` `chains` 每点 `[x, y, flag]`）。本组用例锁两件事：
+ * 有 flag 时必须以 flag 建表（零行程 ⇒ 履带逐点等于静止折线）；无 flag 的几何回落保留历史
+ * 行为（作为缺陷锚点，避免有人把回落路径误当成等价实现）。
+ */
+describe('60TP（7297）履带塌陷回归：支承点按客户端 chain flag 建表', () => {
+  // 资产面 suspension/7297.json 的 left 链原样嵌入（[纵向 x, 高度 z, flag]，63 点，2 位小数）
+  const CHAIN = [
+    [-2.46, 0.0, 1], [-2.39, 0.0, 1], [-1.45, 0.0, 1], [-0.5, 0.0, 1],
+    [0.45, 0.0, 1], [1.4, 0.0, 1], [2.4, 0.0, 1], [2.54, 0.01, 1],
+    [2.65, 0.08, 0], [2.81, 0.15, 0], [2.97, 0.23, 0], [3.13, 0.31, 0],
+    [3.47, 0.47, 1], [3.54, 0.56, 1], [3.6, 0.75, 1], [3.56, 0.94, 1],
+    [3.43, 1.09, 1], [3.24, 1.14, 1], [3.06, 1.14, 0], [2.88, 1.14, 0],
+    [2.71, 1.14, 0], [2.53, 1.14, 0], [2.36, 1.14, 0], [2.18, 1.14, 0],
+    [2.01, 1.14, 1], [1.83, 1.14, 1], [1.66, 1.14, 0], [1.48, 1.14, 0],
+    [1.3, 1.14, 0], [1.13, 1.14, 0], [0.95, 1.14, 0], [0.78, 1.14, 0],
+    [0.6, 1.14, 0], [0.43, 1.14, 0], [0.25, 1.13, 0], [0.07, 1.13, 1],
+    [-0.1, 1.13, 1], [-0.28, 1.13, 0], [-0.45, 1.13, 0], [-0.63, 1.13, 0],
+    [-0.8, 1.13, 0], [-0.98, 1.13, 0], [-1.16, 1.13, 0], [-1.33, 1.13, 0],
+    [-1.51, 1.13, 0], [-1.68, 1.13, 0], [-1.86, 1.13, 1], [-2.03, 1.13, 1],
+    [-2.21, 1.13, 0], [-2.39, 1.13, 0], [-2.56, 1.13, 0], [-2.74, 1.13, 0],
+    [-2.91, 1.13, 0], [-3.19, 1.13, 1], [-3.42, 1.06, 1], [-3.58, 0.88, 1],
+    [-3.63, 0.64, 1], [-3.54, 0.42, 1], [-3.34, 0.27, 1], [-3.17, 0.22, 0],
+    [-3.0, 0.17, 0], [-2.83, 0.12, 0], [-2.67, 0.07, 0],
+  ]
+  const flags = CHAIN.map((p) => p[2])
+  const chain = CHAIN.map(([x, z]) => [x, z])
+  // 模型 GLB chassis_wheel 节点实测（longitudinal = 车体系纵坐标，3 位小数）
+  const wheels = [
+    { longitudinal: 3.24, centerZ: 0.77, radius: 0.252 },
+    { longitudinal: 2.4, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: 1.86, centerZ: 0.89, radius: 0.14 },     // 托带轮
+    { longitudinal: 1.4, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: 0.45, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: -0.05, centerZ: 0.89, radius: 0.14 },    // 托带轮
+    { longitudinal: -0.5, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: -1.45, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: -1.94, centerZ: 0.89, radius: 0.14 },    // 托带轮
+    { longitudinal: -2.39, centerZ: 0.45, radius: 0.35 },
+    { longitudinal: -3.19, centerZ: 0.69, radius: 0.407 },   // 前端导向轮
+  ]
+  const zeros = new Array(chain.length).fill(0)
+  const bend = { upper_factor: 0.19214, length_power: 0.5 }
+  /** 悬挂跨距的峰谷垂弧：`upperFactor·span^P·(t−t²)` 的最大值（t=0.5 → 1/4）。 */
+  const sagPeak = (span) => bend.upper_factor * Math.pow(Math.max(span, 1e-3), bend.length_power) / 4
+  const solve = (attach) => {
+    const out = new Float64Array(chain.length)
+    solveChain(out, chain, attach, new Array(wheels.length).fill(0), zeros, wheels, bend)
+    return out
+  }
+
+  it('flag 支承表：零行程 + 零贴地 ⇒ 履带只在各悬挂跨距的垂弧包络内偏离静止折线', () => {
+    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    const out = solve(attach)
+    // 按解算器同一口径枚举跨距（相邻支承点之间的未挂接段），逐点用该段的垂弧峰值作上限。
+    // 这条断言同时锁住「上支段不被整段拉平」：没有 flag 支承表时 idx 17 会被压 1.0 m。
+    let checked = 0
+    let i = 0
+    while (i < chain.length) {
+      if (attach[i] < 0) { i++; continue }
+      let j = i + 1
+      while (j < chain.length && attach[j] < 0) j++
+      if (j < chain.length && j > i + 1) {
+        const limit = sagPeak(Math.abs(chain[j][0] - chain[i][0]))
+        for (let k = i + 1; k < j; k++) {
+          const dev = out[k] - chain[k][1]
+          expect(dev).toBeLessThanOrEqual(limit + 1e-9)
+          expect(dev).toBeGreaterThanOrEqual(-limit - 1e-9)
+          checked++
+        }
+      }
+      i = j
+    }
+    expect(checked).toBeGreaterThan(30)   // 本车 63 点里 40+ 点落在悬挂跨距内
+  })
+
+  it('三对托带轮支承点（24/25、35/36、46/47）都挂在轮上', () => {
+    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    for (const i of [24, 25, 35, 36, 46, 47]) expect(attach[i]).toBeGreaterThanOrEqual(0)
+    // 底段/弧上的支承点也照常挂接（flag 路径不是只认上支段）
+    for (const i of [0, 2, 4, 6, 12, 17, 53, 58]) expect(attach[i]).toBeGreaterThanOrEqual(0)
+    // 非支承点一律不挂（悬空段内点由垂弧/铺地决定形状）
+    for (const i of [8, 9, 18, 26, 37, 48, 59, 62]) expect(attach[i]).toBe(-1)
+  })
+})
+
 describe('花纹偏移写 V：取模只作用于偏移（保护跨 wrap 图元的插值）', () => {
   it('跨多个 wrap 的四边形：两端 ΔV 保持不变（逐顶点取模会把 2.85 折成 0.15 ⇒ 拉长 18×）', () => {
     // 实测 KRV 底段：一根四边形跨 2.85 个 wrap（V 1.548 → 4.394）
