@@ -636,6 +636,7 @@ const camoBonusParts = computed(() => {
     <section v-if="showEquipment" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.equipment') }}</h3>
+        <slot name="devices" />
         <span class="tp-muted">{{ t('agentTanks.configurator.equipment_hint') }}</span>
       </div>
       <div class="tp-dev-matrix" role="group" :aria-label="t('agentTanks.configurator.equipment')">
@@ -678,6 +679,7 @@ const camoBonusParts = computed(() => {
     <section v-if="showProvisions" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.provisions') }}</h3>
+        <slot name="provisions" />
         <span class="tp-muted">{{ selection.provisions.length }}/{{ provisionSlots }}</span>
       </div>
       <div class="tp-icon-grid">
@@ -702,6 +704,7 @@ const camoBonusParts = computed(() => {
     <section v-if="showConsumables" class="tp-config-block">
       <div class="tp-block-head">
         <h3>{{ t('agentTanks.configurator.consumables') }}</h3>
+        <slot name="consumables" />
         <span class="tp-muted">{{ selection.consumables.length }}/{{ consumableSlots }}</span>
       </div>
       <div class="tp-icon-grid">

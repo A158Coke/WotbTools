@@ -11,7 +11,7 @@
 import { romanLevel } from '../utils/tierFormat.js'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCcw, Search, SearchX, TriangleAlert, X } from 'lucide-vue-next'
+import { RotateCcw, Search, SearchX, Square, SquareCheck, TriangleAlert, X } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { TYPE_CLS, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
@@ -45,10 +45,11 @@ const props = defineProps({
   /** page | dialog */
   layout: { type: String, default: 'page' },
   pageSize: { type: Number, default: 48 },
+  multiple: { type: Boolean, default: false },
   /** 弹窗打开时把焦点交给搜索框 */
   autofocus: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:filters', 'select', 'retry', 'close'])
+const emit = defineEmits(['update:filters', 'select', 'confirm', 'retry', 'close'])
 
 const { t, te, locale } = useI18n()
 const statFormat = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }))
@@ -106,6 +107,21 @@ const { visible, hasMore, loadMore, sentinel } = useIncrementalList(filtered, {
   pageSize: props.pageSize,
   resetKey: () => [local.q, local.tier, local.nation, local.type, local.category, local.sort].join('|'),
 })
+// Selection covers the complete filter result, independently of the rendered page.
+const draft = ref(new Set())
+const selectedHere = computed(() => filtered.value.reduce((n, tank) => n + Number(draft.value.has(tank.id)), 0))
+function selectFiltered(select) {
+  const next = new Set(draft.value)
+  for (const tank of filtered.value) {
+    if (select) next.add(tank.id)
+    else next.delete(tank.id)
+  }
+  draft.value = next
+}
+function confirmSelection() {
+  const byId = new Map(props.tanks.map(tank => [tank.id, tank]))
+  emit('confirm', [...draft.value].map(id => byId.get(id)).filter(Boolean))
+}
 const remaining = computed(() => filtered.value.length - visible.value.length)
 
 const tierLabel = tier => romanLevel(tier)
@@ -133,8 +149,9 @@ const typeOptions = computed(() => [
 const sortOptions = computed(() => [
   { value: 'name', label: t('agentTanks.sort_name') },
   { value: 'tier', label: t('agentTanks.sort_tier') },
-  { value: 'hp', label: t('agentTanks.sort_hp') },
-  { value: 'pen', label: t('agentTanks.sort_pen') },
+  ...(props.multiple ? [{ value: 'speed', label: t('agentTanks.speed_fwd') }] : [
+    { value: 'hp', label: t('agentTanks.sort_hp') }, { value: 'pen', label: t('agentTanks.sort_pen') },
+  ]),
 ])
 
 const hasFilters = computed(() => !!(local.q.trim() || local.tier || local.nation || local.type || local.category))
@@ -194,10 +211,14 @@ function iconCropStyle(id) {
 }
 
 function isSelected(tank) {
+  if (props.multiple) return draft.value.has(tank.id)
   return props.selectedId != null && String(tank.id) === String(props.selectedId)
 }
 function choose(tank) {
-  emit('select', tank)
+  if (props.multiple) {
+    if (draft.value.has(tank.id)) draft.value.delete(tank.id)
+    else draft.value.add(tank.id)
+  } else emit('select', tank)
 }
 
 const searchInput = ref(null)
@@ -214,6 +235,12 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       </button>
     </div>
 
+    <div v-if="multiple" class="tc-bulk-bar">
+      <span aria-live="polite">{{ t('mobBulk.selected', { count: draft.size, hidden: draft.size - selectedHere }) }}</span>
+      <AppButton size="sm" :disabled="!filtered.length || selectedHere === filtered.length" @click="selectFiltered(true)">{{ t('mobBulk.selectFilter') }}</AppButton>
+      <AppButton size="sm" :disabled="!selectedHere" @click="selectFiltered(false)">{{ t('mobBulk.clearFilter') }}</AppButton>
+      <AppButton variant="primary" size="sm" :disabled="!draft.size" @click="confirmSelection">{{ t('mobBulk.addN', { count: draft.size }) }}</AppButton>
+    </div>
     <div class="tp-toolbar surface-glass-1">
     <div class="tp-search-row">
       <label class="tp-search">
@@ -327,6 +354,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
                 'is-collector': tank.category === 'collector',
                 sel: isSelected(tank),
               }"
+              :aria-pressed="multiple ? isSelected(tank) : undefined"
               :data-tank-id="tank.id"
               data-testid="tank-card"
               @click="choose(tank)"
@@ -349,7 +377,11 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
                 <span class="tp-pill">{{ nationLabel(tank.nation) }}</span>
                 <span class="tp-pill" :class="TYPE_CLS[tank.type] || 't-unknown'"><TankCatalogIcon kind="type" :value="tank.type" />{{ typeLabel(tank.type) }}</span>
               </span>
-              <span class="tp-card-stats">
+              <span v-if="multiple" class="tp-card-stats">
+                <span><span class="tp-stat-label">{{ t('agentTanks.speed_fwd') }}</span>{{ formatStat(tank.speed) }} km/h</span>
+                <component :is="isSelected(tank) ? SquareCheck : Square" class="tc-pick-mark" :size="16" aria-hidden="true" />
+              </span>
+              <span v-else class="tp-card-stats">
                 <span><span class="tp-stat-label">{{ t('agentTanks.hp') }}</span>{{ formatStat(tank.hp) }}</span>
                 <span><span class="tp-stat-label">{{ t('agentTanks.pen') }}</span>{{ formatStat(tank.pen_max) }}</span>
               </span>
@@ -365,6 +397,9 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 </template>
 
 <style scoped>
+.tc-bulk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-2); }
+.tc-bulk-bar span { margin-inline-end: auto; }
+.tc-pick-mark { color: var(--color-accent); }
 .tank-catalog-menu {
   display: flex;
   flex-direction: column;

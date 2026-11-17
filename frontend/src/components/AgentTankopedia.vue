@@ -396,6 +396,7 @@ const vehicle = computed(() => mobilityVehicle({
 }))
 function openMobility(withVehicle) {
   const target = locationForView('agent-mobility', route)
+  target.query.mobilityReturn = router.resolve({ path: route.path, query: effectiveQuery.value, hash: route.hash }).fullPath
   delete target.query.comparison
   delete target.query.mobilitySeed
   if (withVehicle) {

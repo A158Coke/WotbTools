@@ -393,7 +393,7 @@ describe('国服名称快照 — 默认搜索接线', () => {
 describe('normalizeTankCache', () => {
   it('对象与数组两种形状都能转换，最大穿深取弹种最大值', () => {
     const fromObject = normalizeTankCache({ 7: { name: 'A', tier: 3, shells: [{ penetration: 50 }, { penetration: 80 }] } })
-    expect(fromObject).toEqual([{ id: 7, name: 'A', aliases: [], tier: 3, nation: 'unknown', type: 'unknown', category: 'unknown', is_premium: false, is_collector: false, hp: null, pen_max: 80 }])
+    expect(fromObject).toEqual([{ id: 7, name: 'A', aliases: [], tier: 3, nation: 'unknown', type: 'unknown', category: 'unknown', is_premium: false, is_collector: false, speed: null, hp: null, pen_max: 80 }])
     expect(normalizeTankCache([{ id: 8, name: 'B', is_premium: 1 }])[0]).toMatchObject({ id: 8, is_premium: true, pen_max: null })
   })
 
