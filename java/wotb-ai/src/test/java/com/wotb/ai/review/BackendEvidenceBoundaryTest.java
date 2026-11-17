@@ -112,7 +112,7 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R5 — Team production integration：Skill → TeamEvidenceFormatter → TeamAiPromptBuilder
+    // R5 — Team production integration: Skill → Team evidence formatters → TeamAiPromptBuilder
     @Test
     void r5TeamProductionPromptHasFactsButNoBackendVerdict() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-delay-hold-01");

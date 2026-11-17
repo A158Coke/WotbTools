@@ -23,7 +23,7 @@ class TeamTankRoleConsistencyTest {
     @Test
     void mainTeamReviewResolvesTankClassFromCanonicalSource() {
         assertEquals(ReplayDisplayNames.tankClass(TANK_ID),
-                TeamEvidenceFormatter.resolveTankClass(TANK_ID),
+                TeamRosterFormatter.resolveTankClass(TANK_ID),
                 "main Team Review 必须使用 ReplayDisplayNames.tankClass");
     }
 

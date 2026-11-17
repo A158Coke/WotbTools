@@ -92,18 +92,18 @@ class TeamResultSourceBoundaryTest {
 
     @Test
     void teamResultLineNeverReportsAnnihilationOnBoundaryInputs() {
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(null, 1, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(null, 1, "CHRD").contains("全歼"));
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(null, 1), 1, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(List.of(), 1), 1, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(friendlyRoster(false), 1), 1, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(enemyRoster(false), 2), 1, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(bothRosters(false, true), 1), 0, "CHRD").contains("全歼"));
-        assertFalse(TeamEvidenceFormatter.resolveTeamResult(
+        assertFalse(TeamOutcomeFormatter.resolveTeamResult(
                 battle(bothRosters(false, true), 1), 3, "CHRD").contains("全歼"));
     }
 
@@ -114,13 +114,13 @@ class TeamResultSourceBoundaryTest {
         assertEquals("（全歼敌方）",
                 FriendlyEnemyResult.annihilationSuffix(enemyWiped, 1, Winner.FRIENDLY_WIN));
         assertEquals("CHRD获胜（全歼敌方）",
-                TeamEvidenceFormatter.resolveTeamResult(enemyWiped, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(enemyWiped, 1, "CHRD"));
         // 双方 roster 齐全且本方 0 存活 → 被敌方全歼
         final Battle friendlyWiped = completeBattle(bothRosters(false, true), 2);
         assertEquals("（被敌方全歼）",
                 FriendlyEnemyResult.annihilationSuffix(friendlyWiped, 1, Winner.ENEMY_WIN));
         assertEquals("CHRD落败（被敌方全歼）",
-                TeamEvidenceFormatter.resolveTeamResult(friendlyWiped, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(friendlyWiped, 1, "CHRD"));
     }
 
     @Test
@@ -135,13 +135,13 @@ class TeamResultSourceBoundaryTest {
         assertEquals(Winner.FRIENDLY_WIN, FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).winner());
         assertEquals(WinnerSource.BATTLE_RESULTS,
                 FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
-        assertEquals("CHRD获胜", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        assertEquals("CHRD获胜", TeamOutcomeFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
         // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 胜利
         final Battle noWinner = battle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
         assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
-        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+        assertEquals("平局或未知", TeamOutcomeFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
     }
 
     @Test
@@ -156,13 +156,13 @@ class TeamResultSourceBoundaryTest {
         assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).winner());
         assertEquals(WinnerSource.BATTLE_RESULTS,
                 FriendlyEnemyResult.resolveTeamBattle(withWinner, 1).source());
-        assertEquals("CHRD落败", TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+        assertEquals("CHRD落败", TeamOutcomeFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
         // winnerTeam 缺失：不得推导为 SURVIVOR_SETTLEMENT 落败
         final Battle noWinner = battle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
         assertEquals(Winner.DRAW_OR_UNKNOWN, resolved.winner());
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
-        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+        assertEquals("平局或未知", TeamOutcomeFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
     }
 
     @Test
@@ -179,14 +179,14 @@ class TeamResultSourceBoundaryTest {
         assertEquals("（全歼敌方）",
                 FriendlyEnemyResult.annihilationSuffix(withWinner, 1, Winner.FRIENDLY_WIN));
         assertEquals("CHRD获胜（全歼敌方）",
-                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
         // winnerTeam 缺失且完整 3v3：仍可推导 SURVIVOR_SETTLEMENT
         final Battle noWinner = completeBattle(players, null);
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(noWinner, 1);
         assertEquals(Winner.FRIENDLY_WIN, resolved.winner());
         assertEquals(WinnerSource.SURVIVOR_SETTLEMENT, resolved.source());
         assertEquals("CHRD获胜（全歼敌方）",
-                TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
     }
 
     @Test
@@ -200,7 +200,7 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertNotEquals(WinnerSource.POINTS_INFERENCE, resolved.source());
         assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
-        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
+        assertEquals("平局或未知", TeamOutcomeFormatter.resolveTeamResult(noWinner, 1, "CHRD"));
     }
 
     @Test
@@ -215,7 +215,7 @@ class TeamResultSourceBoundaryTest {
         assertTrue(resolved.pointsDecided());
         assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
         assertEquals("CHRD获胜（点数判定）",
-                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
     }
 
     @Test
@@ -227,7 +227,7 @@ class TeamResultSourceBoundaryTest {
         final var resolved = FriendlyEnemyResult.resolveTeamBattle(withWinner, 1);
         assertEquals(PointsEndReason.UNKNOWN, resolved.pointsEndReason());
         assertEquals("CHRD获胜（点数判定）",
-                TeamEvidenceFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(withWinner, 1, "CHRD"));
     }
 
     @Test
@@ -236,8 +236,8 @@ class TeamResultSourceBoundaryTest {
         players.get(0).victoryPointsEarned = 1043;
         players.get(7).victoryPointsEarned = 100;
         final Battle incomplete = battle(players, 1); // rosterComplete=false
-        final TeamEvidenceFormatter.BudgetWriter w = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(w, incomplete, 1, "eval-arena");
+        final TeamPromptBudgetWriter w = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(w, incomplete, 1, "eval-arena");
         final String content = w.content();
         assertTrue(content.contains("SETTLEMENT_ROSTER_INCOMPLETE=true"), content);
         assertTrue(content.contains("pointsTotalsUnavailable=true"), content);
@@ -248,8 +248,8 @@ class TeamResultSourceBoundaryTest {
         assertFalse(content.contains("victoryPointsEarned=100"), content);
         // 完整阵容对照：输出真实总量且无标记
         final Battle complete = completeBattle(players, 1);
-        final TeamEvidenceFormatter.BudgetWriter w2 = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(w2, complete, 1, "eval-arena");
+        final TeamPromptBudgetWriter w2 = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(w2, complete, 1, "eval-arena");
         final String completeContent = w2.content();
         assertTrue(completeContent.contains("team victoryPointsEarned=1043"), completeContent);
         assertFalse(completeContent.contains("SETTLEMENT_ROSTER_INCOMPLETE"), completeContent);
@@ -268,7 +268,7 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals(PointsEndReason.TIME_EXPIRED, resolved.pointsEndReason());
         assertEquals("平局或未知",
-                TeamEvidenceFormatter.resolveTeamResult(timeExpiredBattle, 1, "CHRD"));
+                TeamOutcomeFormatter.resolveTeamResult(timeExpiredBattle, 1, "CHRD"));
 
         // 完整 7v7：时长 300s < 420s（标准规则）→ REACHED_1000（胜方仍未知，与点数字段无关）
         final List<PlayerResult> reached = bothRosters(true, true);
@@ -279,7 +279,7 @@ class TeamResultSourceBoundaryTest {
         assertEquals(WinnerSource.UNKNOWN, resolved.source());
         assertEquals(PointsEndReason.REACHED_1000, resolved.pointsEndReason());
         assertEquals("平局或未知",
-                TeamEvidenceFormatter.resolveTeamResult(
+                TeamOutcomeFormatter.resolveTeamResult(
                         completeBattle(reached, null), 1, "CHRD"));
 
         // 合法非 7v7（完整 3v3）：无权威胜方同样 fail closed
