@@ -22,8 +22,10 @@ export function installDebugProbes({ renderer, scene, camera, controls, cameraRu
   w.__scene = scene
   w.__renderer = renderer
   w.__threeCamera = camera
-  // 相机探针：位置/模式（判断“看不见”是否只是俯视视角/距离问题）
-  w.__camera = () => ({
+  // __camera 必须保持**相机对象**（renderer 先写入，测试/诊断直接读 position）；
+  // 位置/模式探针另挂 __cameraInfo，不能覆盖对象引用。
+  w.__camera = camera
+  w.__cameraInfo = () => ({
     pos: camera ? camera.position.toArray() : null,
     mode: cameraRuntime && cameraRuntime.cam ? cameraRuntime.cam() : null,
   })

@@ -1173,7 +1173,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function ensureRenderer() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
     if (DEBUG && renderer) installDebugProbes({ renderer, scene, camera, controls, cameraRuntime });
-    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
+    if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
       || rendererCaps.stencil !== contactShadowCtl.wantsStencil())) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
       // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
