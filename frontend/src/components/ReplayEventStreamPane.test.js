@@ -197,6 +197,8 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
     await flushPromises()
+    await new Promise((r) => setTimeout(r, 1600))
+    await flushPromises()
     await w.setProps({ pageActive: false })
     resolveQuery({ shooter: '10005', shot: '0' })
     await flushPromises()
@@ -212,10 +214,57 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
     await flushPromises()
+    await new Promise((r) => setTimeout(r, 1600))
+    await flushPromises()
     w.unmount()
     resolveQuery({ shooter: '10005', shot: '0' })
     await flushPromises()
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('join/leave/channel_created 保留动作区别（评审 4595675895）', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [
+        { t: 10, kind: 'join', raw_type: 0, channel: 1549648, sender: 'Alpha' },
+        { t: 11, kind: 'leave', raw_type: 2, channel: 1549648, sender: 'Alpha' },
+        { t: 12, kind: 'channel_created', raw_type: 7, channel: 1549648, sender: 'Alpha' },
+      ],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const titles = w.findAll('[data-kind="presence"]').map((n) => n.text())
+    expect(titles.some((x) => x.includes('presence_join'))).toBe(true)
+    expect(titles.some((x) => x.includes('presence_leave'))).toBe(true)
+    expect(titles.some((x) => x.includes('presence_channel_created'))).toBe(true)
+  })
+
+  it('0x2b 另域文本与 0x2f 正文都保留（不做跨域去重，评审 4596693945）', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [{ t: 10, kind: 'message', raw_type: 1, channel: 11, sender: 'A', text: '?' }],
+      chat_messages: [{ t: 10.2, tag: 1, seq: 22, text: '?' }],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const chats = w.findAll('[data-kind="chat"]')
+    expect(chats).toHaveLength(2) // 两条来源明确的原始记录都保留
+  })
+
+  it('无关车型慢请求不阻塞所选射击的导航（评审 4595675888）', async () => {
+    const navigate = vi.fn()
+    let resolveQuery
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0] }] })
+    shotViewerQuery.mockImplementation(() => new Promise((res) => { resolveQuery = res }))
+    const w = mountPane({ navigate })
+    await flushPromises()
+    await w.find('[data-kind="shot"]').trigger('click')
+    // 不等待 annotate 的有界 race（1500ms）自然结束——这里只验证导航在超时后发生
+    await new Promise((r) => setTimeout(r, 1700))
+    await flushPromises()
+    resolveQuery({ shooter: '10005', shot: '0' })
+    await flushPromises()
+    expect(navigate).toHaveBeenCalled()
   })
 
   it('switching file reloads and cleared stale facet (review P1)', async () => {
@@ -275,6 +324,8 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
     await flushPromises()
+    await new Promise((r) => setTimeout(r, 1600))
+    await flushPromises()
     expect(shotViewerQuery).toHaveBeenCalledTimes(1)
     // 用户离开事件流（切到其他能力）：在途交接作废
     await w.setProps({ active: false })
@@ -293,6 +344,8 @@ describe('ReplayEventStreamPane', () => {
     const w = mountPane({ navigate })
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
+    await flushPromises()
+    await new Promise((r) => setTimeout(r, 1600))
     await flushPromises()
     expect(shotViewerQuery).toHaveBeenCalledTimes(1)
     // query 未返回时切到 B 场：旧请求不得把用户带进 A 的装甲检视

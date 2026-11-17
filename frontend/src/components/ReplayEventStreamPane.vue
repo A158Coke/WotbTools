@@ -163,19 +163,11 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
         // 锚定注入失败（产物过旧等）→ 裸解析兜底（与 ReplayShotsPane 同款）
         return parseAgentShotsFromBytes(bytes)
       })
-      // 名册补齐车型身份（与 ReplayShotsPane 同款）：原始 WASM 射击行只有 eid 时
-      // shotViewerQuery 会因两车型 id 缺失返回 null，按钮静默无效。
-      // 解析完成：用户可能已切场/切能力——不再写缓存、不继续交接
       if (!stillCurrent()) return
-      const rows = (outcome.shots || []) as ShotReplayRow[]
       const vehicles = facetSnap?.vehicles
-      if (Array.isArray(vehicles)) {
-        enrichShotsFromRoster(rows as never[], vehicles)
-        // 实际搭载配置下标（多炮车：炮塔/炮管/弹表变体）——与射击分析入口同源
-        await annotateMountedConfigs(rows as never[], vehicles)
-      }
-      if (!stillCurrent()) return
-      shotsCache = { file, rows: rows.filter(rowHas3d) }
+      const parsedRows = (outcome.shots || []) as ShotReplayRow[]
+      if (Array.isArray(vehicles)) enrichShotsFromRoster(parsedRows as never[], vehicles)
+      shotsCache = { file, rows: parsedRows.filter(rowHas3d) }
     }
     // 事件行 → shots facet 行：同一发 = (shooter_eid, target_eid, |Δt|≤0.05s)
     const row = shotsCache.rows.find(
@@ -183,6 +175,15 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
         && Math.abs((r.time_s ?? 0) - ev!.t) <= 0.05,
     )
     if (!row) return
+    // 搭载配置富化只针对**选中行**的射手/目标车型（全场 Promise.all 无界等待会被
+    // 无关车辆的慢请求卡死本次导航——评审 4595675888）；再加有界等待兜底。
+    // annotate 原地改写 row（config_idx），快照在其后取即包含。
+    const vehicles = facetSnap?.vehicles
+    await Promise.race([
+      annotateMountedConfigs([row] as never[], vehicles),
+      new Promise((r) => setTimeout(r, 1500)),
+    ])
+    if (!stillCurrent()) return
     // 快照语义与 ReplayShotsPane 一致：交接 JSON 按点击时版本序列化
     const snapshot = JSON.parse(JSON.stringify(row)) as ShotReplayRow
     // 开战时钟原点与射击分析入口同一推导（3D 场景 / ReplayShotsPane 同源）：
@@ -260,7 +261,10 @@ function eventTitle(ev: PlaybackEventRow): string {
       }
       return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
     }
-    case 'presence': return t('eventStream.presence_label', { name: ev.sender || '?' })
+    case 'presence': return t(`eventStream.presence_${ev.action ?? 'join'}`, {
+      who: ev.sender || '?',
+      channel: ev.channelName || '-',
+    })
     case 'moduleDamage':
     case 'module':
       return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`

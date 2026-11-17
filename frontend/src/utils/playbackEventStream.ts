@@ -94,6 +94,10 @@ export interface PlaybackEventRow {
   shotKill?: boolean
   /** 聊天/指令的频道名（common/team；来自 chat_channels） */
   channelName?: string
+  /** true = 来自 0x2b 另域（与 0x2f 战斗聊天无协议等价证据，呈现时如实区分） */
+  otherDomain?: boolean
+  /** 在场事件的具体动作（join/leave/channel_created；保留上游已给的方向区别） */
+  action?: 'join' | 'leave' | 'channel_created'
   /** 指令语义名（客户端权威表；缺省 = 未映射） */
   commandName?: string
   /** 指令扇区号（attention_to_cell） */
@@ -332,6 +336,8 @@ export function buildEventStream(
               ? actorByAccount(payload)
               : undefined,
             // attention_to_cell 的载荷是扇区号
+            // cell 仅对 attention_to_cell（payload=扇区号，上游契约已闭合）；
+            // catch_point/defend_point 的 payload 域未取证 → 保留原始目标不映射（禁猜）
             cell: name === 'attention_to_cell' ? payload : undefined,
             sender: ev?.sender || undefined,
             rawType: ev?.raw_type,
@@ -343,6 +349,7 @@ export function buildEventStream(
       case 'leave':
       case 'channel_created':
         push('presence', ev?.t, {
+          action: ev?.kind,
           sender: ev?.sender || undefined,
           rawType: ev?.raw_type,
           channelName: channelLabel.get(ev?.channel),
@@ -353,17 +360,12 @@ export function buildEventStream(
         break
     }
   }
-  // 0x2b 另域文本（频道句柄 u64）与 0x2f 正文同时存在时也要展示（此前只在缺失时兜底，
-  // 导致该域消息在双域回放中丢失）。与 0x2f 同文本且 |Δt|≤0.5s 视为重复。
+  // 0x2b 是另域文本（u64 = 频道句柄；上游契约未给出与 0x2f 的等价关系）——
+  // 两条记录都保留展示，不做基于正文+时间的去重（不同域的近邻同文不可推定为同一消息）
   for (const m of Array.isArray(facet.chat_messages) ? facet.chat_messages : []) {
     const text = typeof m?.text === 'string' ? m.text : ''
     if (!text) continue
-    const t = Number(m?.t)
-    const dup = chatEvents.some((ev) => ev?.kind === 'message'
-      && typeof ev?.text === 'string' && ev.text === text
-      && Math.abs(Number(ev?.t) - t) <= 0.5)
-    if (dup) continue
-    push('chat', t, { text })
+    push('chat', m?.t, { text, otherDomain: true })
   }
   // 逐模块损伤（method38 作者路径）：与 module_crew_states 合并到「模块/乘员」过滤片
   for (const md of Array.isArray(facet.module_damage_events) ? facet.module_damage_events : []) {

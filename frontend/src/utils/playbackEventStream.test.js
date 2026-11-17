@@ -124,18 +124,18 @@ describe('buildEventStream', () => {
     expect(cmd.filter).toBe('chat')
     const presence = evs.filter((e) => e.kind === 'presence').map((e) => e.sender)
     expect(presence).toContain('Near996')
-    // 0x2b 与 0x2f 双域同时出现时都要展示（不再只做兜底）
+    // 0x2b 与 0x2f 双域同时出现时都要展示（跨域无协议等价证据，不去重——评审 4596693945）
     const both = buildEventStream({
       chat_events: [{ t: 10, kind: 'message', raw_type: 1, channel: 1, sender: 'A', text: 'hi' }],
       chat_messages: [{ t: 12, tag: 1, seq: 2, text: 'other-domain' }],
     })
     expect(both.filter((e) => e.kind === 'chat').map((e) => e.text)).toEqual(['hi', 'other-domain'])
-    // 同文本且 |Δt|≤0.5s 视为重复（服务器双路回显）
+    // 近邻同文也不去重（不能凭文字+时间推定同一消息）
     const dup = buildEventStream({
       chat_events: [{ t: 10, kind: 'message', raw_type: 1, channel: 1, sender: 'A', text: 'hi' }],
       chat_messages: [{ t: 10.2, tag: 1, seq: 2, text: 'hi' }],
     })
-    expect(dup.filter((e) => e.kind === 'chat')).toHaveLength(1)
+    expect(dup.filter((e) => e.kind === 'chat')).toHaveLength(2)
   })
 
   it('连发逐发归属：窗口内伤害不会被第一发吞掉（评审 4595459443）', () => {
