@@ -302,8 +302,8 @@ class ReplayDamageWindowIntegrationTest {
             }
         }
         assertFalse(members.isEmpty());
-        final TeamEvidenceFormatter.BudgetWriter writer = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendMemberDamageReceivedWindows(
+        final TeamPromptBudgetWriter writer = new TeamPromptBudgetWriter();
+        TeamBattleEvidenceFormatter.appendMemberDamageReceivedWindows(
                 writer, battle, members, result.reconstruction(), false);
         final String content = writer.content();
         assertTrue(content.contains("MEMBER_DAMAGE_RECEIVED_WINDOWS（逐成员掉血窗口·事件流观测）"), content);
