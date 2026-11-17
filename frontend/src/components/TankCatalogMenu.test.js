@@ -49,6 +49,25 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it('selects every filtered result beyond 48, preserves hidden picks and only commits on confirmation', async () => {
+    const tanks = Array.from({ length: 75 }, (_, i) => ({ id: i + 1, name: 'Tank ' + i, tier: i < 60 ? 10 : 9, nation: 'usa', type: 'mediumTank' }))
+    const wrapper = mountMenu({ tanks, multiple: true, filters: { tier: '10' } })
+    const buttons = () => wrapper.get('.tc-bulk-bar').findAll('button')
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(48)
+    await buttons()[0].trigger('click')
+    expect(wrapper.get('.tc-bulk-bar').text()).toContain('"count":60')
+    await wrapper.setProps({ filters: { tier: '9' } })
+    expect(wrapper.get('.tc-bulk-bar').text()).toContain('"hidden":60')
+    await buttons()[0].trigger('click')
+    await buttons()[1].trigger('click')
+    await wrapper.get('[data-tank-id="61"]').trigger('click')
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+    expect(wrapper.emitted('select')).toBeUndefined()
+    await buttons()[2].trigger('click')
+    expect(wrapper.emitted('confirm')[0][0].map(t => t.id).sort((a,b) => a-b)).toEqual(Array.from({ length: 61 }, (_, i) => i+1))
+    wrapper.unmount()
+  })
+
   it('dialog 模式：标题/关闭/autofocus/当前项高亮/选择事件', async () => {
     const wrapper = mountMenu({ layout: 'dialog', title: '选择目标', selectedId: 2, autofocus: true })
     await flushPromises()

@@ -77,6 +77,7 @@ function makeWorld() {
     destroyed: () => false,
     getData: () => ({ meta: { map_id: 6 }, vehicles: [] }),
     quality: () => ({ anisotropy: 1, scenery: false, groundLayers: false }),
+    grassInstanceBudget: () => 0,
     getScene: () => scene,
     getCamera: () => camera,
     getRenderer: () => null,
@@ -94,7 +95,7 @@ function makeWorld() {
     onTerrainReground: vi.fn(),
     onLightingApplied: vi.fn(),
   }
-  const handle = createMapWorld(deps, { build: vi.fn(), clear: vi.fn() })
+  const handle = createMapWorld(deps)
   return { handle, deps, scene, sunLight, hemiLight }
 }
 

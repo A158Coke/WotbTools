@@ -184,6 +184,7 @@ export function locationForView(view, route) {
   if (view !== 'agent-mobility') {
     delete query.comparison
     delete query.mobilitySeed
+    delete query.mobilityReturn
   }
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]

@@ -13,7 +13,8 @@ import type { Group, InstancedMesh, Mesh, Object3D, ShaderMaterial, Texture } fr
 import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from '../sceneryAssemblyRules.js'
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from '../sceneryAssembly.js'
 import { applyMaterialTextureAnisotropy } from '../sceneryMaterials.js'
-import { pruneForeignVariantsDetailed } from '../variantFilter.js'
+import { pruneForeignVariantsDetailed, activeVariantOf } from '../variantFilter.js'
+import { mergeCoincidentWaterMeshes } from './waterMerge.js'
 import { makeWaterCoast, buildCorridorRefineMask } from '../groundPass.js'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes,
@@ -83,6 +84,12 @@ export interface MapAssemblyWrites {
   /** 水面海岸线高度纹理（会话 teardown 释放） */
   waterTexDispose?: Texture | null
   animLayerMats?: ShaderMaterial[]
+  /** 当前地图 id 对应的场景变体标签（nt1/am2/...；无变体为 null） */
+  variantLabel?: string | null
+  /** 合并后的水面网格（反射 pass 期间临时隐藏；会话 teardown 清空） */
+  waterMeshes?: THREE.Mesh[]
+  /** 水面高度（客户端 z / 世界 y；无水面为 null） */
+  waterLevel?: number | null
   mapScenery?: Group
   terrainRefineMask?: unknown
   /** 遮挡检测候选表（旧会话的由 teardown 置 null） */
@@ -108,7 +115,18 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   // gltf.scene 是真实 Object3D；VariantPruneNode 是它的最小结构面
   const variantPrune = pruneForeignVariantsDetailed(gltf.scene as Object3D & import('../variantFilter.js').VariantPruneNode, DATA.meta.map_id);
   const prunedVariants = variantPrune.removed;
+  // 当前激活的变体标签（nt1/am2/...）：基地点位也按变体取（mapBases[key].variants[label]）
+  const activeVariant = activeVariantOf(
+    (gltf.scene as { userData?: { variantByMapId?: unknown } }).userData?.variantByMapId,
+    DATA.meta.map_id,
+  );
   if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
+  if (DEBUG) {
+    // 边界变体验证探针：裁剪后仍在本图的 MapBorder 节点（应只剩本变体那条）
+    const borderNames: string[] = [];
+    gltf.scene.traverse((o) => { const n = (o as { name?: string }).name || ''; if (n.startsWith('MapBorder')) borderNames.push(n); });
+    window.__mapBorderNodes = borderNames;
+  }
   if (variantMappingIncomplete || variantPrune.failClosed) {
     // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
     // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
@@ -176,9 +194,52 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     skyFlagsAvailable,
   });
 
+  // 共面水面合并/显示去重（2026-11-17 用户"远处移动视角水面闪烁"）：客户端同一水面
+  // 可能存成多套三角化（batch0/batch1，导出按原样保留），显示端只画覆盖超集；其余同材质
+  // 互不包含的水面合成一个 draw（索引顺序固定，不再随相机距离翻转）。
+  const waterMerge = mergeCoincidentWaterMeshes(gltf.scene);
+  if (DEBUG && (waterMerge.merged || waterMerge.dropped)) {
+    window.__waterMerged = waterMerge;
+  }
+
+  // 水面反射（HIGH/ULTRA 动态平面反射）：合并后的水面网格 + 水面高度。
+  // 高度取水面网格在**客户端坐标系**的 bbox.max.z（mapScenery 的 qFrame 把它旋到世界 y）；
+  // 网格列表用于反射 pass 期间临时隐藏水面本身（否则镜像相机看到自己的背面）。
+  {
+    const waterMeshes: THREE.Mesh[] = [];
+    let waterLevel: number | null = null;
+    const box = new THREE.Box3();
+    gltf.scene.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : (mesh.material ? [mesh.material] : []);
+      if (!mats.some((m) => m && (m as THREE.Material & { userData?: { water?: boolean } }).userData?.water)) return;
+      waterMeshes.push(mesh);
+      box.setFromObject(mesh);
+      if (!box.isEmpty()) waterLevel = Math.max(waterLevel ?? -Infinity, box.max.z);
+    });
+    writes.waterMeshes = waterMeshes;
+    writes.waterLevel = waterLevel;
+  }
+
   // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
   writes.animLayerMats = assembledAnimMats;
   if (DEBUG) window.__animLayerMats = assembledAnimMats.length;
+  if (DEBUG) {
+    // 水面动画诊断：直接读材质 uniform（uTime 是否推进、滚动速率/UV 基是否非零），
+    // 用来区分"时钟没走"与"法线贡献被压平"两类不同的"水面不动"。
+    const waterMats: THREE.ShaderMaterial[] = [];
+    gltf.scene.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of mats) {
+        const sm = mat as THREE.ShaderMaterial;
+        if (sm?.userData?.water && sm.uniforms && !waterMats.includes(sm)) waterMats.push(sm);
+      }
+    });
+    window.__waterMats = waterMats;
+  }
 
   // 场景 GLB 贴图各向异性：地面（分层地表）早按画质档设了，场景侧此前漏设 ——
   // 掠射角下建筑/道路贴图发糊并随镜头闪烁。逐纹理设一次（同贴图跨材质共享）。
@@ -462,5 +523,6 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   gltf.scene.traverse((o) => { o.matrixAutoUpdate = false; });
   mapScenery.matrixAutoUpdate = false;   // 根组旋转已 bake，永不再变；保持 true 会让
                                          // 每帧置脏 + force 传播把冻结整个击穿
+  writes.variantLabel = activeVariant;
   return { stale: false, writes };
 }

@@ -4,6 +4,7 @@ import { createReusableTemplate, useElementSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Crosshair, Expand, Eye, EyeOff, Focus, Info, Plus, Scan, Search, Timer, ZoomIn } from 'lucide-vue-next'
 import SegmentedControl from './SegmentedControl.vue'
+import '../styles/mobility-controls.css'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
 import { intersections, simulate, speedAt, stepSeconds, terrains } from '../replay-local/compute/mobility'
@@ -17,6 +18,7 @@ const { t, locale } = useI18n()
 const numbers = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 2 }))
 const [DefinePlot, Plot] = createReusableTemplate()
 const expanded = ref(false)
+const focusPlot = ref(false)
 const terrain = ref<Terrain | 'all'>(props.single ? 'all' : 'Firm')
 const terrainOptions = computed(() => [...terrains, 'all'].map(value => ({ value, label: t('mobility.' + value) })))
 const rangeOpen = ref(false)
@@ -58,6 +60,8 @@ watch(() => lines.value.map(line => line.key), keys => {
 })
 const visible = computed(() => lines.value.filter(l => !hidden.value.includes(l.key) && (!isolated.value || l.key === isolated.value)))
 const legend = computed(() => lines.value.filter(l => l.label.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
+const legendLimit = ref(48)
+watch(search, () => { legendLimit.value = 48 })
 const extent = computed<[number, number]>(() => {
   if (zoom.value) return zoom.value
   let end = 1
@@ -78,12 +82,21 @@ function ticks(lo: number, hi: number, step: number) {
   return values
 }
 const xs = computed(() => ticks(...extent.value, tickSize(extent.value[1] - extent.value[0], Math.min(12, W.value / 80))))
+const peaks = new WeakMap<Run, { first: number; last: number; peak: number }>()
 const maxSpeed = computed(() => {
   let max = 1
+  const first = Math.max(0, Math.floor(extent.value[0] / stepSeconds))
+  const end = Math.ceil(extent.value[1] / stepSeconds)
   for (const { run } of visible.value) {
-    const a = Math.max(0, Math.floor(extent.value[0] / stepSeconds))
-    const b = Math.min(run.speeds.length - 1, Math.ceil(extent.value[1] / stepSeconds))
-    for (let i = a; i <= b; i++) max = Math.max(max, run.speeds[i])
+    const last = Math.min(run.speeds.length - 1, end)
+    let saved = peaks.get(run)
+    if (!saved || saved.first !== first || saved.last !== last) {
+      let peak = 0
+      for (let i = first; i <= last; i++) peak = Math.max(peak, run.speeds[i])
+      saved = { first, last, peak }
+      peaks.set(run, saved)
+    }
+    max = Math.max(max, saved.peak)
   }
   return max
 })
@@ -98,17 +111,31 @@ const tipPosition = computed(() => {
   return { [before ? 'right' : 'left']: (before ? W.value - at : at) + 'px',
     '--tip-space': (before ? at : W.value - at) + 'px' }
 })
-function path(speeds: number[]) {
-  const first = Math.max(0, Math.ceil(extent.value[0] / stepSeconds))
-  const last = Math.min(speeds.length - 1, Math.floor(extent.value[1] / stepSeconds))
-  if (last < first) return ''
-  const stride = Math.max(1, Math.floor((last - first) / W.value))
-  const points = []
-  for (let i = first; i < last; i += stride) points.push(x(i * stepSeconds) + ',' + y(speeds[i]))
-  points.push(x(last * stepSeconds) + ',' + y(speeds[last]))
-  return points.join(' ')
-}
-const paths = computed(() => visible.value.map(line => ({ ...line, points: path(line.run.speeds) })))
+// Cache the drawing for each run while other vehicles finish loading. Physics samples
+// remain full precision for the cursor, speed bounds and intersections.
+const drawing = new WeakMap<Run, { view: string; points: string }>()
+const paths = computed(() => {
+  const [lo, hi] = extent.value
+  const w = W.value, h = H.value
+  const sx = (w - left - right) / (hi - lo), sy = (h - bottom - top) / yMax.value
+  const view = [lo, hi, w, h, yMax.value].join(',')
+  return visible.value.map(line => {
+    let cached = drawing.get(line.run)
+    if (cached?.view !== view) {
+      const first = Math.max(0, Math.ceil(lo / stepSeconds))
+      const last = Math.min(line.run.speeds.length - 1, Math.floor(hi / stepSeconds))
+      const stride = Math.max(1, Math.floor((last - first) / w))
+      const points: string[] = []
+      const point = (i: number) => (left + (i * stepSeconds - lo) * sx).toFixed(2) + ',' +
+        (h - bottom - line.run.speeds[i] * sy).toFixed(2)
+      for (let i = first; i < last; i += stride) points.push(point(i))
+      if (last >= first) points.push(point(last))
+      cached = { view, points: points.join(' ') }
+      drawing.set(line.run, cached)
+    }
+    return { ...line, points: cached.points }
+  })
+})
 function setRange(a: number, b: number) {
   const lo = Math.max(0, Math.min(a, b))
   const hi = Math.min(windowEnd.value, Math.max(a, b))
@@ -166,22 +193,23 @@ const marks = computed(() => {
     <header class="mob-tools">
       <h2>{{ t('mobility.chart') }}</h2>
       <slot />
-      <AppButton @click="expanded = true"><Expand :size="16" />{{ t('mobility.expand') }}</AppButton>
+      <AppButton class="mob-action" @click="expanded = true"><Expand :size="16" />{{ t('mobility.expand') }}</AppButton>
     </header>
     <DefinePlot>
-      <div class="mob-plot">
+      <div class="mob-plot" :class="{ 'mob-expanded': expanded, 'mob-plot-focus': expanded && focusPlot }">
       <div class="mob-toolbar">
         <SegmentedControl v-model="terrain" :options="terrainOptions" :ariaLabel="t('mobility.ground')" wrap />
         <div class="mob-actions">
-          <AppButton size="sm" :aria-expanded="rangeOpen" @click="rangeOpen = !rangeOpen">
+          <AppButton v-if="expanded" size="sm" variant="ghost" :aria-pressed="focusPlot" @click="focusPlot = !focusPlot">{{ t(focusPlot ? 'mobBulk.showLegend' : 'mobBulk.focus') }}</AppButton>
+          <AppButton class="mob-action" size="sm" :aria-expanded="rangeOpen" @click="rangeOpen = !rangeOpen">
             <Timer :size="16" />{{ fmt(extent[0]) }}–{{ fmt(extent[1]) }} s <ChevronDown :size="14" />
           </AppButton>
           <AppButton size="sm" variant="ghost" @click="zoom = null"><Scan :size="16" />{{ t('mobility.fit') }}</AppButton>
         </div>
       </div>
       <form v-if="rangeOpen" class="mob-range" @submit.prevent="setRange(from, to); rangeOpen = false">
-        <label>{{ t('mobility.from') }}<input v-model.number="from" required type="number" min="0" :max="windowEnd" step="any" /></label>
-        <label>{{ t('mobility.to') }}<input v-model.number="to" required type="number" min="0" :max="windowEnd" step="any" /></label>
+        <label>{{ t('mobility.from') }}<input class="mob-field" v-model.number="from" required type="number" min="0" :max="windowEnd" step="any" /></label>
+        <label>{{ t('mobility.to') }}<input class="mob-field" v-model.number="to" required type="number" min="0" :max="windowEnd" step="any" /></label>
         <AppButton size="sm" type="submit" :disabled="!(to > from)"><ZoomIn :size="15" />{{ t('mobility.zoom') }}</AppButton>
         <AppButton size="sm" variant="ghost" @click="windowEnd += 90; setRange(0, windowEnd)"><Plus :size="15" />{{ t('mobility.extend') }}</AppButton>
       </form>
@@ -217,9 +245,9 @@ const marks = computed(() => {
         <output>{{ fmt(cursor) }} <small>s</small></output>
         <input v-model.number="cursor" type="range" :min="extent[0]" :max="extent[1]" :step="stepSeconds" />
       </label>
-      <label v-if="lines.length > 3" class="mob-search"><Search :size="16" /><input v-model="search" type="search" :placeholder="t('mobility.search')" :aria-label="t('mobility.search')" /></label>
-      <ul class="mob-legend">
-        <li v-for="l in legend" :key="l.key" :style="{ '--series': l.color }">
+      <label v-if="!(expanded && focusPlot) && lines.length > 3" class="mob-search"><Search :size="16" /><input class="mob-field" v-model="search" type="search" :placeholder="t('mobility.search')" :aria-label="t('mobility.search')" /></label>
+      <ul v-if="!(expanded && focusPlot)" class="mob-legend">
+        <li v-for="l in legend.slice(0, legendLimit)" :key="l.key" :style="{ '--series': l.color }">
           <div class="mob-series">
             <button type="button" class="mob-visibility" :aria-label="l.label" :aria-pressed="!hidden.includes(l.key)" @click="toggle(l.key)">
               <Eye v-if="!hidden.includes(l.key)" :size="16" /><EyeOff v-else :size="16" />
@@ -240,10 +268,11 @@ const marks = computed(() => {
           </details>
         </li>
       </ul>
-      <details class="mob-crossings" v-if="!single && vehicles.length > 1">
+      <AppButton v-if="!(expanded && focusPlot) && legend.length > legendLimit" size="sm" @click="legendLimit += 48">{{ t('mobBulk.moreLegend', { count: legend.length - legendLimit }) }}</AppButton>
+      <details class="mob-crossings" v-if="!(expanded && focusPlot) && !single && vehicles.length > 1">
         <summary>{{ t('mobility.crossings') }}</summary>
-        <select v-model="pairA" :aria-label="t('mobility.first')" @change="pairB = ''"><option value="">—</option><option v-for="l in lines" :key="l.key" :value="l.key">{{ l.label }}</option></select>
-        <select v-model="pairB" :aria-label="t('mobility.second')"><option value="">—</option><option v-for="l in secondChoices" :key="l.key" :value="l.key">{{ l.label }}</option></select>
+        <select class="mob-field" v-model="pairA" :aria-label="t('mobility.first')" @change="pairB = ''"><option value="">—</option><option v-for="l in lines" :key="l.key" :value="l.key">{{ l.label }}</option></select>
+        <select class="mob-field" v-model="pairB" :aria-label="t('mobility.second')"><option value="">—</option><option v-for="l in secondChoices" :key="l.key" :value="l.key">{{ l.label }}</option></select>
         <p v-if="crossings">{{ crossings.length ? crossings.map(([a,b]) => a === b ? '≈ ' + fmt(a) + ' s' : fmt(a) + '–' + fmt(b) + ' s').join(', ') : t('mobility.noCrossing') }}</p>
       </details>
       <footer class="mob-source">
@@ -266,9 +295,14 @@ const marks = computed(() => {
 .mob-toolbar { justify-content: space-between; gap: var(--space-3); }
 .mob-range { align-items: end; padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); }
 .mob-range label { display: grid; gap: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); }
-.mob-range input, .mob-search input, .mob-crossings select { min-height: var(--control-h-sm); padding-inline: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); color: var(--color-text-primary); background: var(--color-surface-1); font: var(--type-body); }
 .mob-range input { width: 9ch; font-variant-numeric: tabular-nums; }
 .mob-area { position: relative; height: clamp(12rem, calc(100dvh - 21rem), 52rem); min-inline-size: 0; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.mob-expanded { gap: var(--space-2); }
+.mob-expanded .mob-toolbar, .mob-expanded .mob-actions { gap: var(--space-1); }
+@media (hover: hover) and (pointer: fine) {
+  .mob-expanded .mob-actions :deep(.app-button) { padding-inline: var(--space-2); }
+}
+.mob-plot-focus .mob-area { height: max(12rem, calc(100dvh - 15rem)); }
 .mob-area svg { display: block; width: 100%; height: 100%; touch-action: pan-y; cursor: crosshair; }
 .mob-area line { stroke: var(--color-border-subtle); }
 .mob-area .mob-cursor { stroke: var(--color-text-secondary); stroke-dasharray: 3 4; }

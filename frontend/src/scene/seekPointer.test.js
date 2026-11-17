@@ -58,57 +58,32 @@ describe('playbackScene.seekTo 的游标接线（防回归）', () => {
   })
 })
 
-describe('边界 fail-closed（PR #411 P0-2）', () => {
-  // buildBoundary 空边界语义已行为化（#827）：createBoundaryBand 工厂无需 WebGL，
-  // 直接断言 build(null) 清空已有条带且不新增对象。调用点权威来源守卫（:83）随
-  // mapWorld harness 移交 Wave 2。
+describe('地图边界来源（2026-11-17 用户裁示：删除旧边界带，只用客户端导出边界）', () => {
+  // 旧实现 = playback/boundary.ts 按 playableBounds 程序化画红带；与客户端
+  // MapBorderRenderObject 导出（scenery.glb 的 extras.mapBorder）在四周重复。
+  // 现在后者是唯一边界来源；旧 band 的模块/调用/常量必须零残留。
   const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
+  const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 
-  it('buildBoundary 对空边界只清理不绘制（行为测试）', async () => {
-    const { createBoundaryBand } = await import('./playback/boundary.ts')
-    const added = []
-    const band = createBoundaryBand({
-      getScene: () => ({ add: (o) => added.push(o), remove: () => {} }),
-      disposeObject3D: () => {},
-      groundY: () => 0,
-    })
-    const bounds = { cx: 0, cz: 0, hx: 50, hz: 50 }
-    band.build(bounds, 2)
-    const countAfterBuild = added.length
-    expect(countAfterBuild).toBeGreaterThan(0)
-    band.build(null, 2)
-    expect(added.length).toBe(countAfterBuild) // 只清理，不新增对象
-    band.build(undefined, 2)
-    expect(added.length).toBe(countAfterBuild)
+  it('旧边界带（buildBoundary / BOUNDARY_THICK / boundary.js）零残留', () => {
+    expect(mapWorldSrc).not.toMatch(/buildBoundary\(/)
+    expect(mapWorldSrc).not.toMatch(/BOUNDARY_THICK/)
+    expect(mapWorldSrc).not.toMatch(/boundary\.js/)
+    expect(sceneSrc).not.toMatch(/createBoundaryBand/)
+    expect(sceneSrc).not.toMatch(/BOUNDARY_THICK/)
   })
 
-  it('调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底', () => {
-    const calls = [...mapWorldSrc.matchAll(/buildBoundary\(([^;]*?), BOUNDARY_THICK\)/gs)].map((m) => m[1].trim())
-    expect(calls.length).toBeGreaterThan(0)
-    for (const arg of calls) expect(arg).toBe('playableBoundsFor()')
-    // 兜底对象（车辆 ext / terrain span）不得再出现在边界构造里
-    expect(mapWorldSrc).not.toMatch(/buildBoundary\(\{\s*cx, cz, hx: ext/)
-    expect(mapWorldSrc).not.toMatch(/hx: \(\(heightMeta && heightMeta\.span\)/)
+  it('客户端边界走 scenery extras.mapBorder（导出器 collect_map_border）', () => {
+    const assemblySrc = readFileSync(resolve(here, 'sceneryAssembly.ts'), 'utf8')
+    expect(assemblySrc).toMatch(/ud\.mapBorder/)
+    expect(assemblySrc).toMatch(/makeMapBorderMaterial\(/)
   })
 })
 
-describe('边界带调用点权威来源（#827 窄化：Integration Contract）', () => {
-  // 行为语义已接替：
-  //   - buildBoundary null → createBoundaryBand 行为测试（上方）
-  //   - 相机钳制 min/max 推导 → playback/cameraTerrainClamp.clamp.test.js（行为测试）
-  // 调用点约束（mapWorld 只准传 playableBoundsFor()、宿主只保留 applyCameraClamp() 注入）
-  // 是跨模块 call-site 契约，宿主无注入点（F3 标注），保留窄化源码守卫。
+describe('相机钳制调用点（#827 窄化：Integration Contract）', () => {
+  // 边界带行为已随旧边界模块删除；相机钳制属独立契约，保留窄化源码守卫。
   const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
   const playbackSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
-
-  it('调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底', () => {
-    const calls = [...mapWorldSrc.matchAll(/buildBoundary\(([^;]*?), BOUNDARY_THICK\)/gs)].map((m) => m[1].trim())
-    expect(calls.length).toBeGreaterThan(0)
-    for (const arg of calls) expect(arg).toBe('playableBoundsFor()')
-    // 兜底对象（车辆 ext / terrain span）不得再出现在边界构造里
-    expect(mapWorldSrc).not.toMatch(/buildBoundary\(\{\s*cx, cz, hx: ext/)
-    expect(mapWorldSrc).not.toMatch(/hx: \(\(heightMeta && heightMeta\.span\)/)
-  })
 
   it('宿主保留钳制注入（clamp owner = cameraTerrainClamp，行为见 clamp.test）', () => {
     expect(playbackSrc).toMatch(/applyCameraClamp\(\);/)

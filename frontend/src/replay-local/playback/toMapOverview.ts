@@ -50,6 +50,8 @@ export interface LocalMapOverview {
 /** Java `MapGridProfile`：语义文件中 overview 需要的部分。 */
 export interface MapGridProfile {
   displayName: string
+  /** 语义文件标注的战斗变体（如 nt0）；缺省 = 未标注/单变体档案。 */
+  battleVariant?: string
   playableBounds: MapBounds
   gridCells: MapGridCell[]
   spawnPoints: MapSpawnPoint[]
@@ -109,6 +111,9 @@ export function parseMapGridProfile(semantic: unknown): MapGridProfile | null {
   }
   return {
     displayName: typeof semantic.displayName === 'string' ? semantic.displayName : semantic.mapId,
+    ...(typeof semantic.battleVariant === 'string' && semantic.battleVariant
+      ? { battleVariant: semantic.battleVariant }
+      : {}),
     playableBounds: playable,
     gridCells: cells,
     spawnPoints: spawns,

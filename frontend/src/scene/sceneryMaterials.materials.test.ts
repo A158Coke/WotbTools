@@ -293,7 +293,7 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     expect(mat.color.b).toBeCloseTo(0.2 * SCENERY_LAMBERT_EXPOSURE, 6)
   })
 
-  it(':804 水面（半透明大面）逐材质修整：depthWrite=true + DoubleSide + 不设 renderOrder', () => {
+  it(':804 水面（半透明大面）逐材质修整：depthWrite=true + DoubleSide + 固定 renderOrder', () => {
     const root = new THREE.Group()
     const m = new THREE.MeshStandardMaterial({ name: 'env_ma_water', transparent: true, opacity: 0.9 })
     m.map = new THREE.Texture()
@@ -305,7 +305,7 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     expect(mat.transparent).toBe(true)
     expect(mat.depthWrite).toBe(true)
     expect(mat.side).toBe(THREE.DoubleSide)
-    expect(mesh.renderOrder).toBe(0)   // 不设 renderOrder：交给透明队列按相机距离排序
+    expect(mesh.renderOrder).toBe(10)  // 固定顺序：透明队列不再按相机距离翻转（共面水面闪烁修复）
   })
 })
 
