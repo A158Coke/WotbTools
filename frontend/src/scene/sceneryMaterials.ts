@@ -779,7 +779,10 @@ export function makeMapBorderMaterial(_m: GltfSceneMaterial, v: MapBorderVisual)
           a *= 1.0 - smoothstep(uMaxZ, uMaxZ + uFade, z);
         }
         if (uFadeEnable > 0.5) {
-          float d2 = dot(vWorld.xz, vWorld.xz);
+          // 客户端 distanceFade 的 near/far 平方阈值相对**相机**；按世界原点算会让
+          // 地图四角/边缘在相机靠近时仍被裁掉、而中心区在远处永不淡出。
+          vec2 rel = vWorld.xz - cameraPosition.xz;
+          float d2 = dot(rel, rel);
           a *= 1.0 - smoothstep(uNearSq, uFarSq, d2);
         }
         if (a <= 0.001) discard;

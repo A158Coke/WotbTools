@@ -58,6 +58,9 @@ describe('makeMapBorderMaterial', () => {
     expect(m.uniforms.uColor.value.toArray()).toEqual([1.0, 0.156, 0.156])
     expect(m.fragmentShader).toContain('uTime * 2.4')
     expect(m.fragmentShader).toContain('mix(uColor, vec3(1.0, 0.18, 0.12), 0.55)')
+    // 距离淡出以相机为原点（不是世界原点）：边缘/角落靠近时仍可见
+    expect(m.fragmentShader).toContain('cameraPosition.xz')
+    expect(m.fragmentShader).not.toMatch(/dot\(vWorld\.xz, vWorld\.xz\)/)
     m.dispose()
   })
 })
