@@ -44,6 +44,10 @@ final class EntityIndex {
     record PointsSample(double clock, int team, int points) {
     }
 
+    /** 当前 perspective 下双方最新点数。 */
+    record PointsAt(Integer friendly, Integer enemy) {
+    }
+
     private final Map<Integer, List<PosSample>> positions;
     private final Map<Integer, List<HpSample>> healths;
     private final Map<Integer, List<DestroySample>> destroys;
@@ -250,7 +254,7 @@ final class EntityIndex {
     record DestroyedInfo(boolean destroyed, Double destroyedAtSec) {
     }
 
-    BattleTimelineBuilder.PointsAt pointsAt(final double t, final int perspectiveTeam) {
+    PointsAt pointsAt(final double t, final int perspectiveTeam) {
         Integer friendly = null;
         Integer enemy = null;
         for (final PointsSample s : points) {
@@ -264,9 +268,9 @@ final class EntityIndex {
             }
         }
         if (perspectiveTeam == 2) {
-            return new BattleTimelineBuilder.PointsAt(enemy, friendly);
+            return new PointsAt(enemy, friendly);
         }
-        return new BattleTimelineBuilder.PointsAt(friendly, enemy);
+        return new PointsAt(friendly, enemy);
     }
 
     // ===== helpers =====
