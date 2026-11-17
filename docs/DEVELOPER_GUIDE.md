@@ -55,6 +55,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 # Targeted：cd frontend && pnpm exec vitest run <related-test-files>
 # Type check：cd frontend && pnpm run typecheck
 # Browser geometry gate（Playback 布局/形态）：cd frontend && pnpm run test:browser-layout
+# 机动读数交互（滑轨几何、Alt、鼠标/触屏、大屏）：cd frontend && pnpm run test:browser-mobility-readings
 # Browser interaction gate（Playback / Replay Workspace 交互）：cd frontend && pnpm run test:browser-interaction
 # 反馈流程浏览器门禁：cd frontend && pnpm run test:browser-feedback
 # 代表页面浮层/遮挡/触控可达矩阵：cd frontend && pnpm run test:browser-interaction --occlusion
