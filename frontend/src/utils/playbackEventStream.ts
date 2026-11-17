@@ -94,6 +94,10 @@ export interface PlaybackEventRow {
   shotKill?: boolean
   /** 聊天/指令的频道名（common/team；来自 chat_channels） */
   channelName?: string
+  /** 指令语义名（客户端权威表；缺省 = 未映射） */
+  commandName?: string
+  /** 指令扇区号（attention_to_cell） */
+  cell?: number
   /** 聊天/指令/在场的发送者昵称（0x2f 前缀名；旧 0x2b 聊天无署名） */
   sender?: string
 }
@@ -189,6 +193,16 @@ export function buildEventStream(
   const actorOf = (eid?: number | null): ActorInfo | undefined => {
     if (typeof eid !== 'number') return undefined
     return actors.get(eid) ?? { eid }
+  }
+  // accountId → 身份（指令目标 attack_enemy 携带的是 accountId，不是 eid）
+  const byAccount = new Map<number, ActorInfo>()
+  for (const v of Array.isArray(facet.vehicles) ? facet.vehicles : []) {
+    if (typeof v?.account_id !== 'number' || !actors.has(v.eid)) continue
+    byAccount.set(v.account_id, actors.get(v.eid) as ActorInfo)
+  }
+  const actorByAccount = (account?: number | null): ActorInfo | undefined => {
+    if (typeof account !== 'number' || account <= 0) return undefined
+    return byAccount.get(account) ?? { eid: 0, name: `#${account}` }
   }
   // 频道句柄 → 频道名（common/team），来自 chat_channels 的 channelName 末段
   const channelLabel = new Map<number, string>()
@@ -306,13 +320,24 @@ export function buildEventStream(
         })
         break
       case 'command':
-        push('command', ev?.t, {
-          command: typeof ev?.command === 'number' ? ev.command : undefined,
-          commandTarget: typeof ev?.target === 'number' ? ev.target : undefined,
-          sender: ev?.sender || undefined,
-          rawType: ev?.raw_type,
-          channelName: channelLabel.get(ev?.channel),
-        })
+        {
+          const name = ev?.command_name
+          const payload = typeof ev?.target === 'number' ? ev.target : undefined
+          push('command', ev?.t, {
+            command: typeof ev?.command === 'number' ? ev.command : undefined,
+            commandName: name,
+            commandTarget: payload,
+            // attack_enemy / help_me_ex / support_me_with_fire 的载荷是目标 accountId
+            target: name === 'attack_enemy' || name === 'help_me_ex' || name === 'support_me_with_fire'
+              ? actorByAccount(payload)
+              : undefined,
+            // attention_to_cell 的载荷是扇区号
+            cell: name === 'attention_to_cell' ? payload : undefined,
+            sender: ev?.sender || undefined,
+            rawType: ev?.raw_type,
+            channelName: channelLabel.get(ev?.channel),
+          })
+        }
         break
       case 'join':
       case 'leave':
@@ -328,10 +353,17 @@ export function buildEventStream(
         break
     }
   }
-  if (!chatEvents.length) {
-    for (const m of Array.isArray(facet.chat_messages) ? facet.chat_messages : []) {
-      push('chat', m?.t, { text: typeof m?.text === 'string' ? m.text : '' })
-    }
+  // 0x2b 另域文本（频道句柄 u64）与 0x2f 正文同时存在时也要展示（此前只在缺失时兜底，
+  // 导致该域消息在双域回放中丢失）。与 0x2f 同文本且 |Δt|≤0.5s 视为重复。
+  for (const m of Array.isArray(facet.chat_messages) ? facet.chat_messages : []) {
+    const text = typeof m?.text === 'string' ? m.text : ''
+    if (!text) continue
+    const t = Number(m?.t)
+    const dup = chatEvents.some((ev) => ev?.kind === 'message'
+      && typeof ev?.text === 'string' && ev.text === text
+      && Math.abs(Number(ev?.t) - t) <= 0.5)
+    if (dup) continue
+    push('chat', t, { text })
   }
   // 逐模块损伤（method38 作者路径）：与 module_crew_states 合并到「模块/乘员」过滤片
   for (const md of Array.isArray(facet.module_damage_events) ? facet.module_damage_events : []) {

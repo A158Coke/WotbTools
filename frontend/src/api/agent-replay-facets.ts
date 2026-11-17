@@ -552,8 +552,10 @@ export interface AgentChatEvent {
   text?: string
   /** 快捷指令码（仅 kind=command；语义未闭合，原样透传） */
   command?: number
-  /** 指令目标（仅 kind=command；0 = 无目标） */
+  /** 指令目标（仅 kind=command）：attack_enemy→accountId；attention_to_cell→扇区号；0 = 无目标 */
   target?: number
+  /** 指令语义名（上游 v0.5.3；客户端权威表）。缺省 = 未映射 id（raw 保留） */
+  command_name?: string
 }
 
 /** 逐模块损伤（method38 组件 token；rawState 0=无新负面 1=受损 2=critical） */

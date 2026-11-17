@@ -11,11 +11,10 @@ const FACET = {
     { t_fire: 10, shooter_eid: 2, target_eid: 3, game_hit_result: 0, hit_flags: 0, ricochet: true, is_kill: false },
   ],
   kills: [{ t: 32, killer_eid: 1, victim_eid: 2, cause: 0 }],
-  chat_messages: [{ t: 20, tag: 1, seq: 7, text: 'gg' }],
   notifications: [{ t: 21, subject: 9, code: 11515 }],
   chat_events: [
     { t: 22, kind: 'message', raw_type: 1, channel: 1549648, sender: 'BLACK_TROOP_sniper', text: 'how do get that tank?' },
-    { t: 23, kind: 'command', raw_type: 20, channel: 1549648, sender: 'Pratama_Gerald', command: 29, target: 0 },
+    { t: 23, kind: 'command', raw_type: 20, channel: 1549648, sender: 'Pratama_Gerald', command: 29, command_name: 'attack_enemy', target: 2002 },
     { t: 24, kind: 'join', raw_type: 0, channel: 1549648, sender: 'Near996' },
   ],
   module_damage_events: [
@@ -46,7 +45,7 @@ const FACET = {
   module_crew_states: [{ clock: 40, vehicle_eid: 2, component: 'engine', state: 'damaged_degraded' }],
   consumables: [{ clock: 15, eid: 1, logical_item_id: 'large_repairkit', state: 2 }],
   vehicles: [
-    { eid: 1, nickname: 'Alpha', tank_name: 'T-62A', team: 1 },
+    { eid: 1, nickname: 'Alpha', tank_name: 'T-62A', team: 1, account_id: 2002 },
     { eid: 2, nickname: 'Bravo', tank_name: 'E 100', team: 2, death_times: [32, 60], resurrection_times: [45] },
     { eid: 3, nickname: 'Charlie', tank_name: 'Maus', team: 2 },
   ],
@@ -119,12 +118,24 @@ describe('buildEventStream', () => {
     const cmd = evs.find((e) => e.kind === 'command')
     expect(cmd.command).toBe(29)
     expect(cmd.sender).toBe('Pratama_Gerald')
+    expect(cmd.commandName).toBe('attack_enemy')
+    // attack_enemy 的载荷是 accountId → 解析到目标玩家身份
+    expect(cmd.target).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
     expect(cmd.filter).toBe('chat')
     const presence = evs.filter((e) => e.kind === 'presence').map((e) => e.sender)
     expect(presence).toContain('Near996')
-    // 旧 chat_messages 只有「无 chat_events」时兜底
-    const legacy = buildEventStream({ chat_messages: [{ t: 5, tag: 1, seq: 2, text: 'old' }] })
-    expect(legacy.map((e) => e.kind)).toEqual(['chat'])
+    // 0x2b 与 0x2f 双域同时出现时都要展示（不再只做兜底）
+    const both = buildEventStream({
+      chat_events: [{ t: 10, kind: 'message', raw_type: 1, channel: 1, sender: 'A', text: 'hi' }],
+      chat_messages: [{ t: 12, tag: 1, seq: 2, text: 'other-domain' }],
+    })
+    expect(both.filter((e) => e.kind === 'chat').map((e) => e.text)).toEqual(['hi', 'other-domain'])
+    // 同文本且 |Δt|≤0.5s 视为重复（服务器双路回显）
+    const dup = buildEventStream({
+      chat_events: [{ t: 10, kind: 'message', raw_type: 1, channel: 1, sender: 'A', text: 'hi' }],
+      chat_messages: [{ t: 10.2, tag: 1, seq: 2, text: 'hi' }],
+    })
+    expect(dup.filter((e) => e.kind === 'chat')).toHaveLength(1)
   })
 
   it('连发逐发归属：窗口内伤害不会被第一发吞掉（评审 4595459443）', () => {

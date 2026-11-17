@@ -249,7 +249,16 @@ function eventTitle(ev: PlaybackEventRow): string {
     }
     case 'command': {
       const ch = ev.channelName ? ` · ${ev.channelName}` : ''
-      return t('eventStream.command_line', { sender: ev.sender || '?', code: ev.command ?? '?' }) + ch
+      const who = ev.sender || '?'
+      if (ev.commandName) {
+        // 客户端权威语义（未映射 id 保留 raw）
+        return t(`eventStream.cmd_${ev.commandName}`, {
+          who,
+          target: actorText(ev.target),
+          cell: ev.cell ?? '?',
+        }) + ch
+      }
+      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
     }
     case 'presence': return t('eventStream.presence_label', { name: ev.sender || '?' })
     case 'moduleDamage':
