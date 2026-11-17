@@ -119,7 +119,7 @@ Contract 失败处理由以下确定性规则组成
 
 > 开发入口见 `docs/DEVELOPER_GUIDE.md`；Team-Level 复盘产品设计见 `docs/features/team-ai-review.md`。
 > 权威结算 vs 事件流观测的数据边界见「AI 分析范围边界」与「Team Perspective 语义」两节。
-> 生产状态：AI 证据只消费 canonical facts（AFFIRMED）；UNKNOWN 为合法内部状态，不得猜成 0/无事件/静止/满血（选用例见 prompts 与 `PlayerEvidenceFormatter`）。
+> 生产状态：AI 证据只消费 canonical facts（AFFIRMED）；UNKNOWN 为合法内部状态，不得猜成 0/无事件/静止/满血（选用例见 prompts 与 `PlayerCombatEvidenceFormatter` / `PlayerRosterEvidenceFormatter` / `PlayerReplayEventFormatter`）。
 
 ## AI Review Harness（随机战双 Call）
 
