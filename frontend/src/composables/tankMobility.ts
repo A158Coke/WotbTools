@@ -75,7 +75,8 @@ export function vehicleColor(id: string, index?: number) {
   // Stable across filtering, moving and restoring a vehicle.
   let hash = 0
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return 'hsl(' + hash % 360 + ' 65% 48%)'
+  const hue = hash % 360
+  return `light-dark(hsl(${hue} 65% 30%), hsl(${hue} 75% 72%))`
 }
 
 export function snapshot(tank: number, modules: ComputeInput['modules'], selection: SetupResolved, dataset: string, activations: Activations = {}): ComparisonEntry {
@@ -189,5 +190,9 @@ export function mobilityVehicle({ id, name, input, catalog, activations = {}, co
       ? computeCharacteristics({ ...input, consumableStems: active.map(w => w.stem) })._mobility : null
     return { start, input: state || null }
   })
-  return { id, name, color, summary, phases, windows, options, mobility: phases[0].input }
+  const carried = (input?.consumableStems || []).map(stem => ({
+    stem, item: catalog?.consumables.find(item => item.stem === stem),
+    window: windows.find(window => window.stem === stem),
+  }))
+  return { id, name, color, summary, phases, windows, carried, options, mobility: phases[0].input }
 }

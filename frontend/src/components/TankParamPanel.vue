@@ -11,6 +11,7 @@ import { armorRows } from '../replay-local/compute/tankSetup'
 import GunArcDiagram from './GunArcDiagram.vue'
 
 const props = defineProps({
+  previewConsumables: { type: Boolean, default: false },
   /** paramGroups() 输出 */
   groups: { type: Array, required: true },
   /** 引擎输出（当前值） */
@@ -75,6 +76,7 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
     <header class="tp-params-head">
       <h2 class="tp-section-title">{{ t('agentTanks.params.title') }}</h2>
       <p class="tp-muted">{{ t('agentTanks.params.baseline_note') }}</p>
+      <p v-if="previewConsumables" class="tp-muted">{{ t('mobility.panelPreview') }}</p>
     </header>
 
     <dl class="tp-summary-strip" data-testid="tank-summary">

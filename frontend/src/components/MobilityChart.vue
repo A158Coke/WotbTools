@@ -53,6 +53,9 @@ const lines = computed(() => props.vehicles.flatMap(car =>
     color: props.single ? singleColors[ground] : car.color,
     label: car.name + ' · ' + t('mobility.' + ground),
   }))))
+watch(() => lines.value.map(line => line.key), keys => {
+  if (isolated.value && !keys.includes(isolated.value)) isolated.value = ''
+})
 const visible = computed(() => lines.value.filter(l => !hidden.value.includes(l.key) && (!isolated.value || l.key === isolated.value)))
 const legend = computed(() => lines.value.filter(l => l.label.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
 const extent = computed<[number, number]>(() => {
@@ -89,6 +92,12 @@ const yMax = computed(() => Math.ceil(maxSpeed.value / yStep.value) * yStep.valu
 const ys = computed(() => ticks(0, yMax.value, yStep.value))
 const x = (time: number) => left + (time - extent.value[0]) / (extent.value[1] - extent.value[0]) * (W.value - left - right)
 const y = (speed: number) => H.value - bottom - speed / yMax.value * (H.value - bottom - top)
+const tipPosition = computed(() => {
+  const at = x(cursor.value)
+  const before = at > W.value / 2
+  return { [before ? 'right' : 'left']: (before ? W.value - at : at) + 'px',
+    '--tip-space': (before ? at : W.value - at) + 'px' }
+})
 function path(speeds: number[]) {
   const first = Math.max(0, Math.ceil(extent.value[0] / stepSeconds))
   const last = Math.min(speeds.length - 1, Math.floor(extent.value[1] / stepSeconds))
@@ -198,8 +207,8 @@ const marks = computed(() => {
             <template v-for="l in visible" :key="l.key"><circle v-if="speedAt(l.run.speeds, cursor) != null" :cx="x(cursor)" :cy="y(speedAt(l.run.speeds, cursor)!)" r="4" :fill="l.color" class="mob-point" /></template>
           </g>
         </svg>
-        <div v-if="inspecting && visible.length" class="mob-tip" :style="{ left: x(cursor) + 'px' }" :class="{ 'is-before': x(cursor) > W / 2 }">
-          <b>{{ fmt(cursor) }} s</b><div v-for="l in visible.slice(0, 4)" :key="l.key"><i :style="{ background: l.color }" />{{ l.label }} <strong>{{ fmt(speedAt(l.run.speeds, cursor)) }} km/h</strong></div>
+        <div v-if="inspecting && visible.length" class="mob-tip" :style="tipPosition" :class="{ 'is-before': x(cursor) > W / 2 }">
+          <b>{{ fmt(cursor) }} s</b><div v-for="l in visible.slice(0, 4)" :key="l.key"><i :style="{ background: l.color }" /><span>{{ l.label }}</span><strong>{{ fmt(speedAt(l.run.speeds, cursor)) }} km/h</strong></div>
           <small v-if="visible.length > 4">+{{ visible.length - 4 }}</small>
         </div>
       </div>
@@ -224,7 +233,10 @@ const marks = computed(() => {
           <details class="mob-config"><summary><ChevronDown :size="14" />{{ t('mobility.' + l.run.status) }}<b v-if="l.run.reached != null">{{ fmt(l.run.reached) }} s</b><span>{{ t('mobility.configure') }}</span></summary>
             <p v-if="l.run.status === 'unreachable'">{{ fmt(l.run.upper) }} km/h · 97%: {{ fmt(l.run.near) }} s</p>
             <p>{{ l.car.summary }}</p>
-            <p v-for="win in l.car.windows" :key="win.stem">{{ win.stem }} · {{ fmt(win.start) }}–{{ Number.isFinite(win.end) ? fmt(win.end) : '—' }} s</p>
+            <p v-for="item in l.car.carried" :key="item.stem">
+              {{ t('mobility.carriedItem', { name: item.item?.[locale === 'zh' ? 'name_zh-Hans' : 'name_en'] || item.stem }) }}
+              · {{ item.window ? t('mobility.activeWindow', { from: fmt(item.window.start), to: Number.isFinite(item.window.end) ? fmt(item.window.end) : '—' }) : t('mobility.inactive') }}
+            </p>
           </details>
         </li>
       </ul>
@@ -234,7 +246,11 @@ const marks = computed(() => {
         <select v-model="pairB" :aria-label="t('mobility.second')"><option value="">—</option><option v-for="l in secondChoices" :key="l.key" :value="l.key">{{ l.label }}</option></select>
         <p v-if="crossings">{{ crossings.length ? crossings.map(([a,b]) => a === b ? '≈ ' + fmt(a) + ' s' : fmt(a) + '–' + fmt(b) + ' s').join(', ') : t('mobility.noCrossing') }}</p>
       </details>
-      <footer class="mob-source"><Info :size="15" /><span>{{ t('mobility.estimate') }}</span><small>{{ dataset || t('mobility.missingVersion') }} · {{ modelRevision }}</small><AppButton v-if="!dataset" variant="ghost" size="sm" @click="loadMobilityDataset">{{ t('mobility.retry') }}</AppButton></footer>
+      <footer class="mob-source">
+        <details class="mob-model"><summary><Info :size="15" />{{ t('mobility.estimate') }} <ChevronDown :size="14" /></summary>
+          <p>{{ t('mobility.modelLimits') }}</p>
+          <a href="https://wg.blitzinfo.app/core-fallback.js" target="_blank" rel="noopener noreferrer">{{ t('mobility.modelSource') }}</a>
+        </details><small>{{ dataset || t('mobility.missingVersion') }} · {{ modelRevision }}</small><AppButton v-if="!dataset" variant="ghost" size="sm" @click="loadMobilityDataset">{{ t('mobility.retry') }}</AppButton></footer>
       </div>
     </DefinePlot>
     <Plot v-if="!expanded" />
@@ -258,11 +274,12 @@ const marks = computed(() => {
 .mob-area .mob-cursor { stroke: var(--color-text-secondary); stroke-dasharray: 3 4; }
 .mob-area text { fill: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .mob-point { stroke: var(--color-surface-1); stroke-width: 2; }
-.mob-tip { position: absolute; top: var(--space-4); max-inline-size: calc(50% - var(--space-4)); transform: translateX(var(--space-2)); pointer-events: none; padding: var(--space-2) var(--space-3); color: var(--color-text-primary); background: var(--color-surface-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); box-shadow: var(--elevation-2); font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.mob-tip.is-before { transform: translateX(calc(-100% - var(--space-2))); }
+.mob-tip { position: absolute; top: var(--space-4); inline-size: max-content; max-inline-size: min(32rem, calc(var(--tip-space) - var(--space-4))); transform: translateX(var(--space-2)); pointer-events: none; padding: var(--space-2) var(--space-3); color: var(--color-text-primary); background: var(--color-surface-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); box-shadow: var(--elevation-2); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.mob-tip.is-before { transform: translateX(calc(-1 * var(--space-2))); }
 .mob-tip div { margin-block-start: var(--space-1); }
-.mob-tip i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); flex: none; }
-.mob-tip strong { margin-inline-start: auto; white-space: nowrap; }
+.mob-tip div span { min-inline-size: 0; overflow-wrap: anywhere; }
+.mob-tip i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); corner-shape: round; flex: none; }
+.mob-tip strong { flex: none; margin-inline-start: auto; white-space: nowrap; }
 .mob-scrubber { padding-inline: var(--space-1); font: var(--type-caption); color: var(--color-text-secondary); }
 .mob-scrubber span, .mob-identity span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .mob-scrubber output { min-inline-size: 6ch; font: var(--type-h3); color: var(--color-text-primary); }
@@ -293,6 +310,9 @@ const marks = computed(() => {
 .mob-crossings summary { cursor: pointer; padding-block: var(--space-2); }
 .mob-crossings select { max-width: 100%; margin-inline-end: var(--space-2); }
 .mob-source { border-top: 1px solid var(--color-border-subtle); padding-block-start: var(--space-2); font: var(--type-caption); color: var(--color-text-secondary); }
+.mob-model summary { cursor: pointer; display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-sm); }
+.mob-model p { max-inline-size: 65ch; }
+.mob-model[open] summary svg:last-child { transform: rotate(180deg); }
 .mob-source small { margin-inline-start: auto; font: inherit; }
 @container (max-width: 38rem) {
   .mob-toolbar { align-items: start; }

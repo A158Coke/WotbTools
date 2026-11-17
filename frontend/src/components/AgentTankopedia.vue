@@ -817,6 +817,7 @@ onMounted(() => {
 
         <div class="tp-workbench-right">
         <TankParamPanel
+          :preview-consumables="setup.consumables.length > 0"
           v-if="characteristics"
           :groups="paramTable"
           :current="characteristics"

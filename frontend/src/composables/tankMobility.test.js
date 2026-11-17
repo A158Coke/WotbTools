@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchesSnapshot, mobilityVehicle, moduleIdentity, readSeed, selectionQuery } from './tankMobility'
+import { matchesSnapshot, mobilityVehicle, moduleIdentity, readSeed, selectionQuery, vehicleColor } from './tankMobility'
 import { simulate, speedAt } from '../replay-local/compute/mobility'
 import research from '../replay-local/compute/__fixtures__/research/consumables.json'
 import ussr from '../replay-local/compute/__fixtures__/modules/ussr.json'
@@ -25,9 +25,17 @@ describe('mobility loadout handoff and boost timing', () => {
     expect(matchesSnapshot({ ...entry, config: { ...entry.config, engine: 99 } }, modules, selection)).toBe(false)
     expect(readSeed(JSON.stringify({ v: 1, vehicle: { ...entry, config: { cons: 'invalid' } } }))).toBeNull()
   })
+  it('uses distinct light and dark strokes for an extra vehicle with a yellow hue', () => {
+    const id = '1d66edf1-48d0-494e-ac52-de65e780ee28'
+    const stroke = vehicleColor(id, 4)
+    expect(stroke).toBe('light-dark(hsl(60 65% 30%), hsl(60 75% 72%))')
+    expect(vehicleColor(id, 12)).toBe(stroke)
+  })
   it('separates a carried boost from a delayed activation and carries speed through expiry', () => {
     const passive = mobilityVehicle({ input, catalog })
     const timed = mobilityVehicle({ input, catalog, activations: { afterburning: 2.015 } })
+    expect(passive.carried).toMatchObject([{ stem: 'afterburning', window: undefined }])
+    expect(timed.carried).toMatchObject([{ stem: 'afterburning', window: { start: 2.015, end: 14.015 } }])
     expect(passive.phases).toHaveLength(1)
     expect(timed.phases.map(p => p.start)).toEqual([0, 2.015, 14.015])
     expect(timed.phases[0].input.power).toBe(passive.mobility.power)
