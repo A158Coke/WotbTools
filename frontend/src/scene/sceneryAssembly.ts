@@ -13,8 +13,8 @@ import * as THREE from 'three';
 import type { BufferGeometry, Mesh, Object3D, ShaderMaterial, Texture } from 'three'
 import {
   cachedSceneryMat, makeBillboardMaterial, makeBlendByAngleMaterial, makeBlendLayerMaterial,
-  makeDecalMaterial, makeLightmappedMaterial, makeSkyMaterial, makeSpeedtreeStaticMaterial,
-  makeWaterMaterial, patchSceneryDetail, SCENERY_LAMBERT_EXPOSURE,
+  makeDecalMaterial, makeLightmappedMaterial, makeMapBorderMaterial, makeSkyMaterial,
+  makeSpeedtreeStaticMaterial, makeWaterMaterial, patchSceneryDetail, SCENERY_LAMBERT_EXPOSURE,
 } from './sceneryMaterials.js';
 import {
   materialIsWater, isWaterNode, isSkyShell, sceneHasSkyFlags,
@@ -227,6 +227,10 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
   const waterSurfaces = collectWaterSurfaces(gltf.scene);
   const underWater = makeUnderWater(waterSurfaces);
   let skyMeshes = 0;
+  // 水面固定绘制顺序（2026-11-17 续修）：透明队列先按 renderOrder、再按物体中心距离排序。
+  // 共面水面合并只覆盖**同一材质**；canal/italy 等图有 2 种不同水面材质（各 1 块网格），
+  // 不能并 draw，但给每块一个稳定递增的 renderOrder 后，顺序不再随相机距离互换 ⇒ 不再闪烁。
+  let waterRenderOrder = 0;
   // 天空穹判据：优先材质 extras.sky（导出器按客户端 Skyobject 模板写入）；只有整份
   // GLB 都没有该标记（旧包）才退回节点名 /sky/i。名字不是语义——新包一旦出现任何
   // sky 标记，就禁止名字 fallback，避免把名字含 sky 的非天穹对象误判。
@@ -346,14 +350,37 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
       // 普通 SpeedTree static geometry（没有 _corner 的 ST|branches/trunk/foliage）也走
       // makeSpeedtreeStaticMaterial；它的朝上枝叶同样不是可绘制表面，按 semantic 排除。
       if ((o.name || '').startsWith('ST|') || ((m && m.name) || '').startsWith('ST|')) annotationSurface = false;
+      // 地图边界（上游 MapBorderRenderObject，2026-11 审计 I5）：几何 = 作者三角形带，
+      // 材质 id=0（引擎内置）不可得 ⇒ 按 MapBorderComponent 的视觉字段复刻（红带 + 高度/
+      // 距离淡出），不受光。extras.mapBorder 由导出器写入。
+      if (ud.mapBorder && typeof ud.mapBorder === 'object') {
+        annotationSurface = false;
+        if (debug && typeof window !== 'undefined') { window.__mapBorderMaterials = (window.__mapBorderMaterials || 0) + 1; }
+        return makeMapBorderMaterial(m, ud.mapBorder as Parameters<typeof makeMapBorderMaterial>[1]);
+      }
       // 水面（客户端 water-fp.sl 的 **MEDIUM 档**）：导出器带数据时走专用材质；
       // 旧包/无数据（water 仅 bool）落回 convMat + 下面的水面修整分支
       if (ud.water && typeof ud.water === 'object') {
         const wt = waterTexOf(m);
         if (wt) {
+          if (debug && typeof window !== 'undefined') { window.__waterMaterials = (window.__waterMaterials || 0) + 1; }
           if (debug && typeof window !== 'undefined' && window.__waterCoast) window.__waterCoast.materials = (window.__waterCoast.materials || 0) + 1;
           annotationSurface = false;
-          return makeWaterMaterial(m, { normalTex: wt[0], cubeTex: wt[1], props: ud.water.props || {}, coast: waterCoast });
+          o.renderOrder = 10 + waterRenderOrder++;   // 固定顺序（不随相机距离翻转）
+          // wro = extras.water 里 WaterRenderObject 类专属的 UV 基两键（texCoordTransform0 /
+          // inputTangent，上游 2026-11-17 起随包）：在 ⇒ 该材质按"UV 从局部位置推导 + 常量
+          // 作者切线基"分支（客户端 WATER_RENDER_OBJECT 同构）；不在（Mesh 类水面）⇒ 既有
+          // 网格 UV + cotangent 导数基路径，行为不变。
+          // 按源材质缓存：同材质的多块水面共用**一个** ShaderMaterial 实例——
+          // 「共面水面合并」（playback/waterMerge.ts，2026-11-17 闪烁修复）按材质对象归组，
+          // 每个 mesh 各 new 一个实例会让合并失效（两块水面继续各自排序翻转）。
+          return cachedSceneryMat(
+            ['W', m.uuid, wt[0].uuid, wt[1].uuid, JSON.stringify(ud.water.props || null),
+              JSON.stringify(ud.water.texCoordTransform0 || null), waterCoast ? 'c' : 'n'].join('#'),
+            () => makeWaterMaterial(m, {
+              normalTex: wt[0], cubeTex: wt[1], props: ud.water.props || {},
+              coast: waterCoast, wro: ud.water,
+            }));
         }
       }
       // 视角淡出软混合效果片（客户端 AlphaBlend 预设 + BLEND_BY_ANGLE）
@@ -432,8 +459,10 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
     if (!annotationSurface) markNotDrawable(o.material);
     // 水体（海平面等半透明大面）：透明 + depthWrite=true + DoubleSide 会与地形/自身共面
     // 产生 z-fighting 与透明互遮挡闪烁；其几何极简且为全场唯一透明物 ⇒ 正常写深度最稳。
-    // 不设 renderOrder：交给 THREE 在透明队列内按摄像机距离排序。
+    // 固定 renderOrder（与 extras.water 分支同一个顺序带）：Mesh 类水面可能有多块不同
+    // 材质，按相机距离排序会在移动时互换 ⇒ 闪烁。已由专用分支赋值的不重复占号。
     if (isWaterNode(o.name, o.material, { strictSurfaces })) {
+      if (!o.renderOrder) o.renderOrder = 10 + waterRenderOrder++;
       const ms = Array.isArray(o.material) ? o.material : [o.material];
       for (const mm of ms) {
         if (!mm || !mm.transparent) continue;
@@ -455,9 +484,13 @@ export function assembleSceneryMaterials(gltf: ParsedGltf, {
     if (!o.isMesh) return;
     const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
     for (const mm of ms) {
-      // 任何带 uTime 的材质都按回放时钟驱动（混合层的 uShiftRate、水面的 uShift0/1）
+      // 任何带 uTime 的材质都按回放时钟驱动（混合层的 uShiftRate、草的风摆）。
+      // ⚠️ 水面**不**登记：2026-11-17 用户裁示放弃水面动画、固定初始静态——
+      // 法线滚动会把反射里的白云/地平线硬边拖成锐利白边。uTime 保持材质初值 0。
       const u = (mm as ShaderMaterial | undefined)?.uniforms
-      if (mm && u && u.uTime) animLayerMats.push(mm as ShaderMaterial);
+      if (mm && u && u.uTime && !(mm.userData && mm.userData.water)) {
+        animLayerMats.push(mm as ShaderMaterial)
+      }
     }
   });
   return { animLayerMats, skyMeshes };

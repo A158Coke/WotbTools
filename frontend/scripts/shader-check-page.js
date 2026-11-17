@@ -6,6 +6,7 @@ import {
   makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, makeWaterMaterial,
   makeDecalMaterial, patchTankMaterial,
 } from '../src/scene/sceneryMaterials.js'
+import { makeGrassMaterial } from '../src/scene/playback/mapGrass.js'
 import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
 import { FX_BUDGETS, createBattleFx } from '../src/scene/battleFx.js'
 import { groundShaderMaterial } from '../src/scene/groundPass.js'
@@ -29,6 +30,22 @@ function geo({ uv1 = true, corner = false, color = false } = {}) {
   return g
 }
 const fakeMat = (over = {}) => Object.assign(new THREE.MeshStandardMaterial({ map: tex(), name: 'fake' }), over)
+
+// 草材质（mapGrass）：逐实例 aVegColor + 对数深度块；线性/logdepth 两个渲染器各编一遍。
+const GRASS_PARAMS = { windAmplitude: [0.3], windSpring: [8], baseColorMultiplier: 2.0 }
+function grassGeometry() {
+  const g = geo({ uv1: false })
+  g.setAttribute('aVegColor', new THREE.InstancedBufferAttribute(
+    new Float32Array([1, 1, 1, 1, 1, 1]), 3))
+  return g
+}
+function grassMesh() {
+  const mesh = new THREE.InstancedMesh(grassGeometry(), makeGrassMaterial(T, GRASS_PARAMS, 1), 2)
+  mesh.setMatrixAt(0, new THREE.Matrix4())
+  mesh.setMatrixAt(1, new THREE.Matrix4().makeTranslation(3, 0, 0))
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
+}
 
 const T = tex()
 // 环境反射材质：遮罩+立方图+逐材质属性（缺省按客户端 property 默认值）
@@ -67,6 +84,7 @@ const cases = [
     normal1ShiftPerSecond: [-0.01, 0.01], fresnelBias: 0.72, fresnelPow: 0.71,
     reflectionTintColor: [0.7, 0.7, 0.72],
   } }), geo({ uv1: false })],
+  ['grass(pixel-alpha)', () => makeGrassMaterial(T, GRASS_PARAMS, 1), grassGeometry()],
   // 坦克 PBR：打了环境隔离补丁的 MeshStandardMaterial 必须能编译（补丁注入点在 three 的
   // lights_fragment_begin 之后；门禁场景里有半球光 ⇒ NUM_HEMI_LIGHTS>0 的真实编译路径）
   ['tank-pbr(ambient-isolated)', () => patchTankMaterial(fakeMat()), geo({ uv1: false })],
@@ -154,6 +172,10 @@ try {
   logRenderer.localClippingEnabled = true
   logRenderer.render(armorScene(), camera)
   built.push('armor-penetration(logdepth)')
+  const grassLogScene = new THREE.Scene()
+  grassLogScene.add(grassMesh())
+  logRenderer.render(grassLogScene, camera)
+  built.push('grass(logdepth)')
   const programs = [...(renderer.info.programs || []), ...(logRenderer.info.programs || [])].map((p) => ({
     name: p.name,
     diag: p.diagnostics ? {
