@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import {
   applyWheelSpin,
   clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
+  attachChainToWheels, chainSpanBoundaries, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
   SUSP_FALLBACK,
@@ -321,48 +321,52 @@ describe('60TP（7297）履带塌陷回归：支承点按客户端 chain flag �
   const bend = { upper_factor: 0.19214, length_power: 0.5 }
   /** 悬挂跨距的峰谷垂弧：`upperFactor·span^P·(t−t²)` 的最大值（t=0.5 → 1/4）。 */
   const sagPeak = (span) => bend.upper_factor * Math.pow(Math.max(span, 1e-3), bend.length_power) / 4
-  const solve = (attach) => {
+  const attach = attachChainToWheels(chain, wheels)
+  const spans = chainSpanBoundaries(attach, flags)
+  const solve = (attachTable) => {
     const out = new Float64Array(chain.length)
-    solveChain(out, chain, attach, new Array(wheels.length).fill(0), zeros, wheels, bend)
+    solveChain(out, chain, attachTable, new Array(wheels.length).fill(0), zeros, wheels, bend, spans)
     return out
   }
 
-  it('flag 支承表：零行程 + 零贴地 ⇒ 履带只在各悬挂跨距的垂弧包络内偏离静止折线', () => {
-    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+  it('flag 只作分段：零行程 + 零贴地 ⇒ 逐点偏离不超过所属跨距的垂弧峰值', () => {
     const out = solve(attach)
-    // 按解算器同一口径枚举跨距（相邻支承点之间的未挂接段），逐点用该段的垂弧峰值作上限。
-    // 这条断言同时锁住「上支段不被整段拉平」：没有 flag 支承表时 idx 17 会被压 1.0 m。
+    // 逐点上限 = 该点所在（相邻边界之间）跨距的垂弧峰值。这条断言锁住「上支段不被整段拉平」：
+    // 若只用挂接点分段（历史口径），idx 8→52 会合成一个 5.57 m 跨距、idx 17 被压 1.0 m。
     let checked = 0
-    let i = 0
-    while (i < chain.length) {
-      if (attach[i] < 0) { i++; continue }
-      let j = i + 1
-      while (j < chain.length && attach[j] < 0) j++
-      if (j < chain.length && j > i + 1) {
-        const limit = sagPeak(Math.abs(chain[j][0] - chain[i][0]))
-        for (let k = i + 1; k < j; k++) {
-          const dev = out[k] - chain[k][1]
-          expect(dev).toBeLessThanOrEqual(limit + 1e-9)
-          expect(dev).toBeGreaterThanOrEqual(-limit - 1e-9)
-          checked++
-        }
+    for (let s = 0; s + 1 < spans.length; s++) {
+      const i = spans[s], j = spans[s + 1]
+      const limit = sagPeak(Math.abs(chain[j][0] - chain[i][0]))
+      for (let k = i + 1; k < j; k++) {
+        const dev = out[k] - chain[k][1]
+        expect(dev).toBeLessThanOrEqual(limit + 1e-9)
+        expect(dev).toBeGreaterThanOrEqual(-limit - 1e-9)
+        checked++
       }
-      i = j
     }
-    expect(checked).toBeGreaterThan(30)   // 本车 63 点里 40+ 点落在悬挂跨距内
+    expect(checked).toBeGreaterThan(30)   // 本车 63 点里 40+ 点落在跨距内
   })
 
-  it('三对托带轮支承点（24/25、35/36、46/47）挂在各自的托带轮上', () => {
-    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
-    // 精确轮号：托带轮 2（lon 1.86）、5（lon −0.05）、8（lon −1.94）。判据改成「轮缘残差为主」
-    // 之后仍必须选中托带轮（它虽是本车最近圆周，但与带面留有约 0.15 m 模型间隙）。
-    expect([attach[24], attach[25]]).toEqual([2, 2])
-    expect([attach[35], attach[36]]).toEqual([5, 5])
-    expect([attach[46], attach[47]]).toEqual([8, 8])
-    // 底段/弧上的支承点也照常挂接（flag 路径不是只认上支段）
-    for (const i of [0, 2, 4, 6, 12, 17, 53, 58]) expect(attach[i]).toBeGreaterThanOrEqual(0)
-    // 非支承点一律不挂（悬空段内点由垂弧/铺地决定形状）
-    for (const i of [8, 9, 18, 26, 37, 48, 59, 62]) expect(attach[i]).toBe(-1)
+  it('三对托带轮点（24/25、35/36、46/47）是**分段边界**，但不挂轮（几何上确实没贴轮缘）', () => {
+    // 带面在辊顶上方约 0.15 m（模型间隙），几何判据不挂——这是历史行为，且无害：
+    // 托带轮 flag=0、行程恒 0，挂与不挂都不产生位移。修复只借用它们作分段边界。
+    for (const i of [24, 25, 35, 36, 46, 47]) {
+      expect(attach[i]).toBe(-1)
+      expect(spans).toContain(i)
+    }
+    // 底段/前弧上确实贴轮缘的点照常挂接（历史几何判据不变）
+    for (const i of [0, 2, 4, 6, 55, 58]) expect(attach[i]).toBeGreaterThanOrEqual(0)
+    // 上支段中段（离任一圆周都远）不挂接——由分段垂弧决定形状
+    for (const i of [18, 20, 26, 30, 37, 41, 48]) expect(attach[i]).toBe(-1)
+  })
+
+  it('边界 = 挂接点 ∪ flag 点：历史跨距只会被切细，绝不合并', () => {
+    const attachedOnly = chainSpanBoundaries(attach, null)
+    for (const i of attachedOnly ?? []) expect(spans).toContain(i)
+    expect(spans.length).toBeGreaterThanOrEqual(attachedOnly.length)
+    // flag 列不可用（含未知取值）时退回历史口径
+    const bogus = flags.map((f, i) => (i === 0 ? 7 : f))
+    expect(chainSpanBoundaries(attach, bogus)).toEqual(attachedOnly)
   })
 })
 
@@ -420,7 +424,7 @@ describe('VK 30.02 (M)（15889）支承点必须挂轮缘最近的轮，而非�
   const bend = { upper_factor: 0.62882, length_power: 0.61261 }
 
   it('底段 idx 8 挂在负重轮 L_03（索引 2），不是纵向更近的托带轮 L_02（索引 1）', () => {
-    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    const attach = attachChainToWheels(chain, wheels)
     expect(attach[8]).toBe(2)
     // 纵向距离与轮缘残差在这里给出相反的答案——用例存在的理由
     const dLong = (w) => Math.abs(chain[8][0] - wheels[w].longitudinal)
@@ -428,7 +432,7 @@ describe('VK 30.02 (M)（15889）支承点必须挂轮缘最近的轮，而非�
   })
 
   it('负重轮压缩 0.06 m 时，底段支承点跟着上移（不被固定托带轮钉住）', () => {
-    const attach = attachChainToWheels(chain, wheels, 0.45, flags)
+    const attach = attachChainToWheels(chain, wheels)
     const delta = new Array(wheels.length).fill(0)
     delta[2] = 0.06                       // L_03 上行 0.06（该车 wheels 记录 up=0.06）
     const out = new Float64Array(chain.length)
