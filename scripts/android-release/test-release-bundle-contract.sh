@@ -126,5 +126,3 @@ agent_wasm_block = workflow[agent_wasm:frontend]
 assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
 PY
-
-

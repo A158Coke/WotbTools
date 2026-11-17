@@ -146,4 +146,3 @@ if guard_local_first_cutover 1000000 2000001 2>/dev/null; then fail "1.x minimum
 python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.2 | grep -q '1000002' || fail "version parser"
 if python3 "$ROOT/scripts/android-release/android_contract.py" version 1.0.02 >/dev/null 2>&1; then fail "invalid version must fail"; fi
 bash "$ROOT/scripts/android-release/test-android-contract.sh"
-

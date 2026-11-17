@@ -271,4 +271,3 @@ for step in publish["steps"][upload_index + 1:]:
 
 print("Android release two-phase protocol: PASS")
 PY
-

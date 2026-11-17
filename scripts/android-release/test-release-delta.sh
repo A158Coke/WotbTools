@@ -201,4 +201,3 @@ CURL
   [ ! -e "$POLICY_DIR/upload-called" ] || fail 'conflicting delta must not be overwritten'
   echo 'Android immutable delta cloud retry: PASS'
 fi
-

@@ -200,4 +200,3 @@ PY
 
   echo "publish staged-identity shell simulation: PASS (staged versionCode, mismatch fails closed, pre-fix form fails)"
 fi
-
