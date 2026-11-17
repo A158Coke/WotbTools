@@ -158,23 +158,29 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
  * （历史边界 = 挂接点，全部保留）——零行程/零贴地时的形变只会更小或不变。实测 20 个车型：
  * 相对历史口径的最大偏差 0 或负值（7297 60TP 0.92→0.06；1089 B1 0.32→0.01）。
  *
- * flag 不可用（缺失 / 长度不符 / 非 0-1）时返回 null，调用方沿用历史的「按挂接点枚举」。
+ * flag 列不可用（缺失 / 长度不符 / **任一**取值非 0-1，含 `NaN`——混合旧/异常链会给出缺列）
+ * 时**整列不参与**分段：先整列校验，再一次性并入，绝不会留下半列的边界
+ * （评审 P2：曾边加边校验，遇到中段非法值会把前半列的 flag 边界留在结果里）。
  */
 export function chainSpanBoundaries(attach: ArrayLike<number>, flags: ArrayLike<number> | null | undefined): number[] | null {
   const n = attach.length;
   const set = new Set<number>();
   for (let i = 0; i < n; i++) if (attach[i] >= 0) set.add(i);
-  let usedFlags = false;
-  if (flags && flags.length === n) {
-    for (let i = 0; i < n; i++) {
-      const f = flags[i];
-      if (f === 1) { set.add(i); usedFlags = true; }
-      else if (f !== 0) { usedFlags = false; break; }   // 未知取值：整列不用于分段（不猜语义）
-    }
-    if (!usedFlags) { /* 忽略 flag 列 */ }
+  if (flagsUsable(flags, n)) {
+    for (let i = 0; i < n; i++) if ((flags as ArrayLike<number>)[i] === 1) set.add(i);
   }
   const out = [...set].sort((a, b) => a - b);
   return out.length >= 2 ? out : null;
+}
+
+/** flag 列是否整列可用：长度一致且每个取值都是 0 或 1（`NaN` / 缺列 / 其它值 ⇒ 不可用）。 */
+function flagsUsable(flags: ArrayLike<number> | null | undefined, n: number): boolean {
+  if (!flags || flags.length !== n) return false;
+  for (let i = 0; i < n; i++) {
+    const f = flags[i];
+    if (f !== 0 && f !== 1) return false;
+  }
+  return true;
 }
 
 /**

@@ -364,9 +364,32 @@ describe('60TP（7297）履带塌陷回归：支承点按客户端 chain flag �
     const attachedOnly = chainSpanBoundaries(attach, null)
     for (const i of attachedOnly ?? []) expect(spans).toContain(i)
     expect(spans.length).toBeGreaterThanOrEqual(attachedOnly.length)
-    // flag 列不可用（含未知取值）时退回历史口径
-    const bogus = flags.map((f, i) => (i === 0 ? 7 : f))
-    expect(chainSpanBoundaries(attach, bogus)).toEqual(attachedOnly)
+  })
+
+  it('flag 列任一非 0/1 值 ⇒ 整列不参与分段（含中段/末段：不得留下半列边界）', () => {
+    const attachedOnly = chainSpanBoundaries(attach, null)
+    // 此前只把非法值放在索引 0，恰好漏掉「已加入若干边界后才校验失败」的路径（评审 P2）。
+    for (const badAt of [0, 24, 48, 62]) {
+      const bogus = flags.slice()
+      bogus[badAt] = 7
+      expect(chainSpanBoundaries(attach, bogus), `非法值在 idx ${badAt}`).toEqual(attachedOnly)
+    }
+    // runtime 的缺列路径会给出 NaN（混合旧/异常链）：同样整列作废
+    for (const badAt of [0, 48, 62]) {
+      const holes = flags.slice()
+      holes[badAt] = NaN
+      expect(chainSpanBoundaries(attach, holes), `缺列在 idx ${badAt}`).toEqual(attachedOnly)
+    }
+    // 长度不符同样整列作废
+    expect(chainSpanBoundaries(attach, flags.slice(0, flags.length - 1))).toEqual(attachedOnly)
+  })
+
+  it('最小反例（评审给出）：非法值出现在已加入 1 之后也不得残留边界', () => {
+    const tinyAttach = [0, -1, -1, -1, 1]
+    expect(chainSpanBoundaries(tinyAttach, [0, 1, 0, 7, 0])).toEqual([0, 4])
+    expect(chainSpanBoundaries(tinyAttach, [0, 1, 0, NaN, 0])).toEqual([0, 4])
+    // 合法列仍按并集生效
+    expect(chainSpanBoundaries(tinyAttach, [0, 1, 0, 0, 0])).toEqual([0, 1, 4])
   })
 })
 
