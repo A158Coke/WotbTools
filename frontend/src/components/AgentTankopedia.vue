@@ -402,9 +402,10 @@ function openMobility(withVehicle) {
   if (withVehicle) {
     const entry = snapshot(detailId.value, modules.value, setup.value, dataset.value, activations.value)
     const key = crypto.randomUUID()
-    saveComparison(key, [entry])
+    const comparison = { v: 2, entries: [entry], crew: { skills: { ...setup.value.skills }, conditionalSkills: setup.value.conditionalSkills === true } }
+    saveComparison(key, comparison)
     target.query.comparison = key
-    target.query.mobilitySeed = JSON.stringify({ v: 1, vehicle: entry })
+    target.query.mobilitySeed = JSON.stringify(comparison)
   }
   router.push(target)
 }
