@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowReactive, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
 import { fetchTankEncyclopedia } from '../scene/agentData.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
@@ -9,7 +10,7 @@ import { loadMobilityDataset, readComparison, readSeed, saveComparison, useMobil
 import MobilityBatchDialog from './MobilityBatchDialog.vue'
 import type { BatchGroup, BatchSetup } from '../composables/mobilityBatch'
 import '../styles/mobility-controls.css'
-import { GitCompareArrows } from 'lucide-vue-next'
+import { ArrowLeft, GitCompareArrows } from 'lucide-vue-next'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -19,6 +20,14 @@ import MobilityVehicleColumn from './MobilityVehicleColumn.vue'
 import type { ComparisonEntry, VehicleCurve } from '../composables/tankMobility'
 const { t } = useI18n()
 const route = useRoute(), router = useRouter()
+const returnLocation = computed(() => {
+  const fallback = locationForView('agent-tankopedia', route)
+  const origin = route.query.mobilityReturn
+  if (typeof origin !== 'string' || !origin.startsWith('/') || origin.startsWith('//')) return fallback
+  const resolved = router.resolve(origin)
+  if (!['/', '/index.html'].includes(resolved.path) || resolved.query.view !== 'agent-tankopedia') return fallback
+  return { path: resolved.path, query: resolved.query, hash: resolved.hash }
+})
 const dataset = useMobilityDataset()
 const entries = shallowRef<ComparisonEntry[]>([])
 const contexts = shallowReactive(new Map<string, BatchSetup>())
@@ -142,7 +151,10 @@ function remove(id: string) {
 </script>
 <template>
   <section class="mob-page">
-    <h1>{{ t('mobility.compare') }}</h1>
+    <header class="mob-page-heading">
+      <AppButton variant="ghost" data-testid="mobility-back" @click="router.push(returnLocation)"><ArrowLeft :size="18" />{{ t('mobBulk.back') }}</AppButton>
+      <h1>{{ t('mobility.compare') }}</h1>
+    </header>
     <p v-if="expired" role="status">{{ t('mobility.expired') }}</p>
     <p v-if="!dataset" role="status">{{ t('mobility.missingVersion') }} <button @click="loadMobilityDataset">{{ t('mobility.retry') }}</button></p>
     <EmptyState v-if="!entries.length" class="mob-empty" :title="t('mobBulk.emptyTitle')" :description="t('mobBulk.empty')" :icon="GitCompareArrows">
@@ -175,6 +187,8 @@ function remove(id: string) {
   </section>
 </template>
 <style scoped>
+.mob-page-heading { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.mob-page-heading h1 { margin: 0; }
 .mob-progress { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .mob-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .mob-empty { border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }

@@ -26,6 +26,10 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 })
 
 describe('primary navigation', () => {
+  it('clears comparison return context when leaving the mobility page', () => {
+    const route = { path: '/', query: { view: 'agent-mobility', comparison: 'session', mobilityReturn: '/?view=agent-tankopedia&tank=14977', mobilitySeed: 'seed', lang: 'zh' } }
+    expect(locationForView('agent-tankopedia', route).query).toEqual({ view: 'agent-tankopedia', lang: 'zh' })
+  })
   it('groups the type entry and both lists under one recommendation destination', () => {
     expect(PRIMARY_NAV.find(item => item.id === 'creators').view).toBe('recommendations')
     for (const view of ['creators', 'recommended-videos', 'recommendations']) {

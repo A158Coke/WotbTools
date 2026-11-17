@@ -1,5 +1,6 @@
 {
   "mobBulk": {
+    "back": "Back",
     "updating": "Updating vehicles · {count} remaining…",
     "warnings": "{count} vehicles have items that cannot be applied. See their previews.",
     "searchTarget": "Find a target vehicle",

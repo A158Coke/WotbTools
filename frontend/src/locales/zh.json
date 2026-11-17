@@ -1,5 +1,6 @@
 {
   "mobBulk": {
+    "back": "返回",
     "updating": "正在更新车辆，还剩 {count} 辆…",
     "warnings": "有 {count} 辆包含无法应用的项目，见逐车说明。",
     "searchTarget": "搜索目标车辆",
