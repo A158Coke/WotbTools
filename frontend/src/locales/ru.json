@@ -140,6 +140,7 @@
     "mode3d": "3D-сцена",
     "mode2d": "2D-тактическая карта",
     "basesSwitch": "Базовые точки",
+    "variantsSwitch": "Вариант карты",
     "basesSupremacy": "Превосходство",
     "basesEncounter": "Встречный бой",
     "backToPicker": "Выбрать другую карту",

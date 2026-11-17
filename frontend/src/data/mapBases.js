@@ -1,5 +1,5 @@
 // GENERATED FILE — do not edit by hand.
-// Regenerate: python common/python/extract_map_bases.py <Maps.zip>
+// Regenerate: python common/python/extract_map_bases.py <Maps>
 // See docs/reference/maps.md for the extraction contract.
 
 /**
@@ -10,6 +10,8 @@
  *   与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源。
  * assault 攻防战/遭遇战：每种模式配置一个基地，`team` 为守方；
  *   场景未声明半径时为 null，调用方自行取默认值。
+ * variants：多变体场景（nt0/nt1/...）的全套点位；顶层两组 = 基础变体
+ *   （最小数字后缀，与 GLB 变体打标同契约）。
  */
 export const mapBases = {
   amigosville: {
@@ -19,10 +21,9 @@ export const mapBases = {
       { baseId: "C", x: 177.3618, y: -16.3423, radius: 15.0 },
     ],
     assault: [
-      { x: -80.9815, y: -0.2824, radius: 15.0, team: 1 },
       { x: -57.6012, y: -0.2369, radius: null, team: 1 },
-      { x: 177.1922, y: -16.3833, radius: 15.0, team: 1 },
     ],
+    variants: {"am1": {"supremacy": [{"baseId": "A", "x": -179.4424, "y": 2.933, "radius": 15.0}, {"baseId": "B", "x": -3.7777, "y": -10.822, "radius": 15.0}, {"baseId": "C", "x": 177.3618, "y": -16.3423, "radius": 15.0}], "assault": [{"x": -57.6012, "y": -0.2369, "radius": null, "team": 1}]}, "am2": {"supremacy": [], "assault": [{"x": 177.1922, "y": -16.3833, "radius": 15.0, "team": 1}]}, "am3": {"supremacy": [], "assault": [{"x": -80.9815, "y": -0.2824, "radius": 15.0, "team": 1}]}},
   },
   canal: {
     supremacy: [
@@ -33,8 +34,8 @@ export const mapBases = {
     ],
     assault: [
       { x: -96.3611, y: 71.795, radius: 24.0, team: null },
-      { x: -96.2032, y: 71.7189, radius: 24.0, team: null },
     ],
+    variants: {"cn0": {"supremacy": [{"baseId": "A", "x": -201.7, "y": 211.0, "radius": 15.0}, {"baseId": "B", "x": -8.3, "y": 92.2, "radius": 15.0}, {"baseId": "C", "x": -58.6, "y": -80.7, "radius": 15.0}, {"baseId": "D", "x": 142.6, "y": -130.3, "radius": 15.0}], "assault": [{"x": -96.3611, "y": 71.795, "radius": 24.0, "team": null}]}, "cn1": {"supremacy": [], "assault": [{"x": -96.2032, "y": 71.7189, "radius": 24.0, "team": null}]}},
   },
   canyon: {
     supremacy: [
@@ -53,10 +54,9 @@ export const mapBases = {
       { baseId: "C", x: 201.5, y: 0.0202, radius: 15.0 },
     ],
     assault: [
-      { x: -95.0132, y: -3.9056, radius: 15.0, team: 1 },
-      { x: 130.2577, y: -2.5428, radius: 15.0, team: 1 },
       { x: 134.0135, y: -2.4993, radius: null, team: 1 },
     ],
+    variants: {"dt1": {"supremacy": [{"baseId": "A", "x": -97.4, "y": -3.7798, "radius": 15.0}, {"baseId": "B", "x": 116.8013, "y": -2.8475, "radius": 15.0}, {"baseId": "C", "x": 201.5, "y": 0.0202, "radius": 15.0}], "assault": [{"x": 134.0135, "y": -2.4993, "radius": null, "team": 1}]}, "dt2": {"supremacy": [], "assault": [{"x": 130.2577, "y": -2.5428, "radius": 15.0, "team": 1}]}, "dt3": {"supremacy": [], "assault": [{"x": -95.0132, "y": -3.9056, "radius": 15.0, "team": 1}]}},
   },
   erlenberg: {
     supremacy: [
@@ -66,9 +66,8 @@ export const mapBases = {
     ],
     assault: [
       { x: -144.5888, y: -16.3902, radius: null, team: 1 },
-      { x: -63.1881, y: -17.7459, radius: 15.0, team: 1 },
-      { x: 84.12, y: -15.4552, radius: 15.0, team: 1 },
     ],
+    variants: {"er0": {"supremacy": [{"baseId": "A", "x": -153.8, "y": 69.4, "radius": 15.0}, {"baseId": "B", "x": -82.2, "y": -70.0, "radius": 15.0}, {"baseId": "C", "x": 114.0, "y": -14.5, "radius": 15.0}], "assault": [{"x": -144.5888, "y": -16.3902, "radius": null, "team": 1}]}, "er1": {"supremacy": [], "assault": [{"x": -63.1881, "y": -17.7459, "radius": 15.0, "team": 1}]}, "er2": {"supremacy": [], "assault": [{"x": 84.12, "y": -15.4552, "radius": 15.0, "team": 1}]}},
   },
   faust: {
     supremacy: [
@@ -191,8 +190,8 @@ export const mapBases = {
     ],
     assault: [
       { x: 69.5876, y: -79.6881, radius: null, team: 1 },
-      { x: 79.0857, y: -73.6436, radius: 15.0, team: 1 },
     ],
+    variants: {"lm0": {"supremacy": [{"baseId": "A", "x": -99.8152, "y": 133.8117, "radius": 15.0}, {"baseId": "B", "x": 12.4503, "y": -16.5983, "radius": 15.0}, {"baseId": "C", "x": 173.6066, "y": -181.1906, "radius": 15.0}], "assault": [{"x": 69.5876, "y": -79.6881, "radius": null, "team": 1}]}, "lm1": {"supremacy": [], "assault": [{"x": 79.0857, "y": -73.6436, "radius": 15.0, "team": 1}]}},
   },
   malinovka: {
     supremacy: [
@@ -211,10 +210,9 @@ export const mapBases = {
       { baseId: "C", x: 219.7365, y: -29.7617, radius: 15.0 },
     ],
     assault: [
-      { x: -3.2388, y: -7.1114, radius: 15.0, team: 1 },
       { x: -1.2798, y: -7.0259, radius: null, team: 1 },
-      { x: 119.3202, y: -4.0293, radius: 17.0, team: 1 },
     ],
+    variants: {"md1": {"supremacy": [{"baseId": "A", "x": -189.0761, "y": -8.9296, "radius": 15.0}, {"baseId": "B", "x": -11.0362, "y": -7.0033, "radius": 15.0}, {"baseId": "C", "x": 219.7365, "y": -29.7617, "radius": 15.0}], "assault": [{"x": -1.2798, "y": -7.0259, "radius": null, "team": 1}]}, "md2": {"supremacy": [], "assault": [{"x": -3.2388, "y": -7.1114, "radius": 15.0, "team": 1}]}, "md3": {"supremacy": [], "assault": [{"x": 119.3202, "y": -4.0293, "radius": 17.0, "team": 1}]}},
   },
   milbase: {
     supremacy: [
@@ -223,21 +221,18 @@ export const mapBases = {
       { baseId: "C", x: 209.1768, y: -2.4648, radius: 15.0 },
     ],
     assault: [
-      { x: -110.0752, y: -10.9828, radius: 15.0, team: 1 },
       { x: -110.0671, y: -10.9309, radius: null, team: 1 },
-      { x: -36.9179, y: -11.2395, radius: 15.0, team: 1 },
-      { x: -15.3905, y: 16.5051, radius: 15.0, team: 1 },
-      { x: 80.4629, y: -10.9828, radius: 15.0, team: 1 },
     ],
+    variants: {"mlb1": {"supremacy": [{"baseId": "A", "x": -201.0668, "y": -11.5038, "radius": 15.0}, {"baseId": "B", "x": -37.5224, "y": -11.196, "radius": 15.0}, {"baseId": "C", "x": 209.1768, "y": -2.4648, "radius": 15.0}], "assault": [{"x": -110.0671, "y": -10.9309, "radius": null, "team": 1}]}, "mlb2": {"supremacy": [], "assault": [{"x": -110.0752, "y": -10.9828, "radius": 15.0, "team": 1}]}, "mlb3": {"supremacy": [], "assault": [{"x": 80.4629, "y": -10.9828, "radius": 15.0, "team": 1}]}, "mlb4": {"supremacy": [], "assault": [{"x": -36.9179, "y": -11.2395, "radius": 15.0, "team": 1}]}, "mlb5": {"supremacy": [], "assault": [{"x": -15.3905, "y": 16.5051, "radius": 15.0, "team": 1}]}},
   },
   mountain: {
     supremacy: [
-      { baseId: "A", x: -74.1, y: 76.7, radius: 15.0 },
+      { baseId: "A", x: -78.5868, y: 80.2357, radius: 15.0 },
       { baseId: "B", x: 80.0, y: -63.0, radius: 15.0 },
-      { baseId: "C", x: 201.9, y: -207.3, radius: 15.0 },
+      { baseId: "C", x: 194.9785, y: -204.1231, radius: 15.0 },
     ],
     assault: [
-      { x: 118.1688, y: -123.9436, radius: null, team: null },
+      { x: 103.1835, y: -103.5346, radius: null, team: null },
     ],
   },
   neptune: {
@@ -248,10 +243,9 @@ export const mapBases = {
       { baseId: "D", x: 139.5419, y: 63.0127, radius: 15.0 },
     ],
     assault: [
-      { x: -174.7717, y: 8.811, radius: 15.0, team: 1 },
       { x: 49.5339, y: 8.5291, radius: null, team: 1 },
-      { x: 56.7256, y: 8.1217, radius: null, team: 1 },
     ],
+    variants: {"nt0": {"supremacy": [{"baseId": "A", "x": -174.7086, "y": 8.7847, "radius": 15.0}, {"baseId": "B", "x": 3.6204, "y": 8.6991, "radius": 15.0}, {"baseId": "C", "x": 135.0464, "y": -49.2444, "radius": 15.0}, {"baseId": "D", "x": 139.5419, "y": 63.0127, "radius": 15.0}], "assault": [{"x": 49.5339, "y": 8.5291, "radius": null, "team": 1}]}, "nt1": {"supremacy": [], "assault": [{"x": 56.7256, "y": 8.1217, "radius": null, "team": 1}]}, "nt2": {"supremacy": [], "assault": [{"x": -174.7717, "y": 8.811, "radius": 15.0, "team": 1}]}},
   },
   plant: {
     supremacy: [

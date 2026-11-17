@@ -20,7 +20,10 @@ vi.mock('../sceneryAssemblyRules.ts', () => ({
   strictSurfacesOf: () => new Set(),
   isWaterNode: () => false,
 }))
-vi.mock('../variantFilter.ts', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
+vi.mock('../variantFilter.ts', () => ({
+  pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }),
+  activeVariantOf: () => null,
+}))
 vi.mock('../sceneryMaterials.ts', () => ({ applyMaterialTextureAnisotropy: () => 0 }))
 vi.mock('../groundPass.js', () => ({
   makeWaterCoast: () => null,

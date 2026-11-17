@@ -196,6 +196,7 @@ describe('updateDestructibles：逐实例矩阵倒伏 + 倒带复位 + needsUpda
       destroyed: () => false,
       getData: () => ({ meta: { map_id: 6 }, vehicles: [] }),
       quality: () => ({ anisotropy: 1, scenery: true, groundLayers: false }),
+    grassInstanceBudget: () => 0,
       getScene: () => scene,
       getCamera: () => new THREE.PerspectiveCamera(),
       getRenderer: () => null,
@@ -214,7 +215,7 @@ describe('updateDestructibles：逐实例矩阵倒伏 + 倒带复位 + needsUpda
       onLightingApplied: vi.fn(),
     }
     const perfHandle = createPerf({ now: () => 0 })
-    const handle = createMapWorld(deps, { build: vi.fn(), clear: vi.fn() })
+    const handle = createMapWorld(deps)
     return { handle, deps }
   }
 

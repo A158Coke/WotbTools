@@ -14,7 +14,6 @@ const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 常量/并发工具与边界带 2026-10-24 出仓 playback/（巨石拆分 Step A1，守卫随实现迁移）
 const pbUtilSrc = readSrc(resolve(here, 'playback/util.ts'), 'utf8')
-const bandSrc = readSrc(resolve(here, 'playback/boundary.ts'), 'utf8')
 // 3D 战斗反馈 transient（伤害/击毁事件源、壁钟幽灵段/受击闪）2026-11-05 出仓
 // playback/transientFeedback3d.ts（#820 Wave B6B；事件源/游标守卫随实现迁移）
 const transientSrc = readSrc(resolve(here, 'playback/transientFeedback3d.ts'), 'utf8')
@@ -193,9 +192,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/R\.y = abs\(R\.y\);/);                                    // 防穿透水面
     expect(fn).toMatch(/transparent: true,/);
     expect(fn).toMatch(/depthWrite: true,/);   // erlenberg 实测：水面不写深度会与地形逐像素闪
-    expect(fn).not.toMatch(/albedoTex|decalTex|uReflectance|uDecalTint/);          // LOW 档字段零残留
-    // 装配路由半句（water extras → makeWaterMaterial，transparent+depthWrite:true）
-    // 2026-11-12 接替：sceneryMaterials.materials.test.ts 行为测试（ud.water 对象 fixture）
+    expect(fn).not.toMatch(/albedoTex|decalTex|uReflectance\b|uDecalTint/);          // LOW 档字段零残留
+    // HIGH/ULTRA 太阳高光：客户端 SPECULAR 分支（lighting.slh BlinnPhong 公式）
+    expect(fn).toMatch(/pow\(5000\.0, uGlossiness\)/);
+    expect(fn).toMatch(/uSunSpecColor \* specTerm \* \(NdotL \* uSpecularity \* F\)/);
+    // 装配路由（water extras → makeWaterMaterial）行为测试见 sceneryMaterials.materials.test.ts；
+    // 水面共面合并缓存键与冻结登记仍由装配模块锁定。
+    expect(asmSrc).toMatch(/cachedSceneryMat\(\s*\['W', m\.uuid/)
+    expect(asmSrc).toMatch(/makeWaterMaterial\(m, \{/)
+    expect(asmSrc).toMatch(/coast: waterCoast, wro: ud\.water,/)
+    expect(asmSrc).toMatch(/u\.uTime && !\(mm\.userData && mm\.userData\.water\)/)
+    expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/);
   })
 
   it('烘焙光照图：albedo × lightmap(UV1×逐实例变换) × 2、不受光、镂空保留', () => {
@@ -469,20 +476,25 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     //    ⇒ coastLine = saturate(dNdcZ / (2·uDepthUlp))：淡出带 = 该视距下深度抢胜带（2 ulp）。
     //  ⚠️ 曾用"该视距下地形单元格上界"（∝视距）当淡出宽度：与客户端无关，且远景把水整片洗掉
     //  （用户"水面贴图也不太对了"）。此用例同时钉死正确口径并禁止那两个错误写法复活。
-    expect(asmSrc).toMatch(/coast: waterCoast \}\);/)
+    expect(asmSrc).toMatch(/coast: waterCoast, wro: ud\.water,/)
     expect(mapWorldSrc).toMatch(/if \(waterTexDispose\) \{ waterTexDispose\.dispose\(\); waterTexDispose = null; \}/)
     // 资源构造与阈值（makeWaterCoast / uDepthUlp = 2/2^depthBits）2026-11-12 接替：
     // groundPass.behavior.test.ts 行为测试（24/16bit 阈值、数据纹理口径）
     expect(mapWorldSrc).toMatch(/function terrainSpanOf\(\) \{/)
     expect(mapWorldSrc).not.toMatch(/terrainCellBound\(1, camera/)  // 旧"单元格上界"口径：禁止复活
     const wSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
-    expect(wSrc).toMatch(/export function makeWaterMaterial\(m: GltfSceneMaterial, \{ normalTex, cubeTex, props, coast = null \}: \{/)
+    expect(wSrc).toMatch(/export function makeWaterMaterial\(m: GltfSceneMaterial, \{ normalTex, cubeTex, props, coast = null, wro = null \}: \{/)
     expect(wSrc).toMatch(/uniform sampler2D uHeightmap;/)
     // 阈值量纲 = **本渲染器的深度分辨率**（2 ulp）：岸线带（差值小到缓冲分不开）淡出、
     // 深水任何角度满反射（含俯视）。旧的"相机高 − 水面高"分母已废（俯视时深水被压没）。
     expect(wSrc).toMatch(/float dNdcZ = \(2\.0 \* uFar \* uNear \/ \(\(uFar - uNear\) \* zlen \* zlen\)\) \* dzAlong;/)
-    expect(wSrc).toMatch(/coastLine = clamp\(dNdcZ \/ \(2\.0 \* uDepthUlp\), 0\.0, 1\.0\);/)
-    expect(wSrc).toMatch(/float dzAlong = \(vWorldP\.y - terrainY\) \/ max\(abs\(toCam\.y\) \/ zlen, 1e-3\);/)
+    // 深度精度带（D5 口径）保留为 byDepth；再与世界空间最小淡出带取 min（远处稳定，
+    // 粗高度场 + 固定米制过渡——2026-11-17 用户"远处水面闪烁"）
+    expect(wSrc).toMatch(/float byDepth = clamp\(dNdcZ \/ \(2\.0 \* uDepthUlp\), 0\.0, 1\.0\);/)
+    expect(wSrc).toMatch(/float byWorld = smoothstep\(0\.0, uCoastFade, dzWorld\);/)
+    expect(wSrc).toMatch(/coastLine = min\(byDepth, byWorld\);/)
+    expect(wSrc).toMatch(/float dzWorld = vWorldP\.y - terrainY;/)
+    expect(wSrc).toMatch(/float dzAlong = dzWorld \/ max\(abs\(toCam\.y\) \/ zlen, 1e-3\);/)
     // 纹素中心在 `(j+0.5)/n`、地形顶点在 `j/n`（corner 口径）⇒ 采样加半个纹素，岸线高度才与网格同位
     expect(wSrc).toMatch(/float terrainY = texture2D\(uHeightmap, vWorldP\.xz \/ uMapSpan \+ 0\.5 \+ 0\.5 \* uHmTexel\)\.r;/)
     expect(wSrc).toMatch(/uHmTexel: \{ value: \(\(\) => \{[\s\S]*?img\.width > 0 \? 1 \/ img\.width : 0\s*\}\)\(\) \},/)
@@ -494,7 +506,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
     expect(gpSrc).toMatch(/const matched = await terrainBinMatchesMeta\(tbuf, meta\)/)
     expect(mapWorldSrc).not.toMatch(/heightField\[i\] = u16\[i\]/)
-    expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
+    // 查看器正俯视补偿：alpha = max(菲涅尔, uMinAlpha) × coastLine（客户端贴地相机无此视角；
+    // 595m 正俯视下 fresnel≈bias 0.05 ⇒ 水面会等于透明，只剩海床）
+    expect(wSrc).toMatch(/float alpha = max\(clamp\(fresnel, 0\.0, 1\.0\), uMinAlpha\) \* coastLine;/)
+    expect(wSrc).toMatch(/uMinAlpha: \{ value: 0\.32 \},/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
     expect(wSrc).not.toMatch(/max\(cameraPosition\.y - vWorldP\.y, 1e-3\)/)     // 旧"相机高"口径：禁止复活
   })
@@ -605,9 +620,9 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 与其他物体深度语义割裂。
     // 2026-10-07：默认改为**关**（真机 A/B 权衡：每片元 gl_FragDepth + 禁 early-z
     // 对 alpha-test 植被的填充率开销是乘法级）；Display 面板开关 + localStorage
-    // 持久化，URL ?logdepth= 仍最高优先（prefOf 解析）。
-    expect(src).toMatch(/let LOGDEPTH = prefOf\('pb_logdepth', 'logdepth', false\);/)
-    expect(src).toMatch(/let DYNRES = prefOf\('pb_dynres', 'dynres', true\);/)
+    // 持久化，URL ?logdepth= 仍最高优先（boolPref 解析）。
+    expect(src).toMatch(/let LOGDEPTH = boolPref\('pb_logdepth', 'logdepth', false\);/)
+    expect(src).toMatch(/let DYNRES = boolPref\('pb_dynres', 'dynres', true\);/)
     expect(rendererSrc).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
     // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
     // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
@@ -904,8 +919,9 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     // 的材质**，未设 toneMapped:false 的标记材质会随图变深（山地图 expo≈0.21）。
     // 炮线/轨迹线早已遵循此约定（见其注释），本守卫把同类标记逐点锁死。
     // 击毁特效的 toneMapped 在 playbackScene 生命周期测试中检查实际材质。
-    // 边界带/基地环/圆盘 toneMapped:false 2026-11-12 接替：
-    // playback/markers.toneMapped.test.ts 行为测试（createBoundaryBand/createBaseMarkers 真实材质）
+    // 基地环/圆盘材质随基地系统出仓 playback/bases.js（守卫随实现迁移）
+    expect(basesSrc, '基地环').toMatch(/color: baseColors\.neutral[\s\S]{0,200}toneMapped: false/)
+    expect(basesSrc, '基地圆盘').toMatch(/map: tex, side: THREE\.DoubleSide[\s\S]{0,160}toneMapped: false/)
     const sites = [
       [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
     ]

@@ -18,7 +18,7 @@ import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import { mapBases } from '../data/mapBases.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { WORLD_BOUNDS_300 } from '../data/mapImages.js'
-import { mapGridProfile } from '../data/mapSemantics.js'
+import { mapGridProfile, profileMatchesVariant } from '../data/mapSemantics.js'
 import { resolveMap2dBasemap } from '../scene/replaySource.js'
 import { createMapView } from '../utils/mapView.js'
 import {
@@ -54,6 +54,15 @@ const props = defineProps({
    * null / 组无几何 → 不渲染（fail-closed，绝不从内容猜坐标）。
    */
   basesKind: { type: String, default: null },
+  /**
+   * 该变体的基地点位条目（页面按 index 的 variant 标签从 mapBases[key].variants 解析）；
+   * 缺省回退 mapBases[mapKey]（单变体地图/旧调用）。
+   */
+  bases: { type: Object, default: null },
+  /** 当前变体标签（nt0/nt1…）：与语义档案 battleVariant 不符时隐藏该档出生点/边界。 */
+  variant: { type: String, default: null },
+  /** 选中条目是否基础（首个）index 条目：额外条目缺变体归属时不得复用基础档案。 */
+  variantIsBase: { type: Boolean, default: true },
   /** 页面 v-show 生命周期闸门：失活时退出全屏，避免全屏落在隐藏面板上 */
   active: { type: Boolean, default: true },
 })
@@ -71,10 +80,14 @@ const image = computed(() => basemapImage.value)
 const overview = computed(() => {
   const key = String(props.mapKey).toLowerCase()
   const bounds = playableBounds[key]
+  const profile = mapGridProfile(key)
+  // 语义档案的 battleVariant 只代表该变体；不匹配 = 该变体没有已验证的出生点/可玩
+  // 边界 ⇒ 两者都隐藏（不能把 nt0 的档案画到 nt1/nt2 上）。
+  const variantOk = profileMatchesVariant(profile, props.variant, props.variantIsBase)
   return {
     mapCode: props.mapKey,
-    spawnPoints: mapGridProfile(key)?.spawnPoints ?? [],
-    ...(bounds ? { playableBounds: bounds } : {}),
+    spawnPoints: variantOk ? (profile?.spawnPoints ?? []) : [],
+    ...(variantOk && bounds ? { playableBounds: bounds } : {}),
   }
 })
 const mapView = computed(() => createMapView(image.value, overview.value))
@@ -87,7 +100,7 @@ const mapView = computed(() => createMapView(image.value, overview.value))
 const baseMarkers = computed(() => {
   const kind = props.basesKind
   if (kind !== 'supremacy' && kind !== 'assault') return []
-  const pts = mapBases[props.mapKey]?.[kind] || []
+  const pts = (props.bases || mapBases[props.mapKey])?.[kind] || []
   if (kind === 'assault' && pts.length !== 1) return []
   return pts.map((b) => ({
     baseId: kind === 'supremacy' ? b.baseId : 'BASE',

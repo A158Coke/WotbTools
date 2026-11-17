@@ -83,7 +83,17 @@ Collector 按 Agent `map_key` 匹配现有 `mapCodes`，不以数字 `map_id` �
 | 场景实体 | 对应模式 | 每图数量 | 说明 |
 |---|---|---|---|
 | `strategicpoint` | 争霸赛 | 3–4 | `baseID` 0..3 与后端 `SupremacyBaseId.fromProtocolIndex()` 及 wire 字段 `baseStates[].baseId` 同源，直接 join，无需推断 |
-| `controlpoint` | 攻防战 / 遭遇战 | active variant 通常 1 个 | `team` 仅保留 raw scene metadata，攻/守语义未闭合；半径可能缺失。Battle Playback 已可按 runtime `baseId=BASE` 渲染单基地 |
+| `controlpoint` | 攻防战 / 遭遇战 | 基础变体 1 个 | `team` 仅保留 raw scene metadata，攻/守语义未闭合；半径可能缺失。Battle Playback 已可按 runtime `baseId=BASE` 渲染单基地 |
+
+**变体分组**：同一 `*.sc2` 里，基础图与 `_01/_02` 子图的点位由 `LabelComponent`
+（`nt0/nt1/nt2`、`am1..am3`）分组。生成器输出顶层 `supremacy`/`assault` = **基础变体**
+（数字后缀最小，与 GLB 变体打标同一契约：`tools/export_map_glb.py:resolve_variant_map`），
+并额外输出 `variants: { <label>: { supremacy, assault } }` 全套点位；无标签点位为所有
+变体共用。WotbTools 预览页按资产包 index 的 `variant` 标签切换变体（同一 assets key
+只物化一份资产，3D 侧按 map_id 裁剪边界），基地点位从 `mapBases[key].variants[label]` 取。
+此前不过滤会把 2–5 个变体的 controlpoint 混成一组（诺曼底遭遇点变成 3 个 candidate），
+预览端按「assault 恰好 1 个 candidate」才提供遭遇选项 ⇒ 多张图只剩争霸点位。
+当前产物：29 图 × 93 争霸基地 + 29 个基础变体遭遇/攻防点位（外加各变体组）。
 
 半径由场景 `radius` 声明（争霸基地 93 个里 92 个为 15 m）。坐标是世界米，与回放坐标、
 `mapImages.js` 的 `coordinateBounds` 同一坐标系，可直接落到底图上。
@@ -100,8 +110,10 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 ### 已知限制
 
-- 全局基地生成器保留原有抽取行为；本 PR 不对全部地图施加未经真实 Maps corpus 验证的 variant 筛选。
-  `mapBases.js` 保留 base branch 生成产物，旧注释中的“守方”不构成已证明语义；以本节 raw metadata 边界为准。
+- 变体筛选按「基础图 ↔ 最小数字后缀标签」配对；该契约依赖 `mapImages.js` 每个场景只注册
+  基础 mapCode（当前 29/29 成立）。若未来注册 `_01/_02` 子图，生成器需按子图 key 序与标签
+  序逐一配对（同 `resolve_variant_map`），不能再用单一最小标签。
+  `mapBases.js` 的 `team` 旧注释中的“守方”不构成已证明语义；以本节 raw metadata 边界为准。
 - 2D Assault 以 `assaultObjectivePresent`（wrapper8 目标族存在性：field2==1 且 field1∈{1,2} 出现即 true，
   与是否发生占领无关）确认 objective 存在；
   按 `mapCode` 查找 verified `common/map-semantics/*.semantic.json`，使用唯一 EXACT_SCENE_DATA

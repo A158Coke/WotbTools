@@ -16,10 +16,10 @@ import { FX_BUDGETS } from '../battleFx.js'
 // fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
 // 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: true,  groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: true,  groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: true,  groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, waterReflection: false, fx: FX_BUDGETS.low },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: true,  groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, waterReflection: false, fx: FX_BUDGETS.mid },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, waterReflection: true,  fx: FX_BUDGETS.high },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, waterReflection: true,  fx: FX_BUDGETS.ultra },
 }
 
 /**
@@ -28,4 +28,75 @@ export const QUALITY_PRESETS = {
  */
 export function shadowQualityEligible(key: string): boolean {
   return key === 'high' || key === 'ultra'
+}
+
+/**
+ * 画质档**语义表**（画质计划 P1）：把"低/均衡/高清/极致"映射到各渲染子系统的
+ * 预算与开关。渲染器数值旋钮仍在 QUALITY_PRESETS；本表是跨模块的唯一语义来源，
+ * 新增增强项（反射档位/草密度/CSM/贴花投影）先落这张表，再在各模块消费。
+ *
+ * 约束：表里的值必须是**当前已实现**的能力，不能提前写"未来支持"。未实现项
+ * （CSM/折射/贴花投影）固定 false；实现后改表并由单元测试锁一致性。
+ */
+export type QualityKey = keyof typeof QUALITY_PRESETS
+export type WaterTier = 'medium' | 'high' | 'ultra'
+
+export interface QualityFeatures {
+  water: {
+    tier: WaterTier
+    /** HIGH/ULTRA：当帧场景平面反射 */
+    reflection: boolean
+    /** ULTRA：屏幕空间折射（W2，未实现） */
+    refraction: boolean
+    /** 反射 RT 相对主画面比例（0 = 不建 RT） */
+    reflectionScale: number
+    /** 反射 pass 更新间隔（1 = 每帧；反射关闭时写 0，消费端按 1 处理） */
+    reflectionIntervalFrames: number
+  }
+  grass: {
+    /** 草实例预算（0 = 不加载草层） */
+    instances: number
+    /** 原型几何档（顶点量最大档；500 档为当前导出档） */
+    geometryTier: 500
+  }
+  shadows: {
+    /** 方向光 CSM（L1，未实现） */
+    csm: boolean
+    /** 坦克接地阴影**可用性**（默认仍关闭，用户面板显式开启） */
+    tankContact: boolean
+    /** 坦克 stencil 轮廓投影**可用性**（随接地阴影开关） */
+    silhouettes: boolean
+  }
+  decals: { projected: boolean }
+}
+
+export const QUALITY_FEATURES: Record<QualityKey, QualityFeatures> = {
+  low: {
+    water: { tier: 'medium', reflection: false, refraction: false, reflectionScale: 0, reflectionIntervalFrames: 0 },
+    grass: { instances: 0, geometryTier: 500 },
+    shadows: { csm: false, tankContact: false, silhouettes: false },
+    decals: { projected: false },
+  },
+  mid: {
+    water: { tier: 'medium', reflection: false, refraction: false, reflectionScale: 0, reflectionIntervalFrames: 0 },
+    grass: { instances: 0, geometryTier: 500 },
+    shadows: { csm: false, tankContact: false, silhouettes: false },
+    decals: { projected: false },
+  },
+  high: {
+    water: { tier: 'high', reflection: true, refraction: false, reflectionScale: 0.5, reflectionIntervalFrames: 2 },
+    grass: { instances: 60000, geometryTier: 500 },
+    shadows: { csm: false, tankContact: true, silhouettes: true },
+    decals: { projected: false },
+  },
+  ultra: {
+    water: { tier: 'ultra', reflection: true, refraction: false, reflectionScale: 0.5, reflectionIntervalFrames: 1 },
+    grass: { instances: 60000, geometryTier: 500 },
+    shadows: { csm: false, tankContact: true, silhouettes: true },
+    decals: { projected: false },
+  },
+}
+
+export function qualityFeatures(key: string): QualityFeatures {
+  return QUALITY_FEATURES[key as QualityKey] || QUALITY_FEATURES.mid
 }
