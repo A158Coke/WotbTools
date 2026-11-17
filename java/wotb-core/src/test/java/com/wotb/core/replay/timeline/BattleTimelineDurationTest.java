@@ -49,7 +49,7 @@ class BattleTimelineDurationTest {
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(300.0, eventsWithRoundFinished(120.0));
 
-        assertEquals(150.0, BattleTimelineBuilder.resolveDurationSec(battle, recon, START), EPS);
+        assertEquals(150.0, TimelineClockResolver.resolveDurationSec(battle, recon, START), EPS);
     }
 
     @Test
@@ -58,7 +58,7 @@ class BattleTimelineDurationTest {
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(500.0, eventsWithRoundFinished(120.0));
 
-        assertEquals(420.0, BattleTimelineBuilder.resolveDurationSec(battle, recon, START), EPS);
+        assertEquals(420.0, TimelineClockResolver.resolveDurationSec(battle, recon, START), EPS);
     }
 
     @Test
@@ -68,7 +68,7 @@ class BattleTimelineDurationTest {
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(300.0, eventsWithRoundFinished(180.0));
 
-        assertEquals(180.0, BattleTimelineBuilder.resolveDurationSec(battle, recon, START), EPS);
+        assertEquals(180.0, TimelineClockResolver.resolveDurationSec(battle, recon, START), EPS);
     }
 
     @Test
@@ -77,7 +77,7 @@ class BattleTimelineDurationTest {
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(0.0, eventsWithRoundFinished(95.5));
 
-        assertEquals(95.5, BattleTimelineBuilder.resolveDurationSec(battle, recon, START), EPS);
+        assertEquals(95.5, TimelineClockResolver.resolveDurationSec(battle, recon, START), EPS);
     }
 
     @Test
@@ -86,15 +86,15 @@ class BattleTimelineDurationTest {
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(240.0, eventsWithRoundFinished(-5.0));
 
-        assertEquals(240.0, BattleTimelineBuilder.resolveDurationSec(battle, recon, START), EPS);
+        assertEquals(240.0, TimelineClockResolver.resolveDurationSec(battle, recon, START), EPS);
     }
 
     @Test
     void metaFallbackUsedWhenNoRoundFinishedAndCappedAt420() {
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
-        assertEquals(240.0, BattleTimelineBuilder.resolveDurationSec(
+        assertEquals(240.0, TimelineClockResolver.resolveDurationSec(
                 metaOnlyBattle(240.0), TimelineTestFixtures.recon(240.0, events), START), EPS);
-        assertEquals(420.0, BattleTimelineBuilder.resolveDurationSec(
+        assertEquals(420.0, TimelineClockResolver.resolveDurationSec(
                 metaOnlyBattle(600.0), TimelineTestFixtures.recon(600.0, events), START), EPS);
     }
 
@@ -104,7 +104,7 @@ class BattleTimelineDurationTest {
         events.add(TimelineTestFixtures.position(TimelineTestFixtures.RECORDER_EID, 45, 12f, 12f, 0f));
         final ReplayReconstruction recon = TimelineTestFixtures.recon(0.0, events);
 
-        assertEquals(45.0, BattleTimelineBuilder.resolveDurationSec(metaOnlyBattle(null), recon, START), EPS);
+        assertEquals(45.0, TimelineClockResolver.resolveDurationSec(metaOnlyBattle(null), recon, START), EPS);
     }
 
     @Test
