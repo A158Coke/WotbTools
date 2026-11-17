@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { CATALOG, makeCache, UPGRADE_TANKS, createMountAt } from './AgentTankopedia.test-helpers.js'
+import { CATALOG, makeCache, UPGRADE_TANKS, createMountAt } from '../test/AgentTankopediaTestHelpers.js'
 import { flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
 import AgentTankopedia from './AgentTankopedia.vue'
