@@ -480,19 +480,23 @@ if [[ -n "$BASE_SHA" ]]; then
     source_line_history_allowlisted["$union_path"]=1
   done
 
-  # Third source, for branches that merged a newer main: a branch commit made
-  # before main split a legacy file still carries the then-sanctioned
-  # over-budget blob, while both BASE and HEAD have already retired the entry.
-  # Such a commit is judged by the allowlist main had where the branch forked,
-  # i.e. at merge-base(commit, BASE). That fork point is reachable from BASE, so
-  # the entry was approved on main — a branch-only temporary entry is never at
-  # a merge-base and still legitimizes nothing.
+  # A branch forked before main split a legacy file may still carry its old
+  # over-budget blob in earlier commit trees. The fork point is trusted because
+  # merge-base(commit, BASE) is reachable from current main, unlike branch-only
+  # changes. A blob unchanged since that fork is grandfathered even without an
+  # explicit allowlist entry; a changed or newly added blob is NOT.
+  # Preserve the existing explicit fork-point allowlist rule for pre-existing
+  # approved exceptions (including allowed edits to those exception paths).
   declare -A fork_allowlist_loaded=()
   declare -A fork_allowlisted=()
-  fork_point_allowlists() {
-    local commit="$1" path="$2" fork
+  fork_point_permits_source_blob() {
+    local commit="$1" path="$2" oid="$3" fork fork_oid
     fork=$(git merge-base "$commit" "$BASE_SHA" 2>/dev/null) || return 1
     [[ -n "$fork" ]] || return 1
+    fork_oid=$(git rev-parse --verify "${fork}:${path}" 2>/dev/null) || fork_oid=""
+    if [[ -n "$fork_oid" && "$fork_oid" == "$oid" ]]; then
+      return 0
+    fi
     if [[ -z "${fork_allowlist_loaded[$fork]+x}" ]]; then
       fork_allowlist_loaded["$fork"]=1
       if git cat-file -e "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
@@ -562,7 +566,7 @@ if [[ -n "$BASE_SHA" ]]; then
           echo "Unable to count source lines of blob $oid for $(printable_path "$path") (awk returned: ${blob_lines:-<empty>})." >&2
           exit 2
         fi
-        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! is_unmodified_base_source_blob "$path" "$oid" && ! fork_point_allowlists "$commit" "$path"; then
+        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! is_unmodified_base_source_blob "$path" "$oid" && ! fork_point_permits_source_blob "$commit" "$path" "$oid"; then
           # The union list only decides whether the over-budget blob was ever a
           # sanctioned exception; policing per-file net growth is left to the
           # split workflow (the entry-count ratchet owns the allowlist).
