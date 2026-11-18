@@ -164,9 +164,9 @@ function createLocalDevAuthProvider() {
 **提交纪律（硬要求）**：登录桩与其回归用例**不得随任何 PR / commit 提交**。提交前自查：
 
 ```bash
-git diff --stat            # useAuth.ts / useAuth.test.js 不应出现本机登录桩相关改动
+git diff --stat            # useAuth.ts / useAuth.providers.test.js / src/test/useAuthTestHelpers.js 不应出现本机登录桩相关改动
 # 或提交前直接还原（补丁在 Agent 仓 tmp_analysis/ 有留存，可随时重打）：
-git checkout -- frontend/src/composables/useAuth.ts frontend/src/composables/useAuth.test.js
+git checkout -- frontend/src/composables/useAuth.ts frontend/src/composables/useAuth.providers.test.js frontend/src/test/useAuthTestHelpers.js
 ```
 
 ## 5. 能力分层：本地能全用什么，什么要真角色
