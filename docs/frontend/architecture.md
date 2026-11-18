@@ -70,7 +70,7 @@ JavaScript 与 TypeScript 共存；`.js` import specifier 经 Vite/TypeScript re
 | Three.js 场景 / 装甲 | 模块内自持（armorShaders / armorCollisionPack / armorPlateModel 等）；wire 形状复用 `api/agent-replay-facets.ts` |
 | 领域 / View model | `types/*.ts`，与 wire 类型分离 |
 
-`frontend/typescript.legacy.json` 是只减不增的迁移基线。`src/shared/typescript-ownership.test.ts` 保证名单等于当前源码；`scripts/check-typescript-baseline.mjs` 在 CI 中比较 PR base 与 head，名单不得新增路径，单个文件的 escape hatch 不得增加，新文件必须为 0，因此不能靠同时修改 JSON 放行。TypeScript 文件改名按新文件计算。
+`frontend/typescript.legacy.json` 是只减不增的迁移基线。`src/shared/typescript-ownership.test.ts` 保证名单等于当前源码；`scripts/check-typescript-baseline.mjs` 在 CI 中比较 PR base 与 head，非 TypeScript 名单不得新增路径，单个文件的 escape hatch 不得增加。拆分时，基线中有额度的旧模块可通过直接 re-export 将额度按类型转给基线中不存在的新文件；目标只能有一个来源，且来源必须等额扣减。其他新文件仍以 0 为上限，普通改名不能仅靠修改 JSON 放行。
 
 **#741 Wave C（2026-11）已把 p1 全部迁入 TypeScript**（scene 核心、playback 子模块、Playback composables、map2dOverlay），并引入 `@types/three@0.185.x` 作为 Three.js 类型基础。Wave C 的负向类型证明分布在各批次的 `*TypeProofs.test.ts` 文件中（`scenePureTypeProofs` / `sceneGeometryTypeProofs` / `sceneAssetOwnershipTypeProofs` / `playbackStateTypeProofs` / `composableTypeProofs`）。剩余 p1 名单为拆分后的宿主文件 `src/scene/tankViewer.js` 与 `src/scene/playbackScene.js`：两者只保留 composition root 与公开 façade，随各自的稳定 boundary 迁移。
 
