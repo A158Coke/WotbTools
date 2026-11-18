@@ -9,7 +9,7 @@
  *
  * 夹具：startFixtureServer 只替换 Keycloak 边界（同 browser-workspace-interaction），
  * 地图索引 / 封面走 /fixture-assets/* 中间件；faust 走打包注册表底图（无 3D 资产需求）。
- * 真实手势（缩放/平移/标注坐标）不在此门禁范围：由既有 vitest 管线与人工验收覆盖。
+ * 真实触摸标注与 3D pane v-show canvas 持留在本门禁验证；复杂缩放手势仍由专项回归覆盖。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { verifyMapPreviewCanvasPersistence, verifyMapPreviewTouchDrawing } from './browser-map-preview-interactions.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -124,11 +125,16 @@ async function openDrawingInFullscreen(page) {
 
 async function openMapPreview(page, origin) {
   await page.goto(`${origin}/?view=map-preview&map=faust&mode=2d&ws-auth=1&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
-  await page.waitForValue(
-    `(() => { const sq = document.querySelector('.map2d-square'); return !!sq && sq.getBoundingClientRect().width > 0 })()`,
-    (v) => v === true,
-    { label: 'map2d square rendered', timeout: 30_000 },
-  )
+  try {
+    await page.waitForValue(
+      `(() => { const sq = document.querySelector('.map2d-square'); return !!sq && sq.getBoundingClientRect().width > 0 })()`,
+      (v) => v === true,
+      { label: 'map2d square rendered', timeout: 30_000 },
+    )
+  } catch (error) {
+    const state = await page.probe(() => ({ href: location.href, viewport: [innerWidth, innerHeight], map: !!document.querySelector('[data-testid="map-2d-pane"]'), stage: !!document.querySelector('[data-testid="map-2d-stage"]'), square: document.querySelector('.map2d-square')?.getBoundingClientRect().toJSON(), body: document.body.innerText.slice(0, 240) }))
+    throw new Error(`${error.message}; map preview navigation state=${JSON.stringify(state)}; errors=${JSON.stringify(page.consoleErrors)}`)
+  }
   await page.animationsSettled()
   await delay(200)
   await page.installInputTrace()
@@ -225,6 +231,7 @@ async function main() {
           throw error
         }
         await delay(200)
+        if (scenario.name === 'phone-390x844') await verifyMapPreviewTouchDrawing(page)
         const g2 = await page.probe(mapPreviewGeometryProbe)
         const problems2 = []
         if (g2.centerXError > 2) problems2.push(`centerX ${g2.centerXError.toFixed(1)}px`)
@@ -352,7 +359,7 @@ async function main() {
       await page.goto(`${origin}/?view=map-preview&map=faust&mode=3d&ws-auth=1&debug&assets=${encodeURIComponent(`${origin}/fixture-assets`)}`)
       await page.waitForValue(`!!window.__mapPreviewPane && !!document.querySelector('[data-testid="map-3d-root"]')`, Boolean,
         { label: '3D map preview root', timeout: 30000 })
-      await page.evaluate(`window.__mapPreviewPane.store.mapReady = true`)
+      await verifyMapPreviewCanvasPersistence(page, scenario)
       if (scenario.name === 'phone') {
         await page.waitForValue(`!!document.querySelector('[data-testid="scene-distance-slider"]')`, Boolean, { label: 'distance slider visible' })
         const slider = await page.probe(() => {
@@ -380,6 +387,7 @@ async function main() {
         if (near <= far) throw new Error(`distance slider edge touches did not adjust value: near=${near} far=${far}`)
         console.log(`[PASS] phone distance slider width=${slider.width.toFixed(1)}px centered and unobstructed`)
       }
+      await page.evaluate(`document.activeElement?.blur()`)
       await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
       await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'h', code: 'KeyH', windowsVirtualKeyCode: 72 }, page.sessionId)
       await page.waitForValue(`!!document.querySelector('[data-testid="map-3d-restore-ui"]')`, Boolean, { label: '3D UI hidden' })

@@ -9,13 +9,13 @@
  * `loadMapOnly`，本组件只发命令。标注状态机与 3D 回放同源（utils/annotation 全套），
  * 差异只有就绪门控（mapReady 而非 hasData）与标注的文件导入/导出。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, TriangleAlert, Upload } from 'lucide-vue-next'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { createPlaybackStore } from '../scene/playbackStore.js'
-import { initPlayback, QUALITY_PRESETS } from '../scene/playbackScene.js'
+import { QUALITY_PRESETS } from '../scene/playbackScene.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { useSceneActivity } from '../composables/useSceneActivity'
@@ -24,7 +24,6 @@ import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import { isInteractiveTarget } from '../composables/usePlaybackTransport.js'
 import { usePaneFillHeight } from '../composables/usePaneFillHeight.js'
-import { uiProfile } from '../composables/useUiProfile.js'
 import SegmentedControl from './SegmentedControl.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
@@ -33,6 +32,7 @@ import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import { stripSurfaceAnchors } from '../utils/annotation.js'
 import { useSceneAnnotations } from '../composables/useSceneAnnotations.js'
 import { useMapPreviewAnnotationFile } from '../composables/useMapPreviewAnnotationFile.js'
+import { useMapPreview3DSession } from '../composables/useMapPreview3DSession.js'
 
 const props = defineProps({
   /** 资产面数字地图 id（loadMapOnly 'id=' 解析入口） */
@@ -63,7 +63,8 @@ const webgl = detectWebGL()
 
 const store = createPlaybackStore()
 const stage = ref(null)
-let sceneApi = null
+const sceneApi = ref(null)
+const getSceneApi = () => sceneApi.value
 // Stage 高度（usePaneFillHeight：视口剩余高度的 JS 度量，全屏吃满）。
 // rootEl 必须先于 fullscreen/fly 等 composable 声明——它们的 option getter 同步读取它。
 const rootEl = ref(null)
@@ -76,22 +77,12 @@ const CAMERAS = computed(() => [
   { value: 'top', label: t('agentReplay.cam_top') },
 ])
 function chooseCamera(mode) {
-  sceneApi?.setCam(mode)
+  sceneApi.value?.setCam(mode)
 }
 const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 const qualityOptions = computed(() =>
   QUALITY_ORDER.map((k) => ({ value: k, label: t('agentReplay.q_' + k) })),
 )
-/** 画质切换：地图会话不整页 reload——拆场景重建（DATA=null 时 setQuality 直改档），重载当前图。
- *  destroyScene 不再触碰标注（GPU teardown 与标注会话分离），装载完成后 mapReady
- *  watcher 把 pane 撤销栈整体补推回内核。 */
-function changeQuality(k) {
-  if (k === store.qualityKey) return
-  destroyScene()
-  ensureScene()
-  sceneApi?.setQuality?.(k)
-  reloadMap()
-}
 const { isPhone } = usePlaybackPhoneForm()
 const { isPortrait } = usePlaybackPortraitViewport()
 const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFullscreen({
@@ -101,10 +92,10 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen } = usePlaybackFulls
 })
 const renderActive = useSceneActivity(() => props.active)
 const fly = useSceneFlyControls({
-  setFlySpeed: (n) => sceneApi?.setFlySpeed(n),
+  setFlySpeed: (n) => sceneApi.value?.setFlySpeed(n),
   isActive: () => renderActive.value,
-  canFly: () => !!sceneApi && store.mapReady,
-  getSceneApi: () => sceneApi,
+  canFly: () => !!sceneApi.value && store.mapReady,
+  getSceneApi: () => sceneApi.value,
 })
 
 // ---------- 标注（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
@@ -113,7 +104,7 @@ const {
   annotationOpen, annotations, replaceAnnotations, pushAnnotationProjection, pushAnnotationInteraction,
   pushAnnotationVisibility, commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation,
   resetAnnotationState, toolbarProps: annotationToolbarProps, toolbarHandlers: annotationToolbarHandlers,
-} = useSceneAnnotations({ getSceneApi: () => sceneApi, interactionReady: () => store.mapReady })
+} = useSceneAnnotations({ getSceneApi: () => sceneApi.value, interactionReady: () => store.mapReady })
 
 // ---------- 标注导入 / 导出（会话内的文件落盘；fail-closed 校验）----------
 // 文件 schema owner = useMapPreviewAnnotationFile（与 2D 预览共用，可互导）。
@@ -138,123 +129,19 @@ function isImportableAnnotation(a) {
     && a.points.every((p) => !!p && Number.isFinite(p.x) && Number.isFinite(p.y))
 }
 
-// ---------- 会话生命周期 ----------
-/** GPU/场景 teardown，**不触碰标注会话**：pane 撤销栈是权威，重建（离线恢复/
- *  画质切换）后由 mapReady watcher 与 ensureScene 补推回内核——离线瞬间销毁场景
- *  不得连带清掉未导出的绘制（Codex #4431990895）。标注重置只属于「换图」语义
- *  （mapId watcher 显式调用）。 */
-function destroyScene() {
-  fly.stopLoop()
-  if (!sceneApi) return
-  sceneApi.destroy?.()
-  sceneApi = null
-}
-function shouldHaveScene() {
-  return online.value.available && !!webgl.supported
-}
-function ensureScene() {
-  if (sceneApi || !renderActive.value || !shouldHaveScene()) return false
-  // stage 必须已挂在文档上：canvas append 到游离节点会静默丢失（模板切换的残留防护）
-  if (!stage.value?.isConnected) return false
-  sceneApi = initPlayback(stage.value, store, null, {
-    onAnnotationCommit: commitAnnotationFromScene,
-    onAnnotationErase: eraseFromScene,
-  })
-  sceneApi?.setPaused?.(!renderActive.value)
-  sceneApi?.setFlySpeed?.(fly.flySpeedIndex())
-  sceneApi?.setMobileTouch?.(isPhone.value)   // 移动端触屏相机契约（单指分流 / 双指不控制）
-  pushAnnotationProjection()
-  pushAnnotationInteraction()
-  pushAnnotationVisibility()
-  pushBasesKind()
-  pushSpawnPoints()
-  return true
-}
-function reloadMap() {
-  if (!sceneApi || !props.mapId || !requireFeature(Feature.PLAYBACK_3D)) return
-  sceneApi.loadMapOnly({ mapId: props.mapId, mapName: props.mapName })
-}
-// 旋转 / 跨断点改变手机形态时同步触屏相机契约（场景已建时立即生效）
-watch(isPhone, (v) => sceneApi?.setMobileTouch?.(v))
-/**
- * 基地点位组的唯一推送方向（pane → scene，与标注投影同一纪律）：会话未就绪时
- * 内核只记意图（startPlayback 的 map 分支按它 build），就绪则立即重建。三个触发
- * 点共享：kind 变化、场景创建（记意图先于装载）、会话就绪（teardown 会把内核
- * 意图复位，重建/换图后必须补推）。
- */
-function pushBasesKind() {
-  sceneApi?.setMapBasesKind?.(props.basesKind || null)
-}
-/** 出生点列的唯一推送方向（pane → scene，与基地 kind 同一纪律）：会话未就绪时
- *  内核只记意图，就绪则立即重建。三个触发点共享：点列变化、场景创建（记意图
- *  先于装载）、会话就绪（teardown 会把内核意图复位，重建/换图后必须补推）。 */
-function pushSpawnPoints() {
-  sceneApi?.setMapSpawns?.(props.spawnPoints || null)
-}
-// 换图判定只看 mapId（图身份）：mapName 是 locale 派生的显示名——切语言会变，
-// 但图没换，标注与撤销栈不得清空（名称更新由页面 header 的 computed 承担）。
-watch(() => props.mapId, () => {
-  resetAnnotationState()   // 换图 = 换标注语义；旧标注不跨图残留
-  // 场景已存在（曾激活）：暂停态下重载，用户回到 3D 看到新图；
-  // 从未激活（无场景）：不抢建——首次激活的 reconcile watcher 会装载当前图。
-  if (sceneApi && shouldHaveScene()) reloadMap()
+const { destroyScene, reloadMap, changeQuality } = useMapPreview3DSession({
+  props, online, webgl, renderActive, stage, store, requireFeature, fly, isPhone, sceneApi,
+  resetAnnotationState,
+  pushAnnotationProjection,
+  pushAnnotationInteraction,
+  pushAnnotationVisibility,
+  commitAnnotationFromScene,
+  eraseFromScene,
 })
-watch(renderActive, (active) => {
-  sceneApi?.setPaused?.(!active)
-  if (!active) fly.stopLoop()
-})
+
 watch(() => props.active, (active) => {
   if (!active && annotationOpen.value) closeAnnotation()
 })
-watch(() => props.basesKind, pushBasesKind)
-watch(() => props.spawnPoints, pushSpawnPoints)
-// UI Profile 切换（四季主题切换，不 reload/remount）：2D 出生点
-// 随 CSS token 自动换色，3D 材质颜色是 build 时快照——必须显式原位刷新（内核
-// refreshSpawnColors 只重着色已有标记，不重建场景、不动相机）。
-watch(uiProfile, () => {
-  sceneApi?.refreshSpawnColors?.()
-})
-// 就绪门关闭时收起 drawing 由 useSceneAnnotations 负责（同一门控）。
-watch(() => store.mapReady, (ready) => {
-  // loadMapOnly 的 teardown 清空内核侧标注数组（会话纪律与回放一致）；pane 的
-  // 撤销栈是权威——就绪后把当前标注整体补推回内核（换图/画质重建同样经过这里）。
-  if (ready) {
-    pushAnnotationProjection()
-    pushAnnotationVisibility()
-    pushBasesKind()
-    pushSpawnPoints()
-  }
-})
-/**
- * 连通性翻转兜底（矿井阵地空白页根因）：组件可能在连通性检测仍 pending 时挂载
- * （`online.available=false` → `shouldHaveScene()` false），而 onMounted 只拍一次、
- * available 翻转后没有任何人拉起场景——stage 留空、零错误。这里对
- * available/active 的每次变化做 reconcile：首次可建（含 pending→available 翻转）
- * 装载当前图，active 翻转只改暂停态，离线则拆场景。
- */
-watch(
-  () => [online.value.available, renderActive.value],
-  ([available, active], [prevAvailable] = []) => {
-    if (!shouldHaveScene()) {
-      destroyScene()
-      return
-    }
-    // 未激活（直达 ?mode=2d，3D pane 仍 v-show 挂载）：不建 WebGL 上下文、不装
-    // 资产——移动端上隐藏 pane 的整套 map-only 资产链是纯浪费。首次激活才创建
-    // + 装载；之后切走只暂停保留场景/标注（Replay3DPane 生命周期同一不变量）。
-    if (!active) return
-    nextTick(() => {
-      if (!renderActive.value || !shouldHaveScene()) return
-      const created = ensureScene()
-      if (!sceneApi) return
-      sceneApi.setPaused?.(!renderActive.value)
-      // 首次创建（含激活翻转、pending→available 翻转）才装载；active 翻转不重复装图
-      if (created || (available === true && prevAvailable === false)) reloadMap()
-    })
-  },
-  { immediate: true },
-)
-
 // ---------- 「隐藏全部 UI」（与 3D 回放同一语义，不持久化）----------
 const uiHidden = ref(false)
 const importFile = ref(null)
@@ -303,7 +190,7 @@ onBeforeUnmount(() => {
 if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
   window.__mapPreviewPane = {
     store,
-    get sceneApi() { return sceneApi },
+    get sceneApi() { return sceneApi.value },
   }
 }
 </script>
@@ -440,196 +327,10 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
          usePlaybackPortraitViewport）；全屏按钮正下方，free/top 可用，follow/recorder
          场景返回 unavailable（这里以 cam 判定隐藏）；Hide All UI 时随控件一起隐藏。 -->
     <SceneDistanceSlider
-      :get-scene-api="() => sceneApi"
+      :get-scene-api="getSceneApi"
       :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
     />
   </div>
 </template>
 
-<style scoped>
-.map3d {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  /* 3D 场景（含非全屏）必须自铺不透明底（winter 场景块解析为深色）：
-     页面外围仍可见环境背景，但场景内不能透图，也不叠页面环境光。 */
-  background: var(--color-canvas);
-}
-
-.map3d-note {
-  padding: var(--space-4);
-  color: var(--color-text-secondary);
-  font: var(--type-body);
-}
-
-.map3d-root {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.map3d:fullscreen {
-  padding: 0;
-  background: var(--color-canvas);
-}
-
-/* root 高度 = 视口剩余高度（usePaneFillHeight）：stage 吃剩余、controls 固有高
-   ——场景与下方绘制菜单同屏，不把菜单挤出视口。 */
-.map3d-stage {
-  position: relative;
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-/* 加载/错误覆盖层：stage 常驻（canvas 不可被模板切换卸载），状态浮在其上 */
-.map3d-status-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-sticky);
-}
-
-.map3d-stage .scene {
-  width: 100%;
-  height: 100%;
-}
-
-.map3d-stage .scene :deep(canvas) {
-  display: block;
-  touch-action: none;
-}
-
-.map3d-fps {
-  position: absolute;
-  inset-block-start: var(--space-2);
-  inset-inline-start: var(--space-2);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-scrim);
-  color: var(--color-text-primary);
-  font: var(--type-caption-xs);
-  line-height: var(--line-height-caption-xs);
-  pointer-events: none;
-}
-
-.map3d-fps-low {
-  color: var(--color-warning);
-}
-
-.map3d-controls {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-}
-
-.map3d-degraded {
-  position: absolute;
-  inset-block-start: var(--space-2);
-  inset-inline-end: var(--space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: calc(100% - var(--space-4));
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  color: var(--color-warning);
-  font: var(--type-caption);
-  pointer-events: none;
-}
-
-.map3d-toolrow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.map3d-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--control-h-sm);
-  padding: 0 var(--space-2);
-  border: var(--border-width) solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-  cursor: pointer;
-}
-
-.map3d-btn:hover {
-  border-color: var(--color-border-strong);
-}
-
-.map3d-btn:focus-visible {
-  outline: var(--focus-outline);
-  outline-offset: var(--focus-outline-offset);
-}
-
-.map3d-btn-icon {
-  padding: 0 var(--space-2);
-}
-
-.map3d-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.map3d-spacer {
-  flex: 1;
-}
-
-.map3d-quality {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-}
-
-.map3d-import-note {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-}
-
-.map3d-hint {
-  margin: 0;
-  color: var(--color-text-tertiary);
-  font: var(--type-caption-xs);
-  line-height: var(--line-height-caption-xs);
-}
-
-.map3d-annotations {
-  min-width: 0;
-}
-
-.map3d-restore {
-  position: absolute;
-  inset-block-start: var(--space-2);
-  inset-inline-end: var(--space-2);
-}
-
-/* 右上角有浮动全屏按钮时，restore 下移一行，避免命中区重叠。 */
-.map3d-restore.map3d-restore-shifted {
-  inset-block-start: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
-  z-index: var(--z-sticky);
-}
-
-/* 短视口横屏紧凑档：map3d-btn 的 --control-h-sm 只有 32px，回落到 40px 舒适命中区；
-   全屏按钮同样抬到 40px，restore 的偏移必须跟它一起改，避免两块命中区重叠。 */
-@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
-  .map3d-btn { min-height: var(--hit-min-comfortable); }
-  .map3d-btn-icon { min-inline-size: var(--hit-min-comfortable); }
-  .map3d-restore.map3d-restore-shifted {
-    inset-block-start: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2));
-  }
-}
-</style>
+<style scoped src="./MapPreview3DPane.css"></style>

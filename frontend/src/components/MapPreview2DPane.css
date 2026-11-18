@@ -1,0 +1,144 @@
+.map2d {
+  position: relative;
+  min-height: 0;
+}
+
+.map2d:fullscreen {
+  padding: 0;
+  background: var(--color-canvas);
+  /* 全屏根是 viewport-fixed：手机满宽地图（横屏高度可超视口）时，工具区靠这里
+     的纵向滚动触达——非全屏的滚动来自页面，全屏必须自建滚动容器。 */
+  overflow-y: auto;
+}
+
+/* 固定高度层（usePaneFillHeight 写入）：舞台吃剩余、controls 固有高——
+   地图与下方绘制菜单同屏。 */
+.map2d-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* root 高度 = 视口剩余高度（usePaneFillHeight）：舞台吃剩余、controls 固有高
+   ——地图与下方绘制菜单同屏。 */
+.map2d-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+  touch-action: none;
+}
+
+/* 手机形态：body 高度内容驱动（stage 内联高度 = 方形边长），工具栏紧随地图；
+   舞台不再 flex 吃剩余。min-height 保证底图错误态可见。 */
+.map2d-phone .map2d-stage {
+  flex: 0 0 auto;
+  min-height: 120px;
+}
+
+/* 舞台内居中方形（边长 = min(舞台宽, 舞台高)，JS 实测写入内联尺寸）：底图契约框
+   是正方形，contain fit 与 pan 夹都以这个舞台为界（与回放正方形 stage 同构）——
+   宽屏不留裁切、窄屏不留横滚，标注语义坐标不变。 */
+.map2d-square {
+  position: relative;
+  overflow: hidden;
+}
+
+.map2d-stage:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: calc(-1 * var(--focus-outline-offset));
+}
+
+.map2d-error {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-danger);
+  font: var(--type-caption);
+}
+
+.map2d-battlemap {
+  height: 100%;
+}
+
+/* 地图预览是整页查看器：BattleMap 根的回放内嵌宽度（66.7%）在本布局不适用，
+   全幅铺满 stage——screen-space 几何全部取真实 mapEl 尺寸，宽度改动不影响坐标换算。 */
+.map2d-stage :deep(.pb-map) {
+  width: 100%;
+}
+
+.map2d-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.map2d-toolrow,
+.map2d-image-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.map2d-export-error {
+  margin: 0;
+  color: var(--color-danger);
+  font: var(--type-caption);
+}
+
+.map2d-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--border-width) solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+
+.map2d-btn:hover {
+  border-color: var(--color-border-strong);
+}
+
+.map2d-btn:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.map2d-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.map2d-import-note {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+}
+
+.map2d-hint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font: var(--type-caption);
+}
+
+.map2d-annotations {
+  min-width: 0;
+}

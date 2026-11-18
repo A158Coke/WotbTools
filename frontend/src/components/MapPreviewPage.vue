@@ -11,17 +11,14 @@
  * 「显示全部地图」开关展开；可见性只作用于列表渲染，?map= 深链与 2D/3D 加载始终
  * 使用完整清单（maps），因此默认隐藏的地图仍可被旧链接打开。
  */
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Map as MapIcon } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
-import { loadMapIndex, mapCoverUrl } from '../scene/replaySource.js'
-import { dataVersionId } from '../scene/assetBase.js'
-import { mapImages } from '../data/mapImages.js'
 import { mapBases } from '../data/mapBases.js'
 import { mapGridProfile, profileMatchesVariant } from '../data/mapSemantics.js'
-import { hasChineseMapName, mapLabel } from '../utils/helpers.js'
+import { mapLabel } from '../utils/helpers.js'
 import { Feature } from '../app/featureCapabilities.js'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
@@ -33,133 +30,14 @@ import MapPreview2DPane from './MapPreview2DPane.vue'
 import RotatePrompt from './RotatePrompt.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import { useForcedLandscape } from '../composables/useForcedLandscape.js'
+import { useMapPreviewCatalog } from '../composables/useMapPreviewCatalog.js'
 import { assaultSelectable, resolveBasesKind } from './mapBasesKind.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { authenticated } = useAuth()
-
-// ---- 地图清单（资产包 index.json → 按 key 去重的 picker 模型）----
-/** 目录数据保持 locale 中性（rawMaps 只存 key/id/display）；显示名与排序是
- *  当前 locale 的**派生投影**（computed）——运行中切语言即时生效，不残留旧语言。 */
-const rawMaps = ref([])
-const failedThumbs = ref(new Set())
-const failedFallbacks = ref(new Set())
-const nameOf = (m) => {
-  const localized = mapLabel(m.key, locale.value)
-  return localized !== m.key ? localized : (m.packDisplay || m.key)
-}
-const maps = computed(() => rawMaps.value
-  .map((m) => ({
-    ...m,
-    name: nameOf(m),
-    thumb: failedThumbs.value.has(m.key) ? null : m.thumb,
-    thumbFallback: failedFallbacks.value.has(m.key) ? null : m.thumbFallback,
-  }))
-  .sort((a, b) => collator.compare(a.name, b.name)))
-/** picker 默认可见性：有中文名 = 人工认可（与当前 UI locale 无关，切 en/ru 集合不变）。
- *  开关只是本页会话状态——不写 localStorage、不占 URL 键，每次进入都回到干净默认。 */
-const showAllMaps = ref(false)
-/** 选图搜索（4.0）：按当前语言的显示名与 key 做不区分大小写的包含匹配；搜索时忽略「显示全部」开关，
- *  否则未认可的地图永远搜不到。同样只是本页会话状态。 */
-const mapQuery = ref('')
-const visibleMaps = computed(() => {
-  const query = mapQuery.value.trim().toLocaleLowerCase()
-  if (query) return maps.value.filter((m) => m.name.toLocaleLowerCase().includes(query) || m.key.toLowerCase().includes(query))
-  return showAllMaps.value ? maps.value : maps.value.filter((m) => hasChineseMapName(m.key))
-})
-const indexFailed = ref(false)
-const indexLoaded = ref(false)
-const collator = new Intl.Collator()
-
-async function loadMaps() {
-  indexFailed.value = false
-  const idx = await loadMapIndex()
-  const entries = idx && idx.maps ? Object.entries(idx.maps) : null
-  if (!entries) {
-    // 资产源未配置 / 索引拉取失败（loadMapIndex 已告警）：预览没有 3D 数据面，明确失败
-    indexFailed.value = true
-    rawMaps.value = []
-    indexLoaded.value = true
-    return
-  }
-  const byKey = new Map()
-  // 显式选中游戏版本时，该 dataset 的 map2d 优先；未选中时保留 bundled 优先
-  // （离线 + 逐图校准的既有契约）。dataset 缺图/校验失败仍回落 bundled。
-  const preferDatasetBasemap = Boolean(dataVersionId())
-  for (const [id, m] of entries) {
-    const key = String(m.key || '')
-    if (!key) continue
-    // 同一资产 key 的多个 index 条目 = 同一场景的地图变体（诺曼底/Hills/Beach 等）：
-    // 资产只物化一份，但每个 id 带自己的 variant 标签（GLB scene extras 的
-    // variantByMapId）。全部保留，页面用变体切换选择其中一个 id（3D 边界按 id 裁剪）。
-    let group = byKey.get(key)
-    if (!group) {
-      const bundled = mapImages[key] || null
-      group = {
-        key,
-        packDisplay: m.display || '',
-        // 底图双源（2D 面板用）：默认 bundled 打包注册表优先（离线 + 逐图校准），
-        // 未收录的图回退资产包 map2d 校准图（1254² 战术底图，±300 契约框）；
-        // 显式选择 dataset 时反转为 dataset map2d 优先、bundled 兜底。
-        basemap: (preferDatasetBasemap || !bundled)
-          ? { kind: 'map2d', mapKey: key, ...(bundled ? { fallbackImage: bundled } : {}) }
-          : { kind: 'bundled', image: bundled },
-        // 封面统一 cover.webp（512² 战术风格，43/43 同源同风格，~100KB/张）；
-        // bundled.src 留作 cover 加载失败时的兜底（离线打包资产，必可用）。
-        thumb: safeCoverUrl(key),
-        thumbFallback: bundled ? bundled.src : null,
-        variants: [],
-      }
-      byKey.set(key, group)
-    }
-    group.variants.push({
-      id: Number(id),
-      display: m.display || '',
-      variantKey: String(m.variantKey || ''),
-      variant: typeof m.variant === 'string' ? m.variant : null,
-    })
-  }
-  // 基础变体 = 首个 index 条目（注册表基础 key 在前）；缺省选中它。
-  for (const group of byKey.values()) group.mapId = group.variants[0]?.id ?? null
-  rawMaps.value = [...byKey.values()]
-  indexLoaded.value = true
-}
-/** 封面 URL（cover.webp，512² 战术风格，43/43 同源）：assetProvider 在 Android 离线
- *  门控下可抛（NETWORK_ERROR）——吞为 null 由 bundled.src 兜底，不让整份清单失败。 */
-function safeCoverUrl(key) {
-  try {
-    return mapCoverUrl(key)
-  } catch {
-    return null
-  }
-}
-
-/**
- * cover 加载失败 → 记住该 key，派生投影把 thumb 置空（模板走 thumbFallback
- * 打包底图；无 bundled 才落占位图标）。集合式记录避免重试循环：同一 key 只
- * 失败一次，渲染不再请求远端 URL。
- */
-function onThumbError(m) {
-  if (!m.thumb || failedThumbs.value.has(m.key)) return
-  const next = new Set(failedThumbs.value)
-  next.add(m.key)
-  failedThumbs.value = next
-}
-
-/**
- * bundled 兜底图自身加载失败（打包资产按理必可用，失败即环境异常）→ 记入独立
- * 集合，派生投影把 thumbFallback 置空——模板落占位图标，不再重试任一 URL。
- * 与 cover 失败集合分开：fallback 失败不回退 cover（那会回到已知失败的远端）。
- */
-function onFallbackError(m) {
-  if (!m.thumbFallback || failedFallbacks.value.has(m.key)) return
-  const next = new Set(failedFallbacks.value)
-  next.add(m.key)
-  failedFallbacks.value = next
-}
-watch(authenticated, (ok) => { if (ok && !indexLoaded.value) loadMaps() }, { immediate: true })
+const { maps, visibleMaps, showAllMaps, mapQuery, indexFailed, indexLoaded, loadMaps, onThumbError, onFallbackError } = useMapPreviewCatalog(locale, authenticated)
 
 // ---- URL 契约：?map=<key> &mode=3d|2d（缺省 2d） &bases=supremacy|encounter ----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
