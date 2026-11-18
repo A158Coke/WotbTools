@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-17",
-  "scannedTestFiles": 477,
-  "sourceReadingTestFiles": 76,
+  "generatedAt": "2026-11-18",
+  "scannedTestFiles": 524,
+  "sourceReadingTestFiles": 78,
   "totalCases": 1178,
   "totalTextAssertionCases": 234,
   "parseAnomalies": [],
@@ -933,26 +933,6 @@
           "varName": "card"
         },
         {
-          "sourcePath": "../scene/penetration.js",
-          "varName": "pen"
-        },
-        {
-          "sourcePath": "../scene/armorCollisionPack.ts",
-          "varName": "packSrc"
-        },
-        {
-          "sourcePath": "./TankCatalogMenu.vue",
-          "varName": "menu"
-        },
-        {
-          "sourcePath": "./ArmorShotHud.vue",
-          "varName": "hud"
-        },
-        {
-          "sourcePath": "../scene/viewer/armorShaders.ts",
-          "varName": "shaders"
-        },
-        {
           "sourcePath": "../scene/tankViewer.js",
           "varName": "kernel"
         },
@@ -1021,8 +1001,8 @@
           "varName": "kernel"
         }
       ],
-      "caseCount": 64,
-      "textAssertionCases": 57,
+      "caseCount": 15,
+      "textAssertionCases": 12,
       "parseAnomalies": [],
       "cases": [
         {
@@ -1063,7 +1043,6 @@
             "viewer",
             "metrics",
             "view",
-            "pen",
             "kernel",
             "kernel",
             "kernel",
@@ -1428,11 +1407,93 @@
             "toContain"
           ],
           "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/components/AgentArmorView.heatmap-contract.test.js",
+      "sources": [
+        {
+          "sourcePath": "../scene/viewer/armorPlateModel.ts",
+          "varName": "plateModel"
         },
         {
-          "id": "AgentArmorView.dom-contract:453",
+          "sourcePath": "../scene/penetration.js",
+          "varName": "pen"
+        },
+        {
+          "sourcePath": "../scene/armorCollisionPack.ts",
+          "varName": "packSrc"
+        },
+        {
+          "sourcePath": "../scene/tankViewer.js",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/turretRig.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/modelLifecycle.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/heatmap.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/judgment.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/trajectoryCard.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/diagnosticProbe.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplay.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplayMiss.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/debugUi.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/equipmentState.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/collisionView.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/viewerMath.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/dataLoader.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/aimInput.ts",
+          "varName": "kernel"
+        }
+      ],
+      "caseCount": 19,
+      "textAssertionCases": 17,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "AgentArmorView.heatmap-contract:19",
           "name": "逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加",
-          "startLine": 453,
+          "startLine": 19,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1451,8 +1512,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -1464,9 +1523,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:512",
+          "id": "AgentArmorView.heatmap-contract:78",
           "name": "热力图用 flat vNormal 面法线 + highp 视线方向（移动端 mediump 回归）",
-          "startLine": 512,
+          "startLine": 78,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1484,8 +1543,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -1494,22 +1551,20 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:529",
+          "id": "AgentArmorView.heatmap-contract:95",
           "name": "管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）",
-          "startLine": 529,
+          "startLine": 95,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:539",
+          "id": "AgentArmorView.heatmap-contract:105",
           "name": "累计格式：半浮点 RT 保留 >1 累计 + 能力检测 + 8 位回退饱和守卫（review 2026-10-13 P2）",
-          "startLine": 539,
+          "startLine": 105,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1534,9 +1589,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:555",
+          "id": "AgentArmorView.heatmap-contract:121",
           "name": "累计格式：逐层 normalized R 可 >1；8 位饱和按整穿深保守处理",
-          "startLine": 555,
+          "startLine": 121,
           "textAssertion": false,
           "usesVars": [
             "pen"
@@ -1545,9 +1600,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:575",
+          "id": "AgentArmorView.heatmap-contract:141",
           "name": "rcContinue 双实现：每个非外部层独立转正（BlitzKit）",
-          "startLine": 575,
+          "startLine": 141,
           "textAssertion": true,
           "usesVars": [
             "packSrc"
@@ -1558,9 +1613,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:581",
+          "id": "AgentArmorView.heatmap-contract:147",
           "name": "点击链：每个非外部层独立转正（BlitzKit）",
-          "startLine": 581,
+          "startLine": 147,
           "textAssertion": true,
           "usesVars": [
             "pen"
@@ -1571,13 +1626,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:590",
+          "id": "AgentArmorView.heatmap-contract:156",
           "name": "主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）",
-          "startLine": 590,
+          "startLine": 156,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1600,14 +1653,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:596",
+          "id": "AgentArmorView.heatmap-contract:162",
           "name": "AP/APCR/HEAT 使用概率链统一判定；HE/跳弹保留确定性分支",
-          "startLine": 596,
+          "startLine": 162,
           "textAssertion": true,
           "usesVars": [
-            "viewer",
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1630,13 +1680,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:616",
+          "id": "AgentArmorView.heatmap-contract:182",
           "name": "HE 零/缺失 explosion_radius 不进入 generic probability card",
-          "startLine": 616,
+          "startLine": 182,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1659,12 +1707,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:623",
+          "id": "AgentArmorView.heatmap-contract:189",
           "name": "HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底",
-          "startLine": 623,
+          "startLine": 189,
           "textAssertion": true,
           "usesVars": [
-            "viewer",
             "pen",
             "kernel",
             "kernel",
@@ -1680,8 +1727,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -1691,9 +1736,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:640",
+          "id": "AgentArmorView.heatmap-contract:206",
           "name": "判定输入缺数据时 fail-closed：无 120mm 静默默认、未知弹种不落到 HE",
-          "startLine": 640,
+          "startLine": 206,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -1711,8 +1756,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -1722,13 +1765,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:649",
+          "id": "AgentArmorView.heatmap-contract:215",
           "name": "爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF",
-          "startLine": 649,
+          "startLine": 215,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1751,13 +1792,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:659",
+          "id": "AgentArmorView.heatmap-contract:225",
           "name": "单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间",
-          "startLine": 659,
+          "startLine": 225,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1780,13 +1819,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:677",
+          "id": "AgentArmorView.heatmap-contract:243",
           "name": "PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane",
-          "startLine": 677,
+          "startLine": 243,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1809,13 +1846,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:685",
+          "id": "AgentArmorView.heatmap-contract:251",
           "name": "无效 HE 概率行走 resolveCardChance fail-closed",
-          "startLine": 685,
+          "startLine": 251,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1838,14 +1873,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:689",
+          "id": "AgentArmorView.heatmap-contract:255",
           "name": "非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签",
-          "startLine": 689,
+          "startLine": 255,
           "textAssertion": true,
           "usesVars": [
-            "viewer",
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1868,13 +1900,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:693",
+          "id": "AgentArmorView.heatmap-contract:259",
           "name": "跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0",
-          "startLine": 693,
+          "startLine": 259,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1897,13 +1927,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:698",
+          "id": "AgentArmorView.heatmap-contract:264",
           "name": "跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）",
-          "startLine": 698,
+          "startLine": 264,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1925,15 +1953,107 @@
             "toContain"
           ],
           "parseError": null
+        }
+      ]
+    },
+    {
+      "testFile": "frontend/src/components/AgentArmorView.viewer-state-contract.test.js",
+      "sources": [
+        {
+          "sourcePath": "../scene/viewer/armorPlateModel.ts",
+          "varName": "plateModel"
         },
         {
-          "id": "AgentArmorView.dom-contract:714",
+          "sourcePath": "./TankCatalogMenu.vue",
+          "varName": "menu"
+        },
+        {
+          "sourcePath": "./AgentArmorView.vue",
+          "varName": "view"
+        },
+        {
+          "sourcePath": "./ArmorShotHud.vue",
+          "varName": "hud"
+        },
+        {
+          "sourcePath": "../scene/viewer/armorShaders.ts",
+          "varName": "shaders"
+        },
+        {
+          "sourcePath": "./AgentArmorView.vue",
+          "varName": "template"
+        },
+        {
+          "sourcePath": "../scene/tankViewer.js",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/turretRig.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/modelLifecycle.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/heatmap.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/judgment.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/trajectoryCard.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/diagnosticProbe.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplay.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/shotReplayMiss.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/debugUi.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/equipmentState.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/collisionView.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/viewerMath.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/dataLoader.ts",
+          "varName": "kernel"
+        },
+        {
+          "sourcePath": "../scene/viewer/aimInput.ts",
+          "varName": "kernel"
+        }
+      ],
+      "caseCount": 30,
+      "textAssertionCases": 28,
+      "parseAnomalies": [],
+      "cases": [
+        {
+          "id": "AgentArmorView.viewer-state-contract:16",
           "name": "updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵",
-          "startLine": 714,
+          "startLine": 16,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1957,13 +2077,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:725",
+          "id": "AgentArmorView.viewer-state-contract:27",
           "name": "传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）",
-          "startLine": 725,
+          "startLine": 27,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -1986,9 +2104,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:732",
+          "id": "AgentArmorView.viewer-state-contract:34",
           "name": "卡片盒是固定 8:5 比例、无固定高度尺寸",
-          "startLine": 732,
+          "startLine": 34,
           "textAssertion": true,
           "usesVars": [
             "menu"
@@ -1999,9 +2117,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:737",
+          "id": "AgentArmorView.viewer-state-contract:39",
           "name": "共享菜单以同一比例常数应用内容框变换，并驱动迟到表补样式",
-          "startLine": 737,
+          "startLine": 39,
           "textAssertion": true,
           "usesVars": [
             "menu"
@@ -2012,13 +2130,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:750",
+          "id": "AgentArmorView.viewer-state-contract:52",
           "name": "求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复",
-          "startLine": 750,
+          "startLine": 52,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2041,13 +2157,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:756",
+          "id": "AgentArmorView.viewer-state-contract:58",
           "name": "同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）",
-          "startLine": 756,
+          "startLine": 58,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2070,13 +2184,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:765",
+          "id": "AgentArmorView.viewer-state-contract:67",
           "name": "点击主链与跳弹续飞共用同一双面求交/收集",
-          "startLine": 765,
+          "startLine": 67,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2099,13 +2211,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:778",
+          "id": "AgentArmorView.viewer-state-contract:80",
           "name": "换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照",
-          "startLine": 778,
+          "startLine": 80,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2128,9 +2238,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:783",
+          "id": "AgentArmorView.viewer-state-contract:85",
           "name": "选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config",
-          "startLine": 783,
+          "startLine": 85,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -2143,14 +2253,12 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:793",
+          "id": "AgentArmorView.viewer-state-contract:95",
           "name": "原生回退控件把选择写回 URL，避免 HUD 与场景各用一套状态",
-          "startLine": 793,
+          "startLine": 95,
           "textAssertion": true,
           "usesVars": [
             "view",
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2173,9 +2281,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:809",
+          "id": "AgentArmorView.viewer-state-contract:111",
           "name": "空 scfg 视同缺省，射击方配置不再回落受击方 config",
-          "startLine": 809,
+          "startLine": 111,
           "textAssertion": true,
           "usesVars": [
             "view"
@@ -2186,9 +2294,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:812",
+          "id": "AgentArmorView.viewer-state-contract:114",
           "name": "射击方配置独立：不回落受击方 config，双方同车型也不共享主炮配置",
-          "startLine": 812,
+          "startLine": 114,
           "textAssertion": true,
           "usesVars": [
             "view"
@@ -2199,18 +2307,18 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:817",
+          "id": "AgentArmorView.viewer-state-contract:119",
           "name": "HUD readiness 双向跟随弹表，切到无弹表配置交还原生控件",
-          "startLine": 817,
+          "startLine": 119,
           "textAssertion": false,
           "usesVars": [],
           "patterns": [],
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:822",
+          "id": "AgentArmorView.viewer-state-contract:124",
           "name": "HUD 只加载 devices 轻目录，不拉整份配置器目录",
-          "startLine": 822,
+          "startLine": 124,
           "textAssertion": true,
           "usesVars": [
             "hud"
@@ -2221,13 +2329,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:827",
+          "id": "AgentArmorView.viewer-state-contract:129",
           "name": "普通检视换射手/换炮清掉上一发结果与 HE 可视化",
-          "startLine": 827,
+          "startLine": 129,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2250,13 +2356,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:830",
+          "id": "AgentArmorView.viewer-state-contract:132",
           "name": "射击复现换装备/换配置沿权威 launch/lvDir 重跑",
-          "startLine": 830,
+          "startLine": 132,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2279,13 +2383,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:836",
+          "id": "AgentArmorView.viewer-state-contract:138",
           "name": "目标配置切换清空旧结果并使在途判定失效",
-          "startLine": 836,
+          "startLine": 138,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2308,13 +2410,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:839",
+          "id": "AgentArmorView.viewer-state-contract:141",
           "name": "射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载",
-          "startLine": 839,
+          "startLine": 141,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2337,9 +2437,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:844",
+          "id": "AgentArmorView.viewer-state-contract:146",
           "name": "只重建场景时保留已挂载子组件的 readiness",
-          "startLine": 844,
+          "startLine": 146,
           "textAssertion": true,
           "usesVars": [
             "view"
@@ -2350,9 +2450,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:848",
+          "id": "AgentArmorView.viewer-state-contract:150",
           "name": "只换射手发动机/履带不凭空建立 scfg；换炮才写 scfg",
-          "startLine": 848,
+          "startLine": 150,
           "textAssertion": true,
           "usesVars": [
             "view"
@@ -2363,9 +2463,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:852",
+          "id": "AgentArmorView.viewer-state-contract:154",
           "name": "HUD 就绪即独占被替换的装备控件；配置变更按解析后的选择判断",
-          "startLine": 852,
+          "startLine": 154,
           "textAssertion": true,
           "usesVars": [
             "view",
@@ -2377,9 +2477,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:873",
+          "id": "AgentArmorView.viewer-state-contract:175",
           "name": "间隙甲材质/状态材质/深度占位的既有渲染状态",
-          "startLine": 873,
+          "startLine": 175,
           "textAssertion": true,
           "usesVars": [
             "plateModel",
@@ -2398,8 +2498,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -2408,9 +2506,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:880",
+          "id": "AgentArmorView.viewer-state-contract:182",
           "name": "间隙甲片元着色器按 gl_FrontFacing 翻转法线（PBR/间隙/状态三处）",
-          "startLine": 880,
+          "startLine": 182,
           "textAssertion": false,
           "usesVars": [
             "shaders"
@@ -2419,9 +2517,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:884",
+          "id": "AgentArmorView.viewer-state-contract:186",
           "name": "厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide",
-          "startLine": 884,
+          "startLine": 186,
           "textAssertion": true,
           "usesVars": [
             "kernel",
@@ -2438,8 +2536,6 @@
             "kernel",
             "kernel",
             "kernel",
-            "kernel",
-            "kernel",
             "kernel"
           ],
           "patterns": [
@@ -2448,9 +2544,9 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:893",
+          "id": "AgentArmorView.viewer-state-contract:195",
           "name": "onPickerKeydown 在 #tank-picker 之外的 dialog 内直接放行",
-          "startLine": 893,
+          "startLine": 195,
           "textAssertion": true,
           "usesVars": [
             "template"
@@ -2463,13 +2559,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:909",
+          "id": "AgentArmorView.viewer-state-contract:211",
           "name": "瞄准/判定上下文按当前目标过滤回放装备真值",
-          "startLine": 909,
+          "startLine": 211,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2492,13 +2586,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:913",
+          "id": "AgentArmorView.viewer-state-contract:215",
           "name": "换目标后原生勾选回到手动且不保留上一辆车的勾选态",
-          "startLine": 913,
+          "startLine": 215,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2522,13 +2614,11 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:930",
+          "id": "AgentArmorView.viewer-state-contract:232",
           "name": "eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice",
-          "startLine": 930,
+          "startLine": 232,
           "textAssertion": true,
           "usesVars": [
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2554,14 +2644,12 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:938",
+          "id": "AgentArmorView.viewer-state-contract:240",
           "name": "宿主经 initTankViewer 的 labels 传三语 pitchDevice",
-          "startLine": 938,
+          "startLine": 240,
           "textAssertion": true,
           "usesVars": [
             "template",
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
@@ -2584,14 +2672,12 @@
           "parseError": null
         },
         {
-          "id": "AgentArmorView.dom-contract:943",
+          "id": "AgentArmorView.viewer-state-contract:245",
           "name": "勾选框回放判定 tooltip 不得硬编码：走 L.replayEquipmentAutoTitle",
-          "startLine": 943,
+          "startLine": 245,
           "textAssertion": true,
           "usesVars": [
             "template",
-            "kernel",
-            "kernel",
             "kernel",
             "kernel",
             "kernel",
