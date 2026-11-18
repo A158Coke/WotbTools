@@ -176,13 +176,13 @@ git commit -q -m 'add allowlisted lifecycle doc citing the plan carrier'
 head=$(git rev-parse HEAD)
 expect_pass plan-reference-allowlist env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
-# Source-line budget (#820): an unlisted first-party production file over 1500
+# Source-line budget (#820): an unlisted first-party production file over 500
 # physical lines must fail, and the failure must come from this gate.
 git switch -q -C source-line-unlisted "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("frontend/src/oversized.js").write_text("// line\n" * 501)
 PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized first-party source file'
@@ -194,12 +194,36 @@ git switch -q -C source-line-at-limit "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/at-limit.ts").write_text("// line\n" * 1500)
+Path("frontend/src/at-limit.ts").write_text("// line\n" * 500)
 PY
 git add frontend/src/at-limit.ts
 git commit -q -m 'add source file exactly at the line budget'
 head=$(git rev-parse HEAD)
 expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Lowering the default budget must not block an unrelated PR because it merely
+# carries a byte-for-byte unchanged legacy file above 500 lines. Once that
+# legacy file changes, the current ceiling applies (no silent line growth).
+git switch -q -C source-line-preexisting-unchanged "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/old-large.js").write_text("// existing\\n" * 601)
+PY
+git add frontend/src/old-large.js
+git commit -q -m 'baseline with a pre-existing large source file'
+legacy_base=$(git rev-parse HEAD)
+printf 'unrelated\\n' > unrelated.txt
+git add unrelated.txt
+git commit -q -m 'unrelated source-free edit'
+head=$(git rev-parse HEAD)
+expect_pass source-line-preexisting-unchanged env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+printf '// changed\\n' >> frontend/src/old-large.js
+git add frontend/src/old-large.js
+git commit -q -m 'modify a still oversized legacy source file'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-preexisting-modified "first-party frontend source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
 
 # Tests, declaration files and generated transport are not production source
 # and stay out of scope even when they are large.
@@ -221,7 +245,7 @@ git switch -q -C source-line-allowlisted "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("frontend/src/oversized.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/oversized.js\n")
 PY
 git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt
@@ -235,7 +259,7 @@ git switch -q -C source-line-allowlist-growth "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("frontend/src/existing.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
 PY
 git add frontend/src/existing.js scripts/ci/source-line-allowlist.txt
@@ -243,7 +267,7 @@ git commit -q -m 'seed the source-line allowlist'
 growth_base=$(git rev-parse HEAD)
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("frontend/src/new.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text(
     "frontend/src/existing.js\nfrontend/src/new.js\n"
 )
@@ -261,7 +285,7 @@ mkdir -p frontend/src scripts/ci
 cp "$CHECK" scripts/ci/check-repository-hygiene.sh
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/existing.js").write_text("// line\n" * 1501)
+Path("frontend/src/existing.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/existing.js\n")
 PY
 git add scripts/ci/check-repository-hygiene.sh frontend/src/existing.js scripts/ci/source-line-allowlist.txt
@@ -272,7 +296,7 @@ recreated_base=$(git rev-parse HEAD)
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/new.js").write_text("// line\n" * 1501)
+Path("frontend/src/new.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/new.js\n")
 PY
 git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
@@ -281,12 +305,12 @@ head=$(git rev-parse HEAD)
 expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # A limit that Bash would parse as octal must abort the gate, not disable the
-# comparison. The 1501-line file proves the gate did not silently pass.
+# comparison. The 501-line file proves the gate did not silently pass.
 git switch -q -C source-line-invalid-limit "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("frontend/src/oversized.js").write_text("// line\n" * 501)
 PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized file for an invalid-limit fixture'
@@ -301,7 +325,7 @@ git switch -q -C source-line-split-in-range "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("frontend/src/legacy.js").write_text("// line\n" * 601)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
 PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
@@ -312,7 +336,7 @@ git add README.md
 git commit -q -m 'intermediate commit that still carries the over-budget blob'
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1500)
+Path("frontend/src/legacy.js").write_text("// line\n" * 500)
 PY
 git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/legacy.js
@@ -328,7 +352,7 @@ git switch -q -C source-line-merged-newer-main "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("frontend/src/legacy.js").write_text("// line\n" * 601)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
 PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
@@ -341,7 +365,7 @@ git commit -q -m 'feature commit made before main split the file'
 git switch -q source-line-merged-newer-main
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1500)
+Path("frontend/src/legacy.js").write_text("// line\n" * 500)
 PY
 git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/legacy.js
@@ -358,14 +382,14 @@ expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 BA
 git switch -q -C source-line-fork-evasion "$old_main"
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/flash.js").write_text("// line\n" * 1501)
+Path("frontend/src/flash.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\nfrontend/src/flash.js\n")
 PY
 git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'branch-only temporary entry'
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/flash.js").write_text("// line\n" * 1500)
+Path("frontend/src/flash.js").write_text("// line\n" * 500)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
 PY
 git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
@@ -381,14 +405,14 @@ git switch -q -C source-line-history-evasion "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/flash.js").write_text("// line\n" * 1501)
+Path("frontend/src/flash.js").write_text("// line\n" * 501)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/flash.js\n")
 PY
 git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'temporarily shield an oversized blob with a new entry'
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/flash.js").write_text("// line\n" * 1500)
+Path("frontend/src/flash.js").write_text("// line\n" * 500)
 PY
 git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/flash.js
@@ -402,7 +426,7 @@ git switch -q -C source-line-entry-deleted "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("frontend/src/legacy.js").write_text("// line\n" * 601)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
 PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
@@ -419,7 +443,7 @@ git switch -q -C source-line-entry-shrunk "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("frontend/src/legacy.js").write_text("// line\n" * 601)
 Path("scripts/ci/source-line-allowlist.txt").write_text("frontend/src/legacy.js\n")
 PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
@@ -427,7 +451,7 @@ git commit -q -m 'base: pinned legacy file'
 shrunk_base=$(git rev-parse HEAD)
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1500)
+Path("frontend/src/legacy.js").write_text("// line\n" * 500)
 PY
 git add frontend/src/legacy.js
 git commit -q -m 'shrink the legacy file below the budget but keep its entry'
@@ -440,7 +464,7 @@ git switch -q -C source-line-allowlist-duplicate "$base"
 mkdir -p frontend/src scripts/ci
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// line\n" * 1601)
+Path("frontend/src/legacy.js").write_text("// line\n" * 601)
 Path("scripts/ci/source-line-allowlist.txt").write_text(
     "frontend/src/legacy.js\nfrontend/src/legacy.js\n"
 )
@@ -456,7 +480,7 @@ git switch -q -C source-line-invalid-limit-forms "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 1501)
+Path("frontend/src/oversized.js").write_text("// line\n" * 501)
 PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized file for invalid numeric limit fixtures'
