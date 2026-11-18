@@ -21,6 +21,6 @@ final class FormationDepthMath {
     }
 
     static String fmt(final double sec) {
-        return String.valueOf(Math.round(sec * 100.0) / 100.0);
+        return String.valueOf(Math.round(sec * 10.0) / 10.0);
     }
 }
