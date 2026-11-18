@@ -14,20 +14,18 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { BookOpen, RotateCcw, TriangleAlert } from 'lucide-vue-next'
+import { BookOpen } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { loadTechTree } from '../utils/researchCatalog.js'
 import { techTreeGrid, techTreeNations } from '../utils/techTreeLayout.js'
-import { formatXpCompact } from '../utils/xpFormat.js'
-import { romanLevel } from '../utils/tierFormat.js'
 import { locationForView } from '../app/navigation'
 import ShowcaseHero from './ShowcaseHero.vue'
-import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import TankCatalogIcon from './TankCatalogIcon.vue'
+import AgentTechTreeCanvas from './AgentTechTreeCanvas.vue'
 
 const VIEW = 'agent-techtree'
 const NATIONS = techTreeNations()
@@ -174,37 +172,6 @@ const tierRows = computed(() => {
   }
   return [...rows.entries()].sort((a, b) => b[0] - a[0]).map(([tier, nodes]) => ({ tier, nodes: nodes.sort((a, b) => a.y - b.y || a.x - b.x) }))
 })
-const CELL_W = 216
-const CELL_H = 96
-const gridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${grid.value.columns.length}, ${CELL_W}px)`,
-  gridTemplateRows: `repeat(${grid.value.rows.length}, ${CELL_H}px)`,
-}))
-const svgSize = computed(() => ({
-  width: (grid.value?.columns.length || 0) * CELL_W,
-  height: (grid.value?.rows.length || 0) * CELL_H,
-}))
-const rulerStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${grid.value.columns.length}, ${CELL_W}px)`,
-}))
-
-/**
- * 客户端连线几何（TankCell/Lines{mask} 提取）：出线 = 源格右侧 20px（RightHLine
- * 19.5px + 0.5 边距）；跨行干线骑在列边界（VL/VR 在 ±0.5px）；入线到目标格内 13px
- * （LeftHLine 13.5px），箭头即 LeftCenterArrow @13px。同行相邻 = 直线。
- */
-function edgePath(edge) {
-  const xOut = (edge.x1 + 1) * CELL_W - 20
-  const yFrom = edge.y1 * CELL_H + CELL_H / 2
-  const xBoundary = edge.x2 * CELL_W
-  const yTo = edge.y2 * CELL_H + CELL_H / 2
-  const xIn = edge.x2 * CELL_W + 13
-  if (edge.y1 === edge.y2) return `M ${xOut} ${yFrom} L ${xIn} ${yTo}`
-  return `M ${xOut} ${yFrom} L ${xBoundary} ${yFrom} L ${xBoundary} ${yTo} L ${xIn} ${yTo}`
-}
-
-/** 客户端等级条用罗马数字（LevelCell 绑定 roman(level)；1..11 覆盖 XI）。 */
-
 /** 节点点击 = 进坦克百科详情（研发弹窗在详情页里；这里不再有中间研发页）。 */
 function openResearch(node) {
   if (!node?.tankId) return
@@ -277,126 +244,18 @@ onMounted(() => {
       </SegmentedControl>
     </div>
 
-      <p v-if="treeState === 'loading'" class="tt-status" role="status">{{ t('research.loading') }}</p>
-      <EmptyState
-        v-else-if="treeState === 'error'"
-        role="alert"
-        data-testid="techtree-error"
-        :icon="TriangleAlert"
-        :title="t('research.load_error_title')"
-        :description="treeError || t('agentTanks.error_desc')"
-      >
-        <AppButton variant="primary" @click="loadTree(urlNation)">
-          <RotateCcw :size="16" aria-hidden="true" />
-          {{ t('agentTanks.retry') }}
-        </AppButton>
-      </EmptyState>
-
-      <div v-else-if="tierRows" class="tt-tiers" data-testid="techtree-tiers">
-        <p v-if="!tierRows.length" class="tt-status" role="status">{{ t('research.no_type_match') }}</p>
-        <section v-for="row in tierRows" :key="row.tier" class="tt-tier-row" :aria-label="t('agentTanks.tier_n', { tier: row.tier })" :data-testid="`techtree-tier-${row.tier}`">
-          <span class="tt-tier-label" aria-hidden="true">{{ romanLevel(row.tier) }}</span>
-          <div class="tt-tier-cards">
-            <button
-              v-for="node in row.nodes"
-              :key="node.stem"
-              type="button"
-              class="tt-cell tt-tier-cell"
-              :class="{
-                'is-preview': node.preview,
-                'is-premium': summaryOf(node)?.is_premium,
-                'is-collector': !summaryOf(node)?.is_premium && summaryOf(node)?.is_collector,
-              }"
-              :data-testid="`techtree-cell-${node.stem}`"
-              :aria-label="`${nameOf(node) || node.stem} · ${t('agentTanks.tier_n', { tier: node.tier })}`"
-              @click="openResearch(node)"
-            >
-              <span class="tt-card">
-                <span class="tt-card-icon">
-                  <img :src="tankImageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconCropStyle(node.tankId)" @error="$event.target.hidden = true">
-                </span>
-                <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
-                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: formatXpCompact(costByStem.get(node.stem)) }) }}</span>
-              </span>
-            </button>
-          </div>
-        </section>
-      </div>
-
-      <div v-else-if="grid" class="tt-scroll" data-testid="techtree-grid">
-        <div class="tt-canvas" :style="{ minWidth: `${grid.columns.length * CELL_W}px` }">
-          <div class="tt-body" :style="gridStyle">
-            <svg class="tt-edges" :width="svgSize.width" :height="svgSize.height" aria-hidden="true">
-              <defs>
-                <marker id="tt-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                  <path d="M0,0 L7,3.5 L0,7 z" class="tt-arrow-head" />
-                </marker>
-              </defs>
-              <!-- 客户端连线几何（TankCell/Lines{mask} 提取）：出线从源格右侧 20px 处出发，
-                   跨行干线骑在列边界上（客户端 VL/VR 在 ±0.5px），入线 13px 后是箭头
-                   （LeftCenterArrow @13px）。 -->
-              <path
-                v-for="edge in grid.drawnEdges"
-                :key="`${edge.from}-${edge.to}-${edge.sourceModule}`"
-                class="tt-edge"
-                :d="edgePath(edge)"
-                marker-end="url(#tt-arrow)"
-              >
-                <title>{{ `${nameOf(edge.fromNode) || edge.from} → ${nameOf(edge.toNode) || edge.to}` }}{{ edge.cost?.xp != null ? ` · ${t('research.xp_cost', { xp: edge.cost.xp.toLocaleString() })}` : '' }}</title>
-              </path>
-            </svg>
-            <button
-              v-for="[key, node] in grid.cells"
-              :key="key"
-              type="button"
-              class="tt-cell"
-              :class="{
-                'is-preview': node.preview,
-                'is-premium': summaryOf(node)?.is_premium,
-                'is-collector': !summaryOf(node)?.is_premium && summaryOf(node)?.is_collector,
-              }"
-              :style="{ gridColumn: String(grid.colIndex.get(node.x) + 1), gridRow: String(grid.rowIndex.get(node.y) + 1) }"
-              :data-testid="`techtree-cell-${node.stem}`"
-              :aria-label="`${nameOf(node) || node.stem} · ${t('agentTanks.tier_n', { tier: node.tier })}`"
-              @click="openResearch(node)"
-            >
-              <!-- 卡片 = 客户端 TankNode 的 176×64（格子 216×96，四周留出 20/16px 连线跑道） -->
-              <span class="tt-card">
-                <span class="tt-card-icon">
-                  <img :src="tankImageUrl(node.tankId)" alt="" loading="lazy" decoding="async" :style="iconCropStyle(node.tankId)" @error="$event.target.hidden = true">
-                </span>
-                <span class="tt-card-name">{{ nameOf(node) || node.stem }}</span>
-                <span class="tt-card-meta">
-                  <span class="tt-pill">{{ romanLevel(node.tier) }}</span>
-                  <span v-if="node.preview" class="tt-pill is-preview">{{ t('research.preview') }}</span>
-                </span>
-                <span v-if="costByStem.get(node.stem) != null" class="tt-card-cost">{{ t('research.xp_short', { xp: formatXpCompact(costByStem.get(node.stem)) }) }}</span>
-              </span>
-            </button>
-            <span
-              v-for="node in grid.pending"
-              :key="`pending-${node.stem}`"
-              class="tt-cell is-pending"
-              :style="{ gridColumn: String(grid.colIndex.get(node.x) + 1), gridRow: String(grid.rowIndex.get(node.y) + 1) }"
-              :title="t('research.pending_title', { stem: node.stem })"
-              :data-testid="`techtree-pending-${node.stem}`"
-            >
-              <span class="tt-card is-placeholder">
-                <span class="tt-pending-label">{{ t('research.pending') }}</span>
-              </span>
-            </span>
-          </div>
-          <!-- 等级条（客户端 LevelCell：216×24，roman(level)，可见窗口 = minLevel..maxLevel；
-               吸底、随内容横向滚动）。列 i 的标注 = minTier + i（other 树列 1..7 = tier
-               4..10 时与客户端一致）。 -->
-          <div class="tt-ruler" :style="rulerStyle" data-testid="techtree-levels">
-            <span v-for="(x, i) in grid.columns" :key="`ruler-${x}`" class="tt-ruler-cell">
-              {{ grid.minTier != null && grid.minTier + i <= grid.maxTier ? romanLevel(grid.minTier + i) : '' }}
-            </span>
-          </div>
-        </div>
-      </div>
-  </section>
+    <AgentTechTreeCanvas
+      :state="treeState"
+      :error="treeError"
+      :tier-rows="tierRows"
+      :grid="grid"
+      :summaries="cache"
+      :cost-by-stem="costByStem"
+      :image-url="tankImageUrl"
+      :icon-style="iconCropStyle"
+      @retry="loadTree(urlNation)"
+      @select-node="openResearch"
+    />  </section>
 </template>
 
 <style scoped>
@@ -438,144 +297,6 @@ onMounted(() => {
 .tt-filters.is-sticky .tt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .tt-filters.is-sticky .tt-tab { flex: none; min-block-size: var(--hit-min-comfortable); }
 /* 数据密集区：整站环境背景只出现在页头与外围，树板保持不透明表面（design-language §2.1）。 */
-.tt-tiers { flex: 1 1 0; min-block-size: 0; overflow-y: auto; display: grid; align-content: start; gap: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); padding: var(--space-2); }
-.tt-tier-row { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); align-items: center; }
-.tt-tier-label { color: var(--color-accent-text); font: var(--type-h3); font-weight: 700; text-align: center; }
-.tt-tier-cards { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-inline: contain; padding-block: var(--space-1); }
-.tt-tier-cell { flex: none; }
-
-/* ---------- 树网格：客户端 216×96 单元格语义，横向滚动 ---------- */
-/* flex: 1 1 0 + min-block-size: 0：滚动区只吃剩余高度，内容高度不反过来把页面撑出视口；
-   吸底等级条因此始终停在滚动区底部、底栏上方。 */
-.tt-scroll { flex: 1 1 0; min-block-size: 0; overflow: auto; background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
-.tt-canvas { display: grid; gap: 0; min-inline-size: 0; align-content: start; }
-.tt-body { position: relative; display: grid; }
-.tt-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-.tt-edge { fill: none; stroke: var(--color-border-strong); stroke-width: 1.5; }
-.tt-arrow-head { fill: var(--color-border-strong); }
-
-/* 等级条（客户端 LevelCell 216×24，罗马数字，吸底随内容横向滚动） */
-.tt-ruler {
-  position: sticky;
-  inset-block-end: 0;
-  display: grid;
-  background: var(--color-surface-2);
-}
-.tt-ruler-cell {
-  display: grid;
-  place-items: center;
-  block-size: 24px;
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 700;
-}
-
-/* 格子 = 客户端 TankCell 216×96，但视觉卡片是内嵌的 176×64（TankNode 的
-   NationFlag/TankBackground 尺寸）——四周 20/16px 就是连线跑道，卡片之间因此有
-   明显间隔，连线在缝隙里可见。 */
-.tt-cell {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  min-inline-size: 0;
-  cursor: pointer;
-}
-.tt-cell:focus-visible { outline: none; }
-.tt-cell:focus-visible .tt-card { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.tt-card {
-  position: relative;
-  display: block;
-  inline-size: 176px;
-  block-size: 64px;
-  overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-}
-.tt-cell:hover .tt-card { border-color: var(--color-border-strong); }
-/* 坦克类别只由卡片边框表达（用户 2026-10-27）：金币 = 金、收藏 = 蓝，不另出带子/徽标。
-   与选择器卡片同口径（TankCatalogMenu 的 .tp-card.is-premium/.is-collector）。 */
-.tt-cell.is-premium .tt-card { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
-.tt-cell.is-collector .tt-card { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
-.tt-cell.is-preview .tt-card { border-style: dashed; border-color: color-mix(in oklab, var(--color-warning) 55%, var(--color-border-subtle)); }
-.tt-cell.is-pending { cursor: default; }
-.tt-card.is-placeholder {
-  display: grid;
-  place-items: center;
-  border-style: dashed;
-  background: var(--color-surface-2);
-  opacity: 0.72;
-}
-.tt-pending-label { color: var(--color-text-secondary); font: var(--type-caption); }
-
-/* 图标盒 = 客户端 TankIcon 97×60（@40,8）；crop transform 由 tankIconCrop 给出 */
-.tt-card-icon {
-  position: absolute;
-  inset-block-start: 4px;
-  inset-inline-start: 40px;
-  inline-size: 97px;
-  block-size: 60px;
-  overflow: hidden;
-}
-.tt-card-icon img {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
-}
-
-/* 名字横贯卡片下缘，正压在坦克贴图（图标盒 97×60）的下半上：贴图是不透明的深色车体，
-   浅色主题（冬）的近黑文字直接混进贴图里。名字自带一层卡片表面色 → 透明的雾化
-   scrim——文字永远落在自家表面色上，所有卡片、所有主题同一规则（2026-11-10 反馈）；
-   竖屏 92×48 行形态共用此规则。padding 复刻原 2/4px 内缩，文字可用宽度不变。 */
-.tt-card-name {
-  position: absolute;
-  inset-block-end: 0;
-  inset-inline: 0;
-  padding: 0 4px 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  background: linear-gradient(to top, var(--color-surface-1) 70%, transparent);
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-.tt-card-meta {
-  position: absolute;
-  inset-block-start: 2px;
-  inset-inline-start: 4px;
-  display: flex;
-  gap: 2px;
-}
-.tt-card-cost {
-  position: absolute;
-  inset-block-start: 2px;
-  inset-inline-end: 4px;
-  color: var(--color-warning);
-  font: var(--type-caption);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-}
-
-.tt-pill {
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-full);
-  corner-shape: round;
-  background: var(--color-surface-3);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-  white-space: nowrap;
-}
-.tt-pill.is-preview { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
-.tt-pill.is-tier { background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); color: var(--color-accent-text); }
-
 /* ---------- 研发态 ---------- */
 /* 手机：分区横幅只保留标题；国别页签改单行横滑——9 个国别在 390px 下会换
    两行，白白吃掉 36px 树高；横滑比换行更符合“页签条”的语义。 */
@@ -592,26 +313,6 @@ onMounted(() => {
   }
   .tt-tabs::-webkit-scrollbar { display: none; }
   .tt-tab { flex: 0 0 auto; }
-  /* 竖屏行形态密度（用户反馈 2026-11-08：小屏要能近览整树）：176×64 卡一行只容 2 张、
-     每屏约 2 个等级；压到 92×48（图标盒按 97×60 等比 0.45 居中）一行 3 张、行距收紧后
-     每屏约 8–9 个等级。横屏手机走网格形态，这些规则不命中。触控下限 44px 由
-     browser-techtree-layout 门禁锁定。 */
-  .tt-tier-cell .tt-card {
-    inline-size: 92px;
-    block-size: 48px;
-    display: grid;
-    place-items: center;
-  }
-  .tt-tier-cell .tt-card-icon {
-    position: relative;
-    inset: auto;
-    inline-size: 43.65px;
-    block-size: 27px;
-  }
-  .tt-tiers { gap: var(--space-1); }
-  .tt-tier-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .tt-tier-label { font: var(--type-caption); }
-  .tt-tier-cards { padding-block: 2px; }
 }
 
 /* 矮横屏（手机横屏等）：96px 分区横幅会把树视口压到不足两行，只隐藏横幅本身；
