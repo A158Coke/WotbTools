@@ -77,7 +77,14 @@ const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_targe
 const guideSurfaces = {}
 const guideActive = ref(false)
 const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
-afterEach(() => { guideActive.value = false })
+afterEach(() => {
+  guideActive.value = false
+  fetchShotTankData.mockReset()
+  fetchShotTankData.mockImplementation(async () => ({ configs: [] }))
+  assetProvider.json.mockReset()
+  assetProvider.json.mockImplementation(async () => { throw new Error('asset source unconfigured') })
+  document.body.innerHTML = ''
+})
 
 async function mountPane(props = {}) {
   const wrapper = mount(ReplayShotsPane, {
