@@ -3,7 +3,7 @@ set -euo pipefail
 
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
-MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
+MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-500}"
 SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
@@ -70,6 +70,17 @@ is_source_line_allowlisted() {
   done < "$SOURCE_LINE_ALLOWLIST_FILE"
 
   return 1
+}
+
+
+# Legacy source blobs predating the stricter 500-line threshold may remain
+# unchanged; newly introduced or modified blobs must meet the new ceiling.
+# The existing exact-path allowlist remains the only explicit exception.
+is_unmodified_base_source_blob() {
+  local path="$1" oid="$2" base_oid
+  [[ -n "$BASE_SHA" ]] || return 1
+  base_oid=$(git rev-parse --verify "${BASE_SHA}:${path}" 2>/dev/null) || return 1
+  [[ "$oid" == "$base_oid" ]]
 }
 
 # Reads an allowlist from stdin and prints its non-comment entry count.
@@ -339,7 +350,7 @@ while IFS= read -r -d '' path; do
     source_line_head_lines["$path"]="$lines"
     if (( lines > MAX_SOURCE_LINES )); then
       source_line_over=$((source_line_over + 1))
-      if ! is_source_line_allowlisted "$path"; then
+      if ! is_source_line_allowlisted "$path" && ! is_unmodified_base_source_blob "$path" "$(git hash-object -- "$path")"; then
         report_source_line_budget "$path" "$lines"
         violations=$((violations + 1))
       fi
@@ -414,7 +425,7 @@ else
   echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
 fi
 
-echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
+echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit present=$source_line_over (untouched base blobs remain grandfathered)."
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
@@ -539,7 +550,7 @@ if [[ -n "$BASE_SHA" ]]; then
           echo "Unable to count source lines of blob $oid for $(printable_path "$path") (awk returned: ${blob_lines:-<empty>})." >&2
           exit 2
         fi
-        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! fork_point_allowlists "$commit" "$path"; then
+        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! is_unmodified_base_source_blob "$path" "$oid" && ! fork_point_allowlists "$commit" "$path"; then
           # The union list only decides whether the over-budget blob was ever a
           # sanctioned exception; policing per-file net growth is left to the
           # split workflow (the entry-count ratchet owns the allowlist).
