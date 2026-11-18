@@ -4,7 +4,7 @@
 // 地图预览 3D 面板必须走 loadMapOnly 会话，绝不触碰回放数据路径 loadData。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: { value: 'zh' }, t: (k) => k, te: () => false }),
@@ -46,6 +46,16 @@ vi.mock('../scene/playbackScene.js', () => ({
   initPlayback: scene.initPlayback,
   QUALITY_PRESETS: { low: { label: 'l' }, mid: { label: 'm' } },
 }))
+
+function restoreLoadMapOnlyMock() {
+  scene.api.loadMapOnly.mockImplementation(async () => {
+    const store = scene.stores.at(-1)
+    if (!store) return
+    store.mapReady = false
+    await Promise.resolve()
+    store.mapReady = true
+  })
+}
 
 vi.mock('../app/featureCapabilities.js', () => ({
   Feature: { PLAYBACK_3D: 'playback3d', PLAYBACK_2D: 'playback2d' },
@@ -127,6 +137,7 @@ beforeEach(() => {
   scene.stores.splice(0)
   scene.initPlayback.mockClear()
   for (const k of Object.keys(scene.api)) if (vi.isMockFunction(scene.api[k])) scene.api[k].mockClear()
+  restoreLoadMapOnlyMock()
 })
 
 describe('MapPreview3DPane 场景接线（行为）', () => {
@@ -175,6 +186,29 @@ describe('MapPreview3DPane 场景接线（行为）', () => {
     await flushPromises()
     expect(scene.api.setAnnotations).toHaveBeenCalledWith([])
     expect(scene.api.loadMapOnly).toHaveBeenCalledWith({ mapId: 17, mapName: 'Yukon' })
+  })
+
+  it('切图时先清标注再 reload，即使 mapReady 在 reload 内同步回调也不推旧标注', async () => {
+    const wrapper = await mountReady()
+    annotationBridge().onAnnotationCommit({ type: 'pen', color: '#ff4d4f', width: 3, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] })
+    await flushPromises()
+
+    const calls = []
+    scene.api.setAnnotations.mockImplementation((annotations) => calls.push(['annotations', annotations]))
+    scene.api.loadMapOnly.mockImplementation(({ mapId }) => {
+      calls.push(['reload', mapId])
+      const store = scene.stores.at(-1)
+      store.mapReady = false
+      store.mapReady = true
+    })
+
+    await wrapper.setProps({ mapId: 17, mapName: 'Yukon' })
+    await flushPromises()
+    restoreLoadMapOnlyMock()
+
+    expect(calls[0]).toEqual(['annotations', []])
+    expect(calls[1]).toEqual(['reload', 17])
+    expect(calls.every(([kind, annotations]) => kind !== 'annotations' || annotations.length === 0)).toBe(true)
   })
 
   it('destroyScene（GPU teardown/离线销毁）不触碰标注会话；重连后 pane 撤销栈补推回内核', async () => {
