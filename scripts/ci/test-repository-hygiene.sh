@@ -429,19 +429,19 @@ git switch -q -C source-line-merged-newer-main-implicit "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// legacy\\n" * 601)
+Path("frontend/src/legacy.js").write_text("// legacy\n" * 601)
 PY
 git add frontend/src/legacy.js
 git commit -q -m 'old main: grandfathered source with no explicit allowlist'
 implicit_old_main=$(git rev-parse HEAD)
 git switch -q -c source-line-merged-newer-main-implicit-feature
-printf 'feature\\n' > unrelated.txt
+printf 'feature\n' > unrelated.txt
 git add unrelated.txt
 git commit -q -m 'unrelated feature before legacy split'
 git switch -q source-line-merged-newer-main-implicit
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// legacy\\n" * 500)
+Path("frontend/src/legacy.js").write_text("// legacy\n" * 500)
 PY
 git add frontend/src/legacy.js
 git commit -q -m 'new main: split formerly grandfathered source'
@@ -457,13 +457,13 @@ expect_pass source-line-merged-newer-main-implicit env REPOSITORY_HYGIENE_TEST_C
 git switch -q -C source-line-merged-newer-main-implicit-edited "$implicit_old_main"
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// edited\\n" * 602)
+Path("frontend/src/legacy.js").write_text("// edited\n" * 602)
 PY
 git add frontend/src/legacy.js
 git commit -q -m 'feature temporarily edits oversized legacy source'
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/legacy.js").write_text("// legacy\\n" * 601)
+Path("frontend/src/legacy.js").write_text("// legacy\n" * 601)
 PY
 git add frontend/src/legacy.js
 git commit -q -m 'feature restores original legacy content'
