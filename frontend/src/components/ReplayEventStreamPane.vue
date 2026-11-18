@@ -311,7 +311,10 @@ function eventTitle(ev: PlaybackEventRow): string {
         }) + ch
       }
       if (ev.commandName === 'ally_retreat') {
-        return t('eventStream.marker_retreat', { who }) + ch
+        return t('eventStream.marker_retreat', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
       }
       if (ev.commandName === 'catch_point') {
         return t('eventStream.marker_catch', { who }) + ch

@@ -246,6 +246,25 @@ describe('buildEventStream', () => {
     expect(filterEvents(evs, 'marker')).toHaveLength(4)
   })
 
+  it('0x2e 身份域固定：eid 未命中不得误吃同号 accountId（评审 4614554391）', () => {
+    const facet = {
+      vehicles: [
+        // Wrong 的 accountId 恰好等于另一个未入册的发送者 entity_id
+        { eid: 10, account_id: 20, nickname: 'Wrong', tank_name: 'T1', team: 2 },
+        { eid: 30, account_id: 40, nickname: 'Sender', tank_name: 'T2', team: 1 },
+      ],
+      markers: [
+        { t: 1, entity_id: 20, account_id: 40, marker_type: 1, at: [0, 0, 0] },
+        { t: 2, entity_id: 30, account_id: 40, marker_type: 4, target_eid: 40 },
+      ],
+    }
+    const evs = buildEventStream(facet).filter((e) => e.kind === 'marker')
+    // entity_id=20 不在 vehicles.eid：不得命中 Wrong(account=20)，按 account_id=40 回退 Sender
+    expect(evs[0].actor).toMatchObject({ name: 'Sender', tank: 'T2' })
+    // target_eid=40 是 accountId 域，不是车辆 eid：不得把 Sender 当成目标
+    expect(evs[1].target).toBeUndefined()
+  })
+
   it('连发逐发归属：窗口内伤害不会被第一发吞掉（评审 4595459443）', () => {
     const facet = {
       shots: [

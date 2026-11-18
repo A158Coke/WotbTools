@@ -283,7 +283,7 @@ describe('ReplayEventStreamPane', () => {
     const titles = rows.map((n) => n.text())
     expect(titles.some((x) => x.includes('marker_cell') && x.includes('cell=B3'))).toBe(true)
     expect(titles.some((x) => x.includes('marker_moving') && x.includes('who=Alpha · T-62A'))).toBe(true)
-    expect(titles.some((x) => x.includes('marker_retreat') && x.includes('who=Alpha · T-62A'))).toBe(true)
+    expect(titles.some((x) => x.includes('marker_retreat') && x.includes('who=Alpha · T-62A') && x.includes('target=Bravo · E 100'))).toBe(true)
     expect(titles.some((x) => x.includes('marker_attack') && x.includes('target=Bravo · E 100'))).toBe(true)
     // 未知 markerType 显示原始类型号（不伪造语义）
     const facetUnknown = {

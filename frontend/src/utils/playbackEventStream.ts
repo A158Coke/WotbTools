@@ -275,6 +275,20 @@ export function buildEventStream(
     if (typeof ref !== 'number' || ref <= 0) return undefined
     return actors.get(ref) ?? byAccount.get(ref)
   }
+  /**
+   * 0x2e marker 的身份域是**固定**的（上游 v0.5.4 契约）：`entity_id`/`target_eid`
+   * 是车辆 eid，`account_id` 是账号 id。这里不得复用双域 actorByRef——否则一个
+   * 未在 `vehicles[]` 命中的 eid 若恰好等于某玩家 accountId，会误配到别人并阻断
+   * 真正 account_id 的回退。只按各自域查表，未命中保持 unknown（fail-closed）。
+   */
+  const actorOfMarkerEid = (ref?: number | null): ActorInfo | undefined => {
+    if (typeof ref !== 'number' || ref <= 0) return undefined
+    return actors.get(ref)
+  }
+  const actorOfMarkerAccount = (ref?: number | null): ActorInfo | undefined => {
+    if (typeof ref !== 'number' || ref <= 0) return undefined
+    return byAccount.get(ref)
+  }
   /** 通知 subject：语义未定，若同一 id 同时命中两名不同玩家的 eid/accountId → 歧义，不联表。 */
   const actorBySubject = (ref?: number | null): ActorInfo | undefined => {
     if (typeof ref !== 'number' || ref <= 0) return undefined
@@ -471,8 +485,8 @@ export function buildEventStream(
       markerType: type,
       commandName: markerNameOf(type),
       commandTarget: targetRef,
-      target: type === 4 || type === 5 ? actorByRef(targetRef) : undefined,
-      actor: actorByRef(m?.entity_id) ?? actorByRef(m?.account_id),
+      target: type === 4 || type === 5 ? actorOfMarkerEid(targetRef) : undefined,
+      actor: actorOfMarkerEid(m?.entity_id) ?? actorOfMarkerAccount(m?.account_id),
     })
   }
   // 0x2b 是另域文本（u64 = 频道句柄；上游契约未给出与 0x2f 的等价关系）——
