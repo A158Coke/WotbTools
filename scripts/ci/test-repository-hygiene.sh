@@ -422,6 +422,56 @@ git merge -q --no-edit "$new_main"
 head=$(git rev-parse HEAD)
 expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+# Regression for implicit grandfathering: unlike the explicit allowlist case
+# above, the old 601-line source was never on an allowlist. An unrelated branch
+# predating main's split must not fail due to its untouched historical blob.
+git switch -q -C source-line-merged-newer-main-implicit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// legacy\\n" * 601)
+PY
+git add frontend/src/legacy.js
+git commit -q -m 'old main: grandfathered source with no explicit allowlist'
+implicit_old_main=$(git rev-parse HEAD)
+git switch -q -c source-line-merged-newer-main-implicit-feature
+printf 'feature\\n' > unrelated.txt
+git add unrelated.txt
+git commit -q -m 'unrelated feature before legacy split'
+git switch -q source-line-merged-newer-main-implicit
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// legacy\\n" * 500)
+PY
+git add frontend/src/legacy.js
+git commit -q -m 'new main: split formerly grandfathered source'
+implicit_new_main=$(git rev-parse HEAD)
+git switch -q source-line-merged-newer-main-implicit-feature
+git merge -q --no-edit "$implicit_new_main"
+head=$(git rev-parse HEAD)
+expect_pass source-line-merged-newer-main-implicit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$implicit_new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# A branch edit to that same legacy path must still fail, even if it was
+# reverted before merging main. The 602-line intermediate blob is not the
+# exact blob at the trusted fork point and may not inherit the exemption.
+git switch -q -C source-line-merged-newer-main-implicit-edited "$implicit_old_main"
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// edited\\n" * 602)
+PY
+git add frontend/src/legacy.js
+git commit -q -m 'feature temporarily edits oversized legacy source'
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/legacy.js").write_text("// legacy\\n" * 601)
+PY
+git add frontend/src/legacy.js
+git commit -q -m 'feature restores original legacy content'
+git merge -q --no-edit "$implicit_new_main"
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-merged-newer-main-implicit-edited "frontend/src/legacy.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$implicit_new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+
 # The fork-point rule must not admit a branch-only entry: a feature commit that
 # adds an oversized blob shielded by its own temporary entry still fails after
 # merging a newer main (its fork point never had that entry).
