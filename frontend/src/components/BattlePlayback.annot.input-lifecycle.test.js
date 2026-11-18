@@ -3,13 +3,9 @@
 // 战局回放地图标注回归测试：工具栏渲染（三语）、画笔绘制/撤回/重做/清空、
 // 橡皮擦点擦、文字标注、overview 切换重置。
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
-import zh from '../locales/zh.json'
-import en from '../locales/en.json'
-import ru from '../locales/ru.json'
+import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
-import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil'
+import { createBattlePlaybackAnnotTestHarness } from '../test/BattlePlaybackAnnotTestHarness.js'
 
 enableAutoUnmount(afterEach)
 
@@ -37,86 +33,8 @@ vi.mock('../vehicle-models/runtime.js', () => ({
   })),
 }))
 
-function makeOverview() {
-  return {
-    mapCode: 'holland',
-    displayName: 'Molendijk',
-    displayNames: { zh: '莫伦代克', en: 'Molendijk', ru: 'Молендейк' },
-    playableBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 },
-    friendlyTeam: 1,
-    arenaBonusType: 1,
-    recorderAccountId: 1001,
-    gridCells: [],
-    spawnPoints: [],
-    routes: [],
-  }
-}
+const { makeOverview, mountAnnot, dispatchPointer, setMapLayout, openAnnotations } = createBattlePlaybackAnnotTestHarness(BattlePlayback)
 
-function mountAnnot(lang = 'zh', attachTo) {
-  const i18n = createI18n({ locale: lang, fallbackLocale: 'en', messages: { zh, en, ru } })
-  return mount(BattlePlayback, {
-    attachTo,
-    props: { overview: makeOverview(), seekTo: null, playbackV2: makeBattlePlaybackDataset({ vehicles: [], events: [] }) },
-    global: { plugins: [i18n] }
-  })
-}
-
-/** 派发 window 级指针事件（组件在 window 上监听 move/up）。 */
-function dispatchPointer(type, props) {
-  const ev = new Event(type)
-  Object.defineProperty(ev, 'pointerId', { value: props.pointerId })
-  Object.defineProperty(ev, 'clientX', { value: props.clientX })
-  Object.defineProperty(ev, 'clientY', { value: props.clientY })
-  window.dispatchEvent(ev)
-}
-
-/** mock .pb-map 的真实渲染尺寸（clientWidth/clientHeight，happy-dom 无布局默认 0）。 */
-function setMapLayout(wrapper, width, height) {
-  const el = wrapper.find('[data-test="pb-map"]').element
-  Object.defineProperty(el, 'clientWidth', { value: width, configurable: true })
-  Object.defineProperty(el, 'clientHeight', { value: height, configurable: true })
-}
-
-/** 从 viewport style 解析当前 view 变换（translate(tx,ty) + layout width scale）。 */
-function viewTransformOf(wrapper) {
-  const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
-  const translate = style.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/)
-  const width = style.match(/width: ([\d.]+)%/)
-  if (!translate || !width) throw new Error('cannot parse viewport style: ' + style)
-  return { tx: Number(translate[1]), ty: Number(translate[2]), scale: Number(width[1]) / 100 }
-}
-
-/**
- * 测试侧独立逆公式：SVG viewBox 点 → 地图容器 CSS px。
- * 不调用组件/生产代码，独立验证组件换算结果落回真实指针位置。
- */
-function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
-  return {
-    x: (sx / W) * rw * view.scale + view.tx,
-    y: (sy / H) * rh * view.scale + view.ty
-  }
-}
-
-/** 在战局回放地图上画一条折线：pen 工具 → down/move/up。 */
-async function drawStroke(wrapper, points) {
-  await openAnnotations(wrapper)
-  // 绘图是显式操作；进入标记默认选择工具。
-  const pen = wrapper.find('[data-test="pb-annot-pen"]')
-  if (!pen.classes().includes('active')) await pen.trigger('click')
-  const viewport = wrapper.find('[data-test="pb-viewport"]')
-  await viewport.trigger('pointerdown', { pointerId: 1, clientX: points[0][0], clientY: points[0][1] })
-  for (const [x, y] of points.slice(1)) {
-    dispatchPointer('pointermove', { pointerId: 1, clientX: x, clientY: y })
-  }
-  dispatchPointer('pointerup', { pointerId: 1, clientX: points[points.length - 1][0], clientY: points[points.length - 1][1] })
-  await flushPromises()
-}
-
-// Marking has a direct entry; drawing is explicit after safe selection mode opens.
-async function openAnnotations(wrapper) {
-  if (!wrapper.find('[data-test="pb-annot-toolbar"]').exists()) await wrapper.get('[data-test="pb-annotation-entry"]').trigger('click')
-  await flushPromises()
-}
 async function clickMap(wrapper, x, y, pointerId = 1) {
   await wrapper.get('[data-test="pb-viewport"]').trigger('pointerdown', { pointerId, clientX: x, clientY: y, pointerType: 'mouse', button: 0 })
   dispatchPointer('pointerup', { pointerId, clientX: x, clientY: y })
