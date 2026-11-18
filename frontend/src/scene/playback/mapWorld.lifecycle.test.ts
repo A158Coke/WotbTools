@@ -72,6 +72,7 @@ function makeDeps(overrides: Partial<MapWorldDeps> = {}) {
     destroyed: () => false,
     getData: () => ({ meta: { map_id: 6 }, vehicles: [] }),
     quality: () => ({ anisotropy: 1, scenery: true, groundLayers: false }),
+    grassInstanceBudget: () => 0,
     getScene: () => scene,
     getCamera: () => camera,
     getRenderer: () => null,
@@ -95,7 +96,7 @@ function makeDeps(overrides: Partial<MapWorldDeps> = {}) {
 
 function makeWorld(overrides: Partial<MapWorldDeps> = {}) {
   const { deps, scene, camera } = makeDeps(overrides)
-  const handle = createMapWorld(deps, { build: vi.fn(), clear: vi.fn() })
+  const handle = createMapWorld(deps)
   return { handle, deps, scene, camera }
 }
 

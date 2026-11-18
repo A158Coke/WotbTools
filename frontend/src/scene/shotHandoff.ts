@@ -81,6 +81,12 @@ export async function buildPitchLimits(
  * 缺省会让装甲查看器按顶级配置摆射手炮管/选目标变体/选弹表（&scfg=）。
  * 依据 = 回放 facet 自带的逐车证据（comp locals → `resolveMountedConfig`）；
  * 坦克数据缺失时不注入（消费端回退顶级，与服务器「全无 → 顶级」一致）。
+ *
+ * **逐车增量提交**：每辆车的 tank JSON 一返回就写入所有引用它的行，而不是等
+ * 全部车型的 `Promise.all` 结束。交接调用方带 1500ms 有界等待（`PITCH_ANCHOR_WAIT_MS`），
+ * 到期即序列化快照——若先等全场，任何一辆无关慢车都会把已就绪的配置证据一起抹掉
+ * （评审 4597024398：选中发与下一发都退化回顶级炮管/弹表）。本函数仍返回「全部请求
+ * 都结算」的 Promise；有界等待由调用方按需 race，已到的证据由上面的增量写入保住。
  */
 export async function annotateMountedConfigs(
   parsedShots: ReadonlyArray<HandoffShotRow>,
@@ -96,15 +102,6 @@ export async function annotateMountedConfigs(
   }
   if (!tankIds.size) return
   const configsByTank = new Map<number, TankJsonLike>()
-  await Promise.all([...tankIds].map(async (tid) => {
-    try {
-      const data = await assetProvider.json(`/tank/${tid}.json`) as TankJsonLike | null
-      if (Array.isArray(data?.configs) && data.configs.length) {
-        configsByTank.set(tid, data)
-      }
-    } catch { /* 数据缺失：该车不注入 */ }
-  }))
-  if (!configsByTank.size) return
   const idxOf = (vehicle: VehicleLike | undefined, tid: number | undefined): number | null => {
     if (tid == null) return null
     const data = configsByTank.get(tid)
@@ -113,12 +110,28 @@ export async function annotateMountedConfigs(
     const idx = cfg && data.configs ? data.configs.indexOf(cfg) : -1
     return idx >= 0 ? idx : null
   }
-  for (const s of parsedShots) {
-    const shooterIdx = idxOf(byEid.get(s.shooter_eid as number), s.shooter_tank_id as number | undefined)
-    if (shooterIdx != null) s.shooter_config_idx = shooterIdx
-    const targetIdx = s.target_eid != null
-      ? idxOf(byEid.get(s.target_eid as number), s.target_tank_id as number | undefined)
-      : null
-    if (targetIdx != null) s.target_config_idx = targetIdx
+  /** 该车数据已就绪：立刻写回所有以它为射手/目标的交接行（幂等）。 */
+  const injectTank = (tid: number): void => {
+    if (!configsByTank.has(tid)) return
+    for (const s of parsedShots) {
+      if (s.shooter_tank_id === tid) {
+        const shooterIdx = idxOf(byEid.get(s.shooter_eid as number), tid)
+        if (shooterIdx != null) s.shooter_config_idx = shooterIdx
+      }
+      if (s.target_tank_id === tid && s.target_eid != null) {
+        const targetIdx = idxOf(byEid.get(s.target_eid as number), tid)
+        if (targetIdx != null) s.target_config_idx = targetIdx
+      }
+    }
   }
+  await Promise.all([...tankIds].map(async (tid) => {
+    try {
+      const data = await assetProvider.json(`/tank/${tid}.json`) as TankJsonLike | null
+      if (Array.isArray(data?.configs) && data.configs.length) {
+        configsByTank.set(tid, data)
+        // 增量提交：调用方的有界等待到期时，快照已包含期限内返回的全部证据。
+        injectTank(tid)
+      }
+    } catch { /* 数据缺失：该车不注入 */ }
+  }))
 }

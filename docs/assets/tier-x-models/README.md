@@ -40,7 +40,9 @@ AI 只做 visual QA；发现错误 → 修 baker → 重新生成，禁止人工
 | `frontend/src/vehicle-models/validate.js` | validator（CI 与 CLI 共用；正式资产强制 source.provider=blitzkit + method=texture-bake） |
 | `frontend/src/vehicle-models/coverage.test.js` | Tier X 100% 覆盖门禁（新增 Tier X 无 mapping → CI FAIL） |
 | `frontend/src/vehicle-models/pivot.js` | 图层旋转数学（嵌套 transform：assembly 绕车辆中心 + image 绕 raster 内 pivot） |
-| `frontend/src/vehicle-models/extractor.test.js` | extractor 契约测试（坐标/fit/资产/确定性，CI 不联网） |
+| `frontend/src/vehicle-models/extractor.geometry.test.js` | extractor 几何、投影与细节提取契约（CI 不联网） |
+| `frontend/src/vehicle-models/extractor.surface-merging.test.js` | 高保真表面合并契约（CI 不联网） |
+| `frontend/src/vehicle-models/extractor.asset-contracts.test.js` | Maus 资产、场景装配、可见性与 turret pivot 契约（CI 不联网） |
 | `frontend/src/vehicle-models/texture-bake.test.js` | bake 纯函数契约 + **raster 方向回归（RASTER_Y_AXIS_CONTRACT）** |
 | `frontend/src/components/VehicleMarker.vue` | **生产 Battle Playback 正式单车 marker**（dedicated/generic 渲染 + hull/turret 旋转） |
 | `frontend/src/vehicle-models/runtime.js` | **生产 runtime 资产解析**（tankId→modelKey→资产、战局级 preload、单车 fallback；动态 import 保 bundle 分离） |

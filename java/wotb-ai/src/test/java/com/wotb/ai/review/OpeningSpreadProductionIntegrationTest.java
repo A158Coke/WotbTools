@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PR #103 架构收口生产链路集成测试：TeamSeparationEvidenceSkill / PlayerSeparationEvidenceSkill
- * → TeamEvidenceFormatter / TacticalEvidenceFormatter → Call #2 user content。
+ * → Team outcome/evidence formatters / TacticalEvidenceFormatter → Call #2 user content。
  * <p>验证：OPENING_SPREAD（开局分散）以中性 signal 输出（summary 无拿视野/点亮/侦察），
  * 且 production Prompt 不暴露 OPENING_MAP_CONTROL 原始标签。</p>
  */

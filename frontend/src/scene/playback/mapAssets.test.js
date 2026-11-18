@@ -20,7 +20,10 @@ vi.mock('../sceneryAssemblyRules.ts', () => ({
   strictSurfacesOf: () => new Set(),
   isWaterNode: () => false,
 }))
-vi.mock('../variantFilter.ts', () => ({ pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }) }))
+vi.mock('../variantFilter.ts', () => ({
+  pruneForeignVariantsDetailed: () => ({ removed: 0, failClosed: false }),
+  activeVariantOf: () => null,
+}))
 vi.mock('../sceneryMaterials.ts', () => ({ applyMaterialTextureAnisotropy: () => 0 }))
 vi.mock('../groundPass.js', () => ({
   makeWaterCoast: () => null,
@@ -33,7 +36,7 @@ vi.mock('../sceneryInstancing.ts', () => ({
   buildStandaloneLightmappedMeshes: () => {},
   groupInstanceBatches: () => [],
   // 会话竞态用例只关心装配编排：材质规整保持恒等（真实实现由
-  // sceneryInstancing.test.js 的签名/合并用例覆盖）
+  // sceneryInstancing.materials.test.js 的签名/合并用例覆盖）
   canonicalizeEntryMaterials: (entries) => entries,
 }))
 vi.mock('../pickDebug.ts', () => ({ buildMeshOwnerMap: () => new Map() }))

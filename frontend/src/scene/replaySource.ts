@@ -583,6 +583,14 @@ export function mapStaticUrl(kind: string, layer: string | null | undefined, map
     case 'ibl': return f('ibl.webp')
     // 可破坏物清单（逆向总集 §5.4 的 (cell,slot) 联表；缺失时 3D 侧静默禁用该特性）
     case 'destructibles': return f('destructibles.json')
+    // 投影贴花（上游 tools/export_map_glb.py 的 decals.json + 图集；2026-11-17 审计 B9。
+    // 当前内容仅 plant 有；缺失（其余图/旧包）→ 无贴花层，不阻断加载）
+    case 'decals': return f('decals.json')
+    // 草层（上游 grass.json / grass.bin / grass.glb；2026-11-17 审计 H1。
+    // 缺失（旧包/无草图）→ 不画草层，不阻断）
+    case 'grass': return f('grass.json')
+    case 'grassbin': return f('grass.bin')
+    case 'grassproto': return f('grass.glb')
     case 'groundmeta': return f('ground.layers.json')
     case 'groundtex': return f(`ground/${layer}.webp`)
   }

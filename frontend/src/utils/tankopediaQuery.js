@@ -191,6 +191,7 @@ export function withTankopediaState(query = {}, state = {}) {
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '')
 const byNumberDesc = key => (a, b) => (b[key] ?? -1) - (a[key] ?? -1) || byName(a, b)
 const COMPARATORS = {
+  speed: byNumberDesc('speed'),
   name: byName,
   tier: (a, b) => (b.tier ?? 0) - (a.tier ?? 0) || byName(a, b),
   hp: byNumberDesc('hp'),
@@ -295,6 +296,7 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
         is_collector: !!value.is_collector,
         // XI 卡片默认顶级血量：hp_top 由上游按升级树 MAX_HEALTH 节点算好；
         // 普通车没有该字段，继续用 hp（车体 + 顶炮塔）。
+        speed: value.speed_forward ?? value.speed ?? null,
         hp: value.hp_top ?? value.hp ?? null,
         pen_max: penMax || null,
       }

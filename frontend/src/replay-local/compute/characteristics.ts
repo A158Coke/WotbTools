@@ -14,6 +14,7 @@
  * 物品 script（provisions/consumables）必须由调用方经 researchCatalog.scriptMap 注入：
  * 食物类乘员加成的唯一权威是客户端 script，引擎不按 stem 猜数值。
  */
+import { mobilityRows, positive, terrains, type Mobility } from './mobility'
 import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
 
 /** 乘员熟练度曲线（BK degressiveStat/progressiveStat，100% 时均为 0）。 */
@@ -257,22 +258,19 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   // 各车电台/油箱唯一（738/738 各 1 件，不可换装），故直接取第一件。
   const radio = modules.radios?.[0]
   const fuelTank = modules.fuelTanks?.[0]
-  const weightKg =
-    (modules.hull?.weight ?? 0) +
-    (engine.stats?.weight ?? 0) +
-    (track.stats?.weight ?? 0) +
-    (turret.stats?.weight ?? 0) +
-    (gun.stats?.weight ?? 0) +
-    (radio?.stats?.weight ?? 0) +
-    (fuelTank?.stats?.weight ?? 0)
+  const componentWeights = (engineWeight: number | undefined, trackWeight: number | undefined, turretWeight: number | undefined, gunWeight: number | undefined) =>
+    [modules.hull?.weight, engineWeight, trackWeight, turretWeight, gunWeight, radio?.stats?.weight, fuelTank?.stats?.weight]
+  const massParts = componentWeights(engine.stats?.weight, track.stats?.weight, turret.stats?.weight, gun.stats?.weight)
+  const sumWeights = (parts: Array<number | undefined>): number => parts.reduce<number>((total, value) => total + (value ?? 0), 0)
+  const weightKg = sumWeights(massParts)
   const weightT = weightKg / 1000
 
   // ---- 发动机功率（同调用加法）----
   const enginePowerCoeff = coeff(
     [has(117), 0.06], // recycledEngineSpeed
-    [hasConsumable('freeAfterburning'), 0.1],
-    [hasConsumable('afterburning'), 0.2],
-    [hasConsumable('improvedAfterburning'), 0.35],
+    [hasConsumable('freeAfterburning'), Number(input.consumableScripts.freeAfterburning?.params?.enginePowerIncrease ?? 1.1) - 1],
+    [hasConsumable('afterburning'), Number(input.consumableScripts.afterburning?.params?.bonusValues?.enginePowerIncrease ?? 20) / 100],
+    [hasConsumable('improvedAfterburning'), Number(input.consumableScripts.improvedAfterburning?.params?.enginePowerIncrease ?? 1.35) - 1],
     [hasProvision('regular_fuel'), 0.03],
     [hasProvision('improved_fuel'), 0.1],
     [hasProvision('gearOil'), 0.03],
@@ -401,7 +399,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   // ---- 极速（加法 bias）----
   const fwdBias =
-    (hasConsumable('improvedAfterburning') ? 4 : 0) +
+    (hasConsumable('improvedAfterburning') ? Number(input.consumableScripts.improvedAfterburning?.params?.fwdSpeedLimitBias ?? 4) : 0) +
     (hasProvision('gearOil') ? 2 : 0) +
     (hasProvision('improvedGearOil') ? 4 : 0)
   const bkwdBias =
@@ -427,35 +425,29 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     [has(116), 0.12],
     [hasConsumable('improvedAfterburning'), 0.05],
     [skill('virtuoso') > 0, skill('virtuoso') * skillRate('virtuoso', 'rotationSpeedFactorPerLevel')],
-  ) * (1 + driverProg)
+  )
   // 车体转向（BlitzInfo Hull Turn Rate）：发动机功率比 × 底盘转速 × 乘员/操控系数 ×
   // 初始/当前重量比。升级发动机/减重会提高转向，与游戏内一致。
   const stockEngine = modules.engines?.[0]
   const stockTrack = modules.chassis?.[0]
   const stockTurret = modules.turrets?.[0]
   const stockGun = stockTurret?.guns?.[0]
-  const stockWeightKg =
-    (modules.hull?.weight ?? 0) +
-    (stockEngine?.stats?.weight ?? 0) +
-    (stockTrack?.stats?.weight ?? 0) +
-    (stockTurret?.stats?.weight ?? 0) +
-    (stockGun?.stats?.weight ?? 0) +
-    (radio?.stats?.weight ?? 0) +
-    (fuelTank?.stats?.weight ?? 0)
+  const stockParts = componentWeights(stockEngine?.stats?.weight, stockTrack?.stats?.weight, stockTurret?.stats?.weight, stockGun?.stats?.weight)
+  const stockWeightKg = sumWeights(stockParts)
   const stockEnginePower = input.stockEnginePower ?? stockEngine?.stats?.power ?? baseEnginePower
   const stockWeightRatio = stockWeightKg > 0 && weightKg > 0 ? stockWeightKg / weightKg : 1
   // 只计模块发动机（装车/初始），消耗品增压不改变车体转向（BlitzInfo：引擎增压只 +5% rotation）
   const stockPowerRatio = stockEnginePower > 0 ? baseEnginePower / stockEnginePower : 1
-  const chassiRotationSpeed = (track.stats?.rotationSpeed ?? 0) * hullCoeff * stockPowerRatio * stockWeightRatio
+  const configuredTurn = (track.stats?.rotationSpeed ?? 0) * hullCoeff * stockPowerRatio
+  const chassiRotationSpeed = configuredTurn * (1 + driverProg) * stockWeightRatio
 
   // ---- 地形阻力（显示系数 = 100/raw）----
   const resist = track.stats?.terrainResistance
   // Improved Suspension（grousers）：客户端 script 是“通过性 +20/15/30%”
   // （bonusPercentage），阻力按 1/(1+bonus) 变化；BlitzInfo 实测 Road 91→109 (+20%)。
   const grousers = has(123)
-  const suspFirm = (grousers ? 1 / 1.2 : 1) * (1 + driverDeg)
-  const suspMedium = (grousers ? 1 / 1.15 : 1) * (1 + driverDeg)
-  const suspSoft = (grousers ? 1 / 1.3 : 1) * (1 + driverDeg)
+  const suspension = grousers ? [1.2, 1.15, 1.3] : [1, 1, 1]
+  const [suspFirm, suspMedium, suspSoft] = suspension.map(bonus => (1 + driverDeg) / bonus)
   const rawFirm = (resist?.[0] ?? 0) * suspFirm
   const rawMedium = (resist?.[1] ?? 0) * suspMedium
   const rawSoft = (resist?.[2] ?? 0) * suspSoft
@@ -573,7 +565,34 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   const dimensions = tankDimensions(modules, turret, track)
 
+  // The legacy panel keeps its crew curve and display precision. BF consumes raw values.
+  const bfDriver = 0.57 + 0.43 * driverMastery
+  const knownMass = (parts: unknown[]) => parts.every(x => typeof x === 'number' && Number.isFinite(x) && x >= 0)
+  const mobility: Mobility = {
+    mass: knownMass(massParts) && positive(weightT) ? weightT : null,
+    power: enginePower,
+    limit: positive(modules.speedLimits?.forward) ? maxFrontSpeed : null,
+    permeability: { Firm: null, Medium: null, Soft: null },
+    traverse: { Firm: null, Medium: null, Soft: null },
+  }
+  for (const [i, ground] of terrains.entries()) {
+    const raw = resist?.[i]
+    if (positive(raw)) mobility.permeability[ground] = 100 * bfDriver * suspension[i] / raw
+  }
+  // BF statsByLoadout uses total weight for hp/t, but excludes the radio in the traverse ratio.
+  const radioWeight = radio?.stats?.weight
+  const turn = configuredTurn * bfDriver * (stockWeightKg - radioWeight) / (weightKg - radioWeight)
+  for (const ground of terrains) {
+    const c = mobility.permeability[ground]
+    const medium = mobility.permeability.Medium
+    if (positive(turn) && positive(c) && positive(medium) && positive(resist?.[0]) && positive(resist?.[1])
+        && positive(stockEngine?.stats?.power) && positive(stockEnginePower) && positive(baseEnginePower) && positive(mobility.mass) && knownMass(stockParts)) {
+      mobility.traverse[ground] = turn * resist[0] / resist[1] * c / medium
+    }
+  }
   return {
+    _mobility: mobility,
+    ...mobilityRows(mobility),
     maxHealth,
     hasTurret,
     weight: Math.round(weightT * 100) / 100,

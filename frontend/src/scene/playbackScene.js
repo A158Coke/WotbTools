@@ -45,7 +45,7 @@ import { visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 // playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
 import { hpPercentText } from './rosterState.js'
 import { resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
-import { pointsAt } from './supremacyPoints.js'
+import { applySupremacyPointsToStore } from './supremacyPoints.js'
 import { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY } from './playback/palette.ts'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
@@ -62,6 +62,7 @@ import { assetProvider } from './assetProvider.js'
 import { createSceneCore } from './playback/renderer.js'
 import { createSessionLifecycle } from './playback/sessionLifecycle.ts'
 import { createMapWorld } from './playback/mapWorld.ts'
+import { createWaterReflectionRuntime } from './playback/waterReflectionRuntime.ts'
 import { createVehicleRuntime } from './playback/vehicleRuntime.ts'
 import { makeReplacedAt } from './playback/identity.ts'
 import { createTreadRuntime } from './playback/treadRuntime.ts'
@@ -78,13 +79,14 @@ import { createCameraRuntime, CAMERA_GROUND_CLEARANCE } from './playback/cameraR
 // 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
 // 导入方（Replay3DPane / 测试）零改动。
 import { GRID_DT } from './playback/util.js'
-import { QUALITY_PRESETS, shadowQualityEligible } from './playback/quality.js'
+import { QUALITY_PRESETS, qualityFeatures, shadowQualityEligible } from './playback/quality.js'
+import { boolPref, persistBoolPref, resolveQualityKey } from './playback/preferences.ts'
+import { installDebugProbes } from './playback/debugProbes.ts'
 // 坦克接地阴影（#907 主干随迁）：选择/句柄生命周期 owner = contactShadowControl.ts（逐车挂接在 vehicleRuntime）。
 import { createContactShadowControl } from './playback/contactShadowControl.ts'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
 import { createPickReporter } from './playback/pickReport.js'
 import { chainVisible } from './pickDebug.js'
-import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
 import { createCameraTerrainClamp } from './playback/cameraTerrainClamp.js'
 import { createBaseMarkers } from './playback/bases.js'
 import { createSpawnMarkers } from './playback/spawns.js'
@@ -133,6 +135,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 履带印缓存的唯一 owner = playback/vehicleRuntime.ts / playback/treadRuntime.ts
   //（#820 Step 4 出仓；本闭包经 vehicles/tread 句柄读写，语义与拆分前逐字一致）
   let T = 0, PLAYING = false, SPEED = store.speed;
+  // 地图预览（loadMapOnly）没有回放传输：T 恒 0。环境动画（草风摆/动画混合层/水波）
+  // 在地图预览里**全部冻结为初始静态**（2026-11-17 用户裁示：动画会把反射/贴图硬边
+  // 放大成白边）；回放会话仍严格跟随回放时钟 T（暂停/seek 相位可复现）。
   // 战斗时间轴 [START, END]：引擎是唯一权威（store.startTime / store.duration 只是发布）。0 = 开战，与 2D 同一个时钟：
   // 工作台 canonical 的 clock（面板经 setBattleClock 交给引擎）优先，canonical 未就绪 / 失败时用场景按同一
   // resolveReplayClock 从自身 periods 推出的 sceneClock，都没有才退回数据范围（t_start → battleEnd.js）。
@@ -200,39 +205,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //   俯瞰时贴地薄板/重建地形交叠带可能成片 z-fighting（开启即恢复确定性深度序）。
   // - dynres（动态分辨率）：默认**开**——持续超帧预算降 DPR、有余量升回档位上限
   //  （纯函数状态机 scene/dynRes.js），负载起伏的软着陆。
-  const prefOf = (key, urlKey, dflt) => {
-    try {
-      const usp = new URLSearchParams(location.search);
-      if (usp.has(urlKey)) return usp.get(urlKey) !== '0';
-      const v = localStorage.getItem(key);
-      return v == null ? dflt : v === '1';
-    } catch (e) { return dflt; }
-  };
-  // 实例级可变量（非 const）：待开播阶段的偏好切换只持久化 + 同步 store——渲染器
-  // 尚未创建，下次 initScene（按「开始」）自然按新偏好装配，无需重载；已在播放中
-  // 不存在这两个开关（已移至待开播卡片）。
-  let LOGDEPTH = prefOf('pb_logdepth', 'logdepth', false);
-  let DYNRES = prefOf('pb_dynres', 'dynres', true);
-  let ARMOR_HIGHLIGHT = prefOf('pb_armor_highlight', 'armorhl', false);
-  const persistPref = (key, on) => { try { localStorage.setItem(key, on ? '1' : '0'); } catch (_) {} };
+  // 实例级可变量（非 const）：待开播阶段只持久化 + 同步 store，下次 initScene 按新偏好装配。
+  let LOGDEPTH = boolPref('pb_logdepth', 'logdepth', false);
+  let DYNRES = boolPref('pb_dynres', 'dynres', true);
+  let ARMOR_HIGHLIGHT = boolPref('pb_armor_highlight', 'armorhl', false);
 
   // ---------- 画质分档 ----------
-  // 解析优先级：URL ?q= > localStorage > 设备默认；四档都开 3D 地形（仅分段数降档）。
-  // （预设表用模块级 QUALITY_PRESETS，与面板共享）
-  function resolveQuality() {
-    const usp = new URLSearchParams(location.search);
-    let q = (usp.get('q') || '').toLowerCase();
-    if (!QUALITY_PRESETS[q]) { try { q = localStorage.getItem('pb_quality') || ''; } catch (e) {} }
-    if (!QUALITY_PRESETS[q]) {
-      const mobile = !!window.__TAURI__ || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
-      // 移动/Tauri 默认**均衡**（真车模、完整场景和烘焙地表）；4K/Retina 想吃满
-      // 填充率的显式选极致，桌面默认不背 DPR 2 的税。
-      q = mobile ? 'mid' : 'high';
-    }
-    try { localStorage.setItem('pb_quality', q); } catch (e) {}
-    return q;
-  }
-  let QKEY = resolveQuality(), Q = QUALITY_PRESETS[QKEY];
+  // 解析优先级：URL ?q= > localStorage > 设备默认（实现在 playback/preferences.ts；
+  // 四档都开 3D 地形，仅分段数降档；预设表用模块级 QUALITY_PRESETS，与面板共享）。
+  let QKEY = resolveQualityKey(), Q = QUALITY_PRESETS[QKEY];
   store.qualityKey = QKEY;
   store.qualityLabel = '画质 · ' + Q.label;
   store.logdepth = LOGDEPTH;   // Display 面板开关的初始态（偏好解析见上方 prefOf）
@@ -243,6 +224,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store, qualityKey: () => QKEY, getScene: () => scene, getSunLight: () => sunLight,
     surfaceHeightAt: (x, z) => mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!rendererCaps?.stencil,
   });
+  // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
+  let applyQualityFeatures = () => {};
+  let requestWaterReflectionRefresh = () => {};
   function setQuality(k) {
     if (!QUALITY_PRESETS[k] || k === QKEY) return;
     const apply = () => {
@@ -252,6 +236,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.qualityKey = QKEY;
       store.qualityLabel = '画质 · ' + Q.label;
       if (!shadowQualityEligible(k)) contactShadowCtl.setEnabled(false);   // 降档清零；再升档不自动恢复
+      applyQualityFeatures();
       applyGlbGate();
     };
     if (DATA) {
@@ -399,11 +384,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function reportPick(e) { pickReporter.reportPick(e, pickCtx()); }
   // 报告组装/面板/标记的实现自 2026-10-24 起在 playback/pickReport.js（工厂 + ctx 快照）。
 
-  // ---------- 地图边界带（几何在 playback/boundary.js 工厂；可玩范围解析/重建时机在 mapWorld） ----------
-  // 边界带工厂（boundaryGroup 由工厂私有持有；几何与 fail-closed 语义见 playback/boundary.js。
-  // getScene 因 scene 在 initScene 才创建；groundY / disposeObject3D 是闭包内函数声明，
-  // 创建期引用安全——调用时才求值）
-  const boundaryBand = createBoundaryBand({ getScene: () => scene, disposeObject3D, groundY: (x, z) => mapWorld.groundY(x, z) });
   // 世界/地形/地图资产 owner（#820 Step 2 出仓）：buildWorld / loadMapImage / sampleHeight /
   // 地形 LOD / rebuildGround / 可破坏物推进 / 逐图光照接线 + 会话 teardown 的地图资产段。
   const mapWorld = createMapWorld({
@@ -414,6 +394,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     destroyed: () => destroyed,
     getData: () => DATA,
     quality: () => Q,
+    grassInstanceBudget: () => qualityFeatures(QKEY).grass.instances,
     getScene: () => scene,
     getCamera: () => camera,
     getRenderer: () => renderer,
@@ -439,8 +420,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       applyCameraClamp();   // 世界范围决定 min/max 距离（初值，实测再调）
     },
-  }, boundaryBand);
+  });
 
+  // 水面 HIGH/ULTRA 动态平面反射（画质计划 W1/P1/W3）：镜像相机 + 半分辨率 RT，
+  // 画质语义/反射 pass 覆盖层剔除/运行时改档收口在 waterReflectionRuntime.ts。
+  const waterReflection = createWaterReflectionRuntime({
+    getWaterMeshes: () => mapWorld.waterMeshes(),
+    getWaterLevel: () => mapWorld.waterLevel(),
+    // 反射 pass 覆盖层剔除（W3）：草/战斗特效/3D 标注不进镜像 RT。
+    getExcludedRoots: () => [mapWorld.grassRoot(), battle.fxRoot(), annotationScene.annotationRoot()],
+    qualityKey: () => QKEY,
+    debug: DEBUG,
+  })
+  applyQualityFeatures = () => waterReflection.apply();
+  requestWaterReflectionRefresh = () => waterReflection.requestRefresh();
   // 车辆运行时 owner（#820 Step 4 出仓）：buildVehicles / 位姿采样 / GLB / 悬挂 /
   // applyPose 与车辆 teardown 的唯一归属。canonical 生命事实（sceneLifeAt/visibleAt）
   // 与调色板仍在本闭包，按 deps 注入；POSE_GRID 按引用共享同一可变对象。
@@ -532,7 +525,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   });
 
   // 标签运行时 owner（#820 Step 5 出仓）：软遮挡/名牌发布/会话 resolver/击杀 feed 计分名册。
-  // writeHud（时钟+相机+名册编排）、teamHpTotals、pointsAt 仍在本闭包。
+  // writeHud（时钟+相机+名册编排）、teamHpTotals、applySupremacyPointsToStore 仍在本闭包。
   const labels = createLabelsRuntime({
     store,
     container,
@@ -600,7 +593,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     spawnMarkers.refreshColors();
     invalidate();
   }
-  function buildBoundary(bounds, thick) { boundaryBand.build(bounds, thick); }
 
   // 相机地形净空与 target 钳制（#820 Wave B6A：实现与语义注释在
   // playback/cameraTerrainClamp.js）。本处只注入场景侧的事实来源。
@@ -713,7 +705,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
   // 否则那一帧的静止状态会一直停留在旧画面上。
   let frameDirty = true;
-  function invalidate() { frameDirty = true; }
+  function invalidate() { frameDirty = true; requestWaterReflectionRefresh(); }
 
   // 实时帧率（FPS 覆盖层）：rAF 回调间隔的 500ms 窗口均值，每窗口写一次 store
   //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
@@ -742,9 +734,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 由回放时刻唯一确定（不随壁钟漂移，截图可复现）。未装载时该数组为空。
     const animLayerMats = mapWorld.animLayerMats();
     if (animLayerMats.length) {
-      const secs = T / 1000;
-      for (const mm of animLayerMats) mm.uniforms.uTime.value = secs;
+      // 地图预览（有地图无回放）：环境动画**全部冻结**为初始静态（用户 2026-11-17 裁示）。
+      // 回放会话（hasData）仍严格跟随回放时钟 T；水波材质已在装配期排除出该表。
+      const mapMode = !!store.mapReady && !store.hasData;
+      if (!mapMode) {
+        const secs = T / 1000;
+        for (const mm of animLayerMats) mm.uniforms.uTime.value = secs;
+      }
+      if (DEBUG) {
+        const frames = ((window.__ambient?.frames) || 0) + 1;
+        window.__ambient = { mapMode, frozen: mapMode, mats: animLayerMats.length,
+          frames, paused, dtMs: Math.round(dt * 1000 * 100) / 100 };
+      }
     }
+    // 动态光源：固定 16 盏池按相机近邻逐帧换绑（灯数恒定 ⇒ 不触发着色器重编译；
+    // 142 盏数据在靠近时都会亮起，见 mapLighting.updateDynamicLights）
+    mapWorld.tickDynamicLights?.(camera.position);
     // 相机
     // 跟随模式：相机位置与视点目标按坦克逐帧位移整体平移——用户选好的方位/
     // 距离/俯仰刚性保持，不会被拉回固定机位；旋转/缩放/平移始终自由
@@ -852,6 +857,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     try {
       if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
       const gpuFrameId = session.isReadySession() ? gpu?.beginFrame() ?? null : null;
+      // 水面动态反射（HIGH/ULTRA）：镜像 pass 必须在主渲染前完成（RT 供水面着色采样）。
+      waterReflection.update(renderer, scene, camera);
       const gpuMainStarted = gpu?.begin('main') ?? false;
       try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
       session.tryMarkFirstReadyFrame(performance.now());
@@ -927,16 +934,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     tread.updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     labels.updateScore();
     // HUD → store
-    // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
-    // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
-    // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
-    {
-      const pts = pointsAt(DATA.supremacy_points, T, DATA.meta.friendly_team);
-      // 变更守卫与 updateScore 同款：点数在两次占领事件间恒定，60Hz 无守卫写是仅存的
-      // 每 tick reactive 写入（Vue 同值短路只免 trigger，不免 proxy set 本身）。
-      if (store.pointsFriend !== pts.friend) store.pointsFriend = pts.friend;
-      if (store.pointsEnemy !== pts.enemy) store.pointsEnemy = pts.enemy;
-    }
+    // 顶栏：争霸实时点数每 tick 确定性重算 + 变更守卫（无采样也写 null，防切场残值）。
+    applySupremacyPointsToStore(store, DATA, T);
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     writeHud();
     if (!winnerShown && T >= END - 1e-3 && DATA.meta.winner_team) {
@@ -1091,7 +1090,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                         //（粒子批次 / 条带 / 图集）+ window.__battleFx 删除，顺序逐字保留
     // 拾取调试残留（标记网格 + 面板 DOM）与边界带随会话回收（实现在 playback/ 工厂）
     pickReporter.dispose({ scene, disposeObject3D });
-    boundaryBand.clear();
+    waterReflection.dispose();   // 反射 RT / uniform 复位（水面材质随后随场景释放）
     mapWorld.dispose();   // 地图资产段 teardown（owner 在 mapWorld；对象清单/顺序逐字保留）
     annotationScene.clearSessionProjection();   // 旧会话的 annotation 派生几何不得跨图残留（权威在 pane）
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
@@ -1168,7 +1167,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 渲染器就绪（startPlayback 编排调用；原 startPlayback 内联段，偏好失配语义原样）。 */
   function ensureRenderer() {
     if (!renderer) initScene();   // 渲染器惰性创建：此时画质档已定型（loader 选择/URL 参数）
-    else if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
+    if (DEBUG && renderer) installDebugProbes({ renderer, scene, camera, controls, cameraRuntime });
+    if (rendererCaps && (rendererCaps.logdepth !== LOGDEPTH || rendererCaps.dynres !== DYNRES
       || rendererCaps.stencil !== contactShadowCtl.wantsStencil())) {
       // 复用渲染器（换文件 reset 保留）但待开播偏好已改：按失配项热修正——
       // logdepth 是上下文级参数 → 重建渲染器（initScene 换新上下文，dynres 同步重装）；
@@ -1420,18 +1420,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 播放中不存在该入口）。
     setLogdepth: (on) => {
       LOGDEPTH = !!on;
-      persistPref('pb_logdepth', on);
+      persistBoolPref('pb_logdepth', on);
       store.logdepth = !!on;
     },
     setDynres: (on) => {
       DYNRES = !!on;
-      persistPref('pb_dynres', on);
+      persistBoolPref('pb_dynres', on);
       store.dynres = !!on;
     },
     setArmorHighlight: (on) => {
       if (perf && ARMOR_HIGHLIGHT !== !!on) perf.interrupt('armor-setting-change');
       ARMOR_HIGHLIGHT = !!on;
-      persistPref('pb_armor_highlight', on);
+      persistBoolPref('pb_armor_highlight', on);
       store.armorHighlight = !!on;
       if (!ARMOR_HIGHLIGHT) {
         // 关闭即释放 RT；模板与目标保留，重新打开时不再重新下载/构建。

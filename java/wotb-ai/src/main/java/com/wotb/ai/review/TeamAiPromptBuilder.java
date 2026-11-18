@@ -31,14 +31,14 @@ public final class TeamAiPromptBuilder {
     private TeamAiPromptBuilder() {
     }
 
-    // ===== 包内 forwarder：新逻辑在 TeamEvidenceFormatter（契约测试直接引用） =====
+    // Package compatibility forwarders; structured roster facts live in TeamRosterFormatter.
 
     static String structuredTankFacts(final long tankId) {
-        return TeamEvidenceFormatter.structuredTankFacts(tankId);
+        return TeamRosterFormatter.structuredTankFacts(tankId);
     }
 
     static String extraInfoFact(final String extraInfo) {
-        return TeamEvidenceFormatter.extraInfoFact(extraInfo);
+        return TeamRosterFormatter.extraInfoFact(extraInfo);
     }
 
     // ---- 向后兼容的重载（无 token 估算，适用于测试等） ----
@@ -91,7 +91,7 @@ public final class TeamAiPromptBuilder {
         // 先构建 HPF：对方阵容属权威结算且体量很小（≤7 行），与本队事实同为 mandatory，
         // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
         // 因此必须在 header 写出 unitLimitations 之前完成。
-        final TeamEvidenceFormatter.BudgetWriter hpfTemp = new TeamEvidenceFormatter.BudgetWriter();
+        final TeamPromptBudgetWriter hpfTemp = new TeamPromptBudgetWriter();
         final Map<Long, PlayerResult> playersByAccount = new HashMap<>();
         if (context.battle() != null && context.battle().players != null) {
             for (final PlayerResult p : context.battle().players) {
@@ -100,18 +100,18 @@ public final class TeamAiPromptBuilder {
                 }
             }
         }
-        TeamEvidenceFormatter.appendHighPriorityFacts(
+        TeamBattleEvidenceFormatter.appendHighPriorityFacts(
                 hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations),
                 playersByAccount);
-        if (!TeamEvidenceFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
+        if (!TeamRosterFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
             // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
         }
         final String hpfBlock = hpfTemp.content();
-        final String priorBlock = TeamEvidenceFormatter.priorSection(
+        final String priorBlock = TeamPriorFormatter.priorSection(
                 prior, context.perspectiveTeam(),
                 context.battle() != null
-                        ? TeamEvidenceFormatter.resolveDisplayLabel(context.battle().players, context.perspectiveTeam())
+                        ? TeamRosterFormatter.resolveDisplayLabel(context.battle().players, context.perspectiveTeam())
                         : "");
 
         // 构建 header
@@ -124,9 +124,9 @@ public final class TeamAiPromptBuilder {
         if (context.battle() != null) {
             // user-facing 名称只使用 backend display labels；
             // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
-            final String teamLabel = TeamEvidenceFormatter.resolveDisplayLabel(
+            final String teamLabel = TeamRosterFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
-            final String opponentLabel = TeamEvidenceFormatter.resolveOpponentDisplayLabel(
+            final String opponentLabel = TeamRosterFormatter.resolveOpponentDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
             // display label：无可靠 clan 时输出 (none)，prompt 规则要求正文称「我方/对方」；
             // 不使用 quoteData 的 UNKNOWN fallback（避免把机器标签当队名泄漏给 LLM/用户）
@@ -136,10 +136,10 @@ public final class TeamAiPromptBuilder {
                     StringUtils.hasText(opponentLabel) ? TeamEvidenceFormatter.quoteData(opponentLabel) : "(none)").append("\n");
             headerBuf.append("map=").append(TeamEvidenceFormatter.quoteData(TeamEvidenceFormatter.resolveMapName(context.battle().mapName))).append("\n");
             headerBuf.append("durationSec=").append(TeamEvidenceFormatter.formatNullable(context.battle().durationS)).append("\n");
-            final String result = TeamEvidenceFormatter.resolveTeamResult(
+            final String result = TeamOutcomeFormatter.resolveTeamResult(
                     context.battle(), context.perspectiveTeam(), teamLabel);
             headerBuf.append("result=").append(result).append("\n");
-            headerBuf.append("resultSource=").append(TeamEvidenceFormatter.resolveTeamResultSource(
+            headerBuf.append("resultSource=").append(TeamOutcomeFormatter.resolveTeamResultSource(
                     context.battle(), context.perspectiveTeam())).append("\n");
         }
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
@@ -165,7 +165,7 @@ public final class TeamAiPromptBuilder {
         }
 
         // 写入所有内容
-        final TeamEvidenceFormatter.BudgetWriter writer = new TeamEvidenceFormatter.BudgetWriter();
+        final TeamPromptBudgetWriter writer = new TeamPromptBudgetWriter();
         writer.appendRequired(headerBlock);
         writer.appendRequired(priorBlock);
         writer.appendRequiredBlock(hpfBlock);
@@ -183,11 +183,11 @@ public final class TeamAiPromptBuilder {
             final boolean includePointsSituation,
             final String timelineBlock
     ) {
-        final TeamEvidenceFormatter.BudgetWriter optTemp = new TeamEvidenceFormatter.BudgetWriter();
+        final TeamPromptBudgetWriter optTemp = new TeamPromptBudgetWriter();
         if (timelineBlock != null && !timelineBlock.isBlank()) {
             optTemp.append(timelineBlock);
         }
-        TeamEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
+        TeamBattleEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName,
                 context.battle(), context.perspectiveTeam(), List.copyOf(limitations));
         // 敌方最后已知位置（观测子集）：与其它 optional 证据同级，超预算时整体被裁剪
@@ -197,7 +197,7 @@ public final class TeamAiPromptBuilder {
             optTemp.append("\n" + enemyPositions);
         }
         // 逐成员掉血窗口（事件流观测子集）：与 OBSERVED 聚合同一覆盖率口径
-        TeamEvidenceFormatter.appendMemberDamageReceivedWindows(
+        TeamBattleEvidenceFormatter.appendMemberDamageReceivedWindows(
                 optTemp,
                 context.battle(),
                 context.features() == null ? List.of() : context.features().members(),
@@ -205,7 +205,7 @@ public final class TeamAiPromptBuilder {
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：完整区块，超预算时整体移除
         if (includePointsSituation) {
-            TeamEvidenceFormatter.appendPointsSituation(
+            TeamOutcomeFormatter.appendPointsSituation(
                     optTemp,
                     context.battle(),
                     context.reconstruction(),

@@ -11,6 +11,9 @@ const { storeShotsForViewer, shotViewerQuery } = vi.hoisted(() => ({
 vi.mock('../scene/agentData.js', () => ({
   storeShotsForViewer,
   shotViewerQuery,
+  // 真实 annotateMountedConfigs（shotHandoff）读取的资产面；逐车 Promise 由集成用例控制。
+  assetProvider: { json: vi.fn() },
+  fetchShotTankData: vi.fn(),
 }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
@@ -27,9 +30,19 @@ vi.mock('../replay-local/canonical/facts', () => ({
 }))
 const handoff = vi.hoisted(() => ({
   buildPitchLimits: vi.fn(async () => ({ Alpha: { dep: 15, ele: 7 } })),
-  annotateMountedConfigs: vi.fn(async () => {}),
+  annotateMountedConfigs: vi.fn(),
 }))
-vi.mock('../scene/shotHandoff.ts', () => handoff)
+// 只替换俯仰锚定（避免真实资产请求）；搭载配置富化走真实实现，让交接快照的
+// config_idx 由生产代码写入，而不是被 mock 掉（评审 4597024398）。
+vi.mock('../scene/shotHandoff.ts', async (importOriginal) => {
+  const actual = await importOriginal()
+  handoff.annotateMountedConfigs.mockImplementation(actual.annotateMountedConfigs)
+  return {
+    ...actual,
+    buildPitchLimits: handoff.buildPitchLimits,
+    annotateMountedConfigs: handoff.annotateMountedConfigs,
+  }
+})
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key, params) => {
   if (!params || typeof params !== 'object') return key
@@ -40,6 +53,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: i18n.t }) }))
 
 import ReplayEventStreamPane from './ReplayEventStreamPane.vue'
 import { parseAgentShotsFromBytes, enrichShotsFromRoster } from '../api/agent-replay-facets.js'
+import { assetProvider } from '../scene/agentData.js'
 
 const FACET = {
   shots: [
@@ -69,6 +83,8 @@ function mountPane({ session = makeSession(), navigate = vi.fn(), active = true 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 逐车资产实现只属于设置它的用例，避免跨用例残留（actual annotate 会读它）。
+  assetProvider.json.mockReset()
 })
 
 describe('ReplayEventStreamPane', () => {
@@ -271,6 +287,47 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     // 交接数组包含全部两行（都带 config 证据），而非只有选中行
     expect(handoff.annotateMountedConfigs.mock.calls[0][0]).toHaveLength(2)
+  })
+
+  it('有界等待到期时，已返回车型的配置证据保留在交接快照（评审 4597024398 回归）', async () => {
+    const navigate = vi.fn()
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [
+        { time_s: 30, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 100, target_tank_id: 200 },
+        { time_s: 45, shooter_eid: 1, target_eid: 2, ball_a: [0, 0, 0], shooter_tank_id: 100, target_tank_id: 200 },
+        { time_s: 60, shooter_eid: 1, target_eid: 3, ball_a: [0, 0, 0], shooter_tank_id: 100, target_tank_id: 300 },
+      ],
+    })
+    shotViewerQuery.mockResolvedValue({ shooter: '100', shot: '0' })
+    const facet = {
+      ...FACET,
+      vehicles: [
+        { eid: 1, nickname: 'Alpha', tank_id: 100, turret_local: 5, gun_local: 'gun_a' },
+        { eid: 2, nickname: 'Bravo', tank_id: 200, turret_local: 6, gun_local: 'gun_b' },
+        { eid: 3, nickname: 'Charlie', tank_id: 300, turret_local: 7, gun_local: 'gun_c' },
+      ],
+    }
+    assetProvider.json.mockImplementation((url) => {
+      if (url === '/tank/100.json') return Promise.resolve({ configs: [{ turret_local: 5, gun_local: 'gun_a' }] })
+      if (url === '/tank/200.json') return Promise.resolve({ configs: [{ turret_local: 6, gun_local: 'gun_b' }] })
+      // 无关车型永久挂起：不得抹掉 100/200 已就绪的证据
+      if (url === '/tank/300.json') return new Promise(() => {})
+      return Promise.resolve(null)
+    })
+    const w = mountPane({ session: makeSession(facet), navigate })
+    await flushPromises()
+    await w.find('[data-kind="shot"]').trigger('click')
+    await new Promise((r) => setTimeout(r, 1600))
+    await flushPromises()
+    expect(storeShotsForViewer).toHaveBeenCalledTimes(1)
+    const rows = storeShotsForViewer.mock.calls[0][0]
+    expect(rows).toHaveLength(3)
+    // 逐车增量提交：首发/下一发拿到 100→200 的实际配置，300 只影响它自己的目标字段
+    expect([rows[0].shooter_config_idx, rows[0].target_config_idx]).toEqual([0, 0])
+    expect([rows[1].shooter_config_idx, rows[1].target_config_idx]).toEqual([0, 0])
+    expect(rows[2].shooter_config_idx).toBe(0)
+    expect(rows[2].target_config_idx).toBeUndefined()
+    expect(navigate).toHaveBeenCalledTimes(1)
   })
 
   it('join/leave/channel_created 保留动作区别（评审 4595675895）', async () => {

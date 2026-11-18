@@ -284,7 +284,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 ## 12. 前端展示
 
-- `ReplayWorkspace.vue`：工作台编排层（五种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果。
+- `ReplayWorkspace.vue`：工作台编排层（六种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果。
 - AI Review 权限：已登录且 realm role 含 `wotbtools-user` 或 `wotbtools-admin`；登录成功但缺 role 时渲染显式权限态，不静默隐藏入口。投影未就绪时显示准备中/失败状态，失败可触发重建投影。
 - `FileDrop.vue`：全站唯一的上传面，超限拒绝；回放列表的单个移除与清空全部由 `ReplayCollectionManager.vue` 提供，AI 复盘分析 BattlePicker 选中的当前场次。
 - `AnalysisResultPanel.vue`：个人路径渲染最终 Markdown 报告；团队路径按 `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors` 分区渲染，空的可选区块不渲染；身份使用 `done.teamPlayers` 的 authoritative 映射，缺失时显示未知玩家/未知坦克。

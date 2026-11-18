@@ -3,7 +3,11 @@
 // 复位语义、sunUniforms 写入。用真 THREE 灯泡对象测（模块导入 three，vitest 环境可实例化）。
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from './mapLighting.ts'
+import {
+  MAX_DYNAMIC_LIGHTS, applyDynamicLights, applyMapLighting, lightPositionScene,
+  resetDynamicLights, resetMapLighting, selectDynamicLights, updateDynamicLights,
+  DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY,
+} from './mapLighting.ts'
 import { sunUniforms } from './sceneryMaterials.ts'
 
 function rig() {
@@ -86,5 +90,143 @@ describe('mapLighting：应用与归一（faust 真值回归）', () => {
     expect(sunUniforms.uSunDirScene.value.y).toBeCloseTo(-1, 6)
     expect(sunUniforms.uSunColor.value.x).toBeCloseTo(1, 6)
     expect(r.scene.environmentIntensity).toBeCloseTo(1.0, 6)
+  })
+})
+
+
+// ---- 动态光源（lighting.json dynamicLights，2026-11 上游审计 A5）----
+
+const LIGHT = (over = {}) => ({
+  name: 'spot.sc2',
+  type: 2, flags: 3,
+  intensity: 1.0, radius: 18.0, falloffExponent: 1.3,
+  color: [0.145, 0.487, 1.0, 1.0],
+  ambient: [0, 0, 0, 1],
+  position: [112.19, -179.49, 38.49],
+  rotation: [0, 0, 0.878, -0.478],
+  ...over,
+})
+
+describe('selectDynamicLights（性能预算，非语义判据）', () => {
+  it('按 亮度×半径 降序取前 max；并列按文件序稳定', () => {
+    const recs = [LIGHT({ radius: 5 }), LIGHT({ radius: 20 }), LIGHT({ radius: 10 })]
+    expect(selectDynamicLights(recs).map((r) => r.radius)).toEqual([20, 10, 5])
+    expect(selectDynamicLights(recs, 2).length).toBe(2)
+  })
+
+  it('fail-closed：缺位置/色/半径/强度的记录被剔除', () => {
+    const recs = [
+      LIGHT(),
+      LIGHT({ position: [1, 2] }),                 // 维度不符
+      LIGHT({ position: [1, NaN, 3] }),            // 非有限
+      LIGHT({ color: [] }),
+      LIGHT({ radius: 0 }),
+      LIGHT({ intensity: -1 }),
+      null,
+    ]
+    expect(selectDynamicLights(recs).length).toBe(1)
+    expect(selectDynamicLights(null)).toEqual([])
+  })
+})
+
+describe('lightPositionScene（客户端世界系 → 回放场景系，qFrame 同式）', () => {
+  it('(x,y,z) → (−x, z, y)；iceworld 实测值回归', () => {
+    expect(lightPositionScene([1, 2, 3])).toEqual([-1, 3, 2])
+    const [x, y, z] = lightPositionScene([112.192, -179.493, 38.494])
+    expect(x).toBeCloseTo(-112.192, 3)
+    expect(y).toBeCloseTo(38.494, 3)
+    expect(z).toBeCloseTo(-179.493, 3)
+  })
+})
+
+describe('applyDynamicLights / resetDynamicLights（真 THREE.Scene）', () => {
+  it('建 PointLight：色/半径/位置按映射；亮度 = intensity×radius×0.35÷expo', () => {
+    const scene = new THREE.Scene()
+    const lights = applyDynamicLights(scene, [LIGHT()], 2.0)
+    expect(lights.length).toBe(1)
+    const l = lights[0]
+    expect(l).toBeInstanceOf(THREE.PointLight)
+    expect(l.distance).toBe(18.0)
+    expect(l.decay).toBe(1)
+    expect(l.intensity).toBeCloseTo(1.0 * 18.0 * 0.35 / 2.0, 6)
+    expect(l.position.x).toBeCloseTo(-112.19, 3)
+    expect(l.position.y).toBeCloseTo(38.49, 3)
+    expect(l.position.z).toBeCloseTo(-179.49, 3)
+    expect(scene.children).toContain(l)
+    resetDynamicLights(scene)
+    expect(scene.children.length).toBe(0)
+  })
+
+  it('超预算图（iceworld 71 盏）截到 MAX_DYNAMIC_LIGHTS；重入先摘旧灯', () => {
+    const scene = new THREE.Scene()
+    const many = Array.from({ length: 71 }, (_, i) => LIGHT({ position: [i, 0, 0] }))
+    const first = applyDynamicLights(scene, many, 1)
+    expect(first.length).toBe(MAX_DYNAMIC_LIGHTS)
+    expect(scene.children.length).toBe(MAX_DYNAMIC_LIGHTS)
+    const second = applyDynamicLights(scene, [LIGHT()], 1)
+    expect(second.length).toBe(1)
+    expect(scene.children.length).toBe(1)   // 旧的 16 盏已摘除（非叠加）
+    resetDynamicLights(scene)
+  })
+
+  it('无记录 = 无灯；applyMapLighting 路径下 dynamicLights 随 lighting.json 一起生效', () => {
+    const scene = new THREE.Scene()
+    expect(applyDynamicLights(scene, null, 1).length).toBe(0)
+    expect(scene.children.length).toBe(0)
+    // applyMapLighting 的桩 scene 需支持 add/userData（真实 Scene）
+    const r = rig()
+    const realScene = new THREE.Scene()
+    applyMapLighting({ ...r, scene: realScene, lighting: { ...FAUST, dynamicLights: [LIGHT()] } })
+    expect(realScene.children.length).toBe(1)
+    // faust expo = 3/8 = 0.375 ⇒ 灯亮 ÷ expo（与 hemi 同通道口径）
+    const lamp = realScene.children[0]
+    expect(lamp.intensity).toBeCloseTo(1.0 * 18.0 * 0.35 / 0.375, 6)
+    resetMapLighting({ ...r, scene: realScene })
+    expect(realScene.children.length).toBe(0)
+  })
+})
+
+
+describe('updateDynamicLights（固定池逐帧近邻换绑）', () => {
+  it('池大小恒定；相机移到哪，最近的灯就绑到池里', () => {
+    const scene = new THREE.Scene()
+    // 两端各一盏：x=+200 与 x=−200（客户端系）；场景系 x 取负 ⇒ 场景里也在 ±200
+    const east = LIGHT({ position: [200, 0, 0], radius: 10 })
+    const west = LIGHT({ position: [-200, 0, 0], radius: 10 })
+    const lights = applyDynamicLights(scene, [east, west], 1)
+    expect(lights.length).toBe(2)                        // 池 = min(16, 2)
+    // 相机在 +x 端：两盏都在池里（池未满时全部绑），但位置各自对
+    updateDynamicLights(scene, { x: 200, y: 0, z: 0 })
+    const xs = lights.map((l) => l.position.x).sort((a, b) => a - b)
+    expect(xs[0]).toBeCloseTo(-200, 6)
+    expect(xs[1]).toBeCloseTo(200, 6)
+    resetDynamicLights(scene)
+  })
+
+  it('池满时只绑最近 MAX 盏；相机移动后绑定集合随之更替', () => {
+    const scene = new THREE.Scene()
+    const many = Array.from({ length: 40 }, (_, i) => LIGHT({ position: [i * 10, 0, 0], radius: 5 }))
+    const lights = applyDynamicLights(scene, many, 1)
+    expect(lights.length).toBe(MAX_DYNAMIC_LIGHTS)
+    updateDynamicLights(scene, { x: 0, y: 0, z: 0 })
+    const nearLeft = lights.map((l) => l.position.x).sort((a, b) => a - b)
+    // 场景 x = −客户端 x：相机在 0 ⇒ 最近 16 盏 = 客户端 0..150 ⇒ 场景 0..−150
+    expect(Math.min(...nearLeft)).toBeCloseTo(-150, 6)
+    expect(Math.max(...nearLeft)).toBeCloseTo(0, 6)
+    updateDynamicLights(scene, { x: -390, y: 0, z: 0 })  // 移到客户端 x=390 端
+    const nearRight = lights.map((l) => l.position.x).sort((a, b) => a - b)
+    expect(Math.min(...nearRight)).toBeCloseTo(-390, 6)
+    expect(Math.max(...nearRight)).toBeCloseTo(-240, 6)  // 客户端 x=240..390
+    resetDynamicLights(scene)
+  })
+
+  it('无池/无相机位置 = no-op；复位清掉池与源表', () => {
+    const scene = new THREE.Scene()
+    updateDynamicLights(scene, { x: 0, y: 0, z: 0 })     // 无池 → 不抛
+    applyDynamicLights(scene, [LIGHT()], 1)
+    updateDynamicLights(scene, null)
+    resetDynamicLights(scene)
+    expect(scene.userData.__dynamicLights).toBeUndefined()
+    expect(scene.userData.__dynamicLightSource).toBeUndefined()
   })
 })

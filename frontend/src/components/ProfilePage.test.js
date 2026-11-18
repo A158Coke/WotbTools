@@ -65,7 +65,7 @@ Object.defineProperty(api, 'authenticated', {
  * 这里刻意保留 **legacy boolean 语义**（= Android 2.1.0 APK 里那份前端的行为，也正是本 bug
  * 的触发条件）：页面必须对「历史 promise resolve true」免疫。一旦有组件再把这个值当成
  * session truth，下面的 stale-init 回归测试就会失败。
- * （生产代码里 `initPromise` 已不再 resolve 值，见 useAuth.test.js 的契约断言。）
+ * （生产代码里 `initPromise` 已不再 resolve 值，见 useAuth.providers.test.js 的契约断言。）
  */
 let initSettlement = null
 function staleInitPromise() {

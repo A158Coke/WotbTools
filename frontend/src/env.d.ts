@@ -48,4 +48,23 @@ interface Window {
   __camera?: unknown
   __controls?: unknown
   __setFollow?: unknown
+  /** ?debug 诊断探针（playback/debugProbes.ts 写入；仅 debug 构建挂载） */
+  __threeCamera?: unknown
+  __renderInfo?: () => { calls: number; triangles: number }
+  __cameraInfo?: () => { pos: number[] | null; mode: string | null }
+  __debugView?: (px: number, py: number, pz: number, tx: number, ty: number, tz: number) => boolean
+  __rows?: (fracs: number[]) => number[][] | null
+  __forceFrame?: () => { calls: number; triangles: number; pixel: number[]; size: number[] } | null
+  /** 水面反射运行时句柄（waterReflectionRuntime.ts ?debug 写入） */
+  __waterReflection?: unknown
+  /** Tauri 运行时标记（webview 内由宿主注入） */
+  __TAURI__?: unknown
+  /** 地图资产 ?debug 诊断面（mapAssets/mapWorld/sceneryAssembly 写入） */
+  __mapBorderNodes?: string[]
+  __waterMerged?: unknown
+  __waterMats?: unknown
+  __grassStage?: string
+  __grass?: unknown
+  __mapBorderMaterials?: number
+  __waterMaterials?: number
 }
