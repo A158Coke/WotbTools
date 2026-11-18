@@ -10,6 +10,19 @@ describe('locale message composition', () => {
     expect(messages.en.aiFeedback.model).toBe('Model')
     expect(messages.ru.aiFeedback.model).toBe('Модель')
   })
+  it('keeps catch/defend raw-target event copy in all locales', () => {
+    // payload 语义未闭合：UI 用专用 raw 文案展示原始目标，不得断言为据点编号。
+    for (const locale of ['zh', 'en', 'ru']) {
+      for (const key of ['cmd_catch_point_raw', 'cmd_defend_point_raw']) {
+        const message = messages[locale].eventStream[key]
+        expect(message, `${locale} eventStream.${key}`).toBeTruthy()
+        expect(message).toContain('{who}')
+        expect(message).toContain('{target}')
+      }
+    }
+    expect(messages.zh.eventStream.cmd_catch_point_raw).toContain('夺取据点指令')
+    expect(messages.zh.eventStream.cmd_defend_point_raw).toContain('防守据点指令')
+  })
   it('compiles every message in every locale', () => {
     // vue-i18n 在渲染时才编译消息；未转义的 `@`（linked message）/非法 `|` 会在
     // 切语言后抛 SyntaxError，表现为整块 UI 消失（2026-10-27 英文 pen_far 事故）。
