@@ -187,7 +187,7 @@ PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized first-party source file'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-unlisted "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-unlisted "first-party production source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Exactly at the budget passes: the limit is inclusive.
 git switch -q -C source-line-at-limit "$base"
@@ -208,22 +208,68 @@ git switch -q -C source-line-preexisting-unchanged "$base"
 mkdir -p frontend/src
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/old-large.js").write_text("// existing\\n" * 601)
+Path("frontend/src/old-large.js").write_text("// existing\n" * 601)
 PY
 git add frontend/src/old-large.js
 git commit -q -m 'baseline with a pre-existing large source file'
 legacy_base=$(git rev-parse HEAD)
-printf 'unrelated\\n' > unrelated.txt
+printf 'unrelated\n' > unrelated.txt
 git add unrelated.txt
 git commit -q -m 'unrelated source-free edit'
 head=$(git rev-parse HEAD)
 expect_pass source-line-preexisting-unchanged env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-printf '// changed\\n' >> frontend/src/old-large.js
+printf '// changed\n' >> frontend/src/old-large.js
 git add frontend/src/old-large.js
 git commit -q -m 'modify a still oversized legacy source file'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-preexisting-modified "first-party frontend source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-preexisting-modified "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
+
+# Backend Java production code follows the same limit as frontend code.
+git switch -q -C source-line-backend-over-limit "$base"
+mkdir -p java/wotb-web/src/main/java/com/wotb/web
+python3 - <<'PY'
+from pathlib import Path
+Path("java/wotb-web/src/main/java/com/wotb/web/BigService.java").write_text("// java\\n" * 501)
+PY
+git add java/wotb-web/src/main/java/com/wotb/web/BigService.java
+git commit -q -m 'add over-budget Java backend source'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-backend-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+git switch -q -C source-line-backend-at-limit "$base"
+mkdir -p java/wotb-core/src/main/java/com/wotb/core
+python3 - <<'PY'
+from pathlib import Path
+Path("java/wotb-core/src/main/java/com/wotb/core/AtLimit.java").write_text("// java\\n" * 500)
+PY
+git add java/wotb-core/src/main/java/com/wotb/core/AtLimit.java
+git commit -q -m 'add Java backend source exactly at the budget'
+head=$(git rev-parse HEAD)
+expect_pass source-line-backend-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+# Backend Keycloak providers and the Android native client are production code.
+git switch -q -C source-line-keycloak-over-limit "$base"
+mkdir -p keycloak-wargaming-provider/src/main/java/com/wotb
+python3 - <<'PY'
+from pathlib import Path
+Path("keycloak-wargaming-provider/src/main/java/com/wotb/BigProvider.java").write_text("// java\\n" * 501)
+PY
+git add keycloak-wargaming-provider
+git commit -q -m 'add over-budget Keycloak provider source'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-keycloak-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+
+git switch -q -C source-line-android-over-limit "$base"
+mkdir -p android/app/src/main/java/com/wotbtools/app
+python3 - <<'PY'
+from pathlib import Path
+Path("android/app/src/main/java/com/wotbtools/app/BigController.kt").write_text("// kotlin\\n" * 501)
+PY
+git add android/app/src/main/java
+git commit -q -m 'add over-budget Android Kotlin source'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-android-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Tests, declaration files and generated transport are not production source
 # and stay out of scope even when they are large.
@@ -418,7 +464,7 @@ git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/flash.js
 git commit -q -m 'shrink the file and remove the temporary entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-history-evasion "first-party frontend source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-history-evasion "first-party production source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
 
 # Deleting a legacy file without retiring its entry leaves a dead exception
 # that could shield a future re-created file at the same path.
