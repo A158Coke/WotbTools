@@ -292,6 +292,22 @@ rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\
 
 新增 production type/file 必须 repo-wide 搜索可复用实现、检查第二 SSOT 与单调用方 mechanical wrapper。等价实现或第二 SSOT → BLOCKER；纯 speculative abstraction → MAJOR，能安全收缩则修复。
 
+#### jscpd 重复代码证据
+
+jscpd 是本项的重复代码证据工具，不是独立 gate。存在 task-related source change 时，从 `frontend/` 运行固定依赖版本：
+
+```bash
+pnpm run review:duplicates -- --baseline-from-ref <main-ref>
+```
+
+配置覆盖 Java、Kotlin、JavaScript、TypeScript、Vue、Python 的仓库源码根；报告写入 gitignored 的 `tmp/jscpd/review-with-docs.json`。jscpd 会扫描候选树和基线树，使用报告中 `duplicates[].isNew` / `statistics.total.newClones` 辅助识别相对基线新增候选。它不是增量扫描。官方 `--changed` 只接受当前 staged、unstaged、untracked 文件，仍扫描全树，不能代替 PR main-ref 对比。每轮 Review 初次运行一次；修复 Finding 后只对受影响候选做定向复核，确有必要才重跑全树。
+
+对候选先确认至少一侧属于本次 candidate tree，再打开报告双方行范围和实际源码，repo-wide 搜索已有实现并确认现有 owner。报告路径是绝对路径；提交 Review finding 时改写为仓库相对路径。检查候选是否是跨文件/模块重复，及其是否造成第二 SSOT、行为漂移或违反既有架构契约。重复可属于独立领域逻辑、协议结构、测试 setup/fixture；提取公共实现也可能增加耦合。不得仅据相似度或命中要求抽象。
+
+Finding 必须列出：duplicate locations、相同类型/匹配行数与 token 数等 similarity evidence、existing owner、impact、recommendation、severity、intentional-duplication / false-positive assessment。Severity 沿用 Layer C：只有确认新增重复导致第二 SSOT、真实行为漂移风险或既有架构契约违例，才按其实际影响判 BLOCKER / MAJOR；其它命中人工判断并至多按普通维护风险处理。单纯命中永不自动令 Review FAIL。
+
+无相关 source candidate 时记录 N/A 和范围理由。CLI 缺失、扫描错误或 `--fail-on-empty` 失败均是工具失败，不是零重复；明确报告并对候选执行人工 reuse/SSOT 检查，按 Review 既有覆盖与证据规则处理。jscpd 不改变 OCR、Fallow 或唯一 final PASS 职责。
+
 ### A6. UI Change Gate
 
 含 UI / CSS / 响应式布局 / 前端状态实现修改的 PR（contract 正文见 `.agents/playbooks/frontend-architecture.md`）：检查是否修改正确 owner、是否新增重复实现 / CSS override / 第二状态源、是否留下已被替代的代码、是否出现无必要的新 `!important`。CSS 变更影响实际页面渲染时，不能仅凭 Typecheck / Vitest / Stylelint 判定视觉行为正确，须有与改动风险相称的浏览器 runtime evidence（computed style / 布局几何 / 相关 browser 测试）；纯文案与不影响布局的改动按实际风险选择验证范围，不要求全站测试。

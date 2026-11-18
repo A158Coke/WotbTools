@@ -40,6 +40,23 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 - **ripgrep（`rg`）**：Agent / Skill 的仓库搜索、reuse audit 与 review gate 的本地前置，必须在 `PATH` 中可调用（自检 `rg --version`）；这里只声明能力依赖，不固定具体二进制版本。搜索必须显式列出目标路径：默认根递归会跳过 `.github/`、`.agents/`、`.opencodereview/` 等隐藏目录，所以零命中不能证明「无引用」。不要用无差别的 `rg --hidden .` 替代定向搜索——它会把 `.worktrees/**` 等工作副本带进结果，产生重复证据。
 - 不要使用任何公司 token、凭据或基础设施。
 
+### 重复代码检测（jscpd）
+
+仓库使用 frontend pnpm 工具链中的固定开发依赖 `jscpd@5.4.3`，为 Review With Docs 提供跨语言重复代码证据；它不是 CI 阈值或独立质量判定。依赖只在 `frontend/package.json` 和唯一锁文件 `frontend/pnpm-lock.yaml` 中维护，沿用 pnpm 的 `strictDepBuilds` 与 `minimumReleaseAge` 策略。
+
+```bash
+cd frontend
+pnpm install
+pnpm run review:duplicates                         # 当前源码基线
+pnpm run review:duplicates -- --baseline-from-ref <main-ref>  # Review 中比较候选树与已验证基线
+pnpm run test:jscpd                                # 六语言、排除和失败语义 smoke 验证
+```
+
+配置 `.jscpd.json` 扫描 Java、Kotlin、JavaScript、TypeScript、Vue 与 Python 源码，包括测试代码；使用 jscpd mild 模式，最小候选为 5 行与 50 tokens（沿用工具默认最小克隆尺寸，不是重复率门槛）。Generated/generated-sources、vendor、node_modules、target/build/dist、minified/bundle/map 文件排除；二进制及配置未列入扫描语言的资产不参与检测。报告写到 gitignored 的 `tmp/jscpd/review-with-docs.json`，含行范围、片段、类型、行/token 数及统计；Review 报告中引用仓库相对路径。
+
+全树报告同时包含 production 与 test 文件。按路径把候选分为 production-production、test-test、mixed；测试夹具/setup 的重复单独评估，不让大量测试命中掩盖 production 候选。PR Review 使用 `--baseline-from-ref <main-ref>`，通过 `isNew` 标记相对基线的候选并仅审查与 candidate 文件相关的 pair。该模式扫描完整候选树和基线树，不是增量扫描；本机首次基线对比约 8 秒。历史候选不会仅因存在而阻断。
+
+阅读命中时确认双方真实源码、owner、领域语义、第二 SSOT/行为漂移风险与抽取成本。相似结构可能有独立含义，协议和测试也可能需要重复；jscpd 不判 Bug、不触发自动抽象、不设置全仓重复率阈值。报告缺失、CLI 错误或空扫描（`failOnEmpty`）必须作为检测失败报告，不可解释成零重复。
 常用命令：
 
 ```bash
