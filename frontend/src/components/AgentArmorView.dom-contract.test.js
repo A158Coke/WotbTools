@@ -612,7 +612,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
     expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链停在同一个收集边界（首个 Primary 含），该行为由
-    // penetration.test.js「收集链」用例驱动 calculate() 验证；本文件只锁依赖关系。
+    // penetration.heat-origin.test.js「收集链」用例驱动 calculate() 验证；本文件只锁依赖关系。
   })
   it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
     // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须

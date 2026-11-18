@@ -152,7 +152,7 @@ Roster 呈现只有一个响应式契约。非竖屏布局，包括手机横屏/
 
 物理队伍身份与 recorder 视角呈现保持区分。2D 与 3D 的 roster lanes 都通过 `scene/rosterState.ts#rosterLanesFor` 将 recorder allies 放在左侧、enemies 放在右侧；未知玩家仍是独立分组。`PlaybackRoster` 接收 `friendlyTeam` 并派生 friendly/enemy 标题以及 `--color-team-ally` / `--color-team-enemy` 颜色。物理 `team1` / `team2` keys 在数据中保持不变；在 recorder team 未知时，lane 排序回退为 Team 1 左 / Team 2 右，行颜色保持中性。`scene/rosterState.ts` 拥有 roster 的 state-at-time 投影（identity rows 只构建一次，`hp` / `dead` 按 `t` 重新投影）；label 呈现使用共享 Vue 组件和语义 CSS tokens。
 
-Playback 测试遵循这些所有权边界：map/marker/gesture 契约位于 `BattleMap.test.js`，control 契约位于 `PlaybackControls.test.js`，timeline 契约位于 `PlaybackTimeline.test.js`，HUD/mobile/panel 契约位于各自聚焦的组件测试套件，detail-panel 契约位于 `VehicleDetailsPanel.test.js`，纯 projection/clock 契约位于 `utils/playbackVehicleState.test.js` / `utils/playbackClock.test.js`。共享 playback fixtures 位于仅用于测试的 `playbackTestHarness.js`。`BattlePlayback.test.js` 与其余 `BattlePlayback.integration.test.js` 用例保留给跨组件/领域回归；呈现用例不在那里重复。
+Playback 测试遵循这些所有权边界：map/layer 契约位于 `BattleMap.layers.test.js`，tracer/zoom/pan/gesture 契约位于 `BattleMap.interactions.test.js`，vehicle-marker/label 契约位于 `BattleMap.markers.test.js`，control 契约位于 `PlaybackControls.test.js`，timeline 契约位于 `PlaybackTimeline.test.js`，HUD/mobile/panel 契约位于各自聚焦的组件测试套件，detail-panel 契约位于 `VehicleDetailsPanel.test.js`，纯 projection/clock 契约位于 `utils/playbackVehicleState.test.js` / `utils/playbackClock.test.js`。共享 playback fixtures 位于仅用于测试的 `playbackTestHarness.js`；BattleMap suites 使用 `src/test/BattleMapTestHelpers.js` 创建本地 map fixtures，`baseProps()` 每次返回新的数据对象。`BattlePlayback.test.js` 与其余 `BattlePlayback.integration.test.js` 用例保留给跨组件/领域回归；呈现用例不在那里重复。
 
 源码级 CSS 守卫对所有权不变量仍然有用，但最终布局行为不能从 CSS 文本推断。`pnpm run test:browser-layout` 会启动 CI runner 上可用的 Chrome/Chromium，加载真实的 shared/PC/tablet/mobile Playback stylesheets，并检查 1600×900 PC、1024×768 tablet、390×844 mobile 的真实 computed styles / geometry，外加一个跨形态隔离用例。该检查在 frontend CI 中先于生产构建运行。CSS 文本也无法体现*交互*真相，因此 `pnpm run test:browser-interaction` 覆盖另一半：它加载真实应用（router / AppShell / ReplayWorkspace / 每个 stylesheet，仅 stub 掉 Keycloak 边界），模拟 device metrics 与粗指针，驱动**真实输入管线**（原始 touch / mouse 事件，绝不用合成的 `click()`），并通过页面内事件记录证明真实点击目标**就是**预期控件。它覆盖 375×812 / 390×844 竖屏粗指针、740×360 横屏粗指针、1024×768 tablet、1600×900 desktop、capability switching、未认证登录失败的可见性 + 可重试性、`duration <= 0` 的 transport 不可用，以及竖屏→横屏旋转。其 `roster-geometry-*` 场景还会驱动真实 3D pane：注入 roster/kill-feed fixtures、recorder 视角 lane geometry、行内 HP 数字或回退百分比位于 bar 内且不被截断、display popover 保持在可见 pane 内并避开场景中心、各 block 开关确实移除其 block，以及 hide-all-UI 可恢复。这些 panel 交互使用 `clickElement()`，它将 scroll-into-view、`elementFromPoint` 遮挡检查和 `el.click()` 融合为单次页面内求值——在 fixture 注入的布局仍在稳定时，先从 driver 测坐标再点击是不稳定的，而 hit test 仍针对真实浏览器布局运行（透明 overlay 和遮挡仍会使其失败）。
 
@@ -192,6 +192,12 @@ XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的
 ### 坦克百科的地形机动指标
 
 百科参数区按硬地、中地、软地显示理论有效推重比（hp/t）和理论车体转速（°/s）。详情右列的加速图读取当前配装，默认展示三地形。「加入机动对比」携带当前车辆、模块和消耗品激活时刻。百科列表的「机动对比」打开空列表。对比页允许同车多配和调序，默认比较硬地。单车种子链接能在同版数据下还原，多车编辑结果通过浏览器标签页会话恢复。主页面的「返回」按钮保留进入时的百科路由，返回原列表筛选或原车辆详情及配装，添加车辆、配装与批量应用后仍使用同一来源。直接打开且没有有效来源的对比链接返回百科列表。
+
+比较表在桌面使用 220px 车辆列，窄屏为 200px，属性列保持可见。标准推重比、三地形理论有效推重比和履带适应性按统一十行模型关联，单位在组标题显示。图表独立占用页面可用宽度。表格左上入口编辑全局乘员技能，影响当前及以后添加的车辆。技能组件与原百科共用，机动配装不显示逐车技能和涂装，机动输入将涂装归零。百科页的涂装和技能功能保留原有入口。
+
+比较会话用 v2 文档保存 entries、crew 及可选 legacyCrewOverrides；继续兼容旧数组和 v1 单车 seed。旧车技能一致时提升为全局值，存在差异时保留各车结果并在统一面板列出。第一次确认统一后才替换差异，取消保留原设置。空车辆列表也保存技能。单车 seed 携带 v2 文档及技能；浏览器会话键依然属于当前标签页的存储，不提供跨设备多车分享服务。未知版本和无效技能显示恢复失败，后续创建新会话使用另一个键，原数据保留。
+
+清空车辆可撤销，恢复身份、顺序、完整配装、历史技能差异和图表的地形、隐藏项、游标、窗口、缩放、搜索及交点选择。技能变更与批量应用也使用一次撤销事务，新编辑使前次撤销失效。曲线分批加载或重算时保留“只看此车”，加载完成后才判断目标是否已移除并退出单独显示。大屏属于临时界面状态，撤销不会主动重新进入大屏。当前速度读数对全体可见曲线按未舍入速度稳定降序，紧凑提示显示前四项并提供完整读数表，图例顺序保持稳定。鼠标查看曲线时按住 Alt 固定当前时刻并临时展开全部可见读数，浮层限制高度并支持滚动；松开、离开图表、窗口失焦或切换标签时收起。输入控件不占用该快捷键，移动端保留独立的全部读数入口。全部读数弹窗将时间与滑轨分行，滑轨位置不随时间文本宽度变化；输入按帧合并，释放、关闭及快照时提交最后值，弹窗打开时缓存被遮罩图表的时刻，关闭后同步共享游标。
 
 选车弹窗支持暂存多选。全选和取消选择作用于当前完整筛选结果，跨筛选保留勾选并显示隐藏选中数，确认后一次加入全部实例。单车仍可重复加入。独立对比页的配装弹窗分别提供装备、补给与消耗品的批量预览，默认选中其他车辆，可逐车取消。九宫格通过等级、分组及装备 stem 对号，不支持的槽位保留原值。补给和消耗品优先匹配目标可用的同一物品，大小食品按标签和乘员加成匹配唯一同档食品。目标车容量不足或任一物品不支持时保留整组。消耗品仅同步携带，仍保留的物品沿用目标自己的激活时刻。批量应用后可立即撤销，恢复各目标原始配置和时序。大屏的「专注曲线」可收起图例，切回后可继续检索与查看曲线。
 

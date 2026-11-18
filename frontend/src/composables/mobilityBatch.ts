@@ -13,6 +13,7 @@ interface BatchSlot { group: string; level: number; left?: string | null; right?
 export interface BatchSetup {
   entry?: ComparisonEntry
   name?: string
+  rawSelection?: SetupResolved
   selection: SetupResolved
   modules: Parameters<typeof moduleIdentity>[0]
   slots: BatchSlot[]
@@ -39,7 +40,9 @@ function same(a: readonly unknown[], b: readonly unknown[]) {
 }
 
 function configured(target: ComparisonEntry, context: BatchSetup, selection: SetupResolved): ComparisonEntry {
-  return { ...target, config: selectionQuery(selection), stems: moduleIdentity(context.modules, selection) }
+  const raw = context.rawSelection || context.selection
+  return { ...target, config: selectionQuery({ ...selection, skills: raw.skills,
+    conditionalSkills: raw.conditionalSkills, camouflage: raw.camouflage }), stems: moduleIdentity(context.modules, selection) }
 }
 
 function mapItems(group: 'consumables' | 'provisions', source: BatchSetup, target: ComparisonEntry, context: BatchSetup): BatchResult {

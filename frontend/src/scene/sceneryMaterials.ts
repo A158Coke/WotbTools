@@ -4,7 +4,7 @@
  * 重实现路线已两次偏离（灰块/采样翻车），故提取为单源模块。
  *
  * 从 playbackScene.js 原样平移（2026-10-07，逐字未改）；守卫测试
- * sceneryMaterials.test.js 锁定行为，改这里必须同步过测。
+ * sceneryMaterials.*.test.js 锁定行为，改这里必须同步过测。
  */
 import * as THREE from 'three'
 import type { Mesh, MeshLambertMaterial, MeshStandardMaterial, Object3D, ShaderMaterial, Texture } from 'three'
@@ -488,7 +488,7 @@ export function makeLightmappedMaterial(m: GltfSceneMaterial, atlasTex: Texture 
         #include <logdepthbuf_vertex>
         // 世界位置/法线（环境反射的反射向量用世界系，客户端 materials-vp.sl:274-276 同式）：
         // ⚠️ 声明了 varying 就必须真的赋值——只写不声明/只声明不写都会让整材质编译失败，
-        // 页面上只表现为"物体不渲染"。守卫测试锁这两条（scene/sceneryMaterials.test.js）。
+        // 页面上只表现为"物体不渲染"。守卫测试锁这两条（scene/sceneryMaterials.*.test.js）。
         vWorldP = wp.xyz;
         vWorldN = normalize(mat3(im) * normal);
         vUv = uv;

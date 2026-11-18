@@ -134,7 +134,7 @@ class ReplayFactsCodecTest {
     /**
      * 泛型 record 组件必须按元素类型解码：{@code ShotResultEvent.components} 是
      * {@code List<ComponentResult>}，若解码器用擦除后的 raw class，会得到
-     * {@code List<LinkedHashMap>}，生产消费方（{@code PlayerEvidenceFormatter} 的
+     * {@code List<LinkedHashMap>}，生产消费方（{@code PlayerReplayEventFormatter} 的
      * typed for-each）随即 {@code ClassCastException}。
      */
     @Test

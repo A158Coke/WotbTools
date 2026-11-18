@@ -59,7 +59,7 @@ export interface ReplayClock {
 export interface PeriodPoint { clock: number; period: number }
 
 /**
- * Java `BattleTimelineBuilder.resolveClock / resolveDurationSec` 同优先级：
+ * Java `TimelineClockResolver.resolveClock / resolveDurationSec` 同优先级：
  * 时长 ① 结算 root5（cap 420）② AFTERBATTLE − 开始 ③ meta battleDuration（cap 420）④ 流末时钟 − 开始。
  */
 export function resolveReplayClock(

@@ -124,7 +124,7 @@ public final class ReplayFactsCodec {
                 final JsonNode componentNode = node.get(component.getName());
                 // 必须用 generic type，而不是擦除后的 raw Class：否则 List<ComponentResult> /
                 // List<Integer> 这类泛型 record 组件会被解成 List<LinkedHashMap>，下游按具体类型
-                // 遍历时抛 ClassCastException（如 PlayerEvidenceFormatter 的 ShotResultEvent.components()）。
+                // 遍历时抛 ClassCastException（如 PlayerReplayEventFormatter 的 ShotResultEvent.components()）。
                 args[i] = MAPPER.convertValue(componentNode,
                         MAPPER.getTypeFactory().constructType(component.getGenericType()));
             }

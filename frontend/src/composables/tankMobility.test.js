@@ -29,7 +29,8 @@ describe('mobility loadout handoff and boost timing', () => {
     const id = '1d66edf1-48d0-494e-ac52-de65e780ee28'
     const stroke = vehicleColor(id, 4)
     expect(stroke).toBe('light-dark(hsl(60 65% 30%), hsl(60 75% 72%))')
-    expect(vehicleColor(id, 12)).toBe(stroke)
+    expect(vehicleColor(id, 4)).toBe(stroke)
+    expect(vehicleColor(id, 12)).not.toBe(stroke)
   })
   it('separates a carried boost from a delayed activation and carries speed through expiry', () => {
     const passive = mobilityVehicle({ input, catalog })

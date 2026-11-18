@@ -4,7 +4,6 @@ import com.wotb.core.model.Battle;
 import com.wotb.core.model.PlayerResult;
 import com.wotb.core.replay.event.DamageEvent;
 import com.wotb.core.replay.event.DecodeConfidence;
-import com.wotb.core.replay.event.ParticipantMappingEvent;
 import com.wotb.core.replay.event.PositionChangedEvent;
 import com.wotb.core.replay.event.ReplayEvent;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
@@ -13,7 +12,6 @@ import com.wotb.core.replay.processing.TeamEntityMapping;
 import com.wotb.core.replay.processing.TeamPerspectiveResolution;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.util.PlayerResultFormat;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -32,8 +29,6 @@ import java.util.stream.Stream;
  * 所有位置与伤害归因都依赖 {@link TeamEntityMapper}，未知实体不会进入本队统计。
  */
 public class DefaultTeamBattleFeatureExtractor {
-
-
     public TeamBattleFeatureSet extract(
             final Battle battle,
             final ReplayReconstruction reconstruction,
@@ -80,9 +75,13 @@ public class DefaultTeamBattleFeatureExtractor {
         }
 
         final Map<Integer, List<PositionChangedEvent>> positionsByEntity =
-                teamPositionsByEntity(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode);
-        final PositionEvidenceAudit positionAudit =
-                auditPositionEvidence(events, entityMapping, perspectiveTeam, resolutionByEvent, mapCode, battle);
+                TeamPositionEvidenceExtractor.teamPositionsByEntity(
+                        events, entityMapping, perspectiveTeam, resolutionByEvent,
+                        position -> TeamFormationExtractor.usableSpatialEvidence(position, mapCode));
+        final TeamPositionEvidenceExtractor.PositionEvidenceAudit positionAudit =
+                TeamPositionEvidenceExtractor.auditPositionEvidence(
+                        events, entityMapping, perspectiveTeam, resolutionByEvent, battle,
+                        position -> TeamFormationExtractor.isOutOfBounds(position, mapCode));
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
@@ -317,122 +316,6 @@ public class DefaultTeamBattleFeatureExtractor {
                 hasFeatures);
     }
 
-    private static Map<Integer, List<PositionChangedEvent>> teamPositionsByEntity(
-            final List<ReplayEvent> events,
-            final TeamEntityMapping mapping,
-            final int perspectiveTeam,
-            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent,
-            final String mapCode
-    ) {
-        return events.stream()
-                .filter(PositionChangedEvent.class::isInstance)
-                .map(PositionChangedEvent.class::cast)
-                .filter(position -> {
-                    final TacticalTimeResolution res = resolutionByEvent.get(position);
-                    return res != null && res.isUsable();
-                })
-                .filter(pos -> TeamFormationExtractor.usableSpatialEvidence(pos, mapCode))
-                .filter(position -> {
-                    final TeamEntityIdentity identity = mapping.identity(position.entityId());
-                    return identity != null && identity.usable()
-                            && identity.team() == perspectiveTeam;
-                })
-                .collect(Collectors.groupingBy(
-                        PositionChangedEvent::entityId,
-                        LinkedHashMap::new,
-                        Collectors.collectingAndThen(
-                                Collectors.toList(),
-                                list -> {
-                                    list.sort(Comparator.comparingInt(PositionChangedEvent::sequence));
-                                    return list;
-                                })));
-    }
-
-    /**
-     * Diagnostic audit for position evidence that does NOT feed analysis: unattributable
-     * positions and out-of-bounds positions. Observed and clamped counts are derived directly
-     * from the analyzed {@code positionsByEntity} collection (single source of truth), so this
-     * method deliberately does not recompute them. Uses {@code battleStartRes} to exclude
-     * pre-battle preparation positions; invalid-timestamp positions are excluded here and
-     * reported via {@code ignoredInvalidTimestampEventCount}.
-     */
-    private static PositionEvidenceAudit auditPositionEvidence(
-            final List<ReplayEvent> events,
-            final TeamEntityMapping mapping,
-            final int perspectiveTeam,
-            final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent,
-            final String mapCode,
-            final Battle battle
-    ) {
-        // 实际参战账号权威集合 = battle_results #301（actual combatant source，唯一权威）；
-        // 观战/辅助实体只出现在 #201/updateArena2/event stream，不属于 #301。
-        final Set<Long> combatantAccounts = new LinkedHashSet<>();
-        final Set<String> combatantNicknames = new LinkedHashSet<>();
-        if (battle != null && battle.players != null) {
-            for (final PlayerResult player : battle.players) {
-                if (player == null) {
-                    continue;
-                }
-                if (player.accountId > 0) {
-                    combatantAccounts.add(player.accountId);
-                }
-                if (StringUtils.hasText(player.nickname)) {
-                    combatantNicknames.add(player.nickname);
-                }
-            }
-        }
-        // entity -> 映射账号/昵称（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）。
-        // 昵称映射（accountId=0）也可能指向 #301 成员（如昵称重名导致 TeamEntityMapper 无法归因），
-        // 需一并纳入 A/B 分类，避免把 #301 成员实体的位置误判为非参战。
-        final Map<Integer, Long> accountByEntity = new HashMap<>();
-        final Map<Integer, String> nicknameByEntity = new HashMap<>();
-        for (final ReplayEvent event : events) {
-            if (event instanceof ParticipantMappingEvent pm) {
-                if (pm.accountId() > 0) {
-                    accountByEntity.putIfAbsent(pm.entityId(), pm.accountId());
-                } else if (StringUtils.hasText(pm.nickname())) {
-                    nicknameByEntity.putIfAbsent(pm.entityId(), pm.nickname());
-                }
-            }
-        }
-        int unattributedCombatantCount = 0;
-        int nonCombatantPositionCount = 0;
-        int outOfBoundsCount = 0;
-        for (final ReplayEvent event : events) {
-            if (!(event instanceof PositionChangedEvent position)) {
-                continue;
-            }
-            final TacticalTimeResolution res = resolutionByEvent.get(event);
-            if (res == null || !res.isUsable()) {
-                continue;
-            }
-            final TeamEntityIdentity identity = mapping.identity(position.entityId());
-            if (identity == null || !identity.usable()) {
-                // A. actual combatant（#301）实体无法归因 -> 真实数据质量问题
-                final Long mappedAccount = accountByEntity.get(position.entityId());
-                final String mappedNickname = nicknameByEntity.get(position.entityId());
-                final boolean combatantEntity = mappedAccount != null
-                        && combatantAccounts.contains(mappedAccount)
-                        || mappedNickname != null && combatantNicknames.contains(mappedNickname);
-                if (combatantEntity) {
-                    unattributedCombatantCount++;
-                } else {
-                    // B. 非参战实体（观战玩家/镜头/场景对象）-> 战术证据忽略，仅 internal diagnostic
-                    nonCombatantPositionCount++;
-                }
-                continue;
-            }
-            if (identity.team() != perspectiveTeam) {
-                continue; // enemy position, not counted in perspective coverage
-            }
-            if (TeamFormationExtractor.isOutOfBounds(position, mapCode)) {
-                outOfBoundsCount++;
-            }
-        }
-        return new PositionEvidenceAudit(
-                unattributedCombatantCount, nonCombatantPositionCount, outOfBoundsCount);
-    }
-
     private static TeamMemberFeatureSet buildMember(
             final PlayerResult player,
             final Battle battle,
@@ -582,13 +465,6 @@ public class DefaultTeamBattleFeatureExtractor {
         return null;
     }
 
-    private record PositionEvidenceAudit(
-            int unattributedCombatantCount,
-            int nonCombatantPositionCount,
-            int outOfBoundsCount
-    ) {
-    }
-
     record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
 
     /** 事件级掉血记录：trustedHpLoss = 该事件可证明的掉血（单通知窗口归属；null = 无法归属到单事件）。 */
@@ -610,5 +486,4 @@ public class DefaultTeamBattleFeatureExtractor {
                 .map(tp -> new DefaultPlayerBattleFeatureExtractor.TimedPosition(tp.event(), tp.battleRelativeSec()))
                 .toList();
     }
-
 }

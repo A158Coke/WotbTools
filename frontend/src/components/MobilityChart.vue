@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { createReusableTemplate, useElementSize } from '@vueuse/core'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { createReusableTemplate, useElementSize, useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Crosshair, Expand, Eye, EyeOff, Focus, Info, Plus, Scan, Search, Timer, ZoomIn } from 'lucide-vue-next'
 import SegmentedControl from './SegmentedControl.vue'
@@ -10,26 +10,28 @@ import AppDialog from './AppDialog.vue'
 import { intersections, simulate, speedAt, stepSeconds, terrains } from '../replay-local/compute/mobility'
 import { loadMobilityDataset, modelRevision } from '../composables/tankMobility'
 
+import { defaultChartView, copyChartView, rankCurveReadings, type MobilityChartView } from '../composables/mobilityChartView'
 import type { VehicleCurve } from '../composables/tankMobility'
 import type { Phase, Run, Terrain } from '../replay-local/compute/mobility'
 
-const props = defineProps<{ vehicles: VehicleCurve[]; dataset?: string | null; single?: boolean }>()
+const props = defineProps<{ vehicles: VehicleCurve[]; dataset?: string | null; single?: boolean; initialView?: MobilityChartView; loading?: boolean }>()
+const savedView = copyChartView(props.initialView || defaultChartView(props.single))
 const { t, locale } = useI18n()
 const numbers = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 2 }))
 const [DefinePlot, Plot] = createReusableTemplate()
 const expanded = ref(false)
 const focusPlot = ref(false)
-const terrain = ref<Terrain | 'all'>(props.single ? 'all' : 'Firm')
+const terrain = ref<Terrain | 'all'>(savedView.terrain)
 const terrainOptions = computed(() => [...terrains, 'all'].map(value => ({ value, label: t('mobility.' + value) })))
 const rangeOpen = ref(false)
 const inspecting = ref(false)
 const singleColors = { Firm: 'var(--color-success)', Medium: 'var(--color-info)', Soft: 'var(--color-warning)' }
-const hidden = ref<string[]>([])
-const isolated = ref('')
-const search = ref('')
-const cursor = ref(0)
-const windowEnd = ref(90)
-const zoom = ref<[number, number] | null>(null)
+const hidden = ref<string[]>(savedView.hidden)
+const isolated = ref(savedView.isolated)
+const search = ref(savedView.search)
+const cursor = ref(savedView.cursor)
+const windowEnd = ref(savedView.windowEnd)
+const zoom = ref<[number, number] | null>(savedView.zoom)
 const from = ref(0)
 const to = ref(30)
 const area = ref<HTMLElement | null>(null)
@@ -37,8 +39,8 @@ const { width, height } = useElementSize(area)
 const W = computed(() => Math.max(220, width.value))
 const H = computed(() => Math.max(160, height.value))
 const left = 48, top = 18, bottom = 34, right = 30
-const pairA = ref('')
-const pairB = ref('')
+const pairA = ref(savedView.pairA)
+const pairB = ref(savedView.pairB)
 const fmt = (value: number | null) => value == null ? '—' : numbers.value.format(value)
 const cache = new WeakMap<Phase[], { seconds: number; runs: Partial<Record<Terrain, Run>> }>()
 function run(car: VehicleCurve, ground: Terrain, seconds: number): Run {
@@ -55,10 +57,42 @@ const lines = computed(() => props.vehicles.flatMap(car =>
     color: props.single ? singleColors[ground] : car.color,
     label: car.name + ' · ' + t('mobility.' + ground),
   }))))
-watch(() => lines.value.map(line => line.key), keys => {
-  if (isolated.value && !keys.includes(isolated.value)) isolated.value = ''
+watch(() => [lines.value.map(line => line.key), props.loading] as const, ([keys, loading]) => {
+  if (!loading && isolated.value && !keys.includes(isolated.value)) isolated.value = ''
 })
 const visible = computed(() => lines.value.filter(l => !hidden.value.includes(l.key) && (!isolated.value || l.key === isolated.value)))
+const readings = computed(() => rankCurveReadings(visible.value, cursor.value))
+const readingsOpen = ref(false)
+// The covered plot keeps its last rendered time; the dialog owns no second cursor.
+const plotCursor = computed<number>(previous => readingsOpen.value ? previous ?? cursor.value : cursor.value)
+const expandedReadings = ref(false)
+let consumeAltUp = false
+function leaveInspection() {
+  inspecting.value = false
+  expandedReadings.value = false
+}
+function resetInspection() {
+  leaveInspection()
+  consumeAltUp = false
+}
+useEventListener(window, 'keydown', event => {
+  if (event.key !== 'Alt' || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented ||
+      !inspecting.value || readingsOpen.value || !visible.value.length ||
+      (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))) return
+  event.preventDefault()
+  flushCursor()
+  expandedReadings.value = true
+  consumeAltUp = true
+})
+useEventListener(window, 'keyup', event => {
+  if (event.key !== 'Alt') return
+  if (consumeAltUp) event.preventDefault()
+  expandedReadings.value = false
+  consumeAltUp = false
+})
+useEventListener(window, 'blur', resetInspection)
+useEventListener(document, 'visibilitychange', resetInspection)
+watch([expanded, readingsOpen, terrain], resetInspection)
 const legend = computed(() => lines.value.filter(l => l.label.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())))
 const legendLimit = ref(48)
 watch(search, () => { legendLimit.value = 48 })
@@ -71,6 +105,30 @@ const extent = computed<[number, number]>(() => {
   }
   return [0, Math.min(windowEnd.value, Math.ceil(end * 1.08))]
 })
+let cursorFrame = 0
+let pendingCursor: number | null = null
+function cancelCursor() {
+  cancelAnimationFrame(cursorFrame)
+  cursorFrame = 0
+  pendingCursor = null
+}
+function flushCursor() {
+  const value = pendingCursor
+  cancelCursor()
+  if (value !== null) cursor.value = Math.max(extent.value[0], Math.min(extent.value[1], value))
+}
+function queueCursor(value: number) {
+  if (!Number.isFinite(value)) return
+  pendingCursor = value
+  if (!cursorFrame) cursorFrame = requestAnimationFrame(flushCursor)
+}
+function inputCursor(event: Event) { queueCursor((event.target as HTMLInputElement).valueAsNumber) }
+function finishCursor(event: Event) { inputCursor(event); flushCursor() }
+function showReadings(open: boolean) {
+  flushCursor()
+  readingsOpen.value = open
+}
+onBeforeUnmount(() => { cancelCursor(); resetInspection() })
 function tickSize(span: number, count: number) {
   const raw = Math.max(0.001, span / Math.max(2, count))
   const base = 10 ** Math.floor(Math.log10(raw))
@@ -141,8 +199,12 @@ function setRange(a: number, b: number) {
   const hi = Math.min(windowEnd.value, Math.max(a, b))
   if (Number.isFinite(lo) && Number.isFinite(hi) && hi > lo) zoom.value = [lo, hi]
 }
-watch(extent, ([a, b]) => { from.value = a; to.value = b; cursor.value = Math.max(a, Math.min(b, cursor.value)) }, { immediate: true })
-watch(terrain, () => { isolated.value = ''; pairA.value = ''; pairB.value = '' })
+watch(() => [extent.value, props.loading] as const, ([[a, b], loading]) => {
+  from.value = a
+  to.value = b
+  if (!loading && visible.value.some(line => line.run.speeds.length)) cursor.value = Math.max(a, Math.min(b, cursor.value))
+}, { immediate: true })
+watch(terrain, () => { isolated.value = ''; pairA.value = ''; pairB.value = '' }, { flush: 'sync' })
 const drag = ref<number | null>(null)
 function pointerTime(event: PointerEvent) {
   const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect()
@@ -150,13 +212,15 @@ function pointerTime(event: PointerEvent) {
   return extent.value[0] + fraction * (extent.value[1] - extent.value[0])
 }
 function press(event: PointerEvent) {
-  if (!event.isPrimary || event.button !== 0) return
+  if (!event.isPrimary || event.button !== 0 || expandedReadings.value) return
   const svg = event.currentTarget as SVGSVGElement
   svg.setPointerCapture?.(event.pointerId)
+  cancelCursor()
   cursor.value = pointerTime(event)
   drag.value = cursor.value
 }
 function release(event: PointerEvent) {
+  flushCursor()
   const time = pointerTime(event)
   if (drag.value != null && Math.abs(x(time) - x(drag.value)) > 10) setRange(drag.value, time)
   drag.value = null
@@ -176,6 +240,27 @@ const crossings = computed(() => {
   const a = lines.value.find(l => l.key === pairA.value), b = secondChoices.value.find(l => l.key === pairB.value)
   return a && b && a.run.speeds.length && b.run.speeds.length ? intersections(a.run.speeds, b.run.speeds) : null
 })
+function snapshotView(): MobilityChartView {
+  flushCursor()
+  return copyChartView({ terrain: terrain.value, hidden: hidden.value, isolated: isolated.value,
+    cursor: cursor.value, windowEnd: windowEnd.value, zoom: zoom.value, search: search.value, pairA: pairA.value, pairB: pairB.value })
+}
+function restoreView(value: MobilityChartView) {
+  cancelCursor()
+  resetInspection()
+  const v = copyChartView(value)
+  terrain.value = v.terrain
+  hidden.value = v.hidden
+  isolated.value = v.isolated
+  windowEnd.value = v.windowEnd
+  zoom.value = v.zoom
+  search.value = v.search
+  pairA.value = v.pairA
+  pairB.value = v.pairB
+  cursor.value = v.cursor
+  expanded.value = false
+}
+defineExpose({ snapshotView, restoreView })
 const marks = computed(() => {
   const line = visible.value.find(l => l.key === pairA.value)
   if (!line || !visible.value.some(l => l.key === pairB.value)) return []
@@ -213,9 +298,9 @@ const marks = computed(() => {
         <AppButton size="sm" type="submit" :disabled="!(to > from)"><ZoomIn :size="15" />{{ t('mobility.zoom') }}</AppButton>
         <AppButton size="sm" variant="ghost" @click="windowEnd += 90; setRange(0, windowEnd)"><Plus :size="15" />{{ t('mobility.extend') }}</AppButton>
       </form>
-      <div ref="area" class="mob-area">
+      <div ref="area" class="mob-area" @pointerleave="leaveInspection" @pointercancel="resetInspection">
         <svg :viewBox="'0 0 ' + W + ' ' + H" role="img" :aria-label="t('mobility.chart')"
-          @pointerenter="inspecting = true" @pointerleave="inspecting = false" @pointerdown="inspecting = true; press($event)" @pointermove="cursor = pointerTime($event)" @pointerup="release" @pointercancel="drag = null">
+          @pointerenter="inspecting = true" @pointerdown="inspecting = true; press($event)" @pointermove="!expandedReadings && queueCursor(pointerTime($event))" @pointerup="release" @pointercancel="drag = null">
           <g v-for="v in ys" :key="'y'+v"><line :x1="left" :x2="W-right" :y1="y(v)" :y2="y(v)" /><text :x="left-6" :y="y(v)" text-anchor="end">{{ fmt(v) }}</text></g>
           <g v-for="v in xs" :key="'x'+v"><line :x1="x(v)" :x2="x(v)" :y1="top" :y2="H-bottom" /><text :x="x(v)" :y="H-8" text-anchor="middle">{{ fmt(v) }}</text></g>
           <text :x="left" :y="12">km/h</text><text :x="W-10" :y="H-8">s</text>
@@ -230,22 +315,24 @@ const marks = computed(() => {
             <circle :cx="x(mark.start)" :cy="y(mark.speed)" r="4" fill="currentColor" />
             <circle v-if="mark.end > mark.start" :cx="x(mark.end)" :cy="y(mark.endSpeed ?? mark.speed)" r="4" fill="currentColor" />
           </g>
-          <line v-if="inspecting || cursor > 0" class="mob-cursor" :x1="x(cursor)" :x2="x(cursor)" :y1="top" :y2="H-bottom" />
-          <g v-if="inspecting || cursor > 0">
-            <template v-for="l in visible" :key="l.key"><circle v-if="speedAt(l.run.speeds, cursor) != null" :cx="x(cursor)" :cy="y(speedAt(l.run.speeds, cursor)!)" r="4" :fill="l.color" class="mob-point" /></template>
+          <line v-if="inspecting || plotCursor > 0" class="mob-cursor" :x1="x(plotCursor)" :x2="x(plotCursor)" :y1="top" :y2="H-bottom" />
+          <g v-if="inspecting || plotCursor > 0">
+            <template v-for="l in visible" :key="l.key"><circle v-if="speedAt(l.run.speeds, plotCursor) != null" :cx="x(plotCursor)" :cy="y(speedAt(l.run.speeds, plotCursor)!)" r="4" :fill="l.color" class="mob-point" /></template>
           </g>
         </svg>
-        <div v-if="inspecting && visible.length" class="mob-tip" :style="tipPosition" :class="{ 'is-before': x(cursor) > W / 2 }">
-          <b>{{ fmt(cursor) }} s</b><div v-for="l in visible.slice(0, 4)" :key="l.key"><i :style="{ background: l.color }" /><span>{{ l.label }}</span><strong>{{ fmt(speedAt(l.run.speeds, cursor)) }} km/h</strong></div>
-          <small v-if="visible.length > 4">+{{ visible.length - 4 }}</small>
+        <div v-if="inspecting && visible.length" class="mob-tip" :style="tipPosition" :class="{ 'is-before': x(cursor) > W / 2, 'is-expanded': expandedReadings }" @wheel.stop>
+          <b>{{ fmt(cursor) }} s</b><div v-for="{ line: l, speed } in (expandedReadings ? readings : readings.slice(0, 4))" :key="l.key"><i :style="{ background: l.color }" /><span>{{ l.label }}</span><strong>{{ fmt(speed) }} km/h</strong></div>
+          <small v-if="expandedReadings">{{ t('mob1016.releaseAlt') }}</small>
+          <small v-else-if="readings.length > 4">{{ t('mob1016.moreCurves', { count: readings.length - 4 }) }} · {{ t('mob1016.holdAlt') }}</small>
         </div>
       </div>
       <label class="mob-scrubber">
         <span><Crosshair :size="16" />{{ t('mobility.cursor') }}</span>
-        <output>{{ fmt(cursor) }} <small>s</small></output>
-        <input v-model.number="cursor" type="range" :min="extent[0]" :max="extent[1]" :step="stepSeconds" />
+        <output>{{ fmt(plotCursor) }} <small>s</small></output>
+        <input :value="plotCursor" type="range" :min="extent[0]" :max="extent[1]" :step="stepSeconds" @input="inputCursor" @change="finishCursor" @pointerup="finishCursor" @pointercancel="finishCursor" />
       </label>
       <label v-if="!(expanded && focusPlot) && lines.length > 3" class="mob-search"><Search :size="16" /><input class="mob-field" v-model="search" type="search" :placeholder="t('mobility.search')" :aria-label="t('mobility.search')" /></label>
+      <AppButton size="sm" variant="ghost" class="mob-readings-button" @click="showReadings(true)">{{ t('mob1016.allReadings') }} · {{ fmt(plotCursor) }} s</AppButton>
       <ul v-if="!(expanded && focusPlot)" class="mob-legend">
         <li v-for="l in legend.slice(0, legendLimit)" :key="l.key" :style="{ '--series': l.color }">
           <div class="mob-series">
@@ -253,7 +340,7 @@ const marks = computed(() => {
               <Eye v-if="!hidden.includes(l.key)" :size="16" /><EyeOff v-else :size="16" />
             </button>
             <div class="mob-identity"><strong>{{ l.car.name }}</strong><span><i :class="'sample-' + l.ground" />{{ t('mobility.' + l.ground) }}</span></div>
-            <output class="mob-speed">{{ fmt(speedAt(l.run.speeds, cursor)) }} <small>km/h</small></output>
+            <output class="mob-speed">{{ fmt(speedAt(l.run.speeds, plotCursor)) }} <small>km/h</small></output>
             <AppButton size="sm" variant="ghost" class="mob-solo" :aria-pressed="isolated === l.key" @click="solo(l.key)">
               <Focus :size="15" />{{ t(isolated === l.key ? 'mobility.showAll' : 'mobility.solo') }}
             </AppButton>
@@ -284,9 +371,29 @@ const marks = computed(() => {
     </DefinePlot>
     <Plot v-if="!expanded" />
     <AppDialog :open="expanded" :title="t('mobility.chart')" size="viewport" @close="expanded = false"><Plot v-if="expanded" /></AppDialog>
+    <AppDialog :open="readingsOpen" :title="t('mob1016.allReadings')" size="lg" @close="showReadings(false)">
+      <label class="mob-scrubber mob-reading-scrubber">
+        <span>{{ t('mobility.cursor') }} <output>{{ fmt(cursor) }} <small>s</small></output></span>
+        <input :value="cursor" type="range" :min="extent[0]" :max="extent[1]" :step="stepSeconds" @input="inputCursor" @change="finishCursor" @pointerup="finishCursor" @pointercancel="finishCursor" />
+      </label>
+      <table class="mob-reading-table">
+        <caption>{{ t('mob1016.descending') }}</caption>
+        <thead><tr><th>{{ t('mob1016.vehicle') }}</th><th>{{ t('mobility.ground') }}</th><th>km/h</th></tr></thead>
+        <tbody><tr v-for="{ line, speed } in readings" :key="line.key">
+          <th scope="row"><i :style="{ borderColor: line.color }" />{{ line.car.name }}</th>
+          <td>{{ t('mobility.' + line.ground) }}</td><td>{{ fmt(speed) }}</td>
+        </tr></tbody>
+      </table>
+    </AppDialog>
   </section>
 </template>
 <style scoped>
+.mob-readings-button { justify-self: start; }
+.mob-reading-table { inline-size: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.mob-reading-table th, .mob-reading-table td { padding: var(--space-2); border-bottom: 1px solid var(--color-border-subtle); text-align: start; overflow-wrap: anywhere; }
+.mob-reading-table td:last-child { text-align: end; white-space: nowrap; }
+.mob-reading-table i { display: inline-block; inline-size: var(--space-3); margin-inline-end: var(--space-2); border-top: 3px solid; }
+.mob-reading-table caption { text-align: start; color: var(--color-text-secondary); padding-block: var(--space-2); }
 .mob-chart { display: grid; gap: var(--space-4); min-inline-size: 0; padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .mob-tools, .mob-toolbar, .mob-actions, .mob-range, .mob-source, .mob-scrubber, .mob-search, .mob-series, .mob-config summary, .mob-tip div { display: flex; align-items: center; gap: var(--space-2); }
 .mob-tools, .mob-toolbar, .mob-range, .mob-source { flex-wrap: wrap; }
@@ -310,6 +417,8 @@ const marks = computed(() => {
 .mob-point { stroke: var(--color-surface-1); stroke-width: 2; }
 .mob-tip { position: absolute; top: var(--space-4); inline-size: max-content; max-inline-size: min(32rem, calc(var(--tip-space) - var(--space-4))); transform: translateX(var(--space-2)); pointer-events: none; padding: var(--space-2) var(--space-3); color: var(--color-text-primary); background: var(--color-surface-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); box-shadow: var(--elevation-2); font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .mob-tip.is-before { transform: translateX(calc(-1 * var(--space-2))); }
+.mob-tip.is-expanded { max-block-size: 60%; overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; }
+.mob-tip small { display: block; margin-block-start: var(--space-1); }
 .mob-tip div { margin-block-start: var(--space-1); }
 .mob-tip div span { min-inline-size: 0; overflow-wrap: anywhere; }
 .mob-tip i { width: var(--space-2); height: var(--space-2); border-radius: var(--radius-full); corner-shape: round; flex: none; }
@@ -318,6 +427,9 @@ const marks = computed(() => {
 .mob-scrubber span, .mob-identity span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .mob-scrubber output { min-inline-size: 6ch; font: var(--type-h3); color: var(--color-text-primary); }
 .mob-scrubber input { flex: 1; min-width: 4ch; min-height: var(--control-h-sm); accent-color: var(--color-accent); }
+.mob-reading-scrubber { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+.mob-reading-scrubber > span { justify-content: space-between; }
+.mob-reading-scrubber input { inline-size: 100%; margin-inline: 0; }
 .mob-search input { width: min(100%, 24rem); }
 .mob-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 .mob-legend li { display: grid; align-content: start; min-width: 0; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); }

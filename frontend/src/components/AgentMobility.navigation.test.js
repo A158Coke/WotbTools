@@ -23,14 +23,14 @@ it.each([
     plugins: [router, createI18n({ legacy: false, locale: 'zh', messages: { zh } })],
     stubs: {
       MobilityVehicleColumn: { name: 'MobilityVehicleColumn', props: ['entry', 'dataset'], template: '<div />' },
-      MobilityChart: { props: ['vehicles', 'dataset'], template: '<div />' },
+      MobilityChart: { props: ['vehicles', 'dataset', 'initialView'], methods: { snapshotView: () => undefined, restoreView: () => {} }, template: '<div />' },
       TankCatalogMenu: true,
       AppDialog: { props: { open: Boolean }, template: '<div v-if="open"><slot /></div>' },
     },
   } })
   try {
     expect(wrapper.get('[data-testid=mobility-back]').text()).toContain('返回')
-    await wrapper.get('.mob-page-actions button').trigger('click')
+    await wrapper.get('[data-testid=mobility-add]').trigger('click')
     await flushPromises()
     wrapper.getComponent({ name: 'TankCatalogMenu' }).vm.$emit('confirm', [{ id: 14977, name: 'CS-63' }])
     await flushPromises()

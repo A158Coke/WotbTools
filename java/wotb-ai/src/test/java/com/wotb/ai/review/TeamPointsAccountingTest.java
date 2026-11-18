@@ -75,8 +75,8 @@ class TeamPointsAccountingTest {
         assertTrue(FriendlyEnemyResult.provableEarlyPointsWin(early));
         assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000,
                 FriendlyEnemyResult.resolveTeamBattle(early, 2).pointsEndReason());
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("pointsEndReason=REACHED_1000"), content);
         assertTrue(content.contains("finalScore: team=1000（达到1000分上限提前结束, 业务规则） opposing=UNKNOWN"), content);
@@ -89,8 +89,8 @@ class TeamPointsAccountingTest {
     @Test
     void enemyWinEarlyEndPinsOnlyOpposing() {
         final Battle early = supremacyBattle(226, 1, 4);
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         assertTrue(bw.content().contains(
                 "finalScore: team=UNKNOWN opposing=1000（达到1000分上限提前结束, 业务规则）"), bw.content());
     }
@@ -100,8 +100,8 @@ class TeamPointsAccountingTest {
         final Battle late = supremacyBattle(420, 2, 4);
         assertEquals(FriendlyEnemyResult.PointsEndReason.TIME_EXPIRED,
                 FriendlyEnemyResult.resolveTeamBattle(late, 2).pointsEndReason());
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, late, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, late, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
         assertFalse(content.contains("finalScore: team=1000"), content);
@@ -127,8 +127,8 @@ class TeamPointsAccountingTest {
         }
         assertEquals(FriendlyEnemyResult.PointsEndReason.TIME_EXPIRED,
                 FriendlyEnemyResult.resolveTeamBattle(b, 2).pointsEndReason());
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, b, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, b, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("pointsEndReason=TIME_EXPIRED"), content);
         assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
@@ -149,8 +149,8 @@ class TeamPointsAccountingTest {
     @Test
     void evidenceAndPromptNeverClaimUnverifiedTickValueOrOvershoot() {
         final Battle early = supremacyBattle(226, 2, 4);
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, early, 2, "eval-arena");
         final String content = bw.content();
         assertFalse(content.contains("略超"), content);
         assertFalse(content.contains("压缩"), content);
@@ -180,8 +180,8 @@ class TeamPointsAccountingTest {
         assertFalse(FriendlyEnemyResult.provableEarlyPointsWin(unknown));
         assertEquals(FriendlyEnemyResult.PointsEndReason.UNKNOWN,
                 FriendlyEnemyResult.resolveTeamBattle(unknown, 2).pointsEndReason());
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, unknown, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, unknown, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
         assertFalse(content.contains("finalScore: team=1000"), content);
@@ -196,8 +196,8 @@ class TeamPointsAccountingTest {
         assertEquals(FriendlyEnemyResult.Winner.DRAW_OR_UNKNOWN, w.winner());
         assertEquals(FriendlyEnemyResult.WinnerSource.UNKNOWN, w.source());
         assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000, w.pointsEndReason());
-        final TeamEvidenceFormatter.BudgetWriter bw = new TeamEvidenceFormatter.BudgetWriter();
-        TeamEvidenceFormatter.appendCaptureAndPoints(bw, b, 2, "eval-arena");
+        final TeamPromptBudgetWriter bw = new TeamPromptBudgetWriter();
+        TeamOutcomeFormatter.appendCaptureAndPoints(bw, b, 2, "eval-arena");
         final String content = bw.content();
         assertTrue(content.contains("pointsEndReason=REACHED_1000"), content);
         assertTrue(content.contains("finalScore: team=UNKNOWN opposing=UNKNOWN"), content);
@@ -224,6 +224,6 @@ class TeamPointsAccountingTest {
         final var w = FriendlyEnemyResult.resolveTeamBattle(b, 1);
         assertEquals(FriendlyEnemyResult.Winner.DRAW_OR_UNKNOWN, w.winner());
         assertEquals(FriendlyEnemyResult.WinnerSource.UNKNOWN, w.source());
-        assertEquals("平局或未知", TeamEvidenceFormatter.resolveTeamResult(b, 1, "CHRD"));
+        assertEquals("平局或未知", TeamOutcomeFormatter.resolveTeamResult(b, 1, "CHRD"));
     }
 }

@@ -417,7 +417,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
     // 可破坏物**槽位化**：不再重挂 pivot——状态持 { mesh, idx, base } 槽位。
     // 树倒 = T(p)·R·T(−p)·base 逐实例矩阵（与旧 pivot 装配逐值等价，等价性由
-    // sceneryInstancing.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
+    // sceneryInstancing.geometry.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
     // 与隐藏矩阵之间翻转。pivot 原点/树高/停止角公式与旧实现逐项一致。
     const slotOf = (e: BatchedEntry): DestructibleSlot => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
     for (const st of states) {
