@@ -241,7 +241,7 @@ describe('ReplayEventStreamPane', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('catch/defend 进入地图标记片；主文本不显示原始目标，tooltip 保留', async () => {
+  it('catch/defend 主文本显示原始目标，不猜据点编号；tooltip 保留', async () => {
     const facet = {
       ...FACET,
       chat_events: [
@@ -254,9 +254,9 @@ describe('ReplayEventStreamPane', () => {
     const rows = w.findAll('[data-kind="marker"]')
     expect(rows).toHaveLength(2)
     const titles = rows.map((n) => n.text())
-    expect(titles.some((x) => x.includes('marker_catch') && x.includes('who=A'))).toBe(true)
-    expect(titles.some((x) => x.includes('marker_defend') && x.includes('who=A'))).toBe(true)
-    expect(titles.some((x) => x.includes('target='))).toBe(false)
+    expect(titles.some((x) => x.includes('cmd_catch_point_raw') && x.includes('who=A') && x.includes('target=2'))).toBe(true)
+    expect(titles.some((x) => x.includes('cmd_defend_point_raw') && x.includes('who=A') && x.includes('target=3'))).toBe(true)
+    expect(titles.some((x) => x.includes('cell='))).toBe(false)
     expect(rows[0].attributes('title')).toContain('marker_raw_target')
     expect(rows[0].attributes('title')).toContain('target=2')
     expect(rows[1].attributes('title')).toContain('target=3')

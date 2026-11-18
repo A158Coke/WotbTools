@@ -316,11 +316,13 @@ function eventTitle(ev: PlaybackEventRow): string {
           target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
         }) + ch
       }
-      if (ev.commandName === 'catch_point') {
-        return t('eventStream.marker_catch', { who }) + ch
-      }
-      if (ev.commandName === 'defend_point') {
-        return t('eventStream.marker_defend', { who }) + ch
+      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
+        // payload 域上游未闭合：不把它写成「据点 N」，只按原始目标值呈现
+        // （评审 5935348769 P2；专用 *_raw 文案保留“指令（目标 N）”的中性语义）。
+        return t(`eventStream.cmd_${ev.commandName}_raw`, {
+          who,
+          target: ev.commandTarget ?? '?',
+        }) + ch
       }
       if (ev.commandName === 'moving_here') {
         return t('eventStream.marker_moving', { who }) + ch
