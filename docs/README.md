@@ -33,6 +33,7 @@
 
 | 文档 | 何时读 |
 |---|---|
+| `development/aoci-code.md` | 在维护者本机接入 AOCI-CODE、构建/验证 AI 认知索引、检查 MCP 配置及索引回滚边界时 |
 | `development/contribution-map.md` | 想加新功能、找后端/前端/契约入口或判断贡献点归属时 |
 | `development/ai-virtual-thread-benchmark.md` | 运行真实 provider 的 Platform vs Virtual blocking-call A/B 时 |
 
