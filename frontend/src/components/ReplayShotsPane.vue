@@ -21,7 +21,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
-import { resolveMountedConfig } from '../scene/reloadBar.js'
+import { annotateMountedConfigs, buildPitchLimits } from '../scene/shotHandoff.ts'
 import { assetProvider } from '../scene/assetProvider.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { formatShotBattleClock } from '../utils/playbackClock.js'
@@ -138,52 +138,6 @@ function enrichShellFallback(parsedShots, table) {
  *  不能像弹表那样事后补齐，只能在解析前**有界等待**：到期用已到的部分表
  *  （best effort）继续解析，避免单个资产请求挂起把整条列表拖死在解析中
  *  （评审 P1，2026-10-15）。缺锚定 = 既有的如实降级态（俯仰降级标记透传）。 */
-const PITCH_ANCHOR_WAIT_MS = 1500
-
-/**
- * 俯仰锚定表：playback 名册 → tank_id → 顶级配置 pitch_limits，换算 GunPitchRange 形状
- * （dep = max 俯角上限、ele = −min 仰角上限）。注入后俯仰按车型极限解码，
- * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。**有界等待**：
- * 逐车请求并行、结果随到随写，PITCH_ANCHOR_WAIT_MS 到期即以已到部分返回。
- * **只传基础极限**：122 改进型垂直稳定器的 +4°仰/+3°俯由 Agent core 按同 eid 的
- * Type5 配件串叠加；在这里预加会双重计算。
- */
-async function buildPitchLimits(vehicles) {
-  const limits = {}
-  const tankNames = new Map()
-  const tankRange = new Map()
-  for (const v of vehicles || []) {
-    if (v.nickname && v.tank_id && !tankNames.has(v.tank_id)) tankNames.set(v.tank_id, [])
-    if (v.nickname && v.tank_id) tankNames.get(v.tank_id).push(v.nickname)
-  }
-  let timer = null
-  const pending = Promise.all([...tankNames.keys()].map(async (tid) => {
-    try {
-      const data = await fetchShotTankData(tid)
-      const cfgs = data.configs || []
-      const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
-      if (pl && pl.max != null && pl.min != null) {
-        tankRange.set(tid, {
-          dep: pl.max,
-          ele: -pl.min,
-          ...(pl.front ? { front: pl.front } : {}),
-          ...(pl.back ? { back: pl.back } : {}),
-          ...(pl.transition != null ? { transition: pl.transition } : {}),
-        })
-      }
-    } catch { /* 数据缺失：该玩家保持空锚定（如实降级） */ }
-  })).finally(() => clearTimeout(timer))
-  await Promise.race([
-    pending,
-    new Promise((resolve) => { timer = setTimeout(resolve, PITCH_ANCHOR_WAIT_MS) }),
-  ])
-  for (const [tid, names] of tankNames) {
-    const range = tankRange.get(tid)
-    if (!range) continue
-    for (const nick of names) limits[nick] = range
-  }
-  return limits
-}
 
 /**
  * 名册联表只补身份与阵营（`enrichShotsFromRoster`）；昵称缺在射击链上是常态
@@ -202,46 +156,6 @@ function applyRosterNames(parsedShots, vehicles, tankopedia) {
       shot[`${role}_tank_name`] = name || ''
       shot[`${role}_tank_class`] = info?.type || vehicle?.tank_class || vehicle?.tank_type || ''
     }
-  }
-}
-
-/**
- * 实际搭载配置下标注入（shooter/target_config_idx）。WASM 产物没有这两个字段
- * （服务器路径由解析面按 comp blob 证据链注入；客户端无解析面）——多炮坦克各炮
- * GLB 节点组、炮口原点、弹表都不同，缺省会让装甲查看器按顶级配置摆射手炮管/
- * 炮口、选目标变体、选弹表（&scfg=）。此处用回放 facet 自带的逐车证据
- * （comp locals → 发射弹种 → 初始血量，resolveMountedConfig）联表 tank 数据派生；
- * 坦克数据缺失时不注入，消费端回退顶级（与服务器「全无 → 顶级」语义一致）。
- */
-async function annotateMountedConfigs(parsedShots, playback) {
-  const vehicles = playback?.vehicles || []
-  const byEid = new Map(vehicles.map((v) => [v.eid, v]))
-  const tankIds = new Set()
-  for (const s of parsedShots) {
-    if (s.shooter_tank_id) tankIds.add(s.shooter_tank_id)
-    if (s.target_tank_id) tankIds.add(s.target_tank_id)
-  }
-  if (!tankIds.size) return
-  const configsByTank = new Map()
-  await Promise.all([...tankIds].map(async (tid) => {
-    try {
-      const data = await assetProvider.json(`/tank/${tid}.json`)
-      if (Array.isArray(data?.configs) && data.configs.length) configsByTank.set(tid, data)
-    } catch { /* 数据缺失：该车不注入 */ }
-  }))
-  if (!configsByTank.size) return
-  const idxOf = (vehicle, tid) => {
-    const data = configsByTank.get(tid)
-    if (!data || !vehicle) return null
-    const cfg = resolveMountedConfig(vehicle, data)
-    const idx = cfg ? data.configs.indexOf(cfg) : -1
-    return idx >= 0 ? idx : null
-  }
-  for (const s of parsedShots) {
-    const shooterIdx = idxOf(byEid.get(s.shooter_eid), s.shooter_tank_id)
-    if (shooterIdx != null) s.shooter_config_idx = shooterIdx
-    const targetIdx = s.target_eid != null ? idxOf(byEid.get(s.target_eid), s.target_tank_id) : null
-    if (targetIdx != null) s.target_config_idx = targetIdx
   }
 }
 
@@ -329,7 +243,7 @@ async function decode(file) {
       }
     })
     if (playback) {
-      annotateMountedConfigs(parsedShots, playback).catch((e) => {
+      annotateMountedConfigs(parsedShots, playback?.vehicles).catch((e) => {
         console.warn('mounted-config annotation skipped:', e)
       })
     }

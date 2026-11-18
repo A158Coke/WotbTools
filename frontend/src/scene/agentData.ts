@@ -14,7 +14,7 @@ export { assetProvider }
 type TankId = number | string
 type TankUpgradeOptions = { upgrade?: unknown; abilities?: unknown }
 type ShotTankConfig = { pitch_limits?: unknown; shell_global_ids?: Array<number | null> }
-type ShotViewerInput = {
+export type ShotViewerInput = {
   index?: unknown
   shooter_tank_id?: number | null
   target_tank_id?: number | null

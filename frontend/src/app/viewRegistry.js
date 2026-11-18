@@ -67,6 +67,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'ai-review': ReplayWorkspace,
   'battle-playback': ReplayWorkspace,
   'agent-replay': ReplayWorkspace,
+  'agent-events': ReplayWorkspace,
   'agent-shots': ReplayWorkspace,
   'agent-tankopedia': AgentTankopediaPage,
   'agent-mobility': defineLazyView(() => import('../components/AgentMobility.vue')),
@@ -101,6 +102,7 @@ export const VIEW_COMPONENTS = Object.freeze({
 const CAPABILITY_BY_VIEW = Object.freeze({
   replay: 'data',
   'agent-replay': '3d',
+  'agent-events': 'events',
   'agent-shots': 'shots',
   'battle-playback': 'playback',
   'ai-review': 'ai',

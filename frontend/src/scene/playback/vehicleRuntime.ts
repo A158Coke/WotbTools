@@ -23,6 +23,8 @@ import {
 import type { DestroyedLifeEvidence, TankDestroyedVisual } from '../tankDestroyedVisual.js'
 import { sampleDetachedPose } from '../trackInterp.js'
 import { sampleVehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
+import { lastKnownPoseAt, replacedBySuccessorAt } from './lastKnown.js'
+import type { LastKnownPose } from './lastKnown.js'
 import type { PoseGrid, PoseDef, VehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
@@ -174,6 +176,16 @@ export interface RuntimeVehicle {
   glbVisual: TankDestroyedVisual | null
   labelAnchor: THREE.Vector3
   labelOccluded?: boolean
+  /**
+   * 最后已知位姿（可视性诚实呈现，语义见 scene/playback/lastKnown.ts）：applyPose 逐帧维护，
+   * **在场时刻恒 null**（正常呈现）；不在场 = 末段末采样（协议 AoI 判别，纯函数），memo 按 t。
+   * labelsRuntime 读它做幽灵名牌锚点；呈现开关 = store.lastKnownOn（只门控呈现，不改计算）。
+   */
+  lastKnownPose: LastKnownPose | null; lastReplaced?: boolean
+  /** 上次 lastKnownPose 计算的回放时刻（memo 键；NaN = 尚未计算） */
+  lastKnownAt: number
+  /** 最后已知位置的半透明低模代理（盒体几何复用 trackGeo；teardown 随 dispose 释放） */
+  lastKnownProxy: THREE.Mesh | null
   /** 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算） */
   trail: { L: TrailState; R: TrailState; builtT: number } | null
   tread: TreadRuntimeParams | null
@@ -209,7 +221,7 @@ export interface GlbCacheEntry {
 /** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
 export interface VehicleRuntimeDeps {
   /** 宿主 store 的 GLB 开关投影（applyGlbToggle 双写：内部态 + store）。 */
-  store: { glbOn: boolean }
+  store: { glbOn: boolean; lastKnownOn: boolean }
   /** 实例是否已 destroy。 */
   destroyed(): boolean
   /** 会话加载代数（applyGlbToggle 的迟到守卫；owner 在 sessionLifecycle）。 */
@@ -230,6 +242,9 @@ export interface VehicleRuntimeDeps {
   invalidate(): void
   /** 协议精确可见性（canonical 事实 owner = 宿主 visibleAt）。 */
   visibleAt(v: RuntimeVehicle, t: number): boolean
+  /** 当前时刻的实体身份替换判据（同账号后继实体已接管；canonical 证据 owner = 宿主）。
+   *  缺省时回退到 coverage 段序的纯函数判据（replacedBySuccessorAt）。 */
+  replacedAt?(eid: number, t: number): boolean
   /** 场景死亡判据（canonical 事实 owner = 宿主 sceneLifeAt）。 */
   sceneLifeAt(v: RuntimeVehicle, t: number): DestroyedLifeEvidence | null
   /** 地形高度采样（owner = mapWorld）。 */
@@ -278,6 +293,9 @@ export interface VehicleRuntimeHandle {
   /** 阴影同步（宿主 setLabelPrefs 循环消费；实现见 syncContactShadow）。 */
   syncContactShadow(v: RuntimeVehicle): void
 }
+
+/** 最后已知代理的底盘盒中心相对记录位姿的抬升（= 低模履带盒在 group 内的 position.y，同高对齐）。 */
+const LAST_KNOWN_PROXY_Y = 0.42
 
 export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHandle {
   let V: RuntimeVehicle[] = [];      // 车辆运行时 {def, group, turretG, gunPivot, labelAnchor, meshHull, glb}
@@ -371,9 +389,18 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
         ring.userData.keepWithGlb = true;   // GLB 模式下保留作者标记环
         g.add(ring);
       }
+      // 最后已知位置代理（可视性诚实呈现，语义见 playback/lastKnown.ts）：该车不在场时段
+      // 在末段末采样位姿上的半透明低模盒（store.lastKnownOn 可关）。几何复用低模履带盒
+      // （trackGeo 共享），材质逐车独立（阵营色 + 半透明），teardown 随 dispose 释放。
+      const lastKnownProxy = new THREE.Mesh(trackGeo, new THREE.MeshLambertMaterial({
+        color, transparent: true, opacity: 0.35, depthWrite: false,
+      }));
+      lastKnownProxy.visible = false;
+      scene.add(lastKnownProxy);
       const v: RuntimeVehicle = { def, group: g, turretG, gunPivot, meshHull: hull, hullGroup: hullG,
         detachedTurrets: [], proxyVisual: null, glbVisual: null,
-        labelAnchor: new THREE.Vector3(), trail: null, tread: null, treadMesh: null };
+        labelAnchor: new THREE.Vector3(), lastKnownPose: null, lastKnownAt: NaN, lastReplaced: false, lastKnownProxy,
+        trail: null, tread: null, treadMesh: null };
       // Capture clean proxy materials before the vehicle receives its wreck shader.
       v.detachedTurrets = (data.detached_turrets || []).filter(track => track.vehicle_eid === def.eid).map(track => {
         const root = new THREE.Group(); root.userData.eid = def.eid;
@@ -974,6 +1001,38 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     v.group.visible = vis;
     if (v.glb) v.glb.visible = vis && !deps.classIconsVisible();
     if (!vis) {
+      // 最后已知位姿（可视性诚实呈现）：语义判别器只允许协议 AoI 在场段（见
+      // playback/lastKnown.ts）；位姿 = 段内末网格采样，不插值不外推。memo 按 (车, t)；
+      // 计算与设置无关（lastKnownOn 只门控呈现），切换开关重入 applyPose 即生效。
+      // 证据晚到也要刷新：仅按 T 记忆会把「同一时刻 canonical 身份稍后就绪」挡在门外
+      //（评审反例：先 false 生成幽灵，同一 T 再 true，旧代码不重算）。
+      const spansOfForIdentity = (eid: number) => deps.visByEid().get(eid)
+        ?? deps.getData()?.vehicles.find((o) => o.eid === eid)?.coverage;
+      const replacedNow = deps.replacedAt
+        ? deps.replacedAt(v.def.eid, T) === true
+        : deps.getData()
+          ? replacedBySuccessorAt(deps.getData()!.vehicles, spansOfForIdentity, v.def.eid, T)
+          : false;
+      if (v.lastKnownAt !== T || v.lastReplaced !== replacedNow) {
+        v.lastKnownAt = T;
+        v.lastReplaced = replacedNow;
+        // 同账号后继实体（AoI 重入/复活换 eid）在当前时刻已接管 → 抑制旧实体幽灵
+        // （否则同一玩家同时出现在两个位置）。权威身份（canonical entityStartsByAccount）
+        // 由宿主注入；缺省回退 coverage 段序（时间感知：接管前不隐藏）。
+        v.lastKnownPose = replacedNow
+          ? null
+          : lastKnownPoseAt(
+            deps.visByEid().get(v.def.eid) ?? v.def.coverage, T, v.def.pos, deps.poseGrid.tStart);
+      }
+      const ghost = v.lastKnownProxy;
+      if (ghost) {
+        const lk = v.lastKnownPose;
+        ghost.visible = deps.store.lastKnownOn && lk != null;
+        if (ghost.visible && lk) {
+          // game 系 → 场景系 x 取负（帧变换契约与 posAt 一致，禁止在别处再补符号）
+          ghost.position.set(-lk.pos[0], lk.pos[1] + LAST_KNOWN_PROXY_Y, lk.pos[2]);
+        }
+      }
       syncContactShadow(v);
       // 悬挂积分复位：不可见期间不累积侧位移（复现时首帧吸附，不跳变）
       if (v.suspParts) {
@@ -981,6 +1040,10 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
       }
       return;
     }
+    // 在场：正常呈现，无幽灵（清掉上一段的 memo 与代理显隐）
+    v.lastKnownPose = null;
+    v.lastKnownAt = T;
+    if (v.lastKnownProxy) v.lastKnownProxy.visible = false;
     posAt(v, T, tmpV);
     v.group.position.copy(tmpV);
     if (v.glb) poseGlb(v);
@@ -1023,6 +1086,12 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
       if (v.glb) scene?.remove(v.glb);          // only material clones are instance-owned
       disposeTankDestroyedVisual(v.glbVisual);
       v.glbVisual = null;
+      // 最后已知代理：材质逐车独立（几何与低模共享，dispose 幂等），随会话一并释放
+      if (v.lastKnownProxy) {
+        scene?.remove(v.lastKnownProxy);
+        deps.disposeObject3D(v.lastKnownProxy);
+        v.lastKnownProxy = null;
+      }
       // 悬挂求解为逐车 clone 的履带几何（唯一持有者）：显式释放
       if (v.suspParts && v.suspParts.disposables) {
         for (const g of v.suspParts.disposables) g.dispose();

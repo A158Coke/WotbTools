@@ -60,7 +60,10 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
 })
 
 describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）', () => {
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 调色唯一事实源拆分到 playback/palette.js（行数卫生规则；playbackScene re-export 保持
+  // 导入方零改动）——声明唯一性断言跟随事实源移动。
+  const src = readFileSync(resolve(here, 'playback/palette.ts'), 'utf8')
+  const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 
   it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
     expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)
@@ -69,6 +72,9 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
     expect(src.match(/const COLOR_ENEMY = 0x98322a;/g)?.length).toBe(1)
     expect(src).not.toContain('0x2ecc71')
     expect(src).not.toContain('0xef4444')
+    // 内核文件不再内联声明（防双源漂移）
+    expect(sceneSrc).not.toContain('const COLOR_FRIENDLY')
+    expect(sceneSrc).not.toContain('const TRACER_FRIENDLY')
   })
 
 })
