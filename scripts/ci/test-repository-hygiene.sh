@@ -230,7 +230,7 @@ git switch -q -C source-line-backend-over-limit "$base"
 mkdir -p java/wotb-web/src/main/java/com/wotb/web
 python3 - <<'PY'
 from pathlib import Path
-Path("java/wotb-web/src/main/java/com/wotb/web/BigService.java").write_text("// java\\n" * 501)
+Path("java/wotb-web/src/main/java/com/wotb/web/BigService.java").write_text("// java\n" * 501)
 PY
 git add java/wotb-web/src/main/java/com/wotb/web/BigService.java
 git commit -q -m 'add over-budget Java backend source'
@@ -241,7 +241,7 @@ git switch -q -C source-line-backend-at-limit "$base"
 mkdir -p java/wotb-core/src/main/java/com/wotb/core
 python3 - <<'PY'
 from pathlib import Path
-Path("java/wotb-core/src/main/java/com/wotb/core/AtLimit.java").write_text("// java\\n" * 500)
+Path("java/wotb-core/src/main/java/com/wotb/core/AtLimit.java").write_text("// java\n" * 500)
 PY
 git add java/wotb-core/src/main/java/com/wotb/core/AtLimit.java
 git commit -q -m 'add Java backend source exactly at the budget'
@@ -253,7 +253,7 @@ git switch -q -C source-line-keycloak-over-limit "$base"
 mkdir -p keycloak-wargaming-provider/src/main/java/com/wotb
 python3 - <<'PY'
 from pathlib import Path
-Path("keycloak-wargaming-provider/src/main/java/com/wotb/BigProvider.java").write_text("// java\\n" * 501)
+Path("keycloak-wargaming-provider/src/main/java/com/wotb/BigProvider.java").write_text("// java\n" * 501)
 PY
 git add keycloak-wargaming-provider
 git commit -q -m 'add over-budget Keycloak provider source'
@@ -264,7 +264,7 @@ git switch -q -C source-line-android-over-limit "$base"
 mkdir -p android/app/src/main/java/com/wotbtools/app
 python3 - <<'PY'
 from pathlib import Path
-Path("android/app/src/main/java/com/wotbtools/app/BigController.kt").write_text("// kotlin\\n" * 501)
+Path("android/app/src/main/java/com/wotbtools/app/BigController.kt").write_text("// kotlin\n" * 501)
 PY
 git add android/app/src/main/java
 git commit -q -m 'add over-budget Android Kotlin source'
