@@ -161,6 +161,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // fly 接管、穿深着色、场景选中语义的唯一 owner = playback/cameraRuntime.ts
   //（#820 Step 4 出仓；本闭包经 cameraRuntime 句柄读写，语义与拆分前逐字一致）
   let renderer = null, scene, camera, controls, clock, raycaster;
+  const logicalSize = new THREE.Vector2();
+  const getViewportSize = () => renderer.getSize(logicalSize);
   let hemiLight = null, sunLight = null;   // 逐图光照（applyMapLighting 覆盖，见 load 流程）
   // 世界/地形/地图资产状态（mapPlane/heightField/mapScenery/destruct/envTexture…）与
   // 逐图 IBL envTexture/envMultiplier 的唯一 owner = playback/mapWorld.ts（#820 Step 2 出仓）。
@@ -494,7 +496,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     getT: () => T,
     getScene: () => scene,
     getCamera: () => camera,
-    getViewportHeight: () => container.clientHeight,
+    getViewportHeight: () => getViewportSize().y,
     debug: DEBUG,
     getVehicles: () => vehicles.getVehicles(),
     vehicles,
@@ -532,7 +534,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // writeHud（时钟+相机+名册编排）、teamHpTotals、pointsAt 仍在本闭包。
   const labels = createLabelsRuntime({
     store,
-    container,
+    getViewportSize,
     getCamera: () => camera,
     getRaycaster: () => raycaster,
     getData: () => DATA,
@@ -588,7 +590,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //  档案解析出的点列，回放会话不消费；几何 fail-closed 在 spawns.build 内部。）
   const spawnMarkers = createSpawnMarkers({ getScene: () => scene, groundY: (x, z) => mapWorld.groundY(x, z) });
   function buildSpawns() { spawnMarkers.build(session.sessionMode() === 'map' ? MAP_SPAWN_POINTS : null); }
-  function clearSpawns() { spawnMarkers.clear(); }
   function regroundSpawns() { spawnMarkers.reground(); }
   /** UI Profile 切换后 token 色板变化（四季主题切换）：已有出生点
    *  材质原位重着色——不重建场景、不动相机。仅 map 会话有意义（回放无出生点）。 */
@@ -862,7 +863,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (PERF) { renderer.info.autoReset = false; renderer.info.reset(); }
       const gpuFrameId = session.isReadySession() ? gpu?.beginFrame() ?? null : null;
       // 水面动态反射（HIGH/ULTRA）：镜像 pass 必须在主渲染前完成（RT 供水面着色采样）。
-      waterReflection.update(renderer, scene, camera);
+      const reflectionStarted = PERF ? performance.now() : 0;
+      waterReflection.update(renderer, scene, camera, gpu);
+      const mainStarted = PERF ? performance.now() : 0;
       const gpuMainStarted = gpu?.begin('main') ?? false;
       try { renderer.render(scene, camera); } finally { if (gpuMainStarted) gpu.end(); }
       session.tryMarkFirstReadyFrame(performance.now());
@@ -870,7 +873,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       cameraRuntime.renderArmorHighlight();
       gpu?.submitFrame();
       const perfR1 = PERF ? performance.now() : 0;
-      if (PERF && session.isReadySession()) perfProbe.perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, cameraRuntime.armorStats(), { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
+      if (PERF && session.isReadySession()) perfProbe.perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, cameraRuntime.armorStats(), {
+        cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished,
+        terrainCheckInclusiveMs: terrainFinished - perfT1, reflectionUpdateMs: mainStarted - reflectionStarted,
+        mainSubmitMs: perfR0 - mainStarted, gpuFrameId, gpu_total_ms: null,
+      });
       gpu?.recorded(gpuFrameId);
     } finally {
       if (PERF) renderer.info.autoReset = perfAutoReset;
@@ -878,15 +885,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
   }
 
-  // ---------- 性能探针（`?perf`；只读测量，不改变任何渲染行为） ----------
-  // 分阶段逐帧耗时 / 主线程停顿看门狗 / window.__pbPerf 调试句柄的唯一 owner =
-  // playback/perfProbe.ts（#820 Step 4 出仓）；PERF/perf/gpu 句柄仍由本闭包解构持有
-  //（渲染循环与会话编排直接消费）。
+  // 帧计时、GPU 查询与诊断句柄生命周期归 perfProbe。
   const perfProbe = createPerfProbe({
     container,
     getT: () => T,
     getRenderer: () => renderer,
     getQualityKey: () => QKEY,
+    getSpeed: () => SPEED,
+    getDynres: () => DYNRES,
     getArmorHighlightPref: () => ARMOR_HIGHLIGHT,
     getCameraMode: () => cameraRuntime.cam(),
     paused: () => paused,
@@ -898,9 +904,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     armorStats: () => cameraRuntime.armorStats(),
     contactShadowsCount: () => contactShadowCtl.count(),
   });
-  const PERF = perfProbe.PERF;
-  const perf = perfProbe.perf;
-  const gpu = perfProbe.gpu;
+  const { PERF, perf, gpu } = perfProbe;
   let dynResCtl = null;
   let rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres, stencil }（reset 保留渲染器时用于失配检测）
 
@@ -1062,7 +1066,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
-  function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
+  function setSpeed(s) {
+    if (!isPlaybackSpeed(s)) return;
+    if (perf && s !== SPEED) perf.interrupt('speed-change');
+    SPEED = s;
+    store.speed = s;
+  }
 
 
   // 键盘（空格 / ←→）由页面经 usePlaybackTransport 统一处理（与 2D 同一套键位与输入框防误触），
@@ -1100,7 +1109,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     mapWorld.dispose();   // 地图资产段 teardown（owner 在 mapWorld；对象清单/顺序逐字保留）
     annotationScene.clearSessionProjection();   // 旧会话的 annotation 派生几何不得跨图残留（权威在 pane）
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
-    clearSpawns();   // 出生点贴地标记随会话释放（#835，与基地同一生命周期）
+    spawnMarkers.clear();   // 出生点贴地标记随会话释放（#835，与基地同一生命周期）
     // 车辆域 teardown owner（#820 Step 4）：履带印逐车回收 + 贴图/参数缓存释放
     //（treadRuntime.dispose），随后车辆循环（分离炮塔/GLB/悬挂几何/低模组）+ GLB 模板
     // 缓存释放 + V=[]（vehicleRuntime.dispose）。先 tread 后 vehicles，保持原相对顺序
@@ -1195,8 +1204,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
     }
   }
-  /** 会话开场相机重置：跟随目标不跨回放（startPlayback 编排调用）。 */
-  function prepareSessionCamera() { cameraRuntime.prepareSessionCamera(); }
   /** 回放数据发布（sessionLifecycle 编排调用；DATA/VIS_BY_EID/POSE_GRID 唯一 owner 仍在本闭包）。 */
   function publishSessionData(data, playbackSession) {
     DATA = data;
@@ -1220,8 +1227,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     POSE_GRID.samples = 0;
     store.playbackSession = null;
   }
-  /** 会话级 resolver 装配 + mounted-configs 预取（owner = labelsRuntime.prepareResolvers）。 */
-  function prepareResolvers() { labels.prepareResolvers(); }
   /** 会话游标复位（开战时刻：弹道指针与击杀 feed 指针）。 */
   function resetSessionCursors() { battle.resetShotPtr(); labels.resetCursors(); }
 
@@ -1239,7 +1244,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     battleRange,
     publishSceneClock: () => { sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration); },
     clearCanonicalClock: () => { canonicalClock = null; },
-    prepareSessionCamera,
+    prepareSessionCamera: cameraRuntime.prepareSessionCamera,
     setMapKey: (key) => mapWorld.setMapKey(key),
     getGlbOn: () => vehicles.glbOn(),
     buildWorld: () => mapWorld.buildWorld(),
@@ -1253,7 +1258,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setupContactShadows: () => contactShadowCtl.setup(),
     applyGlbToggle: (on) => vehicles.applyGlbToggle(on),
     buildRoster: () => labels.buildRoster(),
-    prepareResolvers,
+    prepareResolvers: labels.prepareResolvers,
     prewarmShaders,
     setPlaying,
     tick,
@@ -1327,7 +1332,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
      * `DATA` 后旧续体会在 `DATA.vehicles` 上抛错，把内部异常当「加载失败」写给用户）。
      */
     reset() {
-      if (perf) { perf.interrupt('session-reset'); perf.beginSession(); session.clearReadySession(); perf.setIdentity({ replayDigest: null }); }
+      if (perf) { perf.interrupt('session-reset'); perf.beginSession(); session.clearReadySession(); perf.setIdentity({ sessionMode: null, mapId: null, replayDigest: null }); }
       session.invalidateLoadingTokens();
       teardownSession();               // 车辆/地图/地形/特效/GLB 模板全量释放 + roster/HP/点数归零
       setPlaying(false);
@@ -1413,7 +1418,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         vehicles.syncContactShadow(v);   // 类型图标替换后阴影随显隐（#907 主干随迁）
       }
       labels.setLabelPrefs();
-      if (camera) labels.updateLabels();
+      if (renderer && camera) labels.updateLabels();
     },
     // 渲染性能偏好切换：只持久化 + 同步 store（待开播阶段渲染器未创建，下次
     // initScene 按当前偏好装配——不重载、不重建；开关已移至待开播卡片，
@@ -1424,6 +1429,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.logdepth = !!on;
     },
     setDynres: (on) => {
+      if (perf && DYNRES !== !!on) perf.interrupt('dynres-change');
       DYNRES = !!on;
       persistBoolPref('pb_dynres', on);
       store.dynres = !!on;
@@ -1474,13 +1480,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         delete window.__destructStage; delete window.__destructDebug;
         delete window.__waterCoast;
       }
-      // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳
-      // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
-      if (PERF) {
-        perfProbe.stopWatchdog();
-        perf.reset();
-        if (window.__pbPerf === perfProbe.perfHandle) delete window.__pbPerf;
-      }
+      perfProbe.dispose();
       if (renderer) {
         try { renderer.domElement.removeEventListener('pointerdown', cameraRuntime.onScenePointerDown); } catch (_) {}
         try { renderer.domElement.removeEventListener('pointerup', cameraRuntime.onScenePointerUp); } catch (_) {}

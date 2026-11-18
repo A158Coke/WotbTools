@@ -16,7 +16,7 @@ function makeDeps(labelsOn: boolean, overrides: Partial<LabelsRuntimeDeps> = {})
   }
   const deps: LabelsRuntimeDeps = {
     store: { labelsOn, killfeed: [], scoreFriend: 0, scoreEnemy: 0, friendlyTeam: 1, roster: { team1: [], team2: [], unknown: [] } } as never,
-    container: document.createElement('div'),
+    getViewportSize: () => ({ x: 800, y: 600 }),
     getCamera: () => new THREE.PerspectiveCamera(),
     getRaycaster: () => new THREE.Raycaster(),
     getData: () => ({ meta: { friendly_team: 1 }, kills: [] }) as never,

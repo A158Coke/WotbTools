@@ -133,6 +133,8 @@ describe('?perf 看门狗（行为）', () => {
       const { createPerfProbe } = await import('./perfProbe.js')
       const probe = createPerfProbe({
         getQualityKey: () => 'mid',
+        getSpeed: () => 1,
+        getDynres: () => false,
         getCameraMode: () => 'free',
         getArmorHighlightPref: () => false,
         container: document.createElement('div'),

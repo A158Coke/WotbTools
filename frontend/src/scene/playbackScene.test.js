@@ -80,7 +80,8 @@ vi.mock('three', async (importOriginal) => {
       this.capabilities = { getMaxAnisotropy: () => 8 }
       this.info = { autoReset: true, reset() {}, render: { calls: 0 } }
     }
-    setSize() {}
+    setSize(width, height) { this.width = width; this.height = height }
+    getSize(target) { return target.set(this.width, this.height) }
     setPixelRatio() {}
     getPixelRatio() { return 1 }
     getContext() { return null }
@@ -324,6 +325,10 @@ describe('opt-in profiler ownership', () => {
     frame()
     const snapshot = window.__pbPerf.snapshot()
     expect(snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
+    expect(snapshot.identity).toMatchObject({ sessionMode: 'map', mapId: 1, replayDigest: null, playbackSpeed: 1 })
+    window.__pbPerf.startCapture({ scenarioId: 'speed-change' })
+    api.setSpeed(2)
+    expect(window.__pbPerf.stopCapture()).toMatchObject({ reason: 'speed-change', interrupted: true })
     // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
     for (const e of snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')) {
       expect(typeof e.durationMs).toBe('number')
