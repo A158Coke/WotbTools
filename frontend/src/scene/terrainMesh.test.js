@@ -152,6 +152,7 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
       d: 100, px: 0, py: 100, pz: 0, ux: 0, uy: 1, uz: 0, fovY: 0.8, aspect: 16 / 9, ...o,
     })
     expect(terrainLodStaleReason(null, st(), 0)).toBe('first')
+    expect(terrainLodStaleReason({ d: 100 }, st(), 500)).toBeNull() // 非快照对象仍沿用旧版逐字段算术
     expect(terrainLodStaleReason(st(), st({ d: 90, py: 90 }), 500)).toBe('distance')
     expect(terrainLodStaleReason(st(), st({ d: 150, py: 150 }), 500)).toBe('distance')
     expect(terrainLodStaleReason(st(), st({ px: 6 }), 500)).toBe('lateral')          // 侧向 6% ≥ 5%
