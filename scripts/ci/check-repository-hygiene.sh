@@ -42,20 +42,24 @@ is_allowlisted() {
   return 1
 }
 
-# Source-line budget (#820): first-party production frontend source stays below a
-# fixed physical-line ceiling. Tests, declaration files and generated transport
-# are not production source and remain out of scope. Existing over-budget files
-# are exact-path exceptions that may only leave the list as they get split.
+# Source-line budget: first-party frontend, backend and Android native production
+# source must respect the same physical-line ceiling. Tests, declarations,
+# generated transport and build scripts remain outside this production scope.
 is_source_line_candidate() {
   local path="$1"
-  [[ "$path" == frontend/src/* ]] || return 1
   case "$path" in
-    *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+    frontend/src/*)
+      case "$path" in
+        *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+      esac
+      case "$path" in
+        *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
+      esac
+      ;;
+    java/*/src/main/java/*.java|keycloak-*/src/main/java/*.java|android/app/src/main/java/*.java|android/app/src/main/java/*.kt|android/app/src/main/assets/gecko-bridge/*.js)
+      return 0 ;;
   esac
-  case "$path" in
-    *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
-    *) return 1 ;;
-  esac
+  return 1
 }
 
 is_source_line_allowlisted() {
@@ -210,7 +214,7 @@ report_large_file() {
 report_source_line_budget() {
   local path="$1"
   local lines="$2"
-  echo "ERROR: first-party frontend source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
+  echo "ERROR: first-party production source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
   echo "       Split it by responsibility, or swap an existing entry for it in $SOURCE_LINE_ALLOWLIST_FILE (the allowlist may only shrink)." >&2
 }
 
@@ -309,6 +313,9 @@ load_ignored_paths index "" tracked_ignored
 
 source_line_checked=0
 source_line_over=0
+source_line_over_frontend=0
+source_line_over_backend=0
+source_line_over_android=0
 declare -A source_line_head_lines=()
 
 while IFS= read -r -d '' path; do
@@ -350,6 +357,11 @@ while IFS= read -r -d '' path; do
     source_line_head_lines["$path"]="$lines"
     if (( lines > MAX_SOURCE_LINES )); then
       source_line_over=$((source_line_over + 1))
+      case "$path" in
+        frontend/*) source_line_over_frontend=$((source_line_over_frontend + 1)) ;;
+        android/*) source_line_over_android=$((source_line_over_android + 1)) ;;
+        *) source_line_over_backend=$((source_line_over_backend + 1)) ;;
+      esac
       if ! is_source_line_allowlisted "$path" && ! is_unmodified_base_source_blob "$path" "$(git hash-object -- "$path")"; then
         report_source_line_budget "$path" "$lines"
         violations=$((violations + 1))
@@ -425,7 +437,7 @@ else
   echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
 fi
 
-echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit present=$source_line_over (untouched base blobs remain grandfathered)."
+echo "Source line budget checked $source_line_checked first-party production source file(s); limit=$MAX_SOURCE_LINES lines; over-limit present=$source_line_over (frontend=$source_line_over_frontend, backend=$source_line_over_backend, android=$source_line_over_android; untouched base blobs grandfathered)."
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
