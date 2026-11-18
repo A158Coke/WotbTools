@@ -5,8 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 import {
-  projectionA, projectionB, mountAiReviewPanel, analyzeCalls, cancelCalls, cancelUrl,
-  requestBody, sseEvent,
+  projectionA, projectionB, mountAiReviewPanel, createRequestHelpers, requestBody, sseEvent,
 } from '../test/AiReviewPanelTestHelpers.js'
 
 const connectivityState = vi.hoisted(() => ({ state: null }))
@@ -38,6 +37,8 @@ vi.mock('../composables/useAuth.js', () => ({
 }))
 
 const mountPanel = (props = {}) => mountAiReviewPanel(mount, AiReviewPanel, props)
+const AI_REVIEWS_URL = '/api/ai/reviews'
+const { analyzeCalls, cancelCalls, cancelUrl } = createRequestHelpers(AI_REVIEWS_URL)
 
 // ---- 投影 identity 必须进入 AI request ownership ----
 

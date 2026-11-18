@@ -1,6 +1,5 @@
 import { gunzipSync } from 'node:zlib'
 
-export const AI_REVIEWS_URL = '/api/ai/reviews'
 export const AI_WIRE_LOCALE = 'zh-CN'
 
 export const projectionA = Object.freeze({
@@ -41,19 +40,22 @@ export function mountAiReviewPanel(mount, AiReviewPanel, props = {}) {
   })
 }
 
-/** `/api/ai/reviews` request calls, excluding cancel endpoints. */
-export function analyzeCalls(fetchMock) {
-  return fetchMock.mock.calls.filter(([url]) => String(url) === AI_REVIEWS_URL)
+/** Request calls, excluding cancel endpoints. */
+export function createRequestHelpers(aiReviewsUrl) {
+  return {
+    analyzeCalls(fetchMock) {
+      return fetchMock.mock.calls.filter(([url]) => String(url) === aiReviewsUrl)
+    },
+    cancelCalls(fetchMock) {
+      return fetchMock.mock.calls
+        .filter(([url]) => String(url).includes('/cancel'))
+        .map(([url]) => String(url))
+    },
+    cancelUrl(correlationId) {
+      return `${aiReviewsUrl}/${encodeURIComponent(correlationId)}/cancel`
+    },
+  }
 }
-
-/** Cancel endpoint URLs, whose correlation id is a path parameter. */
-export function cancelCalls(fetchMock) {
-  return fetchMock.mock.calls
-    .filter(([url]) => String(url).includes('/cancel'))
-    .map(([url]) => String(url))
-}
-
-export const cancelUrl = correlationId => `${AI_REVIEWS_URL}/${encodeURIComponent(correlationId)}/cancel`
 
 /** Decode the gzip request body back into JSON. */
 export const requestBody = async call => JSON.parse(

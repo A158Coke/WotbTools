@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import AiReviewPanel from './AiReviewPanel.vue'
 import {
-  AI_REVIEWS_URL, AI_WIRE_LOCALE, projectionA, mountAiReviewPanel, requestBody,
+  AI_WIRE_LOCALE, projectionA, mountAiReviewPanel, requestBody,
   emptySseResponse, sseFrame, sseFromFrames,
 } from '../test/AiReviewPanelTestHelpers.js'
 
@@ -38,6 +38,7 @@ vi.mock('../composables/useAuth.js', () => ({
 }))
 
 const mountPanel = (props = {}) => mountAiReviewPanel(mount, AiReviewPanel, props)
+const AI_REVIEWS_URL = '/api/ai/reviews'
 
 describe('AiReviewPanel workspace layout ownership', () => {
   it('.ai-review-panel 存在且包含 .ai-action-row（Action 与 Result 同属一个父容器）', () => {
