@@ -210,7 +210,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('setSpeed 只接受档位表内的值（#827 F3: Integration Contract（无注入点）；宿主闭包函数无独立 owner）', () => {
-    expect(src).toMatch(/function setSpeed\(s\) \{ if \(!isPlaybackSpeed\(s\)\) return;/)
+    expect(src).toMatch(/function setSpeed\(s\)\s*\{\s*if\s*\(!isPlaybackSpeed\(s\)\)\s*return;/)
   })
 
   it('onResize 单画布取整尺寸 + 置脏重绘（#827 F3: Integration Contract（无注入点）；宿主闭包函数）', () => {
