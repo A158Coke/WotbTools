@@ -156,7 +156,7 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         }
         final String raw = response.completionText() == null ? "" : response.completionText();
         // structured result：本 probe 只读正文语义，因此不做 roster playerKey 校验
-        // （normative roster 校验由 TeamAiReviewResultParserTest / TeamReplayAnalysisServiceTest 覆盖）。
+        // （normative roster 校验由 TeamAiReviewResultParserTest / TeamReplayAnalysisServiceRecoveryTest 覆盖）。
         final TeamAiReviewResultParser.ParseResult parsed =
                 TeamAiReviewResultParser.parse(raw, Set.of());
         if (!parsed.usable()) {
