@@ -49,6 +49,7 @@ const FACET = {
     { eid: 2, nickname: 'Bravo', tank_name: 'E 100', team: 2, death_times: [32, 60], resurrection_times: [45] },
     { eid: 3, nickname: 'Charlie', tank_name: 'Maus', team: 2 },
   ],
+  meta: { friendly_team: 1 },
 }
 
 describe('buildEventStream', () => {
@@ -86,7 +87,7 @@ describe('buildEventStream', () => {
     // 未匹配的掉血仍单列（环境/未记录射击），归「炮击」片并带来源/受害身份
     const dmg = evs.find((e) => e.kind === 'damage')
     expect(dmg.damage).toBe(320)
-    expect(dmg.filter).toBe('shot')
+    expect(dmg.filter).toBe('damage')
     expect(dmg.actor).toMatchObject({ eid: 1, name: 'Alpha' })
     expect(dmg.target).toMatchObject({ eid: 2, name: 'Bravo' })
     // 击杀不再是独立行（已并入炮击）
@@ -96,6 +97,8 @@ describe('buildEventStream', () => {
     // 顺序：supremacy invading(26) → supremacy captured(28) → assault 进度上升(34/35)
     expect(caps.map((e) => e.captureState)).toEqual(['invading', 'captured', 'invading', 'captured'])
     expect(caps[1].team).toBe(1)
+    expect(caps[1].faction).toBe('friendly') // meta.friendly_team=1
+    expect(caps[0].faction).toBe('friendly')
     expect(caps[1].baseId).toBe(0)
     expect(caps[2].progress).toBe(40)
     expect(caps[3].progress).toBe(100)
@@ -136,6 +139,71 @@ describe('buildEventStream', () => {
       chat_messages: [{ t: 10.2, tag: 1, seq: 2, text: 'hi' }],
     })
     expect(dup.filter((e) => e.kind === 'chat')).toHaveLength(2)
+  })
+
+  it('指令目标/通知主体/发送者按 eid 或 accountId 联表到玩家与坦克', () => {
+    const facet = {
+      vehicles: [
+        { eid: 1, account_id: 2002, nickname: 'Alpha', tank_id: 100, tank_name: 'tank_100', team: 1 },
+        { eid: 2, account_id: 3003, nickname: 'Bravo', tank_id: 200, tank_name: 'tank_200', team: 2 },
+      ],
+      chat_events: [
+        // 真实语料：attack_enemy 的 target 是车辆 eid（不是上游注释的 accountId）
+        { t: 1, kind: 'command', raw_type: 20, sender: 'Alpha', command: 29, command_name: 'attack_enemy', target: 2 },
+        // 兼容 accountId 域（旧/其他客户端产物）
+        { t: 2, kind: 'command', raw_type: 20, sender: 'Bravo', command: 29, command_name: 'attack_enemy', target: 2002 },
+        { t: 3, kind: 'message', raw_type: 1, sender: 'Alpha', text: 'hi' },
+        { t: 4, kind: 'join', raw_type: 0, sender: 'Bravo' },
+      ],
+      notifications: [
+        { t: 5, subject: 2, code: 11515 },
+        { t: 6, subject: 2002, code: 11515 }, // accountId 域 → Alpha
+        { t: 7, subject: 99999, code: 1 },
+      ],
+    }
+    const evs = buildEventStream(facet, { tankNames: { 100: 'T-62A', 200: 'E 100' } })
+    const cmds = evs.filter((e) => e.kind === 'command')
+    expect(cmds[0].actor).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
+    expect(cmds[0].target).toMatchObject({ name: 'Bravo', tank: 'E 100' })
+    expect(cmds[1].target).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
+    expect(evs.find((e) => e.kind === 'chat').actor).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
+    expect(evs.find((e) => e.kind === 'presence').actor).toMatchObject({ name: 'Bravo', tank: 'E 100' })
+    const notices = evs.filter((e) => e.kind === 'notice')
+    expect(notices[0].actor).toMatchObject({ name: 'Bravo', tank: 'E 100' })
+    expect(notices[1].actor).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
+    expect(notices[2].actor).toBeUndefined() // 未命中名册：不伪造身份
+  })
+
+  it('tank_<id> 占位名不上 UI；tankNames 注入真实车型名', () => {
+    const facet = {
+      vehicles: [{ eid: 1, nickname: 'Alpha', tank_id: 100, tank_name: 'tank_100', team: 1 }],
+      visibility: [{ eid: 1, t_in: 0 }],
+    }
+    expect(buildEventStream(facet)[0].actor.tank).toBeUndefined()
+    expect(buildEventStream(facet, { tankNames: { 100: 'T-62A' } })[0].actor.tank).toBe('T-62A')
+  })
+
+  it('地图类指令进入 marker 片；扇区保留、据点目标不猜', () => {
+    const facet = {
+      vehicles: [{ eid: 1, nickname: 'Alpha', tank_name: 'T-62A', team: 1 }],
+      chat_events: [
+        { t: 1, kind: 'command', raw_type: 20, sender: 'Alpha', command: 28, command_name: 'attention_to_cell', target: 6 },
+        { t: 2, kind: 'command', raw_type: 20, sender: 'Alpha', command: 60, command_name: 'moving_here', target: 0 },
+        { t: 3, kind: 'command', raw_type: 20, sender: 'Alpha', command: 57, command_name: 'catch_point', target: 9 },
+        { t: 4, kind: 'command', raw_type: 20, sender: 'Alpha', command: 58, command_name: 'defend_point', target: 9 },
+      ],
+    }
+    const evs = buildEventStream(facet)
+    const markers = evs.filter((e) => e.kind === 'marker')
+    expect(markers).toHaveLength(4)
+    expect(markers.every((e) => e.filter === 'marker')).toBe(true)
+    expect(markers[0]).toMatchObject({ commandName: 'attention_to_cell', cell: 6 })
+    expect(markers[0].actor).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
+    // catch/defend 的 payload 语义未闭合：保留 commandTarget，不映射为 target/cell
+    expect(markers[2].target).toBeUndefined()
+    expect(markers[2].cell).toBeUndefined()
+    expect(markers[2].commandTarget).toBe(9)
+    expect(filterEvents(evs, 'marker')).toHaveLength(4)
   })
 
   it('连发逐发归属：窗口内伤害不会被第一发吞掉（评审 4595459443）', () => {
@@ -237,13 +305,14 @@ describe('filterEvents', () => {
   it('group filters select the right rows', () => {
     expect(filterEvents(evs, 'chat').map((e) => e.kind)).toEqual(['chat', 'command', 'presence'])
     expect(filterEvents(evs, 'other').map((e) => e.kind)).toEqual(['notice', 'death', 'destructible', 'revive', 'death'])
-    // 炮击片 = 炮击行 + 未匹配的掉血行（合并呈现口径）
-    expect(filterEvents(evs, 'shot').every((e) => e.kind === 'shot' || e.kind === 'damage')).toBe(true)
+    // 炮击片 = 只含炮击行；未匹配炮击的掉血单独进「掉血」片
+    expect(filterEvents(evs, 'shot').every((e) => e.kind === 'shot')).toBe(true)
+    expect(filterEvents(evs, 'damage').map((e) => e.kind)).toEqual(['damage'])
     const cons = evs.find((e) => e.kind === 'consumable')
     expect(cons.actor).toMatchObject({ eid: 1, name: 'Alpha' })
   })
   it('filter keys are all known groups', () => {
-    for (const f of EVENT_FILTERS) expect(f.key).toMatch(/^(all|shot|damage|kill|capture|observed|chat|module|consumable|other)$/)
+    for (const f of EVENT_FILTERS) expect(f.key).toMatch(/^(all|shot|damage|kill|capture|observed|marker|chat|module|consumable|other)$/)
   })
 })
 

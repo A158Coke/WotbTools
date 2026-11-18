@@ -4,14 +4,14 @@
 // 数据源 = playbackSession.loadScene(file)（与 3D 面板同一缓存解析，不重复跑 WASM）。
 // 射击事件的「装甲检视」走现有射击复现入口（storeShotsForViewer + shotViewerQuery，
 // 与 ReplayShotsPane.openInViewer 同一交接通道），本 pane 不自建任何 viewer 契约。
-import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { enrichShotsFromRoster, parseAgentShotsFromBytes } from '../api/agent-replay-facets.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { annotateMountedConfigs, buildPitchLimits } from '../scene/shotHandoff.ts'
-import { storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
+import { fetchTankEncyclopedia, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
 import type { ShotViewerInput } from '../scene/agentData.js'
 import {
   buildEventStream, filterEvents, EVENT_FILTERS,
@@ -59,7 +59,32 @@ const filter = ref<EventFilterKey>('all')
 const RenderCap = 800
 const showCount = ref(RenderCap)
 
-const events = computed(() => buildEventStream(facet.value))
+/**
+ * 车型名表（tank_cache `{id: name}`）。facet 的 `tank_name` 是 `tank_<id>` 占位
+ * （WASM 未注入名表）——事件流必须用真实车型名，否则行里只剩数字编号。
+ */
+const tankNames = ref<Record<number, string>>({})
+let tankNamesAttempted = false
+async function loadTankNames() {
+  if (tankNamesAttempted) return
+  tankNamesAttempted = true
+  try {
+    const cache = await fetchTankEncyclopedia() as Record<string, { name?: unknown }> | null
+    const names: Record<number, string> = {}
+    for (const [id, info] of Object.entries(cache || {})) {
+      const tankId = Number(id)
+      const name = typeof info?.name === 'string' ? info.name : ''
+      if (name && Number.isFinite(tankId)) names[tankId] = name
+    }
+    tankNames.value = names
+  } catch {
+    // 资产面暂不可用：保留 facet 名/昵称；下次进入或换文件时重试。
+    tankNamesAttempted = false
+  }
+}
+onMounted(() => { void loadTankNames() })
+
+const events = computed(() => buildEventStream(facet.value, { tankNames: tankNames.value }))
 const filtered = computed(() => filterEvents(events.value, filter.value))
 const shown = computed(() => filtered.value.slice(0, showCount.value))
 const overflow = computed(() => Math.max(0, filtered.value.length - shown.value.length))
@@ -76,6 +101,8 @@ async function ensureFacet() {
   const file = props.file
   if (!file || !props.playbackSession?.loadScene) return
   if (parsedFile.value === file) return
+  // 名表与解析并行走；失败不阻塞事件流（行内退化为昵称）。
+  void loadTankNames()
   const gen = ++loadGen
   loading.value = true
   err.value = ''
@@ -113,7 +140,11 @@ watch(
   (active) => {
     // 离开事件流 = 在途装甲交接作废（旧 query 返回后不得把用户拉走）
     if (!active) handoffSeq++
-    if (active && !facet.value) void ensureFacet()
+    if (active) {
+      // 名表失败后允许在重新进入时重试（不阻塞 facet 缓存命中）。
+      void loadTankNames()
+      if (!facet.value) void ensureFacet()
+    }
   },
   { immediate: true },
 )
@@ -206,7 +237,7 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
 
 const KIND_ICON: Record<string, string> = {
   shot: '◎', damage: '✦', kill: '☠', capture: '🚩', observed: '👁',
-  chat: '💬', command: '📣', presence: '·',
+  chat: '💬', command: '📣', marker: '📍', presence: '·',
   notice: 'ℹ', module: '⚙', moduleDamage: '⚙', destructible: '🌳',
   consumable: '⏱', death: '☠', revive: '✚',
 }
@@ -215,12 +246,11 @@ function verdictClass(ev: PlaybackEventRow): string {
   return ev.verdict ? `ev-${ev.verdict}` : ''
 }
 
-/** 名册身份文本：昵称 · 车名（缺一即省略；全缺回退 eid） */
+/** 名册身份文本：昵称 · 车名（缺一即省略；全缺回退「未知玩家」，不显示裸 eid）。 */
 function actorText(a?: { eid: number; name?: string; tank?: string }): string {
   if (!a) return '-'
-  const parts = [a.name || `#${a.eid}`]
-  if (a.tank) parts.push(a.tank)
-  return parts.join(' · ')
+  const parts = [a.name || '', a.tank || ''].filter(Boolean)
+  return parts.length ? parts.join(' · ') : t('eventStream.unknown_actor')
 }
 
 function verdictText(ev: PlaybackEventRow): string {
@@ -237,7 +267,10 @@ function verdictText(ev: PlaybackEventRow): string {
 function eventTitle(ev: PlaybackEventRow): string {
   switch (ev.kind) {
     case 'shot': {
-      const head = t('eventStream.shot_line', { from: actorText(ev.actor), to: actorText(ev.target) })
+      const head = t('eventStream.shot_line', {
+        from: actorText(ev.actor),
+        to: ev.target ? actorText(ev.target) : t('eventStream.no_target'),
+      })
       const parts = [head]
       const v = verdictText(ev)
       if (v) parts.push(v)
@@ -247,57 +280,78 @@ function eventTitle(ev: PlaybackEventRow): string {
     }
     case 'chat': {
       const ch = ev.channelName ? `[${ev.channelName}] ` : ''
-      const who = ev.sender ? `${ev.sender}: ` : ''
+      const who = ev.actor ? `${actorText(ev.actor)}: ` : ev.sender ? `${ev.sender}: ` : ''
       return `${ch}${who}${ev.text || ''}`
     }
     case 'command': {
       const ch = ev.channelName ? ` · ${ev.channelName}` : ''
-      const who = ev.sender || '?'
-      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
-        // 这两类指令的 payload 域上游契约未闭合 → 显示原始目标值，不宣称是据点编号
-        return t(`eventStream.cmd_${ev.commandName}_raw`, {
-          who,
-          target: ev.commandTarget ?? '?',
-        }) + ch
-      }
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       if (ev.commandName) {
-        // 客户端权威语义（未映射 id 保留 raw）
+        // 客户端权威语义（未映射 id 保留 raw）；玩家目标按 eid/account 两域联表，
+        // 查不到时给「未知目标」而不是裸数字（原始值在 tooltip）。
         return t(`eventStream.cmd_${ev.commandName}`, {
           who,
-          target: actorText(ev.target),
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
           cell: ev.cell ?? '?',
         }) + ch
       }
       return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
     }
+    case 'marker': {
+      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      if (ev.commandName === 'attention_to_cell') {
+        return t('eventStream.marker_cell', { who, cell: ev.cell ?? '?' }) + ch
+      }
+      if (ev.commandName === 'catch_point') {
+        return t('eventStream.marker_catch', { who }) + ch
+      }
+      if (ev.commandName === 'defend_point') {
+        return t('eventStream.marker_defend', { who }) + ch
+      }
+      return t('eventStream.marker_moving', { who }) + ch
+    }
     case 'presence': {
       // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
       const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
-      return t(key, { who: ev.sender || '?', channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      return t(key, { who, channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
     }
     case 'moduleDamage':
     case 'module':
       return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`
     case 'damage': return t('eventStream.damage_label', {
-      from: actorText(ev.actor),
-      to: actorText(ev.target),
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
       n: ev.damage ?? 0,
     })
     case 'capture': {
       if (ev.progress != null) return t('eventStream.capture_progress', { n: ev.progress })
+      const base = String.fromCharCode(65 + (ev.baseId ?? 0))
+      if (ev.faction) {
+        return t(`eventStream.capture_${ev.captureState ?? 'invading'}_faction`, {
+          faction: t(`eventStream.faction_${ev.faction}`),
+          base,
+        })
+      }
       return t(`eventStream.capture_${ev.captureState ?? 'invading'}`, {
-        base: String.fromCharCode(65 + (ev.baseId ?? 0)),
+        base,
         team: ev.team ?? '-',
       })
     }
     case 'observed': return t('eventStream.observed_label', { who: actorText(ev.actor) })
     case 'destructible': return t('eventStream.destructible_label')
-    case 'notice': return t('eventStream.notice_label', { code: ev.code ?? '?' })
+    case 'notice': return ev.actor
+      ? t('eventStream.notice_label_actor', { who: actorText(ev.actor), code: ev.code ?? '?' })
+      : t('eventStream.notice_label', { code: ev.code ?? '?' })
     case 'consumable':
       return `${actorText(ev.actor)} · ${ev.text || t('eventStream.consumable_label')}`
     case 'death': return t('eventStream.death_label_actor', { who: actorText(ev.actor) })
     case 'revive': return t('eventStream.revive_label_actor', { who: actorText(ev.actor) })
-    case 'kill': return t('eventStream.kill_label', { from: actorText(ev.actor), to: actorText(ev.target) })
+    case 'kill': return t('eventStream.kill_label', {
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
+    })
     default: return t('eventStream.shot_label')
   }
 }
@@ -305,6 +359,16 @@ function eventTitle(ev: PlaybackEventRow): string {
 /** 该行是否可直接进射击复现（有目标的事实行） */
 function canOpenShot(ev: PlaybackEventRow): boolean {
   return ev.kind === 'shot' && ev.shot != null && ev.targetEid != null
+}
+
+/** 行 tooltip：射击提示；地图标记暴露上游未闭合的原始目标值（不占主文本）。 */
+function rowTitle(ev: PlaybackEventRow): string {
+  if (canOpenShot(ev)) return t('eventStream.open_shot_hint')
+  if (ev.kind === 'marker' && ev.commandTarget
+    && (ev.commandName === 'catch_point' || ev.commandName === 'defend_point')) {
+    return t('eventStream.marker_raw_target', { target: ev.commandTarget })
+  }
+  return ''
 }
 
 /** 行主体点击：射击行 → 射击复现；其余 → 跳到该时刻 */
@@ -358,7 +422,7 @@ function filterCount(key: EventFilterKey): number {
               class="es-body"
               :data-kind="ev.kind"
               :class="{ 'es-body-shot': canOpenShot(ev) }"
-              :title="canOpenShot(ev) ? $t('eventStream.open_shot_hint') : ''"
+              :title="rowTitle(ev)"
               @click="onRowClick(ev)"
             >
               <span class="es-text">{{ eventTitle(ev) }}</span>

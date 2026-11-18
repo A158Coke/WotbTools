@@ -6,12 +6,18 @@
 // 事件源与 kind（过滤器 chip 按此分组）：
 //   shot        shots[].t_fire            炮击（含命中/未命中/跳弹，verdict 取 game_hit_result 位图）
 //   kill        kills[].t                 击毁（killfeed 同源）
-//   chat        chat_messages[].t         聊天文本（v0.5.0；tag/seq 不上 UI）
-//   notice      notifications[].t         单发通知（v0.5.0；语义未定 → 「通知 #code」）
+//   chat        chat_events[].kind=message（0x2f 战斗聊天）/ chat_messages[]（0x2b 另域）
+//   command     chat_events[].kind=command 非地图类快捷指令
+//   marker      chat_events[].kind=command 的地图标记（attention_to_cell / moving_here /
+//               catch_point / defend_point）；独立过滤片，避免与聊天文本混在一起
+//   presence    chat_events[].kind=join/leave/channel_created
+//   notice      notifications[].t         单发通知（语义未定；subject 仅按名册联表）
 //   module      module_crew_states[].?    模块/乘员状态（recorder-only 数据）
 //   consumable  consumables[].clock       消耗品生命周期
 //   death       vehicles[].death_times    死亡（≥2 次死亡的车才有数组；单次死亡用 kills/death_t）
 //   revive      vehicles[].resurrection_times  复活
+// 身份：vehicles[] 是唯一 eid 名册；tankNames 选项（tank_cache）补真实车型名；
+// 指令 target / 通知 subject 同时接受 eid 与 accountId 两域。
 //
 // 字段命名与 agent-replay-facets.ts 的 TS 类型一一对应；新增事件源在这里追加并同步 filter 组。
 
@@ -23,6 +29,7 @@ export type EventKind =
   | 'kill'
   | 'chat'
   | 'command'
+  | 'marker'
   | 'presence'
   | 'notice'
   | 'module'
@@ -42,6 +49,7 @@ export type EventFilterKey =
   | 'kill'
   | 'capture'
   | 'observed'
+  | 'marker'
   | 'chat'
   | 'module'
   | 'consumable'
@@ -104,6 +112,15 @@ export interface PlaybackEventRow {
   cell?: number
   /** 聊天/指令/在场的发送者昵称（0x2f 前缀名；旧 0x2b 聊天无署名） */
   sender?: string
+  /** 通知主体原始 id（kind=notice；上游语义未定，仅作名册联表证据） */
+  subject?: number
+  /** 占领阵营的玩家视角（kind=capture；friendly/enemy 由 meta.friendly_team 判定） */
+  faction?: 'friendly' | 'enemy'
+}
+
+/** 构建选项：车型名表（tank_cache `{id: name}`）；缺省时回退 facet `tank_name`（可能为 tank_<id> 占位）。 */
+export interface EventStreamOptions {
+  tankNames?: Readonly<Record<number, string>>
 }
 
 /** eid → 名册身份（昵称/车名/队伍；缺失字段省略） */
@@ -117,8 +134,10 @@ export interface ActorInfo {
 export const EVENT_FILTERS: ReadonlyArray<{ key: EventFilterKey; labelKey: string }> = [
   { key: 'all', labelKey: 'eventStream.filter_all' },
   { key: 'shot', labelKey: 'eventStream.filter_shot' },
+  { key: 'damage', labelKey: 'eventStream.filter_damage' },
   { key: 'capture', labelKey: 'eventStream.filter_capture' },
   { key: 'observed', labelKey: 'eventStream.filter_observed' },
+  { key: 'marker', labelKey: 'eventStream.filter_marker' },
   { key: 'chat', labelKey: 'eventStream.filter_chat' },
   { key: 'module', labelKey: 'eventStream.filter_module' },
   { key: 'consumable', labelKey: 'eventStream.filter_consumable' },
@@ -129,11 +148,12 @@ const FILTER_OF_KIND: Record<EventKind, EventFilterKey> = {
   shot: 'shot',
   kill: 'shot', // 击毁与炮击合并呈现（同一条战斗行）
   chat: 'chat',
-  command: 'chat', // 快捷指令与聊天同一过滤片（blitzinfo 同族）
+  command: 'chat', // 非地图类快捷指令与聊天同一过滤片（blitzinfo 同族）
+  marker: 'marker', // 地图标记（attention_to_cell / moving_here / catch_point / defend_point）
   presence: 'chat', // 成员进出
   module: 'module',
   moduleDamage: 'module', // method38 逐模块损伤与 method16 状态同片
-  damage: 'shot', // 掉血并入炮击行（未匹配到炮击时仍在此片）
+  damage: 'damage', // 未并入炮击的掉血单独成片（撞击/火焰/环境/未记录射击）
   capture: 'capture',
   observed: 'observed',
   destructible: 'other',
@@ -168,6 +188,7 @@ export function shotVerdict(shot: AgentPlaybackShot | null | undefined): ShotVer
 /** 归一化事件行：{ kind, filter, t, … }。t 升序稳定排序。 */
 export function buildEventStream(
   facet: AgentPlaybackFacet | null | undefined,
+  options: EventStreamOptions = {},
 ): PlaybackEventRow[] {
   if (!facet || typeof facet !== 'object') return []
   const out: PlaybackEventRow[] = []
@@ -181,32 +202,72 @@ export function buildEventStream(
     if (!Number.isFinite(time)) return // 非法时刻 fail-closed 丢弃该条
     out.push({ kind, filter: filterOverride ?? FILTER_OF_KIND[kind], t: time, ...extra })
   }
-  // 名册身份索引：所有事件行据此带出「谁 / 哪辆车」（eid 元数据只来自 vehicles[]）
+  // 名册身份索引：所有事件行据此带出「谁 / 哪辆车」（eid 元数据只来自 vehicles[]）。
+  // 车型名优先取注入的 tank_cache 名表；facet 的 tank_<id> 是**占位名**，不得上 UI。
+  const tankNameOf = (v: { tank_id?: number; tank_name?: string }): string | undefined => {
+    const fromTable = typeof v?.tank_id === 'number' ? options.tankNames?.[v.tank_id] : undefined
+    if (typeof fromTable === 'string' && fromTable) return fromTable
+    const raw = typeof v?.tank_name === 'string' ? v.tank_name : ''
+    return raw && !/^tank_\d+$/.test(raw) ? raw : undefined
+  }
   const actors = new Map<number, ActorInfo>()
+  const byName = new Map<string, ActorInfo[]>()
   for (const v of Array.isArray(facet.vehicles) ? facet.vehicles : []) {
     if (typeof v?.eid !== 'number') continue
     const name = typeof v.nickname === 'string' && v.nickname ? v.nickname : undefined
-    const tank = typeof v.tank_name === 'string' && v.tank_name ? v.tank_name : undefined
-    actors.set(v.eid, {
+    const tank = tankNameOf(v)
+    const actor: ActorInfo = {
       eid: v.eid,
       ...(name ? { name } : {}),
       ...(tank ? { tank } : {}),
       team: typeof v.team === 'number' ? v.team : null,
-    })
+    }
+    actors.set(v.eid, actor)
+    if (name) {
+      const list = byName.get(name) ?? []
+      list.push(actor)
+      byName.set(name, list)
+    }
   }
   const actorOf = (eid?: number | null): ActorInfo | undefined => {
-    if (typeof eid !== 'number') return undefined
+    if (typeof eid !== 'number' || eid <= 0) return undefined
     return actors.get(eid) ?? { eid }
   }
-  // accountId → 身份（指令目标 attack_enemy 携带的是 accountId，不是 eid）
+  /** 昵称 → 身份。仅唯一命中才解析；同名歧义保持 undefined（fail-closed）。 */
+  const actorByName = (name?: string | null): ActorInfo | undefined => {
+    if (!name) return undefined
+    const list = byName.get(name)
+    return list && list.length === 1 ? list[0] : undefined
+  }
+  // accountId → 身份（指令 target / 通知 subject 的候选 id 域之一）
   const byAccount = new Map<number, ActorInfo>()
   for (const v of Array.isArray(facet.vehicles) ? facet.vehicles : []) {
     if (typeof v?.account_id !== 'number' || !actors.has(v.eid)) continue
     byAccount.set(v.account_id, actors.get(v.eid) as ActorInfo)
   }
-  const actorByAccount = (account?: number | null): ActorInfo | undefined => {
-    if (typeof account !== 'number' || account <= 0) return undefined
-    return byAccount.get(account) ?? { eid: 0, name: `#${account}` }
+  /**
+   * 指令 target / 通知 subject → 身份。语料实测 `attack_enemy` 的载荷是**车辆 eid**
+   * （1549653/1764961/136528020… 均命中 vehicles[].eid），与上游注释的 accountId 不一致；
+   * 两域都按名册联表，eid 优先。0/负数 = 无目标。
+   */
+  const actorByRef = (ref?: number | null): ActorInfo | undefined => {
+    if (typeof ref !== 'number' || ref <= 0) return undefined
+    return actors.get(ref) ?? byAccount.get(ref)
+  }
+  /** 通知 subject：语义未定，若同一 id 同时命中两名不同玩家的 eid/accountId → 歧义，不联表。 */
+  const actorBySubject = (ref?: number | null): ActorInfo | undefined => {
+    if (typeof ref !== 'number' || ref <= 0) return undefined
+    const byEid = actors.get(ref)
+    const byAcct = byAccount.get(ref)
+    if (byEid && byAcct && byEid.eid !== byAcct.eid) return undefined
+    return byEid ?? byAcct
+  }
+  // 阵营视角：team 1/2 与 meta.friendly_team 相同 = friendly，另一队 = enemy；未知保持 undefined。
+  const friendlyTeam = facet.meta?.friendly_team
+  const factionOf = (team?: number | null): 'friendly' | 'enemy' | undefined => {
+    if (team !== 1 && team !== 2) return undefined
+    if (friendlyTeam !== 1 && friendlyTeam !== 2) return undefined
+    return team === friendlyTeam ? 'friendly' : 'enemy'
   }
   // 频道句柄 → 频道名（common/team），来自 chat_channels 的 channelName 末段
   const channelLabel = new Map<number, string>()
@@ -319,6 +380,7 @@ export function buildEventStream(
         push('chat', ev?.t, {
           text: typeof ev?.text === 'string' ? ev.text : '',
           sender: ev?.sender || undefined,
+          actor: actorByName(ev?.sender),
           rawType: ev?.raw_type,
           channelName: channelLabel.get(ev?.channel),
         })
@@ -327,19 +389,22 @@ export function buildEventStream(
         {
           const name = ev?.command_name
           const payload = typeof ev?.target === 'number' ? ev.target : undefined
-          push('command', ev?.t, {
+          // 地图类指令（扇区/位置标记）单独成 kind，事件流有独立「地图标记」过滤片。
+          const marker = name === 'attention_to_cell' || name === 'moving_here'
+            || name === 'catch_point' || name === 'defend_point'
+          // 只有这三类的载荷是玩家目标（语料实测 attack_enemy 为 eid；见 actorByRef）。
+          const playerTarget = name === 'attack_enemy' || name === 'help_me_ex'
+            || name === 'support_me_with_fire'
+          push(marker ? 'marker' : 'command', ev?.t, {
             command: typeof ev?.command === 'number' ? ev.command : undefined,
             commandName: name,
             commandTarget: payload,
-            // attack_enemy / help_me_ex / support_me_with_fire 的载荷是目标 accountId
-            target: name === 'attack_enemy' || name === 'help_me_ex' || name === 'support_me_with_fire'
-              ? actorByAccount(payload)
-              : undefined,
-            // attention_to_cell 的载荷是扇区号
-            // cell 仅对 attention_to_cell（payload=扇区号，上游契约已闭合）；
-            // catch_point/defend_point 的 payload 域未取证 → 保留原始目标不映射（禁猜）
+            target: playerTarget ? actorByRef(payload) : undefined,
+            // attention_to_cell 的载荷是扇区号；catch_point/defend_point 的 payload 域
+            // 上游未取证 → 保留 commandTarget 原值，不映射为 cell/据点编号（禁猜）。
             cell: name === 'attention_to_cell' ? payload : undefined,
             sender: ev?.sender || undefined,
+            actor: actorByName(ev?.sender),
             rawType: ev?.raw_type,
             channelName: channelLabel.get(ev?.channel),
           })
@@ -351,12 +416,17 @@ export function buildEventStream(
         push('presence', ev?.t, {
           action: ev?.kind,
           sender: ev?.sender || undefined,
+          actor: actorByName(ev?.sender),
           rawType: ev?.raw_type,
           channelName: channelLabel.get(ev?.channel),
         })
         break
       default:
-        push('presence', ev?.t, { sender: ev?.sender || undefined, rawType: ev?.raw_type })
+        push('presence', ev?.t, {
+          sender: ev?.sender || undefined,
+          actor: actorByName(ev?.sender),
+          rawType: ev?.raw_type,
+        })
         break
     }
   }
@@ -378,7 +448,13 @@ export function buildEventStream(
     })
   }
   for (const n of Array.isArray(facet.notifications) ? facet.notifications : []) {
-    push('notice', n?.t, { code: n?.code })
+    // subject 语义上游未定（eid/accountId 量级均观测到）；仅按名册做 id→身份联表，
+    // 不据此命名通知含义。code 保持原始值。
+    push('notice', n?.t, {
+      code: n?.code,
+      subject: n?.subject,
+      actor: actorBySubject(n?.subject),
+    })
   }
   for (const mc of Array.isArray(facet.module_crew_states) ? facet.module_crew_states : []) {
     // AgentModuleCrewState：clock/vehicle_eid/component/state（snake_case 语义名）
@@ -403,13 +479,19 @@ export function buildEventStream(
         push('capture', tr?.clock, {
           baseId: base,
           team: owner ?? undefined,
+          faction: factionOf(owner),
           captureState: owner == null ? 'neutralized' : 'captured',
         })
       }
       prevOwner.set(base, owner)
       const cap = tr?.capturing_team ?? null
       if (prevCapturing.has(base) && prevCapturing.get(base) !== cap && cap != null) {
-        push('capture', tr?.clock, { baseId: base, team: cap, captureState: 'invading' })
+        push('capture', tr?.clock, {
+          baseId: base,
+          team: cap,
+          faction: factionOf(cap),
+          captureState: 'invading',
+        })
       }
       prevCapturing.set(base, cap)
     }

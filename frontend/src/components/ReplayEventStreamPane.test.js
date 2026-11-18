@@ -11,7 +11,8 @@ const { storeShotsForViewer, shotViewerQuery } = vi.hoisted(() => ({
 vi.mock('../scene/agentData.js', () => ({
   storeShotsForViewer,
   shotViewerQuery,
-  // 真实 annotateMountedConfigs（shotHandoff）读取的资产面；逐车 Promise 由集成用例控制。
+  // 事件流车型名表（tank_cache）与真实 annotateMountedConfigs 读取的资产面。
+  fetchTankEncyclopedia: vi.fn(async () => ({})),
   assetProvider: { json: vi.fn() },
   fetchShotTankData: vi.fn(),
 }))
@@ -53,7 +54,7 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: i18n.t }) }))
 
 import ReplayEventStreamPane from './ReplayEventStreamPane.vue'
 import { parseAgentShotsFromBytes, enrichShotsFromRoster } from '../api/agent-replay-facets.js'
-import { assetProvider } from '../scene/agentData.js'
+import { assetProvider, fetchTankEncyclopedia } from '../scene/agentData.js'
 
 const FACET = {
   shots: [
@@ -83,8 +84,10 @@ function mountPane({ session = makeSession(), navigate = vi.fn(), active = true 
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // 逐车资产实现只属于设置它的用例，避免跨用例残留（actual annotate 会读它）。
+  // 逐车资产/车型名实现只属于设置它的用例，避免跨用例残留。
   assetProvider.json.mockReset()
+  fetchTankEncyclopedia.mockReset()
+  fetchTankEncyclopedia.mockResolvedValue({})
 })
 
 describe('ReplayEventStreamPane', () => {
@@ -238,7 +241,7 @@ describe('ReplayEventStreamPane', () => {
     expect(navigate).not.toHaveBeenCalled()
   })
 
-  it('catch/defend 指令显示原始目标（payload 域未闭合，不宣称据点号）', async () => {
+  it('catch/defend 进入地图标记片；主文本不显示原始目标，tooltip 保留', async () => {
     const facet = {
       ...FACET,
       chat_events: [
@@ -248,9 +251,60 @@ describe('ReplayEventStreamPane', () => {
     }
     const w = mountPane({ session: makeSession(facet) })
     await flushPromises()
-    const titles = w.findAll('[data-kind="command"]').map((n) => n.text())
-    expect(titles.some((x) => x.includes('cmd_catch_point_raw') && x.includes('target=2'))).toBe(true)
-    expect(titles.some((x) => x.includes('cmd_defend_point_raw') && x.includes('target=3'))).toBe(true)
+    const rows = w.findAll('[data-kind="marker"]')
+    expect(rows).toHaveLength(2)
+    const titles = rows.map((n) => n.text())
+    expect(titles.some((x) => x.includes('marker_catch') && x.includes('who=A'))).toBe(true)
+    expect(titles.some((x) => x.includes('marker_defend') && x.includes('who=A'))).toBe(true)
+    expect(titles.some((x) => x.includes('target='))).toBe(false)
+    expect(rows[0].attributes('title')).toContain('marker_raw_target')
+    expect(rows[0].attributes('title')).toContain('target=2')
+    expect(rows[1].attributes('title')).toContain('target=3')
+    expect(w.find('[data-filter="marker"]').exists()).toBe(true)
+  })
+
+  it('指令目标按 eid 联表，不再显示 #数字', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [{
+        t: 22, kind: 'command', raw_type: 20, channel: 1549648, sender: 'Alpha',
+        command: 29, command_name: 'attack_enemy', target: 2, // 车辆 eid（真实语料形状）
+      }],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const text = w.find('[data-kind="command"]').text()
+    expect(text).toContain('who=Alpha · T-62A')
+    expect(text).toContain('target=Bravo · E 100')
+    expect(text).not.toContain('#2')
+  })
+
+  it('车型名取 tank_cache，占位 tank_<id> 不上 UI', async () => {
+    fetchTankEncyclopedia.mockResolvedValue({ 100: { name: 'T-62A' }, 200: { name: 'E 100' } })
+    const facet = {
+      ...FACET,
+      vehicles: [
+        { eid: 1, nickname: 'Alpha', tank_id: 100, tank_name: 'tank_100', team: 1 },
+        { eid: 2, nickname: 'Bravo', tank_id: 200, tank_name: 'tank_200', team: 2 },
+      ],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const text = w.find('[data-kind="shot"]').text()
+    expect(text).toContain('Alpha · T-62A')
+    expect(text).toContain('Bravo · E 100')
+    expect(text).not.toContain('tank_100')
+    expect(text).not.toContain('tank_200')
+  })
+
+  it('通知主体按名册解析到玩家/坦克（code 保持原始）', async () => {
+    const facet = { ...FACET, notifications: [{ t: 21, subject: 2, code: 11515 }] }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const text = w.find('[data-kind="notice"]').text()
+    expect(text).toContain('notice_label_actor')
+    expect(text).toContain('who=Bravo · E 100')
+    expect(text).toContain('code=11515')
   })
 
   it('未知在场动作显示中性提示 + 原始码（不冒充进入频道）', async () => {
