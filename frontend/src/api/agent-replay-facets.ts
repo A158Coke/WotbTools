@@ -523,6 +523,8 @@ export interface AgentPlaybackFacet {
   module_damage_events?: AgentModuleDamageEvent[]
   /** 逐次掉血事件（上游 v0.5.2 additive；method1 血量链）——blitzinfo ev-damage 等价物 */
   damage_events?: AgentDamageEvent[]
+  /** 战场快捷标记（上游 v0.5.4 additive；Avatar method 0x2e）——战斗日志的地图标记行 */
+  markers?: AgentBattleMarkerEvent[]
 }
 
 /** 掉血事件：damage = prev_hp − hp（0 = 该事件未掉血，如治疗/复位） */
@@ -593,6 +595,22 @@ export interface AgentNotificationEvent {
   t: number
   subject: number
   code: number
+}
+
+/**
+ * 战场快捷标记（上游 v0.5.4 additive；Avatar method 0x2e）。
+ * `marker_type` 1=moving_here（`at` 世界坐标）/ 4=attack（`target_eid`）/
+ * 5=ally_retreat（`target_eid`）；其余类型只保留 `marker_type`，消费方不得命名。
+ */
+export interface AgentBattleMarkerEvent {
+  t: number
+  /** 发送者实体 id（与 vehicles[].eid 同域；不是信封 Avatar eid） */
+  entity_id: number
+  /** 发送者账号 id（与 vehicles[].account_id 同域） */
+  account_id: number
+  marker_type: number
+  at?: [number, number, number]
+  target_eid?: number
 }
 
 // ---------- AI 事件数据：AiReviewFacet（v1；上游 v0.3.5 起含原始 HP 与 method8 证据） ----------

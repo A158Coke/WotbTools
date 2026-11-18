@@ -263,6 +263,39 @@ describe('ReplayEventStreamPane', () => {
     expect(w.find('[data-filter="marker"]').exists()).toBe(true)
   })
 
+  it('attention_to_cell 显示地图格 B3；0x2e 标记带玩家/坦克身份', async () => {
+    const facet = {
+      ...FACET,
+      chat_events: [{
+        t: 24, kind: 'command', raw_type: 20, channel: 1549648, sender: 'Alpha',
+        command: 28, command_name: 'attention_to_cell', target: 6,
+      }],
+      markers: [
+        { t: 26, entity_id: 1, account_id: 1001, marker_type: 1, at: [1, 2, 3] },
+        { t: 27, entity_id: 1, account_id: 1001, marker_type: 5, target_eid: 2 },
+        { t: 28, entity_id: 1, account_id: 1001, marker_type: 4, target_eid: 2 },
+      ],
+    }
+    const w = mountPane({ session: makeSession(facet) })
+    await flushPromises()
+    const rows = w.findAll('[data-kind="marker"]')
+    expect(rows).toHaveLength(4)
+    const titles = rows.map((n) => n.text())
+    expect(titles.some((x) => x.includes('marker_cell') && x.includes('cell=B3'))).toBe(true)
+    expect(titles.some((x) => x.includes('marker_moving') && x.includes('who=Alpha · T-62A'))).toBe(true)
+    expect(titles.some((x) => x.includes('marker_retreat') && x.includes('who=Alpha · T-62A'))).toBe(true)
+    expect(titles.some((x) => x.includes('marker_attack') && x.includes('target=Bravo · E 100'))).toBe(true)
+    // 未知 markerType 显示原始类型号（不伪造语义）
+    const facetUnknown = {
+      ...FACET,
+      markers: [{ t: 29, entity_id: 1, account_id: 1001, marker_type: 6 }],
+    }
+    const w2 = mountPane({ session: makeSession(facetUnknown) })
+    await flushPromises()
+    expect(w2.find('[data-kind="marker"]').text()).toContain('marker_unknown')
+    expect(w2.find('[data-kind="marker"]').text()).toContain('type=6')
+  })
+
   it('指令目标按 eid 联表，不再显示 #数字', async () => {
     const facet = {
       ...FACET,

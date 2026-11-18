@@ -301,7 +301,17 @@ function eventTitle(ev: PlaybackEventRow): string {
       const ch = ev.channelName ? ` · ${ev.channelName}` : ''
       const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       if (ev.commandName === 'attention_to_cell') {
-        return t('eventStream.marker_cell', { who, cell: ev.cell ?? '?' }) + ch
+        const cell = ev.cellLabel ?? (ev.cell != null ? `#${ev.cell}` : '?')
+        return t('eventStream.marker_cell', { who, cell }) + ch
+      }
+      if (ev.commandName === 'attack') {
+        return t('eventStream.marker_attack', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
+      }
+      if (ev.commandName === 'ally_retreat') {
+        return t('eventStream.marker_retreat', { who }) + ch
       }
       if (ev.commandName === 'catch_point') {
         return t('eventStream.marker_catch', { who }) + ch
@@ -309,7 +319,13 @@ function eventTitle(ev: PlaybackEventRow): string {
       if (ev.commandName === 'defend_point') {
         return t('eventStream.marker_defend', { who }) + ch
       }
-      return t('eventStream.marker_moving', { who }) + ch
+      if (ev.commandName === 'moving_here') {
+        return t('eventStream.marker_moving', { who }) + ch
+      }
+      return t('eventStream.marker_unknown', {
+        who,
+        type: ev.markerType ?? ev.command ?? '?',
+      }) + ch
     }
     case 'presence': {
       // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码

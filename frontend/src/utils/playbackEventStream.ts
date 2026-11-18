@@ -108,8 +108,12 @@ export interface PlaybackEventRow {
   action?: 'join' | 'leave' | 'channel_created'
   /** 指令语义名（客户端权威表；缺省 = 未映射） */
   commandName?: string
-  /** 指令扇区号（attention_to_cell） */
+  /** 指令扇区号（attention_to_cell；1..9） */
   cell?: number
+  /** 扇区显示标签（1..9 → A1..C3；域外不生成，保留 cell 原值） */
+  cellLabel?: string
+  /** 0x2e 标记类型（kind=marker；1/4/5 语义已证，其余原样保留） */
+  markerType?: number
   /** 聊天/指令/在场的发送者昵称（0x2f 前缀名；旧 0x2b 聊天无署名） */
   sender?: string
   /** 通知主体原始 id（kind=notice；上游语义未定，仅作名册联表证据） */
@@ -183,6 +187,23 @@ export function shotVerdict(shot: AgentPlaybackShot | null | undefined): ShotVer
     case SHOT_RESULT.HE_BLAST: return 'he'
     default: return null // MISS / HIT / UNVERIFIED：不伪造语义
   }
+}
+
+/**
+ * 客户端 3×3 扇区编号 → 地图格标签（1..9 → A1..C3）。
+ *
+ * 权威证据：`attention_to_cell` 的载荷是 1..9 的扇区号（客户端
+ * `chatCommand/attention_to_cell` 的 `%(cell)` 参数）；同一场 BZT-70 回放
+ * payload=6 与战斗日志「Attention to sector B3」逐条对应。列优先：
+ * `A1,A2,A3,B1,...,C3` 不是此编码；客户端/BlitzInfo 的既有映射为
+ * `letter = 65 + floor((n-1)/3)`、`number = (n-1)%3 + 1`（6 → B3）。
+ * 域外值不生成标签（调用方保留原始 cell，禁猜）。
+ */
+export function sectorLabel(cell: number | null | undefined): string | undefined {
+  if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 1 || cell > 9) {
+    return undefined
+  }
+  return String.fromCharCode(65 + Math.floor((cell - 1) / 3)) + ((cell - 1) % 3 + 1)
 }
 
 /** 归一化事件行：{ kind, filter, t, … }。t 升序稳定排序。 */
@@ -403,6 +424,7 @@ export function buildEventStream(
             // attention_to_cell 的载荷是扇区号；catch_point/defend_point 的 payload 域
             // 上游未取证 → 保留 commandTarget 原值，不映射为 cell/据点编号（禁猜）。
             cell: name === 'attention_to_cell' ? payload : undefined,
+            cellLabel: name === 'attention_to_cell' ? sectorLabel(payload) : undefined,
             sender: ev?.sender || undefined,
             actor: actorByName(ev?.sender),
             rawType: ev?.raw_type,
@@ -429,6 +451,29 @@ export function buildEventStream(
         })
         break
     }
+  }
+  // 战场快捷标记（Avatar method 0x2e）：与 0x2f 聊天指令是两条包路径，不能互相替代。
+  // BZT-70 场：type1 t=47.72 → 战斗日志“Moving here”，type5 t=71.83 → “Let's fall back!”。
+  // type 4=attack 的目标是车辆 eid；type 1 只有世界坐标（不参与行文本）。
+  // 未观测类型只保留 marker_type，UI 显示原始类型号（禁猜语义）。
+  const markerNameOf = (type: number | undefined): string | undefined => {
+    switch (type) {
+      case 1: return 'moving_here'
+      case 4: return 'attack'
+      case 5: return 'ally_retreat'
+      default: return undefined
+    }
+  }
+  for (const m of Array.isArray(facet.markers) ? facet.markers : []) {
+    const type = typeof m?.marker_type === 'number' ? m.marker_type : undefined
+    const targetRef = typeof m?.target_eid === 'number' ? m.target_eid : undefined
+    push('marker', m?.t, {
+      markerType: type,
+      commandName: markerNameOf(type),
+      commandTarget: targetRef,
+      target: type === 4 || type === 5 ? actorByRef(targetRef) : undefined,
+      actor: actorByRef(m?.entity_id) ?? actorByRef(m?.account_id),
+    })
   }
   // 0x2b 是另域文本（u64 = 频道句柄；上游契约未给出与 0x2f 的等价关系）——
   // 两条记录都保留展示，不做基于正文+时间的去重（不同域的近邻同文不可推定为同一消息）

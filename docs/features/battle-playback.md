@@ -326,11 +326,11 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 
 ### 事件流与回放交互（2026-11-17）
 
-- **统一事件流**（工作台「事件流」能力页，`ReplayEventStreamPane`）：合并炮击/掉血/击毁（一条战斗行：双方昵称·车名 + 判定 + 伤害 + 击毁）/聊天（0x2f 正文带发送者 + 0x2b 另域文本）/快捷指令（客户端权威语义 + 目标玩家/扇区）/地图标记（`attention_to_cell` / `moving_here` / `catch_point` / `defend_point`，独立过滤片）/模块与乘员状态/逐模块损伤/消耗品（含使用者）/占领（争霸与攻防进度）/观测（录制端 AoI 首次进入，**不称点亮**）/死亡复活/场景破坏。过滤片 + 「显示更多」分页（单次渲染上限 800，全量可达）。
+- **统一事件流**（工作台「事件流」能力页，`ReplayEventStreamPane`）：合并炮击/掉血/击毁（一条战斗行：双方昵称·车名 + 判定 + 伤害 + 击毁）/聊天（0x2f 正文带发送者 + 0x2b 另域文本）/快捷指令（客户端权威语义 + 目标玩家/扇区）/地图标记（0x2f `attention_to_cell` / `catch_point` / `defend_point` + 0x2e `moving_here` / `attack` / `ally_retreat`，独立过滤片）/模块与乘员状态/逐模块损伤/消耗品（含使用者）/占领（争霸与攻防进度）/观测（录制端 AoI 首次进入，**不称点亮**）/死亡复活/场景破坏。过滤片 + 「显示更多」分页（单次渲染上限 800，全量可达）。
 - **交互**：点击射击行直接打开装甲检视（射击复现入口，带俯仰锚定与搭载配置，与射击分析入口同一实现）；⏱ 按钮跳到该时刻；时间轴炮击/击毁刻度可点；`,` / `.` 跳上/下一发（seek 回退 0.05s 保留目标发弹道游标，暂停中连跳用 jumpBase 基准持续推进）；1–7 / Shift+1–7 骑乘名册序（Ctrl/Meta/Alt 不劫持；自由飞行模式让位给飞行速率）。
 - **最后已知位置**：离场坦克显示末段末采样的幽灵名牌 + 半透明代理（AoI 在场段语义，**不插值不外推**）；同账号后继实体接管后抑制旧实体幽灵；Display 面板可关（`wotb.pb.last-known-prefs` 持久化，默认开）。
-- **数据面**：聊天/指令 = 上游 Agent `chat_events`（v0.5.1/0.5.3）；掉血 = `damage_events`（v0.5.2）；逐模块 = `module_damage_events`（v0.5.1）。旧 pin 下这些数组缺省为空（additive 契约，零扰动）。
-- **身份与地图标记（2026-11-18 补充）**：事件行身份从 `vehicles[]` 名册联表；facet 的 `tank_<id>` 是占位名，**不上 UI**，车型名取 `tank_cache.json`（窄屏/资产缺失时退化为昵称）。指令 `target` 与通知 `subject` 同时按 **eid 与 accountId** 两域解析——语料实测 `attack_enemy` 载荷是车辆 eid（1549653/1764961/136528020…），与上游注释的 accountId 不一致；未命中名册时不伪造身份。`catch_point`/`defend_point` 的上游 payload 语义未闭合：原始值只进 tooltip，不猜据点编号。占领事件按 `meta.friendly_team` 显示己方/敌方；未并入炮击的掉血单独进「掉血」过滤片。**已知缺口**：上游尚未解析独立 marker 包（上游 `docs/replay-chat-events.md` §六.1 的包级定位未完成），事件流只能识别聊天域的战场标记；完整地图标注点需要上游先闭合 marker 包。
+- **数据面**：聊天/指令 = 上游 Agent `chat_events`（v0.5.1/0.5.3）；掉血 = `damage_events`（v0.5.2）；地图标记 = `markers`（v0.5.4，Avatar method 0x2e，与 0x2f chat command 是两条包路径）；逐模块 = `module_damage_events`（v0.5.1）。旧 pin 下这些数组缺省为空（additive 契约，零扰动）。
+- **身份与地图标记（2026-11-18 补充）**：事件行身份从 `vehicles[]` 名册联表；facet 的 `tank_<id>` 是占位名，**不上 UI**，车型名取 `tank_cache.json`（窄屏/资产缺失时退化为昵称）。指令 `target` 与通知 `subject` 同时按 **eid 与 accountId** 两域解析——语料实测 `attack_enemy` 载荷是车辆 eid（1549653/1764961/136528020…）；未命中名册时不伪造身份。0x2e 标记按 `marker_type` 显示 `moving_here`（世界坐标，不参与行文本）/`attack`（目标玩家·车）/`ally_retreat`（目标玩家·车）；未观测类型只显示原始类型号（禁猜）。`attention_to_cell` 的扇区号按客户端 1..9 → A1..C3 映射显示（BZT-70 场 payload 6 = 战斗日志 B3）；域外值保留 `#N`。`catch_point`/`defend_point` 的上游 payload 语义未闭合：原始值只进 tooltip，不猜据点编号。占领事件按 `meta.friendly_team` 显示己方/敌方；未并入炮击的掉血单独进「掉血」过滤片。
 
 ### 悬挂与履带
 

@@ -1,7 +1,7 @@
 // 统一事件流纯函数测试：合并/排序/过滤/最近邻 + verdict 枚举语义 + fail-closed 边界。
 import { describe, it, expect } from 'vitest'
 import {
-  buildEventStream, filterEvents, nearestEventTime, shotVerdict, EVENT_FILTERS,
+  buildEventStream, filterEvents, nearestEventTime, sectorLabel, shotVerdict, EVENT_FILTERS,
 } from './playbackEventStream.ts'
 
 const FACET = {
@@ -197,12 +197,52 @@ describe('buildEventStream', () => {
     const markers = evs.filter((e) => e.kind === 'marker')
     expect(markers).toHaveLength(4)
     expect(markers.every((e) => e.filter === 'marker')).toBe(true)
-    expect(markers[0]).toMatchObject({ commandName: 'attention_to_cell', cell: 6 })
+    expect(markers[0]).toMatchObject({ commandName: 'attention_to_cell', cell: 6, cellLabel: 'B3' })
     expect(markers[0].actor).toMatchObject({ name: 'Alpha', tank: 'T-62A' })
     // catch/defend 的 payload 语义未闭合：保留 commandTarget，不映射为 target/cell
     expect(markers[2].target).toBeUndefined()
     expect(markers[2].cell).toBeUndefined()
     expect(markers[2].commandTarget).toBe(9)
+    expect(filterEvents(evs, 'marker')).toHaveLength(4)
+  })
+
+  it('扇区号 1..9 → A1..C3；域外不生成标签', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9].map(sectorLabel))
+      .toEqual(['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'])
+    expect(sectorLabel(0)).toBeUndefined()
+    expect(sectorLabel(10)).toBeUndefined()
+    expect(sectorLabel(6.5)).toBeUndefined()
+    expect(sectorLabel(undefined)).toBeUndefined()
+  })
+
+  it('0x2e 战场标记：moving_here/attack/ally_retreat 带玩家与坦克身份', () => {
+    const facet = {
+      vehicles: [
+        { eid: 136106019, account_id: 2033684170, nickname: 'Anonyme', tank_id: 14129, tank_name: 'tank_14129', team: 1 },
+        { eid: 136106020, account_id: 2028526399, nickname: 'BBA9', tank_id: 18001, tank_name: 'tank_18001', team: 1 },
+        { eid: 136106027, account_id: 2047518170, nickname: 'Karsonkarthik', tank_id: 13857, tank_name: 'tank_13857', team: 2 },
+      ],
+      markers: [
+        { t: 47.72, entity_id: 136106019, account_id: 2033684170, marker_type: 1, at: [176, 62, 60] },
+        { t: 71.83, entity_id: 136106019, account_id: 2033684170, marker_type: 5, target_eid: 136106020 },
+        { t: 26.9, entity_id: 136106019, account_id: 2033684170, marker_type: 4, target_eid: 136106027 },
+        { t: 90, entity_id: 136106019, account_id: 2033684170, marker_type: 6 },
+      ],
+    }
+    const evs = buildEventStream(facet, { tankNames: { 14129: 'BZT-70', 18001: 'BZT-70', 13857: 'Rinoceronte' } })
+    const markers = evs.filter((e) => e.kind === 'marker')
+    expect(markers.map((e) => e.commandName)).toEqual(['attack', 'moving_here', 'ally_retreat', undefined])
+    const moving = markers.find((e) => e.t === 47.72)
+    expect(moving.actor).toMatchObject({ name: 'Anonyme', tank: 'BZT-70' })
+    const retreat = markers.find((e) => e.t === 71.83)
+    expect(retreat.commandName).toBe('ally_retreat')
+    expect(retreat.target).toMatchObject({ name: 'BBA9', tank: 'BZT-70' })
+    const attack = markers.find((e) => e.t === 26.9)
+    expect(attack.commandName).toBe('attack')
+    expect(attack.target).toMatchObject({ name: 'Karsonkarthik', tank: 'Rinoceronte' })
+    const unknown = markers.find((e) => e.t === 90)
+    expect(unknown.markerType).toBe(6)
+    expect(unknown.target).toBeUndefined()
     expect(filterEvents(evs, 'marker')).toHaveLength(4)
   })
 
