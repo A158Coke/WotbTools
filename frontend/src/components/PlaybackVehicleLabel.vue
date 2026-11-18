@@ -25,6 +25,8 @@ const props = defineProps({
   hpNoTransition: Boolean,
   hpTitle: { type: String, default: '' },
   nameTooltips: Boolean,
+  /** 「最后已知」标记文案（lastKnown 时显示；空串 = 不显示——2D 侧保持既有呈现不变） */
+  lastKnownLabel: { type: String, default: '' },
 })
 const playerLine = ref(null)
 const playerTruncated = ref(false)
@@ -71,6 +73,8 @@ const classes = computed(() => ({
       <span v-if="showPlayerName && playerName" ref="playerLine" class="pb-label-player" data-test="pb-label-player"
         :class="{ 'name-tooltip': nameTooltips }" :title="nameTooltips && playerTruncated ? playerName : undefined">{{ playerName }}</span>
       <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }} <GunMarksBadge :marks="gunMarks" /></span>
+      <!-- 最后已知标记：离场坦克（AoI 在场段之外）的名牌诚实标记；文案由宿主按 locale 传入 -->
+      <span v-if="lastKnown && lastKnownLabel" class="pb-last-known-tag" data-test="pb-last-known">{{ lastKnownLabel }}</span>
     </div>
     <!-- combat state block：HP（主要）在上、reload（次级瞬时）在下，两者视觉上属于同一块，
          但与上面的身份两行保持更大的间距。 -->
@@ -132,6 +136,8 @@ const classes = computed(() => ({
 .label-last-known .pb-label-tank,
 .label-last-known .pb-label-player { opacity: .65; }
 .label-last-known .pb-hp-hud { opacity: .55; }
+/* 「最后已知」诚实标记：与破坏色同源（stale 语义），但整行不透明（标记本身要一眼可见） */
+.pb-last-known-tag { color: var(--color-playback-label-destroyed); font-weight: 600; }
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
 /* 血条中心保持与身份两行同轴；消耗品徽标绝对定位到左侧，不参与居中布局，
    也不改变 `.pb-hp-bar` 右缘（伤害数字落点仍按血条几何计算）。 */
