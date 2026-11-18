@@ -41,6 +41,18 @@ expect_pass() {
   fi
 }
 
+# Guard regression fixtures against Python double-escaped "\\n": a supposed
+# 601-line failure sample accidentally becoming one physical line is a false
+# positive/negative in the source-line budget tests.
+expect_fixture_lines() {
+  local path="$1" expected="$2" actual
+  actual=$(awk 'END { print NR }' "$path")
+  if [[ "$actual" != "$expected" ]]; then
+    echo "fixture physical-line mismatch: $path expected=$expected actual=$actual" >&2
+    exit 1
+  fi
+}
+
 repo="$WORK/repo"
 git init -q -b main "$repo"
 cd "$repo"
@@ -431,6 +443,7 @@ python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/legacy.js").write_text("// legacy\n" * 601)
 PY
+expect_fixture_lines frontend/src/legacy.js 601
 git add frontend/src/legacy.js
 git commit -q -m 'old main: grandfathered source with no explicit allowlist'
 implicit_old_main=$(git rev-parse HEAD)
@@ -443,6 +456,7 @@ python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/legacy.js").write_text("// legacy\n" * 500)
 PY
+expect_fixture_lines frontend/src/legacy.js 500
 git add frontend/src/legacy.js
 git commit -q -m 'new main: split formerly grandfathered source'
 implicit_new_main=$(git rev-parse HEAD)
@@ -459,12 +473,14 @@ python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/legacy.js").write_text("// edited\n" * 602)
 PY
+expect_fixture_lines frontend/src/legacy.js 602
 git add frontend/src/legacy.js
 git commit -q -m 'feature temporarily edits oversized legacy source'
 python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/legacy.js").write_text("// legacy\n" * 601)
 PY
+expect_fixture_lines frontend/src/legacy.js 601
 git add frontend/src/legacy.js
 git commit -q -m 'feature restores original legacy content'
 git merge -q --no-edit "$implicit_new_main"
