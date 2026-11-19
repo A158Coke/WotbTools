@@ -84,4 +84,3 @@ for (const key of LEAGUE_DIM_KEYS) {
 export function dimensionTitle(key: string): string {
   return DIMENSION_TITLES[key]
 }
-

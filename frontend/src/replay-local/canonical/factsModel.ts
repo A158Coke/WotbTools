@@ -252,4 +252,3 @@ export function isCurrent(facts: CanonicalReplayFacts, entityId: number, t: numb
   const w = observationAt(facts, entityId, t)
   return w !== null && observedAt >= w.fromSec - 1e-9
 }
-

@@ -236,4 +236,3 @@ export function lifeTransitions(
   }
   return out
 }
-

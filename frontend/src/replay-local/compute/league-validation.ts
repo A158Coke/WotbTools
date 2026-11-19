@@ -97,4 +97,3 @@ function hasInvalidStatFacts(players: readonly PlayerResult[]): boolean {
   }
   return false
 }
-
