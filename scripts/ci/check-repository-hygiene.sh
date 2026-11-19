@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
-MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-500}"
+MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["limits"]["production"])' "$SCRIPT_DIR/source-line-policy.json")}"
 SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"

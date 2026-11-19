@@ -3,8 +3,9 @@
 
 import argparse
 import collections
+import json
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
@@ -16,13 +17,10 @@ EXTENSIONS = frozenset({
     '.js', '.jsx', '.kt', '.kts', '.mjs', '.cjs', '.proto', '.ps1', '.py', '.rs', '.scss',
     '.sh', '.sql', '.tf', '.ts', '.tsx', '.vue', '.xml', '.yaml', '.yml',
 })
-LIMITS = {'production': 500, 'test': 1500}
-# Explicitly owned generated transport and vendored upstream xdelta3; see
-# docs/DEVELOPER_GUIDE.md for provenance and the process for new exclusions.
-EXCLUDED_PREFIXES = ('frontend/src/api/generated/', 'android/app/src/main/cpp/xdelta3/')
-EXCLUDED_FILES = frozenset({'frontend/pnpm-lock.yaml'}) | frozenset(f'infra/tofu/{owner}/.terraform.lock.hcl' for owner in (
-    'grafana', 'keycloak', 'komodo', 'postgres-business', 'postgres-keycloak',
-))
+POLICY = json.loads(Path(__file__).with_name('source-line-policy.json').read_text(encoding='utf-8'))
+LIMITS = POLICY['limits']
+EXCLUDED = tuple(POLICY['explicit_exclusions'])
+ALLOWLIST_FILE = 'scripts/ci/source-line-allowlist.txt'
 TEST_DIRS = frozenset({'test', 'tests', '__tests__', 'androidtest', 'testfixtures', 'testing'})
 TEST_NAME = re.compile(r'(?:^test[-_]|(?:[._-](?:test|tests|spec|specs))\.|(?:Test|Tests|IT)\.(?:java|kt)$|_test\.go$)')
 
@@ -35,7 +33,7 @@ def git(*args, input_bytes=None):
 
 
 def category(path):
-    if path.startswith(EXCLUDED_PREFIXES) or path in EXCLUDED_FILES:
+    if any(path == item or (item.endswith('/') and path.startswith(item)) for item in EXCLUDED):
         return None
     parts = PurePosixPath(path).parts
     name = parts[-1]
@@ -103,6 +101,21 @@ def main():
     args = parser.parse_args()
     base_sha, base = tree(args.base)
     head_sha, head = tree(args.head)
+    fork_entries = {}
+    if not args.strict:
+        fork_result = subprocess.run(['git', 'merge-base', base_sha, head_sha], capture_output=True, text=True)
+        if fork_result.returncode == 0 and fork_result.stdout.strip():
+            _, fork_entries = tree(fork_result.stdout.strip())
+    allowlist = set()
+    try:
+        for line in Path(ALLOWLIST_FILE).read_text(encoding='utf-8').splitlines():
+            entry = line.strip()
+            if entry and not entry.startswith('#'):
+                if entry in allowlist:
+                    raise RuntimeError(f'duplicate source-line allowlist entry for {entry}')
+                allowlist.add(entry)
+    except FileNotFoundError:
+        pass
     counts = blob_lines([oid for _, oid in (*base.values(), *head.values())])
     metrics = {name: collections.defaultdict(lambda: [0, 0, 0, 0, '']) for name in ('base', 'head')}
     violations = []
@@ -116,7 +129,9 @@ def main():
                 metric[3], metric[4] = size, path
             if size > LIMITS[role]:
                 metric[2] += 1
-                if label == 'head' and (args.strict or base.get(path) != (role, oid)):
+                grandfathered = (path in allowlist or base.get(path) == (role, oid) or
+                                 fork_entries.get(path) == (role, oid))
+                if label == 'head' and (args.strict or not grandfathered):
                     violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
     print(f'Source LOC: base={base_sha} head={head_sha} strict={args.strict}')
     for label in ('base', 'head'):
@@ -126,6 +141,10 @@ def main():
                   f'limit={LIMITS[role]} largest={largest_path!r}')
     if violations:
         print('\n'.join(violations), file=sys.stderr)
+        return 1
+    stale = sorted(path for path in allowlist if path not in head or counts[head[path][1]] <= LIMITS[head[path][0]])
+    if stale:
+        print('stale source-line allowlist entries: ' + ', '.join(stale), file=sys.stderr)
         return 1
     return 0
 

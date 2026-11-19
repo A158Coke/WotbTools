@@ -1,0 +1,16 @@
+{
+  "limits": {
+    "production": 500,
+    "test": 1500
+  },
+  "explicit_exclusions": [
+    "frontend/src/api/generated/",
+    "android/app/src/main/cpp/xdelta3/",
+    "frontend/pnpm-lock.yaml",
+    "infra/tofu/grafana/.terraform.lock.hcl",
+    "infra/tofu/keycloak/.terraform.lock.hcl",
+    "infra/tofu/komodo/.terraform.lock.hcl",
+    "infra/tofu/postgres-business/.terraform.lock.hcl",
+    "infra/tofu/postgres-keycloak/.terraform.lock.hcl"
+  ]
+}

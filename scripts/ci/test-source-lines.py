@@ -2,6 +2,7 @@
 """Exercise the source LOC gate with disposable, isolated Git repositories."""
 
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,7 @@ import unittest
 
 
 CHECK = Path(__file__).with_name('check-source-lines.py').resolve()
+POLICY = json.loads(CHECK.with_name('source-line-policy.json').read_text(encoding='utf-8'))
 
 
 class SourceLineGateTest(unittest.TestCase):
@@ -42,6 +44,7 @@ class SourceLineGateTest(unittest.TestCase):
                               cwd=self.root, env=env, text=True, capture_output=True)
 
     def test_inclusive_limits_and_explicit_exclusions(self):
+        self.assertEqual(POLICY['limits'], {'production': 500, 'test': 1500})
         self.write('frontend/src/Ok.vue', 500, final_newline=False)
         self.write('android/app/src/androidTest/java/Ok.kt', 1500)
         self.write('frontend/src/api/generated/contract.ts', 2000)
@@ -54,9 +57,18 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('production: files=1 lines=500 over=0', result.stdout)
         self.assertIn('test: files=1 lines=1500 over=0', result.stdout)
 
+    def test_legacy_exact_path_allowlist_and_strict_override(self):
+        self.write('frontend/src/api/agent-replay-facets.ts', 501)
+        self.write('scripts/ci/source-line-allowlist.txt', 2)
+        allowlist = self.root / 'scripts/ci/source-line-allowlist.txt'
+        allowlist.write_text('frontend/src/api/agent-replay-facets.ts\n', encoding='utf-8')
+        head = self.commit('legacy explicit exception')
+        self.assertEqual(self.check(self.base, head).returncode, 0)
+        self.assertEqual(self.check(self.base, head, '--strict').returncode, 1)
+
     def test_new_production_and_test_over_limit_fail(self):
-        self.write('common/python/loader.py', 501)
-        self.write('frontend/scripts/browser-scenario.mjs', 1501)
+        self.write('common/python/loader.py', POLICY['limits']['production'] + 1)
+        self.write('frontend/scripts/browser-scenario.mjs', POLICY['limits']['test'] + 1)
         head = self.commit('new oversized')
         result = self.check(self.base, head)
         self.assertEqual(result.returncode, 1)
@@ -76,6 +88,19 @@ class SourceLineGateTest(unittest.TestCase):
         self.write('java/module/src/main/java/Old.java', 500)
         fixed = self.commit('split old')
         self.assertEqual(self.check(legacy, fixed, '--strict').returncode, 0)
+
+    def test_pre_split_fork_point_blob_remains_grandfathered(self):
+        self.write('frontend/src/legacy.ts', 501)
+        fork = self.commit('fork point with legacy blob')
+        self.write('frontend/src/legacy.ts', 400)
+        self.commit('main splits legacy file')
+        main_head = self.git('rev-parse', 'HEAD')
+        self.git('switch', '-q', '-c', 'candidate', fork)
+        self.write('README.md', 2)
+        candidate = self.commit('candidate carries unchanged fork blob')
+        result = self.check(main_head, candidate)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.check(main_head, candidate, '--strict').returncode, 1)
 
     def test_unknown_paths_and_invalid_revisions_cannot_pass(self):
         self.write('some/generated/handwritten.py', 501)

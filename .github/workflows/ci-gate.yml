@@ -150,51 +150,6 @@ jobs:
               output.write(f"base_sha={base_sha}\n")
               output.write(f"head_sha={head_sha}\n")
           PY
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          ref: ${{ steps.revisions.outputs.head_sha }}
-          fetch-depth: 0
-      - name: Validate source LOC enforcement
-        run: python3 scripts/ci/test-source-lines.py
-      - name: Check first-party source LOC
-        env:
-          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
-        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
-      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
-        with:
-          package_json_file: frontend/package.json
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "24"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-      - name: Verify duplicate scanner isolation
-        working-directory: frontend
-        run: |
-          pnpm run test:jscpd
-          node --test scripts/test-validate-jscpd-report.mjs
-      - name: Scan duplicate candidates against verified PR base
-        working-directory: frontend
-        env:
-          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
-          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-          git cat-file -e "${BASE_SHA}^{commit}"
-          rm -f ../tmp/jscpd-ci/ci-candidates.json
-          pnpm run review:duplicates --baseline-from-ref "$BASE_SHA" --output ../tmp/jscpd-ci --report-name ci-candidates
-          node scripts/validate-jscpd-report.mjs ../tmp/jscpd-ci/ci-candidates.json
-      - name: Upload duplicate candidates for review
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: duplicate-candidates
-          path: tmp/jscpd-ci/ci-candidates.json
-          if-no-files-found: error
   changes:
     needs: [pr_identity]
     runs-on: ubuntu-latest
@@ -229,6 +184,62 @@ jobs:
           base: ${{ needs.pr_identity.outputs.base_sha }}
           ref: ${{ needs.pr_identity.outputs.head_sha }}
           filters: .github/ci-owner-paths.yml
+  source_quality:
+    name: Source quality evidence
+    needs: [pr_identity]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Verify exact PR head checkout
+        env:
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+      - name: Validate source LOC enforcement
+        run: python3 scripts/ci/test-source-lines.py
+      - name: Check first-party source LOC
+        env:
+          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Verify duplicate scanner isolation
+        working-directory: frontend
+        run: |
+          pnpm run test:jscpd
+          node --test scripts/test-validate-jscpd-report.mjs
+      - name: Scan duplicate candidates against verified PR base
+        working-directory: frontend
+        env:
+          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"
+          rm -f ../tmp/jscpd-ci/ci-candidates.json
+          pnpm run review:duplicates --baseline-from-ref "$BASE_SHA" --output ../tmp/jscpd-ci --report-name ci-candidates
+          node scripts/validate-jscpd-report.mjs ../tmp/jscpd-ci/ci-candidates.json
+      - name: Upload duplicate candidates for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: duplicate-candidates
+          path: tmp/jscpd-ci/ci-candidates.json
+          if-no-files-found: error
   business_api:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.business_api == 'true'
@@ -341,6 +352,7 @@ jobs:
     needs:
       - pr_identity
       - changes
+      - source_quality
       - business_api
       - ai_service
       - frontend
@@ -371,14 +383,22 @@ jobs:
           import os
 
           needs = json.loads(os.environ["NEEDS_JSON"])
-          if needs["pr_identity"]["result"] != "success" or needs["changes"]["result"] != "success":
-              raise SystemExit("::error::PR identity or changed-file detection failed")
+          if (needs["pr_identity"]["result"] != "success" or
+                  needs["changes"]["result"] != "success" or
+                  needs["source_quality"]["result"] != "success"):
+              raise SystemExit("::error::PR identity, source quality, or changed-file detection failed")
           failed = []
+          owner_jobs = set(needs) - {"pr_identity", "changes", "source_quality"}
           for owner, affected in needs["changes"]["outputs"].items():
+              if owner not in owner_jobs:
+                  failed.append(f"unexpected path owner output: {owner}")
+                  continue
               result = needs[owner]["result"]
               expected = "success" if affected == "true" else "skipped" if affected == "false" else None
               if result != expected:
                   failed.append(f"{owner}: affected={affected}, result={result}, expected={expected}")
+          if set(needs["changes"]["outputs"]) != owner_jobs:
+              failed.append("path owner jobs do not match changes outputs")
           if failed:
               raise SystemExit("::error::Affected owner CI failed or dispatch mismatched: " + "; ".join(failed))
           PY

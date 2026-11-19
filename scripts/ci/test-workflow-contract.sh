@@ -71,11 +71,14 @@ jobs = ci["jobs"]
 required = jobs["required"]
 assert required["name"] == "CI / Required Gate" and required["if"] == "always()"
 assert set(required["needs"]) == set(jobs) - {"required"}
+assert "source_quality" in required["needs"]
+assert "pr_identity" in jobs["source_quality"]["needs"]
+assert "changes" not in jobs["source_quality"]["needs"]
+assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
 assert re.search(r"dorny/paths-filter@[0-9a-f]{40}", json.dumps(jobs["changes"])), "paths-filter must stay SHA-pinned"
-assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "required"}
 filter_path = next(step for step in jobs["changes"]["steps"]
                    if step.get("id") == "filter")["with"]["filters"]
 assert filter_path == ".github/ci-owner-paths.yml"
@@ -300,10 +303,11 @@ required_run = next(
 )
 gate_py = required_run.split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
 
-def run_gate(affected_owners, owner_results, identity_result="success"):
+def run_gate(affected_owners, owner_results, identity_result="success", source_quality_result="success"):
     # 真实聚合逻辑会读取 changes.outputs 里的每个 owner 的 needs[owner]，
     # 所以 payload 必须覆盖全部 owner（未显式给出的按 skipped 处理）。
     payload = {"pr_identity": {"result": identity_result},
+               "source_quality": {"result": source_quality_result},
                "changes": {"result": "success",
                            "outputs": {owner: ("true" if owner in affected_owners else "false")
                                        for owner in owner_names}}}
@@ -333,7 +337,9 @@ r = run_gate(set(), {owner: "skipped" for owner in owner_names})
 assert r.returncode == 0, r.stderr
 # identity 失败保持失败。
 r = run_gate({"frontend"}, {"frontend": "success"}, identity_result="failure")
-assert r.returncode != 0 and "PR identity or changed-file detection failed" in r.stderr, r.stderr
+assert r.returncode != 0 and "PR identity, source quality, or changed-file detection failed" in r.stderr, r.stderr
+r = run_gate({"frontend"}, {"frontend": "success"}, source_quality_result="failure")
+assert r.returncode != 0 and "source quality" in r.stderr, r.stderr
 # Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
 #（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。
 codeql_wf = load(workflow_dir / "codeql.yml")
