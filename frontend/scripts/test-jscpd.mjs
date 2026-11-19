@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { platform } from 'node:os';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runJscpd } from 'jscpd';
@@ -88,23 +88,41 @@ try {
   execFileSync('git', ['init', '--quiet'], { cwd: baselineRoot });
   execFileSync('git', ['config', 'user.email', 'jscpd-smoke@example.invalid'], { cwd: baselineRoot });
   execFileSync('git', ['config', 'user.name', 'jscpd smoke'], { cwd: baselineRoot });
-  const baselineSource = sources.javascript[1];
-  const addedSource = 'function multiply(left, right) {\n  const total = left * right;\n  if (total > 10) {\n    return total + 2;\n  }\n  return total - 1;\n}\n';
-  await writeFile(path.join(baselineRoot, 'existing-a.js'), baselineSource);
-  await writeFile(path.join(baselineRoot, 'existing-b.js'), baselineSource);
-  execFileSync('git', ['add', '.'], { cwd: baselineRoot });
+  const fixtureFrontend = path.join(baselineRoot, 'frontend');
+  const fixtureSources = path.join(baselineRoot, 'samples');
+  await mkdir(fixtureFrontend);
+  await mkdir(fixtureSources);
+  const actualFrontend = path.resolve(import.meta.dirname, '..');
+  const actualPackage = JSON.parse(await readFile(path.join(actualFrontend, 'package.json'), 'utf8'));
+  const actualConfig = JSON.parse(await readFile(path.join(actualFrontend, '..', '.jscpd.json'), 'utf8'));
+  await writeFile(path.join(fixtureFrontend, 'package.json'), JSON.stringify({ private: true, scripts: { 'review:duplicates': actualPackage.scripts['review:duplicates'] } }));
+  await writeFile(path.join(baselineRoot, '.jscpd.json'), JSON.stringify({ ...actualConfig, path: ['samples'] }));
+  await symlink(path.join(actualFrontend, 'node_modules'), path.join(fixtureFrontend, 'node_modules'), 'junction');
+  const baselineSource = 'function calculateTotal(left, right) {\n  const sum = left + right;\n  const difference = left - right;\n  const factor = sum * 3;\n  const adjusted = factor - difference;\n  if (adjusted > 100) {\n    return adjusted + sum;\n  }\n  return adjusted - difference;\n}\n';
+  const addedSource = 'function prepareOrder(order) {\n  const price = order.unitPrice * order.quantity;\n  const shipping = order.distance * order.rate;\n  const discount = order.discount + order.credit;\n  const subtotal = price + shipping - discount;\n  if (order.taxable) {\n    return subtotal * order.taxRate;\n  }\n  return subtotal + order.fee;\n}\n';
+  await writeFile(path.join(fixtureSources, 'existing-a.js'), baselineSource);
+  await writeFile(path.join(fixtureSources, 'existing-b.js'), baselineSource);
+  execFileSync('git', ['add', '.jscpd.json', 'frontend/package.json', 'samples'], { cwd: baselineRoot });
   execFileSync('git', ['commit', '--quiet', '-m', 'baseline'], { cwd: baselineRoot });
-  await writeFile(path.join(baselineRoot, 'added-a.js'), addedSource);
-  await writeFile(path.join(baselineRoot, 'added-b.js'), addedSource);
+  await writeFile(path.join(fixtureSources, 'added-a.js'), addedSource);
+  await writeFile(path.join(fixtureSources, 'added-b.js'), addedSource);
   const pnpmArgs = ['run', 'review:duplicates', '--baseline-from-ref', 'HEAD'];
   const pnpmRun = platform() === 'win32'
-    ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'pnpm ' + pnpmArgs.map((arg) => /[\s"]/.test(String(arg)) ? '"' + String(arg).replaceAll('"', '\\"') + '"' : String(arg)).join(' ')], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8', stdio: 'pipe' })
-    : spawnSync('pnpm', pnpmArgs, { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8', stdio: 'pipe' });
+    ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'pnpm ' + pnpmArgs.map((arg) => /[\s"]/.test(String(arg)) ? '"' + String(arg).replaceAll('"', '\\"') + '"' : String(arg)).join(' ')], { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' })
+    : spawnSync('pnpm', pnpmArgs, { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' });
   if (pnpmRun.error) throw pnpmRun.error;
   assert.equal(pnpmRun.status, 0, pnpmRun.stdout + '\n' + pnpmRun.stderr);
   assert.match(pnpmRun.stdout, /JSON report saved/i);
-  const baselineReport = JSON.parse(await readFile(path.resolve(import.meta.dirname, '..', '..', 'tmp', 'jscpd', 'review-with-docs.json'), 'utf8'));
-  assert.equal(baselineReport.statistics.total.newClones, 0, 'The package script must compare the current tree to its base ref');
+  const baselineReport = JSON.parse(await readFile(path.join(baselineRoot, 'tmp', 'jscpd', 'review-with-docs.json'), 'utf8'));
+  for (const [prefix, isNew] of [['existing', false], ['added', true]]) {
+    const clone = baselineReport.duplicates.find(({ firstFile, secondFile }) => {
+      const names = [path.basename(firstFile.name), path.basename(secondFile.name)].sort();
+      return names[0] === `${prefix}-a.js` && names[1] === `${prefix}-b.js`;
+    });
+    assert(clone, `Expected ${prefix} clone pair in isolated report`);
+    assert.equal(clone.isNew, isNew, `Incorrect baseline classification for ${prefix} clone`);
+    assert(clone.tokens >= 50, `${prefix} clone must exceed configured token threshold`);
+  }
 
   console.log('jscpd smoke passed: six languages, clone report and exit code, test visibility, generated/vendor exclusions, distinct behavior, non-gating duplicate exit, empty-scan failure, and pnpm baseline script comparison.');
 } finally {

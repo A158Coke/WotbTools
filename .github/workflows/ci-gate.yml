@@ -150,6 +150,56 @@ jobs:
               output.write(f"base_sha={base_sha}\n")
               output.write(f"head_sha={head_sha}\n")
           PY
+  source_quality:
+    needs: [pr_identity]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+          fetch-depth: 0
+      - name: Validate source LOC enforcement
+        run: python3 scripts/ci/test-source-lines.py
+      - name: Check first-party source LOC
+        env:
+          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Verify duplicate scanner isolation
+        working-directory: frontend
+        run: |
+          pnpm run test:jscpd
+          node --test scripts/validate-jscpd-report.test.mjs
+      - name: Scan duplicate candidates against verified PR base
+        working-directory: frontend
+        env:
+          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+          git cat-file -e "${BASE_SHA}^{commit}"
+          rm -f ../tmp/jscpd-ci/ci-candidates.json
+          pnpm run review:duplicates --baseline-from-ref "$BASE_SHA" --output ../tmp/jscpd-ci --report-name ci-candidates
+          node scripts/validate-jscpd-report.mjs ../tmp/jscpd-ci/ci-candidates.json
+      - name: Upload duplicate candidates for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: duplicate-candidates
+          path: tmp/jscpd-ci/ci-candidates.json
+          if-no-files-found: error
   changes:
     needs: [pr_identity]
     runs-on: ubuntu-latest
@@ -295,6 +345,7 @@ jobs:
   required:
     needs:
       - pr_identity
+      - source_quality
       - changes
       - business_api
       - ai_service
@@ -328,6 +379,8 @@ jobs:
           needs = json.loads(os.environ["NEEDS_JSON"])
           if needs["pr_identity"]["result"] != "success" or needs["changes"]["result"] != "success":
               raise SystemExit("::error::PR identity or changed-file detection failed")
+          if needs["source_quality"]["result"] != "success":
+              raise SystemExit("::error::Source quality checks failed or were skipped")
           failed = []
           for owner, affected in needs["changes"]["outputs"].items():
               result = needs[owner]["result"]
