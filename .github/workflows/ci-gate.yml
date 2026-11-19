@@ -176,7 +176,7 @@ jobs:
         working-directory: frontend
         run: |
           pnpm run test:jscpd
-          node --test scripts/validate-jscpd-report.test.mjs
+          node --test scripts/test-validate-jscpd-report.mjs
       - name: Scan duplicate candidates against verified PR base
         working-directory: frontend
         env:
