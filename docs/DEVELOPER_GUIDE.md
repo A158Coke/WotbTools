@@ -48,7 +48,7 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 cd frontend
 pnpm install
 pnpm run review:duplicates                         # 当前源码基线
-pnpm run review:duplicates -- --baseline-from-ref <main-ref>  # Review 中比较候选树与已验证基线
+pnpm run review:duplicates --baseline-from-ref <main-ref>    # Review 中比较候选树与已验证基线
 pnpm run test:jscpd                                # 六语言、排除和失败语义 smoke 验证
 ```
 

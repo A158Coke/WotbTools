@@ -297,7 +297,7 @@ rg -n '@Autowired(?:\s*\([^)]*\))?\s+(?:(?:private|protected|public)\s+)?[^(){}\
 jscpd 是本项的重复代码证据工具，不是独立 gate。存在 task-related source change 时，从 `frontend/` 运行固定依赖版本：
 
 ```bash
-pnpm run review:duplicates -- --baseline-from-ref <main-ref>
+pnpm run review:duplicates --baseline-from-ref <main-ref>
 ```
 
 配置覆盖 Java、Kotlin、JavaScript、TypeScript、Vue、Python 的仓库源码根；报告写入 gitignored 的 `tmp/jscpd/review-with-docs.json`。jscpd 会扫描候选树和基线树，使用报告中 `duplicates[].isNew` / `statistics.total.newClones` 辅助识别相对基线新增候选。它不是增量扫描。官方 `--changed` 只接受当前 staged、unstaged、untracked 文件，仍扫描全树，不能代替 PR main-ref 对比。每轮 Review 初次运行一次；修复 Finding 后只对受影响候选做定向复核，确有必要才重跑全树。

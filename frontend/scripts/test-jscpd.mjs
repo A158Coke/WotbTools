@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { platform } from 'node:os';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runJscpd } from 'jscpd';
 
 const root = await mkdtemp(path.join(tmpdir(), 'wotb-jscpd-'));
+const baselineRoot = path.join(root, 'baseline-fixture');
 const reportDir = path.join(root, 'report');
 const sources = {
   java: ['.java', 'class Probe {\n  int add(int left, int right) {\n    int total = left + right;\n    if (total > 10) {\n      return total * 2;\n    }\n    return total - 1;\n  }\n}\n'],
@@ -80,7 +83,30 @@ try {
   assert.equal(emptyRun.status, 1, 'An empty scan must fail rather than report zero duplication');
   assert.match(emptyRun.stdout + '\n' + emptyRun.stderr, /analyzed no files/i);
 
-  console.log('jscpd smoke passed: six languages, clone report and exit code, test visibility, generated/vendor exclusions, distinct behavior, non-gating duplicate exit and empty-scan failure.');
+  // Exercise the actual pnpm script and baseline option using an isolated Git fixture.
+  await mkdir(baselineRoot, { recursive: true });
+  execFileSync('git', ['init', '--quiet'], { cwd: baselineRoot });
+  execFileSync('git', ['config', 'user.email', 'jscpd-smoke@example.invalid'], { cwd: baselineRoot });
+  execFileSync('git', ['config', 'user.name', 'jscpd smoke'], { cwd: baselineRoot });
+  const baselineSource = sources.javascript[1];
+  const addedSource = 'function multiply(left, right) {\n  const total = left * right;\n  if (total > 10) {\n    return total + 2;\n  }\n  return total - 1;\n}\n';
+  await writeFile(path.join(baselineRoot, 'existing-a.js'), baselineSource);
+  await writeFile(path.join(baselineRoot, 'existing-b.js'), baselineSource);
+  execFileSync('git', ['add', '.'], { cwd: baselineRoot });
+  execFileSync('git', ['commit', '--quiet', '-m', 'baseline'], { cwd: baselineRoot });
+  await writeFile(path.join(baselineRoot, 'added-a.js'), addedSource);
+  await writeFile(path.join(baselineRoot, 'added-b.js'), addedSource);
+  const pnpmArgs = ['run', 'review:duplicates', '--baseline-from-ref', 'HEAD'];
+  const pnpmRun = platform() === 'win32'
+    ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'pnpm ' + pnpmArgs.map((arg) => /[\s"]/.test(String(arg)) ? '"' + String(arg).replaceAll('"', '\\"') + '"' : String(arg)).join(' ')], { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8', stdio: 'pipe' })
+    : spawnSync('pnpm', pnpmArgs, { cwd: path.resolve(import.meta.dirname, '..'), encoding: 'utf8', stdio: 'pipe' });
+  if (pnpmRun.error) throw pnpmRun.error;
+  assert.equal(pnpmRun.status, 0, pnpmRun.stdout + '\n' + pnpmRun.stderr);
+  assert.match(pnpmRun.stdout, /JSON report saved/i);
+  const baselineReport = JSON.parse(await readFile(path.resolve(import.meta.dirname, '..', '..', 'tmp', 'jscpd', 'review-with-docs.json'), 'utf8'));
+  assert.equal(baselineReport.statistics.total.newClones, 0, 'The package script must compare the current tree to its base ref');
+
+  console.log('jscpd smoke passed: six languages, clone report and exit code, test visibility, generated/vendor exclusions, distinct behavior, non-gating duplicate exit, empty-scan failure, and pnpm baseline script comparison.');
 } finally {
   await rm(root, { recursive: true, force: true });
 }
