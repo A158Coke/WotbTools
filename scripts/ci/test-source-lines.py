@@ -66,6 +66,16 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertEqual(self.check(self.base, head).returncode, 0)
         self.assertEqual(self.check(self.base, head, '--strict').returncode, 1)
 
+    def test_ci_gate_tools_use_the_test_budget(self):
+        self.write('scripts/ci/check-repository-hygiene.sh', POLICY['limits']['test'])
+        head = self.commit('CI tooling at the test budget')
+        self.assertEqual(self.check(self.base, head).returncode, 0)
+        self.write('scripts/ci/check-repository-hygiene.sh', POLICY['limits']['test'] + 1)
+        head = self.commit('CI tooling over the test budget')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('check-repository-hygiene.sh: 1501 physical lines (limit 1500, test)', result.stderr)
+
     def test_new_production_and_test_over_limit_fail(self):
         self.write('common/python/loader.py', POLICY['limits']['production'] + 1)
         self.write('frontend/scripts/browser-scenario.mjs', POLICY['limits']['test'] + 1)

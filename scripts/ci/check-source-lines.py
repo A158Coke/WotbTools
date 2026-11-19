@@ -21,7 +21,7 @@ POLICY = json.loads(Path(__file__).with_name('source-line-policy.json').read_tex
 LIMITS = POLICY['limits']
 EXCLUDED = tuple(POLICY['explicit_exclusions'])
 ALLOWLIST_FILE = 'scripts/ci/source-line-allowlist.txt'
-TEST_DIRS = frozenset({'test', 'tests', '__tests__', 'androidtest', 'testfixtures', 'testing'})
+TEST_DIRS = frozenset({'ci', 'test', 'tests', '__tests__', 'androidtest', 'testfixtures', 'testing'})
 TEST_NAME = re.compile(r'(?:^test[-_]|(?:[._-](?:test|tests|spec|specs))\.|(?:Test|Tests|IT)\.(?:java|kt)$|_test\.go$)')
 
 
