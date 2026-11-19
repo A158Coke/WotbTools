@@ -28,7 +28,7 @@ jobs:
   pr_identity:
     name: pull request identity
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       base_sha: ${{ steps.revisions.outputs.base_sha }}
       head_sha: ${{ steps.revisions.outputs.head_sha }}
@@ -150,21 +150,16 @@ jobs:
               output.write(f"base_sha={base_sha}\n")
               output.write(f"head_sha={head_sha}\n")
           PY
-  source_quality:
-    needs: [pr_identity]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ needs.pr_identity.outputs.head_sha }}
+          ref: ${{ steps.revisions.outputs.head_sha }}
           fetch-depth: 0
       - name: Validate source LOC enforcement
         run: python3 scripts/ci/test-source-lines.py
       - name: Check first-party source LOC
         env:
-          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
         run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         with:
@@ -185,8 +180,8 @@ jobs:
       - name: Scan duplicate candidates against verified PR base
         working-directory: frontend
         env:
-          BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
-          HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
+          BASE_SHA: ${{ steps.revisions.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.revisions.outputs.head_sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
@@ -345,7 +340,6 @@ jobs:
   required:
     needs:
       - pr_identity
-      - source_quality
       - changes
       - business_api
       - ai_service
@@ -379,8 +373,6 @@ jobs:
           needs = json.loads(os.environ["NEEDS_JSON"])
           if needs["pr_identity"]["result"] != "success" or needs["changes"]["result"] != "success":
               raise SystemExit("::error::PR identity or changed-file detection failed")
-          if needs["source_quality"]["result"] != "success":
-              raise SystemExit("::error::Source quality checks failed or were skipped")
           failed = []
           for owner, affected in needs["changes"]["outputs"].items():
               result = needs[owner]["result"]
