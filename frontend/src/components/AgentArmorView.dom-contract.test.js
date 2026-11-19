@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 // 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
-const plateModel = read('../scene/viewer/armorPlateModel.ts')
+const plateModel = read('../scene/viewer/armorPlateModel.ts') + '\n' + read('../scene/viewer/armorPenetrationScenes.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
   const template = read('./AgentArmorView.vue')
