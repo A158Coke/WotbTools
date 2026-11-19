@@ -37,6 +37,11 @@ const props = defineProps({
   /** 名册浮层入口：宿主决定是否需要（2D 横屏 / 桌面浮层形态；3D 与竖屏纵向流不需要）。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
+  /** 事件刻度（炮击 / 击毁；宿主经 utils/playbackShortcuts.js 预换算）：缺省空 = 无刻度层（2D 现状）。 */
+  shotTicks: { type: Array, default: () => [] },
+  killTicks: { type: Array, default: () => [] },
+  /** 快捷键说明 tooltip（宿主按需传入，缺省无提示）。 */
+  shortcutsHint: { type: String, default: '' },
 })
 
 // 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
@@ -96,6 +101,9 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     :start-time="props.startTime"
     :duration="props.duration"
     :disabled="!timelineUsable"
+    :shot-ticks="props.shotTicks"
+    :kill-ticks="props.killTicks"
+    :hint="props.shortcutsHint"
     @drag-start="emit('scrub-start')"
     @drag-end="emit('scrub-end')"
     @seek="emit('seek', $event)"

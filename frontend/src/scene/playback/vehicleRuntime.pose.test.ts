@@ -87,7 +87,7 @@ const ramp = (start: number, step: number) => Array.from({ length: 101 }, (_, i)
 function makeDeps(data: ReturnType<typeof makeData>, overrides: Partial<VehicleRuntimeDeps> = {}) {
   const scene = new THREE.Scene()
   const deps: VehicleRuntimeDeps = {
-    store: { glbOn: false },
+    store: { glbOn: false, lastKnownOn: false },
     destroyed: () => false,
     sessionGen: () => 0,
     getScene: () => scene,

@@ -46,6 +46,7 @@ import { visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { hpPercentText } from './rosterState.js'
 import { resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
 import { applySupremacyPointsToStore } from './supremacyPoints.js'
+import { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY } from './playback/palette.ts'
 import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 //（FLASH_MS/FLOAT_DMG_MS/GHOST_MS 随战斗反馈 transient 出仓 playback/battleRuntime.ts）
@@ -63,6 +64,7 @@ import { createSessionLifecycle } from './playback/sessionLifecycle.ts'
 import { createMapWorld } from './playback/mapWorld.ts'
 import { createWaterReflectionRuntime } from './playback/waterReflectionRuntime.ts'
 import { createVehicleRuntime } from './playback/vehicleRuntime.ts'
+import { makeReplacedAt } from './playback/identity.ts'
 import { createTreadRuntime } from './playback/treadRuntime.ts'
 //（战斗表现/3D 标注场景层/标签 HUD 随 #820 Step 5 出仓 playback/battleRuntime.ts、
 //  playback/annotationScene.ts、playback/labelsRuntime.ts；本文件只经句柄调度）
@@ -90,22 +92,8 @@ import { createBaseMarkers } from './playback/bases.js'
 import { createSpawnMarkers } from './playback/spawns.js'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
-
-// 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
-// 中立与未知阵营一律 white（unknown ≠ enemy）。
-// 阵营色深色板（2026-10-05 加深）：原亮绿/亮红在明亮地表上对比不足；
-// 统一到与车辆 tint 同源的深绿/深红（「与上游 Agent 同值」，`teamColor` 原已用此对），
-// 炮线与车辆着色共用一个事实源。
-export const COLOR_FRIENDLY = 0x26794a;   // 深绿
-export const COLOR_ENEMY = 0x98322a;      // 深红
-export const COLOR_UNKNOWN = 0xf5f5f5;
-// 炮线专用亮色（与车辆 tint **分离**，2026-10-05 用户反馈"亮度/鲜艳度不够"）：
-// 两者取色目标相反——车辆 tint 要压得住（亮色在明亮地表上刺眼且车体显脏，已回退），
-// 炮线是细长高动态、只存在一两秒的物体，需要**字面亮度**才看得清（材质 toneMapped=false
-// 直出字面色，故提亮只能靠颜色本身与不透明度）。保持"绿=友 / 红=敌"色相，仅提亮提饱和。
-// 车辆/基地/标签**不得**改用这两个值（回退即车辆 tint 变亮）。
-export const TRACER_FRIENDLY = 0x3ee08a;  // 亮绿（同色相提亮 #26794a）
-export const TRACER_ENEMY = 0xff5a45;     // 亮红（同色相提亮 #98322a）
+// 调色常量的消费方（bases.tracers.behavior 测试等）经本文件 re-export 零改动。
+export { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY }
 
 // 兜底灯光（读不到 lighting.json 时用，= 上游硬编码时代的两盏灯，保证无数据也不变样）
 // 出屏口径（A2）：客户端发布版**没有任何 filmic 出屏曲线**。证据（客户端 Materials/Shaders
@@ -141,7 +129,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts）。
    *  唯一 owner 仍在本闭包（canonical 事实域），按引用共享给 vehicleRuntime。 */
   const POSE_GRID = { tStart: 0, samples: 0 };
-  // 阵营/炮线调色常量（COLOR_* / TRACER_*）已提到模块顶层（唯一事实源，注释见该处）。
+  // 阵营/炮线调色（COLOR_* / TRACER_*，含深色板与炮线亮色的语义注释）在
+  // ./playback/palette.js（调色唯一事实源，与 quality.js/pure.js 同款拆分）。
   // 车辆运行时（{def, group, turretG, gunPivot, labelAnchor, meshHull, glb}）与 GLB 模板缓存、
   // 履带印缓存的唯一 owner = playback/vehicleRuntime.ts / playback/treadRuntime.ts
   //（#820 Step 4 出仓；本闭包经 vehicles/tread 句柄读写，语义与拆分前逐字一致）
@@ -339,6 +328,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return defLifeAt(v.def, t);
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
+  const replacedAt = makeReplacedAt({ // 身份替换判据（见 playback/identity.ts，时间感知）
+    canonical: () => store.playbackSession?.canonical,
+    vehicles: () => vehicles.getVehicles().map(v => ({ eid: v.def.eid, account_id: v.def.account_id, coverage: v.def.coverage })),
+    spansOf: (id) => VIS_BY_EID.get(id),
+  });
   function visibleAt(v, t) {
     // 活车按**协议精确 visibility** 显隐（coverage 只保证"有采样"，短隐藏段不断开）；
     // 否则隐藏期仍会显示车辆并把炮塔/炮管插值到下一段。死亡残骸例外由 applyPose
@@ -459,6 +453,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate,
     visibleAt: (v, t) => visibleAt(v, t),
     sceneLifeAt: (v, t) => sceneLifeAt(v, t),
+    // 身份替换判据（幽灵抑制；唯一消费方是车辆运行时，勿挪到 treadRuntime）
+    replacedAt: (eid, t) => replacedAt(eid, t),
     sampleHeight: (x, z) => mapWorld.sampleHeight(x, z),
     // 晚绑定解环：vehicles 需要 tread.attachVehicle（buildVehicles 的履带装配段）、
     // tread 需要 vehicles 的位姿采样与车辆清单。buildVehicles 只在运行期调用，届时
@@ -531,7 +527,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   });
 
   // 标签运行时 owner（#820 Step 5 出仓）：软遮挡/名牌发布/会话 resolver/击杀 feed 计分名册。
-  // writeHud（时钟+相机+名册编排）、teamHpTotals、pointsAt 仍在本闭包。
+  // writeHud（时钟+相机+名册编排）、teamHpTotals、applySupremacyPointsToStore 仍在本闭包。
   const labels = createLabelsRuntime({
     store,
     getViewportSize,
@@ -942,9 +938,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     tread.updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     labels.updateScore();
     // HUD → store
-    // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
-    // supremacy_points 缺失，若只在有采样时才写，上一场的点数会残留在 HUD 上。
-    // 阵营映射只认 friendly_team ∈ {1,2}（unknown ≠ enemy，见 pointsAt）。
+    // 顶栏：争霸实时点数每 tick 确定性重算 + 变更守卫（无采样也写 null，防切场残值）。
     applySupremacyPointsToStore(store, DATA, T);
     // 顶栏：单基地目标存在性 + 占领进度（取 ≤T 最后一条；无目标证据整行不显示）
     writeHud();
@@ -1407,6 +1401,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setLabelPrefs: (prefs) => {
       const enabled = !prefs || prefs.enabled !== false;
       store.labelsOn = enabled;
+      // 最后已知呈现（可视性诚实呈现；偏好唯一 owner = usePlaybackPreferences，经面板推入）。
+      // 暂停时 applyPose 不逐帧跑：开关变化必须立即重摆一次（与 setTreadMarks 同理由）。
+      const lastKnownOn = prefs?.lastKnown !== false;
+      const lastKnownChanged = store.lastKnownOn !== lastKnownOn;
+      store.lastKnownOn = lastKnownOn;
       labels.setClassIcons(prefs?.classIcons === true);
       labels.setShowMarkerStatus(prefs?.showStatus !== false);
       // Keep factual visibility and the raycast roots intact. Only artwork is
@@ -1417,6 +1416,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (v.glb) v.glb.visible = v.group.visible && !labels.classIconsVisible();
         vehicles.syncContactShadow(v);   // 类型图标替换后阴影随显隐（#907 主干随迁）
       }
+      if (lastKnownChanged) for (const v of vehicles.getVehicles()) vehicles.applyPose(v);
       labels.setLabelPrefs();
       if (renderer && camera) labels.updateLabels();
     },

@@ -79,6 +79,7 @@ vi.mock('../scene/playbackScene.js', () => {
       seekTime: vi.fn(),
       setCam: vi.fn(),
       setFollow: vi.fn(),
+      setFlySpeed: vi.fn(),   // 真实契约：useSceneFlyControls 的 1–6 速率键写场景（数字键用例会触到）
       setGlb: vi.fn(),
       setLabelPrefs: vi.fn(),
       setQuality: vi.fn(),
@@ -879,7 +880,7 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: false, showReload: false,
-      classIcons: true, showStatus: false,
+      classIcons: true, showStatus: false, lastKnown: true,
     })
     await wrapper.get('[data-testid="disp-roster"]').setValue(false)
     expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(false)
@@ -899,7 +900,7 @@ describe('Replay3DPane', () => {
     // 建场景时补推一次（内核在 initPlayback 之后才有 setLabelPrefs）
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: true, showReload: true,
-      classIcons: false, showStatus: true,
+      classIcons: false, showStatus: true, lastKnown: true,
     })
     // 工具条只在 HUD 有数据时渲染
     playback.api.store.hasData = true
@@ -913,7 +914,7 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
-      classIcons: false, showStatus: true,
+      classIcons: false, showStatus: true, lastKnown: true,
     })
     expect(wrapper.get('[data-test="pb-label-player"]').text()).toBe('Recorder昵称')
     await wrapper.get('[data-testid="disp-player"]').setValue(false)
@@ -923,8 +924,60 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
-      classIcons: false, showStatus: true,
+      classIcons: false, showStatus: true, lastKnown: true,
     })
+    wrapper.unmount()
+  })
+
+  it('一次性消费事件流 seek 请求：切回 3D 不重放，新 id 才执行', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ pendingSeek: { id: 1, sec: 20 } })
+    await flush()
+    // 场景就绪（hasData 翻转）后执行一次
+    playback.api.store.hasData = true
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenCalledWith(20)
+    playback.api.seekTime.mockClear()
+    // 切走再切回：旧请求已消费，不得把播放位置拉回事件时刻
+    await wrapper.setProps({ active: false })
+    await wrapper.setProps({ active: true })
+    await nextTick()
+    expect(playback.api.seekTime).not.toHaveBeenCalled()
+    // 新请求（id 递增）才执行
+    await wrapper.setProps({ pendingSeek: { id: 2, sec: 35 } })
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenCalledWith(35)
+    wrapper.unmount()
+  })
+
+  it('暂停时连续按下一发可持续前进（评审 4595575859）', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.hasData = true
+    Object.assign(store, { startTime: 5, duration: 100, time: 5, cam: 'follow' })
+    // 真实契约：seekTime 同步把回放时钟写回 store（场景每 tick 发布）
+    playback.api.seekTime.mockImplementation((v) => { store.time = v })
+    const workspaceState = wrapper.props('playbackSession').getState(wrapper.props('file'))
+    workspaceState.scenePlayback = {
+      shots: [
+        { t_fire: 10, shooter_eid: 11, is_author: true },
+        { t_fire: 20, shooter_eid: 11, is_author: true },
+        { t_fire: 30, shooter_eid: 11, is_author: true },
+      ],
+      kills: [],
+    }
+    await flush()
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(9.95)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(19.95)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(29.95)
     wrapper.unmount()
   })
 
@@ -1687,6 +1740,65 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="display-toggle"]').attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.banner').text()).toBe('agentReplay.banner_win')
+    wrapper.unmount()
+  })
+
+  // 时间轴刻度 / 跳炮击 / 数字键骑乘（借鉴 blitzinfo）的面板接线：
+  // 事件面来自 AgentPlaybackFacet（工作台状态 scenePlayback），刻度位置与跳炮击共用
+  // utils/playbackShortcuts.js 纯函数；数字键冲突消解 = 自由飞行激活时归飞行速率。
+  it('timeline ticks render from the facet and `,`/`.`/digits seek-jump and ride', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.hasData = true
+    Object.assign(store, { startTime: 45, duration: 145, time: 110, friendlyTeam: 1, cam: 'follow' })
+    store.roster = {
+      team1: [
+        { eid: 11, accountId: 11, team: 1, nick: 'A1', tank: 'T' },
+        { eid: 12, accountId: 12, team: 1, nick: 'A2', tank: 'T' },
+      ],
+      team2: [{ eid: 21, accountId: 21, team: 2, nick: 'E1', tank: 'T' }],
+      unknown: [],
+    }
+    const workspaceState = wrapper.props('playbackSession').getState(wrapper.props('file'))
+    workspaceState.scenePlayback = {
+      shots: [
+        { t_fire: 50, shooter_eid: 11, is_author: true },
+        { t_fire: 100, shooter_eid: 21, is_author: false },
+        { t_fire: 120, shooter_eid: 12, is_author: false },
+      ],
+      kills: [{ t: 118, killer_eid: 11, victim_eid: 21, cause: 0 }],
+    }
+    await flush()
+    expect(wrapper.findAll('.pb-tick-shot')).toHaveLength(3)
+    expect(wrapper.findAll('.pb-tick-shot-highlight')).toHaveLength(1)   // is_author
+    expect(wrapper.findAll('.pb-tick-kill')).toHaveLength(1)
+
+    // `.` → time=110 之后最近的一发（120）；`,` → 之前最近的一发（100）
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
+    await nextTick()
+    // 跳到目标发**之前**一小步：seekTo 用 firstIndexAfter(严格晚于 T) 定位游标，
+    // 精确 t_fire 会把该发排除（炮线/炮声不出现）
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(119.95)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', bubbles: true }))
+    await nextTick()
+    expect(playback.api.seekTime).toHaveBeenLastCalledWith(99.95)
+
+    // 数字键骑乘（非飞行模式）：2 → 己方第 2 辆；Shift+1 → 敌方第 1 辆
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', key: '2', bubbles: true }))
+    await nextTick()
+    expect(playback.api.setFollow).toHaveBeenLastCalledWith(12)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', key: '1', shiftKey: true, bubbles: true }))
+    await nextTick()
+    expect(playback.api.setFollow).toHaveBeenLastCalledWith(21)
+
+    // 冲突消解：自由飞行激活（cam=free）→ 数字键归飞行速率，骑乘不触发
+    store.cam = 'free'
+    await nextTick()
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', key: '1', bubbles: true }))
+    await nextTick()
+    expect(playback.api.setFollow).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

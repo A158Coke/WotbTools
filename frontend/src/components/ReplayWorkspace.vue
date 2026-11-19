@@ -47,6 +47,8 @@ const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'
 const threeModule = defineLazyModule(() => import('./Replay3DPane.vue'))
 const shotsModule = defineLazyModule(() => import('./ReplayShotsPane.vue'))
 const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
+const eventsModule = defineLazyModule(() => import('./ReplayEventStreamPane.vue'))
+const ReplayEventStreamPane = eventsModule.component
 const BattlePlaybackPanel = playbackModule.component
 const Replay3DPane = threeModule.component
 const ReplayShotsPane = shotsModule.component
@@ -178,13 +180,14 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
 })
 
 /**
- * 五个能力始终公开显示。数据 / 2D 匿名可用；官方示例额外开放 3D / 射击，AI 仍要求登录，
+ * 六个能力始终公开显示。数据 / 2D 匿名可用；官方示例额外开放 3D / 射击，AI 仍要求登录，
  * 管理员角色不改变工作台能力。登录门禁位于实际解析与场景挂载之前。
  */
 const capabilityOptions = [
   { key: 'data', labelKey: 'workspace.tab_data' },
   { key: 'playback', labelKey: 'workspace.tab_playback' },
   { key: '3d', labelKey: 'workspace.tab_3d' },
+  { key: 'events', labelKey: 'workspace.tab_events' },
   { key: 'shots', labelKey: 'workspace.tab_shots' },
   { key: 'ai', labelKey: 'workspace.tab_ai' },
 ]
@@ -201,6 +204,7 @@ const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'p
 const threeMounted = useMountedWhenActive(() =>
   canUseDemoCapabilities.value && activeCapability.value === '3d' && threeAvailability.value.available)
 const shotsMounted = useMountedWhenActive(() => canUseDemoCapabilities.value && activeCapability.value === 'shots')
+const eventsMounted = useMountedWhenActive(() => canUseDemoCapabilities.value && activeCapability.value === 'events')
 const aiMounted = useMountedWhenActive(() =>
   authenticated.value && activeCapability.value === 'ai' && aiAvailability.value.available)
 
@@ -221,6 +225,7 @@ const playbackLoadError = computed(() => paneLoadError(playbackModule))
 const threeLoadError = computed(() => paneLoadError(threeModule))
 const shotsLoadError = computed(() => paneLoadError(shotsModule))
 const aiLoadError = computed(() => paneLoadError(aiModule))
+const eventsLoadError = computed(() => paneLoadError(eventsModule))
 
 /** 重试：由 lazyModule 创建新一代 async wrapper（不是重复跑一次 import）。 */
 async function retryPane(module) {
@@ -283,14 +288,20 @@ const showBattlePicker = computed(() => {
   if (cap === 'playback') return !playbackLoadError.value
   if (cap === '3d') return canUseDemoCapabilities.value && threeAvailability.value.available && !threeLoadError.value
   if (cap === 'shots') return canUseDemoCapabilities.value && !shotsLoadError.value
+  // 事件流 = 本地解析能力（playbackSession.loadScene），不随联网可用性隐藏；
+  // 与 shots 同款登录/示例资格 + 模块加载状态判据。
+  if (cap === 'events') return canUseDemoCapabilities.value && !eventsLoadError.value
   return aiAvailability.value.available && !aiLoadError.value
 })
-const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
+const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', events: 'events', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
 
 const VIEW_BY_CAPABILITY = Object.freeze({
   data: 'replay',
   playback: 'battle-playback',
   '3d': 'agent-replay',
+  // 事件流是一等能力：必须有自己的 view 槽位，否则 navigate('replay') 会被 ViewHost
+  // 映射回 data（切到事件流立刻被路由同步撤销）。
+  events: 'agent-events',
   shots: 'agent-shots',
   ai: 'ai-review',
 })
@@ -309,6 +320,19 @@ async function viewIn2d(sec) {
   playbackSeek.value = sec
 }
 
+/** 事件流 →「跳到此刻」：切到 3D 并请求场景 seek（Replay3DPane 监听 pending3dSeek）。
+ *  seek 属于场景句柄（sceneApi 由 3D 面板持有），工作台只做 tab 切换与请求转交。 */
+/** 一次性 seek 请求：id 单调递增——3D 面板按 id 只消费一次，切回 3D 不得重放旧请求。 */
+const pending3dSeek = ref(null)
+let seekSeq = 0
+async function view3dAt(sec) {
+  await setCapability('3d')
+  pending3dSeek.value = { id: ++seekSeq, sec }
+  await nextTick()
+}
+// 换回放：旧场的 seek 请求随之作废
+watch(targetFile, () => { pending3dSeek.value = null })
+
 async function setCapability(key) {
   if (key === activeCapability.value) return
   workspace.setWorkspaceTab(key)
@@ -316,10 +340,10 @@ async function setCapability(key) {
   if (navigate) navigate(viewFor(key))
 }
 
-/** 回放类视图（2D/3D/射击/AI）：打开时把视窗放到屏幕中间。 */
-const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'shots', 'ai'])
+/** 回放类视图（2D/3D/事件流/射击/AI）：打开时把视窗放到屏幕中间。 */
+const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'events', 'shots', 'ai'])
 /** 能力 → 视窗容器（`.capability-pane` 的稳定 testid；测量目标是 pane 本身，不含工具栏）。 */
-const PANE_TEST_IDS = { playback: 'ws-playback', '3d': 'ws-3d', shots: 'ws-shots', ai: 'ws-ai' }
+const PANE_TEST_IDS = { playback: 'ws-playback', '3d': 'ws-3d', events: 'ws-events', shots: 'ws-shots', ai: 'ws-ai' }
 // 回放内容容器（视图切换居中与手机横屏沉浸态共用；声明须早于下方 immediate watcher）
 const workspaceContentEl = ref(null)
 
@@ -674,6 +698,31 @@ watch(() => props.initialCapability, (val) => {
           :active="pageActive && activeCapability === '3d' && threeAvailability.available"
           :blocked-reason="threeBlocked"
           :auto-fullscreen-token="autoFullscreenToken"
+          :pending-seek="pending3dSeek"
+        />
+      </div>
+      <div v-show="activeCapability === 'events'" class="capability-pane" data-testid="ws-events">
+        <ReplayCapabilityAuthGate
+          v-if="!canUseDemoCapabilities && activeCapability === 'events'"
+          :title="$t('workspace.tab_events')"
+          :description="$t('workspace.login_required_events')"
+          login-destination="agent-events"
+        />
+        <Banner v-else-if="eventsLoadError" tone="danger" data-testid="ws-events-load-error">
+          <p>{{ $t(eventsLoadError) }}</p>
+          <template #actions>
+            <AppButton size="sm" data-testid="ws-events-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+            <AppButton size="sm" variant="ghost" data-testid="ws-events-load-retry" @click="retryPane(eventsModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          </template>
+        </Banner>
+        <ReplayEventStreamPane
+          v-if="canUseDemoCapabilities && eventsMounted && !eventsLoadError"
+          :file="targetFile"
+          :active="activeCapability === 'events'"
+          :page-active="pageActive"
+          :playback-session="workspace.playbackSession"
+          :navigate="navigate"
+          @view-3d="view3dAt"
         />
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">

@@ -38,8 +38,8 @@ export interface LabelsData {
   [key: string]: unknown
 }
 
-/** 本模块触碰的 store 字段（hudFeed 面 + 名牌开关投影）。 */
-export type LabelsStore = HudFeedStore & { labelsOn: boolean }
+/** 本模块触碰的 store 字段（hudFeed 面 + 名牌开关投影 + 最后已知呈现开关）。 */
+export type LabelsStore = HudFeedStore & { labelsOn: boolean; lastKnownOn: boolean }
 
 /** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
 export interface LabelsRuntimeDeps {
@@ -204,7 +204,9 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
     if (++occlTick < occlStride) return;   // 未到检测帧：沿用缓存结果
     occlTick = 0;
     const v = deps.getVehicles()[occlCursor++ % n];
-    if (!v || !v.labelAnchor || !v.group.visible || !deps.store.labelsOn) return;
+    // 幽灵名牌（不在场坦克的最后已知锚点）同样参与软遮挡：labelAnchor 已在 updateLabels
+    // 前段按最后已知位姿写好，这里只把「不可见」的排除条件放宽到「不可见且无幽灵」。
+    if (!v || !v.labelAnchor || (!v.group.visible && !ghostOf(v)) || !deps.store.labelsOn) return;
     const a = v.labelAnchor;
     const camera = deps.getCamera();
     let blocked = terrainBlocksAim(camera.position.x, camera.position.y, camera.position.z,
@@ -243,6 +245,13 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
   // 名牌偏好（宿主 setLabelPrefs 公开 API 委托写入；见模块头）
   let classIcons = false, showMarkerStatus = true;
   const classIconsVisible = () => classIcons && deps.store.labelsOn;
+  // 最后已知幽灵（可视性诚实呈现，语义见 playback/lastKnown.ts）：vehicleRuntime.applyPose
+  // 逐帧维护 v.lastKnownPose（在场 = null；不在场 = 段内末采样，不插值不外推）。
+  // store.lastKnownOn 只门控呈现；返回 null = 正常呈现（无幽灵锚点）。
+  const ghostOf = (v: RuntimeVehicle) =>
+    deps.store.lastKnownOn ? v.lastKnownPose ?? null : null;
+  // 幽灵名牌锚点复用的场景系位置（game 系 x 取负，与 posAt 同一帧变换；零分配）
+  const ghostPosScratch = new THREE.Vector3();
   function publishLabels(force = false) {
     const labelOverlay = deps.getLabelOverlay();
     const DATA = deps.getData();
@@ -265,10 +274,13 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       const friendly = [1, 2].includes(Number(friendlyTeam)) && [1, 2].includes(Number(v.def.team))
         ? v.def.team === friendlyTeam : null;
       const ghost = deps.transients.ghostOf(v.def.eid);
+      // 最后已知（不在场坦克）：幽灵名牌标记（呈现层弱化样式 + 「最后已知」小字标签）。
+      // 摧毁样式优先——组件按 lastKnown && !destroyed 生效（残骸一直可见，不走幽灵）。
+      const lastKnown = ghostOf(v) != null;
       return {
         eid: v.def.eid, accountId: v.def.account_id, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         tankClass: classByAccount.get(v.def.account_id) || '',
-        friendly, destroyed, lastKnown: false,
+        friendly, destroyed, lastKnown,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
         reload: destroyed ? null : reloadStateAt(v.def.eid, T),
         consumables: destroyed || !deps.visibleAt(v, T) ? []
@@ -300,8 +312,13 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
     const camera = deps.getCamera();
     camera.updateMatrixWorld();
     for (const v of deps.getVehicles()) {
-      const d = camera.position.distanceTo(v.group.position);
-      v.labelAnchor.copy(v.group.position);
+      // 不在场坦克：名牌锚点 = 最后已知位姿（幽灵名牌，与场景里的半透明代理同位置）；
+      // 在场 = 车辆当前位置。两者同一条抬升与投影路径。
+      const ghost = ghostOf(v);
+      if (ghost) ghostPosScratch.set(-ghost.pos[0], ghost.pos[1], ghost.pos[2]);
+      else ghostPosScratch.copy(v.group.position);
+      const d = camera.position.distanceTo(ghostPosScratch);
+      v.labelAnchor.copy(ghostPosScratch);
       v.labelAnchor.y += labelLiftWorld(d);
     }
     updateLabelOcclusion();
@@ -311,9 +328,10 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
         .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
       const w = labelClip.w;
       const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
-      // projected = 车辆在视锥内；visible = 名牌本身是否显示。两者必须分开：伤害数字是
-      // 战斗反馈而不是名牌内容，关掉名牌后它仍要有落点（覆盖层里回退到锚点上方）。
-      const projected = v.group.visible && v.def.eid !== deps.scopedHiddenEid() && w > 0
+      // projected = 车辆在视锥内（不在场坦克按最后已知锚点投影）；visible = 名牌本身是否
+      // 显示。两者必须分开：伤害数字是战斗反馈而不是名牌内容，关掉名牌后它仍要有落点
+      // （覆盖层里回退到锚点上方）。
+      const projected = (v.group.visible || ghostOf(v) != null) && v.def.eid !== deps.scopedHiddenEid() && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
       labelAnchorScratch.x = projected ? (x + 1) * viewW / 2 : 0;

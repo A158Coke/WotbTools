@@ -13,6 +13,8 @@ const props = defineProps({
   hidden: Boolean,
   /** drawing mode 下关闭 overlay 内唯一的可交互点（class icon），避免抢走/选中。 */
   interactive: { type: Boolean, default: true },
+  /** 「最后已知」标记文案（离场坦克幽灵名牌；空串 = 不显示标记小字） */
+  lastKnownLabel: { type: String, default: '' },
 })
 const emit = defineEmits(['select'])
 // Only this child receives 10 Hz content snapshots. Screen coordinates bypass
@@ -239,7 +241,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
       class="vehicle-label-anchor" :data-eid="row.eid" hidden>
       <PlaybackVehicleLabel
         :player-name="row.playerName" :tank-name="row.tankName" :gun-marks="gunMarks.get(row.accountId)" :friendly="row.friendly"
-        :destroyed="row.destroyed" :last-known="row.lastKnown" :hp="row.hp" :reload="row.reload"
+        :destroyed="row.destroyed" :last-known="row.lastKnown" :last-known-label="lastKnownLabel" :hp="row.hp" :reload="row.reload"
         :consumables="row.consumables"
         :hp-ghost="row.hpGhost" :hp-flash="row.hpFlash" :hp-no-transition="true"
         :show-player-name="labelPrefs.showPlayerName" :show-tank-name="labelPrefs.showTankName"

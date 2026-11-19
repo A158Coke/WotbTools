@@ -123,7 +123,8 @@ const crewDraft = ref<CrewSettings>(emptyCrew())
 const [DefineCrewControl, CrewControl] = createReusableTemplate()
 watch(() => [route.query.comparison, route.query.mobilitySeed, catalog.value] as const, ([value, encoded, nextCatalog], previous) => {
   if (value && value === key.value && !encoded && nextCatalog === previous?.[2]) return
-  const switched = value !== key.value
+  // undefined（无 comparison 查询）与 null（当前无会话）等价：catalog 迟到时不得关闭选车器。
+  const switched = (typeof value === 'string' ? value : null) !== key.value
   if (switched) { undo.value = null; batch.value = null; crewOpen.value = false; picker.value = false; chartRestore.value = undefined }
   key.value = typeof value === 'string' ? value : null
   const skillIds = nextCatalog ? Object.keys(nextCatalog.skills || {}) : undefined
