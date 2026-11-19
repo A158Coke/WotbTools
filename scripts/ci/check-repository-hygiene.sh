@@ -3,7 +3,7 @@ set -euo pipefail
 
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
-MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-1500}"
+MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-500}"
 SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
@@ -42,20 +42,24 @@ is_allowlisted() {
   return 1
 }
 
-# Source-line budget (#820): first-party production frontend source stays below a
-# fixed physical-line ceiling. Tests, declaration files and generated transport
-# are not production source and remain out of scope. Existing over-budget files
-# are exact-path exceptions that may only leave the list as they get split.
+# Source-line budget: first-party frontend, backend and Android native production
+# source must respect the same physical-line ceiling. Tests, declarations,
+# generated transport and build scripts remain outside this production scope.
 is_source_line_candidate() {
   local path="$1"
-  [[ "$path" == frontend/src/* ]] || return 1
   case "$path" in
-    *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+    frontend/src/*)
+      case "$path" in
+        *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
+      esac
+      case "$path" in
+        *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
+      esac
+      ;;
+    java/*/src/main/java/*.java|keycloak-*/src/main/java/*.java|android/app/src/main/java/*.java|android/app/src/main/java/*.kt|android/app/src/main/assets/gecko-bridge/*.js)
+      return 0 ;;
   esac
-  case "$path" in
-    *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
-    *) return 1 ;;
-  esac
+  return 1
 }
 
 is_source_line_allowlisted() {
@@ -70,6 +74,17 @@ is_source_line_allowlisted() {
   done < "$SOURCE_LINE_ALLOWLIST_FILE"
 
   return 1
+}
+
+
+# Legacy source blobs predating the stricter 500-line threshold may remain
+# unchanged; newly introduced or modified blobs must meet the new ceiling.
+# The existing exact-path allowlist remains the only explicit exception.
+is_unmodified_base_source_blob() {
+  local path="$1" oid="$2" base_oid
+  [[ -n "$BASE_SHA" ]] || return 1
+  base_oid=$(git rev-parse --verify "${BASE_SHA}:${path}" 2>/dev/null) || return 1
+  [[ "$oid" == "$base_oid" ]]
 }
 
 # Reads an allowlist from stdin and prints its non-comment entry count.
@@ -199,7 +214,7 @@ report_large_file() {
 report_source_line_budget() {
   local path="$1"
   local lines="$2"
-  echo "ERROR: first-party frontend source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
+  echo "ERROR: first-party production source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
   echo "       Split it by responsibility, or swap an existing entry for it in $SOURCE_LINE_ALLOWLIST_FILE (the allowlist may only shrink)." >&2
 }
 
@@ -298,6 +313,9 @@ load_ignored_paths index "" tracked_ignored
 
 source_line_checked=0
 source_line_over=0
+source_line_over_frontend=0
+source_line_over_backend=0
+source_line_over_android=0
 declare -A source_line_head_lines=()
 
 while IFS= read -r -d '' path; do
@@ -339,7 +357,12 @@ while IFS= read -r -d '' path; do
     source_line_head_lines["$path"]="$lines"
     if (( lines > MAX_SOURCE_LINES )); then
       source_line_over=$((source_line_over + 1))
-      if ! is_source_line_allowlisted "$path"; then
+      case "$path" in
+        frontend/*) source_line_over_frontend=$((source_line_over_frontend + 1)) ;;
+        android/*) source_line_over_android=$((source_line_over_android + 1)) ;;
+        *) source_line_over_backend=$((source_line_over_backend + 1)) ;;
+      esac
+      if ! is_source_line_allowlisted "$path" && ! is_unmodified_base_source_blob "$path" "$(git hash-object -- "$path")"; then
         report_source_line_budget "$path" "$lines"
         violations=$((violations + 1))
       fi
@@ -414,7 +437,7 @@ else
   echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
 fi
 
-echo "Source line budget checked $source_line_checked first-party frontend source file(s); limit=$MAX_SOURCE_LINES lines; over-limit allowlisted=$source_line_over."
+echo "Source line budget checked $source_line_checked first-party production source file(s); limit=$MAX_SOURCE_LINES lines; over-limit present=$source_line_over (frontend=$source_line_over_frontend, backend=$source_line_over_backend, android=$source_line_over_android; untouched base blobs grandfathered)."
 
 # Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
@@ -457,19 +480,23 @@ if [[ -n "$BASE_SHA" ]]; then
     source_line_history_allowlisted["$union_path"]=1
   done
 
-  # Third source, for branches that merged a newer main: a branch commit made
-  # before main split a legacy file still carries the then-sanctioned
-  # over-budget blob, while both BASE and HEAD have already retired the entry.
-  # Such a commit is judged by the allowlist main had where the branch forked,
-  # i.e. at merge-base(commit, BASE). That fork point is reachable from BASE, so
-  # the entry was approved on main — a branch-only temporary entry is never at
-  # a merge-base and still legitimizes nothing.
+  # A branch forked before main split a legacy file may still carry its old
+  # over-budget blob in earlier commit trees. The fork point is trusted because
+  # merge-base(commit, BASE) is reachable from current main, unlike branch-only
+  # changes. A blob unchanged since that fork is grandfathered even without an
+  # explicit allowlist entry; a changed or newly added blob is NOT.
+  # Preserve the existing explicit fork-point allowlist rule for pre-existing
+  # approved exceptions (including allowed edits to those exception paths).
   declare -A fork_allowlist_loaded=()
   declare -A fork_allowlisted=()
-  fork_point_allowlists() {
-    local commit="$1" path="$2" fork
+  fork_point_permits_source_blob() {
+    local commit="$1" path="$2" oid="$3" fork fork_oid
     fork=$(git merge-base "$commit" "$BASE_SHA" 2>/dev/null) || return 1
     [[ -n "$fork" ]] || return 1
+    fork_oid=$(git rev-parse --verify "${fork}:${path}" 2>/dev/null) || fork_oid=""
+    if [[ -n "$fork_oid" && "$fork_oid" == "$oid" ]]; then
+      return 0
+    fi
     if [[ -z "${fork_allowlist_loaded[$fork]+x}" ]]; then
       fork_allowlist_loaded["$fork"]=1
       if git cat-file -e "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
@@ -539,7 +566,7 @@ if [[ -n "$BASE_SHA" ]]; then
           echo "Unable to count source lines of blob $oid for $(printable_path "$path") (awk returned: ${blob_lines:-<empty>})." >&2
           exit 2
         fi
-        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! fork_point_allowlists "$commit" "$path"; then
+        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! is_unmodified_base_source_blob "$path" "$oid" && ! fork_point_permits_source_blob "$commit" "$path" "$oid"; then
           # The union list only decides whether the over-budget blob was ever a
           # sanctioned exception; policing per-file net growth is left to the
           # split workflow (the entry-count ratchet owns the allowlist).

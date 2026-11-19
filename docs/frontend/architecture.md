@@ -242,7 +242,7 @@ XI 的基础模块、升级规则、车辆详情与 GLB 均来自当前选中的
 
 ## 验证要求
 
-架构工作从 `.agents/playbooks/frontend-architecture.md` 开始。用 focused tests 覆盖改动边界。路由改动必须覆盖 legacy / deep links、Back/Forward、受影响时的 authentication destinations 与 Android route。Playback 布局改动必须保持 `pnpm run test:browser-layout` 绿色；Playback / Replay Workspace **interaction** 改动（hit targets、pointer-events、capability switching、auth gating、transport controls）还必须保持 `pnpm run test:browser-interaction` 绿色，并辅以 focused Vitest suites。依赖或 router 改动要求 `pnpm run build`；完整 frontend CI 仍是 repository-wide final gate。first-party production source 的单文件行数预算（1500 行）由 repository hygiene gate 执行，超限文件只能通过 [`scripts/ci/source-line-allowlist.txt`](../../scripts/ci/source-line-allowlist.txt) 的 exact path 例外并随拆分移出。
+架构工作从 `.agents/playbooks/frontend-architecture.md` 开始。用 focused tests 覆盖改动边界。路由改动必须覆盖 legacy / deep links、Back/Forward、受影响时的 authentication destinations 与 Android route。Playback 布局改动必须保持 `pnpm run test:browser-layout` 绿色；Playback / Replay Workspace **interaction** 改动（hit targets、pointer-events、capability switching、auth gating、transport controls）还必须保持 `pnpm run test:browser-interaction` 绿色，并辅以 focused Vitest suites。依赖或 router 改动要求 `pnpm run build`；完整 frontend CI 仍是 repository-wide final gate。first-party production source（前端、Java 后端/Keycloak、Android 原生）的单文件行数预算为 **500 物理行**，由现有 repository hygiene PR gate 执行。测试与生成代码不在范围；字节完全未改变的存量超限文件可保留，修改时必须降至 500 行以内（显式 legacy allowlist 继续只减不增）。
 
 ## Android local-first 运行时与能力归属
 

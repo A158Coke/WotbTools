@@ -1,8 +1,11 @@
-# Exact first-party frontend production paths allowed to exceed the 1500-line
+# Exact first-party production paths explicitly permitted to exceed the 500-line
 # source budget enforced by scripts/ci/check-repository-hygiene.sh.
 #
-# Scope: frontend/src/**/*.{js,ts,vue,mjs,cjs}, excluding *.test.*, *.spec.*,
+# Scope: frontend/src source, java/*/src/main/java, keycloak-*/src/main/java,
+# and android/app/src/main/java (+ Gecko bridge JS); excluding *.test.*, *.spec.*,
 # *.d.ts and frontend/src/api/generated/**. Keep this list small and exact.
+# Unchanged historical >500-line blobs need not be added: PR CI compares exact
+# content to the base commit; changing such a blob must meet the 500-line cap.
 # It may only shrink: adding an entry requires removing another one, and every
 # removal is the proof of a completed split. A rename may swap one path for
 # another without changing the entry count.
