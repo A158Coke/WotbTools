@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHECK="$ROOT/scripts/ci/check-repository-hygiene.sh"
+SOURCE_LINES_CHECK="$ROOT/scripts/ci/check-source-lines.py"
 ALLOWLIST="$ROOT/scripts/ci/large-file-allowlist.txt"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -199,7 +200,7 @@ PY
 git add frontend/src/oversized.js
 git commit -q -m 'add oversized first-party source file'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-unlisted "first-party production source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-unlisted "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # Exactly at the budget passes: the limit is inclusive.
 git switch -q -C source-line-at-limit "$base"
@@ -211,7 +212,7 @@ PY
 git add frontend/src/at-limit.ts
 git commit -q -m 'add source file exactly at the line budget'
 head=$(git rev-parse HEAD)
-expect_pass source-line-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-at-limit python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # Lowering the default budget must not block an unrelated PR because it merely
 # carries a byte-for-byte unchanged legacy file above 500 lines. Once that
@@ -229,12 +230,12 @@ printf 'unrelated\n' > unrelated.txt
 git add unrelated.txt
 git commit -q -m 'unrelated source-free edit'
 head=$(git rev-parse HEAD)
-expect_pass source-line-preexisting-unchanged env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-preexisting-unchanged python3 "$SOURCE_LINES_CHECK" --base "$legacy_base" --head "$head"
 printf '// changed\n' >> frontend/src/old-large.js
 git add frontend/src/old-large.js
 git commit -q -m 'modify a still oversized legacy source file'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-preexisting-modified "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$legacy_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-preexisting-modified "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$legacy_base" --head "$head"
 
 
 # Backend Java production code follows the same limit as frontend code.
@@ -247,7 +248,7 @@ PY
 git add java/wotb-web/src/main/java/com/wotb/web/BigService.java
 git commit -q -m 'add over-budget Java backend source'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-backend-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-backend-over-limit "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 git switch -q -C source-line-backend-at-limit "$base"
 mkdir -p java/wotb-core/src/main/java/com/wotb/core
@@ -258,7 +259,7 @@ PY
 git add java/wotb-core/src/main/java/com/wotb/core/AtLimit.java
 git commit -q -m 'add Java backend source exactly at the budget'
 head=$(git rev-parse HEAD)
-expect_pass source-line-backend-at-limit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-backend-at-limit python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # Backend Keycloak providers and the Android native client are production code.
 git switch -q -C source-line-keycloak-over-limit "$base"
@@ -270,7 +271,7 @@ PY
 git add keycloak-wargaming-provider
 git commit -q -m 'add over-budget Keycloak provider source'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-keycloak-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-keycloak-over-limit "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 git switch -q -C source-line-android-over-limit "$base"
 mkdir -p android/app/src/main/java/com/wotbtools/app
@@ -281,7 +282,7 @@ PY
 git add android/app/src/main/java
 git commit -q -m 'add over-budget Android Kotlin source'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-android-over-limit "first-party production source exceeds 500 lines" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-android-over-limit "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # Tests, declaration files and generated transport are not production source
 # and stay out of scope even when they are large.
@@ -289,14 +290,14 @@ git switch -q -C source-line-exempt "$base"
 mkdir -p frontend/src/api/generated
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.test.js").write_text("// test\n" * 1600)
+Path("frontend/src/oversized.test.js").write_text("// test\n" * 1500)
 Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
 Path("frontend/src/api/generated/oversized.ts").write_text("// generated\n" * 1600)
 PY
 git add frontend/src
 git commit -q -m 'add large test, declaration and generated files'
 head=$(git rev-parse HEAD)
-expect_pass source-line-exempt env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-exempt python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # An exact allowlist entry admits an existing over-budget file.
 git switch -q -C source-line-allowlisted "$base"
@@ -309,12 +310,15 @@ PY
 git add frontend/src/oversized.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'add allowlisted oversized source file'
 head=$(git rev-parse HEAD)
-expect_pass source-line-allowlisted env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-allowlisted python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # The allowlist is a one-way ratchet: a new entry added in the event range fails
 # even when every individual file is allowlisted in the head tree.
 git switch -q -C source-line-allowlist-growth "$base"
 mkdir -p frontend/src scripts/ci
+printf '%s\n' '# Source-line policy compatibility marker' > scripts/ci/check-repository-hygiene.sh
+git add scripts/ci/check-repository-hygiene.sh
+git commit -q -m 'record the existing source-line policy'
 python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/existing.js").write_text("// line\n" * 501)
@@ -333,7 +337,7 @@ PY
 git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'grow the source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$growth_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-allowlist-growth "source-line allowlist must not grow" python3 "$SOURCE_LINES_CHECK" --base "$growth_base" --head "$head"
 
 # Once the gate exists, retiring the last exception (deleting the allowlist)
 # must not reset the ratchet: a later change that recreates the file with a new
@@ -360,20 +364,7 @@ PY
 git add frontend/src/new.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'recreate the deleted source-line allowlist'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$recreated_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# A limit that Bash would parse as octal must abort the gate, not disable the
-# comparison. The 501-line file proves the gate did not silently pass.
-git switch -q -C source-line-invalid-limit "$base"
-mkdir -p frontend/src
-python3 - <<'PY'
-from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 501)
-PY
-git add frontend/src/oversized.js
-git commit -q -m 'add oversized file for an invalid-limit fixture'
-head=$(git rev-parse HEAD)
-expect_fail_msg source-line-invalid-limit "MAX_SOURCE_LINES must be a non-negative decimal integer without leading zeros" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES=08 bash "$CHECK"
+expect_fail_msg source-line-allowlist-recreated "source-line allowlist must not grow" python3 "$SOURCE_LINES_CHECK" --base "$recreated_base" --head "$head"
 
 # --- Source-line gate increments (PR #889 on top of #883) ---
 # The normal split flow must pass even though early commits still hold the
@@ -400,7 +391,7 @@ git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/legacy.js
 git commit -q -m 'shrink the legacy file and retire its entry'
 head=$(git rev-parse HEAD)
-expect_pass source-line-split-in-range env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$split_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-split-in-range python3 "$SOURCE_LINES_CHECK" --base "$split_base" --head "$head"
 
 # A branch forked before main split a legacy file, then merged the newer main:
 # its early commits still carry the over-budget blob, while BASE (new main) and
@@ -432,7 +423,7 @@ new_main=$(git rev-parse HEAD)
 git switch -q source-line-merged-newer-main-feature
 git merge -q --no-edit "$new_main"
 head=$(git rev-parse HEAD)
-expect_pass source-line-merged-newer-main env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-merged-newer-main python3 "$SOURCE_LINES_CHECK" --base "$new_main" --head "$head"
 
 # Regression for implicit grandfathering: unlike the explicit allowlist case
 # above, the old 601-line source was never on an allowlist. An unrelated branch
@@ -463,7 +454,7 @@ implicit_new_main=$(git rev-parse HEAD)
 git switch -q source-line-merged-newer-main-implicit-feature
 git merge -q --no-edit "$implicit_new_main"
 head=$(git rev-parse HEAD)
-expect_pass source-line-merged-newer-main-implicit env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$implicit_new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_pass source-line-merged-newer-main-implicit python3 "$SOURCE_LINES_CHECK" --base "$implicit_new_main" --head "$head"
 
 # A branch edit to that same legacy path must still fail, even if it was
 # reverted before merging main. The 602-line intermediate blob is not the
@@ -485,7 +476,7 @@ git add frontend/src/legacy.js
 git commit -q -m 'feature restores original legacy content'
 git merge -q --no-edit "$implicit_new_main"
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-merged-newer-main-implicit-edited "frontend/src/legacy.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$implicit_new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-merged-newer-main-implicit-edited "frontend/src/legacy.js" python3 "$SOURCE_LINES_CHECK" --base "$implicit_new_main" --head "$head"
 
 
 # The fork-point rule must not admit a branch-only entry: a feature commit that
@@ -508,7 +499,7 @@ git add frontend/src/flash.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'shrink and drop the temporary entry'
 git merge -q --no-edit "$new_main"
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-fork-evasion "frontend/src/flash.js" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$new_main" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-fork-evasion "frontend/src/flash.js" python3 "$SOURCE_LINES_CHECK" --base "$new_main" --head "$head"
 
 # An oversized blob committed together with a temporary allowlist entry that is
 # removed later must still fail: entries that exist neither at the base nor at
@@ -530,7 +521,7 @@ git rm -q scripts/ci/source-line-allowlist.txt
 git add frontend/src/flash.js
 git commit -q -m 'shrink the file and remove the temporary entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-history-evasion "first-party production source exceeds" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-history-evasion "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # Deleting a legacy file without retiring its entry leaves a dead exception
 # that could shield a future re-created file at the same path.
@@ -547,7 +538,7 @@ deleted_base=$(git rev-parse HEAD)
 git rm -q frontend/src/legacy.js
 git commit -q -m 'delete the legacy file but keep its allowlist entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-entry-deleted "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$deleted_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-entry-deleted "stale source-line allowlist entries" python3 "$SOURCE_LINES_CHECK" --base "$deleted_base" --head "$head"
 
 # The same dead-entry rule covers a file that was shrunk below the budget
 # without retiring its entry.
@@ -568,7 +559,7 @@ PY
 git add frontend/src/legacy.js
 git commit -q -m 'shrink the legacy file below the budget but keep its entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-entry-shrunk "no longer points at an over-budget tracked first-party source" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$shrunk_base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
+expect_fail_msg source-line-entry-shrunk "stale source-line allowlist entries" python3 "$SOURCE_LINES_CHECK" --base "$shrunk_base" --head "$head"
 
 # A duplicated allowlist entry silently inflates the entry count the ratchet
 # compares, so duplicates must abort the gate (exit 2), never pass.
@@ -584,23 +575,6 @@ PY
 git add frontend/src/legacy.js scripts/ci/source-line-allowlist.txt
 git commit -q -m 'duplicate the same allowlist entry'
 head=$(git rev-parse HEAD)
-expect_fail_msg source-line-allowlist-duplicate "duplicate source-line allowlist entry" env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" bash "$CHECK"
-
-# User-configurable numeric values that Bash would misread (octal, negative,
-# non-numeric) or that overflow intmax_t must abort the gate, never disable it.
-git switch -q -C source-line-invalid-limit-forms "$base"
-mkdir -p frontend/src
-python3 - <<'PY'
-from pathlib import Path
-Path("frontend/src/oversized.js").write_text("// line\n" * 501)
-PY
-git add frontend/src/oversized.js
-git commit -q -m 'add oversized file for invalid numeric limit fixtures'
-head=$(git rev-parse HEAD)
-for bad_limit in 01609 1912345678901234567 -1 15o0; do
-  expect_fail_msg "source-line-invalid-limit-forms-${bad_limit}" "MAX_SOURCE_LINES" \
-    env REPOSITORY_HYGIENE_TEST_CHILD=1 BASE_SHA="$base" HEAD_SHA="$head" \
-    LARGE_FILE_ALLOWLIST_FILE="$ALLOWLIST" MAX_SOURCE_LINES="$bad_limit" bash "$CHECK"
-done
+expect_fail_msg source-line-allowlist-duplicate "duplicate source-line allowlist entry" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 echo "repository hygiene regression tests: PASS"
