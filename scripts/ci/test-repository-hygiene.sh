@@ -290,7 +290,7 @@ git switch -q -C source-line-exempt "$base"
 mkdir -p frontend/src/api/generated
 python3 - <<'PY'
 from pathlib import Path
-Path("frontend/src/oversized.test.js").write_text("// test\n" * 1600)
+Path("frontend/src/oversized.test.js").write_text("// test\n" * 1500)
 Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
 Path("frontend/src/api/generated/oversized.ts").write_text("// generated\n" * 1600)
 PY

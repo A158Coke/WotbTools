@@ -3,6 +3,7 @@
 
 import argparse
 import collections
+import fnmatch
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -34,7 +35,8 @@ def git(*args, input_bytes=None):
 
 
 def category(path):
-    if any(path == item or (item.endswith('/') and path.startswith(item)) for item in EXCLUDED):
+    if any(fnmatch.fnmatchcase(path, item) or (item.endswith('/') and path.startswith(item))
+           for item in EXCLUDED):
         return None
     parts = PurePosixPath(path).parts
     name = parts[-1]

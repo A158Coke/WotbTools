@@ -48,6 +48,7 @@ class SourceLineGateTest(unittest.TestCase):
         self.write('frontend/src/Ok.vue', 500, final_newline=False)
         self.write('android/app/src/androidTest/java/Ok.kt', 1500)
         self.write('frontend/src/api/generated/contract.ts', 2000)
+        self.write('frontend/src/generated.d.ts', 2000)
         self.write('android/app/src/main/cpp/xdelta3/xdelta3.c', 2000)
         self.write('infra/tofu/grafana/.terraform.lock.hcl', 2000)
         self.write('frontend/pnpm-lock.yaml', 2000)

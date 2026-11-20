@@ -4,6 +4,7 @@
     "test": 1500
   },
   "explicit_exclusions": [
+    "*.d.ts",
     "frontend/src/api/generated/",
     "android/app/src/main/cpp/xdelta3/",
     "frontend/pnpm-lock.yaml",
