@@ -4,10 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-5242880}"
 ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt}"
-MAX_SOURCE_LINES="${MAX_SOURCE_LINES:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["limits"]["production"])' "$SCRIPT_DIR/source-line-policy.json")}"
-SOURCE_LINE_ALLOWLIST_FILE="${SOURCE_LINE_ALLOWLIST_FILE:-scripts/ci/source-line-allowlist.txt}"
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
+
+# Source-line policy compatibility marker; classification and limits live in Python.
 
 # Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
 # leading-zero forms such as 08 would be parsed as octal at the comparison
@@ -27,7 +27,6 @@ validate_decimal_limit() {
 }
 
 validate_decimal_limit MAX_TRACKED_FILE_BYTES "$MAX_TRACKED_FILE_BYTES"
-validate_decimal_limit MAX_SOURCE_LINES "$MAX_SOURCE_LINES"
 
 is_allowlisted() {
   local candidate="$1"
@@ -43,65 +42,6 @@ is_allowlisted() {
   return 1
 }
 
-# Source-line budget: first-party frontend, backend and Android native production
-# source must respect the same physical-line ceiling. Tests, declarations,
-# generated transport and build scripts remain outside this production scope.
-is_source_line_candidate() {
-  local path="$1"
-  case "$path" in
-    frontend/src/*)
-      case "$path" in
-        *.test.*|*.spec.*|*.d.ts|frontend/src/api/generated/*) return 1 ;;
-      esac
-      case "$path" in
-        *.js|*.ts|*.vue|*.mjs|*.cjs) return 0 ;;
-      esac
-      ;;
-    java/*/src/main/java/*.java|keycloak-*/src/main/java/*.java|android/app/src/main/java/*.java|android/app/src/main/java/*.kt|android/app/src/main/assets/gecko-bridge/*.js)
-      return 0 ;;
-  esac
-  return 1
-}
-
-is_source_line_allowlisted() {
-  local candidate="$1"
-  [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]] || return 1
-
-  local line
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    [[ "$candidate" == "$line" ]] && return 0
-  done < "$SOURCE_LINE_ALLOWLIST_FILE"
-
-  return 1
-}
-
-
-# Legacy source blobs predating the stricter 500-line threshold may remain
-# unchanged; newly introduced or modified blobs must meet the new ceiling.
-# The existing exact-path allowlist remains the only explicit exception.
-is_unmodified_base_source_blob() {
-  local path="$1" oid="$2" base_oid
-  [[ -n "$BASE_SHA" ]] || return 1
-  base_oid=$(git rev-parse --verify "${BASE_SHA}:${path}" 2>/dev/null) || return 1
-  [[ "$oid" == "$base_oid" ]]
-}
-
-# Reads an allowlist from stdin and prints its non-comment entry count.
-count_allowlist_entries() {
-  local total=0 line
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    total=$((total + 1))
-  done
-  printf '%s\n' "$total"
-}
-
-# Defense-in-depth for paths that must never become source even if a future
-# change accidentally weakens .gitignore. The repository .gitignore remains the
-# broad source of truth for generated/local-only paths.
 is_forbidden_path() {
   local path="$1"
   case "$path" in
@@ -178,29 +118,6 @@ report_current_plan_reference() {
   echo "       Move the statement to a canonical doc or a GitHub Issue; structural exceptions live in is_current_plan_allowlisted()." >&2
 }
 
-report_source_line_dead_entry() {
-  local path="$1"
-  echo "ERROR: source-line allowlist entry no longer points at an over-budget tracked first-party source (deleted, renamed, shrunk, or out of scope); remove it from $SOURCE_LINE_ALLOWLIST_FILE: $(printable_path "$path")" >&2
-}
-
-# Reads a path-per-line allowlist from stdin into the named assoc array.
-# Duplicates are fail-closed: a repeated entry would silently inflate the
-# entry count the growth ratchet compares.
-load_source_line_paths() {
-  local destination_name="$1"
-  local -n entries="$destination_name"
-  local line
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%$'\r'}"
-    [[ -z "$line" || "$line" == \#* ]] && continue
-    if [[ -n "${entries[$line]+x}" ]]; then
-      echo "ERROR: duplicate source-line allowlist entry for $line in $SOURCE_LINE_ALLOWLIST_FILE; keep exactly one line." >&2
-      exit 2
-    fi
-    entries["$line"]=1
-  done
-}
-
 report_large_file() {
   local scope="$1"
   local path="$2"
@@ -210,20 +127,6 @@ report_large_file() {
   limit_mib=$(awk -v bytes="$MAX_TRACKED_FILE_BYTES" 'BEGIN { printf "%.2f", bytes / 1048576 }')
   echo "ERROR: $scope exceeds ${limit_mib} MiB limit: $(printable_path "$path") (${mib} MiB)" >&2
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
-}
-
-report_source_line_budget() {
-  local path="$1"
-  local lines="$2"
-  echo "ERROR: first-party production source exceeds ${MAX_SOURCE_LINES} lines: $(printable_path "$path") (${lines} lines)" >&2
-  echo "       Split it by responsibility, or swap an existing entry for it in $SOURCE_LINE_ALLOWLIST_FILE (the allowlist may only shrink)." >&2
-}
-
-report_source_line_allowlist_growth() {
-  local base_count="$1"
-  local head_count="$2"
-  echo "ERROR: source-line allowlist must not grow (base=$base_count, head=$head_count entries)." >&2
-  echo "       Split an over-budget file instead of allowlisting a new one; a rename may swap one exact path for another." >&2
 }
 
 # Resolve the exact event range when CI did not pass one explicitly. PR runs
@@ -309,15 +212,12 @@ load_ignored_paths() {
 
 # Guard the final tracked tree. This catches generated paths even when every
 # individual file is small enough to stay below the size threshold.
+if [[ -n "$BASE_SHA" ]]; then
+  python3 "$SCRIPT_DIR/check-source-lines.py" --base "$BASE_SHA" --head "$HEAD_SHA"
+fi
+
 declare -A tracked_ignored=()
 load_ignored_paths index "" tracked_ignored
-
-source_line_checked=0
-source_line_over=0
-source_line_over_frontend=0
-source_line_over_backend=0
-source_line_over_android=0
-declare -A source_line_head_lines=()
 
 while IFS= read -r -d '' path; do
   [[ -f "$path" ]] || continue
@@ -347,100 +247,9 @@ while IFS= read -r -d '' path; do
     violations=$((violations + 1))
   fi
 
-  if is_source_line_candidate "$path"; then
-    source_line_checked=$((source_line_checked + 1))
-    source_line_head_lines["$path"]=""
-    lines=$(awk 'END { print NR }' "$path")
-    if ! [[ "$lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#lines} > 18 )); then
-      echo "Unable to count source lines for $(printable_path "$path") (awk returned: ${lines:-<empty>})." >&2
-      exit 2
-    fi
-    source_line_head_lines["$path"]="$lines"
-    if (( lines > MAX_SOURCE_LINES )); then
-      source_line_over=$((source_line_over + 1))
-      case "$path" in
-        frontend/*) source_line_over_frontend=$((source_line_over_frontend + 1)) ;;
-        android/*) source_line_over_android=$((source_line_over_android + 1)) ;;
-        *) source_line_over_backend=$((source_line_over_backend + 1)) ;;
-      esac
-      if ! is_source_line_allowlisted "$path" && ! is_unmodified_base_source_blob "$path" "$(git hash-object -- "$path")"; then
-        report_source_line_budget "$path" "$lines"
-        violations=$((violations + 1))
-      fi
-    fi
-  fi
 done < <(git ls-files -z)
 
-declare -A source_line_head_entries=()
-if [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]]; then
-  load_source_line_paths source_line_head_entries < "$SOURCE_LINE_ALLOWLIST_FILE"
-fi
-
-# Entry liveness: every exception must keep pointing at a tracked, in-scope
-# source file that is still over budget. A deleted, renamed, shrunk or
-# out-of-scope file leaves a dead entry whose exception could otherwise shield
-# a future re-created file at the same path.
-source_line_liveness_checked=0
-for allow_path in "${!source_line_head_entries[@]}"; do
-  if [[ -z "${source_line_head_lines[$allow_path]+x}" ]] \
-    || (( source_line_head_lines[$allow_path] <= MAX_SOURCE_LINES )); then
-    report_source_line_dead_entry "$allow_path"
-    violations=$((violations + 1))
-  else
-    source_line_liveness_checked=$((source_line_liveness_checked + 1))
-  fi
-done
-echo "Source-line allowlist liveness checked $source_line_liveness_checked live entry(ies)."
-
-
-# The allowlist is a one-way ratchet: it may shrink as files get split, but a
-# new over-budget file cannot be admitted by merely appending its path. Renames
-# remain possible by swapping one exact path for another (equal entry count).
-#
-# A missing allowlist is only a free starting point while the gate itself is
-# being introduced. Once the gate exists in the base commit, a missing allowlist
-# means every prior exception was retired, so the base count is zero: deleting
-# and later recreating the file must not reset the ratchet.
-SOURCE_LINE_GATE_SCRIPT="scripts/ci/check-repository-hygiene.sh"
-
-source_line_gate_present_at_base() {
-  [[ -n "$BASE_SHA" ]] || return 1
-  local base_script
-  base_script=$(git show "${BASE_SHA}:${SOURCE_LINE_GATE_SCRIPT}" 2>/dev/null) || return 1
-  [[ "$base_script" == *"is_source_line_candidate()"* ]]
-}
-
-head_source_allowlist_entries=0
-if [[ -f "$SOURCE_LINE_ALLOWLIST_FILE" ]]; then
-  head_source_allowlist_entries=$(count_allowlist_entries < "$SOURCE_LINE_ALLOWLIST_FILE")
-fi
-
-growth_guard_checked=0
-if [[ -n "$BASE_SHA" ]]; then
-  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
-    base_source_allowlist_entries=$(git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" | count_allowlist_entries)
-    growth_guard_checked=1
-  elif source_line_gate_present_at_base; then
-    base_source_allowlist_entries=0
-    growth_guard_checked=1
-  fi
-
-  if (( growth_guard_checked )); then
-    if (( head_source_allowlist_entries > base_source_allowlist_entries )); then
-      report_source_line_allowlist_growth "$base_source_allowlist_entries" "$head_source_allowlist_entries"
-      violations=$((violations + 1))
-    fi
-    echo "Source-line allowlist growth guard checked ${base_source_allowlist_entries} -> ${head_source_allowlist_entries} entries."
-  else
-    echo "Source-line allowlist growth guard skipped: gate is introduced by this change (no base gate in ${BASE_SHA})."
-  fi
-else
-  echo "Source-line allowlist growth guard skipped: no BASE_SHA (workflow_dispatch or local full-history run)."
-fi
-
-echo "Source line budget checked $source_line_checked first-party production source file(s); limit=$MAX_SOURCE_LINES lines; over-limit present=$source_line_over (frontend=$source_line_over_frontend, backend=$source_line_over_backend, android=$source_line_over_android; untouched base blobs grandfathered)."
-
-# Inspect every tree state introduced by commits in the event range. `git ls-tree
+## Inspect every tree state introduced by commits in the event range. `git ls-tree
 # -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
 # other unusual bytes cannot escape either the size or generated-path policy.
 # This also catches a large/generated file that is committed and then deleted in
@@ -459,57 +268,6 @@ if [[ -n "$BASE_SHA" ]]; then
   history_checked=0
   history_commits=0
   declare -A history_seen=()
-
-  # History-gate allowlist: the union of entries at BASE_SHA and HEAD, parsed in
-  # this shell (a pipeline would discard assoc-array writes to a subshell). An
-  # entry that existed at the base covers the normal split flow; an entry that
-  # survives to HEAD covers a rename swap; an entry that exists at neither
-  # endpoint shields nothing, so a temporary exemption cannot admit an
-  # oversized blob that is later shrunk or deleted.
-  declare -A source_line_history_allowlisted=()
-  if git cat-file -e "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
-    git show "${BASE_SHA}:${SOURCE_LINE_ALLOWLIST_FILE}" > "$ignore_work/base-source-line-allowlist" || {
-      echo "ERROR: unable to read ${SOURCE_LINE_ALLOWLIST_FILE} at ${BASE_SHA}." >&2
-      exit 2
-    }
-    load_source_line_paths source_line_history_allowlisted < "$ignore_work/base-source-line-allowlist"
-  fi
-  # The HEAD side of the union reuses the final-tree parse result: running the
-  # duplicate detector across the two sources would flag a base entry that
-  # legitimately survives to HEAD as a duplicate.
-  for union_path in "${!source_line_head_entries[@]}"; do
-    source_line_history_allowlisted["$union_path"]=1
-  done
-
-  # A branch forked before main split a legacy file may still carry its old
-  # over-budget blob in earlier commit trees. The fork point is trusted because
-  # merge-base(commit, BASE) is reachable from current main, unlike branch-only
-  # changes. A blob unchanged since that fork is grandfathered even without an
-  # explicit allowlist entry; a changed or newly added blob is NOT.
-  # Preserve the existing explicit fork-point allowlist rule for pre-existing
-  # approved exceptions (including allowed edits to those exception paths).
-  declare -A fork_allowlist_loaded=()
-  declare -A fork_allowlisted=()
-  fork_point_permits_source_blob() {
-    local commit="$1" path="$2" oid="$3" fork fork_oid
-    fork=$(git merge-base "$commit" "$BASE_SHA" 2>/dev/null) || return 1
-    [[ -n "$fork" ]] || return 1
-    fork_oid=$(git rev-parse --verify "${fork}:${path}" 2>/dev/null) || fork_oid=""
-    if [[ -n "$fork_oid" && "$fork_oid" == "$oid" ]]; then
-      return 0
-    fi
-    if [[ -z "${fork_allowlist_loaded[$fork]+x}" ]]; then
-      fork_allowlist_loaded["$fork"]=1
-      if git cat-file -e "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}" 2>/dev/null; then
-        declare -A fork_entries=()
-        load_source_line_paths fork_entries < <(git show "${fork}:${SOURCE_LINE_ALLOWLIST_FILE}")
-        local entry
-        for entry in "${!fork_entries[@]}"; do fork_allowlisted["${fork}:${entry}"]=1; done
-        unset fork_entries
-      fi
-    fi
-    [[ -n "${fork_allowlisted["${fork}:${path}"]+x}" ]]
-  }
 
   while IFS= read -r commit; do
     [[ -n "$commit" ]] || continue
@@ -561,20 +319,6 @@ if [[ -n "$BASE_SHA" ]]; then
         violations=$((violations + 1))
       fi
 
-      if is_source_line_candidate "$path"; then
-        blob_lines=$(git cat-file blob "$oid" | awk 'END { print NR }')
-        if ! [[ "$blob_lines" =~ ^(0|[1-9][0-9]*)$ ]] || (( ${#blob_lines} > 18 )); then
-          echo "Unable to count source lines of blob $oid for $(printable_path "$path") (awk returned: ${blob_lines:-<empty>})." >&2
-          exit 2
-        fi
-        if (( blob_lines > MAX_SOURCE_LINES )) && [[ -z "${source_line_history_allowlisted[$path]+x}" ]] && ! is_unmodified_base_source_blob "$path" "$oid" && ! fork_point_permits_source_blob "$commit" "$path" "$oid"; then
-          # The union list only decides whether the over-budget blob was ever a
-          # sanctioned exception; policing per-file net growth is left to the
-          # split workflow (the entry-count ratchet owns the allowlist).
-          report_source_line_budget "$path" "$blob_lines"
-          violations=$((violations + 1))
-        fi
-      fi
     done < <(git ls-tree -r -z -l "$commit")
   done < <(git rev-list --reverse "${BASE_SHA}..${HEAD_SHA}")
 

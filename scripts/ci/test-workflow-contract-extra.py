@@ -249,7 +249,6 @@ for invariant in (
     "Production workflows require the main ref.",
     "Checkout SHA differs from the event SHA.",
     "workflow_dispatch",
-    "git merge-base --is-ancestor",
     "git diff --quiet",
     "Production-owned inputs changed after the workflow source SHA.",
 ):

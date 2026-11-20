@@ -77,6 +77,11 @@ assert "changes" not in jobs["source_quality"]["needs"]
 assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
+source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
+                   if step.get("name") == "Scan duplicate candidates against verified PR base")
+assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in source_scan
+assert "merge-base --is-ancestor" not in source_scan
+assert '--baseline-from-ref "$MERGE_BASE_SHA"' in source_scan
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
 assert re.search(r"dorny/paths-filter@[0-9a-f]{40}", json.dumps(jobs["changes"])), "paths-filter must stay SHA-pinned"
 filter_path = next(step for step in jobs["changes"]["steps"]

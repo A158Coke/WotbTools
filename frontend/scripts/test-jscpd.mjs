@@ -104,9 +104,27 @@ try {
   await writeFile(path.join(fixtureSources, 'existing-b.js'), baselineSource);
   execFileSync('git', ['add', '.jscpd.json', 'frontend/package.json', 'samples'], { cwd: baselineRoot });
   execFileSync('git', ['commit', '--quiet', '-m', 'baseline'], { cwd: baselineRoot });
+  const forkPoint = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: baselineRoot, encoding: 'utf8' }).trim();
+  // Main advances independently with a non-conflicting change; the candidate
+  // remains on its fork branch, as in a valid but stale PR.
+  execFileSync('git', ['switch', '--quiet', '-c', 'main'], { cwd: baselineRoot });
+  await writeFile(path.join(fixtureSources, 'main-only.js'), 'export const mainOnly = true;\n');
+  execFileSync('git', ['add', 'samples/main-only.js'], { cwd: baselineRoot });
+  execFileSync('git', ['commit', '--quiet', '-m', 'main advances cleanly'], { cwd: baselineRoot });
+  const advancedMain = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: baselineRoot, encoding: 'utf8' }).trim();
+  execFileSync('git', ['switch', '--quiet', '-c', 'candidate', forkPoint], { cwd: baselineRoot });
   await writeFile(path.join(fixtureSources, 'added-a.js'), addedSource);
   await writeFile(path.join(fixtureSources, 'added-b.js'), addedSource);
-  const pnpmArgs = ['run', 'review:duplicates', '--baseline-from-ref', 'HEAD'];
+  const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: baselineRoot, encoding: 'utf8' }).trim();
+  const baseSha = advancedMain;
+  const ancestorMergeBase = execFileSync('git', ['merge-base', forkPoint, headSha], { cwd: baselineRoot, encoding: 'utf8' }).trim();
+  assert.equal(ancestorMergeBase, forkPoint, 'Stable main baseline must be an ancestor of candidate head');
+  assert.notEqual(execFileSync('git', ['merge-base', baseSha, headSha], { cwd: baselineRoot, encoding: 'utf8' }).trim(), baseSha,
+    'Advanced main must not be an ancestor of candidate head');
+  const mergeBase = execFileSync('git', ['merge-base', baseSha, headSha], { cwd: baselineRoot, encoding: 'utf8' }).trim();
+  assert.equal(mergeBase, forkPoint, 'Candidate baseline must be the PR fork-point');
+  execFileSync('git', ['merge-tree', '--write-tree', baseSha, headSha], { cwd: baselineRoot, stdio: 'pipe' });
+  const pnpmArgs = ['run', 'review:duplicates', '--baseline-from-ref', mergeBase];
   const pnpmRun = platform() === 'win32'
     ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'pnpm ' + pnpmArgs.map((arg) => /[\s"]/.test(String(arg)) ? '"' + String(arg).replaceAll('"', '\\"') + '"' : String(arg)).join(' ')], { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' })
     : spawnSync('pnpm', pnpmArgs, { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' });
@@ -122,6 +140,17 @@ try {
     assert(clone, `Expected ${prefix} clone pair in isolated report`);
     assert.equal(clone.isNew, isNew, `Incorrect baseline classification for ${prefix} clone`);
     assert(clone.tokens >= 50, `${prefix} clone must exceed configured token threshold`);
+  }
+
+  for (const [label, badArgs] of [
+    ['missing baseline', ['run', 'review:duplicates', '--baseline-from-ref', 'refs/no-such-baseline']],
+    ['invalid scan path', ['run', 'review:duplicates', 'samples/missing', '--reporters', 'json', '--output', path.join(root, 'failed-scan')]]
+  ]) {
+    const failed = platform() === 'win32'
+      ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'pnpm ' + badArgs.map((arg) => /[\s"]/.test(String(arg)) ? '"' + String(arg).replaceAll('"', '\\"') + '"' : String(arg)).join(' ')], { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' })
+      : spawnSync('pnpm', badArgs, { cwd: fixtureFrontend, encoding: 'utf8', stdio: 'pipe' });
+    if (failed.error) throw failed.error;
+    assert.notEqual(failed.status, 0, `${label} must fail closed`);
   }
 
   console.log('jscpd smoke passed: six languages, clone report and exit code, test visibility, generated/vendor exclusions, distinct behavior, non-gating duplicate exit, empty-scan failure, and pnpm baseline script comparison.');

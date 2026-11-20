@@ -48,13 +48,13 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 cd frontend
 pnpm install
 pnpm run review:duplicates                         # 当前源码基线
-pnpm run review:duplicates --baseline-from-ref <main-ref>    # Review 中比较候选树与已验证基线
+pnpm run review:duplicates --baseline-from-ref <fork-point-ref>    # Review 中比较候选树与PR fork-point
 pnpm run test:jscpd                                # 六语言、排除和失败语义 smoke 验证
 ```
 
 配置 `.jscpd.json` 扫描 Java、Kotlin、JavaScript、TypeScript、Vue 与 Python 源码，包括测试代码；使用 jscpd mild 模式，最小候选为 5 行与 50 tokens（沿用工具默认最小克隆尺寸，不是重复率门槛）。Generated/generated-sources、vendor、node_modules、target/build/dist、minified/bundle/map 文件排除；二进制及配置未列入扫描语言的资产不参与检测。报告写到 gitignored 的 `tmp/jscpd/review-with-docs.json`，含行范围、片段、类型、行/token 数及统计；Review 报告中引用仓库相对路径。
 
-全树报告同时包含 production 与 test 文件。按路径把候选分为 production-production、test-test、mixed；测试夹具/setup 的重复单独评估，不让大量测试命中掩盖 production 候选。PR Review 使用 `--baseline-from-ref <main-ref>`，通过 `isNew` 标记相对基线的候选并仅审查与 candidate 文件相关的 pair。该模式扫描完整候选树和基线树，不是增量扫描；本机首次基线对比约 8 秒。历史候选不会仅因存在而阻断。
+全树报告同时包含 production 与 test 文件。按路径把候选分为 production-production、test-test、mixed；测试夹具/setup 的重复单独评估，不让大量测试命中掩盖 production 候选。PR Review 使用 `--baseline-from-ref <fork-point-ref>`，通过 `isNew` 标记相对 PR fork-point 的新增候选并仅审查与 candidate 文件相关的 pair。该模式扫描完整候选树和基线树，不是增量扫描；本机首次基线对比约 8 秒。历史候选不会仅因存在而阻断。
 
 PR 的现有 `CI / Required Gate` 无条件使用已验证的 base/head SHA 执行基线扫描，报告单独上传为 `duplicate-candidates` artifact，不覆盖本地 Review 报告。扫描、基线比较、报告缺失或报告结构无效均使门禁失败；匹配本身不自动失败。Review 必须检查新增候选，对已确认的第二 SSOT 或不合理业务复制提出阻断；合理重复应记录依据。重构清零后才能以清理后的树建立正式基线并评估自动阻断的误报。
 

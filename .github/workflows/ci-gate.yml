@@ -230,9 +230,11 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$HEAD_SHA"
           git cat-file -e "${BASE_SHA}^{commit}"
-          git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"
+          MERGE_BASE_SHA="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          test -n "$MERGE_BASE_SHA"
+          echo "jscpd baseline semantics: PR fork-point additions (merge-base=$MERGE_BASE_SHA)"
           rm -f ../tmp/jscpd-ci/ci-candidates.json
-          pnpm run review:duplicates --baseline-from-ref "$BASE_SHA" --output ../tmp/jscpd-ci --report-name ci-candidates
+          pnpm run review:duplicates --baseline-from-ref "$MERGE_BASE_SHA" --output ../tmp/jscpd-ci --report-name ci-candidates
           node scripts/validate-jscpd-report.mjs ../tmp/jscpd-ci/ci-candidates.json
       - name: Upload duplicate candidates for review
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

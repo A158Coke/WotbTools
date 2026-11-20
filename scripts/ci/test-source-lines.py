@@ -112,6 +112,34 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.check(main_head, candidate, '--strict').returncode, 1)
 
+    def test_bash_hygiene_delegates_loc_classification_to_python_policy(self):
+        hygiene = (CHECK.with_name('check-repository-hygiene.sh')).read_text(encoding='utf-8')
+        self.assertIn('check-source-lines.py" --base "$BASE_SHA" --head "$HEAD_SHA"', hygiene)
+        self.assertNotIn('is_source_line_candidate()', hygiene)
+        self.assertNotIn('MAX_SOURCE_LINES', hygiene)
+        self.write('frontend/src/__tests__/helpers.ts', 600)
+        head = self.commit('shared test candidate')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('test: files=1 lines=600 over=0', result.stdout)
+
+    def test_legacy_bash_gate_growth_ratchet_is_preserved(self):
+        gate = b'Source-line policy compatibility marker'
+        self.write('scripts/ci/check-repository-hygiene.sh', 1)
+        gate_path = self.root / 'scripts/ci/check-repository-hygiene.sh'
+        gate_path.write_bytes(gate + b'\n')
+        self.write('scripts/ci/source-line-allowlist.txt', 1)
+        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
+        allow.write_text('frontend/src/a.ts\n', encoding='utf-8')
+        self.write('frontend/src/a.ts', 501)
+        base = self.commit('legacy policy with one exception')
+        allow.write_text('frontend/src/a.ts\nfrontend/src/b.ts\n', encoding='utf-8')
+        self.write('frontend/src/b.ts', 501)
+        head = self.commit('attempt to grow exceptions')
+        result = self.check(base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('source-line allowlist must not grow', result.stderr)
+
     def test_unknown_paths_and_invalid_revisions_cannot_pass(self):
         self.write('some/generated/handwritten.py', 501)
         head = self.commit('not explicitly excluded')
