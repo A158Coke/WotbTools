@@ -99,6 +99,16 @@ class SourceLineGateTest(unittest.TestCase):
         fixed = self.commit('split old')
         self.assertEqual(self.check(legacy, fixed, '--strict').returncode, 0)
 
+    def test_legacy_intermediate_edits_are_allowed_after_final_split(self):
+        self.write('scripts/ci/test-workflow-contract.sh', 1601)
+        legacy = self.commit('legacy test tool above the test budget')
+        self.write('scripts/ci/test-workflow-contract.sh', 1602)
+        self.commit('intermediate tooling edits before responsibility split')
+        self.write('scripts/ci/test-workflow-contract.sh', 1400)
+        head = self.commit('split tooling file below the test budget')
+        result = self.check(legacy, head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_pre_split_fork_point_blob_remains_grandfathered(self):
         self.write('frontend/src/legacy.ts', 501)
         fork = self.commit('fork point with legacy blob')

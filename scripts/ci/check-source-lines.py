@@ -176,8 +176,16 @@ def main():
                     continue
                 seen.add(key)
                 size = counts[oid]
+                base_entry = base.get(path)
+                head_entry = head.get(path)
+                repaired_preexisting = False
+                if base_entry and head_entry and base_entry[0] == role and head_entry[0] == role:
+                    repaired_preexisting = (
+                        counts[base_entry[1]] > LIMITS[role]
+                        and counts[head_entry[1]] <= LIMITS[role]
+                    )
                 grandfathered = (path in history_allowlist or base.get(path) == (role, oid)
-                                 or fork_entries.get(path) == (role, oid))
+                                 or fork_entries.get(path) == (role, oid) or repaired_preexisting)
                 if size > LIMITS[role] and not grandfathered:
                     violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
     print(f'Source LOC: base={base_sha} head={head_sha} strict={args.strict}')
