@@ -40,6 +40,25 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 - **ripgrep（`rg`）**：Agent / Skill 的仓库搜索、reuse audit 与 review gate 的本地前置，必须在 `PATH` 中可调用（自检 `rg --version`）；这里只声明能力依赖，不固定具体二进制版本。搜索必须显式列出目标路径：默认根递归会跳过 `.github/`、`.agents/`、`.opencodereview/` 等隐藏目录，所以零命中不能证明「无引用」。不要用无差别的 `rg --hidden .` 替代定向搜索——它会把 `.worktrees/**` 等工作副本带进结果，产生重复证据。
 - 不要使用任何公司 token、凭据或基础设施。
 
+### 重复代码检测（jscpd）
+
+仓库使用 frontend pnpm 工具链中的固定开发依赖 `jscpd@5.4.3`，为 Review With Docs 提供跨语言重复代码证据；它不是 CI 阈值或独立质量判定。依赖只在 `frontend/package.json` 和唯一锁文件 `frontend/pnpm-lock.yaml` 中维护，沿用 pnpm 的 `strictDepBuilds` 与 `minimumReleaseAge` 策略。
+
+```bash
+cd frontend
+pnpm install
+pnpm run review:duplicates                         # 当前源码基线
+pnpm run review:duplicates --baseline-from-ref <fork-point-ref>    # Review 中比较候选树与PR fork-point
+pnpm run test:jscpd                                # 六语言、排除和失败语义 smoke 验证
+```
+
+配置 `.jscpd.json` 扫描 Java、Kotlin、JavaScript、TypeScript、Vue 与 Python 源码，包括测试代码；使用 jscpd mild 模式，最小候选为 5 行与 50 tokens（沿用工具默认最小克隆尺寸，不是重复率门槛）。Generated/generated-sources、vendor、node_modules、target/build/dist、minified/bundle/map 文件排除；二进制及配置未列入扫描语言的资产不参与检测。报告写到 gitignored 的 `tmp/jscpd/review-with-docs.json`，含行范围、片段、类型、行/token 数及统计；Review 报告中引用仓库相对路径。
+
+全树报告同时包含 production 与 test 文件。按路径把候选分为 production-production、test-test、mixed；测试夹具/setup 的重复单独评估，不让大量测试命中掩盖 production 候选。PR Review 使用 `--baseline-from-ref <fork-point-ref>`，通过 `isNew` 标记相对 PR fork-point 的新增候选并仅审查与 candidate 文件相关的 pair。该模式扫描完整候选树和基线树，不是增量扫描；本机首次基线对比约 8 秒。历史候选不会仅因存在而阻断。
+
+PR 的现有 `CI / Required Gate` 无条件使用已验证的 base/head SHA 执行基线扫描，报告单独上传为 `duplicate-candidates` artifact，不覆盖本地 Review 报告。扫描、基线比较、报告缺失或报告结构无效均使门禁失败；匹配本身不自动失败。Review 必须检查新增候选，对已确认的第二 SSOT 或不合理业务复制提出阻断；合理重复应记录依据。重构清零后才能以清理后的树建立正式基线并评估自动阻断的误报。
+
+阅读命中时确认双方真实源码、owner、领域语义、第二 SSOT/行为漂移风险与抽取成本。相似结构可能有独立含义，协议和测试也可能需要重复；jscpd 不判 Bug、不触发自动抽象、不设置全仓重复率阈值。报告缺失、CLI 错误或空扫描（`failOnEmpty`）必须作为检测失败报告，不可解释成零重复。
 常用命令：
 
 ```bash
@@ -119,7 +138,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
-仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一脚本还执行 first-party 生产源码行数预算：前端 `frontend/src` 的 JS/TS/Vue、Java 后端与 Keycloak Provider 的 `src/main/java`、Android `app/src/main/java` Kotlin/Java 与 Gecko Bridge JS，均以 **500 物理行**为单文件上限（测试、声明与生成代码排除）。与 PR base 完全相同的历史超限源码暂时允许保留；一旦新增或修改，必须满足 500 行限制或属于既有 exact-path 显式例外。`scripts/ci/source-line-allowlist.txt` 的条目数 base→head 仍只减不增（重命名可等量替换），拆分完成后同步移除条目；门禁已存在于 base 时，删除名单不会重置基线（缺失名单按 0 条比较），重新创建仍受只减不增约束。三项补充约束：`base..head` 中每个 commit tree 的源 blob 同样受行数预算约束（豁免按 base 与 HEAD 名单的联合判定，两端都不存在的临时条目不提供豁免）；名单条目必须仍指向 tracked、in-scope 且仍超限的文件，删除/重命名/缩行后残留条目按违规处理；重复条目 fail-closed。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
+仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。源码 LOC 检查使用 `python scripts/ci/check-source-lines.py --base <verified-base-sha> --head <verified-head-sha>`，共用 `scripts/ci/source-line-policy.json` 的生产上限 500 行、测试上限 1500 行及显式生成/第三方排除。检查按 Git tree 的物理行数分类；`frontend/scripts/browser-*` 按浏览器测试计。与已验证 base 同路径、同分类且 blob 未变的历史超限源码继续兼容；现有 exact-path `source-line-allowlist.txt`、只减不增 ratchet 与 fork-point grandfather 继续生效。新增或修改后的超限源码失败；`--strict` 会拒绝所有遗留超限文件，用于确认重构完成后的清零检查。规则测试使用独立 Git fixture：`python scripts/ci/test-source-lines.py`。Bash hygiene 仍负责文件大小、ignore/history 与计划引用等门禁；生产 LOC 默认上限从同一策略文件读取。开发者可运行 `bash scripts/ci/check-repository-hygiene.sh` 和 `python scripts/ci/test-source-lines.py`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
