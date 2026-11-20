@@ -316,6 +316,9 @@ expect_pass source-line-allowlisted python3 "$SOURCE_LINES_CHECK" --base "$base"
 # even when every individual file is allowlisted in the head tree.
 git switch -q -C source-line-allowlist-growth "$base"
 mkdir -p frontend/src scripts/ci
+printf '%s\n' '# Source-line policy compatibility marker' > scripts/ci/check-repository-hygiene.sh
+git add scripts/ci/check-repository-hygiene.sh
+git commit -q -m 'record the existing source-line policy'
 python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/existing.js").write_text("// line\n" * 501)
