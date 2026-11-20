@@ -151,6 +151,39 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('source-line allowlist must not grow', result.stderr)
 
+    def test_existing_base_allowlist_enforces_ratchet_without_gate_marker(self):
+        self.write('scripts/ci/source-line-allowlist.txt', 1)
+        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
+        allow.write_text('frontend/src/a.ts\n', encoding='utf-8')
+        self.write('frontend/src/a.ts', 501)
+        base = self.commit('base has an existing source exception')
+        allow.write_text('frontend/src/a.ts\nfrontend/src/b.ts\n', encoding='utf-8')
+        self.write('frontend/src/b.ts', 501)
+        head = self.commit('attempt growth without a gate marker')
+        result = self.check(base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('source-line allowlist must not grow', result.stderr)
+
+    def test_fork_point_allowlist_grandfathers_intermediate_candidate_blob(self):
+        source = 'frontend/src/legacy.ts'
+        self.write(source, 501)
+        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
+        allow.parent.mkdir(parents=True, exist_ok=True)
+        allow.write_text(source + '\n', encoding='utf-8')
+        fork = self.commit('fork point approves the legacy exception')
+        self.git('switch', '-q', '-c', 'main-advanced')
+        self.write(source, 500)
+        (self.root / 'scripts/ci/source-line-allowlist.txt').unlink()
+        main = self.commit('main splits and retires the exception')
+        self.git('switch', '-q', '-c', 'candidate', fork)
+        self.write(source, 502)
+        self.commit('candidate intermediate edit remains under fork approval')
+        self.write(source, 500)
+        (self.root / 'scripts/ci/source-line-allowlist.txt').unlink()
+        head = self.commit('candidate ends within budget')
+        result = self.check(main, head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_unknown_paths_and_invalid_revisions_cannot_pass(self):
         self.write('some/generated/handwritten.py', 501)
         head = self.commit('not explicitly excluded')

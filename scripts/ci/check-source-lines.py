@@ -96,6 +96,23 @@ def blob_lines(oids):
     return lines
 
 
+def parse_allowlist(content, source):
+    entries = set()
+    for line in content.decode('utf-8').splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith('#'):
+            continue
+        if entry in entries:
+            raise RuntimeError(f'duplicate source-line allowlist entry for {entry} in {source}')
+        entries.add(entry)
+    return entries
+
+
+def allowlist_tree(revision):
+    result = subprocess.run(['git', 'show', f'{revision}:{ALLOWLIST_FILE}'], capture_output=True)
+    return parse_allowlist(result.stdout, f'{revision}:{ALLOWLIST_FILE}') if result.returncode == 0 else set()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base', required=True, help='verified base commit SHA')
@@ -115,12 +132,7 @@ def main():
         _, fork_entries = tree(common.stdout.strip())
     allowlist = set()
     try:
-        for line in Path(ALLOWLIST_FILE).read_text(encoding='utf-8').splitlines():
-            entry = line.strip()
-            if entry and not entry.startswith('#'):
-                if entry in allowlist:
-                    raise RuntimeError(f'duplicate source-line allowlist entry for {entry}')
-                allowlist.add(entry)
+        allowlist = parse_allowlist(Path(ALLOWLIST_FILE).read_bytes(), ALLOWLIST_FILE)
     except FileNotFoundError:
         pass
     counts = blob_lines([oid for _, oid in (*base.values(), *head.values())])
@@ -149,14 +161,10 @@ def main():
         )
         # Preserve the rollout ratchet: missing allowlist is zero only after the
         # source LOC gate itself was already present in the base tree.
-        base_allowlist = set()
-        if base_allowlist_blob.returncode == 0:
-            base_allowlist = {line.strip() for line in base_allowlist_blob.stdout.decode().splitlines()
-                              if line.strip() and not line.lstrip().startswith('#')}
-        elif gate_blob.returncode == 0 and any(marker in gate_blob.stdout for marker in LEGACY_GATE_MARKERS):
-            base_allowlist = set()
-        if (gate_blob.returncode == 0 and any(marker in gate_blob.stdout for marker in LEGACY_GATE_MARKERS)
-                and len(allowlist) > len(base_allowlist)):
+        base_allowlist_present = base_allowlist_blob.returncode == 0
+        base_allowlist = parse_allowlist(base_allowlist_blob.stdout, f'{base_sha}:{ALLOWLIST_FILE}') if base_allowlist_present else set()
+        base_gate_present = gate_blob.returncode == 0 and any(marker in gate_blob.stdout for marker in LEGACY_GATE_MARKERS)
+        if (base_allowlist_present or base_gate_present) and len(allowlist) > len(base_allowlist):
             violations.append(f'source-line allowlist must not grow (base={len(base_allowlist)}, head={len(allowlist)} entries)')
 
         # Every intermediate commit tree is checked so an over-limit blob cannot
@@ -170,8 +178,8 @@ def main():
             fork_result = subprocess.run(['git', 'merge-base', commit, base_sha], capture_output=True, text=True)
             fork = fork_result.stdout.strip() if fork_result.returncode == 0 else ''
             if fork not in fork_cache:
-                fork_cache[fork] = tree(fork)[1] if fork else {}
-            fork_entries = fork_cache[fork]
+                fork_cache[fork] = (tree(fork)[1], allowlist_tree(fork)) if fork else ({}, set())
+            fork_entries, fork_allowlist = fork_cache[fork]
             for path, (role, oid) in entries.items():
                 key = (path, oid)
                 if key in seen:
@@ -187,7 +195,8 @@ def main():
                         and counts[head_entry[1]] <= LIMITS[role]
                     )
                 grandfathered = (path in history_allowlist or base.get(path) == (role, oid)
-                                 or fork_entries.get(path) == (role, oid) or repaired_preexisting)
+                                 or fork_entries.get(path) == (role, oid) or path in fork_allowlist
+                                 or repaired_preexisting)
                 if size > LIMITS[role] and not grandfathered:
                     violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
     print(f'Source LOC: base={base_sha} head={head_sha} strict={args.strict}')

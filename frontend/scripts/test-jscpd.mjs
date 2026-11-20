@@ -85,7 +85,7 @@ try {
 
   // Exercise the actual pnpm script and baseline option using an isolated Git fixture.
   await mkdir(baselineRoot, { recursive: true });
-  execFileSync('git', ['init', '--quiet'], { cwd: baselineRoot });
+  execFileSync('git', ['init', '--quiet', '--initial-branch=baseline'], { cwd: baselineRoot });
   execFileSync('git', ['config', 'user.email', 'jscpd-smoke@example.invalid'], { cwd: baselineRoot });
   execFileSync('git', ['config', 'user.name', 'jscpd smoke'], { cwd: baselineRoot });
   const fixtureFrontend = path.join(baselineRoot, 'frontend');
