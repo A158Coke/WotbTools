@@ -24,6 +24,11 @@ export interface PlaybackMarkerPreferences {
    * follows it, while 3D combat feedback only follows Hide All UI.
    */
   showStatus: boolean
+  /**
+   * 战场快捷标记 3D 呈现（0x2e markers + attention_to_cell：移动 ping / 目标光环 /
+   * 注意扇区高亮；owner = scene markerRuntime）。默认开；不被防遮预设触碰。
+   */
+  battleMarkers: boolean
 }
 
 /**
@@ -118,10 +123,11 @@ function createPlaybackPreferences() {
 
   const markerPrefs = reactive<PlaybackMarkerPreferences>(readJson(
     MARKER_PREFS_KEY,
-    { classIcons: false, showStatus: true },
+    { classIcons: false, showStatus: true, battleMarkers: true },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      return { classIcons: record.classIcons === true, showStatus: record.showStatus !== false }
+      // 新增字段：老持久化值（无该键）默认开启，不重置用户已有 classIcons/showStatus
+      return { classIcons: record.classIcons === true, showStatus: record.showStatus !== false, battleMarkers: record.battleMarkers !== false }
     },
   ))
 

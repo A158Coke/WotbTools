@@ -19,11 +19,15 @@ import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
+import { resetViewerClocks, viewerClocks } from '../scene/playback/viewerClockSync.js'
 import ReplayPage from './ReplayPage.vue'
 import FileDrop from './FileDrop.vue'
 import ReplayProcessingPanel from './ReplayProcessingPanel.vue'
 import RemoveConfirmModal from './RemoveConfirmModal.vue'
 import ReplayCapabilityTabs from './ReplayCapabilityTabs.vue'
+import { useReplayViewerState, useReplayAutoCenter, useReplayIngest } from '../composables/useReplayOrchestration.js'
+import { useReplayImmersive } from '../composables/useReplayImmersive.js'
+import ReplayViewerPanel from './ReplayViewerPanel.vue'
 import RotatePrompt from './RotatePrompt.vue'
 import { showToast } from '../composables/useToast.js'
 import { notify } from '../composables/useNotifications.js'
@@ -43,17 +47,7 @@ import { battlePickerOptions, buildSeriesOverview, replayCollectionRows } from '
  * 不能让 Vue 渲染中断（那会把整个工作台打成空壳，见 utils/lazyModule.ts 的说明）。
  * generation 与 recovery 由该边界自己拥有，工作台不重复管理。
  */
-const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'))
-const threeModule = defineLazyModule(() => import('./Replay3DPane.vue'))
-const shotsModule = defineLazyModule(() => import('./ReplayShotsPane.vue'))
-const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
-const eventsModule = defineLazyModule(() => import('./ReplayEventStreamPane.vue'))
-const ReplayEventStreamPane = eventsModule.component
-const BattlePlaybackPanel = playbackModule.component
-const Replay3DPane = threeModule.component
-const ReplayShotsPane = shotsModule.component
-const AiReviewWorkspacePane = aiModule.component
-
+/** 五个能力面板都是异步组件（审计 PF-02）：测试只验证工作台的编排与 props 接线。 */
 defineOptions({ name: 'ReplayWorkspace' })
 
 const props = defineProps({
@@ -66,8 +60,7 @@ const onboarding = inject(ONBOARDING_KEY, null)
 const { confirm } = useConfirm()
 const { t, locale } = useI18n()
 const { authenticated } = useAuth()
-const { availability, requireFeature } = useFeatureGate()
-const onlineFeatures = { '3d': Feature.PLAYBACK_3D, ai: Feature.AI_REVIEW }
+const { availability } = useFeatureGate()
 const threeAvailability = computed(() => availability(Feature.PLAYBACK_3D))
 const aiAvailability = computed(() => availability(Feature.AI_REVIEW))
 const threeBlocked = computed(() => !threeAvailability.value.available ? t(threeAvailability.value.messageKey) : '')
@@ -85,89 +78,41 @@ const {
   analysis, analyze, cancelAnalysis,
 } = workspace.replay
 
-const demoLoading = ref(false)
-const demoError = ref('')
-let demoController = null
-let disposed = false
-
-/** Reuse the existing session. A confirmation never authorizes a later changed selection. */
-async function loadDemo(signal) {
-  if (isDemoSelection.value && resp.value && analysis.value.phase === 'ready') {
-    await setCapability('data')
-    return
-  }
-  if (demoLoading.value || loading.value) throw new Error('Replay workspace is busy')
-  const revision = selectionRevision.value
-  const controller = new AbortController()
-  demoController = controller
-  const abort = () => controller.abort()
-  signal?.addEventListener('abort', abort, { once: true })
-  if (signal?.aborted) abort()
-  demoLoading.value = true
-  demoError.value = ''
-  try {
-    controller.signal.throwIfAborted()
-    if (files.value.length && !isDemoSelection.value) {
-      const confirmed = await confirm({
-        title: t('onboarding.demo_replace_title'), message: t('onboarding.demo_replace_message'),
-        confirmLabel: t('onboarding.demo_replace_confirm'), cancelLabel: t('onboarding.demo_replace_cancel'),
-        signal: controller.signal,
-      })
-      controller.signal.throwIfAborted()
-      if (!confirmed) throw new DOMException('Official replay replacement declined', REPLACE_DECLINED)
-    }
-    controller.signal.throwIfAborted()
-    if (!isDemoSelection.value) {
-      const file = await loadOfficialDemo(controller.signal)
-      controller.signal.throwIfAborted()
-      if (disposed || selectionRevision.value !== revision) throw new DOMException('Official replay superseded', 'AbortError')
-      // The synchronous selection commit must not abort its own completed download.
-      demoController = null
-      updateDemoFile(file)
-    }
-    const demoRevision = selectionRevision.value
-    await setCapability('data')
-    controller.signal.throwIfAborted()
-    const result = await analyze()
-    controller.signal.throwIfAborted()
-    if (disposed || selectionRevision.value !== demoRevision) throw new DOMException('Official replay superseded', 'AbortError')
-    if (!result?.completed || !resp.value) throw new Error('Official replay analysis failed')
-  } catch (e) {
-    if (e?.name !== 'AbortError' && e?.name !== REPLACE_DECLINED) demoError.value = t('onboarding.demo_failed')
-    throw e
-  } finally {
-    signal?.removeEventListener('abort', abort)
-    if (demoController === controller) demoController = null
-    demoLoading.value = false
-  }
-}
-
-async function onDemoClick() {
-  try {
-    await loadDemo()
-    onboarding?.sampleOpened()
-  } catch { /* Visible error above; cancelled replacement keeps the current selection. */ }
-}
-
-watch(selectionRevision, () => {
-  demoController?.abort()
-  demoError.value = ''
-}, { flush: 'sync' })
-
-/**
- * Android 外部 replay 完整自动解析契约：
- * pending File 导入 → 替换当前 selection → 本机分析一次 → data tab 展示结果。
- * 仅在 Android external intent 触发（isAndroidApp()）。绝不自动启动 AI Review。
- *
- * 返回值是 Native pending 的 ACK 唯一依据：本机分析完成（无论有没有有效场次）才返回 true——
- * 重新导入同一份不会有不同结果；回放引擎装载失败（可重试）不 ACK，保留 pending。
- */
-async function importPendingFile(file) {
-  workspace.setWorkspaceTab('data')
-  updateFiles([file])
-  const result = await analyze()
-  return result?.completed === true
-}
+// 编排拆分（2026-11-20 行数预算 500）：能力/挂载/失败态/场次/seek 同步 → useReplayViewerState；
+// 惰性模块表 = 五个 defineLazyModule 的稳定组件（错误态按模块检索）。
+const playbackModule = defineLazyModule(() => import('./BattlePlaybackPanel.vue'))
+const threeModule = defineLazyModule(() => import('./Replay3DPane.vue'))
+const shotsModule = defineLazyModule(() => import('./ReplayShotsPane.vue'))
+const aiModule = defineLazyModule(() => import('./AiReviewWorkspacePane.vue'))
+const eventsModule = defineLazyModule(() => import('./ReplayEventStreamPane.vue'))
+const modules = { playback: playbackModule, three: threeModule, shots: shotsModule, ai: aiModule, events: eventsModule }
+const ReplayEventStreamPane = eventsModule.component
+const BattlePlaybackPanel = playbackModule.component
+const Replay3DPane = threeModule.component
+const ReplayShotsPane = shotsModule.component
+const AiReviewWorkspacePane = aiModule.component
+const viewer = useReplayViewerState(workspace, modules, { navigate, onboarding })
+const {
+  capabilityOptions, activeCapability, canUseDemoCapabilities, viewerActive, viewerMode, activeTab,
+  viewerMounted, playbackMounted, threeMounted, shotsMounted, eventsMounted, aiMounted,
+  playbackLoadError, threeLoadError, shotsLoadError, aiLoadError, eventsLoadError, retryPane,
+  currentBattleId, battleOptions, onBattleSelect, targetFile,
+  initialLoading, openFailed, contentVisible, demoEntryVisible, pending3dSeek,
+  sourcePicker, collectionManager, collectionRows, collectionProgress,
+  failedReplayCount, acknowledgedResult, partialFailureVisible,
+  showBattlePicker, battlePickerTestId,
+  playbackSeek, playbackSeekRequest, viewerShotFacet, viewerKillFacet,
+  viewIn2d, onTabSelect, setViewerMode, applyCapabilityFromRoute, onEventSeek, setCapability,
+} = viewer
+const { workspaceContentEl } = useReplayAutoCenter({ activeCapability, initialLoading })
+const { demoLoading, demoError, onDemoClick, importPendingFile, loadDemo, markDisposed, abortDemo } = useReplayIngest(
+  workspace, { t, confirm, onboarding, setCapability },
+)
+const { pageActive, autoFullscreenToken, releaseShell, forcedLandscape, wantsImmersive } = useReplayImmersive(
+  workspaceContentEl,
+  workspace,
+  { activeCapability, playbackMounted, threeMounted, workspaceReady: viewer.workspaceReady },
+)
 
 const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayImport({
   isReady: () => true,
@@ -177,262 +122,6 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       ? t('workspace.native_client_upgrade_required')
       : t('workspace.native_replay_read_failed')
   },
-})
-
-/**
- * 六个能力始终公开显示。数据 / 2D 匿名可用；官方示例额外开放 3D / 射击，AI 仍要求登录，
- * 管理员角色不改变工作台能力。登录门禁位于实际解析与场景挂载之前。
- */
-const capabilityOptions = [
-  { key: 'data', labelKey: 'workspace.tab_data' },
-  { key: 'playback', labelKey: 'workspace.tab_playback' },
-  { key: '3d', labelKey: 'workspace.tab_3d' },
-  { key: 'events', labelKey: 'workspace.tab_events' },
-  { key: 'shots', labelKey: 'workspace.tab_shots' },
-  { key: 'ai', labelKey: 'workspace.tab_ai' },
-]
-
-/**
- * 能力面板首次进入时才挂载（代码块按需加载、不进主包），之后切走只隐藏：
- * 停渲染但不销毁会话——切回不重新要求文件、不重新解析、保留 timeline / 相机。
- * 失去登录且没有可信示例时卸载受保护面板，selection / 数据结果继续保留。
- */
-const activeCapability = workspace.activeWorkspaceTab
-const canUseDemoCapabilities = computed(() => authenticated.value || isDemoSelection.value)
-const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'playback')
-// 3D / 射击的登录或可信示例资格与连通性独立；示例不能绕过 ONLINE_REQUIRED 门禁。
-const threeMounted = useMountedWhenActive(() =>
-  canUseDemoCapabilities.value && activeCapability.value === '3d' && threeAvailability.value.available)
-const shotsMounted = useMountedWhenActive(() => canUseDemoCapabilities.value && activeCapability.value === 'shots')
-const eventsMounted = useMountedWhenActive(() => canUseDemoCapabilities.value && activeCapability.value === 'events')
-const aiMounted = useMountedWhenActive(() =>
-  authenticated.value && activeCapability.value === 'ai' && aiAvailability.value.available)
-
-/**
- * 能力模块加载失败态（design-language §10）：说清发生了什么 + 下一步怎么做。
- *
- * 失败态是**持久的**：切走再切回来仍然显示，只有用户明确选择才算处理过——
- * 自动清状态只会把「有提示的失败」变成「没有提示的空白」。generation 与 recovery 由
- * `lazyModule` 自己拥有（见其文件头），Workspace 不重复管理。
- *
- * 触发条件是「页面还跑着上一次部署的 bundle，而 chunk 已被新部署替换」——重新加载必然修好，
- * 所以主操作是重新加载；「重试」只覆盖网络瞬断（同一 URL 再试一次即可）。
- */
-function paneLoadError(module) {
-  return module.error.value ? 'workspace.pane_load_failed' : ''
-}
-const playbackLoadError = computed(() => paneLoadError(playbackModule))
-const threeLoadError = computed(() => paneLoadError(threeModule))
-const shotsLoadError = computed(() => paneLoadError(shotsModule))
-const aiLoadError = computed(() => paneLoadError(aiModule))
-const eventsLoadError = computed(() => paneLoadError(eventsModule))
-
-/** 重试：由 lazyModule 创建新一代 async wrapper（不是重复跑一次 import）。 */
-async function retryPane(module) {
-  await module.retry()
-}
-
-/** 模板直接消费的 workspace 权威 ref（顶层绑定，模板自动解包 ref）。 */
-const currentBattleId = workspace.currentBattleId
-
-/**
- * 单场能力（2D 回放 / 3D 回放 / 射击分析 / AI 复盘）共用的场次选择器：只列解析成功的场次
- * （failed / duplicate 不入列），选项文案与数据模式一致（第 N 场 · 地图 · 胜方 · 时间）。
- * 数据模式的选择器在 ReplayPage 工具栏里。
- */
-const battleOptions = computed(() =>
-  battlePickerOptions(buildSeriesOverview(resp.value), { t, locale: locale.value, mapLabel }))
-function onBattleSelect(sourceId) {
-  workspace.selectBattle(sourceId)
-}
-
-/** 单场能力的目标文件：单文件直接用；多文件先批次分析，再选有效场次对应的原始 File */
-const targetFile = computed(() => workspace.currentTargetFile.value)
-/**
- * 工作台四态由 session 派生，不另存状态：
- * Empty（没有文件）/ Loading（首批加载中）/ Ready（有结果）/ Failure（没有可提交的批次结果）。
- * Loading 与 Failure 时隐藏内容区但不卸载面板；批次里部分失败仍是 Ready。
- */
-const initialLoading = computed(() => analysis.value.phase === 'parsing' && !resp.value)
-const openFailed = computed(() => analysis.value.phase === 'failed' && !resp.value)
-const workspaceReady = computed(() => !!resp.value && files.value.length > 0)
-// 解析完成（每份新结果一次）：toast + 本机通知
-watch(resp, (next, previous) => {
-  // 官方示例（新手教程）不提示：它不是用户自己的解析任务
-  if (!next || next === previous || !files.value.length || isDemoSelection.value) return
-  const count = files.value.length
-  showToast({ id: 'replay-parsed', tone: 'success', titleKey: 'notifications.replayParsed' })
-  notify({ id: 'replay-parsed', kind: 'replay-parsed', titleKey: 'notifications.replayParsed', bodyKey: 'notifications.replayParsedBody', params: { count }, view: 'replay' })
-})
-const contentVisible = computed(() => !files.value.length || !!resp.value)
-const demoEntryVisible = computed(() => !files.value.length || onboarding?.guideActive?.value === true)
-
-const sourcePicker = ref(null)
-const collectionManager = ref(null)
-/** 回放列表标「当前」：只在有当前场次语境时。赛后数据汇总看的是整批，没有当前场次。 */
-const collectionRows = computed(() => replayCollectionRows(files.value, battleOptions.value, resp.value, {
-  currentSourceId: activeCapability.value === 'data' && workspace.dataViewMode.value !== 'SINGLE' ? null : currentBattleId.value,
-  parsing: analysis.value.phase === 'parsing',
-}))
-const collectionProgress = computed(() => (analysis.value.phase === 'parsing' && resp.value
-  ? { done: analysis.value.done, total: analysis.value.total } : null))
-
-/** 批次部分失败：其余回放照常可用，提醒在每个能力都可见。确认只对当前这份结果有效。 */
-const failedReplayCount = computed(() => resp.value?.failures?.length || 0)
-const acknowledgedResult = shallowRef(null)
-const partialFailureVisible = computed(() => failedReplayCount.value > 0 && acknowledgedResult.value !== resp.value)
-
-const showBattlePicker = computed(() => {
-  const cap = activeCapability.value
-  if (cap === 'data' || !battleOptions.value.length) return false
-  if (cap === 'playback') return !playbackLoadError.value
-  if (cap === '3d') return canUseDemoCapabilities.value && threeAvailability.value.available && !threeLoadError.value
-  if (cap === 'shots') return canUseDemoCapabilities.value && !shotsLoadError.value
-  // 事件流 = 本地解析能力（playbackSession.loadScene），不随联网可用性隐藏；
-  // 与 shots 同款登录/示例资格 + 模块加载状态判据。
-  if (cap === 'events') return canUseDemoCapabilities.value && !eventsLoadError.value
-  return aiAvailability.value.available && !aiLoadError.value
-})
-const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', events: 'events', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
-
-const VIEW_BY_CAPABILITY = Object.freeze({
-  data: 'replay',
-  playback: 'battle-playback',
-  '3d': 'agent-replay',
-  // 事件流是一等能力：必须有自己的 view 槽位，否则 navigate('replay') 会被 ViewHost
-  // 映射回 data（切到事件流立刻被路由同步撤销）。
-  events: 'agent-events',
-  shots: 'agent-shots',
-  ai: 'ai-review',
-})
-
-/** capability → 路由 view（Back / Forward 与深链仍由 Vue Router 唯一持有）。 */
-function viewFor(cap) {
-  return VIEW_BY_CAPABILITY[cap] || 'replay'
-}
-
-/** AI 复盘关键回合 →「在 2D 中查看」：切到 2D 能力页并按战斗时钟定位（BattlePlaybackPanel.seekTo 监听变化）。 */
-const playbackSeek = ref(null)
-async function viewIn2d(sec) {
-  await setCapability('playback')
-  playbackSeek.value = null
-  await nextTick()
-  playbackSeek.value = sec
-}
-
-/** 事件流 →「跳到此刻」：切到 3D 并请求场景 seek（Replay3DPane 监听 pending3dSeek）。
- *  seek 属于场景句柄（sceneApi 由 3D 面板持有），工作台只做 tab 切换与请求转交。 */
-/** 一次性 seek 请求：id 单调递增——3D 面板按 id 只消费一次，切回 3D 不得重放旧请求。 */
-const pending3dSeek = ref(null)
-let seekSeq = 0
-async function view3dAt(sec) {
-  await setCapability('3d')
-  pending3dSeek.value = { id: ++seekSeq, sec }
-  await nextTick()
-}
-// 换回放：旧场的 seek 请求随之作废
-watch(targetFile, () => { pending3dSeek.value = null })
-
-async function setCapability(key) {
-  if (key === activeCapability.value) return
-  workspace.setWorkspaceTab(key)
-  if (onlineFeatures[key]) requireFeature(onlineFeatures[key])
-  if (navigate) navigate(viewFor(key))
-}
-
-/** 回放类视图（2D/3D/事件流/射击/AI）：打开时把视窗放到屏幕中间。 */
-const REPLAY_CAPABILITIES = new Set(['playback', '3d', 'events', 'shots', 'ai'])
-/** 能力 → 视窗容器（`.capability-pane` 的稳定 testid；测量目标是 pane 本身，不含工具栏）。 */
-const PANE_TEST_IDS = { playback: 'ws-playback', '3d': 'ws-3d', events: 'ws-events', shots: 'ws-shots', ai: 'ws-ai' }
-// 回放内容容器（视图切换居中与手机横屏沉浸态共用；声明须早于下方 immediate watcher）
-const workspaceContentEl = ref(null)
-
-/** 当前能力的视窗容器（懒加载面板挂载前它是空 div，高度为 0）。 */
-function activePaneEl() {
-  const id = PANE_TEST_IDS[activeCapability.value]
-  if (!id) return null
-  const root = workspaceContentEl.value?.parentElement ?? (typeof document !== 'undefined' ? document : null)
-  return root?.querySelector?.(`[data-testid="${id}"]`) ?? null
-}
-
-/**
- * 打开 2D/3D 等回放视窗时**自动垂直居中**（用户 2026-10-31 要求：此前视窗偏上，
- * 每次都要手动往下滚一段）。规则：
- * - 视窗比视口矮 → `block: 'center'`（这正是"偏上、要往下滚"的场景）；
- * - 视窗比视口高 → `block: 'start'`（居中的话会裁掉顶部，继续往下滚才是浏览剩余内容的自然动作）。
- * 只在切换视图/首次进入时触发一次（边沿），不监听滚动、不覆盖用户后续滚动位置。
- * 手机横屏沉浸态另有 `scrollIntoView({block:'start'})`（见 wantsImmersive），两者目的不同。
- */
-function centerReplayPane() {
-  const pane = activePaneEl()
-  if (!pane || typeof pane.scrollIntoView !== 'function') return
-  const rect = pane.getBoundingClientRect()
-  const viewportH = typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 0
-  // 高度不可测量（隐藏 / jsdom 无布局）时按居中处理：scrollIntoView 自身会安全退化为最近可滚位置
-  const tallerThanViewport = viewportH > 0 && rect.height > viewportH
-  pane.scrollIntoView({ block: tallerThanViewport ? 'start' : 'center' })
-}
-
-// 视图切换的正确时序（Codex review P2）：面板是**懒加载 chunk**（`defineLazyModule` 动态
-// import），nextTick 等不到 chunk；而且「有高度」也不等于视窗就绪——2D 的标题栏 + LOADING
-// 提示、3D 的解析/资产阶段、射击的解析中、AI 的投影构建中都已经有高度。若此时定位会锁在
-// 加载提示上，真实视窗出现后不再定位。
-// 因此就绪信号是各 pane 自己给出的 **`data-pane-ready`**（内容就绪或终态；加载中不置位），
-// 由 ResizeObserver 在布局变化时重新检查；激活令牌在切换/卸载时撤销过期请求，每次进入只定位一次。
-const PANE_READY_SELECTOR = '[data-pane-ready="true"]'
-let centerToken = 0
-let centerObserver = null
-let centerMutationObserver = null
-function cancelPendingCenter() {
-  centerToken += 1
-  centerObserver?.disconnect?.()
-  centerObserver = null
-}
-/** 当前 pane 已就绪：真实内容（或终态外壳）已布局 —— 标记在位且有高度。 */
-function paneIsReady(pane) {
-  if (initialLoading.value) return false         // 首批在途：等内容区出现再定位
-  if (!pane || !pane.querySelector(PANE_READY_SELECTOR)) return false
-  return pane.getBoundingClientRect().height > 0
-}
-function scheduleCenterWhenLaidOut() {
-  const token = centerToken
-  const tryOnce = () => {
-    if (token !== centerToken) return true          // 已切换/离开：撤销
-    const pane = activePaneEl()
-    if (!paneIsReady(pane)) return false
-    centerReplayPane()
-    // 成功即收尾：RO / MO 两个监听都撤销，保证每次进入只定位一次
-    cancelPendingCenter()
-    return true
-  }
-  if (tryOnce()) return
-  const pane = activePaneEl()
-  if (!pane || typeof ResizeObserver === 'undefined') return
-  centerObserver = new ResizeObserver(() => {
-    if (tryOnce()) { centerObserver?.disconnect?.(); centerObserver = null }
-  })
-  centerObserver.observe(pane)
-  // 子元素替换（pane 高度不变、仅内容切换）时 ResizeObserver 不触发：MutationObserver 补一道
-  if (typeof MutationObserver !== 'undefined') {
-    centerMutationObserver?.disconnect?.()
-    centerMutationObserver = new MutationObserver(() => {
-      if (tryOnce()) { centerMutationObserver?.disconnect?.(); centerMutationObserver = null }
-    })
-    centerMutationObserver.observe(pane, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-pane-ready'] })
-  }
-}
-
-watch(activeCapability, (cap) => {
-  cancelPendingCenter()
-  centerMutationObserver?.disconnect?.()
-  centerMutationObserver = null
-  if (!REPLAY_CAPABILITIES.has(cap)) return
-  nextTick(scheduleCenterWhenLaidOut)
-}, { immediate: true })
-onBeforeUnmount(() => {
-  cancelPendingCenter()
-  centerMutationObserver?.disconnect?.()
-  centerMutationObserver = null
 })
 
 function confirmRemove() {
@@ -505,54 +194,32 @@ const onboardingWorkspace = {
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 const shellOwner = Symbol('replay-workspace')
 const { isPhone } = usePlaybackPhoneForm()
-const { isPortrait } = usePlaybackPortraitViewport()
-const { coarse } = usePointer()
-const pageActive = ref(true)
-const replayPaneShown = computed(() =>
-  (activeCapability.value === 'playback' && playbackMounted.value) || (activeCapability.value === '3d' && threeMounted.value))
-const wantsImmersive = computed(() =>
-  pageActive.value && isPhone.value && !isPortrait.value && coarse.value && workspaceReady.value && replayPaneShown.value)
-watch(wantsImmersive, (on) => {
-  shellChrome?.request(shellOwner, on)
-  // 进入沉浸态时把回放区对齐到视口顶端（仅边沿触发一次，不监听滚动）
-  if (on) nextTick(() => workspaceContentEl.value?.scrollIntoView?.({ block: 'start' }))
-}, { immediate: true })
-// 强制横屏（design-language §9）：iPhone Safari 在 2D / 3D 回放显示且竖屏时提示旋转（退出动作回到赛后数据，主要数据能力在竖屏仍可达）；
-// 其它设备（桌面、平板、Android 浏览器）不受影响。
-// Android 手机 App（4.x）：查看器内非全屏锁竖屏，全屏由 MainActivity.enterFullscreen 锁横屏并在退出时还原；
-// 空查看器 / 解析中也锁竖屏，所以 androidActive 不依赖 workspaceReady。iPhone Safari 的旋转提示仍按原条件。
-const VIEWER_CAPABILITIES = new Set(['playback', '3d', 'shots'])
-const viewerCapabilityShown = computed(() => VIEWER_CAPABILITIES.has(activeCapability.value))
-const forcedLandscape = useForcedLandscape(
-  computed(() => pageActive.value && workspaceReady.value && replayPaneShown.value),
-  { androidOrientation: 'portrait', androidActive: computed(() => pageActive.value && viewerCapabilityShown.value) },
-)
-// 自动全屏的「进入查看器」事件序号：每次切入 2D / 3D / 射击复现（含从赛果解析 / AI 复盘跳入）递增一次；
-// 查看器在成功就绪时按 (序号, 回放身份) 消费，主动退出全屏后不会因仍然 Ready 再次进入。
-const autoFullscreenToken = ref(0)
-watch(activeCapability, (cap) => { if (VIEWER_CAPABILITIES.has(cap)) autoFullscreenToken.value++ }, { immediate: true })
-onActivated(() => { pageActive.value = true })
-onDeactivated(() => {
-  pageActive.value = false
-  // 确认框 portal 到 body，KeepAlive 停用不会带走它。
-  workspace.replay.cancelRemove()
-})
-
 function registerOnboarding() { onboarding?.registerWorkspace(onboardingWorkspace) }
-onMounted(registerOnboarding)
-onActivated(registerOnboarding)
+// 回放工作台的页面滚动条出现/消失会让整页横移 15px（收起传输条动画实测 1265→1280→1265）：
+// 仅在本工作台挂载期间给 html 挂 `replay-scrollbar-reserve` 预留滚动条槽位（见 app-shell.css），
+// 离开（含 KeepAlive 停用）立即还原——后台抽屉等其它页面保持原贴边契约。
+const SCROLLBAR_RESERVE_CLASS = 'replay-scrollbar-reserve'
+onMounted(() => {
+  registerOnboarding()
+  document.documentElement.classList.add(SCROLLBAR_RESERVE_CLASS)
+})
+onActivated(() => {
+  registerOnboarding()
+  document.documentElement.classList.add(SCROLLBAR_RESERVE_CLASS)
+})
+onDeactivated(() => document.documentElement.classList.remove(SCROLLBAR_RESERVE_CLASS))
 onUnmounted(() => {
-  shellChrome?.request(shellOwner, false)
-  disposed = true
-  demoController?.abort()
+  releaseShell()
+  markDisposed()
+  abortDemo()
   onboarding?.registerWorkspace(null)
+  document.documentElement.classList.remove(SCROLLBAR_RESERVE_CLASS)
 })
 
+// URL（浏览器前进/后退/深链）是能力的来源：交给 orchestration 处理，
+// 2D↔3D 与面板按钮共用同一份时钟交接（不反向 navigate）。
 watch(() => props.initialCapability, (val) => {
-  if (val) {
-    workspace.setWorkspaceTab(val)
-    if (onlineFeatures[val]) requireFeature(onlineFeatures[val])
-  }
+  if (val) applyCapabilityFromRoute(val)
 }, { immediate: true })
 
 </script>
@@ -562,7 +229,7 @@ watch(() => props.initialCapability, (val) => {
     <div class="workspace-head">
       <ShowcaseHero v-if="!wantsImmersive && !forcedLandscape.blocked.value" compact section="replay" :kicker="$t('nav.replay')" :title="$t('workspace.title')" />
       <div class="workspace-toolbar">
-        <ReplayCapabilityTabs class="workspace-capabilities" data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+        <ReplayCapabilityTabs class="workspace-capabilities" data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeTab" @select="onTabSelect" />
         <AppButton v-if="onboarding" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
           <CircleHelp :size="16" aria-hidden="true" />{{ $t('onboarding.help') }}
         </AppButton>
@@ -652,78 +319,94 @@ watch(() => props.initialCapability, (val) => {
         :replay-context="workspace.replay"
         :workspace-context="workspace"
       />
-      <div v-show="activeCapability === 'playback'" class="capability-pane" data-testid="ws-playback">
-        <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
-          <p>{{ $t(playbackLoadError) }}</p>
-          <template #actions>
-            <AppButton size="sm" data-testid="ws-playback-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
-            <AppButton size="sm" variant="ghost" data-testid="ws-playback-load-retry" @click="retryPane(playbackModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+      <!-- 统一回放面板（2D / 3D / 事件流深链共用；2026-11-19 用户要求仿地图预览排版）：
+           头部 2D/3D 切换、两个 pane 都挂载仅 v-show；播放条在窗口下方通栏（3D docked）；
+           事件流固定在面板底部（桌面固定高度内部滚动、窄屏折叠）。 -->
+      <div v-show="viewerActive" class="capability-pane" data-testid="ws-replay">
+        <ReplayViewerPanel v-if="viewerMounted" :mode="viewerMode" @update:mode="setViewerMode">
+          <template #viewer-2d>
+            <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
+              <p>{{ $t(playbackLoadError) }}</p>
+              <template #actions>
+                <AppButton size="sm" data-testid="ws-playback-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+                <AppButton size="sm" variant="ghost" data-testid="ws-playback-load-retry" @click="retryPane(playbackModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+              </template>
+            </Banner>
+            <BattlePlaybackPanel
+              v-if="playbackMounted && !playbackLoadError"
+              :playback-session="workspace.playbackSession"
+              :file="targetFile"
+              :active="viewerActive && viewerMode === '2d'"
+              :seek-to="playbackSeek"
+              :seek-request="playbackSeekRequest"
+              :facet-shots="viewerShotFacet"
+              :facet-kills="viewerKillFacet"
+              :auto-fullscreen-token="autoFullscreenToken"
+            />
           </template>
-        </Banner>
-        <BattlePlaybackPanel
-          v-if="playbackMounted && !playbackLoadError"
-          :playback-session="workspace.playbackSession"
-          :file="targetFile"
-          :active="activeCapability === 'playback'"
-          :seek-to="playbackSeek"
-          :auto-fullscreen-token="autoFullscreenToken"
-        />
-      </div>
-      <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
-        <!-- 顺序即优先级：连通性（capability SSOT）→ 登录门禁 → 加载错误 → 面板。
-             非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。
-             首次检测未完成（pending）时保持中性空白：不下连通性结论，也不落到登录门禁。 -->
-        <template v-if="!threeAvailability.available">
-          <Banner v-if="!threeAvailability.pending" tone="info" data-testid="ws-3d-connectivity">
-            <p>{{ $t(threeAvailability.messageKey) }}</p>
-          </Banner>
-        </template>
-        <ReplayCapabilityAuthGate
-          v-else-if="!canUseDemoCapabilities && activeCapability === '3d'"
-          :title="$t('workspace.tab_3d')"
-          :description="$t('workspace.login_required_3d')"
-          login-destination="agent-replay"
-        />
-        <Banner v-else-if="canUseDemoCapabilities && threeLoadError" tone="danger" data-testid="ws-3d-load-error">
-          <p>{{ $t(threeLoadError) }}</p>
-          <template #actions>
-            <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
-            <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(threeModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          <template #viewer-3d>
+            <!-- 顺序即优先级：连通性（capability SSOT）→ 登录门禁 → 加载错误 → 面板。
+                 非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。
+                 首次检测未完成（pending）时保持中性空白：不下连通性结论，也不落到登录门禁。 -->
+            <template v-if="!threeAvailability.available">
+              <Banner v-if="!threeAvailability.pending" tone="info" data-testid="ws-3d-connectivity">
+                <p>{{ $t(threeAvailability.messageKey) }}</p>
+              </Banner>
+            </template>
+            <ReplayCapabilityAuthGate
+              v-else-if="!canUseDemoCapabilities && viewerMode === '3d'"
+              :title="$t('workspace.tab_3d')"
+              :description="$t('workspace.login_required_3d')"
+              login-destination="agent-replay"
+            />
+            <Banner v-else-if="threeLoadError" tone="danger" data-testid="ws-3d-load-error">
+              <p>{{ $t(threeLoadError) }}</p>
+              <template #actions>
+                <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+                <AppButton size="sm" variant="ghost" data-testid="ws-3d-load-retry" @click="retryPane(threeModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+              </template>
+            </Banner>
+            <Replay3DPane
+              v-if="canUseDemoCapabilities && threeMounted && !threeLoadError"
+              :playback-session="workspace.playbackSession"
+              :file="targetFile"
+              :active="pageActive && viewerActive && viewerMode === '3d' && threeAvailability.available"
+              :blocked-reason="threeBlocked"
+              :auto-fullscreen-token="autoFullscreenToken"
+              :pending-seek="pending3dSeek"
+            />
           </template>
-        </Banner>
-        <Replay3DPane
-          v-if="canUseDemoCapabilities && threeMounted && !threeLoadError"
-          :playback-session="workspace.playbackSession"
-          :file="targetFile"
-          :active="pageActive && activeCapability === '3d' && threeAvailability.available"
-          :blocked-reason="threeBlocked"
-          :auto-fullscreen-token="autoFullscreenToken"
-          :pending-seek="pending3dSeek"
-        />
-      </div>
-      <div v-show="activeCapability === 'events'" class="capability-pane" data-testid="ws-events">
-        <ReplayCapabilityAuthGate
-          v-if="!canUseDemoCapabilities && activeCapability === 'events'"
-          :title="$t('workspace.tab_events')"
-          :description="$t('workspace.login_required_events')"
-          login-destination="agent-events"
-        />
-        <Banner v-else-if="eventsLoadError" tone="danger" data-testid="ws-events-load-error">
-          <p>{{ $t(eventsLoadError) }}</p>
-          <template #actions>
-            <AppButton size="sm" data-testid="ws-events-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
-            <AppButton size="sm" variant="ghost" data-testid="ws-events-load-retry" @click="retryPane(eventsModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+          <template #events>
+            <!-- events 深链保留完整登录门禁；2D/3D 下的匿名单只看一行提示，
+                 不在播放器下方再放一个登录卡片。 -->
+            <ReplayCapabilityAuthGate
+              v-if="!canUseDemoCapabilities && activeCapability === 'events'"
+              :title="$t('workspace.tab_events')"
+              :description="$t('workspace.login_required_events')"
+              login-destination="agent-events"
+            />
+            <p v-else-if="!canUseDemoCapabilities" class="ws-note" data-testid="ws-events-login-note">
+              {{ $t('workspace.login_required_events') }}
+            </p>
+            <Banner v-else-if="eventsLoadError" tone="danger" data-testid="ws-events-load-error">
+              <p>{{ $t(eventsLoadError) }}</p>
+              <template #actions>
+                <AppButton size="sm" data-testid="ws-events-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
+                <AppButton size="sm" variant="ghost" data-testid="ws-events-load-retry" @click="retryPane(eventsModule)">{{ $t('workspace.pane_retry') }}</AppButton>
+              </template>
+            </Banner>
+            <ReplayEventStreamPane
+              v-else-if="eventsMounted"
+              embedded
+              :file="targetFile"
+              :active="viewerActive"
+              :page-active="pageActive"
+              :playback-session="workspace.playbackSession"
+              :navigate="navigate"
+              @seek="onEventSeek"
+            />
           </template>
-        </Banner>
-        <ReplayEventStreamPane
-          v-if="canUseDemoCapabilities && eventsMounted && !eventsLoadError"
-          :file="targetFile"
-          :active="activeCapability === 'events'"
-          :page-active="pageActive"
-          :playback-session="workspace.playbackSession"
-          :navigate="navigate"
-          @view-3d="view3dAt"
-        />
+        </ReplayViewerPanel>
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
         <ReplayCapabilityAuthGate

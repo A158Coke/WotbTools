@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 
-import { computed, ref } from 'vue'
+import { computed, h, KeepAlive, ref, toRaw } from 'vue'
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
-import { afterEach, beforeEach, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises as flushVue, mount } from '@vue/test-utils'
 
 /** 能力面板是异步组件：每次 flush 同时等动态 import 完成。 */
-async function flushPromises() {
+export async function flushPromises() {
   await flushVue()
   await vi.dynamicImportSettled()
   await flushVue()
@@ -17,11 +17,13 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
-import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
-import { OFFICIAL_DEMO } from '../replay-local/demo.js'
+import { createShellChrome } from '../app/shellChrome.js'
+import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { useConfirmHost } from '../composables/useConfirm.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
+import { resetViewerClocks, viewerClocks } from '../scene/playback/viewerClockSync.js'
 import FileDrop from './FileDrop.vue'
 
 // useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
@@ -89,12 +91,12 @@ vi.mock('./ReplayPage.vue', () => ({
   },
 }))
 // 四个能力面板都是异步组件（审计 PF-02）：测试只验证工作台的编排与 props 接线
-function paneMock(name, testid) {
+export function paneMock(name, testid) {
   return {
     __esModule: true,
     default: {
       name,
-      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken'],
+      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken', 'seekTo', 'seekRequest', 'pendingSeek'],
       template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }
@@ -125,7 +127,7 @@ vi.mock('../composables/useNativeReplayImport.js', () => ({
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true, locale: { value: 'en' } }) }))
 
 /** 以真实 Vue ref/函数构造 useReplay 返回物（保证 files/resp/analysis/selectionRevision 响应式）。 */
-function buildState() {
+export function buildState() {
   const session = useReplaySession()
   return {
     ...session,
@@ -150,9 +152,9 @@ function buildState() {
   }
 }
 
-let replayState = null
+export const replayStateRef = { current: null }
 
-function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null, shellChrome = null } = {}) {
+export function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null, shellChrome = null } = {}) {
   authState.authenticated.value = authenticated
   nav.navigate = navigate
   return mount(ReplayWorkspace, {
@@ -165,42 +167,52 @@ function mountWorkspace(capability = 'data', { authenticated = true, navigate = 
   })
 }
 
-/** 能力按钮：data-cap 是稳定契约（深链、浏览器 gate 与测试共用） */
-const tab = (wrapper, cap) => wrapper.get(`[data-testid="ws-tab"][data-cap="${cap}"]`)
-const capKeys = (wrapper) => wrapper.findAll('[data-testid="ws-tab"]').map(t => t.attributes('data-cap'))
+/** 能力按钮：data-cap 是稳定契约（深链、浏览器 gate 与测试共用）。
+ *  2026-11-19：2D/3D/事件流合并为「回放」入口，内部能力键仍在测试里使用。 */
+export const TAB_KEY = { playback: 'replay', '3d': 'replay', events: 'replay' }
+export const tab = (wrapper, cap) => wrapper.get(`[data-testid="ws-tab"][data-cap="${TAB_KEY[cap] || cap}"]`)
+export const capKeys = (wrapper) => wrapper.findAll('[data-testid="ws-tab"]').map(t => t.attributes('data-cap'))
 
-async function switchTo(wrapper, cap) {
+/** 切能力：2D/3D 现在在统一回放面板内切换（2D = 回放标签 + 2D 模式；3D = 回放标签 + 3D 模式）。 */
+export async function switchTo(wrapper, cap) {
   await tab(wrapper, cap).trigger('click')
   await flushPromises()
+  if (cap === 'playback' || cap === '3d') {
+    const mode = wrapper.find(`[data-testid="viewer-mode-${cap === '3d' ? '3d' : '2d'}"]`)
+    if (mode.exists() && mode.attributes('aria-checked') !== 'true') {
+      await mode.trigger('click')
+      await flushPromises()
+    }
+  }
 }
 
-function withBattles(count) {
-  replayState.files.value = Array.from({ length: count }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
-  replayState.resp.value = {
+export function withBattles(count) {
+  replayStateRef.current.files.value = Array.from({ length: count }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
+  replayStateRef.current.resp.value = {
     leagueMode: false,
     aggregate: [{ a: 1 }],
     battles: Array.from({ length: count }, (_, i) => ({ sourceId: `r${i}`, mapName: 'Lagoon', players: [] })),
   }
 }
 
-const demoBytes = readFileSync(new NodeURL(`../../../common/assets${OFFICIAL_DEMO.path}`, import.meta.url))
-function serveDemo() {
+export const demoBytes = readFileSync(new NodeURL(`../../../common/assets${OFFICIAL_DEMO.path}`, import.meta.url))
+export function serveDemo() {
   const fetch = vi.fn(async () => ({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) }))
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
-function analyzeDemo() {
-  replayState.analyze.mockImplementation(async () => {
-    replayState.session.commitReadyResult({ battles: [{ sourceId: 'r0', sourceName: replayState.files.value[0].name, mapName: 'rift', players: [] }], aggregate: [] })
-    replayState.analysis.value = { phase: 'ready', done: 1, total: 1, failure: null }
+export function analyzeDemo() {
+  replayStateRef.current.analyze.mockImplementation(async () => {
+    replayStateRef.current.session.commitReadyResult({ battles: [{ sourceId: 'r0', sourceName: replayStateRef.current.files.value[0].name, mapName: 'rift', players: [] }], aggregate: [] })
+    replayStateRef.current.analysis.value = { phase: 'ready', done: 1, total: 1, failure: null }
     return { completed: true }
   })
 }
-function guideContext() {
+export function guideContext() {
   return { guideActive: computed(() => true), registerWorkspace: vi.fn(), openDirectory: vi.fn(), sampleOpened: vi.fn() }
 }
 /** 空列表（或教学中）在页面上；Ready 态的示例入口在管理弹层里。 */
-async function clickDemo(wrapper) {
+export async function clickDemo(wrapper) {
   if (!wrapper.find('[data-testid="workspace-demo"]').exists()) {
     await wrapper.get('[data-testid="collection-trigger"]').trigger('click')
     await flushPromises()
@@ -209,41 +221,40 @@ async function clickDemo(wrapper) {
   }
   await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
 }
-const demoIdle = (wrapper) => {
+export const demoIdle = (wrapper) => {
   const button = wrapper.find('[data-testid="workspace-demo"]')
   return !button.exists() || !button.element.disabled
 }
 /** FileDrop 把通过校验的 selection 交给工作台：真实入口，选择即加载。 */
-async function choose(wrapper, files) {
+export async function choose(wrapper, files) {
   wrapper.findComponent(FileDrop).vm.$emit('update:files', files)
   await flushPromises()
 }
 // Vue's queue flush does not await Node's real WebCrypto hash of the bundled sample.
-async function waitForDemoReady(wrapper) {
+export async function waitForDemoReady(wrapper) {
   await vi.waitFor(() => {
-    expect(replayState.analysis.value.phase).toBe('ready')
+    expect(replayStateRef.current.analysis.value.phase).toBe('ready')
     expect(demoIdle(wrapper)).toBe(true)
   }, { timeout: 4000 })
   await flushPromises()
 }
-afterEach(() => {
-  vi.unstubAllGlobals()
-  useConfirmHost().settle(false)
-})
+export const testState = { hold, authState, nav, formState, connectivityState, nativeImportState, replayStateRef }
+export { computed, h, KeepAlive, ref, toRaw } from 'vue'
+export { mount } from '@vue/test-utils'
+export { useConfirmHost } from '../composables/useConfirm.js'
+export { resetViewerClocks, viewerClocks } from '../scene/playback/viewerClockSync.js'
+export { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
+export { createShellChrome } from '../app/shellChrome.js'
+export { useReplaySession } from '../composables/useReplaySession.js'
+export { useError } from '../composables/useError.js'
+export { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
+export { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
+export { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+export { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
-function resetWorkspace() {
-    connectivityState.state.value = 'online'
-    connectivityState.settled.value = true
-    useConnectivityNotice().close()
-    replayState = buildState()
-    hold.state = replayState
-    authState.authenticated.value = true
-    authState.isAdmin.value = false
-    authState.login = vi.fn()
-    const { error: globalError, showError } = useError()
-    showError.value = false
-    globalError.value = ''
-    vi.clearAllMocks()
+export function installWorkspaceTestLifecycle() {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    useConfirmHost().settle(false)
+  })
 }
-
-export { demoBytes, flushPromises, hold, authState, nav, formState, connectivityState, nativeImportState, buildState, replayState, mountWorkspace, tab, capKeys, switchTo, withBattles, serveDemo, analyzeDemo, guideContext, clickDemo, demoIdle, choose, waitForDemoReady, resetWorkspace }

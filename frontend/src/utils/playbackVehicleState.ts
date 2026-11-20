@@ -23,7 +23,7 @@ export type VehiclePoseInput = {
 } | null
 
 type ProjectVehicleStateInput = {
-  vehicle: { accountId: number | null; playerName?: string | null; tankName?: string | null; tankId?: number | null }
+  vehicle: VehiclePlaybackTrack
   track: VehiclePlaybackTrack
   time: number
   pose?: VehiclePoseInput

@@ -38,6 +38,8 @@ test('requires a valid nonempty baseline comparison report', async () => {
       { ...validClone, firstFile: { ...validClone.firstFile, start: 0 } },
       { ...validClone, secondFile: { ...validClone.secondFile, end: 29 } },
       { ...validClone, firstFile: { ...validClone.firstFile, startLoc: { line: 13 } } },
+      { ...validClone, secondFile: { ...validClone.secondFile, endLoc: { line: 28 } } },
+
     ]) {
       await writeFile(file, JSON.stringify({ statistics: { total: { sources: 2, newClones: 1 } }, duplicates: [invalid] }))
       assert.notEqual(run(), 0, 'new clone without complete source positions fails')

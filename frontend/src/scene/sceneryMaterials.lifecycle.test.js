@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = PLAYBACK_SCENE_SOURCE.replace(/\r\n/g, '\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const basesSrc = readSrc(resolve(here, 'playback/bases.ts'), 'utf8')
@@ -69,8 +70,10 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
   })
 
   it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
-    expect(src).toMatch(/function prewarmShaders\(\)/)
-    expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
+    // 实现出仓 playback/shaderPrewarm.ts（源码行预算回归 1500）；façade 保留接线 + 会话启动路径
+    expect(src).toMatch(/const prewarmShaders = createShaderPrewarm\(/)
+    const prewarmSrc = readSrc(resolve(here, 'playback/shaderPrewarm.ts'))
+    expect(prewarmSrc).toMatch(/compile\(/)
     // 会话启动路径必须调用（GLB 恢复之后、开播之前）
     // GLB 恢复挂载已前移到 buildVehicles 之后（2026-10-11）：高/极致在 assetStage 内
     // await 全部模型就绪才开播（用户裁示"进地图前加载完双方坦克模型"）

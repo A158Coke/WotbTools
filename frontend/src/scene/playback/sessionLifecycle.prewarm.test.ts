@@ -39,6 +39,7 @@ function makeDeps(overrides: Partial<SessionLifecycleDeps> = {}) {
     constrainFreeCameraAltitude: vi.fn(),
     loadMapImage: vi.fn(async () => { order.push('loadMapImage') }),
     buildBases: track('buildBases'),
+    buildMarkers: track('buildMarkers'),
     buildSpawns: track('buildSpawns'),
     buildVehicles: track('buildVehicles'),
     setupContactShadows: track('setupContactShadows'),

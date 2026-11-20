@@ -154,7 +154,7 @@ const classes = computed(() => ({
 }
 .pb-hp-num { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-playback-label-text); font-variant-numeric: tabular-nums; }
 /* 等宽轨道：HP 容纳数值，reload 保持较细的分段状态。 */
-.pb-hp-bar, .reload-bar { border-radius: var(--radius-full); corner-shape: round; background: var(--color-playback-label-track); overflow: hidden; }
+.pb-hp-bar, .reload-bar { border-radius: 0; background: var(--color-playback-label-track); overflow: hidden; }
 .pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-4); }
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }
@@ -166,7 +166,7 @@ const classes = computed(() => ({
 /* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。
    外描边 = token `--pb-label-reload-outline`（半透明黑）勾出整条轮廓——白填充/亮空槽在
    雪地等亮背景上会糊进背景，黑边在明暗背景都能把白色状态条衬出来（分段间隙露出的是
-   页面背景）。box-shadow 不占布局、跟随圆角，随 3D 标签 transform 缩放保持同一比例。 */
+   页面背景）。box-shadow 不占布局、跟随矩形轮廓，随 3D 标签 transform 缩放保持同一比例。 */
 .reload-bar {
   display: flex;
   width: var(--pb-label-hp-bar-width);

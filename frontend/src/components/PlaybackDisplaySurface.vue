@@ -63,7 +63,12 @@ function measure() {
   const available = abovePreferred ? abovePane : belowPane
   const width = Math.min(panel.value.offsetWidth, hostWidth - paddingLeft - paddingRight - edge * 2)
   // 面板自身高度也按可见交集收口，保证它始终落在**可见**范围内（而不是宿主范围内）。
-  const height = Math.min(panel.value.scrollHeight, available, Math.max(0, viewportBottom - viewportTop))
+  // max-height 是 border-box（全局 `box-sizing: border-box`），上下边框会吃掉内容高度：
+  // 内容恰好等于 available 时 clientHeight 少 2px，面板出现无意义滚动条（1600×900 实测 644>642）。
+  // 边框是面板外框的一部分，把 borderY 计入可用高度，内容可放下时就不再被压着滚。
+  const borderY = Math.max(0, panel.value.offsetHeight - panel.value.clientHeight)
+  const outerAvailable = available + borderY
+  const height = Math.min(panel.value.scrollHeight + borderY, outerAvailable, Math.max(0, viewportBottom - viewportTop))
   const topMin = Math.max(0, paddingTop + edge)
   const topMax = Math.max(topMin, viewportBottom - host.top - height)
   const aboveTop = aboveAnchorTop - originTop - gap - height
@@ -72,7 +77,7 @@ function measure() {
     // 面板以 host 的内边距盒为定位基准，故先扣掉左侧内边距再夹到 host 内。
     left: `${Math.max(paddingLeft + edge, Math.min(anchor.right - originLeft - width, hostWidth - paddingRight - width - edge))}px`,
     top: `${Math.min(Math.max(rawTop, topMin), topMax)}px`,
-    maxHeight: `${available}px`,
+    maxHeight: `${outerAvailable}px`,
   }
 }
 function dismiss(event) {
