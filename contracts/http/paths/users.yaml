@@ -1,0 +1,150 @@
+/api/users/profile/records:
+  get:
+    operationId: getUserHofRecords
+    summary: 读取当前用户单场记录（仅按 accountId 归属）
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/PersonalHallOfFameRecord' } } } } }
+/api/users/profile:
+  get:
+    operationId: getCurrentUserProfile
+    summary: Read the authenticated user's WotBTools business profile
+    description: >-
+      user_profile is the WotBTools business-user projection of the Keycloak identity. Every
+      authenticated user that reaches the SPA is provisioned by the global business bootstrap,
+      so 404 PROFILE_NOT_FOUND now only means provisioning has not succeeded yet.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: Current user profile, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+  put:
+    operationId: ensureCurrentUserProfile
+    summary: Idempotently ensure the authenticated user's WotBTools business profile
+    description: >-
+      This is ensure, not create. An existing profile is returned unchanged: wotbServer,
+      wotbAccountId, wotbNickname, wotbAccountSource and wotbAccountVerifiedAt are never
+      overwritten. A missing profile is created with the canonical provisioning semantics
+      (trusted Wargaming claims create that region with source WARGAMING; otherwise CN with
+      source MANUAL). Concurrent calls for the same subject both succeed and leave exactly one
+      row: the loser of the keycloak_user_id unique race reloads the winner's profile instead of
+      reporting an already-exists conflict. A real WotB ownership collision is never swallowed
+      and still returns 409 WOTB_ACCOUNT_ALREADY_USED. Identity comes solely from the bearer
+      token and no request body is accepted, so a caller cannot impersonate another user.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: Existing or newly provisioned profile, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '409': { description: The WotB account is already bound to another user, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Profile bootstrap invariant violated, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/users/onboarding:
+  get:
+    operationId: getCurrentUserOnboarding
+    summary: Read the authenticated user's core onboarding receipt
+    description: >-
+      Identity comes solely from the bearer token subject. Profile bootstrap must have
+      succeeded first; this resource never creates a profile. A fresh profile returns 0/NONE.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: Current onboarding receipt, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/OnboardingReceipt' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Unexpected server error, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+  put:
+    operationId: saveCurrentUserOnboarding
+    summary: Idempotently merge a core onboarding completion or skip receipt
+    description: >-
+      The maximum coreEpoch wins; at the same epoch COMPLETED takes precedence over SKIPPED.
+      Older devices cannot overwrite a newer receipt. Only terminal receipts are accepted.
+      Identity comes solely from the bearer token subject; no user identifier is accepted.
+      This resource never creates a profile and does not change profile ensure semantics.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '../openapi.yaml#/components/schemas/SaveOnboardingReceipt' }
+    responses:
+      '200': { description: Persisted merged onboarding receipt, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/OnboardingReceipt' } } } }
+      '400': { description: Invalid onboarding receipt, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Unexpected server error, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/users:
+  get:
+    operationId: searchAdminUsers
+    summary: Search Keycloak and local-profile users for the admin console
+    description: >-
+      Server-side pagination over a merged view, never a fetched page filtered in memory.
+      segment=keycloak (default) reads realm users and can surface Keycloak-only users;
+      segment=local reads local user_profile rows and exposes orphan bindings whose Keycloak
+      user no longer exists (keycloakUserMissing=true).
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: query, in: query, required: false, schema: { type: string } }
+      - { name: segment, in: query, required: false, schema: { type: string, enum: [keycloak, local] } }
+      - { name: idpAlias, in: query, required: false, schema: { type: string } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 0, minimum: 0 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 25, minimum: 1, maximum: 100 } }
+    responses:
+      '200': { description: Paged merged user list, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminUserPage' } } } }
+      '400': { description: Unknown segment, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+  delete:
+    operationId: deleteAdminUsers
+    summary: Delete users by an id list
+    description: >-
+      The request body is a JSON array of Keycloak subs; deleting a single user is simply an
+      array of length one, so there is no separate single-user endpoint and no bulk-delete
+      endpoint. Each id repeats the authoritative delete semantics in its own transaction, so
+      the call allows partial success and reports a per-user errorCode. confirm is required
+      (missing or false rejects the whole request with 400 CONFIRMATION_REQUIRED before
+      anything is deleted). More than 100 ids is rejected with 400 BULK_LIMIT_EXCEEDED.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: confirm, in: query, required: false, schema: { type: boolean, default: false } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { type: array, items: { type: string }, maxItems: 100 }
+    responses:
+      '200': { description: Per-user delete result, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/DeleteUsersResponse' } } } }
+      '400': { description: Missing confirmation or too many ids, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/users/{keycloakUserId}:
+  get:
+    operationId: getAdminUser
+    summary: 读取本地资料与 Keycloak 用户详情
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: keycloakUserId, in: path, required: true, schema: { type: string } }
+    responses:
+      '200': { description: 管理用户详情, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminUserDetail' } } } }
+/api/users/wotb-account:
+  patch:
+    operationId: updateUserWotbAccount
+    summary: 更新当前用户账号绑定
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UpdateWotbAccountRequest' } } } }
+    responses:
+      '200': { description: 当前用户资料, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }
+  delete:
+    operationId: deleteUserWotbAccount
+    summary: 解除当前用户账号绑定
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: 当前用户资料, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }
+/api/users/wotb-account/verify-replay:
+  post:
+    operationId: verifyUserWotbAccountFromReplay
+    summary: 以回放录像者账号验证当前绑定
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/VerifyWotbAccountFromReplayRequest' } } } }
+    responses:
+      '200': { description: 当前用户资料, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }
+/api/users/wotb-account/from-login:
+  put:
+    operationId: syncUserWotbAccountFromLogin
+    summary: 从可信登录信息同步账号绑定
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: 当前用户资料, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UserProfile' } } } }

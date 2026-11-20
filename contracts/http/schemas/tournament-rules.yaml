@@ -1,0 +1,224 @@
+TournamentRankPoints:
+  type: object
+  additionalProperties: false
+  required:
+    - rank
+    - points
+  properties:
+    rank:
+      type: integer
+      minimum: 1
+      maximum: 5
+    points:
+      type: integer
+      minimum: 0
+      maximum: 1000000
+TournamentRuleDay:
+  type: object
+  additionalProperties: false
+  required:
+    - dayNumber
+    - points
+  properties:
+    dayNumber:
+      type: integer
+      minimum: 1
+      maximum: 3
+    points:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRankPoints"
+TournamentDefaultRules:
+  type: object
+  additionalProperties: false
+  required:
+    - version
+    - active
+    - sourceEventId
+    - sourceLabel
+    - updatedAt
+    - rounds
+  properties:
+    version:
+      type: integer
+      format: int64
+      minimum: 0
+    active:
+      type: boolean
+    sourceEventId:
+      description: Null for a directly configured or seeded default, a deleted source event, or an inactive default.
+      type: [integer, "null"]
+      format: int64
+      minimum: 1
+    sourceLabel:
+      description: Stable source identity snapshot; empty when no default is active. Not a localized UI message.
+      type: string
+    updatedAt:
+      type: [string, "null"]
+      format: date-time
+    rounds:
+      description: Full published rule snapshot; empty when inactive. Round and day numbers are unique within their parent.
+      type: array
+      maxItems: 5
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRound"
+TournamentSetDefaultRulesRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - eventId
+    - expectedEventVersion
+    - expectedDefaultVersion
+    - confirm
+  properties:
+    eventId:
+      type: integer
+      format: int64
+      minimum: 1
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDefaultVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    confirm:
+      description: Must be true when replacing an active default.
+      type: boolean
+TournamentDefaultConfigurationRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedDefaultVersion
+    - confirm
+    - rounds
+  properties:
+    expectedDefaultVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    confirm:
+      description: Must be true when replacing an active default.
+      type: boolean
+    rounds:
+      description: Complete rounds numbered consecutively from 1, with a consistent number of days and ranks 1-4 present on each day. Duplicate round, day, or rank numbers are rejected.
+      type: array
+      minItems: 4
+      maxItems: 5
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRound"
+TournamentClearDefaultRulesRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedDefaultVersion
+    - confirm
+  properties:
+    expectedDefaultVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    confirm:
+      description: Must be true to clear the default.
+      type: boolean
+TournamentRuleSource:
+  type: object
+  additionalProperties: false
+  required:
+    - eventVersion
+    - source
+    - defaultVersion
+    - isDefaultSource
+    - defaultOutdated
+  properties:
+    eventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    source:
+      type: string
+      enum:
+        - INHERIT
+        - CUSTOM
+        - FROZEN
+    defaultVersion:
+      description: Current singleton version for INHERIT (including an inactive default), captured version for events frozen from a default, otherwise null.
+      type: [integer, "null"]
+      format: int64
+      minimum: 0
+    isDefaultSource:
+      description: True only when this event is the source of the currently active default.
+      type: boolean
+    defaultOutdated:
+      description: True when the active default source event has saved rules differing from the published snapshot.
+      type: boolean
+TournamentRoundRule:
+  type: object
+  additionalProperties: false
+  required:
+    - roundNumber
+    - rulesVersion
+    - complete
+    - locked
+    - days
+  properties:
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    rulesVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    complete:
+      type: boolean
+    locked:
+      type: boolean
+    days:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRuleDay"
+TournamentConfig:
+  type: object
+  additionalProperties: false
+  required:
+    - event
+    - rounds
+    - clans
+  properties:
+    event:
+      $ref: "../openapi.yaml#/components/schemas/TournamentEvent"
+    rounds:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRoundRule"
+    clans:
+      type: array
+      items:
+        type: string
+TournamentRuleRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedRulesVersion
+    - days
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedRulesVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDefaultVersion:
+      description: Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before copying the complete effective rule set into this event. Null or omission uses the server-authoritative current default.
+      type: [integer, "null"]
+      format: int64
+      minimum: 0
+    days:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRuleDay"
