@@ -1,0 +1,429 @@
+BroadcastServer:
+  type: "string"
+  enum: ["CN", "ASIA", "NA", "EU", "LESTA"]
+BroadcastCategoryType:
+  type: "string"
+  enum: ["POINTS", "QUARTER_FINALS", "SEMI_FINALS"]
+BroadcastFormat:
+  type: "string"
+  enum: ["ROUND_ROBIN", "KNOCKOUT"]
+BroadcastPerspective:
+  type: "string"
+  enum: ["POV", "OBSERVER"]
+BroadcastBracket:
+  type: "string"
+  enum: ["DEFAULT", "WINNERS", "LOSERS"]
+BroadcastSeason:
+  type: "object"
+  additionalProperties: false
+  required: ["id", "server", "year", "nameZh", "nameEn", "nameRu", "startDate", "createdAt", "version", "rootCount", "replayCount"]
+  properties:
+    id:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    server:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastServer"
+    year:
+      type: "integer"
+      minimum: 1
+      maximum: 9999
+    nameZh:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameEn:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameRu:
+      type: ["string", "null"]
+      maxLength: 100
+    startDate:
+      type: ["string", "null"]
+      format: "date"
+    createdAt:
+      type: "string"
+      format: "date-time"
+    version:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    rootCount:
+      type: "integer"
+      minimum: 0
+      maximum: 2147483647
+    replayCount:
+      type: "integer"
+      minimum: 0
+      maximum: 2147483647
+BroadcastCategory:
+  type: "object"
+  additionalProperties: false
+  required: ["id", "seasonId", "type"]
+  properties:
+    id:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    seasonId:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    type:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastCategoryType"
+BroadcastReplay:
+  type: "object"
+  additionalProperties: false
+  required: ["id", "nodeId", "title", "url", "matchDate", "dayNumber", "groupNumber", "bracket", "teams", "perspective", "coverId"]
+  properties:
+    id:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    nodeId:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    title:
+      type: "string"
+      minLength: 1
+      maxLength: 200
+    url:
+      type: "string"
+      minLength: 1
+      maxLength: 2048
+      pattern: "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+    matchDate:
+      type: "string"
+      format: "date"
+    dayNumber:
+      type: "integer"
+      minimum: 1
+      maximum: 2147483647
+    groupNumber:
+      type: ["integer", "null"]
+      minimum: 1
+      maximum: 2147483647
+    bracket:
+      anyOf:
+        -
+          $ref: "../openapi.yaml#/components/schemas/BroadcastBracket"
+        -
+          type: "null"
+    teams:
+      type: "array"
+      minItems: 2
+      maxItems: 4
+      items:
+        type: "string"
+        minLength: 1
+        maxLength: 100
+    perspective:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastPerspective"
+    coverId:
+      type: ["string", "null"]
+      format: "uuid"
+BroadcastNode:
+  type: "object"
+  additionalProperties: false
+  required: ["id", "categoryId", "roundNumber", "format", "replays"]
+  properties:
+    id:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    categoryId:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    roundNumber:
+      type: ["integer", "null"]
+      minimum: 1
+      maximum: 5
+    format:
+      anyOf:
+        -
+          $ref: "../openapi.yaml#/components/schemas/BroadcastFormat"
+        -
+          type: "null"
+    replays:
+      type: "array"
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastReplay"
+BroadcastIndex:
+  type: "object"
+  additionalProperties: false
+  required: ["servers", "seasons", "coverUploadAvailable"]
+  properties:
+    servers:
+      type: "array"
+      minItems: 5
+      maxItems: 5
+      uniqueItems: true
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastServer"
+    seasons:
+      type: "array"
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastSeason"
+    coverUploadAvailable:
+      type: "boolean"
+BroadcastSeasonView:
+  type: "object"
+  additionalProperties: false
+  required: ["season", "categories", "coverUploadAvailable"]
+  properties:
+    season:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastSeason"
+    categories:
+      type: "array"
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastCategory"
+    coverUploadAvailable:
+      type: "boolean"
+BroadcastTimeZone:
+  type: string
+  enum:
+    - Asia/Shanghai
+    - America/Los_Angeles
+    - Europe/Berlin
+    - Europe/Moscow
+BroadcastReplayStart:
+  type: object
+  additionalProperties: false
+  required:
+    - replayId
+    - startsAt
+  properties:
+    replayId:
+      type: integer
+      minimum: 1
+      maximum: 9007199254740991
+    startsAt:
+      type: string
+      format: date-time
+BroadcastSeasonContents:
+  type: object
+  additionalProperties: false
+  required:
+    - season
+    - categories
+    - nodes
+    - defaultTimeZone
+    - replayStarts
+    - coverUploadAvailable
+  properties:
+    season:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastSeason"
+    categories:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastCategory"
+    coverUploadAvailable:
+      type: boolean
+    nodes:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastNode"
+    defaultTimeZone:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastTimeZone"
+    replayStarts:
+      type: array
+      description: Only replays with a known start instant are included.
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastReplayStart"
+BroadcastTimedCategoryView:
+  type: object
+  additionalProperties: false
+  required:
+    - data
+    - defaultTimeZone
+    - replayStarts
+  properties:
+    data:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastCategoryView"
+    defaultTimeZone:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastTimeZone"
+    replayStarts:
+      type: array
+      description: Only replays with a known start instant are included.
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastReplayStart"
+BroadcastTimedReplaySave:
+  type: object
+  additionalProperties: false
+  required: [replay, startsAt]
+  properties:
+    replay:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastReplaySave"
+    startsAt:
+      type: [string, 'null']
+      format: date-time
+      description: Explicit null clears the time. When present, its date in the server tournament timezone must equal replay.matchDate.
+BroadcastCategoryView:
+  type: "object"
+  additionalProperties: false
+  required: ["season", "category", "nodes", "coverUploadAvailable"]
+  properties:
+    season:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastSeason"
+    category:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastCategory"
+    nodes:
+      type: "array"
+      items:
+        $ref: "../openapi.yaml#/components/schemas/BroadcastNode"
+    coverUploadAvailable:
+      type: "boolean"
+BroadcastDeletionPreview:
+  type: "object"
+  additionalProperties: false
+  required: ["seasonId", "expectedVersion", "rootCount", "replayCount"]
+  properties:
+    seasonId:
+      type: "integer"
+      minimum: 1
+      maximum: 9007199254740991
+    expectedVersion:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    rootCount:
+      type: "integer"
+      minimum: 0
+      maximum: 2147483647
+    replayCount:
+      type: "integer"
+      minimum: 0
+      maximum: 2147483647
+BroadcastSeasonCreate:
+  type: "object"
+  additionalProperties: false
+  required: ["server", "year", "nameZh", "nameEn", "startDate"]
+  properties:
+    server:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastServer"
+    year:
+      type: "integer"
+      minimum: 1
+      maximum: 9999
+    nameZh:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameEn:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameRu:
+      type: ["string", "null"]
+      maxLength: 100
+    startDate:
+      type: ["string", "null"]
+      format: "date"
+BroadcastSeasonUpdate:
+  type: "object"
+  additionalProperties: false
+  required: ["expectedVersion", "year", "nameZh", "nameEn", "startDate"]
+  properties:
+    expectedVersion:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    year:
+      type: "integer"
+      minimum: 1
+      maximum: 9999
+    nameZh:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameEn:
+      type: "string"
+      minLength: 1
+      maxLength: 100
+    nameRu:
+      type: ["string", "null"]
+      maxLength: 100
+    startDate:
+      type: ["string", "null"]
+      format: "date"
+BroadcastCategoryCreate:
+  type: "object"
+  additionalProperties: false
+  required: ["expectedVersion", "type"]
+  properties:
+    expectedVersion:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    type:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastCategoryType"
+BroadcastNodeCreate:
+  type: "object"
+  additionalProperties: false
+  required: ["expectedVersion", "roundNumber", "format"]
+  properties:
+    expectedVersion:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    roundNumber:
+      type: ["integer", "null"]
+      minimum: 1
+      maximum: 5
+    format:
+      anyOf:
+        -
+          $ref: "../openapi.yaml#/components/schemas/BroadcastFormat"
+        -
+          type: "null"
+BroadcastReplaySave:
+  type: "object"
+  additionalProperties: false
+  required: ["expectedVersion", "title", "url", "matchDate", "dayNumber", "groupNumber", "bracket", "teams", "perspective", "coverAction"]
+  properties:
+    expectedVersion:
+      type: "integer"
+      minimum: 0
+      maximum: 9007199254740991
+    title:
+      type: "string"
+      minLength: 1
+      maxLength: 200
+    url:
+      type: "string"
+      minLength: 1
+      maxLength: 2048
+      pattern: "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+    matchDate:
+      type: "string"
+      format: "date"
+    dayNumber:
+      type: "integer"
+      minimum: 1
+      maximum: 2147483647
+    groupNumber:
+      type: ["integer", "null"]
+      minimum: 1
+      maximum: 2147483647
+    bracket:
+      anyOf:
+        -
+          $ref: "../openapi.yaml#/components/schemas/BroadcastBracket"
+        -
+          type: "null"
+    teams:
+      type: "array"
+      minItems: 2
+      maxItems: 4
+      items:
+        type: "string"
+        minLength: 1
+        maxLength: 100
+    perspective:
+      $ref: "../openapi.yaml#/components/schemas/BroadcastPerspective"
+    coverAction:
+      type: "string"
+      enum: ["KEEP", "REMOVE", "REPLACE"]

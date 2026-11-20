@@ -1,0 +1,199 @@
+/api/tournament-broadcasts:
+  get:
+    operationId: "getBroadcastIndex"
+    summary: "get Broadcast Index"
+    parameters:
+      -
+        name: "server"
+        in: "query"
+        required: false
+        schema:
+          $ref: "../openapi.yaml#/components/schemas/BroadcastServer"
+    responses:
+      "200":
+        description: "Public broadcast directory data"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/BroadcastIndex"
+      "400":
+        description: "Invalid input"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: "Not found"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: "The season changed or the root already exists"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+"/api/tournament-broadcasts/seasons/{seasonId}":
+  get:
+    operationId: "getBroadcastSeason"
+    summary: "get Broadcast Season"
+    parameters:
+      -
+        name: "seasonId"
+        in: "path"
+        required: true
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 9007199254740991
+    responses:
+      "200":
+        description: "Public broadcast directory data"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/BroadcastSeasonView"
+      "400":
+        description: "Invalid input"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: "Not found"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: "The season changed or the root already exists"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+"/api/tournament-broadcasts/categories/{categoryId}":
+  get:
+    operationId: "getBroadcastCategory"
+    summary: "get Broadcast Category"
+    parameters:
+      -
+        name: "categoryId"
+        in: "path"
+        required: true
+        schema:
+          type: "integer"
+          minimum: 1
+          maximum: 9007199254740991
+    responses:
+      "200":
+        description: "Public broadcast directory data"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/BroadcastTimedCategoryView"
+      "400":
+        description: "Invalid input"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: "Not found"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: "The season changed or the root already exists"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+"/api/tournament-broadcasts/covers/{coverId}":
+  get:
+    operationId: "getBroadcastCover"
+    summary: "Read a cover still referenced by a public broadcast"
+    parameters:
+      -
+        name: "coverId"
+        in: "path"
+        required: true
+        schema:
+          type: "string"
+          format: "uuid"
+    responses:
+      "200":
+        description: "Validated image"
+        headers:
+          ETag:
+            schema:
+              type: "string"
+          X-Content-Type-Options:
+            schema:
+              type: "string"
+              enum: ["nosniff"]
+        content:
+          image/png:
+            schema:
+              type: "string"
+              format: "binary"
+          image/jpeg:
+            schema:
+              type: "string"
+              format: "binary"
+      "404":
+        description: "Not found or no longer referenced"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "502":
+        description: "Cover storage request failed"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "503":
+        description: "Cover storage is not configured"
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/tournament-broadcasts/seasons/{seasonId}/contents:
+  get:
+    operationId: getBroadcastSeasonContents
+    summary: Read all broadcast categories and roots in one tournament snapshot
+    parameters:
+      - name: seasonId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    responses:
+      "200":
+        description: Public broadcast directory data
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/BroadcastSeasonContents"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: The season changed or the root already exists
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"

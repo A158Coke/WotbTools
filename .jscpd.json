@@ -1,0 +1,43 @@
+{
+  "path": [
+    "java",
+    "android/app/src/main",
+    "android/app/src/test",
+    "android/app/src/androidTest",
+    "frontend/src",
+    "frontend/scripts",
+    "common",
+    "scripts",
+    "deploy"
+  ],
+  "format": [
+    "java",
+    "kotlin",
+    "javascript",
+    "typescript",
+    "vue",
+    "python"
+  ],
+  "minLines": 5,
+  "minTokens": 50,
+  "mode": "mild",
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/target/**",
+    "**/vendor/**",
+    "**/generated/**",
+    "**/generated-sources/**",
+    "**/*.min.js",
+    "**/*.bundle.js",
+    "**/*.map"
+  ],
+  "reporters": [
+    "json"
+  ],
+  "output": "../tmp/jscpd",
+  "reportName": "review-with-docs",
+  "failOnEmpty": true,
+  "absolute": true
+}
