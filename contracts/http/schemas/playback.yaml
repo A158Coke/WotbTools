@@ -1,0 +1,288 @@
+PlaybackCapability:
+  type: string
+  enum: [FULL, PARTIAL]
+PlaybackConfidence:
+  type: string
+  enum: [HIGH, MEDIUM, LOW, UNKNOWN]
+PositionKnowledge:
+  type: string
+  enum: [OBSERVED, LAST_KNOWN]
+OrientationKnowledge:
+  type: string
+  enum: [CURRENT, LAST_KNOWN]
+HealthKnowledge:
+  type: string
+  enum: [CURRENT, LAST_KNOWN]
+PlaybackLifeState:
+  type: string
+  enum: [ALIVE, DESTROYED]
+BattlePlaybackDataset:
+  type: object
+  additionalProperties: false
+  required:
+    - durationSec
+    - mapCode
+    - friendlyTeam
+    - recorderAccountId
+    - vehicles
+    - events
+    - pointsSamples
+    - limitations
+    - capability
+    - arenaBonusType
+  properties:
+    durationSec:
+      type: number
+      minimum: 0
+    mapCode:
+      type: [string, 'null']
+    friendlyTeam:
+      type: [integer, 'null']
+      enum: [1, 2, null]
+    recorderAccountId:
+      type: [integer, 'null']
+    vehicles:
+      type: array
+      items:
+        $ref: '../openapi.yaml#/components/schemas/VehiclePlaybackTrack'
+    events:
+      type: array
+      items:
+        $ref: '../openapi.yaml#/components/schemas/BattleEvent'
+    pointsSamples:
+      type: array
+      items:
+        $ref: '../openapi.yaml#/components/schemas/PointsSample'
+    # Additive, backward-compatible wire field (PR #229 rolling deployment):
+    # not required — the previous production contract omits it, and the frontend
+    # contract boundary normalizes a missing value to [] so older responses still
+    # validate. Newer producers MUST still emit baseStates: [] or real transitions.
+    assaultObjectivePresent:
+      type: boolean
+      description: Proven single-base objective presence, independent of capture progress. Requires the objective family to emit fields beyond the bare initialization pair (1=1,2=1 + 1=2,2=1), which ordinary battles also broadcast. Missing on older artifacts means unknown (no static Assault objective rendering). Not derived from arenaBonusType.
+    baseStates:
+      type: array
+      items:
+        $ref: '../openapi.yaml#/components/schemas/BaseStateTransition'
+    limitations:
+      type: array
+      items: { type: string }
+    capability:
+      $ref: '../openapi.yaml#/components/schemas/PlaybackCapability'
+    arenaBonusType:
+      type: [integer, 'null']
+VehiclePlaybackTrack:
+  type: object
+  additionalProperties: false
+  required: [accountId, playerName, tankId, tankName, tankClass, tankTier, team, friendly, loadout, positionSegments, orientationSegments, healthTransitions, lifeTransitions, damageLosses, consumableTransitions, moduleCrewTransitions]
+  properties:
+    accountId: { type: integer }
+    playerName: { type: string }
+    tankId: { type: integer }
+    tankName: { type: string }
+    tankClass: { type: string }
+    tankTier: { type: [integer, 'null'] }
+    team: { type: integer }
+    friendly: { type: [boolean, 'null'] }
+    loadout:
+      anyOf:
+        - $ref: '../openapi.yaml#/components/schemas/VehicleBattleLoadout'
+        - type: 'null'
+    positionSegments:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/PositionSegment' }
+    orientationSegments:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/OrientationSegment' }
+    healthTransitions:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/HealthTransition' }
+    lifeTransitions:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/LifeTransition' }
+    damageLosses:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/DamageLoss' }
+    damageDealtSamples:
+      description: Optional recorded cumulative damage broadcasts. Absent in older datasets and on players without this evidence; never populated from final settlement totals.
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/DamageDealtSample' }
+    consumableTransitions:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/ConsumableTransition' }
+    moduleCrewTransitions:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/ModuleCrewTransition' }
+DamageDealtSample:
+  type: object
+  additionalProperties: false
+  required: [timeSec, total]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    total: { type: integer, minimum: 0 }
+VehicleBattleLoadout:
+  type: object
+  additionalProperties: false
+  required: [replayVersion, consumables, consumableWireCodes, provisions, provisionWireCodes, equipmentIds, confidence]
+  properties:
+    replayVersion: { type: [string, 'null'] }
+    consumables:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: { type: [string, 'null'] }
+    consumableWireCodes:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: { type: [integer, 'null'] }
+    provisions:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: { type: [string, 'null'] }
+    provisionWireCodes:
+      type: array
+      minItems: 3
+      maxItems: 3
+      items: { type: [integer, 'null'] }
+    equipmentIds:
+      type: array
+      minItems: 9
+      maxItems: 9
+      items: { type: [integer, 'null'] }
+    confidence: { $ref: '../openapi.yaml#/components/schemas/PlaybackConfidence' }
+PositionSegment:
+  type: object
+  additionalProperties: false
+  required: [startSec, endSec, knowledge, interpolationAllowed, samples]
+  properties:
+    startSec: { type: number, minimum: 0 }
+    endSec: { type: number, minimum: 0 }
+    knowledge: { $ref: '../openapi.yaml#/components/schemas/PositionKnowledge' }
+    interpolationAllowed: { type: boolean }
+    samples:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/PositionSample' }
+PositionSample:
+  type: object
+  additionalProperties: false
+  required: [timeSec, x, y]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    x: { type: number }
+    y: { type: number }
+OrientationSegment:
+  type: object
+  additionalProperties: false
+  required: [startSec, endSec, knowledge, samples]
+  properties:
+    startSec: { type: number, minimum: 0 }
+    endSec: { type: number, minimum: 0 }
+    knowledge: { $ref: '../openapi.yaml#/components/schemas/OrientationKnowledge' }
+    samples:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/OrientationSample' }
+OrientationSample:
+  type: object
+  additionalProperties: false
+  required: [timeSec, hullYawDeg, turretRelativeYawDeg]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    hullYawDeg: { type: [number, 'null'] }
+    turretRelativeYawDeg: { type: [number, 'null'] }
+HealthTransition:
+  type: object
+  additionalProperties: false
+  required: [timeSec, currentHp, knowledge, source, displayCapacityHp, relativeFull, confidence]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    currentHp: { type: [integer, 'null'], minimum: 0 }
+    knowledge: { type: [string, 'null'], enum: [CURRENT, LAST_KNOWN, null] }
+    source: { type: [string, 'null'] }
+    displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+    relativeFull: { type: boolean }
+    confidence: { $ref: '../openapi.yaml#/components/schemas/PlaybackConfidence' }
+LifeTransition:
+  type: object
+  additionalProperties: false
+  required: [timeSec, lifeState, destroyedKnownAtSec]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    lifeState: { $ref: '../openapi.yaml#/components/schemas/PlaybackLifeState' }
+    destroyedKnownAtSec: { type: [number, 'null'], minimum: 0 }
+ConsumableTransition:
+  type: object
+  additionalProperties: false
+  required: [timeSec, consumableSlot, logicalItemId, wireCode, state, invalidation, confidence]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    consumableSlot: { type: [integer, 'null'], minimum: 0, maximum: 2 }
+    logicalItemId: { type: [string, 'null'] }
+    wireCode: { type: [integer, 'null'] }
+    state: { type: string }
+    durationSec: { type: [number, 'null'], minimum: 0 }
+    endsAt: { type: [number, 'null'], minimum: 0 }
+    everActivated: { type: boolean }
+    invalidation: { type: boolean }
+    confidence: { $ref: '../openapi.yaml#/components/schemas/PlaybackConfidence' }
+ModuleCrewTransition:
+  type: object
+  additionalProperties: false
+  required: [timeSec, component, state, recorderVisible, confidence]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    component: { type: string }
+    state: { type: [string, 'null'] }
+    recorderVisible: { type: boolean }
+    confidence: { $ref: '../openapi.yaml#/components/schemas/PlaybackConfidence' }
+DamageLoss:
+  type: object
+  additionalProperties: false
+  required: [fromSec, toSec, hpLoss, attackerAccountId, attackerReliable, damageEventCount, fromHp, toHp, displayCapacityHp, transientAllowed]
+  properties:
+    fromSec: { type: number, minimum: 0 }
+    toSec: { type: number, minimum: 0 }
+    hpLoss: { type: integer, minimum: 0 }
+    attackerAccountId: { type: [integer, 'null'] }
+    attackerReliable: { type: boolean }
+    damageEventCount: { type: integer, minimum: 0 }
+    fromHp: { type: [integer, 'null'], minimum: 0 }
+    toHp: { type: [integer, 'null'], minimum: 0 }
+    displayCapacityHp: { type: [integer, 'null'], minimum: 0 }
+    transientAllowed: { type: boolean }
+BattleEvent:
+  type: object
+  additionalProperties: false
+  required: [type, timeSec, accountId, targetAccountId, observedHpLoss]
+  properties:
+    type: { type: string }
+    timeSec: { type: number, minimum: 0 }
+    accountId: { type: [integer, 'null'] }
+    targetAccountId: { type: [integer, 'null'] }
+    observedHpLoss: { type: [integer, 'null'], minimum: 0 }
+PointsSample:
+  type: object
+  additionalProperties: false
+  required: [timeSec, team, points]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    team: { type: integer }
+    points: { type: integer, minimum: 0 }
+BaseStateTransition:
+  type: object
+  additionalProperties: false
+  required: [timeSec, baseId, ownerTeam, capturingTeam, captureProgress]
+  properties:
+    timeSec: { type: number, minimum: 0 }
+    baseId:
+      type: string
+      enum: [A, B, C, D, BASE]
+      description: Supremacy uses A-D; Assault single-base uses BASE.
+    ownerTeam: { type: [integer, 'null'], enum: [1, 2, null] }
+    capturingTeam: { type: [integer, 'null'], enum: [1, 2, null] }
+    captureProgress:
+      type: [integer, 'null']
+      minimum: 0
+      maximum: 100
+      description: Supremacy canonical states remain 0-99; Assault BASE may reach protocol value 100.

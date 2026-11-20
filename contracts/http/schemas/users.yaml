@@ -1,0 +1,126 @@
+OnboardingReceipt:
+  type: object
+  additionalProperties: false
+  required: [coreEpoch, disposition]
+  properties:
+    coreEpoch: { type: integer, format: int32, minimum: 0, maximum: 2147483647 }
+    disposition: { type: string, enum: [NONE, COMPLETED, SKIPPED] }
+SaveOnboardingReceipt:
+  type: object
+  additionalProperties: false
+  required: [coreEpoch, disposition]
+  properties:
+    coreEpoch: { type: integer, format: int32, minimum: 1, maximum: 2147483647 }
+    disposition: { type: string, enum: [COMPLETED, SKIPPED] }
+UserProfile:
+  type: object
+  additionalProperties: false
+  required: [id, keycloakUserId, username, wotbServer, wotbAccountSource]
+  properties:
+    id: { type: integer, format: int64 }
+    keycloakUserId: { type: string }
+    displayName: { type: [string, 'null'] }
+    username: { type: string }
+    wotbAccountId: { type: [integer, 'null'], format: int64 }
+    wotbNickname: { type: [string, 'null'] }
+    wotbServer: { type: string, enum: [CN, ASIA, EU, NA] }
+    wotbAccountSource: { type: string, enum: [MANUAL, WARGAMING] }
+    wotbAccountVerifiedAt: { type: [string, 'null'], format: date-time }
+UpdateWotbAccountRequest:
+  type: object
+  additionalProperties: false
+  properties:
+    wotbAccountId: { type: [integer, 'null'], format: int64 }
+    wotbNickname: { type: [string, 'null'] }
+    wotbServer: { type: [string, 'null'] }
+VerifyWotbAccountFromReplayRequest:
+  type: object
+  additionalProperties: false
+  required: [recorderAccountId]
+  properties:
+    recorderAccountId: { type: integer, format: int64 }
+AdminUserDetail:
+  type: object
+  additionalProperties: false
+  required: [keycloakUserId, profile, keycloak, warnings]
+  properties:
+    keycloakUserId: { type: string }
+    profile: { anyOf: [{ $ref: '../openapi.yaml#/components/schemas/AdminUserDetailProfile' }, { type: 'null' }] }
+    keycloak: { anyOf: [{ $ref: '../openapi.yaml#/components/schemas/AdminUserDetailKeycloak' }, { type: 'null' }] }
+    warnings: { type: array, items: { type: string } }
+AdminUserDetailProfile:
+  type: object
+  additionalProperties: false
+  required: [id, displayName, wotbNickname, wotbServer, createdAt, updatedAt, wotbAccountId]
+  properties:
+    id: { type: [integer, 'null'], format: int64 }
+    displayName: { type: [string, 'null'] }
+    wotbNickname: { type: [string, 'null'] }
+    wotbServer: { type: [string, 'null'] }
+    createdAt: { type: [string, 'null'] }
+    updatedAt: { type: [string, 'null'] }
+    wotbAccountId: { type: [integer, 'null'], format: int64 }
+AdminUserDetailKeycloak:
+  type: object
+  additionalProperties: false
+  required: [id, username, email, firstName, lastName, enabled, federatedIdentities]
+  properties:
+    id: { type: [string, 'null'] }
+    username: { type: [string, 'null'] }
+    email: { type: [string, 'null'] }
+    firstName: { type: [string, 'null'] }
+    lastName: { type: [string, 'null'] }
+    enabled: { type: boolean }
+    federatedIdentities: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AdminUserFederatedIdentity' } }
+AdminUserFederatedIdentity:
+  type: object
+  additionalProperties: false
+  required: [identityProvider, userId, userName]
+  properties:
+    identityProvider: { type: [string, 'null'] }
+    userId: { type: [string, 'null'] }
+    userName: { type: [string, 'null'] }
+AdminUserListItem:
+  type: object
+  additionalProperties: false
+  required: [keycloakUserId, hasLocalProfile, keycloakUserMissing]
+  properties:
+    keycloakUserId: { type: string }
+    keycloakUsername: { type: [string, 'null'] }
+    keycloakEmail: { type: [string, 'null'] }
+    keycloakEnabled: { type: [boolean, 'null'] }
+    profileId: { type: [integer, 'null'], format: int64 }
+    displayName: { type: [string, 'null'] }
+    wotbAccountId: { type: [integer, 'null'], format: int64 }
+    wotbNickname: { type: [string, 'null'] }
+    wotbServer: { type: [string, 'null'] }
+    profileCreatedAt: { type: [string, 'null'], format: date-time }
+    hasLocalProfile: { type: boolean }
+    keycloakUserMissing: { type: boolean }
+AdminUserPage:
+  type: object
+  additionalProperties: false
+  required: [items, page, size, totalItems, totalPages]
+  properties:
+    items: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AdminUserListItem' } }
+    page: { type: integer }
+    size: { type: integer }
+    totalItems: { type: integer, format: int64 }
+    totalPages: { type: integer }
+DeleteUserResult:
+  type: object
+  additionalProperties: false
+  required: [userId, deleted]
+  properties:
+    userId: { type: string }
+    deleted: { type: boolean }
+    errorCode: { type: [string, 'null'] }
+DeleteUsersResponse:
+  type: object
+  additionalProperties: false
+  required: [requested, deleted, failed, results]
+  properties:
+    requested: { type: integer }
+    deleted: { type: integer }
+    failed: { type: integer }
+    results: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/DeleteUserResult' } }

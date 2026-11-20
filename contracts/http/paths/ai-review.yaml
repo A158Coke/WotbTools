@@ -1,0 +1,154 @@
+/api/ai/tournament-groups/recognize:
+  post:
+    operationId: recognizeTournamentGroup
+    summary: recognizeTournamentGroup
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentRecognitionResult"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "413":
+        description: Image size limit exceeded
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "415":
+        description: PNG or JPEG image required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "429":
+        description: Recognition rate limit exceeded
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "500":
+        description: Recognition processing failed
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "502":
+        description: Provider unavailable or invalid response
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "503":
+        description: Recognition not configured or capacity exhausted
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "504":
+        description: Provider timeout
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - image
+              - permit
+            properties:
+              image:
+                type: string
+                format: binary
+              permit:
+                type: string
+/api/ai/reviews:
+  post:
+    operationId: createAiReview
+    summary: Stream an AI replay review
+    security: [{ bearerAuth: [] }]
+    description: >-
+      The request carries the client canonical AI projection (the server has no replay parser).
+      Clients SHOULD send the JSON body with `Content-Encoding: gzip`; the server inflates it with a
+      16 MiB decompressed-size limit (exceeding the transport or the inflated limit → 413).
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '../openapi.yaml#/components/schemas/AiReviewRequest' }
+    responses:
+      '200':
+        description: SSE stream. Stage events have empty payloads; call2_token carries delta; done carries the review result; error carries a stable error code.
+        content:
+          text/event-stream:
+            schema: { type: string }
+        x-sse-events:
+          call1_start: { $ref: '../openapi.yaml#/components/schemas/AiReviewStageEventPayload' }
+          call1_done: { $ref: '../openapi.yaml#/components/schemas/AiReviewStageEventPayload' }
+          evidence_done: { $ref: '../openapi.yaml#/components/schemas/AiReviewStageEventPayload' }
+          call2_token: { $ref: '../openapi.yaml#/components/schemas/AiReviewTokenEventPayload' }
+          done: { $ref: '../openapi.yaml#/components/schemas/AiReviewDonePayload' }
+          error: { $ref: '../openapi.yaml#/components/schemas/AiReviewErrorEventPayload' }
+      '400':
+        description: Invalid request envelope or unsupported schema/locale
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: AI review role required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '409': { description: Duplicate correlation ID, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '413': { description: Request (transport or gzip-inflated) exceeds the 16 MiB limit, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '422': { description: Unsupported battle category, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '503': { description: Bounded AI worker queue is full, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/ai/reviews/{correlationId}/cancel:
+  post:
+    operationId: cancelAiReview
+    summary: Cancel an in-flight AI review
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: correlationId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    responses:
+      '204': { description: Cancellation accepted or no active review remains }
+      '400': { description: Invalid correlation ID, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: AI review role required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
