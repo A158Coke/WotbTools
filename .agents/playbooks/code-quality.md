@@ -49,6 +49,7 @@
 - URL 是否走配置/环境变量，而非硬编码字符串
 - 文案是否走 i18n（`$t()` / locale JSON），而非硬编码中英文
 - 平衡：重复 ≥ 3 次的字符串/数字提取常量；重复 1 次且含义清晰保持内联，不为单处 magic number 或单引用字符串创建常量（除非用于文档化含义或 i18n）；不为"可能以后会改"引入配置抽象——等到真的要改时再提取
+- jscpd 的 exact/near-miss 候选只作复用与 SSOT 证据；打开双方源码判断领域语义、协议/测试必要重复和抽取耦合成本。只有证据确认新增第二 SSOT、行为漂移风险或既有架构契约违例时，才按实际影响升级；命中本身不构成 Bug 或 FAIL。
 
 #### 7. 过度装饰
 - 为单一路径 Controller 使用 `@RequestMapping("/api/x")` + class-level + method-level → 能用 `@GetMapping`/`@PostMapping` 直接解决的不要拆
