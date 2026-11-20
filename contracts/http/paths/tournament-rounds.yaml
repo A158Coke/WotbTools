@@ -1,0 +1,357 @@
+/api/admin/tournaments/{eventId}/rounds/{roundNumber}:
+  put:
+    operationId: saveTournamentRoundRules
+    summary: saveTournamentRoundRules
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentConfig"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentRuleRequest"
+/api/admin/tournaments/{eventId}/rounds/{roundNumber}/days/{dayNumber}:
+  get:
+    operationId: getTournamentDay
+    summary: getTournamentDay
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: dayNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: includeCanonicalStandings
+        in: query
+        required: false
+        description: Return pre-clear daily facts for authenticated canonical CSV export.
+        schema:
+          type: boolean
+          default: false
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDayView"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+/api/admin/tournaments/{eventId}/rounds/{roundNumber}/days/{dayNumber}/expected-groups:
+  put:
+    operationId: setTournamentExpectedGroups
+    summary: setTournamentExpectedGroups
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: dayNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDayView"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentExpectedGroupsRequest"
+/api/admin/tournaments/{eventId}/rounds/{roundNumber}/days/{dayNumber}/recognition-permits:
+  post:
+    operationId: createTournamentRecognitionPermit
+    summary: createTournamentRecognitionPermit
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: dayNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentRecognitionPermit"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - image
+              - expectedEventVersion
+              - expectedDayVersion
+              - expectedRulesVersion
+            properties:
+              image:
+                type: string
+                format: binary
+              expectedEventVersion:
+                type: integer
+                format: int64
+                minimum: 0
+              expectedDayVersion:
+                type: integer
+                format: int64
+                minimum: 0
+              expectedRulesVersion:
+                type: integer
+                format: int64
+                minimum: 0
+/api/admin/tournaments/{eventId}/rounds/{roundNumber}/days/{dayNumber}/preview:
+  post:
+    operationId: previewTournamentDay
+    summary: previewTournamentDay
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: dayNumber
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDayView"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentDraftRequest"

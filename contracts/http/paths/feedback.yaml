@@ -1,0 +1,120 @@
+/api/ai-review-feedback:
+  post:
+    operationId: createAiReviewFeedback
+    summary: Submit feedback on a final AI review
+    description: JSON request bodies are limited to 3 MiB; larger or malformed requests return 400.
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/CreateAiReviewFeedbackRequest' } } } }
+    responses:
+      '201': { description: Created, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/CreateAiReviewFeedbackResponse' } } } }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/ai-review-feedback:
+  get:
+    operationId: listAdminAiReviewFeedback
+    summary: List AI review feedback for site administrators
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: reason, in: query, schema: { $ref: '../openapi.yaml#/components/schemas/AiReviewFeedbackReason' } }
+    responses:
+      '200': { description: Feedback page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminAiReviewFeedbackPage' } } } }
+      '400': { description: Invalid filter or page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/ai-review-feedback/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+  get:
+    operationId: getAdminAiReviewFeedback
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: Feedback detail, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminAiReviewFeedbackDetail' } } } }
+      '400': { description: Invalid id, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+  delete:
+    operationId: deleteAdminAiReviewFeedback
+    security: [{ bearerAuth: [] }]
+    responses:
+      '204': { description: Deleted }
+      '400': { description: Invalid id, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/ai-review-feedback/{id}/status:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+  patch:
+    operationId: updateAdminAiReviewFeedbackStatus
+    summary: Update the status of an AI review feedback record
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UpdateFeedbackStatusRequest' } } } }
+    responses:
+      '204': { description: Status updated }
+      '400': { description: Invalid id or status, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/site-feedback:
+  post:
+    operationId: createSiteFeedback
+    summary: Submit site feedback
+    description: JSON request bodies are limited to 64 KiB; larger or malformed requests return 400.
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/CreateSiteFeedbackRequest' } } } }
+    responses:
+      '201': { description: Created, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/CreateSiteFeedbackResponse' } } } }
+      '400': { description: Invalid request, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/site-feedback:
+  get:
+    operationId: listAdminSiteFeedback
+    summary: List site feedback for site administrators
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: reason, in: query, schema: { $ref: '../openapi.yaml#/components/schemas/SiteFeedbackReason' } }
+    responses:
+      '200': { description: Feedback page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminSiteFeedbackPage' } } } }
+      '400': { description: Invalid filter or page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/site-feedback/{id}:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+  get:
+    operationId: getAdminSiteFeedback
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: Feedback detail, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/AdminSiteFeedbackDetail' } } } }
+      '400': { description: Invalid id, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+  delete:
+    operationId: deleteAdminSiteFeedback
+    security: [{ bearerAuth: [] }]
+    responses:
+      '204': { description: Deleted }
+      '400': { description: Invalid id, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/site-feedback/{id}/status:
+  parameters:
+    - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]*$' } }
+  patch:
+    operationId: updateAdminSiteFeedbackStatus
+    summary: Update the status of a site feedback record
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/UpdateFeedbackStatusRequest' } } } }
+    responses:
+      '204': { description: Status updated }
+      '400': { description: Invalid id or status, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Administrator required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Feedback not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }

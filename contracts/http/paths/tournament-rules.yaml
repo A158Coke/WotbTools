@@ -1,0 +1,208 @@
+/api/admin/tournaments/rules/default:
+  get:
+    operationId: getTournamentDefaultRules
+    summary: Read the global default rule snapshot
+    description: Requires the tournament-admin role. The singleton version remains available when no default is active.
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: Current global default state
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRules"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+  put:
+    operationId: setTournamentDefaultRules
+    summary: Publish a saved event rule set as the global default
+    description: Requires the tournament-admin role. Atomically replaces the full snapshot after checking both versions. Replacing an active default requires confirm=true. Ordinary event edits do not change the published snapshot.
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentSetDefaultRulesRequest"
+    responses:
+      "200":
+        description: Updated global default state
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRules"
+      "400":
+        description: INVALID_ARGUMENT
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Source event not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+  delete:
+    operationId: clearTournamentDefaultRules
+    summary: Clear the global default while retaining its versioned singleton
+    description: Requires the tournament-admin role and confirm=true. Custom and frozen event rules remain unchanged.
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentClearDefaultRulesRequest"
+    responses:
+      "200":
+        description: Inactive global default state with an incremented version
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRules"
+      "400":
+        description: INVALID_ARGUMENT
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: TOURNAMENT_VERSION_CONFLICT
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/admin/tournaments/rules/default/configuration:
+  put:
+    operationId: saveTournamentDefaultConfiguration
+    summary: Save a complete global default rule set without a source event
+    description: Requires the tournament-admin role. Atomically replaces the full default snapshot after checking expectedDefaultVersion; confirm=true is required when replacing an active default. Rounds must cover 1 through 4 or 5, with matching two or three days per round and ranks 1 through 4 required on every day. Rank 5 is optional. Frozen and custom event rules remain unchanged.
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentDefaultConfigurationRequest"
+    responses:
+      "200":
+        description: Updated global default snapshot with no source event
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDefaultRules"
+      "400":
+        description: INVALID_ARGUMENT
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/admin/tournaments/{eventId}/rule-source:
+  get:
+    operationId: getTournamentRuleSource
+    summary: Read the event rule source without freezing inherited rules
+    description: Requires the tournament-admin role. Existing event/config/day response shapes remain unchanged.
+    security:
+      - bearerAuth: []
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+    responses:
+      "200":
+        description: Current event rule source
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentRuleSource"
+      "400":
+        description: INVALID_ARGUMENT
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Event not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"

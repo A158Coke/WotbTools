@@ -1,0 +1,161 @@
+TournamentDayPoints:
+  type: object
+  additionalProperties: false
+  required:
+    - dayNumber
+    - points
+  properties:
+    dayNumber:
+      type: integer
+      minimum: 1
+      maximum: 3
+    points:
+      type:
+        - integer
+        - "null"
+      format: int64
+      minimum: 0
+TournamentRoundPoints:
+  type: object
+  additionalProperties: false
+  required:
+    - roundNumber
+    - totalPoints
+    - days
+  properties:
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    totalPoints:
+      type: integer
+      format: int64
+      minimum: 0
+    days:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentDayPoints"
+TournamentStandingRow:
+  type: object
+  additionalProperties: false
+  required:
+    - rank
+    - clanTag
+    - totalPoints
+    - rounds
+  properties:
+    rank:
+      type: integer
+      minimum: 1
+    clanTag:
+      type: string
+    totalPoints:
+      type: integer
+      format: int64
+      minimum: 0
+    rounds:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRoundPoints"
+TournamentStandingDay:
+  type: object
+  additionalProperties: false
+  required:
+    - roundNumber
+    - dayNumber
+    - label
+    - published
+  properties:
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    dayNumber:
+      type: integer
+      minimum: 1
+      maximum: 3
+    label:
+      type: string
+    published:
+      type: boolean
+TournamentStandings:
+  type: object
+  additionalProperties: false
+  required:
+    - event
+    - days
+    - rows
+  properties:
+    event:
+      $ref: "../openapi.yaml#/components/schemas/TournamentEvent"
+    days:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentStandingDay"
+    rows:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentStandingRow"
+TournamentDayView:
+  type: object
+  additionalProperties: false
+  required:
+    - eventId
+    - roundNumber
+    - dayNumber
+    - eventVersion
+    - rulesVersion
+    - version
+    - status
+    - expectedGroupCount
+    - groups
+    - published
+    - standings
+  properties:
+    eventId:
+      type: integer
+      format: int64
+      minimum: 0
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    dayNumber:
+      type: integer
+      minimum: 1
+      maximum: 3
+    eventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    rulesVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    version:
+      type: integer
+      format: int64
+      minimum: 0
+    status:
+      type: string
+      enum:
+        - EMPTY
+        - DRAFT
+        - FINALIZED
+        - CORRECTION
+    expectedGroupCount:
+      type:
+        - integer
+        - "null"
+    groups:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentGroup"
+    published:
+      type: boolean
+    standings:
+      $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+    canonicalStandings:
+      allOf:
+        - $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+      description: Optional authenticated admin import/export facts before sanctions and clear overlays; absent on older servers.

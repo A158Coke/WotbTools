@@ -1,0 +1,356 @@
+AiReviewRequest:
+  type: object
+  additionalProperties: false
+  required: [locale, correlationId, battle, projection]
+  properties:
+    locale: { type: string, enum: [zh-CN, en-US, ru-RU] }
+    correlationId: { type: string, format: uuid }
+    battle: { $ref: '../openapi.yaml#/components/schemas/AiReviewBattle' }
+    projection: { $ref: '../openapi.yaml#/components/schemas/ClientAiReviewProjection' }
+ClientAiReviewProjection:
+  description: >-
+    WotbTools client canonical AI projection (frontend/src/replay-local/ai). Built from the pinned
+    upstream Agent facets through WotbTools canonical replay facts, never the raw Agent DTO.
+    Clocks are raw replay clocks in seconds; battle-relative time = rawClockSec - clock.battleStartRawClockSec.
+    Only combatant entities appear. Evidence the engine does not provide is listed in unavailableEvidence.
+  type: object
+  additionalProperties: false
+  required: [engine, clock, perspective, participants, observationWindows, positions, turrets, prop3Health, healthEvents, damageNotices, periods, objectives, limitations, unavailableEvidence]
+  properties:
+    engine: { $ref: '../openapi.yaml#/components/schemas/AiProjectionEngine' }
+    clock: { $ref: '../openapi.yaml#/components/schemas/AiProjectionClock' }
+    perspective: { $ref: '../openapi.yaml#/components/schemas/AiProjectionPerspective' }
+    participants: { type: array, maxItems: 64, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionParticipant' } }
+    observationWindows: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionObservationWindow' } }
+    positions: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionSampleTrack' } }
+    turrets: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionSampleTrack' } }
+    prop3Health: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionProp3Health' } }
+    healthEvents: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionHealthEvent' } }
+    damageNotices: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionDamageNotice' } }
+    periods: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiProjectionPeriod' } }
+    objectives: { $ref: '../openapi.yaml#/components/schemas/AiProjectionObjectives' }
+    limitations:
+      description: Capability-affecting limitations; non-empty means the timeline is limited.
+      type: array
+      items: { type: string }
+    unavailableEvidence:
+      description: Evidence classes the engine does not provide; consumers render them as unavailable, never as empty truth.
+      type: array
+      items: { type: string, enum: [PACKET_DECODE_COVERAGE, SHOT_LIFECYCLE, TARGETING, AMMUNITION] }
+AiProjectionEngine:
+  type: object
+  additionalProperties: false
+  required: [agentRelease, agentCommit]
+  properties:
+    agentRelease: { type: string }
+    agentCommit: { type: string }
+AiProjectionClock:
+  type: object
+  additionalProperties: false
+  required: [battleStartRawClockSec, battleDurationSec, estimated, battleEndRawClockSec, streamEndRawClockSec]
+  properties:
+    battleStartRawClockSec: { type: number }
+    battleDurationSec: { type: number }
+    estimated: { type: boolean }
+    battleEndRawClockSec: { type: [number, 'null'] }
+    streamEndRawClockSec: { type: [number, 'null'] }
+AiProjectionPerspective:
+  type: object
+  additionalProperties: false
+  required: [recorderAccountId, perspectiveTeam, recorderEntityIds, winnerTeam]
+  properties:
+    recorderAccountId: { type: [integer, 'null'], format: int64 }
+    perspectiveTeam: { type: [integer, 'null'] }
+    recorderEntityIds: { type: array, items: { type: integer } }
+    winnerTeam: { type: [integer, 'null'] }
+AiProjectionParticipant:
+  type: object
+  additionalProperties: false
+  required: [entityId, accountId, nickname, team, tankId, recorder]
+  properties:
+    entityId: { type: integer }
+    accountId: { type: integer, format: int64 }
+    nickname: { type: string }
+    team: { type: integer, enum: [1, 2] }
+    tankId: { type: integer }
+    recorder: { type: boolean }
+AiProjectionObservationWindow:
+  type: object
+  additionalProperties: false
+  required: [entityId, fromRawClockSec, toRawClockSec, materializationHp]
+  properties:
+    entityId: { type: integer }
+    fromRawClockSec: { type: number }
+    toRawClockSec: { type: [number, 'null'] }
+    materializationHp: { type: [integer, 'null'] }
+AiProjectionSampleTrack:
+  description: >-
+    Raw observations of one entity, flat and clock-ordered. positions: [rawClockSec, x, y, z, hullYawRad] x N
+    (unfiltered type-10 world poses). turrets: [rawClockSec, turretRelativeYawDeg] x N (prop2 coarse yaw).
+  type: object
+  additionalProperties: false
+  required: [entityId, stride, samples]
+  properties:
+    entityId: { type: integer }
+    stride: { type: integer, enum: [2, 5] }
+    samples: { type: array, items: { type: number } }
+AiProjectionProp3Health:
+  type: object
+  additionalProperties: false
+  required: [entityId, rawClockSec, hpRaw]
+  properties:
+    entityId: { type: integer }
+    rawClockSec: { type: number }
+    hpRaw: { type: integer, minimum: 0, maximum: 65535 }
+    hpState:
+      description: >-
+        canonical 层对 hpRaw 的权威分类（HpRawState）。服务端不得重新分类。客户端投影恒发送该字段
+        （v0.4.9 起的 pinned producer 路径）；字段缺省只出现在旧载荷上，此时服务端按 hpRaw 现算
+        （legacy 语义：仅 0/0xFFFD 终态）。
+      type: string
+      enum: [CURRENT_HP, HP_ZERO_TERMINAL, DEATH_TERMINAL_FFFD, DEATH_TERMINAL, UNKNOWN_FFFF, UNKNOWN_OTHER]
+AiProjectionHealthEvent:
+  type: object
+  additionalProperties: false
+  required: [entityId, rawClockSec, hpRaw, sourceEntityId, causeFlag]
+  properties:
+    entityId: { type: integer }
+    rawClockSec: { type: number }
+    hpRaw: { type: integer, minimum: 0, maximum: 65535 }
+    sourceEntityId: { type: integer }
+    causeFlag: { type: integer }
+    hpState:
+      description: >-
+        同 AiProjectionProp3Health.hpState：canonical 权威分类（客户端投影恒发送）；缺省 = 旧载荷
+        （legacy 现算）。
+      type: string
+      enum: [CURRENT_HP, HP_ZERO_TERMINAL, DEATH_TERMINAL_FFFD, DEATH_TERMINAL, UNKNOWN_FFFF, UNKNOWN_OTHER]
+AiProjectionDamageNotice:
+  type: object
+  additionalProperties: false
+  required: [rawClockSec, kind, envelopeEntityId, attackerEntityId, victimEntityId, primaryResult, secondaryResult]
+  properties:
+    rawClockSec: { type: number }
+    kind: { type: string, enum: [HIT, UNDECODED_VARIANT, SHORT_VARIANT] }
+    envelopeEntityId: { type: integer }
+    attackerEntityId: { type: integer }
+    victimEntityId: { type: integer }
+    primaryResult: { type: [integer, 'null'] }
+    secondaryResult: { type: [integer, 'null'] }
+AiProjectionPeriod:
+  type: object
+  additionalProperties: false
+  required: [rawClockSec, period]
+  properties:
+    rawClockSec: { type: number }
+    period: { type: integer }
+AiProjectionObjectives:
+  type: object
+  additionalProperties: false
+  required: [supremacyPoints, supremacyBases, assaultObjectivePresent, assaultBases]
+  properties:
+    supremacyPoints:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [rawClockSec, team, points]
+        properties:
+          rawClockSec: { type: number }
+          team: { type: integer }
+          points: { type: integer }
+    supremacyBases:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [rawClockSec, baseId, ownerTeam, capturingTeam, captureProgress]
+        properties:
+          rawClockSec: { type: number }
+          baseId: { type: string, enum: [A, B, C, D] }
+          ownerTeam: { type: [integer, 'null'] }
+          capturingTeam: { type: [integer, 'null'] }
+          captureProgress: { type: [integer, 'null'] }
+    assaultObjectivePresent: { type: boolean }
+    assaultBases:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [rawClockSec, captureProgress]
+        properties:
+          rawClockSec: { type: number }
+          captureProgress: { type: integer }
+AiReviewBattle:
+  type: object
+  additionalProperties: false
+  required: [players]
+  properties:
+    arenaId: { type: [string, 'null'] }
+    winnerTeam: { type: [integer, 'null'] }
+    arenaBonusType: { type: [integer, 'null'] }
+    version: { type: string }
+    mapName: { type: string }
+    durationS: { type: [number, 'null'] }
+    startTime: { type: [integer, 'null'], format: int64 }
+    settlementStartTime: { type: [integer, 'null'], format: int64 }
+    settlementFinishReasonRaw: { type: [integer, 'null'] }
+    settlementDurationSec: { type: [number, 'null'] }
+    recorder: { type: string }
+    recorderVehicle: { type: string }
+    clientVersion: { type: string }
+    rosterComplete: { type: [boolean, 'null'] }
+    players: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/AiReviewPlayerResult' } }
+AiReviewPlayerResult:
+  type: object
+  additionalProperties: false
+  required: [accountId, team, tankId, nickname, survived]
+  properties:
+    accountId: { type: integer, format: int64 }
+    team: { type: integer }
+    tankId: { type: integer, format: int64 }
+    nShots: { type: integer }
+    nHitsDealt: { type: integer }
+    nPenetrationsDealt: { type: integer }
+    damageDealt: { type: integer }
+    damageAssisted: { type: integer }
+    damageReceived: { type: integer }
+    nHitsReceived: { type: integer }
+    nPenetrationsReceived: { type: integer }
+    nEnemiesDamaged: { type: integer }
+    kills: { type: integer }
+    damageBlocked: { type: integer }
+    victoryPointsEarned: { type: integer }
+    victoryPointsSeized: { type: integer }
+    survived: { type: boolean }
+    xp: { type: integer }
+    credits: { type: integer }
+    nickname: { type: string }
+    clan: { type: string }
+    prebattleGroupId: { type: [integer, 'null'], format: int64 }
+    rank: { type: [integer, 'null'], format: int64 }
+    tankName: { type: string }
+    contribution: { type: [number, 'null'] }
+    kast: { type: [number, 'null'] }
+    impact: { type: [number, 'null'] }
+    observedMaxHp: { type: [integer, 'null'] }
+    entryHpSource: { type: [string, 'null'] }
+    entryHp: { type: [integer, 'null'] }
+    tankTier: { type: [string, integer, 'null'] }
+    tankType: { type: string }
+    tankNation: { type: string }
+    alphaDamage: { type: [string, integer, 'null'] }
+    deathTimeMillis: { type: integer, format: int64 }
+    settlementResultEntityId: { type: integer, format: int64 }
+    settlementLifeTimeSec: { type: number }
+    settlementKillerResultEntityId: { type: [integer, 'null'], format: int64 }
+    settlementDeathReasonRaw: { type: [integer, 'null'] }
+    killerAccountId: { type: [integer, 'null'], format: int64 }
+    survivalTimeSec: { type: number }
+    raw: { type: [object, 'null'], additionalProperties: { type: array, items: {} } }
+AiReviewStageEventPayload:
+  type: object
+  additionalProperties: false
+AiReviewTokenEventPayload:
+  type: object
+  additionalProperties: false
+  required: [delta]
+  properties:
+    delta: { type: string }
+AiReviewErrorEventPayload:
+  type: object
+  additionalProperties: false
+  required: [id, errorCode]
+  properties:
+    id: { type: [string, 'null'] }
+    errorCode: { $ref: '../openapi.yaml#/components/schemas/AiReviewErrorCode' }
+AiReviewErrorCode:
+  type: string
+  enum: [AI_CANCELLED, AI_NOT_CONFIGURED, AI_INVALID_REQUEST, AI_TIMEOUT, AI_UPSTREAM_UNAVAILABLE, AI_AUTHENTICATION_ERROR, AI_RATE_LIMITED, AI_CONTEXT_TOO_LARGE, AI_EMPTY_RESPONSE, AI_RESPONSE_INVALID, AI_REVIEW_SCHEMA_FAILED, AI_REVIEW_GROUNDING_FAILED, AI_TIMELINE_UNUSABLE, AI_PROMPT_MANDATORY_SECTION_TOO_LARGE]
+TeamAiReviewSummary:
+  type: object
+  additionalProperties: false
+  required: [verdict, primaryDiagnosis]
+  properties:
+    verdict: { type: string, minLength: 1, maxLength: 4000 }
+    primaryDiagnosis: { type: string, minLength: 1, maxLength: 4000 }
+TeamAiReviewEpisode:
+  type: object
+  additionalProperties: false
+  required: [id, startSec, endSec, title, analysis, playerKeys]
+  properties:
+    id: { type: string, minLength: 1, maxLength: 64 }
+    startSec: { type: [integer, 'null'], minimum: 0 }
+    endSec: { type: [integer, 'null'], minimum: 0 }
+    title: { type: string, minLength: 1, maxLength: 240 }
+    analysis: { type: string, minLength: 1, maxLength: 8000 }
+    playerKeys:
+      type: array
+      maxItems: 8
+      items: { type: string, minLength: 1, maxLength: 64 }
+TeamAiTrainingSuggestion:
+  type: object
+  additionalProperties: false
+  required: [title, content, episodeId]
+  properties:
+    title: { type: string, minLength: 1, maxLength: 240 }
+    content: { type: string, minLength: 1, maxLength: 6000 }
+    episodeId: { type: [string, 'null'], maxLength: 64 }
+TeamAiReviewFocus:
+  type: object
+  additionalProperties: false
+  required: [playerKey, episodeId, reason]
+  properties:
+    playerKey: { type: string, minLength: 1, maxLength: 64 }
+    episodeId: { type: string, minLength: 1, maxLength: 64 }
+    reason: { type: string, minLength: 1, maxLength: 2000 }
+TeamAiHighContributor:
+  type: object
+  additionalProperties: false
+  required: [playerKey, episodeId, reason]
+  properties:
+    playerKey: { type: string, minLength: 1, maxLength: 64 }
+    episodeId: { type: string, minLength: 1, maxLength: 64 }
+    reason: { type: string, minLength: 1, maxLength: 2000 }
+TeamAiPlayerIdentity:
+  type: object
+  additionalProperties: false
+  required: [playerKey, displayName, tankName]
+  properties:
+    playerKey: { type: string, minLength: 1, maxLength: 64 }
+    displayName: { type: string, maxLength: 240 }
+    tankName: { type: string, maxLength: 240 }
+TeamAiReviewResult:
+  type: object
+  additionalProperties: false
+  required: [summary, episodes, trainingSuggestions, reviewFocus, highContributors]
+  properties:
+    summary: { $ref: '../openapi.yaml#/components/schemas/TeamAiReviewSummary' }
+    episodes:
+      type: array
+      maxItems: 6
+      items: { $ref: '../openapi.yaml#/components/schemas/TeamAiReviewEpisode' }
+    trainingSuggestions:
+      type: array
+      maxItems: 12
+      items: { $ref: '../openapi.yaml#/components/schemas/TeamAiTrainingSuggestion' }
+    reviewFocus:
+      type: array
+      maxItems: 2
+      items: { $ref: '../openapi.yaml#/components/schemas/TeamAiReviewFocus' }
+    highContributors:
+      type: array
+      maxItems: 2
+      items: { $ref: '../openapi.yaml#/components/schemas/TeamAiHighContributor' }
+AiReviewDonePayload:
+  type: object
+  additionalProperties: false
+  required: [analysis, preBattleSection, capability, teamReview, teamPlayers]
+  properties:
+    analysis: { type: [string, 'null'] }
+    preBattleSection: { type: [string, 'null'] }
+    capability: { type: [string, 'null'], enum: [AVAILABLE, AVAILABLE_WITH_LIMITED_TIMELINE, UNAVAILABLE, null] }
+    teamReview: { oneOf: [{ $ref: '../openapi.yaml#/components/schemas/TeamAiReviewResult' }, { type: 'null' }] }
+    teamPlayers:
+      type: array
+      items: { $ref: '../openapi.yaml#/components/schemas/TeamAiPlayerIdentity' }

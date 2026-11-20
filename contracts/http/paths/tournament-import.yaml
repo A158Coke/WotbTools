@@ -1,0 +1,385 @@
+/api/admin/tournaments/{eventId}/clear-points:
+  post:
+    operationId: clearTournamentClanPoints
+    summary: clearTournamentClanPoints
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentClearRequest"
+/api/admin/tournaments/{eventId}/csv-import/preview:
+  post:
+    operationId: previewTournamentCsvImport
+    summary: Preview a complete cumulative CSV standings replacement
+    description: Requires tournament-admin. Parses the CSV on the server without changing data. Scores are direct values, blank cells mean no participation, and existing administrative clear overrides remain effective. Existing drafts or correction workspaces reject the import with TOURNAMENT_CSV_WORKSPACE_BUSY.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [file, expectedEventVersion]
+            properties:
+              file:
+                type: string
+                format: binary
+                description: UTF-8 CSV, with or without BOM, containing the complete cumulative event standings.
+              expectedEventVersion:
+                type: integer
+                format: int64
+                minimum: 0
+    responses:
+      "200":
+        description: Validated standings, source identity and replacement changes
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentCsvImportPreview"
+      "400":
+        description: Invalid multipart request or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details; rowNumber counts CSV records including the header.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Event not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: TOURNAMENT_VERSION_CONFLICT, TOURNAMENT_CSV_WORKSPACE_BUSY, or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "413":
+        description: FILE_TOO_LARGE
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/admin/tournaments/{eventId}/csv-import:
+  post:
+    operationId: importTournamentCsv
+    summary: Atomically replace standings with a previewed cumulative CSV snapshot
+    description: Requires tournament-admin and explicit confirmation. Re-parses the original file and verifies the preview hash and event version. Repeated requests with the same idempotency key and payload do not add scores twice. Prior audit evidence and administrative clear overrides are retained, and successful imports permanently mark this event as using the credited CSV source.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [file, expectedEventVersion, sourceSha256, confirm, idempotencyKey]
+            properties:
+              file:
+                type: string
+                format: binary
+              expectedEventVersion:
+                type: integer
+                format: int64
+                minimum: 0
+              sourceSha256:
+                type: string
+                pattern: "^[a-f0-9]{64}$"
+              confirm:
+                type: boolean
+                description: Must be true to replace standings.
+              idempotencyKey:
+                type: string
+                minLength: 1
+                maxLength: 64
+    responses:
+      "200":
+        description: Committed standings and replacement changes, or the original idempotent result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentCsvImportPreview"
+      "400":
+        description: Invalid multipart request, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Event not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key; TOURNAMENT_CSV_WORKSPACE_BUSY; or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "413":
+        description: FILE_TOO_LARGE
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/admin/tournaments/{eventId}/historical-import/preview:
+  post:
+    operationId: previewTournamentHistoricalImport
+    summary: previewTournamentHistoricalImport
+    description: Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalPreview"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalPreviewRequest"
+/api/admin/tournaments/{eventId}/historical-import:
+  get:
+    operationId: getTournamentHistoricalState
+    summary: getTournamentHistoricalState
+    description: Historical capability and committed import state are separate from the deployed day response. Previous backends return 404; clients then keep ordinary administration available and disable historical import.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: roundNumber
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 5
+      - name: dayNumber
+        in: query
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 3
+    responses:
+      "200":
+        description: Historical import state
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalState"
+      "400":
+        description: Invalid dimensions
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Tournament administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Event not found, or a previous backend without historical import support
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+  post:
+    operationId: importTournamentHistorical
+    summary: importTournamentHistorical
+    description: Requires tournament-admin (inherited by the Keycloak super-admin composite). Imports direct historical scores only into an event without draft or published results.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalPreview"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalImportRequest"
