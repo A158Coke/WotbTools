@@ -118,7 +118,7 @@ function deviceChoice(index: number, choice: 0 | 1) {
 
 <template>
     <!-- 装备：3×3，每格左右两件图标 -->
-    <section class="tp-config-block" :class="{ 'is-comparison': comparisonLayout }">
+    <section class="tp-config-block">
       <div class="tp-block-head tp-loadout-head">
         <h3>{{ t('agentTanks.configurator.equipment') }}</h3>
         <span class="tp-muted tp-loadout-hint">{{ t('agentTanks.configurator.equipment_hint') }}</span>
@@ -169,13 +169,6 @@ function deviceChoice(index: number, choice: 0 | 1) {
 .tp-block-head h3 { margin: 0; font: var(--type-body); font-weight: 600; }
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-tile-fallback { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; overflow-wrap: anywhere; }
-.is-comparison { --loadout-action-width: 16rem; --loadout-count-width: 3.5rem; }
-.is-comparison .tp-loadout-head { display: grid; grid-template-columns: max-content minmax(0, 1fr) var(--loadout-action-width) var(--loadout-count-width); align-items: center; gap: var(--space-3); }
-.is-comparison .tp-loadout-head h3 { grid-column: 1; }
-.is-comparison .tp-loadout-hint { grid-column: 2; }
-.is-comparison .tp-loadout-action { grid-column: 3; }
-.is-comparison .tp-loadout-action :deep(.app-button) { inline-size: 100%; min-block-size: var(--hit-min-comfortable); }
-.is-comparison .tp-loadout-count { grid-column: 4; text-align: end; font-variant-numeric: tabular-nums; }
 .tp-dev-matrix {
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr));
@@ -204,12 +197,6 @@ function deviceChoice(index: number, choice: 0 | 1) {
 .tp-dev-btn img { inline-size: 40px; block-size: 40px; object-fit: contain; }
 
 @media (width < 768px) {
-  .is-comparison .tp-loadout-head { grid-template-columns: minmax(0, 1fr) var(--loadout-count-width); }
-  .is-comparison .tp-loadout-head h3 { grid-column: 1; grid-row: 1; }
-  .is-comparison .tp-loadout-hint { grid-column: 1 / -1; grid-row: 2; }
-  .is-comparison .tp-loadout-action { grid-column: 1; grid-row: 3; }
-  .is-comparison .tp-loadout-count { grid-column: 2; grid-row: 3; }
-  .is-comparison .tp-loadout-action :deep(.app-button) { inline-size: min(100%, var(--loadout-action-width)); }
   /* 装备矩阵 3 行 × 3 类共 9 对候选：组内 2px、组间 12px；横纵都留白，避免九对糊成一片 */
   .tp-dev-matrix { gap: var(--space-3); }
   /* 极窄屏两个 44px 候选放不进同一槽位时自动改为纵向排列，避免 44px 触控目标互相覆盖 */

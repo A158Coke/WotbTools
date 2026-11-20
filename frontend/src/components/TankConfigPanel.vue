@@ -270,19 +270,19 @@ const camoBonusParts = computed(() => {
 .tp-config-block { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .tp-config > .tp-config-block + .tp-config-block { padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-subtle); }
 .is-comparison { --loadout-action-width: 16rem; --loadout-count-width: 3.5rem; }
-.is-comparison .tp-loadout-head { display: grid; grid-template-columns: max-content minmax(0, 1fr) var(--loadout-action-width) var(--loadout-count-width); align-items: center; gap: var(--space-3); }
-.is-comparison .tp-loadout-head h3 { grid-column: 1; }
-.is-comparison .tp-loadout-hint { grid-column: 2; }
-.is-comparison .tp-loadout-action { grid-column: 3; }
-.is-comparison .tp-loadout-action :deep(.app-button) { inline-size: 100%; min-block-size: var(--hit-min-comfortable); }
-.is-comparison .tp-loadout-count { grid-column: 4; text-align: end; font-variant-numeric: tabular-nums; }
+.is-comparison :deep(.tp-loadout-head) { display: grid; grid-template-columns: max-content minmax(0, 1fr) var(--loadout-action-width) var(--loadout-count-width); align-items: center; gap: var(--space-3); }
+.is-comparison :deep(.tp-loadout-head h3) { grid-column: 1; }
+.is-comparison :deep(.tp-loadout-hint) { grid-column: 2; }
+.is-comparison :deep(.tp-loadout-action) { grid-column: 3; }
+.is-comparison :deep(.tp-loadout-action .app-button) { inline-size: 100%; min-block-size: var(--hit-min-comfortable); }
+.is-comparison :deep(.tp-loadout-count) { grid-column: 4; text-align: end; font-variant-numeric: tabular-nums; }
 @media (width < 768px) {
-  .is-comparison .tp-loadout-head { grid-template-columns: minmax(0, 1fr) var(--loadout-count-width); }
-  .is-comparison .tp-loadout-head h3 { grid-column: 1; grid-row: 1; }
-  .is-comparison .tp-loadout-hint { grid-column: 1 / -1; grid-row: 2; }
-  .is-comparison .tp-loadout-action { grid-column: 1; grid-row: 3; }
-  .is-comparison .tp-loadout-count { grid-column: 2; grid-row: 3; }
-  .is-comparison .tp-loadout-action :deep(.app-button) { inline-size: min(100%, var(--loadout-action-width)); }
+  .is-comparison :deep(.tp-loadout-head) { grid-template-columns: minmax(0, 1fr) var(--loadout-count-width); }
+  .is-comparison :deep(.tp-loadout-head h3) { grid-column: 1; grid-row: 1; }
+  .is-comparison :deep(.tp-loadout-hint) { grid-column: 1 / -1; grid-row: 2; }
+  .is-comparison :deep(.tp-loadout-action) { grid-column: 1; grid-row: 3; }
+  .is-comparison :deep(.tp-loadout-count) { grid-column: 2; grid-row: 3; }
+  .is-comparison :deep(.tp-loadout-action .app-button) { inline-size: min(100%, var(--loadout-action-width)); }
 }
 .tp-block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); }
 .tp-config-block > h3, .tp-block-head h3 { margin: 0; font: var(--type-body); font-weight: 600; }
