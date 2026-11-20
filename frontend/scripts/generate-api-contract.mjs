@@ -3,12 +3,13 @@ import addFormats from 'ajv-formats'
 import standaloneCode from 'ajv/dist/standalone/index.js'
 import { _ } from 'ajv/dist/compile/codegen/index.js'
 import { readFile, writeFile } from 'node:fs/promises'
-import { parse } from 'yaml'
+import SwaggerParser from '@apidevtools/swagger-parser'
+import { fileURLToPath } from 'node:url'
 
 const input = new URL('../../contracts/http/openapi.yaml', import.meta.url)
 const output = new URL('../src/api/generated/playback-v2.schema.ts', import.meta.url)
 const errorCodesOutput = new URL('../src/api/generated/api-error-codes.ts', import.meta.url)
-const document = parse(await readFile(input, 'utf8'))
+const document = await SwaggerParser.bundle(fileURLToPath(input))
 const components = document.components?.schemas || {}
 
 function rewriteRefs(value) {

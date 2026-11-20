@@ -1,0 +1,310 @@
+TournamentHistoricalState:
+  type: object
+  additionalProperties: false
+  required: [eventVersion, imported, canImport, historical]
+  properties:
+    eventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    imported:
+      type: boolean
+      description: A historical import was committed, including roster-only imports with all-null cells.
+    canImport:
+      type: boolean
+      description: The backend one-time import gate currently accepts this event.
+    historical:
+      type: boolean
+      description: The selected published day still uses historical direct scores.
+TournamentHistoricalRow:
+  type: object
+  additionalProperties: false
+  required:
+    - clanTag
+    - points
+    - sourceTotal
+  properties:
+    clanTag:
+      type: string
+      minLength: 1
+      maxLength: 32
+    points:
+      type: array
+      minItems: 8
+      maxItems: 15
+      description: Round-major then day-major matrix, with exactly roundCount times daysPerRound cells. Null is no participation; zero is an explicit score.
+      items:
+        type:
+          - integer
+          - "null"
+        minimum: 0
+        maximum: 1000000
+    sourceTotal:
+      type: integer
+      format: int64
+      minimum: 0
+      maximum: 15000000
+TournamentHistoricalPreviewRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - sourceName
+    - sourceSha256
+    - rows
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    sourceName:
+      type: string
+      minLength: 1
+      maxLength: 200
+    sourceSha256:
+      type: string
+      pattern: "^[a-f0-9]{64}$"
+    rows:
+      type: array
+      minItems: 1
+      maxItems: 10000
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalRow"
+TournamentHistoricalImportRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - sourceName
+    - sourceSha256
+    - rows
+    - confirm
+    - idempotencyKey
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    sourceName:
+      type: string
+      minLength: 1
+      maxLength: 200
+    sourceSha256:
+      type: string
+      pattern: "^[a-f0-9]{64}$"
+    rows:
+      type: array
+      minItems: 1
+      maxItems: 10000
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentHistoricalRow"
+    confirm:
+      type: boolean
+    idempotencyKey:
+      type: string
+      minLength: 1
+      maxLength: 64
+TournamentHistoricalPreview:
+  type: object
+  additionalProperties: false
+  required:
+    - standings
+    - sourceRowCount
+    - clanCount
+    - missingCellCount
+    - eventVersion
+  properties:
+    standings:
+      $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+    sourceRowCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    clanCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    missingCellCount:
+      type: integer
+      minimum: 0
+      maximum: 150000
+      description: Missing cells after merging distinct source rows for the same clan.
+    eventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+TournamentCsvChanges:
+  type: object
+  additionalProperties: false
+  required: [addedClans, changedClans, removedClans, addedScores, changedScores, removedScores, preservedClears]
+  properties:
+    addedClans:
+      type: integer
+      minimum: 0
+    changedClans:
+      type: integer
+      minimum: 0
+    removedClans:
+      type: integer
+      minimum: 0
+    addedScores:
+      type: integer
+      minimum: 0
+    changedScores:
+      type: integer
+      minimum: 0
+    removedScores:
+      type: integer
+      minimum: 0
+    preservedClears:
+      type: integer
+      minimum: 0
+      description: Administrative clear overrides retained in the effective replacement.
+TournamentCsvImportPreview:
+  type: object
+  additionalProperties: false
+  required: [standings, sourceName, sourceSha256, sourceRowCount, clanCount, missingCellCount, eventVersion, changes]
+  properties:
+    standings:
+      $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+    sourceName:
+      type: string
+      minLength: 1
+      maxLength: 200
+    sourceSha256:
+      type: string
+      pattern: "^[a-f0-9]{64}$"
+    sourceRowCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    clanCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    missingCellCount:
+      type: integer
+      minimum: 0
+      maximum: 150000
+    eventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    changes:
+      $ref: "../openapi.yaml#/components/schemas/TournamentCsvChanges"
+TournamentAttribution:
+  type: object
+  additionalProperties: false
+  required: [name, url]
+  properties:
+    name:
+      type: string
+      minLength: 1
+    url:
+      type: string
+      format: uri
+TournamentDataSource:
+  type: object
+  additionalProperties: false
+  required: [csvImported, attribution]
+  properties:
+    csvImported:
+      type: boolean
+      description: Remains true after the first successful CSV import for the lifetime of this event.
+    attribution:
+      oneOf:
+        - $ref: "../openapi.yaml#/components/schemas/TournamentAttribution"
+        - type: "null"
+TournamentRecognitionPermit:
+  type: object
+  additionalProperties: false
+  required:
+    - permit
+    - expiresAt
+    - evidenceId
+    - imageHash
+  properties:
+    permit:
+      type: string
+    expiresAt:
+      type: string
+      format: date-time
+    evidenceId:
+      type: string
+      format: uuid
+    imageHash:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+TournamentRecognitionResult:
+  type: object
+  additionalProperties: false
+  required:
+    - groupNumber
+    - teams
+    - complete
+    - issues
+    - imageHash
+  properties:
+    groupNumber:
+      type:
+        - integer
+        - "null"
+    teams:
+      type: array
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRecognizedTeam"
+    complete:
+      type: boolean
+    issues:
+      type: array
+      items:
+        type: string
+    imageHash:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+TournamentAudit:
+  type: object
+  description: Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.
+  additionalProperties: false
+  required:
+    - id
+    - action
+    - actor
+    - reason
+    - roundNumber
+    - dayNumber
+    - createdAt
+    - before
+    - after
+  properties:
+    id:
+      type: integer
+      format: int64
+      minimum: 0
+    action:
+      type: string
+    actor:
+      type: string
+    reason:
+      type:
+        - string
+        - "null"
+    roundNumber:
+      type:
+        - integer
+        - "null"
+    dayNumber:
+      type:
+        - integer
+        - "null"
+    createdAt:
+      type: string
+      format: date-time
+    before:
+      type: object
+      description: Empty in audit-list responses; the full snapshot is retained internally.
+      additionalProperties: true
+    after:
+      type: object
+      description: Empty in audit-list responses; the full snapshot is retained internally.
+      additionalProperties: true

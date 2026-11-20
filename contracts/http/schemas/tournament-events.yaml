@@ -1,0 +1,418 @@
+TournamentEvent:
+  type: object
+  additionalProperties: false
+  required:
+    - id
+    - version
+    - year
+    - region
+    - season
+    - roundCount
+    - daysPerRound
+    - dayLabels
+    - configLocked
+  properties:
+    id:
+      type: integer
+      format: int64
+      minimum: 0
+    version:
+      type: integer
+      format: int64
+      minimum: 0
+    year:
+      type: integer
+      minimum: 2000
+      maximum: 2100
+    region:
+      type: string
+      enum:
+        - CN
+        - ASIA
+        - EU
+        - NA
+    season:
+      type: string
+      enum:
+        - SPRING
+        - SUMMER
+        - AUTUMN
+        - WINTER
+        - FIRE_CUP
+    roundCount:
+      type: integer
+      minimum: 4
+      maximum: 5
+    daysPerRound:
+      type: integer
+      minimum: 2
+      maximum: 3
+    dayLabels:
+      type: array
+      items:
+        type: string
+    configLocked:
+      type: boolean
+TournamentCreateRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - year
+    - region
+    - season
+    - roundCount
+    - daysPerRound
+    - dayLabels
+  properties:
+    year:
+      type: integer
+      minimum: 2000
+      maximum: 2100
+    region:
+      type: string
+      enum:
+        - CN
+        - ASIA
+        - EU
+        - NA
+    season:
+      type: string
+      enum:
+        - SPRING
+        - SUMMER
+        - AUTUMN
+        - WINTER
+        - FIRE_CUP
+    roundCount:
+      type: integer
+      minimum: 4
+      maximum: 5
+    daysPerRound:
+      type: integer
+      minimum: 2
+      maximum: 3
+    dayLabels:
+      type: array
+      items:
+        type: string
+TournamentUpdateRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedVersion
+    - year
+    - region
+    - season
+    - roundCount
+    - daysPerRound
+    - dayLabels
+  properties:
+    expectedVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    year:
+      type: integer
+      minimum: 2000
+      maximum: 2100
+    region:
+      type: string
+      enum:
+        - CN
+        - ASIA
+        - EU
+        - NA
+    season:
+      type: string
+      enum:
+        - SPRING
+        - SUMMER
+        - AUTUMN
+        - WINTER
+        - FIRE_CUP
+    roundCount:
+      type: integer
+      minimum: 4
+      maximum: 5
+    daysPerRound:
+      type: integer
+      minimum: 2
+      maximum: 3
+    dayLabels:
+      type: array
+      items:
+        type: string
+TournamentDefaultRound:
+  type: object
+  additionalProperties: false
+  required:
+    - roundNumber
+    - days
+  properties:
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    days:
+      type: array
+      minItems: 2
+      maxItems: 3
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentRuleDay"
+TournamentTeam:
+  type: object
+  additionalProperties: false
+  required:
+    - clanTag
+    - rank
+  properties:
+    clanTag:
+      type: string
+      minLength: 1
+      maxLength: 32
+    rank:
+      type: integer
+      minimum: 1
+      maximum: 5
+TournamentGroup:
+  type: object
+  additionalProperties: false
+  required:
+    - groupNumber
+    - evidenceId
+    - imageHash
+    - teams
+  properties:
+    groupNumber:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    evidenceId:
+      type: string
+      format: uuid
+    imageHash:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+    teams:
+      type: array
+      minItems: 3
+      maxItems: 5
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentTeam"
+TournamentIncomingGroup:
+  type: object
+  additionalProperties: false
+  required:
+    - groupNumber
+    - evidenceId
+    - imageHash
+    - teams
+    - duplicateAction
+    - complete
+  properties:
+    groupNumber:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    evidenceId:
+      type: string
+      format: uuid
+    imageHash:
+      type: string
+      pattern: ^[a-f0-9]{64}$
+    teams:
+      type: array
+      minItems: 3
+      maxItems: 5
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentTeam"
+    duplicateAction:
+      type: string
+      enum:
+        - ERROR
+        - REPLACE
+        - SKIP
+    complete:
+      type: boolean
+TournamentVersions:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedDayVersion
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDayVersion:
+      type: integer
+      format: int64
+      minimum: 0
+TournamentExpectedGroupsRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedDayVersion
+    - expectedGroupCount
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDayVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDefaultVersion:
+      description: Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before freezing the effective rule set. Null or omission uses the server-authoritative current default.
+      type: [integer, "null"]
+      format: int64
+      minimum: 0
+    expectedGroupCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+TournamentDraftRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedDayVersion
+    - expectedRulesVersion
+    - groups
+    - confirmedNewClans
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDayVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedRulesVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    groups:
+      type: array
+      maxItems: 10000
+      items:
+        $ref: "../openapi.yaml#/components/schemas/TournamentIncomingGroup"
+    confirmedNewClans:
+      type: array
+      items:
+        type: string
+TournamentFinalizeRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedDayVersion
+    - expectedRulesVersion
+    - idempotencyKey
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDayVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedRulesVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    idempotencyKey:
+      type: string
+      minLength: 1
+      maxLength: 64
+TournamentCorrectionRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - expectedDayVersion
+    - expectedGroupCount
+    - reason
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedDayVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    expectedGroupCount:
+      type: integer
+      minimum: 1
+      maximum: 10000
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+TournamentClearRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedEventVersion
+    - roundNumber
+    - dayNumber
+    - clanTag
+    - reason
+    - restore
+  properties:
+    expectedEventVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    roundNumber:
+      type: integer
+      minimum: 1
+      maximum: 5
+    dayNumber:
+      type:
+        - integer
+        - "null"
+    clanTag:
+      type: string
+    reason:
+      type: string
+      minLength: 1
+      maxLength: 500
+    restore:
+      type: boolean
+TournamentDeleteRequest:
+  type: object
+  additionalProperties: false
+  required:
+    - expectedVersion
+    - confirm
+  properties:
+    expectedVersion:
+      type: integer
+      format: int64
+      minimum: 0
+    confirm:
+      type: boolean
+      const: true
+TournamentRecognizedTeam:
+  type: object
+  additionalProperties: false
+  required:
+    - clanTag
+    - rank
+    - rankText
+  properties:
+    clanTag:
+      type: string
+    rank:
+      type:
+        - integer
+        - "null"
+    rankText:
+      type: string

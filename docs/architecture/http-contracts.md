@@ -4,6 +4,8 @@
 
 `contracts/http/openapi.yaml` 是 WotBTools FE ↔ BE HTTP wire contract 的唯一事实源。它描述实际序列化后的 JSON、HTTP status、required/nullable 字段和稳定 enum；它不是 Java domain model、不是前端 view model，也不是运行时 schema registry。
 
+根文件保留所有路径与 schema 的稳定索引，具体定义按业务域分别位于 `contracts/http/paths/` 和 `contracts/http/schemas/`，每项定义只保留一份。片段中的跨 schema 引用以 `../openapi.yaml#/components/schemas/...` 指向根索引；不要从片段引用另一个片段的内部路径。生成前由 Swagger Parser bundle 外部引用，再沿用原有生成规则。
+
 边界保持分离：
 
 - 回放事实的权威是上游 Rust Core（客户端 WASM）；`java/wotb-core` 保留共享模型、参考数据与 AI 投影分析能力；业务 Web 层通过显式 mapper 投影到 HTTP DTO。

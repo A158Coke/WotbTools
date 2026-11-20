@@ -1,0 +1,56 @@
+/api/health:
+  get:
+    operationId: getBackendHealth
+    summary: Check backend health and additive product capabilities
+    security: []
+    responses:
+      "200":
+        description: Legacy health bodies may omit capabilities; clients must not assume product support.
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/BackendHealth"
+/api/observability/events:
+  post:
+    operationId: recordObservabilityEvents
+    summary: Record bounded, best-effort product telemetry
+    description: Maximum 16384 bytes. Anonymous feature events allowed; active_user requires a valid bearer token. No arbitrary text or account identity accepted. Times must be within the past 24 hours and at most five minutes ahead.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/ObservabilityEventsRequest"
+    responses:
+      "204":
+        description: Events accepted
+      "400":
+        description: Invalid telemetry
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required or invalid
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "413":
+        description: Payload too large
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "429":
+        description: Rate limited
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "503":
+        description: Active-user hashing not configured
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"

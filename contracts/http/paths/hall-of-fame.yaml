@@ -1,0 +1,334 @@
+/api/hof/vehicle-options:
+  get:
+    operationId: getHofVehicleOptions
+    summary: 读取公开车辆筛选选项
+    security: []
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/HofVehicleOption' } } } } }
+/api/admin/hof/vehicle-options:
+  get:
+    operationId: getHofAdminVehicleOptions
+    summary: 读取管理车辆筛选选项
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/HofVehicleOption' } } } } }
+/api/admin/hof:
+  get:
+    operationId: getHofAdminPage
+    summary: 读取管理单场记录分页
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: nickname, in: query, required: false, schema: { type: string } }
+      - { name: accountId, in: query, required: false, schema: { type: integer } }
+      - { name: uploadedBy, in: query, required: false, schema: { type: string } }
+      - { name: battleType, in: query, required: false, schema: { type: string } }
+      - { name: tankId, in: query, required: false, schema: { type: integer } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: tier, in: query, required: false, schema: { type: integer } }
+      - { name: replayAvailable, in: query, required: false, schema: { type: boolean } }
+      - { name: sort, in: query, required: false, schema: { type: string } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HofAdminPage' } } } }
+/api/admin/hof/audit:
+  get:
+    operationId: getHofAdminAudit
+    summary: 读取单场管理审计分页
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HofAdminAuditPage' } } } }
+/api/hof/upload:
+  post:
+    operationId: uploadHofReplay
+    summary: 上传单场回放
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file, facts], properties: { file: { type: string, format: binary }, facts: { type: string } } } } } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HofUploadResponse' } } } }
+      '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/hof/mark3:
+  get:
+    operationId: listMark3Leaderboard
+    summary: 读取三环公开排行榜
+    security: []
+    parameters:
+      - { name: vehicleId, in: query, required: false, schema: { type: integer } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3LeaderboardPage' } } } }
+/api/hof/mark3/submissions:
+  post:
+    operationId: createMark3Submission
+    summary: 提交三环申请
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [vehicleId, battleCount, averageDamage, winRate, replays, proofScreenshots, facts], properties: { vehicleId: { type: integer, format: int64 }, battleCount: { type: integer }, averageDamage: { type: integer }, winRate: { type: number }, replays: { type: array, items: { type: string, format: binary } }, proofScreenshots: { type: array, items: { type: string } }, facts: { type: array, items: { type: string } } } } } } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3CreateResult' } } } }
+      '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/hof/mark3/submissions/{id}/cancel:
+  post:
+    operationId: cancelMark3Submission
+    summary: 取消三环申请
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3SubmissionSummary' } } } }
+/api/users/mark3/status:
+  get:
+    operationId: getMark3UserStatus
+    summary: 读取当前用户三环状态
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3UserStatus' } } } }
+/api/admin/hof/mark3/submissions:
+  get:
+    operationId: listMark3AdminSubmissions
+    summary: 读取三环审核分页
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: status, in: query, required: false, schema: { type: string } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: vehicleId, in: query, required: false, schema: { type: integer } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3AdminPage' } } } }
+/api/admin/hof/mark3/submissions/{id}:
+  get:
+    operationId: getMark3AdminSubmission
+    summary: 读取三环审核详情
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3AdminDetail' } } } }
+/api/admin/hof/mark3/submissions/{id}/replays:
+  get:
+    operationId: listMark3ReplayEvidence
+    summary: 读取三环回放证据元数据
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/Mark3ReplayEvidence' } } } } }
+/api/admin/hof/mark3/submissions/{id}/approve:
+  post:
+    operationId: approveMark3Submission
+    summary: 批准三环申请
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3SubmissionSummary' } } } }
+/api/admin/hof/mark3/submissions/{id}/reject:
+  post:
+    operationId: rejectMark3Submission
+    summary: 拒绝三环申请
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3RejectRequest' } } } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3SubmissionSummary' } } } }
+/api/admin/hof/mark3/submissions/{id}/delete:
+  post:
+    operationId: deleteMark3Submission
+    summary: 删除当前三环记录
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3DeleteRequest' } } } }
+    responses:
+      '200': { description: 成功响应, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/Mark3SubmissionSummary' } } } }
+/api/hof:
+  get:
+    operationId: listHallOfFame
+    summary: List the public Hall of Fame records
+    parameters:
+      - { name: battleType, in: query, required: false, schema: { $ref: '../openapi.yaml#/components/schemas/HallOfFameBattleType' } }
+      - { name: tankId, in: query, required: false, schema: { type: integer, format: int64 } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: tier, in: query, required: false, schema: { type: integer } }
+      - { name: nickname, in: query, required: false, schema: { type: string } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+    responses:
+      '200':
+        description: Hall of Fame page
+        content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HallOfFamePage' } } }
+      '400': { description: Invalid filter, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/hof/hundred:
+  get:
+    operationId: listHundredLeaderboard
+    summary: List the public Hundred Battles leaderboard
+    parameters:
+      - { name: vehicleId, in: query, required: false, schema: { type: integer, format: int64 } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+    responses:
+      '200':
+        description: Hundred leaderboard page
+        content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredLeaderboardPage' } } }
+      '400': { description: Invalid filter, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/hof/hundred/submissions:
+  post:
+    operationId: createHundredSubmission
+    summary: Create a manual Hundred Battles submission
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [vehicleId, averageDamage, battleCount, screenshot, replays]
+            properties:
+              vehicleId: { type: integer, format: int64 }
+              averageDamage: { type: integer, minimum: 1 }
+              battleCount: { type: integer, minimum: 1 }
+              screenshot: { type: string, description: Base64 image data URL }
+              replays: { type: array, minItems: 5, maxItems: 5, items: { type: string, format: binary } }
+    responses:
+      '200': { description: Pending submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredCreateResult' } } } }
+      '400': { description: Invalid submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/hof/hundred/submissions/{id}/cancel:
+  post:
+    operationId: cancelHundredSubmission
+    summary: Cancel the authenticated user's pending submission
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    responses:
+      '200': { description: Cancelled submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredSubmissionSummary' } } } }
+      '403': { description: Not the submission owner, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/users/hundred/status:
+  get:
+    operationId: getHundredUserStatus
+    summary: Read the authenticated user's Hundred submission status
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: User Hundred status, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredUserStatus' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/hof/hundred/submissions:
+  get:
+    operationId: listHundredAdminSubmissions
+    summary: List Hundred submissions for moderation
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: status, in: query, required: false, schema: { type: string } }
+      - { name: nation, in: query, required: false, schema: { type: string } }
+      - { name: vehicleType, in: query, required: false, schema: { type: string } }
+      - { name: vehicleId, in: query, required: false, schema: { type: integer, format: int64 } }
+      - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+      - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }
+    responses:
+      '200': { description: Moderation page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredAdminPage' } } } }
+/api/admin/hof/hundred/submissions/{id}:
+  get:
+    operationId: getHundredAdminSubmission
+    summary: Read one Hundred submission for moderation
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    responses:
+      '200': { description: Submission detail, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredAdminDetail' } } } }
+/api/admin/hof/hundred/submissions/{id}/replays:
+  get:
+    operationId: listHundredReplayEvidence
+    summary: List replay evidence metadata for moderation
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    responses:
+      '200': { description: Replay evidence metadata, content: { application/json: { schema: { type: array, items: { $ref: '../openapi.yaml#/components/schemas/HundredReplayEvidence' } } } } }
+/api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}:
+  get:
+    operationId: downloadHundredReplayEvidence
+    summary: Download one replay evidence file
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: submissionId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - { name: replayId, in: path, required: true, schema: { type: integer, format: int64 } }
+    responses:
+      '200': { description: Original replay file, content: { application/octet-stream: { schema: { type: string, format: binary } } } }
+/api/admin/hof/hundred/submissions/{id}/approve:
+  post:
+    operationId: approveHundredSubmission
+    summary: Approve a manual Hundred submission
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    responses:
+      '200': { description: Current submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredSubmissionSummary' } } } }
+/api/admin/hof/hundred/submissions/{id}/reject:
+  post:
+    operationId: rejectHundredSubmission
+    summary: Reject a manual Hundred submission
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredRejectRequest' } } } }
+    responses:
+      '200': { description: Rejected submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredSubmissionSummary' } } } }
+/api/admin/hof/hundred/submissions/{id}/delete:
+  post:
+    operationId: deleteHundredSubmission
+    summary: Delete a current Hundred submission
+    security: [{ bearerAuth: [] }]
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredDeleteRequest' } } } }
+    responses:
+      '200': { description: Deleted submission, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredSubmissionSummary' } } } }
+/api/admin/hof/hundred/submissions/bulk-delete:
+  post:
+    operationId: bulkDeleteHundredSubmissions
+    summary: Delete several current Hundred submissions in one request
+    description: >-
+      Each id repeats the authoritative single-record delete semantics in its own transaction,
+      so the batch allows partial success. Ids that are not CURRENT fail individually with
+      HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others.
+      More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteModerationRequest' } } } }
+    responses:
+      '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteResult' } } } }
+      '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/hof/records/bulk-delete:
+  post:
+    operationId: bulkDeleteHofRecords
+    summary: Delete several Hall of Fame records in one request
+    description: >-
+      Single-record deletion in this domain is a hard delete without delete-reason semantics,
+      so this request deliberately carries no reason field. Each id repeats the authoritative
+      single-record delete semantics in its own transaction, so the batch allows partial
+      success: an unknown id fails individually with HOF_ENTRY_NOT_FOUND and never blocks the
+      others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteRecordsRequest' } } } }
+    responses:
+      '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteResult' } } } }
+      '400': { description: Too many ids, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/hof/mark3/submissions/bulk-delete:
+  post:
+    operationId: bulkDeleteMark3Submissions
+    summary: Delete several current Mark3 submissions in one request
+    description: >-
+      Each id repeats the authoritative single-record delete semantics in its own transaction,
+      so the batch allows partial success. Ids that are not CURRENT fail individually with
+      MARK3_NOT_CURRENT / MARK3_SUBMISSION_NOT_FOUND and never block the others.
+      More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteModerationRequest' } } } }
+    responses:
+      '200': { description: Per-id bulk delete result, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteResult' } } } }
+      '400': { description: Invalid reason or too many ids, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
