@@ -5,7 +5,13 @@ html, body, #app { min-height: 100%; }
    底纹与环境光移到 AppShell 的 .app-backdrop 固定装饰层，body 保持透明；
    这是为了避开 iOS Safari 不支持 background-attachment: fixed 的问题。
    图片层未 ready 时 html 自铺 canvas，避免白闪。 */
+/* 回放工作台按设计交由页面滚动（信息流自然高度），页高常贴着视口阈值：竖直滚动条
+   出现/消失会让整个工作区横向跳 15px（收起传输条动画实测 1265→1280→1265）。
+   槽位只挂在回放页面（ReplayWorkspace 挂载时给 html 挂类；browser-fixtures/playback-controls
+   直挂 BattlePlayback 的夹具同款）——后台抽屉等其它页面保持原贴边契约
+   （browser-feedback 门禁断言贴 innerWidth）。 */
 html { background: var(--color-canvas); }
+html.replay-scrollbar-reserve { scrollbar-gutter: stable; }
 body { margin: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); }
 
 /* 页面级卡片的磨砂玻璃表面（§2 D10）：背景图只从这些大面板透出；

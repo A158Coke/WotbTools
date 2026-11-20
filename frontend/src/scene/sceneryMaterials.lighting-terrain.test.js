@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = PLAYBACK_SCENE_SOURCE.replace(/\r\n/g, '\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')

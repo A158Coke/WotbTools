@@ -30,10 +30,12 @@ type ComputeVehicleMarkerSize = (
 const computeVehicleMarkerSizeTyped = computeVehicleMarkerSize as ComputeVehicleMarkerSize
 
 /** projectVehicleState 的单个渲染项（+ 每车 gunMarks/reload/consumables 附加字段）。 */
-type ProjectedVehicleState = NonNullable<ReturnType<typeof projectVehicleState>> & {
-  gunMarks: unknown
+export type VehicleRenderState = NonNullable<ReturnType<typeof projectVehicleState>> & {
+  gunMarks: number | null
   reloadShells: unknown
   consumables: unknown
+  /** 呈现层覆盖后的 marker 样式（含 layout-scaled width/height/left/top）。 */
+  markerStyle: Record<string, string>
 }
 
 
@@ -64,7 +66,7 @@ export function usePlaybackVehicleProjection(
     speed: Ref<number>
     authoritativeEvents: () => BattleEvent[]
     hpVehicles: () => VehiclePlaybackTrack[]
-    gunMarks: () => Map<number, unknown> | null
+    gunMarks: () => Map<number, number> | null
     isMobileDevice: Ref<boolean>
     trailPrefs: { showTrail: boolean }
     palette: Ref<{ friendlyColors: string[]; enemyColors: string[]; routeOutline: string }>
@@ -148,14 +150,14 @@ export function usePlaybackVehicleProjection(
     return list[index % list.length]
   }
 
-  const baseVehicleStates = computed(() => {
+  const baseVehicleStates = computed<VehicleRenderState[]>(() => {
     // preload 未完成（asset decision 未定）时不渲染车辆——禁止 generic 闪现后替换
     if (preload.value.phase !== 'ready') return []
     // V2-only：V2 track 为唯一事实源；无 V2 车辆 → 空（不再有 legacy overview.playback 兜底）。
     const tracks = deps.playbackV2()?.vehicles || []
     if (tracks.length === 0) return []
     return tracks
-      .map((track: VehiclePlaybackTrack): ProjectedVehicleState | null => {
+      .map((track: VehiclePlaybackTrack): VehicleRenderState | null => {
         const vehicle = track
         const model = vehicleModel(track)
         const mobile = deps.isMobileDevice.value
@@ -191,13 +193,13 @@ export function usePlaybackVehicleProjection(
         // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
         return { ...state, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
       })
-      .filter((item): item is ProjectedVehicleState => item != null)
+      .filter((item): item is VehicleRenderState => item != null)
   })
 
   // 标记**不做**防重叠位移（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相压盖；
   // 早前的"整盒推开 + 虚线指回真实位置"在 2D 里读起来就是"坦克模型与真实位置有偏移"，且 3D 从不
   // 移动车体模型 ⇒ 两侧不一致。名牌 / HP 的防重叠仍由 labelLayout 的车道机制承担（与 3D 同构）。
-  const vehicleStates = computed(() => baseVehicleStates.value.map((state: ProjectedVehicleState) => {
+  const vehicleStates = computed<VehicleRenderState[]>(() => baseVehicleStates.value.map((state: VehicleRenderState) => {
     const scale = camera.view.scale || 1
     // renderBox 由投影层恒定提供（computeVehicleMarkerSize 每车返回完整盒）。
     if (!state.markerSize) return state
@@ -247,7 +249,7 @@ export function usePlaybackVehicleProjection(
   const { projectedSemanticNorm: replayDataProjected } = replayData
 
   /** 标记中心 → 相对地图容器的屏幕 px（viewport 变换后）。 */
-  function canonicalMarkerScreen(st: ProjectedVehicleState) {
+  function canonicalMarkerScreen(st: VehicleRenderState) {
     const rect = camera.mapRenderRect()
     if (!rect || rect.width <= 0 || rect.height <= 0) return null
     const point = replayDataProjected(st.pos.x, st.pos.y)
@@ -257,7 +259,7 @@ export function usePlaybackVehicleProjection(
     }
   }
 
-  function markerScreen(st: ProjectedVehicleState) {
+  function markerScreen(st: VehicleRenderState) {
     // 标记严格落在真实位置（无防重叠位移），屏幕位置 = 语义位置。
     return canonicalMarkerScreen(st)
   }

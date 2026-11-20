@@ -7,9 +7,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = PLAYBACK_SCENE_SOURCE.replace(/\r\n/g, '\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
@@ -98,7 +99,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 带 uTime 且进 animLayerMats 返回值）
     // 逐帧写 uTime（回放秒数）：暂停即停、seek 后相位确定——时钟驱动留在运行时
     expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/)
-    expect(src).toMatch(/const secs = T \/ 1000;/)
+    expect(src).toMatch(/const secs = S\.T \/ 1000;/)
   })
 
 

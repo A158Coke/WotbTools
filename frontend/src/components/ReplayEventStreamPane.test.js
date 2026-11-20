@@ -124,11 +124,11 @@ describe('ReplayEventStreamPane', () => {
     expect(session.loadScene).toHaveBeenCalledTimes(1) // 不重复解析
   })
 
-  it('emits view-3d with event time on click (seek 由工作台/3D pane 执行)', async () => {
+  it('emits seek with event time on click（由统一回放面板转交给当前 2D/3D 视图）', async () => {
     const w = mountPane()
     await flushPromises()
     await w.find('[data-kind="chat"]').trigger('click')
-    expect(w.emitted('view-3d')).toEqual([[22]])
+    expect(w.emitted('seek')).toEqual([[22]])
   })
 
   it('armor button hands off through the existing shot-replay entry', async () => {

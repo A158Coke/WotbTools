@@ -24,6 +24,8 @@
 import type { AgentPlaybackFacet, AgentPlaybackShot } from '../api/agent-replay-facets'
 import { SHOT_RESULT, shotResultClass } from './shotResultClass.js'
 
+import { buildCombatRows, buildSocialRows, buildStatusRows } from './playbackEventStreamRows.js'
+
 export type EventKind =
   | 'shot'
   | 'kill'
@@ -311,300 +313,9 @@ export function buildEventStream(
     const parts = ch.channel_name.split('/')
     channelLabel.set(ch.id, parts[parts.length - 1] || ch.channel_name)
   }
-  // —— 炮击 / 掉血 / 击毁合并为一条战斗行（用户口径：不再分开展示）——
-  // 掉血归属 = 逐发最近匹配：每条掉血事件只归给「同 (source,victim) 且弹着时刻不晚于它」
-  // 的最近一发（窗口 [-0.15, +1.0]s）。同一射手对同一目标连发时，第二发的伤害不会被
-  // 第一发按窗口吞掉（评审 4595459443）。
-  const shotsArr = Array.isArray(facet.shots) ? facet.shots : []
-  const impactOf = shotsArr.map((s) => Number(s?.t_fire) + (Number(s?.flight_secs) || 0))
-  const damageByShot = new Map<number, number>()
-  for (const d of Array.isArray(facet.damage_events) ? facet.damage_events : []) {
-    let best = -1
-    // 只把**炮弹**伤害并入炮击行：撞击/火焰/环境（cause != 0）另有语义，不得冒充射击
-    if (d?.cause !== 0) {
-      push('damage', d?.t, {
-        eid: d?.victim_eid,
-        sourceEid: d?.source_eid,
-        damage: typeof d?.damage === 'number' ? d.damage : 0,
-        cause: d?.cause,
-        actor: actorOf(d?.source_eid),
-        target: actorOf(d?.victim_eid),
-      })
-      continue
-    }
-    for (let i = 0; i < shotsArr.length; i++) {
-      const s = shotsArr[i]
-      if (s?.shooter_eid !== d?.source_eid || s?.target_eid !== d?.victim_eid) continue
-      const dt = Number(d?.t) - impactOf[i]
-      if (dt < -0.15 || dt > 1.0) continue
-      if (best < 0 || impactOf[i] > impactOf[best]) best = i
-    }
-    if (best >= 0) {
-      damageByShot.set(best, (damageByShot.get(best) ?? 0) + Math.max(0, Number(d?.damage) || 0))
-      continue
-    }
-    // 未匹配到炮击的掉血：环境/非射击伤害（仍归「炮击」片，保持战斗面完整）
-    push('damage', d?.t, {
-      eid: d?.victim_eid,
-      sourceEid: d?.source_eid,
-      damage: typeof d?.damage === 'number' ? d.damage : 0,
-      cause: d?.cause,
-      actor: actorOf(d?.source_eid),
-      target: actorOf(d?.victim_eid),
-    })
-  }
-  // 击毁同样逐发归属（最近弹着 ≤ 击杀时刻，窗口 [-0.15,+2.0]s），且只认炮弹击杀；
-  // 撞击/火灾/环境击杀保留为独立事件（不冒充射击结果）。
-  const killByShot = new Set<number>()
-  const killsUnmatched: number[] = [] // killPool 下标
-  const killPool = (Array.isArray(facet.kills) ? facet.kills : [])
-    .map((k) => ({ k, consumed: false }))
-  for (const [ki, slot] of killPool.entries()) {
-    const k = slot.k
-    if (k?.cause !== 0) {
-      killsUnmatched.push(ki)
-      continue
-    }
-    let best = -1
-    for (let i = 0; i < shotsArr.length; i++) {
-      const s = shotsArr[i]
-      if (s?.shooter_eid !== k?.killer_eid || s?.target_eid !== k?.victim_eid) continue
-      const dt = Number(k?.t) - impactOf[i]
-      if (dt < -0.15 || dt > 2.0) continue
-      if (best < 0 || impactOf[i] > impactOf[best]) best = i
-    }
-    if (best >= 0) {
-      killByShot.add(best)
-      slot.consumed = true
-    } else {
-      killsUnmatched.push(ki)
-    }
-  }
-  // 未归属的击杀：环境/非炮弹（进「其他」片，不冒充射击）
-  for (const ki of killsUnmatched) {
-    const k = killPool[ki].k
-    push('kill', k?.t, {
-      eid: k?.killer_eid,
-      victimEid: k?.victim_eid,
-      cause: k?.cause,
-      actor: actorOf(k?.killer_eid),
-      target: actorOf(k?.victim_eid),
-    }, 'other')
-  }
-  for (const [idx, s] of shotsArr.entries()) {
-    const killed = killByShot.has(idx) || s?.is_kill === true
-    const dmg = damageByShot.get(idx) ?? 0
-    push('shot', s?.t_fire, {
-      eid: s?.shooter_eid,
-      targetEid: s?.target_eid,
-      verdict: shotVerdict(s),
-      isAuthor: s?.is_author === true,
-      shot: s,
-      actor: actorOf(s?.shooter_eid),
-      target: actorOf(s?.target_eid),
-      shotDamage: dmg > 0 ? dmg : undefined,
-      shotKill: killed || undefined,
-    })
-  }
-  // 战斗聊天正文 = 0x2f code 1（chat_events.message）；快捷指令/成员进出同流。
-  // 0x2b 的 chat_messages 是另域（u64=频道句柄）——仅旧产物/无 chat_events 时兜底展示。
-  const chatEvents = Array.isArray(facet.chat_events) ? facet.chat_events : []
-  for (const ev of chatEvents) {
-    switch (ev?.kind) {
-      case 'message':
-        push('chat', ev?.t, {
-          text: typeof ev?.text === 'string' ? ev.text : '',
-          sender: ev?.sender || undefined,
-          actor: actorByName(ev?.sender),
-          rawType: ev?.raw_type,
-          channelName: channelLabel.get(ev?.channel),
-        })
-        break
-      case 'command':
-        {
-          const name = ev?.command_name
-          const payload = typeof ev?.target === 'number' ? ev.target : undefined
-          // 地图类指令（扇区/位置标记）单独成 kind，事件流有独立「地图标记」过滤片。
-          const marker = name === 'attention_to_cell' || name === 'moving_here'
-            || name === 'catch_point' || name === 'defend_point'
-          // 只有这三类的载荷是玩家目标（语料实测 attack_enemy 为 eid；见 actorByRef）。
-          const playerTarget = name === 'attack_enemy' || name === 'help_me_ex'
-            || name === 'support_me_with_fire'
-          push(marker ? 'marker' : 'command', ev?.t, {
-            command: typeof ev?.command === 'number' ? ev.command : undefined,
-            commandName: name,
-            commandTarget: payload,
-            target: playerTarget ? actorByRef(payload) : undefined,
-            // attention_to_cell 的载荷是扇区号；catch_point/defend_point 的 payload 域
-            // 上游未取证 → 保留 commandTarget 原值，不映射为 cell/据点编号（禁猜）。
-            cell: name === 'attention_to_cell' ? payload : undefined,
-            cellLabel: name === 'attention_to_cell' ? sectorLabel(payload) : undefined,
-            sender: ev?.sender || undefined,
-            actor: actorByName(ev?.sender),
-            rawType: ev?.raw_type,
-            channelName: channelLabel.get(ev?.channel),
-          })
-        }
-        break
-      case 'join':
-      case 'leave':
-      case 'channel_created':
-        push('presence', ev?.t, {
-          action: ev?.kind,
-          sender: ev?.sender || undefined,
-          actor: actorByName(ev?.sender),
-          rawType: ev?.raw_type,
-          channelName: channelLabel.get(ev?.channel),
-        })
-        break
-      default:
-        push('presence', ev?.t, {
-          sender: ev?.sender || undefined,
-          actor: actorByName(ev?.sender),
-          rawType: ev?.raw_type,
-        })
-        break
-    }
-  }
-  // 战场快捷标记（Avatar method 0x2e）：与 0x2f 聊天指令是两条包路径，不能互相替代。
-  // BZT-70 场：type1 t=47.72 → 战斗日志“Moving here”，type5 t=71.83 → “Let's fall back!”。
-  // type 4=attack 的目标是车辆 eid；type 1 只有世界坐标（不参与行文本）。
-  // 未观测类型只保留 marker_type，UI 显示原始类型号（禁猜语义）。
-  const markerNameOf = (type: number | undefined): string | undefined => {
-    switch (type) {
-      case 1: return 'moving_here'
-      case 4: return 'attack'
-      case 5: return 'ally_retreat'
-      default: return undefined
-    }
-  }
-  for (const m of Array.isArray(facet.markers) ? facet.markers : []) {
-    const type = typeof m?.marker_type === 'number' ? m.marker_type : undefined
-    const targetRef = typeof m?.target_eid === 'number' ? m.target_eid : undefined
-    push('marker', m?.t, {
-      markerType: type,
-      commandName: markerNameOf(type),
-      commandTarget: targetRef,
-      target: type === 4 || type === 5 ? actorOfMarkerEid(targetRef) : undefined,
-      actor: actorOfMarkerEid(m?.entity_id) ?? actorOfMarkerAccount(m?.account_id),
-    })
-  }
-  // 0x2b 是另域文本（u64 = 频道句柄；上游契约未给出与 0x2f 的等价关系）——
-  // 两条记录都保留展示，不做基于正文+时间的去重（不同域的近邻同文不可推定为同一消息）
-  for (const m of Array.isArray(facet.chat_messages) ? facet.chat_messages : []) {
-    const text = typeof m?.text === 'string' ? m.text : ''
-    if (!text) continue
-    push('chat', m?.t, { text, otherDomain: true })
-  }
-  // 逐模块损伤（method38 作者路径）：与 module_crew_states 合并到「模块/乘员」过滤片
-  for (const md of Array.isArray(facet.module_damage_events) ? facet.module_damage_events : []) {
-    push('moduleDamage', md?.clock, {
-      eid: md?.victim_eid,
-      component: md?.component,
-      state: md?.state,
-      text: md?.component && md?.state ? `${md.component} ${md.state}` : (md?.state || ''),
-      actor: actorOf(md?.victim_eid),
-    })
-  }
-  for (const n of Array.isArray(facet.notifications) ? facet.notifications : []) {
-    // subject 语义上游未定（eid/accountId 量级均观测到）；仅按名册做 id→身份联表，
-    // 不据此命名通知含义。code 保持原始值。
-    push('notice', n?.t, {
-      code: n?.code,
-      subject: n?.subject,
-      actor: actorBySubject(n?.subject),
-    })
-  }
-  for (const mc of Array.isArray(facet.module_crew_states) ? facet.module_crew_states : []) {
-    // AgentModuleCrewState：clock/vehicle_eid/component/state（snake_case 语义名）
-    push('module', mc?.clock, {
-      eid: mc?.vehicle_eid,
-      text: mc?.component && mc?.state ? `${mc.component} ${mc.state}` : mc?.state || '',
-      component: mc?.component,
-      state: mc?.state,
-      actor: actorOf(mc?.vehicle_eid),
-    })
-  }
-  // 基地占领（supremacy owner/capturing 变化；单基地 assault 只有进度 → 仅 owner 类事件）
-  const sup = Array.isArray(facet.supremacy_bases) ? facet.supremacy_bases : []
-  if (sup.length) {
-    const prevOwner = new Map<number, number | null | undefined>()
-    const prevCapturing = new Map<number, number | null | undefined>()
-    for (const tr of sup) {
-      const base = typeof tr?.base_id === 'number' ? tr.base_id : -1
-      if (base < 0) continue
-      const owner = tr?.owner_team ?? null
-      if (prevOwner.has(base) && prevOwner.get(base) !== owner) {
-        push('capture', tr?.clock, {
-          baseId: base,
-          team: owner ?? undefined,
-          faction: factionOf(owner),
-          captureState: owner == null ? 'neutralized' : 'captured',
-        })
-      }
-      prevOwner.set(base, owner)
-      const cap = tr?.capturing_team ?? null
-      if (prevCapturing.has(base) && prevCapturing.get(base) !== cap && cap != null) {
-        push('capture', tr?.clock, {
-          baseId: base,
-          team: cap,
-          faction: factionOf(cap),
-          captureState: 'invading',
-        })
-      }
-      prevCapturing.set(base, cap)
-    }
-  }
-  // 攻防战单基地进度（assault_bases 只有进度 0..=100）：进度上升 = 正在占领；
-  // 到达 100 = 占领完成（字段定义即「占领进度」，非统计推断）。推进进度原样带出。
-  const assault = Array.isArray(facet.assault_bases) ? facet.assault_bases : []
-  if (assault.length) {
-    let prevProgress: number | null = null
-    for (const tr of assault) {
-      const progress = typeof tr?.progress === 'number' ? tr.progress : null
-      if (progress == null) continue
-      if (prevProgress != null && progress > prevProgress) {
-        push('capture', tr?.clock, {
-          baseId: 0,
-          captureState: progress >= 100 ? 'captured' : 'invading',
-          progress,
-        })
-      } else if (prevProgress == null && progress > 0) {
-        push('capture', tr?.clock, { baseId: 0, captureState: 'invading', progress })
-      }
-      prevProgress = progress
-    }
-  }
-  // 首次进入观察集（**录制端 AoI 观测**，不是游戏侦察/点亮事实：回放里没有
-  // 点亮归属证据。措辞必须如实——「首次观测」，不得命名为 spotted）。
-  const seenSpotted = new Set<number>()
-  for (const vis of Array.isArray(facet.visibility) ? facet.visibility : []) {
-    const eid = vis?.eid
-    if (typeof eid !== 'number' || seenSpotted.has(eid)) continue
-    seenSpotted.add(eid)
-    push('observed', vis?.t_in, { eid, actor: actorOf(eid) })
-  }
-  // 场景破坏（区域可破坏物事件；进「其他」片）
-  for (const de of Array.isArray(facet.destructible_events) ? facet.destructible_events : []) {
-    push('destructible', de?.clock, { eid: de?.area_eid, state: de?.prop })
-  }
-  for (const c of Array.isArray(facet.consumables) ? facet.consumables : []) {
-    push('consumable', c?.clock, {
-      eid: c?.eid,
-      text: c?.logical_item_id || c?.state_name || '',
-      state: c?.state,
-      slot: c?.slot ?? undefined,
-      actor: actorOf(c?.eid),
-    })
-  }
-  for (const v of Array.isArray(facet.vehicles) ? facet.vehicles : []) {
-    for (const dt of Array.isArray(v?.death_times) ? v.death_times : []) {
-      push('death', dt, { eid: v?.eid, actor: actorOf(v?.eid) })
-    }
-    for (const rt of Array.isArray(v?.resurrection_times) ? v.resurrection_times : []) {
-      push('revive', rt, { eid: v?.eid, actor: actorOf(v?.eid) })
-    }
-  }
+  buildCombatRows({ push, actorOf }, facet)
+  buildSocialRows({ push, actorByName, actorByRef, actorOfMarkerEid, actorOfMarkerAccount, channelLabel }, facet)
+  buildStatusRows({ push, actorOf, actorBySubject, factionOf }, facet)
   out.sort((a, b) => a.t - b.t || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0))
   return out
 }
@@ -637,4 +348,144 @@ export function nearestEventTime(
   }
   for (const e of events) if (e.t < now - 1e-6 && (best == null || e.t > best)) best = e.t
   return best
+}
+
+
+/**
+ * 3D 快捷指令/聊天滚动流与事件流 pane 共用的行文案：同一套 i18n 键与身份纪律
+ * （玩家 · 车名；缺一回退「未知玩家」，不显示裸 eid）。t 由调用方注入
+ * （pane 与 3D 覆盖层各自持有 vue-i18n 实例）。
+ */
+export type EventRowTranslate = (key: string, params?: Record<string, unknown>) => string
+
+function eventActorText(a?: { eid: number; name?: string; tank?: string }, t?: EventRowTranslate): string {
+  if (!a) return '-'
+  const parts = [a.name || '', a.tank || ''].filter(Boolean)
+  return parts.length ? parts.join(' · ') : (t ? t('eventStream.unknown_actor') : '-')
+}
+
+function eventVerdictText(ev: PlaybackEventRow, t: EventRowTranslate): string {
+  switch (ev.verdict) {
+    case 'penetrated': return t('eventStream.verdict_penetrated')
+    case 'blocked': return t('eventStream.verdict_blocked')
+    case 'ricochet': return t('eventStream.verdict_ricochet')
+    case 'he': return t('eventStream.verdict_he')
+    case 'kill': return t('eventStream.verdict_kill')
+    default: return ''
+  }
+}
+
+/** 事件行的主文本（ReplayEventStreamPane.eventTitle 的唯一事实源；3D 滚动流同消费）。 */
+export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): string {
+  const actorText = (a?: { eid: number; name?: string; tank?: string }) => eventActorText(a, t)
+  switch (ev.kind) {
+    case 'shot': {
+      const head = t('eventStream.shot_line', {
+        from: actorText(ev.actor),
+        to: ev.target ? actorText(ev.target) : t('eventStream.no_target'),
+      })
+      const parts = [head]
+      const v = eventVerdictText(ev, t)
+      if (v) parts.push(v)
+      if (ev.shotDamage) parts.push(t('eventStream.damage_part', { n: ev.shotDamage }))
+      if (ev.shotKill) parts.push(t('eventStream.kill_part'))
+      return parts.join(' · ')
+    }
+    case 'chat': {
+      const ch = ev.channelName ? `[${ev.channelName}] ` : ''
+      const who = ev.actor ? `${actorText(ev.actor)}: ` : ev.sender ? `${ev.sender}: ` : ''
+      return `${ch}${who}${ev.text || ''}`
+    }
+    case 'command': {
+      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      if (ev.commandName) {
+        // 客户端权威语义（未映射 id 保留 raw）；玩家目标按 eid/account 两域联表，
+        // 查不到时给「未知目标」而不是裸数字（原始值在 tooltip）。
+        return t(`eventStream.cmd_${ev.commandName}`, {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+          cell: ev.cell ?? '?',
+        }) + ch
+      }
+      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
+    }
+    case 'marker': {
+      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      if (ev.commandName === 'attention_to_cell') {
+        const cell = ev.cellLabel ?? (ev.cell != null ? `#${ev.cell}` : '?')
+        return t('eventStream.marker_cell', { who, cell }) + ch
+      }
+      if (ev.commandName === 'attack') {
+        return t('eventStream.marker_attack', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
+      }
+      if (ev.commandName === 'ally_retreat') {
+        return t('eventStream.marker_retreat', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
+      }
+      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
+        // payload 域上游未闭合：不把它写成「据点 N」，只按原始目标值呈现
+        // （评审 5935348769 P2；专用 *_raw 文案保留“指令（目标 N）”的中性语义）。
+        return t(`eventStream.cmd_${ev.commandName}_raw`, {
+          who,
+          target: ev.commandTarget ?? '?',
+        }) + ch
+      }
+      if (ev.commandName === 'moving_here') {
+        return t('eventStream.marker_moving', { who }) + ch
+      }
+      return t('eventStream.marker_unknown', {
+        who,
+        type: ev.markerType ?? ev.command ?? '?',
+      }) + ch
+    }
+    case 'presence': {
+      // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
+      const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      return t(key, { who, channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
+    }
+    case 'moduleDamage':
+    case 'module':
+      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`
+    case 'damage': return t('eventStream.damage_label', {
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
+      n: ev.damage ?? 0,
+    })
+    case 'capture': {
+      if (ev.progress != null) return t('eventStream.capture_progress', { n: ev.progress })
+      const base = String.fromCharCode(65 + (ev.baseId ?? 0))
+      if (ev.faction) {
+        return t(`eventStream.capture_${ev.captureState ?? 'invading'}_faction`, {
+          faction: t(`eventStream.faction_${ev.faction}`),
+          base,
+        })
+      }
+      return t(`eventStream.capture_${ev.captureState ?? 'invading'}`, {
+        base,
+        team: ev.team ?? '-',
+      })
+    }
+    case 'observed': return t('eventStream.observed_label', { who: actorText(ev.actor) })
+    case 'destructible': return t('eventStream.destructible_label')
+    case 'notice': return ev.actor
+      ? t('eventStream.notice_label_actor', { who: actorText(ev.actor), code: ev.code ?? '?' })
+      : t('eventStream.notice_label', { code: ev.code ?? '?' })
+    case 'consumable':
+      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.consumable_label')}`
+    case 'death': return t('eventStream.death_label_actor', { who: actorText(ev.actor) })
+    case 'revive': return t('eventStream.revive_label_actor', { who: actorText(ev.actor) })
+    case 'kill': return t('eventStream.kill_label', {
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
+    })
+    default: return t('eventStream.shot_label')
+  }
 }

@@ -17,6 +17,7 @@ import '../../src/styles/playback-overlap-ux.css'
 import '../../src/styles/playback-shared.css'
 import '../../src/styles/playback-mobile.css'
 import '../../src/styles/playback-workspace.css'
+import '../../src/styles/playback-workspace-3d.css'
 
 import { messages } from '../../src/locales/messages.js'
 import BattlePlayback from '../../src/components/BattlePlayback.vue'

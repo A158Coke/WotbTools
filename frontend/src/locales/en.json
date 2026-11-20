@@ -1790,6 +1790,7 @@
     "glb": "Real models (GLB)",
     "tread_marks": "Track marks (treads)",
     "display_last_known": "Last known position for absent tanks",
+    "display_battle_markers": "Battle markers (move pings / target rings / sector alerts)",
     "label_last_known": "Last known",
     "visibility_note": "The replay only contains what the recording client saw; positions are not reconstructed for unrecorded periods, and absent tanks show their last known position.",
     "glb_forced_hint": "This quality tier always uses real models (GLB)",

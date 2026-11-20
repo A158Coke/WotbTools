@@ -25,6 +25,9 @@ const props = defineProps({
   /** 名册浮层入口（横屏 / 桌面才有）：竖屏名册在纵向流里，不需要这个入口。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
+  /** 时间轴刻度（与 3D 同一份 scenePlayback 换算产物）：缺省空 = 无刻度层。 */
+  shotTicks: { type: Array, default: () => [] },
+  killTicks: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([
@@ -53,6 +56,8 @@ const emit = defineEmits([
     :nav-eligible="props.navEligible"
     :roster-entry-visible="props.rosterEntryVisible"
     :roster-open="props.rosterOpen"
+    :shot-ticks="props.shotTicks"
+    :kill-ticks="props.killTicks"
     @toggle-roster="emit('toggle-roster')"
     @toggle-play="emit('toggle-play')"
     @step="emit('step', $event)"

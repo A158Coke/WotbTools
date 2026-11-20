@@ -61,6 +61,18 @@ describe('PlaybackDisplaySurface', () => {
     expect(wrapper.get('section').element.style.top).toBe('196px')
     expect(wrapper.get('section').element.style.maxHeight).toBe('468px')
   })
+  it('counts the panel borders in max-height so fitting content does not scroll', async () => {
+    const { wrapper } = await openSurface(rect(20, 20, 600, 600), rect(570, 500, 44, 44))
+    const panel = wrapper.get('section').element
+    // border-box：1px 上下边框 → offsetHeight 比 clientHeight 大 2。
+    Object.defineProperty(panel, 'offsetHeight', { configurable: true, value: 282 })
+    Object.defineProperty(panel, 'clientHeight', { configurable: true, value: 280 })
+    window.dispatchEvent(new Event('resize'))
+    await wrapper.vm.$nextTick()
+    // available=468、scrollHeight=280；内容 + 边框完整放入，max-height 含边框。
+    expect(panel.style.maxHeight).toBe('470px')
+  })
+
   it('stacks above the compact landscape transport bar instead of the gear', async () => {
     // 844×390 的传输条是全宽常驻条；如果按 gear 上沿定位，面会盖住条顶 8px。
     const { wrapper } = await openSurface(rect(0, 0, 844, 390), rect(700, 330, 36, 36), {

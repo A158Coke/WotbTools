@@ -20,6 +20,8 @@ const cssPaths = [
   // Owns the square-Stage contract (`--pb-square-side`) and the Team 1 | Stage | Team 2 workspace.
   // Same position as in src/main.js: after the three form files, before the fullscreen refinements.
   'src/styles/playback-workspace.css',
+  // 3D/2D 共用面板与 docked 播放条（生产 main.js 里紧随 workspace.css 导入）。
+  'src/styles/playback-workspace-3d.css',
 ]
 
 // Native :fullscreen cannot be entered reliably from a file:// headless fixture without a user
