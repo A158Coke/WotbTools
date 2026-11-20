@@ -15,6 +15,8 @@
  * 食物类乘员加成的唯一权威是客户端 script，引擎不按 stem 猜数值。
  */
 import { mobilityRows, positive, terrains, type Mobility } from './mobility'
+import { calculateGunDamageRate, penetrationCoefficient } from './gunCharacteristics'
+export { penetrationCoefficient } from './gunCharacteristics'
 import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
 
 /** 乘员熟练度曲线（BK degressiveStat/progressiveStat，100% 时均为 0）。 */
@@ -50,151 +52,17 @@ export function crewLevelIncreaseFromScript(script: { params?: { bonusValues?: {
   return v == null || Number.isNaN(v) ? null : v / 100
 }
 
-/**
- * 客户端弹种词表（tank/{id}.json shells[].type）→ 校准弹系数（BK resolvePenetrationCoefficient）。
- * AP 族（ap / ap_premium / ap_cr / ap_cr_premium）×1.06；HEAT 族（hc / hc_premium / atgm_heat）
- * 与 HE 族（he / he_premium）×1.07。
- */
-export function penetrationCoefficient(type: string | null | undefined, calibrated: unknown) {
-  if (!calibrated || !type) return 1
-  return /^ap/.test(type) ? 1.06 : 1.07
-}
-
-export interface ComputeInput {
-  /** research modules/{nation}.json 的单车条目 */
-  modules: any
-  turretIdx: number
-  gunIdx: number
-  engineIdx: number
-  trackIdx: number
-  /** XI 数值投影前的初始发动机功率，保持既有车体转速的装车/初始功率比。 */
-  stockEnginePower?: number
-  /** 火炮循环（tank/{id}.json config 的 is_drum/is_burst/burst_*；缺省=regular） */
-  gunCycle?: {
-    type: 'regular' | 'autoloader' | 'autoreloader'
-    /** regular=单发装填；autoloader=整弹匣；autoreloader=最长单发 */
-    reload: number
-    /** 弹间装填（弹夹/自动装填）；regular=0 */
-    intraClip: number
-    /** 弹匣/连发容量；regular=0 */
-    shellCount: number
-    /** 自动装填逐发时间（autoreloader）；其余为空 */
-    shellReloads: number[]
-    /** 连发组每组发数（PomPom 类；0/1 = 无连发组）；组间仍按 intraClip */
-    burstGroupCount?: number
-    /** 连发组内弹间秒（BK `GunDefinition.burst.interval`） */
-    burstGroupInterval?: number
-  } | null
-  /** tank/{id}.json 当前配置的标准弹（AP/首个非金币）；burst 炮可空 */
-  standardShell: { damage: number; penetration: number; type: string; velocity?: number | null } | null
-  /** @deprecated 肾上腺素改由 gunCycle.type === 'regular' 判定（客户端 filter 的 clip 排除）；
-   *  保留字段仅为调用方兼容，引擎不再读取。 */
-  isBurstGun: boolean
-  /** tank/{id}.json 的装甲值（hull/turret × front/sides/rear），用于参数区装甲行 */
-  armor?: { hull?: { front?: number; sides?: number; rear?: number }; turret?: { front?: number; sides?: number; rear?: number } } | null
-  /** 装甲系数（强化装甲 110：客户端 script 的 armorHomogenizationFactor，未装 = 1） */
-  armorFactor?: number
-  /** 已选设备 id（resolveDeviceIds 输出） */
-  deviceIds: number[]
-  /** 乘员技能等级（0–7；未选技能 = 缺省 0，效果按满级百分比缩放） */
-  skillLevels?: Record<string, number>
-  /** 显式模拟条件技能触发；缺省 false，训练等级不会自动激活条件加成。 */
-  conditionalSkills?: boolean
-  /** 客户端 skills.json 的逐技能效果参数（per-level；不在此写死百分比） */
-  skillEffects?: Record<string, { effects?: Record<string, number> }>
-  provisionStems: string[]
-  consumableStems: string[]
-  /** 物品 script 摘要（provisions/consumables 的 {stem, script} 表） */
-  provisionScripts: Record<string, any>
-  consumableScripts: Record<string, any>
-  camouflage: boolean
-  /** 迷彩网客户端 script：`bonus` 逐车型系数 + 静止翻倍系数（devices.json camouflageNet） */
-  camouflageNet?: { bonus?: Record<string, number>; activateBonusFactor?: number } | null
-  /** 涂装隐蔽系数（camouflages.xml categories[defaultCategory]） */
-  paintInvisibility?: Record<string, number> | null
-  /** 车辆类别（lightTank/mediumTank/heavyTank/AT-SPG），类别加成用 */
-  vehicleClass: string
-  /** <crew> 角色表（modules.crewRoles）：专职角色 ×1.1；兼职（如 T-34 的 commander 兼
-   *  gunner）在 BI 实测中不给加成，与 BK 的 1.05 兜底不同——按 BI 口径保持 1.0。 */
-  crewRoles: string[]
-}
-
-export interface TankCharacteristics {
-  /** 参数键 → 数值；辅助字段（_susp 等）不是客户端参数键，允许非数值 */
-  [key: string]: any
-}
+import type { ComputeInput, TankCharacteristics } from './characteristicsTypes'
+export type { ComputeInput, TankCharacteristics } from './characteristicsTypes'
 
 /** coefficient（BK）：同调用内加法。 */
 function coeff(...effects: Array<[boolean, number]>): number {
   return effects.reduce((acc, e) => acc + (e[0] ? e[1] : 0), 1)
 }
 
-interface ModelBbox {
-  min: number[]
-  max: number[]
-}
-
-/** 单个碰撞盒 + 挂点偏移；全零 = 客户端空心占位（无炮塔 TD），返回 null 不参与并集。 */
-function bboxWithOffset(box: any, offset?: number[] | null): ModelBbox | null {
-  if (!box || !Array.isArray(box.min) || !Array.isArray(box.max)) return null
-  if (box.min.length < 3 || box.max.length < 3) return null
-  const values = [...box.min.slice(0, 3), ...box.max.slice(0, 3)]
-  if (!values.every(value => typeof value === 'number' && Number.isFinite(value))) return null
-  if (values.every(value => value === 0)) return null
-  const shift = offset || [0, 0, 0]
-  return {
-    min: box.min.slice(0, 3).map((value: number, i: number) => value + (shift[i] || 0)),
-    max: box.max.slice(0, 3).map((value: number, i: number) => value + (shift[i] || 0)),
-  }
-}
-
-export interface TankDimensions {
-  width: number
-  length: number
-  height: number
-  volume: number
-}
-
-/**
- * 车体尺寸（BI 11.21 Dimensions 同口径）：底盘 + 车体 + 当前炮塔碰撞盒并集，**不含炮管**
- * （BI 文案：“车体、炮塔和行走部分的长度/宽度/高度，无炮管——按游戏碰撞”）。
- *
- * 碰撞盒坐标是 [x 宽, y 长, z 高]；车辆 XML 的挂点（`hullPosition` / `turretPositions`）
- * 是 [x, 上, 前]，叠加前换序为 [x, 前, 上]；炮塔挂点 = 车体挂点 + 炮塔相对挂点。
- * 对拍：T-34 顶级炮塔 5.72 × 2.94 × 2.63 m、116-F3 7.63 × 3.49 × 2.70 m，与 BI 逐值一致。
- * 任一必需盒缺失/非数值 → null（fail-closed；参数行隐藏，不猜尺寸）。
- */
-export function tankDimensions(modules: any, turret: any, track: any): TankDimensions | null {
-  const hullPosition = track?.stats?.hullPosition
-  const turretOrigin = modules?.turretOrigin
-  if (!Array.isArray(hullPosition) || hullPosition.length < 3) return null
-  // [x, 上, 前] → [x, 前, 上]
-  const hullOffset = [hullPosition[0], hullPosition[2], hullPosition[1]]
-  // 炮塔盒是空心占位（无炮塔 TD）时不参与并集，也不要求挂点存在；
-  // 有实体炮塔盒却没有挂点 = 无法定位，整组 fail-closed。
-  const turretBox = bboxWithOffset(turret?.stats?.bbox)
-  if (turretBox && (!Array.isArray(turretOrigin) || turretOrigin.length < 3)) return null
-  const turretOffset = turretBox
-    ? [
-        hullOffset[0] + turretOrigin[0],
-        hullOffset[1] + turretOrigin[2],
-        hullOffset[2] + turretOrigin[1],
-      ]
-    : null
-  const boxes = [
-    bboxWithOffset(modules?.bbox?.chassis),
-    bboxWithOffset(modules?.bbox?.hull, hullOffset),
-    turretOffset ? bboxWithOffset(turret?.stats?.bbox, turretOffset) : null,
-  ].filter((box): box is ModelBbox => box !== null)
-  // BI J6：至少两个碰撞盒才出尺寸（缺车体/底盘时整组隐藏）
-  if (boxes.length < 2) return null
-  const min = [0, 1, 2].map(i => Math.min(...boxes.map(box => box.min[i])))
-  const max = [0, 1, 2].map(i => Math.max(...boxes.map(box => box.max[i])))
-  const size = [0, 1, 2].map(i => max[i] - min[i])
-  // BI J6 的合理区间守卫（0.5–20 m）：坏盒不产出尺寸
-  if (!size.every(value => Number.isFinite(value) && value > 0.5 && value < 20)) return null
-  return { width: size[0], length: size[1], height: size[2], volume: size[0] * size[1] * size[2] }
-}
+import { tankDimensions } from './tankDimensions'
+export { tankDimensions } from './tankDimensions'
+export type { TankDimensions } from './tankDimensions'
 
 export function computeCharacteristics(input: ComputeInput): TankCharacteristics {
   const { modules } = input
@@ -282,7 +150,7 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   // ---- 装填（BK：rammer × 乘员 ÷ 肾上腺素；条件技能仅在显式模拟触发时计入）----
   const reloadBase = gun.stats?.reloadTime ?? 0
-  const cycle = input.gunCycle || {
+  const cycle: NonNullable<ComputeInput['gunCycle']> = input.gunCycle || {
     type: 'regular', reload: reloadBase, intraClip: 0, shellCount: 0, shellReloads: [],
     burstGroupCount: 0, burstGroupInterval: 0,
   }
@@ -472,51 +340,9 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const clipDamage = isMagazine && cycle.shellCount > 0 && damage != null
     ? Math.round(damage * cycle.shellCount * 100) / 100
     : null
-  // DPM（BK resolveDpm）：regular 单发；autoloader 整匣循环；autoreloader 取最短单发循环
-  let dpm: number | null = null
-  let shotsPerMinute = reload && reload > 0 ? Math.round((60 / reload) * 100) / 100 : null
-  if (shell && damage != null) {
-    if (cycle.type === 'regular') {
-      dpm = reload ? Math.round(damage * 60 / reload) : null
-    } else if (cycle.type === 'autoloader' && cycle.shellCount > 0) {
-      // 整匣循环（BK resolveDpm）：无连发组 = reload + (n-1)×弹间；
-      // PomPom = reload + (组数-1)×弹间 + 组数×(每组发数-1)×组内弹间
-      //（组内连发比扳机间隔快，按普通弹夹算会把组内时间重复计一遍，DPM 显著偏低）。
-      const groupCount = (cycle.burstGroupCount || 0) > 1
-        ? cycle.shellCount / (cycle.burstGroupCount as number)
-        : 0
-      let cycleTime = cycle.reload * reloadCoeff
-      if (groupCount > 0) {
-        cycleTime += (groupCount - 1) * intraClip +
-          groupCount * ((cycle.burstGroupCount as number) - 1) * (cycle.burstGroupInterval || 0)
-      } else {
-        cycleTime += Math.max(0, cycle.shellCount - 1) * intraClip
-      }
-      dpm = cycleTime > 0 ? Math.round((damage * cycle.shellCount * 60) / cycleTime) : null
-      shotsPerMinute = cycleTime > 0 ? Math.round((cycle.shellCount * 60 / cycleTime) * 100) / 100 : null
-    } else if (cycle.type === 'autoreloader' && cycle.shellReloads.length > 0) {
-      const perShell = cycle.shellReloads.map((value, index) => value * reloadCoeff + (index > 0 ? intraClip : 0))
-      const best = Math.min(...perShell.filter(value => value > 0))
-      dpm = Number.isFinite(best) && best > 0 ? Math.round(damage * 60 / best) : null
-      shotsPerMinute = Number.isFinite(best) && best > 0 ? Math.round((60 / best) * 100) / 100 : null
-    }
-  }
-  // 自动装填炮“有效 DPM”（BK dpmEffective 的 60 s 窗口模型）：只有 autoreloader 有。
-  // BK 的分支条件是**原始**逐发装填（不乘系数）比较首两发；窗口与已打出的弹药数
-  // 取整匣，末发/首发耗时按分支选择（装填最长的一发决定循环）。少于两发时公式
-  // 无定义——留 null（fail-closed，不臆造）。
-  let dpmEffective: number | null = null
-  if (cycle.type === 'autoreloader' && cycle.shellReloads.length >= 2 && damage != null) {
-    const reloads = cycle.shellReloads
-    const rawIntra = cycle.intraClip
-    const longFirst = reloads[0] > reloads[1] + rawIntra
-    const denominatorReload = longFirst ? reloads[reloads.length - 1] : reloads[0]
-    const denominator = denominatorReload * reloadCoeff + rawIntra * intraClipFactor
-    const window = 60 - (reloads.length - 2) * rawIntra * intraClipFactor
-    dpmEffective = denominator > 0
-      ? Math.round(((damage / denominator) * window + damage * (reloads.length - 1)) * 100) / 100
-      : null
-  }
+  const { dpm, shotsPerMinute, dpmEffective } = calculateGunDamageRate(
+    cycle, reload, damage, !!shell, reloadCoeff, intraClip, intraClipFactor,
+  )
   // 弹速：超负荷 107 +35%；火药补给 gunPowder 的客户端 script projectileSpeedFactor = 35
   // （BK 旧值 30% 已过时，按客户端 script 取 35%）。弹种表/弹种明细按同一系数显示。
   const shellVelocityFactor = 1 + (has(107) ? 0.35 : 0) + (hasProvision('gunPowder') ? 0.35 : 0)
