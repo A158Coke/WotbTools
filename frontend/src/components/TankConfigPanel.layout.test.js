@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const source = readFileSync(fileURLToPath(new URL('./TankConfigPanel.vue', import.meta.url)), 'utf8')
+const source = ['./TankConfigPanel.vue', './TankModuleSelection.vue', './TankEquipmentGrid.vue']
+  .map(path => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')).join('\n')
 
 describe('TankConfigPanel mobile module layout', () => {
   it('手机按类型分组，不再按选项序号拼 2 列矩阵', () => {
