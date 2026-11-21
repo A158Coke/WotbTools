@@ -1,21 +1,17 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, watchEffect } from 'vue'
 import type { Ref } from 'vue'
-import { readOnboardingReceipt, saveOnboardingReceipt } from '../api/onboarding.js'
-import { profileBackendAllowed } from '../app/featureCapabilities.js'
 import { useAuth } from './useAuth.js'
 import { useConnectivity } from './useConnectivity.js'
-import { useBusinessUserBootstrap, whenBusinessUserSettled } from './useBusinessUserBootstrap.js'
+import { useBusinessUserBootstrap } from './useBusinessUserBootstrap.js'
 import { REPLACE_DECLINED } from '../shared/onboarding.js'
 import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, OnboardingTopic, OnboardingWorkspace } from '../shared/onboarding.js'
 import {
   EMPTY_RECEIPT,
   ONBOARDING_RELEASE,
   ONBOARDING_STORAGE_KEY,
-  type Disposition,
   type LocalOnboardingReceipt,
   type OnboardingGuidePosition,
   mergeOnboardingReceipts,
-  PRECEDENCE,
   pendingLoginFresh,
   readCache,
   readPendingLogin,
@@ -24,6 +20,8 @@ import {
   withoutReceipt,
   writePendingLogin,
 } from './useOnboardingStorage.js'
+import { createOnboardingReceiptSync } from './useOnboardingSync.js'
+import { createOnboardingDemoLoad, waitForValue } from './useOnboardingDemoLoad.js'
 import { ONBOARDING_GUIDES, SURFACES_READY_BEFORE_PREPARE } from './useOnboardingGuides.js'
 
 // —— 公共面保持稳定：内容注册表 / 存储键 / 回执工具从本入口 re-export ——
@@ -70,14 +68,15 @@ export function useOnboarding(options: {
   const demoFailed = ref(false)
   let runGeneration = 0
   let runAbort = new AbortController()
-  let demoAbort = new AbortController()
-  let demoLoad: Promise<void> | null = null
-  /** Sample-load ownership: only stopRun()/a newer load invalidates a continuation (step changes do not). */
-  let demoGeneration = 0
-  let syncGeneration = 0
-  let syncAbort = new AbortController()
   let previousIdentity = identity.value
-  let anonymousTerminal: LocalOnboardingReceipt | null = null
+  const anonymousTerminal = ref<LocalOnboardingReceipt | null>(null)
+  const { persist, record, synchronize, stopSync } = createOnboardingReceiptSync({
+    cache, identity, receiptKnown, anonymousTerminal,
+    authEpoch: () => auth.authEpoch(),
+    authInitState: auth.authInitState,
+    authenticated: auth.authenticated,
+    connectivity,
+  })
   let explicitLoginPending = auth.loginInFlight?.value === true
   let pendingLogin = readPendingLogin()
   /**
@@ -90,61 +89,17 @@ export function useOnboarding(options: {
   let guideLoginGeneration = pendingLogin?.guide?.generation ?? 0
   /** Set by `loginAiGuide()` so the loginInFlight watcher knows this login owns the AI lesson. */
   let guideLoginIntent: OnboardingGuidePosition | null = null
-  let preparingDemo = false
+  const preparingDemo = ref(false)
+  const { beginDemoLoad, awaitDemoLoad, cancelDemoLoad, currentDemoGeneration } = createOnboardingDemoLoad({
+    mode, workspace, demoFailed, preparingDemo, ensureReplayView,
+  })
 
-  function persist(identityKey: string, incoming: LocalOnboardingReceipt) {
-    // Read before writing so a same-browser account switch/tab cannot erase other users' receipts.
-    const disk = readCache()
-    const merged = { ...disk, ...cache.value }
-    for (const [key, value] of Object.entries(disk)) merged[key] = mergeOnboardingReceipts(merged[key] || EMPTY_RECEIPT, value)
-    merged[identityKey] = mergeOnboardingReceipts(merged[identityKey] || EMPTY_RECEIPT, incoming)
-    cache.value = merged
-    try { localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ version: 1, receipts: merged })) } catch { /* Session memory still suppresses repeated invitations. */ }
-  }
-
-  function record(disposition: Disposition) {
-    const previous = cache.value[identity.value]
-    const coreStep = disposition === 'OFFERED' && previous?.coreEpoch === ONBOARDING_RELEASE.coreEpoch ? previous.coreStep : undefined
-    const migrationConsumed = previous?.coreEpoch === ONBOARDING_RELEASE.coreEpoch && previous.migrationConsumed === true
-    const value = { coreEpoch: ONBOARDING_RELEASE.coreEpoch, disposition, ...(coreStep === undefined ? {} : { coreStep }), ...(migrationConsumed ? { migrationConsumed: true } : {}) }
-    persist(identity.value, value)
-    if (identity.value === 'anonymous' && !migrationConsumed && (disposition === 'COMPLETED' || disposition === 'SKIPPED')) anonymousTerminal = value
-  }
-
-  async function synchronize() {
-    const generation = ++syncGeneration
-    syncAbort.abort()
-    syncAbort = new AbortController()
-    const signal = syncAbort.signal
-    const owner = identity.value
-    const epoch = auth.authEpoch()
-    const context = { authInitState: auth.authInitState.value, authenticated: auth.authenticated.value, connectivity: connectivity.value }
-    const owns = () => generation === syncGeneration && owner === identity.value && epoch === auth.authEpoch() && !signal.aborted
-    receiptKnown.value = owner === 'anonymous' && context.authInitState === 'unauthenticated'
-    if (owner === 'anonymous' || owner === 'unknown-account' || !profileBackendAllowed(context)) return
-    try {
-      if (!await whenBusinessUserSettled(context) || !owns()) return
-      const remote = await readOnboardingReceipt(signal)
-      if (!owns()) return
-      persist(owner, remote)
-      receiptKnown.value = true
-      const local = cache.value[owner]
-      if (local && (local.disposition === 'COMPLETED' || local.disposition === 'SKIPPED')
-        && (local.coreEpoch > remote.coreEpoch || (local.coreEpoch === remote.coreEpoch && PRECEDENCE[local.disposition] > PRECEDENCE[remote.disposition]))) {
-        const saved = await saveOnboardingReceipt({ coreEpoch: local.coreEpoch, disposition: local.disposition }, signal)
-        if (owns()) persist(owner, saved)
-      }
-    } catch { /* Unknown server receipt must never be interpreted as a fresh account. Manual guides remain available. */ }
-  }
 
   function stopRun() {
     ++runGeneration
     runAbort.abort()
     runAbort = new AbortController()
-    ++demoGeneration
-    demoAbort.abort()
-    demoAbort = new AbortController()
-    demoLoad = null
+    cancelDemoLoad()
     issue.value = ''
     demoFailed.value = false
     for (const surface of Object.values(surfaces.value)) {
@@ -217,8 +172,8 @@ export function useOnboarding(options: {
     const anonymous = mergeOnboardingReceipts(cache.value.anonymous || EMPTY_RECEIPT, readCache().anonymous || EMPTY_RECEIPT)
     if (previousIdentity !== identity.value) {
       const migration = explicitLoginPending && previousIdentity === 'anonymous' && identity.value.startsWith('sub:')
-        && anonymousTerminal?.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed ? anonymousTerminal : null
-      anonymousTerminal = null
+        && anonymousTerminal.value?.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed ? anonymousTerminal.value : null
+      anonymousTerminal.value = null
       explicitLoginPending = false
       previousIdentity = identity.value
       interrupt()
@@ -328,7 +283,7 @@ export function useOnboarding(options: {
 
   watch(() => workspace.value?.selectionIdentity(), (selection, previous) => {
     if (mode.value === 'tour' && selection !== undefined && previous !== undefined
-      && selection !== previous && !preparingDemo) interrupt()
+      && selection !== previous && !preparingDemo.value) interrupt()
   }, { flush: 'sync' })
 
   function onStorage(event: StorageEvent) {
@@ -341,8 +296,7 @@ export function useOnboarding(options: {
   onMounted(() => window.addEventListener('storage', onStorage))
   onBeforeUnmount(() => {
     interrupt()
-    ++syncGeneration
-    syncAbort.abort()
+    stopSync()
     window.removeEventListener('storage', onStorage)
   })
 
@@ -365,70 +319,9 @@ export function useOnboarding(options: {
     mode.value = 'directory'
   }
 
-  function waitForValue<T>(read: () => T | null, signal: AbortSignal): Promise<T> {
-    const initial = read()
-    if (initial) return Promise.resolve(initial)
-    return new Promise((resolve, reject) => {
-      let stop = () => {}
-      const finish = (value?: T) => {
-        stop()
-        clearTimeout(timeout)
-        signal.removeEventListener('abort', abort)
-        value ? resolve(value) : reject(new Error('GUIDE_SURFACE_UNAVAILABLE'))
-      }
-      const abort = () => finish()
-      const timeout = setTimeout(() => finish(), 10000)
-      signal.addEventListener('abort', abort, { once: true })
-      stop = watch(read, value => { if (value) finish(value) }, { flush: 'sync' })
-      if (signal.aborted) finish()
-    })
-  }
-
   async function ensureReplayView() {
     // A cached workspace owner does not prove that its real page is currently visible.
     if (!REPLAY_VIEWS.has(options.view.value)) await options.navigate('replay')
-  }
-
-  /**
-   * Official-sample loading owns its own lifecycle: only leaving the guide cancels it.
-   * Sharing the step's AbortController cancelled the download on Next, so the playback step
-   * waited for a sample that would never arrive and Retry could not recover (#668).
-   */
-  function beginDemoLoad() {
-    demoAbort.abort()
-    demoAbort = new AbortController()
-    const generation = ++demoGeneration
-    const signal = demoAbort.signal
-    // A late continuation after skip/interrupt must never call loadDemo(): its ready fast path
-    // could still switch capability after the guide is gone.
-    const owns = () => generation === demoGeneration && mode.value === 'tour' && !signal.aborted
-    const promise = (async () => {
-      await ensureReplayView()
-      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
-      signal.throwIfAborted()
-      const owner = await waitForValue(() => workspace.value, signal)
-      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
-      signal.throwIfAborted()
-      preparingDemo = true
-      try { await owner.loadDemo(signal) } finally { preparingDemo = false }
-    })()
-    demoLoad = promise
-    void promise.catch(() => {}).then(() => { if (demoLoad === promise) demoLoad = null })
-    return promise
-  }
-
-  /**
-   * Wait for the sample when the step needs it.
-   * @returns false when this wait became stale (guide closed / newer sample load), so the caller stops.
-   */
-  async function awaitDemoLoad() {
-    if (!demoLoad) return true
-    const generation = demoGeneration
-    try { await demoLoad; return true } catch {
-      if (generation !== demoGeneration) return false
-      if (mode.value === 'tour') demoFailed.value = true
-      throw new Error('GUIDE_SAMPLE_UNAVAILABLE')
-    }
   }
 
   async function prepareStep() {
@@ -510,8 +403,8 @@ export function useOnboarding(options: {
     const load = beginDemoLoad()
     // A retry can outlive its guide. Capture this load's ownership before awaiting so a late
     // rejection/success from the old load never writes into a guide started meanwhile.
-    const generation = demoGeneration
-    const owns = () => generation === demoGeneration && mode.value === 'tour'
+    const generation = currentDemoGeneration()
+    const owns = () => generation === currentDemoGeneration() && mode.value === 'tour'
     try {
       await load
     } catch (e) {
