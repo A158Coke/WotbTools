@@ -1,21 +1,13 @@
 package com.wotbtools.app.auth
 
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
-import net.openid.appauth.AuthorizationServiceConfiguration
-import net.openid.appauth.CodeVerifierUtil
-import net.openid.appauth.EndSessionRequest
-import net.openid.appauth.ResponseTypeValues
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
@@ -93,18 +85,6 @@ internal class AuthManager private constructor(context: Context) {
      */
     private var authService: AuthorizationService? = null
 
-    /** discovery 结果：进程内缓存一次（Keycloak metadata 不随请求变化）。 */
-    private var configuration: AuthorizationServiceConfiguration? = null
-
-    /** discovery 是否在飞（防止并发重复拉取）。 */
-    private var discovering = false
-
-    /** discovery 完成后待执行的一次登录（用户在 metadata 到手前就点了登录）。 */
-    private var pendingLogin = false
-
-    /** 排队登录要用的登录页语言（OIDC `ui_locales`）；与 [pendingLogin] 同锁读写。 */
-    private var pendingUiLocale: String? = null
-
     private val listeners = mutableListOf<Listener>()
 
     private var session: AuthSession? = null
@@ -121,16 +101,13 @@ internal class AuthManager private constructor(context: Context) {
      */
     private var hostActivityClass: Class<*>? = null
 
-    /**
-     * 已经处理过的授权响应 identity（= 该次请求的 `state`）。
-     *
-     * 为什么必须有：回程经 PendingIntent 投递，而 MainActivity 是 `singleTask`，配置变更 / 进程重建后
-     * 系统会把**同一个 intent 再交付一次**。授权码是一次性的，重复交换必然失败，而失败路径会清空会话
-     * —— 那会把一次已经成功的登录自己销毁掉。这里只持久化「最近一次处理过的 state」这一个字符串：
-     * 不做去重表，也不保存 token / code。
-     */
-    @Volatile
-    private var processedResponseState: String? = null
+    private val browser = AuthBrowserFlow(appContext, transactions, lock, executor, mainHandler,
+        ::activityClass, ::authorizationService, ::notifyListeners)
+    private val callbackHandler = AuthCallbackHandler(transactions, ::exchangeAuthorizationCode)
+
+    internal fun warmUp() = browser.warmUp()
+    internal fun login(uiLocale: String? = null) = browser.login(uiLocale)
+    internal fun handleAuthorizationResult(intent: Intent?): AuthResult = callbackHandler.handleAuthorizationResult(intent)
 
     // ── 听众注册 ──
 
@@ -183,246 +160,9 @@ internal class AuthManager private constructor(context: Context) {
         return restored
     }
 
-    // ── 登录 ──
-
-    /**
-     * 预热 discovery：拉取一次 Keycloak metadata 并缓存（进程内一次）。
-     *
-     * 失败只记日志：认证不是启动门禁，没有配置时 [login] 只会回 false，页面按既有失败路径提示重试。
-     */
-    internal fun warmUp() {
-        var needsFetch = false
-        synchronized(lock) {
-            if (configuration == null && !discovering) {
-                discovering = true
-                needsFetch = true
-            }
-        }
-        if (needsFetch) onMainThread { fetchConfiguration() }
-    }
-
-    /**
-     * 启动登录：构建 Authorization Code + PKCE(S256) 请求，持久化含 verifier 的交易状态，
-     * 然后把它交给 external user-agent（Custom Tabs）。
-     *
-     * 线程：由 bridge 的**后台**线程调用；真正的启动被切到主线程（AppAuth 内部走 `startActivity`）。
-     * 不在这里等待启动结果 —— 那会把后台线程绑在主线程队列上（主线程若正忙就可能长时间阻塞），
-     * 返回值的语义是「请求已被受理」而不是「浏览器窗口已经出现」。
-     *
-     * metadata 还没到手时**排队**而不是拒绝：冷启动后用户可能比 discovery 更快点登录，
-     * 直接回 false 会白丢一次点击。拉取失败时走 [notifyListeners]，让页面重新取状态后自行决定重试，
-     * 绝不静默吞掉一次点击。
-     *
-     * [uiLocale] 是页面当前语言（bridge 已按白名单收窄），作为 OIDC `ui_locales` 让登录页默认同语言；null 不带。
-     *
-     * @return true 表示这次请求已被受理（立刻启动或排队等待 metadata）；false 表示完全无法受理。
-     */
-    internal fun login(uiLocale: String? = null): Boolean {
-        var fetchNeeded = false
-        val ready = synchronized(lock) {
-            if (configuration != null) return@synchronized true
-            // 没有 metadata 就排队，并在需要时发起一次 discovery。
-            pendingLogin = true
-            pendingUiLocale = uiLocale
-            if (!discovering) {
-                discovering = true
-                fetchNeeded = true
-            }
-            false
-        }
-        if (ready) {
-            // 返回值语义：true = 已受理（交易已落盘并已交给浏览器）；false = 无法受理（落盘失败）。
-            return launchAuthorization(uiLocale)
-        }
-        if (fetchNeeded) onMainThread { fetchConfiguration() }
-        Log.d(TAG, "auth-login queued reason=configuration-pending")
-        return true
-    }
-
-    /** 把 `startActivity` 类动作切到主线程；已经在主线程时直接执行。 */
-    private fun onMainThread(action: () -> Unit) {
-        if (Looper.myLooper() === Looper.getMainLooper()) action() else mainHandler.post(action)
-    }
-
-    private fun fetchConfiguration() {
-        val issuer = Uri.parse(OidcConfiguration.ISSUER)
-        AuthorizationServiceConfiguration.fetchFromIssuer(
-            issuer,
-            object : AuthorizationServiceConfiguration.RetrieveConfigurationCallback {
-                override fun onFetchConfigurationCompleted(
-                    fetched: AuthorizationServiceConfiguration?,
-                    ex: AuthorizationException?
-                ) {
-                    if (fetched == null) {
-                        Log.d(TAG, "auth-discovery failed category=${ex?.error ?: "unknown"}")
-                        val dropped = synchronized(lock) {
-                            discovering = false
-                            val wasPending = pendingLogin
-                            pendingLogin = false
-                            pendingUiLocale = null
-                            wasPending
-                        }
-                        // 排队中的登录无法完成：必须让页面知道（重新取状态 → 自行提示重试），
-                        // 否则用户点的那一次登录会静默消失。
-                        if (dropped) notifyListeners()
-                        return
-                    }
-                    var queuedUiLocale: String? = null
-                    val queued = synchronized(lock) {
-                        configuration = fetched
-                        discovering = false
-                        val wasPending = pendingLogin
-                        pendingLogin = false
-                        queuedUiLocale = pendingUiLocale
-                        pendingUiLocale = null
-                        wasPending
-                    }
-                    Log.d(TAG, "auth-discovery ready")
-                    // 只补上排队的那一次登录：没有排队就不主动弹浏览器（预热不等于自动登录）。
-                    if (queued) launchAuthorization(queuedUiLocale)
-                }
-            }
-        )
-    }
-
-    /**
-     * 真正启动 external user-agent。必须在主线程调用（库内部走 `startActivity`）。
-     *
-     * PKCE 必须**显式 S256**：单参数 `setCodeVerifier(verifier)` 不会设置
-     * `codeVerifierChallengeMethod`，授权 URL 会带上没有 method 的 `code_challenge`，Keycloak 按
-     * `plain` 处理 —— 那是一次真实的 PKCE 降级。这里三个参数全部显式给出。
-     *
-     * state 与 nonce 由库的 builder 自动生成（`AuthorizationRequest.Builder` 构造时生成随机 state，
-     * `build()` 时生成 nonce），无需也不应手工设置：手工设置会引入第二个随机源。
-     */
-    private fun launchAuthorization(uiLocale: String?): Boolean {
-        val config = synchronized(lock) { configuration }
-        if (config == null) {
-            Log.d(TAG, "auth-login not-launched reason=no-configuration")
-            return false
-        }
-
-        val selectedRedirectUri = OidcRedirectStrategy.redirectUri()
-        val builder = AuthorizationRequest.Builder(
-            config,
-            OidcConfiguration.CLIENT_ID,
-            ResponseTypeValues.CODE,
-            Uri.parse(selectedRedirectUri)
-        ).setScope(OidcConfiguration.SCOPE)
-        if (uiLocale != null) builder.setUiLocales(uiLocale)
-        val verifier = CodeVerifierUtil.generateRandomCodeVerifier()
-        builder.setCodeVerifier(
-            verifier,
-            CodeVerifierUtil.deriveCodeVerifierChallenge(verifier),
-            AuthorizationRequest.CODE_CHALLENGE_METHOD_S256
-        )
-        val request = builder.build()
-
-        // 交易必须先**成功落盘**才允许启动浏览器：没有落盘的交易不可能通过回程的归属校验，
-        // 启动它等于制造一次必然失败的登录（见 persistTransactionThenLaunch）。
-        //
-        // 线程：调用方通常是 bridge 的认证线程（落了盘就能立刻给出诚实的返回值）；若调用方是主线程
-        // （discovery 回调补齐排队登录），落盘 + 启动整体交给 auth executor，主线程不做磁盘 /
-        // Keystore I/O。
-        return if (Looper.myLooper() === Looper.getMainLooper()) {
-            executor.execute { persistTransactionThenLaunch(request, selectedRedirectUri) }
-            true
-        } else {
-            persistTransactionThenLaunch(request, selectedRedirectUri)
-        }
-    }
-
-    /**
-     * 落盘交易 → 启动 external user-agent。顺序不可颠倒：落盘失败时**绝不**打开浏览器，
-     * 也绝不留下「已受理」的假象（调用方拿到 false，页面据此把这次登录当成可重试的失败）。
-     */
-    private fun persistTransactionThenLaunch(request: AuthorizationRequest, redirectUri: String): Boolean {
-        // 没有 state 的请求无法做交易归属校验：绝不启动（fail closed），也绝不留下一笔无法匹配的交易。
-        val state = request.state?.takeIf { it.isNotBlank() }
-        if (state == null) {
-            Log.d(TAG, "auth-login not-launched reason=missing-state")
-            notifyListeners()
-            return false
-        }
-        if (!transactions.save(state, redirectUri)) {
-            // 落盘失败（Keystore / prefs 异常）：不启动、不假装已受理；已有会话原样保留。
-            Log.d(TAG, "auth-login not-launched reason=persist-failed")
-            // 让页面重新取一次状态：用户那次点击不会静默消失，登录按钮仍然可重试。
-            notifyListeners()
-            return false
-        }
-        Log.d(TAG, "auth-login persisted redirect=${OidcConfiguration.redirectCategory(redirectUri)}")
-        onMainThread { startAuthorizationRequest(request, state) }
-        return true
-    }
-
-    /**
-     * AppAuth 回程 `PendingIntent` 的 flag 策略（**只**用于 AppAuth 的回程，不要外推到其它
-     * PendingIntent）。
-     *
-     * AppAuth 的 `AuthorizationManagementActivity` 并不复用调用方给的 Intent：它先组装一个新的
-     * 响应 Intent（`AuthorizationResponse.EXTRA_RESPONSE` / `AuthorizationException.EXTRA_EXCEPTION`
-     * 两个 extra + 完整 redirect URI 作为 data），再用
-     * `callback.send(context, 0, responseData)` 交给调用方的 completion `PendingIntent`。
-     * 因此这个 PendingIntent **必须允许 AppAuth 填入自己的 Intent**：
-     *
-     *  - `FLAG_IMMUTABLE` 冻结创建时的 Intent，`send(..., fillInIntent)` 的填充会被静默忽略 ⇒
-     *    `MainActivity.isAuthorizationIntent()` 看不到 response/exception extra，回程被当成一次普通
-     *    启动，授权码永远不会被交换（真机表现：浏览器里认证成功，App 里始终未登录）。
-     *  - `FLAG_MUTABLE` 自 API 31 起存在；minSdk 26 必须按版本降级 —— 31 以下不存在「不可变」默认，
-     *    `FLAG_UPDATE_CURRENT` 本身就允许填充。
-     *
-     * 基础 Intent 仍然必须是**显式组件**（`Intent(appContext, activityClass())`）：可变的是
-     * 「允许 AppAuth 填 extras」，而不是「允许任意应用隐式解析到这个 PendingIntent」。
-     */
-    private fun appAuthCallbackFlags(): Int =
-        PendingIntent.FLAG_UPDATE_CURRENT or
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-
-    /**
-     * 把请求交给 external user-agent。主线程调用：库内部走 `startActivity`。
-     *
-     * @param transactionState 这笔交易的 `state`：启动失败时用它做身份匹配的清理，绝不误清
-     *   一笔在这中间被替换掉的新交易。
-     */
-    private fun startAuthorizationRequest(request: AuthorizationRequest, transactionState: String) {
-        val completionIntent = PendingIntent.getActivity(
-            appContext,
-            REQUEST_CODE_LOGIN,
-            Intent(appContext, activityClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            appAuthCallbackFlags()
-        )
-        try {
-            authorizationService().performAuthorizationRequest(request, completionIntent)
-            Log.d(TAG, "auth-login launched")
-        } catch (e: Exception) {
-            // 浏览器不可用 / 启动失败：这笔交易不可能再有回程，按身份清掉它（若中间已被新交易替换，
-            // clearIfState 会保留新的那笔）。
-            transactions.clearIfState(transactionState, "launch-failed")
-            Log.d(TAG, "auth-login failed category=${e.javaClass.simpleName}")
-        }
-    }
-
     /** 回程 `Intent` 的目标 Activity；未注入即抛，属于编程错误（构造必须经 [Companion.getInstance]）。 */
     private fun activityClass(): Class<*> = hostActivityClass
         ?: error("AuthManager.getInstance must be used so the host activity class is known")
-
-    /**
-     * 该 intent 是否携带**已经处理过**的那次响应。
-     *
-     * identity 用请求的 `state`（每次交易随机、唯一）；只有能明确读出同一个 state 时才跳过，
-     * 读不出 state 一律当作新响应继续走正常流程 —— 宁可让幂等判断失效，也不能吞掉一次真实登录。
-     */
-    private fun alreadyProcessed(intent: Intent?): Boolean {
-        val seen = processedResponseState ?: return false
-        val response = try {
-            intent?.let { AuthorizationResponse.fromIntent(it) }
-        } catch (_: Exception) {
-            null
-        }
-        val state = response?.request?.state ?: return false
-        return state == seen
-    }
 
     private fun authorizationService(): AuthorizationService {
         synchronized(lock) {
@@ -431,115 +171,6 @@ internal class AuthManager private constructor(context: Context) {
             authService = created
             return created
         }
-    }
-
-    // ── 授权结果 ──
-
-    /**
-     * 处理授权结果 intent（MainActivity 的 onCreate / onNewIntent / onActivityResult 都调这里）。
-     *
-     * 三条路径都必须收敛到「可复用的未认证」或「已认证」，绝不留下卡死状态：
-     *  - 空 intent / RESULT_CANCELED / 缺少响应与异常 → [AuthFailureReason.CANCELLED]；
-     *  - 响应存在 → 先过 [AuthResponseGuard]（交易身份 + redirect 归属 + code 存在性 + 错误分类），
-     *    再换 token；
-     *  - 交换失败 → 只消费这笔交易，已有会话不受影响（见 [exchangeAuthorizationCode]）。
-     *
-     * **失败路径的清理一律按身份**：只有能证明这次回程属于当前交易时才消费它，否则对这次回程
-     * fail closed 并原样保留当前交易（陈旧 / 外来的 callback 不得作废一笔新登录）。
-     *
-     * 同一个 intent 被系统重复交付时直接跳过（见 [processedResponseState]）：授权码只能用一次。
-     */
-    internal fun handleAuthorizationResult(intent: Intent?): AuthResult {
-        // 同一个回程 intent 重复投递：什么都不做（既不能重复换码，也不能因此清掉已有会话）。
-        if (Companion.isAuthorizationIntent(intent) && alreadyProcessed(intent)) {
-            Log.d(TAG, "auth-result ignored reason=already-processed")
-            return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, ALREADY_PROCESSED_DETAIL)
-        }
-
-        // 库已经把 state 不匹配的响应换成 STATE_MISMATCH 异常，走到这里的响应 state 一定匹配。
-        val exception = try {
-            intent?.let { AuthorizationException.fromIntent(it) }
-        } catch (_: Exception) {
-            null
-        }
-        if (exception != null) {
-            val reason = when {
-                exception.code == AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW.code ->
-                    AuthFailureReason.CANCELLED
-                exception.code == AuthorizationException.GeneralErrors.PROGRAM_CANCELED_AUTH_FLOW.code ->
-                    AuthFailureReason.CANCELLED
-                // IdP 用 error 回程（`?error=access_denied`）时库走的是 exception 路径，响应里根本没有
-                // 可读的 error 参数；因此取消家族必须在这里再判一次，否则用户主动取消会被当成故障提示。
-                AuthResponseGuard.isCancelledProviderError(exception.error) -> AuthFailureReason.CANCELLED
-                exception.code == AuthorizationException.AuthorizationRequestErrors.STATE_MISMATCH.code ->
-                    AuthFailureReason.STATE_MISMATCH
-                else -> AuthFailureReason.PROVIDER_ERROR
-            }
-            // 回程失败（含库判定的 STATE_MISMATCH）只允许作废**它自己那一笔**交易：
-            //  - 回程 URI 里带回的 `state` 与当前交易身份一致 ⇒ 是本次交易的失败 ⇒ 按身份清掉；
-            //  - 带回的 state 对不上，或根本读不出 state（用户直接返回、浏览器关闭）⇒ 归属无法证明，
-            //    对这次回程 fail closed，但**原样保留**当前交易（用户可能已经开始了一笔更新的登录）。
-            // 已有会话与这些都无关：它不是这次失败证明为无效的东西。
-            val returnedState = stateOf(intent?.data)
-            val consumed = transactions.clearIfState(returnedState, "auth-exception")
-            val detail = exception.error?.takeIf { it.isNotBlank() }
-            Log.d(TAG, "auth-result outcome=failure reason=${reason.name.lowercase()} " +
-                "code=${exception.code} error=${detail ?: "none"} " +
-                "transaction=${if (consumed) "consumed" else "preserved"}")
-            return AuthResult.Failure(reason, detail)
-        }
-
-        val response = try {
-            intent?.let { AuthorizationResponse.fromIntent(it) }
-        } catch (_: Exception) {
-            null
-        }
-        if (response == null) {
-            // 没有响应对象 ⇒ 无法证明这次回程属于哪一笔交易（典型：用户取消 / 直接返回）。
-            // 对这次回程 fail closed，但**不**清当前交易：陈旧或无法归属的回程不得作废一笔新登录。
-            Log.d(TAG, "auth-result outcome=cancelled reason=no-response transaction=preserved")
-            return AuthResult.Failure(AuthFailureReason.CANCELLED, "no-response")
-        }
-
-        // 回程校验的唯一依据是**交易域**：当前交易的身份（state）与实际使用的回程 URI。
-        // 交易不存在（回程是伪造的 / 已被消费）时 fail closed，且绝不去动会话域。
-        val transaction = transactions.load()
-        if (transaction == null) {
-            Log.d(TAG, "auth-result outcome=rejected reason=no-pending-transaction")
-            return AuthResult.Failure(AuthFailureReason.UNSUPPORTED, NO_PENDING_TRANSACTION_DETAIL)
-        }
-
-        val guardFailure = AuthResponseGuard.verify(
-            // 交易归属校验的两个操作数必须来自**两处独立来源**：
-            //  - expectedState：我们自己持久化那笔交易的身份（state）；
-            //  - responseState：OAuth 响应真正携带回来的 `response.state`。
-            // 刻意**不**用 `response.request.state`：那是响应里自带的 request，与自己比较是自指
-            // （恒等），等于这道独立校验不存在。
-            expectedState = transaction.state,
-            responseState = response.state,
-            expectedRedirectUri = transaction.redirectUri,
-            responseRedirectUri = redirectUriOf(intent?.data),
-            code = response.authorizationCode,
-            error = response.additionalParameters[ERROR_PARAM]
-        )
-        if (guardFailure != null) {
-            // 只有能证明属于当前交易的回程才允许消费它：state 不一致（陈旧 / 外来）时
-            // clearIfState 返回 false，当前交易原样保留。
-            val consumed = transactions.clearIfState(response.state, "guard-${guardFailure.logToken}")
-            Log.d(TAG, "auth-result outcome=rejected reason=${guardFailure.logToken} " +
-                "detail=${guardFailure.detail} transaction=${if (consumed) "consumed" else "preserved"}")
-            return guardFailure
-        }
-
-        // 只有走到这里才说明回程**属于当前交易**（guard 已用 response.state 与交易身份比对过），
-        // 因此这笔交易可以被这次交换按身份消费。
-        exchangeAuthorizationCode(response, transaction.state)
-        // 记下这次响应的 identity：同一个 intent 再次被交付时直接跳过，避免用已消耗的授权码再换一次。
-        processedResponseState = response.request.state
-        // 交换是异步的：这里的结果表示「已接受并开始交换」，真正的会话由 authChanged 事件与随后的
-        // authGetAccessToken 表达（bridge 不等待 token endpoint）。
-        Log.d(TAG, "auth-result outcome=exchanging")
-        return AuthResult.ExchangeStarted
     }
 
     /**
@@ -606,7 +237,7 @@ internal class AuthManager private constructor(context: Context) {
         // 最后才发远端 end-session —— 「本地状态绝不跨过 logout 存活」不依赖网络，也不依赖主线程。
         val idTokenHint = idTokenHintOf(loadAuthStateForRefresh())
         clearLocalSession()
-        onMainThread { endSession(idTokenHint) }
+        browser.onMainThread { browser.endSession(idTokenHint) }
         Log.d(TAG, "auth-logout local-cleared")
         return true
     }
@@ -614,31 +245,6 @@ internal class AuthManager private constructor(context: Context) {
     /** id_token 只作为 end-session 的 hint；不存在就照样结束 SSO 会话。 */
     private fun idTokenHintOf(authState: net.openid.appauth.AuthState?): String? =
         authState?.idToken?.takeIf { it.isNotBlank() }
-
-    /** best-effort 远端 end-session：失败只记日志，本地会话早已清空。 */
-    private fun endSession(idTokenHint: String?) {
-        val config = synchronized(lock) { configuration }
-        if (config?.endSessionEndpoint == null) {
-            Log.d(TAG, "auth-end-session skipped reason=no-end-session-endpoint")
-            return
-        }
-        try {
-            val builder = EndSessionRequest.Builder(config)
-                .setPostLogoutRedirectUri(Uri.parse(OidcConfiguration.PRIVATE_REDIRECT_URI))
-            // id_token 只在存在时作为 hint：没有会话时仍然结束 SSO 会话。
-            if (!idTokenHint.isNullOrBlank()) builder.setIdTokenHint(idTokenHint)
-            val completionIntent = PendingIntent.getActivity(
-                appContext,
-                REQUEST_CODE_END_SESSION,
-                Intent(appContext, activityClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                appAuthCallbackFlags()
-            )
-            authorizationService().performEndSessionRequest(builder.build(), completionIntent)
-            Log.d(TAG, "auth-end-session launched")
-        } catch (e: Exception) {
-            Log.d(TAG, "auth-end-session skipped category=${e.javaClass.simpleName}")
-        }
-    }
 
     /**
      * 清本地**会话**（内存 + 会话状态域）并通知；幂等。
@@ -797,38 +403,9 @@ internal class AuthManager private constructor(context: Context) {
         if (changed) notifyListeners()
     }
 
-    // ── 回程 URI 解析（归一化 + 身份）──
-
-    /**
-     * 响应 URI 的**回程部分**：剥掉 query 与 fragment，只留 scheme/authority/path。
-     * 响应参数（code / state / error）都在 query 里，不能参与回程比对。畸形 URI 返回 null，
-     * 由 [AuthResponseGuard] 判成 redirect-mismatch（fail closed）。
-     */
-    private fun redirectUriOf(responseUri: Uri?): String? {
-        val uri = responseUri ?: return null
-        val scheme = uri.scheme ?: return null
-        val builder = Uri.Builder().scheme(scheme)
-        uri.encodedAuthority?.let { builder.encodedAuthority(it) }
-        uri.encodedPath?.let { builder.encodedPath(it) }
-        return try {
-            builder.build().toString()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
-     * 回程 URI 里带回的 `state`（交易身份）。读不出就返回 null ⇒ 调用方按「归属无法证明」处理：
-     * 对这次回程 fail closed，但**不**清当前交易（陈旧 / 外来回程不得作废一笔新登录）。
-     */
-    private fun stateOf(responseUri: Uri?): String? = try {
-        responseUri?.getQueryParameter(STATE_PARAM)?.takeIf { it.isNotBlank() }
-    } catch (_: Exception) {
-        null
-    }
-
     internal companion object {
         private const val TAG = "WotbAuth"
+        private const val REFRESH_TIMEOUT_SECONDS = 30L
 
         /**
          * 回程 intent 被重复交付时的失败 detail。调用方据此**不弹失败提示** —— 那不是一次新的登录失败，
@@ -842,17 +419,6 @@ internal class AuthManager private constructor(context: Context) {
          */
         internal const val NO_PENDING_TRANSACTION_DETAIL = "no-pending-transaction"
 
-        /** 授权完成回程的 PendingIntent request code。 */
-        private const val REQUEST_CODE_LOGIN = 0
-
-        /** post-logout 回程的 PendingIntent request code（与登录区分，避免复用同一 PendingIntent）。 */
-        private const val REQUEST_CODE_END_SESSION = 1
-
-        private const val ERROR_PARAM = "error"
-
-        /** 回程 URI 里的交易身份参数（OAuth `state`）。 */
-        private const val STATE_PARAM = "state"
-        private const val REFRESH_TIMEOUT_SECONDS = 30L
 
         @Volatile
         private var instance: AuthManager? = null

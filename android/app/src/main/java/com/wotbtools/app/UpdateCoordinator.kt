@@ -8,10 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.app.DownloadManager
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Notification
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.concurrent.CopyOnWriteArraySet
@@ -65,47 +62,15 @@ internal class UpdateCoordinator internal constructor(
     }
     private var receiverRegistered = false
 
-    data class DownloadSnapshot(
-        val taskToken: String? = null,
-        val versionName: String? = null,
-        val versionCode: Int? = null,
-        val state: String = "idle",
-        val downloadedBytes: Long? = null,
-        val totalBytes: Long? = null,
-        val progressPercent: Int? = null,
-        val failureReason: String? = null,
-        val packageType: String? = null,
-    ) {
-        fun toJson(): JSONObject = JSONObject()
-            .put("taskToken", taskToken ?: JSONObject.NULL)
-            .put("versionName", versionName ?: JSONObject.NULL)
-            .put("versionCode", versionCode ?: JSONObject.NULL)
-            .put("state", state)
-            .put("downloadedBytes", downloadedBytes ?: JSONObject.NULL)
-            .put("totalBytes", totalBytes ?: JSONObject.NULL)
-            .put("progressPercent", progressPercent ?: JSONObject.NULL)
-            .put("failureReason", failureReason ?: JSONObject.NULL)
-            .put("packageType", packageType ?: JSONObject.NULL)
-    }
-
-    data class Status(
-        val revision: Long = 0,
-        val manifest: VersionManifest? = null,
-        val checkState: String = "idle",
-        val checkFailureReason: String? = null,
-        val optionalPromptSuppressed: Boolean = false,
-        val download: DownloadSnapshot = DownloadSnapshot(),
-    )
-
     @Volatile
-    var status = Status()
+    var status = UpdateStatus()
         private set
 
     val latestManifest: VersionManifest?
         get() = status.manifest
 
     /** 一个分类实现，供 Native renderer 和 bridge 投影共同使用。 */
-    fun state(snapshot: Status = status): String {
+    fun state(snapshot: UpdateStatus = status): String {
         val manifest = snapshot.manifest
         return if (manifest != null) classify(currentVersionCode, manifest) else when (snapshot.checkState) {
             "checking" -> "checking"
@@ -114,25 +79,7 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
-    fun snapshot(): JSONObject = json(status)
-
-    private fun json(snapshot: Status): JSONObject {
-        val manifest = snapshot.manifest
-        return JSONObject()
-            .put("revision", snapshot.revision)
-            .put("state", state(snapshot))
-            .put("checkState", snapshot.checkState)
-            .put("checkFailureReason", snapshot.checkFailureReason ?: JSONObject.NULL)
-            .put("currentVersionName", currentVersionName)
-            .put("currentVersionCode", currentVersionCode)
-            .put("latestVersionName", manifest?.latestVersionName ?: JSONObject.NULL)
-            .put("latestVersionCode", manifest?.latestVersionCode ?: JSONObject.NULL)
-            .put("minSupportedVersionCode", manifest?.minSupportedVersionCode ?: JSONObject.NULL)
-            .put("publishedAt", manifest?.publishedAt ?: JSONObject.NULL)
-            .put("releaseNotes", manifest?.releaseNotes ?: JSONObject.NULL)
-            .put("optionalPromptSuppressed", snapshot.optionalPromptSuppressed)
-            .put("download", snapshot.download.toJson())
-    }
+    fun snapshot(): JSONObject = status.toBridgeJson(state(status), currentVersionName, currentVersionCode)
 
     fun legacyCheckForUpdate(): Boolean = latestManifest?.let { currentVersionCode < it.latestVersionCode } ?: false
 
@@ -152,43 +99,9 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
-    /** 通知仅是导航入口；文件身份和安装资格仍由 coordinator 校验。 */
-    private fun updateReadyNotification(snapshot: Status) {
-        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val download = snapshot.download
-        val valid = download.state == "ready" && download.taskToken != null &&
-            download.taskToken == verifiedToken && download.versionCode != null &&
-            download.versionCode > currentVersionCode && download.failureReason != "unsupportedArtifact" &&
-            snapshot.manifest?.let { download.versionCode >= it.minSupportedVersionCode } != false
-        if (!valid) {
-            manager.cancel(READY_NOTIFICATION_ID)
-            return
-        }
-        try {
-            manager.createNotificationChannel(NotificationChannel(READY_CHANNEL,
-                applicationContext.getString(R.string.update_notification_channel), NotificationManager.IMPORTANCE_DEFAULT))
-            val intent = Intent(applicationContext, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                .putExtra(OPEN_UPDATE_PANEL, true)
-            val pending = PendingIntent.getActivity(applicationContext, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val notification = Notification.Builder(applicationContext, READY_CHANNEL)
-                .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                .setContentTitle(applicationContext.getString(R.string.update_notification_title))
-                .setContentText(applicationContext.getString(R.string.update_notification_text, download.versionName ?: ""))
-                .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true).build()
-            manager.notify(READY_NOTIFICATION_ID, notification)
-        } catch (_: SecurityException) {
-            // 通知权限是可选入口，拒绝时不影响校验和安装。
-        } catch (error: RuntimeException) {
-            // 通知服务异常不能使更新状态机停止。
-            Log.w(TAG, "update_notification_failed", error)
-        }
-    }
-
-    private fun publish(next: Status) {
+    private fun publish(next: UpdateStatus) {
         status = next.copy(revision = status.revision + 1)
-        updateReadyNotification(status)
+        updateReadyNotification(applicationContext, status, verifiedToken, currentVersionCode)
         notifyListeners()
     }
 
@@ -246,7 +159,7 @@ internal class UpdateCoordinator internal constructor(
         val completed = status
         val replies = pendingRefreshReplies.toList()
         pendingRefreshReplies.clear()
-        replies.forEach { callback -> mainHandler.post { callback(json(completed)) } }
+        replies.forEach { callback -> mainHandler.post { callback(completed.toBridgeJson(state(completed), currentVersionName, currentVersionCode)) } }
     }
 
     fun dismissOptionalUpdate(expectedLatestVersionCode: Int, reply: (Boolean) -> Unit) {
@@ -278,15 +191,15 @@ internal class UpdateCoordinator internal constructor(
     }
 
     private fun taskSnapshot(task: ApkUpdater.Task, state: String, bytes: Long? = null,
-                             total: Long? = null, reason: String? = null): DownloadSnapshot {
+                             total: Long? = null, reason: String? = null): UpdateDownloadSnapshot {
         val unsupported = status.manifest?.let { task.versionCode < it.minSupportedVersionCode } == true
         val displayedState = if (task.packageType == "delta" && state == "downloading") "downloadingDelta" else state
-        return DownloadSnapshot(task.token, task.versionName, task.versionCode, displayedState, bytes, total,
+        return UpdateDownloadSnapshot(task.token, task.versionName, task.versionCode, displayedState, bytes, total,
             if (bytes != null && total != null && total > 0) ((bytes.toDouble() / total * 100).toInt().coerceIn(0, 100)) else null,
             if (unsupported) "unsupportedArtifact" else reason, task.packageType)
     }
 
-    private fun publishDownload(next: DownloadSnapshot) {
+    private fun publishDownload(next: UpdateDownloadSnapshot) {
         if (status.download != next) publish(status.copy(download = next))
     }
 
@@ -362,12 +275,12 @@ internal class UpdateCoordinator internal constructor(
                                 failureReason = foundFailure))
                             Log.i(TAG, "update_download_failed reason=$foundFailure")
                         }
-                        installed -> { verifiedToken = null; publishDownload(DownloadSnapshot()) }
+                        installed -> { verifiedToken = null; publishDownload(UpdateDownloadSnapshot()) }
                         foundTask == null -> {
                             verifiedToken = null
                             activeDownloadId = null
                             if (status.download.state in setOf("ready", "verifying", "installPermissionRequired", "installRequestFailed", "installRequested"))
-                                publishDownload(DownloadSnapshot())
+                                publishDownload(UpdateDownloadSnapshot())
                             // 保留刚才的下载/校验失败，直到显式用户重试。
                         }
                         foundReport != null -> {
@@ -564,8 +477,6 @@ internal class UpdateCoordinator internal constructor(
 
     companion object {
         internal const val OPEN_UPDATE_PANEL = "com.wotbtools.app.OPEN_UPDATE_PANEL"
-        private const val READY_CHANNEL = "verified-update"
-        private const val READY_NOTIFICATION_ID = 4000
         private const val TAG = "WotbUpdate"
         private const val PREFERENCES = "android-updates"
         private const val DISMISSED_VERSION = "dismissedLatestVersionCode"
