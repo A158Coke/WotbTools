@@ -4,7 +4,7 @@
  * Vue owns navigation / recorded-shot summary / the shared tank picker;
  * tankViewer owns model controls via stable DOM IDs. URL 参数保持上游契约
  * （?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等）。
- * 样式与射击导航 / 装配 URL 同步 / 122 可用性 / 场景文案表拆分至 agentArmorView.css
+ * 样式与射击导航 / 装配 URL 同步 / 122 可用性 / 场景文案表拆分至 agent-armor-view.css
  * 与 agent-armor/（LOC 预算；行为原样）。
  */
 import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
@@ -30,7 +30,7 @@ import { useArmorShotPage } from './agent-armor/useArmorShotPage.js'
 import { useArmorSetupQuery } from './agent-armor/useArmorSetupQuery.js'
 import { useArmorPitchAvailability } from './agent-armor/useArmorPitchAvailability.js'
 import { armorViewerLabels } from './agent-armor/armorViewerLabels.js'
-import './agentArmorView.css'
+import './agent-armor-view.css'
 
 const { t, te } = useI18n()
 const route = useRoute()

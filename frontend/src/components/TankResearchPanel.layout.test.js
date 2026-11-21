@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const source = readFileSync(fileURLToPath(new URL('./TankResearchPanel.vue', import.meta.url)), 'utf8')
+const readSrc = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+// scoped 样式已拆至 sidecar css；源码契约断言仍需看到样式文本
+const source = readSrc('./TankResearchPanel.vue') + readSrc('./tank-research-panel.css')
 
 describe('TankResearchPanel layout', () => {
   it('研发图按自然尺寸渲染，窄屏由滚动容器承接而不是整图缩放', () => {
