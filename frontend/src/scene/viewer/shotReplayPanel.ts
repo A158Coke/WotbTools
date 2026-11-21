@@ -2,6 +2,7 @@
 // tick 位移标注、弹种自动匹配、World View 面板 HTML、相对/世界视角切换与
 // 连续时间滑块插值管线。闭包依赖经 ctx 注入；数值行为与 DOM 契约不变。
 import * as THREE from 'three'
+import { poseFromYPR } from '../glbRig.js'
 import { shotResultClass } from '../../utils/shotResultClass.js'
 import { shellTypeOf } from './armorPlateModel.js'
 import type {
