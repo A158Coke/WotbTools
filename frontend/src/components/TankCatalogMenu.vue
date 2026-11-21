@@ -9,9 +9,9 @@
  * （装甲查看器），标题/关闭按钮由 title 属性开启。
  */
 import { romanLevel } from '../utils/tierFormat.js'
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RotateCcw, Search, SearchX, Square, SquareCheck, TriangleAlert, X } from 'lucide-vue-next'
+import { RotateCcw, SearchX, Square, SquareCheck, TriangleAlert } from 'lucide-vue-next'
 import { loadTankIconCrops, tankImageUrl } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { TYPE_CLS, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
@@ -20,12 +20,9 @@ import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
-import FilterChips from './FilterChips.vue'
-import AppSheet from './AppSheet.vue'
-import SegmentedControl from './SegmentedControl.vue'
-import { createReusableTemplate, useElementSize, useMediaQuery } from '@vueuse/core'
+import TankCatalogControls from './TankCatalogControls.vue'
+import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { BREAKPOINT_MEDIUM, SHELL_DRAWER_QUERY } from '../shared/breakpoints.js'
-import TankCatalogChoice from './TankCatalogChoice.vue'
 import TankCatalogIcon from './TankCatalogIcon.vue'
 
 const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
@@ -172,31 +169,6 @@ function clearFilters() {
   emitFilters()
 }
 
-// 手机筛选 sheet（与 HoF 同一交互）：容器 / 焦点陷阱 / Esc / 遮罩由 AppSheet 提供；
-// 桌面 / 平板的普通筛选行不拦截 Escape，由外层选车弹窗关闭。
-const sheetOpen = ref(false)
-let sheetOpener = null
-// 筛选行：桌面内联，手机放进 AppSheet；同一份模板只写一次
-const [DefineFilters, ReuseFilters] = createReusableTemplate()
-watch(isCompact, async compact => {
-  if (compact || !sheetOpen.value) return
-  sheetOpen.value = false
-  sheetOpener = null
-  await nextTick()
-  searchInput.value?.focus()
-})
-function toggleSheet() {
-  if (sheetOpen.value) return closeSheet()
-  sheetOpener = document.activeElement
-  sheetOpen.value = true
-}
-function closeSheet() {
-  sheetOpen.value = false
-  const opener = sheetOpener
-  sheetOpener = null
-  nextTick(() => opener?.focus?.())
-}
-
 function hideBrokenImage(event) {
   // 封面缺失：保留固定比例的占位框，不显示破图标
   event.target.hidden = true
@@ -221,93 +193,36 @@ function choose(tank) {
   } else emit('select', tank)
 }
 
-const searchInput = ref(null)
-if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 </script>
 
 <template>
   <section ref="root" class="tank-catalog-menu" :class="{ 'is-dialog': layout === 'dialog' }" data-testid="tank-catalog-menu">
-    <div v-if="title" class="tc-dialog-head">
-      <span id="tp-title">{{ title }}</span>
-      <span id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
-      <button id="tp-close" type="button" :title="t('armor.close')" :aria-label="t('armor.close')" @click="emit('close')">
-        <X :size="20" aria-hidden="true" />
-      </button>
-    </div>
-
-    <div v-if="multiple" class="tc-bulk-bar">
-      <span aria-live="polite">{{ t('mobBulk.selected', { count: draft.size, hidden: draft.size - selectedHere }) }}</span>
-      <AppButton size="sm" :disabled="!filtered.length || selectedHere === filtered.length" @click="selectFiltered(true)">{{ t('mobBulk.selectFilter') }}</AppButton>
-      <AppButton size="sm" :disabled="!selectedHere" @click="selectFiltered(false)">{{ t('mobBulk.clearFilter') }}</AppButton>
-      <AppButton variant="primary" size="sm" :disabled="!draft.size" @click="confirmSelection">{{ t('mobBulk.addN', { count: draft.size }) }}</AppButton>
-    </div>
-    <div class="tp-toolbar surface-glass-1">
-    <div class="tp-search-row">
-      <label class="tp-search">
-        <Search :size="16" class="tp-search-icon" aria-hidden="true" />
-        <input
-          ref="searchInput"
-          v-model="local.q"
-          id="tp-search"
-          type="search"
-          data-testid="tank-search" data-tour="tankopedia-search"
-          :aria-label="t('agentTanks.search_label')"
-          :placeholder="t('agentTanks.search_ph')"
-          autocomplete="off"
-          enterkeyhint="search"
-        >
-      </label>
-      <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="key => setFilter(key, '')" />
-      <span v-if="!title" id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
-      <AppButton v-if="hasFilters" size="sm" data-testid="catalog-clear" @click="clearFilters">{{ t('agentTanks.clear_filters') }}</AppButton>
-    </div>
-
-    <DefineFilters>
-    <div
-      class="tp-filters"
-      :class="{ 'is-sheet': isCompact, 'is-flat': choiceMode === 'inline' }"
-      data-testid="tank-filters" data-tour="tankopedia-filters"
-    >
-      <div v-if="isCompact" class="tp-sheet-head">
-        <strong>{{ t('filters.title') }}</strong>
-        <AppButton size="sm" variant="primary" data-testid="filter-sheet-done" @click="closeSheet">{{ t('filters.done') }}</AppButton>
-      </div>
-      <div class="tp-field tp-nations">
-        <span class="tp-field-label">{{ t('agentTanks.nation') }}</span>
-        <TankCatalogChoice id="tp-nation" data-testid="filter-nation" :model-value="local.nation" :options="nationOptions" :label="t('agentTanks.nation')" kind="nation" :mode="choiceMode" @update:model-value="value => setFilter('nation', value)" />
-      </div>
-      <div class="tp-field tp-tiers">
-        <span class="tp-field-label">{{ t('agentTanks.tier') }}</span>
-        <select v-if="choiceMode !== 'inline'" id="tp-tier" data-testid="filter-tier" :value="local.tier" @change="setFilter('tier', $event.target.value)" :aria-label="t('agentTanks.tier')">
-          <option v-for="option in tierOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-        </select>
-        <SegmentedControl v-else id="tp-tier" data-testid="filter-tier" :model-value="local.tier" :options="tierOptions" :aria-label="t('agentTanks.tier')" presentation="chips" @update:model-value="value => setFilter('tier', value)" />
-      </div>
-      <div class="tp-field">
-        <span class="tp-field-label">{{ t('agentTanks.type') }}</span>
-        <TankCatalogChoice id="tp-type" data-testid="filter-type" :model-value="local.type" :options="typeOptions" :label="t('agentTanks.type')" kind="type" :mode="choiceMode" @update:model-value="value => setFilter('type', value)" />
-      </div>
-      <div class="tp-field">
-        <span class="tp-field-label">{{ t('agentTanks.category') }}</span>
-        <TankCatalogChoice id="tp-category" data-testid="filter-category" :model-value="local.category" :options="categoryOptions" :label="t('agentTanks.category')" kind="category" :mode="choiceMode" @update:model-value="value => setFilter('category', value)" />
-      </div>
-      <div class="tp-field">
-        <span class="tp-field-label">{{ t('agentTanks.sort') }}</span>
-        <SegmentedControl
-          id="tp-sort"
-          data-testid="filter-sort"
-          :model-value="local.sort || 'name'"
-          :options="sortOptions"
-          presentation="chips"
-          :aria-label="t('agentTanks.sort')"
-          @update:model-value="value => setFilter('sort', value)"
-        />
-      </div>
-    </div>
-    </DefineFilters>
-    <AppSheet v-if="isCompact" :open="sheetOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
-    <ReuseFilters v-else />
-    </div>
+    <TankCatalogControls
+      :title="title"
+      :count-text="countText"
+      :multiple="multiple"
+      :draft-count="draft.size"
+      :selected-here="selectedHere"
+      :filtered-count="filtered.length"
+      :is-compact="isCompact"
+      :has-filters="hasFilters"
+      :chips="chips"
+      :filters="local"
+      :choice-mode="choiceMode"
+      :layout="layout"
+      :autofocus="autofocus"
+      :nation-options="nationOptions"
+      :tier-options="tierOptions"
+      :type-options="typeOptions"
+      :category-options="categoryOptions"
+      :sort-options="sortOptions"
+      @query-input="value => { local.q = value }"
+      @set-filter="setFilter"
+      @clear-filters="clearFilters"
+      @select-filtered="selectFiltered"
+      @confirm-selection="confirmSelection"
+      @close="emit('close')"
+    />
 
     <div id="tp-grid" class="tp-results" :class="{ 'is-dialog-results': layout === 'dialog' }">
       <EmptyState
@@ -397,8 +312,6 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 </template>
 
 <style scoped>
-.tc-bulk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-2); }
-.tc-bulk-bar span { margin-inline-end: auto; }
 .tc-pick-mark { color: var(--color-accent); }
 .tank-catalog-menu {
   display: flex;
@@ -420,38 +333,6 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   min-block-size: var(--scene-hit);
 }
 
-.tc-dialog-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: none;
-}
-
-#tp-title {
-  flex: 1;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: var(--type-h3);
-}
-
-#tp-close {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--scene-hit);
-  block-size: var(--scene-hit);
-  padding: 0;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.tp-count { color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
@@ -464,78 +345,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
   white-space: nowrap;
 }
 
-/* ---------- 搜索与筛选 ---------- */
-.tp-toolbar { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
-.is-dialog .tp-toolbar { padding: 0; border: 0; border-radius: 0; background: transparent; }
-.tp-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); flex: none; }
-
-.tp-search { position: relative; flex: 1 1 var(--form-field-min); min-inline-size: 0; }
-.tp-search-icon { position: absolute; inset-block-start: 50%; inset-inline-start: var(--space-3); color: var(--color-text-tertiary); transform: translateY(-50%); pointer-events: none; }
-
-.tp-search input,
-.tp-field select {
-  inline-size: 100%;
-  min-block-size: var(--control-h-md);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-}
-
-.tp-search input { padding: 0 var(--space-3) 0 var(--space-8); }
-.tp-field select { padding: 0 var(--space-2); }
-
-.tp-search input:focus-visible,
-.tp-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.tp-search input::placeholder { color: var(--color-text-tertiary); }
-
-.tp-filters { display: flex; flex-wrap: wrap; align-items: start; gap: var(--space-3); flex: none; padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
-
-.tp-field { display: grid; gap: var(--space-1); min-inline-size: min(100%, var(--form-field-min)); flex: 1; }
-.tp-filters.is-flat .tp-nations, .tp-filters.is-flat .tp-tiers { flex-basis: 100%; }
-.tp-field-inline { max-inline-size: 360px; }
-.tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
-
-/* 手机筛选 sheet：容器 / 遮罩 / 安全区由 AppSheet 提供，这里只负责 sheet 内的两列网格 */
-.tp-filters.is-sheet {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.tp-sheet-head {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-primary);
-  font: var(--type-h3);
-}
-
-.is-sheet .tp-field { min-inline-size: 0; }
-.is-sheet .tp-nations { grid-column: 1 / -1; }
 .tp-pill { display: inline-flex; align-items: center; gap: var(--space-1); }
-
-/* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 保底：
-   在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。portal 到 body 后不再
-   继承场景紧凑档，--scene-hit 保持 :root 的 44px，符合全站舒适命中区。 */
-.tp-filters.is-sheet :deep(button),
-.tp-filters.is-sheet :deep(select),
-.tp-filters.is-sheet :deep(input),
-.tp-filters.is-sheet :deep(summary) {
-  min-block-size: var(--scene-hit);
-}
-
-/* Choice Group（type/sort）的选项是 SegmentedControl 的子组件按钮：它的 scoped
-   `.segmented.is-chips .segmented-option`（3 class + scope 属性）压过上面的
-   `:deep(button)`（2 class + 属性 + 元素），在**细指针**的手机档（767px 断点边界）
-   会落回 --control-h-md=32px。本 sheet 的产品规则是「所有控件 ≥44px」，这里按
-   更高特异性把选项抬回去（coarse 档本就由 --control-h-md=44 覆盖）。 */
-.tp-filters.is-sheet :deep(.segmented .segmented-option) {
-  min-block-size: var(--scene-hit);
-}
 
 /* ---------- 结果区与卡片网格 ---------- */
 .tp-results { min-block-size: 0; }
@@ -670,7 +480,6 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 /* 手机：三列卡片（用户反馈 2026-11-08：小屏加大密度，一屏可见大部分车型；
    360px 下单卡约 104px，名称/徽标/参数仍为 12px 正文下限），筛选进 sheet */
 @media (width < 768px) {
-  .tp-search { flex-basis: 100%; }
   .tp-card { padding: var(--space-2); }
   .tp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 }
