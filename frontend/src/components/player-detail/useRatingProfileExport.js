@@ -4,8 +4,7 @@
  * 导出期间切换玩家不产生「新玩家数据 + 旧坦克图」混合 PNG。
  */
 import { computed, nextTick, ref } from 'vue'
-import { downloadBlob } from '../../utils/exportReplayPng.js'
-import { sanitizeFilename, downloadBlob } from '../../utils/exportReplayPng.js'
+import { downloadBlob, sanitizeFilename } from '../../utils/exportReplayPng.js'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
   radarScoreLabelLayout,

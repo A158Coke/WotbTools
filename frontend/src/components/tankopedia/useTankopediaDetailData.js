@@ -8,8 +8,7 @@ import { fetchTankData } from '../../scene/agentData.js'
 import { loadResearchCatalog, loadTankModules, loadTechTree } from '../../utils/researchCatalog.js'
 import { findTankModules } from '../../replay-local/compute/tankSetup'
 import { projectTankUpgrades } from '../../replay-local/compute/tankUpgrades'
-import { devicesFromEquipmentIds } from '../../utils/tankopediaQuery.js'
-import { encodeDevices, resolveSetup } from '../../replay-local/compute/tankSetup'
+import { devicesFromEquipmentIds, encodeDevices, resolveSetup } from '../../replay-local/compute/tankSetup'
 
 /** @param {{
  *  urlState: import('vue').ComputedRef<object>,
