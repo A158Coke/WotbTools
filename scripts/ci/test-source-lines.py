@@ -166,14 +166,18 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('Source LOC check failed', result.stderr)
         result = self.check('not-a-commit', head)
         self.assertEqual(result.returncode, 2)
-        env = dict(os.environ, PATH=str(self.root))
-        self.assertEqual(self.check(self.base, head, env=env).returncode, 2)
+        # On Windows, launching CPython with a deliberately empty PATH also
+        # removes its runtime DLL lookup; the process fails before scanner code.
+        if os.name != 'nt':
+            env = dict(os.environ, PATH=str(self.root))
+            self.assertEqual(self.check(self.base, head, env=env).returncode, 2)
 
     # --- exclusions: generated, vendored, immutable history -----------------
 
     def test_valid_generated_and_vendored_artifacts_pass(self):
         self.write('frontend/src/api/generated/contract.ts', 2000)
         self.write('frontend/src/api/generated/client.d.ts', 2000)
+        self.write('frontend/src/data/vehicleSizes.js', 2000)
         self.write('android/app/src/main/cpp/xdelta3/xdelta3.c', 2000)
         self.write('frontend/pnpm-lock.yaml', 2000)
         self.write('infra/tofu/grafana/.terraform.lock.hcl', 2000)
@@ -186,6 +190,26 @@ class SourceLineGateTest(unittest.TestCase):
         head = self.commit('applied Flyway migration is immutable history')
         result = self.check(self.base, head)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_only_valid_flyway_named_sql_is_excluded(self):
+        self.write('java/wotb-web/src/main/resources/db/migration/check_data.py', 501)
+        self.write('java/wotb-web/src/main/resources/db/migration/V1__valid_name.sql', 2000)
+        head = self.commit('only valid versioned SQL migrations are immutable')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('migration/check_data.py: 501 physical lines', result.stderr)
+        self.assertNotIn('V1__valid_name.sql', result.stderr)
+
+    def test_invalid_flyway_sql_name_is_counted(self):
+        self.write('java/wotb-web/src/main/resources/db/migration/Vx__invalid.sql', 501)
+        self.write('java/wotb-web/src/main/resources/db/migration/V1oops__maintained.sql', 501)
+        self.write('java/wotb-web/src/main/resources/db/migration/V1folder/helper__maintained.sql', 501)
+        head = self.commit('invalid flyway version name remains maintained source')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Vx__invalid.sql: 501 physical lines', result.stderr)
+        self.assertIn('V1oops__maintained.sql: 501 physical lines', result.stderr)
+        self.assertIn('V1folder/helper__maintained.sql: 501 physical lines', result.stderr)
 
     def test_maintained_source_in_an_excluded_looking_path_does_not_bypass(self):
         # Plural "migrations" is not the Flyway convention: classification stays
@@ -245,9 +269,9 @@ class SourceLineGateTest(unittest.TestCase):
         categories = POLICY['categories']
         self.assertEqual(
             set(categories), {'generated', 'vendored', 'immutable-history'})
-        self.assertIn('java/**/src/main/resources/db/migration/V[0-9]*__*.sql',
-                      categories['immutable-history']['patterns'])
+        self.assertEqual(categories['immutable-history']['patterns'], [])
         self.assertIn('frontend/src/api/generated/', categories['generated']['patterns'])
+        self.assertIn('frontend/src/data/vehicleSizes.js', categories['generated']['patterns'])
 
 
 def result_msg(result):

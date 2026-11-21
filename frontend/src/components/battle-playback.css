@@ -1,0 +1,136 @@
+/* Display 面的内容外观；位置与边界归 PlaybackDisplaySurface。 */
+.pb-display-heading { margin: var(--space-1) 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
+.pb-tool-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  min-block-size: var(--hit-min);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+/* 关闭行是最小命中区的下限所在（§5 可见即可达）：`inline-size: auto` 会收缩到 42px，
+   触控档要求 44×44，所以显式给下限。 */
+.pb-display-close { inline-size: auto; min-inline-size: var(--hit-min); min-block-size: var(--hit-min); align-self: flex-end; color: var(--color-text-secondary); }
+.pb-panel-tools { display: grid; gap: var(--space-1); }
+.pb-ui-restore { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); z-index: var(--pb-z-modal); min-block-size: var(--hit-min); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font: var(--type-caption); }
+
+/* 手机形态右上角有浮动全屏按钮：restore 按钮下移一行，两者不互抢命中区 */
+.pb-ui-restore.pb-ui-restore-shifted { inset-block-start: calc(var(--space-2) + var(--hit-min) + var(--space-2)); }
+
+.pb-wheel-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: var(--pb-z-hud);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-scrim);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+/* 这里只保留**组件根元素**的规则：scoped 属性会落在子组件根节点上，所以 `.pb-map`（BattleMap
+   根）与 `.pb-vehicle`（VehicleMarker 根）能匹配；`.pb-map` 剩下的一半外观归 BattleMap 自己，
+   那里的定位（`.pb-viewport` absolute 等）与这里曾经的默认值互相矛盾，已随矛盾规则一并删除。 */
+.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; }
+/* Vehicle-aware sizing supplies the production width/height inline. These are
+   only safe defaults for isolated component rendering without a projected model. */
+.pb-vehicle {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+  border: none;
+  background: none;
+  padding: 0;
+  /* The button itself does not intercept the map; only .pb-hitbox is clickable. */
+  pointer-events: none;
+}
+@media (width < 768px) {
+  .pb-vehicle { width: 25px; height: 25px; }
+}
+/* marker 内部样式（hull/turret/death/name/状态视觉）全部随 VehicleMarker 组件迁移：
+   PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
+   opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
+   team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
+.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
+/* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
+.pb-tracer, .pb-tracer-core { stroke-linecap: round; }
+.pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
+.pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
+.pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+
+/* transient 反馈层（floating damage / destruction burst）的外观归 BattleMap：那几个节点是
+   BattleMap 自己的后代（`.pb-map[data-v-this]` 匹配不到它们），这里的同名规则永远不会生效。 */
+
+.pb-kill-feed {
+  position: absolute;
+  top: calc(max(8px, env(safe-area-inset-top)) + 50px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: var(--pb-z-hud);
+  pointer-events: none;
+}
+.pb-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  animation: pb-feed-in .3s ease-out;
+}
+.pb-feed-skull { color: var(--text); font-size: 1.1em; }
+.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
+.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
+.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
+.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
+@keyframes pb-feed-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-feed-item { animation: none; }
+}
+.pb-event-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-ghost);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.pb-event-row {
+  display: flex;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border-ghost);
+  background: transparent;
+  color: var(--text);
+  padding: 5px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: .78rem;
+}
+.pb-event-row:last-child { border-bottom: 0; }
+.pb-event-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pb-event-time { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-label); }
+.pb-event-type { color: var(--accent); margin-right: 4px; }
+.pb-event-empty { margin: 8px; color: var(--text-muted); font-size: .78rem; }

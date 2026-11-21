@@ -74,7 +74,8 @@ assert set(required["needs"]) == set(jobs) - {"required"}
 assert "source_quality" in required["needs"]
 assert "pr_identity" in jobs["source_quality"]["needs"]
 assert "changes" not in jobs["source_quality"]["needs"]
-assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "required"}
+assert "zero_debt" in required["needs"]
+assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "zero_debt", "required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
 source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
@@ -82,14 +83,26 @@ source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
 assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in source_scan
 assert "merge-base --is-ancestor" not in source_scan
 assert '--baseline-from-ref "$MERGE_BASE_SHA"' in source_scan
-# Strict full-tree source LOC gate: it runs unconditionally on every PR to
-# main (never path-filtered) and must stay wired through check-source-lines.py.
-loc_step = next(step for step in jobs["source_quality"]["steps"]
-                if step.get("name") == "Check first-party source LOC (strict full-tree)")
-assert 'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"' in loc_step["run"]
-loc_test_step = next(step for step in jobs["source_quality"]["steps"]
-                     if step.get("name") == "Validate source LOC enforcement")
-assert "python3 scripts/ci/test-source-lines.py" in loc_test_step["run"]
+zero_debt = jobs["zero_debt"]
+assert zero_debt["uses"] == "./.github/workflows/zero-debt.yml"
+assert zero_debt["with"] == {"base_sha": "${{ needs.pr_identity.outputs.base_sha }}",
+                              "head_sha": "${{ needs.pr_identity.outputs.head_sha }}"}
+assert zero_debt["name"] == "Zero-Debt Merge Gate"
+zero_debt_workflow = load(root / ".github/workflows/zero-debt.yml")
+assert "workflow_call" in zero_debt_workflow["on"]
+gate_steps = zero_debt_workflow["jobs"]["source_limits"]["steps"]
+scanner_self_test = next(step for step in gate_steps if step.get("name") == "Validate candidate strict scanner and policy")
+assert scanner_self_test["run"] == "python3 scripts/ci/test-source-lines.py"
+tree_scans = [step["run"] for step in gate_steps if "Scan full " in step.get("name", "")]
+assert tree_scans == [
+    'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$BASE_SHA"',
+    'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"',
+]
+allowlist_check = next(step for step in gate_steps if step.get("name") == "Reject allowlists in base and candidate trees")
+assert gate_steps.index(scanner_self_test) < min(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", ""))
+assert max(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", "")) < gate_steps.index(allowlist_check)
+assert all(step.get("if", "").startswith("${{ always()") for step in gate_steps if "Scan full " in step.get("name", ""))
+assert "scripts/ci/source-line-allowlist.txt" in json.dumps(zero_debt_workflow)
 assert "check-source-lines.py" not in json.dumps(jobs["changes"]), \
     "the source LOC gate must not be conditioned on affected paths"
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
@@ -318,11 +331,13 @@ required_run = next(
 )
 gate_py = required_run.split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
 
-def run_gate(affected_owners, owner_results, identity_result="success", source_quality_result="success"):
+def run_gate(affected_owners, owner_results, identity_result="success", source_quality_result="success",
+             zero_debt_result="success"):
     # 真实聚合逻辑会读取 changes.outputs 里的每个 owner 的 needs[owner]，
     # 所以 payload 必须覆盖全部 owner（未显式给出的按 skipped 处理）。
     payload = {"pr_identity": {"result": identity_result},
                "source_quality": {"result": source_quality_result},
+               "zero_debt": {"result": zero_debt_result},
                "changes": {"result": "success",
                            "outputs": {owner: ("true" if owner in affected_owners else "false")
                                        for owner in owner_names}}}
@@ -354,6 +369,8 @@ assert r.returncode == 0, r.stderr
 r = run_gate({"frontend"}, {"frontend": "success"}, identity_result="failure")
 assert r.returncode != 0 and "PR identity, source quality, or changed-file detection failed" in r.stderr, r.stderr
 r = run_gate({"frontend"}, {"frontend": "success"}, source_quality_result="failure")
+assert r.returncode != 0 and "source quality" in r.stderr, r.stderr
+r = run_gate({"frontend"}, {"frontend": "success"}, zero_debt_result="failure")
 assert r.returncode != 0 and "source quality" in r.stderr, r.stderr
 # Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
 #（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。

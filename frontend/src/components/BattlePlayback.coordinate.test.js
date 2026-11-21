@@ -13,6 +13,7 @@ const editorSrc = readFileSync(fileURLToPath(new URL('../composables/usePlayback
 // marker 屏幕定位 owner 出仓到 usePlaybackVehicleProjection。
 const replayDataSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackReplayData.ts', import.meta.url)), 'utf8')
 const projectionSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackVehicleProjection.ts', import.meta.url)), 'utf8')
+const presentationSrc = readFileSync(fileURLToPath(new URL('./useBattlePlaybackPresentation.js', import.meta.url)), 'utf8')
 
 describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
   it('uses the active terrain relief projection for marker/collision/transient anchors', () => {
@@ -25,7 +26,7 @@ describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
     // hit-test 的语义投影 owner = usePlaybackVehicleSelection（同一投影注入）。
     expect(selectionSrc).toContain('projectedSemanticNorm(s.pos.x, s.pos.y)')
     // Floating damage and destruction bursts are anchored through markerScreen -> canonicalMarkerScreen.
-    expect(src).toContain('const p = markerScreen(st)')
+    expect(presentationSrc).toContain('const point = markerScreen(vehicle)')
   })
 
   it('uses inverse terrain projection for annotation input and projected text placement', () => {

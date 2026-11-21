@@ -74,7 +74,6 @@ export interface AnnotationSceneHandle {
   setRaycasterFromClient(clientX: number, clientY: number, rect: DOMRect, rc?: THREE.Raycaster): void
   raycastAnnotationGround(clientX: number, clientY: number, rect: DOMRect): { point: THREE.Vector3; distance: number } | null
   setAnnotations(annotations: unknown): void
-  setAnnotationInteraction(config: AnnotationInteractionConfig): void
   annotationRoot(): THREE.Group | null
   setAnnotationsVisible(visible: boolean): void
   stats(): unknown
@@ -119,7 +118,8 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
     perfEnabled: () => deps.perfEnabled(),
     annotationSurfaceHeightAt: (x, z) => deps.annotationSurfaceHeightAt(x, z),
     stats: annotationStats,
-    cancelGesture: () => { gesture.cancelAnnotationGesture(); gesture.resetPointerState(); },
+    cancelGesture: () => gesture.cancelAnnotationGesture(),
+    resetPointerState: () => gesture.resetPointerState(),
     debugProbe: () => ({
       pick: (x: number, y: number) => pickAnnotationSurface(x, y),
       pickDebug: (x: number, y: number) => picker.debugPickAnnotationSurface(x, y),

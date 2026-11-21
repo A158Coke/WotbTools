@@ -7,11 +7,11 @@
       "test": "Maintained first-party test code (paths containing a test directory segment, test-named files, browser test scripts, CI test scripts). Physical-line budget per file: 1500."
     },
     "categories": {
-      "generated": "Machine-generated first-party artifacts that are never hand-edited: TypeScript declarations emitted from types, generated API transport clients, vendored third-party C sources inside the Android NDK bridge, lockfiles, Terraform lock files. Excluded from both budgets. This list is exact-path/pattern scoped and must stay small; do NOT route maintained code through it.",
+      "generated": "Machine-generated first-party artifacts that are never hand-edited: TypeScript declarations emitted from types, generated API transport clients, vehicleSizes.js emitted by common/python/extract_vehicle_sizes.py, vendored third-party C sources inside the Android NDK bridge, lockfiles, Terraform lock files. Excluded from both budgets. This list is exact-path/pattern scoped and must stay small; do NOT route maintained code through it.",
       "vendored": "Third-party code copied into the tree and never modified locally. Excluded from both budgets. Currently empty: the xdelta3 C sources are covered by the generated category entry (android/app/src/main/cpp/xdelta3/). Any new vendored dependency must be added here explicitly with PR justification, never inferred.",
-      "immutable-history": "Applied database migrations. java/**/src/main/resources/db/migration/V[0-9]*__*.sql is classified structurally by path convention, not per file: Flyway checksums make applied migrations immutable, and rewriting them would corrupt every deployed environment, so they are excluded from the 500-line production budget. A migration file becomes immutable the moment it is committed to this path; there is no per-file opt-in or opt-out. Maintained code living under a path that merely LOOKS like this convention (e.g. db/migrations/, or non-SQL sources placed under the real migration directory) is NOT covered and stays inside the production budget."
+      "immutable-history": "Applied Flyway migrations are excluded only when the file is directly in java/<module>/src/main/resources/db/migration and its full filename matches V<digits[.or_ digits]*>__<description>.sql. Directory and filename are validated separately; malformed names, nested sources, non-SQL files, and lookalike paths remain production code."
     },
-    "rationale_flyway": "The Flyway exclusion is deliberately path-convention based so classification is objective and reviewable in the diff alone: either the file sits under java/**/src/main/resources/db/migration/V[0-9]*__*.sql or it does not. Per-file exceptions are the failure mode this gate exists to prevent, so none are supported anywhere in the policy."
+    "rationale_flyway": "The scanner applies a full directory match and a full filename match. Per-file exceptions are not supported."
   },
   "limits": {
     "production": 500,
@@ -21,6 +21,7 @@
     "generated": {
       "patterns": [
         "frontend/src/api/generated/",
+        "frontend/src/data/vehicleSizes.js",
         "android/app/src/main/cpp/xdelta3/",
         "frontend/pnpm-lock.yaml",
         "infra/tofu/grafana/.terraform.lock.hcl",
@@ -34,9 +35,7 @@
       "patterns": []
     },
     "immutable-history": {
-      "patterns": [
-        "java/**/src/main/resources/db/migration/V[0-9]*__*.sql"
-      ]
+      "patterns": []
     }
   }
 }

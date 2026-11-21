@@ -1195,7 +1195,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
   // mobile 形态、又命中 pc 的媒体查询，互斥性就是假的。
   it('keeps the mobile and pc breakpoints strictly complementary', () => {
-    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const src = readFileSync(resolve(process.cwd(), 'src/components/useBattlePlaybackLifecycle.js'), 'utf8')
     // mobile 形态的唯一来源是 shared/breakpoints 的 PLAYBACK_MOBILE_QUERY
     const mobileMax = /max-width:\s*([\d.]+)px\)/.exec(PLAYBACK_MOBILE_QUERY)
     const pcMin = /matchMedia\('\(min-width:\s*([\d.]+)px\)'\)/.exec(src)

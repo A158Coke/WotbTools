@@ -31,6 +31,8 @@ POLICY_PATH = Path(__file__).with_name('source-line-policy.json')
 EXCLUDED_CATEGORY_ROLES = ('generated', 'vendored', 'immutable-history')
 TEST_DIRS = frozenset({'ci', 'test', 'tests', '__tests__', 'androidtest', 'testfixtures', 'testing'})
 TEST_NAME = re.compile(r'(?:^test[-_]|(?:[._-](?:test|tests|spec|specs))\.|(?:Test|Tests|IT)\.(?:java|kt)$|_test\.go$)')
+FLYWAY_DIR = re.compile(r'^java/[^/]+/src/main/resources/db/migration/[^/]+$')
+FLYWAY_NAME = re.compile(r'^V[0-9]+(?:[._][0-9]+)*__[A-Za-z0-9_]+\.sql$')
 
 
 def load_policy():
@@ -63,7 +65,7 @@ def load_policy():
         if not isinstance(entry, dict) or not isinstance(entry.get('patterns'), list) \
                 or not all(isinstance(pattern, str) for pattern in entry['patterns']):
             raise RuntimeError(f'source-line policy category {role!r} must hold a list of string patterns')
-    excluded = tuple(pattern for role in EXCLUDED_CATEGORY_ROLES for pattern in categories[role]['patterns'])
+    excluded = tuple(pattern for role in ('generated', 'vendored') for pattern in categories[role]['patterns'])
     return limits, excluded
 
 
@@ -80,7 +82,7 @@ def is_excluded(path):
 
 
 def category(path):
-    if is_excluded(path):
+    if is_excluded(path) or (FLYWAY_DIR.fullmatch(path) and FLYWAY_NAME.fullmatch(PurePosixPath(path).name)):
         return None
     parts = PurePosixPath(path).parts
     name = parts[-1]

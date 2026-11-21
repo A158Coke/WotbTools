@@ -29,6 +29,7 @@ export interface AnnotationLayerDeps {
   perfEnabled(): boolean
   /** 会话清空时的手势复位（owner = gesture 状态机；晚绑定箭头；含指针表复位）。 */
   cancelGesture(): void
+  resetPointerState(): void
   /** ?debug 诊断探针内容（ensureAnnotationLayer 时装配；debug 关闭时不调用）。 */
   debugProbe: () => Record<string, unknown>
 }
@@ -296,6 +297,7 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
 
   function clearAnnotationProjection() {
     deps.cancelGesture()
+    deps.resetPointerState()
     projectedAnnotations = []
     annotationDraft = null
     if (annotationCommittedMesh) replaceAnnotationGeometry(annotationCommittedMesh, emptyAnnotationGeometry())
