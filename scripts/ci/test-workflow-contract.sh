@@ -82,6 +82,16 @@ source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
 assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in source_scan
 assert "merge-base --is-ancestor" not in source_scan
 assert '--baseline-from-ref "$MERGE_BASE_SHA"' in source_scan
+# Strict full-tree source LOC gate: it runs unconditionally on every PR to
+# main (never path-filtered) and must stay wired through check-source-lines.py.
+loc_step = next(step for step in jobs["source_quality"]["steps"]
+                if step.get("name") == "Check first-party source LOC (strict full-tree)")
+assert 'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"' in loc_step["run"]
+loc_test_step = next(step for step in jobs["source_quality"]["steps"]
+                     if step.get("name") == "Validate source LOC enforcement")
+assert "python3 scripts/ci/test-source-lines.py" in loc_test_step["run"]
+assert "check-source-lines.py" not in json.dumps(jobs["changes"]), \
+    "the source LOC gate must not be conditioned on affected paths"
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
 assert re.search(r"dorny/paths-filter@[0-9a-f]{40}", json.dumps(jobs["changes"])), "paths-filter must stay SHA-pinned"
 filter_path = next(step for step in jobs["changes"]["steps"]

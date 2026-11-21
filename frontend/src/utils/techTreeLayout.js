@@ -106,6 +106,7 @@ export function techTreeGrid(tree) {
  * 客户端精确网格坐标由 `TankModulesTreeModel` 运行时计算（census §4.4），数据里没有；
  * 这里按上述确定性规则推导。环 = 数据异常，显式抛出。
  */
+/** @param {unknown} modules @param {import('../replay-local/compute/tankSetup').SetupSelection | null} selection @param {object} options */
 export function moduleTreeLayout(modules, selection = null, options = {}) {
   if (!modules || typeof modules !== 'object') return null
   const turrets = Array.isArray(modules.turrets) ? modules.turrets : []

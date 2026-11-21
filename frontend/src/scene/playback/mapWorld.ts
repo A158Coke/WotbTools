@@ -8,8 +8,7 @@
 // 不允许副本状态。会话 teardown（dispose）由本模块一次性完成原 teardownSession
 // 的地图资产段（对象清单与顺序逐字保留）。
 import * as THREE from 'three'
-import type { Scene, PerspectiveCamera, WebGLRenderer, Texture, ShaderMaterial,
-               DirectionalLight, HemisphereLight } from 'three'
+import type { Texture, ShaderMaterial } from 'three'
 import { mapStaticUrl, resolveMapKey } from '../replaySource.js'
 import { mapBases } from '../../data/mapBases.js'
 import { basesForVariant, type MapBasesEntry } from './bases.js'
@@ -19,7 +18,6 @@ import {
   terrainLodState, terrainLodPoseReason, terrainLodStaleReason, terrainSurfaceHeightAt,
 } from '../terrainMesh.js'
 import { treeFrame } from '../destructibles.js'
-import type { DestructibleFoldState } from '../destructibles.js'
 import { writeHiddenInstance, fallMatrix } from '../sceneryInstancing.js'
 import { clearSceneryMatCache } from '../sceneryMaterials.js'
 import { loadTerrain, buildGroundGeometry, groundGeometryFromData, makeGroundMaterial,
@@ -40,12 +38,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { ASSET_CONCURRENCY, mapLimit } from './util.js'
 import { assetProvider } from '../assetProvider.js'
 import { createLoadProgress } from '../loadProgress.js'
-import { createPerf } from './perf.ts'
 import { createTerrainLodScheduler } from './terrainLodScheduler.ts'
 import type { TerrainLodScheduler, TerrainLodJob, GroundGeometryData, TerrainSwapInfo } from './terrainLodScheduler.ts'
 import { createTerrainLodWake } from './terrainLodWake.ts'
+import type { HeightMetaSurface, MapMetaSurface, DestructRuntime, DestructState, WorldPlaybackData, MapWorldStore, MapWorldDeps } from './mapWorldLoadState.js'
+export type { HeightMetaSurface, MapMetaSurface, DestructRuntime, DestructState, WorldPlaybackData, MapWorldStore, MapWorldDeps }
 
-type PerfHandle = ReturnType<typeof createPerf>
 
 /** catch (e) 的诊断取值面：`e && e.message ? e.message : e` 的窄化等价体（运行时逐值一致）。 */
 interface ErrorLike { message?: unknown }
@@ -101,94 +99,6 @@ const loadTerrainTyped = loadTerrain as (a: {
   binStatus: number | null
 }
 
-/** terrain.json sidecar 元数据（groundPass.loadTerrain 产物；本模块消费的字段面）。 */
-interface HeightMetaSurface {
-  size?: number
-  span?: number
-  zmax?: number
-  terrainLayout?: unknown
-  playableBounds?: { xMin: number; xMax: number; yMin: number; yMax: number } | null
-}
-
-/** X-Map-Meta 铺设参数（底图响应头 JSON；本模块消费的字段面）。 */
-interface MapMetaSurface {
-  size_m?: number
-  x?: number
-  z?: number
-  rot90?: number
-  flip_x?: boolean
-}
-
-/** 可破坏物运行时（assembleMapScenery 产物；槽位/槽位矩阵形状见 mapAssets.js 装配）。 */
-interface DestructRuntime {
-  states: DestructibleFoldState[]
-  ptr: number
-  lastT: number
-  animating?: boolean
-}
-
-/** 推进循环视角的折叠状态面：DestructibleFoldState + 装配/推进保证存在的字段
- *  （树的 pivotPos/fallQuat 由 mapAssets 装配段回填；applied 是本循环写入的游标标记）。 */
-interface DestructState extends DestructibleFoldState {
-  applied?: boolean
-  pivotPos: { x: number; y: number; z: number }
-  fallQuat: { w: number }
-}
-
-/** 本模块消费的回放数据面（buildWorld 车辆云心 + loadMapImage 元数据）。
- *  map_id 按 assembleMapScenery 的消费面口径（variant 裁剪）声明为必有 number。 */
-export interface WorldPlaybackData {
-  meta: { map_id: number; map_name?: string | null; t_start?: number }
-  vehicles: Array<{ pos: number[] }>
-}
-
-/** 本模块读写的 store 字段面（store 唯一 owner 在宿主）。 */
-export interface MapWorldStore {
-  mapKey: string | null
-  assetProgress: number | null
-  assetIssues: unknown[]
-  assetDegraded: boolean
-}
-
-export interface MapWorldDeps {
-  store: MapWorldStore
-  debug: boolean
-  perf(): PerfHandle | null
-  /** 会话身份（迟到守卫；owner 在 sessionLifecycle）。 */
-  sessionEpoch(): number
-  destroyed(): boolean
-  getData(): WorldPlaybackData | null
-  /** 画质档（宿主持有 QUALITY_PRESETS 解析结果）。 */
-  quality(): { groundLayers?: boolean; scenery?: boolean; anisotropy: number }
-  /** 草实例预算（QUALITY_FEATURES.grass.instances；0 = 不加载草层）。 */
-  grassInstanceBudget(): number
-  getScene(): Scene | null
-  getCamera(): PerspectiveCamera | null
-  getRenderer(): WebGLRenderer | null
-  getControls(): { target: { x: number; y: number; z: number } } | null
-  invalidate(): void
-  disposeObject3D(root: unknown): void
-  /** 高度场发布后的相机约束（宿主自由相机域）。 */
-  constrainFreeCameraAltitude(): void
-  /** 地表整体更换后的贴回链路（基地/出生点/annotation 重投影；宿主编排）。 */
-  regroundBases(): void
-  regroundSpawns(): void
-  rebuildAnnotationProjection(): void
-  /** 逐图光照应用/复位的渲染器目标（宿主 renderer 域持有灯光）。 */
-  lightingTargets(): { renderer: WebGLRenderer | null; scene: Scene | null; sunLight: DirectionalLight | null; hemiLight: HemisphereLight | null; debug: boolean }
-  /** buildWorld 的相机落位（初始机位/钳制；宿主相机域实现）。 */
-  buildWorldCameraPlacement(center: { cx: number; cz: number; ext: number }): void
-  /** 当前开镜隐藏 eid（0 = 未开镜；terrainHFovDeg 判据）。 */
-  scopedHiddenEid(): number
-  /** 地形 LOD 变化后的 annotation 高度刷新（宿主 annotation 域）。 */
-  reprojectAnnotationHeights(): void
-  /** 地表整体更换/LOD 重建后的接地阴影贴回（#907 主干随迁；宿主经 contactShadows 句柄）。 */
-  onTerrainReground(): void
-  /** 逐图光照应用后的接地阴影太阳同步（#907 主干随迁）。 */
-  onLightingApplied(): void
-}
-
-/** 边界带宿主（几何工厂在 boundary.ts；本模块只负责按权威范围重建）。 */
 export interface BoundaryBandHost {
   build(bounds: unknown, thick: number): void
   clear(): void

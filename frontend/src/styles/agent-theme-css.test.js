@@ -100,12 +100,18 @@ describe('Agent 视觉面配色契约', () => {
 
     // tankViewer.js 无样式块：它的面板 DOM 渲染在 .armor-view 子树内，
     // 因此可以合法继承这些语义别名（其余文件仍只认"仓库定义 + 自身**默认**档定义"）。
+    const armorSource = [
+      AGENT_FILES['AgentArmorView.vue'],
+      '../components/agent-armor-view.css',
+      '../components/agent-armor-view-responsive.css',
+      '../components/agent-armor-view-hud-responsive.css',
+    ].map((rel) => read(rel)).join('\n')
     const armorPalette = new Set(
-      Object.keys(declarationsIn(read(AGENT_FILES['AgentArmorView.vue']), '.armor-view') ?? {}),
+      Object.keys(declarationsIn(armorSource, '.armor-view') ?? {}),
     )
 
     for (const [label, rel] of Object.entries(AGENT_FILES)) {
-      const src = read(rel)
+      const src = label === 'AgentArmorView.vue' ? armorSource : read(rel)
       // 只统计浅色档覆盖块**之前**的声明：仅在浅色档定义的 token 不算"有定义"
       // （否则会把"默认档缺失、只有浅色档有"的 token 误判为合法）
       const lightAt = src.indexOf(LIGHT_PREFIX)
