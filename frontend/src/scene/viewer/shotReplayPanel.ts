@@ -6,7 +6,6 @@ import { poseFromYPR } from '../glbRig.js'
 import { shotResultClass } from '../../utils/shotResultClass.js'
 import { shellTypeOf } from './armorPlateModel.js'
 import { interpTick, lerpTl, lerpTlAngle } from './shotReplayInterp.js'
-import { poseShooterTurretGun } from './shotReplayPose.js'
 import type {
     PoseTickSample, ReplayShot, ShellSpec, TankData, Vec3,
 } from './viewerContracts.js'
