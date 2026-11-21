@@ -2,9 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = PLAYBACK_SCENE_SOURCE.replace(/\r\n/g, '\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
@@ -36,8 +37,8 @@ describe('场景绘制与回放接线合同', () => {
     // 2026-10-07：默认改为**关**（真机 A/B 权衡：每片元 gl_FragDepth + 禁 early-z
     // 对 alpha-test 植被的填充率开销是乘法级）；Display 面板开关 + localStorage
     // 持久化，URL ?logdepth= 仍最高优先（boolPref 解析）。
-    expect(src).toMatch(/let LOGDEPTH = boolPref\('pb_logdepth', 'logdepth', false\);/)
-    expect(src).toMatch(/let DYNRES = boolPref\('pb_dynres', 'dynres', true\);/)
+    expect(src).toMatch(/let LOGDEPTH = boolPref\('pb_logdepth', 'logdepth', false\);?/)
+    expect(src).toMatch(/let DYNRES = boolPref\('pb_dynres', 'dynres', true\);?/)
     expect(rendererSrc).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
     // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
     // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
@@ -184,9 +185,9 @@ describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
   it('悬挂逐帧解算宿主接线（#827 F3：无注入点）：markSeekSnap → tick → clearSnap、frameTiming 喂帧', () => {
     // 模块语义（frameTiming 两帧积分 / markSeekSnap 跳变吸附不积累侧位移 / 不可见复位）
     // 2026-11-12 接替：vehicleRuntime.pose.test.ts 行为测试（真实 createVehicleRuntime harness）
-    expect(src).toMatch(/vehicles\.markSeekSnap\(\);[\s\S]{0,160}tick\(\);/)
-    expect(src).toMatch(/for \(const v of vehicles\.getVehicles\(\)\) vehicles\.applyPose\(v\);[\s\S]{0,80}vehicles\.clearSnap\(\);/)
-    expect(src).toMatch(/vehicles\.frameTiming\(dt, false\);[\s\S]{0,80}tick\(\);/)
+    expect(src).toMatch(/S\.vehicles\.markSeekSnap\(\);[\s\S]{0,160}S\.tick\(\);/)
+    expect(src).toMatch(/for \(const v of S\.vehicles\.getVehicles\(\)\) S\.vehicles\.applyPose\(v\);[\s\S]{0,80}S\.vehicles\.clearSnap\(\);/)
+    expect(src).toMatch(/S\.vehicles\.frameTiming\(dt, false\);[\s\S]{0,120}tick\(\);/)
   })
 
 
@@ -205,19 +206,20 @@ describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
 
 describe('播放时钟与速度档位（对齐上游的纯函数入口）', () => {
   it('推进走 advancePlaybackTime（NaN/负增量不污染时钟），终点钳制仍生效（#827 F3：宿主接线子句；纯函数行为见 playback/util.behavior.test.ts）', () => {
-    expect(src).toMatch(/T = advancePlaybackTime\(T, END, dt \* 1000, SPEED\);/)
-    expect(src).not.toMatch(/T \+= dt \* SPEED;/)
+    expect(src).toMatch(/S\.T = advancePlaybackTime\(S\.T, S\.END, dt \* 1000, S\.SPEED\);/)
+    expect(src).not.toMatch(/S\.T \+= dt \* S\.SPEED\;/)
   })
 
   it('setSpeed 只接受档位表内的值（#827 F3: Integration Contract（无注入点）；宿主闭包函数无独立 owner）', () => {
-    expect(src).toMatch(/function setSpeed\(s\) \{ if \(!isPlaybackSpeed\(s\)\) return;/)
+    expect(src).toMatch(/function setSpeed\(s: number\): void \{ if \(!isPlaybackSpeed\(s\)\) return;/)
   })
 
   it('onResize 单画布取整尺寸 + 置脏重绘（#827 F3: Integration Contract（无注入点）；宿主闭包函数）', () => {
-    const resize = src.slice(src.indexOf('function onResize'), src.indexOf('function onScenePointerDown'))
-    expect(resize).toMatch(/const w = Math\.max\(1, Math\.round\(container\.clientWidth\)\);/)
-    expect(resize).toMatch(/renderer\.setSize\(w, h\);/)
-    expect(resize).toMatch(/invalidate\(\);/)
+    const resizeStart = src.indexOf('function onResize')
+    const resize = src.slice(resizeStart, src.indexOf('function ', resizeStart + 20))
+    expect(resize).toMatch(/const w = Math\.max\(1, Math\.round\(P\.container\.clientWidth\)\);/)
+    expect(resize).toMatch(/S\.renderer\.setSize\(w, h\);/)
+    expect(resize).toMatch(/S\.invalidate\(\);/)
     expect(resize).not.toMatch(/labelRenderer/)
   })
 
@@ -230,7 +232,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     const ctor = [...(src.match(/new THREE\.WebGLRenderer\(/g) || []), ...(rendererSrc.match(/new THREE\.WebGLRenderer\(/g) || [])]
     expect(ctor.length).toBe(1)
     const animate = src.slice(src.indexOf('function animate()'))
-    expect(animate).toMatch(/renderer\.render\(scene, camera\);/)
+    expect(animate).toMatch(/S\.renderer\.render\(S\.scene, S\.camera\);/)
     expect(animate).not.toMatch(/autoClear/)
   })
 
@@ -240,7 +242,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     //（资源唯一 owner 与释放见 battleFx.test.js）；伤害数字已是覆盖层 DOM，没有画布资源可池化。
     // 炮线/光迹借还 battleFx 的条带池（takeRibbon ≥ shots、完成归还、热路径零 dispose）
     // 2026-11-12 接替：battleRuntime.fx.test.ts 行为测试（真实 createBattleRuntime harness）
-    expect(src).toMatch(/battle\.dispose\(\);/)
+    expect(src).toMatch(/S\.battle\.dispose\(\);/)
   })
 
   /**
@@ -259,10 +261,11 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次（#827 F3: Integration Contract（无注入点））', () => {
     expect(src).toMatch(/const HUD_INTERVAL_MS = 100;/)
-    expect(src).toMatch(/function writeHud\(force = false\)/)
+    expect(src).toMatch(/function writeHud\(force: boolean = false\)/)
     expect(src).toMatch(/writeHud\(true\);/)
-    const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function writeHud'))
-    expect(tick).not.toMatch(/store\.time = T;/)
+    const tickStart = src.indexOf('function tick()')
+    const tick = src.slice(tickStart, src.indexOf('function writeHud'))
+    expect(tick).not.toMatch(/P\.store\.time = S\.T;/)
   })
 
   it('资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）', () => {
@@ -287,11 +290,16 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('按需渲染：脏帧判定覆盖播放/相机/特效/幽灵闪，跳帧时不跑更新与 render', () => {
     const animate = src.slice(src.indexOf('function animate()'))
-    expect(animate).toMatch(/const busy = PLAYING/)
+    expect(animate).toMatch(/const busy = S\.PLAYING/)
     expect(animate).toMatch(/\|\| cameraMoved/)
-    expect(animate).toMatch(/\|\| frameDirty/)
+    expect(animate).toMatch(/\|\| S\.frameDirty/)
     // 弹道/战斗特效/幽灵闪的活跃判定由 battleRuntime 持有，场景只问 battle.isActive()
-    expect(animate).toMatch(/\|\| battle\.isActive\(\);/)
+    expect(animate).toMatch(/\|\| S\.battle\.isActive\(\);/)
+    // 战场标记是回放时钟窗口状态（暂停冻结、无壁钟动画）：不参与 busy 判定
+    expect(animate).not.toMatch(/battleMarkers\.hasActive/)
+    // tick / seekTo 都走同一条 update(T) 幂等窗口重算（无游标）
+    const seekTo = src.slice(src.indexOf('function seekTo'))
+    expect(seekTo).toMatch(/S\.battleMarkers\.update\(S\.T\)/)
     // isActive() 真值表 2026-11-12 接替：battleRuntime.fx.test.ts 行为测试
     // 跳帧分支：空闲时只做帧率角标归零，随后 return（不跑 tick / 标签 / render）
     expect(animate).toMatch(/if \(!busy\) \{(?:.|\n){0,600}?return;/)

@@ -12,7 +12,10 @@ const shell = descriptor.styles.map(style => {
   if (result.errors.length) throw new Error(result.errors.join('\n'))
   return result.code
 }).join('\n')
-const workspace = readFileSync(new URL('../src/styles/playback-workspace.css', import.meta.url), 'utf8')
+const workspace = [
+  readFileSync(new URL('../src/styles/playback-workspace.css', import.meta.url), 'utf8'),
+  readFileSync(new URL('../src/styles/playback-workspace-3d.css', import.meta.url), 'utf8'),
+].join('\n')
 const browser = await launchChromeForCdp(findChrome())
 try {
   for (const [width, height] of [[390, 844], [844, 390]]) {

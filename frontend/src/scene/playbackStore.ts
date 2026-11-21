@@ -2,11 +2,14 @@
 // Vue 面板组件只读渲染；控件事件回调 scene 方法。字段与旧版 DOM 触点一一对应。
 import { reactive } from 'vue'
 
+import type { WorkspacePlayback } from '../composables/useReplayWorkspace.js'
+import type { HudRosterRow, KillfeedEntry } from './playback/hudFeed.js'
+
 export function createPlaybackStore() {
   return reactive({
     // loader 弹层
     filePath: '',
-    playbackSession: null, // Workspace canonical result shared with 2D / Details
+    playbackSession: null as WorkspacePlayback | null, // Workspace canonical result shared with 2D / Details
     loading: false,
     assetStage: false,   // 进入场景前正在获取地图/地形/地表/场景资产（WotBTools：资产就绪才进场）
     assetProgress: null, // 资产阶段进度 0–1（loadProgress 聚合）；null = 尚未登记任何资产
@@ -62,22 +65,25 @@ export function createPlaybackStore() {
     treadAllowed: true, // 画质档门禁（仅高清/极致；applyGlbGate 随档位写入，UI 据此禁用开关）
     // 渲染性能偏好（初值是内核 prefOf 解析前的占位；initPlayback 会按
     // URL > localStorage > 默认（logdepth 关 / dynres 开）覆写，见 playbackScene）
+    armorHighlight: false,
     logdepth: false,
     dynres: true,
     contactShadows: false, // 坦克接地阴影（待开播 opt-in，不持久化；仅高清/极致，见 playbackScene.setContactShadows）
     // 覆盖层
-    banner: null, // { text, color }
-    killfeed: [], // { id, text }
+    banner: null as { outcome?: string; text?: string; color?: string } | null, // { text, color }
+    killfeed: [] as KillfeedEntry[], // { id, text }
     // 名册按**物理队伍**分组（team 1 / team 2 / 未识别），未知阵营（team=0）进 unknown 中性组
     // ——绝不污染 team1（旧 hack `team!==2→team1`）。
     // 身份（eid/team/nick/tank）只在会话开始时建一次；运行时状态
     // （hp/maxHp/dead/followed）由 playbackScene.updateRoster 按当前回放时刻投影，
     // 见 scene/rosterState.ts。呈现层结合 friendlyTeam 取 Recorder 视角颜色，内核不下发颜色。
     friendlyTeam: null, // Authoritative Recorder team; unknown never implies Team 1.
-    roster: { team1: [], team2: [], unknown: [] },
+    roster: { team1: [] as HudRosterRow[], team2: [] as HudRosterRow[], unknown: [] as HudRosterRow[] },
     hasData: false,
     // 地图预览会话就绪（loadMapOnly 写入）：3D 地图面资产装载完成、可交互。
     // 与 hasData 互斥使用——传输/阵容/HUD 仍由 hasData 门控（地图会话恒 false）。
     mapReady: false,
   })
 }
+
+export type Store = ReturnType<typeof createPlaybackStore>

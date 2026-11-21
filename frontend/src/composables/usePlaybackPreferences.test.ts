@@ -17,7 +17,7 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: true })
     expect({ ...prefs.hpPrefs }).toEqual({ showHp: true, mode: 'bar' })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: true })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, showStatus: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, showStatus: true, battleMarkers: true })
     expect(prefs.declutterActive.value).toBe(false)
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
@@ -36,7 +36,7 @@ describe('usePlaybackPreferences', () => {
     prefs.toggleDeclutter()
     expect(otherRenderer.declutterActive.value).toBe(true)
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: false })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: false })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: false, battleMarkers: true })
     expect(prefs.hpPrefs.showHp).toBe(true)
     expect(prefs.hpPrefs.mode).toBe('ring')
     expect(prefs.trailPrefs.showTrail).toBe(false)
@@ -45,7 +45,7 @@ describe('usePlaybackPreferences', () => {
     prefs.uiPrefs.showRoster = true
     otherRenderer.toggleDeclutter()
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false, showReload: true })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: true, battleMarkers: true })
     expect(prefs.hpPrefs.showHp).toBe(true)
     expect(prefs.hpPrefs.mode).toBe('bar')
     expect(prefs.trailPrefs.showTrail).toBe(false)
@@ -73,7 +73,7 @@ describe('usePlaybackPreferences', () => {
     prefs.toggleDeclutter()
     expect(prefs.hpPrefs.showHp).toBe(false)
     expect(prefs.labelPrefs.showReload).toBe(false)
-    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, showStatus: false })
+    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, showStatus: false, battleMarkers: true })
   })
 
   it('refreshing while declutter is active hydrates saved settings instead of stranding a preset', async () => {

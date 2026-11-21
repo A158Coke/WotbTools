@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { occlusionCells, occlusionFootprintCells } from './playback/pure.js'
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 
 describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', () => {
   it('同一格内的短线段 → 单格；跨格 → 首尾格都在集合里', () => {
@@ -52,7 +53,7 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 })
 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
-  const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  const src = PLAYBACK_SCENE_SOURCE
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
@@ -63,13 +64,13 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
 })
 
 describe('Sniper 穿深着色接线', () => {
-  const source = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  const source = PLAYBACK_SCENE_SOURCE
   // #820 Step 4：录像者相机/穿深着色 owner = playback/cameraRuntime.ts（守卫随实现迁移）
   const cameraSrc = readFileSync(resolve(__dirname, 'playback/cameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
   it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
-    const draw = source.indexOf('renderer.render(scene, camera);')
-    const armor = source.indexOf('renderArmorHighlight();', draw)
+    const draw = source.indexOf('S.renderer.render(S.scene, S.camera)')
+    const armor = source.indexOf('S.cameraRuntime.renderArmorHighlight();', draw)
     expect(draw).toBeGreaterThan(-1)
     expect(armor).toBeGreaterThan(draw)
     expect(cameraSrc).toContain("if (!deps.armorHighlightPref() || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")

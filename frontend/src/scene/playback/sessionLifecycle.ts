@@ -47,7 +47,11 @@ export interface SessionStore {
 
 /** 回放来源（client-only 拓扑：仅 local 文件 / 已装填的 ReplaySession）。 */
 export interface LoadSource {
+  /** 来源类型标注（client-only 拓扑；解析分支由 session 是否存在决定）。 */
+  kind?: 'local'
   file?: Blob & { name?: string; lastModified?: number }
+  /** 解析取消信号（replaySource 透传给 Worker；归属仍由 sessionGen 判定）。 */
+  signal?: AbortSignal
   session?: {
     loadScene(file: LoadSource['file'], observer?: SessionPerfObserver): Promise<SessionPlaybackData>
     getState(file: LoadSource['file']): unknown
@@ -97,6 +101,8 @@ export interface SessionLifecycleDeps {
   constrainFreeCameraAltitude(): void
   loadMapImage(): Promise<void>
   buildBases(): void
+  /** 战场快捷标记事件源（markers 0x2e + attention_to_cell；宿主经 markerRuntime 持有）。 */
+  buildMarkers(): void
   buildSpawns(): void
   buildVehicles(): void
   /** 装配层接地阴影门禁复核 + 资源创建（#907 主干随迁；宿主实现）。 */
@@ -344,6 +350,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     deps.prepareResolvers();
     deps.transients.rebuildSources();   // 战斗反馈事件源（伤害/击毁）
     deps.buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
+    deps.buildMarkers();   // 战场快捷标记事件源（0x2e markers + attention_to_cell；游标由 resetSessionCursors 重定）
     // 会话从开战时刻开始：准备 / 倒计时阶段不在时间轴上（与 2D 一致）
     deps.publishSceneClock();
     const [start, end] = deps.battleRange();

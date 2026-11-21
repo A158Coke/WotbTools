@@ -15,3 +15,12 @@ export const COLOR_UNKNOWN = 0xf5f5f5;
 // 车辆/基地/标签**不得**改用这两个值（回退即车辆 tint 变亮）。
 export const TRACER_FRIENDLY = 0x3ee08a; // 亮绿（同色相提亮 #26794a）
 export const TRACER_ENEMY = 0xff5a45;    // 亮红（同色相提亮 #98322a）
+
+/** 车辆/基地/标签阵营色（深色板；中立与未知阵营一律 white——unknown ≠ enemy）。
+ *  入参是**队伍号本身**而非车辆对象：调用方必须显式解出 `v.def.team`（RuntimeVehicle
+ *  带索引签名，整对象传入无法被类型拦下——评审 P2 的阵营色全白回归即源于此）。 */
+export function teamColorOf(team: number | null | undefined, friendlyTeam: number | null | undefined): number {
+  const f = friendlyTeam ?? 0, t = team ?? 0
+  if (t === 0 || f === 0) return COLOR_UNKNOWN   // 中立＝白（green / red / white 口径）
+  return t === f ? COLOR_FRIENDLY : COLOR_ENEMY
+}

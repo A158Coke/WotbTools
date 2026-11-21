@@ -2,8 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { BATTLE_PLAYBACK_SOURCE } from './battlePlayback.test.source.js'
 
-const src = readFileSync(fileURLToPath(new URL('./BattlePlayback.vue', import.meta.url)), 'utf8')
+const src = BATTLE_PLAYBACK_SOURCE
 // #820 Agent C：MapRenderRect / camera 变换的 owner 出仓到 usePlaybackCamera；守卫跟随 owner。
 const cameraSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackCamera.ts', import.meta.url)), 'utf8')
 // #820 Agent C Step 2：hit-test 与文字定位的语义投影 owner 出仓到 selection / annotation editor。
@@ -25,7 +26,7 @@ describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
     // hit-test 的语义投影 owner = usePlaybackVehicleSelection（同一投影注入）。
     expect(selectionSrc).toContain('projectedSemanticNorm(s.pos.x, s.pos.y)')
     // Floating damage and destruction bursts are anchored through markerScreen -> canonicalMarkerScreen.
-    expect(src).toContain('const p = markerScreen(st)')
+    expect(src).toContain('const p = S.markerScreen(st)')
   })
 
   it('uses inverse terrain projection for annotation input and projected text placement', () => {

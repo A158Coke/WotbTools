@@ -1,10 +1,9 @@
 // 画质档语义表（P1）：四档只由 QUALITY_FEATURES 提供跨模块语义，且必须与
 // QUALITY_PRESETS（渲染器数值旋钮）在重叠字段上一致。未实现项固定 false。
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
 import {
+  GRASS_LAYER_ENABLED,
   QUALITY_FEATURES,
   QUALITY_PRESETS,
   qualityFeatures,
@@ -44,11 +43,12 @@ describe('QUALITY_FEATURES', () => {
     expect(QUALITY_FEATURES.high.water.reflectionScale).toBe(0.5)
   })
 
-  it('草：低/均衡不加载，高清/极致按实例预算（几何统一 500 档 = 导出档）', () => {
+  it('草：低/均衡不加载；2026-11-19 起草层总开关关闭（分布待核查），高清/极致也不加载', () => {
+    expect(GRASS_LAYER_ENABLED).toBe(false)
     expect(QUALITY_FEATURES.low.grass.instances).toBe(0)
     expect(QUALITY_FEATURES.mid.grass.instances).toBe(0)
-    expect(QUALITY_FEATURES.high.grass.instances).toBe(60000)
-    expect(QUALITY_FEATURES.ultra.grass.instances).toBe(60000)
+    expect(QUALITY_FEATURES.high.grass.instances).toBe(0)
+    expect(QUALITY_FEATURES.ultra.grass.instances).toBe(0)
     for (const k of KEYS) expect(QUALITY_FEATURES[k].grass.geometryTier).toBe(500)
   })
 
@@ -71,10 +71,9 @@ describe('QUALITY_FEATURES', () => {
 
 describe('画质语义表的消费接线', () => {
   it('playbackScene 只经 qualityFeatures() 消费语义，不再读原始档位布尔', () => {
-    const path = resolve(dirname(fileURLToPath(import.meta.url)), '../playbackScene.js')
-    const src = readFileSync(path, 'utf8').split('\n').map((line) => line.split('//')[0]).join('\n')
-    expect(src).toContain('qualityFeatures(QKEY)')
+    const src = PLAYBACK_SCENE_SOURCE.split('\n').map((line) => line.split('//')[0]).join('\n')
+    expect(src).toContain('qualityFeatures(S.QKEY)')
     expect(src.includes('Q.waterReflection')).toBe(false)
-    expect(src).toContain('grassInstanceBudget: () => qualityFeatures(QKEY).grass.instances')
+    expect(src).toContain('grassInstanceBudget: () => qualityFeatures(S.QKEY).grass.instances')
   })
 })
