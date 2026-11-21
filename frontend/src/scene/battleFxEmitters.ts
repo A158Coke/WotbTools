@@ -2,8 +2,9 @@
 //（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致；闭包读数改经 deps 注入）。
 import * as THREE from 'three'
 import type { Color, Vector3 } from 'three'
-import type { BurstEvent, FxBudget, ImpactEvent, ImpactKind, MuzzleEvent } from './battleFx.js'
-import { FX_BUDGETS } from './battleFx.js'
+import type { FxBudget } from './battleFxAtlas.js'
+import type { BurstEvent, ImpactEvent, ImpactKind, MuzzleEvent } from './battleFx.js'
+import { FX_BUDGETS } from './battleFxAtlas.js'
 import { GLOW_TILE, FLAME_TILES, SOOT_TILES, STAR_TILE, CHUNK_TILE } from './battleFxAtlas.js'
 import { clamp01 } from './battleFxAtlas.js'
 import type { ParticleBatch, SparkLineBatch } from './battleFxAtlas.js'

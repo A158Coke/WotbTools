@@ -1,6 +1,33 @@
 // 战斗特效 GPU 资源层：程序化贴图图集、粒子/火花批次与 shader——自 battleFx.ts 出仓
 //（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致，公共入口仍由 battleFx re-export）。
 import * as THREE from 'three'
+
+/**
+ * 画质档位预算（键与 `QUALITY_PRESETS` 一一对应；`QUALITY_PRESETS[k].fx` 引用这里）。
+ * 信息类元素（曳光、光迹、命中火光、爆炸闪光）四档都有；氛围元素按档裁剪。
+ * capacity = 每个粒子批次（加色 / 普通混合各一）的实例上限。
+ */
+export const FX_BUDGETS = Object.freeze({
+  low: Object.freeze({
+    capacity: 256, muzzleBrake: false, muzzleSmoke: 0, impactSparks: 6, impactSmoke: 0,
+    burstFire: 5, burstSmoke: 6, burstSparks: 16, burstDebris: 0, burstDust: 0, wreckSmoke: 0, wreckEmbers: false,
+  }),
+  mid: Object.freeze({
+    capacity: 512, muzzleBrake: true, muzzleSmoke: 0, impactSparks: 10, impactSmoke: 2,
+    burstFire: 8, burstSmoke: 10, burstSparks: 32, burstDebris: 0, burstDust: 10, wreckSmoke: 0, wreckEmbers: false,
+  }),
+  high: Object.freeze({
+    capacity: 1024, muzzleBrake: true, muzzleSmoke: 3, impactSparks: 16, impactSmoke: 4,
+    burstFire: 11, burstSmoke: 16, burstSparks: 56, burstDebris: 12, burstDust: 16, wreckSmoke: 10, wreckEmbers: false,
+  }),
+  ultra: Object.freeze({
+    capacity: 1536, muzzleBrake: true, muzzleSmoke: 6, impactSparks: 16, impactSmoke: 6,
+    burstFire: 14, burstSmoke: 20, burstSparks: 80, burstDebris: 16, burstDust: 20, wreckSmoke: 14, wreckEmbers: true,
+  }),
+})
+
+/** 画质档位的特效预算（FX_BUDGETS 各档的同形状）。 */
+export type FxBudget = (typeof FX_BUDGETS)[keyof typeof FX_BUDGETS]
 import type { Color, LineSegments, Mesh, Texture } from 'three'
 
 export const clamp01 = (x: number): number => Math.max(0, Math.min(1, x))

@@ -25,13 +25,11 @@
 import * as THREE from 'three'
 import type { Color, Mesh, Object3D, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
 import { atlasData, TILE, ATLAS_COLS, ATLAS_ROWS, createBatch, createSparkLines, RIBBON_VS, RIBBON_FS, noop } from './battleFxAtlas.js'
+import type { FxBudget } from './battleFxAtlas.js'
 import { createBattleFxEmitters } from './battleFxEmitters.js'
 import { BURST_SECS, MUZZLE_FLASH_SECS, MUZZLE_SMOKE_SECS, IMPACT_FLASH_SECS, IMPACT_SMOKE_SECS, IMPACT_SPARK_SECS } from './battleFxEmitters.js'
 import { GLOW_TILE } from './battleFxAtlas.js'
 import { WHITE } from './battleFxEmitters.js'
-
-/** 画质档位的特效预算（FX_BUDGETS 各档的同形状）。 */
-export type FxBudget = (typeof FX_BUDGETS)[keyof typeof FX_BUDGETS]
 
 /** battleFx 生命周期内的爆炸事件（壁钟驱动）。 */
 export interface BurstEvent { x: number; y: number; z: number; seed: number; bornMs: number }
@@ -44,29 +42,9 @@ export type ImpactKind = 'pen' | 'nonpen' | 'ricochet'
 /** 条带网格（tracer/trail 池化对象；material 恒为 ShaderMaterial）。 */
 type RibbonMesh = Mesh<THREE.BufferGeometry, ShaderMaterial>
 
-/**
- * 画质档位预算（键与 `QUALITY_PRESETS` 一一对应；`QUALITY_PRESETS[k].fx` 引用这里）。
- * 信息类元素（曳光、光迹、命中火光、爆炸闪光）四档都有；氛围元素按档裁剪。
- * capacity = 每个粒子批次（加色 / 普通混合各一）的实例上限。
- */
-export const FX_BUDGETS = Object.freeze({
-  low: Object.freeze({
-    capacity: 256, muzzleBrake: false, muzzleSmoke: 0, impactSparks: 6, impactSmoke: 0,
-    burstFire: 5, burstSmoke: 6, burstSparks: 16, burstDebris: 0, burstDust: 0, wreckSmoke: 0, wreckEmbers: false,
-  }),
-  mid: Object.freeze({
-    capacity: 512, muzzleBrake: true, muzzleSmoke: 0, impactSparks: 10, impactSmoke: 2,
-    burstFire: 8, burstSmoke: 10, burstSparks: 32, burstDebris: 0, burstDust: 10, wreckSmoke: 0, wreckEmbers: false,
-  }),
-  high: Object.freeze({
-    capacity: 1024, muzzleBrake: true, muzzleSmoke: 3, impactSparks: 16, impactSmoke: 4,
-    burstFire: 11, burstSmoke: 16, burstSparks: 56, burstDebris: 12, burstDust: 16, wreckSmoke: 10, wreckEmbers: false,
-  }),
-  ultra: Object.freeze({
-    capacity: 1536, muzzleBrake: true, muzzleSmoke: 6, impactSparks: 16, impactSmoke: 6,
-    burstFire: 14, burstSmoke: 20, burstSparks: 80, burstDebris: 16, burstDust: 20, wreckSmoke: 14, wreckEmbers: true,
-  }),
-})
+// FX_BUDGETS 画质档位预算 owner = battleFxAtlas.ts（叶子模块；本处 re-export 保持 API）。
+export { FX_BUDGETS } from './battleFxAtlas.js'
+export type { FxBudget } from './battleFxAtlas.js'
 
 /** 击毁爆炸壁钟寿命（秒）。3D 专用，不再由 2D 的 `BURST_MS` 推导。（owner = battleFxEmitters，本文件 import 后同名导出） */
 export { BURST_SECS }
