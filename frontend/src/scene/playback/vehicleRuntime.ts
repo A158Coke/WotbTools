@@ -9,297 +9,33 @@
 //（原 buildVehicles 的 tread 段）经 deps.treadAttachVehicle 委托给 treadRuntime，
 // buildVehicles 保持 tread-free。
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import {
-  poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks,
-} from '../glbRig.js'
-import { collectGlbParts } from './glbParts.js'
-import type { GlbParts, GlbStaticData } from './glbParts.js'
-import { resolveMountedConfig } from '../reloadBar.js'
-import type { TankJsonLike } from '../reloadBar.js'
+import { createVehicleGlb } from './vehicleGlb.js'
 import {
   applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual,
 } from '../tankDestroyedVisual.js'
-import type { DestroyedLifeEvidence, TankDestroyedVisual } from '../tankDestroyedVisual.js'
-import { sampleDetachedPose } from '../trackInterp.js'
 import { sampleVehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
 import { lastKnownPoseAt, replacedBySuccessorAt } from './lastKnown.js'
-import type { LastKnownPose } from './lastKnown.js'
-import type { PoseGrid, PoseDef, VehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
+import type { VehiclePoseGame } from '../../replay-local/pose/vehiclePose.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
-  attachChainToWheels, chainSpanBoundaries, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
-  parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents,
-  applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
+  solveChain, applyChainToVertices, chainChanged, chainDrift, sideTravel,
+  applyWheelSpin, writeUvOffsetV,
 } from '../suspension.js'
 import { markPickBoundsStale } from './armorHighlight.js'
-import { measureShadowFootprint } from './tankContactShadows.js'
-import type { TankContactShadows } from './tankContactShadows.js'
-import { ASSET_CONCURRENCY, mapLimit } from './util.js'
-import { assetProvider } from '../assetProvider.js'
 import { createTrailState } from '../treadMarks.js'
-import type { TrailState } from '../treadMarks.js'
+import type {
+  GlbCacheEntry, RuntimeVehicle,
+  VehicleRuntimeDeps, VehicleRuntimeHandle,
+} from './vehicleRuntimeTypes.js'
 
 /** 资产平面 suspension/{tank_id}.json 的消费面（缺失/404 → null，整车回落刚体）。 */
-export interface SuspensionJson {
-  wheels: number[][]
-  chains: { left: number[][][]; right: number[][][] }
-  track_bending?: { upper_factor?: number; length_power?: number } | null
-  wheels_reaction_speed?: number | null
-  [key: string]: unknown
-}
-
-/** 车辆定义面（位姿列 PoseDef + 渲染运行时消费的字段；其余字段走索引签名）。 */
-export interface RuntimeVehicleDef extends PoseDef {
-  eid: number
-  account_id: number
-  tank_id: number
-  team?: number | null
-  coverage?: number[]
-  death_t: number | null
-  death_times?: number[]
-  resurrection_times?: number[]
-  suspReaction?: number | null
-  turret_index?: number | null
-  gun_index?: number | null
-  is_author?: boolean
-  nickname?: string
-  tank_name?: string
-  max_hp?: number
-  hp?: Array<[number, number]>
-  equipment?: unknown
-  [key: string]: unknown
-}
-
-/** 分离炮塔轨道（DATA.detached_turrets 条目；位姿采样面见 trackInterp.sampleDetachedPose）。 */
-export interface DetachedTurretTrack {
-  vehicle_eid: number
-  coverage: ArrayLike<number>
-  pose_kf: Record<'t' | 'pos' | 'yaw' | 'pitch' | 'roll', ArrayLike<number>>
-  [key: string]: unknown
-}
-
-/** 分离炮塔运行时（低模代理 + GLB 克隆双形态；宿主击毁着色/可见性共用同一事实）。 */
-export interface DetachedTurret {
-  track: DetachedTurretTrack
-  root: THREE.Group
-  proxy: THREE.Group
-  proxyVisual: TankDestroyedVisual
-  glb: THREE.Object3D | null
-  glbVisual: TankDestroyedVisual | null
-}
-
-/** 每车「最近一次采样」缓存（applyPose 一帧内多通道采样记忆化，见 poseStash 注释）。 */
-export interface TickPose {
-  t: number; x: number; y: number; z: number; yaw: number; pitch: number; roll: number; turretAbs: number; gunPitch: number
-}
-
-/** 悬挂负重轮运行时（解算状态逐轮持有；见 collectSuspensionParts）。 */
-export interface SuspensionWheelPart {
-  node: THREE.Object3D
-  flag: number
-  up: number
-  down: number
-  radius: number
-  centerHull: THREE.Vector3
-  travelAxis: THREE.Vector3
-  upHull: THREE.Vector3
-  pivot: THREE.Vector3
-  restPivotRot: THREE.Vector3
-  restPos: THREE.Vector3
-  restQuat: THREE.Quaternion
-  travel: number
-  spin: number
-}
-
-/** 悬挂单条履带运行时（链路解算 + 逐顶点形变 + 花纹滚动状态）。 */
-export interface SuspensionTrackPart {
-  node: THREE.Object3D
-  parts: Array<{
-    mesh: THREE.Mesh
-    posAttr: THREE.BufferAttribute
-    basePos: Float32Array
-    params: { seg: Int32Array; t: Float32Array }
-    axis3: [number, number, number]
-    uvAttr: THREE.BufferAttribute | null
-    uvBase: Float32Array | null
-    appliedUv: number
-  }>
-  chain: Array<[number, number]>
-  restZ: number[]
-  attach: Int32Array
-  /** 悬空段边界（挂接点 ∪ 链点 flag 的升序索引）；null = 沿用历史的「相邻挂接点」口径 */
-  spans: number[] | null
-  wheelCfg: Array<{ longitudinal: number; centerZ: number; radius: number }>
-  lateral: number
-  beltW: number
-  groundDrop: Float64Array
-  chainZ: Float64Array
-  appliedChainZ: Float64Array | null
-  normalChainZ: Float64Array | null
-  dvPerM: number
-  uv: number
-}
-
-/** 悬挂单侧（轮 + 带；halfW/beltW 为履带印宽度解析的消费面）。 */
-export interface SuspensionSide {
-  wheels: SuspensionWheelPart[]
-  tracks: SuspensionTrackPart[]
-  wheelDelta: Float64Array
-  halfW: number
-  beltW: number
-  prev: THREE.Vector3 | null
-}
-
-/** collectSuspensionParts 产物（v.suspParts；数据缺失 → null 回落刚体）。 */
-export interface SuspensionParts {
-  sides: Partial<Record<'L' | 'R', SuspensionSide>>
-  disposables: Array<{ dispose(): void }>
-  bend: { upper_factor?: number; length_power?: number } | null
-}
-
-/** 车辆运行时对象（v；宿主与 treadRuntime 经同一形状消费）。 */
-export interface RuntimeVehicle {
-  def: RuntimeVehicleDef
-  group: THREE.Group
-  turretG: THREE.Group
-  gunPivot: THREE.Group
-  meshHull: THREE.Mesh
-  hullGroup: THREE.Group
-  /** 原语义：字段在首次赋值前**不存在**（undefined），不得初始化为 null——契约测试锁定。 */
-  glb?: THREE.Object3D | null
-  glbParts?: GlbParts | null
-  suspParts?: SuspensionParts | null
-  tickPose?: TickPose | null
-  detachedTurrets: DetachedTurret[]
-  proxyVisual: TankDestroyedVisual | null
-  glbVisual: TankDestroyedVisual | null
-  labelAnchor: THREE.Vector3
-  labelOccluded?: boolean
-  /**
-   * 最后已知位姿（可视性诚实呈现，语义见 scene/playback/lastKnown.ts）：applyPose 逐帧维护，
-   * **在场时刻恒 null**（正常呈现）；不在场 = 末段末采样（协议 AoI 判别，纯函数），memo 按 t。
-   * labelsRuntime 读它做幽灵名牌锚点；呈现开关 = store.lastKnownOn（只门控呈现，不改计算）。
-   */
-  lastKnownPose: LastKnownPose | null; lastReplaced?: boolean
-  /** 上次 lastKnownPose 计算的回放时刻（memo 键；NaN = 尚未计算） */
-  lastKnownAt: number
-  /** 最后已知位置的半透明低模代理（盒体几何复用 trackGeo；teardown 随 dispose 释放） */
-  lastKnownProxy: THREE.Mesh | null
-  /** 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算） */
-  trail: { L: TrailState; R: TrailState; builtT: number } | null
-  tread: TreadRuntimeParams | null
-  treadMesh: THREE.Mesh | null
-  tankData?: GlbStaticData | null
-  [key: string]: unknown
-}
-
-/** 履带印逐车参数（treadRuntime 写入；本模块只透传/读 width/space/texture/texScale）。 */
-export interface TreadRuntimeParams {
-  texture: string
-  width: number
-  space: number
-  authoredWidth: boolean
-  texScale: number
-  [key: string]: unknown
-}
-
-/** 本模块消费的回放数据面（车队定义 + 分离炮塔轨道）。 */
-export interface VehicleRuntimeData {
-  vehicles: RuntimeVehicleDef[]
-  detached_turrets?: DetachedTurretTrack[] | null
-  [key: string]: unknown
-}
-
-/** GLB 模板缓存条目（session-scoped；teardown 一次性释放 unique shared resources）。 */
-export interface GlbCacheEntry {
-  template: THREE.Object3D
-  sd: GlbStaticData | null
-  susp: SuspensionJson | null
-}
-
-/** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
-export interface VehicleRuntimeDeps {
-  /** 宿主 store 的 GLB 开关投影（applyGlbToggle 双写：内部态 + store）。 */
-  store: { glbOn: boolean; lastKnownOn: boolean }
-  /** 实例是否已 destroy。 */
-  destroyed(): boolean
-  /** 会话加载代数（applyGlbToggle 的迟到守卫；owner 在 sessionLifecycle）。 */
-  sessionGen(): number
-  getScene(): THREE.Scene | null
-  /** 回放时钟（宿主唯一 owner；姿态/GUN 世界位姿按它采样）。 */
-  getT(): number
-  /** 当前会话回放数据（DATA 读取面；宿主唯一 owner）。 */
-  getData(): VehicleRuntimeData | null
-  /** 阵营色（HOST-owned：唯一事实源在宿主调色板）。 */
-  teamColor(v: { def: RuntimeVehicleDef }): number
-  /** 画质档（宿主持有 QUALITY_PRESETS 解析结果；本模块只读履带印开关）。 */
-  quality(): { treadMarks?: boolean }
-  /** 类型图标替换模式（宿主标签偏好派生）。 */
-  classIconsVisible(): boolean
-  /** 作者标记环显隐（宿主标签偏好）。 */
-  showMarkerStatus(): boolean
-  invalidate(): void
-  /** 协议精确可见性（canonical 事实 owner = 宿主 visibleAt）。 */
-  visibleAt(v: RuntimeVehicle, t: number): boolean
-  /** 当前时刻的实体身份替换判据（同账号后继实体已接管；canonical 证据 owner = 宿主）。
-   *  缺省时回退到 coverage 段序的纯函数判据（replacedBySuccessorAt）。 */
-  replacedAt?(eid: number, t: number): boolean
-  /** 场景死亡判据（canonical 事实 owner = 宿主 sceneLifeAt）。 */
-  sceneLifeAt(v: RuntimeVehicle, t: number): DestroyedLifeEvidence | null
-  /** 地形高度采样（owner = mapWorld）。 */
-  sampleHeight(x: number, z: number): number
-  /** 履带印逐车装配（treadRuntime.attachVehicle；宿主晚绑定注入）。 */
-  treadAttachVehicle(v: RuntimeVehicle): void
-  /** Object3D 子树递归 dispose（宿主实现）。 */
-  disposeObject3D(root: unknown): void
-  /** 共享位姿网格时间轴（宿主唯一 owner；按引用共享同一可变对象）。 */
-  poseGrid: PoseGrid
-  /** 协议精确 AoI 段（宿主唯一 owner 的 VIS_BY_EID 读取）。 */
-  visByEid(): Map<number, number[]>
-  /** 坦克接地阴影句柄（#907 主干随迁；null = 未启用，所有调用点空转）。 */
-  contactShadows(): TankContactShadows | null
-  /** 开镜隐藏的本车 eid（owner = cameraRuntime；阴影随开镜隐藏）。 */
-  scopedHiddenEid(): number
-}
-
-/** 车辆运行时对外句柄（宿主与 treadRuntime 的唯一消费面）。 */
-export interface VehicleRuntimeHandle {
-  getVehicles(): RuntimeVehicle[]
-  buildVehicles(): void
-  loadGlb(tankId: number): Promise<GlbCacheEntry | null>
-  applyGlbToggle(on: boolean): Promise<void>
-  glbOn(): boolean
-  setLowPoly(v: RuntimeVehicle, show: boolean): void
-  applyPose(v: RuntimeVehicle): void
-  applyDetachedTurrets(v: RuntimeVehicle): void
-  poseGlbRig(v: RuntimeVehicle, t: number, pos: THREE.Vector3): void
-  glbGunWorld(v: RuntimeVehicle, pos: THREE.Vector3, dir: THREE.Vector3): boolean
-  posAt(v: RuntimeVehicle, t: number, out: THREE.Vector3): THREE.Vector3
-  yawAt(v: RuntimeVehicle, t: number): number
-  hullPitchAt(v: RuntimeVehicle, t: number): number
-  turretAbsAt(v: RuntimeVehicle, t: number): number
-  gunPitchAt(v: RuntimeVehicle, t: number): number
-  rollAt(v: RuntimeVehicle, t: number): number
-  vehicleByEid(eid: number): RuntimeVehicle | undefined
-  /** animate 逐帧：suspDt = dt; suspSnap = snap（原两行赋值的等价入口）。 */
-  frameTiming(dt: number, snap: boolean): void
-  /** seekTo：suspSnap = true; suspDt = 0（跳变：行程吸附、侧位移不积分）。 */
-  markSeekSnap(): void
-  /** tick 的 applyPose 循环消费掉 seek snap 后清位。 */
-  clearSnap(): void
-  /** 会话 teardown：车辆循环（分离炮塔/GLB/悬挂几何/低模组）+ GLB 模板缓存释放 + V = []。 */
-  dispose(): void
-  /** 阴影同步（宿主 setLabelPrefs 循环消费；实现见 syncContactShadow）。 */
-  syncContactShadow(v: RuntimeVehicle): void
-}
 
 /** 最后已知代理的底盘盒中心相对记录位姿的抬升（= 低模履带盒在 group 内的 position.y，同高对齐）。 */
 const LAST_KNOWN_PROXY_Y = 0.42
 
 export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHandle {
   let V: RuntimeVehicle[] = [];      // 车辆运行时 {def, group, turretG, gunPivot, labelAnchor, meshHull, glb}
-  let glbCache = new Map<number, Promise<GlbCacheEntry | null>>(), glbOn = false;
+  let glbCache = new Map<number, Promise<GlbCacheEntry | null>>();
   let suspDt = 0;          // 本帧 dt（0 = seek/跳变 ⇒ 行程限速退化为吸附）
   let suspSnap = false;    // 本 tick 为跳变（seek）：行程吸附、侧位移不积分
 
@@ -342,6 +78,20 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
   function turretAbsAt(v: RuntimeVehicle, t: number) { return poseStash(v, t).turretAbs; }
   function gunPitchAt(v: RuntimeVehicle, t: number) { return poseStash(v, t).gunPitch; }
   const rollAt = (v: RuntimeVehicle, t: number) => poseStash(v, t).roll;
+  // GLB 车模域 owner（#LOC 结构拆分出仓 vehicleGlb.ts；缓存/清单/位姿缓存仍在本闭包）
+  const glbDomain = createVehicleGlb({
+    deps,
+    V: () => V,
+    glbCache,
+    yawAt,
+    hullPitchAt,
+    rollAt,
+    turretAbsAt,
+    gunPitchAt,
+    suspensionStep,
+    applyPose,
+    wrapPi,
+  });
 
   function buildVehicles() {
     const data = deps.getData();
@@ -420,7 +170,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
       if (deps.quality().treadMarks) deps.treadAttachVehicle(v);
       scene.add(g);
       V.push(v);
-      setLowPoly(v, true);
+      glbDomain.setLowPoly(v, true);
     }
   }
 
@@ -431,54 +181,6 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
   // - 炮塔/炮管 = 烘焙矩阵绕枢轴旋转：炮塔 Rz(−rel)（镜像系）@ tP=track+turret，炮管 Rx(俯仰)@ gP=tP+gun_origin；
   // - 部件数据（model_origins / configs[].gun_origin / initial_turret_rotation）来自资产平面 tank/{id}.json
   //  （WotBTools client-only：dump-tank-data 物化，与上游 /api/tank/{id} 同一形状）。
-
-  async function loadGlb(tankId: number): Promise<GlbCacheEntry | null> {
-    // 捕获当前会话的缓存实例：会话结束后迟到的完成写入旧 Map（已脱离新会话），
-    // 不污染新会话缓存；teardown 时在册的 Promise 已被挂 then(dispose)——迟到
-    // 模板到达即销毁，teardown 后才创建的残余随旧 Map GC
-    const cache = glbCache;
-    if (cache.has(tankId)) return cache.get(tankId)!;
-    const p = (async (): Promise<GlbCacheEntry | null> => {
-      try {
-        const [glbBytes, sd, susp] = await Promise.all([
-          assetProvider.bytes(`/glb/${tankId}/model.glb`),
-          assetProvider.json<GlbStaticData | null>(`/tank/${tankId}.json`).catch(() => null),
-          // 逐车悬挂数据（additive：tools/export_tank_suspension.py 产物；缺失/404 → null，
-          // 整车回落刚体——与"该车客户端无悬挂数据"同路）
-          assetProvider.json<SuspensionJson | null>(`/suspension/${tankId}.json`).catch(() => null),
-        ]);
-        // GLTFLoader.parse：bytes 经 provider（storage/network 与场景解耦），
-        // GLB 自包含无外部资源，resourcePath 无关紧要
-        const model = await new Promise<THREE.Object3D | null>((res) =>
-          new GLTFLoader().parse(glbBytes.buffer as ArrayBuffer, '', (g) => res(g.scene), () => res(null)));
-        if (!model) {
-          console.warn('[playback] 坦克 GLB 解析返回空 tank_id=' + tankId)
-          return null
-        }
-        model.scale.setScalar(1);
-        // 老式车（无 metallicRoughness 贴图）金属度归零——否则无环境贴图下发黑；
-        // 在模板上做一次，逐车 clone 共享材质即随带（见 glbRig.js）
-        neutralizeDefaultMetalness(model);
-        // 同名几何副本去重：Maus 的根级 mask_01 与 gun_01_mask 是同一块炮盾（实测唯一一台），
-        // rig 不摆位 mask_NN → 炮塔转走后它会留在原地（见 glbRig.dropDuplicateGunMasks）
-        dropDuplicateGunMasks(model);
-        // hide_elements 拆件全部渲染（与装甲检视器同规则；位于部件子树内，姿态随父节点自动跟随）
-        // 缓存模板 + 部件数据（sd）；每车实例化时 clone 并重收集节点引用
-        //（同 tank_id 多车共用一个实例会互相抢对象、位姿互覆盖）
-        return { template: model, sd, susp };
-      } catch (e) {
-        // 静默失败是"切真实车模后没有车"这类报障无从定位的根因（2026-10-09 实测）：
-        // 资产 404 / 解析异常 / 模板处理抛错都落在这里，必须留痕（含 tank_id 与原始错误）
-        console.warn('[playback] 坦克 GLB 加载失败 tank_id=' + tankId + ':', e)
-        return null
-      }
-    })();
-    cache.set(tankId, p);
-    // 负结果不入缓存：失败（404/解析失败）只影响本次，资产补位后下次切换即可重试——
-    // 缓存 null 会毒化整个会话（transient 缺资产被永久记住）
-    p.then((entry) => { if (!entry) cache.delete(tankId); }).catch(() => cache.delete(tankId));
-    return p;
-  }
 
   // ---------- 悬挂求解（轮/带逐帧解算，客户端同构） ----------
   // 依据：上游 `docs/tank-suspension-client-re.md` §六（第二轮反汇编）。与客户端逐条对应：
@@ -493,171 +195,12 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
   //     `textureScale/chunkLength` 实测偏快 3.4~19×，见 collectSuspensionParts 内注释）。
   // 半径/挂点/链长由模型现算（客户端亦从骨骼现算）；数据缺失/命名不符/轮数不匹配 →
   // 返回 null，整车回落刚体（fail-closed，与数据面无 suspension 块的车同路）。
-  const SUSP_AXIS = new THREE.Vector3(0, 0, 1);      // 模型 +z（上）——行程方向
   const SUSP_SPIN_AXIS = new THREE.Vector3(1, 0, 0); // 轮局部 X（车宽）——自转轴（客户端同款）
   const _spQ = new THREE.Quaternion(), _spQ2 = new THREE.Quaternion();
-  const _spV = new THREE.Vector3(), _spP = new THREE.Vector3(), _spC = new THREE.Vector3();
+  const _spP = new THREE.Vector3(), _spC = new THREE.Vector3();
   const _spUp = new THREE.Vector3(), _spFwd = new THREE.Vector3();
-  const _spUpW = new THREE.Vector3(), _spBox = new THREE.Box3(), _spBox2 = new THREE.Box3();
+  const _spUpW = new THREE.Vector3();
 
-  function collectSuspensionParts(root: THREE.Object3D, susp: SuspensionJson | null, tankId: number): SuspensionParts | null {
-    if (!susp || !Array.isArray(susp.wheels) || !susp.chains) return null;
-    const chainsBySide = { L: susp.chains.left, R: susp.chains.right };
-    if (!Array.isArray(chainsBySide.L) || !Array.isArray(chainsBySide.R)) return null;
-    root.updateMatrixWorld(true);          // clone 未入 scene：matrixWorld 即"相对模型根"
-    const disposables: Array<{ dispose(): void }> = [];
-    const sides: Partial<Record<'L' | 'R', SuspensionSide>> = {};
-    for (const side of ['L', 'R'] as const) {
-      const wheelNodes: Array<[number, THREE.Object3D]> = [];
-      const trackNodes: Array<[number, THREE.Object3D]> = [];
-      root.traverse((n) => {
-        const wp = parseWheelNodeName(n.name);
-        if (wp && wp.side === side) wheelNodes.push([wp.index, n]);
-        const tp = parseTrackNodeName(n.name);
-        if (tp && tp.side === side) trackNodes.push([tp.segment, n]);
-      });
-      wheelNodes.sort((a, b) => a[0] - b[0]);
-      trackNodes.sort((a, b) => a[0] - b[0]);
-      const chains = chainsBySide[side];
-      // 客户端断言 `wheelInfos.size() == suspension.wheels.size()`：轮数不符即 fail-closed
-      if (!wheelNodes.length || wheelNodes.length !== susp.wheels.length) return null;
-      if (!trackNodes.length || trackNodes.length !== chains.length) return null;
-      const wheels: SuspensionWheelPart[] = [];
-      for (const [idx, node] of wheelNodes) {
-        const rec = susp.wheels[idx - 1];
-        if (!Array.isArray(rec) || rec.length < 3) return null;
-        const flag = rec[0], up = rec[1], down = rec[2];
-        _spBox.makeEmpty();
-        node.traverse((o) => {
-          const mesh = o as THREE.Mesh
-          if (!(mesh as THREE.Mesh).isMesh || !mesh.geometry) return;
-          if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-          if (mesh.geometry.boundingBox) {
-            _spBox.union(_spBox2.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld));
-          }
-        });
-        if (_spBox.isEmpty()) return null;
-        const ctr = _spBox.getCenter(new THREE.Vector3());
-        const size = _spBox.getSize(new THREE.Vector3());
-        const radius = wheelRadiusFromExtents(size.y, size.z);
-        const travelAxis = SUSP_AXIS.clone().applyQuaternion(node.quaternion.clone().invert());
-        const upHull = SUSP_AXIS.clone().applyQuaternion(node.quaternion);
-        // 导出器把轮几何烘进顶点、节点留在原点（实测平移/旋转皆 identity）：直接给节点写
-        // 旋转会绕**整车原点**转（轮公转 = 观感"旋转混乱"）。故按轮心做枢轴补偿——
-        // 与炮塔/炮管同一套"节点原点 + 显式枢轴"约定（见 model_origins 那条链）。
-        const pivot = node.parent ? node.parent.worldToLocal(ctr.clone()) : ctr.clone();
-        const restPivotRot = pivot.clone().applyQuaternion(node.quaternion);
-        wheels.push({
-          node, flag,
-          up: flag ? up : 0, down: flag ? down : 0,     // flag=0：不参与贴地（客户端同款）
-          radius, centerHull: ctr, travelAxis, upHull, pivot, restPivotRot,
-          restPos: node.position.clone(), restQuat: node.quaternion.clone(),
-          travel: 0, spin: 0,
-        });
-      }
-      const tracks: SuspensionTrackPart[] = [];
-      for (let ti = 0; ti < trackNodes.length; ti++) {
-        const node = trackNodes[ti][1];
-        const chain = chains[ti];
-        if (!Array.isArray(chain) || chain.length < 4) return null;
-        _spBox.makeEmpty();
-        const meshes: THREE.Mesh[] = [];
-        node.traverse((o) => {
-          const mesh = o as THREE.Mesh
-          if (!mesh.isMesh || !mesh.geometry) return;
-          meshes.push(mesh);
-          if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-          if (mesh.geometry.boundingBox) {
-            _spBox.union(_spBox2.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld));
-          }
-        });
-        if (!meshes.length || _spBox.isEmpty()) return null;
-        const lateral = _spBox.getCenter(new THREE.Vector3()).x;   // 履带中心线（模型系横向）
-        const beltW = _spBox.getSize(new THREE.Vector3()).x;        // 履带条宽（回落实测宽度用）
-        const chain2: Array<[number, number]> = chain.map((pt): [number, number] => [pt[0], pt[1]]);   // [纵向 y, 高度 z]
-        const restZ = chain.map((pt) => pt[1]);
-        // 段弧长（花纹速率与顶点弧长参数用）
-        const segArc: number[] = [];
-        const cumArc = [0];
-        for (let i = 0; i + 1 < chain2.length; i++) {
-          segArc.push(Math.hypot(chain2[i + 1][0] - chain2[i][0], chain2[i + 1][1] - chain2[i][1]));
-          cumArc.push(cumArc[cumArc.length - 1] + segArc[i]);
-        }
-        const uvSamples: Array<[number, number]> = [];
-        const wheelCfg = wheels.map((w) => ({
-          longitudinal: w.centerHull.y, centerZ: w.centerHull.z, radius: w.radius,
-        }));
-        const attach = attachChainToWheels(chain2, wheelCfg);
-        // 悬空段边界 = 挂接点 ∪ 客户端链点 flag（1 = 分段标记；语义未定，只作**额外**细分，
-        // 不参与选轮——见 suspension.ts `chainSpanBoundaries` / `attachChainToWheels` 注释）。
-        const spans = chainSpanBoundaries(attach,
-          chain.some((pt) => Number.isFinite(pt[2])) ? chain.map((pt) => Number(pt[2])) : null);
-        const parts: SuspensionTrackPart['parts'] = [];
-        for (const mesh of meshes) {
-          mesh.geometry = mesh.geometry.clone();      // 形变逐车独立（模板几何共享）
-          disposables.push(mesh.geometry);
-          const posAttr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute | null;
-          if (!posAttr) continue;
-          const basePos = new Float32Array(posAttr.array);
-          const nv = basePos.length / 3;
-          // 顶点 → 链路映射在**模型根系**里做（链路即模型根系的纵剖面折线）
-          const rootPos = new Float32Array(basePos.length);
-          const m = mesh.matrixWorld;
-          for (let vi = 0; vi < nv; vi++) {
-            _spV.set(basePos[vi * 3], basePos[vi * 3 + 1], basePos[vi * 3 + 2]).applyMatrix4(m);
-            rootPos[vi * 3] = _spV.x; rootPos[vi * 3 + 1] = _spV.y; rootPos[vi * 3 + 2] = _spV.z;
-          }
-          const params = vertexChainParams(rootPos, chain2);
-          // 位移方向：模型根 +z 在该网格局部系里的方向（网格可能带旋转）
-          const localAxis = SUSP_AXIS.clone().applyQuaternion(mesh.quaternion.clone().invert());
-          const uvAttr = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute | null;
-          const uvBase = uvAttr ? new Float32Array(uvAttr.array) : null;
-          // 花纹速率样本：[沿带弧长, V]（沿带弧长由顶点→链路映射给出）
-          if (uvAttr) {
-            for (let vi = 0; vi < nv; vi++) {
-              const sg = params.seg[vi];
-              const arc = cumArc[sg] + params.t[vi] * segArc[sg];
-              uvSamples.push([arc, uvAttr.array[vi * 2 + 1]]);
-            }
-          }
-          parts.push({ mesh, posAttr, basePos, params, axis3: [localAxis.x, localAxis.y, localAxis.z],
-                       uvAttr, uvBase, appliedUv: 0 });
-        }
-        if (!parts.length) return null;
-        // 花纹滚动速率：**网格实测**沿带 dV/ds（客户端形式 textureScale/chunkLength 实测偏快
-        // 3.4~19×——那条常数在客户端自己的 shader V 空间里，与导出网格的图集式 per-link V
-        // 不同量纲）。方向：ΔV = dir·k·Δs，dir = 链路底段走向（材料在底段向后流），
-        // k 的符号自带模型的 V 朝向 ⇒ 两个符号方向都自动正确（见 suspension.js 推导）。
-        const uvFit = measureBeltUvSlope(uvSamples);
-        const dvPerM = uvFit.ok ? chainBottomRunDir(chain2) * uvFit.slope : 0;
-        if (!uvFit.ok) {
-          console.warn('[playback] 履带 UV 沿带斜率不可测（花纹停滚）tank=' + (tankId || '?')
-            + ' pairs=' + uvFit.pairs);
-        }
-        tracks.push({
-          node, parts, chain: chain2, restZ, attach, spans, wheelCfg, lateral, beltW,
-          groundDrop: new Float64Array(chain2.length),
-          chainZ: new Float64Array(chain2.length),
-          appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
-          normalChainZ: null,     // 上次**重算法线**时的链（法线闸门逐点比较用）
-          dvPerM, uv: 0,
-        });
-      }
-      // 侧接触线横向偏移：履带中心线 |x| 的均值；同时累计履带条宽（beltW 均值）
-      let sum = 0, wsum = 0;
-      for (const tg of tracks) { sum += Math.abs(tg.lateral); wsum += tg.beltW || 0; }
-      sides[side] = {
-        wheels, tracks, wheelDelta: new Float64Array(wheels.length),
-        halfW: tracks.length ? sum / tracks.length : 0,
-        beltW: tracks.length ? wsum / tracks.length : 0, prev: null,
-      };
-    }
-    return {
-      sides, disposables, bend: susp.track_bending || null,
-    };
-  }
-
-  // 逐帧：贴地（轮）→ 自转 → 链路解算 → 逐顶点形变 + 花纹滚动
   function suspensionStep(v: RuntimeVehicle) {
     const sp = v.suspParts;
     if (!sp || !v.glb) return;
@@ -763,232 +306,11 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
 
   // GLB 位姿模块级 scratch：本函数每车每帧执行，原实现每次分配 ~20 个矩阵/欧拉/四元数
   // （14 车 × 60fps 的 GC 抖动源）。语义与逐次分配完全一致，只是复用容器。
-  const _glbQuat = new THREE.Quaternion();
-  const _glbEuler = new THREE.Euler();
-  const _mRot = new THREE.Matrix4(), _mTmpA = new THREE.Matrix4(), _mTmpB = new THREE.Matrix4();
-  const _mTmpC = new THREE.Matrix4(), _mTmpD = new THREE.Matrix4(), _mT = new THREE.Matrix4();
-  const _mG = new THREE.Matrix4(), _mAcc = new THREE.Matrix4();
-
-  // GLB 根位姿 = poseFromYPR(−yaw, pitch, roll)（共享 rig，见 scene/glbRig.js）——
-  // **车体位姿照回放记录摆**（客户端同构：车体收记录的 yaw/pitch/roll + y）。
-  // ⚠️ 2026-10-10：曾试过"根吃地形局部平面 + 车体吃限幅残差"的近似，观感被判"怪"且与客户端
-  // 结构相反（客户端：车体 = 记录位姿；轮/带由 `Suspension*System` 按模型几何解算——逆向证据见
-  // 上游 docs/tank-suspension-client-re.md），已整段回退。`__hullGroup` 保留但**恒归单位**：
-  // 它是下一步"逐轮贴地 + 履带分段"的挂点，现在不参与摆放。
-  function poseGlb(v: RuntimeVehicle) {
-    poseGlbRig(v, deps.getT(), v.group.position);
-    // 悬挂：轮带宽高/自转/履带形变（客户端同构；v.suspParts 缺失 = 整车刚体）。只读根位姿。
-    suspensionStep(v);
-  }
-  // 根位姿 + 炮塔 / 炮管：t 时刻的纯函数（不碰悬挂积分状态）。开火定位炮口时临时摆到 t_fire
-  // 量完再摆回 T（见 flushMuzzles）。
-  function poseGlbRig(v: RuntimeVehicle, t: number, pos: THREE.Vector3) {
-    if (!v.glb) return;
-    v.glb.position.copy(pos);
-    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, t), hullPitchAt(v, t), -rollAt(v, t), _glbQuat));
-    const p = v.glbParts;
-    if (p && p.hullGroup) {
-      p.hullGroup.quaternion.identity();
-      p.hullGroup.position.set(0, 0, 0);
-    }
-    if (!p) return;
-    const gr = gunPitchAt(v, t);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
-    const mT = glbTurretMatrix(v, p, t);
-    const mG = _mG.copy(_mT).multiply(_mTmpB.makeTranslation(p.gP[0], p.gP[1], p.gP[2]))
-      .multiply(_mTmpC.makeRotationX(gr))
-      .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
-    p.poseT.copy(mT);
-    p.poseG.copy(mG);
-    const tn = p.turretNode;
-    if (tn) {
-      // 回转炮塔：横转（含 itr 补偿）写炮塔节点；炮管随父链继承横转。
-      tn.updateMatrix();
-      if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
-      tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake as THREE.Matrix4));
-    }
-    // 固定战斗室（turretNode=null，歼击车）：炮管组直接吃 mG——mG = mT·Rx(gr)，
-    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮管」同构。
-    for (const gn of p.gunNodes) {
-      gn.updateMatrix();
-      if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
-      gn.matrix.copy(_mAcc.copy(mG).multiply(gn.userData.__bake as THREE.Matrix4));
-    }
-    // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播足矣。
-    // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
-    // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
-    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它自己
-    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿，
-    // 只打静态场景网格。
-  }
-  /** 炮塔节点的枢轴旋转矩阵（模型系）：炮塔横转绕 tP，含 itr 补偿。 */
-  function glbTurretMatrix(v: RuntimeVehicle, p: GlbParts, t: number) {
-    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
-    const tr = -rel;                       // 镜像系节点旋转角 = −rel
-    if (p.itr) {
-      // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
-      // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
-      _glbEuler.set(-THREE.MathUtils.degToRad(p.itr.pitch || 0), -THREE.MathUtils.degToRad(p.itr.roll || 0),
-                    tr - THREE.MathUtils.degToRad(p.itr.yaw || 0), 'ZYX');
-      _mRot.makeRotationFromEuler(_glbEuler);
-    } else {
-      _mRot.makeRotationZ(tr);
-    }
-    return _mT.makeTranslation(p.tP[0], p.tP[1], p.tP[2]).multiply(_mRot)
-      .multiply(_mTmpA.makeTranslation(-p.tP[0], -p.tP[1], -p.tP[2]));
-  }
-  /**
-   * 本车配置的真实炮位与炮管方向（世界系），与 poseGlbRig 走同一条变换链；低模代理
-   * 没有 itr 补偿，不能代表渲染出的炮管。没有 GLB 时返回 false，由调用方退回低模枢轴。
-   */
-  function glbGunWorld(v: RuntimeVehicle, pos: THREE.Vector3, dir: THREE.Vector3): boolean {
-    const p = v.glb ? v.glbParts : null;
-    const parent = p && (p.turretNode ?? p.gunNodes[0])?.parent;
-    if (!parent) return false;
-    parent.updateWorldMatrix(true, false);
-    const turret = glbTurretMatrix(v, p, deps.getT());
-    const pitch = gunPitchAt(v, deps.getT());        // 模型前向 +Y，绕 X 俯仰，见 poseGlbRig
-    dir.set(0, Math.cos(pitch), Math.sin(pitch)).transformDirection(turret).transformDirection(parent.matrixWorld);
-    pos.set(p!.gP[0], p!.gP[1], p!.gP[2]).applyMatrix4(turret).applyMatrix4(parent.matrixWorld);
-    return true;
-  }
-  async function applyGlbToggle(on: boolean) {
-    const gen = deps.sessionGen();
-    glbOn = on;
-    deps.store.glbOn = on;
-    const scene = deps.getScene();
-    if (on) {
-      if (!scene) return;
-      // 有限并发加载（上限 4）：单个大模型慢解析不阻塞其余车辆，又不会让 14 台车
-      // 的主线程 GLTF 解析同时排队。每车 clone 独立实例。
-      // generation guard：回放替换后迟到的完成不得挂载到新会话场景
-      await mapLimit(V.filter(v => v.def.tank_id > 0), ASSET_CONCURRENCY, async (v) => {
-        if (!v.glb) {
-          const loaded = await loadGlb(v.def.tank_id);
-          if (gen !== deps.sessionGen()) return;   // 迟到：模板留在旧缓存对象里随 GC 回收
-          if (loaded && glbOn && !v.glb) {
-            const inst = loaded.template.clone();
-            inst.scale.setScalar(1);
-            // 炮塔/主炮变体（dense 节点索引）按**实际搭载配置**选：facet 的 turret_index/
-            // gun_index 只有服务器路径产出；WASM 客户端产物用同一三级证据链
-            // （comp locals → 发射弹种 → 初始血量，resolveMountedConfig）联表 tank 数据
-            // 派生——多炮坦克各炮 GLB 节点组不同（实测同队两台 B-C 25t 分别 100/105mm），
-            // 不钉定会整场显示顶级炮。sd 拉取失败 → 回退 facet 字段 → 顶级。
-            const mounted = loaded.sd ? resolveMountedConfig(v.def, loaded.sd as TankJsonLike) : null;
-            const parts = collectGlbParts(inst, loaded.sd, mounted
-              ? { turret_index: (mounted as { turret_index?: number | null }).turret_index ?? null, gun_index: (mounted as { gun_index?: number | null }).gun_index ?? null }
-              : { turret_index: v.def.turret_index ?? null, gun_index: v.def.gun_index ?? null });
-            if (!parts) {
-              // 部位/枢轴链不全（sd 缺失等）：不受姿的 GLB 会停在世界原点被地形埋住，
-              // 看起来就是"没加载出来"——此时保持代理车（失败可见，且与日志对应）
-              console.warn('[playback] GLB 部位不全，保留代理车 tank_id=' + v.def.tank_id)
-              return
-            }
-            v.glb = inst;                       // 通过部位检查后才落库（否则会卡在半装载态）
-            v.glbParts = parts;
-            deps.contactShadows()?.setFootprint(v, measureShadowFootprint(inst));   // 受姿前一次性实测
-            deps.contactShadows()?.attachModel(v, inst);   // 轮廓投影（渲染器带 stencil 时）
-            v.tankData = loaded.sd;             // Sniper 穿深着色的配置/弹表来源
-            // 悬挂部件（轮/带）逐车收集：几何逐车 clone（模板共享），数据缺 → null 回落刚体
-            v.suspParts = collectSuspensionParts(inst, loaded.susp, v.def.tank_id);
-            v.def.suspReaction = loaded.susp ? loaded.susp.wheels_reaction_speed ?? null : null;
-            v.glb.visible = v.group.visible && !deps.classIconsVisible();
-            scene.add(v.glb);
-            // Clone before shader patching: templates keep shared textures/geometry only.
-            // The material module composes the existing tank ambient-light isolation.
-            for (const head of v.detachedTurrets) {
-              head.glb = cloneDetachedTurret(inst, parts, gunPitchAt(v, head.track.pose_kf.t[0]));
-              head.glbVisual = prepareTankDestroyedVisual(head.glb);
-              head.root.add(head.glb);
-            }
-            v.glbVisual = prepareTankDestroyedVisual(v.glb);
-            applyPose(v);   // late attach while paused must reflect the current replay time
-            deps.invalidate();
-          }
-        }
-        if (v.glb) setLowPoly(v, false);
-      });
-    } else {
-      for (const v of V) {
-        if (v.glb) {
-          for (const head of v.detachedTurrets) {
-            if (head.glb) head.root.remove(head.glb);
-            disposeTankDestroyedVisual(head.glbVisual);
-            head.glb = null; head.glbVisual = null;
-          }
-          scene?.remove(v.glb);            // borrowed geometry/textures stay with the template
-          disposeTankDestroyedVisual(v.glbVisual);
-          v.glbVisual = null;
-          // 悬挂求解为逐车 clone 的履带几何（见 collectSuspensionParts 的 disposables）
-          // ——清引用前必须释放，否则反复开关 GLB 逐次累积 GPU 缓冲（2026-10-10 review P2）。
-          if (v.suspParts && v.suspParts.disposables) {
-            for (const g of v.suspParts.disposables) g.dispose();
-          }
-          v.glb = null; v.glbParts = null; v.suspParts = null;
-        }
-        setLowPoly(v, true);
-        applyDetachedTurrets(v);
-      }
-    }
-  }
-  // 低模显隐（标签与作者标记环除外；GLB 根在 scene 上不经过 group）
-  function setLowPoly(v: RuntimeVehicle, show: boolean) {
-    for (const c of v.group.children) {
-      c.visible = c.userData.keepWithGlb ? deps.showMarkerStatus() : show && !deps.classIconsVisible();
-    }
-    // 车体收在 `__hullGroup` 包装内（悬挂挂点），上面的循环只切到包装层；
-    // 而契约按 `meshHull.visible` 读低模显隐（class-icon 用例断言此标志），故同步自身。
-    if (v.meshHull) v.meshHull.visible = show && !deps.classIconsVisible();
-  }
-
-  const detachedPose: { x: number; y: number; z: number; yaw: number; pitch: number; roll: number } = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
-  /**
-   * 分离事实是否属于**当前这一世**（issue #622 review P2）：复活模式下车会带着炮塔复活——上一世的
-   * 飞头不应让新车继续无炮塔。分离从 detached 轨道首帧起生效，到该车**下一次复活**为止（规则与
-   * `defLifeAt` 同一份上游字段，原始时钟域）；复活后的新死亡若再飞头，会有新的 detached 轨道
-   * （新首帧）重新接管。飞头实体自身的渲染不受此判据影响（它有自己的 coverage 与位姿轨道）。
-   */
-  function detachmentAppliesNow(v: RuntimeVehicle, head: DetachedTurret) {
-    const T = deps.getT();
-    const startRaw = head.track.pose_kf.t[0];
-    if (!(T >= startRaw)) return false;
-    for (const r of v.def.resurrection_times || []) {
-      if (r > startRaw && r <= T + 1e-6) return false;
-    }
-    return true;
-  }
-  function applyDetachedTurrets(v: RuntimeVehicle) {
-    const T = deps.getT();
-    let separated = false;
-    for (const head of v.detachedTurrets) {
-      const known = T >= head.track.pose_kf.t[0];
-      separated ||= known && detachmentAppliesNow(v, head);
-      head.root.visible = known && !deps.classIconsVisible() && sampleDetachedPose(head.track, T, detachedPose);
-      if (head.root.visible) {
-        head.root.position.set(detachedPose.x, detachedPose.y, detachedPose.z);
-        yprScene(detachedPose.yaw, detachedPose.pitch, detachedPose.roll, head.root.quaternion);
-      }
-      head.proxy.visible = !head.glb;
-      if (head.glb) head.glb.visible = true;
-      // Detachment is itself known destruction evidence for this part, even if
-      // canonical vehicle life is still loading. Rewind simply hides the part.
-      const amount = destroyedVisualAmount({ lifeState: 'DESTROYED', destroyedKnownAtSec: head.track.pose_kf.t[0] }, T);
-      applyTankDestroyedVisual(head.proxyVisual, amount);
-      applyTankDestroyedVisual(head.glbVisual, amount);
-    }
-    v.turretG.visible = !separated;
-    if (v.glbParts) {
-      // 固定战斗室（turretNode=null，歼击车）没有炮塔节点可摘——脱落时只藏炮管组
-      //（TD 的炮架横转就是它的「炮塔」，脱落件一并带走）。
-      if (v.glbParts.turretNode) v.glbParts.turretNode.visible = !separated;
-      for (const node of v.glbParts.gunNodes) node.visible = !separated;
-    }
-  }
-
   // applyPose 的零分配采样 scratch（原宿主 tmpV 同款，本模块独立持有）
   const tmpV = new THREE.Vector3();
 
   function applyPose(v: RuntimeVehicle) {
-    applyDetachedTurrets(v);
+    glbDomain.applyDetachedTurrets(v);
     const T = deps.getT();
     const life = deps.sceneLifeAt(v, T);
     const dead = life?.lifeState === 'DESTROYED';
@@ -1046,7 +368,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     if (v.lastKnownProxy) v.lastKnownProxy.visible = false;
     posAt(v, T, tmpV);
     v.group.position.copy(tmpV);
-    if (v.glb) poseGlb(v);
+    if (v.glb) glbDomain.poseGlb(v);
     // 低模位姿（GLB 显示时保留低模位姿更新，切回低模无跳变）：与 GLB 侧同口径 = **记录位姿**
     v.group.rotation.order = 'YXZ';
     v.group.rotation.y = -yawAt(v, T);
@@ -1114,14 +436,14 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     getVehicles: () => V,
     buildVehicles,
     syncContactShadow,
-    loadGlb,
-    applyGlbToggle,
-    glbOn: () => glbOn,
-    setLowPoly,
+    loadGlb: (tankId: number) => glbDomain.loadGlb(tankId),
+    applyGlbToggle: (on: boolean) => glbDomain.applyGlbToggle(on),
+    glbOn: () => glbDomain.glbOn(),
+    setLowPoly: (v: RuntimeVehicle, show: boolean) => glbDomain.setLowPoly(v, show),
     applyPose,
-    applyDetachedTurrets,
-    poseGlbRig,
-    glbGunWorld,
+    applyDetachedTurrets: (v: RuntimeVehicle) => glbDomain.applyDetachedTurrets(v),
+    poseGlbRig: (v: RuntimeVehicle, t: number, pos: THREE.Vector3) => glbDomain.poseGlbRig(v, t, pos),
+    glbGunWorld: (v: RuntimeVehicle, pos: THREE.Vector3, dir: THREE.Vector3) => glbDomain.glbGunWorld(v, pos, dir),
     posAt, yawAt, hullPitchAt, turretAbsAt, gunPitchAt, rollAt,
     vehicleByEid,
     frameTiming: (dt, snap) => { suspDt = dt; suspSnap = snap; },
@@ -1130,3 +452,22 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     dispose,
   };
 }
+
+// ---- 类型面（#LOC 结构拆分出仓 vehicleRuntimeTypes.ts，导入方零改动）----
+export type {
+  DetachedTurret,
+  DetachedTurretTrack,
+  GlbCacheEntry,
+  RuntimeVehicle,
+  RuntimeVehicleDef,
+  SuspensionJson,
+  SuspensionParts,
+  SuspensionSide,
+  SuspensionTrackPart,
+  SuspensionWheelPart,
+  TickPose,
+  TreadRuntimeParams,
+  VehicleRuntimeData,
+  VehicleRuntimeDeps,
+  VehicleRuntimeHandle,
+} from './vehicleRuntimeTypes.js'
