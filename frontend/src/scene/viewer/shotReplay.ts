@@ -6,6 +6,8 @@ import * as THREE from 'three'
 import { poseFromYPR } from '../glbRig.js'
 import { fetchReplayShots } from '../agentData.js'
 import { createShooterModelFactory, poseShooterTurretGun } from './shotReplayPose.js'
+import { buildTrajectoryAnnotation, installAnchorMarkers, installShooterMuzzleMarker, placeImpactCamera } from './shotReplaySeg.js'
+import { installSegmentJudgment } from './judgment.js'
 import { mirrorShotData } from './viewerMath.js'
 import { shotResultClass } from '../../utils/shotResultClass.js'
 import { shellTypeOf } from './armorPlateModel.js'
@@ -303,54 +305,8 @@ export function runShotReplay(deps: ShotReplayDeps): void {
                                 poseShooterTurretGun(sModel, sd, s.shooter_turret_yaw, s.launch_velocity, sYaw,
                                     sR2 ? sR2.ang[1] : (sHit ? (sHit.pitch ?? 0) : 0),
                                     sR2 ? sR2.ang[2] : (sHit ? sHit.roll : 0), sgp, sRel, s.shooter_config_idx);
-                                // 炮闩标注：bake 前捕获的 gun 局部坐标 × bake 后 gun.matrixWorld——
-                                // 精确跟随炮塔偏航/炮管俯仰（来源 = 炮管枢轴 gP，不做后伸量修正）。
-                                try {
-                                    if (breechGunLocal) {
-                                        let gunNode: THREE.Object3D | null = null;
-                                        sModel.traverse(function(n: THREE.Object3D) {
-                                            if (!gunNode && /^gun_\d+$/.test(n.name || '')) gunNode = n;
-                                        });
-                                        if (gunNode) {
-                                            window.__shooterGunNode = gunNode;
-                                            window.__updateMuzzleMarker = function() {
-                                                const g = window.__shooterGunNode, mk = window.__shooterMuzzleMk;
-                                                if (!g || !mk) return;
-                                                g.updateMatrixWorld(true);
-                                                mk.position.copy(breechGunLocal.clone().applyMatrix4(g.matrixWorld));
-                                                // 可见性跟随调试模式(位置始终重算,切换时无需重放)
-                                                const on = !!window.__debugOn;
-                                                mk.visible = on;
-                                                if (window.__shooterMuzzleLine && window.__launchPointMk) {
-                                                    const lgeo = window.__shooterMuzzleLine.geometry;
-                                                    lgeo.setFromPoints([mk.position, window.__launchPointMk.position]);
-                                                    window.__shooterMuzzleLine.computeLineDistances();
-                                                    window.__shooterMuzzleLine.visible = on;
-                                                }
-                                                // 炮闩坐标（回放世界系 = 场景坐标 + 中心偏移）写入调试信息窗口
-                                                dbgInfo('dbg-breech', '#cc66ff', '炮闩',
-                                                    fmt3(mk.position.x + cx, mk.position.y + cy, mk.position.z + cz));
-                                            };
-                                            const mk = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10),
-                                                new THREE.MeshBasicMaterial({ color: 0xcc66ff, transparent: true, opacity: 0.95, depthTest: false }));
-                                            mk.renderOrder = 998;
-                                            getScene().add(mk);
-                                            window.__shooterMuzzleMk = mk;
-                                            // 对照线:炮闩(文件标定) ⇄ 服务器发射点(橙色 LaunchPoint),
-                                            // 白色虚线,长度即两套数据的偏差——随 tick 重算一起更新
-                                            const dline = new THREE.Line(
-                                                new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-                                                new THREE.LineDashedMaterial({
-                                                    color: 0xffffff, transparent: true, opacity: 0.8,
-                                                    dashSize: 0.35, gapSize: 0.25, depthTest: false }));
-                                            dline.renderOrder = 996;
-                                            getScene().add(dline);
-                                            window.__shooterMuzzleLine = dline;
-                                            window.__updateMuzzleMarker();
-                                            console.log('[world] shooter breech(gun-local) @', breechGunLocal.toArray().map(v => +v.toFixed(2)).join(','));
-                                        }
-                                    }
-                                } catch (e) { console.warn('[world] muzzle marker failed:', e); }
+                                installShooterMuzzleMarker(sModel, breechGunLocal,
+                                    { cx, cy, cz, getScene, dbgInfo, fmt3 });
                                 // 注册全局引用（滑块/炮口标记/基准点标注消费）
                                 window.__shooterModel = sModel;
                                 window.__shooterData = sd;
@@ -361,34 +317,7 @@ export function runShotReplay(deps: ShotReplayDeps): void {
 
                         // 弹道原始数据（method29 launchPoint + method20 终点，世界系绝对坐标）
                         const ba = s.ball_a, bb = s.ball_b;
-                        // ===== 基准点标记（调试模式）：模型根节点 = type10 记录位置锚点 =====
-                        // 随各自 tick 跟随移动；坐标写入调试信息窗口（原场景内 sprite 标签已移除）。
-                        function makeAnchorMarker(colorCss: string): { mk: THREE.Mesh; color: string } {
-                            const mk = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10),
-                                new THREE.MeshBasicMaterial({ color: new THREE.Color(colorCss), transparent: true, opacity: 0.95, depthTest: false }));
-                            mk.renderOrder = 998;
-                            mk.visible = false;
-                            getScene().add(mk);
-                            return { mk: mk, color: colorCss };
-                        }
-                        window.__victimAnchor = makeAnchorMarker('#00ffcc');
-                        window.__shooterAnchor = makeAnchorMarker('#00aaff');
-                        window.__updateAnchorMarkers = function() {
-                            const on = !!window.__debugOn;
-                            const upd = function(a: { mk: THREE.Mesh; color: string } | null | undefined,
-                                model: THREE.Object3D | null | undefined, rowId: string, name: string): void {
-                                if (!a) return;
-                                if (!model) { a.mk.visible = false; return; }
-                                a.mk.position.copy(model.position);
-                                a.mk.visible = on;
-                                // 坐标 = 回放世界系（场景坐标 + 中心偏移）
-                                dbgInfo(rowId, a.color, name,
-                                    fmt3(model.position.x + cx, model.position.y + cy, model.position.z + cz));
-                            };
-                            upd(window.__victimAnchor, tankModel, 'dbg-anchor-victim', '基准点·受击');
-                            upd(window.__shooterAnchor, window.__shooterModel, 'dbg-anchor-shooter', '基准点·射手');
-                        };
-                        window.__updateAnchorMarkers();
+                        installAnchorMarkers({ cx, cy, cz, getScene, dbgInfo, fmt3 }, tankModel);
                         if (window.__worldAnno) { getScene().remove(window.__worldAnno); }
                         window.__worldAnno = new THREE.Group();
                         // tick 切换重算弹着点所需的射线上下文（在弹道块内赋值）。
@@ -399,353 +328,22 @@ export function runShotReplay(deps: ShotReplayDeps): void {
                         // DecodeShotSegment P1/P2 基准——弦/发射点/速度/终点/来向可视化隐藏；
                         // 脱靶弹无 P1/P2，弹道线是其核心复现内容，保持显示。
                         const SHOW_TRAJ_ANNO = (shotResultClass(s) === 'MISS');
-                        let ctxLaunch: THREE.Vector3 | null = null;
-                        let ctxLvDir: THREE.Vector3 | null = null;
-                        let ctxLvSpd = 0, ctxRayFar = 100;
+                        const trajCtx = buildTrajectoryAnnotation(
+                            { s, cx, cy, cz, armorModel, dbgInfo, fmt3 }, ba ?? undefined, bb ?? undefined, SHOW_TRAJ_ANNO);
+                        const ctxLaunch = trajCtx.ctxLaunch;
+                        const ctxLvDir = trajCtx.ctxLvDir;
+                        const ctxLvSpd = trajCtx.ctxLvSpd, ctxRayFar = trajCtx.ctxRayFar;
                         if (ba && bb) {
-                            const chordLen = Math.sqrt(
-                                (bb[0]-ba[0])**2 + (bb[1]-ba[1])**2 + (bb[2]-ba[2])**2);
-                            // 击穿判定射线 = 弦向量方向(归一化),长度覆盖整条弦
-                            const chordDir = new THREE.Vector3(
-                                (bb[0]-ba[0])/chordLen, (bb[1]-ba[1])/chordLen, (bb[2]-ba[2])/chordLen);
-                            ctxLvDir = chordDir;
-                            ctxRayFar = Math.max(chordLen * 1.1, 20);
-                            // depthTest=false：击穿弹的弦线穿过车体内部，保持全程可见
-                            const trajMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7, depthTest: false });
-                            const trajGeo = new THREE.BufferGeometry().setFromPoints([
-                                new THREE.Vector3(ba[0] - cx, ba[1] - cy, ba[2] - cz),
-                                new THREE.Vector3(bb[0] - cx, bb[1] - cy, bb[2] - cz),
-                            ]);
-                            const trajLine = new THREE.Line(trajGeo, trajMat);
-                            trajLine.renderOrder = 997;
-                            trajLine.visible = SHOW_TRAJ_ANNO;
-                            window.__worldAnno.add(trajLine);   // 随调试开关收纳(原 getScene() 直挂漏显)
-                            // ① launchPoint 标记（method29 发射点，橙色）+ 速度标签
-                            const lpM = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10),
-                                new THREE.MeshBasicMaterial({ color: 0xff6622, transparent: true, opacity: 0.95, depthTest: false }));
-                            lpM.position.set(ba[0] - cx, ba[1] - cy, ba[2] - cz);
-                            lpM.renderOrder = 998;
-                            lpM.visible = SHOW_TRAJ_ANNO;
-                            window.__worldAnno.add(lpM);
-                            window.__launchPointMk = lpM;   // 供模型发射点对照线引用（隐藏但保留引用）
-                            const lv0 = s.launch_velocity || [0, 0, 0];
-                            const lvSpd = Math.sqrt(lv0[0]*lv0[0] + lv0[1]*lv0[1] + lv0[2]*lv0[2]);
-                            ctxLaunch = lpM.position.clone();
-                            ctxLvSpd = lvSpd;
-                            if (SHOW_TRAJ_ANNO) dbgInfo('dbg-launch', '#ff6622', '发射点',
-                                fmt3(ba[0], ba[1], ba[2]) + ' · ' + lvSpd.toFixed(0) + ' m/s');
-                            // ② 速度向量轨迹（青虚线，长度=弦长×1.3）——仅初速方向可视化，判定用弦向量
-                            if (lvSpd > 1) {
-                                const dir = new THREE.Vector3(lv0[0], lv0[1], lv0[2]).normalize();
-                                const vg = new THREE.BufferGeometry().setFromPoints([
-                                    lpM.position.clone(),
-                                    lpM.position.clone().addScaledVector(dir, Math.max(chordLen * 1.3, 10)),
-                                ]);
-                                const vl = new THREE.Line(vg, new THREE.LineDashedMaterial({
-                                    color: 0x00ccff, transparent: true, opacity: 0.8,
-                                    dashSize: 1.2, gapSize: 0.8, depthTest: false }));
-                                vl.computeLineDistances();
-                                vl.renderOrder = 997;
-                                vl.visible = SHOW_TRAJ_ANNO;
-                                window.__worldAnno.add(vl);
-                            }
-                            // ③ 弹道终点标记（method20，黄色）+ 标签——击穿弹终点在车体
-                            // 内部/另一侧，≠弹着点（接触点）
-                            const eg = new THREE.SphereGeometry(0.15, 12, 10);
-                            const em = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.95, depthTest: false });
-                            const emk = new THREE.Mesh(eg, em);
-                            emk.position.set(bb[0] - cx, bb[1] - cy, bb[2] - cz);
-                            emk.renderOrder = 998;
-                                emk.visible = SHOW_TRAJ_ANNO;
-                            window.__worldAnno.add(emk);
-                                if (SHOW_TRAJ_ANNO) dbgInfo('dbg-end', '#ffcc00', '服务器终点', fmt3(bb[0], bb[1], bb[2]));
-                            // ④ 服务器弹着点 = 弦向量射线(launchPoint + 弦方向) ∩ 目标装甲模型，
-                            // 取沿射线首个非 deco 命中（弦含重力下坠，弦终点即 ball_b）。
-                            // 若服务器下发了受击部件索引（server_part_index，报告 §4.7），射线
-                            // 优先约束到该部件（与游戏 DecodeShotSegment 部件约束同构）；该部件
-                            // 无交点时回退全模型（部件标注差异容错）。
-                            if (armorModel) {
-                                const sPart = (typeof s.server_part_index === 'number') ? s.server_part_index : null;
-                                const partOf = (o: THREE.Object3D): number => { const u = o.userData || {}; const sec = u.armorSectionOrig || u.armorSection;
-                                    return sec === 'chassis' ? 0 : sec === 'hull' ? 1 : (sec === 'turret' || sec === 'gun') ? 2 : sec === 'gunBarrel' ? 3 : -1; };
-                                const rc2 = new THREE.Raycaster();
-                                rc2.set(lpM.position.clone(), chordDir);
-                                rc2.far = Math.max(chordLen * 1.1, 20);
-                                const allHits = rc2.intersectObject(armorModel, true)
-                                    .filter(h => h.object.userData.armorSection !== 'deco');
-                                let iHits = allHits;
-                                let partConstrained = false;
-                                if (sPart != null) {
-                                    const inPart = allHits.filter(h => partOf(h.object) === sPart);
-                                    if (inPart.length) { iHits = inPart; partConstrained = true; }
-                                }
-                                if (iHits.length > 0) {
-                                    const imk = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10),
-                                        new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.95, depthTest: false }));
-                                    imk.position.copy(iHits[0].point);
-                                    imk.renderOrder = 998;
-                                    window.__worldAnno.add(imk);
-                                    window.__worldImpactMk = imk;
-                                    // 弹着点坐标（回放世界系）与部件约束写入调试信息窗口
-                                    dbgInfo('dbg-impact', '#ff2222', '弹着点',
-                                        fmt3(iHits[0].point.x + cx, iHits[0].point.y + cy, iHits[0].point.z + cz)
-                                        + (partConstrained ? ' · 部件P' + sPart : ''));
-                                } else {
-                                    console.warn('[world] impact raycast: 0 hits（弹道未交装甲——几何/位姿错位）');
-                                }
-                                // ④' DecodeShotSegment 出入点标注 + 判定射线。
-                                // hash6 = 游戏客户端 DecodeShotSegment 两点编码：服务器命中判定
-                                // 时刻的入点 P1/出点 P2，部件 AABB 1/255 量化，轴序 x右←b2/b5、
-                                // y前←b4/b7、z高←b3/b6（b4 恒 255 = 入点钉盒前界面）。
-                                // 盒源：game_data collision.*_bbox（客户端 Parameters YAML 的
-                                // 权威部件盒，x右/y前/z上）。盒缺失 → fail-closed，不从装甲网格
-                                // 自算 AABB；部件帧：hull/chassis=模型原点、turret/gun=枢轴系。
-                                // 判定射线 __segRay = {P1−0.5·方向, P1→P2 解码弦}：raycast 与
-                                // 入射角同源此射线（服务器编码的位置与弹向），世界系，随位姿联动。
-                                window.__worldSegMk = null;
-                                window.__segRay = null;
-                                // 判定段线组：独立于调试标注层（非调试模式也常显）
-                                if (window.__worldSegGroup) { getScene().remove(window.__worldSegGroup); window.__worldSegGroup = null; }
-                                if (s.hit_token && /^[0-9a-f]{12}$/i.test(s.hit_token)) {
-                                    const hb: number[] = [];
-                                    for (let hi = 0; hi < 6; hi++) hb.push(parseInt(s.hit_token.substr(hi * 2, 2), 16));
-                                    const partOfS = (o: THREE.Object3D): number => { const nm = o.name || '';
-                                        if (/^turret_\d+_armor_/.test(nm)) return 2;
-                                        if (/^gun_\d+_armor_/.test(nm)) return 3;
-                                        const u = o.userData || {};
-                                        const sec = u.armorSectionOrig || u.armorSection;
-                                        return sec === 'chassis' ? 0 : sec === 'hull' ? 1 : (sec === 'turret' || sec === 'gun') ? 2 : sec === 'gunBarrel' ? 3 : -1; };
-                                    const sPart2 = (typeof s.server_part_index === 'number') ? s.server_part_index : null;
-                                    const partNodes: THREE.Object3D[] = [];
-                                    armorModel.traverse(function(n: THREE.Object3D) {
-                                        if (!(n as THREE.Mesh).isMesh) return;
-                                        const u = n.userData || {};
-                                        if (u.armorSection === 'deco') return;
-                                        if (sPart2 != null && partOfS(n) !== sPart2) return;
-                                        partNodes.push(n);
-                                    });
-                                    // part 0（底盘/履带）在装甲模型无网格——回退 hull 装甲网格近似
-                                    // （解码盒仍取客户端 chassis 盒，不合成）
-                                    const partFallback = partNodes.length === 0 && sPart2 === 0;
-                                    if (partFallback) {
-                                        armorModel.traverse(function(n: THREE.Object3D) {
-                                            if (!(n as THREE.Mesh).isMesh) return;
-                                            const u = n.userData || {};
-                                            if (u.armorSection === 'deco') return;
-                                            if (partOfS(n) === 1) partNodes.push(n);
-                                        });
-                                    }
-                                    const cdBoxes = (getTankData() && getTankData().collision_boxes) || null;
-                                    const gameBoxRaw = cdBoxes ? (sPart2 === 0 ? cdBoxes.chassis
-                                        : sPart2 === 1 ? cdBoxes.hull : sPart2 === 2 ? cdBoxes.turret
-                                        : sPart2 === 3 ? cdBoxes.gun : null) : null;
-                                    // 只用客户端权威部件盒；缺失时不解码/不判定（fail-closed），
-                                    // 不再按装甲网格 rest 顶点自算 AABB。
-                                    const box = (gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max) ? gameBoxRaw : null;
-                                    const boxMissing = !box || partNodes.length === 0;
-                                    const boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
-                                    const findPartMesh = function(re: RegExp): THREE.Object3D | null {
-                                        let found: THREE.Object3D | null = null;
-                                        armorModel.traverse(function(n: THREE.Object3D) {
-                                            if (!found && (n as THREE.Mesh).isMesh && re.test(n.name || '')) found = n;
-                                        });
-                                        return found;
-                                    };
-                                    // turret-pivot fallback 需要权威枢轴。状态装甲网格（如
-                                    // turret_01_state_00_armor_11）不匹配普通炮塔板正则；枢轴缺失时
-                                    // 无法重建世界帧 → fail-closed，不用模型系伪坐标生成判定证据。
-                                    const turretPivotMissing = !boxMissing && boxFrame === 'turret-pivot'
-                                        && !findPartMesh(/^turret_\d+_armor/) && !rig.getArmorPivotTurret();
-                                    if (box && partNodes.length !== 0 && !turretPivotMissing) {
-                                        const boxMin = box.min, boxMax = box.max;
-                                        const szv = [boxMax[0] - boxMin[0], boxMax[1] - boxMin[1], boxMax[2] - boxMin[2]];
-                                        // 客户端 DecodeShotSegment 用 255.0f（@0x364B110）：b=0→min、
-                                        // b=255→max，两端都可表示；不能用 /256（max 面永远差一步）。
-                                        const qc = (b: number, ax: number): number => decodeB255(b, boxMin[ax], szv[ax]);
-                                        const mkP1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.12),
-                                            new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.95, depthTest: false }));
-                                        const mkP2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10),
-                                            new THREE.MeshBasicMaterial({ color: 0x22ff88, wireframe: true, transparent: true, opacity: 0.95, depthTest: false }));
-                                        const segLine = new THREE.Line(new THREE.BufferGeometry(),
-                                            new THREE.LineDashedMaterial({ color: 0xffa500, transparent: true, opacity: 0.85, dashSize: 0.25, gapSize: 0.15, depthTest: false }));
-                                        mkP1.renderOrder = 998; mkP2.renderOrder = 998; segLine.renderOrder = 997;
-                                        window.__worldSegGroup = new THREE.Group();
-                                        window.__worldSegGroup.add(mkP1);
-                                        window.__worldSegGroup.add(mkP2);
-                                        window.__worldSegGroup.add(segLine);
-                                        getScene().add(window.__worldSegGroup);
-                                        // 量化三元组 [右,前,高] → 场景世界坐标。炮塔/炮管件经部件
-                                        // 网格世界矩阵（局部系=枢轴系，矩阵由位姿链驱动 → 标记跟随
-                                        // 转角；勿用 Rz(getTurretDeg()) 手动组合，初始位姿时它为 0）
-                                        const placePt = function(q: number[]): THREE.Vector3 | null {
-                                            const pl = new THREE.Vector3(qc(q[0], 0), qc(q[1], 1), qc(q[2], 2));
-                                            if (boxFrame === 'turret-pivot') {
-                                                const tm = findPartMesh(/^turret_\d+_armor/);
-                                                if (tm) { tm.updateWorldMatrix(true, false); return tm.localToWorld(pl); }
-                                                // 无状态无关炮塔网格（如 turret_01_state_00_armor_11）时按
-                                                // 炮塔枢轴重建帧。枢轴缺失（装配异常）返回 null，由调用方
-                                                // fail-closed——不得用模型系伪坐标继续生成判定证据。
-                                                const pvT = rig.getArmorPivotTurret();
-                                                if (!pvT) return null;
-                                                const yaw = THREE.MathUtils.degToRad(getTurretDeg());
-                                                pl.applyMatrix4(new THREE.Matrix4().makeRotationZ(yaw)
-                                                    .setPosition(pvT.x, pvT.y, pvT.z));
-                                                return armorModel.localToWorld(pl);
-                                            }
-                                            if (boxFrame === 'gun-pivot') {
-                                                const gm = findPartMesh(/^gun_\d+_armor/);
-                                                if (gm) { gm.updateWorldMatrix(true, false); return gm.localToWorld(pl); }
-                                                const pitch = THREE.MathUtils.degToRad(getGunDeg());
-                                                pl.applyMatrix4(new THREE.Matrix4().makeRotationX(pitch));
-                                                const pvT = rig.getArmorPivotTurret(), pvG = rig.getArmorPivotGun();
-                                                if (pvG && pvT) {
-                                                    pl.add(pvG.clone().sub(pvT));
-                                                    pl.applyMatrix4(new THREE.Matrix4().makeRotationZ(
-                                                        THREE.MathUtils.degToRad(getTurretDeg()))
-                                                        .setPosition(pvT.x, pvT.y, pvT.z));
-                                                }
-                                                return armorModel.localToWorld(pl);
-                                            }
-                                            return armorModel.localToWorld(pl);
-                                        };
-                                        const updSeg = function(visible: boolean): void {
-                                            // 出入点标记 + 段线（P1→P2 = 游戏编码命中线段）
-                                            const p1 = placePt([hb[0], hb[2], hb[1]]);
-                                            const p2 = placePt([hb[3], hb[5], hb[4]]);
-                                            if (!p1 || !p2) {
-                                                // 位姿竞态导致枢轴丢失时同样 fail-closed：清掉标记/段线，
-                                                // 禁止以模型系坐标继续生成 __segRay 判定证据。
-                                                window.__segRay = null;
-                                                window.__segBoxMissing = true;
-                                                window.__worldSegMk = null;
-                                                tc.tidyTrajectory();
-                                                if (window.__worldSegGroup) {
-                                                    getScene().remove(window.__worldSegGroup);
-                                                    window.__worldSegGroup = null;
-                                                }
-                                                showShotError('炮塔枢轴未安装（模型装配异常），射击复现已阻断');
-                                                return;
-                                            }
-                                            mkP1.position.copy(p1);
-                                            mkP2.position.copy(p2);
-                                            // 判定方向 = P1→P2 解码弦（世界系），经 placePt 同款部件矩阵
-                                            const chordL = new THREE.Vector3(
-                                                qc(hb[3], 0) - qc(hb[0], 0),
-                                                qc(hb[5], 1) - qc(hb[2], 1),
-                                                qc(hb[4], 2) - qc(hb[1], 2));
-                                            let dirS: THREE.Vector3 | null = null;
-                                            if (chordL.lengthSq() > 1e-9) {
-                                                let m: THREE.Matrix4 | null = null;
-                                                if (boxFrame === 'turret-pivot') {
-                                                    const tm = findPartMesh(/^turret_\d+_armor/);
-                                                    if (tm) { tm.updateWorldMatrix(true, false); m = tm.matrixWorld; }
-                                                } else if (boxFrame === 'gun-pivot') {
-                                                    const gm = findPartMesh(/^gun_\d+_armor/);
-                                                    if (gm) { gm.updateWorldMatrix(true, false); m = gm.matrixWorld; }
-                                                } else {
-                                                    m = armorModel.matrixWorld;
-                                                }
-                                                if (m) dirS = chordL.clone().transformDirection(m).normalize();
-                                            }
-                                            if (!dirS) {
-                                                // P1==P2（点射终止，§2.1）：回退炮塔/模型反水平方向
-                                                const e = (findPartMesh(/^turret_\d+_armor/) || armorModel).matrixWorld.elements;
-                                                const fh = Math.hypot(e[4], e[6]) || 1;
-                                                dirS = new THREE.Vector3(-e[4] / fh, 0, -e[6] / fh);
-                                            }
-                                            // 段线入射端"无限"延长（工程取 900m，相机远平面内）：
-                                            // 沿判定弹向 dirS（世界系，与 __segRay 同源）的反向，
-                                            // 入射弹向一目了然；P2（穿出端）与标记保持在解码出入点。
-                                            // 勿用未变换的 chordL 方向——部件盒带姿态时外延会指向错误方向
-                                            const EXT = 900;
-                                            const aPt = mkP1.position.clone().addScaledVector(dirS, -EXT);
-                                            const bPt = mkP2.position.clone();
-                                            segLine.geometry.setFromPoints([aPt, bPt]);
-                                            segLine.computeLineDistances();
-                                            // 判定射线：P1 表面外 0.5m 沿弹向进入（raycast 与入射角同源）
-                                            window.__segRay = {
-                                                origin: mkP1.position.clone().addScaledVector(dirS, -0.5),
-                                                dir: dirS, far: 26
-                                            };
-                                            // 弹着点红点 = P1（服务器编码真实入点）
-                                            if (window.__worldImpactMk) {
-                                                window.__worldImpactMk.position.copy(mkP1.position);
-                                                if (visible) {
-                                                    dbgInfo('dbg-impact', '#ff2222', '弹着点',
-                                                        fmt3(mkP1.position.x + cx, mkP1.position.y + cy, mkP1.position.z + cz)
-                                                        + ' · DecodeShotSegment P1' + (sPart2 != null ? ' · 部件P' + sPart2 : ''));
-                                                }
-                                            }
-                                            if (visible) {
-                                                dbgInfo('dbg-seg', '#ffa500', 'DecodeShotSegment',
-                                                    'P1 ' + fmt3(mkP1.position.x + cx, mkP1.position.y + cy, mkP1.position.z + cz) +
-                                                    ' · P2 ' + fmt3(mkP2.position.x + cx, mkP2.position.y + cy, mkP2.position.z + cz) +
-                                                    ' · 俯仰' + (THREE.MathUtils.radToDeg(Math.asin(
-                                                        chordL.clone().normalize().z)).toFixed(2)) + '°（炮塔系）' +
-                                                    ' · 客户端部件盒');
-                                            }
-                                        };
-                                        window.__worldSegMk = { update: updSeg, p1: mkP1, p2: mkP2 };
-                                        updSeg(!!window.__debugOn);
-                                        // 初始判定统一在本发姿态、选弹和面板安装完毕后执行。
-                                        // 诊断挂钩：盒/量化字节（静止局部），供控制台校准轴序
-                                        window.__segDiag = {
-                                            hb: hb, sPart: sPart2, partFallback: partFallback,
-                                            boxFrame: boxFrame,
-                                            boxMin: boxMin.slice(0, 3), boxMax: boxMax.slice(0, 3),
-                                            armorModel: armorModel
-                                        };
-                                        // debug=1 自动开启晚于本块——延迟补一次刷新（消除加载期位姿竞态残值）
-                                        setTimeout(function() {
-                                            if (!currentShot()) return;
-                                            if (!window.__worldSegMk) return;
-                                            window.__worldSegMk.update(!!window.__debugOn);
-                                            if (window.__worldImpactMk) {
-                                                const pp = window.__worldSegMk.p1.position;
-                                                window.__worldImpactMk.position.copy(pp);
-                                                dbgInfo('dbg-impact', '#ff2222', '弹着点',
-                                                    fmt3(pp.x + cx, pp.y + cy, pp.z + cz) + ' · DecodeShotSegment P1'
-                                                    + (sPart2 != null ? ' · 部件P' + sPart2 : ''));
-                                            }
-                                        }, 1500);
-                                    } else if (!boxMissing) {
-                                        window.__segBoxMissing = true;
-                                        tc.tidyTrajectory();
-                                        showShotError('炮塔枢轴未安装（模型装配异常），射击复现已阻断');
-                                    } else {
-                                        window.__segBoxMissing = true;
-                                        tc.tidyTrajectory();
-                                        showShotError('缺少客户端部件盒（part ' + sPart2 + '），射击复现已阻断');
-                                    }
-                                }
-                            }
-                            // ⑥ 游戏弹孔 = 服务器 segment（hash6）按 DecodeShotSegment 解码的
-                            // 相机 = 炮口侧后上方 3/4 视角。纯第一人称与弹道共线——坦克与网格原点
-                            // 重叠、tick 位移方向垂直于视线，空间关系不可判读；侧偏+上抬赋予视差。
-                            const dirTraj = new THREE.Vector3(bb[0]-ba[0], 0, bb[2]-ba[2]);
-                            const lenH = dirTraj.length();
-                            if (lenH > 1) {
-                                dirTraj.divideScalar(lenH);
-                                const perp = new THREE.Vector3(-dirTraj.z, 0, dirTraj.x);
-                                getCamera().position.copy(lpM.position)
-                                    .addScaledVector(perp, Math.max(lenH * 0.3, 6))
-                                    .add(new THREE.Vector3(0, Math.max(lenH * 0.22, 4), 0));
-                            } else {
-                                getCamera().position.copy(lpM.position).add(new THREE.Vector3(0, 6, 8));
-                            }
-                            getControls().target.set((ba[0]+bb[0])/2 - cx, (ba[1]+bb[1])/2 - cy, (ba[2]+bb[2])/2 - cz);
-                        } else {
-                            // 无弹道数据回退：射手后上方看向两车中点
-                            const camDist = Math.max(20, Math.sqrt(
-                                (tPos[0]-shooterWorld[0])**2 + (tPos[2]-shooterWorld[2])**2) * 0.4);
-                            const aimYaw = Math.atan2(tPos[0]-shooterWorld[0], tPos[2]-shooterWorld[2]);
-                            getCamera().position.set(
-                                shooterWorld[0] - cx + Math.sin(aimYaw) * camDist * 0.3,
-                                shooterWorld[1] - cy + camDist * 0.3,
-                                shooterWorld[2] - cz + Math.cos(aimYaw) * camDist * 0.3
-                            );
-                            getControls().target.set(0, 1, 0);
+                                // ④' DecodeShotSegment 出入点标注 + 判定射线（已出仓 shotReplaySeg.ts）。
+                                installSegmentJudgment({
+                                    s, cx, cy, cz, armorModel, getScene, dbgInfo, fmt3,
+                                    getTankData, rig, tc, showShotError, currentShot,
+                                    getTurretDeg, getGunDeg,
+                                });
                         }
+                        // ⑥ 游戏弹孔视角 = 炮口侧后上方 3/4 视角（已出仓 shotReplaySeg.ts）。
+                        placeImpactCamera({ cx, cy, cz, getCamera, getControls },
+                            ba ?? undefined, bb ?? undefined, ctxLaunch, tPos, shooterWorld!);
                         getControls().update();
 
                         getScene().add(window.__worldAnno);
