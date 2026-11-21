@@ -173,7 +173,7 @@ class SourceLineGateTest(unittest.TestCase):
 
     def test_valid_generated_and_vendored_artifacts_pass(self):
         self.write('frontend/src/api/generated/contract.ts', 2000)
-        self.write('frontend/src/generated.d.ts', 2000)
+        self.write('frontend/src/api/generated/client.d.ts', 2000)
         self.write('android/app/src/main/cpp/xdelta3/xdelta3.c', 2000)
         self.write('frontend/pnpm-lock.yaml', 2000)
         self.write('infra/tofu/grafana/.terraform.lock.hcl', 2000)
@@ -245,7 +245,7 @@ class SourceLineGateTest(unittest.TestCase):
         categories = POLICY['categories']
         self.assertEqual(
             set(categories), {'generated', 'vendored', 'immutable-history'})
-        self.assertIn('java/**/src/main/resources/db/migration/**',
+        self.assertIn('java/**/src/main/resources/db/migration/V[0-9]*__*.sql',
                       categories['immutable-history']['patterns'])
         self.assertIn('frontend/src/api/generated/', categories['generated']['patterns'])
 
