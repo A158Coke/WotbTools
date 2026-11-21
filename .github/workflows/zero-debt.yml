@@ -1,0 +1,42 @@
+name: Global source line limits
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  source_limits:
+    name: Zero-Debt Merge Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Verify the base and candidate revisions
+        id: revisions
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/main
+          main=$(git rev-parse FETCH_HEAD)
+          if [[ "$EVENT" == pull_request ]]; then
+            test "$(git rev-parse HEAD^1)" = "$main"
+          else
+            test "$(git rev-parse HEAD)" = "$main"
+          fi
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          git show "$main:scripts/ci/check-source-lines.py" > "$RUNNER_TEMP/check-source-lines.py"
+          git show "$main:scripts/ci/source-line-policy.json" > "$RUNNER_TEMP/source-line-policy.json"
+      - name: Scan main
+        env:
+          MAIN: ${{ steps.revisions.outputs.main }}
+        run: python3 "$RUNNER_TEMP/check-source-lines.py" --base "$MAIN" --head "$MAIN"
+      - name: Scan full merge tree
+        if: ${{ !cancelled() && steps.revisions.outcome == 'success' }}
+        env:
+          MAIN: ${{ steps.revisions.outputs.main }}
+        run: python3 "$RUNNER_TEMP/check-source-lines.py" --base "$MAIN" --head "$GITHUB_SHA"
