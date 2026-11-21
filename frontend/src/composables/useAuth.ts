@@ -1,8 +1,6 @@
 import { computed, ref, type Ref } from 'vue'
-import { stringifyQuery, type LocationQueryRaw } from 'vue-router'
 import { NATIVE_AUTH_CAPABILITY } from '../platform/nativeBridgeContract.js'
 import { createBrowserAuthProvider } from '../platform/browserAuthProvider.js'
-import { hasAuthReturn } from '../platform/authDiagnostics.js'
 import {
   createAndroidAuthProvider,
   createUnsupportedAuthProvider,
@@ -16,25 +14,21 @@ import {
 import { useConnectivity } from './useConnectivity.js'
 import { ConnectivityState } from '../platform/connectivity.js'
 import type { AuthClaims, AuthInitMode, AuthProvider } from '../types/auth.js'
+import {
+  abandonTransaction,
+  releaseProvider,
+  resolveTransaction,
+  type AuthTransaction,
+} from './authTransaction.js'
+import { elapsedMs, errorType, identityKeyOf, logInitStarted } from './authInitDiagnostics.js'
+import { loginRedirectUri, logoutRedirectUri, type LoginDestination } from './authRedirects.js'
+import {
+  clearPendingRemoteLogout,
+  hasPendingRemoteLogout,
+  markPendingRemoteLogout,
+} from './authPendingRemoteLogout.js'
 
 type AuthInitState = 'idle' | 'initializing' | 'authenticated' | 'unauthenticated' | 'failed'
-type LoginDestination = string | { path?: string; query?: LocationQueryRaw; hash?: string } | null | undefined
-
-interface AuthTransaction {
-  generation: number
-  provider: AuthProvider | null
-  unsubscribe: (() => void) | null
-  reason: string
-  startedAt: number
-  settled: boolean
-  abandoned: boolean
-  watchdog: ReturnType<typeof setTimeout> | null
-  pendingLog: ReturnType<typeof setTimeout> | null
-  timeoutLogged: boolean
-  publicResolved: boolean
-  resolve: ((result: boolean) => void) | null
-  promise: Promise<boolean> | null
-}
 
 /** 角色判断只依赖这两个投影，因此也接受测试与模块内部传入的局部 session。 */
 type AuthRoleSource = { authenticated: Ref<boolean>; tokenParsed: Ref<AuthClaims | null> }
@@ -66,9 +60,6 @@ const initFailureReason = ref<string | null>(null)
  */
 const loginInFlight = ref(false)
 
-function platformName() {
-  return isAndroidApp() ? 'android' : 'web'
-}
 
 /**
  * 运行时 provider 选择（**绝不回退**）：
@@ -92,46 +83,7 @@ async function resolveAuthProvider(): Promise<AuthProvider> {
   return createAndroidAuthProvider()
 }
 
-function errorType(error: unknown) {
-  const failure = error as { name?: unknown; error?: unknown } | null | undefined
-  if (failure?.name && typeof failure.name === 'string') return failure.name
-  if (failure?.error && typeof failure.error === 'string') return failure.error
-  return 'unknown'
-}
 
-function elapsedMs(transaction: AuthTransaction) {
-  return Date.now() - transaction.startedAt
-}
-
-function logInitStarted(transaction: AuthTransaction) {
-  console.debug(
-    `[auth] init_started generation=${transaction.generation} platform=${platformName()} `
-    + `reason=${transaction.reason}`,
-  )
-}
-
-function resolveTransaction(transaction: AuthTransaction, result: boolean) {
-  if (transaction.publicResolved) return
-  transaction.publicResolved = true
-  transaction.resolve!(result)
-}
-
-/** 退订 Native 推送：transaction 一旦不再是 owner（被放弃或被新一代取代）就必须解除。 */
-function releaseProvider(transaction: AuthTransaction | null) {
-  if (!transaction?.unsubscribe) return
-  transaction.unsubscribe()
-  transaction.unsubscribe = null
-}
-
-function abandonTransaction(transaction: AuthTransaction) {
-  if (!transaction || transaction.settled || transaction.abandoned) return
-  transaction.abandoned = true
-  clearTimeout(transaction.watchdog!)
-  clearTimeout(transaction.pendingLog!)
-  releaseProvider(transaction)
-  resolveTransaction(transaction, false)
-  console.debug(`[auth] init_abandoned generation=${transaction.generation}`)
-}
 
 function markFailed(transaction: AuthTransaction, error: unknown, reason: string) {
   if (currentTransaction !== transaction || transaction.settled) return
@@ -167,13 +119,6 @@ function markFailed(transaction: AuthTransaction, error: unknown, reason: string
  */
 let authIdentityEpoch = 0
 let projectedIdentity: string | null = null
-
-/** 身份键：已登录取 token 的 `sub`（缺失时用占位键——仍是"已登录"这个身份），未登录为 null。 */
-function identityKeyOf(isAuthenticatedValue: boolean, parsedToken: AuthClaims | null | undefined) {
-  if (!isAuthenticatedValue) return null
-  const sub = parsedToken && typeof parsedToken === 'object' ? parsedToken.sub : null
-  return typeof sub === 'string' && sub ? `sub:${sub}` : 'authenticated:unknown-sub'
-}
 
 /**
  * 唯一的投影写入路径：init 落定、Native 推送（`wotbtoolsOnAuthChanged`）、logout、
@@ -329,38 +274,6 @@ async function retryAuth() {
   return promise
 }
 
-/** 浏览器登录目的地：同一 view 保留上下文，也接受完整 router location（仅本站）。 */
-function loginRedirectUri(destination: LoginDestination) {
-  const current = new URL(window.location.href)
-  let url: URL
-  if (typeof destination === 'string') {
-    url = current.searchParams.get('view') === destination
-      ? current
-      : new URL(current.origin + current.pathname)
-    url.searchParams.set('view', destination)
-  } else if (!destination) {
-    url = current
-  } else {
-    url = new URL(destination.path || current.pathname, current.origin)
-    if (url.origin !== current.origin) throw new Error('AUTH_REDIRECT_ORIGIN_MISMATCH')
-    url.search = stringifyQuery(destination.query || {})
-    url.hash = destination.hash || ''
-  }
-  // Explicit restart must not carry an unconsumed query callback into its new redirect.
-  // Preserve product context and ordinary anchors; the SDK owns the new transaction.
-  if (hasAuthReturn({ search: url.search, hash: '' })) {
-    for (const key of ['code', 'state', 'session_state', 'iss', 'error', 'error_description',
-      'error_uri', 'kc_action_status', 'kc_action']) url.searchParams.delete(key)
-  }
-  return url.toString()
-}
-
-/** OIDC end-session 之后回到 **HOME**（2.1.0 Phase 5.3：登出落点固定首页，
- *  不保留登出前的 view——`?view=profile` 那种回跳会把用户又带回个人中心）。
- *  浏览器专用；Android 不导航，回跳地址被忽略（App 侧落点由 SPA 自己收敛）。 */
-function logoutRedirectUri() {
-  return window.location.origin + '/'
-}
 
 /**
  * 两个 provider 的 login 都接受 redirectUri，但语义刻意不对称：
@@ -438,24 +351,6 @@ async function logout() {
   await provider.logout(logoutRedirectUri())
 }
 
-/**
- * 「远端 end-session 尚未完成」标记（仅浏览器离线登出会置位）。
- * 存 localStorage：登出意图必须跨刷新存活，否则下一次加载就会把用户静默登回去。
- */
-const PENDING_REMOTE_LOGOUT_KEY = 'wotb-auth-pending-remote-logout'
-
-function markPendingRemoteLogout() {
-  try { localStorage.setItem(PENDING_REMOTE_LOGOUT_KEY, '1') } catch { /* 隐私模式：降级为会话内语义 */ }
-}
-
-function clearPendingRemoteLogout() {
-  try { localStorage.removeItem(PENDING_REMOTE_LOGOUT_KEY) } catch { /* 同上 */ }
-}
-
-/** 是否处于「离线登出后、远端会话未收敛」状态：init 不静默复登。 */
-function hasPendingRemoteLogout() {
-  try { return localStorage.getItem(PENDING_REMOTE_LOGOUT_KEY) === '1' } catch { return false }
-}
 
 function isAuthenticated() {
   return authenticated.value

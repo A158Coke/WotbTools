@@ -1,0 +1,158 @@
+/* AgentTankopedia 局部样式（随拆分自 AgentTankopedia.vue，scoped 原样）。 */
+.tankopedia {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--gutter) var(--space-12);
+  color: var(--color-text-primary);
+}
+
+
+.tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.tp-hero-stat-label { color: var(--color-text-secondary); font: var(--type-caption); }
+
+/* 详情页配置选择（列表的搜索/筛选/排序在 TankCatalogMenu 内，单一实现） */
+.tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }
+.tp-field-inline { max-inline-size: 360px; }
+.tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-field select {
+  inline-size: 100%;
+  min-block-size: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.tp-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* 固定比例的图片框：懒加载图片到达前后都不引起布局位移 */
+.tp-media {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 8 / 5;
+  inline-size: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+}
+
+/* 图片必须**绝对定位铺满**，不能让它在网格里按 `block-size:100%` 自适应。
+ *
+ * 容器是 `display:grid` + `place-items:center`：网格区域按内容 sizing，`block-size:100%`
+ * 解不出确定高度，于是 img 退回**固有比例**——封面图是逐车紧裁的（高固定、宽 84~190），
+ * 窄于 8:5 的车会算得比容器更高（实测列表卡片 164.8×103 的框里 img 是 164.8×133.5，
+ * 详情 hero 240×150 里是 240×156.9），多出来的部分被容器的 `overflow:hidden`
+ * **从下方裁掉**（履带/车体下缘被切）。
+ * 绝对定位后 img 盒恒等于容器盒，`contain` 完整装下整张图，不再裁切。 */
+.tp-media img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+
+.tp-badges { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+
+.tp-pill {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  background: var(--color-surface-3);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tp-pill.is-tier,
+.tp-pill.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
+.tp-pill.t-light { background: color-mix(in oklab, var(--color-success) 16%, var(--color-surface-1)); color: var(--color-success); }
+.tp-pill.t-medium { background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-1)); color: var(--color-accent-text); }
+.tp-pill.t-heavy { background: color-mix(in oklab, var(--color-danger) 16%, var(--color-surface-1)); color: var(--color-danger); }
+.tp-pill.t-td { background: color-mix(in oklab, var(--color-info) 16%, var(--color-surface-1)); color: var(--color-info); }
+.tp-pill.is-shell { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
+.tp-pill.is-shell.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
+
+/* ---------- 详情态 ---------- */
+.tp-detail-nav { display: flex; }
+
+.tp-detail-head {
+  display: grid;
+  grid-template-columns: clamp(var(--tank-header-image-min), 18%, var(--tank-header-image-max)) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
+}
+
+.tp-media-lg { inline-size: 100%; }
+.tp-detail-title { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.tp-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); min-inline-size: 0; }
+
+.tp-card-section {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
+}
+
+.tp-section-title { margin: 0; font: var(--type-h3); }
+
+/* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
+.tp-workbench { display: grid; grid-template-columns: minmax(var(--tank-config-min), min(36%, var(--tank-config-max))) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
+.tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
+.tp-workbench-right { min-inline-size: 0; }
+.tp-model-card { align-content: start; }
+.tp-model-card-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
+.tp-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+.tp-summary > div { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; padding-block: var(--space-1); }
+.tp-summary dt { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-summary dd { margin: 0; font: var(--type-body); font-weight: 600; overflow-wrap: anywhere; }
+
+.tp-table-wrap { overflow-x: auto; }
+.tp-table { inline-size: 100%; border-collapse: collapse; background: var(--color-surface-1); font: var(--type-body); font-variant-numeric: tabular-nums; }
+.tp-table th { padding: var(--space-1) var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; text-align: start; white-space: nowrap; }
+.tp-table td { padding: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
+.tp-table .is-num { text-align: end; }
+
+.tp-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.tp-stats > div { padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
+
+/* 平板：详情头部封面缩小；工作台改单列（配置面板在下） */
+@media (768px <= width < 1200px) {
+  .tp-workbench { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 手机：详情头部改为上下排列 */
+@media (width < 768px) {
+  .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
+  .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }
+  .tp-detail-actions { grid-column: 1 / -1; justify-content: stretch; }
+  .tp-detail-actions > * { flex: 1; }
+  .tp-card-section { padding: var(--space-3); }
+  .tp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tp-workbench { grid-template-columns: minmax(0, 1fr); }
+}

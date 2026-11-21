@@ -1,0 +1,251 @@
+/* 装甲查看器响应式样式（@media 分档；随拆分自 AgentArmorView.vue，原样迁移）。 */
+@media (width >= 768px), (pointer: coarse) and (orientation: landscape) {
+    .armor-view #corner-tl {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: var(--space-1) var(--space-2);
+        inline-size: min(20rem, calc(100% - var(--space-10)));
+        max-block-size: calc(100% - var(--space-10));
+        padding: var(--space-3);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--elevation-2);
+        overflow-y: auto;
+        z-index: var(--pb-z-hud);
+    }
+    .armor-view.is-clean #corner-tl { display: none; }
+    .armor-view.has-back #corner-tl { max-block-size: calc(100% - var(--space-10) - var(--scene-hit) - var(--space-2)); }
+    .armor-view #info-panel {
+        grid-column: 1;
+        grid-row: 1;
+        min-inline-size: 0;
+        max-inline-size: none;
+        max-block-size: none;
+        overflow: visible;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .armor-view #info-panel .stat { display: inline-flex; align-items: center; gap: var(--space-1); margin-inline-end: var(--space-2); }
+    .armor-view #corner-tl > .armor-tools {
+        grid-column: 2;
+        grid-row: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--input-bg);
+        color: var(--txt);
+    }
+    .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+    .armor-view #tank-selectors {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        display: none;
+        inline-size: auto;
+        max-block-size: 54dvh;
+        margin-block-start: var(--space-1);
+        padding: var(--space-3) 0 0;
+        border: 0;
+        border-block-start: 1px solid var(--border);
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+    }
+    .armor-view #tank-selectors .armor-panel-title { margin-block-end: var(--space-3); }
+    .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
+}
+/* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
+   最小高度；信息行压成单行，避免短视口下设置面板被挤出卡片。竖屏手机仍走下面 mobile 规则。
+   必须排在上面大卡片的 `overflow: visible` 之后：同特异度下后者会覆盖裁剪，
+   长车名就会画到「参数」按钮下面。 */
+@media (pointer: coarse) and (orientation: landscape) {
+    .armor-view { min-block-size: 0; }
+    .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
+    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
+    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+    .armor-view #info-panel .label { display: none; }
+}
+.armor-view .ctrl-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; font: var(--type-caption); }
+.armor-view .ctrl-row > * { min-inline-size: 0; }
+.armor-view .ctrl-row label { color: var(--muted); }
+.armor-view .ctrl-row span { color: var(--accent); }
+.armor-view .armor-evidence summary { display: list-item; min-block-size: var(--scene-hit); padding: var(--space-3) 0; cursor: pointer; color: var(--color-text-primary); font: var(--type-body); }
+.armor-view #debug-info { display: none; padding: var(--space-3); max-inline-size: 24rem; max-block-size: 32dvh; overflow: auto; font: var(--type-caption); }
+.armor-view #debug-info h4 { margin: 0 0 var(--space-2); font: var(--type-caption); }
+.armor-view .dbg-row { display: flex; align-items: flex-start; gap: var(--space-1); margin: var(--space-1) 0; overflow-wrap: anywhere; }
+.armor-view .dbg-dot { flex: none; inline-size: var(--space-2); block-size: var(--space-2); border-radius: var(--radius-full); corner-shape: round; margin-block-start: var(--space-1); }
+.armor-view .dbg-name { flex: none; color: var(--muted); }
+.armor-view .dbg-val { min-inline-size: 0; }
+/* 击穿判定 #traj-info（判定模式唯一结果窗口）：跟随世界命中点的屏幕投影，由
+   scene/viewer/trajectoryCard.ts 每帧重投影并写入 left/top，避让固定 HUD 面板（共享
+   resultCardPosition 纯函数）；旋转视角时随命中点移动，命中点转到相机后方时脚本隐藏。
+   这里的顶部停靠只是无世界锚点时的防御回退。 */
+.armor-view #traj-info {
+    position: absolute;
+    inset-block-start: var(--space-5);
+    inset-inline-start: 50%;
+    transform: translateX(-50%);
+    z-index: var(--pb-z-hud);
+}
+/* 厚度模式点选结果 #click-info：跟随点击位置显示五行读数（基础装甲 / 入射角 / 等效装甲 /
+   穿深 / 结果；该模式不判定，后两行保持 '—'）。位置由 scene/viewer/judgment.ts 的
+   showArmorPartInfo 写入 left/top（与判定结果卡共用 resultCardPosition 定位）；
+   尺寸随视口自适应，手机横屏/竖屏都不占大面积。判定模式不再显示这张卡。 */
+.armor-view #click-info {
+    position: absolute;
+    display: none;
+    flex-direction: column;
+    gap: 1px;
+    /* 视口自适应：宽度不超过容器余量，字号在小屏收缩（不影响点击命中区）。 */
+    inline-size: max-content;
+    max-inline-size: min(15rem, calc(100% - var(--space-4)));
+    padding: var(--space-2) var(--space-3);
+    color: var(--muted);
+    font: var(--type-caption);
+    font-size: clamp(10px, 0.55vw + 8.2px, 12px);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: var(--pb-z-modal);
+}
+.armor-view #click-info > .row { display: flex; justify-content: space-between; gap: var(--space-3); }
+/* 通用数值色排除结果字段：结果列按语义着色（pen/bounce/ricochet 三个 class 由脚本写入）。 */
+.armor-view #click-info > .row > span:last-child:not(#click-result) { color: var(--txt); font-variant-numeric: tabular-nums; font-weight: 600; }
+.armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font-size: clamp(11px, 0.6vw + 9px, 13px); font-weight: 700; }
+.armor-view #click-info .pen { color: var(--green); }
+.armor-view #click-info .bounce { color: var(--red); }
+.armor-view #click-info .ricochet { color: var(--orange); }
+/* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距、字号与行距。
+   五行读数在 320–390px 高的视口里必须明显小于半屏（browser-armor-mobile 的
+   resultHeightBudget 上限 = 视口高 45%），否则会压住车体与右下射击面板。 */
+@media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #click-info {
+        gap: 0;
+        padding: 3px var(--space-2);
+        font-size: clamp(9px, 2.3vw, 11px);
+        max-inline-size: min(12rem, calc(100% - var(--space-3)));
+    }
+    .armor-view #click-info h3 { margin-block-end: 1px; font-size: clamp(10px, 2.4vw, 12px); }
+}
+/* 桌面/平板卡片已展开全部明细，点卡片没有可展开内容——不拦截场景点击
+   （卡片跟随点击后可能盖住车体，桌面点击必须继续判定）。小屏收起态才可点开。
+   卡片内容被 max-block-size 裁剪时，scene/viewer/trajectoryCard.ts 会恢复内联
+   pointer-events:auto，保证明细仍可滚轮/触控滚动（评审 P2）。 */
+.armor-view #traj-info { max-block-size: calc(100% - var(--space-10)); overflow-y: auto; pointer-events: none; }
+.armor-view #traj-info:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+/* 竖屏手机：顶部是信息条与姿态行，胶囊排在它们下面 */
+@media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
+    /* 只给「无世界锚点的回退态」排位：判定结果卡正常路径由脚本按命中点投影写 left/top；#click-info 按点击坐标写 left/top。 */
+    .armor-view #traj-info { inset-block-start: calc(var(--space-2) * 3 + var(--space-12) + var(--hit-min-comfortable)); max-inline-size: calc(100% - var(--space-4)); }
+}
+/* 小屏（竖屏手机 / 手机横屏）：默认展开逐层明细；点卡片收起为最终判定一行胶囊 */
+@media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #traj-info { pointer-events: auto; cursor: pointer; }
+    .armor-view #traj-info:not(.is-expanded) > div > :not([data-card-title="final"]) { display: none; }
+    .armor-view #traj-info:not(.is-expanded) > div > [data-card-title="final"] { margin: 0; }
+}
+.armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + var(--scene-control-h-lg)); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
+.armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--scene-hit); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
+.armor-view .armor-tools { display: none; }
+.armor-view .armor-bottom-controls { display: contents; }
+/* Recorded-shot actions are a persistent, high-contrast toolbar. */
+.armor-view.is-shot #corner-br { display: flex; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); max-inline-size: calc(100% - var(--space-10)); padding: var(--space-2); background: var(--color-surface-1); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); box-shadow: var(--elevation-2); z-index: var(--pb-z-hud); }
+.armor-view.is-shot #corner-br:empty { display: none; }
+.armor-view .armor-shot-view-switch { display: flex; flex-wrap: wrap; gap: var(--space-1); padding: var(--space-1); background: var(--color-surface-2); border-radius: var(--radius-md); }
+.armor-view .armor-shot-view-switch .armor-scene-button { flex: 1; min-block-size: var(--scene-control-h-lg); padding: var(--space-2) var(--space-4); font: var(--type-body); font-weight: 600; }
+
+.armor-view #tank-picker { position: absolute; inset: var(--space-5); margin: auto; max-inline-size: var(--layout-wide-max); background: var(--panel); border: 1px solid var(--border-hi); border-radius: var(--radius-lg); z-index: var(--z-dialog); display: none; flex-direction: column; box-shadow: var(--elevation-3); }
+.armor-view #tank-picker.open { display: flex; }
+/* 菜单本体 = 共享 TankCatalogMenu（与坦克百科同一套搜索/筛选/卡片/增量列表） */
+.armor-view #tank-picker > .tank-catalog-menu { flex: 1; min-block-size: 0; }
+/* 共享菜单的控件在装甲页内沿用场景命中尺寸（含搜索框；百科页保持全站控件高度） */
+.armor-view #tank-picker :is(button, select, input) { min-block-size: var(--scene-hit); }
+.armor-view .armor-shot-header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); padding-inline-start: calc(max(var(--space-5), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); border-block-end: 1px solid var(--border); background: var(--color-surface-1); z-index: calc(var(--z-sticky) + 1); }
+.armor-view .armor-shot-header button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: var(--scene-hit); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+.armor-view .armor-navigation-error { margin: 0; color: var(--color-danger); font: var(--type-caption); }
+.armor-view .armor-shot-context { flex: 1; min-inline-size: 0; }
+.armor-view .armor-shot-matchup { display: flex; align-items: center; gap: var(--space-2); font: var(--type-h3); }
+.armor-view .armor-shot-matchup strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.armor-view .armor-shot-matchup svg { flex: none; color: var(--muted); }
+.armor-view .armor-shot-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4); color: var(--muted); font: var(--type-caption); }
+.armor-view .armor-shot-meta b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.armor-view .armor-shot-result.is-success { color: var(--color-success); }
+.armor-view .armor-shot-result.is-danger { color: var(--color-danger); }
+.armor-view .armor-shot-result.is-warning { color: var(--color-warning); }
+.armor-view .armor-shot-result.is-info { color: var(--color-info); }
+.armor-view .armor-shot-navigation { display: flex; align-items: center; gap: var(--space-2); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.armor-view .armor-interaction-help { display: flex; flex: none; align-items: center; gap: var(--space-6); padding: var(--space-3) var(--space-5); background: var(--color-surface-2); border-block-start: 1px solid var(--color-border-strong); border-inline-start: var(--space-1) solid var(--color-accent); }
+.armor-view .armor-interaction-help h2 { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; margin: 0; color: var(--color-accent-text); font: var(--type-h3); }
+.armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
+.armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+/* 手机横屏（与 shared/breakpoints PLAYBACK_PHONE_QUERY 的手机横屏分支同口径）：射击复现页的
+   操作提示节是静态指引，在 ~375px 高的视口里挤占 3D 场景带，整节让位；桌面 / 平板 / 竖屏保留。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view .armor-interaction-help { display: none; }
+}
+@media (768px <= width < 1200px), (pointer: coarse) and (orientation: landscape) {
+    .armor-view #tank-selectors { max-block-size: 38dvh; }
+}
+/* 竖屏手机 + 窄桌面窗口保持既有 mobile 布局；横屏粗指针手机由上面的 tablet 规则接管。 */
+@media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
+    .armor-view .armor-interaction-help { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
+    .armor-view .armor-interaction-help h2 { font: var(--type-caption); font-weight: 600; }
+    .armor-view .armor-interaction-help dl { gap: var(--space-2); }
+
+    .armor-view #corner-tl { inset-block-start: var(--space-2); inset-inline: var(--space-2); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) var(--space-2); background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2); z-index: var(--pb-z-modal); }
+    .armor-view.has-back #corner-tl { inset-block-start: var(--space-2); inset-inline-start: calc(var(--space-2) * 2 + var(--scene-hit)); }
+    .armor-view #info-panel { grid-column: 1; grid-row: 1; min-inline-size: 0; max-inline-size: none; max-block-size: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding: 0; background: none; border: none; box-shadow: none; }
+    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
+    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
+    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+    .armor-view #info-panel .label { display: none; }
+    .armor-view #tank-selectors { grid-column: 1 / -1; grid-row: 2; display: none; inline-size: auto; margin-block-start: var(--space-1); padding: var(--space-2) 0; border: none; border-block-start: 1px solid var(--border); border-radius: 0; background: none; box-shadow: none; max-block-size: calc((100dvh - var(--header-h)) * .46); }
+    .armor-view #tank-selectors .armor-panel-title { display: none; }
+    .armor-view #tank-selectors .sel-row { flex-wrap: nowrap; }
+    .armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 var(--space-12); }
+    .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
+    .armor-view .armor-tools { grid-column: 2; grid-row: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: var(--scene-hit); block-size: var(--scene-hit); padding: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+    .armor-view .armor-tools-label { display: none; }
+    .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+    .armor-view #corner-tr { inset-block-start: auto; inset-block-end: var(--space-2); inset-inline: var(--space-2); inline-size: auto; max-inline-size: none; flex-direction: row; flex-wrap: wrap; align-items: stretch; gap: var(--space-2); }
+    .armor-view #shell-selector { flex: none; padding: var(--space-1) var(--space-2); }
+    .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
+    .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
+    .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
+    .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + var(--scene-control-h-lg)); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
+    .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
+    .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }
+    /* 按文字实际宽度排布：平分宽度时「压坡卖头」等较长文案会溢出按钮、压到旁边的炮塔读数 */
+    .armor-view #turret-controls .armor-camera-presets button { flex: none; padding: var(--space-1) var(--space-2); }
+    .armor-view #corner-br { display: none; }
+    .armor-view.is-shot .armor-bottom-controls { position: absolute; inset-block-end: var(--space-2); inset-inline: var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); pointer-events: none; z-index: var(--pb-z-hud); }
+    .armor-view.is-shot .armor-bottom-controls :is(#corner-tr, #corner-br) { position: static; max-inline-size: none; pointer-events: auto; }
+    .armor-view.is-shot .armor-shot-view-switch { flex: 1 1 100%; }
+    .armor-view.is-shot #corner-tr { display: none; }
+    .armor-view.is-shot .armor-stage.is-tools-open #corner-tr { display: flex; z-index: var(--pb-z-hud); }
+    .armor-view.is-shot #debug-info { max-block-size: 20dvh; }
+    .armor-view.is-clean #corner-tl { display: none; }
+    .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: var(--scene-hit); block-size: var(--scene-hit); padding: 0; justify-content: center; }
+    .armor-view .armor-back-label { display: none; }
+    .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
+    .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); padding-inline-start: calc(max(var(--space-2), env(safe-area-inset-left)) + var(--immersive-nav-reserve)); }
+    .armor-view .armor-shot-back span { display: none; }
+    .armor-view .armor-shot-context { flex-basis: calc(100% - 60px); }
+    .armor-view .armor-shot-matchup { font: var(--type-body); }
+    .armor-view .armor-shot-meta { gap: var(--space-2); }
+    .armor-view .armor-shot-navigation { inline-size: 100%; justify-content: space-between; }
+}
+@media (width < 768px) and (pointer: coarse) and (orientation: landscape) {
+    .armor-view #corner-tr { inline-size: var(--armor-shot-card-compact-width); }
+}
+/* 竖屏提示（强制横屏设备）：盖住场景但不卸载它，转到横屏即继续 */
+.armor-view .armor-rotate-prompt { position: absolute; inset: 0; z-index: var(--pb-z-modal); background: var(--color-canvas); }
