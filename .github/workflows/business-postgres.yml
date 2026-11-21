@@ -6,6 +6,8 @@ on:
     paths:
       - .github/workflows/business-postgres.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/deploy-stage.sh
+      - deploy/tx/deploy-health.sh
       - deploy/tx/docker-compose.yml
       - deploy/tx/common.compose.yml
       - deploy/tx/business-postgres.compose.yml
@@ -25,6 +27,8 @@ env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/business-postgres.yml
     deploy/tx/deploy.sh
+    deploy/tx/deploy-stage.sh
+    deploy/tx/deploy-health.sh
     deploy/tx/docker-compose.yml
     deploy/tx/common.compose.yml
     deploy/tx/business-postgres.compose.yml

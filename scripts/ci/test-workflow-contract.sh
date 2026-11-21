@@ -412,7 +412,10 @@ assert tx_runtime["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == [
     "deploy/check-production-freshness.sh",
     "deploy/tx/runtime-check.sh",
     "deploy/tx/runtime-check-lib.sh",
+    "deploy/tx/runtime-business-probes.sh",
     "deploy/tx/deploy.sh",
+    "deploy/tx/deploy-stage.sh",
+    "deploy/tx/deploy-health.sh",
     "deploy/tx/with-deploy-lock.sh",
 ]
 tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
@@ -433,8 +436,8 @@ assert all(step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}" for step 
 tx_runtime_stage = next(step for step in tx_runtime_steps if step.get("name") == "Stage exact-SHA verifier bundle")
 assert re.search(r"appleboy/scp-action@[0-9a-f]{40}", tx_runtime_stage["uses"]), "scp-action must stay SHA-pinned"
 assert tx_runtime_stage["with"]["source"] == (
-    "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,"
-    "deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh"
+    "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/runtime-business-probes.sh,"
+    "deploy/tx/deploy.sh,deploy/tx/deploy-stage.sh,deploy/tx/deploy-health.sh,deploy/tx/with-deploy-lock.sh"
 )
 assert tx_runtime_stage["with"]["target"] == "/tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}"
 assert tx_runtime_stage["with"]["strip_components"] == "2"
