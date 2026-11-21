@@ -84,13 +84,16 @@ assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in source_scan
 assert "merge-base --is-ancestor" not in source_scan
 assert '--baseline-from-ref "$MERGE_BASE_SHA"' in source_scan
 zero_debt = jobs["zero_debt"]
-assert zero_debt["uses"] == "./.github/workflows/zero-debt.yml"
-assert zero_debt["with"] == {"base_sha": "${{ needs.pr_identity.outputs.base_sha }}",
-                              "head_sha": "${{ needs.pr_identity.outputs.head_sha }}"}
 assert zero_debt["name"] == "Zero-Debt Merge Gate"
+assert zero_debt["runs-on"] == "ubuntu-latest"
+assert zero_debt["steps"][1]["uses"] == "./.github/actions/zero-debt"
+assert zero_debt["steps"][1]["with"] == {"base_sha": "${{ needs.pr_identity.outputs.base_sha }}",
+                                           "head_sha": "${{ needs.pr_identity.outputs.head_sha }}"}
 zero_debt_workflow = load(root / ".github/workflows/zero-debt.yml")
 assert "workflow_call" in zero_debt_workflow["on"]
-gate_steps = zero_debt_workflow["jobs"]["source_limits"]["steps"]
+assert zero_debt_workflow["jobs"]["source_limits"]["steps"][1]["uses"] == "./.github/actions/zero-debt"
+gate_action = load(root / ".github/actions/zero-debt/action.yml")
+gate_steps = gate_action["runs"]["steps"]
 scanner_self_test = next(step for step in gate_steps if step.get("name") == "Validate candidate strict scanner and policy")
 assert scanner_self_test["run"] == "python3 scripts/ci/test-source-lines.py"
 tree_scans = [step["run"] for step in gate_steps if "Scan full " in step.get("name", "")]
@@ -102,7 +105,7 @@ allowlist_check = next(step for step in gate_steps if step.get("name") == "Rejec
 assert gate_steps.index(scanner_self_test) < min(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", ""))
 assert max(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", "")) < gate_steps.index(allowlist_check)
 assert all(step.get("if", "").startswith("${{ always()") for step in gate_steps if "Scan full " in step.get("name", ""))
-assert "scripts/ci/source-line-allowlist.txt" in json.dumps(zero_debt_workflow)
+assert "scripts/ci/source-line-allowlist.txt" in json.dumps(gate_action)
 assert "check-source-lines.py" not in json.dumps(jobs["changes"]), \
     "the source LOC gate must not be conditioned on affected paths"
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。

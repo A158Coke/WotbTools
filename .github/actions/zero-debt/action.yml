@@ -1,0 +1,55 @@
+name: Zero-Debt source tree validation
+description: Validate the strict scanner and scan the base and candidate Git trees.
+inputs:
+  base_sha:
+    description: Verified PR base commit
+    required: true
+  head_sha:
+    description: Verified candidate commit
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        fetch-depth: 0
+        ref: ${{ inputs.head_sha }}
+    - name: Verify the base and candidate revisions
+      id: revisions
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base_sha }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = "$HEAD_SHA"
+        git cat-file -e "${BASE_SHA}^{commit}"
+    - name: Validate candidate strict scanner and policy
+      id: scanner_self_test
+      shell: bash
+      run: python3 scripts/ci/test-source-lines.py
+    - name: Scan full main tree using candidate scanner
+      if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
+      id: scan_main
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base_sha }}
+      run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$BASE_SHA"
+    - name: Scan full candidate tree using candidate scanner
+      if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
+      id: scan_candidate
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base_sha }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+      run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
+    - name: Reject allowlists in base and candidate trees
+      if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
+      shell: bash
+      env:
+        BASE_SHA: ${{ inputs.base_sha }}
+        HEAD_SHA: ${{ inputs.head_sha }}
+      run: |
+        set -euo pipefail
+        test -z "$(git ls-tree --name-only "$BASE_SHA" -- scripts/ci/source-line-allowlist.txt)"
+        test -z "$(git ls-tree --name-only "$HEAD_SHA" -- scripts/ci/source-line-allowlist.txt)"

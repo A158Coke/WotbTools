@@ -17,40 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          fetch-depth: 0
           ref: ${{ inputs.head_sha }}
-      - name: Verify the base and candidate revisions
-        id: revisions
-        shell: bash
-        env:
-          BASE_SHA: ${{ inputs.base_sha }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-      - name: Validate candidate strict scanner and policy
-        id: scanner_self_test
-        run: python3 scripts/ci/test-source-lines.py
-      - name: Scan full main tree using candidate scanner
-        if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
-        id: scan_main
-        env:
-          BASE_SHA: ${{ inputs.base_sha }}
-        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$BASE_SHA"
-      - name: Scan full candidate tree using candidate scanner
-        if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
-        id: scan_candidate
-        env:
-          BASE_SHA: ${{ inputs.base_sha }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
-      - name: Reject allowlists in base and candidate trees
-        if: ${{ always() && steps.revisions.outcome == 'success' && steps.scanner_self_test.outcome == 'success' }}
-        env:
-          BASE_SHA: ${{ inputs.base_sha }}
-          HEAD_SHA: ${{ inputs.head_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -z "$(git ls-tree --name-only "$BASE_SHA" -- scripts/ci/source-line-allowlist.txt)"
-          test -z "$(git ls-tree --name-only "$HEAD_SHA" -- scripts/ci/source-line-allowlist.txt)"
+      - name: Zero-Debt Merge Gate
+        uses: ./.github/actions/zero-debt
+        with:
+          base_sha: ${{ inputs.base_sha }}
+          head_sha: ${{ inputs.head_sha }}

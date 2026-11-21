@@ -76,6 +76,7 @@ export interface AnnotationSceneHandle {
   setAnnotations(annotations: unknown): void
   annotationRoot(): THREE.Group | null
   setAnnotationsVisible(visible: boolean): void
+  setAnnotationInteraction(config?: AnnotationInteractionConfig): void
   stats(): unknown
 }
 

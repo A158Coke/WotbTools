@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { Mesh, ShaderMaterial, Texture } from 'three'
+import type { ShaderMaterial, Texture } from 'three'
 import type { GltfSceneMaterial } from './sceneryMaterialTypes.js'
 import { sunUniforms } from './sceneryLightingMaterials.js'
 

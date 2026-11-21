@@ -13,7 +13,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
-import { useBattlePlaybackModel } from './useBattlePlaybackModel.js'
+import { useBattlePlaybackModel } from './useBattlePlaybackModel.ts'
 
 /**
  * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。

@@ -28,9 +28,9 @@ import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
-import { useReplay3DPaneCore } from './useReplay3DPaneCore.js'
-import { useReplay3DPaneDetails } from './useReplay3DPaneDetails.js'
-import { useReplay3DPaneLifecycle } from './useReplay3DPaneLifecycle.js'
+import { useReplay3DPaneCore } from './useReplay3DPaneCore.ts'
+import { useReplay3DPaneDetails } from './useReplay3DPaneDetails.ts'
+import { useReplay3DPaneLifecycle } from './useReplay3DPaneLifecycle.ts'
 
 defineOptions({ name: 'Replay3DPane' })
 

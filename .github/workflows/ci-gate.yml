@@ -241,10 +241,16 @@ jobs:
   zero_debt:
     name: Zero-Debt Merge Gate
     needs: [pr_identity]
-    uses: ./.github/workflows/zero-debt.yml
-    with:
-      base_sha: ${{ needs.pr_identity.outputs.base_sha }}
-      head_sha: ${{ needs.pr_identity.outputs.head_sha }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+      - name: Zero-Debt Merge Gate
+        uses: ./.github/actions/zero-debt
+        with:
+          base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+          head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   business_api:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.business_api == 'true'

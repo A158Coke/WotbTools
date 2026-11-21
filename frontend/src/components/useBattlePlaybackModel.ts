@@ -13,10 +13,10 @@ import { usePlaybackVehicleSelection } from '../composables/usePlaybackVehicleSe
 import { usePlaybackReplayData } from '../composables/usePlaybackReplayData.js'
 import { usePlaybackClock } from '../composables/usePlaybackClock.js'
 import { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection.js'
-import { useBattlePlaybackRoster } from './useBattlePlaybackRoster.js'
-import { useBattlePlaybackMapModel } from './useBattlePlaybackMapModel.js'
-import { useBattlePlaybackLifecycle } from './useBattlePlaybackLifecycle.js'
-import { useBattlePlaybackPresentation } from './useBattlePlaybackPresentation.js'
+import { useBattlePlaybackRoster } from './useBattlePlaybackRoster.ts'
+import { useBattlePlaybackMapModel } from './useBattlePlaybackMapModel.ts'
+import { useBattlePlaybackLifecycle } from './useBattlePlaybackLifecycle.ts'
+import { useBattlePlaybackPresentation } from './useBattlePlaybackPresentation.ts'
 import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
 
 export function useBattlePlaybackModel(props) {

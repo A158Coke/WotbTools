@@ -13,7 +13,7 @@ const editorSrc = readFileSync(fileURLToPath(new URL('../composables/usePlayback
 // marker 屏幕定位 owner 出仓到 usePlaybackVehicleProjection。
 const replayDataSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackReplayData.ts', import.meta.url)), 'utf8')
 const projectionSrc = readFileSync(fileURLToPath(new URL('../composables/usePlaybackVehicleProjection.ts', import.meta.url)), 'utf8')
-const presentationSrc = readFileSync(fileURLToPath(new URL('./useBattlePlaybackPresentation.js', import.meta.url)), 'utf8')
+const presentationSrc = readFileSync(fileURLToPath(new URL('./useBattlePlaybackPresentation.ts', import.meta.url)), 'utf8')
 
 describe('Battle Playback 2.5D coordinate SSoT (source regression)', () => {
   it('uses the active terrain relief projection for marker/collision/transient anchors', () => {

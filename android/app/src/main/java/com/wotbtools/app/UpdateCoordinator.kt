@@ -79,7 +79,10 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
-    fun snapshot(): JSONObject = status.toBridgeJson(state(status), currentVersionName, currentVersionCode)
+    fun snapshot(): JSONObject {
+        val snapshot = status
+        return snapshot.toBridgeJson(state(snapshot), currentVersionName, currentVersionCode)
+    }
 
     fun legacyCheckForUpdate(): Boolean = latestManifest?.let { currentVersionCode < it.latestVersionCode } ?: false
 
