@@ -44,7 +44,8 @@ export type LabelsStore = HudFeedStore & { labelsOn: boolean; lastKnownOn: boole
 /** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
 export interface LabelsRuntimeDeps {
   store: LabelsStore
-  container: HTMLElement
+  /** Renderer logical pixels from setSize, independent of DPR and free of DOM layout reads. */
+  getViewportSize(): { x: number; y: number }
   getCamera(): PerspectiveCamera
   /** 共享 raycaster（场景遮挡 raycast；owner = 宿主渲染器核心）。 */
   getRaycaster(): THREE.Raycaster
@@ -321,8 +322,7 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       v.labelAnchor.y += labelLiftWorld(d);
     }
     updateLabelOcclusion();
-    // 视口尺寸在循环内恒定，循环外读一次（逐车 clientWidth/clientHeight 读取有强制布局风险）
-    const viewW = deps.container.clientWidth, viewH = deps.container.clientHeight;
+    const { x: viewW, y: viewH } = deps.getViewportSize();
     for (const v of deps.getVehicles()) {
       labelClip.set(v.labelAnchor.x, v.labelAnchor.y, v.labelAnchor.z, 1)
         .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);

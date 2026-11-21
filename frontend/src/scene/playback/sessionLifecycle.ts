@@ -154,7 +154,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
 
   async function loadData(source: LoadSource) {
     const perf = deps.perf();
-    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
+    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ sessionMode: 'replay', mapId: null, replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
     //
@@ -225,7 +225,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
    */
   async function loadMapOnly({ mapId, mapName = '' }: LoadMapOnlyOptions) {
     const perf = deps.perf();
-    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
+    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perf.setIdentity({ sessionMode: 'map', mapId, replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     const gen = ++sessionGen;
     const epoch = ++sessionEpoch;
     const loadGen = ++loadGeneration;

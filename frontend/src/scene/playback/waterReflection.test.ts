@@ -91,10 +91,13 @@ describe('createWaterReflection 画质档', () => {
       intervalFrames: 2,
     })
     refl.setEnabled(true)
-    refl.update(renderer, scene, cam)
-    refl.update(renderer, scene, cam)
-    refl.update(renderer, scene, cam)
+    const timer = { begin: vi.fn(() => true), end: vi.fn() }
+    refl.update(renderer, scene, cam, timer)
+    refl.update(renderer, scene, cam, timer)
+    refl.update(renderer, scene, cam, timer)
     expect(renderer.render).toHaveBeenCalledTimes(2)
+    expect(timer.begin.mock.calls).toEqual([['reflection'], ['reflection']])
+    expect(timer.end).toHaveBeenCalledTimes(2)
     refl.dispose()
     expect((mesh.material as THREE.ShaderMaterial).uniforms.uUseReflection.value).toBe(0)
   })
@@ -166,7 +169,9 @@ describe('createWaterReflection 覆盖层剔除（W3）', () => {
       getExcludedRoots: () => [root],
     })
     refl.setEnabled(true)
-    expect(() => refl.update(renderer, scene, cam)).toThrow('context lost')
+    const timer = { begin: vi.fn(() => true), end: vi.fn() }
+    expect(() => refl.update(renderer, scene, cam, timer)).toThrow('context lost')
+    expect(timer.end).toHaveBeenCalledOnce()
     expect(root.visible).toBe(true)
     expect(mesh.visible).toBe(true)
     refl.dispose()

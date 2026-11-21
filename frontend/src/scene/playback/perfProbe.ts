@@ -8,6 +8,7 @@ import { createPerf } from './perf.ts'
 import { createGpuFrameTracker } from './gpuTimer.ts'
 import { AGENT_WASM_COMMIT, AGENT_WASM_RELEASE } from '../../api/agent-replay-facets.js'
 import { isAndroidRuntime } from '../../platform/runtime.js'
+import { assetProvider } from '../assetProvider.js'
 
 type GpuFrameTracker = ReturnType<typeof createGpuFrameTracker>
 
@@ -35,6 +36,8 @@ export interface PerfProbeDeps {
   getT(): number
   getRenderer(): WebGLRenderer | null
   getQualityKey(): string
+  getSpeed(): number
+  getDynres(): boolean
   /** 穿深着色偏好（owner = 宿主 setArmorHighlight）。 */
   getArmorHighlightPref(): boolean
   getCameraMode(): string
@@ -66,6 +69,7 @@ export interface PerfProbeHandle {
   perfFrame(updateMs: number, renderMs: number, armorMs: number, armorStats: ArmorStatsView | null, stages: Record<string, unknown>): void
   perfStartWatchdog(): void
   stopWatchdog(): void
+  dispose(): void
   perfHandle: {
     report(): string
     snapshot(): Record<string, unknown>
@@ -85,12 +89,21 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
     buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
     wasmCommit: AGENT_WASM_COMMIT, wasmRelease: AGENT_WASM_RELEASE, replayDigest: null, runtime: isAndroidRuntime() ? 'android' : 'browser',
     userAgent: navigator.userAgent, viewport: [window.innerWidth, window.innerHeight],
-    dpr: window.devicePixelRatio, quality: deps.getQualityKey(), assetIdentity: null, identityComplete: false });
+    dpr: window.devicePixelRatio, quality: deps.getQualityKey(), datasetId: null, assetIdentity: null, identityComplete: false });
+  // Query the same effective asset base used by the scene, including a versioned override.
+  if (perf && assetProvider.configured()) {
+    void assetProvider.json('/version.json').then(version => {
+      if (typeof version.dataset_id === 'string' && typeof version.content_digest === 'string'
+          && /^sha256:[0-9a-f]{64}$/i.test(version.content_digest)) {
+        perf.setIdentity({ datasetId: version.dataset_id, assetIdentity: version.content_digest });
+      }
+    }).catch(() => { /* Local packs can lack a version stamp. Keep the identity unknown. */ });
+  }
   function perfFrame(updateMs: number, renderMs: number, armorMs: number, armorStats: ArmorStatsView | null, stages: Record<string, unknown>) {
     const a = armorStats || {};
     const renderer = deps.getRenderer();
     perf!.record({ ...stages, updateMs, renderMs, armorMs, t: deps.getT(),
-      calls: renderer ? renderer.info.render.calls : 0, ...(deps.terrainCounters()),
+      calls: renderer ? renderer.info.render.calls : 0, triangles: renderer?.info.render.triangles ?? null, ...(deps.terrainCounters()),
       armorPick: a.pickMs ?? 0, armorState: a.stateMs ?? 0,
       armorThick: a.thicknessMs ?? 0, armorOcc: a.occluderMs ?? 0,
       armorColor: a.colorMs ?? 0, armorCalls: a.calls ?? 0,
@@ -128,6 +141,7 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   function updatePerfIdentity() {
     const renderer = deps.getRenderer();
     perf!.setIdentity({ quality: deps.getQualityKey(), cameraMode: deps.getCameraMode(), armorhl: deps.getArmorHighlightPref(),
+      playbackSpeed: deps.getSpeed(), dynres: deps.getDynres(),
       viewport: [deps.container.clientWidth, deps.container.clientHeight], dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
   }
   const perfHandle = PERF ? {
@@ -146,5 +160,11 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
     perfStartWatchdog,
     stopWatchdog,
     perfHandle,
+    dispose() {
+      if (!perf) return
+      stopWatchdog()
+      perf.reset()
+      if (debugWindow.__pbPerf === perfHandle) delete debugWindow.__pbPerf
+    },
   };
 }

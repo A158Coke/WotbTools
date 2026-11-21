@@ -27,7 +27,7 @@ export interface WaterReflectionOptions {
 
 export interface WaterReflection {
   /** 每帧主渲染前调用；内部负责 resize / 镜像渲染 / uniform 回填。 */
-  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void
+  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, timer?: { begin(pass: string): boolean; end(): void } | null): void
   setEnabled(on: boolean): void
   /** 请求下一帧强制刷新一次（seek / 按需渲染的单次 dirty frame；不受隔帧间隔限制）。 */
   requestRefresh(): void
@@ -147,7 +147,7 @@ export function createWaterReflection({
   }
 
   return {
-    update(renderer, scene, camera) {
+    update(renderer, scene, camera, timer) {
       if (!enabled) return
       frame++
       // 画质档可把反射降为隔帧更新（W3）：跳过帧保留上一张 RT/uniform，不重建。
@@ -189,7 +189,12 @@ export function createWaterReflection({
       const prevTarget = renderer.getRenderTarget()
       renderer.setRenderTarget(target)
       try {
-        renderer.render(scene, virtualCamera)
+        const activeTimer = timer?.begin('reflection') ? timer : null
+        try {
+          renderer.render(scene, virtualCamera)
+        } finally {
+          activeTimer?.end()
+        }
       } finally {
         renderer.setRenderTarget(prevTarget)
         meshes.forEach((m, i) => { m.visible = prevVisible[i] })

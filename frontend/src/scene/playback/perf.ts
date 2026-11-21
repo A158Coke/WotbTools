@@ -34,7 +34,8 @@ export function createPerf({ now = () => performance.now(), capacity = 240, capt
   function slowFrames(rows: PerfFrame[]) {
     const intervals = rows.map(row => row.frameIntervalMs).filter((n): n is number => n !== null && Number.isFinite(n) && n >= 0)
     return { over16_7ms: intervals.filter(n => n > 1000 / 60).length, over33_3ms: intervals.filter(n => n > 1000 / 30).length,
-      over50ms: intervals.filter(n => n > 50).length, over100ms: intervals.filter(n => n > 100).length }
+      over50ms: intervals.filter(n => n > 50).length, over100ms: intervals.filter(n => n > 100).length,
+      over200ms: intervals.filter(n => n > 200).length }
   }
   function snapshot() {
     const rows = [...frames].sort((a,b) => (a.sequence ?? 0) - (b.sequence ?? 0))

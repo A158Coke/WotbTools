@@ -1,8 +1,9 @@
 // 一次性：真实 vite.config.js（含 WOTB_ASSET_PROXY 资产代理）+ 仓库已有的 Keycloak 边界替身（仅换鉴权，不动生产源码）
-const { createServer } = await import('file:///D:/Program/WotbTools/.claude/worktrees/designer-tool-7fb949/frontend/node_modules/vite/dist/node/index.js')
+import { createRequire } from 'node:module'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../../frontend')
+const { createServer, build, preview } = createRequire(resolve(root, 'package.json'))('vite')
 const fx = resolve(root, 'scripts/browser-fixtures')
 const norm = (id) => id.replaceAll(String.fromCharCode(92), '/').replace(/^\/+/, '').toLowerCase()
 const stubs = new Map([
@@ -18,6 +19,15 @@ const plugin = {
   },
 }
 const port = Number(process.env.PORT || 5190)
-const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), plugins: [plugin], server: { host: '127.0.0.1', port, strictPort: true } })
-await server.listen()
-console.log('ready', server.resolvedUrls.local)
+const config = { root, configFile: resolve(root, 'vite.config.js'), plugins: [plugin] }
+const listen = { host: '127.0.0.1', port, strictPort: true }
+const mode = process.argv[2]
+if (mode === '--build' || mode === '--preview') {
+  config.build = { emptyOutDir: false }
+  if (mode === '--build') await build(config)
+  else await preview({ ...config, preview: listen })
+} else {
+  const server = await createServer({ ...config, server: listen })
+  await server.listen()
+  console.log('ready', server.resolvedUrls.local)
+}

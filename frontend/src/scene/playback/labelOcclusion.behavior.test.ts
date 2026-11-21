@@ -34,7 +34,6 @@ function makeDeps({ vehicles, sampleHeight, occlGrid, mapScenery, raycaster }: {
   mapScenery?: THREE.Object3D | null
   raycaster?: THREE.Raycaster
 }) {
-  const container = document.createElement('div')
   const camera = new THREE.PerspectiveCamera()
   camera.position.set(0, 2, 0)
   const ray = raycaster ?? new THREE.Raycaster()
@@ -46,7 +45,7 @@ function makeDeps({ vehicles, sampleHeight, occlGrid, mapScenery, raycaster }: {
   const overlay = { setLabels: vi.fn(), setAnchor, clear: vi.fn() }
   const deps: LabelsRuntimeDeps = {
     store: store as never,
-    container,
+    getViewportSize: () => ({ x: 800, y: 600 }),
     getCamera: () => camera,
     getRaycaster: () => ray,
     getData: () => ({ meta: { friendly_team: 1 }, kills: [] }),
@@ -78,6 +77,20 @@ beforeEach(() => {
 })
 
 describe('createLabelsRuntime 标签软遮挡（行为）', () => {
+  it('projects anchors using the current logical renderer size on each redraw', () => {
+    const vehicle = makeVehicle(1, { x: 0, y: -1.25, z: -20 })
+    const { deps, setAnchor } = makeDeps({ vehicles: [vehicle] })
+    const size = { x: 800, y: 600 }
+    deps.getViewportSize = () => size
+    const labels = createLabelsRuntime(deps)
+    labels.updateLabels()
+    expect(setAnchor).toHaveBeenLastCalledWith(1, expect.objectContaining({ projected: true, x: 400, y: 300 }))
+    size.x = 1200
+    size.y = 700
+    labels.updateLabels()
+    expect(setAnchor).toHaveBeenLastCalledWith(1, expect.objectContaining({ projected: true, x: 600, y: 350 }))
+  })
+
   it('遮挡发布只打 occluded 标志：地形脊后 labelOccluded=true 并随 anchor 发布；脊前为 false', () => {
     // 高度场解析步进：z=-50 处一道 20m 山脊（camera 在 z=0，脊后锚点 z=-100）
     const sampleHeight = (_x: number, z: number) => (Math.abs(z + 50) < 40 ? 20 : 0)

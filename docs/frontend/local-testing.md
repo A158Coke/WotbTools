@@ -322,3 +322,41 @@ __pbPerf.report()
 `scenarioId` 使用不含玩家、路径、令牌或资产 URL 的标签。结果只留在本机；将数据交给他人前仍需检查内容。采集到时或达到容量停止；场景失活时不能启动采集，采集中发生失活、清空或切换文件、画质或装甲设置变化时会标记中断，不能当作完整基准。`snapshot()` 的短窗口最多 240 帧；capture 的分位数使用实际 capture 样本。各指标分开阅读：帧间隔、CPU 提交、GPU 异步查询与加载等待不是同一种耗时；GPU 查询器状态包含 `not-initialized`（渲染器尚未创建）；每帧 `gpuStatus` 区分 `pending`、`complete`、`unsupported`、`context-lost`、`disjoint`、`invalid`、`dropped` 与 `error`；无可信结果时耗时为 null。`gpu_total_ms` 仅为成功测得的 render pass GPU 耗时之和，并非完整 GPU 帧耗时；部分结果或任一必需查询失败时总量为 null，不能把缺失 pass 当作 0。`snapshot().annotation` 和报告读取现有标注统计，不将其转换为帧分位数。RT 的 `colorEstimateBytes` 仅估算颜色纹理，不代表实际显存。
 
 严格比较前记录构建 SHA、WASM 身份、回放内容摘要与时间区间、相机路径、画质、viewport/DPR、设备及 GPU、资产版本。资产版本未自动取得时人工核验并记录来源；身份不完整时不能声称条件一致。首次使用与预热稳态分别采集；稳态预热后每组测 60 秒、至少重复三次，`armorhl=0/1` 同片段交替运行，同时记录温度和电源状态；另做 `?perf` 开关对照评估探针开销。Browser 和 Android 真机的画面、后台恢复与资源变化需人工验收，mock 或自动化测试不能替代。
+
+
+### 复测跟随视角的 CPU 长帧
+
+准备与 `deploy/agent/source.json` 匹配的 WASM 于 `common/assets/wasm/<ref>/`，并在 `frontend` 安装锁定的依赖。从 `frontend` 启动本地页面，以下为 PowerShell 示例。
+
+```powershell
+$env:WOTB_ASSET_PROXY = 'https://assets.wotbtools.com'
+$env:VITE_ASSET_BASE_URL = 'http://127.0.0.1:5190/__assets'
+node ../docs/research/testing/3d-perf-728/scratch/dev-server.mjs
+```
+
+同一脚本支持 `--build` 和 `--preview`。在独立工作树的 `frontend` 目录沿用上面的环境，先构建再预览即可测本机生产包。两种模式均沿用测试登录替身和真实渲染器。使用其他端口时同步设置 `PORT`、`VITE_ASSET_BASE_URL` 和采集端 `ORIGIN`。
+
+另开终端，从仓库根目录解析脚本路径，然后切到本机采集目录。原始帧、设备、回放和资产身份写到该目录的 `out/`。
+
+```powershell
+$env:VW = '678'
+$env:VH = '298'
+$env:VDPR = '1.25'
+$env:DATASET = '11.21.0_1'
+$scripts = (Resolve-Path 'docs/research/testing/3d-perf-728/scratch').Path
+$runner = Join-Path $scripts 'run.mjs'
+$captures = New-Item -ItemType Directory -Force (Join-Path $env:TEMP 'wotb-perf-728')
+Push-Location $captures.FullName
+foreach ($round in 1..3) {
+  node $runner follow-mid 6 --fixture=example --secs=30 --tag="before-$round-"
+}
+node $runner follow-mid 6 --fixture=example --secs=30 --profile --tag=stacks-
+node (Join-Path $scripts 'prof.mjs')
+Pop-Location
+```
+
+6 是 CDP CPU 降速倍率，报告另记实际回放速度。预热后锁定镜头、回放时间区间、画质与数据集，记录软件/硬件渲染器、舞台像素和 DPR。硬件基准遇软件渲染会退出。mid 默认绘制简化车辆，高档位另验真实车辆 GLB。用 `--secs=60` 运行正式稳态组，`--no-perf` 采无场景探针的外部 rAF 对照。各轮独立打标签保存，plain/profiled 分开统计。跨工作树使用 `ORIGIN` 指向被测页面，并用 `BENCH_SOURCE_ROOT` 指定实际提供页面的检出，用于记录 HEAD 和已跟踪前端差异摘要。新增文件要另记版本。
+
+生产包归因可在同一命令上使用 `--no-perf --profile --trace`，本机 `out/traces/` 保存 Chrome 时间线，`prof.mjs` 以同一时钟对齐 rAF 最慢 1% 的采样栈。该模式在隔离测试页临时测量 DOM 布局读取及 GL 缓冲提交。评分另跑 `--no-perf --cpu-metrics`，以 Chrome 主线程 TaskDuration 和样式重算次数除以同窗 rAF 帧数。固定回放片段执行 `--verify-resize` 可在计时结束后对比两档视口和 DPR 的名牌状态、逻辑位置与截图。
+
+`?perf` 记录实际场景的三角数、DPR、动态分辨率开关、回放速度以及 >200 ms 帧数。可读的资产版本印记提供数据集 ID 和内容摘要；本地包缺印记时两项为空。地图预览用 mapId，回放用内容摘要。中途改速或切换 dynres 会中断 capture。旧 `renderMs` 保留原区间，`reflectionUpdateMs` 是水面更新的 CPU 区间，`mainSubmitMs` 是主绘制提交区间；只有实际提交镜像绘制并取得有效查询的帧才有有效 `gpu_reflection_ms`。
