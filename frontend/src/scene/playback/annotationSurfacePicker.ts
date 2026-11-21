@@ -10,18 +10,13 @@ import { chainVisible } from '../pickDebug.js'
 import { hitWorldNormal } from './annotation3d.js'
 import type { SemanticPoint } from './annotation3d.js'
 import { collectSurfaceCandidates, pickDrawableSurfaceHit } from './annotationSurface.ts'
-import type { AnnotationSceneDeps } from './annotationScene.js'
+import type { AnnotationSceneDeps, AnnotationControls } from './annotationScene.js'
 
 /** 拾取器消费的宿主依赖（getter 快照；语义见 annotationScene.ts 的 deps 注释）。 */
 export type AnnotationPickerDeps = Pick<
   AnnotationSceneDeps,
   'getCamera' | 'getRaycaster' | 'getControls' | 'mapWorld' | 'annotationSurfaceHeightAt'
 > & { container: HTMLElement }
-
-/** 拾取用 controls 面（仅 target 距离消费）。 */
-interface PickerControls {
-  target: { x: number; y: number; z: number }
-}
 
 /** 地表拾取器句柄（宿主与 gesture 状态机的唯一消费面）。 */
 export interface AnnotationSurfacePicker {
@@ -94,7 +89,7 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
   function raycastAnnotationGround(clientX: number, clientY: number, rect: DOMRect) {
     const camera = deps.getCamera()
     const raycaster = deps.getRaycaster()
-    const controls = deps.getControls() as unknown as PickerControls | null
+    const controls = deps.getControls() as AnnotationControls | null
     if (!camera || !raycaster || !controls || !rect || !(rect.width > 0) || !(rect.height > 0)) return null
     setRaycasterFromClient(clientX, clientY, rect)
     const origin = raycaster.ray.origin

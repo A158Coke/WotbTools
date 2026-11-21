@@ -33,8 +33,9 @@ export interface AnnotationInteractionConfig {
   eraserWidth?: number
 }
 
-interface AnnotationControls {
+export interface AnnotationControls {
   touches?: { ONE: string | null } | null
+  target: { x: number; y: number; z: number }
 }
 
 export interface AnnotationSceneDeps {
