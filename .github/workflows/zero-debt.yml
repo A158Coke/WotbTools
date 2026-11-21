@@ -28,6 +28,8 @@ jobs:
           else
             test "$(git rev-parse HEAD)" = "$main"
           fi
+          test "$(git ls-tree --name-only "$main" -- scripts/ci/source-line-allowlist.txt)" = ""
+          test "$(git ls-tree --name-only HEAD -- scripts/ci/source-line-allowlist.txt)" = ""
           echo "main=$main" >> "$GITHUB_OUTPUT"
           git show "$main:scripts/ci/check-source-lines.py" > "$RUNNER_TEMP/check-source-lines.py"
           git show "$main:scripts/ci/source-line-policy.json" > "$RUNNER_TEMP/source-line-policy.json"
