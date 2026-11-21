@@ -134,7 +134,7 @@ describe('Sniper 穿深着色接线', () => {
     expect(hl).toMatch(/armorCamera\.setViewOffset\(size\.x, size\.y, scissor\.x, size\.y - \(scissor\.y \+ scissor\.w\), scissor\.z, scissor\.w\)/)
     expect(hl).toMatch(/bucketedRtSize\(scissor\.z, size\.x\)/)
     expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
-    const shaders = readFileSync(resolve(__dirname, 'viewer/armorShaders.ts'), 'utf8')
+    const shaders = ['viewer/armorShaders.ts', 'viewer/armorPrimaryShader.ts'].map(path => readFileSync(resolve(__dirname, path), 'utf8')).join('\n')
     expect(shaders).toMatch(/uniform vec4 spacedRect/)
     // review R1 blocker：全画面 UV → **rect 局部** RT UV（rect 左下 → (0,0)，右上 → (1,1)）；
     // 反向公式（sc*zw+xy）会让整车错误采样 RT 中央一小块

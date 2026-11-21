@@ -102,9 +102,9 @@ describe('armor shell and readiness ownership', () => {
     expect(kernel).toMatch(/if \(initialCal && eqs\.equipmentOverride\.calibrated != null\) initialCal\.checked = eqs\.equipmentOverride\.calibrated;/)
     expect(kernel).toMatch(/cal\.checked = equipmentOverride\.calibrated \?\? !!s\.shooter_equipment\.calibrated_shells;/)
     expect(kernel).toMatch(/enh\.checked = equipmentOverride\.enhanced \?\? !!s\.target_equipment\.enhanced_armor;/)
-    expect(view).toMatch(/function syncNativeTargetConfig\(index\)/)
-    expect(view).toMatch(/function syncNativeShell\(index\)/)
-    expect(view).toMatch(/function syncNativeEquipment\(kind, value\)/)
+    expect(view).toMatch(/function syncNativeTargetConfig\(index: number \| string\)/)
+    expect(view).toMatch(/function syncNativeShell\(index: number \| string\)/)
+    expect(view).toMatch(/function syncNativeEquipment\(kind: string, value: boolean\)/)
     expect(view).toMatch(/onConfigSelection: index => syncNativeTargetConfig\(index\)/)
     expect(view).toMatch(/onShellSelection: index => syncNativeShell\(index\)/)
     expect(view).toMatch(/onEquipmentSelection: \(kind, value\) => syncNativeEquipment\(kind, value\)/)
@@ -171,7 +171,7 @@ describe('armor shell and readiness ownership', () => {
 // `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
 //（source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
-  const shaders = read('../scene/viewer/armorShaders.ts')
+  const shaders = [read('../scene/viewer/armorShaders.ts'), read('../scene/viewer/armorPrimaryShader.ts')].join('\n')
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   it('间隙甲材质/状态材质/深度占位的既有渲染状态', () => {
     expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)

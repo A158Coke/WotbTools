@@ -11,7 +11,7 @@ const viewer = [
         './tankViewer.js', './viewer/heatmap.ts', './viewer/modelLifecycle.ts', './viewer/judgment.ts',
         './viewer/trajectoryCard.ts', './viewer/shotReplay.ts', './viewer/equipmentState.ts',
         './viewer/collisionView.ts', './viewer/debugUi.ts', './viewer/diagnosticProbe.ts', './viewer/dataLoader.ts', './viewer/aimInput.ts', './viewer/shotReplayMiss.ts',
-        './viewer/turretRig.ts', './viewer/viewerMath.ts', './viewer/armorShaders.ts', './heSplash.ts',
+        './viewer/turretRig.ts', './viewer/viewerMath.ts', './viewer/armorShaders.ts', './viewer/armorPrimaryShader.ts', './heSplash.ts',
     ].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('');
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
 // 轨迹几何 2026-11-04 出仓 viewer/shotTrajectoryGeometry.ts（#820 Wave B3B）：

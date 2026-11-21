@@ -9,7 +9,7 @@ const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
-const matSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
+const matSrc = ['sceneryMaterials.ts', 'sceneryLightingMaterials.ts', 'sceneryWaterMaterials.ts', 'scenerySurfaceMaterials.ts'].map(path => readSrc(resolve(here, path), 'utf8')).join('\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const asmSrc = readSrc(resolve(here, 'sceneryAssembly.ts'), 'utf8')
@@ -272,7 +272,7 @@ describe('照明与地形材质合同', () => {
     // groundPass.behavior.test.ts 行为测试（24/16bit 阈值、数据纹理口径）
     expect(mapWorldSrc).toMatch(/function terrainSpanOf\(\) \{/)
     expect(mapWorldSrc).not.toMatch(/terrainCellBound\(1, camera/)  // 旧"单元格上界"口径：禁止复活
-    const wSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
+    const wSrc = ['sceneryMaterials.ts', 'sceneryLightingMaterials.ts', 'sceneryWaterMaterials.ts', 'scenerySurfaceMaterials.ts'].map(path => readSrc(resolve(here, path), 'utf8')).join('\n')
     expect(wSrc).toMatch(/export function makeWaterMaterial\(m: GltfSceneMaterial, \{ normalTex, cubeTex, props, coast = null, wro = null \}: \{/)
     expect(wSrc).toMatch(/uniform sampler2D uHeightmap;/)
     // 阈值量纲 = **本渲染器的深度分辨率**（2 ulp）：岸线带（差值小到缓冲分不开）淡出、
