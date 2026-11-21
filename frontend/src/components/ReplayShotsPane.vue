@@ -21,15 +21,13 @@ import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import {
   parseAgentShotsFromBytes, parseAgentPlaybackFromBytes, enrichShotsFromRoster, isShotHit,
 } from '../api/agent-replay-facets.js'
-import { annotateMountedConfigs, buildPitchLimits } from '../scene/shotHandoff.ts'
-import { assetProvider } from '../scene/assetProvider.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
-import { formatShotBattleClock } from '../utils/playbackClock.js'
-import { resolveReplayClock } from '../replay-local/canonical/facts'
-import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
 import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
+import { useShotsDecode } from './replay-shots/useShotsDecode.js'
+import { useShotsPresenters } from './replay-shots/useShotsPresenters.js'
+import { useShotsDetail } from './replay-shots/useShotsDetail.js'
 import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
@@ -56,32 +54,47 @@ const props = defineProps({
 })
 const { t } = useI18n()
 const onboarding = inject(ONBOARDING_KEY, null)
+const selectedIndex = ref(null)
+const shooter = ref('own')
+const decodeApi = useShotsDecode({
+  t,
+  resetSelection: () => { selectedIndex.value = null },
+  resetScope: () => { shooter.value = 'own' },
+})
+const {
+  shots, parsing, err, authorError, othersError, authorEid, recorderTankName, battleStartRaw,
+  beginDecode, dispose: disposeDecode, parseSeqNow, parsedFileNow, decodingNow,
+} = decodeApi
+
 onMounted(() => onboarding?.registerSurface('shots', {
   ready: () => props.active && selectedShot.value != null,
-  prepare: () => { closeDetail(); shooter.value = 'own'; return decoding },
+  prepare: () => { closeDetail(); shooter.value = 'own'; return decodingNow() },
   setGuideInset: pixels => { guideInset.value = Math.max(0, pixels) },
   cleanup: () => { guideInset.value = 0 },
-  failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
+  failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFileNow() === props.file && !filteredShots.value.some(rowHas3d)),
 }))
 onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
+onBeforeUnmount(() => {
+  disposeDecode()
+})
 const { requireFeature, availability } = useFeatureGate()
 
-const shots = ref([])
-const parsing = ref(false)
-const err = ref('')
-/** 作者严格路径 fail-visible（契约 v0.1.9）：author_path=error 时警示与空态并存 */
-const authorError = ref('')
-/** 他人宽松路径 fail-visible（上游 v0.4.20）：others_error 在场 = 他人链内部不变量破坏 */
-const othersError = ref('')
-const shooter = ref('own')
-const authorEid = ref(null)
-const recorderTankName = ref('')
-/** 开战时刻的原始时钟：time_s 是原始回放时钟，减去它才与 2D / 3D 的 00:00 = 开战对齐 */
-const battleStartRaw = ref(0)
-const selectedIndex = ref(null)
-const guideInset = ref(0)
-/** 已解析的文件：同一文件不重复解码 */
-let parsedFile = null
+const {
+  shotClock, shellBadge, resultBadge, qualityIssues, playerName,
+  isOwnShot, tankName, targetName,
+  shooterOptions, shooterGroups, selectedShooter,
+  ownShots, filteredShots, scopeTitle, scopeSubtitle,
+  shotSummary, summaryStats, selectedShot,
+  trajectoryLength, rowHas3d, hasEquipment,
+} = useShotsPresenters({
+  shots, authorEid, recorderTankName, battleStartRaw, shooter, selectedIndex, props, t,
+})
+
+const guideShot = computed(() => (isOfficialDemo(props.file)
+  ? filteredShots.value.find(shot => shot.shot_id === OFFICIAL_DEMO.cue.shotId)
+  : null) || filteredShots.value.find(rowHas3d))
+
+
 const paneRoot = ref(null)
 /** KeepAlive 停用（切到别的页面）时同样视为不可见：挂起的全屏请求迟到完成也必须交还 */
 const lifecycleVisible = ref(true)
@@ -96,492 +109,40 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, 
   isPhone,
   isActive: viewerActive,
   // 成功就绪 = 当前文件已解析完成、无错误、至少一发射击（空结果只是空态）；解析中 / 终态错误 / 被阻断都不触发。
-  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: viewerActive(), ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFile === props.file && shots.value.length > 0 }),
+  auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: viewerActive(), ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFileNow() === props.file && shots.value.length > 0 }),
 })
 const releaseFullscreen = () => { unlockOrientation(); exitOwnedFullscreen() }
 watch(() => props.active, (active) => { if (!active) releaseFullscreen() })
 onDeactivated(() => { lifecycleVisible.value = false; releaseFullscreen() })
 onActivated(() => { lifecycleVisible.value = true })
-/** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
-let parseSeq = 0
-let decoding = Promise.resolve()
 
-/**
- * 弹种表与搭载输入都来自资产包（/data/shellKinds.json 与 tank/{id}.json，静态资产源分发，
- * 与上游 tanks.pb 同批刷新）：弹种表只在首次解析时按需加载一次，搭载输入逐车取。
- * 资产源未配置 / 请求失败时按降级语义继续（弹种走槽位/id 兜底、俯仰如实降级标记）。
- */
-let shellTablePromise = null
-function loadShellTable() {
-  if (!shellTablePromise) {
-    shellTablePromise = assetProvider.json('/data/shellKinds.json')
-    shellTablePromise.catch(() => { shellTablePromise = null })
-  }
-  return shellTablePromise
-}
 
-/**
- * 弹种富化兜底（旧产物路径：WASM 输出没有 shell 字段时在客户端按同款表反解；
- * 新产物由 WASM 注入，此处零命中直通）。
- */
-function enrichShellFallback(parsedShots, table) {
-  for (const shot of parsedShots) {
-    if (!shot.shell_id || shot.shell) continue
-    const entry = table?.[String(shot.shell_id)]
-    if (!entry) continue
-    shot.shell = entry
-    shot.shell_kind = shot.shell_kind || entry.type
-  }
-}
-
-/** 俯仰锚定表的等待上界（ms）。该表是解析期入参（`parseShotReplays` 的可选注入），
- *  不能像弹表那样事后补齐，只能在解析前**有界等待**：到期用已到的部分表
- *  （best effort）继续解析，避免单个资产请求挂起把整条列表拖死在解析中
- *  （评审 P1，2026-10-15）。缺锚定 = 既有的如实降级态（俯仰降级标记透传）。 */
-
-/**
- * 名册联表只补身份与阵营（`enrichShotsFromRoster`）；昵称缺在射击链上是常态
- * （他人宽松路径不带昵称），这里按 eid 联表补齐昵称——姓名不可解析时界面显示
- * 「未知玩家」，绝不落回内部 id（design-language §11）。
- */
-function applyRosterNames(parsedShots, vehicles, tankopedia) {
-  const byEid = new Map((vehicles || []).map((vehicle) => [vehicle.eid, vehicle]))
-  const usableName = (value) => typeof value === 'string' && value.trim() && !/^#?\d+$/.test(value.trim())
-  for (const shot of parsedShots) {
-    for (const role of ['shooter', 'target']) {
-      const vehicle = byEid.get(shot[`${role}_eid`])
-      if (!shot[`${role}_name`] && vehicle?.nickname) shot[`${role}_name`] = vehicle.nickname
-      const info = tankopedia?.info(shot[`${role}_tank_id`] || vehicle?.tank_id || 0)
-      const name = [vehicle?.tank_name, info?.name, shot[`${role}_tank_name`]].find(usableName)
-      shot[`${role}_tank_name`] = name || ''
-      shot[`${role}_tank_class`] = info?.type || vehicle?.tank_class || vehicle?.tank_type || ''
-    }
-  }
-}
-
-async function decode(file) {
-  const seq = ++parseSeq
-  parsing.value = true
-  err.value = ''
-  authorError.value = ''
-  othersError.value = ''
-  selectedIndex.value = null
-  shooter.value = 'own'
-  authorEid.value = null
-  recorderTankName.value = ''
-  battleStartRaw.value = 0
-  shots.value = []
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    if (seq !== parseSeq) return
-    // 时序：先解析 playback（轻）构建俯仰锚定表，射击链只做一次重解析。
-    // 锚定注入失败（产物过旧等）→ 裸解析兜底（俯仰降级标记如实透传）。
-    let playback = null
-    let pitchLimits = null
-    try {
-      playback = await parseAgentPlaybackFromBytes(bytes)
-      if (seq !== parseSeq) return
-      // 与 3D 场景同一推导（playbackScene.js：resolveReplayClock(DATA.periods, null, meta.duration)）
-      battleStartRaw.value = resolveReplayClock(playback.periods || [], null, playback.meta?.duration)?.startRaw ?? 0
-      pitchLimits = await buildPitchLimits(playback.vehicles)
-    } catch (e) {
-      console.warn('pitch limits skipped:', e)
-    }
-    if (seq !== parseSeq) return
-    // 弹种表（COS /data/shellKinds.json）与解析**并行**取用，不在发布前 await——
-    // 已完成的本地解析不被资产平台的响应速度卡住（与下方 annotateMountedConfigs
-    // 同款异步增强契约）。表到位后按同款表原地补齐 shell/shell_kind（WASM 端未注入
-    // 时客户端补齐同构）；资产源未配置/失败 → undefined，弹种保持槽位/id 兜底。
-    const shellTablePromise = loadShellTable().catch(() => undefined)
-    let outcome
-    try {
-      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined)
-    } catch (e) {
-      console.warn('anchored parse failed, fallback:', e)
-      if (seq !== parseSeq) return
-      outcome = await parseAgentShotsFromBytes(bytes)
-    }
-    if (seq !== parseSeq) return
-    // 作者严格路径 fail-visible（契约 v0.1.9）：失败不再静默，警示条 + 他人宽松全量
-    authorError.value = outcome.author_error || ''
-    // 他人宽松路径 fail-visible（上游 v0.4.20）：others_error 在场 = 他人链内部不变量破坏
-    othersError.value = outcome.others_error || ''
-    const parsedShots = outcome.shots
-    // 富化失败不阻断主表（名册失败仅 3D 链接缺失；弹种反解失败走槽位/id 兜底）
-    if (playback) {
-      try {
-        enrichShotsFromRoster(parsedShots, playback.vehicles)
-      } catch (e) {
-        console.warn('roster enrichment skipped:', e)
-      }
-    }
-    if (seq !== parseSeq) return
-    const tankopedia = await loadTankopedia().catch(() => null)
-    if (seq !== parseSeq) return
-    applyRosterNames(parsedShots, playback?.vehicles, tankopedia)
-    authorEid.value = outcome.author_eid > 0 ? outcome.author_eid
-      : playback?.meta?.author_eid > 0 ? playback.meta.author_eid
-        : playback?.vehicles?.find((vehicle) => vehicle.is_author)?.eid ?? null
-    const recorder = playback?.vehicles?.find((vehicle) => vehicle.eid === authorEid.value || vehicle.is_author)
-    recorderTankName.value = recorder?.tank_name || ''
-    // 先发布本地解析结果（P1 评审）：搭载配置注解是**可选增强**，其资产请求无超时
-    // 语义——await 它会让已完成的本地解析被远端资产的响应速度卡住。异步补做：
-    // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
-    // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
-    shots.value = parsedShots
-    // 弹表迟到补齐（评审 P2）：回调注册于**发布之后**，经响应式视图写入以触发重绘
-    // （直接改原始数组 parsedShots 会绕过 Vue 代理，迟到补齐不重绘）；表已就绪时
-    // 回调也在微任务中晚于上面的赋值执行——shots.value 必为本文件的列表，
-    // 文件切换由 seq 隔离。
-    shellTablePromise.then((shellTable) => {
-      if (seq !== parseSeq || !shellTable) return
-      const list = shots.value
-      if (list && list.some((s) => s.shell_id && !s.shell)) {
-        try { enrichShellFallback(list, shellTable) } catch (e) {
-          console.warn('shell enrichment skipped:', e)
-        }
-      }
-    })
-    if (playback) {
-      annotateMountedConfigs(parsedShots, playback?.vehicles).catch((e) => {
-        console.warn('mounted-config annotation skipped:', e)
-      })
-    }
-  } catch (e) {
-    if (seq !== parseSeq) return
-    shots.value = []
-    err.value = t('agentShots.error_parse') + ' ' + String(e?.message || e).slice(0, 200)
-  } finally {
-    if (seq === parseSeq) parsing.value = false
-  }
-}
 
 /**
  * 解码时机 = 能力激活（首次进入射击分析）：一个 watcher 同时覆盖"初始就激活"（深链直达）
  * 与"之后才激活"，也覆盖激活期间换了目标回放。同一文件不重复解码；切走不解码、保留结果。
  */
 watch([() => props.active, () => props.file, () => props.blockedReason], ([active, file, blocked]) => {
-  // Changing/clearing a battle invalidates in-flight work even while this pane is hidden.
-  if (parsedFile && parsedFile !== file) {
-    parseSeq++
-    parsedFile = null
-    parsing.value = false
-    shots.value = []
-    recorderTankName.value = ''
-    battleStartRaw.value = 0
-    authorEid.value = null
-    selectedIndex.value = null
-    shooter.value = 'own'
-    err.value = ''
-    authorError.value = ''
-    othersError.value = ''
-  }
-  if (!active || !file || blocked) return
-  if (parsedFile === file) return
-  parsedFile = file
-  decoding = decode(file)
+  beginDecode(active, file, blocked)
 }, { immediate: true })
 
-/** 射击时刻（开战相对）：与 2D / 3D 时间轴同一时钟 */
-const shotClock = (shot) => formatShotBattleClock(shot.time_s, battleStartRaw.value)
-
-const shellBadge = (s) => {
-  const kindOf = (value) => {
-    const v = (value || '').toLowerCase()
-    if (/^ap_cr|^apcr/.test(v)) return 'APCR'
-    if (/^hc|^heat/.test(v)) return 'HEAT'
-    if (/^he/.test(v)) return 'HE'
-    if (/^ap/.test(v)) return 'AP'
-    return ''
-  }
-  const kind = s.shell_kind || (s.shell && s.shell.type) || ''
-  const label = kindOf(kind)
-  const pen = s.shell && s.shell.penetration ? Math.round(s.shell.penetration) : null
-  if (!label) return { label: '', pen, tone: 'neutral' }
-  return { label, pen, tone: /premium/.test(kind) ? 'warning' : 'neutral' }
-}
-
-/** 命中结果：hit_flags 位图 → 击穿 / HE / 跳弹 / 未穿 / 脱靶；无位图按 game_hit_result 降级 */
-const resultBadge = (shot) => shotResultBadge(shot, t)
-
-/** 数据质量徽章：降级 / 陈旧项汇总（悬停显示详情）——与上游同一规则 */
-function qualityIssues(s) {
-  const q = s.quality
-  if (!q) return []
-  const issues = []
-  if (q.shooter_pos_from_muzzle) issues.push(t('agentShots.q_muzzle'))
-  if (Math.abs(q.shooter_state_dt_ms || 0) >= 300) issues.push(`${t('agentShots.q_shooter_dt')} ${q.shooter_state_dt_ms}ms`)
-  if (q.target_state_dt_ms != null && Math.abs(q.target_state_dt_ms) >= 300) issues.push(`${t('agentShots.q_target_dt')} ${q.target_state_dt_ms}ms`)
-  if ((q.turret_degraded || []).includes('shooter')) issues.push(t('agentShots.q_shooter_turret'))
-  if ((q.turret_degraded || []).includes('target')) issues.push(t('agentShots.q_target_turret'))
-  if (q.target_dead) issues.push(t('agentShots.q_target_dead'))
-  if (q.dmg_unattributed) issues.push(t('agentShots.q_dmg_unattr'))
-  if (q.target_anchor_src === 'nearest') issues.push(t('agentShots.q_target_nearest'))
-  else if (q.target_anchor_src === 'extrapolated') issues.push(t('agentShots.q_target_extrap'))
-  else if (q.target_anchor_src === 'filtered') issues.push(t('agentShots.q_target_filtered'))
-  if (q.shooter_anchor_src === 'extrapolated') issues.push(t('agentShots.q_shooter_extrap'))
-  else if (q.shooter_anchor_src === 'nearest') issues.push(t('agentShots.q_shooter_nearest'))
-  if (q.shell_from_broadcast) issues.push(t('agentShots.q_shell_broadcast'))
-  if (q.shell_from_terrain) issues.push(t('agentShots.q_shell_terrain'))
-  if (q.shooter_pitch_from_velocity) issues.push(t('agentShots.q_pitch_velocity'))
-  if (s.target_name && !s.shell_id) issues.push(t('agentShots.q_shell_unknown'))
-  if (s.target_name && s.game_hit_result === 255) issues.push(t('agentShots.q_result_unknown'))
-  return issues
-}
-
-/**
- * 玩家名：解析结果里的昵称优先；拿不到昵称时**不暴露内部 id**（design-language §11），
- * 统一显示「未知玩家」。
- */
-function playerName(name) {
-  const text = (name || '').trim()
-  return text || t('agentShots.unknown_player')
-}
-
-/** Recorder identity comes from the parse outcome/roster, never from shot count. */
-function isOwnShot(shot) {
-  return authorEid.value != null ? shot.shooter_eid === authorEid.value : shot.is_author === true
-}
-function tankName(shot, role) {
-  return shot[`${role}_tank_name`] || t('agentShots.unknown_tank')
-}
-function targetName(shot) {
-  return shot.target_eid == null ? t('agentShots.no_target') : tankName(shot, 'target')
-}
-
-/** Options keep their insertion token when group counts or display metadata change. */
-const shooterOptions = computed(() => {
-  const byKey = new Map()
-  for (const shot of shots.value) {
-    const key = shot.shooter_eid ?? `unknown-${shot.index}`
-    const existing = byKey.get(key)
-    if (existing) { existing.n++; continue }
-    byKey.set(key, {
-      key, value: `player-${byKey.size}`, name: playerName(shot.shooter_name),
-      tankName: tankName(shot, 'shooter'), n: 1, isAuthor: isOwnShot(shot),
-      team: shot.shooter_team,
-    })
-  }
-  return [...byKey.values()]
-})
-const shooterGroups = computed(() => {
-  const groups = { allies: [], enemies: [], unknown: [] }
-  for (const option of shooterOptions.value) {
-    const group = option.team === 'ally' ? 'allies' : option.team === 'enemy' ? 'enemies' : 'unknown'
-    groups[group].push(option)
-  }
-  return groups
-})
-const selectedShooter = computed(() => shooterOptions.value.find((option) => option.value === shooter.value))
-const ownShots = computed(() => shots.value.filter(isOwnShot))
-const filteredShots = computed(() => {
-  if (shooter.value === 'own') return ownShots.value
-  if (shooter.value === 'all') return shots.value
-  const selected = selectedShooter.value
-  return selected ? shots.value.filter((shot) => (shot.shooter_eid ?? `unknown-${shot.index}`) === selected.key) : []
-})
-const scopeTitle = computed(() => {
-  if (shooter.value === 'own') return t('agentShots.my_shots')
-  if (shooter.value === 'all') return t('agentShots.all_shooters')
-  return selectedShooter.value?.tankName || t('agentShots.shooter')
-})
-const scopeSubtitle = computed(() => {
-  if (shooter.value === 'own') {
-    const own = shooterOptions.value.find((option) => option.isAuthor)
-    const recordedName = recorderTankName.value.trim()
-    return own ? `${own.tankName} · ${own.name}`
-      : recordedName && !/^#?\d+$/.test(recordedName) ? recordedName : t('agentShots.own_shots_hint')
-  }
-  return selectedShooter.value?.name || t('agentShots.all_shots_hint')
-})
-
-/**
- * 总览（随筛选联动）：total 按上游顶层 Shot 行计（unique shotId / 一次开火），
- * 绝不按 interaction 数膨胀；命中率 = 命中 / 开火，穿透率 = 击穿 / 命中。
- */
-const shotSummary = computed(() => {
-  const rows = filteredShots.value
-  const total = rows.length
-  const hits = rows.filter(isShotHit).length
-  const pens = rows.filter((s) => (s.is_author ? s.hit_flags & 0x0010 : s.game_hit_result === 3)).length
-  const damage = rows.reduce((sum, s) => sum + (s.damage || 0), 0)
-  return {
-    total, hits, pens, damage,
-    hitRate: total ? (100 * hits) / total : 0,
-    penRate: hits ? (100 * pens) / hits : 0,
-  }
-})
-
-const summaryStats = computed(() => {
-  const s = shotSummary.value
-  return [
-    { key: 'shots', label: t('agentShots.stat_shots'), value: String(s.total) },
-    { key: 'hit', label: t('agentShots.stat_hit'), value: `${s.hitRate.toFixed(0)}%`, sub: `${s.hits}/${s.total}` },
-    { key: 'pen', label: t('agentShots.stat_pen'), value: `${s.penRate.toFixed(0)}%`, sub: `${s.pens}/${s.hits}` },
-    { key: 'damage', label: t('agentShots.recorded_damage'), value: String(s.damage) },
-  ]
-})
-
-const selectedShot = computed(() =>
-  selectedIndex.value == null ? null : shots.value.find((s) => s.index === selectedIndex.value) || null)
-const guideShot = computed(() => (isOfficialDemo(props.file)
-  ? filteredShots.value.find(shot => shot.shot_id === OFFICIAL_DEMO.cue.shotId)
-  : null) || filteredShots.value.find(rowHas3d))
-
-/** 弹道两点距离（米）：只做展示，不参与任何判定 */
-function trajectoryLength(s) {
-  const a = s.ball_a, b = s.ball_b
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 3 || b.length < 3) return null
-  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2]
-  return Math.hypot(dx, dy, dz)
-}
-
-/** 行内 3D 复现可用性：仅命中弹（有目标 = 服务器命中通知在案） */
-function rowHas3d(s) {
-  return s.target_eid != null
-}
-
-/** 该弹的射手配件串有可显示内容（Type5 物化在案且含非空槽 id；未知 id 由徽标 fail-closed）。 */
-function hasEquipment(s) {
-  return Array.isArray(s?.shooter_equipment?.raw) && s.shooter_equipment.raw.some(id => Number.isInteger(id) && id > 0)
-}
-
-/**
- * 列表 / 详情分档由**容器宽度**决定（design-language §9：expanded 常驻、medium 推开式、
- * compact 全屏），不看视口——工作台可能被侧栏或抽屉挤窄。
- */
-const layout = ref('expanded')
-const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
-/** compact 直达复现：手机上点一发直接进入射击复现（design-language §9「射击分析」）；导航期间不弹出检视面板 */
-const directOpening = ref(false)
-const detailOpen = computed(() => selectedIndex.value != null && !directOpening.value)
-const isOverlay = computed(() => guideLayout.value === 'compact')
-
-let observer = null
-const detailPane = ref(null)
-let lastTrigger = null
-
-function applyLayout(width) {
-  layout.value = width >= 900 ? 'expanded' : width >= 600 ? 'medium' : 'compact'
-}
-
-function selectShot(index, event) {
-  const shot = shots.value.find(s => s.index === index)
-  // compact：点一发直接进入射击复现。新手教程引导中保留检视面板，教程的「从这一发打开」步骤仍有目标。
-  // 3D 复现需要在线能力；射击检视是本地能力——3D 当前不可用（离线等）时退回本地详情，不能让这一发无处可看。
-  if (layout.value === 'compact' && !onboarding?.guideActive?.value && shot && rowHas3d(shot)
-    && availability(Feature.PLAYBACK_3D).available) {
-    selectedIndex.value = index
-    directOpening.value = true
-    const trigger = event?.currentTarget ?? null
-    // 只有真的导航走了才清选择；等待期间断网 / 第二次能力检查拒绝 / 出错时退回本地检视面板
-    void openInViewer(shot).catch(() => false).then((navigated) => {
-      directOpening.value = false
-      if (selectedIndex.value !== index) return
-      if (navigated) selectedIndex.value = null
-      else showDetail(trigger)
-    })
-    return
-  }
-  selectedIndex.value = index
-  showDetail(event?.currentTarget ?? null)
-}
-
-function showDetail(trigger) {
-  lastTrigger = trigger
-  if (isOverlay.value) nextTick(() => detailPane.value?.focus?.())
-}
-
-function closeDetail() {
-  selectedIndex.value = null
-  if (lastTrigger?.focus) lastTrigger.focus()
-}
-
-/**
- * 上一发 / 下一发：**只在当前筛选结果内**移动（`filteredShots` 而不是 `shots`）。
- * 边界不循环——第一发没有上一发，最后一发没有下一发，对应按钮同时 disabled。
- */
-const selectedPosition = computed(() =>
-  filteredShots.value.findIndex((s) => s.index === selectedIndex.value))
-const hasPreviousShot = computed(() => selectedPosition.value > 0)
-const hasNextShot = computed(() =>
-  selectedPosition.value >= 0 && selectedPosition.value < filteredShots.value.length - 1)
-
-function goToAdjacentShot(step) {
-  const position = selectedPosition.value
-  if (position < 0) return false
-  const next = position + step
-  if (next < 0 || next >= filteredShots.value.length) return false
-  selectedIndex.value = filteredShots.value[next].index
-  return true
-}
-
-/**
- * 筛选把当前这一发筛掉了 → 关闭详情，不要留一个"列表里已经没有、详情还开着"的状态。
- * （导航本身只在筛选结果内移动，所以这是筛选变化时唯一的不一致入口。）
- */
-watch(filteredShots, (rows) => {
-  if (selectedIndex.value == null) return
-  if (!rows.some((s) => s.index === selectedIndex.value)) closeDetail()
-})
-
-/** 键盘：方向键等价于上一发 / 下一发；表单控件聚焦时不劫持 */
-function isFormControl(target) {
-  return !!target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-}
-
-function onDetailKeydown(event) {
-  if (!detailOpen.value) return
-  if (event.key === 'Escape') {
-    event.stopPropagation()
-    closeDetail()
-    return
-  }
-  if (event.key === 'Tab' && isOverlay.value) {
-    const controls = [...(detailPane.value?.querySelectorAll('button:not(:disabled), summary, [tabindex="0"]') || [])]
-    const first = controls[0], last = controls.at(-1)
-    if (event.shiftKey && (event.target === first || event.target === detailPane.value)) {
-      event.preventDefault()
-      last?.focus()
-    } else if (!event.shiftKey && event.target === last) {
-      event.preventDefault()
-      first?.focus()
-    }
-    return
-  }
-  if (isFormControl(event.target)) return
-  if (event.key === 'ArrowLeft' && goToAdjacentShot(-1)) event.preventDefault()
-  else if (event.key === 'ArrowRight' && goToAdjacentShot(1)) event.preventDefault()
-}
-
-/**
- * compact 全屏详情里的左右滑动切换（Pointer Events，无手势依赖）：
- * 只在 compact + 详情打开时生效；横向位移要足够大且明显压过纵向位移，避免和纵向滚动打架。
- */
-const SWIPE_MIN_DX = 48
-const SWIPE_DX_RATIO = 1.25
-let swipeStart = null
-
-function onDetailPointerDown(event) {
-  if (layout.value !== 'compact' || !detailOpen.value) return
-  swipeStart = { x: event.clientX, y: event.clientY }
-}
-
-function onDetailPointerUp(event) {
-  const start = swipeStart
-  swipeStart = null
-  if (!start || layout.value !== 'compact' || !detailOpen.value) return
-  const dx = event.clientX - start.x
-  const dy = event.clientY - start.y
-  if (Math.abs(dx) < SWIPE_MIN_DX || Math.abs(dx) <= Math.abs(dy) * SWIPE_DX_RATIO) return
-  goToAdjacentShot(dx < 0 ? 1 : -1)
-}
 
 /**
  * 在 3D 装甲查看器里复现这一发：装甲查看器属于坦克百科侧（独立页面），
  * 工作台只把发射数据交出去（本地交接通道，无服务端），导航仍走 router。
  * 返回是否真的发起了导航（compact 直达据此决定清选择还是退回本地检视面板）。
  */
+const {
+  layout, guideLayout, directOpening, detailOpen, isOverlay,
+  detailPane, guideInset, setGuideInset,
+  applyLayout, selectShot, showDetail, closeDetail,
+  selectedPosition, hasPreviousShot, hasNextShot, goToAdjacentShot,
+  onDetailKeydown, onDetailPointerDown, onDetailPointerUp,
+} = useShotsDetail({
+  shots, filteredShots, selectedIndex, paneRoot, onboarding,
+  availability3d: () => availability(Feature.PLAYBACK_3D), openInViewer, rowHas3d,
+})
+
 async function openInViewer(s) {
   if (!requireFeature(Feature.PLAYBACK_3D)) return false
   if (!rowHas3d(s)) return false
@@ -596,33 +157,15 @@ async function openInViewer(s) {
   // s 是 reactive proxy（selectedShot 派生），structuredClone 不可克隆 → JSON 往返
   // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
   s = JSON.parse(JSON.stringify(s))
-  const sequence = parseSeq
+  const sequence = parseSeqNow()
   storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))), { battleStartRaw: battleStartRaw.value })
   const query = await shotViewerQuery(s)
-  if (sequence !== parseSeq || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return false
+  if (sequence !== parseSeqNow() || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return false
   // Routing remains owned by the workspace. Both entry and viewer navigation share one config resolver.
   if (!props.navigate) return false
   props.navigate({ query })
   return true
 }
-
-onMounted(() => {
-  if (typeof ResizeObserver !== 'function' || !paneRoot.value) return
-  observer = new ResizeObserver((entries) => {
-    const width = entries[0]?.contentRect?.width
-    if (width) applyLayout(width)
-  })
-  observer.observe(paneRoot.value)
-  const initialWidth = paneRoot.value.getBoundingClientRect().width
-  if (initialWidth) applyLayout(initialWidth)
-})
-
-onBeforeUnmount(() => {
-  // 工作台退出登录会卸载面板；不得继续启动后续解析或资产富化。
-  parseSeq++
-  observer?.disconnect()
-  observer = null
-})
 </script>
 
 <template>
@@ -824,174 +367,4 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
-/* 配色一律走语义 token（两档主题同一份规则）；容器查询决定 Master–Detail 分档，
-   不按视口——工作台可能被抽屉挤窄。 */
-.shots-pane:fullscreen { padding: var(--space-3); background: var(--color-canvas); overflow-y: auto; }
-.shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); min-width: 0; }
-.shots-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
-.shots-scope { min-width: 0; }
-.shots-scope h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
-.shots-scope p, .shots-recording-hint { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.shots-recording-hint { margin: 0; }
-.shots-empty-state { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); }
-.shots-empty-state p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
-.shot-master { min-width: 0; }
-.shot-list-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-block-end: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
-.shot-list-heading h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
-.shot-detail-placeholder { padding: var(--space-6); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-secondary); }
-.shot-detail-placeholder h3 { margin: 0 0 var(--space-2); font: var(--type-h3); }
-.shot-detail-placeholder p { margin: 0; font: var(--type-body); }
-
-.shots-note { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
-.shots-cause { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
-
-.shots-filter { display: grid; gap: var(--space-1); min-width: 0; max-width: 100%; }
-/* compact：两项分段占满一行；四项统计固定一行（design-language §9「射击分析」） */
-.shots-scope-switch { flex: 1 1 100%; }
-.shots-pane:has(.shots-scope-switch) :deep(.stat-strip) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.shots-pane:has(.shots-scope-switch) :deep(.stat-strip .stat) { min-width: 0; padding-inline: var(--space-2); }
-.shots-filter-label { color: var(--color-text-secondary); font: var(--type-caption); }
-.shots-select {
-  min-height: var(--control-h-md);
-  max-width: 100%;
-  width: 100%;
-  min-width: 0;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-}
-.shots-select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.shots-split { position: relative; display: grid; gap: var(--space-4); align-items: start; }
-.shots-split.is-expanded { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-width)); }
-
-.shot-list {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  list-style: none;
-}
-
-.shot-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  min-height: var(--row-h);
-  padding: var(--space-3);
-  border: 0;
-  border-block-end: 1px solid var(--color-border-subtle);
-  background: transparent;
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  text-align: start;
-  cursor: pointer;
-}
-.shot-list li:last-child .shot-row { border-block-end: 0; }
-.shot-row.is-selected { background: var(--color-surface-3); }
-.shot-row:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
-
-.shot-time { display: grid; gap: var(--space-1); flex: none; width: 5.5ch; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
-.shot-ordinal { color: var(--color-text-tertiary); font: var(--type-caption); }
-.shot-path { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
-.shot-names { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--space-2); min-width: 0; }
-.shot-vehicle { display: grid; gap: var(--space-1); min-width: 0; }
-.shot-player { color: var(--color-text-secondary); font: var(--type-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shot-name { display: flex; align-items: center; gap: var(--space-1); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shot-arrow { flex: none; color: var(--color-text-tertiary); }
-.shot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.shot-dim { color: var(--color-text-secondary); font: var(--type-caption); }
-.shot-dmg { color: var(--color-text-primary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.shot-kill { color: var(--color-danger); font: var(--type-caption); font-weight: 600; }
-.shot-flag { color: var(--color-warning); font: var(--type-caption); font-weight: 700; cursor: help; }
-
-.shot-detail {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-3);
-  align-content: start;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-}
-.shot-detail:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.shot-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.shot-detail-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
-.shot-detail-position { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
-.shot-matchup { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-2); padding: var(--space-3); background: var(--color-surface-2); border-radius: var(--radius-md); }
-.shot-matchup > div { display: grid; gap: var(--space-1); min-width: 0; }
-.shot-matchup strong { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text-primary); font: var(--type-h3); overflow-wrap: anywhere; }
-.shot-matchup strong :deep(svg), .shot-name :deep(svg) { flex: none; }
-.shot-detail-nav { display: flex; align-items: center; gap: var(--space-1); }
-.shot-nav-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--control-h-sm);
-  min-height: var(--control-h-sm);
-  padding: 0;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-2);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-.shot-nav-btn:disabled { opacity: .45; cursor: not-allowed; }
-.shot-nav-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.shot-detail-grid { display: grid; gap: var(--space-1); margin: 0; }
-.shot-detail-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.shot-detail-row dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.shot-detail-row dd { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-variant-numeric: tabular-nums; }
-.shot-detail-quality summary { padding-block: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
-.shot-detail-quality summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.shot-detail-quality ul { margin: 0; padding-inline-start: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
-.shot-detail-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
-
-/* medium：选中后增加详情列——列表让位，内容高度由 grid 自然撑开；
-   compact：整屏面板 + 遮罩，关闭后焦点回到触发它的那一行 */
-.shots-split { --shot-detail-w: min(var(--shot-detail-width), 42cqi); }
-
-.shots-split.is-medium.has-detail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-w)); }
-
-.shots-split.is-compact .shot-detail {
-  position: fixed;
-  inset: 0;
-  inset-block-start: var(--header-h);
-  z-index: var(--z-sheet);
-  align-content: start;
-  padding: var(--space-4);
-  border: 0;
-  border-radius: 0;
-  background: var(--color-surface-1);
-  overflow-y: auto;
-}
-
-.shots-split.is-compact.has-detail::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-drawer);
-  background: var(--color-scrim);
-}
-
-@media (hover: hover) {
-  .shot-row:not(.is-selected):hover { background: var(--color-surface-2); }
-}
-
-/* 触屏：点击区域抬到 --hit-min（44px），布局不动 */
-@media (pointer: coarse) {
-  .shot-row { min-height: var(--hit-min); }
-  .shots-select { min-height: var(--control-h-md); }
-  .shot-detail-quality summary { min-height: var(--hit-min); display: flex; align-items: center; }
-  .shot-nav-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
-  .shot-detail-nav :deep(.app-button) { min-height: var(--hit-min); }
-}
-</style>
+<style scoped src="./replay-shots.css"></style>

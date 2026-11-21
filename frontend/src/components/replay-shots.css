@@ -1,0 +1,171 @@
+/* ReplayShotsPane 局部样式（随拆分自 ReplayShotsPane.vue，scoped 原样）。 */
+/* stylelint-disable -- ReplayShotsPane.vue 在 stylelint.legacy.json 旧基线；豁免随文件迁移，样式逐字未改 */
+/* 配色一律走语义 token（两档主题同一份规则）；容器查询决定 Master–Detail 分档，
+   不按视口——工作台可能被抽屉挤窄。 */
+.shots-pane:fullscreen { padding: var(--space-3); background: var(--color-canvas); overflow-y: auto; }
+.shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); min-width: 0; }
+.shots-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.shots-scope { min-width: 0; }
+.shots-scope h2 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
+.shots-scope p, .shots-recording-hint { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.shots-recording-hint { margin: 0; }
+.shots-empty-state { display: grid; justify-items: start; gap: var(--space-2); padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); }
+.shots-empty-state p { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.shot-master { min-width: 0; }
+.shot-list-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-block-end: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-list-heading h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.shot-detail-placeholder { padding: var(--space-6); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); color: var(--color-text-secondary); }
+.shot-detail-placeholder h3 { margin: 0 0 var(--space-2); font: var(--type-h3); }
+.shot-detail-placeholder p { margin: 0; font: var(--type-body); }
+
+.shots-note { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
+.shots-cause { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+
+.shots-filter { display: grid; gap: var(--space-1); min-width: 0; max-width: 100%; }
+/* compact：两项分段占满一行；四项统计固定一行（design-language §9「射击分析」） */
+.shots-scope-switch { flex: 1 1 100%; }
+.shots-pane:has(.shots-scope-switch) :deep(.stat-strip) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.shots-pane:has(.shots-scope-switch) :deep(.stat-strip .stat) { min-width: 0; padding-inline: var(--space-2); }
+.shots-filter-label { color: var(--color-text-secondary); font: var(--type-caption); }
+.shots-select {
+  min-height: var(--control-h-md);
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.shots-select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+.shots-split { position: relative; display: grid; gap: var(--space-4); align-items: start; }
+.shots-split.is-expanded { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-width)); }
+
+.shot-list {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  list-style: none;
+}
+
+.shot-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row-h);
+  padding: var(--space-3);
+  border: 0;
+  border-block-end: 1px solid var(--color-border-subtle);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: var(--type-body);
+  text-align: start;
+  cursor: pointer;
+}
+.shot-list li:last-child .shot-row { border-block-end: 0; }
+.shot-row.is-selected { background: var(--color-surface-3); }
+.shot-row:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
+
+.shot-time { display: grid; gap: var(--space-1); flex: none; width: 5.5ch; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.shot-ordinal { color: var(--color-text-tertiary); font: var(--type-caption); }
+.shot-path { display: grid; gap: var(--space-2); min-width: 0; flex: 1; }
+.shot-names { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--space-2); min-width: 0; }
+.shot-vehicle { display: grid; gap: var(--space-1); min-width: 0; }
+.shot-player { color: var(--color-text-secondary); font: var(--type-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-name { display: flex; align-items: center; gap: var(--space-1); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-arrow { flex: none; color: var(--color-text-tertiary); }
+.shot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.shot-dim { color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-dmg { color: var(--color-text-primary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
+.shot-kill { color: var(--color-danger); font: var(--type-caption); font-weight: 600; }
+.shot-flag { color: var(--color-warning); font: var(--type-caption); font-weight: 700; cursor: help; }
+
+.shot-detail {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+}
+.shot-detail:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.shot-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.shot-detail-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.shot-detail-position { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-matchup { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-2); padding: var(--space-3); background: var(--color-surface-2); border-radius: var(--radius-md); }
+.shot-matchup > div { display: grid; gap: var(--space-1); min-width: 0; }
+.shot-matchup strong { display: flex; align-items: center; gap: var(--space-1); color: var(--color-text-primary); font: var(--type-h3); overflow-wrap: anywhere; }
+.shot-matchup strong :deep(svg), .shot-name :deep(svg) { flex: none; }
+.shot-detail-nav { display: flex; align-items: center; gap: var(--space-1); }
+.shot-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.shot-nav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.shot-nav-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.shot-detail-grid { display: grid; gap: var(--space-1); margin: 0; }
+.shot-detail-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.shot-detail-row dt { color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-detail-row dd { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-primary); font: var(--type-body); font-variant-numeric: tabular-nums; }
+.shot-detail-quality summary { padding-block: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
+.shot-detail-quality summary:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.shot-detail-quality ul { margin: 0; padding-inline-start: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
+.shot-detail-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
+
+/* medium：选中后增加详情列——列表让位，内容高度由 grid 自然撑开；
+   compact：整屏面板 + 遮罩，关闭后焦点回到触发它的那一行 */
+.shots-split { --shot-detail-w: min(var(--shot-detail-width), 42cqi); }
+
+.shots-split.is-medium.has-detail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-w)); }
+
+.shots-split.is-compact .shot-detail {
+  position: fixed;
+  inset: 0;
+  inset-block-start: var(--header-h);
+  z-index: var(--z-sheet);
+  align-content: start;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: var(--color-surface-1);
+  overflow-y: auto;
+}
+
+.shots-split.is-compact.has-detail::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+  background: var(--color-scrim);
+}
+
+@media (hover: hover) {
+  .shot-row:not(.is-selected):hover { background: var(--color-surface-2); }
+}
+
+/* 触屏：点击区域抬到 --hit-min（44px），布局不动 */
+@media (pointer: coarse) {
+  .shot-row { min-height: var(--hit-min); }
+  .shots-select { min-height: var(--control-h-md); }
+  .shot-detail-quality summary { min-height: var(--hit-min); display: flex; align-items: center; }
+  .shot-nav-btn { min-width: var(--hit-min); min-height: var(--hit-min); }
+  .shot-detail-nav :deep(.app-button) { min-height: var(--hit-min); }
+}
