@@ -104,6 +104,7 @@ describe('Agent 视觉面配色契约', () => {
       AGENT_FILES['AgentArmorView.vue'],
       '../components/agent-armor-view.css',
       '../components/agent-armor-view-responsive.css',
+      '../components/agent-armor-view-hud-responsive.css',
     ].map((rel) => read(rel)).join('\n')
     const armorPalette = new Set(
       Object.keys(declarationsIn(armorSource, '.armor-view') ?? {}),

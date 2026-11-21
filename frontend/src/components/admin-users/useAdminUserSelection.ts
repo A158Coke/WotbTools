@@ -3,7 +3,18 @@
  * 选择集合按「当前页」语义：第一列 = keycloakUserId（后端 deleteOneInternal 的 target）。
  */
 import { computed, ref } from 'vue'
+import type { Ref } from 'vue'
+import type { components } from '../../api/generated/http-contract.js'
 import * as api from '../../api/admin-users.js'
+
+type AdminUserRow = components['schemas']['AdminUserPage']['items'][number]
+type SelectionContext = {
+  users: Ref<AdminUserRow[]>
+  requireOnline: () => boolean
+  loadUsers: () => Promise<void>
+  showApiError: (message: string) => void
+  errorText: (error: unknown) => string
+}
 
 /**
  * @param {{
@@ -14,8 +25,8 @@ import * as api from '../../api/admin-users.js'
  *  errorText: (error: unknown) => string,
  * }} ctx
  */
-export function useAdminUserSelection({ users, requireOnline, loadUsers, showApiError, errorText }) {
-  const selectedIds = ref([])
+export function useAdminUserSelection({ users, requireOnline, loadUsers, showApiError, errorText }: SelectionContext) {
+  const selectedIds = ref<string[]>([])
   const selectedSet = computed(() => new Set(selectedIds.value))
   const selectedCount = computed(() => selectedIds.value.length)
   const allPageSelected = computed(() =>
@@ -23,20 +34,20 @@ export function useAdminUserSelection({ users, requireOnline, loadUsers, showApi
   const showBulkConfirm = ref(false)
   const bulkConfirmText = ref('')
   const bulkDeleting = ref(false)
-  const bulkResult = ref(null)
+  const bulkResult = ref<Awaited<ReturnType<typeof api.adminDeleteUsers>> | null>(null)
 
   function clearSelection() {
     selectedIds.value = []
   }
 
-  function toggleSelect(u, checked) {
+  function toggleSelect(u: AdminUserRow, checked: boolean) {
     const next = new Set(selectedIds.value)
     if (checked) next.add(u.keycloakUserId)
     else next.delete(u.keycloakUserId)
     selectedIds.value = [...next]
   }
 
-  function toggleSelectAllPage(checked) {
+  function toggleSelectAllPage(checked: boolean) {
     const next = new Set(selectedIds.value)
     for (const u of users.value) {
       if (checked) next.add(u.keycloakUserId)

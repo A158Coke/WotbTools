@@ -4,6 +4,17 @@
  */
 import { ApiError } from '../../utils/http.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../../utils/display.js'
+import type { useI18n } from 'vue-i18n'
+
+type Translate = ReturnType<typeof useI18n>['t']
+type GateContext = {
+  gate: () => boolean
+  initPromise: Promise<unknown>
+  ensureAuthToken: (minimumValiditySeconds: number) => Promise<boolean>
+  login: () => void
+  t: Translate
+  te: (key: string) => boolean
+}
 
 /**
  * 用户管理整页都是 Keycloak Admin + 本地 user_profile 的聚合，没有任何可离线的本地投影，
@@ -21,16 +32,16 @@ import { apiErrorCodeLabel, apiErrorLabel } from '../../utils/display.js'
  * 已缓存的过期 admin session 仍然保留 claims/role（见 useAuth 的本地投影），因此「Admin Users」
  * 入口继续可见；只是这个页面在离线时不能登录、不能请求 backend。
  */
-export function createAdminUsersGate({ gate, initPromise, ensureAuthToken, login, t, te }) {
+export function createAdminUsersGate({ gate, initPromise, ensureAuthToken, login, t, te }: GateContext) {
   function requireAdminUsersOnline() {
     return gate()
   }
 
-  function apiError(error) {
+  function apiError(error: unknown) {
     return apiErrorLabel(t, te, error)
   }
 
-  function errorCodeLabel(code) {
+  function errorCodeLabel(code: string) {
     return apiErrorCodeLabel(t, te, code)
   }
 

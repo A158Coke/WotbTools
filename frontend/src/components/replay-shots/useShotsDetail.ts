@@ -4,6 +4,15 @@
  * compact 全屏），不看视口——工作台可能被侧栏或抽屉挤窄。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { Ref, ComputedRef } from 'vue'
+
+type Shot = { index: number }
+type DetailContext = {
+  shots: Ref<Shot[]>; filteredShots: ComputedRef<Shot[]>; selectedIndex: Ref<number | null>
+  paneRoot: Ref<HTMLElement | null>; onboarding: { guideActive?: Ref<boolean> } | null
+  availability3d: () => { available: boolean }; openInViewer: (shot: Shot) => Promise<boolean>
+  rowHas3d: (shot: Shot) => boolean
+}
 
 const SWIPE_MIN_DX = 48
 const SWIPE_DX_RATIO = 1.25
@@ -18,7 +27,7 @@ const SWIPE_DX_RATIO = 1.25
  *  openInViewer: (shot: object) => Promise<boolean>,
  *  rowHas3d: (shot: object) => boolean,
  * }} ctx */
-export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, onboarding, availability3d, openInViewer, rowHas3d }) {
+export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, onboarding, availability3d, openInViewer, rowHas3d }: DetailContext) {
   const layout = ref('expanded')
   const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
   /** compact 直达复现：手机上点一发直接进入射击复现（design-language §9「射击分析」）；导航期间不弹出检视面板 */
@@ -26,16 +35,16 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
   const detailOpen = computed(() => selectedIndex.value != null && !directOpening.value)
   const isOverlay = computed(() => guideLayout.value === 'compact')
 
-  let observer = null
-  const detailPane = ref(null)
-  let lastTrigger = null
+  let observer: ResizeObserver | null = null
+  const detailPane = ref<HTMLElement | null>(null)
+  let lastTrigger: HTMLElement | null = null
   const guideInset = ref(0)
 
-  function applyLayout(width) {
+  function applyLayout(width: number) {
     layout.value = width >= 900 ? 'expanded' : width >= 600 ? 'medium' : 'compact'
   }
 
-  function selectShot(index, event) {
+  function selectShot(index: number, event?: Event) {
     const shot = shots.value.find(s => s.index === index)
     // compact：点一发直接进入射击复现。新手教程引导中保留检视面板，教程的「从这一发打开」步骤仍有目标。
     // 3D 复现需要在线能力；射击检视是本地能力——3D 当前不可用（离线等）时退回本地详情，不能让这一发无处可看。
@@ -43,7 +52,7 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
       && availability3d().available) {
       selectedIndex.value = index
       directOpening.value = true
-      const trigger = event?.currentTarget ?? null
+      const trigger = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null
       // 只有真的导航走了才清选择；等待期间断网 / 第二次能力检查拒绝 / 出错时退回本地检视面板
       void openInViewer(shot).catch(() => false).then((navigated) => {
         directOpening.value = false
@@ -54,10 +63,10 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
       return
     }
     selectedIndex.value = index
-    showDetail(event?.currentTarget ?? null)
+    showDetail(event?.currentTarget instanceof HTMLElement ? event.currentTarget : null)
   }
 
-  function showDetail(trigger) {
+  function showDetail(trigger: HTMLElement | null) {
     lastTrigger = trigger
     if (isOverlay.value) nextTick(() => detailPane.value?.focus?.())
   }
@@ -77,7 +86,7 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
   const hasNextShot = computed(() =>
     selectedPosition.value >= 0 && selectedPosition.value < filteredShots.value.length - 1)
 
-  function goToAdjacentShot(step) {
+  function goToAdjacentShot(step: number) {
     const position = selectedPosition.value
     if (position < 0) return false
     const next = position + step
@@ -96,11 +105,11 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
   })
 
   /** 键盘：方向键等价于上一发 / 下一发；表单控件聚焦时不劫持 */
-  function isFormControl(target) {
-    return !!target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+  function isFormControl(target: EventTarget | null) {
+    return target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
   }
 
-  function onDetailKeydown(event) {
+  function onDetailKeydown(event: KeyboardEvent) {
     if (!detailOpen.value) return
     if (event.key === 'Escape') {
       event.stopPropagation()
@@ -108,7 +117,7 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
       return
     }
     if (event.key === 'Tab' && isOverlay.value) {
-      const controls = [...(detailPane.value?.querySelectorAll('button:not(:disabled), summary, [tabindex="0"]') || [])]
+      const controls = [...(detailPane.value?.querySelectorAll<HTMLElement>('button:not(:disabled), summary, [tabindex="0"]') || [])]
       const first = controls[0], last = controls.at(-1)
       if (event.shiftKey && (event.target === first || event.target === detailPane.value)) {
         event.preventDefault()
@@ -128,14 +137,14 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
    * compact 全屏详情里的左右滑动切换（Pointer Events，无手势依赖）：
    * 只在 compact + 详情打开时生效；横向位移要足够大且明显压过纵向位移，避免和纵向滚动打架。
    */
-  let swipeStart = null
+  let swipeStart: { x: number; y: number } | null = null
 
-  function onDetailPointerDown(event) {
+  function onDetailPointerDown(event: PointerEvent) {
     if (layout.value !== 'compact' || !detailOpen.value) return
     swipeStart = { x: event.clientX, y: event.clientY }
   }
 
-  function onDetailPointerUp(event) {
+  function onDetailPointerUp(event: PointerEvent) {
     const start = swipeStart
     swipeStart = null
     if (!start || layout.value !== 'compact' || !detailOpen.value) return
@@ -143,6 +152,10 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
     const dy = event.clientY - start.y
     if (Math.abs(dx) < SWIPE_MIN_DX || Math.abs(dx) <= Math.abs(dy) * SWIPE_DX_RATIO) return
     goToAdjacentShot(dx < 0 ? 1 : -1)
+  }
+
+  function onDetailPointerCancel() {
+    swipeStart = null
   }
 
   onMounted(() => {
@@ -161,13 +174,13 @@ export function useShotsDetail({ shots, filteredShots, selectedIndex, paneRoot, 
     observer = null
   })
 
-  function setGuideInset(px) { guideInset.value = px }
+  function setGuideInset(px: number) { guideInset.value = px }
 
   return {
     layout, guideLayout, directOpening, detailOpen, isOverlay,
     detailPane, guideInset, setGuideInset,
     applyLayout, selectShot, showDetail, closeDetail,
     selectedPosition, hasPreviousShot, hasNextShot, goToAdjacentShot,
-    onDetailKeydown, onDetailPointerDown, onDetailPointerUp,
+    onDetailKeydown, onDetailPointerDown, onDetailPointerUp, onDetailPointerCancel,
   }
 }

@@ -4,12 +4,22 @@
  * 导出期间切换玩家不产生「新玩家数据 + 旧坦克图」混合 PNG。
  */
 import { computed, nextTick, ref } from 'vue'
+import type { ComputedRef } from 'vue'
 import { downloadBlob, sanitizeFilename } from '../../utils/exportReplayPng.js'
 import {
   RADAR, axisPoint, axisRay, polygonPoints, radarGridPolygons, radarScaleTicks,
   radarScoreLabelLayout,
 } from '../../utils/radarGeometry.js'
 import { formatRadarVisualScore } from '../../utils/radarScale.js'
+
+type Metric = { normalized: number; available: boolean; label: string; tip?: string; [key: string]: unknown }
+type Vehicle = { tankId: number; label: string; tankName: string; battleText: string; rateText: string }
+type ExportContext = {
+  props: { player: { nickname: string; observedMean?: number | null; cells?: Record<string, unknown> } | null }
+  vehicle: ComputedRef<Vehicle | null>; radarMetrics: ComputedRef<Metric[]>; referenceSeries: ComputedRef<Metric[]>
+  referenceLabel: ComputedRef<string>; isSummary: ComputedRef<boolean>; ratingLine: () => { rating: string }
+  loadPortrait: (tankId: number) => Promise<string | null>
+}
 
 /** @param {{
  *  props: object,
@@ -21,11 +31,11 @@ import { formatRadarVisualScore } from '../../utils/radarScale.js'
  *  ratingLine: () => object,
  *  loadPortrait: (tankId: number) => Promise<string|null>,
  * }} ctx */
-export function useRatingProfileExport({ props, vehicle, radarMetrics, referenceSeries, referenceLabel, isSummary, ratingLine, loadPortrait }) {
+export function useRatingProfileExport({ props, vehicle, radarMetrics, referenceSeries, referenceLabel, isSummary, ratingLine, loadPortrait }: ExportContext) {
   const exportingProfile = ref(false)
-  const exportCardRef = ref(null)
-  const exportPortrait = ref(null)
-  const exportSnapshot = ref(null)
+  const exportCardRef = ref<HTMLElement | null>(null)
+  const exportPortrait = ref<string | null>(null)
+  const exportSnapshot = ref<ReturnType<typeof buildExportSnapshot> | null>(null)
 
   // 出口卡只消费 exportSnapshot（快照未建时为空/占位），禁止再读实时 props/vehicle/radarMetrics/referenceSeries。
   const snapIsSummary = computed(() => !!exportSnapshot.value?.isSummary)
@@ -49,6 +59,7 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
   /** 从当前实时状态构建导出所需数据的一次性不可变快照（在任何 await 之前调用）。 */
   function buildExportSnapshot() {
     const p = props.player
+    if (!p) throw new Error('Cannot export without a player')
     const v = vehicle.value
     const metrics = radarMetrics.value.map(m => ({ ...m }))
     const refs = referenceSeries.value.map(m => ({ ...m }))
@@ -96,13 +107,14 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
       await nextTick()
       await ensureVehiclePortraitForExport()
       await nextTick()
+      if (!exportCardRef.value || !exportSnapshot.value) throw new Error('Export card unavailable')
       const html2canvas = (await import('html2canvas')).default
       // 画布底色取导出卡自身的语义 token 底色（随主题），不再写死深色
       const cardEl = exportCardRef.value.querySelector('.rp-card') || exportCardRef.value
       const canvas = await html2canvas(exportCardRef.value, {
         scale: 2, useCORS: true, backgroundColor: getComputedStyle(cardEl).backgroundColor || null,
       })
-      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
+      const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'))
       if (!blob) throw new Error('toBlob returned null')
       const base = 'wotbtools-rating-profile-' + sanitizeFilename(exportSnapshot.value.nickname || 'player')
       await downloadBlob(blob, base + '.png')
@@ -127,8 +139,8 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
     exportPortrait.value = url ? await ensureImageLoaded(url) : null
   }
 
-  function ensureImageLoaded(url) {
-    return new Promise((resolve) => {
+  function ensureImageLoaded(url: string) {
+    return new Promise<string | null>((resolve) => {
       const img = new Image()
       img.onload = () => resolve(url)
       img.onerror = () => resolve(null)

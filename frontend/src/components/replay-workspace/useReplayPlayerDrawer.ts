@@ -3,7 +3,13 @@
  * 只存 identity（scope + accountId + arenaId），不存 mutable row；数据按 context 实时 resolve。
  */
 import { computed, ref, watch } from 'vue'
+import type { Ref, ComputedRef } from 'vue'
+import type { ReplayResult } from '../../types/replay.js'
 import { CW_DIM_KEYS } from '../../utils/playerSummaryMerge.js'
+
+type Selection = { scope: string; accountId: number | string; arenaId?: string | null; order?: Array<number | string> }
+type UnifiedRow = { accountId: number | string; cells: Record<string, unknown>; league: { dimensionMeans?: unknown; mostUsedVehicle?: unknown } | null }
+type DrawerContext = { unifiedRows: ComputedRef<UnifiedRow[]>; resp: Ref<ReplayResult | null>; selectionRevision: Ref<number>; isSummaryView: ComputedRef<boolean>; currentSingleIndex: ComputedRef<number> }
 
 /** @param {{
  *  unifiedRows: import('vue').ComputedRef<Array<object>>,
@@ -12,15 +18,15 @@ import { CW_DIM_KEYS } from '../../utils/playerSummaryMerge.js'
  *  isSummaryView: import('vue').ComputedRef<boolean>,
  *  currentSingleIndex: import('vue').ComputedRef<number>,
  * }} ctx */
-export function useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, isSummaryView, currentSingleIndex }) {
+export function useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, isSummaryView, currentSingleIndex }: DrawerContext) {
   // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
-  const selectedPlayerContext = ref(null)
+  const selectedPlayerContext = ref<Selection | null>(null)
 
   // ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
-  const navOrder = ref([])
+  const navOrder = ref<number[]>([])
   const navIndex = ref(-1)
 
-  function selectPlayer(context) {
+  function selectPlayer(context: Selection) {
     selectedPlayerContext.value = context
     const order = Array.isArray(context.order) ? context.order.map(Number) : []
     navOrder.value = order

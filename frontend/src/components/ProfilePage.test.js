@@ -1079,9 +1079,9 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     // pending 清理逻辑已拆分至 profile/ 模块：不变量覆盖宿主 + 各模块源码
     const source = [
       'src/components/ProfilePage.vue',
-      'src/components/profile/useProfileSession.js',
-      'src/components/profile/useProfileWotbAccount.js',
-      'src/components/profile/useProfileHundred.js',
+      'src/components/profile/useProfileSession.ts',
+      'src/components/profile/useProfileWotbAccount.ts',
+      'src/components/profile/useProfileHundred.ts',
     ].map((rel) => readFileSync(join(process.cwd(), rel), 'utf8')).join('\n')
     const finallyBlocks = []
     let cursor = 0

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 装甲查看器左上角「参数」面板（拆分自 AgentArmorView.vue 模板，行为原样）。
  * 场景静态 DOM 契约（info-panel / config-row / shooter-select / target-select /
@@ -26,6 +26,15 @@ defineProps({
 })
 const emit = defineEmits(['update:toolsOpen', 'update:shooterOpen', 'update:targetOpen', 'open-picker', 'apply-side', 'shooter-ready', 'target-ready'])
 const route = useRoute()
+function queryValue(value: string | null | (string | null)[] | undefined): string | undefined {
+    const selected = Array.isArray(value) ? value[0] : value
+    return selected ?? undefined
+}
+function tankIdValue(value: string | number | null): number | undefined {
+    if (value == null) return undefined
+    const id = Number(value)
+    return Number.isFinite(id) ? id : undefined
+}
 </script>
 
 <template>
@@ -83,14 +92,14 @@ const route = useRoute()
                 <ArmorSideConfig
                     v-if="loadoutActive"
                     :key="`shooter-${shooterSetupId ?? 'none'}`"
-                    :tank-id="shooterSetupId"
+                    :tank-id="tankIdValue(shooterSetupId)"
                     :expanded="shooterOpen"
-                    :config="shooterConfigValue"
-                    :engine="route.query.sengine"
-                    :track="route.query.strack"
-                    :dev="route.query.sdev"
-                    :upgrade="armorUpgrade(route.query.supgrade)"
-                    :abilities="route.query.sabilities"
+                    :config="shooterConfigValue ?? undefined"
+                    :engine="queryValue(route.query.sengine)"
+                    :track="queryValue(route.query.strack)"
+                    :dev="queryValue(route.query.sdev)"
+                    :upgrade="armorUpgrade(queryValue(route.query.supgrade))"
+                    :abilities="queryValue(route.query.sabilities)"
                     @apply="patch => emit('apply-side', 'shooter', patch)"
                     @ready="value => emit('shooter-ready', value)"
                 />
@@ -107,14 +116,14 @@ const route = useRoute()
                 <ArmorSideConfig
                     v-if="loadoutActive"
                     :key="`target-${targetSetupId ?? 'none'}`"
-                    :tank-id="targetSetupId"
+                    :tank-id="tankIdValue(targetSetupId)"
                     :expanded="targetOpen"
-                    :config="route.query.config"
-                    :engine="route.query.engine"
-                    :track="route.query.track"
-                    :dev="route.query.dev"
-                    :upgrade="armorUpgrade(route.query.upgrade)"
-                    :abilities="route.query.abilities"
+                    :config="queryValue(route.query.config)"
+                    :engine="queryValue(route.query.engine)"
+                    :track="queryValue(route.query.track)"
+                    :dev="queryValue(route.query.dev)"
+                    :upgrade="armorUpgrade(queryValue(route.query.upgrade))"
+                    :abilities="queryValue(route.query.abilities)"
                     @apply="patch => emit('apply-side', 'target', patch)"
                     @ready="value => emit('target-ready', value)"
                 />

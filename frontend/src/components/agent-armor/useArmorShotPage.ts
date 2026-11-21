@@ -9,6 +9,8 @@ import { fetchReplayShots, shotViewerQuery } from '../../scene/agentData.js'
 import { shotResultBadge } from '../../utils/shotPresentation.js'
 import { usePointer } from '../../composables/useBreakpoint.js'
 
+type ReplayShot = Awaited<ReturnType<typeof fetchReplayShots>>['shots'][number]
+
 export function useArmorShotPage() {
     const { t } = useI18n()
     const router = useRouter()
@@ -16,8 +18,8 @@ export function useArmorShotPage() {
     const isShotPage = computed(() => route.query.shot != null)
     // 射击复现没有升级态证据：缺省显式 stock（raw），不把回放未证明的配置补成 XI 满级；
     // 普通装甲检视缺省交给 resolveUpgradeSelection（XI→top）。
-    const armorUpgrade = value => (isShotPage.value ? (value ?? 'stock') : value)
-    const shotSnapshot = ref([])
+    const armorUpgrade = (value: string | null | undefined) => (isShotPage.value ? (value ?? 'stock') : value)
+    const shotSnapshot = ref<ReplayShot[]>([])
     const battleStartRaw = ref(0)
     const activeShot = computed(() => shotSnapshot.value.find(shot => String(shot.index) === String(route.query.shot)))
     const shotPosition = computed(() => shotSnapshot.value.indexOf(activeShot.value))
@@ -28,7 +30,7 @@ export function useArmorShotPage() {
     let navigationSeq = 0
     let requestSeq = 0
     // The stored list is the selected shooter's snapshot. The scene fetches its own copy before mirroring.
-    async function readShotSnapshot(seq) {
+    async function readShotSnapshot(seq: number) {
         if (!isShotPage.value) { shotSnapshot.value = []; return }
         try {
             const data = await fetchReplayShots()
@@ -38,7 +40,7 @@ export function useArmorShotPage() {
             }
         } catch { if (alive && seq === navigationSeq) shotSnapshot.value = [] } // The scene reports the actionable missing-handoff error.
     }
-    function shotTankName(role) {
+    function shotTankName(role: 'shooter' | 'target') {
         return activeShot.value?.[`${role}_tank_name`] || t('agentShots.unknown_tank')
     }
     function backToShots() {
@@ -52,7 +54,7 @@ export function useArmorShotPage() {
         if (canGoBack) router.back()
         else router.replace({ query: { view: 'agent-tankopedia' } })
     }
-    async function adjacentShot(offset) {
+    async function adjacentShot(offset: number) {
         const shot = shotSnapshot.value[shotPosition.value + offset]
         if (!shot || navigating.value) return
         const seq = ++requestSeq

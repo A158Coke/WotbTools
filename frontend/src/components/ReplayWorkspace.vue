@@ -29,11 +29,11 @@ import Banner from './Banner.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import BattlePicker from './BattlePicker.vue'
 import { useReplayPaneCentering } from './replay-workspace/useReplayPaneCentering'
-import { useWorkspaceDemoLoad } from './replay-workspace/useWorkspaceDemoLoad.js'
-import { useWorkspaceShellChrome } from './replay-workspace/useWorkspaceShellChrome.js'
-import { capabilityOptions, viewFor } from './replay-workspace/replayWorkspaceMeta.js'
+import { useWorkspaceDemoLoad } from './replay-workspace/useWorkspaceDemoLoad.ts'
+import { useWorkspaceShellChrome } from './replay-workspace/useWorkspaceShellChrome.ts'
+import { capabilityOptions, viewFor } from './replay-workspace/replayWorkspaceMeta.ts'
 import { useWorkspaceBattlePicker } from './replay-workspace/useWorkspaceBattlePicker'
-import { useWorkspaceFileSelection } from './replay-workspace/useWorkspaceFileSelection.js'
+import { useWorkspaceFileSelection } from './replay-workspace/useWorkspaceFileSelection.ts'
 import { battlePickerOptions, buildSeriesOverview, replayCollectionRows } from '../utils/replaySeries.js'
 
 /**
@@ -171,7 +171,7 @@ const { demoLoading, demoError, loadDemo, onDemoClick, dispose: disposeDemoLoad 
   workspace, setCapability, analyze, confirm, t, sampleOpened: () => onboarding?.sampleOpened(),
 })
 const { workspaceContentEl } = useReplayPaneCentering({ activeCapability, initialLoading })
-const { pageActive, forcedLandscape, autoFullscreenToken } = useWorkspaceShellChrome({
+const { pageActive, forcedLandscape, autoFullscreenToken, wantsImmersive } = useWorkspaceShellChrome({
   activeCapability, playbackMounted, threeMounted, workspaceReady, workspaceContentEl,
 })
 // 解析完成（每份新结果一次）：toast + 本机通知

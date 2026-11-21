@@ -13,11 +13,11 @@ import { apiErrorLabel } from '../utils/display.js'
 import AppButton from './AppButton.vue'
 import { sectionHeroStyle } from '../shared/sectionHeroes'
 
-import { useProfileIdentity } from './profile/useProfileIdentity.js'
-import { useProfileRecords } from './profile/useProfileRecords.js'
-import { useProfileHundred } from './profile/useProfileHundred.js'
-import { useProfileWotbAccount } from './profile/useProfileWotbAccount.js'
-import { useProfileSession } from './profile/useProfileSession.js'
+import { useProfileIdentity } from './profile/useProfileIdentity.ts'
+import { useProfileRecords } from './profile/useProfileRecords.ts'
+import { useProfileHundred } from './profile/useProfileHundred.ts'
+import { useProfileWotbAccount } from './profile/useProfileWotbAccount.ts'
+import { useProfileSession } from './profile/useProfileSession.ts'
 import { getUserProfile } from '../api/user-profile.js'
 const { locale, t, te } = useI18n()
 const navigateView = inject(NAVIGATE_VIEW_KEY, null)

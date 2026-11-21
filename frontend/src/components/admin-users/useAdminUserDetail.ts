@@ -4,8 +4,20 @@
  * 删除只在抽屉底部（AdminDangerZone，输入 DELETE），目标就是抽屉里这一行。
  */
 import { ref } from 'vue'
+import type { components } from '../../api/generated/http-contract.js'
 import { rowOpenTarget } from '../adminListRow'
 import * as api from '../../api/admin-users.js'
+
+type AdminUserRow = NonNullable<Awaited<ReturnType<typeof api.adminSearchUsers>>>['items'][number]
+type AdminUserDetail = components['schemas']['AdminUserDetail']
+type DetailContext = {
+  requireOnline: () => boolean
+  loadUsers: () => Promise<void>
+  showError: (message: string) => void
+  apiError: (error: unknown) => string
+  isRowControlClick: (event: Event) => boolean
+}
+type DangerZoneHandle = { reset: () => void }
 
 /**
  * @param {{
@@ -16,22 +28,22 @@ import * as api from '../../api/admin-users.js'
  *  isRowControlClick: (event: unknown) => boolean,
  * }} ctx
  */
-export function useAdminUserDetail({ requireOnline, loadUsers, showError, apiError, isRowControlClick }) {
-  const detailRow = ref(null)
-  const detailUser = ref(null)
-  const detailReturnFocus = ref(null)
-  const dangerZone = ref(null)
+export function useAdminUserDetail({ requireOnline, loadUsers, showError, apiError, isRowControlClick }: DetailContext) {
+  const detailRow = ref<AdminUserRow | null>(null)
+  const detailUser = ref<AdminUserDetail | null>(null)
+  const detailReturnFocus = ref<HTMLElement | null>(null)
+  const dangerZone = ref<DangerZoneHandle | null>(null)
   const deleting = ref(false)
   const deleteResult = ref('')
   let detailLoadGeneration = 0
-  let deleteCloseTimer = null
+  let deleteCloseTimer: ReturnType<typeof setTimeout> | null = null
 
   /**
    * 点行 / 行的打开按钮：抽屉立即打开并显示列表行字段；Keycloak 已删除的用户没有详情可拉，
    * 抽屉只显示行字段与说明（删除仍可用，与原来「查看禁用、删除可用」一致）。
    * 详情请求走门禁：非-online 时不发 adminGetUser。
    */
-  function openDetail(u, event) {
+  function openDetail(u: AdminUserRow, event?: Event) {
     detailLoadGeneration += 1
     detailReturnFocus.value = event ? rowOpenTarget(event) : null
     detailRow.value = u
@@ -42,11 +54,11 @@ export function useAdminUserDetail({ requireOnline, loadUsers, showError, apiErr
     if (!u.keycloakUserMissing) loadDetail(u)
   }
 
-  function onRowClick(u, event) {
+  function onRowClick(u: AdminUserRow, event: Event) {
     if (!isRowControlClick(event)) openDetail(u, event)
   }
 
-  async function loadDetail(u) {
+  async function loadDetail(u: AdminUserRow) {
     if (!requireOnline()) return
     const generation = ++detailLoadGeneration
     try {
@@ -90,7 +102,7 @@ export function useAdminUserDetail({ requireOnline, loadUsers, showError, apiErr
 
   function dispose() {
     detailLoadGeneration += 1
-    clearTimeout(deleteCloseTimer)
+    if (deleteCloseTimer !== null) clearTimeout(deleteCloseTimer)
   }
 
   return {

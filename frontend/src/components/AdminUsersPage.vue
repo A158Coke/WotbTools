@@ -21,12 +21,13 @@ import AdminFilterBar from './AdminFilterBar.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import { isRowControlClick } from './adminListRow'
-import { useAdminUserFilters } from './admin-users/useAdminUserFilters.js'
-import { useAdminUserPagination } from './admin-users/useAdminUserPagination.js'
-import { useAdminUserSelection } from './admin-users/useAdminUserSelection.js'
-import { useAdminUserDetail } from './admin-users/useAdminUserDetail.js'
-import { createAdminUsersGate } from './admin-users/adminUsersGate.js'
-import { createAdminUsersRowPresenter } from './admin-users/adminUsersRow.js'
+import { useAdminUserFilters } from './admin-users/useAdminUserFilters.ts'
+import { useAdminUserPagination } from './admin-users/useAdminUserPagination.ts'
+import { useAdminUserSelection } from './admin-users/useAdminUserSelection.ts'
+import { useAdminUserDetail } from './admin-users/useAdminUserDetail.ts'
+import { createAdminUsersGate } from './admin-users/adminUsersGate.ts'
+import { apiErrorLabel } from '../utils/display.js'
+import { createAdminUsersRowPresenter } from './admin-users/adminUsersRow.ts'
 import './admin-list.css'
 
 const { t, te } = useI18n()
@@ -42,7 +43,7 @@ const { availability, requireFeature } = useFeatureGate()
 const { connectivity } = useConnectivity()
 
 // 门禁 → 认证（ensureToken / login） → backend：非-online 时先被门禁挡住，绝不发 admin API。
-// 门禁/认证细节见 admin-users/adminUsersGate.js（PR 467 review blocker 的顺序约定）。
+// 门禁/认证细节见 admin-users/adminUsersGate.ts（PR 467 review blocker 的顺序约定）。
 const { requireAdminUsersOnline, apiError, errorCodeLabel, ensureToken } = createAdminUsersGate({
   gate: () => requireFeature(Feature.ADMIN_USERS),
   initPromise, ensureAuthToken, login, t, te,

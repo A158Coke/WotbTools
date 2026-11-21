@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * 装甲查看器侧配置卡外壳（拆分自 AgentArmorView.vue 模板，行为原样）：
  * 角色标签 + 场景选择的换车按钮（静态 DOM ID 契约）+ 可选展开/收起开关 + 内容插槽。

@@ -3,6 +3,8 @@
  * 克隆 DOM → 表格展开/测量 → html2canvas → 下载；失败写回 workspace error。
  */
 import { ref } from 'vue'
+import type { Ref, ComputedRef } from 'vue'
+import type { ReplayResult } from '../../types/replay.js'
 import { mapLabel } from '../../utils/helpers.js'
 import {
   getExportTarget,
@@ -26,8 +28,8 @@ const EXPORT_BG = {
   dark: '#1e1e1e'
 }
 
-function createExportClone(target, theme) {
-  const clone = target.cloneNode(true)
+function createExportClone(target: HTMLElement, theme: 'light' | 'dark') {
+  const clone = target.cloneNode(true) as HTMLElement
   clone.classList.add('replay-export-root', EXPORT_THEME_CSS[theme])
   const container = document.createElement('div')
   container.style.position = 'fixed'
@@ -41,15 +43,15 @@ function createExportClone(target, theme) {
   return { clone, container }
 }
 
-function prepareReplayExportClone(clone) {
+function prepareReplayExportClone(clone: HTMLElement) {
   if (!clone) return
   // PNG 总是导出表格：卡片模式下表格只是被隐藏
   for (const el of clone.querySelectorAll('.player-cards')) el.remove()
-  for (const el of clone.querySelectorAll('.tablewrap, .scroll-hint')) el.style.display = ''
+  for (const el of clone.querySelectorAll<HTMLElement>('.tablewrap, .scroll-hint')) el.style.display = ''
   for (const el of clone.querySelectorAll('.selected')) {
     el.classList.remove('selected')
   }
-  for (const el of clone.querySelectorAll('.sticky-col')) {
+  for (const el of clone.querySelectorAll<HTMLElement>('.sticky-col')) {
     el.style.position = 'static'
     el.style.left = 'auto'
     el.style.right = 'auto'
@@ -57,22 +59,22 @@ function prepareReplayExportClone(clone) {
   }
 }
 
-function expandExportTables(clone) {
-  for (const wrap of clone.querySelectorAll('.tablewrap')) {
+function expandExportTables(clone: HTMLElement) {
+  for (const wrap of clone.querySelectorAll<HTMLElement>('.tablewrap')) {
     wrap.style.overflow = 'visible'
     wrap.style.maxWidth = 'none'
     wrap.style.width = 'max-content'
   }
 }
 
-function measureExportClone(clone) {
+function measureExportClone(clone: HTMLElement) {
   const naturalRootW = maxFiniteDimension(
     clone.scrollWidth,
     clone.getBoundingClientRect().width
   )
 
   let maxDescendantW = 0
-  for (const wrap of clone.querySelectorAll('.tablewrap')) {
+  for (const wrap of clone.querySelectorAll<HTMLElement>('.tablewrap')) {
     const wrapW = maxFiniteDimension(wrap.scrollWidth, wrap.getBoundingClientRect().width)
     if (wrapW > maxDescendantW) maxDescendantW = wrapW
     for (const tbl of wrap.querySelectorAll('table')) {
@@ -81,11 +83,11 @@ function measureExportClone(clone) {
     }
   }
   for (const child of clone.children) {
-    const csw = maxFiniteDimension(child.scrollWidth, child.getBoundingClientRect().width)
+    const csw = maxFiniteDimension(child instanceof HTMLElement ? child.scrollWidth : 0, child.getBoundingClientRect().width)
     if (csw > maxDescendantW) maxDescendantW = csw
   }
 
-  const cs = clone.ownerDocument.defaultView.getComputedStyle(clone)
+  const cs = window.getComputedStyle(clone)
   const padLeft = parseFloat(cs.paddingLeft) || 0
   const padRight = parseFloat(cs.paddingRight) || 0
   const borderLeft = parseFloat(cs.borderLeftWidth) || 0
@@ -104,14 +106,14 @@ function measureExportClone(clone) {
   return { width: Math.ceil(finalW), height: Math.ceil(finalH) }
 }
 
-function waitForLayout(nextTick) {
-  return new Promise(resolve => {
+function waitForLayout(nextTick: () => Promise<void>) {
+  return new Promise<void>(resolve => {
     // 等一帧：nextTick 后 requestAnimationFrame
-    nextTick().then(() => requestAnimationFrame(resolve))
+    nextTick().then(() => requestAnimationFrame(() => resolve()))
   })
 }
 
-function cleanupExportClone(container) {
+function cleanupExportClone(container: HTMLElement) {
   if (container && container.parentNode) {
     container.parentNode.removeChild(container)
   }
@@ -131,7 +133,13 @@ function cleanupExportClone(container) {
  *  nextTick: () => Promise<void>,
  * }} ctxIn
  */
-export function useReplayPngExport(ctxIn) {
+type ExportContext = {
+  loading: Ref<boolean>; error: Ref<string>; isSummaryView: ComputedRef<boolean>
+  currentSingleIndex: ComputedRef<number>; resp: Ref<ReplayResult | null>
+  aggregateRef: Ref<HTMLElement | null>; battleRefs: Ref<HTMLElement[]>
+  t: (key: string) => string; locale: Ref<string>; nextTick: () => Promise<void>
+}
+export function useReplayPngExport(ctxIn: ExportContext) {
   const exportingPng = ref(false)
 
   async function downloadResultPng() {
@@ -171,7 +179,7 @@ export function useReplayPngExport(ctxIn) {
         height: dims.height
       })
 
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Replay PNG export: canvas.toBlob returned null')
 
       const filename = exportPngFilename(exportTab, isNaN(exportBattleIdx) ? 0 : exportBattleIdx, exportMapName)

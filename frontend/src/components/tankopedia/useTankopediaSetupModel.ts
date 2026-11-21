@@ -3,6 +3,11 @@
  * 研发树 ↔ 配置栏/参数面板三方共用同一 URL 状态；特性 delta 跟踪与弹种表联动。
  */
 import { computed, ref, watch } from 'vue'
+import type { ComputedRef, Ref } from 'vue'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
+import type { SetupSelection } from '../../replay-local/compute/tankSetup'
+import type { TankCharacteristics } from '../../replay-local/compute/characteristics'
+import type { useTankopediaDetailData } from './useTankopediaDetailData'
 import { moduleTreeLayout } from '../../utils/techTreeLayout.js'
 import { computeCharacteristics, penetrationCoefficient } from '../../replay-local/compute/characteristics'
 import { shellLabel, normType, isPremiumShell } from '../../scene/tankMeta.js'
@@ -24,7 +29,14 @@ import {
  *  t: (key: string, params?: unknown) => string,
  *  te: (key: string) => boolean,
  * }} ctx */
-export function useTankopediaSetupModel({ detailId, writeState, data, cache, route, VIEW, locale, t, te }) {
+type TreeNode = { stem: string; tankId: number; tier?: number }
+type GraphNode = { install?: { kind: string; index: number; occurrences: { turret: number; gun: number }[] } }
+type SetupContext = {
+  detailId: ComputedRef<number | null>; writeState: (patch: Record<string, unknown>) => void
+  data: ReturnType<typeof useTankopediaDetailData>; cache: Ref<Record<string, { name?: string; tier?: number }>>
+  route: RouteLocationNormalizedLoaded; VIEW: string; locale: Ref<string>
+}
+export function useTankopediaSetupModel({ detailId, writeState, data, cache, route, VIEW, locale }: SetupContext) {
   const { detail, modules, catalog, techTree, upgradeSelection, cfgs, setup } = data
 
   // ---- 研发弹窗（研发树 ↔ 配置栏/参数面板 三方共用同一 URL 状态） ----
@@ -57,7 +69,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   })
   /** 升级元数据不可用（版本/脚本/投影字段缺失）时禁止写入研发状态：树保持只读展示。 */
   const augmentWritable = computed(() => upgradeSelection.value.supported !== false)
-  function onAugmentResearch(ids) {
+  function onAugmentResearch(ids: number[]) {
     if (!augmentWritable.value) return
     writeState({ upgrade: ids.length ? 'custom' : 'stock', abilities: ids })
   }
@@ -78,7 +90,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     const stem = detail.value?.stem
     const nodes = techTree.value?.nodes
     if (!stem || !nodes?.length) return []
-    const byStem = new Map(nodes.map(n => [n.stem, n]))
+    const byStem = new Map<string, TreeNode>(nodes.map((n: TreeNode) => [n.stem, n]))
     const out = new Map()
     for (const edge of techTree.value.edges || []) {
       if (edge.to !== stem) continue
@@ -104,7 +116,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
       return []
     }
     if (!layout) return []
-    const byStem = new Map((techTree.value?.nodes || []).map(n => [n.stem, n]))
+    const byStem = new Map<string, TreeNode>((techTree.value?.nodes || []).map((n: TreeNode) => [n.stem, n]))
     return layout.nextVehicles.map((v) => {
       const node = byStem.get(v.stem)
       const summary = node ? cache.value?.[String(node.tankId)] : null
@@ -121,7 +133,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   })
 
   /** 研发图点节点 = 安装（与配置栏模块矩阵同一套对号规则，写回同一组 URL 键）。 */
-  function installFromGraph(node) {
+  function installFromGraph(node: GraphNode) {
     const m = modules.value
     const d = detail.value
     const sel = setup.value
@@ -138,7 +150,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   }
 
   /** 研发图点「下一级坦克」= 切到那辆车（清掉上一辆车的配置下标）。 */
-  function openVehicleFromGraph(tankId) {
+  function openVehicleFromGraph(tankId: number | null) {
     if (!tankId) return
     writeState({ tank: Number(tankId), config: null, engine: null, track: null, upgrade: null, abilities: [] })
   }
@@ -156,13 +168,14 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
 
   const characteristics = computed(() => (computeInput.value ? computeCharacteristics(computeInput.value) : null))
   /** 上一次渲染的特性（BK useDelta 同逻辑）：delta = 当前值 − 上一次值；初次加载无 delta。 */
-  const previousCharacteristics = ref(null)
+  const previousCharacteristics = ref<TankCharacteristics | null>(null)
   /** 重置时清掉对比值：记录重置目标，特性第一次落到该目标时把 previous 对齐（delta=0）。 */
-  let resetTargetKey = null
-  const effectiveShell = selection => (selection.shell == null
+  let resetTargetKey: string | null = null
+  type SelectionKeyInput = Omit<SetupSelection, 'shell' | 'upgrade'> & { shell: number | null; upgrade?: SetupSelection['upgrade'] | null }
+  const effectiveShell = (selection: SelectionKeyInput) => (selection.shell == null
     ? defaultShellIndex(cfgs.value[selection.config])
     : selection.shell)
-  const selectionKey = selection => JSON.stringify([
+  const selectionKey = (selection: SelectionKeyInput) => JSON.stringify([
     selection.config, effectiveShell(selection), selection.engine, selection.track,
     selection.devices, selection.consumables, selection.provisions,
     selection.skills, selection.conditionalSkills, selection.camouflage,
@@ -170,8 +183,8 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   ])
   /** 上一次计入对比基线的选择键：URL 提交（pending → route.query）会让特性重算一次，
    *  内容相同但对象是新引用；若照单收下，previous 就被抹成新值，delta 立刻消失。 */
-  let lastSelectionKey = null
-  let lastTankId = null
+  let lastSelectionKey: string | null = null
+  let lastTankId: number | null = null
   watch(characteristics, (value, oldValue) => {
     const tankId = detail.value?.tank_id ?? null
     // 加载/换车过渡期间不能沿用上一辆车（或上一配置）的基线，否则新车首次参数表
@@ -226,7 +239,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   }))
 
   const moduleLang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
-  function moduleName(item) {
+  function moduleName(item: Record<string, unknown> | null) {
     if (!item) return ''
     const name = [item[`name_${moduleLang.value}`], item.name_en, item['name_zh-Hans'], item.name]
       .find(value => typeof value === 'string' && value.trim() && !value.trim().startsWith('#'))
@@ -267,7 +280,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
   // ---- 选择写回 URL（replace）：全部配置器字段一份 owner，分享/返回可恢复。 ----
 
   /** 初始/顶级快捷：只切换模块（config/发动机/履带），保留装备与物品选择。 */
-  function applyModulePreset(kind) {
+  function applyModulePreset(kind: 'stock' | 'top') {
     writeSetup({
       ...(upgradeSelection.value.available
         ? { upgrade: kind === 'stock' ? 'stock' : 'top', abilities: [] } : {}),
@@ -277,7 +290,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     })
   }
 
-  function writeSetup(patch) {
+  function writeSetup(patch: Partial<Omit<SetupSelection, 'shell' | 'upgrade'>> & { shell?: number | null; upgrade?: SetupSelection['upgrade'] | null }) {
     const next = { ...setup.value, ...patch }
     // 换配置/换炮后旧弹种下标不再有意义：让 resolveSetup 重新取默认弹（URL 上移除 shell）
     const configChanged = patch.config != null && patch.config !== setup.value.config
@@ -297,13 +310,13 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     })
   }
 
-  function selectShell(index) {
+  function selectShell(index: number) {
     // 默认弹不写进 URL（键缺省 = 自动取 AP/首个非金币弹）
     const config = cfgs.value[setup.value.config]
     writeSetup({ shell: index === defaultShellIndex(config) ? null : index })
   }
 
-  function cycleSkill(id, maxLevel = false) {
+  function cycleSkill(id: string, maxLevel = false) {
     const current = Number(setup.value.skills?.[id]) || 0
     const next = maxLevel ? 7 : current >= 7 ? 0 : current + 1
     const skills = { ...(setup.value.skills || {}) }

@@ -3,6 +3,16 @@
  * segment=keycloak（Keycloak 权威）| segment=local（本地 user_profile 权威）。
  */
 import { computed, ref } from 'vue'
+import type { ComputedRef } from 'vue'
+import type { useI18n } from 'vue-i18n'
+
+type Translate = ReturnType<typeof useI18n>['t']
+type FilterContext = {
+  requireOnline: () => boolean
+  reloadFirstPage: () => void
+  adminAvailability: ComputedRef<{ available: boolean }>
+  t: Translate
+}
 
 /**
  * @param {{
@@ -12,15 +22,15 @@ import { computed, ref } from 'vue'
  *  t: (key: string) => string,
  * }} ctx
  */
-export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvailability, t }) {
-  const segment = ref('keycloak')
+export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvailability, t }: FilterContext) {
+  const segment = ref<'keycloak' | 'local'>('keycloak')
   const idpAlias = ref('')
 
   /**
    * segment=keycloak|local：页头的受控分段（:model-value = 已应用状态）。门禁不通过时不推进已应用值，
    * 分段仍显示上一次真正生效的数据源，绝不出现「显示本地资料、行还是 Keycloak」的假 applied 状态。
    */
-  function onSegmentChange(value) {
+  function onSegmentChange(value: 'keycloak' | 'local') {
     if (value === segment.value || !requireOnline()) return
     segment.value = value
     if (segment.value !== 'keycloak') idpAlias.value = ''
@@ -41,7 +51,7 @@ export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvail
     ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${idpAlias.value.trim()}` }]
     : []))
 
-  function removeFilterChip(key) {
+  function removeFilterChip(key: string) {
     if (key !== 'idpAlias') return
     idpAlias.value = ''
     reloadFirstPage()

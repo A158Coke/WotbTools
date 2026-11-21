@@ -3,6 +3,9 @@
  * 在途解析认领（parseSeq）、弹种/名册/搭载富化、官方示例之外的文件解码。
  */
 import { ref } from 'vue'
+import type { AgentShotReplay, AgentShellTable } from '../../api/agent-facets/shotTypes.js'
+import type { AgentVehicleTrack } from '../../api/agent-facets/playbackTypes.js'
+import type { Tankopedia } from '../../replay-local/compute/tankopedia.js'
 import {
   enrichShotsFromRoster,
   parseAgentPlaybackFromBytes,
@@ -18,18 +21,18 @@ import { loadTankopedia } from '../../replay-local/compute/tankopedia.ts'
  *  resetSelection: () => void,
  *  resetScope: () => void,
  * }} ctx */
-export function useShotsDecode({ t, resetSelection, resetScope }) {
-  const shots = ref([])
+export function useShotsDecode({ t, resetSelection, resetScope }: { t: (key: string) => string; resetSelection: () => void; resetScope: () => void }) {
+  const shots = ref<AgentShotReplay[]>([])
   const parsing = ref(false)
   const err = ref('')
   const authorError = ref('')
   const othersError = ref('')
-  const authorEid = ref(null)
+  const authorEid = ref<number | null>(null)
   const recorderTankName = ref('')
   const battleStartRaw = ref(0)
   /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
   let parseSeq = 0
-  let parsedFile = null
+  let parsedFile: File | null = null
   let decoding = Promise.resolve()
 
   /**
@@ -37,7 +40,7 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
    * 与上游 tanks.pb 同批刷新）：弹种表只在首次解析时按需加载一次，搭载输入逐车取。
    * 资产源未配置 / 请求失败时按降级语义继续（弹种走槽位/id 兜底、俯仰如实降级标记）。
    */
-  let shellTablePromise = null
+  let shellTablePromise: Promise<AgentShellTable> | null = null
   function loadShellTable() {
     if (!shellTablePromise) {
       shellTablePromise = assetProvider.json('/data/shellKinds.json')
@@ -50,7 +53,7 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
    * 弹种富化兜底（旧产物路径：WASM 输出没有 shell 字段时在客户端按同款表反解；
    * 新产物由 WASM 注入，此处零命中直通）。
    */
-  function enrichShellFallback(parsedShots, table) {
+  function enrichShellFallback(parsedShots: AgentShotReplay[], table: AgentShellTable) {
     for (const shot of parsedShots) {
       if (!shot.shell_id || shot.shell) continue
       const entry = table?.[String(shot.shell_id)]
@@ -64,22 +67,24 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
    *  （他人宽松路径不带昵称），这里按 eid 联表补齐昵称——姓名不可解析时界面显示
    *  「未知玩家」，绝不落回内部 id（design-language §11）。
    */
-  function applyRosterNames(parsedShots, vehicles, tankopedia) {
+  function applyRosterNames(parsedShots: AgentShotReplay[], vehicles: AgentVehicleTrack[] | undefined, tankopedia: Tankopedia | null) {
     const byEid = new Map((vehicles || []).map((vehicle) => [vehicle.eid, vehicle]))
-    const usableName = (value) => typeof value === 'string' && value.trim() && !/^#?\d+$/.test(value.trim())
+    const usableName = (value: unknown): value is string => typeof value === 'string' && !!value.trim() && !/^#?\d+$/.test(value.trim())
     for (const shot of parsedShots) {
-      for (const role of ['shooter', 'target']) {
-        const vehicle = byEid.get(shot[`${role}_eid`])
+      for (const role of ['shooter', 'target'] as const) {
+        const eid = shot[`${role}_eid`]
+        const vehicle = eid == null ? undefined : byEid.get(eid)
         if (!shot[`${role}_name`] && vehicle?.nickname) shot[`${role}_name`] = vehicle.nickname
         const info = tankopedia?.info(shot[`${role}_tank_id`] || vehicle?.tank_id || 0)
         const name = [vehicle?.tank_name, info?.name, shot[`${role}_tank_name`]].find(usableName)
         shot[`${role}_tank_name`] = name || ''
-        shot[`${role}_tank_class`] = info?.type || vehicle?.tank_class || vehicle?.tank_type || ''
+        const vehicleMetadata = vehicle as (AgentVehicleTrack & { tank_class?: string; tank_type?: string }) | undefined
+        shot[`${role}_tank_class`] = info?.type || vehicleMetadata?.tank_class || vehicleMetadata?.tank_type || ''
       }
     }
   }
 
-  async function decode(file) {
+  async function decode(file: File) {
     const seq = ++parseSeq
     parsing.value = true
     err.value = ''
@@ -139,8 +144,9 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
       const tankopedia = await loadTankopedia().catch(() => null)
       if (seq !== parseSeq) return
       applyRosterNames(parsedShots, playback?.vehicles, tankopedia)
+      const playbackAuthor = playback?.meta?.author_eid ?? 0
       authorEid.value = outcome.author_eid > 0 ? outcome.author_eid
-        : playback?.meta?.author_eid > 0 ? playback.meta.author_eid
+        : playbackAuthor > 0 ? playbackAuthor
           : playback?.vehicles?.find((vehicle) => vehicle.is_author)?.eid ?? null
       const recorder = playback?.vehicles?.find((vehicle) => vehicle.eid === authorEid.value || vehicle.is_author)
       recorderTankName.value = recorder?.tank_name || ''
@@ -170,14 +176,14 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
     } catch (e) {
       if (seq !== parseSeq) return
       shots.value = []
-      err.value = t('agentShots.error_parse') + ' ' + String(e?.message || e).slice(0, 200)
+      err.value = t('agentShots.error_parse') + ' ' + String(e instanceof Error ? e.message : e).slice(0, 200)
     } finally {
       if (seq === parseSeq) parsing.value = false
     }
   }
 
   /** 解码时机 watcher 的文件切换分支：作废在飞并清空本模块投影。 */
-  function invalidateForFile(nextFile) {
+  function invalidateForFile(nextFile: File | null) {
     if (parsedFile && parsedFile !== nextFile) {
       parseSeq++
       parsedFile = null
@@ -195,7 +201,7 @@ export function useShotsDecode({ t, resetSelection, resetScope }) {
   }
 
   /** 解码时机 = 能力激活（首次进入射击分析）或激活期间换了目标回放；同一文件不重复解码。 */
-  function beginDecode(active, file, blocked) {
+  function beginDecode(active: boolean, file: File | null, blocked: boolean) {
     invalidateForFile(file)
     if (!active || !file || blocked) return
     if (parsedFile === file) return

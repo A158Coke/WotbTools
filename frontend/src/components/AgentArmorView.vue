@@ -26,12 +26,14 @@ import RotatePrompt from './RotatePrompt.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
 import ArmorShotHud from './ArmorShotHud.vue'
 import ArmorToolsPanel from './agent-armor/ArmorToolsPanel.vue'
-import { useArmorShotPage } from './agent-armor/useArmorShotPage.js'
-import { useArmorSetupQuery } from './agent-armor/useArmorSetupQuery.js'
-import { useArmorPitchAvailability } from './agent-armor/useArmorPitchAvailability.js'
-import { armorViewerLabels } from './agent-armor/armorViewerLabels.js'
+import { useArmorShotPage } from './agent-armor/useArmorShotPage.ts'
+import { useArmorSetupQuery } from './agent-armor/useArmorSetupQuery.ts'
+import { useArmorPitchAvailability } from './agent-armor/useArmorPitchAvailability.ts'
+import { armorViewerLabels } from './agent-armor/armorViewerLabels.ts'
+import { shellLabel } from '../scene/tankMeta.js'
 import './agent-armor-view.css'
 import './agent-armor-view-responsive.css'
+import './agent-armor-view-hud-responsive.css'
 
 const { t, te } = useI18n()
 const route = useRoute()

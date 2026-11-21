@@ -2,9 +2,9 @@
 import GunMarksBadge from './GunMarksBadge.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useDrawerResize } from './player-detail/useDrawerResize.js'
-import { useRadarMetricSelection } from './player-detail/useRadarMetricSelection.js'
-import { useRatingProfileExport } from './player-detail/useRatingProfileExport.js'
+import { useDrawerResize } from './player-detail/useDrawerResize.ts'
+import { useRadarMetricSelection } from './player-detail/useRadarMetricSelection.ts'
+import { useRatingProfileExport } from './player-detail/useRatingProfileExport.ts'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
@@ -61,7 +61,7 @@ const closeBtn = ref(null)
 const isSummary = computed(() => props.context?.scope === 'summary')
 const {
   isMobile, isDesktop,
-  drawerWidth, isResizing, resizeHandle, drawerMaxWidth,
+  drawerWidth, drawerMinWidth, isResizing, resizeHandle, drawerMaxWidth,
   loadDrawerWidth, setDrawerWidth, bindMobile,
   onResizeStart, onResizeMove, onResizeEnd, onResizeKey,
   panelWidth,
@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
       <div v-if="isDesktop && open" class="pd-resizer" role="separator" aria-orientation="vertical"
            tabindex="0" data-testid="drawer-resizer"
            :aria-label="t('league.drawer.resize_panel')"
-           :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="DRAWER_MIN"
+           :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="drawerMinWidth"
            :aria-valuemax="Math.round(drawerMaxWidth())"
            :style="{ right: 'calc(' + drawerWidth + 'px + var(--space-2))' }"
            ref="resizeHandle"

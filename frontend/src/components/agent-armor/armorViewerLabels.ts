@@ -4,18 +4,21 @@
  * 不持有状态。
  */
 import { armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../../scene/tankMeta.js'
+import type { useI18n } from 'vue-i18n'
 
-const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list', 'shell data': 'shell_data' }
+type Translate = ReturnType<typeof useI18n>['t']
+type LabelContext = { t: Translate; te: (key: string) => boolean }
+const PHASE_KEY: Record<string, string> = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list', 'shell data': 'shell_data' }
 
 /** @param {{ t: (key: string, params?: unknown) => string, te: (key: string) => boolean }} i18n */
-export function armorViewerLabels({ t, te }) {
+export function armorViewerLabels({ t, te }: LabelContext) {
     return {
         loading: t('armor.loading'),
         shellUnavailable: t('armor.shell_unavailable'),
-        loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
+        loadFailed: (phase: string, msg: string) => t('armor.load_failed', { phase, msg }),
         contextLost: t('armor.context_lost'),
-        type: (value) => tankTypeLabel(t, te, value),
-        nation: (value) => tankNationLabel(t, te, value),
+        type: (value: string) => tankTypeLabel(t, te, value),
+        nation: (value: string) => tankNationLabel(t, te, value),
         showCollision: t('armor.show_collision'),
         hideCollision: t('armor.hide_collision'),
         heatmap: t('armor.heatmap'),
@@ -26,8 +29,8 @@ export function armorViewerLabels({ t, te }) {
         worldView: t('armor.world_view'),
         pitchDevice: t('armor.pitch_device'),
         replayEquipmentAutoTitle: t('armor.equipment_auto'),
-        partName: (name) => armorPartLabel(name, t),
-        resultName: (result) => armorResultLabel(result, t),
+        partName: (name: string | null | undefined) => armorPartLabel(name, t),
+        resultName: (result: string | null | undefined) => armorResultLabel(result, t),
         shotDamage: t('armor.shot_damage'),
         shotPenChance: t('armor.penetration_chance'),
         shotPenDamage: t('armor.penetration_damage'),
@@ -44,7 +47,7 @@ export function armorViewerLabels({ t, te }) {
         noPrimaryBlocked: t('armor.no_primary_blocked'),
         heBestSampleUpper: t('armor.best_sample_upper'),
         heBestSampleLower: t('armor.best_sample_lower'),
-        sectionName: (section) => {
+        sectionName: (section: string) => {
             const key = section === 'gunBarrel' ? 'gun_barrel' : section
             return t(`armor.sections.${key}`)
         },
@@ -59,6 +62,6 @@ export function armorViewerLabels({ t, te }) {
         armorStateLabel: t('armor.armor_state'),
         armorStateDefaultSuffix: t('armor.armor_state_default'),
         armorStateAutoTitle: t('armor.armor_state_auto'),
-        phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
+        phase: (phase: string) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
     }
 }

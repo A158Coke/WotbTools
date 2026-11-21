@@ -25,9 +25,9 @@ import { shotResultBadge } from '../utils/shotPresentation.js'
 import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
-import { useShotsDecode } from './replay-shots/useShotsDecode.js'
-import { useShotsPresenters } from './replay-shots/useShotsPresenters.js'
-import { useShotsDetail } from './replay-shots/useShotsDetail.js'
+import { useShotsDecode } from './replay-shots/useShotsDecode.ts'
+import { useShotsPresenters } from './replay-shots/useShotsPresenters.ts'
+import { useShotsDetail } from './replay-shots/useShotsDetail.ts'
 import SceneFullscreenButton from './SceneFullscreenButton.vue'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
@@ -137,7 +137,7 @@ const {
   detailPane, guideInset, setGuideInset,
   applyLayout, selectShot, showDetail, closeDetail,
   selectedPosition, hasPreviousShot, hasNextShot, goToAdjacentShot,
-  onDetailKeydown, onDetailPointerDown, onDetailPointerUp,
+  onDetailKeydown, onDetailPointerDown, onDetailPointerUp, onDetailPointerCancel,
 } = useShotsDetail({
   shots, filteredShots, selectedIndex, paneRoot, onboarding,
   availability3d: () => availability(Feature.PLAYBACK_3D), openInViewer, rowHas3d,
@@ -287,7 +287,7 @@ async function openInViewer(s) {
           :aria-label="$t('agentShots.inspector_title')"
           @pointerdown="onDetailPointerDown"
           @pointerup="onDetailPointerUp"
-          @pointercancel="swipeStart = null"
+          @pointercancel="onDetailPointerCancel"
         >
           <header class="shot-detail-head">
             <div><h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3><p class="shot-detail-position">{{ $t('agentShots.shot_position', { current: selectedPosition + 1, total: filteredShots.length }) }} · {{ shotClock(selectedShot) }}</p></div>

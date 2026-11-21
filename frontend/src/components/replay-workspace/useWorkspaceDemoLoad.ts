@@ -17,15 +17,35 @@ import { loadOfficialDemo } from '../../replay-local/demo.js'
  *  sampleOpened: () => void,
  * }} ctx
  */
-export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confirm, t, sampleOpened }) {
-  const { files, loading, error, resp, updateDemoFile, isDemoSelection, selectionRevision, analysis } = workspace.replay
+type DemoFile = Awaited<ReturnType<typeof loadOfficialDemo>>
+type DemoWorkspace = {
+  replay: {
+    files: import('vue').Ref<DemoFile[]>
+    loading: import('vue').Ref<boolean>
+    resp: import('vue').Ref<unknown | null>
+    updateDemoFile: (file: DemoFile) => void
+    isDemoSelection: import('vue').Ref<boolean>
+    selectionRevision: import('vue').Ref<number>
+    analysis: import('vue').Ref<{ phase: string }>
+  }
+}
+
+export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confirm, t, sampleOpened }: {
+  workspace: DemoWorkspace
+  setCapability: (key: string) => Promise<void>
+  analyze: () => Promise<{ completed?: boolean } | undefined>
+  confirm: (options: { title: string; message: string; confirmLabel: string; cancelLabel: string; signal: AbortSignal }) => Promise<boolean>
+  t: (key: string) => string
+  sampleOpened: () => void
+}) {
+  const { files, loading, resp, updateDemoFile, isDemoSelection, selectionRevision, analysis } = workspace.replay
   const demoLoading = ref(false)
   const demoError = ref('')
-  let demoController = null
+  let demoController: AbortController | null = null
   let disposed = false
 
   /** Reuse the existing session. A confirmation never authorizes a later changed selection. */
-  async function loadDemo(signal) {
+  async function loadDemo(signal?: AbortSignal): Promise<void> {
     if (isDemoSelection.value && resp.value && analysis.value.phase === 'ready') {
       await setCapability('data')
       return
@@ -66,8 +86,9 @@ export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confir
       controller.signal.throwIfAborted()
       if (disposed || selectionRevision.value !== demoRevision) throw new DOMException('Official replay superseded', 'AbortError')
       if (!result?.completed || !resp.value) throw new Error('Official replay analysis failed')
-    } catch (e) {
-      if (e?.name !== 'AbortError' && e?.name !== REPLACE_DECLINED) demoError.value = t('onboarding.demo_failed')
+    } catch (e: unknown) {
+      const name = e instanceof Error ? e.name : ''
+      if (name !== 'AbortError' && name !== REPLACE_DECLINED) demoError.value = t('onboarding.demo_failed')
       throw e
     } finally {
       signal?.removeEventListener('abort', abort)
@@ -76,7 +97,7 @@ export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confir
     }
   }
 
-  async function onDemoClick() {
+  async function onDemoClick(): Promise<void> {
     try {
       await loadDemo()
       sampleOpened()

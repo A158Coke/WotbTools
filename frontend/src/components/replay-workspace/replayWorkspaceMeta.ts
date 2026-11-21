@@ -13,7 +13,7 @@ export const capabilityOptions = [
   { key: 'ai', labelKey: 'workspace.tab_ai' },
 ]
 
-const VIEW_BY_CAPABILITY = Object.freeze({
+const VIEW_BY_CAPABILITY: Readonly<Record<string, string>> = Object.freeze({
   data: 'replay',
   playback: 'battle-playback',
   '3d': 'agent-replay',
@@ -25,6 +25,6 @@ const VIEW_BY_CAPABILITY = Object.freeze({
 })
 
 /** capability → 路由 view（Back / Forward 与深链仍由 Vue Router 唯一持有）。 */
-export function viewFor(cap) {
+export function viewFor(cap: string): string {
   return VIEW_BY_CAPABILITY[cap] || 'replay'
 }

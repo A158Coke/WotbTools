@@ -4,7 +4,18 @@
  */
 import { watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { LocationQuery } from 'vue-router'
 import { shouldResetShellOnConfigChange } from '../../utils/armorShellSelection.js'
+
+type Viewer = {
+    setShell?: (index: number) => void
+    setEquipmentOverride?: (kind: string, value: boolean | undefined) => void
+    setShooterConfig?: (index: number) => void
+    setConfig?: (index: number) => void
+}
+type SetupContext = { viewer: () => Viewer | null; targetSetupId: () => number | null; shooterSetupId: () => number | null; onUpgradesChanged: () => void }
+type ShotPatch = { shell?: number; eqcal?: boolean; eqenh?: boolean; eqpitch?: boolean }
+type SidePatch = { configChanged?: boolean; config?: string | number | null; engine?: string | number | null; track?: string | number | null; dev?: string | null; upgrade?: string | null; abilities?: string | string[] | null }
 
 /**
  * @param {{
@@ -14,23 +25,23 @@ import { shouldResetShellOnConfigChange } from '../../utils/armorShellSelection.
  *  onUpgradesChanged: () => void,   // 升级改动后宿主置 preserveToolsOnRebuild
  * }} ctx
  */
-export function useArmorSetupQuery({ viewer, targetSetupId, shooterSetupId, onUpgradesChanged }) {
+export function useArmorSetupQuery({ viewer, targetSetupId, shooterSetupId, onUpgradesChanged }: SetupContext) {
     const route = useRoute()
     const router = useRouter()
     /** 同一 tick 连点两下（弹种 + 开关）时，第二次写入必须基于上一次尚未落地的 query，
      *  否则会把第一击的结果覆盖回旧值（与坦克百科 pendingQuery 同因同解）。 */
-    let pendingShotQuery = null
+    let pendingShotQuery: LocationQuery | null = null
     watch(() => route.query, () => { pendingShotQuery = null }, { flush: 'sync' })
 
     /** 原生回退控件变更后写回 URL；场景已经自行应用，不能再回调 viewer 造成循环。 */
-    function replaceArmorSetupQuery(mutate) {
+    function replaceArmorSetupQuery(mutate: (query: LocationQuery) => void) {
         const query = { ...(pendingShotQuery || route.query) }
         mutate(query)
         pendingShotQuery = query
         router.replace({ query })
     }
 
-    function syncNativeTargetConfig(index) {
+    function syncNativeTargetConfig(index: number | string) {
         const n = Number(index)
         if (!Number.isInteger(n) || n < 0) return
         replaceArmorSetupQuery((query) => {
@@ -40,13 +51,13 @@ export function useArmorSetupQuery({ viewer, targetSetupId, shooterSetupId, onUp
         })
     }
 
-    function syncNativeShell(index) {
+    function syncNativeShell(index: number | string) {
         const n = Number(index)
         if (!Number.isInteger(n) || n < 0) return
         replaceArmorSetupQuery((query) => { query.shell = String(n) })
     }
 
-    function syncNativeEquipment(kind, value) {
+    function syncNativeEquipment(kind: string, value: boolean) {
         if (kind !== 'calibrated' && kind !== 'enhanced' && kind !== 'pitch') return
         replaceArmorSetupQuery((query) => {
             if (kind === 'calibrated') query.eqcal = value ? '1' : '0'
@@ -55,10 +66,10 @@ export function useArmorSetupQuery({ viewer, targetSetupId, shooterSetupId, onUp
         })
     }
 
-    function applyShotSetup(patch) {
+    function applyShotSetup(patch: ShotPatch | null) {
         if (!patch) return
         const query = { ...(pendingShotQuery || route.query) }
-        const put = (key, value) => {
+        const put = (key: string, value: string | number | null | undefined) => {
             if (value == null || value === '') delete query[key]
             else query[key] = String(value)
         }
@@ -79,10 +90,10 @@ export function useArmorSetupQuery({ viewer, targetSetupId, shooterSetupId, onUp
      * 射击方 / 受击方的模块与配件改动（各自完整的详情页配置逻辑）：
      * 写各自的 URL 键并驱动场景——射击方换主炮重载弹表，受击方换配置切装甲板。
      */
-    function applySide(side, patch) {
+    function applySide(side: 'shooter' | 'target', patch: SidePatch | null) {
         if (!patch) return
         const query = { ...(pendingShotQuery || route.query) }
-        const put = (key, value) => {
+        const put = (key: string, value: string | number | string[] | null | undefined) => {
             const text = Array.isArray(value) ? value.join(',') : value
             if (text == null || text === '') delete query[key]
             else query[key] = String(text)

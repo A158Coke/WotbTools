@@ -4,6 +4,8 @@
  * 资产包 /research/modules/{nation}.json（仅 config 带 turret_local/gun_local 时加载）。
  */
 import { computed, ref, watch } from 'vue'
+import type { ComputedRef } from 'vue'
+import { parseTankopediaQuery } from '../../utils/tankopediaQuery.js'
 import { fetchTankData } from '../../scene/agentData.js'
 import { loadResearchCatalog, loadTankModules, loadTechTree } from '../../utils/researchCatalog.js'
 import { findTankModules } from '../../replay-local/compute/tankSetup'
@@ -15,22 +17,27 @@ import { devicesFromEquipmentIds, encodeDevices, resolveSetup } from '../../repl
  *  detailId: import('vue').ComputedRef<number|null>,
  *  writeState: (patch: object, options?: object) => void,
  * }} ctx */
-export function useTankopediaDetailData({ urlState, detailId, writeState }) {
-  const detail = ref(null)
+type TankShell = { type: string; penetration?: number | null; penetration_far?: number | null; damage?: number | null; velocity?: number | null; module_damage?: number | null; range?: number | null; explosion_radius?: number | null }
+type TankDetail = { tank_id?: number; stem?: string; tier?: number; nation?: string; configs?: TankConfig[]; shells?: TankShell[]; gun_depression?: number; gun_elevation?: number }
+type TankConfig = { turret_local?: number | null; shells?: TankShell[]; pitch_limits?: { min?: number; max?: number }; yaw_limits?: unknown; is_drum?: boolean; is_burst?: boolean; caliber?: number }
+type TankSummary = { gun_depression?: number; gun_elevation?: number }
+type DetailContext = { urlState: ComputedRef<ReturnType<typeof parseTankopediaQuery>>; detailId: ComputedRef<number | null>; writeState: (patch: Record<string, unknown>) => void }
+export function useTankopediaDetailData({ urlState, detailId, writeState }: DetailContext) {
+  const detail = ref<TankDetail | null>(null)
   const detailState = ref('idle')   // idle | loading | ready | error
   const detailError = ref('')
   let detailRequest = 0
   /** 逐车模块数据（资产包 /research/modules/{nation}.json，按 tankId 对号）。 */
-  const modules = ref(null)
+  const modules = ref<ReturnType<typeof findTankModules> | null>(null)
   /** 资产包全局目录/物品/技能/参数格式（research/*.json）。 */
-  const catalog = ref(null)
+  const catalog = ref<Awaited<ReturnType<typeof loadResearchCatalog>> | null>(null)
   /** 该车所属科技树（只为研发弹窗的「下一级坦克」补名称/tier；缺失时节点不显示）。 */
-  const techTree = ref(null)
+  const techTree = ref<Awaited<ReturnType<typeof loadTechTree>> | null>(null)
   let modulesRequest = 0
 
   // summary 依赖宿主的 tank cache（列表态所有物）；由宿主经 bindCache 注入保持单一来源。
-  let cacheGetter = () => ({})
-  function bindCache(getter) { cacheGetter = getter }
+  let cacheGetter: () => Record<string, TankSummary> = () => ({})
+  function bindCache(getter: () => Record<string, TankSummary>) { cacheGetter = getter }
 
   const summary = computed(() => (detailId.value != null ? cacheGetter()?.[String(detailId.value)] || null : null))
 
@@ -40,7 +47,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }) {
   /** 升级态不参与模块 ID 对号；投影不改共享原始资产。普通车保持原引用。 */
   const upgradeSelection = computed(() => Number(detail.value?.tier) === 11
     ? upgradeProjection.value.selection
-    : { available: false })
+    : { ...upgradeProjection.value.selection, available: false })
 
   const cfgs = computed(() => upgradeProjection.value.detail?.configs || [])
   /** 默认顶级变体（末位），与查看器 defaultCfg 语义一致；URL ?config= 优先 */
@@ -64,7 +71,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }) {
     return pitchLimits.value?.min != null ? -pitchLimits.value.min : null
   })
 
-  async function loadDetail(id) {
+  async function loadDetail(id: number | null) {
     const request = ++detailRequest
     if (id == null) {
       detail.value = null
@@ -84,7 +91,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }) {
       loadModules(id, data.nation, data.configs)
     } catch (e) {
       if (request !== detailRequest) return
-      detailError.value = String(e?.message || e)
+      detailError.value = String(e instanceof Error ? e.message : e)
       detailState.value = 'error'
     }
   }
@@ -94,7 +101,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }) {
    * 只在 config 带 turret_local/gun_local（客户端对号字段）时加载模块：缺失即静态回退，
    * 不猜模块组合（fail-closed），也不为旧资产包白拉 2 MB JSON。
    */
-  async function loadModules(id, nation, configs) {
+  async function loadModules(id: number | null, nation: string | undefined, configs: TankConfig[] | undefined) {
     const request = ++modulesRequest
     modules.value = null
     if (id == null || !nation || !Array.isArray(configs) || !configs.some(c => c?.turret_local != null)) return
@@ -109,7 +116,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }) {
       // 科技树仅为研发弹窗的「下一级坦克」补名称/tier：不阻塞配置器数据，失败也不拖垮详情
       techTree.value = null
       try {
-        loadTechTree(nation).then((tree) => {
+        loadTechTree(nation).then((tree: Awaited<ReturnType<typeof loadTechTree>>) => {
           if (request === modulesRequest) techTree.value = tree
         }).catch(() => {})
       } catch {

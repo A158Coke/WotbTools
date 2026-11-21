@@ -3,7 +3,22 @@
  * hero 展示名 / realm 角色 / WG 身份判读 / 服务器标签 / Keycloak 用户 ID 复制。
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
+import type { Ref } from 'vue'
+import type { components } from '../../api/generated/http-contract.js'
+import type { AuthClaims } from '../../types/auth.js'
+import type { useI18n } from 'vue-i18n'
 import { copyText } from '../../utils/clipboard.js'
+
+type UserProfile = components['schemas']['UserProfile']
+type Translate = ReturnType<typeof useI18n>['t']
+type IdentityContext = {
+  profile: Ref<UserProfile | null>
+  tokenParsed: Ref<AuthClaims | null>
+  authDisplayName: Ref<string>
+  authEpoch: () => number
+  ownEpoch: (epoch: number) => boolean
+  t: Translate
+}
 
 /** @param {{
  *  profile: import('vue').Ref<object|null>,
@@ -13,7 +28,7 @@ import { copyText } from '../../utils/clipboard.js'
  *  ownEpoch: (epoch: number) => boolean,
  *  t: (key: string) => string,
  * }} ctx */
-export function useProfileIdentity({ profile, tokenParsed, authDisplayName, authEpoch, ownEpoch, t }) {
+export function useProfileIdentity({ profile, tokenParsed, authDisplayName, authEpoch, ownEpoch, t }: IdentityContext) {
   /** hero 展示名与顶栏同源：后端 Profile 的 displayName 优先，缺失才落到 useAuth.displayName。 */
   const displayName = computed(() =>
     profile.value?.displayName
@@ -26,7 +41,7 @@ export function useProfileIdentity({ profile, tokenParsed, authDisplayName, auth
     const region = tokenParsed.value?.wotb_region
     const accountId = tokenParsed.value?.wotb_account_id
     const verified = tokenParsed.value?.wotb_verified
-    return ['ASIA', 'EU', 'NA'].includes(region)
+    return typeof region === 'string' && ['ASIA', 'EU', 'NA'].includes(region)
       && Boolean(accountId)
       && (verified === true || verified === 'true')
   })
@@ -55,11 +70,11 @@ export function useProfileIdentity({ profile, tokenParsed, authDisplayName, auth
   })
 
   const userIdCopied = ref(false)
-  let userIdCopiedTimer = null
+  let userIdCopiedTimer: ReturnType<typeof setTimeout> | null = null
   let unmounted = false
 
   function resetUserIdCopied() {
-    clearTimeout(userIdCopiedTimer)
+    if (userIdCopiedTimer !== null) clearTimeout(userIdCopiedTimer)
     userIdCopied.value = false
   }
 
@@ -72,13 +87,13 @@ export function useProfileIdentity({ profile, tokenParsed, authDisplayName, auth
     // 卸载后的迟到结果也不再起定时器。
     if (!copied || unmounted || !ownEpoch(epoch)) return
     userIdCopied.value = true
-    clearTimeout(userIdCopiedTimer)
+    if (userIdCopiedTimer !== null) clearTimeout(userIdCopiedTimer)
     userIdCopiedTimer = setTimeout(() => { userIdCopied.value = false }, 1500)
   }
 
   onBeforeUnmount(() => {
     unmounted = true
-    clearTimeout(userIdCopiedTimer)
+    if (userIdCopiedTimer !== null) clearTimeout(userIdCopiedTimer)
   })
 
   /** WARGAMING source 或 JWT WG 身份 = 资料只读；CN MANUAL 用户可编辑。 */

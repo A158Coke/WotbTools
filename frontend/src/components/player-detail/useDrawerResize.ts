@@ -3,6 +3,7 @@
  * 仅桌面可拖；平板固定宽；手机全屏（panelWidth=null）；宽度持久化 localStorage。
  */
 import { computed, onUnmounted, ref, watch } from 'vue'
+import type { ComputedRef } from 'vue'
 
 const DRAWER_MIN = 320
 const DRAWER_DEFAULT = 380
@@ -12,21 +13,21 @@ const DRAWER_MAX_RATIO = 0.45
 const DRAWER_WIDTH_KEY = 'radarSidePanelWidth'
 
 /** @param {{ open: import('vue').ComputedRef<boolean> }} ctx */
-export function useDrawerResize({ open }) {
+export function useDrawerResize({ open }: { open: ComputedRef<boolean> }) {
   const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
   const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
   const drawerWidth = ref(DRAWER_DEFAULT)
   const isResizing = ref(false)
   const resizeStartX = ref(0)
   const resizeStartWidth = ref(0)
-  const resizeHandle = ref(null)
+  const resizeHandle = ref<HTMLElement | null>(null)
 
   /** 动态 max-width：约 45% 视口，且至少 min、绝不超过视口已留边（保证主内容不被完全挤没）。 */
   function drawerMaxWidth() {
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1440
     return Math.max(DRAWER_MIN, Math.min(Math.floor(vw * DRAWER_MAX_RATIO), vw - 16))
   }
-  function clampDrawerWidth(w) {
+  function clampDrawerWidth(w: number) {
     return Math.max(DRAWER_MIN, Math.min(drawerMaxWidth(), w))
   }
   function loadDrawerWidth() {
@@ -39,19 +40,19 @@ export function useDrawerResize({ open }) {
       return DRAWER_DEFAULT
     }
   }
-  function saveDrawerWidth(w) {
+  function saveDrawerWidth(w: number) {
     try { localStorage.setItem(DRAWER_WIDTH_KEY, String(w)) } catch (_) { /* 忽略持久化失败 */ }
   }
   /** 仅更新内存宽度（拖动中高频调用，不写 localStorage）。 */
-  function applyDrawerWidth(w) {
+  function applyDrawerWidth(w: number) {
     drawerWidth.value = clampDrawerWidth(w)
   }
-  function setDrawerWidth(w) {
+  function setDrawerWidth(w: number) {
     applyDrawerWidth(w)
     saveDrawerWidth(drawerWidth.value)
   }
 
-  function onResizeStart(e) {
+  function onResizeStart(e: PointerEvent) {
     if (!isDesktop.value || !open.value) return
     e.preventDefault()
     resizeStartX.value = e.clientX
@@ -64,7 +65,7 @@ export function useDrawerResize({ open }) {
     document.body.style.userSelect = 'none'
     document.body.classList.add('pd-resizing')
   }
-  function onResizeMove(e) {
+  function onResizeMove(e: PointerEvent) {
     if (!isResizing.value) return
     applyDrawerWidth(resizeStartWidth.value + (resizeStartX.value - e.clientX))
   }
@@ -76,7 +77,7 @@ export function useDrawerResize({ open }) {
     document.body.classList.remove('pd-resizing')
   }
   /** 键盘调整：每次 20px。 */
-  function onResizeKey(delta) {
+  function onResizeKey(delta: number) {
     if (!isDesktop.value) return
     setDrawerWidth(drawerWidth.value + delta)
   }
@@ -110,6 +111,7 @@ export function useDrawerResize({ open }) {
   onUnmounted(unbindMobile)
 
   return {
+    drawerMinWidth: DRAWER_MIN,
     isMobile, isDesktop,
     drawerWidth, isResizing, resizeHandle, drawerMaxWidth,
     loadDrawerWidth, setDrawerWidth, bindMobile,

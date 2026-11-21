@@ -50,7 +50,7 @@ describe('Armor recorded-shot navigation', () => {
   it('shows tank names and recorded facts, disposes the previous scene, and respects navigation bounds', async () => {
     const { wrapper, router } = await setup()
     const header = wrapper.get('[data-testid="armor-shot-header"]')
-    for (const value of ['Object 907', 'E 100', '01:12', '350']) expect(header.text()).toContain(value)
+    for (const value of ['Object 907', 'E 100', '01:12', '350', 'AP']) expect(header.text()).toContain(value)
     expect(header.text()).not.toContain('Nickname')
     expect(wrapper.get('[aria-label="armor.previous_shot"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[aria-label="armor.next_shot"]').trigger('click'); await flushPromises()

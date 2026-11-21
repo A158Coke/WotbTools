@@ -12,22 +12,22 @@ import { findTankModules, pitchDeviceBonus, presetProvidesPitchDevice } from '..
  * @param {{ targetSetupId: import('vue').Ref<number|null> }} ctx
  * @param {(patch: { fromModules: boolean, known: boolean }) => void} apply
  */
-export function useArmorPitchAvailability(targetSetupId) {
+export function useArmorPitchAvailability(targetSetupId: import('vue').Ref<number | null>) {
     const pitchFromModules = ref(false)
     const pitchFromModulesKnown = ref(false)
     /** 122 的俯仰加成数值（宿主从 research/devices.json 读，注入场景；场景不硬编码）。 */
-    const pitchDeviceBonusValue = ref(null)
+    const pitchDeviceBonusValue = ref<{ up: number; down: number } | null>(null)
     let pitchAvailabilitySeq = 0
-    let pitchAvailabilityTimer = null
+    let pitchAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
     const PITCH_AVAILABILITY_RETRY_MS = 5000
     const PITCH_AVAILABILITY_MAX_ATTEMPTS = 3
-    async function resolvePitchAvailability(tankId, attempt = 0) {
+    async function resolvePitchAvailability(tankId: number | null, attempt = 0): Promise<void> {
         const seq = ++pitchAvailabilitySeq
         if (pitchAvailabilityTimer) {
             clearTimeout(pitchAvailabilityTimer)
             pitchAvailabilityTimer = null
         }
-        if (!(tankId > 0)) {
+        if (tankId == null || !(tankId > 0)) {
             pitchFromModules.value = false
             pitchFromModulesKnown.value = true
             return

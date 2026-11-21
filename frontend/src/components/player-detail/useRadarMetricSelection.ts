@@ -6,8 +6,8 @@ import { ref } from 'vue'
 import { loadRadarPreference, saveRadarPreference, RADAR_MIN_AXES, RADAR_MAX_AXES } from '../../utils/radarMetrics.js'
 
 /** @param {{ t: (key: string, params?: unknown) => string }} ctx */
-export function useRadarMetricSelection({ t }) {
-  const radarOrder = ref(loadRadarPreference())
+export function useRadarMetricSelection({ t }: { t: (key: string, params?: unknown) => string }) {
+  const radarOrder = ref<string[]>(loadRadarPreference())
   const showRadarPicker = ref(false)
   const radarHint = ref('')
 
@@ -15,7 +15,7 @@ export function useRadarMetricSelection({ t }) {
     saveRadarPreference(radarOrder.value)
   }
 
-  function toggleRadarMetric(key) {
+  function toggleRadarMetric(key: string) {
     const cur = [...radarOrder.value]
     const idx = cur.indexOf(key)
     if (idx >= 0) {
@@ -37,7 +37,7 @@ export function useRadarMetricSelection({ t }) {
     persistRadarOrder()
   }
 
-  function moveRadarMetric(key, dir) {
+  function moveRadarMetric(key: string, dir: number) {
     const cur = [...radarOrder.value]
     const idx = cur.indexOf(key)
     const to = idx + dir

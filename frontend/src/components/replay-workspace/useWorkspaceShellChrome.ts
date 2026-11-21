@@ -18,7 +18,13 @@ import { usePlaybackPortraitViewport } from '../../composables/usePlaybackPortra
  *  workspaceContentEl: Ref<HTMLElement|null>,
  * }} ctx
  */
-export function useWorkspaceShellChrome({ activeCapability, playbackMounted, threeMounted, workspaceReady, workspaceContentEl }) {
+export function useWorkspaceShellChrome({ activeCapability, playbackMounted, threeMounted, workspaceReady, workspaceContentEl }: {
+  activeCapability: import('vue').Ref<string>
+  playbackMounted: import('vue').Ref<boolean>
+  threeMounted: import('vue').Ref<boolean>
+  workspaceReady: import('vue').Ref<boolean>
+  workspaceContentEl: import('vue').Ref<HTMLElement | null>
+}) {
   const shellChrome = inject(SHELL_CHROME_KEY, null)
   const shellOwner = Symbol('replay-workspace')
   const { isPhone } = usePlaybackPhoneForm()
@@ -57,5 +63,8 @@ export function useWorkspaceShellChrome({ activeCapability, playbackMounted, thr
   onDeactivated(() => { pageActive.value = false })
   onUnmounted(() => { shellChrome?.request(shellOwner, false) })
 
-  return { pageActive, forcedLandscape, autoFullscreenToken, disposeShellChrome: () => shellChrome?.request(shellOwner, false) }
+  return {
+    pageActive, forcedLandscape, autoFullscreenToken, wantsImmersive,
+    disposeShellChrome: () => shellChrome?.request(shellOwner, false),
+  }
 }

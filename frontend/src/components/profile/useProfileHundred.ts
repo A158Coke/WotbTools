@@ -4,6 +4,17 @@
 import { ref } from 'vue'
 import { hofHundredCancel, hofHundredMyStatus } from '../../api/hall-of-fame.js'
 
+type HundredStatus = Awaited<ReturnType<typeof hofHundredMyStatus>>
+type HundredContext = {
+  requireHofOnline: () => boolean
+  ownEpoch: (epoch: number) => boolean
+  epochArg: (value: unknown) => number
+  authEpoch: () => number
+  apiError: (error: unknown) => string
+  t: (key: string) => string
+  confirm: (options: { title: string; confirmLabel: string; danger: boolean }) => Promise<boolean>
+}
+
 /** @param {{
  *  requireHofOnline: () => boolean,
  *  ownEpoch: (epoch: number) => boolean,
@@ -13,14 +24,14 @@ import { hofHundredCancel, hofHundredMyStatus } from '../../api/hall-of-fame.js'
  *  t: (key: string) => string,
  *  confirm: (options: unknown) => Promise<boolean>,
  * }} ctx */
-export function useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEpoch, apiError, t, confirm }) {
-  const hundredStatus = ref(null)
+export function useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEpoch, apiError, t, confirm }: HundredContext) {
+  const hundredStatus = ref<HundredStatus | null>(null)
   const hundredError = ref('')
-  const hundredWithdrawingId = ref(null)
+  const hundredWithdrawingId = ref<number | null>(null)
   const hundredMessage = ref('')
 
   /** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
-  async function loadHundredStatus(epochInput) {
+  async function loadHundredStatus(epochInput: unknown) {
     const epoch = epochArg(epochInput)
     if (!ownEpoch(epoch)) return
     if (!requireHofOnline()) return
@@ -37,7 +48,7 @@ export function useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEp
   }
 
   /** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
-  async function withdrawHundred(id) {
+  async function withdrawHundred(id: number) {
     if (!requireHofOnline()) return
     const epoch = authEpoch()
     if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return

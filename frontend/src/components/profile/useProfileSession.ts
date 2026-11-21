@@ -3,7 +3,19 @@
  * 归属代数（Phase 7.2）复核所有在途写入；门禁在最前，离线不发任何请求。
  */
 import { watch } from 'vue'
+import type { Ref, ComputedRef } from 'vue'
 import { getUserProfile, syncUserWotbAccountFromLogin } from '../../api/user-profile.js'
+
+type SessionContext = {
+  phase: Ref<string>; loading: Ref<boolean>; profile: Ref<Awaited<ReturnType<typeof getUserProfile>>>
+  isAuthenticated: () => boolean; authEpoch: () => number; ownEpoch: (epoch: number) => boolean
+  epochArg: (value: unknown) => number; requireProfileOnline: () => boolean
+  availabilityProfile: () => { available: boolean }; connectivity: Ref<string>
+  whenBusinessUserSettled: (context: { authInitState: string; authenticated: boolean; connectivity: string; authEpoch: number }) => Promise<boolean>
+  syncFromLoginPending: Ref<boolean>; syncFromLoginError: Ref<unknown>; isWargamingLogin: ComputedRef<boolean>
+  loadRecords: (epoch?: number) => Promise<void>; loadHundredStatus: (epoch?: number) => Promise<void>
+  getUserProfile: typeof getUserProfile
+}
 
 /** @param {{
  *  phase: import('vue').Ref<string>,
@@ -28,7 +40,7 @@ export function useProfileSession({
   requireProfileOnline, availabilityProfile, connectivity, whenBusinessUserSettled,
   syncFromLoginPending, syncFromLoginError, isWargamingLogin,
   loadRecords, loadHundredStatus, getUserProfile,
-}) {
+}: SessionContext) {
   /** 网络不可用时的中性状态：不是错误态，不显示「资料加载失败 / 重试」。 */
   function enterConnectivityUnavailable() {
     phase.value = 'connectivity-unavailable'
@@ -102,7 +114,7 @@ export function useProfileSession({
    *  - 重复的 online 通知由 `loading` + `profile.value` 双重去重，不会形成请求风暴；
    *  - 只自动恢复 connectivity-unavailable；业务错误由用户显式 retry，避免自动重试循环。
    */
-  const stopReconnectWatch = watch(connectivity, () => {
+  watch(connectivity, () => {
     if (!isAuthenticated()) return
     if (profile.value || loading.value) return
     if (phase.value !== 'connectivity-unavailable') return
@@ -111,7 +123,7 @@ export function useProfileSession({
   })
 
   /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
-  async function syncFromLogin(epochInput) {
+  async function syncFromLogin(epochInput: unknown) {
     const epoch = epochArg(epochInput)
     if (!ownEpoch(epoch)) return
     if (!isWargamingLogin.value) return
