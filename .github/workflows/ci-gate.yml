@@ -200,7 +200,10 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
       - name: Validate source LOC enforcement
         run: python3 scripts/ci/test-source-lines.py
-      - name: Check first-party source LOC
+      # Strict full-tree gate: the ENTIRE head tree is judged on every PR to
+      # main regardless of affected paths. No grandfathering, no allowlist;
+      # scanner errors and missing history fail closed (exit 2).
+      - name: Check first-party source LOC (strict full-tree)
         env:
           BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
           HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}

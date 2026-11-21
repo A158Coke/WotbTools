@@ -1,17 +1,43 @@
 {
+  "_doc": {
+    "purpose": "Single source of truth for the strict source-line gate enforced by scripts/ci/check-source-lines.py. JSON cannot carry comments, so all policy commentary lives here under _doc.",
+    "enforcement": "Full-tree, strict, no grandfathering: every PR to main is judged against the ENTIRE HEAD Git tree. Historical grandfathering (base/fork-point blob identity), the legacy ratchet, and the per-path allowlist mechanism (scripts/ci/source-line-allowlist.txt, deleted) no longer exist. Any maintained source file above its category limit fails, regardless of whether the same blob existed at the base commit, a fork point, or an earlier commit. The gate fails closed: a missing policy file, malformed JSON, an invalid limits table, or missing git history aborts with exit 2 instead of passing.",
+    "limits": {
+      "production": "Maintained first-party code and executable infrastructure (Java backend, Keycloak providers, Android Kotlin, frontend source, shell/python deploy and CI tooling, OpenTofu, workflow YAML). Physical-line budget per file: 500.",
+      "test": "Maintained first-party test code (paths containing a test directory segment, test-named files, browser test scripts, CI test scripts). Physical-line budget per file: 1500."
+    },
+    "categories": {
+      "generated": "Machine-generated first-party artifacts that are never hand-edited: TypeScript declarations emitted from types, generated API transport clients, vendored third-party C sources inside the Android NDK bridge, lockfiles, Terraform lock files. Excluded from both budgets. This list is exact-path/pattern scoped and must stay small; do NOT route maintained code through it.",
+      "vendored": "Third-party code copied into the tree and never modified locally. Excluded from both budgets. Currently empty: the xdelta3 C sources are covered by the generated category entry (android/app/src/main/cpp/xdelta3/). Any new vendored dependency must be added here explicitly with PR justification, never inferred.",
+      "immutable-history": "Applied database migrations. java/**/src/main/resources/db/migration/** is classified structurally by path convention, not per file: Flyway checksums make applied migrations immutable, and rewriting them would corrupt every deployed environment, so they are excluded from the 500-line production budget. A migration file becomes immutable the moment it is committed to this path; there is no per-file opt-in or opt-out. Maintained code living under a path that merely LOOKS like this convention (e.g. db/migrations/, or non-SQL sources placed under the real migration directory) is NOT covered and stays inside the production budget."
+    },
+    "rationale_flyway": "The Flyway exclusion is deliberately path-convention based so classification is objective and reviewable in the diff alone: either the file sits under java/**/src/main/resources/db/migration/** or it does not. Per-file exceptions are the failure mode this gate exists to prevent, so none are supported anywhere in the policy."
+  },
   "limits": {
     "production": 500,
     "test": 1500
   },
-  "explicit_exclusions": [
-    "*.d.ts",
-    "frontend/src/api/generated/",
-    "android/app/src/main/cpp/xdelta3/",
-    "frontend/pnpm-lock.yaml",
-    "infra/tofu/grafana/.terraform.lock.hcl",
-    "infra/tofu/keycloak/.terraform.lock.hcl",
-    "infra/tofu/komodo/.terraform.lock.hcl",
-    "infra/tofu/postgres-business/.terraform.lock.hcl",
-    "infra/tofu/postgres-keycloak/.terraform.lock.hcl"
-  ]
+  "categories": {
+    "generated": {
+      "patterns": [
+        "*.d.ts",
+        "frontend/src/api/generated/",
+        "android/app/src/main/cpp/xdelta3/",
+        "frontend/pnpm-lock.yaml",
+        "infra/tofu/grafana/.terraform.lock.hcl",
+        "infra/tofu/keycloak/.terraform.lock.hcl",
+        "infra/tofu/komodo/.terraform.lock.hcl",
+        "infra/tofu/postgres-business/.terraform.lock.hcl",
+        "infra/tofu/postgres-keycloak/.terraform.lock.hcl"
+      ]
+    },
+    "vendored": {
+      "patterns": []
+    },
+    "immutable-history": {
+      "patterns": [
+        "java/**/src/main/resources/db/migration/**"
+      ]
+    }
+  }
 }
