@@ -77,7 +77,7 @@ describe('spaced armor double-sided judgment', () => {
 // 选车器换车不写 route，编辑器/HUD 就绪标志必须按当前车重置。
 describe('armor shell and readiness ownership', () => {
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  const view = read('./AgentArmorView.vue')
+  const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/useArmorShotPage.js'), read('./agent-armor/useArmorPitchAvailability.js'), read('./agent-armor/armorViewerLabels.js'), read('./agentArmorView.css')].join('\n')
   it('换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照', () => {
     expect(kernel).toMatch(/function requestedShellIndex\(\)/)
     expect(kernel).toMatch(/populateShellSelector\(shooterShells, requestedShellIndex\(\)\)/)
@@ -85,9 +85,9 @@ describe('armor shell and readiness ownership', () => {
   })
   it('选车器换车时重置编辑器/HUD 就绪标志，HUD 不再套用受击方 config', () => {
     expect(view).toMatch(/watch\(shooterSetupId, \(\) => \{ shooterReady\.value = false; hudReady\.value = false \}\)/)
-    expect(view).toMatch(/watch\(targetSetupId, \(id\) => \{\s+targetReady\.value = false/)
-    expect(view).toMatch(/@ready="value => shooterReady = value"/)
-    expect(view).toMatch(/@ready="value => targetReady = value"/)
+    expect(view).toMatch(/watch\(targetSetupId, \(\) => \{ targetReady\.value = false \}\)/)
+    expect(view).toMatch(/@shooter-ready="value => shooterReady = value"/)
+    expect(view).toMatch(/@target-ready="value => targetReady = value"/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/const canConfigure = computed\(\(\) => selection\.value\?\.canConfigure === true\)/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/watch\(canConfigure, value => \{ emit\('ready', value\) \}, \{ immediate: true \}\)/)
     const hud = view.match(/<ArmorShotHud[\s\S]*?\/>/)[0]
@@ -192,7 +192,7 @@ describe('spaced armor surface selection', () => {
 // 选车器的外层键盘 trap 与二级模态层（手机筛选 AppSheet，portal 到 body）的隔离：
 // 按键发生在 #tank-picker 之外的 dialog 内时，外层不得介入（否则 Esc 会连带关闭整个选车器、Tab 被拉回外层）。
 describe('tank picker keyboard isolation from nested modal layers', () => {
-  const template = read('./AgentArmorView.vue')
+  const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/useArmorShotPage.js'), read('./agent-armor/useArmorPitchAvailability.js'), read('./agent-armor/armorViewerLabels.js'), read('./agentArmorView.css')].join('\n')
   it('onPickerKeydown 在 #tank-picker 之外的 dialog 内直接放行', () => {
     const start = template.indexOf('function onPickerKeydown(event)')
     expect(start).toBeGreaterThan(-1)
@@ -228,7 +228,7 @@ describe('122 装备真值的目标身份（场景内核）', () => {
 })
 
 describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
-  const template = read('./AgentArmorView.vue')
+  const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/useArmorShotPage.js'), read('./agent-armor/useArmorPitchAvailability.js'), read('./agent-armor/armorViewerLabels.js'), read('./agentArmorView.css')].join('\n')
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice', () => {
