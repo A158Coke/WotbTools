@@ -2,12 +2,8 @@
 // poseShooterTurretGun / loadShooterModel 自 runShotReplay 闭包原样平移；
 // 回放语义、镜像约定与 bake 时序保持原样（此文件只做搬运，不改数值行为）。
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { neutralizeDefaultMetalness } from '../glbRig.js'
 import { poseFromYPR } from '../glbRig.js'
-import { fetchTankData, assetProvider } from '../agentData.js'
 import type { TankData, Vec3 } from './viewerContracts.js'
-import type { ModelLifecycleHandle } from './modelLifecycle.js'
 
 /** poseShooterTurretGun 闭包外的唯一依赖面（type10 原始欧拉 → 场景四元数共用 rig 工具）。 */
 export { poseFromYPR }
@@ -126,104 +122,4 @@ export function poseShooterTurretGun(sModel: THREE.Object3D | null, sd: TankData
     console.log('[world] shooter turret/gun posed: turretRel=' +
         (-((turretAbsYaw ?? 0) - hullYawS) * 180 / Math.PI).toFixed(1) + '° gunPitch=' +
         (gr * 180 / Math.PI).toFixed(1) + '° gunNodes=' + gunNodes.length);
-}
-
-export interface LoadedShooterModel {
-    sd: TankData | null
-    sModel: THREE.Object3D
-    breechGunLocal: THREE.Vector3 | null
-}
-
-export interface LoadShooterModelOptions {
-    castShadow?: boolean
-    logTag?: string
-    applyPose?: (sModel: THREE.Object3D) => void
-}
-
-/** loadShooterModel 工厂闭包外的依赖面（runShotReplay 注入，语义与原闭包捕获一致）。 */
-export interface ShooterModelFactoryDeps {
-    getTankData(): TankData
-    getShooterData(): TankData | null
-    getSelectedShell(): unknown
-    isShooterLoading(): boolean
-    getCurrentShooterId(): number | string | null
-    currentShot(): boolean
-    ml: Pick<ModelLifecycleHandle, 'disposeDetachedModel'>
-    getScene(): THREE.Scene
-}
-
-/** 射手模型加载工厂（原命中/脱靶两分支大段重复：并行 fetch /api/tank +
- * GLTFLoader 加载 → applyPose 摆位 → 炮闩 bake 前捕获 → 半透明材质克隆
- * → getScene().add）。resolve({ sd, sModel, breechGunLocal })；GLB 加载失败
- * resolve(null)。分支差异参数化：logTag（日志前缀）、castShadow
- * （命中分支网格投影阴影，脱靶分支不投影）、applyPose（各自位姿闭包）。
- * applyPose 必须在炮闩捕获前调用——breechGunLocal 依赖模型当前世界矩阵。 */
-export function createShooterModelFactory(deps: ShooterModelFactoryDeps):
-    (tid: number, opts?: LoadShooterModelOptions) => Promise<LoadedShooterModel | null> {
-    const { getTankData, getShooterData, getSelectedShell, ml, getScene } = deps;
-    const cloneMaterial = (m: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] =>
-        Array.isArray(m) ? m.map((x) => x.clone()) : m.clone();
-    return function loadShooterModel(tid: number, opts?: LoadShooterModelOptions): Promise<LoadedShooterModel | null> {
-        const castShadow = !!(opts && opts.castShadow);
-        const logTag = (opts && opts.logTag) || '[world]';
-        // URL 前缀跟随目标模型（Web 服务挂 /armor_view/glb/...，独立 viewer 挂 /glb/...，
-        // 硬编码 /glb/ 在 Web 下 404）；/api/tank 不手动拼前缀——viewer_index_html
-        // 已对字面量 '/api/ 加前缀，手动拼会双重前缀 404。
-        const shooterGlbUrl = assetProvider.url(getTankData().visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
-        // 目标重试会恢复射手模型；同一射手的车辆 JSON 已随弹药加载，直接复用。
-        // 射手正在切换或本发属于另一辆车时，仍按本发车型独立获取。
-        const reuseShooterData = getShooterData() && getSelectedShell() && !deps.isShooterLoading()
-            && String(deps.getCurrentShooterId()) === String(tid);
-        return Promise.all([
-            reuseShooterData ? Promise.resolve(getShooterData()) : fetchTankData(tid).catch(() => null),
-            new Promise<THREE.Group | null>(function(res) {
-                new GLTFLoader().load(shooterGlbUrl,
-                    function(g) { res(g.scene); }, undefined, function() { res(null); });
-            }),
-        ]).then(function(arr): LoadedShooterModel | null {
-            const sd = arr[0], sModel = arr[1];
-            if (!deps.currentShot()) { ml.disposeDetachedModel(sModel); return null; }
-            if (!sModel) { console.warn(logTag + ' shooter model load failed'); return null; }
-            sModel.scale.setScalar(1);
-            // hide_elements 拆件全部渲染（与视觉模型同规则；随父节点姿态自动跟随）
-            if (opts && opts.applyPose) opts.applyPose(sModel);
-            // 炮闩 gun 局部坐标——必须在炮塔/炮管 bake【之前】捕获：
-            // bake 会改写 gun 节点矩阵（绕枢轴偏航/俯仰），之后无法从模型系反推。
-            let breechGunLocal: THREE.Vector3 | null = null;
-            try {
-                const gunPreMatches: THREE.Object3D[] = [];
-                sModel.traverse(function(n: THREE.Object3D) {
-                    if (!gunPreMatches.length && /^gun_\d+$/.test(n.name || '')) gunPreMatches.push(n);
-                });
-                const gunPre = gunPreMatches[0] ?? null;
-                const moPre = sd && sd.model_origins;
-                if (gunPre && moPre) {
-                    const scP = (sd.configs && sd.configs.length) ? sd.configs[sd.configs.length - 1] : null;
-                    // 炮闩标注 = 炮管枢轴 gP(models.pb 原点链)本身，不用碰撞 YAML 后伸量修正
-                    const breechModel = new THREE.Vector3(
-                        moPre.track[0]+moPre.turret[0]+((scP && scP.gun_origin) ? scP.gun_origin[0] : 0),
-                        moPre.track[1]+moPre.turret[1]+((scP && scP.gun_origin) ? scP.gun_origin[1] : 0),
-                        moPre.track[2]+moPre.turret[2]+((scP && scP.gun_origin) ? scP.gun_origin[2] : 0));
-                    sModel.updateMatrixWorld(true);
-                    breechGunLocal = gunPre.worldToLocal(sModel.localToWorld(breechModel));
-                }
-            } catch (e) { console.warn(logTag + ' breech capture failed:', e); }
-            sModel.traverse(function(node: THREE.Object3D) {
-                if ((node as THREE.Mesh).isMesh) {
-                    const mesh = node as THREE.Mesh;
-                    if (castShadow) mesh.castShadow = true;
-                    if (mesh.material) {
-                        mesh.material = cloneMaterial(mesh.material);
-                        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-                        for (const m of mats) { m.transparent = true; m.opacity = 0.6; }
-                    }
-                }
-            });
-            // 必须在材质 clone 之后：幽灵车与目标车同规则（老式车金属度归零）
-            neutralizeDefaultMetalness(sModel);
-            sModel.updateMatrixWorld(true);
-            getScene().add(sModel);
-            return { sd, sModel, breechGunLocal };
-        });
-    };
 }

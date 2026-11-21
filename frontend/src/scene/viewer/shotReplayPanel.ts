@@ -392,3 +392,12 @@ export function installViewSwitch(
     if (window.__shotIsHit) setImpactView(true);
     else setImpactView(false);
 }
+
+/** 移动方向标注开关（面板 HTML 内 #move-toggle 的 change 接线）。 */
+export function installMoveToggle(): void {
+    const mt2 = document.getElementById('move-toggle') as HTMLInputElement | null;
+    if (mt2) mt2.onchange = function() {
+        const anno = window.__moveAnno;
+        if (anno) anno.visible = mt2.checked;
+    };
+}
