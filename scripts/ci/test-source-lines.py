@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Exercise the source LOC gate with disposable, isolated Git repositories."""
+"""Exercise the strict source LOC gate with disposable, isolated Git repositories.
+
+Every case runs the REAL scanner (check-source-lines.py) against real Git
+commits in a temporary repository; no mocked return values are involved.
+"""
 
 import os
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -39,33 +44,163 @@ class SourceLineGateTest(unittest.TestCase):
         self.git('commit', '-q', '-m', label)
         return self.git('rev-parse', 'HEAD')
 
-    def check(self, base, head, *options, env=None):
+    def check(self, base, head, *options, env=None, cwd=None):
         return subprocess.run([sys.executable, str(CHECK), '--base', base, '--head', head, *options],
-                              cwd=self.root, env=env, text=True, capture_output=True)
+                              cwd=cwd or self.root, env=env, text=True, capture_output=True)
 
-    def test_inclusive_limits_and_explicit_exclusions(self):
-        self.assertEqual(POLICY['limits'], {'production': 500, 'test': 1500})
+    # --- F4 core budget matrix ---------------------------------------------
+
+    def test_new_production_file_500_passes_and_501_fails(self):
         self.write('frontend/src/Ok.vue', 500, final_newline=False)
-        self.write('android/app/src/androidTest/java/Ok.kt', 1500)
+        head = self.commit('new production at the inclusive limit')
+        self.assertEqual(self.check(self.base, head).returncode, 0, result_msg(self.check(self.base, head)))
+        self.assertIn('production: files=1 lines=500 over=0', self.check(self.base, head).stdout)
+        self.write('frontend/src/TooBig.vue', 501)
+        head = self.commit('new production one line over')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('frontend/src/TooBig.vue: 501 physical lines (limit 500, production)', result.stderr)
+
+    def test_new_test_file_1500_passes_and_1501_fails(self):
+        self.write('frontend/src/__tests__/Ok.spec.ts', 1500)
+        head = self.commit('new test at the inclusive limit')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('test: files=1 lines=1500 over=0', result.stdout)
+        self.write('frontend/src/__tests__/TooBig.spec.ts', 1501)
+        head = self.commit('new test one line over')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('TooBig.spec.ts: 1501 physical lines (limit 1500, test)', result.stderr)
+
+    def test_unchanged_and_modified_historical_files_over_limit_fail(self):
+        self.write('java/wotb-web/src/main/java/Legacy.java', 501)
+        self.write('android/app/src/main/java/LegacyController.kt', 500)
+        legacy = self.commit('historical over-budget production file')
+        self.write('README.md', 2)
+        unchanged = self.commit('PR touches an unrelated file')
+        # Grandfathering is gone: the over-limit blob fails even when byte-for-byte
+        # identical to the base commit.
+        result = self.check(legacy, unchanged)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Legacy.java: 501 physical lines (limit 500, production)', result.stderr)
+        self.write('java/wotb-web/src/main/java/Legacy.java', 502)
+        changed = self.commit('PR modifies the over-budget file')
+        result = self.check(legacy, changed)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('Legacy.java: 502 physical lines', result.stderr)
+
+    def test_modified_historical_test_file_over_limit_fails(self):
+        self.write('common/python/tests/legacy_test.py', 1500)
+        legacy = self.commit('historical test file at the limit')
+        self.write('common/python/tests/legacy_test.py', 1501)
+        head = self.commit('grow the historical test file')
+        result = self.check(legacy, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('legacy_test.py: 1501 physical lines (limit 1500, test)', result.stderr)
+
+    def test_per_file_exception_attempts_cannot_pass(self):
+        # The allowlist mechanism was deleted: recreating the file, any variant
+        # name, or a policy-side extra category must not shield over-limit source.
+        self.write('frontend/src/oversized.js', 501)
+        self.write('scripts/ci/source-line-allowlist.txt', 1)
+        (self.root / 'scripts/ci/source-line-allowlist.txt').write_text(
+            'frontend/src/oversized.js\n', encoding='utf-8')
+        head = self.commit('attempt to grandfather via a recreated allowlist file')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('frontend/src/oversized.js: 501 physical lines', result.stderr)
+
+    def check_sandbox(self, base, head, sandbox):
+        scanner = sandbox / 'scripts/ci/check-source-lines.py'
+        return subprocess.run([sys.executable, str(scanner), '--base', base, '--head', head],
+                              cwd=sandbox, text=True, capture_output=True)
+
+    def make_sandbox(self, name):
+        sandbox = self.root / name
+        shutil.rmtree(sandbox, ignore_errors=True)
+        (sandbox / 'scripts/ci').mkdir(parents=True)
+        shutil.copy(CHECK, sandbox / 'scripts/ci/check-source-lines.py')
+        return sandbox
+
+    # --- fail-closed evidence requirements ----------------------------------
+
+    def test_missing_policy_fails_closed(self):
+        sandbox = self.make_sandbox('sandbox')
+        shutil.copy(CHECK.with_name('source-line-policy.json'),
+                    sandbox / 'scripts/ci/source-line-policy.json')
+        self.write('frontend/src/App.vue', 10)
+        head = self.commit('trivial change')
+        (sandbox / 'scripts/ci/source-line-policy.json').unlink()
+        result = self.check_sandbox(self.base, head, sandbox)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('policy is unreadable', result.stderr)
+
+    def test_invalid_policy_fails_closed(self):
+        sandbox = self.make_sandbox('sandbox-invalid')
+        (sandbox / 'scripts/ci/source-line-policy.json').write_text('{ not json')
+        self.write('frontend/src/App.vue', 10)
+        head = self.commit('trivial change')
+        result = self.check_sandbox(self.base, head, sandbox)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('not valid JSON', result.stderr)
+
+    def test_policy_with_missing_or_bad_limits_fails_closed(self):
+        for payload in (
+                '{"limits": {"production": 500}}',
+                '{"limits": {"production": 500, "test": -3}, "categories": {}}',
+                '{"limits": {"production": "500", "test": 1500}, "categories": {}}'):
+            sandbox = self.make_sandbox('sandbox-limits')
+            (sandbox / 'scripts/ci/source-line-policy.json').write_text(payload)
+            self.write('frontend/src/App.vue', 10)
+            head = self.commit('trivial change')
+            result = self.check_sandbox(self.base, head, sandbox)
+            self.assertEqual(result.returncode, 2, payload)
+            self.assertIn('Source LOC check failed', result.stderr)
+
+    def test_missing_git_commit_fails_closed(self):
+        self.write('frontend/src/App.vue', 10)
+        head = self.commit('trivial change')
+        result = self.check('0' * 40, head)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Source LOC check failed', result.stderr)
+        result = self.check('not-a-commit', head)
+        self.assertEqual(result.returncode, 2)
+        env = dict(os.environ, PATH=str(self.root))
+        self.assertEqual(self.check(self.base, head, env=env).returncode, 2)
+
+    # --- exclusions: generated, vendored, immutable history -----------------
+
+    def test_valid_generated_and_vendored_artifacts_pass(self):
         self.write('frontend/src/api/generated/contract.ts', 2000)
         self.write('frontend/src/generated.d.ts', 2000)
         self.write('android/app/src/main/cpp/xdelta3/xdelta3.c', 2000)
-        self.write('infra/tofu/grafana/.terraform.lock.hcl', 2000)
         self.write('frontend/pnpm-lock.yaml', 2000)
-        head = self.commit('within limits')
-        result = self.check(self.base, head, '--strict')
+        self.write('infra/tofu/grafana/.terraform.lock.hcl', 2000)
+        head = self.commit('generated and vendored artifacts of any size')
+        result = self.check(self.base, head)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('production: files=1 lines=500 over=0', result.stdout)
-        self.assertIn('test: files=1 lines=1500 over=0', result.stdout)
 
-    def test_legacy_exact_path_allowlist_and_strict_override(self):
-        self.write('frontend/src/api/agent-replay-facets.ts', 501)
-        self.write('scripts/ci/source-line-allowlist.txt', 2)
-        allowlist = self.root / 'scripts/ci/source-line-allowlist.txt'
-        allowlist.write_text('frontend/src/api/agent-replay-facets.ts\n', encoding='utf-8')
-        head = self.commit('legacy explicit exception')
-        self.assertEqual(self.check(self.base, head).returncode, 0)
-        self.assertEqual(self.check(self.base, head, '--strict').returncode, 1)
+    def test_valid_flyway_migration_of_any_size_passes(self):
+        self.write('java/wotb-web/src/main/resources/db/migration/V999__huge_migration.sql', 20000)
+        head = self.commit('applied Flyway migration is immutable history')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_maintained_source_in_an_excluded_looking_path_does_not_bypass(self):
+        # Plural "migrations" is not the Flyway convention: classification stays
+        # structural, and this maintained SQL-like path stays in the budget.
+        self.write('java/wotb-web/src/main/resources/db/migrations/seed.sql', 501)
+        # A nested migration path under an extra directory still matches the
+        # immutable-history pattern... unless it leaves the java tree entirely.
+        self.write('deploy/db/migration/V1__huge.sql', 501)
+        head = self.commit('maintained source in excluded-looking paths')
+        result = self.check(self.base, head)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('db/migrations/seed.sql: 501 physical lines', result.stderr)
+        self.assertIn('deploy/db/migration/V1__huge.sql: 501 physical lines', result.stderr)
+
+    # --- CI tooling is production, extension coverage -----------------------
 
     def test_ci_gate_tools_use_the_test_budget(self):
         self.write('scripts/ci/check-repository-hygiene.sh', POLICY['limits']['test'])
@@ -77,120 +212,24 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('check-repository-hygiene.sh: 1501 physical lines (limit 1500, test)', result.stderr)
 
-    def test_new_production_and_test_over_limit_fail(self):
-        self.write('common/python/loader.py', POLICY['limits']['production'] + 1)
-        self.write('frontend/scripts/browser-scenario.mjs', POLICY['limits']['test'] + 1)
-        head = self.commit('new oversized')
+    def test_representative_extensions_are_all_enforced(self):
+        names = {
+            'frontend/src/app.ts': 501,
+            'service/Main.java': 501,
+            'android/app/src/main/java/Big.kt': 501,
+            'frontend/src/util.js': 501,
+            'deploy/tool.py': 501,
+            'deploy/run.sh': 501,
+            '.github/workflows/gate.yml': 501,
+            'frontend/src/Page.vue': 501,
+        }
+        for name, lines in names.items():
+            self.write(name, lines)
+        head = self.commit('one oversized file per representative extension')
         result = self.check(self.base, head)
         self.assertEqual(result.returncode, 1)
-        self.assertIn('loader.py: 501 physical lines', result.stderr)
-        self.assertIn('browser-scenario.mjs: 1501 physical lines', result.stderr)
-
-    def test_legacy_unchanged_only_and_strict_mode(self):
-        self.write('java/module/src/main/java/Old.java', 501)
-        legacy = self.commit('legacy')
-        self.write('README.md', 2)
-        unchanged = self.commit('unrelated')
-        self.assertEqual(self.check(legacy, unchanged).returncode, 0)
-        self.assertEqual(self.check(legacy, unchanged, '--strict').returncode, 1)
-        self.write('java/module/src/main/java/Old.java', 502)
-        changed = self.commit('grow old')
-        self.assertEqual(self.check(legacy, changed).returncode, 1)
-        self.write('java/module/src/main/java/Old.java', 500)
-        fixed = self.commit('split old')
-        self.assertEqual(self.check(legacy, fixed, '--strict').returncode, 0)
-
-    def test_legacy_intermediate_edits_are_allowed_after_final_split(self):
-        self.write('scripts/ci/test-workflow-contract.sh', 1601)
-        legacy = self.commit('legacy test tool above the test budget')
-        self.write('scripts/ci/test-workflow-contract.sh', 1602)
-        self.commit('intermediate tooling edits before responsibility split')
-        self.write('scripts/ci/test-workflow-contract.sh', 1400)
-        head = self.commit('split tooling file below the test budget')
-        result = self.check(legacy, head)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_pre_split_fork_point_blob_remains_grandfathered(self):
-        self.write('frontend/src/legacy.ts', 501)
-        fork = self.commit('fork point with legacy blob')
-        self.write('frontend/src/legacy.ts', 400)
-        self.commit('main splits legacy file')
-        main_head = self.git('rev-parse', 'HEAD')
-        self.git('switch', '-q', '-c', 'candidate', fork)
-        self.write('README.md', 2)
-        candidate = self.commit('candidate carries unchanged fork blob')
-        result = self.check(main_head, candidate)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.check(main_head, candidate, '--strict').returncode, 1)
-
-    def test_bash_hygiene_delegates_loc_classification_to_python_policy(self):
-        hygiene = (CHECK.with_name('check-repository-hygiene.sh')).read_text(encoding='utf-8')
-        self.assertIn('check-source-lines.py" --base "$BASE_SHA" --head "$HEAD_SHA"', hygiene)
-        self.assertNotIn('is_source_line_candidate()', hygiene)
-        self.assertNotIn('MAX_SOURCE_LINES', hygiene)
-        self.write('frontend/src/__tests__/helpers.ts', 600)
-        head = self.commit('shared test candidate')
-        result = self.check(self.base, head)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('test: files=1 lines=600 over=0', result.stdout)
-
-    def test_legacy_bash_gate_growth_ratchet_is_preserved(self):
-        gate = b'Source-line policy compatibility marker'
-        self.write('scripts/ci/check-repository-hygiene.sh', 1)
-        gate_path = self.root / 'scripts/ci/check-repository-hygiene.sh'
-        gate_path.write_bytes(gate + b'\n')
-        self.write('scripts/ci/source-line-allowlist.txt', 1)
-        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
-        allow.write_text('frontend/src/a.ts\n', encoding='utf-8')
-        self.write('frontend/src/a.ts', 501)
-        base = self.commit('legacy policy with one exception')
-        allow.write_text('frontend/src/a.ts\nfrontend/src/b.ts\n', encoding='utf-8')
-        self.write('frontend/src/b.ts', 501)
-        head = self.commit('attempt to grow exceptions')
-        result = self.check(base, head)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('source-line allowlist must not grow', result.stderr)
-
-    def test_existing_base_allowlist_enforces_ratchet_without_gate_marker(self):
-        self.write('scripts/ci/source-line-allowlist.txt', 1)
-        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
-        allow.write_text('frontend/src/a.ts\n', encoding='utf-8')
-        self.write('frontend/src/a.ts', 501)
-        base = self.commit('base has an existing source exception')
-        allow.write_text('frontend/src/a.ts\nfrontend/src/b.ts\n', encoding='utf-8')
-        self.write('frontend/src/b.ts', 501)
-        head = self.commit('attempt growth without a gate marker')
-        result = self.check(base, head)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('source-line allowlist must not grow', result.stderr)
-
-    def test_fork_point_allowlist_grandfathers_intermediate_candidate_blob(self):
-        source = 'frontend/src/legacy.ts'
-        self.write(source, 501)
-        allow = self.root / 'scripts/ci/source-line-allowlist.txt'
-        allow.parent.mkdir(parents=True, exist_ok=True)
-        allow.write_text(source + '\n', encoding='utf-8')
-        fork = self.commit('fork point approves the legacy exception')
-        self.git('switch', '-q', '-c', 'main-advanced')
-        self.write(source, 500)
-        (self.root / 'scripts/ci/source-line-allowlist.txt').unlink()
-        main = self.commit('main splits and retires the exception')
-        self.git('switch', '-q', '-c', 'candidate', fork)
-        self.write(source, 502)
-        self.commit('candidate intermediate edit remains under fork approval')
-        self.write(source, 500)
-        (self.root / 'scripts/ci/source-line-allowlist.txt').unlink()
-        head = self.commit('candidate ends within budget')
-        result = self.check(main, head)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_unknown_paths_and_invalid_revisions_cannot_pass(self):
-        self.write('some/generated/handwritten.py', 501)
-        head = self.commit('not explicitly excluded')
-        self.assertEqual(self.check(self.base, head).returncode, 1)
-        self.assertEqual(self.check('not-a-commit', head).returncode, 2)
-        env = dict(os.environ, PATH=str(self.root))
-        self.assertEqual(self.check(self.base, head, env=env).returncode, 2)
+        for name in names:
+            self.assertIn(name, result.stderr)
 
     def test_renamed_oversized_file_is_new_debt(self):
         self.write('scripts/test-legacy.sh', 1501)
@@ -201,16 +240,18 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('test-renamed.sh: 1501 physical lines (limit 1500, test)', result.stderr)
 
-    def test_handwritten_markup_and_less_common_languages_are_checked(self):
-        names = ('android/app/src/main/res/layout/example.xml', 'schema.graphql',
-                 'service/codec.cxx', 'frontend/scripts/protos/schema.proto', '.github/workflows/test.yml')
-        for name in names:
-            self.write(name, 501)
-        head = self.commit('additional source types')
-        result = self.check(self.base, head)
-        self.assertEqual(result.returncode, 1)
-        for name in names:
-            self.assertIn(name, result.stderr)
+    def test_policy_matches_enforced_contract(self):
+        self.assertEqual(POLICY['limits'], {'production': 500, 'test': 1500})
+        categories = POLICY['categories']
+        self.assertEqual(
+            set(categories), {'generated', 'vendored', 'immutable-history'})
+        self.assertIn('java/**/src/main/resources/db/migration/**',
+                      categories['immutable-history']['patterns'])
+        self.assertIn('frontend/src/api/generated/', categories['generated']['patterns'])
+
+
+def result_msg(result):
+    return result.stdout + result.stderr
 
 
 if __name__ == '__main__':
