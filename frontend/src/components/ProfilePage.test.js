@@ -1076,7 +1076,13 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     // 把 B 正在进行的加载/pending 误判为空闲（重连 / watch 路径可能因此再起一次请求）。
     // 只审 **finally 块**内：登出清理（watcher true→false 分支）无条件清空是刻意的，不在范围内。
     // happy-dom 环境下 import.meta.url 不是 file: URL：按 vitest 的 cwd（frontend/）取源文件
-    const source = readFileSync(join(process.cwd(), 'src/components/ProfilePage.vue'), 'utf8')
+    // pending 清理逻辑已拆分至 profile/ 模块：不变量覆盖宿主 + 各模块源码
+    const source = [
+      'src/components/ProfilePage.vue',
+      'src/components/profile/useProfileSession.js',
+      'src/components/profile/useProfileWotbAccount.js',
+      'src/components/profile/useProfileHundred.js',
+    ].map((rel) => readFileSync(join(process.cwd(), rel), 'utf8')).join('\n')
     const finallyBlocks = []
     let cursor = 0
     while (true) {
