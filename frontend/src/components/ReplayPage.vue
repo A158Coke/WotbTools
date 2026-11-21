@@ -7,20 +7,13 @@ import { apiErrorLabel } from '../utils/display.js'
 import { replayAggregatePlayerCount } from '../utils/replayView.js'
 import { useReplay } from '../composables/useReplay.js'
 import { useColumns } from '../composables/useColumns.js'
-import {
-  getExportTarget,
-  computeExportDimensions,
-  exportPngFilename,
-  downloadBlob,
-  maxFiniteDimension
-} from '../utils/exportReplayPng.js'
 import ColumnPicker from './ColumnPicker.vue'
 import AggregateTable from './AggregateTable.vue'
 import BattleTable from './BattleTable.vue'
 import LeagueSummaryTable from './LeagueSummaryTable.vue'
 import CwPlayerSummaryTable from './CwPlayerSummaryTable.vue'
 import PlayerDetailDrawer from './PlayerDetailDrawer.vue'
-import { mergeCwPlayerRows, mergeCwPlayerColumns, CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
+import { mergeCwPlayerRows, mergeCwPlayerColumns } from '../utils/playerSummaryMerge.js'
 import { BookOpen, Columns3, Download } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
@@ -28,6 +21,8 @@ import BattlePicker from './BattlePicker.vue'
 import MenuButton from './MenuButton.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import SeriesOverview from './SeriesOverview.vue'
+import { useReplayPngExport } from './replay-workspace/useReplayPngExport.js'
+import { useReplayPlayerDrawer } from './replay-workspace/useReplayPlayerDrawer.js'
 import { battlePickerOptions, buildSeriesOverview } from '../utils/replaySeries.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 
@@ -127,114 +122,11 @@ const unifiedShownCols = computed(() => {
     .filter(Boolean)
 })
 
-// ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
-const selectedPlayerContext = ref(null)
-
-// ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
-const navOrder = ref([])
-const navIndex = ref(-1)
-
-function selectPlayer(context) {
-  selectedPlayerContext.value = context
-  const order = Array.isArray(context.order) ? context.order.map(Number) : []
-  navOrder.value = order
-  navIndex.value = order.indexOf(Number(context.accountId))
-}
-
-function closeDrawer() {
-  selectedPlayerContext.value = null
-  navOrder.value = []
-  navIndex.value = -1
-}
-
-/** 前后导航可用性：首位 prev 禁用、末位 next 禁用，不循环。 */
-const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
-const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
-
-function goPrevPlayer() {
-  const ctx = selectedPlayerContext.value
-  if (!ctx || !hasPrevPlayer.value) return
-  const target = navOrder.value[navIndex.value - 1]
-  selectedPlayerContext.value = { scope: ctx.scope, accountId: target, arenaId: ctx.arenaId }
-  navIndex.value = navIndex.value - 1
-}
-
-function goNextPlayer() {
-  const ctx = selectedPlayerContext.value
-  if (!ctx || !hasNextPlayer.value) return
-  const target = navOrder.value[navIndex.value + 1]
-  selectedPlayerContext.value = { scope: ctx.scope, accountId: target, arenaId: ctx.arenaId }
-  navIndex.value = navIndex.value + 1
-}
-
-/** Drawer 打开状态：context 存在即打开（默认关闭）。 */
-const drawerOpen = computed(() => !!selectedPlayerContext.value)
-
-/** 选中玩家 identity：scope + accountId + arenaId；
- *  Drawer 关闭（closeDrawer / Tab 切换 / selectionRevision）→ null → 表格清除 selected highlight。 */
-const selectedPlayer = computed(() => {
-  const ctx = selectedPlayerContext.value
-  if (!ctx) return null
-  return { scope: ctx.scope, accountId: Number(ctx.accountId), arenaId: ctx.arenaId || null }
-})
-
-/** 当前 Drawer 的玩家数据（按 context 实时 resolve；排序/响应刷新后仍指向原选手）。 */
-const drawerPlayer = computed(() => {
-  const ctx = selectedPlayerContext.value
-  if (!ctx) return null
-  if (ctx.scope === 'summary') {
-    const row = unifiedRows.value.find(r => Number(r.accountId) === Number(ctx.accountId))
-    if (!row) return null
-    return {
-      accountId: row.accountId,
-      nickname: row.cells.nickname,
-      clan: row.cells.clan || '',
-      rating: row.cells.league_rating,
-      observedMean: row.cells.league_observed_mean,
-      dimensionMeans: row.league?.dimensionMeans ?? null,
-      mvpCount: row.cells.mvp_count,
-      battles: row.cells.battles,
-      wins: row.cells.wins,
-      mostUsedVehicle: row.league?.mostUsedVehicle ?? null,
-      ratedBattles: row.cells?.rated_battles ?? null,
-      cells: row.cells,
-    }
-  }
-  const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
-  const row = battle?.players?.find(p => Number(p.accountId) === Number(ctx.accountId))
-  if (!row) return null
-  return {
-    accountId: row.accountId,
-    nickname: row.cells.nickname,
-    clan: row.cells.clan || '',
-    rating: row.cells.league_rating,
-    dimensionScores: CW_DIM_KEYS.map(k => row.cells[k]),
-    tankId: row.vehicleId ?? null,
-    tankName: row.cells?.tank_name ?? '',
-    tankBattles: 1,
-    cells: row.cells,
-  }
-})
-
-watch(selectionRevision, () => {
-  selectedPlayerContext.value = null
-  navOrder.value = []
-  navIndex.value = -1
-})
-
-watch([isSummaryView, currentSingleIndex], () => {
-  selectedPlayerContext.value = null
-  navOrder.value = []
-  navIndex.value = -1
-})
-
-const drawerScopePlayers = computed(() => {
-  const ctx = selectedPlayerContext.value
-  if (!ctx) return []
-  if (ctx.scope === 'summary') return unifiedRows.value
-  const battle = (resp.value?.battles || []).find(b => b.arenaId === ctx.arenaId)
-  return battle ? battle.players : []
-})
+const {
+  selectedPlayerContext, navOrder, navIndex,
+  selectPlayer, closeDrawer, hasPrevPlayer, hasNextPlayer, goPrevPlayer, goNextPlayer,
+  drawerOpen, selectedPlayer, drawerPlayer, drawerScopePlayers,
+} = useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, isSummaryView, currentSingleIndex })
 
 const showLeagueFailures = ref(false)
 const expandedLeagueGroups = ref({})
@@ -367,7 +259,6 @@ watch(selectionRevision, () => {
   // 切场/汇总往返不受影响（selectionRevision 不变）。
   battleSorts.value = []
 })
-const exportingPng = ref(false)
 const aggregateRef = ref(null)
 const battleRefs = ref([])
 
@@ -387,160 +278,9 @@ function setBattleSort(index, patch) {
   battleSorts.value[index] = { ...current, ...patch }
 }
 
-function readTheme() {
-  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
-}
-
-const EXPORT_THEME_CSS = {
-  light: 'replay-export-light',
-  dark: 'replay-export-dark'
-}
-
-const EXPORT_BG = {
-  light: '#ffffff',
-  dark: '#1e1e1e'
-}
-
-function createExportClone(target, theme) {
-  const clone = target.cloneNode(true)
-  clone.classList.add('replay-export-root', EXPORT_THEME_CSS[theme])
-  const container = document.createElement('div')
-  container.style.position = 'fixed'
-  container.style.left = '-9999px'
-  container.style.top = '0'
-  container.style.pointerEvents = 'none'
-  container.style.zIndex = '-1'
-  container.setAttribute('aria-hidden', 'true')
-  container.appendChild(clone)
-  document.body.appendChild(container)
-  return { clone, container }
-}
-
-function prepareReplayExportClone(clone) {
-  if (!clone) return
-  // PNG 总是导出表格：卡片模式下表格只是被隐藏
-  for (const el of clone.querySelectorAll('.player-cards')) el.remove()
-  for (const el of clone.querySelectorAll('.tablewrap, .scroll-hint')) el.style.display = ''
-  for (const el of clone.querySelectorAll('.selected')) {
-    el.classList.remove('selected')
-  }
-  for (const el of clone.querySelectorAll('.sticky-col')) {
-    el.style.position = 'static'
-    el.style.left = 'auto'
-    el.style.right = 'auto'
-    el.style.zIndex = 'auto'
-  }
-}
-
-function expandExportTables(clone) {
-  for (const wrap of clone.querySelectorAll('.tablewrap')) {
-    wrap.style.overflow = 'visible'
-    wrap.style.maxWidth = 'none'
-    wrap.style.width = 'max-content'
-  }
-}
-
-function measureExportClone(clone) {
-  const naturalRootW = maxFiniteDimension(
-    clone.scrollWidth,
-    clone.getBoundingClientRect().width
-  )
-
-  let maxDescendantW = 0
-  for (const wrap of clone.querySelectorAll('.tablewrap')) {
-    const wrapW = maxFiniteDimension(wrap.scrollWidth, wrap.getBoundingClientRect().width)
-    if (wrapW > maxDescendantW) maxDescendantW = wrapW
-    for (const tbl of wrap.querySelectorAll('table')) {
-      const tblW = maxFiniteDimension(tbl.scrollWidth, tbl.getBoundingClientRect().width)
-      if (tblW > maxDescendantW) maxDescendantW = tblW
-    }
-  }
-  for (const child of clone.children) {
-    const csw = maxFiniteDimension(child.scrollWidth, child.getBoundingClientRect().width)
-    if (csw > maxDescendantW) maxDescendantW = csw
-  }
-
-  const cs = clone.ownerDocument.defaultView.getComputedStyle(clone)
-  const padLeft = parseFloat(cs.paddingLeft) || 0
-  const padRight = parseFloat(cs.paddingRight) || 0
-  const borderLeft = parseFloat(cs.borderLeftWidth) || 0
-  const borderRight = parseFloat(cs.borderRightWidth) || 0
-  const hExtra = padLeft + padRight + borderLeft + borderRight
-
-  const requiredW = maxDescendantW > naturalRootW
-    ? maxDescendantW + hExtra
-    : naturalRootW
-
-  clone.style.width = Math.ceil(requiredW) + 'px'
-
-  const finalW = maxFiniteDimension(clone.scrollWidth, clone.getBoundingClientRect().width)
-  const finalH = maxFiniteDimension(clone.scrollHeight, clone.getBoundingClientRect().height)
-
-  return { width: Math.ceil(finalW), height: Math.ceil(finalH) }
-}
-
-function waitForLayout() {
-  return new Promise(resolve => {
-    nextTick(() => requestAnimationFrame(resolve))
-  })
-}
-
-function cleanupExportClone(container) {
-  if (container && container.parentNode) {
-    container.parentNode.removeChild(container)
-  }
-}
-
-async function downloadResultPng() {
-  if (exportingPng.value || loading.value) return
-
-  const exportSummary = isSummaryView.value
-  const exportBattleIdx = exportSummary ? NaN : currentSingleIndex.value
-  const exportTab = exportSummary ? 'aggregate' : `b${exportBattleIdx}`
-  const exportTheme = readTheme()
-  const exportLocale = locale.value
-  const exportMapName = !exportSummary && resp.value?.battles?.[exportBattleIdx]?.mapName
-    ? mapLabel(resp.value.battles[exportBattleIdx].mapName, exportLocale)
-    : undefined
-
-  const target = getExportTarget(exportTab, aggregateRef.value, battleRefs.value)
-  if (!target) return
-
-  let cloneCtx = null
-
-  exportingPng.value = true
-  error.value = ''
-
-  try {
-    cloneCtx = createExportClone(target, exportTheme)
-    prepareReplayExportClone(cloneCtx.clone)
-    expandExportTables(cloneCtx.clone)
-    await waitForLayout()
-    const measured = measureExportClone(cloneCtx.clone)
-    const dims = computeExportDimensions(measured)
-
-    const html2canvas = (await import('html2canvas')).default
-    const canvas = await html2canvas(cloneCtx.clone, {
-      scale: dims.scale,
-      useCORS: true,
-      backgroundColor: EXPORT_BG[exportTheme],
-      width: dims.width,
-      height: dims.height
-    })
-
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-    if (!blob) throw new Error('Replay PNG export: canvas.toBlob returned null')
-
-    const filename = exportPngFilename(exportTab, isNaN(exportBattleIdx) ? 0 : exportBattleIdx, exportMapName)
-    await downloadBlob(blob, filename)
-  } catch (e) {
-    console.error('[Replay PNG Export] failed', e)
-    error.value = t('replay.png_export_failed')
-  } finally {
-    if (cloneCtx) cleanupExportClone(cloneCtx.container)
-    exportingPng.value = false
-  }
-}
+const { exportingPng, downloadResultPng } = useReplayPngExport({
+  loading, error, isSummaryView, currentSingleIndex, resp, aggregateRef, battleRefs, t, locale, nextTick,
+})
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 
@@ -700,237 +440,4 @@ function openRatingDocs() {
   </div>
 </template>
 
-<style>
-.replay-section-title {
-  margin: 18px 0 8px;
-  font-size: .92rem;
-  font-weight: 800;
-  color: var(--text-heading);
-  letter-spacing: .01em;
-}
-.replay-section-title:first-child { margin-top: 4px; }
-.league-summary-empty {
-  margin: 8px 2px 16px;
-  padding: 14px 16px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  color: var(--text-sub);
-  font-size: .85rem;
-  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
-}
-.replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
-.result-notices { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
-.result-notices:empty { display: none; }
-.notice-files { margin: var(--space-1) 0 0; padding-inline-start: var(--space-5); color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.data-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
-.data-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
-@media (width < 768px) {
-  .data-toolbar > .segmented { width: 100%; }
-  .data-actions { width: 100%; justify-content: flex-end; }
-  .data-layout-toggle { margin-inline-end: auto; }
-}
-.league-failure-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  font-size: .85rem;
-}
-.lf-title { font-weight: 700; color: var(--warn-text); }
-.lf-rated, .lf-unrated { font-variant-numeric: tabular-nums; }
-.lf-unrated { color: var(--warn-text); }
-.lf-toggle {
-  margin-left: auto;
-  padding: 3px 10px;
-  border: 1px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--warn-text);
-  cursor: pointer;
-  font-size: .78rem;
-  font-family: inherit;
-}
-.lf-toggle:hover { background: color-mix(in oklab, var(--color-warning) 16%, transparent); }
-.league-failure-detail { margin-top: 8px; border-top: 1px solid color-mix(in oklab, var(--color-warning) 25%, transparent); padding-top: 8px; }
-.league-failure-group { margin-bottom: 4px; }
-.lf-group-head {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 5px 8px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-label);
-  cursor: pointer;
-  font-size: .8rem;
-  font-family: inherit;
-}
-.lf-group-head:hover { background: color-mix(in oklab, var(--color-warning) 14%, transparent); color: var(--warn-text); }
-.lf-group-files {
-  margin: 2px 0 6px;
-  padding: 2px 8px 2px 22px;
-  color: var(--text-muted);
-  font-size: .78rem;
-  word-break: break-word;
-}
-.replay-export-root.replay-export-light {
-  --exp-bg: #ffffff;
-  --exp-card-bg: #f8f9fa;
-  --exp-text: #1a1a1a;
-  --exp-text-sub: #666666;
-  --exp-border: #dee2e6;
-  --exp-header-bg: #e9ecef;
-  --exp-t1-bg: #e3f2fd;
-  --exp-t2-bg: #fce4ec;
-  --exp-alive: #28a745;
-  --exp-destroyed: #dc3545;
-}
-
-.replay-export-root.replay-export-dark {
-  --exp-bg: #1e1e1e;
-  --exp-card-bg: #2d2d2d;
-  --exp-text: #e0e0e0;
-  --exp-text-sub: #999999;
-  --exp-border: #444444;
-  --exp-header-bg: #333333;
-  --exp-t1-bg: #1a3a5c;
-  --exp-t2-bg: #5c2a3a;
-  --exp-alive: #4caf50;
-  --exp-destroyed: #ef5350;
-}
-
-.replay-export-root {
-  background: var(--exp-bg);
-  color: var(--exp-text);
-  padding: 16px;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: none;
-}
-.replay-export-root .sticky-col {
-  position: static !important;
-  left: auto !important;
-  right: auto !important;
-  z-index: auto !important;
-}
-.replay-export-root .league-overview {
-  border: 1px solid var(--exp-border);
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-}
-.replay-export-root .league-team {
-  border: 1px solid var(--exp-border);
-  border-radius: 7px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-.replay-export-root .league-team.league-win {
-  background: var(--exp-t1-bg);
-}
-.replay-export-root .team-name-input {
-  border: 1px dashed var(--exp-border);
-  color: var(--exp-text);
-}
-.replay-export-root .league-mvp {
-  color: var(--exp-text);
-}
-.replay-export-root .mvp-badge {
-  background: var(--exp-header-bg);
-  color: var(--exp-text);
-}
-.replay-export-root .league-summary-title {
-  color: var(--exp-text);
-}
-/* StatStrip 的 scoped 规则与这里同特异性，导出样式多带一层 .mcards 以确定性胜出 */
-.replay-export-root .mcards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.replay-export-root .mcards .mc {
-  background: var(--exp-card-bg);
-  border: 1px solid var(--exp-border);
-  border-radius: 8px;
-  padding: 14px 16px;
-  text-align: center;
-}
-.replay-export-root .mcards .mc .k {
-  font-size: .78rem;
-  color: var(--exp-text-sub);
-  margin-bottom: 4px;
-}
-.replay-export-root .mcards .mc .v {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--exp-text);
-  font-variant-numeric: tabular-nums;
-}
-.replay-export-root .tablewrap {
-  overflow: visible;
-  max-width: none;
-  border: 1px solid var(--exp-border);
-  border-radius: 8px;
-}
-.replay-export-root table {
-  border-collapse: collapse;
-  width: auto;
-  background: var(--exp-bg);
-}
-.replay-export-root th {
-  background: var(--exp-header-bg) !important;
-  color: var(--exp-text);
-  padding: 6px 10px;
-  border: 1px solid var(--exp-border);
-  white-space: nowrap;
-  font-weight: 600;
-}
-.replay-export-root td {
-  padding: 5px 10px;
-  border: 1px solid var(--exp-border);
-  color: var(--exp-text);
-}
-.replay-export-root tbody tr.t1 td {
-  background: var(--exp-t1-bg) !important;
-}
-.replay-export-root tbody tr.t2 td {
-  background: var(--exp-t2-bg) !important;
-}
-.replay-export-root .alive {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--exp-alive);
-  color: var(--exp-bg);
-}
-.replay-export-root .dead {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--exp-destroyed);
-  color: var(--exp-bg);
-}
-.replay-export-root * {
-  animation: none !important;
-  transition: none !important;
-  backdrop-filter: none !important;
-  filter: none !important;
-}
-.replay-export-root .league-summary-empty {
-  background: var(--exp-card-bg) !important;
-  color: var(--exp-text-sub) !important;
-}
-.replay-export-root .scroll-hint {
-  display: none;
-}
-</style>
+<style src="./replay-page.css"></style>
