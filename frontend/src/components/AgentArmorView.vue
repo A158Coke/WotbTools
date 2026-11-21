@@ -31,6 +31,7 @@ import { useArmorSetupQuery } from './agent-armor/useArmorSetupQuery.js'
 import { useArmorPitchAvailability } from './agent-armor/useArmorPitchAvailability.js'
 import { armorViewerLabels } from './agent-armor/armorViewerLabels.js'
 import './agent-armor-view.css'
+import './agent-armor-view-responsive.css'
 
 const { t, te } = useI18n()
 const route = useRoute()

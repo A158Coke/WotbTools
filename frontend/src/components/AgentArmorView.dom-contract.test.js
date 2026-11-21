@@ -13,7 +13,7 @@ const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)),
 const plateModel = read('../scene/viewer/armorPlateModel.ts') + '\n' + read('../scene/viewer/armorPenetrationScenes.ts')
 
 describe('AgentArmorView ↔ tankViewer DOM 契约', () => {
-  const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css')].join('\n')
+  const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css')].join('\n')
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/resultCardPosition.ts'), read('../scene/viewer/resultCardAnchor.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('内核 getElementById 的静态 ID 全部由模板提供', () => {
@@ -183,7 +183,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/const camView = QP\.get\('camview'\) \|\| \(CAMERA_VIEW_PRESETS\.has\(view\) \? view : null\);/)
   })
   it('场景风格跟随网页 UI：透明画布、无地面网格、半球光主题表面色', () => {
-    const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css')].join('\n')
+    const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css')].join('\n')
     expect(kernel).not.toContain('GridHelper')
     expect(kernel).toContain('scene.background = null;')
     expect(kernel).toContain('antialias: true, alpha: true')
@@ -362,7 +362,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     // （Codex 复核 P2），上一发的爆点/结果卡会在回到默认视图时被复活。
     expect(kernel).toMatch(/function refreshEquipmentEffects\(\)[\s\S]*?hm\.updateHeatmapThickness\(\);[\s\S]*?if \(!QP\.get\('shot'\) && \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\)\) \{/)
     expect(kernel).not.toMatch(/if \(!penetrationMode && !primaryArmorScene\) return;/)
-    const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css')].join('\n')
+    const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css')].join('\n')
     expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
     expect(view).toMatch(/if \(!preserveSelection\) \{/)
     expect(view).toMatch(/selectedShooterId\.value = null/)
@@ -413,7 +413,7 @@ describe('traj-info hit-follow layout', () => {
 // 交战距离结果行本地化（review P3）：标签/单位走 labels（三语），不用硬编码中文。
 describe('engagement-distance result line localization', () => {
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
-  const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css')].join('\n')
+  const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.js'), read('./agent-armor/armorViewerLabels.js'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css')].join('\n')
   it('结果卡距离行插值 L.shotDistance / L.distanceUnit', () => {
     // 卡片 HTML 已出仓 viewer/shotResultCard.ts（Wave B3A）：距离行插值的行为断言
     // 在 src/scene/viewer/shotResultCard.test.ts（含三语）；这里只锁场景内核的接线——
