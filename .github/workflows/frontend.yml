@@ -21,6 +21,7 @@ on:
       - deploy/tx/nginx/**
       - deploy/check-production-freshness.sh
       - deploy/tx/build-frontend-from-gitee.sh
+      - deploy/tx/build-frontend-from-gitee.registry.sh
       - deploy/tx/sponsor-fingerprint.sh
       - deploy/sponsor/**
       - deploy/tx/frontend.compose.yml
@@ -55,6 +56,7 @@ env:
     deploy/tx/nginx/**
     deploy/check-production-freshness.sh
     deploy/tx/build-frontend-from-gitee.sh
+    deploy/tx/build-frontend-from-gitee.registry.sh
     deploy/tx/sponsor-fingerprint.sh
     deploy/sponsor/**
     deploy/tx/frontend.compose.yml
@@ -244,6 +246,8 @@ jobs:
           scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.sh" "$TX2_USER@$TX2_HOST:$remote_script"
           scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
+            "$GITHUB_WORKSPACE/deploy/tx/build-frontend-from-gitee.registry.sh" "$TX2_USER@$TX2_HOST:${remote_script%.sh}.registry.sh"
+          scp -i ~/.ssh/tx2-frontend-build -P "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=15 \
             "$AGENT_FILE" "$TX2_USER@$TX2_HOST:$remote_agent"
           chmod_targets="chmod 700 '$remote_script' && chmod 600 '$remote_agent'"
           if [ -n "$SPONSOR_BUNDLE" ]; then
@@ -346,7 +350,7 @@ jobs:
           remote_agent="/tmp/wotbtools-agent-${RUN_ID}-${RUN_ATTEMPT}-${AGENT_ASSET}"
           remote_sponsor="/tmp/wotbtools-sponsor-${RUN_ID}-${RUN_ATTEMPT}.tar.gz"
           ssh -i ~/.ssh/tx2-frontend-build -p "$TX2_PORT" -o BatchMode=yes -o ConnectTimeout=10 \
-            "$TX2_USER@$TX2_HOST" "rm -f -- '$remote_script' '$remote_agent' '$remote_sponsor'" || \
+            "$TX2_USER@$TX2_HOST" "rm -f -- '$remote_script' '${remote_script%.sh}.registry.sh' '$remote_agent' '$remote_sponsor'" || \
             echo "WARNING: failed to clean staged TX2 frontend build inputs"
 
   deploy:

@@ -901,8 +901,10 @@ for host, spec in periphery_hosts.items():
     steps = {step.get("name"): step for step in job["steps"]}
     # The pinned release manifest and the same SHA-verified artifact, per job.
     release_step = steps["Read the pinned Periphery release"]["run"]
-    assert "deploy/periphery/periphery.release" in release_step, release_step
-    assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
+    assert release_step == "bash deploy/periphery/read-release.sh", release_step
+    release_script = Path("deploy/periphery/read-release.sh").read_text()
+    assert "deploy/periphery/periphery.release" in release_script
+    assert "PERIPHERY_SHA256" in release_script and "PERIPHERY_URL" in release_script
     artifact_step = steps["Download and verify the pinned Periphery artifact"]["run"]
     assert "sha256sum --check --strict" in artifact_step, artifact_step
     assert "--retry 3" in artifact_step, artifact_step
