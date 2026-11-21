@@ -132,6 +132,7 @@ try {
   assert.equal(pnpmRun.status, 0, pnpmRun.stdout + '\n' + pnpmRun.stderr);
   assert.match(pnpmRun.stdout, /JSON report saved/i);
   const baselineReport = JSON.parse(await readFile(path.join(baselineRoot, 'tmp', 'jscpd', 'review-with-docs.json'), 'utf8'));
+  execFileSync(process.execPath, [path.join(actualFrontend, 'scripts', 'validate-jscpd-report.mjs'), path.join(baselineRoot, 'tmp', 'jscpd', 'review-with-docs.json')], { stdio: 'pipe' });
   for (const [prefix, isNew] of [['existing', false], ['added', true]]) {
     const clone = baselineReport.duplicates.find(({ firstFile, secondFile }) => {
       const names = [path.basename(firstFile.name), path.basename(secondFile.name)].sort();

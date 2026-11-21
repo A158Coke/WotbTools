@@ -26,8 +26,8 @@ test('requires a valid nonempty baseline comparison report', async () => {
     }
     const validClone = {
       isNew: true,
-      firstFile: { name: '/repo/src/first.ts', start: { line: 12 }, end: { line: 24 } },
-      secondFile: { name: '/repo/src/second.ts', start: { line: 30 }, end: { line: 42 } },
+      firstFile: { name: '/repo/src/first.ts', start: 12, end: 24, startLoc: { line: 12 }, endLoc: { line: 24 } },
+      secondFile: { name: '/repo/src/second.ts', start: 30, end: 42, startLoc: { line: 30 }, endLoc: { line: 42 } },
       format: 'typescript', lines: 13, tokens: 66,
     }
     await writeFile(file, JSON.stringify({ statistics: { total: { sources: 2, newClones: 1 } }, duplicates: [validClone] }))
@@ -35,8 +35,9 @@ test('requires a valid nonempty baseline comparison report', async () => {
     for (const invalid of [
       { ...validClone, secondFile: undefined },
       { ...validClone, firstFile: { ...validClone.firstFile, name: '  ' } },
-      { ...validClone, firstFile: { ...validClone.firstFile, start: { line: 0 } } },
-      { ...validClone, secondFile: { ...validClone.secondFile, end: { line: 29 } } },
+      { ...validClone, firstFile: { ...validClone.firstFile, start: 0 } },
+      { ...validClone, secondFile: { ...validClone.secondFile, end: 29 } },
+      { ...validClone, firstFile: { ...validClone.firstFile, startLoc: { line: 13 } } },
     ]) {
       await writeFile(file, JSON.stringify({ statistics: { total: { sources: 2, newClones: 1 } }, duplicates: [invalid] }))
       assert.notEqual(run(), 0, 'new clone without complete source positions fails')
