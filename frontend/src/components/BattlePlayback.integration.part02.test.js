@@ -242,11 +242,27 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     resetFullscreenGlobals()
   })
 
+  // 拆分后宿主源码分布在 BattlePlayback.vue + battlePlayback{A..E}.ts；源码级守卫必须
+  // 覆盖全部 owner，否则条目下沉到 section 文件后守卫会静默失效（fail-open）。
+  const PLAYBACK_SOURCE_FILES = [
+    'src/components/BattlePlayback.vue',
+    'src/components/battlePlaybackA.ts',
+    'src/components/battlePlaybackB.ts',
+    'src/components/battlePlaybackC.ts',
+    'src/components/battlePlaybackD.ts',
+    'src/components/battlePlaybackE.ts',
+  ]
+  function readPlaybackSource() {
+    return PLAYBACK_SOURCE_FILES
+      .map((file) => readFileSync(resolve(process.cwd(), file), 'utf8'))
+      .join(String.fromCharCode(10))
+  }
+
   // 碰撞必须喂渲染方框，不能喂各向异性的车体矩形：贴图按航向在方框内旋转，方框才是
   // 屏幕外接盒。喂车体矩形时横向行驶/接近垂直的两车判定失准，视觉上仍然叠在一起。
   it('车体不再参与防重叠布局（marker 只按真实位置摆放；位移与虚线整体删除）', () => {
     // happy-dom 下 import.meta.url 不是 file URL，用 cwd 相对路径读源码。
-    const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
+    const src = readPlaybackSource()
     // #820 Agent C：vehicleStates 投影 owner 出仓到 usePlaybackVehicleProjection；负向锁仍看宿主。
     const projectionSrc = readFileSync(resolve(process.cwd(), 'src/composables/usePlaybackVehicleProjection.ts'), 'utf8')
     expect(src).not.toContain('computeTankCollisionLayout')
@@ -259,7 +275,7 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
   // 三档必须严格互补：mobile 的上界与 pc 的下界不能重叠，否则同一视口既是
   // mobile 形态、又命中 pc 的媒体查询，互斥性就是假的。
   it('keeps the mobile and pc breakpoints strictly complementary', () => {
-    const src = readFileSync(resolve(process.cwd(), 'src/components/useBattlePlaybackLifecycle.ts'), 'utf8')
+    const src = readPlaybackSource()
     // mobile 形态的唯一来源是 shared/breakpoints 的 PLAYBACK_MOBILE_QUERY
     const mobileMax = /max-width:\s*([\d.]+)px\)/.exec(PLAYBACK_MOBILE_QUERY)
     const pcMin = /matchMedia\('\(min-width:\s*([\d.]+)px\)'\)/.exec(src)
