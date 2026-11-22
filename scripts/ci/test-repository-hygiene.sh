@@ -284,20 +284,32 @@ git commit -q -m 'add over-budget Android Kotlin source'
 head=$(git rev-parse HEAD)
 expect_fail_msg source-line-android-over-limit "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
-# Tests, declaration files and generated transport are not production source
-# and stay out of scope even when they are large.
+# Tests and generated transport are not production source and stay out of
+# scope even when they are large.
 git switch -q -C source-line-exempt "$base"
 mkdir -p frontend/src/api/generated
 python3 - <<'PY'
 from pathlib import Path
 Path("frontend/src/oversized.test.js").write_text("// test\n" * 1500)
-Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
 Path("frontend/src/api/generated/oversized.ts").write_text("// generated\n" * 1600)
 PY
 git add frontend/src
-git commit -q -m 'add large test, declaration and generated files'
+git commit -q -m 'add large test and generated files'
 head=$(git rev-parse HEAD)
 expect_pass source-line-exempt python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
+
+# A hand-written declaration file is maintained type source, not generated
+# output: an oversized *.d.ts must fail the production budget.
+git switch -q -C source-line-declaration-over-limit "$base"
+mkdir -p frontend/src
+python3 - <<'PY'
+from pathlib import Path
+Path("frontend/src/oversized.d.ts").write_text("// types\n" * 1600)
+PY
+git add frontend/src/oversized.d.ts
+git commit -q -m 'add over-budget hand-written declaration file'
+head=$(git rev-parse HEAD)
+expect_fail_msg source-line-declaration-over-limit "physical lines (limit 500, production)" python3 "$SOURCE_LINES_CHECK" --base "$base" --head "$head"
 
 # The allowlist mechanism is deleted. Recreating the file must not shield an
 # over-budget production file: the head tree alone decides, no exceptions.

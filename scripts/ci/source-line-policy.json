@@ -7,7 +7,7 @@
       "test": "Maintained first-party test code (paths containing a test directory segment, test-named files, browser test scripts, CI test scripts). Physical-line budget per file: 1500."
     },
     "categories": {
-      "generated": "Non-executable machine-produced or type-only artifacts excluded from both budgets: TypeScript declaration files (*.d.ts, emitted or hand-authored; type-only, never executable), generated API transport clients, vehicleSizes.js emitted by common/python/extract_vehicle_sizes.py, vendored third-party C sources inside the Android NDK bridge, lockfiles, Terraform lock files. Excluded from both budgets. This list is exact-path/pattern scoped and must stay small; do NOT route maintained code through it.",
+      "generated": "Non-executable machine-produced artifacts excluded from both budgets: generated API transport clients, vehicleSizes.js emitted by common/python/extract_vehicle_sizes.py, vendored third-party C sources inside the Android NDK bridge, lockfiles, Terraform lock files. Hand-written *.d.ts declarations are maintained type source and count as production. Excluded from both budgets. This list is exact-path/pattern scoped and must stay small; do NOT route maintained code through it.",
       "vendored": "Third-party code copied into the tree and never modified locally. Excluded from both budgets. Currently empty: the xdelta3 C sources are covered by the generated category entry (android/app/src/main/cpp/xdelta3/). Any new vendored dependency must be added here explicitly with PR justification, never inferred.",
       "immutable-history": "Applied Flyway migrations are excluded only when the file is directly in java/<module>/src/main/resources/db/migration and its full filename matches V<digits[.or_ digits]*>__<description>.sql. Directory and filename are validated separately; malformed names, nested sources, non-SQL files, and lookalike paths remain production code."
     },
@@ -20,7 +20,6 @@
   "categories": {
     "generated": {
       "patterns": [
-        "*.d.ts",
         "frontend/src/api/generated/",
         "frontend/src/data/vehicleSizes.js",
         "android/app/src/main/cpp/xdelta3/",
