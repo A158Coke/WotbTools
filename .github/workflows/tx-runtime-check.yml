@@ -18,7 +18,10 @@ env:
     deploy/check-production-freshness.sh
     deploy/tx/runtime-check.sh
     deploy/tx/runtime-check-lib.sh
+    deploy/tx/runtime-business-probes.sh
     deploy/tx/deploy.sh
+    deploy/tx/deploy-stage.sh
+    deploy/tx/deploy-health.sh
     deploy/tx/with-deploy-lock.sh
 
 jobs:
@@ -50,7 +53,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh
+          source: deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/runtime-business-probes.sh,deploy/tx/deploy.sh,deploy/tx/deploy-stage.sh,deploy/tx/deploy-health.sh,deploy/tx/with-deploy-lock.sh
           target: /tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}
           strip_components: 2
           overwrite: true
@@ -190,7 +193,7 @@ jobs:
               *) echo "Unsafe verifier directory: $VERIFIER_DIR" >&2; exit 2 ;;
             esac
             if [ -d "$VERIFIER_DIR" ] && [ ! -L "$VERIFIER_DIR" ]; then
-              rm -f --                 "$VERIFIER_DIR/runtime-check.sh"                 "$VERIFIER_DIR/runtime-check-lib.sh"                 "$VERIFIER_DIR/deploy.sh"                 "$VERIFIER_DIR/with-deploy-lock.sh"
+              rm -f --                 "$VERIFIER_DIR/runtime-check.sh"                 "$VERIFIER_DIR/runtime-check-lib.sh" "$VERIFIER_DIR/runtime-business-probes.sh"                 "$VERIFIER_DIR/deploy.sh" "$VERIFIER_DIR/deploy-stage.sh" "$VERIFIER_DIR/deploy-health.sh"                 "$VERIFIER_DIR/with-deploy-lock.sh"
               rmdir -- "$VERIFIER_DIR"
             fi
         env:

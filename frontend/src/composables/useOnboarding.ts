@@ -1,184 +1,40 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, watchEffect } from 'vue'
 import type { Ref } from 'vue'
-import { readOnboardingReceipt, saveOnboardingReceipt } from '../api/onboarding.js'
-import type { OnboardingReceipt } from '../api/onboarding.js'
-import { profileBackendAllowed } from '../app/featureCapabilities.js'
 import { useAuth } from './useAuth.js'
 import { useConnectivity } from './useConnectivity.js'
-import { useBusinessUserBootstrap, whenBusinessUserSettled } from './useBusinessUserBootstrap.js'
+import { useBusinessUserBootstrap } from './useBusinessUserBootstrap.js'
 import { REPLACE_DECLINED } from '../shared/onboarding.js'
 import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, OnboardingTopic, OnboardingWorkspace } from '../shared/onboarding.js'
-import type { ReplayCapability } from '../types/workspace.js'
+import {
+  EMPTY_RECEIPT,
+  ONBOARDING_RELEASE,
+  ONBOARDING_STORAGE_KEY,
+  type LocalOnboardingReceipt,
+  type OnboardingGuidePosition,
+  mergeOnboardingReceipts,
+  pendingLoginFresh,
+  readCache,
+  readPendingLogin,
+  shouldOfferOnboarding,
+  withoutGuide,
+  withoutReceipt,
+  writePendingLogin,
+} from './useOnboardingStorage.js'
+import { createOnboardingReceiptSync } from './useOnboardingSync.js'
+import { createOnboardingDemoLoad, waitForValue } from './useOnboardingDemoLoad.js'
+import { ONBOARDING_GUIDES, SURFACES_READY_BEFORE_PREPARE } from './useOnboardingGuides.js'
+
+// —— 公共面保持稳定：内容注册表 / 存储键 / 回执工具从本入口 re-export ——
+export { ONBOARDING_GUIDES, ONBOARDING_TOPICS } from './useOnboardingGuides.js'
+export type { GuideStage, GuideStep } from './useOnboardingGuides.js'
+export { ONBOARDING_PENDING_LOGIN_KEY, ONBOARDING_STORAGE_KEY, mergeOnboardingReceipts, shouldOfferOnboarding, validOnboardingReceipt } from './useOnboardingStorage.js'
 
 /** Increment epoch only when existing users need the core guide again. Copy/anchor changes use revision. */
-const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 8 })
-export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
-export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
-const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
 const isReplaceDeclined = (e: unknown) => (e as { name?: string } | null)?.name === REPLACE_DECLINED
 const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-events', 'agent-shots', 'ai-review'])
-type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
-export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
 /** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */
-interface OnboardingGuidePosition { topic: OnboardingTopic; index: number; stageIndex: number; generation?: number }
-interface PendingLogin { requestedAt: number; receipt?: LocalOnboardingReceipt; guide?: OnboardingGuidePosition }
-const EMPTY_RECEIPT: LocalOnboardingReceipt = { coreEpoch: 0, disposition: 'NONE' }
-const PRECEDENCE: Record<Disposition, number> = { NONE: 0, OFFERED: 1, SKIPPED: 2, COMPLETED: 3 }
 
-export function validOnboardingReceipt(value: unknown): value is LocalOnboardingReceipt {
-  if (!value || typeof value !== 'object') return false
-  const receipt = value as LocalOnboardingReceipt
-  return Number.isSafeInteger(receipt.coreEpoch) && receipt.coreEpoch >= 0
-    && Object.hasOwn(PRECEDENCE, receipt.disposition)
-    && (receipt.coreEpoch > 0 || receipt.disposition === 'NONE')
-    && (receipt.coreStep === undefined || Number.isSafeInteger(receipt.coreStep) && receipt.coreStep >= 0)
-    && (receipt.migrationConsumed === undefined || typeof receipt.migrationConsumed === 'boolean')
-}
 
-/** Same-epoch completion wins; old devices cannot overwrite a newer release. */
-export function mergeOnboardingReceipts(a: LocalOnboardingReceipt, b: LocalOnboardingReceipt): LocalOnboardingReceipt {
-  if (a.coreEpoch !== b.coreEpoch) return { ...(a.coreEpoch > b.coreEpoch ? a : b) }
-  return { ...(PRECEDENCE[a.disposition] > PRECEDENCE[b.disposition] ? a : b),
-    ...(a.migrationConsumed || b.migrationConsumed ? { migrationConsumed: true } : {}) }
-}
-
-export function shouldOfferOnboarding(receipt: LocalOnboardingReceipt, epoch: number = ONBOARDING_RELEASE.coreEpoch) {
-  return receipt.coreEpoch < epoch || (receipt.coreEpoch === epoch && receipt.disposition === 'NONE')
-}
-
-export interface GuideStage {
-  anchor: string
-  copy: string
-  /** Some tools act on a second real surface, such as drawing on the map. */
-  interactionAnchor?: string
-  surface?: OnboardingSurfaceId
-  /** Advance after a real owner reports readiness, without synthesizing a click. */
-  advanceOnReady?: boolean
-  prepare?: boolean
-}
-export interface GuideStep {
-  id: string
-  capability?: ReplayCapability
-  view?: string
-  stages: GuideStage[]
-}
-// prepare 之前必须先等 ready 的 surface：它们的 ready() 表示"回放视图已挂上、可以被准备"。
-// 'annotations' 不在此列——它的 ready() 表示目标状态已达成（工具条已打开），只能在 prepare 之后成立。
-const SURFACES_READY_BEFORE_PREPARE = new Set<OnboardingSurfaceId>(['playback', 'display', '3d'])
-
-const stage = (anchor: string, copy: string, extra: Partial<GuideStage> = {}): GuideStage => ({ anchor, copy, ...extra })
-const step = (id: string, capability: ReplayCapability, stages: GuideStage[]): GuideStep => ({ id, capability, stages })
-const demo = step('demo', 'data', [stage('workspace-demo', 'demo')])
-const data = step('data', 'data', [stage('data-toolbar', 'data')])
-const playback = step('playback', 'playback', [stage('playback-transport', 'playback', { surface: 'playback', prepare: true, interactionAnchor: 'playback-floating-fullscreen' })])
-const annotations = step('annotations', 'playback', [
-  stage('playback-annotation-entry', 'annotationEntry', { surface: 'annotations', advanceOnReady: true }),
-  stage('playback-annotation-tools', 'annotationTools', { surface: 'annotations', interactionAnchor: 'playback-map' }),
-])
-// 防遮控件住在 Display 面里：prepare 打开那块面，interactionAnchor 把整块面纳入交互 / 焦点范围
-// （面打开时焦点落在它的关闭按钮上，第一次 Escape 必须交给面自己关，而不是被教程吞掉）。
-const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'display', prepare: true, interactionAnchor: 'playback-display-options' })])
-const replay3d = step('3d', '3d', [
-  stage('replay3d-start', 'replay3dStart', { surface: '3d', advanceOnReady: true }),
-  stage('replay3d-camera', 'replay3dCamera', { surface: '3d', prepare: true, interactionAnchor: 'replay3d-workspace' }),
-])
-const shots = step('shots', 'shots', [
-  stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true }),
-  stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true, interactionAnchor: 'shots-inspector' }),
-  stage('armor-workspace', 'armor', { surface: 'armor' }),
-])
-
-/** One registry is shared by the short core guide and the optional function guides. */
-export const ONBOARDING_GUIDES: Record<OnboardingTopic, GuideStep[]> = {
-  core: [demo, data, playback, annotations, declutter, replay3d, shots],
-  data: [demo, data, step('columns', 'data', [stage('data-columns', 'columns', { interactionAnchor: 'data-column-options' })]), step('export', 'data', [stage('data-export', 'export')])],
-  playback: [playback, step('timeline', 'playback', [stage('playback-timeline', 'timeline')]), step('display', 'playback', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
-  annotations: [annotations, step('drawing', 'playback', [stage('playback-annotation-tools', 'drawing', { surface: 'annotations', prepare: true, interactionAnchor: 'playback-map' })]), declutter],
-  '3d': [replay3d, step('camera', '3d', [stage('replay3d-camera', 'camera', { surface: '3d', prepare: true, interactionAnchor: 'replay3d-workspace' })]), step('3dDisplay', '3d', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
-  shots: [step('shotList', 'shots', [stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true })]),
-    step('shotOpen', 'shots', [stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true, interactionAnchor: 'shots-inspector' })]),
-    { id: 'armor', stages: [stage('armor-workspace', 'armor', { surface: 'armor' })] }],
-  ai: [step('aiFiles', 'ai', [stage('workspace-file-controls', 'aiFiles')]), step('aiStart', 'ai', [stage('ai-review-start', 'aiStart')]), step('aiReport', 'ai', [stage('ai-review-report', 'aiReport')])],
-  tankopedia: [
-    { id: 'tankFilters', view: 'agent-tankopedia', stages: [stage('tankopedia-search', 'tankFilters', { interactionAnchor: 'tankopedia-filters' })] },
-    { id: 'tankDetail', view: 'agent-tankopedia', stages: [stage('tankopedia-list', 'tankDetail')] },
-    { id: 'tankArmor', view: 'agent-tankopedia', stages: [stage('tankopedia-armor', 'tankArmor')] },
-  ],
-  hof: [
-    { id: 'hofBoards', view: 'hof', stages: [stage('hof-tabs', 'hofBoards')] },
-    { id: 'hofFilters', view: 'hof', stages: [stage('hof-filters', 'hofFilters', { interactionAnchor: 'hof-filter-options' })] },
-    { id: 'hofRecords', view: 'hof', stages: [stage('hof-records', 'hofRecords')] },
-    { id: 'hofSubmit', view: 'hof', stages: [stage('hof-submit', 'hofSubmit')] },
-  ],
-  tournament: [
-    { id: 'tournamentEvent', view: 'tournament-points', stages: [stage('tournament-event', 'tournamentEvent')] },
-    { id: 'tournamentStandings', view: 'tournament-points', stages: [stage('tournament-standings', 'tournamentStandings')] },
-    { id: 'tournamentExport', view: 'tournament-points', stages: [stage('tournament-export', 'tournamentExport')] },
-  ],
-  settings: [
-    { id: 'settingsTheme', view: 'more', stages: [stage('settings-theme', 'settingsTheme')] },
-    { id: 'settingsLanguage', view: 'more', stages: [stage('settings-language', 'settingsLanguage')] },
-    { id: 'settingsAccount', view: 'profile', stages: [stage('settings-account', 'settingsAccount')] },
-  ],
-}
-export const ONBOARDING_TOPICS = Object.keys(ONBOARDING_GUIDES).filter(id => id !== 'core') as Exclude<OnboardingTopic, 'core'>[]
-
-function readCache(): Record<string, LocalOnboardingReceipt> {
-  try {
-    const value = JSON.parse(localStorage.getItem(ONBOARDING_STORAGE_KEY) || '{}')
-    if (value.version !== 1 || !value.receipts || typeof value.receipts !== 'object') return {}
-    return Object.fromEntries(Object.entries(value.receipts).filter(([, receipt]) => validOnboardingReceipt(receipt))) as Record<string, LocalOnboardingReceipt>
-  } catch { return {} }
-}
-
-function validGuidePosition(value: unknown): value is OnboardingGuidePosition {
-  if (!value || typeof value !== 'object') return false
-  const position = value as OnboardingGuidePosition
-  return typeof position.topic === 'string' && Object.hasOwn(ONBOARDING_GUIDES, position.topic)
-    && Number.isSafeInteger(position.index) && position.index >= 0
-    && Number.isSafeInteger(position.stageIndex) && position.stageIndex >= 0
-    && (position.generation === undefined || Number.isSafeInteger(position.generation) && position.generation >= 0)
-}
-
-/**
- * The 30-minute TTL must be re-checked at consume time, not only when the storage is read:
- * Android keeps one document alive while the external user-agent authenticates, so a marker
- * can sit in memory long after it became stale.
- */
-function pendingLoginFresh(pending: PendingLogin | null | undefined): pending is PendingLogin {
-  if (!pending) return false
-  const age = Date.now() - pending.requestedAt
-  return Number.isFinite(age) && age >= 0 && age <= PENDING_LOGIN_MAX_AGE_MS
-}
-
-function readPendingLogin(): PendingLogin | null {
-  try {
-    const pending = JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')
-    const receipt = validOnboardingReceipt(pending?.receipt) && ['COMPLETED', 'SKIPPED'].includes(pending.receipt.disposition)
-      ? pending.receipt : null
-    const guide = validGuidePosition(pending?.guide) ? pending.guide : null
-    if ((receipt || guide) && pendingLoginFresh(pending)) {
-      return { requestedAt: pending.requestedAt, ...(receipt ? { receipt } : {}), ...(guide ? { guide } : {}) }
-    }
-    sessionStorage.removeItem(ONBOARDING_PENDING_LOGIN_KEY)
-  } catch { /* The same-SPA handoff can still use session memory. */ }
-  return null
-}
-
-function writePendingLogin(pending: PendingLogin | null) {
-  try {
-    if (pending) sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify(pending))
-    else sessionStorage.removeItem(ONBOARDING_PENDING_LOGIN_KEY)
-  } catch { /* Login and manual guides remain usable without storage. */ }
-}
-
-function withoutReceipt(pending: PendingLogin | null): PendingLogin | null {
-  return pending?.guide ? { requestedAt: pending.requestedAt, guide: pending.guide } : null
-}
-
-function withoutGuide(pending: PendingLogin | null): PendingLogin | null {
-  return pending?.receipt ? { requestedAt: pending.requestedAt, receipt: pending.receipt } : null
-}
 
 /** AppShell is the single lifecycle owner; panes only register their existing commands. */
 export function useOnboarding(options: {
@@ -212,14 +68,15 @@ export function useOnboarding(options: {
   const demoFailed = ref(false)
   let runGeneration = 0
   let runAbort = new AbortController()
-  let demoAbort = new AbortController()
-  let demoLoad: Promise<void> | null = null
-  /** Sample-load ownership: only stopRun()/a newer load invalidates a continuation (step changes do not). */
-  let demoGeneration = 0
-  let syncGeneration = 0
-  let syncAbort = new AbortController()
   let previousIdentity = identity.value
-  let anonymousTerminal: LocalOnboardingReceipt | null = null
+  const anonymousTerminal = ref<LocalOnboardingReceipt | null>(null)
+  const { persist, record, synchronize, stopSync } = createOnboardingReceiptSync({
+    cache, identity, receiptKnown, anonymousTerminal,
+    authEpoch: () => auth.authEpoch(),
+    authInitState: auth.authInitState,
+    authenticated: auth.authenticated,
+    connectivity,
+  })
   let explicitLoginPending = auth.loginInFlight?.value === true
   let pendingLogin = readPendingLogin()
   /**
@@ -232,61 +89,17 @@ export function useOnboarding(options: {
   let guideLoginGeneration = pendingLogin?.guide?.generation ?? 0
   /** Set by `loginAiGuide()` so the loginInFlight watcher knows this login owns the AI lesson. */
   let guideLoginIntent: OnboardingGuidePosition | null = null
-  let preparingDemo = false
+  const preparingDemo = ref(false)
+  const { beginDemoLoad, awaitDemoLoad, cancelDemoLoad, currentDemoGeneration } = createOnboardingDemoLoad({
+    mode, workspace, demoFailed, preparingDemo, ensureReplayView,
+  })
 
-  function persist(identityKey: string, incoming: LocalOnboardingReceipt) {
-    // Read before writing so a same-browser account switch/tab cannot erase other users' receipts.
-    const disk = readCache()
-    const merged = { ...disk, ...cache.value }
-    for (const [key, value] of Object.entries(disk)) merged[key] = mergeOnboardingReceipts(merged[key] || EMPTY_RECEIPT, value)
-    merged[identityKey] = mergeOnboardingReceipts(merged[identityKey] || EMPTY_RECEIPT, incoming)
-    cache.value = merged
-    try { localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ version: 1, receipts: merged })) } catch { /* Session memory still suppresses repeated invitations. */ }
-  }
-
-  function record(disposition: Disposition) {
-    const previous = cache.value[identity.value]
-    const coreStep = disposition === 'OFFERED' && previous?.coreEpoch === ONBOARDING_RELEASE.coreEpoch ? previous.coreStep : undefined
-    const migrationConsumed = previous?.coreEpoch === ONBOARDING_RELEASE.coreEpoch && previous.migrationConsumed === true
-    const value = { coreEpoch: ONBOARDING_RELEASE.coreEpoch, disposition, ...(coreStep === undefined ? {} : { coreStep }), ...(migrationConsumed ? { migrationConsumed: true } : {}) }
-    persist(identity.value, value)
-    if (identity.value === 'anonymous' && !migrationConsumed && (disposition === 'COMPLETED' || disposition === 'SKIPPED')) anonymousTerminal = value
-  }
-
-  async function synchronize() {
-    const generation = ++syncGeneration
-    syncAbort.abort()
-    syncAbort = new AbortController()
-    const signal = syncAbort.signal
-    const owner = identity.value
-    const epoch = auth.authEpoch()
-    const context = { authInitState: auth.authInitState.value, authenticated: auth.authenticated.value, connectivity: connectivity.value }
-    const owns = () => generation === syncGeneration && owner === identity.value && epoch === auth.authEpoch() && !signal.aborted
-    receiptKnown.value = owner === 'anonymous' && context.authInitState === 'unauthenticated'
-    if (owner === 'anonymous' || owner === 'unknown-account' || !profileBackendAllowed(context)) return
-    try {
-      if (!await whenBusinessUserSettled(context) || !owns()) return
-      const remote = await readOnboardingReceipt(signal)
-      if (!owns()) return
-      persist(owner, remote)
-      receiptKnown.value = true
-      const local = cache.value[owner]
-      if (local && (local.disposition === 'COMPLETED' || local.disposition === 'SKIPPED')
-        && (local.coreEpoch > remote.coreEpoch || (local.coreEpoch === remote.coreEpoch && PRECEDENCE[local.disposition] > PRECEDENCE[remote.disposition]))) {
-        const saved = await saveOnboardingReceipt({ coreEpoch: local.coreEpoch, disposition: local.disposition }, signal)
-        if (owns()) persist(owner, saved)
-      }
-    } catch { /* Unknown server receipt must never be interpreted as a fresh account. Manual guides remain available. */ }
-  }
 
   function stopRun() {
     ++runGeneration
     runAbort.abort()
     runAbort = new AbortController()
-    ++demoGeneration
-    demoAbort.abort()
-    demoAbort = new AbortController()
-    demoLoad = null
+    cancelDemoLoad()
     issue.value = ''
     demoFailed.value = false
     for (const surface of Object.values(surfaces.value)) {
@@ -359,8 +172,8 @@ export function useOnboarding(options: {
     const anonymous = mergeOnboardingReceipts(cache.value.anonymous || EMPTY_RECEIPT, readCache().anonymous || EMPTY_RECEIPT)
     if (previousIdentity !== identity.value) {
       const migration = explicitLoginPending && previousIdentity === 'anonymous' && identity.value.startsWith('sub:')
-        && anonymousTerminal?.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed ? anonymousTerminal : null
-      anonymousTerminal = null
+        && anonymousTerminal.value?.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed ? anonymousTerminal.value : null
+      anonymousTerminal.value = null
       explicitLoginPending = false
       previousIdentity = identity.value
       interrupt()
@@ -470,7 +283,7 @@ export function useOnboarding(options: {
 
   watch(() => workspace.value?.selectionIdentity(), (selection, previous) => {
     if (mode.value === 'tour' && selection !== undefined && previous !== undefined
-      && selection !== previous && !preparingDemo) interrupt()
+      && selection !== previous && !preparingDemo.value) interrupt()
   }, { flush: 'sync' })
 
   function onStorage(event: StorageEvent) {
@@ -483,8 +296,7 @@ export function useOnboarding(options: {
   onMounted(() => window.addEventListener('storage', onStorage))
   onBeforeUnmount(() => {
     interrupt()
-    ++syncGeneration
-    syncAbort.abort()
+    stopSync()
     window.removeEventListener('storage', onStorage)
   })
 
@@ -507,70 +319,9 @@ export function useOnboarding(options: {
     mode.value = 'directory'
   }
 
-  function waitForValue<T>(read: () => T | null, signal: AbortSignal): Promise<T> {
-    const initial = read()
-    if (initial) return Promise.resolve(initial)
-    return new Promise((resolve, reject) => {
-      let stop = () => {}
-      const finish = (value?: T) => {
-        stop()
-        clearTimeout(timeout)
-        signal.removeEventListener('abort', abort)
-        value ? resolve(value) : reject(new Error('GUIDE_SURFACE_UNAVAILABLE'))
-      }
-      const abort = () => finish()
-      const timeout = setTimeout(() => finish(), 10000)
-      signal.addEventListener('abort', abort, { once: true })
-      stop = watch(read, value => { if (value) finish(value) }, { flush: 'sync' })
-      if (signal.aborted) finish()
-    })
-  }
-
   async function ensureReplayView() {
     // A cached workspace owner does not prove that its real page is currently visible.
     if (!REPLAY_VIEWS.has(options.view.value)) await options.navigate('replay')
-  }
-
-  /**
-   * Official-sample loading owns its own lifecycle: only leaving the guide cancels it.
-   * Sharing the step's AbortController cancelled the download on Next, so the playback step
-   * waited for a sample that would never arrive and Retry could not recover (#668).
-   */
-  function beginDemoLoad() {
-    demoAbort.abort()
-    demoAbort = new AbortController()
-    const generation = ++demoGeneration
-    const signal = demoAbort.signal
-    // A late continuation after skip/interrupt must never call loadDemo(): its ready fast path
-    // could still switch capability after the guide is gone.
-    const owns = () => generation === demoGeneration && mode.value === 'tour' && !signal.aborted
-    const promise = (async () => {
-      await ensureReplayView()
-      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
-      signal.throwIfAborted()
-      const owner = await waitForValue(() => workspace.value, signal)
-      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
-      signal.throwIfAborted()
-      preparingDemo = true
-      try { await owner.loadDemo(signal) } finally { preparingDemo = false }
-    })()
-    demoLoad = promise
-    void promise.catch(() => {}).then(() => { if (demoLoad === promise) demoLoad = null })
-    return promise
-  }
-
-  /**
-   * Wait for the sample when the step needs it.
-   * @returns false when this wait became stale (guide closed / newer sample load), so the caller stops.
-   */
-  async function awaitDemoLoad() {
-    if (!demoLoad) return true
-    const generation = demoGeneration
-    try { await demoLoad; return true } catch {
-      if (generation !== demoGeneration) return false
-      if (mode.value === 'tour') demoFailed.value = true
-      throw new Error('GUIDE_SAMPLE_UNAVAILABLE')
-    }
   }
 
   async function prepareStep() {
@@ -652,8 +403,8 @@ export function useOnboarding(options: {
     const load = beginDemoLoad()
     // A retry can outlive its guide. Capture this load's ownership before awaiting so a late
     // rejection/success from the old load never writes into a guide started meanwhile.
-    const generation = demoGeneration
-    const owns = () => generation === demoGeneration && mode.value === 'tour'
+    const generation = currentDemoGeneration()
+    const owns = () => generation === currentDemoGeneration() && mode.value === 'tour'
     try {
       await load
     } catch (e) {

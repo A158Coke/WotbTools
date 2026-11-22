@@ -593,9 +593,10 @@ describe('生产接线守卫（playbackScene 源码级）', () => {
   const sceneSrc = PLAYBACK_SCENE_SOURCE
 
   it('createBattleMarkerHost 必须注入 visibleAt（help 类历史位姿门）', () => {
-    const at = sceneSrc.indexOf('createBattleMarkerHost(')
+    // 合并后源码全集包含 battleMarkerHost.ts 的定义与 sceneAssembly.ts 的构造；必须取构造调用。
+    const at = sceneSrc.indexOf('S.battleMarkers = createBattleMarkerHost(')
     expect(at).toBeGreaterThan(-1)
-    const call = sceneSrc.slice(at, sceneSrc.indexOf('\n', at))
+    const call = sceneSrc.slice(at, sceneSrc.indexOf('});', at))
     expect(call).toMatch(/visibleAt:\s*\(v,\s*t\)\s*=>\s*(?:S\.)?visibleAt\(v,\s*t\)/)
     // 账号兜底的活动实体解析（攻击目标换 eid）：注入身份接管判据
     expect(call).toMatch(/replacedAt:\s*\(eid,\s*t\)\s*=>\s*(?:S\.)?replacedAt\(eid,\s*t\)/)

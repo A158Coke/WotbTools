@@ -6,8 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { REPLAY_3D_PANE_SOURCE } from '../../components/replay3dPane.test.source.js'
-import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
+import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 
 const read = (rel: string) => readFileSync(new NodeURL(rel, import.meta.url), 'utf8')
 
@@ -47,21 +46,21 @@ describe('lastKnown 接线 guard（源码级）', () => {
   })
 
   it('开关经 setLabelPrefs 推入场景并在暂停态立即重摆', () => {
-    const src = PLAYBACK_SCENE_SOURCE
-    expect(src).toMatch(/P\.store\.lastKnownOn = lastKnownOn;/)
+    const src = playbackSceneSource()
+    expect(src).toMatch(/store\.lastKnownOn = lastKnownOn;/)
     expect(src).toMatch(/prefs\?\.lastKnown !== false/)
     // 暂停时 applyPose 不逐帧跑：开关变化必须立即重摆一次（与 setTreadMarks 同理由）
-    expect(src).toMatch(/if \(lastKnownChanged\) for \(const v of S\.vehicles\.getVehicles\(\)\) S\.vehicles\.applyPose\(v\);/)
+    expect(src).toMatch(/if \(lastKnownChanged\) for \(const v of vehicles\.getVehicles\(\)\) vehicles\.applyPose\(v\);/)
   })
 
   it('面板持久化偏好、Display 开关与一行事实边界说明齐备', () => {
     const prefs = read('../../composables/usePlaybackPreferences.ts')
     expect(prefs).toMatch(/wotb\.pb\.last-known-prefs/)
     expect(prefs).toMatch(/showLastKnown: record\.showLastKnown !== false/)
-    const pane = REPLAY_3D_PANE_SOURCE
+    const pane = read('../../components/Replay3DPane.vue')
     expect(pane).toMatch(/disp-last-known/)
     expect(pane).toMatch(/replay3d-visibility-note/)
-    expect(pane).toMatch(/lastKnown: S\.lastKnownPrefs\.showLastKnown/)
+    expect(read('../../components/useReplay3DPaneCore.ts')).toMatch(/lastKnown: lastKnownPrefs\.showLastKnown/)
     // 幽灵名牌的「最后已知」标记文案随 locale 下发（组件本身无 i18n）
     expect(pane).toMatch(/last-known-label="t\('agentReplay\.label_last_known'\)"/)
   })

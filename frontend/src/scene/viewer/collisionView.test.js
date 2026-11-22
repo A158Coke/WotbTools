@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createCollisionView } from './collisionView.js'
 import { createJudgment } from './judgment.js'
+import { tankViewerSource } from '../__tests__/sceneSource.ts'
 import { dynamicDeclarationByTankId } from '../../data/armorStates.js'
 
 const THICKNESS = {
@@ -214,7 +215,7 @@ describe('collisionView category filtering (P2-C / P2-E)', () => {
     expect(spaced.visible).toBe(true)
 
     // façade 不再持有 hiddenCategories：唯一状态在 collisionView。
-    const facade = readFileSync(resolve(process.cwd(), 'src/scene/tankViewer.js'), 'utf8')
+    const facade = tankViewerSource()
     expect(facade).not.toContain('hiddenCategories')
     expect(facade).toContain('cvs.toggleCategory(name)')
   })

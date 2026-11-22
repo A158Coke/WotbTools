@@ -738,21 +738,19 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
   })
 })
 
-// 场景装配顺序回归（评审 P1）：psP2 构造 markerRuntime 时 psP3 尚未给 S.invalidate 赋值。
+// 场景装配顺序回归（评审 P1）：marker host 构造时 invalidate 尚未赋值。
 // 依赖必须以箭头晚绑定；按值捕获 undefined 会在首个标记生成/离开窗口时抛 TypeError。
 // 战场标记迟到数据重算（评审 P2）：暂停期间迟到的回放数据（canonical 位姿/名册重建、
 // markers/chat 晚到）只驱动按需重绘帧、不触发 tick —— 帧体必须在非播放态重算
 // battleMarkers（update(T) 幂等），否则攻击目标环停在迟到数据前的旧位姿。
 describe('playbackScene 战场标记迟到数据重算（源码守卫）', () => {
   it('按需重绘帧在非播放态重算 battleMarkers；tick 的逐帧更新保留', () => {
-    expect(PLAYBACK_SCENE_SOURCE).toContain('if (!(S.DATA && S.PLAYING)) S.battleMarkers.update(S.T);')
-    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers.update(S.T);   // 战场标记窗口状态（回放时钟；暂停冻结/倒带重现）')
-    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers.update(S.T);   // 战场标记窗口重算（窗内标记立即可见：跳转/倒带均适用）')
+    expect(PLAYBACK_SCENE_SOURCE).toContain('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);')
+    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers?.update(S.T);   // 战场快捷标记：回放时钟窗口状态（tick/seekTo 共用）')
   })
   it('重算必须先于来源卡投影（labels.updateLabels）——否则卡停在旧屏幕坐标（评审 P2）', () => {
-    const p3 = PLAYBACK_SCENE_SOURCE.slice(PLAYBACK_SCENE_SOURCE.indexOf('export function psP3'));
-    const markerAt = p3.indexOf('if (!(S.DATA && S.PLAYING)) S.battleMarkers.update(S.T);');
-    const labelsAt = p3.indexOf('S.labels.updateLabels();');
+    const markerAt = PLAYBACK_SCENE_SOURCE.indexOf('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);');
+    const labelsAt = PLAYBACK_SCENE_SOURCE.indexOf('S.labels.updateLabels();', markerAt);
     expect(markerAt).toBeGreaterThan(-1);
     expect(labelsAt).toBeGreaterThan(markerAt);
   })

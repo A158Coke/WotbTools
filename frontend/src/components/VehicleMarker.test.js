@@ -6,7 +6,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
-import markerSource from './VehicleMarker.vue?raw'
+import markerSourceBase from './VehicleMarker.vue?raw'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+// scoped 样式已拆至 sidecar css；源码契约断言仍需看到样式文本
+const markerStyles = readFileSync(join(import.meta.dirname, 'vehicle-marker.css'), 'utf8')
+const markerSource = markerSourceBase + markerStyles
 import labelSource from './PlaybackVehicleLabel.vue?raw'
 
 const genericMarker = {

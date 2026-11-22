@@ -2,20 +2,22 @@
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
+import { transformWithEsbuild } from 'vite'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { armorCameraPreset, armorPresetGunPitch, armorPresetViewPlacement } from './viewer/cameraPresets.js'
 
 // 执行场景内真实 setCameraPreset（不复制实现）；模型/炮管闭包用测试替身，
 // 保留真实 OrbitControls 数学、输入处理与 cameraPresets 纯函数。
-const source = readFileSync(new NodeURL('./tankViewer.js', import.meta.url), 'utf8')
-const presetSource = source.slice(
-  source.indexOf('        function setCameraPreset('),
-  source.indexOf('        function applyUrlOptionsOnce()'),
-)
+const source = readFileSync(new NodeURL('./tankViewer/tankTransport.ts', import.meta.url), 'utf8')
+const presetSource = (await transformWithEsbuild(source.slice(
+  source.indexOf('function setCameraPreset('),
+  source.indexOf('function applyUrlOptionsOnce('),
+), 'tankPreset.ts', { loader: 'ts' })).code
 
 function bindPreset(camera, controls) {
   return new Function('THREE', 'camera', 'controls', 'armorPresetGunPitch', 'armorCameraPreset', 'armorPresetViewPlacement', `
+    const byId = (id) => document.getElementById(id);
     const destroyed = false, contextLost = false, ARMOR_REF_DIST = 15;
     const QP = new URLSearchParams();
     // #820 拆分后：模型/世界米制 owner = modelLifecycle.ts（ml），炮塔/炮管 owner = turretRig.ts（rig），
@@ -31,8 +33,13 @@ function bindPreset(camera, controls) {
     let currentTurretDeg = 0, currentGunDeg = 0;
     const pitchAtBearing = () => ({ down: -20, up: 20 });
     const currentConfig = () => ({ pitch_limits: { down: -20, up: 20 } });
+    const S = {
+      destroyed: false, contextLost: false, ARMOR_REF_DIST: 15, QP: new URLSearchParams(),
+      ml, rig, eqs, tc, camera, controls, currentConfig,
+      currentTurretDeg: 0, currentGunDeg: 0,
+    };
     ${presetSource}
-    return { setCameraPreset, pose: () => ({ turretDeg: currentTurretDeg, gunDeg: currentGunDeg }) };
+    return { setCameraPreset: (kind, opts) => setCameraPreset(S, kind, opts), pose: () => ({ turretDeg: S.currentTurretDeg, gunDeg: S.currentGunDeg }) };
   `)(THREE, camera, controls, armorPresetGunPitch, armorCameraPreset, armorPresetViewPlacement)
 }
 

@@ -1134,7 +1134,7 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     expect(src).not.toMatch(/map-mini/)
     expect(src).not.toMatch(/miniMap/)
     // #820 Step 2：地面链路 owner = playback/mapWorld.ts（四档统一 ground.webp）
-    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).not.toMatch(/map-mini/)
     expect(worldSrc).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
     const replay = (await import('./replaySource.js?raw')).default

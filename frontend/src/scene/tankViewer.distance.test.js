@@ -1,23 +1,29 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { transformWithEsbuild } from 'vite'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 // 执行场景内真实 setter，不复制实现；只提供其闭包依赖，保留真实 OrbitControls 数学和输入处理。
-const source = readFileSync(new NodeURL('./tankViewer.js', import.meta.url), 'utf8')
-const setterSource = source.slice(source.indexOf('        function setDistance(value)'), source.indexOf('        function setCameraPreset('))
+const source = readFileSync(new NodeURL('./tankViewer/tankTransport.ts', import.meta.url), 'utf8')
+const setterSource = (await transformWithEsbuild(source.slice(source.indexOf('function setDistance('), source.indexOf('function setCameraPreset(')), 'tankDistance.ts', { loader: 'ts' })).code
 function bindSetter(camera, controls) {
-  return new Function('THREE', 'camera', 'controls', 'reportDistance', `
-    const destroyed = false, contextLost = false, tankModel = {}, armorModel = {};
-    const QP = new URLSearchParams(), worldMetersPerUnit = 1, worldOverviewMode = false;
+  return new Function('THREE', 'camera', 'controls', 'QP', `
+    const tankModel = {}, armorModel = {};
+    const worldMetersPerUnit = 1;
     // #820 拆分后：模型引用与场景米制 owner = viewer/modelLifecycle.ts（ml handle）
     const ml = { getWorldMetersPerUnit: () => worldMetersPerUnit, models: { tankModel, armorModel } };
     const applyLongRangeCompensation = () => {};
+    const S = {
+      destroyed: false, contextLost: false, QP, ml, camera, controls,
+      worldOverviewMode: false, applyLongRangeCompensation,
+      reportDistance: () => {},
+    };
     ${setterSource}
-    return setDistance;
-  `)(THREE, camera, controls, vi.fn())
+    return (value) => setDistance(S, value);
+  `)(THREE, camera, controls, new URLSearchParams())
 }
 
 describe('装甲距离调节保留惯性中的观察姿态', () => {

@@ -183,6 +183,20 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     wrapper.unmount()
   })
 
+  it('pointercancel clears the in-flight swipe so a later pointerup cannot navigate', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue(threeShots)
+    const wrapper = await mountCompact()
+    await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
+    await flushPromises()
+    const detail = wrapper.get('[data-testid="shot-inspector"]')
+    await detail.trigger('pointerdown', { clientX: 200, clientY: 300 })
+    await detail.trigger('pointercancel')
+    await detail.trigger('pointerup', { clientX: 120, clientY: 300 })
+    await flushPromises()
+    expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-7')
+    wrapper.unmount()
+  })
+
   it('首尾不循环：第一发没有上一发、最后一发没有下一发（按钮同时 disabled）', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(threeShots)
     const wrapper = await mountCompact()

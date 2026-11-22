@@ -36,7 +36,7 @@ export type RosterRow = {
   nick: string;
   tank: string;
 };
-type RosterRuntime = {
+export type RosterRuntime = {
   hp?: number;
   maxHp?: number;
   dead?: boolean;

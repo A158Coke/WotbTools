@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Check physical LOC of first-party source in two immutable Git trees."""
+"""Strict full-tree source LOC gate for first-party code in a Git tree.
+
+Every invocation judges the ENTIRE HEAD tree against the policy in
+source-line-policy.json. There is no grandfathering: a blob that existed at
+the base commit, a fork point, or any earlier commit is not exempt, and no
+per-path allowlist mechanism exists anymore. Any over-limit maintained source
+in the head tree fails. The gate fails closed: missing or invalid policy,
+missing git history, or any scanner error aborts with exit 2 instead of
+passing.
+"""
 
 import argparse
 import collections
@@ -18,25 +27,62 @@ EXTENSIONS = frozenset({
     '.js', '.jsx', '.kt', '.kts', '.mjs', '.cjs', '.proto', '.ps1', '.py', '.rs', '.scss',
     '.sh', '.sql', '.tf', '.ts', '.tsx', '.vue', '.xml', '.yaml', '.yml',
 })
-POLICY = json.loads(Path(__file__).with_name('source-line-policy.json').read_text(encoding='utf-8'))
-LIMITS = POLICY['limits']
-EXCLUDED = tuple(POLICY['explicit_exclusions'])
-ALLOWLIST_FILE = 'scripts/ci/source-line-allowlist.txt'
-LEGACY_GATE_MARKERS = (b'is_source_line_candidate()', b'Source-line policy compatibility marker')
+POLICY_PATH = Path(__file__).with_name('source-line-policy.json')
+EXCLUDED_CATEGORY_ROLES = ('generated', 'vendored', 'immutable-history')
 TEST_DIRS = frozenset({'ci', 'test', 'tests', '__tests__', 'androidtest', 'testfixtures', 'testing'})
 TEST_NAME = re.compile(r'(?:^test[-_]|(?:[._-](?:test|tests|spec|specs))\.|(?:Test|Tests|IT)\.(?:java|kt)$|_test\.go$)')
+FLYWAY_DIR = re.compile(r'^java/[^/]+/src/main/resources/db/migration/[^/]+$')
+FLYWAY_NAME = re.compile(r'^V[0-9]+(?:[._][0-9]+)*__[A-Za-z0-9_]+\.sql$')
 
 
-def git(*args, input_bytes=None):
-    result = subprocess.run(['git', *args], input=input_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def load_policy():
+    """Load and validate the policy. Any problem fails closed (RuntimeError)."""
+    try:
+        raw = POLICY_PATH.read_text(encoding='utf-8')
+    except OSError as error:
+        raise RuntimeError(f'source-line policy is unreadable at {POLICY_PATH}: {error}')
+    try:
+        policy = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f'source-line policy at {POLICY_PATH} is not valid JSON: {error}')
+    if not isinstance(policy, dict):
+        raise RuntimeError('source-line policy must be a JSON object')
+    limits_raw = policy.get('limits')
+    if not isinstance(limits_raw, dict) or set(limits_raw) != {'production', 'test'}:
+        raise RuntimeError('source-line policy limits must define exactly "production" and "test"')
+    limits = {}
+    for role, value in limits_raw.items():
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise RuntimeError(f'source-line policy limit {role!r} must be a positive integer, got {value!r}')
+        limits[role] = value
+    categories = policy.get('categories')
+    if not isinstance(categories, dict):
+        raise RuntimeError('source-line policy must define a "categories" object')
+    for role in EXCLUDED_CATEGORY_ROLES:
+        entry = categories.get(role)
+        if entry is None:
+            raise RuntimeError(f'source-line policy categories must define {role!r}')
+        if not isinstance(entry, dict) or not isinstance(entry.get('patterns'), list) \
+                or not all(isinstance(pattern, str) for pattern in entry['patterns']):
+            raise RuntimeError(f'source-line policy category {role!r} must hold a list of string patterns')
+    excluded = tuple(pattern for role in ('generated', 'vendored') for pattern in categories[role]['patterns'])
+    return limits, excluded
+
+
+def git(*args):
+    result = subprocess.run(['git', *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if result.returncode:
         raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.decode(errors='replace').strip()}")
     return result.stdout
 
 
+def is_excluded(path):
+    return any(fnmatch.fnmatchcase(path, pattern) or (pattern.endswith('/') and path.startswith(pattern))
+               for pattern in EXCLUDED)
+
+
 def category(path):
-    if any(fnmatch.fnmatchcase(path, item) or (item.endswith('/') and path.startswith(item))
-           for item in EXCLUDED):
+    if is_excluded(path) or (FLYWAY_DIR.fullmatch(path) and FLYWAY_NAME.fullmatch(PurePosixPath(path).name)):
         return None
     parts = PurePosixPath(path).parts
     name = parts[-1]
@@ -96,121 +142,38 @@ def blob_lines(oids):
     return lines
 
 
-def parse_allowlist(content, source):
-    entries = set()
-    for line in content.decode('utf-8').splitlines():
-        entry = line.strip()
-        if not entry or entry.startswith('#'):
-            continue
-        if entry in entries:
-            raise RuntimeError(f'duplicate source-line allowlist entry for {entry} in {source}')
-        entries.add(entry)
-    return entries
-
-
-def allowlist_tree(revision):
-    result = subprocess.run(['git', 'show', f'{revision}:{ALLOWLIST_FILE}'], capture_output=True)
-    return parse_allowlist(result.stdout, f'{revision}:{ALLOWLIST_FILE}') if result.returncode == 0 else set()
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--base', required=True, help='verified base commit SHA')
-    parser.add_argument('--head', required=True, help='verified head commit SHA')
-    parser.add_argument('--strict', action='store_true', help='reject all remaining over-limit files')
+    parser.add_argument('--base', required=True, help='verified base commit SHA (identity evidence; the HEAD tree alone decides)')
+    parser.add_argument('--head', required=True, help='verified head commit SHA (the tree that is strictly judged)')
     args = parser.parse_args()
-    # Validate both endpoints before reading any tree. Disconnected histories
-    # are invalid evidence, but a base that merely is not an ancestor is valid.
-    base_sha, base = tree(args.base)
+    limits, excluded = load_policy()
+    global LIMITS, EXCLUDED
+    LIMITS, EXCLUDED = limits, excluded
+    # Both endpoints must be real commits: a missing base or head is invalid
+    # evidence and fails closed rather than silently scanning a partial tree.
+    base_sha, _ = tree(args.base)
     head_sha, head = tree(args.head)
-    common = subprocess.run(['git', 'merge-base', base_sha, head_sha], capture_output=True, text=True)
-    if common.returncode != 0 or not common.stdout.strip():
-        raise RuntimeError(f'base {base_sha} and head {head_sha} have no merge-base')
-    history_range = git('rev-list', '--reverse', f'{base_sha}..{head_sha}').decode().splitlines()
-    fork_entries = {}
-    if not args.strict:
-        _, fork_entries = tree(common.stdout.strip())
-    allowlist = set()
-    try:
-        allowlist = parse_allowlist(Path(ALLOWLIST_FILE).read_bytes(), ALLOWLIST_FILE)
-    except FileNotFoundError:
-        pass
-    counts = blob_lines([oid for _, oid in (*base.values(), *head.values())])
-    metrics = {name: collections.defaultdict(lambda: [0, 0, 0, 0, '']) for name in ('base', 'head')}
+    counts = blob_lines([oid for _, oid in head.values()])
+    metrics = {role: [0, 0, 0, 0, ''] for role in LIMITS}
     violations = []
-    for label, entries in (('base', base), ('head', head)):
-        for path, (role, oid) in sorted(entries.items()):
-            size = counts[oid]
-            metric = metrics[label][role]
-            metric[0] += 1
-            metric[1] += size
-            if size > metric[3]:
-                metric[3], metric[4] = size, path
-            if size > LIMITS[role]:
-                metric[2] += 1
-                grandfathered = (path in allowlist or base.get(path) == (role, oid) or
-                                 fork_entries.get(path) == (role, oid))
-                if label == 'head' and (args.strict or not grandfathered):
-                    violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
-    if not args.strict:
-        base_allowlist_blob = subprocess.run(
-            ['git', 'show', f'{base_sha}:{ALLOWLIST_FILE}'], capture_output=True
-        )
-        gate_blob = subprocess.run(
-            ['git', 'show', f'{base_sha}:scripts/ci/check-repository-hygiene.sh'], capture_output=True
-        )
-        # Preserve the rollout ratchet: missing allowlist is zero only after the
-        # source LOC gate itself was already present in the base tree.
-        base_allowlist_present = base_allowlist_blob.returncode == 0
-        base_allowlist = parse_allowlist(base_allowlist_blob.stdout, f'{base_sha}:{ALLOWLIST_FILE}') if base_allowlist_present else set()
-        base_gate_present = gate_blob.returncode == 0 and any(marker in gate_blob.stdout for marker in LEGACY_GATE_MARKERS)
-        if (base_allowlist_present or base_gate_present) and len(allowlist) > len(base_allowlist):
-            violations.append(f'source-line allowlist must not grow (base={len(base_allowlist)}, head={len(allowlist)} entries)')
-
-        # Every intermediate commit tree is checked so an over-limit blob cannot
-        # be committed and then hidden by a later split/delete in the same PR.
-        history_allowlist = set(allowlist) | base_allowlist
-        seen = set()
-        fork_cache = {}
-        for commit in history_range:
-            _, entries = tree(commit)
-            counts.update(blob_lines(oid for _, oid in entries.values()))
-            fork_result = subprocess.run(['git', 'merge-base', commit, base_sha], capture_output=True, text=True)
-            fork = fork_result.stdout.strip() if fork_result.returncode == 0 else ''
-            if fork not in fork_cache:
-                fork_cache[fork] = (tree(fork)[1], allowlist_tree(fork)) if fork else ({}, set())
-            fork_entries, fork_allowlist = fork_cache[fork]
-            for path, (role, oid) in entries.items():
-                key = (path, oid)
-                if key in seen:
-                    continue
-                seen.add(key)
-                size = counts[oid]
-                base_entry = base.get(path)
-                head_entry = head.get(path)
-                repaired_preexisting = False
-                if base_entry and head_entry and base_entry[0] == role and head_entry[0] == role:
-                    repaired_preexisting = (
-                        counts[base_entry[1]] > LIMITS[role]
-                        and counts[head_entry[1]] <= LIMITS[role]
-                    )
-                grandfathered = (path in history_allowlist or base.get(path) == (role, oid)
-                                 or fork_entries.get(path) == (role, oid) or path in fork_allowlist
-                                 or repaired_preexisting)
-                if size > LIMITS[role] and not grandfathered:
-                    violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
-    print(f'Source LOC: base={base_sha} head={head_sha} strict={args.strict}')
-    for label in ('base', 'head'):
-        for role in LIMITS:
-            files, total, over, largest, largest_path = metrics[label][role]
-            print(f'{label} {role}: files={files} lines={total} over={over} max={largest} '
-                  f'limit={LIMITS[role]} largest={largest_path!r}')
+    for path, (role, oid) in sorted(head.items()):
+        size = counts[oid]
+        metric = metrics[role]
+        metric[0] += 1
+        metric[1] += size
+        if size > metric[3]:
+            metric[3], metric[4] = size, path
+        if size > LIMITS[role]:
+            metric[2] += 1
+            violations.append(f'{path}: {size} physical lines (limit {LIMITS[role]}, {role})')
+    print(f'Source LOC: strict full-tree scan, base={base_sha} head={head_sha}')
+    for role in LIMITS:
+        files, total, over, largest, largest_path = metrics[role]
+        print(f'{role}: files={files} lines={total} over={over} max={largest} '
+              f'limit={LIMITS[role]} largest={largest_path!r}')
     if violations:
         print('\n'.join(violations), file=sys.stderr)
-        return 1
-    stale = sorted(path for path in allowlist if path not in head or counts[head[path][1]] <= LIMITS[head[path][0]])
-    if stale:
-        print('stale source-line allowlist entries: ' + ', '.join(stale), file=sys.stderr)
         return 1
     return 0
 

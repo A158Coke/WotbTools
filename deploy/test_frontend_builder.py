@@ -15,7 +15,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "deploy/tx/build-frontend-from-gitee.sh"
 # Load production functions, replacing only external build/registry dependencies.
-FUNCTIONS, SEPARATOR, _ = BUILDER.read_text().partition('[ "$#" -eq 8 ] || usage')
+def builder_source(builder):
+    source = builder.read_text()
+    if builder == BUILDER:
+        source = source.replace('source "${BASH_SOURCE[0]%.sh}.registry.sh"', builder.with_suffix(".registry.sh").read_text())
+    return source
+
+
+FUNCTIONS, SEPARATOR, _ = builder_source(BUILDER).partition('[ "$#" -eq 8 ] || usage')
 assert SEPARATOR, "frontend builder CLI entrypoint was not found"
 FIXTURE = r'''
 validate_common() { :; }
@@ -322,7 +329,7 @@ class BuilderSourceTransportTest(unittest.TestCase):
                 mirror = base / "missing"
             builder = ROOT / f"deploy/tx/build-{owner}-from-gitee.sh"
             delimiter = '[ "$#" -eq 8 ] || usage' if owner == "frontend" else '[ "$#" -eq 4 ] || usage'
-            functions, separator, _ = builder.read_text().partition(delimiter)
+            functions, separator, _ = builder_source(builder).partition(delimiter)
             self.assertTrue(separator)
             env = {**os.environ, "WOTB_TX_BUILD_CACHE_ROOT": str(cache),
                    "WOTB_GITEE_REPO_URL": mirror.resolve().as_uri(), "SOURCE_SHA": sha,

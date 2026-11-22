@@ -1,3 +1,4 @@
+import type { useReplayWorkspace } from '../../composables/useReplayWorkspace'
 // 会话生命周期 owner（#820 结构拆分，2026-11-05 自 initPlayback 闭包出仓）：
 // loadData / loadMapOnly / startPlayback 与会话代数三计数（sessionGen 加载代数 /
 // loadGeneration 实例令牌 / sessionEpoch 会话身份）的唯一归属。代码与搬移前逐字
@@ -20,11 +21,12 @@ import { loadPlaybackData, resolveMapKey } from '../replaySource.js'
 import { createPerf } from './perf.ts'
 
 type PerfHandle = ReturnType<typeof createPerf>
+import type { AgentAoiPresence } from '../../api/agent-replay-facets.js'
 
 /** 本模块消费的 PlaybackData 结构面（其余字段由场景内核子系统持有）。 */
 export interface SessionPlaybackData {
-  meta: { map_id?: number | null; map_name?: string | null; t_start?: number; friendly_team?: number | null; duration?: number | null }
-  visibility?: unknown
+  meta: { map_id?: number | null; map_name?: string | null; t_start?: number; friendly_team?: number | null; duration?: number | null; samples?: number }
+  visibility?: readonly AgentAoiPresence[] | null
   vehicles: unknown[]
   shots: unknown[]
   periods: unknown[]
@@ -47,15 +49,10 @@ export interface SessionStore {
 
 /** 回放来源（client-only 拓扑：仅 local 文件 / 已装填的 ReplaySession）。 */
 export interface LoadSource {
-  /** 来源类型标注（client-only 拓扑；解析分支由 session 是否存在决定）。 */
   kind?: 'local'
-  file?: Blob & { name?: string; lastModified?: number }
-  /** 解析取消信号（replaySource 透传给 Worker；归属仍由 sessionGen 判定）。 */
   signal?: AbortSignal
-  session?: {
-    loadScene(file: LoadSource['file'], observer?: SessionPerfObserver): Promise<SessionPlaybackData>
-    getState(file: LoadSource['file']): unknown
-  }
+  file?: Blob & { name?: string; lastModified?: number }
+  session?: ReturnType<typeof useReplayWorkspace>['playbackSession'] | null
 }
 
 export interface SessionPerfObserver {
@@ -101,14 +98,14 @@ export interface SessionLifecycleDeps {
   constrainFreeCameraAltitude(): void
   loadMapImage(): Promise<void>
   buildBases(): void
-  /** 战场快捷标记事件源（markers 0x2e + attention_to_cell；宿主经 markerRuntime 持有）。 */
-  buildMarkers(): void
   buildSpawns(): void
   buildVehicles(): void
   /** 装配层接地阴影门禁复核 + 资源创建（#907 主干随迁；宿主实现）。 */
   setupContactShadows(): void
   applyGlbToggle(on: boolean): Promise<void>
   buildRoster(): void
+  /** 战场快捷标记事件源装载（会话数据就绪后；宿主实现，可选）。 */
+  buildMarkers?(): void
   /** 会话级 resolver 装配 + 共享 mounted-configs 预取（宿主 HUD 域实现）。 */
   prepareResolvers(): void
   prewarmShaders(): void
@@ -191,9 +188,9 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
           status: event.status ?? null, digest: event.digest ?? null }, diagnosticEpoch);
       } : undefined;
       const data = source?.session
-        ? await (observer ? source.session.loadScene(source.file, observer) : source.session.loadScene(source.file))
+        ? await (observer ? source.session.loadScene(source.file as File, observer) : source.session.loadScene(source.file as File))
         : await loadPlaybackData(observer ? { ...source, observer } : source);
-      const playbackSession = source?.session ? source.session.getState(source.file) : null;
+      const playbackSession = source?.session ? source.session.getState(source.file as File) : null;
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       deps.teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       deps.publishSessionData(data, playbackSession);
@@ -347,10 +344,10 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     }
     if (perf && current()) perf.event({ stage: 'glb-wait', durationMs: deps.getGlbOn() && deps.forceGlb() ? performance.now() - perfGlbAt : null, status: !deps.getGlbOn() ? 'skipped' : deps.forceGlb() ? 'complete' : 'background-pending' }, perfLoadingEpoch);
     deps.buildRoster();
+    deps.buildMarkers?.();   // 快捷标记事件源（markers/chat_events）随会话数据重建
     deps.prepareResolvers();
     deps.transients.rebuildSources();   // 战斗反馈事件源（伤害/击毁）
     deps.buildBases();   // 基地贴地标记（争霸 A–D / 单基地）
-    deps.buildMarkers();   // 战场快捷标记事件源（0x2e markers + attention_to_cell；游标由 resetSessionCursors 重定）
     // 会话从开战时刻开始：准备 / 倒计时阶段不在时间轴上（与 2D 一致）
     deps.publishSceneClock();
     const [start, end] = deps.battleRange();

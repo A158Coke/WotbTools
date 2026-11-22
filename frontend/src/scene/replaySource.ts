@@ -17,7 +17,6 @@
 // 单一实现）：3D 路径此前只做 JSON.parse，错版 WASM 可静默载入 v1 数据（缺
 // supremacy_bases/points），版本门禁形同虚设。
 import { loadAgentWasmModule, validateAgentPlayback, validateAgentRecorderCamera } from '../api/agent-replay-facets.js'
-import { assetProvider } from './assetProvider.js'
 import { buildPitchLimits } from './pitchLimits.js'
 import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
 import type { PlaybackParseKind, PlaybackParseDiagnostics } from './playbackParse.worker.js'
@@ -406,15 +405,19 @@ export async function loadPlaybackData(source: { kind?: string; file?: ReplayFil
   throw new Error('回放数据源仅支持本地文件（client-only 拓扑，无服务端通道）')
 }
 
-// 地图静态路径已拆至 replayMapAssets.ts（行数预算）；符号原地转出口，消费方导入路径不变。
+
+// ---- 地图静态资产 URL（loadMapIndex / resolveMapKey / mapStaticUrl / map2d / cover）：
+// 自 2026-11-21 起出仓 ./replayMapAssets.ts（#LOC 结构拆分，代码逐字一致）。
+// 公共 API 经 re-export 保持导入方零改动。
+import { assetProvider } from './assetProvider.js'
 export {
-  loadMapIndex,
-  resolveMapKey,
-  __resetMapIndexForTest,
-  mapCoverUrl,
-  map2dCanonicalUrl,
-  loadMap2dIndex,
   __resetMap2dIndexForTest,
-  resolveMap2dBasemap,
+  __resetMapIndexForTest,
+  loadMap2dIndex,
+  loadMapIndex,
+  map2dCanonicalUrl,
+  mapCoverUrl,
   mapStaticUrl,
+  resolveMap2dBasemap,
+  resolveMapKey,
 } from './replayMapAssets.js'

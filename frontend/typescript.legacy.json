@@ -185,7 +185,7 @@
     "src/vehicle-portraits/runtime.js"
   ],
   "escapeHatches": {
-    "src/api/agent-replay-facets.ts": {
+    "src/api/agent-facets/validation.ts": {
       "any": 0,
       "asUnknownAs": 3
     },

@@ -12,18 +12,20 @@ import type { useFeatureGate } from '../composables/useFeatureGate.js'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import type { useI18n } from 'vue-i18n'
+import type { MapAnnotation } from '../composables/useAnnotationState.js'
+import type { SceneErasePath } from '../composables/useSceneAnnotations.js'
 
 type Store = ReturnType<typeof createPlaybackStore>
 type FlyControls = ReturnType<typeof useSceneFlyControls>
 type I18nT = ReturnType<typeof useI18n>['t']
 type RosterRowLike = { eid: number; accountId: number | null; tankId: number | null; team: number | null; nick: string; tank: string; dead?: boolean; hp?: number; maxHp?: number }
 
-type SceneLoadOptions = Parameters<NonNullable<SceneApiLike['loadData']>>[0]
-type SceneSession = NonNullable<SceneLoadOptions['session']>
-
 /** 工作台共享 session 的最小面（owner = useReplayWorkspace.playbackSession）。
- *  loadScene 是场景 loadData 复用工作台共享解析的入口；getState/invalidate 供重试用。 */
-interface PlaybackSessionLike extends Pick<SceneSession, 'loadScene'> {
+ *  loadScene 是场景 loadData 复用工作台共享解析的入口；getState/invalidate 供重试用。
+ *  这里只声明 pane 实际消费的形状：主场景 facade 的 loadData 选项在 JS 侧为宽松类型，
+ *  不应把 session 推断成 unknown。 */
+interface PlaybackSessionLike {
+  loadScene(file: File): unknown
   getState(file: File): { sceneState: string }
   invalidate(file: File): void
 }
@@ -48,8 +50,8 @@ export interface R3dCParts {
   renderActive: Ref<boolean>
   fly: FlyControls
   resetAnnotationState: () => void
-  commitAnnotationFromScene: (...args: never[]) => void
-  eraseFromScene: (...args: never[]) => void
+  commitAnnotationFromScene: (annotation: MapAnnotation) => void
+  eraseFromScene: (path: SceneErasePath) => void
   pushAnnotationProjection: () => void
   pushAnnotationInteraction: () => void
   pushAnnotationVisibility: () => void

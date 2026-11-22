@@ -23,6 +23,8 @@ on:
       - deploy/tx/business-api.compose.yml
       - deploy/tx/build-business-api-from-gitee.sh
       - deploy/tx/deploy.sh
+      - deploy/tx/deploy-stage.sh
+      - deploy/tx/deploy-health.sh
       - deploy/tx/common.compose.yml
       - deploy/tx/docker-compose.yml
   workflow_dispatch:
@@ -52,6 +54,8 @@ env:
     deploy/tx/business-api.compose.yml
     deploy/tx/build-business-api-from-gitee.sh
     deploy/tx/deploy.sh
+    deploy/tx/deploy-stage.sh
+    deploy/tx/deploy-health.sh
     deploy/tx/common.compose.yml
     deploy/tx/docker-compose.yml
 concurrency:

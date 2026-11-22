@@ -1179,10 +1179,13 @@ describe('ReplayWorkspace', () => {
       const wrapper = mountWorkspace('playback', { shellChrome: chrome })
       await flushPromises()
       expect(chrome.immersive.value).toBe(true)
+      expect(wrapper.find('[data-testid="showcase-hero"]').exists()).toBe(false)
       await switchTo(wrapper, 'data')
       expect(chrome.immersive.value).toBe(false)
+      expect(wrapper.find('[data-testid="showcase-hero"]').exists()).toBe(true)
       await switchTo(wrapper, '3d')
       expect(chrome.immersive.value).toBe(true)
+      expect(wrapper.find('[data-testid="showcase-hero"]').exists()).toBe(false)
       formState.isPortrait.value = true
       await flushPromises()
       expect(chrome.immersive.value).toBe(false)

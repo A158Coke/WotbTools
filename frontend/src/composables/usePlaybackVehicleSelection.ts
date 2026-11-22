@@ -21,11 +21,11 @@ type VehicleRenderStateLike = VehicleRenderState
  * hit-test / 屏幕定位经由 usePlaybackCamera 的 view/MapRenderRect（与 marker/标注同一变换），
  * 语义投影由宿主注入（projectedSemanticNorm / markerScreen，owner 在车辆投影层）。
  */
-export function usePlaybackVehicleSelection(
+export function usePlaybackVehicleSelection<T extends VehicleRenderStateLike>(
   camera: Pick<PlaybackCamera, 'view' | 'mapEl' | 'mapRenderRect' | 'mapWidth'>,
   deps: {
     /** 时间相关渲染状态（hit-test 与 selectedState 的来源）。 */
-    vehicleStates: Ref<VehicleRenderStateLike[]>
+    vehicleStates: Ref<T[]>
     /** canonical tracks（selectedTrack / roster 投影源）。 */
     playback: Ref<BattlePlaybackDataset | null>
     currentTime: Ref<number>
@@ -38,7 +38,7 @@ export function usePlaybackVehicleSelection(
     /** 详情浮窗的定位祖先 / 拖动宿主（.pb-main）。 */
     battlefieldWorkspaceEl: Ref<HTMLElement | null>
     /** 标记中心 → 屏幕坐标（车辆投影层提供，与地图/标注同一变换）。 */
-    markerScreen: (st: VehicleRenderStateLike) => { x: number; y: number } | null
+    markerScreen: (st: T) => { x: number; y: number } | null
     /** 语义坐标 → normalized viewport 坐标（含地形起伏回退）。 */
     projectedSemanticNorm: (x: number, y: number) => { xNorm: number; yNorm: number }
     /** mobile overlay reveal（选中后保持 overlay 可见性计时）。 */
@@ -150,7 +150,7 @@ export function usePlaybackVehicleSelection(
     const py = hasPoint ? clientY! - rect.top : NaN
     // Hit-test uses the final vehicle-aware hit target at the marker's true position
     // (markers are never displaced). Selection still returns the canonical vehicle.
-    const hitTest = (s: VehicleRenderStateLike) => {
+    const hitTest = (s: T) => {
       const cx = (px - view.tx) / view.scale
       const cy = (py - view.ty) / view.scale
       const mapRect = camera.mapRenderRect()
@@ -180,7 +180,7 @@ export function usePlaybackVehicleSelection(
     if (candidates.length === 0) return
     let best = candidates[0]
     if (candidates.length > 1) {
-      const dist = (s: VehicleRenderStateLike) => {
+      const dist = (s: T) => {
         const p = deps.markerScreen(s)
         return p ? Math.hypot(p.x - px, p.y - py) : Infinity
       }

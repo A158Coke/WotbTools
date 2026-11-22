@@ -2,6 +2,9 @@
 import GunMarksBadge from './GunMarksBadge.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useDrawerResize } from './player-detail/useDrawerResize.ts'
+import { useRadarMetricSelection } from './player-detail/useRadarMetricSelection.ts'
+import { useRatingProfileExport } from './player-detail/useRatingProfileExport.ts'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import PlayerRatingRadar from './PlayerRatingRadar.vue'
 import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
@@ -51,114 +54,25 @@ const props = defineProps({
 const emit = defineEmits(['close', 'prev', 'next'])
 const { t } = useI18n()
 
+
+
 const open = computed(() => !!props.context && !!props.player)
 const closeBtn = ref(null)
 const isSummary = computed(() => props.context?.scope === 'summary')
+const {
+  isMobile, isDesktop,
+  drawerWidth, drawerMinWidth, isResizing, resizeHandle, drawerMaxWidth,
+  loadDrawerWidth, setDrawerWidth, bindMobile,
+  onResizeStart, onResizeMove, onResizeEnd, onResizeKey,
+  panelWidth,
+} = useDrawerResize({ open })
 
-// 桌面/平板非模态侧栏，移动端(<768px)保持 modal：复用现有 mobile 断点（width < 768px）。
-const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
-// 仅 Desktop (>=1200px) 提供自由 resize；Tablet/Mobile 保持原有行为。
-const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1200 : true)
+const {
+  radarOrder, showRadarPicker, radarHint,
+  toggleRadarMetric, moveRadarMetric,
+} = useRadarMetricSelection({ t })
 
-// ---- Side Panel 自由 Resize（仅桌面）----
-const DRAWER_MIN = 320
-const DRAWER_DEFAULT = 380
-/** 平板固定宽度：768 宽时给表格留约 400px。 */
-const DRAWER_TABLET = 360
-const DRAWER_MAX_RATIO = 0.45
-const DRAWER_WIDTH_KEY = 'radarSidePanelWidth'
-const drawerWidth = ref(DRAWER_DEFAULT)
-const isResizing = ref(false)
-const resizeStartX = ref(0)
-const resizeStartWidth = ref(0)
-const resizeHandle = ref(null)
 
-/** 动态 max-width：约 45% 视口，且至少 min、绝不超过视口已留边（保证主内容不被完全挤没）。 */
-function drawerMaxWidth() {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1440
-  return Math.max(DRAWER_MIN, Math.min(Math.floor(vw * DRAWER_MAX_RATIO), vw - 16))
-}
-function clampDrawerWidth(w) {
-  return Math.max(DRAWER_MIN, Math.min(drawerMaxWidth(), w))
-}
-function loadDrawerWidth() {
-  try {
-    const raw = localStorage.getItem(DRAWER_WIDTH_KEY)
-    if (raw == null) return DRAWER_DEFAULT
-    const n = Number(raw)
-    return Number.isFinite(n) ? clampDrawerWidth(n) : DRAWER_DEFAULT
-  } catch (_) {
-    return DRAWER_DEFAULT
-  }
-}
-function saveDrawerWidth(w) {
-  try { localStorage.setItem(DRAWER_WIDTH_KEY, String(w)) } catch (_) { /* 忽略持久化失败 */ }
-}
-/** 仅更新内存宽度（拖动中高频调用，不写 localStorage）。 */
-function applyDrawerWidth(w) {
-  drawerWidth.value = clampDrawerWidth(w)
-}
-function setDrawerWidth(w) {
-  applyDrawerWidth(w)
-  saveDrawerWidth(drawerWidth.value)
-}
-
-function onResizeStart(e) {
-  if (!isDesktop.value || !open.value) return
-  e.preventDefault()
-  resizeStartX.value = e.clientX
-  resizeStartWidth.value = drawerWidth.value
-  isResizing.value = true
-  const h = resizeHandle.value
-  if (h && typeof h.setPointerCapture === 'function') {
-    try { h.setPointerCapture(e.pointerId) } catch (_) { /* happy-dom 无 Pointer Capture */ }
-  }
-  document.body.style.userSelect = 'none'
-  document.body.classList.add('pd-resizing')
-}
-function onResizeMove(e) {
-  if (!isResizing.value) return
-  applyDrawerWidth(resizeStartWidth.value + (resizeStartX.value - e.clientX))
-}
-function onResizeEnd() {
-  if (!isResizing.value) return
-  isResizing.value = false
-  saveDrawerWidth(drawerWidth.value) // 拖动结束才持久化一次
-  document.body.style.userSelect = ''
-  document.body.classList.remove('pd-resizing')
-}
-/** 键盘调整：每次 20px。 */
-function onResizeKey(delta) {
-  if (!isDesktop.value) return
-  setDrawerWidth(drawerWidth.value + delta)
-}
-
-/** 侧栏宽度：桌面 = 用户可拖的宽度；平板 = 固定宽度；手机 = 全屏（null）。 */
-const panelWidth = computed(() => {
-  if (isMobile.value) return null
-  return isDesktop.value ? drawerWidth.value : DRAWER_TABLET
-})
-
-/** Side Panel 真 reflow：桌面 / 平板开启时把侧栏宽度暴露成 CSS 变量，
- * 供 .layout-data-workspace 预留右侧空间，主内容随之收窄/扩展，不被 fixed 侧栏覆盖；
- * 手机是全屏 sheet（offset=0px）。 */
-const workspaceOffset = computed(() =>
-  open.value && panelWidth.value ? (panelWidth.value + 8) + 'px' : '0px')
-watch([panelWidth, open], () => {
-  if (typeof document !== 'undefined') {
-    document.documentElement.style.setProperty('--pd-drawer-offset', workspaceOffset.value)
-  }
-}, { immediate: true })
-
-function updateViewport() {
-  const w = window.innerWidth
-  isMobile.value = w < 768
-  isDesktop.value = w >= 1200
-  // 屏幕尺寸变化时自动 clamp 当前宽度，不强制写回 localStorage。
-  drawerWidth.value = clampDrawerWidth(drawerWidth.value)
-}
-function bindMobile() { updateViewport(); window.addEventListener('resize', updateViewport) }
-function unbindMobile() { window.removeEventListener('resize', updateViewport) }
 
 function num(v) {
   return (v == null || v === '' || !Number.isFinite(Number(v))) ? '--' : String(Math.round(Number(v) * 10) / 10)
@@ -170,48 +84,6 @@ function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
   return { rating: ratingTotalText(p.rating) }
-}
-
-// ---- Radar Metric Selection：默认七维，仅 League 维度；Summary/Battle 共用同一配置 ----
-const radarOrder = ref(loadRadarPreference())
-const showRadarPicker = ref(false)
-const radarHint = ref('')
-
-function persistRadarOrder() {
-  saveRadarPreference(radarOrder.value)
-}
-
-function toggleRadarMetric(key) {
-  const cur = [...radarOrder.value]
-  const idx = cur.indexOf(key)
-  if (idx >= 0) {
-    if (cur.length <= RADAR_MIN_AXES) {
-      radarHint.value = t('league.drawer.radar_min_hint', { n: RADAR_MIN_AXES })
-      return
-    }
-    cur.splice(idx, 1)
-    radarHint.value = ''
-  } else {
-    if (cur.length >= RADAR_MAX_AXES) {
-      radarHint.value = t('league.drawer.radar_max_hint', { n: RADAR_MAX_AXES })
-      return
-    }
-    cur.push(key)
-    radarHint.value = ''
-  }
-  radarOrder.value = cur
-  persistRadarOrder()
-}
-
-function moveRadarMetric(key, dir) {
-  const cur = [...radarOrder.value]
-  const idx = cur.indexOf(key)
-  const to = idx + dir
-  if (idx < 0 || to < 0 || to >= cur.length) return
-  const [moved] = cur.splice(idx, 1)
-  cur.splice(to, 0, moved)
-  radarOrder.value = cur
-  persistRadarOrder()
 }
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
@@ -259,6 +131,7 @@ const referenceLabel = computed(() =>
 /** D2 缺维契约：player 缺任一所选维 → 整图 unavailable（§24）。 */
 const playerUnavailable = computed(() =>
   radarMetrics.value.length > 0 && radarMetrics.value.some(m => !m.available))
+
 
 // ---- 比赛事实（scope 语义）；Observed Mean / Rated Battles 已移入头部（§6），不在此重复 ----
 const facts = computed(() => {
@@ -363,6 +236,17 @@ function requestClose() {
 function isEditable(el) {
   return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
 }
+
+const {
+  exportingProfile, exportCardRef, exportPortrait,
+  snapIsSummary, snapNickname, snapRating, snapObservedMean, snapRatedBattles,
+  snapReferenceLabel, snapVehicle, snapMetrics, snapRefs,
+  snapPlayerPoints, snapRefPoints, snapGrids, snapAxes, snapLabels,
+  snapScoreLabels, snapScaleTicks, snapDetailRows,
+  exportProfile,
+} = useRatingProfileExport({
+  props, vehicle, radarMetrics, referenceSeries, referenceLabel, isSummary, ratingLine, loadPortrait,
+})
 function onKeydown(e) {
   if (!open.value) return
   if (e.key === 'Escape') {
@@ -399,127 +283,11 @@ function onTouchEnd(e) {
 onMounted(() => { window.addEventListener('keydown', onKeydown); drawerWidth.value = loadDrawerWidth(); bindMobile() })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
-  unbindMobile()
   document.body.style.userSelect = ''
   document.body.classList.remove('pd-resizing')
   if (typeof document !== 'undefined') document.documentElement.style.removeProperty('--pd-drawer-offset')
 })
 
-// ---- 导出 Rating Profile PNG（§41-48）：专用卡片（非 Drawer 截图）----
-// 导出前捕获不可变快照，offscreen 卡只消费快照——导出期间切换玩家不产生“新玩家数据 + 旧坦克图”混合 PNG。
-const exportingProfile = ref(false)
-const exportCardRef = ref(null)
-const exportPortrait = ref(null)
-const exportSnapshot = ref(null)
-
-// 出口卡只消费 exportSnapshot（快照未建时为空/占位），禁止再读实时 props/vehicle/radarMetrics/referenceSeries。
-const snapIsSummary = computed(() => !!exportSnapshot.value?.isSummary)
-const snapNickname = computed(() => exportSnapshot.value?.nickname || '--')
-const snapRating = computed(() => exportSnapshot.value?.rating || '--')
-const snapObservedMean = computed(() => exportSnapshot.value?.observedMean ?? null)
-const snapRatedBattles = computed(() => exportSnapshot.value?.ratedBattles ?? null)
-const snapReferenceLabel = computed(() => exportSnapshot.value?.referenceLabel || '')
-const snapVehicle = computed(() => exportSnapshot.value?.vehicle || null)
-const snapMetrics = computed(() => exportSnapshot.value?.metrics || [])
-const snapRefs = computed(() => exportSnapshot.value?.refs || [])
-const snapPlayerPoints = computed(() => exportSnapshot.value?.playerPoints || [])
-const snapRefPoints = computed(() => exportSnapshot.value?.refPoints || [])
-const snapGrids = computed(() => exportSnapshot.value?.grids || [])
-const snapAxes = computed(() => exportSnapshot.value?.axes || [])
-const snapLabels = computed(() => exportSnapshot.value?.labels || [])
-const snapScoreLabels = computed(() => exportSnapshot.value?.scoreLabels || [])
-const snapScaleTicks = computed(() => exportSnapshot.value?.scaleTicks || [])
-const snapDetailRows = computed(() => exportSnapshot.value?.detailRows || [])
-
-/** 从当前实时状态构建导出所需数据的一次性不可变快照（在任何 await 之前调用）。 */
-function buildExportSnapshot() {
-  const p = props.player
-  const v = vehicle.value
-  const metrics = radarMetrics.value.map(m => ({ ...m }))
-  const refs = referenceSeries.value.map(m => ({ ...m }))
-  return {
-    isSummary: isSummary.value,
-    nickname: p.nickname,
-    rating: ratingLine().rating,
-    observedMean: p.observedMean,
-    ratedBattles: p.cells?.rated_battles ?? null,
-    referenceLabel: referenceLabel.value,
-    vehicle: v ? { ...v } : null,
-    metrics,
-    refs,
-    playerPoints: polygonPoints(metrics.map(m => m.normalized), metrics.length),
-    refPoints: polygonPoints(refs.map(m => m.normalized), refs.length),
-    grids: radarGridPolygons(metrics.length),
-    axes: Array.from({ length: metrics.length }, (_, i) => axisRay(i, metrics.length)),
-    scaleTicks: radarScaleTicks(metrics.length),
-    labels: Array.from({ length: metrics.length }, (_, i) => {
-      const [x, y] = axisPoint(i, metrics.length, RADAR.LABEL_RADIUS, RADAR)
-      const m = metrics[i]
-      return { x, y, label: m?.label || '', tip: m?.tip || '' }
-    }),
-    scoreLabels: radarScoreLabelLayout(
-      metrics.map(m => m.available ? m.normalized : null),
-      metrics.map(m => formatRadarVisualScore(m))),
-    detailRows: metrics.map((m, i) => {
-      const ref = refs[i]
-      return {
-        label: m.label, tip: m.tip || '',
-        player: formatRadarVisualScore(m),
-        reference: formatRadarVisualScore(ref),
-      }
-    }),
-  }
-}
-
-async function exportProfile() {
-  if (exportingProfile.value || !props.player) return
-  exportingProfile.value = true
-  // 任何 await 之前固定快照：导出卡/图片/文件名全部来自它，抵御导出期间父组件 props / Tab / selection 变化。
-  exportSnapshot.value = buildExportSnapshot()
-  exportPortrait.value = null
-  try {
-    await nextTick()
-    await ensureVehiclePortraitForExport()
-    await nextTick()
-    const html2canvas = (await import('html2canvas')).default
-    // 画布底色取导出卡自身的语义 token 底色（随主题），不再写死深色
-    const cardEl = exportCardRef.value.querySelector('.rp-card') || exportCardRef.value
-    const canvas = await html2canvas(exportCardRef.value, {
-      scale: 2, useCORS: true, backgroundColor: getComputedStyle(cardEl).backgroundColor || null,
-    })
-    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'))
-    if (!blob) throw new Error('toBlob returned null')
-    const base = 'wotbtools-rating-profile-' + sanitizeFilename(exportSnapshot.value.nickname || 'player')
-    await downloadBlob(blob, base + '.png')
-  } catch (e) {
-    console.error(e)
-  } finally {
-    exportSnapshot.value = null
-    exportPortrait.value = null
-    exportingProfile.value = false
-  }
-}
-
-/** 导出卡坦克图：先懒加载 URL，再确认图片已解码；失败/缺图返回 null（文字版导出，不阻塞 PNG）。
- * 只消费导出快照中的 vehicle，避免异步恢复后读到已切换选手的车辆。 */
-async function ensureVehiclePortraitForExport() {
-  const v = exportSnapshot.value?.vehicle
-  if (!v || v.tankId == null) {
-    exportPortrait.value = null
-    return
-  }
-  const url = await loadPortrait(v.tankId)
-  exportPortrait.value = url ? await ensureImageLoaded(url) : null
-}
-
-function ensureImageLoaded(url) {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => resolve(url)
-    img.onerror = () => resolve(null)
-    img.src = url
-  })
-}
 </script>
 
 <template>
@@ -634,7 +402,7 @@ function ensureImageLoaded(url) {
       <div v-if="isDesktop && open" class="pd-resizer" role="separator" aria-orientation="vertical"
            tabindex="0" data-testid="drawer-resizer"
            :aria-label="t('league.drawer.resize_panel')"
-           :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="DRAWER_MIN"
+           :aria-valuenow="Math.round(drawerWidth)" :aria-valuemin="drawerMinWidth"
            :aria-valuemax="Math.round(drawerMaxWidth())"
            :style="{ right: 'calc(' + drawerWidth + 'px + var(--space-2))' }"
            ref="resizeHandle"
@@ -720,365 +488,4 @@ function ensureImageLoaded(url) {
   </Teleport>
 </template>
 
-<style scoped>
-/* 设计语言 token（docs/frontend/design-language.md §4–§7 Drawer / Stat）。
- * 非模态侧栏：桌面 / 平板 backdrop 不拦截 Grid 点击（pointer-events:none），
- * Drawer 自身恢复可交互；移动端（<768px）再切回 modal veil（.pd-modal）。 */
-.drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-drawer);
-  isolation: isolate;
-  background: none;
-  pointer-events: none;
-}
-
-.drawer-backdrop.pd-modal { background: var(--color-scrim); pointer-events: auto; }
-
-.player-drawer {
-  position: fixed;
-  top: calc(var(--header-h) + var(--space-2));
-  right: var(--space-2);
-  bottom: var(--space-2);
-  width: min(380px, calc(100% - var(--space-4)));
-  padding: var(--space-4);
-  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
-  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
-  overflow-y: auto;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-3);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  pointer-events: auto;
-  animation: pd-slide-in var(--duration-slow) var(--ease-standard);
-}
-
-.player-drawer.pd-closing { animation: pd-slide-out var(--duration-base) var(--ease-standard) forwards; }
-
-@keyframes pd-slide-in {
-  from { transform: translateX(30px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-@keyframes pd-slide-out {
-  from { transform: translateX(0); opacity: 1; }
-  to { transform: translateX(30px); opacity: 0; }
-}
-
-/* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover / 拖动时高亮。 */
-.pd-resizer {
-  position: absolute;
-  top: calc(var(--header-h) + var(--space-2));
-  bottom: var(--space-2);
-  z-index: var(--z-sticky);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--space-3);
-  /* 与 fixed drawer 共用 CSS 布局视口，避免页面滚动条使 JS innerWidth 定位偏入内容。 */
-  transform: translateX(50%);
-  cursor: col-resize;
-  opacity: 0;
-  touch-action: none;
-  pointer-events: auto;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-
-.pd-resizer:focus-visible,
-body.pd-resizing .pd-resizer { opacity: 1; }
-
-.pd-resizer-line {
-  width: 2px;
-  height: 52px;
-  border-radius: var(--radius-full);
-  corner-shape: round;
-  background: var(--color-border-strong);
-  transition: background-color var(--duration-fast) var(--ease-standard), height var(--duration-fast) var(--ease-standard);
-}
-
-body.pd-resizing .pd-resizer-line,
-.pd-resizer:focus-visible .pd-resizer-line { height: 72px; background: var(--color-accent); }
-
-@media (hover: hover) {
-  .pd-resizer:hover { opacity: 1; }
-  .pd-resizer:hover .pd-resizer-line { height: 72px; background: var(--color-accent); }
-}
-
-@media (width < 1200px) {
-  .pd-resizer { display: none; }
-}
-
-/* 头部：标题（h2）+ 战队 / 范围 + 上一位 / 下一位 */
-.pd-close-abs { position: absolute; top: var(--space-3); right: var(--space-3); }
-.pd-head { display: grid; gap: var(--space-1); padding-right: var(--space-10); }
-.pd-title { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-h2); }
-
-.pd-sub {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-}
-
-.pd-scope {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1));
-  color: var(--color-accent-text);
-  font: var(--type-caption);
-  font-weight: 600;
-}
-
-.pd-close,
-.pd-nav-btn,
-.rp-arrow {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  padding: 0;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-}
-
-.pd-close { width: var(--control-h-md); height: var(--control-h-md); }
-.pd-nav { display: inline-flex; gap: var(--space-2); margin-top: var(--space-2); }
-.pd-nav-btn { width: var(--control-h-sm); height: var(--control-h-sm); }
-.rp-arrow { width: var(--hit-min); height: var(--hit-min); border-radius: var(--radius-sm); }
-
-.pd-nav-btn:disabled,
-.rp-arrow:disabled,
-.pd-linkbtn:disabled { cursor: not-allowed; opacity: .4; }
-
-.pd-close:focus-visible,
-.pd-nav-btn:focus-visible,
-.rp-arrow:focus-visible,
-.pd-linkbtn:focus-visible,
-.pd-resizer:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-/* Stat：Rating 主数值 + 观测均值 / 计分场次 */
-.pd-rating { display: grid; gap: 0; margin-top: var(--space-4); }
-.pd-rating-label { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.pd-rating-value { color: var(--color-accent-text); font: var(--type-h1); font-variant-numeric: tabular-nums; }
-.pd-rating-extra { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin-top: var(--space-1); }
-.pd-extra { color: var(--color-text-secondary); font: var(--type-caption); }
-.pd-extra b { color: var(--color-text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
-
-/* 小节标题：抽屉小节统一 h3（§4），上方留区块间距 */
-.pd-section { margin: var(--space-6) 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
-
-.pd-section-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin: var(--space-6) 0 var(--space-2);
-}
-
-.pd-section-row .pd-section { margin: 0; }
-.pd-section-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-
-.pd-linkbtn {
-  min-height: var(--control-h-sm);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-primary);
-  font: var(--type-caption);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-@media (pointer: coarse) {
-  .pd-nav-btn, .pd-linkbtn {
-    min-width: var(--hit-min);
-    min-height: var(--hit-min);
-  }
-}
-
-.radar-picker {
-  margin: 0 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-
-.radar-hint { margin: 0 0 var(--space-2); color: var(--color-warning); font: var(--type-caption); }
-.radar-picker-list { display: grid; gap: var(--space-1); max-height: 240px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.radar-picker-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.rp-item { display: flex; align-items: center; gap: var(--space-2); min-height: var(--hit-min); color: var(--color-text-primary); cursor: pointer; }
-.radar-picker-list li:not(.checked) .rp-item { color: var(--color-text-secondary); }
-.rp-item input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
-.rp-arrows { display: inline-flex; gap: var(--space-1); }
-
-.radar-empty {
-  margin: var(--space-3) 0;
-  padding: var(--space-4);
-  border: 1px dashed var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  text-align: center;
-}
-
-/* Stat grid：两列格子，标签 caption 在上、数值等宽数字在下 */
-.pd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
-
-.pd-fact {
-  display: grid;
-  gap: 0;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-
-.pd-fact dt { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
-.pd-fact dd { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
-
-/* 坦克展示 */
-.pd-vehicle {
-  margin-top: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-
-.pd-vehicle-label { margin-bottom: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.pd-vehicle-body { display: flex; align-items: center; gap: var(--space-3); }
-.pd-vehicle-img { flex: none; width: 150px; height: auto; border-radius: var(--radius-sm); }
-.pd-vehicle-meta { min-width: 0; }
-.pd-vehicle-name { overflow: hidden; color: var(--color-text-primary); font: var(--type-h3); text-overflow: ellipsis; white-space: nowrap; }
-
-.pd-vehicle-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin-top: var(--space-1);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-@media (hover: hover) {
-  .pd-close:hover,
-  .pd-nav-btn:not(:disabled):hover,
-  .rp-arrow:not(:disabled):hover { border-color: var(--color-accent); color: var(--color-text-primary); }
-  .pd-linkbtn:not(:disabled):hover { background: var(--color-surface-2); }
-}
-
-/* 手机：全屏 sheet，盖住顶栏与底部 Tab 栏 */
-@media (width < 768px) {
-  .drawer-backdrop { z-index: var(--z-sheet); }
-
-  .player-drawer {
-    inset: 0;
-    width: auto;
-    padding-top: calc(var(--space-4) + env(safe-area-inset-top));
-    border: 0;
-    border-radius: 0;
-    animation: pd-sheet-in var(--duration-base) var(--ease-standard);
-  }
-
-  .player-drawer.pd-closing { animation: pd-sheet-out var(--duration-fast) var(--ease-standard) forwards; }
-  .pd-close-abs { top: calc(var(--space-3) + env(safe-area-inset-top)); }
-  .pd-vehicle-img { width: 100px; }
-}
-
-@keyframes pd-sheet-in {
-  from { transform: translateY(24px); opacity: 0; }
-  to { transform: none; opacity: 1; }
-}
-
-@keyframes pd-sheet-out {
-  from { transform: none; opacity: 1; }
-  to { transform: translateY(24px); opacity: 0; }
-}
-
-/* 切换动画（§35/§38）：next 旧左出新右入；prev 旧右出新左入；reduced-motion 关闭（§40） */
-.pd-dir-next-enter-from { transform: translateX(28px); opacity: 0; }
-.pd-dir-next-leave-to { transform: translateX(-28px); opacity: 0; }
-.pd-dir-prev-enter-from { transform: translateX(-28px); opacity: 0; }
-.pd-dir-prev-leave-to { transform: translateX(28px); opacity: 0; }
-
-.pd-dir-next-enter-active,
-.pd-dir-next-leave-active,
-.pd-dir-prev-enter-active,
-.pd-dir-prev-leave-active { transition: transform var(--duration-base) var(--ease-standard), opacity var(--duration-base) var(--ease-standard); }
-
-@media (prefers-reduced-motion: reduce) {
-  .pd-dir-next-enter-from,
-  .pd-dir-next-leave-to,
-  .pd-dir-prev-enter-from,
-  .pd-dir-prev-leave-to { transform: none; }
-
-  .pd-dir-next-enter-active,
-  .pd-dir-next-leave-active,
-  .pd-dir-prev-enter-active,
-  .pd-dir-prev-leave-active { transition: none; }
-
-  .player-drawer,
-  .player-drawer.pd-closing { animation: none; }
-}
-
-/* 导出卡（offscreen）：只用实色语义 token，不用 color-mix（导出库兼容） */
-.rp-export { position: absolute; top: 0; left: -9999px; }
-.rp-card { width: 720px; padding: var(--space-6) var(--space-8); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
-.rp-brand { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; }
-.rp-player { margin: var(--space-2) 0 var(--space-1); color: var(--color-text-primary); font: var(--type-h1); }
-.rp-scope { margin-left: var(--space-2); color: var(--color-text-secondary); font: var(--type-body); font-weight: 600; }
-.rp-rating { display: flex; align-items: baseline; gap: var(--space-2); }
-.rp-rating-label { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.rp-rating-value { color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
-.rp-headline-extra { display: flex; gap: var(--space-4); margin-top: var(--space-1); }
-.rp-extra { color: var(--color-text-secondary); font: var(--type-caption); }
-.rp-extra b { color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
-
-.rp-vehicle {
-  margin: var(--space-3) 0 var(--space-1);
-  padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-}
-
-.rp-vehicle-label { margin-bottom: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
-.rp-vehicle-body { display: flex; align-items: center; gap: var(--space-3); }
-.rp-vehicle-img { flex: none; width: 140px; height: auto; border-radius: var(--radius-sm); }
-.rp-vehicle-meta { min-width: 0; }
-.rp-vehicle-name { color: var(--color-text-primary); font: var(--type-h3); }
-.rp-vehicle-stats { display: flex; gap: var(--space-3); margin-top: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
-.rp-radar { width: 340px; margin: var(--space-3) auto var(--space-1); }
-.rp-radar-svg { width: 340px; height: 340px; }
-.rp-scale-legend { display: flex; justify-content: center; gap: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
-.rp-scale-note { margin-top: var(--space-1); color: var(--color-text-tertiary); font: var(--type-caption); text-align: center; }
-.rp-grid { fill: none; stroke: var(--color-border-subtle); stroke-width: 1; }
-.rp-grid-strong { stroke: var(--color-border-strong); stroke-width: 1.2; }
-.rp-axis { stroke: var(--color-border-subtle); stroke-width: 1; }
-.rp-scale { fill: var(--color-text-tertiary); font-weight: 600; }
-.rp-data { fill: var(--color-accent); fill-opacity: .22; stroke: var(--color-accent); stroke-width: 2; }
-.rp-ref { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.3; stroke-dasharray: 4 3; }
-.rp-dot { fill: var(--color-accent); }
-.rp-score-bg { fill: var(--color-surface-2); stroke: var(--color-accent); stroke-width: .8; }
-.rp-score { fill: var(--color-accent-text); font-weight: 700; font-variant-numeric: tabular-nums; }
-.rp-label { fill: var(--color-text-primary); font-size: var(--font-size-caption); font-weight: 700; }
-.rp-detail { width: 100%; margin-top: var(--space-2); border-collapse: collapse; font: var(--type-body); }
-
-.rp-detail th,
-.rp-detail td { padding: var(--space-1) var(--space-2); text-align: left; }
-
-.rp-detail thead th { border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; }
-.rp-detail td { color: var(--color-text-primary); }
-.rp-detail td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.rp-detail tbody tr:nth-child(even) td { background: var(--color-surface-2); }
-.rp-footer { margin-top: var(--space-3); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 700; text-align: right; }
-</style>
+<style scoped src="./player-detail.css"></style>

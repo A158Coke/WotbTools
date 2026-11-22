@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { setUiProfile } from '../composables/useUiProfile.js'
 import { state, makeResp, mountPage, pngButton, setCloneScrollConfig, interceptAppendChild, stripOffscreen, h2c, i18n } from './ReplayPage.test.fixture.js'
 
@@ -563,7 +565,9 @@ describe('ReplayPage PNG export', () => {
     })
 
     it('export-safe CSS overrides every color-mix-bearing table cell/header selector', async () => {
-      const src = (await import('./ReplayPage.vue?raw')).default
+      // export-safe CSS 已拆至 sidecar：契约覆盖宿主源 + css
+      const cssText = readFileSync(join(process.cwd(), 'src/components/replay-page.css'), 'utf8')
+      const src = (await import('./ReplayPage.vue?raw')).default + '\n' + cssText
       expect(src).toMatch(/\.replay-export-root \.sticky-col \{[\s\S]*?position: static !important;/)
       expect(src).toMatch(/\.replay-export-root tbody tr\.t1 td \{[\s\S]*?background: var\(--exp-t1-bg\) !important;/)
       expect(src).toMatch(/\.replay-export-root tbody tr\.t2 td \{[\s\S]*?background: var\(--exp-t2-bg\) !important;/)

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
+import { tankViewerSource } from './__tests__/sceneSource.ts';
 
 // 源码级锁：HE 热力图必须投影在相机可见的首层主装甲上。
 // 主装甲深度遮罩（renderOrder 0 的 omit 克隆）先写深度，renderOrder 1 的着色克隆
@@ -7,11 +8,11 @@ import fs from 'node:fs';
 // 穿透前板参与混合，画面上的颜色就不再属于可见主装甲。
 // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（#741）：
 // 着色器模式断言随实现覆盖两份源（拼接读取，not.toMatch 同时约束两侧）
-const viewer = [
-        './tankViewer.js', './viewer/heatmap.ts', './viewer/modelLifecycle.ts', './viewer/judgment.ts',
+const viewer = tankViewerSource() + [
+        './viewer/heatmap.ts', './viewer/modelLifecycle.ts', './viewer/judgment.ts',
         './viewer/trajectoryCard.ts', './viewer/shotReplay.ts', './viewer/equipmentState.ts',
         './viewer/collisionView.ts', './viewer/debugUi.ts', './viewer/diagnosticProbe.ts', './viewer/dataLoader.ts', './viewer/aimInput.ts', './viewer/shotReplayMiss.ts',
-        './viewer/turretRig.ts', './viewer/viewerMath.ts', './viewer/armorShaders.ts', './heSplash.ts',
+        './viewer/turretRig.ts', './viewer/viewerMath.ts', './viewer/armorShaders.ts', './viewer/armorPrimaryShader.ts', './heSplash.ts',
     ].map((f) => fs.readFileSync(new URL(f, import.meta.url), 'utf8')).join('');
     + fs.readFileSync(new URL('./viewer/armorShaders.ts', import.meta.url), 'utf8');
 // 轨迹几何 2026-11-04 出仓 viewer/shotTrajectoryGeometry.ts（#820 Wave B3B）：
@@ -21,6 +22,9 @@ const trajectoryGeometry = fs.readFileSync(new URL('./viewer/shotTrajectoryGeome
 // 卡片侧权威断言随实现读取 renderer 源。
 const card = fs.readFileSync(new URL('./viewer/shotResultCard.ts', import.meta.url), 'utf8');
 const splash = fs.readFileSync(new URL('./heSplash.ts', import.meta.url), 'utf8');
+const judgmentResult = fs.readFileSync(new URL('./viewer/judgmentResult.ts', import.meta.url), 'utf8');
+const heVisual = fs.readFileSync(new URL('./viewer/heSplashVisual.ts', import.meta.url), 'utf8');
+const ricochet = fs.readFileSync(new URL('./viewer/heatmapRicochet.ts', import.meta.url), 'utf8');
 
 describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     it('主装甲深度遮罩对所有弹种开启，HE 不得关闭', () => {
@@ -55,8 +59,9 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
             .toBeLessThan(viewer.indexOf('if (heatmapMask && hePenMask > 0.5) {'));
         // 卡片侧的权威规则（遮罩必须与它一致）：首层必须是主装，且 CDF 夹到 100%
         // 才写 PENETRATION；首面非主装走 SPLASH/BLOCKED，0%<chance<100% 是“可能击穿”。
-        expect(viewer).toContain('const heFirstPrimary = isHE && hitsForCheck.length > 0');
-        expect(viewer).toContain('&& isPrimary(hitsForCheck[0].section);');
+        expect(judgmentResult).toContain('const heFirstPrimary = isHE && hitsForCheck.length > 0');
+        expect(judgmentResult.replace('const heFirstPrimary = isHE && hitsForCheck.length > 0', '')).not.toContain('const heFirstPrimary = isHE && hitsForCheck.length > 0');
+        expect(judgmentResult).toContain('&& isPrimary(hitsForCheck[0].section);');
         expect(card).toContain(': (heChance >= 1');
         expect(card).toContain("? L.resultName('PENETRATION')");
     });
@@ -102,7 +107,8 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 轨迹/命中标记/溅射半径球全部挂在 fxScene，不再留在主场景。
         expect(viewer).toContain('getFxScene().add(trajGroup);');
         expect(viewer).toContain('getFxScene().add(marker);');
-        expect(viewer).toMatch(/getFxScene\(\)\.add\(group\);\s*\n\s*heSplashGroup = group;/);
+        expect(heVisual).toMatch(/getFxScene\(\)\.add\(group\);\s*\n\s*heSplashGroup = group;/);
+        expect(heVisual.replace('getFxScene().add(group);', '')).not.toMatch(/getFxScene\(\)\.add\(group\);\s*\n\s*heSplashGroup = group;/);
         expect(viewer).not.toContain('scene.add(trajGroup)');
         expect(viewer).not.toContain('scene.add(marker)');
         // 渲染顺序：热力图 pass 之后再叠一次特效 pass（否则被 0.5/0.95 alpha 盖掉）。
@@ -110,8 +116,8 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).toMatch(/renderer\.render\(scene, camera\);\s*\n\s*renderFxPass\(\);/);
         // 特效之间也按 renderOrder 定序（全部 depthTest:false）：球壳 996 → 轨迹 997
         // → 命中点 999 → 靶环 1000。renderOrder 不随父级继承，必须写在 mesh 上。
-        expect(viewer).toContain('sphere.renderOrder = 996;');
-        expect(viewer).not.toContain('group.renderOrder = 998;');
+        expect(heVisual).toContain('sphere.renderOrder = 996;');
+        expect(heVisual).not.toContain('group.renderOrder = 998;');
         // 轨迹 997 的 renderOrder 定序已随几何出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：
         // 由 factory 的 traverse 统一写在 mesh 上，场景侧不再出现第二处设置。
         expect(viewer).toContain('getFxScene().add(trajGroup);');
@@ -123,7 +129,8 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     it('800 射线采样走空间网格，不在 UI 线程全扫三角形', () => {
         expect(splash).toContain('raycastGridAll');
         expect(splash).not.toContain('raycastPackAll');
-        expect(viewer).toContain('buildRicochetGrid(pack)');
+        expect(ricochet).toContain('buildRicochetGrid(pack)');
+        expect(ricochet.replace('buildRicochetGrid(pack)', '')).not.toContain('buildRicochetGrid(pack)');
     });
     it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {
         expect(viewer).toContain('jc.getLastClickNdc');

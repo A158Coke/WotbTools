@@ -1,0 +1,147 @@
+name: Release / Android Publish
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Explicit immutable staged Android version
+        required: false
+        type: string
+env:
+  ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 || '' }}
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+    - name: Checkout current main (current release policy + ancestry history)
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        ref: main
+        fetch-depth: 0
+    - name: 'Guard: publish requires an explicit staged version'
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-01-version-guard.sh"
+    - name: Resolve the release source from the immutable tag (no rebuild, no current-main candidate)
+      id: stagedref
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-02-resolve-tag-source.sh"
+    - name: Validate the staged release source identity (tag target is authoritative)
+      id: stagedversion
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.version }}
+        TAG_TARGET: ${{ steps.stagedref.outputs.tagTarget }}
+        STEP_STAGEDREF_NATIVEBRIDGEVERSION: ${{ steps.stagedref.outputs.nativeBridgeVersion }}
+        STEP_STAGEDREF_TAGNAME: ${{ steps.stagedref.outputs.tagName }}
+        STEP_STAGEDREF_VERSIONCODE: ${{ steps.stagedref.outputs.versionCode }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-03-validate-identity.sh"
+    - name: Android contract and committed version gate (current main policy)
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-04-contract.sh"
+    - name: Resolve the staged release identity from the immutable tag (no rebuild)
+      id: staged
+      shell: bash
+      env:
+        TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+        TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+        TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+        TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+        TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+        TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+        TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        REQUESTED_VERSION: ${{ inputs.version }}
+        TAG_TARGET: ${{ steps.stagedref.outputs.tagTarget }}
+        STAGED_VERSION_CODE: ${{ steps.stagedref.outputs.versionCode }}
+        STEP_STAGEDREF_APKNAME: ${{ steps.stagedref.outputs.apkName }}
+        STEP_STAGEDREF_STAGINGNAME: ${{ steps.stagedref.outputs.stagingName }}
+        STEP_STAGEDREF_TAGNAME: ${{ steps.stagedref.outputs.tagName }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-05-resolve-staged.sh"
+    - name: Preflight publication state and cutover guards (idempotent)
+      id: pubpreflight
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-06-preflight.sh"
+      env:
+        STEP_STAGEDREF_APKNAME: ${{ steps.stagedref.outputs.apkName }}
+        STEP_STAGED_APKSHA: ${{ steps.staged.outputs.apkSha }}
+        STEP_STAGED_NATIVEBRIDGEVERSION: ${{ steps.staged.outputs.nativeBridgeVersion }}
+        STEP_STAGED_STAGEDSOURCE: ${{ steps.staged.outputs.stagedSource }}
+        STEP_STAGED_VERSIONCODE: ${{ steps.staged.outputs.versionCode }}
+        STEP_STAGED_VERSIONNAME: ${{ steps.staged.outputs.versionName }}
+    - name: Verify the wotbtools-android runtime client (readiness, rerun)
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-07-keycloak-client.sh"
+    - name: Verify production API CORS and asset storage readiness
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-08-api-readiness.sh"
+      env:
+        STEP_STAGED_ASSETORIGIN: ${{ steps.staged.outputs.assetOrigin }}
+    - name: Write version.json (commit point, LAST)
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-09-write-version-json.sh"
+      env:
+        STEP_STAGEDREF_APKNAME: ${{ steps.stagedref.outputs.apkName }}
+        STEP_STAGED_APKSHA: ${{ steps.staged.outputs.apkSha }}
+        STEP_STAGED_NATIVEBRIDGEVERSION: ${{ steps.staged.outputs.nativeBridgeVersion }}
+        STEP_STAGED_STAGEDSOURCE: ${{ steps.staged.outputs.stagedSource }}
+        STEP_STAGED_VERSIONCODE: ${{ steps.staged.outputs.versionCode }}
+        STEP_STAGED_VERSIONNAME: ${{ steps.staged.outputs.versionName }}
+    - name: Mirror release manifest to TX1 rollback runtime
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        source: release-staging/version.json
+        target: /opt/wotb-tx/android-release
+        strip_components: 1
+    - name: Upload version.json to TX (LAST)
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        source: release-staging/version.json
+        target: /opt/wotb-tx2/runtime-content/android-release
+        strip_components: 1
+    - name: Verify production version.json matches the staged artifact
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-10-verify-version-json.sh"
+      env:
+        STEP_STAGEDREF_APKNAME: ${{ steps.stagedref.outputs.apkName }}
+        STEP_STAGED_APKSHA: ${{ steps.staged.outputs.apkSha }}
+        STEP_STAGED_NATIVEBRIDGEVERSION: ${{ steps.staged.outputs.nativeBridgeVersion }}
+        STEP_STAGED_STAGEDSOURCE: ${{ steps.staged.outputs.stagedSource }}
+        STEP_STAGED_VERSIONCODE: ${{ steps.staged.outputs.versionCode }}
+        STEP_STAGED_VERSIONNAME: ${{ steps.staged.outputs.versionName }}
+    - name: Write publish summary
+      if: always()
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-11-publish-summary.sh"
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        JOB_STATUS: ${{ job.status }}
+        STEP_PUBPREFLIGHT_PUBLISHACTION_OR_NA: ${{ steps.pubpreflight.outputs.publishAction || 'n/a' }}
+        STEP_STAGEDREF_TAGNAME: ${{ steps.stagedref.outputs.tagName }}
+        STEP_STAGED_APKSHA: ${{ steps.staged.outputs.apkSha }}
+        STEP_STAGED_NATIVEBRIDGEVERSION: ${{ steps.staged.outputs.nativeBridgeVersion }}
+        STEP_STAGED_STAGEDSOURCE: ${{ steps.staged.outputs.stagedSource }}
+        STEP_STAGED_VERSIONCODE: ${{ steps.staged.outputs.versionCode }}
+        STEP_STAGED_VERSIONNAME_OR_INPUT_VERSION: ${{ steps.staged.outputs.versionName || inputs.version }}

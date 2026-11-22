@@ -695,7 +695,7 @@ describe('playbackScene 资产发布顺序', () => {
   it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
     const raw = PLAYBACK_SCENE_SOURCE
     // #820 Step 2：地图资产装载（noteAsset/进度/降级）owner = playback/mapWorld.ts
-    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).toMatch(/store\.assetIssues = assetIssues/)
     expect(worldSrc).toMatch(/store\.assetDegraded = true/)
     expect(worldSrc).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)

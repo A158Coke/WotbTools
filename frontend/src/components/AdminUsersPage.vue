@@ -1,13 +1,16 @@
 <script setup>
-import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
+/**
+ * Admin 用户管理页（Keycloak + 本地 user_profile 聚合）。
+ * 分页 / 筛选分段 / 选择集与批量删除 / 详情抽屉与删除流拆分至 admin-users/
+ * （LOC 预算；行为原样）。门禁 → 认证 → backend 的唯一顺序约定见 requireAdminUsersOnline。
+ */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAuth } from '../composables/useAuth.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
+import { useAuth } from '../composables/useAuth.js'
 import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
-import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
-import { ApiError } from '../utils/http.js'
 import * as api from '../api/admin-users.js'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -17,88 +20,34 @@ import AdminDetailDrawer from './AdminDetailDrawer.vue'
 import AdminFilterBar from './AdminFilterBar.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
-import { isRowControlClick, rowOpenTarget } from './adminListRow'
+import { isRowControlClick } from './adminListRow'
+import { useAdminUserFilters } from './admin-users/useAdminUserFilters.ts'
+import { useAdminUserPagination } from './admin-users/useAdminUserPagination.ts'
+import { useAdminUserSelection } from './admin-users/useAdminUserSelection.ts'
+import { useAdminUserDetail } from './admin-users/useAdminUserDetail.ts'
+import { createAdminUsersGate } from './admin-users/adminUsersGate.ts'
+import { apiErrorLabel } from '../utils/display.js'
+import { createAdminUsersRowPresenter } from './admin-users/adminUsersRow.ts'
 import './admin-list.css'
 
 const { t, te } = useI18n()
+const { rowName, rowState, fmtTime } = createAdminUsersRowPresenter(t)
 const { show: showError } = useError()
 const users = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
-// 服务端分页状态：page 为 0-based（与后端一致），UI 显示时 +1。
-const page = ref(0)
-const size = ref(25)
-const totalItems = ref(0)
-const totalPages = ref(0)
-// 跳页输入是 UI 页码（1-based）；只有合法的 1..totalPages 才转换成后端 0-based page。
-const jumpPage = ref('')
-// segment=keycloak（Keycloak 权威）| segment=local（本地 user_profile 权威）。
-const segment = ref('keycloak')
-const idpAlias = ref('')
-// 详情抽屉：点行立即打开，先显示列表行自带的字段；Keycloak 仍存在的用户再补拉详情（detailUser）。
-// 删除只在抽屉底部（AdminDangerZone，输入 DELETE），目标就是抽屉里这一行。
-const detailRow = ref(null)
-const detailUser = ref(null)
-const detailReturnFocus = ref(null)
-const dangerZone = ref(null)
-const deleting = ref(false)
-const deleteResult = ref('')
-
-// 选择集合按「当前页」语义：第一列 = keycloakUserId（后端 deleteOneInternal 的 target）。
-const selectedIds = ref([])
-const selectedSet = computed(() => new Set(selectedIds.value))
-const selectedCount = computed(() => selectedIds.value.length)
-const allPageSelected = computed(() =>
-  users.value.length > 0 && users.value.every(u => selectedSet.value.has(u.keycloakUserId)))
-const showBulkConfirm = ref(false)
-const bulkConfirmText = ref('')
-const bulkDeleting = ref(false)
-const bulkResult = ref(null)
-
 let userLoadGeneration = 0
-let detailLoadGeneration = 0
 
 const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const { connectivity } = useConnectivity()
 
-/**
- * 本页所有 backend 动作的**唯一**门禁（PR 467 review blocker）。
- *
- * 用户管理整页都是 Keycloak Admin + 本地 user_profile 的聚合，没有任何可离线的本地投影，
- * 因此整体是 ONLINE_REQUIRED —— 但判定只能来自 capability SSOT（`useFeatureGate`），
- * 页面**不写** `connectivity === 'online'`、也不读 `navigator.onLine`：
- *
- * ```text
- * 门禁 → 认证（ensureToken / login） → backend
- * ```
- *
- * 顺序很关键：非-online 时**先**被门禁挡住，所以既不会触发 `login()` 跳转、也不会走 token
- * refresh 的失败路径，更不会发出 admin API 请求（`adminSearchUsers` / `adminGetUser` /
- * `adminDeleteUsers` 调用数恒为 0），用户立刻看到统一 connectivity notice。
- *
- * 已缓存的过期 admin session 仍然保留 claims/role（见 useAuth 的本地投影），因此「Admin Users」
- * 入口继续可见；只是这个页面在离线时不能登录、不能请求 backend。
- */
-function requireAdminUsersOnline() {
-  return requireFeature(Feature.ADMIN_USERS)
-}
-
-function apiError(error) {
-  return apiErrorLabel(t, te, error)
-}
-
-function errorCodeLabel(code) {
-  return apiErrorCodeLabel(t, te, code)
-}
-
-async function ensureToken() {
-  await initPromise
-  if (!(await ensureAuthToken(5))) {
-    login()
-    throw new ApiError({ code: 'AUTH_UNAUTHENTICATED', status: 401, retryable: false })
-  }
-}
+// 门禁 → 认证（ensureToken / login） → backend：非-online 时先被门禁挡住，绝不发 admin API。
+// 门禁/认证细节见 admin-users/adminUsersGate.ts（PR 467 review blocker 的顺序约定）。
+const { requireAdminUsersOnline, apiError, errorCodeLabel, ensureToken } = createAdminUsersGate({
+  gate: () => requireFeature(Feature.ADMIN_USERS),
+  initPromise, ensureAuthToken, login, t, te,
+})
 
 /** 首次被门禁挡下的加载：只有「确实什么都没加载过」才允许 reconnect 自动补一次。 */
 const blockedByConnectivity = ref(false)
@@ -133,9 +82,42 @@ watch(connectivity, () => {
   loadUsers()
 })
 
-function clearSelection() {
-  selectedIds.value = []
-}
+const {
+  segment, idpAlias, onSegmentChange, segmentOptions, onIdpAliasChange, filterChips, removeFilterChip,
+} = useAdminUserFilters({ requireOnline: requireAdminUsersOnline, reloadFirstPage, adminAvailability, t })
+
+const {
+  selectedIds, selectedSet, selectedCount, allPageSelected,
+  showBulkConfirm, bulkConfirmText, bulkDeleting, bulkResult,
+  clearSelection, toggleSelect, toggleSelectAllPage, retainVisible,
+  startBulkDelete, cancelBulkDelete, confirmBulkDelete,
+} = useAdminUserSelection({
+  users,
+  requireOnline: requireAdminUsersOnline,
+  loadUsers,
+  showApiError: showError,
+  errorText: apiError,
+})
+
+const {
+  page, size, totalItems, totalPages, jumpPage, onSizeChange, goPage, jumpTargetPage, goJumpPage,
+} = useAdminUserPagination({
+  requireOnline: requireAdminUsersOnline,
+  clearSelection,
+  loadUsers,
+  reloadFirstPage,
+})
+
+const {
+  detailRow, detailUser, detailReturnFocus, dangerZone, deleting, deleteResult,
+  openDetail, onRowClick, closeDetail, confirmDelete, dispose: disposeDetail,
+} = useAdminUserDetail({
+  requireOnline: requireAdminUsersOnline,
+  loadUsers,
+  showError,
+  apiError,
+  isRowControlClick,
+})
 
 async function loadUsers() {
   // 门禁在所有 backend 入口的第一行：搜索 / 换 segment / 换 IdP / 换页长 / 翻页 / 删除后 reload
@@ -162,10 +144,7 @@ async function loadUsers() {
     users.value = res?.items || []
     totalItems.value = res?.totalItems || 0
     totalPages.value = res?.totalPages || 0
-    // 选择集收敛到当前页可见行：不允许「看不见的已选择项」进入批量删除。
-    if (selectedIds.value.length) {
-      selectedIds.value = selectedIds.value.filter(id => users.value.some(u => u.keycloakUserId === id))
-    }
+    retainVisible()
   } catch (e) {
     if (generation === userLoadGeneration) showError(apiError(e))
   } finally {
@@ -199,222 +178,12 @@ function onSearch() {
   reloadFirstPage()
 }
 
-/**
- * segment=keycloak|local：页头的受控分段（:model-value = 已应用状态）。门禁不通过时不推进已应用值，
- * 分段仍显示上一次真正生效的数据源，绝不出现「显示本地资料、行还是 Keycloak」的假 applied 状态。
- */
-function onSegmentChange(value) {
-  if (value === segment.value || !requireAdminUsersOnline()) return
-  segment.value = value
-  if (segment.value !== 'keycloak') idpAlias.value = ''
-  reloadFirstPage()
-}
-
-const segmentOptions = computed(() => [
-  { value: 'keycloak', label: t('admin.segmentKeycloak'), testid: 'admin-segment-keycloak', disabled: !adminAvailability.value.available },
-  { value: 'local', label: t('admin.segmentLocal'), testid: 'admin-segment-local', disabled: !adminAvailability.value.available },
-])
-
-function onIdpAliasChange() {
-  reloadFirstPage()
-}
-
-/** 小屏筛选 chip：只有 IdP 别名一项（数据源在页头，不算筛选）。 */
-const filterChips = computed(() => (segment.value === 'keycloak' && idpAlias.value.trim()
-  ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${idpAlias.value.trim()}` }]
-  : []))
-
-function removeFilterChip(key) {
-  if (key !== 'idpAlias') return
-  idpAlias.value = ''
-  reloadFirstPage()
-}
-
-/** 每页数量：同上，未通过门禁（或值非法）时保持已应用的 size。 */
-function onSizeChange(event) {
-  const next = Number(event?.target?.value)
-  if (!requireAdminUsersOnline() || !Number.isFinite(next)) {
-    if (event?.target) event.target.value = event.target.dataset.appliedValue
-    return
-  }
-  size.value = next
-  reloadFirstPage()
-}
-
-function goPage(nextPage) {
-  if (!requireAdminUsersOnline()) return
-  if (nextPage < 0 || nextPage === page.value) return
-  if (totalPages.value > 0 && nextPage > totalPages.value - 1) return
-  clearSelection()
-  page.value = nextPage
-  loadUsers()
-}
-
-/** 跳页目标：只有 1..totalPages 的整数合法（空值 / 非整数 / 越界返回 null，调用方据此不发请求）。 */
-function jumpTargetPage(raw, total) {
-  const value = Number(raw)
-  return Number.isInteger(value) && value >= 1 && value <= total ? value : null
-}
-
-/**
- * 直接跳页：UI 1-based → 后端 0-based。
- * 门禁先于状态变更（与 search / segment / size 同一约定）：非-online 时不改已应用页码、不发请求；
- * 选择集清空沿用 goPage() 内的 clearSelection()。
- */
-function goJumpPage() {
-  const target = jumpTargetPage(jumpPage.value, totalPages.value)
-  if (target == null || target - 1 === page.value) return
-  if (!requireAdminUsersOnline()) return
-  jumpPage.value = ''
-  goPage(target - 1)
-}
-
-function toggleSelect(u, checked) {
-  const next = new Set(selectedIds.value)
-  if (checked) next.add(u.keycloakUserId)
-  else next.delete(u.keycloakUserId)
-  selectedIds.value = [...next]
-}
-
-function toggleSelectAllPage(checked) {
-  const next = new Set(selectedIds.value)
-  for (const u of users.value) {
-    if (checked) next.add(u.keycloakUserId)
-    else next.delete(u.keycloakUserId)
-  }
-  selectedIds.value = [...next]
-}
-
-/**
- * 点行 / 行的打开按钮：抽屉立即打开并显示列表行字段；Keycloak 已删除的用户没有详情可拉，
- * 抽屉只显示行字段与说明（删除仍可用，与原来「查看禁用、删除可用」一致）。
- * 详情请求走门禁：非-online 时不发 adminGetUser。
- */
-function openDetail(u, event) {
-  detailLoadGeneration += 1
-  detailReturnFocus.value = event ? rowOpenTarget(event) : null
-  detailRow.value = u
-  detailUser.value = null
-  deleteResult.value = ''
-  deleting.value = false
-  dangerZone.value?.reset()
-  if (!u.keycloakUserMissing) loadDetail(u)
-}
-
-function onRowClick(u, event) {
-  if (!isRowControlClick(event)) openDetail(u, event)
-}
-
-async function loadDetail(u) {
-  if (!requireAdminUsersOnline()) return
-  const generation = ++detailLoadGeneration
-  try {
-    const result = await api.adminGetUser(u.keycloakUserId)
-    if (generation === detailLoadGeneration) detailUser.value = result
-  } catch (e) {
-    if (generation === detailLoadGeneration) showError(apiError(e))
-  }
-}
-
-function closeDetail() {
-  // 删除请求在途时不关（与原确认框同一约定）：结果要能被看到，且不允许在途中换目标。
-  if (deleting.value) return
-  detailLoadGeneration += 1
-  detailRow.value = null
-  detailUser.value = null
-  deleteResult.value = ''
-}
-
-let deleteCloseTimer = null
 onBeforeUnmount(() => {
   userLoadGeneration += 1
-  detailLoadGeneration += 1
-  clearTimeout(deleteCloseTimer)
+  disposeDetail()
 })
 
-async function confirmDelete() {
-  // TOCTOU：抽屉可以在「在线」时打开、在「离线」后才确认，所以判定必须放在
-  // 真正的 API boundary（而不是只放在打开抽屉时）；否则离线时仍会发出破坏性请求。
-  if (!requireAdminUsersOnline()) return
-  const target = detailRow.value?.keycloakUserId
-  if (!target || deleteResult.value === 'DELETED') return
-  deleting.value = true
-  deleteResult.value = ''
-  try {
-    // 单条删除就是长度为 1 的列表：与多选删除走同一个端点。
-    const res = await api.adminDeleteUsers([target], true)
-    const item = (res?.results || []).find(r => r.userId === target)
-    deleteResult.value = item?.deleted ? 'DELETED' : apiError({ code: item?.errorCode || 'UNKNOWN_ERROR' })
-    deleteCloseTimer = setTimeout(() => {
-      if (detailRow.value?.keycloakUserId === target) closeDetail()
-      loadUsers()
-    }, 1200)
-  } catch (e) {
-    deleteResult.value = apiError(e)
-  } finally { deleting.value = false }
-}
-
-/** 行主列：展示名 → Keycloak 用户名 → Keycloak ID（Keycloak 数据源的用户通常没有本地展示名）。 */
-function rowName(u) {
-  return u.displayName || u.keycloakUsername || u.keycloakUserId || t('admin.unknownUser')
-}
-
-/** 绑定 / 状态徽标：Keycloak 已删除 > 无本地资料 > 未绑定游戏账号 > 已绑定。 */
-function rowState(u) {
-  if (u.keycloakUserMissing) return { label: t('admin.kcUserMissing'), tone: 'is-warning' }
-  if (!u.hasLocalProfile) return { label: t('admin.noLocalProfile'), tone: '' }
-  // 本地资料在登录时即创建；真正的「绑定」是游戏账号（wotbAccountId），与个人资料页同一判据
-  if (u.wotbAccountId == null) return { label: t('admin.unbound'), tone: '' }
-  return { label: t('admin.bound'), tone: 'is-success' }
-}
-
-// 批量删除：整批只弹一次确认，要求输入 DELETE（不逐条弹）。
-function startBulkDelete() {
-  if (!selectedCount.value) return
-  bulkConfirmText.value = ''
-  bulkResult.value = null
-  bulkDeleting.value = false
-  showBulkConfirm.value = true
-}
-
-function cancelBulkDelete() {
-  showBulkConfirm.value = false
-  bulkConfirmText.value = ''
-  bulkResult.value = null
-  bulkDeleting.value = false
-}
-
-async function confirmBulkDelete() {
-  const ids = [...selectedIds.value]
-  if (!ids.length || bulkConfirmText.value !== 'DELETE') return
-  // 同单个删除的 TOCTOU：批量确认框可能跨过一次掉线，因此在最后的执行边界再判一次，
-  // 非-online 时 adminDeleteUsers 一次都不发。
-  if (!requireAdminUsersOnline()) return
-  bulkDeleting.value = true
-  try {
-    const res = await api.adminDeleteUsers(ids, true)
-    bulkResult.value = res
-    // partial success：只有失败项留在选择集里，成功的整批（无论成功与否）都已被后端处理过。
-    const failed = new Set((res?.results || []).filter(r => !r.deleted).map(r => r.userId))
-    selectedIds.value = ids.filter(id => failed.has(id))
-    bulkConfirmText.value = ''
-    await loadUsers()
-  } catch (e) {
-    showError(apiError(e))
-  } finally {
-    bulkDeleting.value = false
-  }
-}
-
-function fmtTime(s) {
-  if (!s) return ''
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
 </script>
-
 <template>
   <div class="admin-page admin-users">
     <ShowcaseHero compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">

@@ -13,92 +13,26 @@
 // 会话缓存一并释放）。GLB 模板缓存为 session-scoped：同 tank 会话内复用，会话结束
 // 对 unique shared resources dispose 一次并清缓存（clone 共享模板资源，不逐克隆
 // 深度 dispose）；cross-session refcount/LRU 不在本层。
-import { confirm as appConfirm } from '../composables/useConfirm.js'
-import * as THREE from 'three'
+/**
+ * 拆分模块共享的宿主对象类型（迁移期声明：宿主字段由各 owner 模块安装，逐字段类型化随迁移推进）。
+ * @typedef {Record<string, any>} Host
+ */
 
-import { loadPlaybackData, mapStaticUrl, resolveMapKey } from './replaySource.js'
-import { battleEndTime } from './battleEnd.js'
-import { orientDiscUv } from './baseDecal.js'
-import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
-import { mapBases } from '../data/mapBases.js'
-import { firstIndexAfter } from './seekPointer.js'
-import { createDynRes } from './dynRes.js'
-import { foliageClip } from './sceneryMaterials.js'
-// 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
-// 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
-// 地图图，与 3D 档实时分层渲染在夜图/带 lm 图上差异显著（见该模块头部）
-import { loadTerrain } from './groundPass.js'
-// 装配规则 / 场景装配 / 水面海岸线 / 走廊掩码 / 可破坏物索引 的消费随场景装配块
-//（2026-10-24 Step A3）整体移至 playback/mapAssets.js；本文件只留地面装载与运行期消费。
-// 逐图光照 SSOT（2026-10-14 抽层）：光照应用与俯视烘焙共用同一份——烘焙此前自持固定日光
-// 常量（白 3.0 + 半球 2.4 + ACES 1.15），未随逐图光照落地而同步（见该模块头部）
-//（pickDebug 的纯函数随拾取报告器移入 playback/pickReport.js；buildMeshOwnerMap 随场景
-// 装配块移入 playback/mapAssets.js）
-import { collectMaterialTextures, disposeObject3D } from './materialDispose.js'
-import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
-//（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
-//（applyPose/applyDetachedTurrets 随车辆运行时出仓 playback/vehicleRuntime.ts，
-//  sampleDetachedPose 一并随迁；本文件只留 spanStartAt/spansContainAt 消费）
-import { spansContainAt } from './trackInterp.js'
-import { visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
-//（ROSTER_GROUPS/applyRosterRuntime/buildRosterRows/projectRoster 随名册桥接出仓
-// playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
-import { hpPercentText } from './rosterState.js'
-import { resolveExactMountedConfig, resolveMountedConfig } from './reloadBar.js'
-import { applySupremacyPointsToStore } from './supremacyPoints.js'
-import { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY, teamColorOf } from './playback/palette.ts'
-import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
-// 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
-//（FLASH_MS/FLOAT_DMG_MS/GHOST_MS 随战斗反馈 transient 出仓 playback/battleRuntime.ts）
-import { playableBounds } from '../data/playableBounds.js'
-import { createLoadProgress } from './loadProgress.js'
-import { createFrameMeter } from './frameMeter.js'
-import { advancePlaybackTime } from '../utils/playbackClock'
-import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
-import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-//（GLB 装载/悬挂求解/履带印 Buffer 写入随车辆与履带运行时出仓 playback/vehicleRuntime.ts、
-//  playback/treadRuntime.ts，#820 Step 4；本文件只经 vehicles/tread 句柄调度）
-import { assetProvider } from './assetProvider.js'
-import { createSceneCore } from './playback/renderer.js'
-import { createSessionLifecycle } from './playback/sessionLifecycle.ts'
-import { createMapWorld } from './playback/mapWorld.ts'
-import { createWaterReflectionRuntime } from './playback/waterReflectionRuntime.ts'
-import { createVehicleRuntime } from './playback/vehicleRuntime.ts'
-import { makeReplacedAt } from './playback/identity.ts'
-import { createTreadRuntime } from './playback/treadRuntime.ts'
-//（战斗表现/3D 标注场景层/标签 HUD 随 #820 Step 5 出仓 playback/battleRuntime.ts、
-//  playback/annotationScene.ts、playback/labelsRuntime.ts；本文件只经句柄调度）
-import { createBattleRuntime } from './playback/battleRuntime.ts'
-import { createAnnotationScene } from './playback/annotationScene.ts'
-import { createLabelsRuntime } from './playback/labelsRuntime.ts'
-import { createBattleMarkerHost } from './playback/battleMarkerHost.ts'
-import { createShaderPrewarm } from './playback/shaderPrewarm.ts'
-import { createPerfProbe } from './playback/perfProbe.ts'
-//（相机运行时/录像者视角/穿深着色随 #820 Step 4 出仓 playback/cameraRuntime.ts；
-//  fly 接管/top·follow 相机/选中语义经 cameraRuntime 句柄调度）
-import { createCameraRuntime, CAMERA_GROUND_CLEARANCE } from './playback/cameraRuntime.ts'
-// 内核拆分（2026-10-24）：常量/纯函数/画质表
-// 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
-// 导入方（Replay3DPane / 测试）零改动。
-import { GRID_DT } from './playback/util.js'
-import { QUALITY_PRESETS, qualityFeatures, shadowQualityEligible } from './playback/quality.js'
-import { boolPref, persistBoolPref, resolveQualityKey } from './playback/preferences.ts'
-import { installDebugProbes } from './playback/debugProbes.ts'
-// 坦克接地阴影（#907 主干随迁）：选择/句柄生命周期 owner = contactShadowControl.ts（逐车挂接在 vehicleRuntime）。
-import { createContactShadowControl } from './playback/contactShadowControl.ts'
+// 2026-11-22 出仓（#820 式拆分）：本文件只保留 initPlayback 接线与公开 re-export；
+// 状态初始化/场景装配/帧循环与 perf/播放传输/会话生命周期/公开 API 的 owner 分别在
+// ./playback/sceneState.ts、sceneAssembly.ts、renderLoop.ts、transport.ts、
+// sessionRuntime.ts、publicApi.ts。跨模块可变状态与函数统一挂在宿主对象 S 上
+//（playback/sceneHost.ts），安装顺序见 initPlayback。
+import { createSceneHost } from './playback/sceneHost.js'
+import { installSceneState } from './playback/sceneState.js'
+import { installSceneAssembly } from './playback/sceneAssembly.js'
+import { installRenderLoop, installPerfProbe } from './playback/renderLoop.js'
+import { installTransport } from './playback/transport.js'
+import { installSessionRuntime, createPlaybackSession } from './playback/sessionRuntime.js'
+import { createPlaybackApi } from './playback/publicApi.js'
+import { QUALITY_PRESETS } from './playback/quality.js'
 import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
-import { createPickReporter } from './playback/pickReport.js'
-import { chainVisible } from './pickDebug.js'
-import { createCameraTerrainClamp } from './playback/cameraTerrainClamp.js'
-import { createBaseMarkers } from './playback/bases.js'
-import { createSpawnMarkers } from './playback/spawns.js'
-// 闭包分段（行数预算 500）：psP1 数据/画质/工具，psP2 运行时装配，psP3 帧循环/HUD，
-// psP4 会话/时钟/seek/渲染器，psP5 公开 API。共享状态经 S 袋传递（入口持有 let 绑定）。
-import { psP1 } from './playbackSceneP1.ts'
-import { psP2 } from './playbackSceneP2.ts'
-import { psP3 } from './playbackSceneP3.ts'
-import { psP4 } from './playbackSceneP4.ts'
-import { psP5 } from './playbackSceneP5.ts'
+import { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY } from './playback/palette.ts'
 
 export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 // 调色常量的消费方（bases.tracers.behavior 测试等）经本文件 re-export 零改动。
@@ -130,101 +64,27 @@ export { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENE
 // 纯函数 tracerSpanSecs / occlusionCells / occlusionFootprintCells 在 ./playback/pure.js
 //（本文件 re-export，导入方零改动）。
 
-
 /**
  * @param {HTMLElement} container
- * @param {{ [key: string]: unknown }} store
- * @param {HTMLElement|null} [labelOverlay]
- * @param {{ onVehicleSelect?: Function, onAnnotationCommit?: Function, onAnnotationErase?: Function, recorderReticle?: HTMLElement|null }} [options]
+ * @param {ReturnType<import('./playbackStore').createPlaybackStore>} store
+ * @param {HTMLElement | null} labelOverlay
+ * @param {{onVehicleSelect?: (eid: number | null, event: MouseEvent | null) => void, onAnnotationCommit?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['commitAnnotationFromScene'], onAnnotationErase?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['eraseFromScene'], recorderReticle?: HTMLElement | null}} [options]
  */
+
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle = null } = {}) {
-  const S = {}
-  const P = { container, store, labelOverlay, onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle }
-  let DATA = null
-  let VIS_BY_EID = new Map()
-  let T = 0
-  let PLAYING = false
-  let SPEED = store.speed
-  let START = 0
-  let END = 0
-  let sceneClock = null
-  let canonicalClock = null
-  let lifeTracks = null
-  let lifeTracksByAccount = new Map()
-  let renderer = null
-  let scene
-  let camera
-  let controls
-  let clock
-  let raycaster
-  let hemiLight = null
-  let sunLight = null
-  let sizeObserver = null
-  let destroyed = false
-  let MAP_BASES_KIND = null
-  let MAP_SPAWN_POINTS = null
-  let rafId = 0
-  let paused = false
-  let LOGDEPTH = boolPref('pb_logdepth', 'logdepth', false)
-  let DYNRES = boolPref('pb_dynres', 'dynres', true)
-  let ARMOR_HIGHLIGHT = boolPref('pb_armor_highlight', 'armorhl', false)
-  let QKEY = resolveQualityKey()
-  let Q = QUALITY_PRESETS[QKEY]
-  let applyQualityFeatures = () => {}
-  let requestWaterReflectionRefresh = () => {}
-  let pickDownAt = null
-  let followAnchor = null
-  let frameDirty = true
-  let lastRenderAt = 0
-  let fpsIdle = false
-  let winnerShown = false
-  let dynResCtl = null
-  let rendererCaps = null
-  let hudWrittenMs = -Infinity
-  Object.defineProperty(S, 'DATA', { get: () => DATA, set: (v) => { DATA = v }, configurable: true })
-  Object.defineProperty(S, 'VIS_BY_EID', { get: () => VIS_BY_EID, set: (v) => { VIS_BY_EID = v }, configurable: true })
-  Object.defineProperty(S, 'T', { get: () => T, set: (v) => { T = v }, configurable: true })
-  Object.defineProperty(S, 'PLAYING', { get: () => PLAYING, set: (v) => { PLAYING = v }, configurable: true })
-  Object.defineProperty(S, 'SPEED', { get: () => SPEED, set: (v) => { SPEED = v }, configurable: true })
-  Object.defineProperty(S, 'START', { get: () => START, set: (v) => { START = v }, configurable: true })
-  Object.defineProperty(S, 'END', { get: () => END, set: (v) => { END = v }, configurable: true })
-  Object.defineProperty(S, 'sceneClock', { get: () => sceneClock, set: (v) => { sceneClock = v }, configurable: true })
-  Object.defineProperty(S, 'canonicalClock', { get: () => canonicalClock, set: (v) => { canonicalClock = v }, configurable: true })
-  Object.defineProperty(S, 'lifeTracks', { get: () => lifeTracks, set: (v) => { lifeTracks = v }, configurable: true })
-  Object.defineProperty(S, 'lifeTracksByAccount', { get: () => lifeTracksByAccount, set: (v) => { lifeTracksByAccount = v }, configurable: true })
-  Object.defineProperty(S, 'renderer', { get: () => renderer, set: (v) => { renderer = v }, configurable: true })
-  Object.defineProperty(S, 'scene', { get: () => scene, set: (v) => { scene = v }, configurable: true })
-  Object.defineProperty(S, 'camera', { get: () => camera, set: (v) => { camera = v }, configurable: true })
-  Object.defineProperty(S, 'controls', { get: () => controls, set: (v) => { controls = v }, configurable: true })
-  Object.defineProperty(S, 'clock', { get: () => clock, set: (v) => { clock = v }, configurable: true })
-  Object.defineProperty(S, 'raycaster', { get: () => raycaster, set: (v) => { raycaster = v }, configurable: true })
-  Object.defineProperty(S, 'hemiLight', { get: () => hemiLight, set: (v) => { hemiLight = v }, configurable: true })
-  Object.defineProperty(S, 'sunLight', { get: () => sunLight, set: (v) => { sunLight = v }, configurable: true })
-  Object.defineProperty(S, 'sizeObserver', { get: () => sizeObserver, set: (v) => { sizeObserver = v }, configurable: true })
-  Object.defineProperty(S, 'destroyed', { get: () => destroyed, set: (v) => { destroyed = v }, configurable: true })
-  Object.defineProperty(S, 'MAP_BASES_KIND', { get: () => MAP_BASES_KIND, set: (v) => { MAP_BASES_KIND = v }, configurable: true })
-  Object.defineProperty(S, 'MAP_SPAWN_POINTS', { get: () => MAP_SPAWN_POINTS, set: (v) => { MAP_SPAWN_POINTS = v }, configurable: true })
-  Object.defineProperty(S, 'rafId', { get: () => rafId, set: (v) => { rafId = v }, configurable: true })
-  Object.defineProperty(S, 'paused', { get: () => paused, set: (v) => { paused = v }, configurable: true })
-  Object.defineProperty(S, 'LOGDEPTH', { get: () => LOGDEPTH, set: (v) => { LOGDEPTH = v }, configurable: true })
-  Object.defineProperty(S, 'DYNRES', { get: () => DYNRES, set: (v) => { DYNRES = v }, configurable: true })
-  Object.defineProperty(S, 'ARMOR_HIGHLIGHT', { get: () => ARMOR_HIGHLIGHT, set: (v) => { ARMOR_HIGHLIGHT = v }, configurable: true })
-  Object.defineProperty(S, 'QKEY', { get: () => QKEY, set: (v) => { QKEY = v }, configurable: true })
-  Object.defineProperty(S, 'Q', { get: () => Q, set: (v) => { Q = v }, configurable: true })
-  Object.defineProperty(S, 'applyQualityFeatures', { get: () => applyQualityFeatures, set: (v) => { applyQualityFeatures = v }, configurable: true })
-  Object.defineProperty(S, 'requestWaterReflectionRefresh', { get: () => requestWaterReflectionRefresh, set: (v) => { requestWaterReflectionRefresh = v }, configurable: true })
-  Object.defineProperty(S, 'pickDownAt', { get: () => pickDownAt, set: (v) => { pickDownAt = v }, configurable: true })
-  Object.defineProperty(S, 'followAnchor', { get: () => followAnchor, set: (v) => { followAnchor = v }, configurable: true })
-  Object.defineProperty(S, 'frameDirty', { get: () => frameDirty, set: (v) => { frameDirty = v }, configurable: true })
-  Object.defineProperty(S, 'lastRenderAt', { get: () => lastRenderAt, set: (v) => { lastRenderAt = v }, configurable: true })
-  Object.defineProperty(S, 'fpsIdle', { get: () => fpsIdle, set: (v) => { fpsIdle = v }, configurable: true })
-  Object.defineProperty(S, 'winnerShown', { get: () => winnerShown, set: (v) => { winnerShown = v }, configurable: true })
-  Object.defineProperty(S, 'dynResCtl', { get: () => dynResCtl, set: (v) => { dynResCtl = v }, configurable: true })
-  Object.defineProperty(S, 'rendererCaps', { get: () => rendererCaps, set: (v) => { rendererCaps = v }, configurable: true })
-  Object.defineProperty(S, 'hudWrittenMs', { get: () => hudWrittenMs, set: (v) => { hudWrittenMs = v }, configurable: true })
-  psP1(S, P)
-  psP2(S, P)
-  psP3(S, P)
-  psP4(S, P)
-  return psP5(S, P)
+  const S = createSceneHost({
+    container, store, labelOverlay, onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle,
+  })
+  installSceneState(S)
+  installRenderLoop(S)
+  installTransport(S)
+  installSessionRuntime(S)
+  installSceneAssembly(S)
+  installPerfProbe(S)
+  // 初始化：事件绑定 + 动画循环（渲染器惰性创建，画质选择先于首帧定型）
+  createPlaybackSession(S)
+  S.animate()
+  S.applyGlbGate()
+
+  return createPlaybackApi(S)
 }

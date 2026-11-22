@@ -1,6 +1,6 @@
-// 地图静态路径模块（从 replaySource.ts 拆出，2026-11-20 行数预算 500）：
-// logical asset path 一律经 assetProvider（消费方不拼接任何基础设施域名）；
-// 无同源 /api/playback/* 回退（client-only）。打包器布局见 export_asset_pack.py。
+// 地图静态路径（logical asset path；打包器 export_asset_pack.py 布局）——自 replaySource.ts
+// 出仓（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致，公共入口仍由 replaySource re-export）。
+// 一律经 assetProvider（消费方不拼接任何基础设施域名）；无同源 /api/playback/* 回退（client-only）。
 import { assetProvider } from './assetProvider.js'
 import type { Map2dIndex, Map2dBounds } from '../data/map2dOverlay.js'
 

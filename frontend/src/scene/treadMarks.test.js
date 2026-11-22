@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 import {
   GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState, openStampOf,
   resetTrailState, resolveTreadParams, textureStemOf,
   trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE, TREAD_RING,
   TREAD_ACTIVATE,
 } from './treadMarks.ts'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const sceneSrc = PLAYBACK_SCENE_SOURCE
+const sceneSrc = playbackSceneSource()
 // #820 Wave B4A：Buffer 写入实现出仓到 playback/treadBufferWriter.ts，槽位/量化守卫随之改读新模块
 const writerSrc = readFileSync(resolve(here, 'playback', 'treadBufferWriter.ts'), 'utf8')
 // #820 Step 5：履带印运行时（路径态/贴图缓存/teardown）出仓到 playback/treadRuntime.ts
@@ -19,7 +19,7 @@ const treadSrc = readFileSync(resolve(here, 'playback', 'treadRuntime.ts'), 'utf
 
 describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.test.js 同风格）', () => {
   it('tick() 必须驱动游标泵 updateTrails()（否则印记只在 seek 时出现）', () => {
-    expect(sceneSrc).toMatch(/S\.mapWorld\.updateDestructibles\(S\.T\);\s*\n\s*S\.tread\.updateTrails\(\);/)
+    expect(sceneSrc).toMatch(/mapWorld\.updateDestructibles\(T\);\s*\n\s*tread\.updateTrails\(\);/)
   })
   it('激活门 = 客户端 0x3632a54（0.3 m 净位移才开始拉伸活戳）', () => {
     expect(TREAD_ACTIVATE).toBeCloseTo(0.3, 6)

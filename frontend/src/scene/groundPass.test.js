@@ -18,16 +18,17 @@ import { buildGroundGeometry, loadTerrain, makeGroundMaterial } from './groundPa
 import { assembleSceneryMaterials } from './sceneryAssembly.ts'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from './sceneryInstancing.ts'
 import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/annotationSurface.ts'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF 锚点不匹配，CI 为 LF）
   .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
-const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
+const src = strip(playbackSceneSource())
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
 const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8'))
 // 地面/地形运行时块 2026-11-06 出仓 playback/mapWorld.ts（#820 Step 2），守卫随实现迁移
-const mapWorldSrc = strip(readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8'))
+const mapWorldSrc = ['playback/mapWorld.ts', 'playback/mapWorldLoader.ts', 'playback/mapWorldTerrain.ts'].map(path => strip(readFileSync(resolve(here, path), 'utf8'))).join('\n')
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 
@@ -43,7 +44,6 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
   })
 
   it('运行时侧：消费共享入口，本地不得再持有地面着色器/海岸线构造/地形解码副本', () => {
-    expect(src).toMatch(/from '\.\/groundPass\.js'/)
     expect(mapWorldSrc).toMatch(/from '\.\.\/groundPass\.js'/)
     expect(mapWorldSrc).toMatch(/buildGroundGeometryTyped\(\{/)
     expect(mapWorldSrc).toMatch(/makeGroundMaterialTyped\(\{/)
@@ -145,8 +145,9 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // 运行时：调用共享实现并把掩码喂进构建器（留宿主接线与 DEBUG 钩子）
     expect(mapAssetsSrc).toMatch(/const built = buildCorridorRefineMask\(\{/)
     expect(mapAssetsSrc).toMatch(/terrainRefineMask = built\.mask;/)
-    expect(mapWorldSrc).toMatch(/refineMask: terrainRefineMask,/)
-    expect(mapWorldSrc).toMatch(/terrainRefineMask = null;/)
+    expect(mapWorldSrc).toMatch(/refineMask: st\.terrainRefineMask,/)
+    expect(mapWorldSrc.replaceAll('refineMask: st.terrainRefineMask,', '')).not.toMatch(/refineMask: st\.terrainRefineMask,/)
+    expect(mapWorldSrc).toMatch(/st\.terrainRefineMask = null;/)
     // 烘焙：同一实现 + 同一收集口径（onMesh 的 water 标记）；次序=掩码先于实例化合批
     expect(bakeSrc).toMatch(/buildCorridorRefineMask\(\{/)
     expect(bakeSrc).toMatch(/meshes: sceneryMeshes, field,/)

@@ -6,9 +6,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
-import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
+import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 
-const scene = PLAYBACK_SCENE_SOURCE
+const scene = playbackSceneSource()
 const runtime = readFileSync(
   fileURLToPath(new URL('./vehicleRuntime.ts', import.meta.url)),
   'utf8',
@@ -33,7 +33,7 @@ function callBlock(source: string, factoryName: string): string {
 describe('replacedAt 注入车辆运行时（评审 4594363745）', () => {
   it('createVehicleRuntime 的依赖显式携带 replacedAt', () => {
     const block = callBlock(scene, 'createVehicleRuntime')
-    expect(block).toMatch(/replacedAt:\s*\(eid,\s*t\)\s*=>\s*S\.replacedAt\(eid,\s*t\)/)
+    expect(block).toMatch(/replacedAt:\s*\(eid,\s*t\)\s*=>\s*replacedAt\(eid,\s*t\)/)
   })
 
   it('createTreadRuntime 不得携带 replacedAt（它不消费该字段）', () => {

@@ -13,31 +13,32 @@ grep -Fq 'DEPLOY_SH="$SCRIPT_DIR/deploy.sh"' "$CHECK"
 grep -Fq 'source "$DEPLOY_SH"' "$CHECK"
 grep -Fq 'tx_runtime_check' "$CHECK"
 RUNTIME_CHECK_LIB="$ROOT/deploy/tx/runtime-check-lib.sh"
-grep -Fq 'TX_RUNTIME_READY' "$RUNTIME_CHECK_LIB"
-grep -Fq 'TX_RUNTIME_NOT_READY' "$RUNTIME_CHECK_LIB"
-grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' "$RUNTIME_CHECK_LIB"
-grep -Fq 'qq_identity_provider_ready' "$RUNTIME_CHECK_LIB"
-grep -Fq 'identity-provider/instances' "$RUNTIME_CHECK_LIB"
-grep -Fq 'clientAuthMethod' "$RUNTIME_CHECK_LIB"
-grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "$RUNTIME_CHECK_LIB"
-grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "$RUNTIME_CHECK_LIB"
-grep -Fq 'https://graph.qq.com/user/get_user_info' "$RUNTIME_CHECK_LIB"
+RUNTIME_LIBS=("$RUNTIME_CHECK_LIB" "$ROOT/deploy/tx/runtime-business-probes.sh")
+grep -Fq 'TX_RUNTIME_READY' "${RUNTIME_LIBS[@]}"
+grep -Fq 'TX_RUNTIME_NOT_READY' "${RUNTIME_LIBS[@]}"
+grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' "${RUNTIME_LIBS[@]}"
+grep -Fq 'qq_identity_provider_ready' "${RUNTIME_LIBS[@]}"
+grep -Fq 'identity-provider/instances' "${RUNTIME_LIBS[@]}"
+grep -Fq 'clientAuthMethod' "${RUNTIME_LIBS[@]}"
+grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "${RUNTIME_LIBS[@]}"
+grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "${RUNTIME_LIBS[@]}"
+grep -Fq 'https://graph.qq.com/user/get_user_info' "${RUNTIME_LIBS[@]}"
 # The declared/active split is a contract of its own: the gate must read the
 # running container environment, not just re-render Compose.
-grep -Fq 'tx-logical-endpoints-declared' "$RUNTIME_CHECK_LIB"
-grep -Fq 'tx-logical-endpoints-active' "$RUNTIME_CHECK_LIB"
-grep -Fq 'docker inspect --format' "$RUNTIME_CHECK_LIB"
-grep -Fq 'tx-alloy-config: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'retired-replay-switches: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'wireguard-backend' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'tx-logical-endpoints-declared' "${RUNTIME_LIBS[@]}"
+grep -Fq 'tx-logical-endpoints-active' "${RUNTIME_LIBS[@]}"
+grep -Fq 'docker inspect --format' "${RUNTIME_LIBS[@]}"
+grep -Fq 'tx-alloy-config: PASS' "${RUNTIME_LIBS[@]}"
+grep -Fq 'retired-replay-switches: PASS' "${RUNTIME_LIBS[@]}"
+grep -Fq 'wireguard-backend' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:32' >&2; exit 1; }
 # Replay parsing runs in the browser: the server-side replay chain (broker,
 # object store, parser worker, processing/export jobs) must not come back.
-grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "$RUNTIME_CHECK_LIB" \
+grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:36' >&2; exit 1; }
-grep -Fq 'keycloak-qq-provider.jar' "$RUNTIME_CHECK_LIB"
-grep -Fq 'keycloak-wargaming-provider.jar' "$RUNTIME_CHECK_LIB"
-grep -Fq 'com.wotbtools.app' "$RUNTIME_CHECK_LIB"
+grep -Fq 'keycloak-qq-provider.jar' "${RUNTIME_LIBS[@]}"
+grep -Fq 'keycloak-wargaming-provider.jar' "${RUNTIME_LIBS[@]}"
+grep -Fq 'com.wotbtools.app' "${RUNTIME_LIBS[@]}"
 grep -Eiq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' "$CHECK" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:41' >&2; exit 1; }
 grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK" \
@@ -47,23 +48,23 @@ grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK" \
 # edge phase, no cutover verdicts or boundary token, no migration-only snapshot,
 # and no business-data-integrity token (its Yecao row-count snapshot input cannot
 # be regenerated, so the token was retired with the machinery).
-grep -Fq 'WOTB_CUTOVER_PHASE' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'WOTB_CUTOVER_PHASE' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:50' >&2; exit 1; }
-grep -Fq 'CUTOVER_PHASE' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'CUTOVER_PHASE' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:52' >&2; exit 1; }
-grep -Fq 'public-edge-sni' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'public-edge-sni' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:54' >&2; exit 1; }
-grep -Fq 'POST_CUTOVER' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'POST_CUTOVER' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:56' >&2; exit 1; }
-grep -Fq 'PRE_CUTOVER' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'PRE_CUTOVER' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:58' >&2; exit 1; }
-grep -Fq 'cutover-safety-boundary' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'cutover-safety-boundary' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:60' >&2; exit 1; }
-grep -Fq 'pre-cutover' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'pre-cutover' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:62' >&2; exit 1; }
-grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'WOTB_E2E_DATA_SNAPSHOT' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:64' >&2; exit 1; }
-grep -Fq 'business-data-integrity' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'business-data-integrity' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:66' >&2; exit 1; }
 grep -Fq -- '--post-cutover' "$CHECK" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:68' >&2; exit 1; }
@@ -72,25 +73,25 @@ grep -Fq 'pre-cutover' "$CHECK" \
 
 # Business PostgreSQL is authoritative state: the check must own its health,
 # reviewed loopback/WireGuard bindings, and provisioning marker before readiness.
-grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "$RUNTIME_CHECK_LIB"
-grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "$RUNTIME_CHECK_LIB"
-grep -Fq 'wireguard-service-plane: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres-provisioning: PASS' "$RUNTIME_CHECK_LIB"
-grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "$RUNTIME_CHECK_LIB"
-grep -Fq 'tx-local-opentofu-business-postgres' "$RUNTIME_CHECK_LIB"
-grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "$RUNTIME_CHECK_LIB"
-grep -Fq '/api/hof?page=1&size=200' "$RUNTIME_CHECK_LIB"
-grep -Fq '/api/hof?page=0&size=' "$RUNTIME_CHECK_LIB" \
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "${RUNTIME_LIBS[@]}"
+grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "${RUNTIME_LIBS[@]}"
+grep -Fq 'wireguard-service-plane: PASS' "${RUNTIME_LIBS[@]}"
+grep -Fq 'wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)' "${RUNTIME_LIBS[@]}"
+grep -Fq 'business-postgres: PASS' "${RUNTIME_LIBS[@]}"
+grep -Fq 'business-postgres: FAIL (container is missing or not healthy)' "${RUNTIME_LIBS[@]}"
+grep -Fq 'business-postgres-provisioning: PASS' "${RUNTIME_LIBS[@]}"
+grep -Fq 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' "${RUNTIME_LIBS[@]}"
+grep -Fq 'tx-local-opentofu-business-postgres' "${RUNTIME_LIBS[@]}"
+grep -Fq 'BUSINESS_POSTGRES_TOFU_PROVISION_MARKER' "${RUNTIME_LIBS[@]}"
+grep -Fq '/api/hof?page=1&size=200' "${RUNTIME_LIBS[@]}"
+grep -Fq '/api/hof?page=0&size=' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:86' >&2; exit 1; }
-grep -Fq 'e2e_first_replay_id' "$RUNTIME_CHECK_LIB"
-grep -Fq 'replayAvailable' "$RUNTIME_CHECK_LIB"
-grep -Fq 'totalPages' "$RUNTIME_CHECK_LIB"
-grep -Fq 'hof_page=$((hof_page + 1))' "$RUNTIME_CHECK_LIB"
+grep -Fq 'e2e_first_replay_id' "${RUNTIME_LIBS[@]}"
+grep -Fq 'replayAvailable' "${RUNTIME_LIBS[@]}"
+grep -Fq 'totalPages' "${RUNTIME_LIBS[@]}"
+grep -Fq 'hof_page=$((hof_page + 1))' "${RUNTIME_LIBS[@]}"
 # The new checks must be read-only: no DDL/DML against the business database.
-grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "$RUNTIME_CHECK_LIB" \
+grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:93' >&2; exit 1; }
 
 WORK="$(mktemp -d)"
@@ -461,7 +462,10 @@ RELOCATED_ROOT="$WORK/relocated-root"
 mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/android-release"
 cp "$ROOT/deploy/tx/runtime-check.sh" "$RELOCATED_ROOT/deploy/runtime-check.sh"
 cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
+cp "$ROOT/deploy/tx/deploy-stage.sh" "$RELOCATED_ROOT/deploy/deploy-stage.sh"
+cp "$ROOT/deploy/tx/deploy-health.sh" "$RELOCATED_ROOT/deploy/deploy-health.sh"
 cp "$ROOT/deploy/tx/runtime-check-lib.sh" "$RELOCATED_ROOT/deploy/runtime-check-lib.sh"
+cp "$ROOT/deploy/tx/runtime-business-probes.sh" "$RELOCATED_ROOT/deploy/runtime-business-probes.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
 printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postgres.tofu-provisioned"
 

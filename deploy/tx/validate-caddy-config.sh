@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# Validate the staged TX Caddy configuration with the real runtime image before
-# the live gateway is touched. The compose service definition is used so the
-# validated file is exactly the one Compose will mount.
-#
-# First it asserts the public site inventory. Caddy is the only owner of public
-# ingress, so a missing site or a wrong upstream is a production incident that
-# must fail here - before the gateway is reloaded - instead of only showing up as
-# a broken route afterwards. This is an independent statement of intent, not a
-# restatement of whatever the Caddyfile happens to contain.
+# Check the public host and upstream inventory independently of the staged Caddyfile,
+# then validate the exact Compose-mounted config with the gateway image before reload.
 set -euo pipefail
 
 INCOMING_DIR="${1:?usage: validate-caddy-config.sh <staged-tx-directory>}"

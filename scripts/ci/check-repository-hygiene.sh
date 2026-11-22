@@ -7,8 +7,6 @@ ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
-# Source-line policy compatibility marker; classification and limits live in Python.
-
 # Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
 # leading-zero forms such as 08 would be parsed as octal at the comparison
 # (where set -e does not abort from an if condition), and values beyond intmax_t

@@ -140,6 +140,7 @@ with tempfile.TemporaryDirectory(prefix="keycloak-postgres-owner-") as work:
     tx.mkdir(parents=True)
     (tx / "keycloak-postgres.compose.yml").write_text("# staged fixture\n")
     (tx / "runtime-check-lib.sh").write_text((root / validator_path).read_text(encoding="utf-8"))
+    (tx / "runtime-business-probes.sh").write_bytes((root / "deploy/tx/runtime-business-probes.sh").read_bytes())
     state = host / "postgres-keycloak-tofu-state"
     state.mkdir()
     (state / "terraform.tfstate").write_text("{}\n")

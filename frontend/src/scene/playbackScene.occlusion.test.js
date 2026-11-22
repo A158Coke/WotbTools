@@ -3,7 +3,6 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { occlusionCells, occlusionFootprintCells } from './playback/pure.js'
-import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
 
 describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', () => {
   it('同一格内的短线段 → 单格；跨格 → 首尾格都在集合里', () => {
@@ -53,7 +52,6 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 })
 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
-  const src = PLAYBACK_SCENE_SOURCE
   // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
@@ -64,59 +62,75 @@ describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
 })
 
 describe('Sniper 穿深着色接线', () => {
-  const source = PLAYBACK_SCENE_SOURCE
+  // 2026-11-22：逐帧渲染编排出仓 playback/renderLoop.js，画质/着色开关注入在
+  // playback/sceneState.js，公开设置器在 playback/publicApi.js（守卫随实现迁移）。
+  const renderLoopSrc = readFileSync(resolve(__dirname, 'playback/renderLoop.ts'), 'utf8')
+  const stateSrc = readFileSync(resolve(__dirname, 'playback/sceneState.ts'), 'utf8')
+  const apiSrc = readFileSync(resolve(__dirname, 'playback/publicApi.ts'), 'utf8')
   // #820 Step 4：录像者相机/穿深着色 owner = playback/cameraRuntime.ts（守卫随实现迁移）
   const cameraSrc = readFileSync(resolve(__dirname, 'playback/cameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
+  const recorderSrc = readFileSync(resolve(__dirname, 'playback/recorderCameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
+  const cameraArmorSrc = readFileSync(resolve(__dirname, 'playback/cameraArmorHighlight.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
   it('叠加 pass 排在主渲染之后，只有录像者开镜且过渡结束才运行', () => {
-    const draw = source.indexOf('S.renderer.render(S.scene, S.camera)')
-    const armor = source.indexOf('S.cameraRuntime.renderArmorHighlight();', draw)
+    const draw = renderLoopSrc.indexOf('renderer.render(S.scene, S.camera);')
+    const armor = renderLoopSrc.indexOf('renderArmorHighlight();', draw)
     expect(draw).toBeGreaterThan(-1)
     expect(armor).toBeGreaterThan(draw)
-    expect(cameraSrc).toContain("if (!deps.armorHighlightPref() || CAM !== 'recorder' || !scopedHiddenEid || cameraBlend) return;")
+    expect(cameraArmorSrc).toContain("if (!deps.armorHighlightPref() || state.cam() !== 'recorder' || !state.scopedHiddenEid() || state.cameraBlend()) return;")
+    expect(cameraArmorSrc.replace("state.cam() !== 'recorder'", "false")).not.toContain("if (!deps.armorHighlightPref() || state.cam() !== 'recorder' || !state.scopedHiddenEid() || state.cameraBlend()) return;")
   })
 
   it('选目标与准星同源（Type39 瞄准点），不取相机正前方', () => {
-    const start = cameraSrc.indexOf('function renderArmorHighlight')
-    const body = cameraSrc.slice(start, cameraSrc.indexOf('回到俯视机位', start))
+    const start = cameraArmorSrc.indexOf('function renderArmorHighlight')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = cameraArmorSrc.slice(start, cameraArmorSrc.indexOf('function prewarmArmorHighlight', start))
     expect(body).toContain('reticleAimDirection(camera, recorderAimPoint(recorderSample')
     expect(body).not.toContain('getWorldDirection')
-    expect(cameraSrc).toContain('recorderAimPoint(sample, _recorderRay)')
+    expect(recorderSrc).toContain('recorderAimPoint(sample, _recorderRay)')
+    expect(recorderSrc.replace('recorderAimPoint(sample, _recorderRay)', '')).not.toContain('recorderAimPoint(sample, _recorderRay)')
   })
 
   it('悬挂改写履带顶点后只打标记，不在主路径重算或置空 bounds', () => {
-    // #820 Step 2：suspensionStep owner = playback/vehicleRuntime.ts
-    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleRuntime.ts'), 'utf8')
+    // Suspension geometry is owned by vehicleModelPose.
+    const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleModelPose.ts'), 'utf8')
     expect(vehicleSrc).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
+    expect(vehicleSrc.replace('markPickBoundsStale(gp.mesh.geometry);', '')).not.toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
     const start = vehicleSrc.indexOf('function suspensionStep')
+    expect(start).toBeGreaterThanOrEqual(0)
     const body = vehicleSrc.slice(start, vehicleSrc.indexOf('function ', start + 'function suspensionStep'.length))
     expect(body).not.toMatch(/computeBounding|bounding\(Box|Sphere\) = null/)
   })
 
   it('着色默认关闭，?armorhl=1 可打开', () => {
-    expect(source).toContain("boolPref('pb_armor_highlight', 'armorhl', false)")
+    expect(stateSrc).toContain("boolPref('pb_armor_highlight', 'armorhl', false)")
   })
 
   it('配置解析不走带回退的 resolveMountedConfig', () => {
-    const start = cameraSrc.indexOf('function renderArmorHighlight')
-    const body = cameraSrc.slice(start, cameraSrc.indexOf('回到俯视机位', start))
+    const start = cameraArmorSrc.indexOf('function renderArmorHighlight')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = cameraArmorSrc.slice(start, cameraArmorSrc.indexOf('function prewarmArmorHighlight', start))
     expect(body).toContain('resolveExactMountedConfig')
     expect(body).not.toMatch(/resolveMountedConfig\(/)
   })
 
   it('SNIPER→ARCADE 转换释放 RT（不只退出录像者模式）', () => {
-    const start = cameraSrc.indexOf('function driveRecorderCamera')
-    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
+    const start = recorderSrc.indexOf('function driveRecorderCamera')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = recorderSrc.slice(start, recorderSrc.indexOf('function ', start + 20))
     expect(body).toMatch(/wasScoped\s*&&\s*!scoped/)
-    expect(body).toContain('armorHighlight?.releaseRenderTargets?.()')
+    expect(body).toContain('hooks.releaseArmorHighlight()')
+    expect(body.replace('hooks.releaseArmorHighlight()', '')).not.toContain('hooks.releaseArmorHighlight()')
   })
 
   it('关闭开关与退出录像者模式仍释放 RT', () => {
-    const leaveStart = cameraSrc.indexOf('function leaveRecorderView')
-    const leaveBody = cameraSrc.slice(leaveStart, cameraSrc.indexOf('function ', leaveStart + 20))
-    expect(leaveBody).toContain('releaseRenderTargets')
-    const setStart = source.indexOf('setArmorHighlight:')
-    const setBody = source.slice(setStart, source.indexOf('setQuality', setStart))
+    const leaveStart = recorderSrc.indexOf('function leaveRecorderView')
+    expect(leaveStart).toBeGreaterThanOrEqual(0)
+    const leaveBody = recorderSrc.slice(leaveStart, recorderSrc.indexOf('function ', leaveStart + 20))
+    expect(leaveBody).toContain('hooks.releaseArmorHighlight()')
+    expect(cameraArmorSrc).toContain('armorHighlight?.releaseRenderTargets?.()')
+    const setStart = apiSrc.indexOf('setArmorHighlight:')
+    const setBody = apiSrc.slice(setStart, apiSrc.indexOf('setQuality', setStart))
     expect(setBody).toContain('releaseArmorHighlightRenderTargets')
   })
 
@@ -135,7 +149,7 @@ describe('Sniper 穿深着色接线', () => {
     expect(hl).toMatch(/armorCamera\.setViewOffset\(size\.x, size\.y, scissor\.x, size\.y - \(scissor\.y \+ scissor\.w\), scissor\.z, scissor\.w\)/)
     expect(hl).toMatch(/bucketedRtSize\(scissor\.z, size\.x\)/)
     expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
-    const shaders = readFileSync(resolve(__dirname, 'viewer/armorShaders.ts'), 'utf8')
+    const shaders = ['viewer/armorShaders.ts', 'viewer/armorPrimaryShader.ts'].map(path => readFileSync(resolve(__dirname, path), 'utf8')).join('\n')
     expect(shaders).toMatch(/uniform vec4 spacedRect/)
     // review R1 blocker：全画面 UV → **rect 局部** RT UV（rect 左下 → (0,0)，右上 → (1,1)）；
     // 反向公式（sc*zw+xy）会让整车错误采样 RT 中央一小块
@@ -145,23 +159,25 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('?perf 逐 pass 计时与装甲预热接线', () => {
-    expect(source).toMatch(/perfFrame\([^\n]*armorStats/)
-    expect(cameraSrc).toMatch(/stats: PERF \? armorStats : undefined/)
+    expect(renderLoopSrc).toMatch(/perfFrame\([^\n]*armorStats/)
+    expect(cameraArmorSrc).toMatch(/stats: PERF \? armorStats : undefined/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function prewarm\(camera: PerspectiveCamera\)/)
-    expect(cameraSrc).toMatch(/\.prewarm\(camera\)/)
+    expect(cameraArmorSrc).toMatch(/\.prewarm\(camera\)/)
   })
 
   it('遮挡 pass 用语义化遮挡根，不再全场景 traverseVisible（issue #850 F）', () => {
-    const start = cameraSrc.indexOf('function occluderRoots')
-    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
+    const start = cameraArmorSrc.indexOf('function occluderRoots')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = cameraArmorSrc.slice(start, cameraArmorSrc.indexOf('function ', start + 20))
     // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
     expect(body).toMatch(/deps\.mapWorld\.terrainMesh\(\), deps\.mapWorld\.mapScenery\(\), deps\.mapWorld\.mapPlane\(\), deps\.mapWorld\.groundMesh\(\)/)
     expect(body).toContain('v.glb')
     expect(body).toContain('detachedTurrets')
     // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
     expect(body).toContain('v.group')
-    expect(cameraSrc).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)
+    expect(cameraArmorSrc).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)
+    expect(cameraArmorSrc.replace('occluderRoots: occluderRoots(target.def.eid as number)', '')).not.toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)
     const hl = readFileSync(resolve(__dirname, 'playback/armorHighlight.ts'), 'utf8')
     expect(hl).toMatch(/function markOccluders\(camera: PerspectiveCamera, vehicle: ArmorHighlightFrame\['vehicle'\], view: OccluderView, roots: Object3D\[\]\): number/)
     expect(hl).toMatch(/for \(const root of roots\)/)
@@ -169,8 +185,9 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('SNIPER 进入时补预取敌方 armor 模板（tankData 晚到缺口）', () => {
-    const start = cameraSrc.indexOf('function driveRecorderCamera')
-    const body = cameraSrc.slice(start, cameraSrc.indexOf('function ', start + 20))
+    const start = recorderSrc.indexOf('function driveRecorderCamera')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = recorderSrc.slice(start, recorderSrc.indexOf('function ', start + 20))
     expect(body).toMatch(/scoped && !wasScoped && deps\.armorHighlightPref\(\)\)\s+prewarmArmorHighlight\(camera\)/)
   })
 

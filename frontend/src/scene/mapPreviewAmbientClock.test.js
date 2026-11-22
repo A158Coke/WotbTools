@@ -9,15 +9,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const src = PLAYBACK_SCENE_SOURCE.replace(/\r\n/g, '\n')
+const src = playbackSceneSource().replace(/\r\n/g, '\n')
 const asmSrc = readFileSync(resolve(here, 'sceneryAssembly.ts'), 'utf8').replace(/\r\n/g, '\n')
 
 describe('地图预览环境动画冻结', () => {
   it('只在回放模式写 uTime；地图模式保持静态', () => {
-    expect(src).toMatch(/const mapMode = !!P\.store\.mapReady && !P\.store\.hasData;/)
+    expect(src).toMatch(/const mapMode = !!store\.mapReady && !store\.hasData;/)
     expect(src).toMatch(/if \(!mapMode\) \{/)
     expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/)
     expect(src).not.toMatch(/AMBIENT_T/)
@@ -28,6 +28,6 @@ describe('地图预览环境动画冻结', () => {
   })
 
   it('换图/重载复位回放时钟', () => {
-    expect(src).toMatch(/S\.T = 0; S\.battle\.resetShotPtr\(\);/)
+    expect(src).toMatch(/T = 0; battle\.resetShotPtr\(\);/)
   })
 })

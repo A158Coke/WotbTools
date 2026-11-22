@@ -74,7 +74,8 @@ assert set(required["needs"]) == set(jobs) - {"required"}
 assert "source_quality" in required["needs"]
 assert "pr_identity" in jobs["source_quality"]["needs"]
 assert "changes" not in jobs["source_quality"]["needs"]
-assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "required"}
+assert "zero_debt" in required["needs"]
+assert set(jobs["changes"]["outputs"]) == set(jobs) - {"pr_identity", "changes", "source_quality", "zero_debt", "required"}
 assert "ci-impact.py" not in json.dumps(ci)
 assert "test-path-filters.py" not in json.dumps(ci)
 source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
@@ -82,6 +83,42 @@ source_scan = next(step["run"] for step in jobs["source_quality"]["steps"]
 assert 'git merge-base "$BASE_SHA" "$HEAD_SHA"' in source_scan
 assert "merge-base --is-ancestor" not in source_scan
 assert '--baseline-from-ref "$MERGE_BASE_SHA"' in source_scan
+zero_debt = jobs["zero_debt"]
+assert zero_debt["name"] == "Zero-Debt Merge Gate"
+assert zero_debt["runs-on"] == "ubuntu-latest"
+assert zero_debt["steps"][1]["uses"] == "./.github/actions/zero-debt"
+assert zero_debt["steps"][1]["with"] == {"base_sha": "${{ needs.pr_identity.outputs.base_sha }}",
+                                           "head_sha": "${{ needs.pr_identity.outputs.head_sha }}"}
+zero_debt_workflow = load(root / ".github/workflows/zero-debt.yml")
+assert "workflow_call" in zero_debt_workflow["on"]
+assert zero_debt_workflow["jobs"]["source_limits"]["steps"][1]["uses"] == "./.github/actions/zero-debt"
+gate_action = load(root / ".github/actions/zero-debt/action.yml")
+gate_steps = gate_action["runs"]["steps"]
+scanner_self_test = next(step for step in gate_steps if step.get("name") == "Validate candidate strict scanner and policy")
+assert scanner_self_test["run"] == "python3 scripts/ci/test-source-lines.py"
+merge_candidate = next(step for step in gate_steps if step.get("name") == "Build the merge candidate tree")
+assert merge_candidate["id"] == "merge_candidate"
+merge_run = merge_candidate["run"]
+assert 'git merge-tree --write-tree "$BASE_SHA" "$HEAD_SHA"' in merge_run
+assert 'commit-tree "$merge_tree" -p "$BASE_SHA" -p "$HEAD_SHA"' in merge_run
+assert '"$GITHUB_OUTPUT"' in merge_run
+assert "steps.merge_candidate.outputs.merge_sha" in json.dumps(gate_steps)
+tree_scans = [step["run"] for step in gate_steps if "Scan full " in step.get("name", "")]
+assert tree_scans == [
+    'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$MERGE_SHA"',
+    'python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"',
+]
+allowlist_check = next(step for step in gate_steps if step.get("name") == "Reject allowlists in merge and candidate trees")
+assert "steps.merge_candidate.outcome" in allowlist_check["if"]
+assert '--head "$BASE_SHA"' not in json.dumps(gate_action), \
+    "the gate must judge the merge result, not require the base tree to be clean"
+assert gate_steps.index(scanner_self_test) < min(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", ""))
+assert gate_steps.index(merge_candidate) < min(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", ""))
+assert max(i for i, step in enumerate(gate_steps) if "Scan full " in step.get("name", "")) < gate_steps.index(allowlist_check)
+assert all(step.get("if", "").startswith("${{ always()") for step in gate_steps if "Scan full " in step.get("name", ""))
+assert "scripts/ci/source-line-allowlist.txt" in json.dumps(gate_action)
+assert "check-source-lines.py" not in json.dumps(jobs["changes"]), \
+    "the source LOC gate must not be conditioned on affected paths"
 # #738：第三方 action 一律 pin 到 immutable SHA（版本号保留在 YAML 行尾注释，parse 后不存在）。
 assert re.search(r"dorny/paths-filter@[0-9a-f]{40}", json.dumps(jobs["changes"])), "paths-filter must stay SHA-pinned"
 filter_path = next(step for step in jobs["changes"]["steps"]
@@ -308,11 +345,13 @@ required_run = next(
 )
 gate_py = required_run.split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
 
-def run_gate(affected_owners, owner_results, identity_result="success", source_quality_result="success"):
+def run_gate(affected_owners, owner_results, identity_result="success", source_quality_result="success",
+             zero_debt_result="success"):
     # 真实聚合逻辑会读取 changes.outputs 里的每个 owner 的 needs[owner]，
     # 所以 payload 必须覆盖全部 owner（未显式给出的按 skipped 处理）。
     payload = {"pr_identity": {"result": identity_result},
                "source_quality": {"result": source_quality_result},
+               "zero_debt": {"result": zero_debt_result},
                "changes": {"result": "success",
                            "outputs": {owner: ("true" if owner in affected_owners else "false")
                                        for owner in owner_names}}}
@@ -344,6 +383,8 @@ assert r.returncode == 0, r.stderr
 r = run_gate({"frontend"}, {"frontend": "success"}, identity_result="failure")
 assert r.returncode != 0 and "PR identity, source quality, or changed-file detection failed" in r.stderr, r.stderr
 r = run_gate({"frontend"}, {"frontend": "success"}, source_quality_result="failure")
+assert r.returncode != 0 and "source quality" in r.stderr, r.stderr
+r = run_gate({"frontend"}, {"frontend": "success"}, zero_debt_result="failure")
 assert r.returncode != 0 and "source quality" in r.stderr, r.stderr
 # Issue #738 review R2：CodeQL workflow 的 init 输入名与排除路径必须受 PR 契约保护
 #（CodeQL 不由 PR 触发——输入名写错时实际扫描不会发现，只能靠这里阻断回归）。
@@ -402,7 +443,10 @@ assert tx_runtime["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == [
     "deploy/check-production-freshness.sh",
     "deploy/tx/runtime-check.sh",
     "deploy/tx/runtime-check-lib.sh",
+    "deploy/tx/runtime-business-probes.sh",
     "deploy/tx/deploy.sh",
+    "deploy/tx/deploy-stage.sh",
+    "deploy/tx/deploy-health.sh",
     "deploy/tx/with-deploy-lock.sh",
 ]
 tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
@@ -423,8 +467,8 @@ assert all(step.get("env", {}).get("EVENT_SHA") == "${{ github.sha }}" for step 
 tx_runtime_stage = next(step for step in tx_runtime_steps if step.get("name") == "Stage exact-SHA verifier bundle")
 assert re.search(r"appleboy/scp-action@[0-9a-f]{40}", tx_runtime_stage["uses"]), "scp-action must stay SHA-pinned"
 assert tx_runtime_stage["with"]["source"] == (
-    "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,"
-    "deploy/tx/deploy.sh,deploy/tx/with-deploy-lock.sh"
+    "deploy/tx/runtime-check.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/runtime-business-probes.sh,"
+    "deploy/tx/deploy.sh,deploy/tx/deploy-stage.sh,deploy/tx/deploy-health.sh,deploy/tx/with-deploy-lock.sh"
 )
 assert tx_runtime_stage["with"]["target"] == "/tmp/wotb-tx-runtime-check-${{ github.run_id }}-${{ github.run_attempt }}"
 assert tx_runtime_stage["with"]["strip_components"] == "2"
@@ -480,78 +524,8 @@ backup_text = json.dumps(backup, ensure_ascii=False)
 for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "tofu-local-state-backup.sh"):
     assert script in backup_text, f"scheduled production backup must retain {script}"
 
-# PR #467 review: APK/bundle content assertions must never pipe into `grep -q`.
-# Under `set -o pipefail` a hit makes grep exit early, the producer takes SIGPIPE (141), and the
-# whole pipeline reports failure — i.e. a real file gets reported as missing.
-# stage 里 setup-node 只能有一个：重复声明是 review 发现的真实冗余（PR #467 P2）。
-_stage_sources = []
-for _name in ("ci-android.yml", "android-release.yml"):
-  _stage_sources.append((_name, (workflow_dir / _name).read_text(encoding="utf-8")))
-_release_source = dict(_stage_sources)["android-release.yml"]
-_stage_block = _release_source.split("\n  publish:", 1)[0]
-assert _stage_block.count("actions/setup-node@") == 1, \
-  f"android-release.yml stage must declare actions/setup-node exactly once (SHA-pinned), got {_stage_block.count('actions/setup-node@v4')}"
-
-for android_workflow in ("ci-android.yml", "android-release.yml"):
-  android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")
-  # 注释里可以解释这个坑，真实命令里不允许再出现（YAML 注释以 # 开头）。
-  offenders = [
-    line.strip() for line in android_text.splitlines()
-    if "| grep -q" in line and not line.lstrip().startswith("#")
-  ]
-  assert not offenders, \
-    f"{android_workflow} must not pipe into grep -q (SIGPIPE false negative under pipefail): {offenders[:2]}"
-  assert "listing_file" in android_text and "unzip -Z1" in android_text, \
-    f"{android_workflow} must assert APK contents from a listing file"
-
-_publish_block = _release_source.split("\n  publish:", 1)[1]
-assert "https://wotbtools.com/version.json" not in _publish_block
-assert "FE_COMMIT" not in _publish_block
-assert "android_contract.py bundle" in _stage_block and "android_contract.py bundle" in _publish_block
-assert "android_contract.py cors" in _publish_block
-
-# PR #467 review P2: publish 的候选版本必须由 workflow_dispatch 的显式 version 输入决定，
-# 不能从「当前 main 的 android/gradle.properties」推导。这两条断言的 owner 是 YAML wiring，
-# 只测 shell helper 是锁不住的（helper 单测见 scripts/android-release/test-release.sh）。
-_release_yaml = yaml.safe_load(_release_source)
-_release_dispatch_inputs = _release_yaml.get(True, _release_yaml.get("on", {}))["workflow_dispatch"]["inputs"]
-assert "version" in _release_dispatch_inputs, \
-  "android-release.yml must expose an explicit workflow_dispatch version input for publish"
-_version_input = _release_dispatch_inputs["version"]
-assert _version_input.get("type") == "string" and _version_input.get("required") is False, _version_input
-_publish_job = _release_yaml["jobs"]["publish"]
-assert "inputs.version" in json.dumps(_publish_job, ensure_ascii=False), \
-  "the publish job must consume the explicit version input"
-_publish_run_text = "\n".join(step.get("run") or "" for step in _publish_job["steps"])
-# 候选身份只能来自显式版本 + immutable tag target。
-assert "steps.version.outputs" not in _publish_run_text, \
-  "publish must not derive the candidate from the current main committed version"
-assert "resolve-staged-version.sh" in _publish_run_text, \
-  "publish must resolve the staged version from the tag target"
-assert 'TAG="android-v$REQUESTED_VERSION"' in _publish_run_text and "git archive" in _publish_run_text
-# staged versionCode：唯一来源是 stagedref 输出，且不得把 Python 局部变量当 shell 变量
-# （`$expected` 在 set -euo pipefail 下会 unbound variable，直接炸掉整个 publish）。
-_staged_step = next(step for step in _publish_job["steps"] if step.get("id") == "staged")
-assert _staged_step.get("env", {}).get("STAGED_VERSION_CODE") == "${{ steps.stagedref.outputs.versionCode }}", \
-  _staged_step.get("env", {})
-_staged_shell_lines = [line for line in (_staged_step.get("run") or "").splitlines()
-                       if not line.lstrip().startswith("#")]
-assert any('echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"' in line
-           for line in _staged_shell_lines), \
-  "publish must write the staged versionCode from STAGED_VERSION_CODE"
-assert not any("$expected" in line or "${expected}" in line for line in _staged_shell_lines), \
-  "publish shell must not read the Python-local `expected` variable"
-# publish 绝不重建 / 重新签名。
-for _forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
-  assert _forbidden not in _publish_run_text, f"publish must not rebuild or re-sign ({_forbidden})"
-# version.json 是最后一个 mutation，且只由 staged 身份写出。
-_publish_step_names = [step.get("name", "") for step in _publish_job["steps"]]
-_write_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Write version.json"))
-_upload_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Upload version.json"))
-_verify_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Verify production version.json"))
-assert _write_i < _upload_i < _verify_i, _publish_step_names
-assert "steps.staged.outputs" in _publish_job["steps"][_write_i]["run"], \
-  "version.json must be written from the staged identity"
+import subprocess
+subprocess.run([sys.executable, str(root / "scripts/ci/test-android-workflow-contract.py"), str(root)], check=True)
 
 # Production owner routing and freshness inputs are paired contracts. A workflow
 # may only proceed when its triggering SHA is still current for every owned input.
@@ -891,8 +865,10 @@ for host, spec in periphery_hosts.items():
     steps = {step.get("name"): step for step in job["steps"]}
     # The pinned release manifest and the same SHA-verified artifact, per job.
     release_step = steps["Read the pinned Periphery release"]["run"]
-    assert "deploy/periphery/periphery.release" in release_step, release_step
-    assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
+    assert release_step == "bash deploy/periphery/read-release.sh", release_step
+    release_script = Path("deploy/periphery/read-release.sh").read_text()
+    assert "deploy/periphery/periphery.release" in release_script
+    assert "PERIPHERY_SHA256" in release_script and "PERIPHERY_URL" in release_script
     artifact_step = steps["Download and verify the pinned Periphery artifact"]["run"]
     assert "sha256sum --check --strict" in artifact_step, artifact_step
     assert "--retry 3" in artifact_step, artifact_step

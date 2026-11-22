@@ -6,11 +6,14 @@ source "$ROOT/scripts/android-release/test-release-common.sh"
 #（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
 # 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin
 # absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。顺序：classify → 清华 → seed×2。
-python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+python3 - "$ROOT" <<'PY'
 import sys
-import yaml
+from pathlib import Path
 
-workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+sys.path.insert(0, str(Path(sys.argv[1]) / "scripts/android-release"))
+import workflow_model
+
+workflow = workflow_model.load(Path(sys.argv[1]))
 steps = workflow["jobs"]["stage"]["steps"]
 
 
@@ -55,12 +58,15 @@ PY
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 由自动续跑或手动 recovery 触发、
 # 绝不重建 APK，并且必须在写 manifest 之前证明四件事（staged 身份 / Keycloak client /
 # bundled frontend / API / assets / minSupported 覆盖 cutover）。
-python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+python3 - "$ROOT" <<'PY'
 import sys
-import yaml
+from pathlib import Path
 
-workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
-trigger = workflow.get(True, workflow.get("on", {}))
+sys.path.insert(0, str(Path(sys.argv[1]) / "scripts/android-release"))
+import workflow_model
+
+workflow = workflow_model.load(Path(sys.argv[1]))
+trigger = workflow["on"]
 mode = trigger["workflow_dispatch"]["inputs"]["mode"]
 assert mode["default"] == "stage", mode
 assert mode["options"] == ["stage", "publish"], mode
@@ -108,8 +114,17 @@ def names(job):
     return [step.get("name", "") for step in job["steps"]]
 
 
+def with_env(job):
+    parts = []
+    for step in job["steps"]:
+        parts.append(step.get("run") or "")
+        parts.extend(str(value) for value in (step.get("env") or {}).values())
+    return "\n".join(parts)
+
+
 stage_runs, stage_names = runs(stage), names(stage)
 publish_runs, publish_names = runs(publish), names(publish)
+stage_text, publish_text = with_env(stage), with_env(publish)
 
 # --- stage: immutable evidence only, never the publication commit point ---
 assert "release-staging/version.json" not in stage_runs, "stage must not write version.json"
@@ -185,7 +200,7 @@ assert 'stagingName=wotbtools-android-v$REQUESTED_VERSION.staging.json' in stage
 assert "resolve-staged-version.sh" in stagedref_runs, \
     "publish must resolve the staged version from the tag target, not from the workspace"
 # 工作区的 committed 版本不得参与候选身份：publish 里不允许再解析 steps.version 或读它的属性。
-assert "steps.version.outputs" not in publish_runs, \
+assert "steps.version.outputs" not in publish_text, \
     "publish must not derive the candidate from the current main committed version"
 # 当前 main 的 gradle.properties 只能在「当前策略」校验里出现（android_contract.py validate），
 # 不允许作为候选版本 / 候选版本号的来源。
@@ -221,18 +236,21 @@ assert "${{ steps.version.outputs" not in staged_runs, staged_runs
 assert "apk-badging.txt" in staged_runs and "versionCode='" in staged_runs, staged_runs
 assert '"$STAGED_VERSION_CODE"' in staged_runs, "badging validation must compare against the staged versionCode"
 # version.json 的内容（= 发布结果）只能来自 staged 身份。
-write_runs = publish["steps"][next(i for i, name in enumerate(publish_names)
-                                   if name.startswith("Write version.json"))]["run"]
+write_step = publish["steps"][next(i for i, name in enumerate(publish_names)
+                                         if name.startswith("Write version.json"))]
+write_runs = write_step["run"]
+write_env = "\n".join(str(value) for value in (write_step.get("env") or {}).values())
+write_sources = write_runs + "\n" + write_env
 for source in ("steps.staged.outputs.versionCode", "steps.staged.outputs.versionName",
                "steps.staged.outputs.nativeBridgeVersion", "steps.staged.outputs.stagedSource",
                "steps.staged.outputs.apkSha", "steps.stagedref.outputs.apkName"):
-    assert source in write_runs, f"version.json must be written from {source}"
-assert "steps.version.outputs" not in write_runs, write_runs
+    assert source in write_sources, f"version.json must be written from {source}"
+assert "steps.version.outputs" not in write_sources, write_sources
 
 # --- publish: the release authority is the STAGED identity, not the checkout SHA ---
 assert "guard_staged_release_identity" in publish_runs, "publish must prove the staged artifact identity"
 assert '--is-ancestor "$TAG_TARGET" origin/main' in publish_runs, "publish must keep staged main ancestry"
-assert "steps.staged.outputs.stagedSource" in publish_runs, "publish must carry the staged source SHA"
+assert "steps.staged.outputs.stagedSource" in publish_text, "publish must carry the staged source SHA"
 assert "origin/main" in publish_runs, "publish must anchor ancestry on current main"
 assert "publish must run from origin/main HEAD" not in publish_runs, \
     "publish must not require the staged source to equal current main HEAD (main may have advanced)"
@@ -253,14 +271,14 @@ assert "android_contract.py cors" in publish_runs and "/api/users/profile" in pu
 assert '"$ASSET_ORIGIN/index.json"' in publish_runs
 assert "$COS_BASE/index.json" not in publish_runs
 assert "https://wotbtools.com/version.json" not in publish_runs
-assert "FE_COMMIT" not in publish_runs and "frontend-version.json" not in publish_runs
+assert "FE_COMMIT" not in publish_text and "frontend-version.json" not in publish_text
 
 # --- version.json is the LAST mutation, and it records the STAGED source ---
 write_index = next(i for i, name in enumerate(publish_names) if name.startswith("Write version.json"))
 upload_index = next(i for i, name in enumerate(publish_names) if name.startswith("Upload version.json"))
 verify_index = next(i for i, name in enumerate(publish_names) if name.startswith("Verify production version.json"))
 assert write_index < upload_index < verify_index, publish_names
-assert "steps.staged.outputs.stagedSource" in publish["steps"][write_index]["run"], \
+assert "steps.staged.outputs.stagedSource" in write_sources, \
     "version.json must record the staged release source, not the checkout HEAD"
 scp_indices = [i for i, step in enumerate(publish["steps"])
                if str(step.get("uses", "")).startswith("appleboy/scp-action")]
