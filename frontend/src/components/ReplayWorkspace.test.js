@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  installWorkspaceTestLifecycle, testState, flushPromises, mountWorkspace, buildState,
+  installWorkspaceTestLifecycle, resetWorkspaceTestState, testState, flushPromises, mountWorkspace,
   paneMock, withBattles, serveDemo, analyzeDemo, guideContext, demoIdle, choose,
   waitForDemoReady, switchTo, clickDemo, TAB_KEY, tab, capKeys, demoBytes, REPLACE_DECLINED,
-  computed, h, KeepAlive, ref, toRaw, useConfirmHost, resetViewerClocks, viewerClocks,
-  loadOfficialDemo, OFFICIAL_DEMO, createShellChrome, useReplaySession, useError, useConnectivityNotice, mount,
+  computed, h, KeepAlive, ref, toRaw, useConfirmHost,
+  loadOfficialDemo, OFFICIAL_DEMO, createShellChrome, useReplaySession, useConnectivityNotice, mount,
   NAVIGATE_VIEW_KEY, ONBOARDING_KEY, DIALOG_INLINE_KEY,
 } from './ReplayWorkspace.test.harness.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 import FileDrop from './FileDrop.vue'
-const { hold, authState, nav, formState, connectivityState, nativeImportState, replayStateRef: replayState } = testState
+const { authState, nav, formState, connectivityState, nativeImportState, replayStateRef: replayState } = testState
 
 installWorkspaceTestLifecycle()
 
@@ -313,19 +313,7 @@ describe('ReplayWorkspace', () => {
   })
 
   beforeEach(() => {
-    connectivityState.state.value = 'online'
-    connectivityState.settled.value = true
-    useConnectivityNotice().close()
-    replayState.current = buildState()
-    hold.state = replayState.current
-    authState.authenticated.value = true
-    authState.isAdmin.value = false
-    authState.login = vi.fn()
-    const { error: globalError, showError } = useError()
-    showError.value = false
-    globalError.value = ''
-    vi.clearAllMocks()
-    resetViewerClocks()
+    resetWorkspaceTestState()
   })
 
   it.each(['3d', 'ai'])('offline deep link keeps %s discoverable but never mounts its online pane', async (cap) => {
@@ -556,74 +544,6 @@ describe('ReplayWorkspace', () => {
     expect(owner.loadCanonical).toBeTypeOf('function')
     await switchTo(wrapper, '3d')
     expect(wrapper.getComponent({ name: 'Replay3DPaneMock' }).props('playbackSession')).toBe(owner)
-    wrapper.unmount()
-  })
-
-  it('2D/3D 切换共享进度：旧 pane 的 currentTime 交给新 pane 的 seek 通道', async () => {
-    withBattles(1)
-    const wrapper = mountWorkspace('playback')
-    await flushPromises()
-    // 2D → 3D：相对秒换算原始秒，播放状态与倍速一并交给 3D
-    viewerClocks['2d'] = { time: 42.5, playing: true, ready: true, startRaw: 30, speed: 2 }
-    viewerClocks['3d'] = { time: 0, playing: false, ready: false, startRaw: 30, speed: 1 }
-    await wrapper.get('[data-testid="viewer-mode-3d"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'Replay3DPaneMock' }).props('pendingSeek')).toMatchObject({ sec: 72.5, playing: true, speed: 2 })
-    // 3D → 2D：相对秒 + 播放状态 + 倍速通过一次性 seekRequest 交给 2D
-    viewerClocks['3d'] = { time: 77.25, playing: true, ready: true, startRaw: 30, speed: 2 }
-    await wrapper.get('[data-testid="viewer-mode-2d"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'BattlePlaybackPanelMock' }).props('seekRequest')).toMatchObject({ sec: 77.25, playing: true, speed: 2 })
-    wrapper.unmount()
-  })
-
-  it('浏览器前进/后退切 2D/3D 也交接时钟（URL 来源，不反向 navigate）', async () => {
-    withBattles(1)
-    const navigate = vi.fn()
-    const wrapper = mountWorkspace('playback', { navigate })
-    await flushPromises()
-    navigate.mockClear()
-    // Back → 3D：2D 暂停在战斗相对 10s；URL watcher 必须发与按钮相同的 seek 交接
-    viewerClocks['2d'] = { time: 10, playing: false, ready: true, startRaw: 30, speed: 1 }
-    viewerClocks['3d'] = { time: 0, playing: false, ready: false, startRaw: 30, speed: 1 }
-    await wrapper.setProps({ initialCapability: '3d' })
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'Replay3DPaneMock' }).props('pendingSeek')).toMatchObject({ sec: 40, playing: false, speed: 1 })
-    // Forward 回 2D：3D 播到 70s / 2x，交接回 2D 的 seekRequest
-    viewerClocks['3d'] = { time: 70, playing: true, ready: true, startRaw: 30, speed: 2 }
-    await wrapper.setProps({ initialCapability: 'playback' })
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'BattlePlaybackPanelMock' }).props('seekRequest')).toMatchObject({ sec: 70, playing: true, speed: 2 })
-    // URL 是来源：watcher 不得反向 push 路由
-    expect(navigate).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('3D 未就绪（待开播，time=0）切回 2D 时不得重置 2D 进度', async () => {
-    withBattles(1)
-    const wrapper = mountWorkspace('playback')
-    await flushPromises()
-    viewerClocks['2d'] = { time: 30, playing: false, ready: true, startRaw: 30, speed: 1 }
-    await wrapper.get('[data-testid="viewer-mode-3d"]').trigger('click')
-    await flushPromises()
-    viewerClocks['3d'] = { time: 0, playing: false, ready: false, startRaw: 30, speed: 1 }
-    await wrapper.get('[data-testid="viewer-mode-2d"]').trigger('click')
-    await flushPromises()
-    // 没有发起 0 秒同步：2D 保持原状（seekRequest 仍为空）
-    expect(wrapper.getComponent({ name: 'BattlePlaybackPanelMock' }).props('seekRequest') ?? null).toBeNull()
-    wrapper.unmount()
-  })
-
-  it('信息流行点击：原始事件时间在 2D 下换算成战斗相对秒', async () => {
-    withBattles(1)
-    const wrapper = mountWorkspace('playback')
-    await flushPromises()
-    // 事件跳转换算要求 2D 时钟已就绪（未解析时保留原始秒，等 canonical 发布后再换算）
-    viewerClocks['2d'].ready = true
-    viewerClocks['2d'].startRaw = 30
-    wrapper.getComponent({ name: 'ReplayEventStreamPaneMock' }).vm.$emit('seek', 60)
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'BattlePlaybackPanelMock' }).props('seekTo')).toBe(30)
     wrapper.unmount()
   })
 

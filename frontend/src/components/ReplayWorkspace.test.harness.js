@@ -252,6 +252,23 @@ export { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 export { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 export { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
+/** 每个工作台用例的干净起点：原 ReplayWorkspace.test.js beforeEach 抽出，拆分 suite 共用。 */
+export function resetWorkspaceTestState() {
+  connectivityState.state.value = 'online'
+  connectivityState.settled.value = true
+  useConnectivityNotice().close()
+  replayStateRef.current = buildState()
+  hold.state = replayStateRef.current
+  authState.authenticated.value = true
+  authState.isAdmin.value = false
+  authState.login = vi.fn()
+  const { error: globalError, showError } = useError()
+  showError.value = false
+  globalError.value = ''
+  vi.clearAllMocks()
+  resetViewerClocks()
+}
+
 export function installWorkspaceTestLifecycle() {
   afterEach(() => {
     vi.unstubAllGlobals()

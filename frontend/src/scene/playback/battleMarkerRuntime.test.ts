@@ -1,13 +1,13 @@
-// battleMarkerRuntime 单测：假场景 + 假车辆位姿/名册，断言出仓前的既有语义——
-// 事件源构建（fail-closed 逐条丢弃）、**回放时钟窗口状态**（update(T) 幂等重算：
+// battleMarkerRuntime 单测：**回放时钟窗口状态**（update(T) 幂等重算：
 // 窗内常驻、暂停冻结、倒带重现、播过消失）、末段淡出、扇区出现闪烁、池上限、
 // 来源卡解析（labelSources：玩家+坦克两行、占位名纪律、sender 联册）。
+// 事件源构建/扇区聚合见 battleMarkerRuntime.build.test.ts；账号联册、生产接线守卫与
+// 暂停按需重绘帧见 battleMarkerRuntime.wiring.test.ts。
 // mapSemantics 用 importOriginal 包装：默认走真实档案（glob 索引在 vitest 可用），
 // 单测按用例临时注入合成档案，用毕恢复。
 import { describe, expect, it, vi } from 'vitest'
-import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
 import * as THREE from 'three'
-import { resolveActiveAccount, resolveActiveSender } from './battleMarkerHost.js'
+import { attention, makeHarness, type Harness } from './battleMarkerRuntime.test.harness.js'
 import {
   MARKER_FLASH_S,
   MARKER_LIFETIME_S,
@@ -17,10 +17,6 @@ import {
   TARGET_FLASH_S,
   buildMarkerEvents,
   createMarkerRuntime,
-  markerSourceCard,
-  sectorRectForMapKey,
-  sectorRectFromCells,
-  type MarkerRuntimeDeps,
 } from './markerRuntime.js'
 
 const profileHolder = vi.hoisted(() => ({
@@ -33,187 +29,6 @@ vi.mock('../../data/mapSemantics.js', async (importOriginal) => {
     mapGridProfile: (mapKey: string | number) =>
       profileHolder.fn ? profileHolder.fn(mapKey) : actual.mapGridProfile(mapKey),
   }
-})
-
-interface Harness {
-  deps: MarkerRuntimeDeps
-  t: { v: number }
-  scene: { added: THREE.Object3D[]; removed: THREE.Object3D[] }
-  poses: Map<number, { x: number; z: number } | null>
-  /** 历史位姿表（getPoseAt；x = at(t) 函数——help 发令时刻语义用） */
-  posesAt: Map<number, { z: number; at(t: number): number }>
-  sources: Map<number, { nickname?: string; tank_name?: string; tank_id?: number } | null>
-  byNickname: Map<string, { nickname?: string; tank_name?: string; tank_id?: number } | null>
-  invalidate: ReturnType<typeof vi.fn>
-}
-
-function makeHarness(opts: {
-  poses?: Map<number, { x: number; z: number } | null>
-  posesAt?: Map<number, { z: number; at(t: number): number }>
-  sources?: Map<number, { nickname?: string; tank_name?: string; tank_id?: number } | null>
-  byNickname?: Map<string, { nickname?: string; tank_name?: string; tank_id?: number } | null>
-} = {}): Harness {
-  const t = { v: 100 }
-  const scene = {
-    added: [] as THREE.Object3D[],
-    removed: [] as THREE.Object3D[],
-    add(o: THREE.Object3D) { scene.added.push(o) },
-    remove(o: THREE.Object3D) { scene.removed.push(o) },
-  }
-  const poses = opts.poses ?? new Map()
-  const posesAt = opts.posesAt ?? new Map()
-  const sources = opts.sources ?? new Map()
-  const byNickname = opts.byNickname ?? new Map()
-  const invalidate = vi.fn()
-  const deps: MarkerRuntimeDeps = {
-    getScene: () => scene as unknown as THREE.Scene,
-    groundY: () => 3,
-    getVehiclePose: (eid, _t, out) => {
-      const p = poses.get(eid)
-      if (!p) return false
-      out.set(p.x, 3, p.z)
-      return true
-    },
-    // 历史位姿（发令时刻采样；不做当前帧 gate——评审 P2 的 help 语义）
-    getPoseAt: (eid, t, out) => {
-      const p = posesAt.get(eid)
-      if (!p) return false
-      out.set(p.at(t), 3, p.z)
-      return true
-    },
-    describeSource: (eid, accountId) => sources.get(eid) ?? sources.get(accountId) ?? null,
-    findByNickname: (nickname) => byNickname.get(nickname) ?? null,
-    tankNameOf: (tankId) => (tankId === 14129 ? 'Tiger II' : undefined),
-    getT: () => t.v,
-    invalidate,
-  }
-  return { deps, t, scene, poses, posesAt, sources, byNickname, invalidate }
-}
-
-const attention = (t: number, target: number, sender = '发布者') => ({
-  t, kind: 'command' as const, raw_type: 1, channel: 0, sender,
-  command_name: 'attention_to_cell', target,
-})
-
-describe('buildMarkerEvents（数据面 → 场景事件，fail-closed）', () => {
-  it('0x2e markers：type1 带 at → ping（x 镜像 + 来源 eid/account）；4/5 → attack/retreat 目标；id = 稳定 key', () => {
-    const events = buildMarkerEvents({
-      markers: [
-        { t: 10, entity_id: 1, account_id: 11, marker_type: 1, at: [30, 5, 70] },
-        { t: 12, entity_id: 1, account_id: 11, marker_type: 4, target_eid: 42 },
-        { t: 14, entity_id: 1, account_id: 11, marker_type: 5, target_eid: 7 },
-      ],
-    }, null)
-    expect(events).toEqual([
-      { id: '0', t: 10, kind: 'ping', x: -30, z: 70, srcEid: 1, srcAccount: 11 },
-      { id: '1', t: 12, kind: 'target', intent: 'attack', eid: 42, srcEid: 1, srcAccount: 11 },
-      { id: '2', t: 14, kind: 'target', intent: 'retreat', eid: 7, srcEid: 1, srcAccount: 11 },
-    ])
-  })
-
-  it('畸形 payload 逐条丢弃：缺 at / 非法坐标 / 非法 target / 未知 marker_type / 缺 t', () => {
-    const events = buildMarkerEvents({
-      markers: [
-        { t: 1, entity_id: 1, account_id: 11, marker_type: 1 },                    // 缺 at
-        { t: 2, entity_id: 1, account_id: 11, marker_type: 1, at: [1, NaN, 3] },   // 坐标脏值
-        { t: 3, entity_id: 1, account_id: 11, marker_type: 4 },                    // 缺 target_eid
-        { t: 4, entity_id: 1, account_id: 11, marker_type: 4, target_eid: -5 },    // 非正整数
-        { t: 5, entity_id: 1, account_id: 11, marker_type: 9 },                    // 未知类型不消费
-        { entity_id: 1, account_id: 11, marker_type: 1, at: [0, 0, 0] },           // 缺 t
-      ],
-    }, null)
-    expect(events).toEqual([])
-  })
-
-  it('attention_to_cell：扇区号域内 + 档案有格 → sector（区域并集、x 镜像、sender 作来源）；缺档案/域外丢弃', () => {
-    profileHolder.fn = () => ({
-      gridCells: [
-        { id: 'B3', nineGridRegion: 6, bounds: { xMin: 10, yMin: 20, xMax: 40, yMax: 50 } },
-        { id: 'B2', nineGridRegion: 6, bounds: { xMin: -20, yMin: 20, xMax: 10, yMax: 50 } },
-        { id: 'A1', nineGridRegion: 1, bounds: { xMin: 0, yMin: 0, xMax: 10, yMax: 10 } },
-      ],
-    })
-    try {
-      // region 6 并集 = 语义系 (-20..40, 20..50) → 场景系 x 镜像 = (-40..20)
-      expect(buildMarkerEvents({ chat_events: [attention(3, 6, ' 队友 ')] }, 'some-map')).toEqual([
-        { id: '0', t: 3, kind: 'sector', region: 6, rect: { xMin: -40, zMin: 20, xMax: 20, zMax: 50 }, source: '队友' },
-      ])
-      // 缺档案：指令丢弃，不猜坐标
-      profileHolder.fn = () => null
-      expect(buildMarkerEvents({ chat_events: [attention(3, 6)] }, 'some-map')).toEqual([])
-      // 域外扇区号（0 / 10）丢弃
-      profileHolder.fn = () => ({ gridCells: [] })
-      for (const target of [0, 10]) {
-        expect(buildMarkerEvents({ chat_events: [attention(3, target)] }, 'some-map')).toEqual([])
-      }
-    } finally {
-      profileHolder.fn = null
-    }
-  })
-
-  it('事件表按 t 升序（markers 与 chat 指令混排；id 跟随最终次序）', () => {
-    profileHolder.fn = () => ({ gridCells: [{ id: 'C1', nineGridRegion: 7, bounds: { xMin: 0, yMin: 0, xMax: 5, yMax: 5 } }] })
-    try {
-      const events = buildMarkerEvents({
-        markers: [{ t: 9, entity_id: 1, account_id: 11, marker_type: 1, at: [1, 2, 3] }],
-        chat_events: [attention(4, 7)],
-      }, 'k')
-      expect(events.map((e) => [e.id, e.t])).toEqual([['0', 4], ['1', 9]])
-    } finally {
-      profileHolder.fn = null
-    }
-  })
-})
-
-describe('markerSourceCard（来源卡解析）', () => {
-  it('名 + 车 → 两行；缺一补一；占位名 tank_<id> 不上 UI（表命中用真名）；全缺 → null', () => {
-    expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'BZT-70', tank_id: 1 })).toEqual({ player: 'Anonyme', tank: 'BZT-70' })
-    expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'tank_14129', tank_id: 14129 }, (id) => (id === 14129 ? 'Tiger II' : undefined)))
-      .toEqual({ player: 'Anonyme', tank: 'Tiger II' })
-    // 占位名 + 表未命中 → 只出玩家行（tank 行为空不上）
-    expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'tank_14129', tank_id: 14129 })).toEqual({ player: 'Anonyme', tank: '' })
-    expect(markerSourceCard({ nickname: 'Anonyme', tank_name: '', tank_id: 1 })).toEqual({ player: 'Anonyme', tank: '' })
-    expect(markerSourceCard({ nickname: '', tank_name: 'BZT-70', tank_id: 1 })).toEqual({ player: '', tank: 'BZT-70' })
-    expect(markerSourceCard({ nickname: '  ', tank_name: 'tank_9', tank_id: 9 })).toBeNull()
-    expect(markerSourceCard(null)).toBeNull()
-  })
-})
-
-describe('sectorRectFromCells / sectorRectForMapKey（区域聚合 + 坐标镜像）', () => {
-  it('并集同 MapOverview 口径；无格 / 脏 bounds → null', () => {
-    const cells = [
-      { id: 'A1', nineGridRegion: 1, bounds: { xMin: 0, yMin: 0, xMax: 10, yMax: 10 } },
-      { id: 'A2', nineGridRegion: 1, bounds: { xMin: 10, yMin: 0, xMax: 20, yMax: 10 } },
-      { id: 'F1', nineGridRegion: 7, bounds: { xMin: -50, yMin: -60, xMax: -40, yMax: -50 } },
-      { id: 'dirty', nineGridRegion: 2, bounds: { xMin: 0, yMin: NaN, xMax: 5, yMax: 5 } },
-    ]
-    expect(sectorRectFromCells(cells, 1)).toEqual({ xMin: -20, zMin: 0, xMax: 0, zMax: 10 })
-    expect(sectorRectFromCells(cells, 2)).toBeNull()
-    expect(sectorRectFromCells(cells, 3)).toBeNull()
-    expect(sectorRectFromCells(null, 1)).toBeNull()
-  })
-
-  it('真实语义档案：erlenberg 九宫格 1..9 各有矩形、成 tile（3D 与 2D 概览同一聚合）', () => {
-    profileHolder.fn = null   // 走真实档案
-    const rects = new Map<number, NonNullable<ReturnType<typeof sectorRectForMapKey>>>()
-    for (let region = 1; region <= 9; region++) {
-      const rect = sectorRectForMapKey('erlenberg', region)
-      expect(rect, `region ${region}`).toBeTruthy()
-      rects.set(region, rect!)
-    }
-    // 九个区域两两内部不相交（同一套 gridCells 的 tile 划分）
-    const keys = [...rects.keys()]
-    for (let i = 0; i < keys.length; i++) {
-      for (let j = i + 1; j < keys.length; j++) {
-        const a = rects.get(keys[i])!, b = rects.get(keys[j])!
-        const disjoint = a.xMax <= b.xMin || b.xMax <= a.xMin || a.zMax <= b.zMin || b.zMax <= a.zMin
-        expect(disjoint, `region ${keys[i]} vs ${keys[j]}`).toBe(true)
-      }
-    }
-    // fail-closed：缺档 key → null
-    expect(sectorRectForMapKey('no-such-map-key', 6)).toBeNull()
-    expect(sectorRectForMapKey(null, 6)).toBeNull()
-  })
 })
 
 describe('markerRuntime（回放时钟窗口状态：常驻 / 冻结 / 重现 / 淡出 / 闪烁）', () => {
@@ -560,63 +375,5 @@ describe('markerRuntime（回放时钟窗口状态：常驻 / 冻结 / 重现 / 
     expect(rt.labelSources()).toEqual([])
     rt.update(1)
     expect(h.scene.removed).toHaveLength(2)   // 事件源已清：不再落新对象
-  })
-})
-
-describe('attack_enemy 的账号联册（换 eid 后的活动实体）', () => {
-  it('联册查询携带指令时刻 t（账号兜底的时间证据）', () => {
-    const h = makeHarness()
-    const describeSource = vi.fn(() => ({ eid: 49, account_id: 7 }))
-    const rt = createMarkerRuntime({ ...h.deps, describeSource })
-    rt.buildSession({
-      chat_events: [{ t: 12, kind: 'command', raw_type: 20, channel: 0, sender: 'S', command_name: 'attack_enemy', target: 7 }],
-    }, null)
-    expect(describeSource).toHaveBeenCalledWith(7, 7, 12)
-  })
-
-  it('同名账号新旧实体：旧 eid 不可见且已被接管 → 取新 eid；接管前倒带仍取旧 eid', () => {
-    const def = (eid: number, account_id: number) => ({ def: { eid, account_id } })
-    const roster = [def(42, 7), def(49, 7)]
-    const visibleAt = (v: { def: { eid: number } }, t: number) => (v.def.eid === 42 ? t < 10 : t >= 10)
-    const replacedAt = (eid: number, t: number) => eid === 42 && t >= 10
-    expect(resolveActiveAccount(roster, 7, 12, visibleAt, replacedAt)?.def.eid).toBe(49)
-    expect(resolveActiveAccount(roster, 7, 5, visibleAt, replacedAt)?.def.eid).toBe(42)
-    expect(resolveActiveAccount(roster, 99, 12, visibleAt, replacedAt)).toBeNull()
-  })
-})
-
-// 生产接线守卫（playbackScene 源码级，treadMarks.test.js 同风格）：单测 harness 自备
-// getPoseAt，覆盖不到 src/scene/playbackScene.js 的真实传参形状。Codex P1 回归：
-// createBattleMarkerHost 未注入 visibleAt 时，求援类指令窗口内 spawn→getPoseAt 每帧抛
-// TypeError（渲染/HUD 中断，seek 进窗口同样失败）。
-describe('生产接线守卫（playbackScene 源码级）', () => {
-  const sceneSrc = PLAYBACK_SCENE_SOURCE
-
-  it('createBattleMarkerHost 必须注入 visibleAt（help 类历史位姿门）', () => {
-    // 合并后源码全集包含 battleMarkerHost.ts 的定义与 sceneAssembly.ts 的构造；必须取构造调用。
-    const at = sceneSrc.indexOf('S.battleMarkers = createBattleMarkerHost(')
-    expect(at).toBeGreaterThan(-1)
-    const call = sceneSrc.slice(at, sceneSrc.indexOf('});', at))
-    expect(call).toMatch(/visibleAt:\s*\(v,\s*t\)\s*=>\s*(?:S\.)?visibleAt\(v,\s*t\)/)
-    // 账号兜底的活动实体解析（攻击目标换 eid）：注入身份接管判据
-    expect(call).toMatch(/replacedAt:\s*\(eid,\s*t\)\s*=>\s*(?:S\.)?replacedAt\(eid,\s*t\)/)
-  })
-})
-
-describe('resolveActiveSender（指令时刻在场解析）', () => {
-  const def = (eid: number, nickname: string) => ({ def: { eid, nickname } })
-  const windowOf = new Map<number, [number, number]>([[1, [0, 10]], [2, [10, 20]], [3, [0, 10]]])
-  const visibleAt = (v: { def: { eid: number } }, t: number) => {
-    const w = windowOf.get(v.def.eid)
-    return !!w && w[0] <= t && t < w[1]
-  }
-  const vehicles = [def(1, 'P'), def(2, 'P'), def(3, 'Q')]
-
-  it('同名多实体按指令时刻取在场实体；不在场 fail-closed 出 null', () => {
-    expect(resolveActiveSender(vehicles, visibleAt, (v) => v.def.nickname, 'P', 5)?.def.eid).toBe(1)
-    expect(resolveActiveSender(vehicles, visibleAt, (v) => v.def.nickname, 'P', 15)?.def.eid).toBe(2)
-    expect(resolveActiveSender(vehicles, visibleAt, (v) => v.def.nickname, 'P', 25)).toBeNull()
-    expect(resolveActiveSender(vehicles, visibleAt, (v) => v.def.nickname, 'Q', 5)?.def.eid).toBe(3)
-    expect(resolveActiveSender(vehicles, visibleAt, (v) => v.def.nickname, 'X', 5)).toBeNull()
   })
 })
