@@ -2,9 +2,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   installPaneTestLifecycle, mountPane, mockWebGL, mkFile, flush, start, openDetailsViaScene,
-  paneComponent, translate, here, testState, fullscreenCalls,
-  nextTick, ref, shallowReactive, mount, readFileSync, fileURLToPath, dirname, resolve,
-  makeBattlePlaybackDataset, zh, en, ru,
+  paneComponent, here, testState, fullscreenCalls,
+  nextTick, readFileSync, resolve,
 } from './Replay3DPane.test.harness.js'
 
 const { canonical, playback, layout, connectivityState } = testState
@@ -444,6 +443,11 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       const rosterBlock = /^\.pb-roster \{([^}]*)\}/m.exec(rosterVue)?.[1]
       expect(rosterBlock).toBeTruthy()
       expect(rosterBlock).not.toContain('overflow')
+
+      // 每队面板本身也不得成为独立滚动盒（原回归目标就是 PlaybackRoster.vue 的 .pb-roster-team）。
+      const teamBlock = /^\.pb-roster-team \{([^}]*)\}/m.exec(rosterVue)?.[1]
+      expect(teamBlock).toBeTruthy()
+      expect(teamBlock).not.toContain('overflow')
 
       // 临时名册面整套规则已不存在
       expect(paneCss + rosterVue).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
