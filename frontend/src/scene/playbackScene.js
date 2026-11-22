@@ -621,6 +621,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 相机地形净空（cameraTerrainClamp）仍在本闭包，经 deps 回调注入；canonical 生命
   // 事实（deathAt/deathTimesOf）、?perf 域与 ARMOR_HIGHLIGHT 偏好仍在本闭包。
   const cameraRuntime = createCameraRuntime({
+    getViewportSize,
     store,
     container,
     debug: DEBUG,

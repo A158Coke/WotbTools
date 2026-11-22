@@ -8,10 +8,11 @@ export function fixturePath(fixture) {
   return resolve(root, fixture === 'example' ? 'common/assets/onboarding/replay-2.wotbreplay' : `common/fixtures/replays/${fixture}.wotbreplay`)
 }
 export const ORIGIN = process.env.ORIGIN || 'http://127.0.0.1:5190'
-export async function openReplay3d(chrome, { fixture = 'random-battle-example', query = '', perf = true, width = Number(process.env.VW||1280), height = Number(process.env.VH||720), dpr = Number(process.env.VDPR||1) } = {}) {
+export async function openReplay3d(chrome, { fixture = 'random-battle-example', query = '', perf = true, observeNetwork, width = Number(process.env.VW||1280), height = Number(process.env.VH||720), dpr = Number(process.env.VDPR||1) } = {}) {
   const { sessionId } = await chrome.openPage()
   const page = new Page(chrome.client, sessionId)
   await page.enable()
+  if (observeNetwork) await observeNetwork(sessionId)
   await page.emulate({ width, height, deviceScaleFactor: dpr, touch: false })
   await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: 'performance.setResourceTimingBufferSize(4000)' }, sessionId)
   await page.goto(`${ORIGIN}/?view=replay&ws-auth=1${perf ? '&perf' : ''}${query}`)

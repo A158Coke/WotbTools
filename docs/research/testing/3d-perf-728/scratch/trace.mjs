@@ -50,8 +50,9 @@ export async function startTimelineTrace(client) {
     await client.send('Tracing.end')
     const { stream, dataLossOccurred } = await complete
     if (!stream) throw new Error('Chrome did not return a trace')
-    const file = await open(path, 'w')
+    let file
     try {
+      file = await open(path, 'wx')
       let eof = false
       while (!eof) {
         const part = await client.send('IO.read', { handle: stream, size: 1024 * 1024 })
@@ -59,7 +60,7 @@ export async function startTimelineTrace(client) {
         eof = part.eof
       }
     } finally {
-      await file.close()
+      await file?.close()
       await client.send('IO.close', { handle: stream })
     }
     if (dataLossOccurred) throw new Error('Chrome reported trace data loss')

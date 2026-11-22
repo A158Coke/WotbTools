@@ -1,22 +1,24 @@
-// 一次性采集：run.mjs <scenarioId,...|all> <throttle,...> [--profile] [--fixture=x] [--secs=30] [--tag=x]
+// 一次性采集：run.mjs <scenarioId,...|all> <throttle,...> --run-id=x [--profile] [--fixture=x] [--secs=30] [--tag=x]
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { root, ORIGIN, fixturePath, findChrome, launchChromeForCdp, openReplay3d, delay } from './lib.mjs'
 import { startTimelineTrace, observeSubmissionAndLayout, observeAnchorWrites } from './trace.mjs'
+import { captureName, capturePolicy, sampleRenderedStage, verifySceneResources, verifyScoredEntry } from './capture-policy.mjs'
 const args = process.argv.slice(2)
 const flag = (n, d) => (args.find(a => a.startsWith(`--${n}=`)) || '').split('=')[1] ?? d
 const pos = args.filter(a => !a.startsWith('--'))
-if (!pos[0]) throw new Error('Usage: node run.mjs <scenario,...|all> <CPU rate,...> [--fixture=example] [--secs=30]')
+if (!pos[0]) throw new Error('Usage: node run.mjs <scenario,...|all> <CPU rate,...> --run-id=x [--fixture=example] [--secs=30]')
 const perf = !args.includes('--no-perf')
 const PROFILE = args.includes('--profile')
 const TRACE = args.includes('--trace')
 const cpuMetrics = args.includes('--cpu-metrics')
 const fixture = flag('fixture', 'random-battle-example')
-const replayDigest = createHash('sha256').update(readFileSync(fixturePath(fixture))).digest('hex')
 const SECS = Number(flag('secs', 30))
 if (!(SECS > 0 && SECS <= 60)) throw new Error('capture duration must be in (0, 60] seconds')
+const policy = capturePolicy(args, SECS)
+const replayDigest = createHash('sha256').update(readFileSync(fixturePath(fixture))).digest('hex')
 const dataset = process.env.DATASET
 const sourceRoot = process.env.BENCH_SOURCE_ROOT || root
 const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim()
@@ -63,8 +65,15 @@ async function runScenario(id, rate) {
     const datasetQuery = dataset ? '&data=' + encodeURIComponent(dataset) : ''
     const sc = SC[id]
     if (!sc) throw new Error('Unknown scenario: ' + id)
-    const name = `${tag}${fixture.split('-')[0]}_${id}_x${rate}${PROFILE ? '_prof' : ''}` + (perf ? '' : '_noprobe')
-    const page = await openReplay3d(chrome, { fixture, perf, query: `&q=${sc.q}&armorhl=${sc.armorhl}&dynres=${sc.dynres}${datasetQuery}` })
+    const name = captureName({ tag, fixture, scenario: id, rate, ...policy })
+    const urls = []
+    const observeNetwork = async sessionId => {
+      chrome.client.on('Network.responseReceived', ({ response }, session) => {
+        if (session === sessionId && response.status === 200) urls.push(response.url)
+      })
+      await chrome.client.send('Network.enable', {}, sessionId)
+    }
+    const page = await openReplay3d(chrome, { fixture, perf, observeNetwork, query: `&q=${sc.q}&armorhl=${sc.armorhl}&dynres=${sc.dynres}${datasetQuery}` })
     const sid = page.sessionId
     await page.evaluate(`document.querySelector('[data-test="replay3d-start"]').click()`)
     if (perf) await page.waitForValue('!!window.__pbPerf && window.__pbPerf.snapshot().totalFrames > 30', Boolean, { timeout: 90000, label: 'frames' })
@@ -91,21 +100,14 @@ async function runScenario(id, rate) {
     if (perf && !(pre.resources.textures > 1 && pre.vehicles > 0)) throw new Error('Empty replay scene')
     const expectedCamera = { '录像者': 'recorder', follow: 'follow' }[sc.cam]
     if (perf && expectedCamera && pre.identity.cameraMode !== expectedCamera) throw new Error('Camera mismatch')
-    const assets = await page.probe(async () => {
-      const entries = performance.getEntriesByType('resource').filter(e => e.responseStatus === 200)
-      const terrain = entries.find(e => new URL(e.name).pathname.endsWith('/terrain.u16.bin'))
-      const vehicle = entries.find(e => /\/glb\/\d+\/model\.glb$/.test(new URL(e.name).pathname))
-      const scenery = entries.find(e => new URL(e.name).pathname.endsWith('/scenery.glb'))
-      if (!terrain || !scenery) throw new Error('Expected loaded map assets: ' + entries.filter(e => /terrain|scenery/.test(e.name)).map(e => new URL(e.name).pathname).slice(-15).join(', '))
-      const base = terrain.name.slice(0, terrain.name.lastIndexOf('/map/'))
-      const version = await fetch(base + '/version.json', {cache:'no-store'})
-      if (!version.ok) throw new Error('Cannot verify asset version')
-      const { dataset_id, release, content_digest } = await version.json()
-      if (!content_digest || !terrain.name.startsWith(base + '/')) throw new Error('Asset identity mismatch')
-      return { dataset_id, release, content_digest, vehicleModelLoaded: !!vehicle }
-    })
-    if ((sc.q === 'high' || sc.q === 'ultra') && !assets.vehicleModelLoaded) throw new Error('High-fidelity vehicle asset missing')
-    if (dataset && dataset !== assets.dataset_id) throw new Error('Selected dataset mismatch')
+    const expectedRoot = new URL(process.env.BENCH_ASSET_ROOT).href.replace(/\/$/, '')
+    await chrome.client.send('Network.disable', {}, sid)
+    const versionResponse = await fetch(expectedRoot + '/version.json', { cache: 'no-store' })
+    if (!versionResponse.ok) throw new Error('Cannot verify expected dataset version')
+    const { dataset_id, release, content_digest } = await versionResponse.json()
+    const assets = { dataset_id, release, content_digest }
+    assets.sources = verifySceneResources(urls, expectedRoot, assets, dataset, ['high', 'ultra'].includes(sc.q))
+    assets.vehicleModelLoaded = assets.sources.vehicles.length > 0
     const playbackSpeed = await page.evaluate("document.querySelector('[data-test=pb-speed-current]').textContent.trim()")
     // A checkout can change after vite build. Also identify the bytes actually served.
     const servedEntry = await page.probe(async () => {
@@ -116,6 +118,7 @@ async function runScenario(id, rate) {
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await response.arrayBuffer()))
       return { path: new URL(script.src).pathname, sha256: Array.from(digest, b => b.toString(16).padStart(2, '0')).join('') }
     })
+    if (!perf) verifyScoredEntry(servedEntry, process.env.BENCH_ENTRY_SHA256)
     if (perf && !sourceSha.startsWith(pre.identity.buildCommit)) throw new Error('Served build does not match BENCH_SOURCE_ROOT')
     if (perf && pre.identity.replayDigest !== replayDigest) throw new Error('Scene and input file digests differ')
     const viewport = await page.probe(() => {
@@ -139,6 +142,7 @@ async function runScenario(id, rate) {
     const readCpuMetrics = async () => Object.fromEntries(
       (await chrome.client.send('Performance.getMetrics', {}, sid)).metrics.map(({ name, value }) => [name, value]),
     )
+    const stageBefore = !perf && await page.probe(sampleRenderedStage)
     const cpuBefore = cpuMetrics ? await readCpuMetrics() : null
     await page.evaluate(`(()=>{
       const duration = ${SECS} * 1000
@@ -216,8 +220,10 @@ async function runScenario(id, rate) {
       armorCallFrames: fr.filter(f => f.armorCalls > 0).length,
       dprMin: Math.min(...dpr), dprMax: Math.max(...dpr), tRange: [fr[0].t, fr.at(-1).t],
     } : null
+    const stageAfter = !perf && await page.probe(sampleRenderedStage)
     const out = {
-      name, fixture, scenario: id, sc, rate, secs: SECS, stat, frameStat, captureStats: cap?.statistics,
+      stageBefore, stageAfter,
+      name, fixture, scenario: id, sc, rate, secs: SECS, captureMode: policy.mode, runId: policy.runId, stat, frameStat, captureStats: cap?.statistics,
       captureEvents: cap?.events, captureDroppedEvents: cap?.droppedEvents,
       loadingEvents: pre?.loadingEvents, captureReason: cap?.reason, interrupted: cap?.interrupted,
       identity: cap?.identity ?? snap?.identity,
@@ -231,7 +237,7 @@ async function runScenario(id, rate) {
       out.chromeMetricDelta = Object.fromEntries(names.map(key => [key, cpuAfter[key] - cpuBefore[key]]))
       if (cpuMid) out.first30MetricDelta = Object.fromEntries(names.map(key => [key, cpuMid[key] - cpuBefore[key]]))
     }
-    writeFileSync(`out/${name}.json`, JSON.stringify(out))
+    writeFileSync(`out/${name}.json`, JSON.stringify(out), { flag: 'wx' })
     console.log(name, JSON.stringify(stat), JSON.stringify(frameStat), 'camMode', snap?.identity?.cameraMode, 'errs', page.consoleErrors.length)
     await chrome.client.send('Emulation.setCPUThrottlingRate', { rate: 1 }, sid)
     if (args.includes('--verify-labels') || args.includes('--verify-resize')) {
@@ -260,9 +266,9 @@ async function runScenario(id, rate) {
           }
         })
         mkdirSync('out/visual', { recursive: true })
-        writeFileSync(`out/visual/${name}-${time}s.json`, JSON.stringify({ geometry, contentHash }))
+        writeFileSync(`out/visual/${name}-${time}s.json`, JSON.stringify({ geometry, contentHash }), { flag: 'wx' })
         const { data } = await chrome.client.send('Page.captureScreenshot', { format: 'png' }, sid)
-        writeFileSync(`out/${name}-${time}s.png`, Buffer.from(data, 'base64'))
+        writeFileSync(`out/${name}-${time}s.png`, Buffer.from(data, 'base64'), { flag: 'wx' })
         if (!rows.some(row => row.visible)) throw new Error('No projected label visible at ' + time + 's; rows=' + rows.length)
         console.log(time + 's label snapshot', rows.length, contentHash)
       }

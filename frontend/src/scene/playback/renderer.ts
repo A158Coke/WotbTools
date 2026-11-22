@@ -45,6 +45,14 @@ export interface RendererCaps {
   stencil: boolean
 }
 
+export function createPlaybackSceneRoot(): Scene {
+  const scene = new THREE.Scene();
+  // The root stays at identity. Explicitly update its matrix if that contract changes.
+  scene.updateMatrix();
+  scene.matrixAutoUpdate = false;
+  return scene;
+}
+
 /** 软件光栅检测（一次性探针上下文，仅在主渲染器创建前调用一次）：
  *  只认 UNMASKED 渲染器串里的真软件光栅器（SwiftShader / llvmpipe / softpipe）。
  *  ⚠️ 无 WEBGL_debug_renderer_info 扩展时的 MASKED 串（"WebKit WebGL"）**不是**
@@ -104,7 +112,7 @@ export function createSceneCore({
   envTexture = null, envMultiplier = 1,
   onResize, onPointerDown, onPointerUp, setFollow,
 }: SceneCoreOptions): SceneCore {
-  const scene = new THREE.Scene();
+  const scene = createPlaybackSceneRoot();
   scene.background = new THREE.Color(0x11161d);
   if (DEBUG) window.__scene = scene;   // 诊断钩子（仅显式 ?debug，destroy 时清除）
   // SPA 壳内渲染：视口尺寸取容器（main 区域），而非整窗（顶部导航占 67px）

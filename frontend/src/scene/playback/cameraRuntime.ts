@@ -104,6 +104,7 @@ export interface RecorderReticleLike {
 export interface CameraRuntimeDeps {
   store: CameraRuntimeStore
   container: HTMLElement
+  getViewportSize(): { x: number; y: number }
   /** ?debug 诊断（[fly] 埋点走 console.info）。 */
   debug: boolean
   /** 相机（宿主渲染器核心 owner；相机域入口都在 initScene 之后，非空）。 */
@@ -1017,11 +1018,11 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     return out.set(-sample.rayX, sample.rayY, sample.rayZ);
   }
   /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
-  function projectToStage(point: THREE.Vector3, out: CameraVec3): CameraVec3 | null {
+  function projectToStage(point: THREE.Vector3, out: CameraVec3, width: number, height: number): CameraVec3 | null {
     point.project(deps.getCamera());
     if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
-    out.x = (point.x + 1) * container.clientWidth / 2;
-    out.y = (1 - point.y) * container.clientHeight / 2;
+    out.x = (point.x + 1) * width / 2;
+    out.y = (1 - point.y) * height / 2;
     return out;
   }
   /**
@@ -1040,11 +1041,12 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     recorderAimPoint(sample, _recorderRay);
     const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
-    const aim = projectToStage(_recorderRay, _reticleAim);
-    const gun = projectToStage(_recorderGun, _reticleGun);
+    const { x: width, y: height } = deps.getViewportSize();
+    const aim = projectToStage(_recorderRay, _reticleAim, width, height);
+    const gun = projectToStage(_recorderGun, _reticleGun, width, height);
     if (!aim && !gun) { deps.recorderReticle.hide(); return; }
     deps.recorderReticle.update(aim, gun, reticleRadiusPx({
-      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
+      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: height,
     }));
   }
   // ---------- Sniper 穿深着色 ----------
