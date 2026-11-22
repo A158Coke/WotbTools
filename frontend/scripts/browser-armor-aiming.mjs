@@ -135,6 +135,22 @@ try {
     const el = document.getElementById('traj-info');
     return { visible: !!el && el.style.display !== 'none', text: (el && el.textContent || '').slice(0, 60) };
   })()`)
+  // 判定本身是同步的，但结果卡要等下一帧把 display/innerHTML 落盘；CI 软件 WebGL 下单帧可能
+  // 超过 mouseTap 的 250ms 固定等待。判定计数已经增加时不能把「卡片还没画出来」误报成
+  // 「没有在屏结论」——这里只等待渲染完成，仍然要求卡片真的可见且有文本。
+  const waitShotPanel = async (timeout = 5000) => {
+    try {
+      return await page.waitForValue(`(() => {
+        const panel = (() => {
+          const el = document.getElementById('traj-info');
+          return { visible: !!el && el.style.display !== 'none', text: (el && el.textContent || '').slice(0, 60) };
+        })();
+        return panel.visible && panel.text.trim() ? panel : null;
+      })()`, (value) => value !== null, { timeout, label: 'shot result panel' })
+    } catch {
+      return shotPanel()
+    }
+  }
 
   /**
    * 「仅间隙甲命中」像素：射线首命中是间隙甲，且整条射线不含任何主装甲板
@@ -270,7 +286,7 @@ try {
       check(false, '未找到「仅间隙甲命中」的像素（夹具屏幕板 turret_01_armor_2 / 机位异常）')
     } else {
       await mouseTap(spots.hull)   // 前置：先留下一个在屏结论，确保「不显示」不是「本来就没有」
-      const before = await shotPanel()
+      const before = await waitShotPanel()
       check(before.visible === true, `屏幕场景前置：车体短按留下在屏结论（"${before.text.trim().slice(0, 24)}"）`)
       const n0 = await readJudgments()
       await mouseTap(spot)
