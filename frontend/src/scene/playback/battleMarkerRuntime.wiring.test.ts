@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 // battleMarkerRuntime 接线与帧行为单测：attack_enemy 账号联册、生产接线守卫、
 // 指令时刻 sender 解析，以及暂停按需重绘的标记帧顺序（恢复合并时删除的
 // playbackSceneP3.markerFrame 行为回归——不是源码字符串断言）。
@@ -6,6 +7,7 @@ import * as THREE from 'three'
 import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
 import { resolveActiveAccount, resolveActiveSender } from './battleMarkerHost.js'
 import { createMarkerRuntime } from './markerRuntime.js'
+import { createLabelsRuntime } from './labelsRuntime.js'
 import { installRenderLoop } from './renderLoop.js'
 import { makeHarness } from './battleMarkerRuntime.test.harness.js'
 
@@ -68,7 +70,7 @@ describe('resolveActiveSender（指令时刻在场解析）', () => {
 })
 
 // 历史 playbackSceneP3.markerFrame.test.ts 在合并时被删除；这里用真实 renderLoop +
-// 真实 markerRuntime + labels.updateLabels 观察点恢复行为级回归（不是源码字符串断言）：
+// 真实 markerRuntime + 真实 labelsRuntime（覆盖层只做观察桩）恢复行为级回归：
 // 暂停态按需重绘必须先重算标记，再做来源卡投影；位姿迟到/缺失同帧生效；空闲不再重绘。
 describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回归）', () => {
   afterEach(() => {
@@ -107,7 +109,59 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     }
     markerRuntime.buildSession(data, null)
 
-    const snapshots: Array<{ x: number | null; visible: boolean | null; sources: number }> = []
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 600 })
+    const camera = new THREE.PerspectiveCamera(50, 800 / 600, 0.1, 5000)
+    camera.position.set(0, 60, 90)
+    camera.lookAt(0, 3, 0)
+
+    const anchorCalls: Array<{ key: string; x: number; visible: boolean }> = []
+    const labelRows: unknown[] = []
+    const overlay = {
+      setLabels: () => {},
+      setAnchor: () => {},
+      clear: () => {},
+      setMarkerLabels: (rows: unknown) => { labelRows.push(rows) },
+      setMarkerAnchor: (key: string, anchor: unknown) => {
+        const a = anchor as { x: number; visible: boolean }
+        anchorCalls.push({ key, x: a.x, visible: a.visible })
+      },
+    }
+    const store = {
+      mapReady: true, hasData: true, fps: 0, frameMs: 0, framePeakMs: 0,
+      labelsOn: true, lastKnownOn: false,
+      killfeed: [], scoreFriend: 0, scoreEnemy: 0, friendlyTeam: 1,
+      roster: { team1: [], team2: [], unknown: [] },
+    }
+    const labelsData = { ...data, meta: { friendly_team: 1 }, kills: [], vehicles: [] }
+    const labels = createLabelsRuntime({
+      store,
+      container,
+      getCamera: () => camera,
+      getRaycaster: () => new THREE.Raycaster(),
+      getData: () => labelsData,
+      getT: () => state.T,
+      getVehicles: () => [],
+      getSessionGen: () => 0,
+      getFollowEid: () => null,
+      deathAt: () => false,
+      hpAt: () => 0,
+      visibleAt: () => false,
+      visByEid: () => new Map(),
+      scopedHiddenEid: () => 0,
+      sampleHeight: () => 0,
+      heightField: () => null,
+      heightMeta: () => null,
+      mapScenery: () => null,
+      occlGrid: () => null,
+      transients: { ghostOf: () => undefined, hasFlash: () => false },
+      fxScale: () => 1,
+      getLabelOverlay: () => overlay,
+      getMarkerLabelSources: () => markerRuntime.labelSources(),
+      canonicalVehicles: () => [],
+      invalidate: () => {},
+    })
     const render = vi.fn()
     const S = {
       destroyed: false,
@@ -121,9 +175,9 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
       END: 300,
       SPEED: 1,
       scene: new THREE.Scene(),
-      camera: new THREE.PerspectiveCamera(),
+      camera,
       controls: { update: () => false, target: new THREE.Vector3(), enabled: true, minDistance: 0 },
-      store: { mapReady: true, hasData: true, fps: 0, frameMs: 0, framePeakMs: 0 },
+      store,
       mapWorld: { animLayerMats: () => [], tickDynamicLights: () => {}, destruct: () => null, maybeRebuildTerrainLod: () => {} },
       cameraRuntime: {
         cam: () => 'free', cameraDriven: () => false, cameraBlend: () => false, fovRestore: () => false,
@@ -131,24 +185,14 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
       },
       clampOrbitCameraToTerrain: () => {},
       clampCameraTarget: () => {},
-      labels: {
-        updateLabels: vi.fn(() => {
-          const ring = markerScene.children.find((o) => o instanceof THREE.Mesh)
-          snapshots.push({
-            x: ring?.geometry.boundingSphere?.center.x ?? null,
-            visible: ring?.visible ?? null,
-            sources: markerRuntime.labelSources().length,
-          })
-        }),
-        updateScore: vi.fn(),
-      },
+      labels,
       updateBases: vi.fn(),
       battle: { isActive: () => false, transients: { updateNow: () => {} }, updateBattleFx: () => {}, advanceWreckClock: () => {} },
       battleMarkers: markerRuntime,
       vehicles: { frameTiming: () => {}, getVehicles: () => [] },
       session: { isReadySession: () => false, tryMarkFirstReadyFrame: () => {} },
       waterReflection: { update: () => {} },
-      container: { clientWidth: 800, clientHeight: 600 },
+      container,
       DEBUG: false,
       PERF: false,
     }
@@ -158,24 +202,38 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     const animate = () => (host as unknown as { animate: () => void }).animate()
     const setDirty = (dirty: boolean) => { (host as unknown as { frameDirty: boolean }).frameDirty = dirty }
 
+    const ring = () => markerScene.children.find((o): o is THREE.Mesh => o instanceof THREE.Mesh)!
+    const lastTargetAnchor = () => anchorCalls.filter((a) => a.key === '0').at(-1)!
+
     setDirty(true)
     animate()
-    expect(snapshots).toEqual([{ x: 1, visible: true, sources: 1 }])
+    expect(ring().visible).toBe(true)
+    expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(1, 5)
+    const firstX = lastTargetAnchor().x
+    expect(lastTargetAnchor().visible).toBe(true)
+    expect(labelRows.at(-1)).toMatchObject([{ key: '0', kind: 'target', target: 'BZT-70' }])
 
     poses.set(42, { x: 40, z: 2 })
     setDirty(true)
     animate()
-    expect(snapshots[1]).toEqual({ x: 40, visible: true, sources: 1 })
+    expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(40, 5)
+    // 真实 labelsRuntime 投影：来源卡与目标环同一帧跟随新位姿（不是只验 marker 本体）。
+    expect(lastTargetAnchor().x).not.toBeCloseTo(firstX, 3)
+    expect(lastTargetAnchor().visible).toBe(true)
+    expect(labelRows.at(-1)).toMatchObject([{ key: '0', kind: 'target' }])
 
     poses.set(42, null)
     setDirty(true)
     animate()
-    expect(snapshots[2]).toEqual({ x: 40, visible: false, sources: 0 })
+    expect(ring().visible).toBe(false)
+    expect(labelRows.at(-1)).toEqual([])
+    const anchorsBeforeIdle = anchorCalls.length
+    const rendersBeforeIdle = render.mock.calls.length
 
     // 空闲帧（无脏标记、无在飞特效）不得再投影标签或重绘。
     animate()
     animate()
-    expect(snapshots).toHaveLength(3)
-    expect(render).toHaveBeenCalledTimes(3)
+    expect(anchorCalls.length).toBe(anchorsBeforeIdle)
+    expect(render).toHaveBeenCalledTimes(rendersBeforeIdle)
   })
 })
