@@ -361,13 +361,16 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(heatmapPass.replace('rcUniforms.rcClipEnabled.value = true;', '')).not.toMatch(/rcUniforms\.rcClipEnabled\.value = true;/)
     expect(kernel).toMatch(/return \{[\s\S]*?destroy(?:: destroy)?, retry(?:: retry)?, canPick: \(\) => dl\.canPick\(\), isContextLost(?:: isContextLost)?,/)
     for (const api of [
-      /setConfig: (?:\(\.\.\.a\) => dl\.applyConfig\(\.\.\.a\)|bind\(dl, dl\.applyConfig\))/,
-      /setConfigUiVisible: (?:\(\.\.\.a\) => dl\.setConfigUiVisible\(\.\.\.a\)|bind\(dl, dl\.setConfigUiVisible\))/,
-      /setShellUiVisible: (?:\(\.\.\.a\) => dl\.setShellUiVisible\(\.\.\.a\)|bind\(dl, dl\.setShellUiVisible\))/,
+      /setConfig: (?:\(idx(?:: number)?\) => dl\.applyConfig\(idx\)|\(\.\.\.a\) => dl\.applyConfig\(\.\.\.a\))/,
+      /setConfigUiVisible: (?:\(visible(?:: boolean)?\) => dl\.setConfigUiVisible\(visible\)|\(\.\.\.a\) => dl\.setConfigUiVisible\(\.\.\.a\))/,
+      /setShellUiVisible: (?:\(visible(?:: boolean)?\) => dl\.setShellUiVisible\(visible\)|\(\.\.\.a\) => dl\.setShellUiVisible\(\.\.\.a\))/,
       /setShell: /, /setShooterConfig: /, /setEquipmentOverride: /,
     ]) {
       expect(kernel).toMatch(api)
     }
+    // 闭包 API 不得套 host-first 的 bind：bind(dl, dl.x) 会把 dl 当成第一个实参。
+    expect(kernel).not.toMatch(/set(?:ShellUi|ConfigUi)?Visible: bind\(dl,/)
+    expect(kernel).not.toMatch(/setConfig: bind\(dl,/)
     // 强化装甲的厚度系数与判定模式无关：setEquipmentOverride → 统一刷新，且刷新在
     // “penetrationMode/叠加层机械” 早退之前就写入 uniform（否则装甲检视模式里开关不生效；
     // 默认视图 HE 渐变机械存在时同样要刷新，2026-10-30）。
