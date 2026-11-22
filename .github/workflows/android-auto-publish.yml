@@ -48,10 +48,13 @@ jobs:
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the staged source commit
+      # 解析器必须来自本次执行的工作流版本。触发 stage 的源码提交可能早于解析器
+      # 被引入（拆分前的 run 只有裸 'stage'），从那里读脚本会在解析 JSON 前就退出。
+      # 候选版本仍从触发 stage 的不可变提交读取，见下面的 staged source checkout。
+      - name: Checkout the release automation version
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 1
 
       - name: Verify triggering stage job succeeded
@@ -69,6 +72,12 @@ jobs:
             exit 1
           fi
           echo "Verified stage success for Release / Android run $RUN_ID."
+
+      - name: Checkout the staged source commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
 
       - name: Resolve immutable staged version
         id: version

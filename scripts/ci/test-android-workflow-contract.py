@@ -157,8 +157,16 @@ def main(root: Path) -> None:
     assert "stage_job_conclusion.py" in verify_run, "auto-publish must resolve the stage job through the shared parser"
     assert 'select(.name == "stage")' not in verify_run, "auto-publish must accept the reusable 'stage / stage' job name"
     auto_index = {step.get("name"): index for index, step in enumerate(auto_steps)}
-    assert auto_index["Checkout the staged source commit"] < auto_index["Verify triggering stage job succeeded"], \
-        "the parser must be checked out before it is executed"
+    automation = auto_steps[auto_index["Checkout the release automation version"]]
+    automation_ref = (automation.get("with") or {}).get("ref", "")
+    assert "github.workflow_sha" in automation_ref, \
+        "auto-publish must execute the parser from the workflow version that is running"
+    assert "workflow_run.head_sha" not in automation_ref, \
+        "the staged source commit may predate the parser and must not supply it"
+    assert auto_index["Checkout the release automation version"] < auto_index["Verify triggering stage job succeeded"], \
+        "the running workflow sources must be checked out before the parser is executed"
+    assert auto_index["Verify triggering stage job succeeded"] < auto_index["Checkout the staged source commit"], \
+        "the staged source checkout must follow stage verification and only supply the candidate"
 
     top_env = caller.get("env", {})
     assert top_env, "android release must keep the top-level env block"

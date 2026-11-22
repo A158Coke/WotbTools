@@ -38,4 +38,19 @@ expect_reject '{"jobs":[]}'
 expect_reject '{}'
 expect_reject 'not-json'
 
+# auto-publish 从「执行中的工作流版本」运行解析器，候选则来自触发 stage 的旧提交。
+# 旧提交可能早于解析器存在（拆分前的 run），所以 staged source 目录里没有脚本是合法的。
+old_source="$(mktemp -d)"
+workflow_source="$(mktemp -d)"
+trap 'rm -rf "$old_source" "$workflow_source"' EXIT
+mkdir -p "$old_source/android" "$workflow_source/scripts/android-release"
+printf 'wotbVersion=1.2.3\n' > "$old_source/android/gradle.properties"
+cp "$SCRIPT" "$workflow_source/scripts/android-release/stage_job_conclusion.py"
+actual="$(cd "$old_source" && printf '%s' '{"jobs":[{"name":"stage","conclusion":"success"}]}' \
+  | python3 "$workflow_source/scripts/android-release/stage_job_conclusion.py")" \
+  || fail "resolver from the workflow version failed while the staged source predates it"
+[ "$actual" = success ] || fail "resolver from workflow version returned '$actual' for a legacy staged source"
+[ ! -e "$old_source/scripts/android-release/stage_job_conclusion.py" ] \
+  || fail "legacy staged source unexpectedly contains the resolver; fixture does not cover the regression"
+
 echo "Android auto-publish stage identity: PASS"
