@@ -146,6 +146,8 @@ vi.mock('./battleFx.ts', async (importOriginal) => {
 
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 
+import { PLAYBACK_SCENE_SOURCE } from './playbackScene.test.source.js'
+
 import { buildGroundGeometry } from './groundPass.js'
 
 import { ANNOTATION_LIFT } from './playback/annotation3d.js'
@@ -915,5 +917,38 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
     api.setContactShadows(true)
     await api.loadMapOnly({ mapId: 1 })
     expect(shadowMeshes()).toHaveLength(0)
+  })
+})
+
+// 战场标记迟到数据重算（评审 P2）：暂停期间迟到的回放数据（canonical 位姿/名册重建、
+// markers/chat 晚到）只驱动按需重绘帧、不触发 tick —— 帧体必须在非播放态重算
+// battleMarkers（update(T) 幂等），否则攻击目标环停在迟到数据前的旧位姿。
+// 由 playbackScene.annotation.test.js 迁移：只保留主文件没有的新增用例。
+describe('playbackScene 战场标记迟到数据重算（源码守卫）', () => {
+  it('按需重绘帧在非播放态重算 battleMarkers；tick 的逐帧更新保留', () => {
+    expect(PLAYBACK_SCENE_SOURCE).toContain('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);')
+    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers?.update(S.T);   // 战场快捷标记：回放时钟窗口状态（tick/seekTo 共用）')
+  })
+  it('重算必须先于来源卡投影（labels.updateLabels）——否则卡停在旧屏幕坐标（评审 P2）', () => {
+    const markerAt = PLAYBACK_SCENE_SOURCE.indexOf('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);')
+    const labelsAt = PLAYBACK_SCENE_SOURCE.indexOf('S.labels.updateLabels();', markerAt)
+    expect(markerAt).toBeGreaterThan(-1)
+    expect(labelsAt).toBeGreaterThan(markerAt)
+  })
+})
+
+describe('playbackScene 装配顺序（晚绑定依赖）', () => {
+  it('markerRuntime.invalidate 在完整装配后可调用：首个标记生成不抛 TypeError', async () => {
+    stubFrames()
+    const { api } = createScene()
+    const data = minimalData(42)
+    source.loadPlaybackData.mockResolvedValue({
+      ...data,
+      meta: { ...data.meta, duration: 300, samples: 1 },
+      markers: [{ t: 42.5, marker_type: 1, at: [10, 0, 10] }],
+    })
+    await api.loadData({ kind: 'local', file: new File(['x'], 'marker.wiring.wotbreplay') })
+    api.setPlaying(false)
+    expect(() => api.seekTime(43)).not.toThrow()
   })
 })

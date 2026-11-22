@@ -60,7 +60,10 @@ describe('lastKnown 接线 guard（源码级）', () => {
     const pane = read('../../components/Replay3DPane.vue')
     expect(pane).toMatch(/disp-last-known/)
     expect(pane).toMatch(/replay3d-visibility-note/)
-    expect(read('../../components/useReplay3DPaneCore.ts')).toMatch(/lastKnown: lastKnownPrefs\.showLastKnown/)
+    // 守卫跟随实际装配：Replay3DPane 执行 r3dB，依赖实参在 replay3dPaneB.pushLabelPrefs。
+    expect(pane).toContain("import { r3dB } from './replay3dPaneB.js'")
+    expect(pane).toMatch(/r3dB\(S, props\)/)
+    expect(read('../../components/replay3dPaneB.ts')).toMatch(/lastKnown: S\.lastKnownPrefs\.showLastKnown/)
     // 幽灵名牌的「最后已知」标记文案随 locale 下发（组件本身无 i18n）
     expect(pane).toMatch(/last-known-label="t\('agentReplay\.label_last_known'\)"/)
   })
