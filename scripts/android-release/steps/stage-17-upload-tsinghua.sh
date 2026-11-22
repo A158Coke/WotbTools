@@ -18,21 +18,48 @@ UPLOAD_ATTEMPTS=3
 VERIFY_ATTEMPTS=5
 VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
-# Absolute budget for this stage. The android-stage job allows 120 minutes and
-# this step runs near its end; 60 minutes leaves room for the other steps and
-# for the fail-closed diagnostics instead of letting the job timeout kill the
-# process. Every HTTP operation is capped by the remaining budget.
+# Budget for this stage. The android-stage job allows 120 minutes and this
+# step runs near its end. The workflow records the job start epoch immediately
+# after checkout; use the job's remaining time (minus a reserve for later
+# steps) as a hard ceiling, and never spend more than the stage's own budget.
+# Checkout time is not counted and is covered by the post-stage reserve.
+# Every HTTP operation is capped by the remaining effective budget.
 STAGE_BUDGET_SECONDS="${TSINGHUA_UPLOAD_BUDGET_SECONDS:-3600}"
 case "$STAGE_BUDGET_SECONDS" in
   ''|*[!0-9]*) echo "::error::TSINGHUA_UPLOAD_BUDGET_SECONDS must be a non-negative integer; release gate remains closed." >&2; exit 1 ;;
 esac
 STAGE_BUDGET_SECONDS=$((10#$STAGE_BUDGET_SECONDS))
+JOB_TIMEOUT_SECONDS="${JOB_TIMEOUT_SECONDS:-7200}"
+POST_STAGE_RESERVE_SECONDS="${POST_STAGE_RESERVE_SECONDS:-900}"
+case "$JOB_TIMEOUT_SECONDS" in
+  ''|*[!0-9]*) echo "::error::JOB_TIMEOUT_SECONDS must be a non-negative integer; release gate remains closed." >&2; exit 1 ;;
+esac
+case "$POST_STAGE_RESERVE_SECONDS" in
+  ''|*[!0-9]*) echo "::error::POST_STAGE_RESERVE_SECONDS must be a non-negative integer; release gate remains closed." >&2; exit 1 ;;
+esac
+JOB_TIMEOUT_SECONDS=$((10#$JOB_TIMEOUT_SECONDS))
+POST_STAGE_RESERVE_SECONDS=$((10#$POST_STAGE_RESERVE_SECONDS))
+if [ -n "${JOB_START_EPOCH:-}" ]; then
+  case "$JOB_START_EPOCH" in
+    ''|*[!0-9]*) echo "::error::JOB_START_EPOCH must be epoch seconds; release gate remains closed." >&2; exit 1 ;;
+  esac
+  JOB_START_EPOCH=$((10#$JOB_START_EPOCH))
+  JOB_ELAPSED=$(( $(date +%s) - JOB_START_EPOCH ))
+  if [ "$JOB_ELAPSED" -lt 0 ]; then JOB_ELAPSED=0; fi
+  JOB_REMAINING=$((JOB_TIMEOUT_SECONDS - JOB_ELAPSED - POST_STAGE_RESERVE_SECONDS))
+  if [ "$JOB_REMAINING" -lt 0 ]; then JOB_REMAINING=0; fi
+  if [ "$JOB_REMAINING" -lt "$STAGE_BUDGET_SECONDS" ]; then
+    echo "Job budget: ${JOB_REMAINING}s remaining after ${JOB_ELAPSED}s elapsed and ${POST_STAGE_RESERVE_SECONDS}s reserve; capping stage budget from ${STAGE_BUDGET_SECONDS}s to ${JOB_REMAINING}s."
+    STAGE_BUDGET_SECONDS="$JOB_REMAINING"
+  fi
+fi
 STAGE_DEADLINE_AT=$((SECONDS + STAGE_BUDGET_SECONDS))
 WORK="$RUNNER_TEMP/thu-upload"
 mkdir -p "$WORK"
 : > "$WORK/upload-body.txt"
 : > "$WORK/upload-curl.err"
 : > "$WORK/probe-curl.err"
+: > "$WORK/probe-sha.err"
 
 budget_remaining() {
   local remaining=$((STAGE_DEADLINE_AT - SECONDS))
@@ -86,7 +113,7 @@ PROBE_OUTCOME=""
 #   unconfirmed  - transport error, empty HTTP 200, or HTTP 403/429/5xx:
 #                  retry reads only
 probe_remote() {
-  local label="$1" diag actual max_time
+  local label="$1" diag actual max_time sha_rc=0 sha_out
   PROBE_RC=0
   PROBE_HTTP=000
   PROBE_BYTES=0
@@ -125,7 +152,26 @@ probe_remote() {
     echo "  $label: HTTP 200 but the response body is empty; this is not proof the object is absent; remote state is unconfirmed."
     return 1
   fi
-  actual="$(sha256sum "$WORK/probe.apk" | awk '{print $1}')"
+  sha_rc=0
+  sha_out="$(sha256sum "$WORK/probe.apk" 2> "$WORK/probe-sha.err")" || sha_rc=$?
+  if [ "$sha_rc" -ne 0 ]; then
+    PROBE_OUTCOME="unconfirmed"
+    echo "  $label: local SHA-256 calculation failed (sha256sum rc=$sha_rc); remote state is unconfirmed; refusing to overwrite."
+    return 1
+  fi
+  actual="${sha_out%% *}"
+  if [ "${#actual}" -ne 64 ]; then
+    PROBE_OUTCOME="unconfirmed"
+    echo "  $label: local SHA-256 output is malformed; remote state is unconfirmed; refusing to overwrite."
+    return 1
+  fi
+  case "$actual" in
+    *[!0-9a-f]*)
+      PROBE_OUTCOME="unconfirmed"
+      echo "  $label: local SHA-256 output is malformed; remote state is unconfirmed; refusing to overwrite."
+      return 1
+      ;;
+  esac
   if [ "$actual" = "$EXPECTED_SHA" ]; then
     PROBE_OUTCOME="match"
     echo "  $label: HTTP 200, ${PROBE_BYTES}B, SHA-256 matches expected."
@@ -189,31 +235,47 @@ confirm_remote() {
 ULINK=""
 ULINK_RAW=""
 fetch_upload_link() {
-  local attempt=1 rc=0 jq_rc=0 delay max_time
+  local attempt=1 rc=0 jq_rc=0 delay max_time error_class
+  local http_code=000 body_bytes=0 err_bytes=0 last_http=000 last_jq_rc=0
   ULINK=""
   while [ "$attempt" -le "$UPLOAD_LINK_ATTEMPTS" ]; do
     rc=0
     jq_rc=0
+    http_code=000
+    body_bytes=0
+    err_bytes=0
     require_budget "upload-link request"
     max_time="$REMAINING_BUDGET"
     if [ "$max_time" -gt 60 ]; then max_time=60; fi
+    : > "$WORK/upload-link.json"
     : > "$WORK/upload-link.err"
     : > "$WORK/upload-link-jq.err"
-    ULINK_RAW="$(curl -fsS --connect-timeout 10 --max-time "$max_time" \
-      --stderr "$WORK/upload-link.err" \
+    http_code="$(curl -fsS --connect-timeout 10 --max-time "$max_time" \
+      --stderr "$WORK/upload-link.err" -o "$WORK/upload-link.json" -w '%{http_code}' \
       -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "$UPLOAD_LINK_API")" || rc=$?
+    http_code="${http_code:-000}"
+    if [ -f "$WORK/upload-link.json" ]; then
+      body_bytes="$(wc -c < "$WORK/upload-link.json" | tr -d ' ')"
+    fi
     if [ "$rc" -eq 0 ]; then
+      ULINK_RAW="$(cat "$WORK/upload-link.json")"
       ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.' 2> "$WORK/upload-link-jq.err")" || jq_rc=$?
       case "$ULINK" in
         https://*)
-          echo "Tsinghua upload-link acquired on attempt $attempt/$UPLOAD_LINK_ATTEMPTS."
+          echo "Tsinghua upload-link acquired on attempt $attempt/$UPLOAD_LINK_ATTEMPTS (HTTP $http_code, body=${body_bytes}B)."
           return 0
           ;;
       esac
-      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS returned an invalid URL (jq rc=$jq_rc, jq error: $(bounded_file "$WORK/upload-link-jq.err")); response body: <withheld; ${#ULINK_RAW} chars>"
+      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS returned an invalid URL (jq rc=$jq_rc, HTTP $http_code); response body: <withheld; ${body_bytes}B>"
     else
-      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS failed (curl rc=$rc): $(bounded_file "$WORK/upload-link.err")"
+      if [ -f "$WORK/upload-link.err" ]; then
+        err_bytes="$(wc -c < "$WORK/upload-link.err" | tr -d ' ')"
+      fi
+      if [ "$http_code" = "000" ]; then error_class="transport"; else error_class="HTTP"; fi
+      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS failed (curl rc=$rc) (HTTP $http_code, error_class=$error_class); stderr bytes=${err_bytes}; response body: <withheld; ${body_bytes}B>"
     fi
+    last_http="$http_code"
+    last_jq_rc="$jq_rc"
     if [ "$attempt" -lt "$UPLOAD_LINK_ATTEMPTS" ]; then
       delay=$((UPLOAD_LINK_RETRY_DELAY * attempt))
       echo "  Retrying upload-link in ${delay}s."
@@ -221,7 +283,7 @@ fetch_upload_link() {
     fi
     attempt=$((attempt + 1))
   done
-  echo "::error::Tsinghua upload-link request failed after $UPLOAD_LINK_ATTEMPTS attempt(s) (last curl rc=$rc, jq rc=$jq_rc); release gate remains closed." >&2
+  echo "::error::Tsinghua upload-link request failed after $UPLOAD_LINK_ATTEMPTS attempt(s) (last curl rc=$rc, HTTP $last_http, jq rc=$last_jq_rc); release gate remains closed." >&2
   return 1
 }
 
@@ -237,7 +299,7 @@ UPLOAD_SPEED=0
 # errors can hide a completed write. The response body is not printed because
 # it comes from an authenticated endpoint; only its size is logged.
 upload_once() {
-  local attempt="$1" diag body_bytes max_time
+  local attempt="$1" diag body_bytes max_time err_bytes=0
   UPLOAD_RC=0
   UPLOAD_HTTP=000
   UPLOAD_UPBYTES=0
@@ -265,7 +327,10 @@ upload_once() {
   echo "Tsinghua upload attempt $attempt/$UPLOAD_ATTEMPTS: curl rc=$UPLOAD_RC, HTTP $UPLOAD_HTTP, uploaded=${UPLOAD_UPBYTES}B, time=${UPLOAD_SECONDS}s, speed=${UPLOAD_SPEED}B/s"
   echo "  response body: <withheld; ${body_bytes}B>"
   if [ "$UPLOAD_RC" -ne 0 ]; then
-    echo "  curl error: $(bounded_file "$WORK/upload-curl.err")"
+    if [ -f "$WORK/upload-curl.err" ]; then
+      err_bytes="$(wc -c < "$WORK/upload-curl.err" | tr -d ' ')"
+    fi
+    echo "  curl error class=transport (stderr bytes=${err_bytes}); HTTP status and transfer metrics are reported above."
   fi
 }
 

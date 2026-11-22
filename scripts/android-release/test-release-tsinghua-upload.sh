@@ -19,12 +19,34 @@ LAST_RC=0
 printf 'wotbtools android fixture apk\n' > "$TMP/expected.apk"
 printf 'wrong android fixture apk\n' > "$TMP/wrong.apk"
 EXPECTED="$(sha256sum "$TMP/expected.apk" | cut -d' ' -f1)"
+REAL_SHA256="$(command -v sha256sum)"
+REAL_DATE="$(command -v date)"
 
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/sleep" <<'MOCK_SLEEP'
 #!/usr/bin/env bash
 exit 0
 MOCK_SLEEP
+cat > "$TMP/bin/sha256sum" <<'MOCK_SHA256'
+#!/usr/bin/env bash
+if [ "${MOCK_SHA256_FAIL:-}" = "1" ]; then
+  echo "mock sha256sum failure" >&2
+  exit 1
+fi
+if [ "${MOCK_SHA256_MALFORMED:-}" = "1" ]; then
+  printf 'not-a-64-char-digest  %s\n' "${1:-mock.apk}"
+  exit 0
+fi
+exec "${REAL_SHA256:?}" "$@"
+MOCK_SHA256
+cat > "$TMP/bin/date" <<'MOCK_DATE'
+#!/usr/bin/env bash
+if [ "${1:-}" = "+%s" ] && [ -n "${MOCK_NOW:-}" ]; then
+  printf '%s\n' "$MOCK_NOW"
+  exit 0
+fi
+exec "${REAL_DATE:?}" "$@"
+MOCK_DATE
 cat > "$TMP/bin/curl" <<'MOCK_CURL'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -72,7 +94,8 @@ case "$url" in
     action="${action:-ok}"
     case "$action" in
       ok)
-        printf '%s\n' '"https://upload.example/signed?token=SIGNED-SECRET&expires=1"'
+        write_body '"https://upload.example/signed?token=SIGNED-SECRET&expires=1"'
+        printf '200'
         exit 0
         ;;
       reset)
@@ -80,11 +103,14 @@ case "$url" in
         exit 56
         ;;
       http500)
-        write_err 'curl: (22) The requested URL returned error: 500'
+        write_body 'AUTH_LINK_SECRET'
+        write_err 'AUTH_ERR_SECRET curl: (22) The requested URL returned error: 500'
+        printf '500'
         exit 22
         ;;
       invalid)
-        printf '%s\n' '"not-a-url?token=SIGNED-SECRET&expires=1"'
+        write_body '"not-a-url?token=SIGNED-SECRET&expires=1"'
+        printf '200'
         exit 0
         ;;
       *)
@@ -207,7 +233,7 @@ case "$url" in
     ;;
 esac
 MOCK_CURL
-chmod +x "$TMP/bin/curl" "$TMP/bin/sleep"
+chmod +x "$TMP/bin/curl" "$TMP/bin/sleep" "$TMP/bin/sha256sum" "$TMP/bin/date"
 
 die() {
   echo "FAIL [$CASE_NAME]: $*" >&2
@@ -252,6 +278,12 @@ init_case() {
   cp "$TMP/expected.apk" "$CASE/expected.apk"
   cp "$TMP/wrong.apk" "$CASE/wrong.apk"
   CASE_BUDGET=""
+  CASE_SHA_FAIL=""
+  CASE_SHA_MALFORMED=""
+  CASE_NOW=""
+  CASE_JOB_START_EPOCH=""
+  CASE_JOB_TIMEOUT=""
+  CASE_JOB_RESERVE=""
   printf 'ok\n' > "$CASE/share_mode"
   : > "$CASE/share_actions"
   printf 'ok\n' > "$CASE/upload_link_actions"
@@ -275,6 +307,14 @@ run_stage() {
       STEP_ARTIFACT_SHA256="$EXPECTED" \
       TSINGHUA_CLOUD_TOKEN="$TOKEN" \
       TSINGHUA_UPLOAD_BUDGET_SECONDS="$CASE_BUDGET" \
+      MOCK_SHA256_FAIL="$CASE_SHA_FAIL" \
+      MOCK_SHA256_MALFORMED="$CASE_SHA_MALFORMED" \
+      MOCK_NOW="$CASE_NOW" \
+      REAL_SHA256="$REAL_SHA256" \
+      REAL_DATE="$REAL_DATE" \
+      JOB_START_EPOCH="$CASE_JOB_START_EPOCH" \
+      JOB_TIMEOUT_SECONDS="$CASE_JOB_TIMEOUT" \
+      POST_STAGE_RESERVE_SECONDS="$CASE_JOB_RESERVE" \
       bash "$STAGE_SCRIPT"
   ) > "$LOG" 2>&1
   LAST_RC=$?
@@ -535,8 +575,9 @@ case_diagnostics_bounded() {
   assert_contains "response body: <withheld"
   assert_not_contains "BODY_HEAD"
   assert_not_contains "BODY_TAIL"
-  assert_contains "ERR_HEAD"
-  assert_contains "<redacted-url>"
+  assert_contains "curl error class=transport (stderr bytes="
+  assert_not_contains "ERR_HEAD"
+  assert_not_contains "<redacted-url>"
   assert_not_contains "ERR_TAIL"
   assert_not_contains "ERR_TOKEN_SECRET"
   assert_not_contains "ERR_URL_SECRET"
@@ -589,9 +630,13 @@ case_upload_link_http_error() {
   assert_count upload-count 1
   assert_count probe-count 2
   assert_contains "upload-link attempt 1/3 failed (curl rc=22)"
+  assert_contains "HTTP 500"
+  assert_contains "response body: <withheld"
+  assert_not_contains "AUTH_LINK_SECRET"
+  assert_not_contains "AUTH_ERR_SECRET"
   assert_contains "upload-link acquired on attempt 2/3"
   assert_remote_sha
-  echo "PASS upload-link HTTP error retries and succeeds"
+  echo "PASS upload-link HTTP error retries without exposing the auth response"
 }
 
 case_content_mismatch_then_retry_success() {
@@ -691,6 +736,78 @@ case_budget_caps_operations() {
   echo "PASS per-operation timeouts are capped by the remaining budget"
 }
 
+case_local_hash_failure() {
+  init_case "local-hash-failure"
+  CASE_SHA_FAIL=1
+  set_share_actions fix fix fix fix fix
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 5
+  assert_contains "local SHA-256 calculation failed"
+  assert_contains "refusing to overwrite an unverified object"
+  assert_not_contains "sha_mismatch"
+  assert_curl_args_not_contains "-F replace=1"
+  assert_remote_sha
+  echo "PASS local SHA-256 failure is unconfirmed and never authorizes overwrite"
+}
+
+case_local_hash_malformed() {
+  init_case "local-hash-malformed"
+  CASE_SHA_MALFORMED=1
+  set_share_actions fix fix fix fix fix
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 5
+  assert_contains "local SHA-256 output is malformed"
+  assert_contains "refusing to overwrite an unverified object"
+  assert_not_contains "sha_mismatch"
+  assert_curl_args_not_contains "-F replace=1"
+  assert_remote_sha
+  echo "PASS malformed local SHA-256 output is unconfirmed and never authorizes overwrite"
+}
+
+case_job_budget_exhausted() {
+  init_case "job-budget-exhausted"
+  CASE_NOW=1000000000
+  CASE_JOB_START_EPOCH=$((CASE_NOW - 7000))
+  CASE_JOB_TIMEOUT=7200
+  CASE_JOB_RESERVE=900
+  set_actions ok
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 0
+  assert_contains "Job budget: 0s remaining"
+  assert_contains "capping stage budget from 3600s to 0s"
+  assert_contains "exhausted its 0s budget"
+  assert_contains "release gate remains closed"
+  echo "PASS already-consumed job time closes the stage budget before any HTTP operation"
+}
+
+case_job_budget_caps_operations() {
+  init_case "job-budget-caps"
+  CASE_NOW=1000000000
+  CASE_JOB_START_EPOCH=$((CASE_NOW - 6000))
+  CASE_JOB_TIMEOUT=7200
+  CASE_JOB_RESERVE=900
+  set_actions ok
+  run_stage
+  assert_rc 0
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_contains "capping stage budget from 3600s to 300s"
+  assert_curl_args_contains "--max-time 300"
+  assert_curl_args_not_contains "--max-time 900"
+  assert_curl_args_not_contains "--max-time 2700"
+  assert_remote_sha
+  echo "PASS remaining job time caps every HTTP operation"
+}
+
 case_upload_link_invalid_response() {
   init_case "upload-link-invalid"
   set_link_actions invalid ok
@@ -708,6 +825,22 @@ case_upload_link_invalid_response() {
   echo "PASS upload-link non-URL response is retried without logging the body"
 }
 
+case_record_job_start() {
+  CASE_NAME="record-job-start"
+  local envfile="$TMP/record-job-start.env" out="$TMP/record-job-start.log"
+  : > "$envfile"
+  if ! PATH="$TMP/bin:$PATH" GITHUB_ENV="$envfile" MOCK_NOW=1700000000 REAL_DATE="$REAL_DATE" \
+    bash "$ROOT_DIR/scripts/android-release/steps/stage-00-record-job-start.sh" > "$out" 2>&1; then
+    echo "FAIL [$CASE_NAME]: stage-00 failed" >&2
+    cat "$out" >&2
+    exit 1
+  fi
+  [ "$(cat "$envfile")" = "JOB_START_EPOCH=1700000000" ] \
+    || { echo "FAIL [$CASE_NAME]: env file was not written with the job start epoch" >&2; exit 1; }
+  echo "PASS stage-00 records the job start epoch"
+}
+
+case_record_job_start
 case_upload_link_retry
 case_upload_link_invalid_response
 case_upload_link_http_error
@@ -736,5 +869,9 @@ case_verify_curl_error
 case_diagnostics_bounded
 case_global_budget_exhausted
 case_budget_caps_operations
+case_local_hash_failure
+case_local_hash_malformed
+case_job_budget_exhausted
+case_job_budget_caps_operations
 
 echo "Tsinghua upload mocked matrix: PASS"
