@@ -1,0 +1,315 @@
+/* HUD 全部走语义 token（两档主题同一份规则，不再各写一套私有 palette）：
+   3D 场景本体（three.js 画的战场）不随主题变化，只有场景之上的应用 UI 跟随。 */
+.pb-pane { display: block; }
+
+/* 资产降级：顶部非阻塞提示（不挡播放/相机），与 Blocking 的 Scene3DStatus error 区分 */
+.asset-degraded {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: max-content;
+  max-inline-size: calc(100% - var(--space-6));
+  margin-inline: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  pointer-events: none;
+}
+
+.pb-note { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
+
+/**
+ * 三列工作区骨架（2D 与 3D 同一布局契约）：`[Team1] [Stage] [Team2]`。
+ *
+ * 横屏战场铺满中心可用宽高；名册关闭时横向扩展到整个工作区。
+ *
+ * 传输控件与 HUD 只占**中间一栏**（Stage 之上 / 之下），两条车道因此吃满整个根高度——
+ * 手机横屏（740×360、844×390）与全屏横屏下，正常 7v7 的紧凑行不需要车道滚动条。
+ */
+.pb-root.roster-side .roster-surface {
+  /* 车道悬浮面板的层级语义：表壳不占布局，车道由 workspace.css 的 absolute 规则定位。 */
+  display: contents;
+}
+
+.pb-root {
+  position: relative;
+  scroll-margin-block-start: calc(var(--header-h) + var(--space-3));
+  isolation: isolate;               /* 局部层叠上下文：HUD 只用 --pb-z-* 的 1–9 层 */
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  color: var(--color-text-primary);
+  font: var(--type-body);
+}
+.scene { position: absolute; inset: 0; z-index: var(--pb-z-canvas); }
+
+/**
+ * Stage 的工作区骨架（2D 与 3D 共用同一布局契约）。
+ *
+ * 3D 横屏占满中心可用宽高，竖屏保持正方形；相机比例随画布更新。
+ *
+ *   · `.pb-root` 全幅场景 + 悬浮面板（名册左上/右上、HUD 顶中、控件底部居中）；
+ *   · 名册面板宽度受 `--pb-roster-min` / clamp 控制，名册关闭时场景独占全幅；
+ *   · `.pb-stage` 里的 `.stage-square` 在横屏铺满中心可用宽高；竖屏保持正方形；
+ *     canvas（.scene）与名牌覆盖层共用这个盒子，因此两者同原点、同尺寸。
+ *
+ * 竖屏（手机）走另一套：见 `.portrait-flow` 的纵向流（HUD → Stage → Transport → 详情 → 名册）。
+ */
+
+.pb-stage {
+  display: grid;
+  place-items: center;
+  min-width: 0; min-height: 0;
+}
+/* 横屏画布占满中心；场景 ResizeObserver 同步相机比例，几何不拉伸。 */
+.stage-square {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  /* 悬浮布局：stage 直接铺满根（workspace.css 的 absolute inset:0）。 */
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.stage-square > .scene { flex: 1; }
+.stage-square > .scene { position: absolute; inset: 0; }
+.pb-stage { container-type: size; }
+
+/* 实时帧率角标（拖拽/飞行卡顿量化）：不拦截场景指针输入，隐藏全部 UI 时一起隐藏 */
+.pb-fps {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  z-index: var(--pb-z-hud);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface-1) 78%, transparent);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+/* 掉帧提示：<45 FPS 变琥珀色（颜色走 token，浅色档同样跟随） */
+.pb-fps-low { color: var(--color-warning); }
+
+/* HUD 面板外观（位置交给各自的容器规则，不再默认绝对定位） */
+.panel {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+}
+
+
+/* 待开播：半透明遮罩 + 居中卡片（画质档位 + 开始）；点开始才解析 + 拉资产。
+   层级用 --pb-z-scrim（盖住 HUD 面板，加载 / 错误状态仍在其上）。 */
+.pre-start {
+  position: absolute; inset: 0;
+  z-index: var(--pb-z-scrim);
+  display: grid; place-items: center;
+  padding: var(--space-4);
+  background: var(--color-scrim);
+}
+.pre-start-card {
+  display: grid; justify-items: center; gap: var(--space-3);
+  max-inline-size: min(100%, var(--dialog-width));
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-3);
+  text-align: center;
+}
+.pre-start-card h3 { margin: 0; font: var(--type-h3); }
+/* 性能偏好常驻可见，说明走 title tooltip */
+.pre-start-advanced { inline-size: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); text-align: start; }
+/* 横排：卡片高度与单行一致，手机横屏（高约 390px）「开始」按钮才留在视口内 */
+.pre-start-perf {
+  display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3);
+}
+.pre-start-perf-note { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.pre-start-file { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+
+/* Persistent HUD appearance; row placement belongs to the shared workspace. */
+.hud {
+  z-index: var(--pb-z-hud);
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
+  pointer-events: none;
+}
+
+/* 名册车道只负责**位置与宽度**：行的布局与视觉由共用的 PlaybackRoster 独占（见该组件）。
+   三段式与竖屏纵向流分别在 `.roster-side` / `.portrait-flow` 下给出位置。 */
+.team-lane { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+
+/* Details placement belongs to the pane; the surface itself is the shared component, which now
+   owns its own workspace-level position (drag + clamp). No absolute/transform rules here:
+   the 3D stage is a square, so a corner-pinned card would cover the battlefield. */
+
+.killfeed {
+  position: absolute; inset-block-start: calc(100% + var(--space-1)); inset-inline: 0;
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-1);
+  max-width: 100%;
+}
+.kf {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  align-items: baseline;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: kfin var(--duration-base) var(--ease-standard);
+}
+.kf-name {
+  overflow: hidden;
+  min-inline-size: 0;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.kf-ally { color: var(--color-team-ally); }
+.kf-enemy { color: var(--color-team-enemy); }
+.kf-tank { flex: none; color: var(--color-text-secondary); }
+.kf-verb { flex: none; color: var(--color-text-tertiary); }
+@keyframes kfin { from { opacity: 0; transform: translateY(-6px); } }
+
+/* 基地状态条：顶栏下方居中，不拦截场景操作（徽章本身可悬停看说明） */
+.base-status { pointer-events: none; }
+
+/* Transport appearance; shared workspace owns its position and available width. */
+.controls {
+  z-index: var(--pb-z-hud);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.controls-content { display: flex; flex-direction: column; gap: var(--space-1); }
+.replay3d-annotations { min-inline-size: 0; }
+.controls-toggle { margin-inline-start: auto; min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); }
+.controls {
+  --controls-slide-duration: calc(var(--duration-slow) * 2);
+  transition:
+    background-color var(--controls-slide-duration) var(--ease-standard),
+    border-color var(--controls-slide-duration) var(--ease-standard),
+    box-shadow var(--controls-slide-duration) var(--ease-standard);
+}
+.controls-slide-enter-active,
+.controls-slide-leave-active {
+  overflow: hidden;
+  transition: height var(--controls-slide-duration) var(--ease-standard);
+}
+.pb-root.playback-workspace > .controls.controls-collapsed {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.pb-root.playback-workspace > .controls.controls-collapsed > .controls-toggle { pointer-events: auto; }
+.toggle { display: flex; gap: var(--space-1); align-items: center; min-height: var(--hit-min); color: var(--color-text-secondary); cursor: pointer; }
+.tool-btn {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-btn[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
+.tool-btn:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.q-badge { color: var(--color-text-secondary); font: var(--type-caption); }
+.pb-root input[type="checkbox"] { flex: none; width: auto; min-width: 0; margin: 0; }
+
+/* Display content appearance; placement belongs to PlaybackDisplaySurface. */
+.dp-title { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
+/* 快捷键速查段：与时间轴 tooltip 同一份 i18n 文案，触屏用户的可见兜底 */
+.dp-shortcuts { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+/* 回放事实边界说明（一行固定小字，帮助区；与 dp-shortcuts 同级呈现） */
+.dp-note { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.dp-declutter { inline-size: 100%; }
+.dp-hide { margin-block-start: var(--space-2); inline-size: 100%; }
+
+/* 隐藏全部 UI 后的唯一恢复入口：右下角常驻，不遮场景中心也不拦场景操作 */
+.ui-restore {
+  position: absolute; right: var(--space-2); top: var(--space-2);
+  z-index: var(--pb-z-hud);
+  box-shadow: var(--elevation-3);
+}
+.ui-restore.ui-restore-shifted {
+  top: calc(var(--space-2) + var(--control-h-sm) + var(--space-2));
+}
+@media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
+  .ui-restore.ui-restore-shifted { top: calc(var(--space-2) + var(--hit-min-comfortable) + var(--space-2)); }
+}
+
+.banner {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%);
+  z-index: var(--pb-z-hud);
+  padding: var(--space-3) var(--space-10);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-2);
+  font: var(--type-display);
+  font-weight: 700;
+}
+
+@media (hover: hover) {
+  .tool-btn:hover { color: var(--color-text-primary); }
+}
+
+
+.phone-form .dp-close { inline-size: 100%; }
+/* 直接陈列的查看动作行（镜头挡位 + GLB）：窄屏整行换行 */
+.tool-row { display: flex; align-items: center; justify-content: center; gap: var(--space-2); flex-wrap: wrap; padding-block-start: var(--space-2); border-block-start: 1px solid var(--color-border-subtle); }
+.phone-form .tool-row { gap: var(--space-1); }
+
+/**
+ * 手机竖屏：纵向流（与 2D 同一个契约）。
+ *   HUD → 正方形 Stage（用满列宽）→ 传输控件 →（显示面板）→ 详情 inline → Team 1 → Team 2
+ * 竖屏利用的是**纵向**空间：根高度由内容决定，页面自己滚；没有两条各自滚动的队伍盒子，
+ * 也没有盖在场景上的名册浮层。
+ */
+.pb-root.portrait-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: auto;
+  overflow: visible;
+  padding: var(--space-2);
+}
+.portrait-flow > .hud { position: relative; inset: auto; order: 1; }
+.portrait-flow > .pb-stage { order: 2; container-type: normal; }
+.portrait-flow .stage-square { inline-size: 100%; block-size: auto; aspect-ratio: 1; }
+.portrait-flow > .controls {
+  position: static;
+  order: 3;
+  width: 100%;
+  transform: none;
+}
+
+.portrait-flow > .vehicle-details { order: 5; }
+.portrait-flow > .roster-surface { order: 6; display: grid; gap: var(--space-2); }
+/* Display 面在竖屏纵向流里紧跟传输控件（共享组件只负责「是一块流内面」，顺序归宿主）。 */
+.portrait-flow > .pb-display-surface { order: 4; }
+.portrait-flow .team-lane { position: static; width: auto; }
+.portrait-flow > .banner { position: absolute; top: var(--space-12); }
+
+/* 触屏：控件点击区域抬到 --hit-min（coarse 44px；场景短视口横屏紧凑档 40px），布局不动 */
+@media (pointer: coarse) {
+  .tool-btn { min-height: var(--hit-min); }
+}

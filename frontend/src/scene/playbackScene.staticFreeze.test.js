@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
+// 2026-11-22 拆分：逐帧喂入/调整侧 owner = playback/renderLoop.js。
+const src = readFileSync(resolve(here, 'playback/renderLoop.ts'), 'utf8').replace(/\/\/[^\n]*/g, '').replace(/\bS\./g, '')
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），冻结/合批守卫随实现迁移
 const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
@@ -17,7 +18,7 @@ describe('playbackScene 手写 shader 的实例化接线', () => {
   // 手写 vertexShader 直接乘 modelViewMatrix/modelMatrix 而不带 USE_INSTANCING 分支，
   // 整批实例会全部叠画在原点（叶卡、ST| 树干各踩过一次）。锁定：每个手写顶点着色器
   // 只要用了模型矩阵就必须有实例分支。场景自定义 shader 已平移至 sceneryMaterials.js。
-  const matSrc = readFileSync(resolve(here, 'sceneryMaterials.ts'), 'utf8')
+  const matSrc = ['sceneryMaterials.ts', 'sceneryLightingMaterials.ts', 'sceneryWaterMaterials.ts', 'scenerySurfaceMaterials.ts'].map(path => readFileSync(resolve(here, path), 'utf8')).join('\n')
     .replace(/\/\/[^\n]*/g, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
   it('每个使用模型矩阵的 vertexShader 都必须处理 USE_INSTANCING（单 mesh 地形除外）', () => {

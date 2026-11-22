@@ -8,9 +8,10 @@ import {
   trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE, TREAD_RING,
   TREAD_ACTIVATE,
 } from './treadMarks.ts'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+const sceneSrc = playbackSceneSource()
 // #820 Wave B4A：Buffer 写入实现出仓到 playback/treadBufferWriter.ts，槽位/量化守卫随之改读新模块
 const writerSrc = readFileSync(resolve(here, 'playback', 'treadBufferWriter.ts'), 'utf8')
 // #820 Step 5：履带印运行时（路径态/贴图缓存/teardown）出仓到 playback/treadRuntime.ts

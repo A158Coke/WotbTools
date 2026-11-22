@@ -48,9 +48,6 @@ jobs:
             echo "::error::docs/current-plan.md must remain ignored." >&2
             exit 1
           }
-      - name: Enforce repository hygiene
-        shell: bash
-        run: bash scripts/ci/check-repository-hygiene.sh
       - name: Resolve and verify pull request range
         id: revisions
         env:
@@ -198,13 +195,12 @@ jobs:
         env:
           HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
         run: test "$(git rev-parse HEAD)" = "$HEAD_SHA"
-      - name: Validate source LOC enforcement
-        run: python3 scripts/ci/test-source-lines.py
-      - name: Check first-party source LOC
+      - name: Enforce repository hygiene
+        shell: bash
         env:
           BASE_SHA: ${{ needs.pr_identity.outputs.base_sha }}
           HEAD_SHA: ${{ needs.pr_identity.outputs.head_sha }}
-        run: python3 scripts/ci/check-source-lines.py --base "$BASE_SHA" --head "$HEAD_SHA"
+        run: bash scripts/ci/check-repository-hygiene.sh
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         with:
           package_json_file: frontend/package.json
@@ -242,6 +238,19 @@ jobs:
           name: duplicate-candidates
           path: tmp/jscpd-ci/ci-candidates.json
           if-no-files-found: error
+  zero_debt:
+    name: Zero-Debt Merge Gate
+    needs: [pr_identity]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ needs.pr_identity.outputs.head_sha }}
+      - name: Zero-Debt Merge Gate
+        uses: ./.github/actions/zero-debt
+        with:
+          base_sha: ${{ needs.pr_identity.outputs.base_sha }}
+          head_sha: ${{ needs.pr_identity.outputs.head_sha }}
   business_api:
     needs: [pr_identity, changes]
     if: needs.changes.outputs.business_api == 'true'
@@ -355,6 +364,7 @@ jobs:
       - pr_identity
       - changes
       - source_quality
+      - zero_debt
       - business_api
       - ai_service
       - frontend
@@ -387,10 +397,11 @@ jobs:
           needs = json.loads(os.environ["NEEDS_JSON"])
           if (needs["pr_identity"]["result"] != "success" or
                   needs["changes"]["result"] != "success" or
-                  needs["source_quality"]["result"] != "success"):
+                  needs["source_quality"]["result"] != "success" or
+                  needs["zero_debt"]["result"] != "success"):
               raise SystemExit("::error::PR identity, source quality, or changed-file detection failed")
           failed = []
-          owner_jobs = set(needs) - {"pr_identity", "changes", "source_quality"}
+          owner_jobs = set(needs) - {"pr_identity", "changes", "source_quality", "zero_debt"}
           for owner, affected in needs["changes"]["outputs"].items():
               if owner not in owner_jobs:
                   failed.append(f"unexpected path owner output: {owner}")

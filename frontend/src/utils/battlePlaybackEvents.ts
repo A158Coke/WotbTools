@@ -5,7 +5,7 @@
  */
 export function teamPointsAt(
   samples: Array<{ team: number; timeSec: number; points: number } | null> | null | undefined,
-  team: number,
+  team: number | null | undefined,
   t: number,
 ) {
   if (!Array.isArray(samples) || !Number.isFinite(t)) return null

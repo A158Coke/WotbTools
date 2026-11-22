@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 13: Write publish summary).
+# Behavior is preserved; edit this script, not the workflow YAML.
+{
+  echo "# Android Release (publish) $STEP_STAGED_VERSIONNAME_OR_INPUT_VERSION"
+  echo ""
+  echo "Status: $JOB_STATUS"
+  echo "Publish Action: $STEP_PUBPREFLIGHT_PUBLISHACTION_OR_NA"
+  echo ""
+  echo "Requested Version: $INPUT_VERSION"
+  echo "Version Code: $STEP_STAGED_VERSIONCODE"
+  echo "Native Bridge: $STEP_STAGED_NATIVEBRIDGEVERSION"
+  echo "Staged APK SHA-256: $STEP_STAGED_APKSHA"
+  echo "minSupportedVersionCode: $ANDROID_MIN_SUPPORTED_VERSION_CODE"
+  echo "Tag: $STEP_STAGEDREF_TAGNAME"
+  echo "Staged Source Commit: $STEP_STAGED_STAGEDSOURCE"
+} >> "$GITHUB_STEP_SUMMARY"

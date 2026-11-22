@@ -1,0 +1,446 @@
+name: Release / Android Stage
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Staged Android version (ignored by stage; kept for parity)
+        required: false
+        type: string
+env:
+  ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 || '' }}
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+    - name: Checkout release source
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - name: Resolve release metadata
+      id: version
+      shell: bash
+      env:
+        WOTB_TRIGGER: ${{ github.event_name }}
+        WOTB_TAG_NAME: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-01-resolve-version.sh"
+    - name: Android Contract and committed version gate
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-02-contract-gate.sh"
+    - name: Validate source is main (workflow_dispatch)
+      if: github.event_name == 'workflow_dispatch'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-03-validate-main.sh"
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        STEP_VERSION_APKNAME: ${{ steps.version.outputs.apkName }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_TAGNAME: ${{ steps.version.outputs.tagName }}
+        STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+    - name: Preflight classify production state (safe + idempotent)
+      id: preflight
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-04-preflight.sh"
+      env:
+        STEP_VERSION_APKNAME: ${{ steps.version.outputs.apkName }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_NATIVEBRIDGEVERSION: ${{ steps.version.outputs.nativeBridgeVersion }}
+        STEP_VERSION_TAGNAME: ${{ steps.version.outputs.tagName }}
+        STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+    - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      with:
+        package_json_file: frontend/package.json
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      with:
+        node-version: '24'
+        cache: pnpm
+        cache-dependency-path: frontend/pnpm-lock.yaml
+    - name: Fetch pinned Agent WASM for frontend validation
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-05-fetch-agent-wasm.sh"
+    - name: Frontend tests + build validation
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      working-directory: frontend
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-06-frontend-tests.sh"
+    - name: Download and inject pinned sponsor runtime content
+      id: sponsor
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-07-sponsor-runtime.sh"
+    - name: Build the local-first frontend bundle into APK assets
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-08-build-frontend-bundle.sh"
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      with:
+        gradle-version: 9.6.1
+    - name: Install pinned Android native toolchain
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-09-install-toolchain.sh"
+    - name: Prepare staging directory (workspace-relative, 服务器路径严格)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-10-prepare-staging.sh"
+    - name: Validate signing config and restore keystore (fail-fast; secrets 不出现在日志)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-11-signing-config.sh"
+    - name: Build signed release APK
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      working-directory: android
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-12-build-apk.sh"
+    - name: Verify APK signature and signing certificate fingerprint
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-13-verify-signature.sh"
+    - name: Attest build provenance for the signed release APK
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018
+      with:
+        subject-path: android/app/build/outputs/apk/release/app-release.apk
+    - name: Verify release APK carries the local-first frontend bundle
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      id: bundle
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-14-verify-bundle.sh"
+      env:
+        STEP_SPONSOR_BUNDLE: ${{ steps.sponsor.outputs.bundle }}
+        STEP_SPONSOR_STATE: ${{ steps.sponsor.outputs.state }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+    - name: Compute SHA-256 and stage APK
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      id: artifact
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-15-stage-apk.sh"
+      env:
+        STEP_VERSION_APKNAME: ${{ steps.version.outputs.apkName }}
+    - name: Classify origin APK on TX1/TX2 (SSH; public URL is the drive replica)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      id: apkcheck
+      shell: bash
+      env:
+        TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+        TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+        TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+        TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+        TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+        TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+        TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-16-classify-origins.sh"
+    - name: Upload APK to Tsinghua Cloud (public download offload + origin seed source)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      env:
+        TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-17-upload-tsinghua.sh"
+    - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      env:
+        APK_NAME: ${{ steps.artifact.outputs.apkName }}
+        EXPECT_SHA: ${{ steps.artifact.outputs.sha256 }}
+        SHARE_DIRECT: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/${{ steps.artifact.outputs.apkName }}&dl=1
+        DEST_DIR: /opt/wotb-tx/android-release
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        envs: APK_NAME,EXPECT_SHA,SHARE_DIRECT,DEST_DIR
+        script_path: scripts/android-release/steps/seed-apk-tx1.sh
+    - name: Seed APK to TX2 from Tsinghua replica (pull; SHA-256 verified, atomic)
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx2State == 'apk_absent'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      env:
+        APK_NAME: ${{ steps.artifact.outputs.apkName }}
+        EXPECT_SHA: ${{ steps.artifact.outputs.sha256 }}
+        SHARE_DIRECT: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/${{ steps.artifact.outputs.apkName }}&dl=1
+        DEST_DIR: /opt/wotb-tx2/runtime-content/android-release
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        envs: APK_NAME,EXPECT_SHA,SHARE_DIRECT,DEST_DIR
+        script_path: scripts/android-release/steps/seed-apk-tx2.sh
+    - name: Verify production APK (HTTP 200 + non-empty + SHA matches)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-18-verify-production-apk.sh"
+      env:
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+    - name: Ensure release tag (idempotent)
+      if: github.ref_type != 'tag' && steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-19-ensure-tag.sh"
+      env:
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_TAGNAME: ${{ steps.version.outputs.tagName }}
+    - name: Prepare verified direct Android delta
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      id: delta
+      shell: bash
+      env:
+        TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+        TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+        TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+        TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+        TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+        TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+        TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-20-prepare-delta.sh"
+    - name: Upload Android delta to Tsinghua Cloud
+      id: delta_cloud
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      shell: bash
+      env:
+        TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        STEP_DELTA_PATCHNAME: ${{ steps.delta.outputs.patchName }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-21-upload-delta.sh"
+    - name: Prepare TX incoming dir for Android delta
+      id: delta_tx_prepare
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        script_path: scripts/android-release/steps/delta-tx-prepare.sh
+    - name: Upload Android delta to TX incoming dir
+      id: delta_tx_upload
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        source: release-staging/${{ steps.delta.outputs.patchName }},deploy/tx/install-staging-evidence.sh
+        target: /opt/wotb-tx/android-evidence.incoming
+        strip_components: 0
+        overwrite: true
+    - name: Install immutable Android delta on TX
+      id: delta_tx_install
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        command_timeout: 20m
+        script_path: scripts/android-release/steps/delta-tx-install.sh
+        envs: PATCH_NAME
+      env:
+        PATCH_NAME: ${{ steps.delta.outputs.patchName }}
+    - name: Prepare TX2 incoming dir for Android delta
+      id: delta_tx2_prepare
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        script_path: scripts/android-release/steps/delta-tx2-prepare.sh
+    - name: Upload Android delta to TX2 incoming dir
+      id: delta_tx2_upload
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        source: release-staging/${{ steps.delta.outputs.patchName }},deploy/tx/install-staging-evidence.sh
+        target: /opt/wotb-tx2/android-evidence.incoming
+        strip_components: 0
+        overwrite: true
+    - name: Install immutable Android delta on TX2
+      id: delta_tx2_install
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        command_timeout: 20m
+        script_path: scripts/android-release/steps/delta-tx2-install.sh
+        envs: PATCH_NAME
+      env:
+        PATCH_NAME: ${{ steps.delta.outputs.patchName }}
+    - name: Verify public Android delta
+      id: delta_public
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-22-verify-delta.sh"
+      env:
+        STEP_DELTA_PATCHNAME: ${{ steps.delta.outputs.patchName }}
+    - name: Resolve optional Android delta availability
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      shell: bash
+      env:
+        DELTA_RESULTS: ${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
+        EXISTING_EVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-23-resolve-delta-availability.sh"
+    - name: Write immutable staging evidence (production version.json 保持不变)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      id: staging
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-24-write-staging-evidence.sh"
+      env:
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_DELTA_EXISTINGEVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+    - name: Prepare TX incoming dir for staging evidence
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        script_path: scripts/android-release/steps/staging-tx-prepare.sh
+    - name: Upload staging evidence to TX incoming dir
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        source: release-staging/${{ steps.staging.outputs.stagingName }},deploy/tx/install-staging-evidence.sh
+        target: /opt/wotb-tx/android-evidence.incoming
+        strip_components: 0
+        overwrite: true
+    - name: Install staging evidence on TX under the host deploy lock
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX_VPS_HOST }}
+        username: ${{ secrets.TX_VPS_USER }}
+        port: ${{ secrets.TX_VPS_PORT }}
+        key: ${{ secrets.TX_VPS_SSH_KEY }}
+        command_timeout: 20m
+        script_path: scripts/android-release/steps/staging-tx-install.sh
+        envs: STAGING_NAME
+      env:
+        STAGING_NAME: ${{ steps.staging.outputs.stagingName }}
+    - name: Prepare TX2 incoming dir for staging evidence
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        script_path: scripts/android-release/steps/staging-tx2-prepare.sh
+    - name: Upload staging evidence to TX2 public frontend runtime incoming dir
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        source: release-staging/${{ steps.staging.outputs.stagingName }},deploy/tx/install-staging-evidence.sh
+        target: /opt/wotb-tx2/android-evidence.incoming
+        strip_components: 0
+        overwrite: true
+    - name: Install staging evidence on TX2 under the host deploy lock
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
+      with:
+        host: ${{ secrets.TX2_VPS_HOST }}
+        username: ${{ secrets.TX2_VPS_USER }}
+        port: ${{ secrets.TX2_VPS_PORT }}
+        key: ${{ secrets.TX2_VPS_SSH_KEY }}
+        command_timeout: 20m
+        script_path: scripts/android-release/steps/staging-tx2-install.sh
+        envs: STAGING_NAME
+      env:
+        STAGING_NAME: ${{ steps.staging.outputs.stagingName }}
+    - name: Verify production staging evidence (HTTP 200 + content)
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      env:
+        TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
+        TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
+        TX1_SSH_PORT: ${{ secrets.TX_VPS_PORT }}
+        TX1_SSH_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+        TX2_SSH_HOST: ${{ secrets.TX2_VPS_HOST }}
+        TX2_SSH_USER: ${{ secrets.TX2_VPS_USER }}
+        TX2_SSH_PORT: ${{ secrets.TX2_VPS_PORT }}
+        TX2_SSH_KEY: ${{ secrets.TX2_VPS_SSH_KEY }}
+        STEP_STAGING_STAGINGNAME: ${{ steps.staging.outputs.stagingName }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-25-verify-staging-evidence.sh"
+    - name: Hand off to the guarded publish phase
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-26-handoff-publish.sh"
+      env:
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+    - name: Write release summary
+      if: always()
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-27-release-summary.sh"
+      env:
+        JOB_STATUS: ${{ job.status }}
+        STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+        STEP_BUNDLE_AGENTWASMCOMMIT: ${{ steps.bundle.outputs.agentWasmCommit }}
+        STEP_BUNDLE_AGENTWASMRELEASE: ${{ steps.bundle.outputs.agentWasmRelease }}
+        STEP_BUNDLE_BUNDLEFILES: ${{ steps.bundle.outputs.bundleFiles }}
+        STEP_BUNDLE_BUNDLEMANIFESTSHA256: ${{ steps.bundle.outputs.bundleManifestSha256 }}
+        STEP_PREFLIGHT_RELEASEACTION_OR_NA: ${{ steps.preflight.outputs.releaseAction || 'n/a' }}
+        STEP_STAGING_STAGINGNAME: ${{ steps.staging.outputs.stagingName }}
+        STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
+        STEP_VERSION_NATIVEBRIDGEVERSION: ${{ steps.version.outputs.nativeBridgeVersion }}
+        STEP_VERSION_TAGNAME: ${{ steps.version.outputs.tagName }}
+        STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
+        STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}

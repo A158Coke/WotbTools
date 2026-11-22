@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 46: Write release summary).
+# Behavior is preserved; edit this script, not the workflow YAML.
+{
+  echo "# Android Release (stage) $STEP_VERSION_VERSIONNAME"
+  echo ""
+  echo "Status: $JOB_STATUS"
+  echo "Stage Action: $STEP_PREFLIGHT_RELEASEACTION_OR_NA"
+  echo ""
+  echo "Version Name: $STEP_VERSION_VERSIONNAME"
+  echo "Version Code: $STEP_VERSION_VERSIONCODE"
+  echo "Native Bridge: $STEP_VERSION_NATIVEBRIDGEVERSION"
+  echo "Tag: $STEP_VERSION_TAGNAME"
+  echo "Source Commit: $STEP_VERSION_COMMIT"
+  echo "APK: $STEP_ARTIFACT_APKNAME"
+  echo "APK SHA-256: $STEP_ARTIFACT_SHA256"
+  echo "Staging evidence: $STEP_STAGING_STAGINGNAME"
+  echo "Signing Certificate SHA-256: $ANDROID_SIGNING_CERT_SHA256"
+  echo ""
+  # PR B：登记 release APK 内 bundle 的身份（证明 parser 来自 APK 自带的 pinned 产物）。
+  echo "Local-first bundle files: $STEP_BUNDLE_BUNDLEFILES"
+  echo "Agent WASM: $STEP_BUNDLE_AGENTWASMRELEASE @ $STEP_BUNDLE_AGENTWASMCOMMIT"
+  echo "Bundle manifest SHA-256: $STEP_BUNDLE_BUNDLEMANIFESTSHA256"
+  echo ""
+  echo "production version.json is NOT modified by this job."
+} >> "$GITHUB_STEP_SUMMARY"

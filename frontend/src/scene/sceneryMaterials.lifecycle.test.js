@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = playbackSceneSource()
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const basesSrc = readSrc(resolve(here, 'playback/bases.ts'), 'utf8')
 const stripComments = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
-const mapWorldSrc = stripComments(readSrc(resolve(here, 'playback/mapWorld.ts')))
+const mapWorldSrc = stripComments(readSrc(resolve(here, 'playback/mapWorldTerrain.ts')))
 const vehSrc = stripComments(readSrc(resolve(here, 'playback/vehicleRuntime.ts')))
 
 describe('场景生命周期与反馈合同', () => {
@@ -121,6 +122,7 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
     expect(start).toBeGreaterThan(0)
     const fn = mapWorldSrc.slice(start, mapWorldSrc.indexOf('\n  }', start))
     expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
+    expect(fn.replace('terrainLodState(camera, controls.target, camera.aspect)', '')).not.toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
     expect(fn).not.toMatch(/terrainLodDist/)
     expect(fn).toMatch(/terrainLodStaleReason\(terrainLodPrev, cur, now - terrainLodAt\)/)
   })

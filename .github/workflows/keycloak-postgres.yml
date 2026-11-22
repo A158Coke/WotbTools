@@ -7,6 +7,7 @@ on:
       - .github/workflows/keycloak-postgres.yml
       - deploy/tx/keycloak-postgres.compose.yml
       - deploy/tx/runtime-check-lib.sh
+      - deploy/tx/runtime-business-probes.sh
       - infra/tofu/postgres-keycloak/**
   workflow_dispatch:
 
@@ -23,6 +24,7 @@ env:
     .github/workflows/keycloak-postgres.yml
     deploy/tx/keycloak-postgres.compose.yml
     deploy/tx/runtime-check-lib.sh
+    deploy/tx/runtime-business-probes.sh
     infra/tofu/postgres-keycloak/**
 
 jobs:
@@ -59,7 +61,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx/keycloak-postgres.compose.yml,deploy/tx/runtime-check-lib.sh,infra/tofu/postgres-keycloak
+          source: deploy/tx/keycloak-postgres.compose.yml,deploy/tx/runtime-check-lib.sh,deploy/tx/runtime-business-probes.sh,infra/tofu/postgres-keycloak
           target: /opt/wotb-tx/tofu.incoming/${{ steps.source.outputs.source_sha }}
           overwrite: true
 

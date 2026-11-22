@@ -116,7 +116,7 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh,deploy/tx/runtime-check-lib.sh
+          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh,deploy/tx/runtime-check-lib.sh,deploy/tx/runtime-business-probes.sh
           target: /opt/wotb-tx2/frontend-replica.incoming
           overwrite: true
 

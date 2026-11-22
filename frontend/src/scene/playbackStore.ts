@@ -1,12 +1,14 @@
 // 实时回放的响应式 UI 状态：scene（playbackScene.js，命令式 three.js 内核）每 tick 写入，
 // Vue 面板组件只读渲染；控件事件回调 scene 方法。字段与旧版 DOM 触点一一对应。
 import { reactive } from 'vue'
+import type { WorkspacePlayback } from '../composables/useReplayWorkspace'
+import type { RosterRow, RosterRuntime } from './rosterState'
 
 export function createPlaybackStore() {
   return reactive({
     // loader 弹层
     filePath: '',
-    playbackSession: null, // Workspace canonical result shared with 2D / Details
+    playbackSession: null as WorkspacePlayback | null, // Workspace canonical result shared with 2D / Details
     loading: false,
     assetStage: false,   // 进入场景前正在获取地图/地形/地表/场景资产（WotBTools：资产就绪才进场）
     assetProgress: null, // 资产阶段进度 0–1（loadProgress 聚合）；null = 尚未登记任何资产
@@ -19,7 +21,7 @@ export function createPlaybackStore() {
     qualityLabel: '',
     // 顶栏
     mapName: '',
-    mapKey: null, // 资产面地图 key（与三语地图名表 map_names.json 同一套 key）
+    mapKey: null as string | null, // 资产面地图 key（与三语地图名表 map_names.json 同一套 key）
     // 顶栏比分：已是阵营视角（perspectiveScore：己方 = 录像者一方），与两侧血条同视角
     scoreFriend: 0,
     scoreEnemy: 0,
@@ -66,15 +68,15 @@ export function createPlaybackStore() {
     dynres: true,
     contactShadows: false, // 坦克接地阴影（待开播 opt-in，不持久化；仅高清/极致，见 playbackScene.setContactShadows）
     // 覆盖层
-    banner: null, // { text, color }
+    banner: null as { text?: string; color?: string; outcome?: string } | null, // { text, color }
     killfeed: [], // { id, text }
     // 名册按**物理队伍**分组（team 1 / team 2 / 未识别），未知阵营（team=0）进 unknown 中性组
     // ——绝不污染 team1（旧 hack `team!==2→team1`）。
     // 身份（eid/team/nick/tank）只在会话开始时建一次；运行时状态
     // （hp/maxHp/dead/followed）由 playbackScene.updateRoster 按当前回放时刻投影，
     // 见 scene/rosterState.ts。呈现层结合 friendlyTeam 取 Recorder 视角颜色，内核不下发颜色。
-    friendlyTeam: null, // Authoritative Recorder team; unknown never implies Team 1.
-    roster: { team1: [], team2: [], unknown: [] },
+    friendlyTeam: null as number | null, // Authoritative Recorder team; unknown never implies Team 1.
+    roster: { team1: [] as Array<RosterRow & RosterRuntime>, team2: [] as Array<RosterRow & RosterRuntime>, unknown: [] as Array<RosterRow & RosterRuntime> },
     hasData: false,
     // 地图预览会话就绪（loadMapOnly 写入）：3D 地图面资产装载完成、可交互。
     // 与 hasData 互斥使用——传输/阵容/HUD 仍由 hasData 门控（地图会话恒 false）。

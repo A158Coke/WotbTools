@@ -1,0 +1,107 @@
+/* Agent 3D 装甲查看器全局样式（Scene IDs 是 DOM 契约；样式随拆分自 AgentArmorView.vue，原样迁移）。 */
+
+.armor-view {
+    --bg: var(--color-canvas); --panel: color-mix(in srgb, var(--color-surface-1) 96%, transparent);
+    --panel2: var(--color-surface-2); --border: var(--color-border-subtle); --border-hi: var(--color-border-strong);
+    --accent: var(--color-accent-text); --accent-2: var(--color-accent-text); --accent-3: var(--color-text-primary);
+    --green: var(--color-success); --orange: var(--color-warning); --red: var(--color-danger);
+    --blue: var(--color-info); --yellow: var(--color-warning); --txt: var(--color-text-primary); --muted: var(--color-text-secondary);
+    --shadow: var(--elevation-2); --radius: var(--radius-lg); --radius-sm: var(--radius-md);
+    --input-bg: var(--color-surface-2); --input-bg-hover: var(--color-surface-3);
+    --tooltip-bg: var(--color-surface-1); --scrub: var(--color-info);
+    position: relative; display: flex; flex-direction: column; isolation: isolate;
+    inline-size: 100%; block-size: calc(100dvh - var(--header-h) - env(safe-area-inset-bottom)); min-block-size: 420px;
+    margin: 0; padding: 0; overflow: hidden; background: var(--color-canvas); color: var(--txt); font: var(--type-body);
+}
+.armor-view .armor-stage { position: relative; flex: 1; min-block-size: 0; inline-size: 100%; }
+.armor-view.is-unsupported { block-size: auto; min-block-size: 0; overflow: visible; background: transparent; }
+.armor-view.is-unsupported .armor-back { position: static; margin: var(--space-4) var(--gutter) 0; }
+.armor-view #canvas-container { inline-size: 100%; block-size: 100%; }
+.armor-view :is(button, select, input) { font: inherit; }
+.armor-view :is(button, select) { min-block-size: var(--scene-hit); }
+.armor-view :is(button, summary, select, input):focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.armor-view button { cursor: pointer; }
+.armor-view button:disabled { cursor: default; opacity: .45; }
+.armor-view :is(#corner-tl, #corner-tr, #corner-br) { position: absolute; display: flex; gap: var(--space-3); }
+.armor-view #corner-tl { inset-block-start: var(--space-5); inset-inline-start: var(--space-5); align-items: flex-start; }
+.armor-view.has-back #corner-tl { inset-block-start: calc(var(--space-5) + var(--scene-hit) + var(--space-2)); }
+.armor-view :is(#info-panel, #tank-selectors, #turret-controls, #debug-info, #click-info) {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--elevation-2);
+}
+.armor-view #info-panel { padding: var(--space-4); max-inline-size: 20rem; max-block-size: 46dvh; overflow: auto; overflow-wrap: anywhere; }
+.armor-view #info-panel h1 { margin: 0 0 var(--space-2); font: var(--type-h3); color: var(--txt); }
+.armor-view #info-panel .stat { display: flex; justify-content: space-between; gap: var(--space-3); font: var(--type-caption); }
+.armor-view #info-panel .label { color: var(--muted); }
+.armor-view #info-panel .value { font-weight: 600; }
+.armor-view .armor-setup-note { margin: 0 0 var(--space-3); color: var(--muted); font: var(--type-caption); }
+.armor-view .armor-panel-title { margin: 0 0 var(--space-2); color: var(--muted); font: var(--type-caption); }
+.armor-view .armor-tools-close { display: none; }
+.armor-view .armor-side-cards { display: grid; gap: var(--space-3); min-inline-size: 0; }
+.armor-view .armor-side-card { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.armor-view .armor-side-card + .armor-side-card { border-block-start: 1px solid var(--color-border-subtle); padding-block-start: var(--space-3); }
+.armor-view .armor-side-head { display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; padding-block: var(--space-1); }
+.armor-view .armor-side-role { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; white-space: nowrap; }
+.armor-view .armor-side-tank { flex: 1 1 auto; inline-size: auto; min-inline-size: 0; }
+.armor-view .armor-side-toggle { display: grid; place-items: center; flex: none; inline-size: var(--hit-min); block-size: var(--hit-min); padding: 0; border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+.armor-view .armor-side-toggle svg { transition: transform var(--duration-fast) var(--ease-standard); }
+.armor-view .armor-side-toggle svg.is-open { transform: rotate(180deg); }
+.armor-view .armor-side-body { padding-block-start: var(--space-1); }
+.armor-view .armor-camera-presets { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block-end: var(--space-2); }
+.armor-view .armor-camera-presets button { flex: 1; min-inline-size: var(--hit-min); white-space: nowrap; }
+.armor-view #turret-controls .ctrl-row { display: inline-flex; gap: var(--space-2); margin-inline-end: var(--space-3); }
+.armor-view #turret-controls .ctrl-row span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.armor-view #view-toggle > button { flex: 1; }
+/* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
+.armor-view #tank-selectors.has-shot-hud .eq-opt:not(#armor-state-opt) { display: none; }
+.armor-view #tank-selectors.has-shot-hud .armor-equipment-caption { display: none; }
+.armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
+.armor-view #tank-selectors .sel-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
+.armor-view #tank-selectors label { color: var(--muted); font: var(--type-caption); }
+.armor-view #tank-selectors .sel-row > label:first-child { flex: 0 0 100%; }
+.armor-view #tank-selectors .eq-opt { display: inline-flex; flex: 1; align-items: center; gap: var(--space-1); min-block-size: var(--scene-hit); cursor: pointer; }
+.armor-view input[type="checkbox"] { flex: none; min-inline-size: 0; inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
+.armor-view #tank-selectors :is(.tank-btn, select) { inline-size: 100%; min-inline-size: 0; padding: var(--space-2) var(--space-3); background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--txt); }
+.armor-view #tank-selectors .tank-btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+.armor-view #tank-selectors .tank-btn:hover { border-color: var(--accent); background: var(--input-bg-hover); }
+.armor-view #tank-selectors .tank-btn:disabled { color: var(--color-text-tertiary); cursor: wait; }
+.armor-view #tank-selection-status { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.armor-view #shooter-label { color: var(--color-accent-text); }
+.armor-view #target-label { color: var(--color-info); }
+/* 右上角是一块整体面板：射击 HUD、模式切换、装甲组成、点选结果共用同一张卡片。
+   固定宽度：进入厚度视图（过滤行/点选结果出现）时面板不会突然变宽。 */
+.armor-view #corner-tr {
+    inset-block-start: var(--space-5);
+    inset-inline-end: var(--space-5);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    inline-size: var(--armor-shot-card-width);
+    max-inline-size: 42%;
+    padding: var(--space-2);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-2);
+}
+.armor-view #shell-selector { padding: var(--space-2) var(--space-3); max-inline-size: 100%; }
+.armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
+.armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
+.armor-view #view-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* 模式按钮文案固定（状态用 active/aria-pressed 表示）：避免开关时标签变长变短把面板宽度挤动 */
+.armor-view #view-toggle > button { white-space: nowrap; }
+/* 装甲组成显隐是同一面板内的第二行（只在厚度视图出现），不再是浮在产品外的独立卡片 */
+.armor-view .armor-filters {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--color-border-subtle);
+}
+.armor-view .armor-filters[hidden] { display: none; }
+.armor-view :is(#view-toggle button, .armor-scene-button) { padding: var(--space-2) var(--space-3); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); font: var(--type-caption); }
+.armor-view #view-toggle button:hover { border-color: var(--accent); }
+.armor-view :is(#view-toggle button.active, .armor-scene-button[aria-pressed="true"]) { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }
+.armor-view #corner-br { inset-block-end: var(--space-5); inset-inline-end: var(--space-5); align-items: flex-end; flex-direction: column; max-inline-size: 38%; }
+.armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
+.armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }

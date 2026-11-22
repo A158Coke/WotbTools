@@ -1,0 +1,234 @@
+/* ReplayPage 全局样式（随拆分自 ReplayPage.vue，原样迁移）。 */
+/* stylelint-disable -- ReplayPage.vue 在 stylelint.legacy.json 旧基线；豁免随文件迁移，样式逐字未改 */
+.replay-section-title {
+  margin: 18px 0 8px;
+  font-size: .92rem;
+  font-weight: 800;
+  color: var(--text-heading);
+  letter-spacing: .01em;
+}
+.replay-section-title:first-child { margin-top: 4px; }
+.league-summary-empty {
+  margin: 8px 2px 16px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-sub);
+  font-size: .85rem;
+  background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+}
+.replay-empty-note { padding: 18px 4px; color: var(--text-muted); font-size: .85rem; }
+.result-notices { display: grid; gap: var(--space-2); margin-bottom: var(--space-3); }
+.result-notices:empty { display: none; }
+.notice-files { margin: var(--space-1) 0 0; padding-inline-start: var(--space-5); color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
+.data-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-4); }
+.data-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+@media (width < 768px) {
+  .data-toolbar > .segmented { width: 100%; }
+  .data-actions { width: 100%; justify-content: flex-end; }
+  .data-layout-toggle { margin-inline-end: auto; }
+}
+.league-failure-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: .85rem;
+}
+.lf-title { font-weight: 700; color: var(--warn-text); }
+.lf-rated, .lf-unrated { font-variant-numeric: tabular-nums; }
+.lf-unrated { color: var(--warn-text); }
+.lf-toggle {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in oklab, var(--color-warning) 50%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--warn-text);
+  cursor: pointer;
+  font-size: .78rem;
+  font-family: inherit;
+}
+.lf-toggle:hover { background: color-mix(in oklab, var(--color-warning) 16%, transparent); }
+.league-failure-detail { margin-top: 8px; border-top: 1px solid color-mix(in oklab, var(--color-warning) 25%, transparent); padding-top: 8px; }
+.league-failure-group { margin-bottom: 4px; }
+.lf-group-head {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-label);
+  cursor: pointer;
+  font-size: .8rem;
+  font-family: inherit;
+}
+.lf-group-head:hover { background: color-mix(in oklab, var(--color-warning) 14%, transparent); color: var(--warn-text); }
+.lf-group-files {
+  margin: 2px 0 6px;
+  padding: 2px 8px 2px 22px;
+  color: var(--text-muted);
+  font-size: .78rem;
+  word-break: break-word;
+}
+.replay-export-root.replay-export-light {
+  --exp-bg: #ffffff;
+  --exp-card-bg: #f8f9fa;
+  --exp-text: #1a1a1a;
+  --exp-text-sub: #666666;
+  --exp-border: #dee2e6;
+  --exp-header-bg: #e9ecef;
+  --exp-t1-bg: #e3f2fd;
+  --exp-t2-bg: #fce4ec;
+  --exp-alive: #28a745;
+  --exp-destroyed: #dc3545;
+}
+
+.replay-export-root.replay-export-dark {
+  --exp-bg: #1e1e1e;
+  --exp-card-bg: #2d2d2d;
+  --exp-text: #e0e0e0;
+  --exp-text-sub: #999999;
+  --exp-border: #444444;
+  --exp-header-bg: #333333;
+  --exp-t1-bg: #1a3a5c;
+  --exp-t2-bg: #5c2a3a;
+  --exp-alive: #4caf50;
+  --exp-destroyed: #ef5350;
+}
+
+.replay-export-root {
+  background: var(--exp-bg);
+  color: var(--exp-text);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: none;
+}
+.replay-export-root .sticky-col {
+  position: static !important;
+  left: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+}
+.replay-export-root .league-overview {
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.replay-export-root .league-team {
+  border: 1px solid var(--exp-border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.replay-export-root .league-team.league-win {
+  background: var(--exp-t1-bg);
+}
+.replay-export-root .team-name-input {
+  border: 1px dashed var(--exp-border);
+  color: var(--exp-text);
+}
+.replay-export-root .league-mvp {
+  color: var(--exp-text);
+}
+.replay-export-root .mvp-badge {
+  background: var(--exp-header-bg);
+  color: var(--exp-text);
+}
+.replay-export-root .league-summary-title {
+  color: var(--exp-text);
+}
+/* StatStrip 的 scoped 规则与这里同特异性，导出样式多带一层 .mcards 以确定性胜出 */
+.replay-export-root .mcards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.replay-export-root .mcards .mc {
+  background: var(--exp-card-bg);
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.replay-export-root .mcards .mc .k {
+  font-size: .78rem;
+  color: var(--exp-text-sub);
+  margin-bottom: 4px;
+}
+.replay-export-root .mcards .mc .v {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--exp-text);
+  font-variant-numeric: tabular-nums;
+}
+.replay-export-root .tablewrap {
+  overflow: visible;
+  max-width: none;
+  border: 1px solid var(--exp-border);
+  border-radius: 8px;
+}
+.replay-export-root table {
+  border-collapse: collapse;
+  width: auto;
+  background: var(--exp-bg);
+}
+.replay-export-root th {
+  background: var(--exp-header-bg) !important;
+  color: var(--exp-text);
+  padding: 6px 10px;
+  border: 1px solid var(--exp-border);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.replay-export-root td {
+  padding: 5px 10px;
+  border: 1px solid var(--exp-border);
+  color: var(--exp-text);
+}
+.replay-export-root tbody tr.t1 td {
+  background: var(--exp-t1-bg) !important;
+}
+.replay-export-root tbody tr.t2 td {
+  background: var(--exp-t2-bg) !important;
+}
+.replay-export-root .alive {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--exp-alive);
+  color: var(--exp-bg);
+}
+.replay-export-root .dead {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--exp-destroyed);
+  color: var(--exp-bg);
+}
+.replay-export-root * {
+  animation: none !important;
+  transition: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+}
+.replay-export-root .league-summary-empty {
+  background: var(--exp-card-bg) !important;
+  color: var(--exp-text-sub) !important;
+}
+.replay-export-root .scroll-hint {
+  display: none;
+}

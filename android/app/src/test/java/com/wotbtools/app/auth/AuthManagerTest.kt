@@ -267,7 +267,10 @@ class AuthManagerTest {
         )
     }
 
-    private fun authManagerSource(): String = authManagerFile().readText()
+    private fun authManagerSource(): String = authManagerFile().let { owner ->
+        listOf(owner, File(owner.parentFile, "AuthBrowserFlow.kt"), File(owner.parentFile, "AuthCallbackHandler.kt"))
+            .joinToString("\n") { it.readText() }
+    }
 
     /**
      * 源码中**去掉注释行**的部分：flag 策略断言必须针对真实代码，而不是针对解释它的注释

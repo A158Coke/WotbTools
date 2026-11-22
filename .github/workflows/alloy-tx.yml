@@ -10,6 +10,8 @@ on:
       - deploy/tx/common.compose.yml
       - deploy/tx/alloy-tx.compose.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/deploy-stage.sh
+      - deploy/tx/deploy-health.sh
       - deploy/validate-alloy-config.sh
   workflow_dispatch:
 
@@ -29,6 +31,8 @@ env:
     deploy/tx/common.compose.yml
     deploy/tx/alloy-tx.compose.yml
     deploy/tx/deploy.sh
+    deploy/tx/deploy-stage.sh
+    deploy/tx/deploy-health.sh
     deploy/validate-alloy-config.sh
 
 jobs:

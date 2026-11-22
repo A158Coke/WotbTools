@@ -9,9 +9,10 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\r\n/g, '\n')
+const src = playbackSceneSource().replace(/\r\n/g, '\n')
 const asmSrc = readFileSync(resolve(here, 'sceneryAssembly.ts'), 'utf8').replace(/\r\n/g, '\n')
 
 describe('地图预览环境动画冻结', () => {

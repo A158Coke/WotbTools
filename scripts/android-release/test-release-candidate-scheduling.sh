@@ -88,10 +88,11 @@ python3 - "$ROOT/.github/workflows/android-release.yml" "$GATE_DIR" <<'PY'
 import sys
 import textwrap
 from pathlib import Path
-import yaml
 
-workflow = yaml.safe_load(Path(sys.argv[1]).read_text(encoding="utf-8"))
-step = next(s for s in workflow["jobs"]["publish_gate"]["steps"] if s.get("id") == "freshness")
+root = Path(sys.argv[1]).resolve().parents[2]
+sys.path.insert(0, str(root / "scripts/android-release"))
+import workflow_model
+step = next(s for s in workflow_model.load(root)["jobs"]["publish_gate"]["steps"] if s.get("id") == "freshness")
 body = textwrap.dedent(step["run"])
 assert "${{" not in body, "the gate must take inputs from env, not interpolate expressions into its shell body"
 (Path(sys.argv[2]) / "gate.sh").write_text(body, encoding="utf-8")

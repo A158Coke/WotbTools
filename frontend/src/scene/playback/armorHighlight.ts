@@ -9,315 +9,20 @@
 //   ③ primary 排除深度 + 着色
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import type { Box3, BufferGeometry, Camera, Frustum, Group, Material, Mesh, Object3D, PerspectiveCamera, Scene, Sphere, WebGLRenderer } from 'three'
-import type { AgentAuthorShellEvent, AgentPlaybackShot, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
-import { dynamicDeclarationByTankId } from '../../data/armorStates.js'
+import type { Box3, Frustum, Group, Material, Mesh, Object3D, PerspectiveCamera, Scene, Sphere, WebGLRenderer } from 'three'
+import type { AimedVehicleCandidate } from './armorHighlightPick.js'
+import { bucketedRtSize, cropFrustum, OCCLUDER_LAYER, screenRect, spacedRectOf } from './armorHighlightPick.js'
+import { createArmorTargets } from './armorHighlightTargets.js'
+import type { BuiltTarget } from './armorHighlightTargets.js'
+import { createLoadRetry } from './armorHighlightPolicy.js'
+import type { ArmorHighlightFrame, ArmorHighlightPerfStats, ArmorRenderTargetStats } from './armorHighlightTypes.js'
 import { createArmorShaderContext, createDepthStencilTexture, standardDepthMaterial } from '../viewer/armorShaders.js'
-import {
-  applyArmorConfigVisible, armorPivots, calibratedPenMul, collectArmorPrefixes,
-  ENHANCED_ARMOR_THICK_MUL, gunMaskOriginModel, installArmorPivots, partitionArmorMeshes,
-  plateThickness, populatePrimaryArmorScene, populateSpacedArmorScene, populateSpacedStateScene,
-  retagSpacedSections, rolledPenetration, selectExternalMeshes, shellAngles, shellTypeOf,
-  tagArmorPlates, tagModuleMeshes, useFaceNormals,
-} from '../viewer/armorPlateModel.js'
+import { useFaceNormals } from '../viewer/armorPlateModel.js'
 
-/** 重画世界深度专用 layer（0 = 默认，1 = 开镜隐藏本车）。 */
-const OCCLUDER_LAYER = 2
-
-/** 装甲 RT 分配粒度（px，向上取整）：按目标矩形分配时避免逐像素反复重建。 */
-export const RT_BUCKET_PX = 64
-
-/** RT 边长：px 向上取整到 RT_BUCKET_PX 的倍数，钳到 ≤ drawing buffer 上限且 ≥1（零尺寸 RT 非法）。 */
-export function bucketedRtSize(px: number, cap: number): number {
-  return Math.min(Math.max(Math.ceil(px / RT_BUCKET_PX) * RT_BUCKET_PX, 1), Math.max(1, Math.floor(cap)))
-}
-
-/** 目标屏幕矩形（GL 像素，含 margin）在整幅画面里的归一化矩形 → spacedRect uniform
- *  （x0,y0,w,h，原点左下）。全屏时 = (0,0,1,1)，与装甲查看器（不设该 uniform）同口径。 */
-export function spacedRectOf(px: number, py: number, pw: number, ph: number, fullW: number, fullH: number, out: THREE.Vector4): THREE.Vector4 {
-  return out.set(px / fullW, py / fullH, pw / fullW, ph / fullH)
-}
-
-/**
- * 全画面 UV → 辅助 RT 局部 UV（`PBR_FRAG` 里 `scBuf = (sc - spacedRect.xy) / spacedRect.zw`
- * 的 JS 同式，行为测试的唯一权威）：辅助 RT 被 setViewOffset 把该 rect 拉伸铺满，所以
- * rect 左下角映射到 (0,0)、右上角映射到 (1,1)；全屏 rect 是恒等映射。
- */
-export function spacedBufferUv(scX: number, scY: number, rect: THREE.Vector4, out: THREE.Vector2): THREE.Vector2 {
-  return out.set((scX - rect.x) / rect.z, (scY - rect.y) / rect.w)
-}
-const EQ_CALIBRATED_SHELLS = 103
-const EQ_ENHANCED_ARMOR = 110
-/** 炮管任意朝向下 GLB 根到车模最远点的上界（最长的车连炮管约 12 m）。 */
-const VEHICLE_PICK_RADIUS_M = 15
+/** 重画世界深度专用 layer（owner = armorHighlightPick；本处 re-export）。 */
+export { OCCLUDER_LAYER } from './armorHighlightPick.js'
 /** 裁剪矩形外扩的像素：包住光栅化取整，矩形边上不留缝。 */
 const SCISSOR_MARGIN_PX = 2
-const ARMOR_LOAD_ATTEMPTS = 3
-const ARMOR_LOAD_RETRY_MS = 5000
-
-/**
- * 加载失败的有限重试：临时错误（断网、503）过后还能恢复，永久错误（404、坏文件）试满就停，
- * 不会每帧重新下载。`succeed` 清掉记录，一次成功后不再占用次数。
- */
-export interface LoadRetry {
-  allowed(key: string | number): boolean
-  fail(key: string | number): void
-  succeed(key: string | number): void
-}
-
-export function createLoadRetry({
-  attempts = ARMOR_LOAD_ATTEMPTS, delayMs = ARMOR_LOAD_RETRY_MS, now = () => performance.now(),
-}: { attempts?: number; delayMs?: number; now?: () => number } = {}): LoadRetry {
-  const failures = new Map<string | number, { count: number; retryAt: number }>()
-  return {
-    allowed(key: string | number): boolean {
-      const failure = failures.get(key)
-      return !failure || (failure.count < attempts && now() >= failure.retryAt)
-    },
-    fail(key: string | number): void {
-      const count = (failures.get(key)?.count ?? 0) + 1
-      failures.set(key, { count, retryAt: now() + delayMs })
-    },
-    succeed(key: string | number): void { failures.delete(key) },
-  }
-}
-
-/** 时刻 t 的当前弹种（`timeline` 时间升序）；首条之前未知，返回 null。 */
-export function authorShellAt(timeline: readonly AgentAuthorShellEvent[] | null | undefined, t: number): number | null {
-  if (!timeline || !timeline.length || !(t >= timeline[0].t)) return null
-  let lo = 0, hi = timeline.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1
-    if (timeline[mid].t <= t) lo = mid
-    else hi = mid - 1
-  }
-  return timeline[lo].shell_id
-}
-
-/** 配置弹表里的弹种（caliber 取弹体，缺失回退该炮口径）；不在表内返回 null。 */
-export interface MountedShell {
-  shell: AgentPlaybackShot | Record<string, unknown>
-  caliber: number
-}
-
-/** 资产包 configs[] 条目中本模块消费的字段（mountedShell / armorHighlightBlock）。 */
-export interface HighlightConfig {
-  shell_global_ids?: number[]
-  caliber?: number
-  shells?: Array<Record<string, unknown> & { caliber?: number; penetration?: number; penetration_far?: number; damage?: number; explosion_radius?: number }>
-  [key: string]: unknown
-}
-
-export function mountedShell(cfg: HighlightConfig | null | undefined, shellId: number | null): MountedShell | null {
-  const i = (cfg?.shell_global_ids ?? []).indexOf(shellId as number)
-  const shell = i >= 0 ? cfg?.shells?.[i] : null
-  if (!shell) return null
-  const caliber = [shell.caliber, cfg?.caliber].find((v) => typeof v === 'number' && Number.isFinite(v) && v > 0) ?? 0
-  return { shell, caliber }
-}
-
-/**
- * 资格判定：返回第一个不满足的原因码，全部满足返回 null。每一项都是「证据不足就不显示」，
- * 不存在回退分支——颜色本身就是结论，错的配置/弹种只会给出错的结论。
- */
-export function armorHighlightBlock({ targetTankId, targetConfig, authorConfig, shellId, targetEquipment, authorEquipment }: {
-  targetTankId: number | null | undefined
-  targetConfig: unknown
-  authorConfig: unknown
-  shellId: number | null
-  targetEquipment: unknown
-  authorEquipment: unknown
-}): string | null {
-  if (dynamicDeclarationByTankId(targetTankId)) return 'dynamic_armor'
-  if (!targetConfig) return 'target_config_unknown'
-  if (!authorConfig) return 'author_config_unknown'
-  if (shellId == null) return 'shell_unknown'
-  const mounted = mountedShell(authorConfig as HighlightConfig, shellId)
-  if (!mounted) return 'shell_not_mounted'
-  if (!shellTypeOf(mounted.shell as { type?: unknown })) return 'shell_type_unknown'
-  if (!(mounted.caliber > 0)) return 'caliber_unknown'
-  if (!Array.isArray(targetEquipment) || !Array.isArray(authorEquipment)) return 'equipment_unknown'
-  return null
-}
-
-const _aimNdc = new THREE.Vector3()
-/**
- * 屏幕准星那条线的方向：相机 → Type39 瞄准点。进入录像者视角的过渡期相机朝向与它不同，
- * 准星才是画面上指着的地方。瞄准点投影不到（与准星隐藏同判据）时返回 null。
- */
-export function reticleAimDirection(camera: Camera, aimPoint: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 | null {
-  _aimNdc.copy(aimPoint).project(camera)
-  if (![_aimNdc.x, _aimNdc.y, _aimNdc.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null
-  out.subVectors(aimPoint, camera.position)
-  return out.lengthSq() > 0 ? out.normalize() : null
-}
-
-function collectVisibleMeshes(node: Object3D, out: Mesh[]): void {
-  if (!node.visible) return
-  const mesh = node as Mesh
-  if (mesh.isMesh) out.push(mesh)
-  for (const child of node.children) collectVisibleMeshes(child, out)
-}
-
-/**
- * 顶点被改写后调用（悬挂形变）。这里只打标记、由拾取时重算：直接置空 bounds 会让视锥剔除
- * 每帧为所有行驶中的车遍历顶点，而 Mesh.raycast 的粗筛用的正是这份 bounds。
- */
-export function markPickBoundsStale(geometry: BufferGeometry): void {
-  geometry.userData.pickBoundsStale = true
-}
-
-const _pickBox = new THREE.Box3()
-const _pickCenter = new THREE.Vector3()
-/**
- * 单趟顶点遍历求 AABB，再令球 = AABB 中心 + 半对角线（保守球，只会多测三角形、不会漏命中）。
- * three 自带的 computeBoundingBox + computeBoundingSphere 合计 3 次全顶点遍历；悬挂形变的
- * 履带每次拾取都要重算，这里是拾取路径上最热的逐顶点成本。
- */
-function refreshPickBounds(geometry: BufferGeometry): void {
-  if (!geometry.userData.pickBoundsStale) return
-  const pos = geometry.getAttribute('position')
-  if (!pos || 'isInterleavedBufferAttribute' in pos) {
-    geometry.computeBoundingBox()
-    geometry.computeBoundingSphere()
-    geometry.userData.pickBoundsStale = false
-    return
-  }
-  const a = pos.array as ArrayLike<number>
-  const count = pos.count
-  let minX = Infinity, minY = Infinity, minZ = Infinity
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-  for (let i = 0; i < count; i++) {
-    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2]
-    if (x < minX) minX = x
-    if (x > maxX) maxX = x
-    if (y < minY) minY = y
-    if (y > maxY) maxY = y
-    if (z < minZ) minZ = z
-    if (z > maxZ) maxZ = z
-  }
-  if (minX > maxX) { minX = maxX = 0; minY = maxY = 0; minZ = maxZ = 0 }
-  _pickBox.min.set(minX, minY, minZ)
-  _pickBox.max.set(maxX, maxY, maxZ)
-  if (geometry.boundingBox) geometry.boundingBox.copy(_pickBox)
-  else geometry.boundingBox = _pickBox.clone()
-  _pickCenter.addVectors(_pickBox.min, _pickBox.max).multiplyScalar(0.5)
-  const half = _pickCenter.distanceTo(_pickBox.max)
-  if (geometry.boundingSphere) {
-    geometry.boundingSphere.center.copy(_pickCenter)
-    geometry.boundingSphere.radius = half
-  } else {
-    geometry.boundingSphere = new THREE.Sphere(_pickCenter.clone(), half)
-  }
-  geometry.userData.pickBoundsStale = false
-}
-
-const _pickRaycaster = new THREE.Raycaster()
-const _pickMeshes: Mesh[] = []
-const _pickHits: THREE.Intersection[] = []
-const _pickRoot = new THREE.Vector3()
-const _pickOffset = new THREE.Vector3()
-const _pickSphere = new THREE.Sphere()
-const _pickFrustum = new THREE.Frustum()
-const _pickViewProjection = new THREE.Matrix4()
-const _pickCandidates: Array<{ v: AimedVehicleCandidate | null; lower: number }> = []
-const _pickPool: Array<{ v: AimedVehicleCandidate | null; lower: number }> = []
-let _pickPoolUsed = 0
-/**
- * 视线最先碰到的车辆：对当前帧可见网格精确求交，炮塔转动、炮管俯仰都按实际姿态算。
- * 先按 GLB 根到视线的距离粗筛（半径与姿态无关），离视线远的车不重算 bounds、不逐网格求交；
- * Mesh.raycast 自带逐网格包围球/盒粗筛。只是选目标，遮挡由深度 pass 决定。
- *
- * 性能：候选车按「根包围球沿视线的最近可能距离」升序求交；已得到最近命中后，
- * 后续候选的最近可能距离更大即可停止——精确剪枝，不改变「最近命中」语义。
- * 传入 camera 时再按视锥剔除（包围球包含整台车，屏幕准星命中必然在视锥内）。
- */
-/** aimedVehicle 的车辆候选（场景侧 vehicles 视图：GLB 根 + 身份/资产面）。 */
-export interface AimedVehicleCandidate {
-  glb: Group
-  def: AgentVehicleTrack | { eid?: number; tank_id?: number | null; equipment?: unknown }
-  tankData?: unknown
-  group?: Object3D
-  /** GLB 装配部件姿态（poseT/poseG/gunNodes；syncPose 与 armor 网格跟随消费） */
-  glbParts?: { poseT: THREE.Matrix4; poseG: THREE.Matrix4; gunNodes: Object3D[] }
-}
-
-export function aimedVehicle(origin: THREE.Vector3, direction: THREE.Vector3, vehicles: AimedVehicleCandidate[], camera: PerspectiveCamera | null = null): AimedVehicleCandidate | null {
-  _pickRaycaster.set(origin, direction)
-  if (camera) {
-    _pickViewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-    _pickFrustum.setFromProjectionMatrix(_pickViewProjection, camera.coordinateSystem)
-  }
-  _pickCandidates.length = 0
-  _pickPoolUsed = 0
-  for (const v of vehicles) {
-    _pickRoot.setFromMatrixPosition(v.glb.matrixWorld)
-    if (_pickRaycaster.ray.distanceSqToPoint(_pickRoot) > VEHICLE_PICK_RADIUS_M ** 2) continue
-    if (camera) {
-      _pickSphere.center.copy(_pickRoot)
-      _pickSphere.radius = VEHICLE_PICK_RADIUS_M
-      if (!_pickFrustum.intersectsSphere(_pickSphere)) continue
-    }
-    const along = _pickOffset.subVectors(_pickRoot, origin).dot(_pickRaycaster.ray.direction)
-    const c = _pickPool[_pickPoolUsed] || (_pickPool[_pickPoolUsed] = { v: null as AimedVehicleCandidate | null, lower: 0 })
-    _pickPoolUsed++
-    c.v = v
-    c.lower = Math.max(0, along - VEHICLE_PICK_RADIUS_M)
-    _pickCandidates.push(c)
-  }
-  _pickCandidates.sort((a, b) => a.lower - b.lower)
-  let best: AimedVehicleCandidate | null = null, bestDistance = Infinity
-  for (const cand of _pickCandidates) {
-    const v = cand.v
-    const lower = cand.lower
-    if (!v || lower > bestDistance) continue
-    _pickMeshes.length = 0
-    _pickHits.length = 0
-    collectVisibleMeshes(v.glb, _pickMeshes)
-    for (const mesh of _pickMeshes) {
-      refreshPickBounds(mesh.geometry)
-      mesh.raycast(_pickRaycaster, _pickHits)
-    }
-    for (const hit of _pickHits) {
-      if (hit.distance < bestDistance) { best = v; bestDistance = hit.distance }
-    }
-  }
-  return best
-}
-
-const _rectCorner = new THREE.Vector3()
-/**
- * 世界包围盒的屏幕矩形（NDC，已钳到视口）。盒子穿过近裁剪面时投影不可靠，退回整屏；
- * 完全在视口外返回 null。
- */
-export function screenRect(box: Box3, camera: PerspectiveCamera): { x0: number; y0: number; x1: number; y1: number } | null {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-  for (let i = 0; i < 8; i++) {
-    _rectCorner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z)
-    _rectCorner.applyMatrix4(camera.matrixWorldInverse)
-    if (_rectCorner.z >= -camera.near) return { x0: -1, y0: -1, x1: 1, y1: 1 }
-    _rectCorner.applyMatrix4(camera.projectionMatrix)
-    x0 = Math.min(x0, _rectCorner.x); x1 = Math.max(x1, _rectCorner.x)
-    y0 = Math.min(y0, _rectCorner.y); y1 = Math.max(y1, _rectCorner.y)
-  }
-  const rect = { x0: Math.max(x0, -1), y0: Math.max(y0, -1), x1: Math.min(x1, 1), y1: Math.min(y1, 1) }
-  return rect.x1 > rect.x0 && rect.y1 > rect.y0 ? rect : null
-}
-
-const _cropMatrix = new THREE.Matrix4()
-const _viewProjection = new THREE.Matrix4()
-/** 只包住 `rect` 的视锥：屏幕矩形外的物体不可能挡住矩形内的像素。 */
-export function cropFrustum(camera: PerspectiveCamera, rect: { x0: number; y0: number; x1: number; y1: number }, out: Frustum): Frustum {
-  const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0
-  _cropMatrix.set(
-    2 / w, 0, 0, -(rect.x1 + rect.x0) / w,
-    0, 2 / h, 0, -(rect.y1 + rect.y0) / h,
-    0, 0, 1, 0,
-    0, 0, 0, 1,
-  )
-  _viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-  return out.setFromProjectionMatrix(_cropMatrix.multiply(_viewProjection), camera.coordinateSystem)
-}
 
 const _occluderSphere = new THREE.Sphere()
 const _occluderOffset = new THREE.Vector3()
@@ -375,71 +80,8 @@ export function isSolidOccluder(object: Object3D): boolean {
 }
 
 /** 炮塔/炮管 armor 网格跟随的姿态：与 glbParts 的 poseT/poseG 一一对应。 */
-export function armorPosePart(name: string): 'turret' | 'gun' | 'hull' {
-  if (/^turret_\d+/.test(name)) return 'turret'
-  if (/^gun_\d+/.test(name)) return 'gun'
-  return 'hull'
-}
-
-/** armor 世界矩阵 = GLB 根 × 部件姿态 × armor 静止矩阵（画面上的车摆在哪，装甲就在哪）。 */
-export function armorWorldMatrix(root: THREE.Matrix4, pose: THREE.Matrix4, rest: THREE.Matrix4, out: THREE.Matrix4): THREE.Matrix4 {
-  return out.copy(root).multiply(pose).multiply(rest)
-}
-
-function shellUniforms(shell: AgentPlaybackShot | Record<string, unknown>, caliber: number) {
-  const type = shellTypeOf(shell as { type?: unknown })
-  const isHE = type === 'he'
-  const isExplosive = isHE || type === 'heat'
-  return { type, isHE, isExplosive, caliber, ...shellAngles(shell as { normalization?: number | null; ricochet?: number | null }, isExplosive) }
-}
 
 /** render(frame) 的装配参数（宿主 renderArmorHighlight 现取现传）。 */
-export interface ArmorHighlightPerfStats {
-  pickMs: number
-  stateMs: number
-  thicknessMs: number
-  occluderMs: number
-  colorMs: number
-  calls: number
-  stateCalls: number
-  thicknessCalls: number
-  occluderCalls: number
-  colorCalls: number
-  rt?: ArmorRenderTargetStats
-  /** passBegin 的工作字段（perfFrame 读取前由 renderArmorHighlight 每帧清零） */
-  _t0: number
-}
-
-/** 计数按实际 render target 对象计；大小为每张 RT，估算仅含两张颜色纹理。 */
-export interface ArmorRenderTargetStats {
-  width: number | null
-  height: number | null
-  creates: number
-  resizes: number
-  disposes: number
-  colorEstimateBytes: number | null
-  estimateKind: 'color-only-estimate'
-}
-
-export interface ArmorHighlightFrame {
-  scene: Scene
-  camera: PerspectiveCamera
-  vehicle: AimedVehicleCandidate & { def: { eid: number; tank_id?: number | null; equipment?: unknown } }
-  tankData: { model_url?: string | null; [key: string]: unknown }
-  config: unknown
-  shell: AgentPlaybackShot | Record<string, unknown>
-  caliber: number
-  penMul: number
-  thickMul: number
-  onReady: () => void
-  /** ?perf 逐 pass 计时（仅 PERF 传入；调用方已关闭 info.autoReset 并逐帧 reset） */
-  stats?: ArmorHighlightPerfStats
-  /** 不重叠包围实际执行的 render；调用方以当前帧序号绑定 query。 */
-  gpu?: { begin(pass: 'state' | 'thickness' | 'occluder' | 'color'): boolean; end(): void }
-  /** 语义化遮挡根（issue #850 F）：地形/场景 GLB/占位地面/每车低模组、GLB/飞炮塔 */
-  occluderRoots?: Object3D[]
-}
-
 export function createArmorHighlight({ renderer, assetProvider }: {
   renderer: WebGLRenderer
   /** logical asset API（scene/assetProvider 的结构面） */
@@ -466,6 +108,22 @@ export function createArmorHighlight({ renderer, assetProvider }: {
   const identity = new THREE.Matrix4()
   const clipNormal = new THREE.Vector3(0, 1, 0)
   const clipPoint = new THREE.Vector3()
+  // 目标生命周期 owner（#LOC 结构拆分出仓 armorHighlightTargets.ts；GPU/模板缓存仍在本工厂）
+  const armorTargets = createArmorTargets({
+    shaders,
+    depthMaterials,
+    excludeMaterial,
+    targets,
+    pending,
+    templateRetry,
+    isDisposed: () => disposed,
+    loadTemplate,
+    identity,
+    clipNormal,
+    clipPoint,
+    clipMatrix,
+    world,
+  })
   const armorBox = new THREE.Box3()
   const armorSphere = new THREE.Sphere()
   const scissor = new THREE.Vector4()
@@ -513,118 +171,6 @@ export function createArmorHighlight({ renderer, assetProvider }: {
     return promise
   }
 
-/** 已构建的目标（三个辅助场景 + 克隆清单 + gun_mask 裁切面）。 */
-interface BuiltTarget {
-  state: Scene
-  thickness: Scene
-  color: Scene
-  clones: Mesh[]
-  clipPlane: THREE.Plane | null
-  maskOrigin: number | null
-}
-
-function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankData: import('../viewer/armorPlateModel.js').TankArmorData, cfg: import('../viewer/armorPlateModel.js').TankArmorConfig): BuiltTarget | null {
-    const pivots = armorPivots(tankData, cfg)
-    if (!pivots) return null
-    const model = template.clone(true)
-    const thicknessOf = (section: string, plateId: string): number => plateThickness(tankData, cfg, section, plateId)
-    tagArmorPlates(model, thicknessOf)
-    applyArmorConfigVisible(model, cfg, collectArmorPrefixes(model))
-    retagSpacedSections(model, tankData, cfg)
-    model.traverse((node) => { const mesh = node as Mesh; if (mesh.isMesh && mesh.userData.armorSection === 'deco') mesh.visible = false })
-    installArmorPivots(model, pivots)
-    model.updateMatrixWorld(true)
-
-    const moduleMeshes = tagModuleMeshes(vehicle.glb, thicknessOf)
-    const glbParts = vehicle.glbParts
-    const gunName = (glbParts?.gunNodes ?? []).map((n) => (n.name || '').match(/^gun_(\d+)$/)).find(Boolean)
-    const { primary, spaced } = partitionArmorMeshes(model)
-    const external = selectExternalMeshes(moduleMeshes, gunName ? parseInt(gunName[1], 10) : null, cfg)
-    const meshes = { primary, spaced, external }
-    const maskOrigin = gunMaskOriginModel(tankData, cfg)
-    const clipPlane = maskOrigin == null ? null : new THREE.Plane()
-    const materials = {
-      ...depthMaterials, exclude: excludeMaterial,
-      externalMaterial: shaders.externalMaterial, moduleStateMaterial: shaders.moduleStateMaterial,
-      spacedMaterial: shaders.spacedMaterial, spacedStateMaterial: shaders.spacedStateMaterial,
-      penetrationMaterial: shaders.penetrationMaterial,
-    }
-    const state = new THREE.Scene(), thickness = new THREE.Scene(), color = new THREE.Scene()
-    populateSpacedStateScene(state, meshes, materials, 200, clipPlane)
-    populateSpacedArmorScene(thickness, meshes, materials, 200, clipPlane)
-    populatePrimaryArmorScene(color, meshes, materials)
-    const clones: Mesh[] = []
-    for (const scene of [state, thickness, color]) {
-      scene.traverse((node) => {
-        const meshNode = node as Mesh
-        if (!meshNode.isMesh) return
-        const src = meshNode.userData._src as Mesh
-        node.userData._external = external.includes(src)
-        node.userData._part = armorPosePart((src as Mesh).name || '')
-        if (!node.userData._external) node.userData._rest = src.matrixWorld.clone()
-        clones.push(node as Mesh)
-      })
-    }
-    return { state, thickness, color, clones, clipPlane, maskOrigin }
-  }
-
-  /** 目标 armor 就绪则返回，否则懒加载（完成后 `onReady` 让场景补一帧）并返回 null。 */
-  function targetArmor(vehicle: ArmorHighlightFrame['vehicle'], tankData: ArmorHighlightFrame['tankData'], cfg: import('../viewer/armorPlateModel.js').TankArmorConfig | null | undefined, onReady: () => void): BuiltTarget | null {
-    const eid = vehicle.def.eid
-    const known = targets.get(eid)
-    if (known && known.glb === vehicle.glb) return known.armor
-    if (known) { disposeTarget(known.armor); targets.delete(eid) }   // GLB 重建后外部模块引用已失效
-    const tankId = vehicle.def.tank_id
-    if (tankId == null || pending.has(eid) || !tankData.model_url || !templateRetry.allowed(tankId)) return null
-    pending.add(eid)
-    loadTemplate(tankId, tankData.model_url).then((template) => {
-      pending.delete(eid)
-      if (disposed || !vehicle.glb || !template) return
-      targets.set(eid, { glb: vehicle.glb, armor: buildTarget(template, vehicle, tankData, cfg as import('../viewer/armorPlateModel.js').TankArmorConfig) })  // cfg 形状由 armorHighlightBlock 验证在场
-      onReady()
-    })
-    return null
-  }
-
-  function syncPose(target: BuiltTarget, vehicle: ArmorHighlightFrame['vehicle']): void {
-    const root = vehicle.glb.matrixWorld
-    const { poseT, poseG } = (vehicle as { glbParts: { poseT: THREE.Matrix4; poseG: THREE.Matrix4 } }).glbParts
-    for (const clone of target.clones) {
-      if (clone.userData._external) { clone.matrix.copy(clone.userData._src.matrixWorld); continue }
-      const part = clone.userData._part
-      const pose = part === 'turret' ? poseT : part === 'gun' ? poseG : identity
-      armorWorldMatrix(root, pose, clone.userData._rest, clone.matrix)
-    }
-    if (target.clipPlane && target.maskOrigin != null) {
-      target.clipPlane.setFromNormalAndCoplanarPoint(clipNormal, clipPoint.set(0, target.maskOrigin, 0))
-      target.clipPlane.applyMatrix4(clipMatrix.multiplyMatrices(root, poseG))
-    }
-  }
-
-  function syncUniforms(target: BuiltTarget, camera: PerspectiveCamera, { shell, caliber, penMul, thickMul }: Pick<ArmorHighlightFrame, 'shell' | 'caliber' | 'penMul' | 'thickMul'>): void {
-    const s = shellUniforms(shell, caliber)
-    for (const clone of target.clones) {
-      const u = (clone.material as Material & { uniforms?: Record<string, { value: unknown }> }).uniforms
-      if (!u) continue
-      if (u.thickness && clone.userData._baseThickness != null) u.thickness.value = clone.userData._baseThickness * thickMul
-      if (u.penetration) {
-        if (!clone.geometry.boundingSphere) clone.geometry.computeBoundingSphere()
-        const sphere0 = clone.geometry.boundingSphere as THREE.Sphere
-        world.copy(sphere0.center).applyMatrix4(clone.matrix)
-        const distance = camera.position.distanceTo(world)
-        u.penetration.value = rolledPenetration((shell as { penetration?: number }).penetration || 0, (shell as { penetration_far?: number }).penetration_far, distance, s.isHE) * penMul
-      }
-      if (u.caliber) u.caliber.value = s.caliber
-      if (u.ricochet) u.ricochet.value = s.rico
-      if (u.normalization) u.normalization.value = s.norm
-      if (u.isExplosive) u.isExplosive.value = s.isExplosive
-      if (u.canSplash) u.canSplash.value = s.isHE
-      if (u.damage) u.damage.value = (shell as { damage?: number }).damage || 0
-      if (u.explosionRadius) u.explosionRadius.value = (shell as { explosion_radius?: number }).explosion_radius || 0
-      if (u.heatmapMask) u.heatmapMask.value = true   // 没有点击爆点：HE 只显示可直穿像素
-    }
-  }
-
   function ensureTargets(rtW: number, rtH: number, shrinking = false): void {
     if (stateRT && stateRT.width >= rtW && stateRT.height >= rtH) return
     const resizing = shrinking || stateRT !== null
@@ -655,7 +201,7 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     const rt = stateRT as THREE.WebGLRenderTarget
     const spaced = spacedRT as THREE.WebGLRenderTarget
     const satGuard = rt.texture.type === THREE.HalfFloatType ? 0 : 1
-    target.color.traverse((node) => {
+    target.color.traverse((node: THREE.Object3D) => {
       const meshNode = node as Mesh
       const u = meshNode.isMesh
         ? (meshNode.material as Material & { uniforms?: Record<string, { value: unknown }> }).uniforms
@@ -754,14 +300,14 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
       stats.stateMs = 0; stats.thicknessMs = 0; stats.occluderMs = 0; stats.colorMs = 0; stats.calls = 0
       stats.stateCalls = 0; stats.thicknessCalls = 0; stats.occluderCalls = 0; stats.colorCalls = 0
     }
-    const target = targetArmor(vehicle, frame.tankData, frame.config as import('../viewer/armorPlateModel.js').TankArmorConfig | null, frame.onReady)
+    const target = armorTargets.targetArmor(vehicle, frame.tankData, frame.config as import('../viewer/armorPlateModel.js').TankArmorConfig | null, frame.onReady)
     if (!target) return
     renderer.getDrawingBufferSize(size)
-    syncPose(target, vehicle)
+    armorTargets.syncPose(target, vehicle)
     const bounds = armorBounds(target)
     const rect = screenRect(bounds, camera)
     if (!rect) return
-    syncUniforms(target, camera, frame)
+    armorTargets.syncUniforms(target, camera, frame)
 
     // 所有叠加 pass 只碰目标的屏幕矩形；遮挡集只留能挡住它的物体，主渲染的画面不受影响
     cropFrustum(camera, rect, occluderView.frustum)
@@ -865,20 +411,11 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
     }
   }
 
-  function disposeTarget(target: BuiltTarget | null): void {
-    if (!target) return
-    const released = new Set()
-    for (const clone of target.clones) {
-      if (released.has(clone.material)) continue
-      released.add(clone.material)
-      ;(clone.material as Material).dispose()
-    }
-  }
 
   function dispose(): void {
     if (disposed) return
     disposed = true
-    for (const target of targets.values()) disposeTarget(target.armor)
+    for (const target of targets.values()) armorTargets.disposeTarget(target.armor)
     targets.clear()
     for (const promise of templates.values()) {
       promise.then((model) => model?.traverse((node) => (node as Mesh).geometry?.dispose()))
@@ -930,10 +467,29 @@ function buildTarget(template: Object3D, vehicle: AimedVehicleCandidate, tankDat
   return { render, prefetch, prewarm, releaseRenderTargets, dispose }
 }
 
-/** 回放 equipment 原值 → 着色系数（调用方已确认双方 equipment 在场）。 */
-export function armorEquipmentCoeffs(shell: AgentPlaybackShot | Record<string, unknown>, authorEquipment: unknown, targetEquipment: unknown): { penMul: number; thickMul: number } {
-  return {
-    penMul: Array.isArray(authorEquipment) && authorEquipment.includes(EQ_CALIBRATED_SHELLS) ? calibratedPenMul(shellTypeOf(shell as { type?: unknown })) : 1.0,
-    thickMul: Array.isArray(targetEquipment) && targetEquipment.includes(EQ_ENHANCED_ARMOR) ? ENHANCED_ARMOR_THICK_MUL : 1.0,
-  }
-}
+// ---- 公共 API（#LOC 结构拆分出仓后 re-export，导入方零改动）----
+export {
+  aimedVehicle,
+  armorPosePart,
+  armorWorldMatrix,
+  bucketedRtSize,
+  cropFrustum,
+  markPickBoundsStale,
+  reticleAimDirection,
+  RT_BUCKET_PX,
+  screenRect,
+  spacedBufferUv,
+  spacedRectOf,
+} from './armorHighlightPick.js'
+export type { AimedVehicleCandidate } from './armorHighlightPick.js'
+export {
+  armorEquipmentCoeffs,
+  armorHighlightBlock,
+  authorShellAt,
+  createLoadRetry,
+  mountedShell,
+} from './armorHighlightPolicy.js'
+export type { LoadRetry, MountedShell, HighlightConfig } from './armorHighlightPolicy.js'
+export type { ArmorHighlightFrame, ArmorHighlightPerfStats, ArmorRenderTargetStats } from './armorHighlightTypes.js'
+export { buildTarget } from './armorHighlightTargets.js'
+export type { BuiltTarget } from './armorHighlightTargets.js'

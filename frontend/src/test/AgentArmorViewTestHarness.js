@@ -9,7 +9,7 @@ import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 
 export function installHarness(mocks) {
   const shots = [
-    { index: 6, time_s: 72, shooter_tank_name: 'Object 907', target_tank_name: 'E 100', shooter_name: 'Nickname', shooter_tank_id: 1, target_tank_id: 2, target_eid: 20, damage: 350, hit_flags: 0x10 },
+    { index: 6, time_s: 72, shooter_tank_name: 'Object 907', target_tank_name: 'E 100', shooter_name: 'Nickname', shooter_tank_id: 1, target_tank_id: 2, target_eid: 20, damage: 350, hit_flags: 0x10, shell_kind: 'ap' },
     { index: 9, time_s: 95, shooter_tank_name: 'Object 907', target_tank_name: 'Maus', shooter_tank_id: 1, target_tank_id: 3, target_eid: 30, damage: 0, hit_flags: 0x8 },
   ]
   const mounted = []

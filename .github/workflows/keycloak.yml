@@ -20,6 +20,8 @@ on:
       - deploy/check-latest-main.sh
       - deploy/tx/keycloak.compose.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/deploy-stage.sh
+      - deploy/tx/deploy-health.sh
       - deploy/tx/common.compose.yml
       - deploy/tx/docker-compose.yml
   workflow_dispatch:
@@ -46,6 +48,8 @@ env:
     deploy/check-latest-main.sh
     deploy/tx/keycloak.compose.yml
     deploy/tx/deploy.sh
+    deploy/tx/deploy-stage.sh
+    deploy/tx/deploy-health.sh
     deploy/tx/common.compose.yml
     deploy/tx/docker-compose.yml
 concurrency:

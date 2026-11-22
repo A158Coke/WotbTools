@@ -448,6 +448,7 @@ describe('PlayerDetailDrawer export', () => {
 describe('Drawer stacking / layout contract', () => {
   it('桌面 / 平板侧栏从顶栏下方开始（--header-h）；手机全屏 sheet 提升到 sheet 层', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
+      + readFileSync(resolve(process.cwd(), 'src/components/player-detail.css'), 'utf8')
     expect(source).toContain('top: calc(var(--header-h) + var(--space-2))')
     expect(source).not.toContain('top: 56px')
     const mobileBlock = source.match(/@media \(width < 768px\) \{\r?\n  \.drawer-backdrop[\s\S]*?\r?\n\}/)?.[0] || ''
@@ -590,6 +591,8 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
 
   it('导出卡包含坦克信息（与 Drawer 同数据源）+ 动态 import runtime', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/components/PlayerDetailDrawer.vue'), 'utf8')
+      + readFileSync(resolve(process.cwd(), 'src/components/player-detail/useRatingProfileExport.ts'), 'utf8')
+      + readFileSync(resolve(process.cwd(), 'src/components/player-detail.css'), 'utf8')
     expect(source).toContain('rp-vehicle')
     expect(source).toContain('exportPortrait')
     expect(source).toContain('ensureVehiclePortraitForExport')
@@ -762,6 +765,7 @@ describe('PlayerDetailDrawer Side Panel resize（仅桌面）', () => {
     const resizer = wrapper.find('[data-testid="drawer-resizer"]')
     expect(resizer.exists()).toBe(true)
     expect(resizer.attributes('role')).toBe('separator')
+    expect(resizer.attributes('aria-valuemin')).toBe('320')
     expect(widthNum(wrapper)).toBe(DEFAULT_W)
     await resizer.trigger('pointerdown', { clientX: 320, pointerId: 1 })
     await resizer.trigger('pointermove', { clientX: 260 })
