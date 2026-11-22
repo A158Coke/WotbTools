@@ -66,8 +66,28 @@ body_size() {
 
 case "$url" in
   *"/upload-link/"*)
-    printf '%s\n' '"https://upload.example/signed?token=SIGNED-SECRET&expires=1"'
-    exit 0
+    bump upload-link-count
+    n="$(cat "$ROOT/upload-link-count")"
+    action="$(sed -n "$n p" "$ROOT/upload_link_actions")"
+    action="${action:-ok}"
+    case "$action" in
+      ok)
+        printf '%s\n' '"https://upload.example/signed?token=SIGNED-SECRET&expires=1"'
+        exit 0
+        ;;
+      reset)
+        write_err 'curl: (56) Recv failure: Connection reset by peer'
+        exit 56
+        ;;
+      http500)
+        write_err 'curl: (22) The requested URL returned error: 500'
+        exit 22
+        ;;
+      *)
+        echo "unknown mock upload-link action: $action" >&2
+        exit 99
+        ;;
+    esac
     ;;
   *"upload.example"*)
     bump upload-count
@@ -209,11 +229,14 @@ init_case() {
   cp "$TMP/expected.apk" "$CASE/expected.apk"
   cp "$TMP/wrong.apk" "$CASE/wrong.apk"
   printf 'ok\n' > "$CASE/share_mode"
+  printf 'ok\n' > "$CASE/upload_link_actions"
   : > "$CASE/upload_actions"
+  : > "$CASE/upload-link-count"
   : > "$CASE/curl-args.log"
 }
 set_share() { printf '%s\n' "$1" > "$CASE/share_mode"; }
 set_actions() { printf '%s\n' "$@" > "$CASE/upload_actions"; }
+set_link_actions() { printf '%s\n' "$@" > "$CASE/upload_link_actions"; }
 
 run_stage() {
   set +e
@@ -238,6 +261,7 @@ case_success() {
   assert_rc 0
   assert_count upload-count 1
   assert_count probe-count 2
+  assert_count upload-link-count 1
   assert_contains "SHA-256 matches expected"
   assert_contains "$EXPECTED"
   assert_remote_sha
@@ -271,6 +295,7 @@ case_reset_then_retry_success() {
   assert_rc 0
   assert_count upload-count 2
   assert_count probe-count 7
+  assert_count upload-link-count 2
   assert_contains "not confirmed; retrying in 5s"
   assert_contains "SHA-256 matches expected"
   assert_remote_sha
@@ -298,6 +323,7 @@ case_reset_never_appears() {
   run_stage
   assert_rc 1
   assert_count upload-count 3
+  assert_count upload-link-count 3
   assert_contains "public-share SHA-256 verification failed after 3"
   assert_contains "upload transport failed on all 3"
   assert_not_contains "upload endpoint returned an HTTP error"
@@ -341,7 +367,9 @@ case_wrong_remote_sha() {
   run_stage
   assert_rc 1
   assert_count upload-count 3
+  assert_count probe-count 7
   assert_contains "SHA-256 mismatch"
+  assert_contains "limiting full APK re-downloads to 2 per upload"
   assert_contains "expected $EXPECTED"
   assert_not_contains "SHA-256 matches expected"
   echo "PASS wrong remote SHA is rejected"
@@ -413,6 +441,71 @@ case_diagnostics_bounded() {
   echo "PASS diagnostics are bounded and secrets are redacted"
 }
 
+case_upload_link_retry() {
+  init_case "upload-link-retry"
+  set_link_actions reset ok
+  set_actions ok
+  run_stage
+  assert_rc 0
+  assert_count upload-link-count 2
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_contains "upload-link attempt 1/3 failed (curl rc=56)"
+  assert_contains "upload-link acquired on attempt 2/3"
+  assert_remote_sha
+  echo "PASS upload-link transient failure retries and succeeds"
+}
+
+case_upload_link_exhausted() {
+  init_case "upload-link-exhausted"
+  set_link_actions reset reset reset
+  set_actions ok
+  run_stage
+  assert_rc 1
+  assert_count upload-link-count 3
+  assert_count upload-count 0
+  assert_count probe-count 1
+  assert_contains "upload-link request failed after 3 attempt(s)"
+  assert_contains "release gate remains closed"
+  assert_not_contains "$TOKEN"
+  assert_not_contains "SIGNED-SECRET"
+  echo "PASS upload-link retry budget exhausted before upload"
+}
+
+case_upload_link_http_error() {
+  init_case "upload-link-http-error"
+  set_link_actions http500 ok
+  set_actions ok
+  run_stage
+  assert_rc 0
+  assert_count upload-link-count 2
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_contains "upload-link attempt 1/3 failed (curl rc=22)"
+  assert_contains "upload-link acquired on attempt 2/3"
+  assert_remote_sha
+  echo "PASS upload-link HTTP error retries and succeeds"
+}
+
+case_content_mismatch_then_retry_success() {
+  init_case "content-mismatch-retry"
+  set_actions wrong ok
+  run_stage
+  assert_rc 0
+  assert_count upload-count 2
+  assert_count upload-link-count 2
+  assert_count probe-count 4
+  assert_contains "limiting full APK re-downloads to 2 per upload"
+  assert_contains "SHA-256 mismatch"
+  assert_contains "SHA-256 matches expected"
+  assert_remote_sha
+  echo "PASS content mismatch limits full downloads and retry succeeds"
+}
+
+case_upload_link_retry
+case_upload_link_http_error
+case_upload_link_exhausted
+case_content_mismatch_then_retry_success
 case_success
 case_preexisting_remote
 case_reset_remote_matches

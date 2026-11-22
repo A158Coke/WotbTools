@@ -12,8 +12,11 @@ REPO_ID="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
 PARENT_DIR="/wotbtools-android"
 SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
 UPLOAD_LINK_API="https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1"
+UPLOAD_LINK_ATTEMPTS=3
+UPLOAD_LINK_RETRY_DELAY=3
 UPLOAD_ATTEMPTS=3
 VERIFY_ATTEMPTS=5
+VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
 WORK="$RUNNER_TEMP/thu-upload"
 mkdir -p "$WORK"
@@ -41,6 +44,7 @@ bounded_string() {
 PROBE_RC=0
 PROBE_HTTP=000
 PROBE_BYTES=0
+PROBE_OUTCOME=""
 # Download the public-share object and compare its SHA-256. This is the sole
 # release gate; an upload response is never accepted as proof of success.
 probe_remote() {
@@ -48,6 +52,7 @@ probe_remote() {
   PROBE_RC=0
   PROBE_HTTP=000
   PROBE_BYTES=0
+  PROBE_OUTCOME=""
   : > "$WORK/probe.apk"
   : > "$WORK/probe-curl.err"
   diag="$(curl -sS -L --connect-timeout 5 --max-time 900 \
@@ -57,35 +62,48 @@ probe_remote() {
   PROBE_HTTP="${PROBE_HTTP:-000}"
   PROBE_BYTES="${PROBE_BYTES:-0}"
   if [ "$PROBE_RC" -ne 0 ]; then
+    PROBE_OUTCOME="transport"
     echo "  $label: HTTP $PROBE_HTTP, curl rc=$PROBE_RC, size=${PROBE_BYTES}B; curl error: $(bounded_file "$WORK/probe-curl.err")"
     return 1
   fi
   if [ "$PROBE_HTTP" != "200" ]; then
+    PROBE_OUTCOME="http_error"
     echo "  $label: HTTP $PROBE_HTTP, curl rc=0, size=${PROBE_BYTES}B; public share did not return the APK."
     return 1
   fi
   if [ ! -s "$WORK/probe.apk" ] || [ "$PROBE_BYTES" = "0" ]; then
+    PROBE_OUTCOME="empty"
     echo "  $label: HTTP 200 but the response body is empty; treating the object as missing."
     return 1
   fi
   actual="$(sha256sum "$WORK/probe.apk" | awk '{print $1}')"
   if [ "$actual" = "$EXPECTED_SHA" ]; then
+    PROBE_OUTCOME="match"
     echo "  $label: HTTP 200, ${PROBE_BYTES}B, SHA-256 matches expected."
     return 0
   fi
+  PROBE_OUTCOME="sha_mismatch"
   echo "  $label: HTTP 200, ${PROBE_BYTES}B, SHA-256 mismatch (expected $EXPECTED_SHA, got $actual)."
   return 1
 }
 
 # A failed or unconfirmed upload may still have written the object. Verify the
-# public share (bounded) before deciding that another upload is needed.
+# public share before deciding that another upload is needed. HTTP/transport
+# failures download only a small error body, so they get the full retry budget.
+# HTTP 200 with the wrong bytes downloads a whole APK each time; cap full
+# verification downloads at 2 per upload and let the next replace=1 upload fix
+# the object.
 confirm_remote() {
-  local phase="$1" attempt=1
-  while [ "$attempt" -le "$VERIFY_ATTEMPTS" ]; do
-    if probe_remote "$phase (verify $attempt/$VERIFY_ATTEMPTS)"; then
+  local phase="$1" attempt=1 limit="$VERIFY_ATTEMPTS"
+  while [ "$attempt" -le "$limit" ]; do
+    if probe_remote "$phase (verify $attempt/$limit)"; then
       return 0
     fi
-    if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
+    if [ "$PROBE_OUTCOME" = "sha_mismatch" ] && [ "$limit" -ne "$VERIFY_ATTEMPTS_CONTENT" ]; then
+      limit="$VERIFY_ATTEMPTS_CONTENT"
+      echo "  $phase: content mismatch; limiting full APK re-downloads to $limit per upload."
+    fi
+    if [ "$attempt" -lt "$limit" ]; then
       sleep "$VERIFY_RETRY_DELAY"
     fi
     attempt=$((attempt + 1))
@@ -94,24 +112,39 @@ confirm_remote() {
 }
 
 ULINK=""
+ULINK_RAW=""
 fetch_upload_link() {
-  local rc=0 jq_rc=0
-  : > "$WORK/upload-link.err"
-  ULINK_RAW="$(curl -fsS --connect-timeout 10 --max-time 60 \
-    --stderr "$WORK/upload-link.err" \
-    -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "$UPLOAD_LINK_API")" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "::error::Tsinghua upload-link request failed (curl rc=$rc): $(bounded_file "$WORK/upload-link.err")" >&2
-    return 1
-  fi
-  ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.' 2> "$WORK/upload-link-jq.err")" || jq_rc=$?
-  case "$ULINK" in
-    https://*) ;;
-    *)
-      echo "::error::Tsinghua upload-link response is not a JSON URL string (jq rc=$jq_rc, jq error: $(bounded_file "$WORK/upload-link-jq.err")); bounded response: $(bounded_string "$ULINK_RAW")" >&2
-      return 1
-      ;;
-  esac
+  local attempt=1 rc=0 jq_rc=0 delay
+  ULINK=""
+  while [ "$attempt" -le "$UPLOAD_LINK_ATTEMPTS" ]; do
+    rc=0
+    jq_rc=0
+    : > "$WORK/upload-link.err"
+    : > "$WORK/upload-link-jq.err"
+    ULINK_RAW="$(curl -fsS --connect-timeout 10 --max-time 60 \
+      --stderr "$WORK/upload-link.err" \
+      -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "$UPLOAD_LINK_API")" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.' 2> "$WORK/upload-link-jq.err")" || jq_rc=$?
+      case "$ULINK" in
+        https://*)
+          echo "Tsinghua upload-link acquired on attempt $attempt/$UPLOAD_LINK_ATTEMPTS."
+          return 0
+          ;;
+      esac
+      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS returned an invalid URL (jq rc=$jq_rc, jq error: $(bounded_file "$WORK/upload-link-jq.err")); bounded response: $(bounded_string "$ULINK_RAW")"
+    else
+      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS failed (curl rc=$rc): $(bounded_file "$WORK/upload-link.err")"
+    fi
+    if [ "$attempt" -lt "$UPLOAD_LINK_ATTEMPTS" ]; then
+      delay=$((UPLOAD_LINK_RETRY_DELAY * attempt))
+      echo "  Retrying upload-link in ${delay}s."
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
+  done
+  echo "::error::Tsinghua upload-link request failed after $UPLOAD_LINK_ATTEMPTS attempt(s) (last curl rc=$rc, jq rc=$jq_rc); release gate remains closed." >&2
+  return 1
 }
 
 UPLOAD_RC=0
@@ -157,7 +190,6 @@ if probe_remote "pre-upload remote check"; then
   exit 0
 fi
 
-fetch_upload_link
 echo "Tsinghua upload uses replace=1; the public SHA-256 remains the release gate."
 
 CONFIRMED=false
@@ -169,6 +201,13 @@ SAW_UPLOAD_HTTP_ERROR=false
 SAW_HTTP_400=false
 attempt=1
 while [ "$attempt" -le "$UPLOAD_ATTEMPTS" ]; do
+  # Seafile upload links are short-lived. Fetch a fresh link for every attempt
+  # instead of reusing one across the retry window; the 2700s upload max-time
+  # stays inside Seafile's default 1h link lifetime.
+  if ! fetch_upload_link; then
+    echo "::error::Tsinghua Cloud upload-link unavailable; release gate remains closed." >&2
+    exit 1
+  fi
   upload_once "$attempt"
   LAST_UPLOAD_RC="$UPLOAD_RC"
   LAST_UPLOAD_HTTP="$UPLOAD_HTTP"

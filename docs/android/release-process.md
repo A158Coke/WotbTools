@@ -142,7 +142,7 @@ TX1 出口公网带宽有限且会被 APK 下载打满；APK 随内嵌 bundle �
 - 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。
 
 - URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，客户端跟着 302 走；`/download/android/version.json` 与 `*.staging.json` **不在**重定向范围内，仍由 TX1/TX2 前端源站服务（deploy 预检的运行时内容一致性比对不受影响）。
-- fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。stage-17 先探测远端 SHA，只有在无法确认匹配时才上传（`replace=1`，最多 3 次、5s/10s backoff）；每次上传后都重新回读校验（5 次、3s 间隔），因此 curl 传输失败也先确认远端是否已写入才重试。诊断只保留 bounded 的 HTTP 状态、curl rc、响应体/错误和传输指标，并对 token 字段与签名 URL 脱敏；上传传输失败与分享回读校验失败分别报错。
+- fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。stage-17 先探测远端 SHA，只有在无法确认匹配时才上传（每次上传前重新获取 upload-link，获取失败最多 3 次、3s/6s backoff；Seafile 默认 1h 有效，单次上传上限 45m；`replace=1`，最多 3 次、5s/10s backoff）；每次上传后都重新回读校验（HTTP/传输错误最多 5 次、3s 间隔；HTTP 200 但内容不匹配时每个上传最多做 2 次完整下载校验（含首次），避免反复拉取整个 APK），因此 curl 传输失败也先确认远端是否已写入才重试。诊断只保留 bounded 的 HTTP 状态、curl rc、响应体/错误和传输指标，并对 token 字段与签名 URL 脱敏；上传传输失败与分享回读校验失败分别报错。
 - 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的 `REPO_ID` / 分享 token，两边一一对应。
 
 ### 卸载链路体检（offload probe）
