@@ -76,6 +76,8 @@ describe('PlaybackRoster', () => {
     // 血量条宽度按比例
     expect(bar.classes()).toContain('hp-mode-exact')
     expect(bar.element.querySelector('.pb-roster-hpfill').style.width).toBe('100%')
+    // 行背景 = 血条 track：整行血条的 mode 类同时落在行 button 上（unknown 中性底靠它）
+    expect(alive.classes()).toContain('hp-mode-exact')
     expect(alive.get('[data-test="pb-roster-player"]').text()).toBe('Wingman')
     expect(alive.get('[data-test="pb-roster-tank"]').text()).toBe('T-62A')
     wrapper.unmount()
@@ -102,6 +104,8 @@ describe('PlaybackRoster', () => {
     const unknownRow = bare.findAll('[data-test="pb-roster-row"]')[1]
     expect(unknownRow.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('—')
     expect(unknownRow.get('[data-test="roster-hp"]').classes()).toContain('hp-mode-unknown')
+    // 整行血条：unknown 行的中性底从 52px 胶囊上移到整行
+    expect(unknownRow.classes()).toContain('hp-mode-unknown')
     expect(unknownRow.find('.pb-roster-hpfill').exists()).toBe(false)
     bare.unmount()
     wrapper.unmount()
@@ -139,9 +143,10 @@ describe('PlaybackRoster', () => {
     wrapper.unmount()
   })
 
-  it('HP 条源码回归：行尾 52 宽，数值写在条内，无弹夹分段节点', () => {
+  it('HP 条源码回归：填充段 = 整条行宽（绝对定位到行），数值保留行尾 52px 槽位；无弹夹分段节点', () => {
     // happy-dom 没有布局引擎（computed style 量不到真实尺寸），所以这里锁的是**声明本身**；
-    // 真实渲染后的比值由 browser gate 断言。
+    // 真实渲染后的比值由 browser gate 断言。2026-11-19 用户口径：血条显示范围 = 整个条目，
+    // 不再在标签内部画一个小血条；数值位置保持行尾原位。
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
     const block = (selector) => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -151,8 +156,27 @@ describe('PlaybackRoster', () => {
     const hpBar = block('.pb-roster-hpbar')
     expect(hpBar).toContain('inline-size: 52px')
     expect(hpBar).toContain('block-size: var(--space-4)')
-    // 单行 flex 行；条内文字 / 弹夹分段的节点与样式均已移除
-    expect(block('.pb-roster-row')).toContain('flex-direction: row')
+    // 填充层：绝对定位到行、铺满整行高度（血条保持完整）、z-index:-1 垫在身份文字下方
+    const fill = block('.pb-roster-hpfill')
+    expect(fill).toContain('position: absolute')
+    expect(fill).toContain('inset-block: 0')
+    expect(fill).not.toContain('block-size: 66.667%')
+    expect(fill).toContain('inset-inline-start: 0')
+    expect(fill).toContain('z-index: var(--roster-rowfill-z)')
+    // 行：track 背景 + 隔离栈（负 z-index 填充盖住行背景、不压文字）
+    const row = block('.pb-roster-row')
+    expect(row).toContain('--roster-rowfill-z: -1')
+    expect(row).toContain('flex-direction: row')
+    expect(row).toContain('isolation: isolate')
+    expect(row).toContain('overflow: hidden')
+    expect(source).toMatch(/\.pb-roster-team \.pb-roster-row \{ background: var\(--color-playback-label-track\)/)
+    // 2026-11-19 用户口径：桌面/平板整体名册高度 = 车道的 2/3（dense / 竖屏保持内容高）
+    const card = block('.pb-roster-3d')
+    expect(card).toContain('flex: 0 0 auto')
+    expect(source).toContain('.pb-roster-3d.pb-roster-compact:not(.pb-roster-dense) { flex: 0 0 66.667%; }')
+    // 数值槽位不再自绘胶囊底（不再有小血条），只有数字；unknown 行的中性底上移到整行
+    expect(block('.pb-roster-hpvalue')).not.toContain('position: absolute')
+    expect(source).toContain('.pb-roster-team .pb-roster-row.hp-mode-unknown')
     expect(source).not.toContain('pb-roster-hptext')
     expect(source).not.toContain('pb-roster-reload')
     expect(source).not.toContain('pb-roster-shell')

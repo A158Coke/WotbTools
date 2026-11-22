@@ -109,6 +109,12 @@ export function createPlaybackApi(S: Host) {
     /** 触屏相机契约开关（usePlaybackPhoneForm 判定，watch 下发；状态 owner = cameraRuntime）。 */
     setMobileTouch: (enabled: boolean) => S.cameraRuntime.setMobileTouch(enabled),
     setFollow: (eid: number | null) => S.cameraRuntime.setFollow(eid),
+    // 3D 战场快捷标记开关（会话级；暂停时也要立即重算窗口，与 setTreadMarks 同理由）
+    setBattleMarkers: (on: boolean) => {
+      S.battleMarkers?.setEnabled(!!on);
+      S.battleMarkers?.update(S.T);
+      S.invalidate();
+    },
     setGlb: (on: boolean) => { if (!S.Q.forceGlb && (S.Q.allowGlb || !on)) S.vehicles.applyGlbToggle(on); S.invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
     setTreadMarks: (on: boolean) => {

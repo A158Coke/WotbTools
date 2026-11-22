@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import BattlePlayback from './BattlePlayback.vue'
 import BattlePlaybackPanel from './BattlePlaybackPanel.vue'
@@ -28,7 +29,7 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-function mountPanel(props = {}) {
+function mountPanel(props = {}, stubs = {}) {
   return mount(BattlePlaybackPanel, {
     props: { file: new File(['a'], 'a.wotbreplay'), active: true, ...props },
     global: {
@@ -38,6 +39,7 @@ function mountPanel(props = {}) {
         BattlePlayback: { props: ['overview', 'playbackV2', 'reloadTelemetry', 'result'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
         BattleMap3D: true,
         teleport: true,
+        ...stubs,
       },
     },
   })
@@ -79,6 +81,32 @@ describe('BattlePlaybackPanel local playback parse', () => {
     expect(find(wrapper, 'pb-stub').exists()).toBe(true)
     expect(session.loadScene).not.toHaveBeenCalled()
     expect(playback.parseLocalPlayback).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('2D 未激活时不消费交接请求：迟到的解析不得让隐藏面板开始播放', async () => {
+    const seekAndPlay = vi.fn()
+    const PlaybackStub = defineComponent({
+      name: 'BattlePlayback',
+      props: ['overview', 'playbackV2', 'reloadTelemetry', 'result'],
+      setup(_, { expose }) {
+        expose({ seekAndPlay })
+        return () => h('div', { 'data-test': 'pb-stub' })
+      },
+    })
+    const pending = deferred()
+    playback.parseLocalPlayback.mockReturnValue(pending.promise)
+    const wrapper = mountPanel({ active: true, seekRequest: null }, { BattlePlayback: PlaybackStub })
+    // 解析在途时切走并留下 3D→2D 的交接请求（真实工作台在同一 tick 更新 active 与请求）
+    await wrapper.setProps({ active: false, seekRequest: { id: 1, sec: 10, playing: true, speed: 2 } })
+    pending.resolve({ dataset: dataset(), overview: null, reloadTelemetry: null })
+    await flushPromises()
+    expect(seekAndPlay).not.toHaveBeenCalled()
+    // 重新激活后才一次性应用（seek + 播放态 + 倍速）
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+    expect(seekAndPlay).toHaveBeenCalledTimes(1)
+    expect(seekAndPlay).toHaveBeenCalledWith(10, true, 2)
     wrapper.unmount()
   })
 

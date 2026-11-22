@@ -50,7 +50,7 @@ interface ParsePending {
 // tank_id → 显示名（静态 tank_cache.json；资产源未配置/缺失 → 空表，label 走
 // tank_{id} 兜底）。解析/身份面保持 asset-independent——此处仅补**展示名**。
 let tankNamesPromise: Promise<Map<number, string>> | null = null
-function tankNamesStatic() {
+export function tankNamesStatic() {
   if (!tankNamesPromise) {
     tankNamesPromise = assetProvider.json<Record<string, { name?: string } | null>>('/data/tank_cache.json').then((cache) => {
       const out = new Map<number, string>()

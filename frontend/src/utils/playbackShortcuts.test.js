@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { REPLAY_3D_PANE_SOURCE } from '../components/replay3dPane.test.source.js'
 import {
   RIDE_DIGIT_MAX,
   buildKillTicks,
@@ -222,7 +223,8 @@ describe('rosterRideTarget（数字键骑乘：1–7 己方 / Shift+1–7 敌方
 
 describe('源码级 guard：数字键冲突消解逻辑存在', () => {
   const transport = readFileSync(resolve(here, '../composables/usePlaybackTransport.ts'), 'utf8')
-  const pane = readFileSync(resolve(here, '../components/useReplay3DPaneCore.ts'), 'utf8')
+  // 拆分后实现分布在 Replay3DPane.vue + replay3dPane{A..C}.ts；守卫必须覆盖全部 owner。
+  const pane = REPLAY_3D_PANE_SOURCE
 
   it('transport 的数字键分支先经 fly 模式判定，才调 rideVehicle（自由飞行激活 → 数字键归飞行速率）', () => {
     // 分支条件现同时排除 Ctrl/Meta/Alt（浏览器快捷键不得被骑乘劫持）；顺序断言不变

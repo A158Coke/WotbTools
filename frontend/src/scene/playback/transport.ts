@@ -15,6 +15,7 @@ export function installTransport(S: Host) {
     setPaused: bind(S, setPaused),
     battleRange: bind(S, battleRange),
     setBattleClock: bind(S, setBattleClock),
+    rebuildMarkersWithIdentitySnapshot: bind(S, rebuildMarkersWithIdentitySnapshot),
     seekTo: bind(S, seekTo),
     setSpeed: bind(S, setSpeed),
   })
@@ -25,6 +26,8 @@ export function installTransport(S: Host) {
   // ~10Hz 更新即可；seek / 会话开始 / 停播等状态跳变时 force 立即补一次，语义不丢。
   S.HUD_INTERVAL_MS = 100;
   S.hudWrittenMs = -Infinity;
+  // canonical 身份指纹快照（建源时同步；变更才重建标记事件源，不按帧重建）。
+  S.markersIdentitySnapshot = null;
   function writeHud(S: Host, force = false) {
     if (!S.DATA) return;
     const now = performance.now();
@@ -88,6 +91,21 @@ export function installTransport(S: Host) {
       ? Math.min(streamEnd, clock.startRaw + clock.durationSec) : dataEnd;
     return [start, Math.max(start, end)];
   }
+  /** 当前 canonical 身份指纹（entityStartsByAccount + startRaw；null = 无身份证据）。 */
+  function canonicalIdentityFingerprint(S: Host): string | null {
+    const canonical = (S.store.playbackSession as { canonical?: { entityStartsByAccount?: Map<number, Map<number, number | null>> | null; clock?: { startRaw?: number | null } | null } | null } | null)?.canonical
+    const starts = canonical?.entityStartsByAccount
+    return canonical && starts
+      ? JSON.stringify([canonical.clock?.startRaw ?? null,
+        [...starts].map(([account, perEntity]) => [account, [...perEntity]])
+          .sort(([a], [b]) => (a as number) - (b as number))])
+      : null
+  }
+  /** 开场建源与 canonical 变更共用：按当前身份指纹重建标记事件源并同步快照。 */
+  function rebuildMarkersWithIdentitySnapshot(S: Host) {
+    S.markersIdentitySnapshot = canonicalIdentityFingerprint(S)
+    S.battleMarkers?.buildMarkers()
+  }
   /**
    * canonical 时钟换了（晚到 / 失败 / 换会话）：重定 [START, END]，把 T 夹回范围（越界才 seek，范围内不打断播放），
    * 越过新终点时停播；随即发布到 store，播放条 / 顶栏 / Details 与引擎同一刻对齐。
@@ -99,9 +117,16 @@ export function installTransport(S: Host) {
     S.battle.transients.resyncBursts(S.T);   // late canonical never replays past explosions
     S.store.startTime = S.START;
     S.store.duration = S.END;
+    // 0x2f attack_enemy 的目标 eid 在建源时按当时身份固定；canonical 身份指纹变化
+    // （晚到 / 修正 / 换会话）时重建事件源。显式 target_eid 由 payload 原样重推。
+    const identityChanged = canonicalIdentityFingerprint(S) !== S.markersIdentitySnapshot;
+    if (identityChanged) rebuildMarkersWithIdentitySnapshot(S);
     const t = Math.max(S.START, Math.min(S.END, S.T));
     if (t !== S.T) S.seekTo(t);
-    else for (const v of S.vehicles.getVehicles()) S.vehicles.applyPose(v);   // canonical late/failure refreshes paused visuals too
+    else {
+      for (const v of S.vehicles.getVehicles()) S.vehicles.applyPose(v);   // canonical late/failure refreshes paused visuals too
+      if (identityChanged) S.battleMarkers?.update(S.T);   // 未越界：应用新位姿后按当前 T 重算标记
+    }
     if (S.PLAYING && S.T >= S.END) S.setPlaying(false);
     S.writeHud(true);
     S.invalidate();

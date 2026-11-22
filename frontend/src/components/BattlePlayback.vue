@@ -1,6 +1,12 @@
 <script setup>
+/**
+ * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
+ * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
+ * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
+ */
+
+import { ref } from 'vue'
 import { mapLabel } from '../utils/helpers.js'
-import { formatClock } from '../utils/battlePlayback.js'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye } from 'lucide-vue-next'
 import { ANNOT_COLORS, ANNOT_FONT_SIZE, ANNOT_WIDTH_MAX, ANNOT_WIDTH_MIN, canRedo, canUndo } from '../utils/annotation.js'
 import BattleMap from './BattleMap.vue'
@@ -13,13 +19,13 @@ import SegmentedControl from './SegmentedControl.vue'
 import PlaybackMobileOverlay from './PlaybackMobileOverlay.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
-import { useBattlePlaybackModel } from './useBattlePlaybackModel.ts'
+import { formatClock } from '../utils/battlePlayback.js'
+import { bpA } from './battlePlaybackA.js'
+import { bpB } from './battlePlaybackB.js'
+import { bpC } from './battlePlaybackC.js'
+import { bpD } from './battlePlaybackD.js'
+import { bpE } from './battlePlaybackE.js'
 
-/**
- * 战局回放（Battle Playback）：地图鸟瞰中的主播放视图。
- * 复用 mapImages 素材、coordinateBounds 坐标映射、自适应色板与响应式布局；
- * RAF 只推进 battle-relative 时间，坐标查询遵循 canonical positionSegments。
- */
 const props = defineProps({
   /**
    * MapOverview（heatmap/secondary 鸟瞰）overlay 数据。仅提供可选 overlay 事实
@@ -39,6 +45,9 @@ const props = defineProps({
   poseFacet: { type: Object, default: null },
   /** battle-relative → 回放时钟域的偏移（canonical `clock.startRaw`）；与 poseFacet 同时给出。 */
   clockOffset: { type: Number, default: null },
+  /** 2D 时间轴刻度源：与 3D 同一份 scenePlayback facet（shots / kills；原始秒，由本组件换算）。 */
+  facetShots: { type: Array, default: null },
+  facetKills: { type: Array, default: null },
   result: { type: Object, default: null },
   /** Raw Playback reload evidence stays outside the generic canonical/HTTP dataset. */
   reloadTelemetry: { type: Object, default: null },
@@ -51,11 +60,66 @@ const props = defineProps({
   autoFullscreen: { type: Object, default: null },
 })
 
-const {   t, locale, gunMarks, uiHidden, pbOverview, image, imageSrc, mapView,   playback, duration, friendlyTeam, friendlyHp, enemyHp, friendlyPoints, enemyPoints, labelPrefs,   hpPrefs, trailPrefs, markerPrefs, uiPrefs, declutterActive, toggleDeclutter, hpModeOptions, ghostFor,   flashFor, visibleFeed, mobileOverlay, transportEl, displayOpen, displaySection, displayAnchor, toggleDisplay,   battlefieldWorkspaceEl, mapComponent, mapStageEl, pbRoot, formFactor, isMobileDevice, phoneLandscape, compactAnnotation,   controlsCollapsed, controlsContentId, rosterLanesOpen, toggleRosterLanes, transportToggleEl, transportContentEl, freezeTransportHeight, startTransportEnter,   openTransportHeight, closeTransportHeight, clearTransportHeight, toggleTransport, lifecycleVisible, isFullscreen, pseudoFullscreen, fullscreenSupported,   toggleFullscreen, floatingFullscreenRow, view, viewportStyle, resetView, wheelHintVisible, mapTouchPan, onWheel,   onPointerDown, onPointerMove, onPointerUp, onViewportClick, annotationOpen, activeTool, routePoints, annotColor,   annotVisible, annotWidthSlider, textSession, textInputStyle, renderedAnnotations, history, historyIndex, annotations,   selectedAnnotation, cancelRoute, toggleTool, toggleAnnotation, closeAnnotation, undoAnnot, redoAnnot, clearAll,   setAnnotColor, toggleAnnotations, finishRoute, commitSession, cancelSession, deleteSelected, renameSelected, currentTime,   playing, speed, hpNoTransition, play, seek, step, setSpeed, seekToEvent,   vehicleStates, visibleTracers, tracerColor, visibleTrails, hpFor, userVisibleEvents, selectedAccountId, detailsSide,   detailsState, selectedTrack, selectedHealth, selectedPortraitUrl, selLastKnownSec, selCurStats, selDamageLog, closeSidebar,   onMarkerSelect, selectFromRoster, setUiHidden, hpPrefsForMap, markerPrefsForMap, visibleFloats, visibleBursts, eventLabel,   showRosterPresentation, transport, dragStart, dragEnd, teamVehicles, rosterTeams, destroyedNow, rosterLanes,   rosterEntryVisible, hudClockVisible, inlineStack, detailsFloating, rosterHealth, rosterReload, floatTeamClass, markerLabel,   hudBaseStates, basesAt, mapStyle, exposed } = useBattlePlaybackModel(props)
-defineExpose(exposed)
 
+// 各段按原脚本顺序执行一次（setup 期间同步），跨段引用统一走 S。
+const S = {}
+bpA(S, props)
+bpB(S, props)
+bpC(S, props)
+bpD(S, props)
+bpE(S, props)
 
+const {
+  mapSemantics, t, locale, gunMarks, pbOverview, image, imageSrc, mapView,
+  palette, paletteRequestToken, playback, duration, friendlyTeam, hpVehicles, friendlyHp, enemyHp,
+  friendlyPoints, enemyTeam, enemyPoints, baseStatesAt, nowMs, labelPrefs, hpPrefs, trailPrefs,
+  markerPrefs, uiPrefs, declutterActive, toggleDeclutter, hpModeOptions, realNowMs, eventCursor, floatItems,
+  burstItems, resetTransients, consumeEvents, hasPendingTransients, pruneTransients, ghostFor, flashFor, visibleFeed,
+  visibleFloats, visibleBursts, uiHidden, setUiHidden, showRosterPresentation, mobileOverlay, transportEl, displayOpen,
+  displaySection, displayAnchor, toggleDisplay, battlefieldWorkspaceEl, mapComponent, mapStageEl, pbRoot, wideLayout,
+  formFactor, isMobileDevice, isPhonePortrait, phoneLandscape, compactAnnotation, controlsCollapsed, controlsContentId, toggleControlsCollapsed,
+  rosterLanesOpen, toggleRosterLanes, transportToggleEl, transportContentEl, freezeTransportHeight, startTransportEnter, openTransportHeight, closeTransportHeight,
+  clearTransportHeight, toggleTransport, playbackLifecycleActive, lifecycleVisible, wideLayoutQuery, onWideLayoutChange, isFullscreen, pseudoFullscreen,
+  fullscreenSupported, toggleFullscreen, exitOwnedFullscreen, floatingFullscreenRow, mapEl, mapWidth, mapHeight, mapRenderRect,
+  view, applyView, viewportStyle, markerTransform, overlayInverse, overlayInverseScale, screenPoint, fitScale,
+  resetView, fitViewIfReady, disposeCamera, mapEngaged, wheelHintVisible, mapTouchPan, onWheel, onPointerDown,
+  onPointerMove, onPointerUp, onViewportClick, resetGestureState, stageResizeObserver, writeSquareAvailHeight, shellChrome, vehicleReloadAt,
+  vehicleConsumablesAt, routesByAccount, vehiclesByAccount, poseSource, poseAtTime, reliefModelForPlayback, projectedSemanticNorm, reliefUnproject,
+  annotationOpen, activeTool, routePoints, annotColor, annotVisible, annotWidthSlider, semPerSvgX, semPerSvgY,
+  textSession, textInputStyle, renderedAnnotations, history, historyIndex, annotations, draft, selectedAnnotationIndex,
+  selectedAnnotation, getDrawingPointerId, getDrawingStartScreen, resetAnnotations, cancelDrawing, cancelRoute, toggleTool, toggleAnnotation,
+  closeAnnotation, undoAnnot, redoAnnot, clearAll, setAnnotColor, toggleAnnotations, finishRoute, startDrawing,
+  moveDrawing, endDrawing, commitSession, cancelSession, deleteSelected, renameSelected, dragStart, dragEnd,
+  transport, onKeydown, hpPrefsForMap, markerPrefsForMap, playerName, eventLabel, currentTime, playing,
+  speed, hpNoTransition, play, pause, seek, step, setSpeed, seekToEvent,
+  disposeClock, vehicleStates, visibleTracers, tracerColor, visibleTrails, canonicalMarkerScreen, markerScreen, hpFor,
+  hpDisplayNumText, authoritativeEvents, shotTicks, killTicks, userVisibleEvents, selectedAccountId, detailsOpen, detailsSide,
+  selectedState, detailsState, selectedTrack, selectedHealth, selectedPortraitUrl, selLastKnownSec, selCurStats, selDamageLog,
+  openDetails, closeSidebar, onMarkerSelect, selectAt, selectFromRoster, teamVehicles, rosterTeams, destroyedNow,
+  rosterLanes, rosterEntryVisible, hudClockVisible, inlineStack, detailsFloating, rosterHealth, rosterReload, floatTeamClass,
+  labelLayout, markerLabel, baseStatus, capturedBy, hudBaseStates, ASSAULT_BASE_RADIUS_FALLBACK_M, basesAt, mapStyle,
+} = S
 
+defineExpose({
+  pause: S.pause,
+  seekAndPlay: (sec, playing, speed) => { S.seek(sec); if (Number.isFinite(speed)) S.setSpeed(speed); if (playing) S.play(); else S.pause() },
+  displayOpened: () => S.displayOpen.value,
+  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），必须能被 onboarding 打开 / 收回。
+  openDisplay: () => {
+    if (S.displayOpen.value) return false
+    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
+    S.toggleDisplay(S.pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
+    return true
+  },
+  closeDisplay: () => { S.displayOpen.value = false },
+  annotationsOpen: () => S.annotationOpen.value,
+  openAnnotations: () => {
+    if (S.annotationOpen.value) return false
+    S.toggleAnnotation()
+    return true
+  },
+  closeAnnotations: S.closeAnnotation,
+})
 </script>
 
 <template>
@@ -210,6 +274,8 @@ defineExpose(exposed)
           @toggle-roster="toggleRosterLanes"
           @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
+          :shot-ticks="shotTicks"
+          :kill-ticks="killTicks"
           @toggle-play="transport.togglePlay()"
           @step="step"
           @set-speed="setSpeed"
@@ -345,6 +411,8 @@ defineExpose(exposed)
           :current-time="currentTime"
           :sel-damage-log="selDamageLog"
           :format-clock="formatClock"
+          :shot-ticks="shotTicks"
+          :kill-ticks="killTicks"
           @close="closeSidebar"
         />
         <PlaybackRoster
@@ -368,4 +436,4 @@ defineExpose(exposed)
   </div>
 </template>
 
-<style scoped src="./battle-playback.css"></style>
+<style scoped src="./battlePlayback.css"></style>

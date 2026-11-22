@@ -4,18 +4,11 @@ import { cumulativeStatsAtV2, healthDisplayAt } from '../utils/battlePlaybackV2.
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import type { PlaybackCamera } from './usePlaybackCamera.js'
+import type { VehicleRenderState } from './usePlaybackVehicleProjection.js'
 import type { BattleEvent, BattlePlaybackDataset, VehiclePlaybackTrack } from '../types/playback-v2.js'
 
-/** 选中/hit-test 消费的车辆渲染状态最小结构（owner 在 usePlaybackVehicleProjection）。 */
-interface VehicleRenderStateLike {
-  // projectVehicleState 的 vehicle 入参与 canonical track 是同一对象。
-  vehicle: VehiclePlaybackTrack
-  pos: { x: number; y: number; timeSec: number }
-  destroyed?: boolean
-  hitTargetSize?: { width: number; height: number } | null
-  markerSize?: { hitTarget?: { width: number; height: number } | null; renderBox?: { width: number; height: number } } | null
-  lastKnown?: boolean
-}
+/** 选中/hit-test 消费的车辆渲染状态（owner 在 usePlaybackVehicleProjection）。 */
+type VehicleRenderStateLike = VehicleRenderState
 
 /**
  * 2D 回放车辆选中 / 详情编排（#820 Agent C 拆分）：selected / details 状态的**唯一 owner**。

@@ -22,12 +22,16 @@ import type { HudFeedStore } from './hudFeed.js'
 import { assetProvider } from '../assetProvider.js'
 import type { TransientFeedback3d } from './transientFeedback3d.js'
 import type { RuntimeVehicle } from './vehicleRuntime.js'
+import type { MarkerLabelSource } from './markerRuntime.js'
 
 /** HTML label 覆盖层结构面（owner = Replay3DPane 的 PlaybackVehicleLabels3D）。 */
 export interface LabelsOverlay {
   setLabels(rows: unknown): void
   setAnchor(eid: number, anchor: unknown): void
   clear(): void
+  /** 战场快捷标记来源卡（与坦克名牌同一 DOM 卡片：内容行 + 逐帧锚点；均可选——旧桩不破）。 */
+  setMarkerLabels?(rows: unknown): void
+  setMarkerAnchor?(key: string, anchor: unknown): void
 }
 
 /** 本模块消费的回放数据面（resolver 联表与击杀 feed 读取；其余由场景内核持有）。 */
@@ -83,6 +87,8 @@ export interface LabelsRuntimeDeps {
   fxScale(): number
   /** HTML label 覆盖层（宿主可选注入）。 */
   getLabelOverlay(): LabelsOverlay | null
+  /** 战场快捷标记来源卡世界锚点（owner = battleMarkerHost；缺省 = 无标记卡）。 */
+  getMarkerLabelSources?: () => readonly MarkerLabelSource[] | null
   /** canonical 数据面的车辆轨道（名牌类型图标映射；store.playbackSession 读取面）。 */
   canonicalVehicles(): Array<{ accountId: number; tankClass: string }>
   invalidate(): void
@@ -236,7 +242,12 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
   let labelsReloadActive = false;
   const LABEL_INTERVAL_RELOAD_MS = 33;
   const LABEL_INTERVAL_IDLE_MS = 100;
+  // target 类标记卡 = 单行「发起者 要求攻击/要求撤退 目标车型」，锚在目标车上时
+  // 上移一个名牌高度 + 间距：不覆盖目标自己的玩家/血量/ID 名牌；卡片本身只有一行，
+  // 抬升取 60px（84 → 60：源卡单行化后不需要为第二块身份卡留高度，视觉更贴近目标）。
+  const MARKER_TARGET_CARD_LIFT_PX = 60;
   const labelClip = new THREE.Vector4();
+  let lastMarkerSignature = '';
   // 零分配锚点：所有车辆共用一个 scratch 喂 labelOverlay.setAnchor——overlay 侧契约是
   // **同步拷贝**进它自有的 per-eid 存储（见 PlaybackVehicleLabels3D.setAnchor），不持有
   // 调用方对象引用，因此逐帧逐车复用同一个对象是安全的（此前每帧每车新建一个对象）。
@@ -340,6 +351,35 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       labelAnchorScratch.visible = projected && deps.store.labelsOn;
       labelAnchorScratch.occluded = v.labelOccluded;
       labelOverlay.setAnchor(v.def.eid, labelAnchorScratch);
+    }
+    // 战场快捷标记来源卡：与坦克名牌**同一 DOM 卡片**（屏幕空间恒定大小，不随距离缩放）。
+    // 内容行按签名变化推送（60Hz 不重渲染），锚点逐帧重摆——车辆锚点同款纪律。
+    const markerSources = deps.getMarkerLabelSources?.() ?? null;
+    if (markerSources && markerSources.length) {
+      const rows: Array<{ key: string; kind: string; intent?: string; player: string; tank: string; target?: string }> = [];
+      const markerScratch: { x: number; y: number; visible: boolean; opacity: number } = { x: 0, y: 0, visible: false, opacity: 1 };
+      for (const src of markerSources) {
+        // intent/target 必须过投影桥（覆盖层按它合成「要求攻击 {目标车型}」章；评审 P2）；
+        // fade 同桥（卡渐进透明）
+        rows.push({ key: src.key, kind: src.kind, intent: src.intent, player: src.player, tank: src.tank, target: src.target });
+        labelClip.set(src.x, src.y, src.z, 1)
+          .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
+        const w = labelClip.w;
+        const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
+        markerScratch.visible = w > 0 && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
+          && x >= -1 && x <= 1 && y >= -1 && y <= 1;
+        markerScratch.x = markerScratch.visible ? (x + 1) * viewW / 2 : 0;
+        markerScratch.y = markerScratch.visible
+          ? (1 - y) * viewH / 2 - (src.kind === 'target' ? MARKER_TARGET_CARD_LIFT_PX : 0)
+          : 0;
+        markerScratch.opacity = src.fade;
+        labelOverlay.setMarkerAnchor?.(src.key, markerScratch);
+      }
+      const signature = rows.map((r) => `${r.key}:${r.player}/${r.tank}/${r.intent ?? ''}/${r.target ?? ''}`).join('|');
+      if (signature !== lastMarkerSignature) { lastMarkerSignature = signature; labelOverlay.setMarkerLabels?.(rows); }
+    } else if (lastMarkerSignature) {
+      lastMarkerSignature = '';
+      labelOverlay.setMarkerLabels?.([]);
     }
     publishLabels();
   }

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 import {
+  GRASS_LAYER_ENABLED,
   QUALITY_FEATURES,
   QUALITY_PRESETS,
   qualityFeatures,
@@ -42,11 +43,12 @@ describe('QUALITY_FEATURES', () => {
     expect(QUALITY_FEATURES.high.water.reflectionScale).toBe(0.5)
   })
 
-  it('草：低/均衡不加载，高清/极致按实例预算（几何统一 500 档 = 导出档）', () => {
+  it('草：总开关关闭（用户报障待核查）；低/均衡不加载，高清/极致预算保留（几何统一 500 档 = 导出档）', () => {
+    expect(GRASS_LAYER_ENABLED).toBe(false)
     expect(QUALITY_FEATURES.low.grass.instances).toBe(0)
     expect(QUALITY_FEATURES.mid.grass.instances).toBe(0)
-    expect(QUALITY_FEATURES.high.grass.instances).toBe(60000)
-    expect(QUALITY_FEATURES.ultra.grass.instances).toBe(60000)
+    expect(QUALITY_FEATURES.high.grass.instances).toBe(0)
+    expect(QUALITY_FEATURES.ultra.grass.instances).toBe(0)
     for (const k of KEYS) expect(QUALITY_FEATURES[k].grass.geometryTier).toBe(500)
   })
 

@@ -203,7 +203,7 @@ interface GpuFrameSink {
 }
 
 interface GpuRenderer {
-  getContext(): WebGL2RenderingContext
+  getContext(): WebGLRenderingContext | WebGL2RenderingContext
   domElement: EventTarget
 }
 
@@ -261,7 +261,7 @@ export function createGpuFrameTracker(sink: GpuFrameSink, maxFrames = 240) {
   function lost(): void { timer?.contextLost(); failFrames('context-lost') }
   function restored(): void {
     if (!renderer || !timer) return
-    try { timer.contextRestored(renderer.getContext()) } catch { timer.contextLost() }
+    try { timer.contextRestored(renderer.getContext() as WebGL2RenderingContext) } catch { timer.contextLost() }
   }
   function detach(): void {
     if (renderer) {
@@ -277,7 +277,7 @@ export function createGpuFrameTracker(sink: GpuFrameSink, maxFrames = 240) {
     detach()
     renderer = next
     let gl: WebGL2RenderingContext
-    try { gl = next.getContext() } catch { fallback = 'error'; sink.event({ stage: 'gpu', status: fallback, durationMs: null }); return }
+    try { gl = next.getContext() as WebGL2RenderingContext } catch { fallback = 'error'; sink.event({ stage: 'gpu', status: fallback, durationMs: null }); return }
     if (!gl || typeof gl.getExtension !== 'function') {
       fallback = 'unsupported'; sink.event({ stage: 'gpu', status: fallback, durationMs: null }); return
     }

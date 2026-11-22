@@ -70,6 +70,12 @@ export interface QualityFeatures {
   decals: { projected: boolean }
 }
 
+/**
+ * 草层总开关（2026-11-19 用户报障：地面草分布待核查）。关闭时高清/极致档也不加载草层；
+ * 数据面（grass.json/bin/glb）与 60k 预算保持原样，恢复显示只需改回 true。
+ */
+export const GRASS_LAYER_ENABLED = false
+
 export const QUALITY_FEATURES: Record<QualityKey, QualityFeatures> = {
   low: {
     water: { tier: 'medium', reflection: false, refraction: false, reflectionScale: 0, reflectionIntervalFrames: 0 },
@@ -85,13 +91,13 @@ export const QUALITY_FEATURES: Record<QualityKey, QualityFeatures> = {
   },
   high: {
     water: { tier: 'high', reflection: true, refraction: false, reflectionScale: 0.5, reflectionIntervalFrames: 2 },
-    grass: { instances: 60000, geometryTier: 500 },
+    grass: { instances: GRASS_LAYER_ENABLED ? 60000 : 0, geometryTier: 500 },
     shadows: { csm: false, tankContact: true, silhouettes: true },
     decals: { projected: false },
   },
   ultra: {
     water: { tier: 'ultra', reflection: true, refraction: false, reflectionScale: 0.5, reflectionIntervalFrames: 1 },
-    grass: { instances: 60000, geometryTier: 500 },
+    grass: { instances: GRASS_LAYER_ENABLED ? 60000 : 0, geometryTier: 500 },
     shadows: { csm: false, tankContact: true, silhouettes: true },
     decals: { projected: false },
   },

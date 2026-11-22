@@ -21,6 +21,11 @@ const props = defineProps({
   playbackSession: { type: Object, default: null },
   active: { type: Boolean, default: false },
   seekTo: { type: Number, default: null },
+  /** 2D/3D 切换同步请求：{ id, sec, playing, speed }；视图就绪后一次性应用。 */
+  seekRequest: { type: Object, default: null },
+  /** 2D 时间轴刻度源（与 3D 同一份 scenePlayback facet）。 */
+  facetShots: { type: Array, default: null },
+  facetKills: { type: Array, default: null },
   /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
   blockedReason: { type: String, default: '' },
   /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
@@ -144,6 +149,18 @@ watch(() => props.seekTo, async (sec) => {
   mapSeek.value = sec
 }, { immediate: true })
 
+/** 2D/3D 切换：视图就绪后一次完成 seek + 恢复播放状态/倍速（与 AI/事件的纯 seekTo 分开）。 */
+let appliedSeekRequest = 0
+// 只在面板激活时消费：3D→2D 后立刻切走时解析仍会完成，若此时消费会把播放态/倍速
+// 施加到隐藏面板（其当前 active 已是 false，暂停 watcher 不会再触发）→ 后台自行推进。
+// 未激活时保留请求（不记录已消费 id），等下次激活再一次性应用。
+watch([() => props.seekRequest, playbackView, () => props.active], ([req, view, active]) => {
+  if (!req || !view || !active || req.id === appliedSeekRequest) return
+  appliedSeekRequest = req.id
+  panelView.value = 'playback'
+  view.seekAndPlay?.(req.sec, req.playing, req.speed)
+}, { immediate: true })
+
 onBeforeUnmount(() => {
   parseSeq++
   onboarding?.registerSurface('playback', null)
@@ -198,7 +215,7 @@ onMounted(() => {
   <div :data-pane-ready="paneReady ? 'true' : undefined">
     <p v-if="blockedReason" class="ws-note map-dataset-error" data-test="map-dataset-status">{{ blockedReason }}</p>
     <p v-else-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
-    <div v-else class="panel map-panel" data-test="map-panel">
+    <div v-else class="map-panel" data-test="map-panel">
       <div class="pb-panel-head">
         <h2>{{ $t('recon.playback.title') }}</h2>
         <div class="pb-view-toggle" role="tablist" aria-label="Replay playback views">
@@ -220,6 +237,8 @@ onMounted(() => {
             :result="result || undefined"
             :reload-telemetry="reloadTelemetry || undefined"
             :seek-to="mapSeek ?? undefined"
+            :facet-shots="facetShots"
+            :facet-kills="facetKills"
             :active="active && panelView === 'playback'"
             :auto-fullscreen="{ token: autoFullscreenToken, key: file }"
           />
@@ -274,15 +293,9 @@ onMounted(() => {
 }
 @keyframes map-status-spin { to { transform: rotate(360deg); } }
 .map-dataset-status .map-dataset-error { color: var(--error); }
-.panel {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
-  color: var(--text);
-}
-.panel h2 { margin: 0 0 12px; font-size: 1rem; }
-.map-panel { margin-top: 16px; }
+/* 统一回放面板里不再给整页套卡片：窗口卡片由 `.pb-map-stage` 承担，
+   播放条在卡片外（下方通栏）。 */
+.map-panel { margin-top: 0; color: var(--text); }
 .map-panel-head {
   display: flex;
   align-items: center;

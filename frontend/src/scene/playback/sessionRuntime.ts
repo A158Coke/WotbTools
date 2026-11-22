@@ -64,6 +64,8 @@ export function installSessionRuntime(S: Host) {
     S.tread.dispose();
     S.vehicles.dispose();
     S.vehicleLife.reset();
+    S.battleMarkers?.clear();   // 快捷标记活动体/事件源随会话释放（含来源卡锚点）
+    S.markersIdentitySnapshot = null;   // 身份指纹快照随会话清空（换场后同款身份不会被误判为未变化）
     S.labels.resetSessionState();   // 标签段 teardown owner（#820 Step 5）：labelOverlay 清空 +
                                   // 标签游标/resolver/tankData 缓存复位（原逐行段收口）
     // 地图资产段 teardown 已在上方 mapWorld.dispose()（owner 释放：占位地面/地形/场景
@@ -174,6 +176,7 @@ export function installSessionRuntime(S: Host) {
     S.POSE_GRID.tStart = 0;
     S.POSE_GRID.samples = 0;
     S.store.playbackSession = null;
+    S.battleMarkers?.clear();
   }
   /** 会话级 resolver 装配 + mounted-configs 预取（owner = labelsRuntime.prepareResolvers）。 */
   function prepareResolvers(S: Host) { S.labels.prepareResolvers(); }
@@ -210,6 +213,7 @@ export function createPlaybackSession(S: Host) {
     setupContactShadows: () => S.contactShadowCtl.setup(),
     applyGlbToggle: (on) => S.vehicles.applyGlbToggle(on),
     buildRoster: () => S.labels.buildRoster(),
+    buildMarkers: () => S.rebuildMarkersWithIdentitySnapshot(),
     prepareResolvers: S.prepareResolvers,
     prewarmShaders: S.prewarmShaders,
     setPlaying: S.setPlaying,

@@ -1237,3 +1237,59 @@ describe('2D 自动全屏（Android 手机 App）：退出不打断回放', () =
     })
   })
 })
+
+// 合并删除的 BattlePlayback.integration.test.js 中 2D 时间轴/seekAndPlay 覆盖：
+// 这些断言在拆分后的三个 part 中都没有等价副本，恢复为独立回归。
+describe('2D 时间轴与 seekAndPlay（恢复自合并删除的集成测试）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('seekAndPlay：一次性同步位置 + 播放状态 + 倍速（2D/3D 切换）', async () => {
+    stubRaf()
+    const wrapper = mountPlayback(makeOverview(), null)
+    await flushPromises()
+    wrapper.vm.seekAndPlay(20, true, 2)
+    await flushPromises()
+    expect(wrapper.vm.currentTime).toBeCloseTo(20, 5)
+    expect(wrapper.vm.playing).toBe(true)
+    expect(wrapper.vm.speed).toBe(2)
+    wrapper.vm.seekAndPlay(30, false, 1)
+    expect(wrapper.vm.currentTime).toBeCloseTo(30, 5)
+    expect(wrapper.vm.playing).toBe(false)
+    expect(wrapper.vm.speed).toBe(1)
+  })
+
+  it('2D 时间轴渲染与 3D 同款的炮击/击毁刻度（scenePlayback facet 换算）', async () => {
+    stubRaf()
+    const facet = {
+      shots: [{ t_fire: 10, shooter_eid: 1, target_eid: 2, game_hit_result: 3, hit_flags: 0, ricochet: false, is_kill: false, is_author: true }],
+      kills: [{ t: 20, killer_eid: 1, victim_eid: 2, cause: 0 }],
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: makePlaybackV2(),
+      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 0,
+    })
+    await flushPromises()
+    expect(wrapper.findAll('.pb-tick-shot')).toHaveLength(1)
+    expect(wrapper.findAll('.pb-tick-kill')).toHaveLength(1)
+  })
+
+  it('2D 刻度点击值是战斗相对秒：canonical 偏移下 t 减 clockOffset，pct 不变', async () => {
+    stubRaf()
+    const facet = {
+      shots: [{ t_fire: 60, shooter_eid: 1, is_author: false }],
+      kills: [{ t: 90 }],
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: makePlaybackV2(),
+      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 30,
+    })
+    await flushPromises()
+    // makePlaybackV2 durationSec=60 → 原始轴 [30, 90]：t_fire=60 / kill 90 → 50% / 100%；
+    // 点击吸附返回值必须是战斗相对秒（60-30=30、90-30=60），否则 seek 会跳错时刻。
+    const controls = wrapper.findComponent({ name: 'PlaybackControls' })
+    expect(controls.props('shotTicks')).toEqual([{ t: 30, pct: 50, highlight: false }])
+    expect(controls.props('killTicks')).toEqual([{ t: 60, pct: 100 }])
+  })
+})
