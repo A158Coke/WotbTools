@@ -128,6 +128,9 @@ keycloak:
 android:
   - '.github/workflows/ci-android.yml'
   - '.github/workflows/android-release.yml'
+  - '.github/workflows/android-stage.yml'
+  - '.github/workflows/android-publish-gate.yml'
+  - '.github/workflows/android-publish.yml'
   - '.github/workflows/android-auto-publish.yml'
   - 'android/**'
   - 'contracts/android-native-bridge.json'

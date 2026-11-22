@@ -98,14 +98,15 @@ SH
   printf "package: name='com.wotbtools.app' versionCode='%s' versionName='%s'\n" \
     "$((SIM_VERSION_CODE + 1))" "$SIM_VERSION" > "$SIM/badging-mismatch.txt"
 
-  python3 - "$ROOT/.github/workflows/android-release.yml" "$SIM" <<'PY'
+  python3 - "$ROOT" "$SIM" <<'PY'
 import re
 import sys
 from pathlib import Path
 
-import yaml
+sys.path.insert(0, str(Path(sys.argv[1]) / "scripts/android-release"))
+import workflow_model
 
-workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+workflow = workflow_model.load(Path(sys.argv[1]))
 sim = Path(sys.argv[2])
 step = next(s for s in workflow["jobs"]["publish"]["steps"] if s.get("id") == "staged")
 run = step["run"]
@@ -114,11 +115,16 @@ run = step["run"]
 collector = 'bash scripts/android-release/staging-evidence.sh collect-required "$STAGING_NAME" "$RUNNER_TEMP/staging-origins.json" >/dev/null'
 assert collector in run
 run = run.replace(collector, 'cp "$WOTB_SIM_STAGING" "$RUNNER_TEMP/staging-origins.json"')
-# 展开 GitHub expression（模拟 runner 渲染后的脚本）：先替换被测身份，再用中性字面量吃掉其余
-# 表达式（它们的下游命令都被 stub 掉了，值不影响本用例）。
-run = run.replace("${{ steps.stagedref.outputs.apkName }}", "wotbtools-android-vSTAGED.apk")
-run = run.replace("${{ steps.stagedref.outputs.stagingName }}", "wotbtools-android-vSTAGED.staging.json")
-run = run.replace("${{ inputs.version }}", "STAGED")
+# 拆分后的 step 把 GitHub expression 移到 env；模拟 runner 渲染时只展开本用例读取的身份变量，
+# 其余表达式用中性字面量吃掉（下游命令都被 stub 掉，值不影响本用例）。
+for expression, value in {
+    "${{ steps.stagedref.outputs.apkName }}": "wotbtools-android-vSTAGED.apk",
+    "${{ steps.stagedref.outputs.stagingName }}": "wotbtools-android-vSTAGED.staging.json",
+}.items():
+    run = run.replace(expression, value)
+run = run.replace("$STEP_STAGEDREF_APKNAME", "wotbtools-android-vSTAGED.apk")
+run = run.replace("$STEP_STAGEDREF_STAGINGNAME", "wotbtools-android-vSTAGED.staging.json")
+run = run.replace("$STEP_STAGEDREF_TAGNAME", "sim")
 run = re.sub(r"\$\{\{[^}]*\}\}", "sim", run)
 # heredoc 去缩进（补偿 YAML `run: |` 的公共缩进）。
 body = "\n".join(line[10:] if line.startswith(" " * 10) else line for line in run.splitlines())

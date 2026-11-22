@@ -136,6 +136,30 @@ def main(root: Path) -> None:
     assert caller["jobs"]["publish"].get("permissions") == {"contents": "read"}
     assert caller["jobs"]["publish"].get("needs") == "publish_gate"
 
+    # Android owner routing must include every production file of the release
+    # protocol, otherwise editing only a called workflow skips Android checks.
+    owner_paths = _load(root / ".github" / "ci-owner-paths.yml")
+    android_owned = set(owner_paths["android"])
+    required_owned = {
+        ".github/workflows/ci-android.yml",
+        ".github/workflows/android-release.yml",
+        *{f".github/workflows/{name}" for name in WORKFLOW_FILES.values()},
+        ".github/workflows/android-auto-publish.yml",
+    }
+    assert required_owned <= android_owned, sorted(required_owned - android_owned)
+
+    # Auto-publish resolves the stage job in both GitHub metadata shapes: the
+    # legacy bare 'stage' and the reusable workflow's 'stage / stage'.
+    auto_publish = _load(workflow_dir / "android-auto-publish.yml")
+    auto_steps = auto_publish["jobs"]["publish"]["steps"]
+    verify = next(step for step in auto_steps if step.get("name") == "Verify triggering stage job succeeded")
+    verify_run = verify.get("run") or ""
+    assert "stage_job_conclusion.py" in verify_run, "auto-publish must resolve the stage job through the shared parser"
+    assert 'select(.name == "stage")' not in verify_run, "auto-publish must accept the reusable 'stage / stage' job name"
+    auto_index = {step.get("name"): index for index, step in enumerate(auto_steps)}
+    assert auto_index["Checkout the staged source commit"] < auto_index["Verify triggering stage job succeeded"], \
+        "the parser must be checked out before it is executed"
+
     top_env = caller.get("env", {})
     assert top_env, "android release must keep the top-level env block"
     called = {}
@@ -188,7 +212,8 @@ def main(root: Path) -> None:
             assert (step.get("with") or {}).get("script"), f"model lost remote script for {step.get('name')}"
 
     for path in [workflow_dir / CALLER, *(workflow_dir / name for name in WORKFLOW_FILES.values()),
-                 root / "scripts" / "android-release" / "workflow_model.py", *sorted(all_scripts)]:
+                 root / "scripts" / "android-release" / "workflow_model.py",
+                 root / "scripts" / "android-release" / "stage_job_conclusion.py", *sorted(all_scripts)]:
         _assert_compact(path)
 
     print("Android workflow contract: PASS")

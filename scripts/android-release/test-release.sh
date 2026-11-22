@@ -36,6 +36,7 @@ for test_script in \
   test-release-protocol.sh \
   test-release-publish-simulation.sh \
   test-release-candidate-scheduling.sh \
+  test-release-stage-job.sh \
   test-release-classifiers.sh; do
   bash "$ROOT/scripts/android-release/$test_script"
 done
