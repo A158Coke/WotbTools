@@ -1,20 +1,22 @@
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import type { ReplayPaneProps, ReplayPaneShared, useReplay3DPaneCore } from './useReplay3DPaneCore'
+import type { useReplay3DPaneDetails } from './useReplay3DPaneDetails'
 import { initPlayback } from '../scene/playbackScene.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 
-export function useReplay3DPaneLifecycle(props, core, details, startedFile, shared) {
+export function useReplay3DPaneLifecycle(props: ReplayPaneProps, core: ReturnType<typeof useReplay3DPaneCore>, details: ReturnType<typeof useReplay3DPaneDetails>, startedFile: Ref<File | null>, shared: ReplayPaneShared) {
   const state = { ...core, ...details }
   const {   t, locale, onboarding, guideOpenedDisplay, availability, requireFeature, online, labelPrefs,   hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, declutterActive, toggleDeclutter, uiHidden, displayOpen,   displayAnchor, toggleDisplay, controlsCollapsed, controlsContentId, controlsDocked, slideContentFrom, slideContentOpen, slideContentClose,   slideContentShut, clearSlideHeight, dockControls, toggleControls, isPhone, isPortrait, portraitFlow, compactBar,   phoneLandscape, selectedEid, detailsOpen, detailsSide, followFromRoster, followUnlessRecorder, handleSceneSelect, selectVehicle,   detailsSideFor, closeDetails, cameraTools, chooseCamera, setUiHidden, toggleUiHidden, onUiToggleKeydown, showTopbar,   showRoster, showKillfeed, showBaseStatus, showFps, fpsText, fpsJanky, store, stage,   labelOverlay, recorderReticle, sceneApiRef, annotationOpen, annotationTool, pushAnnotationProjection, pushAnnotationInteraction, pushAnnotationVisibility,   commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation, resetAnnotationState, annotationToolbarProps, annotationToolbarHandlers, playbackFacet,   facetShots, facetKills, timelineHighlightEid, shotTicks, killTicks, jumpShot, jumpBase, rideRoster,   rideAllyTeam, rideVehicle, transport, renderActive, fly, webgl, pushLabelPrefs, consumedSeekId,   lastFile, lastFileName, loadingMessage, paneReady, qualityBadge, mapTitle, recorderUnavailableReason, CAMERAS,   QUALITY_ORDER, hudFriendlyHp, hudEnemyHp, hudHealth, teamColors, rosterLanes, selectedRow,   detailPlayback, gunMarks, battleTimeLabel, detailTime, selectedTrack, selectedLife, selLastKnownSec, selCurStats,   selDamageLog, selectedPortraitUrl, portraitGeneration, selectedDetailState, selectedHealth, bannerColor } = state
 
-let parseController = null
+let parseController: AbortController | null = null
 function abortParse() {
   parseController?.abort()
   parseController = null
 }
 
-async function loadFile(file) {
+async function loadFile(file: File | null) {
   // 连通性门禁在最前（离线时不启动新的 3D 解析）；随后是 main 的解析生命周期归属：
   // 每次新解析都要先撤下上一次（abort）并换新的 AbortController。
   if (!file || !sceneApiRef.value || !requireFeature(Feature.PLAYBACK_3D)) return
@@ -31,6 +33,7 @@ function retryLoad() {
     if (props.playbackSession?.getState(lastFile.value).sceneState === 'error') props.playbackSession.invalidate(lastFile.value)
     return loadFile(lastFile.value)
   }
+  return undefined
 }
 
 function bannerText() {
@@ -38,7 +41,7 @@ function bannerText() {
   if (!banner) return ''
   return banner.outcome ? t('agentReplay.banner_' + banner.outcome) : banner.text
 }
-function killfeedVerb(kf) {
+function killfeedVerb(kf: { kill?: unknown }) {
   // 结构化渲染（三语）：击杀 = killer × victim；环境/非击杀只标阵亡（cause 细节上游为中文后缀）
   return t(kf.kill ? 'agentReplay.destroyed' : 'agentReplay.destroyed_by_environment')
 }
@@ -79,7 +82,7 @@ function ensureScene() {
   //   · `!props.active` —— 未激活的能力不得建场景（不需要激活就初始化会在切走时白跑渲染）；
   //   · `labelOverlay.value` —— 3D 名牌改屏幕空间 DOM 锚点后，场景需要覆盖层句柄。
   if (sceneApiRef.value || !renderActive.value || !shouldHaveScene()) return false
-  sceneApiRef.value = initPlayback(stage.value, store, labelOverlay.value, {
+  sceneApiRef.value = initPlayback(stage.value!, store, labelOverlay.value, {
     onVehicleSelect: handleSceneSelect,
     onAnnotationCommit: commitAnnotationFromScene,
     onAnnotationErase: eraseFromScene,
@@ -96,7 +99,7 @@ function ensureScene() {
 }
 
 /** 解析目标回放：同一次会话内同一文件不重复解析 */
-let loadedFile = null
+let loadedFile: File | null = null
 
 /**
  * 待开播：文件到位后先让用户选画质，按「开始」才解析 + 拉资产。
@@ -143,7 +146,7 @@ function reconcileScene() {
 
 // Measure viewport capacity independently of the content-sized Stage row.
 const { rootEl, hudEl, controlsEl } = shared
-let laneBoundsObserver = null
+let laneBoundsObserver: ResizeObserver | null = null
 /** 工作台高度低于它时，两行控制条（实测约 137px）放不进场景底部 20% 边带（design-language §5）。 */
 const SHORT_WORKSPACE_MAX_H = 700
 const KILLFEED_MAX_LINES = 3
@@ -205,8 +208,9 @@ const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, 
 /** ?debug：几何门禁 / 人工排查的状态注入点（与场景内核的 ?debug 钩子同一口径，只暴露
  *  store 引用与车道 DOM，不改变任何行为）。browser 几何门禁据此注入 roster / killfeed，
  *  在真实 Chrome 里断言车道的非交叉几何。 */
+const debugWindow = globalThis as typeof globalThis & { __pbPane?: { store: typeof store; selectedEid: number | null; detailsOpen: boolean; labelOverlay: HTMLElement | null; sceneApi: typeof sceneApiRef.value } }
 if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug')) {
-  window.__pbPane = {
+  debugWindow.__pbPane = {
     store,
     get selectedEid() { return selectedEid.value },
     get detailsOpen() { return detailsOpen.value },
@@ -228,7 +232,7 @@ onBeforeUnmount(() => {
   laneBoundsObserver?.disconnect()
   laneBoundsObserver = null
   window.removeEventListener('keydown', onUiToggleKeydown)
-  if (window.__pbPane?.store === store) delete window.__pbPane
+  if (debugWindow.__pbPane?.store === store) delete debugWindow.__pbPane
 })
 
 /**
@@ -237,10 +241,10 @@ onBeforeUnmount(() => {
  */
 watch(
   [() => props.file, () => props.blockedReason, renderActive, () => online.value.available],
-  ([, , active], previous = []) => {
+  ([, , active], previous) => {
     // 先按新的 file/blocked 收敛场景，再处理能力切换
     reconcileScene()
-    const activeChanged = previous.length >= 3 && previous[2] !== active
+    const activeChanged = !!previous && previous.length >= 3 && previous[2] !== active
     if (activeChanged) {
       sceneApiRef.value?.setPaused?.(!active)
       if (!active) fly.stopLoop()

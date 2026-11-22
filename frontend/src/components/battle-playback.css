@@ -62,12 +62,12 @@
    PR3 —— last-known/destroyed 弱化由 VehicleMarker .pb-graphics 容器承担（root 不再
    opacity，否则 ✕/label 也会被淡掉）；Selected 红色倒三角、Recorder 空心菱形、
    team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
-.pb-cell { stroke: var(--map-grid-stroke, rgba(255,255,255,.55)); stroke-width: 1; fill: none; }
+.pb-cell { stroke: var(--map-grid-stroke, var(--color-playback-grid-fallback)); stroke-width: 1; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
 .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
-.pb-region-line { fill: none; stroke: var(--map-region-stroke, rgba(255,255,255,.28)); stroke-width: 1; }
-.pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
-.pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
+.pb-region-line { fill: none; stroke: var(--map-region-stroke, var(--color-playback-region-fallback)); stroke-width: 1; }
+.pb-spawn-friendly { fill: var(--map-spawn-friendly, var(--color-playback-spawn-friendly-fallback)); }
+.pb-spawn-enemy { fill: var(--map-spawn-enemy, var(--color-playback-spawn-enemy-fallback)); }
 
 /* transient 反馈层（floating damage / destruction burst）的外观归 BattleMap：那几个节点是
    BattleMap 自己的后代（`.pb-map[data-v-this]` 匹配不到它们），这里的同名规则永远不会生效。 */
@@ -88,21 +88,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 17px;
+  font-size: var(--font-size-playback-feed);
   font-weight: 700;
-  line-height: 1.25;
+  line-height: var(--line-height-playback-feed);
   background: color-mix(in srgb, var(--bg) 84%, transparent);
   border: 1px solid color-mix(in srgb, var(--text) 22%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-playback-feed);
   padding: 8px 16px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  box-shadow: var(--shadow-playback-feed);
   animation: pb-feed-in .3s ease-out;
 }
-.pb-feed-skull { color: var(--text); font-size: 1.1em; }
-.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, #4ade80); }
-.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, #f87171); }
-.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, #999); }
-.pb-feed-destroyed { color: var(--text-muted, #999); font-weight: 600; }
+.pb-feed-skull { color: var(--text); font-size: var(--font-size-playback-feed-icon); }
+.pb-feed-friendly .pb-feed-victim { color: var(--pb-team-text, var(--friendly-strong)); }
+.pb-feed-enemy .pb-feed-victim { color: var(--pb-enemy-text, var(--enemy-strong)); }
+.pb-feed-neutral .pb-feed-victim { color: var(--text-muted, var(--color-playback-feed-muted-fallback)); }
+.pb-feed-destroyed { color: var(--text-muted, var(--color-playback-feed-muted-fallback)); font-weight: 600; }
 @keyframes pb-feed-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: none; }
@@ -127,10 +127,10 @@
   padding: 5px 8px;
   text-align: left;
   cursor: pointer;
-  font-size: .78rem;
+  font-size: var(--font-size-playback-event);
 }
 .pb-event-row:last-child { border-bottom: 0; }
 .pb-event-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .pb-event-time { min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--text-label); }
 .pb-event-type { color: var(--accent); margin-right: 4px; }
-.pb-event-empty { margin: 8px; color: var(--text-muted); font-size: .78rem; }
+.pb-event-empty { margin: 8px; color: var(--text-muted); font-size: var(--font-size-playback-event); }

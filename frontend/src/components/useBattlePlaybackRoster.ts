@@ -1,4 +1,10 @@
-import { computed, nextTick, watch } from 'vue'
+import type { computed, nextTick, watch, Ref } from 'vue'
+import type { PlaybackModelProps } from './useBattlePlaybackModel'
+import type { useBattlePlaybackMapModel } from './useBattlePlaybackMapModel'
+import type { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection'
+import type { usePlaybackReplayData } from '../composables/usePlaybackReplayData'
+import type { usePlaybackPreferences } from '../composables/usePlaybackPreferences'
+import type { VehiclePlaybackTrack } from '../types/playback-v2'
 import { mapBases } from '../data/mapBases.js'
 import { teamCssVars } from '../data/mapTeamColors.js'
 import { rosterLanesFor } from '../scene/rosterState.js'
@@ -7,9 +13,27 @@ import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import { baseView } from '../utils/baseStatus.js'
 import { MARKER_CORE_PX, computeLabelLayout } from '../utils/labelLayout.js'
 
-const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
+type MapModel = ReturnType<typeof useBattlePlaybackMapModel>
+type Projection = ReturnType<typeof usePlaybackVehicleProjection>
+type Preferences = ReturnType<typeof usePlaybackPreferences>
+export type SceneSemantics = { verified?: boolean; mapCodes?: string[]; sceneEvidence?: { battlePoints?: Array<{ type: string; confidence: string; position: number[] }> } }
+type RosterDeps = {
+  computed: typeof computed; watch: typeof watch; nextTick: typeof nextTick
+  props: PlaybackModelProps
+  currentTime: Ref<number>; playback: MapModel['playback']; pbOverview: MapModel['pbOverview']
+  baseStatesAt: MapModel['baseStatesAt']; friendlyTeam: MapModel['friendlyTeam']
+  mapSemantics: SceneSemantics[]; showRosterPresentation: Ref<boolean>; isPhonePortrait: Ref<boolean>
+  rosterLanesOpen: Ref<boolean>; uiHidden: Ref<boolean>; uiPrefs: Preferences['uiPrefs']
+  pbRoot: Ref<HTMLElement | null>; stageResizeObserver: () => ResizeObserver | null
+  writeSquareAvailHeight: () => void; vehicleReloadAt: ReturnType<typeof usePlaybackReplayData>['vehicleReloadAt']
+  vehicleStates: Projection['vehicleStates']; mapWidth: () => number
+  mapView: MapModel['mapView']; hpPrefs: Preferences['hpPrefs']; markerPrefs: Preferences['markerPrefs']
+  mapEl: Ref<HTMLElement | null>; markerScreen: Projection['markerScreen']; hpFor: Projection['hpFor']
+  hpDisplayNumText: Projection['hpDisplayNumText']; selectedAccountId: Ref<number | null>
+  labelPrefs: Preferences['labelPrefs']; palette: MapModel['palette']
+}
 
-export function useBattlePlaybackRoster(deps) {
+export function useBattlePlaybackRoster(deps: RosterDeps) {
   const {
     computed, watch, nextTick, props, currentTime, playback, pbOverview, baseStatesAt, friendlyTeam,
     mapSemantics, showRosterPresentation, isPhonePortrait, rosterLanesOpen, uiHidden,
@@ -21,9 +45,9 @@ export function useBattlePlaybackRoster(deps) {
 // 按权威 vehicle.team 保留物理身份；rosterTeams 按 Recorder 视角决定左右。
 const teamVehicles = computed(() => {
   const vehicles = props.playbackV2?.vehicles || []
-  const team1 = []
-  const team2 = []
-  const unknown = []
+  const team1: VehiclePlaybackTrack[] = []
+  const team2: VehiclePlaybackTrack[] = []
+  const unknown: VehiclePlaybackTrack[] = []
   for (const v of vehicles) {
     if (v.team === 1) team1.push(v)
     else if (v.team === 2) team2.push(v)
@@ -79,7 +103,7 @@ const detailsFloating = computed(() => !isPhonePortrait.value)
  * `pct` 直接取投影的原始比例，不预先取整：取整是呈现层的事（避免累积误差）。
  */
 const rosterHealth = computed(() => {
-  const out = {}
+  const out: Record<number, { currentHp: number | null; maxHp: number | null; pct: number | null; relativeFull: boolean; state: string }> = {}
   for (const vehicle of props.playbackV2?.vehicles || []) {
     const display = healthDisplayAt(vehicle, currentTime.value)
     if (!display) continue
@@ -102,7 +126,7 @@ const rosterHealth = computed(() => {
  */
 const rosterReload = computed(() => {
   if (!props.reloadTelemetry) return null
-  const out = {}
+  const out: Record<number, NonNullable<ReturnType<RosterDeps['vehicleReloadAt']>>> = {}
   for (const vehicle of props.playbackV2?.vehicles || []) {
     const shells = vehicleReloadAt(vehicle.accountId, currentTime.value)
     if (shells && shells.length > 0) out[vehicle.accountId] = shells
@@ -110,7 +134,7 @@ const rosterReload = computed(() => {
   return out
 })
 
-function floatTeamClass(friendly) {
+function floatTeamClass(friendly: boolean | null | undefined) {
   if (friendly === true) return 'pb-float-friendly'
   if (friendly === false) return 'pb-float-enemy'
   return 'pb-float-neutral'
@@ -138,7 +162,7 @@ const labelLayout = computed(() => {
   // HP HUD 真实渲染尺寸（.pb-hp-hud 屏幕恒定；测试环境无布局 → 回退 null 走 CSS 常量）。
   // PR #107 Blocker 4：querySelector 第一辆车的 HUD 只作测量基准——不同车辆的显示文本不同
   //（数字 vs —）可能影响宽度，labelLayout 侧再按每车 hpDisplayText 估算并取 max（保守覆盖全部状态）。
-  const hpHudEl = mapEl.value?.querySelector('.pb-hp-hud')
+  const hpHudEl = mapEl.value?.querySelector<HTMLElement>('.pb-hp-hud')
   const hpBoxW = hpHudEl ? Number(hpHudEl.offsetWidth) : null
   const hpBoxH = hpHudEl ? Number(hpHudEl.offsetHeight) : null
   const items = vehicleStates.value.map((st) => {
@@ -151,7 +175,7 @@ const labelLayout = computed(() => {
       y: p.y,
       tankName: st.tankName,
       // Badge width (space-3) + inline gap (space-1), in fixed screen pixels.
-      tankNameExtraWidth: st.gunMarks > 0 ? 16 : 0,
+      tankNameExtraWidth: (st.gunMarks as number) > 0 ? 16 : 0,
       playerName: st.playerName,
       // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
       // health selector 有结果），不是 current 是否为 null——relativeFull（current=null）
@@ -181,7 +205,7 @@ const labelLayout = computed(() => {
 
 /** VehicleMarker label prop（每 marker 一个：显示开关 + 碰撞位移 +
  *  §25 blockHidden/hpHidden：不可分离碰撞时的优先级隐藏兼容输出，恒 false）。 */
-function markerLabel(accountId) {
+function markerLabel(accountId: number) {
   const l = labelLayout.value.get(accountId)
   return {
     showPlayer: !uiHidden.value && labelPrefs.showPlayerName,
@@ -194,13 +218,13 @@ function markerLabel(accountId) {
 }
 
 // 圆圈颜色只表示当前归属；正在占领由进度弧单独表达，不覆盖归属。
-function baseStatus(state) {
+function baseStatus(state: MapModel['baseStatesAt']['value'][number] | undefined) {
   if (!state || state.ownerTeam == null) return 'neutral'
   if (friendlyTeam.value == null) return 'controlled'
   return state.ownerTeam === friendlyTeam.value ? 'friendly_controlled' : 'enemy_controlled'
 }
 
-function capturedBy(state) {
+function capturedBy(state: MapModel['baseStatesAt']['value'][number] | undefined) {
   if (!state || state.capturingTeam == null || friendlyTeam.value == null) return 'unknown'
   return state.capturingTeam === friendlyTeam.value ? 'friendly' : 'enemy'
 }
@@ -212,12 +236,12 @@ const ASSAULT_BASE_RADIUS_FALLBACK_M = 20
 
 const basesAt = computed(() => {
   // Objective existence is independent of capture activity; geometry never infers mode.
-  const states = new Map(baseStatesAt.value.map((state) => [state.baseId, state]))
+  const states = new Map<string, MapModel['baseStatesAt']['value'][number]>(baseStatesAt.value.map((state) => [state.baseId, state]))
   const assaultState = states.get('BASE')
   const assaultView = baseView(assaultState || { baseId: 'BASE' }, friendlyTeam.value)
   if (playback.value?.assaultObjectivePresent === true) {
     const mapCode = pbOverview.value?.mapCode
-    const semantics = mapSemantics.find(map => map.verified && map.mapCodes?.includes(mapCode))
+    const semantics = mapSemantics.find(map => map.verified && map.mapCodes?.includes(mapCode as string))
     const geometry = (semantics?.sceneEvidence?.battlePoints || [])
       .filter(point => point.type === 'controlpoint' && point.confidence === 'EXACT_SCENE_DATA')
       .map(point => ({ x: point.position[0], y: point.position[1], radius: null }))
@@ -238,7 +262,7 @@ const basesAt = computed(() => {
   }
 
   if (!baseStatesAt.value.some(state => ['A', 'B', 'C', 'D'].includes(state.baseId))) return []
-  const geometry = mapBases[pbOverview.value?.mapCode]?.supremacy || []
+  const geometry = (mapBases as Record<string, { supremacy?: Array<{ baseId: string; x: number; y: number; radius: number | null }> }>)[pbOverview.value?.mapCode ?? '']?.supremacy || []
   return geometry
     .filter((base) => base.radius != null)
     .map((base) => {

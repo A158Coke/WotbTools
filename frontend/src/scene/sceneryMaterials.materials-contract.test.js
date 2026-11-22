@@ -4,12 +4,13 @@
 // 本文件守卫「场景 GLB 材质管线」，即本轮从上游补齐的渲染实现——它们此前在本仓缺失，
 // 且都属于"少一行就退化成逐 mesh 建材质 / 透明队列闪烁"的接线型不变量。
 import { describe, it, expect } from 'vitest'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = playbackSceneSource()
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
@@ -44,7 +45,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 回归：ST| 静态 ShaderMaterial 的纹理在 uniforms.map.value，直接属性枚举
     // 触发零次 dispose → 切图累积 GPU 显存
     // 实现 2026-11-05 出仓 materialDispose.ts（#913 合并后行数门禁）；守卫随实现迁移
-    expect(src).toMatch(/import \{ collectMaterialTextures, disposeObject3D \} from '\.\/materialDispose\.js'/)
+    expect(src).toMatch(/import \{ ?(?:collectMaterialTextures, )?disposeObject3D(?:, collectMaterialTextures)? \} from '(?:\.\/|\.\.\/)materialDispose\.js'/)
     const at = matDisposeSrc.indexOf('export function disposeObject3D')
     expect(at).toBeGreaterThan(-1)
     expect(matDisposeSrc.slice(at, at + 900)).toMatch(/collectMaterialTextures\(m, texs\)/)

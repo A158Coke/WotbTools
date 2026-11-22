@@ -1,0 +1,43 @@
+name: Release / Android Publish Gate
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Explicit immutable staged Android version
+        required: false
+        type: string
+      auto_publish:
+        description: true for automatic continuation
+        required: false
+        type: string
+    outputs:
+      superseded:
+        description: true when a newer Android candidate supersedes this publish
+        value: ${{ jobs.publish_gate.outputs.superseded }}
+env:
+  ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 || '' }}
+  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+jobs:
+  publish_gate:
+    name: Publish gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      superseded: ${{ steps.freshness.outputs.superseded }}
+    steps:
+    - name: Checkout current main (candidate baseline)
+      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      with:
+        ref: main
+        fetch-depth: 1
+    - name: 'Guard: automatic publish yields to a newer Android candidate'
+      id: freshness
+      shell: bash
+      env:
+        AUTO_PUBLISH: ${{ inputs.auto_publish }}
+        REQUESTED_VERSION: ${{ inputs.version }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/gate-01-freshness.sh"

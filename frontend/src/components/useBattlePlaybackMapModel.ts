@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import type { BattlePlaybackDataset } from '../types/playback-v2'
 import { mapImages } from '../data/mapImages.js'
 import { map2dSrc } from '../data/map2dOverlay.js'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette.js'
@@ -6,7 +7,15 @@ import { createMapView } from '../utils/mapView.js'
 import { teamPointsAt } from '../utils/battlePlayback.js'
 import { friendlyHealthAt } from '../utils/battlePlaybackV2.js'
 
-export function useBattlePlaybackMapModel(props, getCurrentTime) {
+type MapOverview = {
+  mapCode?: string | null
+  friendlyTeam?: number | null
+  recorderAccountId?: number | null
+  arenaBonusType?: number | null
+  playableBounds?: { xMin: number; xMax: number; yMin: number; yMax: number } | null
+}
+
+export function useBattlePlaybackMapModel(props: { playbackV2: BattlePlaybackDataset | null; overview: MapOverview | null }, getCurrentTime: () => number) {
 const pbOverview = computed(() => {
   const v2 = props.playbackV2
   const ov = props.overview || {}
@@ -20,9 +29,9 @@ const pbOverview = computed(() => {
   }
 })
 
-const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
+const image = computed(() => (mapImages as Record<string, (typeof mapImages)[keyof typeof mapImages]>)[pbOverview.value.mapCode ?? ''] || null)
 /** 底图 URL：包内兜底，Android 上若 COS 有更新且校验通过则换成 blob URL（见 map2dOverlay.js）。 */
-const imageSrc = computed(() => (image.value ? map2dSrc(pbOverview.value.mapCode, image.value.src) : null))
+const imageSrc = computed(() => (image.value ? map2dSrc(pbOverview.value.mapCode!, image.value.src) : null))
 const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
 // 自适应配色（与热力覆盖层使用同一色板）
@@ -67,7 +76,7 @@ const enemyPoints = computed(() =>
     ? null
     : teamPointsAt(playback.value?.pointsSamples, enemyTeam.value, getCurrentTime()))
 const baseStatesAt = computed(() => {
-  const latest = new Map()
+  const latest = new Map<string, NonNullable<BattlePlaybackDataset['baseStates']>[number]>()
   for (const state of playback.value?.baseStates || []) {
     if (!state || !Number.isFinite(state.timeSec) || state.timeSec > getCurrentTime() + 1e-6) continue
     if (!['A', 'B', 'C', 'D', 'BASE'].includes(state.baseId)) continue

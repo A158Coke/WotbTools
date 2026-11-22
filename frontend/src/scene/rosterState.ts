@@ -28,7 +28,7 @@ type RosterDef = Partial<Parameters<typeof defLifeAt>[0]> & {
   tank_name?: string | null;
 };
 type RosterVehicle = { def?: RosterDef | null } | null | undefined;
-type RosterRow = {
+export type RosterRow = {
   eid: number;
   accountId: number | null;
   tankId: number | null;
@@ -36,7 +36,7 @@ type RosterRow = {
   nick: string;
   tank: string;
 };
-type RosterRuntime = {
+export type RosterRuntime = {
   hp?: number;
   maxHp?: number;
   dead?: boolean;
@@ -57,7 +57,7 @@ type HealthInput = {
 export const ROSTER_GROUPS = Object.freeze(['team1', 'team2', 'unknown']);
 
 /** Recorder perspective controls presentation only; unknown teams remain separate. */
-export function rosterLanesFor(groups: Partial<Record<RosterGroupKey, RosterRow[]>>, friendlyTeam: number | null | undefined) {
+export function rosterLanesFor<T>(groups: Partial<Record<RosterGroupKey, T[]>>, friendlyTeam: number | null | undefined) {
   const leftKey = friendlyTeam === 2 ? 'team2' : 'team1';
   const rightKey = friendlyTeam === 2 ? 'team1' : 'team2';
   return {

@@ -709,11 +709,16 @@ describe('playbackScene 资产发布顺序', () => {
   })
 
   it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
-    const raw = (await import('./playbackScene.js?raw')).default
-    // #820 Step 2：地图资产装载（noteAsset/进度/降级）owner = playback/mapWorld.ts
-    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    // 2026-11-22 拆分：visibility 投影写 owner = playback/sessionRuntime.js，
+    // 逐车读取回退（visibleAt）owner = playback/sceneState.js。
+    const runtimeRaw = (await import('./playback/sessionRuntime.ts?raw')).default
+    const stateRaw = (await import('./playback/sceneState.ts?raw')).default
+    const raw = runtimeRaw + '\n' + stateRaw
+    // Asset failures are owned by the map loader.
+    const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).toMatch(/store\.assetIssues = assetIssues/)
     expect(worldSrc).toMatch(/store\.assetDegraded = true/)
+    expect(worldSrc.replace('store.assetDegraded = true', '')).not.toMatch(/store\.assetDegraded = true/)
     expect(worldSrc).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
     expect(worldSrc).toMatch(/noteAsset\('terrain', 'unavailable'/)
     expect(worldSrc).toMatch(/noteAsset\('scenery', 'failed'/)

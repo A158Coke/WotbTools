@@ -1,8 +1,45 @@
-import { inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, watch } from 'vue'
+import { inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, watch, type Ref } from 'vue'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 
-export function useBattlePlaybackLifecycle(deps) {
+type LifecycleDeps = {
+  props: { active: boolean }
+  lifecycleVisible: Ref<boolean>
+  wideLayout: Ref<boolean>
+  playbackLifecycle: { active: boolean }
+  pbRoot: Ref<HTMLElement | null>
+  mapStageEl: Ref<HTMLElement | null>
+  transportEl: Ref<HTMLElement | null>
+  battlefieldWorkspaceEl: Ref<HTMLElement | null>
+  isFullscreen: Ref<boolean>
+  fitViewIfReady: (force: boolean) => void
+  pause: () => void
+  exitOwnedFullscreen: () => void
+  disposeClock: () => void
+  disposeCamera: () => void
+  disposeMapPresentation: () => void
+  annotationOpen: Ref<boolean>
+  routePoints: Ref<unknown[]>
+  draft: Ref<unknown>
+  cancelRoute: () => void
+  selectedAnnotation: Ref<unknown>
+  selectedAnnotationIndex: Ref<number>
+  closeAnnotation: () => void
+  finishRoute: () => void
+  deleteSelected: () => void
+  redoAnnot: () => void
+  undoAnnot: () => void
+  setUiHidden: (hidden: boolean) => void
+  duration: Ref<number>
+  currentTime: Ref<number>
+  playing: Ref<boolean>
+  play: () => void
+  step: (delta: number) => void
+  seek: (time: number) => void
+  uiHidden: Ref<boolean>
+}
+
+export function useBattlePlaybackLifecycle(deps: LifecycleDeps) {
   const {
     props, lifecycleVisible, wideLayout, playbackLifecycle,
     pbRoot, mapStageEl, transportEl, battlefieldWorkspaceEl, isFullscreen, fitViewIfReady,
@@ -11,10 +48,10 @@ export function useBattlePlaybackLifecycle(deps) {
     closeAnnotation, finishRoute, deleteSelected, redoAnnot, undoAnnot, setUiHidden,
     duration, currentTime, playing, play, step, seek, uiHidden,
   } = deps
-  let stageResizeObserver = null
-  let wideLayoutQuery = null
+  let stageResizeObserver: ResizeObserver | null = null
+  let wideLayoutQuery: MediaQueryList | null = null
 
-  function onWideLayoutChange(event) {
+  function onWideLayoutChange(event: MediaQueryListEvent) {
     wideLayout.value = !!(event && event.matches)
   }
 /**
@@ -118,9 +155,9 @@ const transport = usePlaybackTransport({
   isActive: () => props.active && lifecycleVisible.value,
 }, { keyboard: false })
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
   if (!props.active || !lifecycleVisible.value || e.isComposing) return
-  if (annotationOpen.value && !isInteractiveTarget(e.target)) {
+  if (annotationOpen.value && !isInteractiveTarget(e.target as HTMLElement | null)) {
     if (e.key === 'Escape') {
       e.preventDefault()
       if (routePoints.value.length || draft.value) cancelRoute()
@@ -132,7 +169,7 @@ function onKeydown(e) {
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelected(); return }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redoAnnot() : undoAnnot(); return }
   }
-  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && !isInteractiveTarget(e.target)) {
+  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && !isInteractiveTarget(e.target as HTMLElement | null)) {
     e.preventDefault()
     setUiHidden(!uiHidden.value)
     return

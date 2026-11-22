@@ -714,17 +714,28 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
 
+    function assertNoNestedScroll(src, selector) {
+      const block = new RegExp(`(?:^|\\n)\\.${selector} \\{([\\s\\S]*?)\\}`).exec(src)
+      expect(block, `missing .${selector} rule`).not.toBeNull()
+      expect(block[1]).not.toContain('overflow')
+    }
+
     it('队面板不得是独立滚动容器（常规名册必须一屏看全）', () => {
-      const src = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
-      // .team 是视觉面板：不得带 overflow 滚动（旧实现 overflow-y: auto 造成两个小滚动盒）
-      const teamBlock = /\.team \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
-      expect(teamBlock).not.toContain('overflow')
-      // 车道本身（基础规则）不是滚动盒；三段式里的 overflow 只是病态数据的兜底，
-      // 正常 7v7 不出现滚动条由浏览器门禁（roster-geometry-*）在真实布局里断言。
-      const laneBlock = /\n\.team-lane \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
-      expect(laneBlock).not.toContain('overflow')
-      // 临时名册面整套规则已不存在
-      expect(src).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
+      const css = readFileSync(resolve(here, 'replay3d-pane.css'), 'utf8')
+      const roster = readFileSync(resolve(here, 'PlaybackRoster.vue'), 'utf8')
+      const pane = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
+      assertNoNestedScroll(css, 'team-lane')
+      assertNoNestedScroll(roster, 'pb-roster-team')
+      expect(css + pane).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
+    })
+
+    it('拒绝缺失规则和嵌套滚动', () => {
+      const css = readFileSync(resolve(here, 'replay3d-pane.css'), 'utf8')
+      const roster = readFileSync(resolve(here, 'PlaybackRoster.vue'), 'utf8')
+      expect(() => assertNoNestedScroll(css.replace('.team-lane {', '.removed-lane {'), 'team-lane')).toThrow()
+      expect(() => assertNoNestedScroll(roster.replace('\n.pb-roster-team {', '\n.removed-team {'), 'pb-roster-team')).toThrow()
+      expect(() => assertNoNestedScroll(css.replace('.team-lane {', '.team-lane { overflow-y: auto;'), 'team-lane')).toThrow()
+      expect(() => assertNoNestedScroll(roster.replace('\n.pb-roster-team {', '\n.pb-roster-team { overflow-y: auto;'), 'pb-roster-team')).toThrow()
     })
 
     it('点一行 = 跟随该玩家坦克 + 高亮，不再打开详情窗（2026-10-05 需求）', async () => {

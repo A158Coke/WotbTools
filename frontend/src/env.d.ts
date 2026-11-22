@@ -67,4 +67,14 @@ interface Window {
   __grass?: unknown
   __mapBorderMaterials?: number
   __waterMaterials?: number
+  /** 场景车辆调试句柄（sessionRuntime/sessionLifecycle ?debug 写入） */
+  __pbV?: unknown
+  /** 场景调试聚合（?debug 写入） */
+  __gdbg?: unknown
+  /** 战斗特效调试句柄（?debug 写入） */
+  __battleFx?: unknown
+  /** ?perf 看门狗句柄（perfProbe 写入，销毁时摘除） */
+  __pbPerf?: unknown
+  /** 环境动画逐帧诊断（renderLoop.ts ?debug 写入） */
+  __ambient?: { mapMode?: boolean; frozen?: boolean; mats?: number; frames?: number; paused?: boolean; dtMs?: number }
 }

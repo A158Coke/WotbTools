@@ -31,6 +31,7 @@ const computeVehicleMarkerSizeTyped = computeVehicleMarkerSize as ComputeVehicle
 
 /** projectVehicleState 的单个渲染项（+ 每车 gunMarks/reload/consumables 附加字段）。 */
 type ProjectedVehicleState = NonNullable<ReturnType<typeof projectVehicleState>> & {
+  vehicle: VehiclePlaybackTrack
   gunMarks: unknown
   reloadShells: unknown
   consumables: unknown
@@ -189,7 +190,7 @@ export function usePlaybackVehicleProjection(
         if (!state) return null
         // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
         // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
-        return { ...state, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
+        return { ...state, vehicle, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
       })
       .filter((item): item is ProjectedVehicleState => item != null)
   })

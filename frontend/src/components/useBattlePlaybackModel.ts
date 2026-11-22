@@ -1,3 +1,5 @@
+import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../types/playback-v2'
+import type { PoseFacet } from '../replay-local/pose/vehiclePose'
 import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -13,14 +15,27 @@ import { usePlaybackVehicleSelection } from '../composables/usePlaybackVehicleSe
 import { usePlaybackReplayData } from '../composables/usePlaybackReplayData.js'
 import { usePlaybackClock } from '../composables/usePlaybackClock.js'
 import { usePlaybackVehicleProjection } from '../composables/usePlaybackVehicleProjection.js'
-import { useBattlePlaybackRoster } from './useBattlePlaybackRoster.ts'
+import { useBattlePlaybackRoster, type SceneSemantics } from './useBattlePlaybackRoster.ts'
 import { useBattlePlaybackMapModel } from './useBattlePlaybackMapModel.ts'
 import { useBattlePlaybackLifecycle } from './useBattlePlaybackLifecycle.ts'
 import { useBattlePlaybackPresentation } from './useBattlePlaybackPresentation.ts'
 import { usePlaybackMapGestures } from '../composables/usePlaybackMapGestures.js'
 
-export function useBattlePlaybackModel(props) {
-const mapSemantics = Object.values(import.meta.glob('../../../common/map-semantics/*.semantic.json', {
+export type PlaybackModelProps = {
+  active: boolean
+  autoFullscreen: { token?: number; key?: string } | null
+  playbackV2: BattlePlaybackDataset | null
+  reloadTelemetry: PlaybackReloadTelemetry | null
+  poseFacet: PoseFacet | null
+  clockOffset: number | null
+  loop: boolean
+  seekTo: number | null
+  result: unknown
+  overview: Parameters<typeof useBattlePlaybackMapModel>[0]['overview']
+}
+
+export function useBattlePlaybackModel(props: PlaybackModelProps) {
+const mapSemantics = Object.values(import.meta.glob<SceneSemantics>('../../../common/map-semantics/*.semantic.json', {
   eager: true, import: 'default',
 }))
 
@@ -36,7 +51,7 @@ const uiHidden = ref(false)
  */
 const {
   pbOverview, image, imageSrc, mapView, palette, playback, duration, friendlyTeam,
-  hpVehicles, friendlyHp, enemyHp, friendlyPoints, enemyTeam, enemyPoints, baseStatesAt,
+  hpVehicles, friendlyHp, enemyHp, friendlyPoints, enemyPoints, baseStatesAt,
   disposeMapPresentation,
 } = useBattlePlaybackMapModel(props, () => currentTime.value)
 
@@ -95,27 +110,27 @@ const {
  * 关掉**只关呈现**：名册数据（teamVehicles）、选中车辆、详情、时间轴、地图视图与相机
  * 全部保留；恢复后立刻可用，不重建播放、不重解析。
  */
-const mobileOverlay = ref(null)
+const mobileOverlay = ref<{ reveal?: () => void } | null>(null)
 /** §details-float：详情浮窗的受保护下界——传输控件。它在竖屏纵向流与横屏中心栈里都是
     同一处（`[data-test="pb-transport-slot"]`），这里始终指向当前真正在渲染的那一个，
     避免浮窗盖住拇指操作区。 */
-const transportEl = ref(null)
+const transportEl = ref<HTMLElement | null>(null)
 const displayOpen = ref(false)
 const displaySection = ref('display')
-const displayAnchor = ref(null)
-function toggleDisplay(anchor) { displayAnchor.value = anchor; displaySection.value = 'display'; displayOpen.value = !displayOpen.value }
+const displayAnchor = ref<HTMLElement | null>(null)
+function toggleDisplay(anchor: HTMLElement | null) { displayAnchor.value = anchor; displaySection.value = 'display'; displayOpen.value = !displayOpen.value }
 /** 整个战场 workspace（`.pb-main`：Team 1 | Stage | Team 2 + 浮窗）——详情浮窗的定位祖先与
     拖动宿主。浮窗是它的直接子元素，`left/top`、夹紧与拖动在同一个坐标系里算；
     它不是 `.pb-map-stage`（那只是中间一栏，按它算会把浮窗关在 Stage 里）。 */
-const battlefieldWorkspaceEl = ref(null)
+const battlefieldWorkspaceEl = ref<HTMLElement | null>(null)
 // ---- 地图视图缩放/平移：单一 camera layer 保证地图/网格/炮线/标记严格对齐 ----
 // 相机状态（view / MapRenderRect / fit）的唯一 owner = usePlaybackCamera（#820 Agent C）；
 // 手势状态机（pointer/pan/pinch/wheel）的唯一 owner = usePlaybackMapGestures。
-const mapComponent = ref(null)
-const mapStageEl = ref(null)
+const mapComponent = ref<{ textInputRef?: HTMLInputElement | null } | null>(null)
+const mapStageEl = ref<HTMLElement | null>(null)
 
 // Fullscreen API 与方向锁生命周期归 usePlaybackFullscreen。
-const pbRoot = ref(null)
+const pbRoot = ref<HTMLElement | null>(null)
 // 三档互斥：手机由 usePlaybackPhoneForm 判定；非手机以 1200px 分 PC / tablet。
 const wideLayout = ref(false)
 const formFactor = computed(() => {
@@ -135,22 +150,22 @@ const compactAnnotation = computed(() => annotationOpen.value && phoneLandscape.
 const { controlsCollapsed, controlsContentId, toggleControlsCollapsed, rosterLanesOpen, toggleRosterLanes } =
   usePlaybackWorkspaceToggles({ phoneLandscape, onCollapse: () => { displayOpen.value = false; closeAnnotation() } })
 // Presentation-only height bookkeeping: the existing disclosure ref remains the sole state owner.
-const transportToggleEl = ref(null)
-const transportContentEl = ref(null)
-function freezeTransportHeight(el) { el.style.height = `${el.getBoundingClientRect().height}px` }
-function startTransportEnter(el) {
+const transportToggleEl = ref<HTMLElement | null>(null)
+const transportContentEl = ref<HTMLElement | null>(null)
+function freezeTransportHeight(el: HTMLElement) { el.style.height = `${el.getBoundingClientRect().height}px` }
+function startTransportEnter(el: HTMLElement) {
   // A cancelled leave has already frozen the current visible height.
   if (!el.style.height) el.style.height = '0px'
 }
-function openTransportHeight(el) {
+function openTransportHeight(el: HTMLElement) {
   void el.offsetHeight
   el.style.height = `${el.scrollHeight}px`
 }
-function closeTransportHeight(el) {
+function closeTransportHeight(el: HTMLElement) {
   void el.offsetHeight
   el.style.height = '0px'
 }
-function clearTransportHeight(el) { el.style.height = '' }
+function clearTransportHeight(el: HTMLElement) { el.style.height = '' }
 function toggleTransport() {
   if (!controlsCollapsed.value && transportContentEl.value?.contains(document.activeElement)) {
     transportToggleEl.value?.focus({ preventScroll: true })
@@ -194,7 +209,6 @@ const {
 })
 
 const {
-  mapEngaged,
   wheelHintVisible,
   mapTouchPan,
   onWheel,
@@ -260,8 +274,6 @@ const {
   annotColor,
   annotVisible,
   annotWidthSlider,
-  semPerSvgX,
-  semPerSvgY,
   textSession,
   textInputStyle,
   renderedAnnotations,
@@ -273,7 +285,6 @@ const {
   selectedAnnotation,
   drawingPointerId: getDrawingPointerId,
   drawingStartScreen: getDrawingStartScreen,
-  resetAnnotations,
   cancelDrawing,
   cancelRoute,
   toggleTool,
@@ -343,7 +354,6 @@ const {
   visibleTracers,
   tracerColor,
   visibleTrails,
-  canonicalMarkerScreen,
   markerScreen,
   hpFor,
   hpDisplayNumText,
@@ -353,7 +363,7 @@ const {
   { poseAtTime, poseSource, vehicleReloadAt, vehicleConsumablesAt, routesByAccount, vehiclesByAccount, projectedSemanticNorm },
   {
     playbackV2: () => props.playbackV2,
-    recorderAccountId: () => pbOverview.value.recorderAccountId,
+    recorderAccountId: () => pbOverview.value.recorderAccountId ?? null,
     currentTime,
     speed,
     authoritativeEvents: () => authoritativeEvents.value,
@@ -406,9 +416,7 @@ const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event
 // （#820 Agent C Step 2）；hit-test 与浮窗落位经由同一相机变换与 workspace 坐标系。
 const {
   selectedAccountId,
-  detailsOpen,
   detailsSide,
-  selectedState,
   detailsState,
   selectedTrack,
   selectedHealth,
@@ -416,7 +424,6 @@ const {
   selLastKnownSec,
   selCurStats,
   selDamageLog,
-  openDetails,
   closeSidebar,
   onMarkerSelect,
   selectAt,
@@ -459,8 +466,8 @@ const { transport, stageResizeObserver, writeSquareAvailHeight, dragStart, dragE
 
 const {
   teamVehicles, rosterTeams, destroyedNow, rosterLanes, rosterEntryVisible, hudClockVisible,
-  inlineStack, detailsFloating, rosterHealth, rosterReload, floatTeamClass, labelLayout,
-  markerLabel, baseStatus, capturedBy, hudBaseStates, basesAt, mapStyle,
+  inlineStack, detailsFloating, rosterHealth, rosterReload, floatTeamClass,
+  markerLabel, hudBaseStates, basesAt, mapStyle,
 } = useBattlePlaybackRoster({
   computed, watch, nextTick, props, currentTime, playback, pbOverview, baseStatesAt, friendlyTeam,
   mapSemantics, showRosterPresentation, isPhonePortrait, rosterLanesOpen, uiHidden,

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { pointsAt } from './supremacyPoints.ts'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -49,7 +50,7 @@ describe('pointsAt（争霸点数的阵营映射）', () => {
 })
 
 describe('playbackScene 的 HUD 状态接线（防回归）', () => {
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const src = playbackSceneSource()
   const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function tick()') + 4000)
 
   it('teardown 显式归零 HUD 点数字段（clearBases 释放行为见 playback/bases.tracers.behavior.test.ts）', () => {
@@ -63,7 +64,7 @@ describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）'
   // 调色唯一事实源拆分到 playback/palette.js（行数卫生规则；playbackScene re-export 保持
   // 导入方零改动）——声明唯一性断言跟随事实源移动。
   const src = readFileSync(resolve(here, 'playback/palette.ts'), 'utf8')
-  const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const sceneSrc = playbackSceneSource()
 
   it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
     expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)

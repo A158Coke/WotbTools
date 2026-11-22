@@ -7,13 +7,14 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { tankViewerSource } from '../scene/__tests__/sceneSource.ts'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const plateModel = read('../scene/viewer/armorPlateModel.ts') + '\n' + read('../scene/viewer/armorPenetrationScenes.ts')
 // 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
 
 describe('shot impact view first-frame pose propagation', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   it('updateTurretGun 写完炮塔/炮管装甲板矩阵后立即传播世界矩阵', () => {
     const start = kernel.indexOf('function updateTurretGun(')
     expect(start).toBeGreaterThan(-1)
@@ -26,7 +27,10 @@ describe('shot impact view first-frame pose propagation', () => {
     expect(propagate, '世界矩阵未在首帧 raycast 前传播').toBeGreaterThan(lastWrite)
   })
   it('传播助手递归更新装甲/外观模型（含子节点的 matrixWorld）', () => {
-    expect(kernel).toMatch(/function updateCollisionWorldMatrices\(\) \{[\s\S]*?models\.armorModel\?\.updateWorldMatrix\(true, true\);[\s\S]*?models\.tankModel\?\.updateWorldMatrix\(true, true\);/)
+    const ricochet = read('../scene/viewer/heatmapRicochet.ts')
+    const invariant = /function updateCollisionWorldMatrices\(\) \{[\s\S]*?models\.armorModel\?\.updateWorldMatrix\(true, true\);[\s\S]*?models\.tankModel\?\.updateWorldMatrix\(true, true\);/
+    expect(ricochet).toMatch(invariant)
+    expect(ricochet.replace('models.tankModel?.updateWorldMatrix(true, true);', '')).not.toMatch(invariant)
   })
 })
 
@@ -49,34 +53,40 @@ describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
 // 正/背面是同一块板，只计一层（否则重复消耗厚度）。显示/采样材质是 FrontSide，求交
 // 时临时切 DoubleSide，同步求交后立即恢复。
 describe('spaced armor double-sided judgment', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const hits = read('../scene/viewer/judgmentHits.ts')
+  const result = read('../scene/viewer/judgmentResult.ts')
   it('求交前把间隙甲材质临时切成 DoubleSide，并在 finally 恢复', () => {
-    expect(kernel).toMatch(/function intersectArmorDoubleSidedSpaced\(objects: THREE\.Object3D\[\], caster: THREE\.Raycaster\): THREE\.Intersection\[\]/)
-    expect(kernel).toMatch(/node\.userData\.armorSection !== 'spaced'/)
-    expect(kernel).toMatch(/m\.side = THREE\.DoubleSide/)
-    expect(kernel).toMatch(/finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/)
+    expect(hits).toMatch(/function intersectArmorDoubleSidedSpaced\(objects: THREE\.Object3D\[\], caster: THREE\.Raycaster\): THREE\.Intersection\[\]/)
+    expect(hits).toMatch(/node\.userData\.armorSection !== 'spaced'/)
+    expect(hits).toMatch(/m\.side = THREE\.DoubleSide/)
+    const restore = /finally \{\s*\n\s*for \(const \[m, side\] of saved\) m\.side = side;/
+    expect(hits).toMatch(restore)
+    expect(hits.replace('m.side = side;', '')).not.toMatch(restore)
   })
   it('同板去重判据委托 armorMeshTopology.resolveSpacedHitMask（语义由纯函数单测锁定）', () => {
-    expect(kernel).toMatch(/function collectJudgmentHits\(intersects: THREE\.Intersection\[\], rayDir: THREE\.Vector3, minDistance = 0\)/)
-    expect(kernel).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
-    expect(kernel).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\.\/armorMeshTopology\.js'/)
-    // HEAT 间距原点必须来自 Node 可直接加载的 penetration.js（Node 不解析 .js → .ts）
-    expect(kernel).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withContactRicochet, withGapOrigin \} from '\.\.\/penetration\.js'/)
-    expect(kernel).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
-    expect(kernel).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
+    expect(hits).toMatch(/function collectJudgmentHits\(intersects: THREE\.Intersection\[\], rayDir: THREE\.Vector3, minDistance = 0\)/)
+    expect(hits).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
+    expect(hits).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\.\/armorMeshTopology\.js'/)
+    // HEAT 间距原点经兼容入口共享；Node 24 原生加载其 TypeScript owner。
+    expect(result).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withGapOrigin \} from '\.\.\/penetration\.js'/)
+    expect(hits).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
+    expect(hits).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
   })
   it('点击主链与跳弹续飞共用同一双面求交/收集', () => {
     expect(kernel).toMatch(/const intersects = intersectArmorDoubleSidedSpaced\(objects, getRaycaster\(\)\);/)
     expect(kernel).toMatch(/const \{ hits: armorHits, firstContact \} = collectJudgmentHits\(intersects, getRaycaster\(\)\.ray\.direction\);/)
-    expect(kernel).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
-    expect(kernel).toMatch(/const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\);/)
+    expect(result).toMatch(/const ricIntersects = intersectArmorDoubleSidedSpaced\(objects, rc\);/)
+    const collect = /const ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\);/
+    expect(result).toMatch(collect)
+    expect(result.replace('RC.MIN_CONTINUATION_T', '0')).not.toMatch(collect)
   })
 })
 
 // 换车/换弹的状态归属：URL 是 owner，viewer 的恢复输入不能停留在初始化快照；
 // 选车器换车不写 route，编辑器/HUD 就绪标志必须按当前车重置。
 describe('armor shell and readiness ownership', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.ts'), read('./agent-armor/useArmorShotPage.ts'), read('./agent-armor/useArmorPitchAvailability.ts'), read('./agent-armor/armorViewerLabels.ts'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css'), read('./agent-armor-view-hud-responsive.css')].join('\n')
   it('换目标后从当前 URL 恢复 shell，setShell 不再保留旧 QP 快照', () => {
     expect(kernel).toMatch(/function requestedShellIndex\(\)/)
@@ -172,7 +182,7 @@ describe('armor shell and readiness ownership', () => {
 //（source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
   const shaders = [read('../scene/viewer/armorShaders.ts'), read('../scene/viewer/armorPrimaryShader.ts')].join('\n')
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   it('间隙甲材质/状态材质/深度占位的既有渲染状态', () => {
     expect(shaders).toMatch(/function spacedMaterial\(thickness: number, penetration: number \| null \| undefined, side: Side\): ShaderMaterial \{/)
     expect(shaders).toMatch(/side,\s*\n\s*uniforms:/)
@@ -208,7 +218,7 @@ describe('tank picker keyboard isolation from nested modal layers', () => {
 // 回放装备真值只属于射击记录的目标车：目标被选车器换掉后，场景内核不得继续把
 // 原目标的 122 当成当前车装备（否则 HUD 仍亮、拖炮仍加 4°/3°）。
 describe('122 装备真值的目标身份（场景内核）', () => {
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   it('瞄准/判定上下文按当前目标过滤回放装备真值', () => {
     expect(kernel).toMatch(/function shotEquipmentCtx\(\)[\s\S]*?recordedTargetMatchesShot\(ctx\.shot, getCurrentTargetId\(\)\)/)
     expect(kernel).toMatch(/const recorded = recordedTargetMatchesShot\(s, getCurrentTargetId\(\)\) \? \(s\.target_equipment \|\| null\) : null/)
@@ -229,7 +239,7 @@ describe('122 装备真值的目标身份（场景内核）', () => {
 
 describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
   const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.ts'), read('./agent-armor/useArmorShotPage.ts'), read('./agent-armor/useArmorPitchAvailability.ts'), read('./agent-armor/armorViewerLabels.ts'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css'), read('./agent-armor-view-hud-responsive.css')].join('\n')
-  const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
+  const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
 
   it('eqBadge 不得硬编码文案：俯仰徽标使用 L.pitchDevice', () => {
     const start = kernel.indexOf('function eqBadge(')

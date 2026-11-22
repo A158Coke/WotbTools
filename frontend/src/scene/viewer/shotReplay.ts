@@ -12,7 +12,8 @@ import { fetchTankData, assetProvider } from '../agentData.js'
 import { buildTrajectoryAnnotation, installAnchorMarkers, installShooterMuzzleMarker, placeImpactCamera } from './shotReplaySeg.js'
 import { autoSelectReplayShell, buildMoveAnnotation, buildWorldPanelHtml, installMoveToggle, installViewSwitch } from './shotReplayPanel.js'
 import { installTimeScrubHandler } from './shotReplayScrub.js'
-import { installSegmentJudgment } from './judgment.js'
+import { installSegmentJudgment } from './segmentJudgment.js'
+export { decodeB255 } from './segmentJudgment.js'
 export interface LoadedShooterModel {
     sd: TankData | null
     sModel: THREE.Object3D
@@ -197,10 +198,6 @@ export interface ShotReplayDeps {
     getCurrentShooterId(): number | string | null
 }
 
-/** 客户端 BWUtils::DecodeShotSegment 的 1/255 量化解码（纯函数，行为测试锚）：b=0→min、b=255→max。 */
-export function decodeB255(b: number, min: number, size: number): number {
-    return min + size * (b / 255)
-}
 
 export function runShotReplay(deps: ShotReplayDeps): void {
     const {

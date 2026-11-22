@@ -6,11 +6,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
+import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 
-const scene = readFileSync(
-  fileURLToPath(new URL('../playbackScene.js', import.meta.url)),
-  'utf8',
-)
+const scene = playbackSceneSource()
 const runtime = readFileSync(
   fileURLToPath(new URL('./vehicleRuntime.ts', import.meta.url)),
   'utf8',

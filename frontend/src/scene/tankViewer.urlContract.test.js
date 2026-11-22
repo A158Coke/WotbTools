@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dollyZoomFov, mirrorShotData } from './tankViewer.js'
+import { tankViewerSource } from './__tests__/sceneSource.ts'
 
 describe('dollyZoomFov（URL 相机契约基线）', () => {
   it('enabled=false 恒原生 FOV（两车 world 总览路径；经 min/max 夹取）', () => {
@@ -95,8 +96,8 @@ describe('mirrorShotData（世界镜像一次性变换契约）', () => {
 
 // 俯仰覆盖的三态语义（review P2 回归锁，source regression）：`eqpitch` URL 初始化、
 // 覆盖只在 `!= null` 时生效、清覆盖必须传 null（显式 false 会永久压住 recorded truth）。
-const viewerSrc = [
-        './tankViewer.js', './viewer/turretRig.ts', './viewer/modelLifecycle.ts', './viewer/heatmap.ts',
+const viewerSrc = tankViewerSource({ raw: true }) + [
+        './viewer/turretRig.ts', './viewer/modelLifecycle.ts', './viewer/heatmap.ts',
         './viewer/judgment.ts', './viewer/trajectoryCard.ts', './viewer/diagnosticProbe.ts',
         './viewer/shotReplay.ts', './viewer/debugUi.ts', './viewer/equipmentState.ts',
         './viewer/collisionView.ts', './viewer/viewerMath.ts', './viewer/dataLoader.ts', './viewer/aimInput.ts', './viewer/shotReplayMiss.ts',
@@ -104,7 +105,7 @@ const viewerSrc = [
 
 describe('121/122 俯仰覆盖三态（source regression）', () => {
   it('eqpitch 只经 URL 初始化进 equipmentOverride.pitch', () => {
-    expect(viewerSrc).toContain("if (QP.has('eqpitch')) eqs.equipmentOverride.pitch = QP.get('eqpitch') === '1';")
+    expect(viewerSrc).toContain("if (S.QP.has('eqpitch')) S.eqs.equipmentOverride.pitch = S.QP.get('eqpitch') === '1';")
   })
 
   it('effectivePitchDevice 走 tankSetup 纯函数裁决（可用性/覆盖/真值/勾选三态）', () => {
@@ -114,7 +115,7 @@ describe('121/122 俯仰覆盖三态（source regression）', () => {
   })
 
   it('setEquipmentOverride 把 null 保留为 null（撤销覆盖，而非写死布尔）', () => {
-    expect(viewerSrc).toContain('equipmentOverride[kind] = value == null ? null : !!value;')
+    expect(viewerSrc).toContain('S.eqs.equipmentOverride[kind] = value == null ? null : !!value;')
   })
 
   it('撤销覆盖（null）时按当前目标真值重同步原生 checkbox（review P2）', () => {

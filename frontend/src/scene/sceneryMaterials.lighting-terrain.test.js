@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = playbackSceneSource()
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
@@ -19,7 +20,7 @@ const gpSrc = readSrc(resolve(here, 'groundPass.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const stripComments = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
-const mapWorldSrc = stripComments(readSrc(resolve(here, 'playback/mapWorld.ts')))
+const mapWorldSrc = ['playback/mapWorld.ts', 'playback/mapWorldLoader.ts', 'playback/mapWorldTerrain.ts'].map(path => stripComments(readSrc(resolve(here, path)))).join('\n')
 const vehSrc = stripComments(readSrc(resolve(here, 'playback/vehicleRuntime.ts')))
 
 describe('照明与地形材质合同', () => {
@@ -134,7 +135,8 @@ describe('照明与地形材质合同', () => {
     //  · IBL envTexture Equirect+SRGB → mapWorld.behavior.test.ts
     //  · 履带印贴图 → treadRuntime.behavior.test.ts 侧共享贴图（显示内容解码）
     // 新增一处 sRGB 解码必须先想清楚它属于哪一类。
-    expect(mapWorldSrc).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
+    expect(mapWorldSrc).toMatch(/st\.groundLayers = \{ layers: L, texs \};/)
+    expect(mapWorldSrc.replace('st.groundLayers = { layers: L, texs };', '')).not.toMatch(/st\.groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
     expect(mapWorldSrc).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
   })
 
@@ -267,7 +269,7 @@ describe('照明与地形材质合同', () => {
     //  ⚠️ 曾用"该视距下地形单元格上界"（∝视距）当淡出宽度：与客户端无关，且远景把水整片洗掉
     //  （用户"水面贴图也不太对了"）。此用例同时钉死正确口径并禁止那两个错误写法复活。
     expect(asmSrc).toMatch(/coast: waterCoast, wro: ud\.water,/)
-    expect(mapWorldSrc).toMatch(/if \(waterTexDispose\) \{ waterTexDispose\.dispose\(\); waterTexDispose = null; \}/)
+    expect(mapWorldSrc).toMatch(/if \(st\.waterTexDispose\) \{ st\.waterTexDispose\.dispose\(\); st\.waterTexDispose = null; \}/)
     // 资源构造与阈值（makeWaterCoast / uDepthUlp = 2/2^depthBits）2026-11-12 接替：
     // groundPass.behavior.test.ts 行为测试（24/16bit 阈值、数据纹理口径）
     expect(mapWorldSrc).toMatch(/function terrainSpanOf\(\) \{/)

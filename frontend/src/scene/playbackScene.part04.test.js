@@ -880,10 +880,12 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
     const src = (await import('./playbackScene.js?raw')).default
     expect(src).not.toMatch(/map-mini/)
     expect(src).not.toMatch(/miniMap/)
-    // #820 Step 2：地面链路 owner = playback/mapWorld.ts（四档统一 ground.webp）
-    const worldSrc = (await import('./playback/mapWorld.ts?raw')).default
+    // All quality levels use the map loader's ground.webp path.
+    const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).not.toMatch(/map-mini/)
-    expect(worldSrc).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
+    const groundPath = /const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/
+    expect(worldSrc).toMatch(groundPath)
+    expect(worldSrc.replace("const mapUrl = mapStaticUrl('map', undefined, resolvedKey);", "const mapUrl = mapStaticUrl('map-mini', undefined, resolvedKey);")).not.toMatch(groundPath)
     const replay = (await import('./replaySource.js?raw')).default
     expect(replay).not.toMatch(/map-mini/)
   })

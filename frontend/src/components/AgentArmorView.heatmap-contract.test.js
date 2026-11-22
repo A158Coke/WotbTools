@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+const judgmentResult = read('../scene/viewer/judgmentResult.ts')
+const heatmapPass = read('../scene/viewer/heatmapPasses.ts')
 const plateModel = read('../scene/viewer/armorPlateModel.ts') + '\n' + read('../scene/viewer/armorPenetrationScenes.ts')
 // 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
 
@@ -17,6 +19,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   // 拼接读取两份源（not.toMatch 同时约束两侧；RT/注入点等留在 tankViewer 的代码两处都可命中）
   const kernel = [read('../scene/tankViewer.js'), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n') + '\n' + [read('../scene/viewer/armorShaders.ts'), read('../scene/viewer/armorPrimaryShader.ts')].join('\n')
   const pen = read('../scene/penetration.js')
+  const penGeometry = read('../scene/penetrationGeometry.ts')
   it('逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
     const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
@@ -113,8 +116,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect((rtFn.match(/type: rtType,/g) || []).length).toBe(2)
     // 回退守卫：PBR uniform 默认 0（浮点语义），注入点按实际格式置 0/1
     expect(kernel).toMatch(/spacedSatGuard: \{ value: 0 \},/)
-    expect(kernel).toMatch(/spacedSatGuard\.value = rtIsFloat \? 0 : 1;/)
-    expect(kernel).toMatch(/const rtIsFloat = spacedRTFloatCapable\(\);/)
+    expect(heatmapPass).toMatch(/spacedSatGuard\.value = rtIsFloat \? 0 : 1;/)
+    expect(heatmapPass.replace('spacedSatGuard.value = rtIsFloat ? 0 : 1;', '')).not.toMatch(/spacedSatGuard\.value = rtIsFloat \? 0 : 1;/)
+    expect(heatmapPass).toMatch(/const rtIsFloat = spacedRTFloatCapable\(\);/)
     // 8 位 R 饱和 = 真实累计厚度未知，必须 fail-closed，不能当成恰好一份穿深算 CDF。
     expect(kernel).toMatch(/spacedSatBlocked = spacedSatGuard > 0\.5 && rawTotal >= 1\.0;/)
     expect(kernel).toMatch(/if \(spacedSatBlocked\) \{/)
@@ -147,12 +151,13 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   })
   it('点击链：每个非外部层独立转正（BlitzKit）', () => {
     // 几何规则已收敛到 resolveLayerGeometry，确定性与概率链共用。
-    expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
-    expect(pen).toMatch(/const effNormalization = normalization/)
-    expect(pen).not.toMatch(/armorLayerCount/)
-    expect(pen).toMatch(/const noRicochet = \(contact \? contact\.three_calibers : threeCalibersRule\)\s*\n\s*\|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
+    expect(penGeometry).toMatch(/function resolveLayerGeometry\(ah: Hit, thickness: number, ctx: GeometryContext\)/)
+    expect(penGeometry).toMatch(/const effNormalization = normalization/)
+    expect(penGeometry.replace('const effNormalization = normalization', 'const effNormalization = 0')).not.toMatch(/const effNormalization = normalization/)
+    expect(penGeometry).not.toMatch(/armorLayerCount/)
+    expect(penGeometry).toMatch(/const noRicochet = \(contact \? contact\.three_calibers : threeCalibersRule\)\s*\n\s*\|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
-    expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
+    expect(penGeometry).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
   })
   it('主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）', () => {
     expect(kernel).toMatch(/pMin -= totalConsume \* penetration;/)
@@ -171,12 +176,13 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true && !blockedNoPrimary;/)
     // 无主装甲阻断是终态：概率/满伤不得回填。
     expect(kernel).toMatch(/allowChance = allowChance && !blockedNoPrimary/)
-    expect(kernel).toMatch(/!isHE && !blockedNoPrimary/)
+    expect(judgmentResult).toMatch(/!isHE && !blockedNoPrimary/)
+    expect(judgmentResult.replaceAll('!isHE && !blockedNoPrimary', '')).not.toMatch(/!isHE && !blockedNoPrimary/)
     expect(kernel).toMatch(/const \{ chance: cardChance \} = resolveCardChance\(\{/)
     // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
-    expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
-    expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
-    expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
+    expect(judgmentResult).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
+    expect(judgmentResult).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
+    expect(judgmentResult).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链停在同一个收集边界（首个 Primary 含），该行为由
     // penetration.heat-origin.test.js「收集链」用例驱动 calculate() 验证；本文件只锁依赖关系。
   })
@@ -184,8 +190,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须
     // 要求合法 splash data，否则 first Primary + chain 会把结果覆盖成
     // May penetrate / PENETRATION full damage。
-    expect(kernel).toMatch(/heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0/)
-    expect(kernel).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
+    expect(judgmentResult).toMatch(/heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0/)
+    expect(judgmentResult).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
   })
 
   it('HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底', () => {
@@ -245,8 +251,9 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
     expect(occurrences).toHaveLength(2)
     expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
-    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
-    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(heatmapPass).toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(heatmapPass.replace('rcUniforms.rcClipPlane.value.set(', '')).not.toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(heatmapPass).toContain('rcUniforms.rcClipEnabled.value = true;')
     expect(kernel).toContain('clipPlane: hm.getGunClipPlane()')
   })
   it('无效 HE 概率行走 resolveCardChance fail-closed', () => {

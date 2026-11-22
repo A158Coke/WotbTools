@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
+// 2026-11-22 拆分：逐帧喂入/调整侧 owner = playback/renderLoop.js。
+const src = readFileSync(resolve(here, 'playback/renderLoop.ts'), 'utf8').replace(/\/\/[^\n]*/g, '').replace(/\bS\./g, '')
 // 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），冻结/合批守卫随实现迁移
 const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
 

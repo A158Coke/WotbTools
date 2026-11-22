@@ -710,8 +710,9 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
     it('click 路径续飞链与 pack 参考入口同一接受阈（#827 窄化：行为侧由下方 0.15/0.05mm 行为锁定；collectJudgmentHits 困于 judgment 闭包，保留 F3 Integration Contract 子句）', () => {
         // pack 侧调用点源码子句已删（下方行为锁定覆盖同一阈值口径）
         const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
-            + require('fs').readFileSync(new URL('./viewer/judgment.ts', import.meta.url), 'utf8');
+            + require('fs').readFileSync(new URL('./viewer/judgmentResult.ts', import.meta.url), 'utf8');
         expect(viewer).toMatch(/ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
+        expect(viewer.replace('RC.MIN_CONTINUATION_T', '0')).not.toMatch(/ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
         expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
     });
     it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {

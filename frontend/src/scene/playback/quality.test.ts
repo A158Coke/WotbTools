@@ -1,9 +1,7 @@
 // 画质档语义表（P1）：四档只由 QUALITY_FEATURES 提供跨模块语义，且必须与
 // QUALITY_PRESETS（渲染器数值旋钮）在重叠字段上一致。未实现项固定 false。
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 import {
   QUALITY_FEATURES,
   QUALITY_PRESETS,
@@ -71,8 +69,7 @@ describe('QUALITY_FEATURES', () => {
 
 describe('画质语义表的消费接线', () => {
   it('playbackScene 只经 qualityFeatures() 消费语义，不再读原始档位布尔', () => {
-    const path = resolve(dirname(fileURLToPath(import.meta.url)), '../playbackScene.js')
-    const src = readFileSync(path, 'utf8').split('\n').map((line) => line.split('//')[0]).join('\n')
+    const src = playbackSceneSource().split('\n').map((line) => line.split('//')[0]).join('\n')
     expect(src).toContain('qualityFeatures(QKEY)')
     expect(src.includes('Q.waterReflection')).toBe(false)
     expect(src).toContain('grassInstanceBudget: () => qualityFeatures(QKEY).grass.instances')

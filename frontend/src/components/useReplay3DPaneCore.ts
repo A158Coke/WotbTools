@@ -1,6 +1,6 @@
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
-import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
-import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch, type Ref } from 'vue'
+import type { useReplayWorkspace } from '../composables/useReplayWorkspace'
+import type { initPlayback } from '../scene/playbackScene'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -20,7 +20,12 @@ import { detectWebGL } from '../scene/webglSupport.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { mapLabel } from '../utils/helpers.js'
 
-export function useReplay3DPaneCore(props, startedFile, shared) {
+export type ReplayPaneProps = {
+  active: boolean; file: File | null; playbackSession: ReturnType<typeof useReplayWorkspace>['playbackSession'] | null
+  blockedReason: string; autoFullscreenToken: number; pendingSeek: { id: number; sec: number } | null
+}
+export type ReplayPaneShared = { rootEl: Ref<HTMLElement | null>; hudEl: Ref<HTMLElement | null>; controlsEl: Ref<HTMLElement | null>; shortWorkspace: Ref<boolean> }
+export function useReplay3DPaneCore(props: ReplayPaneProps, startedFile: Ref<File | null>, shared: ReplayPaneShared) {
 const { shortWorkspace, rootEl, hudEl, controlsEl } = shared
 const { t, locale } = useI18n()
 const onboarding = inject(ONBOARDING_KEY, null)
@@ -67,8 +72,8 @@ const uiHidden = ref(false)
  * 两种形态读写同一份共享偏好（uiPrefs / labelPrefs / hpPrefs / store.cam）。
  */
 const displayOpen = ref(false)
-const displayAnchor = ref(null)
-function toggleDisplay(anchor) {
+const displayAnchor = ref<HTMLElement | null>(null)
+function toggleDisplay(anchor: HTMLElement | null) {
   if (!displayOpen.value) closeAnnotation()   // Display 与 drawing 互斥（同一行高度预算）
   displayAnchor.value = anchor
   displayOpen.value = !displayOpen.value
@@ -81,24 +86,24 @@ const controlsContentId = useId()
  * 动画结束才收窄容器（docked）：滑动期间按钮的横向位置不能变，收起后又不能继续占场景。
  */
 const controlsDocked = ref(false)
-function slideContentFrom(el) {
+function slideContentFrom(el: HTMLElement) {
   controlsDocked.value = false
   el.style.height = '0px'
 }
-function slideContentOpen(el) {
+function slideContentOpen(el: HTMLElement) {
   el.style.height = `${el.scrollHeight}px`
 }
-function slideContentClose(el) {
+function slideContentClose(el: HTMLElement) {
   el.style.height = `${el.offsetHeight}px`
 }
-function slideContentShut(el) {
+function slideContentShut(el: HTMLElement) {
   void el.offsetHeight
   el.style.height = '0px'
 }
-function clearSlideHeight(el) {
+function clearSlideHeight(el: HTMLElement) {
   el.style.height = ''
 }
-function dockControls(el) {
+function dockControls(el: HTMLElement) {
   clearSlideHeight(el)
   controlsDocked.value = true
 }
@@ -134,7 +139,7 @@ const phoneLandscape = computed(() => isPhone.value && !portraitFlow.value)
 
 // Selection belongs to the pane. Camera mode and follow target belong to the scene.
 // 选中与详情可见性是**两个状态**：关详情不清选中。点车或点名单都会选中并跟随；相机档位负责离开跟随。
-const selectedEid = ref(null)
+const selectedEid = ref<number | null>(null)
 const detailsOpen = ref(false)
 /** 浮窗落位偏好：点左车道 → 落右侧，点右车道 → 落左侧，点场景里的车 → 与它相对的一侧。 */
 const detailsSide = ref('right')
@@ -143,47 +148,47 @@ const detailsSide = ref('right')
  * 名册行点击 = **跟随该玩家坦克**（2026-10-05 需求）：不再打开详情窗。
  * 选中高亮照旧（selectedEid），相机跟随由场景内核 setFollow 独占（它同时切 follow 档）。
  */
-function followFromRoster(eid) {
+function followFromRoster(eid: number) {
   selectedEid.value = eid
   displayOpen.value = false
   followUnlessRecorder(eid)
 }
 /** 录像者视角由回放驱动：点车只选中，不改变相机。 */
-function followUnlessRecorder(eid) {
+function followUnlessRecorder(eid: number) {
   if (store.cam !== 'recorder') sceneApiRef.value?.setFollow(eid)
 }
 /** 场景里点中坦克 = 打开共享详情窗并跟随；点空处（eid=null）= 隐藏详情窗，跟随不变。 */
-function handleSceneSelect(eid, event = null) {
+function handleSceneSelect(eid: number | null, event: MouseEvent | null = null) {
   if (eid == null) { closeDetails(); return }
   selectVehicle(eid, event)
   followUnlessRecorder(eid)
 }
-function selectVehicle(eid, event = null) {
+function selectVehicle(eid: number, event: MouseEvent | null = null) {
   selectedEid.value = eid
   detailsOpen.value = true
   displayOpen.value = false
   const side = detailsSideFor(event)
   if (side) detailsSide.value = side
 }
-function detailsSideFor(event) {
-  const target = event?.target
+function detailsSideFor(event: MouseEvent | null) {
+  const target = event?.target as Element | null
   if (target?.closest?.('.side-left')) return 'right'
   if (target?.closest?.('.side-right')) return 'left'
   const root = rootEl.value
   if (!root || !Number.isFinite(event?.clientX)) return null
   // 场景里的车：浮窗落在点击位置的**相对**一侧，不挡住用户刚点的那台车。
   const rect = root.getBoundingClientRect()
-  return event.clientX > rect.left + rect.width / 2 ? 'left' : 'right'
+  return event!.clientX > rect.left + rect.width / 2 ? 'left' : 'right'
 }
 /** 详情 ×：只关详情。选中（名册高亮）、跟随、相机、时间轴、倍速与名册都不动。 */
 function closeDetails() {
   detailsOpen.value = false
 }
 const cameraTools = computed(() => ({ cam: store.cam, cameras: CAMERAS.value, glbOn: store.glbOn, glbAllowed: store.glbAllowed }))
-function chooseCamera(mode) {
+function chooseCamera(mode: string) {
   sceneApiRef.value?.setCam(mode)
 }
-function setUiHidden(hidden) {
+function setUiHidden(hidden: boolean) {
   uiHidden.value = hidden
   if (hidden) {
     displayOpen.value = false
@@ -200,11 +205,11 @@ function toggleUiHidden() { setUiHidden(!uiHidden.value) }
  * 因此这条守卫无法用「聚焦 input + dispatch」在单测里覆盖——测试改为直接调用本函数
  * 并传入真实 target 形状的事件（见 Replay3DPane.test.js）。
  */
-function onUiToggleKeydown(event) {
+function onUiToggleKeydown(event: KeyboardEvent) {
   if (event.key !== 'h' && event.key !== 'H') return
   if (event.ctrlKey || event.metaKey || event.altKey) return
   if (!props.active || !store.hasData) return
-  if (isInteractiveTarget(event.target)) return
+  if (isInteractiveTarget(event.target as HTMLElement | null)) return
   event.preventDefault()
   toggleUiHidden()
 }
@@ -224,10 +229,10 @@ const fpsJanky = computed(() => store.fps > 0
   && (store.fps < 45 || (store.framePeakMs > 0 && store.framePeakMs > store.frameMs * 2.5)))
 
 const store = createPlaybackStore()
-const stage = ref(null)
-const labelOverlay = ref(null)
-const recorderReticle = ref(null)
-const sceneApiRef = shallowRef(null)
+const stage = ref<HTMLElement | null>(null)
+const labelOverlay = ref<HTMLElement | null>(null)
+const recorderReticle = ref<HTMLElement | null>(null)
+const sceneApiRef = shallowRef<ReturnType<typeof initPlayback> | null>(null)
 // 3D annotation（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）：会话唯一 owner =
 // useSceneAnnotations（与地图预览 3D 共用）；scene 只消费 projection 与 interaction 配置。
 // V1 不持久化，换文件 / 场景销毁即清空。recorder 镜头不开 drawing；Display 与 drawing 互斥。
@@ -258,7 +263,7 @@ const killTicks = computed(() => buildKillTicks(facetKills.value, store.startTim
 
 /** `,` 上一发 / `.` 下一发：以 shots[].t_fire 为序列（纯函数查最近邻），无更多炮击则保持不动。
  *  seekTime 不改播放态：暂停中跳完仍是暂停，播放中跳完继续播。 */
-function jumpShot(direction) {
+function jumpShot(direction: number) {
   const shots = facetShots.value
   // 连续跳转基准：上一次跳到的炮击时刻（暂停时 store.time 停在 t-0.05，若直接以它为
   // 基准会反复选中同一发）。普通 seek/播放使时间离开该位置后基准失效（见 watch）。
@@ -274,7 +279,7 @@ function jumpShot(direction) {
   sceneApiRef.value?.seekTime(seekTo)
 }
 // 跳转基准失效：时间离开「上次跳转落点（target-0.05）」超过一个步长容差
-let jumpBase = null
+let jumpBase: number | null = null
 watch(() => store.time, (t) => {
   if (jumpBase == null) return
   if (Math.abs(t - (jumpBase - 0.05)) > 0.11) jumpBase = null
@@ -289,7 +294,7 @@ const rideRoster = computed(() => {
 /** 己方权威阵营：unknown（null）时整体 fail-closed——骑乘键不猜「team 1 = 己方」。 */
 const rideAllyTeam = computed(() => (store.friendlyTeam === 1 || store.friendlyTeam === 2) ? store.friendlyTeam : null)
 /** 数字键骑乘（1–7 己方 / Shift+1–7 敌方）：与名册点击同一入口（选中 + follow 档跟随）。 */
-function rideVehicle(digit, isShift) {
+function rideVehicle(digit: number, isShift: boolean) {
   const eid = rosterRideTarget(rideRoster.value, digit, isShift, rideAllyTeam.value)
   if (eid == null) return
   followFromRoster(eid)
@@ -347,8 +352,8 @@ watch(isPhone, (v) => sceneApiRef.value?.setMobileTouch?.(v))
 
 /** 事件流 → seek 转交：一次性消费（按请求 id）。执行后记下已消费 id——切走再切回 3D、
  *  或 hasData 重新就绪都不会重放旧请求；换文件时工作台已把请求清空。 */
-const consumedSeekId = ref(null)
-watch(() => [props.pendingSeek, props.active, store.hasData], ([req]) => {
+const consumedSeekId = ref<number | null>(null)
+watch(() => [props.pendingSeek, props.active, store.hasData] as const, ([req]) => {
   const r = req
   if (!r || typeof r.sec !== 'number' || typeof r.id !== 'number') return
   if (r.id === consumedSeekId.value) return
@@ -359,7 +364,7 @@ watch(() => [props.pendingSeek, props.active, store.hasData], ([req]) => {
 // 换文件：作废已消费标记（新场的请求 id 仍单调，标记本身可不重置；保留以便审计）
 
 /** 最近一次加载的文件：失败后"重试"直接重新解析，不必再选一次 */
-const lastFile = shallowRef(null)
+const lastFile = shallowRef<File | null>(null)
 const lastFileName = ref('')
 const loadingMessage = computed(() => t(store.assetStage ? 'agentReplay.loading_assets' : 'agentReplay.parsing'))
 /** 视窗是否已过加载阶段：解析/资产加载中不置位（内容就绪、阻断、离线、WebGL 不支持、
@@ -409,7 +414,7 @@ const QUALITY_ORDER = Object.keys(QUALITY_PRESETS)
 // 身份，击穿子组件的 props 等值短路。
 const hudFriendlyHp = computed(() => hudHealth(store.hpFriend, store.hpFriendMax))
 const hudEnemyHp = computed(() => hudHealth(store.hpEnemy, store.hpEnemyMax))
-function hudHealth(current, maximum) {
+function hudHealth(current: number, maximum: number) {
   return {
     state: 'EXACT',
     knownRemaining: Number.isFinite(Number(current)) ? Math.max(0, Number(current)) : 0,
@@ -426,7 +431,7 @@ const teamColors = computed(() => {
     return { ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
   }
   const styles = getComputedStyle(document.documentElement)
-  const read = (name) => styles.getPropertyValue(name).trim() || 'currentColor'
+  const read = (name: string) => styles.getPropertyValue(name).trim() || 'currentColor'
   return {
     ally: read('--color-team-ally'),
     enemy: read('--color-team-enemy'),
