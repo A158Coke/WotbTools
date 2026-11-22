@@ -83,6 +83,10 @@ case "$url" in
         write_err 'curl: (22) The requested URL returned error: 500'
         exit 22
         ;;
+      invalid)
+        printf '%s\n' '"not-a-url?token=SIGNED-SECRET&expires=1"'
+        exit 0
+        ;;
       *)
         echo "unknown mock upload-link action: $action" >&2
         exit 99
@@ -139,7 +143,7 @@ case "$url" in
         ;;
       reset_long)
         write_body "BODY_HEAD \"token\": \"BODY_TOKEN_SECRET\" https://signed.example/upload?token=URL_SECRET $(printf 'B%.0s' $(seq 1 800))BODY_TAIL"
-        write_err "ERR_HEAD$(printf 'E%.0s' $(seq 1 800))ERR_TAIL"
+        write_err "ERR_HEAD token=ERR_TOKEN_SECRET https://signed.example/upload?token=ERR_URL_SECRET $(printf 'E%.0s' $(seq 1 800))ERR_TAIL"
         printf '000 0 0.00 0'
         exit 56
         ;;
@@ -151,7 +155,9 @@ case "$url" in
     ;;
   *"dl=1"*)
     bump probe-count
-    mode="$(cat "$ROOT/share_mode")"
+    n="$(cat "$ROOT/probe-count")"
+    mode="$(sed -n "${n}p" "$ROOT/share_actions" 2>/dev/null || true)"
+    if [ -z "$mode" ]; then mode="$(cat "$ROOT/share_mode")"; fi
     case "$mode" in
       reset)
         write_err 'curl: (56) Recv failure: Connection reset by peer'
@@ -161,6 +167,22 @@ case "$url" in
       403|404|429|500)
         write_body 'mock public-share error'
         printf '%s %s' "$mode" "$(body_size)"
+        exit 0
+        ;;
+      empty200)
+        if [ -n "$out" ]; then : > "$out"; fi
+        printf '200 0'
+        exit 0
+        ;;
+      wrong)
+        cp "$ROOT/wrong.apk" "$out"
+        printf '200 %s' "$(body_size)"
+        exit 0
+        ;;
+      fix)
+        cp "$ROOT/expected.apk" "$ROOT/remote.apk"
+        cp "$ROOT/expected.apk" "$out"
+        printf '200 %s' "$(body_size)"
         exit 0
         ;;
       ok)
@@ -205,6 +227,7 @@ assert_not_contains() {
 assert_count() {
   local file="$CASE/$1" n=0
   if [ -f "$file" ]; then n="$(cat "$file")"; fi
+  n="${n:-0}"
   [ "$n" = "$2" ] || die "expected $1=$2, got $n"
 }
 assert_remote_sha() {
@@ -228,13 +251,16 @@ init_case() {
   cp "$TMP/expected.apk" "$CASE/fixture/release-staging/$APK_NAME"
   cp "$TMP/expected.apk" "$CASE/expected.apk"
   cp "$TMP/wrong.apk" "$CASE/wrong.apk"
+  CASE_BUDGET=""
   printf 'ok\n' > "$CASE/share_mode"
+  : > "$CASE/share_actions"
   printf 'ok\n' > "$CASE/upload_link_actions"
   : > "$CASE/upload_actions"
   : > "$CASE/upload-link-count"
   : > "$CASE/curl-args.log"
 }
 set_share() { printf '%s\n' "$1" > "$CASE/share_mode"; }
+set_share_actions() { printf '%s\n' "$@" > "$CASE/share_actions"; }
 set_actions() { printf '%s\n' "$@" > "$CASE/upload_actions"; }
 set_link_actions() { printf '%s\n' "$@" > "$CASE/upload_link_actions"; }
 
@@ -248,6 +274,7 @@ run_stage() {
       STEP_ARTIFACT_APKNAME="$APK_NAME" \
       STEP_ARTIFACT_SHA256="$EXPECTED" \
       TSINGHUA_CLOUD_TOKEN="$TOKEN" \
+      TSINGHUA_UPLOAD_BUDGET_SECONDS="$CASE_BUDGET" \
       bash "$STAGE_SCRIPT"
   ) > "$LOG" 2>&1
   LAST_RC=$?
@@ -264,7 +291,11 @@ case_success() {
   assert_count upload-link-count 1
   assert_contains "SHA-256 matches expected"
   assert_contains "$EXPECTED"
+  assert_contains "response body: <withheld"
+  assert_curl_args_contains "--max-time 900"
+  assert_curl_args_contains "--max-time 2700"
   assert_remote_sha
+  assert_not_contains "mock-upload"
   assert_not_contains "$TOKEN"
   assert_not_contains "SIGNED-SECRET"
   assert_not_contains "upload.example"
@@ -369,28 +400,93 @@ case_wrong_remote_sha() {
   assert_count upload-count 3
   assert_count probe-count 7
   assert_contains "SHA-256 mismatch"
-  assert_contains "limiting full APK re-downloads to 2 per upload"
+  assert_contains "full APK download 2/2 had the wrong SHA-256"
   assert_contains "expected $EXPECTED"
+  assert_not_contains "full APK download 3/2"
   assert_not_contains "SHA-256 matches expected"
   echo "PASS wrong remote SHA is rejected"
 }
 
-case_share_status() {
-  local status="$1"
-  init_case "share-$status"
-  set_actions ok
-  set_share "$status"
+case_partial_transport_failure() {
+  init_case "partial-transport"
+  set_actions reset wrong wrong
+  set_share 404
   run_stage
   assert_rc 1
   assert_count upload-count 3
   assert_count probe-count 16
-  assert_contains "HTTP $status"
-  assert_contains "HTTP $status, curl rc=0"
+  assert_contains "upload transport failed on 1 of 3 attempt(s)"
+  assert_not_contains "upload transport failed on all 3"
+  assert_not_contains "upload transport failed on the final attempt"
+  assert_contains "public-share SHA-256 verification failed after 3"
+  echo "PASS partial upload transport failure is summarized without hiding the gate"
+}
+
+case_share_not_found() {
+  init_case "share-404"
+  set_actions ok
+  set_share 404
+  run_stage
+  assert_rc 1
+  assert_count upload-count 3
+  assert_count probe-count 16
+  assert_contains "HTTP 404, curl rc=0"
+  assert_contains "the public share reports the object is absent"
   assert_contains "public-share SHA-256 verification failed after 3"
   assert_not_contains "upload transport failed on all 3"
   assert_not_contains "SHA-256 matches expected"
   assert_remote_sha
-  echo "PASS public-share HTTP $status fails closed"
+  echo "PASS definite public-share 404 stays bounded and fails closed"
+}
+
+case_preupload_unconfirmed() {
+  local status="$1"
+  init_case "preupload-$status"
+  set_actions ok
+  set_share "$status"
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 5
+  assert_contains "HTTP $status, curl rc=0"
+  assert_contains "remote state is unconfirmed"
+  assert_contains "refusing to overwrite an unverified object"
+  assert_contains "release gate remains closed"
+  assert_not_contains "SHA-256 matches expected"
+  echo "PASS pre-upload public-share HTTP $status fails closed without upload"
+}
+
+case_preupload_empty_200() {
+  init_case "preupload-empty-200"
+  set_actions ok
+  set_share empty200
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 5
+  assert_contains "HTTP 200 but the response body is empty"
+  assert_contains "remote state is unconfirmed"
+  assert_contains "refusing to overwrite an unverified object"
+  assert_not_contains "SHA-256 matches expected"
+  echo "PASS pre-upload empty HTTP 200 fails closed without overwrite"
+}
+
+case_preupload_transport() {
+  init_case "preupload-transport"
+  set_actions ok
+  set_share reset
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 5
+  assert_contains "HTTP 000, curl rc=56"
+  assert_contains "remote state is unconfirmed"
+  assert_contains "refusing to overwrite an unverified object"
+  assert_not_contains "SHA-256 matches expected"
+  echo "PASS pre-upload transport failure fails closed without upload"
 }
 
 case_retry_budget_exhausted() {
@@ -401,7 +497,8 @@ case_retry_budget_exhausted() {
   assert_count upload-count 3
   assert_count probe-count 16
   assert_contains "HTTP 500"
-  assert_contains "response body: mock server error"
+  assert_contains "response body: <withheld"
+  assert_not_contains "mock server error"
   assert_contains "public-share SHA-256 verification failed after 3"
   assert_contains "not confirmed; retrying in 10s"
   assert_contains "upload endpoint returned an HTTP error (last HTTP 500)"
@@ -412,27 +509,37 @@ case_retry_budget_exhausted() {
 case_verify_curl_error() {
   init_case "verify-curl-error"
   set_actions ok
-  set_share reset
+  set_share_actions 404 reset reset reset reset reset
   run_stage
   assert_rc 1
-  assert_count upload-count 3
+  assert_count upload-count 1
+  assert_count probe-count 6
   assert_contains "curl rc=56"
   assert_contains "HTTP 000, curl rc=56"
   assert_contains "curl error: curl: (56) Recv failure: Connection reset by peer"
-  assert_contains "public-share SHA-256 verification failed after 3"
+  assert_contains "refusing to re-upload"
+  assert_contains "release gate remains closed"
   assert_not_contains "upload transport failed on all 3"
-  echo "PASS public-share curl error is captured and distinguished"
+  assert_not_contains "SHA-256 matches expected"
+  echo "PASS public-share curl error is captured and does not trigger re-upload"
 }
 
 case_diagnostics_bounded() {
   init_case "diagnostics-bounded"
-  set_actions reset_long reset_long reset_long
+  set_actions reset_long
+  set_share_actions 404 reset reset reset reset reset
   run_stage
   assert_rc 1
-  assert_contains "BODY_HEAD"
+  assert_count upload-count 1
+  assert_count probe-count 6
+  assert_contains "response body: <withheld"
+  assert_not_contains "BODY_HEAD"
   assert_not_contains "BODY_TAIL"
   assert_contains "ERR_HEAD"
+  assert_contains "<redacted-url>"
   assert_not_contains "ERR_TAIL"
+  assert_not_contains "ERR_TOKEN_SECRET"
+  assert_not_contains "ERR_URL_SECRET"
   assert_not_contains "BODY_TOKEN_SECRET"
   assert_not_contains "URL_SECRET"
   assert_not_contains "$TOKEN"
@@ -495,14 +602,114 @@ case_content_mismatch_then_retry_success() {
   assert_count upload-count 2
   assert_count upload-link-count 2
   assert_count probe-count 4
-  assert_contains "limiting full APK re-downloads to 2 per upload"
+  assert_contains "full APK download 2/2 had the wrong SHA-256"
   assert_contains "SHA-256 mismatch"
   assert_contains "SHA-256 matches expected"
   assert_remote_sha
   echo "PASS content mismatch limits full downloads and retry succeeds"
 }
 
+case_postupload_empty_200() {
+  init_case "postupload-empty-200"
+  set_actions ok
+  set_share_actions 404 empty200 empty200 empty200 empty200 empty200
+  run_stage
+  assert_rc 1
+  assert_count upload-count 1
+  assert_count upload-link-count 1
+  assert_count probe-count 6
+  assert_contains "HTTP 200 but the response body is empty"
+  assert_contains "refusing to re-upload an object whose remote state is unknown"
+  assert_not_contains "not confirmed; retrying in 5s"
+  assert_not_contains "public-share SHA-256 verification failed after 3"
+  assert_remote_sha
+  echo "PASS post-upload empty HTTP 200 fails closed without re-upload"
+}
+
+case_postupload_unconfirmed() {
+  init_case "postupload-403"
+  set_actions ok
+  set_share_actions 404 403 403 403 403 403
+  run_stage
+  assert_rc 1
+  assert_count upload-count 1
+  assert_count upload-link-count 1
+  assert_count probe-count 6
+  assert_contains "HTTP 403"
+  assert_contains "refusing to re-upload an object whose remote state is unknown"
+  assert_contains "release gate remains closed"
+  assert_not_contains "not confirmed; retrying in 5s"
+  assert_not_contains "public-share SHA-256 verification failed after 3"
+  assert_not_contains "SHA-256 matches expected"
+  assert_remote_sha
+  echo "PASS post-upload HTTP 403 fails closed without re-upload"
+}
+
+case_verify_counter_separation() {
+  init_case "verify-counter-separation"
+  set_actions wrong
+  set_share_actions 404 reset reset reset wrong fix
+  run_stage
+  assert_rc 0
+  assert_count upload-count 1
+  assert_count upload-link-count 1
+  assert_count probe-count 6
+  assert_contains "full APK download 1/2 had the wrong SHA-256"
+  assert_contains "SHA-256 mismatch"
+  assert_contains "SHA-256 matches expected"
+  assert_remote_sha
+  echo "PASS content-download counter is separate from the probe counter"
+}
+
+case_global_budget_exhausted() {
+  init_case "budget-exhausted"
+  CASE_BUDGET=0
+  set_actions ok
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 0
+  assert_count probe-count 0
+  assert_contains "exhausted its 0s budget"
+  assert_contains "release gate remains closed"
+  echo "PASS global budget exhausted before the first HTTP operation"
+}
+
+case_budget_caps_operations() {
+  init_case "budget-caps"
+  CASE_BUDGET=100
+  set_actions ok
+  run_stage
+  assert_rc 0
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_curl_args_contains "--max-time 60"
+  assert_curl_args_not_contains "--max-time 900"
+  assert_curl_args_not_contains "--max-time 2700"
+  assert_contains "response body: <withheld"
+  assert_remote_sha
+  echo "PASS per-operation timeouts are capped by the remaining budget"
+}
+
+case_upload_link_invalid_response() {
+  init_case "upload-link-invalid"
+  set_link_actions invalid ok
+  set_actions ok
+  run_stage
+  assert_rc 0
+  assert_count upload-link-count 2
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_contains "invalid URL"
+  assert_contains "response body: <withheld"
+  assert_not_contains "not-a-url"
+  assert_not_contains "SIGNED-SECRET"
+  assert_remote_sha
+  echo "PASS upload-link non-URL response is retried without logging the body"
+}
+
 case_upload_link_retry
+case_upload_link_invalid_response
 case_upload_link_http_error
 case_upload_link_exhausted
 case_content_mismatch_then_retry_success
@@ -514,12 +721,20 @@ case_reset_never_appears
 case_transport_with_response
 case_http400_matches
 case_wrong_remote_sha
-case_share_status 403
-case_share_status 404
-case_share_status 429
-case_share_status 500
+case_partial_transport_failure
+case_share_not_found
+case_preupload_unconfirmed 403
+case_preupload_unconfirmed 429
+case_preupload_unconfirmed 500
+case_preupload_empty_200
+case_preupload_transport
+case_postupload_empty_200
+case_postupload_unconfirmed
+case_verify_counter_separation
 case_retry_budget_exhausted
 case_verify_curl_error
 case_diagnostics_bounded
+case_global_budget_exhausted
+case_budget_caps_operations
 
 echo "Tsinghua upload mocked matrix: PASS"

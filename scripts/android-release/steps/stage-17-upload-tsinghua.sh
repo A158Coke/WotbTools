@@ -18,27 +18,59 @@ UPLOAD_ATTEMPTS=3
 VERIFY_ATTEMPTS=5
 VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
+# Absolute budget for this stage. The android-stage job allows 120 minutes and
+# this step runs near its end; 60 minutes leaves room for the other steps and
+# for the fail-closed diagnostics instead of letting the job timeout kill the
+# process. Every HTTP operation is capped by the remaining budget.
+STAGE_BUDGET_SECONDS="${TSINGHUA_UPLOAD_BUDGET_SECONDS:-3600}"
+case "$STAGE_BUDGET_SECONDS" in
+  ''|*[!0-9]*) echo "::error::TSINGHUA_UPLOAD_BUDGET_SECONDS must be a non-negative integer; release gate remains closed." >&2; exit 1 ;;
+esac
+STAGE_BUDGET_SECONDS=$((10#$STAGE_BUDGET_SECONDS))
+STAGE_DEADLINE_AT=$((SECONDS + STAGE_BUDGET_SECONDS))
 WORK="$RUNNER_TEMP/thu-upload"
 mkdir -p "$WORK"
 : > "$WORK/upload-body.txt"
 : > "$WORK/upload-curl.err"
 : > "$WORK/probe-curl.err"
 
+budget_remaining() {
+  local remaining=$((STAGE_DEADLINE_AT - SECONDS))
+  if [ "$remaining" -lt 0 ]; then remaining=0; fi
+  printf '%s' "$remaining"
+}
+
+REMAINING_BUDGET=0
+# Exit before starting an operation that would otherwise be killed by the job
+# timeout. Called directly (not in command substitution) so exit aborts stage.
+require_budget() {
+  local label="$1"
+  REMAINING_BUDGET="$(budget_remaining)"
+  if [ "$REMAINING_BUDGET" -le 0 ]; then
+    echo "::error::Tsinghua upload stage exhausted its ${STAGE_BUDGET_SECONDS}s budget before $label; release gate remains closed." >&2
+    exit 1
+  fi
+}
+
+# Do not sleep past the absolute deadline; fail closed with a diagnostic first.
+sleep_budgeted() {
+  local seconds="$1"
+  require_budget "retry backoff"
+  if [ "$seconds" -ge "$REMAINING_BUDGET" ]; then
+    echo "::error::Tsinghua upload stage budget (${STAGE_BUDGET_SECONDS}s) would be exhausted by a ${seconds}s backoff; release gate remains closed." >&2
+    exit 1
+  fi
+  sleep "$seconds"
+}
+
 # Keep diagnostics bounded and free of credentials or signed URLs. A signed
 # upload-link is itself a URL, so every URL is redacted instead of truncated.
 sanitize() {
-  sed -E \
-    -e 's#https?://[^"[:space:]]+#<redacted-url>#g' \
-    -e 's/("?(token|access_token|signature|password)"?[[:space:]]*[:=][[:space:]]*"?)[^",}&[:space:]]+/\1<redacted>/g' \
-    -e 's/[[:cntrl:]]+/ /g' \
-    | cut -c1-400
+  sed -E     -e 's#https?://[^"[:space:]]+#<redacted-url>#g'     -e 's/("?(token|access_token|signature|password)"?[[:space:]]*[:=][[:space:]]*"?)[^",}&[:space:]]+/\1<redacted>/g'     -e 's/[[:cntrl:]]+/ /g'     | cut -c1-400
 }
 bounded_file() {
   [ -f "$1" ] || return 0
   head -c 2000 "$1" | sanitize
-}
-bounded_string() {
-  printf '%s' "$1" | sanitize
 }
 
 PROBE_RC=0
@@ -47,33 +79,50 @@ PROBE_BYTES=0
 PROBE_OUTCOME=""
 # Download the public-share object and compare its SHA-256. This is the sole
 # release gate; an upload response is never accepted as proof of success.
+# Outcomes:
+#   match        - HTTP 200 and the expected SHA-256
+#   missing      - HTTP 404/410: safe to (re)upload
+#   sha_mismatch - HTTP 200 with the wrong bytes: safe to (re)upload
+#   unconfirmed  - transport error, empty HTTP 200, or HTTP 403/429/5xx:
+#                  retry reads only
 probe_remote() {
-  local label="$1" diag actual
+  local label="$1" diag actual max_time
   PROBE_RC=0
   PROBE_HTTP=000
   PROBE_BYTES=0
   PROBE_OUTCOME=""
+  require_budget "$label"
+  max_time="$REMAINING_BUDGET"
+  if [ "$max_time" -gt 900 ]; then max_time=900; fi
   : > "$WORK/probe.apk"
   : > "$WORK/probe-curl.err"
-  diag="$(curl -sS -L --connect-timeout 5 --max-time 900 \
+  diag="$(curl -sS -L --connect-timeout 5 --max-time "$max_time" \
     --stderr "$WORK/probe-curl.err" \
     -o "$WORK/probe.apk" -w '%{http_code} %{size_download}' "$SHARE_DIRECT")" || PROBE_RC=$?
   read -r PROBE_HTTP PROBE_BYTES <<< "$diag" || true
   PROBE_HTTP="${PROBE_HTTP:-000}"
   PROBE_BYTES="${PROBE_BYTES:-0}"
   if [ "$PROBE_RC" -ne 0 ]; then
-    PROBE_OUTCOME="transport"
-    echo "  $label: HTTP $PROBE_HTTP, curl rc=$PROBE_RC, size=${PROBE_BYTES}B; curl error: $(bounded_file "$WORK/probe-curl.err")"
+    PROBE_OUTCOME="unconfirmed"
+    echo "  $label: HTTP $PROBE_HTTP, curl rc=$PROBE_RC, size=${PROBE_BYTES}B; remote state is unconfirmed; curl error: $(bounded_file "$WORK/probe-curl.err")"
     return 1
   fi
-  if [ "$PROBE_HTTP" != "200" ]; then
-    PROBE_OUTCOME="http_error"
-    echo "  $label: HTTP $PROBE_HTTP, curl rc=0, size=${PROBE_BYTES}B; public share did not return the APK."
-    return 1
-  fi
+  case "$PROBE_HTTP" in
+    404|410)
+      PROBE_OUTCOME="missing"
+      echo "  $label: HTTP $PROBE_HTTP, curl rc=0, size=${PROBE_BYTES}B; the public share reports the object is absent."
+      return 1
+      ;;
+    200) ;;
+    *)
+      PROBE_OUTCOME="unconfirmed"
+      echo "  $label: HTTP $PROBE_HTTP, curl rc=0, size=${PROBE_BYTES}B; public share did not provide a usable APK; remote state is unconfirmed."
+      return 1
+      ;;
+  esac
   if [ ! -s "$WORK/probe.apk" ] || [ "$PROBE_BYTES" = "0" ]; then
-    PROBE_OUTCOME="empty"
-    echo "  $label: HTTP 200 but the response body is empty; treating the object as missing."
+    PROBE_OUTCOME="unconfirmed"
+    echo "  $label: HTTP 200 but the response body is empty; this is not proof the object is absent; remote state is unconfirmed."
     return 1
   fi
   actual="$(sha256sum "$WORK/probe.apk" | awk '{print $1}')"
@@ -87,26 +136,52 @@ probe_remote() {
   return 1
 }
 
-# A failed or unconfirmed upload may still have written the object. Verify the
-# public share before deciding that another upload is needed. HTTP/transport
-# failures download only a small error body, so they get the full retry budget.
-# HTTP 200 with the wrong bytes downloads a whole APK each time; cap full
-# verification downloads at 2 per upload and let the next replace=1 upload fix
-# the object.
-confirm_remote() {
-  local phase="$1" attempt=1 limit="$VERIFY_ATTEMPTS"
-  while [ "$attempt" -le "$limit" ]; do
-    if probe_remote "$phase (verify $attempt/$limit)"; then
+# Before an upload, only a definite match (skip), a definite absence (upload)
+# or a confirmed SHA mismatch (repair) are actionable. An unconfirmed read is
+# retried, then the stage fails closed instead of overwriting an unknown object.
+preupload_probe() {
+  local attempt=1
+  while [ "$attempt" -le "$VERIFY_ATTEMPTS" ]; do
+    if probe_remote "pre-upload remote check ($attempt/$VERIFY_ATTEMPTS)"; then
       return 0
     fi
-    if [ "$PROBE_OUTCOME" = "sha_mismatch" ] && [ "$limit" -ne "$VERIFY_ATTEMPTS_CONTENT" ]; then
-      limit="$VERIFY_ATTEMPTS_CONTENT"
-      echo "  $phase: content mismatch; limiting full APK re-downloads to $limit per upload."
-    fi
-    if [ "$attempt" -lt "$limit" ]; then
-      sleep "$VERIFY_RETRY_DELAY"
+    case "$PROBE_OUTCOME" in
+      missing|sha_mismatch) return 1 ;;
+    esac
+    if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
+      sleep_budgeted "$VERIFY_RETRY_DELAY"
     fi
     attempt=$((attempt + 1))
+  done
+  return 1
+}
+
+# A failed or unconfirmed upload may still have written the object. Verify the
+# public share before deciding that another upload is needed. Total probes and
+# full-content downloads are counted separately: transport/HTTP errors get up
+# to 5 probes, while HTTP 200 wrong bytes get at most 2 full downloads per
+# upload. The download counter is not shortened by the probe number.
+CONFIRM_OUTCOME=""
+confirm_remote() {
+  local phase="$1" probe=1 downloads=0
+  CONFIRM_OUTCOME=""
+  while [ "$probe" -le "$VERIFY_ATTEMPTS" ]; do
+    if probe_remote "$phase (probe $probe/$VERIFY_ATTEMPTS, full-downloads $downloads/$VERIFY_ATTEMPTS_CONTENT)"; then
+      CONFIRM_OUTCOME="match"
+      return 0
+    fi
+    CONFIRM_OUTCOME="$PROBE_OUTCOME"
+    if [ "$PROBE_OUTCOME" = "sha_mismatch" ]; then
+      downloads=$((downloads + 1))
+      echo "  $phase: full APK download $downloads/$VERIFY_ATTEMPTS_CONTENT had the wrong SHA-256."
+      if [ "$downloads" -ge "$VERIFY_ATTEMPTS_CONTENT" ]; then
+        return 1
+      fi
+    fi
+    if [ "$probe" -lt "$VERIFY_ATTEMPTS" ]; then
+      sleep_budgeted "$VERIFY_RETRY_DELAY"
+    fi
+    probe=$((probe + 1))
   done
   return 1
 }
@@ -114,14 +189,17 @@ confirm_remote() {
 ULINK=""
 ULINK_RAW=""
 fetch_upload_link() {
-  local attempt=1 rc=0 jq_rc=0 delay
+  local attempt=1 rc=0 jq_rc=0 delay max_time
   ULINK=""
   while [ "$attempt" -le "$UPLOAD_LINK_ATTEMPTS" ]; do
     rc=0
     jq_rc=0
+    require_budget "upload-link request"
+    max_time="$REMAINING_BUDGET"
+    if [ "$max_time" -gt 60 ]; then max_time=60; fi
     : > "$WORK/upload-link.err"
     : > "$WORK/upload-link-jq.err"
-    ULINK_RAW="$(curl -fsS --connect-timeout 10 --max-time 60 \
+    ULINK_RAW="$(curl -fsS --connect-timeout 10 --max-time "$max_time" \
       --stderr "$WORK/upload-link.err" \
       -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "$UPLOAD_LINK_API")" || rc=$?
     if [ "$rc" -eq 0 ]; then
@@ -132,14 +210,14 @@ fetch_upload_link() {
           return 0
           ;;
       esac
-      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS returned an invalid URL (jq rc=$jq_rc, jq error: $(bounded_file "$WORK/upload-link-jq.err")); bounded response: $(bounded_string "$ULINK_RAW")"
+      echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS returned an invalid URL (jq rc=$jq_rc, jq error: $(bounded_file "$WORK/upload-link-jq.err")); response body: <withheld; ${#ULINK_RAW} chars>"
     else
       echo "  Tsinghua upload-link attempt $attempt/$UPLOAD_LINK_ATTEMPTS failed (curl rc=$rc): $(bounded_file "$WORK/upload-link.err")"
     fi
     if [ "$attempt" -lt "$UPLOAD_LINK_ATTEMPTS" ]; then
       delay=$((UPLOAD_LINK_RETRY_DELAY * attempt))
       echo "  Retrying upload-link in ${delay}s."
-      sleep "$delay"
+      sleep_budgeted "$delay"
     fi
     attempt=$((attempt + 1))
   done
@@ -156,17 +234,21 @@ UPLOAD_SPEED=0
 # replace=1 keeps the immutable APK name stable instead of renaming the object
 # to "name (1).apk". The response is diagnostic only: this deployment can return
 # HTTP 400 "Parent dir doesn't exist" after a completed write, and transport
-# errors can hide a completed write.
+# errors can hide a completed write. The response body is not printed because
+# it comes from an authenticated endpoint; only its size is logged.
 upload_once() {
-  local attempt="$1" diag body
+  local attempt="$1" diag body_bytes max_time
   UPLOAD_RC=0
   UPLOAD_HTTP=000
   UPLOAD_UPBYTES=0
   UPLOAD_SECONDS=0
   UPLOAD_SPEED=0
+  require_budget "upload attempt $attempt"
+  max_time="$REMAINING_BUDGET"
+  if [ "$max_time" -gt 2700 ]; then max_time=2700; fi
   : > "$WORK/upload-body.txt"
   : > "$WORK/upload-curl.err"
-  diag="$(curl -sS --connect-timeout 10 --max-time 2700 \
+  diag="$(curl -sS --connect-timeout 10 --max-time "$max_time" \
     --stderr "$WORK/upload-curl.err" \
     -o "$WORK/upload-body.txt" -w '%{http_code} %{size_upload} %{time_total} %{speed_upload}' \
     -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
@@ -176,23 +258,37 @@ upload_once() {
   UPLOAD_UPBYTES="${UPLOAD_UPBYTES:-0}"
   UPLOAD_SECONDS="${UPLOAD_SECONDS:-0}"
   UPLOAD_SPEED="${UPLOAD_SPEED:-0}"
-  body="$(bounded_file "$WORK/upload-body.txt")"
+  body_bytes=0
+  if [ -f "$WORK/upload-body.txt" ]; then
+    body_bytes="$(wc -c < "$WORK/upload-body.txt" | tr -d ' ')"
+  fi
   echo "Tsinghua upload attempt $attempt/$UPLOAD_ATTEMPTS: curl rc=$UPLOAD_RC, HTTP $UPLOAD_HTTP, uploaded=${UPLOAD_UPBYTES}B, time=${UPLOAD_SECONDS}s, speed=${UPLOAD_SPEED}B/s"
-  echo "  response body: ${body:-<empty>}"
+  echo "  response body: <withheld; ${body_bytes}B>"
   if [ "$UPLOAD_RC" -ne 0 ]; then
     echo "  curl error: $(bounded_file "$WORK/upload-curl.err")"
   fi
 }
 
 # If a previous run already delivered the expected object, do not upload again.
-if probe_remote "pre-upload remote check"; then
+if preupload_probe; then
   echo "Tsinghua Cloud object already matches $EXPECTED_SHA; skipping upload."
   exit 0
 fi
 
+case "$PROBE_OUTCOME" in
+  missing|sha_mismatch)
+    echo "Tsinghua remote object is $PROBE_OUTCOME; proceeding with replace=1 upload."
+    ;;
+  *)
+    echo "::error::Cannot confirm the Tsinghua remote state before upload (last HTTP $PROBE_HTTP, curl rc=$PROBE_RC); refusing to overwrite an unverified object; release gate remains closed." >&2
+    exit 1
+    ;;
+esac
+
 echo "Tsinghua upload uses replace=1; the public SHA-256 remains the release gate."
 
 CONFIRMED=false
+UNCONFIRMED_AFTER_UPLOAD=false
 LAST_UPLOAD_RC=0
 LAST_UPLOAD_HTTP=000
 LAST_UPLOAD_ERROR_HTTP=000
@@ -202,7 +298,7 @@ SAW_HTTP_400=false
 attempt=1
 while [ "$attempt" -le "$UPLOAD_ATTEMPTS" ]; do
   # Seafile upload links are short-lived. Fetch a fresh link for every attempt
-  # instead of reusing one across the retry window; the 2700s upload max-time
+  # instead of reusing one across the retry window; the budgeted upload max-time
   # stays inside Seafile's default 1h link lifetime.
   if ! fetch_upload_link; then
     echo "::error::Tsinghua Cloud upload-link unavailable; release gate remains closed." >&2
@@ -228,13 +324,33 @@ while [ "$attempt" -le "$UPLOAD_ATTEMPTS" ]; do
     CONFIRMED=true
     break
   fi
+  case "$CONFIRM_OUTCOME" in
+    missing|sha_mismatch)
+      # A definite absence or a definite wrong SHA is safe to repair with
+      # replace=1. The loop below is bounded by UPLOAD_ATTEMPTS.
+      ;;
+    unconfirmed)
+      UNCONFIRMED_AFTER_UPLOAD=true
+      echo "::error::Tsinghua Cloud public-share verification could not be completed after upload attempt $attempt/$UPLOAD_ATTEMPTS (last HTTP $PROBE_HTTP, curl rc=$PROBE_RC); refusing to re-upload an object whose remote state is unknown; release gate remains closed." >&2
+      break
+      ;;
+    *)
+      echo "::error::Tsinghua Cloud public-share verification returned an unknown outcome; refusing to re-upload; release gate remains closed." >&2
+      exit 1
+      ;;
+  esac
   if [ "$attempt" -lt "$UPLOAD_ATTEMPTS" ]; then
     delay=$((5 * attempt))
     echo "Tsinghua upload attempt $attempt/$UPLOAD_ATTEMPTS not confirmed; retrying in ${delay}s."
-    sleep "$delay"
+    sleep_budgeted "$delay"
   fi
   attempt=$((attempt + 1))
 done
+
+if [ "$UNCONFIRMED_AFTER_UPLOAD" = true ]; then
+  echo "::error::Release gate remains closed: the public share never confirmed a readable object, so no further upload overwrite was attempted." >&2
+  exit 1
+fi
 
 if [ "$CONFIRMED" = true ]; then
   echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
@@ -246,6 +362,8 @@ if [ "$TRANSPORT_FAILED_ATTEMPTS" -eq "$UPLOAD_ATTEMPTS" ]; then
   echo "::error::Tsinghua Cloud upload transport failed on all $UPLOAD_ATTEMPTS attempt(s) (last curl rc=$LAST_UPLOAD_RC, HTTP $LAST_UPLOAD_HTTP); no upload response was usable." >&2
 elif [ "$LAST_UPLOAD_RC" -ne 0 ]; then
   echo "::error::Tsinghua Cloud upload transport failed on the final attempt (curl rc=$LAST_UPLOAD_RC, HTTP $LAST_UPLOAD_HTTP)." >&2
+elif [ "$TRANSPORT_FAILED_ATTEMPTS" -gt 0 ]; then
+  echo "::error::Tsinghua Cloud upload transport failed on $TRANSPORT_FAILED_ATTEMPTS of $UPLOAD_ATTEMPTS attempt(s) (last curl rc=$LAST_UPLOAD_RC, HTTP $LAST_UPLOAD_HTTP); later verification still failed." >&2
 fi
 if [ "$SAW_UPLOAD_HTTP_ERROR" = true ]; then
   echo "::error::Tsinghua Cloud upload endpoint returned an HTTP error (last HTTP $LAST_UPLOAD_ERROR_HTTP); the object was not confirmed." >&2
