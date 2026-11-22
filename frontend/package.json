@@ -43,7 +43,9 @@
     "test:browser-battle-data": "node scripts/browser-battle-data-spawn-bar.mjs",
     "test:browser-showcase-hero": "node scripts/browser-showcase-hero.mjs",
     "test:browser-hof-admin-tabs": "node scripts/browser-hof-admin-tabs.mjs",
-    "test:browser-replay3d-hud": "node scripts/browser-replay3d-hud.mjs"
+    "test:browser-replay3d-hud": "node scripts/browser-replay3d-hud.mjs",
+    "review:duplicates": "jscpd --config ../.jscpd.json",
+    "test:jscpd": "node scripts/test-jscpd.mjs"
   },
   "dependencies": {
     "@vueuse/core": "^14.4.0",
@@ -73,6 +75,7 @@
     "@vue/test-utils": "^2.4.6",
     "fallow": "^3.14.0",
     "happy-dom": "^18.0.1",
+    "jscpd": "5.4.3",
     "openapi-typescript": "^7.9.1",
     "polygon-clipping": "^0.15.7",
     "postcss-html": "^2.0.0",

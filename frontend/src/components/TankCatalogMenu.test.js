@@ -49,6 +49,27 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it('IME 组合输入期间不提前筛选或提交，组合结束后更新搜索', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountMenu()
+    const input = wrapper.find('#tp-search').element
+    input.dispatchEvent(new window.CompositionEvent('compositionstart', { bubbles: true }))
+    input.value = '大白兔'
+    input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    await flushPromises()
+    vi.advanceTimersByTime(300)
+
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(3)
+    expect(wrapper.emitted('update:filters')).toBeUndefined()
+
+    input.dispatchEvent(new window.CompositionEvent('compositionend', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="tank-card"]').map(card => card.find('.tp-card-name').text())).toEqual(['IS-7'])
+    vi.advanceTimersByTime(300)
+    expect(wrapper.emitted('update:filters')?.at(-1)?.[0].q).toBe('大白兔')
+    wrapper.unmount()
+  })
+
   it('selects every filtered result beyond 48, preserves hidden picks and only commits on confirmation', async () => {
     const tanks = Array.from({ length: 75 }, (_, i) => ({ id: i + 1, name: 'Tank ' + i, tier: i < 60 ? 10 : 9, nation: 'usa', type: 'mediumTank' }))
     const wrapper = mountMenu({ tanks, multiple: true, filters: { tier: '10' } })

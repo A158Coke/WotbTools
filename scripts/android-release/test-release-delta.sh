@@ -99,7 +99,9 @@ assert "android-v*" in push["tags"], "Android tag recovery trigger is missing"
 android_proxy = (root / "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt").read_text(encoding="utf-8")
 assert 'REMOTE_ASSET_BASE = "https://assets.wotbtools.com"' in android_proxy
 assert "COS_BASE" not in android_proxy
-release_workflow = yaml.safe_load((root / ".github/workflows/android-release.yml").read_text(encoding="utf-8"))
+sys.path.insert(0, str(root / "scripts/android-release"))
+import workflow_model
+release_workflow = workflow_model.load(root)
 delta_step = next(step for step in release_workflow["jobs"]["stage"]["steps"] if step.get("id") == "delta")
 assert 'delta-base-staging.json' in delta_step["run"] and '.versionCode == $code and .sha256 == $sha' in delta_step["run"]
 delta_upload = next(step for step in release_workflow["jobs"]["stage"]["steps"] if step.get("name") == "Upload Android delta to Tsinghua Cloud")
@@ -115,7 +117,7 @@ assert "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt" in stage
 staged = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "staged")
 assert 'assetOrigin=$ASSET_ORIGIN' in staged["run"]
 readiness = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("name", "").startswith("Verify production API CORS"))
-assert '"${{ steps.staged.outputs.assetOrigin }}"' in readiness["run"]
+assert readiness.get("env", {}).get("STEP_STAGED_ASSETORIGIN") == "${{ steps.staged.outputs.assetOrigin }}"
 assert '"$ASSET_ORIGIN/index.json"' in readiness["run"]
 assert "REMOTE_ASSET_BASE=\"https://assets.wotbtools.com\"" not in readiness["run"]
 for name in ("frontend.yml", "frontend-replica.yml"):
@@ -127,11 +129,13 @@ PY
 if command -v jq >/dev/null; then
   POLICY_DIR="$TMP/delta-policy"
   mkdir -p "$POLICY_DIR"
-  python3 - "$ROOT/.github/workflows/android-release.yml" > "$POLICY_DIR/run.sh" <<'PYCODE'
-import sys, yaml
-with open(sys.argv[1], encoding="utf-8") as stream:
-    workflow = yaml.safe_load(stream)
-print(next(step["run"] for step in workflow["jobs"]["stage"]["steps"]
+  python3 - "$ROOT" > "$POLICY_DIR/run.sh" <<'PYCODE'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1] + "/scripts/android-release")
+import workflow_model
+model = workflow_model.load(Path(sys.argv[1]))
+print(next(step["run"] for step in model["jobs"]["stage"]["steps"]
            if step.get("name") == "Resolve optional Android delta availability"))
 PYCODE
   printf '%s\n' '{"apkSizeBytes":100,"patches":[{"sha256":"fixed"}]}' > "$POLICY_DIR/delta-metadata.json"
@@ -151,13 +155,14 @@ PYCODE
   printf 'immutable patch\n' > "$POLICY_DIR/release-staging/fixture.vcdiff"
   expected_sha="$(sha256sum "$POLICY_DIR/release-staging/fixture.vcdiff" | awk '{print $1}')"
   printf '{"patches":[{"sha256":"%s"}]}\n' "$expected_sha" > "$POLICY_DIR/delta-metadata.json"
-  python3 - "$ROOT/.github/workflows/android-release.yml" > "$POLICY_DIR/upload.sh" <<'PYCODE'
-import sys, yaml
-with open(sys.argv[1], encoding="utf-8") as stream:
-    workflow = yaml.safe_load(stream)
-script = next(step["run"] for step in workflow["jobs"]["stage"]["steps"]
-              if step.get("name") == "Upload Android delta to Tsinghua Cloud")
-print(script.replace('${{ steps.delta.outputs.patchName }}', 'fixture.vcdiff'))
+  python3 - "$ROOT" > "$POLICY_DIR/upload.sh" <<'PYCODE'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1] + "/scripts/android-release")
+import workflow_model
+model = workflow_model.load(Path(sys.argv[1]))
+print(next(step["run"] for step in model["jobs"]["stage"]["steps"]
+           if step.get("name") == "Upload Android delta to Tsinghua Cloud"))
 PYCODE
   cat > "$POLICY_DIR/bin/curl" <<'CURL'
 #!/usr/bin/env bash
@@ -190,12 +195,12 @@ fi
 CURL
   printf '#!/usr/bin/env bash\nexit 0\n' > "$POLICY_DIR/bin/sleep"
   chmod +x "$POLICY_DIR/bin/curl" "$POLICY_DIR/bin/sleep"
-  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=same TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
+  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" STEP_DELTA_PATCHNAME=fixture.vcdiff MOCK_EXISTING=same TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
   [ ! -e "$POLICY_DIR/upload-called" ] || fail 'identical delta must not be uploaded again'
-  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=absent TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
+  (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" STEP_DELTA_PATCHNAME=fixture.vcdiff MOCK_EXISTING=absent TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh)
   [ -e "$POLICY_DIR/upload-called" ] || fail 'absent delta must be uploaded'
   rm "$POLICY_DIR/upload-called"
-  if (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" MOCK_EXISTING=conflict TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh); then
+  if (cd "$POLICY_DIR"; PATH="$POLICY_DIR/bin:$PATH" RUNNER_TEMP="$POLICY_DIR" STEP_DELTA_PATCHNAME=fixture.vcdiff MOCK_EXISTING=conflict TSINGHUA_CLOUD_TOKEN=fixture bash upload.sh); then
     fail 'conflicting immutable cloud delta must fail'
   fi
   [ ! -e "$POLICY_DIR/upload-called" ] || fail 'conflicting delta must not be overwritten'

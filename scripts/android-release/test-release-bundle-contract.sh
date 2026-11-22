@@ -108,21 +108,26 @@ reject(lambda: gates.validate_cors(503, headers, contract["origin"], [], []))
 reject(lambda: gates.validate_cors(200, headers, contract["origin"], [], [], 401))
 print("APK bundle evidence and exact-origin readiness: PASS")
 PY
-python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
+python3 - "$ROOT" <<'PY'
 from pathlib import Path
 import sys
 
-workflow = Path(sys.argv[1]).read_text(encoding="utf-8")
-preflight = workflow.index("Preflight classify production state")
-agent_wasm = workflow.index("Fetch pinned Agent WASM for frontend validation")
-frontend = workflow.index("Frontend tests + build validation")
-upload = workflow.index("Seed APK to TX from Tsinghua replica")
-ensure_tag = workflow.index("Ensure release tag (idempotent)")
+sys.path.insert(0, sys.argv[1] + "/scripts/android-release")
+import workflow_model
+model = workflow_model.load(Path(sys.argv[1]))
+steps = model["jobs"]["stage"]["steps"]
+def step_index(label):
+    return next(index for index, step in enumerate(steps) if label in step.get("name", ""))
+preflight = step_index("Preflight classify production state")
+agent_wasm = step_index("Fetch pinned Agent WASM for frontend validation")
+frontend = step_index("Frontend tests + build validation")
+upload = step_index("Seed APK to TX from Tsinghua replica")
+ensure_tag = step_index("Ensure release tag (idempotent)")
 assert preflight < agent_wasm < frontend < upload < ensure_tag
-preflight_block = workflow[preflight:agent_wasm]
+preflight_block = "\n".join(step.get("run", "") for step in steps[preflight:agent_wasm])
 assert 'classify_tag "$REFS" "$TAG" "$COMMIT_SHA"' in preflight_block
 assert 'if [ "$TAG_STATE" = "tag_conflict" ]; then' in preflight_block
-agent_wasm_block = workflow[agent_wasm:frontend]
+agent_wasm_block = "\n".join(step.get("run", "") for step in steps[agent_wasm:frontend])
 assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
 PY

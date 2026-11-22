@@ -95,7 +95,7 @@ const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8'
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 指针选中/拾取接线 2026-11-06 出仓 playback/cameraRuntime.ts（#820 Step 2），守卫随实现迁移
-const cameraSrc = readFileSync(resolve(here, 'playback/cameraRuntime.ts'), 'utf8')
+const cameraSrc = readFileSync(resolve(here, 'playback/cameraFlyInput.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 地图资产 teardown（含 meshOwner/destruct 释放）owner = playback/mapWorld.ts
@@ -152,6 +152,7 @@ describe('拾取接线（源码级守卫）', () => {
     expect(reportAt).toBeGreaterThan(-1)
     expect(clearAt).toBeGreaterThan(-1)
     expect(reportAt).toBeLessThan(clearAt)
+    expect(body.replace('deps.reportPick(e)', '').indexOf('deps.reportPick(e)')).toBe(-1)
   })
   it('拾取实例：meshOwner 精确归属优先，距离仅兜底', () => {
     const at = pickSrc.indexOf('const owner = (ctx.meshOwner && hit.instanceId != null)')

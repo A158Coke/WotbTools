@@ -4,18 +4,11 @@ import { cumulativeStatsAtV2, healthDisplayAt } from '../utils/battlePlaybackV2.
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { healthRingDiameter } from '../utils/vehicleMarkerSizing.js'
 import type { PlaybackCamera } from './usePlaybackCamera.js'
+import type { VehicleRenderState } from './usePlaybackVehicleProjection.js'
 import type { BattleEvent, BattlePlaybackDataset, VehiclePlaybackTrack } from '../types/playback-v2.js'
 
-/** 选中/hit-test 消费的车辆渲染状态最小结构（owner 在 usePlaybackVehicleProjection）。 */
-interface VehicleRenderStateLike {
-  // projectVehicleState 的 vehicle 入参与 canonical track 是同一对象。
-  vehicle: VehiclePlaybackTrack
-  pos: { x: number; y: number; timeSec: number }
-  destroyed?: boolean
-  hitTargetSize?: { width: number; height: number } | null
-  markerSize?: { hitTarget?: { width: number; height: number } | null; renderBox?: { width: number; height: number } } | null
-  lastKnown?: boolean
-}
+/** 选中/hit-test 消费的车辆渲染状态（owner 在 usePlaybackVehicleProjection）。 */
+type VehicleRenderStateLike = VehicleRenderState
 
 /**
  * 2D 回放车辆选中 / 详情编排（#820 Agent C 拆分）：selected / details 状态的**唯一 owner**。
@@ -28,11 +21,11 @@ interface VehicleRenderStateLike {
  * hit-test / 屏幕定位经由 usePlaybackCamera 的 view/MapRenderRect（与 marker/标注同一变换），
  * 语义投影由宿主注入（projectedSemanticNorm / markerScreen，owner 在车辆投影层）。
  */
-export function usePlaybackVehicleSelection(
+export function usePlaybackVehicleSelection<T extends VehicleRenderStateLike>(
   camera: Pick<PlaybackCamera, 'view' | 'mapEl' | 'mapRenderRect' | 'mapWidth'>,
   deps: {
     /** 时间相关渲染状态（hit-test 与 selectedState 的来源）。 */
-    vehicleStates: Ref<VehicleRenderStateLike[]>
+    vehicleStates: Ref<T[]>
     /** canonical tracks（selectedTrack / roster 投影源）。 */
     playback: Ref<BattlePlaybackDataset | null>
     currentTime: Ref<number>
@@ -45,7 +38,7 @@ export function usePlaybackVehicleSelection(
     /** 详情浮窗的定位祖先 / 拖动宿主（.pb-main）。 */
     battlefieldWorkspaceEl: Ref<HTMLElement | null>
     /** 标记中心 → 屏幕坐标（车辆投影层提供，与地图/标注同一变换）。 */
-    markerScreen: (st: VehicleRenderStateLike) => { x: number; y: number } | null
+    markerScreen: (st: T) => { x: number; y: number } | null
     /** 语义坐标 → normalized viewport 坐标（含地形起伏回退）。 */
     projectedSemanticNorm: (x: number, y: number) => { xNorm: number; yNorm: number }
     /** mobile overlay reveal（选中后保持 overlay 可见性计时）。 */
@@ -157,7 +150,7 @@ export function usePlaybackVehicleSelection(
     const py = hasPoint ? clientY! - rect.top : NaN
     // Hit-test uses the final vehicle-aware hit target at the marker's true position
     // (markers are never displaced). Selection still returns the canonical vehicle.
-    const hitTest = (s: VehicleRenderStateLike) => {
+    const hitTest = (s: T) => {
       const cx = (px - view.tx) / view.scale
       const cy = (py - view.ty) / view.scale
       const mapRect = camera.mapRenderRect()
@@ -187,7 +180,7 @@ export function usePlaybackVehicleSelection(
     if (candidates.length === 0) return
     let best = candidates[0]
     if (candidates.length > 1) {
-      const dist = (s: VehicleRenderStateLike) => {
+      const dist = (s: T) => {
         const p = deps.markerScreen(s)
         return p ? Math.hypot(p.x - px, p.y - py) : Infinity
       }

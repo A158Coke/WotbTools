@@ -15,6 +15,8 @@ const props = defineProps({
   interactive: { type: Boolean, default: true },
   /** 「最后已知」标记文案（离场坦克幽灵名牌；空串 = 不显示标记小字） */
   lastKnownLabel: { type: String, default: '' },
+  /** 战场快捷标记来源卡的动作章文案（kind/intent → 本地化短标签；owner = Replay3DPane） */
+  markerKindLabels: { type: Object, default: null },
 })
 const emit = defineEmits(['select'])
 // Only this child receives 10 Hz content snapshots. Screen coordinates bypass
@@ -22,6 +24,11 @@ const emit = defineEmits(['select'])
 const labels = shallowRef([])
 const elements = new Map()
 const anchors = new Map()
+// 战场快捷标记来源卡（battleMarkerHost → labelsRuntime 投影）：与坦克名牌**同一 DOM 卡片**
+// （PlaybackVehicleLabel，屏幕空间恒定大小，不随距离缩放）；key = 标记事件稳定 id。
+const markerLabels = shallowRef([])
+const markerEls = new Map()
+const markerAnchors = new Map()
 // 伤害数字（"-342"）与名牌同层：canvas sprite 恒在 DOM 之下，跨层避让（renderOrder /
 // 世界空间偏移）怎么算都会被名牌压住——同层后落点直接读血条 DOM 几何（px），
 // 不存在世界↔屏幕换算，也不存在"永远被 DOM 盖住"。
@@ -64,6 +71,34 @@ function paint(el, anchor) {
 function bind(eid, el) {
   if (el) { elements.set(eid, el); paint(el, anchors.get(eid)) }
   else elements.delete(eid)
+}
+/** 来源身份单行文案：「玩家 · 车名」（空项不占位，与事件流 actorText 同一纪律）。 */
+function markerActor(row) {
+  return [row.player, row.tank].filter(Boolean).join(' · ')
+}
+function markerKindLabel(row) {
+  const map = props.markerKindLabels
+  if (!map) return ''
+  if (row.kind === 'target' && row.intent) {
+    // target 类 = **单行来源标注**：`{发起者} 要求攻击/要求撤退 {目标车型}`（不重复
+    // 目标自己的玩家/坦克，也没有第二块身份卡 → 卡片更矮、能贴近目标而不压名牌）。
+    // 模板条目允许函数（Replay3DPane 用 i18n 动态插值）或含 {who}/{target} 的字符串。
+    const base = map[row.intent] || ''
+    const who = markerActor(row)
+    const entry = map[`target_${row.intent}`]
+    if (entry && who && row.target) {
+      if (typeof entry === 'function') return entry(row.target, who)
+      return String(entry).replace('{who}', who).replace('{target}', row.target)
+    }
+    // 来源或目标缺一：仍不伪造——只拼已有事实
+    if (who) return base ? `${who} · ${base}` : who
+    return row.target ? `${base} · ${row.target}` : base
+  }
+  return (row.kind && map[row.kind]) || ''
+}
+function bindMarker(key, el) {
+  if (el) { markerEls.set(key, el); paintMarker(markerEls.get(key), markerAnchors.get(key)) }
+  else markerEls.delete(key)
 }
 function stackOffsetPx(stack) { return (stack % DMG_STACK_SLOTS) * DMG_STACK_PX }
 /**
@@ -231,8 +266,29 @@ function setAnchor(eid, anchor) {
   placeDamages(eid)
 }
 function setLabels(rows) { labels.value = rows; labelsSeq++ }
-function clear() { labels.value = []; anchors.clear(); elements.clear(); clearDamages() }
-defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDamages })
+function setMarkerLabels(rows) { markerLabels.value = rows }
+function setMarkerAnchor(key, anchor) {
+  // 契约与 setAnchor 相同：**同步拷贝**（labelsRuntime 逐帧复用同一个 scratch 对象）
+  let cur = markerAnchors.get(key)
+  if (!cur) { cur = { x: 0, y: 0, visible: false, opacity: 1 }; markerAnchors.set(key, cur) }
+  cur.x = anchor.x; cur.y = anchor.y; cur.visible = anchor.visible !== false
+  cur.opacity = anchor.opacity ?? 1
+  paintMarker(markerEls.get(key), cur)
+}
+/** marker 卡专用重摆：与 paint 同一 transform/hidden，另随标记本体末段淡出渐进透明
+ *  （opacity 由 labelsRuntime 从 runtime fade 系数桥接；0 < fade < 1 不在端点瞬失）。 */
+function paintMarker(el, anchor) {
+  if (!el || !anchor) return
+  el.hidden = !anchor.visible
+  el.style.opacity = String(anchor.opacity)
+  el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
+}
+function clear() {
+  labels.value = []; anchors.clear(); elements.clear()
+  markerLabels.value = []; markerEls.clear(); markerAnchors.clear()
+  clearDamages()
+}
+defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDamages, setMarkerLabels, setMarkerAnchor })
 </script>
 
 <template>
@@ -253,6 +309,23 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
         @pointerdown.stop @click.stop="emit('select', row.eid, $event)">
         <TankClassIcon :tank-class="row.tankClass" />
       </button>
+    </div>
+    <!-- 战场快捷标记来源卡：与坦克名牌同一卡片组件（恒定像素大小，不随距离缩放）。
+         内容 = 下发玩家 + 坦克（0x2e 联名册 def / 0x2f sender 联册，联不到只出玩家行）。 -->
+    <div v-for="row in markerLabels" :key="row.key" :ref="el => bindMarker(row.key, el)"
+      class="vehicle-label-anchor battle-marker-anchor" :data-marker="row.key" :data-target="row.target || null" hidden>
+      <!-- 动作章：target 类 = 「要求攻击/要求撤退 {目标车型}」；身份两行 = 标注**来源**
+           （卡读作「{发起者} 要求攻击/撤退 {目标车型}」）。目标自己的玩家/坦克/血量由车辆
+           名牌负责，卡片不再重复，并在 labelsRuntime 里整体上移避开目标名牌。 -->
+      <p v-if="markerKindLabel(row)" class="battle-marker-kind" :data-kind="row.kind === 'target' ? row.intent : row.kind" aria-hidden="true">{{ markerKindLabel(row) }}</p>
+      <!-- 身份两行 = 来源（开关 = 战场快捷标记总开关，不随名牌行偏好隐藏）；target 类已
+           在动作章里单行给出「发起者 + 目标车型」，不再叠第二块身份卡。 -->
+      <PlaybackVehicleLabel
+        v-if="row.kind !== 'target' && (row.player || row.tank)"
+        :player-name="row.player" :tank-name="row.tank" :friendly="null"
+        :show-player-name="true" :show-tank-name="true"
+        :show-hp="false" :show-reload="false"
+      />
     </div>
     <!-- 伤害数字排在所有名牌之后：同层内 DOM 顺序即层级，数字永远不会被名牌盖住。
          初始 hidden，由 placeDamages 量到落点后再显示（避免在覆盖层原点闪一帧）。
@@ -280,6 +353,18 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 }
 .vehicle-label-overlay.label-layer-static .vehicle-class-button { pointer-events: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+/* 战场快捷标记来源卡的动作章：目标类卡（攻击/撤退）必须自述"对它做什么"——
+   在目标车上悬浮发起者名牌会与目标自己的名牌混淆（用户反馈"撤退表现逻辑不对"）。 */
+.battle-marker-kind {
+  margin: 0 0 2px;
+  padding: 1px 10px;
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  background: color-mix(in oklab, var(--color-canvas) 72%, transparent);
+  color: var(--color-text-primary);
+  font: var(--type-caption);
+  white-space: nowrap;
+}
 .label-occluded { opacity: var(--pb-label-occluded-opacity, .35); }
 /* 伤害数字：血条右侧的战斗反馈数字。屏幕尺寸固定 px（远近缩放与自由/跟随/俯视镜头下
    视觉大小一致），深色描边保证任意地形 / 车体上都读得出，出生阶段 100% 不透明、

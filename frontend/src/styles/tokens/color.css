@@ -17,6 +17,13 @@
  */
 @layer tokens {
   :root {
+    /* Playback fallbacks retain the existing overlay palette when no map palette is supplied. */
+    --color-playback-grid-fallback: rgba(255,255,255,.55);
+    --color-playback-region-fallback: rgba(255,255,255,.28);
+    --color-playback-spawn-friendly-fallback: #8ef7b0;
+    --color-playback-spawn-enemy-fallback: #ff8d8d;
+    --color-playback-feed-muted-fallback: #999;
+    --shadow-playback-feed: 0 4px 14px rgba(0,0,0,.4);
     /* Over-map text has a stable light foreground and outline in both profiles. */
     --color-playback-label-text: #ffffff;
     --color-playback-label-destroyed: #9aa3ad;

@@ -1,0 +1,397 @@
+/api/admin/tournaments:
+  head:
+    operationId: getTournamentCapabilities
+    summary: Check tournament capabilities without changing the existing event-list body
+    description: Requires the tournament-admin role. Older backends return 200 without capability headers; clients must probe this existing route before requesting default-rule or CSV-import endpoints.
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: Event-list headers
+        headers:
+          X-Tournament-Default-Rules:
+            description: Version 1 supports global default rule operations, including direct configuration.
+            schema:
+              type: string
+              enum: ["1"]
+          X-Tournament-Csv-Import:
+            description: Version 1 supports recurring CSV imports and public data-source metadata.
+            schema:
+              type: string
+              enum: ["1"]
+      "401":
+        description: Authentication required
+      "403":
+        description: Tournament administrator required
+  get:
+    operationId: listAdminTournamentEvents
+    summary: listAdminTournamentEvents
+    responses:
+      "200":
+        description: Tournament result
+        headers:
+          X-Tournament-Default-Rules:
+            description: Version 1 supports global default rule operations, including direct configuration.
+            schema:
+              type: string
+              enum: ["1"]
+          X-Tournament-Csv-Import:
+            description: Version 1 supports recurring CSV imports and public data-source metadata.
+            schema:
+              type: string
+              enum: ["1"]
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "../openapi.yaml#/components/schemas/TournamentEvent"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+  post:
+    operationId: createTournament
+    summary: createTournament
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentConfig"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentCreateRequest"
+/api/admin/tournaments/{eventId}:
+  get:
+    operationId: getTournamentConfig
+    summary: getTournamentConfig
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentConfig"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+  put:
+    operationId: updateTournamentConfig
+    summary: updateTournamentConfig
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentConfig"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentUpdateRequest"
+  delete:
+    operationId: deleteTournament
+    summary: deleteTournament
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "204":
+        description: Deleted
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "../openapi.yaml#/components/schemas/TournamentDeleteRequest"
+/api/admin/tournaments/{eventId}/audit:
+  get:
+    operationId: listTournamentAudit
+    summary: listTournamentAudit
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "../openapi.yaml#/components/schemas/TournamentAudit"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []
+/api/admin/tournaments/{eventId}/evidence/{evidenceId}:
+  get:
+    operationId: getTournamentEvidence
+    summary: getTournamentEvidence
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      - name: evidenceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      "200":
+        description: Original administrator-only image
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "401":
+        description: Authentication required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "403":
+        description: Administrator required
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+    security:
+      - bearerAuth: []

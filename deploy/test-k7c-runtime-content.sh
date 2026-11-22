@@ -58,35 +58,35 @@ if [ -z "$lock_ln" ] || [ -z "$sync_ln" ] || [ "$lock_ln" -ge "$sync_ln" ]; then
 fi
 
 # 互斥的另一侧：stage 必须经安装器在宿主锁下落位，而不是直接 scp 进被服务目录。
-grep -Fq 'install-staging-evidence.sh' "$release" || fail "the release stage must install evidence through the installer"
-grep -Fq -- '--lock /opt/wotb-tx/.deploy.lock' "$release" || fail "the TX install must take the TX host deploy lock"
-grep -Fq -- '--lock /opt/wotb-tx2/.deploy.lock' "$release" || fail "the TX2 install must take the TX2 host deploy lock"
+# 发布协议已拆成 orchestrator + workflow_call + 外部 step 脚本，契约读逻辑模型而不是 wrapper 文本。
+python3 - "$ROOT" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts/android-release"))
+import workflow_model
+model = workflow_model.load(root)
+stage_steps = model["jobs"]["stage"]["steps"]
+def all_text(step):
+    with_ = step.get("with") or {}
+    return "\n".join((step.get("run") or "", with_.get("script") or "", with_.get("source") or "", with_.get("target") or ""))
+stage_text = "\n".join(all_text(step) for step in stage_steps)
+assert "install-staging-evidence.sh" in stage_text, "the release stage must install evidence through the installer"
+assert "--lock /opt/wotb-tx/.deploy.lock" in stage_text, "the TX install must take the TX host deploy lock"
+assert "--lock /opt/wotb-tx2/.deploy.lock" in stage_text, "the TX2 install must take the TX2 host deploy lock"
 # 被服务目录只允许接收 publish 的 version.json（既有机制）；staging evidence 直接 scp 进去就是
 # 2026-10-09 那个竞态。逐 step 比对 source/target，避免误伤 version.json 的直传。
-python3 - "$release" <<'PY'
-import re, sys
-lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
 served = ("/opt/wotb-tx/android-release", "/opt/wotb-tx2/runtime-content/android-release")
-cur = {"name": None, "source": None, "target": None}
-steps = []
-def flush():
-    if cur["source"] or cur["target"]:
-        steps.append(dict(cur))
-for ln in lines:
-    m = re.match(r"^      - name:\s*(.*)$", ln)
-    if m:
-        flush(); cur.update(name=m.group(1).strip() or None, source=None, target=None); continue
-    if cur["name"] is None:
-        continue
-    m = re.match(r"^\s+source:\s*(.*)$", ln)
-    if m: cur["source"] = m.group(1).strip(); continue
-    m = re.match(r"^\s+target:\s*(.*)$", ln)
-    if m: cur["target"] = m.group(1).strip()
-flush()
-straight = [s for s in steps if s["target"] and any(s["target"].startswith(p) for p in served)]
-for s in straight:
-    if "version.json" not in (s["source"] or ""):
-        raise SystemExit(f"step {s['name']!r} uploads {s['source']!r} straight into the served tree {s['target']!r}")
+straight = []
+for job_id in ("stage", "publish"):
+    for step in model["jobs"][job_id]["steps"]:
+        with_ = step.get("with") or {}
+        target = with_.get("target") or ""
+        if target and any(target.startswith(prefix) for prefix in served):
+            straight.append((job_id, step.get("name"), with_.get("source"), target))
+for job_id, name, source, target in straight:
+    if "version.json" not in (source or ""):
+        raise SystemExit(f"step {name!r} ({job_id}) uploads {source!r} straight into the served tree {target!r}")
 print(f"served-tree uploads are manifest-only: {len(straight)} step(s)")
 PY
 

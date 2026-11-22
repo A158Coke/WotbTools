@@ -198,7 +198,7 @@ describe('AdminUsersPage', () => {
   }
 
   it('opens user detail in an accessible right drawer when a row is clicked and closes it with Escape', async () => {
-    api.getUser.mockResolvedValue({ profile: null, keycloak: { id: 'kc-a', username: 'kc-a-name', email: 'a@example.com', enabled: true }, warnings: [] })
+    api.getUser.mockResolvedValue({ profile: null, keycloak: { id: 'kc-a', username: 'kc-a-name', email: 'a@example.com', enabled: true }, warnings: ['KEYCLOAK_USER_NOT_FOUND'] })
     wrapper = mountPage()
     await flushPromises()
 
@@ -210,6 +210,7 @@ describe('AdminUsersPage', () => {
     expect(drawer.classes()).toContain('is-end')
     expect(api.getUser).toHaveBeenCalledWith('kc-a')
     expect(drawer.text()).toContain('kc-a-name')
+    expect(drawer.text()).toContain('err:KEYCLOAK_USER_NOT_FOUND')
 
     await pressEscape()
     expect(wrapper.find('[data-testid="admin-detail-drawer"]').exists()).toBe(false)

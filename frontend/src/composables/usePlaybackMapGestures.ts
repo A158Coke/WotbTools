@@ -35,7 +35,7 @@ export interface GestureDrawingHooks {
  * 相机状态（view/applyView/fitScale）由 usePlaybackCamera 唯一持有，本 composable 只消费。
  */
 export function usePlaybackMapGestures(
-  camera: PlaybackCamera,
+  camera: Pick<PlaybackCamera, 'view' | 'applyView' | 'screenPoint' | 'fitScale'>,
   mapEl: Ref<HTMLElement | null>,
   hooks: {
     isFullscreen: () => boolean

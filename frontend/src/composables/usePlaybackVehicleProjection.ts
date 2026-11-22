@@ -30,11 +30,13 @@ type ComputeVehicleMarkerSize = (
 const computeVehicleMarkerSizeTyped = computeVehicleMarkerSize as ComputeVehicleMarkerSize
 
 /** projectVehicleState 的单个渲染项（+ 每车 gunMarks/reload/consumables 附加字段）。 */
-type ProjectedVehicleState = NonNullable<ReturnType<typeof projectVehicleState>> & {
-  gunMarks: unknown
+export type VehicleRenderState = NonNullable<ReturnType<typeof projectVehicleState>> & {
+  vehicle: VehiclePlaybackTrack
+  gunMarks: number | null
   reloadShells: unknown
   consumables: unknown
 }
+type ProjectedVehicleState = VehicleRenderState
 
 
 /**
@@ -64,7 +66,7 @@ export function usePlaybackVehicleProjection(
     speed: Ref<number>
     authoritativeEvents: () => BattleEvent[]
     hpVehicles: () => VehiclePlaybackTrack[]
-    gunMarks: () => Map<number, unknown> | null
+    gunMarks: () => Map<number, number> | null
     isMobileDevice: Ref<boolean>
     trailPrefs: { showTrail: boolean }
     palette: Ref<{ friendlyColors: string[]; enemyColors: string[]; routeOutline: string }>
@@ -189,7 +191,7 @@ export function usePlaybackVehicleProjection(
         if (!state) return null
         // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
         // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
-        return { ...state, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
+        return { ...state, vehicle, gunMarks: deps.gunMarks()?.get(track.accountId) ?? null, reloadShells: replayData.vehicleReloadAt(track.accountId, deps.currentTime.value), consumables: replayData.vehicleConsumablesAt(track, deps.currentTime.value) }
       })
       .filter((item): item is ProjectedVehicleState => item != null)
   })

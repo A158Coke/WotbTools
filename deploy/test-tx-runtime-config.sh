@@ -210,7 +210,7 @@ reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:abc' 
 # green while the running container dials something else, which is the false green this
 # step exists to prevent. A failing probe must also be attributed to wotb-frontend so
 # stop_failed_service actually acts on the affected service.
-frontend_health_block="$(sed -n '/if is_selected wotb-frontend; then/,/^  fi$/p' "$ROOT/deploy/tx/deploy.sh")"
+frontend_health_block="$(sed -n '/if is_selected wotb-frontend; then/,/^  fi$/p' "$ROOT/deploy/tx/deploy-health.sh")"
 grep -Fq 'wait_for_probe frontend-api http://wotb-frontend/api/health' <<< "$frontend_health_block" \
   || { echo 'the frontend deploy must probe /api/health through the frontend' >&2; exit 1; }
 grep -Fq 'wait_for_probe frontend-static http://wotb-frontend/' <<< "$frontend_health_block" \

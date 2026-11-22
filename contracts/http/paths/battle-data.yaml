@@ -1,0 +1,94 @@
+/api/battle-data:
+  post:
+    operationId: collectBattleData
+    summary: 匿名提交最小化战斗观察
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '../openapi.yaml#/components/schemas/BattleDataRequest' }
+    responses:
+      '201': { description: 首个合法提交已存储，无响应体 }
+      '204': { description: arenaId已存在，无响应体 }
+      '400':
+        description: INVALID_REQUEST
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '413':
+        description: FILE_TOO_LARGE
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '415':
+        description: UNSUPPORTED_MEDIA_TYPE
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '429':
+        description: RATE_LIMITED
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '500':
+        description: INTERNAL_ERROR
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+      '503':
+        description: SERVICE_UNAVAILABLE
+        content:
+          application/json:
+            schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' }
+/api/admin/battle-data/summary:
+  get:
+    operationId: getBattleDataAdminSummary
+    summary: Read persisted battle observation summary (wotbtools-admin only)
+    description: UTC interval [from,to); unbounded endpoints allowed. Global metrics use the snapshot asOf; distributions use the selected interval capped at asOf.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+      - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+    responses:
+      '200': { description: Summary, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BattleDataAdminSummary' } } } }
+      '400': { description: Invalid interval, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Admin role required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Internal error, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/battle-data/battles:
+  get:
+    operationId: getBattleDataAdminBattles
+    summary: Read persisted battle observations (wotbtools-admin only)
+    description: Descending keyset pagination by receivedAt and id; cursor is bound to the filters. Time interval is [from,to).
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: cursor, in: query, required: false, schema: { type: string } }
+      - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+      - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      - { name: arenaId, in: query, required: false, schema: { type: string, pattern: '^([1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)(?![\s\S])' } }
+      - { name: mapKey, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[a-z0-9_]+(?![\s\S])' } }
+      - { name: arenaBonusType, in: query, required: false, schema: { type: integer, enum: [1, 7] } }
+      - { name: clientVersion, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9._-]+(?![\s\S])' } }
+      - { name: winnerTeam, in: query, required: false, schema: { type: integer, enum: [0, 1, 2] } }
+    responses:
+      '200': { description: Page, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BattleDataAdminPage' } } } }
+      '400': { description: Invalid parameter or cursor, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Admin role required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Internal error, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+/api/admin/battle-data/battles/{id}:
+  get:
+    operationId: getBattleDataAdminDetail
+    summary: Read one persisted observation and its vehicle rows (wotbtools-admin only)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, pattern: '^[1-9][0-9]{0,18}(?![\s\S])' } }
+    responses:
+      '200': { description: Detail, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BattleDataAdminDetail' } } } }
+      '400': { description: Invalid id, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '401': { description: Authentication required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '403': { description: Admin role required, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '404': { description: Battle not found, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }
+      '500': { description: Internal error, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/ApiError' } } } }

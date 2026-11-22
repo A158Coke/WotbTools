@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { firstIndexAfter } from './seekPointer.ts'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -49,7 +50,7 @@ describe('playbackScene.seekTo 的游标接线（防回归）', () => {
   // 此处仅保留 façade seekTo 三行 glue 的 Integration Contract 守卫：场景内核依赖 WebGL
   // 无法实例化、宿主无注入点（F3 分类标注）。只重定 shotPtr 是 PR #411 的 P0——
   // transient 游标被 clearEffects 归零后会被紧随的 tick() 补播全部历史事件。
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const src = playbackSceneSource()
   const seekTo = src.slice(src.indexOf('function seekTo'), src.indexOf('function seekTo') + 900)
 
   it('façade glue：seekTo 依次接线 resetShotsTo 与 transients.rewind（行为语义见 battleRuntime.seek.test.ts）', () => {
@@ -63,7 +64,7 @@ describe('地图边界来源（2026-11-17 用户裁示：删除旧边界带，�
   // MapBorderRenderObject 导出（scenery.glb 的 extras.mapBorder）在四周重复。
   // 现在后者是唯一边界来源；旧 band 的模块/调用/常量必须零残留。
   const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
-  const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const sceneSrc = playbackSceneSource()
 
   it('旧边界带（buildBoundary / BOUNDARY_THICK / boundary.js）零残留', () => {
     expect(mapWorldSrc).not.toMatch(/buildBoundary\(/)
@@ -83,7 +84,7 @@ describe('地图边界来源（2026-11-17 用户裁示：删除旧边界带，�
 describe('相机钳制调用点（#827 窄化：Integration Contract）', () => {
   // 边界带行为已随旧边界模块删除；相机钳制属独立契约，保留窄化源码守卫。
   const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
-  const playbackSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const playbackSrc = playbackSceneSource()
 
   it('宿主保留钳制注入（clamp owner = cameraTerrainClamp，行为见 clamp.test）', () => {
     expect(playbackSrc).toMatch(/applyCameraClamp\(\);/)

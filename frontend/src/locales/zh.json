@@ -1790,6 +1790,7 @@
     "glb": "真实车模（GLB）",
     "tread_marks": "地面履带印",
     "display_last_known": "离场坦克显示最后已知位置",
+    "display_battle_markers": "战场快捷标记（移动点 / 目标光环 / 注意扇区）",
     "label_last_known": "最后已知",
     "visibility_note": "回放仅包含录制客户端所见；未记录时段不重建位置，离场坦克显示最后已知位置。",
     "glb_forced_hint": "当前画质档强制使用真实车模（GLB）",

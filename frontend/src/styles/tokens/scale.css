@@ -8,6 +8,12 @@
 
 @layer tokens {
   :root {
+    /* Playback feed typography and surface, retained across the stylesheet extraction. */
+    --font-size-playback-feed: 17px;
+    --font-size-playback-feed-icon: 1.1em;
+    --font-size-playback-event: .78rem;
+    --line-height-playback-feed: 1.25;
+    --radius-playback-feed: 10px;
     /* 间距：N × 4px（§5） */
     --space-0: 0;
     --space-1: 4px;

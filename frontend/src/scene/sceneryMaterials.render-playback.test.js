@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest'
+import { playbackSceneSource } from './__tests__/sceneSource.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
+const src = playbackSceneSource()
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const rendererSrc = readSrc(resolve(here, 'playback/renderer.ts'), 'utf8')
 const mapAssetsSrc = readSrc(resolve(here, 'playback/mapAssets.ts'), 'utf8')
-const matSrc = readSrc(resolve(here, 'sceneryMaterials.ts'), 'utf8')
+const matSrc = ['sceneryMaterials.ts', 'sceneryLightingMaterials.ts', 'sceneryWaterMaterials.ts', 'scenerySurfaceMaterials.ts'].map(path => readSrc(resolve(here, path), 'utf8')).join('\n')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const asmSrc = readSrc(resolve(here, 'sceneryAssembly.ts'), 'utf8')
@@ -20,7 +21,9 @@ const gpSrc = readSrc(resolve(here, 'groundPass.js'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const stripComments = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const mapWorldSrc = stripComments(readSrc(resolve(here, 'playback/mapWorld.ts')))
+const mapLoaderSrc = stripComments(readSrc(resolve(here, 'playback/mapWorldLoader.ts')))
 const vehSrc = stripComments(readSrc(resolve(here, 'playback/vehicleRuntime.ts')))
+const vehiclePoseSrc = stripComments(readSrc(resolve(here, 'playback/vehicleModelPose.ts')))
 const lblSrc = stripComments(readSrc(resolve(here, 'playback/labelsRuntime.ts')))
 
 describe('场景绘制与回放接线合同', () => {
@@ -36,8 +39,8 @@ describe('场景绘制与回放接线合同', () => {
     // 2026-10-07：默认改为**关**（真机 A/B 权衡：每片元 gl_FragDepth + 禁 early-z
     // 对 alpha-test 植被的填充率开销是乘法级）；Display 面板开关 + localStorage
     // 持久化，URL ?logdepth= 仍最高优先（boolPref 解析）。
-    expect(src).toMatch(/let LOGDEPTH = boolPref\('pb_logdepth', 'logdepth', false\);/)
-    expect(src).toMatch(/let DYNRES = boolPref\('pb_dynres', 'dynres', true\);/)
+    expect(src).toMatch(/(?:let )?LOGDEPTH = boolPref\('pb_logdepth', 'logdepth', false\);/)
+    expect(src).toMatch(/(?:let )?DYNRES = boolPref\('pb_dynres', 'dynres', true\);/)
     expect(rendererSrc).toMatch(/logarithmicDepthBuffer: LOGDEPTH/)
     // logdepthbuf_vertex 调用 isPerspectiveMatrix（定义在 <common>）：自定义 vertex
     // shader 必须 include <common>，否则 GLSL 编译失败、材质整片不渲染
@@ -195,8 +198,9 @@ describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
     // vehicleRuntime.pose.test.ts 行为测试（mismatch fixture / 两车 geometry !==）
     // 轮自转必须走 pivot 补偿：导出器把轮几何烘进顶点、节点留在原点 —— 直接写旋转 =
     // 轮绕整车公转（实测轮心漂 5.4~6.8 m，观感"旋转混乱"）
-    expect(vehSrc).toMatch(/applyWheelSpin\(w\.node, w\.restPos, w\.restQuat, w\.pivot, w\.restPivotRot,/)
-    expect(vehSrc).toMatch(/node\.parent\.worldToLocal\(ctr\.clone\(\)\)/)
+    expect(vehiclePoseSrc).toMatch(/applyWheelSpin\(w\.node, w\.restPos, w\.restQuat, w\.pivot, w\.restPivotRot,/)
+    expect(vehiclePoseSrc).toMatch(/node\.parent\.worldToLocal\(ctr\.clone\(\)\)/)
+    expect(vehiclePoseSrc.replace('applyWheelSpin(w.node,', 'removedWheelSpin(w.node,')).not.toMatch(/applyWheelSpin\(w\.node, w\.restPos, w\.restQuat, w\.pivot, w\.restPivotRot,/)
   })
 
 })
@@ -210,7 +214,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('setSpeed 只接受档位表内的值（#827 F3: Integration Contract（无注入点）；宿主闭包函数无独立 owner）', () => {
-    expect(src).toMatch(/function setSpeed\(s\)\s*\{\s*if\s*\(!isPlaybackSpeed\(s\)\)\s*return;/)
+    expect(src).toMatch(/function setSpeed\(s(?:: number)?\) \{ if \(!isPlaybackSpeed\(s\)\) return;/)
   })
 
   it('onResize 单画布取整尺寸 + 置脏重绘（#827 F3: Integration Contract（无注入点）；宿主闭包函数）', () => {
@@ -258,7 +262,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('HUD 降频：store.time/seekFrac 不再每帧写，seek 时强制补一次（#827 F3: Integration Contract（无注入点））', () => {
-    expect(src).toMatch(/const HUD_INTERVAL_MS = 100;/)
+    expect(src).toMatch(/(?:const )?HUD_INTERVAL_MS = 100;/)
     expect(src).toMatch(/function writeHud\(force = false\)/)
     expect(src).toMatch(/writeHud\(true\);/)
     const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function writeHud'))
@@ -267,7 +271,8 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('资产加载走有限并发（地表贴图 / 坦克 GLB 都受上限约束）', () => {
     // 并发工具行为（在飞 ≤4、保序）2026-11-12 接替：playback/util.behavior.test.ts
-    expect(mapWorldSrc).toMatch(/await mapLimit\(need, ASSET_CONCURRENCY/)
+    expect(mapLoaderSrc).toMatch(/await mapLimit\(need, ASSET_CONCURRENCY/)
+    expect(mapLoaderSrc.replace('await mapLimit(need, ASSET_CONCURRENCY', '')).not.toMatch(/await mapLimit\(need, ASSET_CONCURRENCY/)
     expect(vehSrc).toMatch(/await mapLimit\(V\.filter\(v => v\.def\.tank_id > 0\), ASSET_CONCURRENCY/)
   })
 
@@ -275,9 +280,9 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     // 回退后（记录位姿）：根 = 记录 yaw/pitch/roll 一次合成，无高度场参与
     // 纯姿态 poseGlbRig(v, t, pos)：每帧以 (T, 本帧位置) 调用；开火定位炮口时临时以 t_fire 调用再摆回
     // poseFromYPR out 参数零分配 2026-11-12 接替：vehicleRuntime.pose.test.ts 行为测试
-    expect(vehSrc).toMatch(/v\.glb\.position\.copy\(pos\);/)
-    expect(vehSrc).toMatch(/poseGlbRig\(v, deps\.getT\(\), v\.group\.position\);\s*suspensionStep\(v\);/)
-    const glb = vehSrc.slice(vehSrc.indexOf('function poseGlb'), vehSrc.indexOf('async function applyGlbToggle'))
+    expect(vehiclePoseSrc).toMatch(/v\.glb\.position\.copy\(pos\);/)
+    expect(vehiclePoseSrc).toMatch(/poseGlbRig\(v, deps\.getT\(\), v\.group\.position\);\s*suspensionStep\(v\);/)
+    const glb = vehiclePoseSrc.slice(vehiclePoseSrc.indexOf('function poseGlb'), vehiclePoseSrc.indexOf('function glbGunWorld'))
     expect(glb).not.toMatch(/terrainPitchRoll|clampHullAttitude|sampleHeight/)
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
     expect(glb).not.toMatch(/new THREE\.Euler\(\)/)

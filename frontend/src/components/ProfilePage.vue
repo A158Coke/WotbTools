@@ -8,21 +8,17 @@ import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
-import {
-  deleteUserWotbAccount,
-  getUserProfile,
-  syncUserWotbAccountFromLogin,
-  updateUserWotbAccount,
-  verifyUserWotbAccountFromReplay
-} from '../api/user-profile.js'
-import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
-import { getUserHofRecords, hofHundredCancel, hofHundredMyStatus } from '../api/hall-of-fame.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
-import { copyText } from '../utils/clipboard.js'
 import AppButton from './AppButton.vue'
 import { sectionHeroStyle } from '../shared/sectionHeroes'
 
+import { useProfileIdentity } from './profile/useProfileIdentity.ts'
+import { useProfileRecords } from './profile/useProfileRecords.ts'
+import { useProfileHundred } from './profile/useProfileHundred.ts'
+import { useProfileWotbAccount } from './profile/useProfileWotbAccount.ts'
+import { useProfileSession } from './profile/useProfileSession.ts'
+import { getUserProfile } from '../api/user-profile.js'
 const { locale, t, te } = useI18n()
 const navigateView = inject(NAVIGATE_VIEW_KEY, null)
 const { initPromise, login, logout, isAuthenticated, authenticated: authState, initError, tokenParsed, displayName: authDisplayName, authEpoch } = useAuth()
@@ -48,11 +44,16 @@ function requireHofOnline() {
   return requireFeature(Feature.HALL_OF_FAME)
 }
 
-const phase = ref('init')
-
-/** 账户归属复核（Phase 7.2）：epoch 相同且仍处于登录态，迟到结果才允许写入。 */
-function ownEpoch(epoch) {
-  return authEpoch() === epoch && isAuthenticated()
+const phase = ref('init')
+
+
+
+/** 账户归属复核（Phase 7.2）：epoch 相同且仍处于登录态，迟到结果才允许写入。 */
+
+function ownEpoch(epoch) {
+
+  return authEpoch() === epoch && isAuthenticated()
+
 }
 
 /** 模板 @click 直连 handler 时 Vue 会把事件对象塞进第一个参数：只接受整数 epoch。 */
@@ -77,20 +78,44 @@ const unavailableMessageKey = computed(() => {
   return current.messageKey || 'featureOffline.accountProfile'
 })
 
-const editingAccount = ref(false)
-const editAccountId = ref(null)
-const editNickname = ref('')
-const editError = ref('')
+/** loadProfile 进行中标志：reconnect watch 与手动 retry 共用的去重位。 */
 const syncFromLoginPending = ref(false)
 const syncFromLoginError = ref(null)
-const records = ref([])
-const recordsError = ref('')
-const hundredStatus = ref(null)
-const hundredError = ref('')
-const hundredWithdrawingId = ref(null)
-const hundredMessage = ref('')
-/** loadProfile 进行中标志：reconnect watch 与手动 retry 共用的去重位。 */
 const loading = ref(false)
+
+const {
+  displayName, heroSubtitle, realmRoles,
+  userIdCopied, resetUserIdCopied, copyUserId,
+  isWargamingLogin, isWargamingProfile, serverLabel,
+} = useProfileIdentity({ profile, tokenParsed, authDisplayName, authEpoch, ownEpoch, t })
+
+const { records, recordsError, loadRecords, reset: resetRecords } = useProfileRecords({
+  requireHofOnline, ownEpoch, epochArg, apiError,
+})
+
+const {
+  hundredStatus, hundredError, hundredWithdrawingId, hundredMessage,
+  loadHundredStatus, withdrawHundred, reset: resetHundred,
+} = useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEpoch, apiError, t, confirm })
+
+const {
+  editingAccount, editAccountId, editNickname, editError,
+  startEditAccount, saveAccount,
+  verifyInput, verifyPending, verifyError, verifyWithReplay,
+  removeAccount, reset: resetAccountEditor,
+} = useProfileWotbAccount({
+  profile, requireProfileOnline, ownEpoch, authEpoch, apiError,
+  loadRecords, loadHundredStatus, confirm, t,
+})
+
+const { loadProfile, syncFromLogin } = useProfileSession({
+  phase, loading, profile, isAuthenticated, authEpoch, ownEpoch, epochArg,
+  requireProfileOnline,
+  availabilityProfile: () => availability(Feature.ACCOUNT_PROFILE),
+  connectivity, whenBusinessUserSettled,
+  syncFromLoginPending, syncFromLoginError, isWargamingLogin,
+  loadRecords, loadHundredStatus, getUserProfile,
+})
 
 function apiError(error) {
   return apiErrorLabel(t, te, error)
@@ -117,87 +142,6 @@ onMounted(async () => {
   }
 })
 
-async function loadProfile() {
-  if (loading.value || !isAuthenticated()) return
-  // 门禁必须在最前面：offline / unknown / degraded / service-unavailable 时**不发任何请求**
-  // （既不 ensure 也不 get），进入中性的 connectivity-unavailable 状态而不是错误态。
-  if (!requireProfileOnline()) {
-    enterConnectivityUnavailable()
-    return
-  }
-  // 账户归属（Phase 7.2）：发起代数记在这里，之后每个 await 复核——登出 / 切到 B 后，
-  // A 时代的迟到结果（profile / records / hundred）一律不得写入。
-  const epoch = authEpoch()
-  loading.value = true
-  phase.value = 'done'
-  try {
-    // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
-    // gated 版本在 backend 不可达时不会触发 ensure（见 useBusinessUserBootstrap）。
-    const settled = await whenBusinessUserSettled({
-      authInitState: 'authenticated',
-      authenticated: true,
-      connectivity: connectivity.value,
-      authEpoch: epoch,
-    })
-    if (!ownEpoch(epoch)) return
-    if (!settled) {
-      if (!availability(Feature.ACCOUNT_PROFILE).available) {
-        enterConnectivityUnavailable()
-      } else {
-        // 连通性仍可用：bootstrap 失败属于业务错误，等待用户显式重试。
-        profile.value = null
-        phase.value = 'profile-error'
-      }
-      return
-    }
-    // ensure 期间也可能掉线：成功结果不能绕过当前的 backend 准入。
-    if (!requireProfileOnline()) {
-      enterConnectivityUnavailable()
-      return
-    }
-    const fetchedProfile = await getUserProfile()
-    if (!ownEpoch(epoch)) return
-    profile.value = fetchedProfile
-  } catch {
-    if (!ownEpoch(epoch)) return
-    profile.value = null
-    if (availability(Feature.ACCOUNT_PROFILE).available) phase.value = 'profile-error'
-    else enterConnectivityUnavailable()
-    return
-  } finally {
-    // P1（review）：pending 状态也要归属检查——A 的迟到响应不得把 B 正在进行的加载清掉，
-    // 否则 B 的加载窗口会被误判为"空闲"，watcher / 重连路径可能再起一次加载。
-    if (ownEpoch(epoch)) loading.value = false
-  }
-  if (!ownEpoch(epoch)) return
-  phase.value = 'done'
-  await syncFromLogin(epoch)
-  if (!ownEpoch(epoch)) return
-  if (profile.value?.wotbAccountId) {
-    loadRecords(epoch)
-    loadHundredStatus(epoch)
-  }
-}
-
-/** 网络不可用时的中性状态：不是错误态，不显示「资料加载失败 / 重试」。 */
-function enterConnectivityUnavailable() {
-  phase.value = 'connectivity-unavailable'
-}
-
-/**
- * 恢复在线后自动加载（无需刷新 / 重开页面 / 重新登录），仍然只经 capability 门禁判定：
- *  - 已加载过 profile（`profile.value` 存在）不再触发；
- *  - 重复的 online 通知由 `loading` + `profile.value` 双重去重，不会形成请求风暴；
- *  - 只自动恢复 connectivity-unavailable；业务错误由用户显式 retry，避免自动重试循环。
- */
-watch(connectivity, () => {
-  if (!isAuthenticated()) return
-  if (profile.value || loading.value) return
-  if (phase.value !== 'connectivity-unavailable') return
-  if (!availability(Feature.ACCOUNT_PROFILE).available) return
-  void loadProfile()
-})
-
 /**
  * 认证状态**响应式**语义（2.1.0 Phase 6 / 7）：
  * - false → true（登录回站 / 账户切到 B / Android authChanged 推送）：立即进入已登录并
@@ -209,135 +153,16 @@ watch(connectivity, () => {
 watch(() => [authState.value, tokenParsed.value?.sub], ([now, sub], [before, previousSub]) => {
   if (before === now && sub === previousSub) return
   profile.value = null
-  records.value = []
-  recordsError.value = ''
-  hundredStatus.value = null
-  hundredError.value = ''
-  hundredWithdrawingId.value = null
-  hundredMessage.value = ''
+  resetRecords()
+  resetHundred()
   syncFromLoginPending.value = false
   syncFromLoginError.value = null
-  editingAccount.value = false
-  editAccountId.value = null
-  editNickname.value = ''
-  editError.value = ''
-  verifyPending.value = false
-  verifyError.value = ''
+  resetAccountEditor()
   resetUserIdCopied()
   loginStarted.value = false
   loading.value = false
   phase.value = now ? 'done' : 'signedOut'
   if (now) void loadProfile()
-})
-
-/** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
-async function syncFromLogin(epochInput) {
-  const epoch = epochArg(epochInput)
-  if (!ownEpoch(epoch)) return
-  if (!isWargamingLogin.value) return
-  if (!requireProfileOnline()) return
-  syncFromLoginPending.value = true
-  syncFromLoginError.value = null
-  try {
-    const synced = await syncUserWotbAccountFromLogin()
-    if (!ownEpoch(epoch)) return
-    if (synced) {
-      profile.value = synced
-    }
-  } catch (e) {
-    if (!ownEpoch(epoch)) return
-    // 保留后端业务错误码：同步失败时绝不回退为 CN 手动入口。
-    syncFromLoginError.value = e
-  } finally {
-    if (ownEpoch(epoch)) syncFromLoginPending.value = false
-  }
-}
-
-/** hero 展示名与顶栏同源：后端 Profile 的 displayName 优先，缺失才落到 useAuth.displayName。 */
-const displayName = computed(() =>
-  profile.value?.displayName
-  || authDisplayName.value
-  || t('profile.unknownUser')
-)
-
-const heroSubtitle = computed(() =>
-  profile.value?.wotbNickname
-    ? profile.value.wotbNickname
-    : isWargamingLogin.value
-      ? t('profile.wgSyncing')
-      : t('profile.notBoundWotbAccount')
-)
-
-/**
- * 当前 token 的 realm 角色（`realm_access.roles`，Keycloak 已展开 composite），隐藏 Keycloak
- * 内置角色后按原始 key 展示。角色展示与权限判断都只认真实 token claims。
- */
-const KEYCLOAK_BUILTIN_ROLES = new Set(['offline_access', 'uma_authorization'])
-const realmRoles = computed(() => {
-  const roles = tokenParsed.value?.realm_access?.roles
-  if (!Array.isArray(roles)) return []
-  return roles
-    .filter(role => typeof role === 'string'
-      && !KEYCLOAK_BUILTIN_ROLES.has(role)
-      && !role.startsWith('default-roles-'))
-    .sort()
-})
-
-const userIdCopied = ref(false)
-let userIdCopiedTimer = null
-let unmounted = false
-
-function resetUserIdCopied() {
-  clearTimeout(userIdCopiedTimer)
-  userIdCopied.value = false
-}
-
-async function copyUserId() {
-  const id = profile.value?.keycloakUserId
-  if (!id) return
-  const epoch = authEpoch()
-  const copied = await copyText(id)
-  // 归属复核：A 时代在途的复制迟到完成时剪贴板里是 A 的 ID，不得在 B 的按钮上显示「已复制」；
-  // 卸载后的迟到结果也不再起定时器。
-  if (!copied || unmounted || !ownEpoch(epoch)) return
-  userIdCopied.value = true
-  clearTimeout(userIdCopiedTimer)
-  userIdCopiedTimer = setTimeout(() => { userIdCopied.value = false }, 1500)
-}
-
-onBeforeUnmount(() => {
-  unmounted = true
-  clearTimeout(userIdCopiedTimer)
-})
-
-/** JWT 明确是 WG 登录（ASIA/EU/NA + 可信 verified + account_id），即使同步失败也据此只读。 */
-const isWargamingLogin = computed(() => {
-  const region = tokenParsed.value?.wotb_region
-  const accountId = tokenParsed.value?.wotb_account_id
-  const verified = tokenParsed.value?.wotb_verified
-  return ['ASIA', 'EU', 'NA'].includes(region)
-    && Boolean(accountId)
-    && (verified === true || verified === 'true')
-})
-
-/** WARGAMING source 或 JWT WG 身份 = 资料只读；CN MANUAL 用户可编辑。 */
-const isWargamingProfile = computed(
-  () => profile.value?.wotbAccountSource === 'WARGAMING'
-    || isWargamingLogin.value
-)
-
-const SERVER_LABEL_BY_VALUE = Object.freeze({
-  CN: 'profile.serverCn',
-  ASIA: 'profile.serverAsia',
-  EU: 'profile.serverEu',
-  NA: 'profile.serverNa',
-})
-
-const serverLabel = computed(() => {
-  const key = profile.value?.wotbServer
-    ? SERVER_LABEL_BY_VALUE[profile.value.wotbServer]
-    : null
-  return key ? t(key) : '--'
 })
 
 async function doLogin() {
@@ -363,137 +188,10 @@ function retry() {
   }
 }
 
-function startEditAccount() {
-  editAccountId.value = profile.value?.wotbAccountId || null
-  editNickname.value = profile.value?.wotbNickname || ''
-  editingAccount.value = true
-  editError.value = ''
-}
-
-async function saveAccount() {
-  if (!requireProfileOnline()) return
-  const epoch = authEpoch()
-  editError.value = ''
-  try {
-    const updated = await updateUserWotbAccount({
-      wotbAccountId: editAccountId.value,
-      wotbNickname: editNickname.value,
-      wotbServer: 'CN'
-    })
-    if (!ownEpoch(epoch)) return
-    profile.value = updated
-    editingAccount.value = false
-    loadRecords(epoch)
-    loadHundredStatus(epoch)
-  } catch (e) {
-    if (!ownEpoch(epoch)) return
-    editError.value = apiError(e)
-  }
-}
-
-/** 用回放验证：本机解析选中的回放，提交录像者 accountId（服务器不解析回放） */
-const verifyInput = ref(null)
-const verifyPending = ref(false)
-const verifyError = ref('')
-
-async function verifyWithReplay(event) {
-  const file = event?.target?.files?.[0]
-  if (event?.target) event.target.value = ''
-  if (!file || verifyPending.value) return
-  // 门禁放在最前：本地解析是 LOCAL 能力，但「用回放验证账号」最终要打 backend verify，
-  // 离线时先提示，避免用户选完文件才发现无法提交。
-  if (!requireProfileOnline()) return
-  const epoch = authEpoch()
-  verifyPending.value = true
-  verifyError.value = ''
-  try {
-    const recorderAccountId = await replayRecorderAccountId(file)
-    if (!ownEpoch(epoch)) return
-    if (!requireProfileOnline()) return
-    const verified = await verifyUserWotbAccountFromReplay(recorderAccountId)
-    if (!ownEpoch(epoch)) return
-    profile.value = verified
-  } catch (e) {
-    if (!ownEpoch(epoch)) return
-    verifyError.value = apiError(e)
-  } finally {
-    if (ownEpoch(epoch)) verifyPending.value = false
-  }
-}
-
-async function loadRecords(epochInput) {
-  const epoch = epochArg(epochInput)
-  if (!ownEpoch(epoch)) return
-  if (!requireHofOnline()) return
-  recordsError.value = ''
-  try {
-    const fetchedRecords = await getUserHofRecords()
-    if (!ownEpoch(epoch)) return
-    records.value = fetchedRecords
-  } catch (error) {
-    if (ownEpoch(epoch)) recordsError.value = apiError(error)
-  }
-}
-
-/** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
-async function loadHundredStatus(epochInput) {
-  const epoch = epochArg(epochInput)
-  if (!ownEpoch(epoch)) return
-  if (!requireHofOnline()) return
-  hundredError.value = ''
-  try {
-    const fetchedStatus = await hofHundredMyStatus()
-    if (!ownEpoch(epoch)) return
-    hundredStatus.value = fetchedStatus
-  } catch (error) {
-    if (!ownEpoch(epoch)) return
-    hundredStatus.value = null
-    hundredError.value = apiError(error)
-  }
-}
-
-/** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
-async function withdrawHundred(id) {
-  if (!requireHofOnline()) return
-  const epoch = authEpoch()
-  if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
-  if (!ownEpoch(epoch) || !requireHofOnline()) return
-  hundredWithdrawingId.value = id
-  hundredMessage.value = ''
-  hundredError.value = ''
-  try {
-    await hofHundredCancel(id)
-    if (!ownEpoch(epoch)) return
-    hundredMessage.value = t('hundred.withdrawSuccess')
-    await loadHundredStatus(epoch)
-  } catch (error) {
-    if (!ownEpoch(epoch)) return
-    hundredError.value = apiError(error)
-  } finally {
-    if (ownEpoch(epoch)) hundredWithdrawingId.value = null
-  }
-}
-
 function formatTime(value) {
   return value ? new Date(value).toLocaleString(locale.value) : '--'
 }
 
-async function removeAccount() {
-  if (!requireProfileOnline()) return
-  const epoch = authEpoch()
-  if (!(await confirm({ title: t('profile.unbindConfirm'), confirmLabel: t('profile.unbind'), danger: true }))) return
-  if (!ownEpoch(epoch) || !requireProfileOnline()) return
-  editError.value = ''
-  try {
-    const updated = await deleteUserWotbAccount()
-    if (!ownEpoch(epoch)) return
-    profile.value = updated
-    records.value = []
-  } catch (e) {
-    if (!ownEpoch(epoch)) return
-    editError.value = apiError(e)
-  }
-}
 </script>
 
 <template>
@@ -754,95 +452,4 @@ async function removeAccount() {
   </div>
 </template>
 
-<style scoped>
-.profile-page { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
-.profile-card { background: var(--showcase-tactical); border: 1px solid var(--showcase-tactical-border); border-radius: 8px; box-shadow: var(--surface-shadow); }
-.profile-message { max-width: 400px; margin: 60px auto; padding: 40px; text-align: center; }
-.profile-empty { padding: 24px 0; text-align: center; color: #a3a6a0; font-size: .9rem; }
-.profile-empty-tight { padding: 8px 0 0; }
-.profile-section { padding: 20px; margin-bottom: 16px; }
-.card-title { font-size: .95rem; font-weight: 600; color: var(--showcase-tactical-heading); margin: 0; }
-.section-meta { font-size: .75rem; color: #a3a6a0; }
-.section-title-line { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
-.section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid rgba(66, 77, 84, .45); }
-.section-actions { display: flex; gap: 6px; }
-.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-4); padding: 24px 28px; margin-bottom: 24px; border-block-end: 2px solid var(--color-accent); }
-.hero-links { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.hero-link { display: inline-flex; cursor: pointer; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--theme-glass); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; text-decoration: none; }
-.hero-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.hero-left { display: flex; align-items: center; gap: 20px; }
-.profile-signed-out {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  max-width: 560px;
-  margin: var(--space-12) auto;
-  padding: var(--space-6);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-}
-.profile-signed-out-title { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
-.profile-signed-out-hint { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--type-body); }
-.hero-avatar { width: 56px; height: 56px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-hover)); color: var(--accent-text); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 800; flex-shrink: 0; box-shadow: 0 12px 26px var(--accent-shadow); }
-.hero-name { font-size: 1.3rem; font-weight: 700; color: var(--text-heading); margin: 0 0 6px; }
-.hero-subtitle { font-size: .85rem; color: var(--text-sub); margin: 0; }
-.profile-body { display: flex; gap: 24px; align-items: flex-start; }
-.profile-left { flex: 1; min-width: 0; }
-.profile-right { width: 340px; flex-shrink: 0; }
-.info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; gap: 16px; }
-.info-label { color: #a3a6a0; font-size: .85rem; flex-shrink: 0; }
-.info-value { color: var(--showcase-tactical-text); font-size: .85rem; font-weight: 500; text-align: right; word-break: break-all; }
-.info-value-copy { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.info-value code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
-.role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
-.role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
-.account-bound { display: flex; flex-direction: column; gap: 10px; }
-.account-row { display: flex; justify-content: space-between; font-size: .88rem; color: var(--showcase-tactical-text); }
-.account-row span { color: #a3a6a0; }
-.account-row code { font-family: monospace; font-size: .8rem; color: #f0a42b; }
-.badge-ok { font-size: .72rem; padding: 2px 8px; border-radius: 6px; background: var(--status-ok-bg); color: var(--status-ok-fg); font-weight: 700; }
-.badge-pending { font-size: .72rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-chip); color: var(--text-sub); font-weight: 700; }
-.edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.edit-form .edit-row { margin-bottom: 10px; }
-.edit-form label { display: block; font-size: .8rem; color: #a3a6a0; margin-bottom: 3px; }
-.edit-input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: .88rem; width: 200px; font-family: inherit; }
-.error { color: #ff8f86; font-size: .82rem; }
-.text-muted { font-size: .8rem; color: #9aa09c; line-height: 1.5; }
-.security-info { display: flex; flex-direction: column; gap: 8px; }
-.sec-row { display: flex; justify-content: space-between; font-size: .88rem; gap: 12px; color: var(--showcase-tactical-text); }
-.sec-row span { color: #a3a6a0; }
-.sec-row code { font-family: monospace; font-size: .78rem; color: #f0a42b; }
-.btn-primary { padding: 8px 20px; border: none; border-radius: 7px; background: var(--accent); color: var(--accent-text); font-size: .88rem; cursor: pointer; font-family: inherit; font-weight: 700; }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
-.btn-ghost { padding: 8px 18px; border: 1px solid #465159; border-radius: 7px; background: transparent; color: var(--showcase-tactical-text); font-size: .85rem; cursor: pointer; font-family: inherit; }
-.btn-ghost.btn-sm { padding: 5px 12px; font-size: .8rem; border-radius: 6px; }
-.btn-ghost:hover { background: #1c262b; }
-.btn-ghost:disabled { cursor: wait; opacity: .65; background: #1c262b; }
-.records-table-wrap { overflow-x: auto; }
-.records-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.records-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); color: var(--text-sub); font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; }
-.records-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-light); color: var(--text); }
-.records-table tbody tr:hover { background: var(--bg-list-hover); }
-.rec-dmg { text-align: right !important; font-variant-numeric: tabular-nums; font-weight: 600; width: 90px; }
-.rec-tank { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-map { color: #9aa09c; }
-.hundred-group-title { margin: 16px 0 8px; font-size: .78rem; font-weight: 700; color: var(--text-sub); letter-spacing: .05em; text-transform: uppercase; }
-.hundred-group-title:first-of-type { margin-top: 0; }
-.hundred-action { text-align: right; white-space: nowrap; }
-.hundred-ok { font-size: .82rem; color: var(--status-ok-fg); margin-bottom: 8px; }
-.hundred-rejected { display: flex; flex-direction: column; gap: 8px; }
-.hundred-rejected-item { padding: 10px 12px; border: 1px solid rgba(66, 77, 84, .45); border-radius: 6px; background: var(--showcase-tactical-soft); }
-.hundred-rejected-head { margin-bottom: 4px; }
-.hundred-rejected-head strong { font-size: .85rem; color: var(--showcase-tactical-heading); }
-.hundred-rejected-reason { margin: 0; font-size: .8rem; color: var(--showcase-tactical-text); }
-.hundred-rejected-text { margin: 2px 0 0; font-size: .78rem; color: #9aa09c; line-height: 1.4; }
-
-@media (width < 768px) {
-  /* .profile-body 的移动端形态由 showcase.css 全局规则（display:block !important）
-     唯一拥有，此处不再声明对 block 容器无效的 flex-direction。 */
-  .profile-right { width: 100%; }
-  .profile-hero { flex-direction: column; gap: 12px; align-items: flex-start; }
-}
-</style>
+<style scoped src="./profile.css"></style>

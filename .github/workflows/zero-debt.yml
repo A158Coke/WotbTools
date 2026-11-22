@@ -1,0 +1,25 @@
+name: Global source line limits
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        required: true
+        type: string
+      head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  source_limits:
+    name: Zero-Debt Merge Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ inputs.head_sha }}
+      - name: Zero-Debt Merge Gate
+        uses: ./.github/actions/zero-debt
+        with:
+          base_sha: ${{ inputs.base_sha }}
+          head_sha: ${{ inputs.head_sha }}

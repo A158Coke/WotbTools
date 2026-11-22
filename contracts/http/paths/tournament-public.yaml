@@ -1,0 +1,104 @@
+/api/tournaments:
+  get:
+    operationId: listTournamentEvents
+    summary: listTournamentEvents
+    responses:
+      "200":
+        description: Tournament result
+        headers:
+          X-Tournament-Csv-Import:
+            description: Version 1 supports recurring CSV imports and public data-source metadata.
+            schema:
+              type: string
+              enum: ["1"]
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "../openapi.yaml#/components/schemas/TournamentEvent"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/tournaments/{eventId}/data-source:
+  get:
+    operationId: getTournamentDataSource
+    summary: Get the persistent CSV data-source attribution for an event
+    description: Probe the existing public event-list route for X-Tournament-Csv-Import before calling this endpoint on a rolling deployment. Once a CSV import succeeds, attribution remains associated with the event.
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Event data-source metadata
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentDataSource"
+      "400":
+        description: Invalid event identifier
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Event not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+/api/tournaments/{eventId}/standings:
+  get:
+    operationId: getTournamentStandings
+    summary: getTournamentStandings
+    parameters:
+      - name: eventId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      "200":
+        description: Tournament result
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/TournamentStandings"
+      "400":
+        description: Invalid input
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "404":
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"
+      "409":
+        description: Conflict
+        content:
+          application/json:
+            schema:
+              $ref: "../openapi.yaml#/components/schemas/ApiError"

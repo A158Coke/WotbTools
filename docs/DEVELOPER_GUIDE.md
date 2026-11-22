@@ -40,6 +40,25 @@ WotbTools 是 WoT Blitz `.wotbreplay` 回放分析工具集：Java 25 + Spring B
 - **ripgrep（`rg`）**：Agent / Skill 的仓库搜索、reuse audit 与 review gate 的本地前置，必须在 `PATH` 中可调用（自检 `rg --version`）；这里只声明能力依赖，不固定具体二进制版本。搜索必须显式列出目标路径：默认根递归会跳过 `.github/`、`.agents/`、`.opencodereview/` 等隐藏目录，所以零命中不能证明「无引用」。不要用无差别的 `rg --hidden .` 替代定向搜索——它会把 `.worktrees/**` 等工作副本带进结果，产生重复证据。
 - 不要使用任何公司 token、凭据或基础设施。
 
+### 重复代码检测（jscpd）
+
+仓库使用 frontend pnpm 工具链中的固定开发依赖 `jscpd@5.4.3`，为 Review With Docs 提供跨语言重复代码证据；它不是 CI 阈值或独立质量判定。依赖只在 `frontend/package.json` 和唯一锁文件 `frontend/pnpm-lock.yaml` 中维护，沿用 pnpm 的 `strictDepBuilds` 与 `minimumReleaseAge` 策略。
+
+```bash
+cd frontend
+pnpm install
+pnpm run review:duplicates                         # 当前源码基线
+pnpm run review:duplicates --baseline-from-ref <fork-point-ref>    # Review 中比较候选树与PR fork-point
+pnpm run test:jscpd                                # 六语言、排除和失败语义 smoke 验证
+```
+
+配置 `.jscpd.json` 扫描 Java、Kotlin、JavaScript、TypeScript、Vue 与 Python 源码，包括测试代码；使用 jscpd mild 模式，最小候选为 5 行与 50 tokens（沿用工具默认最小克隆尺寸，不是重复率门槛）。Generated/generated-sources、vendor、node_modules、target/build/dist、minified/bundle/map 文件排除；二进制及配置未列入扫描语言的资产不参与检测。报告写到 gitignored 的 `tmp/jscpd/review-with-docs.json`，含行范围、片段、类型、行/token 数及统计；Review 报告中引用仓库相对路径。
+
+全树报告同时包含 production 与 test 文件。按路径把候选分为 production-production、test-test、mixed；测试夹具/setup 的重复单独评估，不让大量测试命中掩盖 production 候选。PR Review 使用 `--baseline-from-ref <fork-point-ref>`，通过 `isNew` 标记相对 PR fork-point 的新增候选并仅审查与 candidate 文件相关的 pair。该模式扫描完整候选树和基线树，不是增量扫描；本机首次基线对比约 8 秒。历史候选不会仅因存在而阻断。
+
+PR 的现有 `CI / Required Gate` 无条件使用已验证的 base/head SHA 执行基线扫描，报告单独上传为 `duplicate-candidates` artifact，不覆盖本地 Review 报告。扫描、基线比较、报告缺失或报告结构无效均使门禁失败；匹配本身不自动失败。Review 必须检查新增候选，对已确认的第二 SSOT 或不合理业务复制提出阻断；合理重复应记录依据。重构清零后才能以清理后的树建立正式基线并评估自动阻断的误报。
+
+阅读命中时确认双方真实源码、owner、领域语义、第二 SSOT/行为漂移风险与抽取成本。相似结构可能有独立含义，协议和测试也可能需要重复；jscpd 不判 Bug、不触发自动抽象、不设置全仓重复率阈值。报告缺失、CLI 错误或空扫描（`failOnEmpty`）必须作为检测失败报告，不可解释成零重复。
 常用命令：
 
 ```bash
@@ -119,7 +138,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
-仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。同一脚本还执行 first-party 前端源码行数预算：`frontend/src/**/*.{js,ts,vue,mjs,cjs}`（排除 `*.test.*`、`*.spec.*`、`*.d.ts` 与 `frontend/src/api/generated/**`）单文件上限 1500 物理行；遗留超限文件只能以 exact path 进入 `scripts/ci/source-line-allowlist.txt`，条目数 base→head 只减不增（重命名可等量替换），拆分完成后同步移除条目；门禁已存在于 base 时，删除名单不会重置基线（缺失名单按 0 条比较），重新创建仍受只减不增约束。三项补充约束：`base..head` 中每个 commit tree 的源 blob 同样受行数预算约束（豁免按 base 与 HEAD 名单的联合判定，两端都不存在的临时条目不提供豁免）；名单条目必须仍指向 tracked、in-scope 且仍超限的文件，删除/重命名/缩行后残留条目按违规处理；重复条目 fail-closed。开发者可在仓库根运行 `bash scripts/ci/check-repository-hygiene.sh`，回归 fixture 为 `bash scripts/ci/test-repository-hygiene.sh`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
+仓库 hygiene 是同一 PR gate 的无条件前置检查：`scripts/ci/check-repository-hygiene.sh` 默认拒绝超过 5 MiB 的 tracked file，并拒绝 `Python/`、`.deepseek/`、`common/assets/wasm/`、`frontend/dist/`、`frontend/dist-android/`、`dist/`、`dist-desktop/`、`target/`、`node_modules/` 等生成/运行时路径，同时拒绝 `archive/`、`old/`、`legacy-docs/`、`historical/` 历史堆放目录路径段，并拒绝 PR `base..head` 变更文件把 ephemeral 计划载体当作权威引用（结构性例外见脚本内 `is_current_plan_allowlisted()`，遗留引用在被触及的 PR 中迁移）；确属 source-of-truth 且应继续使用普通 Git 的超限文件，只能把 exact path 加到 `scripts/ci/large-file-allowlist.txt` 并在 PR 解释理由。检查同时覆盖最终 tree 和 PR `base..head` 中每个 commit tree，防止“先提交大 blob 再删除”把对象带入历史；路径遍历使用 NUL-safe Git 输出以支持合法特殊文件名。源码 LOC 检查使用 `python scripts/ci/check-source-lines.py --base <verified-base-sha> --head <verified-head-sha>`，共用 `scripts/ci/source-line-policy.json` 的生产上限 500 行、测试上限 1500 行及分类排除。检查是严格全树执行：gate 先由 base+head 构造 merge tree 并对合并结果完整 tree 判定，同时对候选 HEAD tree 单独扫描；base 自身不洁净不再阻塞，但 base/head 必须无冲突合并。无任何 grandfathering、fork-point 豁免或 allowlist 机制（历史遗留的 `source-line-allowlist.txt` 已删除），遗留超限文件在 head tree 中同样失败。分类是结构化 path 约定：已应用的 Flyway migration（`java/**/src/main/resources/db/migration/**`）按 immutable history 排除在生产预算之外，但形似路径（如 `db/migrations/`）内的维护代码不享受豁免。门禁 fail-closed：策略缺失、JSON 非法、limits 无效或 git 历史缺失都以 exit 2 终止而不是通过。规则测试使用独立 Git fixture：`python scripts/ci/test-source-lines.py`。Bash hygiene 仍负责文件大小、ignore/history 与计划引用等门禁；生产 LOC 默认上限从同一策略文件读取。开发者可运行 `bash scripts/ci/check-repository-hygiene.sh` 和 `python scripts/ci/test-source-lines.py`。main 上另有 push-only `repository-hygiene-main.yml` 对 bypass/direct push 做事后审计。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
@@ -352,7 +371,7 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 
 ### AI Review / Battle Playback
 
-`ReplayWorkspace` 是回放**六种能力**（赛后数据 / 2D 回放 / 3D 回放 / 事件流 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 解析深链初始能力，`ReplayWorkspace.vue` 的 `viewFor` 为能力切换选择路由）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化/取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、上传面、回放集合与当前场次 selector 分别由 `ShowcaseHero`（compact，section=replay）、`ReplayCapabilityTabs`、`FileDrop`、`ReplayCollectionManager`、`BattlePicker` 展示；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果/列系统/Export/Drawer。
+`ReplayWorkspace` 是回放**四个能力标签**（赛后数据 / 回放（统一面板内 2D/3D 切换 + 常驻信息流）/ 射击分析 / AI 复盘）的唯一统一载体：这些能力不是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 解析深链初始能力，`ReplayWorkspace.vue` 的 `viewFor` 为能力切换选择路由）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化/取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、上传面、回放集合与当前场次 selector 分别由 `ShowcaseHero`（compact，section=replay）、`ReplayCapabilityTabs`、`FileDrop`、`ReplayCollectionManager`、`BattlePicker` 展示；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果/列系统/Export/Drawer。
 
 **匿名可用**：服务器没有 parser，分析全部在本机，数据分析与 2D 挂载即可用，不等 Keycloak init。个人回放的 3D、射击与 AI 有登录门禁；可信官方示例可匿名使用 3D/射击，AI 仍需登录。3D 与 AI 还须满足对应的联网可用性门禁；名人堂等写操作另行鉴权。
 **能力解耦**：AI 与 Playback 不做跨 capability 状态 handoff；tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection/分析结果不丢，只恢复 activeCapability。
@@ -778,3 +797,5 @@ Grafana 现有六个由 TF 管理的 dashboard：WotbTools Engineering Overview�
 工程健康：Yecao `dev-metrics-exporter` 每 15 分钟刷新 GitHub 数据，使用内存快照，Prometheus 每 15 秒独立抓取。权威语义与恢复方式见[工程指标](architecture/engineering-metrics.md)。不提供开发者排名或生产力评分。
 
 少数重要 business operation boundary 可使用 Spring Boot / Micrometer `@Observed` 显式 opt-in（当前为 `wotb.creator.avatar.upload`）。operation metric 名称、label 边界、`error_code` taxonomy 与四类 PromQL 见 [`operations/observability.md`](operations/observability.md)。不要给 Controller/Repository 重复注解，也不要对 Service 包做全局 AOP；Spring AI provider observation 保持 `ObservationRegistry.NOOP`。
+
+回放分片定向测试：在 `frontend` 执行 `pnpm exec vitest run src/components/Replay3DPane.part src/components/BattlePlayback.integration.part src/scene/playbackScene.part`。各分片由 Vitest 独立发现。

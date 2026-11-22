@@ -70,6 +70,62 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     wrapper.unmount()
   })
 
+  it('战场快捷标记来源卡：同一 DOM 卡片机制——内容行按 key 渲染、锚点重摆、visible 翻转隐藏、clear 清空', async () => {
+    const wrapper = mountOverlay()
+    wrapper.vm.setMarkerLabels([
+      { key: '0', kind: 'ping', player: 'Anonyme', tank: 'BZT-70' },
+      { key: '1', kind: 'sector', player: 'SiLuck97', tank: 'T-34' },
+    ])
+    await nextTick()
+    const [ping, sector] = wrapper.findAll('.battle-marker-anchor')
+    expect(ping.attributes('data-marker')).toBe('0')
+    wrapper.vm.setMarkerAnchor('0', { x: 40, y: 50, visible: true })
+    wrapper.vm.setMarkerAnchor('1', { x: 200, y: 80, visible: true })
+    await nextTick()
+    expect(ping.element.style.transform).toContain('translate(40px, 50px)')
+    expect(ping.element.hidden).toBe(false)
+    expect(wrapper.get('[data-marker="0"]').text()).toContain('Anonyme')
+    expect(wrapper.get('[data-marker="0"]').text()).toContain('BZT-70')
+    // visible=false → 立即隐藏（与车辆名牌 hidden 同语义）
+    wrapper.vm.setMarkerAnchor('0', { x: 40, y: 50, visible: false })
+    expect(ping.element.hidden).toBe(true)
+    // 空行不渲染：来源缺失的卡（player/tank 全空）不会出现在内容行里（由 runtime 侧过滤）
+    expect(ping.text()).not.toBe('')
+    // 动作章：target 类 = **单行来源标注**「{发起者} 要求攻击/要求撤退 {目标车型}」
+// （who/target 过投影桥，模板可以是函数 = Replay3DPane 的 i18n 动态插值）；
+// 不再叠第二块身份卡（目标自己的玩家/坦克由车辆名牌负责）。
+    await wrapper.setProps({ markerKindLabels: {
+      attack: '攻击目标', retreat: '请求撤退',
+      target_attack: (target, who) => `${who} 要求攻击 ${target}`,
+      target_retreat: (target, who) => `${who} 要求 ${target} 撤退`,
+    } })
+    wrapper.vm.setMarkerLabels([
+      { key: '2', kind: 'target', intent: 'attack', player: 'A', tank: 'X', target: 'KRV' },
+      { key: '3', kind: 'target', intent: 'retreat', player: 'B', tank: 'Y', target: 'FV4005' },
+      { key: '4', kind: 'target', intent: 'attack', player: '', tank: '', target: 'KRV' },
+      { key: '5', kind: 'ping', player: 'C', tank: 'Z' },
+    ])
+    await nextTick()
+    expect(wrapper.get('[data-marker="2"] .battle-marker-kind').text()).toBe('A · X 要求攻击 KRV')
+    expect(wrapper.get('[data-marker="3"] .battle-marker-kind').text()).toBe('B · Y 要求 FV4005 撤退')
+    expect(wrapper.get('[data-marker="2"]').attributes('data-target')).toBe('KRV')
+    // 单行卡：target 类不再渲染第二块身份卡（身高只剩一行 → 能贴近目标）
+    expect(wrapper.get('[data-marker="2"]').find('.pb-labels').exists()).toBe(false)
+    // 来源联不到：动作词 + 目标车型（不伪造身份）
+    expect(wrapper.get('[data-marker="4"] .battle-marker-kind').text()).toBe('攻击目标 · KRV')
+    expect(wrapper.find('[data-marker="5"] .battle-marker-kind').exists()).toBe(false)
+    // 末段淡出渐进透明：opacity 过桥写入 style（评审 P2——卡不继承淡出的回归）
+    wrapper.vm.setMarkerAnchor('2', { x: 1, y: 2, visible: true, opacity: 0.5 })
+    expect(wrapper.get('[data-marker="2"]').element.style.opacity).toBe('0.5')
+    wrapper.vm.setMarkerAnchor('2', { x: 1, y: 2, visible: true, opacity: 0 })
+    expect(wrapper.get('[data-marker="2"]').element.style.opacity).toBe('0')
+    // 清空：clear 一并回收 marker 卡（会话切换同语义）
+    wrapper.vm.clear()
+    await nextTick()
+    expect(wrapper.findAll('.battle-marker-anchor')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it('重挂（v-for 重建 ref）后用内部存储重绘，且更新走复用对象（不重建条目）', async () => {
     const wrapper = mountOverlay()
     wrapper.vm.setLabels([row(7)])

@@ -185,7 +185,7 @@
     "src/vehicle-portraits/runtime.js"
   ],
   "escapeHatches": {
-    "src/api/agent-replay-facets.ts": {
+    "src/api/agent-facets/validation.ts": {
       "any": 0,
       "asUnknownAs": 3
     },
@@ -206,11 +206,19 @@
       "asUnknownAs": 1
     },
     "src/replay-local/compute/characteristics.ts": {
-      "any": 9,
+      "any": 1,
+      "asUnknownAs": 0
+    },
+    "src/replay-local/compute/characteristicsTypes.ts": {
+      "any": 4,
       "asUnknownAs": 0
     },
     "src/replay-local/compute/gunArc.ts": {
       "any": 6,
+      "asUnknownAs": 0
+    },
+    "src/replay-local/compute/tankDimensions.ts": {
+      "any": 4,
       "asUnknownAs": 0
     },
     "src/replay-local/compute/tankSetupCore.ts": {
