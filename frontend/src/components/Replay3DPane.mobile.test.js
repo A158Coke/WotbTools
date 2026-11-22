@@ -426,16 +426,27 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     }
 
     it('队面板不得是独立滚动容器（常规名册必须一屏看全）', () => {
-      const src = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
-      // .team 是视觉面板：不得带 overflow 滚动（旧实现 overflow-y: auto 造成两个小滚动盒）
-      const teamBlock = /\.team \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
-      expect(teamBlock).not.toContain('overflow')
-      // 车道本身（基础规则）不是滚动盒；三段式里的 overflow 只是病态数据的兜底，
+      // Replay3DPane.vue 只保留 <style scoped src="./replay3dPane.css">；必须校验它实际引用的
+      // 活跃样式，而不是旁边同名未引用的 replay3d-pane.css。选择器缺失时测试必须失败。
+      const paneVue = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
+      const activeCss = /<style\s+scoped\s+src="\.\/([^"]+\.css)"\s*(?:\/>|><\/style>)/.exec(paneVue)?.[1]
+      expect(activeCss).toBeTruthy()
+      const paneCss = readFileSync(resolve(here, activeCss), 'utf8')
+
+      // 车道基础规则不是滚动盒；三段式里的 overflow 只是病态数据的兜底，
       // 正常 7v7 不出现滚动条由浏览器门禁（roster-geometry-*）在真实布局里断言。
-      const laneBlock = /\n\.team-lane \{([\s\S]*?)\}/.exec(src)?.[1] ?? ''
+      const laneBlock = /^\.team-lane \{([^}]*)\}/m.exec(paneCss)?.[1]
+      expect(laneBlock).toBeTruthy()
       expect(laneBlock).not.toContain('overflow')
+
+      // 名册容器规则在 PlaybackRoster.vue 的 scoped style，不写死宽度、不是独立滚动区。
+      const rosterVue = readFileSync(resolve(here, 'PlaybackRoster.vue'), 'utf8')
+      const rosterBlock = /^\.pb-roster \{([^}]*)\}/m.exec(rosterVue)?.[1]
+      expect(rosterBlock).toBeTruthy()
+      expect(rosterBlock).not.toContain('overflow')
+
       // 临时名册面整套规则已不存在
-      expect(src).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
+      expect(paneCss + rosterVue).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
     })
 
     it('点一行 = 跟随该玩家坦克 + 高亮，不再打开详情窗（2026-10-05 需求）', async () => {

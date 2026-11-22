@@ -207,6 +207,8 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
 
     setDirty(true)
     animate()
+    // 每个脏帧都必须真正走 renderer.render（防止渲染被删而测试仍假绿）。
+    expect(render).toHaveBeenCalledTimes(1)
     expect(ring().visible).toBe(true)
     expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(1, 5)
     const firstX = lastTargetAnchor().x
@@ -216,6 +218,7 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     poses.set(42, { x: 40, z: 2 })
     setDirty(true)
     animate()
+    expect(render).toHaveBeenCalledTimes(2)
     expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(40, 5)
     // 真实 labelsRuntime 投影：来源卡与目标环同一帧跟随新位姿（不是只验 marker 本体）。
     expect(lastTargetAnchor().x).not.toBeCloseTo(firstX, 3)
@@ -225,6 +228,7 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     poses.set(42, null)
     setDirty(true)
     animate()
+    expect(render).toHaveBeenCalledTimes(3)
     expect(ring().visible).toBe(false)
     expect(labelRows.at(-1)).toEqual([])
     const anchorsBeforeIdle = anchorCalls.length
