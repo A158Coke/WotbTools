@@ -63,7 +63,8 @@ description: >
    - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（只引用不复制，无需长 ADR）；
    - 开始该步前把 `Status` 置为 `IN_PROGRESS`；
    - 实现，遵循项目约定（`.agents/playbooks/wotb-sync.md` 跨层检查单）；UI / CSS / 前端状态改动另遵循 `.agents/playbooks/frontend-architecture.md` 的「UI Change Contract」与「Subtractive Coding」：遵循已确定的 owner，优先修改现有实现并删除被替代代码，不擅自新建样式覆盖文件；plan 的 owner 判断被代码证伪时按偏差边界处理（路径修正自行处理，行为 / 架构边界 / 实质 scope 按 HARD STOP）；
-   - 运行该步 `Validation`；失败先修复再前进；已通过且依赖未变的验证复用，不重复运行；
+   - **Fix-first 闭环**：对实际实现与计划/契约的差异，先定位直接原因并修改到一致，再运行能证明该差异已消除的最小验证；验证只是判断差异是否消除的手段，不是独立扩展的任务。若旧测试断言与已批准的新契约冲突，修正过时断言，不为通过旧测试而扭曲目标实现。失败后优先修复相关实现或测试环境，复跑受影响范围；除非代码、环境或诊断假设有实质变化，不重启相同的昂贵验证；
+   - 运行该步 `Validation`；失败先修复再前进；已通过且依赖未变的验证复用，不重复运行；全量测试的授权及例外按步骤 7 和 `docs/DEVELOPER_GUIDE.md`「测试策略」执行；
    - 该步 `Status` 置为 `DONE`，在 commentary 简短汇报后自动继续下一步；阶段汇报不代表任务完成。
 6. **偏差处理**：按 Designer「授权、计划输入与偏差边界」分类。路径、必要直接依赖、测试/文档/生成产物等可恢复纠正自行完成，更新同一计划的实际 impact 与证据后继续。HARD STOP 只暂停依赖该决定的步骤并置 `BLOCKED`，给出证据与所需输入；设计实质失效才返回 Designer / 用户，不静默改变目标。
 7. **全部完成后**：
