@@ -69,7 +69,7 @@ export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, 
  * cannot make a frozen 3D scene look alive. Gaps are bounded to catch a probe that
  * only sampled at the ends of a 30 s window.
  */
-export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanRatio = 0.5, maxGapMs = 1500 }) {
+export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanRatio = 0.5, maxGapMs = 1500, edgeSlackMs = maxGapMs }) {
   if (!Array.isArray(frames) || frames.length < minFrames) {
     throw new Error(`Scoring saw too few canvas frames: ${frames?.length ?? 0}`)
   }
@@ -78,6 +78,15 @@ export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanR
   const span = last.at - first.at
   if (!(span >= durationMs * minSpanRatio)) {
     throw new Error(`Scoring frames only span ${Math.round(span)} of ${durationMs} ms`)
+  }
+  // 只覆盖窗口前半段或后半段同样不能证明整个计时窗口在绘制：首帧必须接近
+  // 窗口起点，末帧必须接近窗口终点。采样间隔上限就是允许的边缘空隙。
+  const slack = Math.max(0, Number(edgeSlackMs) || 0)
+  if (!(first.at <= slack)) {
+    throw new Error(`Scoring frames start ${Math.round(first.at)} ms into the window (limit ${slack} ms)`)
+  }
+  if (!(last.at >= durationMs - slack)) {
+    throw new Error(`Scoring frames stopped ${Math.round(durationMs - last.at)} ms before the window ended (limit ${slack} ms)`)
   }
   for (let i = 1; i < frames.length; i++) {
     const gap = frames[i].at - frames[i - 1].at

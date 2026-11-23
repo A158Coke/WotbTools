@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -74,10 +75,24 @@ test('score mode requires presented frames across the measured window', () => {
     { at: 29_000, hash: 'd' }, { at: 30_000, hash: 'e' },
   ]
   assert.throws(() => verifyScoredFrames(gapped, { durationMs: 30_000 }), /gap/)
+  // 30 s 窗口只覆盖前半或后半：即使 span 达到 50%，首尾不贴窗口也必须拒收。
+  const firstHalf = Array.from({ length: 16 }, (_, index) => ({ at: index * 1000, hash: index % 2 ? 'a' : 'b' }))
+  assert.throws(() => verifyScoredFrames(firstHalf, { durationMs: 30_000 }), /before the window ended/)
+  const secondHalf = Array.from({ length: 16 }, (_, index) => ({ at: 14_000 + index * 1000, hash: index % 2 ? 'a' : 'b' }))
+  assert.throws(() => verifyScoredFrames(secondHalf, { durationMs: 30_000 }), /into the window/)
   // 只改 HUD 不会进 canvas 哈希：整段同一帧（哪怕颜色正常）仍是冻结。
   const hudOnly = frames.map(frame => ({ ...frame, hash: 'same', colors: 12 }))
   assert.throws(() => verifyScoredFrames(hudOnly, { durationMs: 10_000 }), /frozen/)
   assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, colors: 1 })), { durationMs: 10_000 }), /blank/)
+})
+
+test('diagnostic mode never creates the scored canvas PBO probe', () => {
+  const source = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8')
+  const guard = source.indexOf('if (scoreMode) {')
+  const creation = source.indexOf('window.__canvasProbe = {')
+  assert.ok(guard > 0, 'score-mode guard is missing')
+  assert.ok(guard < creation, 'PBO probe must be created inside the score-mode guard')
+  assert.ok(source.indexOf('window.__canvasProbe = null') < guard, 'diagnostic mode must leave the probe unset')
 })
 
 test('a diagnostic trace cannot overwrite an existing report', async () => {

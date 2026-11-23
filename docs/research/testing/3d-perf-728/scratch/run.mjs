@@ -200,6 +200,7 @@ async function runScenario(id, rate) {
     const wall0 = Date.now()
     await page.evaluate(`(()=>{
       const duration = ${SECS} * 1000
+      const scoreMode = ${JSON.stringify(!perf)}
       window.__pbPerf?.reset()
       window.__pbPerf?.startCapture({ scenarioId: ${JSON.stringify(id + '-x' + rate)}, durationMs: duration })
       const start = ${TRACE} ? performance.mark('pb-benchmark-start').startTime : performance.now()
@@ -224,6 +225,9 @@ async function runScenario(id, rate) {
       }
       ghostSample()
       window.__ghost.timer = setInterval(ghostSample, 250)
+      window.__canvasProbe = null
+      // 评分模式才安装 PBO 探针；诊断模式不得为此多一次 bufferData 或 GPU 回读。
+      if (scoreMode) {
       window.__canvasProbe = { frames: [], error: null, stopped: false, cpuMs: 0, samples: 0, maxCpuMs: 0 }
       const probeCanvas = document.querySelector('[data-testid=replay3d-stage] canvas')
       const probeGl = probeCanvas && probeCanvas.getContext('webgl2')
@@ -304,6 +308,7 @@ async function runScenario(id, rate) {
         }
         requestAnimationFrame(probeLoop)
         }
+      }
       window.__lt = []
       new PerformanceObserver(list => {
         for (const e of list.getEntries()) if (e.startTime >= start && e.startTime < start + duration) window.__lt.push([e.startTime,e.duration])
