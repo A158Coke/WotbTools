@@ -138,6 +138,22 @@ async function mountSuspension(vehicleCount = 1, data?: ReturnType<typeof makeDa
   return { rt, vs, deps, scene }
 }
 
+describe('低模车体 / 最后已知位置：阵营色只来自宿主注入', () => {
+  it('hull 与 last-known proxy 使用 deps.teamColor，不在 runtime 内重选阵营色', () => {
+    const data = makeData(1)
+    const { deps } = makeDeps(data, { teamColor: () => 0x123456 })
+    const rt = createVehicleRuntime(deps)
+    rt.buildVehicles()
+    const v = rt.getVehicles()[0]
+    expect((v.meshHull.material as THREE.MeshLambertMaterial).color.getHex()).toBe(0x123456)
+    if (!v.lastKnownProxy) throw new Error('lastKnownProxy missing')
+    const proxyMat = v.lastKnownProxy.material as THREE.MeshLambertMaterial
+    expect(proxyMat.color.getHex()).toBe(0x123456)
+    expect(proxyMat.opacity).toBe(0.35)
+    rt.dispose()
+  })
+})
+
 describe(':1007 悬挂数据（包内 suspension/<id>.json）', () => {
   it('suspension json 404 → 整车回落刚体（v.suspParts===null），GLB 照常挂载', async () => {
     const data = makeData()

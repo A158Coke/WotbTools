@@ -409,7 +409,7 @@ export function bpE(S: BpEParts, props: BpEProps): void {
     '--map-spawn-friendly': S.palette.value.spawnFriendly,
     '--map-spawn-enemy': S.palette.value.spawnEnemy,
     '--map-route-outline': S.palette.value.routeOutline,
-    // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
+    // Playback root 作用域角色色（SSOT = data/mapTeamColors.js；不随地图分叉）
     ...teamCssVars(S.pbOverview.value.mapCode),
   }))
 

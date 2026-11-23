@@ -2,7 +2,7 @@
 // 地图世界与水面反射、车辆/履带/战斗/标注/标签/相机运行时、基地与出生点标记、相机地形夹取。
 // 依赖读取统一经宿主对象 S；构造顺序与搬移前一致。
 import { disposeObject3D } from '../materialDispose.js'
-import { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY } from './palette.ts'
+import { COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY, teamColorOf } from './palette.ts'
 import { createSceneCore } from './renderer.js'
 import { createMapWorld } from './mapWorld.ts'
 import { createWaterReflectionRuntime } from './waterReflectionRuntime.ts'
@@ -274,10 +274,8 @@ export function installSceneAssembly(S: Host) {
   // annotation 地表采样 = 世界事实的唯一采样口径（mapWorld owner；消费经 annotationScene deps）。
 
   function teamColor(S: Host, v: { def: { team: unknown } }) {
-    const f = S.DATA.meta.friendly_team, t = v.def.team;
-    if (t === 0 || f === 0) return COLOR_UNKNOWN;   // 中立＝白（green / red / white 口径）
-    // 深绿/深红（与上游 Agent 同值）：原 0x3fa66a/0xc05046 偏亮，明亮地表上对比不足
-    return t === f ? COLOR_FRIENDLY : COLOR_ENEMY;
+    // SSOT 角色分流：team 3 / 未知 friendly_team 一律 neutral，不再落入 enemy。
+    return teamColorOf(v.def.team as number, S.DATA.meta.friendly_team);
   }
 
   // ---------- 基地（争霸 A–D / 单基地）贴地标记（实现在 playback/bases.js；快照式工厂） ----------

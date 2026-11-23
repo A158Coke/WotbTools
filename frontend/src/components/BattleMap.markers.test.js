@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBattleMapTestFixtures } from '../test/BattleMapTestHelpers.js'
 import { makeOverview, makePlaybackV2, mountPlayback, stubRaf } from './playbackTestHarness.js'
+import { playbackTracerColor } from '../data/mapTeamColors.js'
 import { activeTerrainRelief, createTerrainReliefModel } from '../utils/terrainReliefProjection.js'
 
 const { baseProps, mountMap } = createBattleMapTestFixtures()
@@ -224,6 +225,8 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-core')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-flash')).toHaveLength(1)
+    // 光晕描边来自共享 tracer variant（射击者 1001 为友军）
+    expect(wrapper.find('.pb-tracer').attributes('stroke')).toBe(playbackTracerColor(true))
     const core = wrapper.find('.pb-tracer-core')
     expect(core.attributes('stroke')).toBe('#fff')
     expect(core.attributes('opacity')).toBe('1')
@@ -235,6 +238,18 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     await flushPromises()
     const rLater = Number(later.find('.pb-tracer-flash').attributes('r'))
     expect(rLater).toBeGreaterThan(3)
+  })
+
+  it('colors 2D tracers from the shared recorder-relative role (enemy / unknown)', async () => {
+    for (const [friendly, expected] of [[false, playbackTracerColor(false)], [null, playbackTracerColor(null)]]) {
+      stubRaf()
+      const ds = makePlaybackV2()
+      ds.vehicles[0].friendly = friendly
+      const wrapper = mountPlayback(makeOverview(), 12, ds)
+      await flushPromises()
+      expect(wrapper.find('.pb-tracer').attributes('stroke')).toBe(expected)
+      wrapper.unmount()
+    }
   })
 
   it('marker images keep center-pivot rotation with the visible-body scale', async () => {

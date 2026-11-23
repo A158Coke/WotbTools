@@ -437,12 +437,12 @@ function onTwoFingerTouch(event) {
 .pb-playable-boundary { stroke: var(--color-map-playable-boundary); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
 .pb-float-dmg { position: absolute; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 90%, transparent), 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); animation: pb-float-rise 1s ease-out forwards; white-space: nowrap; }
-.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-float-friendly { color: var(--pb-team-text, #86efac); }
 .pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-float-rise { 0% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -10px; } }
 .pb-burst { position: absolute; width: 26px; height: 26px; border-radius: 50%; corner-shape: round; border: 2px solid currentColor; animation: pb-burst-ring .7s ease-out forwards; pointer-events: none; }
-.pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-burst.pb-float-friendly { color: var(--pb-team-text, #86efac); }
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
