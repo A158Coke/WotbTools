@@ -100,7 +100,7 @@ Task-related candidate tree contains changes but review scope is empty.
 5. **Supplemental gates**：DI + docs + dead code + reuse/SSOT。
 6. **Internal checklists**：code-quality（含品味检查）；前端适用时加 fallow。
 7. **Layer C**：reconcile findings，计算 blocker。
-8. **Fix → re-review**：可修 BLOCKER/MAJOR 持续修复后只重跑受影响 scope；按 Designer「授权、计划输入与偏差边界」遇到 HARD STOP 才暂停依赖步骤。
+8. **Fix → re-review**：可修 BLOCKER/MAJOR 优先直接修复到符合计划/契约，再只复查本次修复影响的文件、检查与 acceptance criteria；已审查且未受影响的候选文件和已通过证据继续有效，不重新全量审查或反复加载完整 Skill。若 context compaction 使必要审查结论不可恢复，只重建缺失的最小证据。失败工具/缺失 fixture 不得无限重试：记录可复查的失败原因、已尝试恢复和 `UNVERIFIED`/blocker，不虚报 PASS；按 Designer「授权、计划输入与偏差边界」遇到 HARD STOP 才暂停依赖步骤。
 9. **Report**：Plan compliance + Findings + Validation + Final。
 
 ## UI Design Evidence Gate（仅针对影响视觉/交互的 candidate）
