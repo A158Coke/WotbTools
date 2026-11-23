@@ -23,6 +23,11 @@ jobs:
       with:
         ref: ${{ github.sha }}
         fetch-depth: 0
+    # The repository is not available before checkout; stage-17 uses this
+    # epoch as the job start, with the post-stage reserve covering checkout.
+    - name: Record Android stage job start
+      shell: bash
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-00-record-job-start.sh"
     - name: Resolve release metadata
       id: version
       shell: bash
@@ -159,6 +164,8 @@ jobs:
         TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
         STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
+        JOB_TIMEOUT_SECONDS: "7200"
+        POST_STAGE_RESERVE_SECONDS: "900"
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-17-upload-tsinghua.sh"
     - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
       if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
