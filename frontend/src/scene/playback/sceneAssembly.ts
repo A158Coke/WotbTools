@@ -152,6 +152,7 @@ export function installSceneAssembly(S: Host) {
     classIconsVisible: () => S.labels.classIconsVisible(),
     showMarkerStatus: () => S.labels.showMarkerStatus(),
     invalidate: S.invalidate,
+    onModelChanged: (eid) => S.cameraRuntime.refreshFollowMinDistance(eid),
     visibleAt: (v, t) => S.visibleAt(v, t),
     sceneLifeAt: (v, t) => S.sceneLifeAt(v, t),
     // 身份替换判据（幽灵抑制；唯一消费方是车辆运行时，勿挪到 treadRuntime）
@@ -325,6 +326,7 @@ export function installSceneAssembly(S: Host) {
     clearance: CAMERA_GROUND_CLEARANCE,
     getWorldCenter: () => S.mapWorld.worldCenter(),
     isFollowing: () => !!S.cameraRuntime.followEid(),
+    followMinDistance: () => S.cameraRuntime.followMinDistance(),
   });
   function applyCameraClamp(S: Host) { S.cameraTerrainClamp.applyCameraClamp(S.mapWorld.worldCenter().ext); }
   function terrainHeightForCameraClamp(S: Host, x: number, z: number) { return S.cameraTerrainClamp.terrainHeightForCameraClamp(x, z); }
