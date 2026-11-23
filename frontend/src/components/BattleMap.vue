@@ -3,6 +3,7 @@ import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 import { ANNOT_TANK_CLASSES, arrowHeadPoints } from '../utils/annotation.js'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { teamRoleOf } from '../data/mapTeamColors.js'
 
 defineOptions({ name: 'BattleMap' })
 
@@ -69,9 +70,10 @@ function spawnClass(spawn) {
     if (spawn.team === 2) return 'pb-spawn-team-2'
     return 'pb-spawn-neutral'
   }
-  return props.friendlyTeam === null || props.friendlyTeam === undefined
-    ? 'pb-spawn-neutral'
-    : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')
+  const role = teamRoleOf(spawn.team, props.friendlyTeam)
+  if (role === 'friendly') return 'pb-spawn-friendly'
+  if (role === 'enemy') return 'pb-spawn-enemy'
+  return 'pb-spawn-neutral'
 }
 
 const reliefModel = computed(() => {
