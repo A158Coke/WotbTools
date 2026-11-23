@@ -33,8 +33,17 @@ function summarizeWindows(profile, windows) {
   return { self, inclusive }
 }
 
+// captureName() suffixes diagnostic captures with _profile / _profile-trace
+// (hook flags sorted alphabetically, so --profile --count-anchors comes first).
+// Keep the pre-captureName _prof / _prof_noprobe names readable.
+const PROFILE_SUFFIX = /_(?:prof(?:_noprobe)?|(?:count-anchors-)?profile(?:-trace)?)\.json$/
 const files = process.argv.slice(2)
-for (const file of files.length ? files : readdirSync('out').filter(f => /_prof(?:_noprobe)?\.json$/.test(f))) {
+if (!files.length) {
+  const discovered = readdirSync('out').filter(file => PROFILE_SUFFIX.test(file))
+  if (!discovered.length) throw new Error('No profile captures found in out/ (expected *_profile.json, *_profile-trace.json, *_prof.json or *_prof_noprobe.json)')
+  files.push(...discovered)
+}
+for (const file of files) {
   const { name, profile, raf } = JSON.parse(readFileSync('out/' + file))
   if (!profile || raf.ts.length < 2) continue
   const intervals = raf.ts.slice(1).map((t, i) => t - raf.ts[i]).sort((a, b) => a - b)
