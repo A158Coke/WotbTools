@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
-// 阵营调色行为测试（#827 接替 supremacyPoints.test.js:69/:87/:105）：
+// 阵营调色行为测试：
 // - 基地 teardown：clear() 清空贴地标记（场景/几何/材质/纹理释放）+ HUD 派生 baseViews 归零；
-// - 中立/无主基地 → 白 token（--color-team-neutral 消费，不再用灰）；
+// - 中立/无主基地 → Playback SSOT neutral（不再从 document root 读 token）；
 // - 炮线亮色板与车辆 tint 分离（注入契约）：宿主常量亮度 + battleRuntime 阵营分流。
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import * as THREE from 'three'
 import { createBaseMarkers } from './bases.js'
 import { teamTracerColor } from './battleRuntime.js'
 import { COLOR_FRIENDLY, COLOR_ENEMY, TRACER_FRIENDLY, TRACER_ENEMY } from '../playbackScene.js'
+import { PLAYBACK_ROLES } from '../../data/mapTeamColors.js'
+
+const numeric = (hex: string) => parseInt(hex.slice(1), 16)
 
 function makeBases(overrides = {}) {
   const scene = new THREE.Scene()
@@ -24,9 +27,26 @@ function makeBases(overrides = {}) {
   return { handle, scene, store }
 }
 
+const ROOT_VARS = [
+  '--color-team-neutral',
+  '--color-team-ally',
+  '--color-team-enemy',
+  '--color-objective',
+  '--color-on-team-neutral',
+]
+
 beforeEach(() => {
-  // CSS token 显式锚定（happy-dom 无主题注入）：token → 材质 的消费行为
-  document.documentElement.style.setProperty('--color-team-neutral', '#f5f5f5')
+  // 故意写一组与 SSOT 冲突的 document-root token（模拟 Winter 主题根与场景子树不一致）。
+  // 基地颜色若仍从 documentElement 读取，下面的断言会立刻失败。
+  document.documentElement.style.setProperty('--color-team-neutral', '#ff0000')
+  document.documentElement.style.setProperty('--color-team-ally', '#00ff00')
+  document.documentElement.style.setProperty('--color-team-enemy', '#0000ff')
+  document.documentElement.style.setProperty('--color-objective', '#ff00ff')
+  document.documentElement.style.setProperty('--color-on-team-neutral', '#123456')
+})
+
+afterEach(() => {
+  for (const name of ROOT_VARS) document.documentElement.style.removeProperty(name)
 })
 
 describe('createBaseMarkers teardown（会话切换不留残值）', () => {
@@ -43,14 +63,15 @@ describe('createBaseMarkers teardown（会话切换不留残值）', () => {
   })
 })
 
-describe('中立基地 → 白 token（PR #411：不再用灰）', () => {
-  it('贴地环材质消费 --color-team-neutral（0xf5f5f5），无主圆盘按中性色绘制', () => {
+describe('基地颜色来自 Playback SSOT（忽略 document root 作用域）', () => {
+  it('无主环材质 = PLAYBACK_ROLES.neutral.base，即使 document root 写了冲突 token', () => {
     const { handle, scene } = makeBases()
     handle.buildStatic('supremacy')
     const meshes = scene.children.filter((o): o is THREE.Mesh => (o as THREE.Mesh).isMesh)
     const ring = meshes.find((m) => !!(m.material as THREE.MeshBasicMaterial).color)
     expect(ring).toBeTruthy()
-    expect((ring!.material as THREE.MeshBasicMaterial).color.getHexString()).toBe('f5f5f5')
+    expect((ring!.material as THREE.MeshBasicMaterial).color.getHexString())
+      .toBe(PLAYBACK_ROLES.neutral.base.slice(1))
     handle.clear()
   })
 })
@@ -58,10 +79,12 @@ describe('中立基地 → 白 token（PR #411：不再用灰）', () => {
 describe('炮线亮色板（注入契约行为）', () => {
   const lum = (c: number) => 0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255)
 
-  it('宿主常量：炮线亮板显著亮于车辆 tint，色相保持绿=友 / 红=敌', () => {
-    // 车辆 tint 保持深色板（回退护栏）
-    expect(COLOR_FRIENDLY).toBe(0x26794a)
-    expect(COLOR_ENEMY).toBe(0x98322a)
+  it('宿主常量由 SSOT 派生：炮线亮板显著亮于车辆 tint，色相保持绿=友 / 红=敌', () => {
+    // 车辆 tint 使用 SSOT 的 vehicle variant，不再是 renderer 私有 HEX
+    expect(COLOR_FRIENDLY).toBe(numeric(PLAYBACK_ROLES.friendly.vehicle))
+    expect(COLOR_ENEMY).toBe(numeric(PLAYBACK_ROLES.enemy.vehicle))
+    expect(TRACER_FRIENDLY).toBe(numeric(PLAYBACK_ROLES.friendly.tracer))
+    expect(TRACER_ENEMY).toBe(numeric(PLAYBACK_ROLES.enemy.tracer))
     // 炮线同色相提亮：绿更亮且仍偏绿、红更亮且仍偏红；两项都显著亮于 tint
     expect(lum(TRACER_FRIENDLY)).toBeGreaterThan(lum(COLOR_FRIENDLY) * 1.4)
     expect(lum(TRACER_ENEMY)).toBeGreaterThan(lum(COLOR_ENEMY) * 1.4)

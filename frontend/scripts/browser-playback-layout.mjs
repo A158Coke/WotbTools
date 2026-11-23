@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { OCCLUSION_LIMITS, assertDocumentedLimits, measureOcclusion, measureReachability } from './browser-occlusion.mjs'
+import { PLAYBACK_ON_NEUTRAL, playbackTracerColor } from '../src/data/mapTeamColors.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -701,6 +702,66 @@ async function probeDamageOverlay() {
   return { failures, metrics }
 }
 
+function hexToRgb(hex) {
+  const n = Number.parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function rgbStringToRgb(value) {
+  const match = String(value).match(/\d+/g)
+  return match && match.length >= 3 ? match.slice(0, 3).map(Number) : null
+}
+
+function sameRgb(a, b) {
+  return !!a && !!b && a.length === 3 && b.length === 3 && a.every((value, index) => value === b[index])
+}
+
+function relativeLuminance([r, g, b]) {
+  const channel = (value) => {
+    const c = value / 255
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/** 截图中炮线上下若干像素内的最高「对白背景」对比度；纯白 = 1:1。 */
+function maxContrastAgainstWhite(raw, info, centerY, halfBand = 8) {
+  const firstY = Math.max(0, centerY - halfBand)
+  const lastY = Math.min(info.height, centerY + halfBand + 1)
+  let max = 1
+  for (let y = firstY; y < lastY; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const i = (y * info.width + x) * info.channels
+      const lum = relativeLuminance([raw[i], raw[i + 1], raw[i + 2]])
+      max = Math.max(max, 1.05 / (lum + 0.05))
+    }
+  }
+  return max
+}
+
+function tracerLightMapProbe() {
+  const root = document.querySelector('.tracer-fixture')
+  const map = root?.querySelector('.pb-map')
+  if (!root || !map) return null
+  const mapRect = map.getBoundingClientRect()
+  const casings = [...document.querySelectorAll('.pb-tracer-casing')]
+  const lines = [...document.querySelectorAll('.pb-tracer')]
+  return {
+    rect: { x: mapRect.x, y: mapRect.y, width: mapRect.width, height: mapRect.height },
+    onNeutral: getComputedStyle(root).getPropertyValue('--color-on-team-neutral').trim(),
+    casingStroke: casings[0] ? getComputedStyle(casings[0]).stroke : null,
+    casingCount: casings.length,
+    lines: lines.map((line) => {
+      const rect = line.getBoundingClientRect()
+      return {
+        stroke: getComputedStyle(line).stroke,
+        opacity: getComputedStyle(line).opacity,
+        centerY: rect.top + rect.height / 2 - mapRect.top,
+      }
+    }),
+  }
+}
+
 // 设备指标走 CDP `Emulation.setDeviceMetricsOverride`，不是 `--window-size`：headless Chrome 的窗口
 // 有最小宽度（实测 500px），`--window-size=390,844` 会被静默放大成 500×757，「手机竖屏」用例于是
 // 跑在一个根本不是手机竖屏的视口上还报 OK。这里要求页面实测的 innerWidth/innerHeight 与请求一致，
@@ -866,6 +927,89 @@ try {
     console.log(`[browser-layout] 3d-damage-overlay OK ${JSON.stringify(overlayResult.metrics)}`)
   } finally {
     await fixture.server.close()
+  }
+
+  // —— 2D 炮线浅色地图对比度：真实 BattleMap + 纯白背景 + 生产 SSOT ——
+  // 统一炮线色后，阵营 tracer（35% 外圈 + 白色内芯）在雪地图这类浅底上会失去轮廓；
+  // 这里锁两层事实：深色衬底来自 --color-on-team-neutral，且实际截图在纯白上达到
+  // 非文本图形 3:1 对比度；负向对照隐藏衬底后必须掉回 3:1 以下，证明门禁能发现回归。
+  {
+    const tracerFixture = await startFixtureServer()
+    try {
+      const { targetId, sessionId } = await browser.openPage()
+      const tracerPage = new Page(browser.client, sessionId)
+      await tracerPage.enable()
+      await tracerPage.emulate({ width: 1000, height: 300, touch: false, deviceScaleFactor: 1 })
+      try {
+        await tracerPage.goto(`${tracerFixture.origin}/scripts/browser-fixtures/tracer-light-map.html`, { timeout: 90_000 })
+        await tracerPage.waitForValue('!!(window.__tracerFixture && window.__tracerFixture.ready)', (ready) => ready === true,
+          { label: '2d tracer light-map fixture ready' })
+        const state = await tracerPage.probe(tracerLightMapProbe)
+        if (!state || state.casingCount !== 3 || state.lines.length !== 3) {
+          throw new Error(`2d tracer light-map fixture incomplete: ${JSON.stringify(state)}`)
+        }
+        if (state.onNeutral.toLowerCase() !== PLAYBACK_ON_NEUTRAL) {
+          throw new Error(`tracer casing scope must expose SSOT ink: got ${state.onNeutral}, want ${PLAYBACK_ON_NEUTRAL}`)
+        }
+        if (!sameRgb(rgbStringToRgb(state.casingStroke), hexToRgb(PLAYBACK_ON_NEUTRAL))) {
+          throw new Error(`tracer casing must resolve to --color-on-team-neutral: got ${state.casingStroke}`)
+        }
+        const expectedTracers = [playbackTracerColor(true), playbackTracerColor(false), playbackTracerColor(null)]
+        state.lines.forEach((line, index) => {
+          if (!sameRgb(rgbStringToRgb(line.stroke), hexToRgb(expectedTracers[index]))) {
+            throw new Error(`tracer ${index} must resolve from the shared tracer variant: got ${line.stroke}, want ${expectedTracers[index]}`)
+          }
+          // 外层光晕按既有契约以 35% 不透明度绘制；深色衬底保持整条 line 的不透明度。
+          if (line.opacity !== '0.35') throw new Error(`tracer ${index} fixture must render its glow at the production 35%: ${line.opacity}`)
+        })
+
+        const capture = async () => {
+          const { data } = await browser.client.send('Page.captureScreenshot', {
+            format: 'png',
+            clip: {
+              x: Math.round(state.rect.x),
+              y: Math.round(state.rect.y),
+              width: Math.round(state.rect.width),
+              height: Math.round(state.rect.height),
+              scale: 1,
+            },
+            captureBeyondViewport: false,
+          }, sessionId)
+          const { default: sharp } = await import('sharp')
+          const { info, data: raw } = await sharp(Buffer.from(data, 'base64')).raw().toBuffer({ resolveWithObject: true })
+          return { info, raw }
+        }
+
+        const positiveShot = await capture()
+        const positive = state.lines.map((line) => maxContrastAgainstWhite(positiveShot.raw, positiveShot.info, Math.round(line.centerY)))
+        positive.forEach((ratio, index) => {
+          if (ratio < 3) {
+            throw new Error(`tracer ${index} must reach >= 3:1 against a white map with its casing: ${ratio.toFixed(2)}:1`)
+          }
+        })
+
+        await tracerPage.evaluate(`(() => {
+          const style = document.createElement('style')
+          style.textContent = '.pb-tracer-casing { display: none; }'
+          document.head.appendChild(style)
+          return true
+        })()`)
+        await tracerPage.waitForValue(`getComputedStyle(document.querySelector('.pb-tracer-casing')).display`, (value) => value === 'none',
+          { label: '2d tracer casing removed' })
+        const negativeShot = await capture()
+        const negative = state.lines.map((line) => maxContrastAgainstWhite(negativeShot.raw, negativeShot.info, Math.round(line.centerY)))
+        negative.forEach((ratio, index) => {
+          if (ratio >= 3) {
+            throw new Error(`negative control must fail without the casing (tracer ${index}): ${ratio.toFixed(2)}:1`)
+          }
+        })
+        console.log(`[browser-layout] 2d-tracer-light-map OK casing=${PLAYBACK_ON_NEUTRAL} contrast=${positive.map((r) => r.toFixed(2)).join('/')} without-casing=${negative.map((r) => r.toFixed(2)).join('/')}`)
+      } finally {
+        await browser.client.send('Target.closeTarget', { targetId })
+      }
+    } finally {
+      await tracerFixture.server.close()
+    }
   }
 } finally {
   await browser.close()

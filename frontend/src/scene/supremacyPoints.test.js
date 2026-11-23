@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
 import { pointsAt } from './supremacyPoints.ts'
 import { playbackSceneSource } from './__tests__/sceneSource.ts'
-
-const here = dirname(fileURLToPath(import.meta.url))
+import { COLOR_UNKNOWN, COLOR_FRIENDLY, COLOR_ENEMY, TRACER_FRIENDLY, TRACER_ENEMY, teamColorOf } from './playback/palette.ts'
+import { PLAYBACK_ROLES } from '../data/mapTeamColors.js'
 
 describe('pointsAt（争霸点数的阵营映射）', () => {
   const samples = [
@@ -60,22 +57,22 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
   })
 })
 
-describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）', () => {
-  // 调色唯一事实源拆分到 playback/palette.js（行数卫生规则；playbackScene re-export 保持
-  // 导入方零改动）——声明唯一性断言跟随事实源移动。
-  const src = readFileSync(resolve(here, 'playback/palette.ts'), 'utf8')
-  const sceneSrc = playbackSceneSource()
+describe('中立 / 未知阵营色（Playback SSOT 角色）', () => {
+  const numeric = (hex) => parseInt(hex.slice(1), 16)
 
-  it('调色常量只有一处声明（唯一事实源，避免 TDZ 与漂移）', () => {
-    expect(src.match(/const COLOR_UNKNOWN = 0xf5f5f5;/g)?.length).toBe(1)
-    // 深色板（2026-10-05 加深，车辆 tint 共用）：亮色 0x2ecc71/0xef4444 已弃用
-    expect(src.match(/const COLOR_FRIENDLY = 0x26794a;/g)?.length).toBe(1)
-    expect(src.match(/const COLOR_ENEMY = 0x98322a;/g)?.length).toBe(1)
-    expect(src).not.toContain('0x2ecc71')
-    expect(src).not.toContain('0xef4444')
-    // 内核文件不再内联声明（防双源漂移）
-    expect(sceneSrc).not.toContain('const COLOR_FRIENDLY')
-    expect(sceneSrc).not.toContain('const TRACER_FRIENDLY')
+  it('3D 数值常量由共享角色派生，不是 renderer 私有声明', () => {
+    expect(COLOR_FRIENDLY).toBe(numeric(PLAYBACK_ROLES.friendly.vehicle))
+    expect(COLOR_ENEMY).toBe(numeric(PLAYBACK_ROLES.enemy.vehicle))
+    expect(COLOR_UNKNOWN).toBe(numeric(PLAYBACK_ROLES.neutral.vehicle))
+    expect(TRACER_FRIENDLY).toBe(numeric(PLAYBACK_ROLES.friendly.tracer))
+    expect(TRACER_ENEMY).toBe(numeric(PLAYBACK_ROLES.enemy.tracer))
   })
 
+  it('未知队伍 / 未知视角一律 neutral，绝不落入敌方', () => {
+    const neutral = numeric(PLAYBACK_ROLES.neutral.vehicle)
+    expect(teamColorOf(3, 1)).toBe(neutral)
+    expect(teamColorOf(0, 1)).toBe(neutral)
+    expect(teamColorOf(1, null)).toBe(neutral)
+    expect(teamColorOf(1, 2)).toBe(numeric(PLAYBACK_ROLES.enemy.vehicle))
+  })
 })

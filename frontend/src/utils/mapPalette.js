@@ -10,8 +10,6 @@ export const LUMINANCE_THRESHOLD = 0.45
 
 /** 暗图默认色板（现状配色：亮色系 + 白系网格）。 */
 export const darkMapPalette = {
-  friendlyColors: ['#22c55e', '#4ade80', '#16a34a', '#86efac', '#15803d', '#6ee7b7', '#10b981'],
-  enemyColors: ['#ef4444', '#f87171', '#dc2626', '#fca5a5', '#b91c1c', '#fb7185', '#f43f5e'],
   heatFriendly: '#22c55e',
   heatEnemy: '#ef4444',
   gridStroke: 'rgba(255,255,255,.16)',
@@ -26,8 +24,6 @@ export const darkMapPalette = {
 
 /** 亮图色板：深饱和色系 + 深色网格，保证浅色底图上的可区分度。 */
 export const lightMapPalette = {
-  friendlyColors: ['#166534', '#15803d', '#14532d', '#16a34a', '#22c55e', '#15803d', '#052e16'],
-  enemyColors: ['#b91c1c', '#991b1b', '#dc2626', '#7f1d1d', '#ef4444', '#c81e1e', '#450a0a'],
   heatFriendly: '#15803d',
   heatEnemy: '#b91c1c',
   gridStroke: 'rgba(0,0,0,.22)',

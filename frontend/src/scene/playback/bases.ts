@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import type { PerspectiveCamera, Scene, Texture } from 'three'
 import type { AgentAssaultBaseTransition, AgentSupremacyBaseTransition } from '../../api/agent-replay-facets.js'
 import { orientDiscUv } from '../baseDecal.js'
+import { PLAYBACK_ROLES } from '../../data/mapTeamColors.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../../utils/baseStatus.js'
 
 /** 基地视图模型（utils/baseStatus.js baseView 的返回形状；owner/capturing 是 baseSide 侧别词）。 */
@@ -47,13 +48,12 @@ export interface BasesData {
   assault_objective_present?: boolean
 }
 
-/** 基地颜色（设计语言阵营 token 读不到时的兜底见 BASE_COLOR_FALLBACK）。 */
+/** 基地颜色（Playback SSOT 角色；不读 DOM theme scope，避免 Winter root/scene 分叉）。 */
 export interface BaseColors {
   friendly: string
   enemy: string
   neutral: string
   objective: string
-  onNeutral: string
 }
 
 /** 贴地基地标记（环 + 随相机转正的圆盘贴图；reground 在地形异步就绪后重建几何）。 */
@@ -161,24 +161,15 @@ export function createBaseMarkers({ getScene, getCamera, getData, getMapBases, s
   reground(): void
 } {
 const BASE_TEX = 256;
-const BASE_COLOR_FALLBACK = { friendly: '#5cc280', enemy: '#f2786d', neutral: '#f5f5f5', objective: '#ffc24b', onNeutral: '#1c1f1d' };
+const baseColors: BaseColors = {
+  friendly: PLAYBACK_ROLES.friendly.base,
+  enemy: PLAYBACK_ROLES.enemy.base,
+  neutral: PLAYBACK_ROLES.neutral.base,
+  objective: PLAYBACK_ROLES.objective.base,
+};
 let baseObjects: BaseMarkerObject[] = [];
-let baseColors: BaseColors = BASE_COLOR_FALLBACK;
 let supremacyBaseIds: string[] = [];   // 本场出现过的争霸基地（轨迹 ∪ 几何），状态条按它列出
 let lastBaseViewsKey = '';
-
-function readBaseColors() {
-  if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') return BASE_COLOR_FALLBACK;
-  const cs = getComputedStyle(document.documentElement);
-  const read = (name: string, fallback: string): string => (cs.getPropertyValue(name) || '').trim() || fallback;
-  return {
-    friendly: read('--color-team-ally', BASE_COLOR_FALLBACK.friendly),
-    enemy: read('--color-team-enemy', BASE_COLOR_FALLBACK.enemy),
-    neutral: read('--color-team-neutral', BASE_COLOR_FALLBACK.neutral),
-    objective: read('--color-objective', BASE_COLOR_FALLBACK.objective),
-    onNeutral: read('--color-on-team-neutral', BASE_COLOR_FALLBACK.onNeutral),
-  };
-}
 
 // ---------- 单基地目标（Assault / Encounter）----------
 // 几何来自 mapBases[key].assault（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像），
@@ -241,7 +232,6 @@ function addBaseMarker(baseId: string, kind: 'supremacy' | 'assault', gx: number
 
 function buildBases() {
   clearBases();
-  baseColors = readBaseColors();
   const tracks = getData().supremacy_bases || [];
   if (tracks.length) {
     // 非争霸场次不画（不靠静态几何猜模式）；无几何的地图不猜坐标，但状态条照样列出
@@ -271,7 +261,6 @@ let staticKind: 'supremacy' | 'assault' | null = null;
 
 function buildStatic(kind: 'supremacy' | 'assault' | null): void {
   clearBases();
-  baseColors = readBaseColors();
   staticKind = (kind === 'supremacy' || kind === 'assault') ? kind : null;
   if (!staticKind) return;
   const pts = getMapBases()?.[staticKind] ?? [];

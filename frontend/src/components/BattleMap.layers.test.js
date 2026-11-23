@@ -184,6 +184,33 @@ describe('BattleMap', () => {
     expect(Number(circle.attributes('cy'))).toBeCloseTo(99, 6)   // toY = 100 - y
   })
 
+  it('replay mode classifies spawns through the shared recorder-relative role', () => {
+    const spawnClasses = (friendlyTeam, team) => {
+      const wrapper = mountMap({
+        pbOverview: { mapCode: 'mystery', spawnPoints: [{ name: 'a', x: 1, y: 1, team }] },
+        friendlyTeam,
+        bases: [],
+        visibleTracers: [],
+      })
+      return {
+        friendly: wrapper.findAll('.pb-spawn-friendly').length,
+        enemy: wrapper.findAll('.pb-spawn-enemy').length,
+        neutral: wrapper.findAll('.pb-spawn-neutral').length,
+      }
+    }
+
+    expect(spawnClasses(1, 1)).toEqual({ friendly: 1, enemy: 0, neutral: 0 })
+    expect(spawnClasses(2, 2)).toEqual({ friendly: 1, enemy: 0, neutral: 0 })
+    expect(spawnClasses(2, 1)).toEqual({ friendly: 0, enemy: 1, neutral: 0 })
+    for (const friendlyTeam of [0, 3]) {
+      expect(spawnClasses(friendlyTeam, 1)).toEqual({ friendly: 0, enemy: 0, neutral: 1 })
+      expect(spawnClasses(friendlyTeam, 2)).toEqual({ friendly: 0, enemy: 0, neutral: 1 })
+    }
+    for (const team of [0, 3, null, undefined]) {
+      expect(spawnClasses(1, team)).toEqual({ friendly: 0, enemy: 0, neutral: 1 })
+    }
+  })
+
   it('fails closed when the opted-in boundary has no canonical bounds', () => {
     const wrapper = mountMap({
       showPlayableBoundary: true,

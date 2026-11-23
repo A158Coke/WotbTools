@@ -22,6 +22,7 @@ import AppButton from './AppButton.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS } from '../composables/usePlaybackTransport.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
+import { teamCssVars } from '../data/mapTeamColors.js'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
 import { r3dA } from './replay3dPaneA.js'
 import { r3dB } from './replay3dPaneB.js'
@@ -38,6 +39,10 @@ const props = defineProps({
   /** 事件流「跳到此刻」的一次性请求 `{ id, sec }`：按 id 只消费一次（切回 3D 不重放） */
   pendingSeek: { type: Object, default: null },
 })
+
+// Playback root 角色色（SSOT = data/mapTeamColors.js）：3D 无地图差异，setup 期解析一次，
+// 不做逐帧 getComputedStyle / 每次渲染重建内联 style 对象。
+const playbackTeamCssVars = teamCssVars('')
 
 // 各段按原脚本顺序执行一次（setup 期间同步），跨段引用统一走 S。
 const S = {}
@@ -99,7 +104,7 @@ const {
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace transport-docked" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
+    <div v-else class="pb-root playback-workspace transport-docked" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" :style="playbackTeamCssVars" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <!-- 手机全屏入口：竖屏浮动、横屏内联；隐藏全部 UI 时保留唯一浮动入口，三态互斥。 -->

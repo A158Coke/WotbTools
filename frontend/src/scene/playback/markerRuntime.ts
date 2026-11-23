@@ -31,7 +31,7 @@
 import * as THREE from 'three'
 import type { BufferGeometry, Material, Mesh, Scene, Vector3 } from 'three'
 import type { AgentBattleMarkerEvent, AgentChatEvent } from '../../api/agent-replay-facets.js'
-import { TRACER_FRIENDLY } from './palette.js'
+import { PLAYBACK_ROLES } from '../../data/mapTeamColors.js'
 import { makeGroundedRing } from './bases.js'
 import { sectorRectForMapKey, sectorQuadGeometry, sectorBorderGeometry, regroundRingInPlace, type MarkerSectorRect } from './markerGeometry.js'
 import { markerSourceCard, type MarkerSourceCard } from './markerSourceCard.js'
@@ -230,14 +230,6 @@ interface MarkerVisual {
   ring?: Mesh
 }
 
-// 扇区高亮 objective 琥珀（设计语言 token，与基地 objective 同源；读不到用同值兜底）。
-const COLOR_FALLBACK = { objective: '#ffc24b' }
-function readObjectiveColor(): string {
-  if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') return COLOR_FALLBACK.objective
-  const cs = getComputedStyle(document.documentElement)
-  return (cs.getPropertyValue('--color-objective') || '').trim() || COLOR_FALLBACK.objective
-}
-
 /** 扇区地面细分矩形（grid×grid 采样地形高度 + 抬升，起伏地形上平面矩形会被坡地埋掉）。 */
 export function createMarkerRuntime(deps: MarkerRuntimeDeps): MarkerRuntimeHandle {
   const poseTmp = new THREE.Vector3()
@@ -298,7 +290,7 @@ export function createMarkerRuntime(deps: MarkerRuntimeDeps): MarkerRuntimeHandl
   }
 
   function spawn(ev: MarkerSceneEvent): void {
-    const colors = { ally: TRACER_FRIENDLY, objective: readObjectiveColor() }
+    const colors = { ally: PLAYBACK_ROLES.friendly.tracer, objective: PLAYBACK_ROLES.objective.base }
     const objs: Mesh[] = []
     const mats: Material[] = []
     const baseOpacities: number[] = []

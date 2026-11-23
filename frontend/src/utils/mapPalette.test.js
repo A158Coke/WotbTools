@@ -25,8 +25,6 @@ describe('mapPalette', () => {
   })
 
   it('keeps warm/cool route separation and high-contrast grid on light maps', () => {
-    expect(lightMapPalette.friendlyColors).toHaveLength(7)
-    expect(lightMapPalette.enemyColors).toHaveLength(7)
     expect(lightMapPalette.regionStroke).toContain('0,0,0')
     expect(darkMapPalette.regionStroke).toContain('255,255,255')
   })

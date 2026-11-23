@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2D tracer contrast fixture</title>
+    <style>
+      html, body { margin: 0; background: #fff; }
+      /* 真实 BattleMap 的 .pb-map 以 66.7% 宽度作为回放舞台；本夹具只给它确定的 1000x300 像素画布，
+         让纯白背景与炮线像素位置可重复测量。地图组件其余样式仍由生产 SFC 提供。 */
+      .tracer-fixture .pb-map { width: 1000px; height: 300px; aspect-ratio: auto; }
+      .tracer-fixture .pb-svg { border-radius: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./tracer-light-map.js"></script>
+  </body>
+</html>

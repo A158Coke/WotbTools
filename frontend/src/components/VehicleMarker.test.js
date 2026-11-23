@@ -492,10 +492,9 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
   /**
    * §29 team 文字色：语义类由 marker 判定（friendly/enemy），色值由**共享呈现组件**给出。
    *
-   * 说明（如实记录，不粉饰）：规则仍是 `var(--pb-team-text, <token>)`，而
-   * `--pb-team-text` 在本仓**从未被任何地方定义**——所以实际生效的一直是 fallback。
-   * 迁到共享组件时 fallback 从硬编码色换成了设计 token（`--color-team-ally/enemy`），
-   * 这是本次重构带来的实际改进（色值回到 token 体系）；那个死变量仍然存在。
+   * 说明：Playback root 由 `teamCssVars()` 注入 `--pb-team-text/--pb-enemy-text`（SSOT），
+   * 所以生产回放里走第一顺位；fallback `--color-team-ally/enemy` 只在组件被单独挂载、
+   * 没有 Playback root 作用域时生效，仍是同一语义体系的设计 token。
    */
   it('§29 team 文字色：friendly/enemy 语义类 → 设计 token（fallback 位）', () => {
     expect(markerSource).toContain("'pb-friendly': st.value.friendly === true")

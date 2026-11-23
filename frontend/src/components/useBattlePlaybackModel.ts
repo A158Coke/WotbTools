@@ -371,7 +371,6 @@ const {
     gunMarks: () => gunMarks.value,
     isMobileDevice,
     trailPrefs,
-    palette,
     t,
   },
 )

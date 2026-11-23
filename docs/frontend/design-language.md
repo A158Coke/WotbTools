@@ -215,10 +215,10 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 - **物理队伍色是固定身份**：Team 1 永远同一个颜色、Team 2 永远同一个颜色，**不随录像者属于哪一队交换**。
   严禁把 `team1 → ally 色 / team2 → enemy 色` 当成映射——那是把物理身份和记录者视角混成一个概念。名册呈现使用录像者视角：`rosterLanesFor` 将己方放左侧、敌方放右侧，`PlaybackRoster` 根据 `friendlyTeam` 使用视角色与标题；这不改变数据里的物理队伍身份。
-- `--color-team-ally` / `--color-team-enemy` 是物理队伍色的别名；地图标记、基地条、状态条使用视角色，需要「物理队伍」语义时直接用 `--color-team-1/2`。
+- 全局 `--color-team-ally` / `--color-team-enemy` 是物理队伍色的别名；但 2D / 3D Playback 根通过 `teamCssVars()` 以 `PLAYBACK_ROLES` 覆盖同名变量（friendly `#86efac` / enemy `#f87171` / neutral `#f5f5f5` / objective `#ffc24b`），Playback 内表示记录者视角。地图标记、基地条、状态条使用视角色；需要「物理队伍」语义时仍直接用 `--color-team-1/2`。
 - **不能只靠红绿区分阵营。** 约 8% 的男性有红绿色觉障碍。阵营还必须通过**位置**（当前名册：左本方 / 右敌方；录像者队伍未知时回退到左 Team 1 / 右 Team 2）、**文字标签**或**形状**再表达一次（名册标题始终是文本）。
 - 敌方色的色盲替代色是紫色（`--color-team-enemy-cb`），与游戏内色盲模式一致；替代色不取消位置与文字标签要求。当前只定义了 token，产品没有切换入口。
-- 2D、3D、表格、雷达图共用这几个 token，不各自定义红绿。
+- 2D / 3D Playback 共用 `frontend/src/data/mapTeamColors.js` 的 `PLAYBACK_ROLES`（唯一 Playback 语义色 owner）；表格、雷达图等非 Playback 页面继续使用主题 token。任何渲染器都不再各自定义红绿。
 - 可玩边界（游戏内实际战斗范围）的 2D 红线使用 `--color-map-playable-boundary`（与 3D 边界带同义 `#ff2f2f`），它不是阵营色，不得改用 `--color-team-enemy`。
 
 Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图定位和 3D 相机投影
