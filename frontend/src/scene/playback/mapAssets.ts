@@ -339,7 +339,8 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
   // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
   // （评审二轮/五轮两次指出的两个方向）
-  for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => (e as BatchedEntry).hidden === true);
+  const initiallyHidden = (e: InstanceEntry) => (e as BatchedEntry).hidden === true;
+  for (const b of batches) refreshBatchSphere(b.mesh, b, initiallyHidden);
   // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
   // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
   // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
@@ -411,6 +412,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
     meshOwner = buildMeshOwnerMap(destructPickList, (px, py, wantDestroyed): Iterable<PickMeshEntry> => findMeshes(px, py, wantDestroyed));
   }
+  let volatileBatches: ReadonlySet<InstancedMesh> | undefined;
   if (destructDoc && Array.isArray(DATA.destructible_events)) {
     // 槽位装配（foldDestructibleStates + 树倒/换模槽位 + 动态批次包围球扩张）自
     // 2026-11-21 起出仓 ./mapAssetsDestructibles.ts（#LOC 结构拆分，代码逐字一致）。
@@ -418,7 +420,8 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     destruct = assembled.destruct;
     // 可破坏物批次实例矩阵运行期会变（树倒 / 换模翻转），refreshBatchSphere 按构建位姿算的
     // 批次 AABB 不再保守——置 null 回退包围球（树批次的球已被扩张到覆盖倒伏触及）。
-    for (const mesh of assembled.volatileBatches) mesh.userData.occluderBox = null;
+    volatileBatches = assembled.volatileBatches;
+    for (const mesh of volatileBatches) mesh.userData.occluderBox = null;
     const readyDestruct = destruct;
     if (DEBUG && readyDestruct) {
       window.__destructStage = `ready states=${readyDestruct.states.length}`;
@@ -430,6 +433,10 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
         ptr: readyDestruct.ptr,
       });
     }
+  }
+  // 纯损毁外观批次若在整场都没有换模事件，所有实例始终隐藏；省去每帧的空绘制。
+  for (const b of batches) {
+    if (!volatileBatches?.has(b.mesh) && b.items.every(initiallyHidden)) b.mesh.visible = false;
   }
   writes.destructPickList = destructPickList;
   writes.meshOwner = meshOwner;

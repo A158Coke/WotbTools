@@ -140,6 +140,18 @@ describe('sceneryInstancing · 收集与分组', () => {
     expect(members.sort((a, b) => a[0] - b[0])).toEqual([[-149, -74], [1, 2], [76]])
   })
 
+  it('4×4 区域只合并预算内的多个小批，远处实例仍独立', () => {
+    const root = new THREE.Group(), geometry = new THREE.BoxGeometry(), material = mat()
+    for (const [x, y] of [[5, 5], [155, 5], [5, 155], [605, 5]]) {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(x, y, 0)
+      root.add(mesh)
+    }
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75, { maxCollapseTris: 36 })
+    expect(batches.map(batch => batch.items.length).sort()).toEqual([1, 3])
+    expect(batches.find(batch => batch.items.length === 1).items[0].x).toBe(605)
+  })
+
   it('大几何密集组不合并：总三角超预算仍按宫格分片（剔除粒度保留）', () => {
     const root = new THREE.Object3D()
     // 10000 三角的几何 × 4 实例 = 40000 > 预算 → 不合并
