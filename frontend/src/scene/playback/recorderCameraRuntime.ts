@@ -89,11 +89,19 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     camera.updateProjectionMatrix();
     deps.invalidate();
   }
+  // 暂停时最后一帧也可能落在 HIGH 倒影的跳帧上；只在过渡收口时强制刷新。
+  function settleCameraTransition() {
+    deps.requestWaterReflectionRefresh();
+    deps.invalidate();
+  }
   function stepFovRestore(dt: number) {
     fovRestore!.elapsed += dt;
     const progress = blendProgress(fovRestore!.elapsed);
     applyCameraFov(fovRestore!.fov + (BASE_FOV_DEG - fovRestore!.fov) * progress);
-    if (progress >= 1) fovRestore = null;
+    if (progress >= 1) {
+      fovRestore = null;
+      settleCameraTransition();
+    }
   }
   const _recorderDir: CameraVec3 = {} as CameraVec3;
   const _recorderPos = new THREE.Vector3();
@@ -171,7 +179,10 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
       camera.position.lerpVectors(cameraBlend.position, _recorderPos, progress);
       camera.quaternion.slerpQuaternions(cameraBlend.quaternion, _recorderQuat, progress);
       fov = cameraBlend.fov + (fov - cameraBlend.fov) * progress;
-      if (progress >= 1) cameraBlend = null;
+      if (progress >= 1) {
+        cameraBlend = null;
+        settleCameraTransition();
+      }
     }
     applyCameraFov(fov);
     controls.target.copy(camera.position).addScaledVector(_recorderLook, 30);

@@ -95,12 +95,13 @@ export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanR
   }
   for (let i = 1; i < inWindow.length; i++) {
     const gap = inWindow[i].at - inWindow[i - 1].at
-    if (!(gap <= maxGapMs)) {
+    if (gap < 0 || gap > maxGapMs) {
       throw new Error(`Scoring canvas sampling gap ${Math.round(gap)} ms exceeds ${maxGapMs} ms`)
     }
   }
   const blank = inWindow.find(frame => typeof frame.colors === 'number' && frame.colors < 2)
   if (blank) throw new Error('Scoring sampled a blank 3D canvas')
+  if (inWindow.some(frame => typeof frame.hash !== 'string' || !frame.hash)) throw new Error('Missing canvas hash')
   const distinct = new Set(inWindow.map(frame => frame.hash)).size
   if (distinct < 2) throw new Error('Scoring saw a frozen 3D canvas')
   // 尾段按实际时间区间取：最后 25% 的窗口内至少有两帧不同。不能按样本数量取尾，
@@ -111,7 +112,24 @@ export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanR
   }
   const tailDistinct = new Set(tail.map(frame => frame.hash)).size
   if (tailDistinct < 2) throw new Error('Scoring canvas stopped drawing before the window ended')
-  return { frames: inWindow.length, distinct, tailDistinct, spanMs: span, firstAt: first.at, lastAt: last.at, ignored: frames.length - inWindow.length }
+  // 一次重复采样可以是静止画面；超过两个允许的采样间隔仍无变化，就不能用 rAF 给这一窗评分。
+  // 同哈希样本首尾之差是实测跨度；变化之间的间隔连同首尾边界另计。
+  let runStart = first.at, lastChange = 0, maxSameHashMs = 0, maxChangeGapMs = 0
+  for (let i = 1; i < inWindow.length; i++) {
+    const frame = inWindow[i]
+    if (frame.hash === inWindow[i - 1].hash) {
+      maxSameHashMs = Math.max(maxSameHashMs, frame.at - runStart)
+    } else {
+      maxChangeGapMs = Math.max(maxChangeGapMs, frame.at - lastChange)
+      lastChange = runStart = frame.at
+    }
+  }
+  maxChangeGapMs = Math.max(maxChangeGapMs, durationMs - lastChange)
+  if (maxChangeGapMs > 2 * maxGapMs) {
+    throw new Error(`Scoring canvas stopped drawing: no hash change for ${Math.round(maxChangeGapMs)} ms`)
+  }
+  return { frames: inWindow.length, distinct, tailDistinct, spanMs: span, firstAt: first.at, lastAt: last.at,
+    maxSameHashMs, maxChangeGapMs, ignored: frames.length - inWindow.length }
 }
 
 export function verifySceneResources(urls, expectedRoot, version, expectedDataset, requireVehicle) {

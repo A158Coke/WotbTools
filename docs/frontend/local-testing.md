@@ -358,6 +358,6 @@ Pop-Location
 
 6 是 CDP CPU 降速倍率，报告另记实际回放速度。预热后锁定镜头、回放时间区间、画质与数据集，记录软件/硬件渲染器、舞台像素和 DPR。硬件基准遇软件渲染会退出。mid 默认绘制简化车辆，高档位另验真实车辆 GLB。用 `--secs=60` 运行正式稳态组，`--no-perf` 采无场景探针的外部 rAF 对照。各轮独立打标签保存，plain/profiled 分开统计。跨工作树使用 `ORIGIN` 指向被测页面，并用 `BENCH_SOURCE_ROOT` 指定实际提供页面的检出，用于记录 HEAD 和已跟踪前端差异摘要。新增文件要另记版本。
 
-生产包归因使用诊断模式 `--profile --trace --run-id=...`（会加载 `?perf`，因此**不能**与 `--no-perf` 混用），本机 `out/traces/` 保存 Chrome 时间线，`prof.mjs` 以同一时钟对齐 rAF 最慢 1% 的采样栈。该模式在隔离测试页临时测量 DOM 布局读取及 GL 缓冲提交。评分另跑 `--no-perf --cpu-metrics --run-id=...`，以 Chrome 主线程 TaskDuration 和样式重算次数除以同窗 rAF 帧数；评分路径还会独立校验生产包入口摘要、输入文件、相机、画质和 3D 画布像素，缺少 `BENCH_ASSET_ROOT` 或 `BENCH_ENTRY_SHA256` 会直接失败。固定回放片段执行 `--verify-resize` 可在计时结束后对比两档视口和 DPR 的名牌状态、逻辑位置与截图。
+生产包归因使用诊断模式 `--profile --trace --run-id=...`（会加载 `?perf`，因此**不能**与 `--no-perf` 混用），本机 `out/traces/` 保存 Chrome 时间线，`prof.mjs` 以同一时钟对齐 rAF 最慢 1% 的采样栈。该模式在隔离测试页临时测量 DOM 布局读取及 GL 缓冲提交。评分另跑 `--no-perf --cpu-metrics --run-id=...`，以 Chrome 主线程 TaskDuration 和样式重算次数除以同窗 rAF 帧数；评分路径还会独立校验生产包入口摘要、输入文件、相机、画质和 3D 画布像素，缺少 `BENCH_ASSET_ROOT` 或 `BENCH_ENTRY_SHA256` 会直接失败。评分会在整个计时窗口检查画布哈希变化；变化间隔超过两个允许的采样间隔即拒收，并报告同哈希样本跨度与变化最大间隔。固定回放片段执行 `--verify-resize` 可在计时结束后对比两档视口和 DPR 的名牌状态、逻辑位置与截图。
 
 `?perf` 记录实际场景的三角数、DPR、动态分辨率开关、回放速度以及 >200 ms 帧数。可读的资产版本印记提供数据集 ID 和内容摘要；本地包缺印记时两项为空。地图预览用 mapId，回放用内容摘要。中途改速或切换 dynres 会中断 capture。旧 `renderMs` 保留原区间，`reflectionUpdateMs` 是水面更新的 CPU 区间，`mainSubmitMs` 是主绘制提交区间；只有实际提交镜像绘制并取得有效查询的帧才有有效 `gpu_reflection_ms`。

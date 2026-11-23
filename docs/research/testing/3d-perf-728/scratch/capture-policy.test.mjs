@@ -61,6 +61,21 @@ test('score mode reads the production page state without enabling ?perf', () => 
   assert.throws(() => verifyScoredScene({ ...observed, canvas: { webgl: {}, width: 0, height: 720 } }), /WebGL/)
 })
 
+test('score mode rejects a frozen prefix or middle even when the tail resumes', () => {
+  const frames = Array.from({ length: 40 }, (_, i) => ({ at: i * 1500, hash: String(i) }))
+  const options = { durationMs: 60000, maxGapMs: 2500 }
+  for (const [start, end] of [[0, 45000], [15000, 45000], [42000, 55500]]) {
+    const frozen = frames.map(frame => frame.at >= start && frame.at <= end ? { ...frame, hash: 'still' } : frame)
+    assert.throws(() => verifyScoredFrames(frozen, options), /no hash change/)
+  }
+  frames[5].hash = frames[4].hash
+  const valid = verifyScoredFrames(frames, options)
+  assert.equal(valid.maxSameHashMs, 1500)
+  assert.equal(valid.maxChangeGapMs, 3000)
+  assert.throws(() => verifyScoredFrames(frames.map((frame, i) => i === 6 ? { ...frame, hash: null } : frame), options), /Missing canvas hash/)
+  assert.throws(() => verifyScoredFrames(frames.toSpliced(6, 2, frames[7], frames[6]), options), /sampling gap/)
+})
+
 test('score mode requires presented frames across the measured window', () => {
   const frames = Array.from({ length: 12 }, (_, index) => ({ at: index * 1000, hash: index % 2 ? 'a' : 'b' }))
   assert.equal(verifyScoredFrames(frames, { durationMs: 10_000 }).frames, 11)
