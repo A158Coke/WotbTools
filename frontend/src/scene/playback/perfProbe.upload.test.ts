@@ -78,4 +78,39 @@ describe('installUploadTracking', () => {
     context.bufferSubData(0, 0, new Uint8Array(4))
     expect(counts).toEqual({ bufferDataCalls: 1, bufferDataBytes: 8, bufferSubDataCalls: 1, bufferSubDataBytes: 4 })
   })
+
+  it('prototype timing hook installed before counters still sees the real uploads exactly once', () => {
+    const nativeCalls: string[] = []
+    const samples: Array<{ start: number; ms: number; key: string }> = []
+    class FakeGL {
+      bufferData(..._args: unknown[]) { nativeCalls.push('data') }
+      bufferSubData(..._args: unknown[]) { nativeCalls.push('sub') }
+    }
+    // trace.mjs 的真实顺序：先包装 WebGL2RenderingContext.prototype，再由场景 initScene
+    // 调 installUploadTracking 在 context 实例上绑定当时可见的方法。
+    for (const key of ['bufferData', 'bufferSubData'] as const) {
+      const descriptor = Object.getOwnPropertyDescriptor(FakeGL.prototype, key)!
+      const native = descriptor.value as (...args: unknown[]) => unknown
+      Object.defineProperty(FakeGL.prototype, key, {
+        ...descriptor,
+        value: function (this: FakeGL, ...args: unknown[]) {
+          const start = performance.now()
+          const result = Reflect.apply(native, this, args)
+          samples.push({ start, ms: performance.now() - start, key })
+          return result
+        },
+      })
+    }
+    const context = new FakeGL()
+    const counts = stats()
+    expect(installUploadTracking(context as never, counts, new WeakSet<object>())).toBe(true)
+
+    context.bufferData(0, new Uint8Array(8), 0)
+    context.bufferSubData(0, 0, new Uint8Array(4))
+
+    expect(nativeCalls).toEqual(['data', 'sub'])   // 无递归、无重复调用
+    expect(counts).toEqual({ bufferDataCalls: 1, bufferDataBytes: 8, bufferSubDataCalls: 1, bufferSubDataBytes: 4 })
+    expect(samples.map(sample => sample.key)).toEqual(['bufferData', 'bufferSubData'])
+    expect(samples.every(sample => Number.isFinite(sample.start) && sample.ms >= 0)).toBe(true)
+  })
 })

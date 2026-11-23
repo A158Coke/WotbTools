@@ -80,6 +80,11 @@ async function runScenario(id, rate) {
     }
     const page = await openReplay3d(chrome, { fixture, perf, observeNetwork, query: `&q=${sc.q}&armorhl=${sc.armorhl}&dynres=${sc.dynres}${datasetQuery}` })
     const sid = page.sessionId
+    // Install the JS timing wrappers before clicking start: that click triggers the lazy
+    // renderer/context creation, where perfProbe binds the then-current WebGL methods.
+    // Installing afterwards would leave the instance-level upload counters shadowing these
+    // prototype hooks, so bufferData/bufferSubData timings would silently disappear.
+    if (TRACE) await page.probe(observeSubmissionAndLayout)
     await page.evaluate(`document.querySelector('[data-test="replay3d-start"]').click()`)
     if (perf) await page.waitForValue('!!window.__pbPerf && window.__pbPerf.snapshot().totalFrames > 30', Boolean, { timeout: 90000, label: 'frames' })
     if (!perf) await page.waitFor(() => !!document.querySelector('.pb-roster-row'), { timeout: 90000, label: 'vehicles' })
@@ -178,7 +183,6 @@ async function runScenario(id, rate) {
     }
     let navigationStartMs
     const saveTrace = TRACE ? await startTimelineTrace(chrome.client) : null
-    if (TRACE) await page.probe(observeSubmissionAndLayout)
     if (args.includes('--count-anchors')) await page.probe(observeAnchorWrites)
     if (PROFILE || cpuMetrics) await chrome.client.send('Performance.enable', {}, sid)
     if (PROFILE) {

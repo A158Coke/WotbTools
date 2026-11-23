@@ -92,6 +92,16 @@ test('score mode requires presented frames across the measured window', () => {
   assert.throws(() => verifyScoredFrames(lateChange, { durationMs: 30_000 }), /before the window ended|stopped drawing/)
 })
 
+test('trace timing hooks install before scene initialization and only in diagnostic mode', () => {
+  const source = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8')
+  const hook = source.indexOf('if (TRACE) await page.probe(observeSubmissionAndLayout)')
+  const startClick = source.indexOf("document.querySelector('[data-test=\"replay3d-start\"]').click()")
+  assert.ok(hook > 0, 'trace hook installation is missing')
+  assert.ok(startClick > 0, 'replay3d start click is missing')
+  assert.ok(hook < startClick, 'timing hook must precede lazy renderer/context creation')
+  assert.equal((source.match(/page\.probe\(observeSubmissionAndLayout\)/g) || []).length, 1)
+})
+
 test('diagnostic mode never creates the scored canvas PBO probe', () => {
   const source = readFileSync(new URL('./run.mjs', import.meta.url), 'utf8')
   const guard = source.indexOf('if (scoreMode) {')
