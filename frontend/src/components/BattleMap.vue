@@ -323,6 +323,8 @@ function onTwoFingerTouch(event) {
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
+            <!-- 深色衬底：亮色地图（雪地）上保留炮线轮廓；不属于阵营色，也不替代阵营 tracer。 -->
+            <line v-if="line.hasLine" class="pb-tracer-casing" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="var(--color-on-team-neutral)" :stroke-width="10 / props.viewScale" :opacity="line.opacity" />
             <line v-if="line.hasLine" class="pb-tracer" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
             <line v-if="line.hasLine" class="pb-tracer-core" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
             <circle v-if="line.flashProgress < 1" class="pb-tracer-flash" :cx="projectedX(line.x2, line.y2)" :cy="projectedY(line.x2, line.y2)" :r="(3 + 9 * line.flashProgress) / props.viewScale" :fill="props.tracerColor(line.attackerAccountId)" :opacity="line.flashOpacity" />

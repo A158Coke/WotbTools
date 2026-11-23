@@ -206,27 +206,31 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 1×：外层光晕 6px / 内芯 1.75px（逐元素绑定，屏幕宽度恒定）
+    // 1×：深色衬底 10px / 外层光晕 6px / 内芯 1.75px（逐元素绑定，屏幕宽度恒定）
+    expect(wrapper.find('.pb-tracer-casing').attributes('stroke-width')).toBe('10')
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('6')
     expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('1.75')
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
+    expect(wrapper.find('.pb-tracer-casing').attributes('stroke-width')).toBe('2.5')
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('1.5')
     expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('0.4375')
   })
 
-  it('renders laser layers (glow + white core + impact flash) with flash expanding', async () => {
+  it('renders laser layers (dark casing + glow + white core + impact flash) with flash expanding', async () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 命中瞬间三层齐全：光晕（阵营色）、内芯（亮白）、命中闪光圆点
+    // 命中瞬间四层齐全：深色衬底、光晕（阵营色）、内芯（亮白）、命中闪光圆点
+    expect(wrapper.findAll('.pb-tracer-casing')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-core')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-flash')).toHaveLength(1)
-    // 光晕描边来自共享 tracer variant（射击者 1001 为友军）
+    // 光晕描边来自共享 tracer variant（射击者 1001 为友军）；衬底来自中性底板墨色 SSOT
     expect(wrapper.find('.pb-tracer').attributes('stroke')).toBe(playbackTracerColor(true))
+    expect(wrapper.find('.pb-tracer-casing').attributes('stroke')).toBe('var(--color-on-team-neutral)')
     const core = wrapper.find('.pb-tracer-core')
     expect(core.attributes('stroke')).toBe('#fff')
     expect(core.attributes('opacity')).toBe('1')
