@@ -18,6 +18,8 @@ UPLOAD_ATTEMPTS=3
 VERIFY_ATTEMPTS=5
 VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
+# Keep enough time for at least one full public-share download before a write.
+VERIFY_RESERVE_SECONDS="${TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS:-900}"
 # Budget for this stage. The android-stage job allows 120 minutes and this
 # step runs near its end. The workflow records the job start epoch immediately
 # after checkout; use the job's remaining time (minus a reserve for later
@@ -39,6 +41,14 @@ case "$POST_STAGE_RESERVE_SECONDS" in
 esac
 JOB_TIMEOUT_SECONDS=$((10#$JOB_TIMEOUT_SECONDS))
 POST_STAGE_RESERVE_SECONDS=$((10#$POST_STAGE_RESERVE_SECONDS))
+case "$VERIFY_RESERVE_SECONDS" in
+  ''|*[!0-9]*) echo "::error::TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS must be a positive integer; release gate remains closed." >&2; exit 1 ;;
+esac
+VERIFY_RESERVE_SECONDS=$((10#$VERIFY_RESERVE_SECONDS))
+if [ "$VERIFY_RESERVE_SECONDS" -le 0 ]; then
+  echo "::error::TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS must be a positive integer; release gate remains closed." >&2
+  exit 1
+fi
 if [ -n "${JOB_START_EPOCH:-}" ]; then
   case "$JOB_START_EPOCH" in
     ''|*[!0-9]*) echo "::error::JOB_START_EPOCH must be epoch seconds; release gate remains closed." >&2; exit 1 ;;
@@ -54,6 +64,7 @@ if [ -n "${JOB_START_EPOCH:-}" ]; then
   fi
 fi
 STAGE_DEADLINE_AT=$((SECONDS + STAGE_BUDGET_SECONDS))
+echo "Tsinghua upload verify reserve: ${VERIFY_RESERVE_SECONDS}s (stage budget ${STAGE_BUDGET_SECONDS}s)."
 WORK="$RUNNER_TEMP/thu-upload"
 mkdir -p "$WORK"
 : > "$WORK/upload-body.txt"
@@ -306,7 +317,11 @@ upload_once() {
   UPLOAD_SECONDS=0
   UPLOAD_SPEED=0
   require_budget "upload attempt $attempt"
-  max_time="$REMAINING_BUDGET"
+  if [ "$REMAINING_BUDGET" -le "$VERIFY_RESERVE_SECONDS" ]; then
+    echo "::error::Only ${REMAINING_BUDGET}s remain before upload attempt $attempt; ${VERIFY_RESERVE_SECONDS}s are reserved for public-share SHA-256 verification. Refusing to start an unverifiable write; release gate remains closed." >&2
+    exit 1
+  fi
+  max_time=$((REMAINING_BUDGET - VERIFY_RESERVE_SECONDS))
   if [ "$max_time" -gt 2700 ]; then max_time=2700; fi
   : > "$WORK/upload-body.txt"
   : > "$WORK/upload-curl.err"

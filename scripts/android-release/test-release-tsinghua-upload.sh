@@ -21,6 +21,7 @@ printf 'wrong android fixture apk\n' > "$TMP/wrong.apk"
 EXPECTED="$(sha256sum "$TMP/expected.apk" | cut -d' ' -f1)"
 REAL_SHA256="$(command -v sha256sum)"
 REAL_DATE="$(command -v date)"
+REAL_SLEEP="$(command -v sleep)"
 
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/sleep" <<'MOCK_SLEEP'
@@ -54,6 +55,7 @@ ROOT="${TEST_ROOT:?}"
 out=""
 err=""
 url=""
+max_time=0
 printf '%s\n' "$*" >> "$ROOT/curl-args.log"
 
 while [ "$#" -gt 0 ]; do
@@ -61,7 +63,8 @@ while [ "$#" -gt 0 ]; do
     --stderr) err="$2"; shift 2 ;;
     -o) out="$2"; shift 2 ;;
     -w) shift 2 ;;
-    --connect-timeout|--max-time) shift 2 ;;
+    --connect-timeout) shift 2 ;;
+    --max-time) max_time="$2"; shift 2 ;;
     -H|-F) shift 2 ;;
     -sS|-L|-fsS|-fsSL) shift ;;
     https://*) url="$1"; shift ;;
@@ -129,6 +132,15 @@ case "$url" in
         cp "$ROOT/expected.apk" "$ROOT/remote.apk"
         write_body '{"id":"mock-upload"}'
         printf '200 %s 0.10 1024' "$(body_size)"
+        exit 0
+        ;;
+      slow_ok)
+        # The server persisted the correct object, then consumed the whole
+        # upload max-time before answering.
+        cp "$ROOT/expected.apk" "$ROOT/remote.apk"
+        write_body '{"id":"mock-slow-upload"}'
+        if [ "$max_time" -gt 0 ]; then "${REAL_SLEEP:?}" "$max_time"; fi
+        printf '200 %s %s 1024' "$(body_size)" "$max_time"
         exit 0
         ;;
       c400)
@@ -268,6 +280,14 @@ assert_curl_args_contains() {
 assert_curl_args_not_contains() {
   if grep -Fq -- "$1" "$CASE/curl-args.log"; then die "unexpected curl argument: $1"; fi
 }
+assert_upload_max_time_le() {
+  local upload_line upload_max
+  upload_line="$(grep -F -- '-F replace=1' "$CASE/curl-args.log" | head -n1 || true)"
+  [ -n "$upload_line" ] || die "upload curl invocation is missing"
+  upload_max="$(printf '%s\n' "$upload_line" | sed -n 's/.*--max-time \([0-9][0-9]*\).*/\1/p')"
+  [ -n "$upload_max" ] || die "upload max-time is missing"
+  [ "$upload_max" -le "$1" ] || die "upload max-time $upload_max exceeds $1"
+}
 
 init_case() {
   CASE_NAME="$1"
@@ -284,6 +304,7 @@ init_case() {
   CASE_JOB_START_EPOCH=""
   CASE_JOB_TIMEOUT=""
   CASE_JOB_RESERVE=""
+  CASE_VERIFY_RESERVE=""
   printf 'ok\n' > "$CASE/share_mode"
   : > "$CASE/share_actions"
   printf 'ok\n' > "$CASE/upload_link_actions"
@@ -312,6 +333,8 @@ run_stage() {
       MOCK_NOW="$CASE_NOW" \
       REAL_SHA256="$REAL_SHA256" \
       REAL_DATE="$REAL_DATE" \
+      REAL_SLEEP="$REAL_SLEEP" \
+      TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS="$CASE_VERIFY_RESERVE" \
       JOB_START_EPOCH="$CASE_JOB_START_EPOCH" \
       JOB_TIMEOUT_SECONDS="$CASE_JOB_TIMEOUT" \
       POST_STAGE_RESERVE_SECONDS="$CASE_JOB_RESERVE" \
@@ -333,7 +356,7 @@ case_success() {
   assert_contains "$EXPECTED"
   assert_contains "response body: <withheld"
   assert_curl_args_contains "--max-time 900"
-  assert_curl_args_contains "--max-time 2700"
+  assert_upload_max_time_le 2700
   assert_remote_sha
   assert_not_contains "mock-upload"
   assert_not_contains "$TOKEN"
@@ -723,6 +746,7 @@ case_global_budget_exhausted() {
 case_budget_caps_operations() {
   init_case "budget-caps"
   CASE_BUDGET=100
+  CASE_VERIFY_RESERVE=30
   set_actions ok
   run_stage
   assert_rc 0
@@ -734,6 +758,38 @@ case_budget_caps_operations() {
   assert_contains "response body: <withheld"
   assert_remote_sha
   echo "PASS per-operation timeouts are capped by the remaining budget"
+}
+
+case_upload_reserves_verification() {
+  init_case "upload-reserves-verification"
+  CASE_BUDGET=5
+  CASE_VERIFY_RESERVE=2
+  set_actions slow_ok
+  run_stage
+  assert_rc 0
+  assert_count upload-count 1
+  assert_count probe-count 2
+  assert_contains "verify reserve: 2s"
+  assert_contains "Tsinghua Cloud offload verified"
+  assert_upload_max_time_le 3
+  assert_remote_sha
+  echo "PASS upload reserves verification budget"
+}
+
+case_insufficient_verify_budget() {
+  init_case "insufficient-verify-budget"
+  CASE_BUDGET=2
+  CASE_VERIFY_RESERVE=3
+  set_actions ok
+  run_stage
+  assert_rc 1
+  assert_count upload-count 0
+  assert_count upload-link-count 1
+  assert_count probe-count 1
+  assert_contains "reserved for public-share SHA-256 verification"
+  assert_contains "Refusing to start an unverifiable write"
+  assert_contains "release gate remains closed"
+  echo "PASS insufficient verification budget refuses to start the upload"
 }
 
 case_local_hash_failure() {
@@ -795,6 +851,7 @@ case_job_budget_caps_operations() {
   CASE_JOB_START_EPOCH=$((CASE_NOW - 6000))
   CASE_JOB_TIMEOUT=7200
   CASE_JOB_RESERVE=900
+  CASE_VERIFY_RESERVE=100
   set_actions ok
   run_stage
   assert_rc 0
@@ -869,6 +926,8 @@ case_verify_curl_error
 case_diagnostics_bounded
 case_global_budget_exhausted
 case_budget_caps_operations
+case_upload_reserves_verification
+case_insufficient_verify_budget
 case_local_hash_failure
 case_local_hash_malformed
 case_job_budget_exhausted
