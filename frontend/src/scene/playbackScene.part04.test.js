@@ -59,12 +59,13 @@ import { mapImages } from '../data/mapImages.js'
 import { normalizePenPoints } from './playback/annotation3d.js'
 
 
-const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), loadRecorderCameraFromFile: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
+const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), loadRecorderCameraFromFile: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn(), tankNamesStatic: vi.fn(async () => new Map()) }))
 
 vi.mock('./replaySource.js', () => ({
   loadPlaybackData: source.loadPlaybackData,
   loadRecorderCameraFromFile: source.loadRecorderCameraFromFile,
   resolveMapKey: source.resolveMapKey,
+  tankNamesStatic: source.tankNamesStatic,
   mapStaticUrl: source.mapStaticUrl,
 }))
 

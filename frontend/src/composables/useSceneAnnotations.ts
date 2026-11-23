@@ -15,7 +15,7 @@ interface SceneAnnotationApi {
 }
 
 /** 内核擦除回调载荷：擦除路径（语义坐标）+ 半径。 */
-interface SceneErasePath {
+export interface SceneErasePath {
   points: { x: number; y: number }[]
   radius: number
 }

@@ -19,7 +19,7 @@ export function isPlaybackSpeed(value: unknown): boolean {
 }
 
 /** 键盘事件落在可输入 / 可操作控件上时不劫持（空格要留给按钮和输入框本身） */
-interface EventTargetLike {
+export interface EventTargetLike {
   isContentEditable?: boolean
   tagName?: string
 }

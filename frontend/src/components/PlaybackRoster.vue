@@ -164,7 +164,7 @@ function listRows(rowCount) {
           :key="row.id"
           type="button"
           class="pb-roster-row pl"
-          :class="{ 'is-destroyed': row.destroyed, dead: row.destroyed, 'is-selected': row.selected, selected: row.selected, followed: row.followed }"
+          :class="{ 'is-destroyed': row.destroyed, dead: row.destroyed, 'is-selected': row.selected, selected: row.selected, followed: row.followed, ['hp-mode-' + row.hp.mode]: true }"
           data-test="pb-roster-row"
           :data-account-id="row.id"
           :style="{ '--roster-team-color': row.teamColor }"
@@ -195,10 +195,17 @@ function listRows(rowCount) {
 </template>
 
 <style scoped>
-/* 名册行（原始样式回归，f226174b 版）：**单行 flex** —— [色点][昵称][车型][细血条]。
-   血量只以条形表达（文字值走 aria-label）。 */
+/* 名册行（原始样式回归，f226174b 版）：**单行 flex** —— [色点][昵称][车型][血条数值]。
+   血量条本身 = **整条行**：行背景是 track，填充层绝对定位铺满行宽并垫在文字下方
+   （用户 2026-11-19 反馈：血条显示范围应为整个条目，而不是标签内部再加一个小血条）。
+   行尾 52px 槽位只留数值（数字位置不变）；`isolation` 让 z-index:-1 的填充
+   既能盖住行背景、又不压住身份文字。 */
 .pb-roster-row {
+  /* 填充层层级：行是隔离栈，负值 = 盖住行背景 track、垫在身份文字下方 */
+  --roster-rowfill-z: -1;
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -208,7 +215,7 @@ function listRows(rowCount) {
   min-height: var(--hit-min);
   padding: var(--space-1) var(--space-2);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: transparent;
   color: var(--color-text-primary);
   font: var(--type-caption);
@@ -219,37 +226,43 @@ function listRows(rowCount) {
 .pb-roster-row .nick { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pb-roster-row .tank { flex: 0 1 auto; max-inline-size: 86px; min-width: 0; overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
 
-/* —— HP 条（主 combat state）：行尾 52×16，fill 用本行队色（--roster-team-color），数值写在条内。 —— */
+/* —— HP 条（主 combat state）：填充 = 整条行宽（fill 用本行队色 --roster-team-color）；
+   行尾 52×16 只是数值槽位（位置与此前一致）。 —— */
 .pb-roster-hpbar {
-  position: relative;
   display: block;
   flex: none;
   inline-size: 52px;
   block-size: var(--space-4);
-  border-radius: var(--radius-sm);
-  background: var(--color-playback-label-track);
-  overflow: hidden;
 }
 .pb-roster-hpvalue {
-  position: absolute;
-  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  block-size: 100%;
   color: var(--color-text-primary);
   font: var(--type-caption);
   font-size: var(--font-size-caption-xs);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: var(--space-4);
-  text-align: center;
   text-shadow: var(--text-shadow-playback-label);
 }
+/* 填充层：绝对定位到行（最近的 positioned 祖先是 .pb-roster-row，hpbar 不再定位），
+   z-index:-1 在行隔离栈内垫在身份文字下方、盖住行背景 track。宽度由模板 inline style
+   （fill 比例）给出，百分比按行宽解析 = 整个条目的长度；高度铺满整行（用户口径：
+   血条本身保持完整，缩小的是整体名册高度）。 */
 .pb-roster-hpfill {
-  display: block;
-  block-size: 100%;
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: var(--roster-rowfill-z);
   background: var(--roster-team-color);
+  opacity: .55;
 }
 /* unknown / destroyed 没有可画的填充：fill 节点根本不渲染（见模板的 v-if），
-   所以这里不需要 !important 去覆盖 inline width —— unknown ≠ 0%，也不画满绿。 */
-.pb-roster-hpbar.hp-mode-unknown { background: var(--color-surface-3); }
+   所以这里不需要 !important 去覆盖 inline width —— unknown ≠ 0%，也不画满。 */
+/* 选择器带 .pb-roster-team（0,3,0）以压过下方同优先级的行背景 track 规则 */
+.pb-roster-team .pb-roster-row.hp-mode-unknown { background: var(--color-surface-3); }
 
 /* 状态视觉：`selected`（选择器语义，详情面板跟它走）与 `followed`（相机跟随语义）
    是**两个独立状态**，一行可以同时是两者，所以两条规则各按自己的类生效，不互相冒充。 */
@@ -293,14 +306,13 @@ function listRows(rowCount) {
 
 .pb-roster-team { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); min-width: 0; padding: var(--space-1); }
 /* 3D 的车道里，名册栏自己承担卡片外观（2D 的车道由外层 lane 承担）。
-   卡片必须**填满车道高度**：`.team-lane` 是 flex column 且已拉满网格行高，卡片若是
-   `flex: 0 1 auto` 就只占内容高（实测 1600×900：车道 890px、卡片只有 242px），
-   两侧名册退化成贴在左上/右上角的两个浮块，下面整列空着 —— 那不是名册栏。
-   主轴（纵向）要 `flex-grow`；`align-self` 只会拉交叉轴（横向），对高度无效。 */
+   桌面 / 平板（compact 非 dense）卡片高度 = 车道的 **2/3**（2026-11-19 用户口径：
+   整体名册高度缩小 1/3，血量条保持整行高度），下方留 1/3 场景。手机横屏 dense 与
+   竖屏纵向流保持内容高度（固定 30px 行 / 流内块），避免卡片框裁掉行。 */
 .pb-roster-3d {
   inline-size: 100%;
   max-inline-size: 100%;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-block-size: 0;
   padding: var(--space-3);
   border: 1px solid var(--color-border-subtle);
@@ -310,12 +322,14 @@ function listRows(rowCount) {
 /* 队伍面板不再自绘卡片：面与边框已上移到整条名册栏（`.pb-roster-3d`），
    否则会出现「框里的框」，而名册栏下方的留白仍然没有归属。 */
 .pb-roster-3d .pb-roster-team { background: none; border: 0; }
+.pb-roster-3d.pb-roster-compact:not(.pb-roster-dense) { flex: 0 0 66.667%; }
 .pb-team-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 800; }
 .pb-roster-list { display: grid; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; gap: var(--space-1); margin: 0; padding: 0; }
 .pb-roster-team.pb-roster-team1 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
 .pb-roster-team.pb-roster-team2 .pb-roster-row { border-inline-start: 3px solid var(--roster-team-color); }
 .pb-roster-team.pb-roster-unknown .pb-roster-row { border-inline-start: 3px solid var(--color-border-subtle); opacity: .8; }
-.pb-roster-team .pb-roster-row { background: var(--color-surface-2); }
+/* 行背景 = HP 条 track（填充层见 .pb-roster-hpfill；unknown 行保留 surface-3 中性底） */
+.pb-roster-team .pb-roster-row { background: var(--color-playback-label-track); }
 .pb-roster-row:hover { background: var(--color-surface-3); }
 .pb-roster-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
 

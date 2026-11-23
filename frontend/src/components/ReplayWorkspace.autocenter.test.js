@@ -1,11 +1,19 @@
 // @vitest-environment happy-dom
-import { h } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, replayState, mountWorkspace, switchTo, withBattles, resetWorkspace } from './ReplayWorkspace.test.fixture.js'
+import {
+  installWorkspaceTestLifecycle, testState, flushPromises, mountWorkspace, buildState,
+  paneMock, withBattles, serveDemo, analyzeDemo, guideContext, demoIdle, choose,
+  waitForDemoReady, switchTo, clickDemo, TAB_KEY, tab, capKeys, demoBytes, REPLACE_DECLINED,
+  computed, h, KeepAlive, ref, toRaw, useConfirmHost, resetViewerClocks, viewerClocks,
+  loadOfficialDemo, OFFICIAL_DEMO, createShellChrome, useReplaySession, useError, useConnectivityNotice, mount,
+} from './ReplayWorkspace.test.harness.js'
+import ReplayWorkspace from './ReplayWorkspace.vue'
+import FileDrop from './FileDrop.vue'
+const { hold, authState, nav, formState, connectivityState, nativeImportState, replayStateRef: replayState } = testState
 
-// ---- 打开 2D/3D 等回放视图时自动把视窗垂直居中（用户 2026-10-31 要求）----
+installWorkspaceTestLifecycle()
+
 describe('ReplayWorkspace 回放视窗自动居中', () => {
-  beforeEach(resetWorkspace)
   let originalScrollIntoView
   let originalInnerHeight
   let originalRO
@@ -62,6 +70,12 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
       observe() {}
       disconnect() {}
     }
+    // 拆分后本文件自带 session owner：不再隐式依赖主 describe 的 beforeEach 残留。
+    connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
+    replayState.current = buildState()
+    hold.state = replayState.current
+    authState.isAdmin.value = false
     withBattles(1)
   })
   afterEach(() => {
@@ -73,6 +87,32 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
   })
 
   const lastBlock = () => scrollCalls.at(-1)?.opts?.block
+
+  it('agent-events 深链：事件流先于 2D 就绪 → 定位信息流（不等待 2D 地图）', async () => {
+    const wrapper = mountWorkspace('events')
+    await flushPromises()
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
+
+    // 事件流已就绪（面板壳内的事件 pane 自带 data-pane-ready，高 400）；2D pane 未就绪（高度 0、无标记）
+    const events = wrapper.get('[data-testid="ws-events"]').element
+    paneHeights.set(events, 400)
+    roCallbacks.forEach((ro) => ro.el === events && ro.cb([]))
+    await flushPromises()
+
+    expect(scrollCalls.length).toBeGreaterThan(0)
+    expect(scrollCalls.at(-1).el.dataset.testid).toBe('ws-events')
+    expect(lastBlock()).toBe('center') // 400 < 900 → 垂直居中
+
+    // 2D 后续才就绪：不得重定位到地图（每次进入只定位一次）
+    const playback = wrapper.get('[data-testid="ws-playback"]').element
+    paneHeights.set(playback, 1600)
+    playback.querySelector('[data-testid="ws-playback-pane"]')?.setAttribute('data-pane-ready', 'true')
+    roCallbacks.forEach((ro) => ro.el === playback && ro.cb([]))
+    await flushPromises()
+    expect(scrollCalls.filter((c) => c.el.dataset.testid === 'ws-events')).toHaveLength(1)
+    expect(scrollCalls.some((c) => c.el.dataset.testid === 'ws-playback')).toBe(false)
+    wrapper.unmount()
+  })
 
   it('多阶段加载：加载外壳有高度但不就绪 → 不滚动；真实视窗就绪后按最终高度定位一次', async () => {
     const wrapper = mountWorkspace('data')
@@ -132,8 +172,8 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
     // 多文件 + 尚无解析结果 + 解析中：targetFile 为空
     withBattles(2)
-    replayState.resp.value = null
-    replayState.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
+    replayState.current.resp.value = null
+    replayState.current.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
     await flushPromises()
     await switchTo(wrapper, 'playback')
     const before = scrollCalls.length
@@ -143,7 +183,7 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
 
     // 批次落定（analysis ready + resp/target 出现）→ 真实视窗就绪 → 定位一次
     withBattles(2)
-    replayState.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
+    replayState.current.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
     await flushPromises()
     setStage(wrapper, { height: 500, ready: true })
     expect(scrollCalls.length).toBe(before + 1)
@@ -179,3 +219,4 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     })
   })
 })
+

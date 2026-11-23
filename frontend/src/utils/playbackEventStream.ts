@@ -269,3 +269,143 @@ export function nearestEventTime(
   for (const e of events) if (e.t < now - 1e-6 && (best == null || e.t > best)) best = e.t
   return best
 }
+
+
+/**
+ * 3D 快捷指令/聊天滚动流与事件流 pane 共用的行文案：同一套 i18n 键与身份纪律
+ * （玩家 · 车名；缺一回退「未知玩家」，不显示裸 eid）。t 由调用方注入
+ * （pane 与 3D 覆盖层各自持有 vue-i18n 实例）。
+ */
+export type EventRowTranslate = (key: string, params?: Record<string, unknown>) => string
+
+function eventActorText(a?: { eid: number; name?: string; tank?: string }, t?: EventRowTranslate): string {
+  if (!a) return '-'
+  const parts = [a.name || '', a.tank || ''].filter(Boolean)
+  return parts.length ? parts.join(' · ') : (t ? t('eventStream.unknown_actor') : '-')
+}
+
+function eventVerdictText(ev: PlaybackEventRow, t: EventRowTranslate): string {
+  switch (ev.verdict) {
+    case 'penetrated': return t('eventStream.verdict_penetrated')
+    case 'blocked': return t('eventStream.verdict_blocked')
+    case 'ricochet': return t('eventStream.verdict_ricochet')
+    case 'he': return t('eventStream.verdict_he')
+    case 'kill': return t('eventStream.verdict_kill')
+    default: return ''
+  }
+}
+
+/** 事件行的主文本（ReplayEventStreamPane.eventTitle 的唯一事实源；3D 滚动流同消费）。 */
+export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): string {
+  const actorText = (a?: { eid: number; name?: string; tank?: string }) => eventActorText(a, t)
+  switch (ev.kind) {
+    case 'shot': {
+      const head = t('eventStream.shot_line', {
+        from: actorText(ev.actor),
+        to: ev.target ? actorText(ev.target) : t('eventStream.no_target'),
+      })
+      const parts = [head]
+      const v = eventVerdictText(ev, t)
+      if (v) parts.push(v)
+      if (ev.shotDamage) parts.push(t('eventStream.damage_part', { n: ev.shotDamage }))
+      if (ev.shotKill) parts.push(t('eventStream.kill_part'))
+      return parts.join(' · ')
+    }
+    case 'chat': {
+      const ch = ev.channelName ? `[${ev.channelName}] ` : ''
+      const who = ev.actor ? `${actorText(ev.actor)}: ` : ev.sender ? `${ev.sender}: ` : ''
+      return `${ch}${who}${ev.text || ''}`
+    }
+    case 'command': {
+      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      if (ev.commandName) {
+        // 客户端权威语义（未映射 id 保留 raw）；玩家目标按 eid/account 两域联表，
+        // 查不到时给「未知目标」而不是裸数字（原始值在 tooltip）。
+        return t(`eventStream.cmd_${ev.commandName}`, {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+          cell: ev.cell ?? '?',
+        }) + ch
+      }
+      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
+    }
+    case 'marker': {
+      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      if (ev.commandName === 'attention_to_cell') {
+        const cell = ev.cellLabel ?? (ev.cell != null ? `#${ev.cell}` : '?')
+        return t('eventStream.marker_cell', { who, cell }) + ch
+      }
+      if (ev.commandName === 'attack') {
+        return t('eventStream.marker_attack', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
+      }
+      if (ev.commandName === 'ally_retreat') {
+        return t('eventStream.marker_retreat', {
+          who,
+          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
+        }) + ch
+      }
+      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
+        // payload 域上游未闭合：不把它写成「据点 N」，只按原始目标值呈现
+        // （评审 5935348769 P2；专用 *_raw 文案保留“指令（目标 N）”的中性语义）。
+        return t(`eventStream.cmd_${ev.commandName}_raw`, {
+          who,
+          target: ev.commandTarget ?? '?',
+        }) + ch
+      }
+      if (ev.commandName === 'moving_here') {
+        return t('eventStream.marker_moving', { who }) + ch
+      }
+      return t('eventStream.marker_unknown', {
+        who,
+        type: ev.markerType ?? ev.command ?? '?',
+      }) + ch
+    }
+    case 'presence': {
+      // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
+      const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
+      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
+      return t(key, { who, channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
+    }
+    case 'moduleDamage':
+    case 'module':
+      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`
+    case 'damage': return t('eventStream.damage_label', {
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
+      n: ev.damage ?? 0,
+    })
+    case 'capture': {
+      if (ev.progress != null) return t('eventStream.capture_progress', { n: ev.progress })
+      const base = String.fromCharCode(65 + (ev.baseId ?? 0))
+      if (ev.faction) {
+        return t(`eventStream.capture_${ev.captureState ?? 'invading'}_faction`, {
+          faction: t(`eventStream.faction_${ev.faction}`),
+          base,
+        })
+      }
+      return t(`eventStream.capture_${ev.captureState ?? 'invading'}`, {
+        base,
+        team: ev.team ?? '-',
+      })
+    }
+    case 'observed': return t('eventStream.observed_label', { who: actorText(ev.actor) })
+    case 'destructible': return t('eventStream.destructible_label')
+    case 'notice': return ev.actor
+      ? t('eventStream.notice_label_actor', { who: actorText(ev.actor), code: ev.code ?? '?' })
+      : t('eventStream.notice_label', { code: ev.code ?? '?' })
+    case 'consumable':
+      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.consumable_label')}`
+    case 'death': return t('eventStream.death_label_actor', { who: actorText(ev.actor) })
+    case 'revive': return t('eventStream.revive_label_actor', { who: actorText(ev.actor) })
+    case 'kill': return t('eventStream.kill_label', {
+      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
+      to: ev.target ? actorText(ev.target) : '-',
+    })
+    default: return t('eventStream.shot_label')
+  }
+}

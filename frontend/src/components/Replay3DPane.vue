@@ -1,17 +1,10 @@
 <script setup>
-/**
- * 3D 回放能力面板（回放工作台内）：目标回放在本机解析（上游 Rust Core WASM →
- * playbackScene 全场渲染），文件不出本机、不经服务端。
- *
- * 职责边界：只拥有**场景生命周期**（场景内核 + HUD + 阵容 + 相机 / 画质 / 标签 / GLB +
- * 播放传输）；文件选择与 session identity 由工作台（`useReplaySession` + `FileDrop`）
- * 唯一持有——本面板从不自己要求文件，也没有第二个 session。
- *
- * 切到别的能力（`active=false`）：场景停帧但不销毁，切回不重新解析、保留 timeline / 相机；
- * 键盘播放快捷键同样只在激活时响应。
- */
-import { computed, ref, shallowRef } from 'vue'
+defineOptions({ name: 'Replay3DPane' })
+
+import PlaybackChatFeed from './PlaybackChatFeed.vue'
+import { ref, watch } from 'vue'
 import { shadowQualityEligible } from '../scene/playback/quality.js'
+import { usePlaybackPortraitViewport } from '../composables/usePlaybackPortraitViewport.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import PlaybackTransport from './PlaybackTransport.vue'
 import SceneFullscreenButton from './SceneFullscreenButton.vue'
@@ -27,12 +20,12 @@ import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
+import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS } from '../composables/usePlaybackTransport.js'
+import { formatPlaybackClock } from '../utils/playbackClock'
 import { ChevronDown, ChevronUp, PencilRuler, ScanEye, TriangleAlert } from 'lucide-vue-next'
-import { useReplay3DPaneCore } from './useReplay3DPaneCore.ts'
-import { useReplay3DPaneDetails } from './useReplay3DPaneDetails.ts'
-import { useReplay3DPaneLifecycle } from './useReplay3DPaneLifecycle.ts'
-
-defineOptions({ name: 'Replay3DPane' })
+import { r3dA } from './replay3dPaneA.js'
+import { r3dB } from './replay3dPaneB.js'
+import { r3dC } from './replay3dPaneC.js'
 
 const props = defineProps({
   /** 工作台派生的目标回放文件；null = 还没选（面板只显示提示，不自己开文件选择器） */
@@ -46,14 +39,49 @@ const props = defineProps({
   pendingSeek: { type: Object, default: null },
 })
 
-const startedFile = shallowRef(null)
-const shared = { rootEl: ref(null), hudEl: ref(null), controlsEl: ref(null), shortWorkspace: ref(false) }
-const core = useReplay3DPaneCore(props, startedFile, shared)
-const details = useReplay3DPaneDetails(props, core)
-const lifecycle = useReplay3DPaneLifecycle(props, core, details, startedFile, shared)
-const sceneApi = computed(() => core.sceneApiRef.value)
-const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, declutterActive,   toggleDeclutter, uiHidden, displayOpen, displayAnchor, toggleDisplay, controlsCollapsed, controlsContentId, controlsDocked,   slideContentFrom, slideContentOpen, slideContentClose, slideContentShut, clearSlideHeight, dockControls, toggleControls, isPhone,   isPortrait, portraitFlow, compactBar, phoneLandscape, selectedEid, detailsOpen, detailsSide, followFromRoster,   handleSceneSelect, closeDetails, onUiToggleKeydown, cameraTools, chooseCamera, setUiHidden, showTopbar, showRoster, showKillfeed,   showBaseStatus, showFps, fpsText, fpsJanky, store, stage, labelOverlay, recorderReticle,   annotationOpen, annotationTool, openAnnotation, annotationToolbarProps, annotationToolbarHandlers, shotTicks, killTicks, transport,   webgl, lastFileName, loadingMessage, paneReady, qualityBadge, mapTitle, recorderUnavailableReason, hudFriendlyHp,   hudEnemyHp, rosterLanes, selectedRow, gunMarks, battleTimeLabel, detailTime, selectedTrack,   selLastKnownSec, selCurStats, selDamageLog, selectedPortraitUrl, selectedDetailState, selectedHealth, bannerColor, state, PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, formatPlaybackClock,   retryLoad, bannerText, killfeedVerb, qualityOptions, startReplay, rootEl, hudEl,   controlsEl, visibleKillfeed, isFullscreen, fullscreenSupported, toggleFullscreen } = { ...core, ...details, ...lifecycle, sceneApi }
+// 各段按原脚本顺序执行一次（setup 期间同步），跨段引用统一走 S。
+const S = {}
+let guideOpenedDisplay = false
+let sceneApi = null
+let jumpBase = null
+let lastFile = null
+let portraitGeneration = 0
+let parseController = null
+let loadedFile = null
+let laneBoundsObserver = null
+Object.defineProperty(S, 'guideOpenedDisplay', { get: () => guideOpenedDisplay, set: (v) => { guideOpenedDisplay = v }, configurable: true })
+Object.defineProperty(S, 'sceneApi', { get: () => sceneApi, set: (v) => { sceneApi = v }, configurable: true })
+Object.defineProperty(S, 'jumpBase', { get: () => jumpBase, set: (v) => { jumpBase = v }, configurable: true })
+Object.defineProperty(S, 'lastFile', { get: () => lastFile, set: (v) => { lastFile = v }, configurable: true })
+Object.defineProperty(S, 'portraitGeneration', { get: () => portraitGeneration, set: (v) => { portraitGeneration = v }, configurable: true })
+Object.defineProperty(S, 'parseController', { get: () => parseController, set: (v) => { parseController = v }, configurable: true })
+Object.defineProperty(S, 'loadedFile', { get: () => loadedFile, set: (v) => { loadedFile = v }, configurable: true })
+Object.defineProperty(S, 'laneBoundsObserver', { get: () => laneBoundsObserver, set: (v) => { laneBoundsObserver = v }, configurable: true })
+r3dA(S, props)
+r3dB(S, props)
+r3dC(S, props)
 
+const {
+  t, locale, onboarding, availability, requireFeature, online, labelPrefs, hpPrefs,
+  markerPrefs, uiPrefs, lastKnownPrefs, declutterActive, toggleDeclutter, uiHidden, displayOpen, displayAnchor,
+  toggleDisplay, controlsCollapsed, controlsContentId, controlsDocked, slideContentFrom, slideContentOpen, slideContentClose, slideContentShut,
+  clearSlideHeight, dockControls, toggleControls, isPhone, isPortrait, portraitFlow, compactBar, phoneLandscape,
+  selectedEid, detailsOpen, detailsSide, followFromRoster, followUnlessRecorder, handleSceneSelect, selectVehicle, detailsSideFor,
+  closeDetails, cameraTools, chooseCamera, setUiHidden, toggleUiHidden, onUiToggleKeydown, showTopbar, showRoster,
+  rosterEntryVisible, toggleRoster, showKillfeed, showBaseStatus, showFps, fpsText, fpsJanky, store,
+  stage, labelOverlay, recorderReticle, annotationOpen, annotationTool, pushAnnotationProjection, pushAnnotationInteraction, pushAnnotationVisibility,
+  commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation, resetAnnotationState, annotationToolbarProps, annotationToolbarHandlers, playbackFacet,
+  markerKindLabels, facetShots, facetKills, timelineHighlightEid, shotTicks, killTicks, jumpShot, rideRoster,
+  rideAllyTeam, rideVehicle, transport, renderActive, fly, webgl, pushLabelPrefs, consumedSeekId,
+  lastFileName, loadingMessage, paneReady, qualityBadge, mapTitle, recorderUnavailableReason, CAMERAS, QUALITY_ORDER,
+  hudFriendlyHp, hudEnemyHp, hudHealth, teamColors, rosterLanes, selectedRow, detailPlayback, gunMarks,
+  battleTimeLabel, detailTime, selectedTrack, selectedLife, selLastKnownSec, selCurStats, selDamageLog, selectedPortraitUrl,
+  selectedDetailState, selectedHealth, bannerColor, abortParse, loadFile, retryLoad, bannerText, killfeedVerb,
+  destroyScene, shouldHaveScene, ensureScene, startedFile, qualityOptions, startReplay, reconcileScene, rootEl,
+  hudEl, controlsEl, SHORT_WORKSPACE_MAX_H, KILLFEED_MAX_LINES, KILLFEED_ROW_BORDER_PX, killfeedMaxLines, visibleKillfeed, shortWorkspace,
+  measurePresentationBounds, observeLaneBounds, isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen, onViewportResize,
+  shellChrome,
+} = S
 </script>
 
 <template>
@@ -71,7 +99,7 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
+    <div v-else class="pb-root playback-workspace transport-docked" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow, 'compact-bar': compactBar }" data-testid="replay3d-root" data-scene-surface data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <!-- 手机全屏入口：竖屏浮动、横屏内联；隐藏全部 UI 时保留唯一浮动入口，三态互斥。 -->
@@ -93,7 +121,9 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
-          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :last-known-label="t('agentReplay.label_last_known')" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
+          <!-- 快捷指令 / 聊天 / 地图标记滚动流（左下）：与事件流同一行文案事实源（子组件） -->
+          <PlaybackChatFeed :facet="playbackFacet" :time="store.time" :hidden="uiHidden || !store.hasData" />
+          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay"  :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :last-known-label="t('agentReplay.label_last_known')" :marker-kind-labels="markerKindLabels" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
           <RecorderReticle ref="recorderReticle" :suppressed="uiHidden" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
@@ -152,10 +182,8 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
         @close="closeDetails"
       />
 
-      <!-- 阵容车道：Recorder 的己方在左、敌方在右，未知阵营独立列在左车道底部。
-           三段式下两条车道吃满根高度、不与中间一栏的 HUD / 传输控件交叉；竖屏下它们是
-           纵向流里传输控件（与详情）之后的两段。没有「临时名册面」：名册的唯一开关是
-           uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
+      <!-- 阵容车道：Recorder 己方左 / 敌方右，未知阵营列在左车道底部；竖屏是纵向流两段。
+           名册唯一开关 = uiPrefs.showRoster；行渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
           <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :dense="phoneLandscape" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
@@ -189,11 +217,25 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
           @leave-cancelled="clearSlideHeight"
         >
         <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
-          <!-- Drawing 面板在传输控件之上，占用 camera/GLB 行的同一份高度预算；不遮 play/timeline。 -->
           <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
             <AnnotationToolbar v-bind="annotationToolbarProps" compact v-on="annotationToolbarHandlers" />
           </div>
-          <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
+          <!-- 高频查看动作直接陈列（2026-10-05 从 Display 移出）：镜头 + GLB + Drawing 入口；
+               紧凑条放不下时进 Display 面；Drawing 打开时本行让位给 AnnotationToolbar。 -->
+          <ReplayCameraTools v-if="!compactBar && !annotationOpen" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
+            <button
+              type="button" class="tool-btn drawing-entry"
+              data-testid="replay3d-drawing-entry"
+              :disabled="store.cam === 'recorder'"
+              data-tour="playback-annotation-entry"
+              :aria-label="t('recon.map.playback.annot.mode')"
+              :title="t('recon.map.playback.annot.mode')"
+              @click="openAnnotation()"
+            >
+              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
+            </button>
+          </ReplayCameraTools>
+          <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致），次级行统一在主进度条上方 -->
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
             :is-fullscreen="isFullscreen"
@@ -211,6 +253,9 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
             :step-seconds="PLAYBACK_STEP_SECONDS"
             :compact="isPhone"
             :nav-eligible="active && !controlsCollapsed"
+            :roster-entry-visible="rosterEntryVisible"
+            :roster-open="showRoster"
+            @toggle-roster="toggleRoster"
             :shot-ticks="shotTicks"
             :kill-ticks="killTicks"
             :shortcuts-hint="t('agentReplay.shortcuts_hint')"
@@ -222,23 +267,6 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
             @scrub-end="store.seeking = false; transport.scrubEnd()"
           >
           </PlaybackTransport>
-          <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模。
-               紧凑控制条放不下第二行，§5 也不允许它压进场景中心，此时镜头 / GLB 进 Display 面。
-               drawing 打开时让位给 AnnotationToolbar（同一行高度预算），关闭后恢复。
-               Drawing 是 3D 自己的工具，不是 shared transport 的第 7 个 primary action。 -->
-          <ReplayCameraTools v-if="!compactBar && !annotationOpen" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
-            <button
-              type="button" class="tool-btn drawing-entry"
-              data-testid="replay3d-drawing-entry"
-              :disabled="store.cam === 'recorder'"
-              data-tour="playback-annotation-entry"
-              :aria-label="t('recon.map.playback.annot.mode')"
-              :title="t('recon.map.playback.annot.mode')"
-              @click="openAnnotation()"
-            >
-              <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
-            </button>
-          </ReplayCameraTools>
         </div>
         </Transition>
         <!-- Drawing 是创作工具，不是 Display 里的偏好：紧凑控制条也常驻入口，但仍不进 shared transport。 -->
@@ -271,6 +299,10 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
         </label>
         <!-- 回放事实边界的一行固定说明（帮助区）：紧跟该开关，语义可循 -->
         <p class="dp-note" data-testid="replay3d-visibility-note">{{ t('agentReplay.visibility_note') }}</p>
+        <!-- 战场快捷标记（0x2e / attention_to_cell）：移动 ping / 目标光环 / 注意扇区高亮（持久化偏好） -->
+        <label class="toggle">
+          <input type="checkbox" data-testid="disp-battle-markers" :checked="markerPrefs.battleMarkers" @change="markerPrefs.battleMarkers = $event.target.checked"> {{ t('agentReplay.display_battle_markers') }}
+        </label>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
@@ -376,4 +408,4 @@ const {   t, online, labelPrefs, hpPrefs, markerPrefs, uiPrefs, lastKnownPrefs, 
   </div>
 </template>
 
-<style scoped src="./replay3d-pane.css"></style>
+<style scoped src="./replay3dPane.css"></style>

@@ -104,6 +104,8 @@ export interface SessionLifecycleDeps {
   setupContactShadows(): void
   applyGlbToggle(on: boolean): Promise<void>
   buildRoster(): void
+  /** 战场快捷标记事件源装载（会话数据就绪后；宿主实现，可选）。 */
+  buildMarkers?(): void
   /** 会话级 resolver 装配 + 共享 mounted-configs 预取（宿主 HUD 域实现）。 */
   prepareResolvers(): void
   prewarmShaders(): void
@@ -342,6 +344,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     }
     if (perf && current()) perf.event({ stage: 'glb-wait', durationMs: deps.getGlbOn() && deps.forceGlb() ? performance.now() - perfGlbAt : null, status: !deps.getGlbOn() ? 'skipped' : deps.forceGlb() ? 'complete' : 'background-pending' }, perfLoadingEpoch);
     deps.buildRoster();
+    deps.buildMarkers?.();   // 快捷标记事件源（markers/chat_events）随会话数据重建
     deps.prepareResolvers();
     deps.transients.rebuildSources();   // 战斗反馈事件源（伤害/击毁）
     deps.buildBases();   // 基地贴地标记（争霸 A–D / 单基地）

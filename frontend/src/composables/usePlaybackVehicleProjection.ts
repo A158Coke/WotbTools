@@ -30,12 +30,13 @@ type ComputeVehicleMarkerSize = (
 const computeVehicleMarkerSizeTyped = computeVehicleMarkerSize as ComputeVehicleMarkerSize
 
 /** projectVehicleState 的单个渲染项（+ 每车 gunMarks/reload/consumables 附加字段）。 */
-type ProjectedVehicleState = NonNullable<ReturnType<typeof projectVehicleState>> & {
+export type VehicleRenderState = NonNullable<ReturnType<typeof projectVehicleState>> & {
   vehicle: VehiclePlaybackTrack
-  gunMarks: unknown
+  gunMarks: number | null
   reloadShells: unknown
   consumables: unknown
 }
+type ProjectedVehicleState = VehicleRenderState
 
 
 /**
@@ -65,7 +66,7 @@ export function usePlaybackVehicleProjection(
     speed: Ref<number>
     authoritativeEvents: () => BattleEvent[]
     hpVehicles: () => VehiclePlaybackTrack[]
-    gunMarks: () => Map<number, unknown> | null
+    gunMarks: () => Map<number, number> | null
     isMobileDevice: Ref<boolean>
     trailPrefs: { showTrail: boolean }
     palette: Ref<{ friendlyColors: string[]; enemyColors: string[]; routeOutline: string }>

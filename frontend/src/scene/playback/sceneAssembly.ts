@@ -7,6 +7,7 @@ import { createSceneCore } from './renderer.js'
 import { createMapWorld } from './mapWorld.ts'
 import { createWaterReflectionRuntime } from './waterReflectionRuntime.ts'
 import { createVehicleRuntime } from './vehicleRuntime.ts'
+import { createBattleMarkerHost } from './battleMarkerHost.ts'
 import { createTreadRuntime } from './treadRuntime.ts'
 import { createBattleRuntime } from './battleRuntime.ts'
 import { createAnnotationScene } from './annotationScene.ts'
@@ -166,6 +167,20 @@ export function installSceneAssembly(S: Host) {
     contactShadows: () => S.contactShadowCtl.handle(),   // 逐车阴影挂接/同步（#907 主干随迁）
     scopedHiddenEid: () => S.cameraRuntime.scopedHiddenEid(),
   });
+  // 3D 战场快捷标记 owner（0x2e markers + 0x2f attention_to_cell）：场景事件源与
+  // 回放时钟窗口状态在 playback/markerRuntime.ts；本句柄把车辆位姿/名册/地图语义
+  // 接到运行时，并供 labelsRuntime 投影来源卡。DATA 类型面由本模块按 markers/chat_events
+  // 消费子集收窄（会话数据本身来自上游契约，不做运行时改写）。
+  S.battleMarkers = createBattleMarkerHost({
+    getScene: () => S.scene,
+    mapWorld: S.mapWorld,
+    vehicles: S.vehicles,
+    visibleAt: (v, t) => S.visibleAt(v, t),
+    replacedAt: (eid, t) => S.replacedAt(eid, t),
+    getT: () => S.T,
+    getData: () => S.DATA,
+    invalidate: S.invalidate,
+  });
   // 地面履带印 owner（#820 Step 4 出仓）：逐车参数/贴图缓存、网格装配、路径喂样与
   // 游标泵的唯一归属；会话 teardown 的履带段（逐车 treadMesh + 共享贴图）在其 dispose。
   S.tread = createTreadRuntime({
@@ -251,6 +266,7 @@ export function installSceneAssembly(S: Host) {
     transients: S.battle.transients,
     fxScale: () => S.battle.fxScale(),
     getLabelOverlay: () => S.labelOverlay,
+    getMarkerLabelSources: () => S.battleMarkers.labelSources(),
     canonicalVehicles: () => S.store.playbackSession?.canonical?.dataset?.vehicles || [],
     invalidate: S.invalidate,
   });

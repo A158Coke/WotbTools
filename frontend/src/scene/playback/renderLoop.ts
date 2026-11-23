@@ -178,6 +178,8 @@ export function installRenderLoop(S: Host) {
       }
     }
     const perfT0 = S.PERF ? performance.now() : 0;
+    // 战场快捷标记：暂停/按需重绘也要重算窗口（迟到数据只置脏不推进 T；倒带经 seekTo→tick）
+    if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);
     S.labels.updateLabels();
     S.updateBases();
     S.battle.transients.updateNow();
@@ -273,6 +275,7 @@ export function installPerfProbe(S: Host) {
     S.mapWorld.updateDestructibles(S.T);
     S.tread.updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     S.labels.updateScore();
+    S.battleMarkers?.update(S.T);   // 战场快捷标记：回放时钟窗口状态（tick/seekTo 共用）
     // HUD → store
     // 顶栏：争霸实时点数每 tick 确定性重算 + 变更守卫（无采样也写 null，防切场残值）。
     applySupremacyPointsToStore(S.store, S.DATA, S.T);

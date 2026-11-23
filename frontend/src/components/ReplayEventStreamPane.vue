@@ -4,17 +4,18 @@
 // 数据源 = playbackSession.loadScene(file)（与 3D 面板同一缓存解析，不重复跑 WASM）。
 // 射击事件的「装甲检视」走现有射击复现入口（storeShotsForViewer + shotViewerQuery，
 // 与 ReplayShotsPane.openInViewer 同一交接通道），本 pane 不自建任何 viewer 契约。
-import { computed, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { useTankNames } from '../composables/useTankNames.js'
 import { enrichShotsFromRoster, parseAgentShotsFromBytes } from '../api/agent-replay-facets.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { annotateMountedConfigs, buildPitchLimits } from '../scene/shotHandoff.ts'
-import { fetchTankEncyclopedia, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
+import { storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
 import type { ShotViewerInput } from '../scene/agentData.js'
 import {
-  buildEventStream, filterEvents, EVENT_FILTERS,
+  buildEventStream, eventRowTitle, filterEvents, EVENT_FILTERS,
 } from '../utils/playbackEventStream.ts'
 import type { AgentPlaybackFacet, AgentPlaybackShot } from '../api/agent-replay-facets'
 import type { PlaybackEventRow } from '../utils/playbackEventStream'
@@ -40,8 +41,10 @@ const props = withDefaults(defineProps<{
   navigate?: NavigateFn | null
   /** 工作台页面是否在前台（离页 = 在途装甲交接作废；默认 true 便于独立挂载） */
   pageActive?: boolean
-}>(), { file: null, active: false, playbackSession: null, navigate: null, pageActive: true })
-const emit = defineEmits(['view-3d'])
+  /** 内嵌在统一回放面板下方：滚动容器收窄为事件列表（过滤栏固定），由外层给固定高度。 */
+  embedded?: boolean
+}>(), { file: null, active: false, playbackSession: null, navigate: null, pageActive: true, embedded: false })
+const emit = defineEmits(['seek'])
 
 const { t } = useI18n()
 const { requireFeature } = useFeatureGate()
@@ -63,26 +66,8 @@ const showCount = ref(RenderCap)
  * 车型名表（tank_cache `{id: name}`）。facet 的 `tank_name` 是 `tank_<id>` 占位
  * （WASM 未注入名表）——事件流必须用真实车型名，否则行里只剩数字编号。
  */
-const tankNames = ref<Record<number, string>>({})
-let tankNamesAttempted = false
-async function loadTankNames() {
-  if (tankNamesAttempted) return
-  tankNamesAttempted = true
-  try {
-    const cache = await fetchTankEncyclopedia() as Record<string, { name?: unknown }> | null
-    const names: Record<number, string> = {}
-    for (const [id, info] of Object.entries(cache || {})) {
-      const tankId = Number(id)
-      const name = typeof info?.name === 'string' ? info.name : ''
-      if (name && Number.isFinite(tankId)) names[tankId] = name
-    }
-    tankNames.value = names
-  } catch {
-    // 资产面暂不可用：保留 facet 名/昵称；下次进入或换文件时重试。
-    tankNamesAttempted = false
-  }
-}
-onMounted(() => { void loadTankNames() })
+// 车型名表（tank_cache）单例组合式：与 3D 快捷指令/聊天滚动流共用同一份加载与缓存
+const tankNames = useTankNames()
 
 const events = computed(() => buildEventStream(facet.value, { tankNames: tankNames.value }))
 const filtered = computed(() => filterEvents(events.value, filter.value))
@@ -101,8 +86,8 @@ async function ensureFacet() {
   const file = props.file
   if (!file || !props.playbackSession?.loadScene) return
   if (parsedFile.value === file) return
-  // 名表与解析并行走；失败不阻塞事件流（行内退化为昵称）。
-  void loadTankNames()
+  // 名表与解析并行走（useTankNames 单例，失败允许重试）；失败不阻塞事件流（行内退化为昵称）。
+  void useTankNames()
   const gen = ++loadGen
   loading.value = true
   err.value = ''
@@ -141,8 +126,8 @@ watch(
     // 离开事件流 = 在途装甲交接作废（旧 query 返回后不得把用户拉走）
     if (!active) handoffSeq++
     if (active) {
-      // 名表失败后允许在重新进入时重试（不阻塞 facet 缓存命中）。
-      void loadTankNames()
+      // 名表在 useTankNames 首次消费时自动加载（失败允许下次重试，不阻塞 facet 缓存命中）。
+      void useTankNames()
       if (!facet.value) void ensureFacet()
     }
   },
@@ -154,11 +139,11 @@ watch(() => props.pageActive, (on) => { if (!on) handoffSeq++ })
 onDeactivated(() => { handoffSeq++ })
 onBeforeUnmount(() => { handoffSeq++ })
 
-/** 点击事件 → seek 该时刻。seek 属于 3D 场景（sceneApi 由 Replay3DPane 持有），
- *  本 pane 只发出（工作台切 tab + 转交），不直接触碰场景。 */
+/** 点击事件 → seek 当前激活的视图（2D/3D 由统一回放面板决定）。
+ *  时钟属于各 pane（2D usePlaybackClock / 3D sceneApi），本 pane 只发出请求。 */
 function onClick(ev: PlaybackEventRow | null) {
   if (ev == null) return
-  emit('view-3d', ev.t)
+  emit('seek', ev.t)
 }
 
 // ---- 装甲检视（射击事件；现有射击复现入口，见 ReplayShotsPane.openInViewer）----
@@ -246,135 +231,10 @@ function verdictClass(ev: PlaybackEventRow): string {
   return ev.verdict ? `ev-${ev.verdict}` : ''
 }
 
-/** 名册身份文本：昵称 · 车名（缺一即省略；全缺回退「未知玩家」，不显示裸 eid）。 */
-function actorText(a?: { eid: number; name?: string; tank?: string }): string {
-  if (!a) return '-'
-  const parts = [a.name || '', a.tank || ''].filter(Boolean)
-  return parts.length ? parts.join(' · ') : t('eventStream.unknown_actor')
-}
-
-function verdictText(ev: PlaybackEventRow): string {
-  switch (ev.verdict) {
-    case 'penetrated': return t('eventStream.verdict_penetrated')
-    case 'blocked': return t('eventStream.verdict_blocked')
-    case 'ricochet': return t('eventStream.verdict_ricochet')
-    case 'he': return t('eventStream.verdict_he')
-    case 'kill': return t('eventStream.verdict_kill')
-    default: return ''
-  }
-}
-
 function eventTitle(ev: PlaybackEventRow): string {
-  switch (ev.kind) {
-    case 'shot': {
-      const head = t('eventStream.shot_line', {
-        from: actorText(ev.actor),
-        to: ev.target ? actorText(ev.target) : t('eventStream.no_target'),
-      })
-      const parts = [head]
-      const v = verdictText(ev)
-      if (v) parts.push(v)
-      if (ev.shotDamage) parts.push(t('eventStream.damage_part', { n: ev.shotDamage }))
-      if (ev.shotKill) parts.push(t('eventStream.kill_part'))
-      return parts.join(' · ')
-    }
-    case 'chat': {
-      const ch = ev.channelName ? `[${ev.channelName}] ` : ''
-      const who = ev.actor ? `${actorText(ev.actor)}: ` : ev.sender ? `${ev.sender}: ` : ''
-      return `${ch}${who}${ev.text || ''}`
-    }
-    case 'command': {
-      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
-      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
-      if (ev.commandName) {
-        // 客户端权威语义（未映射 id 保留 raw）；玩家目标按 eid/account 两域联表，
-        // 查不到时给「未知目标」而不是裸数字（原始值在 tooltip）。
-        return t(`eventStream.cmd_${ev.commandName}`, {
-          who,
-          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
-          cell: ev.cell ?? '?',
-        }) + ch
-      }
-      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
-    }
-    case 'marker': {
-      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
-      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
-      if (ev.commandName === 'attention_to_cell') {
-        const cell = ev.cellLabel ?? (ev.cell != null ? `#${ev.cell}` : '?')
-        return t('eventStream.marker_cell', { who, cell }) + ch
-      }
-      if (ev.commandName === 'attack') {
-        return t('eventStream.marker_attack', {
-          who,
-          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
-        }) + ch
-      }
-      if (ev.commandName === 'ally_retreat') {
-        return t('eventStream.marker_retreat', {
-          who,
-          target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
-        }) + ch
-      }
-      if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
-        // payload 域上游未闭合：不把它写成「据点 N」，只按原始目标值呈现
-        // （评审 5935348769 P2；专用 *_raw 文案保留“指令（目标 N）”的中性语义）。
-        return t(`eventStream.cmd_${ev.commandName}_raw`, {
-          who,
-          target: ev.commandTarget ?? '?',
-        }) + ch
-      }
-      if (ev.commandName === 'moving_here') {
-        return t('eventStream.marker_moving', { who }) + ch
-      }
-      return t('eventStream.marker_unknown', {
-        who,
-        type: ev.markerType ?? ev.command ?? '?',
-      }) + ch
-    }
-    case 'presence': {
-      // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
-      const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
-      const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
-      return t(key, { who, channel: ev.channelName || '-', raw: ev.rawType ?? '?' })
-    }
-    case 'moduleDamage':
-    case 'module':
-      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.module_label')}`
-    case 'damage': return t('eventStream.damage_label', {
-      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
-      to: ev.target ? actorText(ev.target) : '-',
-      n: ev.damage ?? 0,
-    })
-    case 'capture': {
-      if (ev.progress != null) return t('eventStream.capture_progress', { n: ev.progress })
-      const base = String.fromCharCode(65 + (ev.baseId ?? 0))
-      if (ev.faction) {
-        return t(`eventStream.capture_${ev.captureState ?? 'invading'}_faction`, {
-          faction: t(`eventStream.faction_${ev.faction}`),
-          base,
-        })
-      }
-      return t(`eventStream.capture_${ev.captureState ?? 'invading'}`, {
-        base,
-        team: ev.team ?? '-',
-      })
-    }
-    case 'observed': return t('eventStream.observed_label', { who: actorText(ev.actor) })
-    case 'destructible': return t('eventStream.destructible_label')
-    case 'notice': return ev.actor
-      ? t('eventStream.notice_label_actor', { who: actorText(ev.actor), code: ev.code ?? '?' })
-      : t('eventStream.notice_label', { code: ev.code ?? '?' })
-    case 'consumable':
-      return `${actorText(ev.actor)} · ${ev.text || t('eventStream.consumable_label')}`
-    case 'death': return t('eventStream.death_label_actor', { who: actorText(ev.actor) })
-    case 'revive': return t('eventStream.revive_label_actor', { who: actorText(ev.actor) })
-    case 'kill': return t('eventStream.kill_label', {
-      from: ev.actor ? actorText(ev.actor) : t('eventStream.environment_source'),
-      to: ev.target ? actorText(ev.target) : '-',
-    })
-    default: return t('eventStream.shot_label')
-  }
+  // 行文案唯一事实源在 utils/playbackEventStream.eventRowTitle（3D 快捷指令/聊天
+  // 滚动流同消费）：本封装只注入 vue-i18n 实例。
+  return eventRowTitle(ev, t)
 }
 
 /** 该行是否可直接进射击复现（有目标的事实行） */
@@ -408,7 +268,7 @@ function filterCount(key: EventFilterKey): number {
 </script>
 
 <template>
-  <section class="event-stream" data-testid="ws-event-stream" data-pane-ready="true">
+  <section class="event-stream" :class="{ 'event-stream--embedded': embedded }" data-testid="ws-event-stream" data-pane-ready="true">
     <div v-if="!props.file" class="es-empty">{{ $t('eventStream.no_file') }}</div>
     <template v-else>
       <div v-if="loading" class="es-status">{{ $t('eventStream.loading') }}</div>
@@ -467,4 +327,69 @@ function filterCount(key: EventFilterKey): number {
   </section>
 </template>
 
-<style scoped src="./replay-event-stream-pane.css"></style>
+<style scoped>
+/* 设计语言 token 化（stylelint: 禁 hex/rgba，字号/圆角/z 必须走 token；
+   胶囊圆角与 corner-shape 同条声明是仓库的 squircle 守卫要求）。 */
+.event-stream { display: flex; flex-direction: column; gap: var(--space-2); block-size: 100%; overflow: auto; }
+/* 内嵌（统一回放面板下方）：展开态是自然流列表——列表随内容增高、由页面滚动，
+   不设固定高度或内部滚动条（播放窗口因此保持满高）。 */
+.event-stream--embedded { gap: var(--space-1); block-size: auto; overflow: visible; }
+.event-stream--embedded .es-filters { flex: none; }
+.event-stream--embedded .es-list { flex: none; min-block-size: 0; overflow: visible; }
+.es-filters { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.es-chip {
+  border: 1px solid var(--color-border-subtle);
+  background: transparent;
+  color: var(--color-text-primary);
+  border-radius: var(--radius-full);
+  corner-shape: round;
+  padding: var(--space-1) var(--space-2);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+.es-chip.on { background: var(--color-accent); border-color: transparent; color: var(--color-on-accent); }
+.es-count { opacity: .7; margin-inline-start: var(--space-1); }
+/* 选中 chip 为实心强调底：计数与主标签同用 on-accent 且不降透明度（4.5:1） */
+.es-chip.on .es-count { opacity: 1; }
+.es-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+/* 手机窄屏（390px 实测）：长模块 token（MULTI_PURPOSE_RESTORATION…）没有断行点，
+   行内容撑出 ~140px 横向溢出——Chrome 移动端随后把布局视口扩到内容宽（390→520），
+   整页几何漂移（信息流/教程命中测试全部错位）。行与 es-body 允许收缩，
+   让 es-text 的 ellipsis 真正接管长 token。 */
+.es-row { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-1); border-radius: var(--radius-sm); min-inline-size: 0; }
+.es-row:hover { background: color-mix(in srgb, var(--color-text-primary) 5%, transparent); }
+.es-time { font-variant-numeric: tabular-nums; font: var(--type-caption); color: var(--color-text-tertiary); min-inline-size: 56px; }
+.es-icon { inline-size: 18px; text-align: center; }
+.es-icon.ev-kill { color: var(--color-danger); }
+.es-icon.ev-penetrated, .es-icon.ev-he { color: var(--color-warning); }
+.es-icon.ev-ricochet, .es-icon.ev-blocked { color: var(--color-text-tertiary); }
+.es-body {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  background: none;
+  border: 0;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  padding: 0;
+}
+.es-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.es-kind { font: var(--type-caption); color: var(--color-text-tertiary); }
+.es-armor {
+  border: 1px solid var(--color-border-subtle);
+  background: none;
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+.es-armor:disabled { opacity: .5; cursor: wait; }
+.es-status, .es-empty { padding: var(--space-3) var(--space-1); color: var(--color-text-secondary); }
+.es-err { color: var(--color-danger); }
+.es-overflow { font: var(--type-caption); color: var(--color-text-tertiary); margin: 0; }
+.es-more { margin-inline-start: var(--space-2); font: var(--type-caption); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: none; color: var(--color-text-primary); padding: 0 var(--space-2); cursor: pointer; }
+</style>
