@@ -325,7 +325,6 @@ export function installSceneAssembly(S: Host) {
     clearance: CAMERA_GROUND_CLEARANCE,
     getWorldCenter: () => S.mapWorld.worldCenter(),
     isFollowing: () => !!S.cameraRuntime.followEid(),
-    followMinDistance: () => S.cameraRuntime.followMinDistance(),
   });
   function applyCameraClamp(S: Host) { S.cameraTerrainClamp.applyCameraClamp(S.mapWorld.worldCenter().ext); }
   function terrainHeightForCameraClamp(S: Host, x: number, z: number) { return S.cameraTerrainClamp.terrainHeightForCameraClamp(x, z); }

@@ -57,7 +57,6 @@ import { FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { mapImages } from '../data/mapImages.js'
 
 import { normalizePenPoints } from './playback/annotation3d.js'
-import { followCameraMinDistance } from './playback/followCameraDistance.js'
 
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), loadRecorderCameraFromFile: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn(), tankNamesStatic: vi.fn(async () => new Map()) }))
@@ -1073,8 +1072,6 @@ describe('Free Camera terrain floor', () => {
       expect(window.__controls.target.x).toBeCloseTo(0, 3)
       expect(window.__controls.target.z).toBeCloseTo(0, 3)
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
-      // 近端是可贴地距离，不再是 20 m 战术总览下限
-      expect(window.__controls.minDistance).toBe(1)
       await loadNext(api)
       expect(store.cam).toBe('top')
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
@@ -1158,14 +1155,6 @@ describe('Free Camera terrain floor', () => {
       stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 150, zmax: 150 })
       await loadNext(api)
       expect(window.__camera.position.y).toBeGreaterThanOrEqual(150.5)
-    })
-
-    it('Follow 的 OrbitControls 近端收到车辆尺度，不再固定 20 m', async () => {
-      const { api } = await loadScene()
-      api.setFollow(1)
-      expect(window.__controls.minDistance).toBeCloseTo(followCameraMinDistance(undefined), 6)
-      expect(window.__controls.minDistance).toBeGreaterThan(1)
-      expect(window.__controls.minDistance).toBeLessThan(10)
     })
 
     it('Follow on one replay opens the next at the top overview mode', async () => {
