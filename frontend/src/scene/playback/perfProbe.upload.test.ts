@@ -63,6 +63,11 @@ describe('installUploadTracking', () => {
     expect(counts).toEqual({ bufferDataCalls: 0, bufferDataBytes: 0, bufferSubDataCalls: 0, bufferSubDataBytes: 0 })
   })
 
+  it('does not throw when a context exposes no upload methods', () => {
+    const counts = stats()
+    expect(installUploadTracking({} as never, counts, new WeakSet<object>())).toBe(false)
+  })
+
   it('installs both counters together and counts real upload bytes', () => {
     const { context } = fakeContext()
     const counts = stats()

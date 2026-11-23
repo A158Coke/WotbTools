@@ -112,6 +112,8 @@ export function installUploadTracking(
   attempted.add(context)
   const originalData = context.bufferData
   const originalSubData = context.bufferSubData
+  // Test doubles and partial contexts may expose only one (or neither) upload method.
+  if (typeof originalData !== 'function' || typeof originalSubData !== 'function') return false
   const nativeBufferData = originalData.bind(context) as (...args: unknown[]) => unknown
   const nativeBufferSubData = originalSubData.bind(context) as (...args: unknown[]) => unknown
   let installedData = false
