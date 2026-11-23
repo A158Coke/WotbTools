@@ -63,7 +63,7 @@ test('score mode reads the production page state without enabling ?perf', () => 
 
 test('score mode requires presented frames across the measured window', () => {
   const frames = Array.from({ length: 12 }, (_, index) => ({ at: index * 1000, hash: index % 2 ? 'a' : 'b' }))
-  assert.equal(verifyScoredFrames(frames, { durationMs: 10_000 }).frames, 12)
+  assert.equal(verifyScoredFrames(frames, { durationMs: 10_000 }).frames, 11)
   assert.throws(() => verifyScoredFrames(frames.slice(0, 3), { durationMs: 10_000 }), /too few/)
   assert.throws(() => verifyScoredFrames(frames.slice(0, 5), { durationMs: 10_000 }), /only span/)
   assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, hash: 'a' })), { durationMs: 10_000 }), /frozen/)
@@ -84,6 +84,12 @@ test('score mode requires presented frames across the measured window', () => {
   const hudOnly = frames.map(frame => ({ ...frame, hash: 'same', colors: 12 }))
   assert.throws(() => verifyScoredFrames(hudOnly, { durationMs: 10_000 }), /frozen/)
   assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, colors: 1 })), { durationMs: 10_000 }), /blank/)
+  // 窗口内 0–22.5 s 正常、22.5–30 s 冻结，31.5 s 才又变化：窗口外的帧必须不影响判定。
+  const lateChange = [
+    ...Array.from({ length: 10 }, (_, index) => ({ at: index * 2500, hash: 'a' })),
+    { at: 31_500, hash: 'b' },
+  ]
+  assert.throws(() => verifyScoredFrames(lateChange, { durationMs: 30_000 }), /before the window ended|stopped drawing/)
 })
 
 test('diagnostic mode never creates the scored canvas PBO probe', () => {
@@ -93,6 +99,7 @@ test('diagnostic mode never creates the scored canvas PBO probe', () => {
   assert.ok(guard > 0, 'score-mode guard is missing')
   assert.ok(guard < creation, 'PBO probe must be created inside the score-mode guard')
   assert.ok(source.indexOf('window.__canvasProbe = null') < guard, 'diagnostic mode must leave the probe unset')
+  assert.match(source, /if \(now > start \+ duration\) \{\s+window\.__canvasProbe\.stopped = true\s+return/)
 })
 
 test('a diagnostic trace cannot overwrite an existing report', async () => {

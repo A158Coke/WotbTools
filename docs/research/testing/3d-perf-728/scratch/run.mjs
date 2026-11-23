@@ -253,6 +253,11 @@ async function runScenario(id, rate) {
         const probeLoop = () => {
           if (window.__canvasProbe.stopped) return
           const now = performance.now()
+          // 计时窗口结束后不再发起新的回读；窗口外的一次变化不能作为窗口内持续绘制的证据。
+          if (now > start + duration) {
+            window.__canvasProbe.stopped = true
+            return
+          }
           if (probeSync) {
             const status = probeGl.clientWaitSync(probeSync, 0, 0)
             if (status === probeGl.ALREADY_SIGNALED || status === probeGl.CONDITION_SATISFIED) {

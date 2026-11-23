@@ -82,6 +82,66 @@ export interface PerfProbeHandle {
   } | null
 }
 
+// 一次上传实际搬运的字节数：WebGL2 允许 srcOffset/length（length 以元素计），
+// 只看 srcData.byteLength 会把子区间上传算成整块。非 typed-array（如 size 数字）返回 0。
+function uploadBytes(data: unknown, srcOffset: unknown, length: unknown) {
+  const view = data as { byteLength?: number; BYTES_PER_ELEMENT?: number } | null | undefined
+  const total = view?.byteLength
+  if (typeof total !== 'number') return 0
+  const bytesPerElement = view?.BYTES_PER_ELEMENT ?? 1
+  const offset = typeof srcOffset === 'number' && srcOffset > 0 ? srcOffset * bytesPerElement : 0
+  if (typeof length === 'number' && Number.isFinite(length) && length >= 0) {
+    return Math.min(Math.max(0, total - offset), length * bytesPerElement)
+  }
+  return Math.max(0, total - offset)
+}
+
+type UploadStats = { bufferDataCalls: number; bufferDataBytes: number; bufferSubDataCalls: number; bufferSubDataBytes: number }
+
+/**
+ * Install both upload counters atomically. If either method is non-writable, restore
+ * the one that did install and remember the context, so a retry cannot wrap it again.
+ * Exported for the regression test; production has a single caller.
+ */
+export function installUploadTracking(
+  context: WebGLRenderingContext | WebGL2RenderingContext,
+  stats: UploadStats,
+  attempted = new WeakSet<object>(),
+): boolean {
+  if (attempted.has(context)) return false
+  attempted.add(context)
+  const originalData = context.bufferData
+  const originalSubData = context.bufferSubData
+  const nativeBufferData = originalData.bind(context) as (...args: unknown[]) => unknown
+  const nativeBufferSubData = originalSubData.bind(context) as (...args: unknown[]) => unknown
+  let installedData = false
+  let installedSubData = false
+  try {
+    installedData = Reflect.set(context, 'bufferData', (...args: unknown[]) => {
+      stats.bufferDataCalls += 1
+      stats.bufferDataBytes += uploadBytes(args[1], args[3], args[4])
+      return nativeBufferData(...args)
+    })
+    if (!installedData) throw new Error('WebGL bufferData is not writable')
+    installedSubData = Reflect.set(context, 'bufferSubData', (...args: unknown[]) => {
+      stats.bufferSubDataCalls += 1
+      stats.bufferSubDataBytes += uploadBytes(args[2], args[3], args[4])
+      return nativeBufferSubData(...args)
+    })
+    if (!installedSubData) throw new Error('WebGL bufferSubData is not writable')
+    return true
+  } catch {
+    // Undo a partial install. A failed restore must not leave the counter wrapper in place.
+    if (installedData) {
+      try { if (!Reflect.set(context, 'bufferData', originalData)) delete (context as { bufferData?: unknown }).bufferData } catch { /* optional */ }
+    }
+    if (installedSubData) {
+      try { if (!Reflect.set(context, 'bufferSubData', originalSubData)) delete (context as { bufferSubData?: unknown }).bufferSubData } catch { /* optional */ }
+    }
+    return false
+  }
+}
+
 export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
@@ -91,40 +151,15 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   let uploadContext: WebGLRenderingContext | WebGL2RenderingContext | null = null
   let uploadStats = { bufferDataCalls: 0, bufferDataBytes: 0, bufferSubDataCalls: 0, bufferSubDataBytes: 0 }
   let uploadLast = { ...uploadStats }
-  // 一次上传实际搬运的字节数：WebGL2 允许 srcOffset/length（length 以元素计），
-  // 只看 srcData.byteLength 会把子区间上传算成整块。非 typed-array（如 size 数字）返回 0。
-  function uploadBytes(data: unknown, srcOffset: unknown, length: unknown) {
-    const view = data as { byteLength?: number; BYTES_PER_ELEMENT?: number } | null | undefined
-    const total = view?.byteLength
-    if (typeof total !== 'number') return 0
-    const bytesPerElement = view?.BYTES_PER_ELEMENT ?? 1
-    const offset = typeof srcOffset === 'number' && srcOffset > 0 ? srcOffset * bytesPerElement : 0
-    if (typeof length === 'number' && Number.isFinite(length) && length >= 0) {
-      return Math.min(Math.max(0, total - offset), length * bytesPerElement)
-    }
-    return Math.max(0, total - offset)
-  }
+  const uploadAttempted = new WeakSet<object>()
   function installUploadTracker(renderer: WebGLRenderer | null) {
     if (!PERF) return
     const context = renderer?.getContext?.() as WebGLRenderingContext | WebGL2RenderingContext | undefined
     if (!context || context === uploadContext) return
-    try {
-      const nativeBufferData = context.bufferData.bind(context) as (...args: unknown[]) => unknown
-      const nativeBufferSubData = context.bufferSubData.bind(context) as (...args: unknown[]) => unknown
-      const installedData = Reflect.set(context, 'bufferData', (...args: unknown[]) => {
-        uploadStats.bufferDataCalls += 1
-        uploadStats.bufferDataBytes += uploadBytes(args[1], args[3], args[4])
-        return nativeBufferData(...args)
-      })
-      const installedSubData = Reflect.set(context, 'bufferSubData', (...args: unknown[]) => {
-        uploadStats.bufferSubDataCalls += 1
-        uploadStats.bufferSubDataBytes += uploadBytes(args[2], args[3], args[4])
-        return nativeBufferSubData(...args)
-      })
-      if (!installedData || !installedSubData) throw new Error('WebGL context upload methods are not writable')
+    if (installUploadTracking(context, uploadStats, uploadAttempted)) {
       uploadContext = context
       uploadLast = { ...uploadStats }
-    } catch { /* Context methods may be non-writable in hardened builds; attribution is optional. */ }
+    }
   }
   function takeUploadDelta() {
     const delta = {

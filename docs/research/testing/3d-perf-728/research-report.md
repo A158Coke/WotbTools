@@ -560,7 +560,7 @@ Profile：内容进程 `GeckoMain`，每场景 ~30 s，原始文件 `scratch/out
 
 `swapMs` 只覆盖主线程换装，不含首次上传。上表的 bufferData/bufferSubData 是 **整帧 WebGL 流量**（按地形代次归组），不等于地形自身首次上传的 owner 归属；地形换装与车辆/纹理上传在同一帧内不可再分。每代约 7.2 MB 的几何上传落在大上传帧。基此判断容量桶与稳定 BufferAttribute 仍须把 Worker 传来的完整几何复制进常驻 buffer，`bufferSubData` 仍上传全量（LOD 几何逐代变化，无可复用的小 update range），而受影响帧仅 1.7%，故本轮**只交付归因，不实现容量桶**。评分模式（`--no-perf`）不安装 perf/上传挂钩，`terrain-attribution.mjs` 对带挂钩的 score 捕获直接拒绝。
 
-**幽灵名牌场景（R7，场景登记）。** 可用夹具在 `random-battle-example` 回放时钟 150–180 s 有持续 1–3 个幽灵名牌入镜（`scratch/scan-ghosts.mjs`，固定全图相机、mid、dynres=0；150–162 s 为 3 个，之后降为 1–2 个）。登记场景 `top-mid-ghost`：固定全图相机、q=mid、dynres=0、1× 播放、1280×720、DPR 1，使用 `--last-known=on|off` 每轮显式设置并核实开关。该场景下 30 s 单对诊断（ON 20.7 ms / OFF 13.9 ms 帧间隔 p50）受采集顺序与机器状态影响，**不作为 A/B 结论**；#1001 基线产物与平衡交错三轮 60 s 采集尚未完成，待相关运行时改动落地后按对应 thread 的验收继续。
+**幽灵名牌场景（R7，场景登记；完整 A/B 延后）。** 可用夹具在 `random-battle-example` 回放时钟 150–180 s 有持续 1–3 个幽灵名牌入镜（`scratch/scan-ghosts.mjs`，固定全图相机、mid、dynres=0；150–162 s 为 3 个，之后降为 1–2 个）。登记场景 `top-mid-ghost`：固定全图相机、q=mid、dynres=0、1× 播放、1280×720、DPR 1，使用 `--last-known=on|off` 每轮显式设置并核实开关。该场景下 30 s 单对诊断（ON 20.7 ms / OFF 13.9 ms 帧间隔 p50）受采集顺序与机器状态影响，**不作为 A/B 结论**。完整四格（A＝共同基线+#1001，B＝A+#1066，各 ON/OFF，CPU 1×/6× 分开，60 s×3 平衡交错）**未在本 PR 完成**；按 2026-11-23 review 结论移至 Issue #728，并在维护者明确接受延期前保持 R7 thread open。本 PR 只交付场景登记、显式开关、幽灵计数与有界阶段归因，不声称幽灵 FPS 回归或收益，也不在无证据时增加幽灵缓存。
 
 ## 附：产物位置
 

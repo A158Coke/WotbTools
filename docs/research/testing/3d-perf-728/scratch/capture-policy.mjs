@@ -70,11 +70,16 @@ export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, 
  * only sampled at the ends of a 30 s window.
  */
 export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanRatio = 0.5, maxGapMs = 1500, edgeSlackMs = maxGapMs }) {
-  if (!Array.isArray(frames) || frames.length < minFrames) {
-    throw new Error(`Scoring saw too few canvas frames: ${frames?.length ?? 0}`)
+  // 只看计时窗口内的帧：窗口结束后的一次变化不能掩盖窗口末段冻结。采样时间相对
+  // 窗口起点；非法时间戳同样丢弃。
+  const inWindow = Array.isArray(frames)
+    ? frames.filter(frame => Number.isFinite(frame?.at) && frame.at >= 0 && frame.at <= durationMs)
+    : []
+  if (inWindow.length < minFrames) {
+    throw new Error(`Scoring saw too few canvas frames: ${inWindow.length}`)
   }
-  const first = frames[0]
-  const last = frames[frames.length - 1]
+  const first = inWindow[0]
+  const last = inWindow[inWindow.length - 1]
   const span = last.at - first.at
   if (!(span >= durationMs * minSpanRatio)) {
     throw new Error(`Scoring frames only span ${Math.round(span)} of ${durationMs} ms`)
@@ -88,21 +93,25 @@ export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanR
   if (!(last.at >= durationMs - slack)) {
     throw new Error(`Scoring frames stopped ${Math.round(durationMs - last.at)} ms before the window ended (limit ${slack} ms)`)
   }
-  for (let i = 1; i < frames.length; i++) {
-    const gap = frames[i].at - frames[i - 1].at
+  for (let i = 1; i < inWindow.length; i++) {
+    const gap = inWindow[i].at - inWindow[i - 1].at
     if (!(gap <= maxGapMs)) {
       throw new Error(`Scoring canvas sampling gap ${Math.round(gap)} ms exceeds ${maxGapMs} ms`)
     }
   }
-  const blank = frames.find(frame => typeof frame.colors === 'number' && frame.colors < 2)
+  const blank = inWindow.find(frame => typeof frame.colors === 'number' && frame.colors < 2)
   if (blank) throw new Error('Scoring sampled a blank 3D canvas')
-  const distinct = new Set(frames.map(frame => frame.hash)).size
+  const distinct = new Set(inWindow.map(frame => frame.hash)).size
   if (distinct < 2) throw new Error('Scoring saw a frozen 3D canvas')
-  // 整段只有开头变化、末尾画面冻结同样不能算持续绘制：最后 25% 至少两帧不同。
-  const tail = frames.slice(-Math.max(2, Math.ceil(frames.length * 0.25)))
+  // 尾段按实际时间区间取：最后 25% 的窗口内至少有两帧不同。不能按样本数量取尾，
+  // 否则窗口外补采的帧可以把窗口末段的冻结稀释掉。
+  const tail = inWindow.filter(frame => frame.at >= durationMs * 0.75)
+  if (tail.length < 2) {
+    throw new Error('Scoring canvas stopped drawing before the window ended')
+  }
   const tailDistinct = new Set(tail.map(frame => frame.hash)).size
   if (tailDistinct < 2) throw new Error('Scoring canvas stopped drawing before the window ended')
-  return { frames: frames.length, distinct, tailDistinct, spanMs: span, firstAt: first.at, lastAt: last.at }
+  return { frames: inWindow.length, distinct, tailDistinct, spanMs: span, firstAt: first.at, lastAt: last.at, ignored: frames.length - inWindow.length }
 }
 
 export function verifySceneResources(urls, expectedRoot, version, expectedDataset, requireVehicle) {
