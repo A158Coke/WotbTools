@@ -200,6 +200,51 @@ describe('飞行循环的生命周期（评审 P2）', () => {
   })
 })
 
+// 评审 P2：HIGH 档水面反射隔帧更新，WASD 最后一个键松开后不能再靠 flyTick 产生
+// dirty frame——收口必须在 keyup / blur 当次显式请求一次反射刷新。
+describe('WASD 交互收口（评审 P2）', () => {
+  function mountFly(settleCamera) {
+    const api = { flyTick: () => false, invalidate: () => {}, settleCamera }
+    const Comp = defineComponent({
+      setup() {
+        useSceneFlyControls({
+          setFlySpeed: () => {},
+          isActive: () => true,
+          canFly: () => true,
+          getSceneApi: () => api,
+        })
+        return () => h('div')
+      },
+    })
+    return mount(Comp)
+  }
+
+  it('还有其它飞行键按住时不收口；最后一个键松开收口一次', () => {
+    const settleCamera = vi.fn()
+    const wrapper = mountFly(settleCamera)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA' }))
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
+    expect(settleCamera).not.toHaveBeenCalled()
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))
+    expect(settleCamera).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))
+    expect(settleCamera).toHaveBeenCalledTimes(1)   // 未登记键的 keyup 不重复收口
+    wrapper.unmount()
+  })
+
+  it('按住飞行键时窗口失焦：清键后收口一次', () => {
+    const settleCamera = vi.fn()
+    const wrapper = mountFly(settleCamera)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))
+    window.dispatchEvent(new Event('blur'))
+    expect(settleCamera).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event('blur'))
+    expect(settleCamera).toHaveBeenCalledTimes(1)   // 已无按键：不重复收口
+    wrapper.unmount()
+  })
+})
+
 describe('freeVerticalDistancePose 竖向距离位姿（滑条 Free 模式）', () => {
   const base = { terrainY: 0, clearanceMin: 0.5, heightMax: 100 }
 

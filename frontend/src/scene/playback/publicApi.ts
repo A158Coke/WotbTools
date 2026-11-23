@@ -97,6 +97,8 @@ export function createPlaybackApi(S: Host) {
     setFlySpeed: (n: number) => S.cameraRuntime.setFlySpeed(n),
     flyTick: (dt: number, pressed: Set<string>) => S.cameraRuntime.flyTick(dt, pressed),
     invalidate: S.invalidate,
+    /** 相机交互收口：最后姿态可能落在 HIGH 隔帧反射的跳过帧，必须显式强制刷新一次。 */
+    settleCamera: () => { S.requestWaterReflectionRefresh(); S.invalidate(); },
     seekFraction: (frac: number) => { if (S.DATA) S.seekTo(S.START + frac * (S.END - S.START)); },
     // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [START, END] 夹取（准备 / 倒计时阶段回不去）
     seekTime: (t: number) => { if (S.DATA) S.seekTo(t); },

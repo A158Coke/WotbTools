@@ -232,6 +232,48 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
     expect(renderer.render).toHaveBeenCalledTimes(4)
     refl.dispose()
   })
+
+  it('HIGH 最后相机姿态落在跳过帧：收口刷新使用当前镜像相机，消费后恢复隔帧', () => {
+    const mesh = waterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({
+      getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2,
+    })
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)      // frame 1 → render
+    cam.position.set(12, 70, 30)
+    cam.lookAt(new THREE.Vector3(20, 0, 0))
+    cam.updateMatrixWorld(true)
+    refl.update(renderer, scene, cam)      // frame 2 → skip（相机已移动）
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.requestRefresh()                  // 相机交互收口（pointerup / keyup / cancel）
+    refl.update(renderer, scene, cam)      // frame 3 → force：必须用最后姿态
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    const mirrored = renderer.render.mock.calls.at(-1)![1] as THREE.PerspectiveCamera
+    expect(mirrored).not.toBe(cam)
+    expect(mirrored.position.x).toBeCloseTo(12, 6)
+    expect(mirrored.position.y).toBeCloseTo(-70, 6)
+    expect(mirrored.position.z).toBeCloseTo(30, 6)
+    refl.update(renderer, scene, cam)      // frame 4 → 强制已消费，回到隔帧
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    refl.dispose()
+  })
+
+  it('intervalFrames=1（ULTRA）仍每帧刷新，不受交互收口影响', () => {
+    const mesh = waterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({
+      getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 1,
+    })
+    refl.setEnabled(true)
+    for (let i = 0; i < 4; i++) refl.update(renderer, scene, cam)
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.dispose()
+  })
 })
 
 describe('createWaterReflection 保守可见性剔除（W3）', () => {

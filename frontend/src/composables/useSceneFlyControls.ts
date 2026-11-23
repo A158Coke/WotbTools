@@ -28,8 +28,8 @@ export interface SceneFlyControlsAdapter {
   isActive?: () => boolean
   /** 当前是否允许飞行（如 DATA 就绪、非触屏） */
   canFly?: () => boolean
-  /** 场景内核 API（flyTick 推进相机；invalidate 请求按需重绘） */
-  getSceneApi?: () => { flyTick?: (dt: number, pressed: Set<string>) => boolean; invalidate?: () => void } | null
+  /** 场景内核 API（flyTick 推进相机；invalidate 请求按需重绘；settleCamera 收口相机交互并强制反射刷新） */
+  getSceneApi?: () => { flyTick?: (dt: number, pressed: Set<string>) => boolean; invalidate?: () => void; settleCamera?: () => void } | null
 }
 
 /**
@@ -227,11 +227,24 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
     }
   }
 
+  function settleCamera(): void {
+    adapter.getSceneApi?.()?.settleCamera?.()
+  }
+
   function handleKeyup(event: KeyboardEvent): void {
-    pressed.delete(event.code)
+    const wasPressed = pressed.delete(event.code)
+    // 最后一个飞行键松开：相机随即静止，不能等下一帧 flyTick（那时已无位移输入）。
+    if (wasPressed && pressed.size === 0) settleCamera()
   }
 
   function clearPressed() { pressed.clear() }
+
+  function handleBlur(): void {
+    const wasFlying = pressed.size > 0
+    clearPressed()
+    // 失焦同样结束相机交互；按键被清空后 loop 不会再产生 dirty frame。
+    if (wasFlying) settleCamera()
+  }
 
   /**
    * 推进一帧相机位移（工厂内包装：速率取当前档，按键集合取本实例）。
@@ -304,12 +317,12 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
     onMounted(() => {
       window.addEventListener('keydown', handleKeydown)
       window.addEventListener('keyup', handleKeyup)
-      window.addEventListener('blur', clearPressed)
+      window.addEventListener('blur', handleBlur)
     })
     onBeforeUnmount(() => {
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('keyup', handleKeyup)
-      window.removeEventListener('blur', clearPressed)
+      window.removeEventListener('blur', handleBlur)
       stopLoop()
     })
   }
