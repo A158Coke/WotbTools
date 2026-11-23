@@ -92,6 +92,21 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     return true;
   }
 
+  /** 跟随近端写入 OrbitControls；地形高度场缺失时 clamp 会直接返回，不能只依赖它。 */
+  function applyFollowMinDistance() {
+    const controls = deps.getControls();
+    if (!controls) return;
+    controls.minDistance = followMinDistance;
+    controls.maxDistance = Math.max(controls.maxDistance, followMinDistance);
+  }
+  /** GLB 迟到挂载后按真实模型刷新近端；只处理当前跟随目标，其他车挂载不扰动相机。 */
+  function refreshFollowMinDistance(eid: number) {
+    if (CAM !== 'follow' || !FOLLOW_EID || eid !== FOLLOW_EID) return;
+    followMinDistance = followCameraMinDistance(deps.vehicles.vehicleByEid(FOLLOW_EID));
+    applyFollowMinDistance();
+    deps.clampOrbitCameraToTerrain();
+    deps.invalidate();
+  }
   function setFollow(eid: number) {
     FOLLOW_EID = eid;
     if (FOLLOW_EID) { setCam('follow'); } else { setCam('free'); }
@@ -144,6 +159,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
       // 最近距离按被跟随车辆的模型外廓量一次（GLB 优先，低模回退）：
       // 相机可贴到车体附近，但不会钻进模型；旧固定 20 m 会一直停在战术总览距离。
       followMinDistance = followCameraMinDistance(FOLLOW_EID ? deps.vehicles.vehicleByEid(FOLLOW_EID) : null)
+      applyFollowMinDistance();
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
       controls.minPolarAngle = 0;
@@ -343,6 +359,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     setFollow,
     resetFollow: () => { FOLLOW_EID = 0; followMinDistance = followCameraMinDistance(null); },
     followMinDistance: () => followMinDistance,
+    refreshFollowMinDistance,
     setFlySpeed,
     flyTick,
     flyLookApplyMode,

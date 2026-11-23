@@ -161,6 +161,20 @@ describe(':1007 悬挂数据（包内 suspension/<id>.json）', () => {
     expect(vs[0].def.suspReaction).toBe(5)   // wheels_reaction_speed 透传
     rt.dispose()
   })
+
+  it('GLB 迟到挂载 → 通知宿主刷新跟随相机近端', async () => {
+    const data = makeData()
+    const onGlbAttached = vi.fn()
+    const { deps } = makeDeps(data, { onGlbAttached })
+    const rt = createVehicleRuntime(deps)
+    rt.buildVehicles()
+    jsonRoutes()
+    await rt.applyGlbToggle(true)
+    expect(rt.getVehicles()[0].glb).toBeTruthy()
+    expect(onGlbAttached).toHaveBeenCalledTimes(1)
+    expect(onGlbAttached).toHaveBeenCalledWith(1)
+    rt.dispose()
+  })
 })
 
 describe(':1040 fail-closed 与 per-vehicle clone', () => {

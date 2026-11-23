@@ -218,6 +218,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
             }
             v.glbVisual = prepareTankDestroyedVisual(v.glb);
             applyPose(v);   // late attach while paused must reflect the current replay time
+            deps.onGlbAttached?.(v.def.eid)
             deps.invalidate();
           }
         }

@@ -1168,6 +1168,14 @@ describe('Free Camera terrain floor', () => {
       expect(window.__controls.minDistance).toBeLessThan(10)
     })
 
+    it('地形高度场不可用时 Follow 仍写入模型近端，不把 1 m 留给相机穿模', async () => {
+      source.loadPlaybackData.mockResolvedValue(minimalData())
+      const { api } = createScene()
+      await api.loadData({ kind: 'local', file: new File(['no-terrain'], 'follow-no-heightfield.wotbreplay') })
+      api.setFollow(1)
+      expect(window.__controls.minDistance).toBeCloseTo(followCameraMinDistance(undefined), 6)
+    })
+
     it('Follow on one replay opens the next at the top overview mode', async () => {
       const { api, store } = await loadScene()
       api.setFollow(1)
