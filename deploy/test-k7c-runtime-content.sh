@@ -395,14 +395,17 @@ def default(name):
 
 per_attempt = default("K7C_APK_MAX_TIME_SEC")
 total = default("K7C_APK_TOTAL_BUDGET_SEC")
+public = default("K7C_APK_PUBLIC_BUDGET_SEC")
 small = default("K7C_MAX_TIME_SEC")
 assert per_attempt > 120, per_attempt
 assert total >= per_attempt, (total, per_attempt)
 assert total <= 1500, total
+assert 0 < public < total, (public, total)
+assert total - public >= per_attempt, (public, total, per_attempt)
 assert 4 * small + total <= 2100, (small, total)
 for needle in ("-C -", "Range: bytes=0-0", "content-range", "sha256 mismatch"):
     assert needle in text, needle
-print(f"APK timeout policy: per-attempt={per_attempt}s total={total}s small-file-worst={4 * small}s job-timeout=2100s")
+print(f"APK timeout policy: per-attempt={per_attempt}s total={total}s public-budget={public}s small-file-worst={4 * small}s job-timeout=2100s")
 PY
 
 apk_fixtures="$work/apk-fixtures"
@@ -415,12 +418,14 @@ import os
 import pathlib
 import socketserver
 import sys
+import time
 
 root = pathlib.Path(sys.argv[1]).resolve()
 log_path = pathlib.Path(sys.argv[2])
 port = int(sys.argv[3])
 truncate_once = {item for item in os.environ.get("TRUNCATE_ONCE", "").split(",") if item}
 truncate_always = {item for item in os.environ.get("TRUNCATE_ALWAYS", "").split(",") if item}
+stall = {item for item in os.environ.get("STALL", "").split(",") if item}
 counts = {}
 truncated = set()
 
@@ -475,6 +480,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
+        if rel in stall and requested != "bytes=0-0":
+            try:
+                self.wfile.write(body[:1024])
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            time.sleep(30)
+            return
         cut = None
         if rel in truncate_always:
             cut = max(1, len(body) // 4)
@@ -671,6 +684,59 @@ assert len(public) >= 2, public
 assert any(offset > 0 for offset in public), public
 assert internal and all(offset == 0 for offset in internal), internal
 print(f"source switch offsets: public={public} internal={internal}")
+PY
+
+# 2b) 公网探测成功但实际传输持续卡住、拖到公网预算上限：内网回退仍必须从 0 开始并通过 SHA。
+stall_src="$apk_fixtures/stall-src"
+stall_public="$apk_fixtures/stall-public"
+stall_live="$apk_fixtures/stall-live"
+stall_name=wotbtools-android-v9.2.1.apk
+mkdir -p "$stall_src/download/android" "$stall_public/download/android" "$stall_live/android-release"
+make_apk "$stall_src/download/android/$stall_name" a
+cp "$stall_src/download/android/$stall_name" "$stall_public/download/android/$stall_name"
+stall_sha="$(sha_of "$stall_src/download/android/$stall_name")"
+write_manifest "$stall_src" "$stall_name" "$stall_sha"
+stall_port="$(free_port)"
+stall_public_port="$(free_port)"
+stall_log="$apk_fixtures/stall-internal.log"
+stall_public_log="$apk_fixtures/stall-public.log"
+start_fixture "$stall_src" "$stall_log" "$stall_port" || fail 'stall internal fixture did not start'
+start_fixture "$stall_public" "$stall_public_log" "$stall_public_port" "STALL=download/android/$stall_name" \
+  || fail 'stall public fixture did not start'
+PUBLIC_FIXTURE_PORT="$stall_public_port" PATH="$public_bin:$PATH" \
+  K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$stall_port" \
+  K7C_RUNTIME_ROOT="$stall_live" \
+  K7C_APK_MAX_TIME_SEC=1 K7C_APK_PUBLIC_BUDGET_SEC=2 K7C_APK_TOTAL_BUDGET_SEC=8 K7C_APK_RETRIES=3 \
+  K7C_APK_RETRY_DELAY_SEC=0 K7C_CONNECT_TIMEOUT_SEC=2 \
+  bash "$sync" > "$apk_fixtures/stall-sync.log" 2>&1 \
+  || { cat "$apk_fixtures/stall-sync.log" >&2; fail 'public stall fallback sync failed'; }
+grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/stall-sync.log" || fail 'stall fallback sync did not finish'
+grep -Fq 'APK budget exhausted' "$apk_fixtures/stall-sync.log" || fail 'public APK budget exhaustion was not recorded'
+[ "$(sha_of "$stall_live/android-release/$stall_name")" = "$stall_sha" ] || fail 'stall fallback APK sha mismatch'
+python3 - "$stall_public_log" "$stall_log" "$stall_name" <<'PY'
+import re
+import sys
+public_log, internal_log, name = sys.argv[1], sys.argv[2], sys.argv[3]
+prefix = "download/android/" + name
+
+
+def offsets(path):
+    result = []
+    for line in open(path, encoding="utf-8"):
+        rel, _, requested = line.rstrip("\n").partition("\t")
+        if rel != prefix or requested == "bytes=0-0":
+            continue
+        match = re.match(r"bytes=(\d+)-", requested)
+        result.append(int(match.group(1)) if match else 0)
+    return result
+
+
+public = offsets(public_log)
+internal = offsets(internal_log)
+assert len(public) >= 2, public
+assert any(offset > 0 for offset in public), public
+assert internal and all(offset == 0 for offset in internal), internal
+print(f"public stall offsets: public={public} internal={internal}")
 PY
 
 # 3) 公开源完整但校验失败：回退内网时必须从零下载，且日志明确记录 mismatch。

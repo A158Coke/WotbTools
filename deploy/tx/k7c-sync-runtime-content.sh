@@ -28,6 +28,10 @@ readonly MAX_TIME="${K7C_MAX_TIME_SEC:-120}"
 # 仍低于 Frontend Replica 的 35min job timeout。
 readonly APK_MAX_TIME="${K7C_APK_MAX_TIME_SEC:-600}"
 readonly APK_TOTAL_BUDGET="${K7C_APK_TOTAL_BUDGET_SEC:-1200}"
+# 公网源单独封顶：公开链接探测成功但传输卡死时，不能让第一个源吃掉全部 APK
+# 预算；至少为 TX1 内网回退保留一个完整单次窗口（默认 600s）。TX1 实测约
+# 53MB/120s，210MB 约 480s，600s 足够一次完整内网下载。总预算仍不变。
+readonly APK_PUBLIC_BUDGET="${K7C_APK_PUBLIC_BUDGET_SEC:-600}"
 readonly APK_RETRIES="${K7C_APK_RETRIES:-3}"
 readonly APK_RETRY_DELAY="${K7C_APK_RETRY_DELAY_SEC:-2}"
 APK_DEADLINE=0
@@ -66,16 +70,18 @@ source_supports_range(){
   [[ "$headers" =~ content-range:[[:space:]]*bytes[[:space:]]+0-0/[0-9]+ ]] || return 1
 }
 
-# 单个 APK 源的下载循环。每次进入都先清空目标文件：调用方只有在本源校验失败后
-# 才会换源，绝不能让上一源的半截字节被 -C - 当成新源的续传起点。
+# 单个 APK 源的下载循环。source_deadline 是本源的截止时间：公网源由调用方传入
+# 更早的 cap，确保内网回退仍有预算。每次进入都先清空目标文件：调用方只有在本源
+# 校验失败后才会换源，绝不能让上一源的半截字节被 -C - 当成新源的续传起点。
 apk_fetch(){
-  local url dest mode attempt rc remaining max_time offset
+  local url dest source_deadline mode attempt rc remaining max_time offset delay
   url="$(full_url "$1")"
   dest="$2"
+  source_deadline="$3"
   rm -f -- "$dest"
   : > "$dest"
 
-  remaining=$((APK_DEADLINE - SECONDS))
+  remaining=$((source_deadline - SECONDS))
   [ "$remaining" -gt 0 ] || { echo "K7C runtime sync: APK budget exhausted before $url" >&2; return 1; }
   max_time="$MAX_TIME"
   [ "$max_time" -le "$remaining" ] || max_time="$remaining"
@@ -88,7 +94,7 @@ apk_fetch(){
   attempt=0
   while :; do
     attempt=$((attempt + 1))
-    remaining=$((APK_DEADLINE - SECONDS))
+    remaining=$((source_deadline - SECONDS))
     [ "$remaining" -gt 0 ] || { echo "K7C runtime sync: APK budget exhausted: $url" >&2; return 1; }
     max_time="$APK_MAX_TIME"
     [ "$max_time" -le "$remaining" ] || max_time="$remaining"
@@ -116,13 +122,18 @@ apk_fetch(){
     fi
 
     [ "$attempt" -le "$APK_RETRIES" ] || return 1
-    sleep "$APK_RETRY_DELAY"
+    # 重试等待也受本源 deadline 约束，避免公网源在 cap 之外多占内网预算。
+    remaining=$((source_deadline - SECONDS))
+    [ "$remaining" -gt 0 ] || continue
+    delay="$APK_RETRY_DELAY"
+    [ "$delay" -le "$remaining" ] || delay="$remaining"
+    sleep "$delay"
   done
 }
 
 fetch_apk_verified(){
-  local url="$1" dest="$2" actual
-  apk_fetch "$url" "$dest" || { rm -f -- "$dest"; return 1; }
+  local url="$1" dest="$2" source_deadline="$3" actual
+  apk_fetch "$url" "$dest" "$source_deadline" || { rm -f -- "$dest"; return 1; }
   actual="$(sha256sum "$dest" | awk '{print $1}')"
   [ "$actual" = "$expected_sha" ] || {
     echo "K7C runtime sync: sha256 mismatch from $url (got $actual, want $expected_sha)" >&2
@@ -166,8 +177,10 @@ expected_sha="${expected_sha,,}"
 [ -n "$expected_sha" ] || fail "Android version.json has no sha256; refusing to install an unverified APK: $apk_name"
 [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid sha256 in Android version.json: $expected_sha"
 APK_DEADLINE=$((SECONDS + APK_TOTAL_BUDGET))
-fetch_apk_verified "$apk_url" "$stage/android-release/$apk_name" \
-  || fetch_apk_verified "$apk_path" "$stage/android-release/$apk_name" \
+apk_public_deadline=$((SECONDS + APK_PUBLIC_BUDGET))
+[ "$apk_public_deadline" -le "$APK_DEADLINE" ] || apk_public_deadline="$APK_DEADLINE"
+fetch_apk_verified "$apk_url" "$stage/android-release/$apk_name" "$apk_public_deadline" \
+  || fetch_apk_verified "$apk_path" "$stage/android-release/$apk_name" "$APK_DEADLINE" \
   || fail "cannot fetch current APK with matching sha256: $apk_name"
 
 python3 - "$stage/android-release/version.json" "$stage/android-release/$apk_name" <<'PY'
