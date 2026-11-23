@@ -44,8 +44,9 @@ fail(){ echo "K7C runtime sync: FAIL: $*" >&2; exit 1; }
 # 预算必须是正整数；总预算必须大于内网预留，否则内网回退没有可执行窗口。
 validate_positive_seconds(){
   local name="$1" value="$2"
-  [[ "$value" =~ ^[0-9]+$ ]] || fail "invalid $name: $value (expected integer seconds)"
-  [ "$value" -gt 0 ] || fail "invalid $name: $value (must be greater than 0)"
+  # 拒绝前导零：Bash 算术把 08/0600 当成八进制，校验通过后会在预算计算阶段
+  # 报错或静默缩小预算；在任何 I/O 之前明确失败。
+  [[ "$value" =~ ^[1-9][0-9]*$ ]] || fail "invalid $name: $value (expected positive decimal seconds without leading zeros)"
 }
 validate_positive_seconds K7C_APK_MAX_TIME_SEC "$APK_MAX_TIME"
 validate_positive_seconds K7C_APK_TOTAL_BUDGET_SEC "$APK_TOTAL_BUDGET"

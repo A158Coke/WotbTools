@@ -404,7 +404,7 @@ assert 0 < public < total, (public, total)
 assert total - per_attempt >= 1, (total, per_attempt)
 assert public <= total - per_attempt, (public, total, per_attempt)
 assert 4 * small + total <= 2100, (small, total)
-for needle in ("K7C_APK_INTERNAL_RESERVE_SEC:-$APK_MAX_TIME", "capping public APK budget", "must exceed internal reserve", "-C -", "Range: bytes=0-0", "content-range", "sha256 mismatch"):
+for needle in ("K7C_APK_INTERNAL_RESERVE_SEC:-$APK_MAX_TIME", "capping public APK budget", "must exceed internal reserve", "without leading zeros", "-C -", "Range: bytes=0-0", "content-range", "sha256 mismatch"):
     assert needle in text, needle
 print(f"APK timeout policy: per-attempt={per_attempt}s total={total}s public-budget={public}s internal-reserve={per_attempt}s small-file-worst={4 * small}s job-timeout=2100s")
 PY
@@ -814,6 +814,20 @@ if K7C_RUNTIME_ROOT="$invalid_live" K7C_APK_MAX_TIME_SEC=600 K7C_APK_TOTAL_BUDGE
 fi
 grep -Fq 'must exceed internal reserve' "$apk_fixtures/invalid-budget-sync.log" || fail 'invalid budget configuration was not explained'
 grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/invalid-budget-sync.log" && fail 'invalid budget configuration reported PASS'
+
+# 2e) 前导零预算必须在任何 I/O 前拒绝：Bash 算术会把它当八进制，校验与计算
+# 必须使用同一种十进制格式，不能等请求了 manifest 才在算术阶段失败。
+for budget in 08 0600; do
+  zero_live="$apk_fixtures/leading-zero-$budget-live"
+  zero_log="$apk_fixtures/leading-zero-$budget.log"
+  mkdir -p "$zero_live/android-release"
+  if K7C_RUNTIME_ROOT="$zero_live" K7C_APK_MAX_TIME_SEC=1 K7C_APK_TOTAL_BUDGET_SEC="$budget" \
+    bash "$sync" > "$zero_log" 2>&1; then
+    fail "leading-zero budget $budget was accepted"
+  fi
+  grep -Fq 'without leading zeros' "$zero_log" || fail "leading-zero budget $budget was not rejected as a format error"
+  grep -Fq 'cannot fetch Android version.json' "$zero_log" && fail "leading-zero budget $budget failed after network I/O"
+done
 
 # 3) 公开源完整但校验失败：回退内网时必须从零下载，且日志明确记录 mismatch。
 wrong_src="$apk_fixtures/wrong-src"
