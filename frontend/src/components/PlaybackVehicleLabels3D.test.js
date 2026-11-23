@@ -261,6 +261,37 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.unmount()
   })
 
+  it('屏外重入 / 数字存活期间重开名牌：集中读几何前先解除宿主 hidden', async () => {
+    vi.useFakeTimers()
+    const { wrapper, anchorEl } = await mountedLabel()
+    stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
+    wrapper.vm.spawnDamage(7, 342, 2000)
+    await nextTick()
+    wrapper.vm.setAnchor(7, shownAnchor)
+    expect(damage(wrapper).element.hidden).toBe(false)
+
+    // 车辆出屏：宿主与数字一起隐藏，但数字仍在寿命内；此时 labelsSeq 失效让布局重算。
+    wrapper.vm.setAnchor(7, { ...shownAnchor, visible: false, projected: false })
+    expect(anchorEl.hidden).toBe(true)
+    wrapper.vm.setLabels([hpRow(7)])
+    await nextTick()
+
+    const observedHidden = []
+    anchorEl.getBoundingClientRect = () => {
+      observedHidden.push(anchorEl.hidden)
+      return rect(100, 40, 40, 60)
+    }
+    wrapper.vm.beginAnchors({ x: 300, y: 600 })
+    wrapper.vm.setAnchor(7, { ...shownAnchor, x: 200 })
+    wrapper.vm.endAnchors()
+
+    expect(observedHidden.length, '重入帧必须重新量名牌几何').toBeGreaterThan(0)
+    expect(observedHidden.every((hidden) => hidden === false), '测量时宿主必须已解除 hidden').toBe(true)
+    expect(damage(wrapper).element.hidden).toBe(false)
+    expect(damage(wrapper).element.style.transform).toBe('translate3d(220px, 72px, 0)')
+    wrapper.unmount()
+  })
+
   it('跟随当前 anchor：车辆 / 相机每帧移动时按同一 dx / dy 一起走（不缓存屏幕绝对坐标）', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()

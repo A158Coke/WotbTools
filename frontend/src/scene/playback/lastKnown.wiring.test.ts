@@ -25,7 +25,8 @@ describe('lastKnown 接线 guard（源码级）', () => {
     expect(src).toMatch(/deps\.store\.lastKnownOn/)
     expect(src).toMatch(/const lastKnown = ghostOf\(v\)/)
     // 幽灵名牌不因车辆 group 隐藏而失去投影（projected 放宽到幽灵锚点）
-    expect(src).toMatch(/v\.group\.visible \|\| ghostOf\(v\) != null/)
+    expect(src).toMatch(/const isGhost = ghostOf\(v\) != null/)
+    expect(src).toMatch(/v\.group\.visible \|\| isGhost/)
   })
 
   it('vehicleRuntime 以协议 AoI 判别计算最后已知位姿并放置半透明代理', () => {

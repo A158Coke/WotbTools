@@ -152,9 +152,14 @@ async function runScenario(id, rate) {
     // probe hooks stay disabled, but a missing production entry or a dead scene is fatal.
     let scoredScene = null
     if (!perf) {
-      const { root: documentRoot } = await chrome.client.send('DOM.getDocument', { depth: 0 }, sid)
-      const { nodeId } = await chrome.client.send('DOM.querySelector', { nodeId: documentRoot.nodeId, selector: '[data-testid="select-files-input"]' }, sid)
-      const { files } = await chrome.client.send('DOM.getFileInputFiles', { nodeId }, sid)
+      // DOM.getFileInputFiles is no longer exposed by this Chrome, and FileDrop clears
+      // input.value after change. The new-document audit hashes the File bytes instead.
+      await page.waitForValue(
+        'window.__pbInputAudit && (window.__pbInputAudit.sha256 || window.__pbInputAudit.error)',
+        Boolean,
+        { timeout: 30000, label: 'input byte audit' },
+      )
+      const inputAudit = await page.probe(() => ({ ...window.__pbInputAudit }))
       scoredScene = await page.probe(() => {
         const stage = document.querySelector('[data-testid=replay3d-stage]')
         const canvas = stage?.querySelector('canvas')
@@ -162,13 +167,14 @@ async function runScenario(id, rate) {
         return {
           url: location.href,
           perfHandle: !!window.__pbPerf,
-          camera: document.querySelector('[data-testid="replay3d-camera"] .segmented-option.is-active')?.dataset.value ?? null,
+          camera: stage?.dataset.camera ?? null,
           followed: !!document.querySelector('.pb-roster-row.followed'),
           quality: stage?.dataset.quality ?? null,
           canvas: canvas ? { width: canvas.width, height: canvas.height, webgl: !!gl && !gl.isContextLost() } : null,
         }
       })
-      verifyScoredScene({ ...scoredScene, inputFiles: files, expectedInput: fixturePath(fixture), expectedCamera, expectedQuality: sc.q })
+      verifyScoredScene({ ...scoredScene, inputSha256: inputAudit.sha256, expectedInputSha256: replayDigest, expectedCamera, expectedQuality: sc.q })
+      scoredScene.input = inputAudit
     }
     let navigationStartMs
     const saveTrace = TRACE ? await startTimelineTrace(chrome.client) : null

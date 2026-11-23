@@ -193,10 +193,14 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
         ? await (observer ? source.session.loadScene(source.file as File, observer) : source.session.loadScene(source.file as File))
         : await loadPlaybackData(observer ? { ...source, observer } : source);
       const playbackSession = source?.session ? source.session.getState(source.file as File) : null;
+      if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       // 工作台可能先于 3D 开始解析：late observer 收不到 replay.identity 事件，
       // 但会话状态持有同一份完整内容摘要，必须写进 ?perf identity（否则评分的输入身份为空）。
-      if (perf && playbackSession?.replayDigest) perf.setIdentity({ replayDigest: playbackSession.replayDigest });
-      if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
+      // 与 observer 同一归属判定：被取代的加载（同实例新一代 / 已 destroy 的旧实例）恢复后
+      // 不得把旧回放摘要写进共享 identity。
+      if (perf && playbackSession?.replayDigest && ownsLoading() && diagnosticEpoch === perf.epoch) {
+        perf.setIdentity({ replayDigest: playbackSession.replayDigest });
+      }
       deps.teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       deps.publishSessionData(data, playbackSession);
       deps.loadRecorderCamera(source, epoch);

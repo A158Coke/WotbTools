@@ -15,6 +15,9 @@ export async function openReplay3d(chrome, { fixture = 'random-battle-example', 
   if (observeNetwork) await observeNetwork(sessionId)
   await page.emulate({ width, height, deviceScaleFactor: dpr, touch: false })
   await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: 'performance.setResourceTimingBufferSize(4000)' }, sessionId)
+  // Read-only audit of the bytes the page actually received. FileDrop clears input.value
+  // after change, so the File object must be hashed from that event, not later.
+  await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: "window.__pbInputAudit = { name: null, size: 0, sha256: null }\ndocument.addEventListener('change', event => {\n  const input = event.target\n  if (!input || input.getAttribute('data-testid') !== 'select-files-input') return\n  const file = input.files && input.files[0]\n  if (!file) return\n  window.__pbInputAudit.name = file.name\n  window.__pbInputAudit.size = file.size\n  file.arrayBuffer().then(buffer => crypto.subtle.digest('SHA-256', buffer)).then(digest => {\n    window.__pbInputAudit.sha256 = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')\n  }, () => { window.__pbInputAudit.error = 'read-failed' })\n}, true)" }, sessionId)
   await page.goto(`${ORIGIN}/?view=replay&ws-auth=1${perf ? '&perf' : ''}${query}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'input' })
   const { root: r } = await chrome.client.send('DOM.getDocument', {}, sessionId)

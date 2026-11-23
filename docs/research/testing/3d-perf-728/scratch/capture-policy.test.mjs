@@ -32,13 +32,13 @@ test('mode, duration, run identifier, window and hooks distinguish capture paths
 })
 
 test('score mode reads the production page state without enabling ?perf', () => {
-  const expectedInput = 'C:\\fixtures\\battle.wotbreplay'
+  const expectedInputSha256 = 'a'.repeat(64)
   const canvas = { webgl: {}, width: 1280, height: 720 }
   const observed = {
     url: 'https://wotbtools.com/?view=replay',
     perfHandle: false,
-    inputFiles: ['C:\\fixtures\\battle.wotbreplay'],
-    expectedInput,
+    inputSha256: expectedInputSha256,
+    expectedInputSha256,
     camera: 'top',
     followed: false,
     expectedCamera: 'top',
@@ -50,7 +50,9 @@ test('score mode reads the production page state without enabling ?perf', () => 
   assert.equal(verifyScoredScene({ ...observed, expectedCamera: 'follow', camera: 'free', followed: true }).camera, 'follow')
   assert.throws(() => verifyScoredScene({ ...observed, url: 'https://wotbtools.com/?view=replay&perf' }), /\?perf/)
   assert.throws(() => verifyScoredScene({ ...observed, perfHandle: true }), /\?perf/)
-  assert.throws(() => verifyScoredScene({ ...observed, inputFiles: ['C:\\fixtures\\other.wotbreplay'] }), /input/)
+  assert.throws(() => verifyScoredScene({ ...observed, inputSha256: 'b'.repeat(64) }), /input/)
+  assert.throws(() => verifyScoredScene({ ...observed, inputSha256: null }), /input/)
+  assert.equal(verifyScoredScene({ ...observed, inputSha256: undefined, expectedInputSha256: undefined, inputFiles: ['C:\\fixtures\\battle.wotbreplay'], expectedInput: 'C:\\fixtures\\battle.wotbreplay' }).camera, 'top')
   assert.throws(() => verifyScoredScene({ ...observed, camera: 'free' }), /camera/)
   assert.throws(() => verifyScoredScene({ ...observed, expectedCamera: 'follow' }), /camera/)
   assert.throws(() => verifyScoredScene({ ...observed, quality: 'mid' }), /quality/)

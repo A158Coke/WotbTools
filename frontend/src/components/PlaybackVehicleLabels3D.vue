@@ -60,9 +60,11 @@ function syncGhostPhase(host) {
   const bornMs = Number(ghost?.dataset.bornMs)
   if (Number.isFinite(bornMs)) ghost.style.animationDelay = `${-Math.max(0, performance.now() - bornMs)}ms`
 }
-function paint(el, anchor) {
+function paint(el, anchor, forceReappearing = false) {
   if (!el || !anchor) return
-  const reappearing = el.hidden && anchor.visible
+  // 准备阶段先解除 hidden 后，写阶段不能再靠 el.hidden 判断「从隐藏恢复」；
+  // forceReappearing 记录本帧曾隐藏，幽灵段仍按壁钟续播一次。
+  const reappearing = (el.hidden || forceReappearing) && anchor.visible
   el.hidden = !anchor.visible
   el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
   el.classList.toggle('label-occluded', !!anchor.occluded)
@@ -171,10 +173,19 @@ function setHidden(el, hidden) { if (el.hidden !== hidden) el.hidden = hidden }
  */
 function flushAnchors(eids, stageW) {
   const list = damages.value
-  // 1) 准备：dirty 的伤害节点必须先真正解除 hidden，否则 offsetWidth / rect 全为 0。
+  // 准备阶段解除 hidden 的宿主；写阶段据此保留 paint 的「重现」语义（幽灵段续播）。
+  const preShownHosts = new Set()
+  // 1) 准备：需要重新量的宿主必须先真正解除 hidden，否则 offsetWidth / rect 全为 0。
+  // 车辆从屏外重入、或数字存活期间重开名牌时，anchor 已 visible 但宿主还停在上帧的 hidden；
+  // 不先显示名牌宿主，measureDamageLayout 会读到 0×0 并把 fallback 缓存下来。
   for (const eid of eids) {
     const anchor = anchors.get(eid)
     if (!anchor?.projected) continue
+    const host = elements.get(eid)
+    if (host && anchor.visible) {
+      if (host.hidden) preShownHosts.add(eid)
+      setHidden(host, false)
+    }
     const key = damageLayoutKey(!!anchor.visible)
     for (const d of list) {
       if (d.eid !== eid || !d.el) continue
@@ -203,7 +214,7 @@ function flushAnchors(eids, stageW) {
   // 3) 写：名牌锚点 + 伤害数字统一落 DOM。
   for (const eid of eids) {
     const anchor = anchors.get(eid)
-    paint(elements.get(eid), anchor)
+    paint(elements.get(eid), anchor, preShownHosts.has(eid))
     if (!anchor) continue
     const projected = !!anchor.projected
     for (const d of list) {

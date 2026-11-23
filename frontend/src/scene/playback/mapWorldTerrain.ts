@@ -386,9 +386,10 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       terrainIndexBytes: perfGeometrySummary.indexBytes }
   }
   function resetTerrainCounters() {
-    perfTerrainChecks = 0; perfTerrainRebuilds = 0
-    perfGeometryGeneration = 0; perfGeometryCreated = 0; perfGeometryDisposed = 0
-    perfGeometrySummary = { generation: 0, vertices: 0, indices: 0, attributeBytes: 0, indexBytes: 0 }
+    // 只重置采集区间计数；当前几何身份（generation / 摘要）必须保留：reset 时这块
+    // 地形仍挂在场景里，清零会让后续帧报告第 0 代/零顶点，下一次换装又复用第 1 代，
+    // terrain-attribution 会把 reset 前事件与 reset 后帧合并到同一桶。
+    perfTerrainChecks = 0; perfTerrainRebuilds = 0; perfGeometryCreated = 0; perfGeometryDisposed = 0
   }
   function invalidateTerrainLod() { terrainLodPrev = null }
   function resetTerrainLifecycle() { terrainLodWake.cancel(); terrainScheduler?.invalidate() }

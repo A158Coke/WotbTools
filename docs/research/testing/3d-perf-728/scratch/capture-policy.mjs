@@ -34,15 +34,20 @@ export function verifyScoredEntry(entry, expectedDigest) {
 
 /**
  * Score-mode scene gate. It reads only what the production page exposes (URL, DOM,
- * file input, the live WebGL context) so scoring never enables ?perf or native hooks.
+ * the selected file's bytes, the live WebGL context) so scoring never enables ?perf
+ * or native hooks. `inputSha256` must be the SHA-256 of the File bytes the page read,
+ * not merely its file name or the path the harness typed into the picker.
  */
-export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, camera, followed, expectedCamera, quality, expectedQuality, canvas }) {
+export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, inputSha256, expectedInputSha256, camera, followed, expectedCamera, quality, expectedQuality, canvas }) {
   if (new URL(url).searchParams.has('perf') || perfHandle) {
     throw new Error('Scoring must not enable ?perf diagnostics')
   }
   const normalize = file => String(file).replace(/\\/g, '/').replace(/\/+$/, '')
-  if (!expectedInput || !Array.isArray(inputFiles) ||
-      !inputFiles.some(file => normalize(file) === normalize(expectedInput))) {
+  const inputOk = expectedInputSha256
+    ? /^[a-f0-9]{64}$/i.test(inputSha256 ?? '') && inputSha256 === expectedInputSha256
+    : !!expectedInput && Array.isArray(inputFiles) &&
+      inputFiles.some(file => normalize(file) === normalize(expectedInput))
+  if (!inputOk) {
     throw new Error('Scoring replay input differs from the fixture')
   }
   const observedCamera = expectedCamera === 'follow' ? (followed ? 'follow' : null) : camera
@@ -55,7 +60,7 @@ export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, 
   if (!canvas?.webgl || !(canvas.width > 0) || !(canvas.height > 0)) {
     throw new Error('3D canvas has no live WebGL drawing buffer')
   }
-  return { camera: observedCamera, quality, input: expectedInput, canvas }
+  return { camera: observedCamera, quality, input: expectedInput ?? `sha256:${inputSha256}`, canvas }
 }
 
 /**

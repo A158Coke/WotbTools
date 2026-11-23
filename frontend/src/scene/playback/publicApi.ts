@@ -156,6 +156,9 @@ export function createPlaybackApi(S: Host) {
       if (lastKnownChanged) for (const v of S.vehicles.getVehicles()) S.vehicles.applyPose(v);
       S.labels.setLabelPrefs();
       if (S.renderer && S.camera) S.labels.updateLabels();
+      // 类型图标 / lastKnown 呈现会改车模或幽灵代理显隐：HIGH 档反射隔帧更新，
+      // 若本帧 dirty 落在跳过分支，水面会一直保留旧倒影。离散偏好操作显式强制刷新一次。
+      S.requestWaterReflectionRefresh();
     },
     // 渲染性能偏好切换：只持久化 + 同步 store（待开播阶段渲染器未创建，下次
     // initScene 按当前偏好装配——不重载、不重建；开关已移至待开播卡片，
