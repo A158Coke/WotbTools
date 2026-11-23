@@ -19,6 +19,7 @@ describe('performance samples', () => {
     for (let i=0;i<481;i++) p.record({t:i}, i * 300)
     expect(p.snapshot().latest).toMatchObject({t:480,frameIntervalMs:300})
     expect(p.snapshot().sampleCount).toBe(240)
+    expect(p.snapshot().slowFrames.over200ms).toBe(240)
     p.idle(); p.record({t:481}, 999999)
     expect(p.snapshot().latest?.frameIntervalMs).toBeNull()
   })

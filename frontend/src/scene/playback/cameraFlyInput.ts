@@ -307,7 +307,7 @@ export function createCameraFlyInput(deps: CameraRuntimeDeps, hooks: {
     }
     if (!flyLook.active) return;
     // 已无按键 = 在画布外松了键（捕获没拿到 up）：结束拖拽，且不当作单击
-    if (!e.buttons) { flyLook.active = false; emptyDownAt = null; return; }
+    if (!e.buttons) { flyLook.active = false; emptyDownAt = null; settleCameraAfterGesture(); return; }
     const now = performance.now();
     const logThis = now - flyMoveLastLog > 400;
     if (logThis) flyMoveLastLog = now;
@@ -323,10 +323,16 @@ export function createCameraFlyInput(deps: CameraRuntimeDeps, hooks: {
     deps.invalidate();
     e.stopPropagation();   // flyMode 下 OrbitControls 与场景单击语义都不再需要
   }
+  /** 相机交互结束：强制反射刷新，并安排下一帧消费该请求（HIGH 档只 invalidate 会命中跳过帧）。 */
+  function settleCameraAfterGesture() {
+    deps.requestWaterReflectionRefresh();
+    deps.invalidate();
+  }
   function onFlyCaptureUp(e: PointerEvent) {
     if (!flyMode()) return;
     try { container.releasePointerCapture(e.pointerId); } catch (_) {}
     let wasActive = flyLook.active;
+    let settle = wasActive;
     if (e.pointerType === 'touch') {
       flyPointers.delete(e.pointerId);
       flyTouchCountChanged();
@@ -335,12 +341,15 @@ export function createCameraFlyInput(deps: CameraRuntimeDeps, hooks: {
         e.stopPropagation();
         return;
       }
+      // 最后一指离开：无论单指平移/双指手势，相机都进入静止态。
+      settle = true;
       // 只有没越过阈值的单指才是单击：平移过的手指回到起点也不算
       wasActive = !!flyPan && !flyPan.armed;
       flyPan = null;
     }
     // 单击判定（≤SLOP）与拖拽共存：按下记录起点、抬起位移 ≤SLOP 才算单击
     flyLook.active = false;
+    if (settle) settleCameraAfterGesture();
     if (!wasActive || e.button !== 0) return;
     const moved = Math.hypot(e.clientX - (emptyDownAt?.x ?? e.clientX), e.clientY - (emptyDownAt?.y ?? e.clientY));
     emptyDownAt = null;
@@ -408,6 +417,8 @@ export function createCameraFlyInput(deps: CameraRuntimeDeps, hooks: {
     flyDbg('wheel', `orbit pushed=${orbitWheelFactor(deltaY, controls.zoomSpeed).toFixed(3)}`);
   }
   function onFlyCaptureCancel(e: PointerEvent) {
+    // pointercancel 也是相机交互结束：正在拖拽/多指手势时收口，避免最后姿态停在反射跳过帧。
+    if (flyLook.active || flyPointers.size > 0) settleCameraAfterGesture();
     flyLook.active = false;
     emptyDownAt = null;
     flyPan = null;

@@ -27,7 +27,7 @@ export interface WaterReflectionOptions {
 
 export interface WaterReflection {
   /** 每帧主渲染前调用；内部负责 resize / 镜像渲染 / uniform 回填。 */
-  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera): void
+  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, timer?: { begin(pass: string): boolean; end(): void } | null): void
   setEnabled(on: boolean): void
   /** 请求下一帧强制刷新一次（seek / 按需渲染的单次 dirty frame；不受隔帧间隔限制）。 */
   requestRefresh(): void
@@ -111,6 +111,15 @@ export function createWaterReflection({
   const reflectionMatrix = new THREE.Matrix4()
   const materials = new Set<THREE.ShaderMaterial>()
   const lastReflectionTex: { value: unknown } = { value: null }
+  // 水面世界包围体（保守可见性剔除）：水面按地图静态，按 meshes 数组引用缓存；
+  // 换图/重建会换新数组 → 自动重算。任何几何/包围体异常都 fail-open（照常绘制）。
+  const waterBounds = new THREE.Box3()
+  const frustum = new THREE.Frustum()
+  const projScreen = new THREE.Matrix4()
+  let boundsKey: THREE.Object3D[] | null = null
+  let boundsValid = false
+  // 上一帧水面是否在主相机视锥内：用于把「不可见 → 可见」当成一次本帧刷新事件。
+  let lastWaterVisible = true
 
   function collectMaterials(meshes: THREE.Object3D[]): void {
     for (const mesh of meshes) {
@@ -121,6 +130,39 @@ export function createWaterReflection({
         if (sm?.uniforms && sm.uniforms.uReflectionTex) materials.add(sm)
       }
     }
+  }
+
+  function refreshWaterBounds(meshes: THREE.Object3D[]): void {
+    if (boundsKey === meshes) return
+    boundsKey = meshes
+    boundsValid = false
+    waterBounds.makeEmpty()
+    let boxes = 0
+    for (const mesh of meshes) {
+      const geometry = (mesh as THREE.Mesh).geometry
+      if (!geometry || typeof geometry.computeBoundingBox !== 'function') return
+      mesh.updateWorldMatrix(true, false)
+      if (!geometry.boundingBox) geometry.computeBoundingBox()
+      const box = geometry.boundingBox
+      if (!box || box.isEmpty()) return
+      const world = box.clone().applyMatrix4(mesh.matrixWorld)
+      const e = world.min
+      const f = world.max
+      if (![e.x, e.y, e.z, f.x, f.y, f.z].every(Number.isFinite)) return
+      waterBounds.union(world)
+      boxes++
+    }
+    if (!boxes || waterBounds.isEmpty()) return
+    boundsValid = true
+  }
+
+  /** 主相机视锥与水面世界包围体相交 = 可能可见；不确定（无几何/包围体异常）一律返回 true。 */
+  function waterProbablyVisible(camera: THREE.PerspectiveCamera, meshes: THREE.Object3D[]): boolean {
+    camera.updateMatrixWorld()
+    refreshWaterBounds(meshes)
+    if (!boundsValid) return true
+    frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+    return frustum.intersectsBox(waterBounds)
   }
 
   function ensureTarget(renderer: THREE.WebGLRenderer): void {
@@ -147,21 +189,34 @@ export function createWaterReflection({
   }
 
   return {
-    update(renderer, scene, camera) {
+    update(renderer, scene, camera, timer) {
       if (!enabled) return
       frame++
       // 画质档可把反射降为隔帧更新（W3）：跳过帧保留上一张 RT/uniform，不重建。
       // 但按需渲染的 seek/相机静止场景只有一次 dirty frame，不能吞掉——requestRefresh
       // 让该帧无条件刷新；否则反射会停在 seek 前的车辆位置（下一次 rAF 也不再画）。
-      const due = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
-      forceRefresh = false
-      if (!due) return
+      const scheduled = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
       const level = getWaterLevel()
       const meshes = getWaterMeshes()
       if (level == null || !meshes || !meshes.length) {
-        for (const mat of materials) mat.uniforms.uUseReflection.value = 0
+        lastWaterVisible = false
+        if (scheduled) {
+          forceRefresh = false
+          for (const mat of materials) mat.uniforms.uUseReflection.value = 0
+        }
         return
       }
+      // 可见性转移本身也是刷新事件：隔帧档从视锥外重入时，不能等到下一个到期帧，
+      // 否则主画面已经出现水面、倒影却仍是离开前的旧 RT（Recorder 开/退镜同理，
+      // 那里另有显式 requestRefresh）。可见性每帧判断，代价只是一次包围体视锥测试。
+      const visible = waterProbablyVisible(camera, meshes)
+      const reentered = visible && !lastWaterVisible
+      lastWaterVisible = visible
+      if (!scheduled && !reentered) return
+      // 保守剔除：水面完全不在主相机视锥内时跳过整个镜像 pass（含 RT 重建/场景二次绘制）。
+      // 不确定可见时照旧绘制；被剔除的帧不吃掉 requestRefresh，等真正可见的帧再强制刷新。
+      if (!visible) return
+      forceRefresh = false
       collectMaterials(meshes)
       if (!mirrorCameraForPlane(camera, level, virtualCamera)) {
         // 相机在水下/正俯视：本帧回退 cubemap，避免采样上一帧的旧 RT。
@@ -189,7 +244,12 @@ export function createWaterReflection({
       const prevTarget = renderer.getRenderTarget()
       renderer.setRenderTarget(target)
       try {
-        renderer.render(scene, virtualCamera)
+        const activeTimer = timer?.begin('reflection') ? timer : null
+        try {
+          renderer.render(scene, virtualCamera)
+        } finally {
+          activeTimer?.end()
+        }
       } finally {
         renderer.setRenderTarget(prevTarget)
         meshes.forEach((m, i) => { m.visible = prevVisible[i] })

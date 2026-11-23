@@ -12,7 +12,7 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   setCam: (mode: string) => void; prewarmArmorHighlight: (camera: THREE.PerspectiveCamera) => void
   releaseArmorHighlight: () => void; clearance: number; hiddenLayer: number
 }) {
-  const { container, store } = deps
+  const { store } = deps
   const { setCam, prewarmArmorHighlight } = hooks
   const CAMERA_GROUND_CLEARANCE = hooks.clearance, SCOPED_HIDDEN_LAYER = hooks.hiddenLayer
   const RETICLE_MIN_GUN_DISTANCE_M = 30
@@ -89,11 +89,19 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     camera.updateProjectionMatrix();
     deps.invalidate();
   }
+  // 暂停时最后一帧也可能落在 HIGH 倒影的跳帧上；只在过渡收口时强制刷新。
+  function settleCameraTransition() {
+    deps.requestWaterReflectionRefresh();
+    deps.invalidate();
+  }
   function stepFovRestore(dt: number) {
     fovRestore!.elapsed += dt;
     const progress = blendProgress(fovRestore!.elapsed);
     applyCameraFov(fovRestore!.fov + (BASE_FOV_DEG - fovRestore!.fov) * progress);
-    if (progress >= 1) fovRestore = null;
+    if (progress >= 1) {
+      fovRestore = null;
+      settleCameraTransition();
+    }
   }
   const _recorderDir: CameraVec3 = {} as CameraVec3;
   const _recorderPos = new THREE.Vector3();
@@ -123,6 +131,9 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     if (hiddenEid !== scopedHiddenEid) {
       scopedHiddenEid = hiddenEid;
       setScopedLayer(v, scoped);
+      // Arcade ↔ Sniper 是离散切换：本车/武器/视野层同帧换掉，镜面里的场景也随之变。
+      // 隔帧反射档不能等下一次到期帧，否则退镜后的水面仍倒映上一帧的开镜车体。
+      deps.requestWaterReflectionRefresh();
       // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
       // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
       if (wasScoped && !scoped) hooks.releaseArmorHighlight();
@@ -168,7 +179,10 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
       camera.position.lerpVectors(cameraBlend.position, _recorderPos, progress);
       camera.quaternion.slerpQuaternions(cameraBlend.quaternion, _recorderQuat, progress);
       fov = cameraBlend.fov + (fov - cameraBlend.fov) * progress;
-      if (progress >= 1) cameraBlend = null;
+      if (progress >= 1) {
+        cameraBlend = null;
+        settleCameraTransition();
+      }
     }
     applyCameraFov(fov);
     controls.target.copy(camera.position).addScaledVector(_recorderLook, 30);
@@ -181,12 +195,13 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   function recorderAimPoint(sample: RecorderCameraSample, out: THREE.Vector3) {
     return out.set(-sample.rayX, sample.rayY, sample.rayZ);
   }
-  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
-  function projectToStage(point: THREE.Vector3, out: CameraVec3): CameraVec3 | null {
+  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。
+   *  视口由调用方一次取快照传入（逻辑舞台尺寸，非 drawing buffer）。 */
+  function projectToStage(point: THREE.Vector3, out: CameraVec3, stage: { x: number; y: number }): CameraVec3 | null {
     point.project(deps.getCamera());
     if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
-    out.x = (point.x + 1) * container.clientWidth / 2;
-    out.y = (1 - point.y) * container.clientHeight / 2;
+    out.x = (point.x + 1) * stage.x / 2;
+    out.y = (1 - point.y) * stage.y / 2;
     return out;
   }
   /**
@@ -205,11 +220,12 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     recorderAimPoint(sample, _recorderRay);
     const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
-    const aim = projectToStage(_recorderRay, _reticleAim);
-    const gun = projectToStage(_recorderGun, _reticleGun);
+    const stage = deps.getViewportSize();   // 一次快照供 aim/gun/半径共用（不逐点读）
+    const aim = projectToStage(_recorderRay, _reticleAim, stage);
+    const gun = projectToStage(_recorderGun, _reticleGun, stage);
     if (!aim && !gun) { deps.recorderReticle.hide(); return; }
     deps.recorderReticle.update(aim, gun, reticleRadiusPx({
-      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
+      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: stage.y,
     }));
   }
   return { recorderVehicle, recorderViewAvailable, loadRecorderCamera, enterRecorderView, leaveRecorderView,

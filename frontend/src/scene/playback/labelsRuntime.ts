@@ -27,7 +27,11 @@ import type { MarkerLabelSource } from './markerRuntime.js'
 /** HTML label 覆盖层结构面（owner = Replay3DPane 的 PlaybackVehicleLabels3D）。 */
 export interface LabelsOverlay {
   setLabels(rows: unknown): void
-  setAnchor(eid: number, anchor: unknown): void
+  setAnchor(eid: number, anchor: unknown, stage?: { x: number; y: number }): void
+  /** 一帧锚点批处理（可选；旧桩不实现则 setAnchor 逐条立即落位）。stage = 逻辑舞台像素。 */
+  beginAnchors?(stage: { x: number; y: number }): void
+  /** 结束本帧批处理：覆盖层集中读 dirty 几何后统一写 DOM。 */
+  endAnchors?(): void
   clear(): void
   /** 战场快捷标记来源卡（与坦克名牌同一 DOM 卡片：内容行 + 逐帧锚点；均可选——旧桩不破）。 */
   setMarkerLabels?(rows: unknown): void
@@ -48,7 +52,8 @@ export type LabelsStore = HudFeedStore & { labelsOn: boolean; lastKnownOn: boole
 /** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
 export interface LabelsRuntimeDeps {
   store: LabelsStore
-  container: HTMLElement
+  /** Renderer logical pixels from setSize, independent of DPR and free of DOM layout reads. */
+  getViewportSize(): { x: number; y: number }
   getCamera(): PerspectiveCamera
   /** 共享 raycaster（场景遮挡 raycast；owner = 宿主渲染器核心）。 */
   getRaycaster(): THREE.Raycaster
@@ -92,6 +97,8 @@ export interface LabelsRuntimeDeps {
   /** canonical 数据面的车辆轨道（名牌类型图标映射；store.playbackSession 读取面）。 */
   canonicalVehicles(): Array<{ accountId: number; tankClass: string }>
   invalidate(): void
+  /** ?perf 名牌阶段归因（可选）：父区间与子区间不得相加；count 记录候选/绘制数量。 */
+  perfAdd?(key: string, ms: number, count?: number): void
 }
 
 /** 标签运行时对外句柄（宿主的唯一消费面）。 */
@@ -319,6 +326,8 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
   function updateLabels() {
     const labelOverlay = deps.getLabelOverlay();
     if (!labelOverlay) return;
+    const perf = deps.perfAdd;
+    const updateStarted = perf ? performance.now() : 0;
     const camera = deps.getCamera();
     camera.updateMatrixWorld();
     for (const v of deps.getVehicles()) {
@@ -331,9 +340,18 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       v.labelAnchor.copy(ghostPosScratch);
       v.labelAnchor.y += labelLiftWorld(d);
     }
+    const occlusionStarted = perf ? performance.now() : 0;
     updateLabelOcclusion();
-    // 视口尺寸在循环内恒定，循环外读一次（逐车 clientWidth/clientHeight 读取有强制布局风险）
-    const viewW = deps.container.clientWidth, viewH = deps.container.clientHeight;
+    if (perf) deps.perfAdd!('labelsOcclusionMs', performance.now() - occlusionStarted, 1);
+    const { x: viewW, y: viewH } = deps.getViewportSize();
+    // 逻辑舞台尺寸（renderer.setSize 的 CSS px，与 DPR/动态分辨率解耦）由运行时传入覆盖层：
+    // 覆盖层据此做伤害数字贴边镜像，不再读 rootEl.clientWidth。
+    const stage = { x: viewW, y: viewH };
+    const batched = typeof labelOverlay.beginAnchors === 'function'
+      && typeof labelOverlay.endAnchors === 'function';
+    if (batched) labelOverlay.beginAnchors!(stage);
+    const projectionStarted = perf ? performance.now() : 0;
+    let ghostProjected = 0, ghostDrawn = 0, projectedVehicles = 0;
     for (const v of deps.getVehicles()) {
       labelClip.set(v.labelAnchor.x, v.labelAnchor.y, v.labelAnchor.z, 1)
         .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
@@ -342,15 +360,33 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       // projected = 车辆在视锥内（不在场坦克按最后已知锚点投影）；visible = 名牌本身是否
       // 显示。两者必须分开：伤害数字是战斗反馈而不是名牌内容，关掉名牌后它仍要有落点
       // （覆盖层里回退到锚点上方）。
-      const projected = (v.group.visible || ghostOf(v) != null) && v.def.eid !== deps.scopedHiddenEid() && w > 0
+      const isGhost = ghostOf(v) != null;
+      const projected = (v.group.visible || isGhost) && v.def.eid !== deps.scopedHiddenEid() && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
+      if (projected) projectedVehicles++;
+      if (projected && isGhost) {
+        ghostProjected++;
+        if (deps.store.labelsOn) ghostDrawn++;
+      }
       labelAnchorScratch.x = projected ? (x + 1) * viewW / 2 : 0;
       labelAnchorScratch.y = projected ? (1 - y) * viewH / 2 : 0;
       labelAnchorScratch.projected = projected;
       labelAnchorScratch.visible = projected && deps.store.labelsOn;
       labelAnchorScratch.occluded = v.labelOccluded;
       labelOverlay.setAnchor(v.def.eid, labelAnchorScratch);
+    }
+    if (perf) {
+      deps.perfAdd!('labelsProjectionMs', performance.now() - projectionStarted, projectedVehicles);
+      deps.perfAdd!('ghostProjected', 0, ghostProjected);
+      deps.perfAdd!('ghostLabelDrawn', 0, ghostDrawn);
+    }
+    // 集中落位：先收集全部车辆锚点，再由覆盖层统一「准备新生节点 → 读 dirty 几何 →
+    // 写 transform/class/hidden」，避免逐车写 DOM 再读布局造成同步布局抖动。
+    if (batched) {
+      const domStarted = perf ? performance.now() : 0;
+      labelOverlay.endAnchors!();
+      if (perf) deps.perfAdd!('labelsDomMs', performance.now() - domStarted, 1);
     }
     // 战场快捷标记来源卡：与坦克名牌**同一 DOM 卡片**（屏幕空间恒定大小，不随距离缩放）。
     // 内容行按签名变化推送（60Hz 不重渲染），锚点逐帧重摆——车辆锚点同款纪律。
@@ -382,6 +418,7 @@ export function createLabelsRuntime(deps: LabelsRuntimeDeps): LabelsRuntimeHandl
       labelOverlay.setMarkerLabels?.([]);
     }
     publishLabels();
+    if (perf) deps.perfAdd!('labelsUpdateMs', performance.now() - updateStarted, 1);
   }
 
   // ---------- 击杀 feed / 计分 / 名册（实现在 playback/hudFeed.js；快照式工厂） ----------

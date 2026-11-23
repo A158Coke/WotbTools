@@ -1,6 +1,7 @@
 // 场景装配 owner（2026-11-22 自 playbackScene.js 闭包出仓，纯搬移）：渲染器/场景核心初始化、
 // 地图世界与水面反射、车辆/履带/战斗/标注/标签/相机运行时、基地与出生点标记、相机地形夹取。
 // 依赖读取统一经宿主对象 S；构造顺序与搬移前一致。
+import * as THREE from 'three'
 import { disposeObject3D } from '../materialDispose.js'
 import { COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENEMY, teamColorOf } from './palette.ts'
 import { createSceneCore } from './renderer.js'
@@ -41,6 +42,18 @@ export function installSceneAssembly(S: Host) {
     clampCameraTarget: bind(S, clampCameraTarget),
   })
 
+  // 逻辑舞台尺寸：renderer.setSize() 的 CSS 像素口径（renderLoop 每帧都靠它做投影）。
+  // 与 drawing buffer 尺寸解耦（DPR / 动态分辨率变化不影响名牌与准星的屏幕位置），
+  // 也避免逐帧读 clientWidth/clientHeight 触发强制布局。仅在渲染器创建后调用。
+  const logicalViewport = new THREE.Vector2();
+  const getViewportSize = () => {
+    // 渲染器惰性创建：初始化阶段（?perf 首次写 identity）尚无 renderer，回退到容器尺寸一次。
+    if (!S.renderer) return { x: S.container.clientWidth, y: S.container.clientHeight };
+    S.renderer.getSize(logicalViewport);
+    return logicalViewport;
+  };
+  S.getViewportSize = getViewportSize;
+
   // ---------- 场景 ----------
   function initScene(S: Host) {
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
@@ -53,6 +66,8 @@ export function installSceneAssembly(S: Host) {
     });
     S.scene = core.scene; S.camera = core.camera; S.renderer = core.renderer;
     S.controls = core.controls; S.clock = core.clock; S.raycaster = core.raycaster;
+    // 上传归因必须在首次地形构建之前挂到真实 context；探针创建时渲染器还是 null。
+    S.perfProbe?.attachRenderer?.(S.renderer);
     S.gpu?.attach(S.renderer);
     S.cameraRuntime.applyMobileTouchControls();
     S.hemiLight = core.hemiLight; S.sunLight = core.sunLight;
@@ -73,6 +88,7 @@ export function installSceneAssembly(S: Host) {
     S.camera.aspect = w / h;
     S.camera.updateProjectionMatrix();
     S.renderer.setSize(w, h);
+    S.requestWaterReflectionRefresh();   // RT 尺寸随 drawing buffer 变化，本帧必须重建
     S.invalidate();            // 视口变化：下一帧必须重绘
   }
   // ---------- 点击拾取调试（PICK_DEBUG；报告器在 playback/pickReport.js，纯函数在 pickDebug.js） ----------
@@ -135,7 +151,13 @@ export function installSceneAssembly(S: Host) {
     qualityKey: () => S.QKEY,
     debug: S.DEBUG,
   });
-  S.applyQualityFeatures = () => S.waterReflection.apply();
+  // 切档可能开关/重配动态反射：apply() 后本帧显式刷新一次（否则暂停态那张
+  // dirty frame 可能仍采样旧 RT/旧 uUseReflection，等下一次隔帧到期才纠正）。
+  S.applyQualityFeatures = () => {
+    S.waterReflection.apply();
+    S.requestWaterReflectionRefresh();
+    S.invalidate();
+  };
   S.requestWaterReflectionRefresh = () => S.waterReflection.requestRefresh();
   // 车辆运行时 owner（#820 Step 4 出仓）：buildVehicles / 位姿采样 / GLB / 悬挂 /
   // applyPose 与车辆 teardown 的唯一归属。canonical 生命事实（sceneLifeAt/visibleAt）
@@ -167,6 +189,8 @@ export function installSceneAssembly(S: Host) {
     visByEid: () => S.VIS_BY_EID,
     contactShadows: () => S.contactShadowCtl.handle(),   // 逐车阴影挂接/同步（#907 主干随迁）
     scopedHiddenEid: () => S.cameraRuntime.scopedHiddenEid(),
+    // 只有 ?perf 才安装收集器：评分包完全不存在这条路径（getter 在构造后才读到）。
+    get perfAdd() { return S.perfAddStage },
   });
   // 3D 战场快捷标记 owner（0x2e markers + 0x2f attention_to_cell）：场景事件源与
   // 回放时钟窗口状态在 playback/markerRuntime.ts；本句柄把车辆位姿/名册/地图语义
@@ -208,7 +232,7 @@ export function installSceneAssembly(S: Host) {
     getT: () => S.T,
     getScene: () => S.scene,
     getCamera: () => S.camera,
-    getViewportHeight: () => S.container.clientHeight,
+    getViewportHeight: () => getViewportSize().y,
     debug: S.DEBUG,
     getVehicles: () => S.vehicles.getVehicles(),
     vehicles: S.vehicles,
@@ -246,7 +270,7 @@ export function installSceneAssembly(S: Host) {
   // writeHud（时钟+相机+名册编排）、teamHpTotals、applySupremacyPointsToStore 仍在本闭包。
   S.labels = createLabelsRuntime({
     store: S.store,
-    container: S.container,
+    getViewportSize,
     getCamera: () => S.camera,
     getRaycaster: () => S.raycaster,
     getData: () => S.DATA,
@@ -254,6 +278,7 @@ export function installSceneAssembly(S: Host) {
     getVehicles: () => S.vehicles.getVehicles(),
     getSessionGen: () => S.session.sessionGen(),
     getFollowEid: () => S.cameraRuntime.followEid(),
+    get perfAdd() { return S.perfAddStage },
     deathAt: S.deathAt,
     hpAt: S.hpAt,
     visibleAt: S.visibleAt,
@@ -340,6 +365,7 @@ export function installSceneAssembly(S: Host) {
   S.cameraRuntime = createCameraRuntime({
     store: S.store,
     container: S.container,
+    getViewportSize,
     debug: S.DEBUG,
     getCamera: () => S.camera,
     getRenderer: () => S.renderer,
@@ -347,6 +373,7 @@ export function installSceneAssembly(S: Host) {
     getRaycaster: () => S.raycaster,
     getScene: () => S.scene,
     invalidate: S.invalidate,
+    requestWaterReflectionRefresh: S.requestWaterReflectionRefresh,
     getT: () => S.T,
     getData: () => S.DATA,
     sessionEpoch: () => S.session.sessionEpoch(),

@@ -20,6 +20,7 @@ interface GroundGeometryArgs {
   refineMask: unknown
   cx: number
   cz: number
+  includeNormals: boolean
   onDiagnostics: ((d: Record<string, unknown>) => void) | null | undefined
 }
 const buildGroundGeometryTyped = buildGroundGeometry as (a: GroundGeometryArgs) => THREE.BufferGeometry
@@ -42,6 +43,36 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
   let terrainScheduler: TerrainLodScheduler<unknown> | null = null
   let terrainWorkerFailed = false, terrainSrcField: unknown = null, terrainSrcMask: unknown = null
   let perfTerrainChecks = 0, perfTerrainRebuilds = 0
+  // 地形换装归因（仅 ?perf）：每次 adopt 记一代几何；逐帧计数由 perfProbe 读取。
+  // 有界：只保留计数器与当前几何摘要，不累积历史对象。
+  let perfGeometryGeneration = 0, perfGeometryCreated = 0, perfGeometryDisposed = 0
+  let perfGeometrySummary: Record<string, number> = { generation: 0, vertices: 0, indices: 0, attributeBytes: 0, indexBytes: 0 }
+  function describeGeometry(geometry: THREE.BufferGeometry) {
+    let attributeBytes = 0
+    // Interleaved attributes share one GPU buffer: count each backing array once.
+    const seen = new Set<ArrayBufferLike>()
+    for (const attribute of Object.values(geometry?.attributes ?? {})) {
+      const array = (attribute as { array?: { byteLength?: number } }).array
+      if (!array || seen.has(array as ArrayBufferLike)) continue
+      seen.add(array as ArrayBufferLike)
+      attributeBytes += array.byteLength ?? 0
+    }
+    return {
+      generation: perfGeometryGeneration,
+      vertices: geometry?.attributes?.position?.count ?? 0,
+      indices: geometry?.index?.count ?? 0,
+      attributeBytes,
+      indexBytes: geometry?.index?.array?.byteLength ?? 0,
+    }
+  }
+  /** 主线程 adopt 一代新地形几何：返回 generation / 旧 generation / 几何字节。 */
+  function adoptGeometry(geometry: THREE.BufferGeometry) {
+    const oldGeneration = perfGeometrySummary.generation
+    perfGeometryCreated += 1
+    perfGeometryGeneration += 1
+    perfGeometrySummary = describeGeometry(geometry)
+    return { ...perfGeometrySummary, oldGeneration, created: perfGeometryCreated, disposed: perfGeometryDisposed }
+  }
   const terrainLodWake = createTerrainLodWake(() => deps.invalidate(), () => deps.destroyed())
   const debugWindow = (typeof window !== 'undefined' ? window : {}) as Window & { __terrain?: THREE.Mesh | null }
   // 双线性采样世界 (x,z) 处高度（米）；无高度场/元数据不完整返回 0
@@ -137,6 +168,8 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
       // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
       hFovDeg: terrainHFovDeg() as number | null,
+      // 分层地表和回退底图都不受光；保留拾取和贴图所用的位置、索引和 UV。
+      includeNormals: false,
       measure: !!deps.perf(),
     }
   }
@@ -150,7 +183,7 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       field: st.heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: r.cam, fovY: r.fovY, aspect: r.aspect, hFovDeg: r.hFovDeg,
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
-      refineMask: st.terrainRefineMask,
+      refineMask: st.terrainRefineMask, includeNormals: r.includeNormals,
       onDiagnostics: perf ? (data: Record<string, unknown>) => perf.event({ stage: 'terrain-build', ...data, mode, reason }) : undefined,
       cx: st.mapMetaInfo?.x || 0, cz: st.mapMetaInfo?.z || 0,
     });
@@ -195,8 +228,11 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
     const perf = deps.perf()
     const t0 = performance.now()
     const old = st.terrainMesh.geometry
-    st.terrainMesh.geometry = groundGeometryFromDataTyped(data)
+    const geometry = groundGeometryFromDataTyped(data)
+    st.terrainMesh.geometry = geometry
+    const adoption = perf ? adoptGeometry(geometry) : null
     old.dispose()
+    if (perf) perfGeometryDisposed += 1
     // 过期判定相对「屏幕上那张网格」：换装时才更新为该结果对应的相机快照
     terrainLodPrev = job.snapshot
     terrainLodAt = performance.now()
@@ -215,6 +251,11 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
     }
     if (perf) {
       const swapMs = performance.now() - t0
+      // owner/generation + buffer sizes + worker/swap phases: the per-frame probe adds
+      // bufferData/bufferSubData counts/bytes for the same generation, so the upload can
+      // be attributed to the frame that adopted the geometry (not folded into swapMs).
+      perf.event({ stage: 'terrain-geometry', owner: 'mapWorldTerrain', mode: 'worker', reason: job.reason,
+        ...adoption, disposed: perfGeometryDisposed, queueMs: info.queueMs, workerMs: info.workerMs, swapMs, at: performance.now() })
       perf.event({ stage: 'terrain-build', ...(data.diagnostics ?? {}), mode: 'worker', reason: job.reason, queueMs: info.queueMs, workerMs: info.workerMs, swapMs })
       perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: swapMs })
     }
@@ -252,14 +293,22 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
     if (perf) perfTerrainRebuilds++;
     const old = st.terrainMesh.geometry;
     const perfRebuildAt = perf ? performance.now() : 0;
-    st.terrainMesh.geometry = buildTerrainGeometry(reason, 'sync-fallback');
+    const geometry = buildTerrainGeometry(reason, 'sync-fallback');
+    st.terrainMesh.geometry = geometry;
+    const adoption = perf ? adoptGeometry(geometry) : null;
     old.dispose();
+    if (perf) perfGeometryDisposed += 1;
     // 当前 camera pose 触发的 LOD 几何将在本帧渲染；按新网格重新约束，避免旧 LOD
     // floor 与替换后的三角面之间留下一帧/停驻时的穿地。
     deps.constrainFreeCameraAltitude();
     deps.reprojectAnnotationHeights();
     deps.onTerrainReground();
-    if (perf) perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: performance.now() - perfRebuildAt });
+    if (perf) {
+      const swapMs = performance.now() - perfRebuildAt;
+      perf.event({ stage: 'terrain-geometry', owner: 'mapWorldTerrain', mode: 'sync-fallback', reason,
+        ...(adoption ?? {}), disposed: perfGeometryDisposed, swapMs, at: performance.now() });
+      perf.event({ stage: 'terrain-rebuild-inclusive', durationMs: swapMs });
+    }
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
@@ -291,17 +340,22 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       // +0.04 中位/+1.34 最大）；随后逐 texel 全画又让毛刺全在 ⇒ 与结构齐平的接缝上被顶出来
       // （2026-10-09 用户"不规则地形突出于石板面"；"客户端无论如何看都没问题"即本 LOD 口径
       // 的直接结果）。
+      const buildStarted = deps.perf() ? performance.now() : 0;
       const geo = buildTerrainGeometry();
       // 分层地表（客户端 tilemask-fp.sl 实时合成，tile 原生分辨率平铺）优先；
       // 缺失时回退整图烘焙贴图（已含烘焙光照，不受光材质避免二次压暗；
       // toneMapped=false 保持烘焙色彩逐像素对齐客户端）。材质选择在共享模块
       // groundPass.makeGroundMaterial（俯视烘焙同一份）。
       // 几何已直接建在场景系（顶点 = texel 中心的世界坐标）⇒ 不再旋转/平移
+      const perf = deps.perf();
+      const adoption = perf ? adoptGeometry(geo) : null;
       st.terrainMesh = new THREE.Mesh(geo, makeGroundMaterialTyped({
         layers: st.groundLayers && st.groundLayers.layers, texs: st.groundLayers && st.groundLayers.texs,
         size, cx: meta.x || 0, cz: meta.z || 0, mapTexture: st.mapTexture,
       }));
       scene.add(st.terrainMesh);
+      if (perf) perf.event({ stage: 'terrain-geometry', owner: 'mapWorldTerrain', mode: 'initial', reason: 'map-load',
+        ...adoption, disposed: perfGeometryDisposed, swapMs: performance.now() - buildStarted, at: performance.now() });
       deps.constrainFreeCameraAltitude();
       if (deps.debug) debugWindow.__terrain = st.terrainMesh;   // 诊断/测试钩子：地形网格身份（免按几何猜）
     } else if (st.mapTexture) {
@@ -327,8 +381,19 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
   // 可破坏状态推进（回放时钟；seek 后退 = 全量重算，前进 = 游标泵）。
   // 实例化后不再有 pivot 节点：树倒写**逐实例矩阵**（T(p)·R·T(−p)·base，与旧 pivot
 
-  function terrainCounters() { return { terrainChecks: perfTerrainChecks, terrainRebuilds: perfTerrainRebuilds } }
-  function resetTerrainCounters() { perfTerrainChecks = 0; perfTerrainRebuilds = 0 }
+  function terrainCounters() {
+    return { terrainChecks: perfTerrainChecks, terrainRebuilds: perfTerrainRebuilds,
+      terrainGeneration: perfGeometrySummary.generation, terrainGeometriesCreated: perfGeometryCreated,
+      terrainGeometriesDisposed: perfGeometryDisposed, terrainVertices: perfGeometrySummary.vertices,
+      terrainIndices: perfGeometrySummary.indices, terrainAttributeBytes: perfGeometrySummary.attributeBytes,
+      terrainIndexBytes: perfGeometrySummary.indexBytes }
+  }
+  function resetTerrainCounters() {
+    // 只重置采集区间计数；当前几何身份（generation / 摘要）必须保留：reset 时这块
+    // 地形仍挂在场景里，清零会让后续帧报告第 0 代/零顶点，下一次换装又复用第 1 代，
+    // terrain-attribution 会把 reset 前事件与 reset 后帧合并到同一桶。
+    perfTerrainChecks = 0; perfTerrainRebuilds = 0; perfGeometryCreated = 0; perfGeometryDisposed = 0
+  }
   function invalidateTerrainLod() { terrainLodPrev = null }
   function resetTerrainLifecycle() { terrainLodWake.cancel(); terrainScheduler?.invalidate() }
   function disposeTerrain() { terrainLodWake.cancel(); terrainScheduler?.dispose(); terrainScheduler = null }

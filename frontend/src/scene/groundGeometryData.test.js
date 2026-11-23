@@ -64,6 +64,20 @@ describe('buildGroundGeometryData', { timeout: 60000 }, () => {
     })
   }
 
+  it('回放省略法线后仍可拾取相同地表点和底图 UV', () => {
+    const args = { ...base, cam: cases[0].cam }
+    const full = buildGroundGeometry(args)
+    const samples = []
+    const unlit = buildGroundGeometry({ ...args, includeNormals: false, onDiagnostics: d => samples.push(d) })
+    expect(unlit.getAttribute('normal')).toBeUndefined()
+    expect(samples[0].normalsMs).toBe(0)
+    const ray = new THREE.Raycaster(new THREE.Vector3(12, 80, -15), new THREE.Vector3(0, -1, 0))
+    const hit = geometry => ray.intersectObject(new THREE.Mesh(geometry), false)[0]
+    const original = hit(full)
+    expect(original).toBeDefined()
+    expect(hit(unlit)).toMatchObject({ point: original.point, uv: original.uv, faceIndex: original.faceIndex })
+  })
+
   it('不带 measure 时 diagnostics 为 null；transferables 去重且包含 positions 的 buffer', () => {
     const data = buildGroundGeometryData({ ...base, cam: cases[0].cam })
     expect(data.diagnostics).toBeNull()

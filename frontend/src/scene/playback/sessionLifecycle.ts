@@ -113,6 +113,8 @@ export interface SessionLifecycleDeps {
   tick(): void
   writeHud(force: boolean): void
   invalidate(): void
+  /** 资产就绪的单帧强制刷新水面反射（不是连续位姿；可选，地图预览宿主也接）。 */
+  requestWaterReflectionRefresh?(): void
   loadRecorderCamera(source: LoadSource, epoch: number): void
   /** 战斗反馈事件源（宿主经 transientFeedback3d 工厂持有）。 */
   transients: { rebuildSources(): void; rewindBursts(t: number): void }
@@ -157,7 +159,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
 
   async function loadData(source: LoadSource) {
     const perf = deps.perf();
-    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
+    if (perf) { perf.interrupt('file-change'); perf.beginSession(); perf.setIdentity({ sessionMode: 'replay', mapId: null, replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     // source 仅接受 { kind:'local', file }（client-only 拓扑，replaySource 对
     // 其他形态显式拒绝）；字符串路径等 server 形态在本拓扑中不存在
     //
@@ -192,6 +194,13 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
         : await loadPlaybackData(observer ? { ...source, observer } : source);
       const playbackSession = source?.session ? source.session.getState(source.file as File) : null;
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
+      // 工作台可能先于 3D 开始解析：late observer 收不到 replay.identity 事件，
+      // 但会话状态持有同一份完整内容摘要，必须写进 ?perf identity（否则评分的输入身份为空）。
+      // 与 observer 同一归属判定：被取代的加载（同实例新一代 / 已 destroy 的旧实例）恢复后
+      // 不得把旧回放摘要写进共享 identity。
+      if (perf && playbackSession?.replayDigest && ownsLoading() && diagnosticEpoch === perf.epoch) {
+        perf.setIdentity({ replayDigest: playbackSession.replayDigest });
+      }
       deps.teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       deps.publishSessionData(data, playbackSession);
       deps.loadRecorderCamera(source, epoch);
@@ -228,7 +237,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
    */
   async function loadMapOnly({ mapId, mapName = '' }: LoadMapOnlyOptions) {
     const perf = deps.perf();
-    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
+    if (perf) { perf.interrupt('map-change'); perf.beginSession(); perf.setIdentity({ sessionMode: 'map', mapId, replayDigest: null }); perfReadySession = null; perfLoadingStart = performance.now(); perfLoadingEpoch = perf.epoch; perfFirstSubmitted = false; }
     const gen = ++sessionGen;
     const epoch = ++sessionEpoch;
     const loadGen = ++loadGeneration;
@@ -322,6 +331,8 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
       // 否则 canvas 初始为黑，直到用户第一次拖动相机。
       deps.buildBases();
       deps.buildSpawns();   // 出生点贴地标记（#835；宿主下发的语义点列，缺档不画）
+      // 地图资产就绪：水面网格刚换上，本帧必须重建反射 RT（不能等隔帧到期）
+      deps.requestWaterReflectionRefresh?.();
       deps.invalidate();
       return true;
     }
@@ -368,6 +379,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     deps.setPlaying(true);
     deps.tick();
     deps.writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
+    deps.requestWaterReflectionRefresh?.();   // 新会话首帧：反射不能沿用上一张图的 RT
     deps.invalidate();
     return true;
   }

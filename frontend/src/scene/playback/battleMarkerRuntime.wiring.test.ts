@@ -137,7 +137,7 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     const labelsData = { ...data, meta: { friendly_team: 1 }, kills: [], vehicles: [] }
     const labels = createLabelsRuntime({
       store,
-      container,
+      getViewportSize: () => ({ x: container.clientWidth, y: container.clientHeight }),
       getCamera: () => camera,
       getRaycaster: () => new THREE.Raycaster(),
       getData: () => labelsData,

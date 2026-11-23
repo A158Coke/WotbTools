@@ -133,9 +133,11 @@ describe('?perf 看门狗（行为）', () => {
       const { createPerfProbe } = await import('./perfProbe.js')
       const probe = createPerfProbe({
         getQualityKey: () => 'mid',
+        getSpeed: () => 1,
+        getDynres: () => false,
         getCameraMode: () => 'free',
         getArmorHighlightPref: () => false,
-        container: document.createElement('div'),
+        getViewportSize: () => ({ x: 1280, y: 720 }),
         getRenderer: () => null,
         getT: () => 42,
         terrainCounters: () => ({ terrainChecks: 0, terrainRebuilds: 0 }),

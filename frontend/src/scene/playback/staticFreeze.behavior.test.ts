@@ -71,7 +71,7 @@ afterEach(() => {
 })
 
 describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为）', () => {
-  it('合批后原节点摘出渲染图、InstancedMesh 入场景；全树（含 mapScenery 根组）冻结', async () => {
+  it.each([false, true])('静态布景冻结，独立损毁批次按本场换模事件参与绘制（有事件=%s）', async (canActivate) => {
     const geo = new THREE.BoxGeometry(1, 1, 1)
     const mat = new THREE.MeshBasicMaterial()
     const scene = new THREE.Group()
@@ -89,7 +89,10 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
     dNode.position.set(10, 300, 0)   // 远隔宫格（gltf 地面系 x/y）；独立材质保证 D_ 独占批次
     scene.add(dNode)
     const ctx: MapAssemblyContext = {
-      DATA: { meta: { map_id: 6 }, destructible_areas: [], destructible_events: [] },
+      DATA: {
+        meta: { map_id: 6 }, destructible_areas: [{ eid: 42, x: 10, z: 300 }],
+        destructible_events: canActivate ? [{ clock: 20, area_eid: 42, prop: 2, slot: 1, fall_dir: 0, body_len: 0, args: [] }] : [],
+      },
       Q: { anisotropy: 1 },
       DEBUG: false,
       groundLayers: null,
@@ -104,7 +107,7 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
       sampleHeight: () => 0,
       onSceneryMounted: vi.fn(),
       onRefineMaskBuilt: vi.fn(),
-      destructDocPromise: Promise.resolve(null),
+      destructDocPromise: Promise.resolve({ instances: [{ id: 'tree', pos: [10, 300], serverId: { cell: [0, 3], slot: 1 } }] }),
     }
     const result = await assembleMapScenery({ scene } as never, ctx)
     expect(result.stale).toBe(false)
@@ -124,11 +127,12 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
 
     // D_ 损毁态实例初始隐藏（远处 + 微缩矩阵），且该批次不进遮挡候选
     const dBatch = instanced.find((im) => hasHiddenInstance(im))!
-    expect(dBatch).toBeTruthy()
+    expect(dBatch.visible).toBe(canActivate)
     const occlValues = [...(result.writes.occlGrid as Map<string, unknown[]>).values()].flat()
     expect(occlValues).not.toContain(dBatch)
     // 可见批次按世界位置 + 半径登记进候选格
     const visibleBatch = instanced.find((im) => !hasHiddenInstance(im))!
+    expect(visibleBatch.visible).toBe(true)
     expect(occlValues).toContain(visibleBatch)
   })
 

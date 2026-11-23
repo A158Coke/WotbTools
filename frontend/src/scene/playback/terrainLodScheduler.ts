@@ -15,6 +15,7 @@ export interface TerrainBuildRequest {
   fovY: number
   aspect: number
   hFovDeg: number | null
+  includeNormals?: boolean
   /** 让 Worker 回传分段耗时（仅 perf 开启时） */
   measure: boolean
 }

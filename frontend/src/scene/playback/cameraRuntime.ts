@@ -113,6 +113,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     // 跟随变更立即应用到名册行（followed 高亮）：updateRoster 平时在 tick 里跑，
     // **暂停时不跑**——不补这次，暂停中点跟随的行高亮永远不亮（实测门禁抓到）。
     if (deps.getData()) deps.updateRoster();
+    deps.requestWaterReflectionRefresh();   // 跟随目标跳变：反射相机当帧跟随
     deps.invalidate();
   }
   function setCam(mode: string) {
@@ -133,11 +134,12 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     store.cam = nextMode;
     flyLookApplyMode(nextMode === 'free' ? 'free' : 'follow');
     if (nextMode !== 'follow') FOLLOW_EID = 0;
-    if (!controls) { deps.invalidate(); return; }
+    if (!controls) { deps.requestWaterReflectionRefresh(); deps.invalidate(); return; }
     controls.enabled = nextMode === 'follow';
     // 旋转/缩放中心语义要求 target 不被平移带走：Top 锁地图中心、Follow 锁坦克；
     // Free 由 flyLook 接管，OrbitControls 的 pan 不参与（恢复默认值供下次非 Free 入口设置）。
     controls.enablePan = nextMode === 'free';
+    deps.requestWaterReflectionRefresh();   // 视角模式跳变（含录像者进出）：镜像相机立刻对齐
     deps.invalidate();
     if (nextMode === 'top') {
       applyTopView();
@@ -250,6 +252,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
       controls.target.y = pose.targetY;
       constrainFreeCameraAltitude();
       camera.lookAt(controls.target);
+      deps.requestWaterReflectionRefresh();   // 距离滑条是直接跳变，不是连续位姿
       deps.invalidate();
       return;
     }
@@ -263,6 +266,7 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
       camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
       deps.clampOrbitCameraToTerrain();
       camera.lookAt(controls.target);
+      deps.requestWaterReflectionRefresh();
       deps.invalidate();
     }
   }

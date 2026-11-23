@@ -307,6 +307,8 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
   const tmpV = new THREE.Vector3();
 
   function applyPose(v: RuntimeVehicle) {
+    const perf = deps.perfAdd
+    const poseStarted = perf ? performance.now() : 0
     applyDetachedTurrets(v);
     const T = deps.getT();
     const life = deps.sceneLifeAt(v, T);
@@ -327,12 +329,15 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
       //（评审反例：先 false 生成幽灵，同一 T 再 true，旧代码不重算）。
       const spansOfForIdentity = (eid: number) => deps.visByEid().get(eid)
         ?? deps.getData()?.vehicles.find((o) => o.eid === eid)?.coverage;
+      const successorStarted = perf ? performance.now() : 0;
       const replacedNow = deps.replacedAt
         ? deps.replacedAt(v.def.eid, T) === true
         : deps.getData()
           ? replacedBySuccessorAt(deps.getData()!.vehicles, spansOfForIdentity, v.def.eid, T)
           : false;
+      if (perf) deps.perfAdd!('vehicleSuccessorCheckMs', performance.now() - successorStarted, 1);
       if (v.lastKnownAt !== T || v.lastReplaced !== replacedNow) {
+        const resolveStarted = perf ? performance.now() : 0;
         v.lastKnownAt = T;
         v.lastReplaced = replacedNow;
         // 同账号后继实体（AoI 重入/复活换 eid）在当前时刻已接管 → 抑制旧实体幽灵
@@ -342,21 +347,27 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
           ? null
           : lastKnownPoseAt(
             deps.visByEid().get(v.def.eid) ?? v.def.coverage, T, v.def.pos, deps.poseGrid.tStart);
+        if (perf) deps.perfAdd!('vehicleLastKnownResolveMs', performance.now() - resolveStarted, 1);
       }
+      const ghostStarted = perf ? performance.now() : 0;
       const ghost = v.lastKnownProxy;
       if (ghost) {
         const lk = v.lastKnownPose;
+        if (lk) deps.perfAdd?.('ghostCandidates', 0, 1);
         ghost.visible = deps.store.lastKnownOn && lk != null;
         if (ghost.visible && lk) {
+          deps.perfAdd?.('ghostVisible', 0, 1);
           // game 系 → 场景系 x 取负（帧变换契约与 posAt 一致，禁止在别处再补符号）
           ghost.position.set(-lk.pos[0], lk.pos[1] + LAST_KNOWN_PROXY_Y, lk.pos[2]);
         }
       }
+      if (perf) deps.perfAdd!('vehicleGhostPresentMs', performance.now() - ghostStarted, 1);
       syncContactShadow(v);
       // 悬挂积分复位：不可见期间不累积侧位移（复现时首帧吸附，不跳变）
       if (v.suspParts) {
         for (const k of ['L', 'R'] as const) if (v.suspParts.sides[k]) v.suspParts.sides[k]!.prev = null;
       }
+      if (perf) deps.perfAdd!('vehiclePoseMs', performance.now() - poseStarted, 1);
       return;
     }
     // 在场：正常呈现，无幽灵（清掉上一段的 memo 与代理显隐）
@@ -379,6 +390,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
     v.turretG.rotation.y = -rel;
     v.gunPivot.rotation.x = -gunPitchAt(v, T);
     syncContactShadow(v);
+    if (perf) deps.perfAdd!('vehiclePoseMs', performance.now() - poseStarted, 1);
   }
 
   /** 阴影只读已变换完成的场景位姿（posAt 已含镜像）；车辆不可见或被类型图标替代时隐藏。 */

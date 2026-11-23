@@ -226,6 +226,29 @@ export function collectInstanceEntries(root: Object3D): InstanceEntry[] {
   return out
 }
 
+/** 紧邻的已有批次可在同一三角预算内合并；稠密区域原样交还。 */
+function combineSparseRegions(
+  batches: Iterable<InstanceEntry[]>, regionSize: number, trisEach: number, maxTris: number, minBatches: number,
+): InstanceEntry[][] {
+  const regions = new Map<string, InstanceEntry[][]>()
+  for (const batch of batches) {
+    const key = Math.floor(batch[0].x / regionSize) + ',' + Math.floor(batch[0].y / regionSize)
+    const region = regions.get(key)
+    if (region) region.push(batch)
+    else regions.set(key, [batch])
+  }
+  const out: InstanceEntry[][] = []
+  for (const region of regions.values()) {
+    const count = region.reduce((sum, batch) => sum + batch.length, 0)
+    if (region.length >= minBatches && trisEach * count <= maxTris) {
+      out.push(region.flat())
+    } else {
+      for (const batch of region) out.push(batch)
+    }
+  }
+  return out
+}
+
 /** 按 (geometry, material, 宫格) 分组：每片独立 InstancedMesh。
  *  cellSize 有限时按世界坐标宫格分片——整批一个跨全图的包围球会失去逐实例
  *  视锥剔除（镜头看半张图，视野外的实例也全量提交，林荫图实测减半的树渲染
@@ -245,7 +268,7 @@ export interface InstanceBatch {
  *  的主体是这批小几何稀疏种；合并后 scenery 批次 ≈ 1/4，材质状态切换随材质规整
  *  再降一档）。大几何密集种（林荫图树海：几何大、实例多，逐实例剔除有真实渲染量
  *  收益——「镜头看半张图视野外实例全量提交」正是它实测卡顿的主因）超预算，
- *  仍按宫格分片保留剔除粒度。 */
+ *  以空间分片保留剔除粒度；只在相邻区域不超预算时共用一批。 */
 export const SCENERY_COLLAPSE_MAX_TRIS = 20000
 
 /** 几何三角数（index 优先；非索引几何按 position 顶点数折算）。 */
@@ -298,6 +321,12 @@ export function groupInstanceBatches(
         out.push({ geometry: g.geometry, material: g.material, items })
         continue
       }
+      // 先尝试合并相邻细格。在更大的区域，至少能减少两次提交时才扩大剔除范围。
+      const pairs = combineSparseRegions(g.cells.values(), cellSize * 2, trisEach, maxCollapseTris, 2)
+      for (const items of combineSparseRegions(pairs, cellSize * 4, trisEach, maxCollapseTris, 3)) {
+        out.push({ geometry: g.geometry, material: g.material, items })
+      }
+      continue
     }
     for (const items of g.cells.values()) {
       out.push({ geometry: g.geometry, material: g.material, items })

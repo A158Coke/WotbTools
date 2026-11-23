@@ -91,10 +91,13 @@ describe('createWaterReflection 画质档', () => {
       intervalFrames: 2,
     })
     refl.setEnabled(true)
-    refl.update(renderer, scene, cam)
-    refl.update(renderer, scene, cam)
-    refl.update(renderer, scene, cam)
+    const timer = { begin: vi.fn(() => true), end: vi.fn() }
+    refl.update(renderer, scene, cam, timer)
+    refl.update(renderer, scene, cam, timer)
+    refl.update(renderer, scene, cam, timer)
     expect(renderer.render).toHaveBeenCalledTimes(2)
+    expect(timer.begin.mock.calls).toEqual([['reflection'], ['reflection']])
+    expect(timer.end).toHaveBeenCalledTimes(2)
     refl.dispose()
     expect((mesh.material as THREE.ShaderMaterial).uniforms.uUseReflection.value).toBe(0)
   })
@@ -166,7 +169,9 @@ describe('createWaterReflection 覆盖层剔除（W3）', () => {
       getExcludedRoots: () => [root],
     })
     refl.setEnabled(true)
-    expect(() => refl.update(renderer, scene, cam)).toThrow('context lost')
+    const timer = { begin: vi.fn(() => true), end: vi.fn() }
+    expect(() => refl.update(renderer, scene, cam, timer)).toThrow('context lost')
+    expect(timer.end).toHaveBeenCalledOnce()
     expect(root.visible).toBe(true)
     expect(mesh.visible).toBe(true)
     refl.dispose()
@@ -225,6 +230,147 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
     refl.dispose()
     refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.dispose()
+  })
+
+  it('HIGH 最后相机姿态落在跳过帧：Frame 4 收口刷新使用当前镜像相机，消费后恢复隔帧', () => {
+    const mesh = waterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({
+      getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2,
+    })
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)      // frame 1 → render
+    refl.update(renderer, scene, cam)      // frame 2 → skip
+    refl.update(renderer, scene, cam)      // frame 3 → 自动到期 render（旧姿态）
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    cam.position.set(12, 70, 30)
+    cam.lookAt(new THREE.Vector3(20, 0, 0))
+    cam.updateMatrixWorld(true)
+    refl.requestRefresh()                  // 相机交互收口（pointerup / keyup / cancel）
+    refl.update(renderer, scene, cam)      // frame 4 → 本应 skip，force：必须用最后姿态
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    const mirrored = renderer.render.mock.calls.at(-1)![1] as THREE.PerspectiveCamera
+    expect(mirrored).not.toBe(cam)
+    expect(mirrored.position.x).toBeCloseTo(12, 6)
+    expect(mirrored.position.y).toBeCloseTo(-70, 6)
+    expect(mirrored.position.z).toBeCloseTo(30, 6)
+    refl.update(renderer, scene, cam)      // frame 5 → 到期帧，正常 render
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.update(renderer, scene, cam)      // frame 6 → 强制已消费，恢复隔帧 skip
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.dispose()
+  })
+
+  it('intervalFrames=1（ULTRA）仍每帧刷新，不受交互收口影响', () => {
+    const mesh = waterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({
+      getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 1,
+    })
+    refl.setEnabled(true)
+    for (let i = 0; i < 4; i++) refl.update(renderer, scene, cam)
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.dispose()
+  })
+})
+
+describe('createWaterReflection 保守可见性剔除（W3）', () => {
+  function horizontalWaterMesh(): THREE.Mesh {
+    const mesh = waterMesh()
+    mesh.rotation.x = -Math.PI / 2
+    mesh.updateMatrixWorld(true)
+    return mesh
+  }
+
+  it('水面完全不在主相机视锥内：跳过整个镜像 pass（含 timer/RT），可见后恢复', () => {
+    const mesh = horizontalWaterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const timer = { begin: vi.fn(() => true), end: vi.fn() }
+    const refl = createWaterReflection({ getWaterMeshes: () => [mesh], getWaterLevel: () => 0 })
+    refl.setEnabled(true)
+    const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
+    refl.update(renderer, scene, lookingUp, timer)
+    expect(renderer.render).not.toHaveBeenCalled()
+    expect(timer.begin).not.toHaveBeenCalled()
+    const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    refl.update(renderer, scene, lookingDown, timer)
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    expect(timer.begin).toHaveBeenCalledOnce()
+    refl.dispose()
+  })
+
+  it('隔帧档从视锥外重入恰逢非到期帧：可见性转移必须当帧刷新，下一帧恢复隔帧', () => {
+    const mesh = horizontalWaterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const refl = createWaterReflection({ getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2 })
+    refl.setEnabled(true)
+    const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
+    const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    refl.update(renderer, scene, lookingDown)       // frame 1：到期，渲染
+    refl.update(renderer, scene, lookingDown)       // frame 2：跳过
+    refl.update(renderer, scene, lookingUp)         // frame 3：到期但不可见，不渲染
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.update(renderer, scene, lookingDown)       // frame 4：未到期，但刚重入 → 必须渲染
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    refl.update(renderer, scene, lookingDown)       // frame 5：到期帧，正常刷新
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    refl.update(renderer, scene, lookingDown)       // frame 6：持续可见且未到期 → 恢复隔帧节流
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    refl.dispose()
+  })
+
+  it('被剔除的帧不消耗 requestRefresh：水面重新可见的下一帧仍强制刷新', () => {
+    const mesh = horizontalWaterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const refl = createWaterReflection({ getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 100 })
+    refl.setEnabled(true)
+    const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
+    const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    refl.update(renderer, scene, lookingUp)        // 第 1 帧（间隔到期）但水面不可见
+    expect(renderer.render).not.toHaveBeenCalled()
+    refl.requestRefresh()
+    refl.update(renderer, scene, lookingUp)        // 强制帧仍不可见：forceRefresh 必须保留
+    expect(renderer.render).not.toHaveBeenCalled()
+    refl.update(renderer, scene, lookingDown)      // 未到间隔，但挂起的强制刷新应生效
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.update(renderer, scene, lookingDown)      // 强制已消费：回到隔帧跳过
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.dispose()
+  })
+
+  it('包围体不确定（几何缺失）时 fail-open，照常绘制', () => {
+    const notAMesh = new THREE.Object3D()
+    notAMesh.position.set(0, 0, 0)
+    const scene = sceneWith([notAMesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({ getWaterMeshes: () => [notAMesh], getWaterLevel: () => 0 })
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.dispose()
+  })
+
+  it('水面在远裁剪面之外：剔除，不重建 RT', () => {
+    const mesh = horizontalWaterMesh()
+    mesh.position.z = 100000
+    mesh.updateMatrixWorld(true)
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const cam = camera(new THREE.Vector3(0, 60, 0), new THREE.Vector3(0, 0, 0))
+    const refl = createWaterReflection({ getWaterMeshes: () => [mesh], getWaterLevel: () => 0 })
+    refl.setEnabled(true)
+    refl.update(renderer, scene, cam)
+    expect(renderer.render).not.toHaveBeenCalled()
+    expect(refl.debugTarget()).toBeNull()
     refl.dispose()
   })
 })

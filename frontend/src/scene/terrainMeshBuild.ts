@@ -19,7 +19,6 @@ interface PatchLevel {
 }
 interface PatchTable { n: number; span: number; rootStep: number; levels: PatchLevel[]; K: number }
 interface PatchProbe { subdivide: boolean; err: number; heightError: number; radiusError: number }
-interface TerrainLeaf { i0: number; j0: number; step: number }
 interface TerrainPatchDiagnostic {
   i0: number
   j0: number
@@ -222,7 +221,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   const originIAt = new CellOriginArray(n * n);
   const originJAt = new CellOriginArray(n * n);
   const morphRaw = new Float32Array(n * n);  // 逐 texel：所属补片的 subdivMorph（未过 morphFunc）
-  const leaves: TerrainLeaf[] = []
+  const cellOrigins: number[] = []   // 仅记原点下标；格距已保存在 sizeAt 中。
   let overBudget = false;
   let curMorph = 0;                       // emitPatch 期间该补片的 subdivMorph
   const emitPatch = (i0: number, j0: number, step: number): void => {
@@ -231,7 +230,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
         const ci = i0 + a * step, cj = j0 + b * step;
         if (ci >= n || cj >= n) continue;
         const st = Math.min(step, n - ci, n - cj);   // 退化 n：末格夹取（H 亦夹到 n−1 = GetHeightClamp）
-        leaves.push({ i0: ci, j0: cj, step: st });
+        cellOrigins.push(ci * n + cj);
         for (let i = ci; i < Math.min(ci + st, n); i++) {
           for (let j = cj; j < Math.min(cj + st, n); j++) {
             sizeAt[i * n + j] = st;
@@ -323,7 +322,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   // *Err0 = 父补片同名误差（引擎把当前层的 heightError/radiusError 传给子层当 *0；
   // 根调用传阈值本身 ⇒ 根补片 error0Delta = 0 ⇒ subdivMorph = 0，与引擎 SubdividePatch 首调一致）。
   const rec = (i0: number, j0: number, step: number, level: number, hErr0 = M.maxHeightError, rErr0 = M.maxPatchRadiusError): void => {
-    const roomLeft = leaves.length + PATCH_QUADS * PATCH_QUADS <= MAX_QUADS;
+    const roomLeft = cellOrigins.length + PATCH_QUADS * PATCH_QUADS <= MAX_QUADS;
     let hErr = 0, rErr = 0;
     if (step > minStep && roomLeft) {
       const p = patchProbe(i0, j0, step, level);
@@ -387,26 +386,13 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     }
     return sz;
   };
-  /** 该顶点处"最粗相邻补片"的 subdivMorph（同层多片取较小值 ＝ 客户端同层交界的
-   *  `Min(xNeg->subdivMorph, morph)`；更粗邻居时客户端直接用粗侧值 ⇒ 与"最粗者"一致）。 */
-  const morphRawAt = (i: number, j: number, s: number): number => {
-    let m = Infinity;
-    for (const [di, dj] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
-      const a = i + di, b = j + dj;
-      if (a < 0 || b < 0 || a >= n || b >= n) continue;
-      if (sizeAt[a * n + b] !== s) continue;
-      const v = morphRaw[a * n + b];
-      if (v < m) m = v;
-    }
-    return m === Infinity ? 0 : m;
-  };
   /** 某一通道的顶点值：最粗相邻层级的格点值/边界直线（端点递归，层级严格变大 ⇒ 良基）。 */
-  const channelValue = (get: (i: number, j: number, s: number) => number, memo: Float32Array, i: number, j: number): number => {
+  const channelValue = (get: (i: number, j: number, s: number) => number, memo: Float32Array, i: number, j: number, knownStep?: number): number => {
     const key = i * W + j;
     const hit = memo[key];
     if (hit === hit) return hit;
     let out;
-    const s = maxQuadSize(i, j);
+    const s = knownStep ?? maxQuadSize(i, j);
     const mi = s > 0 && i % s === 0, mj = s > 0 && j % s === 0;
     if (i === n || j === n) {
       out = get(i, j, s);                             // 外圈：着色器 zeroLodMul 同款 ⇒ 取该处原始值
@@ -440,30 +426,43 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     if ((y & 1) && y !== last) { y1 = j - st; y2 = j + st; }
     return (H(x1, y1) + H(x2, y2)) / 2;
   };
-  const accAt = (i: number, j: number): number => channelValue(H, memoAcc, i, j);
-  const avgAt = (i: number, j: number): number => channelValue((ii, jj, s) => avgTexel(ii, jj, s), memoAvg, i, j);
-  /** 顶点高度 = lerp(均值通道, 原始通道, morph)（客户端 tilemask-vp.sl 同式）。 */
+  /** 顶点高度 = lerp(均值通道, 原始通道, morph)。morph 取最粗相邻补片的值，同层多片取较小值。 */
   const heightAt = (i: number, j: number): number => {
-    const s = maxQuadSize(i, j);
-    const acc = accAt(i, j);
-    if (s <= 0) return acc;
-    const m = morphFunc(morphRawAt(i, j, s));
+    // 同一次相邻四格遍历决定最粗步长，以及该层的最小 morph。
+    let maxStep = 0, minMorph = Infinity;
+    const firstRow = Math.max(0, i - 1), lastRow = Math.min(n - 1, i);
+    const firstCol = Math.max(0, j - 1), lastCol = Math.min(n - 1, j);
+    for (let col = firstCol; col <= lastCol; col++) {
+      for (let row = firstRow; row <= lastRow; row++) {
+        const index = row * n + col, step = sizeAt[index];
+        if (step > maxStep) {
+          maxStep = step;
+          minMorph = Infinity;
+        }
+        if (step === maxStep && morphRaw[index] < minMorph) minMorph = morphRaw[index];
+      }
+    }
+    const acc = channelValue(H, memoAcc, i, j, maxStep);
+    if (maxStep <= 0) return acc;
+    const m = morphFunc(minMorph === Infinity ? 0 : minMorph);
     if (!(m > 0)) return acc;
-    const avg = avgAt(i, j);
+    const avg = channelValue(avgTexel, memoAvg, i, j, maxStep);
     return avg + (acc - avg) * m;
   };
 
   // ---------- ③ 发射：每格 1 个四边形；顶点按 (i,j) 去重（法线跨叶连续） ----------
   const vmap = new Int32Array(W * W).fill(-1);      // (i,j) → 顶点序号（-1 = 未发射）
-  const pos = new Float32Array(leaves.length * 4 * 3);   // 上界 = 不去重（实际去重后远少于此）
-  const idx = new Uint32Array(leaves.length * 6);
+  const pos = new Float32Array(Math.min(cellOrigins.length * 4, W * W) * 3);   // 顶点最多覆盖整张格点表
+  const idx = new Uint32Array(cellOrigins.length * 6);
   let np = 0, ni = 0, nv = 0;
   const v = new Int32Array(4);
-  for (const L of leaves) {
+  for (const origin of cellOrigins) {
+    const i0 = Math.floor(origin / n), j0 = origin - i0 * n;
+    const step = sizeAt[origin];
     for (let c = 0; c < 4; c++) {
       const di = c >> 1, dj = c & 1;                // 0:(0,0) 1:(0,1) 2:(1,0) 3:(1,1)
-      const i = Math.min(L.i0 + di * L.step, n);
-      const j = Math.min(L.j0 + dj * L.step, n);
+      const i = Math.min(i0 + di * step, n);
+      const j = Math.min(j0 + dj * step, n);
       const key = i * W + j;
       let vi = vmap[key];
       if (vi < 0) {
@@ -480,7 +479,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   return {
     positions: pos.subarray(0, np),
     indices: idx.subarray(0, ni),
-    quads: leaves.length,
+    quads: cellOrigins.length,
     overBudget,
     sizeAt,
     originIAt,

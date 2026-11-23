@@ -6,6 +6,7 @@ import { applySupremacyPointsToStore } from '../supremacyPoints.js'
 import { createFrameMeter } from '../frameMeter.js'
 import { advancePlaybackTime } from '../../utils/playbackClock'
 import { createPerfProbe } from './perfProbe.ts'
+import { addPerfStage } from './perfStages.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
 
@@ -38,7 +39,10 @@ export function installRenderLoop(S: Host) {
   // 按需渲染的脏标记：状态跳变（seek/换相机/开关节/尺寸变化/特效到期）必须显式置脏，
   // 否则那一帧的静止状态会一直停留在旧画面上。
   S.frameDirty = true;
-  function invalidate(S: Host) { S.frameDirty = true; S.requestWaterReflectionRefresh(); }
+  // 只置“下一帧必须重绘”；水面反射的强制刷新是另一件事（见 waterReflectionRuntime）：
+  // 若把 requestRefresh 挂在这里，连续相机运动/每帧 invalidate 会把 HIGH 档的
+  // intervalFrames=2 完全绕过，镜像 pass 又变回逐帧。强制刷新只在明确的跳变事件处调用。
+  function invalidate(S: Host) { S.frameDirty = true; }
 
   // 实时帧率（FPS 覆盖层）：rAF 回调间隔的 500ms 窗口均值，每窗口写一次 store
   //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
@@ -53,6 +57,7 @@ export function installRenderLoop(S: Host) {
     S.rafId = requestAnimationFrame(S.animate);
     if (!S.renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const cpuStarted = S.PERF ? performance.now() : 0;
+    if (S.PERF) S.perfStages = Object.create(null);
     const dt = Math.min(S.clock.getDelta(), 0.1);
     if (S.DATA && S.PLAYING) {
       // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
@@ -175,6 +180,8 @@ export function installRenderLoop(S: Host) {
         S.renderer.setPixelRatio(nd);
         S.renderer.domElement.style.width = w + 'px';
         S.renderer.domElement.style.height = h + 'px';
+        // drawing buffer 尺寸变了：本帧的反射 RT 也要按新尺寸重建（否则停在旧分辨率一帧）
+        S.requestWaterReflectionRefresh();
       }
     }
     const perfT0 = S.PERF ? performance.now() : 0;
@@ -193,7 +200,10 @@ export function installRenderLoop(S: Host) {
       if (S.PERF) { S.renderer.info.autoReset = false; S.renderer.info.reset(); }
       const gpuFrameId = S.session.isReadySession() ? S.gpu?.beginFrame() ?? null : null;
       // 水面动态反射（HIGH/ULTRA）：镜像 pass 必须在主渲染前完成（RT 供水面着色采样）。
-      S.waterReflection.update(S.renderer, S.scene, S.camera);
+      // GPU 计时把镜像 pass 与主绘制分开（?perf 的 reflectionUpdateMs / mainSubmitMs）。
+      const reflectionStarted = S.PERF ? performance.now() : 0;
+      S.waterReflection.update(S.renderer, S.scene, S.camera, S.gpu);
+      const mainStarted = S.PERF ? performance.now() : 0;
       const gpuMainStarted = S.gpu?.begin('main') ?? false;
       try { S.renderer.render(S.scene, S.camera); } finally { if (gpuMainStarted) S.gpu.end(); }
       S.session.tryMarkFirstReadyFrame(performance.now());
@@ -201,7 +211,7 @@ export function installRenderLoop(S: Host) {
       S.cameraRuntime.renderArmorHighlight();
       S.gpu?.submitFrame();
       const perfR1 = S.PERF ? performance.now() : 0;
-      if (S.PERF && S.session.isReadySession()) S.perfProbe.perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, S.cameraRuntime.armorStats(), { cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, gpuFrameId, gpu_total_ms: null });
+      if (S.PERF && S.session.isReadySession()) S.perfProbe.perfFrame(perfT1 - perfT0, perfR0 - terrainFinished, perfR1 - perfR0, S.cameraRuntime.armorStats(), { ...(S.perfStages || {}), cpuFrameMs: perfR1 - cpuStarted, tickMs: tickFinished - cpuStarted, cameraMs: cameraFinished - tickFinished, terrainCheckInclusiveMs: terrainFinished - perfT1, reflectionUpdateMs: mainStarted - reflectionStarted, mainSubmitMs: perfR0 - mainStarted, gpuFrameId, gpu_total_ms: null });
       S.gpu?.recorded(gpuFrameId);
     } finally {
       if (S.PERF) S.renderer.info.autoReset = perfAutoReset;
@@ -221,12 +231,14 @@ export function installPerfProbe(S: Host) {
   // playback/perfProbe.ts（#820 Step 4 出仓）；PERF/perf/gpu 句柄仍由本闭包解构持有
   //（渲染循环与会话编排直接消费）。
   S.perfProbe = createPerfProbe({
-    container: S.container,
+    getViewportSize: () => S.getViewportSize(),
     getT: () => S.T,
     getRenderer: () => S.renderer,
     getQualityKey: () => S.QKEY,
     getArmorHighlightPref: () => S.ARMOR_HIGHLIGHT,
     getCameraMode: () => S.cameraRuntime.cam(),
+    getSpeed: () => S.SPEED,
+    getDynres: () => S.DYNRES,
     paused: () => S.paused,
     terrainCounters: () => S.mapWorld.terrainCounters(),
     resetTerrainCounters: () => S.mapWorld.resetTerrainCounters(),
@@ -239,6 +251,12 @@ export function installPerfProbe(S: Host) {
   S.PERF = S.perfProbe.PERF;
   S.perf = S.perfProbe.perf;
   S.gpu = S.perfProbe.gpu;
+  if (S.PERF) {
+    // 有界分段归因：每帧在 animate 开头重置；只累加当帧，不保留历史。父子区间
+    //（如 labelsUpdateMs 与 labelsProjectionMs）分别记录，报告时禁止相加成整帧。
+    S.perfStages = Object.create(null);
+    S.perfAddStage = (key: string, ms: number, count?: number) => addPerfStage(S.perfStages, key, ms, count);
+  }
   S.dynResCtl = null;
   S.rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres, stencil }（reset 保留渲染器时用于失配检测）
 

@@ -220,6 +220,7 @@ export function createPlaybackSession(S: Host) {
     tick: S.tick,
     writeHud: S.writeHud,
     invalidate: S.invalidate,
+    requestWaterReflectionRefresh: S.requestWaterReflectionRefresh,
     loadRecorderCamera: (source, epoch) => S.cameraRuntime.loadRecorderCamera(source, epoch),
     transients: S.battle.transients,
     setClockRange: (start, end) => { S.START = start; S.END = end; },

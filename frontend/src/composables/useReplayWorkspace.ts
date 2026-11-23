@@ -18,6 +18,8 @@ export interface WorkspacePlayback {
   canonical: LocalPlayback | null
   canonicalError: unknown
   canonicalState: PlaybackReadiness
+  /** 完整回放内容 SHA-256（解析时已计算）；会话身份的一部分，供诊断晚订阅者复用。 */
+  replayDigest: string | null
 }
 
 /**
@@ -44,7 +46,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
     if (!entry) {
       entry = { state: shallowReactive<WorkspacePlayback>({
         scenePlayback: null, sceneError: null, sceneState: 'idle',
-        canonical: null, canonicalError: null, canonicalState: 'idle',
+        canonical: null, canonicalError: null, canonicalState: 'idle', replayDigest: null,
       }), controller: null, canonicalGeneration: 0 }
       entries.set(file, entry)
     }
@@ -94,6 +96,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
       entry.state.scenePlayback = null
       entry.state.sceneError = null
       entry.state.sceneState = 'idle'
+      entry.state.replayDigest = null
       invalidateCanonical(file)
     },
     loadScene(file: File, observer?: PlaybackDiagnosticObserver): Promise<AgentPlaybackFacet> {
@@ -113,6 +116,10 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
           if (entry.state.sceneState === 'loading') {
             if (!entry.observers) emitPlaybackDiagnostic(observer, { stage: 'workspace.inflightTiming', status: 'unavailable' })
             else entry.observers.add(observer)
+          }
+          // 2D 可能先于 3D 完成解析：新的诊断消费者仍要拿到这一场的真实输入摘要。
+          if (entry.state.sceneState === 'ready' && entry.state.replayDigest) {
+            emitPlaybackDiagnostic(observer, { stage: 'replay.identity', digest: entry.state.replayDigest })
           }
         }
         // Reselecting a cached scene resumes enrichment withdrawn with the old selection.
@@ -135,7 +142,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
           if (entry.controller === controller && !controller.signal.aborted) {
             for (const current of entry.observers ?? []) emitPlaybackDiagnostic(current, event)
           }
-        } : undefined)
+        } : undefined, digest => { entry.state.replayDigest = digest })
         if (controller.signal.aborted) throw new DOMException('Playback scene cancelled', 'AbortError')
         entry.state.scenePlayback = playback
         entry.state.sceneError = null

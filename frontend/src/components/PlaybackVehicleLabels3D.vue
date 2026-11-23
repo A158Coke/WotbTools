@@ -60,10 +60,13 @@ function syncGhostPhase(host) {
   const bornMs = Number(ghost?.dataset.bornMs)
   if (Number.isFinite(bornMs)) ghost.style.animationDelay = `${-Math.max(0, performance.now() - bornMs)}ms`
 }
-function paint(el, anchor) {
+function paint(el, anchor, forceReappearing = false) {
   if (!el || !anchor) return
-  const reappearing = el.hidden && anchor.visible
-  el.hidden = !anchor.visible
+  // 准备阶段先解除 hidden 后，写阶段不能再靠 el.hidden 判断「从隐藏恢复」；
+  // forceReappearing 记录本帧曾隐藏，幽灵段仍按壁钟续播一次。
+  const reappearing = (el.hidden || forceReappearing) && anchor.visible
+  setHidden(el, !anchor.visible)
+  if (!anchor.visible) return
   el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
   el.classList.toggle('label-occluded', !!anchor.occluded)
   if (reappearing) syncGhostPhase(el)
@@ -161,43 +164,89 @@ function resolveDamageSide(layout, anchorX, stageW, current) {
 }
 /** hidden 只在真正变化时写：每帧一次 display 变更会让后续几何读取次次触发同步布局。 */
 function setHidden(el, hidden) { if (el.hidden !== hidden) el.hidden = hidden }
-/** 逐帧把存活数字摆到锚点几何上：位置走 DOM 直写（与名牌 anchor 同一条热路径），不触发 VDOM patch。 */
-function placeDamages(eid) {
+/**
+ * 一帧的锚点落位批处理：labelsRuntime 先 `beginAnchors(逻辑舞台)`，逐车 `setAnchor`
+ * 只做同步拷贝/收集，最后 `endAnchors()` 统一 flush。读阶段（offsetWidth /
+ * getBoundingClientRect）与写阶段（transform / class / hidden）严格分开：先集中准备
+ * 需要重新量的伤害节点，再集中读 dirty 几何，最后统一写 DOM——不再逐车「写→读→写」
+ * 触发同步布局。舞台宽度由调用方传入（renderer.getSize 的逻辑像素），覆盖层不读
+ * rootEl.clientWidth。
+ */
+function flushAnchors(eids, stageW) {
   const list = damages.value
-  if (!list.length) return
-  const anchor = anchors.get(eid)
-  const projected = !!anchor?.projected
-  const key = damageLayoutKey(!!anchor?.visible)
-  let stageW = null
-  for (const d of list) {
-    if (d.eid !== eid) continue
-    const el = d.el
-    if (!el) continue
-    // 车辆出屏 / 车体不可见：立刻隐藏，旧坐标不得继续显示（下一帧回来再按新 anchor 落位）
-    if (!projected) {
-      d.wasProjected = false // 包括出生时就在视野外：首次进屏也必须消费已过寿命
-      setHidden(el, true)
-      continue
+  if (!list.length) {
+    for (const eid of eids) paint(elements.get(eid), anchors.get(eid))
+    return
+  }
+  // 准备阶段解除 hidden 的宿主；写阶段据此保留 paint 的「重现」语义（幽灵段续播）。
+  const preShownHosts = new Set()
+  // 1) 准备：需要重新量的宿主必须先真正解除 hidden，否则 offsetWidth / rect 全为 0。
+  // 车辆从屏外重入、或数字存活期间重开名牌时，anchor 已 visible 但宿主还停在上帧的 hidden；
+  // 不先显示名牌宿主，measureDamageLayout 会读到 0×0 并把 fallback 缓存下来。
+  for (const eid of eids) {
+    const anchor = anchors.get(eid)
+    if (!anchor?.projected) continue
+    const host = elements.get(eid)
+    if (host && anchor.visible) {
+      if (host.hidden) preShownHosts.add(eid)
+      setHidden(host, false)
     }
-    if (!d.layout || d.layoutKey !== key) {
-      setHidden(el, false)                 // 量宽前必须先真正布局（display:none 时量不到宽度）
-      const layout = measureDamageLayout(eid, el, d.stack, !!anchor.visible)
-      if (!layout) { setHidden(el, true); continue }
-      d.layout = layout
-      d.layoutKey = key
+    const key = damageLayoutKey(!!anchor.visible)
+    for (const d of list) {
+      if (d.eid !== eid || !d.el) continue
+      if (!d.layout || d.layoutKey !== key) setHidden(d.el, false)
     }
-    setHidden(el, false)
-    if (stageW == null) stageW = rootEl.value?.clientWidth || 0
-    const side = resolveDamageSide(d.layout, anchor.x, stageW, d.side)
-    if (side !== d.side) {
-      d.side = side
-      // 漂移方向必须**离开**血条：左侧镜像后若继续向右漂，后段会重新撞回血条
-      applyDamageDrift(d)
+  }
+  // 2) 读：每个 dirty 数字只量一次几何（所有写操作都排在这一阶段之后）。
+  for (const eid of eids) {
+    const anchor = anchors.get(eid)
+    if (!anchor?.projected) continue
+    const key = damageLayoutKey(!!anchor.visible)
+    for (const d of list) {
+      if (d.eid !== eid || !d.el) continue
+      if (d.layout && d.layoutKey === key) continue
+      const layout = measureDamageLayout(eid, d.el, d.stack, !!anchor.visible)
+      if (layout) {
+        d.layout = layout
+        d.layoutKey = key
+        d.layoutPending = false
+      } else {
+        // 行 DOM 还没 patch：本帧不定位（不能用错位置），下一帧重试。
+        d.layoutPending = true
+      }
     }
-    if (d.wasProjected === false) syncDamageAnimationPhase(d)
-    d.wasProjected = true
-    const dx = side === SIDE_LEFT ? d.layout.dxLeft : d.layout.dxRight
-    el.style.transform = `translate3d(${anchor.x + dx}px, ${anchor.y + d.layout.dy}px, 0)`
+  }
+  // 3) 写：名牌锚点 + 伤害数字统一落 DOM。
+  for (const eid of eids) {
+    const anchor = anchors.get(eid)
+    paint(elements.get(eid), anchor, preShownHosts.has(eid))
+    if (!anchor) continue
+    const projected = !!anchor.projected
+    for (const d of list) {
+      if (d.eid !== eid || !d.el) continue
+      // 车辆出屏 / 车体不可见：立刻隐藏，旧坐标不得继续显示（下一帧回来再按新 anchor 落位）
+      if (!projected) {
+        d.wasProjected = false // 包括出生时就在视野外：首次进屏也必须消费已过寿命
+        d.layoutPending = false
+        setHidden(d.el, true)
+        continue
+      }
+      if (d.layoutPending || !d.layout) {
+        setHidden(d.el, true)
+        continue
+      }
+      setHidden(d.el, false)
+      const side = resolveDamageSide(d.layout, anchor.x, stageW, d.side)
+      if (side !== d.side) {
+        d.side = side
+        // 漂移方向必须**离开**血条：左侧镜像后若继续向右漂，后段会重新撞回血条
+        applyDamageDrift(d)
+      }
+      if (d.wasProjected === false) syncDamageAnimationPhase(d)
+      d.wasProjected = true
+      const dx = side === SIDE_LEFT ? d.layout.dxLeft : d.layout.dxRight
+      d.el.style.transform = `translate3d(${anchor.x + dx}px, ${anchor.y + d.layout.dy}px, 0)`
+    }
   }
 }
 function applyDamageDrift(d) {
@@ -238,7 +287,7 @@ function spawnDamage(eid, hpLoss, durationMs) {
   if (stack === DMG_STACK_SLOTS) stack = 0
   damages.value = [...damages.value, {
     id, eid, stack, text: '-' + hpLoss, bornMs: performance.now(), durationMs,
-    layout: null, layoutKey: null, side: null, el: null, wasProjected: null,
+    layout: null, layoutKey: null, side: null, el: null, wasProjected: null, layoutPending: false,
   }]
   // 到期摘除走定时器而不是渲染循环：数字是 DOM，暂停时不需要（也不该依赖）场景继续出帧。
   // 非法寿命（NaN / ≤0）也要摘除——宁可短促，也不能把数字永远留在屏幕上。
@@ -253,17 +302,42 @@ function removeDamage(id) {
 function clearDamages() { damages.value = [] }
 /** 每个 entry 的时长稳定不变（rerender 只重写同一个值），动画 timeline 不被重新快进。 */
 function damageAnimStyle(d) { return { animationDuration: `${d.durationMs}ms` } }
-function setAnchor(eid, anchor) {
-  // 契约：**同步拷贝**进自有 per-eid 存储，不持有调用方对象引用——场景内核逐帧逐车
-  // 复用同一个 scratch 对象喂所有 eid（60Hz ×14 个对象的分配热路径），若这里存引用，
-  // 全部 eid 会共享最后一辆车的坐标。
+/** 批处理状态：labelsRuntime 逐帧 begin(stage) → setAnchor（只收集）→ end（统一 flush）。 */
+let batchingAnchors = false
+let batchStageW = 0
+const batchEids = []
+/** 契约：**同步拷贝**进自有 per-eid 存储，不持有调用方对象引用——场景内核逐帧逐车
+ * 复用同一个 scratch 对象喂所有 eid（60Hz ×14 个对象的分配热路径），若这里存引用，
+ * 全部 eid 会共享最后一辆车的坐标。 */
+function copyAnchor(eid, anchor) {
   let cur = anchors.get(eid)
   if (!cur) { cur = { x: 0, y: 0, visible: false, occluded: false, projected: false }; anchors.set(eid, cur) }
   cur.x = anchor.x; cur.y = anchor.y; cur.visible = anchor.visible; cur.occluded = anchor.occluded
   // projected = 车辆在视锥内（与"名牌是否显示"无关）：关名牌时伤害数字仍有落点
   cur.projected = anchor.projected ?? anchor.visible
-  paint(elements.get(eid), cur)
-  placeDamages(eid)
+  return cur
+}
+/**
+ * 开始一帧的锚点批处理。stage = 渲染器逻辑视口（CSS px），作为伤害数字贴边镜像的
+ * 唯一舞台宽度来源；覆盖层不再读 rootEl.clientWidth。
+ */
+function beginAnchors(stage) {
+  batchingAnchors = true
+  batchEids.length = 0
+  batchStageW = Number.isFinite(stage?.x) ? stage.x : 0
+}
+/** 结束本帧批处理：集中读 dirty 几何后统一写 DOM。 */
+function endAnchors() {
+  if (!batchingAnchors) return
+  batchingAnchors = false
+  flushAnchors(batchEids, batchStageW)
+  batchEids.length = 0
+}
+function setAnchor(eid, anchor, stage) {
+  copyAnchor(eid, anchor)
+  if (batchingAnchors) { batchEids.push(eid); return }
+  // 单条兼容路径（旧桩/测试）：显式 stage 优先，否则沿用最近一次 begin 的舞台宽度。
+  flushAnchors([eid], Number.isFinite(stage?.x) ? stage.x : batchStageW)
 }
 function setLabels(rows) { labels.value = rows; labelsSeq++ }
 function setMarkerLabels(rows) { markerLabels.value = rows }
@@ -286,9 +360,10 @@ function paintMarker(el, anchor) {
 function clear() {
   labels.value = []; anchors.clear(); elements.clear()
   markerLabels.value = []; markerEls.clear(); markerAnchors.clear()
+  batchingAnchors = false; batchEids.length = 0; batchStageW = 0
   clearDamages()
 }
-defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDamages, setMarkerLabels, setMarkerAnchor })
+defineExpose({ setLabels, setAnchor, beginAnchors, endAnchors, clear, spawnDamage, removeDamage, clearDamages, setMarkerLabels, setMarkerAnchor })
 </script>
 
 <template>
@@ -353,6 +428,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 }
 .vehicle-label-overlay.label-layer-static .vehicle-class-button { pointer-events: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+.vehicle-label-anchor:not([hidden]) { will-change: transform; }
 /* 战场快捷标记来源卡的动作章：目标类卡（攻击/撤退）必须自述"对它做什么"——
    在目标车上悬浮发起者名牌会与目标自己的名牌混淆（用户反馈"撤退表现逻辑不对"）。 */
 .battle-marker-kind {

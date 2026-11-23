@@ -125,6 +125,33 @@ describe('sceneryInstancing · 收集与分组', () => {
     })
   })
 
+  it('同组跨区超预算时，稀疏相邻格合批，稠密相邻格分别剔除', () => {
+    const root = new THREE.Group()
+    const geometry = new THREE.BoxGeometry(), material = mat()
+    // 一盒 12 个三角：负坐标区有两个实例，可合并；正坐标区有三个，须按细格划分。
+    for (const x of [-149, -74, 1, 2, 76]) {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.x = x
+      root.add(mesh)
+    }
+    const entries = collectInstanceEntries(root)
+    const batches = groupInstanceBatches(entries, 75, { maxCollapseTris: 24 })
+    const members = batches.map(batch => batch.items.map(entry => entry.x).sort((a, b) => a - b))
+    expect(members.sort((a, b) => a[0] - b[0])).toEqual([[-149, -74], [1, 2], [76]])
+  })
+
+  it('4×4 区域只合并预算内的多个小批，远处实例仍独立', () => {
+    const root = new THREE.Group(), geometry = new THREE.BoxGeometry(), material = mat()
+    for (const [x, y] of [[5, 5], [155, 5], [5, 155], [605, 5]]) {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(x, y, 0)
+      root.add(mesh)
+    }
+    const batches = groupInstanceBatches(collectInstanceEntries(root), 75, { maxCollapseTris: 36 })
+    expect(batches.map(batch => batch.items.length).sort()).toEqual([1, 3])
+    expect(batches.find(batch => batch.items.length === 1).items[0].x).toBe(605)
+  })
+
   it('大几何密集组不合并：总三角超预算仍按宫格分片（剔除粒度保留）', () => {
     const root = new THREE.Object3D()
     // 10000 三角的几何 × 4 实例 = 40000 > 预算 → 不合并

@@ -97,6 +97,8 @@ export function createPlaybackApi(S: Host) {
     setFlySpeed: (n: number) => S.cameraRuntime.setFlySpeed(n),
     flyTick: (dt: number, pressed: Set<string>) => S.cameraRuntime.flyTick(dt, pressed),
     invalidate: S.invalidate,
+    /** 相机交互收口：最后姿态可能落在 HIGH 隔帧反射的跳过帧，必须显式强制刷新一次。 */
+    settleCamera: () => { S.requestWaterReflectionRefresh(); S.invalidate(); },
     seekFraction: (frac: number) => { if (S.DATA) S.seekTo(S.START + frac * (S.END - S.START)); },
     // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [START, END] 夹取（准备 / 倒计时阶段回不去）
     seekTime: (t: number) => { if (S.DATA) S.seekTo(t); },
@@ -115,7 +117,7 @@ export function createPlaybackApi(S: Host) {
       S.battleMarkers?.update(S.T);
       S.invalidate();
     },
-    setGlb: (on: boolean) => { if (!S.Q.forceGlb && (S.Q.allowGlb || !on)) S.vehicles.applyGlbToggle(on); S.invalidate(); },
+    setGlb: (on: boolean) => { if (!S.Q.forceGlb && (S.Q.allowGlb || !on)) S.vehicles.applyGlbToggle(on); S.requestWaterReflectionRefresh(); S.invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
     setTreadMarks: (on: boolean) => {
       S.store.treadOn = !!on;
@@ -155,7 +157,10 @@ export function createPlaybackApi(S: Host) {
       }
       if (lastKnownChanged) for (const v of S.vehicles.getVehicles()) S.vehicles.applyPose(v);
       S.labels.setLabelPrefs();
-      if (S.camera) S.labels.updateLabels();
+      if (S.renderer && S.camera) S.labels.updateLabels();
+      // 类型图标 / lastKnown 呈现会改车模或幽灵代理显隐：HIGH 档反射隔帧更新，
+      // 若本帧 dirty 落在跳过分支，水面会一直保留旧倒影。离散偏好操作显式强制刷新一次。
+      S.requestWaterReflectionRefresh();
     },
     // 渲染性能偏好切换：只持久化 + 同步 store（待开播阶段渲染器未创建，下次
     // initScene 按当前偏好装配——不重载、不重建；开关已移至待开播卡片，
@@ -166,9 +171,11 @@ export function createPlaybackApi(S: Host) {
       S.store.logdepth = !!on;
     },
     setDynres: (on: boolean) => {
-      S.DYNRES = !!on;
-      persistBoolPref('pb_dynres', on);
-      S.store.dynres = !!on;
+      const v = !!on;
+      if (S.DYNRES !== v && S.perf) S.perf.interrupt('dynres-change');
+      S.DYNRES = v;
+      persistBoolPref('pb_dynres', v);
+      S.store.dynres = v;
     },
     setArmorHighlight: (on: boolean) => {
       if (S.perf && S.ARMOR_HIGHLIGHT !== !!on) S.perf.interrupt('armor-setting-change');
@@ -218,11 +225,7 @@ export function createPlaybackApi(S: Host) {
       }
       // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳
       // setInterval 不清会永久空转，window.__pbPerf 会指向已销毁实例的旧数据。
-      if (S.PERF) {
-        S.perfProbe.stopWatchdog();
-        S.perf.reset();
-        if (window.__pbPerf === S.perfProbe.perfHandle) delete window.__pbPerf;
-      }
+      S.perfProbe.dispose();
       if (S.renderer) {
         try { S.renderer.domElement.removeEventListener('pointerdown', S.cameraRuntime.onScenePointerDown); } catch (_) {}
         try { S.renderer.domElement.removeEventListener('pointerup', S.cameraRuntime.onScenePointerUp); } catch (_) {}

@@ -36,11 +36,22 @@ const Root = {
 createApp(Root).use(i18n).mount('#stage')
 
 // 门禁探针只用这个入口：真实组件实例的 exposed API + 真实响应式偏好
+const stageSize = () => {
+  const rect = document.getElementById('stage').getBoundingClientRect()
+  return { x: rect.width, y: rect.height }
+}
 window.__damageOverlay = {
   ready: () => !!overlay,
   async setHidden(value) { hidden.value = value; await settle() },
   async setLabels(rows) { overlay.setLabels(rows); await settle() },
-  async setAnchor(eid, anchor) { overlay.setAnchor(eid, anchor); await settle() },
+  // 门禁必须走生产同款批处理：begin(逻辑舞台) → 逐车 setAnchor → end 统一读几何/写 DOM。
+  // 单条 setAnchor 不传 stage 时舞台宽度为 0，右缘镜像用例会假通过（fitsRight 恒真）。
+  async setAnchor(eid, anchor) {
+    overlay.beginAnchors(stageSize())
+    overlay.setAnchor(eid, anchor)
+    overlay.endAnchors()
+    await settle()
+  },
   async spawn(eid, hpLoss, durationMs) { overlay.spawnDamage(eid, hpLoss, durationMs); await settle() },
   clearDamages() { overlay.clearDamages() },
   async prefs(patch) {

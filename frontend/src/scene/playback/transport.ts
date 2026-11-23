@@ -54,7 +54,7 @@ export function installTransport(S: Host) {
     S.store.playing = p;
     // 停下（暂停 / 播到终点）后不再有帧：把 HUD 与名册补写到当前 T，
     // 否则停在节流窗口里的上一次写入（最后 ≤100ms 的掉血 / 击毁不上屏）
-    if (!p) S.writeHud(true);
+    if (!p) { S.writeHud(true); S.requestWaterReflectionRefresh(); }   // 暂停/终点：最后一帧含最新反射
     S.invalidate();
   }
   /** 宿主可见性闸门：暂停时停帧（保留会话），恢复时重挂帧循环；已初始化场景还要
@@ -129,6 +129,7 @@ export function installTransport(S: Host) {
     }
     if (S.PLAYING && S.T >= S.END) S.setPlaying(false);
     S.writeHud(true);
+    S.requestWaterReflectionRefresh();   // canonical 时钟跳变：反射内容按新 T 重建
     S.invalidate();
   }
   function seekTo(S: Host, t: number) {
@@ -147,8 +148,13 @@ export function installTransport(S: Host) {
     // seek 是状态跳变：立即把 HUD/进度条/名册对齐到新 T（不等下一个降频窗口）——
     // 暂停时没有帧在跑，名册投影只能靠这次强制写入。
     S.writeHud(true);
+    S.requestWaterReflectionRefresh();   // seek：单帧 dirty 也要刷新镜像 pass
     S.invalidate();
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
-  function setSpeed(S: Host, s: number) { if (!isPlaybackSpeed(s)) return; S.SPEED = s; S.store.speed = s; }
+  function setSpeed(S: Host, s: number) {
+    if (!isPlaybackSpeed(s)) return;
+    if (S.SPEED !== s && S.perf) S.perf.interrupt('speed-change');
+    S.SPEED = s; S.store.speed = s;
+  }
 }

@@ -466,3 +466,20 @@ it('workspace ready 缓存显式标记未执行阶段，不重新读取或解析
   expect(parser.raw).toHaveBeenCalledTimes(1)
   read.mockRestore()
 })
+
+
+it('workspace ready 缓存把解析时算出的真实输入摘要交给迟到的诊断订阅', async () => {
+  holder.state = newReplay()
+  const ws = useReplayWorkspace()
+  const file = makeFiles(1)[0]
+  parser.raw.mockReset().mockImplementationOnce(async (_file, _signal, _observer, onDigest) => {
+    onDigest?.('a'.repeat(64))
+    return { vehicles: [] }
+  })
+  await ws.playbackSession.loadScene(file)
+  const events = []
+  await ws.playbackSession.loadScene(file, e => events.push(e))
+  expect(events).toContainEqual({ stage: 'workspace.cache', status: 'hit' })
+  expect(events).toContainEqual({ stage: 'replay.identity', digest: 'a'.repeat(64) })
+  expect(parser.raw).toHaveBeenCalledTimes(1)
+})
