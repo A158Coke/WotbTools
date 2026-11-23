@@ -293,7 +293,7 @@ const mapStyle = computed(() => ({
   '--map-spawn-friendly': palette.value.spawnFriendly,
   '--map-spawn-enemy': palette.value.spawnEnemy,
   '--map-route-outline': palette.value.routeOutline,
-  // PR3 §19/§20：marker team tokens（friendly 按地图显式 tone，enemy 固定 red）
+  // Playback root 作用域角色色（SSOT = data/mapTeamColors.js；不随地图分叉）
   ...teamCssVars(pbOverview.value.mapCode)
 }))
   return {

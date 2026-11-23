@@ -9,6 +9,7 @@ import enemyTurret from '../assets/tank-icons/tank-marker-enemy-turret.png'
 import friendlyHull from '../assets/tank-icons/tank-marker-friendly-hull.png'
 import friendlyTurret from '../assets/tank-icons/tank-marker-friendly-turret.png'
 import { positionCoveredAtV2 } from '../utils/battlePlaybackV2.js'
+import { playbackTracerColor } from '../data/mapTeamColors.js'
 import type { PlaybackReplayData } from './usePlaybackReplayData.js'
 import type { PlaybackMapViewLike } from './usePlaybackCamera.js'
 import type { BattlePlaybackDataset, BattleEvent, VehiclePlaybackTrack } from '../types/playback-v2.js'
@@ -69,7 +70,6 @@ export function usePlaybackVehicleProjection(
     gunMarks: () => Map<number, number> | null
     isMobileDevice: Ref<boolean>
     trailPrefs: { showTrail: boolean }
-    palette: Ref<{ friendlyColors: string[]; enemyColors: string[]; routeOutline: string }>
     t: (key: string) => string
   },
 ) {
@@ -124,30 +124,6 @@ export function usePlaybackVehicleProjection(
   /** 标记垂直位置（%）。 */
   function markerTop(y: number) {
     return `${((mapView.value.toY(y)) / mapView.value.H) * 100}%`
-  }
-
-  const friendlyColors = computed(() => deps.palette.value.friendlyColors)
-  const enemyColors = computed(() => deps.palette.value.enemyColors)
-
-  // 车辆在队伍内的着色序号缓存：从**完整花名册**（hpVehicles，时间无关且对象稳定）派生
-  // 队伍内序号——vehicleStates 是时间相关的渲染子集（车辆首观测前缺席），从中缓存会把
-  // 部分序号永久固化（Codex review 2026-10-31：seek 历史不同 → 颜色不同，且多车共享
-  // 同色）。颜色列表仍逐调用读取（调色板可变）。
-  const vehicleColorIndexCache = new WeakMap()
-
-  function vehicleColor(vehicle: VehiclePlaybackTrack) {
-    let index = vehicleColorIndexCache.get(vehicle)
-    if (index === undefined) {
-      const teamVehicles = deps.hpVehicles().filter(v => v.team === vehicle.team)
-      if (teamVehicles.length > 0) {
-        index = Math.max(0, teamVehicles.indexOf(vehicle))
-        vehicleColorIndexCache.set(vehicle, index)
-      } else {
-        index = 0 // 花名册尚未构建：退回首色且不缓存，避免毒化序号
-      }
-    }
-    const list = vehicle.friendly === true ? friendlyColors.value : enemyColors.value
-    return list[index % list.length]
   }
 
   const baseVehicleStates = computed(() => {
@@ -230,7 +206,8 @@ export function usePlaybackVehicleProjection(
 
   function tracerColor(accountId: number) {
     const vehicle = replayData.vehiclesByAccount.value.get(accountId)
-    return vehicle ? vehicleColor(vehicle) : deps.palette.value.routeOutline
+    // 射手不在当前 roster 时不得借用地图自适应色：按未知角色取色板中的 neutral tracer。
+    return vehicle ? playbackTracerColor(vehicle.friendly) : playbackTracerColor(null)
   }
 
   // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
@@ -288,9 +265,6 @@ export function usePlaybackVehicleProjection(
     vehicleModel,
     markerLeft,
     markerTop,
-    friendlyColors,
-    enemyColors,
-    vehicleColor,
     baseVehicleStates,
     vehicleStates,
     visibleTracers,

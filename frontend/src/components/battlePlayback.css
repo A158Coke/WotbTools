@@ -66,7 +66,7 @@
    team outline/glow（friendly green|blue / enemy red，CSS vars 由根元素提供）。 */
 .pb-cell { stroke: var(--map-grid-stroke); stroke-width: 1; fill: none; }
 /* 激光炮线：外层光晕/内芯线宽逐元素绑定（6/view.scale、1.75/view.scale），不随缩放变粗 */
-.pb-tracer, .pb-tracer-core { stroke-linecap: round; }
+.pb-tracer-casing, .pb-tracer, .pb-tracer-core { stroke-linecap: round; }
 .pb-region-line { fill: none; stroke: var(--map-region-stroke); stroke-width: 1; }
 .pb-spawn-friendly { fill: var(--map-spawn-friendly); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy); }
