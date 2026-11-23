@@ -240,8 +240,11 @@ function combineSparseRegions(
   const out: InstanceEntry[][] = []
   for (const region of regions.values()) {
     const count = region.reduce((sum, batch) => sum + batch.length, 0)
-    if (region.length >= minBatches && trisEach * count <= maxTris) out.push(region.flat())
-    else for (const batch of region) out.push(batch)
+    if (region.length >= minBatches && trisEach * count <= maxTris) {
+      out.push(region.flat())
+    } else {
+      for (const batch of region) out.push(batch)
+    }
   }
   return out
 }

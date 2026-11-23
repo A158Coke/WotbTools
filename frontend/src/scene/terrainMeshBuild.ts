@@ -386,19 +386,6 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     }
     return sz;
   };
-  /** 该顶点处"最粗相邻补片"的 subdivMorph（同层多片取较小值 ＝ 客户端同层交界的
-   *  `Min(xNeg->subdivMorph, morph)`；更粗邻居时客户端直接用粗侧值 ⇒ 与"最粗者"一致）。 */
-  const morphRawAt = (i: number, j: number, s: number): number => {
-    let m = Infinity;
-    for (const [di, dj] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
-      const a = i + di, b = j + dj;
-      if (a < 0 || b < 0 || a >= n || b >= n) continue;
-      if (sizeAt[a * n + b] !== s) continue;
-      const v = morphRaw[a * n + b];
-      if (v < m) m = v;
-    }
-    return m === Infinity ? 0 : m;
-  };
   /** 某一通道的顶点值：最粗相邻层级的格点值/边界直线（端点递归，层级严格变大 ⇒ 良基）。 */
   const channelValue = (get: (i: number, j: number, s: number) => number, memo: Float32Array, i: number, j: number, knownStep?: number): number => {
     const key = i * W + j;
@@ -439,14 +426,27 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     if ((y & 1) && y !== last) { y1 = j - st; y2 = j + st; }
     return (H(x1, y1) + H(x2, y2)) / 2;
   };
-  /** 顶点高度 = lerp(均值通道, 原始通道, morph)（客户端 tilemask-vp.sl 同式）。 */
+  /** 顶点高度 = lerp(均值通道, 原始通道, morph)。morph 取最粗相邻补片的值，同层多片取较小值。 */
   const heightAt = (i: number, j: number): number => {
-    const s = maxQuadSize(i, j);
-    const acc = channelValue(H, memoAcc, i, j, s);
-    if (s <= 0) return acc;
-    const m = morphFunc(morphRawAt(i, j, s));
+    // 同一次相邻四格遍历决定最粗步长，以及该层的最小 morph。
+    let maxStep = 0, minMorph = Infinity;
+    const firstRow = Math.max(0, i - 1), lastRow = Math.min(n - 1, i);
+    const firstCol = Math.max(0, j - 1), lastCol = Math.min(n - 1, j);
+    for (let col = firstCol; col <= lastCol; col++) {
+      for (let row = firstRow; row <= lastRow; row++) {
+        const index = row * n + col, step = sizeAt[index];
+        if (step > maxStep) {
+          maxStep = step;
+          minMorph = Infinity;
+        }
+        if (step === maxStep && morphRaw[index] < minMorph) minMorph = morphRaw[index];
+      }
+    }
+    const acc = channelValue(H, memoAcc, i, j, maxStep);
+    if (maxStep <= 0) return acc;
+    const m = morphFunc(minMorph === Infinity ? 0 : minMorph);
     if (!(m > 0)) return acc;
-    const avg = channelValue(avgTexel, memoAvg, i, j, s);
+    const avg = channelValue(avgTexel, memoAvg, i, j, maxStep);
     return avg + (acc - avg) * m;
   };
 

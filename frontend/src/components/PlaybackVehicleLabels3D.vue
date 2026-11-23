@@ -428,6 +428,7 @@ defineExpose({ setLabels, setAnchor, beginAnchors, endAnchors, clear, spawnDamag
 }
 .vehicle-label-overlay.label-layer-static .vehicle-class-button { pointer-events: none; }
 .vehicle-label-anchor { position: absolute; left: 0; top: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; }
+.vehicle-label-anchor:not([hidden]) { will-change: transform; }
 /* 战场快捷标记来源卡的动作章：目标类卡（攻击/撤退）必须自述"对它做什么"——
    在目标车上悬浮发起者名牌会与目标自己的名牌混淆（用户反馈"撤退表现逻辑不对"）。 */
 .battle-marker-kind {
