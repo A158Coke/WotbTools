@@ -233,7 +233,7 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
     refl.dispose()
   })
 
-  it('HIGH 最后相机姿态落在跳过帧：收口刷新使用当前镜像相机，消费后恢复隔帧', () => {
+  it('HIGH 最后相机姿态落在跳过帧：Frame 4 收口刷新使用当前镜像相机，消费后恢复隔帧', () => {
     const mesh = waterMesh()
     const scene = sceneWith([mesh])
     const renderer = fakeRenderer()
@@ -243,21 +243,24 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
     })
     refl.setEnabled(true)
     refl.update(renderer, scene, cam)      // frame 1 → render
+    refl.update(renderer, scene, cam)      // frame 2 → skip
+    refl.update(renderer, scene, cam)      // frame 3 → 自动到期 render（旧姿态）
+    expect(renderer.render).toHaveBeenCalledTimes(2)
     cam.position.set(12, 70, 30)
     cam.lookAt(new THREE.Vector3(20, 0, 0))
     cam.updateMatrixWorld(true)
-    refl.update(renderer, scene, cam)      // frame 2 → skip（相机已移动）
-    expect(renderer.render).toHaveBeenCalledTimes(1)
     refl.requestRefresh()                  // 相机交互收口（pointerup / keyup / cancel）
-    refl.update(renderer, scene, cam)      // frame 3 → force：必须用最后姿态
-    expect(renderer.render).toHaveBeenCalledTimes(2)
+    refl.update(renderer, scene, cam)      // frame 4 → 本应 skip，force：必须用最后姿态
+    expect(renderer.render).toHaveBeenCalledTimes(3)
     const mirrored = renderer.render.mock.calls.at(-1)![1] as THREE.PerspectiveCamera
     expect(mirrored).not.toBe(cam)
     expect(mirrored.position.x).toBeCloseTo(12, 6)
     expect(mirrored.position.y).toBeCloseTo(-70, 6)
     expect(mirrored.position.z).toBeCloseTo(30, 6)
-    refl.update(renderer, scene, cam)      // frame 4 → 强制已消费，回到隔帧
-    expect(renderer.render).toHaveBeenCalledTimes(2)
+    refl.update(renderer, scene, cam)      // frame 5 → 到期帧，正常 render
+    expect(renderer.render).toHaveBeenCalledTimes(4)
+    refl.update(renderer, scene, cam)      // frame 6 → 强制已消费，恢复隔帧 skip
+    expect(renderer.render).toHaveBeenCalledTimes(4)
     refl.dispose()
   })
 
