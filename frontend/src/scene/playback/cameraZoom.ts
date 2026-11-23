@@ -42,11 +42,16 @@ export function createCameraZoom(deps: CameraRuntimeDeps, hooks: {
     if (!deps.getRenderer()) return;
     if (flyMode()) {
       if (!flyZoomSmoother.active()) return;
-      flyDolly(flyZoomSmoother.advance(dt));
+      const step = flyZoomSmoother.advance(dt);
+      flyDolly(step);
+      // 滚动收口：最后一帧的姿态可能落在 HIGH 反射的跳过帧，主画面已到终点
+      // 而倒影仍停在上一帧。只在预算归零的这一帧补一次强制刷新，移动中保持隔帧。
+      if (step !== 0 && !flyZoomSmoother.active()) deps.requestWaterReflectionRefresh();
     } else {
       if (!zoomSmoother.active()) return;
       const f = zoomSmoother.advance(dt);
       if (f === 1) return;
+      let changed = false;
       if (controls && controls.enabled) {
         const off = _zoomDir.subVectors(camera.position, controls.target);
         const len = off.length();
@@ -54,8 +59,11 @@ export function createCameraZoom(deps: CameraRuntimeDeps, hooks: {
           const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, len * f));
           camera.position.copy(controls.target).addScaledVector(off.divideScalar(len), next);
           camera.lookAt(controls.target);
+          changed = true;
         }
       }
+      // 同上：仅当平滑预算在本帧耗尽且确实改了相机姿态时补一次反射刷新。
+      if (changed && !zoomSmoother.active()) deps.requestWaterReflectionRefresh();
     }
     deps.invalidate();
   }
