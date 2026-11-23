@@ -47,7 +47,12 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     await wrapper.get('.vehicle-class-button').trigger('click')
     expect(wrapper.emitted('select')[0][0]).toBe(7)
     wrapper.vm.setAnchor(7, { x: 50, y: 60, visible: false, occluded: false })
-    expect(wrapper.get('.vehicle-label-anchor').element.hidden).toBe(true)
+    const anchor = wrapper.get('.vehicle-label-anchor').element
+    expect(anchor.hidden).toBe(true)
+    wrapper.vm.setAnchor(7, { x: 85, y: 96, visible: true, occluded: true })
+    expect(anchor.hidden).toBe(false)
+    expect(anchor.style.transform).toContain('translate(85px, 96px)')
+    expect(anchor.classList.contains('label-occluded')).toBe(true)
     wrapper.unmount()
   })
   it('同一 scratch 对象喂多个 eid：各自保留自己那一次的值（不共享最后写入）', async () => {

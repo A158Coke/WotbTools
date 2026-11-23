@@ -245,7 +245,7 @@ export interface InstanceBatch {
  *  的主体是这批小几何稀疏种；合并后 scenery 批次 ≈ 1/4，材质状态切换随材质规整
  *  再降一档）。大几何密集种（林荫图树海：几何大、实例多，逐实例剔除有真实渲染量
  *  收益——「镜头看半张图视野外实例全量提交」正是它实测卡顿的主因）超预算，
- *  仍按宫格分片保留剔除粒度。 */
+ *  以空间分片保留剔除粒度；仅相邻 2×2 格内合计也不超预算时共用一批。 */
 export const SCENERY_COLLAPSE_MAX_TRIS = 20000
 
 /** 几何三角数（index 优先；非索引几何按 position 顶点数折算）。 */
@@ -298,6 +298,21 @@ export function groupInstanceBatches(
         out.push({ geometry: g.geometry, material: g.material, items })
         continue
       }
+      // 全图超预算时仅合并相邻的 2×2 格。稠密区域继续使用原细格，避免跨大片树林提交。
+      const regions = new Map<string, InstanceEntry[][]>()
+      const regionSize = 2 * cellSize
+      for (const cell of g.cells.values()) {
+        const key = Math.floor(cell[0].x / regionSize) + ',' + Math.floor(cell[0].y / regionSize)
+        const region = regions.get(key)
+        if (region) region.push(cell)
+        else regions.set(key, [cell])
+      }
+      for (const cells of regions.values()) {
+        const count = cells.reduce((sum, cell) => sum + cell.length, 0)
+        const batches = cells.length > 1 && trisEach * count <= maxCollapseTris ? [cells.flat()] : cells
+        for (const items of batches) out.push({ geometry: g.geometry, material: g.material, items })
+      }
+      continue
     }
     for (const items of g.cells.values()) {
       out.push({ geometry: g.geometry, material: g.material, items })

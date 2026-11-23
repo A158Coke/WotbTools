@@ -65,7 +65,8 @@ function paint(el, anchor, forceReappearing = false) {
   // 准备阶段先解除 hidden 后，写阶段不能再靠 el.hidden 判断「从隐藏恢复」；
   // forceReappearing 记录本帧曾隐藏，幽灵段仍按壁钟续播一次。
   const reappearing = (el.hidden || forceReappearing) && anchor.visible
-  el.hidden = !anchor.visible
+  setHidden(el, !anchor.visible)
+  if (!anchor.visible) return
   el.style.transform = `translate(${anchor.x}px, ${anchor.y}px) translate(-50%, -100%)`
   el.classList.toggle('label-occluded', !!anchor.occluded)
   if (reappearing) syncGhostPhase(el)
@@ -173,6 +174,10 @@ function setHidden(el, hidden) { if (el.hidden !== hidden) el.hidden = hidden }
  */
 function flushAnchors(eids, stageW) {
   const list = damages.value
+  if (!list.length) {
+    for (const eid of eids) paint(elements.get(eid), anchors.get(eid))
+    return
+  }
   // 准备阶段解除 hidden 的宿主；写阶段据此保留 paint 的「重现」语义（幽灵段续播）。
   const preShownHosts = new Set()
   // 1) 准备：需要重新量的宿主必须先真正解除 hidden，否则 offsetWidth / rect 全为 0。
