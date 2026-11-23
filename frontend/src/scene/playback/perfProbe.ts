@@ -68,6 +68,8 @@ export interface PerfProbeHandle {
   perf: ReturnType<typeof createPerf> | null
   gpu: GpuFrameTracker | null
   perfFrame(updateMs: number, renderMs: number, armorMs: number, armorStats: ArmorStatsView | null, stages: Record<string, unknown>): void
+  /** 渲染器惰性创建后立刻挂上传追踪；在首帧/首次地形上传之前调用。 */
+  attachRenderer(renderer?: WebGLRenderer | null): void
   perfStartWatchdog(): void
   stopWatchdog(): void
   dispose(): void
@@ -141,7 +143,8 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   const gpu = PERF ? createGpuFrameTracker(perf!) : null;
   // Install before the first terrain build: the initial upload must be attributed to its
   // own frame rather than appearing as an unexplained later burst.
-  if (perf) installUploadTracker(deps.getRenderer());
+  function attachRenderer(renderer: WebGLRenderer | null = deps.getRenderer()) { installUploadTracker(renderer) }
+  if (perf) attachRenderer();
   if (perf) perf.setIdentity({ buildCommit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : null,
     buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
     wasmCommit: AGENT_WASM_COMMIT, wasmRelease: AGENT_WASM_RELEASE, replayDigest: null, runtime: isAndroidRuntime() ? 'android' : 'browser',
@@ -222,6 +225,7 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
     perf,
     gpu,
     perfFrame,
+    attachRenderer,
     perfStartWatchdog,
     stopWatchdog,
     perfHandle,

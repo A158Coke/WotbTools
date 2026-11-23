@@ -6,6 +6,7 @@ import { applySupremacyPointsToStore } from '../supremacyPoints.js'
 import { createFrameMeter } from '../frameMeter.js'
 import { advancePlaybackTime } from '../../utils/playbackClock'
 import { createPerfProbe } from './perfProbe.ts'
+import { addPerfStage } from './perfStages.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
 
@@ -254,16 +255,7 @@ export function installPerfProbe(S: Host) {
     // 有界分段归因：每帧在 animate 开头重置；只累加当帧，不保留历史。父子区间
     //（如 labelsUpdateMs 与 labelsProjectionMs）分别记录，报告时禁止相加成整帧。
     S.perfStages = Object.create(null);
-    S.perfAddStage = (key: string, ms: number, count?: number) => {
-      const stages = S.perfStages;
-      if (!stages || !key) return;
-      if (Number.isFinite(ms) && ms > 0) stages[key] = (stages[key] || 0) + ms;
-      const n = count ?? 0;
-      if (Number.isFinite(n) && n > 0) {
-        const callsKey = `${key}${ms > 0 ? 'Calls' : 'Count'}`;
-        stages[callsKey] = (stages[callsKey] || 0) + n;
-      }
-    };
+    S.perfAddStage = (key: string, ms: number, count?: number) => addPerfStage(S.perfStages, key, ms, count);
   }
   S.dynResCtl = null;
   S.rendererCaps = null;   // 当前渲染器实际装配的 { logdepth, dynres, stencil }（reset 保留渲染器时用于失配检测）

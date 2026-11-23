@@ -66,6 +66,8 @@ export function installSceneAssembly(S: Host) {
     });
     S.scene = core.scene; S.camera = core.camera; S.renderer = core.renderer;
     S.controls = core.controls; S.clock = core.clock; S.raycaster = core.raycaster;
+    // 上传归因必须在首次地形构建之前挂到真实 context；探针创建时渲染器还是 null。
+    S.perfProbe?.attachRenderer?.(S.renderer);
     S.gpu?.attach(S.renderer);
     S.cameraRuntime.applyMobileTouchControls();
     S.hemiLight = core.hemiLight; S.sunLight = core.sunLight;
