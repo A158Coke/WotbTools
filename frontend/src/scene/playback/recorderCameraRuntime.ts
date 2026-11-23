@@ -123,6 +123,9 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     if (hiddenEid !== scopedHiddenEid) {
       scopedHiddenEid = hiddenEid;
       setScopedLayer(v, scoped);
+      // Arcade ↔ Sniper 是离散切换：本车/武器/视野层同帧换掉，镜面里的场景也随之变。
+      // 隔帧反射档不能等下一次到期帧，否则退镜后的水面仍倒映上一帧的开镜车体。
+      deps.requestWaterReflectionRefresh();
       // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
       // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
       if (wasScoped && !scoped) hooks.releaseArmorHighlight();

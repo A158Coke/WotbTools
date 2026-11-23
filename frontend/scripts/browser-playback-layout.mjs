@@ -498,6 +498,21 @@ async function probeDamageOverlay() {
     `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
   metrics.delay = delayAfter
 
+  // 5b) 名牌隐藏期间出伤害、随后重入：批处理准备阶段必须先解除宿主 hidden 再量几何。
+  // 否则 measureDamageLayout 读到 0×0 宿主并缓存 fallback，数字落在锚点而非血条右侧。
+  api.clearDamages()
+  await api.setLabels([row(7)])
+  await api.setAnchor(7, { ...anchorAt(300, 260), visible: false, projected: false })
+  await api.spawn(7, 342, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  const reentryDmg = box(dmgTextEl())
+  const reentryBar = box(barEl())
+  require(!dmgEl().hidden, 'damage must reappear with its label')
+  require(reentryDmg.left >= reentryBar.right + 4,
+    `re-entered label must measure the real host, not a 0x0 fallback (dmg=${JSON.stringify(reentryDmg)} bar=${JSON.stringify(reentryBar)})`)
+  metrics.hiddenReentry = { dmgLeft: reentryDmg.left, barRight: reentryBar.right }
+  api.clearDamages()
+
   // H 恢复实际 CSS phase，原始 removal timer 不延长。
   api.clearDamages()
   const waitUntil = async (predicate, timeoutMs = 6000) => {

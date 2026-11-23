@@ -64,13 +64,14 @@ export function verifyScoredScene({ url, perfHandle, inputFiles, expectedInput, 
 }
 
 /**
- * Continuous-draw gate for score mode. CDP screencast frames come from the browser
- * compositor, not from a page hook, so they prove the measured window kept presenting
- * frames instead of only advancing rAF/UI clocks.
+ * Continuous-draw gate for score mode. Frames come from the 3D canvas capture stream
+ * (not the page compositor): each hash covers only the WebGL canvas, so HUD/UI updates
+ * cannot make a frozen 3D scene look alive. Gaps are bounded to catch a probe that
+ * only sampled at the ends of a 30 s window.
  */
-export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanRatio = 0.5 }) {
+export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanRatio = 0.5, maxGapMs = 1500 }) {
   if (!Array.isArray(frames) || frames.length < minFrames) {
-    throw new Error(`Scoring saw too few presented frames: ${frames?.length ?? 0}`)
+    throw new Error(`Scoring saw too few canvas frames: ${frames?.length ?? 0}`)
   }
   const first = frames[0]
   const last = frames[frames.length - 1]
@@ -78,9 +79,21 @@ export function verifyScoredFrames(frames, { durationMs, minFrames = 4, minSpanR
   if (!(span >= durationMs * minSpanRatio)) {
     throw new Error(`Scoring frames only span ${Math.round(span)} of ${durationMs} ms`)
   }
+  for (let i = 1; i < frames.length; i++) {
+    const gap = frames[i].at - frames[i - 1].at
+    if (!(gap <= maxGapMs)) {
+      throw new Error(`Scoring canvas sampling gap ${Math.round(gap)} ms exceeds ${maxGapMs} ms`)
+    }
+  }
+  const blank = frames.find(frame => typeof frame.colors === 'number' && frame.colors < 2)
+  if (blank) throw new Error('Scoring sampled a blank 3D canvas')
   const distinct = new Set(frames.map(frame => frame.hash)).size
-  if (distinct < 2) throw new Error('Scoring saw a frozen screen')
-  return { frames: frames.length, distinct, spanMs: span, firstAt: first.at, lastAt: last.at }
+  if (distinct < 2) throw new Error('Scoring saw a frozen 3D canvas')
+  // 整段只有开头变化、末尾画面冻结同样不能算持续绘制：最后 25% 至少两帧不同。
+  const tail = frames.slice(-Math.max(2, Math.ceil(frames.length * 0.25)))
+  const tailDistinct = new Set(tail.map(frame => frame.hash)).size
+  if (tailDistinct < 2) throw new Error('Scoring canvas stopped drawing before the window ended')
+  return { frames: frames.length, distinct, tailDistinct, spanMs: span, firstAt: first.at, lastAt: last.at }
 }
 
 export function verifySceneResources(urls, expectedRoot, version, expectedDataset, requireVehicle) {

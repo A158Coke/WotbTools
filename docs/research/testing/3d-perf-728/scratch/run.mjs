@@ -194,18 +194,10 @@ async function runScenario(id, rate) {
     )
     const stageBefore = !perf && await page.probe(sampleRenderedStage)
     const cpuBefore = cpuMetrics ? await readCpuMetrics() : null
-    // Score runs prove continuous drawing with compositor frames (CDP screencast),
-    // not with a page-side rAF/UI clock. The frames are hashed and bounded.
-    const scoredFrames = []
+    // Score runs prove continuous drawing with the canvas's own WebGL pixels, not page
+    // compositor frames or a page-side rAF/UI clock: HUD-only updates must not make a
+    // frozen 3D scene look alive. Four 720x16 strips are read back through a PBO every 1.5 s.
     const wall0 = Date.now()
-    if (!perf) {
-      chrome.client.on('Page.screencastFrame', (params, session) => {
-        if (session !== sid) return
-        chrome.client.send('Page.screencastFrameAck', { sessionId: params.sessionId }, sid).catch(() => {})
-        scoredFrames.push({ at: Date.now() - wall0, hash: createHash('sha256').update(params.data).digest('hex') })
-      })
-      await chrome.client.send('Page.startScreencast', { format: 'jpeg', quality: 30, maxWidth: 240, maxHeight: 135, everyNthFrame: 5 }, sid)
-    }
     await page.evaluate(`(()=>{
       const duration = ${SECS} * 1000
       window.__pbPerf?.reset()
@@ -232,6 +224,86 @@ async function runScenario(id, rate) {
       }
       ghostSample()
       window.__ghost.timer = setInterval(ghostSample, 250)
+      window.__canvasProbe = { frames: [], error: null, stopped: false, cpuMs: 0, samples: 0, maxCpuMs: 0 }
+      const probeCanvas = document.querySelector('[data-testid=replay3d-stage] canvas')
+      const probeGl = probeCanvas && probeCanvas.getContext('webgl2')
+      if (!probeCanvas || !probeGl) {
+        window.__canvasProbe.error = 'missing WebGL2 3D canvas'
+      } else {
+        // 异步 PBO 回读：4 条横带覆盖画面中部，每条 720x16 像素；一次 readPixels
+        // 写入 PIXEL_PACK_BUFFER 后 fence，下一次采样只在 fence 已 signal 时
+        // getBufferSubData，避免同步等待 GPU。采样的是 3D 画布自身像素。
+        const probeWMax = 720
+        const probeH = 16
+        const probeStrips = 4
+        const probePx = new Uint8Array(probeWMax * probeH * 4 * probeStrips)
+        const probePbo = probeGl.createBuffer()
+        probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, probePbo)
+        probeGl.bufferData(probeGl.PIXEL_PACK_BUFFER, probePx.byteLength, probeGl.STREAM_READ)
+        probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, null)
+        let probeSync = null
+        let probePendingAt = 0
+        let probeIssueMs = 0
+        let probeUsed = 0
+        let probeLast = -Infinity
+        const probeLoop = () => {
+          if (window.__canvasProbe.stopped) return
+          const now = performance.now()
+          if (probeSync) {
+            const status = probeGl.clientWaitSync(probeSync, 0, 0)
+            if (status === probeGl.ALREADY_SIGNALED || status === probeGl.CONDITION_SATISFIED) {
+              const cpuStart = performance.now()
+              probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, probePbo)
+              probeGl.getBufferSubData(probeGl.PIXEL_PACK_BUFFER, 0, probePx, 0, probeUsed)
+              probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, null)
+              probeGl.deleteSync(probeSync)
+              probeSync = null
+              let hash = 2166136261
+              const colors = new Set()
+              for (let i = 0; i < probeUsed; i += 4) {
+                if (!probePx[i + 3]) continue
+                colors.add((probePx[i] << 16) | (probePx[i + 1] << 8) | probePx[i + 2])
+                hash ^= probePx[i]; hash = Math.imul(hash, 16777619)
+                hash ^= probePx[i + 1]; hash = Math.imul(hash, 16777619)
+                hash ^= probePx[i + 2]; hash = Math.imul(hash, 16777619)
+              }
+              const cpuMs = performance.now() - cpuStart + probeIssueMs
+              probeIssueMs = 0
+              window.__canvasProbe.cpuMs += cpuMs
+              window.__canvasProbe.samples++
+              window.__canvasProbe.maxCpuMs = Math.max(window.__canvasProbe.maxCpuMs, cpuMs)
+              window.__canvasProbe.frames.push({
+                at: probePendingAt,
+                hash: (hash >>> 0).toString(16),
+                colors: colors.size,
+              })
+            }
+          }
+          if (!probeSync && now - probeLast >= 1500) {
+            probeLast = now
+            const issueStart = performance.now()
+            const w = probeGl.drawingBufferWidth
+            const h = probeGl.drawingBufferHeight
+            const ww = Math.min(probeWMax, w)
+            const x = Math.max(0, Math.floor((w - ww) / 2))
+            probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, probePbo)
+            let offset = 0
+            for (let strip = 1; strip <= probeStrips; strip++) {
+              const y = Math.max(0, Math.min(h - probeH, Math.floor(h * strip / 5) - probeH / 2))
+              probeGl.readPixels(x, y, ww, probeH, probeGl.RGBA, probeGl.UNSIGNED_BYTE, offset)
+              offset += ww * probeH * 4
+            }
+            probeGl.bindBuffer(probeGl.PIXEL_PACK_BUFFER, null)
+            probeUsed = offset
+            probeSync = probeGl.fenceSync(probeGl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+            probePendingAt = now - start
+            probeIssueMs = performance.now() - issueStart
+            probeGl.flush()
+          }
+          requestAnimationFrame(probeLoop)
+        }
+        requestAnimationFrame(probeLoop)
+        }
       window.__lt = []
       new PerformanceObserver(list => {
         for (const e of list.getEntries()) if (e.startTime >= start && e.startTime < start + duration) window.__lt.push([e.startTime,e.duration])
@@ -258,9 +330,22 @@ async function runScenario(id, rate) {
     } else await delay(SECS * 1000)
     const cpuAfter = cpuMetrics ? await readCpuMetrics() : null
     let scoredEvidence = null
+    let canvasProbe = null
     if (!perf) {
-      await chrome.client.send('Page.stopScreencast', {}, sid)
-      scoredEvidence = verifyScoredFrames(scoredFrames.filter(frame => frame.at >= 0), { durationMs: SECS * 1000 })
+      await page.evaluate('window.__canvasProbe.stopped = true')
+      await delay(400)
+      canvasProbe = await page.evaluate('({ frames: window.__canvasProbe.frames, error: window.__canvasProbe.error, cpuMs: window.__canvasProbe.cpuMs, samples: window.__canvasProbe.samples, maxCpuMs: window.__canvasProbe.maxCpuMs })')
+      if (canvasProbe.error) throw new Error('Canvas probe failed: ' + canvasProbe.error)
+      scoredEvidence = verifyScoredFrames(canvasProbe.frames, { durationMs: SECS * 1000, maxGapMs: 2500 })
+      scoredEvidence.source = 'webgl-strips-async'
+      scoredEvidence.probeError = canvasProbe.error
+      // 采样成本只算 getBufferSubData/hash 的同步 CPU；GPU 异步回读已在 fence 后，
+      // 百分比用于证明连续门禁没有把评分拖成另一个负载。
+      scoredEvidence.probeCpuMs = Math.round(canvasProbe.cpuMs * 10) / 10
+      scoredEvidence.probeSamples = canvasProbe.samples
+      scoredEvidence.probeMaxCpuMs = Math.round(canvasProbe.maxCpuMs * 10) / 10
+      scoredEvidence.probeCpuPct = Math.round((canvasProbe.cpuMs / (SECS * 1000)) * 1000) / 10
+      scoredEvidence.hashes = canvasProbe.frames.map(frame => [Math.round(frame.at), frame.hash, frame.colors])
     }
     const cap = perf && await page.evaluate(`window.__pbPerf.stopCapture()`)
     const snap = perf && await page.evaluate(`(()=>{const s=window.__pbPerf.snapshot(); return {identity:s.identity, resources:s.resources, armorRt:s.armorRt, gpu:s.gpu, slowest:s.slowest, events:s.events, annotation:s.annotation}})()`)
@@ -299,7 +384,7 @@ async function runScenario(id, rate) {
     } : null
     const stageAfter = !perf && await page.probe(sampleRenderedStage)
     const out = {
-      stageBefore, stageAfter,
+      stageBefore, stageAfter, canvasProbe,
       name, fixture, scenario: id, sc, rate, windowSize, secs: SECS, captureMode: policy.mode, runId: policy.runId, scoredScene, scoredEvidence, stat, frameStat, captureStats: cap?.statistics,
       captureEvents: cap?.events, captureDroppedEvents: cap?.droppedEvents,
       loadingEvents: pre?.loadingEvents, captureReason: cap?.reason, interrupted: cap?.interrupted,

@@ -61,11 +61,23 @@ test('score mode reads the production page state without enabling ?perf', () => 
 })
 
 test('score mode requires presented frames across the measured window', () => {
-  const frames = Array.from({ length: 12 }, (_, index) => ({ at: index * 1000, hash: index < 6 ? 'a' : 'b' }))
+  const frames = Array.from({ length: 12 }, (_, index) => ({ at: index * 1000, hash: index % 2 ? 'a' : 'b' }))
   assert.equal(verifyScoredFrames(frames, { durationMs: 10_000 }).frames, 12)
   assert.throws(() => verifyScoredFrames(frames.slice(0, 3), { durationMs: 10_000 }), /too few/)
   assert.throws(() => verifyScoredFrames(frames.slice(0, 5), { durationMs: 10_000 }), /only span/)
   assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, hash: 'a' })), { durationMs: 10_000 }), /frozen/)
+  // 开头有变化、最后 25% 冻结：不是持续绘制。
+  assert.throws(() => verifyScoredFrames(frames.map((frame, index) => ({ ...frame, hash: index < 6 ? 'a' : 'b' })), { durationMs: 10_000 }), /stopped drawing/)
+  // 只采样窗口两端（中间 23 s 没有 canvas 证据）也必须拒收，不能只看 span。
+  const gapped = [
+    { at: 0, hash: 'a' }, { at: 1000, hash: 'b' }, { at: 2000, hash: 'c' },
+    { at: 29_000, hash: 'd' }, { at: 30_000, hash: 'e' },
+  ]
+  assert.throws(() => verifyScoredFrames(gapped, { durationMs: 30_000 }), /gap/)
+  // 只改 HUD 不会进 canvas 哈希：整段同一帧（哪怕颜色正常）仍是冻结。
+  const hudOnly = frames.map(frame => ({ ...frame, hash: 'same', colors: 12 }))
+  assert.throws(() => verifyScoredFrames(hudOnly, { durationMs: 10_000 }), /frozen/)
+  assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, colors: 1 })), { durationMs: 10_000 }), /blank/)
 })
 
 test('a diagnostic trace cannot overwrite an existing report', async () => {

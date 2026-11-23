@@ -118,6 +118,8 @@ export function createWaterReflection({
   const projScreen = new THREE.Matrix4()
   let boundsKey: THREE.Object3D[] | null = null
   let boundsValid = false
+  // 上一帧水面是否在主相机视锥内：用于把「不可见 → 可见」当成一次本帧刷新事件。
+  let lastWaterVisible = true
 
   function collectMaterials(meshes: THREE.Object3D[]): void {
     for (const mesh of meshes) {
@@ -193,18 +195,27 @@ export function createWaterReflection({
       // 画质档可把反射降为隔帧更新（W3）：跳过帧保留上一张 RT/uniform，不重建。
       // 但按需渲染的 seek/相机静止场景只有一次 dirty frame，不能吞掉——requestRefresh
       // 让该帧无条件刷新；否则反射会停在 seek 前的车辆位置（下一次 rAF 也不再画）。
-      const due = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
-      if (!due) return
+      const scheduled = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
       const level = getWaterLevel()
       const meshes = getWaterMeshes()
       if (level == null || !meshes || !meshes.length) {
-        forceRefresh = false
-        for (const mat of materials) mat.uniforms.uUseReflection.value = 0
+        lastWaterVisible = false
+        if (scheduled) {
+          forceRefresh = false
+          for (const mat of materials) mat.uniforms.uUseReflection.value = 0
+        }
         return
       }
+      // 可见性转移本身也是刷新事件：隔帧档从视锥外重入时，不能等到下一个到期帧，
+      // 否则主画面已经出现水面、倒影却仍是离开前的旧 RT（Recorder 开/退镜同理，
+      // 那里另有显式 requestRefresh）。可见性每帧判断，代价只是一次包围体视锥测试。
+      const visible = waterProbablyVisible(camera, meshes)
+      const reentered = visible && !lastWaterVisible
+      lastWaterVisible = visible
+      if (!scheduled && !reentered) return
       // 保守剔除：水面完全不在主相机视锥内时跳过整个镜像 pass（含 RT 重建/场景二次绘制）。
       // 不确定可见时照旧绘制；被剔除的帧不吃掉 requestRefresh，等真正可见的帧再强制刷新。
-      if (!waterProbablyVisible(camera, meshes)) return
+      if (!visible) return
       forceRefresh = false
       collectMaterials(meshes)
       if (!mirrorCameraForPlane(camera, level, virtualCamera)) {

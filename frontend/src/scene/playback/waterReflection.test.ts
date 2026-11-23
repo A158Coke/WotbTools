@@ -260,6 +260,27 @@ describe('createWaterReflection 保守可见性剔除（W3）', () => {
     refl.dispose()
   })
 
+  it('隔帧档从视锥外重入恰逢非到期帧：可见性转移必须当帧刷新，下一帧恢复隔帧', () => {
+    const mesh = horizontalWaterMesh()
+    const scene = sceneWith([mesh])
+    const renderer = fakeRenderer()
+    const refl = createWaterReflection({ getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2 })
+    refl.setEnabled(true)
+    const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
+    const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
+    refl.update(renderer, scene, lookingDown)       // frame 1：到期，渲染
+    refl.update(renderer, scene, lookingDown)       // frame 2：跳过
+    refl.update(renderer, scene, lookingUp)         // frame 3：到期但不可见，不渲染
+    expect(renderer.render).toHaveBeenCalledTimes(1)
+    refl.update(renderer, scene, lookingDown)       // frame 4：未到期，但刚重入 → 必须渲染
+    expect(renderer.render).toHaveBeenCalledTimes(2)
+    refl.update(renderer, scene, lookingDown)       // frame 5：到期帧，正常刷新
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    refl.update(renderer, scene, lookingDown)       // frame 6：持续可见且未到期 → 恢复隔帧节流
+    expect(renderer.render).toHaveBeenCalledTimes(3)
+    refl.dispose()
+  })
+
   it('被剔除的帧不消耗 requestRefresh：水面重新可见的下一帧仍强制刷新', () => {
     const mesh = horizontalWaterMesh()
     const scene = sceneWith([mesh])
