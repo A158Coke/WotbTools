@@ -131,7 +131,7 @@ export function groundGeometryFromData(data) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
-  g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+  if (data.normals) g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
   g.setIndex(new THREE.BufferAttribute(data.indices, 1));
   g.userData.terrainBuild = data.terrainBuild;
   const bs = data.boundingSphere;
@@ -143,9 +143,9 @@ export function groundGeometryFromData(data) {
  *  = 纯数据阶段 + 包装的同步组合（俯视烘焙脚本与回退路径用；签名与行为不变）。 */
 export function buildGroundGeometry({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
-  onDiagnostics = null,
+  includeNormals = true, onDiagnostics = null,
 }) {
-  const data = buildGroundGeometryData({ field, n, span, cam, fovY, aspect, hFovDeg, refineMask, cx, cz, measure: !!onDiagnostics });
+  const data = buildGroundGeometryData({ field, n, span, cam, fovY, aspect, hFovDeg, refineMask, cx, cz, includeNormals, measure: !!onDiagnostics });
   const g = groundGeometryFromData(data);
   if (onDiagnostics) {
     try { onDiagnostics(data.diagnostics); }

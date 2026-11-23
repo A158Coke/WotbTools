@@ -20,12 +20,13 @@ export interface GroundGeometryDataArgs {
   refineMask?: unknown
   cx?: number
   cz?: number
+  includeNormals?: boolean
   measure?: boolean
 }
 export interface GroundGeometryData {
   positions: Float32Array
   uvs: Float32Array
-  normals: Float32Array
+  normals: Float32Array | null
   indices: Uint16Array | Uint32Array
   boundingSphere: { center: number[]; radius: number }
   terrainBuild: Record<string, unknown>
@@ -34,7 +35,7 @@ export interface GroundGeometryData {
 
 export function buildGroundGeometryData({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
-  measure = false,
+  includeNormals = true, measure = false,
 }: GroundGeometryDataArgs): GroundGeometryData {
   let start = measure ? performance.now() : 0;
   const { positions, indices, sizeAt, originIAt, originJAt, vertexIndexAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
@@ -47,8 +48,8 @@ export function buildGroundGeometryData({
   const uvs = groundMapUv(positions, span, cx, cz);
   const assemblyMs = measure ? performance.now() - start : 0;
   if (measure) start = performance.now();
-  const normals = computeIndexedVertexNormals(positions, indices);
-  const normalsMs = measure ? performance.now() - start : 0;
+  const normals = includeNormals ? computeIndexedVertexNormals(positions, indices) : null;
+  const normalsMs = measure && includeNormals ? performance.now() - start : 0;
   if (measure) start = performance.now();
   const boundingSphere = computeBoundingSphereData(positions);
   const boundsMs = measure ? performance.now() - start : 0;

@@ -28,7 +28,8 @@ self.onmessage = (ev: MessageEvent<TerrainWorkerIn>) => {
       const data = buildGroundGeometryData({
         field: source.field, n: source.n, span: source.span,
         cam: msg.cam, fovY: msg.fovY, aspect: msg.aspect, hFovDeg: msg.hFovDeg,
-        refineMask: source.refineMask, cx: source.cx, cz: source.cz, measure: msg.measure,
+        refineMask: source.refineMask, cx: source.cx, cz: source.cz,
+        includeNormals: msg.includeNormals, measure: msg.measure,
       })
       post({ type: 'built', id: msg.id, data, workerMs: performance.now() - t0 }, groundGeometryTransferables(data) as Transferable[])
     } catch (e) {

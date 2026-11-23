@@ -216,7 +216,7 @@ describe('Worker 入口 → 调度 → 换装 与同步路径逐字节一致', (
   beforeEach(() => { prevSelf = (globalThis as { self?: unknown }).self })
   afterEach(() => { (globalThis as { self?: unknown }).self = prevSelf; vi.resetModules() })
 
-  it('经真实 terrainBuild.worker 模块与 structuredClone 转移', { timeout: 60000 }, async () => {
+  it.each([true, false])('经真实 terrainBuild.worker 与 structuredClone 转移（includeNormals=%s）', { timeout: 60000 }, async (includeNormals) => {
     // 真 Worker 入口跑在伪 self 上；消息往返用 structuredClone(transfer) 模拟 Worker 边界
     let toMain: ((m: TerrainWorkerOut, t: Transferable[]) => void) | null = null
     const fakeSelf: { onmessage: ((e: { data: TerrainWorkerIn }) => void) | null; postMessage: (m: TerrainWorkerOut, t: Transferable[]) => void } = {
@@ -241,12 +241,14 @@ describe('Worker 入口 → 调度 → 换装 与同步路径逐字节一致', (
       onWorkerLost: () => { throw new Error('should not lose') },
     })
     s.setSource({ field, n: N, span: SPAN, cx: 2, cz: -3, refineMask: mask })
-    const req: TerrainBuildRequest = { cam: { x: -40, y: 70, z: 55 }, fovY: 0.9, aspect: 1.77, hFovDeg: 55, measure: true }
+    const req: TerrainBuildRequest = { cam: { x: -40, y: 70, z: 55 }, fovY: 0.9, aspect: 1.77, hFovDeg: 55, measure: true, includeNormals }
     s.request({ request: req, snapshot: 's', reason: 'first' })
     const sync = buildGroundGeometry({ field, n: N, span: SPAN, cam: req.cam, fovY: req.fovY, aspect: req.aspect, hFovDeg: req.hFovDeg, refineMask: mask, cx: 2, cz: -3, onDiagnostics: null } as never)
     const g = got as typeof sync
     expect(g).not.toBeNull()
-    for (const k of ['position', 'uv', 'normal'] as const) expect(bytes(g.attributes[k].array)).toEqual(bytes(sync.attributes[k].array))
+    if (includeNormals) expect(bytes(g.attributes.normal.array)).toEqual(bytes(sync.attributes.normal.array))
+    else expect(g.getAttribute('normal')).toBeUndefined()
+    for (const k of ['position', 'uv'] as const) expect(bytes(g.attributes[k].array)).toEqual(bytes(sync.attributes[k].array))
     expect(bytes(g.index!.array)).toEqual(bytes(sync.index!.array))
     expect(g.boundingSphere!.radius).toBe(sync.boundingSphere!.radius)
     expect(g.boundingSphere!.center.toArray()).toEqual(sync.boundingSphere!.center.toArray())

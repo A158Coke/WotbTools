@@ -20,6 +20,7 @@ interface GroundGeometryArgs {
   refineMask: unknown
   cx: number
   cz: number
+  includeNormals: boolean
   onDiagnostics: ((d: Record<string, unknown>) => void) | null | undefined
 }
 const buildGroundGeometryTyped = buildGroundGeometry as (a: GroundGeometryArgs) => THREE.BufferGeometry
@@ -167,6 +168,8 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
       // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
       hFovDeg: terrainHFovDeg() as number | null,
+      // 分层地表和回退底图都不受光；保留拾取和贴图所用的位置、索引和 UV。
+      includeNormals: false,
       measure: !!deps.perf(),
     }
   }
@@ -180,7 +183,7 @@ export function createMapWorldTerrain(deps: MapWorldDeps, st: TerrainState) {
       field: st.heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: r.cam, fovY: r.fovY, aspect: r.aspect, hFovDeg: r.hFovDeg,
       // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
-      refineMask: st.terrainRefineMask,
+      refineMask: st.terrainRefineMask, includeNormals: r.includeNormals,
       onDiagnostics: perf ? (data: Record<string, unknown>) => perf.event({ stage: 'terrain-build', ...data, mode, reason }) : undefined,
       cx: st.mapMetaInfo?.x || 0, cz: st.mapMetaInfo?.z || 0,
     });
