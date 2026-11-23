@@ -28,15 +28,32 @@ readonly MAX_TIME="${K7C_MAX_TIME_SEC:-120}"
 # 仍低于 Frontend Replica 的 35min job timeout。
 readonly APK_MAX_TIME="${K7C_APK_MAX_TIME_SEC:-600}"
 readonly APK_TOTAL_BUDGET="${K7C_APK_TOTAL_BUDGET_SEC:-1200}"
+# 内网回退至少保留一个 APK 单次下载窗口，默认与单次上限相同。公网只能使用
+# “总预算 - 内网预留”，因此即使调用方缩小总预算，公网也不会吃光 TX1 的时间。
+readonly APK_INTERNAL_RESERVE="${K7C_APK_INTERNAL_RESERVE_SEC:-$APK_MAX_TIME}"
 # 公网源单独封顶：公开链接探测成功但传输卡死时，不能让第一个源吃掉全部 APK
-# 预算；至少为 TX1 内网回退保留一个完整单次窗口（默认 600s）。TX1 实测约
-# 53MB/120s，210MB 约 480s，600s 足够一次完整内网下载。总预算仍不变。
+# 预算。默认 600s；实际公网 deadline 还会被“总预算 - 内网预留”截断（见下方）。
+# TX1 实测约 53MB/120s，210MB 约 480s，默认 600s 足够一次完整内网下载。
 readonly APK_PUBLIC_BUDGET="${K7C_APK_PUBLIC_BUDGET_SEC:-600}"
 readonly APK_RETRIES="${K7C_APK_RETRIES:-3}"
 readonly APK_RETRY_DELAY="${K7C_APK_RETRY_DELAY_SEC:-2}"
 APK_DEADLINE=0
 
 fail(){ echo "K7C runtime sync: FAIL: $*" >&2; exit 1; }
+
+# 预算必须是正整数；总预算必须大于内网预留，否则内网回退没有可执行窗口。
+validate_positive_seconds(){
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[0-9]+$ ]] || fail "invalid $name: $value (expected integer seconds)"
+  [ "$value" -gt 0 ] || fail "invalid $name: $value (must be greater than 0)"
+}
+validate_positive_seconds K7C_APK_MAX_TIME_SEC "$APK_MAX_TIME"
+validate_positive_seconds K7C_APK_TOTAL_BUDGET_SEC "$APK_TOTAL_BUDGET"
+validate_positive_seconds K7C_APK_PUBLIC_BUDGET_SEC "$APK_PUBLIC_BUDGET"
+validate_positive_seconds K7C_APK_INTERNAL_RESERVE_SEC "$APK_INTERNAL_RESERVE"
+[ "$APK_TOTAL_BUDGET" -gt "$APK_INTERNAL_RESERVE" ] \
+  || fail "K7C APK total budget (${APK_TOTAL_BUDGET}s) must exceed internal reserve (${APK_INTERNAL_RESERVE}s)"
+
 for cmd in curl python3 install mktemp sha256sum; do command -v "$cmd" >/dev/null || fail "missing command: $cmd"; done
 
 stage="$(mktemp -d "${RUNTIME_ROOT}.incoming.XXXXXX")"
@@ -176,9 +193,15 @@ PY
 expected_sha="${expected_sha,,}"
 [ -n "$expected_sha" ] || fail "Android version.json has no sha256; refusing to install an unverified APK: $apk_name"
 [[ "$expected_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid sha256 in Android version.json: $expected_sha"
-APK_DEADLINE=$((SECONDS + APK_TOTAL_BUDGET))
-apk_public_deadline=$((SECONDS + APK_PUBLIC_BUDGET))
-[ "$apk_public_deadline" -le "$APK_DEADLINE" ] || apk_public_deadline="$APK_DEADLINE"
+apk_now=$SECONDS
+APK_DEADLINE=$((apk_now + APK_TOTAL_BUDGET))
+apk_public_cap="$APK_PUBLIC_BUDGET"
+apk_public_limit=$((APK_TOTAL_BUDGET - APK_INTERNAL_RESERVE))
+if [ "$apk_public_cap" -gt "$apk_public_limit" ]; then
+  apk_public_cap="$apk_public_limit"
+  echo "K7C runtime sync: capping public APK budget to ${apk_public_cap}s (reserve ${APK_INTERNAL_RESERVE}s for internal source, total ${APK_TOTAL_BUDGET}s)" >&2
+fi
+apk_public_deadline=$((apk_now + apk_public_cap))
 fetch_apk_verified "$apk_url" "$stage/android-release/$apk_name" "$apk_public_deadline" \
   || fetch_apk_verified "$apk_path" "$stage/android-release/$apk_name" "$APK_DEADLINE" \
   || fail "cannot fetch current APK with matching sha256: $apk_name"

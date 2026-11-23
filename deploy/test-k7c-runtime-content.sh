@@ -401,11 +401,12 @@ assert per_attempt > 120, per_attempt
 assert total >= per_attempt, (total, per_attempt)
 assert total <= 1500, total
 assert 0 < public < total, (public, total)
-assert total - public >= per_attempt, (public, total, per_attempt)
+assert total - per_attempt >= 1, (total, per_attempt)
+assert public <= total - per_attempt, (public, total, per_attempt)
 assert 4 * small + total <= 2100, (small, total)
-for needle in ("-C -", "Range: bytes=0-0", "content-range", "sha256 mismatch"):
+for needle in ("K7C_APK_INTERNAL_RESERVE_SEC:-$APK_MAX_TIME", "capping public APK budget", "must exceed internal reserve", "-C -", "Range: bytes=0-0", "content-range", "sha256 mismatch"):
     assert needle in text, needle
-print(f"APK timeout policy: per-attempt={per_attempt}s total={total}s public-budget={public}s small-file-worst={4 * small}s job-timeout=2100s")
+print(f"APK timeout policy: per-attempt={per_attempt}s total={total}s public-budget={public}s internal-reserve={per_attempt}s small-file-worst={4 * small}s job-timeout=2100s")
 PY
 
 apk_fixtures="$work/apk-fixtures"
@@ -551,6 +552,17 @@ chunk = (marker * 65536).encode("ascii")
 with open(path, "wb") as apk:
     for _ in range(64):
         apk.write(chunk)
+PY
+}
+
+make_small_apk(){
+  local path="$1" marker="$2"
+  mkdir -p "$(dirname "$path")"
+  python3 - "$path" "$marker" <<'PY'
+import sys
+path, marker = sys.argv[1], sys.argv[2]
+with open(path, "wb") as apk:
+    apk.write((marker * 262144).encode("ascii"))
 PY
 }
 
@@ -738,6 +750,70 @@ assert any(offset > 0 for offset in public), public
 assert internal and all(offset == 0 for offset in internal), internal
 print(f"public stall offsets: public={public} internal={internal}")
 PY
+
+# 2c) 只缩小总预算、未设置公网预算：公网 deadline 仍必须被“总预算 - 内网预留”约束，
+# 内网保留至少一个单次窗口，从 0 下载并通过 SHA（复审 P2 的配置边界）。
+custom_src="$apk_fixtures/custom-budget-src"
+custom_public="$apk_fixtures/custom-budget-public"
+custom_live="$apk_fixtures/custom-budget-live"
+custom_name=wotbtools-android-v9.2.2.apk
+mkdir -p "$custom_src/download/android" "$custom_public/download/android" "$custom_live/android-release"
+make_small_apk "$custom_src/download/android/$custom_name" a
+cp "$custom_src/download/android/$custom_name" "$custom_public/download/android/$custom_name"
+custom_sha="$(sha_of "$custom_src/download/android/$custom_name")"
+write_manifest "$custom_src" "$custom_name" "$custom_sha"
+custom_port="$(free_port)"
+custom_public_port="$(free_port)"
+custom_log="$apk_fixtures/custom-budget-internal.log"
+custom_public_log="$apk_fixtures/custom-budget-public.log"
+start_fixture "$custom_src" "$custom_log" "$custom_port" || fail 'custom budget internal fixture did not start'
+start_fixture "$custom_public" "$custom_public_log" "$custom_public_port" "STALL=download/android/$custom_name" \
+  || fail 'custom budget public fixture did not start'
+PUBLIC_FIXTURE_PORT="$custom_public_port" PATH="$public_bin:$PATH" \
+  K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$custom_port" \
+  K7C_RUNTIME_ROOT="$custom_live" \
+  K7C_APK_MAX_TIME_SEC=1 K7C_APK_TOTAL_BUDGET_SEC=2 K7C_APK_RETRIES=3 \
+  K7C_APK_RETRY_DELAY_SEC=0 K7C_CONNECT_TIMEOUT_SEC=2 \
+  bash "$sync" > "$apk_fixtures/custom-budget-sync.log" 2>&1 \
+  || { cat "$apk_fixtures/custom-budget-sync.log" >&2; fail 'custom budget fallback sync failed'; }
+grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/custom-budget-sync.log" || fail 'custom budget sync did not finish'
+grep -Fq 'capping public APK budget' "$apk_fixtures/custom-budget-sync.log" || fail 'public APK budget was not capped to the internal reserve'
+grep -Fq 'APK budget exhausted' "$apk_fixtures/custom-budget-sync.log" || fail 'public APK budget exhaustion was not recorded'
+[ "$(sha_of "$custom_live/android-release/$custom_name")" = "$custom_sha" ] || fail 'custom budget fallback APK sha mismatch'
+python3 - "$custom_public_log" "$custom_log" "$custom_name" <<'PY'
+import re
+import sys
+public_log, internal_log, name = sys.argv[1], sys.argv[2], sys.argv[3]
+prefix = "download/android/" + name
+
+
+def offsets(path):
+    result = []
+    for line in open(path, encoding="utf-8"):
+        rel, _, requested = line.rstrip(chr(10)).partition(chr(9))
+        if rel != prefix or requested == "bytes=0-0":
+            continue
+        match = re.match(r"bytes=([0-9]+)-", requested)
+        result.append(int(match.group(1)) if match else 0)
+    return result
+
+
+public = offsets(public_log)
+internal = offsets(internal_log)
+assert public, public
+assert internal and all(offset == 0 for offset in internal), internal
+print(f"custom budget offsets: public={public} internal={internal}")
+PY
+
+# 2d) 总预算小于内网预留：必须在任何下载前明确拒绝，不能静默耗尽内网窗口。
+invalid_live="$apk_fixtures/invalid-budget-live"
+mkdir -p "$invalid_live/android-release"
+if K7C_RUNTIME_ROOT="$invalid_live" K7C_APK_MAX_TIME_SEC=600 K7C_APK_TOTAL_BUDGET_SEC=300 \
+  bash "$sync" > "$apk_fixtures/invalid-budget-sync.log" 2>&1; then
+  fail 'invalid APK budget configuration was accepted'
+fi
+grep -Fq 'must exceed internal reserve' "$apk_fixtures/invalid-budget-sync.log" || fail 'invalid budget configuration was not explained'
+grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/invalid-budget-sync.log" && fail 'invalid budget configuration reported PASS'
 
 # 3) 公开源完整但校验失败：回退内网时必须从零下载，且日志明确记录 mismatch。
 wrong_src="$apk_fixtures/wrong-src"
