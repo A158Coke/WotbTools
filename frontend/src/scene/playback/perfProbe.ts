@@ -109,22 +109,19 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
     const context = renderer?.getContext?.() as WebGLRenderingContext | WebGL2RenderingContext | undefined
     if (!context || context === uploadContext) return
     try {
-      const raw = context as unknown as {
-        bufferData(...args: unknown[]): unknown
-        bufferSubData(...args: unknown[]): unknown
-      }
-      const nativeBufferData = raw.bufferData.bind(raw)
-      const nativeBufferSubData = raw.bufferSubData.bind(raw)
-      raw.bufferData = (...args: unknown[]) => {
+      const nativeBufferData = context.bufferData.bind(context) as (...args: unknown[]) => unknown
+      const nativeBufferSubData = context.bufferSubData.bind(context) as (...args: unknown[]) => unknown
+      const installedData = Reflect.set(context, 'bufferData', (...args: unknown[]) => {
         uploadStats.bufferDataCalls += 1
         uploadStats.bufferDataBytes += uploadBytes(args[1], args[3], args[4])
         return nativeBufferData(...args)
-      }
-      raw.bufferSubData = (...args: unknown[]) => {
+      })
+      const installedSubData = Reflect.set(context, 'bufferSubData', (...args: unknown[]) => {
         uploadStats.bufferSubDataCalls += 1
         uploadStats.bufferSubDataBytes += uploadBytes(args[2], args[3], args[4])
         return nativeBufferSubData(...args)
-      }
+      })
+      if (!installedData || !installedSubData) throw new Error('WebGL context upload methods are not writable')
       uploadContext = context
       uploadLast = { ...uploadStats }
     } catch { /* Context methods may be non-writable in hardened builds; attribution is optional. */ }
