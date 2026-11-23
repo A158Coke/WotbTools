@@ -208,8 +208,8 @@ export interface VehicleRuntimeDeps {
   /** 作者标记环显隐（宿主标签偏好）。 */
   showMarkerStatus(): boolean
   invalidate(): void
-  /** 车辆 GLB 挂载完成（late attach；宿主用它刷新跟随相机近端）。 */
-  onGlbAttached?(eid: number): void
+  /** 车辆模型几何变更（GLB 挂载/卸载；宿主用它刷新跟随相机近端）。 */
+  onModelChanged?(eid: number): void
   /** 协议精确可见性（canonical 事实 owner = 宿主 visibleAt）。 */
   visibleAt(v: RuntimeVehicle, t: number): boolean
   /** 当前时刻的实体身份替换判据（同账号后继实体已接管；canonical 证据 owner = 宿主）。
