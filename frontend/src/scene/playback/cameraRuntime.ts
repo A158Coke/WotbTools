@@ -19,6 +19,7 @@ import {
 import { createRecorderCamera } from './recorderCameraRuntime.js'
 import { createCameraArmorHighlight } from './cameraArmorHighlight.js'
 import { createCameraFlyInput } from './cameraFlyInput.js'
+import { followCameraMinDistance } from './followCameraDistance.js'
 import type { CameraRuntimeDeps, CameraRuntimeHandle } from './cameraRuntimeTypes.js'
 export type { CameraRuntimeStore, CameraRuntimeControls, CameraRuntimeData, RecorderReticleLike, CameraRuntimeDeps, CameraRuntimeHandle } from './cameraRuntimeTypes.js'
 
@@ -30,6 +31,8 @@ export const CAMERA_GROUND_CLEARANCE = 0.5
 export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandle {
   const { container, store } = deps
   let CAM = 'free', FOLLOW_EID = 0;
+  // 跟随的 OrbitControls 近端：进入跟随时按目标模型量一次，不在帧循环里做包围盒。
+  let followMinDistance = followCameraMinDistance(null);
   // 新会话默认以俯视机位开局；用户一旦操作过相机，同一实例内不再覆盖其视角。
   let topViewOnLoad = true;
 
@@ -138,6 +141,9 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
       constrainFreeCameraAltitude();
       if (topViewAction) camera.lookAt(controls.target);
     } else if (nextMode === 'follow') {
+      // 最近距离按被跟随车辆的模型外廓量一次（GLB 优先，低模回退）：
+      // 相机可贴到车体附近，但不会钻进模型；旧固定 20 m 会一直停在战术总览距离。
+      followMinDistance = followCameraMinDistance(FOLLOW_EID ? deps.vehicles.vehicleByEid(FOLLOW_EID) : null)
       // 跟随绕转不得沉到 target 水平线以下：OrbitControls 的极角上限直接挡住
       // 「向下绕到地下」的输入；相机点仍由 clampOrbitCameraToTerrain 按地形净空校验。
       controls.minPolarAngle = 0;
@@ -335,7 +341,8 @@ export function createCameraRuntime(deps: CameraRuntimeDeps): CameraRuntimeHandl
     fovRestore: recorder.fovRestore,
     setCam,
     setFollow,
-    resetFollow: () => { FOLLOW_EID = 0; },
+    resetFollow: () => { FOLLOW_EID = 0; followMinDistance = followCameraMinDistance(null); },
+    followMinDistance: () => followMinDistance,
     setFlySpeed,
     flyTick,
     flyLookApplyMode,

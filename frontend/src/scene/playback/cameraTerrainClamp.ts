@@ -64,6 +64,8 @@ export interface CameraTerrainClampDeps {
   getWorldCenter: () => WorldCenterLike
   /** 跟随中 target 钉在坦克上（坦克恒在图内），不钳制。 */
   isFollowing: () => boolean
+  /** 跟随模式的模型感知最近距离（米）；缺省时退回基准近端。 */
+  followMinDistance?: () => number
 }
 
 export interface CameraTerrainClamp {
@@ -78,14 +80,26 @@ export interface CameraTerrainClamp {
 }
 
 export function createCameraTerrainClamp(deps: CameraTerrainClampDeps): CameraTerrainClamp {
-  let baseMinDistance = 20
+  // 近端只有「允许贴到模型/地表附近」这一个值：20 m 旧值会把整个战术镜头锁在远处。
+  // 地形安全距离仍由 clampOrbitCameraToTerrain 按实际高度差逐帧抬高。
+  let baseMinDistance = 1
   const scratchDir = new THREE.Vector3()
+
+  /** 跟随时用模型外表面 1 m；其余模式用基准近端。只是读取回调，不解析 DOM。 */
+  function activeMinDistance(): number {
+    if (deps.isFollowing()) {
+      const follow = deps.followMinDistance?.()
+      if (typeof follow === 'number' && Number.isFinite(follow) && follow > 0) {
+        return Math.max(baseMinDistance, follow)
+      }
+    }
+    return baseMinDistance
+  }
 
   function applyCameraClamp(ext: number): void {
     const controls = deps.getControls()
     if (!controls) return
-    baseMinDistance = Math.max(20, ext * 0.08)
-    controls.minDistance = baseMinDistance
+    controls.minDistance = activeMinDistance()
     controls.maxDistance = ext * 2.2
   }
 
@@ -112,7 +126,7 @@ export function createCameraTerrainClamp(deps: CameraTerrainClampDeps): CameraTe
     if (!Number.isFinite(t.y) || !Number.isFinite(camera.position.y)) return false
     const dir = scratchDir.subVectors(camera.position, t)
     const dist = dir.length()
-    if (!(dist > 1e-6)) { controls.minDistance = baseMinDistance; return false }
+    if (!(dist > 1e-6)) { controls.minDistance = activeMinDistance(); return false }
     dir.divideScalar(dist)
     const clearance = deps.clearance
 
@@ -141,20 +155,20 @@ export function createCameraTerrainClamp(deps: CameraTerrainClampDeps): CameraTe
     if (!found) {
       const camTerrain = terrainHeightForCameraClamp(camera.position.x, camera.position.z)
       if (typeof camTerrain !== 'number' || !Number.isFinite(camTerrain)) {
-        controls.minDistance = baseMinDistance
+        controls.minDistance = activeMinDistance()
         return false
       }
       const lift = camTerrain + clearance
       if (camera.position.y < lift) {
         camera.position.y = lift
         camera.lookAt(t)
-        const locked = Math.max(baseMinDistance, camera.position.distanceTo(t))
+        const locked = Math.max(activeMinDistance(), camera.position.distanceTo(t))
         controls.minDistance = locked
         controls.maxDistance = Math.max(controls.maxDistance, locked)
         return true
       }
       // 相机点本身安全、只是射线前方无交点：无需限制。
-      controls.minDistance = baseMinDistance
+      controls.minDistance = activeMinDistance()
       return false
     }
 
@@ -164,15 +178,15 @@ export function createCameraTerrainClamp(deps: CameraTerrainClampDeps): CameraTe
     if (camDist < safeDist - 1e-6 || camera.position.y < limit - 0.02) {
       camera.position.copy(t).addScaledVector(dir, safeDist)
       camera.lookAt(t)
-      controls.minDistance = Math.max(baseMinDistance, safeDist)
+      controls.minDistance = Math.max(activeMinDistance(), safeDist)
       return true
     }
     // 已贴净空：保持 minDistance 锁定，滚轮继续放大不会钻地；缩小后自然释放。
     if (camera.position.y <= limit + 0.02) {
-      controls.minDistance = Math.max(baseMinDistance, safeDist)
+      controls.minDistance = Math.max(activeMinDistance(), safeDist)
       return false
     }
-    controls.minDistance = baseMinDistance
+    controls.minDistance = activeMinDistance()
     return false
   }
 

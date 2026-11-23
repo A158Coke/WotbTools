@@ -31,10 +31,10 @@ export const IMPACT_FLASH_SECS: Record<ImpactKind, number> = { pen: 0.18, nonpen
 export const IMPACT_SMOKE_SECS: Record<ImpactKind, number> = { pen: 1.8, nonpen: 1.4, ricochet: 1.2 }
 export const IMPACT_SPARK_SECS = 0.8
 /**
- * 命中特效最小屏幕尺寸。应用相机最近也在视点 max(20 m, 地图尺寸×0.08) 之外，2 m 的命中火光
- * 只有十几像素，余火与烟几乎看不见（2026-10-13 实机近景）。参考尺寸 IMPACT_REF_M 至少占
- * IMPACT_MIN_PX 像素：镜头拉远时整套命中特效（火光、余火、烟、火星的大小与散布）等比放大，
- * 最多 IMPACT_MAX_ZOOM 倍；离得近时保持世界尺寸。
+ * 命中特效最小屏幕尺寸。镜头拉远时 2 m 的命中火光只有十几像素，余火与烟几乎看不见
+ * （2026-10-13 实机近景）。参考尺寸 IMPACT_REF_M 至少占 IMPACT_MIN_PX 像素：镜头拉远时
+ * 整套命中特效（火光、余火、烟、火星的大小与散布）等比放大，最多 IMPACT_MAX_ZOOM 倍；
+ * 回放相机可以贴近到约 1 m，离得近时保持世界尺寸，不额外放大。
  */
 export const IMPACT_REF_M = 2
 export const IMPACT_MIN_PX = 56

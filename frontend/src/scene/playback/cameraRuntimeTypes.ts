@@ -139,6 +139,8 @@ export interface CameraRuntimeHandle {
   setCam(mode: string): void
   setFollow(eid: number): void
   resetFollow(): void
+  /** 当前跟随最近距离（场景装配把它注入地形钳制）。 */
+  followMinDistance(): number
   setFlySpeed(n: number): void
   flyTick(dt: number, pressed: Set<string>): boolean
   flyLookApplyMode(mode: string): void
