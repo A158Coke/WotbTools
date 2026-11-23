@@ -226,6 +226,15 @@ describe('maybeRebuildTerrainLod（地形 LOD 滞后与判据接线）', () => {
     await handle.loadMapImage()
     expect(handle.terrainMesh()).not.toBeNull()
     expect(handle.heightField()).not.toBeNull()
+    // 初始 adopt 也必须有 owner/generation：首次上传与后续 LOD 换装落在同一序列里。
+    const c0 = handle.terrainCounters()
+    expect(c0.terrainGeneration).toBe(1)
+    expect(c0.terrainGeometriesCreated).toBe(1)
+    expect(c0.terrainGeometriesDisposed).toBe(0)
+    const initial = deps.perf()!.snapshot().events.filter((e: Record<string, unknown>) => e.stage === 'terrain-geometry')
+    expect(initial).toHaveLength(1)
+    expect(initial[0]).toMatchObject({ owner: 'mapWorldTerrain', mode: 'initial', generation: 1, oldGeneration: 0, created: 1, disposed: 0, reason: 'map-load' })
+    expect(initial[0].swapMs).toBeGreaterThanOrEqual(0)
     const target = (deps.getControls() as { target: THREE.Vector3 }).target
     return { handle, deps, scene, camera, target }
   }
@@ -244,6 +253,14 @@ describe('maybeRebuildTerrainLod（地形 LOD 滞后与判据接线）', () => {
     handle.maybeRebuildTerrainLod(2000)   // ≥ 120ms 节流窗
     expect(handle.terrainCounters().terrainRebuilds).toBe(rebuilds0 + 1)
     expect(handle.terrainMesh()!.geometry).not.toBe(geo0)
+    const c1 = handle.terrainCounters()
+    expect(c1.terrainGeneration).toBe(3)
+    expect(c1.terrainGeometriesCreated).toBe(3)
+    expect(c1.terrainGeometriesDisposed).toBe(2)
+    const swaps = deps.perf()!.snapshot().events.filter((e: Record<string, unknown>) => e.stage === 'terrain-geometry' && e.mode === 'sync-fallback')
+    expect(swaps).toHaveLength(2)
+    expect(swaps[1]).toMatchObject({ owner: 'mapWorldTerrain', reason: 'lateral', generation: 3, oldGeneration: 2, created: 3, disposed: 2 })
+    expect(swaps[0].swapMs).toBeGreaterThanOrEqual(0)
 
     // 滞回窗口内：侧向位移 2m（< 5%·200）、视距/FOV/aspect 不变 → 不重建
     const rebuilds1 = handle.terrainCounters().terrainRebuilds

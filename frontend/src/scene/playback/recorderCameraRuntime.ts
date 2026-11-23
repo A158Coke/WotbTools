@@ -12,7 +12,7 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   setCam: (mode: string) => void; prewarmArmorHighlight: (camera: THREE.PerspectiveCamera) => void
   releaseArmorHighlight: () => void; clearance: number; hiddenLayer: number
 }) {
-  const { container, store } = deps
+  const { store } = deps
   const { setCam, prewarmArmorHighlight } = hooks
   const CAMERA_GROUND_CLEARANCE = hooks.clearance, SCOPED_HIDDEN_LAYER = hooks.hiddenLayer
   const RETICLE_MIN_GUN_DISTANCE_M = 30
@@ -181,12 +181,13 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   function recorderAimPoint(sample: RecorderCameraSample, out: THREE.Vector3) {
     return out.set(-sample.rayX, sample.rayY, sample.rayZ);
   }
-  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。 */
-  function projectToStage(point: THREE.Vector3, out: CameraVec3): CameraVec3 | null {
+  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。
+   *  视口由调用方一次取快照传入（逻辑舞台尺寸，非 drawing buffer）。 */
+  function projectToStage(point: THREE.Vector3, out: CameraVec3, stage: { x: number; y: number }): CameraVec3 | null {
     point.project(deps.getCamera());
     if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
-    out.x = (point.x + 1) * container.clientWidth / 2;
-    out.y = (1 - point.y) * container.clientHeight / 2;
+    out.x = (point.x + 1) * stage.x / 2;
+    out.y = (1 - point.y) * stage.y / 2;
     return out;
   }
   /**
@@ -205,11 +206,12 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     recorderAimPoint(sample, _recorderRay);
     const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
-    const aim = projectToStage(_recorderRay, _reticleAim);
-    const gun = projectToStage(_recorderGun, _reticleGun);
+    const stage = deps.getViewportSize();   // 一次快照供 aim/gun/半径共用（不逐点读）
+    const aim = projectToStage(_recorderRay, _reticleAim, stage);
+    const gun = projectToStage(_recorderGun, _reticleGun, stage);
     if (!aim && !gun) { deps.recorderReticle.hide(); return; }
     deps.recorderReticle.update(aim, gun, reticleRadiusPx({
-      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: container.clientHeight,
+      bloomRaw: sample.bloomRaw, fovDeg: camera.fov, viewportH: stage.y,
     }));
   }
   return { recorderVehicle, recorderViewAvailable, loadRecorderCamera, enterRecorderView, leaveRecorderView,

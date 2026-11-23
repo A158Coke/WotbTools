@@ -209,7 +209,13 @@ async function fileCacheKey(fileObject: ReplayFile, bytes: Uint8Array) {
 /** 仅测试用：清空解析结果缓存（跨用例替换 WASM 桩时，同一份字节会产出不同结果） */
 export function __resetPlaybackJsonCacheForTest() { playbackJsonCache.clear(); }
 
-export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSignal, observer?: PlaybackDiagnosticObserver) {
+export async function loadFromLocalFile(
+  fileObject: ReplayFile,
+  signal?: AbortSignal,
+  observer?: PlaybackDiagnosticObserver,
+  /** 内容摘要（如可用）在缓存键生成后立即交给宿主，供 ?perf identity 等诊断在不重复哈希的前提下复用。 */
+  onDigest?: (digest: string) => void,
+) {
   let started = observer ? performance.now() : 0
   if (signal?.aborted) throw playbackParseAbortError()
   const arrayBuffer = await fileObject.arrayBuffer()
@@ -225,7 +231,9 @@ export async function loadFromLocalFile(fileObject: ReplayFile, signal?: AbortSi
   started = observer ? performance.now() : 0
   const cacheKey = await fileCacheKey(fileObject, bytes)
   measured(observer, 'replay.digest', started)
-  if (observer) emitPlaybackDiagnostic(observer, { stage: 'replay.identity', digest: cacheKey?.split('|').at(-1) })
+  const replayDigest = cacheKey?.split('|').at(-1)
+  if (replayDigest) onDigest?.(replayDigest)
+  if (observer) emitPlaybackDiagnostic(observer, { stage: 'replay.identity', digest: replayDigest })
   if (signal?.aborted) throw playbackParseAbortError()
   const cachedJson = cacheKey === null ? undefined : playbackJsonCache.get(cacheKey)
   if (observer) emitPlaybackDiagnostic(observer, { stage: 'json.cache', status: cachedJson !== undefined ? 'hit' : 'miss' })

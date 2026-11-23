@@ -21,7 +21,11 @@ export async function openReplay3d(chrome, { fixture = 'random-battle-example', 
   const { nodeId } = await chrome.client.send('DOM.querySelector', { nodeId: r.nodeId, selector: '[data-testid="select-files-input"]' }, sessionId)
   await chrome.client.send('DOM.setFileInputFiles', { nodeId, files: [fixturePath(fixture)] }, sessionId)
   await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { timeout: 90000, label: 'parsed' })
-  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="3d"]').click()`)
+  // 2026-11-20 起 2D/3D/事件流合并为「回放」能力，3D 是回放面板内的 viewer-mode 开关。
+  await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { timeout: 90000, label: 'replay tab' }).catch(async e => { console.log(await ids(page), await page.evaluate('document.body.innerText.slice(0,500)')); throw e })
+  await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="replay"]').click()`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="viewer-mode-3d"]'), { timeout: 30000, label: '3d mode' })
+  await page.evaluate(`document.querySelector('[data-testid="viewer-mode-3d"]').click()`)
   await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { timeout: 30000, label: 'start btn' }).catch(async e => { console.log(await ids(page), await page.evaluate('document.body.innerText.slice(0,500)')); throw e })
   return page
 }

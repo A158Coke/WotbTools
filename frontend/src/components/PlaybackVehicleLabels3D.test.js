@@ -70,6 +70,27 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     wrapper.unmount()
   })
 
+  it('begin/end 批处理：setAnchor 只收集，end 后统一落位；舞台宽度由调用方传入（不读 rootEl.clientWidth）', async () => {
+    const wrapper = mountOverlay()
+    wrapper.vm.setLabels([row(1), row(2)])
+    await nextTick()
+    const root = wrapper.get('[data-testid="vehicle-label-overlay"]').element
+    let rootReads = 0
+    Object.defineProperty(root, 'clientWidth', { configurable: true, get() { rootReads++; return 1234 } })
+    const [a, b] = wrapper.findAll('.vehicle-label-anchor')
+    wrapper.vm.beginAnchors({ x: 500, y: 600 })
+    wrapper.vm.setAnchor(1, { x: 10, y: 20, visible: true, occluded: false })
+    wrapper.vm.setAnchor(2, { x: 30, y: 40, visible: true, occluded: true })
+    // flush 之前只收集，不逐车写 DOM（否则又是逐车写→读抖动）
+    expect(a.element.hidden).toBe(true)
+    wrapper.vm.endAnchors()
+    expect(a.element.style.transform).toContain('translate(10px, 20px)')
+    expect(b.element.style.transform).toContain('translate(30px, 40px)')
+    expect(b.element.classList.contains('label-occluded')).toBe(true)
+    expect(rootReads, '逻辑舞台宽度必须来自调用方，不得读覆盖层布局').toBe(0)
+    wrapper.unmount()
+  })
+
   it('战场快捷标记来源卡：同一 DOM 卡片机制——内容行按 key 渲染、锚点重摆、visible 翻转隐藏、clear 清空', async () => {
     const wrapper = mountOverlay()
     wrapper.vm.setMarkerLabels([
@@ -302,11 +323,13 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
     stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
-    stubNumber(wrapper.get('.vehicle-label-overlay').element, 'clientWidth', 300)
     wrapper.vm.spawnDamage(7, 1234, 2000)
     await nextTick()
     stubNumber(damage(wrapper).element, 'offsetWidth', 90)
+    // 逻辑舞台宽度由 labelsRuntime 传入（不读 rootEl.clientWidth）
+    wrapper.vm.beginAnchors({ x: 300, y: 600 })
     wrapper.vm.setAnchor(7, { ...shownAnchor, x: 200 })
+    wrapper.vm.endAnchors()
     // 右侧：200 + 20 + 90 = 310 > 300 → 镜像；左侧：血条左缘 108 − 间隙 8 − 宽 90 = 10 → x = 90
     const el = damage(wrapper).element
     expect(el.style.transform).toBe('translate3d(90px, 72px, 0)')
@@ -322,11 +345,12 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
     stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
-    stubNumber(wrapper.get('.vehicle-label-overlay').element, 'clientWidth', 320)
     wrapper.vm.spawnDamage(7, 1234, 2000)
     await nextTick()
     stubNumber(damage(wrapper).element, 'offsetWidth', 90)
+    wrapper.vm.beginAnchors({ x: 320, y: 600 })
     wrapper.vm.setAnchor(7, { ...shownAnchor, x: 200 })
+    wrapper.vm.endAnchors()
     // 出生帧右缘 = 200 + 20 + 90 = 310 ≤ 320（放得下），但漂移 20px 后 330 > 320
     const el = damage(wrapper).element
     expect(el.style.transform, '只看出生帧就会漏掉漂移后的裁切').toBe('translate3d(90px, 72px, 0)')

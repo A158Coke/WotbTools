@@ -32,7 +32,8 @@ export interface ArmorStatsView {
 
 /** 宿主注入的依赖（getter 快照；语义见各字段处原文注释）。 */
 export interface PerfProbeDeps {
-  container: HTMLElement
+  /** 逻辑舞台尺寸（renderer.setSize 的 CSS 像素口径；与 drawing buffer / DPR / 动态分辨率解耦）。 */
+  getViewportSize(): { x: number; y: number }
   getT(): number
   getRenderer(): WebGLRenderer | null
   getQualityKey(): string
@@ -83,12 +84,68 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
   const perf = PERF ? createPerf() : null;
+  // 上传归因（仅 ?perf）：把 bufferData/bufferSubData 的调用数与字节记到**发生帧**，
+  // 与 mapWorldTerrain 的 geometry generation / 创建销毁计数对齐。只计数，不改上传行为。
+  let uploadContext: WebGLRenderingContext | WebGL2RenderingContext | null = null
+  let uploadStats = { bufferDataCalls: 0, bufferDataBytes: 0, bufferSubDataCalls: 0, bufferSubDataBytes: 0 }
+  let uploadLast = { ...uploadStats }
+  // 一次上传实际搬运的字节数：WebGL2 允许 srcOffset/length（length 以元素计），
+  // 只看 srcData.byteLength 会把子区间上传算成整块。非 typed-array（如 size 数字）返回 0。
+  function uploadBytes(data: unknown, srcOffset: unknown, length: unknown) {
+    const view = data as { byteLength?: number; BYTES_PER_ELEMENT?: number } | null | undefined
+    const total = view?.byteLength
+    if (typeof total !== 'number') return 0
+    const bytesPerElement = view?.BYTES_PER_ELEMENT ?? 1
+    const offset = typeof srcOffset === 'number' && srcOffset > 0 ? srcOffset * bytesPerElement : 0
+    if (typeof length === 'number' && Number.isFinite(length) && length >= 0) {
+      return Math.min(Math.max(0, total - offset), length * bytesPerElement)
+    }
+    return Math.max(0, total - offset)
+  }
+  function installUploadTracker(renderer: WebGLRenderer | null) {
+    if (!PERF) return
+    const context = renderer?.getContext?.() as WebGLRenderingContext | WebGL2RenderingContext | undefined
+    if (!context || context === uploadContext) return
+    try {
+      const raw = context as unknown as {
+        bufferData(...args: unknown[]): unknown
+        bufferSubData(...args: unknown[]): unknown
+      }
+      const nativeBufferData = raw.bufferData.bind(raw)
+      const nativeBufferSubData = raw.bufferSubData.bind(raw)
+      raw.bufferData = (...args: unknown[]) => {
+        uploadStats.bufferDataCalls += 1
+        uploadStats.bufferDataBytes += uploadBytes(args[1], args[3], args[4])
+        return nativeBufferData(...args)
+      }
+      raw.bufferSubData = (...args: unknown[]) => {
+        uploadStats.bufferSubDataCalls += 1
+        uploadStats.bufferSubDataBytes += uploadBytes(args[2], args[3], args[4])
+        return nativeBufferSubData(...args)
+      }
+      uploadContext = context
+      uploadLast = { ...uploadStats }
+    } catch { /* Context methods may be non-writable in hardened builds; attribution is optional. */ }
+  }
+  function takeUploadDelta() {
+    const delta = {
+      bufferDataCalls: uploadStats.bufferDataCalls - uploadLast.bufferDataCalls,
+      bufferDataBytes: uploadStats.bufferDataBytes - uploadLast.bufferDataBytes,
+      bufferSubDataCalls: uploadStats.bufferSubDataCalls - uploadLast.bufferSubDataCalls,
+      bufferSubDataBytes: uploadStats.bufferSubDataBytes - uploadLast.bufferSubDataBytes,
+    }
+    uploadLast = { ...uploadStats }
+    return delta
+  }
   // perf 在 PERF 关闭时为 null：原 JS 同口径（GPU 探针仅在 ?perf 下创建）。
   const gpu = PERF ? createGpuFrameTracker(perf!) : null;
+  // Install before the first terrain build: the initial upload must be attributed to its
+  // own frame rather than appearing as an unexplained later burst.
+  if (perf) installUploadTracker(deps.getRenderer());
   if (perf) perf.setIdentity({ buildCommit: typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : null,
     buildTime: typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : null,
     wasmCommit: AGENT_WASM_COMMIT, wasmRelease: AGENT_WASM_RELEASE, replayDigest: null, runtime: isAndroidRuntime() ? 'android' : 'browser',
-    userAgent: navigator.userAgent, viewport: [window.innerWidth, window.innerHeight],
+    userAgent: navigator.userAgent, viewport: viewportOf(deps),
     dpr: window.devicePixelRatio, quality: deps.getQualityKey(), datasetId: null, assetIdentity: null, identityComplete: false });
   // Query the same effective asset base used by the scene, including a versioned override.
   if (perf && assetProvider.configured()) {
@@ -102,8 +159,11 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   function perfFrame(updateMs: number, renderMs: number, armorMs: number, armorStats: ArmorStatsView | null, stages: Record<string, unknown>) {
     const a = armorStats || {};
     const renderer = deps.getRenderer();
+    installUploadTracker(renderer);
+    const upload = takeUploadDelta();
     perf!.record({ ...stages, updateMs, renderMs, armorMs, t: deps.getT(),
-      calls: renderer ? renderer.info.render.calls : 0, triangles: renderer?.info.render.triangles ?? null, ...(deps.terrainCounters()),
+      calls: renderer?.info?.render?.calls ?? 0, triangles: renderer?.info?.render?.triangles ?? null,
+      geometries: renderer?.info?.memory?.geometries ?? null, ...upload, ...(deps.terrainCounters()),
       armorPick: a.pickMs ?? 0, armorState: a.stateMs ?? 0,
       armorThick: a.thicknessMs ?? 0, armorOcc: a.occluderMs ?? 0,
       armorColor: a.colorMs ?? 0, armorCalls: a.calls ?? 0,
@@ -138,18 +198,23 @@ export function createPerfProbe(deps: PerfProbeDeps): PerfProbeHandle {
   }
   /** destroy / 会话销毁段：看门狗停表（心跳 setInterval 不清会永久空转）。 */
   function stopWatchdog() { if (perfBeatTimer) { clearInterval(perfBeatTimer); perfBeatTimer = 0; } }
+  /** 逻辑舞台视口：不读 container.clientWidth（逐帧强制布局），也不读 drawing buffer（DPR/动态分辨率）。 */
+  function viewportOf(deps: PerfProbeDeps): [number, number] {
+    const size = deps.getViewportSize();
+    return [size.x, size.y];
+  }
   function updatePerfIdentity() {
     const renderer = deps.getRenderer();
     perf!.setIdentity({ quality: deps.getQualityKey(), cameraMode: deps.getCameraMode(), armorhl: deps.getArmorHighlightPref(),
       playbackSpeed: deps.getSpeed(), dynres: deps.getDynres(),
-      viewport: [deps.container.clientWidth, deps.container.clientHeight], dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
+      viewport: viewportOf(deps), dpr: renderer ? renderer.getPixelRatio() : window.devicePixelRatio });
   }
   const perfHandle = PERF ? {
     report: () => { gpu!.poll(); updatePerfIdentity(); const s = perf!.report() + `\ngpu_total_ms: sum of successfully measured render-pass GPU timings (not a full GPU frame; null unless all required queries succeed)` + `\nannotation: ${JSON.stringify(deps.annotationStats())}` + `\ngpu: ${JSON.stringify(gpu!.snapshot())}` + `\nmain-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}\n` + perfStalls.map(r => `  ${r.gap.toFixed(1)} ms @T=${r.t.toFixed(1)}`).join('\n'); console.log(s); return s; },
     snapshot: () => (gpu!.poll(), updatePerfIdentity(), { ...perf!.snapshot(), annotation: { ...(deps.annotationStats() as Record<string, unknown>) }, resources: { geometries: deps.getRenderer()?.info?.memory?.geometries ?? null, textures: deps.getRenderer()?.info?.memory?.textures ?? null }, armorRt: deps.armorStats().rt ? { ...deps.armorStats().rt } : null, contactShadows: deps.contactShadowsCount(), gpu: gpu!.snapshot() }),
     startCapture: (options: { scenarioId: string; durationMs?: number }) => { if (deps.paused()) throw new Error('scene is inactive'); updatePerfIdentity(); perf!.startCapture(options); },
     stopCapture: () => { gpu!.poll(); return perf!.stopCapture(); },
-    reset: () => { gpu!.reset(); perf!.reset(); deps.resetTerrainCounters(); perfStalls = []; perfBeat = performance.now(); },
+    reset: () => { gpu!.reset(); perf!.reset(); deps.resetTerrainCounters(); uploadLast = { ...uploadStats }; perfStalls = []; perfBeat = performance.now(); },
   } : null;
   if (PERF) { perfStartWatchdog(); debugWindow.__pbPerf = perfHandle; }
   return {

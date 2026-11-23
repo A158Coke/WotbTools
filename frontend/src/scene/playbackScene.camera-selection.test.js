@@ -28,7 +28,9 @@ vi.mock('three', async (importOriginal) => {
       this.capabilities = { getMaxAnisotropy: () => 8 }
       this.info = { autoReset: true, reset() {}, render: { calls: 0 } }
     }
-    setSize() {}
+    setSize(w, h) { this.size = { width: w, height: h } }
+    getSize(v) { v.set(this.size?.width ?? 800, this.size?.height ?? 600); return v }
+    getDrawingBufferSize(v) { return this.getSize(v) }
     setPixelRatio() {}
     getPixelRatio() { return 1 }
     getContext() { return null }

@@ -229,6 +229,9 @@ export interface VehicleRuntimeDeps {
   contactShadows(): TankContactShadows | null
   /** 开镜隐藏的本车 eid（owner = cameraRuntime；阴影随开镜隐藏）。 */
   scopedHiddenEid(): number
+  /** ?perf 车辆阶段归因（可选）：key 是 applyPose 内的子区间，父区间 vehiclePoseMs
+   *  由调用方单独统计——父子不得相加；count 记录候选/绘制数量。生产评分不传入。 */
+  perfAdd?(key: string, ms: number, count?: number): void
 }
 
 /** 车辆运行时对外句柄（宿主与 treadRuntime 的唯一消费面）。 */

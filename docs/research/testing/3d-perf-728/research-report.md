@@ -544,6 +544,24 @@ Profile：内容进程 `GeckoMain`，每场景 ~30 s，原始文件 `scratch/out
 
 清理：模拟器已 `adb emu kill`，`adb forward/reverse` 已清除，`am clear-debug-app` 并删除 `/data/local/tmp/<pkg>-geckoview-config.yaml`，桌面 dev server（5190）与临时 `fx-server`（8099）已停止；除 `docs/research/testing/3d-perf-728/` 外未改仓库。
 
+## 2026-11-23 · PR #1066 复测：地形上传归因与幽灵名牌场景
+
+**地形上传归因（R5，诊断包，非评分）。** 资产版本 `11.21.0_1-20261114-r1`、数据集 `11.21.0_1`，回放 `random-battle-example`，follow 视角从回放时钟 60 s 起 30 s，mid、dynres=0、CPU 1×，视口 1280×720、DPR 1。采集 `scratch/out/r5random_follow-mid_x1_diagnostic_12s_r5-attrib-2_1280x720dpr1.json`（12 s 窗口）含 1673 帧、28 次相机 LOD 地形重建。`scratch/terrain-attribution.mjs` 按 `terrain-geometry` 事件的 generation 聚合逐帧上传：
+
+| 项目 | 数值 |
+|---|---:|
+| 地形 generation（含加载期） | 61 |
+| bufferData / bufferSubData 调用 | 115 / 504 |
+| 上传总字节 | 201,270,832 |
+| 单代四 attribute 全量上传 | 约 7.1–7.2 MB |
+| 测量窗口内重建（大上传帧） | 28 帧（1.7%） |
+| `swapMs` | 0.0–0.3 ms |
+| 大上传帧 vs 普通帧 p95 帧间隔 | 13.2 vs 9.7 ms |
+
+`swapMs` 只覆盖主线程换装，不含首次上传；每代 7.2 MB 的全量上传落在大上传帧。基此判断容量桶与稳定 BufferAttribute 仍须把 Worker 传来的完整几何复制进常驻 buffer，`bufferSubData` 仍上传全量（LOD 几何逐代变化，无可复用的小 update range），而受影响帧仅 1.7%，故本轮**只交付归因，不实现容量桶**。评分模式（`--no-perf`）不安装 perf/上传挂钩，`terrain-attribution.mjs` 对带挂钩的 score 捕获直接拒绝。
+
+**幽灵名牌场景（R7，场景登记）。** 可用夹具在 `random-battle-example` 回放时钟 150–180 s 有持续 1–3 个幽灵名牌入镜（`scratch/scan-ghosts.mjs`，固定全图相机、mid、dynres=0；150–162 s 为 3 个，之后降为 1–2 个）。登记场景 `top-mid-ghost`：固定全图相机、q=mid、dynres=0、1× 播放、1280×720、DPR 1，使用 `--last-known=on|off` 每轮显式设置并核实开关。该场景下 30 s 单对诊断（ON 20.7 ms / OFF 13.9 ms 帧间隔 p50）受采集顺序与机器状态影响，**不作为 A/B 结论**；#1001 基线产物与平衡交错三轮 60 s 采集尚未完成，待相关运行时改动落地后按对应 thread 的验收继续。
+
 ## 附：产物位置
 
 - 真机 CSV：`field-reports/2026-11-10-oneplus-ace-pro/`；CSV 分析脚本：`scratch/csv.py`

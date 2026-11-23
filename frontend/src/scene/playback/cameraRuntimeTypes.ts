@@ -61,6 +61,8 @@ export interface RecorderReticleLike {
 export interface CameraRuntimeDeps {
   store: CameraRuntimeStore
   container: HTMLElement
+  /** 逻辑舞台尺寸（renderer.setSize 的 CSS 像素口径；录像者准星投影用，禁读 DOM 布局）。 */
+  getViewportSize(): { x: number; y: number }
   /** ?debug 诊断（[fly] 埋点走 console.info）。 */
   debug: boolean
   /** 相机（宿主渲染器核心 owner；相机域入口都在 initScene 之后，非空）。 */
@@ -74,6 +76,8 @@ export interface CameraRuntimeDeps {
   /** 场景根（穿深着色叠加 pass 的 render 目标）。 */
   getScene(): Scene
   invalidate(): void
+  /** 相机跳变（换跟随/换视角/距离滑条）：单帧 dirty 也要强制刷新水面反射（不是连续位姿）。 */
+  requestWaterReflectionRefresh(): void
   getT(): number
   getData(): CameraRuntimeData | null
   /** 会话代数（录像者相机迟到 settle 的归属判定）。 */

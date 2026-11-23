@@ -111,6 +111,13 @@ export function createWaterReflection({
   const reflectionMatrix = new THREE.Matrix4()
   const materials = new Set<THREE.ShaderMaterial>()
   const lastReflectionTex: { value: unknown } = { value: null }
+  // 水面世界包围体（保守可见性剔除）：水面按地图静态，按 meshes 数组引用缓存；
+  // 换图/重建会换新数组 → 自动重算。任何几何/包围体异常都 fail-open（照常绘制）。
+  const waterBounds = new THREE.Box3()
+  const frustum = new THREE.Frustum()
+  const projScreen = new THREE.Matrix4()
+  let boundsKey: THREE.Object3D[] | null = null
+  let boundsValid = false
 
   function collectMaterials(meshes: THREE.Object3D[]): void {
     for (const mesh of meshes) {
@@ -121,6 +128,39 @@ export function createWaterReflection({
         if (sm?.uniforms && sm.uniforms.uReflectionTex) materials.add(sm)
       }
     }
+  }
+
+  function refreshWaterBounds(meshes: THREE.Object3D[]): void {
+    if (boundsKey === meshes) return
+    boundsKey = meshes
+    boundsValid = false
+    waterBounds.makeEmpty()
+    let boxes = 0
+    for (const mesh of meshes) {
+      const geometry = (mesh as THREE.Mesh).geometry
+      if (!geometry || typeof geometry.computeBoundingBox !== 'function') return
+      mesh.updateWorldMatrix(true, false)
+      if (!geometry.boundingBox) geometry.computeBoundingBox()
+      const box = geometry.boundingBox
+      if (!box || box.isEmpty()) return
+      const world = box.clone().applyMatrix4(mesh.matrixWorld)
+      const e = world.min
+      const f = world.max
+      if (![e.x, e.y, e.z, f.x, f.y, f.z].every(Number.isFinite)) return
+      waterBounds.union(world)
+      boxes++
+    }
+    if (!boxes || waterBounds.isEmpty()) return
+    boundsValid = true
+  }
+
+  /** 主相机视锥与水面世界包围体相交 = 可能可见；不确定（无几何/包围体异常）一律返回 true。 */
+  function waterProbablyVisible(camera: THREE.PerspectiveCamera, meshes: THREE.Object3D[]): boolean {
+    camera.updateMatrixWorld()
+    refreshWaterBounds(meshes)
+    if (!boundsValid) return true
+    frustum.setFromProjectionMatrix(projScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+    return frustum.intersectsBox(waterBounds)
   }
 
   function ensureTarget(renderer: THREE.WebGLRenderer): void {
@@ -154,14 +194,18 @@ export function createWaterReflection({
       // 但按需渲染的 seek/相机静止场景只有一次 dirty frame，不能吞掉——requestRefresh
       // 让该帧无条件刷新；否则反射会停在 seek 前的车辆位置（下一次 rAF 也不再画）。
       const due = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
-      forceRefresh = false
       if (!due) return
       const level = getWaterLevel()
       const meshes = getWaterMeshes()
       if (level == null || !meshes || !meshes.length) {
+        forceRefresh = false
         for (const mat of materials) mat.uniforms.uUseReflection.value = 0
         return
       }
+      // 保守剔除：水面完全不在主相机视锥内时跳过整个镜像 pass（含 RT 重建/场景二次绘制）。
+      // 不确定可见时照旧绘制；被剔除的帧不吃掉 requestRefresh，等真正可见的帧再强制刷新。
+      if (!waterProbablyVisible(camera, meshes)) return
+      forceRefresh = false
       collectMaterials(meshes)
       if (!mirrorCameraForPlane(camera, level, virtualCamera)) {
         // 相机在水下/正俯视：本帧回退 cubemap，避免采样上一帧的旧 RT。

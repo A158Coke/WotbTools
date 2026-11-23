@@ -29,7 +29,7 @@ function makeDeps(sources: readonly MarkerLabelSource[]) {
   camera.updateMatrixWorld()
   const deps: LabelsRuntimeDeps = {
     store: { labelsOn: true, killfeed: [], scoreFriend: 0, scoreEnemy: 0, friendlyTeam: 1, roster: { team1: [], team2: [], unknown: [] } } as never,
-    container: document.createElement('div'),
+    getViewportSize: () => ({ x: 0, y: 0 }),   // 0×0 逻辑视口：投影 x/y 归一为 0（只锁屏幕空间偏移）
     getCamera: () => camera,
     getRaycaster: () => new THREE.Raycaster(),
     getData: () => ({ meta: { friendly_team: 1 }, kills: [] }) as never,

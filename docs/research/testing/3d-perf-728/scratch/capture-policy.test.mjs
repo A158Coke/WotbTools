@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { captureName, capturePolicy, verifySceneResources, verifyScoredEntry } from './capture-policy.mjs'
+import { captureName, capturePolicy, verifySceneResources, verifyScoredEntry, verifyScoredFrames, verifyScoredScene } from './capture-policy.mjs'
 import { startTimelineTrace } from './trace.mjs'
 
 test('scoring rejects diagnostic hooks and requires a safe run identifier', () => {
@@ -12,16 +12,58 @@ test('scoring rejects diagnostic hooks and requires a safe run identifier', () =
   }
   assert.throws(() => capturePolicy(['--no-perf'], 30), /run-id/)
   assert.throws(() => capturePolicy(['--run-id=../bad'], 30), /run-id/)
-  assert.deepEqual(capturePolicy(['--no-perf', '--run-id=pair1'], 30), { mode: 'score', seconds: 30, runId: 'pair1' })
+  assert.deepEqual(capturePolicy(['--no-perf', '--run-id=pair1'], 30), { mode: 'score', seconds: 30, runId: 'pair1', hooks: [] })
+  assert.deepEqual(capturePolicy(['--trace', '--run-id=diag1'], 60).hooks, ['trace'])
 })
 
-test('mode, duration and run identifier distinguish capture paths', () => {
-  const base = { tag: '', fixture: 'random-battle-example', scenario: 'follow-mid', rate: 1 }
-  const name = policy => captureName({ ...base, ...policy })
+test('mode, duration, run identifier, window and hooks distinguish capture paths', () => {
+  const base = { tag: '', fixture: 'random-battle-example', scenario: 'follow-mid', rate: 1, viewport: { width: 1280, height: 720, dpr: 1 } }
+  const name = (policy, viewport = base.viewport) => captureName({ ...base, ...policy, viewport })
   const score = name(capturePolicy(['--no-perf', '--run-id=pair1'], 30))
   assert.notEqual(score, name(capturePolicy(['--run-id=pair1'], 30)))
   assert.notEqual(score, name(capturePolicy(['--no-perf', '--run-id=pair1'], 60)))
   assert.notEqual(score, name(capturePolicy(['--no-perf', '--run-id=pair2'], 30)))
+  assert.notEqual(score, name(capturePolicy(['--no-perf', '--run-id=pair1'], 30), { width: 1920, height: 1080, dpr: 2 }))
+  assert.notEqual(
+    name(capturePolicy(['--run-id=pair1'], 30)),
+    name(capturePolicy(['--run-id=pair1', '--trace'], 30)),
+  )
+  assert.throws(() => name(capturePolicy(['--no-perf', '--run-id=pair1'], 30), null), /viewport/)
+})
+
+test('score mode reads the production page state without enabling ?perf', () => {
+  const expectedInput = 'C:\\fixtures\\battle.wotbreplay'
+  const canvas = { webgl: {}, width: 1280, height: 720 }
+  const observed = {
+    url: 'https://wotbtools.com/?view=replay',
+    perfHandle: false,
+    inputFiles: ['C:\\fixtures\\battle.wotbreplay'],
+    expectedInput,
+    camera: 'top',
+    followed: false,
+    expectedCamera: 'top',
+    quality: 'high',
+    expectedQuality: 'high',
+    canvas,
+  }
+  assert.equal(verifyScoredScene(observed).camera, 'top')
+  assert.equal(verifyScoredScene({ ...observed, expectedCamera: 'follow', camera: 'free', followed: true }).camera, 'follow')
+  assert.throws(() => verifyScoredScene({ ...observed, url: 'https://wotbtools.com/?view=replay&perf' }), /\?perf/)
+  assert.throws(() => verifyScoredScene({ ...observed, perfHandle: true }), /\?perf/)
+  assert.throws(() => verifyScoredScene({ ...observed, inputFiles: ['C:\\fixtures\\other.wotbreplay'] }), /input/)
+  assert.throws(() => verifyScoredScene({ ...observed, camera: 'free' }), /camera/)
+  assert.throws(() => verifyScoredScene({ ...observed, expectedCamera: 'follow' }), /camera/)
+  assert.throws(() => verifyScoredScene({ ...observed, quality: 'mid' }), /quality/)
+  assert.throws(() => verifyScoredScene({ ...observed, canvas: { webgl: null, width: 1280, height: 720 } }), /WebGL/)
+  assert.throws(() => verifyScoredScene({ ...observed, canvas: { webgl: {}, width: 0, height: 720 } }), /WebGL/)
+})
+
+test('score mode requires presented frames across the measured window', () => {
+  const frames = Array.from({ length: 12 }, (_, index) => ({ at: index * 1000, hash: index < 6 ? 'a' : 'b' }))
+  assert.equal(verifyScoredFrames(frames, { durationMs: 10_000 }).frames, 12)
+  assert.throws(() => verifyScoredFrames(frames.slice(0, 3), { durationMs: 10_000 }), /too few/)
+  assert.throws(() => verifyScoredFrames(frames.slice(0, 5), { durationMs: 10_000 }), /only span/)
+  assert.throws(() => verifyScoredFrames(frames.map(frame => ({ ...frame, hash: 'a' })), { durationMs: 10_000 }), /frozen/)
 })
 
 test('a diagnostic trace cannot overwrite an existing report', async () => {
@@ -64,4 +106,6 @@ test('every loaded terrain, scenery and vehicle must belong to the registered da
   assert.equal(check([...urls, 'https://assets.example/shared/font.woff2']).vehicles.length, 1)
   for (const url of urls) assert.throws(() => check([...urls, url.replace('/A/', '/B/')]), /Mixed/)
   assert.throws(() => check(urls.slice(0, 2)), /Missing/)
+  assert.throws(() => check([...urls, root + '/map/other/terrain.u16.bin']), /Mixed map/)
+  assert.throws(() => verifySceneResources(urls, null, version, 'A', true), /BENCH_ASSET_ROOT/)
 })

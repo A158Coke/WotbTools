@@ -113,6 +113,8 @@ export interface SessionLifecycleDeps {
   tick(): void
   writeHud(force: boolean): void
   invalidate(): void
+  /** 资产就绪的单帧强制刷新水面反射（不是连续位姿；可选，地图预览宿主也接）。 */
+  requestWaterReflectionRefresh?(): void
   loadRecorderCamera(source: LoadSource, epoch: number): void
   /** 战斗反馈事件源（宿主经 transientFeedback3d 工厂持有）。 */
   transients: { rebuildSources(): void; rewindBursts(t: number): void }
@@ -191,6 +193,9 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
         ? await (observer ? source.session.loadScene(source.file as File, observer) : source.session.loadScene(source.file as File))
         : await loadPlaybackData(observer ? { ...source, observer } : source);
       const playbackSession = source?.session ? source.session.getState(source.file as File) : null;
+      // 工作台可能先于 3D 开始解析：late observer 收不到 replay.identity 事件，
+      // 但会话状态持有同一份完整内容摘要，必须写进 ?perf identity（否则评分的输入身份为空）。
+      if (perf && playbackSession?.replayDigest) perf.setIdentity({ replayDigest: playbackSession.replayDigest });
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       deps.teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       deps.publishSessionData(data, playbackSession);
@@ -322,6 +327,8 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
       // 否则 canvas 初始为黑，直到用户第一次拖动相机。
       deps.buildBases();
       deps.buildSpawns();   // 出生点贴地标记（#835；宿主下发的语义点列，缺档不画）
+      // 地图资产就绪：水面网格刚换上，本帧必须重建反射 RT（不能等隔帧到期）
+      deps.requestWaterReflectionRefresh?.();
       deps.invalidate();
       return true;
     }
@@ -368,6 +375,7 @@ export function createSessionLifecycle(deps: SessionLifecycleDeps) {
     deps.setPlaying(true);
     deps.tick();
     deps.writeHud(true);   // 会话开始：立即对齐 HUD（不等降频窗口）
+    deps.requestWaterReflectionRefresh?.();   // 新会话首帧：反射不能沿用上一张图的 RT
     deps.invalidate();
     return true;
   }

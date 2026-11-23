@@ -118,7 +118,7 @@ const {
         :get-scene-api="() => sceneApi"
         :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"
       />
-      <div class="pb-stage" data-testid="replay3d-stage">
+      <div class="pb-stage" data-testid="replay3d-stage" :data-quality="store.qualityKey">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <!-- 快捷指令 / 聊天 / 地图标记滚动流（左下）：与事件流同一行文案事实源（子组件） -->

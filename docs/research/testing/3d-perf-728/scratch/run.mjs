@@ -5,12 +5,14 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { root, ORIGIN, fixturePath, findChrome, launchChromeForCdp, openReplay3d, delay } from './lib.mjs'
 import { startTimelineTrace, observeSubmissionAndLayout, observeAnchorWrites } from './trace.mjs'
-import { captureName, capturePolicy, sampleRenderedStage, verifySceneResources, verifyScoredEntry } from './capture-policy.mjs'
+import { captureName, capturePolicy, sampleRenderedStage, verifySceneResources, verifyScoredEntry, verifyScoredFrames, verifyScoredScene } from './capture-policy.mjs'
 const args = process.argv.slice(2)
 const flag = (n, d) => (args.find(a => a.startsWith(`--${n}=`)) || '').split('=')[1] ?? d
 const pos = args.filter(a => !a.startsWith('--'))
 if (!pos[0]) throw new Error('Usage: node run.mjs <scenario,...|all> <CPU rate,...> --run-id=x [--fixture=example] [--secs=30]')
 const perf = !args.includes('--no-perf')
+const LAST_KNOWN = flag('last-known', null)
+if (LAST_KNOWN !== null && !['on', 'off'].includes(LAST_KNOWN)) throw new Error('--last-known must be on or off')
 const PROFILE = args.includes('--profile')
 const TRACE = args.includes('--trace')
 const cpuMetrics = args.includes('--cpu-metrics')
@@ -18,6 +20,7 @@ const fixture = flag('fixture', 'random-battle-example')
 const SECS = Number(flag('secs', 30))
 if (!(SECS > 0 && SECS <= 60)) throw new Error('capture duration must be in (0, 60] seconds')
 const policy = capturePolicy(args, SECS)
+const windowSize = { width: Number(process.env.VW || 1280), height: Number(process.env.VH || 720), dpr: Number(process.env.VDPR || 1) }
 const replayDigest = createHash('sha256').update(readFileSync(fixturePath(fixture))).digest('hex')
 const dataset = process.env.DATASET
 const sourceRoot = process.env.BENCH_SOURCE_ROOT || root
@@ -35,6 +38,8 @@ const tag = flag('tag', '')
 // 场景：camera(top|free|follow|recorder) / t0 / armorhl / dynres / q
 const SC = {
   'top-mid':        { cam: '固定',   t0: 60,  q: 'mid', armorhl: 0, dynres: 0 },
+  // R7 幽灵片段：random-battle-example 在 150–170s 有 3 个 lastKnown 幽灵名牌入镜。
+  'top-mid-ghost':  { cam: '固定',   t0: 150, q: 'mid', armorhl: 0, dynres: 0 },
   'free-mid':       { cam: '自由',   t0: 60,  q: 'mid', armorhl: 0, dynres: 0 },
   'follow-mid':     { cam: 'follow', t0: 60,  q: 'mid', armorhl: 0, dynres: 0 },
   'rec-arcade-a0':  { cam: '录像者', t0: 125, q: 'mid', armorhl: 0, dynres: 0 },
@@ -65,7 +70,7 @@ async function runScenario(id, rate) {
     const datasetQuery = dataset ? '&data=' + encodeURIComponent(dataset) : ''
     const sc = SC[id]
     if (!sc) throw new Error('Unknown scenario: ' + id)
-    const name = captureName({ tag, fixture, scenario: id, rate, ...policy })
+    const name = captureName({ tag, fixture, scenario: id, rate, ...policy, viewport: windowSize })
     const urls = []
     const observeNetwork = async sessionId => {
       chrome.client.on('Network.responseReceived', ({ response }, session) => {
@@ -87,6 +92,19 @@ async function runScenario(id, rate) {
       await page.evaluate(`(${find}).click()`); await delay(400)
       await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
     }
+    // R7：每轮显式设置 lastKnownOn 并核实实际开关状态，不继承 localStorage 偏好。
+    if (LAST_KNOWN !== null) {
+      await page.evaluate(`document.querySelector('[data-testid="display-toggle"]')?.click()`)
+      await page.waitFor(() => !!document.querySelector('[data-testid="disp-last-known"]'), { timeout: 5000, label: 'last-known toggle' })
+      const want = LAST_KNOWN === 'on'
+      const read = () => page.probe(() => document.querySelector('[data-testid="disp-last-known"]')?.checked ?? null)
+      if ((await read()) !== want) await page.evaluate(`document.querySelector('[data-testid="disp-last-known"]').click()`)
+      await delay(200)
+      const got = await read()
+      if (got !== want) throw new Error(`lastKnownOn did not apply: wanted ${want}, got ${got}`)
+      await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
+      await delay(300)
+    }
     await delay(1500)
     const seek = (s) => page.evaluate(`(()=>{const r=document.querySelector('input.pb-range'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; set.call(r, ${s}); r.dispatchEvent(new Event('input',{bubbles:true})); r.dispatchEvent(new Event('change',{bubbles:true}));})()`)
     await seek(sc.t0)
@@ -98,15 +116,19 @@ async function runScenario(id, rate) {
       return { identity, resources, vehicles: latest?.veh, loadingEvents }
     })
     if (perf && !(pre.resources.textures > 1 && pre.vehicles > 0)) throw new Error('Empty replay scene')
-    const expectedCamera = { '录像者': 'recorder', follow: 'follow' }[sc.cam]
+    const expectedCamera = { '固定': 'top', '自由': 'free', '录像者': 'recorder', follow: 'follow' }[sc.cam]
     if (perf && expectedCamera && pre.identity.cameraMode !== expectedCamera) throw new Error('Camera mismatch')
+    if (!process.env.BENCH_ASSET_ROOT) throw new Error('BENCH_ASSET_ROOT is required to verify the served dataset')
     const expectedRoot = new URL(process.env.BENCH_ASSET_ROOT).href.replace(/\/$/, '')
     await chrome.client.send('Network.disable', {}, sid)
     const versionResponse = await fetch(expectedRoot + '/version.json', { cache: 'no-store' })
     if (!versionResponse.ok) throw new Error('Cannot verify expected dataset version')
     const { dataset_id, release, content_digest } = await versionResponse.json()
+    // The selected dataset is the actual asset configuration; when the harness pins one,
+    // version.json must agree. Every terrain/scenery/vehicle URL must sit under this root.
+    if (dataset && dataset !== dataset_id) throw new Error('Selected dataset differs from the served asset version')
     const assets = { dataset_id, release, content_digest }
-    assets.sources = verifySceneResources(urls, expectedRoot, assets, dataset, ['high', 'ultra'].includes(sc.q))
+    assets.sources = verifySceneResources(urls, expectedRoot, assets, dataset || dataset_id, ['high', 'ultra'].includes(sc.q))
     assets.vehicleModelLoaded = assets.sources.vehicles.length > 0
     const playbackSpeed = await page.evaluate("document.querySelector('[data-test=pb-speed-current]').textContent.trim()")
     // A checkout can change after vite build. Also identify the bytes actually served.
@@ -120,12 +142,34 @@ async function runScenario(id, rate) {
     })
     if (!perf) verifyScoredEntry(servedEntry, process.env.BENCH_ENTRY_SHA256)
     if (perf && !sourceSha.startsWith(pre.identity.buildCommit)) throw new Error('Served build does not match BENCH_SOURCE_ROOT')
-    if (perf && pre.identity.replayDigest !== replayDigest) throw new Error('Scene and input file digests differ')
+    if (perf && pre.identity.replayDigest !== replayDigest) throw new Error(`Scene and input file digests differ: ${pre.identity.replayDigest} != ${replayDigest}; events=${JSON.stringify(pre.loadingEvents.map(e => [e.stage, e.digest ?? e.status ?? '']))}`)
     const viewport = await page.probe(() => {
       const canvas = document.querySelector('[data-testid=replay3d-stage] canvas')
       const rect = canvas.getBoundingClientRect()
       return { window: [innerWidth, innerHeight], stage: [rect.width, rect.height], buffer: [canvas.width, canvas.height], deviceDpr: devicePixelRatio }
     })
+    // Score runs get their scene facts from CDP/DOM/WebGL only: ?perf and the native
+    // probe hooks stay disabled, but a missing production entry or a dead scene is fatal.
+    let scoredScene = null
+    if (!perf) {
+      const { root: documentRoot } = await chrome.client.send('DOM.getDocument', { depth: 0 }, sid)
+      const { nodeId } = await chrome.client.send('DOM.querySelector', { nodeId: documentRoot.nodeId, selector: '[data-testid="select-files-input"]' }, sid)
+      const { files } = await chrome.client.send('DOM.getFileInputFiles', { nodeId }, sid)
+      scoredScene = await page.probe(() => {
+        const stage = document.querySelector('[data-testid=replay3d-stage]')
+        const canvas = stage?.querySelector('canvas')
+        const gl = canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl'))
+        return {
+          url: location.href,
+          perfHandle: !!window.__pbPerf,
+          camera: document.querySelector('[data-testid="replay3d-camera"] .segmented-option.is-active')?.dataset.value ?? null,
+          followed: !!document.querySelector('.pb-roster-row.followed'),
+          quality: stage?.dataset.quality ?? null,
+          canvas: canvas ? { width: canvas.width, height: canvas.height, webgl: !!gl && !gl.isContextLost() } : null,
+        }
+      })
+      verifyScoredScene({ ...scoredScene, inputFiles: files, expectedInput: fixturePath(fixture), expectedCamera, expectedQuality: sc.q })
+    }
     let navigationStartMs
     const saveTrace = TRACE ? await startTimelineTrace(chrome.client) : null
     if (TRACE) await page.probe(observeSubmissionAndLayout)
@@ -144,6 +188,18 @@ async function runScenario(id, rate) {
     )
     const stageBefore = !perf && await page.probe(sampleRenderedStage)
     const cpuBefore = cpuMetrics ? await readCpuMetrics() : null
+    // Score runs prove continuous drawing with compositor frames (CDP screencast),
+    // not with a page-side rAF/UI clock. The frames are hashed and bounded.
+    const scoredFrames = []
+    const wall0 = Date.now()
+    if (!perf) {
+      chrome.client.on('Page.screencastFrame', (params, session) => {
+        if (session !== sid) return
+        chrome.client.send('Page.screencastFrameAck', { sessionId: params.sessionId }, sid).catch(() => {})
+        scoredFrames.push({ at: Date.now() - wall0, hash: createHash('sha256').update(params.data).digest('hex') })
+      })
+      await chrome.client.send('Page.startScreencast', { format: 'jpeg', quality: 30, maxWidth: 240, maxHeight: 135, everyNthFrame: 5 }, sid)
+    }
     await page.evaluate(`(()=>{
       const duration = ${SECS} * 1000
       window.__pbPerf?.reset()
@@ -160,12 +216,21 @@ async function runScenario(id, rate) {
         window.__raf.id = requestAnimationFrame(sample)
       }
       window.__raf.id = requestAnimationFrame(sample)
+      window.__ghost = { samples: [], maxGhosts: 0, maxAnchors: 0 }
+      const ghostSample = () => {
+        const anchors = Array.from(document.querySelectorAll('.vehicle-label-anchor:not([hidden])'))
+        const ghosts = anchors.filter(a => a.querySelector('.label-last-known')).length
+        window.__ghost.samples.push({ at: performance.now() - start, replayT: Number(timeline.value), anchors: anchors.length, ghosts })
+        window.__ghost.maxGhosts = Math.max(window.__ghost.maxGhosts, ghosts)
+        window.__ghost.maxAnchors = Math.max(window.__ghost.maxAnchors, anchors.length)
+      }
+      ghostSample()
+      window.__ghost.timer = setInterval(ghostSample, 250)
       window.__lt = []
       new PerformanceObserver(list => {
         for (const e of list.getEntries()) if (e.startTime >= start && e.startTime < start + duration) window.__lt.push([e.startTime,e.duration])
       }).observe({type:'longtask',buffered:false})
     })()`)
-    const wall0 = Date.now()
     let cpuMid = null
     if (sc.drag) {
       const box = await page.evaluate(`(()=>{const r=document.querySelector('[data-testid=replay3d-stage] canvas').getBoundingClientRect(); return [r.x+r.width/2, r.y+r.height/2]})()`)
@@ -186,11 +251,17 @@ async function runScenario(id, rate) {
       await delay(Math.max(0, wall0 + 60000 - Date.now()))
     } else await delay(SECS * 1000)
     const cpuAfter = cpuMetrics ? await readCpuMetrics() : null
+    let scoredEvidence = null
+    if (!perf) {
+      await chrome.client.send('Page.stopScreencast', {}, sid)
+      scoredEvidence = verifyScoredFrames(scoredFrames.filter(frame => frame.at >= 0), { durationMs: SECS * 1000 })
+    }
     const cap = perf && await page.evaluate(`window.__pbPerf.stopCapture()`)
     const snap = perf && await page.evaluate(`(()=>{const s=window.__pbPerf.snapshot(); return {identity:s.identity, resources:s.resources, armorRt:s.armorRt, gpu:s.gpu, slowest:s.slowest, events:s.events, annotation:s.annotation}})()`)
     let profile = null
     if (PROFILE) { profile = (await chrome.client.send('Profiler.stop', {}, sid)).profile }
-    const raf = await page.evaluate("({ts:window.__raf.ts, lt:window.__lt, start:window.__raf.start, timelineStart:window.__raf.timelineStart, timelineEnd:window.__raf.timelineEnd ?? Number(document.querySelector('input.pb-range').value)})")
+    const raf = await page.evaluate("({ts:window.__raf.ts, lt:window.__lt, ghost:window.__ghost, start:window.__raf.start, timelineStart:window.__raf.timelineStart, timelineEnd:window.__raf.timelineEnd ?? Number(document.querySelector('input.pb-range').value)})")
+    await page.evaluate('clearInterval(window.__ghost.timer)')
     if (saveTrace) {
       mkdirSync('out/traces', { recursive: true })
       await saveTrace(`out/traces/${name}.json`)
@@ -223,12 +294,13 @@ async function runScenario(id, rate) {
     const stageAfter = !perf && await page.probe(sampleRenderedStage)
     const out = {
       stageBefore, stageAfter,
-      name, fixture, scenario: id, sc, rate, secs: SECS, captureMode: policy.mode, runId: policy.runId, stat, frameStat, captureStats: cap?.statistics,
+      name, fixture, scenario: id, sc, rate, windowSize, secs: SECS, captureMode: policy.mode, runId: policy.runId, scoredScene, scoredEvidence, stat, frameStat, captureStats: cap?.statistics,
       captureEvents: cap?.events, captureDroppedEvents: cap?.droppedEvents,
       loadingEvents: pre?.loadingEvents, captureReason: cap?.reason, interrupted: cap?.interrupted,
       identity: cap?.identity ?? snap?.identity,
       resources: snap?.resources, gpu: snap?.gpu, raf, frames: fr, sourceSha, localTrackedPatchSha256, servedEntry,
       product, renderer, dataset, assets, wasm, viewport, replayDigest, playbackSpeed, perf, followTank, startedAt: cap?.startedAt, stoppedAt: cap?.stoppedAt,
+      lastKnown: LAST_KNOWN, ghost: LAST_KNOWN === null ? null : raf.ghost,
     }
     if (profile) out.profile = { p0: profile.startTime / 1000 - navigationStartMs, startTime: profile.startTime, nodes: profile.nodes, samples: profile.samples, timeDeltas: profile.timeDeltas }
     if (args.includes('--count-anchors')) out.anchorWrites = await page.evaluate('window.__pbBenchAnchorWrites')
