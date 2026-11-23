@@ -41,7 +41,7 @@ import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { mapLabel } from '../utils/helpers.js'
 import { QUALITY_PRESETS } from '../scene/playbackScene.js'
-import { uiProfile } from '../composables/useUiProfile.js'
+import { PLAYBACK_ROLES } from '../data/mapTeamColors.js'
 import { rosterLanesFor } from '../scene/rosterState.js'
 import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
@@ -255,21 +255,12 @@ function hudHealth(current: unknown, maximum: unknown): { state: string; knownRe
   }
 }
 
-/** Banner colors follow the current profile and Recorder perspective. */
-const teamColors = computed(() => {
-  // 主题偏好是唯一主题状态源：它变了就重读一次 token 值
-  void uiProfile.value
-  if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') {
-    return { ally: 'currentColor', enemy: 'currentColor', unknown: 'currentColor' }
-  }
-  const styles = getComputedStyle(document.documentElement)
-  const read = (name: string): string => styles.getPropertyValue(name).trim() || 'currentColor'
-  return {
-    ally: read('--color-team-ally'),
-    enemy: read('--color-team-enemy'),
-    unknown: read('--color-text-secondary'),
-  }
-})
+/** Banner colors follow the shared Playback role palette (no document-root token read). */
+const teamColors = computed(() => ({
+  ally: PLAYBACK_ROLES.friendly.text,
+  enemy: PLAYBACK_ROLES.enemy.text,
+  unknown: PLAYBACK_ROLES.neutral.base,
+}))
 
 /** Physical identities stay in the store; shared roster presentation derives Recorder colors. */
 const rosterLanes = computed(() => rosterLanesFor(store.roster, store.friendlyTeam))

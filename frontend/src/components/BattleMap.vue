@@ -3,6 +3,7 @@ import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 import { ANNOT_TANK_CLASSES, arrowHeadPoints } from '../utils/annotation.js'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { teamRoleOf } from '../data/mapTeamColors.js'
 
 defineOptions({ name: 'BattleMap' })
 
@@ -69,9 +70,10 @@ function spawnClass(spawn) {
     if (spawn.team === 2) return 'pb-spawn-team-2'
     return 'pb-spawn-neutral'
   }
-  return props.friendlyTeam === null || props.friendlyTeam === undefined
-    ? 'pb-spawn-neutral'
-    : (spawn.team === props.friendlyTeam ? 'pb-spawn-friendly' : 'pb-spawn-enemy')
+  const role = teamRoleOf(spawn.team, props.friendlyTeam)
+  if (role === 'friendly') return 'pb-spawn-friendly'
+  if (role === 'enemy') return 'pb-spawn-enemy'
+  return 'pb-spawn-neutral'
 }
 
 const reliefModel = computed(() => {
@@ -321,6 +323,8 @@ function onTwoFingerTouch(event) {
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
+            <!-- 深色衬底：亮色地图（雪地）上保留炮线轮廓；不属于阵营色，也不替代阵营 tracer。 -->
+            <line v-if="line.hasLine" class="pb-tracer-casing" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="var(--color-on-team-neutral)" :stroke-width="10 / props.viewScale" :opacity="line.opacity" />
             <line v-if="line.hasLine" class="pb-tracer" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
             <line v-if="line.hasLine" class="pb-tracer-core" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
             <circle v-if="line.flashProgress < 1" class="pb-tracer-flash" :cx="projectedX(line.x2, line.y2)" :cy="projectedY(line.x2, line.y2)" :r="(3 + 9 * line.flashProgress) / props.viewScale" :fill="props.tracerColor(line.attackerAccountId)" :opacity="line.flashOpacity" />
@@ -437,12 +441,12 @@ function onTwoFingerTouch(event) {
 .pb-playable-boundary { stroke: var(--color-map-playable-boundary); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
 .pb-float-dmg { position: absolute; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 90%, transparent), 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); animation: pb-float-rise 1s ease-out forwards; white-space: nowrap; }
-.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-float-friendly { color: var(--pb-team-text, #86efac); }
 .pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-float-rise { 0% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -10px; } }
 .pb-burst { position: absolute; width: 26px; height: 26px; border-radius: 50%; corner-shape: round; border: 2px solid currentColor; animation: pb-burst-ring .7s ease-out forwards; pointer-events: none; }
-.pb-burst.pb-float-friendly { color: var(--pb-team-text, #4ade80); }
+.pb-burst.pb-float-friendly { color: var(--pb-team-text, #86efac); }
 .pb-burst.pb-float-enemy { color: var(--pb-enemy-text, #f87171); }
 .pb-burst.pb-float-neutral { color: var(--text-muted, #999); }
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }

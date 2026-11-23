@@ -51,7 +51,6 @@ export interface BpDParts {
   gunMarks: Ref<Map<number, number> | null>
   isMobileDevice: Ref<boolean>
   trailPrefs: ProjectionDeps['trailPrefs']
-  palette: ProjectionDeps['palette']
 }
 
 export interface BpDProps {
@@ -164,7 +163,6 @@ export function bpD(S: BpDParts, props: BpDProps): void {
       gunMarks: () => S.gunMarks.value,
       isMobileDevice: S.isMobileDevice,
       trailPrefs: S.trailPrefs,
-      palette: S.palette,
       t: S.t,
     },
   )

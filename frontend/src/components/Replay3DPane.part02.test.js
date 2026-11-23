@@ -6,6 +6,7 @@ import {
   nextTick, ref, shallowReactive, mount, readFileSync, fileURLToPath, dirname, resolve,
   makeBattlePlaybackDataset, zh, en, ru,
 } from './Replay3DPane.test.harness.js'
+import { PLAYBACK_ROLES } from '../data/mapTeamColors.js'
 
 const { canonical, playback, layout, connectivityState } = testState
 
@@ -476,6 +477,10 @@ describe('Replay3DPane', () => {
     document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
     document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
+    // root 内联变量覆盖 documentElement 的任意主题值：3D 取色不依赖页面根作用域。
+    const rootStyle = wrapper.get('[data-testid="replay3d-root"]').attributes('style')
+    expect(rootStyle).toContain(`--color-team-ally: ${PLAYBACK_ROLES.friendly.base}`)
+    expect(rootStyle).toContain(`--color-team-enemy: ${PLAYBACK_ROLES.enemy.base}`)
     expect(wrapper.get('.side-left .team2').exists()).toBe(true)
     expect(wrapper.get('.side-right .team1').exists()).toBe(true)
     expect(wrapper.get('.side-left .pl').attributes('style')).toContain('--color-team-ally')
