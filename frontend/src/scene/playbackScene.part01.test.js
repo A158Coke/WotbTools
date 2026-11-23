@@ -778,6 +778,44 @@ describe('playbackScene 会话代数契约', () => {
     expect(vehicle.meshHull.visible).toBe(true)
   })
 
+  it('跟随中关闭 GLB 立即恢复低模近端，无需重新选车', async () => {
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockImplementation(() => parked.promise)
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: { x: 0, y: 0, z: 0 }, turret: { x: 0, y: 0, z: 0 } }, configs: [] }
+        : null))
+    const model = new THREE.Group()
+    model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()))
+    const turretNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    turretNode.name = 'turret_0'
+    model.add(turretNode)
+    const gunNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    gunNode.name = 'gun_0'
+    model.add(gunNode)
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, onLoad) => onLoad({ scene: model }))
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, tank_id: 6929, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [], coverage: [42, 100], death_t: null }]
+    source.loadPlaybackData.mockResolvedValue(data)
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['follow-glb'], 'follow-glb.wotbreplay') })
+    api.setPlaying(false)
+    api.setFollow(1)
+    const proxyMin = window.__controls.minDistance
+    api.setGlb(true)
+    parked.resolve(new Uint8Array())
+    await vi.waitFor(() => expect(window.__pbV[0].glb).toBeTruthy())
+    const glbMin = window.__controls.minDistance
+    expect(glbMin).not.toBeCloseTo(proxyMin, 3)
+    api.setGlb(false)
+    expect(window.__pbV[0].glb).toBeNull()
+    expect(window.__controls.minDistance).toBeCloseTo(proxyMin, 6)
+  })
+
   it('履带印游标泵：seek 后退 = 全量重建、前进 = 增量，深浅/存量无残留（用户验收项）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const { store, api } = createScene()

@@ -15,7 +15,7 @@ function makeCamera(x: number, y: number, z: number): CameraLike {
 }
 
 function makeControls(target = new THREE.Vector3(0, 0, 0)): OrbitControlsLike {
-  return { target, minDistance: 20, maxDistance: 1000 };
+  return { target, minDistance: 1, maxDistance: 1000 };
 }
 
 interface Harness {
@@ -34,6 +34,7 @@ function makeHarness(opts: {
   terrainMesh?: unknown | null
   cameraDriven?: boolean
   following?: boolean
+  followMinDistance?: () => number
   worldCenter?: { cx: number; cz: number; ext: number }
 } = {}): Harness {
   const camera = opts.camera ?? makeCamera(10, 10, 0)
@@ -50,23 +51,24 @@ function makeHarness(opts: {
     clearance: 0.5,
     getWorldCenter: () => opts.worldCenter ?? { cx: 0, cz: 0, ext: 300 },
     isFollowing: () => opts.following ?? false,
+    followMinDistance: opts.followMinDistance,
   };
   return { camera, controls, deps };
 }
 
 describe('applyCameraClamp', () => {
-  it('min/max 距离由世界范围决定，下限 20 m', () => {
+  it('近端固定为 1 m 的可贴地距离，max 仍由世界范围决定', () => {
     const { controls, deps } = makeHarness();
     const clamp = createCameraTerrainClamp(deps);
 
     clamp.applyCameraClamp(300);
-    expect(clamp.baseMinDistance()).toBe(24);       // max(20, 300 × 0.08)
-    expect(controls.minDistance).toBe(24);
+    expect(clamp.baseMinDistance()).toBe(1);
+    expect(controls.minDistance).toBe(1);
     expect(controls.maxDistance).toBeCloseTo(660, 9);   // 300 × 2.2
 
-    clamp.applyCameraClamp(100);                    // 8 < 20：取下限
-    expect(clamp.baseMinDistance()).toBe(20);
-    expect(controls.minDistance).toBe(20);
+    clamp.applyCameraClamp(100);
+    expect(clamp.baseMinDistance()).toBe(1);
+    expect(controls.minDistance).toBe(1);
     expect(controls.maxDistance).toBeCloseTo(220, 9);
   });
 });
@@ -142,7 +144,7 @@ describe('clampOrbitCameraToTerrain', () => {
     const clamp = createCameraTerrainClamp(deps);
     expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
     expect(camera.position.y).toBe(-5);
-    expect(controls.minDistance).toBe(20);
+    expect(controls.minDistance).toBe(1);
   });
 
   it('相机高于净空：只复位 minDistance，不动相机', () => {
@@ -151,7 +153,7 @@ describe('clampOrbitCameraToTerrain', () => {
     controls.minDistance = 999;                        // 上一帧可能锁过
     expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
     expect(camera.position.toArray()).toEqual([10, 10, 0]);
-    expect(controls.minDistance).toBe(20);             // 释放回基准值
+    expect(controls.minDistance).toBe(1);              // 释放回基准近端
   });
 
   it('沿射线退到安全距离（target 全程不动）', () => {
@@ -166,7 +168,7 @@ describe('clampOrbitCameraToTerrain', () => {
     expect(camera.position.z).toBe(0);
     expect(camera.position.y).toBeCloseTo(3.5, 6);      // 地形 3 + 净空 0.5
     expect(controls.target.toArray()).toEqual([0, 0, 0]);
-    expect(controls.minDistance).toBe(20);              // 安全距离 3.5 < 基准 20
+    expect(controls.minDistance).toBe(3.5);             // 安全距离 3.5 > 基准 1：锁实际净空
   });
 
   it('坡面穿地：垂直抬到净空并按实际距离锁 minDistance', () => {
@@ -206,7 +208,7 @@ describe('clampOrbitCameraToTerrain', () => {
     const clamp = createCameraTerrainClamp(deps);
     expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
     expect(camera.position.y).toBe(-5);
-    expect(controls.minDistance).toBe(20);
+    expect(controls.minDistance).toBe(1);
   });
 
   it('相机与 target 重合：复位 minDistance', () => {
@@ -214,7 +216,31 @@ describe('clampOrbitCameraToTerrain', () => {
     const { deps } = makeHarness({ camera: makeCamera(1, 2, 3), controls });
     const clamp = createCameraTerrainClamp(deps);
     expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
-    expect(controls.minDistance).toBe(20);
+    expect(controls.minDistance).toBe(1);
+  });
+
+  it('跟随中近端取模型外廓值；复位也回到该值而不是 20 m', () => {
+    const { camera, controls, deps } = makeHarness({
+      following: true,
+      followMinDistance: () => 5.2,
+    });
+    const clamp = createCameraTerrainClamp(deps);
+    expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
+    expect(camera.position.toArray()).toEqual([10, 10, 0]);
+    expect(controls.minDistance).toBe(5.2);
+  });
+
+  it('跟随中地形净空比模型距离更远时，锁地形安全距离', () => {
+    const { camera, controls, deps } = makeHarness({
+      following: true,
+      followMinDistance: () => 2,
+      camera: makeCamera(0, 2, 0),
+      height: () => 6,
+    });
+    const clamp = createCameraTerrainClamp(deps);
+    expect(clamp.clampOrbitCameraToTerrain()).toBe(true);
+    expect(camera.position.y).toBeCloseTo(6.5, 6);
+    expect(controls.minDistance).toBeCloseTo(Math.hypot(0, 6.5), 6);   // max(2, |cam-target|)
   });
 });
 

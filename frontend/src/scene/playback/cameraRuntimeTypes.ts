@@ -143,6 +143,10 @@ export interface CameraRuntimeHandle {
   setCam(mode: string): void
   setFollow(eid: number): void
   resetFollow(): void
+  /** 当前跟随最近距离（场景装配把它注入地形钳制）。 */
+  followMinDistance(): number
+  /** GLB 迟到挂载后刷新跟随近端；仅当 eid 是当前跟随目标时生效。 */
+  refreshFollowMinDistance(eid: number): void
   setFlySpeed(n: number): void
   flyTick(dt: number, pressed: Set<string>): boolean
   flyLookApplyMode(mode: string): void

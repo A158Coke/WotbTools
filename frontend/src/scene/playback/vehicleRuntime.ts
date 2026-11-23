@@ -218,6 +218,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
             }
             v.glbVisual = prepareTankDestroyedVisual(v.glb);
             applyPose(v);   // late attach while paused must reflect the current replay time
+            deps.onModelChanged?.(v.def.eid)
             deps.invalidate();
           }
         }
@@ -225,6 +226,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
       });
     } else {
       for (const v of V) {
+        const hadGlb = !!v.glb;
         if (v.glb) {
           for (const head of v.detachedTurrets) {
             if (head.glb) head.root.remove(head.glb);
@@ -243,6 +245,7 @@ export function createVehicleRuntime(deps: VehicleRuntimeDeps): VehicleRuntimeHa
         }
         setLowPoly(v, true);
         applyDetachedTurrets(v);
+        if (hadGlb) deps.onModelChanged?.(v.def.eid);
       }
     }
   }
