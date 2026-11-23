@@ -34,6 +34,7 @@ for test_script in \
   test-release-bundle-contract.sh \
   test-release-staging.sh \
   test-release-protocol.sh \
+  test-release-tsinghua-upload.sh \
   test-release-publish-simulation.sh \
   test-release-candidate-scheduling.sh \
   test-release-stage-job.sh \
