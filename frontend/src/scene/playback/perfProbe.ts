@@ -98,6 +98,29 @@ function uploadBytes(data: unknown, srcOffset: unknown, length: unknown) {
 
 type UploadStats = { bufferDataCalls: number; bufferDataBytes: number; bufferSubDataCalls: number; bufferSubDataBytes: number }
 
+type UploadMethod = 'bufferData' | 'bufferSubData'
+
+/**
+ * Resolve the upload handler below the instance wrapper at call time. Diagnostic trace
+ * hooks may wrap the prototype after the counters are installed; calling a function
+ * bound during install would bypass that later hook. Contexts with their own method
+ * keep using the captured function (the normal wrapper-chain contract).
+ */
+function callPrototypeUpload(
+  context: WebGLRenderingContext | WebGL2RenderingContext,
+  key: UploadMethod,
+  fallback: (...args: unknown[]) => unknown,
+  args: unknown[],
+): unknown {
+  let owner: object | null = Object.getPrototypeOf(context)
+  while (owner) {
+    const current = Reflect.get(owner, key)
+    if (typeof current === 'function') return Reflect.apply(current, context, args)
+    owner = Object.getPrototypeOf(owner)
+  }
+  return fallback(...args)
+}
+
 /**
  * Install both upload counters atomically. If either method is non-writable, restore
  * the one that did install and remember the context, so a retry cannot wrap it again.
@@ -116,19 +139,28 @@ export function installUploadTracking(
   if (typeof originalData !== 'function' || typeof originalSubData !== 'function') return false
   const nativeBufferData = originalData.bind(context) as (...args: unknown[]) => unknown
   const nativeBufferSubData = originalSubData.bind(context) as (...args: unknown[]) => unknown
+  // Real WebGL methods live on the prototype. Look them up on each call so a trace hook
+  // installed after this counter still wraps the upload; own methods keep the captured
+  // function because replacing them would discard an existing wrapper.
+  const dataFromPrototype = !Object.prototype.hasOwnProperty.call(context, 'bufferData')
+  const subDataFromPrototype = !Object.prototype.hasOwnProperty.call(context, 'bufferSubData')
   let installedData = false
   let installedSubData = false
   try {
     installedData = Reflect.set(context, 'bufferData', (...args: unknown[]) => {
       stats.bufferDataCalls += 1
       stats.bufferDataBytes += uploadBytes(args[1], args[3], args[4])
-      return nativeBufferData(...args)
+      return dataFromPrototype
+        ? callPrototypeUpload(context, 'bufferData', nativeBufferData, args)
+        : nativeBufferData(...args)
     })
     if (!installedData) throw new Error('WebGL bufferData is not writable')
     installedSubData = Reflect.set(context, 'bufferSubData', (...args: unknown[]) => {
       stats.bufferSubDataCalls += 1
       stats.bufferSubDataBytes += uploadBytes(args[2], args[3], args[4])
-      return nativeBufferSubData(...args)
+      return subDataFromPrototype
+        ? callPrototypeUpload(context, 'bufferSubData', nativeBufferSubData, args)
+        : nativeBufferSubData(...args)
     })
     if (!installedSubData) throw new Error('WebGL bufferSubData is not writable')
     return true

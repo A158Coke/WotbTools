@@ -79,15 +79,18 @@ describe('installUploadTracking', () => {
     expect(counts).toEqual({ bufferDataCalls: 1, bufferDataBytes: 8, bufferSubDataCalls: 1, bufferSubDataBytes: 4 })
   })
 
-  it('prototype timing hook installed before counters still sees the real uploads exactly once', () => {
+  it('prototype timing hook installed after counters still sees the real uploads exactly once', () => {
     const nativeCalls: string[] = []
     const samples: Array<{ start: number; ms: number; key: string }> = []
     class FakeGL {
       bufferData(..._args: unknown[]) { nativeCalls.push('data') }
       bufferSubData(..._args: unknown[]) { nativeCalls.push('sub') }
     }
-    // trace.mjs 的真实顺序：先包装 WebGL2RenderingContext.prototype，再由场景 initScene
-    // 调 installUploadTracking 在 context 实例上绑定当时可见的方法。
+    const context = new FakeGL()
+    const counts = stats()
+    // Review validation order: upload counter first, timing hook second. The counter must
+    // dispatch through the prototype's current method instead of a bound native snapshot.
+    expect(installUploadTracking(context as never, counts, new WeakSet<object>())).toBe(true)
     for (const key of ['bufferData', 'bufferSubData'] as const) {
       const descriptor = Object.getOwnPropertyDescriptor(FakeGL.prototype, key)!
       const native = descriptor.value as (...args: unknown[]) => unknown
@@ -101,9 +104,6 @@ describe('installUploadTracking', () => {
         },
       })
     }
-    const context = new FakeGL()
-    const counts = stats()
-    expect(installUploadTracking(context as never, counts, new WeakSet<object>())).toBe(true)
 
     context.bufferData(0, new Uint8Array(8), 0)
     context.bufferSubData(0, 0, new Uint8Array(4))

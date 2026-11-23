@@ -81,9 +81,9 @@ async function runScenario(id, rate) {
     const page = await openReplay3d(chrome, { fixture, perf, observeNetwork, query: `&q=${sc.q}&armorhl=${sc.armorhl}&dynres=${sc.dynres}${datasetQuery}` })
     const sid = page.sessionId
     // Install the JS timing wrappers before clicking start: that click triggers the lazy
-    // renderer/context creation, where perfProbe binds the then-current WebGL methods.
-    // Installing afterwards would leave the instance-level upload counters shadowing these
-    // prototype hooks, so bufferData/bufferSubData timings would silently disappear.
+    // renderer/context creation and the initial terrain/geometry uploads. A late install
+    // would miss those calls (the counter dispatches to the current prototype method, so
+    // order no longer hides the hook, but it cannot replay uploads that already happened).
     if (TRACE) await page.probe(observeSubmissionAndLayout)
     await page.evaluate(`document.querySelector('[data-test="replay3d-start"]').click()`)
     if (perf) await page.waitForValue('!!window.__pbPerf && window.__pbPerf.snapshot().totalFrames > 30', Boolean, { timeout: 90000, label: 'frames' })
