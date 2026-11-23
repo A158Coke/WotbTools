@@ -261,7 +261,9 @@ WotBTools 最小检查提示——只描述去哪看，不声明架构真相，�
 明确需要的 logs / metrics / traces / runtime evidence；纯静态/docs 任务说明为何无需额外 observability。
 
 ### Testing
-定义 targeted / integration / contract / browser / device / benchmark 等验证。
+定义 targeted / integration / contract / browser / device / benchmark 等验证。验证选择遵循 `docs/DEVELOPER_GUIDE.md`「测试策略」：默认以直接相关的最小测试/静态检查证明风险，仓库级 full suite 由 PR CI 承担；只有该文档定义的 Full-test 例外或用户明确要求时，才把本地 full suite 写为执行步骤。不要为了“更完整”而堆叠重复测试。
+
+需要浏览器/3D/真机等运行时证据时，先确认 fixture、资产和环境是否可用；不可用则在计划的 Evidence Gaps 中标出必要证据与阻塞条件，不安排无界探针重试，也不得用静态检查冒充真实运行结果。
 
 ### Rollback
 必须是真实可执行的回退路径；不可逆变化需明确恢复策略。
