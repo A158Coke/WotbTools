@@ -300,7 +300,7 @@ function rowCells(key: string) {
     <MobilityChart v-if="entries.length" :key="key || 'comparison'" ref="chart" :initial-view="chartRestore" :loading="remaining > 0 || selectedCurves.length < entries.length || selectedCurves.some(curve => curve.loading)" :vehicles="selectedCurves" :dataset="dataset" />
     <MobilityBatchDialog v-if="batch && source" :group="batch.group" :source="source" :dataset="dataset" :entries="entries" :contexts="contexts" @close="batch = null" @apply="applyBatch" />
     <AppDialog :open="picker" :title="t('mobility.add')" size="xl" @close="picker = false">
-      <TankCatalogMenu v-if="picker" multiple layout="dialog" :tanks="tanks" :state="state" :filters="filters" @update:filters="filters = $event" @confirm="add" @retry="choose" />
+      <TankCatalogMenu v-if="picker" multiple inline-filters layout="dialog" :tanks="tanks" :state="state" :filters="filters" @update:filters="filters = $event" @confirm="add" @retry="choose" />
     </AppDialog>
     <AppDialog :open="crewOpen" :title="t('agentTanks.configurator.crew_skills')" size="xl" @close="crewOpen = false">
       <template v-if="catalog">

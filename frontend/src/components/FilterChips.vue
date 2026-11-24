@@ -21,7 +21,7 @@ const { t } = useI18n()
       class="filter-toggle"
       data-testid="filter-toggle"
       :aria-expanded="open"
-      @click="emit('toggle')"
+      @click="emit('toggle', $event.currentTarget)"
     >
       <SlidersHorizontal :size="16" aria-hidden="true" />
       <span>{{ t('filters.title') }}</span>

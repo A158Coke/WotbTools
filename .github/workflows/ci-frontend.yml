@@ -225,6 +225,11 @@ jobs:
         timeout-minutes: 10
         working-directory: frontend
         run: pnpm run test:browser-mobility-readings
+      - name: Real-browser Mobility picker touch regression
+        if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}
+        timeout-minutes: 10
+        working-directory: frontend
+        run: pnpm run test:browser-mobility-picker
       # 首页 reduced-motion：真实浏览器媒体查询 + computed style + hover，而不是源码正则。
       - name: Real-browser Home reduced motion regression
         if: ${{ !cancelled() && steps.wasm.outcome == 'success' }}

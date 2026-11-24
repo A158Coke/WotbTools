@@ -45,6 +45,8 @@ const props = defineProps({
   multiple: { type: Boolean, default: false },
   /** 弹窗打开时把焦点交给搜索框 */
   autofocus: { type: Boolean, default: false },
+  /** 机动选车复用外层 Dialog 的筛选子面板；其他调用方保持独立 Sheet。 */
+  inlineFilters: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:filters', 'select', 'confirm', 'retry', 'close'])
 
@@ -57,6 +59,8 @@ const { width: containerWidth } = useElementSize(root)
 const shortTouch = useMediaQuery(SHELL_DRAWER_QUERY)
 const isCompact = computed(() => compactViewport.value || shortTouch.value || (containerWidth.value > 0 && containerWidth.value < BREAKPOINT_MEDIUM))
 const choiceMode = computed(() => isCompact.value ? 'sheet' : isExpanded.value ? 'inline' : 'menu')
+const filtersOpen = ref(false)
+const filterPanelOpen = computed(() => props.inlineFilters && props.layout === 'dialog' && isCompact.value && filtersOpen.value)
 
 const local = reactive({ ...DEFAULT_FILTERS, ...props.filters })
 // 只回灌“外部值真的变了”的字段：父级在详情/无关路由变化时会生成新的 filters 对象，
@@ -205,6 +209,8 @@ function choose(tank) {
       :selected-here="selectedHere"
       :filtered-count="filtered.length"
       :is-compact="isCompact"
+      :filters-open="filtersOpen"
+      :inline-filters="inlineFilters"
       :has-filters="hasFilters"
       :chips="chips"
       :filters="local"
@@ -217,6 +223,7 @@ function choose(tank) {
       :category-options="categoryOptions"
       :sort-options="sortOptions"
       @query-input="value => { local.q = value }"
+      @update:filters-open="filtersOpen = $event"
       @set-filter="setFilter"
       @clear-filters="clearFilters"
       @select-filtered="selectFiltered"
@@ -224,7 +231,7 @@ function choose(tank) {
       @close="emit('close')"
     />
 
-    <div id="tp-grid" class="tp-results" :class="{ 'is-dialog-results': layout === 'dialog' }">
+    <div v-show="!filterPanelOpen" id="tp-grid" class="tp-results" :class="{ 'is-dialog-results': layout === 'dialog' }">
       <EmptyState
         v-if="state === 'error'"
         role="alert"

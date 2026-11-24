@@ -576,7 +576,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|---|---|---|---|
 | DC-ARC-01 | MUST | 页面 | 自上而下是 Showcase Hero（可选）+ 控制条 + 数据区；同一页不并存两套标题区 | 场景型工作台（2D / 3D、装甲查看器）、长文档页 | 人工 |
 | DC-ARC-02 | MUST | 工作区 / 工具页 | 页头用 `ShowcaseHero` 的 `compact` 档：横幅只保留 kicker + h1（桌面 132px / 手机 96px；replay 桌面放宽到 clamp(132px, 20vw, 384px)，矮窗口回退默认），操作放横幅下方工具条；kicker + h1 + 说明 + 标签块不得占掉首屏 | 内容型页面用完整档 Showcase Hero | 人工；`ShowcaseHero.test.ts` |
-| DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 无 | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`） |
+| DC-ARC-03 | MUST | 筛选 | expanded / medium 行内工具栏；compact 用「筛选」按钮 + sheet，已生效条件显示为 chip | 机动选车在原 Dialog 内切换筛选子面板，保持同一模态与列表草稿；装甲选车与百科保持独立 Sheet | `pnpm run test:browser-interaction`（`overlay-catalog-` / `overlay-hof-`）；`pnpm run test:browser-mobility-picker` |
 | DC-ARC-04 | MUST | 主导航 | 成员、分组与栏目归属只由 `app/navigation.js` 定义；侧边栏与手机抽屉渲染同一份分组，「更多」页不复制导航列表 | 无 | `src/app/navigation.test.js` |
 | DC-ARC-07 | MUST | 主导航 | `PRIMARY_NAV` 的每个入口在大屏（侧边栏）与小屏（菜单 → 左侧抽屉）都能经真实点击到达；没有底部常驻导航 | 无 | `pnpm run test:browser-interaction shell-overlay`；主站 Logo 回首页由 `test:browser-creators`（`production-`，小屏）与 `test:browser-broadcasts`（`-desktop`，大屏）验证 |
 | DC-ARC-08 | MUST | 小屏外壳 | 满足下方「小屏布局契约」L1–L6 | 无 | `pnpm run test:browser-interaction mobile-pages`（L4 / L6）、`shell-overlay`（L1 / L3）、`src/app/navigation.test.js`（L5 例外清单） |
@@ -591,7 +591,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **紧凑页头** | 工作区、工具页与后台用 `ShowcaseHero` 的 `compact` 档：横幅只显示 kicker + h1，操作 / 搜索 / 刷新放在下方工具条。原 `PageHeader.vue` 已由本档取代并删除；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
 | **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
-| **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |
+| **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方；机动选车显式启用同一 Dialog 内的筛选子面板，完成 / Esc 回到原列表并恢复筛选按钮焦点，搜索、滚动位置和未确认选择保留，只有「添加 N 辆」提交 |
 | **主操作位置** | expanded：页面头部右侧。compact：底部固定操作栏（带安全区） |
 
 ### 小屏布局契约（L1–L6）

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search, X } from 'lucide-vue-next'
-import { createReusableTemplate } from '@vueuse/core'
+import { createReusableTemplate, useEventListener } from '@vueuse/core'
 import AppButton from './AppButton.vue'
 import AppSheet from './AppSheet.vue'
 import FilterChips from './FilterChips.vue'
@@ -39,6 +39,8 @@ const props = defineProps<{
   selectedHere: number
   filteredCount: number
   isCompact: boolean
+  filtersOpen: boolean
+  inlineFilters: boolean
   hasFilters: boolean
   chips: FilterChip[]
   filters: CatalogFilters
@@ -54,6 +56,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'query-input': [value: string]
+  'update:filtersOpen': [value: boolean]
   'set-filter': [key: FilterKey, value: string]
   'clear-filters': []
   'select-filtered': [selected: boolean]
@@ -66,34 +69,50 @@ const queryModel = computed({
   get: () => props.filters.q,
   set: (value: string) => emit('query-input', value),
 })
-const sheetOpen = ref(false)
+const inlinePanel = computed(() => props.inlineFilters && props.layout === 'dialog' && props.isCompact)
+const panelOpen = computed(() => inlinePanel.value && props.filtersOpen)
 const searchInput = ref<HTMLInputElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
 let sheetOpener: HTMLElement | null = null
 const [DefineFilters, ReuseFilters] = createReusableTemplate()
 
 watch(() => props.isCompact, async compact => {
-  if (compact || !sheetOpen.value) return
-  sheetOpen.value = false
+  if (compact || !props.filtersOpen) return
+  emit('update:filtersOpen', false)
   sheetOpener = null
   await nextTick()
   searchInput.value?.focus()
 })
 
-function toggleSheet() {
-  if (sheetOpen.value) {
+function toggleSheet(trigger: EventTarget | null = null) {
+  if (props.filtersOpen) {
     closeSheet()
     return
   }
-  sheetOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  sheetOpen.value = true
+  sheetOpener = trigger instanceof HTMLElement ? trigger : null
+  if (!sheetOpener && document.activeElement instanceof HTMLElement) sheetOpener = document.activeElement
+  emit('update:filtersOpen', true)
+  if (inlinePanel.value) nextTick(() => {
+    if (panelOpen.value) panel.value?.querySelector<HTMLButtonElement>('button')?.focus()
+  })
 }
 
 function closeSheet() {
-  sheetOpen.value = false
+  emit('update:filtersOpen', false)
   const opener = sheetOpener
   sheetOpener = null
-  nextTick(() => opener?.focus())
+  nextTick(() => opener?.isConnected && opener.focus({ preventScroll: true }))
 }
+
+// The outer Dialog's close button is also in the tab order. Escape from anywhere
+// inside this modal returns to the list before Reka's window listener dismisses it.
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  const scope = panel.value?.closest('[role="dialog"]') ?? panel.value
+  if (event.key !== 'Escape' || !panelOpen.value || !(event.target instanceof Node) || !scope?.contains(event.target)) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeSheet()
+}, { capture: true })
 
 function onTierChange(event: Event) {
   if (event.currentTarget instanceof HTMLSelectElement) emit('set-filter', 'tier', event.currentTarget.value)
@@ -119,15 +138,15 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
     </button>
   </div>
 
-  <div v-if="multiple" class="tc-bulk-bar">
+  <div v-if="multiple" v-show="!panelOpen" class="tc-bulk-bar">
     <span aria-live="polite">{{ t('mobBulk.selected', { count: draftCount, hidden: draftCount - selectedHere }) }}</span>
     <AppButton size="sm" :disabled="!filteredCount || selectedHere === filteredCount" @click="emit('select-filtered', true)">{{ t('mobBulk.selectFilter') }}</AppButton>
     <AppButton size="sm" :disabled="!selectedHere" @click="emit('select-filtered', false)">{{ t('mobBulk.clearFilter') }}</AppButton>
     <AppButton variant="primary" size="sm" :disabled="!draftCount" @click="emit('confirm-selection')">{{ t('mobBulk.addN', { count: draftCount }) }}</AppButton>
   </div>
 
-  <div class="tp-toolbar surface-glass-1" :class="{ 'is-dialog': layout === 'dialog' }">
-    <div class="tp-search-row">
+  <div class="tp-toolbar surface-glass-1" :class="{ 'is-dialog': layout === 'dialog', 'is-filter-panel': panelOpen }">
+    <div v-show="!panelOpen" class="tp-search-row">
       <label class="tp-search">
         <Search :size="16" class="tp-search-icon" aria-hidden="true" />
         <input
@@ -142,7 +161,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
           enterkeyhint="search"
         >
       </label>
-      <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="removeChip" />
+      <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="filtersOpen" @toggle="toggleSheet" @remove="removeChip" />
       <span v-if="!title" id="tp-count" class="tp-count" data-testid="tank-count" aria-live="polite">{{ countText }}</span>
       <AppButton v-if="hasFilters" size="sm" data-testid="catalog-clear" @click="emit('clear-filters')">{{ t('agentTanks.clear_filters') }}</AppButton>
     </div>
@@ -190,7 +209,8 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
         </div>
       </div>
     </DefineFilters>
-    <AppSheet v-if="isCompact" :open="sheetOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
+    <div v-if="inlinePanel" v-show="filtersOpen" ref="panel" class="tp-filter-panel" data-testid="catalog-filter-panel" :aria-label="t('filters.title')" role="region"><ReuseFilters /></div>
+    <AppSheet v-else-if="isCompact" :open="filtersOpen" :title="t('filters.title')" @close="closeSheet"><ReuseFilters /></AppSheet>
     <ReuseFilters v-else />
   </div>
 </template>
@@ -220,6 +240,9 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
 
 .tp-toolbar { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); }
 .tp-toolbar.is-dialog { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.tp-toolbar.is-filter-panel { flex: 1; min-block-size: 0; }
+.tp-filter-panel { min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; }
+.tp-filter-panel .tp-filters { padding-block-start: 0; border-block-start: 0; }
 .tp-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); flex: none; }
 .tp-search { position: relative; flex: 1 1 var(--form-field-min); min-inline-size: 0; }
 .tp-search-icon { position: absolute; inset-block-start: 50%; inset-inline-start: var(--space-3); color: var(--color-text-tertiary); transform: translateY(-50%); pointer-events: none; }
@@ -248,7 +271,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
 .is-sheet .tp-field { min-inline-size: 0; }
 .is-sheet .tp-nations { grid-column: 1 / -1; }
 
-/* The sheet portals outside the dialog tree; keep 44px targets. The segmented selector needs
+/* Compact filters keep touch targets in both page sheets and dialog subpanels. The segmented selector needs
    its extra class in the selector to outrank its own 32px control-height rule. */
 .tp-filters.is-sheet :deep(button),
 .tp-filters.is-sheet :deep(select),
