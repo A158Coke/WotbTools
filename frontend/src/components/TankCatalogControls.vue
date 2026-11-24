@@ -84,12 +84,13 @@ watch(() => props.isCompact, async compact => {
   searchInput.value?.focus()
 })
 
-function toggleSheet() {
+function toggleSheet(trigger: EventTarget | null = null) {
   if (props.filtersOpen) {
     closeSheet()
     return
   }
-  sheetOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  sheetOpener = trigger instanceof HTMLElement ? trigger : null
+  if (!sheetOpener && document.activeElement instanceof HTMLElement) sheetOpener = document.activeElement
   emit('update:filtersOpen', true)
   if (inlinePanel.value) nextTick(() => {
     if (panelOpen.value) panel.value?.querySelector<HTMLButtonElement>('button')?.focus()

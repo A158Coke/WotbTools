@@ -153,6 +153,27 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it.each(['done', 'escape'])('筛选按钮未获得焦点时直接激活，%s 仍把焦点还给实际按钮', async exit => {
+    layout.compact = true
+    const wrapper = mountMenu({ layout: 'dialog', inlineFilters: true })
+    try {
+      const search = wrapper.get('#tp-search')
+      const toggle = wrapper.get('[data-testid="filter-toggle"]')
+      search.element.focus()
+      expect(document.activeElement).toBe(search.element)
+      // Dispatch activation without focusing the button, as touch browsers may do.
+      await toggle.trigger('click')
+      await flushPromises()
+      const done = wrapper.get('[data-testid="filter-sheet-done"]')
+      expect(document.activeElement).toBe(done.element)
+      if (exit === 'done') await done.trigger('click')
+      else done.element.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.get('[data-testid="catalog-filter-panel"]').isVisible()).toBe(false)
+      expect(document.activeElement).toBe(toggle.element)
+    } finally { wrapper.unmount() }
+  })
+
   it('机动子面板 Escape 不传给外层；未显式启用的 dialog 仍使用 Sheet', async () => {
     layout.compact = true
     const wrapper = mountMenu({ layout: 'dialog', inlineFilters: true })
