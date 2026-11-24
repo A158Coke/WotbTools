@@ -147,7 +147,7 @@ TX1 出口公网带宽有限且会被 APK 下载打满；APK 随内嵌 bundle �
 
 ### 恢复已发布版本的全量 APK 副本
 
-官网稳定入口返回错误内容时，从 GitHub Actions 手动运行 `Repair published Android APK`，选择 `main` 并填写当前生产版本。该任务与 Android 发布共用队列，按生产清单、staging 记录和 release tag 核对身份，在 runner 上验过 TX1 原包的大小与 SHA-256 后，复用 stage 的清华上传步骤。最后从官网稳定地址完整回读，与源包逐字节比较。操作只写入对应的清华全量 APK 对象。发布清单、签名和源站文件继续沿用原发布记录。
+官网稳定入口返回错误内容时，从 GitHub Actions 手动运行 `Repair published Android APK`，选择 `main` 并填写当前生产版本。该任务与 Android 发布共用队列，按生产清单、staging 记录和 release tag 核对身份，在 runner 上验过 TX1 原包的大小与 SHA-256 后，复用 stage 的清华上传步骤。最后从官网稳定地址完整回读，与源包逐字节比较。TX1 取包和校验最多 30 分钟。上传阶段按 120 分钟任务的剩余时间收紧预算，额外扣除 22 分钟，覆盖计时前的 checkout、官网回读与比对、步骤切换。操作只写入对应的清华全量 APK 对象。发布清单、签名和源站文件继续沿用原发布记录。
 
 任务使用现有 TX1 SSH 与清华上传 secrets，并要求仓库 Actions variable `TX1_SSH_HOST_PUBLIC_KEY` 存放 TX1 的 Ed25519 **主机公钥**（格式为 `ssh-ed25519 <base64>`，省略注释）。请从已核实的运维连接读取 `/etc/ssh/ssh_host_ed25519_key.pub`。如遇主机密钥轮换，先核实新指纹再更新变量。
 

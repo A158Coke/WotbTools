@@ -2,6 +2,40 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
+# Keep the repair job's wall-clock limits in sync with stage-17's write guard.
+python3 - "$ROOT" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+workflow = Path(sys.argv[1]) / ".github/workflows/android-repair-replica.yml"
+job = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["repair"]
+steps = job["steps"]
+checkout, start = steps[:2]
+assert checkout["uses"].startswith("actions/checkout@")
+assert "stage-00-record-job-start.sh" in start["run"]
+
+def step_running(command):
+    step, = (s for s in steps if command in s.get("run", ""))
+    return step
+
+
+fetch = step_running("fetch-published-apk.sh")
+upload = step_running("stage-17-upload-tsinghua.sh")
+public = step_running("cmp ")
+assert steps.index(fetch) < steps.index(upload) < steps.index(public)
+job_seconds = job["timeout-minutes"] * 60
+reserve = int(upload["env"]["POST_STAGE_RESERVE_SECONDS"])
+assert int(upload["env"]["JOB_TIMEOUT_SECONDS"]) == job_seconds
+assert 0 < fetch["timeout-minutes"] * 60 < job_seconds - reserve
+assert reserve > (checkout["timeout-minutes"] + public["timeout-minutes"]) * 60
+download_seconds = int(re.search(r"--max-time (\d+)", public["run"])[1])
+assert 0 < download_seconds < public["timeout-minutes"] * 60
+print("Repair job budgets cover checkout, origin transfer and final public verification.")
+PY
+
 # 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
 #（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
 # 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin

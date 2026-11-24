@@ -27,8 +27,12 @@ jobs:
         scripts/android-release/**
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        timeout-minutes: 5
         with:
           fetch-depth: 0
+
+      - name: Record repair job start
+        run: bash scripts/android-release/steps/stage-00-record-job-start.sh
 
       - name: Reject stale dispatch before accessing the origin
         run: bash deploy/check-production-freshness.sh "$GITHUB_SHA" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA"
@@ -40,6 +44,7 @@ jobs:
         run: python3 scripts/android-release/published_apk.py
 
       - name: Fetch and verify the immutable TX1 APK
+        timeout-minutes: 30
         env:
           TX_HOST: ${{ secrets.TX_VPS_HOST }}
           TX_PORT: ${{ secrets.TX_VPS_PORT }}
@@ -56,12 +61,17 @@ jobs:
 
       - name: Restore the distribution replica
         env:
+          JOB_TIMEOUT_SECONDS: "7200"
+          # The recorded epoch excludes checkout (5m). Keep 16m for the final
+          # download and cmp, plus 1m for runner step transitions.
+          POST_STAGE_RESERVE_SECONDS: "1320"
           TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
           STEP_ARTIFACT_APKNAME: ${{ steps.release.outputs.name }}
           STEP_ARTIFACT_SHA256: ${{ steps.release.outputs.sha }}
         run: bash scripts/android-release/steps/stage-17-upload-tsinghua.sh
 
       - name: Verify the public download without a cache-busting query
+        timeout-minutes: 16
         env:
           APK_NAME: ${{ steps.release.outputs.name }}
         run: |
