@@ -1,6 +1,8 @@
 // 射击复现·脱靶分支可视化（#820 Agent A 出仓）：terrain_impact 落点/弹跳标注、
 // 射手模型摆放与脱靶信息面板。原 shotReplay 命中/脱靶分支共享上下文经 ctx 注入。
 import * as THREE from 'three'
+import { createScreenSpacePolyline, disposeOverlayObject } from './overlayStroke.js'
+import { ANNOTATION_COLORS, cssHex } from './shotResultPalette.js'
 import { poseFromYPR } from '../glbRig.js'
 import type { EquipmentSpec, PoseTickSample, ReplayShot, TankData, Vec3 } from './viewerContracts.js'
 
@@ -87,11 +89,11 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                 // 脱靶分支无 tick 切换，模型静态——标记挂 __worldAnno 随调试开关显隐。
                                 if (window.__worldAnno) {
                                     const amk2 = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10),
-                                        new THREE.MeshBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.95, depthTest: false }));
+                                        new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.shooterAnchor, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                                     amk2.position.copy(sModel.position);
                                     amk2.renderOrder = 998;
                                     window.__worldAnno.add(amk2);
-                                    deps.dbgInfo('dbg-anchor-shooter', '#00aaff', '基准点·射手',
+                                    deps.dbgInfo('dbg-anchor-shooter', cssHex(ANNOTATION_COLORS.shooterAnchor), '基准点·射手',
                                         deps.fmt3(sModel.position.x + mcx, sModel.position.y + mcy, sModel.position.z + mcz));
                                 }
                                 // 炮闩标注（脱靶分支，镜像命中分支）:位置随炮塔/炮管 bake
@@ -107,18 +109,18 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                             gunNode2.updateMatrixWorld(true);
                                             const bpos = breechGunLocal2.clone().applyMatrix4(gunNode2.matrixWorld);
                                             const bm2 = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10),
-                                                new THREE.MeshBasicMaterial({ color: 0xcc66ff, transparent: true, opacity: 0.95, depthTest: false }));
+                                                new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.breech, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                                             bm2.position.copy(bpos);
                                             bm2.renderOrder = 998;
                                             window.__worldAnno.add(bm2);
-                                            deps.dbgInfo('dbg-breech', '#cc66ff', '炮闩',
+                                            deps.dbgInfo('dbg-breech', cssHex(ANNOTATION_COLORS.breech), '炮闩',
                                                 deps.fmt3(bpos.x + mcx, bpos.y + mcy, bpos.z + mcz));
                                             const dl2 = new THREE.Line(
                                                 new THREE.BufferGeometry().setFromPoints([bpos.clone(),
                                                     new THREE.Vector3(ba[0]-mcx, ba[1]-mcy, ba[2]-mcz)]),
                                                 new THREE.LineDashedMaterial({
-                                                    color: 0xffffff, transparent: true, opacity: 0.8,
-                                                    dashSize: 0.35, gapSize: 0.25, depthTest: false }));
+                                                    color: ANNOTATION_COLORS.deviation, transparent: true, opacity: 0.8,
+                                                    dashSize: 0.35, gapSize: 0.25, depthTest: false, toneMapped: false }));
                                             dl2.computeLineDistances();
                                             dl2.renderOrder = 996;
                                             window.__worldAnno.add(dl2);
@@ -128,46 +130,62 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                             });
                         }
                         // 标注组
-                        if (window.__worldAnno) { deps.getScene().remove(window.__worldAnno); }
+                        if (window.__worldAnno) {
+                            deps.getScene().remove(window.__worldAnno);
+                            disposeOverlayObject(window.__worldAnno);
+                        }
+                        window.__worldImpactMk = null;
                         window.__worldAnno = new THREE.Group();
                         const chordM = Math.sqrt((bb[0]-ba[0])**2 + (bb[1]-ba[1])**2 + (bb[2]-ba[2])**2);
-                        const trajGeo2 = new THREE.BufferGeometry().setFromPoints([
+                        // 屏幕空间弹道弦（2px 核心 + 4px 深色描边）：500m 总览也保持可见。
+                        const trajLine2 = createScreenSpacePolyline([
                             new THREE.Vector3(ba[0]-mcx, ba[1]-mcy, ba[2]-mcz),
                             new THREE.Vector3(bb[0]-mcx, bb[1]-mcy, bb[2]-mcz),
-                        ]);
-                        const trajLine2 = new THREE.Line(trajGeo2,
-                            new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7, depthTest: false }));
-                        trajLine2.renderOrder = 997;
-                        window.__worldAnno.add(trajLine2);
+                        ], {
+                            color: ANNOTATION_COLORS.chord,
+                            widthPx: 2,
+                            haloWidthPx: 4,
+                            haloColor: 0x05070a,
+                            haloOpacity: 0.5,
+                            opacity: 0.95,
+                            renderOrder: 997,
+                        });
+                        if (trajLine2) window.__worldAnno.add(trajLine2);
                         const lpM2 = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10),
-                            new THREE.MeshBasicMaterial({ color: 0xff6622, transparent: true, opacity: 0.95, depthTest: false }));
+                            new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.launch, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                         lpM2.position.set(ba[0]-mcx, ba[1]-mcy, ba[2]-mcz);
                         lpM2.renderOrder = 998;
                         window.__worldAnno.add(lpM2);
                         const lv2 = s.launch_velocity || [0, 0, 0];
                         const spd2 = Math.sqrt(lv2[0]*lv2[0] + lv2[1]*lv2[1] + lv2[2]*lv2[2]);
-                        deps.dbgInfo('dbg-launch', '#ff6622', '发射点',
+                        deps.dbgInfo('dbg-launch', cssHex(ANNOTATION_COLORS.launch), '发射点',
                             deps.fmt3(ba[0], ba[1], ba[2]) + ' · ' + spd2.toFixed(0) + ' m/s');
                         if (spd2 > 1) {
                             const dir2 = new THREE.Vector3(lv2[0], lv2[1], lv2[2]).normalize();
-                            const vg2 = new THREE.BufferGeometry().setFromPoints([
+                            const vl2 = createScreenSpacePolyline([
                                 lpM2.position.clone(),
                                 lpM2.position.clone().addScaledVector(dir2, Math.max(chordM * 1.3, 10)),
-                            ]);
-                            const vl2 = new THREE.Line(vg2, new THREE.LineDashedMaterial({
-                                color: 0x00ccff, transparent: true, opacity: 0.8,
-                                dashSize: 1.2, gapSize: 0.8, depthTest: false }));
-                            vl2.computeLineDistances();
-                            vl2.renderOrder = 997;
-                            window.__worldAnno.add(vl2);
+                            ], {
+                                color: ANNOTATION_COLORS.velocity,
+                                widthPx: 1.5,
+                                haloWidthPx: 3,
+                                haloColor: 0x05070a,
+                                haloOpacity: 0.45,
+                                dashed: true,
+                                dashSize: 1.2,
+                                gapSize: 0.8,
+                                opacity: 0.9,
+                                renderOrder: 997,
+                            });
+                            if (vl2) window.__worldAnno.add(vl2);
                         }
                         // 落点标记（黄）= method20 终点；terrain_impact 附加末段起点（弹跳点）与材质标签
                         const emk2 = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10),
-                            new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.95, depthTest: false }));
+                            new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.endpoint, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                         emk2.position.set(bb[0]-mcx, bb[1]-mcy, bb[2]-mcz);
                         emk2.renderOrder = 998;
                         window.__worldAnno.add(emk2);
-                        deps.dbgInfo('dbg-end', '#ffcc00', '落点',
+                        deps.dbgInfo('dbg-end', cssHex(ANNOTATION_COLORS.endpoint), '落点',
                             deps.fmt3(bb[0], bb[1], bb[2]) + (s.terrain_impact ? ' · 材质' + s.terrain_impact.material : ''));
                         if (s.terrain_impact) {
                             // terminal_dir = 弹道末段速度方向向量（P1-B1 裁决：非位置点）。
@@ -177,15 +195,20 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                             const tdn = Math.sqrt(td[0]*td[0] + td[1]*td[1] + td[2]*td[2]) || 1;
                             const dirEnd = [
                                 bb[0] + td[0]/tdn*8, bb[1] + td[1]/tdn*8, bb[2] + td[2]/tdn*8];
-                            const segGeo = new THREE.BufferGeometry().setFromPoints([
+                            const segLn = createScreenSpacePolyline([
                                 new THREE.Vector3(bb[0]-mcx, bb[1]-mcy, bb[2]-mcz),
                                 new THREE.Vector3(dirEnd[0]-mcx, dirEnd[1]-mcy, dirEnd[2]-mcz),
-                            ]);
-                            const segLn = new THREE.Line(segGeo, new THREE.LineBasicMaterial({
-                                color: 0xffaa00, transparent: true, opacity: 0.9, depthTest: false }));
-                            segLn.renderOrder = 997;
-                            window.__worldAnno.add(segLn);   // 随调试开关收纳(原 deps.getScene() 直挂漏显)
-                            deps.dbgInfo('dbg-ricochet', '#ffaa00', '落点出射方向',
+                            ], {
+                                color: ANNOTATION_COLORS.bounce,
+                                widthPx: 2,
+                                haloWidthPx: 4,
+                                haloColor: 0x05070a,
+                                haloOpacity: 0.5,
+                                opacity: 0.95,
+                                renderOrder: 997,
+                            });
+                            if (segLn) window.__worldAnno.add(segLn);   // 随调试开关收纳(原 deps.getScene() 直挂漏显)
+                            deps.dbgInfo('dbg-ricochet', cssHex(ANNOTATION_COLORS.bounce), '落点出射方向',
                                 deps.fmt3(td[0], td[1], td[2]));
                         }
                         deps.getScene().add(window.__worldAnno);
@@ -226,11 +249,11 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                     return ' · 出射偏角 <b>' + ang.toFixed(1) + '°</b>' + (ang > 2 ? '（弹跳/减速）' : '');
                                 })() + '</div>' : '') +
                             '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
-                            '<span style="color:#ff6622;">●</span> LaunchPoint <span style="color:#00ccff;">┄</span> 速度向量 ' +
-                            '<span style="color:#00ff00;">—</span> 弹道弦 <span style="color:#ffcc00;">●</span> 落点 ' +
-                            '<span style="color:#ffaa00;">●</span> 弹跳点 ' +
-                            '<span style="color:#cc66ff;">●</span> 炮闩(发射起点) ' +
-                            '<span style="color:#00aaff;">●</span> 基准点·射手(type10锚)</div>' +
+                            '<span style="color:' + cssHex(ANNOTATION_COLORS.launch) + ';">●</span> LaunchPoint <span style="color:' + cssHex(ANNOTATION_COLORS.velocity) + ';">┄</span> 速度向量 ' +
+                            '<span style="color:' + cssHex(ANNOTATION_COLORS.chord) + ';">—</span> 弹道弦 <span style="color:' + cssHex(ANNOTATION_COLORS.endpoint) + ';">●</span> 落点 ' +
+                            '<span style="color:' + cssHex(ANNOTATION_COLORS.bounce) + ';">●</span> 弹跳点 ' +
+                            '<span style="color:' + cssHex(ANNOTATION_COLORS.breech) + ';">●</span> 炮闩(发射起点) ' +
+                            '<span style="color:' + cssHex(ANNOTATION_COLORS.shooterAnchor) + ';">●</span> 基准点·射手(type10锚)</div>' +
                             '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">flags=' + flgM.toString(16) +
                             ' · shell_id=' + (s.shell_id || '—') +
                             (s.shell_kind ? ' (' + s.shell_kind + ')' : '') +

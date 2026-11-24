@@ -10,6 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { neutralizeDefaultMetalness } from '../glbRig.js'
 import { fetchTankData, assetProvider } from '../agentData.js'
 import { buildTrajectoryAnnotation, installAnchorMarkers, installShooterMuzzleMarker, placeImpactCamera } from './shotReplaySeg.js'
+import { disposeOverlayObject } from './overlayStroke.js'
 import { autoSelectReplayShell, buildMoveAnnotation, buildWorldPanelHtml, installMoveToggle, installViewSwitch } from './shotReplayPanel.js'
 import { installTimeScrubHandler } from './shotReplayScrub.js'
 import { installSegmentJudgment } from './segmentJudgment.js'
@@ -417,7 +418,8 @@ export function runShotReplay(deps: ShotReplayDeps): void {
                         // 弹道原始数据（method29 launchPoint + method20 终点，世界系绝对坐标）
                         const ba = s.ball_a, bb = s.ball_b;
                         installAnchorMarkers({ cx, cy, cz, getScene, dbgInfo, fmt3 }, tankModel);
-                        if (window.__worldAnno) { getScene().remove(window.__worldAnno); }
+                        if (window.__worldAnno) { getScene().remove(window.__worldAnno); disposeOverlayObject(window.__worldAnno); }
+                        window.__worldImpactMk = null;
                         window.__worldAnno = new THREE.Group();
                         // tick 切换重算弹着点所需的射线上下文（在弹道块内赋值）。
                         // 击穿判定射线方向用【弹道弦向量】(ball_b − ball_a)而非初速向量——

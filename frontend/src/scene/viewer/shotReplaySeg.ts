@@ -2,6 +2,8 @@
 // 闭包原样平移）：炮闩/基准点标记、弹道弦可视化、服务器弹着点、P1/P2 出入点与
 // __segRay 判定射线。闭包依赖经 ctx 注入；数值行为、绘制顺序与 fail-closed 语义不变。
 import * as THREE from 'three'
+import { createScreenSpacePolyline } from './overlayStroke.js'
+import { ANNOTATION_COLORS, cssHex } from './shotResultPalette.js'
 import type { ReplayShot, Vec3 } from './viewerContracts.js'
 
 /** 标注/判定安装函数共享的宿主上下文（原 runShotReplay 闭包捕获面）。 */
@@ -47,11 +49,11 @@ export function installShooterMuzzleMarker(
                         window.__shooterMuzzleLine.visible = on;
                     }
                     // 炮闩坐标（回放世界系 = 场景坐标 + 中心偏移）写入调试信息窗口
-                    dbgInfo('dbg-breech', '#cc66ff', '炮闩',
+                    dbgInfo('dbg-breech', cssHex(ANNOTATION_COLORS.breech), '炮闩',
                         fmt3(mk.position.x + cx, mk.position.y + cy, mk.position.z + cz));
                 };
                 const mk = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10),
-                    new THREE.MeshBasicMaterial({ color: 0xcc66ff, transparent: true, opacity: 0.95, depthTest: false }));
+                    new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.breech, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                 mk.renderOrder = 998;
                 getScene().add(mk);
                 window.__shooterMuzzleMk = mk;
@@ -60,8 +62,8 @@ export function installShooterMuzzleMarker(
                 const dline = new THREE.Line(
                     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
                     new THREE.LineDashedMaterial({
-                        color: 0xffffff, transparent: true, opacity: 0.8,
-                        dashSize: 0.35, gapSize: 0.25, depthTest: false }));
+                        color: ANNOTATION_COLORS.deviation, transparent: true, opacity: 0.8,
+                        dashSize: 0.35, gapSize: 0.25, depthTest: false, toneMapped: false }));
                 dline.renderOrder = 996;
                 getScene().add(dline);
                 window.__shooterMuzzleLine = dline;
@@ -81,14 +83,14 @@ export function installAnchorMarkers(
     const { cx, cy, cz, getScene, dbgInfo, fmt3 } = ctx;
     function makeAnchorMarker(colorCss: string): { mk: THREE.Mesh; color: string } {
         const mk = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10),
-            new THREE.MeshBasicMaterial({ color: new THREE.Color(colorCss), transparent: true, opacity: 0.95, depthTest: false }));
+            new THREE.MeshBasicMaterial({ color: new THREE.Color(colorCss), transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
         mk.renderOrder = 998;
         mk.visible = false;
         getScene().add(mk);
         return { mk: mk, color: colorCss };
     }
-    window.__victimAnchor = makeAnchorMarker('#00ffcc');
-    window.__shooterAnchor = makeAnchorMarker('#00aaff');
+    window.__victimAnchor = makeAnchorMarker(cssHex(ANNOTATION_COLORS.victimAnchor));
+    window.__shooterAnchor = makeAnchorMarker(cssHex(ANNOTATION_COLORS.shooterAnchor));
     window.__updateAnchorMarkers = function() {
         const on = !!window.__debugOn;
         const upd = function(a: { mk: THREE.Mesh; color: string } | null | undefined,
@@ -137,19 +139,27 @@ export function buildTrajectoryAnnotation(
             (bb[0]-ba[0])/chordLen, (bb[1]-ba[1])/chordLen, (bb[2]-ba[2])/chordLen);
         ctxLvDir = chordDir;
         ctxRayFar = Math.max(chordLen * 1.1, 20);
-        // depthTest=false：击穿弹的弦线穿过车体内部，保持全程可见
-        const trajMat = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7, depthTest: false });
-        const trajGeo = new THREE.BufferGeometry().setFromPoints([
+        // depthTest=false：击穿弹的弦线穿过车体内部，保持全程可见。屏幕空间 2px 核心 +
+        // 4px 深色描边：500m 世界总览也保持可见，不再用 1px 世界线。
+        const trajLine = createScreenSpacePolyline([
             new THREE.Vector3(ba[0] - cx, ba[1] - cy, ba[2] - cz),
             new THREE.Vector3(bb[0] - cx, bb[1] - cy, bb[2] - cz),
-        ]);
-        const trajLine = new THREE.Line(trajGeo, trajMat);
-        trajLine.renderOrder = 997;
-        trajLine.visible = showTrajAnno;
-        window.__worldAnno!.add(trajLine);   // 随调试开关收纳(原 getScene() 直挂漏显)
+        ], {
+            color: ANNOTATION_COLORS.chord,
+            widthPx: 2,
+            haloWidthPx: 4,
+            haloColor: 0x05070a,
+            haloOpacity: 0.5,
+            opacity: 0.95,
+            renderOrder: 997,
+        });
+        if (trajLine) {
+            trajLine.visible = showTrajAnno;
+            window.__worldAnno!.add(trajLine);   // 随调试开关收纳(原 getScene() 直挂漏显)
+        }
         // ① launchPoint 标记（method29 发射点，橙色）+ 速度标签
         const lpM = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10),
-            new THREE.MeshBasicMaterial({ color: 0xff6622, transparent: true, opacity: 0.95, depthTest: false }));
+            new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.launch, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
         lpM.position.set(ba[0] - cx, ba[1] - cy, ba[2] - cz);
         lpM.renderOrder = 998;
         lpM.visible = showTrajAnno;
@@ -159,33 +169,41 @@ export function buildTrajectoryAnnotation(
         const lvSpd = Math.sqrt(lv0[0]*lv0[0] + lv0[1]*lv0[1] + lv0[2]*lv0[2]);
         ctxLaunch = lpM.position.clone();
         ctxLvSpd = lvSpd;
-        if (showTrajAnno) dbgInfo('dbg-launch', '#ff6622', '发射点',
+        if (showTrajAnno) dbgInfo('dbg-launch', cssHex(ANNOTATION_COLORS.launch), '发射点',
             fmt3(ba[0], ba[1], ba[2]) + ' · ' + lvSpd.toFixed(0) + ' m/s');
         // ② 速度向量轨迹（青虚线，长度=弦长×1.3）——仅初速方向可视化，判定用弦向量
         if (lvSpd > 1) {
             const dir = new THREE.Vector3(lv0[0], lv0[1], lv0[2]).normalize();
-            const vg = new THREE.BufferGeometry().setFromPoints([
+            const vl = createScreenSpacePolyline([
                 lpM.position.clone(),
                 lpM.position.clone().addScaledVector(dir, Math.max(chordLen * 1.3, 10)),
-            ]);
-            const vl = new THREE.Line(vg, new THREE.LineDashedMaterial({
-                color: 0x00ccff, transparent: true, opacity: 0.8,
-                dashSize: 1.2, gapSize: 0.8, depthTest: false }));
-            vl.computeLineDistances();
-            vl.renderOrder = 997;
-            vl.visible = showTrajAnno;
-            window.__worldAnno!.add(vl);
+            ], {
+                color: ANNOTATION_COLORS.velocity,
+                widthPx: 1.5,
+                haloWidthPx: 3,
+                haloColor: 0x05070a,
+                haloOpacity: 0.45,
+                dashed: true,
+                dashSize: 1.2,
+                gapSize: 0.8,
+                opacity: 0.9,
+                renderOrder: 997,
+            });
+            if (vl) {
+                vl.visible = showTrajAnno;
+                window.__worldAnno!.add(vl);
+            }
         }
         // ③ 弹道终点标记（method20，黄色）+ 标签——击穿弹终点在车体
         // 内部/另一侧，≠弹着点（接触点）
         const eg = new THREE.SphereGeometry(0.15, 12, 10);
-        const em = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.95, depthTest: false });
+        const em = new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.endpoint, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false });
         const emk = new THREE.Mesh(eg, em);
         emk.position.set(bb[0] - cx, bb[1] - cy, bb[2] - cz);
         emk.renderOrder = 998;
             emk.visible = showTrajAnno;
         window.__worldAnno!.add(emk);
-            if (showTrajAnno) dbgInfo('dbg-end', '#ffcc00', '服务器终点', fmt3(bb[0], bb[1], bb[2]));
+            if (showTrajAnno) dbgInfo('dbg-end', cssHex(ANNOTATION_COLORS.endpoint), '服务器终点', fmt3(bb[0], bb[1], bb[2]));
         // ④ 服务器弹着点 raycast（见函数头注释）
         if (armorModel) {
             const sPart = (typeof s.server_part_index === 'number') ? s.server_part_index : null;
@@ -204,13 +222,13 @@ export function buildTrajectoryAnnotation(
             }
             if (iHits.length > 0) {
                 const imk = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 10),
-                    new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.95, depthTest: false }));
+                    new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.impact, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                 imk.position.copy(iHits[0].point);
                 imk.renderOrder = 998;
                 window.__worldAnno!.add(imk);
                 window.__worldImpactMk = imk;
                 // 弹着点坐标（回放世界系）与部件约束写入调试信息窗口
-                dbgInfo('dbg-impact', '#ff2222', '弹着点',
+                dbgInfo('dbg-impact', cssHex(ANNOTATION_COLORS.impact), '弹着点',
                     fmt3(iHits[0].point.x + cx, iHits[0].point.y + cy, iHits[0].point.z + cz)
                     + (partConstrained ? ' · 部件P' + sPart : ''));
             } else {

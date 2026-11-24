@@ -122,7 +122,7 @@
 .armor-view #click-info h3 { margin: 0 0 var(--space-1); color: var(--txt); font-size: clamp(11px, 0.6vw + 9px, 13px); font-weight: 700; }
 .armor-view #click-info .pen { color: var(--green); }
 .armor-view #click-info .bounce { color: var(--red); }
-.armor-view #click-info .ricochet { color: var(--orange); }
+.armor-view #click-info .ricochet { color: var(--purple); }
 /* 小屏（手机横屏 ≤ 500px 高 / 竖屏窄屏）：进一步收紧内边距、字号与行距。
    五行读数在 320–390px 高的视口里必须明显小于半屏（browser-armor-mobile 的
    resultHeightBudget 上限 = 视口高 45%），否则会压住车体与右下射击面板。 */
@@ -221,6 +221,7 @@
     .armor-view #view-toggle { flex: 1 1 11rem; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); padding: 0; }
     .armor-view #view-toggle button { padding: var(--space-1); white-space: normal; }
     .armor-view #armor-filters { grid-column: 1 / -1; padding-block-start: var(--space-1); gap: var(--space-1); }
+    .armor-view #armor-result-legend { display: none; }
     .armor-view #turret-controls { inset-block-start: calc(var(--space-2) * 2 + var(--scene-control-h-lg)); inset-block-end: auto; inset-inline-start: var(--space-2); min-inline-size: 0; max-inline-size: calc(100% - var(--space-4)); padding: 0 var(--space-1); max-block-size: 28dvh; white-space: nowrap; }
     .armor-view #turret-controls .ctrl-row { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1); }
     .armor-view #turret-controls .armor-camera-presets { display: inline-flex; flex-wrap: nowrap; vertical-align: middle; gap: var(--space-1); margin: 0 var(--space-1) 0 0; }

@@ -56,6 +56,8 @@ export interface ProbabilityChainEvaluation extends ProbabilityChainLayer {
   chance: number
   probChance: number
   layerChance: number
+  /** 炮弹是否到达该层；概率链归零后的后续层为 false（未到达，不得画成“挡下”）。 */
+  reached: boolean
 }
 
 /**
@@ -209,20 +211,23 @@ export function evaluateProbabilityChain(
   let pendingSegmentReset = false
   const evaluations: ProbabilityChainEvaluation[] = []
   // 单层累计概率是 UI 的唯一层链：红色 0%、黄色 1–99%、绿色 100%。
-  const record = (layer: ProbabilityChainLayer, layerChance: number): void => {
+  const record = (layer: ProbabilityChainLayer, layerChance: number, reached = true): void => {
     evaluations.push({
       ...layer,
       chance,
       probChance: chance,
       layerChance,
+      reached,
     })
   }
   const fail = (index: number, layer: ProbabilityChainLayer | null | undefined, layerChance = 0): { chance: number; layers: ProbabilityChainEvaluation[] } => {
     chance = 0
-    if (layer) record(layer, layerChance)
+    // 失败层本身到达过（它就是挡下/耗尽的那层）；后续层未到达。
+    if (layer) record(layer, layerChance, true)
     // 概率归零后仍保留到首个 Primary 的完整层链：结果卡/轨迹用这条链，
-    // 提前截断会让后续主装甲层行、层点与轨迹终点整段消失；剩余层统一累计 0%。
-    for (let j = index + 1; j < all.length; j++) record(all[j], 0)
+    // 提前截断会让后续主装甲层行、层点与轨迹终点整段消失；剩余层统一累计 0%，
+    // 但标记 reached=false，展示层用中性灰而不是“挡下红”。
+    for (let j = index + 1; j < all.length; j++) record(all[j], 0, false)
     return { chance: 0, layers: evaluations }
   }
 

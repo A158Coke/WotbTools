@@ -4,6 +4,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
+import { thicknessToColor } from './armorThicknessPalette.js'
+import { SCENE_RESULT_COLORS } from './shotResultPalette.js'
 import type { ArmorMeshStateParams } from './armorMeshState.js'
 
 const THICKNESS: Record<string, number> = { 'hull:10': 100, 'hull:11': 45, 'turret:2': 250, 'gun:3': 30 }
@@ -11,18 +13,12 @@ const THICKNESS: Record<string, number> = { 'hull:10': 100, 'hull:11': 45, 'turr
 function thicknessOf(section: string, plateId: string): number | null {
     return THICKNESS[`${section}:${plateId}`] ?? null
 }
-function colorOf(t: number | null | undefined): number {
-    if (t == null) return 0x666666
-    if (t >= 200) return 0x8B0000
-    if (t >= 100) return 0xFF4500
-    return 0x228B22
-}
 
 function params(over: Partial<ArmorMeshStateParams> = {}): ArmorMeshStateParams {
     return {
         key: 'hull:10', plateId: '10', section: 'hull',
         active: true, spaced: false, collisionMode: false,
-        thicknessOf, colorOf, ...over,
+        thicknessOf, colorOf: thicknessToColor, ...over,
     }
 }
 
@@ -75,7 +71,7 @@ describe('applyArmorStateToMesh — 激活板', () => {
         const node = meshNamed('hull_state_01_armor_10')
         applyArmorStateToMesh(node, params({ collisionMode: true }))
         const mat = node.material as THREE.MeshStandardMaterial
-        expect(mat.color.getHex()).toBe(0xFF4500)
+        expect(mat.color.getHex()).toBe(SCENE_RESULT_COLORS.BLOCKED)
         expect(mat.opacity).toBe(0.95)
         expect(mat.depthWrite).toBe(true)
     })

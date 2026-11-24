@@ -34,7 +34,6 @@ import { shellLabel } from '../scene/tankMeta.js'
 import './agent-armor-view.css'
 import './agent-armor-view-responsive.css'
 import './agent-armor-view-hud-responsive.css'
-
 const { t, te } = useI18n()
 const route = useRoute()
 const {
@@ -107,7 +106,6 @@ const shooterConfigValue = computed(() => {
   const scfg = route.query.scfg
   return scfg != null && scfg !== '' ? scfg : null
 })
-
 const {
   replaceArmorSetupQuery, syncNativeTargetConfig, syncNativeShell, syncNativeEquipment, applyShotSetup, applySide,
 } = useArmorSetupQuery({
@@ -439,7 +437,7 @@ onBeforeUnmount(() => {
                 <select id="shell-select"></select>
             </div>
             <div id="view-toggle">
-                <button id="collision-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.show_collision') }}</button>
+                <button id="collision-btn" type="button" aria-pressed="false" :title="$t('armor.thickness_scale')" :disabled="!viewerReady">{{ $t('armor.show_collision') }}</button>
                 <button id="penetration-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.heatmap') }}</button>
                 <!-- 装甲组成显隐只在装甲厚度视图可用（场景按 collisionMode 显示这一行） -->
                 <div id="armor-filters" class="armor-filters" hidden>
@@ -448,6 +446,8 @@ onBeforeUnmount(() => {
                     <button id="filter-external" type="button" class="active" aria-pressed="true">{{ $t('armor.filter_external') }}</button>
                 </div>
             </div>
+            <div id="armor-result-legend" class="armor-legend" role="list" :aria-label="$t('armor.result_legend')"><span class="armor-legend-item is-pen" role="listitem"><i aria-hidden="true"></i>{{ $t('armor.legend_penetration') }}</span><span class="armor-legend-item is-may" role="listitem"><i aria-hidden="true"></i>{{ $t('armor.legend_may_penetrate') }}</span>
+                <span class="armor-legend-item is-rico" role="listitem"><i aria-hidden="true"></i>{{ $t('armor.legend_ricochet') }}</span><span class="armor-legend-item is-blocked" role="listitem"><i aria-hidden="true"></i>{{ $t('armor.legend_blocked') }}</span></div>
         </div>
         <div id="corner-br">
             <div v-if="!isShotPage" id="controls-hint">{{ hint }}</div>

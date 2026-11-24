@@ -114,15 +114,21 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         // 渲染顺序：热力图 pass 之后再叠一次特效 pass（否则被 0.5/0.95 alpha 盖掉）。
         expect(viewer).toMatch(/renderer\.render\(hm\.getPrimaryArmorScene\(\), camera\); \}\s*\n\s*renderFxPass\(\);/);
         expect(viewer).toMatch(/renderer\.render\(scene, camera\);\s*\n\s*renderFxPass\(\);/);
-        // 特效之间也按 renderOrder 定序（全部 depthTest:false）：球壳 996 → 轨迹 997
-        // → 命中点 999 → 靶环 1000。renderOrder 不随父级继承，必须写在 mesh 上。
-        expect(heVisual).toContain('sphere.renderOrder = 996;');
+        // 特效之间也按 renderOrder 定序（全部 depthTest:false）：球壳 995 → 射线描边 996
+        // → 射线核心/层点 997 → 命中点 999（靶环已删除）。renderOrder 不随父级继承。
+        expect(heVisual).toContain('sphere.renderOrder = 995;');
         expect(heVisual).not.toContain('group.renderOrder = 998;');
-        // 轨迹 997 的 renderOrder 定序已随几何出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：
-        // 由 factory 的 traverse 统一写在 mesh 上，场景侧不再出现第二处设置。
+        // 轨迹 renderOrder 定序已下移到 overlayStroke 原语（描边 996 / 核心与层点 997），
+        // 场景侧不再出现第二处设置。
         expect(viewer).toContain('getFxScene().add(trajGroup);');
-        expect(trajectoryGeometry).toContain('group.traverse((o) => { if (o instanceof THREE.Mesh) o.renderOrder = 997 })');
-        expect(viewer).toContain('ring.renderOrder = 1000;');
+        // 屏幕空间射线/圆点原语已出仓 overlayStroke：轨迹工厂不再自建 Tube/球点。
+        expect(trajectoryGeometry).toContain("from './overlayStroke.js'");
+        expect(trajectoryGeometry).toContain('createScreenSpacePolyline');
+        expect(trajectoryGeometry).not.toMatch(/new THREE\.TubeGeometry/);
+        expect(trajectoryGeometry).not.toMatch(/new THREE\.SphereGeometry/);
+        // 命中靶环已删除（2026-11-24 用户裁示）：命中点改用屏幕空间结果色圆点。
+        expect(viewer).not.toContain('RingGeometry');
+        expect(viewer).toContain('createScreenSpaceDot(');
         // fxScene 没有背景：pass 内必须临时关闭 autoClear，否则整帧被清空。
         expect(viewer).toMatch(/const prevAutoClear = renderer\.autoClear;\s*\n\s*renderer\.autoClear = false;\s*\n\s*renderer\.render\(fxScene, camera\);\s*\n\s*renderer\.autoClear = prevAutoClear;/);
     });

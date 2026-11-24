@@ -2,6 +2,7 @@
 // 依赖读取统一经宿主对象 S。
 import { defaultStateId } from '../../data/armorStates.js'
 import { dollyZoomFov } from '../viewer/viewerMath.js'
+import { disposeHitMarker, updateOverlayResolution } from '../viewer/overlayStroke.js'
 import { resetViewerGlobals } from './viewerGlobals.js'
 import type { Host } from '../tankViewer.js'
 import { bind } from '../hostBind.ts'
@@ -33,7 +34,7 @@ function refreshEquipmentEffects(S: Host) {
             // 依资源存在与否，replay 的权威重判分支保持原样。
             if (!S.QP.get('shot') && (S.jc.getLastClickNdc() || S.hm.getHeHeatmapCenter())) {
                 S.tc.tidyTrajectory();
-                if (window.__hitMarker) { S.fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
+                disposeHitMarker(S.fxScene);
                 S.jc.clearLastClickNdc();
             }
             if (S.penetrationMode || S.hm.getPrimaryArmorScene()) {
@@ -73,7 +74,7 @@ function setupEventHandlers(S: Host) {
                         // 清理与「叠加层资源是否存在」解耦：厚度视图里叠加层已释放，
                         // 上一发的爆点/轨迹仍必须清（Codex 复核 P2，2026-10-30）。
                         S.tc.tidyTrajectory();
-                        if (window.__hitMarker) { S.fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
+                        disposeHitMarker(S.fxScene);
                         S.jc.clearLastClickNdc();
                     }
                     // 清理之后再统一裁决叠加层（HE→非 HE 释放、HE+爆点保留/重建）。
@@ -127,6 +128,7 @@ function setupEventHandlers(S: Host) {
                 // 组成显隐只在厚度视图可用；退出时复位为全显示
                 if (!S.collisionMode) S.cvs.resetArmorFilters();
                 S.setArmorFilterRowVisible(S.collisionMode);
+                S.setResultLegendVisible(!S.collisionMode);
                 if (!S.collisionMode) { S.cvs.resetArmorHighlight(); byId('click-info').style.display = 'none'; }
                 if (!S.ml.models.armorModel) { S.hm.syncHeatOverlay(); return; }
                 S.cvs.applyArmorViewStyle(S.collisionMode);
@@ -272,9 +274,20 @@ function renderFxPass(S: Host) {
             S.renderer.autoClear = prevAutoClear;
         }
 
+/** 屏幕空间覆盖物的 resolution 必须在**任何渲染之前**同步：fxScene 与射击复现的
+ *  世界标注组（__worldAnno）可能不同时存在，且首帧 (1,1) 会把 2px 线画成整屏粗带。 */
+function syncOverlayResolution(S: Host) {
+            if (!S.renderer) return;
+            const width = S.renderer.domElement.clientWidth;
+            const height = S.renderer.domElement.clientHeight;
+            if (S.fxScene) updateOverlayResolution(S.fxScene, width, height);
+            if (window.__worldAnno) updateOverlayResolution(window.__worldAnno, width, height);
+        }
+
 function animate(S: Host) {
             if (S.destroyed || S.contextLost) return;
             S.hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
+            syncOverlayResolution(S);
             S.rafId = requestAnimationFrame(S.animate);
             S.controls.update();
             // 单车装甲检视：Armor Inspector 实测 15m/18.75° + 40° 上限；

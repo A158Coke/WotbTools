@@ -235,7 +235,7 @@ export interface ShotCtx {
   segResult?: number
   eqShooter?: EquipmentSpec | null
   eqTarget?: EquipmentSpec | null
-  fragValidated?: boolean
+  fragValidated?: boolean | null
 }
 
 /** 射击调试面板记录（trajectoryCard 写入；允许不同模式扩展字段）。 */
@@ -298,7 +298,6 @@ declare global {
     __debugOn?: boolean
     __debugSetVisible?: ((visible: boolean) => void) | null
     __hitMarker?: THREE.Object3D | null
-    __hitMarkerRing?: THREE.Object3D | null
     __armorDebugLast?: ArmorDebugRecord
     __heCardDebug?: Record<string, unknown> | null
     __armorRicochet?: ArmorRicochetProbe | null

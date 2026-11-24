@@ -8,6 +8,7 @@
  * 原实现等价的卡片 HTML（结构、class、style、escaping、显示顺序、概率格式不变）。
  */
 import { formatProbabilityPercent } from '../armorInspectorChance.js'
+import { RESULT_CSS_VAR, layerResultRole, resultRoleForOutcome, type ShotResultRole } from './shotResultPalette.js'
 import type { shotResultCardMetrics } from '../../utils/shotResultCardMetrics.js'
 
 /** 卡片尺寸口径（utils/shotResultCardMetrics.js 的返回）。 */
@@ -20,6 +21,10 @@ export interface ShotResultCardLayer {
   eff?: number | null
   angle?: number | null
   chance?: number | null
+  /** 该层自身的局部概率（evaluateProbabilityChain 的 layerChance）。 */
+  layerChance?: number | null
+  /** 炮弹是否到达该层；概率链归零后的后续层为 false。 */
+  reached?: boolean
   penetrated?: boolean
   ricochet?: boolean
   seg?: number | null
@@ -72,6 +77,8 @@ export interface ShotResultCardLabels {
   shotLoss: string
   shotNominal: string
   shotBlocked: string
+  /** 片元交叉验证与服务器装甲组不一致时的卡片徽标。 */
+  fragMismatch: string
 }
 
 /** renderShotResultCardHtml 的显式输入（全部由调用方计算）。 */
@@ -87,8 +94,10 @@ export interface ShotResultCardInput {
   dmgVal: number
   distVal: number
   dmgDealt: number
-  /** 轨迹/结果色（场景按最终判定算出的数值色）。 */
-  trajectoryColor: number
+  /** 最终判定角色（卡片标题/边框与 3D 射线共用；值域见 shotResultPalette）。 */
+  resultRole: ShotResultRole
+  /** 调用方已算好的逐层结果角色（与 3D 接触点共用）；缺省时按 layerResultRole 回退。 */
+  layerRoles?: ReadonlyArray<ShotResultRole>
   cardChance: number
   heInfo: ShotResultCardHeInfo | null
   heChance: number
@@ -99,6 +108,8 @@ export interface ShotResultCardInput {
   hasChance: boolean
   chancePartial: boolean
   blockedNoPrimary: boolean
+  /** 片元校验：true 一致 / false 不一致 / null 无服务器装甲组可比。 */
+  fragValidated?: boolean | null
   cardMetrics: ShotResultCardMetrics
   cardMaxWidth: number | null
   labels: ShotResultCardLabels
@@ -111,6 +122,26 @@ const escapeText = (value: unknown): string =>
   String(value ?? '').replace(/[&<>"']/g, (ch) => ESCAPE_MAP[ch])
 
 /**
+ * 续飞段逐层局部概率解析器（唯一 owner）：按 `seg` 顺序消费 partial chain，
+ * 卡片层行与 3D 接触点共用同一份结果。没有 partial chain / seg=0 时返回 null。
+ */
+export function createPartialChanceResolver(
+  partialChainLayers: ReadonlyArray<ShotResultCardLayer> | null,
+): (layer: ShotResultCardLayer) => number | null {
+  let partialCursor = 0
+  return (layer) => {
+    const layerSeg = layer.seg ?? 0;
+    if (!partialChainLayers || !(layerSeg > 0)) return null;
+    while (partialCursor < partialChainLayers.length && (partialChainLayers[partialCursor].seg ?? 0) < layerSeg) partialCursor++;
+    const ev = partialChainLayers[partialCursor];
+    if (!ev || (ev.seg ?? 0) !== layerSeg) return null;
+    partialCursor++;
+    const local = Number.isFinite(ev.layerChance) ? (ev.layerChance ?? 0) : ev.chance;
+    return Number.isFinite(local) ? (local ?? 0) : null;
+  };
+}
+
+/**
  * 结果卡 HTML：与原 showTrajectory() 的拼装等价。
  * 卡片宽度/紧凑档由调用方按画布容器与视口算好（cardMetrics/cardMaxWidth）传入；
  * renderer 不读 window/document。
@@ -118,20 +149,17 @@ const escapeText = (value: unknown): string =>
 export function renderShotResultCardHtml(input: ShotResultCardInput): string {
   const {
     result, layers, partialChainLayers, chancePen,
-    dmgVal, distVal, dmgDealt, trajectoryColor,
+    dmgVal, distVal, dmgDealt, resultRole, layerRoles,
     cardChance, heInfo, heChance, heDirectHit,
     probabilityMode, overallChance, hasChance, chancePartial, blockedNoPrimary,
+    fragValidated = null,
     cardMetrics, cardMaxWidth, labels: L,
   } = input
   // ===== 结果面板（对照 BlitzKit ShotDisplayCard）=====
   // 结构：状态+伤害标题（按状态着色）→ 逐层行（主/间隙=等效@角度+名义厚度、
   // 外部模块=flat 厚度、HEAT 间隙=距离+穿深损耗）；跳弹时中间分隔「-25% 穿深」
   // 再出第二段标题。无 Dist / Remain / 汇总行（BlitzKit 卡片不展示这些）。
-  const ST_COLOR: Record<string, string> = {
-    PENETRATION: 'var(--green)', BLOCKED: 'var(--red)', RICOCHET: 'var(--orange)',
-    SPLASH: 'var(--orange)', ERROR: 'var(--red)',
-  }
-  const stColor = (st: string) => ST_COLOR[st] || 'var(--orange)';
+  const stColor = (st: string) => RESULT_CSS_VAR[resultRoleForOutcome(st)];
   const fmtNum = (v: number) => {
     const r = Math.round(v);
     return Math.abs(r - v) < 0.05 ? String(r) : (Math.round(v * 10) / 10).toFixed(1);
@@ -142,7 +170,6 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
     return Number.isFinite(n) ? String(Number(n.toFixed(2))) : '-';
   };
   const segments = result.split('→').map(x => x.trim()).filter(Boolean);
-  const colorHex = '#' + trajectoryColor.toString(16).padStart(6, '0');
   const probabilityColorCss = (chance: number) => chance >= 1 ? 'var(--green)' : (chance > 0 ? 'var(--yellow)' : 'var(--red)');
   const cardChanceCss = probabilityColorCss(cardChance);
   // HE 结果标题/圆点：0% 但仍有溅射 → 橙色（有效溅射），0% 且无伤害 → 红色；
@@ -165,7 +192,7 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
   // 概率模式：0% 红、1–99% 黄、100% 绿；HE/跳弹保持确定性/黄色补充规则。
   const cardBorder = heInfo
     ? heTitleCss
-    : (probabilityMode ? cardChanceCss : (chancePartial ? 'var(--yellow)' : colorHex));
+    : (probabilityMode ? cardChanceCss : (chancePartial ? 'var(--yellow)' : RESULT_CSS_VAR[resultRole]));
   let html = `<div style="background:var(--tooltip-bg);border-radius:${cardMetrics.radius}px;border-left:${cardMetrics.borderWidth}px solid ${cardBorder};padding:${cardMetrics.padding};font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
   // 顶行：交战距离 · 有效穿深（距离衰减后） · 溅射半径（仅 HE）。
   // 有效穿深取判定链的 probability_penetration（d>100 时已按 far 衰减；
@@ -248,6 +275,12 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
     return s;
   };
   html += titleHtml(segments[0], segments.length === 1);
+  // 片元交叉验证徽标：3D 命中点只表达判定结果色，校验差异在这里显式说明
+  // （旧实现用命中点变红/变黄，和第二套结果色打架）。
+  if (fragValidated === false) {
+    html += `<div data-card-badge="frag-mismatch" style="font-size:${cardMetrics.expectedFont}px;color:var(--yellow);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">`
+      + `▲ ${escapeText(L.fragMismatch)}</div>`;
+  }
   if (segments.length === 1) html += chanceRowHtml();
   if (blockedNoPrimary) {
     html += `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">${escapeText(L.noPrimaryBlocked)}</div>`;
@@ -294,18 +327,9 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
     }
   }
   // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色：最终段 1–99%
-  // 时标题是“可能击穿”，对应装甲板不能仍是确定性红色；按概率链的
-  // 累计 chance 着色，首段跳弹仍保持橙色。（累计链由调用方预算。）
-  let partialCursor = 0;
-  const nextPartialChance = (layer: ShotResultCardLayer) => {
-    const layerSeg = layer.seg ?? 0;
-    if (!partialChainLayers || !(layerSeg > 0)) return null;
-    while (partialCursor < partialChainLayers.length && (partialChainLayers[partialCursor].seg ?? 0) < layerSeg) partialCursor++;
-    const ev = partialChainLayers[partialCursor];
-    if (!ev || (ev.seg ?? 0) !== layerSeg) return null;
-    partialCursor++;
-    return Number.isFinite(ev.chance) ? (ev.chance ?? 0) : null;
-  };
+  // 时标题是“可能击穿”，对应装甲板不能仍是确定性红色；按 partial chain 的
+  // **该层局部** chance 着色（与 3D 接触点同语义），首段跳弹仍保持跳弹紫。
+  const nextPartialChance = createPartialChanceResolver(partialChainLayers);
   // 有效穿深已并入顶行（距离衰减后），不再重复一行。
   if (!heInfo) {
     let layerNo = 0;
@@ -324,15 +348,17 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
         if (finalSeg) html += chanceRowHtml();
         prevSeg = segNo;
       }
-      const layerChance = probabilityMode ? (l.chance ?? 0) : null;
+      const reached = l.reached !== false;
       const partialChance = probabilityMode ? null : nextPartialChance(l);
-      const pc = blockedNoPrimary
-        ? 'var(--red)'
-        : (probabilityMode
-          ? probabilityColorCss(layerChance ?? 0)
-          : (partialChance != null
-            ? probabilityColorCss(partialChance)
-            : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'))));
+      // 卡片行与 3D 接触点共用同一份 layerRoles（调用方一次算好）；直接调用时
+      // 回退到共享 layerResultRole，避免第二套颜色分支。
+      const role = layerRoles?.[i] ?? layerResultRole({
+        layer: l,
+        probabilityMode,
+        blockedNoPrimary,
+        partialChance,
+      });
+      const pc = RESULT_CSS_VAR[role];
       const th = Number(l.thickness);
       const isGap = /^Gap /.test(l.name || '');
       let main: string, sub: string;
@@ -353,9 +379,11 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
       } else {
         // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
         main = `${fmtArmor(th)}mm`;
-        sub = probabilityMode
-          ? ((l.chance ?? 0) > 0 ? '' : L.shotBlocked)
-          : (l.penetrated ? '' : L.shotBlocked);
+        sub = !reached
+          ? ''
+          : (probabilityMode
+            ? ((l.chance ?? 0) > 0 ? '' : L.shotBlocked)
+            : (l.penetrated ? '' : L.shotBlocked));
       }
       const idx = isGap ? '' : `${++layerNo}.`;
       html += `<div style="font-size:${cardMetrics.layerFont}px;line-height:${cardMetrics.layerLine}px;">`;

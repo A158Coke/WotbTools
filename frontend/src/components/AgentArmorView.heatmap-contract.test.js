@@ -262,7 +262,7 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
   })
   it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
     // 子标签行为随结果卡出仓 viewer/shotResultCard.ts（行为断言在 shotResultCard.test.ts）。
-    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?result, layers(?:: displayLayers)?, partialChainLayers,/)
+    expect(kernel).toMatch(/renderShotResultCardHtml\(\{[\s\S]*?result, layers(?:: displayLayers)?,[\s\S]*?partialChainLayers,/)
   })
   it('跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0', () => {
     // 满伤口径（chancePartial ? dmgVal : dmgDealt）的行为断言在 shotResultCard.test.ts；

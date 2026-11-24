@@ -29,6 +29,37 @@ describe('chooseResultCardPosition', () => {
     expect(pos).toEqual({ left: 314, top: 164 })
   })
 
+  it('anchorGap：结果卡与命中点错开更大距离，不贴住命中点', () => {
+    const pos = chooseResultCardPosition({
+      clickX: 300, clickY: 150, width: 160, height: 100,
+      viewportWidth: 800, viewportHeight: 600, panels: [],
+      gap: 14, anchorGap: 24,
+    })
+    expect(pos).toEqual({ left: 324, top: 174 })
+  })
+
+  it('anchorGapY：垂直方向再往下让（结果卡 24/40 口径）', () => {
+    const pos = chooseResultCardPosition({
+      clickX: 300, clickY: 150, width: 160, height: 100,
+      viewportWidth: 800, viewportHeight: 600, panels: [],
+      gap: 14, anchorGap: 24, anchorGapY: 40,
+    })
+    expect(pos).toEqual({ left: 324, top: 190 })
+  })
+
+  it('anchorGap：右下候选被视口钳回命中点方向时改选左上，不覆盖命中点', () => {
+    const clickX = 700, clickY = 500, width = 360, height = 120
+    const pos = chooseResultCardPosition({
+      clickX, clickY, width, height,
+      viewportWidth: 800, viewportHeight: 600, panels: [],
+      gap: 14, anchorGap: 24, anchorGapY: 40,
+    })
+    expect(pos).toEqual({ left: 316, top: 340 })
+    const coversAnchor = pos.left < clickX && pos.left + width > clickX
+      && pos.top < clickY && pos.top + height > clickY
+    expect(coversAnchor).toBe(false)
+  })
+
   it('右下被占时翻到右上；左右都被占时翻到正上/正下', () => {
     const rightBottom: ResultCardRect = { left: 280, top: 140, right: 520, bottom: 280 }
     const up = chooseResultCardPosition({

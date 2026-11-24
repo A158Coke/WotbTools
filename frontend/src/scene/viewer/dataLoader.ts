@@ -7,6 +7,7 @@ import { normalizeTankCache } from '../../utils/tankopediaQuery.js'
 import { romanLevel } from '../../utils/tierFormat.js'
 import { shellTypeOf } from './armorPlateModel.js'
 import { applyArmorConfigVisible as applyArmorPrefixVisibility } from './armorPlateModel.js'
+import { disposeHitMarker } from './overlayStroke.js'
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { ModelLifecycleHandle } from './modelLifecycle.js'
 import type { TurretRigHandle } from './turretRig.js'
@@ -270,7 +271,7 @@ function applyConfig(idx: number): void {
             if (!QP.get('shot')) {
                 jcRef().bumpPenSeq();
                 tcRef().tidyTrajectory();
-                if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
+                disposeHitMarker(getFxScene());
                 jcRef().clearLastClickNdc();
             } else {
                 rerunAuthoritativeShotCheckFn();
@@ -308,7 +309,7 @@ async function loadShooter(tid: number | string): Promise<void> {
             // 射击复现仍按权威弹道重跑，不在此清空。
             if (!QP.get('shot')) {
                 tcRef().tidyTrajectory();
-                if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
+                disposeHitMarker(getFxScene());
                 jcRef().clearLastClickNdc();
             }
             try {

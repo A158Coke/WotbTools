@@ -11,6 +11,7 @@ import {
     retagSpacedSections as retagSpacedPlates,
 } from './armorPlateModel.js'
 import { replaceArmorMaterial } from './armorMeshState.js'
+import { disposeHitMarker } from './overlayStroke.js'
 
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { TankData } from './viewerContracts.js'
@@ -202,7 +203,7 @@ export function createModelLifecycle(deps: ModelLifecycleDeps): ModelLifecycleHa
         clearTrajectory();
         clearHeBlast();
         disposePenetrationResources();   // 叠加 clone 引用旧模型几何，卸载即整体释放；新模型装载路径按模式重建
-        if (window.__hitMarker) { fxScene.remove(window.__hitMarker); window.__hitMarker = null; }
+        disposeHitMarker(fxScene);
         if (window.__endMarker) { scene.remove(window.__endMarker); window.__endMarker = null; }
         if (window.__dbgGroup) { scene.remove(window.__dbgGroup); window.__dbgGroup = null; }
         releaseModuleMaterialCaches();

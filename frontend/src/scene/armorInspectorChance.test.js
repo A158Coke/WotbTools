@@ -169,8 +169,10 @@ describe('Armor Inspector 逐层概率', () => {
     expect(r.layers).toHaveLength(2)
     expect(r.layers[0].chance).toBeCloseTo(normalCdf(1.2), 5)
     expect(r.layers[0].layerChance).toBeCloseTo(normalCdf(1.2), 5)
+    expect(r.layers[0].reached).toBe(true)
     expect(r.layers[1].layerChance).toBeCloseTo(0.5, 5)
     expect(r.layers[1].chance).toBeCloseTo(r.chance, 10)
+    expect(r.layers[1].reached).toBe(true)
   })
 
   it('camelCase 字段（tankViewer trajLayers）同样可用', () => {
@@ -190,6 +192,20 @@ describe('Armor Inspector 逐层概率', () => {
     expect(r.chance).toBe(0)
     expect(r.layers.map(l => l.part_name)).toEqual(['track', 'hull'])
     expect(r.layers.map(l => l.chance)).toEqual([0, 0])
+    // 挡下层到达过；其后的层未到达（展示为中性灰，不冒充“挡下红”）。
+    expect(r.layers.map(l => l.reached)).toEqual([true, false])
+  })
+
+  it('中间层挡下：后续层 reached=false，不参与“挡下”语义', () => {
+    const layers = [
+      { part_name: 'spaced', section: 'spaced', thickness: 20, effective: 20, external: false, gap: false, ricochet: false },
+      { part_name: 'hull', section: 'hull', thickness: 300, effective: 300, external: false, gap: false, ricochet: false },
+      { part_name: 'turret', section: 'turret', thickness: 80, effective: 80, external: false, gap: false, ricochet: false },
+    ]
+    const r = evaluateProbabilityChain(200, layers)
+    expect(r.chance).toBe(0)
+    expect(r.layers.map(l => l.reached)).toEqual([true, true, false])
+    expect(r.layers[1].layerChance).toBe(0)
   })
 })
 
