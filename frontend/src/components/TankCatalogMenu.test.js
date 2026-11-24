@@ -125,6 +125,54 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it('机动 opt-in：同一模态内切换筛选，保留搜索、结果节点和隐藏草稿，完成后才允许确认', async () => {
+    layout.compact = true
+    const wrapper = mountMenu({ layout: 'dialog', inlineFilters: true, multiple: true })
+    await wrapper.get('#tp-search').setValue('e100')
+    await wrapper.get('[data-tank-id="3"]').trigger('click')
+    const results = wrapper.get('.tp-results').element
+    const toggle = wrapper.get('[data-testid="filter-toggle"]').element
+    toggle.focus()
+    await wrapper.get('[data-testid="filter-toggle"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="catalog-filter-panel"]').isVisible()).toBe(true)
+    expect(wrapper.get('.tp-results').isVisible()).toBe(false)
+    expect(wrapper.get('.tc-bulk-bar').isVisible()).toBe(false)
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('filter-sheet-done')
+    await wrapper.get('#tp-nation [data-value="ussr"]').trigger('click')
+    await wrapper.get('[data-testid="filter-sheet-done"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.tp-results').element).toBe(results)
+    expect(wrapper.get('#tp-search').element.value).toBe('e100')
+    expect(wrapper.get('.tc-bulk-bar').text()).toContain('"hidden":1')
+    expect(document.activeElement).toBe(toggle)
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+    await wrapper.get('.tc-bulk-bar button:last-of-type').trigger('click')
+    expect(wrapper.emitted('confirm')[0][0].map(tank => tank.id)).toEqual([3])
+    wrapper.unmount()
+  })
+
+  it('机动子面板 Escape 不传给外层；未显式启用的 dialog 仍使用 Sheet', async () => {
+    layout.compact = true
+    const wrapper = mountMenu({ layout: 'dialog', inlineFilters: true })
+    await wrapper.get('[data-testid="filter-toggle"]').trigger('click')
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+    wrapper.get('[data-testid="filter-sheet-done"]').element.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(outer).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="catalog-filter-panel"]').isVisible()).toBe(false)
+    window.removeEventListener('keydown', outer)
+    wrapper.unmount()
+    const armor = mountMenu({ layout: 'dialog' })
+    await armor.get('[data-testid="filter-toggle"]').trigger('click')
+    await flushPromises()
+    expect(armor.find('[role="dialog"] [data-testid="tank-filters"]').exists()).toBe(true)
+    expect(armor.find('[data-testid="catalog-filter-panel"]').exists()).toBe(false)
+    armor.unmount()
+  })
+
   it('compact 筛选 sheet：焦点进入 sheet，Escape 关闭 sheet 并把焦点还给筛选按钮', async () => {
     layout.compact = true
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
