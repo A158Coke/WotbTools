@@ -1,6 +1,7 @@
 // 装甲视图 owner（2026-11-22 自 tankViewer.js 闭包出仓，纯搬移）：厚度取色、装甲筛选行、
 // 点击录制与 URL 选项/预设应用。依赖读取统一经宿主对象 S。
 import { plateThickness } from '../viewer/armorPlateModel.js'
+import { thicknessToColor as thicknessColor } from '../viewer/armorThicknessPalette.js'
 import type { Host } from '../tankViewer.js'
 import { bind } from '../hostBind.ts'
 import { byId } from './domById.ts'
@@ -10,12 +11,7 @@ function getPlateThickness(S: Host, section: string, plateId: string | number) {
         }
 
 function thicknessToColor(_S: Host, t: number | null | undefined) {
-            if (t === null || t === undefined) return 0x666666;
-            if (t >= 200) return 0x8B0000;
-            if (t >= 100) return 0xFF4500;
-            if (t >= 60) return 0xFFA500;
-            if (t >= 30) return 0xFFD700;
-            return 0x228B22;
+            return thicknessColor(t);
         }
 
 function hookRcClickRecorder(S: Host) {
@@ -31,12 +27,19 @@ function setArmorFilterRowVisible(_S: Host, visible: boolean) {
             if (row) row.hidden = !visible;
         }
 
+/** 结果色图例只在有射线/热力图的视图（默认/击穿）显示；厚度视图的点选卡不判定。 */
+function setResultLegendVisible(_S: Host, visible: boolean) {
+            const legend = document.getElementById('armor-result-legend');
+            if (legend) legend.hidden = !visible;
+        }
+
 export function bindTankArmor(S: Host) {
   Object.assign(S, {
     getPlateThickness: bind(S, getPlateThickness),
     thicknessToColor: bind(S, thicknessToColor),
     hookRcClickRecorder: bind(S, hookRcClickRecorder),
     setArmorFilterRowVisible: bind(S, setArmorFilterRowVisible),
+    setResultLegendVisible: bind(S, setResultLegendVisible),
   })
 }
 
@@ -127,6 +130,7 @@ export function initTankArmor(S: Host) {
                 cb.setAttribute('aria-pressed', 'false');
                 S.cvs.resetArmorFilters();
                 S.setArmorFilterRowVisible(false);
+                S.setResultLegendVisible(true);
                 S.cvs.setHighlightedArmorNode(null);
                 S.cvs.applyArmorViewStyle(false);
             }

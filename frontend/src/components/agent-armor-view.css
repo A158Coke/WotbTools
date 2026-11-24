@@ -4,7 +4,9 @@
     --bg: var(--color-canvas); --panel: color-mix(in srgb, var(--color-surface-1) 96%, transparent);
     --panel2: var(--color-surface-2); --border: var(--color-border-subtle); --border-hi: var(--color-border-strong);
     --accent: var(--color-accent-text); --accent-2: var(--color-accent-text); --accent-3: var(--color-text-primary);
-    --green: var(--color-success); --orange: var(--color-warning); --red: var(--color-danger);
+    --green: var(--color-success); --orange: color-mix(in oklab, var(--color-warning) 55%, var(--color-danger)); --red: var(--color-danger);
+    /* 跳弹紫 = 热力图跳弹高亮（--color-ricochet）的同色相别名；与文本主色混色保证明暗主题可读。 */
+    --purple: color-mix(in oklab, var(--color-ricochet) 62%, var(--color-text-primary));
     --blue: var(--color-info); --yellow: var(--color-warning); --txt: var(--color-text-primary); --muted: var(--color-text-secondary);
     --shadow: var(--elevation-2); --radius: var(--radius-lg); --radius-sm: var(--radius-md);
     --input-bg: var(--color-surface-2); --input-bg-hover: var(--color-surface-3);
@@ -77,6 +79,8 @@
     gap: var(--space-2);
     inline-size: var(--armor-shot-card-width);
     max-inline-size: 42%;
+    max-block-size: calc(100% - var(--space-10));
+    overflow-y: auto;
     padding: var(--space-2);
     background: var(--panel);
     border: 1px solid var(--border);
@@ -99,6 +103,24 @@
     border-block-start: 1px solid var(--color-border-subtle);
 }
 .armor-view .armor-filters[hidden] { display: none; }
+/* 结果色图例：与射线/层点/卡片标题同一套语义别名；厚度视图由场景脚本隐藏。 */
+.armor-view .armor-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    font: var(--type-caption);
+}
+.armor-view .armor-legend[hidden] { display: none; }
+.armor-view .armor-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.armor-view .armor-legend-item i { inline-size: 8px; block-size: 8px; border-radius: var(--radius-full); corner-shape: round; }
+.armor-view .armor-legend-item.is-pen i { background: var(--green); }
+.armor-view .armor-legend-item.is-may i { background: var(--yellow); }
+.armor-view .armor-legend-item.is-rico i { background: var(--purple); }
+.armor-view .armor-legend-item.is-blocked i { background: var(--red); }
 .armor-view :is(#view-toggle button, .armor-scene-button) { padding: var(--space-2) var(--space-3); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); font: var(--type-caption); }
 .armor-view #view-toggle button:hover { border-color: var(--accent); }
 .armor-view :is(#view-toggle button.active, .armor-scene-button[aria-pressed="true"]) { background: var(--color-accent); color: var(--color-on-accent); border-color: transparent; }

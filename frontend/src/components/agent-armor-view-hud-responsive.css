@@ -136,6 +136,8 @@
         padding: 4px;
         gap: 4px;
     }
+    /* 结果色图例是桌面/平板的补充说明；短横屏 HUD 高度预算不允许多一行。 */
+    .armor-view #armor-result-legend { display: none; }
     .armor-view #view-toggle {
         display: grid;
         flex: 0 0 auto;

@@ -30,9 +30,9 @@ function updateHeSplashVisual(center: THREE.Vector3 | null, radius: number) {
                 }),
             );
             sphere.raycast = () => {};
-            // renderOrder 不随父级继承，必须写在 mesh 上：球壳先画（996），轨迹线/命中
-            // 标记后画，否则按距离排序可能让球壳的橙色薄涂在轨迹线上。
-            sphere.renderOrder = 996;
+            // renderOrder 不随父级继承，必须写在 mesh 上：球壳先画（995），轨迹描边/核心
+            // （996/997）与命中点（999）后画，否则按距离排序可能让球壳的橙色薄涂在轨迹线上。
+            sphere.renderOrder = 995;
             group.add(sphere);
             group.visible = getPenetrationMode();
             getFxScene().add(group);

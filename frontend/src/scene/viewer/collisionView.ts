@@ -253,7 +253,8 @@ function applyModuleCollisionMaterial(on: boolean): void {
                 if (on) {
                     if (!moduleOriginalMaterials.has(mesh)) moduleOriginalMaterials.set(mesh, mesh.material);
                     const t = Number(mesh.userData.armorThickness);
-                    const color = thicknessToColor(Number.isFinite(t) ? t : 0);
+                    // 缺失厚度（NaN）= 未知灰；不再折成 0mm 的薄板绿。
+                    const color = thicknessToColor(t);
                     const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
                     let mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
                     if (!mat) {

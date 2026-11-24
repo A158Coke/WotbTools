@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { poseFromYPR } from '../glbRig.js'
 import { shotResultClass } from '../../utils/shotResultClass.js'
 import { shellTypeOf } from './armorPlateModel.js'
+import { ANNOTATION_COLORS, cssHex } from './shotResultPalette.js'
 import type {
     PoseTickSample, ReplayShot, ShellSpec, TankData, Vec3,
 } from './viewerContracts.js'
@@ -311,17 +312,17 @@ export function buildWorldPanelHtml(
         (qIssues.length ? '<div class="ctrl-row" style="font-size:10px;color:var(--yellow);">⚠ '
             + qIssues.join(' · ') + '</div>' : '') +
         '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
-        '<span style="color:#ff6622;">●</span> LaunchPoint <span style="color:#00ccff;">┄</span> 速度向量 ' +
-        '<span style="color:#00ff00;">—</span> 弹道弦 <span style="color:#ff2222;">●</span> 弹着点 ' +
-        '<span style="color:#ffcc00;">●</span> 服务器终点 ' +
-        '<span style="color:#cc66ff;">●</span> 炮闩(发射起点) <span style="color:#fff;">┄</span> 偏差线</div>' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.launch) + ';">●</span> LaunchPoint <span style="color:' + cssHex(ANNOTATION_COLORS.velocity) + ';">┄</span> 速度向量 ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.chord) + ';">—</span> 弹道弦 <span style="color:' + cssHex(ANNOTATION_COLORS.impact) + ';">●</span> 弹着点 ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.endpoint) + ';">●</span> 服务器终点 ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.breech) + ';">●</span> 炮闩(发射起点) <span style="color:' + cssHex(ANNOTATION_COLORS.deviation) + ';">┄</span> 偏差线</div>' +
         '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
-        '<span style="color:#33ff66;">↑</span>履带朝向 <span style="color:#00ccff;">↑</span>位移方向 ' +
-        '<span style="color:#ff6622;">↑</span>倒车(橙) <span style="color:#ffdd33;">↑</span>转向(黄) ' +
-        '<span style="color:#00ccff;">—</span>tick路径(3D)</div>' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.trackHeading) + ';">↑</span>履带朝向 <span style="color:' + cssHex(ANNOTATION_COLORS.velocity) + ';">↑</span>位移方向 ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.launch) + ';">↑</span>倒车(橙) <span style="color:' + cssHex(ANNOTATION_COLORS.turn) + ';">↑</span>转向(黄) ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.velocity) + ';">—</span>tick路径(3D)</div>' +
         '<div class="ctrl-row" style="font-size:10px;color:var(--muted);">' +
-        '<span style="color:#00ffcc;">●</span>基准点·受击(type10锚) ' +
-        '<span style="color:#00aaff;">●</span>基准点·射手(type10锚)</div>' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.victimAnchor) + ';">●</span>基准点·受击(type10锚) ' +
+        '<span style="color:' + cssHex(ANNOTATION_COLORS.shooterAnchor) + ';">●</span>基准点·射手(type10锚)</div>' +
         '<div class="ctrl-row"><label style="font-size:11px;cursor:pointer;">' +
         '<input type="checkbox" id="move-toggle" checked> 移动方向标注</label>' +
         '<span id="move-err" style="font-size:10px;color:var(--blue);margin-left:8px;"></span></div>';

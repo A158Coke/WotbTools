@@ -304,6 +304,8 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).not.toMatch(/this\.textContent = penetrationMode/)
     expect(kernel).not.toMatch(/this\.textContent = collisionMode/)
     expect(kernel).toMatch(/setArmorFilterRowVisible\(collisionMode\)/)
+    expect(read('./AgentArmorView.vue')).toMatch(/id="armor-result-legend"/)
+    expect(kernel).toMatch(/setResultLegendVisible\(!collisionMode\)/)
     expect(kernel).toMatch(/if \(!collisionMode\) cvs\.resetArmorFilters\(\);/)
     expect(read('./AgentArmorView.vue')).toMatch(/id="armor-filters"/)
     expect(kernel).toMatch(/const hiddenCategories(?:: Record<ArmorCategory, boolean>)? = \{ primary: false, spaced: false, external: false \}/)

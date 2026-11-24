@@ -1,14 +1,16 @@
 /**
- * shotTrajectoryGeometry 单测（Issue #820 Wave B3B）。
+ * shotTrajectoryGeometry 单测（Issue #820 Wave B3B；2026-11 射线视觉重做）。
  *
- * 使用真实 Three.js 几何对象锁工厂不变量：Tube/标记结构、跳弹截断与续飞段、
- * 层色与 renderOrder、材质深度/透明参数、300m 默认回退、输入向量不可变、
- * 不挂载到任何 scene。等价基准 = 原 tankViewer.showTrajectory() 的几何分支。
+ * 使用真实 Three.js 对象锁工厂不变量：屏幕空间 Line2 射线（2px 核心 + 4px 描边）、
+ * 层点角色色、跳弹截断与续飞段、renderOrder、300m 默认回退、输入向量不可变、
+ * 不挂载到任何 scene。等价基准 = 装甲判定链的层链语义。
  */
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { createShotTrajectoryGroup, trajectoryChanceColor, trajectoryLayerColor } from './shotTrajectoryGeometry.js'
+import { Line2 } from 'three/addons/lines/Line2.js'
+import { createShotTrajectoryGroup, SHOT_TRAJECTORY_STYLE } from './shotTrajectoryGeometry.js'
 import type { ShotTrajectoryGeometryLayer } from './shotTrajectoryGeometry.js'
+import { SCENE_RESULT_COLORS, layerResultRole, sceneResultColor } from './shotResultPalette.js'
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
 
@@ -16,97 +18,91 @@ function layer(partial: Partial<ShotTrajectoryGeometryLayer> & { point: THREE.Ve
   return { ...partial }
 }
 
-function positionBox(mesh: THREE.Mesh): THREE.Box3 {
-  const attr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute
-  return new THREE.Box3().setFromBufferAttribute(attr)
+function lineObjects(group: THREE.Object3D): Line2[] {
+  const out: Line2[] = []
+  group.traverse((o) => { if (o instanceof Line2) out.push(o) })
+  return out
 }
-function meshChildren(group: THREE.Group): THREE.Mesh[] {
-  const out: THREE.Mesh[] = []
-  group.traverse((o) => { if (o instanceof THREE.Mesh) out.push(o) })
+function dotObjects(group: THREE.Object3D): THREE.Points[] {
+  const out: THREE.Points[] = []
+  group.traverse((o) => { if (o instanceof THREE.Points) out.push(o) })
+  return out
+}
+/** 每个折线是一个 Group（描边 + 核心），用于区分 incoming / reflected 段。 */
+function polylineGroups(group: THREE.Object3D): THREE.Group[] {
+  const out: THREE.Group[] = []
+  group.traverse((o) => { if (o instanceof THREE.Group && o.userData.overlayRole === 'polyline') out.push(o) })
   return out
 }
 
-function tubeMeshes(group: THREE.Group): THREE.Mesh[] {
-  return meshChildren(group).filter((m) => m.geometry instanceof THREE.TubeGeometry)
-}
-
-function dotMeshes(group: THREE.Group): THREE.Mesh[] {
-  return meshChildren(group).filter((m) => m.geometry instanceof THREE.SphereGeometry)
-}
-
-/** 轨迹材质：tube 与 dot 分别的 MeshBasicMaterial 形状（depthTest off、透明）。 */
-function assertTrajMaterial(mat: THREE.Material, color: number, opacity: number): void {
-  expect(mat).toBeInstanceOf(THREE.MeshBasicMaterial)
-  const basic = mat as THREE.MeshBasicMaterial
-  expect(basic.color.getHex()).toBe(color)
-  expect(basic.depthTest).toBe(false)
-  expect(basic.transparent).toBe(true)
-  expect(basic.opacity).toBe(opacity)
-}
-
 describe('createShotTrajectoryGroup — 结构', () => {
-  it('空层链：无 tube、无标记，lastPoint 回落 firstPoint', () => {
+  it('空层链：无射线、无层点，lastPoint 回落 firstPoint', () => {
     const first = v(1, 2, 3)
     const { group, lastPoint } = createShotTrajectoryGroup({
-      firstPoint: first, cameraPosition: v(1, 2, 103), layers: [], color: 0x4CAF50, probabilityMode: false,
+      firstPoint: first, cameraPosition: v(1, 2, 103), layers: [], resultRole: 'PENETRATION', probabilityMode: false,
     })
-    expect(tubeMeshes(group)).toHaveLength(0)
-    expect(dotMeshes(group)).toHaveLength(0)
+    expect(lineObjects(group)).toHaveLength(0)
+    expect(dotObjects(group)).toHaveLength(0)
     expect(lastPoint.equals(first)).toBe(true)
   })
 
-  it('单层穿透：1 条 incoming tube + 1 个标记；不产生 reflected 段', () => {
+  it('单层穿透：1 条 incoming（描边+核心）+ 1 个层点；不产生 reflected 段', () => {
     const first = v(0, 0, 0)
     const hit = v(0, 0, 10)
     const { group } = createShotTrajectoryGroup({
       firstPoint: first, cameraPosition: v(0, 0, 100),
-      layers: [layer({ point: hit, penetrated: true })], color: 0x4CAF50, probabilityMode: false,
+      layers: [layer({ point: hit, penetrated: true })], resultRole: 'PENETRATION', probabilityMode: false,
     })
-    expect(tubeMeshes(group)).toHaveLength(1)
-    expect(dotMeshes(group)).toHaveLength(1)
+    expect(polylineGroups(group)).toHaveLength(1)
+    expect(lineObjects(group)).toHaveLength(2)
+    expect(dotObjects(group)).toHaveLength(1)
   })
 
-  it('多层：每个层一个标记；tube 参数保持原值（半径 0.025、radial 8、tubular = max(2, n*2)）', () => {
+  it('多层：每个层一个屏幕空间圆点；射线恒为 2px 核心 + 4px 描边', () => {
     const layers = [
       layer({ point: v(0, 0, 10), penetrated: true }),
       layer({ point: v(0, 0, 20), penetrated: true }),
       layer({ point: v(0, 0, 30), penetrated: false }),
     ]
     const { group } = createShotTrajectoryGroup({
-      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers, color: 0xf44336, probabilityMode: false,
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers, resultRole: 'BLOCKED', probabilityMode: false,
     })
-    expect(dotMeshes(group)).toHaveLength(3)
-    const tubes = tubeMeshes(group)
-    expect(tubes).toHaveLength(1)
-    const params = (tubes[0].geometry as THREE.TubeGeometry).parameters
-    expect(params.radius).toBe(0.025)
-    expect(params.radialSegments).toBe(8)
-    // incoming = origin + 3 层 = 4 点 → tubularSegments = 8
-    expect(params.tubularSegments).toBe(8)
-    for (const dot of dotMeshes(group)) {
-      expect((dot.geometry as THREE.SphereGeometry).parameters.radius).toBe(0.04)
+    expect(dotObjects(group)).toHaveLength(3)
+    expect(lineObjects(group)).toHaveLength(2)
+    expect(SHOT_TRAJECTORY_STYLE).toEqual({ rayWidthPx: 2, rayHaloWidthPx: 4, dotSizePx: 7, renderOrder: 997 })
+    for (const line of lineObjects(group)) {
+      const mat = line.material as THREE.ShaderMaterial & { linewidth: number; toneMapped: boolean }
+      expect(mat.toneMapped).toBe(false)
+      expect(mat.depthTest).toBe(false)
+      expect(mat.transparent).toBe(true)
+      expect([2, 4]).toContain(mat.linewidth)
+    }
+    for (const dot of dotObjects(group)) {
+      const mat = dot.material as THREE.PointsMaterial
+      expect(mat).toBeInstanceOf(THREE.PointsMaterial)
+      expect(mat.size).toBe(7)
+      expect(mat.sizeAttenuation).toBe(false)
+      expect(mat.toneMapped).toBe(false)
+      expect(mat.depthTest).toBe(false)
+      expect(mat.transparent).toBe(true)
+      expect(dot.renderOrder).toBe(997)
     }
   })
 
-  it('所有 mesh renderOrder 997、材质 depthTest 关闭（溅射球壳 996 之上、命中标记 999 之下）', () => {
+  it('renderOrder：描边 996 / 核心与层点 997（溅射球壳 995 之上、命中点 999 之下）', () => {
     const layers = [layer({ point: v(0, 0, 10), penetrated: true }), layer({ point: v(0, 0, 20) })]
     const { group } = createShotTrajectoryGroup({
-      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers, color: 0xffcf5c, probabilityMode: false,
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers, resultRole: 'RICOCHET', probabilityMode: false,
     })
-    for (const mesh of meshChildren(group)) {
-      expect(mesh.renderOrder).toBe(997)
-      expect((mesh.material as THREE.MeshBasicMaterial).depthTest).toBe(false)
-      expect((mesh.material as THREE.MeshBasicMaterial).transparent).toBe(true)
-    }
-    // 轨迹管透明度 0.85、层点 0.95
-    assertTrajMaterial(tubeMeshes(group)[0].material as THREE.Material, 0xffcf5c, 0.85)
-    assertTrajMaterial(dotMeshes(group)[0].material as THREE.Material, 0x4CAF50, 0.95)
+    const orders = lineObjects(group).map((line) => line.renderOrder).sort()
+    expect(orders).toEqual([996, 997])
+    for (const dot of dotObjects(group)) expect(dot.renderOrder).toBe(997)
   })
 
   it('factory 不自行挂载到任何 scene（parent 为 null，调用方拥有 fxScene 所有权）', () => {
     const { group } = createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
-      layers: [layer({ point: v(0, 0, 10) })], color: 0xff8800, probabilityMode: false,
+      layers: [layer({ point: v(0, 0, 10) })], resultRole: 'RICOCHET', probabilityMode: false,
     })
     expect(group.parent).toBeNull()
     expect(group.isGroup).toBe(true)
@@ -118,23 +114,22 @@ describe('createShotTrajectoryGroup — 原点回退', () => {
     const first = v(0, 0, 0)
     const { group } = createShotTrajectoryGroup({
       firstPoint: first, cameraPosition: v(0, 0, 100),
-      layers: [layer({ point: v(0, 0, 10) })], color: 0xff8800, probabilityMode: false,
+      layers: [layer({ point: v(0, 0, 10) })], resultRole: 'RICOCHET', probabilityMode: false,
     })
-    const tube = tubeMeshes(group)[0]
-    const box = positionBox(tube)
-    // origin = first + camDir*300 = (0,0,300)；tube 从 origin 铺到命中点 (0,0,10)
+    const core = lineObjects(group).find((line) => (line.material as { linewidth: number }).linewidth === 2)!
+    const box = core.geometry.boundingBox!
+    // origin = first + camDir*300 = (0,0,300)；入射段从 origin 铺到命中点 (0,0,10)
     expect(box.min.z).toBeCloseTo(10, 3)
     expect(box.max.z).toBeCloseTo(300, 3)
   })
 
-  it('trajOrigin 优先：tube 从弹道起点铺到命中点，不用 300m 回退', () => {
+  it('trajOrigin 优先：射线从弹道起点铺到命中点，不用 300m 回退', () => {
     const { group } = createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), trajOrigin: v(0, 0, 50),
-      layers: [layer({ point: v(0, 0, 10) })], color: 0xff8800, probabilityMode: false,
+      layers: [layer({ point: v(0, 0, 10) })], resultRole: 'RICOCHET', probabilityMode: false,
     })
-    const tube = tubeMeshes(group)[0]
-    const box = positionBox(tube)
-    expect(box.max.z).toBeCloseTo(50, 3)
+    const core = lineObjects(group).find((line) => (line.material as { linewidth: number }).linewidth === 2)!
+    expect(core.geometry.boundingBox!.max.z).toBeCloseTo(50, 3)
   })
 })
 
@@ -147,74 +142,119 @@ describe('createShotTrajectoryGroup — 跳弹', () => {
     layer({ point: after, seg: 1 }),
   ]
 
-  it('incoming tube 在 ricochet 点截断：不含截断之后的层点', () => {
+  it('incoming 段在 ricochet 点截断：不含截断之后的层点', () => {
     const { group } = createShotTrajectoryGroup({
-      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers: ricLayers, color: 0xFF8800, probabilityMode: false,
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers: ricLayers, resultRole: 'RICOCHET', probabilityMode: false,
     })
-    const tubes = tubeMeshes(group)
-    expect(tubes.length).toBeGreaterThanOrEqual(1)
-    const incoming = tubes[0]
-    const box = positionBox(incoming)
-    // 入射段各点共线于 z 轴，x/y 范围只有管半径；若截断失效会延到续飞点 (x=5)
-    expect(box.min.x).toBeGreaterThan(-0.1)
-    expect(box.max.x).toBeLessThan(0.1)
-    // tubularSegments = max(2, 3*2)（origin + 2 层）
-    expect((incoming.geometry as THREE.TubeGeometry).parameters.tubularSegments).toBe(6)
+    const incoming = polylineGroups(group)[0]
+    const firstLine = incoming.children[0]
+    const box = firstLine instanceof Line2 ? firstLine.geometry.boundingBox : null
+    // 入射段各点共线于 z 轴，x 范围严格为 0；若截断失效会延到续飞点 (x=5)
+    expect(box).not.toBeNull()
+    expect(box!.min.x).toBeCloseTo(0, 6)
+    expect(box!.max.x).toBeCloseTo(0, 6)
   })
 
-  it('reflected 段：由 ricochet 点与 seg===1 续飞点组成（第 2 条 tube）', () => {
+  it('reflected 段：由 ricochet 点与 seg===1 续飞点组成（第 2 条折线）', () => {
     const { group } = createShotTrajectoryGroup({
-      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers: ricLayers, color: 0xFF8800, probabilityMode: false,
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100), layers: ricLayers, resultRole: 'RICOCHET', probabilityMode: false,
     })
-    const tubes = tubeMeshes(group)
-    expect(tubes).toHaveLength(2)
-    const box = positionBox(tubes[1])
+    const lines = polylineGroups(group)
+    expect(lines).toHaveLength(2)
+    const core = lines[1].children[1] as Line2
+    const box = core.geometry.boundingBox!
     expect(box.min.z).toBeCloseTo(10, 1) // 从 ricochet 点起
     expect(box.max.z).toBeCloseTo(15, 1) // 到续飞点止
   })
 
-  it('有 ricochet 但无 seg===1 续飞点：不产生 reflected tube', () => {
+  it('有 ricochet 但无 seg===1 续飞点：不产生 reflected 段', () => {
     const { group } = createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
-      layers: [layer({ point: ricAt, ricochet: true })], color: 0xFF8800, probabilityMode: false,
+      layers: [layer({ point: ricAt, ricochet: true })], resultRole: 'RICOCHET', probabilityMode: false,
     })
-    expect(tubeMeshes(group)).toHaveLength(1)
+    expect(polylineGroups(group)).toHaveLength(1)
   })
 
   it('seg===1 续飞点出现在 ricochet 之前（无 ricochet）：与原实现等价地构造失败（生产层链不可达）', () => {
-    // 原 showTrajectory() 在该输入下会向 reflected 补 null ricPoint，TubeGeometry
-    // 构造抛 TypeError；工厂逐字迁移该分支，生产链路中 seg===1 只随 ricochet 出现。
+    // 原 showTrajectory() 在该输入下会向 reflected 补 null ricPoint；折线工厂逐点读取
+    // 坐标时同样抛 TypeError。生产链路中 seg===1 只随 ricochet 出现。
     expect(() => createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
       layers: [layer({ point: v(0, 0, 5), seg: 1 }), layer({ point: v(0, 0, 10) })],
-      color: 0xf44336, probabilityMode: false,
+      resultRole: 'BLOCKED', probabilityMode: false,
     })).toThrow(TypeError)
   })
 })
 
 describe('createShotTrajectoryGroup — 层色', () => {
-  it('非概率模式：penetrated 绿 / ricochet 橙 / 其他红', () => {
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0), penetrated: true }), false)).toBe(0x4CAF50)
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0), ricochet: true }), false)).toBe(0xFF8800)
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0) }), false)).toBe(0xf44336)
+  const role = (
+    partial: Partial<ShotTrajectoryGeometryLayer>,
+    probabilityMode = false,
+  ) => layerResultRole({ layer: layer({ point: v(0, 0, 0), ...partial }), probabilityMode })
+
+  it('非概率模式：penetrated 穿透绿 / ricochet 跳弹紫 / 其他挡下红', () => {
+    expect(sceneResultColor(role({ penetrated: true }))).toBe(SCENE_RESULT_COLORS.PENETRATION)
+    expect(sceneResultColor(role({ ricochet: true }))).toBe(SCENE_RESULT_COLORS.RICOCHET)
+    expect(sceneResultColor(role({}))).toBe(SCENE_RESULT_COLORS.BLOCKED)
   })
 
-  it('概率模式：层点按逐层累计 chance 分档（0 红、0–1 黄、1 绿）', () => {
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0), chance: 0 }), true)).toBe(0xf44336)
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0), chance: 0.5 }), true)).toBe(0xffcf5c)
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0), chance: 1 }), true)).toBe(0x4CAF50)
-    expect(trajectoryLayerColor(layer({ point: v(0, 0, 0) }), true)).toBe(0xf44336) // 缺 chance → 0
-    expect(trajectoryChanceColor(0.99)).toBe(0xffcf5c)
+  it('概率模式：层点按当前层局部 layerChance 分档（0 红、0–1 黄、1 绿）', () => {
+    expect(role({ layerChance: 0 }, true)).toBe('BLOCKED')
+    expect(role({ layerChance: 0.5 }, true)).toBe('MAY_PENETRATE')
+    expect(role({ layerChance: 1 }, true)).toBe('PENETRATION')
+    expect(role({}, true)).toBe('BLOCKED') // 缺 chance → 0
+    // 累计概率 50% 但当前层自身 100%：接触点仍然表达本层状态（绿），
+    // 不能把前层的不确定度画到后层的接触点上。
+    expect(role({ chance: 0.5, layerChance: 1 }, true)).toBe('PENETRATION')
+    // 跳弹层优先于概率色。
+    expect(role({ ricochet: true, layerChance: 1 }, true)).toBe('RICOCHET')
   })
 
-  it('概率模式层点材质吃到分档色', () => {
+  it('层点材质吃到角色亮变体', () => {
     const { group } = createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
-      layers: [layer({ point: v(0, 0, 5), chance: 1 }), layer({ point: v(0, 0, 10), chance: 0 })],
-      color: 0x4CAF50, probabilityMode: true,
+      layers: [layer({ point: v(0, 0, 5), layerChance: 1 }), layer({ point: v(0, 0, 10), layerChance: 0 })],
+      resultRole: 'PENETRATION', probabilityMode: true,
     })
-    const colors = dotMeshes(group).map((m) => (m.material as THREE.MeshBasicMaterial).color.getHex())
-    expect(colors).toEqual([0x4CAF50, 0xf44336])
+    const colors = dotObjects(group).map((m) => (m.material as THREE.PointsMaterial).color.getHex())
+    expect(colors).toEqual([SCENE_RESULT_COLORS.PENETRATION, SCENE_RESULT_COLORS.BLOCKED])
+  })
+
+  it('提供 layerRoles 时直接消费调用方角色（与卡片同一数组）', () => {
+    const { group } = createShotTrajectoryGroup({
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
+      layers: [layer({ point: v(0, 0, 5), layerChance: 1 })],
+      layerRoles: ['MAY_PENETRATE'],
+      resultRole: 'BLOCKED', probabilityMode: true,
+    })
+    const colors = dotObjects(group).map((m) => (m.material as THREE.PointsMaterial).color.getHex())
+    expect(colors).toEqual([SCENE_RESULT_COLORS.MAY_PENETRATE])
+  })
+
+  it('未到达层用中性灰，不画成挡下红', () => {
+    const { group } = createShotTrajectoryGroup({
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
+      layers: [
+        layer({ point: v(0, 0, 5), penetrated: true }),
+        layer({ point: v(0, 0, 10), reached: false }),
+      ],
+      resultRole: 'BLOCKED', probabilityMode: false,
+    })
+    const colors = dotObjects(group).map((m) => (m.material as THREE.PointsMaterial).color.getHex())
+    expect(colors).toEqual([SCENE_RESULT_COLORS.PENETRATION, SCENE_RESULT_COLORS.UNREACHED])
+  })
+
+  it('射线核心/描边使用最终结果角色色与近黑描边', () => {
+    const { group } = createShotTrajectoryGroup({
+      firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
+      layers: [layer({ point: v(0, 0, 10), penetrated: true })], resultRole: 'PENETRATION', probabilityMode: false,
+    })
+    const lines = lineObjects(group)
+    const core = lines.find((line) => (line.material as { linewidth: number }).linewidth === 2)!
+    const halo = lines.find((line) => (line.material as { linewidth: number }).linewidth === 4)!
+    expect((core.material as unknown as { color: THREE.Color }).color.getHex()).toBe(SCENE_RESULT_COLORS.PENETRATION)
+    expect((halo.material as unknown as { color: THREE.Color }).color.getHex()).toBe(0x05070a)
+    expect((halo.material as THREE.Material).opacity).toBe(0.5)
   })
 })
 
@@ -229,7 +269,7 @@ describe('createShotTrajectoryGroup — 输入不可变', () => {
     const camClone = cam.clone()
     const layersSnapshot = JSON.stringify(layers.map((l) => l.point.toArray()))
     createShotTrajectoryGroup({
-      firstPoint: first, cameraPosition: cam, trajOrigin: origin, layers, color: 0xff8800, probabilityMode: false,
+      firstPoint: first, cameraPosition: cam, trajOrigin: origin, layers, resultRole: 'RICOCHET', probabilityMode: false,
     })
     expect(first.equals(firstClone)).toBe(true)
     expect(cam.equals(camClone)).toBe(true)

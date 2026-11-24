@@ -35,6 +35,9 @@
     --color-playback-damage-text: #ffb340;
     /* 可玩边界（2D 战术图红线，与 3D 边界带同义）：不是阵营色，两套主题同值 */
     --color-map-playable-boundary: #ff2f2f;
+    /* 装甲查看器跳弹角色：对齐热力图跳弹高亮 vec3(1,0,1) 的语义色（所有主题同值）。
+       组件内 --purple 再与 --color-text-primary 混色，保证明暗主题的文本可读性。 */
+    --color-ricochet: #ff00ff;
     --text-shadow-playback-damage: 0 0 2px rgb(0 0 0), 0 0 4px rgb(0 0 0 / .95), 0 1px 0 rgb(0 0 0 / .95), 0 -1px 0 rgb(0 0 0 / .95), 1px 0 0 rgb(0 0 0 / .95), -1px 0 0 rgb(0 0 0 / .95);
     /* 装填条外描边：半透明黑——白色状态条/亮空槽在雪地等亮背景上会糊进背景 */
     --pb-label-reload-outline: 0 0 0 1.5px rgb(0 0 0 / .7);

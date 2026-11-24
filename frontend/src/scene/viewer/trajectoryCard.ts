@@ -3,11 +3,15 @@
 // 判定结果卡是判定模式唯一结果窗口（2026-11-15 用户裁示）。定位契约（2026-11-16 用户裁示）：
 // 卡片跟随**世界命中点的屏幕投影**——每帧用当前相机重投影，旋转视角时贴着命中点移动；
 // 命中点转到相机后方时隐藏（没有可解释的屏幕位置），不再固定点击坐标或顶部停靠。
-// 避让固定 HUD 仍由共享 resultCardPosition 纯函数负责。
+// 避让固定 HUD 仍由共享 resultCardPosition 纯函数负责；卡片与命中点额外错开
+// 水平 24px / 垂直 40px（2026-11-24 用户裁示：不能贴住命中点遮挡附近装甲，
+// 且卡片要再往下让一些）。
 import * as THREE from 'three'
-import { createShotTrajectoryGroup, trajectoryChanceColor } from './shotTrajectoryGeometry.js'
+import { createShotTrajectoryGroup } from './shotTrajectoryGeometry.js'
+import { disposeOverlayObject, setOverlayDotColor } from './overlayStroke.js'
+import { layerResultRole, resultRoleForCardDisplay, resultRoleForHitPoint, sceneResultColor, type ShotResultRole } from './shotResultPalette.js'
 import { isCompactShotResultCard, shotResultCardMaxWidth as resultCardMaxWidth, shotResultCardMetrics, shotResultCardScale } from '../../utils/shotResultCardMetrics.js'
-import { renderShotResultCardHtml } from './shotResultCard.js'
+import { createPartialChanceResolver, renderShotResultCardHtml } from './shotResultCard.js'
 import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
 import { projectCardAnchor } from './resultCardAnchor.js'
 import { penetrationChance, evaluateProbabilityChain, resolveCardChance } from '../armorInspectorChance.js'
@@ -86,7 +90,7 @@ export function createTrajectoryCard(deps: TrajectoryCardDeps): TrajectoryCardHa
     let trajLayoutDirty = true;
 
 function tidyTrajectory(): void {
-            if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; }
+            if (trajGroup) { getFxScene().remove(trajGroup); disposeOverlayObject(trajGroup); trajGroup = null; }
             trajInfoPos = null;
             trajAnchorWorld = null;
             lastAnchor = null;
@@ -213,31 +217,54 @@ function showTrajectory(
             const { chance: cardChance } = resolveCardChance({
                 heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance,
             });
+            // 续飞 1–99% 的逐层局部概率链：卡片层行与 3D 接触点共用同一份结果。
+            const partialChainLayers = !probabilityMode && chancePartial
+                ? evaluateProbabilityChain(chancePen, probLayers).layers
+                : null;
+            const nextPartialChance = createPartialChanceResolver(partialChainLayers);
+            // 逐层结果角色只算一次：结果卡行圆点与轨迹层点都直接消费该数组，
+            // 不再各自维护颜色分支（2026-11-24 用户裁示）。
+            const layerRoles = (displayLayers as ReadonlyArray<ShotResultCardLayer>).map((l) => layerResultRole({
+                layer: l,
+                probabilityMode,
+                blockedNoPrimary,
+                partialChance: probabilityMode ? null : nextPartialChance(l),
+            }));
 
-            if (trajGroup) getFxScene().remove(trajGroup);
+            if (trajGroup) { getFxScene().remove(trajGroup); disposeOverlayObject(trajGroup); trajGroup = null; }
 
-            // 概率色按精确累计概率分档：0 红、0–1 黄、1 绿；显示用四舍五入百分比，
-            // <1% 时显示 <1%，但伤害仍按“只要 >0”给全额（用户裁定）。
-            // 卡片侧的 Css 变体（标题/概率行/层着色）已随结果卡出仓 viewer/shotResultCard.ts。
-            const probabilityColorHex = trajectoryChanceColor;
-            const finalOutcome = probabilityMode
-                ? (overall >= 1 ? 'PENETRATION' : (hasChance ? 'MAY_PENETRATE' : 'BLOCKED'))
-                : (result.split('→').pop() ?? '').trim();
-            const color = probabilityMode
-                ? probabilityColorHex(overall)
-                : (finalOutcome === 'PENETRATION' ? 0x4CAF50
-                    : (finalOutcome === 'RICOCHET' ? 0xFF8800
-                    : (finalOutcome === 'BLOCKED' || finalOutcome === 'ERROR' ? 0xf44336 : 0xff8800)));
+            // 射线/卡片标题共用最终展示结果：HE 0% 但有溅射 = SPLASH 橙、
+// 续飞最终段 1–99% = 可能击穿黄、HE 采样不可用 = 红；不能只按确定性结果串，
+// 否则射线会与卡片标题/边框不一致（2026-11-24 用户反馈）。
+            const resultRole: ShotResultRole = resultRoleForCardDisplay({
+                result,
+                heInfo,
+                heChance,
+                probabilityMode,
+                overallChance,
+                chancePartial,
+            });
+            // 命中点在判定请求期间是中性色；结果返回后改用**首层角色**：
+            // 普通弹的命中点落在首层接触面，必须和卡片第一层行同色。双层装甲
+            // 首层可穿、次层挡下时，命中点为绿，整体“未击穿”由射线/标题表达。
+            // HE 溅射没有逐层穿透语义，回退到最终展示结果（橙/红）。
+            const hitPointRole = resultRoleForHitPoint({
+                layerRoles,
+                resultRole,
+                hasPerLayerDisplay: !heInfo,
+            });
+            if (window.__hitMarker) setOverlayDotColor(window.__hitMarker, sceneResultColor(hitPointRole));
             // 轨迹几何已出仓 viewer/shotTrajectoryGeometry.ts（Wave B3B）：场景仍拥有
             // 判定/概率计算、getFxScene()/trajGroup 生命周期与 DOM 挂载；factory 按已算好的
-            // 层链/轨迹色构建等价的 Mesh/材质/renderOrder，不挂载到任何 scene。
+            // 层链/角色构建屏幕空间射线，不挂载到任何 scene。
             // 概率评估链由原始层链 spread 而来，展示层世界点随之保留（领域不变量）。
             const { group: builtTrajGroup, lastPoint } = createShotTrajectoryGroup({
                 firstPoint,
                 cameraPosition: getCamera().position,
                 trajOrigin,
                 layers: displayLayers as ReadonlyArray<ShotTrajectoryGeometryLayer>,
-                color,
+                layerRoles,
+                resultRole,
                 probabilityMode,
             });
             trajGroup = builtTrajGroup;
@@ -261,12 +288,10 @@ function showTrajectory(
             trajLayoutDirty = true;
             // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色（最终段 1–99% 时标题是
             // “可能击穿”）：概率链累计是领域计算，在调用方预算后交给 renderer 着色。
-            const partialChainLayers = !probabilityMode && chancePartial
-                ? evaluateProbabilityChain(chancePen, probLayers).layers
-                : null;
             div.innerHTML = renderShotResultCardHtml({
-                result, layers: displayLayers, partialChainLayers, chancePen,
-                dmgVal, distVal, dmgDealt, trajectoryColor: color,
+                result, layers: displayLayers, layerRoles, partialChainLayers, chancePen,
+                dmgVal, distVal, dmgDealt, resultRole,
+                fragValidated: window.__shotCtx?.fragValidated ?? null,
                 cardChance, heInfo, heChance, heDirectHit,
                 probabilityMode, overallChance: overall, hasChance, chancePartial, blockedNoPrimary,
                 cardMetrics, cardMaxWidth, labels: L,
@@ -378,6 +403,11 @@ function updateTrajInfoPos(): void {
                 viewportWidth: anchorRect.width,
                 viewportHeight: anchorRect.height,
                 panels,
+                // 结果卡与命中点错开：水平 24px、垂直 40px。命中点/层点及周围装甲是用户
+                // 正在读的画面，卡片不能贴着命中点压上去，且通常向下多让一些
+                //（2026-11-24 用户裁示）。
+                anchorGap: 24,
+                anchorGapY: 40,
                 gap: 14,
                 pad: 8,
             });
@@ -419,7 +449,7 @@ function updateTrajInfoPos(): void {
         },
         markTrajInfoDirty() { trajLayoutDirty = true; },
         clearTrajGroup() {
-            if (trajGroup) { getFxScene().remove(trajGroup); trajGroup = null; }
+            if (trajGroup) { getFxScene().remove(trajGroup); disposeOverlayObject(trajGroup); trajGroup = null; }
             trajInfoPos = null;
             trajAnchorWorld = null;
             lastAnchor = null;

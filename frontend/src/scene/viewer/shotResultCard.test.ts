@@ -5,6 +5,7 @@
 // 紧凑/普通卡片尺寸。判定输入（概率链、伤害、轨迹色）由调用方计算——本文件
 // 只构造已算好的确定性输入，不重复实现领域逻辑。
 import { describe, expect, it } from 'vitest'
+import { evaluateProbabilityChain } from '../armorInspectorChance.js'
 import { renderShotResultCardHtml } from './shotResultCard.js'
 import type { ShotResultCardInput, ShotResultCardLabels } from './shotResultCard.js'
 import { shotResultCardMetrics } from '../../utils/shotResultCardMetrics.js'
@@ -19,6 +20,7 @@ const EN: ShotResultCardLabels = {
   directHit: 'direct hit', partName: (name) => String(name), sectionName: (section) => String(section),
   heBestSample: 'best sample', heBestSampleUpper: 'best sample (upper)', heBestSampleLower: 'best sample (lower)',
   shotRicochetSeg: 'ricochet (-25% penetration)', shotLoss: 'loss', shotNominal: 'nominal', shotBlocked: 'blocked',
+  fragMismatch: 'fragment check differs from the server armor group',
 }
 
 const baseInput = (): ShotResultCardInput => ({
@@ -29,7 +31,7 @@ const baseInput = (): ShotResultCardInput => ({
   dmgVal: 400,
   distVal: 0,
   dmgDealt: 0,
-  trajectoryColor: 0x4CAF50,
+  resultRole: 'PENETRATION',
   cardChance: 1,
   heInfo: null,
   heChance: 0,
@@ -77,6 +79,56 @@ describe('shotResultCard · 概率显示（0 / 部分 / 100 / 边界）', () => 
     expect(zero).toContain('· 0</span>')
     const partial = renderShotResultCardHtml({ ...baseInput(), overallChance: 0.4, cardChance: 0.4 })
     expect(partial).toContain('· 400</span>')
+  })
+  it('层行圆点按该层局部 layerChance 着色（与 3D 接触点同语义）', () => {
+    const html = renderShotResultCardHtml({
+      ...baseInput(),
+      layers: [
+        { name: 'spaced', eff: 20, angle: 30, thickness: 20, seg: 0, chance: 0.5, layerChance: 1 },
+        { name: 'hull', eff: 200, angle: 30, thickness: 220, seg: 0, chance: 0.5, layerChance: 0 },
+      ],
+      overallChance: 0.5,
+      cardChance: 0.5,
+    })
+    // 总体仍是“可能击穿”黄标题；层行圆点分别表达本层状态。
+    expect(html).toContain('font-weight:bold;color:var(--yellow);margin-bottom')
+    expect(html).toContain('color:var(--green);">●')
+    expect(html).toContain('color:var(--red);">●')
+  })
+  it('提供 layerRoles 时直接消费（与 3D 层点同一数组，不再自行推导）', () => {
+    const html = renderShotResultCardHtml({
+      ...baseInput(),
+      layers: [
+        { name: 'spaced', eff: 20, angle: 30, thickness: 20, seg: 0, layerChance: 0 },
+        { name: 'hull', eff: 30, angle: 30, thickness: 30, seg: 0, layerChance: 1 },
+      ],
+      layerRoles: ['PENETRATION', 'UNREACHED'],
+      overallChance: 1,
+      cardChance: 1,
+    })
+    expect(html).toContain('color:var(--green);">●')
+    expect(html).toContain('color:var(--muted);">●')
+    expect(html).not.toContain('color:var(--red);">●')
+  })
+  it('真实概率链：首层必穿、次层挡下、第三层未到达 → 绿/红/灰三色', () => {
+    const chain = evaluateProbabilityChain(200, [
+      { name: 'spaced', eff: 20, thickness: 20, angle: 30, seg: 0 },
+      { name: 'hull', eff: 300, thickness: 300, angle: 30, seg: 0 },
+      { name: 'turret', eff: 80, thickness: 80, angle: 30, seg: 0 },
+    ])
+    const html = renderShotResultCardHtml({
+      ...baseInput(),
+      layers: chain.layers,
+      overallChance: chain.chance,
+      hasChance: chain.chance > 0,
+      chancePartial: chain.chance > 0 && chain.chance < 1,
+      cardChance: chain.chance,
+    })
+    expect(chain.layers.map((layer) => layer.layerChance)).toEqual([1, 0, 0])
+    expect(chain.layers.map((layer) => layer.reached)).toEqual([true, true, false])
+    expect(html).toContain('color:var(--green);">●')
+    expect(html).toContain('color:var(--red);">●')
+    expect(html).toContain('color:var(--muted);">●')
   })
 })
 
@@ -167,9 +219,27 @@ describe('shotResultCard · 跳弹多段与概率层着色', () => {
     expect(html).toContain('<span>May penetrate</span>')
     expect(html).toContain('penetration chance: 60%')
     expect(html).toContain('· 400</span>')   // 1–99% 中段满伤，不是确定性 0
-    // 跳弹段橙色、最终段按累计概率黄色
-    expect(html).toContain('color:var(--orange);">●')
+    // 跳弹段紫色（热力图同色相）、最终段按累计概率黄色
+    expect(html).toContain('color:var(--purple);">●')
     expect(html).toContain('color:var(--yellow);">●')
+  })
+  it('续飞段的跳弹层仍保持跳弹紫（不被累计概率染黄）', () => {
+    const html = renderShotResultCardHtml({
+      ...baseInput(),
+      result: 'RICOCHET → RICOCHET',
+      layers: [
+        { name: 'upper plate', eff: 200, angle: 30, thickness: 220, penetrated: false, ricochet: true, seg: 0 },
+        { name: 'spaced plate', eff: 20, angle: 60, thickness: 20, penetrated: false, ricochet: true, seg: 1 },
+      ],
+      partialChainLayers: [{ seg: 0, chance: 0 }, { seg: 1, chance: 0.6 }],
+      probabilityMode: false,
+      overallChance: 0,
+      hasChance: false,
+      chancePartial: true,
+      cardChance: 0.6,
+    })
+    expect((html.match(/color:var\(--purple\);">●/g) || [])).toHaveLength(2)
+    expect(html).not.toContain('color:var(--yellow);">●')
   })
   it('非概率模式无 partial 链时最终段保持确定性着色', () => {
     const html = renderShotResultCardHtml({
@@ -260,6 +330,25 @@ describe('shotResultCard · 逐层明细格式', () => {
     })
     expect(html).toContain('color:var(--green);">●')
     expect(html).toContain('color:var(--yellow);">●')
+  })
+})
+
+describe('shotResultCard · 片元校验徽标', () => {
+  it('fragValidated=false：输出黄色徽标；true/null 静默', () => {
+    const mismatch = renderShotResultCardHtml({ ...baseInput(), fragValidated: false })
+    expect(mismatch).toContain('data-card-badge="frag-mismatch"')
+    expect(mismatch).toContain('▲ fragment check differs from the server armor group')
+    expect(renderShotResultCardHtml({ ...baseInput(), fragValidated: true })).not.toContain('data-card-badge="frag-mismatch"')
+    expect(renderShotResultCardHtml(baseInput())).not.toContain('data-card-badge="frag-mismatch"')
+  })
+})
+
+describe('shotResultCard · 非概率模式边框按结果角色着色', () => {
+  it('RICOCHET → 紫；BLOCKED → 红；PENETRATION → 绿', () => {
+    const base = { ...baseInput(), probabilityMode: false, overallChance: 0, hasChance: false, chancePartial: false, cardChance: 0 }
+    expect(renderShotResultCardHtml({ ...base, result: 'RICOCHET', resultRole: 'RICOCHET' })).toContain('border-left:4px solid var(--purple)')
+    expect(renderShotResultCardHtml({ ...base, result: 'BLOCKED', resultRole: 'BLOCKED' })).toContain('border-left:4px solid var(--red)')
+    expect(renderShotResultCardHtml({ ...base, result: 'PENETRATION', resultRole: 'PENETRATION' })).toContain('border-left:4px solid var(--green)')
   })
 })
 

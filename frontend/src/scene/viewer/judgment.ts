@@ -8,6 +8,8 @@ import { judgePenetration, shotBallisticLength, type PenetrationRequest } from '
 import { renderJudgmentResult } from './judgmentResult.js'
 import { createJudgmentClick } from './judgmentClick.js'
 import { createJudgmentHits, type JudgmentHit } from './judgmentHits.js'
+import { createScreenSpaceDot, disposeHitMarker } from './overlayStroke.js'
+import { OVERLAY_METRICS } from './shotResultPalette.js'
 import { shellTypeOf } from './armorPlateModel.js'
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { ModelReferences } from './modelLifecycle.js'
@@ -188,7 +190,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
             const isCameraClick = !window.__segRay && !(__shotRayOrigin && __shotRayTarget);
             if (isCameraClick && shellTypeNow !== 'he' && armorHits.length > 0
                 && !armorHits.some(h => isPrimary(h.section))) {
-                if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
+                disposeHitMarker(getFxScene());
                 // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
                 // 面板/轨迹，避免旧结论被误读成本次点击的结论
                 document.getElementById('traj-info')!.style.display = 'none';
@@ -202,8 +204,8 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 // 无结果出口：卡片/轨迹与 HE 爆点/半径球一起清理（评审 P2）。
                 tc.tidyTrajectory();
                 // 弦不再与装甲相交（滑块拖到命中前位姿等）：同步清掉上次判定的命中
-                // 标记，避免旧位置的绿/红点残留与"不相交"提示并存
-                if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
+                // 标记，避免旧位置的点残留与"不相交"提示并存
+                disposeHitMarker(getFxScene());
                 if (window.__shotIsHit) {
                     if (window.__worldPenMode) {
                         // 世界模式：默认 tick 在命中前 ≈0.2s，弦不相交是正常数据态而非几何错误。
@@ -241,38 +243,31 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
             const hitsForCheck: JudgmentHit[] = shellTypeNow === 'he' ? [first] : checkHits;
             const point = first.point;
             // ===== 片元交叉验证：raycast 装甲片 ↔ 游戏原生 segment armor_group =====
-            // segment（type=32 命中通知，服务器权威）给出命中装甲组。一致 → 标记绿色（高置信），
-            // 不一致 → 红色保留 raycast 点（差异可能来自炮塔/炮管姿态近似）。
+            // segment（type=32 命中通知，服务器权威）给出命中装甲组；差异可能来自炮塔/炮管姿态近似。
+            // 校验结果不再改变 3D 命中点颜色：命中点表达判定结果（结果返回后写入角色亮变体），
+            // 差异交给结果卡的 frag-mismatch 徽标；debug 面板仍读 __shotCtx.fragValidated。
             const segCtx = window.__shotCtx || {};
             let fragOk = null;
             if ((segCtx.segArmorGroup ?? 0) > 0) {
                 const pid = parseInt(String(first.plateId), 10);
                 fragOk = (!isNaN(pid)) && pid === segCtx.segArmorGroup;
             }
-            if (window.__hitMarker) { getFxScene().remove(window.__hitMarker); window.__hitMarker = null; }
-            const markerColor = fragOk === true ? 0x22cc44 : (fragOk === false ? 0xff2222 : 0xffcc00);
-            const markerGeo = new THREE.SphereGeometry(0.08, 16, 12);
-            const markerMat = new THREE.MeshBasicMaterial({ color: markerColor, transparent: true, opacity: 0.9, depthTest: false });
-            const marker = new THREE.Mesh(markerGeo, markerMat);
-            marker.position.copy(point);
-            marker.renderOrder = 999;
+            disposeHitMarker(getFxScene());
+            // 命中点：屏幕空间圆点（含 1.5px 深色描边），等待判定时中性色；
+            // showTrajectory 拿到结果后改为首层角色色（HE 用最终展示色）。靶环已删除
+            //（2026-11-24 用户裁示）。
+            const marker = createScreenSpaceDot(
+                point, OVERLAY_METRICS.markerPendingColor, OVERLAY_METRICS.markerSizePx,
+                { renderOrder: OVERLAY_METRICS.markerRenderOrder },
+            );
             getFxScene().add(marker);
             window.__hitMarker = marker;
-            const ringGeo = new THREE.RingGeometry(0.12, 0.18, 24);
-            const ringMat = new THREE.MeshBasicMaterial({ color: markerColor, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthTest: false });
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            // 靶环永远在最上层（球壳 996 / 轨迹 997 / 命中点 999）：renderOrder 不继承父级。
-            ring.renderOrder = 1000;
-            // 圆环面垂直入射弹向（命中点的"靶环"语义）；无弹向时回退朝向相机
-            const ringDir = (window.__segRay && window.__segRay.dir)
-                ? point.clone().add(window.__segRay.dir.clone()) : getCamera().position;
-            ring.lookAt(ringDir);
-            marker.add(ring);
-            window.__hitMarkerRing = ring;
-            if (fragOk !== null && window.__shotCtx) {
+            if (window.__shotCtx) {
                 window.__shotCtx.fragValidated = fragOk;
-                console.log('[shot-replay] 片元验证:', fragOk ? '✓ 一致' : '✗ 不一致',
-                    'raycast=' + first.section + '#' + first.plateId, 'segment_group=' + segCtx.segArmorGroup);
+                if (fragOk !== null) {
+                    console.log('[shot-replay] 片元验证:', fragOk ? '✓ 一致' : '✗ 不一致',
+                        'raycast=' + first.section + '#' + first.plateId, 'segment_group=' + segCtx.segArmorGroup);
+                }
             }
             // world 复现模式：射线/交点在世界系，判定请求需模型局部米制（/api/penetrate
             // 语义）——经 worldToLocal 刚体逆变换换算；相对模式模型在原点未旋转，世界=局部。
