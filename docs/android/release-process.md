@@ -138,12 +138,18 @@ TX1 出口公网带宽有限且会被 APK 下载打满；APK 随内嵌 bundle �
 **Origin 与分发副本是两个身份，判定源必须分开：**
 
 - Origin identity：TX1/TX2 上的 immutable APK 本体；**任意一台**落位成功即消耗该版本号（见上文「版本号递增规则」的 partial-stage 处理）。stage 的 absent/equal/conflict 分类用 **SSH 直查两台 origin**（远端 `sha256sum`），conflict 仍然 fail-closed。绝不用公网 URL 做该判定——`*.apk` 已被 302 到网盘，副本损坏时公网 URL 会把 rerun 误判成 conflict 直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent（否则 seed 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
-- Distribution replica：清华云盘。不参与 immutable 判定；stage 先比较「分享直链下载回来 SHA-256 与 staged APK」是否一致，只有不一致或缺失时才用 `replace=1` 覆盖同名文件，并在上传后再次校验；因此副本缺失/损坏在任意重跑中都会被修复（「重跑安全」指的就是这一层），上传并核验副本本身不消耗版本号。它同时是 **origin 的冷启动源**（两台 origin 从这里 seed）；副本字节若损坏，seed 步骤的就地 SHA 校验会在写入 origin 前拦下（fail-closed），不会污染 immutable 权威。
+- Distribution replica：清华云盘。不参与 immutable 判定；stage 先比较「分享直链下载回来 SHA-256 与 staged APK」是否一致，只有不一致或缺失时才用 `replace=1` 覆盖同名文件，并在上传后再次校验；尚在 stage 上传阶段的候选可用该步骤恢复副本；已发布版本使用下文的手动恢复工作流，上传并核验副本本身不消耗版本号。它同时是 **origin 的冷启动源**（两台 origin 从这里 seed）；副本字节若损坏，seed 步骤的就地 SHA 校验会在写入 origin 前拦下（fail-closed），不会污染 immutable 权威。
 - 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。
 
 - URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，客户端跟着 302 走；`/download/android/version.json` 与 `*.staging.json` **不在**重定向范围内，仍由 TX1/TX2 前端源站服务（deploy 预检的运行时内容一致性比对不受影响）。
 - fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。stage-17 先探测远端 SHA：匹配则跳过；404/410 才上传；HTTP 200 但 SHA 不符才用 `replace=1` 覆盖；200 空响应、403/429/5xx/传输错误视为「无法确认」，只重试回读，耗尽后失败且不盲目覆盖。每次上传前重新获取 upload-link（失败最多 3 次、3s/6s backoff；Seafile 默认 1h 有效，单次上传上限 45m；`replace=1`，最多 3 次、5s/10s backoff）；每次上传后回读校验（HTTP/传输错误最多 5 次、3s 间隔；HTTP 200 内容不匹配时每个上传最多 2 次完整下载，按内容下载次数单独计数，不受总探测次数影响）。整个 stage 默认 60m 绝对预算（`TSINGHUA_UPLOAD_BUDGET_SECONDS`），且 Android job 在 checkout 后立即记录 `JOB_START_EPOCH`（checkout 耗时由 15m 预留覆盖）；stage-17 取「120m job 超时 - 已耗时 - 15m 后续预留」与自身预算的最小值，每次 HTTP 操作再按剩余预算收紧，避免 job timeout 先杀进程；每次上传写入前还预留默认 15m（`TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS`）给至少一次完整回读，剩余预算不足以覆盖该预留时拒绝开始写入并 fail-closed。诊断只保留 bounded 的 HTTP 状态、curl rc、传输指标和固定错误类别；认证响应正文与 stderr 原文不落日志（只记录字节数），公开回读错误摘要仍脱敏 token 与签名 URL。上传传输失败与分享回读校验失败分别报错；本地 SHA-256 计算失败不得归类为远端内容不匹配。
 - 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的 `REPO_ID` / 分享 token，两边一一对应。
+
+### 恢复已发布版本的全量 APK 副本
+
+官网稳定入口返回错误内容时，从 GitHub Actions 手动运行 `Repair published Android APK`，选择 `main` 并填写当前生产版本。该任务与 Android 发布共用队列，按生产清单、staging 记录和 release tag 核对身份，在 runner 上验过 TX1 原包的大小与 SHA-256 后，复用 stage 的清华上传步骤。最后从官网稳定地址完整回读，与源包逐字节比较。TX1 取包和校验最多 30 分钟。上传阶段按 120 分钟任务的剩余时间收紧预算，额外扣除 22 分钟，覆盖计时前的 checkout、官网回读与比对、步骤切换。操作只写入对应的清华全量 APK 对象。发布清单、签名和源站文件继续沿用原发布记录。
+
+任务使用现有 TX1 SSH 与清华上传 secrets，并要求仓库 Actions variable `TX1_SSH_HOST_PUBLIC_KEY` 存放 TX1 的 Ed25519 **主机公钥**（格式为 `ssh-ed25519 <base64>`，省略注释）。请从已核实的运维连接读取 `/etc/ssh/ssh_host_ed25519_key.pub`。如遇主机密钥轮换，先核实新指纹再更新变量。
 
 ### 卸载链路体检（offload probe）
 
