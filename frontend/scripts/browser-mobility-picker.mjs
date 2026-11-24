@@ -139,10 +139,34 @@ try {
       assert.equal(opened.dialogs.length, 1, 'picker retains a single modal')
       assert.ok(opened.panel.reachable, 'filter panel must receive actual input')
       assert.equal(opened.url, initialUrl, 'opening filters must not navigate')
-      // Expand all details to make the panel overflow even at 440x956.
+      // Linux/Windows font metrics can let all options fit at 440x956. Give this
+      // overflow case a fixed 320px panel viewport; keep the actual device viewport.
       for (const selector of ['#tp-nation summary', '#tp-type summary', '#tp-category summary']) await tap(selector)
+      const overflowGeometry = await page.probe(async () => {
+        await document.fonts.ready
+        const panel = document.querySelector('[data-testid="catalog-filter-panel"]')
+        const natural = { scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight }
+        panel.style.maxBlockSize = '320px'
+        panel.scrollTop = 0
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        return { natural, viewport: { width: innerWidth, height: innerHeight },
+          scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight,
+          detailsOpen: [...panel.querySelectorAll('details')].every(detail => detail.open) }
+      })
+      assert.deepEqual(overflowGeometry.viewport, { width: scenario.width, height: scenario.height }, 'device viewport stays unchanged')
+      assert.equal(overflowGeometry.detailsOpen, true, 'all filter sections must actually be open')
+      assert.ok(overflowGeometry.scrollHeight > overflowGeometry.clientHeight + 160, 'filter scroll fixture must actually overflow: ' + JSON.stringify(overflowGeometry))
+      await shot('filters-overflow')
+      let blockedPanelScroll = null
+      if (scenario.width === 440) {
+        await page.evaluate(`document.querySelector('[data-testid="catalog-filter-panel"]').style.overflowY='hidden'`)
+        blockedPanelScroll = await swipe(page, send, '[data-testid="catalog-filter-panel"]')
+        assert.equal(blockedPanelScroll.after, blockedPanelScroll.before, 'negative control: hidden overflow must block native panel scroll')
+        await page.evaluate(`document.querySelector('[data-testid="catalog-filter-panel"]').style.removeProperty('overflow-y')`)
+      }
       const panelScroll = await swipe(page, send, '[data-testid="catalog-filter-panel"]')
       assert.ok(panelScroll.after > panelScroll.before, 'overflowing filter panel must touch-scroll')
+      await page.evaluate(`document.querySelector('[data-testid="catalog-filter-panel"]').style.removeProperty('max-block-size')`)
       await tap('[data-testid="filter-sheet-done"]')
       assert.equal(await page.evaluate(`document.activeElement?.dataset.testid`), 'filter-toggle', 'Done restores focus to filter toggle')
       assert.equal(await page.evaluate(`document.querySelector('.tp-results')===window.__pickerList`), true, 'result DOM remains mounted')
@@ -189,7 +213,7 @@ try {
       await shot('747-restored')
       await page.tap({ x: 5, y: 8, touch: true })
       await page.waitFor(() => !document.querySelector('[data-testid="tank-catalog-menu"]'))
-      results.push({ scenario, version, scrollBefore, opened, panelScroll, scrollAfter, allSelectedScroll, confirmed: true, explicitScrimDismiss: true })
+      results.push({ scenario, version, scrollBefore, opened, overflowGeometry, blockedPanelScroll, panelScroll, scrollAfter, allSelectedScroll, confirmed: true, explicitScrimDismiss: true })
     } catch (error) {
       await shot('failure').catch(() => {})
       failures.push({ scenario, error: error.stack, state: await page.probe(stateProbe).catch(() => null), diagnostics: await page.diagnose() })
