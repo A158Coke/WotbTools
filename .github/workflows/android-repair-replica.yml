@@ -1,0 +1,71 @@
+name: Repair published Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Current published Android version to restore
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  repair:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PRODUCTION_INPUT_PATHS: |
+        .github/workflows/android-repair-replica.yml
+        scripts/android-release/**
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+
+      - name: Reject stale dispatch before accessing the origin
+        run: bash deploy/check-production-freshness.sh "$GITHUB_SHA" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA"
+
+      - name: Verify currently published identity
+        id: release
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: python3 scripts/android-release/published_apk.py
+
+      - name: Fetch and verify the immutable TX1 APK
+        env:
+          TX_HOST: ${{ secrets.TX_VPS_HOST }}
+          TX_PORT: ${{ secrets.TX_VPS_PORT }}
+          TX_USER: ${{ secrets.TX_VPS_USER }}
+          TX_KEY: ${{ secrets.TX_VPS_SSH_KEY }}
+          TX_HOST_KEY: ${{ vars.TX1_SSH_HOST_PUBLIC_KEY }}
+          APK_NAME: ${{ steps.release.outputs.name }}
+          APK_SIZE: ${{ steps.release.outputs.size }}
+          APK_SHA: ${{ steps.release.outputs.sha }}
+        run: bash scripts/android-release/fetch-published-apk.sh
+
+      - name: Check current main before writing the replica
+        run: bash deploy/check-production-freshness.sh "$GITHUB_SHA" "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA"
+
+      - name: Restore the distribution replica
+        env:
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+          STEP_ARTIFACT_APKNAME: ${{ steps.release.outputs.name }}
+          STEP_ARTIFACT_SHA256: ${{ steps.release.outputs.sha }}
+        run: bash scripts/android-release/steps/stage-17-upload-tsinghua.sh
+
+      - name: Verify the public download without a cache-busting query
+        env:
+          APK_NAME: ${{ steps.release.outputs.name }}
+        run: |
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 900 --output "$RUNNER_TEMP/public.apk" \
+            "https://wotbtools.com/download/android/$APK_NAME"
+          cmp "release-staging/$APK_NAME" "$RUNNER_TEMP/public.apk"
