@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import sources from '../assets/tank-catalog/sources.json'
+import { assetProvider } from '../scene/assetProvider.js'
 import { tankClassIcon } from '../utils/tankClassIcon.js'
 
 const props = withDefaults(defineProps<{
@@ -8,19 +9,30 @@ const props = withDefaults(defineProps<{
   value?: string
   variant?: 'text' | 'filter'
 }>(), { value: '', variant: 'text' })
-const assets: Record<string, { canvas: number[], bounds: number[] }> = sources.assets
-const files = import.meta.glob<string>('../assets/tank-catalog/*.{webp,png}', { eager: true, query: '?url', import: 'default' })
+const assets: Record<string, { canvas: number[]; bounds: number[]; remote?: string }> = sources.assets
 const classStems: Record<string, string> = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
 const key = computed(() => {
   if (props.kind === 'nation') {
+    // 筛选控件一律用 flag_filter_*（无轮播图顶部压暗）；其它场景保留共享的
+    // nation-*（美国/德国/中国为轮播大图，其余为 text 小图）。
+    const filtered = `nation-filter-${props.value}`
+    if (props.variant === 'filter' && assets[filtered]) return filtered
     const shared = `nation-${props.value}`
-    return assets[shared] ? shared : `nation-${props.variant}-${props.value}`
+    if (assets[shared]) return shared
+    const byVariant = `nation-${props.variant}-${props.value}`
+    return assets[byVariant] ? byVariant : filtered
   }
   if (props.kind === 'type') return `type-${classStems[tankClassIcon(props.value)?.key || '']}`
   return `category-${props.value}`
 })
 const asset = computed(() => assets[key.value])
-const url = computed(() => files[`../assets/tank-catalog/${key.value}.webp`] ?? files[`../assets/tank-catalog/${key.value}.png`])
+// 目录图标全部走资产 origin 的 `/ui/**`，bundle 内不再保留任何 tank-catalog 图片。
+// origin 未配置（纯数据页、Android 能力门禁）时图标隐藏，不阻断列表/筛选。
+const url = computed<string | null>(() => {
+  const meta = asset.value
+  if (!meta?.remote) return null
+  try { return assetProvider.url(meta.remote) } catch { return null }
+})
 const failed = ref(false)
 watch(url, () => { failed.value = false })
 // Packed client textures include transparent padding. Keep every visible pixel and its original aspect.

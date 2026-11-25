@@ -33,6 +33,7 @@ import ShowcaseHero from './ShowcaseHero.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import TankCatalogMenu from './TankCatalogMenu.vue'
+import TankCoverNation from './TankCoverNation.vue'
 import TankConfigPanel from './TankConfigPanel.vue'
 import TankResearchPanel from './TankResearchPanel.vue'
 import TankAugmentTree from './TankAugmentTree.vue'
@@ -290,6 +291,7 @@ onMounted(() => {
           :transition="motionTransition('fast')"
         >
           <span class="tp-media tp-media-lg">
+            <TankCoverNation :nation="detail.nation" />
             <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
           <div class="tp-detail-title">
