@@ -2,24 +2,23 @@
   "clientVersion": "11.21.216.0",
   "assets": {
     "nation-usa": {
-      "file": "wotb-icons-v5/png/nations/usa.png",
-      "archive": "user-supplied wotb-icons-v5-part1.zip, 2026-11-14",
-      "sha256": "10fcb1afa2e7747754b170baa6e15c517da32043d32028451f843f7eacb1899a",
-      "outputSha256": "6015c59e66075b4ecde03fc0547fb5d3885f330ad35b20e7b629347b4a824f30",
+      "file": "flags/flag_carousel_usa@2x.packed.webp",
+      "remote": "/ui/flags/flag_carousel_usa@2x.webp",
+      "sha256": "d486d044cc0cd93a8b4b44c74057094756d1b902bfd4d7ea44d56b724dedb0cd",
       "canvas": [
         512,
-        341
+        256
       ],
       "bounds": [
         0,
         0,
-        498,
-        336
-      ],
-      "derivation": "Proportionally resized to 512px width, WebP quality 95, alpha quality 100; transparency preserved"
+        337,
+        209
+      ]
     },
     "nation-germany": {
       "file": "flags/flag_carousel_germany@2x.packed.webp",
+      "remote": "/ui/flags/flag_carousel_germany@2x.webp",
       "sha256": "8654b144f7ad0afa64bded302e12300e362afc1f9f24d4ecee58a3f09bbebe70",
       "canvas": [
         512,
@@ -34,6 +33,7 @@
     },
     "nation-text-ussr": {
       "file": "flags/flag_text_ussr@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_ussr@2x.webp",
       "sha256": "979306876c012f0c8c74c06c9785c336c6520cb592065c51dfe339d04baf0d27",
       "canvas": [
         64,
@@ -48,6 +48,7 @@
     },
     "nation-filter-ussr": {
       "file": "flags/flag_filter_ussr@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_ussr@2x.webp",
       "sha256": "3fb601721bd53bae30d08c68896d611b7afcf1ac3222871b1f492cdffa30a9cd",
       "canvas": [
         256,
@@ -62,6 +63,7 @@
     },
     "nation-text-uk": {
       "file": "flags/flag_text_uk@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_uk@2x.webp",
       "sha256": "6c9331bf3d3bf258dae281136146c26e151f983964fe62d9480f83bd7f831875",
       "canvas": [
         64,
@@ -76,6 +78,7 @@
     },
     "nation-filter-uk": {
       "file": "flags/flag_filter_uk@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_uk@2x.webp",
       "sha256": "8cf050cce387dba8723b37dfb836e1df3706440bf5bb74dbfc6855c3bc47ca96",
       "canvas": [
         256,
@@ -90,6 +93,7 @@
     },
     "nation-text-japan": {
       "file": "flags/flag_text_japan@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_japan@2x.webp",
       "sha256": "ad3ebd1899824ff518133f9b3a2d2542f4ab8c710cec1b44f7d5a66e477a2bea",
       "canvas": [
         64,
@@ -104,6 +108,7 @@
     },
     "nation-filter-japan": {
       "file": "flags/flag_filter_japan@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_japan@2x.webp",
       "sha256": "e5be1f36188d25a055abdff2fb90ee3197651863d0aa59d590752c852342ea7f",
       "canvas": [
         256,
@@ -118,6 +123,7 @@
     },
     "nation-text-france": {
       "file": "flags/flag_text_france@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_france@2x.webp",
       "sha256": "b0da99ba52cc2d9f1bb6f108fe1b84b244907d80edbb9c3e55e0b8f29685ac85",
       "canvas": [
         64,
@@ -132,6 +138,7 @@
     },
     "nation-filter-france": {
       "file": "flags/flag_filter_france@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_france@2x.webp",
       "sha256": "732b8737c28515e2aff3ac144829cd6f655e2af5435100f7e8a1577d9ae5396d",
       "canvas": [
         256,
@@ -146,6 +153,7 @@
     },
     "nation-text-european": {
       "file": "flags/flag_text_european@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_european@2x.webp",
       "sha256": "23cc0305ac7c5e19d5774eb236c256356c255a368413d017163e6ba030366003",
       "canvas": [
         64,
@@ -160,6 +168,7 @@
     },
     "nation-filter-european": {
       "file": "flags/flag_filter_european@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_european@2x.webp",
       "sha256": "d90c672c351c5cd0a4badd6fb792d070cdc054230bc45e7fec58199d7f3411c7",
       "canvas": [
         256,
@@ -174,6 +183,7 @@
     },
     "nation-text-other": {
       "file": "flags/flag_text_other@2x.packed.webp",
+      "remote": "/ui/flags/flag_text_other@2x.webp",
       "sha256": "327016921f41437a6e46616219ab9f3924208b0d9935908887277a49753b8cc2",
       "canvas": [
         64,
@@ -188,6 +198,7 @@
     },
     "nation-filter-other": {
       "file": "flags/flag_filter_other@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_other@2x.webp",
       "sha256": "dd5e9d3c0f3a6d7491fb92fce8a9025e651059a92e92f8db0b65867d70fb0e90",
       "canvas": [
         256,
@@ -202,6 +213,7 @@
     },
     "category-regular": {
       "file": "icons/icon_tank-normal@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-normal@2x.webp",
       "sha256": "47b620b466793d6169f887ba90ff6764bb50678a53fe5f8b80e269a04a0577ea",
       "canvas": [
         128,
@@ -216,6 +228,7 @@
     },
     "category-premium": {
       "file": "icons/icon_tank-premium@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-premium@2x.webp",
       "sha256": "487c92cf058fb02605b7d7268adec007f618ead35290d97ad6c58be64abffb51",
       "canvas": [
         128,
@@ -230,6 +243,7 @@
     },
     "category-collector": {
       "file": "icons/icon_tank-collectible@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-collectible@2x.webp",
       "sha256": "bdb929456fd1d5614d61404922894d219a2ed55b6e650fd6bbf62cf844d8241a",
       "canvas": [
         128,
@@ -244,6 +258,7 @@
     },
     "type-light": {
       "file": "icons/icon_tank-class_light@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-class_light@2x.webp",
       "sha256": "0df27984590537b61f0ef595764fbeb12f37fff531a1d3dff6a3fe9dbc281a64",
       "canvas": [
         64,
@@ -258,6 +273,7 @@
     },
     "type-medium": {
       "file": "icons/icon_tank-class_medium@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-class_medium@2x.webp",
       "sha256": "585482d1efd6ff3ac3954e98a877de9b5e310573ae16ed7c02faa1274b10ef64",
       "canvas": [
         64,
@@ -272,6 +288,7 @@
     },
     "type-heavy": {
       "file": "icons/icon_tank-class_heavy@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-class_heavy@2x.webp",
       "sha256": "6962128ab37f9d76d047f67299ac34913aee768f1f26ab179053b6e538705fa1",
       "canvas": [
         64,
@@ -286,6 +303,7 @@
     },
     "type-at-spg": {
       "file": "icons/icon_tank-class_at-spg@2x.packed.webp",
+      "remote": "/ui/lobby-icons/icon_tank-class_at-spg@2x.webp",
       "sha256": "9a68722e48f7077f44613f08ca7bd4e3a048afe04c4f9c3f07c3af09d204cb3b",
       "canvas": [
         64,
@@ -299,19 +317,199 @@
       ]
     },
     "nation-china": {
-      "file": "user-supplied CN image, 2026-11-14",
-      "sha256": "f4f7d443696fd8fe9c4dea3b897daf8454cf2fb5fc61f4b2f170350cf295b854",
+      "file": "flags/flag_carousel_china@2x.packed.webp",
+      "remote": "/ui/flags/flag_carousel_china@2x.webp",
+      "sha256": "2e045f7df4748fec0b0023e2ac0689f41205d23bfbb08ef1c62f9203fee23641",
       "canvas": [
-        384,
-        233
+        512,
+        256
       ],
       "bounds": [
         0,
         0,
-        384,
-        233
+        337,
+        209
+      ]
+    },
+    "cover-usa": {
+      "file": "flags/flag_tutor-tank_usa@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_usa@2x.webp",
+      "sha256": "0f3f99b93fdabee59001a86e6c858df92528f845d1c754706886ac7ff5f65fc6",
+      "canvas": [
+        1024,
+        512
       ],
-      "derivation": "User image proportionally resized to 384 pixels wide, WebP quality 90"
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-germany": {
+      "file": "flags/flag_tutor-tank_germany@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_germany@2x.webp",
+      "sha256": "93d899bf6802c5bda788589e73bf6cd3f87a135d4162ec9cbc9d34731b4e53b0",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-ussr": {
+      "file": "flags/flag_tutor-tank_ussr@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_ussr@2x.webp",
+      "sha256": "05292d0c2f8a53feb4a693869d522f2a940e6d842e059348e004f4a3f23ce4d2",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-uk": {
+      "file": "flags/flag_tutor-tank_uk@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_uk@2x.webp",
+      "sha256": "566252a27d2d0b09ceb5f503952fe37427ed07e42f409565d6d22a81131798e5",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-japan": {
+      "file": "flags/flag_tutor-tank_japan@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_japan@2x.webp",
+      "sha256": "d33a2084c8656be880f63e5d47afa0960db7fcf0d40e6eb6aedcf2b50472a47b",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-france": {
+      "file": "flags/flag_tutor-tank_france@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_france@2x.webp",
+      "sha256": "b089fb3abfdbad0bbf79b0bb7729fa1628c6edd2b186d3d9fe8a11786db914bd",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-european": {
+      "file": "flags/flag_tutor-tank_european@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_european@2x.webp",
+      "sha256": "a30f7af39b54f800ec91bd212923403f67247fa4ccaeeb89797f92f8ae9635ee",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-china": {
+      "file": "flags/flag_tutor-tank_china@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_china@2x.webp",
+      "sha256": "d507661ff30a5bb5e33e47a8a10bf480314d509e0abf5d5bb3552f940ff92307",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "cover-other": {
+      "file": "flags/flag_tutor-tank_other@2x.packed.webp",
+      "remote": "/ui/flags/flag_tutor-tank_other@2x.webp",
+      "sha256": "e38e2a14573b21b969273f0647a7cc3559e51c4052b038bc391936924ca8f553",
+      "canvas": [
+        1024,
+        512
+      ],
+      "bounds": [
+        0,
+        0,
+        884,
+        496
+      ]
+    },
+    "nation-filter-usa": {
+      "file": "flags/flag_filter_usa@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_usa@2x.webp",
+      "sha256": "30ae0bd210c5628aba40e1df4f510c7a074e778f4677a22a6fd30d7fbb37f54d",
+      "canvas": [
+        256,
+        128
+      ],
+      "bounds": [
+        0,
+        0,
+        145,
+        113
+      ]
+    },
+    "nation-filter-germany": {
+      "file": "flags/flag_filter_germany@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_germany@2x.webp",
+      "sha256": "aafa49e8fbf52b3adfe3bc69af961f0f4e619559c1c681f69c7e2908fb90f9d0",
+      "canvas": [
+        256,
+        128
+      ],
+      "bounds": [
+        0,
+        0,
+        145,
+        113
+      ]
+    },
+    "nation-filter-china": {
+      "file": "flags/flag_filter_china@2x.packed.webp",
+      "remote": "/ui/flags/flag_filter_china@2x.webp",
+      "sha256": "9b71f62d034b7c596d824ab3f1746dad0676c8afcdb8d86df2d17068642fdd94",
+      "canvas": [
+        256,
+        128
+      ],
+      "bounds": [
+        0,
+        0,
+        145,
+        113
+      ]
     }
   }
 }

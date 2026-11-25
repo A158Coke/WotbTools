@@ -11,6 +11,12 @@ const data = vi.hoisted(() => ({
 }))
 vi.mock('../scene/agentData.js', () => data)
 
+const catalogProvider = vi.hoisted(() => ({
+  imageUrl: vi.fn(path => `https://assets.test${path}`),
+  url: vi.fn(path => `https://assets.test${path}`),
+}))
+vi.mock('../scene/assetProvider.js', () => ({ assetProvider: catalogProvider }))
+
 const layout = vi.hoisted(() => ({ compact: false }))
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
@@ -38,6 +44,21 @@ function mountMenu(props = {}) {
 describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () => {
   beforeEach(() => { layout.compact = false; document.body.innerHTML = '' })
   afterEach(() => { vi.useRealTimers(); document.body.innerHTML = '' })
+
+  it('每张坦克封面用国籍布旗作整幅背景（列表与详情共用）', () => {
+    const wrapper = mountMenu()
+    const cards = wrapper.findAll('[data-testid="tank-card"]')
+    expect(cards).toHaveLength(3)
+    for (const card of cards) {
+      const media = card.find('.tp-media')
+      expect(media.find('[data-testid="tank-cover-nation"]').exists()).toBe(true)
+      // 背景层必须是第一个子节点，坦克图在其后（后绘制的坦克图覆盖背景，不被布旗遮挡）。
+      expect(media.element.firstElementChild.className).toContain('tank-cover-flag')
+      expect(media.element.children[1].tagName).toBe('IMG')
+      expect(media.element.children[1].className).not.toContain('tank-cover-flag')
+    }
+    wrapper.unmount()
+  })
 
   it('page 模式：即时筛选 + 防抖提交 filters，别名命中正式车名', async () => {
     vi.useFakeTimers()

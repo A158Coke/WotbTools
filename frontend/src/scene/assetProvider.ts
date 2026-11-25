@@ -51,6 +51,21 @@ export const assetProvider = {
     return requireBase() + path
   },
 
+  /**
+   * 装饰性图片 URL（目录旗帜、封面背景等）。
+   *
+   * 与 `url()` 的区别只在 Android 的 PLAYBACK_3D 门禁：装饰图不进入 3D，缺图时应静默隐藏，
+   * 不能调用 `requireFeature` 触发「3D 回放不可用」的全局提示。这里用无副作用的
+   * `isAvailable` 判断；资产源未配置或能力未就绪时返回 null，由调用方隐藏图片。
+   * 真正的 3D 资产仍走 `url()`，在用户实际进入 3D 时保留统一提示。
+   */
+  imageUrl(path: AssetPath): string | null {
+    const base = assetBase()
+    if (!base) return null
+    if (isAndroidRuntime() && !useFeatureGate().isAvailable(Feature.PLAYBACK_3D)) return null
+    return base + path
+  },
+
   /** 资产字节（GLB/二进制）；非 2xx 抛错（含状态码） */
   async bytes(path: AssetPath): Promise<Uint8Array> {
     const resp = await this.fetch(this.url(path))
