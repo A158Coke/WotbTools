@@ -17,6 +17,7 @@
  */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
@@ -93,8 +94,8 @@ async function assertCatalogIcons(page) {
       naturalAspect: image.naturalWidth / image.naturalHeight,
     }
   }))
-  assert.ok(icons.some(icon => icon.source.includes('nation-china')), 'CN asset is present')
-  assert.ok(icons.some(icon => icon.source.includes('nation-text-ussr') || icon.source.includes('nation-filter-ussr')), 'client USSR icon is present')
+  assert.ok(icons.some(icon => icon.source.includes('flag_filter_china')), 'CN filter asset is present')
+  assert.ok(icons.some(icon => icon.source.includes('flag_text_ussr') || icon.source.includes('flag_filter_ussr')), 'client USSR icon is present')
   for (const icon of icons.filter(icon => icon.width > 0 && icon.height > 0)) {
     assert.ok(Math.abs(icon.width / icon.height - icon.expectedCropAspect) < 0.03, `visible icon crop distorted: ${icon.source}`)
     assert.ok(Math.abs(icon.imageAspect - icon.naturalAspect) < 0.03, `source image distorted: ${icon.source}`)
@@ -334,9 +335,23 @@ function assertScenario(scenario, layout) {
 
 const { server, origin } = await startFixtureServer()
 const topVehicle = tree.nodes.find(node => node.stem === 'Fixture_10_1')
+// 客户端旗帜/类别/车种图标改走资产 origin 的 `/ui/**`（2026-11-25 去重）：
+// 夹具按 sources.json 的 canvas 尺寸生成同比例 SVG，保持图标裁剪与加载断言可执行。
+const catalogSources = JSON.parse(readFileSync(
+  fileURLToPath(new URL('../src/assets/tank-catalog/sources.json', import.meta.url)), 'utf8'))
+const catalogRoutes = {}
+for (const asset of Object.values(catalogSources.assets)) {
+  if (!asset.remote) continue
+  const [width, height] = asset.canvas
+  catalogRoutes[asset.remote] = {
+    type: 'image/svg+xml',
+    body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#789"/></svg>`,
+  }
+}
 const assets = await startFixtureAssetPack({
   tankCache,
   extraRoutes: {
+    ...catalogRoutes,
     [`/research/tech_tree/${NATION}.json`]: { type: 'application/json', body: JSON.stringify(tree) },
     '/tank_images/crops.json': { type: 'application/json', body: '{}' },
     [`/tank_images/${topVehicle.tankId}.webp`]: {

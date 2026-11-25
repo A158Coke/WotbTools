@@ -93,6 +93,10 @@ OTA）解析**；禁止直接读 `ANDROID_ASSET_BASE` / `VITE_ASSET_BASE_URL`，
 - `map/{key}/**`（scenery / terrain / ground / lighting / IBL）
 - `cover/`、`tank_images/`（含 `crops.json`）
 - `research/**`（配置器 / 科技树 / 模块）
+- `ui/**`：客户端 UI 单图元素（国家旗帜 / 勋章 / 技能图标 / 锦标赛 / 大厅图标，2026-11-25 起）。
+  坦克目录 34 条素材（22 图标 + 9 张 `flag_tutor-tank_*` 封面布旗 + 3 张 USA/Germany/China
+  filter 补全）经 `/ui/flags/**`、`/ui/lobby-icons/**` 取用；封面用布旗作整幅背景（位于坦克图
+  下层），筛选统一 `flag_filter_*`；bundle 内不再保留 `tank-catalog` 图片。
 - `map2d/`：Web 地图预览在显式选择 dataset 时 dataset 优先、bundled 兜底；Android OTA
   overlay 走 `/agent-assets/v/<id>/map2d/`
 

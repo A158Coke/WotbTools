@@ -13,6 +13,12 @@ const data = vi.hoisted(() => ({
 }))
 vi.mock('../scene/agentData.js', () => data)
 
+const catalogProvider = vi.hoisted(() => ({
+  imageUrl: vi.fn(path => `https://assets.test${path}`),
+  url: vi.fn(path => `https://assets.test${path}`),
+}))
+vi.mock('../scene/assetProvider.js', () => ({ assetProvider: catalogProvider }))
+
 const research = vi.hoisted(() => ({ loadTankModules: vi.fn(), loadResearchCatalog: vi.fn() }))
 vi.mock('../utils/researchCatalog.js', async importOriginal => ({
   ...(await importOriginal()),
@@ -49,7 +55,7 @@ describe('AgentTankopedia', () => {
     const { wrapper } = await mountAt()
     const cards = wrapper.findAll('[data-testid="tank-card"]')
     expect(cards).toHaveLength(48)
-    const img = cards[0].find('img')
+    const img = cards[0].find('.tp-media > img')
     expect(img.attributes('loading')).toBe('lazy')
     expect(img.attributes('width')).toBeTruthy()
     expect(img.attributes('height')).toBeTruthy()
@@ -76,17 +82,17 @@ describe('AgentTankopedia', () => {
       999: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 148, h: 101 },
     })
     const { wrapper } = await mountAt({ tank: '999' })
-    const hero = wrapper.find('[data-testid="tank-detail"] img, .tp-media-lg img').exists()
-      ? wrapper.find('.tp-media-lg img')
-      : wrapper.find('img')
+    const hero = wrapper.find('.tp-media-lg > img')
     expect(hero.attributes('style')).toContain('translate(')
     expect(hero.attributes('style')).toContain('scale(')
+    // 详情封面同列表卡片一样用国籍布旗作整幅背景（TankCoverNation）
+    expect(wrapper.find('.tp-media-lg [data-testid="tank-cover-nation"]').exists()).toBe(true)
     wrapper.unmount()
 
     // 数据缺失（旧包/资产源未配置）：无 transform，保持原 contain 展示
     data.loadTankIconCrops.mockResolvedValue(null)
     const { wrapper: w2 } = await mountAt({ tank: '999' })
-    const hero2 = w2.find('.tp-media-lg img')
+    const hero2 = w2.find('.tp-media-lg > img')
     expect(hero2.attributes('style') ?? '').not.toContain('scale(')
     w2.unmount()
   })

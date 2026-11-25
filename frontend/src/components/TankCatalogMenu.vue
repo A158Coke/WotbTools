@@ -24,6 +24,7 @@ import TankCatalogControls from './TankCatalogControls.vue'
 import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { BREAKPOINT_MEDIUM, SHELL_DRAWER_QUERY } from '../shared/breakpoints.js'
 import TankCatalogIcon from './TankCatalogIcon.vue'
+import TankCoverNation from './TankCoverNation.vue'
 
 const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
 const SEARCH_DEBOUNCE_MS = 250
@@ -282,6 +283,7 @@ function choose(tank) {
               @click="choose(tank)"
             >
               <span class="tp-media">
+                <TankCoverNation :nation="tank.nation" />
                 <img
                   :src="tankImageUrl(tank.id)"
                   alt=""

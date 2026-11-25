@@ -29,7 +29,7 @@ const value = computed({ get: () => props.modelValue || ALL, set: next => emit('
 <template>
   <SelectRoot v-if="mode === 'menu'" v-model="value" v-model:open="menuOpen">
     <SelectTrigger v-bind="$attrs" class="catalog-trigger" :aria-label="`${label} ${selected?.label || ''}`">
-      <TankCatalogIcon :kind="kind" :value="selected?.value" />
+      <TankCatalogIcon :kind="kind" :value="selected?.value" variant="filter" />
       <span>{{ selected?.label }}</span><ChevronDown :size="16" aria-hidden="true" />
     </SelectTrigger>
     <SelectContent class="catalog-select" position="popper" align="start" :side-offset="4" @keydown.esc.stop.prevent="menuOpen = false">
@@ -43,13 +43,13 @@ const value = computed({ get: () => props.modelValue || ALL, set: next => emit('
     </SelectContent>
   </SelectRoot>
   <details v-else-if="mode === 'sheet'" v-bind="$attrs" class="catalog-details">
-    <summary class="catalog-trigger" :aria-label="`${label} ${selected?.label || ''}`"><TankCatalogIcon :kind="kind" :value="selected?.value" /><span>{{ selected?.label }}</span><ChevronDown :size="16" aria-hidden="true" /></summary>
+    <summary class="catalog-trigger" :aria-label="`${label} ${selected?.label || ''}`"><TankCatalogIcon :kind="kind" :value="selected?.value" variant="filter" /><span>{{ selected?.label }}</span><ChevronDown :size="16" aria-hidden="true" /></summary>
     <SegmentedControl :model-value="modelValue" :options="options" :ariaLabel="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
-      <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" /><span>{{ options[index].label }}</span></template>
+      <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" variant="filter" /><span>{{ options[index].label }}</span></template>
     </SegmentedControl>
   </details>
   <SegmentedControl v-else v-bind="$attrs" :model-value="modelValue" :options="options" :ariaLabel="label" presentation="chips" @update:model-value="emit('update:modelValue', $event)">
-    <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" /><span>{{ options[index].label }}</span></template>
+    <template #option="{ index }"><TankCatalogIcon :kind="kind" :value="options[index].value" variant="filter" /><span>{{ options[index].label }}</span></template>
   </SegmentedControl>
 </template>
 
