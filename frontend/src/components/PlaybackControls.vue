@@ -25,9 +25,11 @@ const props = defineProps({
   /** 名册浮层入口（横屏 / 桌面才有）：竖屏名册在纵向流里，不需要这个入口。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
-  /** 时间轴刻度（与 3D 同一份 scenePlayback 换算产物）：缺省空 = 无刻度层。 */
+  /** 时间轴刻度（与 3D 同一份 scenePlayback 换算产物）：缺省空 = 无刻度数据。 */
   shotTicks: { type: Array, default: () => [] },
   killTicks: { type: Array, default: () => [] },
+  /** 是否渲染事件刻度层（回放面板统一开关；默认关闭，不影响时间轴 seek）。 */
+  showEventMarkers: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -58,6 +60,7 @@ const emit = defineEmits([
     :roster-open="props.rosterOpen"
     :shot-ticks="props.shotTicks"
     :kill-ticks="props.killTicks"
+    :show-event-markers="props.showEventMarkers"
     @toggle-roster="emit('toggle-roster')"
     @toggle-play="emit('toggle-play')"
     @step="emit('step', $event)"

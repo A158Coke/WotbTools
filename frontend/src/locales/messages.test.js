@@ -117,6 +117,15 @@ describe('locale message composition', () => {
     }
   })
 
+  it('contains replay event-details and per-user 3D autostart copy in all locales', () => {
+    for (const locale of ['zh', 'en', 'ru']) {
+      expect(messages[locale].workspace.show_event_details, `${locale} workspace.show_event_details`).toBeTruthy()
+      for (const key of ['playbackSettingsTitle', 'autoStart3d', 'autoStart3dHint']) {
+        expect(messages[locale].profile[key], `${locale} profile.${key}`).toBeTruthy()
+      }
+    }
+  })
+
   it('contains both development backend notices in all supported locales', () => {
     for (const locale of ['zh', 'en', 'ru']) {
       expect(messages[locale].environment.local).toBeTruthy()

@@ -1268,7 +1268,7 @@ describe('2D 时间轴与 seekAndPlay（恢复自合并删除的集成测试）'
     }
     const wrapper = mountBattlePlayback({
       overview: makeOverview(), playbackV2: makePlaybackV2(),
-      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 0,
+      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 0, showEventMarkers: true,
     })
     await flushPromises()
     expect(wrapper.findAll('.pb-tick-shot')).toHaveLength(1)
@@ -1283,7 +1283,7 @@ describe('2D 时间轴与 seekAndPlay（恢复自合并删除的集成测试）'
     }
     const wrapper = mountBattlePlayback({
       overview: makeOverview(), playbackV2: makePlaybackV2(),
-      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 30,
+      facetShots: facet.shots, facetKills: facet.kills, clockOffset: 30, showEventMarkers: true,
     })
     await flushPromises()
     // makePlaybackV2 durationSec=60 → 原始轴 [30, 90]：t_fire=60 / kill 90 → 50% / 100%；

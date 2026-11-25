@@ -724,7 +724,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
   // utils/playbackShortcuts.js 纯函数；数字键冲突消解 = 自由飞行激活时归飞行速率。
   it('timeline ticks render from the facet and `,`/`.`/digits seek-jump and ride', async () => {
     mockWebGL('webgl2')
-    const wrapper = mountPane()
+    const wrapper = mountPane({ showEventMarkers: true })
     await start(wrapper)
     const { store } = playback.api
     store.hasData = true

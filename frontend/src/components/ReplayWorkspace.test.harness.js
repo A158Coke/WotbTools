@@ -28,7 +28,7 @@ import FileDrop from './FileDrop.vue'
 
 // useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
 const hold = vi.hoisted(() => ({ state: null }))
-const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn() }))
+const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn(), tokenParsed: null }))
 const nav = vi.hoisted(() => ({ navigate: null }))
 
 // 手机横屏沉浸态的三个输入（形态 / 朝向 / 触屏）：以真实 ref 驱动，不依赖 matchMedia 仿真。
@@ -75,11 +75,13 @@ vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
   authState.authenticated = ref(true)
   authState.isAdmin = ref(false)
+  authState.tokenParsed = ref({ sub: 'workspace-user' })
   return {
     useAuth: () => ({
       authenticated: authState.authenticated,
       isAdmin: authState.isAdmin,
       login: authState.login,
+      tokenParsed: authState.tokenParsed,
     }),
   }
 })
@@ -96,8 +98,8 @@ export function paneMock(name, testid) {
     __esModule: true,
     default: {
       name,
-      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken', 'seekTo', 'seekRequest', 'pendingSeek'],
-      template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
+      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken', 'seekTo', 'seekRequest', 'pendingSeek', 'showEventMarkers', 'autoStartUserId'],
+      template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true" :data-show-event-markers="String(showEventMarkers)" :data-auto-start-user-id="autoStartUserId">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }
 }
@@ -154,8 +156,9 @@ export function buildState() {
 
 export const replayStateRef = { current: null }
 
-export function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null, shellChrome = null } = {}) {
+export function mountWorkspace(capability = 'data', { authenticated = true, userId = 'workspace-user', navigate = vi.fn(), attached = false, onboarding = null, shellChrome = null } = {}) {
   authState.authenticated.value = authenticated
+  authState.tokenParsed.value = authenticated && userId ? { sub: userId } : null
   nav.navigate = navigate
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },

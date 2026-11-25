@@ -11,6 +11,8 @@ import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import AppButton from './AppButton.vue'
+import AppSwitch from './AppSwitch.vue'
+import { useReplay3DAutoStart } from '../composables/useReplay3DAutoStart.ts'
 import { sectionHeroStyle } from '../shared/sectionHeroes'
 
 import { useProfileIdentity } from './profile/useProfileIdentity.ts'
@@ -22,6 +24,11 @@ import { getUserProfile } from '../api/user-profile.js'
 const { locale, t, te } = useI18n()
 const navigateView = inject(NAVIGATE_VIEW_KEY, null)
 const { initPromise, login, logout, isAuthenticated, authenticated: authState, initError, tokenParsed, displayName: authDisplayName, authEpoch } = useAuth()
+
+/** 3D 自动播放偏好（按 Keycloak sub 隔离；无登录身份时不可用、不显示设置）。 */
+const { available: autoStart3dAvailable, enabled: autoStart3dEnabled } = useReplay3DAutoStart(
+  () => (authState.value && tokenParsed.value?.sub ? String(tokenParsed.value.sub) : ''),
+)
 
 /**
  * 本页所有 backend 动作的统一门禁（PR #467 review blocker）。
@@ -434,6 +441,15 @@ function formatTime(value) {
         </div>
 
         <div class="profile-right">
+          <div v-if="autoStart3dAvailable" class="profile-card profile-section" data-testid="profile-playback-settings">
+            <h3 class="card-title">{{ $t('profile.playbackSettingsTitle') }}</h3>
+            <AppSwitch
+              v-model="autoStart3dEnabled"
+              :label="$t('profile.autoStart3d')"
+              :description="$t('profile.autoStart3dHint')"
+              data-testid="profile-auto-start-3d"
+            />
+          </div>
           <div class="profile-card profile-section">
             <h3 class="card-title">{{ $t('profile.securityTitle') }}</h3>
             <div class="security-info">

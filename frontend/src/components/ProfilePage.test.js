@@ -160,6 +160,8 @@ function setOnline(value) {
 }
 
 beforeEach(async () => {
+  // 3D 自动播放偏好按用户存 localStorage；每个用例从干净存储开始。
+  localStorage.clear()
   // 每个用例都从「一次全新的 auth bootstrap」开始：init 交易只在第一次 useAuth() 时建立，
   // 之后（同一个用例内）跨挂载保持不变 —— 这正是 stale init 结果的来源。
   initSettlement = null
@@ -170,6 +172,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  localStorage.clear()
   // 卸载本轮挂载的组件：否则它们残留的 connectivity watcher 会在后续测试里继续发请求。
   while (mountedWrappers.length) mountedWrappers.pop().unmount()
   useConnectivity().stop()
@@ -203,40 +206,22 @@ describe('ProfilePage Wargaming regions', () => {
     hundredApi.hofHundredCancel.mockReset()
   })
 
-  it('ASIA WARGAMING profile shows Asia server and is read-only', async () => {
-    currentProfile = wargamingProfile('ASIA', 123)
+  it.each([
+    ['ASIA', 'profile.serverAsia'],
+    ['EU', 'profile.serverEu'],
+    ['NA', 'profile.serverNa'],
+  ])('%s WARGAMING profile shows its server and is read-only', async (server, serverLabel) => {
+    currentProfile = wargamingProfile(server, 123)
     const wrapper = mountProfile()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('profile.serverAsia')
+    expect(wrapper.text()).toContain(serverLabel)
     expect(wrapper.text()).not.toContain('profile.serverCn')
     expect(wrapper.text()).toContain('profile.sourceWargaming')
     expect(wrapper.text()).toContain('profile.verifiedBadge')
     expect(wrapper.text()).not.toContain('profile.edit')
     expect(wrapper.text()).not.toContain('profile.unbind')
     expect(wrapper.text()).not.toContain('profile.setAccount')
-  })
-
-  it('EU WARGAMING profile shows Europe server and is read-only', async () => {
-    currentProfile = wargamingProfile('EU', 123)
-    const wrapper = mountProfile()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('profile.serverEu')
-    expect(wrapper.text()).not.toContain('profile.serverCn')
-    expect(wrapper.text()).not.toContain('profile.edit')
-    expect(wrapper.text()).not.toContain('profile.unbind')
-  })
-
-  it('NA WARGAMING profile shows North America server and is read-only', async () => {
-    currentProfile = wargamingProfile('NA', 123)
-    const wrapper = mountProfile()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('profile.serverNa')
-    expect(wrapper.text()).not.toContain('profile.serverCn')
-    expect(wrapper.text()).not.toContain('profile.edit')
-    expect(wrapper.text()).not.toContain('profile.unbind')
   })
 
   it('WARGAMING source with non-ASIA server still blocks edit and unbind', async () => {
@@ -662,6 +647,85 @@ describe('ProfilePage identity card', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('ProfilePage replay playback settings', () => {
+  const AUTO_START_PREFIX = 'wotb.pb.3d-auto-start:'
+
+  beforeEach(() => {
+    profileFailures = 0
+    currentProfile = wargamingProfile('ASIA', 1001)
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    signInAs('user-a')
+  })
+
+  afterEach(() => {
+    currentProfile = null
+    // 恢复后续套件依赖的动态 profile 实现（不留在本套件的固定返回值上）。
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+  })
+
+  async function mountReady() {
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-playback-settings"]').exists()).toBe(true)
+    return wrapper
+  }
+
+  it('signed-in user sees the replay settings card with auto-start on by default', async () => {
+    const wrapper = await mountReady()
+    const toggle = wrapper.get('[data-testid="profile-auto-start-3d"]')
+    expect(wrapper.get('[data-testid="profile-playback-settings"]').text()).toContain('profile.playbackSettingsTitle')
+    expect(toggle.text()).toContain('profile.autoStart3d')
+    expect(toggle.attributes('role')).toBe('switch')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+  })
+
+  it("turning the switch off writes '0' for the current user and a remount stays off", async () => {
+    const wrapper = await mountReady()
+    await wrapper.get('[data-testid="profile-auto-start-3d"]').trigger('click')
+    expect(wrapper.get('[data-testid="profile-auto-start-3d"]').attributes('aria-checked')).toBe('false')
+    expect(localStorage.getItem(`${AUTO_START_PREFIX}user-a`)).toBe('0')
+    wrapper.unmount()
+
+    const remounted = await mountReady()
+    expect(remounted.get('[data-testid="profile-auto-start-3d"]').attributes('aria-checked')).toBe('false')
+  })
+
+  it("honors a previously stored '0' on first render", async () => {
+    localStorage.setItem(`${AUTO_START_PREFIX}user-a`, '0')
+    const wrapper = await mountReady()
+    expect(wrapper.get('[data-testid="profile-auto-start-3d"]').attributes('aria-checked')).toBe('false')
+  })
+
+  it('keeps auto-start preferences isolated per Keycloak sub', async () => {
+    const wrapper = await mountReady()
+    await wrapper.get('[data-testid="profile-auto-start-3d"]').trigger('click')
+    expect(localStorage.getItem(`${AUTO_START_PREFIX}user-a`)).toBe('0')
+
+    signInAs('user-b')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-auto-start-3d"]').attributes('aria-checked')).toBe('true')
+    expect(localStorage.getItem(`${AUTO_START_PREFIX}user-b`)).toBeNull()
+
+    await wrapper.get('[data-testid="profile-auto-start-3d"]').trigger('click')
+    expect(localStorage.getItem(`${AUTO_START_PREFIX}user-b`)).toBe('0')
+    expect(localStorage.getItem(`${AUTO_START_PREFIX}user-a`)).toBe('0')
+
+    signInAs('user-a')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-auto-start-3d"]').attributes('aria-checked')).toBe('false')
+  })
+
+  it('hides the card and never writes a global key without a Keycloak sub', async () => {
+    tokenRef.value = { preferred_username: 'legacy-user' }
+    api.authenticated = true
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-playback-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-auto-start-3d"]').exists()).toBe(false)
+    expect(Object.keys(localStorage).filter((key) => key.startsWith(AUTO_START_PREFIX))).toHaveLength(0)
   })
 })
 

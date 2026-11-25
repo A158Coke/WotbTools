@@ -37,9 +37,11 @@ const props = defineProps({
   /** 名册浮层入口：宿主决定是否需要（2D 横屏 / 桌面浮层形态；3D 与竖屏纵向流不需要）。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
-  /** 事件刻度（炮击 / 击毁；宿主经 utils/playbackShortcuts.js 预换算）：缺省空 = 无刻度层（2D 现状）。 */
+  /** 事件刻度（炮击 / 击毁；宿主经 utils/playbackShortcuts.js 预换算）：缺省空 = 无刻度数据。 */
   shotTicks: { type: Array, default: () => [] },
   killTicks: { type: Array, default: () => [] },
+  /** 是否渲染事件刻度层：回放面板统一开关控制，默认关闭；只隐藏展示，不影响 seek。 */
+  showEventMarkers: { type: Boolean, default: false },
   /** 快捷键说明 tooltip（宿主按需传入，缺省无提示）。 */
   shortcutsHint: { type: String, default: '' },
 })
@@ -103,6 +105,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     :disabled="!timelineUsable"
     :shot-ticks="props.shotTicks"
     :kill-ticks="props.killTicks"
+    :show-event-markers="props.showEventMarkers"
     :hint="props.shortcutsHint"
     @drag-start="emit('scrub-start')"
     @drag-end="emit('scrub-end')"

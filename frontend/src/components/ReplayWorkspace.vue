@@ -59,8 +59,9 @@ const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const onboarding = inject(ONBOARDING_KEY, null)
 const { confirm } = useConfirm()
 const { t, locale } = useI18n()
-const { authenticated } = useAuth()
+const { authenticated, tokenParsed } = useAuth()
 const { availability } = useFeatureGate()
+const autoStartUserId = computed(() => (authenticated.value && tokenParsed.value?.sub ? String(tokenParsed.value.sub) : ''))
 const threeAvailability = computed(() => availability(Feature.PLAYBACK_3D))
 const aiAvailability = computed(() => availability(Feature.AI_REVIEW))
 const threeBlocked = computed(() => !threeAvailability.value.available ? t(threeAvailability.value.messageKey) : '')
@@ -320,11 +321,16 @@ watch(() => props.initialCapability, (val) => {
         :workspace-context="workspace"
       />
       <!-- 统一回放面板（2D / 3D / 事件流深链共用；2026-11-19 用户要求仿地图预览排版）：
-           头部 2D/3D 切换、两个 pane 都挂载仅 v-show；播放条在窗口下方通栏（3D docked）；
-           事件流固定在面板底部（桌面固定高度内部滚动、窄屏折叠）。 -->
+           头部 2D/3D 切换与「显示事件信息」开关、两个 pane 都挂载仅 v-show；播放条在窗口下方通栏（3D docked）；
+           事件流默认隐藏（v-show 保留筛选/分页状态），开启后自然流在面板下方；agent-events 深链自动打开。 -->
       <div v-show="viewerActive" class="capability-pane" data-testid="ws-replay">
-        <ReplayViewerPanel v-if="viewerMounted" :mode="viewerMode" @update:mode="setViewerMode">
-          <template #viewer-2d>
+        <ReplayViewerPanel
+          v-if="viewerMounted"
+          :mode="viewerMode"
+          :events-focused="activeCapability === 'events'"
+          @update:mode="setViewerMode"
+        >
+          <template #viewer-2d="{ showEventMarkers }">
             <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
               <p>{{ $t(playbackLoadError) }}</p>
               <template #actions>
@@ -341,10 +347,11 @@ watch(() => props.initialCapability, (val) => {
               :seek-request="playbackSeekRequest"
               :facet-shots="viewerShotFacet"
               :facet-kills="viewerKillFacet"
+              :show-event-markers="showEventMarkers"
               :auto-fullscreen-token="autoFullscreenToken"
             />
           </template>
-          <template #viewer-3d>
+          <template #viewer-3d="{ showEventMarkers }">
             <!-- 顺序即优先级：连通性（capability SSOT）→ 登录门禁 → 加载错误 → 面板。
                  非-online 时既不给登录入口、也不挂载 3D（远端资源所需的连接不存在）。
                  首次检测未完成（pending）时保持中性空白：不下连通性结论，也不落到登录门禁。 -->
@@ -374,6 +381,8 @@ watch(() => props.initialCapability, (val) => {
               :blocked-reason="threeBlocked"
               :auto-fullscreen-token="autoFullscreenToken"
               :pending-seek="pending3dSeek"
+              :show-event-markers="showEventMarkers"
+              :auto-start-user-id="autoStartUserId"
             />
           </template>
           <template #events>

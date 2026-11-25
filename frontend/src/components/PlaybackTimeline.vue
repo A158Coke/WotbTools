@@ -18,6 +18,8 @@ const props = defineProps({
   shotTicks: { type: Array, default: () => [] },
   /** 击毁刻度（buildKillTicks 产物：{ t, pct }），异色点。 */
   killTicks: { type: Array, default: () => [] },
+  /** 是否渲染事件刻度层；回放面板统一开关控制，默认关闭（原生时间轴 seek 不受影响）。 */
+  showEventMarkers: { type: Boolean, default: false },
   /** 快捷键说明（tooltip）：宿主按需传入，缺省无提示。 */
   hint: { type: String, default: '' },
 })
@@ -31,8 +33,8 @@ const emit = defineEmits(['drag-start', 'drag-end', 'seek'])
 const dragValue = ref(null)
 const shownValue = computed(() => dragValue.value ?? props.currentTime)
 const max = computed(() => (props.duration > props.startTime ? props.duration : props.startTime + 1))
-/** 刻度层只在时间轴可用时呈现：退化时间轴（duration<=start）上刻度会全挤在 0%，纯属误导。 */
-const ticksVisible = computed(() => !props.disabled && props.duration > props.startTime
+/** 刻度层只在开启事件信息且时间轴可用时呈现：退化时间轴（duration<=start）上刻度会全挤在 0%，纯属误导。 */
+const ticksVisible = computed(() => props.showEventMarkers && !props.disabled && props.duration > props.startTime
   && (props.shotTicks.length > 0 || props.killTicks.length > 0))
 
 /**

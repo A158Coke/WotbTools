@@ -14,6 +14,7 @@ import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import type { useI18n } from 'vue-i18n'
 import type { MapAnnotation } from '../composables/useAnnotationState.js'
 import type { SceneErasePath } from '../composables/useSceneAnnotations.js'
+import { useReplay3DAutoStart } from '../composables/useReplay3DAutoStart.js'
 
 type Store = ReturnType<typeof createPlaybackStore>
 type FlyControls = ReturnType<typeof useSceneFlyControls>
@@ -81,6 +82,7 @@ export interface R3dCProps {
   blockedReason: string
   file: File | null
   playbackSession: PlaybackSessionLike | null
+  autoStartUserId: string
 }
 
 export function r3dC(S: R3dCParts, props: R3dCProps): void {
@@ -244,15 +246,15 @@ function ensureScene(): boolean {
   return true
 }
 
-/** 解析目标回放：同一次会话内同一文件不重复解析 */
-
-
 /**
- * 待开播：文件到位后先让用户选画质，按「开始」才解析 + 拉资产。
+ * 待开播：手动路径下文件到位后先让用户选画质，按「开始」才解析 + 拉资产；
+ * 登录且自动播放偏好开启时由 maybeAutoStart 走同一条 startReplay（沿用已有画质）。
  * 画质必须在渲染器创建前定型（内核 `startPlayback()` 惰性建渲染器、首帧按当前档位），
- * 所以这一步不能省成"加载中也能切档"。`startedFile` = 用户已按过开始的那一场。
+ * 所以这一步不能省成"加载中也能切档"。`startedFile` = 已手动或自动开始的那一场。
  */
 const startedFile = shallowRef<File | null>(null)
+/** 登录用户的 3D 自动播放偏好（ProfilePage 控制；匿名 / 无 sub 不可用）。 */
+const autoStart = useReplay3DAutoStart(() => props.autoStartUserId)
 const qualityOptions = computed(() =>
   S.QUALITY_ORDER.map((k) => ({ value: k, label: S.t('agentReplay.q_' + k) })),
 )
@@ -261,6 +263,24 @@ function startReplay(): void {
   if (!props.file) return
   startedFile.value = props.file
   reconcileScene()
+}
+
+/**
+ * 自动开始：只在「偏好开启 + 身份可用 + 面板激活 + 文件就绪 + 在线 + WebGL + 未阻断 + 3D 能力可用」
+ * 同时成立时复用 startReplay，不新增下载 / 解析路径。startedFile 是唯一 one-shot guard：
+ * 同一文件不会因 active / 2D-3D 往返 / 重连重复 start；失败也不自动重试。
+ * 不检查 store.loading —— 旧解析已由 reconcileScene / loadFile 的 abortParse 终止。
+ */
+function maybeAutoStart(): void {
+  // KeepAlive 下 Profile 的偏好写入不会重建本实例：每次进入 / 换文件前重读存储值。
+  autoStart.refresh()
+  if (!autoStart.available.value || !autoStart.enabled.value) return
+  if (!props.active || !S.renderActive.value) return
+  const file = props.file
+  if (!file || startedFile.value === file) return
+  if (!S.online.value.available || !S.webgl.supported || props.blockedReason) return
+  if (!S.requireFeature(Feature.PLAYBACK_3D)) return
+  startReplay()
 }
 
 function reconcileScene(): void {
@@ -272,7 +292,7 @@ function reconcileScene(): void {
   }
   const created = ensureScene()
   const file = props.file
-  // 尚未按开始（含换到另一场）：先撤下上一场（旧场景会压住待开播面板）与在途解析
+  // 尚未开始（含换到另一场）：先撤下上一场（旧场景会压住待开播面板）与在途解析
   if (file !== startedFile.value) {
     if (S.loadedFile) {
       S.sceneApi?.reset?.()
@@ -373,6 +393,7 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 
 onMounted(() => {
   reconcileScene()
+  maybeAutoStart()
   observeLaneBounds()
   window.addEventListener('keydown', S.onUiToggleKeydown)
 })
@@ -393,6 +414,7 @@ const sceneLiveness = computed(() => [props.file, props.blockedReason, S.renderA
 watch(sceneLiveness, (next, previous) => {
   // 先按新的 file/blocked 收敛场景，再处理能力切换
   reconcileScene()
+  maybeAutoStart()
   const active = next[2]
   const activeChanged = previous != null && previous.length >= 3 && previous[2] !== active
   if (activeChanged) {
@@ -405,6 +427,11 @@ watch(() => props.active, (active) => {
   // 能力切走 / 页面停用（active 已含 pageActive）：退出本回放拥有的全屏，否则新页面被挡在旧 fullscreen root 后面
   if (!active) { S.closeAnnotation(); unlockOrientation(); exitOwnedFullscreen() }
 })
+
+// 偏好 / 身份 / 激活状态变化时只尝试一次自动开始；不在这里 reconcileScene，避免提前清场。
+watch([() => props.active, () => props.autoStartUserId, () => autoStart.enabled.value], () => {
+  maybeAutoStart()
+}, { flush: 'post' })
 
 // 面板打开期间尺寸变化（旋转 / 全屏 / 工作台重排）重算可用高度；闭合时不测量
 // （此时 .controls 可能整块不存在），打开那一下由 watch(displayOpen) 负责。
@@ -436,6 +463,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
     startedFile,
     qualityOptions,
     startReplay,
+    maybeAutoStart,
     reconcileScene,
     rootEl,
     hudEl,

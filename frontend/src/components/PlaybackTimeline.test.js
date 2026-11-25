@@ -55,7 +55,7 @@ describe('PlaybackTimeline', () => {
 
   // 事件刻度层（blitzinfo 式）：无刻度数据时整层不渲染（2D 未接线保持原样，上面的
   // 「clean progress track」用例锁的就是缺省形态）；有数据时炮击线 + 击毁点、点击 seek。
-  it('renders shot and kill ticks only when tick data is provided', () => {
+  it('renders shot and kill ticks only when tick data is provided and event markers are enabled', () => {
     const bare = mount(PlaybackTimeline, {
       props: { currentTime: 5, duration: 20 },
       global: { mocks: { $t: key => key } },
@@ -67,6 +67,7 @@ describe('PlaybackTimeline', () => {
         currentTime: 5,
         startTime: 0,
         duration: 20,
+        showEventMarkers: true,
         shotTicks: [
           { t: 4, pct: 20, highlight: false },
           { t: 12, pct: 60, highlight: true },
@@ -85,6 +86,28 @@ describe('PlaybackTimeline', () => {
     expect(wrapper.findAll('.pb-tick-kill')).toHaveLength(1)
   })
 
+  // 事件信息关闭：tick 数据仍在，但不渲染刻度层；原生 range 保持可用（隐藏展示不改 seek）。
+  it('hides tick decorations while keeping native seek usable when event markers are off', async () => {
+    const wrapper = mount(PlaybackTimeline, {
+      props: {
+        currentTime: 5,
+        duration: 20,
+        showEventMarkers: false,
+        shotTicks: [{ t: 4, pct: 20, highlight: false }],
+        killTicks: [{ t: 10, pct: 50 }],
+      },
+      global: { mocks: { $t: key => key } },
+    })
+    expect(wrapper.find('[data-test="pb-ticks"]').exists()).toBe(false)
+    const range = wrapper.find('input[type="range"]')
+    expect(range.attributes('disabled')).toBeUndefined()
+    await range.setValue('9.5')
+    expect(wrapper.emitted('seek')).toEqual([[9.5]])
+
+    await wrapper.setProps({ showEventMarkers: true })
+    expect(wrapper.find('[data-test="pb-ticks"]').exists()).toBe(true)
+  })
+
   // 命中条 = 单一底部元素（不逐刻度布命中区，密集炮击也不挡滑块拖动）：
   // 点击 → 5px 半径内就近吸附刻度；无近邻 → 与原生轨道点击同语义的按比例 seek。
   it('clicking the tick strip snaps to the nearest event, else seeks proportionally', async () => {
@@ -92,6 +115,7 @@ describe('PlaybackTimeline', () => {
       props: {
         currentTime: 5,
         duration: 20,
+        showEventMarkers: true,
         shotTicks: [{ t: 12, pct: 60, highlight: false }],
         killTicks: [{ t: 8, pct: 40 }],
       },
@@ -111,7 +135,7 @@ describe('PlaybackTimeline', () => {
 
     // duration <= start：滑块本身禁用，刻度层一并隐藏（刻度挤在 0% 纯属误导）
     const degenerate = mount(PlaybackTimeline, {
-      props: { currentTime: 7, duration: 7, disabled: true, shotTicks: [{ t: 7, pct: 0, highlight: false }] },
+      props: { currentTime: 7, duration: 7, disabled: true, showEventMarkers: true, shotTicks: [{ t: 7, pct: 0, highlight: false }] },
       global: { mocks: { $t: key => key } },
     })
     expect(degenerate.find('[data-test="pb-ticks"]').exists()).toBe(false)
