@@ -244,6 +244,114 @@ describe('Replay3DPane 3D annotation wiring', () => {
     wrapper.unmount()
   })
 
+  it('登录且偏好开启：进入 3D 自动解析并播放，不出现待开播遮罩；active 往返不重复开始', async () => {
+    mockWebGL('webgl2')
+    const file = mkFile('auto.wotbreplay')
+    const wrapper = mountPane({ file, autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
+    expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+
+    // 同一文件 active 往返（能力切走再回来）不得再次 start / 解析
+    await wrapper.setProps({ active: false })
+    await flush()
+    await wrapper.setProps({ active: true })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('偏好关闭时保留待开播，手动开始仍可用', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    const wrapper = mountPane({ autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    await start(wrapper)
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('Profile 关闭偏好后，KeepAlive 实例换文件不再自动开始', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ file: mkFile('auto-first.wotbreplay'), autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+
+    // 同一 SPA 里 ProfilePage 写入 localStorage；回放面板被 KeepAlive 缓存，不会重建 composable。
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    await wrapper.setProps({ file: mkFile('auto-second.wotbreplay') })
+    await flush()
+
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('Profile 打开偏好后，KeepAlive 实例在下次激活时自动开始', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    const wrapper = mountPane({ autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '1')
+    await wrapper.setProps({ active: false })
+    await flush()
+    await wrapper.setProps({ active: true })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('无用户 sub 时自动播放不可用，保留手动开始', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ autoStartUserId: null })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('离线不自动开始；连通性恢复后自动解析一次', async () => {
+    mockWebGL('webgl2')
+    connectivityState.state.value = 'offline'
+    const wrapper = mountPane({ autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="replay3d-connectivity"]').exists()).toBe(true)
+
+    connectivityState.state.value = 'online'
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('blocked / 未激活时不自动开始；解除后自动一次', async () => {
+    mockWebGL('webgl2')
+    const blocked = mountPane({ autoStartUserId: 'user-a', blockedReason: 'workspace.single_replay_required' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    await blocked.setProps({ blockedReason: '' })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    blocked.unmount()
+
+    canonical.load.mockClear()
+    const inactive = mountPane({ autoStartUserId: 'user-a', active: false })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    await inactive.setProps({ active: true })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    inactive.unmount()
+  })
+
   /**
    * 2026-11-19 用户要求：2D/3D 同一个面板窗口，播放条从场景里拿出来、放到窗口下方通栏。
    * 源码级守卫：根节点必须带 transport-docked；共享 CSS 必须把 controls 放回普通流

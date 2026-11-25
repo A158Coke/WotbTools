@@ -49,6 +49,23 @@ describe('PlaybackTransport', () => {
     expect(wrapper.get('[data-test="pb-speed-2"]').attributes('disabled')).toBeUndefined()
   })
 
+  it('事件刻度层随 showEventMarkers 显隐，时间轴 seek 始终可用', async () => {
+    const wrapper = mountTransport({
+      currentTime: 5,
+      duration: 60,
+      shotTicks: [{ t: 4, pct: 10, highlight: false }],
+      killTicks: [{ t: 10, pct: 20 }],
+    })
+    expect(wrapper.find('[data-test="pb-ticks"]').exists()).toBe(false)
+    expect(wrapper.get('input[type="range"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('input[type="range"]').setValue('30')
+    expect(wrapper.emitted('seek')).toEqual([[30]])
+
+    await wrapper.setProps({ showEventMarkers: true })
+    expect(wrapper.find('[data-test="pb-ticks"]').exists()).toBe(true)
+    expect(wrapper.get('input[type="range"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('拖动进度条：发出 scrub-start / seek / scrub-end，拖动期间不被外部时间拽回', async () => {
     const wrapper = mountTransport({ currentTime: 5, duration: 60 })
     const range = wrapper.get('input[type="range"]')

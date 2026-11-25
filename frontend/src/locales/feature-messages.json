@@ -126,6 +126,7 @@
       "tab_ai": "AI 复盘",
 
       "tab_events": "事件流",
+      "show_event_details": "显示事件信息",
 
       "login_required_events": "登录后即可使用事件流。",
       "ai_maintenance": "AI 复盘维护中",
@@ -1151,6 +1152,7 @@
       "tab_ai": "AI Review",
 
       "tab_events": "Events",
+      "show_event_details": "Show event details",
 
       "login_required_events": "Log in to use the event stream.",
       "ai_maintenance": "AI Review is under maintenance",
@@ -2176,6 +2178,7 @@
       "tab_ai": "AI-разбор",
 
       "tab_events": "События",
+      "show_event_details": "Показать события",
 
       "login_required_events": "Войдите, чтобы использовать поток событий.",
       "ai_maintenance": "ИИ-разбор на техническом обслуживании",

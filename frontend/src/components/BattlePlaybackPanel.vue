@@ -26,6 +26,8 @@ const props = defineProps({
   /** 2D 时间轴刻度源（与 3D 同一份 scenePlayback facet）。 */
   facetShots: { type: Array, default: null },
   facetKills: { type: Array, default: null },
+  /** 是否渲染时间轴事件刻度层（回放面板统一开关；默认关闭）。 */
+  showEventMarkers: { type: Boolean, default: false },
   /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
   blockedReason: { type: String, default: '' },
   /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
@@ -239,6 +241,7 @@ onMounted(() => {
             :seek-to="mapSeek ?? undefined"
             :facet-shots="facetShots"
             :facet-kills="facetKills"
+            :show-event-markers="props.showEventMarkers"
             :active="active && panelView === 'playback'"
             :auto-fullscreen="{ token: autoFullscreenToken, key: file }"
           />

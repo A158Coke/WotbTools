@@ -95,6 +95,8 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
 
     // 事件流已就绪（面板壳内的事件 pane 自带 data-pane-ready，高 400）；2D pane 未就绪（高度 0、无标记）
     const events = wrapper.get('[data-testid="ws-events"]').element
+    expect(events.style.display).toBe('')
+    expect(wrapper.get('[data-testid="viewer-events-toggle"]').attributes('aria-checked')).toBe('true')
     paneHeights.set(events, 400)
     roCallbacks.forEach((ro) => ro.el === events && ro.cb([]))
     await flushPromises()

@@ -307,6 +307,12 @@ export const PLAYBACK_SCENARIOS = [
   // 中心列，速度档位展开后每个都满足 44px 点击区域（触屏自动放大 --control-h-*）。
   { name: 'play-1366x1024-tablet-coarse', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
   { name: 'duration-zero-390x844-coarse', width: 390, height: 844, touch: true, duration: 0, form: 'pb-form-mobile' },
+  // 事件信息开关的刻度层 gating：真实生产组件、真实 CSS，ticks 数据存在时默认不画，
+  // 打开 markers 后才出现炮击 / 击毁刻度；原生 range 在任何状态下都可用。
+  { name: 'play-markers-hidden-1440x900', width: 1440, height: 900, touch: false, duration: 120, form: 'pb-form-pc', query: 'ticks=1', markers: 'hidden' },
+  { name: 'play-markers-visible-1440x900', width: 1440, height: 900, touch: false, duration: 120, form: 'pb-form-pc', query: 'ticks=1&markers=1', markers: 'visible' },
+  { name: 'play-markers-visible-1024x768-tablet', width: 1024, height: 768, touch: false, duration: 120, form: 'pb-form-tablet', query: 'ticks=1&markers=1', markers: 'visible' },
+  { name: 'play-markers-visible-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 120, form: 'pb-form-mobile', query: 'ticks=1&markers=1', markers: 'visible' },
 ]
 
 /** §form-factor：竖屏 → 横屏旋转后 class / hit target 必须重新正确计算，不留 stale 状态。 */
@@ -390,6 +396,56 @@ export async function runAppScenario(env, scenario) {
   `capability was reverted by a later watcher/route sync: ${JSON.stringify(settled)}`)
   check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
     'route was reverted away from ?view=battle-playback by a later watcher/route sync')
+
+  // —— 事件信息开关：默认隐藏事件流，开关恢复；3D 后保持同一状态 ——
+  const eventProbe = `(() => {
+    const toggleEl = document.querySelector('[data-testid="viewer-events-toggle"]')
+    const section = document.querySelector('[data-testid="ws-events"]')
+    const r = section?.getBoundingClientRect()
+    return {
+      toggle: !!toggleEl,
+      checked: toggleEl?.getAttribute('aria-checked') ?? null,
+      displayed: !!section && section.offsetHeight > 0 && (r?.height ?? 0) > 0,
+      styleDisplay: section?.style.display ?? null,
+      sectionMounted: !!section,
+      height: r?.height ?? 0,
+    }
+  })()`
+  const eventToggle = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="viewer-events-toggle"]')
+    if (!button) return null
+    button.scrollIntoView({ block: 'center', inline: 'nearest' })
+    const r = button.getBoundingClientRect()
+    const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+    const hit = document.elementFromPoint(center.x, center.y)
+    return { center, hitIsButton: hit === button || button.contains(hit), height: r.height, width: r.width }
+  })()`)
+  check(failures, !!eventToggle && eventToggle.hitIsButton,
+    `event details switch missing or not hit-testable: ${JSON.stringify(eventToggle)}`)
+  check(failures, (eventToggle?.height ?? 0) >= 43.5,
+    `event details switch hit height below 44px: ${JSON.stringify(eventToggle)}`)
+  const defaultEvents = await page.evaluate(eventProbe)
+  check(failures, defaultEvents.toggle && defaultEvents.checked === 'false' && !defaultEvents.displayed
+    && defaultEvents.sectionMounted,
+  `events must default hidden but stay mounted: ${JSON.stringify(defaultEvents)}`)
+
+  if (eventToggle?.hitIsButton) {
+    try {
+      await page.tap({ ...eventToggle.center, touch: scenario.touch })
+    } catch (error) {
+      failures.push(`event details switch tap failed: ${error?.message || error}`)
+    }
+    const open = await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events visible after toggle' })
+    check(failures, open?.sectionMounted === true,
+      `opening events must keep the section mounted: ${JSON.stringify(open)}`)
+    await page.tap({ ...eventToggle.center, touch: scenario.touch })
+    const closed = await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden after toggle' })
+    check(failures, closed?.sectionMounted === true, `closing events must keep the section mounted: ${JSON.stringify(closed)}`)
+    // 3D 切换前再打开，验证跨 2D/3D 共用同一开关状态
+    await page.tap({ ...eventToggle.center, touch: scenario.touch })
+    await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events reopened before 3D' })
+  }
+
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
   if (!scenario.authenticated) {
     const attempts = await page.evaluate('window.__wsAuth.loginCalls.length')
@@ -429,6 +485,42 @@ export async function runAppScenario(env, scenario) {
     check(failures, !threeDState.data.visible, 'ws-data still visible after switching to 3D')
     const gate = await page.evaluate('!!document.querySelector("[data-testid=capability-auth-gate]")')
     check(failures, gate === !scenario.authenticated, `3D gate visibility must follow authentication: ${gate}`)
+    if (eventToggle?.hitIsButton) {
+      const after3d = await page.evaluate(eventProbe)
+      check(failures, after3d.checked === 'true' && after3d.displayed && after3d.sectionMounted,
+        `event details switch must stay open across 2D→3D: ${JSON.stringify(after3d)}`)
+      const after3dToggle = await page.evaluate(`(() => {
+        const button = document.querySelector('[data-testid="viewer-events-toggle"]')
+        if (!button) return null
+        button.scrollIntoView({ block: 'center', inline: 'nearest' })
+        const r = button.getBoundingClientRect()
+        const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+        const hit = document.elementFromPoint(center.x, center.y)
+        return { center, hitIsButton: hit === button || button.contains(hit) }
+      })()`)
+      check(failures, !!after3dToggle?.hitIsButton,
+        `event details switch not hit-testable in 3D: ${JSON.stringify(after3dToggle)}`)
+      if (after3dToggle?.hitIsButton) {
+        await page.tap({ ...after3dToggle.center, touch: scenario.touch })
+        await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden in 3D' })
+        // 关闭事件流会改变页面高度与滚动位置，重新取命中点再打开，复用旧坐标会打空。
+        const reopen3dToggle = await page.evaluate(`(() => {
+          const button = document.querySelector('[data-testid="viewer-events-toggle"]')
+          if (!button) return null
+          button.scrollIntoView({ block: 'center', inline: 'nearest' })
+          const r = button.getBoundingClientRect()
+          const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+          const hit = document.elementFromPoint(center.x, center.y)
+          return { center, hitIsButton: hit === button || button.contains(hit) }
+        })()`)
+        check(failures, !!reopen3dToggle?.hitIsButton,
+          `event details switch not hit-testable after closing in 3D: ${JSON.stringify(reopen3dToggle)}`)
+        if (reopen3dToggle?.hitIsButton) {
+          await page.tap({ ...reopen3dToggle.center, touch: scenario.touch })
+          await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events reopened in 3D' })
+        }
+      }
+    }
   }
 
   await closePageTarget(env.chrome, targetId)
@@ -443,9 +535,30 @@ export async function runPlaybackControlScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=${scenario.duration}${scenario.query ? `&${scenario.query}` : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-play"]'), { label: 'playback controls' })
   const sceneHit = await sceneHitTarget(page)
+
+  if (scenario.markers) {
+    const markerState = await page.evaluate(`(() => {
+      const range = document.querySelector('.pb-range')
+      return {
+        layers: document.querySelectorAll('[data-test="pb-ticks"]').length,
+        shots: document.querySelectorAll('.pb-tick-shot').length,
+        kills: document.querySelectorAll('.pb-tick-kill').length,
+        rangeDisabled: range?.disabled ?? null,
+      }
+    })()`)
+    if (scenario.markers === 'hidden') {
+      check(failures, markerState.layers === 0 && markerState.shots === 0 && markerState.kills === 0,
+        `tick data with events hidden must not render markers: ${JSON.stringify(markerState)}`)
+    } else {
+      check(failures, markerState.layers === 1 && markerState.shots >= 1 && markerState.kills >= 1,
+        `events on must render shot/kill markers: ${JSON.stringify(markerState)}`)
+    }
+    check(failures, markerState.rangeDisabled === false,
+      `event marker gating must not disable the native seek range: ${JSON.stringify(markerState)}`)
+  }
 
   const before = await page.probe(playbackControlProbe)
   // §landscape：非全屏手机横屏时地图按宽度定尺寸，方形地图可以比视口还高，

@@ -458,10 +458,41 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     // 懒加载组件必须绑定到模板标识符（仅声明 module 会让 <ReplayEventStreamPane> 解析失败）
     expect(wrapper.find('[data-test="ws-event-stream"]').exists()).toBe(true)
+    // 默认隐藏的唯一例外：events 深链自动打开事件流（否则 auto-center 目标高度为 0）
+    expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('')
+    expect(wrapper.get('[data-testid="viewer-events-toggle"]').attributes('aria-checked')).toBe('true')
     // 事件流已并入「回放」入口：切到 data 再进回放走 2D 路由（agent-events 深链本身仍有效）
     await switchTo(wrapper, 'data')
     await switchTo(wrapper, 'playback')
     expect(navigate).toHaveBeenLastCalledWith('battle-playback')
+    wrapper.unmount()
+  })
+
+  it('shares one event-marker visibility state across 2D and 3D panes', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    const toggle = () => wrapper.get('[data-testid="viewer-events-toggle"]')
+    expect(toggle().attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-test="ws-playback-pane"]').attributes('data-show-event-markers')).toBe('false')
+
+    await toggle().trigger('click')
+    expect(toggle().attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-test="ws-playback-pane"]').attributes('data-show-event-markers')).toBe('true')
+
+    await switchTo(wrapper, '3d')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-playback-pane"]').attributes('data-show-event-markers')).toBe('true')
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-show-event-markers')).toBe('true')
+    expect(toggle().attributes('aria-checked')).toBe('true')
+
+    await switchTo(wrapper, 'playback')
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-playback-pane"]').attributes('data-show-event-markers')).toBe('true')
+
+    await toggle().trigger('click')
+    expect(wrapper.get('[data-test="ws-playback-pane"]').attributes('data-show-event-markers')).toBe('false')
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-show-event-markers')).toBe('false')
     wrapper.unmount()
   })
 
@@ -1070,6 +1101,29 @@ describe('ReplayWorkspace', () => {
     // 视觉 / 键盘行为归 canonical 组件：adapter 不再自带选项样式与状态机
     expect(wrapper.find('.capability-option').exists()).toBe(false)
     expect(wrapper.get('.segmented').classes()).toContain('is-wrapping')
+    wrapper.unmount()
+  })
+
+  it('3D 自动播放按登录用户 sub 接线，并在 2D/3D 间保持同一身份', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('3d', { authenticated: true, userId: 'user/a' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-auto-start-user-id')).toBe('user/a')
+    await switchTo(wrapper, 'playback')
+    await switchTo(wrapper, '3d')
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-auto-start-user-id')).toBe('user/a')
+
+    authState.tokenParsed.value = { sub: 'user-b' }
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-auto-start-user-id')).toBe('user-b')
+    wrapper.unmount()
+  })
+
+  it('已登录但 tokenParsed 无 sub 时不传身份，不回退到全局 key', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('3d', { authenticated: true, userId: null })
+    await flushPromises()
+    expect(wrapper.get('[data-test="ws-3d-pane"]').attributes('data-auto-start-user-id')).toBe('')
     wrapper.unmount()
   })
 

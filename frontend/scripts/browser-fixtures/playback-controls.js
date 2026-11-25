@@ -116,9 +116,19 @@ const result = params.get('marks') === '1' ? {
 const active = ref(true)
 window.__pbFixture = { setActive: (value) => { active.value = !!value } }
 
+// `?ticks=1`：给 2D 时间轴提供炮击 / 击毁 facet；`?markers=1`：打开统一事件信息开关。
+// 两个参数分开，才能证明“有数据但默认关闭”和“开启后渲染”是两种状态。
+const tickFacets = params.get('ticks') === '1' ? {
+  facetShots: [{ t_fire: 10, is_author: true, shooter_eid: 1 }],
+  facetKills: [{ t: 20 }],
+} : {}
+const showEventMarkers = params.get('markers') === '1'
+
 const Root = {
   name: 'PlaybackControlsFixture',
-  render: () => h(BattlePlayback, { playbackV2: dataset, result, active: active.value }),
+  render: () => h(BattlePlayback, {
+    playbackV2: dataset, result, active: active.value, ...tickFacets, showEventMarkers,
+  }),
 }
 
 createApp(Root).use(i18n).mount('#app')

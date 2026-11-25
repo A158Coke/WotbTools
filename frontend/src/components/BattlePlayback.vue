@@ -48,6 +48,8 @@ const props = defineProps({
   /** 2D 时间轴刻度源：与 3D 同一份 scenePlayback facet（shots / kills；原始秒，由本组件换算）。 */
   facetShots: { type: Array, default: null },
   facetKills: { type: Array, default: null },
+  /** 是否渲染时间轴事件刻度层（回放面板统一开关；默认关闭，不影响 seek）。 */
+  showEventMarkers: { type: Boolean, default: false },
   result: { type: Object, default: null },
   /** Raw Playback reload evidence stays outside the generic canonical/HTTP dataset. */
   reloadTelemetry: { type: Object, default: null },
@@ -276,6 +278,7 @@ defineExpose({
           :format-clock="formatClock"
           :shot-ticks="shotTicks"
           :kill-ticks="killTicks"
+          :show-event-markers="props.showEventMarkers"
           @toggle-play="transport.togglePlay()"
           @step="step"
           @set-speed="setSpeed"

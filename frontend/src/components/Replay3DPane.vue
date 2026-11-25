@@ -38,6 +38,10 @@ const props = defineProps({
   blockedReason: { type: String, default: '' }, autoFullscreenToken: { type: Number, default: 0 },
   /** 事件流「跳到此刻」的一次性请求 `{ id, sec }`：按 id 只消费一次（切回 3D 不重放） */
   pendingSeek: { type: Object, default: null },
+  /** 是否渲染时间轴事件刻度层（回放面板统一开关；默认关闭，不影响 seek）。 */
+  showEventMarkers: { type: Boolean, default: false },
+  /** 当前登录用户 sub；空串 = 匿名 / 未登录，3D 自动播放不可用。 */
+  autoStartUserId: { type: String, default: '' },
 })
 
 // Playback root 角色色（SSOT = data/mapTeamColors.js）：3D 无地图差异，setup 期解析一次，
@@ -263,6 +267,7 @@ const {
             @toggle-roster="toggleRoster"
             :shot-ticks="shotTicks"
             :kill-ticks="killTicks"
+            :show-event-markers="props.showEventMarkers"
             :shortcuts-hint="t('agentReplay.shortcuts_hint')"
             @toggle-play="transport.togglePlay()"
             @step="sceneApi.seekBy($event)"
