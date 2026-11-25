@@ -4,11 +4,17 @@ import { mount } from '@vue/test-utils'
 import sources from '../assets/tank-catalog/sources.json'
 import TankCatalogIcon from './TankCatalogIcon.vue'
 
-const provider = vi.hoisted(() => ({ url: vi.fn(path => `https://assets.test${path}`) }))
+const provider = vi.hoisted(() => ({
+  imageUrl: vi.fn(path => `https://assets.test${path}`),
+  url: vi.fn(),
+}))
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: provider }))
 
 describe('TankCatalogIcon（客户端图标走资产 origin）', () => {
-  beforeEach(() => { provider.url.mockClear() })
+  beforeEach(() => {
+    provider.imageUrl.mockClear()
+    provider.url.mockClear()
+  })
 
   it('34 张目录素材全部有 /ui/** 远端路径（22 图标 + 9 封面背景 + 3 筛选补全）', () => {
     const entries = Object.entries(sources.assets)
@@ -30,7 +36,8 @@ describe('TankCatalogIcon（客户端图标走资产 origin）', () => {
     for (const [props, expected] of cases) {
       const wrapper = mount(TankCatalogIcon, { props })
       expect(wrapper.get('img').attributes('src')).toBe(expected)
-      expect(provider.url).toHaveBeenCalledWith(expected.replace('https://assets.test', ''))
+      expect(provider.imageUrl).toHaveBeenCalledWith(expected.replace('https://assets.test', ''))
+      expect(provider.url).not.toHaveBeenCalled()
       wrapper.unmount()
     }
   })
@@ -57,7 +64,7 @@ describe('TankCatalogIcon（客户端图标走资产 origin）', () => {
   })
 
   it('资产 origin 未配置时隐藏图标而不是抛断列表', () => {
-    provider.url.mockImplementationOnce(() => { throw new Error('资产源未配置') })
+    provider.imageUrl.mockImplementationOnce(() => null)
     const wrapper = mount(TankCatalogIcon, { props: { kind: 'nation', value: 'ussr' } })
     expect(wrapper.find('.catalog-icon').exists()).toBe(false)
     wrapper.unmount()

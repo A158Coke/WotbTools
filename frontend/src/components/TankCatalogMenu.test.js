@@ -11,6 +11,12 @@ const data = vi.hoisted(() => ({
 }))
 vi.mock('../scene/agentData.js', () => data)
 
+const catalogProvider = vi.hoisted(() => ({
+  imageUrl: vi.fn(path => `https://assets.test${path}`),
+  url: vi.fn(path => `https://assets.test${path}`),
+}))
+vi.mock('../scene/assetProvider.js', () => ({ assetProvider: catalogProvider }))
+
 const layout = vi.hoisted(() => ({ compact: false }))
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')

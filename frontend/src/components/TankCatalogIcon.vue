@@ -31,7 +31,7 @@ const asset = computed(() => assets[key.value])
 const url = computed<string | null>(() => {
   const meta = asset.value
   if (!meta?.remote) return null
-  try { return assetProvider.url(meta.remote) } catch { return null }
+  try { return assetProvider.imageUrl(meta.remote) } catch { return null }
 })
 const failed = ref(false)
 watch(url, () => { failed.value = false })

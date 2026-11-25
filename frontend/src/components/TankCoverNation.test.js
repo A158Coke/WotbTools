@@ -3,21 +3,42 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TankCoverNation from './TankCoverNation.vue'
 
-const provider = vi.hoisted(() => ({ url: vi.fn(path => `https://assets.test${path}`) }))
+const provider = vi.hoisted(() => ({
+  imageUrl: vi.fn(path => `https://assets.test${path}`),
+  url: vi.fn(),
+}))
 vi.mock('../scene/assetProvider.js', () => ({ assetProvider: provider }))
 
 describe('TankCoverNation（整幅封面国籍背景）', () => {
-  beforeEach(() => { provider.url.mockClear() })
+  beforeEach(() => {
+    provider.imageUrl.mockClear()
+    provider.url.mockClear()
+  })
 
-  it('按国籍渲染 tutor-tank 布旗作为封面背景，且对辅助技术隐藏', () => {
+  it('按国籍渲染 tutor-tank 布旗，隐藏装饰并走无副作用的 imageUrl', () => {
     const wrapper = mount(TankCoverNation, { props: { nation: 'ussr' } })
     const flag = wrapper.get('[data-testid="tank-cover-nation"]')
-    expect(flag.element.tagName).toBe('IMG')
-    expect(flag.attributes('src')).toBe('https://assets.test/ui/flags/flag_tutor-tank_ussr@2x.webp')
+    expect(flag.element.tagName).toBe('SPAN')
     expect(flag.attributes('aria-hidden')).toBe('true')
-    // 父级 `.tp-media img` 是 contain；背景层必须内联 cover 才能铺满。
-    expect(flag.attributes('style')).toContain('object-fit: cover')
-    expect(provider.url).toHaveBeenCalledWith('/ui/flags/flag_tutor-tank_ussr@2x.webp')
+    expect(flag.get('img').attributes('src')).toBe('https://assets.test/ui/flags/flag_tutor-tank_ussr@2x.webp')
+    expect(provider.imageUrl).toHaveBeenCalledWith('/ui/flags/flag_tutor-tank_ussr@2x.webp')
+    // 装饰图不能走会触发 Android PLAYBACK_3D 提示的 url()。
+    expect(provider.url).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('按可见 bounds 裁掉打包透明留白后再 cover 铺满', () => {
+    const wrapper = mount(TankCoverNation, { props: { nation: 'ussr' } })
+    const crop = wrapper.get('.tank-cover-flag-crop')
+    const image = wrapper.get('.tank-cover-flag-crop img')
+    // 1024×512 画布、可见 884×496 → 可见宽高比 1.782 > 8:5：
+    // 裁剪窗按高度 100% 铺满，宽度放大到 111.39%；整图再放大 115.84% / 103.23% 并归零偏移。
+    expect(crop.attributes('style')).toContain('inline-size: 111.39')
+    expect(crop.attributes('style')).toContain('block-size: 100%')
+    expect(image.attributes('style')).toContain('inline-size: 115.83')
+    expect(image.attributes('style')).toContain('block-size: 103.22')
+    expect(image.attributes('style')).toContain('inset-inline-start: 0%')
+    expect(image.attributes('style')).toContain('inset-block-start: 0%')
     wrapper.unmount()
   })
 
@@ -27,8 +48,8 @@ describe('TankCoverNation（整幅封面国籍背景）', () => {
     wrapper.unmount()
   })
 
-  it('资产 origin 未配置时隐藏背景而不是抛错', () => {
-    provider.url.mockImplementationOnce(() => { throw new Error('资产源未配置') })
+  it('资产 origin 未配置/Android 3D 不可用时隐藏背景', () => {
+    provider.imageUrl.mockImplementationOnce(() => null)
     const wrapper = mount(TankCoverNation, { props: { nation: 'usa' } })
     expect(wrapper.find('[data-testid="tank-cover-nation"]').exists()).toBe(false)
     wrapper.unmount()
