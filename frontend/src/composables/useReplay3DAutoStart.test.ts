@@ -95,10 +95,29 @@ describe('useReplay3DAutoStart', () => {
     expect(auto.enabled.value).toBe(true)
   })
 
+  it('写失败时按用户共享会话兜底，同账号其他实例仍保持关闭且不串到其他账号', () => {
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => null)
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError') })
+    const first = mountAuto('user-storage-fail')
+    expect(first.auto.enabled.value).toBe(true)
+    first.auto.enabled.value = false
+    first.scope.stop()
+
+    // 模拟 Profile 与回放面板是两个实例：后挂载者读不到持久值，但必须共享本次会话的关闭状态。
+    const second = mountAuto('user-storage-fail')
+    expect(second.auto.enabled.value).toBe(false)
+
+    const other = mountAuto('user-storage-other')
+    expect(other.auto.enabled.value).toBe(true)
+
+    // 同一偏好不会被错误地当成全局开关。
+    expect(localStorage.getItem(PREFIX + 'user-storage-fail')).toBeNull()
+  })
+
   it('localStorage 不可用时默认开启，写偏好不抛出', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
-    const { auto } = mountAuto('user-a')
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('denied') })
+    const { auto } = mountAuto('user-storage-unavailable')
     expect(auto.available.value).toBe(true)
     expect(auto.enabled.value).toBe(true)
     expect(() => { auto.enabled.value = false }).not.toThrow()

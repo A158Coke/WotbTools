@@ -206,40 +206,22 @@ describe('ProfilePage Wargaming regions', () => {
     hundredApi.hofHundredCancel.mockReset()
   })
 
-  it('ASIA WARGAMING profile shows Asia server and is read-only', async () => {
-    currentProfile = wargamingProfile('ASIA', 123)
+  it.each([
+    ['ASIA', 'profile.serverAsia'],
+    ['EU', 'profile.serverEu'],
+    ['NA', 'profile.serverNa'],
+  ])('%s WARGAMING profile shows its server and is read-only', async (server, serverLabel) => {
+    currentProfile = wargamingProfile(server, 123)
     const wrapper = mountProfile()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('profile.serverAsia')
+    expect(wrapper.text()).toContain(serverLabel)
     expect(wrapper.text()).not.toContain('profile.serverCn')
     expect(wrapper.text()).toContain('profile.sourceWargaming')
     expect(wrapper.text()).toContain('profile.verifiedBadge')
     expect(wrapper.text()).not.toContain('profile.edit')
     expect(wrapper.text()).not.toContain('profile.unbind')
     expect(wrapper.text()).not.toContain('profile.setAccount')
-  })
-
-  it('EU WARGAMING profile shows Europe server and is read-only', async () => {
-    currentProfile = wargamingProfile('EU', 123)
-    const wrapper = mountProfile()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('profile.serverEu')
-    expect(wrapper.text()).not.toContain('profile.serverCn')
-    expect(wrapper.text()).not.toContain('profile.edit')
-    expect(wrapper.text()).not.toContain('profile.unbind')
-  })
-
-  it('NA WARGAMING profile shows North America server and is read-only', async () => {
-    currentProfile = wargamingProfile('NA', 123)
-    const wrapper = mountProfile()
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('profile.serverNa')
-    expect(wrapper.text()).not.toContain('profile.serverCn')
-    expect(wrapper.text()).not.toContain('profile.edit')
-    expect(wrapper.text()).not.toContain('profile.unbind')
   })
 
   it('WARGAMING source with non-ASIA server still blocks edit and unbind', async () => {
