@@ -35,11 +35,20 @@ file="$ANDROID_DOWNLOAD_ROOT/android/$name"
 : > "$headers"
 case "$url" in
   https://wotbtools.com/download/android/*)
+    if [[ ${FIXTURE_ROUTE:-} == aliyun ]]; then
+      printf 'HTTP/2 302\r\nlocation: https://assets.wotbtools.com/android/%s\r\nCache-Control: %s\r\n\r\n' "$name" "${REDIRECT_CACHE:-no-store}" >> "$headers"
+    else
+      file="release-staging/$name"
+      dest="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$name&dl=1"
+      if [[ ${BAD_ROUTE:-} == "$name" ]]; then dest=https://other.invalid/file; fi
+      printf 'HTTP/2 302\r\nlocation: %s\r\ncontent-length: 0\r\n\r\n' "$dest" >> "$headers"
+      printf 'HTTP/1.1 302 Found\r\nLocation: https://cloud.tsinghua.edu.cn/seafhttp/files/fixture/%s\r\n\r\n' "$name" >> "$headers"
+    fi
+    ;;
+  https://cloud.tsinghua.edu.cn/d/*)
+    name=${name%&dl=1}
     file="release-staging/$name"
-    dest="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$name&dl=1"
-    if [[ ${BAD_ROUTE:-} == "$name" ]]; then dest=https://other.invalid/file; fi
-    printf 'HTTP/2 302\r\nlocation: %s\r\ncontent-length: 0\r\n\r\n' "$dest" >> "$headers"
-    printf 'HTTP/1.1 302 Found\r\nLocation: https://cloud.tsinghua.edu.cn/seafhttp/files/fixture/%s\r\n\r\n' "$name" >> "$headers"
+    printf 'HTTP/2 302\r\nLocation: https://%s/seafhttp/files/fixture/%s\r\n\r\n' "${SHARE_HOST:-cloud.tsinghua.edu.cn}" "$name" >> "$headers"
     ;;
   https://assets.wotbtools.com/android/*) ;;
   *) exit 1 ;;
@@ -79,6 +88,13 @@ jq -n --arg url "https://wotbtools.com/download/android/$patch" --arg sha "$patc
 reject bash "$publish"
 DOWNLOAD_NAME=$patch DOWNLOAD_SHA=$patch_sha bash "$install"
 bash "$publish"
+verify=deploy/assets/verify-android-download.sh
+bash "$verify" --replica tsinghua "$patch" 5 "$patch_sha"
+SHARE_HOST=other.invalid reject bash "$verify" --replica tsinghua "$patch" 5 "$patch_sha"
+FIXTURE_ROUTE=aliyun bash "$verify" --replica stable-aliyun "$patch" 5 "$patch_sha"
+FIXTURE_ROUTE=aliyun REDIRECT_CACHE=immutable reject bash "$verify" --replica stable-aliyun "$patch" 5 "$patch_sha"
+reject bash "$verify" --replica stable-aliyun "$patch" 5 "$patch_sha"
+FIXTURE_ROUTE=aliyun reject bash "$verify" --replica stable "$patch" 5 "$patch_sha"
 BAD_ROUTE=$patch reject bash "$publish"
 printf 'wrong' > "release-staging/$patch"
 reject bash "$publish"
