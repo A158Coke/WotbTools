@@ -15,6 +15,7 @@ function deps(overrides = {}) {
     updateFiles: vi.fn(),
     updateDemoFile: vi.fn(),
     analyze: vi.fn().mockResolvedValue({ completed: true }),
+    onRestored: vi.fn(),
     onError: vi.fn(),
     ...overrides,
   }
@@ -50,6 +51,7 @@ describe('restoreStagedReplay', () => {
     expect(d.updateFiles).toHaveBeenCalledWith([file])
     expect(d.updateDemoFile).not.toHaveBeenCalled()
     expect(d.analyze).toHaveBeenCalledTimes(1)
+    expect(d.onRestored).toHaveBeenCalledWith(file)
   })
 
   it('官方示例：重新下载校验后走 demo 选择路径', async () => {
@@ -62,6 +64,7 @@ describe('restoreStagedReplay', () => {
     expect(d.updateDemoFile).toHaveBeenCalledWith(file)
     expect(d.updateFiles).not.toHaveBeenCalled()
     expect(d.analyze).toHaveBeenCalledTimes(1)
+    expect(d.onRestored).toHaveBeenCalledWith(file)
   })
 
   it('取回暂存失败：提示一次且不解析', async () => {
@@ -78,5 +81,14 @@ describe('restoreStagedReplay', () => {
     const d = deps({ analyze: vi.fn().mockRejectedValue(new Error('parse crashed')) })
     expect(await restoreStagedReplay(d)).toBe(false)
     expect(d.onError).toHaveBeenCalledTimes(1)
+    expect(d.onRestored).not.toHaveBeenCalled()
+  })
+
+  it('解析没有完成：恢复输入但不标记自动重播', async () => {
+    const file = new File(['replay'], 'battle.wotbreplay')
+    cache.take.mockResolvedValue({ kind: 'file', file })
+    const d = deps({ analyze: vi.fn().mockResolvedValue({ completed: false, reason: 'ENGINE_UNAVAILABLE' }) })
+    expect(await restoreStagedReplay(d)).toBe(true)
+    expect(d.onRestored).not.toHaveBeenCalled()
   })
 })

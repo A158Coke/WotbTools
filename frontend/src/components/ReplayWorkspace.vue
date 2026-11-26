@@ -109,8 +109,9 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
   },
 })
 // 渲染设置整页重载后恢复当前回放（一次性标记；普通进入不触碰 IndexedDB）。
+const replayResumeToken = ref(0)
 useReplayReloadRestore({
-  files, updateFiles, updateDemoFile, analyze, onError: () => { error.value = t('workspace.replay_restore_failed') },
+  files, updateFiles, updateDemoFile, analyze, onRestored: () => { replayResumeToken.value += 1 }, onError: () => { error.value = t('workspace.replay_restore_failed') },
 })
 
 function confirmRemove() {
@@ -352,7 +353,7 @@ watch(() => props.initialCapability, (val) => {
               :pending-seek="pending3dSeek"
               :show-event-markers="showEventMarkers"
               :auto-start-user-id="autoStartUserId"
-              :demo="isDemoSelection"
+              :demo="isDemoSelection" :resume-token="replayResumeToken"
             />
           </template>
           <template #events>

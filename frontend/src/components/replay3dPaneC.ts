@@ -80,6 +80,7 @@ export interface R3dCProps {
   file: File | null
   playbackSession: PlaybackSessionLike | null
   autoStartUserId: string
+  resumeToken: number
 }
 
 export function r3dC(S: R3dCParts, props: R3dCProps): void {
@@ -206,6 +207,7 @@ function ensureScene(): boolean {
 }
 
 const startedFile = shallowRef<File | null>(null)
+let resumePending = props.resumeToken > 0
 const autoStart = useReplay3DAutoStart(() => props.autoStartUserId)
 const qualityOptions = computed(() =>
   S.QUALITY_ORDER.map((k) => ({ value: k, label: S.t('agentReplay.q_' + k) })),
@@ -213,18 +215,23 @@ const qualityOptions = computed(() =>
 
 function startReplay(): void {
   if (!props.file) return
+  resumePending = false
   startedFile.value = props.file
   reconcileScene()
 }
 
 function maybeAutoStart(): void {
   autoStart.refresh()
-  if (!autoStart.available.value || !autoStart.enabled.value) return
   if (!props.active || !S.renderActive.value) return
   const file = props.file
-  if (!file || startedFile.value === file) return
+  if (!file) return
+  if (startedFile.value === file) { resumePending = false; return }
   if (!S.online.value.available || !S.webgl.supported || props.blockedReason) return
   if (!S.requireFeature(Feature.PLAYBACK_3D)) return
+  // 渲染设置重载恢复的那一场优先于日常自动播放偏好；仍复用同一条手动开始路径。
+  const resume = resumePending
+  if (!resume && (!autoStart.available.value || !autoStart.enabled.value)) return
+  resumePending = false
   startReplay()
 }
 
@@ -324,7 +331,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   }
 }
 
-
 onMounted(() => {
   reconcileScene()
   maybeAutoStart()
@@ -359,13 +365,13 @@ watch(() => props.active, (active) => {
 watch([() => props.active, () => props.autoStartUserId, () => autoStart.enabled.value], () => {
   maybeAutoStart()
 }, { flush: 'post' })
+watch(() => props.resumeToken, () => { resumePending = true; maybeAutoStart() }, { flush: 'post' })
 
 function onViewportResize(): void { measurePresentationBounds() }
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(measurePresentationBounds))
 onMounted(() => window.addEventListener('resize', onViewportResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
-
   Object.assign(S, {
     selectedTrack,
     selectedLife,

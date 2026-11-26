@@ -12,6 +12,8 @@ export interface ReplayReloadRestoreDeps {
   updateFiles: (files: File[]) => void
   updateDemoFile: (file: File) => void
   analyze: () => Promise<unknown>
+  /** 恢复解析成功后通知工作台：本次自动开始不受日常自动播放偏好限制。 */
+  onRestored?: (file: File) => void
   onError: (error: unknown) => void
 }
 
@@ -29,13 +31,16 @@ export async function restoreStagedReplay(deps: ReplayReloadRestoreDeps): Promis
   }
   if (!staged) return false
   try {
+    let file: File
     if (staged.kind === 'demo') {
-      const file = await loadOfficialDemo()
+      file = await loadOfficialDemo()
       deps.updateDemoFile(file)
     } else {
-      deps.updateFiles([staged.file])
+      file = staged.file
+      deps.updateFiles([file])
     }
-    await deps.analyze()
+    const result = (await deps.analyze()) as { completed?: boolean } | null | undefined
+    if (result?.completed !== false) deps.onRestored?.(file)
     return true
   } catch (error) {
     deps.onError(error)
