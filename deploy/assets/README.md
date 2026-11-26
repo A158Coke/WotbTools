@@ -148,6 +148,18 @@ rechecks both public paths for every staged object before announcing a new
 version. The stable URL still redirects to Tsinghua. Verify the rollback
 replica and record the production capacity and cost decision before cutover.
 
+To check the rollback source independently of the TX route, run the verifier
+with `--replica tsinghua "$name" "$size" "$sha256"`. For an approved canary
+or an isolated cutover rehearsal, `--replica stable-aliyun "$name" "$size" "$sha256"`
+requires one no-store 302 to the exact Aliyun object, followed by immutable
+responses and matching full and resumed bytes. The dual-write release jobs
+continue to check the current stable-to-Tsinghua route with `--replica stable`.
+On 2026-11-27 the 5.7.2 APK (210,171,637 bytes) passed direct Aliyun and
+Tsinghua full GET and Range checks against its staged SHA-256. The live
+stable URL still redirected to Tsinghua. The single-object cutover and
+rollback were exercised on a loopback Caddy gateway with the real public
+replicas. Production GO and Android device acceptance remain open on #801.
+
 ## Dataset versions
 
 资产 origin 按游戏版本维护 dataset。可选版本与默认版本以 [线上目录](https://assets.wotbtools.com/versions.json) 为准。超测版本须显式选择。
