@@ -1,6 +1,6 @@
 # Alibaba Shanghai asset origin
 
-This directory declares the Komodo-managed static origin for Agent 3D assets.
+This directory declares the Komodo-managed static origin for Agent 3D assets and the candidate Android download replica.
 It does **not** cut production traffic over by itself.
 
 ## Runtime ownership
@@ -86,6 +86,47 @@ release is complete:
 Keep the current release plus at least one previous release while the migration is
 being proven. Do not overwrite the live tree in place. Initial payload upload remains
 manual; Git tracks configuration, not the multi-GB asset pack.
+
+## Android candidate download origin
+
+After redeployment the Caddy Stack can serve versioned APKs and content-addressed VCDIFF files under
+`https://assets.wotbtools.com/android/`. Provision the following host state
+before redeploying the reviewed Stack revision through Komodo. Only the
+`android/` directory is bind-mounted into Caddy, read-only.
+
+| Host path under `/srv/wotb-downloads` | Owner and use |
+|---|---|
+| `android/` | Installer-owned public regular files, readable by Caddy. Restrict writes to the installer. |
+| `incoming/` | Private installer scratch (0700), on the same filesystem as `android/` for atomic hard-link creation. |
+| `.install.lock` | Pre-created regular file shared by all writers and retention jobs. Keep its inode stable. |
+
+Confirm the upload identity, transport, free space and permissions with the
+host operator. Keep the source upload in a private directory for the duration
+of the command. Allow space for a verified scratch copy in addition to the
+upload. The installed name links to the same inode as the scratch copy. Use the name, size and SHA-256 from the original signed
+release and matching staging evidence. A historical backfill needs the
+original bytes and a verified record for that version.
+
+Run the installer on the origin. Run the verifier from an external Linux host.
+
+```bash
+bash deploy/assets/install-android-download.sh "$upload" "$name" "$size" "$sha256"
+bash deploy/assets/verify-android-download.sh \
+  "https://assets.wotbtools.com/android/$name" "$size" "$sha256"
+```
+
+The first command checks its private copy under the host lock and installs
+it atomically. An exact retry succeeds. A conflicting destination requires
+investigation and retains the original bytes. The second command records
+the actual size and SHA of a full direct GET, checks immutable caching and
+compares a resumed range against that download. Run the existing
+`bash deploy/assets/verify.sh` to check the Agent routes after redeployment.
+
+Record object identity, run, timestamp, host, and both command results in
+the migration inventory. Before redirecting any supported object, also
+verify the same bytes and Range on its rollback replica and record the
+production capacity and cost decision. The release workflow and TX routing
+continue to use the existing distribution path during this preparation.
 
 ## Dataset versions
 

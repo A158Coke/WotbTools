@@ -122,10 +122,14 @@ jobs:
           assert by_target["/etc/caddy/Caddyfile"].get("read_only") is True, by_target
           assert by_target["/srv/wotb-assets"].get("type") == "bind", by_target
           assert by_target["/srv/wotb-assets"].get("read_only") is True, by_target
+          downloads = by_target["/srv/wotb-downloads/android"]
+          assert downloads["type"] == "bind" and downloads["read_only"] is True, downloads
+          assert downloads["source"] == "/srv/wotb-downloads/android", downloads
           assert "/data" in by_target and "/config" in by_target, by_target
           PY
 
-          mkdir -p "$work/assets/current" "$work/assets/datasets/11.21.0"
+          bash deploy/assets/test-install-android-download.sh
+          mkdir -p "$work/downloads/android" "$work/assets/current" "$work/assets/datasets/11.21.0"
           printf '%s\n' '{"asset-origin":"fixture"}' > "$work/assets/current/index.json"
           cp "$work/assets/current/index.json" "$work/assets/datasets/11.21.0/index.json"
           printf '%s\n' '{"version":1,"generated":"2026-01-01T00:00:00+00:00","data_version":{"game_version":"release/11.21.0","tank_count":0,"game_data_files":0},"files":[]}' \
@@ -163,6 +167,7 @@ jobs:
             -p 127.0.0.1::8080 \
             -v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$work/assets:/srv/wotb-assets:ro" \
+            -v "$work/downloads/android:/srv/wotb-downloads/android:ro" \
             caddy:2.10.2-alpine \
             run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
@@ -176,6 +181,7 @@ jobs:
           # reused here against the disposable real Caddy process. This keeps ETag
           # parsing, timeouts, CORS, Range, and conditional GET behavior single-sourced.
           bash deploy/assets/verify.sh "$base"
+          bash deploy/assets/test-android-download-http.sh "$base" "$work/downloads"
           echo 'asset-origin Compose and Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
         run: |
