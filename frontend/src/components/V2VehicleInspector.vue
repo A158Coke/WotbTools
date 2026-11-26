@@ -339,8 +339,8 @@ function moduleStateLabel(state) {
 
 .v2-inspector-chip .v2-chip-icon { width: 32px; height: 32px; object-fit: contain; }
 .v2-chip-name {
-  display: block; max-width: 100%; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  display: block; max-width: 100%; text-align: center;
+  white-space: normal; overflow-wrap: anywhere;
   color: var(--color-text-secondary); font: var(--type-caption);
 }
 .v2-inspector-chip.is-empty .v2-chip-name { color: var(--color-text-tertiary); }

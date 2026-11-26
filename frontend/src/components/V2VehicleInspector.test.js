@@ -200,6 +200,18 @@ describe('V2VehicleInspector', () => {
     w.unmount()
   })
 
+  it('真实长名称在 chip 内以可见文本完整呈现，不依赖 tooltip / aria-label', () => {
+    const t = track()
+    t.loadout.consumables = ['MULTI_PURPOSE_RESTORATION_PACK', null, null]
+    t.loadout.consumableWireCodes = [0x14, null, null]
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'en', t)
+    const chip = w.get('[data-consumable-slot="0"]')
+    expect(chip.get('.v2-chip-name').text()).toBe('Multi-Purpose Restoration Pack')
+    expect(chip.attributes('aria-label')).toContain('Multi-Purpose Restoration Pack')
+    w.unmount()
+  })
+
   it('已装备防破片内衬使用 anti-high-explosive 图标，不降级为空占位', () => {
     const t = track()
     t.loadout.provisions = ['SPALL_LINER', null, null]
