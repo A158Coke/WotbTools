@@ -18,7 +18,6 @@ import java.io.IOException
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.WebResponse
 
-/** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
 internal fun MainActivity.saveExternalResponse(response: WebResponse) {
     val body = response.body ?: run { toast(getString(R.string.download_failed)); return }
     if (destroyedRuntime || downloadInFlight || filePrompt != null || folderPickRequest != null || downloadSave != null) {
@@ -107,7 +106,7 @@ internal fun MainActivity.dispatchActivityResult(requestCode: Int, resultCode: I
     }
     if (requestCode == filePrompt?.first) {
         val request = filePrompt ?: return
-        if (filePromptCopying) return // Ignore duplicate Activity results while copying.
+        if (filePromptCopying) return
         val (_, prompt, result) = request
         val uris = when {
             resultCode == Activity.RESULT_OK && data?.clipData != null ->
@@ -152,7 +151,6 @@ internal fun MainActivity.dispatchActivityResult(requestCode: Int, resultCode: I
                         }
                         result.complete(response)
                         Log.d(TAG, "picker-confirm count=${files.size}")
-                        // Gecko may read DOM File bytes later: successful backing files live until TTL.
                     } catch (_: Exception) {
                         FilePickerCache.discard(files)
                         result.complete(prompt.dismiss())
@@ -168,7 +166,6 @@ internal fun MainActivity.dispatchActivityResult(requestCode: Int, resultCode: I
     }
     if (requestCode in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {
         val request = folderPickRequest ?: return
-        // Expired requests and duplicate provider results must never belong to a retry.
         if (request.requestCode != requestCode || !request.pickerOpen) return
         request.pickerOpen = false
         if (resultCode != Activity.RESULT_OK) {
@@ -199,7 +196,5 @@ internal fun MainActivity.dispatchActivityResult(requestCode: Int, resultCode: I
         }
         return
     }
-    // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent。
-    // Picker codes have their own owners, even if a late result carries unrelated extras.
     handleAuthorizationIntent(data)
 }

@@ -6,13 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * 会话状态域（[AuthSessionStore]）的确定性测试。
- *
- * 关键不变量与交易域互为镜像：会话域的缺失 / 为空 / 损坏 / 清理**只**影响会话域。
- * `AuthManager` 的 `authGetState`、token 读取、刷新与 logout 全部只经这一个域，
- * 因此「会话读取失败」再也不会顺手作废一笔进行中的登录。
- */
 class AuthSessionStoreTest {
 
     private val sessionJson = """{"authorizationServiceConfiguration":{"issuer":"https://auth.wotbtools.com/realms/wotbtools"},"refreshToken":"r-1","accessToken":"a-1"}"""
@@ -65,7 +58,6 @@ class AuthSessionStoreTest {
 
     @Test
     fun aCorruptedSessionIsClearedWithoutTouchingThePendingTransaction() {
-        // 正是旧实现出错的路径：会话域损坏（密文解不开/内容不是 AuthState）只清会话域。
         val slots = FakeSecureSlotStore()
         val transactions = AuthTransactionStore(slots) { 1L }
         transactions.save("state-1", OidcConfiguration.PRIVATE_REDIRECT_URI)
@@ -80,7 +72,6 @@ class AuthSessionStoreTest {
 
     @Test
     fun aFreshProcessReadingTheSessionKeepsThePendingTransactionIntact() {
-        // 进程重建：同一份 slot 之上新建两个状态域对象；WebView init 只读会话域。
         val slots = FakeSecureSlotStore()
         AuthTransactionStore(slots) { 1L }.save("state-1", OidcConfiguration.HTTPS_REDIRECT_URI)
 

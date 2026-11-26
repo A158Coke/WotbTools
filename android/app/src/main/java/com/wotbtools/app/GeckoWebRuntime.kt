@@ -23,38 +23,19 @@ import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebResponse
 import org.mozilla.geckoview.WebRequestError
 
-/**
- * GeckoView 引擎适配（Android 3.0 起取代 System WebView）。
- *
- * 所有权：进程级 [GeckoRuntime] + 内置 bridge 扩展（companion，懒创建，只在主进程）；Activity 级
- * [GeckoSession] 与 delegates（本类实例）。引擎只承载 [MainActivity.LOCAL_APP_ORIGIN] 一个 origin：
- * 外部 `https:` / `mailto:` 交系统浏览器，其余一律拒绝（唯一例外见 [NavigationPolicy]：内嵌 origin 等于
- * 本机 origin 的 `blob:` 下载派发）；权限请求一律拒绝。
- *
- * Bridge：内置扩展的 content script 暴露与 v2 同形的 `window.WotbNative`，经 native messaging port 到这里；
- * 只接受「content script ∧ top frame ∧ 本 session ∧ exact local origin」的 port，消息原样交给
- * [NativeBridge]，因此 RPC 语义完全不变（contracts/android-native-bridge.json）。
- *
- * 故障：content 进程 crash 首次自动重开并重载当前页，[CRASH_WINDOW_MS] 内第二次交给宿主显示错误页，避免重启风暴；
- * 低内存 kill 不算故障，回到前台时静默重载。Gecko parent 进程在 App 进程内，它的 native crash 不在此范围。
- */
 internal class GeckoWebRuntime(
     private val context: Context,
     private val view: GeckoView,
     private val host: Host
 ) {
-    /** 宿主（MainActivity）提供的系统能力；全部在主线程回调。 */
     interface Host {
         fun onBridgeMessage(json: String, reply: (String) -> Unit)
         fun onExternalNavigation(uri: String)
         fun onFullScreen(fullScreen: Boolean)
         fun onExternalResponse(response: WebResponse)
         fun onFilePrompt(prompt: PromptDelegate.FilePrompt): GeckoResult<PromptDelegate.PromptResponse>
-        /** [crashLoop] = content 进程短时间内连续崩溃；否则为本地页面 / 扩展加载失败。 */
         fun onRuntimeFailure(crashLoop: Boolean)
-        /** GeckoView 报告页面已有可显示的首次内容绘制。 */
         fun onContentPainted()
-        /** 已绘制内容不再显示（paint reset / crash / kill 恢复），宿主应重新显示启动面。 */
         fun onContentUnavailable()
     }
 
@@ -72,22 +53,17 @@ internal class GeckoWebRuntime(
     private var lastFailure = "none"
     private val choiceDialogs = GeckoChoiceDialogs(context) { closed }
 
-    /** 当前主文档 URL（取代 `WebView.url`）；尚未加载过任何页面时为 null。 */
     var currentUrl: String? = null
         private set
     var canGoBack = false
         private set
 
-    /**
-     * 扩展就绪（message delegate 已注册）之前不加载页面：首屏前 bridge 必须可用。
-     * content 进程 crash / kill 后 session 已关闭：这里先重开再加载（错误页「重新加载」也走这里）。
-     */
     fun load(uri: String) {
         if (closed) return
         recovery.requested(uri)
         pendingUri = uri
         if (extension == null) {
-            requestExtension() // 安装失败后，错误页的「重新加载」从这里重试
+            requestExtension()
             return
         }
         pendingUri = null
@@ -108,12 +84,10 @@ internal class GeckoWebRuntime(
 
     fun exitFullScreen() = session.exitFullScreen()
 
-    /** Native → Web 事件；global 必须是 contract events 之一（bridge.js 只认白名单）。 */
     fun postEvent(global: String) {
         port?.let { post(it, JSONObject().put("type", "event").put("global", global)) }
     }
 
-    /** 低内存 kill 后回到前台：静默重开并重载被杀前的页面（包括还没收到 onLocationChange 的首屏）。 */
     fun onResume() {
         recovery.onResume()?.let {
             host.onContentUnavailable()
@@ -130,7 +104,6 @@ internal class GeckoWebRuntime(
         session.close()
     }
 
-    /** 错误页 / logcat 共用的一行诊断（不含任何账号、文件或回放信息）。 */
     fun diagnostics(): String =
         "GeckoView ${BuildConfig.GECKOVIEW_VERSION} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
             "${Build.MANUFACTURER} ${Build.MODEL} · ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"} · " +
@@ -187,7 +160,6 @@ internal class GeckoWebRuntime(
         }
     }
 
-    /** Port 只能在主线程使用；回复可能来自 bridge 的后台线程，且可能晚于页面销毁（丢弃即可，JS 侧有超时）。 */
     private fun post(target: WebExtension.Port, message: JSONObject) {
         mainHandler.post {
             if (closed || port !== target) return@post
@@ -224,15 +196,10 @@ internal class GeckoWebRuntime(
                     if (request.target != NavigationDelegate.TARGET_WINDOW_NEW) {
                         GeckoResult.fromValue(AllowOrDeny.ALLOW)
                     } else {
-                        // 没有多窗口：本机链接的 _blank / window.open 与 2.x 一样在当前页打开。
                         mainHandler.post { load(uri) }
                         GeckoResult.fromValue(AllowOrDeny.DENY)
                     }
                 }
-                // blob 下载派发：Gecko 先过 onLoadRequest，再进 ContentDelegate.onExternalResponse，
-                // 因此这里必须 ALLOW。刻意不看 request.target：下载不需要 session，若 target=_blank
-                // 而这次又真的是页面导航，onNewSession 返回 null 会让它落空（fail-closed），
-                // 绝不 load(uri)、绝不交系统浏览器、也不进 Bridge 的 origin trust。
                 MainFrameNavigation.BLOB_DOWNLOAD -> {
                     Log.d(TAG, "nav blob download")
                     GeckoResult.fromValue(AllowOrDeny.ALLOW)
@@ -297,7 +264,6 @@ internal class GeckoWebRuntime(
             lastFailure = "content-kill"
             port = null
             Log.w(TAG, "content process killed count=$killCount")
-            // 通常发生在后台（低内存回收）：等回到前台再重载；若窗口正可见则立即重载，避免停在空白页。
             host.onContentUnavailable()
             recovery.onKill(visible = view.windowVisibility == View.VISIBLE)?.let { load(it) }
         }
@@ -331,7 +297,6 @@ internal class GeckoWebRuntime(
         ) = callback.reject()
     }
 
-    // 必须在所有 delegate 属性之后：扩展已缓存时 requestExtension 会同步回调。
     init {
         session.navigationDelegate = navigationDelegate()
         session.contentDelegate = contentDelegate()
@@ -355,7 +320,6 @@ internal class GeckoWebRuntime(
 
     private companion object {
         const val TAG = "WotbRuntime"
-        /** content script 的 `runtime.connectNative(...)` 名称（bridge.js）。 */
         const val NATIVE_APP = "wotbtools"
         const val EXTENSION_URI = "resource://android/assets/gecko-bridge/"
         const val CRASH_WINDOW_MS = 60_000L
@@ -364,7 +328,6 @@ internal class GeckoWebRuntime(
         private var installedExtension: WebExtension? = null
         private var installing: MutableList<Pair<(WebExtension) -> Unit, () -> Unit>>? = null
 
-        /** 回放自动全屏需要关闭 Gecko 的 trusted-request 限制（见 GeckoRuntimeConfig）；写失败则不传配置，退化为手动全屏。 */
         private fun writeRuntimeConfig(context: Context): String {
             val file = java.io.File(context.filesDir, GeckoRuntimeConfig.FILE_NAME)
             return try {
@@ -377,7 +340,6 @@ internal class GeckoWebRuntime(
             }
         }
 
-        /** GeckoRuntime 每进程只能创建一次；只在主线程、首次需要时创建。 */
         fun runtime(context: Context): GeckoRuntime = runtime ?: GeckoRuntime.create(
             context.applicationContext,
             GeckoRuntimeSettings.Builder()
@@ -393,10 +355,6 @@ internal class GeckoWebRuntime(
                 .build()
         ).also { runtime = it }
 
-        /**
-         * 每个进程安装一次内置扩展。用 installBuiltIn（每次都重装）而不是 ensureBuiltIn（同版本跳过）：
-         * 扩展只有两个小文件，换来升级 APK 后一定运行新 bridge.js，不需要维护扩展版本号。
-         */
         fun withExtension(context: Context, onReady: (WebExtension) -> Unit, onFailure: () -> Unit) {
             installedExtension?.let { onReady(it); return }
             installing?.let { it.add(onReady to onFailure); return }
@@ -419,14 +377,6 @@ internal class GeckoWebRuntime(
     }
 }
 
-/**
- * content 进程 crash / kill 后的恢复目标与恢复时机（纯逻辑，JVM 单测覆盖）。
- *
- * 恢复目标 = 最近一次**请求**加载或 Gecko **确认**的本机 URL：`loadUri` 之后、首个 `onLocationChange` 之前
- * 进程就被杀时，`currentUrl` 还是 null，但请求的目标（例如冷启动的 `?view=replay`）不能丢。`about:blank` 等非本机
- * 地址不会覆盖目标；从未请求过任何页面时才回落 [MainActivity.LOCAL_APP_ENTRY]。后台 kill 的标记只在回前台真正开始
- * 恢复时消费；runtime 关闭后一律不再恢复。
- */
 internal class RuntimeRecovery {
     private var target: String? = null
     private var resumePending = false
@@ -440,7 +390,6 @@ internal class RuntimeRecovery {
         if (url != null && MainActivity.isLocalAppUrl(url)) target = url
     }
 
-    /** 窗口可见时立即返回恢复 URL；不可见时记下，等 [onResume]。 */
     fun onKill(visible: Boolean): String? {
         if (closed) return null
         if (!visible) {

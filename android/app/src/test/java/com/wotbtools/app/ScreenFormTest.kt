@@ -19,7 +19,6 @@ class ScreenFormTest {
     fun tabletsAndUnknownConfigurationsAreNotPhones() {
         assertFalse(ScreenForm.isPhone(600))
         assertFalse(ScreenForm.isPhone(800))
-        // Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED == 0：未知时不锁方向
         assertFalse(ScreenForm.isPhone(0))
     }
 

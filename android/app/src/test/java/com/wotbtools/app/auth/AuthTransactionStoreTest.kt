@@ -7,20 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * 进行中的授权交易（[AuthTransactionStore]）的确定性测试。
- *
- * 这里固定两组不变量：
- *
- * 1. **状态域隔离**：交易域只被登录/回程/交换路径读写，永远不被会话域的读取、损坏处理、刷新或
- *    logout 触碰。旧实现把两者放进同一个 slot，`authGetState` 会把持久化的
- *    `AuthorizationRequest` 当成 `AuthState` 解析，失败即清空整份状态 —— 于是「登录途中进程被杀 +
- *    重新初始化 WebView」会永久作废那笔交易，回程 callback 再也无法通过校验。
- * 2. **按身份消费**（[AuthTransactionStore.clearIfState]）：只有回程带回的 `state` 与当前交易
- *    身份一致时才允许清空它。一笔陈旧 / 外来的 callback（旧登录的回程、读不出 state 的取消）
- *    绝不能作废用户已经开始的那笔新登录 —— 这是「登录 A → 用户返回 → 登录 B → 旧回程 A 到达」
- *    这条状态机的核心。
- */
 class AuthTransactionStoreTest {
 
     private val redirectUri = OidcConfiguration.PRIVATE_REDIRECT_URI
@@ -67,7 +53,6 @@ class AuthTransactionStoreTest {
             mapOf(AuthTransactionStore.SLOT to "version=1\nstate=$stateB\nredirectUri=$redirectUri\ncreatedAt=1\n")
         )
         slots.failWrites = true
-        // 写失败必须让调用方知道（它决定要不要启动浏览器），且不能留下旧交易冒充新交易。
         assertFalse(store(slots).save(stateA, redirectUri))
         assertNull(slots.value(AuthTransactionStore.SLOT))
     }
@@ -83,7 +68,6 @@ class AuthTransactionStoreTest {
         )
 
         assertNull(store(slots).load())
-        // 只有交易 slot 被清；会话 slot 既没被读也没被清。
         assertEquals(listOf(AuthTransactionStore.SLOT), slots.clearedSlots())
         assertEquals(sessionJson, slots.value(AuthSessionStore.SLOT))
     }
@@ -104,7 +88,6 @@ class AuthTransactionStoreTest {
         }
     }
 
-    // ── 按身份消费（compare-and-clear）──
 
     @Test
     fun consumingWithTheMatchingStateClearsTheTransaction() {
@@ -118,26 +101,22 @@ class AuthTransactionStoreTest {
 
     @Test
     fun aStaleCallbackNeverClearsTheCurrentTransaction() {
-        // review 指定的状态机：登录 A → 交易 A 落盘 → 用户返回 → 登录 B（交易 B 取代 A）→ 旧回程 A 到达。
         val slots = FakeSecureSlotStore()
         val transactions = store(slots)
         transactions.save(stateA, redirectUri)
         transactions.save(stateB, redirectUri)
 
-        // 旧回程 A：身份不匹配 ⇒ 不清、返回 false（调用方据此把这次回程判成陈旧）
         assertFalse(transactions.clearIfState(stateA, "guard-state_mismatch"))
         assertEquals(stateB, transactions.load()?.state)
         assertEquals(redirectUri, transactions.load()?.redirectUri)
         assertTrue(slots.clearedSlots().isEmpty())
 
-        // 随后真正的 B 回程：身份匹配 ⇒ 可以消费
         assertTrue(transactions.clearIfState(stateB, "exchanged"))
         assertNull(slots.value(AuthTransactionStore.SLOT))
     }
 
     @Test
     fun anUnprovableCallbackNeverClearsTheTransaction() {
-        // 读不出 state（用户直接返回 / 浏览器被关掉）⇒ 归属无法证明 ⇒ 保留当前交易。
         val slots = FakeSecureSlotStore()
         val transactions = store(slots)
         transactions.save(stateB, redirectUri)
@@ -171,22 +150,16 @@ class AuthTransactionStoreTest {
 
     @Test
     fun aPendingTransactionSurvivesSessionReadsCorruptionAndLogout() {
-        // BLOCKER 1 的原始故障序列：登录进行中，进程死亡/被回收后 App 重新启动，
-        // 前端 init 调 authGetState（读会话域 + 损坏即清会话域），随后用户 logout。
-        // 这三件事都不允许影响那笔仍在等待回程的交易。
         val slots = FakeSecureSlotStore()
         store(slots).save(stateA, redirectUri)
 
-        // 1) 重新启动后的 WebView init：会话域为空（或损坏），读取方只处理会话域。
         val sessions = AuthSessionStore(slots)
         assertNull(sessions.load())
         slots.write(AuthSessionStore.SLOT, "corrupted-session-payload")
         sessions.clear("deserialize-failed")
 
-        // 2) 用户 logout：只清会话域。
         sessions.clear("logout")
 
-        // 3) 回程 callback 到达：交易仍在，且带着当初那份身份与回程 URI。
         val transaction = store(slots).load()
         assertEquals(stateA, transaction?.state)
         assertEquals(redirectUri, transaction?.redirectUri)

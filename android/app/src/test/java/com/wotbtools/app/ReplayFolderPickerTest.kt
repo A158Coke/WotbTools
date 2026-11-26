@@ -35,7 +35,6 @@ class ReplayFolderPickerTest {
             selection.files.map { it.relativePath }.toSet())
         assertEquals(4, selection.files.map { it.fileId }.toSet().size)
         assertTrue(selection.files.all { it.lastModified == 1234L })
-        // Published selections cannot be changed through an accidental mutable-list cast.
         assertThrows(UnsupportedOperationException::class.java) {
             (selection.files as MutableList<ReplayFolderPicker.FolderFile>).clear()
         }
@@ -77,7 +76,6 @@ class ReplayFolderPickerTest {
             ReplayFolderPicker.enumerate("tree", "root", { _, emit ->
                 repeat(1_000_000) {
                     emitted++
-                    // Repeated/cyclic rows must also consume the infrastructure budget.
                     emit(directory("root"))
                 }
             })
@@ -133,7 +131,6 @@ class ReplayFolderPickerTest {
             })
         }
         assertEquals("Directory metadata budget exceeded", failure.message)
-        // Each valid individual path fits 8192 chars; the aggregate must fail much earlier than 10k rows.
         assertTrue(emittedFiles in 1..1000)
     }
 
@@ -191,7 +188,6 @@ class ReplayFolderPickerTest {
         val previous = singleSelection("previous")
         publish(picker, previous)
         val expired = picker.begin()!!
-        // MainActivity's deadline completes this exact request with failed/no selection.
         assertTrue(picker.complete(expired, null))
         val retry = picker.begin()!!
         assertNotEquals(expired, retry)
@@ -227,7 +223,6 @@ class ReplayFolderPickerTest {
         assertTrue(picker.isActive(currentGeneration))
         assertTrue(ReplayFolderPicker.ownsClientRequest(currentClientId, currentClientId))
         assertTrue(picker.complete(currentGeneration, null))
-        // Cancellation has no completed-selection owner and must leave its separate resource readable.
         assertFalse(ReplayFolderPicker.ownsClientRequest(null, currentClientId))
         assertFalse(picker.complete(currentGeneration, singleSelection("late")))
         assertTrue(picker.release(completed.selectionId))
@@ -386,7 +381,6 @@ class ReplayFolderPickerTest {
         val picker = ReplayFolderPicker()
         val selection = singleSelection(size = null)
         publish(picker, selection)
-        // Synthetic generator avoids allocating a 25 MiB fixture just to test the stream ceiling.
         var remaining = ReplayIntentHandler.MAX_BYTES + 1L
         var closed = false
         val stream = picker.interceptFolderResource(

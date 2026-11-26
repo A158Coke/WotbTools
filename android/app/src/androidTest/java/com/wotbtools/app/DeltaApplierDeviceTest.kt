@@ -10,7 +10,6 @@ import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
-/** 调用 APK 中实际打包的 JNI；不替换 decoder，不运行 shell 解码器。 */
 class DeltaApplierDeviceTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private fun <T> withFiles(block: (File, File, File, File) -> T): T {
@@ -124,7 +123,6 @@ class DeltaApplierDeviceTest {
             while (true) { val count = stream.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
         }
         assertEquals(expected, digest.digest().joinToString("") { "%02x".format(it) })
-        // Host 安装此精确文件后再清理；不会默认安装或触及其它应用。
     }
 
     @Test fun reconstructsOfficialApkPairWhenFixtureProvided() {

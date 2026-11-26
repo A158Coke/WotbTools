@@ -4,10 +4,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * [StartupSurfaceState] 的纯 JVM 测试：覆盖冷启动 / 内容绘制 / 恢复 / 门禁接管 / 重试，
- * 不依赖真实 GeckoView 或设备即可锁定启动面可见性规则。
- */
 class StartupSurfaceStateTest {
 
     @Test
@@ -39,7 +35,6 @@ class StartupSurfaceStateTest {
         val state = StartupSurfaceState()
         state.contentPainted()
 
-        // GeckoWebRuntime 在 crash/kill 恢复加载前发出 contentUnavailable。
         state.contentUnavailable()
         state.startLoading()
         assertTrue("恢复加载期间保持启动面", state.visible)

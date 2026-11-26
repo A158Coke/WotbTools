@@ -30,7 +30,6 @@ class ApkUpdaterTest {
     class InitialDestinationShadow : ShadowDownloadManager() {
         companion object { var destinationUnknown = false }
 
-        /** API26 实测的初始 local_uri=null；复用原生 shadow 的其余 query 行为。 */
         @Implementation
         protected override fun query(query: DownloadManager.Query): Cursor {
             val cursor = super.query(query)
@@ -106,7 +105,6 @@ class ApkUpdaterTest {
         assertTrue(full.fallback)
         assertEquals(update.apkUrl, request(full).uri.toString())
         assertEquals(1, shadow.requestCount)
-        // Crash after saving fallback intent but before enqueue: recovery creates exactly one full task.
         manager.remove(full.downloadId!!)
         forgetSavedId()
         val pending = ApkUpdater(context).loadTask()!!
@@ -245,7 +243,6 @@ class ApkUpdaterTest {
         assertArrayEquals(content, ready.readBytes())
         assertEquals(File(context.filesDir, "updates/${task.token}.apk").canonicalFile, ready)
         assertFalse(File(context.filesDir, "updates/${task.token}.tmp").exists())
-        // 即使系统 row 消失，私有 ready 也必须先重新校验，不能被 query 宣称 ready。
         manager.remove(task.downloadId!!)
         assertEquals("verifying", ApkUpdater(context).query(task).state)
         assertArrayEquals(content, ApkUpdater(context).verify(task).readBytes())

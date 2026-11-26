@@ -3,7 +3,6 @@ package com.wotbtools.app
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Best-effort update manifest discovery; local startup never awaits this request. */
 object StartupGate {
     private const val VERSION_URL = "https://wotbtools.com/download/android/version.json"
     private const val CONNECT_TIMEOUT_MS = 3_000

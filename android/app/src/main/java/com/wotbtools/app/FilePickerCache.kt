@@ -12,10 +12,8 @@ import java.io.InputStream
 import java.util.UUID
 import java.security.MessageDigest
 
-/** Disposable chooser files; independent of external replay pending and folder ownership. */
 internal object FilePickerCache {
     internal const val TTL_MS = 60L * 60 * 1000
-    // Infrastructure ceilings exceed Web replay/image validation limits, not business rules.
     internal const val MAX_BATCH_BYTES = 256L * 1024 * 1024
     internal const val MAX_FILES = 128
     private const val TAG = "WotbPicker"
@@ -52,7 +50,7 @@ internal object FilePickerCache {
                     }
                 }
             }
-        } catch (_: Exception) { /* Metadata is optional; the stream is authoritative. */ }
+        } catch (_: Exception) { }
         val modified = try {
             resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use { cursor ->
                 val index = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
@@ -65,16 +63,13 @@ internal object FilePickerCache {
         val fallback = "picked-file" + (extension?.let { ".$it" } ?: "")
         Log.d(TAG, "picker-copy-start scheme=${uri.scheme} authority=${uri.authority} declared=$size")
         return copy(directory, name?.takeIf { it.isNotBlank() } ?: fallback, { resolver.openInputStream(uri) }, maxBytes = minOf(ReplayIntentHandler.MAX_BYTES, remainingBytes), modified = modified, log = { event ->
-            // No provider paths, names, bytes or exception messages in logs.
             Log.d(TAG, event)
         }).also { Log.d(TAG, "picker-copy-success bytes=${it.length()}") }
     }
 
-    /** Keep the original basename (and suffix) inside a unique private directory. */
     internal fun safeName(name: String): String {
         val clean = name.map { if (it == '/' || it == '\\' || it.isISOControl()) '_' else it }.joinToString("")
             .trim().takeUnless { it.isEmpty() || it == "." || it == ".." } ?: "picked-file"
-        // Bound UTF-8 filename bytes while preserving a reasonable final extension.
         if (clean.toByteArray(Charsets.UTF_8).size <= 200) return clean
         val suffix = clean.substringAfterLast('.', "").takeIf { it.length in 1..20 }?.let { ".$it" } ?: ""
         var stem = clean.removeSuffix(suffix)
@@ -82,7 +77,6 @@ internal object FilePickerCache {
         return stem + suffix
     }
 
-    /** Own stream opening and partial outputs, including failures before a stream is available. */
     internal fun copy(directory: File, name: String, open: () -> InputStream?, log: (String) -> Unit = {},
         maxBytes: Long = ReplayIntentHandler.MAX_BYTES, modified: Long? = null): File {
         val selection = File(directory, UUID.randomUUID().toString())
@@ -116,7 +110,6 @@ internal object FilePickerCache {
                 phase = "empty"
                 throw IOException("Empty picker stream")
             }
-            // Stable unknown-mtime fallback also distinguishes changed bytes with the same name/size.
             val fallbackTime = 946684800000L + digest.digest().take(6)
                 .fold(0L) { value, byte -> (value shl 8) or (byte.toLong() and 255) } % (30L * 365 * 24 * 60 * 60 * 1000)
             if (!file.setLastModified(modified ?: fallbackTime)) throw IOException("Cannot preserve picker timestamp")
@@ -132,7 +125,6 @@ internal object FilePickerCache {
         files.forEach { it.delete(); it.parentFile?.delete() }
     }
 
-    /** Never evict a fresh confirmed DOM File merely because another chooser opens. */
     fun cleanup(directory: File, now: Long = System.currentTimeMillis()) {
         directory.listFiles()?.filter { now - it.lastModified() >= TTL_MS }?.forEach { it.deleteRecursively() }
     }

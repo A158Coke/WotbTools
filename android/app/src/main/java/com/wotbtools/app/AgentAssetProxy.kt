@@ -8,30 +8,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 
-/**
- * 3D 资产原生代理：App 本机 origin（`MainActivity.LOCAL_APP_ORIGIN`）不在资产服务器的
- * 浏览器 CORS allowlist 里，页面内 `fetch` 直连会被 CORS 拦截；改由 Native 在 LocalRuntimeServer 的
- * `/agent-assets/` 前缀路由里以 HttpURLConnection 匿名 GET 静态资产服务器（CORS 是浏览器机制，原生代码
- * 不受约束），字节从 Alibaba asset origin 直达设备、不经过生产网关——TX1 出口带宽不再被资产包流量占用。
- *
- * 资产基址因此保持本机路径（frontend/src/platform/runtime.js 的 ANDROID_ASSET_BASE =
- * '/agent-assets'），请求 same-origin，无需浏览器 CORS，也无需额外 CSP 白名单。
- *
- * ETag 磁盘缓存：条目 = <sha256(path)>.body + <sha256(path)>.meta（首行 ETag，次行
- * Content-Type）。命中时带 If-None-Match 条件请求，304 回放缓存；200 先全量落盘再回放
- * （先落盘换取实现简单：资产不可变，重取即得同一字节）。网络/上游失败回退陈旧缓存——
- * 资产不可变，陈旧即正确。缓存总量超限按 lastModified LRU 修剪。
- *
- * 静态资产源允许匿名读取，条件请求只依赖 ETag。换 origin 时同步
- * docs/operations/agent-asset-origin.md 与 runtime.js 的注释。
- */
 object AgentAssetProxy {
     private const val TAG = "AgentAssetProxy"
 
-    /** 与 Web 构建默认相同的生产资产 origin。 */
     private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com"
 
-    /** 本机资产路径前缀；runtime.js 的 ANDROID_ASSET_BASE 与这里保持一致。 */
     const val LOCAL_PATH_PREFIX = "/agent-assets/"
 
     private const val CACHE_SUBDIR = "agent-assets"
@@ -42,7 +23,6 @@ object AgentAssetProxy {
     private val NO_STORE = mapOf("Cache-Control" to "no-store")
     private val datasetStampPath = Regex("${LOCAL_PATH_PREFIX}v/[^/]+/version\\.json")
 
-    /** 在 LocalRuntimeServer worker 线程调用（允许网络 I/O）。 */
     internal fun intercept(context: Context, path: String, upstream: URL = URL(upstreamUrl(path))): ReplayIntentHandler.StreamResponse {
         return try {
             fetchAndServe(context, path, upstream, conditional = true)
@@ -66,17 +46,11 @@ object AgentAssetProxy {
         try {
             when (val status = conn.responseCode) {
                 HttpURLConnection.HTTP_NOT_MODIFIED -> {
-                    // 304：回放缓存。但等待上游响应期间，条目可能已被 trimCache 或系统
-                    // cacheDir 回收删除（getCacheDir 契约允许随时清理）——此时 entry 仍
-                    // 非 null 但打开文件会抛 IOException；不能把这种情况当上游失败返回
-                    // 502，必须落入无条件重取。unlink 后仍在读取的流不受 POSIX 语义影
-                    // 响，竞态窗口只在 open 之前，由这里的 try 覆盖。
                     val cached = entry?.takeIf { it.body.isFile }
                     if (cached != null) {
                         try {
                             return cached.response()
                         } catch (_: IOException) {
-                            // 缓存文件在等待期间消失：无条件重取一次。
                         }
                     }
                     return fetchAndServe(context, path, upstream, conditional = false)
@@ -87,7 +61,6 @@ object AgentAssetProxy {
                     return stored.response()
                 }
                 HttpURLConnection.HTTP_NOT_FOUND, HttpURLConnection.HTTP_GONE -> {
-                    // A removed version stamp tells the selector to recover to the default dataset.
                     if (!datasetStampPath.matches(path)) throw IOException("asset upstream HTTP $status")
                     if (entry != null) {
                         metaFile(context, path).delete()
@@ -172,36 +145,23 @@ object AgentAssetProxy {
         File(cacheDir(context), cacheKey(path) + ".meta")
 
     private class Entry(val etag: String, val contentType: String, val body: File) {
-        // 本地已有 ETag 磁盘缓存：no-store 避免 Gecko HTTP cache 再存一份。
         fun response() = ReplayIntentHandler.StreamResponse(200, "OK", body.inputStream(), contentType, NO_STORE)
     }
 
-    /** 纯函数（纯 JVM 单测覆盖）：路径 → 定长缓存键。 */
     fun cacheKey(path: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(path.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    /**
-     * 纯函数（纯 JVM 单测覆盖）：本机路由路径 → 远端资产路径。资产包在**origin 根目录**
-     * （/index.json、/glb/...），而页面请求带本机路由前缀 /agent-assets——拼上游
-     * URL 前必须剥掉前缀并保证根路径斜杠，否则冷缓存请求会 404。
-     * 缓存键（[cacheKey]）仍使用完整本机路径，两者语义不同、不得混用。
-     */
     fun upstreamPath(path: String): String {
         val stripped = path.removePrefix(LOCAL_PATH_PREFIX)
         return if (stripped.startsWith("/")) stripped else "/$stripped"
     }
 
-    /** 纯函数：上游 Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
     fun normalizeContentType(raw: String?): String =
         raw?.substringBefore(';')?.trim()?.lowercase()
             ?.takeIf { it.isNotEmpty() } ?: DEFAULT_CONTENT_TYPE
 
-    /**
-     * 纯函数：entries = (body 文件名, 字节数, lastModified)；按 lastModified 升序淘汰
-     * 直到总量 ≤ maxBytes，返回应删除的 body 文件名列表。
-     */
     fun trimSelection(entries: List<Triple<String, Long, Long>>, maxBytes: Long): List<String> {
         var total = entries.sumOf { it.second }
         if (total <= maxBytes) return emptyList()

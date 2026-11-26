@@ -11,11 +11,6 @@ internal class GeckoChoiceDialogs(private val context: Context, private val isCl
 
     fun dismiss() { choiceDialog?.dismiss() }
 
-    /**
-     * HTML `<select>` 的原生选择菜单（Gecko 把 select 点击转成 choice prompt；默认实现返回 null = 取消，
-     * 页面就无法改选）。optgroup 展开为不可选的组标题，disabled 选项不可选。生命周期：页面侧关闭弹窗
-     * （导航 / 元素移除）收起对话框并完成 result；弹窗打开期间选项更新时用新 prompt 重绘，结果仍回给同一个 [result]。
-     */
     fun showChoicePrompt(
         prompt: PromptDelegate.ChoicePrompt,
         result: GeckoResult<PromptDelegate.PromptResponse>
@@ -67,7 +62,6 @@ internal class GeckoChoiceDialogs(private val context: Context, private val isCl
             else builder.setSingleChoiceItems(labels, rows.indexOfFirst { it.first.selected }, onPick)
         }
         val dialog = builder.create()
-        // 返回键 / 点外部 / 取消按钮：等价于 select 未改选。
         dialog.setOnDismissListener {
             if (choiceDialog === dialog) choiceDialog = null
             settle { prompt.dismiss() }

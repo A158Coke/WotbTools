@@ -3,10 +3,6 @@ package com.wotbtools.app
 import android.os.Build
 import android.view.HapticFeedbackConstants
 
-/**
- * 触感映射（Native Bridge 可选能力 `haptics`）：页面只发事件种类，Native 选系统触感常量，
- * 跟随系统「触摸反馈」设置。纯函数便于单测；未知种类返回 null（不振动）。
- */
 object Haptics {
     val KINDS = setOf("selection", "primary", "success", "error", "endpoint")
 

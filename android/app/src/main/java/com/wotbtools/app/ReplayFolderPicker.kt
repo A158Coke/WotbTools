@@ -5,10 +5,6 @@ import java.io.InputStream
 import java.util.Collections
 import java.util.UUID
 
-/**
- * Temporary SAF directory selection, isolated from the durable external pending replay.
- * Platform query/open boundaries are lambdas so traversal and ownership are real JVM-testable logic.
- */
 internal class ReplayFolderPicker {
     internal data class Document(
         val documentId: String,
@@ -42,7 +38,6 @@ internal class ReplayFolderPicker {
     private var currentSelection: Selection? = null
     private var destroyed = false
 
-    /** One picker/scan at a time; a cancelled picker preserves the prior readable selection. */
     @Synchronized fun begin(): Long? {
         if (destroyed || activeRequestId != null) return null
         return (++nextRequestId).also { activeRequestId = it }
@@ -51,7 +46,6 @@ internal class ReplayFolderPicker {
     @Synchronized fun isActive(requestId: Long): Boolean =
         !destroyed && activeRequestId == requestId
 
-    /** Reject late scans before they can replace a more recent selection. */
     @Synchronized fun complete(requestId: Long, selection: Selection?): Boolean {
         if (!isActive(requestId)) return false
         activeRequestId = null
@@ -59,7 +53,6 @@ internal class ReplayFolderPicker {
         return true
     }
 
-    /** Only the exact selection identity may release this transient read window. */
     @Synchronized fun release(selectionId: String?): Boolean {
         if (selectionId.isNullOrBlank() || currentSelection?.selectionId != selectionId) return false
         currentSelection = null
@@ -75,7 +68,6 @@ internal class ReplayFolderPicker {
     @Synchronized private fun owns(selection: Selection): Boolean =
         !destroyed && currentSelection === selection
 
-    /** Exact resource requests always return a Native decision, including all failure cases. */
     internal fun interceptFolderResource(
         url: String,
         expectedSelectionId: String?,
@@ -115,7 +107,6 @@ internal class ReplayFolderPicker {
         internal const val STREAM_URL = MainActivity.REPLAY_FOLDER_STREAM_URL
         internal const val SELECTION_IDENTITY_HEADER = MainActivity.REPLAY_FOLDER_SELECTION_IDENTITY_HEADER
         internal const val FILE_IDENTITY_HEADER = MainActivity.REPLAY_FOLDER_FILE_IDENTITY_HEADER
-        // Provider safety bounds, independent of the shared Web replay count/size rules.
         internal const val MAX_SCAN_ENTRIES = 10_000
         internal const val MAX_RETAINED_METADATA_CHARS = 1_000_000
         internal const val MAX_CLIENT_REQUEST_ID_LENGTH = 128
@@ -124,16 +115,10 @@ internal class ReplayFolderPicker {
         internal fun validClientRequestId(requestId: String?): Boolean =
             !requestId.isNullOrBlank() && requestId.length <= MAX_CLIENT_REQUEST_ID_LENGTH
 
-        /** Client cancellation owns only the exact in-flight request, never a prefix or completed selection. */
         internal fun ownsClientRequest(currentRequestId: String?, expectedRequestId: String?): Boolean =
             validClientRequestId(currentRequestId) && validClientRequestId(expectedRequestId) &&
                 currentRequestId == expectedRequestId
 
-        /**
-         * Iterative traversal avoids stack exhaustion. Each cursor row is counted before retention,
-         * including duplicates/cycles; the provider adapter emits rows directly, never a child list.
-         * Any provider failure/cancellation/bound aborts the whole selection without publishing it.
-         */
         internal fun enumerate(
             treeUri: String,
             rootDocumentId: String,
@@ -167,8 +152,6 @@ internal class ReplayFolderPicker {
                     val pathLength = document.name.length + if (parentPath.isEmpty()) 0 else parentPath.length + 1
                     if (pathLength > MAX_METADATA_LENGTH) throw IOException("Directory path limit exceeded")
                     val fileId = if (document.directory) "" else UUID.randomUUID().toString()
-                    // Conservatively count every retained identity/name/path field, even shared strings.
-                    // Check before retaining the id or constructing an accumulated relative path.
                     val rowChars = document.documentId.length + document.name.length + pathLength + fileId.length
                     if (rowChars > MAX_RETAINED_METADATA_CHARS - retainedChars) {
                         throw IOException("Directory metadata budget exceeded")
@@ -191,7 +174,6 @@ internal class ReplayFolderPicker {
             return Selection(selectionId, treeUri, files)
         }
 
-        /** Count actual bytes even when a provider omits or lies about SIZE; never truncate silently. */
         internal fun boundedStream(
             input: InputStream,
             maxBytes: Long,
@@ -232,7 +214,6 @@ internal class ReplayFolderPicker {
                     ensureReadable()
                     return try {
                         val remaining = maxBytes - total
-                        // The extra byte detects an oversize source, including a false/unknown SIZE.
                         val requested = minOf(length.toLong(), remaining + 1L).toInt()
                         val read = input.read(buffer, offset, requested)
                         if (read > remaining) throw IOException("Directory stream limit exceeded")
@@ -245,7 +226,7 @@ internal class ReplayFolderPicker {
                 }
 
                 private fun closeAfterFailure() {
-                    try { close() } catch (_: Exception) { /* Preserve the read failure. */ }
+                    try { close() } catch (_: Exception) { }
                 }
 
                 override fun close() {

@@ -11,7 +11,6 @@ import android.util.Log
 internal const val READY_NOTIFICATION_ID = 4000
 private const val READY_CHANNEL = "verified-update"
 
-/** 通知仅是导航入口；文件身份和安装资格仍由 coordinator 校验。 */
 internal fun updateReadyNotification(applicationContext: Context, snapshot: UpdateStatus, verifiedToken: String?, currentVersionCode: Int) {
     val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     val download = snapshot.download
@@ -38,9 +37,7 @@ internal fun updateReadyNotification(applicationContext: Context, snapshot: Upda
             .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true).build()
         manager.notify(READY_NOTIFICATION_ID, notification)
     } catch (_: SecurityException) {
-        // 通知权限是可选入口，拒绝时不影响校验和安装。
     } catch (error: RuntimeException) {
-        // 通知服务异常不能使更新状态机停止。
         Log.w("WotbUpdate", "update_notification_failed", error)
     }
 }

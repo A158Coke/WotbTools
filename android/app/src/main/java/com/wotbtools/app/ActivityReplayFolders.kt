@@ -13,7 +13,6 @@ import java.io.IOException
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Dedicated SAF directory picker; never pass a tree URI through the engine's file prompt. */
 internal fun MainActivity.pickReplayFolder(requestId: String?, reply: (JSONObject) -> Unit) {
     runOnUiThread {
         val clientRequestId = requestId?.takeIf { ReplayFolderPicker.validClientRequestId(it) }
@@ -50,7 +49,6 @@ internal fun MainActivity.pickReplayFolder(requestId: String?, reply: (JSONObjec
     }
 }
 
-/** Cancelling a page-owned request immediately frees the Native picker without touching completed files. */
 internal fun MainActivity.cancelReplayFolderPicker(requestId: String?, reply: (Boolean) -> Unit) {
     runOnUiThread {
         val request = folderPickRequest
@@ -67,7 +65,6 @@ internal fun MainActivity.cancelReplayFolderPicker(requestId: String?, reply: (B
 internal fun MainActivity.releaseReplayFolderSelection(selectionId: String?): Boolean =
     replayFolderPicker.release(selectionId)
 
-/** Android cursor adapter emits rows directly; traversal applies its bound before retaining each. */
 internal fun MainActivity.scanReplayFolder(treeUri: Uri, request: FolderPickRequest): ReplayFolderPicker.Selection {
     if (treeUri.scheme != "content" || !DocumentsContract.isTreeUri(treeUri)) {
         throw IOException("Invalid directory selection")
@@ -110,7 +107,6 @@ internal fun MainActivity.scanReplayFolder(treeUri: Uri, request: FolderPickRequ
     )
 }
 
-/** UI-thread compare-and-complete makes destroy/late worker responses harmless. */
 internal fun MainActivity.finishFolderPick(
     request: FolderPickRequest,
     status: String,
@@ -124,21 +120,17 @@ internal fun MainActivity.finishFolderPick(
     return true
 }
 
-/** A hung provider cannot keep later bridge calls busy after the bounded RPC lifetime. */
 internal fun MainActivity.expireFolderPick(request: FolderPickRequest) {
     abortFolderPick(request, "failed")
 }
 
-/** Client cancellation and deadline expiry share exact native-generation/child-Activity cleanup. */
 internal fun MainActivity.abortFolderPick(request: FolderPickRequest, status: String): Boolean {
     val closePicker = request.pickerOpen
     if (!finishFolderPick(request, status)) return false
     if (closePicker) {
         try {
-            // Close only the child Activity started for this exact folder request.
             finishActivity(request.requestCode)
         } catch (_: Exception) {
-            // Its result may already be queued; request-code ownership will reject that result.
         }
     }
     return true
