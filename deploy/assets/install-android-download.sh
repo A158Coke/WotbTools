@@ -4,6 +4,12 @@ set -Eeuo pipefail
 export LC_ALL=C
 
 fail() { echo "install Android download: $*" >&2; exit 1; }
+# sshd invokes this fixed, root-owned script via authorized_keys. Parse the
+# client request as data; the upload account only needs access to this store.
+if [[ $# == 1 && $1 == --receive ]]; then
+  [[ ${SSH_ORIGINAL_COMMAND:-} =~ ^install\ ([A-Za-z0-9.-]+)\ ([1-9][0-9]{0,9})\ ([0-9a-f]{64})$ ]] || fail "invalid upload request"
+  set -- - "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+fi
 [[ $# == 4 ]] || fail "usage: $0 SOURCE NAME EXPECTED_SIZE EXPECTED_SHA256"
 src=$1 name=$2 size=$3 sha=$4
 root=${ANDROID_DOWNLOAD_ROOT:-/srv/wotb-downloads}
@@ -14,7 +20,7 @@ if [[ $name =~ ^wotbtools-android-delta-[0-9]+-[0-9]+-([0-9a-f]{64})\.vcdiff$ ]]
 else
   [[ $name =~ ^wotbtools-android-v[0-9]+\.[0-9]+\.[0-9]+\.apk$ ]] || fail "invalid release filename"
 fi
-[[ -f $src && ! -L $src ]] || fail "source must be a regular file"
+[[ $src == - || ( -f $src && ! -L $src ) ]] || fail "source must be a regular file"
 [[ -d $root/incoming && ! -L $root/incoming && -d $root/android && ! -L $root/android ]] || fail "origin directories missing or symlinked"
 [[ -f $root/.install.lock && ! -L $root/.install.lock ]] || fail "origin lock missing or symlinked"
 exec 9<"$root/.install.lock"
@@ -33,7 +39,12 @@ verify_file() {
 tmp=$(mktemp "$root/incoming/.install.XXXXXXXX")
 trap 'rm -f -- "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
-cp -- "$src" "$tmp"
+if [[ $src == - ]]; then
+  [[ ${#size} -le 10 && $size -le 2100000000 ]] || fail "stream exceeds release size limit"
+  head -c "$((size + 1))" > "$tmp"
+else
+  cp -- "$src" "$tmp"
+fi
 verify_file "$tmp"
 chmod 0644 "$tmp"
 if [[ -e $dest || -L $dest ]]; then

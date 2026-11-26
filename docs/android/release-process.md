@@ -2,9 +2,13 @@
 
 ## 阿里云候选下载源（#801）
 
-候选源准备阶段保留清华公开分发和两台 TX 的现有副本。运维可从原始签名 APK 或已有差分回填候选源，按[资产源操作说明](../../deploy/assets/README.md#android-candidate-download-origin)核对落盘与公网完整字节、缓存及 Range。客户端与 manifest 继续使用主站的稳定下载 URL。
+Stage 将同一份签名 APK 写入阿里云和清华。生成的差分也写入两处。客户端与 manifest 继续使用主站的稳定下载 URL，TX 仍将流量导向清华。每个产物分别通过阿里云直链和稳定入口检查 HTTP 200、实际大小、完整 SHA-256 和尾段续传字节。稳定入口还要返回该文件对应的清华分享地址。已有 staging evidence 引用的差分验证失败会阻断重跑；首次生成的可选差分仍可退回全量包。
 
-下一阶段接入 Stage 双写、Publish 提交前校验和 Repair。生产试切前按 [#801 实施方案](https://github.com/A158Coke/WotbTools/issues/801#issuecomment-7197531164) 记录发布峰的实际出口、费用和余量，取得 GO，并核验同版同 SHA 回滚源。
+Stage 在主包回读、建 tag 和 staging 身份核验后，按作业启动时刻计算差分剩余时间。预算扣除 checkout 上限 5 分钟、写入与回读 staging evidence 的 15 分钟，以及步骤切换的 2 分钟。准备差分、两个云端上传、六个 TX 操作和稳定入口回读均有独立时限，总和受剩余预算约束。预算不足时，首次候选直接生成全量包记录；已有差分记录则明确失败，已有全量包记录可直接复用。
+
+首次双写前按[资产源操作说明](../../deploy/assets/README.md#android-candidate-download-origin)准备受限 SSH 上传身份、目录与 Caddy 服务。缺少必需配置会阻断发布。Publish 在首次上传生产清单前，按指定版本的已核验 APK 和 staging 差分清单复核两个下载源。既有全量包证据缺少大小字段时，从已核验 SHA 的 APK 读取实际大小。
+
+生产试切另按 [#801 实施方案](https://github.com/A158Coke/WotbTools/issues/801#issuecomment-7197531164) 记录带宽、费用与余量，取得 GO 并验证回滚源。
 
 ## 版本与 Bridge 契约
 
@@ -45,7 +49,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 - **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
 - **版本号在候选取得 immutable release identity 时才被消耗，不是每个 review commit 都消耗**：`wotbVersion` 固定的是**发布身份**，不是提交序号。同一个尚未形成 immutable identity 的 PR / release candidate，在 code review、CI 或 pre-merge 测试过程中发生的修复**不因此自动递增 patch**，保持在**原计划版本**。
   一旦下列**任一**条件成立，候选版本即被锁定（version identity consumed），此后任何会改变该 staged Android candidate / APK identity 的源码或 release input 修改，都必须使用**更高的** `wotbVersion`：
-  ① 已创建 immutable release tag（`android-vX.Y.Z`）；② staged APK 已在**任意一台** immutable origin（TX1 **或** TX2 的 no-clobber origin 路径）成功落位并通过 SHA-256 核验——**不需要等两台都完成**；③ 已写出 staging evidence；④ production `version.json` 已 publish。
+  ① 已创建 immutable release tag（`android-vX.Y.Z`）；② staged APK 已在**任意一台** immutable origin（阿里云、TX1 或 TX2 的 no-clobber 路径）成功落位并通过 SHA-256 核验——**不需要等两台都完成**；③ 已写出 staging evidence；④ production `version.json` 已 publish。
   **注意：不是只有 publish 之后才锁版本**——stage 阶段的 tag / 任一台 origin 上的 APK / staging evidence 同样是 immutable identity。只有这些条件**全部尚未成立**时，同一 release PR 的 pre-release fix 才保留原版本——PR 合并前（还没有 stage）通常不存在任何 immutable identity，review 修复因此不需要 bump。
   清华云盘副本（distribution replica）**不是** identity authority：它是可 `replace=1` 覆盖的分发副本 + origin 冷启动源，上传并核验副本本身不消耗版本（判定源划分见下文「Origin 与分发副本是两个身份」）。但只要**任意一台** origin 已从该副本 seed 并 no-clobber 落位成功，版本即锁定（上列 ②）。
 - **锁定后哪些修改必须换版本**：会改变已锁定 Android candidate identity 的修改——Android Native 代码与 `android/app/**`、Android 构建输入（Gradle 配置 / 依赖版本 / 工具链）、进入 APK 的 bundled frontend / WASM / 资产与 Android 专用生成 bundle、Native Bridge contract 与 `bridgeVersion`、以及 tag target 中任何会改变 staged APK 字节或身份的 release input。与已 staged Android artifact 无关的修改——docs-only、Caddy-only、observability-only、无关后端 / 基础设施修复、不改变 staged 字节与身份的 workflow / policy 修复——可以让 main 前进，**本身不消耗新的 Android 版本**（与 Android 无关的 main 前进本身不消耗新的 Android 版本）。已完整 stage 的候选照常按自己的 tag target 发布，并且仍要通过 publish 的 ancestry / 当前 policy / bridge compatibility / minSupported / CORS 等就绪探测 / staged identity 守卫，没有跳过守卫的例外。
@@ -53,10 +57,11 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - 不允许：候选 X stage 成功 → 修改 `GeckoWebRuntime` / bundled frontend / Bridge contract → 仍复用 X。这种情况必须使用更高版本。
 - **「版本已锁定」不等于「stage 已完成」**：
   - *version identity consumed*：上列四项**任一**出现即成立；
-  - *stage distribution complete*：TX1 **和** TX2 都落位并核验、公网回读核验、tag、staging evidence 全部成功。两台 origin 都成功只是 stage 分发要求完成，**不是** identity 首次成立的时点。
+  - *stage distribution complete*：阿里云、TX1 和 TX2 都落位并核验、两条下载链路回读核验、tag、staging evidence 全部成功。两台 origin 都成功只是 stage 分发要求完成，**不是** identity 首次成立的时点。
 - **partial-stage 的处理**：build A → TX1 seed 成功 → TX2 seed 失败 → stage 整体失败。此时候选版本**已经被锁定**——TX1 上已有该版本的 APK（build A 的 SHA）。若随后修改源码得到 build B 仍想复用同一版本，stage 的「Classify origin APK on TX1/TX2」会发现 TX1 现有 SHA ≠ build B 的 SHA → immutable conflict → fail-closed。补齐 TX2 只能对**同一提交**（build A 的源码提交）幂等重跑 stage：main 触发的 stage 只从 `origin/main` HEAD 构建，且 APK 内嵌 `buildCommit`。main 一旦前进（哪怕只是 docs / Caddy 修改），重跑构建出的 APK 字节就不同，TX1 classify 同样 conflict，这时只能换更高版本——这是部分 stage 无法补齐的结果，不是无关修改本身消耗了版本。
 - **stage 失败后能否复用同一版本：不能只看 workflow conclusion**（A failed stage may still have consumed the version if an immutable artifact was already materialized），逐项只读检查：
   - tag `android-vX.Y.Z` 是否已存在（`git ls-remote --tags origin android-vX.Y.Z`）；
+  - 阿里云宿主公开目录是否已落位；SSH 上传或公网回读超时后也要核对实际大小与 SHA；
   - TX1 origin 是否已有 `wotbtools-android-vX.Y.Z.apk`；
   - TX2 origin 是否已有该 APK（两项都以 stage 日志「Classify origin APK on TX1/TX2」的 SSH 直查结果为准；不要用公网 URL 判断——它被 302 到可覆盖的清华副本）；
   - staging evidence `wotbtools-android-vX.Y.Z.staging.json` 是否已存在；
@@ -91,10 +96,10 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 
 | 阶段 | 行为 |
 |---|---|
-| stage | 校验 source/version/contract 与 **cutover 守卫**（`guard_min_supported` + `guard_local_first_cutover` + `guard_bridge_covered`，因此 major/bridge cutover 的 floor 必须在合并/stage 之前设好）→ 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → 上传清华副本（distribution replica，可覆盖，不锁定版本）→ **TX1、TX2 依次从副本拉取 seed（逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗版本号）** → 公网回读核验 → immutable APK/tag/evidence；不写 production version.json |
-| publish | 自动续跑（`auto_publish=true`）或手动 recovery（`workflow_dispatch(mode=publish, version=X)`）：X 的 immutable tag 决定候选 → 核验 tag target 源码、evidence、APK 字节与内嵌 bundle → Keycloak/API/资产就绪探测 → 最后上传 version.json；不重建、不重新签名 APK。自动续跑在开始执行时先判定是否已被更新的 Android candidate 取代 |
+| stage | 校验 source/version/contract 与 **cutover 守卫**（`guard_min_supported` + `guard_local_first_cutover` + `guard_bridge_covered`，因此 major/bridge cutover 的 floor 必须在合并/stage 之前设好）→ 构建完整 Android bundle → 签名 APK → 核验 APK 内容、签名和 SHA → 阿里云不可变安装和回读 → 上传清华副本（distribution replica，可覆盖，不锁定版本）→ **TX1、TX2 依次从副本拉取 seed（逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗版本号）** → 公网回读核验 → immutable APK/tag/evidence；不写 production version.json |
+| publish | 自动续跑（`auto_publish=true`）或手动 recovery（`workflow_dispatch(mode=publish, version=X)`）：X 的 immutable tag 决定候选 → 核验 tag target 源码、evidence、APK 字节与内嵌 bundle → Keycloak/API/资产就绪探测 → 两条下载链路验证 APK 和已记录的差分 → 最后上传 version.json；不重建、不重新签名 APK。自动续跑在开始执行时先判定是否已被更新的 Android candidate 取代 |
 
-stage 的 APK 门禁顺序是：APK 内容/签名 → bundled frontend/WASM/Agent pin → SHA-256 → 公网回读。publish 的顺序是：`version` 非空且合法 → （自动续跑先判最新 Android candidate）→ tag target 源码 → staging evidence → APK badging/SHA/bundle manifest → 当前 main ancestry/policy → Keycloak/API/资产就绪 → `version.json` 最后写入；任一步失败都不写 `version.json`。
+stage 的 APK 门禁顺序是：APK 内容/签名 → bundled frontend/WASM/Agent pin → SHA-256 → 公网回读。publish 的顺序是：`version` 非空且合法 → （自动续跑先判最新 Android candidate）→ tag target 源码 → staging evidence → APK badging/SHA/bundle manifest → 当前 main ancestry/policy → Keycloak/API/资产就绪 → 双源分发验证 → 依次上传两台 TX 的 `version.json`。首台上传后发生错误时版本可能已公告，应逐一读取 TX1、TX2 与公网 manifest，核对版本、SHA 和差分列表，按相同候选向前补齐。已发布版本的 no-op 不能证明两台均已补齐。
 
 生产版本较旧时继续，相同版本验证元数据和 SHA 后 no-op，较新则拒绝回滚。Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与该次实际 APK 身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
@@ -132,7 +137,7 @@ merge Android version bump
 
 TX1 出口公网带宽有限且会被 APK 下载打满；APK 随内嵌 bundle 增大（2D 底图与 Web 同字节，bundle 资产约 40 MiB，见 [architecture.md](architecture.md) §2D 底图随包）。stage 阶段以 `TSINGHUA_CLOUD_TOKEN` 把 APK 传进清华云盘 `个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把 `/download/android/*.apk` 302 到该目录的分享直链 `https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
 
-**两台 origin 的 APK 由该副本 seed**：跨洋只发生一次——runner 只把 APK 上传到清华副本，随后 TX1/TX2 各自从分享直链**拉取**。拉取侧四道边界：
+**两台 origin 的 APK 由该副本 seed**：runner 单独上传清华分发副本，随后 TX1/TX2 各自从分享直链**拉取**。拉取侧四道边界：
 
 1. 就地 `sha256sum -c` 比对 staged SHA，不符即删临时文件并 fail-closed——绝不把坏字节落成 origin；
 2. 先写 `*.partial.<pid>` 再同目录 **hard link（`ln`）原子 no-clobber 落位**：nginx 永不读到半截文件，且目标已被并发写入时 `ln` 原子失败、绝不覆盖；
@@ -143,17 +148,17 @@ TX1 出口公网带宽有限且会被 APK 下载打满；APK 随内嵌 bundle �
 
 **Origin 与分发副本是两个身份，判定源必须分开：**
 
-- Origin identity：TX1/TX2 上的 immutable APK 本体；**任意一台**落位成功即消耗该版本号（见上文「版本号递增规则」的 partial-stage 处理）。stage 的 absent/equal/conflict 分类用 **SSH 直查两台 origin**（远端 `sha256sum`），conflict 仍然 fail-closed。绝不用公网 URL 做该判定——`*.apk` 已被 302 到网盘，副本损坏时公网 URL 会把 rerun 误判成 conflict 直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent（否则 seed 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
+- Origin identity：阿里云及 TX1/TX2 上的 immutable APK 本体；**任意一台**落位成功即消耗该版本号（见上文「版本号递增规则」的 partial-stage 处理）。stage 的 absent/equal/conflict 分类用 **SSH 直查两台 origin**（远端 `sha256sum`），conflict 仍然 fail-closed。绝不用公网 URL 做该判定——`*.apk` 已被 302 到网盘，副本损坏时公网 URL 会把 rerun 误判成 conflict 直接失败，而能修复副本的清华覆盖上传又被同一失败挡在后面，不可自愈。SSH 探测协议还区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent（否则 seed 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
 - Distribution replica：清华云盘。不参与 immutable 判定；stage 先比较「分享直链下载回来 SHA-256 与 staged APK」是否一致，只有不一致或缺失时才用 `replace=1` 覆盖同名文件，并在上传后再次校验；尚在 stage 上传阶段的候选可用该步骤恢复副本；已发布版本使用下文的手动恢复工作流，上传并核验副本本身不消耗版本号。它同时是 **origin 的冷启动源**（两台 origin 从这里 seed）；副本字节若损坏，seed 步骤的就地 SHA 校验会在写入 origin 前拦下（fail-closed），不会污染 immutable 权威。
 - 公网 URL（wotbtools.com → 302 → 网盘）只做最终端到端复核，从不作为状态判定源。
 
 - URL 契约不变：`version.json` 的 `apkUrl` 仍是 `https://wotbtools.com/download/android/<apk>`，客户端跟着 302 走；`/download/android/version.json` 与 `*.staging.json` **不在**重定向范围内，仍由 TX1/TX2 前端源站服务（deploy 预检的运行时内容一致性比对不受影响）。
-- fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。stage-17 先探测远端 SHA：匹配则跳过；404/410 才上传；HTTP 200 但 SHA 不符才用 `replace=1` 覆盖；200 空响应、403/429/5xx/传输错误视为「无法确认」，只重试回读，耗尽后失败且不盲目覆盖。每次上传前重新获取 upload-link（失败最多 3 次、3s/6s backoff；Seafile 默认 1h 有效，单次上传上限 45m；`replace=1`，最多 3 次、5s/10s backoff）；每次上传后回读校验（HTTP/传输错误最多 5 次、3s 间隔；HTTP 200 内容不匹配时每个上传最多 2 次完整下载，按内容下载次数单独计数，不受总探测次数影响）。整个 stage 默认 60m 绝对预算（`TSINGHUA_UPLOAD_BUDGET_SECONDS`），且 Android job 在 checkout 后立即记录 `JOB_START_EPOCH`（checkout 耗时由 15m 预留覆盖）；stage-17 取「120m job 超时 - 已耗时 - 15m 后续预留」与自身预算的最小值，每次 HTTP 操作再按剩余预算收紧，避免 job timeout 先杀进程；每次上传写入前还预留默认 15m（`TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS`）给至少一次完整回读，剩余预算不足以覆盖该预留时拒绝开始写入并 fail-closed。诊断只保留 bounded 的 HTTP 状态、curl rc、传输指标和固定错误类别；认证响应正文与 stderr 原文不落日志（只记录字节数），公开回读错误摘要仍脱敏 token 与签名 URL。上传传输失败与分享回读校验失败分别报错；本地 SHA-256 计算失败不得归类为远端内容不匹配。
+- fail-closed：该云盘部署「上传成功也返回 HTTP 400」是已知怪癖，workflow 不以响应码判定成败，以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一门禁。stage-17 先探测远端 SHA：匹配则跳过；404/410 才上传；HTTP 200 但 SHA 不符才用 `replace=1` 覆盖；200 空响应、403/429/5xx/传输错误视为「无法确认」，只重试回读，耗尽后失败且不盲目覆盖。每次上传前重新获取 upload-link（失败最多 3 次、3s/6s backoff；Seafile 默认 1h 有效，单次上传上限 45m；`replace=1`，最多 3 次、5s/10s backoff）；每次上传后回读校验（HTTP/传输错误最多 5 次、3s 间隔；HTTP 200 内容不匹配时每个上传最多 2 次完整下载，按内容下载次数单独计数，不受总探测次数影响）。整个 stage 默认 60m 绝对预算（`TSINGHUA_UPLOAD_BUDGET_SECONDS`），且 Android job 在 checkout 后立即记录 `JOB_START_EPOCH`（checkout 耗时计入后续预留）；stage-17 取「210m job 超时 - 已耗时 - 58m 后续预留」与自身预算的最小值，每次 HTTP 操作再按剩余预算收紧，避免 job timeout 先杀进程；每次上传写入前还预留默认 15m（`TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS`）给至少一次完整回读，剩余预算不足以覆盖该预留时拒绝开始写入并 fail-closed。诊断只保留 bounded 的 HTTP 状态、curl rc、传输指标和固定错误类别；认证响应正文与 stderr 原文不落日志（只记录字节数），公开回读错误摘要仍脱敏 token 与签名 URL。上传传输失败与分享回读校验失败分别报错；本地 SHA-256 计算失败不得归类为远端内容不匹配。
 - 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的 `REPO_ID` / 分享 token，两边一一对应。
 
 ### 恢复已发布版本的全量 APK 副本
 
-官网稳定入口返回错误内容时，从 GitHub Actions 手动运行 `Repair published Android APK`，选择 `main` 并填写当前生产版本。该任务与 Android 发布共用队列，按生产清单、staging 记录和 release tag 核对身份，在 runner 上验过 TX1 原包的大小与 SHA-256 后，复用 stage 的清华上传步骤。最后从官网稳定地址完整回读，与源包逐字节比较。TX1 取包和校验最多 30 分钟。上传阶段按 120 分钟任务的剩余时间收紧预算，额外扣除 22 分钟，覆盖计时前的 checkout、官网回读与比对、步骤切换。操作只写入对应的清华全量 APK 对象。发布清单、签名和源站文件继续沿用原发布记录。
+官网稳定入口返回错误内容时，从 GitHub Actions 手动运行 `Repair published Android APK`，选择 `main` 并填写当前生产版本。该任务与 Android 发布共用队列，按生产清单、staging 记录和 release tag 核对身份，在 runner 上验过 TX1 原包的大小与 SHA-256 后，复用 stage 的清华上传步骤。从官网稳定地址校验完整 SHA 和 Range 后，以同一份原包写入阿里云并独立回读。TX1 取包最多 30 分钟，阿里云上传及公网回读最多 43 分钟。清华上传按 165 分钟任务的剩余时间扣除 67 分钟，覆盖 checkout、后续两条链路验证与步骤切换。发布清单、签名和源站文件继续沿用原发布记录。
 
 任务使用现有 TX1 SSH 与清华上传 secrets，并要求仓库 Actions variable `TX1_SSH_HOST_PUBLIC_KEY` 存放 TX1 的 Ed25519 **主机公钥**（格式为 `ssh-ed25519 <base64>`，省略注释）。请从已核实的运维连接读取 `/etc/ssh/ssh_host_ed25519_key.pub`。如遇主机密钥轮换，先核实新指纹再更新变量。
 
@@ -276,7 +281,7 @@ CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle
 
 ## 构建约束、运行时升级与回滚
 
-**APK 体积与超时**：release APK 自带 GeckoView（双 ARM ABI）与完整 frontend bundle，约 200 MB 量级。`android-release.yml` 按此设置 stage job 120 分钟、清华上传 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。release APK 若异常膨胀，先回到产品决策（例如只保留 arm64），不要只调超时。
+**APK 体积与超时**：release APK 自带 GeckoView（双 ARM ABI）与完整 frontend bundle，约 200 MB 量级。`android-release.yml` 按此设置 stage job 210 分钟、清华上传 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 150 分钟。release APK 若异常膨胀，先回到产品决策（例如只保留 arm64），不要只调超时。
 
 **GeckoView 升级**：只用 stable channel 与精确版本（`android/app/build.gradle.kts` 的 `geckoViewVersion`）。每次升级是一次独立的 Android minor 发布（至少每季度一次；遇关键安全修复立即），升级时同时检查 AAR 的 `minCompileSdk` 与 Kotlin metadata 版本是否要求工具链跟进。
 

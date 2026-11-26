@@ -16,15 +16,16 @@ env:
 jobs:
   stage:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 210
+    env:
+      JOB_TIMEOUT_SECONDS: "12600"
     steps:
     - name: Checkout release source
+      timeout-minutes: 5
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       with:
         ref: ${{ github.sha }}
         fetch-depth: 0
-    # The repository is not available before checkout; stage-17 uses this
-    # epoch as the job start, with the post-stage reserve covering checkout.
     - name: Record Android stage job start
       shell: bash
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-00-record-job-start.sh"
@@ -157,6 +158,19 @@ jobs:
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
         STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-16-classify-origins.sh"
+    - name: Install and verify Aliyun APK
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      timeout-minutes: 43
+      shell: bash
+      env:
+        ALI_HOST: ${{ secrets.ANDROID_DOWNLOAD_SSH_HOST }}
+        ALI_USER: ${{ secrets.ANDROID_DOWNLOAD_SSH_USER }}
+        ALI_PORT: ${{ vars.ANDROID_DOWNLOAD_SSH_PORT || '22' }}
+        ALI_KEY: ${{ secrets.ANDROID_DOWNLOAD_SSH_KEY }}
+        ALI_HOST_KEY: ${{ vars.ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY }}
+        DOWNLOAD_NAME: ${{ steps.artifact.outputs.apkName }}
+        DOWNLOAD_SHA: ${{ steps.artifact.outputs.sha256 }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/install-aliyun-download.sh"
     - name: Upload APK to Tsinghua Cloud (public download offload + origin seed source)
       if: steps.preflight.outputs.releaseAction == 'publish'
       shell: bash
@@ -164,8 +178,7 @@ jobs:
         TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
         STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
-        JOB_TIMEOUT_SECONDS: "7200"
-        POST_STAGE_RESERVE_SECONDS: "900"
+        POST_STAGE_RESERVE_SECONDS: "3480"
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-17-upload-tsinghua.sh"
     - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
       if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
@@ -211,10 +224,9 @@ jobs:
       env:
         STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
         STEP_VERSION_TAGNAME: ${{ steps.version.outputs.tagName }}
-    - name: Prepare verified direct Android delta
+    - name: Classify staging evidence and budget optional delta work
       if: steps.preflight.outputs.releaseAction == 'publish'
-      id: delta
-      shell: bash
+      id: delta_budget
       env:
         TX1_SSH_HOST: ${{ secrets.TX_VPS_HOST }}
         TX1_SSH_USER: ${{ secrets.TX_VPS_USER }}
@@ -229,11 +241,37 @@ jobs:
         STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
         STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
         STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-20-budget-delta.sh"
+    - name: Prepare verified direct Android delta
+      if: steps.delta_budget.outputs.tryDelta == 'true'
+      id: delta
+      continue-on-error: true
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.prepareMinutes || '1') }}
+      env:
+        STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
+        EXISTING_EVIDENCE: ${{ steps.delta_budget.outputs.existingEvidence }}
+        STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-20-prepare-delta.sh"
+    - name: Install and verify Aliyun delta
+      id: delta_aliyun
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.uploadMinutes || '1') }}
+      continue-on-error: true
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
+      shell: bash
+      env:
+        ALI_HOST: ${{ secrets.ANDROID_DOWNLOAD_SSH_HOST }}
+        ALI_USER: ${{ secrets.ANDROID_DOWNLOAD_SSH_USER }}
+        ALI_PORT: ${{ vars.ANDROID_DOWNLOAD_SSH_PORT || '22' }}
+        ALI_KEY: ${{ secrets.ANDROID_DOWNLOAD_SSH_KEY }}
+        ALI_HOST_KEY: ${{ vars.ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY }}
+        DOWNLOAD_NAME: ${{ steps.delta.outputs.patchName }}
+        DOWNLOAD_SHA: ${{ steps.delta.outputs.patchSha }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/install-aliyun-download.sh"
     - name: Upload Android delta to Tsinghua Cloud
       id: delta_cloud
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.uploadMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       shell: bash
       env:
         TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
@@ -241,8 +279,9 @@ jobs:
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-21-upload-delta.sh"
     - name: Prepare TX incoming dir for Android delta
       id: delta_tx_prepare
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
       with:
         host: ${{ secrets.TX_VPS_HOST }}
@@ -252,8 +291,9 @@ jobs:
         script_path: scripts/android-release/steps/delta-tx-prepare.sh
     - name: Upload Android delta to TX incoming dir
       id: delta_tx_upload
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
       with:
         host: ${{ secrets.TX_VPS_HOST }}
@@ -266,8 +306,9 @@ jobs:
         overwrite: true
     - name: Install immutable Android delta on TX
       id: delta_tx_install
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
       with:
         host: ${{ secrets.TX_VPS_HOST }}
@@ -281,8 +322,9 @@ jobs:
         PATCH_NAME: ${{ steps.delta.outputs.patchName }}
     - name: Prepare TX2 incoming dir for Android delta
       id: delta_tx2_prepare
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
       with:
         host: ${{ secrets.TX2_VPS_HOST }}
@@ -292,8 +334,9 @@ jobs:
         script_path: scripts/android-release/steps/delta-tx2-prepare.sh
     - name: Upload Android delta to TX2 incoming dir
       id: delta_tx2_upload
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345
       with:
         host: ${{ secrets.TX2_VPS_HOST }}
@@ -306,8 +349,9 @@ jobs:
         overwrite: true
     - name: Install immutable Android delta on TX2
       id: delta_tx2_install
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
       with:
         host: ${{ secrets.TX2_VPS_HOST }}
@@ -321,18 +365,19 @@ jobs:
         PATCH_NAME: ${{ steps.delta.outputs.patchName }}
     - name: Verify public Android delta
       id: delta_public
+      timeout-minutes: ${{ fromJSON(steps.delta_budget.outputs.replicaMinutes || '1') }}
       continue-on-error: true
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta.outcome == 'success' && steps.delta.outputs.patchName != ''
       shell: bash
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-22-verify-delta.sh"
       env:
         STEP_DELTA_PATCHNAME: ${{ steps.delta.outputs.patchName }}
     - name: Resolve optional Android delta availability
-      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      if: steps.delta_budget.outputs.tryDelta == 'true' && (steps.delta.outcome != 'success' || steps.delta.outputs.patchName != '')
       shell: bash
       env:
-        DELTA_RESULTS: ${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
-        EXISTING_EVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
+        DELTA_RESULTS: ${{ steps.delta_aliyun.outcome }},${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
+        EXISTING_EVIDENCE: ${{ steps.delta_budget.outputs.existingEvidence }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-23-resolve-delta-availability.sh"
     - name: Write immutable staging evidence (production version.json 保持不变)
       if: steps.preflight.outputs.releaseAction == 'publish'
@@ -341,7 +386,7 @@ jobs:
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-24-write-staging-evidence.sh"
       env:
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
-        STEP_DELTA_EXISTINGEVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
+        STEP_DELTA_EXISTINGEVIDENCE: ${{ steps.delta_budget.outputs.existingEvidence }}
         STEP_VERSION_COMMIT: ${{ steps.version.outputs.commit }}
         STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
     - name: Prepare TX incoming dir for staging evidence
