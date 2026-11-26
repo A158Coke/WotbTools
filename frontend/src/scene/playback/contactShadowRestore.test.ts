@@ -31,7 +31,6 @@ function makeHost() {
   } as any
 }
 
-/** 与真实宿主一致：只有恢复请求绑定到当前场景 File 时，才把阴影目标交给场景。 */
 function sceneFor(file: File, request: ReturnType<typeof makeRequest> | null) {
   const S = makeHost()
   installSceneState(S, contactShadowOverrideFor(file, request))
@@ -101,7 +100,6 @@ describe('接地阴影恢复绑定到恢复 File', () => {
     expect(file).toBe(fileA)
     expect(contactShadows).toBe(true)
 
-    // A 的 analyze 仍被延迟；此时用户主动选择 B，旧页面还残留 ?shadows=1。
     d.files.value = [fileB]
     d.selectionRevision.value += 1
     window.history.replaceState({}, '', '/replay?shadows=1')

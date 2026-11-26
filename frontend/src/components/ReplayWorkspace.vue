@@ -108,7 +108,6 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       : t('workspace.native_replay_read_failed')
   },
 })
-// 整页重载后恢复完整回放选择与接地阴影（一次性 id；普通进入不触碰 IndexedDB）；请求均绑定恢复 File。
 const replayShadowRequest = ref(null), replayResumeRequest = ref(null)
 useReplayReloadRestore({
   files, selectionRevision, updateFiles, updateDemoFile, selectBattleIndex: workspace.replay.selectBattleIndex, analyze,

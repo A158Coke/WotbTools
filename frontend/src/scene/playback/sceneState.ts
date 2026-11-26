@@ -86,6 +86,7 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     };
     if (S.DATA) {
       const reload = async () => {
+
         try { await S.stageReloadReplay?.(S.store.contactShadows && shadowQualityEligible(k)); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
@@ -158,8 +159,6 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     // 只有真的变化的偏好进 URL；URL 未显式携带的 logdepth/dynres 仍由 localStorage 承载。
     if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
     if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
-    // 接地阴影没有 localStorage 载体，也不进 URL：它的有效目标已随 stageReloadReplay
-    // 绑定本次 reloadId，重载后只在恢复 File 匹配时应用。
     // 装甲高亮是 live 项：重载前把刚写入的当前值带进 URL（仅当 URL 原本已有 ?armorhl=）。
     patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;
     location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));

@@ -122,7 +122,7 @@ export function createPlaybackApi(S: Host) {
       S.invalidate();
     },
     // 待开播卡片直接调用：只改选择，startPlayback 装配时生效。
-    // 已开播的统一修改入口是 applyRenderSettings（随本次暂存记录整页重载后装配）。
+    // 已开播的统一修改入口是 applyRenderSettings（设置面板 Save，一次重载）。
     setContactShadows: (on: boolean) => S.contactShadowCtl.setEnabled(on),
     setQuality: S.setQuality,
     /** 画质 / Log Depth / 动态分辨率 / 接地阴影一次应用；已开播时最多触发一次整页重载。 */

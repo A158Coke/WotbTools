@@ -20,7 +20,6 @@ function makeHost() {
   } as any
 }
 
-/** override = 本次重载恢复请求绑定到当前场景 File 的显式接地阴影目标。 */
 function installAt(query: string, contactShadowOverride?: boolean) {
   window.history.replaceState({}, '', '/replay' + query)
   localStorage.clear()
@@ -71,7 +70,6 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
     expect(downgraded.searchParams.get('q')).toBe('low')
     expect(downgraded.searchParams.has('shadows')).toBe(false)
 
-    // 模拟一次真实重载：新页面没有恢复请求，旧 URL 里的 shadows 也不得再生效。
     replace.mockClear()
     const second = installAt(downgraded.search)
     second.stageReloadReplay = vi.fn()

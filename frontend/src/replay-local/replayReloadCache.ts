@@ -25,7 +25,6 @@ export interface StageReplayInput {
   files: readonly File[]
   currentIndex: number
   demo?: boolean
-  /** 本次重载完成后，仅绑定恢复出来的那个 File 的接地阴影目标。 */
   contactShadows?: boolean
 }
 
@@ -146,7 +145,6 @@ export async function takeReloadReplay(): Promise<StagedReload | null> {
   try {
     const record = await takeRecord(db, id)
     if (!record || !validReplay(record.replay)) return null
-    // 旧记录没有 contactShadows：按 OFF 迁移，绝不把缺失字段当成开启。
     return { id, replay: { ...record.replay, contactShadows: record.replay.contactShadows === true } }
   } finally {
     db.close()

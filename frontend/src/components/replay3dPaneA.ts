@@ -127,7 +127,6 @@ async function stageReloadReplay(contactShadows?: boolean): Promise<void> {
   const capturedFiles = (props.replayFiles ?? []).filter((item): item is File => item instanceof File)
   const files = capturedFiles.includes(file) ? capturedFiles : [file, ...capturedFiles]
   const selectionRevision = props.selectionRevision
-  // 显式传入本次重载后的有效目标；缺省（例如只改画质）沿用当前选择。
   const shadowTarget = contactShadows ?? S.store.contactShadows
   let reloadId: string | null = null
   try {
