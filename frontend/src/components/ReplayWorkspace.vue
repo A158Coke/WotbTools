@@ -110,11 +110,7 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
 })
 // 渲染设置整页重载后恢复当前回放（一次性标记；普通进入不触碰 IndexedDB）。
 useReplayReloadRestore({
-  files,
-  updateFiles,
-  updateDemoFile,
-  analyze,
-  onError: () => { error.value = t('workspace.replay_restore_failed') },
+  files, updateFiles, updateDemoFile, analyze, onError: () => { error.value = t('workspace.replay_restore_failed') },
 })
 
 function confirmRemove() {
