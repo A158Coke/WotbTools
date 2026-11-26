@@ -117,16 +117,20 @@ export async function takeReloadReplay(): Promise<StagedReload | null> {
   let id: string | null = null
   try { id = sessionStorage.getItem(RELOAD_PENDING_KEY) } catch { return null }
   if (!id) return null
-  try { sessionStorage.removeItem(RELOAD_PENDING_KEY) } catch { }
 
   const db = await openDb()
+  let record: StoredReload | null
   try {
-    const record = await takeRecord(db, id)
-    if (!record || !validReplay(record.replay)) return null
-    return { id, replay: { ...record.replay, contactShadows: record.replay.contactShadows === true } }
+    record = await takeRecord(db, id)
   } finally {
     db.close()
   }
+  try {
+    if (sessionStorage.getItem(RELOAD_PENDING_KEY) === id) sessionStorage.removeItem(RELOAD_PENDING_KEY)
+  } catch { }
+
+  if (!record || !validReplay(record.replay)) return null
+  return { id, replay: { ...record.replay, contactShadows: record.replay.contactShadows === true } }
 }
 
 export async function discardReloadReplay(id: string): Promise<void> {

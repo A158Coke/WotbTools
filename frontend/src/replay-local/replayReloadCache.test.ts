@@ -4,9 +4,18 @@ import { RELOAD_PENDING_KEY, discardReloadReplay, stageReplayForReload, takeRelo
 
 function fakeIdb() {
   const data = new Map<string, unknown>()
+  const state = { openFailures: 0, transactionFailures: 0 }
   const db = {
     close: vi.fn(),
     transaction: vi.fn(() => {
+      if (state.transactionFailures > 0) {
+        state.transactionFailures -= 1
+        const tx: any = { error: new Error('IndexedDB transaction failed') }
+        const store = { get: () => ({}), put: vi.fn(), delete: vi.fn() }
+        tx.objectStore = () => store
+        queueMicrotask(() => tx.onerror?.())
+        return tx
+      }
       const tx: any = { error: null }
       const store = {
         get: (key: string) => {
@@ -28,10 +37,15 @@ function fakeIdb() {
   }
   const open = vi.fn(() => {
     const request: any = {}
-    queueMicrotask(() => { request.result = db; request.onsuccess?.() })
+    if (state.openFailures > 0) {
+      state.openFailures -= 1
+      queueMicrotask(() => { request.error = new Error('IndexedDB open failed'); request.onerror?.() })
+    } else {
+      queueMicrotask(() => { request.result = db; request.onsuccess?.() })
+    }
     return request
   })
-  return { indexedDB: { open }, open, data }
+  return { indexedDB: { open }, open, data, state }
 }
 
 const fileA = new File(['a'], 'a.wotbreplay')
@@ -64,6 +78,44 @@ describe('replayReloadCache 一次性恢复记录', () => {
     })
     expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBeNull()
     await expect(takeReloadReplay()).resolves.toBeNull()
+  })
+
+  it('IndexedDB open 临时失败：保留标记，重试恢复原批次', async () => {
+    const fake = fakeIdb()
+    vi.stubGlobal('indexedDB', fake.indexedDB)
+    const id = await stageReplayForReload({ files: [fileA, fileB], currentIndex: 1, contactShadows: true })
+    fake.state.openFailures = 1
+    await expect(takeReloadReplay()).rejects.toThrow('IndexedDB open failed')
+    expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBe(id)
+    await expect(takeReloadReplay()).resolves.toEqual({
+      id,
+      replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1, contactShadows: true },
+    })
+    expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBeNull()
+  })
+
+  it('IndexedDB transaction 失败：保留标记，重试恢复原批次', async () => {
+    const fake = fakeIdb()
+    vi.stubGlobal('indexedDB', fake.indexedDB)
+    const id = await stageReplayForReload({ files: [fileA, fileB], currentIndex: 0, contactShadows: false })
+    fake.state.transactionFailures = 1
+    await expect(takeReloadReplay()).rejects.toThrow('IndexedDB transaction failed')
+    expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBe(id)
+    await expect(takeReloadReplay()).resolves.toEqual({
+      id,
+      replay: { kind: 'files', files: [fileA, fileB], currentIndex: 0, contactShadows: false },
+    })
+    expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBeNull()
+  })
+
+  it('无效记录：确认读取成功后清理记录与标记，不返回选择', async () => {
+    const fake = fakeIdb()
+    vi.stubGlobal('indexedDB', fake.indexedDB)
+    fake.data.set('broken', { replay: { kind: 'files', files: [], currentIndex: 0 } })
+    sessionStorage.setItem(RELOAD_PENDING_KEY, 'broken')
+    await expect(takeReloadReplay()).resolves.toBeNull()
+    expect(fake.data.has('broken')).toBe(false)
+    expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBeNull()
   })
 
   it('每次重载独立 id：两个标签页的记录并存，各自按自己的标记取回', async () => {
