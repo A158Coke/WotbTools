@@ -9,6 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 冷启动 / 引擎恢复期间的首帧占位；由 StartupSurfaceState 在首个内容绘制后移除。 -->
     <LinearLayout
         android:id="@+id/startupSurface"
         android:layout_width="match_parent"
@@ -165,6 +166,7 @@
             android:layout_marginTop="8dp"
             android:text="@string/runtime_error_open_browser" />
 
+        <!-- 诊断行（引擎 / 设备 / crash 计数），可长按选中复制，便于用户反馈问题。 -->
         <TextView
             android:id="@+id/runtimeErrorDiagnostics"
             android:layout_width="wrap_content"

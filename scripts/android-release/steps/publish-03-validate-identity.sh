@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 3: Validate the staged release source identity (tag target is authoritative)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 AUTH_PROVIDER="$RUNNER_TEMP/frontend/src/platform/androidAuthProvider.ts"
 [ -f "$AUTH_PROVIDER" ] || AUTH_PROVIDER="${AUTH_PROVIDER%.ts}.js"

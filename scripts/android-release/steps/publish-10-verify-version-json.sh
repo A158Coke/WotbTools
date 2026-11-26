@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 12: Verify production version.json matches the staged artifact).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 URL="https://wotbtools.com/download/android/version.json"
 TMP_JSON="$RUNNER_TEMP/prod-version-verify.json"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 7: Verify the wotbtools-android runtime client (readiness, rerun)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 AUTH_ENDPOINT="https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth"
 STATE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"

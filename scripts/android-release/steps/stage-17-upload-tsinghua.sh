@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 22: Upload APK to Tsinghua Cloud (public download offload + origin seed source)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 APK_NAME="$STEP_ARTIFACT_APKNAME"
 APK_FILE="release-staging/$APK_NAME"

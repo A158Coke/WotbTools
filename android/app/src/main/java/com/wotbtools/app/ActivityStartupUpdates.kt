@@ -12,6 +12,7 @@ import com.wotbtools.app.MainActivity.Companion.UPDATE_CHANGED_GLOBAL
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoView
 
+// ── Local startup + bounded best-effort update discovery ──
 
 internal fun MainActivity.startStartupFlow() {
     loadWeb()
@@ -24,6 +25,7 @@ internal fun MainActivity.checkForUpdateAsync() {
     }
 }
 
+/** Native 和 Vue 消费同一快照；optional 绝不改变运行时可见性。 */
 internal fun MainActivity.onUpdateStateChanged() {
     if (destroyedRuntime || !runtimeReady) return
     val snapshot = updateCoordinator.status
@@ -41,6 +43,7 @@ internal fun MainActivity.onUpdateStateChanged() {
     }
 }
 
+/** Entry URL：有 pending replay 就进 replay canonical view，否则首页。认证回程不经这里。 */
 internal fun MainActivity.entryUrl(): String {
     if (intent.getBooleanExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, false)) {
         intent.removeExtra(UpdateCoordinator.OPEN_UPDATE_PANEL)
@@ -69,6 +72,7 @@ internal fun MainActivity.loadWeb() {
     }
 }
 
+/** 本地运行时错误页：标题说明原因，诊断行可长按复制（引擎 / 设备 / crash 计数，不含账号或回放信息）。 */
 internal fun MainActivity.showRuntimeError(titleRes: Int) {
     if (updateCoordinator.state() == "mandatory") {
         showMandatoryUpdate(updateCoordinator.status)
@@ -211,6 +215,7 @@ internal fun MainActivity.dismissOptionalUpdate(expectedVersionCode: Int?, reply
     updateCoordinator.dismissOptionalUpdate(expectedVersionCode, reply)
 }
 
+/** 显式安装动作；异步哈希完成后仍须检查前台状态和同一任务 identity。 */
 internal fun MainActivity.installUpdate(expectedToken: String?, reply: (Boolean) -> Unit) {
     runOnUiThread {
         if (expectedToken.isNullOrBlank() || !updateForeground || destroyedRuntime || preparingInstallToken != null) {
@@ -242,6 +247,7 @@ internal fun MainActivity.installUpdate(expectedToken: String?, reply: (Boolean)
     }
 }
 
+/** 兼容旧调用的前台“一键更新”意图，不影响新下载 API 的只下载行为。 */
 internal fun MainActivity.startUpdate() {
     runOnUiThread {
         if (!updateForeground || destroyedRuntime) return@runOnUiThread
@@ -260,7 +266,16 @@ internal fun MainActivity.startUpdate() {
     }
 }
 
+// ── 通用 ──
 
+/**
+ * 隐藏页面并收起版本/错误页。
+ *
+ * 门禁视图（version/runtimeError）与 [runtimeView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
+ * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 GeckoView
+ * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 GeckoView 之上，足以完整接管画面。
+ * [startupSurface] 的可见性属于 [StartupSurfaceState]，不在这里隐式修改。
+ */
 internal fun MainActivity.hideAllGates() {
     versionGateView.visibility = View.GONE
     runtimeErrorView.visibility = View.GONE

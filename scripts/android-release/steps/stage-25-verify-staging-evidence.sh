@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 44: Verify production staging evidence (HTTP 200 + content)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 bash scripts/android-release/staging-evidence.sh collect-required "$STEP_STAGING_STAGINGNAME" "$RUNNER_TEMP/staging-origins.json" >/dev/null
 cmp "$RUNNER_TEMP/staging-origins.json" "release-staging/$STEP_STAGING_STAGINGNAME"

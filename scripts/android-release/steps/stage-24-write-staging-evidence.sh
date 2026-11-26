@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 37: Write immutable staging evidence (production version.json 保持不变)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 APK_NAME="$STEP_ARTIFACT_APKNAME"
 STAGING_NAME="${APK_NAME%.apk}.staging.json"

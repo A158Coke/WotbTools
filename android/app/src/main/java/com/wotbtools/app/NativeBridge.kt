@@ -5,18 +5,42 @@ import org.json.JSONObject
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+/**
+ * origin-scoped bridge：经 GeckoView 内置扩展的 native messaging port（[GeckoWebRuntime]），
+ * 仅 exact local origin（[MainActivity.LOCAL_APP_ORIGIN]）的 top frame 可调。
+ * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth、
+ * 场景页屏幕形态与横屏锁（screen-form）、系统触感（haptics）。
+ * 禁止 arbitrary file/http/command/intent API（规格 §27）。
+ *
+ * 消息形状 `{id, method, params}`；ACK / folder release 携带 exact identity，认证 token 可带有效期。
+ *
+ * **回复是异步的**：[handleMessage] 不返回字符串，而是把回复交给 `reply` 回调。replay / update /
+ * capability 与 getUpdateStatus 这些纯本地读仍在**同一个调用栈内**立即回复；refreshUpdateStatus
+ * 由进程级更新状态 owner 异步回复，下载和安装动作等待 compare-and-act / 完整性检查。认证方法离开
+ * 主线程（`authGetAccessToken` 可能需要 refresh 网络往返，`authLogin` 可能需要 discovery），
+ * 在后台线程完成后回调 `reply`。目录选择同样异步：系统 picker → 后台 SAF 扫描 → 回复。
+ * 主线程绝不做网络 / document I/O。
+ */
 class NativeBridge(private val host: MainActivity) {
 
+    /** 认证方法专用后台线程：主线程只提交请求，不等待任何网络。 */
     private val authExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "wotb-bridge-auth")
     }
 
+    /**
+     * 处理来自页面的 JSON {id, method, params}，构建 JSON {id, result} 并交给 [reply]。
+     *
+     * 运行于主线程；[reply] 可能在该线程同步触发，也可能在**后台线程**稍后触发。
+     * 未知方法 / 任何异常一律回复 `result: null`（fail-closed），绝不把异常抛回页面。
+     */
     fun handleMessage(json: String, reply: (String) -> Unit) {
         try {
             val msg = JSONObject(json)
             val id = msg.opt("id")
             val params = msg.optJSONObject("params")
             when (msg.optString("method")) {
+                // ── 立即回复（纯本地读 / 无网络）──
                 "getBridgeVersion" -> reply(envelope(id, host.bridgeVersion()))
                 "getCapabilities" -> reply(envelope(id, JSONArray(host.bridgeCapabilities())))
                 "connectivityGetState" -> reply(envelope(id, host.bridgeConnectivityState()))
@@ -49,6 +73,7 @@ class NativeBridge(private val host: MainActivity) {
                     updateVersionCodeOf(params?.opt("expectedLatestVersionCode"))
                 ) { result -> reply(envelope(id, result)) }
 
+                // ── 认证：离开主线程，完成后回复（绝不阻塞页面）──
                 "authGetState" -> dispatch(id, reply) { host.bridgeAuthGetState() }
                 "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin(uiLocaleOf(params?.opt("locale"))) }
                 "authLogout" -> dispatch(id, reply) { host.bridgeAuthLogout() }
@@ -59,38 +84,46 @@ class NativeBridge(private val host: MainActivity) {
                 else -> reply(envelope(id, JSONObject.NULL))
             }
         } catch (_: Exception) {
+            // 解析 / 分发异常一律 fail-closed：id 也拿不到时按 null 回复，页面按自己的超时处理。
             reply(envelope(JSONObject.NULL, JSONObject.NULL))
         }
     }
 
+    /** 认证方法分发：后台线程执行 [work]，结果（或异常 → null）经 [reply] 交回调用方。 */
     private fun dispatch(id: Any?, reply: (String) -> Unit, work: () -> Any?) {
         try {
             authExecutor.execute {
                 val result = try {
                     work()
                 } catch (_: Exception) {
+                    // 认证失败永远表现为契约里的失败值（null / error 字段），绝不把异常抛给页面。
                     JSONObject.NULL
                 }
                 reply(envelope(id, result))
             }
         } catch (_: Exception) {
+            // 线程池已关闭（进程收尾）：同样 fail-closed，立即回 null。
             reply(envelope(id, JSONObject.NULL))
         }
     }
 
+    /** 唯一构造 `{id, result}` 的地方：同步路径与异步路径形状不可能漂移。 */
     private fun envelope(id: Any?, result: Any?): String = JSONObject()
         .put("id", id ?: JSONObject.NULL)
         .put("result", result ?: JSONObject.NULL)
         .toString()
 
     internal companion object {
+        /** 不接受字符串、浮点数或溢出的版本 identity，避免 optInt 的静默截断。 */
         internal fun updateVersionCodeOf(raw: Any?): Int? = when (raw) {
             is Int -> raw.takeIf { it >= 0 }
             is Long -> raw.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt()
             else -> null
         }
+        /** 登录页语言白名单：只接受契约里的 zh / en / ru，其它一律不带 ui_locales（让 Keycloak 走 realm 默认）。 */
         internal fun uiLocaleOf(raw: Any?): String? = (raw as? String)?.takeIf { it in UI_LOCALES }
         private val UI_LOCALES = setOf("zh", "en", "ru")
+        /** `minValiditySeconds` 缺省 0（「现在可用即可」）；负数一律归零，绝不放宽判定。 */
         private fun minValiditySecondsOf(raw: Any?): Long = when (raw) {
             is Number -> raw.toLong().coerceAtLeast(0L)
             else -> 0L

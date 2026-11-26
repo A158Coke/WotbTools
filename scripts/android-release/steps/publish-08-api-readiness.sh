@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 8: Verify production API CORS and asset storage readiness).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 STAGING="$RUNNER_TEMP/staging.json"
 ORIGIN="$(jq -r '.runtimeOrigin' "$STAGING")"

@@ -1,3 +1,4 @@
+-- Preserve administrator-entered legacy names in both required languages.
 ALTER TABLE tournament_broadcast_season RENAME COLUMN name TO name_en;
 ALTER TABLE tournament_broadcast_season
     ADD COLUMN name_zh varchar(100),

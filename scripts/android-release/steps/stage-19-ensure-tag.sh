@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 26: Ensure release tag (idempotent)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 . scripts/android-release/check-release-guards.sh
 TAG="$STEP_VERSION_TAGNAME"

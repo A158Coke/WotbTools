@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 27: Prepare verified direct Android delta).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 TARGET="android/app/build/outputs/apk/release/app-release.apk"
 TARGET_CODE="$STEP_VERSION_VERSIONCODE"

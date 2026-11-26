@@ -1,3 +1,7 @@
+-- Correct only the unchanged default English name attached to V40's source video.
+-- Official NetEase champion poster spells BLITZ PROFESSIONAL CUP 2025 (BPC):
+-- https://game.xiaomi.com/viewpoint/1160758920_1766404215796_16
+-- V40 and its source manifest remain immutable; administrator names/translations are preserved.
 UPDATE tournament_broadcast_season season
 SET name_en = 'Blitz Professional Cup (BPC)', version = version + 1
 WHERE season.server = 'CN' AND season.year = 2025

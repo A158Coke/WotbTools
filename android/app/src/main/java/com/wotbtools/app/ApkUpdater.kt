@@ -15,6 +15,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import org.json.JSONObject
 
+/** 系统下载、任务身份和私有 APK 完整性操作；调用方在 IO 线程串行执行。 */
 class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Long) -> Unit = DeltaApplier::apply) {
     private val appContext = context.applicationContext
     private val downloads = appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -74,6 +75,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         }
     }
 
+    /** durable intent 先于 enqueue；相同身份的有效任务重复点击不再入队。 */
     fun begin(manifest: VersionManifest, retry: Boolean = false): Task {
         val existing = loadTask()
         var forceFullRetry = false
@@ -84,6 +86,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
                 val report = query(existing)
                 if (report.state != "downloadFailed") return report.task
                 if (!retry) {
+                    // 崩溃发生在 intent 保存后、enqueue 前：排除所有尚未确定 destination 的候选后才可续入队。
                     if (existing.downloadId == null && rows(existing).none { it.localUri == null || matches(existing, it) } &&
                         !externalFile(existing).exists()) return enqueue(existing)
                     return existing
@@ -98,13 +101,14 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
             manifest.latestVersionName, manifest.sha256, manifest.apkUrl)
         val task = if (forceFullRetry) full.copy(fallback = true) else selectPackage(full, manifest)
         validate(task)
-        externalFile(task)
+        externalFile(task) // 在保存 intent 前确认目标目录可用。
         save(task)
         return enqueue(task)
     }
 
     private fun downloadUrl(task: Task): String = if (task.packageType == "delta") requireNotNull(task.patchUrl) else task.apkUrl
 
+    /** 只在正式 base identity、收益和空间均可证明时使用 delta。 */
     private fun selectPackage(full: Task, manifest: VersionManifest): Task {
         val targetSize = manifest.apkSizeBytes ?: return full
         if (targetSize > Int.MAX_VALUE.toLong()) return full
@@ -137,12 +141,14 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
             val id = downloads.enqueue(request)
             task.copy(downloadId = id).also(::save)
         } catch (failure: Failure) {
+            // enqueue 后 ID commit 失败也保留先前 durable intent，恢复时按精确 URL/destination 认领。
             throw failure
         } catch (error: Exception) {
             throw Failure("unknown").apply { initCause(error) }
         }
     }
 
+    /** 系统 SUCCESSFUL 与私有文件存在都只返回 verifying，绝不直接认定 ready。 */
     fun query(task: Task): Report {
         validate(task)
         val readyFile = privateFile(task)
@@ -197,6 +203,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         } catch (_: Exception) { false }
     }
 
+    /** 已有 private ready 也重新 hash；复制阶段 hash 的是即将安装的私有副本。 */
     fun verify(task: Task, phase: (String) -> Unit = {}): File {
         validate(task)
         val ready = privateFile(task)
@@ -243,6 +250,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         }
     }
 
+    /** 先验证 base/patch，再应用并核对目标 full SHA；进程重启可从已下载 patch 重做。 */
     private fun verifyDelta(task: Task, temporary: File, ready: File, phase: (String) -> Unit): File {
         try {
             val info = appContext.applicationInfo
@@ -259,6 +267,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
             if (!sourcePatch.isFile || sourcePatch.length() != patchSize) throw Failure("patchHashMismatch")
             if (ready.parentFile!!.usableSpace < Math.addExact(targetSize, patchSize))
                 throw Failure("insufficientStorage")
+            // 不在 app-specific external 上执行已校验 patch：复制并 hash 私有副本，避免 TOCTOU。
             if (patch.exists() && !patch.delete()) throw Failure("fileIo")
             val digest = MessageDigest.getInstance("SHA-256")
             var copied = 0L
@@ -301,6 +310,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         }
     }
 
+    /** 先安全清掉旧 patch，再持久化 full intent；崩溃恢复不重复入队。 */
     fun fallbackToFull(task: Task): Task {
         if (task.packageType != "delta") throw Failure("taskMissing")
         cleanupOwnedFiles(task)
@@ -355,6 +365,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         return result
     }
 
+    /** 只清本 token 精确 destination；未确定 destination 的 orphan 不猜测归属。 */
     fun cleanup(task: Task) {
         cleanupOwnedFiles(task)
         if (loadTask()?.token == task.token && !preferences.edit().remove(TASK_KEY).commit()) throw Failure("fileIo")
@@ -374,6 +385,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
     }
 
     private fun invalidate(task: Task) {
+        // 校验失败时先去掉所有本任务产物；任何清理异常都不能把失败变成可安装。
         listOf(privateFile(task), privateTemp(task)).forEach { it.delete() }
         try { externalFile(task).delete() } catch (_: Exception) { }
         try {
@@ -382,6 +394,7 @@ class ApkUpdater(context: Context, private val applyDelta: (File, File, File, Lo
         } catch (_: Exception) { }
     }
 
+    /** 调用方须先在后台 verify；UI 线程这里只做窄 FileProvider 的 installer handoff。 */
     fun requestInstall(apk: File): Boolean = try {
         val task = loadTask()
         if (task == null || apk.canonicalFile != privateFile(task) || !apk.isFile) false else {

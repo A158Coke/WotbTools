@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 4: Preflight classify production state (safe + idempotent)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 VERSION_CODE="$STEP_VERSION_VERSIONCODE"
 VERSION_NAME="$STEP_VERSION_VERSIONNAME"

@@ -16,17 +16,20 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import org.json.JSONObject
 
+/** 进程级更新事实所有者；Activity 只订阅投影，不拥有检查或下载生命周期。 */
 internal class UpdateCoordinator internal constructor(
     context: Context,
     val currentVersionCode: Int,
     val currentVersionName: String,
     private val fetchManifest: () -> StartupGate.Result = StartupGate::checkVersion,
+    // 状态与 compare-and-act 始终串行；网络/文件操作不得阻塞这条队列。
     private val stateExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val ioExecutor: Executor = Executors.newSingleThreadExecutor(),
     private val updaterOverride: ApkUpdater? = null,
 ) {
     private val applicationContext = context.applicationContext
     init {
+        // 进程重启后旧通知不再作为 READY 证明；恢复对账重新验证后才重新显示。
         (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .cancel(READY_NOTIFICATION_ID)
     }
@@ -51,6 +54,7 @@ internal class UpdateCoordinator internal constructor(
     }
     private val completionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // 广播只触发对账；真实状态和完整性仍取自系统 query / SHA。
             if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE &&
                 intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) == activeDownloadId &&
                 instance === this@UpdateCoordinator) reconcile()
@@ -65,6 +69,7 @@ internal class UpdateCoordinator internal constructor(
     val latestManifest: VersionManifest?
         get() = status.manifest
 
+    /** 一个分类实现，供 Native renderer 和 bridge 投影共同使用。 */
     fun state(snapshot: UpdateStatus = status): String {
         val manifest = snapshot.manifest
         return if (manifest != null) classify(currentVersionCode, manifest) else when (snapshot.checkState) {
@@ -81,6 +86,7 @@ internal class UpdateCoordinator internal constructor(
 
     fun legacyCheckForUpdate(): Boolean = latestManifest?.let { currentVersionCode < it.latestVersionCode } ?: false
 
+    /** 回调总在主线程；detach 会过滤已排队、尚未分发的通知。 */
     fun addListener(listener: () -> Unit) {
         listeners.add(listener)
         mainHandler.post { if (listeners.contains(listener)) listener() }
@@ -102,6 +108,7 @@ internal class UpdateCoordinator internal constructor(
         notifyListeners()
     }
 
+    /** 并发调用加入同一次检查；网络失败不替换已经发现的支持门槛。 */
     fun refresh(online: Boolean, reply: (JSONObject) -> Unit = {}) {
         stateExecutor.execute {
             pendingRefreshReplies.add(reply)
@@ -121,6 +128,7 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
+    /** 仅由 stateExecutor 调用，先发布 terminal snapshot，再回答所有同次调用方。 */
     private fun completeCheck(result: StartupGate.Result) {
         when (result) {
             is StartupGate.Result.Ok -> {
@@ -168,6 +176,7 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
+    /** 只停止界面采样；系统下载和应用级 I/O 均不属于 Activity。 */
     fun setForeground(value: Boolean) {
         foreground = value
         mainHandler.post {
@@ -199,6 +208,7 @@ internal class UpdateCoordinator internal constructor(
 
     private fun reason(error: Exception): String = (error as? ApkUpdater.Failure)?.reason ?: "fileIo"
 
+    /** 一条 I/O 队列只对账已有任务，绝不隐式 enqueue。 */
     fun reconcile() {
         stateExecutor.execute {
             if (downloadBusy) return@execute
@@ -274,6 +284,7 @@ internal class UpdateCoordinator internal constructor(
                             activeDownloadId = null
                             if (status.download.state in setOf("ready", "verifying", "installPermissionRequired", "installRequestFailed", "installRequested"))
                                 publishDownload(UpdateDownloadSnapshot())
+                            // 保留刚才的下载/校验失败，直到显式用户重试。
                         }
                         foundReport != null -> {
                             activeDownloadId = foundTask.downloadId
@@ -297,6 +308,7 @@ internal class UpdateCoordinator internal constructor(
 
     fun beginDownload(expectedLatestCode: Int, reply: (Boolean) -> Unit) {
         stateExecutor.execute {
+            // 前台定时对账与用户点击可能重叠；等对账完成后重新检查版本身份，不能让正常点击随机失败。
             if (downloadBusy) {
                 mainHandler.postDelayed({ beginDownload(expectedLatestCode, reply) }, 100)
                 return@execute
@@ -315,7 +327,7 @@ internal class UpdateCoordinator internal constructor(
                 try {
                     val old = updater.loadTask()
                     if (old != null && old.versionCode != manifest.latestVersionCode) {
-                        updater.cleanup(old)
+                        updater.cleanup(old) // 显式用户选择替换，不在发现新版本时自动执行。
                         verifiedToken = null
                     }
                     task = updater.begin(manifest, retry)
@@ -337,12 +349,15 @@ internal class UpdateCoordinator internal constructor(
         }
     }
 
+    /** 不信任 ready 标志；每次显式安装都离开主线程重新校验当前私有文件。 */
     fun prepareInstall(expectedToken: String, reply: (File?) -> Unit) {
         val request = InstallRequest(expectedToken, reply)
         stateExecutor.execute { prepareInstallOnState(request) }
     }
 
+    /** Activity 销毁后移除尚未执行的回调，避免进程级 coordinator 持有过期界面。 */
     fun cancelPendingInstall(expectedToken: String) {
+        // 主线程先释放正在校验或等待主线程分发的回调；I/O 不持有 Activity。
         activeInstall?.takeIf { it.token == expectedToken }?.callback = null
         stateExecutor.execute {
             if (pendingInstall?.token == expectedToken) {

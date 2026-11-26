@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 21: Classify origin APK on TX1/TX2 (SSH; public URL is the drive replica)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 . scripts/android-release/check-release-guards.sh
 APK_NAME="$STEP_ARTIFACT_APKNAME"

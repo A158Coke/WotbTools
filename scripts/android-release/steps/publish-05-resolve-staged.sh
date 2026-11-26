@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 5: Resolve the staged release identity from the immutable tag (no rebuild)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 . scripts/android-release/check-release-guards.sh
 

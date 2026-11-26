@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 19: Verify release APK carries the local-first frontend bundle).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 APK="android/app/build/outputs/apk/release/app-release.apk"
 test -s "$APK" || { echo "::error::release APK missing or empty" >&2; exit 1; }

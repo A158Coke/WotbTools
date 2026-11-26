@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 2: Resolve the release source from the immutable tag (no rebuild, no current-main candidate)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 TAG="android-v$REQUESTED_VERSION"
 git fetch origin main --tags --force

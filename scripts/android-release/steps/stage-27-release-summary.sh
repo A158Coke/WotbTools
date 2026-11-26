@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 46: Write release summary).
+# Behavior is preserved; edit this script, not the workflow YAML.
 {
   echo "# Android Release (stage) $STEP_VERSION_VERSIONNAME"
   echo ""

@@ -25,6 +25,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Replay ACTION_SEND / ACTION_VIEW。MIME/action 以用户真机 evidence 为准（规格 §35），
+                 本组为保守默认，待真机导出后调优。 -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -38,10 +40,16 @@
             </intent-filter>
         </activity>
 
+        <!-- 原生认证回程（AppAuth，RFC 8252 external user-agent）：库自带 `${appAuthRedirectScheme}`
+             的 scheme-only filter；这里补上两条**精确**回程，与 Keycloak client 登记的 redirect URI
+             一一对应。库 activity 继承 AppCompatActivity，因此必须显式给 AppCompat 主题（app 主题是
+             android:Theme.Material.NoActionBar，继承它会在启动时崩）。 -->
         <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
             android:exported="true"
             android:theme="@style/Theme.AppCompat.Translucent.NoTitleBar">
+            <!-- 首选回程：HTTPS App Link（deploy/tx/assets/auth/.well-known/assetlinks.json 已发布
+                 本包名 + 签名指纹）；仅在平台确认 domain verified 时使用。 -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -51,6 +59,7 @@
                     android:host="auth.wotbtools.com"
                     android:path="/android/oauth/callback" />
             </intent-filter>
+            <!-- 回退回程：private-use URI scheme（RFC 8252 §7.1），不依赖 domain verification。 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

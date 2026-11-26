@@ -1,7 +1,18 @@
 "use strict";
+// Native Bridge transport for GeckoView（contracts/android-native-bridge.json，bridge v4）。
+//
+// 向页面暴露与 2.x（Bridge v2，System WebView 注入）完全同形的 `window.WotbNative`
+// （postMessage(string) / addEventListener('message') / removeEventListener），
+// 因此前端 `callBridge()` 是唯一 RPC 入口且无需感知引擎。消息经 runtime.connectNative 交给 Native；
+// Native 再按 sender（content script / top frame / 当前 session / exact origin）复核，这里只是第一道门。
 (() => {
+  // 只允许 Native 触发 contract events 列出的 global，绝不执行任意名字。
   const EVENT_GLOBALS = new Set(["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay", "wotbtoolsOnUpdateStatusChanged"]);
 
+  // 第一道门：exact local origin（`http://127.0.0.1:21653`）的 top frame。
+  // manifest 的 `http://127.0.0.1/*` 只是粗粒度注入范围——Firefox 的 WebExtension match pattern
+  // 不支持 port（MDN match patterns / bug 1362809、1468162），所以 port 必须在这里显式比对。
+  // origin 的精确性 = 这里（port）+ Native 的 MainActivity.isLocalAppUrl(sender.url)，两层缺一不可。
   function isTrustedBridgeLocation(loc) {
     return loc.protocol === "http:" && loc.hostname === "127.0.0.1" && loc.port === "21653";
   }

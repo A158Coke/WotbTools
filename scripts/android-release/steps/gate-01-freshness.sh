@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish_gate step 1: Guard: automatic publish yields to a newer Android candidate).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 SUPERSEDED=false
 STATE=manual

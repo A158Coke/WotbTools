@@ -3,6 +3,11 @@ package com.wotbtools.app
 import org.json.JSONObject
 import java.util.regex.Pattern
 
+/**
+ * Android 版本 manifest（对应 https://wotbtools.com/download/android/version.json）。
+ * fail-closed：任何非法字段（sha256 缺失/格式错、apkUrl 缺失、schemaVersion 不支持、
+ * 版本字段非法）都视为 manifest/update error，抛异常 → 本地启动继续、该更新不可用，绝不绕过 APK 完整性校验。
+ */
 data class VersionManifest(
     val schemaVersion: Int,
     val latestVersionCode: Int,
@@ -16,6 +21,7 @@ data class VersionManifest(
     val patches: List<Patch> = emptyList(),
     val apkSizeBytes: Long? = null,
 ) {
+    /** 只描述一个已签名基础 APK 到当前完整包的直接增量。 */
     data class Patch(
         val fromVersionCode: Int,
         val fromSha256: String,
@@ -67,6 +73,7 @@ data class VersionManifest(
             )
         }
 
+        /** optInt/optString 会把小数和字符串静默转换；发布策略必须来自真实整数与字符串字段。 */
         private fun integer(json: JSONObject, key: String): Int = when (val value = json.opt(key)) {
             is Int -> value
             is Long -> value.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt()
@@ -86,6 +93,7 @@ data class VersionManifest(
             else -> null
         }?.takeIf { it in 1..MAX_SAFE_SIZE }
 
+        /** 增量是可选优化；元数据非法或基础版本有歧义时只禁用增量，保留完整包。 */
         private fun patches(json: JSONObject, latestCode: Int): List<Patch> {
             if (!json.has("patches")) return emptyList()
             val array = json.opt("patches") as? org.json.JSONArray ?: return emptyList()

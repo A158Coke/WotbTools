@@ -1,3 +1,5 @@
+-- 百场名人堂：新增 Wargaming API 认证来源与官方统计快照。
+-- 存量/人工链路统一回填 MANUAL；WG 来源必须冻结完整的国际服官方 totals。
 alter table hundred_battle_submission
     add column verification_source varchar(32) not null default 'MANUAL',
     add column verified_at timestamp with time zone,

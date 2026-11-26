@@ -1,3 +1,8 @@
+-- Initial source-backed individual matches; no network request runs during migration.
+-- Source: docs/research/broadcast-seed-2025-2026/seed-ready.json
+-- Source SHA-256 (UTF-8, LF): 65ba1a1934c5012bf51960cc197e1f10fa19c89907d5bd93bd4ef8d3b4638482
+-- Facts: official Bilibili BV18j2CBWEMo parts 1-3; official December 5-7 schedule.
+-- Generated snapshot of reviewed facts. Corrections after release use administration/new migration.
 DO $seed$
 DECLARE
     source_rows CONSTANT jsonb := $entries$[
@@ -94,7 +99,9 @@ DECLARE
     existing_owner_matches boolean;
     added integer := 0;
 BEGIN
+    -- Serialize the small one-time seed with normal administrator writes and manual retries.
     LOCK TABLE tournament_broadcast_season IN EXCLUSIVE MODE;
+    -- An administrator may have already filed part of this series under a custom season name.
     SELECT count(DISTINCT season.id), min(season.id), bool_and(season.server = 'CN' AND season.year = 2025)
     INTO matched_seasons, seed_season_id, existing_owner_matches
     FROM tournament_broadcast_replay existing

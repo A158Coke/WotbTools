@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 6: Preflight publication state and cutover guards (idempotent)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 . scripts/android-release/check-release-guards.sh
 VERSION_CODE="$STEP_STAGED_VERSIONCODE"

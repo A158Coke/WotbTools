@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 15: Validate signing config and restore keystore (fail-fast; secrets 不出现在日志)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 
 for v in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do

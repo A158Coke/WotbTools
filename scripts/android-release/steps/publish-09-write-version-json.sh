@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (publish step 9: Write version.json (commit point, LAST)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionName": "%s",\n  "minSupportedVersionCode": %s,\n  "nativeBridgeVersion": %s,\n  "sourceSha": "%s",\n  "apkUrl": "https://wotbtools.com/download/android/%s",\n  "sha256": "%s",\n  "publishedAt": "%s",\n  "releaseNotes": ""\n}\n' \
   "$STEP_STAGED_VERSIONCODE" \

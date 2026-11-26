@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 9: Download and inject pinned sponsor runtime content).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 pin="$GITHUB_WORKSPACE/deploy/sponsor/content.json"
 if [ ! -f "$pin" ]; then

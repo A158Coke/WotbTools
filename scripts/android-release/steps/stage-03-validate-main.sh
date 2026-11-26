@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Extracted from .github/workflows/android-release.yml (stage step 3: Validate source is main (workflow_dispatch)).
+# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 BUILD_SHA="$STEP_VERSION_COMMIT"
 echo "Release source:"

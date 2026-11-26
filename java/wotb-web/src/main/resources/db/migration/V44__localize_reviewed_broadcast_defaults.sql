@@ -1,3 +1,7 @@
+-- Localize only unchanged defaults associated with reviewed 2025/2026 broadcast sources.
+-- Source: docs/research/broadcast-seed-2025-2026/seed-localization-2025-2026.json
+-- Source SHA-256 (UTF-8, LF): 9d32cebbbc8c2685e8b6aa13be605ff833cc387f89e9504a8cedb35f171521b4
+-- Text-only, forward-only correction. Administrator names, titles, facts, times and covers are preserved.
 DO $localize$
 DECLARE
     source_rows CONSTANT jsonb := $entries$[
@@ -2743,6 +2747,7 @@ DECLARE
     changed integer;
     changed_seasons bigint[] := ARRAY[]::bigint[];
 BEGIN
+    -- Same lock order as catalogue edits and V43; ordinary readers remain available.
     LOCK TABLE tournament_broadcast_season IN EXCLUSIVE MODE;
     SELECT coalesce(jsonb_agg(jsonb_build_object('sourceKey', identity.source_key,
             'replayId', replay.id, 'seasonId', season.id, 'server', season.server, 'year', season.year)), '[]'::jsonb)
@@ -2773,6 +2778,7 @@ BEGIN
     FOR item IN SELECT value FROM jsonb_array_elements(source_rows) LOOP
         FOR existing IN SELECT value FROM jsonb_array_elements(existing_sources)
                 WHERE value->'sourceKey' = item->'sourceKey' AND value->'server' = item->'server' AND value->'year' = item->'year' LOOP
+            -- All three old names must still match. Never fill just one field of an administrator-edited tuple.
             UPDATE tournament_broadcast_season season
             SET name_zh = item->'newSeason'->>'nameZh', name_en = item->'newSeason'->>'nameEn', name_ru = item->'newSeason'->>'nameRu'
             WHERE season.id = (existing->>'seasonId')::bigint
@@ -2783,6 +2789,7 @@ BEGIN
             GET DIAGNOSTICS changed = ROW_COUNT;
             IF changed > 0 THEN changed_seasons := array_append(changed_seasons, (existing->>'seasonId')::bigint); END IF;
 
+            -- A source URL alone is insufficient: a retained title must not acquire a different battle label.
             UPDATE tournament_broadcast_replay replay
             SET title = item->>'newTitle'
             FROM tournament_broadcast_node node
@@ -2804,5 +2811,6 @@ BEGIN
             IF changed > 0 THEN changed_seasons := array_append(changed_seasons, (existing->>'seasonId')::bigint); END IF;
         END LOOP;
     END LOOP;
+    -- ANY visits each season row once even when several names/titles in that season changed.
     UPDATE tournament_broadcast_season SET version = version + 1 WHERE id = ANY(changed_seasons);
 END $localize$;
