@@ -106,11 +106,25 @@ delta_step = next(step for step in release_workflow["jobs"]["stage"]["steps"] if
 assert 'delta-base-staging.json' in delta_step["run"] and '.versionCode == $code and .sha256 == $sha' in delta_step["run"]
 delta_upload = next(step for step in release_workflow["jobs"]["stage"]["steps"] if step.get("name") == "Upload Android delta to Tsinghua Cloud")
 assert 'replace=0' in delta_upload["run"]
-delta_ids = ("delta_cloud", "delta_tx_prepare", "delta_tx_upload", "delta_tx_install",
+assert "delta-probe.vcdiff" not in delta_step["run"]
+delta_ids = ("delta_aliyun", "delta_cloud", "delta_tx_prepare", "delta_tx_upload", "delta_tx_install",
              "delta_tx2_prepare", "delta_tx2_upload", "delta_tx2_install", "delta_public")
 steps = release_workflow["jobs"]["stage"]["steps"]
 assert all(next(step for step in steps if step.get("id") == item).get("continue-on-error") is True for item in delta_ids)
-resolution = next(step for step in steps if step.get("name") == "Resolve optional Android delta availability")["run"]
+policy = next(step for step in steps if step.get("name") == "Resolve optional Android delta availability")
+assert all("steps." + item + ".outcome" in policy["env"]["DELTA_RESULTS"] for item in delta_ids)
+# The limits emitted by the real budget gate cover the complete optional chain.
+budget = next(step for step in steps if step.get("id") == "delta_budget")
+assert release_workflow["jobs"]["stage"]["timeout-minutes"] * 60 == int(release_workflow["jobs"]["stage"]["env"]["JOB_TIMEOUT_SECONDS"])
+assert steps[0]["timeout-minutes"] == 5
+optional = steps[steps.index(budget) + 1:steps.index(policy)]
+assert [step["id"] for step in optional] == ["delta", *delta_ids]
+expected_limits = ["prepareMinutes", "uploadMinutes", "uploadMinutes"] + ["replicaMinutes"] * 7
+for step, limit in zip(optional, expected_limits, strict=True):
+    assert step["timeout-minutes"] == "${{ fromJSON(steps.delta_budget.outputs." + limit + " || '1') }}"
+    assert step["continue-on-error"] is True
+assert "steps.delta.outcome != 'success'" in policy["if"]
+resolution = policy["run"]
 assert 'EXISTING_EVIDENCE' in resolution and "'.patches = []'" in resolution and 'exit 1' in resolution
 staged_source = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "stagedref")
 assert "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt" in staged_source["run"]
@@ -139,12 +153,12 @@ print(next(step["run"] for step in model["jobs"]["stage"]["steps"]
            if step.get("name") == "Resolve optional Android delta availability"))
 PYCODE
   printf '%s\n' '{"apkSizeBytes":100,"patches":[{"sha256":"fixed"}]}' > "$POLICY_DIR/delta-metadata.json"
-  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='success,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
+  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='success,success,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
   jq -e '.patches | length == 1' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'successful delta was dropped'
-  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
+  RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success,success' EXISTING_EVIDENCE=404 bash "$POLICY_DIR/run.sh"
   jq -e '.patches | length == 0' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'new delta failure did not use full-only'
   printf '%s\n' '{"apkSizeBytes":100,"patches":[{"sha256":"fixed"}]}' > "$POLICY_DIR/delta-metadata.json"
-  if RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success' EXISTING_EVIDENCE=200 bash "$POLICY_DIR/run.sh"; then
+  if RUNNER_TEMP="$POLICY_DIR" DELTA_RESULTS='failure,success,success,success,success,success,success,success,success' EXISTING_EVIDENCE=200 bash "$POLICY_DIR/run.sh"; then
     fail 'existing immutable delta failure must stop staging'
   fi
   jq -e '.patches | length == 1' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'existing evidence was changed'

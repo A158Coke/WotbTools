@@ -20,8 +20,7 @@ VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
 # Keep enough time for at least one full public-share download before a write.
 VERIFY_RESERVE_SECONDS="${TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS:-900}"
-# Budget for this stage. The android-stage job allows 120 minutes and this
-# step runs near its end. The workflow records the job start epoch immediately
+# Budget for this shared upload step. Each calling job supplies its deadline. The workflow records the job start epoch immediately
 # after checkout; use the job's remaining time (minus a reserve for later
 # steps) as a hard ceiling, and never spend more than the stage's own budget.
 # Checkout time is not counted and is covered by the post-stage reserve.

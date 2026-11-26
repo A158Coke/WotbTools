@@ -20,11 +20,13 @@ jobs:
   repair:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 165
     env:
       PRODUCTION_INPUT_PATHS: |
         .github/workflows/android-repair-replica.yml
         scripts/android-release/**
+        deploy/assets/verify-android-download.sh
+        deploy/assets/install-android-download.sh
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         timeout-minutes: 5
@@ -61,21 +63,30 @@ jobs:
 
       - name: Restore the distribution replica
         env:
-          JOB_TIMEOUT_SECONDS: "7200"
-          # The recorded epoch excludes checkout (5m). Keep 16m for the final
-          # download and cmp, plus 1m for runner step transitions.
-          POST_STAGE_RESERVE_SECONDS: "1320"
+          JOB_TIMEOUT_SECONDS: "9900"
+          # Checkout, stable readback, Aliyun install/readback and step transitions.
+          POST_STAGE_RESERVE_SECONDS: "4020"
           TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
           STEP_ARTIFACT_APKNAME: ${{ steps.release.outputs.name }}
           STEP_ARTIFACT_SHA256: ${{ steps.release.outputs.sha }}
         run: bash scripts/android-release/steps/stage-17-upload-tsinghua.sh
 
       - name: Verify the public download without a cache-busting query
-        timeout-minutes: 16
+        timeout-minutes: 17
         env:
           APK_NAME: ${{ steps.release.outputs.name }}
-        run: |
-          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-            --connect-timeout 10 --max-time 900 --output "$RUNNER_TEMP/public.apk" \
-            "https://wotbtools.com/download/android/$APK_NAME"
-          cmp "release-staging/$APK_NAME" "$RUNNER_TEMP/public.apk"
+          APK_SIZE: ${{ steps.release.outputs.size }}
+          APK_SHA: ${{ steps.release.outputs.sha }}
+        run: bash deploy/assets/verify-android-download.sh --replica stable "$APK_NAME" "$APK_SIZE" "$APK_SHA"
+
+      - name: Install and verify the immutable Aliyun APK replica
+        timeout-minutes: 43
+        env:
+          ALI_HOST: ${{ secrets.ANDROID_DOWNLOAD_SSH_HOST }}
+          ALI_USER: ${{ secrets.ANDROID_DOWNLOAD_SSH_USER }}
+          ALI_PORT: ${{ vars.ANDROID_DOWNLOAD_SSH_PORT || '22' }}
+          ALI_KEY: ${{ secrets.ANDROID_DOWNLOAD_SSH_KEY }}
+          ALI_HOST_KEY: ${{ vars.ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY }}
+          DOWNLOAD_NAME: ${{ steps.release.outputs.name }}
+          DOWNLOAD_SHA: ${{ steps.release.outputs.sha }}
+        run: bash scripts/android-release/steps/install-aliyun-download.sh
