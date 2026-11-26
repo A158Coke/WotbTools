@@ -41,7 +41,6 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
         assertFalse(features.engagements().getFirst().damageDealt() == 100);
     }
 
-    // ===== Movement in canonical meters (Finding #9) =====
     @Test
     void movementDistanceAndSpeedUseCanonicalMeters() {
         final var features = new DefaultPlayerBattleFeatureExtractor()
@@ -51,7 +50,6 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
                         position(3, BATTLE_START_RAW + 5f, 1, 100f, 0f))), recorderMapping(), null);
         assertEquals(1, features.movements().size());
         final MovementSegment movement = features.movements().getFirst();
-        // raw (0,0)->(100,0) == canonical (250,250)->(350,250) == 100 canonical meters over 5s.
         assertEquals(100f, movement.distance(), 0.01f);
         assertEquals(20f, movement.averageSpeed(), 0.01f);
         assertEquals(MovementType.MOVING, movement.type());
@@ -59,7 +57,6 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
 
     @Test
     void stationaryThresholdIsInCanonicalMeters() {
-        // raw delta 2.5 == canonical 2.5m < 3m threshold -> STATIONARY (MOVING if raw units used).
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
@@ -71,7 +68,6 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
 
     @Test
     void invalidTimeDeltaProducesNoInfiniteOrNaNSpeed() {
-        // two positions at the same clock -> zero time delta -> no fake segment/speed.
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
@@ -86,9 +82,6 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
 
     @Test
     void outOfRangeCoordinatePositionProducesNoMovement() {
-        // raw X 5000 is far beyond the clamp tolerance -> INVALID evidence (NaN/Infinity are
-        // already rejected by PositionChangedEvent's own constructor), and must not produce a
-        // movement segment nor corrupt distance/speed.
         final var features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(recon(BATTLE_START_RAW, List.of(
                         mapping(1, 1, 1001L),
@@ -100,13 +93,13 @@ class DefaultPlayerBattleFeatureExtractorTest extends DefaultPlayerBattleFeature
     void movementSegmentRejectsIllegalValues() {
         final Vector3 pos = new Vector3(0f, 0f, 0f);
         assertThrows(IllegalArgumentException.class, () -> new MovementSegment(
-                2f, 1f, MovementType.MOVING, pos, pos, 0f, 0f, DecodeConfidence.EXACT)); // start>end
+                2f, 1f, MovementType.MOVING, pos, pos, 0f, 0f, DecodeConfidence.EXACT));
         assertThrows(IllegalArgumentException.class, () -> new MovementSegment(
-                -1f, 1f, MovementType.MOVING, pos, pos, 0f, 0f, DecodeConfidence.EXACT)); // negative time
+                -1f, 1f, MovementType.MOVING, pos, pos, 0f, 0f, DecodeConfidence.EXACT));
         assertThrows(IllegalArgumentException.class, () -> new MovementSegment(
-                0f, 1f, MovementType.MOVING, pos, pos, Float.NaN, 0f, DecodeConfidence.EXACT)); // NaN distance
+                0f, 1f, MovementType.MOVING, pos, pos, Float.NaN, 0f, DecodeConfidence.EXACT));
         assertThrows(IllegalArgumentException.class, () -> new MovementSegment(
                 0f, 1f, MovementType.MOVING, pos, pos, 0f, Float.POSITIVE_INFINITY,
-                DecodeConfidence.EXACT)); // infinite speed
+                DecodeConfidence.EXACT));
     }
 }

@@ -27,7 +27,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Evidence Skill 测试共享 fixture。 */
 final class EvidenceTestFixtures {
 
     static final float START_RAW = 1000f;
@@ -82,7 +81,6 @@ final class EvidenceTestFixtures {
         return vs;
     }
 
-    /** confirmed DESTROYED（LifeState.DESTROYED + REMOVED，0 HP）——可靠终态。 */
     static VehicleState destroyedVehicle(final int entityId, final long accountId, final int team) {
         final VehicleState vs = new VehicleState(entityId, 0f);
         vs.setAccountId(accountId);

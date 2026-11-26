@@ -18,7 +18,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Locale;
 
-/** 百场管理列表与详情查询。 */
 @Service
 public class HundredAdminQueryService {
     private static final int DEFAULT_PAGE_SIZE = 50;

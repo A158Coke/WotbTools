@@ -9,7 +9,6 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 
 import java.io.IOException;
 
-/** Preserves Bearer challenge headers while adding the canonical 401 response body. */
 public class CanonicalAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
     private final BearerTokenAuthenticationEntryPoint delegate = new BearerTokenAuthenticationEntryPoint();

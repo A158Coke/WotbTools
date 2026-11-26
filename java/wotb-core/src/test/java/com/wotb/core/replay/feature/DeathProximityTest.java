@@ -19,10 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/**
- * 阵亡时刻与主力质心距离（DeathProximity）的边界测试：
- * OBSERVED 目标可算距离；无 OBSERVED 记录不得硬算。
- */
 class DeathProximityTest {
 
     @Test
@@ -37,14 +33,10 @@ class DeathProximityTest {
         final PlayerResult target = player(1001L, 1, 60.0);
         final TeamEntityMapping mapping = mapping();
 
-        // deathRaw = 0 + 60 = 60；目标在 checkpoint@60 的最近 OBSERVED（向前找）无记录，
-        // 但 checkpoint@120 有 OBSERVED → 使用 120s 位置，质心取自最近的 checkpoint@60 无队友 OBSERVED？
-        // 为清晰起见，本测试让目标与队友都在 120s checkpoint OBSERVED。
         final TeamMemberFeatureSet.DeathProximity prox =
                 extractorDeathProximity(recon, mapping, target);
 
         assertNotNull(prox);
-        // holmeisk 等比 profile（±250 → 500m）：目标 (150,200) 质心 (100,200) → 50m
         assertEquals(50.0, prox.distanceMeters(), 0.5);
         assertNotNull(prox.confidence());
     }
@@ -72,7 +64,6 @@ class DeathProximityTest {
         assertNull(extractorDeathProximity(null, mapping(), player(1001L, 1, 60.0)));
     }
 
-    // ---- helpers ----
 
     private static TeamMemberFeatureSet.DeathProximity extractorDeathProximity(
             final ReplayReconstruction recon,

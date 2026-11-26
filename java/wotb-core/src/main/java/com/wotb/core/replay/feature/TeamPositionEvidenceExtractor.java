@@ -19,7 +19,6 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-/** Selects team positions and audits excluded position evidence. */
 final class TeamPositionEvidenceExtractor {
     private TeamPositionEvidenceExtractor() {
     }
@@ -55,11 +54,6 @@ final class TeamPositionEvidenceExtractor {
                                 })));
     }
 
-    /**
-     * Audits unattributable and out-of-bounds positions that do not feed tactical analysis.
-     * Observed and clamped counts remain derived from the analyzed positions collection.
-     * Invalid timestamps and pre-battle events are excluded by the resolved-time input.
-     */
     static PositionEvidenceAudit auditPositionEvidence(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -68,8 +62,6 @@ final class TeamPositionEvidenceExtractor {
             final Battle battle,
             final Predicate<PositionChangedEvent> isOutOfBounds
     ) {
-        // 实际参战账号权威集合 = battle_results #301（actual combatant source，唯一权威）；
-        // 观战/辅助实体只出现在 #201/updateArena2/event stream，不属于 #301。
         final Set<Long> combatantAccounts = new LinkedHashSet<>();
         final Set<String> combatantNicknames = new LinkedHashSet<>();
         if (battle != null && battle.players != null) {
@@ -85,9 +77,6 @@ final class TeamPositionEvidenceExtractor {
                 }
             }
         }
-        // entity -> 映射账号/昵称（来自 updateArena2 roster 映射事件；未映射实体（观战镜头/场景对象）不在其中）。
-        // 昵称映射（accountId=0）也可能指向 #301 成员（如昵称重名导致 TeamEntityMapper 无法归因），
-        // 需一并纳入 A/B 分类，避免把 #301 成员实体的位置误判为非参战。
         final Map<Integer, Long> accountByEntity = new HashMap<>();
         final Map<Integer, String> nicknameByEntity = new HashMap<>();
         for (final ReplayEvent event : events) {
@@ -112,7 +101,6 @@ final class TeamPositionEvidenceExtractor {
             }
             final TeamEntityIdentity identity = mapping.identity(position.entityId());
             if (identity == null || !identity.usable()) {
-                // A. actual combatant（#301）实体无法归因 -> 真实数据质量问题
                 final Long mappedAccount = accountByEntity.get(position.entityId());
                 final String mappedNickname = nicknameByEntity.get(position.entityId());
                 final boolean combatantEntity = mappedAccount != null
@@ -121,13 +109,12 @@ final class TeamPositionEvidenceExtractor {
                 if (combatantEntity) {
                     unattributedCombatantCount++;
                 } else {
-                    // B. 非参战实体（观战玩家/镜头/场景对象）-> 战术证据忽略，仅 internal diagnostic
                     nonCombatantPositionCount++;
                 }
                 continue;
             }
             if (identity.team() != perspectiveTeam) {
-                continue; // enemy position, not counted in perspective coverage
+                continue;
             }
             if (isOutOfBounds.test(position)) {
                 outOfBoundsCount++;

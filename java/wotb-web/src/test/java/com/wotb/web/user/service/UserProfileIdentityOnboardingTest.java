@@ -29,7 +29,6 @@ class UserProfileIdentityOnboardingTest extends UserProfileServiceTestSupport {
 
         final WotbAccountIdentity identity = service.currentWotbIdentity("kc-user").orElseThrow();
 
-        // 区服是业务身份的一部分：只返回账号 ID 会让 (CN, 123456) 与 (ASIA, 123456) 串号
         assertEquals("ASIA", identity.server());
         assertEquals(123456L, identity.accountId());
     }

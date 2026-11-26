@@ -18,7 +18,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 三环管理员审核与终态迁移。创建、取消与回放锁生命周期仍由 submission service 持有。 */
 @Service
 public class Mark3ModerationService {
     private final Mark3SubmissionRepository repository;
@@ -37,7 +36,6 @@ public class Mark3ModerationService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** 只将创建时冻结的 claimed 值写入 approved；CURRENT 已存在时拒绝替换。 */
     @Transactional
     public Mark3SubmissionSummaryDto approve(final String adminUserId, final long submissionId) {
         final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
@@ -96,7 +94,6 @@ public class Mark3ModerationService {
                 requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
     }
 
-    /** Each row uses its own transaction, preserving partial success and terminal evidence cleanup. */
     public BulkDeleteResultDto bulkDeleteCurrent(
             final String adminUserId, final List<Long> ids,
             final String deleteReason, final String deleteReasonText) {

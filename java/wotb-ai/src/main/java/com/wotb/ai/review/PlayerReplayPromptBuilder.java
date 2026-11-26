@@ -10,19 +10,11 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.List;
 
-/**
- * Player Replay 的 prompt 构建入口（facade）。
- * <p>提供 prepareFallback / prepareFullNoRecon / prepareFull 公开入口与
- * buildPlayerContextSummary / buildSummary 等测试入口；实际实现已拆分到
- * {@link PlayerPromptRules}（规则/多语言/system prompt）、PlayerCombatEvidenceFormatter、PlayerRosterEvidenceFormatter、PlayerReplayEventFormatter（证据格式化）
- * 与 {@link PlayerSummaryBuilder}（prepare* 编排与摘要构建）。</p>
- */
 public final class PlayerReplayPromptBuilder {
 
     private PlayerReplayPromptBuilder() {
     }
 
-    // ===== 提示词资源别名，保留现有测试引用入口 =====
 
     static final String COMMON_TANK_PROPER_NOUN_RULE = PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE;
 
@@ -31,7 +23,6 @@ public final class PlayerReplayPromptBuilder {
     static final String SINGLE_PLAYER_PROMPT = PlayerPromptRules.SINGLE_PLAYER_PROMPT;
 
 
-    // ===== prepare* 编排：新逻辑在 PlayerSummaryBuilder，此处保留公开入口 =====
 
     public static PreparedAiPrompt prepareFallback(final Battle battle,
                                                    final ReplayReconstruction recon) {

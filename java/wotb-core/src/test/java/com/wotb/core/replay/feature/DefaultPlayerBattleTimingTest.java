@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
-/** Battle-relative timing, clock and battle-end resolution tests. */
 class DefaultPlayerBattleTimingTest extends DefaultPlayerBattleFeatureTestFixture {
     @Test
     void movementTimesAreRelative() {
@@ -146,7 +145,6 @@ class DefaultPlayerBattleTimingTest extends DefaultPlayerBattleFeatureTestFixtur
         assertEquals(2f, features.keyEvents().getFirst().clockSec(), 0.01f);
     }
 
-    // ===== Dual-clock tests =====
     @Test
     void dualClockMovementTimesAreRelative() {
         final var features = new DefaultPlayerBattleFeatureExtractor()
@@ -204,7 +202,6 @@ class DefaultPlayerBattleTimingTest extends DefaultPlayerBattleFeatureTestFixtur
         assertTrue(features.movements().isEmpty());
     }
 
-    // ===== Battle-end resolution =====
     @Test
     void authoritativeDurationUsedWhenNoBattleEndEvent() {
         final Battle battle = new Battle();

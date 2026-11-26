@@ -70,13 +70,13 @@ class BattleDataAdminPersistenceTest {
 
     @Test void spawnStatsCountEverySideByModeAndCombinedInsideTheInterval() {
         final String t = "2026-10-02T12:00:00Z";
-        insertSpawn(1, 1, 1, "rift", "NORTH", "SOUTH", t);                      // Random: NORTH win / SOUTH loss
-        insertSpawn(2, 7, 2, "rift", "NORTH", "SOUTH", t);                      // Rating: SOUTH win / NORTH loss
-        insertSpawn(3, 7, 1, "rift", "SOUTH", "NORTH", t);                      // team number is not the side
-        insertSpawn(4, 1, 0, "rift", "SOUTH", "NORTH", t);                      // draw on both sides
+        insertSpawn(1, 1, 1, "rift", "NORTH", "SOUTH", t);
+        insertSpawn(2, 7, 2, "rift", "NORTH", "SOUTH", t);
+        insertSpawn(3, 7, 1, "rift", "SOUTH", "NORTH", t);
+        insertSpawn(4, 1, 0, "rift", "SOUTH", "NORTH", t);
         insertSpawn(5, 1, 1, "karieri", "WEST", "EAST", t);
-        insertSpawn(6, 1, 1, "rift", "NORTH", "SOUTH", "2026-10-01T23:59:59Z"); // before from
-        insertSpawn(7, 7, 2, "rift", "NORTH", "SOUTH", "2026-10-03T00:00:00Z"); // exactly to: excluded
+        insertSpawn(6, 1, 1, "rift", "NORTH", "SOUTH", "2026-10-01T23:59:59Z");
+        insertSpawn(7, 7, 2, "rift", "NORTH", "SOUTH", "2026-10-03T00:00:00Z");
         final var stats = service.summary("2026-10-02T00:00:00Z", "2026-10-03T00:00:00Z").spawnStats();
         assertEquals(List.of(
                 stat("karieri", null, "EAST", 1, 0, 0, 1), stat("karieri", 1, "EAST", 1, 0, 0, 1),
@@ -107,7 +107,6 @@ class BattleDataAdminPersistenceTest {
     }
 
     @Test void summaryAndUtcBoundariesMatchIndependentFixture() {
-        // Exactly from is inclusive; exactly to is exclusive; the rows immediately outside stay outside.
         insert(1, 1, 1, "rift", "11.18", "2026-10-01T23:59:59.999999Z");
         insert(2, 7, 0, "malinovka", "11.19", "2026-10-02T00:00:00Z");
         insert(3, 1, 2, "rift", "11.18", "2026-10-02T12:00:00Z");

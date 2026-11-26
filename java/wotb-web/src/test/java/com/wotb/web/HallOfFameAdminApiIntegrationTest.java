@@ -21,15 +21,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * MockMvc 进程内 REST API 测试 (不绑定端口)。
- */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
 
-    // ── 名人堂安全矩阵（真实 SecurityConfig + MockMvc jwt roles）────────────────
     @Test
     void hofAnonymousPublicOkUploadDownloadAdminDenied() throws Exception {
         mvc().perform(get("/api/hof")).andExpect(status().isOk());
@@ -41,32 +37,26 @@ class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
 
     @Test
     void hofAdminRoleGatesAreExact() throws Exception {
-        // HoF-admin：可访问 /api/admin/hof/**，不可访问其他 admin 域
         mvc().perform(get("/api/admin/hof").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isOk());
         mvc().perform(get("/api/admin/users/probe").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                 .andExpect(status().isForbidden());
-        // wotbtools-user：无 HoF admin 权限
         mvc().perform(get("/api/admin/hof").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_wotbtools-user"))))
                 .andExpect(status().isForbidden());
-        // wotbtools-admin：super admin 拥有 HoF 权限
         mvc().perform(get("/api/admin/hof").with(jwt().authorities(
                         new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().isOk());
-        // 普通已登录用户（无角色）：upload/download 允许（authenticated）
         final MockMultipartFile corrupt = new MockMultipartFile("file", "bad.wotbreplay",
                 "application/octet-stream", new byte[]{0, 1, 2, 3});
         mvc().perform(multipart("/api/hof/upload").file(corrupt).with(jwt()))
                 .andExpect(status().isBadRequest());
-        // authenticated：security 放行后落到业务（记录不存在 → 404），证明已登录可访问下载端点
         mvc().perform(get("/api/hof/999999/replay").with(jwt()))
                 .andExpect(status().isNotFound());
     }
 
-    // ── admin hard delete / audit / 文件引用清理（真实 PostgreSQL + 文件系统）────────
     @Test
     void hofAdminDeleteRemovesRecordAuditAndLastFile() throws Exception {
         loginAs(ADMIN_SUB, "admin-user");
@@ -83,7 +73,6 @@ class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
             assertTrue(hallOfFameRecordRepository.findById(id).isEmpty(), "记录必须已 hard delete");
             assertFalse(Files.exists(REPLAY_DIR.resolve(hash + ".wotbreplay")),
                     "最后引用删除后物理文件必须移除");
-            // audit 存在且为完整快照
             final String auditJson = mvc().perform(get("/api/admin/hof/audit").with(jwt().authorities(
                             new SimpleGrantedAuthority("ROLE_HoF-admin"))))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -154,7 +143,7 @@ class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
     @Test
     void hofAdminDeleteFileMissingStillDeletesRecord() throws Exception {
         loginAs(ADMIN_SUB, "admin-user");
-        final String hash = "99".repeat(32); // 无对应物理文件
+        final String hash = "99".repeat(32);
         final HallOfFameRecord r = hofRecord("adm-missing-file", 111L, "PlayerX", 6481L, "FV4005",
                 "RANDOM", 1, 4000);
         r.setReplayHash(hash);
@@ -178,7 +167,6 @@ class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
         r.setReplayUploadedBy("up-sub-1");
         hallOfFameRecordRepository.saveAndFlush(r);
         try {
-            // uploadedBy 搜索定位本测试记录（避免其他测试残留数据干扰第一条）
             final String filtered = mvc().perform(get("/api/admin/hof").param("uploadedBy", "up-sub-1")
                             .param("arenaId", "not-used-as-a-business-filter")
                             .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin"))))
@@ -186,7 +174,6 @@ class HallOfFameAdminApiIntegrationTest extends WebApiIntegrationTestSupport {
             final JsonNode n = om.readTree(filtered);
             assertEquals(1, n.get("totalItems").asInt());
             final JsonNode item = n.get("items").get(0);
-            // 管理页面仍保留必要的治理字段，但不暴露内部战斗唯一键/原始战斗模式码。
             assertTrue(item.has("replayHash"));
             assertTrue(item.has("replayUploadedBy"));
             assertTrue(item.has("accountId"));

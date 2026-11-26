@@ -56,7 +56,6 @@ abstract class DefaultTeamBattleFeatureFixture {
                 .clusterCount();
     }
 
-    /** Two-position version with separate raw X coordinates. */
     protected int formationClusters(final Fixture fixture, final float rawX1, final float rawX2) {
         final List<ReplayEvent> events = List.of(
                 mapping(1, 10, 100L),
@@ -90,7 +89,6 @@ abstract class DefaultTeamBattleFeatureFixture {
         battle.durationS = 120.0;
         battle.winnerTeam = 1;
         battle.recorder = "AllyOne";
-        // 完整结算阵容（2v1 训练房）：允许 SURVIVOR_SETTLEMENT / 全歼判定
         battle.rosterComplete = true;
         battle.players = List.of(allyOne, allyTwo, enemy);
 
@@ -217,7 +215,6 @@ abstract class DefaultTeamBattleFeatureFixture {
                 null, null, damage, false);
     }
 
-    /** Type-7 propId=3 当前血量（EXACT；掉血推导的数据源）。 */
     protected static HealthChangedEvent health(
             final int sequence,
             final float time,

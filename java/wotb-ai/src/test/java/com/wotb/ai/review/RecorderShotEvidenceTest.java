@@ -11,7 +11,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** D6：录像者射击事实渲染（canonical facts 进入 AI context，未知项标注 UNKNOWN）。 */
 class RecorderShotEvidenceTest {
 
     @Test

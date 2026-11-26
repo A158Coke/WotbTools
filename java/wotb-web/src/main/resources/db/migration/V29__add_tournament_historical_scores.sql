@@ -1,4 +1,3 @@
--- Historical leaderboards contain direct scores without authoritative group/rank data.
 ALTER TABLE tournament_day ADD COLUMN published_historical_points JSONB;
 ALTER TABLE tournament_day ADD CONSTRAINT tournament_day_single_published_source
  CHECK (published_groups IS NULL OR published_historical_points IS NULL);

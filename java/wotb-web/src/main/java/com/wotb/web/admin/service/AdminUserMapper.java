@@ -11,11 +11,9 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.time.format.DateTimeFormatter;
 
-/** 管理端用户列表与详情 DTO 映射。 */
 @Service
 public class AdminUserMapper implements Mapper<UserProfileSnapshot, AdminUserListItemDto> {
 
-    /** 单行映射：Keycloak 用户与本地资料两侧都可为空，缺失侧即为该行的可见语义。 */
     @Override
     public AdminUserListItemDto toDto(final UserProfileSnapshot profile) {
         return toListItem(null, profile);

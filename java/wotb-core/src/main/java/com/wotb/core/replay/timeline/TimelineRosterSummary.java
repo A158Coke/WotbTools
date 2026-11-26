@@ -8,12 +8,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Calculates world-level team counts, points and the authoritative actual-combatant roster. */
 final class TimelineRosterSummary {
     private TimelineRosterSummary() {
     }
 
-    // ===== world summary =====
 
     static WorldSummary worldSummary(
             final List<FrameVehicle> vehicles,
@@ -41,20 +39,16 @@ final class TimelineRosterSummary {
                 }
             } else {
                 enemyTotal++;
-                // knowledge partition 必须互斥：一辆车只属于一种知识状态；
-                // DESTROYED_KNOWN ⟺ lifeState DESTROYED（frameVehicle 保证），只计一次 destroyed。
                 switch (v.knowledgeState()) {
                     case POSITION_STREAM_ACTIVE -> enemyKnown++;
                     case LAST_KNOWN -> enemyLastKnown++;
                     case DESTROYED_KNOWN -> enemyDestroyed++;
                     case UNKNOWN -> {
-                        // 从未观测到位置：计入 roster 未知（见下方 roster 计算）
                     }
                 }
             }
         }
 
-        // roster-level totals（account 级；含从未出现在事件流的车辆）
         final RosterCounts roster = rosterCounts(battle, perspectiveTeam);
         final int friendlyTotalRoster = roster.friendly();
         final int enemyTotalRoster = roster.enemy();
@@ -68,7 +62,6 @@ final class TimelineRosterSummary {
         friendlyAlive = friendlyTotal - friendlyDestroyed;
         enemyAlive = enemyTotal - enemyDestroyed;
 
-        // 未知敌人数 = roster 敌人数 - 已知(含 last-known) - 已确知阵亡
         final int enemyKnownTotal = enemyKnown + enemyLastKnown;
         final int enemyUnknown = Math.max(0, enemyTotalRoster - enemyKnownTotal - enemyDestroyed);
 
@@ -90,11 +83,6 @@ final class TimelineRosterSummary {
     record RosterCounts(int friendly, int enemy) {
     }
 
-    /**
-     * #301 actual combatant 账号集（battle.players，accountId > 0）。
-     * spectator/observer/camera/场景静态实体不在 #301 中，即使出现在 #201 / updateArena2 / 事件流
-     * 也不得进入 tactical vehicle universe（ActualCombatantSet == battle_results #301）。
-     */
     static Set<Long> actualCombatantAccounts(final Battle battle) {
         if (battle == null || battle.players == null) {
             return Set.of();

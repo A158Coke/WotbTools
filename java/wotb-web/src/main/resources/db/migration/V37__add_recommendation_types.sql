@@ -1,4 +1,3 @@
--- Existing records and configured categories remain UP recommendations.
 ALTER TABLE creator ADD COLUMN type VARCHAR(8) NOT NULL DEFAULT 'UP' CHECK (type IN ('UP', 'VIDEO'));
 ALTER TABLE creator_category ADD COLUMN type VARCHAR(8) NOT NULL DEFAULT 'UP' CHECK (type IN ('UP', 'VIDEO'));
 ALTER TABLE creator DROP CONSTRAINT creator_bilibili_uid_key;

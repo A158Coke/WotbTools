@@ -8,7 +8,6 @@ import com.wotb.core.replay.processing.PlayerSideResolver;
 import com.wotb.core.replay.processing.PlayerSideResolver.Side;
 import com.wotb.core.util.PlayerResultFormat;
 
-/** Shared actor and tank text used by player evidence owners. */
 final class PlayerEvidenceFormattingSupport {
     private PlayerEvidenceFormattingSupport() {
     }

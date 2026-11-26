@@ -24,7 +24,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.DoubleStream;
 
-/** 默认录像者个人特征提取器。 */
 public class DefaultPlayerBattleFeatureExtractor {
 
     static final int ENGAGEMENT_GAP_SEC = 15;
@@ -99,8 +98,6 @@ public class DefaultPlayerBattleFeatureExtractor {
                     }
                 }
                 case VehicleHitEvent h -> {
-                    // method8 is a hit/result-feedback family — a proven hit still marks first
-                    // contact (attacker/victim engagement); no damage magnitude is used.
                     final boolean recorderIsAttacker = h.attackerEntityId() == recorderEid;
                     final boolean recorderIsVictim = h.victimEntityId() == recorderEid;
                     if ((recorderIsAttacker || recorderIsVictim) && res.isUsable()
@@ -135,7 +132,6 @@ public class DefaultPlayerBattleFeatureExtractor {
             limitationSet.add(result.limitation());
         }
 
-        // One AoI authority: derive hard observation boundaries from ReplayAoiLifecycle, never from time-gap guessing.
         final double startRawForAoi = battleStartRaw == null
                 ? Double.NaN : battleStartRaw.doubleValue();
         final List<Double> recorderAoiLeaves = ReplayAoiLifecycle.build(events, startRawForAoi).stream()

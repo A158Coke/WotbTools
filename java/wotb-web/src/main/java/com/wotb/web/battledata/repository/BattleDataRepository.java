@@ -6,7 +6,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 
-/** 唯一约束是 arena 去重的最终仲裁者；调用方必须提供事务。 */
 @Repository
 public class BattleDataRepository {
     private final JdbcTemplate jdbc;

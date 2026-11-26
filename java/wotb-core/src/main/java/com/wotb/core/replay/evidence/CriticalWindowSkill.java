@@ -8,10 +8,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 关键决策窗口 Skill：把其它 Skill 的信号合并成"战局发生明显变化"的时间窗口。
- * <p>只负责找窗口、给确定性优先级；不判断谁背锅、不判断是否犯错。</p>
- */
 public final class CriticalWindowSkill {
 
     public static final float MERGE_GAP_SEC = 30f;
@@ -81,7 +77,6 @@ public final class CriticalWindowSkill {
                 && b.endSec() + MERGE_GAP_SEC >= a.startSec();
     }
 
-    /** 聚合窗口信号（数值全部来自确定性证据）。 */
     private record WindowSignal(
             float startSec,
             float endSec,
@@ -110,8 +105,6 @@ public final class CriticalWindowSkill {
             int enemyAfter = -1;
             String localNumbersBefore = null;
             String localNumbersAfter = null;
-            // HP 代表信号：hpSwing 最大的单个可靠 HP_MOMENTUM，
-            // before/after/swing/poolEstimate 全部取自同一 signal，禁止跨 cohort 拼接
             AiEvidence representativeHp = null;
 
             for (final AiEvidence e : group) {
@@ -126,7 +119,6 @@ public final class CriticalWindowSkill {
                     case ENGAGEMENT_TRADE -> {
                         recorderDamageDealt += e.numbers().getOrDefault("damageDealt", 0.0).intValue();
                         recorderDamageReceived += e.numbers().getOrDefault("damageReceived", 0.0).intValue();
-                        // 无 HP_MOMENTUM 信号时用换血证据的 HP 差兜底
                         if (Double.isNaN(hpLeadBefore)
                                 && !Double.isNaN(e.numbers().getOrDefault("teamHpLeadBefore", Double.NaN))) {
                             hpLeadBefore = e.numbers().get("teamHpLeadBefore");
@@ -149,7 +141,6 @@ public final class CriticalWindowSkill {
                         enemyAfter = e.numbers().getOrDefault("nearbyEnemyAfter", -1.0).intValue();
                         friendlyDelta = e.numbers().getOrDefault("friendlyDelta", 0.0).intValue();
                         enemyDelta = e.numbers().getOrDefault("enemyDelta", 0.0).intValue();
-                        // 使用 LS 证据的 observed 标签（含 ≥ / ?），避免重建全知 XvY
                         if (e.labels().containsKey("localNumbersBefore")) {
                             localNumbersBefore = e.labels().get("localNumbersBefore");
                         }
@@ -158,7 +149,6 @@ public final class CriticalWindowSkill {
                         }
                     }
                     default -> {
-                        // ROUTE 仅作为候选定位，不贡献聚合数值
                     }
                 }
             }
@@ -171,7 +161,6 @@ public final class CriticalWindowSkill {
                 pool = Math.max(pool,
                         representativeHp.numbers().getOrDefault("poolEstimate", 0.0));
             } else if (!Double.isNaN(hpLeadBefore) && !Double.isNaN(hpLeadAfter)) {
-                // 无 HP_MOMENTUM 时，仅用 ENGAGEMENT_TRADE 兜底的同一对 HP 差
                 hpSwing = Math.abs(hpLeadAfter - hpLeadBefore);
             }
             final int totalDeaths = friendlyDeaths + enemyDeaths;
@@ -210,7 +199,6 @@ public final class CriticalWindowSkill {
                 labels.put("localNumbersBefore", localNumbersBefore);
                 labels.put("localNumbersAfter", localNumbersAfter);
             } else if (friendlyBefore >= 0) {
-                // 仅测试构造无标签证据时的兜底
                 labels.put("localNumbersBefore", friendlyBefore + "v" + enemyBefore);
                 labels.put("localNumbersAfter", friendlyAfter + "v" + enemyAfter);
             }

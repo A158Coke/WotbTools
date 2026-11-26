@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 独立夹具执行真实 Modulith 引擎，验证边界规则没有空转。 */
 class WebModuleArchitectureMutationTest {
 
     @Test
@@ -61,7 +60,6 @@ class WebModuleArchitectureMutationTest {
 
     private static ApplicationModules fixture(final String scenario, final Map<String, String> types) {
         final String root = "com.wotb.modulithfixture." + scenario;
-        // 生产图默认排除测试目录；此处必须显式导入测试夹具。
         final ApplicationModules modules = ApplicationModules.of(root, location -> true);
         assertEquals(types.keySet(), modules.stream()
                 .map(module -> module.getIdentifier().toString()).collect(Collectors.toSet()));

@@ -29,7 +29,6 @@ abstract class Mark3SubmissionTestSupport {
 
     static final long TIER10_VEHICLE = 385L;
     static final long GAME_ID = 111L;
-    /** canonical owner 的区服维度：(WOTB_SERVER, GAME_ID) 与 (OTHER_SERVER, GAME_ID) 是两个不同账号。 */
     static final String WOTB_SERVER = "CN";
     static final String OTHER_SERVER = "EU";
     static final String USER = "kc-user";
@@ -90,7 +89,6 @@ abstract class Mark3SubmissionTestSupport {
                 "PlayerOne", WOTB_SERVER, null, null);
     }
 
-    /** 当前绑定身份 = 记录的 canonical owner（同区服、同账号）。 */
     static WotbAccountIdentity identity() {
         return new WotbAccountIdentity(WOTB_SERVER, GAME_ID);
     }
@@ -100,7 +98,6 @@ abstract class Mark3SubmissionTestSupport {
         submission.setId(10L);
         submission.setVehicleId(TIER10_VEHICLE);
         submission.setVehicleName("Progetto 65");
-        // canonical owner：创建瞬间冻结的 (区服, WotB 游戏账号)（Keycloak 身份不再落在 submission 上）
         submission.setWotbServer(WOTB_SERVER);
         submission.setWotbAccountId(GAME_ID);
         submission.setNicknameSnapshot("PlayerOne");
@@ -146,7 +143,6 @@ abstract class Mark3SubmissionTestSupport {
         return battle;
     }
 
-    /** 客户端 facts：每个回放按其字节（= arenaId）映射到 {@code battle(arenaId)}，与回放同序。 */
     static List<String> facts(final List<MultipartFile> files) {
         return files.stream().map(file -> {
             try {

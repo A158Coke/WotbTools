@@ -18,19 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 地图战术语义库：按内部地图 code（meta.json 的 mapName，全小写）查询 {@link MapTacticalSemantics}。
- * <p>数据源 {@code common/map-semantics/*.semantic.json}（{@code map-semanticizer} 从
- * Wot Blitz 客户端 SC2 + heightmap 解码生成，构建时复制到 classpath:/map-semantics/）。
- * 每份文档按以下键注册：
- * <ul>
- *   <li>文档 {@code mapId}（如 {@code 02_desert_train_dt}）；</li>
- *   <li>文档 {@code mapCodes}（脚本 {@code --map-code} 写入的内部 code，如 {@code desert_train}）；</li>
- *   <li>{@code mapId} 的下划线分词连续子序列（如 {@code desert_train}），覆盖未显式提供
- *   {@code mapCodes} 的旧文件，匹配必须位于 token 边界，避免把 {@code train} 这类短词误匹配。</li>
- * </ul>
- * 未收录的地图返回 {@link MapTacticalSemantics#UNKNOWN}，禁止 LLM 编造区域语义。</p>
- */
 public final class MapTacticalSemanticsRegistry {
 
     private final Map<String, MapTacticalSemantics> byMapId;
@@ -50,11 +37,9 @@ public final class MapTacticalSemanticsRegistry {
                 try (InputStream in = resource.getInputStream()) {
                     parseDocument(JsonMapper.builder().build().readTree(in), map);
                 } catch (final Exception ignored) {
-                    // 单张地图损坏不影响其余语义库
                 }
             }
         } catch (final IOException ignored) {
-            // 语义库缺失时全部 UNKNOWN（与 Tankopedia 缺库策略一致）
         }
         return new MapTacticalSemanticsRegistry(Collections.unmodifiableMap(map));
     }
@@ -135,7 +120,6 @@ public final class MapTacticalSemanticsRegistry {
                 text(node, "favorsAndRisks"));
     }
 
-    /** 语义化器按后端 MapRegionResolver 约定输出 1~9，渲染为 GRID_REGION_N。 */
     private static List<String> nineGridRegions(final JsonNode node) {
         final List<String> result = new ArrayList<>();
         if (node != null && node.isArray()) {
@@ -148,7 +132,6 @@ public final class MapTacticalSemanticsRegistry {
         return result;
     }
 
-    /** 关系数组原样解析，保留 from/type/to/reason/confidence，不做分组或改名。 */
     private static List<MapTacticalSemantics.TacticalRelationship> parseRelationships(
             final JsonNode node) {
         final List<MapTacticalSemantics.TacticalRelationship> result = new ArrayList<>();
@@ -186,11 +169,6 @@ public final class MapTacticalSemanticsRegistry {
         return result;
     }
 
-    /**
-     * 从 {@code mapId} 生成 token 边界别名：下划线分词后的连续子序列（长度 ≥ 2），
-     * 例如 {@code 02_desert_train_dt} → {@code desert_train}。避免单个 token（如
-     * {@code train}）被当成内部地图 code。
-     */
     static List<String> boundedTokenAliases(final String mapId) {
         final List<String> tokens = new ArrayList<>(List.of(mapId.split("_")));
         tokens.removeIf(String::isBlank);

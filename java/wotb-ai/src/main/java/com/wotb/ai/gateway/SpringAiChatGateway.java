@@ -11,16 +11,6 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.util.StringUtils;
 
 import java.util.function.LongSupplier;
-/**
- * The only production AI transport adapter: maps {@link AiChatRequest} onto Spring AI
- * {@link OpenAiChatModel} (official OpenAI-compatible adapter) against
- * {@code https://api.deepseek.com}.
- *
- * <p>This Spring bean preserves the public gateway API and wires focused owners
- * for model creation, deadline/retry execution, response mapping, metrics,
- * failure policy, and watchdog lifecycle. Prompts and completions are never
- * logged and never enter metrics or Spring AI observation.</p>
- */
 public class SpringAiChatGateway implements AiChatGateway {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SpringAiChatGateway.class);
@@ -57,12 +47,6 @@ public class SpringAiChatGateway implements AiChatGateway {
                 responseMapper, lifecycle);
     }
 
-    /**
-     * Builds the gateway from {@link AiModelProperties}. Without an API key the
-     * Spring AI client is not created: the gateway still exists,
-     * {@code isConfigured()} returns {@code false} and {@link #chat} throws
-     * {@link AiNotConfiguredException}.
-     */
     public static SpringAiChatGateway fromProperties(final AiModelProperties properties,
                                                      final MeterRegistry meterRegistry) {
         final SpringAiChatGateway gateway = new SpringAiChatGateway(

@@ -11,10 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * {@link PreBattleSectionRenderer} 契约：用户可见中文、无机器段头、
- * 中性/视角化标签、Call #1 不可用时返回 null。
- */
 class PreBattleSectionRendererTest {
 
     private static final PreBattleStrategicPrior PRIOR = new PreBattleStrategicPrior(
@@ -115,7 +111,6 @@ class PreBattleSectionRendererTest {
         assertNotNull(section);
         assertTrue(section.contains("我方画像"), "perspective team 2 is ours");
         assertTrue(section.contains("对方画像"));
-        // perspectiveTeam=2 时 teamB（中坦机动拉扯）为视角队伍
         assertTrue(section.contains("中坦机动拉扯"));
         assertTrue(section.contains("对方：前十分钟控制左路"),
                 "after swap, original TEAM_A condition belongs to the opponent");
@@ -223,9 +218,6 @@ class PreBattleSectionRendererTest {
 
     @Test
     void rendererKeepsClusterTermsForFinalSanitizeBoundary() {
-        // renderer 无 authoritative Battle context（nickname/tankName/clan 可能合法含「簇」），
-        // 不得提前裸替换——「簇」字兜底由最终输出边界（AiReplayReviewService.sanitizeClusterTerms
-        // 带 protected literals）统一处理；此处守护 renderer 不破坏 proper noun。
         final PreBattleStrategicPrior clusterPrior = new PreBattleStrategicPrior(
                 new PreBattleStrategicPrior.TeamProfile(
                         Map.of(),
@@ -268,9 +260,6 @@ class PreBattleSectionRendererTest {
 
     @Test
     void rendererKeepsEveryClusterVariantAcrossAllFieldsVerbatim() {
-        // 每个用户可见自由文本字段都塞入不同「簇」形态：strengths/weaknesses/plans/
-        // composition 值/keyMatchups area+advantage+reason/winConditions/hypotheses。
-        // renderer 不做「簇」替换（无 authoritative context），全部原样保留给最终边界。
         final PreBattleStrategicPrior dirty = new PreBattleStrategicPrior(
                 new PreBattleStrategicPrior.TeamProfile(
                         Map.of("mobility", "高簇", "burstPotential", "MEDIUM"),

@@ -9,28 +9,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Call #1（Pre-Battle Strategic Prior）的用户可见渲染器。
- * <p>与 Prompt 内的 priorSection 共享同一数据源（{@link PreBattleStrategicPrior}），
- * 但输出的是面向最终用户的 Markdown：去除机器段头（PRE-BATTLE STRATEGIC PRIOR）、
- * 内部标签（GRID_REGION_N 转可读区域名，TEAM_A/TEAM_B 替换为可读标签），只保留
- * 队伍画像 / 关键对阵 / 战略胜机 / 战略假设四个可读小节。</p>
- * <p>输出语言跟随请求 {@link AllowedLanguage}（ZH/EN/RU），文案为后端确定性渲染，
- * 不重新请求 LLM 生成展示文本。两种调用形态：随机战 harness 按录像者视角映射为
- * 「友军/敌军」（内部 Call #1 仍保持 TEAM_A/TEAM_B 的客观标签不变）；团队复盘按
- * 视角队伍交换为「我方/对方」。prior 不可用（Call #1 失败 / 降级 / 无内容）返回
- * {@code null}，由调用方置空 preBattleSection。</p>
- * <p>用户可见文本的卫生规则：hypothesis id 直接输出 parser 得到的 id（如 H1，
- * 绝不 prepend 额外前缀）；所有用户可见 LLM 自由文本（advantage/reason/condition/
- * claim/strengths/weaknesses/preferredPlans/composition）统一做 TEAM_A/TEAM_B
- * 与 GRID_REGION_N 的显示 token 替换。</p>
- */
 public final class PreBattleSectionRenderer {
 
     private static final Pattern GRID_REGION = Pattern.compile("GRID_REGION_(\\d)");
     private static final MapTacticalSemanticsRegistry MAP_SEMANTICS = MapTacticalSemanticsRegistry.load();
 
-    /** composition 属性键的中文显示名（用户可见，不直出 mobility 等英文键）。 */
     private static final Map<String, String> COMPOSITION_KEYS_ZH = Map.of(
             "mobility", "机动性",
             "closeRangeTrading", "近距离换血",
@@ -52,9 +35,6 @@ public final class PreBattleSectionRenderer {
     private PreBattleSectionRenderer() {
     }
 
-    /**
-     * 中性渲染（perspective 未知时的防御路径）：队伍1/队伍2，简体中文。
-     */
     public static String render(final PreBattleStrategicPrior prior) {
         return render(prior, 0, null, AllowedLanguage.ZH);
     }
@@ -71,9 +51,6 @@ public final class PreBattleSectionRenderer {
         return render(prior, perspectiveTeam, teamLabel, AllowedLanguage.ZH);
     }
 
-    /**
-     * 团队复盘（语言跟随请求）：按视角队伍交换，视角队伍渲染为「我方」。
-     */
     public static String render(final PreBattleStrategicPrior prior,
                                 final int perspectiveTeam,
                                 final String teamLabel,
@@ -81,10 +58,6 @@ public final class PreBattleSectionRenderer {
         return render(prior, perspectiveTeam, teamLabel, language, null);
     }
 
-    /**
-     * 团队复盘（语言跟随请求 + 地图语义）：按视角队伍交换，视角队伍渲染为「我方」；
-     * {@code mapCode} 用于把 AREA ID 映射为中文名 + 九宫格编号。
-     */
     public static String render(final PreBattleStrategicPrior prior,
                                 final int perspectiveTeam,
                                 final String teamLabel,
@@ -94,21 +67,12 @@ public final class PreBattleSectionRenderer {
                 texts(language, false), language, mapCode);
     }
 
-    /**
-     * 随机战：按录像者 perspective 队伍映射为「友军/敌军」。recorderTeam 必须是
-     * 1 或 2（录像者所属 team → 友军，另一方 → 敌军）；其他值走中性标签防御路径。
-     * 内部 Call #1 的 TEAM_A/TEAM_B 客观语义不受此映射影响。
-     * <p>随机战 <b>不</b>附加录像者 nickname 作为 team label——只显示「友军画像/
-     * 敌军画像」，不显示「友军（Player123）画像」。团队复盘才保留真实 clan/team
-     * label（走 {@link #render(PreBattleStrategicPrior, int, String, AllowedLanguage)}）。</p>
-     */
     public static String renderRandomBattle(final PreBattleStrategicPrior prior,
                                             final int recorderTeam,
                                             final AllowedLanguage language) {
         return renderRandomBattle(prior, recorderTeam, language, null);
     }
 
-    /** 随机战（语言跟随 + 地图语义，AREA ID → 中文名 + 九宫格编号）。 */
     public static String renderRandomBattle(final PreBattleStrategicPrior prior,
                                             final int recorderTeam,
                                             final AllowedLanguage language,
@@ -133,8 +97,6 @@ public final class PreBattleSectionRenderer {
                         ? texts.labelParens().formatted(teamLabel) : "")
                 : texts.neutralOne();
         final String teamBLabel = teamView ? texts.theirs() : texts.neutralTwo();
-        // TEAM_A/TEAM_B 是 LLM 输出的原始队伍 token：不 swap 时 TEAM_A=渲染首位；
-        // swap 后 TEAM_A 指向 prior.teamA（渲染末位），映射随之对调。
         final String tokenALabel = swapped ? teamBLabel : teamALabel;
         final String tokenBLabel = swapped ? teamALabel : teamBLabel;
         final PreBattleStrategicPrior.TeamProfile profileA = swapped ? prior.teamB() : prior.teamA();
@@ -176,7 +138,6 @@ public final class PreBattleSectionRenderer {
         if (!prior.hypotheses().isEmpty()) {
             sb.append("\n**").append(texts.hypotheses()).append("**\n");
             for (final PreBattleStrategicPrior.StrategicHypothesis h : prior.hypotheses()) {
-                // id 直接输出 parser 得到的值（如 H1），绝不 prepend 前缀（避免 HH1）。
                 sb.append("- ").append(text(h.id(), "?"))
                         .append("：").append(display(text(h.claim(), ""),
                                 tokenALabel, tokenBLabel, texts, mapCode, language));
@@ -239,12 +200,6 @@ public final class PreBattleSectionRenderer {
         return StringUtils.hasText(value) ? value.trim() : fallback;
     }
 
-    /**
-     * 用户可见展示转换：TEAM_A/TEAM_B 内部 token 替换为对应显示名，GRID_REGION_N
-     * 机器 token 转为可读区域名（如 GRID_REGION_5 → 5区）。{@code teamALabel} 是
-     * TEAM_A token 对应的显示名、{@code teamBLabel} 是 TEAM_B token 对应的显示名
-     * （调用侧已按视角 swap 映射）。
-     */
     private static String display(final String value,
                                   final String teamALabel,
                                   final String teamBLabel,
@@ -254,31 +209,19 @@ public final class PreBattleSectionRenderer {
         if (!StringUtils.hasText(value)) {
             return value;
         }
-        // TEAM_A/TEAM_B 是 Call #1 契约 token；LLM 自由文本还可能出现
-        // TEAM A / A队 / A 队 / 队伍1 等变体，全部映射到同一视角标签。
         String result = value
                 .replace("TEAM_A", teamALabel).replace("TEAM_B", teamBLabel)
                 .replace("TEAM A", teamALabel).replace("TEAM B", teamBLabel)
                 .replace("A队", teamALabel).replace("B队", teamBLabel)
                 .replace("A 队", teamALabel).replace("B 队", teamBLabel)
                 .replace("队伍1", teamALabel).replace("队伍2", teamBLabel);
-        // 「簇」字兜底不在 renderer 层做：此处无 authoritative Battle context（nickname/
-        // tankName/clan 可能合法含「簇」，如昵称「星簇」），提前裸替换会破坏 proper noun。
-        // 由最终输出边界 AiReplayReviewService.sanitizeClusterTerms（带 protected literals）统一处理。
         final Matcher matcher = GRID_REGION.matcher(result);
         if (matcher.find()) {
-            // regionName 模板形如 "$1区" / "Region $1"：replaceAll 会把 $1 展开为区域号。
             result = matcher.replaceAll(texts.regionName());
         }
         return mapAreaNames(result, mapCode, language);
     }
 
-    /**
-     * AREA ID → 用户可见区域名 + 九宫格编号，语言跟随请求。
-     * <p>ZH 使用现有 semantic 中文 label（如 ELEVATED_TERRAIN_01 → 东侧高地区域（3/5/6/9区））；
-     * EN/RU 不泄漏中文、不翻译/猜测区域名，只保留可靠的九宫格编号（Regions 3/5/6/9 /
-     * Области 3/5/6/9），无编号时用通用词 Area / Область。</p>
-     */
     private static String mapAreaNames(final String value,
                                        final String mapCode,
                                        final AllowedLanguage language) {
@@ -309,7 +252,6 @@ public final class PreBattleSectionRenderer {
         return result;
     }
 
-    /** composition 属性键翻译（三语），用户可见不直出 mobility 等英文键。 */
     private static String compositionKey(final String key, final AllowedLanguage language) {
         if (key == null) {
             return "";
@@ -322,7 +264,6 @@ public final class PreBattleSectionRenderer {
         return map.getOrDefault(key, key);
     }
 
-    /** composition 属性值翻译（HIGH/MEDIUM/LOW → 三语）。 */
     private static String compositionValue(final String value, final AllowedLanguage language) {
         if (value == null) {
             return "";
@@ -350,7 +291,6 @@ public final class PreBattleSectionRenderer {
         };
     }
 
-    /** 文案集合：按语言与展示形态（随机战 友军/敌军 vs 团队 我方/对方）选择。 */
     private record Texts(
             String title,
             String intro,
@@ -404,7 +344,6 @@ public final class PreBattleSectionRenderer {
             "Ключевые противостояния", "Регион", "Область $1", "Условия победы", "Стратегические гипотезы",
             "Причина: ", "Неизвестно");
 
-    /** 随机战形态的友军/敌军文案（EN/RU 随机战当前无 prior，防御性保留）。 */
     private static final Texts ZH_RANDOM = ZH.withFriendlyEnemy();
     private static final Texts EN_RANDOM = new Texts(
             "Pre-Battle Prediction",

@@ -14,11 +14,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
-/**
- * 测试用：把 {@link Battle} 编码成浏览器提交的客户端投影 facts JSON（服务器没有 parser）。
- * 字段可见性与 {@code ReplayFactsCodec} 解码侧一致（FIELD=ANY，不走 getter），
- * 所以 {@code recorderResult()} / {@code nPlayers()} 这类派生方法不会进入 wire。
- */
 public final class ReplayFactsJson {
 
     private static final JsonMapper MAPPER = JsonMapper.builder()
@@ -35,7 +30,6 @@ public final class ReplayFactsJson {
         return MAPPER.writeValueAsString(battle);
     }
 
-    /** 多回放提交：每个回放一份 facts，与回放同序。 */
     public static List<String> ofAll(final Battle... battles) {
         return Arrays.stream(battles).map(ReplayFactsJson::of).toList();
     }
@@ -44,10 +38,6 @@ public final class ReplayFactsJson {
         return battles.stream().map(ReplayFactsJson::of).toList();
     }
 
-    /**
-     * 冻结的真实客户端投影（{@code common/fixtures/replay-facts/<name>.json.gz} 的 {@code battle} 节点），
-     * 与 {@code common/fixtures/replays/<name>.wotbreplay} 同源；即浏览器对该回放提交的 facts。
-     */
     public static String fixture(final String name) {
         final Path file = Path.of(System.getProperty("user.dir"), "..", "..", "common", "fixtures",
                 "replay-facts", name + ".json.gz").normalize();

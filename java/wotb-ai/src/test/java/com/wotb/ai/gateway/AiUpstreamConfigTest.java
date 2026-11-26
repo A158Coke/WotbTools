@@ -13,10 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Timeout and retry configuration: single source (wotb.ai.* env mapping),
- * explicit defaults, and legal min/max validation.
- */
 class AiUpstreamConfigTest {
 
     @Test
@@ -47,9 +43,6 @@ class AiUpstreamConfigTest {
         final List<PropertySource<?>> sources = new YamlPropertySourceLoader()
                 .load("application", new ClassPathResource("application.yml"));
         final PropertySource<?> source = sources.getFirst();
-        // OpenAiChatModel logs the full prompt at WARN when the provider returns
-        // empty choices; the ai-service config must keep that class at ERROR and
-        // must not silence the whole application via a global ERROR level.
         assertEquals("ERROR", source.getProperty(
                 "logging.level.org.springframework.ai.openai.OpenAiChatModel"));
         assertNull(source.getProperty("logging.level.root"),
@@ -99,13 +92,11 @@ class AiUpstreamConfigTest {
 
     @Test
     void call2ThinkingEnabledRequiresHighOrMaxEffort() {
-        // call2 开启但 effort 非法 → 拒绝
         assertThrows(IllegalArgumentException.class,
                 () -> new AiModelProperties(
                         "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                         10, 300, 315, 3, 1000, 8000, 2.0,
                         1_000_000, 940_000, 32_768, 16_384, false, null, true, 4096));
-        // 开启 + high → 合法且透传
         final AiModelProperties enabled = new AiModelProperties(
                 "sk-test", "https://api.deepseek.com", "deepseek-v4-flash",
                 10, 300, 315, 3, 1000, 8000, 2.0,

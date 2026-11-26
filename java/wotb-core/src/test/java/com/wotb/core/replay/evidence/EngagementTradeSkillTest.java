@@ -21,7 +21,6 @@ class EngagementTradeSkillTest {
         for (int i = 1; i <= 5; i++) {
             players.add(EvidenceTestFixtures.player(2000 + i, 2, 10785, "T110E5", true, 300));
         }
-        // 友军 1002 在 15s 阵亡
         players.set(1, EvidenceTestFixtures.player(1002, 1, 4481, "Kranvagn", false, 15));
         final Battle battle = EvidenceTestFixtures.battle(players);
         final PlayerBattleFeatureSet features = EvidenceTestFixtures.features(

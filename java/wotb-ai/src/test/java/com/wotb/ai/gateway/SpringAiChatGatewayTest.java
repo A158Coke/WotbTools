@@ -51,12 +51,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Gateway unit tests: a mocked {@link ChatModel} completely avoids real
- * DeepSeek calls. Verifies the AiChatRequest -> Prompt/OpenAiChatOptions
- * mapping, response parsing, thinking/reasoning_effort forwarding and error
- * mapping.
- */
 class SpringAiChatGatewayTest {
 
     private ChatModel chatModel;
@@ -263,11 +257,6 @@ class SpringAiChatGatewayTest {
         assertEquals("AI_UPSTREAM_UNAVAILABLE", e.code());
     }
 
-    /**
-     * 回归：Spring AI / SDK 把 UnexpectedStatusCodeException(402) 包进普通
-     * RuntimeException 时，只有 gateway 的 generic adapter 边界恢复
-     * providerStatus=402；AI_UPSTREAM_UNAVAILABLE + 402 不得被重试。
-     */
     @Test
     void recoversWrappedProviderStatusAndMarksNonRetryable() {
         when(chatModel.call(any(Prompt.class))).thenThrow(
@@ -336,7 +325,6 @@ class SpringAiChatGatewayTest {
         verify(chatModel, times(2)).call(any(Prompt.class));
     }
 
-    /** （非 blocker A/B）：transport retry 用无歧义 retryNumber；completed 不记录伪 providerStatus。 */
     @Test
     void transportRetryLogUsesRetryNumberAndCompletedOmitsFakeProviderStatus() {
         when(chatModel.call(any(Prompt.class)))
@@ -357,14 +345,12 @@ class SpringAiChatGatewayTest {
             final String all = appender.list.stream()
                     .map(ILoggingEvent::getFormattedMessage)
                     .collect(Collectors.joining("\n"));
-            // 第一次退避重试 = retryNumber=1；其后的下一次上游调用是 attempt=2。
             assertTrue(all.contains("event=ai_transport_retry"), "必须记录 transport retry 事件: " + all);
             assertTrue(all.contains("retryNumber=1"),
                     "第一次重试必须记录 retryNumber=1（而非歧义的 transportAttempt）: " + all);
             assertTrue(all.contains("event=ai_upstream_call_started") && all.contains("attempt=2"),
                     "重试后的下一次上游调用必须是 attempt=2: " + all);
             assertFalse(all.contains("transportAttempt"), "不得再使用歧义的 transportAttempt 字段: " + all);
-            // completed 不得记录硬编码 providerStatus=200（伪 observation，非真实 transport metadata）。
             assertFalse(all.contains("providerStatus=200"),
                     "ai_upstream_call_completed 不得记录伪 providerStatus=200: " + all);
         } finally {

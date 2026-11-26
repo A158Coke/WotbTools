@@ -1,5 +1,3 @@
--- V5: WotBTools 业务用户资料表。
--- Keycloak 负责认证/权限，user_profile 负责轻量业务资料。
 CREATE TABLE user_profile (
     id BIGSERIAL PRIMARY KEY,
 

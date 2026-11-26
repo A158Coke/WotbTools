@@ -44,32 +44,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 名人堂「百场」业务（docs/features/hall-of-fame.md 百场需求）。
- *
- * <p>核心不变量（全部由 DB + 行锁保证，非前端保证）：</p>
- * <ul>
- *   <li>WotB 账号 + vehicle 最多一个 active PENDING / CURRENT（V18/V22 partial unique index）</li>
- *   <li>APPROVE/REJECT/CANCEL 只能从 PENDING 成功一次（{@link #findByIdForUpdate} 行锁 + 状态复核）</li>
- *   <li>APPROVE 只使用创建时冻结的 MANUAL 申报值，并按其场均严格比较</li>
- *   <li>身份/成绩快照创建瞬间冻结；排行榜只读 approved*</li>
- * </ul>
- *
- * <p>proof 生命周期：MANUAL 来源的截图与 5 个原始 {@code .wotbreplay} 只在 PENDING 保留，
- * 终态事务内清空并在 commit 后 best-effort 清理无引用物理文件。</p>
- */
 @Service
 public class HundredBattleSubmissionService {
 
     private static final int MAX_IMAGE_CHARS = 5_500_000;
     private static final int REPLAY_COUNT = 5;
-    /** 「百场」资格最低场次：写入排行榜的冻结 battleCount 必须 ≥ 100。 */
     private static final int MIN_APPROVED_BATTLE_COUNT = 100;
 
-    /** 拒绝原因分类。 */
     static final Set<String> REJECT_CATEGORIES = Set.of(
             "SCREENSHOT_MISMATCH", "SCREENSHOT_UNREADABLE", "INSUFFICIENT_PROOF", "SUSPECTED_FRAUD", "OTHER");
-    /** 删除原因分类。 */
     static final Set<String> DELETE_CATEGORIES = Set.of(
             "CHEATING_FORGERY", "WRONG_REVIEW", "PLAYER_IDENTITY_ISSUE", "DATA_ERROR", "ADMIN_CORRECTION", "OTHER");
 
@@ -99,27 +82,7 @@ public class HundredBattleSubmissionService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    // ── Phase 3：Submission ──────────────────────────────────────────────
 
-    /**
-     * 创建百场 submission（需登录且 Profile 已配置 gameId/nickname）。
-     * 硬门禁：Tier X authoritative 校验 + 固定 1 张截图 + 正好 5 个 replay 全部解析成功、
-     * gameId/vehicleId 匹配、5 场不同 battle（size/type 复用 {@code ReplayUploadValidator} 全局 contract）；
-     * 任意失败 → 整单失败，不进入 PENDING，零持久化残留。
-     *
-     * <p><b>锁与事务协议</b>（与 {@link ReplayHashLock} 全协议对齐，多实例安全）：</p>
-     * <pre>
-     * acquire sorted distinct hash advisory locks   （固定顺序防 deadlock）
-     *   ├ storage.store × 5（幂等，内容寻址）
-     *   ├ DB transaction（TransactionTemplate）：
-     *   │    create submission → attach 5 evidence rows
-     *   └ COMMIT  ← 必须发生在锁释放之前（DB 引用 H ⇒ 物理 H 存在）
-     * release locks（反向）
-     * </pre>
-     * DB 事务失败（含 PENDING unique index 竞态）：rollback 完成后、仍在锁内进行
-     * 引用计数保护的 best-effort 文件清理——绝不在 aborted transaction 内执行 DB 查询。
-     * 5 个 hash 由 {@code ReplayHashLock.runWithLocksResult} 按字典序去重排序后统一加锁。
-     */
     public HundredCreateResult createSubmission(final String userId,
                                                 final long vehicleId,
                                                 final int claimedAverageDamage,
@@ -135,7 +98,6 @@ public class HundredBattleSubmissionService {
         if (!StringUtils.hasText(profile.wotbNickname())) {
             throw new IllegalArgumentException("HUNDRED_PROFILE_NICKNAME_REQUIRED");
         }
-        // canonical owner 含区服：(CN, 123456) 与 (EU, 123456) 是两个不同账号。
         final String wotbServer = profile.wotbServer();
         if (claimedAverageDamage <= 0 || claimedBattleCount <= 0) {
             throw new IllegalArgumentException("HUNDRED_INVALID_CLAIM");
@@ -147,11 +109,8 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("HUNDRED_REPLAY_COUNT");
         }
         ReplayUploadValidator.validate(replays.toArray(new MultipartFile[0]));
-        // 服务器没有 parser：结算事实由客户端本地解析后与回放一一对应提交，回放只作证据存档
         final List<Battle> battles = ClientReplayFacts.readAll(replayFacts, replays.size());
 
-        // PENDING 唯一性 cheap check：明知已有同车 PENDING 时不再解析 5 个 replay；
-        // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
         requireNoPending(wotbServer, gameId, vehicleId);
 
         try {
@@ -165,7 +124,6 @@ public class HundredBattleSubmissionService {
         }
     }
 
-    /** 许可内执行 replay bytes 读取、校验、hash、落盘及事务提交的完整重型生命周期。 */
     private HundredCreateResult createSubmissionWithinReplayCapacity(
             final long vehicleId,
             final long gameId,
@@ -177,11 +135,8 @@ public class HundredBattleSubmissionService {
             final String nickname,
             final List<MultipartFile> replays,
             final List<Battle> battles) {
-        // cheap preflight 后可能有并发请求已创建 PENDING；在读取五份 replay 前再次检查。
         requireNoPending(wotbServer, gameId, vehicleId);
 
-        // 硬门禁：5 个 replay 全部匹配 gameId/vehicleId 且 arenaId 不重复。
-        // 每个文件只读一次 bytes；文件名仅用于展示。
         final Set<String> arenaIds = new HashSet<>();
         final List<HundredReplayEvidenceService.PendingReplay> pendingReplays = new ArrayList<>();
         int slot = 0;
@@ -210,7 +165,6 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("HUNDRED_REPLAY_DUPLICATE_BATTLE");
         }
 
-        // CURRENT 门槛：新成绩必须严格高于当前 CURRENT（无 CURRENT 时允许重新开始）。
         final HundredBattleSubmission current = repository
                 .findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(wotbServer, gameId, vehicleId, "CURRENT")
                 .orElse(null);
@@ -219,7 +173,6 @@ public class HundredBattleSubmissionService {
             throw new IllegalStateException("HUNDRED_NOT_HIGHER");
         }
 
-        // 锁协议临界区：sorted distinct hash locks → store → DB tx(commit) → unlock。
         final List<String> hashes = pendingReplays.stream()
                 .map(HundredReplayEvidenceService.PendingReplay::sha256)
                 .distinct()
@@ -230,7 +183,6 @@ public class HundredBattleSubmissionService {
                 proofScreenshot, vehicleName, nickname, pendingReplays, hashes));
     }
 
-    /** WG 用户首次提交可能尚未访问 ProfilePage，先按可信登录身份创建 Profile。 */
     private UserProfileSnapshot findProfileForSubmission(final String userId) {
         final UserProfileSnapshot existing = userProfileService.findSnapshotByKeycloakUserId(userId).orElse(null);
         if (existing != null) {
@@ -244,11 +196,6 @@ public class HundredBattleSubmissionService {
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
-    /**
-     * 锁内临界区：落盘 5 文件 → 单事务写 submission + 恰好 5 行 evidence → COMMIT。
-     * DB 失败（含 unique index 竞态）→ TransactionTemplate 已 rollback 完成 → 锁内
-     * 引用计数保护清理已存文件 → 映射错误码。绝不产生「只保存 3/5 个 replay 的合法 PENDING」。
-     */
     private HundredCreateResult createLocked(final long vehicleId,
                                              final long gameId,
                                              final String wotbServer,
@@ -259,8 +206,6 @@ public class HundredBattleSubmissionService {
                                              final String nickname,
                                              final List<HundredReplayEvidenceService.PendingReplay> pendingReplays,
                                              final List<String> hashes) {
-        // 全部硬门禁通过后落盘 5 个原始回放（内容寻址幂等；失败时已存文件 best-effort 清理，
-        // 复用当前外层锁——不嵌套取锁防 self-deadlock）。
         evidenceService.storeAll(pendingReplays);
 
         final Long submissionId;
@@ -277,14 +222,10 @@ public class HundredBattleSubmissionService {
                 submission.setStatus(HundredBattleStatus.PENDING.name());
                 submission.setProofScreenshot(proofScreenshot.trim());
                 repository.saveAndFlush(submission);
-                // submission 与 5 行 evidence 同事务原子写入；attach 失败 → 事务回滚 submission。
                 evidenceService.attach(submission.getId(), pendingReplays);
                 return submission.getId();
             });
         } catch (final DataIntegrityViolationException e) {
-            // 并发双提交竞态：partial unique index 只允许一条 PENDING。
-            // 注意：TransactionTemplate 已先完成 rollback，aborted transaction 状态已清除，
-            // 此处 DB 引用计数查询可安全执行（Blocker 3）。
             evidenceService.cleanupStoredFiles(hashes);
             throw new IllegalStateException("HUNDRED_PENDING_EXISTS");
         } catch (final RuntimeException e) {
@@ -294,12 +235,6 @@ public class HundredBattleSubmissionService {
         return new HundredCreateResult(submissionId, HundredBattleStatus.PENDING.name());
     }
 
-    /**
-     * 用户取消自己的 PENDING（不影响 CURRENT；终态清理截图与回放证据）。
-     * ownership 以当前绑定的 canonical 身份 {@code (区服, WotB 账号)} 判定：
-     * 未绑定账号、或记录归属其他 (区服, 账号) → 403。
-     * 记录创建后用户改绑到别的账号时，记录仍属于原 (区服, 账号)，因此不可再取消。
-     */
     @Transactional
     public HundredSubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
@@ -317,13 +252,7 @@ public class HundredBattleSubmissionService {
         return result;
     }
 
-    // ── Phase 6：Profile ──────────────────────────────────────────────────
 
-    /**
-     * 个人中心百场状态：CURRENT 纪录 + PENDING 申请 + 最近拒绝反馈。
-     * 归属按当前绑定的 canonical 身份 {@code (区服, WotB 账号)} 查询；
-     * 未绑定账号时没有任何属于该身份的记录，三个列表均为空。
-     */
     @Transactional(readOnly = true)
     public HundredUserStatusDto userStatus(final String userId) {
         final WotbAccountIdentity owner = userProfileService.currentWotbIdentity(userId).orElse(null);
@@ -344,12 +273,7 @@ public class HundredBattleSubmissionService {
                 .stream().map(mapper::toSummary).toList();
     }
 
-    // ── 辅助 ──────────────────────────────────────────────────────────────
 
-    /**
-     * 记录是否属于当前绑定身份。canonical owner 是 {@code (区服, WotB 账号)}，
-     * 不是 Keycloak sub；只比账号 ID 会让跨服同号互相看见。
-     */
     private static boolean owns(final WotbAccountIdentity owner, final HundredBattleSubmission submission) {
         return owner != null
                 && owner.accountId() == submission.getWotbAccountId()
@@ -377,7 +301,6 @@ public class HundredBattleSubmissionService {
         }
     }
 
-    /** 审批成绩必须是提交时冻结的 MANUAL 申报值，并先经过截图与回放证据门禁。 */
     static void requireApprovedValues(final int approvedAverageDamage, final int approvedBattleCount) {
         if (approvedAverageDamage <= 0 || approvedBattleCount <= 0) {
             throw new IllegalArgumentException("HUNDRED_INVALID_APPROVED");
@@ -415,7 +338,6 @@ public class HundredBattleSubmissionService {
         return vehicle.tier() instanceof final Number tier && tier.intValue() == 10;
     }
 
-    /** 读取 MultipartFile 原始字节（读取失败 → 稳定 400 INVALID_REPLAY_FILE，非 500）。 */
     private static byte[] readBytes(final MultipartFile file) {
         try {
             return file.getBytes();
@@ -433,7 +355,6 @@ public class HundredBattleSubmissionService {
         }
     }
 
-    /** 在 battle 名册中按 accountId 找玩家（gameId 匹配证据）。 */
     private static PlayerResult findPlayerByAccountId(final Battle battle, final long gameId) {
         if (battle.players == null) {
             return null;

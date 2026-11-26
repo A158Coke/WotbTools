@@ -17,22 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 四类输出缺陷的回归测试：
- * <ol>
- *   <li>friendly 被理解成「朋友」——证据里的英文段头必须带中文注解，prompt 必须钉死 FRIENDLY = 友方；</li>
- *   <li>敌方阵容信息缺失——逐车证据必须含损失血量/助攻/格挡/命中，prompt 必须要求逐车分析；</li>
- *   <li>双方对炮明细——必须来自事件流逐次伤害，覆盖未被击杀的对手，并带权威坦克名称；</li>
- *   <li>英文术语泄漏（favourable / MID GAME 等）——证据里的枚举必须以中文呈现。</li>
- * </ol>
- */
 class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
+    private static final long SPHT_TANK_ID = 29985L;
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
 
-    /** 权威掉血 fixture：recorder 对 enemy 掉 900、enemy 对 recorder 掉 640（Type-7 推导 + 单通知归属）。 */
     private static ReplayReconstruction killRecon() {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(
@@ -46,24 +36,19 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                         new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true)),
                 List.of(), null, null, null);
     }
-    /** canonical kill attribution fixture: both sides terminal + reliable cross-attribution. */
     private static ReplayReconstruction dualKillRecon() {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(
                         new com.wotb.core.replay.event.ParticipantMappingEvent(1, new ReplayTimestamp(1f, null), 8, DecodeConfidence.EXACT, 1, 1L),
                         new com.wotb.core.replay.event.ParticipantMappingEvent(2, new ReplayTimestamp(2f, null), 8, DecodeConfidence.EXACT, 2, 2L),
-                        // recorder(1) -> enemy(2): 900 HP loss @10
                         new com.wotb.core.replay.event.HealthChangedEvent(3, new ReplayTimestamp(9f, null), 7, DecodeConfidence.EXACT, 2, 2000, null, true),
                         new DamageEvent(4, new ReplayTimestamp(10f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
                         new com.wotb.core.replay.event.HealthChangedEvent(5, new ReplayTimestamp(10f, null), 7, DecodeConfidence.EXACT, 2, 1100, null, true),
-                        // enemy(2) -> recorder(1): 640 HP loss @12
                         new com.wotb.core.replay.event.HealthChangedEvent(6, new ReplayTimestamp(11f, null), 7, DecodeConfidence.EXACT, 1, 2000, null, true),
                         new DamageEvent(7, new ReplayTimestamp(12f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false),
                         new com.wotb.core.replay.event.HealthChangedEvent(8, new ReplayTimestamp(12f, null), 7, DecodeConfidence.EXACT, 1, 1360, null, true),
-                        // enemy terminal @14, killed by recorder(1)
                         new com.wotb.core.replay.event.HealthChangedEvent(9, new ReplayTimestamp(14f, null), 7, DecodeConfidence.EXACT, 2, null, null, false),
                         new DamageEvent(10, new ReplayTimestamp(14f, null), 8, DecodeConfidence.EXACT, 1, 2, null, null, 999, false),
-                        // recorder terminal @15, killed by enemy(2)
                         new com.wotb.core.replay.event.HealthChangedEvent(11, new ReplayTimestamp(15f, null), 7, DecodeConfidence.EXACT, 1, null, null, false),
                         new DamageEvent(12, new ReplayTimestamp(15f, null), 8, DecodeConfidence.EXACT, 2, 1, null, null, 999, false)),
                 List.of(), null, null, null);
@@ -76,7 +61,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                 TeamReplayAnalysisService.SINGLE_TEAM_PROMPT);
     }
 
-    // ---- 1. friendly ≠ 朋友 ----
 
     @Test
     void everyPromptPinsFriendlyToTheMilitaryChineseTerm() {
@@ -99,7 +83,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertTrue(evidence.contains("ENEMY_LINEUP_AUTHORITATIVE（敌方阵容·权威结算）"), evidence);
     }
 
-    // ---- 2. 敌方逐车信息完整 ----
 
     @Test
     void enemyLineupCarriesFullPerVehicleFacts() {
@@ -125,7 +108,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         PlayerReplayPromptBuilder.appendPlayerLine(sb, enemy(), false);
         final String line = sb.toString();
 
-        // 等级/国家来自 tankopedia 的结构化字段
         assertTrue(line.contains("等级: 10"), line);
         assertTrue(line.contains("国家: USA"), line);
     }
@@ -145,8 +127,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     @Test
     void killAttributionNamesBothDirections() {
-        // killer identity derives from canonical terminal evidence (combat.destroyed());
-        // the stale PlayerResult.killVictims model is removed.
         final Battle battle = battleWithRecorderAndEnemy();
         final PlayerResult recorder = battle.players.get(0);
 
@@ -174,15 +154,12 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
 
     @Test
     void promptsRequireEnemyAnalysisWithTeamCap() {
-        // player 路径仍强制逐车分析敌方阵容（个人复盘需要逐对手威胁）
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("敌方阵容逐车分析"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SYSTEM_PROMPT
                 .contains("逐车分析敌方阵容"), PlayerReplayPromptBuilder.SYSTEM_PROMPT);
         assertTrue(PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT
                 .contains("必须逐车分析敌方阵容"), PlayerReplayPromptBuilder.SINGLE_PLAYER_PROMPT);
-        // 团队路径（AI Review V2.1 + ）：对方关键威胁是【可选】内容，
-        // 不再强制逐车作文，也不再无条件强制「指出对方主要威胁」
         final String team = TeamReplayAnalysisService.SINGLE_TEAM_PROMPT;
         assertTrue(team.contains("对方关键威胁是【可选】内容"), team);
         assertTrue(team.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"), team);
@@ -191,7 +168,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
                 "团队复盘不得保留无条件 mandatory 威胁规则");
     }
 
-    // ---- 3. 双方对炮明细 ----
 
     @Test
     void damageExchangeCoversBothDirectionsWithAuthoritativeTankName() {
@@ -218,7 +194,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
     @Test
     void damageExchangeIncludesOpponentsThatWereNeverKilled() {
         final Battle battle = battleWithRecorderAndEnemy();
-        // 敌人存活：事件流仍能提供这条对炮信息（不依赖 killVictims 归属）。
         battle.players.get(1).survived = true;
 
         final StringBuilder sb = new StringBuilder();
@@ -234,7 +209,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         final Battle battle = battleWithRecorderAndEnemy();
         final StringBuilder sb = new StringBuilder();
 
-        // battleStart=30s：20s 的伤害属准备阶段，必须被排除
         final boolean written = PlayerReplayPromptBuilder.appendDamageExchangeByOpponent(
                 sb, battle, RECORDER_ACCOUNT,
                 reconWith(30f, damage(20f, RECORDER_ACCOUNT, ENEMY_ACCOUNT, 999)));
@@ -256,7 +230,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         assertEquals("", sb.toString());
     }
 
-    // ---- 4. 术语中文化 ----
 
     @Test
     void phaseAndOutcomeTermsAreChinese() {
@@ -300,7 +273,6 @@ class PlayerAnalysisTermsAndEnemyEvidenceTest {
         });
     }
 
-    // ---- helpers ----
 
     private static String lineupEvidence() {
         final StringBuilder sb = new StringBuilder();

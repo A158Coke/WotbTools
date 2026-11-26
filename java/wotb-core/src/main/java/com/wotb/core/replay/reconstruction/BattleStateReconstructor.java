@@ -19,18 +19,6 @@ import com.wotb.core.replay.event.VehicleHitEvent;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 按领域事件重建战场状态（checkpoints / finalState）；只消费 canonical world-position / HP / terminal semantics。
- *
- * <p>纯事件归约，不读字节：服务器没有 replay parser，输入事件由
- * {@link com.wotb.core.replay.projection.ClientAiProjectionAdapter} 从客户端 canonical AI 投影装配。</p>
- *
- * <p>This is NOT a second terminal/death authority. Destroyed/death life state is derived
- * only from the canonical terminal surfaces {@code ReplayTerminalLifecycle} consumes — the
- * {@code rawState.terminal()} ({@code HealthChangedEvent}/{@code VehicleHealthStateEvent}), an
- * explicit (packet-local validated) drowning cause, and {@code alive==false} legacy exact — never
- * from the derived {@code VehicleDestroyedEvent} or a raw HP&lt;=0 re-derivation.</p>
- */
 public class BattleStateReconstructor {
 
     static final float DEFAULT_CHECKPOINT_INTERVAL_SEC = 1.0f;
@@ -92,7 +80,7 @@ public class BattleStateReconstructor {
             case VehicleHitEvent e -> applyHit(state, e);
             case EntityRemovedEvent e -> applyEntityRemoved(state, e);
             case RoundFinishedEvent e -> applyRoundFinished(state, e);
-            case ReplayStreamClosedEvent ignored -> { /* Type14 = stream close only */ }
+            case ReplayStreamClosedEvent ignored -> { }
             case HealthChangedEvent e -> applyHealth(state, e);
             case MaterializationEvent e -> applyMaterialization(state, e);
             case RecorderHealthChangedEvent e -> applyRecorderHealth(state, e);
@@ -115,8 +103,6 @@ public class BattleStateReconstructor {
         try {
             vs.setRotation(new Rotation(e.yaw(), e.pitch(), e.roll()));
         } catch (IllegalArgumentException ignored) { }
-        // PARTIAL/UNKNOWN PositionChangedEvent must not upgrade an
-        // entity to OBSERVED — only a trustworthy (EXACT/INFERRED) position marks it observed.
         if (!DecodeConfidenceHelper.isLowConfidence(e.confidence())
                 && (vs.observationState() == ObservationState.UNKNOWN
                     || vs.observationState() == ObservationState.REMOVED)) {
@@ -125,15 +111,9 @@ public class BattleStateReconstructor {
     }
 
     private void applyDamage(final BattleState state, final DamageEvent e) {
-        // raw DamageEvent.damage() is an observed (partial) value,
-        // NOT a canonical damage fact. This playback state does NOT accumulate a second
-        // damageDealt/damageReceived authority (those fields were removed from VehicleState).
-        // Only last-observed is updated for both sides.
         applyEngagement(state, e.attackerEid(), e.victimEid(), e.timestamp().rawClockSec());
     }
 
-    /** method8 is a hit/result-feedback family (VehicleHitEvent) — a proven hit still
-     *  updates last-observed for attacker/victim (engagement evidence); no damage magnitude is used. */
     private void applyHit(final BattleState state, final VehicleHitEvent e) {
         applyEngagement(state, e.attackerEntityId(), e.victimEntityId(), e.timestamp().rawClockSec());
     }
@@ -158,8 +138,6 @@ public class BattleStateReconstructor {
         }
     }
 
-    // PR147: lifecycle comes from the canonical RoundFinishedEvent (Avatar method4 / wrapper3
-    // AFTERBATTLE), NOT the Type14 stream-close marker.
     private void applyRoundFinished(final BattleState state, final RoundFinishedEvent e) {
         state.setBattleEnded(true);
         state.setLifecycle(BattleLifecycle.FINISHED);
@@ -195,7 +173,6 @@ public class BattleStateReconstructor {
     }
 
     private void applyEntityCreated(final BattleState state, final EntityCreatedEvent e) {
-        // unproven/guessed entityId must not create a phantom vehicle.
         if (e.entityId() <= 0) {
             return;
         }
@@ -231,10 +208,6 @@ public class BattleStateReconstructor {
         if (e.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        // consume the decoder-classified rawState propagated with the event; never
-        // re-classify the raw u16 here. The raw cause is NOT a semantic (the decoder preserves
-        // causeFlag and leaves cause=null) — the validated semantic is consumed here via the
-        // packet-local field-specific derivation.
         final HpRawState rawState = e.rawState() == null ? HpRawState.UNKNOWN_OTHER : e.rawState();
         if (rawState == HpRawState.CURRENT_HP) {
             vs.setCurrentHealth((int) (short) (e.currentHpRaw() & 0xFFFF));

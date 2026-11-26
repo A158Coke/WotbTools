@@ -24,12 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 真实回放（common/fixtures/replays/random-battle-example.wotbreplay，rift 随机战）掉血窗口
- * 集成回归：真实 decoder 的 DamageEvent 账号字段为 null，必须经 ParticipantMappingEvent
- * 实体映射生成窗口；覆盖 battle-relative 时间、准备阶段排除、partial 抑制、
- * Harness 主路径与 fallback 提示词、团队路径、单一攻击者不得标集火、无致死宣称。
- */
 class ReplayDamageWindowIntegrationTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
@@ -53,16 +47,12 @@ class ReplayDamageWindowIntegrationTest {
                 ? battle.recorderResult().accountId : 0L;
         assertTrue(recorderAccount > 0, "录像者账号应解析");
 
-        // method8 is a hit/result-feedback family (VehicleHitEvent) — it carries attacker/
-        // victim entity ids, never account ids. The hit events are the observed damage-window signal.
         final List<VehicleHitEvent> damages = result.reconstruction().events().stream()
                 .filter(VehicleHitEvent.class::isInstance)
                 .map(VehicleHitEvent.class::cast)
                 .toList();
         assertFalse(damages.isEmpty(), "真实回放必须有伤害事件");
 
-        // 回归门禁：真实 decoder 事件只填 entity id（恒无 account id），直接按 victimAccountId 过滤必然为空。
-        // 若有人把 Clusterer 改回直接使用 account id 字段，以下断言会失败。
         assertEquals(0, damages.stream().filter(d -> d.victimEntityId() <= 0).count(),
                 "真实 decoder 的 VehicleHitEvent victimEntityId 必须可解析");
 
@@ -71,9 +61,6 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(windows.isEmpty(), "录像者必须经实体映射得到非空掉血窗口");
         final float duration = battle.durationS == null
                 ? Float.MAX_VALUE : battle.durationS.floatValue();
-        // hpLoss 语义：掉血事实来自 Type-7 权威采样（真实数字保留）；攻击者 attribution 在存在
-        // 无法排除的 unsupported 变体（短体/zero-raw/非 direct 冲突证据）时 fail-closed（部分未解析
-        // 是合法且必须的输出）。任何窗口都不得把同一攻击者算多个、不得在未解析时断言集火。
         for (final DamageWindowClusterer.DamageWindow window : windows) {
             assertTrue(window.startSec() >= 0f, "battle-relative 时间不得为负: " + window);
             assertTrue(window.endSec() >= window.startSec());
@@ -84,20 +71,15 @@ class ReplayDamageWindowIntegrationTest {
             assertFalse(window.focusFireCandidate() && window.attackersUnresolved(),
                     "攻击者未解析时不得断言集火: " + window);
         }
-        // PR #107 第 5 轮回归：短体/zero-raw damage-method 变体现在产出冲突证据事件并真正参与
-        // attribution fail-closed——本夹具（含短体/zero-raw 变体）必须存在诚实标记「攻击者部分未解析」
-        // 的窗口（若有人回退成「warning 不产出事件」，此断言失败）；不得伪造攻击者。
         assertTrue(windows.stream().anyMatch(w -> w.attackersUnresolved()),
                 "至少一个窗口必须诚实标记攻击者未解析（冲突证据 fail-closed）: " + windows);
 
-        // Player 证据段：覆盖完整时输出真实数字；partial 时抑制并输出 UNAVAILABLE
         final StringBuilder full = new StringBuilder();
         PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 full, battle, result.reconstruction(), recorderAccount, false);
         final String fullEvidence = full.toString();
         assertTrue(fullEvidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"), fullEvidence);
         assertTrue(fullEvidence.contains("掉血524"), fullEvidence);
-        // 夹具含短体/zero-raw 冲突证据 → 窗口攻击者 fail-closed：诚实输出「攻击者0（攻击者部分未解析）」
         assertTrue(fullEvidence.contains("攻击者0"), fullEvidence);
         assertTrue(fullEvidence.contains("（攻击者部分未解析）"), fullEvidence);
         assertTrue(fullEvidence.contains("攻击者=1 → 短时间集中掉血/高压掉血窗口（不是集火）"), fullEvidence);
@@ -123,7 +105,6 @@ class ReplayDamageWindowIntegrationTest {
         final EvidenceSkillResult evidence = new EvidenceSkillEngine()
                 .run(new EvidenceSkillContext(battle, result.reconstruction(), features, recorder));
         assertTrue(evidence.hasContent());
-        // 覆盖完整（无 OBSERVED_DAMAGE_IS_PARTIAL）的 Harness 主路径：必须包含真实窗口数字
         final PlayerBattleFeatureSet completeFeatures = new PlayerBattleFeatureSet(
                 features.movements(), features.engagements(), features.phases(),
                 features.keyEvents(), List.of(), features.hasFeatures());
@@ -140,7 +121,6 @@ class ReplayDamageWindowIntegrationTest {
                         > harnessContent.indexOf("RECORDER_DAMAGE_RECEIVED_WINDOWS"),
                 "掉血窗口段必须位于 TASK 之前");
 
-        // 真实特征（本夹具带 OBSERVED_DAMAGE_IS_PARTIAL）→ Harness 输出抑制标记而非数字
         final var partialPrepared = TacticalReviewPromptBuilder.prepare(
                 null, evidence, battle, result.reconstruction(), features, recorder,
                 ESTIMATOR, 100_000, 131_072, 8192, 1000);
@@ -150,15 +130,12 @@ class ReplayDamageWindowIntegrationTest {
         assertFalse(partialContent.contains("掉血488"), partialContent);
         assertFalse(partialContent.contains("你输出"), partialContent);
         assertFalse(partialContent.contains("事件流输出:"), partialContent);
-        // 引擎在 partial 下跳过 EngagementTradeSkill，Prompt 边界再防御性过滤：
-        // 换血摘要/伤害数字/窗口聚合数字一律不得进入 final user prompt
         assertFalse(partialContent.contains("换血"), partialContent);
         assertFalse(partialContent.contains("damageDealt="), partialContent);
         assertFalse(partialContent.contains("damageReceived="), partialContent);
         assertFalse(partialContent.contains("recorderDamageDealt"), partialContent);
         assertFalse(partialContent.contains("recorderDamageReceived"), partialContent);
 
-        // fallback（prepareFull）同样包含窗口
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle, completeFeatures, recorder,
                 result.reconstruction().coverage(), List.of());
@@ -168,7 +145,6 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(fallback.userPrompt().contains("RECORDER_DAMAGE_RECEIVED_WINDOWS（你掉血时间窗口"),
                 fallback.userPrompt());
         assertTrue(fallback.userPrompt().contains("掉血524"), fallback.userPrompt());
-        // 同根因修复：逐次伤害与逐对手对炮段在真实事件（直填账号为 null）下也必须非空
         assertTrue(fallback.userPrompt().contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"),
                 fallback.userPrompt());
         assertFalse(fallback.userPrompt().contains("PER_HIT_DAMAGE_EVENTS_UNAVAILABLE"),
@@ -190,7 +166,6 @@ class ReplayDamageWindowIntegrationTest {
                 .extract(result.reconstruction(), recorder, battle);
         assertTrue(features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL"),
                 "真实夹具必须带 OBSERVED_DAMAGE_IS_PARTIAL（前置条件）");
-        // 使用真实 features（不移除 limitations）：partial 下三段事件流伤害数字必须全部抑制
         final SinglePlayerBattleAnalysisContext ctx = new SinglePlayerBattleAnalysisContext(
                 null, battle, features, recorder, result.reconstruction().coverage(),
                 features.limitations());
@@ -198,7 +173,6 @@ class ReplayDamageWindowIntegrationTest {
                 ctx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.ZH);
         assertNoEventStreamDamageNumbers(zh.userPrompt());
-        // NON_ZH（Harness fallback 可达路径）同样抑制
         final var en = PlayerReplayPromptBuilder.prepareFull(
                 ctx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.EN);
@@ -231,9 +205,6 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(recorder.resolved());
         final PlayerResult rec = battle.recorderResult();
         assertNotNull(rec);
-        // killer identity derives from canonical terminal evidence (combat.destroyed()); the
-        // former killVictims construction is removed. The recorder survives in this fixture, so there is
-        // no "击杀你的是" entry — that would only have been fabricated by stale killVictims data.
 
         final PlayerBattleFeatureSet features = new DefaultPlayerBattleFeatureExtractor()
                 .extract(result.reconstruction(), recorder, battle);
@@ -251,13 +222,11 @@ class ReplayDamageWindowIntegrationTest {
         assertTrue(zhPrompt.contains("DAMAGE_EXCHANGE_AGGREGATED_OBSERVED ===\n"
                 + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), zhPrompt);
 
-        // NON_ZH（Harness fallback 可达路径）同样抑制
         final var en = PlayerReplayPromptBuilder.prepareFull(
                 partialCtx, result.reconstruction(), ESTIMATOR, 100_000, 131_072, 8192, 1000,
                 AllowedLanguage.EN);
         assertKillAttributionNumbersSuppressed(en.userPrompt());
 
-        // complete coverage：canonical 击杀归因可正常输出，但 fabricated killVictims 数字绝不得出现
         final PlayerBattleFeatureSet completeFeatures = new PlayerBattleFeatureSet(
                 features.movements(), features.engagements(), features.phases(),
                 features.keyEvents(), List.of(), features.hasFeatures());

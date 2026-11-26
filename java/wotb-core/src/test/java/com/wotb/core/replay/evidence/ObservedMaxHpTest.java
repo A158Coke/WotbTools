@@ -23,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** ObservedMaxHp：sentinel（0xFFFD=65533 / 0xFFFF=65535）绝不得污染实测最大血量；entry HP provenance。 */
 class ObservedMaxHpTest {
 
     private static PlayerResult player(final long accountId, final int team, final long tankId) {
@@ -43,7 +42,7 @@ class ObservedMaxHpTest {
 
     private static Battle battle() {
         final Battle battle = new Battle();
-        battle.players = List.of(player(1001L, 1, 29985L)); // SPHT tankopedia base 3400
+        battle.players = List.of(player(1001L, 1, 29985L));
         return battle;
     }
 
@@ -51,9 +50,9 @@ class ObservedMaxHpTest {
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(10f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
-        events.add(hp(2, 10, 2000, DecodeConfidence.EXACT));  // 真实正 HP
-        events.add(hp(3, 10, 65533, DecodeConfidence.EXACT)); // 0xFFFD 死亡 sentinel（解码层已归一化，此处兜底）
-        events.add(hp(4, 10, 65535, DecodeConfidence.PARTIAL)); // 0xFFFF UNKNOWN sentinel
+        events.add(hp(2, 10, 2000, DecodeConfidence.EXACT));
+        events.add(hp(3, 10, 65533, DecodeConfidence.EXACT));
+        events.add(hp(4, 10, 65535, DecodeConfidence.PARTIAL));
         return events;
     }
 
@@ -76,10 +75,8 @@ class ObservedMaxHpTest {
         final Battle battle = battle();
         ObservedMaxHp.populate(battle, eventsWithSentinels(),
                 TeamEntityMapper.resolve(battle, recon(eventsWithSentinels())));
-        // max(2000 观测, 3400 tankopedia base) = 3400；绝不可能是 65533/65535
         assertEquals(3400, battle.players.getFirst().observedMaxHp);
         assertTrue(battle.players.getFirst().observedMaxHp < 0xFF00);
-        // 样本 2000 < base 3400 且无受击前证明 → 进场满血无法证明 → BASE_FALLBACK，entryHp=null
         assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);
         assertNull(battle.players.getFirst().entryHp);
     }
@@ -91,14 +88,12 @@ class ObservedMaxHpTest {
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
-        // Deliberately out of event-list order: ReplayHpTimeline owns chronological ordering.
         events.add(new HealthChangedEvent(2, new ReplayTimestamp(20f, null), 7,
                 DecodeConfidence.EXACT, 10, 3200, null, true));
         events.add(new HealthChangedEvent(3, new ReplayTimestamp(10f, null), 7,
                 DecodeConfidence.EXACT, 10, 3600, null, true));
         events.add(new HealthChangedEvent(4, new ReplayTimestamp(5f, null), 7,
                 DecodeConfidence.EXACT, 10, null, null, false, 0xFFFF, HpRawState.UNKNOWN_FFFF));
-        // No participant mapping: this remains account 0 and must not affect player 1001.
         events.add(new HealthChangedEvent(5, new ReplayTimestamp(1f, null), 7,
                 DecodeConfidence.EXACT, 99, 9999, null, true));
         events.add(new DamageEvent(6, new ReplayTimestamp(30f, null), 8,
@@ -123,14 +118,11 @@ class ObservedMaxHpTest {
     @Test
     void resolveFallsBackToTankopediaBaseWithoutObservation() {
         assertEquals(3400, ObservedMaxHp.resolve(null, 29985L));
-        assertEquals(3400, ObservedMaxHp.resolve(2000, 29985L)); // max(观测, base)
+        assertEquals(3400, ObservedMaxHp.resolve(2000, 29985L));
     }
 
     @Test
     void preFirstDamageSampleAtOrAboveBaseProvesEntryExact() {
-        // 受击覆盖完整（事件流 received 400 == 结算 damageReceived 400）且
-        // 首个 positive 样本 3600（> base 3400，含装备加成）严格早于首次受击 @20s
-        // → 受击前满血被证明 → OBSERVED_EXACT，entryHp=3600
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -141,7 +133,7 @@ class ObservedMaxHpTest {
         events.add(new DamageEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 20, 10, null, null, 400, false));
         final Battle battle = battle();
-        battle.players.getFirst().damageReceived = 400; // 覆盖完整（掉血 400 与结算一致）
+        battle.players.getFirst().damageReceived = 400;
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
         final PlayerResult p = battle.players.getFirst();
@@ -151,7 +143,6 @@ class ObservedMaxHpTest {
 
     @Test
     void sampleBelowBaseBeforeFirstDamageIsNotProvenEntry() {
-        // 首个样本 3000 < base 3400（已掉血）且早于首次受击 → 不得证明为进场满血
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -171,8 +162,6 @@ class ObservedMaxHpTest {
 
     @Test
     void recorderOpeningHpFromMethod5IsAffirmedEvenBelowTankopediaBase() {
-        // 录像者：Avatar method5 初始化 HP = opening HP 种子（34/34 == 首个 Type5 hpRaw）；
-        // 即使 opening HP（3200）< tankopedia base（3400）也 AFFIRMED（装备/物资加成与 base 无关）
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -180,7 +169,7 @@ class ObservedMaxHpTest {
                 2, new ReplayTimestamp(8f, null), 8,
                 DecodeConfidence.EXACT, 10, 3200, 1));
         final Battle battle = battle();
-        battle.recorder = "rec"; // PlayerResultFormat.recorderAccountId 需要 nickname 匹配
+        battle.recorder = "rec";
         battle.players.getFirst().nickname = "rec";
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
@@ -192,13 +181,9 @@ class ObservedMaxHpTest {
 
     @Test
     void unobservedEarlyDamageMakesCoveragePartialAndFailsClosed() {
-        // 用户反例：base=2400（Kranvagn 4481）、真实 entry=2600；
-        // 3s 发生未被事件流观察到的 100 伤害；10s sample=2500；20s 才观察到首次伤害 100。
-        // 事件流 observed received=100 != 结算 damageReceived=200 → 覆盖 PARTIAL
-        // → 不得 OBSERVED_EXACT(2500)，必须 fail closed 到 BASE_FALLBACK（entryHp=null）。
         final Battle battle = new Battle();
-        battle.players = List.of(player(1001L, 1, 4481L)); // Kranvagn base 2400
-        battle.players.getFirst().damageReceived = 200; // 含 3s 未观察的 100
+        battle.players = List.of(player(1001L, 1, 4481L));
+        battle.players.getFirst().damageReceived = 200;
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -217,15 +202,14 @@ class ObservedMaxHpTest {
 
     @Test
     void partialCoverageWithoutAnyObservedDamageFailsClosed() {
-        // 覆盖 PARTIAL + 没有任何 observed DamageEvent：不得因 firstDamageSec==null 判「从未受击」
         final Battle battle = new Battle();
-        battle.players = List.of(player(1001L, 1, 4481L)); // base 2400
-        battle.players.getFirst().damageReceived = 100; // 结算有受击，但事件流 0
+        battle.players = List.of(player(1001L, 1, 4481L));
+        battle.players.getFirst().damageReceived = 100;
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(5f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
         events.add(new HealthChangedEvent(2, new ReplayTimestamp(10f, null), 7,
-                DecodeConfidence.EXACT, 10, 2500, null, true)); // 2500 >= base 2400 也无用
+                DecodeConfidence.EXACT, 10, 2500, null, true));
         ObservedMaxHp.populate(battle, events,
                 TeamEntityMapper.resolve(battle, recon(events)));
         assertEquals(EntryHpSource.BASE_FALLBACK, battle.players.getFirst().entryHpSource);

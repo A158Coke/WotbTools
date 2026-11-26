@@ -6,7 +6,6 @@ import com.wotb.web.util.apierror.ApiErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/** Broadcast policy around the shared, bounded private COS byte adapter. */
 @Service
 public class BroadcastCosStorage {
     private final CosImageStorage.Namespace namespace;

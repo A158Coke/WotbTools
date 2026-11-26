@@ -55,7 +55,6 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
-        <!-- 测试运行期需要 JAX-RS RuntimeDelegate 来构造 Response（Keycloak 运行时由 Jersey 提供） -->
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-common</artifactId>

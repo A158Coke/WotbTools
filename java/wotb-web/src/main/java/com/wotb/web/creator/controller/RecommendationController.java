@@ -21,7 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
-/** Typed recommendations and their shared dictionaries. */
 @RestController
 public class RecommendationController {
     private final CreatorService service;

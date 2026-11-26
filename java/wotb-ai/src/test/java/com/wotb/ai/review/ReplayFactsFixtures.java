@@ -13,14 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 
-/**
- * 冻结的客户端投影夹具（{@code common/fixtures/replay-facts}）：{@code common/fixtures/replays} 的回放在服务端 parser 退役前由
- * 迁移期工具（已随 parser 删除）冻结成 AI 服务生产入口接收的 JSON（{@code {battle, reconstruction}}），
- * 经与生产相同的 {@link ReplayFactsCodec} 解码。服务器没有 parser：AI 测试不再解析回放。
- */
 final class ReplayFactsFixtures {
 
-    /** 解码后的客户端投影 */
     record Facts(Battle battle, ReplayReconstruction reconstruction) {
     }
 

@@ -16,11 +16,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 验证信任模型：录像者 accountId 来自浏览器声明，服务端只与绑定账号比较。
- * 便利徽章不是身份证明、不授予权限；权限边界另见 ReplayVerificationBadgeBoundaryTest。
- * 契约正文见 docs/features/user-profile.md。
- */
 class UserProfileBindingVerificationTest extends UserProfileServiceTestSupport {
 
     @Test
@@ -110,7 +105,6 @@ class UserProfileBindingVerificationTest extends UserProfileServiceTestSupport {
 
     @Test
     void verificationIsAClientAssertedComparisonNotAReplayAuthenticityCheck() {
-        // 服务端不接收回放字节、不重新解析：任何客户端声称的录像者 accountId 只要等于绑定账号即点亮徽章
         final UserProfile profile = cnProfile(123L, "CNName", null);
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
 

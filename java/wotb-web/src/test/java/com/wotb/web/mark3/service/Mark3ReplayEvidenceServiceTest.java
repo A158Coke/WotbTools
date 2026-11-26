@@ -22,7 +22,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 三环 evidence 的 5 文件门禁与独立 namespace 清理契约。 */
 @ExtendWith(MockitoExtension.class)
 class Mark3ReplayEvidenceServiceTest {
 

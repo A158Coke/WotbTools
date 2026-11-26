@@ -10,7 +10,6 @@ import org.springframework.util.StringUtils;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 
-/** Executes the chat attempt/retry lifecycle against the gateway's shared call state. */
 final class AiGatewayChatExecutor {
     private final AiGatewayRuntimeState state;
     private final AiGatewayMetrics metrics;
@@ -37,16 +36,11 @@ final class AiGatewayChatExecutor {
                 ? request.correlationId()
                 : (StringUtils.hasText(AiRequestContext.correlationId())
                         ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
-        // Optional external cancellation (client abort): cancels the in-flight
-        // upstream call and stops the retry loop with AI_CANCELLED.
         final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
         final String model = StringUtils.hasText(request.model()) ? request.model() : state.defaultModel;
         final boolean metricsEnabled = state.meterRegistry != null;
         final Timer.Sample upstreamSample = metrics.startDuration();
         final Prompt prompt = responseMapper.buildPrompt(request, model);
-        // Monotonic total deadline for the whole AiChatGateway.chat() lifecycle
-        // (first attempt + retries + backoff + response parsing). A per-request
-        // stage budget (e.g. harness Call #1) must never exceed the configured total.
         final long requestCallTimeoutNanos = request.callTimeoutSec() != null
                 ? Math.min(request.callTimeoutSec() * 1_000_000_000L, state.callTimeoutNanos)
                 : state.callTimeoutNanos;
@@ -61,8 +55,6 @@ final class AiGatewayChatExecutor {
                             retryCount, request, failurePolicy);
                 }
                 if (cancellation != null && cancellation.isCancelled()) {
-                    // Client aborted before this attempt started: do not send a
-                    // new upstream request at all.
                     throw metrics.finishFailure(
                             new AiUpstreamException("AI_CANCELLED", null, correlationId),
                             retryCount, request, failurePolicy);
@@ -89,12 +81,8 @@ final class AiGatewayChatExecutor {
                     usageRecorded = true;
                     final AiChatResponse result = responseMapper.toResponse(response, request, model, correlationId);
                     if (context.isExpired() || state.nanoTimeSource.getAsLong() >= deadlineNanos) {
-                        // The deadline passed during response conversion: never
-                        // report success, never record success metrics, end as AI_TIMEOUT.
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId);
                     } else if (context.isCancelled()) {
-                        // Client aborted while the response was being converted:
-                        // never report success, never record success metrics.
                         failure = new AiUpstreamException("AI_CANCELLED", null, correlationId);
                     } else {
                         if (metricsEnabled) {
@@ -132,33 +120,23 @@ final class AiGatewayChatExecutor {
                     state.activeContext.remove();
                 }
                 if (context.isCancelled()) {
-                    // Client abort is the binding constraint: never retry, end
-                    // as AI_CANCELLED so no further upstream request is sent.
                     failure = new AiUpstreamException("AI_CANCELLED", null, correlationId, failure);
                 } else if (context.isExpired()) {
-                    // The in-flight request was aborted because the remaining
-                    // total budget ran out: never retry, end as AI_TIMEOUT.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
                 final boolean lastAttempt = retryCount >= state.retryPolicy.maxAttempts() - 1;
                 final long remainingAfterNanos = deadlineNanos - state.nanoTimeSource.getAsLong();
                 if (!context.isStopped() && state.retryPolicy.isRetryable(failure)
                         && remainingAfterNanos <= 0) {
-                    // The total budget is exhausted: the deadline is the binding
-                    // constraint, so the call ends as AI_TIMEOUT even when the
-                    // attempt cap was reached at the same moment.
                     failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                 }
                 if (!lastAttempt && !context.isStopped()
                         && state.retryPolicy.isRetryable(failure)) {
                     final long backoffMillis = state.retryPolicy.backoffMillis(retryCount + 1);
                     if (remainingAfterNanos <= backoffMillis * AiGatewayMetrics.NANOS_PER_MILLI) {
-                        // Not enough budget left for the backoff plus another
-                        // attempt: stop without sleeping and without a new request.
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId, failure);
                     } else {
                         retryCount++;
-                        // retryCount 已自增：第一次重试 → retryNumber=1，下一次上游调用 attempt=2。
                         failurePolicy.logTransportRetry(request, correlationId, retryCount, failure, backoffMillis);
                         try {
                             sleepQuietly(backoffMillis, failure);

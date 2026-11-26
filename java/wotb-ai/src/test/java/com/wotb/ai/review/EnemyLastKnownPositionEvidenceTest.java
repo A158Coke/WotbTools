@@ -32,11 +32,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 敌方最后已知位置 prompt 契约（阶段 1：团队 single + 随机战 harness/fallback）。
- * <p>断言：注入段存在、UNKNOWN 语义、无 raw team、时间必须 X分XX秒（无裸秒数）、
- * 不出现「录像者」指代自己、段头明确「观测子集」。</p>
- */
 class EnemyLastKnownPositionEvidenceTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
@@ -44,7 +39,6 @@ class EnemyLastKnownPositionEvidenceTest {
 
     private static final String SECTION_HEADER = "ENEMY_LAST_KNOWN_POSITIONS_OBSERVED（敌方最后已知位置·观测子集）";
 
-    // ---- fixture：录像者在 1 队，2 名敌方（2001 有 OBSERVED 记录，2002 无记录） ----
 
     private static Battle battle() {
         final PlayerResult rec = player(1001L, 1, 4481, "Kranvagn", "rec1");
@@ -86,7 +80,6 @@ class EnemyLastKnownPositionEvidenceTest {
         return vs;
     }
 
-    /** 最终快照：我方 (0,0) 与 (100,0) 观察中 → 质心 (50,0)；敌方 2001 在 (250,0)；2002 无记录。 */
     private static ReplayReconstruction recon() {
         final Map<Integer, VehicleState> vehicles = new HashMap<>();
         vehicles.put(1, observedVehicle(1, 1001L, 1, 0f, 0f));
@@ -119,13 +112,11 @@ class EnemyLastKnownPositionEvidenceTest {
         final int start = content.indexOf(SECTION_HEADER);
         assertTrue(start >= 0, "content must contain enemy last-known-position section:\n" + content);
         final int end = content.indexOf('\n', start);
-        // 返回段头所在行之后到下一个 === 段头（或结尾）之间的文本
         final String rest = content.substring(start);
         final int nextHeader = rest.indexOf("\n===", 1);
         return nextHeader < 0 ? rest : rest.substring(0, nextHeader);
     }
 
-    // ---- 团队 single ----
 
     @Test
     void teamSingleInjectsObservedSubsetSection() {
@@ -144,12 +135,10 @@ class EnemyLastKnownPositionEvidenceTest {
         assertTrue(section.contains("region="), section);
         assertTrue(section.contains("distanceMeters=200.0"), section);
         assertTrue(section.contains("lastObserved=1分35秒"), "时间必须 X分XX秒：" + section);
-        // UNKNOWN 语义：2002 无 OBSERVED 记录 → 显式 UNKNOWN 行，不带位置/时间
         assertTrue(section.contains("accountId=2002"), section);
         assertTrue(section.contains("lastKnownPosition=UNKNOWN"), section);
         assertFalse(section.contains("distanceMeters=UNKNOWN"),
                 "UNKNOWN 行不得输出距离键：" + section);
-        // 观测子集口径：不得伪装全知
         assertTrue(section.contains("观测子集"), section);
         assertTrue(section.contains("可能已变化"), section);
     }
@@ -178,7 +167,6 @@ class EnemyLastKnownPositionEvidenceTest {
         assertFalse(content.contains(SECTION_HEADER), "无重建时不得注入该段");
     }
 
-    // ---- 随机战 harness（Call #2） ----
 
     private static TacticalReviewPromptBuilder.PreparedHarnessPrompt prepareHarness(
             final int contextWindow) {
@@ -206,7 +194,6 @@ class EnemyLastKnownPositionEvidenceTest {
         final String content = prepareHarness(131_072).userContent();
         final String section = sectionOf(content);
 
-        // 敌方 = 非录像者队伍：只出现敌方 2001 的行，我方车辆不进入
         assertTrue(section.contains("敌方 \"EnemyOne\""), section);
         assertFalse(section.contains("1002"), "我方车辆不得出现在敌方位置段：" + section);
         assertTrue(section.contains("距你方主力质心: 200.0m"), section);
@@ -247,7 +234,6 @@ class EnemyLastKnownPositionEvidenceTest {
         assertFalse(content.contains(SECTION_HEADER), "无重建时 harness 不得注入该段");
     }
 
-    // ---- fallback（随机战旧路径） ----
 
     @Test
     void fallbackInjectsEnemyLastKnownPositions() {
@@ -275,7 +261,6 @@ class EnemyLastKnownPositionEvidenceTest {
         assertNotNull(prepared.systemPrompt());
     }
 
-    // ---- 完整特征路径（prepareFull） ----
 
     @Test
     void fullPathInjectsEnemyLastKnownPositions() {

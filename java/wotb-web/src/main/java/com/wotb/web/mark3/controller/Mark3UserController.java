@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 当前用户的三环申请状态（/api/users/mark3/**，安全边界由 SecurityConfig USERS_PATTERN 覆盖）。 */
 @RestController
 @RequestMapping(ApiPaths.USERS_MARK3)
 public class Mark3UserController {

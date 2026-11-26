@@ -7,12 +7,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Natural Coach Mode 提示词契约。
- * <p>验证：主正文为自由组织的自然复盘（无固定章节模板）；必须有唯一「最重要结论」；
- * Focus Window 是内部 attention 提示而非用户模板；结构化输出契约；
- * 教练不是司法鉴定员；ZH/EN/RU 三语一致。</p>
- */
 class TeamReviewNaturalCoachContractTest {
 
     private static final String ZH = AiPromptLibrary.zh("team/single");
@@ -46,7 +40,6 @@ class TeamReviewNaturalCoachContractTest {
         assertTrue(ZH.contains("但一个主因不等于正文只能讲一件事"), "主因不能压缩正文范围");
         assertTrue(ZH.contains("必须保留解释该主因所需的 Information、Objectives、local engagements、cross-local propagation"),
                 "正文必须保留解释主因所需的战术链");
-        // 旧固定章节不得作为强制结构存在
         assertFalse(ZH.contains("1. 核心结论：2-4 句"), "不得再强制核心结论章节");
         assertFalse(ZH.contains("2. 关键决策窗口：只输出"), "不得再强制关键决策窗口章节");
         assertFalse(ZH.contains("3. 可确认的团队问题：只写"), "不得再强制可确认问题章节");

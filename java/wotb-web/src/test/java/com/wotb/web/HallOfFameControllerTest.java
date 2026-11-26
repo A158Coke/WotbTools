@@ -31,10 +31,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * Controller HTTP 绑定测试 (standalone MockMvc + mock service, 无需 DB / postgres profile)。
- * 守住 @RequestParam/@PathVariable 参数名绑定 —— 这正是 -parameters 缺失会在运行时炸的地方。
- */
 class HallOfFameControllerTest {
 
     private static final HallOfFamePageDto PAGE = new HallOfFamePageDto(List.of(), 1, 50, 0, 0);
@@ -157,10 +153,6 @@ class HallOfFameControllerTest {
         verify(uploadService).upload(any(), eq("{\"arenaId\":\"arena-1\"}"));
     }
 
-    /**
-     * 不支持战斗模式（训练房/联赛等）错误语义契约：upload 抛 UNSUPPORTED_BATTLE_TYPE →
-     * GlobalExceptionHandler 统一 canonical error HTTP 400 {errorCode: UNSUPPORTED_BATTLE_TYPE}，绝不返回 200 skipped。
-     */
     @Test
     void uploadUnsupportedBattleTypeRejectsWith400() throws Exception {
         final HallOfFameService service = mock(HallOfFameService.class);
@@ -179,7 +171,6 @@ class HallOfFameControllerTest {
         verify(uploadService).upload(any(), eq("{\"arenaId\":\"arena-1\"}"));
     }
 
-    /** facts 必填：浏览器本地解析的结算事实缺失时直接 400，不进入上传编排。 */
     @Test
     void uploadWithoutFactsRejectsWith400() throws Exception {
         final HallOfFameService service = mock(HallOfFameService.class);
@@ -194,7 +185,6 @@ class HallOfFameControllerTest {
         verify(uploadService, never()).upload(any(), any());
     }
 
-    /** 非法 facts（结构校验失败）→ canonical 400 {errorCode: INVALID_REPLAY_FACTS}。 */
     @Test
     void uploadInvalidFactsRejectsWith400() throws Exception {
         final HallOfFameService service = mock(HallOfFameService.class);

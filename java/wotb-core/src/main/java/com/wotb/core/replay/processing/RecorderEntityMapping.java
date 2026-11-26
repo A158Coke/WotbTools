@@ -2,10 +2,6 @@ package com.wotb.core.replay.processing;
 
 import com.wotb.core.replay.event.DecodeConfidence;
 
-/**
- * 录像者完整实体映射。
- * recorder → accountId → vehicleId → entityId
- */
 public record RecorderEntityMapping(
         Long accountId,
         Integer vehicleId,

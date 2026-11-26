@@ -8,11 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Loads the deliberately small gold.yaml subset used by the offline harness.
- * The schema is YAML on disk, with no second replay/evidence format: scalar
- * fields and string lists carry report constraints and required evidence types.
- */
 public final class TeamReplayQualityCaseLoader {
 
     private static final List<String> CASE_IDS = List.of(

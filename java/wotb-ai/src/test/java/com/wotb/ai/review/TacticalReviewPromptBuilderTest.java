@@ -214,7 +214,6 @@ class TacticalReviewPromptBuilderTest {
 
     @Test
     void rawMomentumSeriesIsNeverRenderedIntoPrompt() {
-        // 逐采样点的可观察 HP 差观察集合可能不同，不能直接进 Prompt（unspot 会伪装成 HP momentum）
         final List<HpMomentumSkill.HpMomentumSample> fakeSeries = List.of(
                 new HpMomentumSkill.HpMomentumSample(0f, Map.of(), Map.of(), 4000, 4000, 0, 1.0, 8),
                 new HpMomentumSkill.HpMomentumSample(60f, Map.of(), Map.of(), 4000, 2200, 987654, 1.0, 8));
@@ -324,10 +323,8 @@ class TacticalReviewPromptBuilderTest {
                 + "UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
         assertFalse(content.contains("掉血400"), content);
         assertFalse(content.contains("攻击者1"), content);
-        // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制
         assertFalse(content.contains("你输出 800"), content);
         assertFalse(content.contains("损失 300"), content);
-        // ENGAGEMENT_TRADE 的摘要与数字（含窗口聚合）不得进入 partial prompt
         assertFalse(content.contains("换血"), content);
         assertFalse(content.contains("输出 300"), content);
         assertFalse(content.contains("损失血量 100"), content);

@@ -12,14 +12,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
-/**
- * Wargaming.net API 客户端。Host 只来自 {@link WargamingRegion} 白名单：
- * 认证（login/prolongate/logout）走 {@code api.worldoftanks.* /wot/auth/}，
- * 账号（account/info）走 {@code api.wotblitz.* /wotb/account/}，不接受调用方传入 URL。
- *
- * <p>安全约定：连接超时 5 秒、总请求超时 10 秒；token 不进入异常正文与日志；
- * 错误正文不回显给浏览器；日志仅含错误码/消息/字段，不含 {@code error.value}。</p>
- */
 final class WargamingApiClient {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
@@ -36,7 +28,6 @@ final class WargamingApiClient {
                 request -> http.send(request, HttpResponse.BodyHandlers.ofString()));
     }
 
-    /** 测试钩子：注入可控 sender 以确定性模拟 IOException / InterruptedException。 */
     WargamingApiClient(final URI authApiBase, final URI accountApiBase,
                        final HttpSender sender) {
         this.authApiBase = authApiBase;
@@ -44,10 +35,6 @@ final class WargamingApiClient {
         this.sender = sender;
     }
 
-    /**
-     * 生产实例：按区服固定白名单 + 默认超时。区服必须来自 {@link WargamingRegion}，
-     * 未知区服在编译期即不可表达，杜绝任意 host 注入。
-     */
     static WargamingApiClient defaultClient(final WargamingRegion region) {
         if (region == null) {
             throw new IllegalArgumentException("Wargaming region must not be null");
@@ -75,11 +62,6 @@ final class WargamingApiClient {
                 + "&nofollow=1";
     }
 
-    /**
-     * 拉取 WG 登录跳转地址（nofollow=1 时 WG 返回 JSON {@code data.location}，兼容 302 响应）。
-     *
-     * @throws WargamingApiException WG 拒绝或响应不可解析
-     */
     String fetchLoginRedirectUrl(final String applicationId, final String callbackUrl) {
         final URI uri = URI.create(authApiBase.resolve("login/") + "?application_id="
                 + encode(applicationId) + "&redirect_uri=" + encode(callbackUrl) + "&nofollow=1");
@@ -107,7 +89,6 @@ final class WargamingApiClient {
             if (!location.isEmpty()) {
                 return location;
             }
-            // 短期兼容旧测试/旧响应格式；主契约以 data.location 为准。
             final String legacyUrl = json.path("url").asText("");
             if (legacyUrl.isEmpty()) {
                 throw new WargamingApiException("WG login response missing data.location");
@@ -121,17 +102,6 @@ final class WargamingApiClient {
         }
     }
 
-    /**
-     * 验证 token 有效性并刷新有效期，返回服务端绑定账号的结构化结果。
-     *
-     * <p>官方契约（wot/auth/prolongate）响应含 {@code access_token} /
-     * {@code account_id} / {@code expires_at}；部分生产响应把字段放在
-     * {@code data} 对象内，本方法优先读取 {@code data}，缺失时兼容根节点格式。
-     * 其中的 {@code account_id} 是 WG 服务端在验证 token 后返回的所属账号，
-     * 是登录身份绑定的唯一可信来源。</p>
-     *
-     * @throws WargamingApiException token 无效、响应缺失可信 account_id 或 WG 服务错误
-     */
     ProlongatedToken prolongate(final String applicationId, final String accessToken) {
         final String body = postForm(authApiBase.resolve("prolongate/"),
                 "application_id=" + encode(applicationId)
@@ -148,13 +118,6 @@ final class WargamingApiClient {
         return new ProlongatedToken(token, accountId, expiresAt);
     }
 
-    /**
-     * 查询 WoTB 官方账号资料，返回官方当前昵称。请求携带 access_token，
-     * 但昵称是公开字段；本方法只用于取官方昵称，**不**单独作为身份绑定证明
-     * （身份绑定由 {@link #prolongate} 返回的可信 account_id 完成）。
-     *
-     * @throws WargamingApiException 接口失败或返回结果中没有该账号
-     */
     String fetchOfficialNickname(final String applicationId, final long accountId,
                                  final String accessToken) {
         final String accountIdText = Long.toString(accountId);
@@ -177,7 +140,6 @@ final class WargamingApiClient {
         return nickname;
     }
 
-    /** 立即销毁 WG token（尽力而为，失败由调用方记录不含 token 的安全警告）。 */
     void logout(final String applicationId, final String accessToken) {
         final String body = postForm(authApiBase.resolve("logout/"),
                 "application_id=" + encode(applicationId)
@@ -229,7 +191,6 @@ final class WargamingApiClient {
         final String message = error.path("message").asText("UNKNOWN");
         final String field = error.path("field").asText("");
 
-        // 安全错误信息：不含 error.value / application_id / access_token / 完整响应 JSON。
         final String safeMessage = field.isBlank()
                 ? "WG API rejected request: code=" + code + ", message=" + message
                 : "WG API rejected request: code=" + code
@@ -253,26 +214,19 @@ final class WargamingApiClient {
         return value;
     }
 
-    /** prolongate 响应字段优先读 {@code data} 对象；缺失时兼容根节点 payload。 */
     private static JsonNode responsePayload(final JsonNode json) {
         final JsonNode data = json.path("data");
         return data.isObject() ? data : json;
     }
 
-    /** 发送 HTTP 请求的接缝：默认走 {@link HttpClient}，测试可注入异常。 */
     @FunctionalInterface
     interface HttpSender {
         HttpResponse<String> send(HttpRequest request) throws IOException, InterruptedException;
     }
 
-    /**
-     * WG 服务端对 access_token 验证后的结构化结果：刷新后的 token、
-     * token 所属的可信 account_id、过期时间（官方契约字段）。
-     */
     record ProlongatedToken(String accessToken, long accountId, long expiresAt) {
     }
 
-    /** WG API 调用失败（消息不含 token / 原始正文）。 */
     static final class WargamingApiException extends RuntimeException {
         WargamingApiException(final String message) {
             super(message);

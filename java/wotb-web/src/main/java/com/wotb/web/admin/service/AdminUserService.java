@@ -31,30 +31,13 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * 管理员用户管理核心逻辑。
- *
- * <p>列表是 Keycloak realm users 与本地 user_profile 的合并视图，分两个 segment：</p>
- * <ul>
- *   <li>{@link #SEGMENT_KEYCLOAK}（默认）：权威源是 Keycloak，因此没有任何本地 profile 的
- *       Keycloak-only 用户也能被找到并删除（历史第三方 IdP 用户清理的前提）。</li>
- *   <li>{@link #SEGMENT_LOCAL}：权威源是本地 user_profile，用于暴露 Keycloak 侧已不存在
- *       的孤儿绑定，管理员可批量删除其资料以释放 {@code (wotb_server, wotb_account_id)} 唯一槽位。</li>
- * </ul>
- *
- * <p>两个 segment 都使用各自的权威分页与权威总数，不做「拉一页再在内存里筛」的伪造分页。</p>
- */
 @Service
 public class AdminUserService {
 
-    /** Keycloak-driven segment：以 Keycloak realm users 为权威用户列表。 */
     public static final String SEGMENT_KEYCLOAK = "keycloak";
-    /** Local-profile-driven segment：以本地 user_profile 为权威用户列表。 */
     public static final String SEGMENT_LOCAL = "local";
 
-    /** 单页上限；默认页大小由 controller 的 {@code size} 默认值决定。 */
     private static final int MAX_PAGE_SIZE = 100;
-    /** 单次删除请求的 id 数上限：为无界的外部（Keycloak Admin API）调用设硬边界。 */
     private static final int MAX_DELETE_BATCH = 100;
 
     private final UserProfiles userProfileService;
@@ -75,7 +58,6 @@ public class AdminUserService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    // ── 列表（合并视图） ──────────────────────────────────────────────────
 
     /**
      * 分页搜索用户。
@@ -107,7 +89,6 @@ public class AdminUserService {
                 : keycloakSegment(query, idpAlias, effectivePage, effectiveSize);
     }
 
-    /** Keycloak 权威分页 + 本地资料批量增强（单次 IN 查询，禁止逐用户查询）。 */
     private AdminUserPageDto keycloakSegment(final String query,
                                              final String idpAlias,
                                              final int page,
@@ -128,12 +109,6 @@ public class AdminUserService {
         return new AdminUserPageDto(items, page, size, total, totalPages(total, size));
     }
 
-    /**
-     * 本地 profile 权威分页；当页每个 profile 逐个确认 Keycloak 用户是否仍存在，以标记孤儿绑定。
-     *
-     * <p>代价：该 segment 每页会产生 N（≤ size）次 Keycloak Admin 调用——Keycloak 没有按 id
-     * 批量查询的能力（见 docs/auth/keycloak-admin-user-search.md）。默认页大小使该代价有界。</p>
-     */
     private AdminUserPageDto localSegment(final String query, final int page, final int size) {
         final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(query, page, size);
         final List<AdminUserListItemDto> items = rows.getContent().stream()
@@ -165,11 +140,7 @@ public class AdminUserService {
         return size <= 0 ? 0 : (int) ((total + size - 1) / size);
     }
 
-    // ── 详情 ─────────────────────────────────────────────────────────────
 
-    /**
-     * 获取用户详情（本地 profile + Keycloak 信息）。
-     */
     @Transactional(readOnly = true)
     public AdminUserDetailDto getUser(final String keycloakUserId) {
         final Optional<UserProfileSnapshot> profileOpt = userProfileService
@@ -195,7 +166,6 @@ public class AdminUserService {
         return mapper.toDetailDto(keycloakUserId, profileDto, keycloakDto, warnings);
     }
 
-    // ── 删除 ─────────────────────────────────────────────────────────────
 
     /**
      * 删除用户。请求体就是 Keycloak sub 列表——删除单个用户即长度为 1 的列表，
@@ -260,11 +230,6 @@ public class AdminUserService {
                 .toList();
     }
 
-    /**
-     * 删除的唯一实现：请求体里的每个 id 都走这里（单条删除就是长度为 1 的列表）。
-     * 禁止任何绕过路径（直接 SQL DELETE 或裸 Keycloak Admin 调用），否则会丢掉 self-delete 保护、
-     * 本地资料清理与审计日志。
-     */
     private void deleteOneInternal(final String targetKeycloakUserId, final Jwt adminJwt) {
         final String adminKeycloakUserId = adminJwt.getSubject();
         final String adminUsername = adminJwt.getClaimAsString("preferred_username");
@@ -283,7 +248,6 @@ public class AdminUserService {
 
         boolean localDeleted = false;
 
-        // 先验证并 flush 本地删除，避免数据库约束失败后才删除 Keycloak 用户。
         if (profile != null) {
             try {
                 userProfileService.deleteForAdministration(targetKeycloakUserId);

@@ -30,15 +30,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 验证客户端/反向代理断连（Broken pipe、Connection reset）不进入普通 Unhandled exception ERROR 路径：
- * <ul>
- *   <li>cause-chain 断连识别（含多层包装）</li>
- *   <li>断连时返回 null（不再写错误 JSON）且仅 WARN、无 ERROR 堆栈</li>
- *   <li>普通未处理异常仍按 ERROR + INTERNAL_ERROR 处理</li>
- *   <li>非断连 IOException 不被错误忽略</li>
- * </ul>
- */
 class GlobalExceptionHandlerTest {
 
     private GlobalExceptionHandler handler;
@@ -71,7 +62,6 @@ class GlobalExceptionHandlerTest {
                 .toList();
     }
 
-    // ---- cause-chain 识别 ----
 
     @Test
     void clientAbortExceptionIsDetected() {
@@ -122,7 +112,6 @@ class GlobalExceptionHandlerTest {
         assertFalse(GlobalExceptionHandler.isClientDisconnect(new IllegalStateException("plain")));
     }
 
-    // ---- handler 行为 ----
 
     @Test
     void genericExceptionStillErrors() {
@@ -198,7 +187,6 @@ class GlobalExceptionHandlerTest {
         assertEquals(0, errorEvents().size(), "IO_ERROR is a handled warning, not Unhandled exception");
     }
 
-    // ---- MaxUploadSizeExceededException transport contract（HTTP 恒 413）----
 
     @Test
     void singlePartTooLargeMapsToFileTooLargeWith413() {
@@ -224,8 +212,6 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void realTomcatCauseChainMapsToFileTooLarge() {
-        // Tomcat 11: getParts → InvalidParameterException(SizeException, 413) → Spring 包装成
-        // MaxUploadSizeExceededException。结构化 cause chain 必须能穿透识别。
         final MaxUploadSizeExceededException ex = new MaxUploadSizeExceededException(-1,
                 new InvalidParameterException(new FileSizeLimitExceededException(
                         "The field files exceeds its maximum permitted size of 20971520 bytes.",
@@ -238,13 +224,11 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void maxUploadWithoutStructuredCauseFallsBackToGenericUploadTooLarge() {
-        // 无结构化 cause：不得 parse exception message 猜测 → 通用 UPLOAD_TOO_LARGE。
         final MaxUploadSizeExceededException plain = new MaxUploadSizeExceededException(-1);
         final ResponseEntity<ApiErrorResponse> plainResponse = handler.handleMaxUploadSize(plain);
         assertEquals(HttpStatus.CONTENT_TOO_LARGE, plainResponse.getStatusCode());
         assertEquals("UPLOAD_TOO_LARGE", plainResponse.getBody().errorCode());
 
-        // message 含 "size exceeded" 但 cause 不是结构化 size 异常 → 仍不得按 message 猜测。
         final MaxUploadSizeExceededException msgCause = new MaxUploadSizeExceededException(-1,
                 new IOException("Maximum upload size of 20971520 bytes exceeded"));
         final ResponseEntity<ApiErrorResponse> msgResponse = handler.handleMaxUploadSize(msgCause);

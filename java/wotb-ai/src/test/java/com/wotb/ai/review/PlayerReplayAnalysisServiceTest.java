@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** PlayerReplayAnalysisService request and evidence contract tests. */
 class PlayerReplayAnalysisServiceTest extends PlayerReplayAnalysisServiceTestSupport {
 
     @Test
@@ -38,7 +37,6 @@ class PlayerReplayAnalysisServiceTest extends PlayerReplayAnalysisServiceTestSup
 
     @Test
     void playerRequestWithoutReconstructionRejectsAiReview() {
-        // 无法构建 canonical timeline → 拒绝 AI Review，不走 settlement-only
         final var service = service();
         final AiTimelineUnusableException e = assertThrows(
                 AiTimelineUnusableException.class,
@@ -49,7 +47,6 @@ class PlayerReplayAnalysisServiceTest extends PlayerReplayAnalysisServiceTestSup
 
     @Test
     void playerSummaryFallbackWithoutReconstructionNeverCallsProvider() {
-        // 无重建 → 拒绝：绝不调用 AI（settlement-only fallback 已按 V2 移除）
         final var service = service();
         assertThrows(AiTimelineUnusableException.class,
                 () -> service.analyzePlayerOrFallback(randomBattleWithoutReconstruction(), null,

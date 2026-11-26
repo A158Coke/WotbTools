@@ -31,7 +31,6 @@ import java.util.Objects;
 import java.util.List;
 import java.util.Set;
 
-/** The season lock serializes tree edits; COS upload runs before that transaction. */
 @Service
 public class BroadcastService {
     private static final List<String> SERVERS = List.of("CN", "ASIA", "NA", "EU", "LESTA");
@@ -115,7 +114,6 @@ public class BroadcastService {
         return transactions.execute(status -> {
             final BroadcastCategory category = findCategory(categoryId);
             final BroadcastSeason season = locked(category.seasonId, request.expectedVersion());
-            // Re-read after taking the ancestor lock: its tree may have been deleted while waiting.
             findCategory(categoryId);
             final int key;
             if (POINTS.equals(category.type)) {
@@ -155,7 +153,6 @@ public class BroadcastService {
             }
             return season.id;
         });
-        // A committed reservation makes failures between PUT and the business commit recoverable.
         final String uploaded = "REPLACE".equals(request.coverAction()) ? covers.upload(seasonId, file) : null;
         return transactions.execute(status -> {
             final BroadcastSeason season = locked(seasonId, request.expectedVersion());
@@ -168,7 +165,6 @@ public class BroadcastService {
             replay.nodeId = nodeId; replay.title = request.title().strip(); replay.url = request.url().strip();
             replay.matchStartsAt = startsAt == null ? null : startsAt.truncatedTo(ChronoUnit.MICROS);
             replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
-            // Unrelated edits retain the archived spelling; changing the group replaces it.
             if (!Objects.equals(request.groupNumber(), replay.groupNumber)) { replay.legacyGroupLabel = null; }
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
             replay.teams = request.teams().stream().map(String::strip).toList(); replay.perspective = request.perspective();
@@ -259,7 +255,6 @@ public class BroadcastService {
     }
     private List<BroadcastDtos.Node> categoryNodes(final long categoryId, final List<BroadcastDtos.ReplayStart> starts) {
         return nodes.findByCategoryIdOrderByRootKeyAscIdAsc(categoryId).stream().map(node -> {
-            // Unknown times follow timed entries on the same day, retaining their existing id order.
             final List<BroadcastReplay> ordered = replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id).stream()
                     .sorted(Comparator.comparing((BroadcastReplay replay) -> replay.matchDate)
                             .thenComparing(replay -> replay.matchStartsAt, Comparator.nullsLast(Comparator.naturalOrder()))

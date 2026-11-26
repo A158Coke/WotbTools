@@ -36,7 +36,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 使用实际 Boot 代理与事务 advice，repository 不依赖数据库。 */
 class UserProfileApiTransactionTest {
 
     private final UserProfileRepository repository = mock(UserProfileRepository.class);

@@ -2,7 +2,6 @@ package com.wotb.web.admin.dto;
 
 import java.util.List;
 
-/** 管理员用户详情 DTO。包含本地 profile + Keycloak 信息。 */
 public class AdminUserDetailDto {
 
     private String keycloakUserId;

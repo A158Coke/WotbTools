@@ -6,7 +6,6 @@ import org.springframework.util.StringUtils;
 
 import java.util.UUID;
 
-/** Shared request-trace constants, header sanitization and request-id resolution. */
 public final class RequestTrace {
 
     public static final String HEADER = "X-Request-ID";
@@ -28,12 +27,6 @@ public final class RequestTrace {
         return safe.isEmpty() ? UUID.randomUUID().toString() : safe.toString();
     }
 
-    /**
-     * Resolve the request correlation id: request attribute (set by {@code RequestIdFilter})
-     * first, then inbound {@code X-Request-ID} header, then MDC, then a fresh UUID. Used to keep
-     * the {@code X-Request-ID} response header durable even in filter-layer security errors that
-     * never reach the MVC advice.
-     */
     public static String resolve(final HttpServletRequest request) {
         if (request != null) {
             final Object attribute = request.getAttribute(REQUEST_ATTRIBUTE);

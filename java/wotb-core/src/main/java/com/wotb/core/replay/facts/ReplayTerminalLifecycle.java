@@ -17,14 +17,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Canonical live lifecycle for alive/terminal facts.
- *
- * <p>PR147 production rule: HP timeline and terminal/death state are independent facts. Positive HP
- * therefore cannot erase an explicit same-clock terminal such as drowning/terminal sentinels. A strictly
- * later trusted positive/rematerialization sample can prove re-entry/respawn and negate an earlier death.
- * Repeated terminal mirrors after a death do not move the authoritative death time forward.</p>
- */
 public final class ReplayTerminalLifecycle {
 
     private static final double SAME_CLOCK_EPSILON = 1e-6;
@@ -53,7 +45,6 @@ public final class ReplayTerminalLifecycle {
             return state == State.TERMINAL;
         }
 
-        /** Drowning is an explicit non-projectile terminal cause; do not infer a killer from nearby damage. */
         public boolean allowsDamageKillerAttribution() {
             return terminal() && terminalKind != TerminalKind.DROWNING;
         }
@@ -109,8 +100,6 @@ public final class ReplayTerminalLifecycle {
                     state = State.TERMINAL;
                     kind = TerminalKind.DROWNING;
                 } else {
-                    // consume the decoder-classified rawState propagated with the event; never
-                    // re-classify the raw u16 here.
                     final HpRawState rawState = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
                     if (!rawState.terminal()) {
                         continue;
@@ -152,14 +141,6 @@ public final class ReplayTerminalLifecycle {
         return List.copyOf(out);
     }
 
-    /**
-     * Final live state per account.
-     *
-     * <p>A later ALIVE sample can prove respawn/re-entry. Repeated TERMINAL mirrors within the same
-     * terminal run preserve the first terminal timestamp. At an identical clock, ordinary HP-zero/alive
-     * mirrors follow packet sequence; explicit non-HP terminal evidence (drowning/FFFD)
-     * outranks a positive-HP mirror because PR147 proves terminal state is independent from HP amount.</p>
-     */
     public static Map<Long, Evidence> finalStateByAccount(
             final List<ReplayEvent> events,
             final TeamEntityMapping mapping,
@@ -183,7 +164,6 @@ public final class ReplayTerminalLifecycle {
         final double delta = incoming.timeSec() - current.timeSec();
         if (delta > SAME_CLOCK_EPSILON) {
             if (current.terminal() && incoming.terminal()) {
-                // Duplicate terminal mirrors must not move death time forward.
                 return current;
             }
             return incoming;
@@ -211,7 +191,6 @@ public final class ReplayTerminalLifecycle {
     private static TerminalKind terminalKind(final HpRawState state) {
         return switch (state) {
             case HP_ZERO_TERMINAL -> TerminalKind.HP_ZERO;
-            // 字段权威的终态全族与 legacy FFFD 同归为"独立于 HP 的终态"（kind 名保持，不动 wire）
             case DEATH_TERMINAL_FFFD, DEATH_TERMINAL -> TerminalKind.DEATH_SENTINEL_FFFD;
             default -> TerminalKind.LEGACY_EXACT_ALIVE_FALSE;
         };

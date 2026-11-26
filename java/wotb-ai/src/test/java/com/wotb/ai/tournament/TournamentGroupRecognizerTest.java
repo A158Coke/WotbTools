@@ -42,7 +42,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TournamentGroupRecognizerTest {
-    // Synthetic fixture only; never a runtime secret.
     static final String SIGNING_KEY = "synthetic-tournament-fixture-key-32-bytes";
     static final String ADMIN_ID = "test-admin";
     private AiChatGateway gateway;

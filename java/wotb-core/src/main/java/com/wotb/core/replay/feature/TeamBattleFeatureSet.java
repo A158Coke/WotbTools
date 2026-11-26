@@ -2,10 +2,6 @@ package com.wotb.core.replay.feature;
 
 import java.util.List;
 
-/**
- * 训练房/联赛队伍特征集。
- * 权威结算与事件流观测子集严格分离。
- */
 public record TeamBattleFeatureSet(
         int perspectiveTeam,
         List<TeamMemberFeatureSet> members,

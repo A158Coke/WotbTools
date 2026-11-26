@@ -1,16 +1,5 @@
 package com.wotb.ai.review;
 
-/**
- * Token / context 预算的唯一事实来源。
- * <p>所有 Player/Team 编排与 Gateway 调用前都必须通过本组件检查，
- * 避免三套重复的 {@code estimated > max} 判断与各自抛出的稳定错误码。</p>
- * <ul>
- *   <li>Layer 1: estimated input tokens 不得超过 {@code singleReplayMaxInputTokens}</li>
- *   <li>Layer 2: input + max output + safety margin 必须放进 {@code contextWindowTokens}</li>
- * </ul>
- * 拒绝时抛 {@link IllegalArgumentException}，携带稳定错误码
- * {@code AI_TOKEN_BUDGET_EXCEEDED} / {@code AI_CONTEXT_WINDOW_EXCEEDED}。
- */
 public final class AiPromptBudgetGuard {
 
     private AiPromptBudgetGuard() {

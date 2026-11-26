@@ -25,10 +25,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * CSV and historical-import parsing, validation and day construction, extracted from
- * TournamentService. Pure helpers over the same request/entity shapes; error mapping unchanged.
- */
 final class TournamentImportSupport {
     private TournamentImportSupport() { }
     record CsvSource(String name, String sha256, List<TournamentDtos.HistoricalRow> rows) { }

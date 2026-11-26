@@ -10,7 +10,6 @@ import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 管理端截图只在 PENDING 期间可见，终态不暴露私有证据。 */
 class Mark3MapperTest {
 
     private final Mark3Mapper mapper = new Mark3Mapper();

@@ -7,12 +7,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Team 输出风格契约（prompt 主体，不需要 runtime regex sanitizer）。
- * <p>验证 Team prompt 明确：internal evidence ≠ user-facing output；中文输出采用选择性完整复盘的软目标
- * （普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字）；UNKNOWN selective；不单独建立「数据完整性/证据限制」章节；
- * Focus Window 只是内部 attention 提示、正文不机械输出；数字只保留支撑核心判断的。</p>
- */
 class TeamReviewStyleContractTest {
 
     private static final String ZH = AiPromptLibrary.zh("team/single");
@@ -52,8 +46,6 @@ class TeamReviewStyleContractTest {
 
     @Test
     void focusWindowIsInternalAttentionPrimitiveNotSectionTemplate() {
-        // Natural Coach Mode：Focus Window 只是「这里最值得集中分析」的 attention 提示，
-        // 不是用户看到的标题结构；不要求逐窗口输出小标题
         assertTrue(ZH.contains("内部 attention 提示"), "Focus Window 必须标注为内部 attention 提示");
         assertTrue(ZH.contains("不要求逐窗口输出标题"), "不得强制逐窗口输出标题");
         assertTrue(ZH.contains("这局真正崩掉是在1分52秒后面那二十秒"), "自然语言直接引用窗口示例");
@@ -79,29 +71,20 @@ class TeamReviewStyleContractTest {
         assertTrue(ZH.contains("禁止把复盘写成时间线流水账"), "禁止时间线流水账");
     }
 
-    /**
-     * 局部规则不得重新把 UNKNOWN 定义成「必须告诉用户」——
-     * 任何「证据不足」都必须收敛到内部 UNKNOWN + 默认静默，只有符合全局选择性条件才自然说明。
-     */
     @Test
     void localRulesCannotReimposeMandatoryUnknownDisclosure() {
-        // 1) Opening Spread：不得再强制写「无法确认其实际视野收益」
         assertFalse(ZH.contains("UNKNOWN（写「无法确认其实际视野收益」）"),
                 "Opening Spread 不得强制写「无法确认其实际视野收益」");
         assertFalse(ZH.contains("视野类收益统一视为 UNKNOWN（写"),
                 "Opening Spread 不得出现 UNKNOWN（写…）强制句式");
-        // 2) Solo candidate：不得再强制「信号不足或矛盾时明确写…」
         assertFalse(ZH.contains("信号不足或矛盾时明确写「无法从当前回放数据确定」"),
                 "Solo 规则不得强制写「无法从当前回放数据确定」");
-        // 3) points/capture 8e：不得再强制「信号不足或矛盾时写…」
         assertFalse(ZH.contains("信号不足或矛盾时写「无法从当前回放数据确定」"),
                 "点数规则不得强制写「无法从当前回放数据确定」");
-        // 4) 统一原则：证据不足 → 内部 UNKNOWN；只有符合全局选择性条件才自然说明
         assertTrue(ZH.contains("保持内部 UNKNOWN"),
                 "证据不足必须收敛到内部 UNKNOWN 语义");
         assertTrue(ZH.contains("仅当符合全局选择性 UNKNOWN 条件时才自然说明"),
                 "任何自然说明必须显式引用全局选择性 UNKNOWN 条件");
-        // 5) EN / RU 同步：不得残留强制披露句式，必须携带选择性条件引用
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("explicitly write \"cannot be determined from the current replay data\""),

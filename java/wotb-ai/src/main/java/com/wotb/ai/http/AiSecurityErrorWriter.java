@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Map;
 
-/** Writes the stable ApiError response used for AI service authentication failures. */
 public final class AiSecurityErrorWriter {
 
     private AiSecurityErrorWriter() {

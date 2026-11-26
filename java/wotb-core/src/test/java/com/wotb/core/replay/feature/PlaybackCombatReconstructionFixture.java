@@ -40,13 +40,11 @@ abstract class PlaybackCombatReconstructionFixture {
                 DecodeConfidence.EXACT, attacker, victim, null, null, rawDamage, false);
     }
 
-    /** 结构合法但语义未解码的伤害方法变体（火灾/撞击等；attacker=0 → 身份无法解析）。 */
     protected static UnsupportedDamageEvent unsup(final int seq, final double rawSec,
                                                 final int attacker, final int victim) {
         return unsupV(seq, rawSec, attacker, victim, "DAMAGE_METHOD_VARIANT");
     }
 
-    /** 带 variant 的 unsupported 证据事件（短体 / 非 direct / zero-raw 变体同构消费）。 */
     protected static UnsupportedDamageEvent unsupV(final int seq, final double rawSec,
                                                  final int attacker, final int victim,
                                                  final String variant) {

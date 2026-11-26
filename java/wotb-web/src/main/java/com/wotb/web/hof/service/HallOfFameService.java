@@ -37,11 +37,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
-/**
- * 名人堂业务。MVP 只记录录像者本人单场成绩，不存全场 14 人。
- * 原始 .wotbreplay 由 {@link HallOfFameReplayStorage} 内容寻址存储，本类只保存 replay metadata。
- * 成绩所有权 = 回放录像者（recorder），uploadedBy 仅表示谁上传了回放。
- */
 @Service
 public class HallOfFameService implements HofReplayReferenceCounter {
 
@@ -61,7 +56,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         this.storage = storage;
     }
 
-    /** 下载回放：记录无 hash / 文件缺失（best-effort 语义）→ 404 REPLAY_FILE_NOT_FOUND。 */
     public ReplayDownload downloadReplay(final long id) {
         final HallOfFameRecord record = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "REPLAY_FILE_NOT_FOUND"));
@@ -78,19 +72,11 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         }
     }
 
-    /**
-     * 某回放 hash 在名人堂记录中的引用数（百场 evidence 物理文件清理时的跨域引用计数）。
-     * 百场与名人堂共享同一内容寻址存储目录，删除文件前必须确认两个域都无引用。
-     */
     @Override
     public long countHofReferences(final String sha256) {
         return repository.countByReplayHash(sha256);
     }
 
-    /**
-     * 纯内存 eligibility（写文件前的 preflight）：不支持战斗模式（含训练房/联赛/未知）/
-     * 无录像者 → SKIPPED，其余返回 SAVED（仅表示 eligible，不代表入库结果）。
-     */
     public RecordOutcome eligibility(final Battle battle) {
         if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
         if (!HallOfFameBattleTypePolicy.isSupported(battle.arenaBonusType)) {
@@ -100,12 +86,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         return RecordOutcome.SAVED;
     }
 
-    /**
-     * 写文件前的 hash 预判（避免无意义落盘）：已存在记录且 replay_hash 非 NULL 时
-     * 返回确定的 IDEMPOTENT / SKIPPED_HASH_CONFLICT；hash NULL 或记录不存在返回 empty
-     * （需要继续走完整原子状态机）。并发竞态下该预判可能过期，最终以
-     * {@link #recordRecorder} 的 DB 原子结果为准。
-     */
     public Optional<RecordOutcome> preflightReplay(final Battle battle, final ReplayFileMeta meta) {
         if (battle == null || battle.arenaId == null) return Optional.empty();
         final PlayerResult recorder = battle.recorderResult();
@@ -119,12 +99,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
                 : Optional.of(RecordOutcome.SKIPPED_HASH_CONFLICT);
     }
 
-    /**
-     * 录像者单场成绩入库状态机（含 replay metadata + battle_type/arena_bonus_type），DB 原子：
-     * 新建 → SAVED（unique race 后 re-read winner 分类）；
-     * 已存在且 replay_hash NULL → 原子 conditional UPDATE（唯一 winner）→ ATTACHED，败者 re-read 分类；
-     * 已存在且同 hash → IDEMPOTENT；已存在且异 hash → SKIPPED_HASH_CONFLICT（绝不覆盖）。
-     */
     public RecordOutcome recordRecorder(final Battle battle, final Tankopedia tankopedia,
                                         final ReplayFileMeta meta) {
         if (battle == null || battle.arenaId == null) return RecordOutcome.SKIPPED_UNKNOWN_RECORDER;
@@ -140,14 +114,12 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         if (existing.isPresent()) {
             final String currentHash = existing.get().getReplayHash();
             if (currentHash == null) {
-                // 原子 attach：conditional UPDATE ... WHERE replay_hash IS NULL → affected=1 即唯一 winner。
                 final int updated = repository.attachReplayMetadata(
                         existing.get().getId(), meta.sha256(), meta.originalName(),
                         meta.size(), meta.uploadedBy());
                 if (updated == 1) {
                     return RecordOutcome.ATTACHED;
                 }
-                // 并发竞态：另一个请求已先 attach → re-read winner 后重新分类，绝不覆盖。
                 return classifyByCurrentHash(battle.arenaId, recorder.accountId, meta);
             }
             return meta != null && meta.sha256().equals(currentHash)
@@ -179,13 +151,10 @@ public class HallOfFameService implements HofReplayReferenceCounter {
             repository.saveAndFlush(record);
             return RecordOutcome.SAVED;
         } catch (final DataIntegrityViolationException e) {
-            // 并发首次 insert 竞态：unique 约束只允许一条 → re-read winner 后重新分类 hash，
-            // 禁止无条件返回 IDEMPOTENT。
             return classifyByCurrentHash(battle.arenaId, recorder.accountId, meta);
         }
     }
 
-    /** 竞态后按 winner 当前 hash 分类：同 hash → IDEMPOTENT；异 hash / 无 hash → SKIPPED_HASH_CONFLICT。 */
     private RecordOutcome classifyByCurrentHash(final String arenaId, final long accountId,
                                                 final ReplayFileMeta meta) {
         final HallOfFameRecord winner = repository
@@ -195,7 +164,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         }
         final String winnerHash = winner.getReplayHash();
         if (winnerHash == null) {
-            // 防御：winner 无 hash（理论不发生，insert 恒带 meta）——不覆盖。
             return RecordOutcome.SKIPPED_HASH_CONFLICT;
         }
         return meta != null && meta.sha256().equals(winnerHash)
@@ -213,16 +181,11 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         record.setReplayUploadedBy(meta.uploadedBy());
     }
 
-    /** 向后兼容的公开查询入口（无车辆分类条件）。 */
     public HallOfFamePageDto search(final String battleType, final Long tankId, final String nickname,
                                     final int page, final int size) {
         return search(battleType, tankId, null, null, null, nickname, page, size);
     }
 
-    /**
-     * 统一公开查询：battleType ×（nation ∩ vehicleType ∩ tier ∩ tankId）× nickname × 分页。
-     * 国家/车种/等级均可独立生效；排序 deterministic，rank 基于完整交集上下文。
-     */
     @Transactional(readOnly = true)
     public HallOfFamePageDto search(final String battleType,
                                     final Long tankId,
@@ -233,7 +196,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
                                     final int page,
                                     final int size) {
         final String normalizedType = normalizeBattleTypeFilter(battleType);
-        // 昵称模糊匹配：服务端预计算小写 pattern（含 %），避免 JPQL lower(concat(...)) 的 PG 类型推断问题
         final String nicknamePattern = StringUtils.hasText(nickname)
                 ? "%" + nickname.trim().toLowerCase() + "%" : null;
         final Pageable pageable = PageRequest.of(page - 1, clamp(size));
@@ -250,7 +212,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         return mapper.toPageDtoWithRank(records, page, size);
     }
 
-    /** 当前名人堂实际存在的车辆选项，车辆属性统一为 API 稳定英文码。 */
     @Transactional(readOnly = true)
     public List<HofVehicleOptionDto> vehicleOptions() {
         return repository.findVehicleOptions().stream()
@@ -258,7 +219,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
                 .toList();
     }
 
-    /** 按任意非空国家/车种/等级条件取交集，只返回当前名人堂实际存在的车辆 ID。 */
     @Transactional(readOnly = true)
     public List<Long> matchingVehicleIds(final String nation,
                                          final String vehicleType,
@@ -292,7 +252,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         return StringUtils.hasText(value) ? value.trim().toUpperCase(Locale.ROOT) : null;
     }
 
-    /** 过滤参数只接受 RANDOM / RATING（缺省 All）；其余 → 400。 */
     private static String normalizeBattleTypeFilter(final String battleType) {
         if (!StringUtils.hasText(battleType)) {
             return null;
@@ -304,7 +263,6 @@ public class HallOfFameService implements HofReplayReferenceCounter {
         return upper;
     }
 
-    /** 指定玩家的伤害记录。保持 flat 返回供个人中心使用。 */
     public List<HallOfFameRecordDto> recordsByAccountId(final long accountId, final int limit) {
         return repository.findByAccountIdOrderByDamageDealtDesc(accountId, PageRequest.of(0, clamp(limit)))
                 .stream().map(mapper::toDto).toList();

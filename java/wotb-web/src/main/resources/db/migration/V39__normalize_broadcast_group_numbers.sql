@@ -1,4 +1,3 @@
--- Retain original administrator labels for manual recovery when not unambiguously numeric.
 ALTER TABLE tournament_broadcast_replay RENAME COLUMN group_label TO legacy_group_label;
 ALTER TABLE tournament_broadcast_replay
     DROP CONSTRAINT tournament_broadcast_replay_group_number_check,

@@ -7,13 +7,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 
-/**
- * Marks brokered Web logins as remember-me before Keycloak attaches the final user session.
- *
- * <p>The post-broker flow is configured at identity-provider level and is therefore also
- * entered by the Android OIDC client. Android owns its session through native AppAuth, so this
- * authenticator deliberately changes only the browser client.</p>
- */
 public final class PersistentBrowserSessionAuthenticator implements Authenticator {
 
     static final String WEB_CLIENT_ID = "wotbtools-web";
@@ -51,11 +44,9 @@ public final class PersistentBrowserSessionAuthenticator implements Authenticato
 
     @Override
     public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
-        // No user action is required.
     }
 
     @Override
     public void close() {
-        // Stateless.
     }
 }

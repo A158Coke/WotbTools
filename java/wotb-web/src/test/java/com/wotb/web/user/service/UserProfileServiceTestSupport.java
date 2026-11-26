@@ -61,7 +61,6 @@ abstract class UserProfileServiceTestSupport {
         return profile;
     }
 
-    /** CN / QQ 手动绑定 profile（回放验证的目标形态）。 */
     static UserProfile cnProfile(final Long accountId, final String nickname,
                                          final OffsetDateTime verifiedAt) {
         final UserProfile profile = new UserProfile();

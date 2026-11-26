@@ -16,10 +16,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Unused-evidence sweeping and after-commit hooks, extracted from TournamentService.
- * Lock and timing semantics unchanged: the caller owns the event lock and the transaction.
- */
 class TournamentEvidenceCleanupSupport {
     private static final Logger LOG = LoggerFactory.getLogger(TournamentEvidenceCleanupSupport.class);
     private final TournamentDayRepository days;
@@ -44,9 +40,6 @@ class TournamentEvidenceCleanupSupport {
             if (!ids.contains(attachment.id) && (immediate || attachment.createdAt.isBefore(cutoff))) { evidence.delete(attachment); }
             else { retainedHashes.add(attachment.imageHash); }
         }
-        // Grace protects rolled-back uploads; draft deletion clears DB references immediately.
-        // Scheduled sweeps keep the event lock while deleting unreferenced old files, preventing an
-        // upload from reusing an orphan between the reference check and physical removal.
         if (!immediate) { storage.cleanup(event.id, retainedHashes, cutoff); }
     }
     void afterCommit(final Runnable action) {

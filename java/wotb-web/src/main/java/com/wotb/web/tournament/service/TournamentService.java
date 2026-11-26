@@ -46,7 +46,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Every mutation locks the event first. Totals are recomputed from published facts, never incremented. */
 @Service
 @Transactional
 public class TournamentService {
@@ -192,7 +191,6 @@ public class TournamentService {
         }
         audit(event, round, null, "RULES_UPDATED", actor, null, before, Map.of("rules", next)); return configView(event);
     }
-    // Event identity, published day facts and historical roster must share one MVCC snapshot.
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.Standings publicStandings(final long id) { return standingsSupport.standings(event(id), dayList(id), null, null, false); }
     @Transactional(readOnly = true)
@@ -253,7 +251,6 @@ public class TournamentService {
                         "appliedVersion", event.version, "changes", changes, "standings", result.standings()));
         return result;
     }
-    /** Separate capability/state response leaves strict, already-deployed day clients compatible. */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.HistoricalState historicalState(final long id, final int round, final int number) {
         final TournamentEvent event = event(id); dimension(event, round, number);
@@ -382,7 +379,6 @@ public class TournamentService {
         final int required = request.dayNumber() == null ? event.daysPerRound : 1;
         if (affected.size() != required || affected.stream().anyMatch(day -> !published(day) || day.correction)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
         if (affected.stream().noneMatch(day -> day.clearedClans.contains(tag) || publishedTags(day).contains(tag))) {
-            // A draft-only clan must never be exposed by sanctioning an unrelated published day.
             throw error(ApiErrorCode.RESOURCE_NOT_FOUND);
         }
         for (final TournamentDay day : affected) {
@@ -402,7 +398,6 @@ public class TournamentService {
     }
     public void deleteEvent(final long id, final TournamentDtos.DeleteRequest request) {
         locked(id, request.expectedVersion()); if (!request.confirm()) { throw invalid(); }
-        // Explicit FK order. No cascading into shared replay/user data.
         audits.deleteByEventId(id); evidence.deleteByEventId(id); days.deleteByEventId(id); clans.deleteByEventId(id); rules.deleteByEventId(id); events.deleteById(id);
         cleanupSupport.afterCommit(() -> storage.deleteEvent(id));
     }
@@ -411,8 +406,6 @@ public class TournamentService {
         for (final TournamentEvent listed : events.findAllByOrderByYearDescIdDesc()) {
             events.findLocked(listed.id).ifPresent(event -> cleanupSupport.removeUnusedEvidence(event, false));
         }
-        // A failed post-commit event deletion has no remaining DB row to sweep. IDs are never reused;
-        // only old directories without an event are retried, inside this feature's own root.
         final Instant cutoff = Instant.now().minus(24, ChronoUnit.HOURS);
         for (final long id : storage.eventDirectories()) {
             if (events.findById(id).isEmpty()) { storage.deleteOldOrphanEvent(id, cutoff); }

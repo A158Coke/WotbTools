@@ -8,10 +8,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 import java.util.List;
 
-/**
- * 健康检查（部署探针 deploy/tx/deploy.sh、runtime-check-lib.sh 依赖）。
- * 服务器没有 parser：回放解析 / 汇总 / 导出全部在客户端完成，这里不再有回放处理端点。
- */
 @RestController
 public class BackendHealthController {
 

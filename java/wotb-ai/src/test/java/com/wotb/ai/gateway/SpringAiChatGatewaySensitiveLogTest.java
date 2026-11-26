@@ -21,11 +21,6 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 敏感数据回归：AI Review 全链路事件日志（ai_upstream_call_* /
- * AI usage / AI provider failure）必须不含 API key、Authorization、prompt、completion、
- * 回放内容等敏感文本；只记录低基数 metadata。
- */
 @Disabled("DS API gateway logging test; run only in the dedicated network-capable CI job")
 class SpringAiChatGatewaySensitiveLogTest {
 
@@ -90,9 +85,7 @@ class SpringAiChatGatewaySensitiveLogTest {
 
     @Test
     void failurePathLogsNeverContainSensitiveDataOrRawProviderBody() throws Exception {
-        // 恶意 provider 500 响应体回显 API key：safeProviderSummary 必须整体脱敏。
         startServer(500, "{\"error\":\"unauthorized " + FAKE_API_KEY + "\"}");
-        // retryMaxAttempts=1：500 不重试，避免测试等待退避。
         final SpringAiChatGateway gateway = gateway(1);
         try {
             gateway.chat(new AiChatRequest(
@@ -100,7 +93,6 @@ class SpringAiChatGatewaySensitiveLogTest {
                     null, 4096, true, "max", "corr-sensitive-fail", "SINGLE_PLAYER_BATTLE", 315,
                     AiResponseFormat.TEXT));
         } catch (final AiUpstreamException expected) {
-            // AI_UPSTREAM_UNAVAILABLE (500) — 预期失败
         }
 
         final String all = formattedLogs();

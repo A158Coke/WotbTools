@@ -10,11 +10,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * 地图内部名 -> 多语显示名 (来自 meta.json 的 mapName 字段)。
- * 单一来源在 common/map_names.json(构建时复制到 classpath:/map_names.json),
- * 前端直接 import 同一份 JSON; 导出层继续固定使用中文，避免两边漂移。
- */
 public final class MapNames {
 
     private static final String LOCALE_ZH = "zh";
@@ -36,7 +31,6 @@ public final class MapNames {
                 );
             }
         } catch (Exception ignored) {
-            // 缺映射表时降级为显示原始内部名
         }
         return map;
     }
@@ -72,7 +66,6 @@ public final class MapNames {
         return mapName == null ? "" : mapName.toLowerCase(Locale.ROOT).trim();
     }
 
-    /** 单张地图的三语显示名（zh/en/ru；未收录时三语均回退内部 code）。 */
     public record Localized(String zh, String en, String ru) {
     }
 
@@ -91,14 +84,10 @@ public final class MapNames {
                 });
             }
         } catch (Exception ignored) {
-            // 缺映射表时降级为显示原始内部名
         }
         return map;
     }
 
-    /**
-     * 三语显示名；未收录时三语均回退内部 code（与 {@link #cn} 的降级一致）。
-     */
     public static Localized localized(final String mapName) {
         if (!StringUtils.hasText(mapName)) {
             return new Localized(mapName, mapName, mapName);
@@ -107,7 +96,6 @@ public final class MapNames {
         return hit != null ? hit : new Localized(mapName, mapName, mapName);
     }
 
-    /** 中文名,未匹配则原样返回(与 Python get_map_cn_name 行为一致)。 */
     public static String cn(final String mapName) {
         if (!StringUtils.hasText(mapName)) {
             return mapName;
@@ -115,11 +103,6 @@ public final class MapNames {
         return CN.getOrDefault(normalizeKey(mapName), mapName);
     }
 
-    /**
-     * Try to resolve the Chinese map name.
-     * Returns {@code Optional.empty()} when the map code is unknown,
-     * allowing callers to distinguish "found" from "not found".
-     */
     public static Optional<String> tryResolve(final String mapName) {
         if (!StringUtils.hasText(mapName)) {
             return Optional.empty();

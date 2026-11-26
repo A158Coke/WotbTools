@@ -9,7 +9,6 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 
-/** 单实例固定分钟配额；来源仅以每分钟轮换的 hash 保留在有界内存中。 */
 public final class AnonymousAdmission {
     private final Clock clock;
     private final int perSource;

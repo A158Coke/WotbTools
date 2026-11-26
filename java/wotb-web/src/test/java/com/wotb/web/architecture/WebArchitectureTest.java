@@ -25,18 +25,12 @@ import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * wotb-web 架构契约（对应 {@code docs/DEVELOPER_GUIDE.md}）：
- * domain 分包（禁止层分包）、Controller→Service→Repository 分层、Service 不得跨域调 Repository、
- * 构造器注入（禁字段注入）、禁 Lombok；模块依赖与循环由 Modulith 验证。
- */
 @AnalyzeClasses(packages = "com.wotb.web", importOptions = ImportOption.DoNotIncludeTests.class)
 class WebArchitectureTest {
 
     private static final String[] DOMAINS =
             {"admin", "aireviewfeedback", "battledata", "creator", "hof", "hundred", "mark3", "observability", "replay", "sitefeedback", "tournament", "user"};
 
-    /** 允许的非 domain 位置：Spring Boot 入口根包 + 共享 config/util。 */
     private static final String[] SHARED_PACKAGES = {
             "com.wotb.web",
             "com.wotb.web.config..",
@@ -101,7 +95,6 @@ class WebArchitectureTest {
     static final ArchRule NO_LOMBOK = noClasses()
             .should().dependOnClassesThat().resideInAnyPackage("lombok..");
 
-    /** 防"规则空转"：确保分析器真实导入了 web 主代码。 */
     @ArchTest
     static void webClassesAreAnalyzed(final JavaClasses classes) {
         assertTrue(classes.size() > 100, "ArchUnit 未导入足量 com.wotb.web 主类: " + classes.size());

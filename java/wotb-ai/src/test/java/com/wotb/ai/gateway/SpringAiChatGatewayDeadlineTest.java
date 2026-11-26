@@ -24,12 +24,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Deterministic total-deadline tests: a fake monotonic clock and a fake
- * sleeper verify that {@code AI_CALL_TIMEOUT_SEC} bounds the whole
- * {@code AiChatGateway.chat()} lifecycle (attempts + retries + backoff),
- * without waiting for real time and without calling a real provider.
- */
 class SpringAiChatGatewayDeadlineTest {
 
     private static final long START_NANOS = 1_000_000_000_000L;
@@ -102,7 +96,7 @@ class SpringAiChatGatewayDeadlineTest {
     void budgetExhaustedDuringFirstAttemptSkipsSecondRequest() {
         gateway(10, new AiRetryPolicy(3, 1000, 8000, 2.0));
         when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
-            now.addAndGet(10_000_000_000L); // attempt consumes the whole budget
+            now.addAndGet(10_000_000_000L);
             throw upstream("AI_TIMEOUT", null);
         });
 
@@ -121,7 +115,7 @@ class SpringAiChatGatewayDeadlineTest {
     void backoffExceedingRemainingBudgetSkipsNextRequest() {
         gateway(10, new AiRetryPolicy(3, 5000, 8000, 2.0));
         when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
-            now.addAndGet(9_000_000_000L); // only 1s of budget left
+            now.addAndGet(9_000_000_000L);
             throw upstream("AI_RATE_LIMITED", 429);
         });
 
@@ -197,8 +191,6 @@ class SpringAiChatGatewayDeadlineTest {
     void deadlinePassedDuringResponseConversionNeverReturnsSuccess() {
         gateway(100, new AiRetryPolicy(3, 0, 0, 2.0));
         when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
-            // The provider returned, but response conversion crosses the total
-            // deadline: the gateway must not report success afterwards.
             now.addAndGet(200_000_000_000L);
             return okResponse();
         });
@@ -219,7 +211,7 @@ class SpringAiChatGatewayDeadlineTest {
     void requestLevelStageBudgetOverridesConfigDeadline() {
         gateway(315, new AiRetryPolicy(3, 1000, 8000, 2.0));
         when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
-            now.addAndGet(10_000_000_000L); // exceeds the 5s stage budget
+            now.addAndGet(10_000_000_000L);
             throw upstream("AI_TIMEOUT", null);
         });
 

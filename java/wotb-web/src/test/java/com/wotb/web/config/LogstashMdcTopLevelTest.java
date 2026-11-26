@@ -16,12 +16,6 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 实证 Spring Boot 4 logstash 结构化日志中 MDC 字段的位置：
- * requestId 是顶层 JSON 字段（而非 mdc.requestId 子对象）。
- * 使用默认 LoggerContext + 临时 OutputStreamAppender（与生产相同的 StructuredLogEncoder，
- * format=logstash）实际记录一条带 MDC 的日志并捕获输出。
- */
 class LogstashMdcTopLevelTest {
 
     @Test
@@ -52,7 +46,6 @@ class LogstashMdcTopLevelTest {
         }
 
         final String json = buffer.toString(StandardCharsets.UTF_8);
-        // 顶层字段必须是 requestId（不带 mdc. 前缀，不带 _ 前缀）
         assertTrue(json.contains("\"requestId\":\"abc-123\""),
                 "requestId must be a top-level field, actual: " + json);
         assertFalse(json.matches(".*\"mdc\"\\s*:\\s*\\{.*requestId.*"),

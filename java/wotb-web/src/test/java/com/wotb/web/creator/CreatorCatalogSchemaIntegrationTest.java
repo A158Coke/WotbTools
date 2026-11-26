@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Real PostgreSQL proves UID uniqueness, catalog write serialization and dictionary references. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -34,7 +33,6 @@ class CreatorCatalogSchemaIntegrationTest extends CreatorIntegrationTestSupport 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void catalogLockIsExclusiveAcrossConnectionsAndReleasedAtTransactionEnd(final boolean rollback) {
-        // A separate physical connection observes the lock while the real repository joins the JPA transaction.
         final JdbcTemplate observer = new JdbcTemplate(new DriverManagerDataSource(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {

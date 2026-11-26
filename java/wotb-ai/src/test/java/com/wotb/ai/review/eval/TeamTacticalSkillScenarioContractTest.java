@@ -8,7 +8,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Keeps the manual live-probe inputs facts-only; expected behavior stays in assertions. */
 class TeamTacticalSkillScenarioContractTest {
 
     private static final List<String> JUDGMENT_MARKERS = List.of(

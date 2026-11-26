@@ -25,7 +25,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Real PostgreSQL proves UID uniqueness, catalog write serialization and dictionary references. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -292,7 +291,6 @@ class CreatorDirectoryIntegrationTest extends CreatorIntegrationTestSupport {
                         .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("CREATOR_INVALID_REQUEST"));
             }
         }
-        // Java trim/strip or UNICODE_CHARACTER_CLASS must not broaden the wire contract.
         for (final int codePoint : new int[] {0, 8, 14, 28, 31, 133, 6158, 8191, 8203, 8234, 8288, 8289, 12289}) {
             final String padding = Character.toString(codePoint);
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,

@@ -8,7 +8,6 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 防回归：三环证据不与 hundred / 单场 HoF 共享同一物理 hash 路径。 */
 class Mark3ReplayStorageTest {
 
     @TempDir

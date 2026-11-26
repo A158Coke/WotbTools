@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Admin endpoints are protected by the existing /api/admin/** security matcher. */
 @RestController
 public class BattleDataAdminController {
     private final BattleDataAdminService service;

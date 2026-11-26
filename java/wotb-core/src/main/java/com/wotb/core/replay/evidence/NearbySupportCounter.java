@@ -16,17 +16,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * 局部支援计数（LOCAL_SUPPORT 的确定性基础）。
- * <p>只统计 {@code observationState == OBSERVED} 且位置已知的实体；
- * STALE / UNKNOWN / REMOVED 一律不计入。敌军数量表达为"至少观察到 N 个附近敌军"，
- * 只有该侧全部实体都被观察到时才可表达为完整数量；两侧都完整覆盖时才允许 EXACT。</p>
- */
 public final class NearbySupportCounter {
 
     public static final float SUPPORT_RADIUS_M = 150f;
 
-    /** 某时刻录像者附近的友军 / 敌军观察数量。 */
     public record Counts(
             float battleRelSec,
             int friendlyCount,
@@ -38,27 +31,22 @@ public final class NearbySupportCounter {
             int recorderRegion,
             DecodeConfidence confidence
     ) {
-        /** 友军一侧是否全部被观察到（可表达完整数量）。 */
         public boolean friendlyFullyObserved() {
             return friendlyTotal > 0 && observedFriendlyTotal == friendlyTotal;
         }
 
-        /** 敌军一侧是否全部被观察到（可表达完整数量）。 */
         public boolean enemyFullyObserved() {
             return enemyTotal > 0 && observedEnemyTotal == enemyTotal;
         }
 
-        /** 友军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
         public String friendlyLabel() {
             return label(friendlyCount, friendlyFullyObserved());
         }
 
-        /** 敌军数量标签：完整覆盖时 "N"，否则 "≥N"（N=0 时 "?"）。 */
         public String enemyLabel() {
             return label(enemyCount, enemyFullyObserved());
         }
 
-        /** "友军v敌军" 形式标签，避免把观察子集伪装成全知兵力。 */
         public String numbersLabel() {
             return friendlyLabel() + "v" + enemyLabel();
         }
@@ -102,7 +90,6 @@ public final class NearbySupportCounter {
             return null;
         }
         final Map<Long, Integer> teamByAccountId = teamByAccountId(battle);
-        // denominator 使用当前时间点的存活名单：已阵亡车辆不污染观察覆盖
         final int[] totals = sideTotals(battle, recorder.team(), battleRelSec);
         int friendly = 0;
         int enemy = 0;
@@ -141,7 +128,6 @@ public final class NearbySupportCounter {
                 totals[0], totals[1], recorderRegion, confidence);
     }
 
-    /** 当前时间点存活队伍人数（来自 battle 结算）：[友军(不含录像者), 敌军]。 */
     private static int[] sideTotals(final Battle battle, final int recorderTeam,
                                     final float battleRelSec) {
         int friendly = 0;
@@ -158,11 +144,9 @@ public final class NearbySupportCounter {
                 }
             }
         }
-        // 录像者本人恒不进入附近计数，友军侧应排除他
         return new int[]{Math.max(0, friendly - 1), enemy};
     }
 
-    /** 权威存活判定：survived，或阵亡时间晚于当前 battle-relative 时刻。 */
     private static boolean aliveAt(final Battle battle, final PlayerResult p, final float battleRelSec) {
         if (p.survived) {
             return true;

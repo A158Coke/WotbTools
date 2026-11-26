@@ -8,9 +8,6 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
 import java.util.List;
 
-/**
- * 单场训练房/联赛队伍视角 AI 分析上下文。
- */
 public record SingleTeamBattleAnalysisContext(
         String analysisUnitId,
         BattleIdentity battleId,

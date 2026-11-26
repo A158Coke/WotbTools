@@ -28,12 +28,9 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/** Catalog write order: catalog -> creator -> avatar. Image I/O precedes the catalog transaction. */
 @Service
 @Transactional
 public class CreatorService {
-    // OpenAPI/Ajv uses ECMAScript \s: ASCII whitespace, Unicode Zs, LS, PS and BOM.
-    // Java trim/strip and Unicode regex \s each accept a different set.
     private static final String INPUT_WHITESPACE = "[\\s\\p{Zs}\\u2028\\u2029\\uFEFF]*";
     private static final Pattern UID_INPUT = Pattern.compile(INPUT_WHITESPACE + "([0-9]{1,20})" + INPUT_WHITESPACE);
     private static final Pattern VIDEO_INPUT = Pattern.compile(INPUT_WHITESPACE + "(BV[A-Za-z0-9]{10})" + INPUT_WHITESPACE);
@@ -100,7 +97,6 @@ public class CreatorService {
         if ((id == null && request.expectedVersion() != null)
                 || (id != null && (request.expectedVersion() == null || request.expectedVersion() < 0))) { throw invalid(); }
         final String externalId = externalId(request.type(), request.externalId());
-        // The committed, site-owned upload remains discoverable if the following catalog transaction fails.
         final String uploaded = "REPLACE".equals(request.imageAction()) ? avatars.upload(avatar) : null;
         return writes.execute(tx -> {
             creators.lockCatalog();

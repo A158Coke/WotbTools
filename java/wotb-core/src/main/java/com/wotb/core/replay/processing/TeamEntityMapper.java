@@ -18,10 +18,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/**
- * 构建可复用的 entityId → participant → team 映射。
- * 不按 entityId 数值范围猜测队伍；冲突实体会被整体排除。
- */
 public final class TeamEntityMapper {
 
     private TeamEntityMapper() {

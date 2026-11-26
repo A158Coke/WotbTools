@@ -16,7 +16,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Wire shapes owned by contracts/http/openapi.yaml. */
 public final class BroadcastDtos {
     private BroadcastDtos() { }
     public record Season(long id, String server, int year, String nameZh, String nameEn, String nameRu, LocalDate startDate,
@@ -38,7 +37,6 @@ public final class BroadcastDtos {
             @JsonProperty(required = true) @JsonDeserialize(using = StartInstantInput.class) Instant startsAt) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
-    /** Unlike Jackson's general Instant reader, this input accepts only an ISO date-time string or explicit null. */
     public static final class StartInstantInput extends ValueDeserializer<Instant> {
         @Override
         public Instant deserialize(final JsonParser parser, final DeserializationContext context) {

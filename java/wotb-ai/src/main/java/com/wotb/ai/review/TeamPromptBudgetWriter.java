@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Owns mandatory/optional prompt block budgeting for Team prompt assembly. */
 final class TeamPromptBudgetWriter {
 
     private static final String TRUNCATION_LINE = "\nLIMITATION: AI_INPUT_TRUNCATED\n";
@@ -60,7 +59,6 @@ final class TeamPromptBudgetWriter {
             final Map<String, List<String>> perUnitLimitations
     ) {
         final Set<String> globalLimitations = new LinkedHashSet<>(suppliedGlobalLimitations);
-        // 在 finish 时估算 token 数，如果超限则标记 truncated
         if (estimator != null) {
             final String currentContent = content.toString();
             if (estimator.estimateTextTokens(currentContent) > maxInputTokens) {

@@ -15,7 +15,6 @@ import tools.jackson.databind.ValueDeserializer;
 import java.time.Instant;
 import java.util.List;
 
-/** Typed wire boundary for UP and video recommendations. */
 public final class RecommendationDtos {
     private RecommendationDtos() { }
     public record Level(long id, String name) { }
@@ -49,7 +48,6 @@ public final class RecommendationDtos {
         @JsonAnySetter
         public void rejectUnknown(final String key, final Object value) { throw new ApiException(ApiErrorCode.CREATOR_INVALID_REQUEST); }
     }
-    /** Never coerce a JSON scalar: large Bilibili IDs must survive transport exactly. */
     public static class StringInput extends ValueDeserializer<String> {
         @Override
         public String deserialize(final JsonParser parser, final DeserializationContext context) {

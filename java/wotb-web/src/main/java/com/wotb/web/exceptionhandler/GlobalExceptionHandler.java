@@ -41,7 +41,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Maps Spring MVC and legacy domain exceptions to the canonical API error contract. */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -123,8 +122,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleIllegalState(
             final IllegalStateException exception, final HttpServletRequest request) {
         final String code = errorCode(exception.getMessage(), "INVALID_STATE");
-        // Profile bootstrap 在唯一冲突后重读不到自身 profile：这是服务端不变量被破坏，
-        // 不是调用方的请求冲突，必须区别于 409 的业务冲突。
         if ("PROFILE_BOOTSTRAP_FAILED".equals(code)) {
             return response(code, HttpStatus.INTERNAL_SERVER_ERROR, exception, request);
         }
@@ -290,7 +287,6 @@ public class GlobalExceptionHandler {
                 || lower.contains("forcibly closed");
     }
 
-    /** Accept only stable English error codes, never exception details. */
     static String errorCode(final String value, final String fallback) {
         if (!StringUtils.hasText(value)) {
             return fallback;

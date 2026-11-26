@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** 严格验证先于事务；未知形状不占 arenaId，写入失败不暴露 SQL 或原始载荷。 */
 @Service
 public class BattleDataService {
     private static final JsonMapper JSON = JsonMapper.builder()
@@ -100,7 +99,6 @@ public class BattleDataService {
         try {
             stored = Boolean.TRUE.equals(transaction.execute(status -> repository.insert(request)));
         } catch (final RuntimeException exception) {
-            // The canonical handler can log this safe exception; never retain SQL detail or payload in its cause.
             throw new ApiException(ApiErrorCode.INTERNAL_ERROR);
         }
         (stored ? created : duplicate).increment();

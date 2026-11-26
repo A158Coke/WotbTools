@@ -9,10 +9,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Recorder targeting fact joiner: method36 + Type31 marker size + Type39 aim-ray geometry. */
 public final class TargetingDerivedFacts {
 
-    /** Type31/39 run at ~120 Hz; older samples than this are not attached to a shot. */
     static final double HIGH_RATE_PRE_SHOT_MAX_AGE_SEC = 0.10;
 
     private TargetingDerivedFacts() {

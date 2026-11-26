@@ -13,10 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * {@link TankNameCorrector} 单测：覆盖生产反馈案例（Kranvagn 被写成「埃米尔1951」）
- * 与 R1/R2/R3 各规则及边界。零容忍口径：提及玩家处的车名必须等于 roster 权威名。
- */
 class TankNameCorrectorTest {
 
     private static final List<RosterEntry> ROSTER = List.of(
@@ -156,7 +152,6 @@ class TankNameCorrectorTest {
     @Test
     void noAnchor_standaloneNameFailClosed() {
         final Result result = correct("埃米尔1951前压");
-        // 无昵称锚点：只归一化为权威英文名 + DETECTED，禁止凭 roster 猜成 Kranvagn
         assertEquals("EMIL 1951前压", result.text());
         assertFalse(result.text().contains("Kranvagn"));
         assertTrue(reasons(result).contains("NORMALIZED"));
@@ -170,7 +165,6 @@ class TankNameCorrectorTest {
                 new RosterEntry("OtherPlayer", "EMIL 1951"));
         final Result result = TankNameCorrector.correct(
                 "埃米尔1951（Awesomeman954）阵亡。此前EMIL 1951一直在后排。", roster);
-        // 锚点处按 R1 局部纠正为 Kranvagn；standalone EMIL 1951 可能是真车（roster 有 EMIL 1951），不得全局改
         assertEquals("Kranvagn（Awesomeman954）阵亡。此前EMIL 1951一直在后排。", result.text());
         assertEquals(List.of("CORRECTED"), reasons(result));
     }
@@ -180,10 +174,8 @@ class TankNameCorrectorTest {
         final List<RosterEntry> roster = List.of(
                 new RosterEntry("Awesomeman954", "Kranvagn"),
                 new RosterEntry("B158", "E 100"));
-        // 第三个锚点指向与第二个相同的 E 100：冲突源已封禁，不得因后到同目标锚点重新入传播表
         final Result result = TankNameCorrector.correct(
                 "埃米尔1951（Awesomeman954）阵亡。埃米尔1951（B158）仍在。埃米尔1951（B158）对炮。此前埃米尔1951一直处于后排。", roster);
-        // 各锚点分别局部纠正；standalone 因映射冲突 fail closed（EMIL 1951 + DETECTED），不猜
         assertTrue(result.text().contains("Kranvagn（Awesomeman954）"));
         assertTrue(result.text().contains("E 100（B158）"));
         assertTrue(result.text().contains("EMIL 1951一直处于后排"));
@@ -244,7 +236,6 @@ class TankNameCorrectorTest {
     @Test
     void standaloneWrongTank_detectedButNotRewritten() {
         final Result result = correct("埃米尔1951 前压");
-        // 别名归一化为权威英文名，但 EMIL 1951 不在 roster → DETECTED 不改写
         assertEquals("EMIL 1951 前压", result.text());
         assertEquals(List.of("NORMALIZED", "DETECTED"), reasons(result));
     }
@@ -272,7 +263,6 @@ class TankNameCorrectorTest {
 
     @Test
     void emilIiPrefixOverlap_longestMatchWins() {
-        // "Emil II" 以 "Emil I" 为前缀：重叠时必须命中更长的 Emil II（B158 的 roster 车）
         final Result result = correct("Emil II 前压");
         assertEquals("Emil II 前压", result.text());
         assertTrue(result.replacements().isEmpty());
@@ -288,7 +278,6 @@ class TankNameCorrectorTest {
     @Test
     void nicknameContainingTankName_notTreatedAsTankMention() {
         final Result result = correct("KranvagnPlayer 前压");
-        // 昵称里含 Kranvagn 子串：ASCII 边界检查 + 重叠保留更长者，均不触发纠正
         assertEquals("KranvagnPlayer 前压", result.text());
         assertTrue(result.replacements().isEmpty());
     }
@@ -303,7 +292,6 @@ class TankNameCorrectorTest {
     @Test
     void parenWithMultipleNicknames_noCorrection() {
         final Result result = correct("埃米尔1951（Ace 与 AceKiller）对炮");
-        // 括号内两个昵称 → 归属不明，不按括号纠正；埃米尔1951 走别名归一化 + DETECTED
         assertEquals("EMIL 1951（Ace 与 AceKiller）对炮", result.text());
         assertTrue(reasons(result).contains("DETECTED"));
     }
@@ -323,7 +311,6 @@ class TankNameCorrectorTest {
         assertEquals(correct(input).text(), correct(input).text());
     }
 
-    // ---- correctAll：跨文本共享 propagation map ----
 
     @Test
     void correctAll_anchorInFirstText_propagatesToSecondText() {
@@ -348,7 +335,6 @@ class TankNameCorrectorTest {
 
     @Test
     void correctAll_nullAndBlankTexts_passthroughWithoutNpe() {
-        // Arrays.asList 允许 null 元素（List.of 不允许）
         final List<Result> results = TankNameCorrector.correctAll(Arrays.asList(
                 "埃米尔1951（Awesomeman954）阵亡", null, "  "), ROSTER);
         assertEquals("Kranvagn（Awesomeman954）阵亡", results.get(0).text());

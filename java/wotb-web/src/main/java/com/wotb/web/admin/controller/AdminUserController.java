@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** 管理员用户管理 API。需要 wotbtools-admin 角色。 */
 @RestController
 @RequestMapping(ApiPaths.ADMIN_USERS)
 public class AdminUserController {
@@ -50,12 +49,6 @@ public class AdminUserController {
         return adminUserService.getUser(keycloakUserId);
     }
 
-    /**
-     * 删除用户：请求体是 Keycloak sub 的 JSON 数组——删除单个用户就是长度为 1 的数组，
-     * 因此没有单独的「批量删除」端点，也没有单条 {@code /{keycloakUserId}} 删除端点。
-     *
-     * <p>逐用户复用删除业务保护并允许 partial success，响应始终是逐用户结果。</p>
-     */
     @DeleteMapping
     public DeleteUsersResponse deleteUsers(
             @RequestBody final List<String> keycloakUserIds,

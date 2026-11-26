@@ -29,14 +29,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * HTTP boundary test: a real Spring AI {@code OpenAiChatModel} plus
- * {@link SpringAiChatGateway} talk to a loopback JDK HttpServer, never to an
- * external network. Verifies the final DeepSeek-compatible request body
- * (path, Authorization scheme, model, messages, max_tokens, thinking and
- * reasoning_effort) and completion parsing. The API key is a synthetic value
- * and assertions never print it in failure messages.
- */
 @Disabled("DS API gateway boundary test; run only in the dedicated network-capable CI job")
 class SpringAiChatGatewayHttpBoundaryTest {
 
@@ -79,7 +71,6 @@ class SpringAiChatGatewayHttpBoundaryTest {
         final CapturedRequest captured = requests.getFirst();
         assertEquals("/chat/completions", captured.path());
 
-        // Verify scheme and non-empty token without echoing the secret.
         assertNotNull(captured.authorization(), "Authorization header must be present");
         assertTrue(captured.authorization().startsWith("Bearer "),
                 "Authorization must use the Bearer scheme");
@@ -124,10 +115,6 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     @Test
     void cancelsSlowResponseBodyAtTotalDeadline() throws Exception {
-        // Raw TCP server: sends a 200 header immediately, then drips one body
-        // byte every 50ms (~10s total). The 50ms drip is far below the 4s SDK
-        // idle read timeout, so only the total-deadline watchdog can stop the
-        // request while the response body is being read.
         final ServerSocket serverSocket = new ServerSocket(0, 50,
                 InetAddress.getByName("127.0.0.1"));
         final Thread serverThread = new Thread(() -> {
@@ -153,15 +140,12 @@ class SpringAiChatGatewayHttpBoundaryTest {
                     Thread.sleep(50);
                 }
             } catch (final IOException | InterruptedException e) {
-                // Client cancelled the call at the total deadline; writes fail.
             }
         });
         serverThread.setDaemon(true);
         serverThread.start();
         try {
             final String baseUrl = "http://127.0.0.1:" + serverSocket.getLocalPort();
-            // The model's SDK read timeout is 60s and the gateway total budget is
-            // 5s: only the total-deadline watchdog can stop the slow body read.
             final AiModelProperties modelProperties = new AiModelProperties(
                     FAKE_API_KEY, baseUrl, "deepseek-v4-flash",
                     1, 60, 61, 1, 0, 0, 2.0,
@@ -210,8 +194,6 @@ class SpringAiChatGatewayHttpBoundaryTest {
                             1, 2, 3, 1, 0, 0, 2.0,
                 1_000_000, 940_000, 32_768, 16_384, true, "max", false, 4096),
                     new SimpleMeterRegistry());
-            // Deterministically fire the watchdog before the attempt starts, i.e.
-            // before the okhttp interceptor captures the Call.
             gateway.state.attemptStartHook = AttemptBudgetContext::expireAndCancel;
 
             final AiUpstreamException e = assertThrows(AiUpstreamException.class,
@@ -267,7 +249,6 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     private record CapturedRequest(String path, String authorization, String body) {
     }
-    // ===== response_format 请求体边界契约 =====
 
     @Test
     void jsonObjectResponseFormatSendsResponseFormatInRequestBody() throws Exception {
@@ -301,7 +282,6 @@ class SpringAiChatGatewayHttpBoundaryTest {
 
     @Test
     void defaultResponseFormatIsText() {
-        // 兼容构造器（无 responseFormat 参数）必须保持 TEXT：存量请求不进入 JSON mode。
         final AiChatRequest legacy = new AiChatRequest(
                 "system-instructions", "player-evidence", "deepseek-v4-flash",
                 null, 4096, true, "max", "corr-legacy", "SINGLE_PLAYER_BATTLE");

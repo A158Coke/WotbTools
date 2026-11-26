@@ -33,25 +33,6 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Opt-in DeepSeek behavior evaluation for Team Tactical Skill v0.2.
- *
- * <p>This is deliberately a live-provider test, not a default CI test or merge
- * gate. It sends
- * the existing Team Call #2 JSON request through {@link SpringAiChatGateway},
- * parses the final structured result, and checks the final model text against explicit
- * behavior contracts. The A-H prompt golden cases remain a separate static
- * contract suite and are not treated as behavior evidence.</p>
- *
- * <p>Historical grounding validator check（legacy Team Review envelope + 事实一致性 validator）
- * 已随 legacy 契约层删除：Team production 只做技术
- * JSON/schema/引用解析，不提供后端 tactical grounding verdict，因此本 probe 不再重复它。</p>
- *
- * <p>Run from {@code java} after supplying the key out of band:
- * {@code $env:AI_API_KEY = "..."; mvn -pl wotb-web -am test
- * "-Dtest=TeamTacticalSkillLiveBehaviorEvalTest"
- * "-Dai.probe.excludedGroups=" "-Dai.tactical.live.enabled=true"}</p>
- */
 @Tag("ai-live")
 class TeamTacticalSkillLiveBehaviorEvalTest {
 
@@ -155,8 +136,6 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
             return LiveResult.failed(caseId, reason, "", "", List.of());
         }
         final String raw = response.completionText() == null ? "" : response.completionText();
-        // structured result：本 probe 只读正文语义，因此不做 roster playerKey 校验
-        // （normative roster 校验由 TeamAiReviewResultParserTest / TeamReplayAnalysisServiceRecoveryTest 覆盖）。
         final TeamAiReviewResultParser.ParseResult parsed =
                 TeamAiReviewResultParser.parse(raw, Set.of());
         if (!parsed.usable()) {
@@ -193,7 +172,6 @@ class TeamTacticalSkillLiveBehaviorEvalTest {
         return checks;
     }
 
-    /** structured result 的自然语言正文（legacy reviewMarkdown 的等价载体）。 */
     private static String finalText(final TeamAiReviewResult structured) {
         final StringBuilder text = new StringBuilder();
         if (structured.summary() != null) {

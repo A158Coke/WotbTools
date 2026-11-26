@@ -1,8 +1,5 @@
 package com.wotb.core.replay.event;
 
-/**
- * Avatar method16 recorder-visible vehicle module/crew state presentation (PR147, 11.19).
- */
 public record VehicleModuleCrewStateEvent(
         int sequence,
         ReplayTimestamp timestamp,

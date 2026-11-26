@@ -2,7 +2,6 @@ package com.wotb.web.util.apierror;
 
 import org.springframework.http.HttpStatus;
 
-/** Canonical infrastructure error codes. Existing domain codes remain supported by {@link ApiErrorFactory}. */
 public enum ApiErrorCode {
     AUTH_UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, false),
     AUTH_FORBIDDEN(HttpStatus.FORBIDDEN, false),

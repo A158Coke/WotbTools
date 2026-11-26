@@ -41,7 +41,6 @@ class PreBattlePromptBuilderTest {
         p.tankId = tankId;
         p.tankName = tankName;
         p.survived = true;
-        // 敏感战绩字段：任何泄漏都会让测试失败
         p.damageDealt = 77777;
         p.damageReceived = 88888;
         p.kills = 66;
@@ -91,8 +90,6 @@ class PreBattlePromptBuilderTest {
 
     @Test
     void provenEntryHpOverridesTotalAndPerVehicleHp() {
-        // 仅当进场满血被回放证明（OBSERVED_EXACT，含装备/物资加成）时才输出实测值；
-        // 战斗中观测到的 currentHp（observedMaxHp）不得被包装为赛前进场满血。
         final Battle battle = battleWithFullResults();
         for (final PlayerResult p : battle.players) {
             final Integer base = ReplayDisplayNames.tankMaxHpValue(p.tankId);
@@ -117,11 +114,10 @@ class PreBattlePromptBuilderTest {
 
     @Test
     void unprovenEntryHpRendersBaseBaselineNotObservedCurrent() {
-        // 反例：observedMaxHp（战斗中观测最大 current）≠ 进场满血；未证明时输出 base baseline 标注
         final Battle battle = battleWithFullResults();
         for (final PlayerResult p : battle.players) {
             final Integer base = ReplayDisplayNames.tankMaxHpValue(p.tankId);
-            p.observedMaxHp = base + 300; // 观测最大 current（未证明为进场满血）
+            p.observedMaxHp = base + 300;
         }
         final String content = PreBattlePromptBuilder.buildUserContent(
                 battle, TankTacticalProfileRegistry.load(),

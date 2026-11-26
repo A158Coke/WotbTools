@@ -1,5 +1,3 @@
--- V6: 管理员操作日志。
--- 记录管理员对用户的所有操作（删除用户等），谁做的、对谁做的、结果如何。
 CREATE TABLE IF NOT EXISTS admin_user_log (
     id BIGSERIAL PRIMARY KEY,
 

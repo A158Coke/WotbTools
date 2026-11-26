@@ -19,12 +19,6 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * 名人堂上传编排（需登录）：校验 → 解析 → battle-type policy（不支持模式零持久化拒绝）→
- * SHA-256 内容寻址落盘 → 记录入库（含 metadata）。
- * 一致性（终审 P0）：DB 更新失败不删除已入存储的文件——保留为安全 orphan，
- * 同 hash 未来上传直接复用；孤儿清理由未来 maintenance job 处理。
- */
 @Service
 public class HallOfFameUploadService {
 
@@ -56,9 +50,6 @@ public class HallOfFameUploadService {
             final byte[] bytes = file.getBytes();
             final Battle battle = ClientReplayFacts.read(factsJson);
 
-            // Blocker：不支持战斗模式（训练房/联赛/娱乐/未知等，见 HallOfFameBattleTypePolicy
-            // 单一事实源）在 SHA-256、preflight、storage、DB 任何持久化之前直接拒绝
-            // → 400 UNSUPPORTED_BATTLE_TYPE，零持久化（DB 写入=0、metadata 写入=0、文件写入=0）。
             final RecordOutcome eligibility = hallOfFameService.eligibility(battle);
             if (eligibility == RecordOutcome.SKIPPED_UNSUPPORTED_BATTLE_TYPE) {
                 throw new IllegalArgumentException("UNSUPPORTED_BATTLE_TYPE");
@@ -70,20 +61,16 @@ public class HallOfFameUploadService {
             final String hash = sha256(bytes);
             final ReplayFileMeta meta = new ReplayFileMeta(hash, ReplayFileNames.originalName(file), bytes.length, uploadedBy);
 
-            // P1 preflight：写文件前确定无需落盘的 SKIPPED，避免正常请求稳定制造 orphan。
             final Optional<RecordOutcome> preflight = hallOfFameService.preflightReplay(battle, meta);
             if (preflight.isPresent() && preflight.get() == RecordOutcome.SKIPPED_HASH_CONFLICT) {
                 return skipped(preflight.get(), battle);
             }
 
-            // 落盘 + 入库在 hash advisory lock 内（与 admin delete 的文件清理串行化，
-            // 保证不变量：DB 引用 H ⇒ 物理 H.wotbreplay 存在）。
             final RecordOutcome outcome = replayHashLock.runWithLockResult(hash, () -> {
                 storage.store(bytes, hash);
                 return hallOfFameService.recordRecorder(battle, tankopedia, meta);
             });
             final String arenaId = battle.arenaId == null ? "" : battle.arenaId;
-            // 同一场战斗 + 同一回放已在名人堂：仍按上面的路径落盘以自愈缺失文件，但不得以 "ok" 冒充新上榜
             if (outcome == RecordOutcome.IDEMPOTENT) {
                 return Map.of("status", "already_recorded", "arenaId", arenaId);
             }

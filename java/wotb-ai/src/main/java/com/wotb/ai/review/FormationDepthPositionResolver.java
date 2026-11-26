@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Resolves phase position references within canonical AOI segments and entity lifetimes. */
 final class FormationDepthPositionResolver {
 
     private FormationDepthPositionResolver() {
@@ -32,11 +31,6 @@ final class FormationDepthPositionResolver {
         }
     }
 
-    /**
-     * Resolves only samples from the entity owning the phase-end AOI segment, so re-entry coordinates
-     * cannot be combined across entity lifetimes. A phase-end inside an unknown AOI gap may retain a
-     * last-known reference, but never upgrades it to current geometry.
-     */
     static PhasePositionReference resolvePhasePosition(
             final boolean aliveAtPhaseEnd,
             final long accountId,

@@ -12,7 +12,6 @@ import java.util.List;
 
 import static com.wotb.ai.review.TeamEvidenceFormatter.quoteData;
 
-/** Team roster and member fact rendering. */
 final class TeamRosterFormatter {
     private TeamRosterFormatter() {
     }
@@ -79,7 +78,6 @@ final class TeamRosterFormatter {
         return structuredTankFacts(tankId, null);
     }
 
-    /** 同上；hp 按 provenance 口径（OBSERVED_EXACT → 已证明进场满血；否则 tankopedia base）。 */
     static String structuredTankFacts(final long tankId, final PlayerResult player) {
         final StringBuilder sb = new StringBuilder(80);
         appendFact(sb, "tier", ReplayDisplayNames.tankTier(tankId));
@@ -103,10 +101,6 @@ final class TeamRosterFormatter {
         return extraInfo.isEmpty() ? "" : " extraInfo=" + quoteData(extraInfo);
     }
 
-    /**
-         * 视角队伍的用户可见 display label：唯一 dominant 且严格多数
-         * 的 clan tag，否则空串（上层 fallback「我方」）；绝不返回 {@code 队伍-XXXX}。
-         */
     static String resolveDisplayLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
         if (players == null) return "";
@@ -117,7 +111,6 @@ final class TeamRosterFormatter {
         return TeamPerspectiveLabelResolver.resolveDisplayLabel(perspectivePlayers);
     }
 
-    /** 对方队伍的用户可见 display label（独立解析；无可靠 clan → 空串，上层 fallback「对方」）。 */
     static String resolveOpponentDisplayLabel(
             final List<PlayerResult> players, final int perspectiveTeam) {
         if (players == null) return "";

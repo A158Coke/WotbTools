@@ -13,13 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 争霸赛点数口径（fail-closed + 项目所有者确认的业务规则）：
- * - 420s/1000 是业务规则（arenaBonusType 只证明战斗类别，不解码出 420s/1000）；
- * - 结束方式只按「标准规则 + 时长 + 双方存活」判定，不使用任何点数公式；
- * - victoryPointsEarned 的精确定义未经证明，终局比分除规则可证明的胜方=1000 外一律 UNKNOWN；
- * - 证据只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths）。
- */
 class TeamPointsAccountingTest {
 
     private static PlayerResult player(final long id, final int team,
@@ -70,7 +63,7 @@ class TeamPointsAccountingTest {
 
     @Test
     void earlyEndPinsOnlyWinnerTo1000ByBusinessRule() {
-        final Battle early = supremacyBattle(226, 2, 4); // 已知类别：业务规则 7 分钟/1000 分
+        final Battle early = supremacyBattle(226, 2, 4);
         assertTrue(FriendlyEnemyResult.standardSupremacyRules(early));
         assertTrue(FriendlyEnemyResult.provableEarlyPointsWin(early));
         assertEquals(FriendlyEnemyResult.PointsEndReason.REACHED_1000,
@@ -109,15 +102,13 @@ class TeamPointsAccountingTest {
 
     @Test
     void rawBelow1000WithKillImbalanceMustNotTriggerReached1000() {
-        // 回归：raw victoryPointsEarned 均 <1000、击杀不对称（旧公式 subtotal 会 ≥1000），
-        // 时长打满 7 分钟 → 必须 TIME_EXPIRED，绝不能因公式/不同组件口径得出 REACHED_1000。
         final Battle b = new Battle();
         b.rosterComplete = true;
         b.durationS = 420.0;
         b.winnerTeam = 2;
         b.arenaBonusType = 4;
         b.players = new ArrayList<>();
-        b.players.add(player(1, 2, 900, 4, true)); // 旧口径 subtotal = 900 + 40×4 − 0 = 1060 ≥1000
+        b.players.add(player(1, 2, 900, 4, true));
         for (int i = 2; i <= 7; i++) {
             b.players.add(player(i, 2, 0, 0, true));
         }
@@ -189,8 +180,6 @@ class TeamPointsAccountingTest {
 
     @Test
     void winnerMissingBothAliveEarlyEndKnowsReasonButNotTeam() {
-        // 完整阵容 + 双方均有存活 + 标准业务规则 + <420s → REACHED_1000；
-        // 但胜方未知：只知「有人达到1000」，不得把1000分配给任何队伍，finalScore 双方 UNKNOWN
         final Battle b = supremacyBattle(226, null, 4);
         final var w = FriendlyEnemyResult.resolveTeamBattle(b, 2);
         assertEquals(FriendlyEnemyResult.Winner.DRAW_OR_UNKNOWN, w.winner());
@@ -207,7 +196,6 @@ class TeamPointsAccountingTest {
 
     @Test
     void missingWinnerTeamFailsClosedEvenWhenPointsConflict() {
-        // 原始占点分 team1(900) > team2(700)、击杀分布相反：禁止推断胜方
         final Battle b = new Battle();
         b.rosterComplete = true;
         b.durationS = 226.0;

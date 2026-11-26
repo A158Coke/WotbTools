@@ -12,7 +12,6 @@ import org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomiz
 import java.time.Duration;
 import java.util.List;
 
-/** Builds the configured Spring AI model and its total-budget call interceptor. */
 final class AiGatewayModelFactory {
     private AiGatewayModelFactory() { }
 
@@ -22,7 +21,6 @@ final class AiGatewayModelFactory {
         connectionOptions.baseUrl(properties.baseUrl());
         connectionOptions.apiKey(properties.apiKey());
         connectionOptions.model(properties.model());
-        // Single retry layer lives in this gateway; the SDK must not retry itself.
         connectionOptions.maxRetries(0);
         connectionOptions.timeout(Duration.ofSeconds(properties.timeoutSec()));
         final OpenAiHttpClientBuilderCustomizer httpCustomizer = builder -> {
@@ -32,12 +30,6 @@ final class AiGatewayModelFactory {
                     .write(Duration.ofSeconds(properties.timeoutSec()))
                     .request(Duration.ofSeconds(properties.callTimeoutSec()))
                     .build());
-            // Capture the in-flight okhttp Call so the total-budget watchdog can
-            // abort an attempt that exceeds the remaining deadline, including
-            // while the SDK is still reading/parsing the response body (Spring
-            // AI 2.0 has no per-request timeout override). The Call reference is
-            // deliberately NOT cleared here; it stays until the attempt's outer
-            // finally so the watchdog covers the full chatModel.call() lifecycle.
             builder.interceptor(chain -> {
                 final AttemptBudgetContext context = activeContext.get();
                 if (context == null) {
@@ -46,9 +38,6 @@ final class AiGatewayModelFactory {
                 final Call call = chain.call();
                 context.capture(call);
                 if (context.isStopped()) {
-                    // Watchdog or external cancellation already fired before this
-                    // interceptor captured the Call: cancel so chain.proceed()
-                    // fails fast without sending.
                     call.cancel();
                 }
                 return chain.proceed(chain.request());

@@ -69,16 +69,13 @@ public final class PersistentBrowserSessionAuthenticatorFactory implements Authe
 
     @Override
     public void init(Config.Scope config) {
-        // No configuration.
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
-        // No initialization.
     }
 
     @Override
     public void close() {
-        // Stateless.
     }
 }

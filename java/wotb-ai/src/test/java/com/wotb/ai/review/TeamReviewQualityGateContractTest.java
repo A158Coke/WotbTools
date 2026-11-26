@@ -7,13 +7,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * AI Review V2.1 Team Review Quality Gate — Prompt Contract。
- * <p>新 Team Prompt 必须：不再强制 10 个固定章节；不再规定「开局散开就是图控/拿视野」；
- * 明确 FACT / SUPPORTED INFERENCE / UNKNOWN 契约；明确禁止 unsupported terrain/LOS/visibility
- * 推断与 magic-number coaching；不再强制「做得好的行为」；训练建议必须对应可确认问题；
- * 车辆角色只能来自后端。ZH / EN / RU 契约一致。</p>
- */
 class TeamReviewQualityGateContractTest {
 
     private static final String ZH = AiPromptLibrary.zh("team/single");
@@ -26,7 +19,6 @@ class TeamReviewQualityGateContractTest {
                 "旧的强制章节不得保留");
         assertFalse(ZH.contains("2) 对方阵容逐车分析"),
                 "旧的逐车作文章节不得保留");
-        // Natural Coach Mode：自由组织的自然复盘，禁止固定章节模板
         assertFalse(ZH.contains("1. 核心结论：2-4 句"), "不得再强制核心结论章节");
         assertFalse(ZH.contains("2. 关键决策窗口：只输出"), "不得再强制关键决策窗口章节");
         assertFalse(ZH.contains("3. 可确认的团队问题：只写"), "不得再强制可确认问题章节");
@@ -51,12 +43,10 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void openingSpreadIsTradeOffNotMapControl() {
-        // 旧规则「开局散开…是图控/拿视野，不是脱节」必须删除
         assertFalse(ZH.contains("是图控/拿视野，不是脱节"),
                 "不得再断言开局散开=图控/拿视野");
         assertFalse(ZH.contains("OPENING_MAP_CONTROL"),
                 "不得再暴露 OPENING_MAP_CONTROL 标签");
-        // 新规则：开局分散 = 信息覆盖 ↔ 局部兵力集中度的战术交换（中性 signal）
         assertTrue(ZH.contains("开局分散（OPENING_SPREAD"),
                 "必须携带 OPENING_SPREAD 中性 signal");
         assertTrue(ZH.contains("地图信息覆盖 ↔ 局部兵力集中度"),
@@ -71,14 +61,12 @@ class TeamReviewQualityGateContractTest {
                 "具体视野归因必须有专门 evidence");
         assertTrue(ZH.contains("具体视野收益保持内部 UNKNOWN"),
                 "无专门 evidence 时具体视野收益保持内部 UNKNOWN（不强制写「无法确认」）");
-        // 响应分析：拿到信息后是否及时响应
         assertTrue(ZH.contains("开局分散的质量取决于拿到信息后是否及时响应"),
                 "必须分析信息获得后的响应（合流/收缩/转场）");
     }
 
     @Test
     void openingSpreadStrategicInterpretationContractInThreeLanguages() {
-        // 追加修正：三语都必须携带「信息覆盖 ↔ 局部兵力集中度」trade-off 语义
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("OPENING_MAP_CONTROL"),
@@ -119,7 +107,6 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ZH.contains("卖头"), "禁止「卖头」");
         assertTrue(ZH.contains("hull-down"), "禁止 hull-down");
         assertTrue(ZH.contains("对方有无遮挡射界"), "禁止「无遮挡射界」");
-        // 5a 允许一般战术解释（分散可以扩大地图信息覆盖），但禁止具体视野归因
         assertTrue(ZH.contains("允许一般战术解释"), "允许 general tactical interpretation");
         assertTrue(ZH.contains("分散可以扩大地图信息覆盖"), "允许「分散扩大信息覆盖」");
         assertTrue(ZH.contains("A 点亮了 B"), "禁止「A 点亮了 B」");
@@ -230,7 +217,6 @@ class TeamReviewQualityGateContractTest {
     void localizedContractConsistentAcrossLanguages() {
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.systemPrompt(lang);
-            // 中文证据契约规则段必须被替换，不残留
             assertFalse(localized.contains("证据契约（强制）：FACT / SUPPORTED INFERENCE"),
                     lang + " 残留中文证据契约");
             assertFalse(localized.contains("团队复盘输出结构（强制）"),
@@ -256,11 +242,9 @@ class TeamReviewQualityGateContractTest {
         assertFalse(ru.contains("是图控/拿视野，不是脱节"), "RU 不得携带旧规则");
     }
 
-    // ---- Opening Spread 的 battle-specific inference 必须有证据 ----
 
     @Test
     void regroupingIsBattleSpecificConclusionNeedingEvidence() {
-        // 「敌方主力确认后本方没有及时合流」是本场具体结论，不是一般战术解释
         assertTrue(ZH.contains("是本场具体结论，不是一般战术解释"),
                 "必须把合流/重新集中标记为本场具体结论");
         assertTrue(ZH.contains("重新集中推断规则（强制：本场具体结论必须有证据）"),
@@ -281,7 +265,6 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void enemyUnknownWordingIsStrict() {
-        // known=4 / unknown=3：只能说「至少观察到 4 辆，其余 3 辆位置不明确」
         assertTrue(ZH.contains("至少已经观察到 4 辆敌车"), "必须给出 unknown 措辞（至少观察到 X 辆）");
         assertTrue(ZH.contains("其余 3 辆的位置还不明确"), "必须给出 unknown 措辞（其余未知）");
         assertTrue(ZH.contains("禁止说「对方 7 辆主力已经集中在这一侧」"),
@@ -304,11 +287,9 @@ class TeamReviewQualityGateContractTest {
         assertTrue(ru.contains("ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ"), "RU 必须携带重新集中规则");
     }
 
-    // ---- 对方关键威胁 optional contract 统一 ----
 
     @Test
     void opposingThreatIsOptionalOnlyWhenMaterial() {
-        // A. optional threat：必须显式「可选」+「只在确实有价值时」
         assertTrue(ZH.contains("对方关键威胁（可选）"), "输出结构必须标记对方关键威胁为可选");
         assertTrue(ZH.contains("对方关键威胁是【可选】内容"), "团队规则必须统一为可选语义");
         assertTrue(ZH.contains("只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁"),
@@ -321,7 +302,6 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void noMandatoryOpponentThreatContradiction() {
-        // B. 不得存在 mandatory contradiction
         assertFalse(ZH.contains("分析对方阵容并指出对方主要威胁车辆"),
                 "不得保留无条件 mandatory 威胁规则");
         assertFalse(ZH.contains("必须分析对方"), "不得强制分析对方");
@@ -329,7 +309,6 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void noForcedOpponentDataDisclaimer() {
-        // C. no forced missing-data disclaimer：改为 selective UNKNOWN
         assertFalse(ZH.contains("对方数据缺失时明确说明"),
                 "不得强制输出缺失数据 disclaimer");
         assertTrue(ZH.contains("对方数据不足时不得猜测"), "不得猜测");
@@ -340,7 +319,6 @@ class TeamReviewQualityGateContractTest {
 
     @Test
     void opposingThreatOptionalContractLocalizedInThreeLanguages() {
-        // D. EN/RU parity：同样不得强制威胁段 / 强制缺失 disclaimer
         for (final AllowedLanguage lang : java.util.List.of(AllowedLanguage.EN, AllowedLanguage.RU)) {
             final String localized = TeamPromptLocalizer.systemPrompt(lang);
             assertFalse(localized.contains("Analyze the opposing lineup and point out the opposing team's main threat vehicles"),

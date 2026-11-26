@@ -17,10 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Call #1 Prompt 构造器：只提供地图名 + 双方阵容 + 坦克战术 Profile，
- * 严格剥离任何战斗结果（伤害/击杀/存活/胜负/阵亡顺序），避免 Hindsight Bias。
- */
 public final class PreBattlePromptBuilder {
 
     private PreBattlePromptBuilder() {
@@ -52,7 +48,6 @@ public final class PreBattlePromptBuilder {
         return sb.toString();
     }
 
-    /** 渲染地图战术语义段；无语义数据时明确 UNKNOWN，禁止编造。 */
     static String buildMapSemanticsSection(final String mapCode,
                                            final MapTacticalSemantics mapSemantics) {
         final StringBuilder sb = new StringBuilder(3072);
@@ -143,7 +138,6 @@ public final class PreBattlePromptBuilder {
         return sb.toString();
     }
 
-    /** 聚合各区域置信度字段的众数，供全局一行展示（避免逐区域重复）。 */
     private static Map<String, String> dominantConfidence(
             final Map<String, MapTacticalSemantics.TacticalArea> areas) {
         final String[] fields = {
@@ -172,7 +166,6 @@ public final class PreBattlePromptBuilder {
                 continue;
             }
             final String top = perField.entrySet().stream()
-                    // Map.copyOf 不保证迭代顺序，并列众数必须 tie-break 保持确定性
                     .max(Map.Entry.<String, Integer>comparingByValue()
                             .thenComparing(Map.Entry.comparingByKey()))
                     .map(Map.Entry::getKey)
@@ -182,7 +175,6 @@ public final class PreBattlePromptBuilder {
         return dominant;
     }
 
-    /** 仅标注与该图全局置信度不一致的区域字段，避免 30+ 区域逐行重复。 */
     private static void appendConfidenceDiff(
             final StringBuilder sb,
             final MapTacticalSemantics.TacticalArea area,
@@ -286,7 +278,6 @@ public final class PreBattlePromptBuilder {
                     try {
                         max = Math.max(max, Integer.parseInt(tier));
                     } catch (final NumberFormatException ignored) {
-                        // 非数字等级忽略
                     }
                 }
             }
@@ -294,7 +285,6 @@ public final class PreBattlePromptBuilder {
         return max;
     }
 
-    /** 双方总血量：仅已证明的进场满血（OBSERVED_EXACT）用实测值，否则 tankopedia base 求和；均无按 0 计。 */
     private static int totalHp(final Battle battle, final int team) {
         if (battle.players == null) {
             return 0;
@@ -312,11 +302,6 @@ public final class PreBattlePromptBuilder {
         return total;
     }
 
-    /**
-     * 单车进场满血量（含 provenance 标注）：仅 OBSERVED_EXACT 输出已证明的进场满血
-     * （回放受击前样本证明、含装备/物资加成）；否则输出 tankopedia base 并标注 BASE baseline——
-     * 战斗中观测到的 currentHp 不得被包装为赛前进场满血（真实回放 probe 已证伪）。
-     */
     private static String tankEntryMaxHp(final PlayerResult p) {
         if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
                 && p.entryHp != null && p.entryHp > 0) {
@@ -326,7 +311,6 @@ public final class PreBattlePromptBuilder {
         return base.isBlank() ? "未知" : base + "（tankopedia base）";
     }
 
-    /** 满血量数值（无标注）：OBSERVED_EXACT → entryHp；否则 tankopedia base；均无 → null。 */
     private static Integer tankEntryMaxHpValue(final PlayerResult p) {
         if (p.entryHpSource == EntryHpSource.OBSERVED_EXACT
                 && p.entryHp != null && p.entryHp > 0) {

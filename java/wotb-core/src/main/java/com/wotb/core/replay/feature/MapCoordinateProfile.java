@@ -12,12 +12,8 @@ package com.wotb.core.replay.feature;
 public record MapCoordinateProfile(float halfExtent, float clampTolerance,
                                    float centerX, float centerZ) {
 
-    /**
-     * Canonical map width/height in meters (fixed at 500×500).
-     */
     public static final float MAP_SIZE = 500f;
 
-    /** Compatible default: origin-centered 250m half-extent (near-symmetric maps). */
     public static final MapCoordinateProfile DEFAULT =
             new MapCoordinateProfile(250f, 12.5f, 0f, 0f);
 
@@ -65,12 +61,10 @@ public record MapCoordinateProfile(float halfExtent, float clampTolerance,
         return centerZ - halfExtent - clampTolerance;
     }
 
-    /** Compatibility: widest X/Z upper bound (used by maxRawAllowed). */
     public float clampUpper() {
         return Math.max(clampUpperX(), clampUpperZ());
     }
 
-    /** Compatibility: narrowest X/Z lower bound. */
     public float clampLower() {
         return Math.min(clampLowerX(), clampLowerZ());
     }

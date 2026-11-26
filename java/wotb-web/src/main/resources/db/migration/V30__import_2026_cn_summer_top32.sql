@@ -1,12 +1,8 @@
--- Approved final screenshot: 2026 CN Summer, first 32 clans only (316 scores, 4 omissions).
--- A single atomic statement also permits manual execution; Flyway records it once as V30.
--- Keep the source facts immutable. Later corrections use tournament administration.
 DO $seed$
 DECLARE
     source_name CONSTANT TEXT := '2026 国服夏季赛最终榜（32强）';
     source_sha256 CONSTANT TEXT := '171b9618ea53ef585c200a4248704d43ab00e6d166b47d2003cd80764140bfd4';
     import_key CONSTANT TEXT := 'flyway-v30:2026-cn-summer-top32';
-    -- Same canonical request hash as TournamentService; verified by an actual API-service retry.
     import_hash CONSTANT TEXT := '2e8ef8bcd8c3a69dfd350e5701d394ac5fd5eb75a72cef55c580b7a8ad4a93f3';
     source_rows CONSTANT JSONB := $rows$[
     {"clanTag":"KSR","points":[2305,1845,2813,2253,3767,3013,4937,3949,6611,5287],"sourceTotal":36780},

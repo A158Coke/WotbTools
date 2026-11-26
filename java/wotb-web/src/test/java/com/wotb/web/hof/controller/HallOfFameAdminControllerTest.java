@@ -17,7 +17,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 单场名人堂管理列表 HTTP 参数绑定契约（安全边界由 SecurityConfigTest 覆盖）。 */
 class HallOfFameAdminControllerTest {
 
     @Test

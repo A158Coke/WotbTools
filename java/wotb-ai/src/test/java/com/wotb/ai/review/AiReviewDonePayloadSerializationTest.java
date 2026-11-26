@@ -13,14 +13,6 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * AI Review SSE {@code done} transport 形状契约（contracts/http/openapi.yaml
- * {@code #/components/schemas/AiReviewDonePayload}）：
- * <p>required = [analysis, preBattleSection, capability, teamReview, teamPlayers]，且
- * 个人复盘时 {@code teamReview} 为 JSON null、{@code teamPlayers} 为数组。ai-service 未设置
- * {@code spring.jackson.default-property-inclusion}，因此 null 字段必须仍然出现在 payload 中
- * （Jackson 默认 ALWAYS）——这把「5 个 key 齐备」锁成确定性断言。</p>
- */
 class AiReviewDonePayloadSerializationTest {
 
     private static final Set<String> DONE_KEYS = Set.of(
@@ -75,7 +67,6 @@ class AiReviewDonePayloadSerializationTest {
 
     @Test
     void capabilityEnumKeepsRetiredUnavailableValue() {
-        // N12：wire 保留 UNAVAILABLE（时间线不可用走 error 路径），不得删除枚举值。
         assertEquals(Set.of("AVAILABLE", "AVAILABLE_WITH_LIMITED_TIMELINE", "UNAVAILABLE"),
                 Arrays.stream(AiReviewDonePayload.Capability.values())
                         .map(Enum::name).collect(Collectors.toSet()));

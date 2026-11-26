@@ -56,7 +56,6 @@ public record BattleStartResolution(Status status, Float battleStartRawClockSec,
         return battleStartRawClockSec != null;
     }
 
-    /** Tolerance for raw vs battle clock consistency check (in seconds). */
     static final float CLOCK_CONSISTENCY_TOLERANCE_SEC = 0.1f;
 
     public TacticalTimeResolution tryRelative(final ReplayTimestamp timestamp) {

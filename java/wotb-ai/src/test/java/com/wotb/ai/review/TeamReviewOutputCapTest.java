@@ -30,19 +30,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-/**
- * Team Call #2 独立输出上限。
- * <p>effective = min(globalMaxOutputTokens, teamReviewMaxOutputTokens)，且同时用于
- * AiPromptBudgetGuard 与 AiChatRequest；Player Call #2（TacticalReviewHarness）不受 Team cap 影响
- * （Player 隔离断言见 TacticalReviewHarnessTest.playerCall2IsNotLimitedByTeamReviewCap）。</p>
- */
 class TeamReviewOutputCapTest {
 
     private static final float START_RAW = 1000f;
 
     @Test
     void teamCall2UsesTeamCapWhenGlobalIsHigher() {
-        // global=32768, team=4096 → Team Call #2 maxOutputTokens = 4096
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
         final AiReviewDonePayload result = service.analyzeTeam(
@@ -56,7 +49,6 @@ class TeamReviewOutputCapTest {
 
     @Test
     void teamCall2RespectsLowerGlobalCap() {
-        // global=2048, team=4096 → effective = min(2048, 4096) = 2048
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 2_048, 4_096);
         final AiReviewDonePayload result = service.analyzeTeam(
@@ -70,8 +62,6 @@ class TeamReviewOutputCapTest {
 
     @Test
     void teamCapBelowGlobalStillProducesStructuredReview() {
-        // 预算守卫与 request 使用同一 effective 值：team cap < global 时仍然完整走完
-        // Call #2（JSON_OBJECT）并产出 structured result。
         final CapGateway gateway = new CapGateway();
         final TeamReplayAnalysisService service = service(gateway, 32_768, 4_096);
         final AiReviewDonePayload result = service.analyzeTeam(
@@ -82,7 +72,6 @@ class TeamReviewOutputCapTest {
         assertEquals(AiResponseFormat.JSON_OBJECT, gateway.teamRequests().getLast().responseFormat());
     }
 
-    // ---- fixture ----
 
     private static TeamReplayAnalysisService service(final CapGateway gateway,
                                                      final int globalMaxOutput,
@@ -176,7 +165,6 @@ class TeamReviewOutputCapTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /** 记录全部 gateway 请求的替身；从不发起真实 HTTP。 */
     private static final class CapGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
 

@@ -68,7 +68,6 @@ class LocalSupportSkillTest {
         final Battle battle = supportBattle();
         final PlayerBattleFeatureSet features = EvidenceTestFixtures.features(
                 List.of(EvidenceTestFixtures.engagement(10f, 20f, 100, 100)));
-        // cp1 只观察到 2/3 敌军，cp2 观察到 3/3：敌军数量变化可能只是点亮造成，不得产出翻转证据
         final EvidenceSkillContext ctx = new EvidenceSkillContext(
                 battle,
                 EvidenceTestFixtures.recon(

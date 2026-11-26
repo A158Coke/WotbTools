@@ -1,8 +1,3 @@
--- Reviewed 2025/2026 tournament broadcasts; one evidenced representative battle pair per stream.
--- Source: docs/research/broadcast-seed-2025-2026/seed-ready-2025-2026-verified.json
--- Source SHA-256 (UTF-8, LF): e851618cb48addce71af760263a455c084aa857678bd3f8f924ea44d4d7adafc
--- Live-start UTC remains in source evidence; only its regional calendar date is imported.
--- Confirmed groups are preserved; unknown groups remain NULL. No network access or overwrite of administrator-owned data.
 DO $seed$
 DECLARE
     source_rows CONSTANT jsonb := $entries$[
@@ -2078,8 +2073,6 @@ DECLARE
     existing_owner_matches boolean;
     added integer;
 BEGIN
-    -- Acquire before row locks, as normal writes lock the season before changing its descendants.
-    -- Ordinary readers remain available while the small one-time import runs.
     LOCK TABLE tournament_broadcast_season IN EXCLUSIVE MODE;
     SELECT coalesce(jsonb_agg(jsonb_build_object('videoId', identity.video_id, 'seasonId', season.id,
             'server', season.server, 'year', season.year)), '[]'::jsonb)
@@ -2108,7 +2101,6 @@ BEGIN
         INTO event_video_ids FROM jsonb_array_elements(source_rows) candidate
         WHERE candidate->'server' = event->'server' AND candidate->'year' = event->'year' AND candidate->'season' = event->'season';
 
-        -- Existing video ownership outranks default names, including renamed administrator seasons.
         SELECT count(DISTINCT (existing->>'seasonId')::bigint), min((existing->>'seasonId')::bigint),
                 bool_and(existing->'server' = event->'server' AND existing->'year' = event->'year')
         INTO matched_seasons, seed_season_id, existing_owner_matches
@@ -2127,7 +2119,6 @@ BEGIN
             WHERE server = event->>'server' AND year = (event->>'year')::integer
                 AND (btrim(name_zh) = event->'season'->>'nameZh' OR btrim(name_en) = event->'season'->>'nameEn'
                     OR btrim(name_zh) = event->'season'->>'nameEn'
-                    -- Original Lesta defaults used the same Russian name in all three fields.
                     OR (name_zh = event->'season'->>'nameRu' AND name_en = event->'season'->>'nameRu'
                         AND name_ru = event->'season'->>'nameRu'));
         END IF;

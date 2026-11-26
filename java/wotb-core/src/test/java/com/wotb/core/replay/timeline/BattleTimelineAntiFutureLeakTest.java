@@ -15,11 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Anti-future-leak invariant（docs/architecture/battle-timeline.md §10/§52.2）：
- * 敌方 HP 1500 于 t=100 观测 → 失联 → t=140 重亮 HP=600。
- * contextAt(120) 绝不能出现 600；contextAt(145) 才可出现重亮与 bounded retrospective delta。
- */
 class BattleTimelineAntiFutureLeakTest {
 
     private static final int ENEMY = TimelineTestFixtures.ENEMY_EID;
@@ -28,13 +23,9 @@ class BattleTimelineAntiFutureLeakTest {
     void contextBeforeReacquireMustNotSeeFutureHp() {
         final Battle battle = TimelineTestFixtures.battle(200.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
-        // 敌方位置流持续到 100s（此后失联）
         events.add(TimelineTestFixtures.position(ENEMY, 100, -12f, -12f, 0f));
-        // P0-1：enemy 在 t=100 后失联（Type4 leave）→ observed segment 关闭 → 120/130 = UNKNOWN_AOI gap → LAST_KNOWN；
-        // 140 重亮（position）重开段（canonical AoI gap 需要 leave 才成立，不再按 5s 失联）。
         events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(100),
                 4, DecodeConfidence.EXACT, ENEMY));
-        // HP：100s 观测 1500；140s 重亮 600
         events.add(TimelineTestFixtures.health(ENEMY, 100, 1500, true));
         events.add(TimelineTestFixtures.position(ENEMY, 140, -15f, -15f, 0f));
         events.add(TimelineTestFixtures.health(ENEMY, 140, 600, true));
@@ -43,26 +34,21 @@ class BattleTimelineAntiFutureLeakTest {
                 .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
         assertNotNull(timeline);
 
-        // contextAt(120)：位置失联 → LAST_KNOWN；血量只能知道 1500（last-known HP），绝不能 600
         final FrameVehicle at120 = frameVehicle(timeline, 120);
         assertEquals(VehicleKnowledgeState.LAST_KNOWN, at120.knowledgeState());
         assertEquals(1500, at120.health().currentHp());
         assertEquals(100.0, at120.health().observedAtSec(), 1e-9);
         assertEquals(20.0, at120.health().ageSec(), 1e-9);
-        // P0 frame-health knowledge：hidden interval → LAST_KNOWN；displayCapacityHp 只含 ≤t 观测 (=1500)。
         assertEquals(FrameHealth.HealthKnowledge.LAST_KNOWN, at120.health().knowledge());
         assertEquals(1500, at120.health().displayCapacityHp(),
                 "displayCapacityHp must be anti-future-leak: only <=120s obs, never 600 from t=140");
 
-        // contextAt(130)：仍未重亮，HP 仍是 1500
         assertEquals(1500, frameVehicle(timeline, 130).health().currentHp());
 
-        // contextAt(145)：已重亮 → 600
         final FrameVehicle at145 = frameVehicle(timeline, 145);
         assertEquals(600, at145.health().currentHp());
         assertEquals(VehicleKnowledgeState.POSITION_STREAM_ACTIVE, at145.knowledgeState());
         assertEquals(FrameHealth.HealthKnowledge.CURRENT, at145.health().knowledge());
-        // 1500 仍是 display capacity 的正确上界（重亮后 600 更低，不改变容量）
         assertEquals(1500, at145.health().displayCapacityHp());
     }
 
@@ -80,7 +66,6 @@ class BattleTimelineAntiFutureLeakTest {
         final BattleTimeline timeline = BattleTimelineBuilder
                 .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
 
-        // 140s 帧的 delta 必须包含 HP_GAP_DELTA：previousKnownHp=1500 / newKnownHp=600 / gap=40s / exactCauseUnknown=true
         final BattleFrame frame140 = timeline.frameAt(140);
         final BattleDelta gap = frame140.deltas().stream()
                 .filter(d -> d.kind() == DeltaKind.HP_GAP_DELTA)
@@ -92,7 +77,6 @@ class BattleTimelineAntiFutureLeakTest {
         assertEquals(40.0, gap.number("informationGapSec", -1), 1e-9);
         assertEquals("true", gap.attr("exactCauseUnknown", "false"));
 
-        // 120s 帧绝不能有 HP_GAP_DELTA（信息尚未出现）
         assertTrue(timeline.frameAt(120).deltas().stream()
                 .noneMatch(d -> d.kind() == DeltaKind.HP_GAP_DELTA));
     }
@@ -101,17 +85,14 @@ class BattleTimelineAntiFutureLeakTest {
     void futureDestroyedStateDoesNotLeakIntoPastFrames() {
         final Battle battle = TimelineTestFixtures.battle(200.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
-        // 敌方 150s 才阵亡（alive=false EXACT）
         events.add(TimelineTestFixtures.health(ENEMY, 150, 0, false));
         final ReplayReconstruction recon = TimelineTestFixtures.recon(200.0, events);
         final BattleTimeline timeline = BattleTimelineBuilder
                 .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
 
-        // 120s：绝不能预知阵亡
         final FrameVehicle at120 = frameVehicle(timeline, 120);
         assertNull(at120.destroyedKnownAtSec());
         assertTrue(at120.knowledgeState() != VehicleKnowledgeState.DESTROYED_KNOWN);
-        // 160s：已确知阵亡
         assertNotNull(frameVehicle(timeline, 160).destroyedKnownAtSec());
         assertEquals(150.0, frameVehicle(timeline, 160).destroyedKnownAtSec(), 1e-9);
     }
@@ -120,7 +101,6 @@ class BattleTimelineAntiFutureLeakTest {
     void orientationKnowledgeIsLastKnownDuringAoIHiddenInterval() {
         final Battle battle = TimelineTestFixtures.battle(200.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
-        // enemy 位置流到 100s；turret 到 100s；随后 Type4 leave → UNKNOWN_AOI gap；140 重亮。
         events.add(TimelineTestFixtures.position(ENEMY, 100, -12f, -12f, 0f));
         events.add(TimelineTestFixtures.turret(ENEMY, 100, 30.0));
         events.add(new EntityRemovedEvent(TimelineTestFixtures.seq++, TimelineTestFixtures.ts(100),
@@ -132,12 +112,10 @@ class BattleTimelineAntiFutureLeakTest {
                 .build(battle, recon, TimelineTestFixtures.personalPerspective()).timeline();
         assertNotNull(timeline);
 
-        // 120s：hidden interval → orientation LAST_KNOWN（不能表现为实时炮塔方向）
         final FrameVehicle at120 = frameVehicle(timeline, 120);
         assertNotNull(at120.orientation().hullYawDeg());
         assertEquals(FrameOrientation.OrientationKnowledge.LAST_KNOWN,
                 at120.orientation().knowledge());
-        // 145s：重亮 → CURRENT
         final FrameVehicle at145 = frameVehicle(timeline, 145);
         assertEquals(FrameOrientation.OrientationKnowledge.CURRENT,
                 at145.orientation().knowledge());

@@ -37,7 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Shared fixtures for the Team prompt builder behavior tests. */
 abstract class TeamAiPromptBuilderTestSupport {
 protected static SingleTeamBattleAnalysisContext contextWithMembers(
             final int memberCount,
@@ -92,7 +91,6 @@ protected static SingleTeamBattleAnalysisContext contextWithMembers(
         battle.winnerTeam = 1;
         battle.players = players;
         battle.recorder = players.getFirst().nickname;
-        // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
         return TeamContextBuilder.buildSingleTeamContext(battle, null);
     }
     protected static String singleWithPrior(final Battle battle,
@@ -128,7 +126,6 @@ protected static SingleTeamBattleAnalysisContext contextWithMembers(
         }
         return count;
     }
-    /** 点数局势上下文：holland 地图 + 双方阵亡（击杀夺分时间线）+ 位置轨迹（存在/推进窗口）。 */
         protected static SingleTeamBattleAnalysisContext pointsSituationContext() {
             final Battle battle = new Battle();
             battle.mapName = "holland";

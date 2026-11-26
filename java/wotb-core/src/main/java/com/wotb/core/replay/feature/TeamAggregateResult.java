@@ -1,8 +1,5 @@
 package com.wotb.core.replay.feature;
 
-/**
- * 来自 battle_results.dat 的权威团队结算聚合。
- */
 public record TeamAggregateResult(
         int memberCount,
         int totalDamageDealt,

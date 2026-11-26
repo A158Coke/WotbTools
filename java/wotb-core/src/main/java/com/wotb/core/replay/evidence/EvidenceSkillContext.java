@@ -5,9 +5,6 @@ import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
 import com.wotb.core.replay.processing.RecorderEntityMapping;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 
-/**
- * Backend Evidence Skill 的统一输入。所有 Skill 只读此上下文，产出 {@link AiEvidence}。
- */
 public record EvidenceSkillContext(
         Battle battle,
         ReplayReconstruction recon,

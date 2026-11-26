@@ -20,10 +20,6 @@ import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.sli
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/**
- * wotb-core 架构契约（对应 {@code docs/DEVELOPER_GUIDE.md}）：
- * 纯库边界——不依赖 Spring Web/Boot 容器，不反向依赖 wotb-web；core 内部无循环依赖。
- */
 @AnalyzeClasses(packages = "com.wotb.core", importOptions = ImportOption.DoNotIncludeTests.class)
 class CoreArchitectureTest {
     private static final Path MAIN_SOURCE = Path.of("src/main/java");
@@ -38,7 +34,6 @@ class CoreArchitectureTest {
                     "org.springframework.boot..",
                     "com.wotb.web..");
 
-    /** Research/probe helpers are test evidence only and must not become production domain dependencies. */
     @ArchTest
     static final ArchRule CORE_PRODUCTION_MUST_NOT_DEPEND_ON_RESEARCH_PROBES = noClasses()
             .that().resideInAPackage("com.wotb.core..")
@@ -53,7 +48,6 @@ class CoreArchitectureTest {
             .matching("com.wotb.core.(*)..")
             .should().beFreeOfCycles();
 
-    /** 防"规则空转"：确保分析器真实导入了 core 主代码。 */
     @ArchTest
     static void coreClassesAreAnalyzed(final JavaClasses classes) {
         assertTrue(classes.size() > 0, "ArchUnit 未导入任何 com.wotb.core 主类");

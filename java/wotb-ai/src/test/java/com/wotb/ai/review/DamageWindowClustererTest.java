@@ -23,15 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 掉血窗口聚类器单测：空事件 / 单事件 / 连续聚类 / 大间隔拆分 /
- * 真实 entity 映射（accountId 为 null）/ 准备阶段过滤 / 非受击者忽略 /
- * 攻击者解析（单一攻击者≠集火、多攻击者才可集火、未解析不得集火）。
- *
- * <p>口径：窗口只消费权威 HP loss（Type-7 推导），fixture 用
- * {@code hpLoss(...)} helper 生成「prev/cur HP sample 对 + 单条 DAMAGE 通知」，
- * 使每条掉血都得到精确 attribution。</p>
- */
 class DamageWindowClustererTest {
 
     private static final long VICTIM = 10_001L;
@@ -120,7 +111,6 @@ class DamageWindowClustererTest {
 
     @Test
     void unresolvedAttackerMarksWindowAndIsNotCounted() {
-        // attackerEid=999 无映射且无直填 accountId → 攻击者无法解析，不得计数/不得断言集火
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f,
@@ -135,8 +125,6 @@ class DamageWindowClustererTest {
 
     @Test
     void chainedClusteringLongSpanIsNotShortFocusFire() {
-        // 相邻间隔均 ≤10s（9s），链式聚类成一个窗口，但总跨度 27s 超阈值：
-        // 即使攻击者 ≥2 也不得当作短时集火。
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f,
@@ -171,7 +159,6 @@ class DamageWindowClustererTest {
 
     @Test
     void entityMappingResolvesNullAccountIdsFromRealDecoderShape() {
-        // 模拟真实 decoder：DamageEvent 的 accountId 恒为 null，只有 eid；映射来自 ParticipantMappingEvent
         final Battle battle = new Battle();
         battle.players = List.of(
                 player(1001L, 1, "Ally"), player(2001L, 2, "EnemyA"), player(2002L, 2, "EnemyB"));
@@ -204,17 +191,15 @@ class DamageWindowClustererTest {
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f,
-                                hpLoss(10f, 2L, VICTIM, 500),    // 准备阶段
-                                hpLoss(40f, 2L, 9_999L, 999),    // 其他受击者
-                                hpLoss(0f, 2L, VICTIM, 0)),      // 零伤害
+                                hpLoss(10f, 2L, VICTIM, 500),
+                                hpLoss(40f, 2L, 9_999L, 999),
+                                hpLoss(0f, 2L, VICTIM, 0)),
                         VICTIM);
         assertTrue(windows.isEmpty());
     }
 
     @Test
     void unprovenEntryHpUsesBaseBaselineAndFailsClosedCritical() {
-        // Kranvagn（4481）tankopedia base 2400、无受击前样本证明进场满血（BASE_FALLBACK）：
-        // pct 按 base 输出（79%），但 criticalWindow fail closed（base 只是下界，真实 entry 可能更高）。
         final Battle battle = new Battle();
         battle.players = List.of(player(VICTIM, 1, "Victim"));
         final List<DamageWindowClusterer.DamageWindow> windows =
@@ -229,8 +214,6 @@ class DamageWindowClustererTest {
 
     @Test
     void provenEntryHpWithEquipmentBonusUsesEntryDenominator() {
-        // 进场满血被证明（OBSERVED_EXACT，含装备/物资加成 entry=2600）：
-        // 同一 5s 窗口伤害 1900 → 1900/2600 = 73% < 75% → 不得标短窗高额伤害窗口
         final Battle battle = new Battle();
         final PlayerResult victim = player(VICTIM, 1, "Victim");
         victim.entryHpSource = EntryHpSource.OBSERVED_EXACT;
@@ -250,12 +233,9 @@ class DamageWindowClustererTest {
 
     @Test
     void unprovenCurrentSampleNeverCreatesFalseCriticalWindow() {
-        // 反例（用户回归）：tankopedia base=2400、真实进场满血=2600、
-        // 整场观测最大 currentHp=2500（已受伤，未证明为进场满血）。
-        // 直接 1900/2500=76% 会误报 critical；必须 fail closed（按 base baseline 79%，不判 critical）。
         final Battle battle = new Battle();
         final PlayerResult victim = player(VICTIM, 1, "Victim");
-        victim.observedMaxHp = 2500; // 只是观测最大 current，无受击前证明 → 不得当 entry
+        victim.observedMaxHp = 2500;
         battle.players = List.of(victim);
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
@@ -272,7 +252,6 @@ class DamageWindowClustererTest {
     void slowLongWindowIsNotCritical() {
         final Battle battle = new Battle();
         battle.players = List.of(player(VICTIM, 1, "Victim"));
-        // 相邻间隔 ≤10s 链式聚类成单个跨度 15s 的窗口：掉血 79% 但跨度 >10s，不是「短窗大额掉血」
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(battle, recon(30f,
                         hpLoss(35f, 2L, VICTIM, 1000),
@@ -286,7 +265,6 @@ class DamageWindowClustererTest {
 
     @Test
     void unknownEntryMaxHpYieldsUnknownPctAndFailsClosed() {
-        // battle=null → 无满血量口径 → pct 未知，不得误标短窗高额伤害窗口
         final List<DamageWindowClusterer.DamageWindow> windows =
                 DamageWindowClusterer.receivedWindows(
                         null, recon(30f, hpLoss(35f, 2L, VICTIM, 400)), VICTIM);
@@ -304,20 +282,12 @@ class DamageWindowClustererTest {
         return p;
     }
 
-    /**
-     * 一条权威掉血：prev/cur HP sample 对 + 单条 DAMAGE 通知（直填账号）。
-     * 窗口 (t-0.5, t] 内只有这一条通知 → 精确 attribution。
-     */
     private static DamageEvent hpLoss(final float clock, final long attacker,
                                       final long victim, final int amount) {
         return new DamageEvent(0, new ReplayTimestamp(clock, null), 8,
                 DecodeConfidence.EXACT, (int) attacker, (int) victim, attacker, victim, amount, false);
     }
 
-    /**
-     * 构造带 HP 链的 recon：为每条 damage 自动生成 prev/cur HP sample（victim 从 2000 逐条递减），
-     * 并为每个出现的账号生成 entityId→accountId 映射与参与者（battle 为 null 时也能解析身份）。
-     */
     private static ReplayReconstruction recon(final Float battleStart, final DamageEvent... events) {
         return recon(battleStart, List.of(), events);
     }
@@ -329,7 +299,6 @@ class DamageWindowClustererTest {
         final List<ReplayEvent> sortedEvents = new ArrayList<>(List.of(events));
         sortedEvents.sort(Comparator.comparingDouble(e ->
                 e.timestamp() == null ? 0 : e.timestamp().rawClockSec()));
-        // victim 账号 → 当前 HP（从 2000 递减），生成 HP 链
         final Map<Long, Integer> curHp = new LinkedHashMap<>();
         final Map<Long, Integer> victimEid = new LinkedHashMap<>();
         for (final ReplayEvent e : sortedEvents) {
@@ -346,7 +315,7 @@ class DamageWindowClustererTest {
             victimEid.putIfAbsent(victim, eid);
             final float t = d.timestamp().rawClockSec();
             if (battleStart != null && t < battleStart) {
-                continue; // 准备阶段：HP sample 也在战斗开始前，derive 会过滤
+                continue;
             }
             final int prev = curHp.getOrDefault(victim, 2000);
             all.add(new HealthChangedEvent(seq(victim, 0), new ReplayTimestamp(t - 0.5f, null), 7,
@@ -355,7 +324,6 @@ class DamageWindowClustererTest {
                     DecodeConfidence.EXACT, eid, prev - d.damage(), null, true));
             curHp.put(victim, prev - d.damage());
         }
-        // 为每个出现的账号补 mapping + 参与者（battle=null 时 identity 从 participants 解析）
         final Map<Long, Integer> allAccounts = new LinkedHashMap<>();
         for (final DamageEvent d : events) {
             if (d.victimAccountId() != null && d.victimAccountId() > 0) {
@@ -390,12 +358,10 @@ class DamageWindowClustererTest {
                 participants, all, List.of(), null, null, null);
     }
 
-    /** 与 recon 相同，但保留调用方显式提供的 mapping（不自动补）。 */
     private static ReplayReconstruction reconWithMapping(final Float battleStart,
                                                          final List<ParticipantMappingEvent> mappings,
                                                          final DamageEvent... events) {
         final List<ReplayEvent> all = new ArrayList<>(mappings);
-        // HP 链：victim eid=10（映射已提供），从 2000 递减
         int prev = 2000;
         final List<ReplayEvent> sortedEvents = new ArrayList<>(List.of(events));
         sortedEvents.sort(Comparator.comparingDouble(e ->

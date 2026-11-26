@@ -27,7 +27,6 @@ import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.phase
 import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.stationary;
 import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.twoClusterPhase;
 
-/** Observation coverage and event-window boundaries for spatial separation evidence. */
 class TeamSeparationEvidenceBoundaryTest {
 
     @Test
@@ -116,7 +115,6 @@ class TeamSeparationEvidenceBoundaryTest {
         final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        // 覆盖不足 → movementState=UNKNOWN（不得按 MOVING 下结论），但分离窗口事实仍输出
         assertFalse(evidence.isEmpty(), "separation window facts must still be emitted");
         for (final AiEvidence e : evidence) {
             assertEquals("UNKNOWN", e.labels().get("movementState"), e.summary());
@@ -146,7 +144,6 @@ class TeamSeparationEvidenceBoundaryTest {
 
     @Test
     void engagementFullyInsideSpanOutputsFacts() {
-        // 交火完全位于 span 内：整段承伤可正常归属 → 输出中性 SEPARATION_WINDOW 事实
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 0, true, null,
                 List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -202,7 +199,6 @@ class TeamSeparationEvidenceBoundaryTest {
         final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        // partial 覆盖不得用“没有观察到”证明未接火 → 不生成 OPENING_SPREAD；也不得生成任何战术 verdict
         for (final AiEvidence e : evidence) {
             assertFalse("OPENING_SPREAD".equals(e.labels().get("kind")), e.summary());
             assertFalse(e.summary().contains("拖延") || e.summary().contains("脱节"), e.summary());

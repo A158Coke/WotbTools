@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-/** One private COS client; domain services retain ownership and reservation lifecycles. */
 @Component
 public class CosImageStorage {
     private static final int REQUEST_TIMEOUT_MS = 30_000;
@@ -54,7 +53,6 @@ public class CosImageStorage {
                 ? new COSClient(new BasicCOSCredentials(secretId, secretKey), clientConfig(region)) : null;
     }
 
-    /** Explicit client injection for loopback tests; production credentials have one configuration source. */
     public CosImageStorage(final COSClient client, final String bucket, final String... prefixes) {
         this.client = validBucket(bucket) ? client : null;
         this.bucket = bucket;
@@ -66,7 +64,6 @@ public class CosImageStorage {
         return new Namespace(prefix, unavailable, invalid, failure, missing);
     }
 
-    /** Only configured, safe prefixes plus canonical UUID keys can reach the SDK. */
     public final class Namespace {
         private final String prefix;
         private final ApiErrorCode unavailable;
@@ -99,7 +96,6 @@ public class CosImageStorage {
         public byte[] get(final String objectKey, final int maxBytes) {
             if (maxBytes < 1 || maxBytes > ImageValidation.MAX_BYTES) { throw new IllegalArgumentException("Invalid image bound"); }
             checkKey(objectKey);
-            // The SDK's deadline stops at streaming GET headers, so bound the body too.
             final AtomicBoolean expired = new AtomicBoolean();
             final AtomicReference<COSObjectInputStream> stream = new AtomicReference<>();
             final var deadline = deadlines.schedule(() -> {
@@ -147,7 +143,6 @@ public class CosImageStorage {
         return bucket != null && bucket.matches("[a-z0-9][a-z0-9-]{1,49}-[0-9]{5,20}");
     }
     private static Set<String> safePrefixes(final String... candidates) {
-        // Equal namespaces would allow cross-domain deletion. Fail closed on collisions.
         final List<String> all = Arrays.asList(candidates);
         if (all.stream().distinct().count() != all.size()) { return Set.of(); }
         return all.stream().filter(prefix -> prefix != null

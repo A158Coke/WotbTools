@@ -85,7 +85,6 @@ class UserProfileLoginSyncTest extends UserProfileServiceTestSupport {
         final OffsetDateTime verifiedAt = OffsetDateTime.parse("2026-01-01T00:00:00Z");
         when(repository.findByKeycloakUserId("kc-user"))
                 .thenReturn(Optional.of(wgProfile("ASIA", 123456L, "PlayerOne", verifiedAt)));
-        // 即使当前 JWT 的可信 claims 指向另一个区服/账号，也不得覆盖既有绑定。
         loginWithWgClaims("EU", true, 999L);
 
         final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "other", "Other");
@@ -110,9 +109,6 @@ class UserProfileLoginSyncTest extends UserProfileServiceTestSupport {
 
     @Test
     void ensureReloadsExistingProfileWhenAnotherRequestWonTheKeycloakUserRace() {
-        // 并发败者路径：find → 不存在；插入冲突；胜者已提交。
-        // 刻意用一个**不含任何已知约束名**的冲突消息：收敛判定必须来自「重读自己的 sub」这一
-        // 数据库事实，而不是 PostgreSQL 先报告了哪个约束。
         when(repository.findByKeycloakUserId("kc-user"))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(wgProfile("CN", 7L, null, null)));
@@ -121,7 +117,6 @@ class UserProfileLoginSyncTest extends UserProfileServiceTestSupport {
 
         final UserProfileDto dto = service.ensureCurrentProfile("kc-user", "u", "U");
 
-        // 同一 KC sub 的并发 ensure 必须两个调用方都成功，而不是返回 PROFILE_ALREADY_EXISTS。
         assertEquals(7L, dto.wotbAccountId());
         assertEquals("kc-user", dto.keycloakUserId());
     }
@@ -136,14 +131,12 @@ class UserProfileLoginSyncTest extends UserProfileServiceTestSupport {
         final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.ensureCurrentProfile("kc-user", "u", "U"));
 
-        // 真实 WotB 账号占用绝不能被幂等逻辑吞掉，也绝不返回他人的 profile。
         assertEquals("WOTB_ACCOUNT_ALREADY_USED", error.getMessage());
     }
 
     @Test
     void ensureReportsUnknownIntegrityViolationAsBootstrapFailure() {
         when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.empty());
-        // 自己的 sub 不存在，且冲突不是 WotB 账号占用 → 不得伪装成 409 业务冲突。
         when(repository.saveAndFlush(any(UserProfile.class)))
                 .thenThrow(new DataIntegrityViolationException(
                         "new row for relation \"user_profile\" violates check constraint \"ck_user_profile_wotb_server\""));

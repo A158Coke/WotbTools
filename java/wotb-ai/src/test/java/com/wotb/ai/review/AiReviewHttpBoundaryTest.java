@@ -18,16 +18,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * {@code POST /api/ai/reviews} 的 HTTP 边界契约：JWT 角色门 + 返回 worker 之前的失败必须是契约
- * {@code ApiError} 信封（含稳定 {@code errorCode}），而不是 Spring 默认错误体。
- *
- * <p>覆盖 AI Review HTTP 边界用例：无 JWT、角色不足、未知 locale、非法
- * correlationId。SSE 准入、取消与执行期行为由 Review service tests 覆盖。</p>
- *
- * <p>MockMvc 按本仓库既有形态手工装配（{@code webAppContextSetup + springSecurity()}），
- * 不依赖 {@code @AutoConfigureMockMvc}（Spring Boot 4.1 该切片不在现有测试依赖内）。</p>
- */
 @SpringBootTest(classes = AiServiceApplication.class,
         properties = {
                 "spring.security.oauth2.resourceserver.jwt.issuer-uri=",
@@ -83,7 +73,6 @@ class AiReviewHttpBoundaryTest {
         return body(locale, "6f1e6f1e-0000-4000-8000-000000000001");
     }
 
-    /** V2 信封：投影段留空（信封错误先于投影结构校验返回）。 */
     private static String body(final String locale, final String correlationId) {
         return "{\"locale\":\"" + locale + "\",\"correlationId\":\"" + correlationId + "\","
                 + "\"battle\":{\"players\":[]},\"projection\":{}}";
@@ -108,7 +97,6 @@ class AiReviewHttpBoundaryTest {
 
     @Test
     void inflatedSizeIsCappedAt16MiB() throws Exception {
-        // 17 MiB 的空白在 gzip 下只有几十 KB：传输体合规，解压后超限 → 413（防 zip bomb）
         final byte[] bomb = gzip("{\"locale\":\"zh-CN\"" + " ".repeat(17 * 1024 * 1024) + "}");
         mockMvc.perform(post(ENDPOINT).contentType(MediaType.APPLICATION_JSON).header("Content-Encoding", "gzip")
                         .content(bomb).with(jwt().authorities(new SimpleGrantedAuthority(USER))))

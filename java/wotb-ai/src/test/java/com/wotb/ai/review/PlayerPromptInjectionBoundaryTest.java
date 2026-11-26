@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Prompt injection and unsafe display input boundary tests for Player AI. */
 class PlayerPromptInjectionBoundaryTest extends PlayerReplayAnalysisServiceTestSupport {
 
     @Test

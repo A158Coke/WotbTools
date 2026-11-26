@@ -296,7 +296,6 @@ class WargamingApiClientTest {
                         case "body":
                             return body;
                         case "headers":
-                            // 测试路径均为 200，不会访问 headers；302 兼容分支不覆盖。
                             return null;
                         default:
                             return null;

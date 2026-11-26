@@ -52,9 +52,6 @@ public class QQIdentityProvider
     protected BrokeredIdentityContext doGetFederatedIdentity(String accessToken) {
 
         try {
-            // =========================
-            // 1️⃣ 获取 openid
-            // =========================
             String meResponse = SimpleHttp.create(session)
                     .doGet(ME_URL)
                     .param("access_token", accessToken)
@@ -69,9 +66,6 @@ public class QQIdentityProvider
 
             String openid = meNode.get("openid").asText();
 
-            // =========================
-            // 2️⃣ 获取用户信息
-            // =========================
             JsonNode userInfo = SimpleHttp.create(session)
                     .doGet(USER_INFO_URL)
                     .param("access_token", accessToken)
@@ -97,23 +91,17 @@ public class QQIdentityProvider
                     ? userInfo.get("figureurl_qq_2").asText()
                     : null;
 
-            // =========================
-            // 3️⃣ 构造 BrokeredIdentityContext
-            // =========================
             BrokeredIdentityContext context = new BrokeredIdentityContext(getConfig());
 
             context.setId(openid);
             context.setBrokerUserId(openid);
 
-            // 建议用户名
             context.setUsername("qq_" + openid);
 
             context.setFirstName(nickname);
             context.setUserAttribute("displayName", nickname);
             context.setUserAttribute("region", "CN");
 
-            // QQ 默认没有邮箱，这里给一个占位邮箱
-            // context.setEmail(openid + "@qq.social.local");
 
             if (avatar != null) {
                 context.setUserAttribute("avatar", avatar);

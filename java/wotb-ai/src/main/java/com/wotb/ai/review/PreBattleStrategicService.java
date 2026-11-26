@@ -19,24 +19,13 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Call #1 编排：构造 roster-only Prompt → 预算守卫 → 独立小输出上限的 LLM 调用
- * → 解析结构化 {@link PreBattleStrategicPrior}。
- * <p>任何失败（未配置 / 上游异常 / 解析失败）都返回 {@code null}，
- * 由 {@link TacticalReviewHarness} 决定降级，不让 Call #1 拖垮整场复盘。
- * 结构化 JSON 小调用强制关闭 thinking：DeepSeek thinking 模式（effort=max）会把
- * 整个输出预算消耗在 reasoning 上并返回空正文（线上实测 AI_EMPTY_RESPONSE），
- * 关闭后直接输出契约 JSON（finish_reason=stop）。</p>
- */
 @Service
 public class PreBattleStrategicService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PreBattleStrategicService.class);
 
-    /** Call #1 是结构化 JSON，输出预算独立且远小于 Call #2。 */
     static final int PRE_BATTLE_MAX_OUTPUT_TOKENS = 4096;
 
-    /** Call #1 是小型 roster/map JSON 分析，必须有独立、明显更短的调用预算。 */
     static final int PRE_BATTLE_CALL_TIMEOUT_SEC = 45;
 
     private final AiChatGateway gateway;
@@ -101,8 +90,6 @@ public class PreBattleStrategicService {
                 config.model(),
                 null,
                 PRE_BATTLE_MAX_OUTPUT_TOKENS,
-                // 结构化 JSON 任务：关闭 thinking，避免 reasoning 吃光 4096 输出预算
-                // 导致空正文（AI_EMPTY_RESPONSE），见类 Javadoc。
                 false,
                 null,
                 null,
@@ -143,7 +130,6 @@ public class PreBattleStrategicService {
         return prior;
     }
 
-    /** 可观测：记录 Call #1 输入覆盖（地图语义状态 + 车辆战术 Profile 覆盖率），供 Loki/Grafana 验证。 */
     private void logInputCoverage(final Battle battle,
                                   final MapTacticalSemantics semantics) {
         final boolean found = semantics != null && semantics.hasSemantics();

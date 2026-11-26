@@ -26,8 +26,6 @@ spring:
     username: ${POSTGRES_USER:wotb}
     password: ${POSTGRES_PASSWORD}
   jpa:
-    # DTO projection ends in service transactions; public COS reads must not
-    # keep a request-wide persistence context and its borrowed connection.
     open-in-view: false
     hibernate.ddl-auto: validate
   flyway:
@@ -41,7 +39,6 @@ spring:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:https://auth.wotbtools.com/realms/wotbtools}
 
-# observability: dedicated management port (8088), Docker-network only.
 management:
   server:
     port: 8088
@@ -82,7 +79,6 @@ management:
 
 logging:
   level:
-    # COS logs signed Authorization headers on failures; the domain reports sanitized error types.
     com.qcloud.cos: "OFF"
   structured:
     format:
@@ -98,7 +94,6 @@ keycloak:
 wotb:
   creator:
     cos:
-      # Credentials and private bucket are shared with broadcast covers; only the namespace differs.
       prefix: ${CREATOR_AVATAR_COS_PREFIX:creator-avatars/}
   broadcast:
     cos:
@@ -112,10 +107,7 @@ wotb:
     evidence-dir: ${HOF_REPLAY_DIR:data/replays}/tournament
     min-free-bytes: ${HOF_REPLAY_MIN_FREE_BYTES:536870912}
   replay:
-    # 回放证据上传（名人堂 / 百场 / 三环）的全局并发许可（ReplayCapacityLimiter）；服务器没有 parser
     max-concurrent-jobs: ${REPLAY_MAX_CONCURRENT_JOBS:2}
   hof:
-    # 名人堂回放文件内容寻址存储目录（生产挂 volume /data/replays）
     replay-dir: ${HOF_REPLAY_DIR:data/replays}
-    # 磁盘保留阈值（字节，含本次写入大小）；低于则拒绝存储 REPLAY_STORAGE_FULL(507)
     replay-min-free-bytes: ${HOF_REPLAY_MIN_FREE_BYTES:536870912}

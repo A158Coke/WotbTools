@@ -42,11 +42,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 上传编排契约测试（客户端 facts + mock storage/service，无 DB，任何环境可跑）。
- * 覆盖：facts 必填/结构校验（INVALID_REPLAY_FACTS）、存储 IOException 与非法 facts 隔离、DB 失败保留 orphan（v3 语义不删除）、
- * 未登录 401。
- */
 class HallOfFameUploadServiceTest {
 
     private final Tankopedia tankopedia = Tankopedia.load();
@@ -149,7 +144,6 @@ class HallOfFameUploadServiceTest {
                 });
 
         assertThrows(DataAccessException.class, () -> uploadService.upload(file(), facts()));
-        // v3 语义：DB 失败不删除已入存储的文件（保留为安全 orphan）
         verify(storage, never()).delete(anyString());
     }
 
@@ -192,14 +186,8 @@ class HallOfFameUploadServiceTest {
         verify(hofService, never()).eligibility(any());
     }
 
-    /**
-     * Blocker 契约（真实 HallOfFameService 判定，任何环境可跑，不依赖 Docker）：
-     * arenaBonusType=2 的训练房 facts → 400 UNSUPPORTED_BATTLE_TYPE，且在 SHA-256/preflight/storage/DB
-     * 任何持久化之前被拒绝：storage 不落盘、leaderboard DB 零写入。
-     */
     @Test
     void nonRandomReplayRejectsWithNonRandomBattleBeforeAnyPersistence() throws Exception {
-        // eligibility 走真实 HallOfFameService（纯内存判定，不触 DB），验证 facts→判定 真实集成路径。
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
         final HallOfFameService realService = new HallOfFameService(
                 repo, mock(HallOfFameRecordMapper.class), mock(HallOfFameReplayStorage.class));
@@ -207,7 +195,6 @@ class HallOfFameUploadServiceTest {
         doAnswer(inv -> ((Callable<?>) inv.getArgument(0)).call()).when(limiter).execute(any());
         final HallOfFameUploadService svc = new HallOfFameUploadService(realService, limiter, storage, replayHashLock);
 
-        // 训练房（非随机）且录像者可识别：只有战斗模式会触发拒绝。
         final Battle training = battle();
         training.arenaBonusType = 2;
         assertTrue(training.recorderResult() != null, "训练房 facts 应能识别录像者");
@@ -218,7 +205,6 @@ class HallOfFameUploadServiceTest {
         final IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> svc.upload(file, ReplayFactsJson.of(training)));
         assertEquals("UNSUPPORTED_BATTLE_TYPE", e.getMessage());
-        // 任何持久化零发生：不落盘、不入库、不改已有记录。
         verify(storage, never()).store(any(byte[].class), anyString());
         verify(repo, never()).saveAndFlush(any());
         verify(repo, never()).attachReplayMetadata(anyLong(), anyString(), anyString(), anyLong(), anyString());
@@ -258,7 +244,6 @@ class HallOfFameUploadServiceTest {
 
         final Map<String, Object> result = uploadService.upload(file(), facts());
 
-        // 已存在的同一记录：仍落盘自愈，但明确告知「已在名人堂中」，不冒充新上榜
         assertEquals("already_recorded", result.get("status"));
         verify(storage).store(any(byte[].class), anyString());
         verify(hofService).recordRecorder(any(), any(), any());

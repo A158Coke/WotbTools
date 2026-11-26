@@ -15,29 +15,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 掉血窗口测试 fixture：为直填账号（或 entityId）的 DAMAGE 事件自动生成
- * 「prev/cur HP sample 对 + entityId→accountId 映射 + 参与者」，使
- * {@code PlaybackCombatReconstruction.derive} 能为每条掉血产出可 attribution 的 Loss。
- *
- * <p>窗口 (t-0.5, t] 内只放一条 DAMAGE 通知 → 精确 attribution；
- * 准备阶段（t &lt; battleStart）事件与 HP 链被 {@code derive} 过滤，天然排除。</p>
- */
 final class DamageWindowFixture {
 
     private DamageWindowFixture() {
     }
 
-    /** 为直填账号事件生成 recon（victim entityId = (int) victimAccountId）。 */
     static ReplayReconstruction recon(final Float battleStart, final DamageEvent... events) {
         return recon(battleStart, List.of(), events);
     }
 
-    /**
-     * 生成带 HP 链的 recon：为每条 damage 自动生成 prev/cur HP sample
-     * （victim 从 2000 逐条递减），并为每个出现的账号生成 entityId→accountId 映射
-     * 与参与者（battle 为 null 时 identity 也能从 participants 解析）。
-     */
     static ReplayReconstruction recon(final Float battleStart,
                                       final List<ParticipantMappingEvent> explicitMappings,
                                       final DamageEvent... events) {
@@ -45,7 +31,6 @@ final class DamageWindowFixture {
         final List<ReplayEvent> sortedEvents = new ArrayList<>(List.of(events));
         sortedEvents.sort(Comparator.comparingDouble(e ->
                 e.timestamp() == null ? 0 : e.timestamp().rawClockSec()));
-        // victim 账号 → 当前 HP（从 2000 递减），生成 HP 链
         final Map<Long, Integer> curHp = new LinkedHashMap<>();
         final Map<Long, Integer> victimEid = new LinkedHashMap<>();
         for (final ReplayEvent e : sortedEvents) {
@@ -62,7 +47,7 @@ final class DamageWindowFixture {
             victimEid.putIfAbsent(victim, eid);
             final float t = d.timestamp().rawClockSec();
             if (battleStart != null && t < battleStart) {
-                continue; // 准备阶段：HP sample 也在战斗开始前，derive 会过滤
+                continue;
             }
             final int prev = curHp.getOrDefault(victim, 2000);
             all.add(new HealthChangedEvent(seq(victim, 0), new ReplayTimestamp(t - 0.5f, null), 7,
@@ -71,7 +56,6 @@ final class DamageWindowFixture {
                     DecodeConfidence.EXACT, eid, prev - d.damage(), null, true));
             curHp.put(victim, prev - d.damage());
         }
-        // 为每个出现的账号补 mapping + 参与者（battle=null 时 identity 从 participants 解析）
         final Map<Long, Integer> allAccounts = new LinkedHashMap<>();
         for (final DamageEvent d : events) {
             if (d.victimAccountId() != null && d.victimAccountId() > 0) {

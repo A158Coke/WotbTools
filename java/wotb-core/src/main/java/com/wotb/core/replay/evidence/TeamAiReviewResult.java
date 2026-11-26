@@ -2,10 +2,6 @@ package com.wotb.core.replay.evidence;
 
 import java.util.List;
 
-/**
- * Team AI Review 当前结构化结果。这里只表达 LLM 输出的数据形状，
- * 不在 domain 层判断战术结论是否正确。
- */
 public record TeamAiReviewResult(
         Summary summary,
         List<Episode> episodes,

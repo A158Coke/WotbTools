@@ -19,14 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 敌方情报可用性：事件流里的 entityId 必须能解析成
- * 「阵营 + 昵称 + 权威坦克名称 + 结构化车种」，否则位置时间线只是匿名 Entity#id，
- * AI 拿到了敌人的位置和时间却无法归属到具体车辆。
- */
 class EntityIdentityResolverTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
+    private static final long SPHT_TANK_ID = 29985L;
     private static final long RECORDER_ACCOUNT = 1L;
     private static final long ENEMY_ACCOUNT = 2L;
     private static final int RECORDER_ENTITY = 5;
@@ -43,7 +38,6 @@ class EntityIdentityResolverTest {
         assertTrue(enemyLabel.contains("\"EnemyAce\""), enemyLabel);
         assertTrue(enemyLabel.contains("坦克: \"SPHT\""), enemyLabel);
         assertTrue(enemyLabel.contains("车种: Heavy tank"), enemyLabel);
-        // 结构化车辆事实来自 tankopedia，而不是名称推断
         assertTrue(enemyLabel.contains("等级: 10"), enemyLabel);
         assertTrue(enemyLabel.contains("国家: USA"), enemyLabel);
         assertTrue(enemyLabel.contains("炮伤: 400"), enemyLabel);
@@ -55,7 +49,6 @@ class EntityIdentityResolverTest {
     void recorderEntityIsLabelledAsSecondPersonNotAsAnEnemy() {
         final Map<Integer, String> labels = EntityIdentityResolver.resolveLabels(
                 recon(), battle(), RECORDER_ACCOUNT);
-        // 复盘直接面向玩家本人，实体标签用「你」，不再出现「录像者」
         assertEquals("你", labels.get(RECORDER_ENTITY));
     }
 
@@ -90,7 +83,6 @@ class EntityIdentityResolverTest {
 
     @Test
     void unresolvableEntitiesAreOmittedSoCallersCanFallBack() {
-        // 名册里没有该 accountId → 不产生标签，调用方回退为中性 E<id>
         final VehicleState stranger = vehicle(99, 4242L, SPHT_TANK_ID);
         final ReplayReconstruction recon = reconWith(checkpoint(1.0f, stranger));
 
@@ -107,7 +99,7 @@ class EntityIdentityResolverTest {
         enemy.accountId = ENEMY_ACCOUNT;
         enemy.nickname = "NoTankData";
         enemy.team = 2;
-        enemy.tankId = 999_999_999L;   // tankopedia 无此车
+        enemy.tankId = 999_999_999L;
         final Battle battle = new Battle();
         battle.players = List.of(recorder(), enemy);
         battle.recorder = "Recorder";
@@ -127,7 +119,6 @@ class EntityIdentityResolverTest {
         assertEquals("", EntityIdentityResolver.legend(Map.of()));
     }
 
-    // ---- fixtures ----
 
     private static PlayerResult recorder() {
         final PlayerResult p = new PlayerResult();
@@ -161,11 +152,10 @@ class EntityIdentityResolverTest {
     void sideIsUnknownWhenTheRecorderCannotBeResolved() {
         final Battle battle = new Battle();
         battle.players = List.of(recorder(), enemyAce());
-        battle.winnerTeam = 1;   // 未设置 recorder → 录像者队伍不可知
+        battle.winnerTeam = 1;
 
         final String label = EntityIdentityResolver.label(battle, enemyAce(), RECORDER_ACCOUNT);
 
-        // 不臆断阵营：无法确定时诚实输出「未知阵营」
         assertTrue(label.startsWith("未知阵营 "), label);
     }
 

@@ -239,7 +239,6 @@ class TournamentServiceWorkflowTest extends TournamentServiceFixture {
                 (Runnable) () -> service.recognitionPermit("admin", 1, 6, 1, event.version, 0, 1, evidenceFile))) {
             assertCode(ApiErrorCode.INVALID_ARGUMENT, probing);
         }
-        // Inclusive dimension boundaries stay open: the last configured round and day are reachable.
         final List<TournamentRule> allRounds = new ArrayList<>(List.of(rule));
         for (int round = 2; round <= 5; round++) {
             final TournamentRule extra = new TournamentRule(); extra.eventId = 1; extra.roundNumber = round; extra.rulesVersion = 1; extra.days = List.of();
@@ -317,7 +316,6 @@ class TournamentServiceWorkflowTest extends TournamentServiceFixture {
         assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.saveRules("admin", 1, 1, new TournamentDtos.RuleRequest(event.version, 1,
                 List.of(new TournamentDtos.RuleDay(1, List.of(new TournamentDtos.RankPoints(1, 1_000_001), new TournamentDtos.RankPoints(2, 50), new TournamentDtos.RankPoints(3, 25), new TournamentDtos.RankPoints(4, 10))),
                         new TournamentDtos.RuleDay(2, full)))));
-        // rulesVersion 0 never counts as a configured rule set even when the days are complete.
         final long rulesVersion = rule.rulesVersion; rule.rulesVersion = 0;
         assertCode(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE, () -> service.preview(1, 1, 1, request(List.of(), List.of())));
         rule.rulesVersion = rulesVersion;
@@ -377,7 +375,6 @@ class TournamentServiceWorkflowTest extends TournamentServiceFixture {
         assertFalse(day.correction); assertNull(day.draftGroups); assertNull(day.correctionReason);
         assertEquals(1, day.expectedGroupCount);
         assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
-        // Only the day version is stale here: the event version check must not mask the day check.
         assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,
                 () -> service.deleteDraft(1, 1, 1, new TournamentDtos.Versions(event.version, dayVersion)));
     }
@@ -407,7 +404,6 @@ class TournamentServiceWorkflowTest extends TournamentServiceFixture {
     }
     @Test void clanTagsMayUseExactlyThirtyTwoCodePoints() {
         final String tag = "😀".repeat(32);
-        // 合法上界是 32 个 Unicode code points（不是 UTF-16 code units）；33 已在上方用例拒绝。
         assertEquals(32, tag.codePointCount(0, tag.length()));
         final TournamentDtos.DayView result = service.preview(1, 1, 1, request(List.of(group(1, "ERROR", tag, "B", "C")), List.of(tag, "B", "C")));
         assertEquals(tag, result.standings().rows().getFirst().clanTag());

@@ -5,7 +5,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-/** Owns the daemon watchdog scheduler used to enforce each remaining call budget. */
 final class AiGatewayLifecycle {
     private volatile ScheduledExecutorService watchdog;
 

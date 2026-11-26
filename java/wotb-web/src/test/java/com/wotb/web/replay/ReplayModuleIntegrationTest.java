@@ -11,7 +11,6 @@ import org.springframework.test.context.TestPropertySource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** Replay module bootstrap outside judge for its public capacity contract. */
 @ApplicationModuleTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(properties = {
         "wotb.replay.max-concurrent-jobs=1",

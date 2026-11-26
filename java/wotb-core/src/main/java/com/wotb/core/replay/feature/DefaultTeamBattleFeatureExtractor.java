@@ -24,10 +24,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 
-/**
- * 默认队伍特征提取器。
- * 所有位置与伤害归因都依赖 {@link TeamEntityMapper}，未知实体不会进入本队统计。
- */
 public class DefaultTeamBattleFeatureExtractor {
     public TeamBattleFeatureSet extract(
             final Battle battle,
@@ -85,8 +81,6 @@ public class DefaultTeamBattleFeatureExtractor {
         final int invalidTimestampEventCount = (int) resolvedEvents.stream()
                 .filter(re -> re.resolution().status() == TacticalTimeResolution.Status.INVALID_TIMESTAMP)
                 .count();
-        // 伤害/掉血事实只消费权威 HP loss（Type-7 推导 + attacker attribution）。
-        // Type-8 rawProtocolValue 语义未证明，不得作为 dealt/received/关键事件伤害。
         final Float battleStartRaw = reconstruction == null ? null
                 : reconstruction.battleStartRawClockSec();
         final double duration = reconstruction != null && reconstruction.battleDurationSec() > 0
@@ -96,8 +90,6 @@ public class DefaultTeamBattleFeatureExtractor {
         final PlaybackCombatReconstruction.Result combat = PlaybackCombatReconstruction.derive(
                 events, entityMapping,
                 battleStartRaw == null ? 0.0 : battleStartRaw.doubleValue(), duration, battle);
-        // 涉及本队视角的掉血记录（victim 属本队，或 reliable attacker 属本队）；
-        // attacker 可能为 null = 不可归属（掉血真实发生但不得计入任何攻击者）
         final List<AttributedHpLoss> teamLosses = new ArrayList<>();
         for (final java.util.Map.Entry<Long,
                 List<PlaybackCombatReconstruction.Loss>> entry
@@ -134,7 +126,6 @@ public class DefaultTeamBattleFeatureExtractor {
             if (!TeamAggregateExtractor.usableDamageEvidence(damage, attacker, victim)) {
                 continue;
             }
-            // 事件级可信掉血：仅单通知窗口归属（多通知/无通知 → null，聚合走 loss 级）
             final long victimAccount = victim != null ? victim.accountId() : 0L;
             final Integer trustedHpLoss = victimAccount > 0
                     ? PlaybackCombatReconstruction.observedHpLossAt(
@@ -159,14 +150,12 @@ public class DefaultTeamBattleFeatureExtractor {
         ).toList();
         final boolean hasUsableTimedEvent = !acceptedEvents.isEmpty();
 
-        // AoI 离开边界（Type4）：从 canonical ReplayAoiLifecycle 获取（facts 只定义一次，
-        // 禁止从 raw EntityRemovedEvent 重建第二套 Type4 时间表——P1 architecture convergence）。
         final Double teamStartRaw = battleStartRaw == null ? null : battleStartRaw.doubleValue();
         final Map<Integer, List<Double>> leaveTimesByEntity = new LinkedHashMap<>();
         for (final com.wotb.core.replay.facts.AoiObservationSegment segment
                 : com.wotb.core.replay.facts.ReplayAoiLifecycle.build(events, teamStartRaw)) {
             if (segment.absentFromSec() == null) {
-                continue; // 未关闭段（直到战斗结束仍被观测）
+                continue;
             }
             leaveTimesByEntity.computeIfAbsent(segment.entityId(), k -> new ArrayList<>())
                     .add(segment.absentFromSec());
@@ -213,10 +202,6 @@ public class DefaultTeamBattleFeatureExtractor {
                 formationPhases, perspectiveTeam, battleEndResolved, eventEndConfidence);
 
         final int mappedMembers = entityMapping.mappedMembers(perspectiveTeam);
-        // observed = positions that actually feed movement/formation analysis
-        // (teamPositionsByEntity already excluded pre-battle, invalid clock, out-of-bounds,
-        // unusable identity and non-perspective entities). clamped is a strict subset of the
-        // same collection, so clampedPositionEventCount <= observedPositionEventCount holds.
         final int observedPositionEventCount = (int) timedPositionsByEntity.values().stream()
                 .flatMap(List::stream)
                 .count();
@@ -229,7 +214,6 @@ public class DefaultTeamBattleFeatureExtractor {
         final boolean fullFeaturesAvailable = reconstructionAvailable
                 && mappedMembers > 0
                 && (observedPositionEventCount > 0 || !engagements.isEmpty());
-        // 新引擎不提供包解码覆盖率（unavailable，不是 0）
         final Double decodedRatio = reconstructionAvailable
                 && reconstruction.coverage() != null
                 ? Double.valueOf(reconstruction.coverage().decodedPacketRatio()) : null;
@@ -254,9 +238,6 @@ public class DefaultTeamBattleFeatureExtractor {
         if (battleStartRes.limitation() != null) {
             limitations.add(battleStartRes.limitation());
         }
-        // 事件流迄今仅逆向出 sub3 直接伤害子类型；只有当观测聚合与权威结算不一致
-        // （覆盖未达 100%）时才标记 PARTIAL，触发 prompt 层抑制观测数字。
-        // 覆盖补齐后（观测=权威）该 limitation 自动消失，数字恢复输出。
         final boolean observedMatchesAuthoritative = authoritativeAggregate != null
                 && observedAggregate != null
                 && ObservedDamageCoverage.matches(
@@ -354,8 +335,6 @@ public class DefaultTeamBattleFeatureExtractor {
         if (memberId.ambiguousNickname()) {
             limitations.add("TEAM_MEMBER_IDENTITY_UNRESOLVED");
         }
-        // mapping 根本不存在 → mapping failure；mapping 存在但没有 usable position → position failure。
-        // 避免对同一个完全 unmapped 成员重复披露两个派生 limitation（P2 cleanup）。
         if (entityIds.isEmpty()) {
             limitations.add("TEAM_MEMBER_ENTITY_UNMAPPED");
         } else if (movements.isEmpty()) {
@@ -394,7 +373,6 @@ public class DefaultTeamBattleFeatureExtractor {
                 limitations);
     }
 
-    /** 包内 forwarder：新逻辑在 TeamKeyEventsExtractor，此入口供 DeathProximityTest 直接调用。 */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -453,7 +431,6 @@ public class DefaultTeamBattleFeatureExtractor {
     ) {
     }
 
-    /** 账号 → 身份（re-entry 取首个实体）；无 → null。 */
     static TeamEntityIdentity identityOfAccount(final TeamEntityMapping mapping, final long accountId) {
         final List<Integer> entityIds = mapping.entityIdsByAccount().getOrDefault(accountId, List.of());
         for (final int eid : entityIds) {
@@ -467,10 +444,8 @@ public class DefaultTeamBattleFeatureExtractor {
 
     record ResolvedEvent(ReplayEvent event, TacticalTimeResolution resolution) {}
 
-    /** 事件级掉血记录：trustedHpLoss = 该事件可证明的掉血（单通知窗口归属；null = 无法归属到单事件）。 */
     record TimedTeamDamage(AttributedDamage event, float battleRelativeSec, Integer trustedHpLoss) {}
 
-    /** 掉血记录（loss 级，聚合用）：attacker 可为 null（不可归属——不得计入任何攻击者）。 */
     record AttributedHpLoss(
             PlaybackCombatReconstruction.Loss loss,
             TeamEntityIdentity attacker,

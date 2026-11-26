@@ -1,13 +1,5 @@
 package com.wotb.ai.gateway;
 
-/**
- * 项目内部、供应商无关的 AI 聊天网关。
- * <p>Replay 业务服务通过此接口发起 AI 调用， Gateway 实现负责：
- * Provider HTTP 传输、认证、请求体构建、响应解析、错误分类、脱敏、
- * token usage 提取、调用耗时与成功/失败指标记录。</p>
- * <p>GATEWAY 失败时抛出 {@link AiUpstreamException}，携带稳定错误码与
- * {@code correlationId}；不得抛出 Provider 私有异常。</p>
- */
 public interface AiChatGateway {
 
     /**

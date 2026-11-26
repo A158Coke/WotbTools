@@ -12,7 +12,6 @@ import org.springframework.util.StringUtils;
 
 import java.util.List;
 
-/** 通过 Keycloak Admin API 查询/删除用户并管理 realm role。 */
 @Service
 public class KeycloakAdminUserService {
 
@@ -25,7 +24,6 @@ public class KeycloakAdminUserService {
         this.realm = realm;
     }
 
-    /** 查询 Keycloak 用户详情，用户不存在时返回 null。 */
     public UserRepresentation getUser(final String keycloakUserId) {
         try {
             return keycloak.realm(realm).users().get(keycloakUserId).toRepresentation();
@@ -34,7 +32,6 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /** 获取 Keycloak 用户的联合身份（federated identities）。 */
     public List<FederatedIdentityRepresentation> getFederatedIdentities(final String keycloakUserId) {
         try {
             return keycloak.realm(realm).users().get(keycloakUserId).getFederatedIdentity();
@@ -43,7 +40,6 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /** 查询用户是否已分配指定 realm role。 */
     public boolean hasRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final List<RoleRepresentation> roles = keycloak.realm(realm)
@@ -60,7 +56,6 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /** 给 Keycloak 用户分配 realm role。 */
     public void addRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final RoleRepresentation role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
@@ -70,7 +65,6 @@ public class KeycloakAdminUserService {
         }
     }
 
-    /** 移除 Keycloak 用户的 realm role。 */
     public void removeRealmRole(final String keycloakUserId, final String roleName) {
         try {
             final RoleRepresentation role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
@@ -97,7 +91,6 @@ public class KeycloakAdminUserService {
                 : users.list(first, max);
     }
 
-    /** Keycloak 侧与 {@link #searchUsers} 同过滤条件的用户总数（分页 totalItems 的权威来源）。 */
     public int countUsers(final String query) {
         final Integer count = StringUtils.hasText(query)
                 ? keycloak.realm(realm).users().count(query.trim())
@@ -105,13 +98,6 @@ public class KeycloakAdminUserService {
         return count == null ? 0 : count;
     }
 
-    /**
-     * 按 IdP alias 分页检索用户（第三方 IdP 用户清理的筛选前提）。
-     *
-     * <p>admin-client 26.0.9 的列表重载没有「自由文本 search + idpAlias」的组合，
-     * 因此文本条件走 {@code username} 维度；{@link #countUsersByIdpAlias} 必须使用同一维度，
-     * 否则分页总数与列表不一致。详见 docs/auth/keycloak-admin-user-search.md。</p>
-     */
     public List<UserRepresentation> searchUsersByIdpAlias(final String idpAlias,
                                                           final String usernameQuery,
                                                           final int first,
@@ -123,7 +109,6 @@ public class KeycloakAdminUserService {
                 first, max, null, true);
     }
 
-    /** 与 {@link #searchUsersByIdpAlias} 同过滤条件的用户总数。 */
     public int countUsersByIdpAlias(final String idpAlias, final String usernameQuery) {
         final Integer count = keycloak.realm(realm).users().count(
                 null, null, null, null, null,
@@ -132,7 +117,6 @@ public class KeycloakAdminUserService {
         return count == null ? 0 : count;
     }
 
-    /** 删除 Keycloak 用户。用户不存在时不抛异常。 */
     public void deleteUser(final String keycloakUserId) {
         try (Response response = keycloak.realm(realm).users().delete(keycloakUserId)) {
             final int status = response.getStatus();
@@ -141,7 +125,6 @@ public class KeycloakAdminUserService {
                 throw new IllegalStateException("KEYCLOAK_USER_DELETE_FAILED_" + status);
             }
         } catch (final jakarta.ws.rs.NotFoundException e) {
-            // 用户已在 Keycloak 侧被删除，视为成功
         }
     }
 }

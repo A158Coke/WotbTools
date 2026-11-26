@@ -16,12 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * V49 迁移验证（真实 PostgreSQL 执行）：先建立 V46/V48 旧 schema 并写入历史行，再执行 V49。
- *
- * <p>锁定的契约：历史行初始化为 PENDING、id 与时间戳不变、新写入默认 PENDING、
- * NOT NULL 默认值与两态 CHECK 约束真实生效；不验证 Flyway 版本记录（由集成测试的启动迁移覆盖）。</p>
- */
 @Testcontainers(disabledWithoutDocker = true)
 class FeedbackStatusMigrationTest {
     @Container static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:18-alpine")

@@ -34,21 +34,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Team Call #2（structured result）的 transport 契约：
- * <ul>
- *   <li>合法 structured JSON → 恰好 1 次 {@code SINGLE_TEAM_BATTLE} 请求；</li>
- *   <li>contract 失败 → 恰好 1 次 {@code SINGLE_TEAM_BATTLE_RECOVERY}（全新 stream() 调用，不串 buffer）；</li>
- *   <li>{@code completionText()} 是唯一 authoritative source（stream callback 只是 progress）；</li>
- *   <li>上游失败原样传播（绝不产出 partial 结果）；</li>
- *   <li>Team Call #2 显式 {@code JSON_OBJECT}，Call #1 保持 TEXT。</li>
- * </ul>
- */
 class TeamReviewRetryContractTest {
 
     private static final float START_RAW = 1000f;
 
-    /** 合法 structured result。 */
     private static final String STRUCTURED_RESULT = "{"
             + "\"summary\":{\"verdict\":\"结论\",\"primaryDiagnosis\":\"诊断\"},"
             + "\"episodes\":[],\"trainingSuggestions\":[],\"reviewFocus\":[],\"highContributors\":[]}";
@@ -65,11 +54,9 @@ class TeamReviewRetryContractTest {
         assertEquals(1, gateway.teamCall2Requests(), "合法 structured JSON 只允许 1 次 Call #2 请求");
     }
 
-    // ===== callRaw authoritative response source = completionText() =====
 
     @Test
     void completionTextIsAuthoritativeOverPartialCallbackChunks() {
-        // stream() 回调只给零散 chunk，completionText 才是完整 structured result
         final StreamingGateway gateway = new StreamingGateway(
                 List.of(STRUCTURED_RESULT), List.of("{", "\"summary", "\"verdict\"..."), null);
         final TeamReplayAnalysisService service = service(gateway);
@@ -94,7 +81,6 @@ class TeamReviewRetryContractTest {
 
     @Test
     void upstreamErrorNeverYieldsPartialResult() {
-        // 上游失败（AI_TIMEOUT）→ 直接抛 AiUpstreamException，绝不返回 partial 结果
         final StreamingGateway gateway = new StreamingGateway(
                 List.of(STRUCTURED_RESULT), List.of(), new AiUpstreamException("AI_TIMEOUT", 504, "corr-1"));
         final TeamReplayAnalysisService service = service(gateway);
@@ -107,7 +93,6 @@ class TeamReviewRetryContractTest {
 
     @Test
     void recoveryUsesFreshIndependentResponseNoBufferCarry() {
-        // attempt1 = "{}"（contract 失败）→ 唯一一次 recovery 用全新 stream() 响应成功
         final StreamingGateway gateway = new StreamingGateway(
                 List.of("{}", STRUCTURED_RESULT), List.of("{", "\"summary", "\"..."), null);
         final TeamReplayAnalysisService service = service(gateway);
@@ -119,7 +104,6 @@ class TeamReviewRetryContractTest {
         assertEquals("SINGLE_TEAM_BATTLE_RECOVERY", gateway.lastTeamMode());
     }
 
-    // ===== 只有 Team Call #2 使用 JSON_OBJECT =====
 
     @Test
     void teamCall2ExplicitlyUsesJsonObjectWhilePreBattleStaysText() {
@@ -133,7 +117,6 @@ class TeamReviewRetryContractTest {
         assertEquals(AiResponseFormat.JSON_OBJECT, teamCall2.responseFormat(),
                 "Team Call #2 必须显式请求 JSON_OBJECT");
 
-        // Call #1（Pre-Battle Strategic Prior）保持 TEXT，不得因本任务进入 JSON mode。
         final AiChatRequest preBattle = gateway.requests().stream()
                 .filter(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode()))
                 .findFirst().orElseThrow();
@@ -141,7 +124,6 @@ class TeamReviewRetryContractTest {
                 "PRE_BATTLE_STRATEGIC_PRIOR 必须保持 TEXT");
     }
 
-    // ---- fixture ----
 
     private static AiReviewDonePayload analyze(final TeamReplayAnalysisService service) {
         return service.analyzeTeam(teamBattle("arena-retry", "Ally", 1001L, 1), validRecon(),
@@ -238,11 +220,6 @@ class TeamReviewRetryContractTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /**
-     * 流式替身：{@code stream()} 按调用顺序返回预设 completionText，
-     * 并先向 callback 发出预设 chunk（可为零散 JSON / 垃圾）——验证 callRaw 只用
-     * completionText()（authoritative），callback 仅为 progress。
-     */
     private static final class StreamingGateway implements AiChatGateway {
         final List<String> completions;
         final List<String> callbackChunks;
@@ -309,7 +286,6 @@ class TeamReviewRetryContractTest {
         }
     }
 
-    /** 按调用顺序返回预设响应的替身；从不发起真实 HTTP。 */
     private static final class RetryGateway implements AiChatGateway {
         final List<String> responses;
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
@@ -327,7 +303,6 @@ class TeamReviewRetryContractTest {
         @Override
         public AiChatResponse chat(final AiChatRequest request) {
             requests.add(request);
-            // 预设响应序列只供 Team Call #2 消费；Call #1 的解析器不消费该序列（返回不可解析空对象即可）。
             final String response;
             if ("SINGLE_TEAM_BATTLE".equals(request.analysisMode())
                     || "SINGLE_TEAM_BATTLE_RECOVERY".equals(request.analysisMode())) {

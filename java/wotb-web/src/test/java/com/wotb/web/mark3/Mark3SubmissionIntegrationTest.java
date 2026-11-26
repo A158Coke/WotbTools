@@ -35,20 +35,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * V21 的真实 PostgreSQL + 文件系统回归。验证 active partial unique index 不是仅靠 service 预检，
- * 并覆盖通过时 claimed → approved 冻结与 `${wotb.hof.replay-dir}/mark3` 证据清理。
- */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class Mark3SubmissionIntegrationTest {
 
     private static final Path REPLAY_ROOT = Path.of("data/replays-mark3-it");
     private static final long VEHICLE = 385L;
-    /** HoF ownership 的 canonical owner：active 唯一性按 (区服, 账号) 判定（V22 partial unique index）。 */
     private static final long WOTB_ACCOUNT_ID = 111L;
     private static final String WOTB_SERVER = "CN";
-    /** 同一账号 ID 在另一区服 = 另一个账号。 */
     private static final String OTHER_SERVER = "EU";
 
     @Container
@@ -108,10 +102,6 @@ class Mark3SubmissionIntegrationTest {
         assertEquals("PENDING", retry.getStatus());
     }
 
-    /**
-     * 区服是 canonical owner 的一半：同号跨服是两个账号，(EU, 111) 的 active 记录不得撞
-     * (CN, 111) 的 partial unique index，但同一 (区服, 账号) 的第二个 active 记录仍必须被 DB 拒绝。
-     */
     @Test
     void activeUniquenessIsScopedToServerAndAccountPair() {
         final Mark3Submission cnCurrent = insert(WOTB_SERVER, "CURRENT");

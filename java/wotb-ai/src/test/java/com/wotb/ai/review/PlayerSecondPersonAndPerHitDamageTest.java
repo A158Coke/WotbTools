@@ -15,19 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 随机战个人复盘的人称契约、Player/Team 规则隔离与逐次伤害事件。
- */
 class PlayerSecondPersonAndPerHitDamageTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // SPHT / Heavy tank / 10 / USA
-    private static final long IS_TANK_ID = 513L;       // IS / Heavy tank
+    private static final long SPHT_TANK_ID = 29985L;
+    private static final long IS_TANK_ID = 513L;
     private static final long YOU = 1L;
     private static final long ENEMY = 2L;
     private static final long MATE = 3L;
 
 
-    /** 权威掉血 fixture：recorder(YOU) 对 ENEMY 掉 780（Type-7 推导 + 单通知归属）。 */
     private static ReplayReconstruction dealtRecon(final int victimEid, final long victimAccount, final int amount) {
         return new ReplayReconstruction(null, null, 120f, 0f, List.of(),
                 List.of(
@@ -50,7 +46,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
                 TeamReplayAnalysisService.SINGLE_TEAM_PROMPT);
     }
 
-    // ---- 人称规则 ----
 
     @Test
     void playerPromptsUseSecondPersonForThePlayer() {
@@ -67,7 +62,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
                 p.contains("禁止用以下词语指代玩家本人：用户、录像者、友方、友军、我方玩家、朋友、RECORDER、FRIENDLY"), p));
     }
 
-    // ---- Player / Team 规则隔离 ----
 
     @Test
     void teamPromptsDoNotCarryPlayerPersonRules() {
@@ -89,7 +83,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
         });
     }
 
-    // ---- 玩家本人不进入队友阵容 ----
 
     @Test
     void thePlayerIsNeverListedAmongTeammates() {
@@ -112,7 +105,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertFalse(line.contains("友方"), line);
     }
 
-    // ---- 逐次伤害事件 ----
 
     @Test
     void perHitEventsUseMinuteSecondClockAndKeepDirection() {
@@ -126,8 +118,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(written);
         final String evidence = sb.toString();
         assertTrue(evidence.contains("PER_HIT_DAMAGE_EVENTS_OBSERVED"), evidence);
-        // 3分12秒 = 192s，方向不得颠倒（hpLoss 语义：recorder 攻击方「你 对 …造成了」，
-        // recorder 受击「…对你造成了」，不再重复车辆名）
         assertTrue(evidence.contains("3分12秒：你 对 敌方玩家\"EnemyAce\"驾驶的SPHT 造成了418点伤害"), evidence);
         assertTrue(evidence.contains("3分18秒：敌方玩家\"EnemyAce\"驾驶的SPHT 对你造成了376点伤害"), evidence);
     }
@@ -143,7 +133,6 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(evidence.contains("每条都是单次伤害事件, 不是累计值"), evidence);
         assertTrue(evidence.contains("造成了100点伤害"), evidence);
         assertTrue(evidence.contains("造成了200点伤害"), evidence);
-        // 不得把两次合并成 300
         assertFalse(evidence.contains("造成了300点伤害"), evidence);
     }
 
@@ -153,8 +142,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
         final boolean written = PlayerReplayPromptBuilder.appendPerHitDamageEvents(
                 sb, battle(), YOU,
                 recon(30f,
-                        hit(10f, YOU, ENEMY, 500),   // 准备阶段
-                        hit(40f, YOU, ENEMY, 0)));   // 零伤害
+                        hit(10f, YOU, ENEMY, 500),
+                        hit(40f, YOU, ENEMY, 0)));
 
         assertFalse(written);
         assertEquals("", sb.toString());
@@ -182,11 +171,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(written);
         final String evidence = sb.toString();
         assertTrue(evidence.contains("RECORDER_DAMAGE_RECEIVED_WINDOWS"), evidence);
-        // 窗口1：相对 5s–13s（间隙 8s ≤ 10s）→ 掉血 700 / 2 次 / 同一攻击者 ENEMY
         assertTrue(evidence.contains("[0分05秒-0分13秒] 掉血700 命中2次 攻击者1"), evidence);
-        // 窗口2：相对 50s（与窗口1间隙 37s > 10s）→ 单独窗口（攻击者 MATE）
         assertTrue(evidence.contains("[0分50秒-0分50秒] 掉血700 命中1次 攻击者1"), evidence);
-        // 不再输出生产中恒为 false 的「致死」宣称；单攻击者不得被提示为集火
         assertFalse(evidence.contains("致死"), evidence);
         assertFalse(evidence.contains("=被集火"), evidence);
         assertFalse(evidence.contains("攻击者1（短时多车集火证据）"), evidence);
@@ -213,9 +199,9 @@ class PlayerSecondPersonAndPerHitDamageTest {
         final StringBuilder sb = new StringBuilder();
         final boolean written = PlayerReplayPromptBuilder.appendRecorderDamageReceivedWindows(
                 sb, battle(), recon(30f,
-                        hit(10f, ENEMY, YOU, 500),   // 准备阶段（battleStart=30s 之前）
-                        hit(40f, ENEMY, MATE, 999),  // 非玩家受击
-                        hit(0f, ENEMY, YOU, 0)),     // 零伤害
+                        hit(10f, ENEMY, YOU, 500),
+                        hit(40f, ENEMY, MATE, 999),
+                        hit(0f, ENEMY, YOU, 0)),
                 YOU, false);
 
         assertFalse(written);
@@ -237,19 +223,18 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(evidence.contains("累计直接伤害780"), evidence);
     }
 
-    // ---- 阵亡时间线人称 / TD / 时间格式 ----
 
     @Test
     void deathTimelineUsesSecondPersonAndMinuteSecondClock() {
         final Battle battle = battle();
         battle.durationS = 420.0;
-        battle.players.get(0).survived = false;   // 你
+        battle.players.get(0).survived = false;
         battle.players.get(0).deathTimeMillis = 192_000L;
         battle.players.get(0).settlementLifeTimeSec = 192;
-        battle.players.get(1).survived = false;   // 敌方
+        battle.players.get(1).survived = false;
         battle.players.get(1).deathTimeMillis = 200_000L;
         battle.players.get(1).settlementLifeTimeSec = 200;
-        battle.players.get(2).survived = false;   // 队友
+        battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 210_000L;
         battle.players.get(2).settlementLifeTimeSec = 210;
 
@@ -260,10 +245,8 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertTrue(timeline.contains("你"), timeline);
         assertTrue(timeline.contains("队友 \"Mate\""), timeline);
         assertTrue(timeline.contains("敌方 \"EnemyAce\""), timeline);
-        // 玩家本人绝不出现为「友方」，也不出现「录像者」
         assertFalse(timeline.contains("友方"), timeline);
         assertFalse(timeline.contains("录像者"), timeline);
-        // 时间统一 X分XX秒，不再出现裸秒数
         assertTrue(timeline.contains("分") && timeline.contains("秒"), timeline);
         assertFalse(timeline.matches("(?s).*\\d+\\.\\ds.*"), timeline);
     }
@@ -272,13 +255,13 @@ class PlayerSecondPersonAndPerHitDamageTest {
     void deathTimelineUnknownTimeRendersUnknownNotZeroClock() {
         final Battle battle = battle();
         battle.durationS = 420.0;
-        battle.players.get(0).survived = false;   // 你，已知
+        battle.players.get(0).survived = false;
         battle.players.get(0).deathTimeMillis = 192_000L;
         battle.players.get(0).settlementLifeTimeSec = 192;
-        battle.players.get(1).survived = false;   // 敌方，时刻未知
+        battle.players.get(1).survived = false;
         battle.players.get(1).deathTimeMillis = 0L;
         battle.players.get(1).survivalTimeSec = 0.0;
-        battle.players.get(2).survived = false;   // 队友，已知
+        battle.players.get(2).survived = false;
         battle.players.get(2).deathTimeMillis = 210_000L;
         battle.players.get(2).settlementLifeTimeSec = 210;
 
@@ -299,12 +282,10 @@ class PlayerSecondPersonAndPerHitDamageTest {
 
     @Test
     void tankDestroyerIsWrittenInChinese() {
-        // tankopedia 把坦克歼击车记作 TD，证据里必须展开为中文
-        assertEquals("Tank destroyer", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L)); // AT 15
+        assertEquals("Tank destroyer", com.wotb.core.ref.ReplayDisplayNames.tankClass(8529L));
         assertEquals("Heavy tank", com.wotb.core.ref.ReplayDisplayNames.tankClass(SPHT_TANK_ID));
     }
 
-    // ---- 术语 ----
 
     @Test
     void battleClockFormatsAsMinutesAndSeconds() {
@@ -323,12 +304,10 @@ class PlayerSecondPersonAndPerHitDamageTest {
         assertEquals("车辆被击毁", PlayerAnalysisTerms.keyEventLabel("VEHICLE_DESTROYED"));
         assertEquals("战斗结束", PlayerAnalysisTerms.keyEventLabel("BATTLE_END"));
         assertEquals("首次接敌", PlayerAnalysisTerms.keyEventLabel("FIRST_CONTACT"));
-        // 未知全大写机器标签回退为通用中文，不得原样进入 prompt
         assertEquals("其他关键事件", PlayerAnalysisTerms.keyEventLabel("SOME_NEW_TEAM_EVENT"));
         assertEquals("其他关键事件", PlayerAnalysisTerms.keyEventLabel(""));
     }
 
-    // ---- fixtures ----
 
     private static PlayerResult you() {
         final PlayerResult p = new PlayerResult();

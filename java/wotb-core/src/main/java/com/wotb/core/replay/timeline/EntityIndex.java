@@ -17,34 +17,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 按实体聚合的 battle-relative 事件采样索引（构建 Timeline 的确定性事实源）。
- * <p>所有采样按 battle-relative 时间升序排序；查询 lastAtOrBefore 只返回 time ≤ t 的采样——
- * 天然满足 anti-future-leak invariant（docs/architecture/battle-timeline.md §10）。</p>
- */
 final class EntityIndex {
 
-    /** 位置采样（battle-relative 秒 + 原始 XYZ + 车体 yaw 度）。 */
     record PosSample(double clock, float x, float y, float z, Float yawDeg, DecodeConfidence confidence) {
     }
 
-    /** 血量采样：currentHp 仅保留可信正 HP 或 0（sentinel 绝不进入）；alive 来自事件字段。 */
     record HpSample(double clock, Integer currentHp, Boolean alive, DecodeConfidence confidence, int seq) {
     }
 
-    /** 阵亡采样（事件已可靠证明）。 */
     record DestroySample(double clock, int seq) {
     }
 
-    /** 炮塔相对偏航采样（type-7 propId=2，PROVEN）。 */
     record TurretSample(double clock, double relYawDeg) {
     }
 
-    /** 争霸赛点数采样。 */
     record PointsSample(double clock, int team, int points) {
     }
 
-    /** 当前 perspective 下双方最新点数。 */
     record PointsAt(Integer friendly, Integer enemy) {
     }
 
@@ -114,9 +103,6 @@ final class EntityIndex {
                     }
                 }
                 case MaterializationEvent m -> {
-                    // Type5 combat-vehicle materialization carries a proven opening/current HP
-                    // snapshot. Keep its battle-relative timestamp (which may be pre-battle) so
-                    // frameAt(0) can seed the active timeline without fabricating a t=0 event.
                     if (m.currentHp() != null
                             && HealthChangedEvent.isPlausibleHp(m.currentHp())
                             && m.confidence() == DecodeConfidence.EXACT) {
@@ -138,8 +124,6 @@ final class EntityIndex {
                             .add(new TurretSample(t, td.turretRelativeYawDeg()));
                 }
                 case DamageEvent d -> {
-                    // DamageEvent raw value is NOT authoritative HP delta; never feed it into
-                    // canonical FrameVehicle damage totals. Only register entity observation.
                     firstObserved.merge(d.attackerEid(), t, Math::min);
                     firstObserved.merge(d.victimEid(), t, Math::min);
                 }
@@ -150,7 +134,6 @@ final class EntityIndex {
                     }
                 }
                 case EntityCreatedEvent ec -> {
-                    // unproven/guessed entityId must not enter canonical firstObserved.
                     if (ec.entityId() > 0) {
                         firstObserved.merge(ec.entityId(), t, Math::min);
                     }
@@ -158,7 +141,6 @@ final class EntityIndex {
                 case com.wotb.core.replay.event.EntityRemovedEvent removed ->
                         leaves.computeIfAbsent(removed.entityId(), k -> new ArrayList<>()).add(t);
                 default -> {
-                    // 其余事件不影响采样
                 }
             }
         }
@@ -182,7 +164,6 @@ final class EntityIndex {
         return invalidTimestampEvents;
     }
 
-    /** 在 t 时已存在的实体（first observed ≤ t）。 */
     List<Integer> knownEntityIdsAt(final double t) {
         final List<Integer> out = new ArrayList<>();
         for (final Map.Entry<Integer, Double> e : firstObserved.entrySet()) {
@@ -201,11 +182,6 @@ final class EntityIndex {
         return lastAtOrBefore(healths.get(entityId), t, HpSample::clock);
     }
 
-    /**
-     * presentation-only HP bar 容量：截至 t 的真实可信 currentHp 采样最大值
-     * （anti-future-leak —— 绝不用任何 &gt;t 采样；也绝不 max(观测, tankopedia base)）。
-     * 无可信 positive sample → null。这只用于 HP bar 渲染量程，不是 canonical max HP 事实。
-     */
     Integer displayCapacityHpAt(final int entityId, final double t) {
         final List<HpSample> list = healths.get(entityId);
         if (list == null || list.isEmpty()) {
@@ -227,13 +203,11 @@ final class EntityIndex {
         return lastAtOrBefore(turrets.get(entityId), t, TurretSample::clock);
     }
 
-    /** 截至 t 的最后一次 EntityLeave（位置流硬中断；无则 null）。 */
     Double lastLeaveAtOrBefore(final int entityId, final double t) {
         final List<Double> list = leaves.get(entityId);
         return lastAtOrBefore(list, t, Double::doubleValue);
     }
 
-    /** 截至 t 的阵亡信息：取最新生命采样（按 clock/seq）。 */
     DestroyedInfo destroyedInfoAt(final int entityId, final double t) {
         final List<DestroySample> list = destroys.get(entityId);
         if (list == null || list.isEmpty()) {
@@ -273,7 +247,6 @@ final class EntityIndex {
         return new PointsAt(friendly, enemy);
     }
 
-    // ===== helpers =====
 
     private static <T> T lastAtOrBefore(
             final List<T> list, final double t, final java.util.function.ToDoubleFunction<T> clock) {

@@ -13,7 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** AI-owned ApiError remains aligned with contracts/http/openapi.yaml. */
 class ApiErrorResponseSerializationTest {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
     private static final Set<String> API_ERROR_KEYS = Set.of(

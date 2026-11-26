@@ -7,13 +7,6 @@ import org.springframework.util.StringUtils;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * Stable member identity for engagement matching.
- * accountId > 0: exact accountId match.
- * accountId <= 0: normalized nickname match ONLY if unique in perspective roster.
- * blank/null nickname with accountId <= 0 is always ambiguous.
- * Use {@link #resolve(PlayerResult, List)} for construction with uniqueness check.
- */
 public record MemberIdentity(long accountId, String nickname, boolean ambiguousNickname) {
 
     public MemberIdentity {

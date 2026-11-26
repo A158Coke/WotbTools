@@ -75,7 +75,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Real PostgreSQL lifecycle transactions with fake private COS; no uploader identity or HTTP upload API. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @Import(CreatorAvatarIntegrationTest.FakeCos.class)

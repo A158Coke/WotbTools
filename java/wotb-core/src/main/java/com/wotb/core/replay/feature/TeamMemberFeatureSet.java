@@ -4,10 +4,6 @@ import com.wotb.core.replay.event.DecodeConfidence;
 
 import java.util.List;
 
-/**
- * 一名本队成员的权威结算与独立事件流特征。
- * {@code entityIds} 保留 re-entry 后的多个实体 ID，各实体移动不会跨 ID 串接。
- */
 public record TeamMemberFeatureSet(
         List<Integer> entityIds,
         long accountId,
@@ -40,7 +36,6 @@ public record TeamMemberFeatureSet(
         limitations = limitations == null ? List.of() : List.copyOf(limitations);
     }
 
-    /** 旧签名便捷构造器：未计算阵亡质心距离时 deathProximity 为 null。 */
     public TeamMemberFeatureSet(
             List<Integer> entityIds,
             long accountId,
@@ -65,11 +60,6 @@ public record TeamMemberFeatureSet(
                 deathTimeSec, null, movements, engagements, keyEvents, limitations);
     }
 
-    /**
-     * 阵亡时刻与主力质心（其余 OBSERVED 本队车辆平均位置）的实际距离。
-     * {@code distanceMeters} 为 null 表示无法可靠计算（目标位置无 OBSERVED 记录），禁止硬算；
-     * {@code observedDeltaSec} 为目标位置相对阵亡时刻的最近观测时间差。
-     */
     public record DeathProximity(
             Double distanceMeters,
             Double observedDeltaSec,

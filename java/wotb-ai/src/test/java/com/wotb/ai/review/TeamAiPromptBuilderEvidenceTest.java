@@ -78,7 +78,6 @@ class TeamAiPromptBuilderEvidenceTest extends TeamAiPromptBuilderTestSupport {
         assertTrue(content.contains("[0分05秒-0分13秒]掉血700/2次攻击者1"), content);
         assertFalse(content.contains("UNAVAILABLE (OBSERVED_DAMAGE_IS_PARTIAL)"), content);
 
-        // 事件流覆盖不全时抑制数字（与 OBSERVED_EVENT_SUBSET 同口径）
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
                 new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of()),
@@ -241,8 +240,6 @@ class TeamAiPromptBuilderEvidenceTest extends TeamAiPromptBuilderTestSupport {
     }
     @Test
     void formationCanonicalCentroidIsNotReMappedAndCarriesRegion() {
-        // Canonical centroid (250,250) must render as-is with region 5 — never resolved again
-        // as if it were a raw replay coordinate (which would move it to ~312.5).
         final SingleTeamBattleAnalysisContext base = contextWithNickname("Player");
         final TeamFormationPhase phase = new TeamFormationPhase(
                 0f, 15f, new CanonicalMapPosition(250f, 250f), 0f, 1,
@@ -291,7 +288,6 @@ class TeamAiPromptBuilderEvidenceTest extends TeamAiPromptBuilderTestSupport {
                 TeamFeatureCoverage.empty(), List.of(), true);
         final ReplayCoverage coverage = new ReplayCoverage(0, 0, 0, 0, 0, 0.0, Map.of());
 
-        // partial：TEAM_ENGAGEMENTS 不得输出 dealtSubset/receivedSubset 等事件流伤害数字
         final SingleTeamBattleAnalysisContext partial = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
                 coverage, List.of("OBSERVED_DAMAGE_IS_PARTIAL"), null);
@@ -303,7 +299,6 @@ class TeamAiPromptBuilderEvidenceTest extends TeamAiPromptBuilderTestSupport {
         assertFalse(partialContent.contains("damageDealtSubset="), partialContent);
         assertFalse(partialContent.contains("damageReceivedSubset="), partialContent);
 
-        // complete coverage：Team Engagement 明细正常输出
         final SingleTeamBattleAnalysisContext complete = new SingleTeamBattleAnalysisContext(
                 "unit-A", null, "f.wotbreplay", null, battle, 1, features,
                 coverage, List.of(), null);

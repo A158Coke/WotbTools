@@ -28,11 +28,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Verifies the upstream metric surface: existing names stay compatible,
- * new low-cardinality metrics are recorded, and no high-cardinality or
- * prompt/completion data ever becomes a tag.
- */
 class SpringAiChatGatewayMetricsTest {
 
     private SimpleMeterRegistry registry;

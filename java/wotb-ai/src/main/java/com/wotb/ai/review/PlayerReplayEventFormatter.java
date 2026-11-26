@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Recorder event, movement, and shot evidence rendering. */
 final class PlayerReplayEventFormatter {
     private PlayerReplayEventFormatter() {
     }

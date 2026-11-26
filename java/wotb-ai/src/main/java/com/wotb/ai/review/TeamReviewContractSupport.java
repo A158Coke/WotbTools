@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 
 import java.util.Set;
 
-/** Prompt and diagnostic helpers for the structured team-review contract. */
 final class TeamReviewContractSupport {
     private TeamReviewContractSupport() {
     }
