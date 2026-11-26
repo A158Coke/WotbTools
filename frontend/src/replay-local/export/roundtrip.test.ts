@@ -1,6 +1,3 @@
-/**
- * 产物字节可被 exceljs 重新读入（round-trip sanity）：工作表名、表头、行数、冻结与筛选保持。
- */
 
 import ExcelJS from 'exceljs'
 import { unzipSync } from 'fflate'

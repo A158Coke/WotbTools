@@ -1,7 +1,3 @@
-/* PlayerDetailDrawer 局部样式（随拆分自 PlayerDetailDrawer.vue，scoped 原样）。 */
-/* 设计语言 token（docs/frontend/design-language.md §4–§7 Drawer / Stat）。
- * 非模态侧栏：桌面 / 平板 backdrop 不拦截 Grid 点击（pointer-events:none），
- * Drawer 自身恢复可交互；移动端（<768px）再切回 modal veil（.pd-modal）。 */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -20,7 +16,6 @@
   bottom: var(--space-2);
   width: min(380px, calc(100% - var(--space-4)));
   padding: var(--space-4);
-  /* Android edge-to-edge 预备：env() 今日解析为 0，视觉零变化 */
   padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   overflow-y: auto;
   border: 1px solid var(--color-border-subtle);
@@ -45,7 +40,6 @@
   to { transform: translateX(30px); opacity: 0; }
 }
 
-/* Side Panel resize handle（桌面）：视觉 2px 线，实际 12px hit 区；默认不显，hover / 拖动时高亮。 */
 .pd-resizer {
   position: absolute;
   top: calc(var(--header-h) + var(--space-2));
@@ -55,7 +49,6 @@
   align-items: center;
   justify-content: center;
   width: var(--space-3);
-  /* 与 fixed drawer 共用 CSS 布局视口，避免页面滚动条使 JS innerWidth 定位偏入内容。 */
   transform: translateX(50%);
   cursor: col-resize;
   opacity: 0;
@@ -88,7 +81,6 @@ body.pd-resizing .pd-resizer-line,
   .pd-resizer { display: none; }
 }
 
-/* 头部：标题（h2）+ 战队 / 范围 + 上一位 / 下一位 */
 .pd-close-abs { position: absolute; top: var(--space-3); right: var(--space-3); }
 .pd-head { display: grid; gap: var(--space-1); padding-right: var(--space-10); }
 .pd-title { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-h2); }
@@ -140,7 +132,6 @@ body.pd-resizing .pd-resizer-line,
 .pd-linkbtn:focus-visible,
 .pd-resizer:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* Stat：Rating 主数值 + 观测均值 / 计分场次 */
 .pd-rating { display: grid; gap: 0; margin-top: var(--space-4); }
 .pd-rating-label { color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .pd-rating-value { color: var(--color-accent-text); font: var(--type-h1); font-variant-numeric: tabular-nums; }
@@ -148,7 +139,6 @@ body.pd-resizing .pd-resizer-line,
 .pd-extra { color: var(--color-text-secondary); font: var(--type-caption); }
 .pd-extra b { color: var(--color-text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* 小节标题：抽屉小节统一 h3（§4），上方留区块间距 */
 .pd-section { margin: var(--space-6) 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
 
 .pd-section-row {
@@ -207,7 +197,6 @@ body.pd-resizing .pd-resizer-line,
   text-align: center;
 }
 
-/* Stat grid：两列格子，标签 caption 在上、数值等宽数字在下 */
 .pd-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: 0; }
 
 .pd-fact {
@@ -222,7 +211,6 @@ body.pd-resizing .pd-resizer-line,
 .pd-fact dt { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .pd-fact dd { margin: 0; overflow-wrap: anywhere; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* 坦克展示 */
 .pd-vehicle {
   margin-top: var(--space-4);
   padding: var(--space-3);
@@ -254,7 +242,6 @@ body.pd-resizing .pd-resizer-line,
   .pd-linkbtn:not(:disabled):hover { background: var(--color-surface-2); }
 }
 
-/* 手机：全屏 sheet，盖住顶栏与底部 Tab 栏 */
 @media (width < 768px) {
   .drawer-backdrop { z-index: var(--z-sheet); }
 
@@ -282,7 +269,6 @@ body.pd-resizing .pd-resizer-line,
   to { transform: translateY(24px); opacity: 0; }
 }
 
-/* 切换动画（§35/§38）：next 旧左出新右入；prev 旧右出新左入；reduced-motion 关闭（§40） */
 .pd-dir-next-enter-from { transform: translateX(28px); opacity: 0; }
 .pd-dir-next-leave-to { transform: translateX(-28px); opacity: 0; }
 .pd-dir-prev-enter-from { transform: translateX(-28px); opacity: 0; }
@@ -308,7 +294,6 @@ body.pd-resizing .pd-resizer-line,
   .player-drawer.pd-closing { animation: none; }
 }
 
-/* 导出卡（offscreen）：只用实色语义 token，不用 color-mix（导出库兼容） */
 .rp-export { position: absolute; top: 0; left: -9999px; }
 .rp-card { width: 720px; padding: var(--space-6) var(--space-8); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
 .rp-brand { color: var(--color-accent-text); font: var(--type-caption); font-weight: 700; }

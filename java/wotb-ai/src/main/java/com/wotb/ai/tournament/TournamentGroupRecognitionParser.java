@@ -12,7 +12,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Validates extracted observations; points and persistent team identities belong to Business API. */
 public class TournamentGroupRecognitionParser {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Set<String> ISSUE_CODES = Set.of("MULTIPLE_GROUPS", "INCOMPLETE_GROUP",
@@ -72,7 +71,6 @@ public class TournamentGroupRecognitionParser {
                 }
                 final String rankText = team.path("rankText").asString().trim();
                 if (rankText.length() > 32) throw invalidResponse();
-                // These are the only agreed deterministic interpretations of the screenshot.
                 final Integer rank;
                 if (rankText.matches("3\\s*[-–—]\\s*4")) {
                     rank = 4;

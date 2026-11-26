@@ -6,11 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 战斗模式 policy 单一事实源测试。
- * 证据：Random=1（真实夹具）、Rating=7（Jylpah/blitz-tools 外部证据，已入库文档）、
- * Training=2 / Tournament=4 / Mad Games=8（真实样本/外部映射）→ UNSUPPORTED。
- */
 class HallOfFameBattleTypePolicyTest {
 
     @Test

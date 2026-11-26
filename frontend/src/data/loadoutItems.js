@@ -1,17 +1,4 @@
-/**
- * Battle Playback 战斗装载（consumable / provision / equipment）本地化名称。
- *
- * ⚠️ 本文件由 `frontend/scripts/generate-loadout-items.mjs` 自动生成，请勿手工编辑。
- * 单一来源：zh/nameEn 取自 `common/wotb-item-catalog-json/**` authoritative catalog；
- * ru 由生成脚本内的 RU overlay 提供（官方游戏术语）。后端 DTO 只返回稳定协议标识
- * （logicalItemId / equipmentId），用户可见文案一律由本模块 + i18n 提供，绝不裸露
- * raw protocol ID（装载契约见 docs/features/battle-playback.md）。
- *
- * 契约：unknown 条目（null logicalItemId / 无映射 equipmentId）由调用方走
- * `recon.map.playback.loadout_unknown` fallback 并保留 raw id 仅作诊断。
- */
 
-/** consumable：logicalItemId -> { zh, en, ru } */
 export const CONSUMABLE_NAMES = {
   "AUTOMATIC_FIRE_EXTINGUISHER": {
     "zh": "自动灭火器",
@@ -80,7 +67,6 @@ export const CONSUMABLE_NAMES = {
   }
 }
 
-/** provision：logicalItemId -> { zh, en, ru } */
 export const PROVISION_NAMES = {
   "SMALL_FOOD": {
     "zh": "小补给",
@@ -139,7 +125,6 @@ export const PROVISION_NAMES = {
   }
 }
 
-/** equipment：numeric equipmentId -> { zh, en, ru } */
 export const EQUIPMENT_NAMES = {
   "100": {
     "zh": "火炮输弹机",

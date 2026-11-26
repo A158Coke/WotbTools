@@ -277,8 +277,6 @@ class TournamentServiceImportTest extends TournamentServiceFixture {
         assertEquals(eventVersion + 1, event.version); assertEquals(dayVersion + 1, day.version);
         assertTrue(event.csvImported); assertTrue(event.configLocked);
         assertEquals(Set.of("A"), day.clearedClans);
-        // A stays published (still present in the source with blank cells); a clan absent from the
-        // source loses its published flag so stale roster entries cannot linger on the board.
         assertTrue(clanRows.stream().filter(row -> row.clanTag.equals("A")).findFirst().orElseThrow().historicalPublished);
         assertTrue(clanRows.stream().filter(row -> row.clanTag.equals("B")).findFirst().orElseThrow().historicalPublished);
         assertFalse(clanRows.stream().filter(row -> row.clanTag.equals("GONE")).findFirst().orElseThrow().historicalPublished);

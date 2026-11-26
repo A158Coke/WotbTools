@@ -9,12 +9,9 @@ export const APP_SCENARIOS = [
   { name: 'capability-740x360-landscape-coarse', width: 740, height: 360, touch: true, authenticated: true, login: 'resolve' },
   { name: 'capability-1024x768-tablet', width: 1024, height: 768, touch: false, authenticated: true, login: 'resolve' },
   { name: 'capability-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve' },
-  // Data / 2D 在未登录、auth init 挂起 / 失败时立即可用；受保护能力停在登录门。
-  // pending 的 watchdog 设得远长于场景本身——工作台必须在 auth init 仍挂起时就渲染（不能等超时兜底）。
   { name: 'anonymous-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'reject' },
   { name: 'auth-init-pending-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'pending', authTimeout: 120_000 },
   { name: 'auth-init-reject-390x844-coarse', width: 390, height: 844, touch: true, authenticated: false, login: 'resolve', authInit: 'reject', authTimeout: 120_000 },
-  // Admin 与普通登录用户能力集合相同。
   { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   ...['zh', 'en', 'ru'].flatMap(locale => ['summer', 'winter'].flatMap(profile => [
@@ -54,7 +51,6 @@ export async function runAuthCapabilityScenario(env, scenario) {
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
   await page.evaluate('window.__pbSelect("auth-capability.wotbreplay", [1, 2, 3, 4])')
   await page.installInputTrace()
-  // 统一回放面板后 3D 不再是独立能力标签：先点「回放」再切 3D 模式。
   const tabCap = scenario.cap === '3d' ? 'replay' : scenario.cap
   const selector = `[data-testid="ws-tab"][data-cap="${tabCap}"]`
   const center = await page.evaluate(clickCenterExpression(selector))
@@ -72,7 +68,6 @@ export async function runAuthCapabilityScenario(env, scenario) {
   await page.waitForValue('new URLSearchParams(location.search).get("view")', (view) => view === scenario.view,
     { label: 'capability destination' })
   const trace = await page.evaluate('window.__wsInput.click')
-  // 3D 的「真实点击」是面板内的模式开关（3D 不再是独立标签）；其余能力仍是标签点击。
   const traceOk = scenario.cap === '3d' ? trace?.testId === 'viewer-mode-3d' : trace?.cap === tabCap
   check(failures, traceOk, `real capability click landed on ${JSON.stringify(trace)}`)
   const paneSelector = scenario.cap === '3d' ? '.pb-root' : '[data-testid="replay-shots-pane"]'
@@ -124,7 +119,6 @@ export async function runAuthCapabilityScenario(env, scenario) {
       await page.waitFor(() => !document.querySelector('[data-testid="shot-row-2"]'), { label: 'restore recorder filter' })
       check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot list must not overflow the viewport')
       if (scenario.shotsFullscreen) {
-        // 射击复现全屏（Android 手机横屏尺寸）：退出按钮可达、不裁切、列表与详情可达、退出后状态保持
         const enter = await page.evaluate(clickCenterExpression('[data-testid="shots-fullscreen"]'))
         if (!enter) throw new Error('shots fullscreen button must be hit-testable')
         await page.tap({ ...enter, touch: scenario.touch })
@@ -165,7 +159,6 @@ export async function runAuthCapabilityScenario(env, scenario) {
       await page.tap({ ...row, touch: scenario.touch })
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'shot-row-1',
         'real selection click must land on the selected shot row')
-      // compact 窗格（< 600）：点一发直接进入射击复现，不经检视面板（design-language §9「射击分析」）
       const directOpen = scenario.width < 600
       if (directOpen) check(failures, await page.evaluate('!document.querySelector("[data-testid=shot-inspector]")'), 'compact shot tap must not open the inspector overlay')
       if (!directOpen) for (const selector of ['[data-testid=shot-next]', '[data-testid=shot-prev]', '[data-testid=shot-detail-close]']) {
@@ -237,30 +230,6 @@ export async function runAuthCapabilityScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
 }
 
-/**
- * 3D 阵容车道的**真实几何**回归（review blocker：源码级 CSS 断言证明不了最终渲染）。
- * 每个场景走真实用户路径：选文件 → 真实点击切 3D 能力 → 真实点击「开始」（走过待开播
- * 闸门）→ 经 ?debug 注入口喂入就绪态（两队名单非空 / unknown 非空 / killfeed）→ 用
- * getBoundingClientRect 断言：三块名单两两不重叠、不覆盖 HUD 子面板、不覆盖底部控制条、
- * 全部位于 pb-root 内。宽档 normal 7v7 全员可见且无 team/lane 内滚动；phone/短视口
- * 必须由 Display 打开临时 roster surface，打开即关闭 Display，dismiss 即归还完整场景。
- */
-/**
- * `getBoundingClientRect` 断言：三块名单两两不重叠、不覆盖 HUD 子面板、不覆盖底部控制条、
- * 全部位于 pb-root 内；每个可见行都要有 HP 数值与百分比且不被截断。
- *
- * `transient` 不是「手机 / 矮视口」的别名，而是**名册放不放得下**的实测结论
- * （`Replay3DPane` 的 `rosterConstrained`）。7v7 全员 16 行的真实名册需要约 534px 车道高，
- * 而 `.pb-root` 的高度上限是 `clamp(320px, 62dvh, 720px)` —— 战场必须占主导，900 高的视口
- * 只给出 558px 根高，HUD 与传输控件再各占 127 / 120px，车道只剩 313px。
- * 所以 1600×900 与 1024×768 上**全量名册**同样是临时面：常驻车道会溢出到控制条上，
- * 那正是这条门禁要挡住的事。
- */
-/**
- * 3D 与 2D 同一个 workspace 契约：竖屏手机 = 纵向流（HUD / Stage / 传输控件 / 详情 / Team 1 /
- * Team 2）；其余（手机横屏、手机全屏横屏、平板、桌面）= `Team 1 | 正方形 Stage | Team 2`。
- * 正常 7v7 不走任何「临时名册面」，车道不出现滚动条。`unknown` 是未识别阵营的行数（排在 Team 1 下）。
- */
 export const ROSTER_GEOMETRY_SCENARIOS = [
   { name: 'roster-geometry-1600x900-desktop', width: 1600, height: 900, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side', killfeedRows: 2, killfeedAdaptive: true },
   { name: 'roster-geometry-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, players: 7, unknown: 2, killfeed: 3, layout: 'side', fullscreen: true },
@@ -297,32 +266,24 @@ export const ROSTER_GEOMETRY_SCENARIOS = [
 
 export const PLAYBACK_SCENARIOS = [
   { name: 'play-390x844-coarse', width: 390, height: 844, touch: true, duration: 60, form: 'pb-form-mobile' },
-  // §form-factor：手机横屏内宽 >768 仍必须是 mobile 形态，不能落进 tablet/pc。
   { name: 'play-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 60, form: 'pb-form-mobile' },
   { name: 'play-1024x768-tablet', width: 1024, height: 768, touch: false, duration: 60, form: 'pb-form-tablet' },
-  // 审计 PB-07：iPad 横屏是触屏但有平板的可用空间，必须拿 tablet 形态（触屏只放大点击区域）
   { name: 'play-1024x768-ipad-coarse', width: 1024, height: 768, touch: true, duration: 60, form: 'pb-form-tablet' },
   { name: 'play-1440x900-desktop', width: 1440, height: 900, touch: false, duration: 60, form: 'pb-form-pc' },
-  // 触屏 + 大平板（iPad Pro / Android 平板横屏）走 pc 形态：六个 primary 控件仍在 Stage 之下的
-  // 中心列，速度档位展开后每个都满足 44px 点击区域（触屏自动放大 --control-h-*）。
   { name: 'play-1366x1024-tablet-coarse', width: 1366, height: 1024, touch: true, duration: 60, form: 'pb-form-pc' },
   { name: 'duration-zero-390x844-coarse', width: 390, height: 844, touch: true, duration: 0, form: 'pb-form-mobile' },
-  // 事件信息开关的刻度层 gating：真实生产组件、真实 CSS，ticks 数据存在时默认不画，
-  // 打开 markers 后才出现炮击 / 击毁刻度；原生 range 在任何状态下都可用。
   { name: 'play-markers-hidden-1440x900', width: 1440, height: 900, touch: false, duration: 120, form: 'pb-form-pc', query: 'ticks=1', markers: 'hidden' },
   { name: 'play-markers-visible-1440x900', width: 1440, height: 900, touch: false, duration: 120, form: 'pb-form-pc', query: 'ticks=1&markers=1', markers: 'visible' },
   { name: 'play-markers-visible-1024x768-tablet', width: 1024, height: 768, touch: false, duration: 120, form: 'pb-form-tablet', query: 'ticks=1&markers=1', markers: 'visible' },
   { name: 'play-markers-visible-740x360-landscape-coarse', width: 740, height: 360, touch: true, duration: 120, form: 'pb-form-mobile', query: 'ticks=1&markers=1', markers: 'visible' },
 ]
 
-/** §form-factor：竖屏 → 横屏旋转后 class / hit target 必须重新正确计算，不留 stale 状态。 */
 export const ROTATION_SCENARIO = {
   name: 'orientation-portrait-to-landscape-coarse',
   width: 390, height: 844, touch: true, duration: 60,
   rotateTo: { width: 844, height: 390 },
 }
 
-/** 阵容车道的真实几何断言（getBoundingClientRect，0.5px 容差吸收亚像素舍入）。 */
 export async function runAppScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -339,7 +300,6 @@ export async function runAppScenario(env, scenario) {
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { label: 'capability tabs' })
 
-  // 无 auth gating：auth init 挂起 / 失败时数据面板也必须马上出现（远早于 auth watchdog）
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-data"]'), {
     ...(scenario.authInit ? { timeout: 3_000 } : {}),
     label: 'data pane',
@@ -351,7 +311,6 @@ export async function runAppScenario(env, scenario) {
   check(failures, !(await page.evaluate(`!!document.querySelector('[data-testid="ws-auth-loading"]')`)),
     'workspace shows a removed auth-checking state')
 
-  // —— B. 无透明 blocker：真实 hit-testing ——
   const hit = await page.probe(capabilityHitProbe)
   check(failures, hit.found, 'capability tab button missing')
   check(failures, hit.hitIsButton, `elementFromPoint(${hit.center?.x},${hit.center?.y}) hit ${JSON.stringify(hit.hitChain)} instead of the tab button`)
@@ -367,13 +326,10 @@ export async function runAppScenario(env, scenario) {
     `四 capability buttons must fit without horizontal scrolling: ${JSON.stringify(layout)}`)
   check(failures, layout?.buttons.every(button => button.inside && button.labelFits && button.hit),
     `every capability label must be visible and its button directly reachable: ${JSON.stringify(layout)}`)
-  // 统一面板后 UI 收敛为 4 个标签：320px 也可能单行放下，不再硬要求换行；
-  // 不溢出 / 标签完整 / 可点击已在上方逐项断言。
   if (scenario.width >= 768) {
     check(failures, layout?.rows === 1, `wide capability bar must stay on one row: ${JSON.stringify(layout)}`)
   }
 
-  // —— A/C. 真实点击 ——
   await page.installInputTrace()
   await page.tap({ ...hit.center, touch: scenario.touch })
   const input = await page.inputTrace()
@@ -388,7 +344,6 @@ export async function runAppScenario(env, scenario) {
   check(failures, !state.data.visible, 'ws-data still visible after switching to playback')
   const playbackTab = state.tabs.find((tab) => tab.cap === 'replay')
   check(failures, !!playbackTab && playbackTab.selected && playbackTab.active, `playback tab not marked active: ${JSON.stringify(state.tabs)}`)
-  // §3.6：结论必须稳定——不能被别的 watcher / route sync 事后改回 data/ai。
   await delay(500)
   const settled = await page.probe(capabilityStateProbe)
   check(failures, settled.playback.visible && !settled.data.visible
@@ -397,7 +352,6 @@ export async function runAppScenario(env, scenario) {
   check(failures, await page.evaluate('new URLSearchParams(location.search).get("view")') === 'battle-playback',
     'route was reverted away from ?view=battle-playback by a later watcher/route sync')
 
-  // —— 事件信息开关：默认隐藏事件流，开关恢复；3D 后保持同一状态 ——
   const eventProbe = `(() => {
     const toggleEl = document.querySelector('[data-testid="viewer-events-toggle"]')
     const section = document.querySelector('[data-testid="ws-events"]')
@@ -441,7 +395,6 @@ export async function runAppScenario(env, scenario) {
     await page.tap({ ...eventToggle.center, touch: scenario.touch })
     const closed = await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden after toggle' })
     check(failures, closed?.sectionMounted === true, `closing events must keep the section mounted: ${JSON.stringify(closed)}`)
-    // 3D 切换前再打开，验证跨 2D/3D 共用同一开关状态
     await page.tap({ ...eventToggle.center, touch: scenario.touch })
     await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events reopened before 3D' })
   }
@@ -452,7 +405,6 @@ export async function runAppScenario(env, scenario) {
     check(failures, attempts === 0, `anonymous capability switch must not start login, loginCalls=${attempts}`)
   }
 
-  // 五项能力对所有身份公开可见，身份只决定受保护能力是否挂载。
   const expectedCaps = ['data', 'replay', 'shots', 'ai']
   check(failures, JSON.stringify(state.tabs.map((t) => t.cap)) === JSON.stringify(expectedCaps),
     `capability set=${JSON.stringify(state.tabs.map((t) => t.cap))}, expected ${JSON.stringify(expectedCaps)}`)
@@ -462,7 +414,6 @@ export async function runAppScenario(env, scenario) {
       `coarse capability targets below 44px: ${JSON.stringify(small)}`)
   }
 
-  // —— 3D 模式：统一回放面板内的 2D/3D 切换，留在同一工作台，URL 与面板一起变 ——
   const threeDTab = state.tabs.find((t) => t.cap === 'replay')
   const threeDHit = await page.evaluate(`(() => {
     const button = document.querySelector('[data-testid="viewer-mode-3d"]')
@@ -503,7 +454,6 @@ export async function runAppScenario(env, scenario) {
       if (after3dToggle?.hitIsButton) {
         await page.tap({ ...after3dToggle.center, touch: scenario.touch })
         await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden in 3D' })
-        // 关闭事件流会改变页面高度与滚动位置，重新取命中点再打开，复用旧坐标会打空。
         const reopen3dToggle = await page.evaluate(`(() => {
           const button = document.querySelector('[data-testid="viewer-events-toggle"]')
           if (!button) return null
@@ -561,14 +511,9 @@ export async function runPlaybackControlScenario(env, scenario) {
   }
 
   const before = await page.probe(playbackControlProbe)
-  // §landscape：非全屏手机横屏时地图按宽度定尺寸，方形地图可以比视口还高，
-  // controls 因此排在首屏之外。要求不是「永远在首屏」，而是「可以滚动到并真的可点」。
   const control = before.hitIsButton ? before : await page.revealControl('[data-test="pb-play"]')
   check(failures, control.hitIsButton,
     `play button center hit ${control.hitDescription} instead (viewport=${control.viewportWidth}x${control.viewportHeight} geometry=${JSON.stringify(control.geometry)})`)
-  // 命中区必须在档位控件真正进入视口后测量：1024×768 平板的地图高于视口，
-  // 控件条会换行且档位可能在首屏之外；此时 elementFromPoint 返回 null 是可达性问题，
-  // 不是命中区问题。先滚到档位控件本身，再判定 44×44 的可点范围。
   const speed = scenario.touch && !control.speedHit
     ? await page.revealControl('[data-test="pb-speed-current"]')
     : control
@@ -576,8 +521,6 @@ export async function runPlaybackControlScenario(env, scenario) {
     check(failures, speed.speedHit,
       `touch speed option must expose a ${sceneHit}x${sceneHit} hit target: ${JSON.stringify(speed.speedHitDetail)}`)
   }
-  // 速度档位是渐进披露：常驻只有当前值，展开后是一列档位菜单——档位齐全、不越出自身容器、
-  // 触屏每个档位都满足场景命中下限（紧凑档 40px、常规触屏 44px）。菜单是覆盖层，不参与控件条高度。
   {
     await page.evaluate(`document.querySelector('[data-test="pb-speed-current"]')?.click()`)
     await delay(150)
@@ -613,7 +556,6 @@ export async function runPlaybackControlScenario(env, scenario) {
       .catch(() => null)
     check(failures, advanced !== null, `play tap was a silent no-op: clock stayed ${control.time}`)
   } else {
-    // duration<=0 是不可用时间线：控件必须显式不可用并给出原因，不得「看起来能用但什么都不发生」。
     check(failures, control.disabled === true || control.ariaDisabled === 'true',
       `duration<=0 but the play button still looks enabled (disabled=${control.disabled} aria-disabled=${control.ariaDisabled})`)
     check(failures, !!control.unavailableReason, 'duration<=0 without an explicit unavailable reason in the UI')
@@ -639,7 +581,6 @@ export async function runRotationScenario(env, scenario) {
   const portrait = await page.probe(playbackControlProbe)
   check(failures, portrait.formClass === 'pb-form-mobile', `portrait form=${portrait.formClass}`)
 
-  // 旋转：同一页面，只改 viewport —— 模拟真机 orientationchange。
   await page.emulate({ ...scenario, ...scenario.rotateTo })
   const rotated = await page.waitForValue(
     `(() => { const root = document.querySelector('[data-test="battle-playback"]'); return root ? (Array.from(root.classList).find((n) => n.startsWith('pb-form-')) || null) : null })()`,
@@ -671,20 +612,6 @@ export async function runRotationScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `rotate ${scenario.width}x${scenario.height} -> ${scenario.rotateTo.width}x${scenario.rotateTo.height}` })
 }
 
-/**
- * §mobile-fullscreen：手机横屏全屏与**非全屏横屏是同一个几何**——Team 1 | 正方形 Stage | Team 2，
- * 播放控件在 Stage 之下，没有常驻左栏；⚙ 打开的是锚定在 gear 上的 Display 浮面。
- * 早先「148px navigation rail | map」的模型已整体移除，这里锁的是替代它的契约：
- * 全屏本身不产生任何常驻侧栏，⚙ 的浮面既不离开 gear 也不越出视口。
- */
-/**
- * §2d-toolbar-collapse / §roster-overlay：2D 工具栏折叠与名册浮层的真浏览器交互回归。
- * 夹具 = playback-controls.html（生产 BattlePlayback + 生产 CSS）：
- *   · 手机横屏默认收纳名册、Desktop / 平板默认展开；
- *   · 传输条折叠后只剩恢复入口（命中测试必须命中按钮本身）；
- *   · 名册浮层开合不得改变地图正方形面积（mapShare 独立度量），浮层不得盖住传输控件；
- *   · 展开状态下选中名册行、+5s seek 与播放都必须继续正确。
- */
 export const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['summer', 'winter'].flatMap(profile =>
   [{ width: 1600, height: 1000, touch: false }, { width: 1024, height: 900, touch: false }, { width: 390, height: 844, touch: true }]
     .map(viewport => ({ ...viewport, language, profile, name: `onboarding-${language}-${profile}-${viewport.width}` })))),
@@ -693,7 +620,6 @@ export const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => [
   { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true, fullscreenTransition: true }]
 export let onboardingServer = null
 export async function runOnboardingScenario(env, scenario) {
-  // Actual pinned WASM and the actual sample: only the external auth/profile boundary is stubbed.
   if (!onboardingServer) onboardingServer = await startFixtureServer({ realReplay: true })
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
@@ -786,7 +712,6 @@ export async function runOnboardingScenario(env, scenario) {
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'onboarding-next',
         `node ${node + 1} Next click must reach the teaching card`)
     }
-    // 3D remains explicitly user-started; browser gate checks teaching/navigation, not GPU appearance.
     if (!skippedInFullscreen) {
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-replay', { label: '3D guide destination' })
       if (scenario.fullscreenTransition) {
@@ -798,8 +723,6 @@ export async function runOnboardingScenario(env, scenario) {
             guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
         })()`)
         if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
-        // 紧凑形态的镜头在 Display 面里：真实点「开始」后教程自动推进，必须自己把面打开，目标才存在
-        // 原地点：先滚到屏幕正中会把按钮送到教程卡片下面，真实用户不会这样滚
         const startPoint = await page.evaluate(`(() => {
           const button = document.querySelector('[data-test="replay3d-start"]')
           const r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
@@ -871,7 +794,6 @@ export async function runOnboardingScenario(env, scenario) {
   results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
 }
 
-// #727：真实 MenuButton + 当前三项导出文案；短视口在上下两侧都放不下整个菜单。
 export const MENU_VIEWPORT_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 360, height: 640, touch: true },
   { width: 740, height: 360, touch: true },
@@ -925,7 +847,6 @@ export async function runMenuViewportScenario(env, scenario) {
   await open()
   await checkBounds()
   if (failures.length) throw new Error(failures.join('\n'))
-  // 键盘导航本身必须把末项/首项滚入可用区；不能靠测试先 scrollIntoView 掩盖它。
   for (const [name, code, item] of [['End', 35, 'png'], ['Home', 36, 'aggregate']]) {
     await key(name, code)
     await page.waitForValue(`document.activeElement?.dataset.testid`, value => value === `menu-${item}`)
@@ -937,7 +858,6 @@ export async function runMenuViewportScenario(env, scenario) {
   await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
   await page.waitForValue('document.activeElement?.dataset.testid', value => value === 'menu-trigger')
 
-  // 每一项都用原始触摸/鼠标选择；回调结果和菜单关闭共同证明事件真正到达。
   for (const item of ['aggregate', 'each', 'png']) {
     await open()
     await page.evaluate(`document.querySelector('[data-testid=menu-${item}]').scrollIntoView({block:'nearest'})`)
@@ -948,7 +868,6 @@ export async function runMenuViewportScenario(env, scenario) {
     await page.waitForValue('document.querySelector("[data-testid=menu-selected]")?.textContent', value => value === item)
     await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
   }
-  // 菜单打开时缩短并恢复视口，覆盖浏览器可用空间动态变化；不声称模拟真实软键盘。
   if (scenario.height > 240) {
     await open()
     for (const height of [240, scenario.height]) {

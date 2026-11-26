@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 名人堂「百场」榜：筛选 / 分页 / 榜单行 / 个人百场状态（pending / current）/ 撤回的唯一 owner。
-// URL query 归 HoFPage：本组件只在加载时 emit('query-change')，并通过 expose 的 queryState / applyQuery 收发。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
@@ -32,7 +30,6 @@ const [DefineFilters, ReuseFilters] = createReusableTemplate()
 const pane = ref<HTMLElement | null>(null)
 const submitDialog = ref<InstanceType<typeof HofHundredSubmitDialog> | null>(null)
 
-// common/tankopedia-tier10.json 的稳定分类映射由公开页与管理页共用。
 const vehicles = HUNDRED_VEHICLES
 const vehicleId = ref<number | null>(null)
 const vehicleName = ref('')
@@ -99,7 +96,6 @@ async function loadList() {
   }
 }
 
-// 个人中心百场状态（需登录）：仅登录后拉取，避免匿名浏览触发 401 跳登录。
 async function loadPending() {
   if (!hofAvailability.value.available) return
   const epoch = currentEpoch()

@@ -83,7 +83,6 @@ try {
   assert.equal(emptyRun.status, 1, 'An empty scan must fail rather than report zero duplication');
   assert.match(emptyRun.stdout + '\n' + emptyRun.stderr, /analyzed no files/i);
 
-  // Exercise the actual pnpm script and baseline option using an isolated Git fixture.
   await mkdir(baselineRoot, { recursive: true });
   execFileSync('git', ['init', '--quiet', '--initial-branch=baseline'], { cwd: baselineRoot });
   execFileSync('git', ['config', 'user.email', 'jscpd-smoke@example.invalid'], { cwd: baselineRoot });
@@ -105,8 +104,6 @@ try {
   execFileSync('git', ['add', '.jscpd.json', 'frontend/package.json', 'samples'], { cwd: baselineRoot });
   execFileSync('git', ['commit', '--quiet', '-m', 'baseline'], { cwd: baselineRoot });
   const forkPoint = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: baselineRoot, encoding: 'utf8' }).trim();
-  // Main advances independently with a non-conflicting change; the candidate
-  // remains on its fork branch, as in a valid but stale PR.
   execFileSync('git', ['switch', '--quiet', '-c', 'main'], { cwd: baselineRoot });
   await writeFile(path.join(fixtureSources, 'main-only.js'), 'export const mainOnly = true;\n');
   execFileSync('git', ['add', 'samples/main-only.js'], { cwd: baselineRoot });

@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.docs.Documenter;
 
-/** Generates derived architecture snippets from the same verified module graph used by tests. */
 class WebModuleDocumentationTest {
 
     @Test

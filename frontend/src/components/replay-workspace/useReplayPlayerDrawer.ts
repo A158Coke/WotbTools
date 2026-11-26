@@ -1,7 +1,3 @@
-/**
- * ReplayPage —— Player Detail Drawer 的选择与导航（拆分自 ReplayPage.vue，行为原样）。
- * 只存 identity（scope + accountId + arenaId），不存 mutable row；数据按 context 实时 resolve。
- */
 import { computed, ref, watch } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
 import type { ReplayResult } from '../../types/replay.js'
@@ -19,10 +15,8 @@ type DrawerContext = { unifiedRows: ComputedRef<UnifiedRow[]>; resp: Ref<ReplayR
  *  currentSingleIndex: import('vue').ComputedRef<number>,
  * }} ctx */
 export function useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, isSummaryView, currentSingleIndex }: DrawerContext) {
-  // ---- Player Detail Drawer（只存 identity，不存 mutable row；刷新后按 accountId 重新 resolve） ----
   const selectedPlayerContext = ref<Selection | null>(null)
 
-  // ---- Player Detail Drawer 导航：跟随当前可见表格顺序，scope 不跨界 ----
   const navOrder = ref<number[]>([])
   const navIndex = ref(-1)
 
@@ -39,7 +33,6 @@ export function useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, is
     navIndex.value = -1
   }
 
-  /** 前后导航可用性：首位 prev 禁用、末位 next 禁用，不循环。 */
   const hasPrevPlayer = computed(() => navOrder.value.length > 0 && navIndex.value > 0)
   const hasNextPlayer = computed(() => navOrder.value.length > 0 && navIndex.value >= 0 && navIndex.value < navOrder.value.length - 1)
 
@@ -59,18 +52,14 @@ export function useReplayPlayerDrawer({ unifiedRows, resp, selectionRevision, is
     navIndex.value = navIndex.value + 1
   }
 
-  /** Drawer 打开状态：context 存在即打开（默认关闭）。 */
   const drawerOpen = computed(() => !!selectedPlayerContext.value)
 
-  /** 选中玩家 identity：scope + accountId + arenaId；
-   *  Drawer 关闭（closeDrawer / Tab 切换 / selectionRevision）→ null → 表格清除 selected highlight。 */
   const selectedPlayer = computed(() => {
     const ctx = selectedPlayerContext.value
     if (!ctx) return null
     return { scope: ctx.scope, accountId: Number(ctx.accountId), arenaId: ctx.arenaId || null }
   })
 
-  /** 当前 Drawer 的玩家数据（按 context 实时 resolve；排序/响应刷新后仍指向原选手）。 */
   const drawerPlayer = computed(() => {
     const ctx = selectedPlayerContext.value
     if (!ctx) return null

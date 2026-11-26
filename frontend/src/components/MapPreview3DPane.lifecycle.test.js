@@ -7,7 +7,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: { value: 'zh' }, t: (k) => k, te: () => false }),
 }))
 
-/** 内核替身：记录 initPlayback / loadMapOnly / destroy 的调用次数与顺序。 */
 const scene = vi.hoisted(() => {
   const api = {
     setPaused: vi.fn(),
@@ -70,8 +69,6 @@ import { afterEach } from 'vitest'
 
 let wrappers = []
 function mountPane(active, extraProps = {}) {
-  // attachTo：ensureScene 的 isConnected 护栏要求 stage 真实挂载（防游离 append），
-  // 与生产语义一致；afterEach unmount 清理。
   const wrapper = mount(MapPreview3DPane, {
     props: { mapId: 6, mapName: '矿井阵地', mapKey: 'rudniki', active, ...extraProps },
     attachTo: document.body,
@@ -118,7 +115,6 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     await flushPromises()
     expect(scene.api.setMapSpawns).toHaveBeenCalledWith(points)
     scene.api.setMapSpawns.mockClear()
-    // 换图：页面重算点列（新数组）→ prop 变化即补推（内核 teardown 复位由 mapReady watcher 兜底）
     const next = [{ x: 1, y: 2 }, { x: 3, y: 4 }]
     await wrapper.setProps({ spawnPoints: next })
     await flushPromises()
@@ -146,18 +142,14 @@ describe('MapPreview3DPane 首次激活生命周期', () => {
     const slider = () => document.querySelector('[data-testid="scene-distance-slider"]')
     const wrapper = mountPane(true)
     await flushPromises()
-    // 桌面横屏：不渲染
     expect(slider()).toBeNull()
-    // 手机竖屏（390×844）：不渲染
     __phoneForm.isPhone.value = true
     __portrait.isPortrait.value = true
     await flushPromises()
     expect(slider()).toBeNull()
-    // 手机横屏（844×390）：渲染
     __portrait.isPortrait.value = false
     await flushPromises()
     expect(slider()).not.toBeNull()
-    // 竖屏隐藏后不留捕获触摸的不可见区域（v-if 卸载，不是 visibility/opacity）
     __portrait.isPortrait.value = true
     await flushPromises()
     expect(slider()).toBeNull()

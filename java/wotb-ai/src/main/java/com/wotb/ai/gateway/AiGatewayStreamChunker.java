@@ -3,7 +3,6 @@ package com.wotb.ai.gateway;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Splits oversized provider deltas while preserving sentence boundaries and pacing. */
 final class AiGatewayStreamChunker {
     static final int CHUNK_SPLIT_THRESHOLD = 512;
     static final int CHUNK_MAX_PIECE = 128;
@@ -12,10 +11,6 @@ final class AiGatewayStreamChunker {
 
     private AiGatewayStreamChunker() { }
 
-    /**
-     * 按句子边界切分，缺少边界时按 maxPiece 硬切；超过 CHUNK_MAX_PIECES 时放大片长，
-     * 避免固定片间暂停把整篇展示拖得过长。
-     */
     static List<String> splitChunks(final String text, final int maxPiece) {
         if (text == null || text.isEmpty()) {
             return List.of();

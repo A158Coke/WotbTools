@@ -59,10 +59,6 @@ if run_with_network_retry "bounded fixture" always_transport_failure; then
 fi
 [[ "$attempts" == 3 ]]
 
-# Per-attempt bound (NETWORK_RETRY_TIMEOUT_SECONDS). The bound only exists when the
-# caller asks for it, so the fixtures above already prove the default path still runs
-# shell functions without a `timeout` wrapper. The cases below use real executables,
-# because `timeout` cannot execute a shell function.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -91,8 +87,6 @@ status=0
 NETWORK_RETRY_TIMEOUT_SECONDS=1 run_with_network_retry "always timing out fixture" sleep 30 || status=$?
 [[ "$status" == 124 ]]
 
-# With a per-attempt bound the command must be an executable (a shell function cannot be
-# wrapped by `timeout`), and a non-transport failure must still fail on the first attempt.
 cat > "$work/compile-error" <<'COMPILE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -119,8 +113,6 @@ NETWORK_RETRY_TIMEOUT_SECONDS=5 NETWORK_RETRY_KILL_AFTER_SECONDS=0 \
   run_with_network_retry "invalid kill-after fixture" true || status=$?
 [[ "$status" == 2 ]]
 
-# Regression guard for the unbounded callers: without a per-attempt bound a 124 exit is
-# not ours to retry, so it must stay fail-closed on the first attempt exactly as before.
 unset NETWORK_RETRY_TIMEOUT_SECONDS
 cat > "$work/exits-124" <<'E124'
 #!/usr/bin/env bash

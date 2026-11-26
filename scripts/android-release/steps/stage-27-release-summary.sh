@@ -17,7 +17,6 @@
   echo "Staging evidence: $STEP_STAGING_STAGINGNAME"
   echo "Signing Certificate SHA-256: $ANDROID_SIGNING_CERT_SHA256"
   echo ""
-  # PR B：登记 release APK 内 bundle 的身份（证明 parser 来自 APK 自带的 pinned 产物）。
   echo "Local-first bundle files: $STEP_BUNDLE_BUNDLEFILES"
   echo "Agent WASM: $STEP_BUNDLE_AGENTWASMRELEASE @ $STEP_BUNDLE_AGENTWASMCOMMIT"
   echo "Bundle manifest SHA-256: $STEP_BUNDLE_BUNDLEMANIFESTSHA256"

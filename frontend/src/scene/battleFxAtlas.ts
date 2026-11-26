@@ -1,12 +1,5 @@
-// 战斗特效 GPU 资源层：程序化贴图图集、粒子/火花批次与 shader——自 battleFx.ts 出仓
-//（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致，公共入口仍由 battleFx re-export）。
 import * as THREE from 'three'
 
-/**
- * 画质档位预算（键与 `QUALITY_PRESETS` 一一对应；`QUALITY_PRESETS[k].fx` 引用这里）。
- * 信息类元素（曳光、光迹、命中火光、爆炸闪光）四档都有；氛围元素按档裁剪。
- * capacity = 每个粒子批次（加色 / 普通混合各一）的实例上限。
- */
 export const FX_BUDGETS = Object.freeze({
   low: Object.freeze({
     capacity: 256, muzzleBrake: false, muzzleSmoke: 0, impactSparks: 6, impactSmoke: 0,
@@ -26,14 +19,12 @@ export const FX_BUDGETS = Object.freeze({
   }),
 })
 
-/** 画质档位的特效预算（FX_BUDGETS 各档的同形状）。 */
 export type FxBudget = (typeof FX_BUDGETS)[keyof typeof FX_BUDGETS]
 import type { Color, LineSegments, Mesh, Texture } from 'three'
 
 export const clamp01 = (x: number): number => Math.max(0, Math.min(1, x))
 export const noop = (): void => {}
 
-// ---------- 程序化贴图图集（4×2 格，每格 128 px，只用 alpha） ----------
 export const TILE = 128
 export const ATLAS_COLS = 4
 export const ATLAS_ROWS = 2
@@ -56,7 +47,6 @@ const TILE_ALPHA: Array<(u: number, v: number) => number> = [
     return fall ** 3 + rays * fall ** 1.5 * 0.55
   },
   (u, v) => {
-    // 碎片：不规则硬边多边形（只留 1~2 px 抗锯齿边）
     const edge = 0.72 * (1 + 0.22 * Math.sin(Math.atan2(v, u) * 5 + 0.8) + 0.08 * turb(u, v, 5.1))
     return clamp01((edge - Math.hypot(u, v)) * 40)
   },
@@ -71,7 +61,6 @@ function sootAlpha(u: number, v: number, p: number): number {
   return Math.max(0, 1 - r * (1 + 0.22 * t1 + 0.1 * t2)) ** 1.1 * (0.62 + 0.24 * t1 + 0.14 * t2)
 }
 let atlasPixels: Uint8Array | null = null
-/** 图集像素只算一次（模块级缓存）；每个会话的 DataTexture 共用同一份只读数据。 */
 export function atlasData(): Uint8Array {
   if (atlasPixels) return atlasPixels
   const w = TILE * ATLAS_COLS, h = TILE * ATLAS_ROWS
@@ -90,8 +79,7 @@ export function atlasData(): Uint8Array {
   return px
 }
 
-// ---------- shader ----------
-export const PARTICLE_VS = /* glsl */`
+export const PARTICLE_VS =`
 #include <common>
 attribute vec4 iA;
 attribute vec4 iB;
@@ -111,7 +99,7 @@ void main() {
   vColor = iC;
   #include <logdepthbuf_vertex>
 }`
-export const PARTICLE_FS = /* glsl */`
+export const PARTICLE_FS =`
 uniform sampler2D uMap;
 varying vec2 vUv;
 varying vec4 vColor;
@@ -123,7 +111,7 @@ void main() {
   gl_FragColor = vec4(vColor.rgb, a);
   #include <colorspace_fragment>
 }`
-export const RIBBON_VS = /* glsl */`
+export const RIBBON_VS =`
 #include <common>
 uniform vec3 uA;
 uniform vec3 uB;
@@ -147,7 +135,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
   #include <logdepthbuf_vertex>
 }`
-export const RIBBON_FS = /* glsl */`
+export const RIBBON_FS =`
 uniform vec3 uCA;
 uniform vec3 uCB;
 uniform float uAA;
@@ -170,8 +158,6 @@ void main() {
 }`
 
 
-// ---------- 粒子批次 ----------
-/** 实例化粒子批次（加色 / 普通混合各一；容量按档位封顶）。 */
 export interface ParticleBatch {
   mesh: Mesh
   capacity: number
@@ -205,8 +191,7 @@ export function createBatch(capacity: number, map: Texture, { additive, sorted, 
   mesh.frustumCulled = false
   mesh.matrixAutoUpdate = false
   mesh.visible = false
-  mesh.raycast = noop   // 单位四边形几何在原点：不参与拾取
-  // 排序批次先写暂存区，按视深排序后再拷进 GPU 数组；加色批次与顺序无关，直写。
+  mesh.raycast = noop
   const stage: Float32Array[] = sorted ? attrs.map(() => new Float32Array(capacity * 4)) : attrs.map((attr) => attr.array as Float32Array)
   const depth = sorted ? new Float32Array(capacity) : null
   const order: number[] = []
@@ -233,7 +218,7 @@ export function createBatch(capacity: number, map: Texture, { additive, sorted, 
           order[i] = i
           depth[i] = view[2] * A[i * 4] + view[6] * A[i * 4 + 1] + view[10] * A[i * 4 + 2] + view[14]
         }
-        order.sort((a, b) => depth[a] - depth[b])   // 视空间 z 越小越远：远者先画
+        order.sort((a, b) => depth[a] - depth[b])
         for (let k = 0; k < 3; k++) {
           const src = stage[k], dst = attrs[k].array
           for (let i = 0; i < count; i++) {

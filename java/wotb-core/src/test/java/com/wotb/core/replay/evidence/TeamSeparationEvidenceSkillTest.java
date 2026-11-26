@@ -22,11 +22,6 @@ import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.phase
 import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.stationary;
 import static com.wotb.core.replay.evidence.TeamSeparationEvidenceFixtures.twoClusterPhase;
 
-/**
- * TeamSeparationEvidenceSkill — Backend Evidence Boundary 回归测试。
- * <p>只输出中性空间分离结构事实（kind=OPENING_SPREAD / SEPARATION_WINDOW + 确定性测量），
- * 不输出 SOLO_DELAY / SOLO_DETACHED / teammateBenefit / 队友获利 / 卡点 / 守点等战术 verdict。</p>
- */
 class TeamSeparationEvidenceSkillTest {
 
     @Test
@@ -44,7 +39,6 @@ class TeamSeparationEvidenceSkillTest {
         assertEquals(1, evidence.size());
         assertEquals(EvidenceType.SPATIAL_SEPARATION, evidence.getFirst().type());
         assertEquals("OPENING_SPREAD", evidence.getFirst().labels().get("kind"));
-        // summary 只描述空间结构，不得声称地图信息收益/拿视野/图控
         assertTrue(evidence.getFirst().summary().contains("空间分离")
                 || evidence.getFirst().summary().contains("开局分散"), evidence.getFirst().summary());
         assertFalse(evidence.getFirst().summary().contains("拿视野"), evidence.getFirst().summary());
@@ -56,7 +50,6 @@ class TeamSeparationEvidenceSkillTest {
 
     @Test
     void stationaryHoldEmitsNeutralSeparationWindowNotDelay() {
-        // 旧逻辑会输出 SOLO_DELAY（静止+压力+队友获利）；现在只输出中性 SEPARATION_WINDOW 事实
         final Battle battle = battle(3, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 200, true, null,
                 List.of(stationary(60, 240, 100, 150)),
@@ -80,7 +73,6 @@ class TeamSeparationEvidenceSkillTest {
         assertTrue(evidence.getFirst().numbers().containsKey("mainClusterDisplacementM"));
         assertTrue(evidence.getFirst().numbers().containsKey("otherFriendlyDeathsDuringSpan"));
         assertTrue(evidence.getFirst().numbers().containsKey("otherFriendlyEngagementCountDuringSpan"));
-        // 不得出现战术 verdict 词汇
         assertFalse(evidence.getFirst().summary().contains("拖延"), evidence.getFirst().summary());
         assertFalse(evidence.getFirst().summary().contains("脱节"), evidence.getFirst().summary());
         assertFalse(evidence.getFirst().summary().contains("队友获利"), evidence.getFirst().summary());
@@ -90,7 +82,6 @@ class TeamSeparationEvidenceSkillTest {
 
     @Test
     void movingPushEmitsNeutralSeparationWindowNotDetach() {
-        // 旧逻辑会输出 SOLO_DETACHED（移动+拉大距离+无获利+被白吃）；现在只输出中性事实
         final Battle battle = battle(3, new double[]{0, 0, 90, 0, 0, 0, 0}, new long[7]);
         final TeamMemberFeatureSet solo = member(0, 1800, false, 90.0,
                 List.of(move(45, 90, 0, 0, -150, -100, 5f)), List.of(), 1);
@@ -114,7 +105,6 @@ class TeamSeparationEvidenceSkillTest {
 
     @Test
     void contradictorySignalsProduceNoCandidate() {
-        // 部分重叠交火：压力/承伤无法可靠归属 → 不硬出（与旧契约一致）
         final Battle battle = battle(2, new double[7], new long[7]);
         final TeamMemberFeatureSet solo = member(0, 400, true, null,
                 List.of(stationary(115, 260, 150, 100)),
@@ -155,7 +145,6 @@ class TeamSeparationEvidenceSkillTest {
         final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        // 5+2 分簇：主力 5 人（P0-P4）+ 独立 2 人（P5-P6）→ 两个 off-main 成员都产生中性分离窗口
         assertEquals(2, evidence.size(), "both off-main members must be candidates");
         for (final AiEvidence e : evidence) {
             assertEquals("SEPARATION_WINDOW", e.labels().get("kind"));
@@ -180,7 +169,6 @@ class TeamSeparationEvidenceSkillTest {
         final List<AiEvidence> evidence = TeamSeparationEvidenceSkill.detect(
                 features, battle, features.battlePhases(), MapTacticalSemantics.UNKNOWN);
 
-        // 无 battle phases 时不得生成 OPENING_SPREAD（未证明开局边界）
         for (final AiEvidence e : evidence) {
             assertFalse("OPENING_SPREAD".equals(e.labels().get("kind")),
                     "without battle phases no OPENING_SPREAD may be emitted: " + e.summary());

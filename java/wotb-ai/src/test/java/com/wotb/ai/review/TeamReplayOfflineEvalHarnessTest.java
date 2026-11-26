@@ -16,12 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Zero-token real-replay harness. It deliberately stops before any gateway:
- * frozen client projection (ReplayFactsFixtures) → timeline → team context → prompt →
- * grounding facts. Gold files constrain evidence availability only; they do not
- * contain or get appended to a model prompt.
- */
 class TeamReplayOfflineEvalHarnessTest {
 
     @Test
@@ -31,7 +25,6 @@ class TeamReplayOfflineEvalHarnessTest {
             assertNotNull(processed.battle(), qualityCase.id() + " battle was not parsed");
             assertNotNull(processed.reconstruction(), qualityCase.id() + " reconstruction was not built");
 
-            // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
             final SingleTeamBattleAnalysisContext context = TeamContextBuilder.buildSingleTeamContext(
                     processed.battle(), processed.reconstruction());
             final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(

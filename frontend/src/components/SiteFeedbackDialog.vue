@@ -9,7 +9,6 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { apiErrorLabel } from '../utils/display.js'
 import AppDialog from './AppDialog.vue'
 
-// 打开时才由外壳挂载，关闭即卸载：表单状态不需要手动重置。
 const props = defineProps<{ pageView: string | null }>()
 const emit = defineEmits<{ close: [] }>()
 const { t, te } = useI18n()

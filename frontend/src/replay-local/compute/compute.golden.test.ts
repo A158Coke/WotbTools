@@ -1,9 +1,3 @@
-/**
- * 客户端批次计算 ↔ Java golden 逐字段 parity（验收基准）。
- *
- * 每个批次：按 batches.json 的顺序构造 ParsedEntry（见 `__golden__/goldenEntries.ts`），断言
- * `toPreviewResponse(finalizeBatch(entries))` 与 java-preview.json 完全相等（含浮点逐位）。
- */
 
 import { describe, expect, it } from 'vitest'
 

@@ -29,7 +29,6 @@ class GitHubClient:
         self.reset = int(headers.get('X-RateLimit-Reset', self.reset))
 
     def get(self, path):
-        # Reject foreign pagination links before sending credentials.
         url = urllib.parse.urljoin('https://api.github.com/', path)
         if urllib.parse.urlsplit(url).netloc != 'api.github.com' or not url.startswith('https://api.github.com/'):
             raise GitHubError('invalid API origin')

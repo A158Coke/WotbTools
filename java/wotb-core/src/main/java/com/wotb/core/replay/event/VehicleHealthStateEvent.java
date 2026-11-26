@@ -38,7 +38,6 @@ public record VehicleHealthStateEvent(
         HpRawState rawState
 ) implements ReplayEvent {
 
-    /** method1 causeFlag 语义化原因。 */
     public enum Cause {
         DIRECT,
         FIRE,
@@ -51,35 +50,6 @@ public record VehicleHealthStateEvent(
         rawState = rawState == null ? HpRawState.UNKNOWN_OTHER : rawState;
     }
 
-    /**
-     * Packet-local semantic derivation (PR147): maps the preserved {@code causeFlag} + the proven
-     * {@code sourceEntity} relationship into a semantic {@link Cause}.
-     *
-     * <p>This is <b>not</b> decoder raw→semantic promotion: the decoder always retains
-     * {@code causeFlag} raw and leaves {@link #cause()} as {@code null}. Consumers must obtain the
-     * validated cause through field-specific validation ({@code VehicleHealthCauseValidator}) before
-     * treating it as authority. Returns {@code null} when the packet-local invariant is not met (the
-     * raw cause is then retained rather than guessed), so no UNKNOWN/PARTIAL state explosion.</p>
-     *
-     * <p><b>Packet-local invariant (PR147 proven)</b>, using only the preserved {@code causeFlag}
-     * and the {@code sourceEntity} relationship — this is <b>never</b> a simple raw→semantic promotion:</p>
-     * <ul>
-     *   <li>{@code causeFlag==0} → {@link Cause#DIRECT};</li>
-     *   <li>{@code causeFlag==1} → {@link Cause#FIRE} only when {@code sourceEntity != entityId}
-     *       (external fire source); otherwise {@code null}.</li>
-     *   <li>{@code causeFlag==2} → {@link Cause#RAMMING} only when {@code sourceEntity != entityId}
-     *       (external rammer); otherwise {@code null}.</li>
-     *   <li>{@code causeFlag==3} → {@link Cause#WORLD_OR_ENVIRONMENT} only when
-     *       {@code sourceEntity == entityId} (self/environment source); otherwise {@code null}.</li>
-     *   <li>{@code causeFlag==5} → {@link Cause#DROWNING} only when {@code sourceEntity == entityId}
-     *       (proven self/environment source); otherwise {@code null}.</li>
-     *   <li>unknown flag → {@code null}.</li>
-     * </ul>
-     *
-     * <p>method8 / settlement / wrapper6 are never a required cross-evidence gate; they may only
-     * corroborate. When the invariant is unmet the semantic is absent ({@code null}) and the raw
-     * {@code causeFlag}/{@code sourceEntity} are retained.</p>
-     */
     public static Cause deriveSemanticCause(final VehicleHealthStateEvent event) {
         if (event == null) {
             return null;

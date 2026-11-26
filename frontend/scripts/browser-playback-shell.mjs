@@ -117,7 +117,6 @@ async function runPlaybackCollapseScenario(env, scenario) {
   const collapsedMapWidth = base.mapRect ? base.mapRect.width : null
 
   if (!portrait) {
-    // Desktop / 平板默认展开：先归位到「收纳」基线，再从它验证展开语义。
     if (base.lanes) {
       const resetRes = await clickElement(page, '[data-test="pb-roster-entry"]')
       check(failures, clicked(resetRes), 'roster entry baseline collapse click failed: ' + resetRes)
@@ -169,7 +168,6 @@ async function runPlaybackCollapseScenario(env, scenario) {
   await page.evaluate(`document.querySelector('[data-test="pb-play"]').focus()`)
   const toggleRes = await clickElement(page, '[data-test="pb-transport-toggle"]')
   check(failures, clicked(toggleRes), 'transport toggle click failed: ' + toggleRes)
-  // Observe actual production layout at intermediate animation frames, not just classes.
   const frames = await page.evaluate(`new Promise(resolve => {
     const samples = []
     const start = performance.now()
@@ -224,7 +222,6 @@ async function runPlaybackCollapseScenario(env, scenario) {
     check(failures, (await page.probe(playbackCollapseProbe)).contentInlineHeight === '', 'reversal must clean inline height')
   }
   if (scenario.width === 844) {
-    // Rotation preserves disclosure state, and a transition interrupted by hiding UI is disposable.
     await clickElement(page, '[data-test="pb-transport-toggle"]')
     await delay(120)
     await page.emulate({ ...scenario, width: 390, height: 844 })
@@ -263,18 +260,6 @@ async function runPlaybackCollapseScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: scenario.width + 'x' + scenario.height, mapShare: base.mapShare })
 }
 
-/**
- * §2d-shellnav：600×320 沉浸态下的**真实 Shell 导航所有权**回归。
- *
- * 与 pb-collapse-* 的差别：这里挂载的是**真实应用**（startFixtureServer({ realReplay: true })，
- * 只有 auth 边界替身，AppShell / shellChrome / AppNavDrawer / 回放解析全部是生产实现），
- * 不是 playback-controls.html 那种直接挂 BattlePlayback 的夹具——只有真实 AppShell 才能
- * 证明 `SHELL_CHROME_KEY` / `OPEN_NAV_DRAWER_KEY` 的注入与 `hostNav` 所有权交接：
- *   · 传输条展开时承载唯一可见导航入口（fallback .immersive-nav 必须不存在）；
- *   · 传输条折叠后所有权交还 AppShell（fallback 出现且可点，传输条内导航隐藏）；
- *   · 恢复后所有权回到传输条（fallback 消失）。
- * 任何一侧漏渲染 / 双渲染（两个 nav-menu 同时可见）都会让 navCount 断言失败。
- */
 const PLAYBACK_SHELLNAV_SCENARIOS = [
   { name: 'pb-shellnav-600x320-landscape-coarse', width: 600, height: 320, touch: true, duration: 60 },
 ]
@@ -310,7 +295,6 @@ function playbackShellNavProbe() {
   ]
   const controls = {}
   for (const [key, selector] of controlSelectors) {
-    // 同名入口可能有多个（传输条导航 vs 外壳 fallback）：全部收集，命中状态按「存在任一可见且可点」计。
     const rects = [...document.querySelectorAll(selector)].map(rectOf).filter(Boolean)
     controls[key] = rects
   }
@@ -347,7 +331,6 @@ async function runPlaybackShellNavScenario(env, scenario) {
   await page.emulate(scenario)
   if (!shellNavServer) shellNavServer = await startFixtureServer({ realReplay: true })
 
-  // 真实应用：示例回放 → 2D 战局回放 tab；沉浸态由 ReplayWorkspace 向真实 AppShell 申请。
   await page.goto(`${shellNavServer.origin}/?view=replay&ws-auth=0`)
   await page.waitFor(() => !!document.querySelector('[data-testid="workspace-demo"]'), { label: 'workspace demo entry' })
   await page.evaluate(`document.querySelector('[data-testid="workspace-demo"]').scrollIntoView({ block: 'center' })`)
@@ -367,8 +350,6 @@ async function runPlaybackShellNavScenario(env, scenario) {
     return trace?.click
   }
 
-  // —— Step 1/2：沉浸态 + 传输条承载唯一导航入口 + 全控件几何 ——
-  // 横屏地图可高于视口（仓库既有契约：控件允许滚动触达），命中测试前先把工作台对齐到视口。
   const alignWorkspace = async () => {
     await page.evaluate(`(() => {
       const slot = document.querySelector('[data-test="pb-transport-slot"]')
@@ -384,8 +365,6 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, expanded.navCount === 1 && expanded.navInTransport,
     `expanded transport must host exactly one visible navigation entry (count=${expanded.navCount} inTransport=${expanded.navInTransport})`)
   check(failures, !expanded.navFallbackVisible, 'shell fallback nav must be hidden while the transport hosts navigation')
-  // §2d-shellnav：窄视口（<640px）传输条时钟让位（紧凑 HUD 中心列有同一时钟），时间轴下限收缩——
-  // 否则 min-content 超宽，时钟溢出视口并与折叠按钮重叠（真实缺陷，已由本场景复现）。
   check(failures, expanded.controls.clock.every(r => !r.visible) && expanded.controls.hudClock.some(r => r.visible && r.hitSelf),
     `narrow viewport must hide the transport clock and keep the HUD clock reachable: clock=${JSON.stringify(expanded.controls.clock)} hud=${JSON.stringify(expanded.controls.hudClock)}`)
   const expandedControls = ['nav', 'back5', 'play', 'fwd5', 'speed', 'fullscreen', 'annotation', 'roster', 'gear', 'timeline', 'toggle']
@@ -412,18 +391,15 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, expanded.map && expanded.map.width >= 170 && expanded.map.height >= 170,
     `map stage must stay usable at 600x320 immersive: ${JSON.stringify(expanded.map)}`)
 
-  // —— Step 3a：抽屉打开 / 关闭（真实 AppNavDrawer，Esc 关闭） ——
   const navClick = await hit('[data-testid="nav-menu"]')
   check(failures, navClick?.testId === 'nav-menu', `navigation tap missed the hosted nav entry: ${JSON.stringify(navClick)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open' })
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
   await page.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, page.sessionId)
-  // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），限时等待真实卸载再断言
   await page.waitFor(() => !document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer unmount after Escape' })
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the navigation drawer')
   check(failures, (await page.probe(playbackShellNavProbe)).navCount === 1, 'exactly one nav entry must remain after closing the drawer')
 
-  // —— Step 3b：折叠 → 所有权交还 AppShell ——
   const clockBefore = (await page.probe(playbackShellNavProbe)).clock
   const toggleClick = await hit('[data-test="pb-transport-toggle"]')
   check(failures, toggleClick?.test === 'pb-transport-toggle', `collapse tap missed the toggle: ${JSON.stringify(toggleClick)}`)
@@ -435,11 +411,9 @@ async function runPlaybackShellNavScenario(env, scenario) {
   check(failures, collapsed.navCount === 1 && collapsed.navFallbackVisible && collapsed.controls.nav.some(r => r.hitSelf),
     `collapsed state must return navigation ownership to AppShell (count=${collapsed.navCount} fallback=${collapsed.navFallbackVisible})`)
   check(failures, collapsed.clock === clockBefore, 'collapsing must not move the clock')
-  // 折叠释放传输条高度 → 纵向预算变大：地图正方形只能变大或不变（不能因折叠而缩小）。
   check(failures, collapsed.map.width >= expanded.map.width - 1,
     `collapsing must not shrink the map square (expanded=${expanded.map.width} collapsed=${collapsed.map.width})`)
 
-  // —— Step 3b'：fallback 导航按钮**真实触控**打开抽屉（P3：不能只靠 elementFromPoint 判命中）——
   const fallbackClick = await hit('.immersive-nav')
   check(failures, fallbackClick?.testId === 'nav-menu', `fallback nav tap missed: ${JSON.stringify(fallbackClick)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'nav drawer open from fallback' })
@@ -449,14 +423,12 @@ async function runPlaybackShellNavScenario(env, scenario) {
   await page.waitFor(() => !document.querySelector('[data-testid="nav-drawer"]'), { timeout: 5000, label: 'fallback drawer unmount after Escape' })
   check(failures, await page.evaluate(`!document.querySelector('[data-testid="nav-drawer"]')`), 'Escape must close the drawer opened from the fallback')
 
-  // —— Step 3c：恢复 → 所有权回到传输条 ——
   await hit('[data-test="pb-transport-toggle"]')
   await alignWorkspace()
   const restored = await page.probe(playbackShellNavProbe)
   check(failures, restored.navCount === 1 && restored.navInTransport && !restored.navFallbackVisible,
     `restored transport must reclaim navigation ownership (count=${restored.navCount} fallback=${restored.navFallbackVisible})`)
 
-  // —— Step 3d：播放 / seek / 名册开合仍然正确 ——
   await hit('[data-test="pb-play"]')
   const advanced = await page
     .waitForValue('document.querySelector(\'[data-test="pb-time"]\').textContent.trim()', (value) => value !== clockBefore,
@@ -479,7 +451,6 @@ async function runPlaybackShellNavScenario(env, scenario) {
   await hit('[data-test="pb-roster-entry"]')
   check(failures, await page.evaluate(`!document.querySelector('[data-test="pb-team-lane-left"]')`), 'roster entry must collapse the overlay lanes')
 
-  // —— Step 4（F6）：showTopbar 关闭 → HUD 时钟消失，窄容器必须保留可见的传输条时钟 ——
   await hit('[data-test="pb-secondary-entry"]')
   await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface open' })
   await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)
@@ -501,7 +472,6 @@ async function runPlaybackShellNavScenario(env, scenario) {
       `transport clock must not overlap the ${key} with the top bar off: clock=${JSON.stringify(a)} ${key}=${JSON.stringify(b)}`)
   }
   check(failures, !noHud.pageOverflow, `page-level horizontal overflow with the top bar off: ${JSON.stringify(noHud)}`)
-  // 恢复 showTopbar → 传输条时钟回到让位态（HUD 时钟接管）
   await hit('[data-test="pb-secondary-entry"]')
   await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { timeout: 5000, label: 'Display surface reopen' })
   await page.evaluate(`document.querySelector('[data-test="pb-show-hud"]').click()`)

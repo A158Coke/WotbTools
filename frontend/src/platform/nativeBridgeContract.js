@@ -1,18 +1,9 @@
 import { ANDROID_APP_ORIGIN } from './runtime.js'
 
-// The JSON contract is authoritative. This is the FE compatibility declaration;
-// CI fails if it drifts from contracts/android-native-bridge.json.
-//
-// Bridge v4 = Android 3.0 GeckoView runtime + setOrientationLock（v3 的 setLandscapeLock 被移除）（本机 loopback origin + 内置扩展 transport），
-// Additive 方法由 capability 区分；这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [4]；
-// 旧 v3 及更早客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
-// 绝不在页面里静默回退到 keycloak-js。
 export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([4])
 
-/** Capability that makes the native OIDC session (not the page) the auth owner. */
 export const NATIVE_AUTH_CAPABILITY = 'native-auth'
 
-/** Bridge methods the native-auth provider depends on (mirrors the JSON contract). */
 export const NATIVE_AUTH_METHODS = Object.freeze({
   getState: 'authGetState',
   login: 'authLogin',
@@ -20,24 +11,16 @@ export const NATIVE_AUTH_METHODS = Object.freeze({
   getAccessToken: 'authGetAccessToken',
 })
 
-/** Native → Web auth state change notification (mirrors the JSON contract `events`). */
 export const NATIVE_AUTH_CHANGED_GLOBAL = 'wotbtoolsOnAuthChanged'
 
-/**
- * Capability that makes the native connectivity state (Android `ConnectivityManager`,
- * INTERNET + VALIDATED) authoritative instead of `navigator.onLine` in the page.
- */
 export const NATIVE_CONNECTIVITY_CAPABILITY = 'connectivity'
 
-/** Bridge methods the connectivity platform source depends on (mirrors the JSON contract). */
 export const NATIVE_CONNECTIVITY_METHODS = Object.freeze({
   getState: 'connectivityGetState',
 })
 
-/** Native → Web connectivity change notification (mirrors the JSON contract `events`). */
 export const NATIVE_CONNECTIVITY_CHANGED_GLOBAL = 'wotbtoolsOnConnectivityChanged'
 
-/** 更新状态能力独立于旧 app-update，避免把同为 v3 的旧 Native 当成新接口。 */
 export const NATIVE_UPDATE_CAPABILITY = 'app-update-status'
 export const NATIVE_UPDATE_METHODS = Object.freeze({
   getStatus: 'getUpdateStatus',
@@ -48,24 +31,19 @@ export const NATIVE_UPDATE_METHODS = Object.freeze({
 })
 export const NATIVE_UPDATE_CHANGED_GLOBAL = 'wotbtoolsOnUpdateStatusChanged'
 
-/** Native → Web: pending replay arrived while the replay workspace is loaded (mirrors the JSON contract `events`). */
 export const NATIVE_REPLAY_GLOBAL = 'wotbtoolsOnReplay'
 
-/** Exact Native-owned resource; must never become an arbitrary remote fetch. */
 export const NATIVE_REPLAY_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay-pending`
 
-/** Optional v2 capability: manual SAF directory selection, independent of external replay pending. */
 export const NATIVE_REPLAY_FOLDER_CAPABILITY = 'replay-folder-picker'
 export const NATIVE_REPLAY_FOLDER_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay-folder`
 
-/** Optional screen-form capability: phone detection + scene-page landscape lock (tablets never lock). */
 export const NATIVE_SCREEN_FORM_CAPABILITY = 'screen-form'
 export const NATIVE_SCREEN_FORM_METHODS = Object.freeze({
   getForm: 'getScreenForm',
   setOrientationLock: 'setOrientationLock',
 })
 
-/** Optional haptics capability: system haptic feedback constants mapped from a fixed event kind. */
 export const NATIVE_HAPTICS_CAPABILITY = 'haptics'
 export const NATIVE_HAPTICS_METHODS = Object.freeze({
   haptic: 'haptic',

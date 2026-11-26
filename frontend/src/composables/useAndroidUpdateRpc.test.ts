@@ -58,11 +58,11 @@ it('keeps one real bridge RPC pending beyond five seconds and resolves from Nati
     expect(installs).toBe(2)
     window.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(0)
-    expect(update.acting.value).toBe(true) // READY 仍可能是在排队。
+    expect(update.acting.value).toBe(true)
     current = { ...ready, revision: 2, download: { ...ready.download, state: 'installRequested' } }
     window.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(0)
-    expect(update.acting.value).toBe(true) // snapshot 不能代替仍在等待的关联回复。
+    expect(update.acting.value).toBe(true)
     respond(installRequest!.id, true)
     await vi.advanceTimersByTimeAsync(0)
     await uncertain

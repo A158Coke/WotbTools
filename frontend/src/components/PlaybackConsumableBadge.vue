@@ -2,14 +2,6 @@
 import { computed } from 'vue'
 import { consumableIconUrl } from '../utils/consumableIcons.js'
 
-/**
- * 血量条旁的一个**正在生效**的定时消耗品徽标：图标 + 剩余时间环。
- *
- * - 只在 `consumableRuntimeAt` 给出激活窗口（ACTIVATED 且 duration>0）时渲染；
- *   冷却/未使用/瞬发都不会进来。
- * - 环 = 剩余时间 / 本次激活总时长。
- * - 不显示 raw wire/logical ID；无图时用同色几何点回退。
- */
 const props = defineProps({
   logicalItemId: { type: String, default: null },
   remainingSec: { type: Number, required: true },
@@ -48,7 +40,6 @@ const iconUrl = computed(() => consumableIconUrl(props.logicalItemId))
   color: inherit;
   pointer-events: none;
 }
-/* 环从 12 点方向开始顺时针消耗：SVG 整体旋转 -90°，dashoffset 走剩余比例。 */
 .pb-consumable-ring {
   position: absolute;
   inset: 0;

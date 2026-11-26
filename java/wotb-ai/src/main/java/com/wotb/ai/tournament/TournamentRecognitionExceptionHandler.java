@@ -18,7 +18,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.util.Map;
 
-/** Multipart failures can happen before a controller is selected, so this advice is guarded by exact path. */
 @RestControllerAdvice
 public class TournamentRecognitionExceptionHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(TournamentRecognitionExceptionHandler.class);
@@ -47,7 +46,6 @@ public class TournamentRecognitionExceptionHandler {
         } else {
             status = 500;
             errorCode = "INTERNAL_ERROR";
-            // Exception text/stack can contain provider request material; log only the exception type.
             LOGGER.error("tournament_recognition_failed errorType={}", error.getClass().getSimpleName());
         }
         return ResponseEntity.status(status).body(new ApiErrorResponse(null, errorCode, null, status,

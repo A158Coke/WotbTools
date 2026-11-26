@@ -19,21 +19,6 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * #821：「{@code @RequestParam(name="x")} 必须显式写 name」的机械门禁——
- * wotb-ai 镜像（与 wotb-web 的同名 gate 同型；跨模块 test 工具共享需 test-jar
- * 基建，故按本仓 per-module arch gate 模式复制谓词）。
- *
- * <p>规则语义与 wotb-web 一致：参数标注 {@code @RequestParam} 且未提供非空
- * 字面量 name/value（空串算未提供——Spring 对空 name 回退到 Java 参数名），
- * 且 raw 类型不是 Map/MultiValueMap 聚合绑定 → 违规。覆盖 wotb-ai production
- * classes（其 controller 真实使用 @RequestParam），随 {@code mvn test} 的
- * authoritative CI 路径执行。</p>
- *
- * <p>红线证明（committed）：{@code archfixture.RequestParamFixture} 的
- * unnamed / 空 name / 空 value 形态必须被<b>同一检查</b>拒绝，显式 name 与
- * 聚合绑定必须通过。</p>
- */
 class RequestParamExplicitNameTest {
 
     private static JavaClasses productionClasses() {
@@ -43,7 +28,6 @@ class RequestParamExplicitNameTest {
         return new ClassFileImporter().importPath(classes.toString());
     }
 
-    /** 语义与 wotb-web 的 RequestParamExplicitNameTest 保持一致。 */
     static List<String> unnamedRequestParamViolations(JavaClasses classes) {
         List<String> violations = new ArrayList<>();
         for (JavaClass clazz : classes) {
@@ -73,7 +57,6 @@ class RequestParamExplicitNameTest {
         return violations;
     }
 
-    /** 显式绑定名 = 属性声明为字面量 String 且非空串；非字面量值按违规处理（gate 偏向红）。 */
     private static boolean hasNonEmptyProperty(JavaAnnotation<JavaParameter> annotation, String property) {
         return annotation.tryGetExplicitlyDeclaredProperty(property)
                 .filter(String.class::isInstance)

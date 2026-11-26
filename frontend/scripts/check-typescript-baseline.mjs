@@ -1,6 +1,3 @@
-// typescript.legacy.json / stylelint.legacy.json 的 base→head 单调门禁：名单只减不增，
-// typescript 的 escape hatch 逐文件不增；显式拆分迁移只能把基线源额度逐类型转给唯一新路径。
-// src/shared/typescript-ownership.test.ts 保证名单等于当前源码，这里保证名单不能跟着源码一起放宽。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
@@ -128,15 +125,12 @@ export function baselineViolations(base, head, transfers = {}) {
   return [...added, ...invalidTransfers, ...grown]
 }
 
-// stylelint.legacy.json 的 files[] 同样只减不增：文件迁完设计语言 token 后从名单删除，
-// 不允许把新文件加进名单来豁免严格规则。
 export function stylelintBaselineViolations(base, head) {
   const allowed = new Set(base.files ?? [])
   return (head.files ?? []).filter(path => !allowed.has(path)).map(path => `${path}: 新增了 stylelint legacy 豁免`)
 }
 
 function readBaseJson(sha, path) {
-  // 基线随本门禁一起引入；此前的 base 没有该文件。sha 不可达时 cat-file 失败，不当作无基线放行。
   execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], { stdio: 'inherit' })
   try {
     return JSON.parse(execFileSync('git', ['show', `${sha}:${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }))

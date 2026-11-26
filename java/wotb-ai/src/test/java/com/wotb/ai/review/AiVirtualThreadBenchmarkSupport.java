@@ -31,7 +31,6 @@ import jdk.jfr.Recording;
 import jdk.management.VirtualThreadSchedulerMXBean;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Internal measurements, result types, and report support for the AI VT benchmark. */
 abstract class AiVirtualThreadBenchmarkSupport {
 
     private static final String PROMPT = "Return exactly: OK";

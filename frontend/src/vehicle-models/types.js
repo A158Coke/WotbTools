@@ -1,22 +1,4 @@
-/**
- * Tier X 专属俯视车型系统 — 类型契约（discriminated union）。
- *
- * 正式资产 = Source-faithful PBR top-view WebP asset。尺寸契约（RASTER_SIZE_RUNTIME_CONTRACT）：
- * - hull.webp：固定 640×640 physical / 320×320 logical（viewBox 见 VIEWBOX）；
- * - turret.webp（turreted）：physical canvas **尺寸可变**——按 turret + mantlet + complete gun
- *   bounds 动态扩展（raster overflow contract），authoritative size / placement / pivot
- *   一律来自顶层 metadata.turretRaster（runtime 不得假设 640×640）；
- * 0° = hull 车头朝 12 点、turret/gun 朝车体正前；旋转数学（嵌套 transform，见 pivot.js）：
- * - turret assembly 父层 rotate(hullWorldDeg) around 车辆中心（座圈随 hull 移动）；
- * - turret image 子层 rotate(turretWorldDeg - hullWorldDeg) around image-local pivot
- *   （turretRaster.pivotX/pivotY）——最终 world yaw = turretWorldDeg；
- * turretless 车型禁止伪造 turret 层。旧 SVG 仅为 debug/reference（extractor CLI 输出）。
- *
- * 本文件只放纯类型/常量，不依赖 Vue、不读文件——
- * 供运行时、validator（vitest）与 CLI 脚本共用。
- */
 
-/** 统一逻辑 viewBox（所有正式车型固定；hull physical 渲染固定 640×640，turret 尺寸见 turretRaster）。 */
 export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
 
 /**
@@ -81,7 +63,6 @@ export const VIEWBOX = Object.freeze({ width: 320, height: 320 })
  *     guarantee——几何上限 = BlitzKit/WoTB LOD0 source）
  */
 
-/** metadata.json 允许的顶层键（多余键视为契约违反，防漂移）。 */
 export const METADATA_KEYS = Object.freeze([
   'modelKey',
   'kind',
@@ -91,21 +72,10 @@ export const METADATA_KEYS = Object.freeze([
   'generation',
 ])
 
-/** 正式几何来源 provider（baker / source contract：BlitzKit model.glb + models.pb）。 */
 export const SOURCE_PROVIDER_BLITZKIT = 'blitzkit'
 
-/** 正式生成方法（texture bake 生成，PR1 正式契约）。 */
 export const GENERATION_METHOD_TEXTURE_BAKE = 'blitzkit-model-topdown-texture-bake'
 
-/**
- * 正式资产目录契约（raster-backed high-fidelity）：
- * - hull.webp：RGBA WebP，固定 640×640 physical / 320×320 logical；
- * - turret.webp（仅 turreted）：RGBA WebP，physical 尺寸可变（turret+mantlet+gun bounds），
- *   尺寸/原点/枢轴以 metadata.turretRaster 为准（runtime 禁止假设 640×640）；
- * - metadata.json：Source-faithful PBR top-view asset 契约；
- * - bake-report.json：生成记录（developer QA，validator 要求存在）。
- * 旧 hull.svg / turret.svg 不再属于正式契约（extractor 输出到 gitignored debug 目录）。
- */
 export const ASSET_FILES = Object.freeze({
   hull: 'hull.webp',
   turret: 'turret.webp',
@@ -113,10 +83,8 @@ export const ASSET_FILES = Object.freeze({
   bakeReport: 'bake-report.json',
 })
 
-/** modelKey 命名约定：kebab-case（小写字母/数字/连字符）。 */
 export const MODEL_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-/** BlitzKit 参考图 URL（已验证：api.blitzkit.app/tanks/{tankId}/icons/big.webp）。 */
 export function blitzkitIconUrl(tankId) {
   return `https://api.blitzkit.app/tanks/${tankId}/icons/big.webp`
 }

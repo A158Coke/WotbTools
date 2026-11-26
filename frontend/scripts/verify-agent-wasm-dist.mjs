@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * Agent WASM dist 契约校验（唯一实现，被 Docker build 与 CI 的 dist smoke 共用）。
- *
- * 断言 dist 里的 Agent 产物是 **commit-addressed** 的，并且与 `deploy/agent/source.json`
- * 这一唯一 identity 来源逐字段一致：
- *
- *   dist/wasm/<ref>/wotb_replay_wasm.js
- *   dist/wasm/<ref>/wotb_replay_wasm_bg.wasm          (wasm magic = 0061736d)
- *   dist/wasm/<ref>/fingerprint.json                  (upstream_commit/tag == source.json)
- *   dist/wasm/ 下**不得**再有别的条目（stable `/wasm/wotb_replay_wasm.js` 禁止回归）
- *
- * 用法（frontend/ 下）：
- *   node scripts/verify-agent-wasm-dist.mjs [--dist <dir>] [--pin <source.json>]
- * 默认：--dist dist --pin ../deploy/agent/source.json
- */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -47,7 +32,6 @@ function parseArgs(argv) {
   return options
 }
 
-/** dist 契约校验；任何一条不成立都抛错（fail-closed）。 */
 export function verifyAgentWasmDist(distDir = join(FRONTEND, 'dist'), pinPath = PIN_PATH) {
   const pin = JSON.parse(readFileSync(pinPath, 'utf8'))
   const ref = pin?.ref
@@ -106,7 +90,6 @@ function main(argv) {
   }
 }
 
-// 直接执行（被 vitest 作为库 import 时不跑）
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   process.exit(main(process.argv))
 }

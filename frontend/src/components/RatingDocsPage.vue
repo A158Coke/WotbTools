@@ -3,9 +3,6 @@ import { inject } from 'vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import MarkdownDocPage from './MarkdownDocPage.vue'
-// 构建期把 canonical Markdown 作为 raw 资源纳入独立 chunk（懒加载），
-// 不维护第二份人工副本；文档正文唯一事实源始终是 docs/WotBTools_League_Rating_V6.md。
-// 与项目历史 / 技术演进同一文档模板（目录 + 阅读排版）；正文按 CommonMark 渲染，源文件的硬换行不再变成 <br>。
 import leagueRatingV6 from '../../../docs/WotBTools_League_Rating_V6.md?raw'
 
 const navigate = inject<((view: string) => void) | null>(NAVIGATE_VIEW_KEY, null)

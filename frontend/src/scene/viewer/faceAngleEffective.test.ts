@@ -1,5 +1,3 @@
-// 点选卡"入射角/等效装甲"的几何换算（纯函数）：确定性几何，不含转正/口径规则。
-// 厚度模式用它；判定模式的等效来自判定结果，不经过本函数。
 import { describe, expect, it } from 'vitest'
 import { faceAngleAndEffective } from './judgment.ts'
 
@@ -29,7 +27,7 @@ describe('faceAngleAndEffective', () => {
   it('掠射（cos→0）按 0.05 下限钳制，等效有限', () => {
     const r = faceAngleAndEffective(100, n(0, 0, 1), n(1, 0, -1e-9))
     expect(r.angleDeg).toBeGreaterThan(89)
-    expect(r.effective).toBeCloseTo(2000, 0)   // 100 / 0.05
+    expect(r.effective).toBeCloseTo(2000, 0)
   })
 
   it('缺失法线/方向或非法厚度 → null（fail-closed，UI 显示 —）', () => {

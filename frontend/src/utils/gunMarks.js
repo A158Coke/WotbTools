@@ -6,7 +6,6 @@ export function gunMarksCount(value) {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3 ? value : null
 }
 
-/** Derived identity lookup; the owning replay result remains the only fact source. */
 export function gunMarksByAccount(result) {
   const counts = new Map()
   for (const player of result?.players || []) {

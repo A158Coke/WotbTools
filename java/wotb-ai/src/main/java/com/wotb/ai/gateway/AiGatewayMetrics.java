@@ -5,7 +5,6 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 
-/** Owns low-cardinality counters for AI upstream requests and provider usage. */
 final class AiGatewayMetrics {
     static final long NANOS_PER_MILLI = 1_000_000L;
     static final String REQUESTS = "wotb_ai_upstream_requests_total";

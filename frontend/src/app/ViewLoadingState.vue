@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// View transition 的统一 loading surface（#845）：由 viewRegistry 的 defineLazyView
-// 在 lazy chunk 超过反馈阈值后渲染在原 view 位置（main 内容区内，不遮 Sidebar / 导航）。
 </script>
 
 <template>
@@ -11,8 +9,6 @@
 </template>
 
 <style scoped>
-/* 填满 main：ViewHost 在 surface 在场时把 main 变成列 flex（见 ViewHost.vue），这里跟随伸展。
-   main 的 flex-grow 已保证块高（Footer 贴底不上跳），无需任何视口/百分比 magic number。 */
 .view-loading {
   flex: 1 1 auto;
   display: grid;
@@ -33,7 +29,6 @@
   animation: view-loading-spin 0.9s linear infinite;
 }
 
-/* reduced-motion 只停动画，不改变 loading 语义（阈值在 viewRegistry，与 motion token 无关）。 */
 @media (prefers-reduced-motion: reduce) {
   .view-loading-spinner { animation: none; }
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Strict full-tree source LOC gate for first-party code in a Git tree.
 
 Every invocation judges the ENTIRE HEAD tree against the policy in
@@ -150,8 +149,6 @@ def main():
     limits, excluded = load_policy()
     global LIMITS, EXCLUDED
     LIMITS, EXCLUDED = limits, excluded
-    # Both endpoints must be real commits: a missing base or head is invalid
-    # evidence and fails closed rather than silently scanning a partial tree.
     base_sha, _ = tree(args.base)
     head_sha, head = tree(args.head)
     counts = blob_lines([oid for _, oid in head.values()])

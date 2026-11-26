@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// 名人堂管理 · 操作日志分区（只读）。首次激活且没有数据时加载；切回时保留已加载的页。
 import { onActivated, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '../api/generated/http-contract.js'

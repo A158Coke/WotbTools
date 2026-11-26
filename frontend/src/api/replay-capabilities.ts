@@ -6,21 +6,12 @@ export interface ReplayAuthSession {
   ensureToken: (minValidity?: number) => Promise<boolean>
 }
 
-/**
- * 可选 Bearer：已登录则保鲜 token 并附带；未登录（或刷新失败）返回空 header，以匿名身份请求。
- * 回放解析 / 汇总 / 导出 / 2D 回放都在本机完成（服务器没有 parser），这里只服务仍需服务端的调用。
- */
 export async function optionalBearer(auth: ReplayAuthSession): Promise<Record<string, string>> {
   const valid = await auth.ensureToken(30)
   const accessToken = valid ? auth.token() : ''
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
 }
 
-/**
- * Bearer 鉴权 POST：`ensureToken` 保鲜 + canonical `ApiError` 归一。
- * `/api/ai/**` transport 共用，组件不得复制此逻辑。
- * `optionalAuth`：匿名可用的端点未登录时不抛错、不带 header。
- */
 export async function authedReplayPost(
   auth: ReplayAuthSession,
   url: string,
@@ -30,7 +21,6 @@ export async function authedReplayPost(
     allowNoContent?: boolean
     keepalive?: boolean
     optionalAuth?: boolean
-    /** JSON 体以 `Content-Encoding: gzip` 发送（服务端限额解压；AI 复盘投影用） */
     gzip?: boolean
   } = {},
 ): Promise<Response> {
@@ -53,7 +43,6 @@ export async function authedReplayPost(
   const json = JSON.stringify(body)
   let payload: BodyInit = json
   if (options.gzip) {
-    // 同步压缩：请求在同一 tick 发出（取消 / 超时的 run ownership 语义不因压缩引入异步窗口）
     payload = new Blob([gzipSync(strToU8(json), { level: 6 })], { type: 'application/json' })
     headers['Content-Encoding'] = 'gzip'
   }

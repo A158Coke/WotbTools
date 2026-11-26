@@ -17,13 +17,11 @@ import { useAnnotationSvgProjection } from './useAnnotationSvgProjection.js'
 import type { MapAnnotation } from './useAnnotationState.js'
 import type { PlaybackCamera, PlaybackMapViewLike } from './usePlaybackCamera.js'
 
-/** 语义坐标点（回放地图用户坐标系）。 */
 export interface SemanticPoint {
   x: number
   y: number
 }
 
-/** 文字输入会话（BattleMap 的 text input 绑定对象）。 */
 export interface TextSession {
   point: SemanticPoint
   text: string
@@ -31,51 +29,29 @@ export interface TextSession {
   cancelled?: boolean
 }
 
-/**
- * 2D 回放标注编辑器（#820 Agent C 拆分）：工具/绘制手势/文字会话/route 的**唯一 owner**。
- *
- * - 历史快照 / 草稿 / 选中项的唯一事实源仍是 useAnnotationState（#820 Wave B5B），
- *   本 composable 是它的唯一消费者，持有 gesture 临时状态（工具、颜色/宽度、routePoints、
- *   绘制采样、文字会话）；
- * - 标注几何一律存语义坐标；坐标换算复用 usePlaybackCamera 的 view/MapRenderRect（同一视口），
- *   地形起伏的投影/反投影由宿主注入（activeTerrainRelief 仍由宿主按地图匹配）；
- * - pointer 事件由 usePlaybackMapGestures 转入（startDrawing/moveDrawing/endDrawing/cancelDrawing），
- *   双指捏合仍归手势层，第二指落下时手势层调用 cancelDrawing。
- */
 export function usePlaybackAnnotationEditor(
   camera: Pick<PlaybackCamera, 'view' | 'screenPoint' | 'mapRenderRect' | 'mapWidth' | 'mapHeight'>,
   mapView: Ref<PlaybackMapViewLike>,
   hooks: {
-    /** 文字输入框（BattleMap 内的 input 桥）。 */
     textInputRef: () => { focus: (opts?: { preventScroll?: boolean }) => void } | null
-    /** 打开标注模式时宿主副作用（暂停播放、收起 display 浮层）。 */
     onOpen: () => void
-    /** 标注重置时同步清空手势状态（pointer/pan/pinch）。 */
     resetGestures: () => void
-    /** 地形起伏反投影：normalized viewport 坐标 → 语义坐标；无模型返回 null。 */
     reliefUnproject: (xNorm: number, yNorm: number) => SemanticPoint | null
-    /** 地形起伏正投影：语义坐标 → normalized viewport 坐标；无模型回退 mapView 线性映射。 */
     projectedSemanticNorm: (x: number, y: number) => { xNorm: number; yNorm: number }
-    /** 当前地图是否命中地形起伏模型（文字定位分支与原实现逐行等价）。 */
     reliefHasModel: () => boolean
-    /** 切换文件（overview 引用变化）→ 清空标注。 */
     overview: () => unknown
   },
 ) {
   const { view } = camera
-// JS 工具（无类型）在 TS 边界上的最小注解：工具表与草稿对象按运行时形状消费。
 const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
 
-  // ---- 地图标注（临时纯前端：切视图/切文件即清空；几何一律存语义坐标） ----
-  // 历史快照 / 草稿 / 选中项的唯一 owner 是 useAnnotationState（#820 Wave B5B）；
-  // 工具、颜色/宽度、routePoints 等 gesture 临时状态在本 composable。
   const annotationOpen = ref(false)
-  const activeTool = ref<string | null>(null) // null outside marking mode; select, tank classes, route or legacy drawing tools
+  const activeTool = ref<string | null>(null)
   const routePoints = ref<SemanticPoint[]>([])
   let moveOriginal: MapAnnotation | null = null
   const annotColor = ref(ANNOT_COLORS[0])
   const annotVisible = ref(true)
-  const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT) // 滑块值 = SVG 像素口径（1× 下所见即所得）
+  const annotWidthSlider = ref(ANNOT_WIDTH_DEFAULT)
   const {
     history,
     historyIndex,
@@ -95,7 +71,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     renameSelected,
     finishRoute: finishRouteCommit,
   } = useAnnotationState({ getRouteDraft: () => routeDraft() })
-  // SVG 投影（语义↔SVG 比例、滑块线宽、渲染列表）唯一 owner = useAnnotationSvgProjection。
   const { semPerSvgX, semPerSvgY, annotWidth, renderedAnnotations } = useAnnotationSvgProjection(mapView, {
     widthSlider: annotWidthSlider,
     annotations,
@@ -104,11 +79,11 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     replacingSelected: () => !!moveOriginal,
     showSelection: () => annotationOpen.value,
   })
-  const textSession = ref<TextSession | null>(null) // reactive({ point, text })，文字输入会话
-  const ANNOT_THIN_PX = 2 // 笔迹抽稀阈值（屏幕 CSS px，与坐标体系无关）
-  let drawStart: SemanticPoint | null = null // 绘制起点（语义坐标）
-  let drawPoints: SemanticPoint[] = [] // pen/eraser 已采点（语义坐标）
-  let drawScreen: { x: number; y: number }[] = [] // 与 drawPoints 一一对应的屏幕点（CSS px，用于抽稀）
+  const textSession = ref<TextSession | null>(null)
+  const ANNOT_THIN_PX = 2
+  let drawStart: SemanticPoint | null = null
+  let drawPoints: SemanticPoint[] = []
+  let drawScreen: { x: number; y: number }[] = []
   let drawingPointerId: number | null = null
   let drawingStartScreen: { x: number; y: number } | null = null
 
@@ -127,7 +102,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     drawingPointerId = null
     drawingStartScreen = null
   }
-  // 切换文件（overview 引用变化；MapOverview 未按文件 key 复用）→ 清空标注
   watch(hooks.overview, resetAnnotations)
 
   function cancelDrawing() {
@@ -199,7 +173,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     return annotationDraftFromTool(tool, a, b, { color: annotColor.value, width: annotWidth.value })
   }
 
-  /** 指针 client 坐标 → 语义坐标（CSS px → 撤销 viewport 变换 → CSS↔SVG 比例 → fromX/fromY）。 */
   function semanticPoint(e: { clientX: number; clientY: number }): SemanticPoint | null {
     const sp = camera.screenPoint(e.clientX, e.clientY)
     const rect = camera.mapRenderRect()
@@ -231,7 +204,7 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
       return
     }
     if (activeTool.value === 'text') {
-      if (textSession.value) commitSession(textSession.value) // 先提交上一个未完成的文字
+      if (textSession.value) commitSession(textSession.value)
       textSession.value = reactive({ point: p, text: '' })
       nextTick(() => hooks.textInputRef()?.focus())
       return
@@ -256,12 +229,10 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     }
     if (tool === 'route' || TANK_CLASSES.some(cls => cls.key === tool)) return
     if (tool === 'pen' || tool === 'eraser') {
-      // 屏幕空间抽稀：相邻采样点 ≥ ANNOT_THIN_PX CSS px（不依赖 scale/渲染比例，避免换算误差累积）
       const last = drawScreen[drawScreen.length - 1]
       if (last == null || Math.hypot(e.clientX - last.x, e.clientY - last.y) >= ANNOT_THIN_PX) {
         drawScreen.push({ x: e.clientX, y: e.clientY })
         drawPoints.push(p)
-        // route 草稿在采点过程中始终携带 points 列（原实现同形状）。
         draft.value = { ...(draft.value as MapAnnotation), points: [...drawPoints] }
       }
     } else if (drawStart) {
@@ -301,7 +272,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     cancelDrawing()
   }
 
-  /** 文字提交（幂等：Enter/blur/移除输入框都会触发，committed 防重复）。 */
   function commitSession(session: TextSession) {
     if (textSession.value === session) textSession.value = null
     if (!session || session.cancelled || session.committed) return
@@ -318,7 +288,6 @@ const TANK_CLASSES = ANNOT_TANK_CLASSES as ReadonlyArray<{ key: string }>
     }
   }
 
-  /** 文字输入框屏幕定位：语义 → SVG unit → CSS px（渲染尺寸比例）→ viewport 变换（与 screenToSvg 互逆）。 */
   const textInputStyle = computed(() => {
     const session = textSession.value
     if (!session) return null

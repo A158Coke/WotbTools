@@ -3,7 +3,6 @@ import cases from './__fixtures__/mobility-wg-11.21.0_1.json'
 import { computeCharacteristics, type ComputeInput } from './characteristics'
 import { effectivePower, intersections, simulate, terrains, type Mobility } from './mobility'
 
-// Module weights and resistances from WotbTools WG 11.21.0_1, BF stats and issue #994 segment table.
 type Vehicle = typeof cases[number]
 function loadout(car: Vehicle, fueled: boolean): ComputeInput {
   const turret = (weight: number, gun: number) => ({ stats: { weight }, guns: [{ stats: { weight: gun } }] })

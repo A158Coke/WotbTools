@@ -19,7 +19,6 @@
 
   <dependencies>
 
-    <!-- SPI -->
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-server-spi</artifactId>
@@ -27,7 +26,6 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- SPI Private -->
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-server-spi-private</artifactId>
@@ -35,7 +33,6 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Services -->
     <dependency>
       <groupId>org.keycloak</groupId>
       <artifactId>keycloak-services</artifactId>

@@ -148,7 +148,6 @@ describe('HoFPage', () => {
   })
 
   it('switches to 百场 tab and renders vehicle selector with leaderboard rows', async () => {
-    // 钉死单场 Tab 为空，避免前序用例泄漏的 hofList mock 干扰 .rk 计数
     lbApi.hofList.mockResolvedValue({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })
     lbApi.hofHundredList.mockResolvedValue({
       vehicleId: 385,
@@ -172,11 +171,9 @@ describe('HoFPage', () => {
     expect(tabButtons).toHaveLength(3)
     await tabButtons[1].trigger('click')
     await flushPromises()
-    // 切到百场 Tab → 拉取个人 PENDING 状态
     expect(lbApi.hofHundredMyStatus).toHaveBeenCalled()
 
     expect(wrapper.find('.h100-vehicle-select input[role="combobox"]').exists()).toBe(true)
-    // Tier X 全集 + 「默认」选项
     expect(pickerLabels(wrapper, '.h100-vehicle-select').length).toBeGreaterThanOrEqual(86)
 
     await pickVehicle(wrapper, '.h100-vehicle-select', 385)

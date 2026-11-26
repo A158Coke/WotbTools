@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Inventory a WoT Blitz Maps.zip without unpacking the whole archive.
 
 The report is deliberately evidence-only: filename/path patterns are grouped as
@@ -96,8 +95,6 @@ def build_inventory(archive_path: pathlib.Path, sample_limit: int) -> dict[str, 
     uncompressed_total = 0
     file_count = 0
 
-    # Inventory is central-directory-only on purpose: do not call testzip() here,
-    # because that would decompress the entire multi-GB archive.
     with zipfile.ZipFile(archive_path) as archive:
         for info in archive.infolist():
             if info.is_dir():

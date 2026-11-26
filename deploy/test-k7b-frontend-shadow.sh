@@ -9,9 +9,6 @@ resource="$ROOT/infra/komodo/resources/frontend-shadow.toml"
 [ -f "$template" ] || { echo "missing frontend nginx template" >&2; exit 1; }
 [ -f "$resource" ] || { echo "missing K7B shadow Komodo resource" >&2; exit 1; }
 
-# The K7C production replica deliberately requires the workflow to supply the
-# exact immutable TX1 image reference. Keep the fixture aligned with that runtime
-# contract instead of relying on the retired source-controlled shadow image pin.
 test_image_ref="ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 if env -u TX_FRONTEND_IMAGE_REF docker compose -f "$compose" config --format json >/dev/null 2>&1; then
   echo "frontend shadow compose accepted a missing TX_FRONTEND_IMAGE_REF" >&2

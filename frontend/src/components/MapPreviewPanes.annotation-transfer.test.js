@@ -12,7 +12,6 @@ vi.mock('vue-i18n', () => ({
   }),
 }))
 
-/** BattleMap 打桩为渲染数量探针：标注列表经 renderedAnnotations、基地经 bases 进入展示层。 */
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
@@ -112,7 +111,6 @@ describe('MapPreview2DPane 标注导入导出', () => {
     expect(wrapper.find('.bm-stub').attributes('data-count')).toBe('1')
     await wrapper.setProps({ mapKey: 'moon', basemap: { kind: 'ground', mapKey: 'moon' } })
     await nextTick()
-    // ground 底图需异步解析（happy-dom Image 不触发 onload）→ BattleMap 暂不渲染
     expect(wrapper.find('.bm-stub').exists()).toBe(false)
   })
 })

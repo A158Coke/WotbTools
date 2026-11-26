@@ -7,7 +7,6 @@ import type { NativeBridgeResponse } from '../api/generated/android-native-bridg
 type NativeFolderFile = NativeBridgeResponse<'pickReplayFolder'>['files'][number]
 export type NativeFolderMetadata = NativeFolderFile & { webkitRelativePath: string }
 
-// Includes time in the system chooser; reading itself is abortable on component destruction.
 const FOLDER_PICKER_TIMEOUT_MS = 10 * 60 * 1000
 const FOLDER_READ_TIMEOUT_MS = 2 * 60 * 1000
 
@@ -28,7 +27,6 @@ function validFile(file: unknown): file is NativeFolderFile {
     && isSafeCount(file.lastModified)
 }
 
-/** Provider sizes can be absent or wrong. Enforce actual bytes before constructing a File. */
 async function readFolderFile(selectionId: string, metadata: NativeFolderMetadata, remainingBytes: number, signal: AbortSignal) {
   const response = await fetch(NATIVE_REPLAY_FOLDER_RESOURCE_URL, {
     headers: {
@@ -64,11 +62,6 @@ async function readFolderFile(selectionId: string, metadata: NativeFolderMetadat
   return file
 }
 
-/**
- * Only the system-selected transient batch can be read. FileDrop owns replay filtering,
- * merging and preflight; prepareFiles returns the accepted new metadata or [] on rejection.
- * No partial batch is returned, and every selected batch is released even on abort/error.
- */
 export async function pickNativeReplayFolder({ signal, prepareFiles }: {
   signal?: AbortSignal
   prepareFiles: (metadata: NativeFolderMetadata[]) => NativeFolderMetadata[]
@@ -95,7 +88,6 @@ export async function pickNativeReplayFolder({ signal, prepareFiles }: {
       throw new Error('Invalid native folder metadata')
     }
     const metadata = selected.map(file => ({ ...file, webkitRelativePath: file.relativePath }))
-    // 先于 prepareFiles：它按路径 + 大小 + 时间去重，两个不同 fileId 会被合成一个而不报错。
     const replayPaths = metadata.filter(file => isReplayFileName(file.name)).map(file => file.relativePath)
     if (new Set(replayPaths).size !== replayPaths.length) {
       throw Object.assign(new Error('Ambiguous native folder paths'), { code: 'ambiguous-paths' })

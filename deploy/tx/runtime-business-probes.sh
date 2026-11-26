@@ -70,17 +70,10 @@ if any(config.get(key) != value for key, value in expected.items()):
   echo "qq-idp-admin-api: PASS"
 }
 
-# ---------------------------------------------------------------- business E2E
-# The read-only runtime check proves the *real* business chain from inside
-# wotb_tx_internal: Keycloak token -> business runtime -> PostgreSQL -> HoF
-# replay storage. Replay parsing runs in the browser, so there is no server-side
-# processing chain to exercise. The check performs no writes and makes no paid
-# AI provider call.
 
 E2E_CLIENT_ID="${KEYCLOAK_E2E_CLIENT_ID:-wotbtools-e2e}"
 E2E_CLIENT_SECRET="${KEYCLOAK_E2E_CLIENT_SECRET:-}"
 E2E_PUBLIC_IP="${WOTB_E2E_PUBLIC_IP:-118.25.18.105}"
-# The public hosts and the URLs the edge check must prove.
 E2E_WEB_URL="${WOTB_E2E_WEB_URL:-https://wotbtools.com/api/health}"
 E2E_AUTH_URL="${WOTB_E2E_AUTH_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
 E2E_BEARER=""
@@ -89,10 +82,6 @@ E2E_HTTP_BODY=""
 E2E_DOWNLOAD_SIZE="0"
 declare -a E2E_EXTRA_ARGS=()
 
-# Run one HTTP call in the deployment-owned health-probe container: the gate
-# needs no curl on the TX host and never contacts a published application port.
-# Keep Compose/container lifecycle diagnostics on stderr: stdout is a machine
-# protocol (JSON/body + curl write-out) and must stay parseable.
 e2e_http() {
   local method="$1" url="$2" body="${3:-}" content_type="${4:-}" raw
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -117,7 +106,6 @@ e2e_http() {
   return 0
 }
 
-# Status-only probe for binary payloads (HoF replay originals).
 e2e_download() {
   local url="$1" raw
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -134,7 +122,6 @@ e2e_download() {
   return 0
 }
 
-# Decode one field from the JSON body by dotted path; empty output means absent.
 e2e_field() {
   local body="$1" path="$2"
   python3 -c '
@@ -161,9 +148,6 @@ print(payload)
 ' "$path" <<< "$body"
 }
 
-# First HoF record that explicitly advertises a replay. Public HoF records can
-# legitimately exist without an archived replay, so arbitrary ids are not valid
-# storage probes.
 e2e_first_replay_id() {
   local body="$1"
   python3 -c '
@@ -209,7 +193,6 @@ business_e2e_check() {
     return 1
   fi
 
-  # --- auth: mint the machine token used by every authenticated call ---------
   E2E_EXTRA_ARGS=(--data-urlencode 'grant_type=client_credentials' \
     --data-urlencode "client_id=$E2E_CLIENT_ID" \
     --data-urlencode "client_secret=$E2E_CLIENT_SECRET")
@@ -223,7 +206,6 @@ business_e2e_check() {
   fi
   e2e_emit auth-token 1
 
-  # --- anonymous rejection ---------------------------------------------------
   local saved_bearer="$E2E_BEARER"
   E2E_BEARER=""
   e2e_http GET "http://business-api:8087/api/users/profile"
@@ -235,7 +217,6 @@ business_e2e_check() {
   fi
   E2E_BEARER="$saved_bearer"
 
-  # --- admin authorization boundary -----------------------------------------
   E2E_BEARER=""
   e2e_http GET "http://business-api:8087/api/admin/users"
   local admin_anonymous="$E2E_HTTP_STATUS"
@@ -248,7 +229,6 @@ business_e2e_check() {
     failures=1
   fi
 
-  # --- read-only business APIs ----------------------------------------------
   e2e_http GET "http://business-api:8087/api/users/profile"
   if [ "$E2E_HTTP_STATUS" = 200 ] || [ "$E2E_HTTP_STATUS" = 404 ]; then
     e2e_emit business-profile 1
@@ -264,7 +244,6 @@ business_e2e_check() {
     e2e_emit business-hof 0 "public HoF list must answer 200, got HTTP $hof_status"
     failures=1
   fi
-  # --- HoF replay originals are readable for a record that advertises one ----
   local hof_id="" hof_page=1 hof_total_pages=0 hof_scan_failed=0
   if [ "$hof_status" = 200 ]; then
     hof_id="$(e2e_first_replay_id "$hof_body")"

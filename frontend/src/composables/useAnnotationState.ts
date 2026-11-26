@@ -2,7 +2,6 @@ import { computed, ref } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
 import { commit, redo as redoSnapshot, undo as undoSnapshot } from '../utils/annotation.js'
 
-/** 标注记录的结构最小集（schema 几何由 utils/annotation 权威，这里只要求可辨识）。 */
 export interface MapAnnotation {
   type: string
   color: string
@@ -10,33 +9,19 @@ export interface MapAnnotation {
 }
 
 interface UseAnnotationStateOptions {
-  /** route 草稿由宿主 gesture 状态派生（routePoints + 颜色/宽度），route 提交时取值。 */
   getRouteDraft?: () => MapAnnotation | null
 }
 
-/**
- * 地图标注编辑状态的唯一 owner（#820 Wave B5B 起；回放 2D / 回放 3D / 地图预览 2D / 地图预览 3D 共用）：
- * 快照历史（history + historyIndex）+ 当前标注列表 + 进行中草稿 + 选中项，
- * 以及 commit / undo / redo / clear / updateSelected / delete / rename / route 提交 / reset。
- *
- * 边界（不在此处，也不做双向同步）：
- * - 几何与历史算法的权威仍是 `utils/annotation`（只消费，不复制）；
- * - pointer gesture 临时状态（routePoints、drawStart/points、moveOriginal）、工具与颜色/宽度、
- *   textSession、地图 viewport 归各表面的宿主（回放 2D = usePlaybackAnnotationEditor，
- *   3D = useSceneAnnotations，预览 2D = MapPreview2DPane）；gesture 产生的草稿通过
- *   写 `draft` ref 进入同一 owner，不建第二份草稿状态。3D 不用 draft / 选中（选中恒为 -1）。
- */
 export function useAnnotationState(options: UseAnnotationStateOptions = {}) {
-  const history: Ref<MapAnnotation[][]> = ref([[]]) // 快照栈（不可变数组），history[0] = 初始空
+  const history: Ref<MapAnnotation[][]> = ref([[]])
   const historyIndex = ref(0)
   const annotations: ComputedRef<MapAnnotation[]> = computed(() => history.value[historyIndex.value] || [])
-  const draft: Ref<MapAnnotation | null> = ref(null) // 进行中的标注（未提交）
+  const draft: Ref<MapAnnotation | null> = ref(null)
   const selectedAnnotationIndex = ref(-1)
   const selectedAnnotation: ComputedRef<MapAnnotation | null> = computed(
     () => annotations.value[selectedAnnotationIndex.value] || null
   )
 
-  /** 切换文件等场景的整体重置：历史、草稿、选中项全部回到初始态。 */
   function reset() {
     history.value = [[]]
     historyIndex.value = 0
@@ -48,7 +33,6 @@ export function useAnnotationState(options: UseAnnotationStateOptions = {}) {
     selectedAnnotationIndex.value = -1
   }
 
-  /** 快照式提交：next 成为新历史项（utils/annotation.commit 权威）。 */
   function replaceAnnotations(next: MapAnnotation[]) {
     const s = commit(history.value, historyIndex.value, next)
     history.value = s.history
@@ -96,9 +80,6 @@ export function useAnnotationState(options: UseAnnotationStateOptions = {}) {
     else updateSelected({ label: value })
   }
 
-  /**
-   * 提交进行中的路线（≥2 个点才有效）。返回是否实际提交；宿主负责随后清 gesture 状态与切回 select。
-   */
   function finishRoute(): boolean {
     const routeDraft = options.getRouteDraft?.() || null
     const points = (routeDraft?.points as unknown[] | undefined) || []

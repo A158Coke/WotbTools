@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-/** 三环实体与 DTO 的集中转换；Service/Entity 不手写 toXxx。 */
 @Service
 public class Mark3Mapper implements Mapper<Mark3Submission, Mark3SubmissionSummaryDto> {
 
@@ -101,7 +100,6 @@ public class Mark3Mapper implements Mapper<Mark3Submission, Mark3SubmissionSumma
                 null, null, items, 1, displaySize, items.size(), items.isEmpty() ? 0 : 1);
     }
 
-    /** PENDING 证据截图按字段顺序返回，空值不会泄露为 null list item。 */
     public List<String> proofScreenshots(final Mark3Submission submission) {
         return Stream.of(submission.getProofScreenshotFirst(), submission.getProofScreenshotSecond())
                 .filter(StringUtils::hasText)

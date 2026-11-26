@@ -46,7 +46,6 @@ public record VehicleBattleLoadout(
         equipment = equipment == null ? List.of() : List.copyOf(equipment);
     }
 
-    /** 一个 consumable/provision item slot（wire 原值 + raw 保留）。 */
     public record LoadoutItemSlot(
             int slot,
             int wireCode,
@@ -65,7 +64,6 @@ public record VehicleBattleLoadout(
         }
     }
 
-    /** 一个 equipment selection slot（直接 equipment numeric ID）。 */
     public record EquipmentSelection(int slot, int equipmentId, byte rawByte) {
     }
 
@@ -85,11 +83,10 @@ public record VehicleBattleLoadout(
         if (marker0A < 0) {
             return null;
         }
-        final int descriptorsStart = marker0A + 2; // 0A 06
+        final int descriptorsStart = marker0A + 2;
         if (descriptorsStart + ITEM_COUNT * ITEM_BYTES > initPayloadRaw.length) {
             return null;
         }
-        // 6 × 14-byte descriptors 之后必须是 0B 09
         final int equipMarker = descriptorsStart + ITEM_COUNT * ITEM_BYTES;
         if (equipMarker + 2 + EQUIPMENT_COUNT > initPayloadRaw.length) {
             return null;
@@ -133,10 +130,6 @@ public record VehicleBattleLoadout(
     private static final int ITEM_PAYLOAD_BYTES = 12;
     private static final int EQUIPMENT_COUNT = 9;
 
-    /**
-     * Resolve the version-scoped Type5 item namespace without losing the raw wire value.
-     * Consumables reuse the Type32 lifecycle mapping as the single semantic source.
-     */
     private static String resolveLogicalItemId(final int wireCode, final boolean consumableSlot) {
         if (consumableSlot) {
             return ConsumableLifecycleEvent.logicalItemIdOf(wireCode);

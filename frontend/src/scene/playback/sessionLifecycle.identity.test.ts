@@ -1,6 +1,3 @@
-// 迟到的 loadData 不得把旧回放摘要写进共享 ?perf identity。
-// 场景：A 的 loadScene 慢，B 先接管（A 被 destroy / 同实例新一代）；A 恢复时即便
-// gen 守卫在 export 层看似成立，也必须用与 observer 相同的 ownsLoading + epoch 判定。
 import { describe, expect, it, vi } from 'vitest'
 import { createSessionLifecycle, type SessionLifecycleDeps } from './sessionLifecycle'
 
@@ -22,7 +19,6 @@ function fakeStore() {
   }
 }
 
-/** 只提供 loadData 在守卫前会碰到的依赖；其余调用在迟到分支不应发生。 */
 function fakeDeps(perf: ReturnType<typeof fakePerf>, store: ReturnType<typeof fakeStore>, destroyed = false) {
   const base = {
     store,
@@ -67,7 +63,6 @@ describe('sessionLifecycle replayDigest identity ownership', () => {
       getState: () => ({ replayDigest: digestB }),
     } as never })
 
-    // B 接管 3D：旧实例失效；B 的 beginSession 已把 epoch 推进、identity 清空。
     a.invalidateForDestroy()
     expect(perf.identity.replayDigest).toBeNull()
 

@@ -1,5 +1,3 @@
-// 画质档语义表（P1）：四档只由 QUALITY_FEATURES 提供跨模块语义，且必须与
-// QUALITY_PRESETS（渲染器数值旋钮）在重叠字段上一致。未实现项固定 false。
 import { describe, expect, it } from 'vitest'
 import { playbackSceneSource } from '../__tests__/sceneSource.ts'
 import {

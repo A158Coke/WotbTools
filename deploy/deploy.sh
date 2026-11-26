@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Staged selective production deployment for the Yecao host.
-#
-# The Yecao runtime is the AI review service plus the shared observability stack. The business
-# runtime (`business-api`), its PostgreSQL, Keycloak, Keycloak's PostgreSQL, and the public frontend
-# live on TX and are deployed by deploy/tx/deploy.sh; they are not selectable here any more.
-# Failure is fail-closed and operator-led.
 set -Eeuo pipefail
 
 readonly WOTB_DIR="${WOTB_DIR:-/opt/wotb}"
@@ -86,8 +80,6 @@ stage_and_validate() {
   [ -f "$staged_source" ] || die "staged deployment tree is missing docker-compose.prod.yml."
   mkdir -p "$INCOMING_DIR"
   cp -f "$staged_source" "$EFFECTIVE_COMPOSE"
-  # Freeze the exporter reference into promoted Compose so another owner's
-  # later deployment cannot reset it through missing workflow environment.
   local dev_image="${DEV_METRICS_IMAGE:-}"
   if is_selected dev-metrics-exporter; then
     [[ "$dev_image" =~ ^ghcr\.io/a158coke/dev-metrics-exporter:[0-9a-f]{40}@sha256:[0-9a-f]{64}$ ]] \

@@ -1,10 +1,4 @@
 <script setup>
-// 平板 / 桌面的应用导航（design-language §9）：固定在左侧、铺满视口高度。
-// 上：品牌 · 分组主栏目 · 管理组（按角色）；下：更多（弹出面板，放低频设置）· 账户 · 折叠开关（仅桌面）。
-// 平板（768–1199）固定为图标栏；桌面（≥1200）默认展开，可折叠成图标栏（useSidebar 记忆偏好）。
-// 图标栏里文字缩成图标下方的小字（触屏平板没有悬停提示，不能只剩图标），过长时最多两行。
-// drawer：手机竖屏 / 横屏的左侧抽屉（AppNavDrawer 承载，§9 L1）复用同一份分组与管理组，
-// 品牌行带关闭按钮，「更多与设置」是整页链接，没有折叠开关，也没有弹出面板。
 import { computed, inject, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { Bell, PanelLeftClose, PanelLeftOpen, X } from 'lucide-vue-next'
@@ -27,7 +21,6 @@ const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, isAuthenticated,
 const { isExpanded } = useBreakpoint()
 const { collapsed, toggle } = useSidebar()
 
-/** 图标栏：平板一律；桌面在用户折叠时 */
 const rail = computed(() => !props.drawer && (!isExpanded.value || collapsed.value))
 const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
@@ -86,7 +79,6 @@ function linkAttrs(id) {
     <nav class="sidebar-nav" :aria-label="$t('nav.primary')">
       <template v-for="group in sectionGroups" :key="group.id">
         <template v-if="group.labelKey">
-          <!-- 分组名不用标题元素：侧边栏在 DOM 里先于页面 h1，用 h2 会打乱标题层级 -->
           <p :id="`sidebar-group-${group.id}`" class="sidebar-group-title" :class="{ 'visually-hidden': rail }">{{ $t(group.labelKey) }}</p>
           <hr v-if="rail" class="sidebar-divider" aria-hidden="true">
         </template>
@@ -215,7 +207,6 @@ function linkAttrs(id) {
   background: var(--color-surface-1);
 }
 
-/* 抽屉形态：由 AppSheet 定位与让出安全区，这里只铺满抽屉 */
 .app-sidebar.is-drawer {
   position: static;
   width: 100%;
@@ -258,12 +249,10 @@ function linkAttrs(id) {
 
 .is-rail .sidebar-brand { justify-content: center; padding-inline: 0; }
 .sidebar-logo { flex: none; height: 28px; }
-/* 图标栏内宽约 64px：品牌图形（约 2.1:1）收小，避免撑出栏宽 */
 .is-rail .sidebar-logo { height: 24px; }
 .sidebar-brand-name { font: var(--type-h3); font-weight: 700; white-space: nowrap; }
 .sidebar-brand-accent { color: var(--color-accent-text); }
 
-/* 侧栏整体可滚动；状态条不能被 flex 压扁，否则文字只剩半行。 */
 .sidebar-dev-notice {
   flex: none;
   padding: var(--space-1) var(--space-2);
@@ -321,8 +310,6 @@ function linkAttrs(id) {
   text-align: start;
   text-decoration: none;
   cursor: pointer;
-  /* 导航 chrome 不参与文字选择（同 app-shell.css 的 button 规则）：GeckoView 有活动选区时
-     文字上的拖动会变成「扩展选区」而不是滚动。 */
   user-select: none;
   transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
@@ -341,8 +328,6 @@ function linkAttrs(id) {
 .sidebar-link:focus-visible,
 .sidebar-brand:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
-/* 图标栏：图标 + 下方小字（Material navigation rail 形态），过长两行截断，完整名称在 title */
-/* 图标栏高度紧张：分隔线只靠列表 gap 留白，避免分组让平板横屏多出滚动条 */
 .is-rail .sidebar-divider { margin-block: 0; }
 .app-sidebar.is-rail { padding-inline: var(--space-1); padding-inline-start: calc(var(--space-1) + env(safe-area-inset-left)); }
 
@@ -402,9 +387,6 @@ function linkAttrs(id) {
   .sidebar-link:not(.is-active):hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 }
 
-/* 按压反馈（DC-CMP-01 active 状态）：比悬停的 surface-2 深一档；触屏没有 hover，这是按下时唯一的视觉反馈。
-   放在悬停规则之后并以 :not(.is-active) 对齐特异性，保证按下一定压过悬停色。
-   当前页（is-active）按压时在既有强调底色上加深、不丢失高亮。均为即时色彩变化，Reduced Motion 下不受影响。 */
 .sidebar-link:not(.is-active):active { background: var(--color-surface-3); color: var(--color-text-primary); }
 .sidebar-link.is-active:active { background: color-mix(in oklab, var(--color-accent) 20%, var(--color-surface-1)); }
 .sidebar-close:active { background: var(--color-surface-3); color: var(--color-text-primary); }

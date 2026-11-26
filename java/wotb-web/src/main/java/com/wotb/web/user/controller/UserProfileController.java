@@ -27,7 +27,6 @@ public class UserProfileController {
         this.service = service;
     }
 
-    /** 查询当前用户资料。未创建 → 404。（正常已认证用户经 ensure 后必然存在。） */
     @GetMapping("/profile")
     public UserProfileDto getProfile() {
         final String uid = JwtUtil.requireUserId();
@@ -35,15 +34,6 @@ public class UserProfileController {
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
-    /**
-     * 幂等 ensure 当前用户资料（全局 authenticated bootstrap 调用）。
-     *
-     * <p>PUT 是 ensure 语义而非 create：已存在 → 200 原样返回且不改任何绑定；不存在 → 按
-     * canonical provisioning 创建。因此重复调用、并发调用、刷新后重试都安全。</p>
-     *
-     * <p>身份只取自当前 JWT（sub / username / displayName / 可信 claims），请求不接受任何
-     * body 字段，调用方无法冒充他人。</p>
-     */
     @PutMapping("/profile")
     public UserProfileDto ensureProfile() {
         return service.ensureCurrentProfile(JwtUtil.requireUserId(),
@@ -66,16 +56,11 @@ public class UserProfileController {
                 body.wotbAccountId(), body.wotbNickname(), body.wotbServer());
     }
 
-    /** WG 登录（ASIA/EU/NA）后的幂等同步（只读 JWT，不接受 body）。 */
     @PutMapping("/wotb-account/from-login")
     public UserProfileDto syncFromLogin() {
         return service.syncFromLogin(JwtUtil.requireUserId());
     }
 
-    /**
-     * 个人主页「用回放验证」：客户端本地解析回放，只提交录像者 accountId；与当前绑定账号相等才标记已验证。
-     * 身份只取自 JWT。
-     */
     @PostMapping("/wotb-account/verify-replay")
     public UserProfileDto verifyWotbAccountFromReplay(@RequestBody final VerifyWotbAccountFromReplayRequest body) {
         return service.verifyWotbAccountFromReplay(JwtUtil.requireUserId(), body.recorderAccountId());

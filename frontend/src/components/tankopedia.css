@@ -1,4 +1,3 @@
-/* AgentTankopedia 局部样式（随拆分自 AgentTankopedia.vue，scoped 原样）。 */
 .tankopedia {
   display: flex;
   flex-direction: column;
@@ -12,7 +11,6 @@
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 .tp-hero-stat-label { color: var(--color-text-secondary); font: var(--type-caption); }
 
-/* 详情页配置选择（列表的搜索/筛选/排序在 TankCatalogMenu 内，单一实现） */
 .tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }
 .tp-field-inline { max-inline-size: 360px; }
 .tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -28,7 +26,6 @@
 }
 .tp-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* 固定比例的图片框：懒加载图片到达前后都不引起布局位移 */
 .tp-media {
   position: relative;
   display: grid;
@@ -40,14 +37,6 @@
   background: var(--color-surface-2);
 }
 
-/* 图片必须**绝对定位铺满**，不能让它在网格里按 `block-size:100%` 自适应。
- *
- * 容器是 `display:grid` + `place-items:center`：网格区域按内容 sizing，`block-size:100%`
- * 解不出确定高度，于是 img 退回**固有比例**——封面图是逐车紧裁的（高固定、宽 84~190），
- * 窄于 8:5 的车会算得比容器更高（实测列表卡片 164.8×103 的框里 img 是 164.8×133.5，
- * 详情 hero 240×150 里是 240×156.9），多出来的部分被容器的 `overflow:hidden`
- * **从下方裁掉**（履带/车体下缘被切）。
- * 绝对定位后 img 盒恒等于容器盒，`contain` 完整装下整张图，不再裁切。 */
 .tp-media img {
   position: absolute;
   inset: 0;
@@ -78,7 +67,6 @@
 .tp-pill.is-shell { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
 .tp-pill.is-shell.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
 
-/* ---------- 详情态 ---------- */
 .tp-detail-nav { display: flex; }
 
 .tp-detail-head {
@@ -107,7 +95,6 @@
 
 .tp-section-title { margin: 0; font: var(--type-h3); }
 
-/* 工作台：桌面左右两栏（模型/装甲入口 + 配置面板），窄屏纵向堆叠 */
 .tp-workbench { display: grid; grid-template-columns: minmax(var(--tank-config-min), min(36%, var(--tank-config-max))) minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .tp-workbench-left { display: grid; gap: var(--space-4); align-content: start; min-inline-size: 0; }
 .tp-workbench-right { min-inline-size: 0; }
@@ -141,12 +128,10 @@
 .tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
 
-/* 平板：详情头部封面缩小；工作台改单列（配置面板在下） */
 @media (768px <= width < 1200px) {
   .tp-workbench { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* 手机：详情头部改为上下排列 */
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
   .tp-detail-head { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-3); }

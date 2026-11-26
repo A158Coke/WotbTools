@@ -12,13 +12,6 @@ vi.mock('vue-i18n', () => ({
   }),
 }))
 
-/**
- * 科技树页 contract（AgentTechTree.vue）：
- * - 数据 = 资产包 tech_tree/{nation}.json + tank_cache 联表；缺数据 fail-closed
- *   （pending 占位、from 不在树上的边不画线、无名称回退 stem）。
- * - 节点点击 → ?tank= 研发态；国别页签写 ?nation=。
- * - 视图注册：?view=agent-techtree 是合法深链。
- */
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(async () => ({
     1: { name: 'T-26', tier: 1, is_premium: false },
@@ -28,7 +21,6 @@ const data = vi.hoisted(() => ({
   })),
   fetchTankData: vi.fn(),
   tankImageUrl: vi.fn(id => `https://assets.test/tank_images/${id}.webp`),
-  // 逐车内容框（科技树/坦克百科同一裁剪实现）；夹具给一个合法框验证 transform 生效
   loadTankIconCrops: vi.fn(async () => ({
     1: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 128, h: 100 },
   })),
@@ -85,14 +77,11 @@ describe('树态', () => {
     const cells = wrapper.findAll('[data-testid^="techtree-cell-"]')
     expect(cells).toHaveLength(3)
     expect(wrapper.find('[data-testid="techtree-cell-T-26"]').text()).toContain('T-26')
-    // MT-25 的最低研发成本 = 入边 31000 → 卡片上按 k 缩写（不截断成省略号）
     expect(wrapper.find('[data-testid="techtree-cell-MT25"]').text()).toContain('31k')
-    // preview XI 节点：预览徽标 + 金币标记（tank_cache is_premium）
     const previewCell = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
     expect(previewCell.classes()).toContain('is-preview')
-    expect(previewCell.text()).toContain('Object 432U') // 名称来自 tank_cache
+    expect(previewCell.text()).toContain('Object 432U')
     expect(previewCell.text()).toContain('XI')
-    // 连线：两端都在树上的一条
     expect(wrapper.findAll('path.tt-edge')).toHaveLength(1)
   })
 
@@ -128,7 +117,6 @@ describe('树态', () => {
   })
 
   it('XI 预览列：等级条窗口含 11（真实数据列连续 1..11 → I..XI）', async () => {
-    // 真实 ussr 数据列 1..11 连续（每列 ≥1 节点）：XI 列末格 = 罗马 XI。
     research.loadTechTree.mockImplementation(async nation => ({
       meta: { nation, premiumRows: 2 },
       nodes: [
@@ -153,9 +141,7 @@ describe('树态', () => {
     const premium = wrapper.find('[data-testid="techtree-cell-R230_Object_432U"]')
     expect(premium.classes()).toContain('is-premium')
     expect(premium.classes()).not.toContain('is-collector')
-    // 普通车不吃类别色
     expect(wrapper.find('[data-testid="techtree-cell-T-26"]').classes()).not.toContain('is-premium')
-    // 不再有顶部带子与逐车「高级」徽标
     expect(wrapper.find('[data-testid="techtree-premium-band"]').exists()).toBe(false)
     expect(wrapper.find('.tt-pill.is-premium').exists()).toBe(false)
   })

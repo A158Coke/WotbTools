@@ -10,12 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * internal identity 与 user-facing display label 分离。
- * <p>{@code resolveDisplayLabel} 只返回唯一 dominant 且严格多数（&gt; 一半）的 clan tag
- * （最常见 casing），否则空串；绝不返回 {@code 队伍-XXXX}。{@code resolveStableKey} 是
- * internal-only 身份键（可含 {@code 队伍-}），不得进入 user-facing 路径。</p>
- */
 class TeamPerspectiveLabelResolverTest {
 
     private static PlayerResult player(final int team, final String clan, final String nickname) {
@@ -48,7 +42,6 @@ class TeamPerspectiveLabelResolverTest {
 
     @Test
     void minorityDominant3of7IsNotAUserVisibleLabel() {
-        // 3/7 是唯一最高但不是严格多数：不得把整队命名为该 clan（保守多数派规则）
         final List<PlayerResult> roster = List.of(
                 player(1, "CHRD", "A"), player(1, "CHRD", "B"),
                 player(1, "CHRD", "C"),
@@ -62,7 +55,6 @@ class TeamPerspectiveLabelResolverTest {
 
     @Test
     void twoOfSevenSameClanIsNotAReliableLabel() {
-        // 2 个玩家同 clan、其他 5 个全不同：禁止盲目命名为该 clan
         final List<PlayerResult> roster = List.of(
                 player(1, "CHRD", "A"), player(1, "CHRD", "B"),
                 player(1, "KSR", "C"), player(1, "FUN", "D"),
@@ -106,7 +98,6 @@ class TeamPerspectiveLabelResolverTest {
                 player(1, "CHRD", "A"), player(1, "chrd", "B"),
                 player(1, "Chrd", "C"), player(1, "KSR", "D"));
         final String label = TeamPerspectiveLabelResolver.resolveDisplayLabel(roster);
-        // 3/4 严格多数：返回最常见 casing 之一
         assertTrue(label.equals("CHRD") || label.equals("chrd") || label.equals("Chrd"),
                 "Should resolve to one of the original casings, got: " + label);
     }
@@ -136,7 +127,6 @@ class TeamPerspectiveLabelResolverTest {
                 player(1, "KSR", "Z"), player(1, "CHRD", "A"),
                 player(1, "CHRD", "B"), player(1, "CHRD", "C"));
         assertEquals("CHRD", TeamPerspectiveLabelResolver.resolveDisplayLabel(roster));
-        // Shuffle
         final List<PlayerResult> shuffled = new ArrayList<>(roster);
         java.util.Collections.shuffle(shuffled, new java.util.Random(42));
         assertEquals("CHRD", TeamPerspectiveLabelResolver.resolveDisplayLabel(shuffled));

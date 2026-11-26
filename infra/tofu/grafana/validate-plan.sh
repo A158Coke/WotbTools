@@ -3,8 +3,6 @@ set -euo pipefail
 plan_file="${1:-plan.tfplan}"
 [[ -f "$plan_file" ]] || { echo "Grafana plan file is missing: $plan_file" >&2; exit 1; }
 plan_json="$(tofu show -json "$plan_file")"
-# Dashboards are disposable, declarative resources: any delete or replacement is allowed.
-# Datasources remain protected and file-provisioned.
 jq -e 'type == "object" and (.resource_changes == null or (.resource_changes | type == "array"))' <<< "$plan_json" >/dev/null
 jq -r '
   [ .resource_changes[]? | select(.type == "grafana_dashboard") ] as $dashboards |

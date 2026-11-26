@@ -11,7 +11,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => false, locale: { value: 'zh' } }),
 }))
 
-// 服务器没有 parser：2D 回放在本机解析。mock 本地解析入口，组件只负责生命周期与状态机。
 const playback = vi.hoisted(() => ({ parseLocalPlayback: vi.fn() }))
 vi.mock('../replay-local/playback/index.js', () => playback)
 
@@ -97,12 +96,10 @@ describe('BattlePlaybackPanel local playback parse', () => {
     const pending = deferred()
     playback.parseLocalPlayback.mockReturnValue(pending.promise)
     const wrapper = mountPanel({ active: true, seekRequest: null }, { BattlePlayback: PlaybackStub })
-    // 解析在途时切走并留下 3D→2D 的交接请求（真实工作台在同一 tick 更新 active 与请求）
     await wrapper.setProps({ active: false, seekRequest: { id: 1, sec: 10, playing: true, speed: 2 } })
     pending.resolve({ dataset: dataset(), overview: null, reloadTelemetry: null })
     await flushPromises()
     expect(seekAndPlay).not.toHaveBeenCalled()
-    // 重新激活后才一次性应用（seek + 播放态 + 倍速）
     await wrapper.setProps({ active: true })
     await flushPromises()
     expect(seekAndPlay).toHaveBeenCalledTimes(1)
@@ -155,7 +152,6 @@ describe('BattlePlaybackPanel local playback parse', () => {
 
     expect(find(wrapper, 'pb-loading').exists()).toBe(false)
     expect(find(wrapper, 'pb-capability-partial').exists()).toBe(false)
-    // V2 是核心事实源：mapCode 取 dataset，MapOverview 只补 overlay
     expect(find(wrapper, 'pb-stub').text()).toBe('holland')
     expect(find(wrapper, 'map-stub').text()).toBe('holland-overview')
   })
@@ -167,17 +163,11 @@ describe('BattlePlaybackPanel local playback parse', () => {
 
     expect(find(wrapper, 'pb-capability-partial').text()).toContain('recon.playback.partial')
     expect(find(wrapper, 'pb-stub').exists()).toBe(true)
-    // 没有 overview：地图副视图显式不可用
     expect(find(wrapper, 'map-unavailable').exists()).toBe(true)
   })
 
   it('passes Playback reload telemetry to the 2D consumer and discards it on file changes', async () => {
     const reloadTelemetry = { timeOrigin: 40, friendlyTeam: 1, vehicles: [{ eid: 7, account_id: 42, team: 1 }], reloads: [] }
-    // 两点注意：
-    //  1. BattlePlayback 受 `v-if="pbOverview"` 保护（没有地图副视图就不挂载播放器），
-    //     所以必须给 overview，否则找不到组件；
-    //  2. BattlePlayback.vue 没有 name 选项，`findComponent({ name })` 恒为空
-    //     ——按组件定义查找；stub 也带 data-test="pb-stub" 便于断言已挂载。
     playback.parseLocalPlayback.mockResolvedValueOnce({
       dataset: dataset(), overview: { mapCode: 'holland-overview' }, result: {}, reloadTelemetry,
     })
@@ -190,7 +180,6 @@ describe('BattlePlaybackPanel local playback parse', () => {
     })
     await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
     await flushPromises()
-    // 换文件必须丢弃上一场的装填遥测（否则会把 A 场的装填画到 B 场上）
     expect(wrapper.findComponent(BattlePlayback).props('reloadTelemetry')).toBeUndefined()
     wrapper.unmount()
   })
@@ -271,7 +260,6 @@ describe('BattlePlaybackPanel local playback parse', () => {
 
     parseB.resolve({ dataset: dataset({ mapCode: 'B' }), overview: null, result: {} })
     await flushPromises()
-    // A 迟到（成功或失败）都不得覆盖 B
     parseA.resolve({ dataset: dataset({ mapCode: 'A' }), overview: null, result: {} })
     await flushPromises()
     expect(find(wrapper, 'pb-stub').text()).toBe('B')

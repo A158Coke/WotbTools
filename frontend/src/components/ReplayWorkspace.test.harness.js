@@ -6,7 +6,6 @@ import { URL as NodeURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises as flushVue, mount } from '@vue/test-utils'
 
-/** 能力面板是异步组件：每次 flush 同时等动态 import 完成。 */
 export async function flushPromises() {
   await flushVue()
   await vi.dynamicImportSettled()
@@ -26,12 +25,10 @@ import ReplayWorkspace from './ReplayWorkspace.vue'
 import { resetViewerClocks, viewerClocks } from '../scene/playback/viewerClockSync.js'
 import FileDrop from './FileDrop.vue'
 
-// useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
 const hold = vi.hoisted(() => ({ state: null }))
 const authState = vi.hoisted(() => ({ authenticated: null, isAdmin: null, login: vi.fn(), tokenParsed: null }))
 const nav = vi.hoisted(() => ({ navigate: null }))
 
-// 手机横屏沉浸态的三个输入（形态 / 朝向 / 触屏）：以真实 ref 驱动，不依赖 matchMedia 仿真。
 const formState = vi.hoisted(() => ({ isPhone: null, isPortrait: null, coarse: null }))
 vi.mock('../composables/usePlaybackPhoneForm.ts', async () => {
   const { ref } = await import('vue')
@@ -54,7 +51,6 @@ vi.mock('../composables/useConnectivity.js', async () => {
   const { ref, watch } = await import('vue')
   connectivityState.state = ref('online')
   connectivityState.settled = ref(true)
-  // 与生产一致：whenSettled 在 settled 变 true（且同一同步块里写入的状态已提交）后才 resolve。
   const whenSettled = () => new Promise((resolve) => {
     if (connectivityState.settled.value) return resolve()
     const stop = watch(connectivityState.settled, (value) => {
@@ -70,7 +66,6 @@ vi.mock('../composables/useReplay.js', () => ({
   useReplay: () => hold.state,
   chooseInitialResultTab: () => 'aggregate',
 }))
-// 数据 / 2D 匿名可用；3D / shots 在工作台挂载边界要求登录。
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
   authState.authenticated = ref(true)
@@ -92,7 +87,6 @@ vi.mock('./ReplayPage.vue', () => ({
     template: '<div data-test="data-pane" />',
   },
 }))
-// 四个能力面板都是异步组件（审计 PF-02）：测试只验证工作台的编排与 props 接线
 export function paneMock(name, testid) {
   return {
     __esModule: true,
@@ -128,7 +122,6 @@ vi.mock('../composables/useNativeReplayImport.js', () => ({
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true, locale: { value: 'en' } }) }))
 
-/** 以真实 Vue ref/函数构造 useReplay 返回物（保证 files/resp/analysis/selectionRevision 响应式）。 */
 export function buildState() {
   const session = useReplaySession()
   return {
@@ -170,13 +163,10 @@ export function mountWorkspace(capability = 'data', { authenticated = true, user
   })
 }
 
-/** 能力按钮：data-cap 是稳定契约（深链、浏览器 gate 与测试共用）。
- *  2026-11-19：2D/3D/事件流合并为「回放」入口，内部能力键仍在测试里使用。 */
 export const TAB_KEY = { playback: 'replay', '3d': 'replay', events: 'replay' }
 export const tab = (wrapper, cap) => wrapper.get(`[data-testid="ws-tab"][data-cap="${TAB_KEY[cap] || cap}"]`)
 export const capKeys = (wrapper) => wrapper.findAll('[data-testid="ws-tab"]').map(t => t.attributes('data-cap'))
 
-/** 切能力：2D/3D 现在在统一回放面板内切换（2D = 回放标签 + 2D 模式；3D = 回放标签 + 3D 模式）。 */
 export async function switchTo(wrapper, cap) {
   await tab(wrapper, cap).trigger('click')
   await flushPromises()
@@ -214,7 +204,6 @@ export function analyzeDemo() {
 export function guideContext() {
   return { guideActive: computed(() => true), registerWorkspace: vi.fn(), openDirectory: vi.fn(), sampleOpened: vi.fn() }
 }
-/** 空列表（或教学中）在页面上；Ready 态的示例入口在管理弹层里。 */
 export async function clickDemo(wrapper) {
   if (!wrapper.find('[data-testid="workspace-demo"]').exists()) {
     await wrapper.get('[data-testid="collection-trigger"]').trigger('click')
@@ -228,12 +217,10 @@ export const demoIdle = (wrapper) => {
   const button = wrapper.find('[data-testid="workspace-demo"]')
   return !button.exists() || !button.element.disabled
 }
-/** FileDrop 把通过校验的 selection 交给工作台：真实入口，选择即加载。 */
 export async function choose(wrapper, files) {
   wrapper.findComponent(FileDrop).vm.$emit('update:files', files)
   await flushPromises()
 }
-// Vue's queue flush does not await Node's real WebCrypto hash of the bundled sample.
 export async function waitForDemoReady(wrapper) {
   await vi.waitFor(() => {
     expect(replayStateRef.current.analysis.value.phase).toBe('ready')
@@ -255,7 +242,6 @@ export { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 export { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 export { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
-/** 每个工作台用例的干净起点：原 ReplayWorkspace.test.js beforeEach 抽出，拆分 suite 共用。 */
 export function resetWorkspaceTestState() {
   connectivityState.state.value = 'online'
   connectivityState.settled.value = true

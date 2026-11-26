@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-// AI Review payload audit（开发/测试用途）。
-//
-// 收集并打印：
-//   - 原始 .wotbreplay 字节数，以及 zip 内每个成员的压缩/未压缩字节（含 data.wotreplay）
-//   - 一个 AiReviewRequest JSON 的总字节、gzip 后字节（level 6/9）、按 section 的字节
-//     （battle / projection 及其 participants、observationWindows、positions、prop3Health、healthEvents …）
-//   - 事件按 type 的计数与序列化字节
-//
-// 无第三方依赖：zip 只读 central directory 取成员名与压缩/未压缩字节。
-//
-// 用法：
-//   node scripts/audit-ai-payload.mjs --replay ../../common/fixtures/replays/random-battle-example.wotbreplay
-//   node scripts/audit-ai-payload.mjs --request ./request.json
-//   node scripts/audit-ai-payload.mjs --request ./request.json --json
-//
-// 注意：--request 只做形状统计，不校验 contract；wire authority 仍是 contracts/http/openapi.yaml。
 
 import { readFileSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
@@ -27,7 +11,6 @@ function fail(message) {
   process.exit(1)
 }
 
-/** 读取 zip central directory 的成员表（name/method/compressedSize/uncompressedSize/localOffset）。 */
 function readZipEntries(buf) {
   const maxBack = Math.min(buf.length, 66_000)
   let eocd = -1
@@ -58,7 +41,6 @@ function readZipEntries(buf) {
   return entries
 }
 
-/** JSON 序列化后的字节数（重算 per-section / per-event 用量）。 */
 function bytesOf(value) {
   return Buffer.byteLength(JSON.stringify(value) ?? 'null', 'utf8')
 }
@@ -93,8 +75,6 @@ function reportRequest(path) {
   }
   const gzip6 = gzipSync(raw, { level: 6 }).length
   const gzip9 = gzipSync(raw, { level: 9 }).length
-  // AiReviewRequest 的事实在 projection 下（client canonical AI projection，按 section 计量）；
-  // 上游 facet 样例把 events 放在顶层。
   const reconstruction = parsed?.projection
   const eventList = Array.isArray(reconstruction?.events)
     ? reconstruction.events

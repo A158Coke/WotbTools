@@ -21,11 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * TimelineFocusWindowSelector（docs/architecture/battle-timeline.md §4/§5/§13-B/C/D）：
- * 连续减员窗口必须成为 Top Focus Window；正常交火/点数 swing 也能选出有意义窗口；
- * 稀疏证据不编造；不重复 delta、不 future leak。
- */
 class TimelineFocusWindowSelectorTest {
 
     private static final int FRIENDLY_START = 1001;
@@ -93,7 +88,6 @@ class TimelineFocusWindowSelectorTest {
         return TimelineTestFixtures.recon(durationSec, events);
     }
 
-    /** 14 车（7v7）开局：mapping + created + position + 满血。 */
     private static List<ReplayEvent> opening() {
         seq = 0;
         final List<ReplayEvent> out = new ArrayList<>();
@@ -110,19 +104,15 @@ class TimelineFocusWindowSelectorTest {
         return out;
     }
 
-    /** 本测试：1分52秒–2分12秒 连续减员（本方 3 死 / 对方 1 死）必须成为 Top Focus Window。 */
     @Test
     void collapseWindowBecomesTopFocusWindowWithExactDeathCounts() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
-        // 首次接敌 50s
         events.add(damage(1, 8, 50, 400));
         events.add(health(8, 50, 1600, true));
-        // 连续减员窗口：本方 112/121/132，对方 128
         events.add(health(1, 112, 0, false));
         events.add(health(2, 121, 0, false));
         events.add(health(8, 128, 0, false));
         events.add(health(3, 132, 0, false));
-        // 独立残局阵亡 170s（与主窗口间隔 > 30s，不得合并）
         events.add(health(4, 170, 0, false));
         events.add(health(9, 175, 0, false));
         final BattleTimeline timeline = buildTimeline(180.0, events);
@@ -135,16 +125,13 @@ class TimelineFocusWindowSelectorTest {
         assertEquals(1, top.enemyDeaths(), "对方同期 1 死");
         assertTrue(top.startSec() <= 112.0, "窗口起点 ≤ 1分52秒, 实际 " + top.startSec());
         assertTrue(top.endSec() >= 132.0, "窗口终点 ≥ 2分12秒, 实际 " + top.endSec());
-        // BEFORE / AFTER 存活数正确（无 future leak）
         assertEquals(7, top.before().friendlyAlive(), "窗口前本方存活 7");
         assertEquals(7, top.before().enemyAlive(), "窗口前对方存活 7");
         assertEquals(4, top.after().friendlyAlive(), "窗口后本方存活 4");
         assertEquals(6, top.after().enemyAlive(), "窗口后对方存活 6");
-        // 独立残局窗口仍在输出中（信息密度同样高），但不与主窗口合并
         assertTrue(windows.stream().anyMatch(w -> w.friendlyDeaths() == 1 && w.enemyDeaths() == 1),
                 "残局阵亡窗口应独立输出");
         assertTrue(windows.size() <= TimelineFocusWindowSelector.MAX_WINDOWS);
-        // 不 future leak：core window 无 padding，所有事件时间都在 [112,132] 核心区间内
         for (final BattleDelta d : top.events()) {
             assertTrue(d.timeSec() <= 132.0 + 1e-6,
                     "主窗口不得包含核心区间外事件: " + d.timeSec());
@@ -153,7 +140,6 @@ class TimelineFocusWindowSelectorTest {
         }
     }
 
-    /** 正常交火 + 点数 swing（无阵亡）：仍能选出有意义的窗口（selector 不只找死亡）。 */
     @Test
     void normalBattleWithPointsAndHpSwingStillFindsMeaningfulWindow() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
@@ -181,17 +167,14 @@ class TimelineFocusWindowSelectorTest {
         assertTrue(w.pointsChanged(), "点数变化必须被捕获");
     }
 
-    /** 稀疏证据：几乎无信号时 selector 不编造窗口。 */
     @Test
     void sparseEvidenceProducesNoFabricatedWindow() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
-        // 只有一次小型交火（无阵亡 / 无大 HP swing / 无点数）
         events.add(damage(1, 8, 60, 120));
         final BattleTimeline timeline = buildTimeline(120.0, events);
 
         final List<TimelineFocusWindowSelector.FocusWindow> windows =
                 TimelineFocusWindowSelector.select(timeline);
-        // 允许空输出：证据不足时不编造
         if (windows.isEmpty()) {
             return;
         }
@@ -204,7 +187,6 @@ class TimelineFocusWindowSelectorTest {
                 "selector 不得输出战术归因");
     }
 
-    /** 确定性：同一 timeline 两次选择结果一致。 */
     @Test
     void deterministicAcrossRuns() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
@@ -228,7 +210,6 @@ class TimelineFocusWindowSelectorTest {
         }
     }
 
-    /** 不重复 delta：同一 delta 不得出现在两个不同窗口中（窗口互不重叠）。 */
     @Test
     void selectedWindowsDoNotShareDeltas() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
@@ -255,12 +236,10 @@ class TimelineFocusWindowSelectorTest {
         }
     }
 
-    /** PR #103 B2：bounded window 不得吞掉核心 3:1 collapse —— 136s 对方阵亡不得污染 [112,132] 的 3:1。 */
     @Test
     void boundedWindowKeepsCoreCollapseIntact() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
         events.add(damage(1, 8, 50, 400));
-        // 完整序列：112F / 121F / 128E / 132F / 136E（136 与 132 仅隔 4s）
         events.add(health(1, 112, 0, false));
         events.add(health(2, 121, 0, false));
         events.add(health(8, 128, 0, false));
@@ -280,22 +259,18 @@ class TimelineFocusWindowSelectorTest {
         assertEquals(7, top.before().enemyAlive(), "BEFORE 对方 7");
         assertEquals(4, top.after().friendlyAlive(), "AFTER 本方 4");
         assertEquals(6, top.after().enemyAlive(), "AFTER 对方 6");
-        // 136s 对方阵亡不得把任何窗口的 3:1 core 改成 3:2
         assertTrue(windows.stream().noneMatch(w -> w.friendlyDeaths() == 3 && w.enemyDeaths() == 2),
                 "任何窗口都不得把 3:1 core 污染成 3:2: " + windows);
     }
 
-    /** PR #103 B2：明显单边 swing 不得被 balanced massacre 靠总死亡数压掉（交换不对称优先）。 */
     @Test
     void oneSidedSwingOutranksBalancedMassacre() {
         final List<ReplayEvent> events = new ArrayList<>(opening());
-        // 单边 collapse：本方 60/65/70 连续 3 死，对方 0 死（swing=3, total=3）
         events.add(damage(1, 8, 60, 400));
-        events.add(health(8, 60, 1600, true)); // 掉血 400@60 → ENGAGEMENT_ACTIVITY 对齐 collapse core（权威 HP loss）
+        events.add(health(8, 60, 1600, true));
         events.add(health(1, 60, 0, false));
         events.add(health(2, 65, 0, false));
         events.add(health(3, 70, 0, false));
-        // balanced massacre：148E/150F/152E/155F/158E/160F（swing=0, total=6）
         events.add(health(8, 148, 0, false));
         events.add(health(4, 150, 0, false));
         events.add(health(9, 152, 0, false));
@@ -307,8 +282,6 @@ class TimelineFocusWindowSelectorTest {
         final List<TimelineFocusWindowSelector.FocusWindow> windows =
                 TimelineFocusWindowSelector.select(timeline);
         assertFalse(windows.isEmpty(), "必须选出 focus window");
-        // 按公开字段复算 selector 信息分（swing*800 + total*200 + 支撑信号），验证排序：
-        // 明显单边 swing（3:0）必须排在 balanced massacre（3:3，总死亡更多）之前
         final TimelineFocusWindowSelector.FocusWindow best = windows.stream()
                 .max(java.util.Comparator.comparingDouble(TimelineFocusWindowSelectorTest::scoreOf))
                 .orElseThrow();
@@ -327,7 +300,6 @@ class TimelineFocusWindowSelectorTest {
                         + scoreOf(best) + " vs " + scoreOf(balancedBest));
     }
 
-    /** 复算 selector 信息分（与 TimelineFocusWindowSelector.score 同公式，仅测试排序语义）。 */
     private static double scoreOf(final TimelineFocusWindowSelector.FocusWindow w) {
         final int total = w.friendlyDeaths() + w.enemyDeaths();
         final int swing = Math.abs(w.friendlyDeaths() - w.enemyDeaths());

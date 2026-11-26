@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Minimal CI runtime smoke for production Prometheus/Loki/Grafana provisioning.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -98,8 +97,6 @@ alpine_grafana_api() {
 }
 
 docker network create "$NETWORK" >/dev/null
-# Missing runtime secret deliberately simulates initial upstream failure. The
-# exporter must stay healthy and expose unavailable data, without network I/O.
 docker run -d --name "$DEV_METRICS" --network "$NETWORK" \
   --network-alias dev-metrics-exporter --read-only --user 10001:10001 \
   --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 \
@@ -152,9 +149,6 @@ for datasource_uid in prometheus loki; do
   fi
 done
 
-# Datasources remain file-provisioned, while dashboards are adopted through the
-# same Grafana API contract used by the OpenTofu provider. This keeps the smoke
-# test from silently validating the removed dashboard file controller.
 for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
   seed_dashboard_via_api "$dashboard_file"
 done

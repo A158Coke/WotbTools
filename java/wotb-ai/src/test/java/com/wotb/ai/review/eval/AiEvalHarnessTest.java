@@ -9,7 +9,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** CI 模式评估：加载 golden cases → 构建 prompt → 断言 → 写报告；任一 FAIL 构建失败。 */
 @Tag("ai-eval")
 class AiEvalHarnessTest {
 
@@ -38,8 +37,6 @@ class AiEvalHarnessTest {
 
     @Test
     void teamSystemPromptCarriesEvidenceContractAndBansCausalOverreach() {
-        // AI Review V2.1 Quality Gate：真实失败案例
-        // 20260817 WildCat SPHT 回放暴露的因果过度断言，必须在 prompt 契约层被禁止。
         final String zh = AiPromptLibrary.zh("team/single");
         assertTrue(zh.contains("证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN"),
                 "must carry the evidence contract");
@@ -63,7 +60,6 @@ class AiEvalHarnessTest {
                 "old 'opening spread = map control' rule must be gone");
         assertFalse(zh.contains("10) 3-5 条可执行训练建议"),
                 "old ten-chapter structure must be gone");
-        // Natural Coach Mode 输出结构：自由组织的自然复盘，禁止固定章节模板
         assertTrue(zh.contains("自由组织的自然复盘"), "must carry the free-form natural review");
         assertTrue(zh.contains("不是固定章节模板"), "must not be a fixed-section template");
         assertTrue(zh.contains("## 团队复盘"), "main heading must be ## 团队复盘");

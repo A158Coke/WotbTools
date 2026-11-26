@@ -39,7 +39,6 @@ async function exportBoard(format: string) {
   exportMessage.value = ''
   if (format === 'pdf' && isAndroidApp()) { exportMessage.value = t('tournament.exportPdfBrowser'); return }
   const source = standings.value
-  // Freeze values at click time before any asynchronous download or renderer work.
   const table = projectTournamentPoints(source, locale.value, t)
   exporting.value = true
   try {
@@ -85,7 +84,6 @@ async function loadEvents(selectInitial = !initialSelectionDone) {
     events.value = values
     if (selectInitial && eventId.value === null) {
       noInitialStandings.value = false
-      // Initial default follows the tournament calendar; explicit history choices stay owned by eventId.
       const initial = await findInitialStandings(values, controller.signal)
       if (gen !== generation || eventId.value !== null) return
       standings.value = initial
@@ -120,7 +118,6 @@ async function loadBoard() {
   finally { if (gen === generation) loading.value = false }
 }
 watch(eventId, id => {
-  // The initial search already fetched its chosen snapshot; history changes still fetch their own board.
   if (standings.value?.event.id !== id) void loadBoard()
 })
 watch(() => network.value.available, available => {

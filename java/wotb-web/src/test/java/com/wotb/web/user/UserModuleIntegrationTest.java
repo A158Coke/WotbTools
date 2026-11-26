@@ -15,11 +15,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * User module bootstrap outside judge: Spring must be able to wire the module without scanning
- * consumer modules. Persistence is replaced by the module's repository port because database
- * behavior already has dedicated Testcontainers coverage.
- */
 @ApplicationModuleTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(properties = {
         "spring.autoconfigure.exclude="

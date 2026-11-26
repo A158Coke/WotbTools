@@ -6,10 +6,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * 纯 JVM：GeckoView 的 `NavigationDelegate` 无法在 JVM 里实例化，导航判断因此全部放在
- * [NavigationPolicy] 的纯函数里，这里穷举放行 / 拒绝的 URL 形态。
- */
 class NavigationPolicyTest {
     private val origin = MainActivity.LOCAL_APP_ORIGIN
 
@@ -53,7 +49,6 @@ class NavigationPolicyTest {
         ).forEach { assertFalse(it, NavigationPolicy.isTrustedLocalBlobUrl(it)) }
     }
 
-    /** id 必须是 object URL 规范里的 UUID：路径样子的 id 一律拒绝（`blob:<origin>/<uuid>`）。 */
     @Test fun blobIdsThatAreNotUuidsAreRejected() {
         listOf(
             "blob:$origin/index.html",
@@ -100,7 +95,6 @@ class NavigationPolicyTest {
         )
         assertEquals(MainFrameNavigation.EXTERNAL, NavigationPolicy.classifyMainFrameNavigation("https://wotbtools.com/"))
         assertEquals(MainFrameNavigation.EXTERNAL, NavigationPolicy.classifyMainFrameNavigation("mailto:support@wotbtools.com"))
-        // https 即使在 loopback 端口上也不是应用 origin（isLocalAppUrl 为 false），继续交系统浏览器。
         assertEquals(
             MainFrameNavigation.EXTERNAL,
             NavigationPolicy.classifyMainFrameNavigation("https://127.0.0.1:21653/index.html")
@@ -125,10 +119,6 @@ class NavigationPolicyTest {
         ).forEach { assertEquals(it, MainFrameNavigation.DENY, NavigationPolicy.classifyMainFrameNavigation(it)) }
     }
 
-    /**
-     * blob 只是下载派发的例外，不是 application origin：Native Bridge 的 sender 校验
-     * （[MainActivity.isLocalAppUrl]）必须继续只接受 `http://127.0.0.1:21653`。
-     */
     @Test fun aTrustedBlobUrlIsNeverATrustedApplicationOrigin() {
         val blob = "blob:$origin/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e"
         assertTrue(NavigationPolicy.isTrustedLocalBlobUrl(blob))

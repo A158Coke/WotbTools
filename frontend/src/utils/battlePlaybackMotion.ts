@@ -1,4 +1,3 @@
-/** Battle Playback route interpolation and observed-position trails. */
 
 import { positionAtV2, positionCoveredAtV2 } from './battlePlaybackV2.js'
 import type { PositionSegment, VehiclePlaybackTrack } from '../types/playback-v2.js'
@@ -14,22 +13,11 @@ type PositionTrail = Pick<VehiclePlaybackTrack, 'accountId' | 'friendly'> & {
   point?: TimedPoint
 }
 
-/** Legacy point-route interpolation limit. V2 routes use canonical segment boundaries. */
 const LEGACY_OBSERVED_GAP_SEC = 5
 
-/**
- * 某时刻车辆位置：
- * - t 早于首点 → null（尚未观测，不显示）
- * - 落在相邻可信点之间且 gap ≤ 5s → 线性插值
- * - gap > 5s（跨越断线/失察）→ null，不穿线
- * - 晚于末点 → 返回最后已知位置（供失察淡化/阵亡标记）
- */
 export function positionAt(points: TimedPoint[] | null | undefined, t: number) {
   if (!points || points.length === 0 || !Number.isFinite(t)) return null
   if (t < points[0].timeSec - 1e-6) return null
-  // t 恰为采样点（含 gap 后重新上报的首点）：直接返回该点本身；
-  // gap > LEGACY_OBSERVED_GAP_SEC 的断线判定只用于「两点之间」的插值，
-  // 不适用于落在采样点上的时刻。
   if (t <= points[0].timeSec + 1e-6) {
     return { x: points[0].x, y: points[0].y, timeSec: points[0].timeSec }
   }
@@ -54,12 +42,6 @@ export function positionAt(points: TimedPoint[] | null | undefined, t: number) {
   return { x: prev.x, y: prev.y, timeSec: prev.timeSec }
 }
 
-/**
- * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ LEGACY_OBSERVED_GAP_SEC
- * （即 positionAt 返回插值/采样点本身，timeSec === t）且坐标为有限值时返回。
- * 末点之后的最后已知位置、gap 内、首点之前与非有限坐标一律 null——
- * 炮线端点禁止用最后已知位置伪造射击位置。
- */
 export function trustedPositionAt(points: TimedPoint[] | null | undefined, t: number) {
   const p = positionAt(points, t)
   if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null
@@ -67,13 +49,6 @@ export function trustedPositionAt(points: TimedPoint[] | null | undefined, t: nu
   return p
 }
 
-/**
- * Canonical V2 route position at a shot time; point routes remain legacy-test compatible.
- *
- * `poseAt(route, t)`（可选）= 与 3D 同源的位姿通道取值（`replay-local/pose/vehiclePose.ts`）。
- * **门控不变**：事件时刻必须落在观测区间（`positionCoveredAtV2`）才可信——位姿通道只改"取哪个值"，
- * 不放松"能不能画"（炮线端点禁止用最后已知位置 / 编造位置伪造射击位置）。
- */
 export function trustedRoutePosition(route: RouteLike, t: number, poseAt: PoseAt | null = null) {
   if (Array.isArray(route?.positionSegments)) {
     if (!positionCoveredAtV2(route.positionSegments, t)) return null
@@ -88,12 +63,6 @@ export function trustedRoutePosition(route: RouteLike, t: number, poseAt: PoseAt
   return trustedPositionAt(route?.points, t)
 }
 
-/**
- * Per-segment cache of the validated + time-sorted sample list. Playback data is
- * immutable after parse, so the filter/sort only needs to run once per segment;
- * per-frame window extraction then costs two binary searches + a slice instead of
- * re-filtering and re-sorting every sample of every observed segment at 60 fps.
- */
 const trailSamplesCache = new WeakMap<object, PositionSegment['samples']>()
 
 function sortedTrailSamples(segment: PositionSegment, segmentStart: number, segmentEnd: number) {
@@ -132,13 +101,6 @@ function upperBoundTimeSec(sorted: Array<{ timeSec: number }>, t: number) {
   return lo
 }
 
-/**
- * Build the last battle-relative two seconds of observed positions for each vehicle.
- * V2 segment boundaries and interpolationAllowed are the only interpolation authority:
- * segments are never joined, future samples are never emitted, and LAST_KNOWN/unknown
- * intervals do not extend the visible trail. The current endpoint is queried through
- * canonical segment interpolation when the current time is inside that segment.
- */
 export function recentPositionTrails(vehicles: TrailVehicle[] | null | undefined, nowSec: number, windowSec = 2) {
   if (!Array.isArray(vehicles) || !Number.isFinite(nowSec)) return []
   const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
@@ -163,7 +125,6 @@ export function recentPositionTrails(vehicles: TrailVehicle[] | null | undefined
           path.push({ ...clippedStart, timeSec: start })
         }
       }
-      // window samples are contiguous in the time-sorted list: slice instead of filter
       path.push(...samples.slice(
         lowerBoundTimeSec(samples, start - 1e-6),
         upperBoundTimeSec(samples, nowSec + 1e-6),
@@ -228,7 +189,6 @@ export function recentPositionTrailsFromPose(
   const start = nowSec - span
   const trails: PositionTrail[] = []
   for (const vehicle of vehicles) {
-    // 从当前时刻向回走；未观测处断链（绝不跨越 AoI 空隙连线）。
     let chain: TimedPoint[] = []
     const emit = () => {
       for (let i = 1; i < chain.length; i += 1) {

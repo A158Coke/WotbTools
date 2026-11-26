@@ -1,12 +1,5 @@
 // @vitest-environment happy-dom
 
-/**
- * Historical end-to-end regression matrix for the playback orchestrator.
- * Component ownership contracts live in BattleMap/PlaybackControls/
- * PlaybackTimeline/VehicleDetailsPanel focused tests; this suite remains
- * intentionally broad so the PR4 extraction does not discard proven replay
- * protocol, visibility, marker, and interaction regressions.
- */
 
 import { vi } from 'vitest'
 import { mount } from '@vue/test-utils'

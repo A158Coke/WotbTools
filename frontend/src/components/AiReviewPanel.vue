@@ -1,13 +1,3 @@
-<!--
-  AI 复盘能力面板：SSE 分析流（call1/evidence/call2）+ 流式进度 + 结果面板。
-  不负责页面级登录门禁/自动跳转（由宿主入口把关）。HTTP endpoint / auth / canonical
-  error handling 由 api/ai-review.ts 统一拥有；本组件只编排 run lifecycle 与 SSE 展示状态。
-  输入是 client canonical AI projection（battle + projection，replay-local/ai），不是完整回放。
-
-  失败态（design-language §10：永远不能静默失败，必须说明发生了什么 + 下一步）：
-  登录/权限、AI 服务不可达、服务繁忙、超时、Provider 失败、返回格式异常、已取消 —— 各自独立归类，
-  可重试的给「重试」，取消之类的非错误只给中性提示，不渲染成 danger。
--->
 <script setup lang="ts">
 import { showToast } from '../composables/useToast.js'
 import { notify } from '../composables/useNotifications.js'
@@ -41,13 +31,9 @@ type AiRuntimeError = Error & { isLocalized?: boolean }
 type AiPanelAuth = ReplayAuthSession & { tokenParsed: { value: AuthTokenParsed } }
 
 const props = defineProps({
-  /** 目标回放文件（null = 尚未选择，显示空态提示）。 */
   file: { type: Object, default: null },
-  /** 客户端 AI 输入（battle + canonical projection）：由本地解析层产出；null = 尚未就绪。 */
   projection: { type: Object as () => AiReviewProjection | null, default: null },
-  /** 投影准备失败时的已本地化错误；空 = 无。 */
   projectionError: { type: String, default: '' },
-  /** 宿主能跳到 2D 回放（工作台）时为 true：关键回合显示「在 2D 中查看」。 */
   canViewIn2d: { type: Boolean, default: false },
 })
 
@@ -58,8 +44,6 @@ const auth = useAuth() as AiPanelAuth
 const { availability, requireFeature, connectivity } = useFeatureGate()
 const { tokenParsed } = auth
 
-// AI Review 权限：已登录 + wotbtools-user 或 wotbtools-admin。
-// 登录成功不等于授权成功——realm role 缺失必须是**显式权限态**，不能静默隐藏入口。
 const canUseAiReview = computed(() => {
   const roles = tokenParsed.value?.realm_access?.roles
   return Array.isArray(roles) && (
@@ -67,13 +51,7 @@ const canUseAiReview = computed(() => {
   )
 })
 
-/**
- * 投影就绪守卫（defense-in-depth）：AI Analyze 只有在客户端投影
- * （battle + canonical projection）已绑定时才能执行。
- * file 已选但投影缺失 = 本地解析/投影未完成（状态机问题），不是用户错误。
- */
 const projectionReady = computed(() => !!props.projection)
-/** 投影准备中/失败的用户可读文案（本地解析生命周期，非 AI 模型错误）。 */
 const projectionMessage = computed(() =>
   props.projectionError || t('workspace.dataset_preparing'))
 
@@ -81,29 +59,19 @@ const failure = ref<AiFailure | null>(null)
 const copiedErrorId = ref(false)
 const analyzing = ref(false)
 const analysisResult = ref<AiReviewResult | null>(null)
-/** AI 复盘 capability（AiReviewDonePayload.capability：AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE / UNAVAILABLE）。 */
 const analysisCapability = computed<AiReviewCapability | null>(() => analysisResult.value?.capability || null)
 const limitedTimelineNote = computed(() =>
   analysisCapability.value === 'AVAILABLE_WITH_LIMITED_TIMELINE'
     ? t('recon.capability_limited')
     : '')
 
-// 流式状态：当前阶段（call1 赛前预测 / evidence 证据分析 / call2 生成中）
-// 与主复盘已到达文本（token 滚动）。
 const progressStage = ref('')
 const partialAnalysis = ref('')
 
-// AI 复盘请求生命周期：客户端安全超时 + 取消（AbortController + 后端 cancel 端点）。
-// 超时链对齐：后端整体 deadline=1100s < nginx analyze 1120s；前端 1100s 在 nginx 之前给出干净 AI_TIMEOUT。
 const AI_ANALYZE_TIMEOUT_MS = 1_100_000
-/** 确定性 / 非错误失败不给重试按钮：点了也没用，或用户本来就主动取消过。 */
 const NOT_RETRYABLE: ReadonlySet<AiFailureKind> = new Set<AiFailureKind>(['not_configured', 'cancelled'])
 const canRetry = computed(() => !!failure.value && !NOT_RETRYABLE.has(failure.value.kind))
 
-/**
- * 当前 AI analysis run：每次 runAnalyze 创建独立 run context。
- * Dataset identity 变化只取消旧 activeRun；stale run 绝不修改新 generation 的状态。
- */
 let activeRun: AiReviewRunState | null = null
 
 function resetResults() {
@@ -133,13 +101,11 @@ async function copyErrorId() {
   }
 }
 
-/** 尽力而为地通知后端取消 in-flight 请求（按钮取消 / 面板卸载 / 前端超时）。 */
 function fireCancel(correlationId: string) {
   if (!correlationId || !availability(Feature.AI_REVIEW).available) return
   cancelAiReview(auth, correlationId).catch(() => {})
 }
 
-/** 只取消指定 run（closure-capture：只操作 run 自己的 timer / correlationId / controller）。 */
 function cancelRun(run: AiReviewRunState | null) {
   if (!run) return
   run.cancelRequested = true
@@ -178,12 +144,6 @@ function analyzeRequest(correlationId: string) {
   })
 }
 
-/**
- * 失败归类：稳定错误码（服务端契约）→ 用户可读文案 + 是否给重试动作。
- *
- * 服务端未给 errorCode 的形态（网关 5xx HTML、断流、网络失败）按 status / 异常兜底，
- * 不允许落回无信息的「未知错误」。
- */
 function classify(e: unknown, run: AiReviewRunState): AiFailure {
   const normalized = normalizeApiError(e)
   const code = normalized.code || ''
@@ -193,8 +153,6 @@ function classify(e: unknown, run: AiReviewRunState): AiFailure {
 
   if (run.cancelRequested) return { kind: 'cancelled', code, id, message: t('recon.cancelled') }
   if (run.timedOut || code === 'AI_TIMEOUT') return known('timeout', 'recon.errors.AI_TIMEOUT')
-  // 确定性分类只在服务端给了明确语义时覆盖 canonical label；status 兜底交给 apiErrorLabel，
-  // 避免把「后端说禁止」误写成「你的账号没有权限」这类我们其实不知道的结论。
   if (code === 'AI_REVIEW_BUSY') return known('busy', 'recon.errors.AI_REVIEW_BUSY')
   if (code === 'AI_NOT_CONFIGURED') return known('not_configured', 'recon.errors.AI_NOT_CONFIGURED')
   if (code === 'AI_EMPTY_RESPONSE') return known('malformed', 'recon.errors.AI_EMPTY_RESPONSE')
@@ -203,8 +161,6 @@ function classify(e: unknown, run: AiReviewRunState): AiFailure {
     return known('malformed', `recon.errors.${code}`)
   }
   if (e instanceof ApiError) {
-    // 服务端给了契约错误码且 i18n 有对应文案（含 `errors.<code 小写>` 约定）：沿用 canonical label
-    // （保留 errorCode → 文案的稳定映射与诊断 ID）；只有文案缺失时才退到通用归类。
     const hasLocaleLabel = te(`recon.errors.${code}`) || te(`errors.${code.toLowerCase()}`)
       || te(`api_errors.${code}`)
     if (hasLocaleLabel) return { kind: 'upstream', code, id, message: apiErrorLabel(t, te, normalized) }
@@ -212,8 +168,6 @@ function classify(e: unknown, run: AiReviewRunState): AiFailure {
   if (code === 'NETWORK_ERROR' || normalized.status === 502 || normalized.status === 504) {
     return known('upstream', 'recon.errors.AI_UPSTREAM_UNAVAILABLE')
   }
-  // 兜底：原始运行时异常（`TypeError: Failed to fetch` 之类）只进 console 与诊断日志，
-  // 绝不作为面向用户的文案——用户看不懂，也无法据此行动。
   console.warn('[ai-review] unclassified failure', e)
   return known('client', 'recon.errors.AI_CLIENT_ERROR')
 }
@@ -247,7 +201,6 @@ async function runAnalyze() {
     if (activeRun !== run) return
     const receivedDone = await readAnalyzeStream(r, run)
     if (!receivedDone && !run.cancelRequested) {
-      // 断流（响应 200 但从未给 done）不是网络失败，是契约不满足：必须归到「返回格式异常」。
       throw new ApiError({
         errorCode: 'AI_RESPONSE_INVALID',
         status: 200,
@@ -298,7 +251,6 @@ async function readAnalyzeStream(r: Response, run: AiReviewRunState) {
         analysisResult.value = event.result
         progressStage.value = 'done'
         receivedDone = true
-        // 耗时任务完成：toast + 本机通知（离开页面后也能找回）
         showToast({ id: 'ai-review', tone: 'success', titleKey: 'notifications.aiReview' })
         notify({ kind: 'ai-review', titleKey: 'notifications.aiReview', view: 'ai-review' })
         break
@@ -362,7 +314,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', onPageLeave)
 })
 
-/** 测试入口（Vue Test Utils 约定的 `__` 前缀）：兜底分类必须可被直接覆盖。 */
 defineExpose({ __classify: classify })
 </script>
 
@@ -370,7 +321,6 @@ defineExpose({ __classify: classify })
   <div class="ai-review-panel">
     <p v-if="!file && !projectionReady" class="ws-note">{{ $t('workspace.ai_empty') }}</p>
     <template v-else>
-      <!-- 已登录但缺 realm role：显式权限态，不静默隐藏入口（design-language §10「权限」）。 -->
       <Banner v-if="!canUseAiReview" tone="warning" data-testid="ai-permission-required">
         <p>{{ $t('recon.permission_missing') }}</p>
       </Banner>
@@ -378,8 +328,6 @@ defineExpose({ __classify: classify })
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!projectionReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
-      <!-- 本地 AI 输入准备：准备中为 info，失败为 danger（本地解析生命周期，不是模型错误）。
-           权限缺失时也渲染：否则「什么都没发生」无法归因。 -->
       <Banner
         v-if="!projectionReady"
         :tone="projectionError ? 'danger' : 'info'"
@@ -419,8 +367,6 @@ defineExpose({ __classify: classify })
           <span>{{ $t(`recon.stages.${progressStage || 'call1'}`) }}</span>
         </div>
       </div>
-      <!-- 流式中显示已到达正文；断流/失败时保留并标注不完整。完成后只留格式化报告，
-           不再与完成报告并列展示原始 Markdown（#679）。 -->
       <div v-if="partialAnalysis && !analysisResult" class="ai-stream-text" data-testid="ai-partial">
         <p v-if="failure" class="ai-partial-note">{{ $t('recon.partial_incomplete') }}</p>
         {{ partialAnalysis }}

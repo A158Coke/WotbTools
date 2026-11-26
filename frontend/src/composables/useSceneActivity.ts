@@ -1,6 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
-/** Combine the pane owner with browser foreground state; this does not own playback. */
 export function useSceneActivity(active: () => boolean) {
   const visible = ref(typeof document === 'undefined' || document.visibilityState === 'visible')
   const pageShown = ref(true)

@@ -1,6 +1,5 @@
 package com.wotb.core.replay.evidence;
 
-/** Shared numeric policy for team and player spatial-separation evidence. */
 final class SeparationThresholds {
     static final float SEPARATION_DISTANCE_M = 150f;
     static final float STATIONARY_SPEED_MPS = 1.0f;

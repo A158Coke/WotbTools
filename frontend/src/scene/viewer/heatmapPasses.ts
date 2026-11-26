@@ -40,9 +40,6 @@ function updatePenetrationDistanceUniforms() {
             const { penMul } = equipmentCoeffs();
             const origin = getCamera().position;
             const world = new THREE.Vector3();
-            // 射击复现：弹道长度是单值事件量——逐板同值（板间差 ≤ 车体尺度 ~10m，
-            // 在 100→500m 衰减窗口内 ≤0.4mm；与判定同源，用户裁定 2026-10-13）。
-            // 静态检视：逐板 = 相机 → 板包围球中心。
             const shotLenForUniforms = (window.__shotCtx && window.__shotCtx.shot)
                 ? shotBallisticLength(window.__shotCtx.shot) * (getWorldMetersPerUnit() || 1) : 0;
             const apply = (scene: THREE.Scene | null) => {
@@ -80,7 +77,6 @@ function renderSpacedArmorPass() {
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
             const gunClipPlane = getGunClipPlane();
-            // gun_mask 裁切面同步到续飞着色器：与点击/JS 参考同一判据，只滤 gunBarrel。
             if (gunClipPlane) {
                 rcUniforms.rcClipPlane.value.set(
                     gunClipPlane.normal.x, gunClipPlane.normal.y, gunClipPlane.normal.z, gunClipPlane.constant);
@@ -88,15 +84,12 @@ function renderSpacedArmorPass() {
             } else {
                 rcUniforms.rcClipEnabled.value = false;
             }
-            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G（A=0）→ 更近的外部模块写
-            //    A=1（RGB 保留：模块后间隙板的跳弹/续飞状态不被覆盖）
             if (spacedStateScene) {
                 getRenderer().autoClear = true;
                 getRenderer().setRenderTarget(srt);
                 getRenderer().setClearColor(0x000000, 0);
                 getRenderer().render(spacedStateScene, getCamera());
             }
-            // ② 厚度通道：全板 additive（逐层 normalized effective 累计）；状态缓冲留给 PBR 解读
             const rtIsFloat = spacedRTFloatCapable();
             const inject = (obj: THREE.Object3D) => { obj.traverse(function(node){
                 const mesh = node as THREE.Mesh;
@@ -116,8 +109,6 @@ function renderSpacedArmorPass() {
             getRenderer().render(spacedArmorScene, getCamera());
             getRenderer().autoClear = false;
             getRenderer().setRenderTarget(null);
-            // scene.background=null 时 autoClear=false 不会隐式清屏；显式清理默认 framebuffer，
-            // 避免热力图相机移动时复用上一帧颜色/深度（拖影/新几何被旧深度拒绝）。
             getRenderer().clear(true, true, true);
         }
 function updateHeatMaskUniforms(on: boolean) {

@@ -1,12 +1,9 @@
-// 诊断像素回读（自 diagnosticProbe.ts 原样平移）：命中像素级的 GPU/JS 对拍
-// readback——浮点 RT + debug shader 三遍读回（身份/分类/位置反射），raw 值不解码。
 import * as THREE from 'three'
 import { PBR_VERT, PBR_FRAG } from './armorShaders.js'
 import { simulateContinuation, RC } from '../armorCollisionPack.js'
 import type { createHeatmapPipeline } from './heatmap.js'
 import type { ShellSpec } from './viewerContracts.js'
 
-/** readArmorPixels 的依赖面（原 createDiagnosticProbe 闭包捕获）。 */
 export interface ArmorPixelReaderDeps {
     hm: ReturnType<typeof createHeatmapPipeline>
     getRenderer: () => THREE.WebGLRenderer
@@ -65,7 +62,7 @@ export function createArmorPixelReader(deps: ArmorPixelReaderDeps) {
                     const material = node.material as THREE.ShaderMaterial;
                     const original = { node, material, geometry: node.geometry as THREE.BufferGeometry };
                     saved.push(original);
-                    if (!material.uniforms) continue; // preserve the display depth prepass
+                    if (!material.uniforms) continue;
                     const src = node.userData._src;
                     const id = identities.length + 1;
                     identities.push({ id, meshName: src.name, plateId: src.userData.armorPlateId,
@@ -76,7 +73,7 @@ export function createArmorPixelReader(deps: ArmorPixelReaderDeps) {
                     node.geometry.setAttribute('debugTriangle', new THREE.BufferAttribute(Float32Array.from({ length: count }, (_, j) => Math.floor(j / 3) + 1), 1));
                     const clone = material.clone();
                     node.material = clone;
-                    clone.uniforms = { ...material.uniforms }; // share textures; probe owns no collision textures
+                    clone.uniforms = { ...material.uniforms };
                     clone.transparent = false;
                     clone.blending = THREE.NoBlending;
                     clone.toneMapped = false;
@@ -94,7 +91,7 @@ export function createArmorPixelReader(deps: ArmorPixelReaderDeps) {
                     renderer.render(primaryScene, camera);
                     renderer.readRenderTargetPixels(target, left, size.y - top - h, w, h, buffer);
                 };
-                read(ids); // identity-only: bypass continuation entirely
+                read(ids);
                 for (const { node, material } of saved) {
                     if (!material.uniforms) continue;
                     const clone = node.material as THREE.ShaderMaterial;

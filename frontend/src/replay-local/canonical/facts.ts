@@ -1,18 +1,3 @@
-/**
- * WotbTools canonical replay facts：上游 Agent 切面（BattleResult + PlaybackData + AiReviewFacet）
- * → WotbTools 自己的语义事实层。2D 回放投影（`playback/toBattlePlaybackDataset`）与 AI 复盘投影
- * （`ai/toClientAiReviewProjection`）都只消费这一层，不直接把 Agent DTO 当领域契约。
- *
- * 帧与归因规则沿用已退役 Java canonical 层（出处见各段注释），补充已验证的 Avatar 累计伤害广播。
- * 输入只用上游**已明确提供**
- * 的事实；上游没给的不猜，交给 `limitations` / `unavailableEvidence` 如实降级：
- *  - 身份：`TeamEntityMapper` / `TeamPerspectiveResolver`（结算花名册是队伍权威）；
- *  - AoI 观测段：`ReplayAoiLifecycle`（[observedFrom, absentFrom) 半开区间）；
- *  - 血量采样：`EntityIndex.healths`（prop3 + 每次物化快照；method1 不进血量帧）；
- *  - 掉血 / 归属 / 击毁：`PlaybackCombatReconstruction` + `ReplayTerminalLifecycle`
- *    （method8 直击 = 归属证据，非直击 / 短体变体 = 冲突证据，fail-closed）。
- * 时间一律 battle-relative（原始时钟 − 战斗开始 = period 3 时钟）。
- */
 
 import type {
   AgentAiEvent,
@@ -43,27 +28,16 @@ export type {
   DestroyedFact, CanonicalReplayFacts, CanonicalInput,
 } from './factsModel.js'
 
-/** Java `BattleTimelineBuilder.MAX_BATTLE_DURATION_SEC` */
 const MAX_BATTLE_DURATION_SEC = 420
-/** Java `PlaybackCombatReconstruction.KILL_BACKING_WINDOW_SEC` */
 export const KILL_BACKING_WINDOW_SEC = 0.25
-/** Java `ReplayTerminalLifecycle.SAME_CLOCK_EPSILON` */
 const SAME_CLOCK_EPSILON = 1e-6
-/** Java `EntityMethodDecoder.DAMAGE_SUB_DIRECT`：method8 result=3 才是直击（其余为未解码变体） */
 const DAMAGE_SUB_DIRECT = 3
-/** Java parseDamage：body = payload[8..]，body < 18 字节 → 短体变体 ⇔ payload < 26 */
 const DAMAGE_MIN_PAYLOAD_LEN = 26
-/** 上游 playback COVERAGE_GAP：原始采样间隙 > 2 s 视为空洞 */
 const STREAM_GAP_SEC = 2
 const PERIOD_BATTLE = 3
 const PERIOD_AFTERBATTLE = 4
 
-// ---------- 时钟 ----------
 
-/**
- * Java `TimelineClockResolver.resolveClock / resolveDurationSec` 同优先级：
- * 时长 ① 结算 root5（cap 420）② AFTERBATTLE − 开始 ③ meta battleDuration（cap 420）④ 流末时钟 − 开始。
- */
 export function resolveReplayClock(
   periods: readonly PeriodPoint[], result?: AgentBattleResult | null, streamEndRaw?: number | null,
 ): ReplayClock | null {
@@ -96,7 +70,6 @@ function positive(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
 }
 
-// ---------- 构建 ----------
 
 export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalReplayFacts | null {
   const { result, aiReview } = input
@@ -107,7 +80,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
   const afterBattle = periods.find((p) => p.period === PERIOD_AFTERBATTLE)
   const events = aiReview.events
 
-  // ---- 身份（TeamEntityMapper：结算花名册是队伍权威；只收实际参战者） ----
   const settlement = new Map<number, AgentResultPlayer>()
   for (const p of result?.players ?? []) if (p.account_id > 0 && (p.team === 1 || p.team === 2)) settlement.set(p.account_id, p)
   const recorderAccountId = positive(result?.author_account_id) ?? null
@@ -120,7 +92,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
     const player = settlement.get(r.account_id)
     if (!player) continue
     const team = player.team as 1 | 2
-    // 实体自报队伍与结算矛盾：身份不可信，整条实体不进 canonical（与 Java 冲突实体剔除同口径）
     if (r.team !== undefined && r.team !== 0 && r.team !== team) {
       mappingConflict = true
       continue
@@ -141,7 +112,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
   if (mappingConflict) mappingLimitations.push('TEAM_ENTITY_MAPPING_CONFLICT')
   if (entities.size === 0) mappingLimitations.push('TEAM_ENTITY_MAPPING_INSUFFICIENT')
 
-  // ---- 视角（TeamPerspectiveResolver） ----
   const perspectiveLimitations: string[] = []
   const recorderTeam = recorderAccountId !== null ? settlement.get(recorderAccountId)?.team : undefined
   const perspectiveTeam = recorderTeam === 1 || recorderTeam === 2 ? recorderTeam : null
@@ -152,14 +122,10 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
 
   const accountOf = (eid: number): number | null => entities.get(eid)?.accountId ?? null
 
-  // ---- 战斗车辆类（Java EntityClassRegistry）：Type5 entityTypeId=2 物化证据（visibility.hp_raw 在场）
-  // → VEHICLE；映射到录像者账号的实体 → AVATAR（粘性，覆盖 VEHICLE：录像者实体按 Avatar 协议角色分派方法）。
-  // 只有 VEHICLE 实体的 method8 才是伤害/命中通知——录像者被击中的通知因此不进归属证据（固定的旧口径）。
   const vehicleEntityIds = new Set<number>()
   for (const e of events) if (e.type === 'visibility' && typeof e.hp_raw === 'number') vehicleEntityIds.add(e.eid)
   for (const id of recorderEntityIds) vehicleEntityIds.delete(id)
 
-  // ---- AoI 观测段 + 血量采样 + method1 + method8 ----
   const observation = new Map<number, ObservationWindow[]>()
   const hpSamples = new Map<number, HpSample[]>()
   const healthEvents: HealthEvent[] = []
@@ -184,12 +150,10 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
         break
       }
       case 'health': {
-        // 上游 `hp_state` 在场 = 权威分类；缺省（旧产物）按 hp_raw 同一规则现算（见 hpRawState.ts）
         const rawState = classifyHpRaw(e.hp_raw, e.hp_state)
         push(hpSamples, e.eid, {
           t: rel(e.t), entityId: e.eid, hp: knownHpOf(e.hp_raw, e.hp_state), kind: 'PROP3', rawState,
           alive: rawState === 'CURRENT_HP' ? true : isTerminalHpState(rawState) ? false : null,
-          // 缺 hp_state 的旧产物：正 i16 与终态族在 Java 同为 EXACT，其余负值 PARTIAL（现规则下不存在该档）
           exact: rawState === 'CURRENT_HP' || isTerminalHpState(rawState),
           order,
         })
@@ -203,7 +167,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
         })
         break
       case 'hit_notice': {
-        // Java：method8 只对战斗车辆实体解码（其它类 = METHOD8_CLASS_MISMATCH，不产出事件）
         if (!vehicleEntityIds.has(e.eid)) break
         const t = rel(e.t)
         if (e.payload_len < DAMAGE_MIN_PAYLOAD_LEN) {
@@ -230,7 +193,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
   for (const list of observation.values()) list.sort((a, b) => a.fromSec - b.fromSec || a.order - b.order)
   for (const list of hpSamples.values()) list.sort((a, b) => a.t - b.t || a.order - b.order)
 
-  // ---- 原始位姿 / 炮塔（按时钟稳定排序；包序同刻保留） ----
   const poses = new Map<number, PoseTrack>()
   for (const p of aiReview.poses) {
     const idx = p.t.map((_, i) => i).sort((a, b) => p.t[a] - p.t[b] || a - b)
@@ -247,9 +209,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
 
   const inBattle = (t: number) => Number.isFinite(t) && t >= 0 && t <= clock.durationSec + EPS
 
-  // The recorder Avatar has a different eid from the vehicle roster. prop10 broadcasts belong
-  // to that recorder, not to the Avatar eid as a player. Preserve their actual observation clock;
-  // a settlement total must never appear early in playback. Conflicting sources fail closed.
   const recorderDamageDealt: CanonicalReplayFacts['recorderDamageDealt'] = []
   if (recorderAccountId !== null && settlement.has(recorderAccountId)) {
     const ticks = events.filter((e): e is Extract<AgentAiEvent, { type: 'damage_tick' }> =>
@@ -268,7 +227,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
     }
   }
 
-  // ---- 掉血（PlaybackCombatReconstruction.derive）：只用 prop3 可信采样 ----
   const samplesByAccount = new Map<number, Array<{ t: number; hp: number }>>()
   for (const [eid, list] of hpSamples) {
     const account = accountOf(eid)
@@ -328,7 +286,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
     if (out.length) lossesByVictim.set(victim, out.sort((a, b) => a.fromSec - b.fromSec))
   }
 
-  // ---- 击毁（ReplayTerminalLifecycle.finalStateByAccount）+ 击杀者（uniqueKiller） ----
   const evidence: TerminalEvidence[] = []
   const addEvidence = (eid: number, t: number, order: number, terminal: boolean, kind: TerminalKind | null) => {
     const account = accountOf(eid)
@@ -348,7 +305,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
     }
   }
   for (const h of healthEvents) {
-    // 身份门（VehicleHealthCauseValidator）：原因只对可用参战者成立
     const cause: HealthCause | null = accountOf(h.entityId) !== null
       ? semanticCauseOf(h.causeFlag, h.sourceEntityId, h.entityId) : null
     if (cause === 'DROWNING') addEvidence(h.entityId, h.t, h.order, true, 'DROWNING')
@@ -405,7 +361,6 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
   }
 }
 
-// ---------- 内部 ----------
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key)
@@ -417,12 +372,10 @@ function toSignedInt(v: number): number {
   return v | 0
 }
 
-/** (from, to] 窗口（Java `inWindow`） */
 function within(t: number, from: number, to: number): boolean {
   return t > from + EPS && t <= to + EPS
 }
 
-/** 同刻重复采样折叠；同刻取值冲突 → 该刻不可用（Java `collapseSameClockDuplicates`） */
 function collapseSameClock(points: Array<{ t: number; hp: number }>): Array<{ t: number; hp: number }> {
   const out: Array<{ t: number; hp: number }> = []
   let i = 0
@@ -471,7 +424,6 @@ function uniqueKiller(
   return count > 0 ? sole : null
 }
 
-/** Java `ReplayTerminalLifecycle.later`：同一终态段保留首个时刻；同刻 FFFD/溺水终态压过正血量镜像 */
 function laterEvidence(current: TerminalEvidence, incoming: TerminalEvidence): TerminalEvidence {
   const delta = incoming.timeSec - current.timeSec
   if (delta > SAME_CLOCK_EPSILON) return current.terminal && incoming.terminal ? current : incoming

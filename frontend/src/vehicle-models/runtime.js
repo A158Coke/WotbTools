@@ -1,29 +1,9 @@
-/**
- * 生产 runtime 车型资产解析（PR2 — Dedicated Tier X Models in Battle Playback）。
- *
- * 职责（、§18）：
- * - tankId → modelKey（mapping，单一事实源）；
- * - modelKey → 正式资产（hull.webp / turret.webp / metadata，Vite 静态打包 URL）；
- * - 战局级 preload：只预加载当前战局实际出现的 Tier X base models（dedupe：同 modelKey
- *   只解析/加载一次）；3s 超时/失败 → 该 modelKey 标记 failed（单车 fallback generic，
- *   不整场 fallback）；
- * - current-page cache（模块生命周期 = 页面生命周期；不做跨 replay persistent cache）。
- *
- * Bundle 分离：本模块含全部 'vehicle-models/assets' 引用（import.meta.glob），
- * 必须由调用方**动态 import**（BattlePlayback 在 preload 时 await import 本模块），
- * 保证主入口 bundle 不含车型资产标记（scripts/check-bundle-separation.mjs 门禁）。
- *
- * 失败语义：结构失败和图片失败都 fail closed（generic），但必须保留确定性的诊断原因；
- * 图片错误/超时仅允许一次有界重试，结构失败不重试。
- */
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
 
-// Vite 静态打包：?url 输出为同源静态文件 URL（确定性路径，build 后 hash 命名）
 const hullUrls = import.meta.glob('./assets/*/hull.webp', { query: '?url', import: 'default', eager: true })
 const turretUrls = import.meta.glob('./assets/*/turret.webp', { query: '?url', import: 'default', eager: true })
 const metadataMap = import.meta.glob('./assets/*/metadata.json', { import: 'default', eager: true })
 
-/** 默认 preload 超时（3 秒）。 */
 export const PRELOAD_TIMEOUT_MS = 3000
 const TRANSIENT_IMAGE_ATTEMPTS = 2
 
@@ -40,11 +20,6 @@ const FALLBACK_REASON = Object.freeze({
   MODULE_IMPORT_FAILURE: 'MODULE_IMPORT_FAILURE',
 })
 
-/**
- * 解析后的车型资产（dedicated runtime contract）。
- * 仅供 resolveModel 内部构造；外部通过 resolveModel / preloadBattleModels 消费实例
- * （无外部直接构造/继承需求，不导出——避免无人消费的公共 API）。
- */
 class VehicleModel {
   /** @param {{modelKey:string, kind:'turreted'|'turretless', hullSrc:string, turretSrc:string|null, turretPivot:({x:number,y:number}|null), turretRaster:(object|null), hullBounds:(object|null)}} init */
   constructor({ modelKey, kind, hullSrc, turretSrc, turretPivot, turretRaster, hullBounds }) {
@@ -58,7 +33,6 @@ class VehicleModel {
   }
 }
 
-/** tankId → modelKey（无 mapping → null = 非 Tier X / 未确认车型 → generic）。 */
 export function modelKeyForTank(tankId) {
   return TANK_ID_TO_MODEL[String(tankId)] ?? null
 }
@@ -71,7 +45,6 @@ function invalidTurretMetadata(meta) {
     || !Number.isFinite(r.pivotX) || !Number.isFinite(r.pivotY)
 }
 
-/** modelKey → 正式资产 + 明确失败原因；不导出，避免重复构造第二份 contract。 */
 function resolveModelResult(modelKey) {
   if (!modelKey) return { ok: false, reason: FALLBACK_REASON.UNKNOWN_TANK_MAPPING }
   const def = MODEL_DEFINITIONS[modelKey]
@@ -120,13 +93,11 @@ function resolveModelResult(modelKey) {
   }) }
 }
 
-/** modelKey → 正式资产；缺失/结构非法 → null（fallback generic）。 */
 export function resolveModel(modelKey) {
   const result = resolveModelResult(modelKey)
   return result.ok ? result.model : null
 }
 
-/** 单图预加载：onload/onerror 或超时（不抛错——超时按失败处理）。 */
 function loadImage(url, timeoutMs) {
   return new Promise((resolve) => {
     let settled = false
@@ -147,27 +118,11 @@ function loadImage(url, timeoutMs) {
   })
 }
 
-/**
- * module-lifetime preload cache（current-page cache；页面刷新自然清空，
- * 不做 localStorage/IndexedDB/persistent cache）。
- *
- * modelKey 级状态机（Map 值）：
- * - undefined         未请求；
- * - Promise           in-flight（并发去重：同一 modelKey 的并发请求共享同一个 Promise，
- *                     实际只加载一次；两个 BattlePlayback 实例/快速切换不会重复 preload）；
- * - { ok: true, model } 已成功——后续 battle 直接复用，不再调用 imageLoader；
- * - { ok: false, reason } 已失败——结构性失败不重试；图片错误/超时只在首次请求内
- *                     进行一次 bounded retry，最终结果仍按 modelKey 负缓存。
- */
 const preloadCache = new Map()
 
-/**
- * 单个 modelKey 的 preload（带 cache + in-flight 去重）。
- * 返回 { ok: true, model } | { ok: false, reason }。
- */
 async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
   const existing = preloadCache.get(modelKey)
-  if (existing) return existing // in-flight Promise 或已固化结果（await 非 thenable 直接返回）
+  if (existing) return existing
   const task = (async () => {
     try {
       const resolved = resolveModelResult(modelKey)
@@ -207,14 +162,13 @@ async function preloadModel(modelKey, { timeoutMs, imageLoader }) {
       }
       return { ok: true, model }
     } catch {
-      // 兜底保证 cache 永不留 rejected promise（避免悬挂/未处理 rejection）。
       console.error(`[vehicle-models] fallback reason=${FALLBACK_REASON.IMAGE_LOAD_ERROR} modelKey=${modelKey}`)
       return { ok: false, reason: FALLBACK_REASON.IMAGE_LOAD_ERROR }
     }
   })()
-  preloadCache.set(modelKey, task) // 先存 in-flight，去重并发
+  preloadCache.set(modelKey, task)
   const result = await task
-  preloadCache.set(modelKey, result) // 固化（成功/失败都缓存，页面生命周期内不再重试）
+  preloadCache.set(modelKey, result)
   return result
 }
 

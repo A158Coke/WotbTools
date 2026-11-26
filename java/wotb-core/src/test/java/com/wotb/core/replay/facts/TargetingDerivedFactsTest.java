@@ -13,7 +13,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** TargetingDerivedFacts（C7）：PRE/POST 配对 + bloom 增量。 */
 class TargetingDerivedFactsTest {
 
     private static TargetingInfoSnapshotEvent snap(final int seq, final float clock,

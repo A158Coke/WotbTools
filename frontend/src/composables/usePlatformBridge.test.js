@@ -20,7 +20,6 @@ import {
   usePlatformBridge,
 } from './usePlatformBridge.js'
 
-/** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件。 */
 function stubNative(capabilities, pending, consumeResult = true, bridgeVersion = 4, overrides = {}) {
   const listeners = []
   const calls = []
@@ -252,7 +251,7 @@ describe('usePlatformBridge', () => {
     vi.useFakeTimers()
     const methods = []
     window.WotbNative = {
-      postMessage: vi.fn((json) => { methods.push(JSON.parse(json).method) }), // native 永不回复
+      postMessage: vi.fn((json) => { methods.push(JSON.parse(json).method) }),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }
@@ -267,7 +266,6 @@ describe('usePlatformBridge', () => {
       return value
     })
 
-    // 通用方法保持 5s 预算；native-auth 的长预算由调用方逐次传入。
     await vi.advanceTimersByTimeAsync(5_000)
     expect(settled).toBe('default')
     await vi.advanceTimersByTimeAsync(15_000)

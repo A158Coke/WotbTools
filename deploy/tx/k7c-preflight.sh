@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# K7C read-only frontend cutover preflight.
 set -Eeuo pipefail
 
 readonly TX_RUNTIME_ROOT="${TX_RUNTIME_ROOT:-/opt/wotb-tx}"

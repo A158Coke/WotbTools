@@ -1,22 +1,9 @@
-/* Shared application primitives. Feature components own their layout and state. */
 * { box-sizing: border-box; }
 html, body, #app { min-height: 100%; }
-/* 页面底色 = 主题底纹 + 环境光 + 纯色 canvas（design-language §2 装饰插槽 5）。
-   底纹与环境光移到 AppShell 的 .app-backdrop 固定装饰层，body 保持透明；
-   这是为了避开 iOS Safari 不支持 background-attachment: fixed 的问题。
-   图片层未 ready 时 html 自铺 canvas，避免白闪。 */
-/* 回放工作台按设计交由页面滚动（信息流自然高度），页高常贴着视口阈值：竖直滚动条
-   出现/消失会让整个工作区横向跳 15px（收起传输条动画实测 1265→1280→1265）。
-   槽位只挂在回放页面（ReplayWorkspace 挂载时给 html 挂类；browser-fixtures/playback-controls
-   直挂 BattlePlayback 的夹具同款）——后台抽屉等其它页面保持原贴边契约
-   （browser-feedback 门禁断言贴 innerWidth）。 */
 html { background: var(--color-canvas); }
 html.replay-scrollbar-reserve { scrollbar-gutter: stable; }
 body { margin: 0; background: transparent; color: var(--color-text-primary); font: var(--type-body); }
 
-/* 页面级卡片的磨砂玻璃表面（§2 D10）：背景图只从这些大面板透出；
-   表格、数据密集区、输入框与回放 HUD 仍使用 --color-surface-N 纯色。
-   无 backdrop-filter 的浏览器退回纯色，不能依赖半透明表面保证文字对比度。 */
 .surface-glass-1,
 .surface-glass-2,
 .surface-glass-3 {
@@ -31,11 +18,6 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
   .surface-glass-2 { background: var(--color-surface-2); }
   .surface-glass-3 { background: var(--color-surface-3); }
 }
-/* 系统级可访问性偏好（design-language §2 D10 降级路径的 media 查询面）：
-   用户要求减少透明度时玻璃必须整体退化为纯色表面，而不是只降模糊——
-   半透明背景叠在环境光/底纹上仍会让复杂背景透过文字区。
-   两块都放在 @supports fallback 之后，覆盖同特异性的玻璃默认背景；
-   contrast 块最后，叠加两种偏好时由它给出更强的边界。 */
 @media (prefers-reduced-transparency: reduce) {
   .surface-glass-1,
   .surface-glass-2,
@@ -57,8 +39,6 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
   .surface-glass-1 { background: var(--color-surface-1); }
   .surface-glass-2 { background: var(--color-surface-2); }
   .surface-glass-3 { background: var(--color-surface-3); }
-  /* 组件 scoped 样式的 border 简写是 (0,2,0) 且晚于本文件注入；
-     重复类名抬到 (0,3,0)，在无 !important 约束下仍能覆盖边界色。 */
   .surface-glass-1.surface-glass-1.surface-glass-1,
   .surface-glass-2.surface-glass-2.surface-glass-2,
   .surface-glass-3.surface-glass-3.surface-glass-3 {
@@ -67,9 +47,6 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
 }
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
-/* 交互控件文字不可被长按选中：GeckoView 下一旦存在活动选区，落在文字上的拖动会被引擎解释为
-   「扩展选区」而不是滚动，误长按控件选中文字后滑动就成了逐帧选区扩展（感知为滑动卡死）。
-   只覆盖控件 chrome；内容文本不受影响，仍可长按选中与复制。 */
 button { user-select: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: var(--focus-outline);
@@ -78,8 +55,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .ic { width: var(--space-4); height: var(--space-4); flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
 .up-icon { display: inline-flex; align-items: center; justify-content: center; width: var(--control-h-lg); height: var(--control-h-lg); margin-bottom: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); color: var(--color-accent-text); }
 .up-icon .ic { width: var(--space-6); height: var(--space-6); }
-/* 统一控制条（design-language §9 DC-ARC-03）：页面数据区之上的筛选 / 排序 / 搜索一行；
-   大屏行内、窄屏自动换行；吸顶时读 --header-h（顶栏随滚动收起时贴顶）。 */
 .control-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; margin-block-end: var(--space-4); }
 .control-bar > .control-bar-end { margin-inline-start: auto; }
 .control-bar.is-sticky { position: sticky; top: var(--header-h); z-index: var(--z-sticky); padding-block: var(--space-2); background: var(--color-canvas); }
@@ -98,7 +73,6 @@ h2 { margin: 0 0 var(--space-3); color: var(--color-text-primary); font: var(--t
   color: var(--color-text-tertiary);
   font: var(--type-caption);
   text-align: center;
-  /* 页脚文字落在环境光/底纹之上时，用 canvas 渐隐托底，避免 1px 网格线吃掉小字对比度。 */
   background: linear-gradient(180deg, transparent 0, var(--color-canvas) var(--space-5));
 }
 .app-footer a { color: inherit; text-decoration: underline; text-underline-offset: var(--space-1); }

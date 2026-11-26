@@ -5,13 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 可变的战场状态，用于 reconstruction 过程中的状态更新。
- * <p>
- * 核心状态模型，包含当前回放时钟、战斗阶段、已知玩家和实体。
- * 事件通过 applier 应用到此状态。
- * </p>
- */
 public final class BattleState {
 
     private float rawClockSec;
@@ -36,7 +29,6 @@ public final class BattleState {
         this.winnerTeam = null;
     }
 
-    // ---- Getters ----
 
     public float getRawClockSec() { return rawClockSec; }
     public Float getBattleClockSec() { return battleClockSec; }
@@ -47,7 +39,6 @@ public final class BattleState {
     public boolean isBattleEnded() { return battleEnded; }
     public Integer getWinnerTeam() { return winnerTeam; }
 
-    // ---- Setters ----
 
     public void setRawClockSec(float rawClockSec) { this.rawClockSec = rawClockSec; }
     public void setBattleClockSec(Float battleClockSec) { this.battleClockSec = battleClockSec; }
@@ -55,11 +46,7 @@ public final class BattleState {
     public void setBattleEnded(boolean battleEnded) { this.battleEnded = battleEnded; }
     public void setWinnerTeam(Integer winnerTeam) { this.winnerTeam = winnerTeam; }
 
-    // ---- Entity management ----
 
-    /**
-     * 获取或创建实体状态。
-     */
     public VehicleState getOrCreateVehicle(int entityId, float clockSec) {
         return vehiclesByEntityId.computeIfAbsent(entityId, k -> {
             final VehicleState vs = new VehicleState(entityId, clockSec);
@@ -68,9 +55,6 @@ public final class BattleState {
         });
     }
 
-    /**
-     * 注册参与者映射。
-     */
     public void registerMapping(int entityId, long accountId) {
         entityIdByAccountId.put(accountId, entityId);
         final VehicleState vs = vehiclesByEntityId.get(entityId);
@@ -79,37 +63,22 @@ public final class BattleState {
         }
     }
 
-    /**
-     * 添加参与者信息。
-     */
     public void addParticipant(BattleParticipant participant) {
         participants.add(participant);
     }
 
-    /**
-     * 根据 accountId 查找实体 ID。
-     */
     public Integer getEntityIdByAccountId(long accountId) {
         return entityIdByAccountId.get(accountId);
     }
 
-    /**
-     * 根据 entityId 查找车辆状态。
-     */
     public VehicleState getVehicle(int entityId) {
         return vehiclesByEntityId.get(entityId);
     }
 
-    /**
-     * 返回当前已知实体的数量。
-     */
     public int entityCount() {
         return vehiclesByEntityId.size();
     }
 
-    /**
-     * 返回当前已注册参与者的数量。
-     */
     public int participantCount() {
         return participants.size();
     }

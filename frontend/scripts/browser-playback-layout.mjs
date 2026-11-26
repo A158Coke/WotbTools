@@ -10,7 +10,6 @@ import { PLAYBACK_ON_NEUTRAL, playbackTracerColor } from '../src/data/mapTeamCol
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
 
-// 规则 owner 是 design-language §5：文档与门禁的数值必须一致，任一侧漂移就失败。
 assertDocumentedLimits()
 
 const chrome = findChrome()
@@ -18,16 +17,10 @@ const cssPaths = [
   'src/styles/tokens/scale.css',
   'src/styles/playback-shared.css',
   'src/styles/playback-mobile.css',
-  // Owns the square-Stage contract (`--pb-square-side`) and the Team 1 | Stage | Team 2 workspace.
-  // Same position as in src/main.js: after the three form files, before the fullscreen refinements.
   'src/styles/playback-workspace.css',
-  // 3D/2D 共用面板与 docked 播放条（生产 main.js 里紧随 workspace.css 导入）。
   'src/styles/playback-workspace-3d.css',
 ]
 
-// Native :fullscreen cannot be entered reliably from a file:// headless fixture without a user
-// gesture. For geometry regression we use the production CSS verbatim except for replacing that
-// single pseudo-class with a root marker. This still exercises the real cascade and browser layout.
 const productionCss = cssPaths
   .map((path) => readFileSync(resolve(frontendRoot, path), 'utf8'))
   .join('\n')
@@ -35,8 +28,6 @@ const productionCss = cssPaths
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
 const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
 const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
-// 2026-10-16 用户裁定：标记删除防重叠位移与虚线 leader，车体严格落在真实位置。
-// 本门禁守住"生产接线里不再出现位移/虚线"（反过来写回去也会在这里失败）。
 if (battleMapSource.includes('screenOffsetToSvgDelta')
   || battleMapSource.includes('presentationOffset')
   || battleMapSource.includes('pb-marker-leader')
@@ -48,8 +39,6 @@ if (battleMapSource.includes('screenOffsetToSvgDelta')
 const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
 const scenarios = [
-  // §roster-overlay：遮挡基线场景默认**名册收纳**（手机横屏的生产默认；遮挡契约量的是常驻 UI，
-  // 用户主动展开的浮层车道不参与 §5 上限）。名册展开的几何由 roster-open 场景单独锁。
   { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc', occlusion: true },
   { name: 'pc-1600x900-roster-open', form: 'pc', width: 1600, height: 900, check: 'pc', rosterOpen: true },
   { name: 'desktop-1280x900-roster-open', form: 'pc', width: 1280, height: 900, check: 'pc', rosterOpen: true },
@@ -60,38 +49,22 @@ const scenarios = [
   { name: 'phone-landscape-844x390', form: 'mobile', width: 844, height: 390, check: 'wide', occlusion: true },
   { name: 'phone-landscape-844x390-roster-open', form: 'mobile', width: 844, height: 390, check: 'wide', rosterOpen: true },
   { name: 'phone-landscape-600x320', form: 'mobile', width: 600, height: 320, check: 'wide' },
-  // 负向对照：同一形态下故意加一块盖住地图的常驻控件，断言遮挡探针**必须**失败。
   { name: 'occlusion-negative-740x360', form: 'mobile', width: 740, height: 360, check: 'wide', occlusion: true, occlusionNegative: true },
   { name: 'wide-fullscreen-1792x922', form: 'pc', width: 1792, height: 922, check: 'wide', fullscreen: true },
-  // Form differences must not override the shared geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
-  // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
-  // frame for the basemap img, overlay SVG and marker layer.
   { name: 'raster-frame-source', form: 'pc', width: 1280, height: 900, check: 'raster' },
-  // Real marker-position guard: the marker center must coincide with its semantic anchor
-  // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
   { name: 'marker-true-position', form: 'mobile', width: 390, height: 844, check: 'true-position' },
 
-  // Fullscreen changes capacity while retaining the shared three-row battlefield contract.
   { name: 'pc-fullscreen-side-slots', form: 'pc', width: 1920, height: 900, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
   { name: 'tablet-fullscreen-side-slots', form: 'tablet', width: 1180, height: 320, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
-  // Mobile production JS no longer enables sideSlots, but force the stale class defensively: even if
-  // it survives a responsive transition, the form contract must keep HUD top + controller bottom.
   { name: 'mobile-fullscreen-forced-side-slots', form: 'mobile', width: 882, height: 344, check: 'fullscreen-mobile', fullscreen: true, sideSlots: true, controlsInRail: false, controlsVisible: true },
 ]
 
-// 负向对照：故意重新引入一块盖住主内容的常驻控件。门禁断言探针对它**失败**——
-// 这是「这套门禁真的能发现 #727 这类问题」的唯一证据，没有它，断言只是对当前实现的同义重复。
-// 它的类名不得传给 measureOcclusion：探针必须靠网格命中自己发现，换名字重新加回来才抓得到。
 function negativeOverlayMarkup(scenario) {
   if (!scenario.occlusionNegative) return ''
   return '<div class="pb-occlusion-negative" data-test="pb-occlusion-negative" style="position:absolute;inset-block-start:30%;inset-inline-start:10%;inline-size:60%;block-size:30%;display:grid;z-index:var(--pb-z-controls)"><button type="button" style="background:#333">mutant</button></div>'
 }
 
-// 可达性探针自测夹具（PR #747 review）。每个元素对应一种判定，期望写在下面的断言里：
-// 三个负向样本的**中心点都露着**——这正是只看中心点的探针会放过的那一类。
-// 两个正向样本防止修过头：可滚动触达不是缺陷；fixed 元素不受非 containing block 祖先的
-// overflow 裁剪（CSS 规定它逃出去了），把它判成"被裁掉"就是误报。
 function reachabilitySelfTestHtml() {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -117,10 +90,7 @@ function reachabilitySelfTestHtml() {
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
-  // §roster-overlay：名册浮层是否展开由场景显式声明（生产默认：手机横屏收纳、其余展开）。
   const lanes = !!scenario.rosterOpen
-  // 手机横屏在真实宿主里还会带 pb-phone-landscape（PlaybackWorkspace 的 phoneLandscape）。
-  // 夹具必须带上同一个类，才能真正量到手机横屏的浮层车道 token，而不是继续量桌面宽档。
   const phoneLandscape = scenario.form === 'mobile' && scenario.width > scenario.height
   const rootClasses = [
     'battle-playback',
@@ -410,14 +380,6 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 </html>`
 }
 
-/**
- * 3D 伤害数字覆盖层的浏览器级几何探针（在页面内执行，**不能引用模块作用域**）。
- *
- * 验收：出生贴血条右侧且不覆盖血条 / 跟随当前 anchor（车辆与相机每帧在动）/ 出屏立即隐藏 /
- * 贴右缘镜像到血条左侧且漂移反向（远离血条、不出边界）/ fit 边界含整段漂移行程 /
- * 真 0×0 空名牌回退到锚点上方 / rerender 不重算 animation-delay。
- * 组件挂载与偏好注入由 scripts/browser-fixtures/damage-overlay-entry.js 提供（真实组件 + 真实 CSS）。
- */
 async function probeDamageOverlay() {
   const failures = []
   const require = (ok, message) => { if (!ok) failures.push(message) }
@@ -434,8 +396,6 @@ async function probeDamageOverlay() {
   const barEl = () => document.querySelector('.pb-hp-bar')
   const labelEl = () => document.querySelector('.vehicle-label')
   const dmgEl = () => document.querySelector('[data-test="pb-damage"]')
-  // 几何一律量**数字文本本身**：外层 span 只是定位载体，文本带 translate(0,-50%) 与漂移动画，
-  // 真正要与血条对齐 / 不覆盖血条的是文本的可见盒。
   const dmgTextEl = () => document.querySelector('[data-test="pb-damage"] .pb-damage-text')
   const driftX = () => parseFloat(getComputedStyle(dmgEl()).getPropertyValue('--pb-damage-drift-x')) || 0
   const row = (eid, extra = {}) => ({
@@ -452,7 +412,6 @@ async function probeDamageOverlay() {
   await api.spawn(7, 342, 60000)
   await api.setAnchor(7, anchorAt(300, 260))
 
-  // 1) 出生在血条右侧、垂直居中于血条；漂移行程仍在舞台内（fit 含 drift）
   const bar = box(barEl())
   let dmg = box(dmgTextEl())
   require(!!dmgEl() && !dmgEl().hidden, 'damage number must be visible next to the HP bar')
@@ -465,20 +424,17 @@ async function probeDamageOverlay() {
     `right-side drift must stay inside the stage (dmg.right=${dmg.right} drift=${driftX()} stage=${stageW})`)
   metrics.birth = { gap: dmg.left - bar.right, driftX: driftX(), dmg, bar }
 
-  // 2) 跟随当前 anchor：车辆 / 相机移动时按同一偏移一起走（不缓存屏幕绝对坐标）
   await api.setAnchor(7, anchorAt(360, 300))
   const moved = box(dmgTextEl())
   require(Math.abs((moved.left - dmg.left) - 60) <= 1 && Math.abs((moved.top - dmg.top) - 40) <= 1,
     `damage must follow the anchor (dx=${moved.left - dmg.left} dy=${moved.top - dmg.top})`)
   metrics.follow = { dx: moved.left - dmg.left, dy: moved.top - dmg.top }
 
-  // 3) 出屏（projected=false）→ 立即隐藏；回到视锥内 → 按新 anchor 继续显示
   await api.setAnchor(7, { ...anchorAt(360, 300), projected: false })
   require(dmgEl().hidden, 'damage must hide as soon as the vehicle leaves the frustum')
   await api.setAnchor(7, anchorAt(360, 300))
   require(!dmgEl().hidden, 'damage must come back with the remaining lifetime')
 
-  // 4) 贴右缘放不下（含漂移行程）→ 镜像到血条左侧，漂移反向、不覆盖血条、不出左边界
   await api.setAnchor(7, anchorAt(stageW - 20, 260))
   dmg = box(dmgTextEl())
   const barNear = box(barEl())
@@ -489,7 +445,6 @@ async function probeDamageOverlay() {
     `mirrored drift must stay inside the stage (dmg.left=${dmg.left} drift=${driftX()})`)
   metrics.mirror = { dmgRight: dmg.right, barLeft: barNear.left, driftX: driftX() }
 
-  // 5) rerender 不重算 animation-delay（存活期间 timeline 稳定，不被重复快进）
   await api.setAnchor(7, anchorAt(300, 260))
   const delayBefore = getComputedStyle(dmgEl().firstElementChild).animationDelay
   await api.setLabels([row(7), row(8), row(9)])
@@ -499,8 +454,6 @@ async function probeDamageOverlay() {
     `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
   metrics.delay = delayAfter
 
-  // 5b) 名牌隐藏期间出伤害、随后重入：批处理准备阶段必须先解除宿主 hidden 再量几何。
-  // 否则 measureDamageLayout 读到 0×0 宿主并缓存 fallback，数字落在锚点而非血条右侧。
   api.clearDamages()
   await api.setLabels([row(7)])
   await api.setAnchor(7, { ...anchorAt(300, 260), visible: false, projected: false })
@@ -514,7 +467,6 @@ async function probeDamageOverlay() {
   metrics.hiddenReentry = { dmgLeft: reentryDmg.left, barRight: reentryBar.right }
   api.clearDamages()
 
-  // H 恢复实际 CSS phase，原始 removal timer 不延长。
   api.clearDamages()
   const waitUntil = async (predicate, timeoutMs = 6000) => {
     const start = performance.now()
@@ -551,7 +503,6 @@ async function probeDamageOverlay() {
   require(removedAt - bornBefore < 4400, 'H must not restart removal timer')
   metrics.hiddenRecovery = { effectiveTime, ageMin, ageMax, removedAfterMs: removedAt - bornBefore }
 
-  // 出屏再进屏也会重启 CSS timeline，必须恢复原始 wall-clock phase。
   const offscreenBornBefore = performance.now()
   await api.spawn(7, 342, 4000)
   const offscreenBornAfter = performance.now()
@@ -581,7 +532,6 @@ async function probeDamageOverlay() {
   require(offscreenRemovedAfterMs < 4400, 'off-screen return must not extend removal deadline')
   metrics.offscreenRecovery = { beforeOffscreen, resumedTime, resumedAgeMin, resumedAgeMax, offscreenRemovedAfterMs }
 
-  // 出生时已经在视锥外：延迟首次可见也要恢复原始 wall-clock phase。
   await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
   const unseenBornBefore = performance.now()
   await api.spawn(7, 342, 4000)
@@ -610,7 +560,6 @@ async function probeDamageOverlay() {
   require(unseenRemovedAfterMs < 4400, 'delayed first display must not extend removal deadline')
   metrics.bornOffscreen = { firstTime, firstAgeMin, firstAgeMax, unseenRemovedAfterMs }
 
-  // 状态标记关闭不影响战斗反馈：真实 CSS 下数字仍可见。
   await api.prefs({ markerPrefs: { showStatus: false } })
   await api.spawn(7, 415, 4000)
   await api.setAnchor(7, anchorAt(300, 260))
@@ -620,7 +569,6 @@ async function probeDamageOverlay() {
   await api.prefs({ markerPrefs: { showStatus: true } })
   api.clearDamages()
 
-  // lost HP ghost：真实几何、停留后淡出、与主条有明显反差；受击闪与隐藏全部 UI 同层验证。
   await api.setLabels([row(7, {
     hp: { current: 615, pct: 30, state: 'CURRENT' }, hpFlash: true,
     hpGhost: { prevPct: 50, nextPct: 30, durationMs: 1200 },
@@ -648,7 +596,6 @@ async function probeDamageOverlay() {
   require(ghostEl.getBoundingClientRect().width === 0, 'Hide All UI must hide the ghost')
   await api.setHidden(false)
 
-  // 中后段隐藏再恢复（H / 出屏返回）：续当前相位，不回到满不透明。寿命放长，避免慢 CI 上采样时已淡完。
   const midGhostOpacity = () => Number(getComputedStyle(document.querySelector('[data-test="pb-hp-ghost"]')).opacity)
   const midBorn = performance.now()
   await api.setLabels([row(7, {
@@ -656,7 +603,7 @@ async function probeDamageOverlay() {
     hpGhost: { prevPct: 50, nextPct: 25, bornMs: midBorn, durationMs: 8000 },
   })])
   await api.setAnchor(7, anchorAt(300, 260))
-  await waitUntil(() => performance.now() - midBorn >= 3200)   // 40%：已进入淡出段
+  await waitUntil(() => performance.now() - midBorn >= 3200)
   await api.setHidden(true)
   await api.setHidden(false)
   require(midGhostOpacity() < 0.95, `ghost phase must survive Hide All UI (opacity ${midGhostOpacity()})`)
@@ -665,7 +612,6 @@ async function probeDamageOverlay() {
   require(midGhostOpacity() < 0.95, `ghost phase must survive leaving the view (opacity ${midGhostOpacity()})`)
   await api.setLabels([row(7)])
 
-  // 第一槽到期后再出生：三个仍存活的数字必须占三个不同位置。
   await api.spawn(7, 100, 500)
   await api.spawn(7, 200, 4000)
   await api.spawn(7, 300, 4000)
@@ -675,7 +621,6 @@ async function probeDamageOverlay() {
   const slotPositions = [...document.querySelectorAll('[data-test="pb-damage"]')].map(el => el.style.transform)
   require(new Set(slotPositions).size === 3, 'expire-then-spawn must reuse the free stacking slot')
 
-  // 6) HP 关掉 → 退回名牌块右侧，仍然可见
   await api.clearDamages()
   await api.prefs({ hpPrefs: { showHp: false } })
   await api.spawn(7, 400, 60000)
@@ -687,7 +632,6 @@ async function probeDamageOverlay() {
     `HP-off damage must fall back to the right of the label block (dmg.left=${dmg.left} label.right=${label.right})`)
   metrics.hpOff = { dmgLeft: dmg.left, labelRight: label.right }
 
-  // 7) 姓名 / 车型 / HP 全关 → 真正的 0×0 名牌 → 回退到锚点上方（不得一直 hidden）
   await api.clearDamages()
   await api.prefs({ labelPrefs: { showPlayerName: false, showTankName: false }, hpPrefs: { showHp: false } })
   await api.spawn(7, 400, 60000)
@@ -724,7 +668,6 @@ function relativeLuminance([r, g, b]) {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 
-/** 截图中炮线上下若干像素内的最高「对白背景」对比度；纯白 = 1:1。 */
 function maxContrastAgainstWhite(raw, info, centerY, halfBand = 8) {
   const firstY = Math.max(0, centerY - halfBand)
   const lastY = Math.min(info.height, centerY + halfBand + 1)
@@ -762,10 +705,6 @@ function tracerLightMapProbe() {
   }
 }
 
-// 设备指标走 CDP `Emulation.setDeviceMetricsOverride`，不是 `--window-size`：headless Chrome 的窗口
-// 有最小宽度（实测 500px），`--window-size=390,844` 会被静默放大成 500×757，「手机竖屏」用例于是
-// 跑在一个根本不是手机竖屏的视口上还报 OK。这里要求页面实测的 innerWidth/innerHeight 与请求一致，
-// 否则直接失败——不允许把一个回退过的视口算作该形态的覆盖。
 const temp = mkdtempSync(resolve(tmpdir(), 'wotb-playback-browser-'))
 const browser = await launchChromeForCdp(chrome, { extraArgs: ['--allow-file-access-from-files', '--run-all-compositor-stages-before-draw'] })
 const geometryByName = new Map()
@@ -780,8 +719,6 @@ try {
     await page.goto(pathToFileURL(htmlPath).href)
     const encoded = await page.waitForValue('document.body && document.body.dataset.result', (value) => !!value,
       { label: `${scenario.name} result` })
-    // 遮挡判定（design-language §5）：常驻控件不得实质遮挡主内容。必须在真实浏览器里量，
-    // 因为它取决于真实布局与绘制结果，而不是声明值。
     const occlusion = scenario.occlusion
       ? await measureOcclusion(page, {
         primary: '.pb-map',
@@ -819,17 +756,12 @@ try {
   const phoneLandscapeOpen = geometryByName.get('phone-landscape-844x390-roster-open')
   const phoneLandscapeSmall = geometryByName.get('phone-landscape-600x320')
 
-  // —— §roster-overlay 空间归属契约 ——
-  //
-  // 名册不再拥有 Grid 列：地图正方形只由纵向预算决定，名册浮层的开合**不得改变地图面积**；
-  // 浮层车道有可读下限并随视口增长（封顶 15rem），且只覆盖 Stage 侧带。
   const contractFailures = []
   const requireContract = (ok, message) => { if (!ok) contractFailures.push(message) }
 
   for (const [name, metrics] of geometryByName) {
-    if (!metrics?.hudWidth) continue // 非 workspace 场景（raster / marker-true-position）不参与
+    if (!metrics?.hudWidth) continue
     const label = `${name}: map=${metrics.mapSide} hud=${metrics.hudWidth} main=${metrics.mainWidth}`
-    // 单列 workspace：HUD 吃满整行（名册没有列可分）。
     requireContract(Math.abs(metrics.hudWidth - metrics.mainWidth) <= 1,
       `HUD must span the full workspace (roster must not own grid columns): ${label}`)
     requireContract(metrics.mapSide <= metrics.availableHeight + 1,
@@ -838,8 +770,6 @@ try {
       `map viewport share must be measured: ${label} share=${metrics.mapShare}`)
   }
 
-  // 浮层车道的可读下限：宽档 11rem 起、随视口增长（16vw），封顶 15rem；
-  // 手机横屏 dense 行 clamp(8.25rem, 17vw, 9rem)。
   requireContract(tabletOpen.laneWidth >= 11 * 16 - 0.5,
     `tablet roster overlay must keep its readable floor (176px): ${tabletOpen.laneWidth}`)
   requireContract(desktopOpen.laneWidth > tabletOpen.laneWidth,
@@ -849,7 +779,6 @@ try {
   requireContract(phoneLandscapeOpen.laneWidth >= 8.25 * 16 - 0.5 && phoneLandscapeOpen.laneWidth <= 9 * 16 + 0.5,
     `phone landscape roster overlay must respect clamp(8.25rem, 17vw, 9rem): ${phoneLandscapeOpen.laneWidth}`)
 
-  // 名册开合不得改变地图正方形：开 = 浮层覆盖侧带；收 = 地图独占全宽。面积必须相等。
   for (const [closed, open, label] of [
     [desktop, desktopOpen, 'desktop-1600'],
     [tablet, tabletOpen, 'tablet-1024'],
@@ -858,7 +787,6 @@ try {
     requireContract(Math.abs(closed.mapSide - open.mapSide) <= 1,
       `roster expand/collapse must not change the map square (${label}): closed=${closed.mapSide} open=${open.mapSide}`)
   }
-  // 地图 viewport 占比独立度量（PR 验收数据）：宽度受限形态在名册浮层化后正方形吃满全宽。
   requireContract(desktop.mapSide >= desktopOpen.laneWidth,
     `desktop map must be at least as wide as a roster overlay lane (roster no longer shrinks the map): map=${desktop.mapSide}`)
   requireContract(phoneLandscapeSmall.mapSide > 0,
@@ -867,9 +795,6 @@ try {
     throw new Error(`workspace roster overlay contract:\n- ${contractFailures.join('\n- ')}`)
   }
 
-  // —— 可达性探针自测：探针自己必须能发现 #727 这一类问题，同时不能误伤 ——
-  // 只看中心点、或者把「命中了祖先」算成可达的探针，对部分裁剪 / 部分覆盖 / pointer-events 穿透
-  // 全都会给出绿色。这里用确定性夹具逐项锁定判定方向。
   {
     const htmlPath = resolve(temp, 'reachability-self-test.html')
     writeFileSync(htmlPath, reachabilitySelfTestHtml(), 'utf8')
@@ -901,8 +826,6 @@ try {
     console.log('[browser-layout] reachability-self-test OK（部分裁剪 / 部分覆盖 / pointer-events 穿透均判失败；可滚动触达与逃出 overflow 的 fixed 均判通过）')
   }
 
-  // —— 3D 伤害数字覆盖层：真实组件 + 真实 CSS 的浏览器几何 / 跟随 / 出屏 / 镜像门禁 ——
-  // 覆盖层是纯 DOM（无 WebGL、无资产），所以能在真浏览器里锁几何；3D 场景画面观感仍归用户人工验收。
   const { startFixtureServer } = await import('./browser-fixtures/fixture-server.mjs')
   const fixture = await startFixtureServer()
   try {
@@ -910,8 +833,6 @@ try {
     const overlayPage = new Page(browser.client, sessionId)
     await overlayPage.enable()
     await overlayPage.emulate({ width: 1200, height: 800, touch: false, deviceScaleFactor: 1 })
-    // 覆盖层 fixture 会冷启动 Vite 并转译整条 consumable/badge 依赖链；实测冷缓存下首次 complete 约需 50s，
-    // 超过 goto 默认 20s。放宽到 90s 只覆盖加载等待，几何 / 跟随 / 出屏 / 镜像断言不变。
     await overlayPage.goto(`${fixture.origin}/scripts/browser-fixtures/damage-overlay.html`, { timeout: 90_000 })
     await overlayPage.waitForValue('!!(window.__damageOverlay && window.__damageOverlay.ready())', (ready) => ready === true,
       { label: '3d damage overlay fixture ready' })
@@ -929,10 +850,6 @@ try {
     await fixture.server.close()
   }
 
-  // —— 2D 炮线浅色地图对比度：真实 BattleMap + 纯白背景 + 生产 SSOT ——
-  // 统一炮线色后，阵营 tracer（35% 外圈 + 白色内芯）在雪地图这类浅底上会失去轮廓；
-  // 这里锁两层事实：深色衬底来自 --color-on-team-neutral，且实际截图在纯白上达到
-  // 非文本图形 3:1 对比度；负向对照隐藏衬底后必须掉回 3:1 以下，证明门禁能发现回归。
   {
     const tracerFixture = await startFixtureServer()
     try {
@@ -959,7 +876,6 @@ try {
           if (!sameRgb(rgbStringToRgb(line.stroke), hexToRgb(expectedTracers[index]))) {
             throw new Error(`tracer ${index} must resolve from the shared tracer variant: got ${line.stroke}, want ${expectedTracers[index]}`)
           }
-          // 外层光晕按既有契约以 35% 不透明度绘制；深色衬底保持整条 line 的不透明度。
           if (line.opacity !== '0.35') throw new Error(`tracer ${index} fixture must render its glow at the production 35%: ${line.opacity}`)
         })
 

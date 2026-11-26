@@ -18,7 +18,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 百场管理员审核与终态迁移。创建、取消与回放锁生命周期仍由 submission service 持有。 */
 @Service
 public class HundredModerationService {
     private final HundredBattleSubmissionRepository repository;
@@ -85,7 +84,6 @@ public class HundredModerationService {
                 requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
     }
 
-    /** 每条使用独立事务，保留 partial success 与终态证据清理语义。 */
     public BulkDeleteResultDto bulkDeleteCurrent(
             final String adminUserId, final List<Long> ids,
             final String deleteReason, final String deleteReasonText) {
@@ -132,7 +130,6 @@ public class HundredModerationService {
         return result;
     }
 
-    /** Strictly lock/check CURRENT, flush SUPERSEDED first, then persist the approved submission. */
     private HundredBattleSubmission promoteToCurrent(
             final HundredBattleSubmission submission, final int approvedAverageDamage,
             final int approvedBattleCount, final String approvedBy, final OffsetDateTime approvedAt,

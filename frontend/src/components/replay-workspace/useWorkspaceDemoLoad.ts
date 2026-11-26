@@ -1,7 +1,3 @@
-/**
- * ReplayWorkspace —— 官方示例装载（拆分自 ReplayWorkspace.vue，行为原样）。
- * 拥有 demoController 生命周期；selectionRevision 变化即作废在飞装载。
- */
 import { ref, watch } from 'vue'
 import { REPLACE_DECLINED } from '../../shared/onboarding.js'
 import { loadOfficialDemo } from '../../replay-local/demo.js'
@@ -44,7 +40,6 @@ export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confir
   let demoController: AbortController | null = null
   let disposed = false
 
-  /** Reuse the existing session. A confirmation never authorizes a later changed selection. */
   async function loadDemo(signal?: AbortSignal): Promise<void> {
     if (isDemoSelection.value && resp.value && analysis.value.phase === 'ready') {
       await setCapability('data')
@@ -75,7 +70,6 @@ export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confir
         const file = await loadOfficialDemo(controller.signal)
         controller.signal.throwIfAborted()
         if (disposed || selectionRevision.value !== revision) throw new DOMException('Official replay superseded', 'AbortError')
-        // The synchronous selection commit must not abort its own completed download.
         demoController = null
         updateDemoFile(file)
       }
@@ -109,7 +103,6 @@ export function useWorkspaceDemoLoad({ workspace, setCapability, analyze, confir
     demoError.value = ''
   }, { flush: 'sync' })
 
-  /** 宿主卸载：作废在飞装载并标记 disposed（不再接受新的完成回调）。 */
   function dispose() {
     disposed = true
     demoController?.abort()

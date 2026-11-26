@@ -96,9 +96,6 @@ wait_for_business_database() {
 
 tx_alloy_health() {
   local canary_id="deploy-$(date +%s)-$$"
-  # Canary container names live in globals because the RETURN-trap cleanup
-  # runs after the function's local scope is gone (set -u would abort on the
-  # unbound names).
   TX_ALLOY_BACKEND_CANARY="business-api-observability-canary-${canary_id}"
   TX_ALLOY_KEYCLOAK_CANARY="keycloak-observability-canary-${canary_id}"
   local backend_name="$TX_ALLOY_BACKEND_CANARY" keycloak_name="$TX_ALLOY_KEYCLOAK_CANARY"
@@ -125,8 +122,6 @@ tx_alloy_health() {
     return 1
   fi
 
-  # Compose service labels are the authoritative match key for the TX Alloy
-  # config; the labels here are exactly the production ones.
   docker run -d --network wotb_tx_internal \
     --label com.docker.compose.service=business-api \
     --name "$backend_name" alpine:3.22 \
@@ -137,12 +132,6 @@ tx_alloy_health() {
     --name "$keycloak_name" alpine:3.22 \
     sh -c "printf '%s\n' '$keycloak_marker'; sleep 90" >/dev/null \
     || { FAILED_SERVICE=alloy-tx; return 1; }
-  # A 404 is expected and proves the real frontend nginx access-log path; the
-  # Android dashboard counts only status=200, so a 404 never inflates usage.
-  # 直连**本机** frontend 容器，而不是经 Caddy 的 2:8 加权池：合金只采集本机容器日志，
-  # 而加权探针约 80% 落 TX2 —— 那台的事件永远到不了本机合金，检查自 2026-10-07 K7C
-  # 加权上线后必然失败（10-10 实测 12 次探针仅 2 次落 TX1），失败处理还会把合金停机。
-  # 带生产 Host 头直连，保证 404 事件落在被采集的那一台。
   probe_http frontend-canary "http://wotb-frontend/download/android/$frontend_apk" 'Host: wotbtools.com' >/dev/null 2>&1 || true
   FAILED_SERVICE=alloy-tx
 
@@ -199,9 +188,6 @@ blocking_health() {
     fi
   fi
   if is_selected business-api; then
-    # The application surface stays TX-internal; management also binds to
-    # WireGuard for the Yecao Prometheus scrape. Prove both paths from the
-    # deployment-owned health-probe container.
     wait_for_probe tx-business-api http://business-api:8088/actuator/health || return 1
     wait_for_probe business-api-app http://business-api:8087/api/health || return 1
   fi
@@ -209,16 +195,9 @@ blocking_health() {
     docker compose -p deploy -f "$LIVE_COMMON" -f "$LIVE_COMPOSE" exec -T wotb-frontend nginx -t >/dev/null \
       || { FAILED_SERVICE=frontend-static; echo "frontend nginx config: FAIL" >&2; return 1; }
     wait_for_probe frontend-static http://wotb-frontend/ 'Host: wotbtools.com' || return 1
-    # K6B-2A: nginx proxies /api/ to BACKEND_UPSTREAM, so probing /api/health *through*
-    # the frontend proves the placement the running container actually renders - never
-    # the Business API directly. A cutover whose endpoint does not answer (for example a
-    # WireGuard address that is not reachable) returns 502 here, so the frontend
-    # deployment fails immediately instead of leaving a half-broken consumer behind
-    # until the manual runtime gate runs.
     wait_for_probe frontend-api http://wotb-frontend/api/health 'Host: wotbtools.com' || return 1
   fi
   if is_selected caddy; then
-    # The gateway's own process/config readiness is separate from upstream routes.
     wait_for_probe caddy-ready http://caddy/_wotb/ready || return 1
     wait_for_probe caddy-upstream-frontend http://caddy/_wotb/frontend/api/health || return 1
     wait_for_probe caddy-upstream-keycloak http://caddy/_wotb/keycloak/realms/wotbtools/.well-known/openid-configuration || return 1

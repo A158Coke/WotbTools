@@ -37,8 +37,6 @@ class TeamReplayAnalysisServicePromptTest extends TeamReplayAnalysisServiceTestS
                 "user-facing prompt body must not contain 队伍- hash fallback");
         assertTrue(teamLastBody().contains("AUTHORITATIVE_TEAM_RESULT"));
         assertTrue(teamLastBody().contains("OBSERVED_EVENT_SUBSET_NOT_AUTHORITATIVE"));
-        // 生产入口携带有效 reconstruction → recorder entity 必须已解析，不得再声明 UNMAPPED
-        // （UNMAPPED/REENTRY limitation 的产生由 core 的 TeamPerspectiveResolverTest 覆盖）。
         assertFalse(teamLastBody().contains("RECORDER_ENTITY_UNMAPPED"),
                 "valid reconstruction must resolve the recorder entity");
         assertFalse(teamLastBody().contains("ParticipantMappingEvent"));
@@ -101,7 +99,6 @@ class TeamReplayAnalysisServicePromptTest extends TeamReplayAnalysisServiceTestS
         final AiReviewDonePayload result = analyzeTeam(service, fixture, AllowedLanguage.ZH);
         assertEquals("team review", result.analysis());
         assertNotNull(result.teamReview());
-        // 单文件 team single 路径：SINGLE_TEAM_CONTEXT，无 MULTI_TEAM_CONTEXT / PERSPECTIVE 分区
         assertTrue(teamLastBody().contains("SINGLE_TEAM_CONTEXT"),
                 "Must use SINGLE_TEAM_CONTEXT");
         assertTrue(teamLastBody().contains("teamDisplayLabel="),
@@ -161,8 +158,6 @@ class TeamReplayAnalysisServicePromptTest extends TeamReplayAnalysisServiceTestS
 
     @Test
     void duplicateTeamMemberLimitationRendersIntoTeamPrompt() {
-        // 重复 accountId 的 context 无法由 analyzeTeam 的 TeamContextBuilder 产生，因此
-        // 直接覆盖 production 使用的两段契约：RosterEvidence 检测 + Team Prompt 渲染。
         final SingleTeamBattleAnalysisContext context = duplicateMemberContext();
         final TeamRosterResolver.RosterEvidence evidence = TeamRosterResolver.RosterEvidence.from(context);
         assertTrue(evidence.limitations().contains("DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS"),
@@ -190,7 +185,6 @@ class TeamReplayAnalysisServicePromptTest extends TeamReplayAnalysisServiceTestS
                 "Single team perspective must produce exactly 1 team request");
 
         final String first = teamRequests.get(0).userPrompt();
-        // file= 恒为空（生产入口不再携带 fileName），改为断言「录像者所在队伍即视角队伍」。
         assertTrue(perspectiveBodySection(first).contains("Ally"),
                 "Request must be the ally perspective");
         assertFalse(perspectiveBodySection(first).contains("Enemy"),

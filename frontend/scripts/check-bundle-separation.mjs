@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-/**
- * Bundle 分离检查：Tier X 车型 / 坦克贴图资产（import.meta.glob 静态打包）不得进入
- * 普通用户**初始主加载路径**。
- *
- * 背景：两类资产的唯一运行时消费方都是生产 runtime.js（Battle Playback / 选手 Drawer
- * 在真正需要时才 await import）——本门禁守护该分离不变。
- *
- * 用法（frontend 目录，build 之后）：
- *   pnpm run build && node scripts/check-bundle-separation.mjs
- *
- * 检查（基于静态 import 依赖图，不用文件 hash / 固定 chunk 名判断）：
- * 1. 从 index.html 入口开始 BFS 递归解析所有初始静态可达的 .js chunk；
- * 2. 这些初始可达 chunk 都不得包含 'tank-portraits' 或 'vehicle-models/assets' 标记
- *   （谁把资产静默 import 进初始路径 → FAIL）；
- * 3. 存在**初始不可达**的 lazy chunk 分别承载坦克贴图 glob 与车型 runtime glob
- *   → 代码分割成立（portrait/vehicle runtime 仅由动态 import 触达）；
- * 4. dist/assets 存在独立 .webp 文件 → 资产未被内联进 JS。
- */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,10 +7,8 @@ import { MODEL_DEFINITIONS } from '../src/vehicle-models/mapping.js'
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')
 const ASSET_MARK = 'vehicle-models/assets'
 const PORTRAIT_MARK = 'tank-portraits'
-// vehicle-models runtime.js 的 import.meta.glob 相对键（构建后保留，如 "./assets/<modelKey>/metadata.json"）
 const RUNTIME_GLOB_MARK = './assets/'
 
-/** 解析一个 .js chunk 内所有静态 import / export-from 的模块说明符。 */
 function staticImportSpecifiers(filePath) {
   const src = fs.readFileSync(filePath, 'utf8')
   const specs = new Set()
@@ -42,14 +22,12 @@ function staticImportSpecifiers(filePath) {
   return [...specs]
 }
 
-/** 把相对说明符解析为本地 .js 文件绝对路径；外部/裸说明符返回 null。 */
 function resolveLocalJs(spec, fromFile) {
   if (!spec || (!spec.startsWith('./') && !spec.startsWith('../'))) return null
   const abs = path.resolve(path.dirname(fromFile), spec)
   return abs.endsWith('.js') ? abs : null
 }
 
-/** 从入口开始 BFS，收集所有初始静态可达的 .js chunk（绝对路径集合）。 */
 function collectReachable(entryAbs) {
   const seen = new Set()
   const queue = [entryAbs]
@@ -117,7 +95,6 @@ function main() {
   let failures = 0
   failures += checkMappedVehicleAssets()
 
-  // 1) 初始静态可达 chunk 不得包含车型/坦克贴图资产标记
   const badReach = [...reachable].filter((f) => {
     const c = fs.readFileSync(f, 'utf8')
     return c.includes(PORTRAIT_MARK) || c.includes(ASSET_MARK)
@@ -129,7 +106,6 @@ function main() {
     console.log(`[PASS] 初始静态可达 ${reachable.size} 个 .js chunk 均不含车型/坦克贴图资产标记`)
   }
 
-  // 2) 存在初始不可达的 lazy chunk 承载坦克贴图 glob
   const lazyPortrait = allJs.filter((f) => {
     const abs = path.join(assetsDir, f)
     if (reachable.has(abs)) return false
@@ -142,7 +118,6 @@ function main() {
     failures += 1
   }
 
-  // 2b) 全构建内不得有任何 chunk 静态 import 坦克贴图 runtime（否则它被打进静态可达图）。
   const portraitChunkAbs = new Set(lazyPortrait.map((f) => path.join(assetsDir, f)))
   const portraitStaticImporters = []
   for (const fc of allJs) {
@@ -159,7 +134,6 @@ function main() {
     console.log('[PASS] 坦克贴图 runtime 仅由动态 import 触达（无 chunk 静态 import 它）')
   }
 
-  // 3) 存在初始不可达的 lazy chunk 承载车型 runtime glob
   const lazyVehicle = allJs.filter((f) => {
     const abs = path.join(assetsDir, f)
     if (reachable.has(abs)) return false
@@ -173,7 +147,6 @@ function main() {
     failures += 1
   }
 
-  // 4) dist/assets 存在独立 .webp 文件（未内联进 JS）
   const webpCount = fs.readdirSync(assetsDir).filter((f) => f.endsWith('.webp')).length
   if (webpCount > 0) {
     console.log(`[PASS] dist/assets 存在 ${webpCount} 个独立 .webp 资产文件（未内联进 JS）`)

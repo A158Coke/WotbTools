@@ -20,7 +20,6 @@ test "$AGENT_RELEASE" = "$MANIFEST_RELEASE" || {
   exit 1
 }
 
-# listing 文件而不是管道：`producer | grep -q` 在 `set -o pipefail` 下会因 SIGPIPE 假失败。
 listing_file="$RUNNER_TEMP/release-apk-listing.txt"
 unzip -Z1 "$APK" > "$listing_file"
 for required in \
@@ -34,8 +33,6 @@ for required in \
     exit 1
   }
 done
-# Sponsor 运行时内容：pin 存在时 APK 必须逐文件带上配置**与配置引用的每一张图**，
-# 且与 pin 住的资产包逐字节一致（不是「至少有一张图」就算过）。
 if [ "$STEP_SPONSOR_STATE" = "injected" ]; then
   python3 - "$APK" "$listing_file" "$STEP_SPONSOR_BUNDLE" <<'PY'
 import hashlib, json, sys, tarfile, zipfile

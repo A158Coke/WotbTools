@@ -4,22 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveWasmDevFile } from '../vite.config.js'
 
-/**
- * `/wasm` dev middleware 的路径解算边界。
- *
- * dev server 可能被 `vite --host` / Remote Link / 容器端口 / LAN 暴露，`req.url` 是不可信输入；
- * 这里锁定的是「最终读取的文件一定位于 WASM 制品根内」——用**真实存在**的根外文件做诱饵，
- * 证明拒绝来自 containment 判定，而不是「恰好不存在」。
- */
 function makeFixture() {
   const base = mkdtempSync(join(tmpdir(), 'wotb-wasm-dev-'))
   const root = join(base, 'common-wasm')
   mkdirSync(join(root, 'abc1234'), { recursive: true })
   writeFileSync(join(root, 'abc1234', 'wotb_replay_wasm.js'), '// agent wasm wrapper\n')
-  // 根外的真实 .js 文件：containment 判定必须挡住它（而不是因为不存在才拒绝）。
   writeFileSync(join(base, 'outside.js'), '// outside the wasm root\n')
   writeFileSync(join(base, 'secret.txt'), 'not a module\n')
-  // 以 .js 结尾的**目录**：不能被当成文件流出去。
   mkdirSync(join(root, 'box.js'))
   return { base, root }
 }
@@ -68,7 +59,6 @@ describe('resolveWasmDevFile · traversal 必须拒绝', () => {
   })
 
   it('拒绝反斜杠拼接的越界（Win32 分隔符语义）', () => {
-    // POSIX 下 `\` 是普通文件名字符，此时目标是「不存在」而不是越界；两种都必须是 ok:false。
     expect(resolveIn('..\\outside.js').ok).toBe(false)
   })
 })
@@ -112,7 +102,6 @@ describe('resolveWasmDevFile · symlink', () => {
     symlinkSync(join(fixture.base, 'outside.js'), join(fixture.root, 'link-out.js'), 'file')
     symlinkSync(join(fixture.root, 'abc1234', 'wotb_replay_wasm.js'), join(fixture.root, 'link-in.js'), 'file')
   } catch {
-    // Windows 非开发者模式不允许建 symlink；此时跳过（CI 在 Linux 上会真实执行）。
     symlinkOk = false
   }
 

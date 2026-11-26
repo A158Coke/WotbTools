@@ -1,10 +1,3 @@
-/**
- * 名人堂的 URL 状态（审计 PG-08）：Tab、筛选、页码写进 query，返回 / 分享 / 刷新都能恢复。
- * 纯函数：只做校验与序列化，读写路由由 HoFPage 负责。默认值不写进 URL，保持链接干净。
- *
- * 键：tab（single|hundred|mark3）· page · tank（车辆 id）· nation · type · tier
- *     · bt（RANDOM|RATING，仅单场）· nick（仅单场）· limit（20|50|100，仅单场）
- */
 export const HOF_TABS = Object.freeze(['single', 'hundred', 'mark3'])
 export const HOF_LIMITS = Object.freeze([20, 50, 100])
 const BATTLE_TYPES = new Set(['RANDOM', 'RATING'])
@@ -20,7 +13,6 @@ function text(value) {
   return typeof s === 'string' ? s.trim() : ''
 }
 
-/** route.query → 已校验的状态；非法值回落到默认值。 */
 export function parseHofQuery(query = {}) {
   const tab = HOF_TABS.includes(text(query.tab)) ? text(query.tab) : 'single'
   const limit = positiveInt(query.limit)
@@ -38,7 +30,6 @@ export function parseHofQuery(query = {}) {
   }
 }
 
-/** 状态 → query（只含非默认值；单场专属键在其他 Tab 下不写）。 */
 export function serializeHofQuery(state) {
   const query = {}
   if (state.tab && state.tab !== 'single') query.tab = state.tab
@@ -55,7 +46,6 @@ export function serializeHofQuery(state) {
   return query
 }
 
-/** 比较两个 query 的名人堂部分是否相同（忽略 view 等其他键与键顺序）。 */
 export function sameHofQuery(a, b) {
   const left = serializeHofQuery(parseHofQuery(a))
   const right = serializeHofQuery(parseHofQuery(b))

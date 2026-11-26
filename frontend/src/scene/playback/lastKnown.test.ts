@@ -1,12 +1,8 @@
-// lastKnown 纯函数单测：协议 AoI 在场段是唯一语义判别器（项目 AGENTS.md 禁止统计推断）。
-// 锁定的不变量：在场 → null；段间空隙 → 前段末采样；战斗尾声 → 末段末采样；
-// 早于首段 / 无段 / 空数组 / 畸形输入 → null（fail-closed）；+∞ 末段（缺 t_out）恒在场。
 import { describe, expect, it } from 'vitest'
 import { lastKnownPoseAt, replacedBySuccessorAt } from './lastKnown.js'
 import type { LastKnownPose } from './lastKnown.js'
 
 const T_START = 5
-/** 250 个采样 → 覆盖 [5, 30)（步长 0.1s）；第 i 个采样位置 = (i, i*10, -i)。 */
 const makePos = (n = 250): number[] =>
   Array.from({ length: n * 3 }, (_, k) => {
     const i = Math.floor(k / 3)
@@ -39,7 +35,6 @@ describe('lastKnownPoseAt — 在场时段', () => {
 describe('lastKnownPoseAt — 不在场（最后已知）', () => {
   it('段间空隙 → 前段（最近一个已开始段）的段内末采样', () => {
     const result = lastKnownPoseAt([10, 20, 30, 40], 25, makePos(), T_START) as LastKnownPose
-    // 段末 20 → 网格采样下标 (20-5)/0.1 = 150，时刻恰为 20.0
     expect(result.t).toBeCloseTo(20, 6)
     expect(result.pos).toEqual(posAt(150))
   })
@@ -51,7 +46,6 @@ describe('lastKnownPoseAt — 不在场（最后已知）', () => {
   })
 
   it('候选段整段落在网格之后 → null（钳到末采样也在段外，不外推）', () => {
-    // 网格 250 采样（末采样 29.9）早于候选段起点 30：段内无任何采样证据 → fail-closed。
     const result = lastKnownPoseAt([10, 20, 30, 40], 45, makePos(250), T_START)
     expect(result).toBeNull()
   })
@@ -63,8 +57,6 @@ describe('lastKnownPoseAt — 不在场（最后已知）', () => {
   })
 
   it('短段不足一个网格间隔且不含采样 → null（不拿段外采样顶替）', () => {
-    // 段 [12.34, 12.34]（同开同闭）不含任何网格点：向下取整得到的 12.3 早于段起点，
-    // 是该次在场**从未观测**的位置——fail-closed 返回 null（幽灵与名牌都不显示）。
     const result = lastKnownPoseAt([12.34, 12.34], 15, makePos(), T_START)
     expect(result).toBeNull()
   })
@@ -118,15 +110,15 @@ describe('replacedBySuccessorAt — 同账号后继实体（身份 + 当前时�
     { eid: 50, account_id: 8 },
   ]
   const spans = new Map<number, number[]>([
-    [42, [10, 48]], // 旧实体：AoI 重入前的一段
-    [49, [49, 51]], // 同账号新实体：重入后接管
+    [42, [10, 48]],
+    [49, [49, 51]],
     [50, [10, 60]],
   ])
   const spansOf = (eid: number) => spans.get(eid)
 
   it('接管时刻之后 → true（幽灵抑制）；接管前 → false（保留最后已知，倒带恢复）', () => {
     expect(replacedBySuccessorAt(vehicles, spansOf, 42, 49.5)).toBe(true)
-    expect(replacedBySuccessorAt(vehicles, spansOf, 42, 48.5)).toBe(false) // 评审用例：重入前一刻
+    expect(replacedBySuccessorAt(vehicles, spansOf, 42, 48.5)).toBe(false)
     expect(replacedBySuccessorAt(vehicles, spansOf, 42, 20)).toBe(false)
   })
 

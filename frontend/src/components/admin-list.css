@@ -1,7 +1,3 @@
-/* 管理后台列表模板（docs/frontend/ui-system.md「管理后台列表模板」）：表格 / 手机卡片、分页、详情列表、状态徽标、口径提示。
- * 全局类名统一带 admin-list- 前缀，不与各页 scoped 类（如名人堂管理的 .admin-table）冲突；只用语义 token。
- * 页面骨架：ShowcaseHero compact（kicker + 标题，操作在工具条）→ AdminFilterBar → AdminBulkBar → .admin-list-table → .admin-list-pagination，
- * 点行打开 AdminDetailDrawer（右侧 AppSheet），危险操作在抽屉底部的 AdminDangerZone。 */
 
 .admin-list-note {
   display: flex;
@@ -22,7 +18,6 @@
 .admin-list-note > strong { flex: none; color: var(--color-accent-text); }
 .admin-list-note > ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 
-/* 连通性 / 加载 / 空状态：中性语气（不是 danger） */
 .admin-list-status {
   margin: 0 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
@@ -34,7 +29,6 @@
 .admin-list-status.is-error { border-color: var(--color-danger); color: var(--color-danger); }
 .admin-list-empty { margin: 0; padding: var(--space-8) 0; color: var(--color-text-secondary); text-align: center; }
 
-/* 筛选条与抽屉里的输入控件 */
 .admin-list-field { display: grid; gap: var(--space-1); min-width: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .admin-list-input {
   box-sizing: border-box;
@@ -50,7 +44,6 @@
 }
 .admin-list-input:disabled { cursor: not-allowed; opacity: .5; }
 
-/* 表格：容器横向滚动；isolation 建立局部层叠上下文，表头只用 --table-z-*（§5） */
 .admin-list-table-wrap {
   isolation: isolate;
   overflow-x: auto;
@@ -86,7 +79,6 @@
 .admin-list-table tr.is-active td { background: var(--color-surface-2); }
 .admin-list-table tr.is-active td:first-child { border-inline-start: var(--space-1) solid var(--color-accent); }
 
-/* 行的键盘入口：主列是按钮，点整行与按它是同一个动作 */
 .admin-list-open {
   display: inline-flex;
   align-items: center;
@@ -103,7 +95,6 @@
 }
 .admin-list-open:disabled { cursor: not-allowed; }
 
-/* 复选框：可视尺寸取 --control-check，label 提供最小点击区域 */
 .admin-list-table .cell-check { width: var(--hit-min); padding: 0; text-align: center; }
 .admin-list-check {
   display: inline-flex;
@@ -135,7 +126,6 @@
 .admin-list-badge.is-success { background: color-mix(in oklab, var(--color-success) 16%, var(--color-surface-1)); color: var(--color-success); }
 .admin-list-badge.is-warning { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
 
-/* 分页：左侧页码信息，右侧翻页 / 跳页 / 每页数量 */
 .admin-list-pagination {
   display: flex;
   flex-wrap: wrap;
@@ -150,7 +140,6 @@
 .admin-list-pagination-controls .admin-list-input { width: auto; }
 .admin-list-pagination-controls input.admin-list-input { inline-size: calc(var(--control-h-md) * 2); text-align: center; }
 
-/* 抽屉内容：分区标题 + 键值列表 + 原文 */
 .admin-list-section + .admin-list-section { margin-top: var(--space-5); }
 .admin-list-section-title { margin: 0 0 var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .admin-list-dl {
@@ -183,7 +172,6 @@
   .admin-list-table tr.is-clickable:hover td { background: var(--color-surface-2); }
 }
 
-/* 小屏：表格变卡片列表（DC-ARC-06）。表头只留「全选本页」，其余列名进每个单元格的 data-label。 */
 @media (width < 768px) {
   .admin-list-table-wrap { overflow: visible; border: 0; background: none; box-shadow: none; }
   .admin-list-table,

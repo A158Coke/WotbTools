@@ -9,7 +9,6 @@ vi.mock('../composables/usePlatformBridge.js', () => ({
   callBridge: vi.fn(), getCapabilities: vi.fn(), getNativeBridgeVersion: vi.fn(),
   isNativeBridgeCompatible: version => version === 2,
 }))
-// Small byte budgets exercise the real streaming boundary without allocating 200 MiB per unit test.
 vi.mock('../utils/replayUpload.js', () => ({
   MAX_REPLAY_FILE_BYTES: 4, MAX_REPLAY_TOTAL_BYTES: 6, isReplayFileName: name => /\.wotbreplay$/i.test(name ?? ''),
 }))

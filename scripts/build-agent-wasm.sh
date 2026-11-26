@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# 依据 deploy/agent/source.json 锁定的上游完整 SHA，构建 WoT-Blitz-Agent 回放 WASM 产物。
-#
-# 产物输出 **commit-addressed 目录** `common/assets/wasm/<ref>/`（vite publicDir → dist
-# 拷贝 → 线上 /wasm/<ref>/ 伺服），并写入上游同形状的 fingerprint.json
-# （upstream_commit / tag，与 fetch-agent-wasm.sh 直取 Release 时一致），供运行期
-# 版本门禁与诊断使用。两条路径产出同一形状，前端 loader 不区分来源。
-#
-# 依赖：cargo、rustup target wasm32-unknown-unknown、wasm-bindgen-cli
-# （版本自动取上游 Cargo.lock 锁定值，缺失时 cargo install）。
-# 上游按精确 SHA 浅克隆（external read-only upstream dependency，契约 §4）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

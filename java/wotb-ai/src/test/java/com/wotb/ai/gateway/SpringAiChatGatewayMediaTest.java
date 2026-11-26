@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Real Spring AI adapter against loopback HTTP only; no external provider or credentials. */
 class SpringAiChatGatewayMediaTest {
     @Test
     void sendsImageAsDataUrlAndKeepsExistingTextRequestBehavior() throws Exception {

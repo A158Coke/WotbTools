@@ -231,8 +231,6 @@ class HpMomentumSkillTest {
         final List<AiEvidence> windows = skill.detect(skill.sample(recon, battle));
         assertEquals(1, windows.size());
         final AiEvidence window = windows.getFirst();
-        // 代表 = swing 最大的单个候选（cohort {rec,a,b,c,d}，-4000 → 1000），
-        // 不得拼接其它 cohort 的 before/after
         assertEquals(-4000.0, window.numbers().get("hpLeadBefore"));
         assertEquals(1000.0, window.numbers().get("hpLeadAfter"));
         assertEquals(5000.0, window.numbers().get("hpSwing"));

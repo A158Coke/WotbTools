@@ -10,13 +10,6 @@ services:
   business-postgres:
     image: postgres:18-alpine
     environment:
-      # Compose owns only the runtime and its bootstrap administrator. OpenTofu
-      # on TX owns the wotb database, the control_api application role, and its
-      # grants; Flyway owns every application table. The application credential
-      # is deliberately absent here: this runtime never receives it.
-      #
-      # POSTGRES_DB pins initial startup to postgres, so the image entrypoint
-      # cannot create a database named after the bootstrap administrator.
       POSTGRES_DB: postgres
       POSTGRES_USER: ${TX_BUSINESS_POSTGRES_ADMIN_USER:?TX_BUSINESS_POSTGRES_ADMIN_USER is required}
       POSTGRES_PASSWORD: ${TX_BUSINESS_POSTGRES_ADMIN_PASSWORD:?TX_BUSINESS_POSTGRES_ADMIN_PASSWORD is required}

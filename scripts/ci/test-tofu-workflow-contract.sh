@@ -45,8 +45,6 @@ assert "bash deploy/test-business-postgres-runtime.sh" in fixture["run"]
 print("PR OpenTofu validation has no plan/apply or production credentials")
 PY
 
-# Production local state is owner-host persistent, never SHA-staged. Keep the
-# bootstrap gate and backup inventory in this existing OpenTofu contract entry.
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path
@@ -210,8 +208,6 @@ for workflow in ("keycloak.yml", "keycloak-postgres.yml", "observability.yml"):
 print("Owner-host local state, bootstrap gates, backup, and retired ownership contracts OK")
 PY
 
-# Exercise the Grafana plan guard with local JSON fixtures only; this test never
-# initializes a backend or contacts the Grafana API.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
@@ -239,8 +235,6 @@ for actions in '["delete"]' '["delete","create"]' '["create","delete"]'; do
     bash "$ROOT/infra/tofu/grafana/validate-plan.sh" "$work/plan.tfplan"
 done
 
-# The observability owner backs up state while already holding its host lock.
-# Exercise that path against an isolated owner directory, without production state.
 mkdir -p "$work/owner/grafana-tofu-state"
 printf '%s\n' '{"version":4,"resources":[]}' > "$work/owner/grafana-tofu-state/terraform.tfstate"
 printf '%s\n' local-tofu-state-bootstrap-v1 > "$work/owner/grafana-tofu-state/bootstrap-complete"

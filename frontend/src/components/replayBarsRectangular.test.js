@@ -1,6 +1,3 @@
-// 回放血条 / 左右状态条外形契约（2026-11-19 用户口径）：
-// 车辆名牌 HP/装填条、HUD 左右队伍血条、名册行血条统一为矩形，不再使用胶囊圆角；
-// 圆角只保留在卡片、徽章等容器上。用 source-level 规则守卫，防止主题/样式重构把圆角加回来。
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'

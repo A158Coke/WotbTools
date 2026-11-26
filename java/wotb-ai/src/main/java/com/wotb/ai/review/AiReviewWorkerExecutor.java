@@ -22,29 +22,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 有界 AI Review / SSE worker executor：{@code ReconstructionController.analyze()}
- * 在 servlet request 线程只做校验与提交，真正的 AI 复盘（含上游流式调用）在
- * 此执行器的 worker 线程上运行，request 线程立即返回 {@code SseEmitter}。
- *
- * <p><b>容量设计（V1：2C4G VPS）</b>：默认 4 concurrent workers + 4 queued，
- * 最多 8 active/pending，第 9 个请求立即拒绝（{@code AI_REVIEW_BUSY} / 503）。
- * 可通过环境变量 {@code AI_REVIEW_WORKER_MAX_CONCURRENT} /
- * {@code AI_REVIEW_WORKER_QUEUE_CAPACITY} 调整（3/4/6 等无需 rebuild）。
- * 平台线程模式使用固定 worker + 有界队列；虚拟线程模式则为每个已接纳的
- * task 创建一个虚拟线程，并用独立 admission/active permits 保留相同的
- * {@code maxConcurrent + queueCapacity} backpressure。</p>
- *
- * <p><b>拒绝策略</b>：{@link ThreadPoolExecutor.AbortPolicy}——满载时抛
- * {@code RejectedExecutionException}，由 Controller 捕获后返回 503
- * {@code AI_REVIEW_BUSY}。绝不使用 {@code CallerRunsPolicy}（会让 servlet
- * request 线程执行 AI Review，重新引入 SSE blocking bug）。</p>
- *
- * <p><b>整体 deadline（E）</b>：请求在提交时刻计算 {@code now + overall-deadline-sec}
- * （默认 1100s，覆盖团队多次 AI 调用（Call #1 + Call #2 + 至多一次 recovery，每次 ≤315s）
- * 加余量；对齐前端 1100s / nginx 1120s），经 {@link AiRequestContext} 暴露给
- * worker；排队等待计入剩余预算，启动时预算耗尽直接干净失败 {@code AI_TIMEOUT}。</p>
- */
 @Component
 public class AiReviewWorkerExecutor implements AutoCloseable {
 
@@ -60,10 +37,6 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
     private final Semaphore admissionPermits;
     private final AtomicInteger virtualQueueDepth;
     private final AtomicBoolean closed = new AtomicBoolean();
-    /**
-     * 已进入 worker、尚未完成的 Review 数（Gauge {@code wotb_ai_review_in_flight}）：
-     * 不含排队等待的请求，也不含被 {@code AI_REVIEW_BUSY} 回绝的请求。
-     */
     private final AtomicInteger inFlight = new AtomicInteger();
     private final boolean virtualThreads;
     private final long overallDeadlineNanos;
@@ -135,32 +108,21 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
         }
     }
 
-    /** 测试便利构造器：使用默认 4/4/1100。 */
     public AiReviewWorkerExecutor() {
         this(DEFAULT_MAX_CONCURRENT, DEFAULT_QUEUE_CAPACITY, DEFAULT_OVERALL_DEADLINE_SEC,
                 true, null);
     }
 
-    /** 测试便利构造器：指定 workers/queue，整体 deadline 用默认 1100s。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity) {
         this(maxConcurrent, queueCapacity, DEFAULT_OVERALL_DEADLINE_SEC, true, null);
     }
 
-    /** 测试/显式装配便利构造器：可选择平台线程或虚拟线程。 */
     public AiReviewWorkerExecutor(final int maxConcurrent, final int queueCapacity,
                                   final long overallDeadlineSec,
                                   final MeterRegistry meterRegistry) {
         this(maxConcurrent, queueCapacity, overallDeadlineSec, true, meterRegistry);
     }
 
-    /**
-     * 提交任务；当 workers + queue 全满时抛 {@code RejectedExecutionException}
-     * （AbortPolicy），由调用方捕获并返回 503 {@code AI_REVIEW_BUSY}。
-     *
-     * <p>提交时刻即计算整体 deadline（now + overall-deadline-sec），经
-     * {@link AiRequestContext} 暴露给 worker；排队等待计入剩余预算，
-     * 启动时预算耗尽由服务层直接抛 {@code AI_TIMEOUT}。</p>
-     */
     public void execute(final Runnable task) {
         final long submittedNanos = System.nanoTime();
         if (closed.get()) {
@@ -196,7 +158,6 @@ public class AiReviewWorkerExecutor implements AutoCloseable {
         }
     }
 
-    /** Waits for already admitted work to finish; useful for deterministic benchmark teardown. */
     public boolean awaitTermination(final long timeout, final TimeUnit unit)
             throws InterruptedException {
         return executor.awaitTermination(timeout, unit);

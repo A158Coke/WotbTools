@@ -41,7 +41,6 @@ public record ConsumableLifecycleEvent(
         float effectiveParamSec
 ) implements ReplayEvent {
 
-    /** consumable lifecycle state（wire→state 骨：1/2/3/255）。 */
     public enum ConsumableLifecycleState {
         INITIALIZED,
         ACTIVATED,
@@ -60,10 +59,6 @@ public record ConsumableLifecycleEvent(
         };
     }
 
-    /**
-     * Version-scoped consumable wireCode→logicalItemId mapping shared by Type32 and Type5.
-     * Unknown values remain null while the raw wireCode is preserved by the caller.
-     */
     public static String logicalItemIdOf(final int wireCode) {
         return switch (wireCode) {
             case 0x08 -> "AUTOMATIC_FIRE_EXTINGUISHER";
@@ -81,7 +76,6 @@ public record ConsumableLifecycleEvent(
         };
     }
 
-    /** 该事件是否为已知 consumable（identity proven）。 */
     public boolean identityProven() {
         return logicalItemId != null;
     }

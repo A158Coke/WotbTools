@@ -2,20 +2,6 @@ package com.wotb.ai.gateway;
 
 import com.wotb.ai.config.AiModelProperties;
 
-/**
- * The single AI upstream retry policy, executed inside
- * {@link SpringAiChatGateway}. The SDK itself keeps {@code maxRetries} at 0,
- * so there is no retry multiplication (retry x retry).
- *
- * <p>Retryable: 429, connection failures, and AI_UPSTREAM_UNAVAILABLE with no
- * status or with 500/502/503/504.</p>
- *
- * <p>Never retried: read/response timeouts (AI_TIMEOUT - the upstream may have
- * already processed and billed the request, so a retry would double-charge),
- * authentication/permission failures, invalid request, model not found,
- * context too large, and empty/invalid completions (avoids paying twice for an
- * already billed response).</p>
- */
 public record AiRetryPolicy(
         int maxAttempts,
         long initialBackoffMillis,
@@ -50,10 +36,6 @@ public record AiRetryPolicy(
                 properties.retryBackoffMultiplier());
     }
 
-    /**
-     * Wait time for the {@code retryNumber}-th retry (1-based), exponential
-     * (base * multiplier^(n-1)) and capped at {@code maxBackoffMillis}.
-     */
     public long backoffMillis(final int retryNumber) {
         if (retryNumber < 1) {
             throw new IllegalArgumentException("retryNumber must be >= 1: " + retryNumber);
@@ -65,9 +47,6 @@ public record AiRetryPolicy(
         return Math.max(initialBackoffMillis, (long) delay);
     }
 
-    /**
-     * The single retryable check, aligned with the gateway's stable error codes.
-     */
     public boolean isRetryable(final AiUpstreamException error) {
         if (error == null) {
             return false;

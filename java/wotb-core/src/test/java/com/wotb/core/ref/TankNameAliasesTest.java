@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Alias normalization oracles: only exact registered aliases map to tankopedia canonical names. */
 class TankNameAliasesTest {
 
     @Test

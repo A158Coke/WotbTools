@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 开关（design-language §7.1 DC-SEL-06：只用于立即生效的布尔设置）：role=switch，44px 命中区，
-// 标签在左、轨道在右；切换给一次「选择」触感。
 import { haptic } from '../composables/useHaptics.js'
 
 defineProps<{ modelValue: boolean, label: string, description?: string }>()

@@ -2,13 +2,8 @@ interface StrokeNormal { x: number; y: number; z: number }
 interface StrokePoint { x: number; y: number; surfaceY?: number; surfaceN?: StrokeNormal }
 type Interval = [number, number]
 
-/** 同一 XZ 多层 surface 的 eraser hit 高度容差（米）。 */
 const ANNOT_ERASE_LAYER_EPS = 0.5
 
-/**
- * 橡皮擦 capsule 与一条直线段的参数区间：返回 t∈[0,1] 上被擦除的区间。
- * capsule = 到 eraser 线段的距离 ≤ radius，等价于「两端 disc ∪ 两条平行边之间的矩形」。
- */
 function capsuleIntervals(a: StrokePoint, b: StrokePoint, c: StrokePoint, d: StrokePoint, radius: number): Interval[] {
   const vx = b.x - a.x
   const vy = b.y - a.y
@@ -78,7 +73,6 @@ function capsuleIntervals(a: StrokePoint, b: StrokePoint, c: StrokePoint, d: Str
     const hi = Math.min(lineHi, projHi)
     if (hi > lo) intervals.push([lo, hi])
   }
-  // Body miss must not bypass caps: start/end discs are part of the capsule.
   addDisc(c)
   addDisc(d)
   return intervals
@@ -112,11 +106,6 @@ function pathLength(points: StrokePoint[]) {
   return total
 }
 
-/**
- * 语义 capsule eraser：对每条 stroke segment 求被擦除的 t 区间，取补集生成新 polyline。
- * 返回 null = 未命中（调用方保留原 annotation 引用）；[] = 整笔被擦净；否则为 ≥2 点的新段。
- * 子段精度是 3D 稀疏笔迹（远距离画、快速划）不漏擦的前提。
- */
 export function clipPenByEraser(points: (StrokePoint | null | undefined)[], eraserPoints: (StrokePoint | null | undefined)[], radius: number): StrokePoint[][] | null {
   if (!Array.isArray(points) || points.length < 2) return null
   const validNormal = (n: StrokeNormal | undefined): n is StrokeNormal => !!n && Number.isFinite(n.x) && Number.isFinite(n.y) && Number.isFinite(n.z)
@@ -131,12 +120,10 @@ export function clipPenByEraser(points: (StrokePoint | null | undefined)[], eras
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) continue
     const previous = cleanPoints[cleanPoints.length - 1]
     if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) <= 1e-9) {
-      // 同 XZ 的 ground→bridge 点去重时不能丢掉后一个点的 layer anchor。
       if (!Number.isFinite(previous.surfaceY) && Number.isFinite(point.surfaceY)) previous.surfaceY = point.surfaceY
       if (!validNormal(previous.surfaceN) && validNormal(point.surfaceN)) previous.surfaceN = point.surfaceN
       continue
     }
-    // cleanup 必须脱离原 annotation：duplicate merge 会写回，不能让 no-op 污染 history。
     cleanPoints.push(copyPoint(point))
   }
   if (cleanPoints.length < 2) return null
@@ -187,20 +174,17 @@ export function clipPenByEraser(points: (StrokePoint | null | undefined)[], eras
     }
     const len = Math.hypot(nx, ny, nz)
     if (!(len > 1e-6)) return null
-    // surfaceN 是 scene/world normal；eraser/stroke 坐标是 semantic XZ（x 取负）。
     return { x: -nx / len, y: ny / len, z: nz / len }
   }
-  // eraser 的 semantic capsule 仍是 2D；这里按 capsule interval 与 layer-compatible
-  // 子区间求交，不能只拿 interval 中点做一个 boolean gate。
   const layerDeltaAt = (a: StrokePoint, b: StrokePoint, c: StrokePoint, d: StrokePoint, t: number) => {
     const ay = anchorY(a)
     const by = anchorY(b)
     const cy = anchorY(c)
     const dy = anchorY(d)
-    if ((ay === null) !== (by === null)) return null // stroke 自身跨层：不借 capsule 连两层
-    if ((cy === null) !== (dy === null)) return null // eraser 自身跨层：同上
-    if (ay === null) return cy === null ? 0 : null   // terrain layer
-    if (cy === null) return null                     // anchored stroke 不被 terrain eraser 擦
+    if ((ay === null) !== (by === null)) return null
+    if ((cy === null) !== (dy === null)) return null
+    if (ay === null) return cy === null ? 0 : null
+    if (cy === null) return null
     const sx = a.x + (b.x - a.x) * t
     const sz = a.y + (b.y - a.y) * t
     const ex = d.x - c.x
@@ -214,8 +198,6 @@ export function clipPenByEraser(points: (StrokePoint | null | undefined)[], eras
     const eraserPoint = { x: c.x + ex * u, z: c.y + ez * u }
     const en = normalAt(c, d, u)
     if (!en) return Math.abs(sy - ey)
-    // 同一 plane 在不同 XZ 的 raw Y 可以差很多；把 eraser plane 延伸到 stroke XZ。
-    // 单方向检查即可区分同层 / 平行 offset；不做 point-vs-far-anchor 的过严双检。
     const expectedStrokeY = ey
       - (en.x * (strokePoint.x - eraserPoint.x) + en.z * (strokePoint.z - eraserPoint.z)) / en.y
     return Math.abs(sy - expectedStrokeY)

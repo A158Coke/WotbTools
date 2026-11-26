@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// 结果卡命中点跟随（行为测试）：渲染循环每帧调用 updateTrajInfoPos()，相机旋转后同一世界
-// 命中点的投影改变 → 卡片位置随之改变；命中点转到相机后方时隐藏。2026-11-16 用户裁示：
-// 射击结果卡保持在命中位置附近（旋转视角时），不是固定屏幕坐标或顶部停靠。
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { createTrajectoryCard } from './trajectoryCard.js'
@@ -59,7 +56,6 @@ describe('traj-info 命中点跟随', () => {
     const first = { left: card.style.left, top: card.style.top }
     expect(first.left).toMatch(/px$/)
 
-    // 相机绕到 +X 轴（仍看向原点）：同一世界命中点的投影移动，卡片必须跟着走。
     camera.position.set(10, 0, 0)
     camera.lookAt(0, 0, 0)
     camera.updateMatrixWorld(true)
@@ -92,7 +88,6 @@ describe('traj-info 命中点跟随', () => {
     const { card } = mount()
     const camera = makeCamera()
     const viewSwitch = document.querySelector('.armor-shot-view-switch') as HTMLElement
-    // 覆盖命中点附近的首选位（右下偏移），强制 chooser 选别处。
     viewSwitch.getBoundingClientRect = () => rect(300, 200, 500, 400)
     const tc = createTrajectoryCard({
       isDestroyed: () => false,
@@ -132,8 +127,6 @@ describe('traj-info 命中点跟随', () => {
     tc.setTrajInfoPos(new THREE.Vector3(0, 0, 0))
     tc.updateTrajInfoPos()
     expect(card.style.display).toBe('block')
-    // 模拟 HUD 面板展开覆盖原来的卡片区域（browser-armor-aiming 的门禁夹具同样会外部
-    // 写入卡片位置，再断言产品在 dirty 后把它移出）。
     panel.getBoundingClientRect = () => rect(0, 0, 600, 600)
     tc.markTrajInfoDirty()
     tc.updateTrajInfoPos()
@@ -145,8 +138,6 @@ describe('traj-info 命中点跟随', () => {
 
   it('隐藏期间容器变窄：恢复时按实际宽度重排，不按旧 left 量宽', () => {
     const { card } = mount()
-    // 位置相关宽度（absolute + width:auto 的 shrink-to-fit）：旧 left=700 时只能量到 100；
-    // 归零/正常位置量到 360。旧实现对隐藏恢复先按旧 left 量宽，落位后实际 360 会覆盖右侧 HUD。
     Object.defineProperty(card, 'offsetWidth', {
       configurable: true,
       get() {

@@ -24,8 +24,6 @@ from wotb_sc2 import Reader, Sc2ParseError, decode_bytes, read_archive
 SCG_MAGIC = b"SCPG"
 MAX_REASONABLE_NODE_COUNT = 1_000_000
 
-# DAVA eVertexFormat bit 0. PolygonGroup::UpdateDataPointersAndStreams handles
-# EVF_VERTEX first and exposes it as a float3 position stream.
 EVF_VERTEX = 1 << 0
 
 INDEX_FORMAT_UINT16 = 0
@@ -64,8 +62,6 @@ def read_scg(raw: bytes) -> dict[str, Any]:
         )
 
     polygon_groups = [read_archive(reader) for _ in range(node_count)]
-    # A duplicate id makes rb.datasource resolution ambiguous. Reject it at the
-    # shared parser boundary so inspectors/exporters cannot silently overwrite it.
     polygon_groups_by_id(polygon_groups)
 
     trailing_bytes = len(raw) - reader.offset

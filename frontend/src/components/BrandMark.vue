@@ -1,11 +1,7 @@
 <script setup>
-// 品牌图形（侧边栏 / 标题栏 / 首页）：内联 SVG，车体跟随主题文字色、增长柱用强调色，
-// 深浅两档都不需要两份位图。几何的唯一来源是 scripts/brand/generate_brand_assets.py；
-// 改图形先改那里，重新生成静态资源，再把同样的路径同步到这里。
 import { useId } from 'vue'
 
 defineProps({
-  /** 有可访问名称（如作为链接的唯一内容）时传 label；纯装饰时省略 */
   label: { type: String, default: '' },
 })
 

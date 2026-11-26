@@ -5,7 +5,6 @@ import com.wotb.core.util.PromptDataQuoter;
 
 import java.util.Locale;
 
-/** Shared deterministic text and tank/map display formatting helpers. */
 final class TeamEvidenceFormatter {
     private TeamEvidenceFormatter() {
     }

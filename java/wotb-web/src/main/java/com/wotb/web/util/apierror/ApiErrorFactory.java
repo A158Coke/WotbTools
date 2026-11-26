@@ -8,7 +8,6 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.util.Map;
 
-/** Single source for canonical error metadata and safe response construction. */
 @Component
 public class ApiErrorFactory {
 

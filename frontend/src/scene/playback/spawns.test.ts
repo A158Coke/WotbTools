@@ -1,9 +1,7 @@
-// spawns 纯模块测试：fail-closed 门、坐标镜像、贴地几何与生命周期（#835）。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createSpawnMarkers, type MapSpawnPoint } from './spawns.js'
 
-/** 记录 add/remove 的假 scene（模块只做 add/remove + dispose，无需真实渲染）。 */
 function fakeScene() {
   const added: THREE.Object3D[] = []
   const removed: THREE.Object3D[] = []
@@ -54,7 +52,6 @@ describe('createSpawnMarkers fail-closed 门', () => {
       null as unknown as MapSpawnPoint,
       { x: 30, y: 40 },
     ])
-    // 每个有效点 = 盘 + 环 两个对象
     expect(added.length).toBe(4)
   })
 })
@@ -67,13 +64,11 @@ describe('坐标与几何', () => {
     expect(added.length).toBe(2)
     for (const o of added) {
       const r = geomXZRange(o)
-      // 顶点全部落在 (−100, ·, −200) 附近（贴地采样允许 ±半径偏移）
       expect(r.xMin).toBeGreaterThan(-103.5)
       expect(r.xMax).toBeLessThan(-96.5)
       expect(r.zMin).toBeGreaterThan(-203.5)
       expect(r.zMax).toBeLessThan(-196.5)
     }
-    // 逐顶点贴地：groundY=5 → 所有顶点 y ≈ 5.05/5.08
     const discY = geomCenterY(added[0])
     expect(discY).toBeGreaterThan(4.9)
     expect(discY).toBeLessThan(5.3)
@@ -102,7 +97,7 @@ describe('坐标与几何', () => {
       return { geoSpy, matSpy }
     })
     markers.clear()
-    expect(removed).toEqual(added)   // 移除的正是添加过的对象
+    expect(removed).toEqual(added)
     disposals.forEach(({ geoSpy, matSpy }) => {
       expect(geoSpy).toHaveBeenCalledTimes(1)
       expect(matSpy).toHaveBeenCalledTimes(1)
@@ -118,12 +113,11 @@ describe('坐标与几何', () => {
     const firstCount = added.length
     markers.build([{ x: 9, y: 9 }])
     expect(added.length).toBe(firstCount + 2)
-    expect(removed.length).toBe(4)   // 旧图 2 点 × 盘+环
+    expect(removed.length).toBe(4)
   })
 })
 
 describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知中性）', () => {
-  /** 直接检查 MeshBasicMaterial 的实际颜色，不只看代码字符串。 */
   function matOf(o: THREE.Object3D): THREE.MeshBasicMaterial {
     return (o as THREE.Mesh).material as THREE.MeshBasicMaterial
   }
@@ -133,11 +127,8 @@ describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知
     const { scene, added } = fakeScene()
     const markers = createSpawnMarkers({ getScene: () => scene, groundY: () => 0 })
     markers.build([{ x: 1, y: 1, team: 1 }, { x: 2, y: 2, team: 2 }])
-    // disc / ring 交替（每点两个对象）；node 测试环境无 getComputedStyle → 按
-    // tokens.css 同值 fallback 断言（token 名 ↔ fallback 的映射守卫在本模块常量）
-    expect(hex(added[0])).toBe('5cc280')   // --color-team-1（green-400）
-    expect(hex(added[2])).toBe('f2786d')   // --color-team-2（red-400）
-    // 环是深色轮廓（--color-on-team-neutral），不是阵营色
+    expect(hex(added[0])).toBe('5cc280')
+    expect(hex(added[2])).toBe('f2786d')
     expect(hex(added[1])).toBe('1c1f1d')
     expect(hex(added[3])).toBe('1c1f1d')
   })
@@ -152,7 +143,7 @@ describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知
       { x: 4, y: 4, team: 3 },
     ])
     for (const i of [0, 2, 4, 6]) {
-      expect(hex(added[i])).toBe('858f81')   // --text-muted
+      expect(hex(added[i])).toBe('858f81')
       expect(matOf(added[i]).transparent).toBe(true)
       expect(matOf(added[i]).opacity).toBe(0.85)
     }
@@ -192,7 +183,6 @@ describe('场景 Team 身份色（#835 后续：Team 1 绿 / Team 2 红 / 未知
 })
 
 describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）', () => {
-  /** token 面板模拟：盛夏 summer（深色）↔ 寒冬 winter（浅色） 的 team 色板（tokens/color.css 实值）。 */
   const PROFILES = {
     summer: { '--color-team-1': '#5cc280', '--color-team-2': '#f2786d', '--color-on-team-neutral': '#1c1f1d' },
     winter: { '--color-team-1': '#11703f', '--color-team-2': '#b8322a', '--color-on-team-neutral': '#1c1f1d' },
@@ -239,23 +229,19 @@ describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）
       expect(hexOf(added[0])).toBe('5cc280')
       expect(hexOf(added[2])).toBe('f2786d')
 
-      // 寒冬（浅色主题）：不重建场景，同批对象原位换色
       const identityBefore = added.map(o => (o as THREE.Mesh).geometry)
       useProfile('winter')
       markers.refreshColors()
       expect(hexOf(added[0])).toBe('11703f')
       expect(hexOf(added[2])).toBe('b8322a')
-      // 中性盘：寒冬无 --text-muted 覆盖（stub 未给）→ fallback，不误入 team 色
       expect(hexOf(added[4])).toBe('858f81')
       expect(added.map(o => (o as THREE.Mesh).geometry)).toEqual(identityBefore)
 
-      // 切回 showcase：双向回归
       useProfile('summer')
       markers.refreshColors()
       expect(hexOf(added[0])).toBe('5cc280')
       expect(hexOf(added[2])).toBe('f2786d')
 
-      // 换 profile 后 build 新点：直接用新 token（不只 refresh 路径生效）
       markers.build([{ x: 9, y: 9, team: 1 }])
       expect(hexOf(added.at(-2)!)).toBe('5cc280')
     } finally {
@@ -272,7 +258,6 @@ describe('UI Profile 切换后 refreshColors 原位重着色（#877 review P3）
       markers.build([{ x: 0, y: 0, team: 2 }])
       markers.refreshColors()
       expect(hexOf(added[1])).toBe('1c1f1d')
-      // reground 与 refreshColors 正交：几何重建不改颜色
       const colorBefore = hexOf(added[0])
       markers.reground()
       expect(hexOf(added[0])).toBe(colorBefore)

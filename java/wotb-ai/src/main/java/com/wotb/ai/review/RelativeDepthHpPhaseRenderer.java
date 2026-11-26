@@ -12,7 +12,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Renders relative-depth/HP measurements for each battle phase. */
 final class RelativeDepthHpPhaseRenderer {
     private RelativeDepthHpPhaseRenderer() {
     }
@@ -81,11 +80,6 @@ final class RelativeDepthHpPhaseRenderer {
             return new PhaseResult(null, hits);
         }
         final int enemyTeam = 3 - ownTeam;
-        // 阶段位置参考（带知识状态）：复用 FormationDepthEvidence 的 canonical 同口径解析
-        // （phase end 位于 observed segment=CURRENT；位于 UNKNOWN_AOI gap / 跨 gap=LAST_KNOWN，P0-1）。
-        // 相对纵深/血量呈现为确定性距离测量 → 只允许 CURRENT 参考参与 exact 距离；
-        // enemy LAST_KNOWN 不得生成仿佛当前精确位置的 memberDist/referenceDist/relativeDepthM
-        // （fail-closed，不 future-leak）。
         final Map<Long, FormationDepthEvidence.PhasePositionReference> refsByAccount = new LinkedHashMap<>();
         for (final Map.Entry<Long, List<FormationDepthEvidence.PositionSample>> entry : tracks.entrySet()) {
             final int team = teamByAccount.getOrDefault(entry.getKey(), 0);
@@ -101,13 +95,12 @@ final class RelativeDepthHpPhaseRenderer {
         if (refsByAccount.size() < 2) {
             return new PhaseResult(null, hits);
         }
-        // 只消费 CURRENT 参考：own 成员（friendly CURRENT）+ 敌方 CURRENT
         final Map<Long, FormationDepthEvidence.PhasePositionReference> ownCurrent = new LinkedHashMap<>();
         final Map<Long, FormationDepthEvidence.PhasePositionReference> enemyCurrent = new LinkedHashMap<>();
         for (final Map.Entry<Long, FormationDepthEvidence.PhasePositionReference> entry : refsByAccount.entrySet()) {
             final FormationDepthEvidence.PhasePositionReference ref = entry.getValue();
             if (!ref.current()) {
-                continue; // LAST_KNOWN（enemy stale / EntityLeave 中断）不参与 exact 距离
+                continue;
             }
             if (ref.team() == ownTeam) {
                 ownCurrent.put(entry.getKey(), ref);
@@ -135,9 +128,6 @@ final class RelativeDepthHpPhaseRenderer {
             }
             return new PhaseResult(null, hits);
         }
-        // 敌方 CURRENT 位置参考完整性门禁：本阶段存活的敌方车辆中缺少 CURRENT 位置参考时，
-        // 最近观测敌方 ≠ 真实最近敌方（enemy LAST_KNOWN 不得满足 current-position completeness），
-        // 禁止输出「距敌更远/血量优势」精确距离测量（fail-closed，避免误导 LLM）
         int enemyAliveCount = 0;
         int enemyRefCount = 0;
         for (final Map.Entry<Long, PlayerResult> entry : playersByAccount.entrySet()) {
@@ -155,7 +145,6 @@ final class RelativeDepthHpPhaseRenderer {
         }
         final boolean enemyRefComplete = enemyRefCount >= enemyAliveCount;
         if (!enemyRefComplete) {
-            // 敌方 CURRENT 位置参考不完整：最近观测敌方 ≠ 真实最近敌方，不输出不可信距离测量
             return new PhaseResult(null, hits);
         }
 
@@ -163,7 +152,7 @@ final class RelativeDepthHpPhaseRenderer {
         final StringBuilder sb = new StringBuilder();
         for (final long accountId : targets) {
             if (!FormationDepthEvidence.isAliveAt(battle, playersByAccount, accountId, phase.end())) {
-                continue; // 本阶段已阵亡：不作为测量目标
+                continue;
             }
             final Double distX = distToEnemy.get(accountId);
             if (distX == null) {
@@ -172,7 +161,6 @@ final class RelativeDepthHpPhaseRenderer {
             long reference = -1L;
             double referenceDist = Double.POSITIVE_INFINITY;
             double referenceHpRatio = -1;
-            // 纯几何 reference：本阶段距观测敌方最近的存活本方成员（不按 tank profile 分类）
             for (final Map.Entry<Long, Double> entry : distToEnemy.entrySet()) {
                 if (entry.getKey() == accountId) {
                     continue;
@@ -181,7 +169,7 @@ final class RelativeDepthHpPhaseRenderer {
                     continue;
                 }
                 if (!FormationDepthEvidence.isAliveAt(battle, playersByAccount, entry.getKey(), phase.end())) {
-                    continue; // 已阵亡车辆不得成为 reference
+                    continue;
                 }
                 if (entry.getValue() < referenceDist - 1e-9) {
                     referenceDist = entry.getValue();
@@ -213,13 +201,11 @@ final class RelativeDepthHpPhaseRenderer {
                         .append(" referenceDist=").append(Math.round(referenceDist)).append("m")
                         .append(" relativeDepthM=+").append(Math.round(distX - referenceDist))
                         .append(" ").append(outputStatus(observedAttackEvents, observedDamagePartial)).append("\n");
-                // outputStatus=UNKNOWN（partial 且 0 个已观测攻击事件）时禁止进入跨阶段聚合
                 if (!(observedDamagePartial && observedAttackEvents == 0)) {
                     hits.add(new PhaseHit(accountId,
                             hpRatioX / referenceHpRatio, distX - referenceDist));
                 }
             } else if (!hpKnown) {
-                // 血量优势未知：只输出中性事实（位置关系 + 已观察攻击事件）
                 sb.append("- ").append(selfLabel).append(profileFacts(accountId, profiles))
                         .append(" hpRatio=未知 HP_RATIO_UNKNOWN vs reference ").append(key(reference))
                         .append(profileFacts(reference, profiles)).append(" hpRatio=未知")
@@ -247,7 +233,6 @@ final class RelativeDepthHpPhaseRenderer {
         return new PhaseResult(out.toString(), hits);
     }
 
-    /** Last known phase-end HP ratio; unavailable when samples or proven entry HP are missing. */
     private static double hpRatioAt(final long accountId,
                                     final FormationDepthEvidence.PhaseRange phase,
                                     final Map<Long, List<double[]>> hpSamples,
@@ -266,10 +251,6 @@ final class RelativeDepthHpPhaseRenderer {
             return -1;
         }
         final PlayerResult p = playersByAccount.get(accountId);
-        // hp ratio 分母只允许已证明的进场满血（OBSERVED_EXACT）：
-        // observedMaxHp 是整场观测最大 current HP，可能低于真实 entry（装备加成/已受伤），
-        // 用它算 ratio 会让血量优势测量失真；BASE_FALLBACK 用 tankopedia base 同样失真。
-        // 无法证明 → -1 → HP_RATIO_UNKNOWN 中性路径。
         if (p == null || p.entryHpSource != EntryHpSource.OBSERVED_EXACT
                 || p.entryHp == null || p.entryHp <= 0) {
             return -1;
@@ -277,7 +258,6 @@ final class RelativeDepthHpPhaseRenderer {
         return lastHp / p.entryHp;
     }
 
-    /** Emits observed attack count and coverage only; partial damage cannot imply no output or avoidance. */
     private static String outputStatus(final int observedAttackEvents, final boolean observedDamagePartial) {
         if (observedDamagePartial) {
             return "observedAttackEvents=" + observedAttackEvents
@@ -299,7 +279,6 @@ final class RelativeDepthHpPhaseRenderer {
         return n;
     }
 
-    /** Emits opening rear-tercile geometry using CURRENT positions only; it does not assign tactical roles. */
     private static String renderOpeningRearTercile(
             final Map<Long, FormationDepthEvidence.PhasePositionReference> ownCurrent,
             final Map<Long, FormationDepthEvidence.PhasePositionReference> enemyCurrent,
@@ -357,7 +336,6 @@ final class RelativeDepthHpPhaseRenderer {
         return sb.length() == 0 ? null : sb.toString();
     }
 
-    /** Counts phases where the neutral HP-advantage and greater-distance salience combination appears. */
     private static String renderAggregate(final List<PhaseHit> hits, final boolean playerPath) {
         if (hits.isEmpty()) {
             return "";
@@ -376,7 +354,6 @@ final class RelativeDepthHpPhaseRenderer {
         return sb.toString();
     }
 
-    /** Adds static vehicle-class and armor facts when the profile is known. */
     private static String profileFacts(final long accountId, final Map<Long, TankTacticalProfile> profiles) {
         final TankTacticalProfile profile = profiles.get(accountId);
         if (profile == null || "UNKNOWN".equals(profile.vehicleClass())) {
@@ -397,7 +374,6 @@ final class RelativeDepthHpPhaseRenderer {
         return String.valueOf(Math.round(ratio * 100.0) / 100.0);
     }
 
-    /** Phase hit where HP advantage and greater enemy distance both meet the salience filter. */
     private record PhaseHit(
             long accountId,
             double bloodRatio,
@@ -405,7 +381,6 @@ final class RelativeDepthHpPhaseRenderer {
     ) {
     }
 
-    /** Single-phase rendering result: evidence text and aggregate salience hits. */
     private record PhaseResult(String text, List<PhaseHit> hits) {
     }
 }

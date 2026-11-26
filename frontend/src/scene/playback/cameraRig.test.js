@@ -65,7 +65,6 @@ describe('sampleRecorderCamera', () => {
 
   it('never leaks zoom across sessions or into arcade', () => {
     expect(sampleRecorderCamera(facet(SPARSE), 4).zoomRaw).toBeNull()
-    // 第二个 session 开始时第一段的值不得延续，取本 session 的首样本
     expect(sampleRecorderCamera(facet(SPARSE), 5.1).zoomRaw).toBe(6.75)
   })
 

@@ -1,19 +1,14 @@
-// 装备判定状态（#820 Agent A 出仓）：校准弹/强化装甲/122 俯仰装置的手动覆盖、
-// 回放自动判定与勾选框同步的唯一 owner。原 tankViewer.js 闭包内对应块整体平移。
 import type { ShellKind } from './armorPlateModel.js'
 import type { EquipmentSpec, ReplayShot, ShellSpec } from './viewerContracts.js'
 import { recordedTargetMatchesShot, resolvePitchCheckboxChecked, resolvePitchDeviceEffective } from '../../replay-local/compute/tankSetup'
 import { shellTypeOf, calibratedPenMul, ENHANCED_ARMOR_THICK_MUL } from './armorPlateModel.js'
 
-/** 122 俯仰装置加成（度，上/下）。 */
 export interface PitchDeviceBonus {
     up?: number
     down?: number
 }
 
-/** 装备判定 owner 的合成根接口（显式依赖，无全局旁路）。 */
 export interface EquipmentStateDeps {
-    /** 热力图管线（厚度 uniform 刷新）。 */
     hmRef: () => { updateHeatmapThickness(): void }
     getCurrentTargetId: () => number | null
     getSelectedShell: () => ShellSpec | null | undefined
@@ -23,7 +18,6 @@ export interface EquipmentStateDeps {
     L: { replayEquipmentAutoTitle: string; pitchDevice: string; [key: string]: string }
 }
 
-/** 装备判定 owner 的公开句柄。 */
 export interface EquipmentStateHandle {
     shotEquipmentCtx(): { shooter: EquipmentSpec | null; target: EquipmentSpec | null }
     effectiveCalibrated(eq?: EquipmentSpec | null): boolean
@@ -60,11 +54,8 @@ export function createEquipmentState(deps: EquipmentStateDeps): EquipmentStateHa
     const { hmRef, getCurrentTargetId, getSelectedShell, getShooterShells,
         pitchDeviceBonus, pitchDeviceAvailable: initialPitchDeviceAvailable, L } = deps
 
-        /** 手动覆盖（装甲页图形开关）：null = 跟随回放真值/旧勾选框。 */
         const equipmentOverride: { calibrated: boolean | null; enhanced: boolean | null; pitch: boolean | null } = { calibrated: null, enhanced: null, pitch: null };
-        /** 装备 122 的俯仰加成（度，{up,down}）；由宿主从 research/devices.json 注入。 */
         let pitchDeviceBonusValue: PitchDeviceBonus | null = pitchDeviceBonus;
-        /** 目标/被展示车是否存在 122 槽位；未知/不适用时 fail-closed 不加成。 */
         let pitchDeviceAvailable = !!initialPitchDeviceAvailable;
 
 
@@ -110,7 +101,6 @@ function shellPenMul(s: ShellSpec | null | undefined): number {
             const shellEq = (s?.shooter_equipment ?? null) as EquipmentSpec | null;
             const calOn = effectiveCalibrated(shellEq);
             if (!calOn) return 1.0;
-            // 未知弹种没有可用的装备口径系数；判定入口会 fail-closed，这里不猜 1.07。
             return calibratedPenMul(shellTypeOf(s));
         }
 
@@ -159,7 +149,6 @@ function syncEquipmentCheckboxes(s: ReplayShot): void {
                     pit.checked = checked;
                     pit.disabled = true; pit.title = L.replayEquipmentAutoTitle;
                 } else {
-                    // 换目标后回放真值不适用：回到手动勾选，且不保留上一辆车的勾选态。
                     pit.checked = checked;
                     pit.disabled = false; pit.title = '';
                 }

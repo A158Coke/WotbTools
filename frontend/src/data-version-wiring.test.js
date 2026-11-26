@@ -1,6 +1,3 @@
-// 数据版本选择器的接线守卫（source-contract）。
-// 这条链路的失败模式是"服务器有 /v/<id>，但 UI 没接上或 Android 仍读固定基址"，
-// 纯函数单测覆盖不到 .vue 模板与 Android map2d 的常量替换，因此锁源码级接线。
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,7 +17,6 @@ function sourceFiles(dir) {
   })
 }
 
-/** 去掉整行注释后再做边界匹配，避免把说明文字当代码。 */
 function codeOnly(source) {
   return source.split('\n')
     .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/.test(line))
@@ -61,7 +57,6 @@ describe('data version selector wiring', () => {
     expect(sidebarSelector, 'sidebar rail variant').toContain('is-rail')
     expect(sidebarSelector, 'sidebar uses the shared data-version menu').toContain('DataVersionMenu')
 
-    // 同一概念只有一种选择控件：设置页与页头也用共享菜单，不再各自维护原生 select。
     const settingSelector = read('../src/components/DataVersionSelect.vue')
     expect(settingSelector, 'setting selector uses the shared menu').toContain('DataVersionMenu')
     expect(settingSelector, 'setting selector default label').toContain("$t('dataVersion.default')")
@@ -70,14 +65,11 @@ describe('data version selector wiring', () => {
     expect(morePage, 'mobile More selector').toContain('DataVersionSelect')
     expect(morePage, 'mobile More test id').toContain('data-testid="more-data-version"')
 
-    // 桌面「更多」面板与回放页头不再重复放置；唯一主入口在侧边栏。
     expect(read('../src/app/MorePanel.vue')).not.toContain('DataVersionSelect')
     expect(read('../src/components/ReplayWorkspace.vue')).not.toContain('DataVersionSelect')
   })
 
   it('all literal asset paths are handed to assetProvider', () => {
-    // 逻辑资产路径（以 / 开头的包内布局）只能作为 assetProvider 的入参出现。
-    // 例外：treadMarks 的 GENERIC_TREAD_TEXTURE 是"路径常量"，由调用方交给 assetProvider。
     const ASSET_PATH_RE = /["'`]\/(?:glb|tank|tank_images|map|cover|research|data|map2d|tread|suspension)\//
     const allowed = new Set(['scene/treadMarks.ts'])
     const offenders = []

@@ -1,7 +1,3 @@
-/**
- * 配置器状态解析 golden：用客户端导出数据（T-34）构造与 tank/{id}.json 同形的 config 表，
- * 锁定 (turret_local, gun_local) ↔ config 对号、装备槽编解码、默认消耗品与 delta 行契约。
- */
 import { describe, expect, it } from 'vitest'
 import DEVICES from './__fixtures__/research/devices.json'
 import CONSUMABLES from './__fixtures__/research/consumables.json'
@@ -29,7 +25,6 @@ const catalog = {
 
 const MODULES = findTankModules(USSRS, 1)!
 
-/** 由模块数据生成与 tank/{id}.json 同形的 configs（客户端顺序：炮塔序 × 该塔炮序）。 */
 function makeDetail() {
   const configs: any[] = []
   for (const turret of MODULES.turrets) {
@@ -79,7 +74,7 @@ describe('resolveSetup（URL + 数据 → 选择态）', () => {
   it('无 URL 状态：顶级配置（末位）+ 顶级发动机/履带 + 空装备 + 客户端默认消耗品', () => {
     const setup = resolveSetup({ detail: DETAIL, modules: MODULES, url: EMPTY_URL, catalog })
     expect(setup.canConfigure).toBe(true)
-    expect(setup.config).toBe(6)         // 末位 = 1 号炮塔 + S-54
+    expect(setup.config).toBe(6)
     expect(setup.turret).toBe(1)
     expect(setup.gun).toBe(3)
     expect(setup.engine).toBe(MODULES.engines.length - 1)
@@ -87,7 +82,6 @@ describe('resolveSetup（URL + 数据 → 选择态）', () => {
     expect(setup.devices).toEqual(Array(9).fill(null))
     expect(setup.provisions).toEqual([])
     expect(setup.camouflage).toBe(false)
-    // 默认空（与 BlitzInfo 中性基线一致；客户端默认表不再预填）
     expect(setup.consumables).toEqual([])
   })
 
@@ -112,10 +106,8 @@ describe('resolveSetup（URL + 数据 → 选择态）', () => {
     })
     expect(setup).toMatchObject({ config: 0, turret: 0, gun: 0, engine: 0, track: 0, camouflage: true })
     expect(setup.devices).toEqual([0, 1, null, null, null, null, null, null, null])
-    // cons: []（键存在但空）= 用户清空，不回填默认表
     expect(setup.consumables).toEqual([])
     expect(setup.provisions).toEqual(['regular_fuel'])
-    // 技能只保留已知 20 项；效果全局、不按当前车型过滤
     expect(setup.skills).toEqual({ smooth_driving: 3 })
     expect(buildComputeInput({ detail: DETAIL, modules: MODULES, selection: setup, catalog }).skillLevels)
       .toEqual({ smooth_driving: 3 })
@@ -128,7 +120,7 @@ describe('resolveSetup（URL + 数据 → 选择态）', () => {
       url: { config: 99, engine: 99, track: 99, dev: '', cons: ['notAnItem', 'afterburning'], prov: ['notAProvision'], camo: false },
       catalog,
     })
-    expect(setup.config).toBe(6) // 越界回落末位
+    expect(setup.config).toBe(6)
     expect(setup.engine).toBe(MODULES.engines.length - 1)
     expect(setup.track).toBe(MODULES.chassis.length - 1)
     expect(setup.consumables).toEqual(['afterburning'])
@@ -148,12 +140,12 @@ describe('模块切换（炮塔 / 炮 → config）', () => {
     const next = pickTurret(top, MODULES, DETAIL, 0)
     expect(next.turret).toBe(0)
     expect(next.gun).toBe(0)
-    expect(next.config).toBe(0) // 0 号塔 + L-11
+    expect(next.config).toBe(0)
   })
 
   it('切炮写回对应 config', () => {
     const top = resolveSetup({ detail: DETAIL, modules: MODULES, url: EMPTY_URL, catalog })
-    const next = pickGun(top, MODULES, DETAIL, 2) // 1 号塔的 ZiS-4
+    const next = pickGun(top, MODULES, DETAIL, 2)
     expect(next.gun).toBe(2)
     expect(next.config).toBe(5)
   })
@@ -177,10 +169,8 @@ describe('gunCycleOf（config 的 is_drum/is_burst 语义）', () => {
       type: 'autoloader', shellCount: 6, intraClip: 3,
       burstGroupCount: 3, burstGroupInterval: 0.25,
     })
-    // 普通弹夹（旧包没有 burst_group_*）：0 → 计算仍走整匣公式
     expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true }))
       .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
-    // count=1 是“单发连发组”（客户端常规炮也带 burst count 1）：不算组
     expect(gunCycleOf({ reload_time: 20, burst_size: 3, burst_interval: 3, is_burst: true, burst_group_count: 1, burst_group_interval: 0.2 }))
       .toMatchObject({ burstGroupCount: 0, burstGroupInterval: 0 })
   })
@@ -268,14 +258,12 @@ describe('装甲表（按所选炮塔解析）', () => {
     const top = resolveArmor(detail, modules, resolveSetup({ detail, modules, url: EMPTY_URL, catalog }))
     expect(top.turret).toEqual({ front: 200, sides: 60, rear: 40 })
     expect(top.hull).toEqual(DETAIL.armor.hull)
-    // 无炮塔 TD（model_turret_count=0）不展示炮塔装甲
     const turretless = {
       ...DETAIL,
       configs: DETAIL.configs.map(config => ({ ...config, model_turret_count: 0 })),
     }
     expect(resolveArmor(turretless, MODULES, resolveSetup({ detail: turretless, modules: MODULES, url: EMPTY_URL, catalog })).turret)
       .toBeNull()
-    // 无 primaryArmor/turret_plates → 回退顶层 armor 摘要（不猜）
     expect(resolveArmor(DETAIL, MODULES, resolveSetup({ detail: DETAIL, modules: MODULES, url: EMPTY_URL, catalog })).turret)
       .toEqual(DETAIL.armor.turret)
   })
@@ -290,12 +278,10 @@ describe('引擎输入与 delta 行', () => {
       selection: { ...setup, devices: [0, 1, null, null, null, null, null, null, null], provisions: ['regular_fuel'] },
       catalog,
     })
-    // T-34 预设 HEprotectionPreset：槽 0 = attack 左(100 rammer)，槽 1 = defence 右(121 改进战斗室)
     expect(input.deviceIds).toEqual([100, 121])
     expect(input.provisionScripts.regular_fuel?.params?.bonusValues?.enginePowerIncrease).toBe('3')
     expect(input.armor?.turret?.front).toBe(60)
     expect(input.standardShell?.type).toBe('ap')
-    // 隐蔽加成来自客户端数据（迷彩网 script + camouflages.xml 默认类别）
     expect(Number(input.camouflageNet?.bonus?.mediumTank)).toBe(0.04)
     expect(Number(input.camouflageNet?.activateBonusFactor)).toBe(2)
     expect(input.paintInvisibility).toMatchObject({ lightTank: 0.03, mediumTank: 0.03, heavyTank: 0.02, 'AT-SPG': 0.04 })
@@ -311,22 +297,17 @@ describe('引擎输入与 delta 行', () => {
     const { current, base } = computeSetupPair({ detail: DETAIL, modules: MODULES, selection: setup, catalog })
     const groups = paramGroups(current, base, FORMAT.params)
     const rows = Object.fromEntries(groups.flatMap(group => group.rows.map(row => [row.key, row])))
-    // 顶级炮装填更快：delta 负、biggerIsBetter=false → good
     expect(rows.gunShellReloadTime.delta).toBeLessThan(0)
     expect(rows.gunShellReloadTime.good).toBe(true)
     expect(rows.gunShellReloadTime.digits).toBe(2)
-    // 顶级炮塔血量更高：delta 正、good
     expect(rows.maxHealth.delta).toBe(60)
     expect(rows.maxHealth.good).toBe(true)
-    // 单位/小数位来自客户端 format
     expect(rows.maxFrontSpeed.unit).toBe('KILOMETER_PER_HOUR')
     expect(rows.weight.digits).toBe(2)
-    // 客户端 format 缺 units 的时间/距离键由 UI 语义补充
     expect(rows.gunAimingTime.unit).toBe('SECOND')
     expect(rows.gunShellReloadTime.unit).toBe('SECOND')
     expect(rows.circularVisionRadius.unit).toBe('METER')
     expect(rows.gunShotDispersionRadius.unit).toBe('METER')
-    // 没有值的参数不出现
     expect(rows.gunClipReloadTime).toBeUndefined()
     expect(rows.dispersionMoving.unit).toBeNull()
     expect(rows.dispersionMoving.value).toBe(0.17)
@@ -362,7 +343,6 @@ describe('引擎输入与 delta 行', () => {
     expect(turret.turretRotationSpeed.value).toBe(40)
     expect(turret.gunTraverseSpeed).toBeUndefined()
 
-    // 旧数据/缺 rotationSpeed：保留炮塔行（fail-open，不因数据迁移留空）
     const fallback = rowsOf({ hasTurret: false, turretRotationSpeed: 26, gunTraverseSpeed: null })
     expect(fallback.turretRotationSpeed.value).toBe(26)
     expect(fallback.gunTraverseSpeed).toBeUndefined()

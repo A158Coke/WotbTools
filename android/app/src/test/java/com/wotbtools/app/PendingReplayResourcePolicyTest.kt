@@ -79,7 +79,6 @@ class PendingReplayResourcePolicyTest {
     }
 
     @Test fun nativeReadFailureNeverFallsThroughToNetwork() {
-        // Simulate a file disappearing after isFile, before inputStream opens it.
         val file = object : File(temp.root, "vanished") {
             override fun isFile() = true
         }

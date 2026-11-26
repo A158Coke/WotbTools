@@ -22,11 +22,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-/**
- * 团队关键事件提取器：成员阵亡/首次接火/队形分裂/战斗结束 KeyBattleEvent，
- * 阵亡时主力质心距离（DeathProximity）与事件流结束时刻/置信度解析。
- * <p>从 {@link DefaultTeamBattleFeatureExtractor} 拆出，纯静态工具类，不做编排。</p>
- */
 final class TeamKeyEventsExtractor {
 
     private TeamKeyEventsExtractor() {
@@ -43,10 +38,6 @@ final class TeamKeyEventsExtractor {
         };
     }
 
-    /**
-     * 阵亡时刻与主力质心（其余 OBSERVED 本队车辆平均位置）的实际距离。
-     * 目标位置取阵亡时刻前后最近的 OBSERVED 记录；无 OBSERVED 位置时返回 null（禁止硬算）。
-     */
     static TeamMemberFeatureSet.DeathProximity resolveDeathProximity(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -127,7 +118,6 @@ final class TeamKeyEventsExtractor {
         return resolveDeathProximity(null, recon, mapping, mapCode, perspectiveTeam, player);
     }
 
-    /** 某时刻本队其它 OBSERVED 车辆的原始坐标质心。 */
     static float[] friendlyCentroidAt(
             final BattleStateCheckpoint cp,
             final int perspectiveTeam,
@@ -181,7 +171,6 @@ final class TeamKeyEventsExtractor {
                 .map(td -> new KeyBattleEvent(
                         td.battleRelativeSec(),
                         "TEAM_FIRST_CONTACT",
-                        // 伤害数字只用可证明的掉血（单通知归属）；不可归属 → unknown
                         "damage=" + (td.trustedHpLoss() == null ? "unknown" : td.trustedHpLoss()),
                         lowestConfidence(td.event()),
                         "REPLAY_EVENT",
@@ -222,10 +211,6 @@ final class TeamKeyEventsExtractor {
                 .toList();
     }
 
-    /**
-     * Battle-relative fallback clock: the latest observed raw event clock converted through
-     * {@code battleStartRes}. Never mixes raw replay clock with battle-relative duration.
-     */
     static Float lastObservedClock(
             final List<ReplayEvent> events,
             final Map<ReplayEvent, TacticalTimeResolution> resolutionByEvent

@@ -24,7 +24,6 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
-/** 角色由测试改写：`tokenParsed` 是 ref，组件只读 `realm_access.roles`。 */
 const authToken = ref({ realm_access: { roles: ['wotbtools-user'] } })
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -40,7 +39,6 @@ const mountPanel = (props = {}) => mountAiReviewPanel(mount, AiReviewPanel, prop
 const AI_REVIEWS_URL = '/api/ai/reviews'
 const { analyzeCalls, cancelCalls, cancelUrl } = createRequestHelpers(AI_REVIEWS_URL)
 
-// ---- 投影 identity 必须进入 AI request ownership ----
 
 describe('AiReviewPanel projection identity ownership', () => {
   function deferred() {
@@ -50,7 +48,6 @@ describe('AiReviewPanel projection identity ownership', () => {
     return { promise, resolve, reject }
   }
 
-  /** 可控 SSE 响应：reader.read() 的 resolve 时机由测试精确控制（deferred，不用 sleep）。 */
   function controllableSse() {
     const queue = []
     let waiting = null
@@ -90,12 +87,10 @@ describe('AiReviewPanel projection identity ownership', () => {
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(true)
 
-    // 投影 identity 切到 B（file + projection 一起变）
     await wrapper.setProps({ file: { name: 'b.wotbreplay' }, projection: projectionB })
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(false, 'identity 切换后旧请求必须作废，新 generation 可开始')
 
-    // 旧 A 的 SSE 迟到事件：done 载荷不得写回
     sse._release({ done: false, value: sseEvent('done', { analysis: 'OLD A RESULT', preBattleSection: '' }) })
     sse._release({ done: true, value: undefined })
     await flushPromises()
@@ -139,15 +134,15 @@ describe('AiReviewPanel projection identity ownership', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: projectionA })
 
-    await wrapper.find('.ai-analyze').trigger('click') // A 在途
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(true)
 
-    await wrapper.setProps({ projection: projectionB }) // 投影切 B
+    await wrapper.setProps({ projection: projectionB })
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(false)
 
-    await wrapper.find('.ai-analyze').trigger('click') // B 发起
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(true)
     const calls = analyzeCalls(fetchMock)
@@ -156,13 +151,11 @@ describe('AiReviewPanel projection identity ownership', () => {
     expect(body.battle).toEqual(projectionB.battle)
     expect(body.projection).toEqual(projectionB.projection)
 
-    // 旧 A 流迟到收尾（done:true，无事件）：不得清掉 B 的 analyzing/结果
     sseA._release({ done: true, value: undefined })
     await flushPromises()
     expect(wrapper.vm.analyzing).toBe(true, '旧 A 的 finally 不得覆盖新 generation 的 loading')
     expect(wrapper.vm.analysisResult).toBeNull()
 
-    // B 正常完成
     sseB._release({ done: false, value: sseEvent('done', { analysis: 'B RESULT' }) })
     sseB._release({ done: true, value: undefined })
     await flushPromises()
@@ -172,7 +165,6 @@ describe('AiReviewPanel projection identity ownership', () => {
   })
 })
 
-// ---- 每次 AI analysis 独立 run context（timer/correlationId/controller 所有权）----
 
 describe('AiReviewPanel per-run context', () => {
   function controllableSse() {
@@ -204,7 +196,6 @@ describe('AiReviewPanel per-run context', () => {
     }
   }
 
-  /** 路由 mock：cancel 恒返回 ok，analyze（/api/ai/reviews）按顺序返回可控 SSE。 */
   function routedFetch(...sseResponses) {
     let analyzeCall = 0
     return vi.fn((url) => {
@@ -225,36 +216,32 @@ describe('AiReviewPanel per-run context', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: projectionA })
 
-    await wrapper.find('.ai-analyze').trigger('click') // A
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     const aCorr = (await requestBody(analyzeCalls(fetchMock)[0])).correlationId
 
-    await wrapper.setProps({ projection: projectionB }) // A 被 cancel（watcher）
+    await wrapper.setProps({ projection: projectionB })
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(false)
 
-    await wrapper.find('.ai-analyze').trigger('click') // B 启动（B timer 已安装）
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     expect(wrapper.vm.analyzing).toBe(true)
     const bCorr = (await requestBody(analyzeCalls(fetchMock)[1])).correlationId
     expect(bCorr).not.toBe(aCorr)
 
-    // A 的 async unwind 最后执行（fetch resolve + stream 收尾 → A finally）：
-    // 不得 clear B 的 timeoutTimer。
     sseA._release({ done: false, value: sseEvent('done', { analysis: 'OLD' }) })
     sseA._release({ done: true, value: undefined })
     await flushPromises()
 
-    // 推进到 B deadline：B timeout 必须触发（即使 A finally 已跑过）
     await vi.advanceTimersByTimeAsync(1_100_000)
-    sseB._release({ done: false, value: new TextEncoder().encode('') }) // 唤醒流循环检查墙钟 deadline
+    sseB._release({ done: false, value: new TextEncoder().encode('') })
     await flushPromises()
 
     expect(wrapper.vm.failure.message).toBe('recon.errors.AI_TIMEOUT', 'B 的 timeout 语义必须保留')
     expect(wrapper.vm.analyzing).toBe(false)
     const urls = cancelCalls(fetchMock)
     expect(urls).toContain(cancelUrl(bCorr))
-    // cancel 是 path 参数，不是退役的 ?correlationId= query 形式。
     expect(urls.every(u => !u.includes('?'))).toBe(true)
     vi.unstubAllGlobals()
     vi.useRealTimers()
@@ -268,29 +255,26 @@ describe('AiReviewPanel per-run context', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: projectionA })
 
-    await wrapper.find('.ai-analyze').trigger('click') // A
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     const aCorr = (await requestBody(analyzeCalls(fetchMock)[0])).correlationId
 
-    await wrapper.setProps({ projection: projectionB }) // watcher 只 cancel A
+    await wrapper.setProps({ projection: projectionB })
     await nextTick()
-    await wrapper.find('.ai-analyze').trigger('click') // B
+    await wrapper.find('.ai-analyze').trigger('click')
     await nextTick()
     const bCorr = (await requestBody(analyzeCalls(fetchMock)[1])).correlationId
 
-    // B 活跃期间：A 不得触发任何 B_ID 的 cancel（A 只能操作 A_ID）
     const urlsBefore = cancelCalls(fetchMock)
     expect(urlsBefore).toContain(cancelUrl(aCorr))
     expect(urlsBefore).not.toContain(cancelUrl(bCorr))
 
-    // 推进 B 自身 deadline：只有 B 自己触发 cancel（A 的 timer 已在切换时 clear）
     await vi.advanceTimersByTimeAsync(1_100_000)
     sseB._release({ done: false, value: new TextEncoder().encode('') })
     await flushPromises()
 
     const urls = cancelCalls(fetchMock)
     expect(urls).toContain(cancelUrl(bCorr))
-    // A 的 timeout timer 已在 identity 切换时清除：整场只 cancel 一次 A。
     expect(urls.filter(u => u === cancelUrl(aCorr)).length).toBe(1)
     vi.unstubAllGlobals()
     vi.useRealTimers()

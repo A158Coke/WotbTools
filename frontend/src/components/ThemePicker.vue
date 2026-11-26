@@ -1,13 +1,10 @@
 <script setup lang="ts">
-// 四季主题选择（design-language §2）：SegmentedControl 的 tiles 呈现，每项是该主题的主视觉缩略图 +
-// 强调色点 + 名称。预览色板来自 tokens/color.css 的 --theme-preview-*，与当前主题无关。
 import SegmentedControl from './SegmentedControl.vue'
 import { UI_PROFILES, setUiProfile, useUiProfile } from '../composables/useUiProfile.js'
 
 defineProps<{ ariaLabel: string }>()
 const { uiProfile } = useUiProfile()
 type ThemeOption = { value: string, label: string }
-/** SegmentedControl 是 JS SFC，插槽参数在类型上是 unknown；选项由本组件构造，形状确定。 */
 const themeOption = (option: unknown) => option as ThemeOption
 const tileStyle = ({ value }: ThemeOption) => ({
   '--tile-canvas': `var(--theme-preview-${value}-canvas)`,

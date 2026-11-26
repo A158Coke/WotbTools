@@ -42,10 +42,8 @@ function deviceIcon(stem: string | null | undefined) {
   return item ? itemIconUrl('devices', item.icon) : null
 }
 
-/** 只影响模块耐久/被击中概率、参数表没有对应行的装备（悬停明确说明，避免误判未生效）。 */
 const MODULE_DEFENCE_DEVICE_IDS = new Set([108, 109, 112, 120, 121])
 
-/** 客户端 description 占位符 → 当前车型可读数值（百分比/角度/秒）。 */
 const DEVICE_PERCENT_KEYS = new Set([
   'gunReloadTimeFactor', 'equipmentDurationFactor', 'gunAimingTimeFactor',
   'additiveShotDispersionFactor', 'shotDispersionAngleFactor', 'maxHealthPercentageBonus',
@@ -57,7 +55,6 @@ const DEVICE_PERCENT_KEYS = new Set([
   'HOLLOW_CHARGE', 'HIGH_EXPLOSIVE',
   'engineEvasionPercentageBonus', 'crewEvasionPercentageBonus', 'ammoEvasionPercentageBonus',
 ])
-/** 模板自带 + 或单位（° / % / s）的占位符：只填数值，避免 ++ / %% 双符号。 */
 const DEVICE_RAW_KEYS = new Set([
   'upperPitchLimitIncrease', 'lowerPitchLimitIncrease',
   'circularVisionRadiusIncrease', 'activateWhenStillSec',
@@ -67,7 +64,6 @@ const DEVICE_CLASS_KEYS: Record<string, string> = {
 }
 const vehicleClassKey = () => DEVICE_CLASS_KEYS[props.detail?.type || ''] || null
 
-/** 装备 script 的 percent 是符号权威（displayParams 只给绝对值，104/105 会漏负号）。 */
 function deviceScriptPercent(item: Device, key: string) {
   const params = item.script?.params || {}
   const attr = String(params.attribute || '').split('/').pop()
@@ -108,7 +104,7 @@ function deviceHint(stem: string | null | undefined) {
 }
 
 function deviceChoice(index: number, choice: 0 | 1) {
-  if (index < 0) return // 预设缺该 (level, group) 槽位时不猜，直接忽略
+  if (index < 0) return
   const devices = props.selection.devices.slice()
   devices[index] = devices[index] === choice ? null : choice
   emit('update', { devices })
@@ -117,7 +113,6 @@ function deviceChoice(index: number, choice: 0 | 1) {
 </script>
 
 <template>
-    <!-- 装备：3×3，每格左右两件图标 -->
     <section class="tp-config-block">
       <div class="tp-block-head tp-loadout-head">
         <h3>{{ t('agentTanks.configurator.equipment') }}</h3>
@@ -197,9 +192,7 @@ function deviceChoice(index: number, choice: 0 | 1) {
 .tp-dev-btn img { inline-size: 40px; block-size: 40px; object-fit: contain; }
 
 @media (width < 768px) {
-  /* 装备矩阵 3 行 × 3 类共 9 对候选：组内 2px、组间 12px；横纵都留白，避免九对糊成一片 */
   .tp-dev-matrix { gap: var(--space-3); }
-  /* 极窄屏两个 44px 候选放不进同一槽位时自动改为纵向排列，避免 44px 触控目标互相覆盖 */
   .tp-dev-slot { grid-template-columns: repeat(auto-fit, minmax(var(--hit-min-comfortable), 1fr)); gap: calc(var(--space-1) / 2); }
   .tp-dev-btn { min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); padding: 2px; }
   .tp-dev-btn img { inline-size: 32px; block-size: 32px; }

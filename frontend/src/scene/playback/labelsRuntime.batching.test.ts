@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// 锚点批处理契约（评审 R3）：labelsRuntime 逐帧「begin(逻辑舞台) → 逐车 setAnchor（只收集）
-// → end（统一 flush）」。舞台宽高必须来自 renderer.getSize 的逻辑视口（deps.getViewportSize），
-// 由覆盖层集中读 dirty 几何、统一写 DOM；逐车 setAnchor 不得在批处理内立刻落位。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createLabelsRuntime } from './labelsRuntime.js'
@@ -74,7 +71,6 @@ describe('labelsRuntime 锚点批处理（R3）', () => {
     expect(overlay.beginAnchors).toHaveBeenCalledWith({ x: 800, y: 600 })
     expect(overlay.setAnchor).toHaveBeenCalledTimes(2)
     expect(overlay.endAnchors).toHaveBeenCalledTimes(1)
-    // 收集必须全部发生在 flush 之前：end 之前不写 DOM，end 只调用一次。
     expect(calls).toEqual([
       ['begin', { x: 800, y: 600 }],
       ['anchor', 1],

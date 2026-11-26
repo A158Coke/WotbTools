@@ -1,9 +1,5 @@
 import { feedbackPrefs } from './useFeedbackPrefs.js'
 
-/**
- * 按键音效（design-language §10「反馈」）：四种短音，默认关闭；`prefers-reduced-motion: reduce`
- * 时不播放。用 WebAudio 合成，不引入音频资产；iOS Safari 的 WebAudio 默认随静音开关静音。
- */
 export type SoundKind = 'click' | 'success' | 'error' | 'notice'
 type Tone = { frequency: number, start: number, duration: number }
 const SOUND_TONES: Record<SoundKind, Tone[]> = Object.freeze({

@@ -1,13 +1,3 @@
-// 点击拾取调试报告器（2026-10-24 自 initPlayback 闭包出仓为工厂，拆分计划与
-// 模式说明见 #741；代码与搬移前逐字一致，仅闭包读数改经 ctx 快照）。
-// 纯函数（报告组装/格式化/链可见性）在 scene/pickDebug.js；本工厂只持有会话级
-// 调试件（pickMarker 网格 + pickPanel DOM）。
-//
-// ctx 快照契约：调用方在**事件时刻**现取现传 { clock, vehicles, scenery,
-// terrainMesh, groundMesh, destruct, destructPickList, meshOwner, heightField,
-// heightMeta, camera, raycaster, container, scene, terrainSpan }——这些在闭包里都是
-// 可变绑定，工厂创建期捕获会拿到过期值；快照式传参是「显式 state」拆分模式在
-// 事件处理器上的落地形式（见 #741 Design 节）。
 import * as THREE from 'three'
 import type { Camera, Intersection, Mesh, Object3D, Raycaster, Scene } from 'three'
 import { nameChainOf, nearestInstance, chainVisible, meshOwnerKey, stateVisualLabel, formatPickReport } from '../pickDebug.js'
@@ -16,7 +6,6 @@ import type { DestructibleFoldState, DestructibleInstance } from '../destructibl
 import type { MeshOwnerValue } from '../pickDebug.js'
 import type { HudFeedVehicleDef } from './hudFeed.js'
 
-/** createPickReporter 的事件时刻快照契约（可变绑定现取现传；见文件头注释）。 */
 export interface PickReporterCtx {
   clock: number
   vehicles: Array<{ def?: HudFeedVehicleDef | null; group: Object3D }>
@@ -46,18 +35,15 @@ export function createPickReporter() {
       const roots = [ctx.scenery, ctx.terrainMesh, ctx.groundMesh, ...ctx.vehicles.map((v) => v.group)]
         .filter((root): root is Object3D => !!root);
       const hits = roots.length ? ctx.raycaster.intersectObjects(roots, true) : [];
-      // Raycaster 不过滤 visible：隐藏 D_ 损毁网格/sky/隐藏父节点下的车辆会被
-      // 命中——按整条祖先链可见性取最近可见命中，否则报告指向画面里没有的模型
       const hit = hits.find((h) => chainVisible(h.object)) || null;
       const rep = buildPickReport(hit, ctx);
       const text = formatPickReport(rep);
       console.log(text);
       try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
-      try { window.__pbPickMesh = hit ? hit.object : null; } catch (_) {}   // 诊断：命中网格本体（控制台实时改材质用）
+      try { window.__pbPickMesh = hit ? hit.object : null; } catch (_) {}
       showPickPanel(text, ctx.container);
       if (hit) movePickMarker(hit.point, ctx.scene);
     } catch (err) {
-      // 失败必须可见（禁止静默）：面板直接显示错误，否则表现为"点击没反应"难排查
       console.warn('[scene-pick] failed:', err);
       const errObj = err as { stack?: string; message?: string }
       try { showPickPanel(`[scene-pick] failed: ${(errObj.stack || errObj.message) || String(err)}`, ctx.container); } catch (_) {}
@@ -65,7 +51,6 @@ export function createPickReporter() {
   }
   function buildPickReport(hit: Intersection | null, ctx: PickReporterCtx): PickReport {
     if (!hit) return { clock: ctx.clock, kind: 'empty', err: 'no hit（天空/空处）' };
-    // 车辆归属：沿父链找 userData.eid（车辆拾取与既有选中逻辑同式）
     let o: Object3D | null = hit.object, eid = 0;
     while (o) { if (o.userData && o.userData.eid) { eid = o.userData.eid as number; break; } o = o.parent; }
     if (eid) {
@@ -78,7 +63,6 @@ export function createPickReporter() {
       return false;
     })();
     if (onTerrain) return { clock: ctx.clock, kind: 'terrain', node: hit.object.name || 'terrain' };
-    // 场景网格：世界点击点 → 游戏场景系（= gltf.scene 局部系 = destructibles pos 系）
     let scenePt = null;
     if (ctx.scenery) {
       try { scenePt = ctx.scenery.worldToLocal(hit.point.clone()).toArray(); } catch (_) {}
@@ -86,29 +70,17 @@ export function createPickReporter() {
     const chain = nameChainOf(hit.object, ctx.scenery || null);
     const mat = (hit.object as Mesh).material;
     const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
-    // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
-    // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
-    // 动画状态是可选叠加，按实例身份关联
-    // 实例归属：合批后命中 = 批次 InstancedMesh + instanceId——按复合键查归属表
-    //（值携带原节点名：合批后原 Mesh 已摘除，报告仍报真实物体名）；无表项才按位置兜底
     const owner = (ctx.meshOwner && hit.instanceId != null)
       ? ctx.meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) ?? null : null;  // eslint-disable-line @typescript-eslint/no-unnecessary-condition
     const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(ctx.destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (ctx.destruct?.states || []).find((x) => x.inst === inst) || null : null;
-    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度。
-    // 渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
-    // ⚠️ 两个诊断变量都声明在 if 外——return 在 if 外引用它们（作用域错误曾致
-    // ReferenceError: render is not defined，表现为"点击无反应"）。
     let terrain = null;
     let render = null;
     if (ctx.heightField && ctx.heightMeta) {
       try {
         const n = ctx.heightMeta.size || 512;
         const span = ctx.terrainSpan;
-        // truth = 真值场在命中点的**双线性插值**（与网格的连续表面对同一口径）——
-        // 不能拿最近格点值当基准：坡面上连续点 vs 格点值的差是比法误差，不是渲染缺陷
-        //（2026-10-11 plant wall_03 Δ=+0.234 假警报的教训：该点在两格点之间、坡度 1 m/texel）。
         const fx = (hit.point.x / span + 0.5) * n;
         const fz = (hit.point.z / span + 0.5) * n;
         const j0 = Math.min(Math.max(Math.floor(fx), 0), n - 1), j1 = Math.min(j0 + 1, n - 1);
@@ -138,10 +110,6 @@ export function createPickReporter() {
         };
       } catch (_) { terrain = null; }
     }
-    // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
-    // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
-    // ⚠️ 不依赖 heightField/heightMeta——terrain 下载失败/元数据缺失/降级时（恰是最值得排障的
-    // 一类场景）本段仍必须出报告（2026-10-11 PR 评审 P3：此前被错误地包在 terrain 可用性里）。
     try {
       const o = hit.object as Mesh;
       const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
@@ -214,7 +182,6 @@ export function createPickReporter() {
     pickMarker.position.copy(p);
     scene.add(pickMarker);
   }
-  /** 会话 teardown 回收调试件（标记网格 + 面板 DOM） */
   function dispose({ scene, disposeObject3D }: { scene: Scene; disposeObject3D: (root: Object3D, shared?: unknown) => void }): void {
     if (pickMarker) { scene.remove(pickMarker); disposeObject3D(pickMarker); pickMarker = null; }
     if (pickPanel) { pickPanel.remove(); pickPanel = null; }

@@ -86,7 +86,6 @@ it('filters on the server, displays original detail and confirms deletion', asyn
   const drawer = wrapper.get('[data-testid="admin-detail-drawer"]')
   expect(drawer.attributes('role')).toBe('dialog')
   expect(drawer.findAll('pre').at(-1).text()).toBe('exact reply\nraw')
-  // 删除在抽屉底部两段式确认：第一步只展开确认，不发请求
   await drawer.get('[data-testid="admin-danger-start"]').trigger('click')
   expect(api.deleteFeedback).not.toHaveBeenCalled()
   await drawer.get('[data-testid="admin-danger-confirm"]').trigger('click')
@@ -115,7 +114,6 @@ it('requests the next server page and ignores a stale filter response', async ()
   expect(wrapper.text()).not.toContain('stale')
 })
 
-// --- #923 管理员可维护状态（行内状态下拉；详情抽屉只显示服务器确认的状态）---
 it('does not send a status update when the admin feedback feature is unavailable', async () => {
   const wrapper = mountPage()
   await flushPromises()
@@ -218,14 +216,12 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
-  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
   api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
   expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -237,7 +233,6 @@ it('does not let a pre-update detail response overwrite the status after a list 
   const wrapper = mountPage()
   await flushPromises()
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
-  // PATCH 确认会作废在途详情读取并自动重发：先排队重发响应（服务器已应用新状态）
   api.getFeedback.mockResolvedValueOnce({ ...row, status: 'FIXED', feedbackText: 'feedback', aiResponseText: 'exact reply\nraw' })
   await wrapper.get('.status-select').setValue('FIXED')
   await flushPromises()
@@ -247,7 +242,6 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, aiResponseText: 'exact reply\nraw', status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
   expect(detailStatusText(wrapper)).toContain('aiFeedback.status.FIXED')
   expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -316,7 +310,6 @@ it('关闭抽屉后迟到的 PATCH 不再为已关闭详情重发读取，也不
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   expect(api.getFeedback).toHaveBeenCalledTimes(1)
-  // PATCH 完成前关闭抽屉：确认后不得为已关闭的详情重发 GET
   await wrapper.get('[data-testid="admin-drawer-close"]').trigger('click')
   resolveUpdate()
   resolveDetail({ ...row, status: 'PENDING' })

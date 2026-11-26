@@ -9,10 +9,6 @@ const { canonical, playback, layout, connectivityState } = testState
 
 installPaneTestLifecycle()
 
-/**
- * 场景生命周期不变量：sceneApi 存在 ⟺ 活的 stage DOM ∧ file ∧ !blocked ∧ WebGL。
- * 这三种变化的产品语义必须分开：active=false 只停帧；file/blocked 变化会销毁场景。
- */
 describe('Replay3DPane 场景生命周期', () => {
   it('Test A — file → null 销毁旧场景；给新 file 时在新 stage 上重建，按开始后解析新文件', async () => {
     mockWebGL('webgl2')
@@ -24,7 +20,6 @@ describe('Replay3DPane 场景生命周期', () => {
     await start(wrapper)
     expect(firstApi.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file: fileA }))
 
-    // file=null：模板移除 .pb-root（stage 变成游离节点）→ 必须销毁场景，不能继续往它上面画
     await wrapper.setProps({ file: null })
     await flush()
     expect(firstApi.destroy).toHaveBeenCalledTimes(1)
@@ -32,7 +27,6 @@ describe('Replay3DPane 场景生命周期', () => {
     expect(wrapper.find('.scene').exists()).toBe(false)
     expect(wrapper.get('[data-testid="replay3d-empty"]').exists()).toBe(true)
 
-    // 新文件：必须是一次**全新的** initPlayback；新场景先待开播，按开始才解析
     const fileB = mkFile('b.wotbreplay')
     await wrapper.setProps({ file: fileB })
     await flush()
@@ -43,7 +37,6 @@ describe('Replay3DPane 场景生命周期', () => {
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
     await start(wrapper)
     expect(secondApi.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file: fileB }))
-    // 新场景必须挂在**当前**的 stage 节点上，而不是那个已被移除的旧节点
     expect(wrapper.find('.scene').exists()).toBe(true)
     expect(playback.init.mock.calls[1][0]).toBe(wrapper.get('.scene').element)
 
@@ -125,13 +118,7 @@ describe('Replay3DPane 场景生命周期', () => {
   })
 })
 
-/**
- * 就绪态（store.hasData）契约：它是 HUD 与播放传输的 authoritative gate
- * （`usePlaybackTransport({ isReady: () => store.hasData })`），因此必须在
- * 「新会话被接受」与「会话终止」两个时点落下，绝不能让上一场的 ready 泄漏到新会话。
- */
 describe('Replay3DPane 就绪态（hasData）', () => {
-  /** 让下一次加载保持挂起（按场景契约翻转 loading / hasData），返回完成句柄 */
   function pendNextLoad(api) {
     let settle
     api.loadData.mockImplementationOnce(() => {
@@ -151,7 +138,7 @@ describe('Replay3DPane 就绪态（hasData）', () => {
     await flush()
     const api = playback.api
     await start(wrapper)
-    expect(api.store.hasData).toBe(true)      // 按开始后的加载已完成
+    expect(api.store.hasData).toBe(true)
 
     await wrapper.setProps({ file: null })
     await flush()
@@ -184,7 +171,6 @@ describe('Replay3DPane 就绪态（hasData）', () => {
     await start(wrapper)
     expect(api.store.hasData).toBe(true)
 
-    // 换场：撤下旧场景（内核 reset）→ 回到待开播，ready 不得留在屏幕上
     await wrapper.setProps({ file: mkFile('b.wotbreplay') })
     await flush()
     expect(api.reset).toHaveBeenCalledTimes(1)
@@ -192,7 +178,6 @@ describe('Replay3DPane 就绪态（hasData）', () => {
     expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
 
-    // 新加载窗口：HUD / 播放传输都不得按 ready 渲染
     const settle = pendNextLoad(api)
     await start(wrapper)
     expect(api.store.loading).toBe(true)
@@ -254,7 +239,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
 
-    // 同一文件 active 往返（能力切走再回来）不得再次 start / 解析
     await wrapper.setProps({ active: false })
     await flush()
     await wrapper.setProps({ active: true })
@@ -281,7 +265,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     await flush()
     expect(canonical.load).toHaveBeenCalledTimes(1)
 
-    // 同一 SPA 里 ProfilePage 写入 localStorage；回放面板被 KeepAlive 缓存，不会重建 composable。
     localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
     await wrapper.setProps({ file: mkFile('auto-second.wotbreplay') })
     await flush()
@@ -352,11 +335,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     inactive.unmount()
   })
 
-  /**
-   * 2026-11-19 用户要求：2D/3D 同一个面板窗口，播放条从场景里拿出来、放到窗口下方通栏。
-   * 源码级守卫：根节点必须带 transport-docked；共享 CSS 必须把 controls 放回普通流
-   * （否则播放条又变成压在场景底部的 absolute 浮层）。
-   */
   it('统一回放面板：3D 根带 transport-docked，播放条在舞台下方通栏（源码守卫）', () => {
     const src = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
     expect(src).toContain('class="pb-root playback-workspace transport-docked"')
@@ -368,10 +346,8 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(docked).toContain('position: relative')
     expect(docked).toContain('inline-size: 100%')
     expect(docked).toContain('order: 1')
-    // 2026-11-19 统一传输条 chrome：与 2D 同一行布局（次级行在上 | 主进度条 | 折叠钮在右）
     expect(docked).toContain('flex-direction: row')
     expect(docked).toContain('padding: 0')
-    // 收起态只包按钮（不占满行宽），否则手机横屏折叠不省空间。
     const collapsed = /\.pb-root\.playback-workspace\.transport-docked:not\(\.portrait-flow\) > \.controls\.controls-docked \{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
     expect(collapsed).toContain('inline-size: fit-content')
   })

@@ -1,42 +1,28 @@
-// 坦克查看器 owner 模块共享的领域与 window 钩子契约（#820 拆分后的类型边界）。
-//
-// 只放跨 owner 复用的数据类型与浏览器调试钩子声明，不持有运行时状态、不做数据转换。
-// 数据面形状与 tank/{id}.json、agent shot 交接 payload 对齐；装甲相关类型直接复用
-// armorPlateModel.TankArmorData / TankArmorConfig（同一份消费字段定义）。
 import type * as THREE from 'three'
 import type { TankArmorConfig, TankArmorData } from './armorPlateModel.js'
 
-/** 世界系/模型系三元组（x, y, z）。 */
 export type Vec3 = [number, number, number]
 
-/** 可空的三元组输入（URL/JSON 解码结果）。 */
 export type NullableVec3 = Vec3 | null
 
-/** 一帧渲染位姿（agent 交接 payload 中的 render/tick 样本）。 */
 export interface RenderPose {
   pos: Vec3
   ang: Vec3
-  /** 渲染锚点相对判定时刻的滞后（秒）。 */
   latency: number
-  /** 渲染位与判定位之间的距离（米）。 */
   dist_to_judgment: number
 }
 
-/** 逐 tick 位姿样本。 */
 export interface PoseTickSample {
   pos: Vec3
   yaw: number
   roll: number
   pitch?: number | null
   dt?: number
-  /** 由渲染锚点补入的采样（滑块零点优先使用）。 */
   render?: boolean
 }
 
-/** 炮塔/炮管相对角时间线的一个 [dt, rad] 采样。 */
 export type TimelineTuple = [number, number]
 
-/** shot.quality 中客户端消费的降级标记。 */
 export interface ShotQuality {
   gun_pitch_degraded?: string[] | null
   shell_from_terrain?: boolean | null
@@ -49,17 +35,14 @@ export interface ShotQuality {
   dmg_unattributed?: boolean | null
 }
 
-/** 脱靶弹着地形信息。 */
 export interface TerrainImpact {
   impact_point: Vec3
   terminal_dir: Vec3
   material?: string | number | null
 }
 
-/** 装备效果载荷（弹/装甲/俯仰装置；回放交接原样透传）。 */
 export type EquipmentSpec = Record<string, number | boolean | null>
 
-/** 一次射击复现的交接 payload（Agent → viewer，字段见 agentData.fetchReplayShots）。 */
 export interface ReplayShot {
   index: number
   target_tank_id?: number | null
@@ -108,7 +91,6 @@ export interface ReplayShot {
   armor_group?: number | null
   quality?: ShotQuality | null
   terrain_impact?: TerrainImpact | null
-  /** 折线中间点（mirrorShotData 同链镜像）。 */
   via?: Vec3[] | null
   aim_point?: Vec3 | null
   launch_point_rel?: Vec3 | null
@@ -117,12 +99,10 @@ export interface ReplayShot {
     state_before?: number | null
     state_after?: number | null
   } | null
-  /** 世界镜像幂等标记（viewerMath.mirrorShotData 写入）。 */
   __worldMirrored?: boolean
   [key: string]: unknown
 }
 
-/** 乘员/装备俯仰限制（tankSetup.pitchAtBearing 消费的扇区形状）。 */
 export interface PitchSector {
   min: number
   max: number
@@ -137,13 +117,11 @@ export interface PitchLimits {
   back?: PitchSector | null
 }
 
-/** 炮塔水平射界（度，左负右正）。 */
 export interface YawLimits {
   min: number
   max: number
 }
 
-/** 当前配置（tank/{id}.json configs[]）中 viewer 消费的字段。 */
 export interface TankConfig extends TankArmorConfig {
   label?: string
   turret_name?: string
@@ -154,7 +132,6 @@ export interface TankConfig extends TankArmorConfig {
   shell_global_ids?: number[] | null
 }
 
-/** 弹种参数（/api/shells 与 tank/{id}.json shells[] 同形状）。 */
 export interface ShellSpec {
   name?: string
   type?: string
@@ -170,12 +147,10 @@ export interface ShellSpec {
   [key: string]: unknown
 }
 
-/** 装甲模型声明（tank/{id}.json armor_model + config 派生）。 */
 export interface ArmorModelDecl extends NonNullable<TankArmorData['armor_model']> {
   turret?: { plates?: Record<string, number | null>; spaced?: readonly (string | number)[] | null } | null
 }
 
-/** 部件碰撞盒（min/max 为模型系量化前的米制 AABB）。 */
 export interface CollisionBox {
   min: Vec3
   max: Vec3
@@ -189,7 +164,6 @@ export interface CollisionBoxes {
   [key: string]: CollisionBox | undefined
 }
 
-/** 单车数据（/api/tank/{id} / 资产包 tank/{id}.json）。 */
 export interface TankData extends TankArmorData {
   tank_id?: number
   name?: string
@@ -206,20 +180,17 @@ export interface TankData extends TankArmorData {
   initial_turret_rotation?: { yaw: number; pitch: number; roll: number } | null
 }
 
-/** 动态装甲声明（collisionView resolveArmorStateDecl 解析结果）。 */
 export interface ArmorStateDecl {
   states: Array<{ id: number; label?: string }>
   [key: string]: unknown
 }
 
-/** segment 判定射线（世界系）。 */
 export interface SegmentRay {
   origin: THREE.Vector3
   dir: THREE.Vector3
   far: number
 }
 
-/** 实时炮口射线上下文（dataLoader 重跑权威判定时读取）。 */
 export interface WorldTickCtx {
   launch?: THREE.Vector3 | null
   lvDir?: THREE.Vector3 | null
@@ -227,7 +198,6 @@ export interface WorldTickCtx {
   rayFar: number
 }
 
-/** 片元交叉验证上下文（judgment/heatmap 消费）。 */
 export interface ShotCtx {
   shot?: ReplayShot | null
   segArmorGroup?: number
@@ -238,7 +208,6 @@ export interface ShotCtx {
   fragValidated?: boolean | null
 }
 
-/** 射击调试面板记录（trajectoryCard 写入；允许不同模式扩展字段）。 */
 export interface ArmorDebugRecord {
   card?: string
   chancePct?: number
@@ -246,14 +215,12 @@ export interface ArmorDebugRecord {
   [key: string]: unknown
 }
 
-/** 世界 segment 标记句柄。 */
 export interface WorldSegMk {
   update(visible: boolean): void
   p1: THREE.Object3D
   p2: THREE.Object3D
 }
 
-/** CPU 跳弹探针（diagnosticProbe 在 window.__armorRicochet 暴露的调试面）。 */
 export interface ArmorRicochetProbe {
   info(): Record<string, unknown>
   predict(x: number, y: number): unknown
@@ -261,7 +228,6 @@ export interface ArmorRicochetProbe {
 
 declare global {
   interface Window {
-    // ---- 射击复现世界模式 ----
     __worldPan?: boolean
     __worldPenMode?: boolean
     __worldIsHE?: boolean
@@ -278,7 +244,6 @@ declare global {
     __segBoxMissing?: boolean
     __segDiag?: Record<string, unknown> | null
     __fireGunDegT?: number
-    // ---- 射手/受击方锚点与炮口 ----
     __shooterData?: TankData | null
     __shooterFix?: THREE.Vector3 | null
     __shooterModel?: THREE.Object3D | null
@@ -294,7 +259,6 @@ declare global {
     __moveArrow?: THREE.ArrowHelper | null
     __moveVecArrow?: THREE.ArrowHelper | null
     updateMoveArrow?: ((idx: number) => void) | null
-    // ---- 调试/命中标记 ----
     __debugOn?: boolean
     __debugSetVisible?: ((visible: boolean) => void) | null
     __hitMarker?: THREE.Object3D | null

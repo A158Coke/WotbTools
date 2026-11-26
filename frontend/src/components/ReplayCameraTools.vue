@@ -1,7 +1,4 @@
 <script setup>
-// 镜头模式 + 俯视 + GLB 车模：宽形态直接陈列在 3D 控制条，紧凑控制条放不下时进 Display 面。
-// 两处渲染同一份组件，状态仍归 Replay3DPane 的 store，这里只转发。
-// 默认插槽放同一行的 3D 工具入口：它们用父组件的样式。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SegmentedControl from './SegmentedControl.vue'
@@ -13,14 +10,12 @@ const props = defineProps({
   cameras: { type: Array, required: true },
   glbOn: Boolean,
   glbAllowed: Boolean,
-  /** 触屏看不到 title：Display 面里把录像者不可用的原因写出来。 */
   hint: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:cam', 'update:glb'])
 const { t } = useI18n()
 
-// 跟随是自由视角的子状态，不是模式：radio 仍选中「自由」，再点一次退出跟随。
 const mode = computed(() => (props.cam === 'follow' ? 'free' : props.cam))
 function reselect(value) {
   if (props.cam === 'follow' && value === 'free') emit('update:cam', 'free')
@@ -39,7 +34,6 @@ function reselect(value) {
       @update:model-value="emit('update:cam', $event)"
       @reselect="reselect"
     />
-    <!-- 沙盘是模式（radio）；这里是一次性回到俯视机位的动作，完成后是自由视角。 -->
     <button type="button" class="top-view" data-testid="replay3d-top-view" @click="emit('update:cam', 'top-view')">
       {{ t('agentReplay.cam_top') }}
     </button>
@@ -71,7 +65,6 @@ function reselect(value) {
 @media (pointer: coarse) {
   .top-view { min-height: var(--hit-min); min-width: var(--hit-min); }
 }
-/* 短视口横屏紧凑档：--control-h-sm 收到 32px 时，俯视按钮仍保留 40px 命中区。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   .top-view { min-height: var(--hit-min-comfortable); min-width: var(--hit-min-comfortable); }
 }

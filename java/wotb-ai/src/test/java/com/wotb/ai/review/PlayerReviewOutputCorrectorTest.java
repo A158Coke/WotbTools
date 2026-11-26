@@ -10,11 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 锁定迁移前 {@code AiReplayReviewService} 对随机战输出应用的确定性纠正链：
- * 免责句、null 段透传、「簇」兜底与权威昵称保护。这些行为一旦静默丢失，
- * AI 复盘输出质量会回退（见 {@code docs/ai-lessons/tank-name-hallucination-01.md}）。
- */
 class PlayerReviewOutputCorrectorTest {
 
     @Test
@@ -25,7 +20,6 @@ class PlayerReviewOutputCorrectorTest {
                 PlayerReviewOutputCorrector.apply("body", null, null, AllowedLanguage.EN).analysis());
         assertEquals("текст\n\nРазбор ИИ приведён только для справки",
                 PlayerReviewOutputCorrector.apply("текст", null, null, AllowedLanguage.RU).analysis());
-        // 免责句只追加在正文；preBattleSection 原样透传。
         assertEquals("赛前", PlayerReviewOutputCorrector
                 .apply("正文", "赛前", null, AllowedLanguage.ZH).preBattleSection());
     }

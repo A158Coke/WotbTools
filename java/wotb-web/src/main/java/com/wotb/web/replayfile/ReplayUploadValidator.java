@@ -2,16 +2,6 @@ package com.wotb.web.replayfile;
 
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- * 共享回放上传校验器：文件类型 / 单文件 20MiB / 总大小 200MiB / 空文件。
- *
- * <p>通用校验不限制文件数量（服务器没有回放解析器：处理/导出任务端点已于 2026-10-02 删除，
- * 回放在浏览器本地解析；本校验器只服务仍存在的上传端点——名人堂 / 百场 / 三环 submission）。
- * AI 的单文件策略由 AI 边界负责，百场 submission 复用本校验器的 size/type contract。</p>
- *
- * <p>错误码与既有端点保持一致：{@code NO_REPLAY_FILES} / {@code NO_REPLAY_FILE} /
- * {@code INVALID_REPLAY_FILE_TYPE} / {@code FILE_TOO_LARGE} / {@code TOTAL_REQUEST_TOO_LARGE}。</p>
- */
 public final class ReplayUploadValidator {
 
     public static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
@@ -20,7 +10,6 @@ public final class ReplayUploadValidator {
     private ReplayUploadValidator() {
     }
 
-    /** 通用上传校验：文件数组非空、每个文件非空/类型合法/单文件 ≤ 20MiB、累计 ≤ 200MiB。不限制文件数量。 */
     public static void validate(final MultipartFile[] files) {
         if (files == null || files.length == 0) {
             throw new IllegalArgumentException("NO_REPLAY_FILES");

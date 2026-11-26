@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-# Sponsor 运行时内容（配置 + 收款码）**构建期注入** → publicDir（common/assets/）。
-#
-# 内容从哪来：它是私密收款信息，不进 Git 历史、不进镜像源，但必须出现在**两个发布面**——
-# Frontend 镜像（Web 同源伺服）与 APK bundle（本机 origin，赞助页离线也能显示）。做法是
-# 复刻本仓既有的 Agent WASM 模式：内容作为 **GitHub Release 资产**发布（`deploy/sponsor/
-# content.json` 钉 release/asset/sha256），构建期下载校验后注入 publicDir，由 Vite 原样拷进
-# dist（Web）与 dist-android（APK）。仓库里只有 pin（哈希），没有明文内容。
-#
-# 输入（三选一）：
-#   SPONSOR_BUNDLE=<tar.gz 路径>   构建用：pin 住的 release 资产（sponsor-config.json +
-#                                  sponsor-assets/ 的相对布局）
-#   SPONSOR_SOURCE_DIR=<目录>      本地自测用：同一布局的本地目录
-#   都不设置                      absent：不注入、不失败（页面回落「暂未配置」）
-#
-# 契约（stdout 只输出一行机器可读结果；人读信息走 stderr；**绝不回显内容**）：
-#   sponsorRuntimeContent=injected | absent
-# 输入坏（tar 逃逸/非普通文件、JSON 形状不符、引用的图片缺失或不是真实图片）→ fail closed。
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -32,7 +15,6 @@ if [ -n "$bundle" ] && [ -n "$source_dir" ]; then
 fi
 
 if [ -z "$bundle" ] && [ -z "$source_dir" ]; then
-  # 确定性：没有输入就确保 publicDir 里没有上一次注入的残留（否则「关掉赞助内容」不会真的关掉）。
   rm -f "$PUBLIC_DIR/sponsor-config.json"
   rm -rf "$PUBLIC_DIR/sponsor-assets"
   note "no sponsor input configured: building without sponsor runtime content (sponsor page renders the unconfigured state)"
@@ -46,8 +28,6 @@ trap 'rm -rf "$stage"' EXIT
 
 if [ -n "$bundle" ]; then
   [ -f "$bundle" ] || fail "SPONSOR_BUNDLE is not a file: $bundle"
-  # 构建上下文来自外部资产 → tar 必须 fail closed：只接受 sponsor-config.json 与
-  # sponsor-assets/ 下的普通文件/目录，拒绝符号链接、绝对路径与 .. 逃逸。
   python3 - "$bundle" <<'PY_TAR'
 import sys, tarfile
 

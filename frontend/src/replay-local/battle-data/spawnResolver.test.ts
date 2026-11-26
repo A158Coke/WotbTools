@@ -84,7 +84,6 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
     it.each(documents.map(document => [document.mapId, document] as const))('%s binds each side to its own exact spawn group', (mapId, document) => {
       const groups = profiles.get(mapId)?.physicalSpawns
       expect(groups).toHaveLength(2)
-      // The side declared on a semantic group must land on that group's scene points.
       for (const [index, team] of ['TEAM_1', 'TEAM_2'].entries()) {
         const declared = document.spawnSemantics[team]
         expect(groups![index].side).toBe(declared.physicalSide)
@@ -96,7 +95,6 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
       if (a.side === 'SOUTH') expect(a.y).toBeLessThan(b.y)
       if (a.side === 'WEST') expect(a.x).toBeLessThan(b.x)
       if (a.side === 'EAST') expect(a.x).toBeGreaterThan(b.x)
-      // Every exact point resolves to its own side; replay team only chooses which team receives it.
       for (const group of groups!) {
         const other = groups!.find(item => item !== group)!.side
         for (const p of group.points) {
@@ -128,7 +126,7 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
     const result = JSON.parse(agent.parseResult(bytes))
     const position = JSON.parse(agent.parseAuthorInitialPosition!(bytes)) as AgentAuthorInitialPosition
     expect(result.map_key).toBe('malinovka')
-    expect(result.arena_bonus_type).toBe(2) // 非采集模式，仅验证位置及方向。
+    expect(result.arena_bonus_type).toBe(2)
     expect(result.author_team).toBe(2)
     expect(Math.hypot(position.position[0] - 229.885, position.position[2] + 143.6585)).toBeLessThan(0.001)
     expect(resolvePhysicalSpawns(result.map_key, result.author_team, position)).toEqual({ team1: 'NORTH', team2: 'SOUTH' })
@@ -149,7 +147,6 @@ describe('physical spawn: reviewed canonical data and bounded evidence', () => {
     const position = JSON.parse(agent.parseAuthorInitialPosition!(bytes)) as AgentAuthorInitialPosition
     expect(result.map_key).toBe('rift')
     expect(result.author_team).toBe(2)
-    // Scene Spawn2-8 is [141.0831,210.5851,50.4194], in northern grid row.
     expect(Math.hypot(position.position[0] - 141.0831, position.position[2] - 210.5851)).toBeCloseTo(0.936592107, 6)
     expect(resolvePhysicalSpawns(result.map_key, result.author_team, position)).toEqual({ team1: 'SOUTH', team2: 'NORTH' })
     expect(resolvePhysicalSpawns('malinovka', result.author_team, position)).toBeNull()

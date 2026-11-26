@@ -1,5 +1,3 @@
-// 浏览器交互门禁：入口/编排（场景实现按域拆分到 browser-workspace-interaction-*.mjs）。
-// 门禁分类：frontend/scripts/browser-* 属 test（≤1500 行），拆分只搬家不改场景语义。
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { SHELL_OVERLAY_SCENARIOS, MOBILE_PAGE_SCENARIOS, runShellOverlayScenario, runMobilePageScenario } from './browser-shell-overlays.mjs'
@@ -66,7 +64,6 @@ try {
     ...MOBILE_FULLSCREEN_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileFullscreenScenario(env, scenario) })),
     ...WORKSPACE_2D_SCENARIOS.map((scenario) => ({ scenario, run: () => runWorkspace2DScenario(env, scenario) })),
   ]
-  // 可选场景名过滤（调试单个形态时不必跑满矩阵）。
   const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
   const { nameFilter } = scenarioArgs
   const base = process.argv.includes('--occlusion')
@@ -76,7 +73,6 @@ try {
     : nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
   const selected = selectShard(base, scenarioArgs)
   for (const { scenario, run } of selected) {
-    // 单个场景抛错（例如等不到元素）不得吞掉整轮结果：记为该场景的失败后继续。
     try {
       await run()
       if (scenario.name.startsWith('onboarding-')) {
@@ -97,18 +93,13 @@ try {
   const tabletRoster = results.find((result) => result.name === 'roster-geometry-1024x768-tablet')?.geometry
   const desktopRoster = results.find((result) => result.name === 'roster-geometry-1600x900-desktop')?.geometry
   const fullscreenRoster = results.find((result) => result.name === 'roster-geometry-1792x922-fullscreen-desktop')?.geometry
-  // 2026-10-05：浮层布局下 lane 宽度 = clamp(11rem, 16vw, 15rem) 恒定，center=2×lane 的
-  // 比例契约随旧网格一并停用，待按新布局重写（覆盖缺口记录于 PR #537）。
   const LEGACY_GRID_CONTRACT = false
   if (tabletRoster && desktopRoster && fullscreenRoster && LEGACY_GRID_CONTRACT) {
     const failures = []
-    // As the workspace grows, desktop center stays twice the roster width.
-    // 这里锁的是比例：lane 变大、center 变大且桌面始终约 2× lane。
     check(failures, tabletRoster.laneWidths[0] + 1 < desktopRoster.laneWidths[0], 'roster lanes must grow between tablet and desktop')
     check(failures, fullscreenRoster.laneWidths[0] > desktopRoster.laneWidths[0] + 1, 'roster lanes must absorb spare viewport width')
     for (const [name, g] of [['tablet', tabletRoster], ['desktop', desktopRoster], ['fullscreen', fullscreenRoster]]) {
       const lane = g.laneWidths[0]
-      // HUD 属于 center 列，用它的宽度当 center 宽度的实测值
       const center = g.centerWidth ?? null
       if (!lane || !center) { check(failures, false, `${name} roster matrix: missing lane/center`); continue }
       if (name !== 'tablet') check(failures, Math.abs(center - lane * 2) <= 2,
@@ -124,7 +115,6 @@ try {
       continue
     }
     if (result.xfail) {
-      // 显式已知问题：照常运行与打印，但不计入退出码（修复后应从 known-issues 移除）。
       knownIssues += 1
       console.error(`[browser-interaction] ${result.name} KNOWN-ISSUE (${result.viewport}): ${result.xfail}`)
       for (const failure of result.failures) console.error(`  - ${failure}`)
@@ -141,7 +131,6 @@ try {
     console.log(`[browser-interaction] all ${results.length} scenarios passed`)
   }
 } finally {
-  // Chrome 启动失败时也必须关掉 Vite server，否则脚本会挂在未释放的监听上而不是报错退出。
   if (chromeCdp) await chromeCdp.close()
   await closeOnboardingServer()
   await closeFakeAnalysisServer()

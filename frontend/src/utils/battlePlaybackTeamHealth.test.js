@@ -28,18 +28,14 @@ describe('Battle Playback team HP presentation scale', () => {
       state: 'EXACT', knownRemaining: 3400, totalMax: 3400,
     })
 
-    // First trusted replay HP switches authority but does not fabricate 3200/3200 and does not
-    // erase the already-disclosed presentation scale. The bar therefore stays proportional.
     expect(friendlyHealthAt([enemy], false, 10)).toMatchObject({
       state: 'PARTIAL', knownRemaining: 3200, totalMax: 3400,
     })
 
-    // Hidden/AoI last-known must not turn the team bar into a fake 100% partial bar.
     expect(friendlyHealthAt([enemy], false, 15)).toMatchObject({
       state: 'PARTIAL', knownRemaining: 3200, totalMax: 3400,
     })
 
-    // A later replay-provided capacity replaces the provisional presentation scale.
     expect(friendlyHealthAt([enemy], false, 25)).toMatchObject({
       state: 'EXACT', knownRemaining: 2800, totalMax: 3560,
     })

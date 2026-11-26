@@ -31,11 +31,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Verifies that a client abort (via {@link AiRequestContext} + cancellation
- * token) stops the retry loop and never records success or usage: the whole
- * point is to avoid paying for a response nobody waits for.
- */
 class SpringAiChatGatewayCancellationTest {
 
     private static final long START_NANOS = 1_000_000_000_000L;
@@ -112,18 +107,14 @@ class SpringAiChatGatewayCancellationTest {
     void registryCancelsOnlyRegisteredRequests() {
         final AiCancellationRegistry registry = new AiCancellationRegistry();
         final String id = "00000000-0000-0000-0000-0000000000aa";
-        // 非 UUID id 被拒绝（不复用 token），也不会注册
         assertNull(registry.register("abc"));
         assertFalse(registry.cancel("abc"));
         final AiCancellationToken token = registry.register(id);
         assertNotNull(token);
-        // 同一 id 重复注册被拒绝
         assertNull(registry.register(id));
         assertTrue(registry.cancel(id));
         assertTrue(token.isCancelled());
-        // cancel 幂等：再次 cancel 仍报告已注册
         assertTrue(registry.cancel(id));
-        // unregister(id, token) compare-and-remove：错误 token 不删除，正确 token 删除
         registry.unregister(id, new AiCancellationToken());
         assertTrue(registry.cancel(id));
         registry.unregister(id, token);

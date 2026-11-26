@@ -922,10 +922,6 @@ assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensur
 exec(compile((root / "scripts/ci/test-workflow-contract-extra.py").read_text(encoding="utf-8"), "scripts/ci/test-workflow-contract-extra.py", "exec"))
 PY
 
-# The "reuse only an existing immutable image" release step must not confuse a
-# brand-new application repository with a broken registry. Exercise the real gate
-# helper through fake crane binaries: a first publish has to fall through to
-# build + push, while an auth/server/network failure has to stay fatal.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
@@ -974,7 +970,6 @@ done
 
 echo "first publish falls through to build while registry failures stay fatal: PASS"
 
-# Exercise the real exporter lookup/verification blocks without registry writes.
 python3 - "$ROOT" "$work" <<'PY'
 import pathlib, sys, yaml
 root, work = map(pathlib.Path, sys.argv[1:])
@@ -1030,13 +1025,6 @@ for mode in changed wrong-revision; do
 done
 echo 'exporter reuses immutable digests and rejects registry/identity drift: PASS'
 
-# ---------------------------------------------------------------------------
-# asset-origin: only the asset-owned transport ref `asset-origin` may be
-# force-updated, and only by a run that is still EXACT current GitHub main. This
-# executes the real workflow step against a disposable GitHub origin and a
-# URL-rewritten local Gitee remote, so a stale queued run cannot move the asset ref
-# and the Frontend/Business API mirror movement of shared `main` stays irrelevant.
-# ---------------------------------------------------------------------------
 asset_work="$work/asset-origin"
 mkdir -p "$asset_work/runner-temp"
 git init -q --bare "$asset_work/hub-bare"
@@ -1060,10 +1048,6 @@ git -C "$asset_work/seed" commit -qm 'unrelated main commit'
 sha_newer="$(git -C "$asset_work/seed" rev-parse HEAD)"
 git clone -q "$asset_work/hub-bare" "$asset_work/repo"
 
-# The workflow step pushes to the real Gitee URL; rewriting it to a disposable
-# bare repository keeps the run offline while exercising the same command. An
-# isolated HOME keeps the rewrite (and the runner's real git config) out of the
-# way on every git version.
 mkdir -p "$asset_work/home"
 git config --file "$asset_work/home/.gitconfig" \
   url."$asset_work/gitee.git".insteadOf https://gitee.com/A158Coke/Wotbtools.git
@@ -1078,13 +1062,11 @@ steps = {step.get('name'): step for step in workflow['jobs']['mirror_gitee']['st
 PY
 
 set_github_main() { git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$1:refs/heads/main"; }
-# Shared main is moved by the Frontend/Business API mirrors, never by this owner.
 set_gitee_main() { git -C "$asset_work/seed" push -q "$asset_work/gitee.git" "+$1:refs/heads/main"; }
-# The asset-owned transport ref is moved only by the asset source-transport step.
 set_gitee_transport() { git -C "$asset_work/seed" push -q "$asset_work/gitee.git" "+$1:refs/heads/asset-origin"; }
 gitee_main() { git -C "$asset_work/gitee.git" rev-parse --verify 'refs/heads/main^{commit}'; }
 gitee_transport() { git -C "$asset_work/gitee.git" rev-parse --verify 'refs/heads/asset-origin^{commit}'; }
-run_asset_push() {  # <event-name> <event-sha> <log>
+run_asset_push() {
   (
     cd "$asset_work/repo" || exit 1
     env \
@@ -1103,14 +1085,11 @@ run_asset_push() {  # <event-name> <event-sha> <log>
   ) >"$3" 2>&1
 }
 
-# The step may only mutate its own transport ref.
 if grep -q 'refs/heads/main' "$asset_work/push-step.sh"; then
   echo 'the asset source-transport step references shared Gitee main' >&2
   exit 1
 fi
 
-# A newer mirror and a newer asset run already published newer refs: the queued run
-# for the older asset SHA must fail closed instead of moving its transport ref back.
 set_github_main "$sha_newer"
 set_gitee_main "$sha_newer"
 set_gitee_transport "$sha_newer"
@@ -1136,8 +1115,6 @@ for stale_kind in push workflow_dispatch; do
   }
 done
 
-# The same frozen SHA still reaches the asset-owned ref while it IS exact current
-# main, and shared Gitee main (another owner's ref) is left exactly where it was.
 set_github_main "$sha_asset"
 if ! run_asset_push push "$sha_asset" "$asset_work/fresh-push.log"; then
   echo 'a fresh asset-origin push run was rejected' >&2
@@ -1156,7 +1133,6 @@ shared="$(gitee_main)"
 }
 echo 'asset-origin pins the reviewed SHA on its own ref and never touches shared main: PASS'
 
-# asset-owned transport pair 保留；main-only sync 的 ref isolation 由真实 Git fixture 验证。
 hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/asset-origin^{commit}')"
 [ "$hub_transport" = "$sha_asset" ] || {
   echo "the asset workflow did not publish the GitHub pointer branch: $hub_transport" >&2
@@ -1164,11 +1140,6 @@ hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/as
 }
 echo 'asset-origin transport pair remains asset-owned: PASS'
 
-# ---------------------------------------------------------------------------
-# D3 helper behavior suite: scripts/ci/publish-data-update.sh
-# Isolated fixtures only — a throwaway bare remote + work repo, and a fake `gh`
-# on PATH. No real GitHub access, no real publishing target is ever touched.
-# ---------------------------------------------------------------------------
 helper_behavior_main() {
   HELPER="$ROOT/scripts/ci/publish-data-update.sh"
   TMP="$(mktemp -d)"
@@ -1229,7 +1200,7 @@ EOF
     fi
   }
 
-  expect_fail() { # description, then command...
+  expect_fail() {
     local desc="$1"; shift
     if "$@" >/dev/null 2>&1; then bad "$desc (expected failure, got success)"; else ok "$desc"; fi
   }
@@ -1258,7 +1229,6 @@ EOF
 
   run_in_repo() { (cd "$TMP/repo" && bash "$HELPER" "$@") 2>"$HELPER_ERR"; }
 
-  # 1. crew-skills normal path: new branch, force-with-lease, create PR, dispatch exact HEAD.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   : > "$GIT_LOG"; : > "$GH_LOG"
@@ -1282,7 +1252,6 @@ EOF
   [ "$commit_files" = "common/crew-skills.json" ] \
     && ok "commit contains only the whitelisted path" || bad "commit contains only the whitelisted path (got: $commit_files)"
 
-  # 2. no changes: no commit, no push, no PR, no dispatch.
   setup_repo; : > "$GIT_LOG"; : > "$GH_LOG"
   FAKE_EXPECT_BRANCH=automation/update-crew-skills run_in_repo \
     --branch automation/update-crew-skills \
@@ -1294,7 +1263,6 @@ EOF
     ok "unchanged paths must not push/create/dispatch"
   fi
 
-  # 3. existing PR（真实 gh --jq 的裸数字输出形态）: no create, dispatch with that number.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   : > "$GH_LOG"
@@ -1305,7 +1273,6 @@ EOF
   grep -q "gh pr create" "$GH_LOG" && bad "existing-PR path must not create a PR" || ok "existing-PR path must not create a PR"
   grep -q "pr_number=7" "$GH_LOG" && ok "existing-PR path dispatches pr_number=7" || bad "existing-PR path dispatches pr_number=7"
 
-  # 4. unresolvable PR number (create ok but list stays empty): fail, no dispatch.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   : > "$GH_LOG"
@@ -1317,7 +1284,6 @@ EOF
   grep -q "workflow run" "$GH_LOG" && bad "unresolvable PR number must not dispatch" || ok "unresolvable PR number must not dispatch"
   unset FAKE_NEW_PR_NUMBER
 
-  # 5. wrong state / base / branch / head OID: fail, no dispatch.
   mismatch_names=(FAKE_VIEW_STATE FAKE_VIEW_BASE FAKE_VIEW_BRANCH FAKE_VIEW_HEAD_OVERRIDE)
   mismatch_vals=(MERGED develop automation/update-equipment 0000000000000000000000000000000000000000)
   for i in 0 1 2 3; do
@@ -1334,7 +1300,6 @@ EOF
     unset "${mismatch_names[$i]}"
   done
 
-  # 6. gh pr create failure: fail, no dispatch.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   : > "$GH_LOG"
@@ -1344,7 +1309,6 @@ EOF
     && bad "gh create failure must fail the helper" || ok "gh create failure must fail the helper"
   grep -q "workflow run" "$GH_LOG" && bad "gh create failure must not dispatch" || ok "gh create failure must not dispatch"
 
-  # 6b. git push failure: fail.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/remote.git/hooks/pre-receive"
@@ -1355,7 +1319,6 @@ EOF
     && bad "git push failure must fail the helper" || ok "git push failure must fail the helper"
   rm -f "$TMP/remote.git/hooks/pre-receive"
 
-  # 7. Tankopedia same-source path: no branch switch, plain push (no force flag).
   setup_repo
   git -C "$TMP/repo" switch -qC automation/update-tankopedia
   printf 'v2\n' > "$TMP/repo/common/tank_ids.json"
@@ -1369,7 +1332,6 @@ EOF
   grep -q -- "--force-with-lease" "$GIT_LOG" \
     && bad "same-source path keeps the plain push" || ok "same-source path keeps the plain push"
 
-  # 8. Tankopedia different-source path: switch -C + force-with-lease.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/tank_ids.json"
   : > "$GIT_LOG"
@@ -1383,7 +1345,6 @@ EOF
   grep -q -- "--force-with-lease" "$GIT_LOG" \
     && ok "different-source path pushes with --force-with-lease" || bad "different-source path pushes with --force-with-lease"
 
-  # 9. unexpected staged content: refuse, no commit, no push, no PR.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   printf 'x\n' > "$TMP/repo/other.txt"
@@ -1396,7 +1357,6 @@ EOF
   grep -q "git commit" "$GIT_LOG" && bad "unexpected staged content must not commit" || ok "unexpected staged content must not commit"
   grep -q "git push" "$GIT_LOG" && bad "unexpected staged content must not push" || ok "unexpected staged content must not push"
 
-  # 10. shell metacharacters in arguments stay data, never execute.
   setup_repo
   printf 'v2\n' > "$TMP/repo/common/crew-skills.json"
   rm -f "$TMP/pwned"
@@ -1410,7 +1370,6 @@ EOF
   [ "$commit_subject" = "msg with 'quotes' and \$(touch $TMP/pwned) and \"dq\"" ] \
     && ok "commit message preserved literally" || bad "commit message preserved literally (got: $commit_subject)"
 
-  # 11. non-allowlist branch is rejected outright.
   setup_repo
   run_in_repo --branch main \
     --commit-message m --pr-title t --pr-body-file "$BODY" --path common/crew-skills.json >/dev/null 2>&1 \
@@ -1421,5 +1380,4 @@ EOF
 }
 helper_behavior_main
 
-# Agent WASM 下载器故障注入测试（本地 HTTP fixture，不访问上游）。
 python3 "$ROOT/scripts/ci/test-fetch-agent-wasm.py"

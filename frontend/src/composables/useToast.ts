@@ -4,13 +4,6 @@ import type { HapticKind } from './useHaptics.js'
 import { playSound } from './useSound.js'
 import type { SoundKind } from './useSound.js'
 
-/**
- * 全站 toast（design-language §10「反馈」）的唯一状态源，渲染出口是 `app/AppToast.vue`。
- * - success / info：4 秒后消失，悬停或按住时暂停计时；
- * - warning / error：不自动消失，必须由用户关闭或执行下一步；
- * - 同一 `id` 只保留一条（替换内容）；最多同时 3 条，超出时最早的一条让位。
- * 文案可以是已翻译的字符串，也可以是 i18n key（store 不依赖组件实例）。
- */
 export type ToastTone = 'success' | 'info' | 'warning' | 'error'
 export interface ToastAction { label?: string, labelKey?: string, run: () => void }
 export interface ToastInput {
@@ -76,7 +69,6 @@ export function dismissToast(id: string) {
   toast.onDismiss?.()
 }
 
-/** 悬停 / 按住：暂停自动消失；离开时按剩余时间继续。 */
 export function pauseToast(id: string) {
   const timer = timers.get(id)
   if (!timer?.handle) return
@@ -91,10 +83,6 @@ export function resumeToast(id: string) {
   startTimer(id, timer.remaining)
 }
 
-/**
- * 换到另一个视图时收起成功 / 提示类 toast：它们属于触发它的那一页（例如回放解析完成），
- * 带到下一页只会遮住新页面的控件（手机竖屏装甲查看器的「返回」按钮）。警告 / 错误需要用户处理，保留。
- */
 export function dismissTransientToasts() {
   for (const toast of toasts.value.filter(item => !item.persistent)) dismissToast(toast.id)
 }

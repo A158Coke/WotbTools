@@ -58,7 +58,6 @@ describe('tournament default rule wire compatibility', () => {
 })
 
 it('loads generated validators as native ESM and enforces Unicode tag lengths', () => {
-  // Vitest's transform can supply require; a separate native ESM process cannot.
   const validatorUrl = new URL('./generated/contract-validators.js', import.meta.url).href
   const event = {
     id: 7, version: 1, year: 2026, region: 'CN', season: 'SUMMER',
@@ -244,7 +243,6 @@ describe('HTTP contract runtime validator', () => {
     ]))
   })
 
-  // PR #229 rolling-deployment compatibility: baseStates is an additive wire field.
   it('legacy payload without baseStates validates and normalizes to []', () => {
     const legacy = { ...dataset() } as Record<string, unknown>
     delete legacy.baseStates
@@ -291,7 +289,6 @@ describe('HTTP contract runtime validator', () => {
   })
 })
 
-// 与 Java ApiContractTest、api:fixture 共用真实 producer 样本，独立验证 standalone 接线。
 const producerCases: { schema: string, value: unknown }[] = JSON.parse(readFileSync(
   new URL('../../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8',
 ))

@@ -4,15 +4,6 @@ import com.wotb.core.replay.event.ShotResultEvent;
 
 import java.util.List;
 
-/**
- * method38 low-16 射击结果 flags（当前 11.19 bit map）。
- *
- * <p>flags 是正交多 bit 集合，不是互斥枚举；一次命中可以同时包含多个 resolution 事实。
- * 未观测/未证明的 bit 保留 raw，不得命名（尤其 {@code 0x0200}：当前无样本，只能 raw）。</p>
- *
- * <p>modifier：additive modifierId list——1 = Precision Fire proc，
- * 2 = Tungsten Shells；可同时 [1,2]（controlled JagdPanzer probe）。未知 ID 保留 raw。</p>
- */
 public record ShotResolution(
         int rawFlags16,
         boolean directKill,
@@ -34,13 +25,8 @@ public record ShotResolution(
         List<ShotResultEvent.ComponentResult> components
 ) {
 
-    /** 0x0200：当前未观测，禁止命名（candidate = device-not-pierced，仅为未来样本保留）。 */
     public static final int BIT_0200_UNOBSERVED_RAW = 0x0200;
 
-    /**
-     * 由 method38 raw flags + extension + component list 构建（bit map 见
-     * docs/research/replay/method38-current-hit-flag-reconstruction.md）。
-     */
     public static ShotResolution of(
             final int flags16,
             final List<Integer> modifierIds,

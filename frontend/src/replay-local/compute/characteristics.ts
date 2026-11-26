@@ -1,28 +1,10 @@
-/**
- * 车辆配置器计算引擎（纯函数）。
- *
- * 公式结构参考 BlitzKit `tankCharacteristics.ts`。**2026-10-27 用户裁定：BK 除隐蔽系数
- * 外均可参考**——隐蔽（迷彩网/涂装）继续用客户端原值；其余数值以客户端 script/参数为准，
- * 并用 BlitzInfo 11.21 对拍（见上游计划 §5/§7 #12）。差异及理由逐条记在 §7：
- * BK 的 1.05 无角色兜底、武器补给 +30%、漏电台/油箱重量不采用（BI 实测与客户端 script
- * 分别给出 1.0 / +35% / 含电台油箱）。乘员技能支持 0–7 级：per-level 效果只读
- * `common/research/skills.json.effects`（avatar.xml 导出），默认 0。
- *
- * 数据输入：上游仓 data/research/ 的逐车模块数据（VehicleModulesData，客户端原值）+
- * tank/{id}.json 当前配置的弹种摘要/装甲值。坐标/口径注记见各公式行注释。
- *
- * 物品 script（provisions/consumables）必须由调用方经 researchCatalog.scriptMap 注入：
- * 食物类乘员加成的唯一权威是客户端 script，引擎不按 stem 猜数值。
- */
 import { mobilityRows, positive, terrains, type Mobility } from './mobility'
 import { calculateGunDamageRate, penetrationCoefficient } from './gunCharacteristics'
 export { penetrationCoefficient } from './gunCharacteristics'
 import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
 
-/** 乘员熟练度曲线（BK degressiveStat/progressiveStat，100% 时均为 0）。 */
 export { degressiveStat, progressiveStat }
 
-/** 车辆类别 → 视野装备的类别加成（客户端 CoatedOptics script；AT-SPG/SPG 同 4%）。 */
 export function viewRangeBonusByClass(vehicleClass: string | null | undefined) {
   if (vehicleClass === 'lightTank') return 0.11
   if (vehicleClass === 'mediumTank') return 0.08
@@ -30,22 +12,13 @@ export function viewRangeBonusByClass(vehicleClass: string | null | undefined) {
   return 0.04
 }
 
-/**
- * 客户端隐蔽加成查值（车辆类别键：lightTank / mediumTank / heavyTank / AT-SPG / SPG）。
- * 来源：
- * - 迷彩网：`optional_devices.xml` 的 `CamouflageNet` script（`bonus` + `activateBonusFactor`）；
- * - 涂装：`camouflages.xml` 的 `<invisibility><categories>`（配置器用 defaultCategory，通常 free）。
- * 缺失类别按 0（fail-closed：宁可少算，不臆造数值）。
- */
 export function invisibilityBonusFor(values: Record<string, unknown> | null | undefined, vehicleClass: string | null | undefined) {
   if (!values || !vehicleClass) return 0
-  // 涂装表只有 AT-SPG（无 SPG）；SPG 回退 AT-SPG。未知类别按 0，不借用别的车型桶。
   const raw = values[vehicleClass] ?? (vehicleClass === 'SPG' ? values['AT-SPG'] : undefined)
   const value = Number(raw)
   return Number.isFinite(value) ? value : 0
 }
 
-/** 从物品 script 读 crewLevelIncrease（Stimulator 族权威来源）。 */
 export function crewLevelIncreaseFromScript(script: { params?: { bonusValues?: { crewLevelIncrease?: unknown } } } | null | undefined) {
   const bonus = script?.params?.bonusValues?.crewLevelIncrease
   const v = bonus == null ? null : Number(bonus)
@@ -55,7 +28,6 @@ export function crewLevelIncreaseFromScript(script: { params?: { bonusValues?: {
 import type { ComputeInput, TankCharacteristics } from './characteristicsTypes'
 export type { ComputeInput, TankCharacteristics } from './characteristicsTypes'
 
-/** coefficient（BK）：同调用内加法。 */
 function coeff(...effects: Array<[boolean, number]>): number {
   return effects.reduce((acc, e) => acc + (e[0] ? e[1] : 0), 1)
 }
@@ -71,7 +43,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const engine = modules.engines?.[input.engineIdx]
   const track = modules.chassis?.[input.trackIdx]
   if (!turret || !gun || !engine || !track) {
-    // fail-closed：模块缺数据时返回全 null（参数面板逐项隐藏，不猜默认值）
     return {}
   }
 
@@ -89,16 +60,13 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     return Number.isFinite(value) && value > 0 ? value : 0
   }
 
-  // ---- 乘员（食物 script 权威 + 通风设备 +0.08）----
   let crewBonus = 0
   for (const stem of input.provisionStems) {
     const inc = crewLevelIncreaseFromScript(input.provisionScripts[stem])
     if (inc != null) crewBonus += inc
   }
-  if (has(102)) crewBonus += 0.08 // improvedVentilation
+  if (has(102)) crewBonus += 0.08
   const commanderMastery = 1 + crewBonus
-  // 角色加成（BK）：有该乘员 ×1.1，无 ×1.0（无 1.05 兜底）。兼职（commander 兼 gunner）不算专职。
-  // BlitzInfo 口径：车辆没有该乘员角色时不给 1.05 兜底（T-34 无炮手 → 炮塔/瞄准无乘员加成）
   const roleMul = (role: string) => (input.crewRoles.includes(role) ? 1.1 : 1.0)
   const loaderMastery = commanderMastery * roleMul('loader')
   const gunnerMastery = commanderMastery * roleMul('gunner')
@@ -110,20 +78,14 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const driverProg = progressiveStat(driverMastery)
   const commanderProg = progressiveStat(commanderMastery)
 
-  // ---- HP（加法合成；回放实证 5%+6%=11%）----
   const hpCoeff = coeff(
     [hasProvision('smallHPStock'), 0.03],
     [hasProvision('largeHPStock'), 0.06],
     [has(111), 0.05], // highQualityAssembly
   )
   const maxHealth = Math.round(((modules.hull?.hp ?? 0) + (turret.stats?.maxHealth ?? 0)) * hpCoeff)
-  // 无炮塔标记来自导出器（客户端 `<hull><fakeTurrets>` 元素存在 ⇔ hasTurret=false）。
-  // 旧数据/缺字段按“有炮塔”处理（保持既有参数行，不因数据迁移隐藏行）。
   const hasTurret = modules.hasTurret !== false
 
-  // ---- 重量（游戏内整车：车体+发动机+底盘+炮塔+火炮+电台+油箱）----
-  // BK 参考实现漏掉电台/油箱，但 BlitzInfo 显示值与客户端一致（T-34 29.61+0.08+0.25=29.94）；
-  // 各车电台/油箱唯一（738/738 各 1 件，不可换装），故直接取第一件。
   const radio = modules.radios?.[0]
   const fuelTank = modules.fuelTanks?.[0]
   const componentWeights = (engineWeight: number | undefined, trackWeight: number | undefined, turretWeight: number | undefined, gunWeight: number | undefined) =>
@@ -133,9 +95,8 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const weightKg = sumWeights(massParts)
   const weightT = weightKg / 1000
 
-  // ---- 发动机功率（同调用加法）----
   const enginePowerCoeff = coeff(
-    [has(117), 0.06], // recycledEngineSpeed
+    [has(117), 0.06],
     [hasConsumable('freeAfterburning'), Number(input.consumableScripts.freeAfterburning?.params?.enginePowerIncrease ?? 1.1) - 1],
     [hasConsumable('afterburning'), Number(input.consumableScripts.afterburning?.params?.bonusValues?.enginePowerIncrease ?? 20) / 100],
     [hasConsumable('improvedAfterburning'), Number(input.consumableScripts.improvedAfterburning?.params?.enginePowerIncrease ?? 1.35) - 1],
@@ -148,17 +109,13 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const enginePower = baseEnginePower * enginePowerCoeff *
     (1 + skill('surrounded_by_enemy') * skillRate('surrounded_by_enemy', 'enginePowerFactorPerLevel'))
 
-  // ---- 装填（BK：rammer × 乘员 ÷ 肾上腺素；条件技能仅在显式模拟触发时计入）----
   const reloadBase = gun.stats?.reloadTime ?? 0
   const cycle: NonNullable<ComputeInput['gunCycle']> = input.gunCycle || {
     type: 'regular', reload: reloadBase, intraClip: 0, shellCount: 0, shellReloads: [],
     burstGroupCount: 0, burstGroupInterval: 0,
   }
   const isMagazine = cycle.type !== 'regular'
-  // 肾上腺素：客户端 consumable filter 的 exclude extendedTags:["clip"]（弹夹/自动装填车不可用），
-  // 等价于 BK 的 gun_type === regular；burst 已由 tankSetup 的同一过滤排除，这里不另设守卫。
   const adrenaline = hasConsumable('berserk') && cycle.type === 'regular' ? 0.17 : 0
-  // 装填系数（BK）：输弹机 + 装填手；肾上腺素只作用于常规炮
   const reloadCoeff = coeff([has(100), -0.05]) * (1 + loaderDeg)
   const reloadSkillFactor = isMagazine
     ? 1
@@ -167,19 +124,13 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const reload = reloadBase > 0
     ? (reloadCoeff * reloadBase) / (1 + adrenaline) / reloadSkillFactor
     : null
-  // 炮弹装填加速（Shell Reload Boost）：客户端 script 的 clipReloadTimeFactor 作用于**弹间装填**
-  // （描述原文“弹匣内每发炮弹的装填时间”；BlitzInfo 实测 2.40→1.68 = ×0.7）。
   const intraClipFactor = (() => {
     if (!hasConsumable('newAutoloader')) return 1
     const factor = Number(input.consumableScripts?.newAutoloader?.params?.clipReloadTimeFactor)
     return Number.isFinite(factor) && factor > 0 ? factor : 1
   })()
-  // 弹夹/自动装填（客户端 config 原值；整匣/逐发装填吃输弹机+装填手，弹间只吃装填加速）
   const intraClip = cycle.intraClip * intraClipFactor
   const clipShellCount = isMagazine && cycle.shellCount > 0 ? cycle.shellCount : null
-  // 弹夹炮用 gunClipShellReloadTime；自动装填炮用 timeBetweenPumpShots（同一数值只出现一次）
-  // 连发组（PomPom）：组内弹间 / 每组发数 / 每夹组数（客户端 hangarParams 同名参数）。
-  // 非连发组 → null（参数行隐藏）；整夹不能被每组整除时组数留空（fail-closed）。
   const burstGroupSize = cycle.type === 'autoloader' && (cycle.burstGroupCount || 0) > 1
     ? (cycle.burstGroupCount as number)
     : 0
@@ -189,8 +140,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const burstGroupInterval = burstGroupSize > 0 && (cycle.burstGroupInterval || 0) > 0
     ? (cycle.burstGroupInterval as number)
     : null
-  // 弹间装填 = 组与组之间的扳机间隔。整夹只有一组连发时（Annihilator/Cerberus：3 发一组、
-  // 一夹一组）不存在“组间”，该行隐藏——此时唯一的射击间隔是组内的 gunClipBurstReloadTime。
   const clipShotsSpan = burstGroupSize > 0
     ? burstGroupsPerClip != null && burstGroupsPerClip > 1
     : true
@@ -204,7 +153,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     ? cycle.shellReloads.map(value => value * reloadCoeff)
     : []
 
-  // ---- 瞄准 / 散布 ----
   const aimTime = (gun.stats?.aimingTime ?? 0) *
     coeff([has(104), -0.12], [hasConsumable('fireControlSystem'), -0.3]) *
     (1 + gunnerDeg) /
@@ -212,9 +160,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const dispersion = (gun.stats?.shotDispersionRadius ?? 0) *
     coeff([has(106), -0.11], [hasConsumable('fireControlSystem'), -0.3]) *
     (1 + gunnerDeg)
-  // 动态扩圈系数（BlitzInfo FIRE “Gun flexibility” 同口径）：客户端 gun/chassis
-  // dispersionFactors × 垂稳(105) −17% × 对应 smooth_* 技能。这是无量纲系数，
-  // 不是米制散布；照 BI 的 “Moving +0.158 / Shooting +3.255” 显示。
   const gunFactors = gun.stats?.dispersionFactors || {}
   const trackFactors = track.stats?.dispersionFactors || {}
   const dynamicDispersion = (factor: any, skillId: string) => {
@@ -234,30 +179,20 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     return Math.round(value * coeff([has(105), -0.17]) * 1000) / 1000
   })()
 
-  // ---- 视野 ----
   const viewRange = (turret.stats?.circularVisionRadius ?? 0) *
     coeff([has(114), viewRangeBonusByClass(input.vehicleClass)]) *
     (1 + commanderProg) *
     (1 + skill('deadly_accuracy') * skillRate('deadly_accuracy', 'visionRadiusFactorPerLevel'))
 
-  // ---- 隐蔽（2026-10-27 用户裁定：绝对值相加）
-  //   camo = 基础 <invisibility> + 涂装类别系数 + 迷彩网 bonus（静止再 ×activateBonusFactor）。
-  //   数值均为客户端原值（camouflages.xml / optional_devices.xml script），按“百分点”直接相加；
-  //   移动只吃迷彩网的移动 bonus，静止吃翻倍后的 bonus。----
   const paint = input.camouflage ? invisibilityBonusFor(input.paintInvisibility, input.vehicleClass) : 0
   const netBonus = has(115) ? invisibilityBonusFor(input.camouflageNet?.bonus, input.vehicleClass) : 0
   const netMoving = netBonus
   const netStill = netBonus * (Number(input.camouflageNet?.activateBonusFactor) || 0)
-  // 乘员 Camouflage：客户端描述为“隐蔽 +3%/级”，作用在裸隐蔽上；涂装/迷彩网仍按
-  // 用户裁定的绝对值（百分点）相加，不把技能乘到它们身上。
   const camoSkill = 1 + skill('camouflage') * skillRate('camouflage', 'camouflageFactorPerLevel')
   const baseStill = (modules.invisibility?.still ?? 0) * camoSkill
   const baseMoving = (modules.invisibility?.moving ?? 0) * camoSkill
   const camoStill = baseStill + paint + netStill
   const camoMoving = baseMoving + paint + netMoving
-  // 开火后隐蔽：炮的 invisibilityFactorAtShot 是“剩余比例”（T-34 S-54 0.247）；
-  // 移动开火 = 移动隐蔽 × 同一系数，起火 = 静止隐蔽 × 车辆 invisibility.firePenalty
-  // （BK 的 5 种隐蔽状态；数值仍用客户端基础值/涂装/网）。
   const shotFactor = Number(gun.stats?.invisibilityFactorAtShot)
   const hasShotFactor = Number.isFinite(shotFactor) && shotFactor > 0
   const camoShot = hasShotFactor ? camoStill * shotFactor : camoStill
@@ -265,7 +200,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const firePenalty = Number(modules.invisibility?.firePenalty)
   const camoOnFire = Number.isFinite(firePenalty) && firePenalty > 0 ? camoStill * firePenalty : null
 
-  // ---- 极速（加法 bias）----
   const fwdBias =
     (hasConsumable('improvedAfterburning') ? Number(input.consumableScripts.improvedAfterburning?.params?.fwdSpeedLimitBias ?? 4) : 0) +
     (hasProvision('gearOil') ? 2 : 0) +
@@ -277,14 +211,10 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const maxFrontSpeed = (modules.speedLimits?.forward ?? 0) + fwdBias
   const maxBackSpeed = (modules.speedLimits?.backward ?? 0) + bkwdBias
 
-  // ---- 转向 ----
   const turretCoeff = coeff([hasProvision('regular_fuel'), 0.03], [hasProvision('improved_fuel'), 0.1]) *
     (1 + gunnerProg)
   const turretRotationSpeed = (turret.stats?.rotationSpeed ?? 0) * turretCoeff *
     (1 + skill('close_combat_master') * skillRate('close_combat_master', 'turretRotationSpeedFactorPerLevel'))
-  // 火炮转向速度（BK gunTraverseSpeed）：火炮模块自己的 <rotationSpeed> × 与炮塔相同的
-  // 燃料/炮手系数。无炮塔车的“炮塔转速”实际由该值表达（参数区在 !hasTurret 时替换）；
-  // BK 不把 close_combat_master（“炮塔”转速技能）乘到 gunTraverseSpeed，这里保持一致。
   const gunRotationSpeed = Number(gun.stats?.rotationSpeed)
   const gunTraverseSpeed = Number.isFinite(gunRotationSpeed) && gunRotationSpeed > 0
     ? gunRotationSpeed * turretCoeff
@@ -294,8 +224,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     [hasConsumable('improvedAfterburning'), 0.05],
     [skill('virtuoso') > 0, skill('virtuoso') * skillRate('virtuoso', 'rotationSpeedFactorPerLevel')],
   )
-  // 车体转向（BlitzInfo Hull Turn Rate）：发动机功率比 × 底盘转速 × 乘员/操控系数 ×
-  // 初始/当前重量比。升级发动机/减重会提高转向，与游戏内一致。
   const stockEngine = modules.engines?.[0]
   const stockTrack = modules.chassis?.[0]
   const stockTurret = modules.turrets?.[0]
@@ -304,15 +232,11 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const stockWeightKg = sumWeights(stockParts)
   const stockEnginePower = input.stockEnginePower ?? stockEngine?.stats?.power ?? baseEnginePower
   const stockWeightRatio = stockWeightKg > 0 && weightKg > 0 ? stockWeightKg / weightKg : 1
-  // 只计模块发动机（装车/初始），消耗品增压不改变车体转向（BlitzInfo：引擎增压只 +5% rotation）
   const stockPowerRatio = stockEnginePower > 0 ? baseEnginePower / stockEnginePower : 1
   const configuredTurn = (track.stats?.rotationSpeed ?? 0) * hullCoeff * stockPowerRatio
   const chassiRotationSpeed = configuredTurn * (1 + driverProg) * stockWeightRatio
 
-  // ---- 地形阻力（显示系数 = 100/raw）----
   const resist = track.stats?.terrainResistance
-  // Improved Suspension（grousers）：客户端 script 是“通过性 +20/15/30%”
-  // （bonusPercentage），阻力按 1/(1+bonus) 变化；BlitzInfo 实测 Road 91→109 (+20%)。
   const grousers = has(123)
   const suspension = grousers ? [1.2, 1.15, 1.3] : [1, 1, 1]
   const [suspFirm, suspMedium, suspSoft] = suspension.map(bonus => (1 + driverDeg) / bonus)
@@ -320,14 +244,10 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
   const rawMedium = (resist?.[1] ?? 0) * suspMedium
   const rawSoft = (resist?.[2] ?? 0) * suspSoft
 
-  // ---- 弹种（校准弹：AP/APCR ×1.06，HEAT/HE ×1.07）----
   const shell = input.standardShell
   const calibrated = has(103)
-  // 词表见 penetrationCoefficient：ap* / hc*（HEAT）/ he*（HE）/ atgm_heat。
   const penCoeff = penetrationCoefficient(shell?.type, calibrated)
   const penetration = shell ? shell.penetration * penCoeff : null
-  // 钨芯穿甲弹（tungstenTip）：客户端 script 的 min/max 伤害因子 → 平均系数（(1.05+1.25)/2 = 1.15，
-  // 与 BlitzInfo 实测 +15% 一致）；同时作用于 DPM 与模块伤害。
   const tungstenFactor = (() => {
     if (!hasConsumable('tungstenTip')) return 1
     const params = input.consumableScripts?.tungstenTip?.params
@@ -336,33 +256,21 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     return Number.isFinite(min) && Number.isFinite(max) && min > 0 && max > 0 ? (min + max) / 2 : 1
   })()
   const damage = shell ? shell.damage * tungstenFactor : null
-  // 弹匣/连发总伤（BK clipDamage）：单发伤害 × 弹匣容量；regular 不给（参数行隐藏）
   const clipDamage = isMagazine && cycle.shellCount > 0 && damage != null
     ? Math.round(damage * cycle.shellCount * 100) / 100
     : null
   const { dpm, shotsPerMinute, dpmEffective } = calculateGunDamageRate(
     cycle, reload, damage, !!shell, reloadCoeff, intraClip, intraClipFactor,
   )
-  // 弹速：超负荷 107 +35%；火药补给 gunPowder 的客户端 script projectileSpeedFactor = 35
-  // （BK 旧值 30% 已过时，按客户端 script 取 35%）。弹种表/弹种明细按同一系数显示。
   const shellVelocityFactor = 1 + (has(107) ? 0.35 : 0) + (hasProvision('gunPowder') ? 0.35 : 0)
   const shellVelocity = shell?.velocity != null ? shell.velocity * shellVelocityFactor : null
-  // 超负荷 107 的 piercingPenaltyFactor500m = -60：500m 穿透**衰减量**降到 40%
-  // （近距/远距穿深都先吃校准弹系数，再按衰减量 ×0.4 得到远距穿深）。
   const farPenetrationFalloffFactor = has(107) ? 0.4 : 1
 
-  // ---- 装甲表（板值 × 强化装甲系数；系数来自客户端 script，未装 = 1）----
   const armorFactor = Number(input.armorFactor) > 0 ? Number(input.armorFactor) : 1
   const armorValue = (v: number | null | undefined) => (v == null ? null : Math.round(v * armorFactor * 100) / 100)
   const armor = input.armor || null
 
-  // ---- 引擎起火 / 履带维修 ----
   const fireChance = (engine.stats?.fireStartingChance ?? 0) * (hasProvision('safety_set') ? 0.8 : 1)
-  // 履带维修：客户端 hangarParams 的 chassisRepairTime = hysteresisHealth / healthRegenPerSec
-  // （T-34 24/3.5 = 6.86 s，BI 11.21 同值），再除以维修加速：
-  //   工具箱 113 +20%（client script repairSpeedFactor）
-  //   × 乘员 Repair 技能（avatar.xml repairSpeedFactorPerLevel，0–7 级）
-  //   × 防护套件 safety_set +10%（client script repairSpeedIncrease）
   const repairBase = Number(track.stats?.hysteresisHealth) > 0 && Number(track.stats?.healthRegenPerSec) > 0
     ? Number(track.stats.hysteresisHealth) / Number(track.stats.healthRegenPerSec)
     : null
@@ -371,17 +279,10 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     (hasProvision('safety_set') ? 1.1 : 1)
   const chassisRepairTime = repairBase == null ? null : repairBase / repairSpeed
 
-  // ---- 炮塔射界（客户端模块 yawLimits；[-180,180] = 全向）----
   const yaw = turret.stats?.yawLimits
   const yawLeft = Array.isArray(yaw) && yaw.length === 2 ? Math.abs(yaw[0]) : null
   const yawRight = Array.isArray(yaw) && yaw.length === 2 ? yaw[1] : null
 
-  // ---- 俯仰（初始炮塔姿态 + 稳定器 122 装备在预设内时生效）----
-  // 客户端 pitchLimits 的存储顺序：|min| = 仰角上限、max = 俯角下限
-  // （T-34 `-26 8` → 仰 26 / 俯 8；BlitzInfo Gun Turn Limit 同口径）。
-  // 4 辆意系 AT-SPG 的炮塔有非零初始 pitch（models.pb 的 initial_turret_rotation）：
-  // 有效仰角 = |min| − pitch、有效俯角 = max + pitch；BI 11.21 同口径
-  // （Minotauro 18/7 + pitch 3 → 15/10；Ciclope 20/7 + 6.5 → 13.5/13.5）。
   const pitch = gun.stats?.pitchLimits
   const defaultPitch = Number(modules.initialTurretRotation?.pitch) || 0
   const upperBuff = has(122) ? 4 : 0
@@ -391,7 +292,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
 
   const dimensions = tankDimensions(modules, turret, track)
 
-  // The legacy panel keeps its crew curve and display precision. BF consumes raw values.
   const bfDriver = 0.57 + 0.43 * driverMastery
   const knownMass = (parts: unknown[]) => parts.every(x => typeof x === 'number' && Number.isFinite(x) && x >= 0)
   const mobility: Mobility = {
@@ -405,7 +305,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     const raw = resist?.[i]
     if (positive(raw)) mobility.permeability[ground] = 100 * bfDriver * suspension[i] / raw
   }
-  // BF statsByLoadout uses total weight for hp/t, but excludes the radio in the traverse ratio.
   const radioWeight = radio?.stats?.weight
   const turn = configuredTurn * bfDriver * (stockWeightKg - radioWeight) / (weightKg - radioWeight)
   for (const ground of terrains) {
@@ -425,7 +324,6 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     enginePower: Math.round(enginePower * 10) / 10,
     thrustToWeightRatio: weightT > 0 ? Math.round((enginePower / weightT) * 100) / 100 : null,
     chassisRepairTime: chassisRepairTime == null ? null : Math.round(chassisRepairTime * 1000) / 1000,
-    // 弹夹炮的“单发装填”由整匣/逐发字段表达，不重复给 gunShellReloadTime
     gunShellReloadTime: isMagazine || reload == null ? null : Math.round(reload * 1000) / 1000,
     gunCommonDamagePerMin: dpm,
     gunEffectiveDamagePerMin: dpmEffective,
@@ -471,21 +369,18 @@ export function computeCharacteristics(input: ComputeInput): TankCharacteristics
     terrainPermeabilityMedium: rawMedium > 0 ? Math.round((100 / rawMedium) * 10) / 10 : null,
     terrainPermeabilitySoft: rawSoft > 0 ? Math.round((100 / rawSoft) * 10) / 10 : null,
     engineFireStartingChance: Math.round(fireChance * 10000) / 100,
-    // 车体尺寸（BI Dimensions 同口径；无碰撞盒 = null，参数行隐藏）
     tankWidth: dimensions == null ? null : Math.round(dimensions.width * 100) / 100,
     tankLength: dimensions == null ? null : Math.round(dimensions.length * 100) / 100,
     tankHeight: dimensions == null ? null : Math.round(dimensions.height * 100) / 100,
     tankVolume: dimensions == null ? null : Math.round(dimensions.volume * 100) / 100,
     gunPitchUpLimit: pitchUp,
     gunPitchDownLimit: pitchDown,
-    // 装甲（参数区；客户端结构里的 turretArmor*/primaryArmor* 行）
     turretArmorFront: armorValue(armor?.turret?.front),
     turretArmorSide: armorValue(armor?.turret?.sides),
     turretArmorRear: armorValue(armor?.turret?.rear),
     hullArmorFront: armorValue(armor?.hull?.front),
     hullArmorSide: armorValue(armor?.hull?.sides),
     hullArmorRear: armorValue(armor?.hull?.rear),
-    // 供 UI 判定基准差分的辅助字段（不属于客户端参数键）
     _damageCoeff: tungstenFactor,
     _shellVelocityFactor: shellVelocityFactor,
     _farPenetrationFalloffFactor: farPenetrationFalloffFactor,

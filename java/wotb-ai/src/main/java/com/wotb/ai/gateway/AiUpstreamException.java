@@ -1,10 +1,5 @@
 package com.wotb.ai.gateway;
 
-/**
- * 调用上游 AI 服务（DeepSeek）失败时抛出。
- * 由 AI HTTP 边界映射为稳定错误码，
- * 不包含任何密钥或敏感信息。
- */
 public class AiUpstreamException extends RuntimeException {
 
     private final String code;

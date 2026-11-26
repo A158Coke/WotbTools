@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Contract for the read-only TX_RUNTIME_READY entrypoint. Business PostgreSQL is
-# authoritative business state, so the check must refuse readiness when its
-# runtime, reviewed loopback/WireGuard bindings, or OpenTofu marker is wrong.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,8 +20,6 @@ grep -Fq 'clientAuthMethod' "${RUNTIME_LIBS[@]}"
 grep -Fq 'https://graph.qq.com/oauth2.0/authorize' "${RUNTIME_LIBS[@]}"
 grep -Fq 'https://graph.qq.com/oauth2.0/token?fmt=json&need_openid=1' "${RUNTIME_LIBS[@]}"
 grep -Fq 'https://graph.qq.com/user/get_user_info' "${RUNTIME_LIBS[@]}"
-# The declared/active split is a contract of its own: the gate must read the
-# running container environment, not just re-render Compose.
 grep -Fq 'tx-logical-endpoints-declared' "${RUNTIME_LIBS[@]}"
 grep -Fq 'tx-logical-endpoints-active' "${RUNTIME_LIBS[@]}"
 grep -Fq 'docker inspect --format' "${RUNTIME_LIBS[@]}"
@@ -32,8 +27,6 @@ grep -Fq 'tx-alloy-config: PASS' "${RUNTIME_LIBS[@]}"
 grep -Fq 'retired-replay-switches: PASS' "${RUNTIME_LIBS[@]}"
 grep -Fq 'wireguard-backend' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:32' >&2; exit 1; }
-# Replay parsing runs in the browser: the server-side replay chain (broker,
-# object store, parser worker, processing/export jobs) must not come back.
 grep -Eiq 'rabbitmq|minio|parser-worker|processing-jobs|export-jobs|map-overview|battle-playback-v2' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:36' >&2; exit 1; }
 grep -Fq 'keycloak-qq-provider.jar' "${RUNTIME_LIBS[@]}"
@@ -44,10 +37,6 @@ grep -Eiq '(nsupdate|route53|cloudflare|gcloud dns|az network dns)' "$CHECK" \
 grep -Eiq 'docker compose .* (stop|rm|down).*yecao' "$CHECK" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:43' >&2; exit 1; }
 
-# The retired cutover machinery must be gone: no phase selector, no SNI-only
-# edge phase, no cutover verdicts or boundary token, no migration-only snapshot,
-# and no business-data-integrity token (its Yecao row-count snapshot input cannot
-# be regenerated, so the token was retired with the machinery).
 grep -Fq 'WOTB_CUTOVER_PHASE' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:50' >&2; exit 1; }
 grep -Fq 'CUTOVER_PHASE' "${RUNTIME_LIBS[@]}" \
@@ -71,8 +60,6 @@ grep -Fq -- '--post-cutover' "$CHECK" \
 grep -Fq 'pre-cutover' "$CHECK" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:70' >&2; exit 1; }
 
-# Business PostgreSQL is authoritative state: the check must own its health,
-# reviewed loopback/WireGuard bindings, and provisioning marker before readiness.
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_USER' "${RUNTIME_LIBS[@]}"
 grep -Fq 'TX_BUSINESS_POSTGRES_ADMIN_PASSWORD' "${RUNTIME_LIBS[@]}"
 grep -Fq 'wireguard-service-plane: PASS' "${RUNTIME_LIBS[@]}"
@@ -90,7 +77,6 @@ grep -Fq 'e2e_first_replay_id' "${RUNTIME_LIBS[@]}"
 grep -Fq 'replayAvailable' "${RUNTIME_LIBS[@]}"
 grep -Fq 'totalPages' "${RUNTIME_LIBS[@]}"
 grep -Fq 'hof_page=$((hof_page + 1))' "${RUNTIME_LIBS[@]}"
-# The new checks must be read-only: no DDL/DML against the business database.
 grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alter[[:space:]]+database)' "${RUNTIME_LIBS[@]}" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:93' >&2; exit 1; }
 
@@ -291,8 +277,6 @@ esac
 FAKE_DOCKER
 chmod 700 "$WORK/bin/docker"
 
-# Shared check environment. WOTB_TX_DIR is set per invocation because the
-# relocated-layout fixtures point at a promoted runtime directory.
 CHECK_ENV=(
   PATH="$WORK/bin:$PATH" HOME="$WORK"
   KC_POSTGRES_ADMIN_USER=kc_admin KC_POSTGRES_ADMIN_PASSWORD=not-real
@@ -319,9 +303,6 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$ready_output"
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$ready_output"
 grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$ready_output"
 
-# A full reviewed TX1 placement must stay green on both sides: the rendered
-# Compose contract, the running containers, and the expectation the gate was
-# invoked with all carry the same reviewed value.
 wg_ready_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087 \
   FAKE_BUSINESS_DB_HOST=10.20.0.1 FAKE_BUSINESS_DB_PORT=25432 \
@@ -342,16 +323,6 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-declared: PASS' <<< "$wg_ready_output"
 grep -Fq 'tx-logical-endpoints-active: PASS' <<< "$wg_ready_output"
 
-# K6B-2 COMPLETE production steady state: all six TX consumers are on the frozen K6B
-# baseline (K6B-2A Frontend ->
-# Business API, K6B-2B Business API -> Business PostgreSQL, K6B-2C Business API ->
-# Keycloak Admin, K6B-2D Keycloak -> Keycloak PostgreSQL, K6B-2E Caddy -> Frontend,
-# K6B-2F Caddy -> Keycloak). No private Docker-local TX placement remains; the only
-# non-TX dependency is the Yecao AI upstream. The rendered contract, the running
-# containers, and the gate expectation all carry the same reviewed endpoints, and this is
-# the accepted K6B-2 production state, so its acceptance tokens are asserted here, not
-# only in production. `k6b2f_placements` is reused by the baseline-drift cases below so
-# each of them can only fail because of the single change it introduces.
 k6b2f_placements=(
   FAKE_FRONTEND_UPSTREAM=http://10.20.0.1:8087
   FAKE_RUNNING_FRONTEND_UPSTREAM=http://10.20.0.1:8087
@@ -375,14 +346,6 @@ k6b2f_placements=(
 k6b2f_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$k6b2f_output" \
   || { echo "FAIL: the K6B-2F placement must be ready (output: $k6b2f_output)" >&2; exit 1; }
-# The Keycloak/business/Caddy tokens prove real behaviour behind the new placements:
-# Keycloak reads its realm/clients/IdP state out of PostgreSQL and issues tokens
-# (keycloak / auth-token / anonymous-rejected / admin-authz / qq-idp-admin-api), the
-# business read path runs through the new database placement, the two PostgreSQL
-# containers are checked as healthy containers, and both public ingress paths still work
-# through the gateway (caddy-frontend / public-tls-web for the site, caddy-keycloak /
-# public-tls-auth for the auth hostname, whose discovery must still report the public
-# issuer).
 for token in \
   'tx-logical-endpoints-declared: PASS' \
   'tx-logical-endpoints-active: PASS' \
@@ -418,7 +381,6 @@ grep -Fq 'admin-authz: PASS' <<< "$ready_output"
 grep -Fq 'business-profile: PASS' <<< "$ready_output"
 grep -Fq 'business-hof: PASS' <<< "$ready_output"
 grep -Fq 'hof-replay-storage: PASS' <<< "$ready_output"
-# The public edge is a single trusted-TLS assertion, never an SNI-only phase.
 grep -Fq 'public-tls-web: PASS' <<< "$ready_output"
 grep -Fq 'public-tls-auth: PASS' <<< "$ready_output"
 grep -Fq 'public-edge-sni' <<< "$ready_output" \
@@ -435,9 +397,6 @@ grep -Fq 'business-postgres: PASS' <<< "$ready_output"
 grep -Fq 'wireguard-service-plane: PASS' <<< "$ready_output"
 grep -Fq 'business-postgres-provisioning: PASS' <<< "$ready_output"
 
-# Docker Compose writes lifecycle/status lines for `compose run` to stderr in
-# production. Those diagnostics must remain visible without contaminating the
-# JSON/body/status protocol captured from stdout.
 stderr_noise_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_COMPOSE_RUN_STDERR=1)"
 for token in \
   'TX_RUNTIME_READY' \
@@ -456,8 +415,6 @@ grep -Fq 'Container deploy-health-probe-run-test Creating' <<< "$stderr_noise_ou
   exit 1
 }
 
-# Exercise the actual promoted TX layout: the wrapper and deploy helper are
-# siblings under runtime/deploy, with no repository checkout or source root.
 RELOCATED_ROOT="$WORK/relocated-root"
 mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/android-release"
 cp "$ROOT/deploy/tx/runtime-check.sh" "$RELOCATED_ROOT/deploy/runtime-check.sh"
@@ -474,7 +431,6 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$relocated_ready_output"
 grep -Fq 'QQ_IDP_STATUS=idp-qq=READY' <<< "$relocated_ready_output"
 grep -Fq 'business-postgres: PASS' <<< "$relocated_ready_output"
 
-# --- Routing, execution-plane, business-E2E and edge tokens must all block readiness ---
 run_gate_failure() {
   local label="$1" expected="$2" tx_dir="$3" check_script="$4"
   shift 4
@@ -496,16 +452,10 @@ run_gate_failure "frontend-upstream-yecao" 'tx-logical-endpoints-declared: FAIL'
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=http://10.20.0.2:8087
 run_gate_failure "frontend-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_UPSTREAM=https://example.test
-# The AI route must reach the Yecao ai-service over WireGuard: pointing it at the TX
-# business runtime or a public host reintroduces exactly the boundary this check owns.
 run_gate_failure "frontend-ai-upstream-business-api" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=http://business-api:8087
 run_gate_failure "frontend-ai-upstream-public" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_FRONTEND_AI_UPSTREAM=https://ai.example.test
-# K6B is COMPLETE, so the cases below are steady-state drift guards rather than migration
-# sequencing: each one rolls a single consumer back to its Docker-local *rollback* value
-# (still legal in the canonical allowlist) and requires the declared contract to fail,
-# so a rollback can never be merged without an explicit, reviewed baseline change.
 run_gate_failure "k6b2b-baseline-drift-database-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_BUSINESS_DB_HOST=business-postgres FAKE_BUSINESS_DB_PORT=5432
@@ -518,23 +468,15 @@ run_gate_failure "k6b2a-baseline-drift-frontend-rolled-back" 'tx-logical-endpoin
 run_gate_failure "k6b2d-baseline-drift-keycloak-db-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://keycloak-postgres:5432/keycloak
-# The two PostgreSQL placements are not interchangeable: pointing the Keycloak database
-# consumer at the Business PostgreSQL port (25432), or at 5432 on the WireGuard host,
-# must fail even though both are otherwise well-formed.
 run_gate_failure "k6b2d-business-postgres-port-used-for-keycloak" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:25432/keycloak
 run_gate_failure "k6b2d-wg-host-on-the-local-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:5432/keycloak
-# Caddy -> Keycloak rolled back to `keycloak:8080`: the Docker-local value is a legal
-# rollback placement but not the frozen production baseline.
 run_gate_failure "k6b2f-baseline-drift-caddy-keycloak-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=keycloak:8080
-# K6B-2F is reviewing one specific endpoint: the Keycloak service-plane port. The
-# container port, the frontend port, the Business API port and the management port are
-# all well-formed values on the same host, so only the reviewed placement tells them apart.
 run_gate_failure "k6b2f-keycloak-upstream-on-the-container-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:80
@@ -547,24 +489,15 @@ run_gate_failure "k6b2f-keycloak-upstream-on-the-business-api-port" 'tx-logical-
 run_gate_failure "k6b2f-keycloak-upstream-on-the-management-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8088
-# The public auth hostname is not a placement endpoint: TLS termination and the realm
-# issuer stay on https://auth.wotbtools.com, so it must never be dialled as an upstream.
 run_gate_failure "k6b2f-keycloak-upstream-is-the-public-auth-host" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=auth.wotbtools.com:443
-# TX2 is a legal WireGuard placement in the canonical allowlist but is not the reviewed
-# production placement, so the desired-state contract must refuse it.
 run_gate_failure "k6b2f-keycloak-upstream-on-tx2" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_KEYCLOAK_UPSTREAM=10.20.0.3:8080
-# Caddy -> Frontend rolled back to `wotb-frontend:80`: same steady-state drift guard.
 run_gate_failure "k6b2e-baseline-drift-caddy-frontend-rolled-back" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=wotb-frontend:80
-# The frozen baseline reviews one specific endpoint per consumer: the frontend
-# service-plane port here. The
-# container port, the Keycloak port and the Business API port are well-formed values on
-# the same host, so only the reviewed placement can tell them apart.
 run_gate_failure "k6b2e-frontend-upstream-on-the-container-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=10.20.0.1:80
@@ -577,13 +510,9 @@ run_gate_failure "k6b2e-frontend-upstream-on-the-business-api-port" 'tx-logical-
 run_gate_failure "k6b2e-frontend-upstream-on-an-adjacent-port" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=10.20.0.1:8082
-# TX2 is a legal WireGuard placement in the canonical allowlist but is not this step's
-# reviewed production placement, so the desired-state contract must refuse it.
 run_gate_failure "k6b2e-frontend-upstream-on-tx2" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_CADDY_FRONTEND_UPSTREAM=10.20.0.3:8081
-# The Yecao AI upstream is not a TX placement consumer: moving it to a TX WireGuard
-# address must fail on both contracts.
 run_gate_failure "ai-upstream-moved-to-tx-wg" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" "${k6b2f_placements[@]}" \
   FAKE_FRONTEND_AI_UPSTREAM=http://10.20.0.1:8089
@@ -603,29 +532,18 @@ run_gate_failure "active-keycloak-admin-public-host" 'tx-logical-endpoints-activ
 run_gate_failure "active-keycloak-db-wrong-port" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_RUNNING_KEYCLOAK_DB_URL=jdbc:postgresql://10.20.0.1:5432/keycloak
-# Both Caddy upstreams are part of the public ingress contract and are read from
-# the running gateway, not from the Compose file it was rendered out of.
 run_gate_failure "active-caddy-frontend-upstream" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_CADDY_FRONTEND_UPSTREAM=10.20.0.2:8081
 run_gate_failure "active-caddy-keycloak-upstream" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_RUNNING_CADDY_KEYCLOAK_UPSTREAM=keycloak:9999
 run_gate_failure "declared-caddy-keycloak-upstream" 'tx-logical-endpoints-declared: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_CADDY_KEYCLOAK_UPSTREAM=keycloak:9999
-# The canonical issuer never becomes a placement endpoint.
 run_gate_failure "active-keycloak-issuer" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   FAKE_RUNNING_KEYCLOAK_ISSUER_URI=https://auth.example.invalid/realms/wotbtools
 run_gate_failure "active-container-missing" 'tx-logical-endpoints-active: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_NO_RUNNING_CONTAINER=caddy
 
-# The K6B-2F false green this gate exists to refuse: the invocation and the staged
-# Compose file both carry the reviewed WireGuard placements while the containers that
-# are actually running still dial Docker-local. Both sides are healthy, so only the
-# active contract can catch it - and the declared contract must still pass, otherwise
-# the fixture would be failing for the wrong reason. This is also the case that proves
-# both Caddy upstreams are read from the running gateway: the running Caddy is still
-# substituting `wotb-frontend:80` and `keycloak:8080` into its Caddyfile, which no
-# declared-side check can see.
 set +e
 stale_active_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" \
   "${k6b2f_placements[@]}" \
@@ -672,8 +590,6 @@ run_gate_failure "retired-execution-mode-switch" 'retired-replay-switches: FAIL'
 run_gate_failure "retired-job-repository-switch" 'retired-replay-switches: FAIL' \
   "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT" FAKE_JOB_REPOSITORY=memory
 
-# Every business token must independently block readiness, so a green check cannot
-# be produced by a partially working chain.
 source_root_env=(env WOTB_SOURCE_ROOT="$ROOT")
 run_gate_failure "e2e-identity-missing" 'business-e2e: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" KEYCLOAK_E2E_CLIENT_SECRET=
@@ -689,7 +605,6 @@ run_gate_failure "hof-replay-missing" 'hof-replay-storage: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_LIST_EMPTY=1
 run_gate_failure "hof-replay-unreadable" 'hof-replay-storage: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_HOF_REPLAY_STATUS=404
-# An untrusted certificate is a hard failure: TLS verification is never disabled.
 run_gate_failure "public-tls-untrusted-certificate" 'public-tls-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_EXIT=60
 run_gate_failure "public-tls-wrong-address" 'public-tls-web: FAIL' \
@@ -703,7 +618,6 @@ run_gate_failure "public-tls-handshake-failed" 'public-tls-web: FAIL' \
 run_gate_failure "public-tls-non-2xx" 'public-tls-web: FAIL' \
   "$WORK" "$CHECK" "${source_root_env[@]}" FAKE_TLS_STATUS=503
 
-# An unknown flag must be a usage error: the entrypoint accepts no phase.
 set +e
 usage_output="$(env -i "${CHECK_ENV[@]}" WOTB_TX_DIR="$WORK" bash "$CHECK" --bogus 2>&1)"
 usage_rc=$?
@@ -712,7 +626,6 @@ set -e
 grep -Fq 'usage: runtime-check.sh' <<< "$usage_output" \
   || { echo "FAIL: usage error must explain the accepted flags (output: $usage_output)" >&2; exit 1; }
 
-# --- Business PostgreSQL must independently block readiness -------------------
 run_business_failure() {
   local label="$1" expected="$2" tx_dir="$3" check_script="$4"
   shift 4
@@ -739,8 +652,6 @@ run_business_failure "business-postgres-not-ready" 'business-postgres: FAIL (con
 run_business_failure "business-postgres-port-exposed" 'wireguard-service-plane: FAIL (core services must preserve exactly the reviewed WireGuard and loopback bindings)' \
   "$WORK" "$CHECK" env FAKE_BUSINESS_PORT_EXPOSED=1
 
-# A missing or invalid OpenTofu marker must block readiness even when the
-# runtime itself is healthy.
 MARKER="$WORK/business-postgres.tofu-provisioned"
 mv -- "$MARKER" "$WORK/business-postgres.tofu-provisioned.saved"
 run_business_failure "business-postgres-marker-missing" 'business-postgres-provisioning: FAIL (TX-local OpenTofu marker is missing or invalid)' \
@@ -750,7 +661,6 @@ run_business_failure "business-postgres-marker-invalid" 'business-postgres-provi
   "$WORK" "$CHECK"
 printf 'tx-local-opentofu-business-postgres\n' > "$MARKER"
 
-# The relocated production layout must apply the same Business PostgreSQL check.
 mv -- "$RELOCATED_ROOT/business-postgres.tofu-provisioned" \
   "$RELOCATED_ROOT/business-postgres.tofu-provisioned.saved"
 run_business_failure "relocated-business-postgres-marker-missing" \
@@ -771,8 +681,6 @@ grep -Fq 'TX_RUNTIME_READY' <<< "$qq_idp_blocked_output" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-check.sh:638' >&2; exit 1; }
 grep -Fq 'qq-idp-admin-api: FAIL (idp-qq representation is not production-ready)' <<< "$qq_idp_blocked_output"
 
-# A healthy runtime with a valid marker must still be able to reach readiness,
-# proving the checks gate rather than permanently block the deployment.
 final_output="$(run_check "$WORK" "$CHECK" env WOTB_SOURCE_ROOT="$ROOT")"
 grep -Fq 'TX_RUNTIME_READY' <<< "$final_output"
 

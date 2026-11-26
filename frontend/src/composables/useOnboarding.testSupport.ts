@@ -46,7 +46,6 @@ export function createOnboardingTestHelpers(boundary: OnboardingTestBoundary) {
     controller.registerWorkspace({ hasFiles: () => selected.value, busy: () => busy.value,
       selectionIdentity: () => revision.value, loadDemo, chooseOwnReplay, setCapability })
     controller.registerSurface('playback', { ready: () => true, prepare, cleanup })
-    // 防遮这一步的目标控件在 Display 面里，它有自己的 surface（prepare 负责把面打开）。
     controller.registerSurface('display', { ready: () => true, prepare, cleanup })
     return { controller, wrapper, route, canInvite, selected, revision, busy, loadDemo, chooseOwnReplay, setCapability, prepare, cleanup }
   }

@@ -6,7 +6,6 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
 function reset() {
   db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, recommendationsAvailable: true, creatorReads: 0, publicListReads: 0, metadataReads: 0, recommendationReads: 0,
@@ -113,23 +112,18 @@ async function fill(page, values) {
   }, values)
 }
 async function chooseAvatar(page) { await page.evaluate(`(async()=>{const canvas=document.createElement('canvas');canvas.width=32;canvas.height=32;canvas.getContext('2d').fillRect(0,0,32,32);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));const transfer=new DataTransfer();transfer.items.add(new File([blob],'avatar.png',{type:'image/png'}));const input=document.querySelector('[data-testid=tournament-image-input]');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}))})()`) }
-// 触屏下 overflow 还要比 innerWidth 与 visualViewport：移动端模拟下内容过宽会撑大布局视口，scrollWidth 检测不到。
-// 命中区按布局盒（offset*）量：AppButton 按下反馈 scale(.97) 的回弹过渡会让 getBoundingClientRect 暂时缩到 42.68px。
 async function geometry(page, profile, configuration = false) {
   const value = await page.evaluate(`(()=>{const p=[...document.querySelectorAll('.creator-config-grid > *')].map(e=>e.getBoundingClientRect());return{overflow:document.documentElement.scrollWidth>innerWidth+1||matchMedia('(pointer:coarse)').matches&&innerWidth>visualViewport.width+1,profile:document.documentElement.dataset.uiProfile,stacked:p.length===2?p[1].top>=p[0].bottom:false,tiny:matchMedia('(pointer:coarse)').matches?[...document.querySelectorAll('.creators-page button')].filter(e=>e.getClientRects().length>0&&e.offsetWidth>0&&e.offsetHeight>0&&e.offsetHeight<43).map(e=>e.dataset.testid||e.textContent):[]}})()`)
   assert.equal(value.overflow, false); assert.equal(value.profile, profile); assert.deepEqual(value.tiny, [])
   if (configuration) assert.equal(value.stacked, await page.evaluate('innerWidth<768'))
 }
-/** 推荐入口：小屏在左侧抽屉，大屏在侧边栏（同一份分组）。 */
 async function openCreators(page, scenario) {
   await page.navigateViaShell('creators', scenario.touch)
 }
-/** 4.0：bilibili 推荐是一页两个页签；只有一种类型已发布时没有页签，直接就是该列表。 */
 async function openType(page, type, touch) {
   await page.waitForValue('!!document.querySelector("[data-testid=creators-page]")', Boolean, { label: 'recommendations page' })
   if (await page.evaluate(`!!document.querySelector('[data-testid=recommendation-tab-${type}]')`)) await tap(page, `[data-testid=recommendation-tab-${type}]`, touch)
 }
-/** 抽屉外壳的导航几何：每一项 44px 命中区、项与项不重叠、抽屉不越出视口、没有底部 Tab 栏。 */
 async function drawerGeometry(page, scenario) {
   await page.openNavDrawer(scenario.touch)
   const value = await page.evaluate(`(() => {
@@ -189,7 +183,6 @@ async function cardPresentation(page, origin, scenario, chrome, sessionId) {
       await writeFile(join(process.env.CREATOR_SCREENSHOTS, `${scenario.name}-${admin ? 'admin' : 'public'}.png`), Buffer.from(shot.data, 'base64'))
     }
   }
-  // Missing images return to the compact icon header without leaving a cover-sized hole.
   db.creators[0].avatarId = 'missing-image'
   await tap(page, '[data-testid=creator-refresh]', scenario.touch)
   await page.waitForValue('performance.getEntriesByType("resource").some(entry => entry.name.endsWith("/api/creators/avatars/missing-image"))', Boolean)
@@ -420,7 +413,6 @@ try {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
         await drawerGeometry(page, scenario)
         if (scenario.productionHome) {
-          // 主站：Logo 与抽屉里的「首页」都回到公开首页（APK 与本地回回放）。
           await page.tapSelector('[data-testid=app-top-bar] .brand', scenario.touch)
           await page.waitForValue('!!document.querySelector("[data-testid=home-feedback]")', Boolean, { label: 'public home after logo' })
           assert.deepEqual(await page.evaluate('[location.pathname, new URL(location.href).searchParams.has("view")]'), ['/', false])

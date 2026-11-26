@@ -1,7 +1,3 @@
-// UI Profile 防业务 fork 门禁。
-// 硬约定：UI Profile 只改变 Presentation 层视觉，业务组件/状态/API 不得按 Profile fork；
-// 禁止用 :key="uiProfile" 触发组件重建（会丢 AI streaming / Replay / HoF 表单状态）。
-// 这是一组 source-contract 断言：任何 .vue 出现以下模式即失败。
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

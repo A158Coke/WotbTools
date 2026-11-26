@@ -1,4 +1,3 @@
-/** workspace 几何探针（只读）。 */
 function workspace2dProbe(touch = false) {
   const box = (el) => {
     if (!el || !el.getClientRects().length) return null
@@ -37,16 +36,12 @@ function workspace2dProbe(touch = false) {
   }
   const buttons = [...document.querySelectorAll('.pb-controls > .pb-btn, .pb-controls > * > .pb-btn, .pb-controls .pb-btn')]
     .filter((b) => b.getClientRects().length && !b.closest('.pb-speed-menu'))
-  // 手机横屏：全屏入口内联在传输条（右上浮动按钮已移除），与桌面同一组 6 个主控件。
-  // 手机竖屏仍保留 HUD 右上角的浮动全屏入口（不压纵向流的名单），传输条只有 5 个主控件。
-  // touch 由调用方经 page.callWith 显式传入（probe 在页面内执行，无 Node 闭包）。
   const phoneLandscape = !!root?.classList.contains('pb-phone-landscape')
   const primaryIds = touch && !phoneLandscape
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
     : ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-fullscreen', 'pb-secondary-entry']
   const primary = primaryIds
     .map((test) => box(document.querySelector(`.pb-controls [data-test="${test}"]`)))
-  // 视觉盒仍是 36px：用真实命中测试验证伪元素把可点范围扩到 ≥40×40（不读 token 代替）。
   const primaryHitAreas = primaryIds.map((test, index) => {
     const el = document.querySelector(`.pb-controls [data-test="${test}"]`)
     const b = primary[index]
@@ -124,10 +119,6 @@ function workspace2dProbe(touch = false) {
   }
 }
 
-/**
- * 紧凑 HUD 的宽度竞争探针：把地图名换成超长串后，量实际轨道/数字/中列的几何。
- * 只读 + 一次 DOM 文本注入，不依赖 fixture 为某个设备硬编码 HUD 宽度。
- */
 function hudStressProbe(longTitle = false) {
   const box = (el) => {
     if (!el || !el.getClientRects().length) return null

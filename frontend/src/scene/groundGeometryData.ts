@@ -1,6 +1,3 @@
-// 地形几何**纯数据阶段**（无 THREE 依赖）：自适应细分 + 底图 UV + 顶点法线 + 包围球。
-// 独立成模块的原因：地形 LOD 重建在 Worker 里跑（playback/terrainBuild.worker.ts），Worker 不能把整个
-// three 打进来；groundPass.js 再导出本模块，主线程/烘焙脚本的调用面不变。
 import { buildAdaptiveTerrain, groundMapUv } from './terrainMesh.js';
 
 /** 地形几何**纯数据阶段**（无 THREE 依赖，可在 Worker 里跑）：自适应细分 + 底图 UV + 顶点法线 + 包围球。
@@ -43,8 +40,6 @@ export function buildGroundGeometryData({
   } as Parameters<typeof buildAdaptiveTerrain>[0]);
   const adaptiveMs = measure ? performance.now() - start : 0;
   if (measure) start = performance.now();
-  // 底图 UV：回退档（无分层）把 `ground.webp` 直接摊在地形上——分层着色的 UV 在
-  // 片元由世界坐标反推，但回退材质吃几何 `uv`，缺了整张图退化成单 texel 常量（2026-10-10 review P1）
   const uvs = groundMapUv(positions, span, cx, cz);
   const assemblyMs = measure ? performance.now() - start : 0;
   if (measure) start = performance.now();
@@ -62,7 +57,6 @@ export function buildGroundGeometryData({
   };
 }
 
-/** three `computeVertexNormals`（indexed）的逐步等价：float32 累加 → 逐点归一。 */
 function computeIndexedVertexNormals(positions: Float32Array, indices: ArrayLike<number>): Float32Array {
   const normals = new Float32Array(positions.length);
   for (let i = 0, il = indices.length; i < il; i += 3) {
@@ -72,7 +66,6 @@ function computeIndexedVertexNormals(positions: Float32Array, indices: ArrayLike
     const cx = positions[vC], cy = positions[vC + 1], cz = positions[vC + 2];
     const cbx = cx - bx, cby = cy - by, cbz = cz - bz;
     const abx = ax - bx, aby = ay - by, abz = az - bz;
-    // cb = cb × ab（three: cb.cross(ab)）
     const nx = cby * abz - cbz * aby;
     const ny = cbz * abx - cbx * abz;
     const nz = cbx * aby - cby * abx;
@@ -88,7 +81,6 @@ function computeIndexedVertexNormals(positions: Float32Array, indices: ArrayLike
   return normals;
 }
 
-/** three `computeBoundingSphere` 的逐步等价：包围盒中心 + 到各点最大距离。 */
 function computeBoundingSphereData(positions: Float32Array): { center: number[]; radius: number } {
   const count = positions.length;
   if (!count) return { center: [0, 0, 0], radius: 0 };
@@ -108,7 +100,6 @@ function computeBoundingSphereData(positions: Float32Array): { center: number[];
   return { center: [ccx, ccy, ccz], radius: Math.sqrt(maxRadiusSq) };
 }
 
-/** 纯数据阶段产物里全部可转移的 ArrayBuffer（Worker 回传用；去重，positions 被 terrainBuild 共享）。 */
 export function groundGeometryTransferables(data: GroundGeometryData): ArrayBufferLike[] {
   const set = new Set<ArrayBufferLike>();
   const tb = data.terrainBuild as Record<string, ArrayBufferView | undefined>;

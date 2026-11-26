@@ -63,8 +63,6 @@ class ItemCatalogValidationTest {
         }
     }
 
-    // ======== Schema helper unit tests ========
-    // Uses helpers: setEffect, numericEffect, assertInvalid, assertValid
 
     @Test
     void setMissingValueFails() { assertInvalid(setEffect(null)); }
@@ -239,7 +237,6 @@ class ItemCatalogValidationTest {
         assertDoesNotThrow(() -> validateConsumableItem(item, 0, new HashSet<>(), new HashSet<>()));
     }
 
-    // ======== Item validators ========
 
     private static void validateEquipmentItem(final JsonNode item, final int idx,
             final Set<Integer> ids, final Set<String> codes) {
@@ -293,7 +290,6 @@ class ItemCatalogValidationTest {
         validateEffects(item.get("effects"), "provisions[" + idx + "]");
     }
 
-    // ======== Schema helpers ========
 
     private static JsonNode requireItems(final String fileName) throws Exception {
         final JsonNode root = load(fileName);
@@ -404,7 +400,6 @@ class ItemCatalogValidationTest {
         return MAPPER.readTree(file);
     }
 
-    // ======== In-memory JSON factories ========
 
     private static ObjectNode obj(final Object... pairs) {
         var n = NF.objectNode();
@@ -426,9 +421,7 @@ class ItemCatalogValidationTest {
         return a;
     }
 
-    // ======== Effect test helpers ========
 
-    /** Create a SET effect with the given raw value node (converted to JsonNode via obj's logic). */
     private static JsonNode setEffect(final Object rawValue) {
         if (rawValue == null) {
             return array(obj("operation", "SET", "stat", "x"));
@@ -436,12 +429,10 @@ class ItemCatalogValidationTest {
         return array(obj("operation", "SET", "value", rawValue, "stat", "x"));
     }
 
-    /** Assert that an effect (as a single-element array) fails validateEffects. */
     private static void assertInvalid(final JsonNode effect) {
         assertThrows(AssertionError.class, () -> validateEffects(effect, "t"));
     }
 
-    /** Assert that an effect (as a single-element array) passes validateEffects. */
     private static void assertValid(final JsonNode effect) {
         assertDoesNotThrow(() -> validateEffects(effect, "t"));
     }

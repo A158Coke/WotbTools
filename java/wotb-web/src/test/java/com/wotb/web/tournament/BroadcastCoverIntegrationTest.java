@@ -52,7 +52,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Actual PostgreSQL transactions/locks/FKs; the concrete COS boundary is mocked, never cloud-backed. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class BroadcastCoverIntegrationTest {
@@ -96,7 +95,6 @@ class BroadcastCoverIntegrationTest {
 
     @Test void reservationIsCommittedBeforePutAndNetworkNeverHoldsASeasonLock() throws Exception {
         doAnswer(call -> {
-            // A different physical connection can already see the durable PENDING row.
             try (final Connection connection = jdbc.getDataSource().getConnection();
                  final var statement = connection.createStatement();
                  final var result = statement.executeQuery("select status from tournament_broadcast_cover")) {

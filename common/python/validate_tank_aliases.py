@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Fail closed on an invalid common/tank_aliases.json.
 
@@ -112,7 +111,6 @@ def validate_tank_aliases(document, known_tank_ids):
             if not trimmed:
                 blank_aliases.append(tank_id)
                 continue
-            # Search normalizes case, so "Death Star" and "death star" are one alias.
             folded = trimmed.casefold()
             if folded in seen:
                 duplicates.append((tank_id, trimmed))

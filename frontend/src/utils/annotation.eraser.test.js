@@ -6,7 +6,7 @@ describe('applyEraser (semantic capsule)', () => {
 
   it('clips a stroke at capsule boundaries and splits into sub-segments', () => {
     const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }]
-    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6) // 覆盖 [9,21]
+    const result = applyEraser([pen(points)], [{ x: 15, y: 0 }], 6)
     expect(result).toHaveLength(2)
     expect(result[0].points).toEqual([{ x: 0, y: 0 }, { x: 9, y: 0 }])
     expect(result[1].points).toEqual([{ x: 21, y: 0 }, { x: 30, y: 0 }, { x: 40, y: 0 }])
@@ -29,7 +29,6 @@ describe('applyEraser (semantic capsule)', () => {
     const line = { type: 'line', color: '#fff', width: 2, x1: 0, y1: 0, x2: 100, y2: 0 }
     const circle = { type: 'circle', color: '#fff', width: 2, cx: 0, cy: 0, r: 10 }
     const far = { type: 'circle', color: '#fff', width: 2, cx: 500, cy: 500, r: 10 }
-    // (10,0) 同时在直线上（距离 0）与圆边框上（|10-10|=0）
     const result = applyEraser([line, circle, far], [{ x: 10, y: 0 }], 2)
     expect(result).toEqual([far])
   })
@@ -37,7 +36,7 @@ describe('applyEraser (semantic capsule)', () => {
   it('touching the circle border erases the circle', () => {
     const circle = { type: 'circle', color: '#fff', width: 2, cx: 0, cy: 0, r: 10 }
     expect(applyEraser([circle], [{ x: 10, y: 0 }], 1)).toHaveLength(0)
-    expect(applyEraser([circle], [{ x: 25, y: 0 }], 1)).toHaveLength(1) // 圆心距 25 > 1+2，未命中
+    expect(applyEraser([circle], [{ x: 25, y: 0 }], 1)).toHaveLength(1)
   })
 
   it('erases text near its anchor', () => {

@@ -77,7 +77,6 @@ class RouteSkillTest {
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
                 List.of(), List.of(), List.of(), List.of(), true);
-        // 友军侧完整覆盖（1002/1003 都被观察到，但远离录像者），observedEnemy=2 是真实敌军下界
         final EvidenceSkillContext ctx = new EvidenceSkillContext(
                 routeBattle(),
                 EvidenceTestFixtures.recon(
@@ -97,7 +96,6 @@ class RouteSkillTest {
                 EvidenceTestFixtures.recorder());
         final List<AiEvidence> entries = RouteSkill.localObservedNumbersEntries(ctx);
         assertEquals(1, entries.size());
-        // 只报数量事实，不得声称「敌方人数优势」（战术判断由 LLM 负责）
         assertTrue(entries.getFirst().summary().contains("观察到附近友军"),
                 "summary 必须只报观察数量: " + entries.getFirst().summary());
         assertTrue(entries.getFirst().summary().contains("敌军至少"),
@@ -111,7 +109,6 @@ class RouteSkillTest {
         final PlayerBattleFeatureSet features = new PlayerBattleFeatureSet(
                 List.of(EvidenceTestFixtures.movement(0f, 10f, new Vector3(0, 0, 0), new Vector3(50, 0, 0))),
                 List.of(), List.of(), List.of(), List.of(), true);
-        // 友军侧只观察到 0/2（1002/1003 未点亮），即使观察到 2 名敌军也不能声称"敌方人数优势"
         final EvidenceSkillContext ctx = new EvidenceSkillContext(
                 routeBattle(),
                 EvidenceTestFixtures.recon(

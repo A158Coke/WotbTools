@@ -1,15 +1,3 @@
-/**
- * 录像者初始世界位姿消费边界（上游 v0.4.15 `parseAuthorInitialPosition`）。
- *
- * 锁定三件事：
- *  - 合法返回只有 `null` 或严格 `{author_eid, clock, position}` 对象；
- *  - 形状漂移（0/负数/非整数 eid、NaN/Infinity/负 clock、长度≠3 或非有限 position）
- *    一律 fail closed，绝不把未知降级成 `[0,0,0]`；
- *  - `position` 保持 Agent 原始 replay 世界坐标 `[x,y,z]` 顺序，不做 map/spawn 转换。
- *
- * wrapper 的合法对象/null 用例通过注桩 WASM 模块驱动；真实 pinned 产物的 export /
- * replay fixture smoke 在 `agent-wasm-smoke.test.ts`（v0.4.15 pin 下通过）。
- */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,7 +17,6 @@ const VALID: api.AgentAuthorInitialPosition = {
   position: [-138.75604, 31.585732, -165.30302],
 }
 
-/** 以当前 source.json pin 的 fingerprint 通过装载门禁，再注桩 WASM 模块。 */
 function stubWasm(module: Record<string, unknown>): void {
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,

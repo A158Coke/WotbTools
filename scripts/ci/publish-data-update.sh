@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Shared publish protocol for the three data-update workflows
-# (update-tankopedia.yml / update-equipment.yml / update-crew-skills.yml).
-#
-# Restricted helper: it only implements the pre-existing per-workflow publish
-# block — unchanged exit -> staged-content guard -> bot identity -> branch
-# handling -> whitelist commit -> push -> find/create PR -> verify PR identity
-# -> exact-HEAD dispatch. It is not a general release platform: only the three
-# automation/update-* target branches are accepted, only the caller-supplied
-# pathspecs are committed (never `git add -A` / `git add .`), and no command is
-# ever built by string interpolation into a shell evaluation.
 set -euo pipefail
 
 usage() {
@@ -49,7 +39,6 @@ esac
 [[ ${#PATHS[@]} -gt 0 ]] || usage
 [[ -f "$PR_BODY_FILE" ]] || { echo "::error::PR body file not found: $PR_BODY_FILE" >&2; exit 2; }
 
-# Unexpected staged content must never be swept into a bot commit.
 staged="$(git diff --cached --name-only)"
 if [[ -n "$staged" ]]; then
   echo "::error::Unexpected staged content before publish; refusing to commit:" >&2
@@ -57,7 +46,6 @@ if [[ -n "$staged" ]]; then
   exit 1
 fi
 
-# No changes: no branch switch, no commit, no push, no PR, no dispatch.
 if git diff --quiet -- "${PATHS[@]}"; then
   echo "No changes in the whitelisted paths; nothing to publish."
   exit 0
@@ -74,16 +62,12 @@ fi
 git add -- "${PATHS[@]}"
 git commit -m "$COMMIT_MESSAGE"
 
-# Same-source runs (Tankopedia dispatching on its own automation branch) keep
-# the plain fast-forward push; every other branch rebuild is force-with-lease.
 if [[ -n "$SOURCE_REF" && "$SOURCE_REF" == "$BRANCH" ]]; then
   git push origin "HEAD:$BRANCH"
 else
   git push --force-with-lease origin "HEAD:$BRANCH"
 fi
 
-# JSON parsing only: python reads the gh output and prints a number / verdict.
-# It never interprets the JSON as commands.
 pr_list="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
 pr_number="$(printf '%s' "$pr_list" | python3 -c 'import json,sys
 try:

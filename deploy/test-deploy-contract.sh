@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise the Yecao deployment (ai-service + observability) without release metadata.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
@@ -35,8 +34,6 @@ deploy_run() {
     bash "$WORK/incoming/deploy/deploy.sh"
 }
 
-# Replay parsing runs in the browser: the retired parser execution plane must not be
-# declared or selectable on Yecao any more.
 ! grep -Eq '^  parser-worker:' "$ROOT/deploy/docker-compose.prod.yml"
 ! grep -Eiq 'rabbitmq|minio|parser-worker' "$ROOT/deploy/docker-compose.prod.yml" "$ROOT/deploy/deploy.sh"
 if deploy_run parser-worker >/dev/null 2>&1; then echo 'retired parser-worker was accepted' >&2; exit 1; fi
@@ -49,8 +46,6 @@ grep -Fq 'ghcr.io/a158coke/ai-service:latest' "$WORK/docker-compose.yml"
 grep -Fq '10.20.0.2:8089:8080' "$WORK/docker-compose.yml"
 grep -Fq 'http://10.20.0.2:8089/actuator/health/readiness' "$WORK/curl.log"
 [ ! -e "$WORK/production-release.json" ]
-# A later AI-owned deployment must retain the previously deployed immutable
-# exporter reference, even when that job has no exporter environment or token.
 exporter_image="ghcr.io/a158coke/dev-metrics-exporter:${SHA}@sha256:$(printf 'b%.0s' {1..64})"
 sed -i "s|^    image: \${DEV_METRICS_IMAGE:-ghcr.io/a158coke/dev-metrics-exporter:unconfigured}$|    image: $exporter_image|" "$WORK/docker-compose.yml"
 deploy_run ai-service AI_API_KEY=test >/dev/null

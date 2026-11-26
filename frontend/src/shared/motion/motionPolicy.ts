@@ -1,5 +1,3 @@
-// motion-v 的唯一配置入口：时长与缓动从 design-language 的 CSS token 读取，CSS 仍是 motion policy 的唯一来源。
-// prefers-reduced-motion 时 token 本身归零（scale.css），这里只消费，不建立独立偏好。
 export interface MotionTokens {
   fast: number
   base: number
@@ -22,7 +20,6 @@ function cubicBezier(value: string): MotionTokens['ease'] {
   return numbers?.length === 4 && numbers.every(Number.isFinite) ? numbers as MotionTokens['ease'] : STANDARD_EASE
 }
 
-/** 读取当前生效的 motion token（秒）。无 DOM（SSR / 测试）时返回 0 时长，即不产生动画。 */
 export function readMotionTokens(root: Element | undefined = typeof document === 'undefined' ? undefined : document.documentElement): MotionTokens {
   if (!root) return { fast: 0, base: 0, slow: 0, ease: STANDARD_EASE }
   const style = getComputedStyle(root)
@@ -34,7 +31,6 @@ export function readMotionTokens(root: Element | undefined = typeof document ===
   }
 }
 
-/** 某一档时长对应的 motion-v transition；调用时读取 token，随 reduced-motion 变化。 */
 export function motionTransition(tier: keyof Pick<MotionTokens, 'fast' | 'base' | 'slow'> = 'base') {
   const tokens = readMotionTokens()
   return { duration: tokens[tier], ease: tokens.ease }

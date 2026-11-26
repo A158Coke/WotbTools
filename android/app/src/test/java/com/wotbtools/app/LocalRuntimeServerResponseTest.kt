@@ -11,11 +11,6 @@ import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 
-/**
- * [LocalRuntimeServer.sendResponse] 是 [ReplayIntentHandler.StreamResponse]`.data` 的唯一 owner：
- * 每条路径都必须 close **恰好一次**（不 double close、不漏 close）。socket 层的失败用可注入的
- * 输出流复现，另外补一个真实 loopback 往返来证明 `serve()` 确实把 ownership 接在这条路径上。
- */
 class LocalRuntimeServerResponseTest {
 
     private fun response(body: InputStream?) =
@@ -58,7 +53,6 @@ class LocalRuntimeServerResponseTest {
         assertEquals(1, body.closeCount)
     }
 
-    /** 客户端在 header 交付阶段断开：底层 `write` 抛 IOException。 */
     @Test fun headerWriteFailureClosesTheBodyExactlyOnce() {
         val body = TrackingInput(ByteArray(100_000) { 'x'.code.toByte() })
         val failure = try {
@@ -71,11 +65,6 @@ class LocalRuntimeServerResponseTest {
         assertEquals(1, body.closeCount)
     }
 
-    /**
-     * 修复前唯一会漏掉 body 的 header 路径：head 一次写满输出缓冲（超过 8 KiB，例如异常大的响应头），
-     * 于是底层 `write` 在进入 body copy **之前**就抛 IOException —— 旧的
-     * `output.write(head); response.data?.use { ... }` 覆盖不到这里。这里用超长头部把这条顺序钉死。
-     */
     @Test fun oversizedHeadWriteFailureClosesTheBodyExactlyOnce() {
         val body = TrackingInput("payload".toByteArray())
         val response = ReplayIntentHandler.StreamResponse(
@@ -116,7 +105,6 @@ class LocalRuntimeServerResponseTest {
         assertEquals(1, body.closeCount)
     }
 
-    /** body 的 close 失败不值得把已经写完的响应变成失败，也不允许它替换正在传播的异常。 */
     @Test fun aFailingBodyCloseIsSwallowed() {
         val checked = object : InputStream() {
             override fun read(): Int = -1
@@ -145,12 +133,6 @@ class LocalRuntimeServerResponseTest {
         assertTrue(text, text.contains("Cache-Control: no-store\r\n"))
     }
 
-    /**
-     * `serve()` 自己的调用形态也必须保住 ownership：连接在请求头读完之后、响应头写出之前断掉
-     * （客户端 RST / fd 耗尽）时 `getOutputStream()` 会抛 IOException，而此刻路由已经打开了 replay /
-     * asset / 代理缓存流。只测 companion 函数覆盖不到这一点——这条用例在 `serve()` 退回
-     * 「先把输出流求值再交给 write」时失败（body 不会被关闭）。
-     */
     @Test fun serveClosesTheRoutedBodyWhenTheSocketOutputCannotBeOpened() {
         val body = TrackingInput("payload".toByteArray())
         val server = LocalRuntimeServer(MainActivity.LOCAL_APP_ORIGIN) {
@@ -168,7 +150,6 @@ class LocalRuntimeServerResponseTest {
         assertEquals(1, body.closeCount)
     }
 
-    /** 端到端（真实 loopback）：`serve()` 必须在连接关闭前 close 路由返回的 body。 */
     @Test fun serveClosesTheRoutedBodyExactlyOnceOverTheWire() {
         val body = TrackingInput("routed-payload".toByteArray())
         var attempt = 0
@@ -201,7 +182,6 @@ class LocalRuntimeServerResponseTest {
                 assertTrue(text, text.startsWith("HTTP/1.1 200 OK\r\n"))
                 assertTrue(text, text.endsWith("routed-payload"))
             }
-            // EOF 只在 serve() 关掉连接后出现，而 body 的 close 在关连接之前 —— 这里读到的值必须是终值。
             assertEquals(1, body.closeCount)
         } finally {
             server.close()
@@ -209,7 +189,6 @@ class LocalRuntimeServerResponseTest {
     }
 
     private class TrackingInput(private val bytes: ByteArray) : InputStream() {
-        // 端到端用例由 worker 线程 close、测试线程断言。
         @Volatile
         var closeCount = 0
             private set
@@ -222,7 +201,6 @@ class LocalRuntimeServerResponseTest {
         }
     }
 
-    /** 读满 [afterBytes] 个字节后抛 IOException：body copy 的失败路径。 */
     private class FailingRead(private val afterBytes: Int) : InputStream() {
         @Volatile
         var closeCount = 0
@@ -236,14 +214,12 @@ class LocalRuntimeServerResponseTest {
         }
     }
 
-    /** 任何 write 都失败：header 交付时客户端已断开。 */
     private class WriteFailingOutput : OutputStream() {
         override fun write(b: Int): Unit = throw IOException("write failed")
 
         override fun write(b: ByteArray, off: Int, len: Int): Unit = throw IOException("write failed")
     }
 
-    /** 接受写入但 flush 失败。 */
     private class FlushFailingOutput : OutputStream() {
         override fun write(b: Int) = Unit
 

@@ -1,6 +1,3 @@
-// 地图边界材质（sceneryMaterials.ts::makeMapBorderMaterial）单测。
-// 上游（Agent 仓 export_map_glb.collect_map_border）把 MapBorderComponent 的视觉字段
-// 写进材质 extras.mapBorder；材质 id=0 是引擎内置、不可得 ⇒ 这些字段是唯一视觉依据。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { makeMapBorderMaterial } from './sceneryMaterials.js'
@@ -29,7 +26,7 @@ describe('makeMapBorderMaterial', () => {
     expect(m.uniforms.uMaxZ.value).toBe(100)
     expect(m.uniforms.uFade.value).toBe(2)
     expect(m.uniforms.uZOffset.value).toBeCloseTo(-0.2, 6)
-    expect(m.uniforms.uFadeEnable.value).toBe(0)      // 该图两侧淡出都关
+    expect(m.uniforms.uFadeEnable.value).toBe(0)
     expect(m.uniforms.uNearSq.value).toBe(90000)
     expect(m.uniforms.uFarSq.value).toBe(160000)
     m.dispose()
@@ -58,7 +55,6 @@ describe('makeMapBorderMaterial', () => {
     expect(m.uniforms.uColor.value.toArray()).toEqual([1.0, 0.156, 0.156])
     expect(m.fragmentShader).toContain('uTime * 2.4')
     expect(m.fragmentShader).toContain('mix(uColor, vec3(1.0, 0.18, 0.12), 0.55)')
-    // 距离淡出以相机为原点（不是世界原点）：边缘/角落靠近时仍可见
     expect(m.fragmentShader).toContain('cameraPosition.xz')
     expect(m.fragmentShader).not.toMatch(/dot\(vWorld\.xz, vWorld\.xz\)/)
     m.dispose()

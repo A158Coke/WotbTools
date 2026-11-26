@@ -12,17 +12,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Timeline/playback {@code durationSec} 权威链：settlement root5 → round-finished − battle 开始 →
- * legacy meta durationS → 最后事件时间（docs/features/battle-playback.md「时长契约」）。
- */
 class BattleTimelineDurationTest {
 
     private static final double START = TimelineTestFixtures.START_RAW;
     private static final double EPS = 1e-3;
 
-    /** 无 settlement：durationS 视为已退役 Java {@code ReplayParser} 的 meta.json#battleDuration fallback
-     * （客户端同口径见 {@code frontend/src/replay-local/battleFacts.ts}）。 */
     private static Battle metaOnlyBattle(final Double metaDurationSec) {
         final Battle b = TimelineTestFixtures.battle(0.0);
         b.durationS = metaDurationSec;
@@ -63,7 +57,6 @@ class BattleTimelineDurationTest {
 
     @Test
     void roundFinishedWinsOverInflatedMetaDuration() {
-        // meta battleDuration 300s 但 round-finished 在 battle-relative 180s：取真实结束时刻
         final Battle battle = metaOnlyBattle(300.0);
         final ReplayReconstruction recon =
                 TimelineTestFixtures.recon(300.0, eventsWithRoundFinished(180.0));
@@ -119,7 +112,6 @@ class BattleTimelineDurationTest {
         assertNotNull(timeline);
         assertTrue(timeline.validation().valid());
         assertEquals(180.0, timeline.durationSec(), EPS);
-        // second 0..180 = 181 帧，不再拖到 meta 的 300s
         assertEquals(181, timeline.frames().size());
     }
 }

@@ -28,21 +28,6 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * #821：「禁止 {@code import *}」的 JLS token 级机械门禁。
- *
- * <p>import 语句不进 class 依赖，ArchUnit 字节码分析不可见，因此用 JDK 自带的
- * javac parser API（{@code com.sun.source}，无第三方依赖）把每个 .java 源文件
- * 解析成编译单元，再检查 on-demand import 的限定名是否以 {@code *} 结尾——
- * 多行、注间空白/注释、Unicode 翻译等所有词法形态天然覆盖。扫描范围是三个
- * 模块的 {@code src/main/java} 与 {@code src/test/java}（该
- * 禁令没有 production 限定）。随 {@code mvn test} 的 authoritative CI 路径执行。</p>
- *
- * <p>红线证明（committed）：{@code src/test/resources/archfixture/import-star/}
- * 的每个违规 fixture 覆盖一种 JLS 合法形态（普通 / static / 多行 / 注间空白 /
- * 注间注释 / Unicode 转义），本测试用<b>同一个 gate predicate</b> 断言它们逐一
- * 被拒绝、控制组零命中——失败原因只能是 import * 本身。</p>
- */
 class SourceImportStarBanTest {
 
     private static final List<String> MODULES = List.of("wotb-core", "wotb-ai", "wotb-web");
@@ -55,7 +40,6 @@ class SourceImportStarBanTest {
     record ParsedImports(List<String> starImports, List<String> parseErrors) {
     }
 
-    /** 用 javac parser 检查 on-demand import；解析错误 fail closed。 */
     static ParsedImports findStarImports(List<Path> javaFiles) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
@@ -82,7 +66,6 @@ class SourceImportStarBanTest {
                     .toList();
             return new ParsedImports(starImports, errors);
         } catch (IOException e) {
-            // file manager 关闭失败按工具错误处理：fail closed 而非静默放行
             throw new UncheckedIOException(e);
         }
     }

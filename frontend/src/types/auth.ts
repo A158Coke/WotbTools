@@ -1,6 +1,4 @@
-/** Application auth contracts shared by the browser and Android session owners. */
 
-/** Token claims read by the SPA. Native claims are only checked to be an object, so readers still verify `roles`. */
 export interface AuthClaims {
   sub?: string
   displayName?: string

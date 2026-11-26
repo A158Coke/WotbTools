@@ -2,10 +2,6 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
-# --- 自动 publish 的候选新鲜度：以 Version-as-Code 判定，不是 staged SHA == main SHA ---
-# review P2 反例：staged A 之后 main 只合入 docs-only / backend-only 提交，SHA 前进但
-# android/gradle.properties:wotbVersion 不变。旧实现（SHA 相等）会把唯一 Android candidate
-# 误判成 stale；这里用真实 git 时序复现同一时刻，证明判定只看版本号。
 mkdir -p "$TMP/candidate"
 printf 'wotbVersion=%s\n' "$STAGED_VERSION" > "$TMP/candidate/main-latest.properties"
 printf 'wotbVersion=%s\n' "$NEXT_VERSION" > "$TMP/candidate/main-newer.properties"
@@ -14,22 +10,18 @@ printf 'wotbNativeBridgeVersion=3\n' > "$TMP/candidate/main-no-version.propertie
 
 . "$GUARDS"
 
-# Case 1：没有更新的 Android candidate ⇒ 自动发布继续。
 classify_candidate_freshness "$STAGED_VERSION" "$TMP/candidate/main-latest.properties"
 [ "$CANDIDATE_STATE" = candidate_latest ] || fail "same committed version must stay publishable"
 [ "$MAIN_CANDIDATE_VERSION" = "$STAGED_VERSION" ] || fail "main candidate version must be reported"
 
-# Case 4：main 上已有更高的 Android candidate ⇒ staged A 失去自动发布权。
 classify_candidate_freshness "$STAGED_VERSION" "$TMP/candidate/main-newer.properties"
 [ "$CANDIDATE_STATE" = candidate_superseded ] \
   || fail "a newer committed Android version must supersede the staged candidate"
 [ "$MAIN_CANDIDATE_VERSION" = "$NEXT_VERSION" ] || fail "superseding version must be reported"
 
-# 更低的 committed 版本不是「新候选」；是否允许发布交给既有 publish 守卫。
 classify_candidate_freshness "$STAGED_VERSION" "$TMP/candidate/main-older.properties"
 [ "$CANDIDATE_STATE" = candidate_latest ] || fail "a lower committed version is not a newer candidate"
 
-# fail-closed：main / staged 的 Version-as-Code 不可读时绝不猜。
 if classify_candidate_freshness "$STAGED_VERSION" "$TMP/candidate/main-no-version.properties" 2>/dev/null; then
   fail "main gradle.properties without wotbVersion must fail closed"
 fi
@@ -40,8 +32,6 @@ if classify_candidate_freshness "not-a-version" "$TMP/candidate/main-latest.prop
   fail "malformed staged version must fail closed"
 fi
 
-# Case 2 / Case 3（真实 git 时序）：A stage 期间 main 合入 docs-only B、backend-only C ⇒
-# SHA 前进但版本不变，A 仍是唯一 Android candidate。Case 4 续：main 再合入更高版本 ⇒ 让位。
 if command -v git >/dev/null 2>&1; then
   CANDIDATE_REPO="$TMP/candidate-repo"
   mkdir -p "$CANDIDATE_REPO/android" "$CANDIDATE_REPO/docs" "$CANDIDATE_REPO/java/src"
@@ -78,9 +68,6 @@ fi
 
 echo "android candidate freshness (Version-as-Code supersession): PASS"
 
-# --- 执行 publish_gate 的真实 shell block（不只静态 YAML inspection）---
-# 用例覆盖 review 要求：自动续跑只在「main 已有更高 Android candidate」时 skip；手动 recovery
-# 不受该策略限制；version / Version-as-Code 不可读时 fail closed。
 GATE_DIR="$TMP/gate-sim"
 GATE_REPO="$GATE_DIR/repo"
 mkdir -p "$GATE_REPO/android" "$GATE_DIR/runner-temp"
@@ -121,7 +108,6 @@ run_gate() {
   ) > "$log" 2>&1
 }
 
-# Case 1（执行版）：自动续跑 + 没有更新候选 ⇒ superseded=false，继续走既有 publish 守卫。
 run_gate true "$STAGED_VERSION" "$STAGED_VERSION" \
   "$GATE_DIR/out1" "$GATE_DIR/sum1" "$GATE_DIR/log1" \
   || { cat "$GATE_DIR/log1" >&2; fail "automatic publish with no newer candidate must proceed"; }
@@ -129,7 +115,6 @@ grep -qx 'superseded=false' "$GATE_DIR/out1" \
   || { cat "$GATE_DIR/log1" >&2; fail "automatic publish must not be skipped when main version equals the staged version"; }
 grep -q 'Entry: automatic' "$GATE_DIR/sum1" || fail "gate summary must report the automatic entry"
 
-# Case 4（执行版）：自动续跑 + main 已有更高版本 ⇒ superseded=true，安全 no-op。
 run_gate true "$STAGED_VERSION" "$NEXT_VERSION" \
   "$GATE_DIR/out2" "$GATE_DIR/sum2" "$GATE_DIR/log2" \
   || { cat "$GATE_DIR/log2" >&2; fail "an automatic publish superseded by a newer candidate must stay a green no-op"; }
@@ -138,14 +123,12 @@ grep -qx 'superseded=true' "$GATE_DIR/out2" \
 grep -q "No publish step ran" "$GATE_DIR/sum2" \
   || fail "the skipped automatic publish must state that no publish step ran"
 
-# Case 7（执行版）：手动 recovery 不受最新候选策略限制（main 更高也交给现有 publish 守卫）。
 run_gate false "$STAGED_VERSION" "$NEXT_VERSION" \
   "$GATE_DIR/out3" "$GATE_DIR/sum3" "$GATE_DIR/log3" \
   || { cat "$GATE_DIR/log3" >&2; fail "manual recovery gate must not fail on a newer main candidate"; }
 grep -qx 'superseded=false' "$GATE_DIR/out3" \
   || { cat "$GATE_DIR/log3" >&2; fail "manual recovery must not be subject to the automatic latest-candidate policy"; }
 
-# fail closed：自动续跑的 version / main Version-as-Code 不可读时 gate 必须非零退出。
 if run_gate true "not-a-version" "$STAGED_VERSION" \
     "$GATE_DIR/out4" "$GATE_DIR/sum4" "$GATE_DIR/log4"; then
   fail "a malformed automatic publish version must fail closed"
@@ -157,7 +140,6 @@ fi
 
 echo "publish gate shell (executed): PASS"
 
-# --- 调度策略：queue: max 让 stage / publish 请求互不替换；gate 在执行时判定 ---
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path

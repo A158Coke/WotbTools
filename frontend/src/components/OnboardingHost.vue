@@ -14,7 +14,6 @@ import type { OnboardingTopic } from '../shared/onboarding.js'
 const props = defineProps<{ onboarding: OnboardingController }>()
 const { mode, topic, index, issue, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn } = props.onboarding
 const inline = inject(DIALOG_INLINE_KEY, false)
-// Reuse AppDialog inside the active fullscreen host, instead of teleporting beyond fullscreen.
 provide(DIALOG_INLINE_KEY, true)
 const teleportTarget = shallowRef<Element | string>('body')
 const card = ref<HTMLElement | null>(null)
@@ -63,7 +62,6 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([t
 function styleRect(rect: GuideRect) {
   return { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }
 }
-/** Union of clipped rects: the card must clear the real anchor and any companion panel it opened. */
 function unionRects(rects: (GuideRect | null)[]): GuideRect | null {
   const valid = rects.filter((rect): rect is GuideRect => !!rect)
   if (!valid.length) return null
@@ -122,8 +120,6 @@ function measure() {
   const right = Math.max(...regions.map(rect => rect.right)), bottom = Math.max(...regions.map(rect => rect.bottom))
   cutout.value = regions.length ? guideCutout({ left, top, width: right - left, height: bottom - top }, viewport.value, padding) : null
   const measuredCard = card.value?.getBoundingClientRect()
-  // Use intrinsic scroll height: feeding the previous max-height back into placement can move
-  // a short phone card between pointerdown and pointerup as ResizeObserver fires.
   const naturalHeight = card.value ? Math.max(card.value.scrollHeight + card.value.offsetHeight - card.value.clientHeight, measuredCard?.height || 0) : 0
   const navigation = card.value?.querySelector('.onboarding-card-actions')?.getBoundingClientRect()
   const cardViewport = { ...viewport.value }
@@ -134,15 +130,12 @@ function measure() {
   const inspector = interactionTargets.value.find(element => element.dataset.tour === 'shots-inspector')
   inspectingShot.value = !!inspector
   if (inspector && (compact.value || inspector.getAttribute('aria-modal') === 'true')) {
-    // The real pane owns the inset; leave its contents scrollable above the compact guide.
     const height = Math.min(naturalHeight || 220, cardViewport.height / 2)
     const position = guideCardPosition(null, cardViewport, { width: cardWidth, height }, gap, true)
     cardPosition.value = { ...position, maxHeight: height }
     props.onboarding.reserveShotGuideSpace(viewport.value.top + viewport.value.height - position.top + gap)
   } else {
     props.onboarding.reserveShotGuideSpace(0)
-    // The anchor alone is not enough: an opened companion panel (the export menu connected by
-    // aria-controls) extends past the trigger and must not be covered by the card (#680).
     const avoid = inspector
       ? guideCutout(inspector.getBoundingClientRect(), viewport.value, padding)
       : unionRects([highlight.value, ...controlledTargets.value.map(element => guideCutout(element.getBoundingClientRect(), viewport.value, padding))])
@@ -173,8 +166,6 @@ function allowedTarget(eventTarget: EventTarget | null) {
   return eventTarget instanceof Node && (card.value?.contains(eventTarget) || targetScope.value?.contains(eventTarget)
     || interactionTargets.value.some(element => element.contains(eventTarget)) || controlledTargets.value.some(element => element.contains(eventTarget)))
 }
-/** App-owned download activation: downloadBlob() clicks a hidden anchor after an allowed export
- *  action. It is programmatic (not a background pointer target), so the guide must not cancel it (#680). */
 function isAppDownloadActivation(eventTarget: EventTarget | null) {
   if (!(eventTarget instanceof Element)) return false
   const anchor = eventTarget.closest('a[data-app-download][download]')
@@ -199,8 +190,6 @@ function onPointerDown(event: PointerEvent) {
 function onPointerEnd(event: PointerEvent) {
   cardPointers.delete(event.pointerId)
   if (!cardPointers.size && cardGesture.value && !releaseFrame) {
-    // Freeze content as well as placement: removing a loading paragraph would otherwise move
-    // the footer under a held finger. Release after the native compatibility click, never emit one.
     releaseFrame = requestAnimationFrame(() => {
       releaseFrame = 0
       if (cardPointers.size) return
@@ -224,7 +213,6 @@ function focusables() {
   candidates.push(...card.value?.querySelectorAll<HTMLElement>(FOCUSABLE) || [])
   return [...new Set(candidates)].filter(visible)
 }
-/** An ARIA combobox keeps focus on the input while its controlled listbox/menu is open. */
 function expandedComboboxOwnsEscape(target: Element) {
   const combobox = target.closest('[role="combobox"][aria-expanded="true"]')
   if (!combobox) return false
@@ -236,8 +224,6 @@ function expandedComboboxOwnsEscape(target: Element) {
 function onKeydown(event: KeyboardEvent) {
   if (mode.value !== 'tour' || suspended.value) return
   if (event.key === 'Escape') {
-    // A real target dialog / menu / listbox — or an expanded combobox's open popup — owns Escape
-    // for events originating inside it: it closes first and the guide keeps its step (#669).
     if (event.target instanceof Element && !card.value?.contains(event.target) && allowedTarget(event.target)
       && (event.target.closest('[role="dialog"], [role="menu"], [role="listbox"]')
         || expandedComboboxOwnsEscape(event.target))) return
@@ -251,8 +237,6 @@ function onKeydown(event: KeyboardEvent) {
     const next = active < 0 ? (event.shiftKey ? items.length - 1 : 0) : (active + (event.shiftKey ? -1 : 1) + items.length) % items.length
     ;(items[next] || card.value)?.focus()
   } else if (event.target instanceof Node && (card.value?.contains(event.target) || !allowedTarget(event.target))) {
-    // Keep the focused guide's Space/arrow/H keys from controlling the background replay.
-    // Default button activation and scrolling still work; real target input keeps its normal keys.
     event.stopImmediatePropagation()
   }
 }
@@ -299,7 +283,6 @@ watch(mode, async (value, previous) => {
   if (mode.value !== 'tour') return
   if (typeof ResizeObserver !== 'undefined') resizeObserver = new ResizeObserver(scheduleMeasure)
   mutationObserver = new MutationObserver(records => {
-    // Geometry writes belong to this host; observing them would schedule another geometry write.
     if (records.some(record => !(record.target instanceof Element ? record.target : record.target.parentElement)?.closest('.onboarding-host'))) scheduleMeasure()
   })
   mutationObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'data-tour'] })
@@ -428,7 +411,6 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 
 <style scoped>
 .onboarding-host { color: var(--color-text-primary); }
-/* 锚定在底部：顶部右侧是各页页头工具条的操作按钮（导出 / 刷新 …），桌面 --header-h=0 时会被整块盖住 */
 .onboarding-available { position: fixed; inset-block-end: calc(env(safe-area-inset-bottom) + var(--space-3)); inset-inline-end: var(--space-3); z-index: var(--z-menu); display: flex; align-items: center; gap: var(--space-2); max-width: calc(100dvw - var(--sidebar-w) - var(--space-6)); padding: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); box-shadow: var(--elevation-2); font: var(--type-caption); }
 .onboarding-available > span { min-width: 0; overflow-wrap: anywhere; }
 .onboarding-layer { position: fixed; inset: 0; z-index: var(--z-dialog); pointer-events: none; }

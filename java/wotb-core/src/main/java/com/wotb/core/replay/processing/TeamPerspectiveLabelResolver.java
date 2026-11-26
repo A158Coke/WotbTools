@@ -9,23 +9,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Resolves team identity labels for TEAM_PERSPECTIVE scope.
- * <p>internal identity 与 user-facing display label
- * 严格分离，任何方法都不再同时承担两者：
- * <ul>
- *   <li>{@link #resolveDisplayLabel(List)} —— 用户可见 display label：只有<b>唯一 dominant
- *       且严格多数（超过一半成员）</b>的 clan tag 才返回其最常见 casing；无 clan / 平票 /
- *       非多数一律返回空串（由上层 fallback 到「我方/对方」）。绝不返回 {@code 队伍-XXXX}。</li>
- *   <li>{@link #resolveStableKey(List)} —— 内部稳定身份键（roster hash），可用于 internal
- *       identity；<b>禁止</b>进入任何 user-facing 输出路径（Prompt 正文 / UI / 渲染）。</li>
- *   <li>{@link #resolveDominantClanTag(List)} —— 归一化（小写）dominant clan tag，供内部
- *       partition 兼容逻辑使用；不区分大小写、取唯一最高计数，不要求多数（内部用途）。</li>
- * </ul>
- * 可靠性门槛：7 人团队需要 ≥4 人同 clan；2 个玩家同 clan、其他 5 个全不同时<b>不</b>
- * 把整队命名为该 clan（多数派保守规则，避免过度命名）。
- * Does NOT modify {@link PlayerResult#clan}.</p>
- */
 public final class TeamPerspectiveLabelResolver {
 
     private TeamPerspectiveLabelResolver() {}
@@ -48,7 +31,6 @@ public final class TeamPerspectiveLabelResolver {
         }
         final long winnerCount = countClan(players, winner);
         if (winnerCount * 2L <= players.size()) {
-            // 非严格多数（含 2/7 之类的 minority dominant）：不把整队命名为该 clan
             return "";
         }
         final Map<String, Long> casingCounts = players.stream()
@@ -66,11 +48,6 @@ public final class TeamPerspectiveLabelResolver {
                 .orElse("");
     }
 
-    /**
-     * 内部稳定身份键：基于排序 roster 昵称/账号 hash 的 {@code 队伍-<code>}。
-     * <p><b>internal only</b>：可用于内部 identity 比较，<b>禁止</b>出现在任何
-     * 用户可见输出（Prompt 正文 / UI / PreBattleSectionRenderer）。</p>
-     */
     public static String resolveStableKey(final List<PlayerResult> players) {
         if (players == null || players.isEmpty()) {
             return "队伍-0";
@@ -86,11 +63,6 @@ public final class TeamPerspectiveLabelResolver {
         return "队伍-" + code;
     }
 
-    /**
-     * Returns the normalized (lowercased) dominant clan tag from the given players,
-     * or empty string if there is no unique dominant clan (tie or no clans present).
-     * <p>Internal helper: does NOT require a majority and is NOT user-facing.</p>
-     */
     public static String resolveDominantClanTag(final List<PlayerResult> players) {
         if (players == null || players.isEmpty()) return "";
         final Map<String, Long> counts = players.stream()

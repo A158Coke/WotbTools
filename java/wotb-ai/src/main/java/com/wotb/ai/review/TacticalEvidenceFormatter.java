@@ -8,16 +8,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 把确定性证据渲染成 Call #2 Prompt 的中文证据段。
- * 数值 key 排序输出，保证确定性；所有时间统一使用 {@code X分XX秒}。
- */
 final class TacticalEvidenceFormatter {
 
     private TacticalEvidenceFormatter() {
     }
 
-    /** 按给定证据列表渲染（调用方可先做 partial 过滤，避免把换血伤害数字送入 LLM）。 */
     static String renderEvidenceSections(final List<AiEvidence> evidence) {
         final StringBuilder sb = new StringBuilder(2048);
         final List<AiEvidence> sorted = new ArrayList<>(evidence);

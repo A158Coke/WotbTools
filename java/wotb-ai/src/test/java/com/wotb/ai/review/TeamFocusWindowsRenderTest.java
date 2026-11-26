@@ -30,11 +30,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Team Review FOCUS WINDOWS 渲染：每个窗口必须输出
- * BEFORE / EVENTS / AFTER / OBSERVED FACTS / EVIDENCE LIMITATIONS；不 future leak；
- * 稀疏证据不编造战术原因。
- */
 class TeamFocusWindowsRenderTest {
 
     private static final float START_RAW = 1000f;
@@ -65,7 +60,6 @@ class TeamFocusWindowsRenderTest {
         return b;
     }
 
-    /** 8 车（4v4）开局 + 连续减员：本方 112/121/132，对方 128；残局 170。 */
     private static List<ReplayEvent> collapseEvents() {
         seq = 0;
         final List<ReplayEvent> events = new ArrayList<>();
@@ -117,25 +111,21 @@ class TeamFocusWindowsRenderTest {
         assertTrue(section.contains("本方阵亡 3 辆，对方阵亡 1 辆"), "必须给出连续减员事实");
         assertTrue(section.contains("EVIDENCE LIMITATIONS"), "必须输出 EVIDENCE LIMITATIONS");
         assertTrue(section.contains("当前证据无法证明具体原因"), "必须写明证据边界");
-        // 不 future leak：窗口 1 内不得出现 170s 的残局阵亡
         final int window1End = section.indexOf("WINDOW 2");
         final String window1 = window1End < 0 ? section : section.substring(0, window1End);
         assertFalse(window1.contains("2分50秒"), "窗口 1 不得引用未来事件（170s）");
         assertFalse(window1.contains("阵亡 1 辆，对方阵亡 0 辆"), "窗口 1 不得包含残局阵亡");
-        // 确定性
         assertTrue(TeamAiContextCompiler.renderFocusWindowsSection(timeline, 1).equals(section));
     }
 
     @Test
     void sparseEvidenceRendersNoFabricatedWindow() {
-        // 只有一次小型交火、无阵亡无 HP swing 无点数 → 不应编造窗口
         final List<ReplayEvent> events = collapseEvents();
-        final List<ReplayEvent> sparse = new ArrayList<>(events.subList(0, 33)); // 仅开局 + 首次接敌（不含阵亡）
+        final List<ReplayEvent> sparse = new ArrayList<>(events.subList(0, 33));
         final BattleTimelineResult tl = BattleTimelineBuilder.build(
                 battle(120.0), recon(120.0, sparse), TimelinePerspective.team(1));
         assertTrue(tl.usable(), "timeline must be valid: " + tl.validation().errors());
         final String section = TeamAiContextCompiler.renderFocusWindowsSection(tl.timeline(), 1);
-        // 允许空段（证据不足不编造）
         if (section.isBlank()) {
             return;
         }

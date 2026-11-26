@@ -1,5 +1,4 @@
 <script setup>
-// 移除单场回放的确认（审计 PG-09：统一 AppDialog——焦点陷阱、Esc、关闭后焦点回到触发元素）
 import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
 

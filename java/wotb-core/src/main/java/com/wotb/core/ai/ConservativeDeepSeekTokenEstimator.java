@@ -3,18 +3,9 @@ package com.wotb.core.ai;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Conservative token estimator for DeepSeek models.
- * Uses character-based estimation as an approximation:
- *   estimatedTokens = ceil(codePoints * 1.25)
- * plus fixed per-message envelope overhead.
- * This is a CONSERVATIVE estimate, NOT exact token counting.
- * May overestimate for English/Latin text, near-accurate for CJK.
- * Always paired with a safety margin to prevent context overflow.
- */
 public final class ConservativeDeepSeekTokenEstimator implements AiTokenEstimator {
 
-    private static final int ENVELOPE_CHARS_PER_MESSAGE = 32; // role + formatting overhead
+    private static final int ENVELOPE_CHARS_PER_MESSAGE = 32;
 
     @Override
     public int estimateMessagesTokens(List<Map<String, Object>> messages) {

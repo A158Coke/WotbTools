@@ -1,33 +1,5 @@
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { watchEffect } from 'vue'
@@ -70,10 +42,6 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 
-/**
- * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
- * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
- */
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -97,16 +65,11 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 })
 
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
- * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
- * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
     constructor(params = {}) {
-      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
+      this.params = params
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -129,10 +92,6 @@ vi.mock('three', async (importOriginal) => {
 })
 
 
-/**
- * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
- * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
- */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
 
 vi.mock('./battleFx.ts', async (importOriginal) => {
@@ -155,9 +114,6 @@ import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 
-/** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
- *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
- *  继续跑了 DATA 派生状态写入」的可观测探针（无 WebGL 时 hasData 不具区分度）。 */
 function minimalData(tStart = 42, mapName = 'probe_map') {
   return {
     meta: { map_id: 1, map_name: mapName, t_start: tStart, friendly_team: 1 },
@@ -175,7 +131,6 @@ function deferred() {
 }
 
 
-/** 场景内核需要一个容器元素；渲染器在数据就位后才惰性创建，这里给空节点即可。 */
 function mountContainer() {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -185,11 +140,8 @@ function mountContainer() {
 
 let api = null
 
-/** 本用例创建过的全部实例（含被取代的 A）：每个实例都有自己的渲染器与事件监听，
- *  只销毁最后一个会让前面的实例继续跑，串到下个用例。 */
 let created = []
 
-/** 仍挂起的 defer：afterEach 兜底结算，避免悬挂 promise 把在途续体泄漏到下个用例。 */
 let pending = []
 
 
@@ -200,11 +152,6 @@ function track(d) {
 
 
 beforeEach(() => {
-  // 单元测试必须**无网**：happy-dom 的 fetch 会真发请求，而开发机常带 `.env.local`
-  // （`VITE_ASSET_BASE_URL=http://127.0.0.1:8123`），高档位
-  // `forceGlb: true` 的用例于是真的去下载 `/glb/<id>/model.glb` 与履带/悬挂资产 ⇒ 5 s 预算内
-  // 必超时（CI 无 .env.local ⇒ 相对地址快速失败 ⇒ 绿）——这就是 "wreck smoke …" 用例长期
-  // 「本机红 / CI 绿」的根因。默认钉成无网：需要资产的用例各自 `vi.stubGlobal('fetch', …)` 覆盖。
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
@@ -259,7 +206,6 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
 }
 
 
-/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
 function stubFrames() {
   const frames = []
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -268,11 +214,6 @@ function stubFrames() {
 }
 
 
-/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
- *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
- *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
- *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
- *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
 let zoomPump = null
 
 async function settleZoomFrames() {
@@ -280,13 +221,12 @@ async function settleZoomFrames() {
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
     const frame = stubFrames()
     zoomPump = { stub: globalThis.requestAnimationFrame, frame }
-    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+    await new Promise((r) => setTimeout(r, 25))
   }
   for (let i = 0; i < 17; i++) zoomPump.frame()
 }
 
 
-/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
 async function pumpZoomAt(dt, frames) {
   vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
@@ -298,7 +238,6 @@ async function pumpZoomAt(dt, frames) {
 }
 
 
-/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
@@ -313,7 +252,6 @@ function createScene(existingStore = null) {
 }
 
 
-/** 每次 initPlayback 一个独立实例（跨实例竞态测试要同时持有 A 与 B） */
 function createInstance(store) {
   const instance = initPlayback(mountContainer(), store)
   created.push(instance)
@@ -346,15 +284,11 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     return { api, store, overlay, frames, vehicles: window.__pbV }
   }
 
-  /**
-   * 伤害数字由 HTML 覆盖层呈现（血条右侧的 DOM 几何），场景只负责在掉血事件跨过回放时钟时
-   * 生成一次、并在 seek 时清空：数字不能因为"曾经在屏幕上"而在倒带 / 重播时补播。
-   */
   it('掉血事件生成一次覆盖层伤害数字（3D 寿命系数），seek 清空且不补播', async () => {
     const { api, frames, overlay } = await load([vehicle({ hp: [[42, 1000], [50, 600]] })])
     api.seekTime(49.9)
     api.setPlaying(true)
-    frames.shift()()   // 越过 t=50：掉血 400
+    frames.shift()()
     expect(overlay.spawnDamage).toHaveBeenCalledWith(1, 400, FLOAT_DMG_MS * 2)
 
     api.setPlaying(false)
@@ -369,7 +303,6 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
   })
 
-  /** 幽灵段契约走真实 writer → reader：强制发布一次标签后读场景交给覆盖层的行。 */
   const publishedRow = (api, overlay) => {
     api.setLabelPrefs({})
     return overlay.setLabels.mock.lastCall[0].find((row) => row.eid === 1)
@@ -470,22 +403,21 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
   })
 
   it('复活后装回炮塔：上一世的飞头不让新车继续无炮塔（issue #622 review P2）', async () => {
-    // 同一 eid 死（52s 飞头）→ 复活（70s）：分离只属于那一世；飞头实体自身照旧按自己的 coverage 渲染。
     const sceneData = dataFor([vehicle({ death_t: 52, resurrection_times: [70] })])
     sceneData.detached_turrets = [detachedTrack()]
     const { api, vehicles } = await load(sceneData.vehicles, null, sceneData)
     const owner = vehicles[0], head = owner.detachedTurrets[0]
-    expect(owner.turretG.visible).toBe(true)          // 分离前：装炮塔
+    expect(owner.turretG.visible).toBe(true)
     api.seekTime(53)
-    expect(owner.turretG.visible).toBe(false)         // 分离期：摘掉炮塔
+    expect(owner.turretG.visible).toBe(false)
     expect(head.root.visible).toBe(true)
     api.seekTime(71)
-    expect(owner.turretG.visible).toBe(true)          // 复活后：装回炮塔
+    expect(owner.turretG.visible).toBe(true)
     api.seekTime(81)
-    expect(owner.turretG.visible).toBe(true)          // 复活后飞头仍在视野（coverage 80~100）也不摘
+    expect(owner.turretG.visible).toBe(true)
     expect(head.root.visible).toBe(true)
     api.seekTime(53)
-    expect(owner.turretG.visible).toBe(false)         // 倒带回到分离世：恢复摘除
+    expect(owner.turretG.visible).toBe(false)
   })
 
   it('uses the same replay clock for pause and speed, with direct seek matching forward playback', async () => {
@@ -706,13 +638,13 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(vehicles[0].group.visible).toBe(true)
     expect(activeBursts()).toHaveLength(1)
     expect(activeBursts()[0].x).toBe(vehicles[0].group.position.x)
-    expect(window.__battleFx.budget).toBe(QUALITY_PRESETS.low.fx)   // the suite runs with ?q=low
+    expect(window.__battleFx.budget).toBe(QUALITY_PRESETS.low.fx)
     const glow = fxMesh('battle-fx-glow'), smoke = fxMesh('battle-fx-smoke')
-    expect(glow.visible).toBe(true)   // flash + fireball are written in the death frame
+    expect(glow.visible).toBe(true)
     expect(glow.material.blending).toBe(THREE.AdditiveBlending)
     for (const object of window.__battleFx.root.children) {
       expect(object.material.depthTest).toBe(true)
-      expect(object.material.toneMapped).toBe(false)  // per-map exposure must not alter flame/spark colours
+      expect(object.material.toneMapped).toBe(false)
     }
     const resources = new Set(window.__battleFx.root.children.flatMap(object => [object.geometry, object.material]))
     resources.add(glow.material.uniforms.uMap.value)
@@ -720,7 +652,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     now += 1500
     frames.shift()()
     expect(activeBursts()).toHaveLength(1)
-    expect(smoke.geometry.instanceCount).toBeGreaterThan(0)  // smoke outlives the fireball
+    expect(smoke.geometry.instanceCount).toBeGreaterThan(0)
     now += BURST_SECS * 1000 - 1500
     frames.shift()()
     expect(activeBursts()).toHaveLength(0)
@@ -730,7 +662,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(true)
     frames.shift()()
     api.setPlaying(false)
-    expect(activeBursts()).toHaveLength(1)  // playing through the death again triggers it once more
+    expect(activeBursts()).toHaveLength(1)
     api.reset()
     for (const dispose of disposes) expect(dispose).toHaveBeenCalledTimes(1)
     expect(window.__battleFx).toBeUndefined()
@@ -751,23 +683,22 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.seekTime(49.95)
     api.setPlaying(true)
     const muzzle = vi.spyOn(window.__battleFx, 'spawnMuzzle')
-    frames.shift()()   // T 50.05: fired, in flight
-    expect(fxStats()).toMatchObject({ muzzles: 1, impacts: 0, ribbons: 2 })   // tracer + trail
-    // no GLB on the shooter (proxy vehicle): muzzle effects fall back to the recorded origin
+    frames.shift()()
+    expect(fxStats()).toMatchObject({ muzzles: 1, impacts: 0, ribbons: 2 })
     expect(muzzle).toHaveBeenCalledTimes(1)
     expect(muzzle.mock.calls[0][0].toArray()).toEqual([-0, 2, 0])
     expect(muzzle.mock.calls[0][1].toArray()).toEqual([1, 0, 0])
     const tracer = window.__battleFx.root.children.find(object => object.name === 'battle-fx-tracer')
-    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0x3ee08a)   // friendly shooter: green tracer
+    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0x3ee08a)
     frames.shift()()
-    frames.shift()()   // T 50.25 > arrival 50.2: impact, tracer returned
+    frames.shift()()
     expect(fxStats()).toMatchObject({ impacts: 1, ribbons: 1 })
     api.setPlaying(false)
     now += 10_000
-    for (let i = 0; i < 3; i++) frames.shift()()   // wall clock runs on while the replay is paused
-    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 1 })   // trail waits on the replay clock
+    for (let i = 0; i < 3; i++) frames.shift()()
+    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 1 })
     api.setPlaying(true)
-    for (let i = 0; i < 38; i++) frames.shift()()   // T ≈ 54.05 < arrival + 2.5 s hold + 1.5 s fade
+    for (let i = 0; i < 38; i++) frames.shift()()
     expect(fxStats().ribbons).toBe(1)
     for (let i = 0; i < 3; i++) frames.shift()()
     expect(fxStats().ribbons).toBe(0)
@@ -778,15 +709,14 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
     expect(fxStats()).toMatchObject({ muzzles: 1, ribbons: 2 })
     api.seekTime(49)
-    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 0 })   // seek clears and never replays history
+    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 0 })
   })
 
   it('barrel: muzzle effects at the barrel tip; tracer and trail stay hidden inside the barrel and start at the muzzle', async () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
-    muzzleTip.reach = 8   // muzzle 8 m ahead of the recorded origin (gun pivot)
+    muzzleTip.reach = 8
     const vehicles = shotPair()
-    // 100 m in 2 s = 5 m per 0.1 s frame; a second point-blank shot lands 3 m out, inside the barrel
     const shots = [
       { t_fire: 50, shooter_eid: 1, target_eid: 2, from: [0, 2, 0], to: [-100, 2, 0], flight_secs: 2, game_hit_result: 3 },
       { t_fire: 60, shooter_eid: 1, target_eid: 2, from: [0, 2, 0], to: [-3, 2, 0], flight_secs: 0.3, game_hit_result: 3 },
@@ -797,14 +727,14 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     const named = (name) => fx.root.children.filter((o) => o.name === name && o.visible)
     api.seekTime(49.95)
     api.setPlaying(true)
-    frames.shift()()   // T 50.05: head 2.5 m out, still in the barrel
+    frames.shift()()
     expect(muzzle.mock.calls[0][0].toArray()).toEqual([8, 2, 0])
     expect(fxStats()).toMatchObject({ muzzles: 1, ribbons: 2 })
     expect(named('battle-fx-tracer')).toHaveLength(0)
     expect(named('battle-fx-trail')).toHaveLength(0)
-    frames.shift()()   // T 50.15: 7.5 m, still in the barrel
+    frames.shift()()
     expect(named('battle-fx-tracer')).toHaveLength(0)
-    frames.shift()()   // T 50.25: 12.5 m, out of the muzzle; tail clamped to the muzzle, not 14 m back
+    frames.shift()()
     const [tracer] = named('battle-fx-tracer')
     expect(tracer.material.uniforms.uA.value.x).toBeCloseTo(8, 5)
     expect(tracer.material.uniforms.uB.value.x).toBeCloseTo(12.5, 5)
@@ -814,16 +744,14 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
     api.seekTime(59.95)
     api.setPlaying(true)
-    for (let i = 0; i < 5; i++) frames.shift()()   // point-blank: the whole 3 m path is inside the barrel
+    for (let i = 0; i < 5; i++) frames.shift()()
     expect(named('battle-fx-tracer')).toHaveLength(0)
     expect(named('battle-fx-trail')).toHaveLength(0)
-    expect(muzzle.mock.calls[1][0].toArray()).toEqual([8, 2, 0])   // the flash still sits at the barrel tip
-    expect(fxStats().impacts).toBe(1)                              // and the hit still lands on arrival
+    expect(muzzle.mock.calls[1][0].toArray()).toEqual([8, 2, 0])
+    expect(fxStats().impacts).toBe(1)
   })
 
   it.each([1, 2, 4, 8])('moving shooter at %sx with 100 ms frames: muzzle flash and trail start come from the barrel at fire time', async (speed) => {
-    // PR #613 审查回归：真实 muzzleTipOf + 合成 GLB。射手 10 m/s 沿 +z 前进、t=50 过原点并开火，
-    // 炮管从枢轴向前 4.5 m；处理帧晚于开火（倍速 × 0.1 s 帧）时，起点不得混入开火后的位移。
     window.history.replaceState(null, '', '/?debug&q=mid')
     const parked = track(deferred())
     vi.spyOn(assetProvider, 'bytes').mockReturnValue(parked.promise)
@@ -855,14 +783,13 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     const muzzle = vi.spyOn(window.__battleFx, 'spawnMuzzle')
     api.setSpeed(speed)
     api.setPlaying(true)
-    frames.shift()()   // 一帧 0.1 s × 倍速：处理帧落在开火后 0.05 / 0.15 / 0.35 / 0.75 s
+    frames.shift()()
     api.setPlaying(false)
-    expect(vehicles[0].group.position.z).toBeCloseTo((0.1 * speed - 0.05) * 10, 5)   // 射手确实已前移
+    expect(vehicles[0].group.position.z).toBeCloseTo((0.1 * speed - 0.05) * 10, 5)
     expect(muzzle).toHaveBeenCalledTimes(1)
     expect(muzzle.mock.calls[0][0].z).toBeCloseTo(4.5, 4)
     const trail = window.__battleFx.root.children.find((o) => o.name === 'battle-fx-trail' && o.visible)
     expect(trail.material.uniforms.uA.value.z).toBeCloseTo(4.5, 4)
-    // 摆回 T：开火定位后车模停在本帧姿态，没有留在开火时刻
     vehicles[0].glb.updateMatrixWorld(true)
     expect(vehicles[0].glb.position.z).toBeCloseTo(vehicles[0].group.position.z, 6)
   })
@@ -876,13 +803,13 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     const { api, frames } = await load(vehicles, null, { ...dataFor(vehicles), shots: [shot] })
     api.seekTime(49.95)
     api.setPlaying(true)
-    frames.shift()()   // T 50.05: first leg
-    expect(fxStats()).toMatchObject({ impacts: 0, ribbons: 3 })   // tracer + one trail per leg
-    frames.shift()()   // T 50.15: past the hit point, still flying the exit leg
+    frames.shift()()
+    expect(fxStats()).toMatchObject({ impacts: 0, ribbons: 3 })
+    frames.shift()()
     api.setPlaying(false)
     expect(fxStats()).toMatchObject({ impacts: 1, ribbons: 3 })
     const tracer = window.__battleFx.root.children.find(object => object.name === 'battle-fx-tracer')
-    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0xff5a45)   // enemy shooter: red tracer
+    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0xff5a45)
   })
 
   it('high tier: wreck smoke follows the life fact — present after death, gone on rewind — and adds no redraws while paused', async () => {
@@ -896,7 +823,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(smoke().geometry.instanceCount).toBeGreaterThan(0)
     const render = vi.spyOn(window.__renderer, 'render')
     frames.shift()()
-    expect(render).not.toHaveBeenCalled()   // paused, nothing transient alive: on-demand rendering stays idle
+    expect(render).not.toHaveBeenCalled()
     api.seekTime(51)
     frames.shift()()
     expect(smoke().geometry.instanceCount).toBe(0)
@@ -920,7 +847,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(true)
     frames.shift()()
     api.setPlaying(false)
-    expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
+    expect(activeBursts()).toHaveLength(0)
   })
 
   it('respawn track: DESTROYED→ALIVE→DESTROYED — wreck un-fades on resurrection, roster follows (issue #622)', async () => {
@@ -956,18 +883,15 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(true)
     frames.shift()()
     api.setPlaying(false)
-    expect(spawnBurst).toHaveBeenCalledTimes(1)   // 第一次死亡
+    expect(spawnBurst).toHaveBeenCalledTimes(1)
     api.seekTime(71.9)
     api.setPlaying(true)
     frames.shift()()
     api.setPlaying(false)
-    expect(spawnBurst).toHaveBeenCalledTimes(2)   // 复活后的第二次死亡：独立爆焰
+    expect(spawnBurst).toHaveBeenCalledTimes(2)
     expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
   })
 
-  // 血量判死两条路径（2026-10-16 裁决 + 本仓评审）：`hp_state`=terminal 时负 i16 全族判死；
-  // 字段缺省 = legacy 分类不放宽（0xFFFE/0xFFFF 仍属未证明哨兵 → 不判死）；0/0xFFFD 行为不变。
-  // 唯一"不判死"的另一情形：死亡证据落在实体未入场期间（entry 42 = 开战时钟，身份不可归属）。
   it.each([
     [10, 20, 0, 49, undefined], [20, 10, 0, 49, undefined],
     [10, 20, 0xfffd, 49, undefined],
@@ -979,7 +903,6 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
       const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))
       const result = validateAgentBattleResult({ ...f.result, author_account_id: 77, author_team: 1,
         players: [{ ...f.result.players[0], account_id: 77, team: 1, survived: false, life_time_secs: 10 }] })
-      // 本用例显式构造 legacy 口径（含"字段缺省 = legacy 不判死"反例行）→ legacy-compatible
       const aiReview = validateAgentAiReview({ ...f.aiReview,
         battle: { ...f.aiReview.battle, duration_secs: 200, periods: [{ period: 3, clock: 42 }, { period: 4, clock: 242 }] },
         rosters: [oldId, newId].map(eid => ({ eid, account_id: 77, team: 1, tank_id: 6929, tank_name: 'Maus', is_author: true })),
@@ -990,18 +913,14 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
         ],
       }, 'legacy-compatible')
       const definitions = [vehicle({ eid: oldId, coverage: [42, 48], death_t: null }),
-        // Deliberately equal render coverage starts: canonical evidence must determine identity.
         vehicle({ eid: newId, pos: [100, 0, 0], coverage: [42, 51], death_t: null, is_author: false })]
       const playback = validateAgentPlayback({ ...f.playback, meta: { ...f.playback.meta, samples: 1, t_start: 42, duration: 242 },
         vehicles: definitions.map(def => ({ ...f.playback.vehicles[0], ...def, pose_kf: undefined, hull_roll: [0] })),
-        // The synthetic re-entry roster replaces every original vehicle ID.
-        // Its unrelated real-fixture turret owners must be removed with the roster.
         detached_turrets: [], shots: [], kills: [], reloads: [], reload_effective: [],
       })
       const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
       const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
       const canonical = { dataset, clock: facts.clock, entityStartsByAccount: entityFirstSeenByAccount(facts) }
-      // 判死 = 字段权威全族 ∨ legacy 已证明值（0/0xFFFD）；legacy 未证明负值不算证据
       const terminalByState = hpState === 'terminal'
       const legacyTerminal = hpState === undefined && (terminal === 0 || terminal === 0xfffd)
       const destroyed = (terminalByState || legacyTerminal) && newEntry > 42
@@ -1051,7 +970,6 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(activeBursts()).toHaveLength(0)
     expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, 0, 0])
     expect(vehicles.map(v => v.group.visible)).toEqual([true, false, false])
-    // Unknown exact death time still uses the authoritative transition for entity identity.
     store.playbackSession.canonical = canonicalFor([deadTrack(null)])
     api.setBattleClock(store.playbackSession.canonical.clock)
     api.seekTime(53)
@@ -1128,7 +1046,6 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
   })
   const mkData = (vehicles, detachedTurrets = []) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles, detached_turrets: detachedTurrets })
 
-  /** 歼击车模板：hull + 炮管组（gun_0/gun_0_mask），无任何 turret_N 节点（T110E3 实测形态） */
   function stubTurretlessGlb({ withGun = true } = {}) {
     vi.spyOn(assetProvider, 'bytes').mockImplementation(() => Promise.resolve(new Uint8Array([1])))
     vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
@@ -1233,10 +1150,10 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     const { vehicles } = await loadTurretless([mkVehicle({ turret_yaw: [0.5], gun_pitch: [0.1] })])
     expect(vehicles).toHaveLength(1)
     const v = vehicles[0]
-    expect(v.glb).toBeTruthy()                       // 不再是代理盒
-    expect(v.glbParts.turretNode).toBeNull()         // 无炮塔节点
-    expect(v.glbParts.gunNodes.length).toBe(2)       // 炮管 + 炮盾
-    expect(v.glbParts.gunNodes.every(gn => gn.matrixAutoUpdate === false)).toBe(true) // 姿态系统接管炮管组
+    expect(v.glb).toBeTruthy()
+    expect(v.glbParts.turretNode).toBeNull()
+    expect(v.glbParts.gunNodes.length).toBe(2)
+    expect(v.glbParts.gunNodes.every(gn => gn.matrixAutoUpdate === false)).toBe(true)
     expect(v.glb.visible).toBe(true)
   })
 
@@ -1244,7 +1161,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     stubTurretlessGlb({ withGun: false })
     const { vehicles } = await loadTurretless([mkVehicle()])
     expect(vehicles).toHaveLength(1)
-    expect(vehicles[0].glb).toBeFalsy()              // 保留代理车
+    expect(vehicles[0].glb).toBeFalsy()
   })
 
   it('turretless + 独立炮塔轨道：clone/分离/倒带全程不抛（cloneDetachedTurret 空炮塔回归锁）', async () => {
@@ -1256,15 +1173,15 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     }
     const { api, vehicles } = await loadTurretless([mkVehicle()], [detachedTrack])
     const v = vehicles[0]
-    expect(v.glb).toBeTruthy()                       // 挂载阶段（clone 路径）不再踩 null.turretNode
+    expect(v.glb).toBeTruthy()
     expect(v.detachedTurrets).toHaveLength(1)
     const head = v.detachedTurrets[0]
     expect(head.glb).toBeTruthy()
-    expect(head.glb.children.length).toBeGreaterThan(0)   // 脱落件由炮管组构成
-    api.seekTime(55)                                 // T ≥ 分离已知时刻：分离态
+    expect(head.glb.children.length).toBeGreaterThan(0)
+    api.seekTime(55)
     expect(head.root.visible).toBe(true)
-    expect(v.glbParts.gunNodes.every(gn => gn.visible === false)).toBe(true)  // 车上炮管组隐藏
-    api.seekTime(45)                                 // 倒带到分离前：恢复
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === false)).toBe(true)
+    api.seekTime(45)
     expect(head.root.visible).toBe(false)
     expect(v.glbParts.gunNodes.every(gn => gn.visible === true)).toBe(true)
   })
@@ -1375,7 +1292,6 @@ describe('3D annotation renderer (scene projection)', () => {
     layer.reproject()
     expect(annotationVertices(layer).every((v) => Math.abs(v.y - (20 + ANNOTATION_LIFT)) < 1e-3)).toBe(true)
 
-    // 纯地形笔迹仍按 terrain + lift 贴地（surface anchor 不影响 legacy 路径）。
     api.setAnnotations([stroke()])
     expect(annotationVertices(layer).every((v) => Math.abs(v.y - (10 + ANNOTATION_LIFT)) < 1e-3)).toBe(true)
   })

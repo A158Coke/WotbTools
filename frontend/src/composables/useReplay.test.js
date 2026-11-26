@@ -9,7 +9,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: { value: 'en' }, t: key => key, te: () => false }),
 }))
 
-// facade 只编排 session + 本机分析；mock 解析 / 计算边界（服务器没有 parser，也没有 job API）。
 const local = vi.hoisted(() => ({
   parseReplayFiles: vi.fn(),
   analyzeReplayBatch: vi.fn(),
@@ -27,7 +26,6 @@ vi.mock('../replay-local/compute/index.js', async (importOriginal) => ({
 
 const base = { duplicates: [], failures: [], playerColumns: [], aggregateColumns: [] }
 
-/** 按解析出的文件名构造 Preview：每个文件一场 */
 function previewFor(parsed, extra = {}) {
   return {
     ...base,

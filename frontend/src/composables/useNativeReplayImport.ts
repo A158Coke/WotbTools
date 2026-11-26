@@ -50,7 +50,6 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
   let rerunRequested = false
   const consumedIds = new Set()
 
-  /** Identity travels in a header, never in the resource URL or logs. */
   async function readPendingFile(pending: NativePendingReplay) {
     console.debug('[replay-native] pending stream fetch start')
     const resp = await fetch(pending.uri, {
@@ -67,11 +66,9 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
     return file
   }
 
-  /** 单轮 drain：消费当前 Native pending（若有且未消费过）。返回本次是否真正受理了一份 replay。 */
   async function drainOnce() {
     if (!isAndroidApp()) return false
     if (!isReady()) {
-      // Workspace 未就绪：pending 原样留在 Native，就绪后再消费。
       console.debug('[replay-native] pending deferred reason=workspace-pending')
       return false
     }
@@ -82,14 +79,11 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
       return false
     }
     const pending = await getPendingReplay()
-    // 当前没有 pending（可能从未有，也可能 Native 尚未产生）→ 不清零 eligible，留待 warm resume。
     if (!pending) return false
-    // 没有 identity 就无法 ACK（也绝不消费）：旧 Native 或畸形 payload 一律跳过。
     if (!pending.pendingId || pending.uri !== NATIVE_REPLAY_RESOURCE_URL) {
       console.debug('[replay-native] pending skipped reason=invalid-metadata')
       return false
     }
-    // 这份 pending 已在本会话消费并成功注入 → 不再重复（exactly-once for this replay）。
     if (consumedIds.has(pending.pendingId)) return false
     console.debug('[replay-native] pending discovered')
 
@@ -97,20 +91,17 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
     try {
       file = await readPendingFile(pending)
     } catch {
-      // Fetch/blob errors may contain URLs or filenames; expose only a localized safe message.
       console.warn('[replay-native] pending stream read failed')
       onReadError?.()
       return false
     }
     try {
-      // ACK 顺序：先让本机分析完成，成功后才清 Native pending。
       const accepted = await onPendingFile?.(file, pending)
       if (accepted !== true) return false
       console.debug('[replay-native] analysis completed')
       const acked = await consumePendingReplay(pending.pendingId)
       consumedIds.add(pending.pendingId)
       if (!acked) {
-        // 正常竞态：处理期间新 replay 已取代它 → 新 pending 保留，绝不被这次 ACK 清掉。
         console.debug('[replay-native] pending ack stale (replaced by newer replay)')
       } else {
         console.debug('[replay-native] pending ack success')
@@ -118,18 +109,11 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
       console.debug('[replay-native] pending accepted')
       return true
     } catch {
-      // read/受理失败：不记录 consumed、不 ACK Native，允许下一次 ready 重试。
       console.warn('[replay-native] pending processing or ack failed')
       return false
     }
   }
 
-  /**
-   * 消费入口（Native onNewIntent / mount / auth 完成后都会调用）。
-   *
-   * 单飞 + deferred drain：并发调用只允许一个 drain 循环；期间到达的调用只置 `rerunRequested`，
-   * 由当前循环在结束后立即再 drain 一次（coalesce），保证 inflight 期间的 Native 通知不丢。
-   */
   async function consumePendingWhenReady() {
     if (inflight.value) {
       rerunRequested = true
@@ -141,7 +125,6 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
       do {
         rerunRequested = false
         if (await drainOnce()) handled = true
-        // rerunRequested 只能由外部 Native 通知置位；无新通知时循环立即结束（不空转）。
       } while (rerunRequested)
       return handled
     } finally {
@@ -149,7 +132,6 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
     }
   }
 
-  /** 供 Native onNewIntent 回调的全局入口（warm resume 时 Workspace 重新触发导入）。 */
   function registerGlobalHandler() {
     if (typeof window !== 'undefined') {
       window[NATIVE_REPLAY_GLOBAL] = () => consumePendingWhenReady()

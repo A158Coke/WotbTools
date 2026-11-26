@@ -1,16 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 回放全屏 / 方向锁的**共享产品语义**（2D 与 3D 共用 composables/usePlaybackFullscreen）。
- *
- * 这些用例针对契约而不是某个组件：两边的全屏按钮最终都走同一实现，所以语义在这里锁一次。
- * 重点覆盖那个最容易出错、也最难在桌面上发现的点：
- *
- *   手机竖屏 412×915  →  点 Fullscreen  →  全屏横屏 915×412
- *
- * 横屏后**内宽 915 > 768**。如果按"宽度 ≥ 768 就是平板"重新判断，刚收起来的
- * controls 会全部展开、全屏锁横屏也永远不会发生。正确判据是 2D 早就用的
- * `PLAYBACK_MOBILE_QUERY`（宽度 < 768，**或**触屏且视口高 ≤ 500）。
- */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 import { PLAYBACK_PHONE_QUERY } from './usePlaybackPhoneForm.ts'

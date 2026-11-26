@@ -30,12 +30,10 @@ import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.soloPhases;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.stationary;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.twoClusterPhase;
 
-/** Synthetic team evaluation scenarios grouped by the behavior evidence they exercise. */
 final class AiEvalTeamOutcomeFixtures {
     private AiEvalTeamOutcomeFixtures() {
     }
 
-    // ===== 场景九：占点致胜（点数推断） =====
 
     static SingleTeamBattleAnalysisContext capWinByPoints() {
         final List<TeamMemberFeatureSet> members = compactTeam();
@@ -50,7 +48,6 @@ final class AiEvalTeamOutcomeFixtures {
                 earned(10002, 80), earned(10003, 60), enemyEarned(20_002, 40));
     }
 
-    // ===== 场景十：集中一波被偷家 =====
 
     static SingleTeamBattleAnalysisContext capStolenWhileConcentrating() {
         final List<TeamMemberFeatureSet> members = compactTeam();
@@ -65,7 +62,6 @@ final class AiEvalTeamOutcomeFixtures {
                 enemyEarned(20_001, 120), enemyEarned(20_002, 90));
     }
 
-    // ===== 场景十一：守家翻盘（防守者拖延 + 队友占点） =====
 
     static SingleTeamBattleAnalysisContext capDefenseComeback() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -84,7 +80,6 @@ final class AiEvalTeamOutcomeFixtures {
                 earned(10002, 120), earned(10003, 90));
     }
 
-    // ===== 场景十二：点数胜负（双方存活，比占点分） =====
 
     static SingleTeamBattleAnalysisContext capPointsDecided() {
         final List<TeamMemberFeatureSet> members = compactTeam();
@@ -99,7 +94,6 @@ final class AiEvalTeamOutcomeFixtures {
                 earned(10002, 100), earned(10004, 70), enemyEarned(20_001, 60));
     }
 
-    // ===== 场景十二B：全歼胜利（对方全部阵亡、双方点数均 <1000；battle result 权威） =====
 
     static SingleTeamBattleAnalysisContext annihilationWin() {
         final List<TeamMemberFeatureSet> members = compactTeam();
@@ -115,7 +109,6 @@ final class AiEvalTeamOutcomeFixtures {
                 earned(10002, 120), earned(10003, 120));
     }
 
-    // ===== 场景十二C：被敌方全歼落败（本方 7 台全部阵亡、双方点数均 <1000；battle result 权威） =====
 
     static SingleTeamBattleAnalysisContext annihilationLoss() {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
@@ -135,7 +128,6 @@ final class AiEvalTeamOutcomeFixtures {
                 earned(10002, 100));
     }
 
-    // ===== 场景十三：5+2 分簇 false-positive（主力簇成员不得判单走） =====
 
     static SingleTeamBattleAnalysisContext mainClusterNoSolo() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -161,10 +153,8 @@ final class AiEvalTeamOutcomeFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
-    // ===== false-positive：观测不足 / span 缺口 / 交火跨窗口去重 =====
 
     static SingleTeamBattleAnalysisContext partialObservation() {
-        // 7 名成员存活但每窗口只观测到 4 人（3+1 子集）：不得把子集最大簇当作全局主力
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
         for (int index = 0; index < 7; index++) {
             members.add(member(index, 0, true, null, null,
@@ -187,7 +177,6 @@ final class AiEvalTeamOutcomeFixtures {
     }
 
     static SingleTeamBattleAnalysisContext gapNoMerge() {
-        // [60,75] 与 [90,105] 中间缺失 75-90 phase：禁止跨缺口合并 span 计算距离增长
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 75, 100, 150, 100, 150, 2f),
@@ -211,7 +200,6 @@ final class AiEvalTeamOutcomeFixtures {
     }
 
     static SingleTeamBattleAnalysisContext engagementNotMultiplied() {
-        // 同一交火段横跨 4 个 formation window：实际承伤 300、1 名敌人，不得累计成 1200/4 而误判脱节
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 120, 100, 150, 0, 150, 2f)),
@@ -232,8 +220,6 @@ final class AiEvalTeamOutcomeFixtures {
     }
 
     static SingleTeamBattleAnalysisContext benefitPartialOverlapUnknown() {
-        // 队友交火 40-65s 与单走 span 60-90s 部分重叠：活动无法可靠归属到窗口（覆盖不足），
-        // 后端不输出该窗口（不得硬生成任何结论）
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 90, 100, 150, 0, 150, 2f)),
@@ -261,8 +247,6 @@ final class AiEvalTeamOutcomeFixtures {
     }
 
     static SingleTeamBattleAnalysisContext damagePartialBenefitUnknown() {
-        // OBSERVED_DAMAGE_IS_PARTIAL + 没有队友活动：不得用「没有观察到」证明未发生，
-        // 后端不输出该窗口（不得硬生成任何结论）
         final List<TeamMemberFeatureSet> members = List.of(
                 member(0, 0, true, null, null,
                         List.of(move(60, 90, 100, 150, 0, 150, 2f)),

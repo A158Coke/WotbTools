@@ -14,10 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Structural regression（docs/architecture/battle-timeline.md §52.1）：真实夹具上的 Timeline 结构不变量——
- * deterministic、事件无丢失/无重复、Episode 覆盖完整。
- */
 class BattleTimelineStructuralEvalTest {
 
     @Test
@@ -28,7 +24,6 @@ class BattleTimelineStructuralEvalTest {
         final PlayerResult recorder = battle.recorderResult();
         final TimelinePerspective perspective = TimelinePerspective.personal(
                 recorder.accountId > 0 ? recorder.accountId : null, recorder.team);
-        // P0-3: 现场夹具无 battle-start 权威（ArenaPeriod/RoundFinished）→ 必须 fail-closed，不得伪造。
         if (recon.battleStartRawClockSec() == null) {
             final BattleTimelineResult r = BattleTimelineBuilder.build(battle, recon, perspective);
             assertFalse(r.usable());
@@ -67,11 +62,6 @@ class BattleTimelineStructuralEvalTest {
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team)).timeline();
         assertNotNull(timeline);
 
-        // 帧内事件分区必须互斥（无重复）；active-battle 内落在 [0, duration] 的事件必须恰好出现一次（无丢失）。
-        // 开战前（负时间）与战斗结束后的尾部事件不属于任何帧窗口，不计入 lossless；
-        // canonical timeline 仍保留这些原始事件供 provenance 使用。
-        // One raw packet may intentionally produce a generic structural event plus one
-        // semantically routed event.  Identity is therefore (sequence, event class), not sequence alone.
         final Set<String> seen = new HashSet<>();
         int total = 0;
         int inRange = 0;
@@ -82,7 +72,6 @@ class BattleTimelineStructuralEvalTest {
                 total++;
             }
         }
-        // 帧窗口实际覆盖 [0, maxSecond]；canonical raw timeline 中的负时间事件不属于 active frame。
         final double lastFrameSec = timeline.frames().getLast().stateAtSec();
         for (final com.wotb.core.replay.event.ReplayEvent e : timeline.events()) {
             final double t = TimelineClock.battleClockOf(e, timeline.battleStartRawClockSec());
@@ -115,7 +104,6 @@ class BattleTimelineStructuralEvalTest {
         final var episodes = EpisodeDetector.detect(timeline);
         assertTrue(!episodes.isEmpty(), "真实回放必须产出 Episode");
         assertEquals(0.0, episodes.getFirst().startSec(), 1e-9, "首个 Episode 必须从 0 开始");
-        // 末个 Episode 必须覆盖战斗结束（到最后一帧 stateAt；帧粒度取 ceil）
         final double lastFrameSec = timeline.frames().getLast().stateAtSec();
         assertEquals(lastFrameSec, episodes.getLast().endSec(), 1e-6,
                 "末个 Episode 必须覆盖到最后一帧");
@@ -125,7 +113,6 @@ class BattleTimelineStructuralEvalTest {
             assertTrue(episodes.get(i).startSec() >= episodes.get(i - 1).endSec() - 1e-9,
                     "Episode 不得重叠/留洞");
         }
-        // 确定性
         assertEquals(EpisodeDetector.detect(timeline).size(), episodes.size());
     }
 }

@@ -1,4 +1,3 @@
-// battleMarkerRuntime 测试共享 harness：假场景 + 假车辆位姿/名册。
 import * as THREE from 'three'
 import { vi } from 'vitest'
 import type { MarkerRuntimeDeps } from './markerRuntime.js'
@@ -8,7 +7,6 @@ export interface Harness {
   t: { v: number }
   scene: { added: THREE.Object3D[]; removed: THREE.Object3D[] }
   poses: Map<number, { x: number; z: number } | null>
-  /** 历史位姿表（getPoseAt；x = at(t) 函数——help 发令时刻语义用） */
   posesAt: Map<number, { z: number; at(t: number): number }>
   sources: Map<number, { nickname?: string; tank_name?: string; tank_id?: number } | null>
   byNickname: Map<string, { nickname?: string; tank_name?: string; tank_id?: number } | null>
@@ -42,7 +40,6 @@ export function makeHarness(opts: {
       out.set(p.x, 3, p.z)
       return true
     },
-    // 历史位姿（发令时刻采样；不做当前帧 gate——评审 P2 的 help 语义）
     getPoseAt: (eid, t, out) => {
       const p = posesAt.get(eid)
       if (!p) return false

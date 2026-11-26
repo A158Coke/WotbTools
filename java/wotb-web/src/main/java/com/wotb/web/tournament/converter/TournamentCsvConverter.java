@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** Maps generic CSV records to the Tournament import column shape without applying score or clan rules. */
 public final class TournamentCsvConverter {
     private TournamentCsvConverter() { }
 

@@ -6,13 +6,6 @@ import { useNativeReplayImport } from './useNativeReplayImport.js'
 const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 5 }
 const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 5 }
 
-/**
- * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
- * （只有 expected pendingId 与当前 pending 完全一致才清理），与 Android 侧一致。
- *
- * 默认 bridge 版本是本前端支持的 v2；任何未知/旧版本 fail closed。
- * （无版本号 + 已知能力 + 固定 synthetic resource）。
- */
 function stubNative(
   pending,
   consumeResult = true,
@@ -37,7 +30,6 @@ function stubNative(
         } else if (msg.method === 'consumePendingReplay') {
           consumeRequests.push(msg.params || {})
           const expected = msg.params?.expectedPendingId
-          // identity 必须存在且与当前 pending 完全一致，否则绝不清理（绝不误清后来取代它的 replay）。
           if (current != null && !cleared && expected && current.pendingId === expected) {
             cleared = true
             current = null
@@ -67,7 +59,6 @@ function stubNative(
   }
 }
 
-/** 模拟 Native shouldInterceptRequest 以 synthetic HTTPS resource 返回缓存文件字节。 */
 function stubFetchBlob() {
   vi.stubGlobal('fetch', vi.fn(async (uri) => {
     if (uri === 'http://127.0.0.1:21653/__native/replay-pending') {
@@ -105,7 +96,6 @@ describe('useNativeReplayImport', () => {
     })
 
     await expect(consumePendingWhenReady()).resolves.toBe(false)
-    // 版本号是权威的：不 get、不 fetch、不 ACK，pending 原样留在 Native。
     expect(native.methods).toEqual(['getBridgeVersion'])
     expect(fetchMock).not.toHaveBeenCalled()
     expect(onPendingFile).not.toHaveBeenCalled()
@@ -248,9 +238,7 @@ describe('useNativeReplayImport', () => {
     expect(onPendingFile).toHaveBeenCalledTimes(1)
     const file = onPendingFile.mock.calls[0][0]
     expect(file.name).toBe('a.wotbreplay')
-    // bytes actually flowed into the browser File (existing upload pipeline)
     expect(await file.text()).toBe('replay-bytes')
-    // identity 一并交给业务（作为 processing create 的 operationId）
     expect(onPendingFile.mock.calls[0][1]).toMatchObject({ pendingId: PENDING_A.pendingId })
   })
 
@@ -295,12 +283,10 @@ describe('useNativeReplayImport', () => {
     const inflightA = consumePendingWhenReady()
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
 
-    // 处理 A 期间 Android 收到新 replay B（single slot latest-wins），Native 只调用一次全局通知
     native.setPending(PENDING_B)
-    await expect(window.wotbtoolsOnReplay()).resolves.toBe(false) // inflight：coalesce，绝不丢弃
+    await expect(window.wotbtoolsOnReplay()).resolves.toBe(false)
 
     releaseA()
-    // 关键：此后没有任何第二次手工触发；A 结束后必须自动 drain 到 B
     await expect(inflightA).resolves.toBe(true)
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(2))
 
@@ -323,7 +309,6 @@ describe('useNativeReplayImport', () => {
 
     const first = consumePendingWhenReady()
     await vi.waitFor(() => expect(onPendingFile).toHaveBeenCalledTimes(1))
-    // inflight 期间连发多次通知 → coalesce 成一次 rerun
     consumePendingWhenReady()
     consumePendingWhenReady()
     consumePendingWhenReady()
@@ -344,7 +329,6 @@ describe('useNativeReplayImport', () => {
     })
     await consumePendingWhenReady()
     expect(onPendingFile).not.toHaveBeenCalled()
-    // 登录后就绪时可消费
     const authed = useNativeReplayImport({ isReady: () => true, onPendingFile })
     await authed.consumePendingWhenReady()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
@@ -372,7 +356,6 @@ describe('useNativeReplayImport', () => {
     registerGlobalHandler()
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).not.toHaveBeenCalled()
-    // 登录后由 Workspace 再次触发
     authed.mockReturnValue(true)
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
@@ -389,17 +372,14 @@ describe('useNativeReplayImport', () => {
     })
     registerGlobalHandler()
 
-    // 第一次：无 pending → 不清零 eligible
     await consumePendingWhenReady()
     expect(onPendingFile).not.toHaveBeenCalled()
 
-    // Native 后来（warm resume）产生新 pending
     native.setPending(PENDING_B)
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
     expect(onPendingFile.mock.calls[0][0].name).toBe('b.wotbreplay')
 
-    // 同一份 pending 不重复消费（exactly once）
     await window.wotbtoolsOnReplay()
     expect(onPendingFile).toHaveBeenCalledTimes(1)
   })
@@ -441,12 +421,10 @@ describe('useNativeReplayImport', () => {
     await expect(consumePendingWhenReady()).resolves.toBe(false)
     expect(native.methods).not.toContain('consumePendingReplay')
 
-    // 重试：这次业务受理成功 → 才 ACK
     onPendingFile.mockImplementation(async () => true)
     await expect(consumePendingWhenReady()).resolves.toBe(true)
     expect(native.methods.filter(m => m === 'consumePendingReplay')).toHaveLength(1)
 
-    // 受理失败也必须能被 undefined 返回值触发（不能把「没返回值」当成功）
     const undefinedCase = stubNative(PENDING_A)
     stubFetchBlob()
     const noResult = useNativeReplayImport({

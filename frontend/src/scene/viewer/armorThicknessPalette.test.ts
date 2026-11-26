@@ -1,4 +1,3 @@
-// 装甲厚度视图色阶：固定 5 档阈值（tooltip 契约）+ 与热力图/结果色同一标定语言。
 import { describe, expect, it } from 'vitest'
 import {
   THICKNESS_BANDS, THICKNESS_UNKNOWN_COLOR, thicknessToColor,
@@ -29,7 +28,6 @@ describe('armorThicknessPalette', () => {
   it('分档颜色互不相同，且按厚度从绿到深红单调过渡', () => {
     const colors = THICKNESS_BANDS.map((band) => band.color)
     expect(new Set(colors).size).toBe(THICKNESS_BANDS.length)
-    // 浅色档（绿/黄/橙/红）直接复用结果色，避免两套调色板漂移。
     expect(colors).toContain(SCENE_RESULT_COLORS.PENETRATION)
     expect(colors).toContain(SCENE_RESULT_COLORS.MAY_PENETRATE)
     expect(colors).toContain(SCENE_RESULT_COLORS.SPLASH)

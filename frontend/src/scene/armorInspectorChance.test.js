@@ -75,7 +75,6 @@ describe('Armor Inspector 逐层概率', () => {
       { section: 'hull', name: 'hull', thickness: 25, effective: 25, remaining_before: 100 },
       { section: 'hull', name: 'hull', thickness: 25, effective: 25, remaining_before: 75 },
     ]
-    // [95,105] - 25 = [70,80]，25mm 远低于下界 → CDF≈1。
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
@@ -100,8 +99,6 @@ describe('Armor Inspector 逐层概率', () => {
       { name: 'Gap 0.50m', thickness: 0, remaining_before: 80 },
       { section: 'hull', name: 'hull', thickness: 30, effective: 30, remaining_before: 60 },
     ]
-    // 第一层后 [95,105]-20=[75,85]；gap 0.5m 衰减 25% → [56.25,63.75]；
-    // 第二层 30mm 远低于下界 → CDF≈1。
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
@@ -110,7 +107,6 @@ describe('Armor Inspector 逐层概率', () => {
       { section: 'spaced', name: 'spaced', thickness: 300, effective: 300 },
       { section: 'hull', name: 'hull', thickness: 690, effective: 690 },
     ]
-    // [950,1050] - 300 = [650,750]，σ 仍为 100/6；Φ((700-690)/(100/6)) = Φ(0.6)。
     expect(penetrationChance(1000, layers)).toBeCloseTo(0.7257469, 5)
   })
 
@@ -152,10 +148,8 @@ describe('Armor Inspector 逐层概率', () => {
     const layers = [
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, ricochet: true, seg: 0 },
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, seg: 1 },
-      // 第二层 remaining_before 故意给 100；若每层 seg=1 都重置会得到 ≈1。
       { name: 'hull', thickness: 55, eff: 55, remainBefore: 100, angle: 0, seg: 1 },
     ]
-    // 75 → [71.25,78.75]；第一层后 [51.25,58.75]；第二层 55mm → Φ(0)=0.5。
     expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
   })
 
@@ -192,7 +186,6 @@ describe('Armor Inspector 逐层概率', () => {
     expect(r.chance).toBe(0)
     expect(r.layers.map(l => l.part_name)).toEqual(['track', 'hull'])
     expect(r.layers.map(l => l.chance)).toEqual([0, 0])
-    // 挡下层到达过；其后的层未到达（展示为中性灰，不冒充“挡下红”）。
     expect(r.layers.map(l => l.reached)).toEqual([true, false])
   })
 

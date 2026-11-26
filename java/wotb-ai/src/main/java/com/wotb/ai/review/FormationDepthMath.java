@@ -2,7 +2,6 @@ package com.wotb.ai.review;
 
 import java.util.List;
 
-/** Small pure helpers shared by formation and relative-depth evidence. */
 final class FormationDepthMath {
 
     private FormationDepthMath() {

@@ -1,11 +1,3 @@
-// 装甲查看器穿透材质族（2026-10-24 自 tankViewer 闭包出仓，#741；
-// 代码与搬移前逐字一致，仅去一层闭包缩进并加 export）。
-// 覆盖：PBR 穿透热力图主材质（penetrationMaterial，逐行对齐 BlitzKit
-// PrimaryArmorSceneComponent fragment.glsl）、外部模块/履带等效层（externalMaterial、
-// moduleStateMaterial）、间隙甲双通道（spacedMaterial 厚度累计 / spacedStateMaterial
-// 最近层跳弹-续飞状态）与跳弹续飞共享 uniforms（rcUniforms——同一对象引用注入全部
-// 材质，grid 侧单点更新全体生效；数据面机制在 armorCollisionPack.js）。
-// 消费方 tankViewer 经导入使用；材质语义/通道口径的注释随代码原样保留。
 import * as THREE from 'three'
 import type { Plane, Side, ShaderMaterial } from 'three'
 import { RC_GLSL_CONST, RC_GLSL_FUNCS } from '../armorCollisionPack.js'
@@ -29,20 +21,12 @@ const EXTERNAL_FRAG = `
       gl_FragColor = vec4(thickness / penetration, 0.0, thickness / penetration, 1.0);
     }
 `;
-/** 辅助 RT 的深度占位：内建材质在 ?logdepth 渲染器下写对数深度，与 spaced 标准深度不同域。 */
 export function standardDepthMaterial(side: Side = THREE.FrontSide): ShaderMaterial {
     return new THREE.ShaderMaterial({
         vertexShader: EXTERNAL_VERT, fragmentShader: DEPTH_ONLY_FRAG,
         colorWrite: false, depthTest: true, depthWrite: true, side, clipping: true,
     });
 }
-/**
- * 厚度通道 RT 的深度纹理（带 stencil 附件）：DepthStencilFormat 是 stencil 去重的
- * 硬前提——three 对自带 depthTexture 的 target 只按纹理格式挂 DEPTH(_STENCIL)_ATTACHMENT，
- * DepthFormat + stencilBuffer:true 不会创建 stencil 附件（测试恒通过 = 去重失效）。
- * 首建与 resize 重建（tankViewer.syncPenetrationRT / armorHighlight.ensureTargets）
- * 必须共用本工厂，避免重建路径退回 DepthFormat。
- */
 export function createDepthStencilTexture(width: number, height: number): THREE.DepthTexture {
     const depth = new THREE.DepthTexture(width, height);
     depth.format = THREE.DepthStencilFormat;
@@ -54,12 +38,10 @@ export function externalMaterial(thickness: number, penetration: number | null |
         vertexShader: EXTERNAL_VERT, fragmentShader: EXTERNAL_FRAG,
         depthWrite: false, depthTest: true,
         blending: THREE.AdditiveBlending,
-        // 无裁切面时省略 clipping/clippingPlanes（与传 false/null 的默认值等价）
         ...(clip != null ? { clipping: true, clippingPlanes: [clip] } : {}),
         uniforms: { thickness: { value: thickness }, penetration: { value: penetration || 200 } },
     });
 }
-// 辅助 RT 恒写标准深度（spaced 距离按标准投影反算），不挂 logdepthbuf。
 const SPACED_VERT = `
     varying highp vec3 vNormal;
     varying highp vec3 vViewPos;
@@ -77,11 +59,6 @@ const DEPTH_ONLY_FRAG = `
       gl_FragColor = vec4(0.0);
     }
 `;
-// 厚度通道（RT0，additive，R 累计）：每块间隙板按 BlitzKit 独立计算
-// finalNorm（2× 口径增强按本层厚度）与 finalThickness，写 R=finalThickness/penetration；
-// G=间隙甲层标记；外部模块写 flat R/coverage、不写 G。
-// 状态通道（RT1）只负责最近层的跳弹标志/续飞编码；外部模块写 A=1 抑制其后的
-// 间隙板跳弹/续飞。PBR 直接累加 RT0.R，不再做“首层/最近层差额”修正。
 const SPACED_FRAG = `
     precision highp float;
     varying highp vec3 vNormal;
@@ -118,10 +95,6 @@ const SPACED_FRAG = `
       gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
     }
 `;
-// 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
-// 不可累加的跳弹标志/续飞编码与逐层 normalized R 累计分离。续飞就地执行，反射起点/
-// 法线 = 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；
-// G = 续飞结果编码（0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
 const SPACED_STATE_FRAG = `
     precision highp float;
     varying highp vec3 vNormal;
@@ -172,9 +145,6 @@ const SPACED_STATE_FRAG = `
       gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, rcDiag / 255.0, 0.0);
     }
 `;
-// 外部模块状态材质（RT1）：只把 A 置 1（= 最近覆盖层是外部模块），RGB 保留——
-// 其后间隙板的跳弹/续飞状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
-// 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。
 const MODULE_STATE_FRAG = `
     #include <clipping_planes_pars_fragment>
     void main() {
@@ -195,13 +165,8 @@ export function moduleStateMaterial(clip: Plane | null | undefined): ShaderMater
     });
 }
 
-/**
- * 每个 viewer 一份的穿透材质**运行态**：穿透分辨率 uniform、跳弹续飞共享 uniforms、
- * 空白占位纹理，以及把材质绑定到这些对象上的工厂。**不得提升为模块单例**——
- * 两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 正在使用的 uniforms。
- */
 export function createArmorShaderContext() {
-    const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
+    const resUniform = { value: new THREE.Vector2(1, 1) };
 
     const rcUniforms: Record<string, { value: unknown }> & {
         rcClipPlane: { value: THREE.Vector4 };
@@ -220,7 +185,6 @@ export function createArmorShaderContext() {
         rcCellRows: { value: 1 },
         rcEntryRows: { value: 1 },
         rcEntryTotal: { value: 0 },
-        // gun_mask 裁切面（世界系 xyz=normal, w=constant）：只过滤 gunBarrel 命中。
         rcClipPlane: { value: new THREE.Vector4() },
         rcClipEnabled: { value: false },
     };
@@ -271,7 +235,6 @@ export function createArmorShaderContext() {
             },
         });
     }
-    /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
     function spacedCommonUniforms(thickness: number, penetration: number | null | undefined) {
         return {
             thickness: { value: thickness }, penetration: { value: penetration || 200 },
@@ -298,8 +261,6 @@ export function createArmorShaderContext() {
             vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
             depthWrite: false, depthTest: true,
             blending: THREE.AdditiveBlending,
-            // 面与 stencil 去重状态由调用方按几何拓扑 + 去重键决定：闭合网格 FrontSide 单 clone；
-            // 开放网格拆 FrontSide（写本键 stencil 位）/ BackSide（测位）两 clone。
             side,
             uniforms: spacedCommonUniforms(thickness, penetration),
         });
@@ -307,7 +268,6 @@ export function createArmorShaderContext() {
     function spacedStateMaterial(thickness: number, penetration: number | null | undefined): ShaderMaterial {
         return new THREE.ShaderMaterial({
             vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
-            // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
             depthWrite: true, depthTest: true, blending: THREE.NoBlending,
             side: THREE.DoubleSide,
             uniforms: spacedCommonUniforms(thickness, penetration),
@@ -323,7 +283,6 @@ export function createArmorShaderContext() {
         return _emptySpacedTex;
     }
 
-    /** 释放本 context 的占位纹理（材质由场景 traverse 释放；这里只收 context 私有资源） */
     function dispose(): void {
         if (_emptySpacedTex) { _emptySpacedTex.dispose(); _emptySpacedTex = null }
     }

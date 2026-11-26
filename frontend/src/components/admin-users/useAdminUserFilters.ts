@@ -1,7 +1,3 @@
-/**
- * AdminUsersPage —— 数据源分段与 IdP 筛选（拆分自 AdminUsersPage.vue，行为原样）。
- * segment=keycloak（Keycloak 权威）| segment=local（本地 user_profile 权威）。
- */
 import { computed, ref } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { useI18n } from 'vue-i18n'
@@ -26,10 +22,6 @@ export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvail
   const segment = ref<'keycloak' | 'local'>('keycloak')
   const idpAlias = ref('')
 
-  /**
-   * segment=keycloak|local：页头的受控分段（:model-value = 已应用状态）。门禁不通过时不推进已应用值，
-   * 分段仍显示上一次真正生效的数据源，绝不出现「显示本地资料、行还是 Keycloak」的假 applied 状态。
-   */
   function onSegmentChange(value: 'keycloak' | 'local') {
     if (value === segment.value || !requireOnline()) return
     segment.value = value
@@ -46,7 +38,6 @@ export function useAdminUserFilters({ requireOnline, reloadFirstPage, adminAvail
     reloadFirstPage()
   }
 
-  /** 小屏筛选 chip：只有 IdP 别名一项（数据源在页头，不算筛选）。 */
   const filterChips = computed(() => (segment.value === 'keycloak' && idpAlias.value.trim()
     ? [{ key: 'idpAlias', label: `${t('admin.idpAlias')}: ${idpAlias.value.trim()}` }]
     : []))

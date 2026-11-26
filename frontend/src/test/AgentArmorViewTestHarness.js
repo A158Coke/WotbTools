@@ -28,7 +28,6 @@ export function installHarness(mocks) {
   }
 
   async function setup({ query = { view: 'agent-armor', shot: '6' }, shellChrome = null, phone = false, portrait = false } = {}) {
-    // Component phone/orientation checks read matchMedia directly; happy-dom uses exact query stubs.
     const original = window.matchMedia
     window.matchMedia = (mediaQuery) => ({
       matches: (phone && mediaQuery === PLAYBACK_PHONE_QUERY) || (portrait && mediaQuery === PLAYBACK_PORTRAIT_QUERY),

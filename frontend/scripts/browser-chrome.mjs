@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-/** Windows 安装路径（Chrome 优先，Edge 作为 Chromium 后备）。 */
 const WINDOWS_INSTALLS = [
   ['PROGRAMFILES', 'Google/Chrome/Application/chrome.exe'],
   ['PROGRAMFILES(X86)', 'Google/Chrome/Application/chrome.exe'],
@@ -25,13 +24,6 @@ function chromeCandidates() {
   return candidates
 }
 
-/**
- * Chrome/Chromium 可执行文件发现。
- *
- * Windows 上 Chrome 已在运行时 `<exe> --version` 会被转发给既有会话（打印
- * "Opening in existing browser session"）而不是真的报告版本，因此绝对路径只做存在性检查，
- * 只有命令名才用 `--version` 退出码做探针。
- */
 export function findChrome() {
   const candidates = chromeCandidates()
   for (const candidate of candidates) {
@@ -46,7 +38,6 @@ export function findChrome() {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** 极简 CDP 客户端：浏览器级 endpoint + flatten session 复用同一条 WebSocket。 */
 export class CdpClient {
   constructor(socket) {
     this.socket = socket
@@ -54,8 +45,6 @@ export class CdpClient {
     this.pending = new Map()
     this.listeners = new Map()
     this.closed = false
-    // Browser.close may disconnect before its response arrives. Settle pending
-    // commands so teardown cannot wait forever on a dead WebSocket.
     socket.addEventListener('close', () => {
       this.closed = true
       for (const entry of this.pending.values()) entry.reject(new Error(`CDP websocket closed during ${entry.method}`))
@@ -103,12 +92,6 @@ export class CdpClient {
   }
 }
 
-/**
- * 启动一个**独立的** Chrome 实例并连上 CDP。
- *
- * `--user-data-dir` 必须显式指定：否则 Chrome 会把命令转发给用户已开着的实例，测试就
- * 跑在真实浏览器会话里（可能带扩展/已登录态），完全不可复现。
- */
 export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false } = {}) {
   const userDataDir = mkdtempSync(join(tmpdir(), 'wotb-cdp-'))
   let child
@@ -136,8 +119,6 @@ export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false }
     child = spawn(chrome, [
       '--headless=new',
       '--no-sandbox',
-      // Isolated trusted fixture pages need WebGL even on machines without a GPU.
-      // Chrome no longer enables SwiftShader implicitly after --disable-gpu.
       ...(gpu ? ['--ignore-gpu-blocklist'] : ['--disable-gpu', '--enable-unsafe-swiftshader']),
       '--no-first-run',
       '--no-default-browser-check',
@@ -156,16 +137,11 @@ export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false }
     const deadline = Date.now() + 30_000
     let port = 0
     while (!port) {
-      // 进程退出 ≠ 启动失败：Windows 上 Chromium（Edge / Chrome）可能走「启动器」模型 —— 启动器
-      // 进程立即以 0 退出，真正的浏览器进程继续运行并写出 DevToolsActivePort（本机 Edge 154 +
-      // 已开的用户会话实测如此）。只有拿不到端口文件才是失败，所以这里只把「非 0 退出」当错误。
       if (spawnError) throw new Error(`Chrome spawn failed: ${spawnError.code || spawnError.name}`)
       if (child.signalCode || (child.exitCode != null && child.exitCode !== 0)) {
         throw new Error(`Chrome exited before publishing DevToolsActivePort (code=${child.exitCode})`)
       }
       if (Date.now() > deadline) throw new Error('Chrome did not publish DevToolsActivePort within 30s')
-      // 文件出现 ≠ 写完：读到空/半行时继续等，避免把 NaN 递给 fetch。
-      // Windows 上 Chrome 可能仍持有写锁（EBUSY）读完即释放，因此瞬时读取失败按“还没就绪”处理。
       if (existsSync(portFile)) {
         try {
           portState = 'present-invalid'

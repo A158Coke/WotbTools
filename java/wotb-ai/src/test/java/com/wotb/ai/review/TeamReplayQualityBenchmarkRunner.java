@@ -35,17 +35,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/**
- * Explicit manual real-replay benchmark. The class intentionally has no Test
- * suffix, is ai-live tagged, and requires enabled + case/all + API key before a
- * provider object is created. It never adds gold text or an evaluation scenario
- * to the production prompt.
- *
- * Example (PowerShell, from java):
- * {@code $env:AI_API_KEY = "..."; mvn -pl wotb-web -am test
- * "-Dtest=TeamReplayQualityBenchmarkRunner" "-Dai.quality.enabled=true"
- * "-Dai.quality.case=A-flank-local-propagation"}
- */
 @Tag("ai-live")
 public class TeamReplayQualityBenchmarkRunner {
 
@@ -144,9 +133,6 @@ public class TeamReplayQualityBenchmarkRunner {
         final TeamAiReviewResult structured = parsed.result();
         final boolean contractPass = parsed.usable();
         final Map<String, Object> scores = new LinkedHashMap<>();
-        // contract：parser 可产出 minimum contract（summary + episodes）即为通过；
-        // normalized 表示发生了确定性 salvage。legacy envelope 的 grounding validator /
-        // structural shortcut validator 已随 legacy 契约层删除，不再参与评分（见 ai-evaluation 文档）。
         scores.put("contract", parsed.normalized() ? 1 : 2);
         final String review = reviewText(structured);
         final TeamQualityGoldEvaluator.Evaluation gold = TeamQualityGoldEvaluator.evaluate(qualityCase, review);
@@ -166,10 +152,6 @@ public class TeamReplayQualityBenchmarkRunner {
                 gold.mustNotViolations(), review, "");
     }
 
-    /**
-     * structured result → 参与 gold / lexical 评分的正文文本：
-     * summary 摘要 + episode 标题与分析 + 训练建议（legacy {@code reviewMarkdown} 的等价载体）。
-     */
     private static String reviewText(final TeamAiReviewResult result) {
         final StringBuilder text = new StringBuilder();
         if (result.summary() != null) {

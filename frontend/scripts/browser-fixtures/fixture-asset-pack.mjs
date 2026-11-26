@@ -1,29 +1,10 @@
-/**
- * 装甲查看器浏览器门禁的**确定性资产包**（评审 PR #511 BLOCKER 2）。
- *
- * 为什么需要：瞄准交互门禁（browser-armor-aiming.mjs）断言的是「按炮管/炮塔/车体拖动」
- * 与「短按判定」这些 Pointer Events × OrbitControls 互作——合成事件复现不了，必须有
- * 真实车模几何（部位判定按视觉组分组）。此前门禁依赖本机资产包、资产不可达就 SKIP，
- * 于是 CI 里这条 gate 永远是绿的假阳性。这里改用**进程内起一个极小资产源**：
- * 确定性构造的 GLB（hull / turret_01 / gun_01 / chassis_track_* 组，含装甲板命名）+ tank JSON，
- * 让门禁在任何环境（含 CI，无真实资产）都真实执行；SKIP 路径随之删除。
- *
- * 坐标口径与真实资产一致：GLB 为游戏系 Z-up（查看器 applyModelTransforms 转 -90°X）；
- * 装甲模型（armor.glb）的 turret/gun 板存**模块局部**坐标——alignArmorModules 会按
- * tank JSON 的 model_origins 加回枢轴（hull 板 = 车体枢轴系，与本 GLB 同原点）。
- */
 import { createServer } from 'node:http'
 
-/** 夹具坦克 id（数字 id：visual_model_url 的 /glb/<id>/ 替换逻辑要求数字） */
 export const FIXTURE_TANK_ID = 9001
-/** 第二个可切换目标 id；默认名册保持单车，避免改变其它门禁“首张卡”的既有假设。 */
 export const FIXTURE_SECOND_TANK_ID = 9002
-/** 固定战斗室夹具 id：GLB 没有 turret_NN，只有 gun_01（无炮塔拖曳回归）。 */
 export const FIXTURE_TURRETLESS_TANK_ID = 9003
 
-/* ------------------------------------------------------------------ 几何 */
 
-/** 轴对齐盒 → 12 三角形（游戏系 Z-up；返回顶点/索引数组） */
 function boxMesh(cx, cy, cz, sx, sy, sz) {
   const hx = sx / 2, hy = sy / 2, hz = sz / 2
   const corners = [
@@ -44,25 +25,18 @@ function boxMesh(cx, cy, cz, sx, sy, sz) {
   return { positions: Float32Array.from(positions), indices: Uint16Array.from(indices) }
 }
 
-/** 夹具车体尺寸（米，游戏系）：hull / turret / 炮管 / 左右履带 */
 const HULL = { c: [0, 0, 0.6], s: [3.0, 5.6, 1.2] }
 const TURRET = { c: [0, -0.2, 1.85], s: [2.2, 2.6, 1.3] }
 const BARREL = { c: [0, 2.6, 1.9], s: [0.35, 3.6, 0.35] }
 const TRACK_L = { c: [-1.6, 0, 0.35], s: [0.6, 5.0, 0.7] }
 const TRACK_R = { c: [1.6, 0, 0.35], s: [0.6, 5.0, 0.7] }
-/** 装甲模型枢轴（= tank JSON model_origins 同值；装甲板按模块局部坐标存放） */
 export const FIXTURE_ORIGINS = { track: [0, 0, 0], turret: [0, -0.2, 1.2] }
-const GUN_ORIGIN = [0, 0, 0.7]   // gun 枢轴 = track + turret + gun_origin
-/** 间隙甲屏幕板（turret 板 2，12mm）：悬在车体右前方之外，视线穿过它之后是空域，
- *  用来构造「整条射线只碰到间隙甲、没触达主装甲」的点击（BlitzKit 语义下不构成判定）。 */
+const GUN_ORIGIN = [0, 0, 0.7]
 const SCREEN = { c: [2.6, 3.2, 1.35], s: [1.6, 0.10, 1.7] }
-/** 固定战斗室车体：比炮塔型夹具更高的整体盒，炮管直接挂在车体上（无 turret_NN 节点）。 */
 const TD_HULL = { c: [0, 0, 0.9], s: [3.0, 5.6, 1.8] }
 
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 
-/** 视觉模型：部件组节点 + 网格子节点（与真实资产同构：查看器按"组名"分组/摆位，
- *  炮管网格的父节点须恰为 `gun_01` 才会被 tagModuleMeshes 认成外部模块） */
 function visualParts() {
   return [
     { node: 'hull', mesh: 'hull_mesh', geo: boxMesh(...HULL.c, ...HULL.s) },
@@ -73,8 +47,6 @@ function visualParts() {
   ]
 }
 
-/** 装甲模型：板名命中查看器 tagArmorPlates 正则；turret/gun 板按模块局部坐标。
- *  装甲板直接是网格节点（installPivot 按网格名匹配，不能再套一层组）。 */
 function armorParts() {
   const tPivot = FIXTURE_ORIGINS.turret
   const gPivot = [
@@ -94,7 +66,6 @@ function armorParts() {
   ]
 }
 
-/** 固定战斗室视觉模型：没有 turret_01，只有 hull + gun_01 + 履带。 */
 function turretlessVisualParts() {
   return [
     { node: 'hull', mesh: 'hull_mesh', geo: boxMesh(...TD_HULL.c, ...TD_HULL.s) },
@@ -104,7 +75,6 @@ function turretlessVisualParts() {
   ]
 }
 
-/** 固定战斗室装甲模型：hull + gun 板，无 turret 板。 */
 function turretlessArmorParts() {
   const tPivot = FIXTURE_ORIGINS.turret
   const gPivot = [
@@ -122,9 +92,7 @@ function turretlessArmorParts() {
   ]
 }
 
-/* ------------------------------------------------------------------ GLB 打包 */
 
-/** 最小 GLB 封装：单缓冲 + 每个 primitive 一个 bufferView 对（POSITION / indices） */
 function buildGlb(parts) {
   const bufferViews = []
   const accessors = []
@@ -134,7 +102,6 @@ function buildGlb(parts) {
   for (const part of parts) {
     const pos = part.geo.positions
     const idx = part.geo.indices
-    // 顶点 min/max（POSITION accessor 必填）
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity]
     for (let i = 0; i < pos.length; i += 3) {
       for (let a = 0; a < 3; a++) {
@@ -159,8 +126,6 @@ function buildGlb(parts) {
     byteOffset += posBytes.length + posPad + idxBytes.length + idxPad
   }
   const bin = Buffer.concat(binChunks)
-  // 节点图：0 = root；wrap=true 的部件 = 组节点 + 网格子节点（视觉模型），
-  // 否则单网格节点（装甲模型：installPivot 按网格名匹配）
   const nodes = [{ name: 'fixture_root', children: [] }]
   parts.forEach((part, i) => {
     if (part.wrap === false) {
@@ -189,15 +154,15 @@ function buildGlb(parts) {
   const binPad = (4 - (bin.length % 4)) % 4
   const binChunk = Buffer.concat([bin, Buffer.alloc(binPad)])
   const header = Buffer.alloc(12)
-  header.writeUInt32LE(0x46546C67, 0)   // 'glTF'
+  header.writeUInt32LE(0x46546C67, 0)
   header.writeUInt32LE(2, 4)
   header.writeUInt32LE(12 + 8 + jsonChunk.length + 8 + binChunk.length, 8)
   const jsonHeader = Buffer.alloc(8)
   jsonHeader.writeUInt32LE(jsonChunk.length, 0)
-  jsonHeader.writeUInt32LE(0x4E4F534A, 4)   // 'JSON'
+  jsonHeader.writeUInt32LE(0x4E4F534A, 4)
   const binHeader = Buffer.alloc(8)
   binHeader.writeUInt32LE(binChunk.length, 0)
-  binHeader.writeUInt32LE(0x004E4942, 4)   // 'BIN\0'
+  binHeader.writeUInt32LE(0x004E4942, 4)
   return Buffer.concat([header, jsonHeader, jsonChunk, binHeader, binChunk])
 }
 
@@ -206,9 +171,7 @@ export const FIXTURE_VISUAL_GLB = buildGlb(visualParts())
 export const FIXTURE_TURRETLESS_ARMOR_GLB = buildGlb(turretlessArmorParts())
 export const FIXTURE_TURRETLESS_VISUAL_GLB = buildGlb(turretlessVisualParts())
 
-/* ------------------------------------------------------------------ tank JSON */
 
-/** 夹具坦克数据（形状 = dump-tank-data 物化的 tank/{id}.json；板号/厚度与 GLB 命名对应） */
 export const FIXTURE_TANK_DATA = {
   tank_id: FIXTURE_TANK_ID,
   name: 'Fixture Medium',
@@ -219,7 +182,6 @@ export const FIXTURE_TANK_DATA = {
   visual_model_url: `/glb/${FIXTURE_TANK_ID}/visual.glb`,
   armor_model: {
     hull: { plates: { 1: 100 }, spaced: [] },
-    // 板 2 = 间隙甲屏幕板（plate 12mm）：与 configs[0].turret_spaced 同步，retag 后归 spaced
     turret: { plates: { 1: 150, 2: 12 }, spaced: [2] },
     gun: { plates: { 1: 200, gun: 60 }, spaced: [] },
     chassis: { left_track: 30, right_track: 30 },
@@ -235,14 +197,11 @@ export const FIXTURE_TANK_DATA = {
     gun_index: 0,
     gun_thickness: 60,
     gun_origin: GUN_ORIGIN,
-    // 逐配置装甲：stock/top 两套值必须不同，门禁才能验证切换后不是旧缓存
     turret_plates: { 1: 150, 2: 12 },
     gun_plates: { 1: 200 },
     turret_spaced: [2],
     gun_spaced: [],
-    // 俯仰限位（aimFromDrag 无 null 保护：真实配置必带；lower=-max/upper=-min 口径）
     pitch_limits: { min: -8, max: 20, transition: 20 },
-    // 不提供 yaw_limits：走 turret_traverse_left/right(=180) 的全向回卷分支
     caliber: 105,
     shells: [{
       type: 'ap',
@@ -286,7 +245,6 @@ export const FIXTURE_TANK_DATA = {
   caliber: 105,
 }
 
-/** 固定战斗室坦克数据：无 turret 装甲/炮塔名，yaw 限位 ±10°（客户端固定战斗室口径）。 */
 export const FIXTURE_TURRETLESS_TANK_DATA = {
   ...structuredClone(FIXTURE_TANK_DATA),
   tank_id: FIXTURE_TURRETLESS_TANK_ID,
@@ -332,18 +290,15 @@ export const FIXTURE_TURRETLESS_TANK_DATA = {
   caliber: 105,
 }
 
-/** 夹具名册（tank_cache.json：{id: info}）——populateTankLists 依赖该资产 */
 export const FIXTURE_TANK_CACHE = {
   [FIXTURE_TANK_ID]: { id: FIXTURE_TANK_ID, name: 'Fixture Medium', tier: 8, nation: 'ussr', type: 'mediumTank' },
 }
 
-/** 夹具变体：同一服务器可按车换成“有炮塔 / 固定战斗室”两套 GLB + tank JSON。 */
 const FIXTURE_PACKS = {
   turreted: { data: FIXTURE_TANK_DATA, armorGlb: FIXTURE_ARMOR_GLB, visualGlb: FIXTURE_VISUAL_GLB },
   turretless: { data: FIXTURE_TURRETLESS_TANK_DATA, armorGlb: FIXTURE_TURRETLESS_ARMOR_GLB, visualGlb: FIXTURE_TURRETLESS_VISUAL_GLB },
 }
 
-/* ------------------------------------------------------------------ 服务器 */
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -368,8 +323,6 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, de
   const routes = new Map([
     ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(tankCache)) }],
   ])
-  // 名册里的每个 id 都提供同形 tank JSON + 同一夹具 GLB；picker 选择任意车都能加载，
-  // context-loss retry 的“保留已选目标”门禁因此可确定复现。
   for (const [id, info] of Object.entries(tankCache)) {
     const tankId = Number(id)
     const data = structuredClone(pack.data)

@@ -1,7 +1,3 @@
-// 3D annotation 地表拾取（独立 raycaster + semantic 坐标换算 + 诊断拾取）——自
-// annotationScene.ts 出仓（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致；
-// 独立 raycaster 的生命周期 = attachListeners 每次渲染器装配重建，owner 随迁本模块）。
-// 纯几何在 ./annotation3d.js；surface 候选/判定在 ./annotationSurface.ts。
 import * as THREE from 'three'
 import { mapImages } from '../../data/mapImages.js'
 import { semanticWidthFromSlider } from '../../utils/annotation.js'
@@ -12,15 +8,12 @@ import type { SemanticPoint } from './annotation3d.js'
 import { collectSurfaceCandidates, pickDrawableSurfaceHit } from './annotationSurface.ts'
 import type { AnnotationSceneDeps, AnnotationControls } from './annotationScene.js'
 
-/** 拾取器消费的宿主依赖（getter 快照；语义见 annotationScene.ts 的 deps 注释）。 */
 export type AnnotationPickerDeps = Pick<
   AnnotationSceneDeps,
   'getCamera' | 'getRaycaster' | 'getControls' | 'mapWorld' | 'annotationSurfaceHeightAt'
 > & { container: HTMLElement }
 
-/** 地表拾取器句柄（宿主与 gesture 状态机的唯一消费面）。 */
 export interface AnnotationSurfacePicker {
-  /** 独立 raycaster 重建（attachListeners 的 annotation 段；不给共享 raycaster 留副作用）。 */
   resetRaycaster(): void
   semanticNormal(normal: { x?: unknown; y?: unknown; z?: unknown } | null | undefined): { x: number; y: number; z: number } | undefined
   semanticFromScene(x: number, z: number, surfaceY?: number, surfaceN?: { x: number; y: number; z: number }): SemanticPoint
@@ -38,7 +31,6 @@ export interface AnnotationSurfacePicker {
 
 export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): AnnotationSurfacePicker {
   const { container } = deps
-  // 独立 raycaster：不给共享 raycaster 留 near/far 副作用（fly/selection 仍用共享实例）。
   let annotationSurfaceRaycaster: THREE.Raycaster | null = null
 
   function semanticNormal(normal: { x?: unknown; y?: unknown; z?: unknown } | null | undefined) {
@@ -75,9 +67,6 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     )
-    // renderer.render 才更新 matrixWorld；暂停/无首帧时也必须得到当前相机射线。
-    // 无布局测试/首帧前 aspect 可能仍是 NaN（renderer 创建时 clientWidth/clientHeight=0），
-    // 用容器实测比例修复投影；真实浏览器不会走到这里。
     if (!Number.isFinite(camera.aspect) || camera.aspect <= 0) {
       camera.aspect = rect.width / rect.height
       camera.updateProjectionMatrix()
@@ -97,7 +86,6 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
     const maxT = Math.min(4000, Number.isFinite(camera.far) ? camera.far : 4000)
     const distance = camera.position.distanceTo(controls.target)
     const step = Math.max(1.5, Math.min(8, (Number.isFinite(distance) ? distance : 200) / 160))
-    // ceiling 只用于向上射线提前退出；+100 m 是地形 zmax 之上的安全余量。
     const ceiling = (Number.isFinite(Number(deps.mapWorld.heightMeta()?.zmax)) ? Number(deps.mapWorld.heightMeta()!.zmax) : 50) + 100
     let prevT = 0
     for (let t = step; t <= maxT; t += step) {
@@ -126,10 +114,6 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
     return null
   }
 
-  /**
-   * camera ray × 可绘制 static scenery：候选来自装配期 16m 足印格，不遍历整张 GLB。
-   * far 收到 terrain hit 距离之前，因此只有真正位于地面之前的表面才会被选中。
-   */
   function raycastAnnotationScenery(clientX: number, clientY: number, rect: DOMRect, groundHit: ReturnType<AnnotationSurfacePicker['raycastAnnotationGround']>) {
     const camera = deps.getCamera()
     const annotationSurfaceGrid = deps.mapWorld.annotationSurfaceGrid()
@@ -160,10 +144,6 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
     } as { point: THREE.Vector3; distance: number; surfaceY: number; surfaceN?: { x: number; y: number; z: number } } | null
   }
 
-  /**
-   * 诊断专用：解释一次 annotation surface pick 的 grid/candidate/rejection。
-   * 与 pickAnnotationSurface 共用同一 grid/candidate/raycast/policy，不建立第二套 telemetry。
-   */
   function debugPickAnnotationSurface(clientX: number, clientY: number) {
     const camera = deps.getCamera()
     const rect = container.getBoundingClientRect()
@@ -255,11 +235,6 @@ export function createAnnotationSurfacePicker(deps: AnnotationPickerDeps): Annot
     return diag
   }
 
-  /**
-   * Toolbar logical width -> canonical map-space width. Reuse mapImages (2D canonical
-   * registry) and terrain/map span; never current camera projection. Unknown map key
-   * falls back to 1:1 map units so the slider stays stable without a second registry.
-   */
   function annotationSemanticWidth(sliderValue: number) {
     const image = deps.mapWorld.mapKey() ? mapImages[deps.mapWorld.mapKey() as keyof typeof mapImages] : null
     const bounds = image?.coordinateBounds

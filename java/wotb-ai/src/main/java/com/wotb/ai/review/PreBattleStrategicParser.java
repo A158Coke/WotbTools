@@ -8,10 +8,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 解析 Call #1 的 JSON 输出。容忍 markdown 代码围栏；字段缺失兜底为空；
- * 解析失败返回 {@code null}（由 Harness 降级，不抛业务异常）。
- */
 public final class PreBattleStrategicParser {
 
     static final int MAX_ITEMS = 6;

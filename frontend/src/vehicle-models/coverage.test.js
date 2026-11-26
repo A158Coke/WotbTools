@@ -1,12 +1,3 @@
-/**
- * Tier X 专属车型 — 覆盖率门禁。
- *
- * 强制契约：
- * - Tankopedia 中所有 Tier X 必须 100% 有 baseModelKey mapping；
- * - mapping 不得指向不存在的 modelKey、不得含 Tankopedia 之外的 tankId；
- * - mapping 期望的每个 modelKey 都必须有完整 source asset（hull + turret 按 kind）；
- * - 未来新增 Tier X → 缺失 mapping → CI FAIL（禁止 silent fallback）。
- */
 import { describe, expect, it } from 'vitest'
 import tankopedia from '../../../common/tankopedia-tier10.json'
 import { MODEL_DEFINITIONS, TANK_ID_TO_MODEL } from './mapping.js'
@@ -57,8 +48,6 @@ describe('Tier X coverage（common/tankopedia-tier10.json vs mapping）', () => 
   })
 
   it('mapping 的 kind 声明与 class 常识不冲突（Tank destroyer 分组覆盖检查）', () => {
-    // 防手误：所有 turretless 车型必须在 TD 中（tankopedia 无 turret 字段，
-    // 该检查只验证 turretless 声明集中在 TD 类，作为最低防线）。
     const tdIds = new Set(
       tankopedia.vehicles.filter((v) => v.class === 'Tank destroyer').map((v) => String(v.id)),
     )
@@ -84,7 +73,6 @@ describe('assets/ 目录完整性（映射期望集合 + sample 契约）', () =
         kind: def ? def.kind : null,
         files,
       })
-      // kind=null（非映射目录如 sample）时只校验契约本身，不做 mapping 一致性
       expect(errors, `${modelKey} 校验失败`).toEqual([])
     }
   })

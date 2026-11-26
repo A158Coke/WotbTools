@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-// 屏幕空间覆盖物原语：恒定线宽、深色描边、点尺寸、resolution 同步与资源释放。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
@@ -61,7 +60,6 @@ describe('overlayStroke · 折线', () => {
       expect(resolution.x).toBe(800)
       expect(resolution.y).toBe(600)
     }
-    // 非法尺寸不写入（0 高度时保持原值）
     updateOverlayResolution(group, 0, 0)
     expect((linesOf(group)[0].material as unknown as { resolution: THREE.Vector2 }).resolution.x).toBe(800)
   })

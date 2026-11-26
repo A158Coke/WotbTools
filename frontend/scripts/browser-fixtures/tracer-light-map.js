@@ -4,11 +4,6 @@ import BattleMap from '../../src/components/BattleMap.vue'
 import { PLAYBACK_ON_NEUTRAL, playbackTracerColor, teamCssVars } from '../../src/data/mapTeamColors.js'
 import { messages } from '../../src/locales/messages.js'
 
-/**
- * 2D 炮线浅色地图可读性夹具：挂载真实 BattleMap，纯白背景，三条满不透明度炮线
- * （友军 / 敌军 / 未知）。像素断言由 browser-playback-layout.mjs 执行；这里只提供
- * 生产组件、生产颜色 SSOT 与确定性几何，不复制炮线绘制样式。
- */
 const i18n = createI18n({ locale: 'zh', fallbackLocale: 'en', messages })
 const MAP_WIDTH = 1000
 const MAP_HEIGHT = 300

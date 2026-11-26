@@ -30,8 +30,6 @@ describe('Shooter/Target 主炮配置解耦（射击方决定炮弹，受击方�
   }
 
   it('同车型普通检视：缺省 scfg 时射击方 HUD 不跟随受击方 config', async () => {
-    // shooter 未指定 → 默认与 target 同车（tank=1），受击方 config=0；
-    // 射击方配置必须解析为 null（自身默认顶级配置），不得回落到 &config=
     const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '1', config: '0' } })
     expect(wrapper.getComponent(ArmorShotHud).props('scfg')).toBeNull()
   })
@@ -113,7 +111,6 @@ describe('XI armor upgrade handoff', () => {
     expect(scenes[0].destroy).toHaveBeenCalledOnce()
     expect(wrapper.getComponent(ArmorShotHud).props('abilities')).toBe('401')
     expect(wrapper.get('[data-testid="armor-tools"]').attributes('aria-expanded')).toBe('true')
-    // Removing the explicit mode restores the XI top default; explicit stock remains available.
     await router.replace({ query: { view: 'agent-armor', tank: '15153', shooter: '30497' } })
     await flushPromises()
     expect(scenes).toHaveLength(3)
@@ -157,7 +154,6 @@ describe('armor camera actions', () => {
     scene.setCameraPreset = vi.fn()
     await wrapper.get('[data-testid="armor-camera-front"]').trigger('click')
     await wrapper.get('[data-testid="armor-camera-hull-down"]').trigger('click')
-    // preserveView：预设只换观察方向，不接管用户的旋转中心/距离。
     expect(scene.setCameraPreset.mock.calls).toEqual([
       ['front', { preserveView: true }],
       ['hull_down', { preserveView: true }],

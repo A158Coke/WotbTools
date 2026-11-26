@@ -1,15 +1,3 @@
-/**
- * 客户端回放 xlsx 导出（取代服务端 `ReplayExportJobService` + Java `ExcelExporter`/POI）。
- *
- * 用法：
- *   const dataset = finalizeBatch(entries, tankopedia)
- *   const file = await exportAggregateXlsx(dataset, tankopedia, { teamNames })  // mode=aggregate
- *   const zip = await exportEachZip(dataset, tankopedia, { teamNames })         // mode=each
- *   download(file.blob, file.filename)
- *
- * 工作簿结构由 Replay 投影为 shared WorkbookSpec；XLSX renderer 与 ZIP packaging 分属各自能力。
- * 与 Java 的逐格一致由 `__golden__/java-export.json` 锁定（export.golden.test.ts）。
- */
 
 import type { ProcessedDataset } from '../compute/finalize.js'
 import { resultFor } from '../compute/league-batch.js'
@@ -31,23 +19,14 @@ export type { WorkbookSpec } from './spec.js'
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 export const ZIP_MIME = 'application/zip'
-/** 多场纯 League（CW）汇总文件名（Java `ReplayExportNames.LEAGUE_AGGREGATE`）。 */
 const LEAGUE_AGGREGATE_FILENAME = '联赛汇总.xlsx'
-/** 多场 Standard / Mixed 汇总文件名（Java `ReplayExportNames.STANDARD_AGGREGATE`）。 */
 const STANDARD_AGGREGATE_FILENAME = '回放汇总.xlsx'
-/** 逐场导出 zip 文件名。 */
 const EACH_ZIP_FILENAME = '逐场导出.zip'
 
-/**
- * 战队名称覆盖输入（与服务端 `teamNames` 参数同一契约）：
- * `{"battle": {"arenaId:team": 名}, "summary": {teamKey: 名}}`；扁平 `{"arenaId:team": 名}` 视为 battle。
- * 可传对象或 JSON 字符串；非法 → 空（不抛错）。
- */
 export type TeamNamesInput = string | Readonly<Record<string, unknown>> | null | undefined
 
 export interface ExportOptions {
   teamNames?: TeamNamesInput
-  /** IANA 时区（日期列）；省略 = 浏览器本地时区。 */
   timeZone?: string
 }
 
@@ -66,7 +45,6 @@ function collectText(node: unknown, out: Map<string, string>): void {
   for (const [k, v] of Object.entries(node)) if (typeof v === 'string') out.set(k, v)
 }
 
-/** Java `ReplayExportJobService.parseTeamNames`。 */
 export function parseTeamNames(input: TeamNamesInput): TeamNameOverrides {
   const empty: TeamNameOverrides = { battle: new Map(), summary: new Map() }
   let node: unknown = input
@@ -90,13 +68,11 @@ export function parseTeamNames(input: TeamNamesInput): TeamNameOverrides {
   return { battle, summary }
 }
 
-/** Java `ReplayJobFiles.stripExt`。 */
 function stripExt(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot > 0 ? name.substring(0, dot) : name
 }
 
-/** Java `ReplayExportJobService.uniqueName`：替换路径分隔符，重名追加 `-2`、`-3`…。 */
 function uniqueName(preferred: string, used: Set<string>): string {
   const safe = preferred.replaceAll('\\', '_').replaceAll('/', '_')
   if (!used.has(safe)) {
@@ -115,13 +91,11 @@ function uniqueName(preferred: string, used: Set<string>): string {
   }
 }
 
-/** mode=aggregate 的文件名：单场 = 源文件名.xlsx；多场 League = 联赛汇总；否则回放汇总。 */
 function aggregateFilename(dataset: ProcessedDataset): string {
   if (dataset.battles.length === 1) return `${stripExt(dataset.battleSourceNames[0])}.xlsx`
   return dataset.league !== null ? LEAGUE_AGGREGATE_FILENAME : STANDARD_AGGREGATE_FILENAME
 }
 
-/** mode=aggregate 的工作簿（Java `processAggregateFromResult`）。 */
 export function buildAggregateWorkbook(dataset: ProcessedDataset, tankopedia: Tankopedia,
   options: ExportOptions = {}): WorkbookSpec {
   const ctx: SheetContext = { tankopedia, timeZone: options.timeZone }
@@ -129,7 +103,6 @@ export function buildAggregateWorkbook(dataset: ProcessedDataset, tankopedia: Ta
   const { battles, league } = dataset
   if (league !== null) {
     if (battles.length === 1) {
-      // identity 绑定；未评分单场回退普通单场工作簿（基础数据仍可导出）
       const single = resultFor(league, battles[0].arenaId)
       return single !== null
         ? singleLeagueWorkbook(battles[0], single, ctx, names.battle)
@@ -141,7 +114,6 @@ export function buildAggregateWorkbook(dataset: ProcessedDataset, tankopedia: Ta
   return aggregateWorkbook(battles, dataset.battleSourceNames, dataset.duplicates, ctx)
 }
 
-/** mode=each 的逐场工作簿（Java `processEachFromResult`）：未评分的 League 场次也导出普通单场。 */
 function buildEachWorkbooks(dataset: ProcessedDataset, tankopedia: Tankopedia,
   options: ExportOptions = {}): { name: string; workbook: WorkbookSpec }[] {
   const ctx: SheetContext = { tankopedia, timeZone: options.timeZone }
@@ -160,14 +132,12 @@ function toBlob(bytes: Uint8Array, mime: string): Blob {
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime })
 }
 
-/** 导出 mode=aggregate 的 xlsx。 */
 export async function exportAggregateXlsx(dataset: ProcessedDataset, tankopedia: Tankopedia,
   options: ExportOptions = {}): Promise<ExportFile> {
   const bytes = await renderXlsx(buildAggregateWorkbook(dataset, tankopedia, options))
   return { filename: aggregateFilename(dataset), mime: XLSX_MIME, blob: toBlob(bytes, XLSX_MIME) }
 }
 
-/** 导出 mode=each 的 zip（每场一个 xlsx）。 */
 export async function exportEachZip(dataset: ProcessedDataset, tankopedia: Tankopedia,
   options: ExportOptions = {}): Promise<ExportFile> {
   const files: { name: string; data: Uint8Array }[] = []

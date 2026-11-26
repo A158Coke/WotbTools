@@ -19,7 +19,6 @@ export const ALLOWED_VIEWS = Object.freeze([
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
 ])
 
-/** 侧边栏分组（平板 / 桌面）。首页不属于任何分组，排在最上面。 */
 export const NAV_GROUPS = Object.freeze([
   Object.freeze({ id: 'battle', labelKey: 'nav.groups.battle' }),
   Object.freeze({ id: 'reference', labelKey: 'nav.groups.reference' }),
@@ -27,15 +26,6 @@ export const NAV_GROUPS = Object.freeze([
   Object.freeze({ id: 'community', labelKey: 'nav.groups.community' }),
 ])
 
-/**
- * 主导航（design-language §9）：
- * - 平板 / 桌面：左侧边栏按 `group` 分组渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
- *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持）。
- * - 手机竖屏 / 手机横屏（抽屉外壳）：顶栏左上菜单按钮打开左侧抽屉，内容与侧边栏同一份分组 + 管理组，
- *   "更多与设置"是整页。没有底部常驻导航。
- * 账户（个人中心 / 登录登出）：手机在顶栏右侧与抽屉底部，平板 / 桌面在侧边栏底部。
- * `homeHostOnly`：公开 Web 站提供首页；APK 与本地 Web 开发都直接以回放作为落地页，APK 不显示首页 Tab。
- */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
   Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay', group: 'battle' }),
@@ -49,11 +39,6 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
-/**
- * 侧边栏管理组（平板 / 桌面）。role 对应 useAuth 的各域管理权限（contentAdmin 独立于
- * tournamentAdmin）；全站管理员通过 Keycloak composite 同时具备所有管理入口。
- * 手机抽屉复用同一组。
- */
 export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'admin-users', view: 'admin-users', labelKey: 'admin.title', role: 'admin' }),
   Object.freeze({ id: 'admin-battle-data', view: 'admin-battle-data', labelKey: 'battleDataAdmin.title', role: 'admin' }),
@@ -65,8 +50,6 @@ export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'creators-config', view: 'creators-config', labelKey: 'creators.configTitle', role: 'contentAdmin' }),
 ])
 
-// 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
-// 未列出的视图（设置、关于等）都归入"更多"。
 const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   home: 'home',
   replay: 'replay',
@@ -101,10 +84,6 @@ export function primarySection(view) {
   return PRIMARY_SECTION_OF_VIEW[view] ?? 'more'
 }
 
-/**
- * 工作台视图（L5 例外）：回放工作台的各能力、装甲查看器 / 射击复现、地图预览与科技树。
- * 它们自己管理高度预算与底部操作栏，顶栏不随滚动收起。
- */
 const WORKSPACE_SECTIONS = Object.freeze(['replay', 'maps', 'techtree'])
 export function isWorkspaceView(view) {
   return view === 'agent-armor' || WORKSPACE_SECTIONS.includes(primarySection(view))
@@ -135,10 +114,6 @@ export function canonicalView(view) {
   return LEGACY_VIEW_ALIASES[view] ?? view
 }
 
-/**
- * Derive a supported product view from the router's canonical location.
- * Authentication gates belong to capability/page hosts; deep links remain discoverable.
- */
 export function viewFromRoute(route) {
   const rawView = isSponsorPath(route.path)
     ? 'sponsor'
@@ -149,28 +124,15 @@ export function viewFromRoute(route) {
   return view
 }
 
-/** 名人堂写进 URL 的筛选键（utils/hofQuery.js）：只属于 hof，导航到别的页面时丢掉。 */
 const HOF_QUERY_KEYS = ['tab', 'page', 'tank', 'nation', 'type', 'tier', 'bt', 'nick', 'limit']
-/**
- * 装甲查看器 / 射击复现场景写进 URL 的键（`AgentShots.srViewerUrl` 的交接链接 + `tankViewer` 的 QP 读取）：
- * tank / shooter / config / scfg / shell / shot / world / heatmap，加相机与显示档（az / h / d / eqcal / …）
- * 与 `clean` / `debug` 这类只对该场景有意义的开关。它们**只属于该视图**——不清理的话，
- * 从场景里用侧边栏切走，URL 会变成 ?view=replay&tank=…&shot=…&world=1&heatmap=1（用户实测反馈）。
- *
- * 清理方向与坦克百科一致：只处理**离开**场景。进入方向一律保留——这些键就是目的地的参数，
- * 而"射击分析 → 装甲查看器"的交接（`ReplayShotsPane.openInViewer`）与坦克百科入口
- * （`AgentTankopedia` 的 router.push）都不经本函数；但任何以 URL 表达的交接都不该在入场时被吞掉。
- */
 const ARMOR_SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'config', 'scfg', 'sengine', 'strack', 'sdev', 'shell', 'shot', 'world', 'heatmap',
   'az', 'h', 'd', 'eqcal', 'eqenh', 'eqpitch', 'quality', 'move', 'rel', 'clean', 'debug',
   'upgrade', 'abilities', 'supgrade', 'sabilities',
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
-/** 地图预览写进 URL 的键（map=资产 key、mode=2d|3d、bases=supremacy|encounter）：只属于该视图，离开时丢掉。 */
 const MAP_PREVIEW_QUERY_KEYS = ['map', 'mode', 'bases']
 
-/** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
   if (route.query?.view === 'league-broadcasts' && view !== 'league-broadcasts') {
@@ -178,7 +140,6 @@ export function locationForView(view, route) {
   }
   if (['creators', 'recommended-videos'].includes(route.query?.view) && view !== route.query.view) delete query.creatorCategory
   if (route.query?.view === 'creators-config' && view !== 'creators-config') delete query.recommendationType
-  // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]
   }
@@ -190,11 +151,9 @@ export function locationForView(view, route) {
   if (route.query?.view === 'agent-tankopedia' && view !== 'agent-tankopedia') {
     for (const key of TANKOPEDIA_QUERY_KEYS) delete query[key]
   }
-  // 离开装甲场景时丢掉场景参数（进入方向见上面 ARMOR_SCENE_QUERY_KEYS 的说明）
   if (route.query?.view === 'agent-armor' && view !== 'agent-armor') {
     for (const key of ARMOR_SCENE_QUERY_KEYS) delete query[key]
   }
-  // 离开地图预览时丢掉地图参数（同上：进入方向保留，map/mode 就是目的地参数）
   if (route.query?.view === 'map-preview' && view !== 'map-preview') {
     for (const key of MAP_PREVIEW_QUERY_KEYS) delete query[key]
   }
@@ -207,7 +166,6 @@ export function locationForView(view, route) {
   }
 }
 
-/** 当前页面所属一级区块的标题 key（顶栏紧凑标题与 document.title 共用）；不属于任何区块时为 null。 */
 export function sectionTitleKey(view) {
   const section = primarySection(view)
   const item = [...primaryNavItems(), ...ADMIN_NAV].find(entry => entry.id === section)

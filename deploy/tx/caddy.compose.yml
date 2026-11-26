@@ -10,20 +10,11 @@ services:
   caddy:
     image: caddy:2.10.2-alpine
     ports:
-      # Caddy is the TX production public ingress and owns 80/443 on every TX
-      # interface by default. It is the only service in this stack allowed to
-      # publish publicly: the two PostgreSQL ports and the Keycloak admin port
-      # stay on 127.0.0.1; business-api exposes only management on WireGuard,
-      # while frontend publishes nothing.
-      # An operator can still move the bind address with CADDY_HTTP_BIND or
-      # CADDY_HTTPS_BIND without editing this file.
       - "${CADDY_HTTP_BIND:-0.0.0.0}:80:80"
       - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443"
       - "${CADDY_HTTPS_BIND:-0.0.0.0}:443:443/udp"
     environment:
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?CADDY_ACME_EMAIL is required}
-      # Local/CI defaults stay Docker-local. Production injects TX1 as the
-      # preferred frontend and TX2 as the continuously reconciled failover peer.
       CADDY_FRONTEND_UPSTREAM: ${CADDY_FRONTEND_UPSTREAM:-wotb-frontend:80}
       CADDY_FRONTEND_PEER: ${CADDY_FRONTEND_PEER:-wotb-frontend:80}
       CADDY_KEYCLOAK_UPSTREAM: ${CADDY_KEYCLOAK_UPSTREAM:-keycloak:8080}

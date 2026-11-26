@@ -1,33 +1,5 @@
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { watchEffect } from 'vue'
@@ -71,10 +43,6 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 
-/**
- * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
- * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
- */
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -98,16 +66,11 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 })
 
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
- * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
- * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
     constructor(params = {}) {
-      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
+      this.params = params
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -130,10 +93,6 @@ vi.mock('three', async (importOriginal) => {
 })
 
 
-/**
- * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
- * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
- */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
 
 vi.mock('./battleFx.ts', async (importOriginal) => {
@@ -156,9 +115,6 @@ import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 
-/** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
- *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
- *  继续跑了 DATA 派生状态写入」的可观测探针（无 WebGL 时 hasData 不具区分度）。 */
 function minimalData(tStart = 42, mapName = 'probe_map') {
   return {
     meta: { map_id: 1, map_name: mapName, t_start: tStart, friendly_team: 1 },
@@ -176,7 +132,6 @@ function deferred() {
 }
 
 
-/** 场景内核需要一个容器元素；渲染器在数据就位后才惰性创建，这里给空节点即可。 */
 function mountContainer() {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -186,11 +141,8 @@ function mountContainer() {
 
 let api = null
 
-/** 本用例创建过的全部实例（含被取代的 A）：每个实例都有自己的渲染器与事件监听，
- *  只销毁最后一个会让前面的实例继续跑，串到下个用例。 */
 let created = []
 
-/** 仍挂起的 defer：afterEach 兜底结算，避免悬挂 promise 把在途续体泄漏到下个用例。 */
 let pending = []
 
 
@@ -201,11 +153,6 @@ function track(d) {
 
 
 beforeEach(() => {
-  // 单元测试必须**无网**：happy-dom 的 fetch 会真发请求，而开发机常带 `.env.local`
-  // （`VITE_ASSET_BASE_URL=http://127.0.0.1:8123`），高档位
-  // `forceGlb: true` 的用例于是真的去下载 `/glb/<id>/model.glb` 与履带/悬挂资产 ⇒ 5 s 预算内
-  // 必超时（CI 无 .env.local ⇒ 相对地址快速失败 ⇒ 绿）——这就是 "wreck smoke …" 用例长期
-  // 「本机红 / CI 绿」的根因。默认钉成无网：需要资产的用例各自 `vi.stubGlobal('fetch', …)` 覆盖。
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
@@ -260,7 +207,6 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
 }
 
 
-/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
 function stubFrames() {
   const frames = []
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -269,11 +215,6 @@ function stubFrames() {
 }
 
 
-/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
- *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
- *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
- *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
- *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
 let zoomPump = null
 
 async function settleZoomFrames() {
@@ -281,13 +222,12 @@ async function settleZoomFrames() {
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
     const frame = stubFrames()
     zoomPump = { stub: globalThis.requestAnimationFrame, frame }
-    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+    await new Promise((r) => setTimeout(r, 25))
   }
   for (let i = 0; i < 17; i++) zoomPump.frame()
 }
 
 
-/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
 async function pumpZoomAt(dt, frames) {
   vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
@@ -299,7 +239,6 @@ async function pumpZoomAt(dt, frames) {
 }
 
 
-/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
@@ -314,7 +253,6 @@ function createScene(existingStore = null) {
 }
 
 
-/** 每次 initPlayback 一个独立实例（跨实例竞态测试要同时持有 A 与 B） */
 function createInstance(store) {
   const instance = initPlayback(mountContainer(), store)
   created.push(instance)
@@ -369,7 +307,6 @@ describe('playbackScene loadMapOnly：地图预览会话', () => {
     expect(store.err).toBe('')
   })
 
-  // ---- 静态基地环（setMapBasesKind）：与回放同一贴地管线，模式由宿主显式指定 ----
   it('setMapBasesKind 显式选组：中立视图进 store.baseViews；非法值归一 null 清空', async () => {
     stubTerrainAssets()
     stubCanvas2d()
@@ -380,7 +317,6 @@ describe('playbackScene loadMapOnly：地图预览会话', () => {
     expect(store.baseViews).toEqual([])
     api.setMapBasesKind('supremacy')
     frame()
-    // 争霸 A–C 全列、无占领状态（静态预览按无主中立，与回放未开占领同表现）
     expect(store.baseViews.map((v) => [v.baseId, v.kind, v.owner, v.progress])).toEqual([
       ['A', 'supremacy', 'neutral', null],
       ['B', 'supremacy', 'neutral', null],
@@ -388,7 +324,6 @@ describe('playbackScene loadMapOnly：地图预览会话', () => {
     ])
     api.setMapBasesKind('assault')
     frame()
-    // 遭遇 = 单基地旗帜（ASSAULT_BASE_ID），probe_map.assault 恰 1 条 candidate
     expect(store.baseViews.map((v) => [v.baseId, v.kind, v.owner, v.progress])).toEqual([
       ['BASE', 'assault', 'neutral', null],
     ])
@@ -569,8 +504,6 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.err).toBe('')
   })
 
-  // json/bin 配对（PR #615 review P2）：布局标记只对同一次发布的 bin 成立——bin 以 terrainBinSha256 作缓存键
-  // 取回，解码前核对字节；不同批（发布进行中）fail-closed 回退 2D，不画错位一列的地形。
   function terrainPairFetch(meta, bin) {
     return vi.fn(async (url) => {
       if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ ...meta }) }
@@ -666,7 +599,7 @@ describe('playbackScene 资产发布顺序', () => {
       const u = String(url)
       if (u.includes('terrain-meta')) return { ok: true, status: 200, json: async () => ({ size: 2, span: 600, zmin: 0, zmax: 1, terrainLayout: 2 }) }
       if (u.includes('/terrain')) return { ok: true, status: 200, arrayBuffer: async () => new Uint16Array([0, 1, 2, 3]).buffer }
-      if (u.includes('groundmeta')) return { ok: true, status: 200, json: async () => ({}) } // 缺 tiling
+      if (u.includes('groundmeta')) return { ok: true, status: 200, json: async () => ({}) }
       if (u.includes('groundtex')) return { ok: true, status: 200, blob: async () => new Blob(['x']) }
       return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
     }))
@@ -678,7 +611,7 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(true)
     expect(store.assetDegraded).toBe(true)
     expect(store.assetIssues.some((i) => i.key === 'groundLayers' && i.status === 'invalid')).toBe(true)
-    expect(window.__terrain).toBeTruthy()   // 回退烘焙底图后地形仍建成
+    expect(window.__terrain).toBeTruthy()
   })
 
   it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
@@ -713,12 +646,9 @@ describe('playbackScene 资产发布顺序', () => {
   })
 
   it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
-    // 2026-11-22 拆分：visibility 投影写 owner = playback/sessionRuntime.js，
-    // 逐车读取回退（visibleAt）owner = playback/sceneState.js。
     const runtimeRaw = (await import('./playback/sessionRuntime.ts?raw')).default
     const stateRaw = (await import('./playback/sceneState.ts?raw')).default
     const raw = runtimeRaw + '\n' + stateRaw
-    // Asset failures are owned by the map loader.
     const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).toMatch(/store\.assetIssues = assetIssues/)
     expect(worldSrc).toMatch(/store\.assetDegraded = true/)
@@ -726,7 +656,6 @@ describe('playbackScene 资产发布顺序', () => {
     expect(worldSrc).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
     expect(worldSrc).toMatch(/noteAsset\('terrain', 'unavailable'/)
     expect(worldSrc).toMatch(/noteAsset\('scenery', 'failed'/)
-    // 3D 与 2D 共用同一 visibility 投影（短隐藏段在 3D 也不能回退到 coverage）
     expect(raw).toMatch(/VIS_BY_EID = visibilitySpansByEid\(data\.visibility\)/)
     expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
   })
@@ -852,13 +781,11 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
-    // 俯视是持续的战术总览模式：OrbitControls 接管，target 锁**地图中心**（旋转中心不是相机）
     expect(store.cam).toBe('top')
     expect(controls.enabled).toBe(true)
     expect(controls.enablePan).toBe(false)
     const viewDirection = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
-    expect(viewDirection().y).toBeLessThan(-0.99)   // 保持直下朝向，不回落到斜俯视
-    // 飞行（WASD）不接管总览视角：flyTick 在俯视模式下为惰性
+    expect(viewDirection().y).toBeLessThan(-0.99)
     expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(false)
     api.setCam('free')
     expect(controls.enabled).toBe(false)
@@ -880,7 +807,7 @@ describe('Free Camera terrain floor', () => {
     cam.position.y = topHeight - 0.1
     controls.target.y = topHeight - 5.1
     canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
-    await settleZoomFrames()   // #835：滚轮只累积预算，净空钳制在逐帧收敛中逐帧校验
+    await settleZoomFrames()
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
 
     cam.position.y = topHeight - 0.1
@@ -895,7 +822,7 @@ describe('Free Camera terrain floor', () => {
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
     canvas.dispatchEvent(touch('pointerdown', 340, 9))
     canvas.dispatchEvent(touch('pointermove', 300, 9))
-    frame()                                              // 判定为捏合，基准指距 200px
+    frame()
     canvas.dispatchEvent(touch('pointermove', 260, 9))
     expect(cam.position.y).toBeCloseTo(topHeight, 5)
     canvas.dispatchEvent(touch('pointerup', 260, 9))
@@ -968,7 +895,7 @@ describe('Free Camera terrain floor', () => {
     canvas.dispatchEvent(touch('pointerdown', 100, 7))
     canvas.dispatchEvent(touch('pointerdown', 260, 9))
     canvas.dispatchEvent(touch('pointermove', 300, 9))
-    frame()                                              // 判定为捏合，基准指距 200px
+    frame()
     canvas.dispatchEvent(touch('pointermove', 340, 9))
     expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
     canvas.dispatchEvent(touch('pointerup', 340, 9))
@@ -1018,22 +945,18 @@ describe('Free Camera terrain floor', () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
-    expect(store.cam).toBe('top')   // 默认进入俯视总览模式
+    expect(store.cam).toBe('top')
     const cam = window.__camera
     const controls = window.__controls
-    const tacticalHeight = 255 // minimalData 的 WORLD_CENTER.ext = 150
+    const tacticalHeight = 255
     api.setCam('top')
     expect(store.cam).toBe('top')
     expect(cam.position.x).toBeCloseTo(0)
     expect(Math.abs(cam.position.z)).toBeLessThan(0.1)
-    expect(cam.position.y).toBeGreaterThanOrEqual(400.5)   // 地形净空优先于默认高度
+    expect(cam.position.y).toBeGreaterThanOrEqual(400.5)
     expect(new THREE.Vector3().subVectors(controls.target, cam.position).normalize().y).toBeLessThan(-0.99)
   })
 
-  // 回归（用户要求）：默认俯视视角的**旋转中心 = 地图中心**，不是相机。
-  // 锁两件事：① target 钉在地图中心；② 绕转后 target 不随相机移动（OrbitControls 轨道语义），
-  // 且极角上限仍挡在地平线以上。此前曾被改成「一次性动作 + 落进 free」，free 的 flyLook 把
-  // target 重钉到 cam + dir×dist（旋转中心变成相机）。
   it('top view orbits around the map center, not the camera', async () => {
     stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
     source.loadPlaybackData.mockResolvedValue(minimalData())
@@ -1043,21 +966,18 @@ describe('Free Camera terrain floor', () => {
     const controls = window.__controls
     expect(store.cam).toBe('top')
     expect(controls.enabled).toBe(true)
-    // ① target = WORLD_CENTER（minimalData：ext=150、cx=cz=0）
     expect(controls.target.x).toBeCloseTo(0, 3)
     expect(controls.target.z).toBeCloseTo(0, 3)
-    // ② 模拟轨道绕转（相机绕 target 转到斜上方）：target 必须纹丝不动
     const center = controls.target.clone()
     const radius = cam.position.distanceTo(center)
     cam.position.set(radius * 0.6, radius * 0.75, radius * 0.2)
     controls.update()
     expect(controls.target.distanceTo(center)).toBeLessThan(1e-6)
-    // ③ 不沉到地平线以下
     expect(controls.maxPolarAngle).toBeLessThanOrEqual(Math.PI * 0.5)
   })
 
   describe('default top view across sessions', () => {
-    const TOP_HEIGHT = 255   // minimalData 的 ext = 150 × 1.7
+    const TOP_HEIGHT = 255
     const loadScene = async () => {
       stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 0, zmax: 0 })
       source.loadPlaybackData.mockResolvedValue(minimalData())
@@ -1069,13 +989,11 @@ describe('Free Camera terrain floor', () => {
 
     it('opens at the top overview mode (map-center target) and repeats it while untouched', async () => {
       const { api, store } = await loadScene()
-      // 俯视是持续模式：OrbitControls 接管，旋转中心 = 地图中心（不是相机）
       expect(store.cam).toBe('top')
       expect(window.__controls.enabled).toBe(true)
       expect(window.__controls.target.x).toBeCloseTo(0, 3)
       expect(window.__controls.target.z).toBeCloseTo(0, 3)
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
-      // 近端是可贴地距离，不再是 20 m 战术总览下限
       expect(window.__controls.minDistance).toBe(1)
       await loadNext(api)
       expect(store.cam).toBe('top')
@@ -1113,7 +1031,7 @@ describe('Free Camera terrain floor', () => {
 
     it('keyboard flight keeps the full camera pose on the next replay', async () => {
       const { api } = await loadScene()
-      api.setCam('free')   // 飞行只在自由模式接管（俯视是轨道总览）
+      api.setCam('free')
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
       await expectPoseKept(api)
     })
@@ -1122,7 +1040,7 @@ describe('Free Camera terrain floor', () => {
       const { api } = await loadScene()
       api.setCam('free')
       document.querySelector('canvas').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
-      await settleZoomFrames()   // 预算收敛到终点后：滚轮造成的机位变化跨回放保留
+      await settleZoomFrames()
       await expectPoseKept(api)
     })
 
@@ -1147,7 +1065,7 @@ describe('Free Camera terrain floor', () => {
         expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
         expect(window.__camera.position.distanceTo(before)).toBeGreaterThan(0.01)
       } finally {
-        api.setLogdepth(false)   // 偏好会持久化，不得泄漏给后续用例
+        api.setLogdepth(false)
       }
     })
 
@@ -1189,7 +1107,6 @@ describe('Free Camera terrain floor', () => {
       expect(window.__controls.target.x).toBeCloseTo(0, 3)
       expect(window.__controls.target.z).toBeCloseTo(0, 3)
       expect(window.__camera.position.y).toBeCloseTo(TOP_HEIGHT, 3)
-      // 要飞行先切自由模式（俯视下键盘飞行不接管）
       api.setCam('free')
       expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     })
@@ -1203,11 +1120,10 @@ describe('Free Camera terrain floor', () => {
     const cam = window.__camera
     const controls = window.__controls
     controls.target.set(0, 2, 0)
-    cam.position.set(8, -28, 0)   // 绕到 target 水平线以下（review 复现）
+    cam.position.set(8, -28, 0)
     api.setCam('follow')
     expect(controls.maxPolarAngle).toBeLessThanOrEqual(Math.PI / 2)
     expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
-    // 真实 OrbitControls update 也不得把相机带回地下
     controls.update()
     expect(cam.position.y).toBeGreaterThanOrEqual(0.5)
   })
@@ -1231,7 +1147,6 @@ describe('Free Camera terrain floor', () => {
     controls.target.set(0, 0, 0)
     cam.position.set(50, 50, 0)
     api.setCam('follow')
-    // 旧实现只按 x=50 的地形一次外推到 x≈125.5，那里地面已 162.75：仍穿地。
     expect(cam.position.x).toBeGreaterThan(150)
     expect(cam.position.y).toBeGreaterThanOrEqual(100 + 0.5 * cam.position.x + 0.49)
   })
@@ -1255,7 +1170,7 @@ describe('Free Camera terrain floor', () => {
     controls.target.set(0, 0, 0)
     cam.position.set(50, 50, 0)
     api.setCam('follow')
-    expect(cam.position.x).toBeCloseTo(50, 3)   // 不沿射线外推到无地形区
+    expect(cam.position.x).toBeCloseTo(50, 3)
     expect(cam.position.y).toBeGreaterThanOrEqual(200.49)
   })
 
@@ -1297,7 +1212,6 @@ describe('Free Camera terrain floor', () => {
     })
     expect(terrain).toHaveLength(1)
 
-    // 在场景宿主里换入同一生产 builder 的远景 LOD，以确定性地产生 step=8→5 的正边裁剪 quad。
     const oldGeometry = terrain[0].geometry
     terrain[0].geometry = buildGroundGeometry({
       field: new Float32Array(n * n).fill(20), n, span: 600,

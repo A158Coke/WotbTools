@@ -8,13 +8,6 @@ const kcUpdateToken = vi.fn(() => Promise.resolve(false))
 const kcInit = vi.fn()
 const kcInstances = []
 
-/**
- * keycloak-js 替身 scenario：
- * - `initResult` 同时决定 init() 的 resolve 值与落定后的 `adapter.authenticated`
- *   （真实 keycloak-js 中两者同源：check-sso 命中 → true + tokenParsed）；
- * - `initImpl` 覆盖 init 返回的 promise，用于悬挂 / reject 场景；
- * - `tokenParsed` 是 check-sso 命中时 adapter 上的 claims。
- */
 const kcScenario = {
   initResult: false,
   tokenParsed: null,
@@ -36,7 +29,6 @@ vi.mock('keycloak-js', () => ({
       const settle = (value) => {
         this.authenticated = value === true
         this.tokenParsed = value === true ? kcScenario.tokenParsed : null
-        // A query-looking return cannot match the SDK's default fragment callback.
         if (!this.authenticated && options.onLoad && returnUrl.searchParams.has('state')
           && !new URLSearchParams(returnUrl.hash.slice(1)).has('state')) this.login()
         return value
@@ -133,10 +125,8 @@ describe('useAuth — tokens and identity claims', () => {
     expect(auth.hasRole('HoF-admin')).toBe(false)
     expect(auth.hasRole('')).toBe(false)
     expect(auth.isAdmin.value).toBe(true)
-    // 全站管理员同时具备 HoF 审核权限。
     expect(auth.isHofAdmin.value).toBe(true)
     expect(auth.isTournamentAdmin.value).toBe(true)
-    // 内容域独立：`wotbtools-admin` 这个原始 claim 本身不展开 composite，必须显式带 content-admin。
     expect(auth.isContentAdmin.value).toBe(false)
     expect(auth.isLeagueBroadcastAdmin.value).toBe(true)
     auth.authenticated.value = false
@@ -168,11 +158,9 @@ describe('useAuth — tokens and identity claims', () => {
     expect(auth.isHofAdmin.value).toBe(false)
     expect(auth.isTournamentAdmin.value).toBe(false)
 
-    // WG / QQ 登录：displayName = 官方昵称 / QQ 昵称，preferred_username 是内部登录名。
     auth.tokenParsed.value = { displayName: 'A158布丁', preferred_username: 'wg_eu_572253806' }
     expect(auth.displayName.value).toBe('A158布丁')
 
-    // 缺 claim 的 token（例如映射未生效的旧 token）：退回登录名，绝不渲染 undefined。
     auth.tokenParsed.value = { preferred_username: 'wg_eu_572253806' }
     expect(auth.displayName.value).toBe('wg_eu_572253806')
 
@@ -181,9 +169,8 @@ describe('useAuth — tokens and identity claims', () => {
   })
 
   it('?admin=1 不再提供角色旁路，也绝不伪造登录态', async () => {
-    // 历史回归锚点：URL 参数不得成为认证或授权事实源。
     window.history.replaceState({}, '', '/?admin=1&view=agent-replay')
-    kcScenario.initResult = false // check-sso 未命中：真实未登录
+    kcScenario.initResult = false
     kcScenario.tokenParsed = null
     kcInit.mockClear()
     try {

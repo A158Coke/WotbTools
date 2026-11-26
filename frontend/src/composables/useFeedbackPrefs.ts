@@ -1,11 +1,5 @@
 import { ref } from 'vue'
 
-/**
- * 反馈偏好（design-language §10「反馈」）的唯一持久化 owner：触感默认开、音效默认关。
- * `battleSound`（3D 回放炮声）默认开——它不是 UI 反馈短音，而是回放内容的一部分，
- * 与 2D 战斗表现同层；独立于 `sound`（按键音）。
- * 存储 key `wotb-feedback`；读取边界校验形状，非法值回落默认。
- */
 export const FEEDBACK_PREFS_STORAGE_KEY = 'wotb-feedback'
 export interface FeedbackPrefs { haptics: boolean, sound: boolean, battleSound: boolean }
 const DEFAULTS: FeedbackPrefs = Object.freeze({ haptics: true, sound: false, battleSound: true })

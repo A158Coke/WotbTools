@@ -31,11 +31,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * admin delete 治理语义单元测试（mock，无 DB）：
- * 单事务 audit + delete、404、共享 hash 保留文件、最后引用删除文件、hash null 无文件清理、
- * audit 失败中止删除（不产生假删除）。真实 PG 并发 invariant 见 HallOfFameConcurrencyIntegrationTest。
- */
 class HallOfFameAdminServiceTest {
 
     private final HallOfFameRecordRepository repository = mock(HallOfFameRecordRepository.class);
@@ -50,8 +45,6 @@ class HallOfFameAdminServiceTest {
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
     private HallOfFameAdminService service() {
-        // mock txManager.getTransaction → null：TransactionTemplate.execute 仍会执行回调（单事务语义由真实 Spring 管理，
-        // 单元测试只验证回调内的业务编排：audit+delete 顺序与失败传播）。
         return new HallOfFameAdminService(repository, recordMapper, auditRepository,
                 auditMapper, storage, replayHashLock, hallOfFameService, hundredReplayReferenceCounter, txManager);
     }
@@ -148,7 +141,6 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteSharedHashRetainsPhysicalFile() {
-        // 1 HoF + 0 Hundred → TOTAL=1 → 保留
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "c".repeat(64));
@@ -165,7 +157,6 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteLastReferenceRemovesPhysicalFile() {
-        // 0 HoF + 0 Hundred → TOTAL=0 → 删除
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "d".repeat(64));
@@ -179,7 +170,6 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteLastHoFReferenceRetainsFileWhenHundredEvidenceStillReferences() {
-        // 0 HoF + 1 Hundred → TOTAL=1 → 保留
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "e".repeat(64));
@@ -195,7 +185,6 @@ class HallOfFameAdminServiceTest {
 
     @Test
     void deleteRetainsFileWhenBothDomainsReference() {
-        // 1 HoF + 1 Hundred → TOTAL=2 → 保留（且日志引用数正确）
         login();
         runLockInline();
         final HallOfFameRecord r = record(42L, "f".repeat(64));
@@ -246,7 +235,6 @@ class HallOfFameAdminServiceTest {
         when(repository.countByReplayHash("f".repeat(64))).thenReturn(0L);
         when(storage.delete(anyString())).thenThrow(new RuntimeException("io fail"));
 
-        // DB 删除已 commit 且权威：清理失败不抛给调用方，不留脏状态
         service().deleteEntry(42L);
 
         verify(auditRepository).save(any(HallOfFameAdminLog.class));

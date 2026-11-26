@@ -1,22 +1,10 @@
 #!/usr/bin/env bash
-# Android release pre-flight / idempotency guards. Pure, no secrets, testable.
-# Source this file in a bash step, then call the classifiers.
-# A classifier sets a *_STATE variable and returns 0 for every known state;
-# it returns non-zero only on an input/parse error (and prints ::error::).
-# guard_min_supported returns non-zero on a guard violation.
 set -euo pipefail
 
 guard_error() {
   echo "::error::$1" >&2
 }
 
-# guard_staged_release_identity <tag_target> <staged_source> <evidence_source> <evidence_apk_sha> <actual_apk_sha>
-#
-# 发布权威是**已 staged 的 release 身份**，不是当前 checkout / main HEAD。发布阶段的断言必须
-# 证明 manifest 要广播的正是设备上验证过的那个产物：
-#   - immutable tag 指向 staged source commit（绝不 repoint）；
-#   - staging evidence 的 sourceSha 与 staged source 一致；
-#   - 线上 APK 字节的 SHA-256 与 evidence 记录的一致（不重建、不替换）。
 guard_staged_release_identity() {
   local tag_target="$1" staged_source="$2" evidence_source="$3" evidence_apk_sha="$4" actual_apk_sha="$5"
 
@@ -52,7 +40,6 @@ guard_staged_release_identity() {
   }
 }
 
-# guard_min_supported <min_supported_code> <new_code>
 guard_min_supported() {
   local min_supported="$1" new_code="$2"
   if [ "$new_code" -ge "$min_supported" ]; then
@@ -62,8 +49,6 @@ guard_min_supported() {
   return 1
 }
 
-# PR B starts at 2.0.1. Bridge v2 alone cannot prove this local-first cutover:
-# PR A 2.0.0 still requires the remote frontend. Keep the floor on later patches too.
 guard_local_first_cutover() {
   local min_supported="$1" new_code="$2"
   [[ "$min_supported" =~ ^[1-9][0-9]*$ && "$new_code" =~ ^[1-9][0-9]*$ ]] || {
@@ -75,19 +60,6 @@ guard_local_first_cutover() {
   fi
 }
 
-# guard_bridge_covered <prod_bridge> <head_bridge> <frontend_versions_csv> <min_supported_code> <new_code>
-#
-# The frontend declares which Native Bridge versions it can still serve. When a
-# release drops the bridge version that production clients currently report, those
-# clients can no longer be served correctly, so `version.json` must force them to
-# update - otherwise publishing a client-compatible-looking manifest silently leaves
-# them on an unsupported wire contract (the exact failure mode "publish the manifest
-# before the cutover is configured" produces).
-#
-# Returns 0 when a cutover is not needed (no production bridge yet, bridge version
-# unchanged, or the frontend still supports the production bridge version) or when
-# it is needed AND minSupportedVersionCode already covers the new release. Returns
-# non-zero with an actionable error when the cutover is needed but not configured.
 guard_bridge_covered() {
   local prod_bridge="$1" head_bridge="$2" fe_versions="$3" min_supported="$4" new_code="$5"
   case "$prod_bridge" in
@@ -107,20 +79,6 @@ guard_bridge_covered() {
   return 1
 }
 
-# classify_candidate_freshness <staged_version> <main_gradle_properties_path>
-#
-# 自动发布只回答一个问题：main 上是否已经存在一个**更新的 Android release candidate**？
-#
-# Android release candidate 由 Version-as-Code 定义（android/gradle.properties:wotbVersion），
-# 不是「仓库 main SHA 是否等于 staged SHA」。只改 docs / 后端 / 基础设施的 main 提交不改版本号，
-# 因此不产生新的 Android candidate，也不能让唯一已 staged 的候选失去自动发布权；反过来，一旦
-# main 的 committed 版本是更高的 X.Y.Z，更新的候选就存在，旧候选的自动发布必须让位。
-#
-# Sets CANDIDATE_STATE:
-#   candidate_latest      没有更新的 Android candidate -> 自动发布继续走既有 publish 守卫
-#   candidate_superseded  main committed version 更高    -> 自动发布安全 skip
-# Also sets MAIN_CANDIDATE_VERSION (main 的 committed wotbVersion)。
-# 输入不可读 / 不是 X.Y.Z 时返回非零（fail closed，绝不猜）。
 classify_candidate_freshness() {
   local staged_version="$1" main_properties="$2"
   CANDIDATE_STATE=""
@@ -133,7 +91,6 @@ classify_candidate_freshness() {
 
   local helper_dir output
   helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  # 版本号公式与 X.Y.Z 校验只有 android_contract.py 一份实现，判定逻辑不重复它。
   if ! output="$(python3 - "$staged_version" "$main_properties" "$helper_dir" <<'PY'
 import sys
 from pathlib import Path

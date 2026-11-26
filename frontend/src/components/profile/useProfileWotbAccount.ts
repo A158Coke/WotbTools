@@ -1,6 +1,3 @@
-/**
- * ProfilePage —— CN 手动账户的绑定 / 改绑 / 回放验证 / 解绑（拆分自 ProfilePage.vue，行为原样）。
- */
 import { ref } from 'vue'
 import type { Ref } from 'vue'
 import type { components } from '../../api/generated/http-contract.js'
@@ -43,7 +40,6 @@ export function useProfileWotbAccount({
   const editAccountId = ref<number | null>(null)
   const editNickname = ref('')
   const editError = ref('')
-  /** 用回放验证：本机解析选中的回放，提交录像者 accountId（服务器不解析回放） */
   const verifyInput = ref<File | null>(null)
   const verifyPending = ref(false)
   const verifyError = ref('')
@@ -81,8 +77,6 @@ export function useProfileWotbAccount({
     const file = target?.files?.[0]
     if (target) target.value = ''
     if (!file || verifyPending.value) return
-    // 门禁放在最前：本地解析是 LOCAL 能力，但「用回放验证账号」最终要打 backend verify，
-    // 离线时先提示，避免用户选完文件才发现无法提交。
     if (!requireProfileOnline()) return
     const epoch = authEpoch()
     verifyPending.value = true

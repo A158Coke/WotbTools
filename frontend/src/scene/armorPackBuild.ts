@@ -1,5 +1,3 @@
-// 碰撞包构建与网格加速结构（自 armorCollisionPack.ts 原样平移）：
-// buildPack 三角形打包、位姿快照/矩阵刷新与 buildRicochetGrid DDA 网格。
 import * as THREE from 'three';
 import type { DataTexture, Mesh, Texture } from 'three';
 import { isPrimary } from './penetration.js';
@@ -12,17 +10,8 @@ import type {
 const MODULE_SECTIONS = new Set(['chassis', 'gunBarrel']);
 const VARIANTS: Partial<Record<ArmorSection, number>> = { chassis: RC.VARIANT_BIT.track, gunBarrel: RC.VARIANT_BIT.gun };
 
-/**
- * 打包碰撞几何。entries: [{ mesh, section('hull'|'turret'|'gun'|'spaced'|'chassis'|'gunBarrel'),
- * thickness(基础厚度), variant('track'|'gun'|null, 模块去重用) }]。
- * 单网格三角形数超过 RC.MAX_TRI_PER_MESH 时按连续三角形段【分块】为多个包单元
- * （同 section/thickness/variant/矩阵）——命中集合与整网格完全一致；履带等多块
- * 同 variant 在判定链里照常去重，与点击链（raycaster 对整网格多命中 + variant 去重）等价。
- * 返回 { ok, reason?, meshCount(=包单元数), triTotal, triRows, triData, metaData, matsData }；
- * ok=false 表示超限/非刚性，调用方必须禁用续飞（fail-closed）。
- */
 export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
-    const units: PackUnit[] = [];   // 打包单元：{ mesh, section, thickness, variant, triStart, triCount }
+    const units: PackUnit[] = [];
     const triChunks: Float32Array[] = [];
     const metaOut: number[] = [];
     let triTotal = 0;
@@ -33,19 +22,16 @@ export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
         if (!isPrimary(e.section) && e.section !== 'spaced' && !MODULE_SECTIONS.has(e.section)) {
             return { ok: false, reason: 'bad-section:' + e.section };
         }
-        // 板厚是判定输入：NaN/负数不是“0mm 板”，是数据坏了 → 整包 fail-closed。
         if (!Number.isFinite(e.thickness) || e.thickness < 0) {
             return { ok: false, reason: 'bad-thickness:' + (e.section || '?') };
         }
         const mesh = e.mesh;
         mesh.updateWorldMatrix(true, false);
         mesh.matrixWorld.decompose(_pos, _quat, _scale);
-        // 刚性校验：着色器用 R^T 求逆，非刚性矩阵会让求交失真
         if (Math.abs(_scale.x - 1) > 1e-3 || Math.abs(_scale.y - 1) > 1e-3 || Math.abs(_scale.z - 1) > 1e-3) {
             return { ok: false, reason: 'non-rigid-matrix:' + (mesh.name || '?') };
         }
         const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
-        // 装甲 mesh 缺顶点属性是模型/数据损坏，不能静默把它从判定几何里剔除。
         if (!pos) return { ok: false, reason: 'no-position:' + (mesh.name || '?') };
         const idx = mesh.geometry.index;
         const triCountAll = Math.floor((idx ? idx.count : pos.count) / 3);
@@ -53,12 +39,9 @@ export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
 
         const secCode = RC.SECTION[e.section];
         const variantBit = VARIANTS[e.section] || 0;
-        // 局部 AABB + 三角形顶点（局部坐标原样，无世界烘焙）；按段分块写入包单元
         const chunkCount = Math.ceil(triCountAll / RC.MAX_TRI_PER_MESH);
         const chunkTri = Math.ceil(triCountAll / chunkCount);
         const verts = new Float32Array(triCountAll * 9);
-        // 顶点读取必须走抽象访问（getX/getY/getZ）：GLB 属性可能是 interleaved buffer，
-        // 直接 pos.array[vi*3] 裸索引在交叉布局下会读到垃圾（包围盒错乱、求交全错）
         for (let t = 0; t < triCountAll; t++) {
             for (let k = 0; k < 3; k++) {
                 const vi = idx ? idx.getX(t * 3 + k) : t * 3 + k;
@@ -90,7 +73,6 @@ export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
     }
     if (!units.length || !triTotal) return { ok: false, reason: 'empty' };
 
-    // 顶点纹理数据：RGBA 每 texel 一顶点（xyz + 0）
     const texels = triTotal * 3;
     const triRows = Math.ceil(texels / RC.TRI_ROW);
     const triData = new Float32Array(triRows * RC.TRI_ROW * 4);
@@ -108,21 +90,15 @@ export function buildPack(entries: readonly PackEntry[]): BuildPackResult {
     return { ok: true, units, meshes, meshCount: units.length, triTotal, triRows, triData, metaData, matsData };
 }
 
-/** Copy doubles, not Float32 GPU data or mutable Matrix4 references. */
 export function snapshotPackPose(pack: CollisionPack): number[][] {
     return pack.meshes.map(mesh => mesh.matrixWorld.elements.slice());
 }
 
-/** Caller propagates source matrices before comparing; camera motion is irrelevant. */
 export function packPoseChanged(pack: CollisionPack, snapshot: number[][] | null | undefined): boolean {
     return !snapshot || snapshot.length !== pack.meshes.length || pack.meshes.some((mesh, i) =>
         mesh.matrixWorld.elements.some((value, j) => value !== snapshot[i][j]));
 }
 
-/**
- * 每帧把 pack.meshes 的当前世界矩阵写入矩阵纹理数据，并计算整车世界包围盒
- * （pack.worldMin/worldMax，供着色器早退 uniform）。tankViewer 渲染循环调用。
- */
 export function updatePackMatrices(pack: {
     meshes: Mesh[]
     matsData: Float32Array
@@ -135,7 +111,7 @@ export function updatePackMatrices(pack: {
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     const metaData = pack.metaData;
-    const withAabb = !!metaData;   // buildPack 内部先于 metaData 落盘调用（只写矩阵）
+    const withAabb = !!metaData;
     const corner = new THREE.Vector3();
     for (let i = 0; i < pack.meshes.length; i++) {
         const m = pack.meshes[i];
@@ -161,18 +137,8 @@ export function updatePackMatrices(pack: {
 }
 
 
-/**
- * 世界系均匀网格加速结构（GPU DDA 求交数据面）。
- * 以各单元【当前 matrixWorld】把三角形变换到世界系：顶点写入 worldTrisData（全局
- * triSlot 与 pack 一致），三角形 AABB 覆盖的每个 cell 追加一条 entry（triSlot +
- * sectionCode + thickness）。炮塔/配置变化时重建（相机移动无需重建）——这就是
- * 着色器只测路径 cell 内三角形（~10² 级）代替全量扫描的结构基础。
- * cell 条目超限时按对半【细化】重试（0.45 → 0.225 → … → coverageFloor，最多 4 次尝试；
- * 细化降低单 cell 条目数），到覆盖下界仍超限 → ok=false（调用方禁用续飞，fail-closed）。
- */
 export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | null | undefined): BuildRicochetGridResult {
     if (!pack || !pack.ok || !pack.units) return { ok: false, reason: 'no-pack' };
-    // 世界系顶点（全局 triSlot 布局）
     const worldVerts = new Float32Array(pack.triTotal * 9);
     const secOf = new Int32Array(pack.triTotal);
     const thOf = new Float32Array(pack.triTotal);
@@ -196,7 +162,7 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
                 v.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi)).applyMatrix4(mw);
                 if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) {
                     nanCount++;
-                    v.set(0, 0, 0);   // 保持数组有限，包围盒不致 NaN 化
+                    v.set(0, 0, 0);
                 }
                 worldVerts[slot * 9 + k * 3] = v.x;
                 worldVerts[slot * 9 + k * 3 + 1] = v.y;
@@ -205,9 +171,6 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
         }
     }
     if (nanCount > 0) return { ok: false, reason: 'nan-verts:' + nanCount };
-    // 稳健性诊断：包围盒异常膨胀时定位元凶单元（防单个坏矩阵拖垮整个网格）。
-    // 阈值 80m：高于一切真实车辆几何（含长炮管整车 ~12m），只拦矩阵腐蚀的天文坐标；
-    // 覆盖不变量测试（长几何 60m）不受影响。
     {
         const culprits: string[] = [];
         const bb = new THREE.Box3();
@@ -224,7 +187,6 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
             return { ok: false, reason: 'bad-unit:' + culprits.slice(0, 3).join('|') + (culprits.length > 3 ? `+${culprits.length - 3}` : '') };
         }
     }
-    // 世界包围盒
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     for (let i = 0; i < worldVerts.length; i += 3) {
@@ -235,20 +197,14 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
     }
     if (!Number.isFinite(minX)) return { ok: false, reason: 'empty' };
     const ext = [maxX - minX, maxY - minY, maxZ - minZ];
-    // 覆盖不变量（评审 P1）：cellSize 下界 = max(extAxis)/GRID_DIM_MAX —— 该尺寸下任何轴
-    // 都不超过 cell 数上限，网格恒覆盖全部几何；后续放细只在该下界之内，被截断的
-    // capped 成功路径（GPU 网格 AABB 小于几何 → DDA 永不可达 → 静默紫）不可能再出现。
     const coverageFloor = Math.max(ext[0], ext[1], ext[2]) / RC.GRID_DIM_MAX;
-    // 初始 cell 尺寸：目标 0.45m，但不低于覆盖下界（长几何抬高初始值）。注意这与覆盖下界
-    // 是两个概念——此前把 GRID_CELL_SIZE 也并入 floor，初始 cell 恰等于 floor →
-    // `cellSize/2 < floor` 恒真 → 密度细化重试的 attempt 2..4 成为死代码（评审 P1）。
     let cellSize = Math.max(RC.GRID_CELL_SIZE, coverageFloor);
     let dims: number[] = [0, 0, 0];
     let cells: Map<number, number[]> = new Map();
     for (let attempt = 0; attempt < 4; attempt++) {
         dims = [0, 1, 2].map(a => Math.min(RC.GRID_DIM_MAX, Math.max(1, Math.ceil((ext[a] + 1e-4) / cellSize))));
         const capped = dims.some((d, a) => d === RC.GRID_DIM_MAX && ext[a] / RC.GRID_DIM_MAX > cellSize);
-        if (capped) return { ok: false, reason: 'grid-capped' };   // 防御断言：下界保证下不可达
+        if (capped) return { ok: false, reason: 'grid-capped' };
         const total = dims[0] * dims[1] * dims[2];
         cells = new Map<number, number[]>();
         let maxCnt = 0;
@@ -278,7 +234,6 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
         }
         void total;
         if (maxCnt <= RC.MAX_CELL_ENTRIES) {
-            // 展平：cellsData（offset,count）+ entriesData（triSlot,section,thickness,0）
             const cellTotal = dims[0] * dims[1] * dims[2];
             const cellsData = new Float32Array(cellTotal * 4);
             const entryLists = [...cells.entries()];
@@ -297,7 +252,6 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
                 }
                 off += list.length;
             }
-            // 世界顶点纹理数据（RGBA 每 texel 一顶点）
             const triRows = Math.ceil((pack.triTotal * 3) / RC.TRI_ROW);
             const worldTrisData = new Float32Array(triRows * RC.TRI_ROW * 4);
             let w = 0;
@@ -314,18 +268,12 @@ export function buildRicochetGrid(pack: CollisionPack | CollisionPackFailure | n
                 cellsData, entriesData, worldTrisData,
             };
         }
-        // 密度重试：只要还没到覆盖下界就继续对半细化（0.45 → 0.225 → … → coverageFloor，
-        // 最多 4 次尝试）；细化到覆盖下界仍过密 → fail-closed（跳弹紫），不允许截断成功
         if (cellSize <= coverageFloor) break;
         cellSize = Math.max(cellSize / 2, coverageFloor);
     }
     return { ok: false, reason: 'grid-too-dense' };
 }
 
-/** 网格三张纹理（cell 表 / 条目表 / 世界顶点）。
- * 数据长度必须补齐到 w×h×4：行宽向上取整后纹理需求常大于有效数据，
- * 缓冲不足的 texImage2D 会触发 GL INVALID_OPERATION（1282）→ 纹理不完整 →
- * 采样恒零（条目表全零 → DDA 永不命中 → 跳弹区永久紫——本 bug 的根因）。 */
 export function createGridTextures(grid: RicochetGrid): { cellsTex: DataTexture; entriesTex: DataTexture; worldTrisTex: DataTexture } {
     const mk = (data: Float32Array, w: number, h: number): DataTexture => {
         const need = w * h * 4;

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fail-closed locks for equipment whose effects are not fully modeled.
 
 The sync remains forward-compatible: unrelated new vehicles, presets, equipment,
@@ -29,11 +28,6 @@ LOCKED_DESCRIPTION_SHA256 = {
     "HIGH_END_CONSUMABLES": "95ce345dddfd159bfe5234bc475a861e55480e738379bde0c43f28b792d53107",
 }
 
-# SHA-256 of each locked item's complete Equipment protobuf value from the live
-# 11.20 data reviewed for this PR. Unlike a whole equipment.pb lock, these hashes
-# allow unrelated upstream data to evolve while still catching hidden numeric or
-# structural changes inside a partially modeled item even when its description
-# template stays unchanged.
 LOCKED_DEFINITION_SHA256 = {
     "CONSUMABLE_DELIVERY_SYSTEM": "94897e6bd56a9930bf5a92355cf36743db4c45af01c5c056362124e116a07a17",
     "DEFENSE_SYSTEM": "a722efc13b8b80392d439d4459fbf1798313d0feb76413917c41ef2db80ac53d",

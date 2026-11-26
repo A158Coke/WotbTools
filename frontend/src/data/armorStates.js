@@ -1,24 +1,4 @@
-/**
- * 动态装甲（armorsStatesController）状态声明与纯函数助手。
- *
- * ⚠️ 数据来源：上游 Agent 仓 `tools/extract_armor_states.py` ← 客户端 item_defs
- * 车辆 XML 的 `<extras><armorsStatesController>`（2026-10-13，
- * 协议定案见上游 `investigation/blitz-client-protocol-and-replay.md` §8.6 与
- * `docs/index.md` 待发版条目）。**游戏版本更新后需重新生成**——本文件是
- * game-version 数据的前端 vendored 常量（仅 6 车 / ~2KB，不值得走远端资产包渠道）。
- *
- * 运行时语义（上游 PlaybackData / AiReviewFacet 的 additive 字段 `armor_states`）：
- * Vehicle 实体 propID 16 `armorsStates` 载荷 = `[u8 n][n × u32 LE 状态描述符]`
- * （n = 状态数；描述符仅 bit0/bit16，bit16 = 该状态当前激活），解码 = 激活组下标
- * = 本表声明的 state id。时间线首样本 = 入视野 create 表 materialize 快照（含
- * "入视野前已切换"的正确值）；更早区间用 `default: true` 的 state 兜底。
- * 每态 `armors` = 该态**激活**的 `<part>.<armor_N>` 集合——可切换板中未列出的 = 隐藏；
- * 从未出现在任何 state 的装甲板 = 常驻板，不受状态控制。
- *
- * 消费方门控（fail-closed）：armor_states 时间线里的 state 值 ∉ 本表状态集的更新丢弃。
- */
 
-/** item_defs stem（与回放车辆 codename 同域，如 "Oth71_Titan_Strife"）→ 声明 */
 export const ARMOR_STATES = {
   Oth28_Sturmfeur_HW: {
     file: 'vehicles/other/Oth28_Sturmfeur_HW.xml',
@@ -75,10 +55,6 @@ export function dynamicArmorDeclaration(tankName) {
   return key ? ARMOR_STATES[key] : null
 }
 
-/**
- * tank_id（list.xml 编码，与装甲查看器 `?tank=` / 回放 roster 同域）→ item_defs stem。
- * 来源：上游 `data/tank_id_bridge.json` 的 6 辆动态装甲车（2026-10-13 取值）。
- */
 export const DYNAMIC_TANK_IDS = {
   8305: 'Oth28_Sturmfeur_HW',
   9073: 'Oth30_T54MS',
@@ -100,7 +76,6 @@ export function dynamicDeclarationByTankId(tankId) {
 
 const SECTION_RE = /^(hull|turret|gun)(?:_\d+)?\.armor_(\d+)$/
 
-/** `hull.armor_10` / `gun_01.armor_11` → `{ section: 'gun', plateId: '11' }`；其余 null */
 export function parseArmorRef(ref) {
   const m = SECTION_RE.exec(String(ref || ''))
   if (!m) return null
@@ -124,7 +99,6 @@ export function activePlateSet(decl, stateId) {
   return active
 }
 
-/** 全部可切换板（各态 armors 的并集，`section:plateId` Set）。 */
 export function controllablePlateSet(decl) {
   const all = new Set()
   for (const s of decl.states) {
@@ -136,7 +110,6 @@ export function controllablePlateSet(decl) {
   return all
 }
 
-/** 初态 id（`default: true` 的 state；缺标记取最小 id——fail-closed 兜底）。 */
 export function defaultStateId(decl) {
   const d = decl.states.find((s) => s.default)
   if (d) return d.id

@@ -39,7 +39,6 @@ class AdminUserServiceTest {
 
         final DeleteUsersResponse response = service.deleteUsers(List.of("target"), true, adminJwt());
 
-        // 列表端点逐条捕获失败并写进 results（partial success），因此不抛异常
         assertEquals(1, response.failed());
         assertEquals("USER_HAS_DEPENDENCIES", response.results().getFirst().errorCode());
         verifyNoInteractions(keycloakService);
@@ -67,7 +66,6 @@ class AdminUserServiceTest {
             final UserProfiles userProfileService,
             final AdminUserLogPersister logPersister,
             final KeycloakAdminUserService keycloakService) {
-        // 第 5 参数（PlatformTransactionManager）只被 deleteUsers 使用；本用例走的删除路径不触碰它。
         return new AdminUserService(
                 userProfileService,
                 new AdminUserMapper(),

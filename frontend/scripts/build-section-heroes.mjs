@@ -1,6 +1,3 @@
-// 分区主视觉（section key visual）产物脚本：把 art-source 里的 1672×941 原图放大到 2400 宽，
-// 轻度锐化后输出 WebP 到 src/assets/theme/，供 ShowcaseHero 的 section 变体按导航分区取图。
-// 原图只读；产物入库并由 Vite 随 import 打包。命名固定为 hero-<section>.webp，与 src/shared/sectionHeroes.ts 一一对应。
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -48,7 +45,6 @@ async function main() {
     if (buffer.byteLength > MAX_BYTES) {
       throw new Error(`${file} is ${formatKb(buffer.byteLength)} at q${quality}, over the ${formatKb(MAX_BYTES)} budget`)
     }
-    // 直接写 buffer：再经 toFile 编码一次会让体积重新变大
     await writeFile(output, buffer)
     const meta = await sharp(buffer).metadata()
     console.log(`${file}  ${formatKb(input.size)} -> ${formatKb(buffer.byteLength)}  ${meta.width}×${meta.height}  q${quality}`)

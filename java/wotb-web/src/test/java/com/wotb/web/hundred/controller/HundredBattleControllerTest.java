@@ -19,7 +19,6 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 百场公开排行榜 HTTP 参数绑定契约（standalone MockMvc，无数据库）。 */
 class HundredBattleControllerTest {
 
     private static final HundredLeaderboardPageDto EMPTY =

@@ -77,7 +77,6 @@ const abilityGroups = computed(() => (upgrades.value.groups || []).map((group, g
     }
   }),
 })))
-/** 升级状态文案：custom（部分研发）效果已生效，不能沿用 stock 的「未生效」。 */
 const upgradeStatusKey = computed(() => (upgrades.value.mode === 'top' ? 'upgrade_top'
   : upgrades.value.mode === 'custom' ? 'upgrade_custom' : 'upgrade_inactive'))
 const hasMissingValues = computed(() => parameterGroups.value.some(section =>
@@ -92,9 +91,6 @@ function choiceStatus(group: AbilityGroup) {
   return t(`${cfg}.${key}`, { n: String(group.number).padStart(2, '0') })
 }
 function selectAbility(group: AbilityGroup, value: string) {
-  // custom（研发树联动）：abilities 即已研发表——选卡 = 组内换选，其余已研发节点保留。
-  // 组前置必须与研发树同口径补齐（共享 researchGroupChoice），否则配置卡能装出
-  // “缺前置却有机制效果”的非法状态。
   if (props.selection.upgrade === 'custom') {
     const progression = parseAugmentProgression(props.modules)
     const installed = new Set(props.selection.abilities || [])
@@ -224,7 +220,6 @@ function selectAbility(group: AbilityGroup, value: string) {
 .tp-effect-current { color: var(--color-accent-text); font-weight: 600; }
 .tp-effect-delta { display: block; color: var(--color-text-secondary); font: var(--type-caption); }
 
-/* Share row tracks so a wrapped title or scope cannot shift one option’s benefit. */
 @media (width >= 768px) {
   .tp-ability-options { grid-template-rows: repeat(4, auto); }
   .tp-ability-options :deep(.segmented-option),

@@ -18,7 +18,6 @@ export function defaultChartView(single = false): MobilityChartView {
 export function copyChartView(view: MobilityChartView): MobilityChartView {
   return { ...view, hidden: [...view.hidden], zoom: view.zoom ? [...view.zoom] : null }
 }
-/** Sort the entire visible set before truncating; unavailable values are never zero. */
 export function rankCurveReadings<T extends { run: Run }>(lines: T[], cursor: number) {
   return lines.map((line, order) => {
     const speed = speedAt(line.run.speeds, cursor)

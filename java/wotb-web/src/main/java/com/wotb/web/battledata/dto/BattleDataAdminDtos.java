@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Transport shapes for the admin-only persisted observation API. */
 public final class BattleDataAdminDtos {
     private BattleDataAdminDtos() { }
 

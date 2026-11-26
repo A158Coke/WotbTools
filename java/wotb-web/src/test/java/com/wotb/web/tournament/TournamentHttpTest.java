@@ -58,7 +58,6 @@ class TournamentHttpTest {
         final MockMvc legacy=MockMvcBuilders.standaloneSetup(new PreviousEventIdController())
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         legacy.perform(get("/api/admin/tournaments/1")).andExpect(status().isOk());
-        // The former one-segment candidate collides with the old Long eventId argument.
         legacy.perform(get("/api/admin/tournaments/default-rules")).andExpect(status().isBadRequest());
         legacy.perform(head("/api/admin/tournaments")).andExpect(status().isOk())
                 .andExpect(header().doesNotExist("X-Tournament-Default-Rules"));

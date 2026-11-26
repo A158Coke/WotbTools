@@ -20,9 +20,9 @@ class AiCancellationRegistryTest {
         assertNull(registry.register(null));
         assertNull(registry.register(""));
         assertNull(registry.register("abc"));
-        assertNull(registry.register("550e8400-e29b-41d4-a716-44665544000")); // 长度不足
-        assertNull(registry.register("550e8400-e29b-41d4-a716-4466554400000")); // 长度超长
-        assertNull(registry.register("550e8400-e29b-41d4-a716-44665544000g")); // 非法字符
+        assertNull(registry.register("550e8400-e29b-41d4-a716-44665544000"));
+        assertNull(registry.register("550e8400-e29b-41d4-a716-4466554400000"));
+        assertNull(registry.register("550e8400-e29b-41d4-a716-44665544000g"));
     }
 
     @Test
@@ -49,11 +49,9 @@ class AiCancellationRegistryTest {
         final AiCancellationToken token = registry.register(VALID_ID);
         assertNotNull(token);
 
-        // 错误 token：映射保留，请求仍可取消
         registry.unregister(VALID_ID, new AiCancellationToken());
         assertTrue(registry.cancel(VALID_ID));
 
-        // 正确 token：原子删除后 cancel 返回 false
         registry.unregister(VALID_ID, token);
         assertFalse(registry.cancel(VALID_ID));
         assertFalse(registry.cancel(VALID_ID));

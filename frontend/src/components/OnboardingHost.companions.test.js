@@ -35,7 +35,6 @@ describe('OnboardingHost', () => {
   })
 
   it('keeps the card clear of a companion menu opened by the real anchor', async () => {
-    // #680 回归：导出菜单比触发按钮宽（右对齐、min-width 200），只避让按钮会让卡片压住菜单左半。
     const trigger = button('data-export')
     trigger.setAttribute('aria-controls', 'real-export-menu')
     trigger.getBoundingClientRect = () => new DOMRect(900, 100, 100, 48)
@@ -58,7 +57,6 @@ describe('OnboardingHost', () => {
   })
 
   it('lets an opened column panel and export menu own Escape while the guide keeps its step', async () => {
-    // #669 回归：列面板与导出菜单都是可自行关闭的伴随层，引导不能吞掉 Esc 直接退出教程。
     const panelTrigger = button('data-columns')
     const panel = document.createElement('div')
     panel.setAttribute('role', 'dialog')
@@ -99,8 +97,6 @@ describe('OnboardingHost', () => {
   })
 
   it('lets the auto-opened Display own the first Escape on the declutter step', async () => {
-    // 防遮控件住在 Display 面里，教程进入这一步会自动打开它，焦点随之落到面板的关闭按钮上。
-    // 第一次 Escape 必须交给 Display 自己关，教程保持当前步骤，不能直接记成 SKIPPED。
     const panel = document.createElement('section')
     panel.setAttribute('role', 'dialog')
     panel.dataset.tour = 'playback-display-options'
@@ -123,7 +119,6 @@ describe('OnboardingHost', () => {
   })
 
   it('lets the real export download activation through while blocking background clicks', async () => {
-    // #680 回归：downloadBlob 在 body 上点击隐藏 anchor；引导的背景点击隔离不能取消这次程序化下载。
     const originalCreate = URL.createObjectURL
     const originalRevoke = URL.revokeObjectURL
     URL.createObjectURL = vi.fn(() => 'blob:test')
@@ -160,7 +155,6 @@ describe('OnboardingHost', () => {
       ])
       expect(guide.skip).not.toHaveBeenCalled()
 
-      // 普通背景点击仍然被教程拦截，不因下载放行而放宽隔离。
       const background = document.createElement('button')
       document.body.append(background)
       const backgroundClick = vi.fn()
@@ -177,7 +171,6 @@ describe('OnboardingHost', () => {
   })
 
   it('lets an expanded combobox close its own popup before the guide exits', async () => {
-    // ARIA combobox 打开时焦点仍在 input 上：第一次 Escape 必须关 dropdown，教程保持当前步骤。
     const anchor = document.createElement('div')
     anchor.dataset.tour = 'data-export'
     document.body.append(anchor)
@@ -207,7 +200,6 @@ describe('OnboardingHost', () => {
     expect(guide.skip).not.toHaveBeenCalled()
     expect(document.querySelector('[data-testid="onboarding-layer"]')).not.toBeNull()
 
-    // dropdown 关闭后，第二次 Escape 才回到教程。
     combobox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(guide.skip).toHaveBeenCalledTimes(1)
   })

@@ -64,8 +64,6 @@ function expectTrianglesClear(ribbon, surface, { allowEmpty = false } = {}) {
         const x = wa * ax + wb * bx + wc * cx
         const y = wa * ay + wb * by + wc * cy
         const z = wa * az + wb * bz + wc * cz
-        // 5cm 允许误差；production lift=8cm 覆盖。固定 0.5m cross samples 的 off-grid
-        // ridge 实测 ~8.7cm，超过该阈值，因此这个回归仍能锁住 adaptive refinement。
         expect(y).toBeGreaterThanOrEqual(surface(x, z) - 0.05)
         checked++
       }
@@ -296,7 +294,6 @@ describe('buildPenRibbon', () => {
           const ax = strip.positions[ia]; const ay = strip.positions[ia + 1]; const az = strip.positions[ia + 2]
           const bx = strip.positions[ib]; const by = strip.positions[ib + 1]; const bz = strip.positions[ib + 2]
           const cx = strip.positions[ic]; const cy = strip.positions[ic + 1]; const cz = strip.positions[ic + 2]
-          // 重心 + 三个偏向顶点的重心采样；只查 mesh 线性插值是否低于 terrain。
           for (const [wa, wb, wc] of [
             [1 / 3, 1 / 3, 1 / 3], [0.6, 0.2, 0.2], [0.2, 0.6, 0.2], [0.2, 0.2, 0.6],
             [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5],
@@ -391,7 +388,6 @@ describe('buildPenRibbon', () => {
     const ribbon = buildPenRibbon(pen(points, 40), { sampleHeight: surface, lift: 0, maxSegment: 1e9 })
     expect(ribbon).not.toBeNull()
     expect(ribbon.validation.unsafeCells).toBeGreaterThan(0)
-    // unsafe cells are omitted; if any safe triangle is emitted it must still be clear.
     expectTrianglesClear(ribbon, surface, { allowEmpty: true })
   })
 
@@ -418,8 +414,6 @@ describe('buildPenRibbon', () => {
     })
     expect(ribbon).not.toBeNull()
     expect(ribbon.validation.unsafeCells).toBe(0)
-    // Runtime uses recursive validation; this independent 17x17 barycentric grid is not
-    // the runtime's 7-point oracle. In particular it includes (1/16, 14/16, 1/16).
     expectTrianglesDenseClear(ribbon, sampler, { steps: 16, epsilon: 0.05 })
   })
 
@@ -433,7 +427,6 @@ describe('buildPenRibbon', () => {
     const committed = pen(normalized, 1)
     const ribbon = buildPenRibbon(committed, { sampleHeight: () => 20, lift: 0, maxSegment: 1e9 })
     expect(ribbon).not.toBeNull()
-    // Renderer consumes normalized points; raw peak (10,10) must not appear as a centerline row.
     const verts = ribbonVertices(ribbon)
     expect(verts.some((v) => Math.abs(v.x - 10) < 1e-6 && Math.abs(v.z - 10) < 1e-6)).toBe(false)
 
@@ -477,8 +470,6 @@ describe('buildPenRibbon', () => {
     const ribbon = buildPenRibbon(pen([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 8), { sampleHeight: surface, lift: 0 })
     expect(ribbon).not.toBeNull()
     expect(ribbon.crossCount).toBeGreaterThanOrEqual(5)
-    // Sharp miter may exhaust the bounded geometry budget; unsafe cells are skipped, so
-    // only emitted triangles are asserted against an independent dense oracle.
     expectTrianglesClear(ribbon, surface)
     expectTrianglesDenseClear(ribbon, surface, { steps: 12, epsilon: 0.05 })
   })
@@ -647,7 +638,6 @@ describe('3D surface anchors (selected-surface drawing)', () => {
       { x: 10, y: 0 },
       { x: 20, y: 0, surfaceY: 12 },
     ], { strength: 0.25 })
-    // ground / bridge / ground are separate runs; the two boundary anchors must survive.
     expect(mixed).toHaveLength(3)
     expect(mixed[0].surfaceY).toBe(8)
     expect(mixed[1].surfaceY).toBeUndefined()
@@ -721,9 +711,7 @@ describe('3D surface anchors (selected-surface drawing)', () => {
     expect(bridge).not.toBeNull()
     const verts = ribbonVertices(bridge)
     expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(3)
-    // canonical XZ footprint must stay 6m; only Y is derived from the plane.
     expect(Math.max(...verts.map((v) => v.z)) - Math.min(...verts.map((v) => v.z))).toBeCloseTo(6, 5)
-    // 45° plane through (0,8,0), normal (0,√½,√½): y + z = 8.
     expect(verts.every((v) => Math.abs(v.y + v.z - 8) < 1e-6)).toBe(true)
   })
 
@@ -780,7 +768,7 @@ describe('3D surface anchors (selected-surface drawing)', () => {
 
   it('refinement keeps anchored rows on the selected layer and fails closed below terrain', () => {
     const ribbon = buildPenRibbon(pen([{ x: -5, y: 0, surfaceY: 8 }, { x: 5, y: 0, surfaceY: 8 }], 4), {
-      sampleHeight: () => 12, // ribbon is below the terrain: every cell must fail closed
+      sampleHeight: () => 12,
       lift: 0,
       maxSegment: 100,
     })
@@ -826,7 +814,6 @@ describe('3D surface anchors (selected-surface drawing)', () => {
       expect(ring).not.toBeNull()
       const verts = ringVertices(ring)
       expect(Math.max(...verts.map((v) => v.y)) - Math.min(...verts.map((v) => v.y))).toBeGreaterThan(0.5)
-      // plane through (0, 8, 0), normal (0, cos, sin): y*cos + z*sin = 8*cos
       expect(verts.every((v) => Math.abs(normal.y * (v.y - 8) + normal.z * v.z) < 1e-5)).toBe(true)
     }
 

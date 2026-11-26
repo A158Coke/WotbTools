@@ -1,13 +1,3 @@
-/**
- * 测试专用：把 xlsx 字节（exceljs 读回）归一化成与 `tools/parity/JavaExportDump.java`（POI 读回）
- * 相同的 JSON 形状，用于和 `__golden__/java-export.json` 逐格比较。只被测试 import，不进产物。
- *
- * 规则（两侧一致）：
- * - 单元格值：数值 / 字符串 / 布尔 / {f: 公式} / {blank: true}；不存在的单元格/行 = null；去掉末尾空行
- * - 样式串：`b=粗体;sz=字号;fc=字色;fill=填充;h=水平对齐;bd=上,下,左,右;fmt=数字格式`
- *   颜色：indexed → `idx:n`（indexed 8 = 默认黑色 → 空）；rgb → 6 位大写 hex；theme/未设 → 空
- * - 列宽：只列出显式 `<col width>` 的列（0 基 → 宽度字符数）
- */
 
 import type { Cell, Color, Workbook, Worksheet } from 'exceljs'
 import ExcelJS from 'exceljs'
@@ -92,7 +82,6 @@ function sheet(ws: Worksheet): NormalizedSheet {
   }
 }
 
-/** 读回 xlsx 字节并归一化。 */
 export async function normalizeXlsx(bytes: Uint8Array): Promise<NormalizedWorkbook> {
   const ExcelJS = (await import('exceljs')).default
   const wb: Workbook = new ExcelJS.Workbook()

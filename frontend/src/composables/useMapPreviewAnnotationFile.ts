@@ -2,20 +2,10 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import type { MapAnnotation } from './useAnnotationState.js'
 
-/** 文件 kind 不区分视角：2D/3D 标注同为 ±300 语义系，同一张地图即可互导。 */
 const IMPORT_KIND = 'map-preview-annotations'
-/** 兼容合入前旧导出的 -2d / -3d 后缀 kind。 */
 const IMPORT_KINDS = new Set([IMPORT_KIND, 'map-preview-annotations-2d', 'map-preview-annotations-3d'])
 const MESSAGE_MS = 4000
 
-/**
- * 地图预览标注 JSON 文件的唯一 owner（MapPreview2DPane 与 MapPreview3DPane 共用）：
- * 文件 schema（version / kind / mapKey / annotations）、fail-closed 导入校验、导出落盘，
- * 以及导入导出结果的短时提示。
- *
- * 宿主只注入数据差异：几何校验（2D 全 schema、3D pen-only）、净化（3D 剥离 session-local
- * 的 surface 锚点，导入导出都做）、文件名视角后缀、导入落地方式（宿主自己的撤销栈）。
- */
 export function useMapPreviewAnnotationFile(options: {
   mapKey: () => string
   annotations: Ref<MapAnnotation[]>
@@ -80,7 +70,6 @@ export function useMapPreviewAnnotationFile(options: {
       rejectImport('mapPreview.annotations.importReasonMap')
       return
     }
-    // 几何逐条校验（fail-closed，整份拒绝）：半校验条目会在渲染或 applyEraser 里 TypeError。
     if (!payload.annotations.every(options.validate)) {
       rejectImport('mapPreview.annotations.importReasonFormat')
       return

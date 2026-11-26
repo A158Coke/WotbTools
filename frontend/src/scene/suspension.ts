@@ -1,28 +1,5 @@
 
-/**
- * 坦克悬挂求解（客户端同构）——纯函数层。
- *
- * 逆向证据与公式出处：上游 `docs/tank-suspension-client-re.md` §六（第二轮反汇编）。
- * 与客户端逐条对应：
- *   1) 负重轮 = **纯竖直平移**，夹到 `[pz − b, pz + a]`（yaml `wheels` 的 `{flag, a, b}`，
- *      `flag = 1` 参与贴地、`0`（诱导/主动/托带轮）不参与），按 `wheelsReactionSpeed` 限速
- *      逼近（首次可见直接吸附）——`clampTravel` / `rateLimitTravel`。
- *   2) 自转 = 绕轮节点**局部 X 轴** `θ += −Δs_侧 / r`（左右各用自己的纵向位移，差速自动成立）
- *      ——`spinStep`。
- *   3) 履带 = **静止折线（链路）+ 逐轮偏移 → 悬空段垂弧 → 铺地**，顺序与客户端
- *      `Bending → Laying` 一致（本模块 `solveChain` 的第 2/3/4 步）。
- *      垂弧形状 = 客户端 `(t − t²)` 抛物线，幅度用 `upperFactor · span^lengthPower`
- *      （`lengthPower` 是幂次已确定；`upperMin/frontFactor/backFactor` 的逐项落位未定，
- *      本实现按统一幅度近似——上游 §五.4）。
- *   4) 花纹滚动：每米 V 变化 = 该带**网格实测**的沿带斜率 dV/ds（`measureBeltUvSlope`），
- *      使花纹线速度恰等于履带速度——见 `treadScrollStep` 及其 2026-10-10 勘误（客户端形式
- *      常数 `textureScale / chunkLength` 比网格真实斜率大 3.4~19×，不可用）。
- *
- * 求解层不依赖 three.js（入参是普通数组/标量，便于单测）；仅位姿写入 `applyWheelSpin`
- * 触 three（场景侧做容器与写入）。
- */
 
-/** 客户端 `wheels` 记录缺省（数据缺失时的兜底；正常路径不用） */
 export const SUSP_FALLBACK = { travelUp: 0.08, travelDown: 0.08, reaction: 1.0 };
 
 /**
@@ -37,10 +14,6 @@ export function clampTravel(delta: number, up: number, down: number): number {
   return delta > hi ? hi : (delta < -lo ? -lo : delta);
 }
 
-/**
- * 限速逼近（客户端 `copysign(min(|Δ|, wheelsReactionSpeed·dt), Δ)`）：
- * 首次可见（`snap`）直接吸附——与客户端"首帧不插值"一致。
- */
 export function rateLimitTravel(current: number, target: number, rate: number, dt: number, snap: unknown): number {
   if (snap || !(dt > 0)) return target;
   const step = (Number.isFinite(rate) && rate > 0 ? rate : SUSP_FALLBACK.reaction) * dt;
@@ -52,7 +25,6 @@ export function rateLimitTravel(current: number, target: number, rate: number, d
 
 const TWO_PI = Math.PI * 2;
 
-/** 周期折叠到 ±2π（客户端 `θ = wrap(θ + …)`） */
 export function wrapSpin(theta: number): number {
   let t = theta % TWO_PI;
   if (t > Math.PI) t -= TWO_PI;
@@ -60,48 +32,27 @@ export function wrapSpin(theta: number): number {
   return t;
 }
 
-/**
- * 轮自转步进：`θ += −Δs / r`。
- * 符号：模型系（y 前 / z 上 / x 右）里"向前滚动且不打滑" ⇒ 绕 **+X** 的角速度 ω = −v/r
- * （顶部随车向前、底部相对车向后），与客户端写骨骼旋转块的 (−θ/2) 半角域一致。
- */
 export function spinStep(theta: number, distSide: number, radius: number): number {
   if (!(radius > 1e-4)) return theta;
   return wrapSpin(theta - distSide / radius);
 }
 
-/**
- * 花纹滚动步进：`ΔV = Δs · dvPerM`，返回累计后的 V（调用方就地取模写 UV）。
- *
- * `dvPerM` = 该带**网格实测**的沿带斜率（[`measureBeltUvSlope`] × 底段走向），单位 V/米：
- * 这样花纹沿带的线速度恰好等于履带速度（接地段在世界里静止，与真车一致）。
- *
- * ⚠️ 2026-10-10 勘误：曾用客户端形式常数 `chassis.textureScale / chunkLength`——实测它比
- * 网格真实斜率**大 3.4~19×**（30 辆抽样，中位 4.5×）。原因是那条常数活在客户端自己的
- * shader V 空间（一个 chunk 一份原型），与导出网格的图集式 per-link V 不同量纲。
- */
 export function treadScrollStep(vOffset: number, distSide: number, dvPerM: number): number {
   if (!(Math.abs(dvPerM) > 1e-6)) return vOffset;
   return vOffset + distSide * dvPerM;
 }
 
-/**
- * 地形"掉高"折算到车体系局部 +z：把世界竖直差除以车体 up 轴的世界 y 分量。
- * 车体倾倒到 |upY| 过小时返回 0（求解停摆而非发散，fail-safe）。
- */
 export function groundDropLocal(terrainH: number, restWorldY: number, upWorldY: number): number {
   if (!(Math.abs(upWorldY) > 0.25)) return 0;
   return (terrainH - restWorldY) / upWorldY;
 }
 
-/** 客户端 wheels 记录中求解层消费的几何字段（链坐标系）。 */
 export interface SuspensionWheel {
   longitudinal: number
   radius?: number
   centerZ?: number
 }
 
-/** 静止链路点：`[纵向 y, 高度 z]`（模型系纵剖面，米）。 */
 export type ChainPoint = [number, number]
 
 /**
@@ -126,9 +77,6 @@ export type ChainPoint = [number, number]
  */
 export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readonly SuspensionWheel[], tolFactor = 0.45): Int32Array {
   const out = new Int32Array(chain.length).fill(-1);
-  // 判据 = 「链点在**该轮圆周上**」：|‖p − c‖ − r| 落在履带板厚容差内。
-  // 单看纵向会误挂——上支段与底段同纵向，但上支段在轮顶上方一个直径处（客户端真正的
-  // 支承关系是"带贴着轮缘"，含上支段的托带轮）。
   for (let i = 0; i < chain.length; i++) {
     const [cy, cz] = chain[i];
     let best = -1, bestD = Infinity;
@@ -147,19 +95,6 @@ export function attachChainToWheels(chain: readonly ChainPoint[], wheels: readon
   return out;
 }
 
-/**
- * 悬空段（`Suspension::HangingSegment`）的边界：**挂接点 ∪ 作者 flag 点**（升序去重）。
- *
- * 客户端的段表是 `{kind; i0; i1; aux}`（垂弧 kind==4 / 包轮其它），由客户端自己枚举，
- * 我们的导出里没有段表，只有链点上的 flag（语义未定，但「分布与小轮/托带位置相关」）。
- * 因此只把 flag 当作**额外的分段标记**：取并集意味着**只会把历史跨距切得更细、绝不合并**
- * （历史边界 = 挂接点，全部保留）——零行程/零贴地时的形变只会更小或不变。实测 20 个车型：
- * 相对历史口径的最大偏差 0 或负值（7297 60TP 0.92→0.06；1089 B1 0.32→0.01）。
- *
- * flag 列不可用（缺失 / 长度不符 / **任一**取值非 0-1，含 `NaN`——混合旧/异常链会给出缺列）
- * 时**整列不参与**分段：先整列校验，再一次性并入，绝不会留下半列的边界
- * （评审 P2：曾边加边校验，遇到中段非法值会把前半列的 flag 边界留在结果里）。
- */
 export function chainSpanBoundaries(attach: ArrayLike<number>, flags: ArrayLike<number> | null | undefined): number[] | null {
   const n = attach.length;
   const set = new Set<number>();
@@ -171,7 +106,6 @@ export function chainSpanBoundaries(attach: ArrayLike<number>, flags: ArrayLike<
   return out.length >= 2 ? out : null;
 }
 
-/** flag 列是否整列可用：长度一致且每个取值都是 0 或 1（`NaN` / 缺列 / 其它值 ⇒ 不可用）。 */
 function flagsUsable(flags: ArrayLike<number> | null | undefined, n: number): boolean {
   if (!flags || flags.length !== n) return false;
   for (let i = 0; i < n; i++) {
@@ -198,12 +132,10 @@ function flagsUsable(flags: ArrayLike<number> | null | undefined, n: number): bo
 export function solveChain(out: Float64Array | number[], rest: readonly ChainPoint[], attach: Int32Array, wheelDelta: readonly number[] | Float64Array, groundDrop: readonly number[] | Float64Array, wheels: readonly SuspensionWheel[], bend: { upper_factor?: number; length_power?: number } | null | undefined, spans?: readonly number[] | null): { maxAbs: number } {
   const n = rest.length;
   let maxAbs = 0;
-  // 1) 逐轮偏移：挂接点随轮移动（客户端 `chain[i] += wheelInfo.offset`）
   for (let i = 0; i < n; i++) {
     const w = attach[i];
     out[i] = rest[i][1] + (w >= 0 ? (wheelDelta[w] ?? 0) : 0);
   }
-  // 2) 悬空段垂弧：在**段边界**之间按 `(t − t²)` 抛物线向下垂
   const sagFactor = bend && typeof bend.upper_factor === 'number' && Number.isFinite(bend.upper_factor) ? Math.max(0, bend.upper_factor) : 0;
   const sagPow = bend && typeof bend.length_power === 'number' && bend.length_power !== undefined && Number.isFinite(bend.length_power) ? bend.length_power : 0.5;
   const sagSpan = (i: number, j: number) => {
@@ -228,8 +160,6 @@ export function solveChain(out: Float64Array | number[], rest: readonly ChainPoi
       i = j;
     }
   }
-  // 3) 包轮约束：**经过轮顶**的链点不得切进轮胎圆（客户端 `y = max(y, cy + sqrt(r² − dx²))`）。
-  //    只对静止高度在轮心以上的点生效——底段在轮心**以下**（履带板厚），套用会把它顶到轮顶。
   for (let k = 0; k < n; k++) {
     const w = attach[k];
     if (w < 0) continue;
@@ -243,7 +173,6 @@ export function solveChain(out: Float64Array | number[], rest: readonly ChainPoi
     const top = cz + Math.sqrt(Math.max(0, r * r - dx * dx));
     if (out[k] < top) out[k] = top;
   }
-  // 4) 铺地（客户端 Laying）：低于地面的点抬到地面；地面在下方（drop<0）时**不跟**下来
   for (let k = 0; k < n; k++) {
     const laid = rest[k][1] + (groundDrop[k] ?? 0);
     if (out[k] < laid) out[k] = laid;
@@ -287,9 +216,6 @@ export function vertexChainParams(pos: ArrayLike<number>, rest: readonly ChainPo
   return { seg, t };
 }
 
-/** 两条解算链的**逐点最大偏差**（米）。用途：履带**法线**重算闸门——与"上次重算法线时的链"
- *  比较。累计统计量（最大幅度 / 均值）表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时
- *  两者都不变、而法线必须重算（2026-10-10 review 复审 P2）。空 / 长度不符 ⇒ Infinity（fail-safe）。 */
 export function chainDrift(prev: ArrayLike<number> | null | undefined, cur: ArrayLike<number> | null | undefined): number {
   if (!prev || !cur || prev.length !== cur.length) return Infinity;
   let m = 0;
@@ -300,10 +226,6 @@ export function chainDrift(prev: ArrayLike<number> | null | undefined, cur: Arra
   return m;
 }
 
-/** 两条解算链是否等价（逐点严格比较）。顶点输出是链的纯函数（见 `applyChainToVertices`）：
- *  链相同 ⇒ 顶点逐点相同、无需重传 GPU。形变"下发判定"用它而不是最大幅度——
- *  幅度相同但分布不同（如把 0.1 的形变从一处挪到另一处）时 max 不变、顶点已变
- *  （2026-10-10 review P2）。空/长度不符视为变化（首帧 fail-safe）。 */
 export function chainChanged(prev: ArrayLike<number> | null | undefined, cur: ArrayLike<number> | null | undefined): boolean {
   if (!prev || !cur || prev.length !== cur.length) return true;
   for (let i = 0; i < cur.length; i++) if (prev[i] !== cur[i]) return true;
@@ -367,14 +289,7 @@ export function writeUvOffsetV(uvArray: { [index: number]: number }, uvBase: Arr
   return phase;
 }
 
-/**
- * 链路底段的**走向**（+1 = 点序号增大方向为"车尾→车头"）。
- *
- * 用途：花纹滚动方向的物理判据——底段履带材料相对车体**向后**流动（接地段在世界里静止），
- * 而链路坐标的"向后"是 +s 还是 −s 取决于链路自身的点序，故先取走向再定符号。
- */
 
-// —— 车轮/履带运动与节点解析（#LOC 拆分：实现原样平移，出口经本文件 re-export）——
 export {
   chainBottomRunDir, applyWheelSpin, measureBeltUvSlope, parseWheelNodeName,
   parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment, sideTravel,

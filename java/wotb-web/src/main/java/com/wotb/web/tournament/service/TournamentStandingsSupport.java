@@ -17,10 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Standings computation and day-view assembly, extracted from TournamentService. Totals are
- * recomputed from published facts exactly as before; read-model only, no writes.
- */
 class TournamentStandingsSupport {
     private final TournamentDayRepository days;
     private final TournamentClanRepository clans;

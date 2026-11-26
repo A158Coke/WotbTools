@@ -6,8 +6,6 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// Exercise the production router, components, transport validators and CSS. Only external
-// auth and HTTP services are fixtures, shared by anonymous and administrator requests.
 const fixture = createBroadcastFixture({ rich: true })
 let db
 function reset() { fixture.reset(); db = fixture.db }
@@ -103,7 +101,6 @@ try {
         await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
       }
-      // 手机竖屏 / 横屏走「菜单 → 左侧抽屉」，平板 / 桌面走侧边栏（§9 L1 / L3）；栏目入口是同一项。
       const clicked = await page.navigateViaShell('league-broadcasts', scenario.touch)
       await page.waitForValue('document.querySelectorAll("[data-testid^=broadcast-server-]").length', value => value === 5)
       const drawerShell = clicked.includes('nav-drawer-panel')

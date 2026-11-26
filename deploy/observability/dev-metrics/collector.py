@@ -118,18 +118,12 @@ def collect(client, repository, overrides, now=None, cache=None):
     prs = list(client.pages(base + '/pulls?state=all&per_page=100'))
     for pr in prs:
         number = str(pr['number'])
-        # Frozen overrides describe merged/closed history; open and reopened PRs are
-        # classified from their current changed paths.
         if number in overrides and pr.get('state') != 'open':
             continue
-        # Cache only the classification contribution, never paths/body/user data.
         key = (number, pr.get('updated_at'))
         if key not in area_cache:
             paths = [item['filename'] for item in client.pages(base + f"/pulls/{pr['number']}/files?per_page=100")]
             if len(paths) >= 3000:
-                # GitHub truncates the file list at this limit. Only an override bound to
-                # this exact active head may classify the PR; a stale or list-only record
-                # must never silently keep applying across a new HEAD.
                 areas = head_bound_areas(overrides.get(number), (pr.get('head') or {}).get('sha'))
                 if areas:
                     area_cache[key] = areas
@@ -141,8 +135,6 @@ def collect(client, repository, overrides, now=None, cache=None):
         pr['_areas'] = area_cache[key]
     active_prs = {(str(pr['number']), pr.get('updated_at')) for pr in prs}
     cache['areas'] = {key: areas for key, areas in area_cache.items() if key in active_prs}
-    # GitHub caps filtered Actions searches at 1000. Split saturated windows
-    # until each page range is complete; never silently truncate history.
     from github_client import GitHubError
     def run_window(begin, end):
         query = f"{base}/actions/runs?per_page=100&created={begin.strftime('%Y-%m-%dT%H:%M:%SZ')}..{end.strftime('%Y-%m-%dT%H:%M:%SZ')}"
@@ -175,7 +167,6 @@ def collect(client, repository, overrides, now=None, cache=None):
     return aggregate(prs, runs, gates, releases, now, overrides)
 
 
-# Committed workflow path allowlist bounds labels; unknown/deleted workflows share 'other'.
 WORKFLOW_PATHS = frozenset({
     '.github/workflows/ai-service.yml',
     '.github/workflows/alloy-tx.yml',

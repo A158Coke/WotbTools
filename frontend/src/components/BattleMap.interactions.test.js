@@ -113,7 +113,6 @@ describe('map zoom and pan', () => {
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 110, clientY: 60 })
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 210, clientY: 60 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 310, clientY: 60 })
-    // 锚点局部 (60,10)，dist 100→200（ratio 2）：t'=anchor−anchor·2=(−60,−10)；中点位移 (50,0)
     expect(viewport.attributes('style')).toContain('translate(-10px, -10px)')
     expect(viewport.attributes('style')).toContain('width: 200%')
     await viewport.trigger('pointerup', { pointerId: 1 })
@@ -126,7 +125,6 @@ describe('map zoom and pan', () => {
     await flushPromises()
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 })
-    // 屏幕锚点 (10,10)：t' = 10 − 10×1.2 = −2
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('translate(-2px, -2px)')
     expect(wrapper.find('[data-test="pb-viewport"]').attributes('style')).toContain('width: 120%')
   })
@@ -146,17 +144,16 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     const map = wrapper.find('[data-test="pb-map"]')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 }) // → (-2,-2) scale 1.2
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 })
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
-    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // 平移 +50/+20 → (48,18)
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 })
     await viewport.trigger('pointerup', { pointerId: 1 })
-    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 }) // 屏幕锚点 (50,30)
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 })
     const t = parseTransform(viewport.attributes('style'))
     expect(t).not.toBeNull()
     expect(t.scale).toBeCloseTo(1.44, 6)
     expect(t.tx).toBeCloseTo(47.6, 6)
     expect(t.ty).toBeCloseTo(15.6, 6)
-    // 锚点内容不变式：(px − tx)/scale
     const before = { x: (50 - 48) / 1.2, y: (30 - 18) / 1.2 }
     const after = { x: (50 - t.tx) / t.scale, y: (30 - t.ty) / t.scale }
     expect(after.x).toBeCloseTo(before.x, 6)
@@ -170,7 +167,6 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     const map = wrapper.find('[data-test="pb-map"]')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    // 初始 scale 1、t=0：屏幕锚点 (50,30) 即内容点
     for (let i = 0; i < 3; i++) {
       await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 150, clientY: 80 })
       const t = parseTransform(viewport.attributes('style'))
@@ -197,24 +193,21 @@ describe('map zoom and pan', () => {
     wrapper.find('[data-test="pb-map"]').element.getBoundingClientRect = () => nonzeroRect()
     const map = wrapper.find('[data-test="pb-map"]')
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 }) // (-2,-2) 1.2
+    await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 110, clientY: 60 })
     await viewport.trigger('pointerdown', { pointerId: 9, clientX: 10, clientY: 10 })
-    await viewport.trigger('pointermove', { pointerId: 9, clientX: 60, clientY: 30 }) // → (48,18) 1.2
+    await viewport.trigger('pointermove', { pointerId: 9, clientX: 60, clientY: 30 })
     await viewport.trigger('pointerup', { pointerId: 9 })
-    // 第一次捏合：mid 160→210、dist 100→200（ratio 2）
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 110, clientY: 60 })
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 210, clientY: 60 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 310, clientY: 60 })
     const t = parseTransform(viewport.attributes('style'))
     expect(t.scale).toBeCloseTo(2.4, 6)
-    // 不变式：捏合前 mid0 下的内容点 == 捏合后 mid1 下的内容点（手指跟随）
     const beforeMid = { x: (160 - 100 - 48) / 1.2, y: (60 - 50 - 18) / 1.2 }
     const afterMid = { x: (210 - 100 - t.tx) / t.scale, y: (60 - 50 - t.ty) / t.scale }
     expect(afterMid.x).toBeCloseTo(beforeMid.x, 6)
     expect(afterMid.y).toBeCloseTo(beforeMid.y, 6)
     await viewport.trigger('pointerup', { pointerId: 1 })
     await viewport.trigger('pointerup', { pointerId: 2 })
-    // 连续第二次捏合：mid 170→210、dist 100→200，2.4×2 → clamp 4
     await viewport.trigger('pointerdown', { pointerId: 3, clientX: 120, clientY: 70 })
     await viewport.trigger('pointerdown', { pointerId: 4, clientX: 220, clientY: 70 })
     await viewport.trigger('pointermove', { pointerId: 4, clientX: 320, clientY: 70 })
@@ -231,14 +224,11 @@ describe('map zoom and pan', () => {
   it('reset restores identity view and keeps all layers on the single transform', async () => {
     const wrapper = await zoomedWrapper()
     const markerStyleBefore = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
-    // Reset View 是次级动作：只从 Display 面可达，不再占用 primary 控件行。
     await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
     await wrapper.get('[data-test="pb-panel-reset"]').trigger('click')
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
     expect(style).toContain('width: 100%')
     expect(style).toContain('translate(0px, 0px)')
-    // 图层对齐契约：camera 只在 viewport 的 translate/width layout 上；标记 left/top（%）
-    // 不随缩放变化，marker 保留自身 scale，SVG 自身无 style。
     const markerAfter = wrapper.find('[data-test="pb-marker-1001"]').attributes('style')
     const leftTop = (s) => s.match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
     expect(leftTop(markerAfter)).toEqual(leftTop(markerStyleBefore))
@@ -264,7 +254,6 @@ describe('map gesture forwarding', () => {
     expect(wrapper.emitted('viewport-click')).toHaveLength(2)
     expect(wrapper.emitted('marker-select')[0][0].accountId).toBe(2)
     expect(wrapper.emitted('wheel')).toHaveLength(1)
-    // focused map responsibility regression matrix
   })
 })
 describe('gesture click suppression and pointer cleanup', () => {
@@ -290,7 +279,7 @@ describe('gesture click suppression and pointer cleanup', () => {
     await flushPromises()
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
-    await viewport.trigger('pointermove', { pointerId: 1, clientX: 12, clientY: 12 }) // <5px
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 12, clientY: 12 })
     await viewport.trigger('pointerup', { pointerId: 1 })
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
@@ -301,15 +290,15 @@ describe('gesture click suppression and pointer cleanup', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const viewport = wrapper.find('[data-test="pb-viewport"]')
-    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 }) // scale>1 才可平移
+    await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 10, clientY: 10 })
-    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 }) // pan +50/+20
+    await viewport.trigger('pointermove', { pointerId: 1, clientX: 60, clientY: 30 })
     const up = new window.Event('pointerup')
     up.pointerId = 1
-    window.dispatchEvent(up) // 指针移出元素后在 window 上结束
+    window.dispatchEvent(up)
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 20, clientY: 20 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 30, clientY: 20 })
-    expect(viewport.attributes('style')).toContain('translate(60px, 20px)') // 上次 50,20 + 新位移 10,0
+    expect(viewport.attributes('style')).toContain('translate(60px, 20px)')
     await viewport.trigger('pointerup', { pointerId: 2 })
   })
 
@@ -321,7 +310,7 @@ describe('gesture click suppression and pointer cleanup', () => {
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 0, clientY: 0 })
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 100, clientY: 0 })
     await viewport.trigger('pointermove', { pointerId: 2, clientX: 200, clientY: 0 })
-    await viewport.trigger('pointerup', { pointerId: 2 }) // 剩下一根手指
+    await viewport.trigger('pointerup', { pointerId: 2 })
     await viewport.trigger('pointermove', { pointerId: 1, clientX: 50, clientY: 30 })
     const style = viewport.attributes('style')
     expect(style).toContain('width: 200%')

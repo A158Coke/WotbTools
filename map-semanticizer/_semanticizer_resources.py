@@ -29,8 +29,6 @@ def discover_map_resources(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
             path.stat().st_size,
         )
 
-    # Prefer a root-level scene named after the map folder. Only then use depth
-    # and size. This avoids accidentally selecting a large linked object scene.
     scene = max(scenes, key=lambda path: resource_rank(path, root.name))
     heightmap = max(heightmaps, key=lambda path: resource_rank(path))
     return scene, heightmap

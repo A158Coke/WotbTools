@@ -5,7 +5,6 @@ import { ApiError } from '../utils/http.js'
 import { useAuth } from './useAuth.js'
 import type { KeycloakTokenParsed } from 'keycloak-js'
 
-/** Blank required cells never become zero; optional fifth place is omitted. */
 export function tournamentRulesFromInputs(inputs: (number | string | null)[][]): TournamentRuleRequest['days'] | null {
   if (inputs.length < 2 || inputs.length > 3) return null
   const days: TournamentRuleRequest['days'] = []
@@ -115,8 +114,6 @@ export function useTournamentPointsConfig(deps = { api, auth: useAuth() }) {
   function selectGlobal() { globalMode.value = true }
   function selectEvent(value: number | null) { globalMode.value = false; eventId.value = value }
   async function loadConfig(id: number, signal: AbortSignal) {
-    // Read the version before the effective rules: a concurrent default update can only
-    // make this token older, never authorize saving old cells against a newer default.
     const source = await transport.getTournamentRuleSource(id, signal)
     const value = await transport.getTournamentConfig(id, signal)
     if (source && source.eventVersion !== value.event.version) throw new ApiError({ errorCode: 'TOURNAMENT_VERSION_CONFLICT', status: 409 })

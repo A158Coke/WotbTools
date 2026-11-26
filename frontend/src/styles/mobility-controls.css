@@ -1,4 +1,3 @@
-/* Shared by the comparison page and by the chart in the tank detail workbench. */
 .mob-field {
   box-sizing: border-box;
   min-height: var(--control-h-sm);

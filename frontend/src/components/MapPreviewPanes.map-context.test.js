@@ -4,8 +4,6 @@ import { flushPromises } from '@vue/test-utils'
 import { mountPane } from '../test/MapPreviewPanesTestHelpers.js'
 import { mapImages } from '../data/mapImages.js'
 
-// 多 candidate 的 fail-closed 夹具：真实 mapBases 经变体过滤后每图恰 1 条 assault，
-// 规则本身仍需可测（合成 probe_multi，不依赖生产数据恰好含歧义样本）。
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -31,7 +29,6 @@ vi.mock('vue-i18n', () => ({
   }),
 }))
 
-/** BattleMap 打桩为渲染数量探针：标注列表经 renderedAnnotations、基地经 bases 进入展示层。 */
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
@@ -123,7 +120,6 @@ describe('MapPreview2DPane 基地点位（与 2D 回放同一 :bases 口径）',
   })
 
   it('assault 单条 candidate → BASE 圆标 + 20m 缺省（与回放同一 presentation fallback）', async () => {
-    // erlenberg 的基础变体（er0）恰 1 条遭遇 candidate、未声明 radius → 20m 兜底
     const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { basesKind: 'assault' })
     expect(wrapper.find('.bm-stub').attributes('data-bases')).toBe('BASE:20:neutral')
   })
@@ -135,7 +131,6 @@ describe('MapPreview2DPane 基地点位（与 2D 回放同一 :bases 口径）',
 })
 
 describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
-  /** 语义文件的原始事实（不经被测 parser）：spawnpoint → {name, team, x, y}。 */
   function rawSpawns(semantic) {
     return semantic.sceneEvidence.battlePoints
       .filter(point => point.type === 'spawnpoint')
@@ -146,8 +141,6 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
     ['mountain', mountainSemantic, mapImages.mountain],
     ['milbase', milbaseSemantic, mapImages.milbase],
   ])('%s：spawn 与语义 battlePoints 逐值相等（含 name/team/x/y）', (key, semantic, image) => {
-    // milbase 的语义文件名是 24_milibase_mlb（文件名片段 != mapCode），
-    // 证明查找必须走 mapCodes 索引而不是文件名。
     const wrapper = mountPane({ kind: 'bundled', image }, { mapKey: key })
     const battleMap = wrapper.findComponent({ name: 'BattleMap' })
     expect(battleMap.props('pbOverview').spawnPoints).toEqual(rawSpawns(semantic))
@@ -166,7 +159,6 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
     const baseOverview = base.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(baseOverview.spawnPoints).toEqual(rawSpawns(neptuneSemantic))
     expect(baseOverview.playableBounds).toBeTruthy()
-    // 页面契约：额外条目（非首个 index 条目）下发 variantIsBase=false
     const hills = mountPane({ kind: 'bundled', image: mapImages.neptune }, { mapKey: 'neptune', variant: 'nt1', variantIsBase: false })
     const hillsOverview = hills.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(hillsOverview.spawnPoints).toEqual([])
@@ -174,7 +166,6 @@ describe('MapPreview2DPane canonical 出生点 / 可玩边界', () => {
   })
 
   it('moon（无语义 mapCodes）：spawn 为空且 overview 不带 playableBounds（fail-closed）', () => {
-    // bundled 底图让 BattleMap 立即渲染；底图身份与 fail-closed 断言无关。
     const wrapper = mountPane({ kind: 'bundled', image: mapImages.erlenberg }, { mapKey: 'moon' })
     const overview = wrapper.findComponent({ name: 'BattleMap' }).props('pbOverview')
     expect(overview.spawnPoints).toEqual([])

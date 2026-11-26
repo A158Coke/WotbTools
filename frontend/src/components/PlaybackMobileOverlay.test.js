@@ -65,7 +65,6 @@ describe('PlaybackMobileOverlay', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).toContain('pb-mobile-overlay-transient')
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
-    // Pointer ownership is class-driven: the fullscreen wrapper never becomes the map gesture target.
     expect(wrapper.attributes('style')).toBeUndefined()
     expect(wrapper.find('.pb-mobile-overlay-content').attributes('style')).toBeUndefined()
 
@@ -143,7 +142,6 @@ describe('PlaybackMobileOverlay', () => {
     await wrapper.setProps({ fullscreen: false })
     await wrapper.vm.$nextTick()
     expect(wrapper.classes()).not.toContain('pb-mobile-overlay-transient')
-    // 退出全屏不应隐藏标注工具条；reveal() 排下的 auto-hide 计时器也必须取消。
     expect(wrapper.classes()).toContain('pb-mobile-overlay-visible')
     vi.advanceTimersByTime(2500)
     await wrapper.vm.$nextTick()

@@ -1,15 +1,6 @@
-/* Shared macro geometry for both Playback renderers.
-   Topology selects columns/flow; measured viewport capacity and intrinsic chrome select size.
-   Details positioning remains owned by usePlaybackDetailsPlacement. */
-/* Shared sizing authority. Short layouts retain 2/6/2 control capacity; desktop uses
-   approximately 25 / 50 / 25 columns while the Stage maximizes its available square. */
 .playback-workspace {
   position: relative;
   container-type: inline-size;
-  /* 工作台是自己的局部层叠上下文（§5）：内部 `--pb-z-*` 的 1–9 只在这里比较，不与根层的
-     AppTopBar / 导航抽屉 / 侧栏竞争；需要越出工作台的浮层必须 Teleport 到 body。
-     没有这一行时 1–9 会和组件里的裸 25/30/40/45 在页面外壳的上下文里裸比大小，
-     文档声明的"局部刻度"并不成立（实测：Display surface 的 9 被 transport 的 25 盖住）。 */
   isolation: isolate;
 }
 
@@ -33,11 +24,8 @@
 .pb-quick-action[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent-text); background: var(--color-surface-3); }
 .pb-quick-action:hover { background: var(--color-surface-2); }
 .pb-quick-action:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: var(--space-1); }
-/* Phone landscape uses the available width instead of spending a second row on
-   the same clock already shown in the HUD. Buttons retain their touch targets. */
 :is(.battle-playback.pb-phone-landscape, .pb-root.compact-bar) .pb-controls .pb-time {
   flex-basis: auto;
-  /* 右侧留 4px：时间不贴视口边缘，也不被相邻按钮挤压。 */
   margin-inline: auto var(--space-1);
   order: 0;
 }
@@ -62,8 +50,6 @@
   padding: 0;
   min-block-size: 0;
 }
-/* §roster-overlay：2D 名册不再占据固定 Grid 列——`.pb-main` 恒为单列（HUD / Stage / 传输），
-   地图 Stage 吃满整行；展开的名册是 Stage 内侧左右边缘的浮层（几何见 .pb-team-lane 规则）。 */
 .battle-playback.playback-workspace .pb-main > .pb-map-stage {
   display: block;
   position: relative;
@@ -73,15 +59,11 @@
   block-size: auto;
   min-block-size: 0;
   margin: 0;
-  /* 统一回放面板：地图 Stage 是「窗口」卡片；HUD 在上、播放条在下，都在卡片外。 */
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
 }
-/* §roster-overlay 浮层车道：锚在 Stage（地图盒）内侧左右边缘，只覆盖地图侧带，
-   不进 HUD 行、不盖传输控件（那两行在 Stage 之外）。展开上限让出底部一行，
-   收纳时整个元素由模板移除，地图不再有任何侧栏。 */
 .battle-playback.playback-workspace .pb-team-lane {
   position: absolute;
   inset-block-start: 0;
@@ -93,8 +75,6 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
-/* 宽形态车道不进地图中心 60% 盒（design-language §5），按行内容需求取宽并封顶；
-   手机横屏用 dense 行，车道压到 8.25rem 起（与 3D roster-side 同一 token 契约）。 */
 .battle-playback.playback-workspace {
   --pb-overlay-lane-w: min(clamp(11rem, 16vw, 15rem), 20%);
 }
@@ -129,22 +109,14 @@
   grid-row: 1;
   padding: var(--space-1);
 }
-/* 手机横屏的高度账：正方形 Stage 只受纵向预算约束，所以把所有非地图的行压到最小——
-   传输条（时间轴 + 按钮）合成一行放在最底部。不浮在地图上：地图盒里不放常驻 UI（design-language §5）。 */
 .battle-playback.playback-workspace.pb-phone-landscape .pb-main {
   flex: 1 1 auto;
   grid-template-rows: max-content minmax(0, 1fr) max-content;
 }
-/* 沉浸态横屏（非全屏）同样贴到屏幕左右边缘：刘海 / 圆角侧的 safe-area 与全屏路径一致（:fullscreen 另有自己的 padding-inline） */
 .battle-playback.playback-workspace.pb-phone-landscape:not(:fullscreen, .pb-pseudo-fullscreen) {
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
 }
-/* 紧凑档按钮视觉高度 36px，命中区靠上下各 2px 的伪元素补到 40px。传输条此前贴视口底：
-   下缘 2px 落到 viewport 之外，真实命中测试会在 b.bottom + 1.5 处取到 null。留 4px 后
-   40×40 命中区完整落在屏内，同时不改变按钮视觉尺寸。 */
 .battle-playback.playback-workspace.pb-phone-landscape .pb-transport-slot { padding-block-end: var(--space-1); }
-/* 标注编辑时传输条整体隐藏；把同一个全屏入口移到标注行右端，并给工具条留出按钮槽。
-   按钮仍是 root 的绝对定位子节点，所以必须按标注行高度贴底，而不是继续停在右上名册上。 */
 .battle-playback.playback-workspace.pb-phone-landscape .pb-annotation-surface {
   padding-inline-end: calc(var(--hit-min-comfortable) + var(--space-2) * 2);
 }
@@ -163,7 +135,6 @@
   flex: 1 1 auto;
   inline-size: auto;
   min-inline-size: var(--pb-timeline-min-w);
-  /* 时间轴自己的 4px 上下外边距会把底栏从 44px 顶到 52px；横屏单行底栏由控件本体撑高。 */
   margin-block: 0;
 }
 :is(.battle-playback.playback-workspace.pb-phone-landscape [data-test="pb-transport-controls"], .pb-root.playback-workspace.compact-bar .controls-content) > .pb-controls {

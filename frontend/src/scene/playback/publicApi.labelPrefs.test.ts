@@ -1,5 +1,3 @@
-// 名牌偏好改变车模 / 幽灵代理显隐：HIGH/ULTRA 动态反射必须显式强制刷新一次。
-// 只 invalidate() 时，dirty frame 可能落在 intervalFrames=2 的跳过帧，水面保留旧倒影。
 import { describe, expect, it, vi } from 'vitest'
 import { createPlaybackApi } from './publicApi'
 

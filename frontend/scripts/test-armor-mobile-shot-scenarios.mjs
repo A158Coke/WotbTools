@@ -2,13 +2,11 @@ import { Page } from './browser-page.mjs'
 import { FIXTURE_TANK_ID } from './browser-fixtures/fixture-asset-pack.mjs'
 import { armorLayoutProbe, check, checkCommonGeometry, rectsOverlap } from './test-armor-mobile-geometry.mjs'
 
-/** Real scene + deterministic GLB: verify default camera and the prominent shot controls without inspecting pixels. */
 export const SHOT_SCENARIOS = [
   { name: 'armor-shot-actions-mobile', width: 390, height: 844, touch: true },
   { name: 'armor-shot-actions-tablet', width: 1024, height: 768, touch: false },
   { name: 'armor-shot-actions-desktop', width: 1280, height: 800, touch: false },
 ]
-/** 射击复现夹具数据（sessionStorage 交接；runShotActionsScenario 与横屏场景共用同一份）。 */
 const FIXTURE_SHOT = {
   index: 1, time_s: 12, shooter_eid: 7, target_eid: 8, is_author: true,
   shooter_tank_id: FIXTURE_TANK_ID, target_tank_id: FIXTURE_TANK_ID,
@@ -92,7 +90,6 @@ export async function runShotActionsScenario(env, scenario, { trackPage, results
   await tapControl('#collision-btn')
   await tapControl('[data-testid="armor-tools"]')
   check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot toolbar must not create horizontal overflow')
-  // After integrating the readiness fix, real next/previous inputs must rebuild the scene and calculate once.
   for (const { label, index, damage } of [
     { label: '下一发', index: '2', damage: '200' },
     { label: '上一发', index: '1', damage: '100' },
@@ -116,8 +113,6 @@ export async function runShotActionsScenario(env, scenario, { trackPage, results
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/** 手机横屏射击复现页：沉浸态 + 流内「操作提示」节整节让位（竖屏 / 平板 / 桌面保留，由 runShotActionsScenario 锁定）。
-    Outside Judge 视口：844×390 / 780×360 / 740×360 / 600×320（844/780 按真机注入左右 safe-area）。 */
 export const SHOT_LANDSCAPE_SCENARIOS = [
   { name: 'armor-shot-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
   { name: 'armor-shot-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
@@ -126,8 +121,6 @@ export const SHOT_LANDSCAPE_SCENARIOS = [
   { name: 'armor-shot-landscape-667x375', width: 667, height: 375, touch: true },
   { name: 'armor-shot-landscape-915x412', width: 915, height: 412, touch: true },
 ]
-/** 单发分析页右下/左上 chrome 的几何快照：射击参数面板（#corner-tr）与视角切换
-    （#corner-br = .armor-shot-view-switch）必须两两不相交，且视角按钮是真实触控目标。 */
 function shotLandscapeProbe() {
   const box = (selector) => {
     const element = document.querySelector(selector)
@@ -147,7 +140,6 @@ function shotLandscapeProbe() {
     if (!element) return null
     const rect = element.getBoundingClientRect()
     const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2
-    // 触控派发（Input.dispatchTouchEvent）只收整数坐标：inside 按最终派发的取整坐标判定。
     const tx = Math.round(x), ty = Math.round(y)
     const hit = document.elementFromPoint(x, y)
     return {
@@ -191,8 +183,6 @@ function shotLandscapeProbe() {
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
   }
 }
-/** 抽屉遮挡探针（仅在抽屉展开时执行）：抽屉与右下 HUD 的真实交集区、交集内命中归属、
-    滚到抽屉底部后的最下方交互控件是否仍被抽屉自身命中。 */
 const drawerOcclusionProbe = () => {
   const box = (selector) => {
     const element = document.querySelector(selector)
@@ -231,8 +221,6 @@ const drawerOcclusionProbe = () => {
       inHud: !!el && !!(el.closest && el.closest('#corner-tr, .armor-shot-view-switch')),
     }
   })()
-  // 抽屉内容不一定溢出（滚不动也可断言）；在全部可见可交互控件里优先选
-  // 「中心已落入 HUD 覆盖区」的最下方一个做真实命中，否则退回最下方控件。
   let inRegionControl = null
   let bottomControl = null
   for (const el of drawerEl.querySelectorAll('button, input, select')) {
@@ -269,12 +257,7 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
     const { storeShotsForViewer } = await import('/src/scene/agentData.js')
     storeShotsForViewer(${JSON.stringify(FIXTURE_SHOTS)})
   })()`)
-  // compactAssets 资产包提供 /research/devices.json：缺它时 ArmorShotHud 不挂载，
-  // 右下就没有真实的射击参数面板可测（compact 场景同口径）。
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.compactAssets)}`)
-  // 回归夹具必须在真实 view-switch（查看弹着点 / 查看双方位置）出现后才测量遮挡：
-  // #932 的横屏夹具只等 scene ready，而普通装甲查看器 URL 下 #corner-br 是空的，
-  // 四盒断言测不到 shot 页右下的真实布局。
   await page.waitFor(() => !!document.querySelector('#world-view-toggle'),
     { timeout: 30000, label: 'real shot view-switch controls' })
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]'),
@@ -290,8 +273,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
     `${label}: 操作提示节没有在手机横屏让位（${JSON.stringify(layout.interactionHelp)}）`)
   check(failures, layout.shotHeader?.visible === true, `${label}: 射击复现顶栏丢失（${JSON.stringify(layout.shotHeader)}）`)
   checkCommonGeometry(failures, layout, label)
-  // 沉浸态悬浮菜单（.immersive-nav）不得盖住「返回射击分析」：包围盒不相交，
-  // 且返回键最左缘 / 中心的真实命中目标都是返回键自己（点击不会误开导航）。
   const backNav = await page.evaluate(`(() => {
     const back = document.querySelector('.armor-shot-back')
     const nav = document.querySelector('.immersive-nav')
@@ -309,9 +290,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
   check(failures, !backNav.missing && backNav.overlap === false && backNav.leftEdgeHit === true && backNav.centerHit === true,
     `${label}: 沉浸态菜单按钮遮挡了返回射击分析（${JSON.stringify(backNav)}）`)
   const shot = await page.probe(shotLandscapeProbe)
-  /** F1：四个 HUD 区域先显式断言存在且可见（缺失 = fail，而不是静默跳过对应互斥断言）；
-      shot 页姿态面板 #turret-controls 由场景隐藏（标注交给 3D），锁定其不可见契约后，
-      互斥检查覆盖全部实际可见盒。 */
   const assertShotGeometry = (snapshot, phase) => {
     for (const name of ['capsule', 'result', 'shotPanel', 'viewSwitch']) {
       check(failures, snapshot[name]?.visible === true,
@@ -331,7 +309,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
     }
     check(failures, snapshot.horizontalOverflow === false, `${label}${phase}: shot 页横屏出现横向溢出`)
   }
-  /** 真实触摸命中（不是只看截图）：两枚视角按钮 + HUD 弹种按钮 + 距离滑条必须是自己区域的真实命中目标。 */
   const assertTouchTargets = (snapshot, phase) => {
     for (const [name, target] of Object.entries({ relBtn: snapshot.relBtn, worldBtn: snapshot.worldBtn, hudShell: snapshot.hudShell, distanceInput: snapshot.distanceInput })) {
       check(failures, target?.visible === true && target.hit === true && target.inside === true,
@@ -340,8 +317,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
   }
   assertShotGeometry(shot, '')
   assertTouchTargets(shot, '')
-  // F3：HIT 默认已进入相对视角，此时点 relBtn 是 no-op（setImpactView 早期返回）。
-  // 真正的往返 = world → rel → world，每步都校验 aria-pressed 互斥与相机距离。
   const viewState = `(() => ({
     impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
     overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
@@ -356,9 +331,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
   await page.tap({ ...shot.worldBtn.center, touch: scenario.touch })
   await page.waitForValue(viewState, value => value.overview === 'true' && value.impact === 'false' && value.distance > 20,
     { timeout: 15000, label: 'overview restored after full round trip' })
-  // F2：射击复现结果卡保持默认收起（空间受限）；点开逐层明细后不得压到右下列，再点收起。
-  // 结果卡现在跟随世界命中点的屏幕投影（2026-11-16 用户裁示）：视图切换会改变卡片位置，
-  // tap 前必须重新测量并等锚点稳定；旧夹具复用切换前的 resultCenter 只在固定停靠版成立。
   const settleResultCard = () => page.evaluate(`new Promise((resolve) => {
     const started = performance.now()
     let prev = null
@@ -387,15 +359,10 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
   await page.tap({ ...expandedResult.resultCenter, touch: scenario.touch })
   await page.waitForValue(`!!document.querySelector('#traj-info.is-expanded, #click-info.is-expanded')`, value => value === false,
     { label: 'result details collapsed' })
-  // F2：参数面板展开/关闭（参数抽屉）后右下共享布局仍成立；关闭后重新执行几何与触摸命中。
   await page.tap({ ...layout.tools.center, touch: scenario.touch })
   await page.waitForValue(`document.querySelector('.armor-stage').className`, value => value.includes('is-tools-open'),
     { label: 'tools drawer open' })
   assertShotGeometry(await page.probe(shotLandscapeProbe), ' 参数展开')
-  // P2 抽屉层叠：抽屉是 #corner-tl 的后代，展开后必须绘制在右下 HUD 之上，
-  // 且被 HUD 覆盖区域内的抽屉控件仍能收到真实触摸（bounding box 断言证明不了绘制/命中顺序）。
-  // 先滚到抽屉底部；若最下方控件中心落在 HUD 盒之间的间隙，则逐步回滚把它带入
-  // 真实覆盖区（有界迭代，找到即停）。
   await page.evaluate(`(() => {
     const drawer = document.querySelector('#tank-selectors')
     if (drawer) drawer.scrollTop = drawer.scrollHeight
@@ -411,7 +378,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
     occlusion = await page.probe(drawerOcclusionProbe)
   }
   check(failures, occlusion.drawerVisible === true, `${label} 参数展开: 抽屉不可见（${JSON.stringify(occlusion.drawer)}）`)
-  // 交集必须真实存在，否则后面的命中断言是空集通过。
   check(failures, occlusion.regions.length > 0,
     `${label} 参数展开: 抽屉与右下 HUD 无实际交集，遮挡断言无效（drawer=${JSON.stringify(occlusion.drawer)}）`)
   check(failures, occlusion.sampleHit?.inDrawer === true && occlusion.sampleHit?.inHud === false,
@@ -420,7 +386,6 @@ export async function runShotLandscapeScenario(env, scenario, { trackPage, resul
     `${label} 参数展开: 抽屉最下方交互控件未落入 HUD 覆盖区域，控件命中断言无效（${JSON.stringify(occlusion.bottomControl)}）`)
   check(failures, occlusion.bottomControl?.hit === true,
     `${label} 参数展开: 抽屉内位于 HUD 覆盖区域的控件被 HUD 抢走触摸（${JSON.stringify(occlusion.bottomControl)}）`)
-  // 抽屉自带的关闭按钮（sticky 在抽屉头部）必须可操作：真实 tap 关闭抽屉。
   const closeProbe = await page.evaluate(`(() => {
     const el = document.querySelector('[data-testid="armor-tools-close"]')
     if (!el) return { present: false }

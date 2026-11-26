@@ -11,11 +11,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/**
- * Parameterized redaction coverage. Test secrets are synthetic values only;
- * assertion failures therefore never expose real credentials, prompts or
- * replay evidence.
- */
 class AiSecretRedactorTest {
 
     @ParameterizedTest

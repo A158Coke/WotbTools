@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-/**
- * Issue #827 F1/F2 — 台账统计与 D 项安全门禁表生成器。
- *
- * 统计单位 = test case（u:'case' 行）；u:'clause' 行附着到 case 不计数。
- * 稳定 ID = <文件slug>:<case起始行>（对台账行号取有界 floor）。
- *
- * 对齐基线固定为 Wave 0 快照 `source-text-inventory-wave0.json`：该文件由**修正后的
- * 分类器**在历史提交 67fdb2be 的源码树上重新生成，保留历史行号，但不冻结旧分类器的
- * 漏判（shorthand/正则切块/toContain/包装器读取变量）。当前树 inventory 只服务探针，
- * 不与历史台账混用。
- *
- * 映射使用**完整 baseline cases**（不只 textAssertion=true）：改写后的行为测试仍是
- * 台账行的正确落点；若 floor 距离超出容差则记未映射单行，不能向前借用无关 text case。
- * 未映射单行独立计数，不混入 R/K/D；同一 case 跨处置进独立冲突清单。
- * D 项无接替者证据 → BLOCKED，不允许删除；validation_status 初始 PENDING。
- */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +15,10 @@ for (const f of inv.files) {
   fileBySlug.set(slug, f);
 }
 
-/** 单行：完整 cases 的有界 floor；超出容差返回 null（不得向前借用无关 case）。 */
 function mapSingleCase(cases, from) {
   const floor = cases.filter((x) => x.line <= from).at(-1);
   return floor && (from - floor.line <= TOL) ? [floor.id] : null;
 }
-/** 区间：完整 cases 在 [from-TOL, to] 内的 case。 */
 function mapRangeCases(cases, from, to) {
   return cases.filter((x) => x.line >= from - TOL && x.line <= to).map((x) => x.id);
 }
@@ -44,8 +26,8 @@ function mapRangeCases(cases, from, to) {
 const anomalies = [];
 const perFile = [];
 const coveredSlugs = new Set();
-const globalCases = new Map();   // `${file}:${id}` -> Set(disposition)
-const nonTextMappings = [];      // 映射到行为（非文本）case 的台账行，人工确认
+const globalCases = new Map();
+const nonTextMappings = [];
 
 for (const b of blocks) {
   const f = fileBySlug.get(b.file);
@@ -56,7 +38,7 @@ for (const b of blocks) {
   const byId = new Map(allCases.map((c) => [c.id, c]));
   const counts = { R: 0, K: 0, D: 0, PK: 0 };
   const seenIds = { R: new Set(), K: new Set(), D: new Set(), PK: new Set() };
-  const caseDisp = new Map();   // id -> Set(disposition)
+  const caseDisp = new Map();
   let clauseRows = 0;
   let unmappedRows = 0;
   let unmappedCases = 0;
@@ -88,7 +70,6 @@ for (const b of blocks) {
     } else {
       const id = unique[0];
       if (!id) {
-        // 未映射 / 超出容差的单行：单独计数，不能混入 R/K/D 总数。
         unmappedCases++;
       } else if (!seenIds[d].has(id)) {
         counts[d] += 1;
@@ -113,7 +94,6 @@ for (const b of blocks) {
   });
 }
 
-// review 指定三例的映射断言（sceneryMaterials:1127/1305/1373）
 const REQUIRED_MAPPINGS = [
   ['sceneryMaterials.test', 1128, 'sceneryMaterials:1127'],
   ['sceneryMaterials.test', 1306, 'sceneryMaterials:1305'],
@@ -128,7 +108,6 @@ for (const [file, line, expected] of REQUIRED_MAPPINGS) {
   }
 }
 
-// 台账未覆盖的 text 文件（scope 缺口，按台账同一 baseline 统计）
 const scopeGaps = inv.files
   .filter((f) => f.textAssertionCases > 0)
   .map((f) => ({ file: f.testFile, n: f.textAssertionCases }))

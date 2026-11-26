@@ -9,7 +9,6 @@ const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['summer
   { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'summer', fullscreen: true, fullscreenTransition: true }]
 let onboardingServer = null
 async function runOnboardingScenario(env, scenario) {
-  // Actual pinned WASM and the actual sample: only the external auth/profile boundary is stubbed.
   if (!onboardingServer) onboardingServer = await startFixtureServer({ realReplay: true })
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
@@ -102,7 +101,6 @@ async function runOnboardingScenario(env, scenario) {
       check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'onboarding-next',
         `node ${node + 1} Next click must reach the teaching card`)
     }
-    // 3D remains explicitly user-started; browser gate checks teaching/navigation, not GPU appearance.
     if (!skippedInFullscreen) {
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-replay', { label: '3D guide destination' })
       if (scenario.fullscreenTransition) {
@@ -114,8 +112,6 @@ async function runOnboardingScenario(env, scenario) {
             guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
         })()`)
         if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
-        // 紧凑形态的镜头在 Display 面里：真实点「开始」后教程自动推进，必须自己把面打开，目标才存在
-        // 原地点：先滚到屏幕正中会把按钮送到教程卡片下面，真实用户不会这样滚
         const startPoint = await page.evaluate(`(() => {
           const button = document.querySelector('[data-test="replay3d-start"]')
           const r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
@@ -187,7 +183,6 @@ async function runOnboardingScenario(env, scenario) {
   results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
 }
 
-// #727：真实 MenuButton + 当前三项导出文案；短视口在上下两侧都放不下整个菜单。
 const MENU_VIEWPORT_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { width: 360, height: 640, touch: true },
   { width: 740, height: 360, touch: true },
@@ -241,7 +236,6 @@ async function runMenuViewportScenario(env, scenario) {
   await open()
   await checkBounds()
   if (failures.length) throw new Error(failures.join('\n'))
-  // 键盘导航本身必须把末项/首项滚入可用区；不能靠测试先 scrollIntoView 掩盖它。
   for (const [name, code, item] of [['End', 35, 'png'], ['Home', 36, 'aggregate']]) {
     await key(name, code)
     await page.waitForValue(`document.activeElement?.dataset.testid`, value => value === `menu-${item}`)
@@ -253,7 +247,6 @@ async function runMenuViewportScenario(env, scenario) {
   await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
   await page.waitForValue('document.activeElement?.dataset.testid', value => value === 'menu-trigger')
 
-  // 每一项都用原始触摸/鼠标选择；回调结果和菜单关闭共同证明事件真正到达。
   for (const item of ['aggregate', 'each', 'png']) {
     await open()
     await page.evaluate(`document.querySelector('[data-testid=menu-${item}]').scrollIntoView({block:'nearest'})`)
@@ -264,7 +257,6 @@ async function runMenuViewportScenario(env, scenario) {
     await page.waitForValue('document.querySelector("[data-testid=menu-selected]")?.textContent', value => value === item)
     await page.waitForValue('!document.querySelector("[role=menu]")', Boolean)
   }
-  // 菜单打开时缩短并恢复视口，覆盖浏览器可用空间动态变化；不声称模拟真实软键盘。
   if (scenario.height > 240) {
     await open()
     for (const height of [240, scenario.height]) {

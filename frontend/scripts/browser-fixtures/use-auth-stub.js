@@ -1,18 +1,6 @@
 import { computed, ref } from 'vue'
 
-/**
- * Browser fixture for the auth boundary. The page, router, AppShell, ReplayWorkspace and CSS
- * remain production code; only Keycloak's network/runtime boundary is replaced.
- *
- * Query contract:
- *   ws-auth=0|1                 -> unauthenticated / authenticated result
- *   ws-auth-init=resolve-authenticated|resolve-unauthenticated|reject|pending
- *   ws-auth-retry-init=<mode>   -> result used by retryAuth()
- *   ws-auth-timeout-ms=<ms>     -> shortens the fixture watchdog for browser tests
- *   ws-login=resolve|reject     -> login() success / provider rejection
- */
 const params = new URLSearchParams(window.location.search)
-// Other interaction scenarios start after onboarding. Only named guide scenarios exercise invitations.
 const onboardingCase = params.get('ws-onboarding')
 if (onboardingCase) {
   if (sessionStorage.getItem('ws-onboarding-case') !== onboardingCase) {
@@ -125,11 +113,6 @@ function startInit(mode) {
   return publicPromise
 }
 
-/**
- * 与真实 composable 一致：`initPromise` 只表示 bootstrap **落定**这个事件，不携带登录态。
- * 它 resolve 的一律是 undefined —— 登录态只能读 `isAuthenticated()` / `authenticated`
- * （读历史值正是 Android 2.1.0 logout 后 Profile 停在「正在初始化登录…」的原因）。
- */
 async function initAuth() {
   await (currentPromise || startInit(initialMode))
 }
@@ -169,9 +152,7 @@ function hasRole(role) {
   const roles = tokenParsed.value?.realm_access?.roles
   return Boolean(role) && Array.isArray(roles) && roles.includes(role)
 }
-/** 与真实 composable 一致：后台角色边界，Replay Workspace 不依赖此角色。 */
 const isAdmin = computed(() => hasRole('wotbtools-admin'))
-/** 与真实 composable 一致：名人堂审核权限（侧边栏管理组按它显示"名人堂管理"）。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
 export function leagueBroadcastAdminAllowed(auth = useAuth()) {
@@ -190,7 +171,6 @@ export function contentAdminAllowed(auth = useAuth()) {
     && roles.includes('content-admin')
 }
 const isContentAdmin = computed(() => contentAdminAllowed({ authenticated, tokenParsed }))
-/** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
 function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }
 function token() { return authenticated.value ? 'fixture-access-token' : '' }
 async function ensureToken() { return authenticated.value }

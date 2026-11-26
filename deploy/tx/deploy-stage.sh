@@ -13,10 +13,6 @@ stage_and_validate() {
   [ -f "$INCOMING_DIR/runtime-check-lib.sh" ] || die "staged TX deployment tree is missing runtime-check-lib.sh."
   if is_selected wotb-frontend; then
     [ -f "$INCOMING_DIR/nginx/frontend.conf.template" ] || die "staged TX deployment tree is missing frontend nginx template."
-    # The AI route is a routing boundary, not a tuning detail: it must stay a
-    # more-specific ^~ prefix ahead of the generic /api/ route, must proxy to the
-    # Yecao upstream without rewriting the path (public and controller paths are both
-    # /api/ai/...), and the generic /api/ route must remain on the TX business runtime.
     grep -Fq 'location ^~ /api/ai/ {' "$INCOMING_DIR/nginx/frontend.conf.template" \
       || die "staged TX frontend template is missing the /api/ai/ route to the standalone AI service."
     grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$INCOMING_DIR/nginx/frontend.conf.template" \
@@ -37,8 +33,6 @@ stage_and_validate() {
       || die "staged TX Alloy config validation failed; live TX deployment was not changed."
   fi
   if is_selected wotb-frontend; then
-    # Android releases are optional runtime content. Sponsor QR content is not a
-    # host mount anymore (published to the object-storage asset plane).
     mkdir -p "$TX_RUNTIME_ROOT/android-release"
   fi
   export TX_RUNTIME_ROOT

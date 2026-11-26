@@ -24,7 +24,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 百场管理 HTTP 参数绑定与审批契约（安全边界由 SecurityConfigTest 覆盖）。 */
 class HundredBattleAdminControllerTest {
 
     @AfterEach

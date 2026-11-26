@@ -18,13 +18,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Canonical playback combat reconstruction.
- *
- * <p>HP loss is derived only from trustworthy observed current-HP samples. Destroyed/death is derived
- * independently from {@link ReplayTerminalLifecycle}; this is essential for positive-HP drowning and
- * terminal sentinels that are not HP=0.</p>
- */
 public final class PlaybackCombatReconstruction {
 
     public static final double KILL_BACKING_WINDOW_SEC = 0.25;
@@ -78,7 +71,6 @@ public final class PlaybackCombatReconstruction {
             return new Result(losses, List.of());
         }
 
-        // Canonical current-HP samples only. Terminal sentinels are intentionally not rewritten to HP=0.
         final Map<Long, List<double[]>> samples = new HashMap<>();
         final Map<Long, List<double[]>> damagesByVictim = new HashMap<>();
         final Map<Long, List<double[]>> unsupportedByVictim = new HashMap<>();
@@ -104,9 +96,6 @@ public final class PlaybackCombatReconstruction {
                 samples.computeIfAbsent(account, k -> new ArrayList<>())
                         .add(new double[]{t, current});
             } else if (event instanceof VehicleHitEvent hit) {
-                // method8 is a hit/result-feedback family (VehicleHitEvent), NOT a damage number.
-                // A proven hit is the attacker→victim engagement signal for attribution; authoritative HP
-                // loss is derived from the Type7 samples (above), never from a method8 magnitude.
                 if (hit.confidence() != DecodeConfidence.EXACT) {
                     continue;
                 }
@@ -124,7 +113,6 @@ public final class PlaybackCombatReconstruction {
                 damagesByVictim.computeIfAbsent(victim, k -> new ArrayList<>())
                         .add(new double[]{t, attacker});
             } else if (event instanceof DamageEvent damage) {
-                // legacy DamageEvent consumers (non-method8 sources, if any) keep attribution semantics.
                 if (damage.damage() <= 0) {
                     continue;
                 }
@@ -173,8 +161,6 @@ public final class PlaybackCombatReconstruction {
 
         deriveLosses(samples, damagesByVictim, unsupportedByVictim, unsupportedUnresolved, losses);
 
-        // Final live terminal state per account is the only destroyed authority. Same-clock terminal beats
-        // positive HP; a strictly later alive/rematerialization state negates an earlier terminal.
         final Map<Long, ReplayTerminalLifecycle.Evidence> finalLifecycle =
                 ReplayTerminalLifecycle.finalStateByAccount(
                         events, mapping, battleStartRawClockSec, battle);
@@ -258,7 +244,6 @@ public final class PlaybackCombatReconstruction {
         }
     }
 
-    /** Collapse exact same-clock duplicate HP mirrors; conflicting values make that clock unusable. */
     private static List<double[]> collapseSameClockDuplicates(final List<double[]> source) {
         final List<double[]> out = new ArrayList<>();
         int i = 0;

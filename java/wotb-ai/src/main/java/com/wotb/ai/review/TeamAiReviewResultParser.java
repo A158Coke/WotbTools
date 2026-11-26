@@ -9,12 +9,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Technical parser for Team AI Review.
- *
- * <p>The parser never changes tactical text. It only validates the wire shape and
- * deterministically removes or clears unsupported optional references.</p>
- */
 public final class TeamAiReviewResultParser {
 
     public static final int MAX_EPISODES = 6;
@@ -22,7 +16,6 @@ public final class TeamAiReviewResultParser {
     public static final int MAX_HIGH_CONTRIBUTORS = 2;
     public static final int MAX_TRAINING_SUGGESTIONS = 12;
 
-    /** Bounded UTF-16 envelope for one provider completion (8192 output tokens by default). */
     private static final int MAX_PROVIDER_OUTPUT_CHARS = 256_000;
     private static final int MAX_SUMMARY_CHARS = 4_000;
     private static final int MAX_ANALYSIS_CHARS = 8_000;
@@ -356,7 +349,6 @@ public final class TeamAiReviewResultParser {
             normalizations = normalizations == null ? List.of() : List.copyOf(normalizations);
         }
 
-        /** Backward-compatible coarse accessor for older callers/tests. */
         public Failure failure() {
             return failures.isEmpty() ? null : failures.getFirst().code();
         }
@@ -373,15 +365,6 @@ public final class TeamAiReviewResultParser {
             return status == ParseStatus.VALID_WITH_NORMALIZATION;
         }
 
-        /**
-         * Returns whether deterministic normalization still produced the minimum
-         * structured result needed by the Team Call #2 consumer.
-         *
-         * <p>Optional sections and optional references may be dropped. The summary
-         * and the preferred episodes root sections are the minimum contract; a
-         * response missing either cannot be made useful locally and must use the
-         * bounded recovery path.</p>
-         */
         public boolean usable() {
             if (result == null) {
                 return false;

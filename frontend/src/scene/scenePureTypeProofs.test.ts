@@ -1,4 +1,3 @@
-// Wave C（#741）C1 批次的编译期负向证明：锁定「过去 JS 能静默接受的错误数据形状，
 // 现在 TypeScript 会在编译期拦截」。@ts-expect-error 只出现在本测试文件中（类型迁移契约）。
 import { describe, expect, it } from 'vitest'
 import { impactKind } from './impactKind.js'
@@ -10,7 +9,6 @@ import { activeVariantOf, pruneForeignVariants, type VariantPruneNode } from './
 
 describe('C1 纯函数边界的编译期负向证明', () => {
   it('impactKind：命中分型只接受三类字面量 + null，game_hit_result 不能传字符串', () => {
-    // JS 时代 game_hit_result: '3' 会在 r === 3 的严格比较下静默走 null 分支（不生成特效也不报错）
     // @ts-expect-error — negative compile proof: game_hit_result 只接受 number
     const mismatched = impactKind({ target_eid: 1, game_hit_result: '3' })
     expect(mismatched).toBeNull()
@@ -46,7 +44,6 @@ describe('C1 纯函数边界的编译期负向证明', () => {
   })
 
   it('reloadBar：ShellState 判别集合与逐发状态数组契约', () => {
-    // 开火后未有任何装填事件补弹：1 发在膛、2 发等整夹重装（unknown≠full 由 hasReloadTelemetry 另测）
     const states = shellStatesAt(
       [{ clock: 1, eid: 7, phase: 3, duration_s: 5, count: 2 }],
       [2],

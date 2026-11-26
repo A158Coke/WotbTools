@@ -28,7 +28,6 @@ public class ObservabilityController {
     @PostMapping(value = ApiPaths.OBSERVABILITY_EVENTS, consumes = "application/json")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void record(final HttpServletRequest request, @AuthenticationPrincipal final Jwt jwt) throws IOException {
-        // Read at most the limit plus one byte, including chunked bodies, before parsing JSON.
         service.accept(request.getInputStream().readNBytes(16_385), jwt, clientSource.resolve(request));
     }
 

@@ -51,22 +51,18 @@ describe('perspectiveScore（顶栏比分与血条同一阵营视角）', () => 
   })
 
   it('friendlyTeam 未知（0/null）：不建立视角，比分归零（unknown ≠ enemy）', () => {
-    // 与 teamHpTotals（两队血量都算 0）、pointsAt（friend/enemy 都是 null）同口径：
-    // 视角未知时不得把物理 team1 当「己方」上屏——那会被 HUD 染成 ally/enemy 两色
     expect(perspectiveScore(3, 1, 0)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
     expect(perspectiveScore(3, 1, null)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
     expect(perspectiveScore(3, 1, undefined)).toEqual({ scoreFriend: 0, scoreEnemy: 0 })
   })
 
   it('perspective 对齐：friendlyTeam = 2 时，左侧血桶与左侧比分都来自 team 2', () => {
-    // 顶栏布局：己方 HP | 己方比分 : 敌方比分 | 敌方 HP —— 两者必须同一视角
     const vehicles = [vehicle(1, 100, 1000), vehicle(1, 200, 1000), vehicle(2, 700, 800)]
-    const totals = teamHpTotals(vehicles, 2)              // team 2 是己方
-    const score = perspectiveScore(3, 1, 2)               // 物理：team1 杀 3、team2 杀 1
-    expect(totals.hpFriend + totals.hpFriendMax).toBe(1500)   // 左侧血量总量 = team 2
-    expect(score.scoreFriend).toBe(1)                          // 左侧比分 = team 2 的击杀
-    expect(score.scoreEnemy).toBe(3)                           // 右侧比分 = team 1
-    // 直接对照：己方血量桶的 max 必须来自 team 2（与 scoreFriend 同队）
+    const totals = teamHpTotals(vehicles, 2)
+    const score = perspectiveScore(3, 1, 2)
+    expect(totals.hpFriend + totals.hpFriendMax).toBe(1500)
+    expect(score.scoreFriend).toBe(1)
+    expect(score.scoreEnemy).toBe(3)
     expect(totals.hpFriendMax).toBe(800)
     expect(totals.hpEnemyMax).toBe(2000)
   })

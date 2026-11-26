@@ -37,19 +37,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 百场 APPROVE 的 CURRENT replacement 真实 PostgreSQL 集成测试。
- * 必须经过 V22 partial unique index（wotb_server, wotb_account_id, vehicle_id) where status='CURRENT'：
- * 旧 CURRENT 先显式 flush 为 SUPERSEDED，再提升 PENDING 为 CURRENT；单事务内后半段失败整体回滚。
- */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class HundredBattleSubmissionIntegrationTest {
 
-    /** HoF ownership 的 canonical owner：两人同车不冲突，同 (区服, 账号) 同车才唯一。 */
     private static final long WOTB_ACCOUNT_ID = 111L;
     private static final String WOTB_SERVER = "CN";
-    /** 同一账号 ID 在另一区服 = 另一个账号。 */
     private static final String OTHER_SERVER = "EU";
 
     @Container
@@ -89,13 +82,11 @@ class HundredBattleSubmissionIntegrationTest {
 
     @BeforeEach
     void clean() {
-        // evidence 行有 FK RESTRICT → 先清 evidence 再清 submission
         evidenceRepository.deleteAll();
         repository.deleteAll();
         repository.flush();
     }
 
-    /** 插入一条归属 (WOTB_SERVER, WOTB_ACCOUNT_ID) 的记录。 */
     private HundredBattleSubmission insertRow(final String status, final int damage, final int battles) {
         return insertRow(WOTB_SERVER, status, damage, battles);
     }
@@ -105,7 +96,7 @@ class HundredBattleSubmissionIntegrationTest {
                                               final int damage,
                                               final int battles) {
         final HundredBattleSubmission s = new HundredBattleSubmission();
-        s.setVehicleId(385L); // Progetto 65 (Tier X)
+        s.setVehicleId(385L);
         s.setVehicleName("Progetto 65");
         s.setWotbServer(server);
         s.setWotbAccountId(WOTB_ACCOUNT_ID);
@@ -132,7 +123,6 @@ class HundredBattleSubmissionIntegrationTest {
                 server, WOTB_ACCOUNT_ID, List.of("CURRENT")).size();
     }
 
-    /** 场景 A：existing CURRENT(4000) + PENDING(4200) → approve 成功 → 恰好一个 CURRENT、旧行 SUPERSEDED。 */
     @Test
     void approveReplacesCurrentWithSingleCurrentRow() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
@@ -154,11 +144,6 @@ class HundredBattleSubmissionIntegrationTest {
                 .orElseThrow().getId());
     }
 
-    /**
-     * 场景 A2：区服是 canonical owner 的一半。(CN, 111) 已有 CURRENT 时，
-     * (EU, 111) 同车必须能各自持有自己的 CURRENT——partial unique index 不得把跨服同号视为冲突，
-     * approve 也不得把另一区服的 CURRENT 顶成 SUPERSEDED。
-     */
     @Test
     void sameAccountOnAnotherServerKeepsItsOwnCurrentRow() throws Exception {
         final HundredBattleSubmission cnCurrent = insertRow(WOTB_SERVER, "CURRENT", 4000, 150);
@@ -177,19 +162,12 @@ class HundredBattleSubmissionIntegrationTest {
         assertEquals(2, repository.count(), "跨服同号必须是两条互不覆盖的记录");
     }
 
-    /**
-     * 场景 B：提升 PENDING 为 CURRENT 之后制造事务失败（approved_by 超长 varchar(64) →
-     * saveAndFlush(submission) 抛 DataIntegrityViolationException）→ 整个事务 rollback：
-     * 旧行仍 CURRENT、PENDING 无半完成状态、CURRENT 数量不变。
-     */
     @Test
     void approveRollbackKeepsOldCurrentAndPendingUnchanged() throws Exception {
         final HundredBattleSubmission current = insertRow("CURRENT", 4000, 150);
         final HundredBattleSubmission pending = insertRow("PENDING", 4200, 150);
         pending.setProofScreenshot("data:image/png;base64,AAAA");
         repository.saveAndFlush(pending);
-        // 通过 APPROVE 前置 evidence 校验（否则会先被 HUNDRED_INCOMPLETE_REVIEW_EVIDENCE 拦截，
-        // 测不到 approved_by 溢出导致的 rollback 场景）：附 5 完整 evidence + 物理文件
         attachCompleteEvidence(pending.getId());
 
         assertThrows(DataIntegrityViolationException.class,
@@ -205,14 +183,6 @@ class HundredBattleSubmissionIntegrationTest {
         assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(pending.getId()).size());
     }
 
-    /**
-     * Evidence 全生命周期（真实 PG + 真实文件系统，storage 目录 data/replays-it）：
-     * storeAll 落盘 5 文件 → attach 恰好 5 行（slot 1..5）→ admin list/download 可读 →
-     * REJECT 后清空截图、删除 metadata，并清理无引用物理文件。
-     * createSubmission 的 facts 解析/校验部分由单元测试覆盖
-     * （{@code HundredSubmissionValidationTest}/{@code HundredSubmissionTestSupport}，用 {@code testsupport/ReplayFactsJson} 构造客户端结算事实；
-     * 服务器没有 parser，不存在 ReplayParser mock）。
-     */
     @Test
     void evidencePersistenceRoundTripAndRejectCleanup() throws Exception {
         final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
@@ -229,7 +199,6 @@ class HundredBattleSubmissionIntegrationTest {
         evidenceService.storeAll(replays);
         evidenceService.attach(s.getId(), replays);
 
-        // 恰好 5 行 + slot 顺序 + 物理文件存在（DB 引用 H ⇒ 物理 H 存在）
         final List<HundredBattleReplayEvidence> rows =
                 evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId());
         assertEquals(5, rows.size());
@@ -240,7 +209,6 @@ class HundredBattleSubmissionIntegrationTest {
                     "evidence 物理文件必须存在: " + row.getSha256());
         }
 
-        // admin list 元数据 + 下载原始字节
         final List<HundredReplayEvidenceDto> dtos = evidenceService.adminListEvidence(s.getId());
         assertEquals(5, dtos.size());
         assertEquals("battle-3.wotbreplay", dtos.get(2).originalFilename());
@@ -259,7 +227,6 @@ class HundredBattleSubmissionIntegrationTest {
         }
     }
 
-    /** 给 PENDING 附 exactly 5 行 evidence + 物理文件（通过 APPROVE 前置校验用）。 */
     private void attachCompleteEvidence(final long submissionId) throws Exception {
         final List<HundredReplayEvidenceService.PendingReplay> replays = new ArrayList<>();
         for (int i = 1; i <= 5; i++) {
@@ -280,10 +247,6 @@ class HundredBattleSubmissionIntegrationTest {
         }
     }
 
-    /**
-     * Blocker：legacy PENDING（无 replay evidence）无法 APPROVE——backend authoritative 拒绝，
-     * status 保持 PENDING、不产生 CURRENT、evidence 无残留。
-     */
     @Test
     void approveRejectsLegacyPendingWithoutEvidence() {
         final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);
@@ -298,10 +261,6 @@ class HundredBattleSubmissionIntegrationTest {
         assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty());
     }
 
-    /**
-     * Blocker：完整审核证据（screenshot + exactly 5 evidence + 5 物理文件）才允许 APPROVE；
-     * 成功后清空截图、删除 evidence 行，并清理无引用物理文件。
-     */
     @Test
     void approveWithCompleteEvidenceSucceedsAndCleansEvidence() throws Exception {
         final HundredBattleSubmission s = insertRow("PENDING", 4200, 150);

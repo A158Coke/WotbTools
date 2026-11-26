@@ -54,7 +54,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** Real PostgreSQL coverage for tournament CSV import, replacement, and audit contracts. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class TournamentCsvIntegrationTest {
@@ -229,7 +228,6 @@ class TournamentCsvIntegrationTest {
         final var orphan = group(id, 1, 1, 1, 99, "A", "B", "C");
         final var original = group(id, 1, 1, 1, 0, "A", "B", "C");
         save(id, 1, 1, List.of(original), List.of("A", "B", "C")); publish(id, 1, 1, "screenshot");
-        // Isolate the CSV replacement's reference, including snapshots without a legacy publication audit.
         jdbc.update("delete from tournament_audit where event_id=? and action='DAY_PUBLISHED'", id);
         final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
         service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "replace-screenshot");
@@ -238,7 +236,6 @@ class TournamentCsvIntegrationTest {
         assertEquals(1, ((Number) oldDay.get("roundNumber")).intValue()); assertEquals(1, ((Number) oldDay.get("dayNumber")).intValue());
         final var oldGroup = (Map<?, ?>) ((List<?>) oldDay.get("groups")).getFirst();
         assertEquals(original.evidenceId(), oldGroup.get("evidenceId"));
-        // CSV row/standing payloads are not evidence sources, even if they contain a matching field.
         jdbc.update("update tournament_audit set before_state=jsonb_set(before_state,'{standings,evidenceId}',to_jsonb(cast(? as text))), after_state=jsonb_set(after_state,'{evidenceId}',to_jsonb(cast(? as text))) where id=?",
                 orphan.evidenceId(), orphan.evidenceId(), imported.id);
         assertEquals(List.of(original.evidenceId()), audits.findEvidenceIdsByEventId(id));

@@ -1,16 +1,3 @@
-/**
- * Agent 回放数据消费接口测试（契约 v2）。
- *
- * 契约 v2 = 独立能力（Result / Playback / Shots），giant envelope 与 HofFacet 已从
- * Agent 公开面拆除（breaking，评审 P0-1）。本文件锁定：
- * - 结果能力轻校验（花名册齐备 + 不得物化时序键——"Result-only 不 materialize
- *   Playback"的消费侧镜像）；
- * - Playback 校验（version 锁定 + 数组齐备）；
- * - shots 全局重编号（上游 /api/replay/shots 同规则）；
- * - HoF = BattleResult 的消费方投影（字段映射与上游 HofFacet.from_settlement 逐项
- *   对齐——职责移入消费方，映射语义不变）；
- * - 旧接口（giant envelope 装载 / validateAgentFacetEnvelope）不复存在。
- */
 
 import { describe, expect, it } from 'vitest'
 
@@ -217,20 +204,12 @@ describe('时序能力（PlaybackData 校验）', () => {
     })).toThrow(/reload_effective\[0\]\.duration_s/)
   })
 
-  /**
-   * raw `reloads[]` = producer 的原始透传（arena update subtype 15/16/17 的原始 f3）。
-   * producer **没有**「正时长」invariant：真实 `cw-training-15-14-example.wotbreplay`
-   * 就含 `duration_s: -0.03939394`（`reloads[50]`，phase=4 的时长变更差值）。
-   * trust boundary 只锁定 producer 真正保证的线形状 = **`null` 或有限数值**；
-   * `> 0` 是消费方（`scene/reloadBar.js#isUsablePhase`）的语义规则，不得提升成 wire contract。
-   */
   it('raw reloads[].duration_s（v0.3.9 producer 原始透传）：null / 0 / 负 finite / 正 finite 全部接受', () => {
     const cases: Array<number | null> = [null, 0, -0.03939394, -3, 0.89, 8]
     for (const duration_s of cases) {
       const pb = minimalPlayback()
       ;(pb as Record<string, unknown>).reloads = [{ clock: 10, eid: 7, phase: 3, duration_s, count: null }]
       const validated = validateAgentPlayback(pb)
-      // 忠实保留：trust boundary 不得改写 / 丢弃原始 producer 事实
       expect(validated.reloads?.[0].duration_s, `duration_s=${String(duration_s)}`).toBe(duration_s)
     }
   })
@@ -272,10 +251,6 @@ describe('时序能力（PlaybackData 校验）', () => {
     }
   })
 
-  /**
-   * `reload_effective[]`（method 35）与 raw `reloads[]` 不是同一个东西：它表示「当前生效的
-   * **完整装填配置时长**」，`finite && > 0` 是 producer 自己的 invariant——这里继续严格锁定。
-   */
   it('reload_effective[].duration_s（method 35）保持严格：finite 且 > 0', () => {
     const base = { clock: 14, eid: 7 }
     const rejects: Array<[unknown, RegExp]> = [
@@ -293,7 +268,6 @@ describe('时序能力（PlaybackData 校验）', () => {
         reload_effective: [{ ...base, duration_s }],
       }), `duration_s=${String(duration_s)}`).toThrow(pattern)
     }
-    // method 35 只存在于本方；`eid` 越界同样 fail closed
     expect(() => validateAgentPlayback({
       ...minimalPlayback(),
       reload_effective: [{ clock: 14, eid: -1, duration_s: 4 }],
@@ -303,7 +277,6 @@ describe('时序能力（PlaybackData 校验）', () => {
   it('单基地键（v0.3.1）：缺省合法、assault_bases 非数组拒绝、objective 非布尔拒绝', () => {
     const ok = validateAgentPlayback(minimalPlayback())
     expect(ok.assault_bases).toBeUndefined()
-    // 目标存在性独立于进度：只有 objective 没有 bases 也合法（无占领活动的单基地场次）
     const objOnly = minimalPlayback()
     ;(objOnly as Record<string, unknown>).assault_objective_present = true
     expect(validateAgentPlayback(objOnly).assault_objective_present).toBe(true)
@@ -327,7 +300,6 @@ describe('时序能力（PlaybackData 校验）', () => {
 })
 
 describe('独立炮塔实体（PlaybackData additive，原始轨迹边界）', () => {
-  // 合成实体与坐标；不持久化用户回放中的实体/账号/轨迹。
   function turret(): api.AgentDetachedTurretTrack {
     return {
       eid: 101,
@@ -509,7 +481,6 @@ describe('复活生命轨道（PlaybackData additive，上游 v0.4.8）', () => 
       expect(() => validateAgentPlayback(lifePlayback({ death_times: times })))
         .toThrow(/vehicles\[0\]\.death_times/)
     }
-    // 同刻允许（非降序）：边界只拦下不可能的生命史，不为上游排序保证代替 fail
     expect(() => validateAgentPlayback(lifePlayback({ death_times: [10, 10] }))).not.toThrow()
   })
 })
@@ -557,17 +528,16 @@ describe('projectHoF（BattleResult 的消费方投影；上游 HofFacet.from_se
       tank_id: 1,
       damage_dealt: 2000,
       damage_blocked: 300,
-      damage_assisted_spot: 250,   // damage_assisted_1
-      damage_assisted_track: 120,  // damage_assisted_2
-      kills: 2,                    // n_enemies_destroyed
+      damage_assisted_spot: 250,
+      damage_assisted_track: 120,
+      kills: 2,
       n_shots: 10,
-      n_hits: 6,                   // n_hits_dealt
-      n_penetrations: 4,           // n_penetrations_dealt
+      n_hits: 6,
+      n_penetrations: 4,
       survived: true,
-      xp: 900,                     // base_xp
+      xp: 900,
       credits: 50000,              // credits_earned
     })
-    // 无对应结算值 → 键不存在（unknown ≠ 0；undefined 键不序列化）
     expect('killer_id' in p1).toBe(false)
     expect(p2.killer_id).toBe(7)
   })
@@ -594,17 +564,7 @@ describe('契约 v2 边界（评审 P0-1 验收的消费侧锁定）', () => {
   })
 })
 
-// ---------- AiReview 信任边界：hp_state 两条口径（当前 producer / legacy 兼容） ----------
 
-/**
- * `hp_state` 的两条路径在信任边界必须分开（本 PR 的 blocker）：
- *
- *  - `current-producer`（= `parseAgentAiReviewFromBytes`，当前正式 pin v0.4.9 的 WASM 路径）：
- *    `damage`/`health.hp_state` **必填**。producer 漂移（字段消失）必须 fail closed——静默回退
- *    legacy 会把 0xFFFE 档弹药架殉爆重新判成存活（正是本 PR 修的 bug）。
- *  - `legacy-compatible`（旧 artifact / 旧 JSON fixture / 显式 legacy 摄入）：字段可缺省，
- *    缺省即 legacy raw 分类（仅 0/0xFFFD 终态，其余负值仍是未证明哨兵）。
- */
 describe('AiReview 信任边界（hp_state：current-producer 必填 / legacy 可缺省）', () => {
   function minimalAiReview(events: unknown[]): Record<string, unknown> {
     return {
@@ -630,13 +590,11 @@ describe('AiReview 信任边界（hp_state：current-producer 必填 / legacy �
   const damageEvent = (over: Record<string, unknown> = {}) =>
     ({ type: 'damage', t: 20, victim_eid: 21, hp: 0, hp_raw: 0xfffe, hp_state: 'terminal', source_eid: 22, cause: 0, ...over })
 
-  /** 去掉 hp_state 键（缺省 = 旧产物线形状；undefined 键与"不发送"在 JSON 上等价，这里显式删除更贴近产物） */
   const withoutState = (e: Record<string, unknown>) => {
     const { hp_state: _state, ...rest } = e
     return rest
   }
 
-  /** canonical 层对最后一条 health 事件的分类（legacy 路径要走真分类，不只是形状检查） */
   function sampleOf(events: unknown[]) {
     const facet = validateAgentAiReview(minimalAiReview(events), 'legacy-compatible')
     const facts = buildCanonicalReplayFacts({ aiReview: facet })!
@@ -673,9 +631,9 @@ describe('AiReview 信任边界（hp_state：current-producer 必填 / legacy �
 
   it('legacy-compatible：字段缺省放行，缺省分类仍是 legacy（0xFFFE/0xFFFF 未知、0xFFFD 终态）', () => {
     const cases: Array<[number, string, boolean | null]> = [
-      [0xfffe, 'UNKNOWN_OTHER', null],        // −2：未证明哨兵 → 不判死
-      [0xffff, 'UNKNOWN_FFFF', null],         // −1：未证明哨兵 → 不判死
-      [0xfffd, 'DEATH_TERMINAL_FFFD', false], // −3：legacy 已证明终态（行为不变）
+      [0xfffe, 'UNKNOWN_OTHER', null],
+      [0xffff, 'UNKNOWN_FFFF', null],
+      [0xfffd, 'DEATH_TERMINAL_FFFD', false],
       [0x0000, 'HP_ZERO_TERMINAL', false],
       [1406, 'CURRENT_HP', true],
     ]
@@ -696,7 +654,6 @@ describe('AiReview 信任边界（hp_state：current-producer 必填 / legacy �
   })
 })
 
-// ---------- 契约 v0.1.9：parseShotReplays 包装形状 + eid 联表富化 ----------
 
 describe('normalizeAgentShotsOutcome', () => {
   const shot = { index: 1, time_s: 1, damage: 100, target_name: 'x', is_kill: false, shooter_eid: 2 }
@@ -757,12 +714,9 @@ describe('normalizeAgentShotsOutcome', () => {
   })
 
   it('trust boundary 严格化：对象形状的 author_path 只收 "ok"|"error"', () => {
-    // 缺失（schema drift / 错版 WASM）→ throw，不得静默伪装成正常解析
     expect(() => api.normalizeAgentShotsOutcome({ shots: [] })).toThrow(/author_path/)
-    // 值漂移（大小写/未知枚举）→ throw
     expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'Error', author_error: 'x' })).toThrow(/author_path/)
     expect(() => api.normalizeAgentShotsOutcome({ shots: [], author_path: 'OK' })).toThrow(/author_path/)
-    // 合法值放行
     expect(api.normalizeAgentShotsOutcome({ shots: [], author_path: 'ok', author_eid: 1, others: {} }).author_path).toBe('ok')
   })
 })
@@ -772,7 +726,6 @@ describe('isShotHit（hit authority = target_eid，评审 blocker 回归）', ()
     expect(api.isShotHit({ target_eid: 283127376 })).toBe(true)
   })
   it('无受击方 eid → 未命中（不回退昵称/hit_flags 双语义）', () => {
-    // 契约类型是 number | undefined；null 属坏生产者输出，运行时同样按缺失处理
     expect(api.isShotHit({ target_eid: undefined })).toBe(false)
     expect(api.isShotHit({ target_eid: null } as unknown as api.AgentShotReplay)).toBe(false)
   })
@@ -782,7 +735,6 @@ describe('isShotHit（hit authority = target_eid，评审 blocker 回归）', ()
 })
 
 describe('enrichShotsFromRoster（eid 联表）', () => {
-  // 国服场次同构 fixture：7v7 中文昵称 + 1 台 team=0（联表失败的观察者）
   const vehicles = [
     ...Array.from({ length: 7 }, (_, i) => ({ eid: 100 + i, nickname: `兰亭公子苏${i}`, team: 1, tank_id: 30085 + i, is_author: i === 0 })),
     ...Array.from({ length: 7 }, (_, i) => ({ eid: 200 + i, nickname: `他们都叫我袁弟呀${i}`, team: 2, tank_id: 40085 + i })),
@@ -795,19 +747,19 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
 
   it('eid 联表：昵称缺失/冲突不影响 tank_id 与阵营归属', () => {
     const shots = [
-      shot({ shooter_eid: 100, target_eid: 200 }),           // 常规
-      shot({ shooter_eid: 200, target_eid: 101 }),           // 敢打我方（敌视角联表）
-      shot({ shooter_eid: 999, target_eid: 205 }),           // 未知阵营射手
+      shot({ shooter_eid: 100, target_eid: 200 }),
+      shot({ shooter_eid: 200, target_eid: 101 }),
+      shot({ shooter_eid: 999, target_eid: 205 }),
       shot({ shooter_eid: 100, target_eid: 999 }),           // 打向未知阵营（不产 tank_id）
     ]
     api.enrichShotsFromRoster(shots, vehicles)
     expect(shots[0].shooter_tank_id).toBe(30085)
     expect(shots[0].target_tank_id).toBe(40085)
-    expect(shots[0].shooter_team).toBe('ally')      // 射手 = 作者（eid 100, is_author）
-    expect(shots[1].shooter_team).toBe('enemy')     // eid 200 ∈ team2 ≠ 作者 team1
+    expect(shots[0].shooter_team).toBe('ally')
+    expect(shots[1].shooter_team).toBe('enemy')
     expect(shots[1].target_tank_id).toBe(30086)
-    expect(shots[2].shooter_team).toBeUndefined()   // team=0：不归入任何一队
-    expect(shots[3].target_tank_id).toBeUndefined() // team=0 无 tank_id：富化缺省
+    expect(shots[2].shooter_team).toBeUndefined()
+    expect(shots[3].target_tank_id).toBeUndefined()
   })
 
   it('unknown team（team=0）带非零 tank_id：tank_id 正常富化、阵营必须 undefined（评审 blocker 回归）', () => {
@@ -816,12 +768,12 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     ]
     withUnknownTank[withUnknownTank.length - 1] = { eid: 999, nickname: '观察者', team: 0, tank_id: 555 }
     const shots = [
-      shot({ shooter_eid: 999, target_eid: 200 }),   // unknown 射手有真实坦克
+      shot({ shooter_eid: 999, target_eid: 200 }),
       shot({ shooter_eid: 100, target_eid: 999 }),   // 打向 unknown（有坦克）
     ]
     api.enrichShotsFromRoster(shots, withUnknownTank)
-    expect(shots[0].shooter_tank_id).toBe(555)          // 富化照常
-    expect(shots[0].shooter_team).toBeUndefined()       // 绝不因 0 !== 1 被染成 enemy
+    expect(shots[0].shooter_tank_id).toBe(555)
+    expect(shots[0].shooter_team).toBeUndefined()
     expect(shots[1].target_tank_id).toBe(555)
   })
 
@@ -834,7 +786,7 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     api.enrichShotsFromRoster(shots, noAuthorSide)
     expect(shots[0].shooter_tank_id).toBe(1)
     expect(shots[0].target_tank_id).toBe(2)
-    expect(shots[0].shooter_team).toBeUndefined()       // authorTeam=0：0===0 不得伪装 ally
+    expect(shots[0].shooter_team).toBeUndefined()
   })
 
   it('已知敌方缺车型（team=2, tank_id=0）→ 阵营照常 enemy（评审 blocker 回归）', () => {
@@ -842,8 +794,8 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     noTank[noTank.length - 1] = { eid: 999, nickname: '无车型敌方', team: 2, tank_id: 0 }
     const shots = [shot({ shooter_eid: 999, target_eid: 100 })]
     api.enrichShotsFromRoster(shots, noTank)
-    expect(shots[0].shooter_tank_id).toBeUndefined()   // 车型富化缺省
-    expect(shots[0].shooter_team).toBe('enemy')        // 阵营不受车型缺失影响
+    expect(shots[0].shooter_tank_id).toBeUndefined()
+    expect(shots[0].shooter_team).toBe('enemy')
   })
 
   it('eid 缺失（旧产物）不断链：仅跳过富化', () => {
@@ -860,6 +812,6 @@ describe('enrichShotsFromRoster（eid 联表）', () => {
     ]
     const shots = [shot({ shooter_eid: 100, target_eid: 301 })]
     api.enrichShotsFromRoster(shots, dup)
-    expect(shots[0].target_tank_id).toBe(222)  // 按 eid 精确命中，而非昵称首匹配的 111
+    expect(shots[0].target_tank_id).toBe(222)
   })
 })

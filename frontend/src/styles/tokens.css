@@ -1,20 +1,6 @@
-/* ============================================================
- * WotBTools legacy tokens（deprecated）
- *
- * 新代码使用 tokens/scale.css 与 tokens/color.css 中的设计语言 token，
- * 规则见 docs/frontend/design-language.md。本文件保留旧变量原值以保证视觉不变；
- * 组件迁移到新 token 后，旧变量无人引用即删除。颜色类旧变量全部投影到当前主题的语义 token。
- *
- * 运维备注：所有样式打包进单个 main-*.css，文件名取【压缩产物】的内容哈希——
- * minifier 会剥掉注释，注释不能改变产物（2026-10-06 第一次尝试即因此无效）。
- * 需要强制轮换文件名时，递增下方 :root 里的 --style-revision。这是「404 被浏
- * 览器缓存」类事故的愈合杠杆：换名后被缓存的旧 URL 不再被 index 引用。
- * ============================================================ */
 
 :root {
-  /* 递增即轮换 main-*.css 文件名（minifier 不剥自定义属性）。见文件头运维备注。 */
   --style-revision: 2;
-  /* 旧变量全部投影到当前主题的语义 token（tokens/color.css），四季主题自动跟随；颜色方案由 color.css 决定。 */
   --bg: var(--color-canvas);
   --bg-card: var(--color-surface-1);
   --bg-card2: var(--color-surface-2);
@@ -58,7 +44,6 @@
   --accent-light: var(--color-accent-text);
   --accent-icon: var(--color-accent-text);
   --accent-shadow: color-mix(in srgb, var(--color-accent) 22%, transparent);
-  /* 旧名「accent-text」指强调色底上的文字 */
   --accent-text: var(--color-on-accent);
   --hero-fg-rgb: 247 240 223;
   --surface-shadow: var(--elevation-2);
@@ -89,16 +74,13 @@
   --danger-solid-fg: #ffffff;
   --focus-ring: color-mix(in srgb, var(--color-accent) 34%, transparent);
 
-  /* V2 Layout tokens */
-  --topbar-h: var(--header-h); /* deprecated → --header-h */
+  --topbar-h: var(--header-h);
   --layout-gutter: 24px;
   --content-max: 1280px;
   --wide-max: 1600px;
   --workspace-gutter: 24px;
 
-  /* 间距与圆角已迁至 tokens/scale.css（--space-*、--radius-*）。 */
 
-  /* Typography（deprecated → tokens/scale.css 的 --type-*） */
   --font-xs: 11px;
   --font-sm: 12px;
   --font-md: 13px;
@@ -106,8 +88,6 @@
   --font-lg: 16px;
   --font-xl: 20px;
 
-  /* Tactical 阵营色（唯一规则）：Friendly=green，Enemy=red。
-   * 与普通 UI Success/Error 语义色分离，仅用于战术地图领域。 */
   --friendly: #22c55e;
   --friendly-strong: #4ade80;
   --friendly-fg: #0b1f10;
@@ -116,10 +96,8 @@
   --enemy-fg: #1a0606;
 }
 
-/* 主视觉叠字的前景色（rgb 三元组，不能从 hex token 派生）：寒冬是浅色主题，叠字取深色 */
 :root[data-ui-profile="winter"] { --hero-fg-rgb: 15 34 54; }
 
-/* Shared layout primitives; retained class names avoid splitting page structure by profile. */
 .layout-content, .layout-wide, .layout-data-workspace {
   position: relative;
   isolation: isolate;

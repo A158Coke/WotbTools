@@ -1,5 +1,3 @@
-// 着色器编译自检的**页面侧**（由 vite 以模块 URL 伺服：裸 'three' 被重写成与
-// sceneryMaterials.js 同一份依赖实例；写在中间件内联 HTML 里则解析不了——上一版即卡在这）。
 import * as THREE from 'three'
 import {
   makeLightmappedMaterial, makeBlendLayerMaterial, makeSkyMaterial,
@@ -31,7 +29,6 @@ function geo({ uv1 = true, corner = false, color = false } = {}) {
 }
 const fakeMat = (over = {}) => Object.assign(new THREE.MeshStandardMaterial({ map: tex(), name: 'fake' }), over)
 
-// 草材质（mapGrass）：逐实例 aVegColor + 对数深度块；线性/logdepth 两个渲染器各编一遍。
 const GRASS_PARAMS = { windAmplitude: [0.3], windSpring: [8], baseColorMultiplier: 2.0 }
 function grassGeometry() {
   const g = geo({ uv1: false })
@@ -48,12 +45,10 @@ function grassMesh() {
 }
 
 const T = tex()
-// 环境反射材质：遮罩+立方图+逐材质属性（缺省按客户端 property 默认值）
 const envObj = {
   maskTex: T, cubeTex: T,
   props: { reflectionSpecParamGloss: 0.6, reflectionMetalFresnelReflectance: [0.4, 0.4, 0.4], reflectionBrightenEnvMap: 2.0 },
 }
-// 地面材质：分层地表 shader（groundPass 共享实现）——用最小合法 uniform 构造后真编译。
 const groundMat = groundShaderMaterial(
   { flatcolor: false, separate_lm: false, scaled_tiles: false, height_blend: false,
     tiling: [1, 1], tile_scale: [1, 1, 1, 1],
@@ -85,8 +80,6 @@ const cases = [
     reflectionTintColor: [0.7, 0.7, 0.72],
   } }), geo({ uv1: false })],
   ['grass(pixel-alpha)', () => makeGrassMaterial(T, GRASS_PARAMS, 1), grassGeometry()],
-  // 坦克 PBR：打了环境隔离补丁的 MeshStandardMaterial 必须能编译（补丁注入点在 three 的
-  // lights_fragment_begin 之后；门禁场景里有半球光 ⇒ NUM_HEMI_LIGHTS>0 的真实编译路径）
   ['tank-pbr(ambient-isolated)', () => patchTankMaterial(fakeMat()), geo({ uv1: false })],
   ['tank-pbr(destroyed-charcoal)', () => destroyedTankMaterial(fakeMat()), geo({ uv1: false })],
   ['tank-proxy(destroyed-charcoal)', () => destroyedTankMaterial(new THREE.MeshLambertMaterial()), geo({ uv1: false })],
@@ -95,8 +88,6 @@ const cases = [
   ['billboard', () => makeBillboardMaterial(fakeMat({ color: new THREE.Color(1.77, 1.77, 1.77) })), geo({ corner: true })],
   ['ST|static', () => makeSpeedtreeStaticMaterial(fakeMat({ name: 'ST|x' }), true), geo({ color: true })],
   ['ST|static+alphaBlend', () => makeSpeedtreeStaticMaterial(fakeMat({ name: 'ST|x', opacity: 0.5, userData: { alphaBlend: true } }), true), geo({ color: true })],
-  // 贴花（客户端 MATERIAL_DECAL）：UV1 采地图 colormap、不受光；含 separate_lm 与
-  // GLOBAL_TINT 的 brightness/contrast/gamma 调整分支
   ['decal(贴花, UV1×colormap)', () => makeDecalMaterial(fakeMat(), T, T, { separateLm: true, lmAdjust: [0.1, 1.1, 0.9], globalTint: true }), geo()],
   ['decal+alphaBlend', () => makeDecalMaterial(fakeMat({ opacity: 0.5, userData: { alphaBlend: true } }), T, null, {}), geo()],
   ['decal+alphaTest', () => makeDecalMaterial(fakeMat({ alphaTest: 0.33 }), T, null, {}), geo()],
@@ -112,14 +103,12 @@ try {
   camera.position.set(0, 0, 5)
   camera.lookAt(0, 0, 0)
   scene.add(new THREE.HemisphereLight(0xffffff, 0x222222, 2.0))
-  // 一盏方向光：让走 three 内建管线的材质（坦克 PBR 等）编译真实的光照分支
   const sun = new THREE.DirectionalLight(0xffffff, 3.0)
   sun.position.set(60, 120, 40)
   scene.add(sun); scene.add(sun.target)
   const built = []
   for (const [name, make, geometry] of cases) {
     const mat = make()
-    // 实例化路径（USE_INSTANCING，与真实合批一致）+ 逐实例光照图变换属性
     const mesh = new THREE.InstancedMesh(geometry, mat, 2)
     mesh.setMatrixAt(0, new THREE.Matrix4())
     mesh.setMatrixAt(1, new THREE.Matrix4().makeTranslation(3, 0, 0))
@@ -130,8 +119,6 @@ try {
     scene.add(mesh)
     built.push(name)
   }
-  // 战斗特效（battleFx）：两个实例化粒子批次 + 火星线段 + 曳光/光迹条带。自定义 shader 手挂
-  // logdepthbuf 代码块——线性深度与 ?logdepth=1 两种渲染器各编一遍（漏 <common> 只在后者炸）。
   function battleFxScene() {
     const fx = createBattleFx(FX_BUDGETS.ultra)
     const at = (x, y, z) => new THREE.Vector3(x, y, z)
@@ -145,7 +132,6 @@ try {
   }
   scene.add(battleFxScene().root)
   built.push('battle-fx(glow/smoke/sparks/tracer/trail)')
-  // 穿透材质族：回放开镜着色在 ?logdepth 渲染器下也要编译，两种渲染器各编一遍。
   function armorScene() {
     const ctx = createArmorShaderContext()
     const clip = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)

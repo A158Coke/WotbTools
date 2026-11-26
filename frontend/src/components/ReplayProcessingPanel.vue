@@ -3,14 +3,8 @@ import { computed } from 'vue'
 import { CircleAlert } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 
-/**
- * 首次打开回放时的加载与恢复面板。正常路径不留痕迹：成功后内容直接出现，这里不显示。
- * 只有当前选择没有可提交的批次结果才进入失败态，部分失败由工作台的警示条负责。
- */
 const props = defineProps({
-  /** ReplayAnalysis：{ phase, done, total, failure } */
   analysis: { type: Object, required: true },
-  /** 当前列表里的文件数：决定失败时是「从列表移除」还是「清空列表」。 */
   fileCount: { type: Number, default: 1 },
 })
 

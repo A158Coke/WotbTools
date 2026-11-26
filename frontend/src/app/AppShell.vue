@@ -47,14 +47,10 @@ const route = useRoute()
 useUsageTelemetry(computed(() => viewFromRoute(route)))
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 const { notice: connectivityNotice } = useConnectivityNotice()
-// 外壳形态（design-language §9）：手机竖屏 / 手机横屏用顶栏菜单 + 左侧抽屉；平板 / 桌面用左侧边栏
 const { isDrawerShell } = useBreakpoint()
 const navDrawerOpen = ref(false)
 const topBar = ref(null)
 const immersiveMenu = ref(null)
-// 3D 全屏 + 播放器工具栏收起（navEligible=false 交还托管）时，兜底菜单若留在全屏元素外，
-// 会被浏览器随外壳一起隐藏，抽屉入口不可达；随 fullscreenchange 渲染进当前全屏根
-// （与 AppNavDrawer 的 portalTo 同因同修；非全屏时 Teleport disabled 原地渲染，行为不变）。
 const fullscreenRoot = ref(typeof document === 'undefined' ? null : document.fullscreenElement)
 function onFullscreenChange() { fullscreenRoot.value = document.fullscreenElement }
 onMounted(() => document.addEventListener('fullscreenchange', onFullscreenChange))
@@ -65,7 +61,6 @@ function openNavDrawer(opener) {
   navOpener.value = opener ?? null
   navDrawerOpen.value = true
 }
-// 本机通知中心：顶栏铃铛（抽屉外壳）与侧边栏底部（平板 / 桌面）共用这一个面板
 const notificationsOpen = ref(false)
 const notificationOpener = ref(null)
 function openNotifications(opener) {
@@ -74,39 +69,19 @@ function openNotifications(opener) {
 }
 provide(NOTIFICATIONS_PANEL_KEY, openNotifications)
 watch(isDrawerShell, (drawer) => { if (!drawer) navDrawerOpen.value = false })
-// 切换视图时收起上一页的成功 / 提示 toast（警告 / 错误保留），避免遮住新页面的控件
 watch(() => viewFromRoute(route), () => dismissTransientToasts())
 
-/**
- * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（Native Bridge），
- * 浏览器走 navigator.onLine。业务页面不得自行监听 —— 它们只读 capability 门禁的结果。
- */
 const { connectivity, start: startConnectivity } = useConnectivity()
-// 门禁（唯一判定入口）：重试等交互用它 —— 既弹统一 connectivity notice，又给出布尔结果。
 const { requireFeature } = useFeatureGate()
 provideCreatorAvailability()
 onMounted(() => {
   void startConnectivity()
 })
 
-/**
- * 全局业务用户 bootstrap：只要 Keycloak 认证成功并进入 SPA（任意 view —— home /
- * replay / battle-playback / AI Review / HoF / admin / profile），
- * 就在这里 ensure 当前用户的 user_profile。
- *
- * 这里也是唯一触发点：页面不再各自负责「读不到资料 → 自己创建」。
- *
- * 但 ensure 是一次 **backend** 调用，准入必须服从 capability SSOT（`ACCOUNT_PROFILE` 是
- * ONLINE_REQUIRED，见 shouldEnsureBusinessUser）：离线 / 状态未知时**不发请求、不进入 failed、
- * 不显示失败横幅**，本地 UI 照常可用（「离线是受支持的运行模式，不是错误状态」）。恢复在线后
- * 这里会因 connectivity 变化再次求值并自动补一次（`ensure()` 自身的 ready / in-flight 去重保证
- * 不重复请求，也没有任何 retry 循环）。
- */
 const { authInitState, authenticated, tokenParsed, authEpoch } = useAuth()
 const { failed, ensure, retry } = useBusinessUserBootstrap()
 
 watch([authInitState, authenticated, connectivity, () => tokenParsed.value?.sub], ([state, isLoggedIn, currentConnectivity]) => {
-  // Auth generation changes are authoritative; ensure itself deduplicates ready/in-flight work.
   void ensure({
     authInitState: state,
     authenticated: isLoggedIn,
@@ -115,12 +90,6 @@ watch([authInitState, authenticated, connectivity, () => tokenParsed.value?.sub]
   })
 }, { immediate: true })
 
-/**
- * 失败横幅上的「重试」：必须先过 capability 门禁（`ACCOUNT_PROFILE` 是 ONLINE_REQUIRED）。
- *
- * 否则「在线时失败 → 用户断网 → 点重试」会绕过策略再打一次 backend，把离线变成一次新的业务失败。
- * 不允许时统一走 connectivity notice（`requireFeature` 内部弹层），**绝不**用 profile 业务错误冒充。
- */
 function retryBusinessBootstrap() {
   const context = {
     authInitState: authInitState.value,
@@ -135,12 +104,6 @@ function retryBusinessBootstrap() {
   void retry(context)
 }
 
-/**
- * 登出 / 会话失效 → 当前运行面的默认落地页（2.1.0 Phase 5.3/5.4）：
- * Web production 回首页；Android 与本地 Web 回回放工作台。浏览器端这一步发生在跳 Keycloak
- * end-session 之前（local-first 已先清本地态）；Android 端页面不导航，这一跳就是它唯一的落点。
- * init 重建期间（authInitState=initializing）的中间态不是登出：不导航。
- */
 let previousAuthenticated = authenticated.value
 watch(authenticated, (now) => {
   const was = previousAuthenticated
@@ -151,7 +114,6 @@ watch(authenticated, (now) => {
 })
 
 function navigate(target) {
-  // 目标是 view 字符串或带 query 的完整目的地；两者都归 router（组件不碰 history）
   const destination = router.resolve(
     typeof target === 'string'
       ? locationForView(target, route)
@@ -161,14 +123,11 @@ function navigate(target) {
 }
 
 provide(NAVIGATE_VIEW_KEY, navigate)
-// 沉浸态：需要整屏高度的 feature（手机横屏回放）通过 typed key 申请，外壳不渲染顶栏，
-// 并把 --header-block / --header-h 归零（scale.css 是这两个 token 的唯一 owner），预算公式无需改。
 const shellChrome = createShellChrome()
 provide(SHELL_CHROME_KEY, shellChrome)
 provide(OPEN_NAV_DRAWER_KEY, openNavDrawer)
 const androidUpdate = useAndroidUpdate({ route, router })
 provide(ANDROID_UPDATE_KEY, androidUpdate)
-// 新版本可用：记一条本机通知（同一版本只记一次，id 含版本）
 watch(() => androidUpdate.showPrompt.value && androidUpdate.snapshot.value?.latestVersionName, (version) => {
   if (!version) return
   notify({ id: `app-update-${version}`, kind: 'app-update', titleKey: 'notifications.appUpdate', bodyKey: 'notifications.appUpdateBody', params: { version }, view: 'more' })
@@ -188,11 +147,6 @@ const siteFeedback = useSiteFeedback(route)
 const { open: siteFeedbackOpen, pageView: siteFeedbackPage } = siteFeedback
 provide(FEEDBACK_KEY, siteFeedback.request)
 
-/**
- * 全站环境背景（design-language §2）：fixed 装饰层先铺 canvas 纯色，等当前主题 /
- * 视口对应的氛围图解码完成后再 .is-ready 淡入，避免背景图阻塞首屏。
- * 主题切换时重新等新图，竖屏 / 横屏切换只更新预载目标（CSS 已同步换图）。
- */
 const { uiProfile } = useUiProfile()
 const backdropReady = ref(false)
 const loadedBackdrops = new Set()
@@ -201,10 +155,6 @@ const portraitBackdropQuery = typeof window !== 'undefined' && typeof window.mat
   ? window.matchMedia('(orientation: portrait) and (width < 768px)')
   : null
 
-/**
- * 图片 URL 只从 color.css 的语义 token 读，避免 AppShell 再维护一份季节映射；
- * 主题 / 横竖屏切换时 CSS 已经同步换图，这里只负责按同一个 URL 预解码。
- */
 function currentBackdropSource() {
   if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return ''
   const token = portraitBackdropQuery?.matches ? '--theme-backdrop-image-portrait' : '--theme-backdrop-image'
@@ -227,17 +177,14 @@ function preloadBackdrop(url) {
   image.decoding = 'async'
   const finish = (loaded) => {
     if (loaded) loadedBackdrops.add(url)
-    // 只让最后一次请求决定可见性，防止快速切换主题时旧图回写把新图盖住。
     if (token === backdropLoadToken) backdropReady.value = true
   }
   image.onload = () => finish(true)
-  // 图片 404 / 解码失败时退回 canvas 纯色，不能让装饰层永远停在 opacity: 0。
   image.onerror = () => finish(false)
   image.src = url
 }
 
 function syncBackdrop() {
-  // 视口横竖切换也会换图：先退回 canvas，等新图解码后再淡入，避免换图瞬间露出半张图。
   backdropReady.value = false
   preloadBackdrop(currentBackdropSource())
 }
@@ -265,9 +212,6 @@ watch(uiProfile, async () => {
     @open-nav="openNavDrawer(null)"
   />
   <AppSidebar v-if="!isDrawerShell" />
-  <!-- 沉浸态（手机横屏回放 / 装甲查看器 / 桌面伪全屏）没有顶栏：左上保留同一个菜单入口打开抽屉。
-       桌面伪全屏时播放器托管入口可能随控制条收起 / UI 隐藏而释放（navHosted=false），
-       此时外壳必须接回兜底入口；该条件不能再要求 isDrawerShell。 -->
   <Teleport :to="fullscreenRoot ?? 'body'" :disabled="!fullscreenRoot">
     <button
       v-if="shellChrome.immersive.value && !shellChrome.navHosted.value"
@@ -283,8 +227,6 @@ watch(uiProfile, async () => {
       <Menu :size="20" aria-hidden="true" />
     </button>
   </Teleport>
-  <!-- 抽屉入口不只属于抽屉外壳：平板 / 桌面进入伪全屏后侧边栏被 CSS 隐藏，无论入口来自
-       播放器托管（navHosted）还是外壳兜底，同一个抽屉都必须真实存在。 -->
   <AppNavDrawer
     v-if="isDrawerShell || shellChrome.immersive.value"
     :open="navDrawerOpen"
@@ -333,19 +275,14 @@ watch(uiProfile, async () => {
 </template>
 
 <style scoped>
-/* Keep the shared footer at the viewport bottom on short pages without pinning it over content. */
 :global(#app) {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
-/* 侧边栏是 fixed：内容整体让出 --sidebar-w（抽屉外壳为 0）。没有底部常驻栏（L1）。 */
 :global(#app) { padding-inline-start: var(--sidebar-w); }
 
-/* 全站环境背景层（design-language §2）：固定铺满视口、不接收指针事件、永远在内容之后。
-   canvas 是最后一层，所以图片未加载 / 加载失败时仍是主题纯色；加载完成后由 JS 加 .is-ready 淡入。
-   竖屏手机改用竖向构图，让中上部的坦克车队落在首屏可见区域。 */
 .app-backdrop {
   position: fixed;
   inset: 0;
@@ -382,9 +319,6 @@ watch(uiProfile, async () => {
   margin-top: auto;
 }
 
-/* 回放伪全屏（原生 Fullscreen API 不可用 / 被拒时的降级，见 usePlaybackFullscreen）：
-   工作台是局部层叠上下文，压不过 fixed 的宽屏侧栏，页脚也还在文档流里——伪全屏期间一并摘掉。
-   抽屉面板（div.app-sidebar.is-drawer）不受影响。 */
 :global(html[data-pb-pseudo-fullscreen] aside.app-sidebar),
 :global(html[data-pb-pseudo-fullscreen] .app-footer) {
   display: none;
@@ -394,7 +328,6 @@ watch(uiProfile, async () => {
   z-index: calc(var(--z-header) + 2);
 }
 
-/* 沉浸态悬浮菜单：玻璃底胶囊，避开刘海与圆角安全区；场景外壳用 --immersive-nav-reserve 让出这一块 */
 .immersive-nav {
   position: fixed;
   inset-block-start: max(var(--space-2), env(safe-area-inset-top));
@@ -425,10 +358,8 @@ watch(uiProfile, async () => {
   background: var(--color-surface-2);
   color: var(--color-text-primary);
 }
-/* AppButton md 高度（32px）低于移动端 44px 触控目标下限：更新提示条保持 comfortable 命中高度。 */
 .android-update-notice .app-button { min-height: var(--hit-min-comfortable); }
 
-/* 提示条已在文档流中让出固定顶栏与安全区：内容区不再重复让出同一高度。 */
 :global(#app:has(> .android-update-notice) > .app-main) {
   padding-top: 0;
 }

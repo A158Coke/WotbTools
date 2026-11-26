@@ -15,12 +15,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-/** Builds the ordered event stream and per-entity vehicle snapshots for each frame. */
 final class TimelineFrameAssembler {
     private TimelineFrameAssembler() {
     }
 
-    /** 事件按 (battle-relative 时间, sequence) 排序；非有限时间戳的事件剔除并计数。 */
     static List<ReplayEvent> orderedEvents(
             final List<ReplayEvent> events, final double startRawClockSec) {
         final List<ReplayEvent> ordered = new ArrayList<>();
@@ -50,9 +48,6 @@ final class TimelineFrameAssembler {
             if (t > endInclusive) {
                 break;
             }
-            // Pre-battle events remain available in the canonical event stream for
-            // provenance, but they are not active-battle frame events. In particular,
-            // frame 0 must not absorb an INITIALIZED event from t < 0.
             if (t < 0d) {
                 continue;
             }
@@ -63,7 +58,6 @@ final class TimelineFrameAssembler {
         return out;
     }
 
-    // ===== frame vehicle construction =====
 
     static FrameVehicle frameVehicle(
             final int entityId,
@@ -78,7 +72,6 @@ final class TimelineFrameAssembler {
         final Identity identity = identityOf(entityId, mapping, battle);
         final boolean friendly = identity.team() != null && identity.team() == perspectiveTeam;
 
-        // position knowledge（canonical AoI authority，禁止再用 5s/packet-age 推断）
         final EntityIndex.PosSample pos = index.lastPositionAtOrBefore(entityId, t);
         FramePosition position;
         VehicleKnowledgeState knowledge;
@@ -87,11 +80,6 @@ final class TimelineFrameAssembler {
             knowledge = VehicleKnowledgeState.UNKNOWN;
         } else {
             final double age = t - pos.clock();
-            // 当前帧是否位于 open observed segment（entityId + frame time 查询）：
-            // - 位于 observed segment 且位置样本来自本段（observedFrom ≤ pos.clock）→
-            //   CURRENT carry-forward（静止车辆即使 >5s 无 Type10 也不降级）；
-            // - 位于 UNKNOWN_AOI gap / 位置样本跨 gap（来自上一段）→ LAST_KNOWN
-            //   （不插值、不前进；closed segment 不允许把 last-known 当 current）。
             final AoiObservationSegment aoiSeg =
                     ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
             final boolean active = aoiSeg != null
@@ -108,11 +96,9 @@ final class TimelineFrameAssembler {
                     : VehicleKnowledgeState.LAST_KNOWN;
         }
 
-        // health
         final EntityIndex.HpSample hp = index.lastHealthAtOrBefore(entityId, t);
         final FrameHealth health = buildHealth(hp, t, index, aoiByEntity, entityId);
 
-        // destroyed-known (world fact at t): latest reliable life sample
         final var destroyed = index.destroyedInfoAt(entityId, t);
         final LifeState lifeState = destroyed.destroyed()
                 ? LifeState.DESTROYED
@@ -123,7 +109,6 @@ final class TimelineFrameAssembler {
             knowledge = VehicleKnowledgeState.DESTROYED_KNOWN;
         }
 
-        // orientation
         final EntityIndex.TurretSample turret = index.lastTurretAtOrBefore(entityId, t);
         FrameOrientation orientation = FrameOrientation.UNKNOWN;
         if (pos != null && pos.yawDeg() != null) {
@@ -131,7 +116,6 @@ final class TimelineFrameAssembler {
             final Float world = rel == null ? null
                     : FrameOrientation.normalizeDeg(pos.yawDeg() + rel);
             final double observed = Math.max(pos.clock(), turret == null ? -1 : turret.clock());
-            // 敌方离开 AoI → 方向降为 LAST_KNOWN（不能继续表现为实时炮塔方向）。
             final AoiObservationSegment aoiSeg = ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
             final boolean active = aoiSeg != null
                     && pos.clock() >= aoiSeg.observedFromSec() - 1e-9;
@@ -143,9 +127,6 @@ final class TimelineFrameAssembler {
                     active ? Confidence.HIGH : Confidence.MEDIUM);
         }
 
-        // no cumulative damage on the canonical vehicle frame. DamageEvent raw value is NOT
-        // authoritative HP delta; authoritative HP loss lives in PlaybackCombatReconstruction. The
-        // cumulative dealt/received that previously lived here were write-only and never consumed.
 
         final FrameMapState mapState = enricher.enrich(pos);
 
@@ -184,8 +165,6 @@ final class TimelineFrameAssembler {
                 ? HpSource.EXACT_BATTLE_EVENT : HpSource.INFERRED;
         final Confidence conf = hp.confidence() == DecodeConfidence.EXACT
                 ? Confidence.HIGH : Confidence.MEDIUM;
-        // HP knowledge 与 AoI observation boundary 一致：t 在 open observed segment 且采样来自本段
-        // → CURRENT；t 在 UNKNOWN_AOI gap / 采样跨 hidden interval → LAST_KNOWN。
         final AoiObservationSegment aoiSeg = ReplayAoiLifecycle.segmentAt(aoiByEntity, entityId, t);
         final boolean active = aoiSeg != null && hp.clock() >= aoiSeg.observedFromSec() - 1e-9;
         final FrameHealth.HealthKnowledge knowledge = active

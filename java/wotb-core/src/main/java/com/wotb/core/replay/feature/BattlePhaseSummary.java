@@ -57,11 +57,6 @@ public record BattlePhaseSummary(
         return buildPhases(firstContactRelative, battleEndRelative);
     }
 
-    /**
-     * Build battle-relative phases with survival counts. Death times come only from canonical
-     * {@link PlayerResultFormat#deathSec(PlayerResult)}; UNKNOWN deaths make that side's exact alive count
-     * unavailable rather than being placed at zero seconds.
-     */
     public static List<BattlePhaseSummary> buildRelativePhasesWithSurvival(
             final float firstContactRelative,
             final float battleEndRelative,
@@ -142,9 +137,6 @@ public record BattlePhaseSummary(
         return rosterSize - deaths;
     }
 
-    /**
-     * Dense-kill window over settlement death seconds.
-     */
     private static boolean isDenseKillWindow(
             final BattlePhaseSummary phase,
             final SurvivalTimeline survival
@@ -175,10 +167,6 @@ public record BattlePhaseSummary(
         return times.stream().sorted().toList();
     }
 
-    /**
-     * Survival timeline over settlement battle-relative death seconds. Invalid/missing settlement
-     * death facts make exact per-phase alive counts unavailable for that side.
-     */
     public record SurvivalTimeline(
             List<Double> friendlyDeathTimes,
             List<Double> enemyDeathTimes,

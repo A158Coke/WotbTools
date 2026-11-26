@@ -1,12 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 射击分析面板状态链回归：
- * - author_path="error" 且他人宽松路径 0 发 → 警示必须可见，且与空态并存——
- *   绝不允许只显示"没有射击"把作者链失败伪装成正常空结果（契约 v0.1.9 评审 blocker）；
- * - 射击者筛选三态（未知阵营绝不并入我方）；
- * - Master–Detail：一行一 Shot、选中出检视、窄容器整屏 + 焦点管理；
- * - 术语：界面不得出现内部 id（eid）、WebAssembly / Agent 等实现层词汇。
- */
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -50,7 +42,6 @@ vi.mock('../scene/agentData.js', () => ({
   fetchShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
-/** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
 const observers = []
 class ResizeObserverStub {
   constructor(cb) { this.cb = cb; observers.push(this) }
@@ -73,7 +64,6 @@ function mkFile(name = 'cn.wotbreplay') {
 
 const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 }
 
-/** 新手教程表面（ONBOARDING_KEY）：compact 检视面板只在教程引导中出现，测试用它模拟引导态 */
 const guideSurfaces = {}
 const guideActive = ref(false)
 const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
@@ -92,7 +82,6 @@ async function mountPane(props = {}) {
     global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
     attachTo: document.body,
   })
-  // 只有"应当解码"的场景才等终态（无文件 / 被阻断 / 未激活时不发解码）
   const shouldDecode = props.active !== false && !props.blockedReason && props.file !== null
   if (shouldDecode) {
     await vi.waitFor(() => {
@@ -155,11 +144,6 @@ describe('ReplayShotsPane 文件与激活契约', () => {
   })
 })
 
-/**
- * 交接护栏：命中弹的「在装甲查看器里打开」把整份射击数据交出去（本机通道），
- * 并把装甲查看器要读的场景参数**一个不少**地交给 router owner——参数由目的地组件消费，
- * 不能在这里被裁掉（导航层的视图私有 key 清理只作用于"离开场景"方向，见 navigation.test.js）。
- */
 
 describe('ReplayShotsPane → 装甲查看器交接', () => {
   const hitShot = {
@@ -210,7 +194,6 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     await nextTick()
     await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
     await flushPromises()
-    // 等待坦克数据期间不弹检视面板
     expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
     connectivityState.state.value = 'offline'
     finishQuery({ view: 'agent-armor', shot: '2' })
@@ -230,10 +213,8 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
     await wrapper.get('[data-testid="shot-open-viewer"]').trigger('click')
     await flushPromises()
 
-    // 交接通道：整份 shots 交出去（查看器按 shot 序号找这一发）
     expect(storeShotsForViewer).toHaveBeenCalledTimes(1)
     expect(storeShotsForViewer.mock.calls[0][0]).toHaveLength(1)
-    // 目的地：装甲查看器要读的键一个不少（view / tank / shooter / shot / shell / config / world / heatmap）
     expect(navigate).toHaveBeenCalledWith({
       query: {
         view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2',
@@ -261,10 +242,6 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
 })
 
 it('shooting inputs come from the asset pack: compact projection over tank/{id}.json + shell table fetch', async () => {
-  // 2026-10-15 起弹种表与搭载输入不再内嵌进前端构建，改由资产包分发
-  // （/data/shellKinds.json 与 tank/{id}.json，随上游 tanks.pb 同批更新）：
-  // 搭载输入 = fetchShotTankData 对包内 tank/{id}.json 的紧凑投影（config 顺序 +
-  // pitch_limits + shell_global_ids），缺车按 assetProvider 的 404 如实拒绝。
   const { fetchShotTankData: realFetchShotTankData } = await vi.importActual('../scene/agentData.js')
   const packTank = {
     name: 'T-34', nation: 'ussr', is_premium: false,
@@ -328,8 +305,6 @@ describe('ReplayShotsPane viewer snapshot lifecycle', () => {
 
 describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
   it('远端资产请求挂起不得阻塞本地列表发布（WASM 解析完成即出结果）', async () => {
-    // annotateMountedConfigs 的资产请求保持挂起（模拟资产服务卡住）：
-    // buildPitchLimits 走 agentData 层不受影响，decode 的前置步骤全部正常完成
     assetProvider.json.mockImplementationOnce(() => new Promise(() => {}))
     parseAgentPlaybackFromBytes.mockResolvedValue({
       vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true, shell_ids: [5914], max_hp: 100 }],
@@ -344,18 +319,14 @@ describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
       others: { ...baseOthers, total_launches: 1 },
     })
     const wrapper = await mountPane()
-    // 配置注解仍挂起，但本地射击列表必须已发布（有行 = 不被远端资产卡在解析中）
     expect(wrapper.find('[data-testid="shots-no-shots"]').exists()).toBe(false)
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
     wrapper.unmount()
   })
 
   it('俯仰锚定资产挂起：有界等待后降级发布，不被单个请求拖死（评审 P1：真实挂起路径）', async () => {
-    // 该表是解析期入参（不能事后补齐）——单个 /tank/{id}.json 永不返回时，
-    // 必须在 PITCH_ANCHOR_WAIT_MS 到期后以"已到部分"（此处为空表）继续解析并发布。
-    // 直挂载而非 mountPane：后者的 vi.waitFor 会自动推进假时钟，掩盖"仍停在等待上"的边界。
     vi.useFakeTimers()
-    fetchShotTankData.mockImplementation(() => new Promise(() => {})) // 永不 resolve
+    fetchShotTankData.mockImplementation(() => new Promise(() => {}))
     parseAgentPlaybackFromBytes.mockResolvedValue({
       vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true }],
     })
@@ -373,9 +344,9 @@ describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
       global: { mocks: { $t: i18n.t } },
       attachTo: document.body,
     })
-    await vi.advanceTimersByTimeAsync(0) // 冲刷微任务：playback 已解析、停在有界等待上
+    await vi.advanceTimersByTimeAsync(0)
     expect(parseAgentShotsFromBytes).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(1501) // 到期即降级继续
+    await vi.advanceTimersByTimeAsync(1501)
     expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(1)
     const limits = parseAgentShotsFromBytes.mock.calls.at(-1)[1]
     expect(!limits || Object.keys(limits).length === 0).toBe(true)
@@ -407,9 +378,7 @@ describe('ReplayShotsPane 弹表迟到补齐（评审 P2 回归）', () => {
     await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
     await flushPromises()
     const inspector = () => wrapper.get('[data-testid="shot-inspector"]')
-    // 表未到：无弹种标签（槽位/id 兜底）
     expect(inspector().text()).not.toContain('APCR')
-    // 表迟到返回（资产平台慢响应）→ 重绘后同一次检视即见弹种与穿深
     resolveTable({ '5914': { type: 'apcr', penetration: 245, damage: 100 } })
     await flushPromises()
     await nextTick()

@@ -2,7 +2,6 @@ import type { AgentBattleResult } from '../../api/agent-replay-facets.js'
 import { toCollectorSeed } from './collectorProjection.js'
 import type { CollectorDone, CollectorTask } from './collectorWorkerProtocol.js'
 
-// 资源策略仅约束旁路，不改变主回放文件限制。
 const MAX_FILE_BYTES = 32 * 1024 * 1024
 const MAX_WAITING_BYTES = 64 * 1024 * 1024
 const MAX_WAITING = 2
@@ -37,7 +36,6 @@ function dispatch(task: CollectorTask): void {
     const current = factory()
     worker = current
     current.onmessage = (event: MessageEvent<CollectorDone>) => {
-      // Worker identity + 单调 task id 防止已终止实例的迟到回复完成新任务。
       if (worker !== current || event.data?.id !== active?.id) return
       clearTimeout(taskTimer)
       active = undefined
@@ -61,7 +59,6 @@ function dispatch(task: CollectorTask): void {
   worker.postMessage(task)
 }
 
-/** 同步、有界、不抛错；调用方不得等待 Collector 完成。 */
 export function tryCollect(blob: Blob, result: AgentBattleResult): void {
   try {
     if (import.meta.env.VITE_BATTLE_DATA_COLLECTOR_ENABLED === 'false' || navigator.onLine === false
@@ -81,7 +78,6 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', discard)
 }
 
-/** 与 parser Worker 相同的测试注入边界；生产调用方不用。 */
 export function __setCollectorWorkerFactoryForTest(value: (() => Worker) | null): void {
   discard()
   factory = value ?? defaultFactory

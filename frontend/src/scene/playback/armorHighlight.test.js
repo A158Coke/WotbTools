@@ -76,7 +76,6 @@ describe('aimedVehicle', () => {
     glb.updateMatrixWorld(true)
     return { glb }
   }
-  // 炮塔枢轴在车辆原点，炮管沿局部 +X 伸出 10 m
   const withBarrel = (x, z) => {
     const v = at(x, z)
     const turret = new THREE.Group()
@@ -110,14 +109,13 @@ describe('aimedVehicle', () => {
     const v = withBarrel(0, 50)
     const atBarrelTip = new THREE.Vector3(10, 0, 0)
     expect(aimedVehicle(atBarrelTip, forward, [v])).toBe(v)
-    v.turret.rotation.y = Math.PI / 2   // 炮管转到 -Z，旧位置已空
+    v.turret.rotation.y = Math.PI / 2
     v.glb.updateMatrixWorld(true)
     expect(aimedVehicle(atBarrelTip, forward, [v])).toBeNull()
     expect(aimedVehicle(origin, new THREE.Vector3(0, 0, 1), [v])).toBe(v)
   })
 
   it('两车重叠时取实际先碰到的表面，不看聚合包围盒', () => {
-    // far 的长炮管把聚合盒撑到 near 身前，但这条线只会先碰到 near 的车体
     const near = at(0, 50), far = withBarrel(0, 60)
     far.turret.rotation.y = Math.PI / 2
     far.barrel.position.set(7, 3, 0)
@@ -132,10 +130,10 @@ describe('aimedVehicle', () => {
     track.geometry.computeBoundingSphere()
     const position = track.geometry.getAttribute('position')
     for (let i = 0; i < position.count; i++) {
-      if (position.getY(i) < 0) position.setY(i, position.getY(i) - 3)   // 底段下移，球和盒都包不住
+      if (position.getY(i) < 0) position.setY(i, position.getY(i) - 3)
     }
     const newEdge = new THREE.Vector3(0, -3.5, 0)
-    expect(aimedVehicle(newEdge, forward, [v])).toBeNull()               // 不标记就被旧 bounds 筛掉
+    expect(aimedVehicle(newEdge, forward, [v])).toBeNull()
     markPickBoundsStale(track.geometry)
     expect(aimedVehicle(newEdge, forward, [v])).toBe(v)
   })
@@ -244,8 +242,8 @@ describe('装甲 RT 按目标矩形分配', () => {
     expect(bucketedRtSize(1, 4096)).toBe(64)
     expect(bucketedRtSize(64, 4096)).toBe(64)
     expect(bucketedRtSize(65, 4096)).toBe(128)
-    expect(bucketedRtSize(3000, 2880)).toBe(2880)   // 满屏目标 = 旧全尺寸行为
-    expect(bucketedRtSize(0, 0)).toBe(1)            // 病态输入不为 0
+    expect(bucketedRtSize(3000, 2880)).toBe(2880)
+    expect(bucketedRtSize(0, 0)).toBe(1)
   })
 
   it('spacedRectOf：全屏 = (0,0,1,1)，子矩形按整幅画面归一化（原点左下）', () => {
@@ -259,23 +257,21 @@ describe('装甲 RT 按目标矩形分配', () => {
   })
 
   it('spacedBufferUv（PBR_FRAG scBuf 公式的 JS 同式）：全画面 UV → rect 局部 RT UV', () => {
-    // review R1：scBuf = (sc − xy) / zw——rect 左下角 → (0,0)，右上角 → (1,1)，全屏恒等
     const rect = new THREE.Vector4(0.4, 0.25, 0.2, 0.3)
     const uv = new THREE.Vector2()
-    spacedBufferUv(0.4, 0.25, rect, uv)                       // rect 左下 → RT (0,0)
+    spacedBufferUv(0.4, 0.25, rect, uv)
     expect(uv.x).toBeCloseTo(0)
     expect(uv.y).toBeCloseTo(0)
-    spacedBufferUv(0.4 + 0.1, 0.25 + 0.15, rect, uv)          // rect 中心 → RT (0.5,0.5)
+    spacedBufferUv(0.4 + 0.1, 0.25 + 0.15, rect, uv)
     expect(uv.x).toBeCloseTo(0.5)
     expect(uv.y).toBeCloseTo(0.5)
-    spacedBufferUv(0.6, 0.55, rect, uv)                       // rect 右上 → RT (1,1)
+    spacedBufferUv(0.6, 0.55, rect, uv)
     expect(uv.x).toBeCloseTo(1)
     expect(uv.y).toBeCloseTo(1)
     const full = new THREE.Vector4(0, 0, 1, 1)
-    spacedBufferUv(0.37, 0.62, full, uv)                      // 全屏 rect 恒等
+    spacedBufferUv(0.37, 0.62, full, uv)
     expect(uv.x).toBeCloseTo(0.37)
     expect(uv.y).toBeCloseTo(0.62)
-    // 旧错误公式（sc*zw+xy）在这组输入下会得到 (0.48, 0.295) —— 方向反了
     spacedBufferUv(0.4, 0.25, rect, uv)
     expect(uv.x).toBeLessThan(0.01)
   })
@@ -289,7 +285,6 @@ describe('拾取 bounds 单趟重算（悬挂形变路径）', () => {
     glb.add(mesh)
     glb.updateMatrixWorld(true)
     const v = { glb }
-    // 悬挂形变：底段下移出旧 bounds
     const position = mesh.geometry.getAttribute('position')
     for (let i = 0; i < position.count; i++) {
       if (position.getY(i) < 0) position.setY(i, position.getY(i) - 3)
@@ -298,10 +293,8 @@ describe('拾取 bounds 单趟重算（悬挂形变路径）', () => {
     aimedVehicle(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 1), [v])
     const box = mesh.geometry.boundingBox
     const sphere = mesh.geometry.boundingSphere
-    // 保守球：中心 = AABB 中心，半径 = 半对角线 ≥ 任意顶点到中心距离
     expect(sphere.center.x).toBeCloseTo((box.min.x + box.max.x) / 2)
     expect(sphere.radius).toBeGreaterThanOrEqual(sphere.center.distanceTo(new THREE.Vector3(box.min.x, box.min.y, box.min.z)))
-    // 形变后的最低顶点仍在覆盖内
     let minY = Infinity
     for (let i = 0; i < position.count; i++) minY = Math.min(minY, position.getY(i))
     expect(sphere.radius).toBeGreaterThanOrEqual(Math.abs(minY - sphere.center.y) - 1e-6)

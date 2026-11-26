@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Static contract for the Yecao -> TX WireGuard boundary.
-#
-# The Yecao application runtime (business backend, frontend, Keycloak and its PostgreSQL) is retired:
-# that host now runs the AI review service plus the shared observability stack. The only
-# Yecao-owned WireGuard endpoints are the ai-service listener and the two observability listeners
-# the TX control plane dials (Grafana for the public monitor route, Loki for the TX log shipper).
-# WireGuard itself is unchanged; this contract pins what still crosses it.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

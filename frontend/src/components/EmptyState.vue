@@ -1,10 +1,8 @@
 <script setup>
-// 空状态 / 维护中 / 需要登录（design-language §7、§10）：说明为什么是空的 + 下一步操作。
 defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },
   icon: { type: [Object, Function], default: null },
-  /** status：普通说明；alert：需要用户处理的失败态 */
   role: { type: String, default: 'status' },
 })
 </script>

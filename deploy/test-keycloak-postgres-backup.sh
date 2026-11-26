@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Execute the production Keycloak backup script against disposable PostgreSQL.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

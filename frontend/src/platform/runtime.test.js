@@ -17,18 +17,13 @@ describe('Android local resource / remote service boundary', () => {
     vi.stubEnv('MODE', 'android')
     expect(resolveApiUrl('/api/ai/reviews')).toBe(`${PRODUCTION_API_ORIGIN}/api/ai/reviews`)
     expect(resolveApiUrl('/download/android/version.json')).toBe(`${PRODUCTION_API_ORIGIN}/download/android/version.json`)
-    // Sponsor 配置与二维码随构建进 bundle（Web 由镜像 nginx 同源伺服，APK 由本机 origin
-    // 伺服），**不得**改道生产网关——一旦出现在这条白名单里，APK 会去 wotbtools.com 取。
     for (const path of ['/assets/chunk.js', '/wasm/ref/parser.wasm', '/maps/map.png', '/__native/replay-pending', '/sponsor-config.json', '/sponsor-assets/alipay.jpg']) expect(resolveApiUrl(path)).toBe(path)
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
     await apiFetch('/api/hof', { headers: { Authorization: 'Bearer native-token' }, credentials: 'include' })
     expect(fetch).toHaveBeenCalledWith(`${PRODUCTION_API_ORIGIN}/api/hof`, { headers: { Authorization: 'Bearer native-token' }, credentials: 'omit' })
-    // A missing bridge in a packaged runtime must never select WebView Keycloak.
     expect(isAndroidApp()).toBe(true)
     expect(ANDROID_APP_ORIGIN).toBe('http://127.0.0.1:21653')
-    // 3D 资产是本机路径（same-origin），由 Native AgentAssetProxy 直连对象存储——
-    // 一旦这里变成远程 origin，WebView fetch 会被桶 CORS 拦截（白名单不含本 origin）。
     expect(ANDROID_ASSET_BASE).toBe('/agent-assets')
   })
   it('rejects AI, HoF, Profile, Admin Users and previously resolved 3D assets before dispatch when offline', async () => {
@@ -40,7 +35,6 @@ describe('Android local resource / remote service boundary', () => {
       '/api/ai/reviews',
       '/api/hof',
       '/api/users/profile',
-      // Admin Users 是 ONLINE_REQUIRED：列表与详情/删除都不允许在非-online 时离开设备。
       '/api/admin/users',
       '/api/admin/users/kc-a',
     ]) {

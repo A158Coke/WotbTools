@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-// 战局回放地图标注回归测试：工具栏渲染（三语）、画笔绘制/撤回/重做/清空、
-// 橡皮擦点擦、文字标注、overview 切换重置。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
@@ -140,7 +138,6 @@ describe('BattlePlayback annotation input lifecycle', () => {
     }
 
     await pickTool('TD')
-    // Toolbar keys retain native button semantics; the editor must not hijack them.
     expect(await keyAtFocus('Enter')).toBe(false)
     expect(await keyAtFocus(' ')).toBe(false)
     await clickMap(wrapper, 100, 100)
@@ -217,13 +214,11 @@ describe('BattlePlayback annotation input lifecycle', () => {
     wrapper.unmount()
   })
 
-  // 关闭标注必须同时收起画笔，否则退出后地图上继续画而不是平移。
   it('clears the active tool when annotations close', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
     setMapLayout(wrapper, 600, 602)
     await openAnnotations(wrapper)
-    // 工具条的关闭按钮是标注面的唯一出口（工具栏与画笔状态同生共死）。
     await wrapper.get('[data-test="pb-annot-close"]').trigger('click')
     await flushPromises()
 
@@ -259,17 +254,14 @@ describe('BattlePlayback annotation input lifecycle', () => {
   it('keeps browsing interactions intact when no tool is active', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
-    // 现有行为：scale≤1 时平移复位（clampViewPan），先滚轮放大到 1.2 再拖拽平移
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, clientX: 100, clientY: 100, deltaY: -100 })
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 100, clientY: 100 })
     dispatchPointer('pointermove', { pointerId: 1, clientX: 150, clientY: 150 })
     dispatchPointer('pointerup', { pointerId: 1, clientX: 150, clientY: 150 })
     await flushPromises()
-    // 未选工具：缩放 + 平移照常发生，且不产生标注
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
     const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
-    // 缩放锚点 (100,100) 把 tx/ty 推到 -20，再拖 50px → 30px
     expect(style).toContain('translate(30px, 30px)')
     expect(style).toContain('width: 120%')
   })

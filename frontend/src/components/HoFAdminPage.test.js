@@ -13,7 +13,6 @@ import HoFAdminModeration from './HoFAdminModeration.vue'
 import HoFAdminRecords from './HoFAdminRecords.vue'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
-// Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
 async function pressEscape() {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await flushPromises()
@@ -68,7 +67,6 @@ vi.mock('../composables/useConnectivity.js', async () => {
 
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
-    // 与真实 composable 一致：initPromise 只表示 bootstrap 落定，不携带登录态。
     initPromise: Promise.resolve(undefined),
     isAuthenticated: () => authenticated,
     tokenParsed: ref(roles.length ? { realm_access: { roles } } : null),
@@ -84,7 +82,6 @@ vi.mock('../utils/display.js', () => ({
   replayValueLabel: (t, te, value) => value,
   formatDateTimeMinute: value => value || ''
 }))
-// 三语 reason options（object message：tm/$tm 才返回 object；$t 只用于字符串 key）
 const REJECT_OPTIONS = {
   SCREENSHOT_MISMATCH: '截图数据与申报不符',
   SCREENSHOT_UNREADABLE: '截图无法识别',
@@ -107,7 +104,6 @@ const optionMessages = (key) => {
   if (key === 'mark3Admin.deleteReasonOptions') return DELETE_OPTIONS
   return {}
 }
-// t(key, params) → "key(k=v,...)"：断言同时锁定 key 与插值参数。
 const translate = vi.hoisted(() => (key, params) => (params
   ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
   : key))
@@ -239,11 +235,10 @@ describe('HoFAdminPage', () => {
     const wrapper = mountPage()
     await flushPromises()
     const tabs = wrapper.findAll('.hof-admin-tabs button')
-    // 防未来 refactor 丢失审核入口：四个 Tab 必须存在且顺序固定
     expect(tabs.map(button => button.text())).toEqual([
       'hofAdmin.recordsTab', 'hofAdmin.auditTab', 'hundredAdmin.tab', 'mark3Admin.tab'
     ])
-    expect(tabs[0].classes()).toContain('active') // 默认停在 records
+    expect(tabs[0].classes()).toContain('active')
   })
 
   it('uses optional readable vehicle filters as real search conditions and intersects the selected tank', async () => {
@@ -261,7 +256,6 @@ describe('HoFAdminPage', () => {
       .toEqual(['hofAdmin.fNickname', 'hofAdmin.fAccountId', 'hofAdmin.fUploadedBy'])
 
     let selects = wrapper.find('.hof-admin-filters').findAll('select')
-    // 三项都未选择时，车辆下拉直接提供全量候选。
     expect(selects[3].findAll('option')).toHaveLength(5)
 
     await selects[2].setValue('10')
@@ -335,11 +329,9 @@ describe('HoFAdminPage', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    // 单击垃圾桶 → 弹确认，绝不立即执行删除
     await wrapper.findAll('.actions .danger')[0].trigger('click')
     expect(hofAdminApi.hofAdminDelete).not.toHaveBeenCalled()
     expect(wrapper.find('.hof-delete-modal').exists()).toBe(true)
-    // 确认 → 调用删除 API
     await wrapper.findAll('.modal-actions .danger')[0].trigger('click')
     expect(hofAdminApi.hofAdminDelete).toHaveBeenCalledWith(7)
   })
@@ -361,16 +353,13 @@ describe('HoFAdminPage', () => {
     expect(table.text()).toContain('FV4005')
     expect(table.text()).toContain('SnapUser')
     expect(table.text()).toContain('E 100')
-    // 状态列渲染
     expect(table.text()).toContain('hundredAdmin.status.PENDING')
     expect(table.text()).toContain('hundredAdmin.status.CURRENT')
     expect(table.text()).toContain('RejectedUser')
-    // 队列每条只打开右侧详情，队列不得直接审核或删除。
     const actionButtons = wrapper.findAll('.hof-hundred [data-testid="hof-queue-open"]')
     expect(actionButtons).toHaveLength(3)
     expect(wrapper.find('.hof-hundred .hof-queue .danger').exists()).toBe(false)
     expect(wrapper.find('.hof-hundred .hof-review-pane').exists()).toBe(false)
-    // 国家/车种无需先选车辆即可真实筛选；车辆与状态继续取交集。
     const filters = wrapper.findAll('.hof-hundred .hof-admin-filters select')
     expect(filters).toHaveLength(4)
     await filters[0].setValue('EUROPE')
@@ -423,18 +412,15 @@ describe('HoFAdminPage', () => {
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(11)
     const modal = wrapper.find('.hof-review-pane')
     expect(modal.exists()).toBe(true)
-    // 截图
     const img = modal.find('img')
     expect(img.exists()).toBe(true)
     expect(img.attributes('src')).toBe('/api/screenshots/11.png')
-    // 四项 Replay 校验：true → ✓ / false → ✗
     const items = modal.findAll('.val-list li')
     expect(items.length).toBe(4)
     expect(items[0].classes()).toContain('val-ok')
     expect(items[1].classes()).toContain('val-bad')
     expect(items[2].classes()).toContain('val-ok')
     expect(items[3].classes()).toContain('val-ok')
-    // 管理员只能改变状态，页面不再提供改分输入框。
     expect(modal.findAll('.hundred-inputs input')).toHaveLength(0)
   })
 
@@ -444,7 +430,7 @@ describe('HoFAdminPage', () => {
       page: 1, size: 50, totalItems: 1, totalPages: 1
     })
     hofAdminApi.hofAdminHundredDetail.mockResolvedValue(pendingDetail)
-    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence) // 完整 5 evidence → approve 可用
+    hofAdminApi.hofAdminHundredReplays.mockResolvedValue(replayEvidence)
     const wrapper = mountPage()
     await flushPromises()
     await switchToHundred(wrapper)
@@ -452,13 +438,11 @@ describe('HoFAdminPage', () => {
     await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    // 第一次点击「通过」仅进入确认阶段，不调用 API
     const approveBtn = () => wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.approve')
     await approveBtn().trigger('click')
     expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
     expect(wrapper.find('.hof-review-pane').text()).toContain('hundredAdmin.approveConfirm')
 
-    // 确认后调用 approve 并刷新列表
     await approveBtn().trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredApprove).toHaveBeenCalledWith(11)
@@ -503,14 +487,11 @@ describe('HoFAdminPage', () => {
     await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
 
-    // 进入拒绝表单
     const rejectBtn = () => wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject')
     await rejectBtn().trigger('click')
     const select = wrapper.find('.hof-review-pane select')
     const values = select.findAll('option').map(o => o.attributes('value'))
-    // option value 必须是 backend 接受的稳定 category（不是字符串字符/索引）
     expect(values).toEqual(['', 'SCREENSHOT_MISMATCH', 'SCREENSHOT_UNREADABLE', 'INSUFFICIENT_PROOF', 'SUSPECTED_FRAUD', 'OTHER'])
-    // 选择 category 并确认 → API 收到稳定 category value
     await select.setValue('SCREENSHOT_MISMATCH')
     await wrapper.findAll('.hof-review-pane .modal-actions button').find(b => b.text() === 'hundredAdmin.reject').trigger('click')
     await flushPromises()
@@ -553,7 +534,6 @@ describe('HoFAdminPage', () => {
     await flushPromises()
     await switchToHundred(wrapper)
 
-    // 先打开详情，列表里没有直接删除入口。
     await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredDetail).toHaveBeenCalledWith(12)
@@ -629,7 +609,6 @@ describe('HoFAdminPage', () => {
     expect(items[0].text()).toContain('1.0 KB')
     expect(items[2].text()).toContain('3.00 MB')
 
-    // 点击单个 replay 下载 → 调 authenticated download API（submissionId + replayId）
     await items[0].find('button').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminHundredReplayDownload).toHaveBeenCalledWith(11, 101)
@@ -692,10 +671,8 @@ describe('HoFAdminPage', () => {
     await openReviewWithEvidence(wrapper, [])
 
     expect(approveBtn(wrapper).attributes('disabled')).toBeDefined()
-    // REJECT 在 evidence 不完整时仍可用
     const rejectBtn = wrapper.findAll('.hof-review-pane button').find(b => b.text() === 'hundredAdmin.reject')
     expect(rejectBtn.attributes('disabled')).toBeUndefined()
-    // 点击禁用按钮不会进入 approve-confirm
     await approveBtn(wrapper).trigger('click')
     expect(wrapper.find('.hof-review-pane').text()).not.toContain('hundredAdmin.approveConfirm')
     expect(hofAdminApi.hofAdminHundredApprove).not.toHaveBeenCalled()
@@ -801,7 +778,6 @@ describe('HoFAdminPage', () => {
     expect(modal.find('textarea').attributes('maxlength')).toBe('500')
   })
 
-  // ── 三域批量删除：一次确认 + 逐条结果 ──────────────────────────────
 
   const recordsPage = {
     items: [
@@ -823,7 +799,6 @@ describe('HoFAdminPage', () => {
     page: 1, size: 50, totalItems: 2, totalPages: 1
   }
 
-  /** 批量确认 ：未输入 DELETE 时按钮禁用。 */
   async function confirmBulk(wrapper, keyword = 'DELETE') {
     const modal = wrapper.find('.bulk-delete-modal')
     const confirm = modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete')
@@ -855,7 +830,6 @@ describe('HoFAdminPage', () => {
     await wrapper.findAll('.hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     const modal = wrapper.find('.bulk-delete-modal')
     expect(modal.text()).toContain('hofAdmin.bulkDeleteHint(count=2)')
-    // 单场删除语义不带 reason：批量确认里没有原因选择控件，只有 DELETE 关键字。
     expect(modal.find('select').exists()).toBe(false)
     expect(hofAdminApi.hofAdminBulkDeleteRecords).not.toHaveBeenCalled()
 
@@ -865,9 +839,7 @@ describe('HoFAdminPage', () => {
     expect(modal.text()).toContain('hofAdmin.bulkSummary(requested=2,deleted=1,failed=1)')
     expect(modal.text()).toContain('#8')
     expect(modal.text()).toContain('code:HOF_RECORD_NOT_FOUND')
-    // 删除后 reload 当前页。
     expect(hofAdminApi.hofAdminList).toHaveBeenCalledTimes(2)
-    // 失败记录保留选择，成功记录移出。
     expect(wrapper.find('.hof-bulk-count').text()).toBe('hofAdmin.selectedCount(count=1)')
   })
 
@@ -892,16 +864,13 @@ describe('HoFAdminPage', () => {
     await wrapper.findAll('.hof-hundred .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     const modal = wrapper.find('.bulk-delete-modal')
     expect(modal.text()).toContain('hofAdmin.bulkDeleteHintModeration(count=2)')
-    // 复用既有单条删除的 reason 选项（同一组 6 类 + 占位项）。
     expect(modal.find('select').findAll('option').map(option => option.attributes('value')))
       .toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
 
-    // 未选原因 → 复用既有校验文案，且不发请求。
     await confirmBulk(wrapper)
     expect(hofAdminApi.hofAdminBulkDeleteHundred).not.toHaveBeenCalled()
     expect(modal.text()).toContain('hundredAdmin.deleteReasonRequired')
 
-    // OTHER 必须带补充说明。
     await modal.find('select').setValue('OTHER')
     await modal.find('.admin-confirm-input').setValue('DELETE')
     await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
@@ -934,7 +903,6 @@ describe('HoFAdminPage', () => {
 
     await wrapper.findAll('.hof-mark3 .hof-bulk-bar button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     const modal = wrapper.find('.bulk-delete-modal')
-    // 三环复用自己命名空间的 reason 选项。
     expect(modal.find('select').findAll('option').map(option => option.attributes('value')))
       .toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
     await modal.find('select').setValue('DATA_ERROR')
@@ -974,7 +942,6 @@ describe('HoFAdminPage', () => {
     expect(wrapper.find('.hof-review-pane').text()).toContain('EU·game-333')
   })
 
-  // —— PG-09 / PG-10：对话框统一 AppDialog，图标按钮有可访问名称，Tab 可滚动 ——
   it.each(['hundred', 'mark3'])('releases inactive %s overlays across breakpoints and caches its list', async (kind) => {
     const list = kind === 'hundred' ? hofAdminApi.hofAdminHundredList : hofAdminApi.hofAdminMark3List
     const detail = kind === 'hundred' ? hofAdminApi.hofAdminHundredDetail : hofAdminApi.hofAdminMark3Detail
@@ -1093,12 +1060,9 @@ describe('HoFAdminPage', () => {
       expect(button.text()).toBe('')
     }
     expect(wrapper.find('.hof-admin-table').text()).not.toMatch(/[⬇🗑✓✗]/u)
-    // 操作列表头与单元格同一 class：吸附在右侧（PG-10），不会被横向滚动带出视口
     expect(wrapper.find('th.actions').exists()).toBe(true)
   })
 
-  // 分区的 scoped 样式按真实编译产物（vue/compiler-sfc，组件自己的 scope id）注入文档，
-  // 由 happy-dom 级联算出 computed style：选择器若依赖分区之外的祖先或 scope 不匹配，这里就拿不到控件样式。
   it('applies the shared control styles to section-owned filters, page-size and bulk confirm controls', async () => {
     const sheets = []
     const inject = (component, file) => {

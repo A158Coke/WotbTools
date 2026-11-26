@@ -1,5 +1,3 @@
-// 战斗特效发射器（击毁爆炸 / 开火 / 命中 / 残骸烟的逐帧粒子外观）——自 battleFx.ts 出仓
-//（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致；闭包读数改经 deps 注入）。
 import * as THREE from 'three'
 import type { Color, Vector3 } from 'three'
 import type { FxBudget } from './battleFxAtlas.js'
@@ -9,33 +7,22 @@ import { GLOW_TILE, FLAME_TILES, SOOT_TILES, STAR_TILE, CHUNK_TILE } from './bat
 import { clamp01 } from './battleFxAtlas.js'
 import type { ParticleBatch, SparkLineBatch } from './battleFxAtlas.js'
 
-/** 发射器消费的批次与相机态（owner = createBattleFx；getter 语义见该模块）。 */
 export interface BattleFxEmittersDeps {
   budget: FxBudget
   glow: ParticleBatch
   smoke: ParticleBatch
   sparks: SparkLineBatch
-  /** 每帧更新的像素尺度（屏幕尺寸下限换算；owner = createBattleFx.frame）。 */
   pxScale: { value: number }
-  /** 相机世界位（owner = createBattleFx.frame）。 */
   camPos: Vector3
 }
 
-// ---------- 特效寿命与屏幕尺寸常量（battleFx 的 life 函数同源消费） ----------
 
-/** 击毁爆炸壁钟寿命（秒）。3D 专用，不再由 2D 的 `BURST_MS` 推导。 */
 export const BURST_SECS = 4.2
 export const MUZZLE_FLASH_SECS = 0.24
 export const MUZZLE_SMOKE_SECS = 1.8
 export const IMPACT_FLASH_SECS: Record<ImpactKind, number> = { pen: 0.18, nonpen: 0.13, ricochet: 0.1 }
 export const IMPACT_SMOKE_SECS: Record<ImpactKind, number> = { pen: 1.8, nonpen: 1.4, ricochet: 1.2 }
 export const IMPACT_SPARK_SECS = 0.8
-/**
- * 命中特效最小屏幕尺寸。镜头拉远时 2 m 的命中火光只有十几像素，余火与烟几乎看不见
- * （2026-10-13 实机近景）。参考尺寸 IMPACT_REF_M 至少占 IMPACT_MIN_PX 像素：镜头拉远时
- * 整套命中特效（火光、余火、烟、火星的大小与散布）等比放大，最多 IMPACT_MAX_ZOOM 倍；
- * 回放相机可以贴近到约 1 m，离得近时保持世界尺寸，不额外放大。
- */
 export const IMPACT_REF_M = 2
 export const IMPACT_MIN_PX = 56
 export const IMPACT_MAX_ZOOM = 3
@@ -45,10 +32,8 @@ export const MAX_DUST = FX_BUDGETS.ultra.burstDust
 export const G = 9.8
 export const TAU = Math.PI * 2
 
-// ---------- 缓动与确定性随机 ----------
 const easeOut = (x: number): number => 1 - (1 - clamp01(x)) ** 3
 const smooth = (x: number): number => { const t = clamp01(x); return t * t * (3 - 2 * t) }
-/** 确定性哈希随机 [0,1)：同一 (seed, i, k) 永远同值——特效外观只依赖年龄。 */
 function rnd(seed: number, i: number, k: number): number {
   let x = Math.imul((seed | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(i + 1, 0xc2b2ae35) ^ Math.imul(k + 1, 0x27d4eb2f)
   x ^= x >>> 15; x = Math.imul(x, 0x2c1b3c6d)
@@ -57,8 +42,6 @@ function rnd(seed: number, i: number, k: number): number {
   return (x >>> 0) / 4294967296
 }
 
-// ---------- 颜色（three 线性空间；shader 末尾转输出色彩空间） ----------
-// ---------- 颜色（three 线性空间；shader 末尾转输出色彩空间） ----------
 const C = (hex: number) => new THREE.Color(hex)
 const HOT = C(0xfff4dc), YEL = C(0xffc864), ORA = C(0xff7f2a), RED = C(0xa6381a)
 const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d), WRECK_TOP = C(0x5f5a54)
@@ -69,15 +52,10 @@ const PEN_SMOKE0 = C(0x48433d), PEN_SMOKE1 = C(0x6c6660), GREY0 = C(0x9d978d), G
 const MUZZLE_SMOKE = C(0xa29c92), DEBRIS = C(0x23201d)
 export { WHITE }
 
-/**
- * 创建一个会话的发射器闭包（原 createBattleFx 内的 spark/emit* 逐字迁入）。
- * 返回的函数只写 deps 批次，不持有 GPU 资源。
- */
 export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
   const { budget, glow, smoke, sparks, pxScale, camPos } = deps
   const _c = new THREE.Color()
 
-  /** 加色粒子 + 拖尾线段组成的一颗火星。 */
   function spark(x: number, y: number, z: number, vx: number, vy: number, vz: number, color: Color, k: number, tail: number, size = 0.28): void {
     glow.push(x, y, z, 0, size, size, GLOW_TILE, color, k)
     sparks.push(x, y, z, x - vx * tail, y - vy * tail, z - vz * tail, color, k)
@@ -90,7 +68,6 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
       glow.push(x, y + 1.7, z, 0.4, s, s, STAR_TILE, FLASH, (1 - a / 0.22) ** 2)
     }
     if (a < 0.8) {
-      // 贴地光斑：压扁的大光晕，模拟爆炸照亮地面
       const k = a / 0.8, s = 9 + 7 * easeOut(k)
       glow.push(x, y + 0.35, z, 0, s, s * 0.45, GLOW_TILE, GROUND_GLOW, 0.55 * (1 - k) ** 1.6)
     }
@@ -197,9 +174,6 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
     }
   }
 
-  // 命中点就在车体表面：面向相机的火光 / 烟四边形有一半插进车体，被深度测试裁掉（实机近景里
-  // 暗烟完全看不见、火光被切掉一块）。沿视线朝相机挪半个粒子尺寸：屏幕位置不变，只把四边形
-  // 从车体里拉出来。
   function pushTowardCamera(batch: ParticleBatch, x: number, y: number, z: number, rot: number, w: number, h: number, tile: number, color: Color, alpha: number): void {
     const vx = camPos.x - x, vy = camPos.y - y, vz = camPos.z - z
     const d = Math.hypot(vx, vy, vz)
@@ -209,7 +183,6 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
 
   function emitImpact(e: ImpactEvent, a: number): void {
     const { kind, x, y, z, dx, dy, dz, seed } = e
-    // 屏幕尺寸下限（见 IMPACT_MIN_PX）：zoom ≥ 1 时大小与散布等比放大
     const zoom = Math.min(IMPACT_MAX_ZOOM, Math.max(1,
       IMPACT_MIN_PX * Math.hypot(x - camPos.x, y - camPos.y, z - camPos.z) * pxScale.value / IMPACT_REF_M))
     const flashSecs = IMPACT_FLASH_SECS[kind]
@@ -220,16 +193,12 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
       pushTowardCamera(glow, x - dx * 0.2 * zoom, y - dy * 0.2 * zoom, z - dz * 0.2 * zoom, rnd(seed, 0, 0) * TAU,
         s, s, FLAME_TILES[0], _c, (1 - f) ** 1.5)
     }
-    // 命中点余火：击穿留一点橙色火光，未击穿只闪一下亮点；跳弹不留
     const glowSecs = kind === 'pen' ? 0.9 : kind === 'nonpen' ? 0.4 : 0
     if (a < glowSecs) {
       const s = (kind === 'pen' ? 0.9 : 0.6) * zoom
       pushTowardCamera(glow, x - dx * 0.15 * zoom, y - dy * 0.15 * zoom, z - dz * 0.15 * zoom, 0, s, s, GLOW_TILE,
         kind === 'pen' ? ORA : YEL, 0.9 * (1 - a / glowSecs) ** 1.5)
     }
-    // 烟：击穿深灰、其余中灰。单团烟贴图平均不透明度只有 ~0.2，暗烟叠在深灰车体上实机几乎
-    // 看不出（像素回读：命中点附近中位只压暗 ~13/255），所以每团再叠一层小一号的烟芯，颜色取中灰，
-    // 在深色车体与亮地面上都有对比。
     const smokeSecs = IMPACT_SMOKE_SECS[kind]
     const nSmoke = kind === 'ricochet' ? Math.ceil(budget.impactSmoke / 2) : budget.impactSmoke
     const peak = kind === 'pen' ? 1 : kind === 'nonpen' ? 0.9 : 0.6
@@ -253,12 +222,10 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
         const rx = (rnd(seed, i, 20) - 0.5) * 2, ry = rnd(seed, i, 21) * 1.6, rz = (rnd(seed, i, 22) - 0.5) * 2
         let vx, vy0, vz, lifeSecs
         if (kind === 'ricochet') {
-          // 沿偏转方向的窄锥
           const spd = 12 + rnd(seed, i, 23) * 10
           vx = e.ox * spd + rx * 2.2; vy0 = e.oy * spd + ry * 2.2; vz = e.oz * spd + rz * 2.2
           lifeSecs = 0.25 + rnd(seed, i, 24) * 0.25
         } else {
-          // 迎着来弹方向回溅：击穿低速橙色，未击穿高速亮白
           let bx = -dx * 0.6 + rx, by = -dy * 0.6 + ry, bz = -dz * 0.6 + rz
           const n = Math.hypot(bx, by, bz) || 1
           const spd = kind === 'pen' ? 3 + rnd(seed, i, 23) * 4 : 6 + rnd(seed, i, 23) * 8
@@ -268,7 +235,6 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
         }
         const life = a / lifeSecs
         if (life >= 1) continue
-        // 命中点在车体上、地面高度未知：不做落地钳制（寿命 ≤0.65 s，落到地下的部分由深度测试遮住）
         _c.lerpColors(head, SPARK1, life)
         spark(x + vx * a * zoom, y + (vy0 * a - 0.5 * G * a * a) * zoom, z + vz * a * zoom,
           vx * zoom, (vy0 - G * a) * zoom, vz * zoom, _c,
@@ -277,9 +243,7 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
     }
   }
 
-  /** 残骸持续烟（+ 极致档余火）。`since` 回放秒（未知死亡时刻传 Infinity），`phase` 播放中壁钟累计秒。 */
   function emitWreck(x: number, y: number, z: number, yaw: number, since: number, phase: number, seed: number): void {
-    // 车体局部 (lx, lz) → 世界 xz（绕 Y 转 yaw；车头 +z，发动机舱在 -z 侧）
     const cos = Math.cos(yaw), sin = Math.sin(yaw)
     const n = budget.wreckSmoke
     const ramp = n > 0 ? smooth((since - 1.4) / 2.2) : 0
@@ -289,9 +253,6 @@ export function createBattleFxEmitters(deps: BattleFxEmittersDeps) {
         const ph = (phase * 0.2 + i / n + offset) % 1, age = ph * 5
         const lx = (rnd(seed, i, 51) - 0.5) * 0.8 + age * (0.7 + rnd(seed, i, 52) * 0.6) * 0.7
         const lz = -1.6 + (rnd(seed, i, 53) - 0.5) * 0.8 + age * 0.25
-        // 烟团大、升得慢、彼此重叠成连续烟柱：单团烟贴图中心 alpha 只有 ~0.6，稀疏摆放在亮图远景下
-        // 只剩一层看不出的薄灰（实机像素回读：峰值只压暗 ~1/3）。
-        // 底部炭黑（亮图上读得出）→ 顶部转灰（暗图上读得出）。
         const size = 2.4 + ph * 6.5
         _c.lerpColors(SOOT, WRECK_TOP, ph)
         smoke.push(x + lx * cos + lz * sin, y + 1.6 + ph * 10, z - lx * sin + lz * cos,

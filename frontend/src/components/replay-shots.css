@@ -1,7 +1,4 @@
-/* ReplayShotsPane 局部样式（随拆分自 ReplayShotsPane.vue，scoped 原样）。 */
 /* stylelint-disable -- ReplayShotsPane.vue 在 stylelint.legacy.json 旧基线；豁免随文件迁移，样式逐字未改 */
-/* 配色一律走语义 token（两档主题同一份规则）；容器查询决定 Master–Detail 分档，
-   不按视口——工作台可能被抽屉挤窄。 */
 .shots-pane:fullscreen { padding: var(--space-3); background: var(--color-canvas); overflow-y: auto; }
 .shots-pane { container-type: inline-size; display: grid; gap: var(--space-3); min-width: 0; }
 .shots-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-4); }
@@ -22,7 +19,6 @@
 .shots-cause { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
 .shots-filter { display: grid; gap: var(--space-1); min-width: 0; max-width: 100%; }
-/* compact：两项分段占满一行；四项统计固定一行（design-language §9「射击分析」） */
 .shots-scope-switch { flex: 1 1 100%; }
 .shots-pane:has(.shots-scope-switch) :deep(.stat-strip) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .shots-pane:has(.shots-scope-switch) :deep(.stat-strip .stat) { min-width: 0; padding-inline: var(--space-2); }
@@ -130,8 +126,6 @@
 .shot-detail-quality ul { margin: 0; padding-inline-start: var(--space-4); color: var(--color-text-secondary); font: var(--type-caption); }
 .shot-detail-hint { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); }
 
-/* medium：选中后增加详情列——列表让位，内容高度由 grid 自然撑开；
-   compact：整屏面板 + 遮罩，关闭后焦点回到触发它的那一行 */
 .shots-split { --shot-detail-w: min(var(--shot-detail-width), 42cqi); }
 
 .shots-split.is-medium.has-detail { grid-template-columns: minmax(0, 1fr) minmax(0, var(--shot-detail-w)); }
@@ -161,7 +155,6 @@
   .shot-row:not(.is-selected):hover { background: var(--color-surface-2); }
 }
 
-/* 触屏：点击区域抬到 --hit-min（44px），布局不动 */
 @media (pointer: coarse) {
   .shot-row { min-height: var(--hit-min); }
   .shots-select { min-height: var(--control-h-md); }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Helpers for fail-closed reads of mutable BlitzKit definition resources."""
 
 import hashlib

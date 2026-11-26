@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-/**
- * BlitzKit 辅助脚本— 为 ChatGPT SVG 生成准备输入资料。
- *
- * 职责：
- * 1. 读取真实项目 Tankopedia（common/tankopedia-tier10.json）+ 车型 mapping；
- * 2. 输出完整 Tier X inventory（含 baseModelKey / kind / BlitzKit 参考 URL）；
- * 3. 自动下载车型 reference images 到本地缓存（gitignored）；
- * 4. 输出覆盖/缺失情况；
- * 5. --emit-docs 时生成 docs/assets/tier-x-models/tier-x-inventory.md（提交入库）。
- *
- * 用法（仓库根）：
- *   node frontend/scripts/blitzkit-references.mjs            # 下载参考图 + 写缓存 inventory
- *   node frontend/scripts/blitzkit-references.mjs --dry-run  # 只看清单，不下载
- *   node frontend/scripts/blitzkit-references.mjs --limit 5  # 只处理前 5 辆（调试）
- *   node frontend/scripts/blitzkit-references.mjs --emit-docs# 生成 tier-x-inventory.md
- *   node frontend/scripts/blitzkit-references.mjs --emit-portraits # 下载并发布 Details Panel 车型图
- *
- * BlitzKit 不是 production/CI 依赖：脚本只在本机手动运行。
- * 参考图 URL 已验证：https://api.blitzkit.app/tanks/{tankId}/icons/big.webp
- */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -45,13 +25,6 @@ function isWebp(bytes) {
     && bytes.subarray(8, 12).toString('ascii') === 'WEBP'
 }
 
-/**
- * kind 核验依据（2026-08-17 起，全量 modelKey 逐组核验）。
- * 依据来源：官方 tankopedia 描述 / fandom wiki / 车辆实际俯视结构知识。
- * 注意：不采用 BlitzKit TURRET module 或 turretRotationSpeed 字段判定
- * （casemate 也有 turret module 且转速非零，不可判）。
- * 未列出的 turreted modelKey 均为「标准可旋转炮塔（HT/MT/LT，结构知识核验）」。
- */
 const KIND_EVIDENCE = {
   'ho-ri': 'fandom：无炮塔，仅 14° 总射界（casemate）',
   'foch-155': 'fandom specs turret=no（固定/微转前向炮塔）',
@@ -69,15 +42,12 @@ const KIND_EVIDENCE = {
   'obj-263': 'casemate 固定战斗室 TD（结构知识）',
   'fv217-badger': 'casemate 固定战斗室 TD（结构知识）',
   'object-268-4': 'casemate 固定战斗室 TD（结构知识）',
-  // 2026-08-19 BlitzKit 真实模型数据确认（GLB 节点结构 + models.pb turret yaw 限位），
-  // confirmPending 全部清零，contract 冻结；turretPivot 均已通过 yaw0/90 几何反推验证（err=0.0000m）。
   'spht': '2026-08-19 BlitzKit 数据确认：GLB turret_01 + gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
   'ac-teichos': '2026-08-19 BlitzKit 数据确认：GLB turret_01（631+1540 顶点）+ gun_01 + gun_01_mask、models.pb turret 模块无 yaw 限位 → 确认 turreted',
   'nc-70-blyskawica': '2026-08-19 BlitzKit 数据确认：GLB turret_01 为 1-triangle stub（casemate 主体在 hull_nc_01，属 hull 层；旋转层实际 = gun_01 + gun_01_mask）、models.pb turret 模块 yaw ±10°（limited-traverse，同 grille-15）→ 确认 turreted',
   'zmije': '2026-09-08 BlitzKit 数据确认：GLB turret_01 + gun_01_mask + gun_01，tanks.pb 选定 turret=33409/gun=38785，models.pb turretOrigin 可解析 → 确认 turreted',
 }
 
-/** 尽力而为的 BlitzKit 页面 slug（非 ASCII 字母会被剥离，页面链接仅作辅助）。 */
 function slugify(name) {
   return name
     .toLowerCase()
@@ -87,7 +57,7 @@ function slugify(name) {
 
 function buildInventory() {
   const byId = new Map(tankopedia.vehicles.map((v) => [v.id, v]))
-  const groups = new Map() // modelKey -> { kind, confirmPending, entries: [] }
+  const groups = new Map()
   for (const [modelKey, def] of Object.entries(MODEL_DEFINITIONS)) {
     groups.set(modelKey, {
       kind: def.kind,

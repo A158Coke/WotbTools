@@ -19,10 +19,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Draft-group merge and snapshot/rank validation, extracted from TournamentService.
- * Evidence lookup and clan confirmation semantics unchanged.
- */
 class TournamentDraftGroupSupport {
     private final TournamentEvidenceRepository evidence;
     private final TournamentClanRepository clans;

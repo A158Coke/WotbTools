@@ -48,7 +48,6 @@ export function isApiErrorWirePayload(value: unknown): value is ApiErrorWirePayl
   return validateApiError(value).data !== null
 }
 
-/** Backward-compatible name; validation now targets the generated HTTP wire schema. */
 export const isApiErrorPayload = isApiErrorWirePayload
 
 function isPlayerRow(value: unknown): boolean {

@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 侧边栏顶部（logo 下方）的资产数据版本切换。
-// 与侧边栏导航同一套视觉：展开态是带标题/当前值的块，图标栏是图标 + 下方两行小字。
-// 下拉列表由 DataVersionMenu（Reka Select）提供，外观由本组件决定。
 import { computed } from 'vue'
 import { ChevronDown, Database } from 'lucide-vue-next'
 import DataVersionMenu from '../components/DataVersionMenu.vue'
@@ -16,7 +13,6 @@ const currentLabel = computed(() => {
   return options.value.find((option) => option.value === selected.value)?.label ?? selected.value
 })
 
-/** 图标栏很窄：只显示 variant（如 t11-preview）或 dataset id，完整 label 留给展开态/title。 */
 const railLabel = computed(() => {
   if (!selected.value) return null
   return state.value.datasets.find((entry) => entry.id === selected.value)?.variant || selected.value
@@ -126,7 +122,6 @@ function onSelect(id: string): void {
 
 .sidebar-version[data-state='open'] { background: var(--color-surface-3); }
 
-/* 图标栏：图标 + 下方小字，与 .sidebar-link 的 rail 形态一致；不再显示标题/箭头/边框。 */
 .sidebar-version.is-rail {
   align-items: center;
   gap: var(--space-1);
@@ -153,7 +148,6 @@ function onSelect(id: string): void {
   overflow-wrap: anywhere;
 }
 
-/* 覆盖展开态的 nowrap/ellipsis：否则内层 span 只显示一行，外层两行 clamp 失效。 */
 .sidebar-version.is-rail .sidebar-version-value-text {
   display: inline;
   overflow: visible;

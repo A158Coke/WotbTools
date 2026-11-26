@@ -18,7 +18,7 @@ class FilePickerCacheTest {
         assertEquals("battle.wotbreplay", output.name)
         assertArrayEquals(MessageDigest.getInstance("SHA-256").digest(fixture.readBytes()),
             MessageDigest.getInstance("SHA-256").digest(output.readBytes()))
-        assertTrue(output.isFile) // backing file remains readable after returning to Gecko
+        assertTrue(output.isFile)
     }
 
     @Test fun missingOrThrowingInputLeavesNoOutput() {
@@ -49,7 +49,6 @@ class FilePickerCacheTest {
         val events = mutableListOf<String>()
         assertThrows(IOException::class.java) {
             FilePickerCache.copy(temporary.root, "blocked.wotbreplay", {
-                // Simulate an output that cannot be opened, after the provider stream was acquired.
                 File(temporary.root.listFiles()!!.single(), "blocked.wotbreplay").mkdir()
                 input
             }, events::add)

@@ -3,24 +3,6 @@ package com.wotb.core.replay.feature;
 import com.wotb.core.replay.event.DecodeConfidence;
 import com.wotb.core.replay.reconstruction.Vector3;
 
-/**
- * 移动段 —— 将高频位置流压缩为战术移动段。
- * <p>
- * 时间语义：{@code startTime}/{@code endTime} 为 battle-relative 秒。
- * 坐标/单位语义：{@code rawStartPosition}/{@code rawEndPosition} 是 <strong>raw replay</strong>
- * 坐标（字段名显式标注 raw，展示时经由单一 resolver 转 canonical）；{@code distance} 为
- * <strong>canonical 米</strong>，{@code averageSpeed} 为 canonical 米 / battle-relative 秒
- * （m/s），{@code averageSpeedKmh} 为 km/h。
- *
- * <p>派生事实（1 Type10 unit ≈ 1 米，docs/research/replay/
- * type10-movement-transform-closure.md）：{@code verticalDeltaMeters} /
- * {@code verticalSpeedMps} / {@code hullYawRateRadS} 由端点 raw 坐标与 yaw 派生；
- * {@code movementState} 为段级分类（FORWARD/REVERSE 由 signed longitudinal speed 判定）。</p>
- * <p>
- * 不变量：所有 float 有限；{@code startTime}/{@code endTime}/{@code distance}/{@code averageSpeed}
- * 非负；{@code startTime <= endTime}；{@code type}/{@code rawStartPosition}/{@code rawEndPosition}
- * 非空。派生 scalar 允许 {@link Float#NaN}（= 端点数据不足以派生，不得当 0）。
- */
 public record MovementSegment(
         float startTime,
         float endTime,
@@ -72,7 +54,6 @@ public record MovementSegment(
             throw new IllegalArgumentException(
                     "averageSpeedKmh must be finite and >= 0: " + averageSpeedKmh);
         }
-        // 派生 scalar 允许 NaN（未知），但有限值必须合法
         if (!Float.isNaN(verticalDeltaMeters) && !Float.isFinite(verticalDeltaMeters)) {
             throw new IllegalArgumentException(
                     "verticalDeltaMeters must be finite or NaN: " + verticalDeltaMeters);
@@ -87,10 +68,6 @@ public record MovementSegment(
         }
     }
 
-    /**
-     * Legacy 便捷构造（无派生数据）：派生 scalar 默认 NaN/由 type+speed 推导，
-     * 供旧调用方/测试保持编译兼容；生产路径应使用 {@link #derived}。
-     */
     public MovementSegment(
             float startTime,
             float endTime,
@@ -147,7 +124,6 @@ public record MovementSegment(
                 state, dy, verticalSpeed, yawRate);
     }
 
-    /** 段级移动状态分类（保守：阈值以下不臆断前进/倒车/转弯）。 */
     static MovementState movementStateOf(
             final MovementType type,
             final float averageSpeedMps,
@@ -156,7 +132,7 @@ public record MovementSegment(
         if (type == MovementType.STATIONARY
                 || (Float.isFinite(averageSpeedMps) && averageSpeedMps < 0.1f)) {
             if (Float.isFinite(yawRateRadS) && Math.abs(yawRateRadS) >= 0.05f) {
-                return MovementState.TURNING; // 平面位移小但车体明显转动 = 原地转向
+                return MovementState.TURNING;
             }
             return MovementState.STATIONARY;
         }

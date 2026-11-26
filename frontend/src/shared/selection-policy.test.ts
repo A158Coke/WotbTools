@@ -4,12 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'vue/compiler-sfc'
 
-// 选择控件（design-language §7.1 DC-SEL-02）：2 项互斥选择不用下拉。
-// 候选数按真实选项算：value 为空的「请选择」「全部」与 disabled 占位项不计入。
-// 选项由 v-for 或 JS 填充的 <select> 要到运行时才知道候选数，由人工审查。
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 
-// 存量例外，只减不增：每项是一处具体 <select>（文件#绑定=候选），页面迁移到 Choice Group 时删除。
 const BASELINE = [
   'components/HoFAdminRecords.vue#fBattleType=RANDOM|RATING',
   'components/HoFAdminRecords.vue#fReplayAvailable=true|false',
@@ -37,7 +33,6 @@ interface TemplateNode {
 const ELEMENT = 1
 const ATTRIBUTE = 6
 
-/** 表达式节点的源码；复合表达式没有 content，按缺失处理。 */
 function content(node: unknown): string | undefined {
   if (typeof node !== 'object' || node === null || !('content' in node)) return undefined
   return typeof node.content === 'string' ? node.content : undefined
@@ -51,7 +46,6 @@ const isElement = (node: unknown): node is TemplateNode =>
   typeof node === 'object' && node !== null && 'type' in node && node.type === ELEMENT
 const elements = (node: TemplateNode) => (node.children ?? []).filter(isElement)
 
-/** 收集静态选项；任一层出现 v-for 就返回 null，表示候选数要到运行时才知道。 */
 function staticOptions(node: TemplateNode): TemplateNode[] | null {
   const options: TemplateNode[] = []
   for (const child of elements(node)) {

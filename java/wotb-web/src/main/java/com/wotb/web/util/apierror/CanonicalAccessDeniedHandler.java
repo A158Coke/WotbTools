@@ -9,7 +9,6 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 
 import java.io.IOException;
 
-/** Preserves Bearer insufficient-scope headers while adding the canonical 403 response body. */
 public class CanonicalAccessDeniedHandler implements AccessDeniedHandler {
 
     private final BearerTokenAccessDeniedHandler delegate = new BearerTokenAccessDeniedHandler();

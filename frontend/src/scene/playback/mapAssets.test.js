@@ -1,11 +1,3 @@
-// assembleMapScenery 的会话竞态回归锁（评审 P1/P2，PR #745）：
-// P1 —— GLB 已装配、destructibles 延迟期间会话被取代（切场/清空）：已挂进场景的
-//       资源必须就地回收，且**不得发布任何 writes**（stale 结果写回宿主会覆盖
-//       新会话的 mapScenery/动画材质/遮挡表/走廊掩码）。
-// P2 —— 走廊掩码建成时，onRefineMaskBuilt 必须带着 mask 调用（宿主先写回再重建
-//       LOD；回调不带 mask 会让首次重建拿到空掩码）。
-// 协作模块（材质装配/变体裁剪/实例化/掩码生成）mock 掉——被锁的是本模块的
-// 时序与发布语义，不是它们的实现。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 
@@ -35,8 +27,6 @@ vi.mock('../sceneryInstancing.ts', () => ({
   collectInstanceEntries: () => [],
   buildStandaloneLightmappedMeshes: () => {},
   groupInstanceBatches: () => [],
-  // 会话竞态用例只关心装配编排：材质规整保持恒等（真实实现由
-  // sceneryInstancing.materials.test.js 的签名/合并用例覆盖）
   canonicalizeEntryMaterials: (entries) => entries,
 }))
 vi.mock('../pickDebug.ts', () => ({ buildMeshOwnerMap: () => new Map() }))
@@ -70,24 +60,18 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     let lateResolve
     ctx.destructDocPromise = new Promise((res) => { lateResolve = res })
     const run = assembleMapScenery(gltf, ctx)
-    // 装配的同步续体在 resolveSceneryExtras 的微任务后运行：flush 一拍再断言
     await Promise.resolve()
     await Promise.resolve()
     expect(scene.children.length).toBe(1)
     const mountedGroup = scene.children[0]
-    // ① 挂载即归属：宿主（teardownSession）在 destructibles 仍悬挂时即拿到引用
     expect(ctx.onSceneryMounted).toHaveBeenCalledWith(mountedGroup, null)
-    // ② 迟到的 destructibles 返回时已 stale：只丢弃结果，**不碰宿主资源**。
-    //   评审回归分支：A stale 返回 → B 解析失败 → 宿主不 teardown A；此处若自行
-    //   摘除，A 的布景消失而地形/其它对象仍在。释放只由宿主负责。
     ctx.stale = () => true
     lateResolve({ instances: [] })
     const asm = await run
     expect(asm.stale).toBe(true)
-    expect(asm.writes).toEqual({})                    // 不发布任何 stale 结果
-    expect(scene.children.length).toBe(1)             // 布景仍归宿主所有
-    expect(disposeObject3D).not.toHaveBeenCalled()    // stale 路径不释放
-    // ③ 宿主 teardown（切场成功 / reset）时才摘除并释放一次
+    expect(asm.writes).toEqual({})
+    expect(scene.children.length).toBe(1)
+    expect(disposeObject3D).not.toHaveBeenCalled()
     scene.remove(mountedGroup)
     disposeObject3D(mountedGroup)
     expect(scene.children.length).toBe(0)
@@ -99,15 +83,13 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     ctx.destructDocPromise = Promise.resolve({ instances: [{ id: 1, pos: [0, 0, 0] }] })
     const asm = await assembleMapScenery(gltf, ctx)
     expect(asm.stale).toBe(false)
-    expect(ctx.onSceneryMounted).toHaveBeenCalledTimes(1)   // 正常路径同样挂载即归属
+    expect(ctx.onSceneryMounted).toHaveBeenCalledTimes(1)
     expect(asm.writes.destructPickList).toEqual([{ id: 1, pos: [0, 0, 0] }])
-    expect(asm.writes.destruct).toBeTruthy()           // events + instances 齐 ⇒ 状态机随 writes 发布
+    expect(asm.writes.destruct).toBeTruthy()
     expect(asm.writes.destruct.states).toBeInstanceOf(Array)
     expect(asm.writes.mapScenery).toBeTruthy()
     expect(asm.writes.occlGrid).toBeInstanceOf(Map)
     expect(asm.writes.annotationSurfaceGrid).toBeInstanceOf(Map)
-    // 走廊候选只服务 terrain refinement，不得把 mesh 全局标成“非 3D 可绘制表面”
-    //（薄桥一头贴地/同 batch 混合时会把桥也连坐掉）。
     expect(surfaceMesh.userData.annotationSurface).toBeUndefined()
   })
 
@@ -117,9 +99,8 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     await assembleMapScenery(withTerrain.gltf, withTerrain.ctx)
     expect(onRefineMaskBuilt).toHaveBeenCalledWith('MASK')
 
-    const noTerrain = makeCtx({ onRefineMaskBuilt: vi.fn() })   // terrainMesh=null：不重建
+    const noTerrain = makeCtx({ onRefineMaskBuilt: vi.fn() })
     await assembleMapScenery(noTerrain.gltf, noTerrain.ctx)
     expect(noTerrain.ctx.onRefineMaskBuilt).not.toHaveBeenCalled()
-    // 掩码本身仍随 writes 发布（宿主稍后写回的路径不受影响）
   })
 })

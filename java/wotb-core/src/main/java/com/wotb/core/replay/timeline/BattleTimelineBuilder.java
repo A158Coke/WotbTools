@@ -19,33 +19,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Canonical BattleTimeline 构建器。
- * <p>数据流：ReplayEvent → BattleStateReconstructor → BattleTimelineBuilder → BattleTimeline。
- * Timeline 一律 battle-relative 时间（docs/architecture/battle-timeline.md §2.3/§2.4）；时钟无法可靠建立时
- * Timeline = INVALID，该 replay 不进入 AI Review（禁止 settlement-only fallback）。</p>
- * <p>Anti-future-leak invariant：任意 frame second=N 的状态只使用 battle-relative
- * time ≤ N 的事件信息，绝不使用未来信息（含 battle_results 最终状态）。</p>
- * <p>ActualCombatantEntitySet 边界：tactical FrameVehicle universe 只包含可靠映射到
- * battle_results #301（battle.players）actual combatant 账号的实体；non-#301
- * spectator/camera/observer/场景静态实体即使被 broad roster / ParticipantMapping 赋予完整身份
- * （accountId/team/nickname/坦克元数据），也不得进入 FrameVehicle —— 因此不会产生
- * FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / POSITION_CHANGE / REGION_CHANGE / DESTROYED
- * 等 tactical deltas（spectator ≠ combatant；#301 是权威边界）。
- * raw timeline.events 保留原始事件供必要协议用途。</p>
- * Clock/duration、vehicle frame assembly、world/roster summary 分别委托给同 package owner。
- */
 public final class BattleTimelineBuilder {
 
-    /** 位置显著变化阈值（canonical 米）。 */
     static final double POSITION_CHANGE_THRESHOLD_M = 5.0;
 
     private BattleTimelineBuilder() {
     }
 
-    /**
-     * 构建 canonical timeline。validation 失败时返回 timeline=null + 错误码（调用方据此拒绝 AI Review）。
-     */
     public static BattleTimelineResult build(
             final Battle battle,
             final ReplayReconstruction recon,
@@ -82,10 +62,6 @@ public final class BattleTimelineBuilder {
                     "no entity→account mapping could be established"));
         }
 
-        // ActualCombatantEntitySet（#301 权威边界）：只允许可靠映射到 battle.players
-        // （battle_results #301 actual combatant）账号的实体进入 tactical FrameVehicle universe。
-        // 即使 broad roster / ParticipantMapping 给 non-#301 实体提供完整身份，spectator 仍不得
-        // 形成 tactical vehicle delta（杜绝 team=null 被 BattleDeltaEngine 当作 enemy）。
         final Set<Long> actualCombatantAccounts = TimelineRosterSummary.actualCombatantAccounts(battle);
         final Set<Integer> actualCombatantEntityIds =
                 mapping.actualCombatantEntityIds(actualCombatantAccounts);
@@ -118,8 +94,6 @@ public final class BattleTimelineBuilder {
         final List<ReplayEvent> orderedEvents = TimelineFrameAssembler.orderedEvents(
                 recon.events(), clock.startRawClockSec());
 
-        // Canonical AoI authority：构建 frames 之前建立 ReplayAoiLifecycle，frame knowledge
-        // 用 entityId + frame time 查询 observed segment / UNKNOWN_AOI gap（禁止再靠 5s/age 推断）。
         final List<AoiObservationSegment> aoiSegments =
                 ReplayAoiLifecycle.build(recon.events(), clock.startRawClockSec());
         final Map<Integer, List<AoiObservationSegment>> aoiByEntity =
@@ -145,7 +119,6 @@ public final class BattleTimelineBuilder {
         final TimelineMapEnricher enricher = new TimelineMapEnricher(
                 battle == null ? "" : battle.mapName);
 
-        // 交火活动强度只使用权威 HP loss（Type-8 raw 语义未证明）
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat =
                 com.wotb.core.replay.feature.PlaybackCombatReconstruction.derive(
                         orderedEvents, mapping, clock.startRawClockSec(), duration, battle);
@@ -203,7 +176,6 @@ public final class BattleTimelineBuilder {
                     List.copyOf(windowEvents), List.copyOf(deltas),
                     Map.copyOf(tacticalState), List.of()));
 
-            // update previous-state trackers for next frame
             prevVehicles = byId;
             prevFriendlyAlive = world.friendlyAlive();
             prevEnemyAlive = world.enemyAlive();
@@ -240,7 +212,6 @@ public final class BattleTimelineBuilder {
         return new BattleTimelineResult(timeline, timeline.validation());
     }
 
-    // ===== validation =====
 
     static BattleTimelineValidationResult validate(
             final Battle battle,

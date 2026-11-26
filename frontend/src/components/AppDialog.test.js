@@ -29,7 +29,6 @@ function mountDialog() {
 }
 
 const dialog = () => document.querySelector('[role="dialog"]')
-// Reka 在焦点陷阱卸载后的下一个宏任务才触发 close-auto-focus
 const settleFocus = () => new Promise(resolve => setTimeout(resolve, 10))
 
 describe('AppDialog', () => {
@@ -111,7 +110,6 @@ describe('AppDialog', () => {
   })
 
   it('忽略视觉隐藏的焦点候选：初始焦点落在可见按钮，Tab 不逃到背景', async () => {
-    // #678 回归：名人堂上传弹层里隐藏的 file input 曾抢走初始焦点，导致 Tab 进背景、Esc 关不掉。
     const Host = defineComponent({
       setup() {
         const open = ref(false)

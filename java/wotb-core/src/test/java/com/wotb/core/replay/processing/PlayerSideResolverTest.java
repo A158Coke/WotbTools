@@ -17,13 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for PlayerSideResolver and FriendlyEnemyResult covering sections 8.1–8.5.
- * Does NOT modify PlayerResult.team (the raw number is preserved).
- */
 class PlayerSideResolverTest {
 
-    // ========== isValidRawTeam ==========
 
     @Test
     void isValidRawTeam_1() { assertTrue(PlayerSideResolver.isValidRawTeam(1)); }
@@ -43,7 +38,6 @@ class PlayerSideResolverTest {
     @Test
     void isValidRawTeam_maxInt() { assertFalse(PlayerSideResolver.isValidRawTeam(Integer.MAX_VALUE)); }
 
-    // ========== 8.1 Recorder in raw team 1 ==========
 
     @Test
     void recorderTeam1_selfIsFriendly() {
@@ -55,7 +49,6 @@ class PlayerSideResolverTest {
         assertEquals(Side.ENEMY, PlayerSideResolver.resolve(1, 2));
     }
 
-    // ========== 8.2 Recorder in raw team 2 ==========
 
     @Test
     void recorderTeam2_selfIsFriendly() {
@@ -78,7 +71,6 @@ class PlayerSideResolverTest {
         assertEquals(Side.FRIENDLY, sides.get(battle.players.get(1)));
     }
 
-    // ========== 8.3 Winner conversion ==========
 
     @Test
     void winnerEqualsRecorderTeam_friendlyWin() {
@@ -108,7 +100,6 @@ class PlayerSideResolverTest {
         assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(Integer.MAX_VALUE, 1));
     }
 
-    // ========== 8.4 Unknown cases ==========
 
     @Test
     void recorderResultMissing_unknown() {
@@ -154,7 +145,6 @@ class PlayerSideResolverTest {
         assertEquals(Winner.DRAW_OR_UNKNOWN, FriendlyEnemyResult.resolve(-1, 1));
     }
 
-    // ========== 8.5 Multi-Player ==========
 
     @Test
     void multiPlayer_eachBattleIndependent() {
@@ -175,14 +165,12 @@ class PlayerSideResolverTest {
         assertEquals(Side.FRIENDLY, sidesB.get(battleB.players.get(0)), "Battle B team2 is friendly");
         assertEquals(Side.ENEMY, sidesB.get(battleB.players.get(1)), "Battle B team1 is enemy");
 
-        // Verify raw team numbers are preserved
         assertEquals(1, battleA.players.get(0).team);
         assertEquals(2, battleA.players.get(1).team);
         assertEquals(2, battleB.players.get(0).team);
         assertEquals(1, battleB.players.get(1).team);
     }
 
-    // ========== 5. Recorder team 2 correctness ==========
 
     @Test
     void recorderTeam2_friendlyWin() {
@@ -196,7 +184,6 @@ class PlayerSideResolverTest {
         assertEquals(Winner.ENEMY_WIN, FriendlyEnemyResult.resolve(2, 1));
     }
 
-    // ========== 9. Supremacy team-battle winner (FriendlyEnemyResult.resolveTeamBattle) ==========
 
     @Test
     void supremacy_winnerFromBattleResults_isAuthoritative() {
@@ -218,8 +205,8 @@ class PlayerSideResolverTest {
         final Battle battle = new Battle();
         battle.winnerTeam = 2;
         battle.rosterComplete = true;
-        battle.arenaBonusType = 3; // 官方联赛：标准时限证据
-        battle.durationS = 420.0;  // 打到 7 分钟且双方部分分均 <1000 → 时间耗尽
+        battle.arenaBonusType = 3;
+        battle.durationS = 420.0;
         battle.players = List.of(
                 player(1, "A1", true, 100),
                 player(2, "B1", true, 500));
@@ -271,7 +258,6 @@ class PlayerSideResolverTest {
                 player(2, "B1", true, 700),
                 player(2, "B2", true, 0));
         final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, 1);
-        // 无权威胜方：victoryPointsEarned 是否含被动增长/击杀夺分仍未证明，禁止比较推断胜方 → fail closed
         assertEquals(Winner.DRAW_OR_UNKNOWN, w.winner());
         assertEquals(WinnerSource.UNKNOWN, w.source());
         assertTrue(w.pointsDecided());
@@ -284,8 +270,8 @@ class PlayerSideResolverTest {
         final Battle battle = new Battle();
         battle.winnerTeam = 1;
         battle.rosterComplete = true;
-        battle.arenaBonusType = 3; // 已知类别：业务规则固定 7 分钟/1000 分
-        battle.durationS = 300.0;  // 双方均有存活且时长 <7 分钟 → 达到 1000 分提前获胜
+        battle.arenaBonusType = 3;
+        battle.durationS = 300.0;
         battle.players = List.of(
                 player(1, "A1", true, 1043),
                 player(2, "B1", true, 280));
@@ -325,7 +311,6 @@ class PlayerSideResolverTest {
                 FriendlyEnemyResult.resolveTeamBattle(noPlayers, 1).winner());
     }
 
-    // ========== Helpers ==========
 
     private static Battle createBattle(final int recorderTeam, final List<PlayerResult> players) {
         final Battle battle = new Battle();

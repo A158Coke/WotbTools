@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// 每个用例重新加载模块：useBreakpoint 在模块级共享一组 matchMedia 监听
 function stubMatchMedia(width, coarse = false, { landscape = false, height = 800 } = {}) {
   const listeners = []
   const evaluate = (query) => {

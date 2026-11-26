@@ -1,4 +1,3 @@
-/** Shared presentation of recorded shot facts; this never recomputes a hit or damage. */
 import { shotResultClass } from './shotResultClass.js'
 
 export function shotResultBadge(s, t) {

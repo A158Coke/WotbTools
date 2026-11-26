@@ -24,7 +24,6 @@ type MapEntry = {
 type LocalizedMap = MapEntry & { name: string }
 
 export function useMapPreviewCatalog(locale: Ref<string>, authenticated: ComputedRef<boolean>) {
-  /** Store locale-neutral map data; derive names and ordering from the active locale. */
   const rawMaps = ref<MapEntry[]>([])
   const failedThumbs = ref(new Set())
   const failedFallbacks = ref(new Set())
@@ -40,9 +39,7 @@ export function useMapPreviewCatalog(locale: Ref<string>, authenticated: Compute
       thumbFallback: failedFallbacks.value.has(m.key) ? null : m.thumbFallback,
     }))
     .sort((a, b) => collator.compare(a.name, b.name)))
-  /** Visibility uses the approved map list, independent of locale, and resets each visit. */
   const showAllMaps = ref(false)
-  /** Search localized names and keys; a query includes unapproved maps regardless of the visibility switch. */
   const mapQuery = ref('')
   const visibleMaps = computed(() => {
     const query = mapQuery.value.trim().toLocaleLowerCase()
@@ -64,19 +61,16 @@ export function useMapPreviewCatalog(locale: Ref<string>, authenticated: Compute
       return
     }
     const byKey = new Map<string, MapEntry>()
-    // An explicitly selected dataset prefers its calibrated map2d; offline/default use prefers bundled images.
     const preferDatasetBasemap = Boolean(dataVersionId())
     for (const [id, m] of entries) {
       const key = String(m.key || '')
       if (!key) continue
-      // Multiple ids for one key share the map entry but retain per-id variant metadata.
       let group = byKey.get(key)
       if (!group) {
         const bundled = mapImages[key as keyof typeof mapImages] || null
         group = {
           key,
           packDisplay: m.display || '',
-          // Keep a bundled fallback for calibrated map2d images when one exists.
           basemap: (preferDatasetBasemap || !bundled)
             ? { kind: 'map2d', mapKey: key, ...(bundled ? { fallbackImage: bundled } : {}) }
             : { kind: 'bundled', image: bundled },
@@ -98,7 +92,6 @@ export function useMapPreviewCatalog(locale: Ref<string>, authenticated: Compute
     rawMaps.value = [...byKey.values()]
     indexLoaded.value = true
   }
-  /** Offline asset providers may throw; let the bundled cover fallback handle that case. */
   function safeCoverUrl(key: string) {
     try {
       return mapCoverUrl(key)
@@ -114,7 +107,6 @@ export function useMapPreviewCatalog(locale: Ref<string>, authenticated: Compute
     failedThumbs.value = next
   }
 
-  /** Keep fallback failures separate so a known-failed remote cover is not retried. */
   function onFallbackError(m: LocalizedMap) {
     if (!m.thumbFallback || failedFallbacks.value.has(m.key)) return
     const next = new Set(failedFallbacks.value)

@@ -244,7 +244,6 @@ describe('HoFPage', () => {
     await wrapper.find('.h100-clear-draft').trigger('click')
     await flushPromises()
 
-    // 应用内确认对话框（审计 PG-09），不再用 window.confirm
     expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: 'hundred.clearDraftConfirm', danger: true }))
     expect(wrapper.find('#h100-submit-damage').element.value).toBe('')
     expect(wrapper.find('.h100-selected-files').exists()).toBe(false)

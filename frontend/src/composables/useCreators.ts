@@ -15,8 +15,6 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
   const availability = deps.availability ?? useCreatorAvailability()
   const route = deps.route ?? useRoute(), router = deps.router ?? useRouter(), gate = useFeatureGate()
   const type = computed(() => toValue(deps.type) ?? 'UP')
-  // Router commits before the parent passes its new type prop; never reconcile the new URL against the old type.
-  // 4.0：`?view=recommendations` 是合成推荐页入口，与 ViewHost 一致地缺省第一个可见类型（UP 优先）。
   const routeType = computed(() => route.query.view === 'recommended-videos' ? 'VIDEO' : route.query.view === 'creators' ? 'UP'
     : route.query.view === 'recommendations' ? (availability.typeVisible?.('UP') === false ? 'VIDEO' : 'UP') : null)
   const routeMatchesType = computed(() => routeType.value === type.value)
@@ -30,7 +28,6 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
   const loading = computed(() => listLoading.value || availability.loading.value)
   const error = computed(() => listError.value ?? availability.error.value)
   const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && contentAdminAllowed(auth))
-  // Public content can arrive before check-sso; do not destroy an administrator's deep link while identity is pending.
   const invalidCategory = computed(() => routeMatchesType.value && !['idle', 'initializing'].includes(auth.authInitState.value)
     && !adminAllowed.value && availability.contentKnown.value && categoryId.value !== null
     && !categories.value.some(value => value.id === categoryId.value))

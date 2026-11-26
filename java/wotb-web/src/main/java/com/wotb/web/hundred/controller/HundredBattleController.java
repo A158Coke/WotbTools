@@ -18,10 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
-/**
- * 名人堂「百场」REST API（只做 HTTP 映射，业务在 {@link HundredBattleSubmissionService}）。
- * 公开排行榜 GET /api/hof/hundred（匿名）；提交/取消 POST /api/hof/hundred/submissions（登录）。
- */
 @RestController
 @RequestMapping(ApiPaths.HOF_HUNDRED)
 public class HundredBattleController {
@@ -35,11 +31,6 @@ public class HundredBattleController {
         this.leaderboardService = leaderboardService;
     }
 
-    /**
-     * 公开排行榜：三个筛选条件按交集处理。全部为空时返回全站 CURRENT Top 10；
-     * 仅传 nation / vehicleType 时返回分类交集 Top 10；传 vehicleId 时返回该车独立分页排行，
-     * 若同时传入的分类与该车不匹配则返回空榜。rank 始终基于同一筛选上下文计算。
-     */
     @GetMapping
     public HundredLeaderboardPageDto leaderboard(
             @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
@@ -50,10 +41,6 @@ public class HundredBattleController {
         return leaderboardService.leaderboard(vehicleId, nation, vehicleType, page, size);
     }
 
-    /**
-     * 创建百场 submission（需登录且 Profile 已配置 gameId/nickname）。
-     * 表单字段：vehicleId / averageDamage / battleCount / screenshot（base64 data URL）/ replays（正好 5 个 .wotbreplay）。
-     */
     @PostMapping("/submissions")
     public HundredCreateResult create(
             @RequestParam(name = "vehicleId") final long vehicleId,
@@ -62,15 +49,12 @@ public class HundredBattleController {
             @RequestParam(name = "screenshot") final String screenshot,
             @RequestParam(name = "replays") final List<MultipartFile> replays,
             final HttpServletRequest request) {
-        // facts：每个回放一份结算事实 JSON（与 replays 同序）。JSON 含逗号，必须按多值参数读取，
-        // 不能让 Spring 把单值按逗号拆成 List<String>。
         final String[] facts = request.getParameterValues("facts");
         return service.createSubmission(JwtUtil.requireUserId(),
                 vehicleId, averageDamage, battleCount, screenshot, replays,
                 facts == null ? List.of() : List.of(facts));
     }
 
-    /** 用户取消自己的 PENDING submission。 */
     @PostMapping("/submissions/{id}/cancel")
     public HundredSubmissionSummaryDto cancel(@PathVariable final long id) {
         return service.cancelSubmission(JwtUtil.requireUserId(), id);

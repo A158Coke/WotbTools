@@ -13,15 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * MockMvc 进程内 REST API 测试 (不绑定端口)。
- */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PublicSearchIntegrationTest extends WebApiIntegrationTestSupport {
 
-    // ── 名人堂公开查询 / 过滤器 / 排名（真实 PostgreSQL）────────────────────────
     @Test
     void publicSearchOrdersRatingBeforeRandomOnEqualDamageWithRanks() throws Exception {
         final List<HallOfFameRecord> rows = List.of(
@@ -30,7 +26,6 @@ class PublicSearchIntegrationTest extends WebApiIntegrationTestSupport {
                 hofRecord("rank-random-8k", 555L, "RankAnother", 424240L, "FV4005", "RANDOM", 1, 8000));
         hallOfFameRecordRepository.saveAll(rows);
         try {
-            // tankId 唯一过滤本测试数据，避免其他测试残留记录干扰排序/rank 断言
             final String json = mvc().perform(get("/api/hof").param("tankId", "424240"))
                     .andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
@@ -44,7 +39,6 @@ class PublicSearchIntegrationTest extends WebApiIntegrationTestSupport {
             assertEquals("RANDOM", n.get("items").get(1).get("battleType").asText());
             assertEquals("RankAnother", n.get("items").get(2).get("nickname").asText());
             assertEquals(3, n.get("items").get(2).get("rank").asInt());
-            // 公开边界：不暴露 accountId / arenaId / replayHash / uploadedBy
             assertFalse(n.get("items").get(0).has("accountId"));
             assertFalse(n.get("items").get(0).has("arenaId"));
             assertFalse(n.get("items").get(0).has("replayHash"));
@@ -63,20 +57,16 @@ class PublicSearchIntegrationTest extends WebApiIntegrationTestSupport {
                 hofRecord("flt-random-2", 555L, "FltOther", 424243L, "T49", "RANDOM", 1, 8000));
         hallOfFameRecordRepository.saveAll(rows);
         try {
-            // battleType=RATING（tankId 限定本测试数据，避免其他测试残留记录干扰计数）
             String json = mvc().perform(get("/api/hof")
                             .param("battleType", "RATING").param("tankId", "424242"))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             assertEquals(1, om.readTree(json).get("totalItems").asInt());
-            // tankId filter
             json = mvc().perform(get("/api/hof").param("tankId", "424243"))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             assertEquals(1, om.readTree(json).get("totalItems").asInt());
-            // nickname search（模糊）
             json = mvc().perform(get("/api/hof").param("nickname", "FltCoke").param("tankId", "424242"))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
             assertEquals(2, om.readTree(json).get("totalItems").asInt());
-            // 组合：Rating + tank + nickname
             json = mvc().perform(get("/api/hof")
                             .param("battleType", "RATING").param("tankId", "424242").param("nickname", "FltCoke"))
                     .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

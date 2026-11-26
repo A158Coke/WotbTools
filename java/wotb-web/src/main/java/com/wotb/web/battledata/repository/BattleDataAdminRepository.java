@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Read-only queries over the canonical collector tables. */
 @Repository
 public class BattleDataAdminRepository {
     private final JdbcTemplate jdbc;
@@ -87,7 +86,6 @@ public class BattleDataAdminRepository {
                 + intervalSql(from, to) + " GROUP BY day ORDER BY day", interval(from, to),
                 (r, n) -> new BattleDataAdminDtos.DailyCount(r.getObject(1, LocalDate.class), r.getLong(2)));
     }
-    /** One scan: each battle yields one observation per side; the map+side grouping set is the combined row. */
     public List<BattleDataAdminDtos.SpawnStat> spawnStats(final Instant from, final Instant to) {
         return named.query("SELECT map_key, arena_bonus_type, observed.side, count(*) AS battles,"
                 + " count(*) FILTER (WHERE winner_team = observed.team) AS wins,"

@@ -1,7 +1,3 @@
-/**
- * 车辆检查器装载区的图形标识（消耗品 / 补给）：只返回资产图标 URL，
- * 名称仅用于 `aria-label` / `title`，不再作为可见文本。
- */
 import { consumableIconUrl } from './consumableIcons.js'
 import { itemIconUrl } from './researchCatalog.js'
 
@@ -19,7 +15,6 @@ const PROVISION_ICON = {
   IMPROVED_GUNPOWDER: 'gunpowder',
 }
 
-/** 补给图标 URL；无映射/无图返回 null（组件用几何占位，不显示文字）。 */
 export function provisionIconUrl(logicalId) {
   const icon = PROVISION_ICON[logicalId]
   return icon ? itemIconUrl('provisions', icon) : null

@@ -32,10 +32,6 @@ public record BattleTimeline(
         BattleTimelineValidationResult validation,
         List<String> limitations
 ) {
-    /**
-     * 按 battle-relative 秒查询 frame；越界时返回最近 frame；空 timeline 返回 null。
-     * 结果 deterministic 且可测试（docs/architecture/battle-timeline.md §45）。
-     */
     public BattleFrame frameAt(final double battleClockSec) {
         if (frames == null || frames.isEmpty()) {
             return null;

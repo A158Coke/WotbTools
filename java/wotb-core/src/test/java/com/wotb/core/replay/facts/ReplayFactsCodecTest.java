@@ -23,24 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * {@link ReplayFactsCodec} 保留的客户端投影解码契约（{@code Battle} + {@code ReplayReconstruction}）。
- *
- * <p>输入来自冻结的真实 fixture 投影（{@code common/fixtures/replay-facts}）。stored facts 的写入侧（{@code AiReplayFacts} / {@code toBytes} / {@code fromBytes}）已随
- * ai-facts artifact 移除，因此这里锁定 standalone ai-service 仍然消费的解码方向：真实 fixture 的
- * 解析结果按客户端投影 wire 形态（{@code ReplayEvent} 带 {@code {"type": <简单类名>}} 多态标记）
- * 重新编码，再经保留的 {@code battleFromJson} / {@code reconstructionFromJson} 解回。</p>
- *
- * <p>断言按「客户端投影是同一批事实的另一种表示」来写：结构完整 + 元素数量 + 代表性标量，
- * 而不是要求解码后的 Java 对象图与服务端对象图 {@code equals}（客户端数字精度、省略/显式 null、
- * 集合顺序都可能合理地不同）。</p>
- */
 class ReplayFactsCodecTest {
 
-    /**
-     * 客户端投影编码器：字段可见性与 wire 契约一致（含 private field POJO，如 {@code VehicleState}），
-     * 否则投影会缺字段而无法解回。
-     */
     private static final JsonMapper MAPPER = JsonMapper.builder()
             .changeDefaultVisibility(vc -> vc.withVisibility(
                     PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY))
@@ -50,7 +34,6 @@ class ReplayFactsCodecTest {
 
     @BeforeAll
     static void loadFixtureOnce() {
-        // 冻结的真实 fixture 投影（服务器没有 parser）；本测试把它重新编码再解回，锁定 wire 契约。
         result = FrozenReplayFacts.load(FrozenReplayFacts.RANDOM_BATTLE);
         assertNotNull(result.battle());
         assertNotNull(result.reconstruction());
@@ -81,7 +64,6 @@ class ReplayFactsCodecTest {
         final ReplayReconstruction decoded =
                 ReplayFactsCodec.reconstructionFromJson(clientProjection(source));
 
-        // AI 消费的 section 必须存在且结构完整（数量级一致）。
         assertNotNull(decoded);
         assertNotNull(decoded.streamHeader());
         assertNotNull(decoded.coverage());
@@ -91,11 +73,9 @@ class ReplayFactsCodecTest {
         assertEquals(source.checkpoints().size(), decoded.checkpoints().size());
         assertEquals(source.finalState().entityCount(), decoded.finalState().entityCount());
 
-        // sealed ReplayEvent 的 subtype dispatch 仍然解析（{"type": ...} + canonical constructor）。
         assertEquals(source.events().getFirst().getClass(), decoded.events().getFirst().getClass());
         assertNotNull(decoded.events().getFirst().timestamp());
 
-        // 代表性标量：时长/开战时钟 + 一个 checkpoint + 一辆车。
         assertEquals(source.battleDurationSec(), decoded.battleDurationSec());
         assertEquals(source.battleStartRawClockSec(), decoded.battleStartRawClockSec());
         final BattleStateCheckpoint expectedCheckpoint = source.checkpoints().getLast();
@@ -131,12 +111,6 @@ class ReplayFactsCodecTest {
                 "外部客户端投影的 null 原始类型字段必须回落 primitive 默认值");
     }
 
-    /**
-     * 泛型 record 组件必须按元素类型解码：{@code ShotResultEvent.components} 是
-     * {@code List<ComponentResult>}，若解码器用擦除后的 raw class，会得到
-     * {@code List<LinkedHashMap>}，生产消费方（{@code PlayerReplayEventFormatter} 的
-     * typed for-each）随即 {@code ClassCastException}。
-     */
     @Test
     void decodesGenericRecordComponentsWithTheirElementTypes() throws Exception {
         final ObjectNode projection = MAPPER.createObjectNode();
@@ -157,7 +131,6 @@ class ReplayFactsCodecTest {
         final ReplayEvent event = decoded.events().getFirst();
         assertInstanceOf(ShotResultEvent.class, event, "必须解回 ShotResultEvent");
         final ShotResultEvent shotEvent = (ShotResultEvent) event;
-        // 与生产消费方一致地按具体元素类型遍历；元素是 LinkedHashMap 时会在此抛 ClassCastException。
         int stateSum = 0;
         for (final ShotResultEvent.ComponentResult component : shotEvent.components()) {
             stateSum += component.state();
@@ -167,10 +140,6 @@ class ReplayFactsCodecTest {
         assertEquals(List.of(1, 2), shotEvent.modifierIds());
     }
 
-    /**
-     * 解析结果 → 客户端投影 wire JSON：{@code ReplayEvent} 加 {@code type} 多态标记，其余结构由
-     * Jackson 按 record/字段原样编码。
-     */
     private static ObjectNode clientProjection(final ReplayReconstruction reconstruction) {
         final ObjectNode projection = MAPPER.valueToTree(reconstruction);
         final ArrayNode events = (ArrayNode) projection.get("events");

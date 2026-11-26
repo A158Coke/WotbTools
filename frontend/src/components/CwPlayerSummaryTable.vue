@@ -7,27 +7,14 @@ import { leagueMaxByKey, ratingCellText } from '../utils/helpers.js'
 import { useI18n } from 'vue-i18n'
 import PlayerCardList from './PlayerCardList.vue'
 
-/**
- * CW 统一玩家汇总表：Replay Aggregate 全量玩家 + League Rating 按 accountId join，
- * 缺失 League 字段显示 "--"。汇总页唯一玩家主表；战队仍走 LeagueSummaryTable。
- * 列 = 用户偏好（useColumns cw scope）驱动：只有 nickname + league_rating 固定
- * （sticky 核心对，left=0 / 实测昵称列宽），其余列（七维/MVP/表现指标/facts）用户可隐藏、
- * 可拖拽顺序。点击玩家行 emit select-player（Side Drawer）。
- */
 const props = defineProps({
   title: String,
   rows: { type: Array, default: () => [] },
-  /** 统一列定义（useColumns cw scope 可见 + 顺序后的列） */
   columns: { type: Array, default: () => [] },
-  /** Rating 列元数据（resp.league.columns：key/max 满分） */
   leagueColumns: { type: Array, default: () => [] },
-  /** 是否 League 模式（决定 league_rating/七维是否渲染评分格式） */
   leagueMode: { type: Boolean, default: false },
-  /** 本表是否当前可见（父组件持有 activeTab；v-show hidden 时禁止 sticky 测量） */
   active: { type: Boolean, default: true },
-  /** Drawer 选中玩家 accountId（identity 跟随；Drawer 关闭 → null → 清除 highlight） */
   selectedAccountId: { type: [Number, String], default: null },
-  /** 呈现方式：table（默认）/ cards（手机卡片列表；表格保留在 DOM 里供 PNG 导出）。 */
   layout: { type: String, default: 'table' },
 })
 const emit = defineEmits(['select-player'])
@@ -35,7 +22,6 @@ const { t } = useI18n()
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-// ---- 全列 ASC/DESC（任何可见列都可排序；missing-last；raw sort）----
 const sortKey = ref('')
 const sortReverse = ref(false)
 
@@ -59,7 +45,6 @@ function arrow(key) {
   return sortKey.value === key ? (sortReverse.value ? ' ▼' : ' ▲') : ''
 }
 
-// Rating 格式 contract 在 helpers.js 唯一实现（单场表 / CW 统一玩家表 / PNG 导出共用）。
 
 function isRatingKey(key) {
   return props.leagueMode && (key === 'league_rating' || key === 'league_observed_mean' || CW_DIM_KEYS.includes(key))
@@ -78,8 +63,6 @@ function cellDisplay(row, col) {
 }
 
 function onRowClick(row) {
-  // identity = accountId；scope 标记汇总（drawerPlayer 按 scope + accountId 重新 resolve）；
-  // order = 当前可见顺序（排序后），供 Drawer 前后导航（§29）。
   emit('select-player', {
     scope: 'summary',
     accountId: Number(row.accountId),
@@ -87,24 +70,20 @@ function onRowClick(row) {
   })
 }
 
-/** 选中行判定按 accountId（禁止 row index；排序后 highlight 跟随同一玩家）。 */
 function isSelectedRow(row) {
   const sel = props.selectedAccountId
   if (sel == null || sel === '') return false
   return Number(row.accountId) === Number(sel)
 }
 
-// ---- sticky 核心对：nickname.left=0；league_rating.left=实测昵称列宽 >0 ----
 const { headerRefs, isStickyCol, colStyle, schedule } = useStickyColumns({
   enabled: computed(() => props.leagueMode),
   active: computed(() => props.active && props.layout !== 'cards'),
   watchCols: computed(() => props.columns),
 })
 
-// 排序箭头变化可能改昵称列宽 → 重新调度测量
 watch([sortKey, sortReverse], schedule)
 
-// ---- 卡片列表（手机）：与表格共用排序、选中与单元格格式 ----
 const CARD_IDENTITY_KEYS = new Set(['nickname', 'clan', 'league_rating'])
 
 const cardItems = computed(() => {
@@ -183,7 +162,6 @@ function onCardSelect(accountId) {
 .league-summary-note { font-size: .72rem; color: var(--text-sub); }
 .player-row { cursor: pointer; }
 .player-row:hover td { background: var(--bg-list-hover); }
-/* Drawer 选中玩家行 highlight：accent 浅染，覆盖 hover 与 sticky 底色 */
 .cw-player-summary tr.player-row.selected td { background: color-mix(in srgb, var(--accent) 16%, var(--bg-card)); }
 .cw-player-summary tr.player-row.selected td.sticky-t1 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t1)); }
 .cw-player-summary tr.player-row.selected td.sticky-t2 { background: color-mix(in srgb, var(--accent) 16%, var(--bg-t2)); }
@@ -192,8 +170,6 @@ function onCardSelect(accountId) {
 .cw-player-summary tr.player-row.selected:hover td.sticky-t2 { background: color-mix(in srgb, var(--accent) 24%, var(--bg-t2)); }
 .league-summary-empty { text-align: center; color: var(--text-sub); }
 
-/* CW 统一玩家表 sticky：玩家 + Rating 固定。
-   z-index 层级与 BattleTable.league-table 对齐：tbody 3 < thead 7。 */
 .cw-table th.sticky-col, .cw-table td.sticky-col { position: sticky; }
 .cw-table td.sticky-col { z-index: 3; background: var(--bg-card); }
 .cw-table th.sticky-col { z-index: 7; background: var(--bg-card2); }

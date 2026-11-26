@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# CI runtime smoke: Docker emitter -> production Alloy config -> Loki query.
-# This deliberately uses the production Alloy config; it does not reproduce it
-# in a test-only configuration.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,9 +17,6 @@ KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
 KEYCLOAK_TX="kc-events-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
 CADDY_TX="gateway-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
-# 合规分流的标记：每一条都必须能单独判定「该进 190 天留存」还是「只进 7 天」。
-# 独立前缀（不复用 MARKER / MARKER_TX）是必须的：下面的「不得进 compliance」断言是
-# 子串匹配，若这些标记里嵌了 MARKER_TX，后端 telemetry 的排除断言会被自己误伤。
 COMPLIANCE_SCOPE="compliance-e2e-${GITHUB_RUN_ID:-local}-$$"
 KC_LOGIN_MARKER="kc-login-${COMPLIANCE_SCOPE}"
 KC_ADMIN_MARKER="kc-admin-${COMPLIANCE_SCOPE}"
@@ -59,9 +53,6 @@ wait_until() {
   fail "$description"
 }
 
-# 留存契约：普通日志 7 天、只有 {compliance="security"} 190 天。这里断言的是**两档同时
-# 存在**——只 grep 4560h 会在有人把默认档也改成半年时通过，那正好是这次整改要避免的结果。
-# 下面用真实 Loki 镜像加载同一个文件，所以语法层由 Loki 自己把关，这里只管语义。
 python3 - "$ROOT/deploy/observability/loki/loki-config.yml" <<'PY_RETENTION'
 import sys
 
@@ -161,24 +152,9 @@ wait_until "backend Docker stream reaches Loki" backend_query
 wait_until "Keycloak Docker stream reaches Loki" keycloak_query
 wait_until "sanitized Android frontend stream reaches Loki" frontend_query
 
-# TX lane: the production TX config matches by Compose service label (container
-# names are project-prefixed there) and must normalize the stream to the legacy
-# {container_name="wotb-backend"} identity every dashboard queries. The emitter
-# starts BEFORE the TX Alloy instance on purpose: discovery.docker snapshots the
-# container list on startup and refreshes on a 60s interval, so starting the
-# emitter first keeps target discovery deterministic inside the assertion
-# window instead of racing the refresh timer.
 docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   --label com.docker.compose.service=business-api \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
-# 合规分流的输入：形态照抄生产真实行（Keycloak jboss-logging 的文本行、Caddy filter
-# 编码器的 JSON 行），因为分流判定就是在这些形态上做的。每个 lane 都带正反两例：
-#   - Keycloak：受控事件（LOGIN）与 admin event 必须进 compliance；未入清单的事件类型
-#     （CLIENT_LOGIN）与普通 runtime 日志必须留在 7 天档；
-#   - Caddy：带 compliance 字段的受控访问日志必须进 compliance（并把 security_kind 提
-#     升为标签）；TLS/ACME 之类的 runtime 行必须留在 7 天档。
-# 容器名刻意不含 keycloak/wotb-frontend/wotb-backend：Yecao 车道按**容器名**匹配，这些
-# 容器只应该被按 Compose 标签匹配的 TX 车道采到。
 docker run -d --name "$KEYCLOAK_TX" --network "$NETWORK" \
   --label com.docker.compose.service=keycloak \
   alpine:3.22 sh -c "while true; do
@@ -206,11 +182,6 @@ docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
 ALLOY_TX_PORT="$(docker port "$ALLOY_TX" 12345/tcp | sed -E 's/.*://')"
 [[ -n "$ALLOY_TX_PORT" ]] || fail "TX Alloy HTTP port was not published"
 
-# Inspect what the label relabel actually discovered: every emitter container
-# this lane depends on must appear with the exact Compose service label. The
-# /api/v0/web/components payload carries each discovery.relabel component's
-# debug data (its processed targets); /metrics carries the discovery target
-# counters as a cross-check.
 dump_tx_relabel_targets() {
   local raw
   raw="$(curl -sS --max-time 5 "http://127.0.0.1:${ALLOY_TX_PORT}/api/v0/web/components" 2>&1 || echo "CURL_FAILED")"
@@ -256,14 +227,11 @@ for attempt in $(seq 1 30); do
   [ "$attempt" -lt 30 ] && sleep 2
 done
 if [ "$backend_tx_seen" != 1 ]; then
-  # Dump the relabel components' real discovered targets so a failing run shows
-  # whether the emitter's com.docker.compose.service label was even seen.
   dump_tx_relabel_targets
   fail "TX Compose-label stream reaches Loki as wotb-backend"
 fi
 wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
 
-# --- the compliance split: only security logs reach the 190-day stream -------
 stream_has() {
   local selector="$1" marker="$2" body
   body="$(query_range "$selector")"
@@ -277,8 +245,6 @@ wait_until "Caddy API access log is labelled compliance=security/api_access" \
   stream_has '{compliance="security",security_kind="api_access"}' "$CADDY_API_MARKER"
 wait_until "Caddy auth access log is labelled compliance=security/auth_access" \
   stream_has '{compliance="security",security_kind="auth_access"}' "$CADDY_AUTH_MARKER"
-# 正向对照：下面「不进 compliance」的断言只有在这些行确实已经到达 Loki 之后才有意义，
-# 否则缺席可能只是还没送到。
 wait_until "a non-retained Keycloak event type still reaches the ordinary stream" \
   stream_has '{container_name="keycloak"}' "$KC_UNSELECTED_MARKER"
 wait_until "ordinary Keycloak runtime output still reaches the ordinary stream" \
@@ -288,7 +254,6 @@ wait_until "ordinary Caddy runtime output still reaches the ordinary stream" \
 
 compliance_body="$(query_range '{compliance="security"}')"
 loki_response_has_sample "$compliance_body" || fail "the compliance stream is empty"
-# 这一组是整次整改的边界：普通产品日志绝不能被延长到 190 天。
 for excluded in \
   "$KC_UNSELECTED_MARKER:a Keycloak event type outside the declared list" \
   "$KC_RUNTIME_MARKER:ordinary Keycloak runtime output" \
@@ -304,8 +269,6 @@ for excluded in \
 done
 echo "PASS: only the declared security logs carry compliance=security"
 
-# Loki parses its metric and log queries, including variable interpolation.
-# Prometheus targets are validated by promtool in the observability CI job.
 python3 - "$ROOT" "$LOKI_PORT" <<'PYQUERY'
 from pathlib import Path
 import json, urllib.parse, urllib.request,sys,time

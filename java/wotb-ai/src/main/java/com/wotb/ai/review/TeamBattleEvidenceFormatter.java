@@ -34,16 +34,10 @@ import static com.wotb.ai.review.TeamOutcomeFormatter.appendCaptureAndPoints;
 import static com.wotb.ai.review.TeamOutcomeFormatter.appendSpatialSeparationEvidence;
 import static com.wotb.ai.review.TeamOutcomeFormatter.appendObserved;
 
-/** Member, formation, engagement, and timeline evidence rendering. */
 final class TeamBattleEvidenceFormatter {
     private TeamBattleEvidenceFormatter() {
     }
 
-    /**
-         * 逐成员掉血时间窗口（事件流观测子集）：把每名成员的受击 DamageEvent 聚类成窗口，
-         * 输出时间范围 + 总掉血量。与 {@code OBSERVED_EVENT_SUBSET} 同一覆盖率口径：
-         * {@code OBSERVED_DAMAGE_IS_PARTIAL} 时抑制数字，输出 UNAVAILABLE。
-         */
     static void appendMemberDamageReceivedWindows(
             final TeamPromptBudgetWriter writer,
             final Battle battle,
@@ -119,7 +113,6 @@ final class TeamBattleEvidenceFormatter {
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
-                    // vehicleClass / tier / nation 只来自 tankopedia 的结构化字段，不得由 tank 名称推断
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + structuredTankFacts(member.tankId(),
                             playersByAccount == null ? null : playersByAccount.get(member.accountId()))
@@ -164,13 +157,11 @@ final class TeamBattleEvidenceFormatter {
         writer.append("\n=== MEMBER_MOVEMENTS ===\n");
         for (final TeamMemberFeatureSet member : members) {
             if (member.movements().isEmpty()) continue;
-            // 必须标出归属成员：否则所有成员的移动段被打成一个匿名平铺列表，AI 无法归属
             writer.append("member accountId=" + member.accountId()
                     + " nickname=" + quoteData(member.nickname())
                     + " tank=" + quoteData(resolveTankName(member.tankId(), member.tankName()))
                     + " vehicleClass=" + resolveTankClass(member.tankId())
                     + "\n");
-            // 压缩区域序列（1-9 区，与回放九宫格一致）：让 AI 一眼看到该成员的整场路线
             final List<String> regionSequence = new ArrayList<>();
             String lastRegion = null;
             for (final MovementSegment movement : member.movements()) {
@@ -219,7 +210,6 @@ final class TeamBattleEvidenceFormatter {
                     + " members=" + phase.observedMemberCount()
                     + " confidence=" + PlayerAnalysisTerms.confidenceLabel(phase.confidence())
                     + "\n");
-            // Structured cluster output
             for (final TeamFormationCluster cluster : phase.clusters()) {
                 writer.append("  cluster[" + format(cluster.startTime())
                         + "-" + format(cluster.endTime()) + "]"
@@ -302,7 +292,6 @@ final class TeamBattleEvidenceFormatter {
         }
         final List<PlayerResult> dead = battle.players.stream()
                 .filter(p -> PlayerSideResolver.isValidRawTeam(p.team) && !p.survived)
-                // 未知死亡时间（deathSec<=0）排到已知时间之后，绝不因 0 被排到整场最前
                 .sorted(java.util.Comparator
                         .comparingDouble((PlayerResult p) -> PlayerResultFormat.deathSec(p) > 0
                                 ? PlayerResultFormat.deathSec(p) : Double.MAX_VALUE)
@@ -359,7 +348,6 @@ final class TeamBattleEvidenceFormatter {
         appendMemberMovements(writer, features.members(), mapCode);
         appendFormation(writer, features.formationPhases());
         appendBattlePhases(writer, features.battlePhases(), battle, perspectiveTeam);
-        // 覆盖不全时 Team Engagement 的 dealtSubset/receivedSubset 是事件流伤害数字：一并抑制
         appendEngagements(writer, features.engagements(),
                 limitations != null && limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         appendKeyEvents(writer, features.keyEvents());
@@ -381,7 +369,6 @@ final class TeamBattleEvidenceFormatter {
             return;
         }
         appendAuthoritative(writer, features.authoritativeAggregate());
-        // 使用合并后的 limitations（context + features + extra），不能只检查 features.limitations
         appendObserved(writer, features.observedAggregate(), limitations);
         appendMemberFacts(writer, features.members(), playersByAccount);
         writer.append("coverage=" + features.coverage() + "\n");

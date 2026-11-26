@@ -78,7 +78,6 @@ describe('public creator directory ownership', () => {
       expect(router.currentRoute.value.query.creatorCategory).toBe('99')
       auth.authInitState.value = 'initializing'; await flushPromises()
       expect(router.currentRoute.value.query.creatorCategory).toBe('99')
-      // Match useAuth.projectSession ordering: identity is projected before the settled state.
       if (settledState === 'authenticated') {
         auth.authenticated.value = true
         auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }

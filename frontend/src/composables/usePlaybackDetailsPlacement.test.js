@@ -1,23 +1,11 @@
 // @vitest-environment happy-dom
 
-/**
- * 详情浮窗的**位置所有权**测试。
- *
- * 这一层不能用「渲染出什么」来验证——它只写 left/top 与维护一个 userPositioned 闩锁，
- * 所以测试直接给宿主/面板喂几何，然后断言：
- *   · 只在 workspace 内（左右上下都被夹住，不用缓存尺寸）；
- *   · 不越过受保护边界（传输控件上缘）；
- *   · 初始位置按点击原点避让（点右 → 落左）；
- *   · 用户拖过之后初始位置启发式永久让位，但窗口变化仍会重新夹紧；
- *   · 不持久化（重开就是新的一次）。
- */
 import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usePlaybackDetailsPlacement } from './usePlaybackDetailsPlacement.ts'
 import { detailsPlacementLimits, detailsPlacementPreserved } from '../utils/detailsPlacementBounds.ts'
 
-/** 用 happy-dom 的元素几何桩：这一层只读 getBoundingClientRect，不需要真实布局引擎。 */
 function rect(left, top, width, height) {
   return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top }
 }
@@ -27,8 +15,6 @@ function harness({ host = rect(0, 0, 1200, 700), panel = rect(0, 0, 320, 400), b
   const panelEl = ref(null)
   const boundsEl = ref(null)
   const active = ref(true)
-  // 保护区元素**总是**渲染：`state.bounds = null` 表示「当前量不到控件」（0 高），
-  // 而不是「DOM 里没有这个节点」。这样测试可以在同一个挂载里让控件出现/消失。
   const state = { host, panel, bounds }
   const api = {}
 
@@ -51,10 +37,6 @@ function harness({ host = rect(0, 0, 1200, 700), panel = rect(0, 0, 320, 400), b
   })
 
   const wrapper = mount(Host)
-  // 每次调用都读**当前** state：这一层要验证的正是「不缓存尺寸」，
-  // 桩也必须跟着变（否则测的是一个不存在的缓存行为）。
-  // 三个元素都取自**composable 真正持有的 ref**（宿主与保护区是父组件传进来的模板 ref，
-  // 不是本组件里声明的那个），否则桩打在别的节点上、边界检查会静默失效。
   const geometry = (el, key) => {
     if (!el) return
     el.getBoundingClientRect = () => state[key] || rect(0, 0, 0, 0)
@@ -77,20 +59,16 @@ describe('usePlaybackDetailsPlacement', () => {
     expect(api.pos.value).toEqual({ left: 16, top: 16 })
 
     api.placeInitial({ x: 100, y: 0 })
-    // 右对齐：宿主 1200 - 面板 320 - 16 = 864
     expect(api.pos.value).toEqual({ left: 864, top: 16 })
     wrapper.unmount()
   })
 
   it("initialVertical='bottom'：贴底落下（3D 悬浮名册占顶部两角，浮窗不得盖住）", async () => {
-    // host 1200×700、panel 320×400、bounds（传输控件）上缘 y=520 → 底界 520−8=512
     const { api, wrapper } = harness({ initialVertical: 'bottom', bounds: rect(0, 520, 1200, 160) })
     await nextTick()
     api.placeInitial({ x: 900, y: 0 })
-    // 左列（点右半 → 落左）：left = gutter + pad = 16；贴底：top = 512 − 400 = 112
     expect(api.pos.value).toEqual({ left: 16, top: 112 })
     api.placeInitial({ x: 100, y: 0 })
-    // 右列：1200 − 320 − 16 = 864，同样贴底
     expect(api.pos.value).toEqual({ left: 864, top: 112 })
     wrapper.unmount()
   })
@@ -101,33 +79,26 @@ describe('usePlaybackDetailsPlacement', () => {
     api.placeInitial({ x: 900, y: 0 })
     expect(api.pos.value).toEqual({ left: 16, top: 16 })
 
-    // 同一台车换到长文案 / 出现 V2 检查器之后面板变宽 → 夹紧必须立刻用**新**尺寸，
-    // 而不是沿用「上次量到的尺寸」（那会让右边缘越出 workspace）。
     const hostWidth = 1200
     state.panel = rect(0, 0, 1100, 400)
     api.clampIntoHost()
-    // 左边缘本来就在界内 → 不动；右边缘 = left + 1100 必须 ≤ 1200 - 8
     expect(api.pos.value.left + 1100).toBeLessThanOrEqual(hostWidth - 8)
 
-    // 把浮窗拖到右下角：两个方向都被夹在界内
     api.onPointerDown({ button: 0, pointerId: 31, clientX: 0, clientY: 0, currentTarget: { setPointerCapture: vi.fn() } })
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 31, clientX: 1100, clientY: 600 }))
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 31 }))
     expect(api.pos.value).toEqual({ left: 92, top: 292 })
 
-    // 尺寸回到小面板也不「弹回去」：夹紧只保证在界内，不改写用户位置
     state.panel = rect(0, 0, 320, 400)
     api.clampIntoHost()
     expect(api.pos.value).toEqual({ left: 92, top: 292 })
 
-    // 用户已经拖过 → 后续选择**不再**重算初始位置（这是本层的核心承诺）
     expect(api.userPositioned.value).toBe(true)
     api.placeInitial({ x: 900, y: 0 })
     expect(api.pos.value).toEqual({ left: 92, top: 292 })
     api.placeInitial({ x: 100, y: 0 })
     expect(api.pos.value).toEqual({ left: 92, top: 292 })
 
-    // 但窗口/形态变化仍会重新夹紧（用户位置不是「永不越界」的豁免）
     state.panel = rect(0, 0, 1100, 400)
     api.clampIntoHost()
     expect(api.pos.value).toEqual({ left: 92, top: 292 })
@@ -135,19 +106,14 @@ describe('usePlaybackDetailsPlacement', () => {
   })
 
   it('受保护边界：候选项落在传输控件上时被顶到控件上方（320x400 面板 → top 112）', async () => {
-    // 宿主 1200x700，传输控件从 y=520 开始，面板 320x400。
-    // 这里用 origin.y 之外的路径：先把浮窗拖到最下方（此刻还没有边界），再挂上边界重新夹紧，
-    // 这样候选 top 一定**大于**上界，才能真正验证「top 的上界」而不是恒等的 Math.min。
     const { api, state, wrapper } = harness({ bounds: null })
     await nextTick()
     api.placeInitial({ x: 900, y: 0 })
     api.onPointerDown({ button: 0, pointerId: 21, clientX: 0, clientY: 0, currentTarget: { setPointerCapture: vi.fn() } })
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 21, clientX: 16, clientY: 292 }))
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 21 }))
-    // 没有保护区时下界就是 host：700 - 8 - 400 = 292
     expect(api.pos.value).toEqual({ left: 16, top: 292 })
 
-    // 现在传输控件出现了：同样的位置必须被顶到 520 - 8 - 400 = 112
     state.bounds = rect(0, 520, 1200, 160)
     api.clampIntoHost()
     expect(api.pos.value).toEqual({ left: 16, top: 112 })
@@ -190,10 +156,8 @@ describe('usePlaybackDetailsPlacement', () => {
     const target = { setPointerCapture: vi.fn(), currentTarget: null }
     api.onPointerDown({ button: 0, pointerId: 3, clientX: 100, clientY: 60, currentTarget: target })
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 3, clientX: 500, clientY: 260 }))
-    // 移动即置位：pointerup 可能在指针捕获丢失/触屏取消时收不到，不能依赖它才认用户位置。
     expect(api.userPositioned.value).toBe(true)
     window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 3 }))
-    // 指针相对面板原点偏移 100/60 → 新位置 = 500-100 / 260-60
     expect(api.pos.value).toEqual({ left: 400, top: 200 })
     expect(api.userPositioned.value).toBe(true)
     expect(target.setPointerCapture).toHaveBeenCalledWith(3)
@@ -201,7 +165,6 @@ describe('usePlaybackDetailsPlacement', () => {
     api.placeInitial({ x: 100, y: 0 })
     expect(api.pos.value).toEqual({ left: 400, top: 200 })
 
-    // 但窗口变化仍然重新夹紧（用户位置不是「永不越界」的豁免）
     api.clampIntoHost()
     expect(api.pos.value.left).toBeLessThanOrEqual(1200 - 320 - 8)
     wrapper.unmount()
@@ -247,7 +210,6 @@ describe('usePlaybackDetailsPlacement', () => {
   })
 })
 
-// A short workspace cannot protect Transport by changing top alone: the panel must also scroll.
 describe('short workspace panel capacity', () => {
   it('bounds tall content above Transport while preserving the drag position contract', async () => {
     const { wrapper, api } = harness({ host: rect(0, 0, 740, 256), panel: rect(0, 0, 320, 280), bounds: rect(144, 174, 452, 82) })
@@ -259,19 +221,16 @@ describe('short workspace panel capacity', () => {
   })
 })
 
-// 初始落位不压中心栏（HUD / Stage / 传输控件同一列）：侧边名册比浮窗窄时收窄浮窗，而不是伸进中心栏。
 describe('initial placement keeps the center column clear', () => {
   it('1280 宽桌面全屏：侧边只有 318，340 宽浮窗收窄到侧边可用宽度，不盖顶栏右端', async () => {
-    // 中心栏 = 传输控件所在列 x 322..958；面板天然 340 宽
     const { wrapper, api } = harness({ host: rect(0, 0, 1280, 720), panel: rect(0, 0, 340, 600), bounds: rect(322, 670, 636, 50) })
     await nextTick()
-    api.placeInitial({ x: 100, y: 0 }) // 点左侧 → 落右侧
-    // 右侧可用 = 1280 - 16 - (958 + 8) = 298
+    api.placeInitial({ x: 100, y: 0 })
     expect(api.maxPanelWidth.value).toBe(298)
     expect(api.pos.value.left).toBe(966)
     expect(api.pos.value.left).toBeGreaterThanOrEqual(958 + 8)
 
-    api.placeInitial({ x: 900, y: 0 }) // 点右侧 → 落左侧：可用 = (322 - 8) - 16 = 298
+    api.placeInitial({ x: 900, y: 0 })
     expect(api.maxPanelWidth.value).toBe(298)
     expect(api.pos.value.left).toBe(16)
     expect(api.pos.value.left + api.maxPanelWidth.value).toBeLessThanOrEqual(322 - 8)
@@ -282,7 +241,6 @@ describe('initial placement keeps the center column clear', () => {
     const { wrapper, api } = harness({ host: rect(0, 0, 1600, 900), panel: rect(0, 0, 340, 600), bounds: rect(400, 850, 800, 50) })
     await nextTick()
     api.placeInitial({ x: 100, y: 0 })
-    // 右侧可用 = 1600 - 16 - (1200 + 8) = 376 ≥ 340：left 仍是 1600 - 340 - 16
     expect(api.maxPanelWidth.value).toBe(376)
     expect(api.pos.value.left).toBe(1244)
     wrapper.unmount()
@@ -292,14 +250,14 @@ describe('initial placement keeps the center column clear', () => {
     const { wrapper, api, state } = harness({ host: rect(0, 0, 1200, 700), panel: rect(0, 0, 320, 400), bounds: rect(0, 640, 1200, 60) })
     await nextTick()
     api.placeInitial({ x: 100, y: 0 })
-    expect(api.maxPanelWidth.value).toBe(null) // 中心栏铺满：没有侧边
+    expect(api.maxPanelWidth.value).toBe(null)
     expect(api.pos.value.left).toBe(864)
 
-    state.bounds = rect(250, 640, 800, 60) // 右侧只剩 1200 - 16 - 1058 = 126 < 240
+    state.bounds = rect(250, 640, 800, 60)
     api.placeInitial({ x: 100, y: 0 })
     expect(api.maxPanelWidth.value).toBe(null)
 
-    state.bounds = rect(300, 640, 600, 60) // 右侧 1200 - 16 - 908 = 276 → 收窄
+    state.bounds = rect(300, 640, 600, 60)
     api.placeInitial({ x: 100, y: 0 })
     expect(api.maxPanelWidth.value).toBe(276)
     api.active.value = false
@@ -309,10 +267,6 @@ describe('initial placement keeps the center column clear', () => {
   })
 })
 
-/**
- * 选择变化后的位置断言必须由**真实边界**推导，不能用「上移不超过增高量」这种弱谓词：
- * old top 在新高度下仍然合法时，任何位移（哪怕 bottom 没变）都是不必要的重排。
- */
 describe('user-dragged placement after selection change', () => {
   const base = {
     hostWidth: 1200,
@@ -330,9 +284,7 @@ describe('user-dragged placement after selection change', () => {
     }
     const limits = detailsPlacementLimits({ ...base, panelHeight: 150 })
     expect(limits.maxTop).toBeGreaterThan(100)
-    // 负例：old top=100、new height=150 时下缘 250 仍远高于 transport 600；移到 50 是假阳性。
     expect(detailsPlacementPreserved(input)).toBe(false)
-    // 正确结果：原位 100。
     expect(detailsPlacementPreserved({ ...input, newTop: 100 })).toBe(true)
   })
 

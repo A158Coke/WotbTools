@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-// 自由相机地形边界回归（拆分自 playbackScene.test.js；共享装配见 playbackScene.test.setup.js）。
 import { describe, expect, it, vi } from 'vitest'
 import { installSceneTestSetup, minimalData } from './playbackScene.test.setup.js'
 
@@ -12,10 +11,6 @@ vi.mock('./replaySource.js', () => ({
   mapStaticUrl: source.mapStaticUrl,
 }))
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，initScene() 里的 new THREE.WebGLRenderer() 必然抛错，
- * 于是 startPlayback() 在第一个写入之前就失败。只替换 WebGLRenderer，其余 three 保持真实实现。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
@@ -101,10 +96,6 @@ describe('Free Camera terrain floor', () => {
 
 
 
-  // 回归（用户要求）：默认俯视视角的**旋转中心 = 地图中心**，不是相机。
-  // 锁两件事：① target 钉在地图中心；② 绕转后 target 不随相机移动（OrbitControls 轨道语义），
-  // 且极角上限仍挡在地平线以上。此前曾被改成「一次性动作 + 落进 free」，free 的 flyLook 把
-  // target 重钉到 cam + dir×dist（旋转中心变成相机）。
 
 
 

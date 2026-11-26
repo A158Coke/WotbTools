@@ -18,7 +18,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 三环公开排行榜查询；排名在查询时派生，不改变持久化成绩。 */
 @Service
 public class Mark3LeaderboardService {
     private static final int DEFAULT_PAGE_SIZE = 50;
@@ -34,7 +33,6 @@ public class Mark3LeaderboardService {
         this.mapper = mapper;
     }
 
-    /** 具体车辆分页；未指定车辆时为全站或 nation/type 交集的固定 Top 10。 */
     @Transactional(readOnly = true)
     public Mark3LeaderboardPageDto leaderboard(
             final Long vehicleId, final String nation, final String vehicleType, final int page, final int size) {

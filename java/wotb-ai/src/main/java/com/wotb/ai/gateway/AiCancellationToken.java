@@ -3,15 +3,6 @@ package com.wotb.ai.gateway;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Per-request cancellation signal shared between the analyze HTTP request and
- * the in-flight AI upstream call.
- *
- * <p>When the client aborts (cancel button, page navigation, client timeout),
- * the cancel endpoint flips this token; the gateway then cancels the captured
- * okhttp {@code Call} immediately (no further tokens are consumed) and stops
- * the retry loop with a stable {@code AI_CANCELLED} error.</p>
- */
 public final class AiCancellationToken {
 
     private final AtomicBoolean cancelled = new AtomicBoolean();

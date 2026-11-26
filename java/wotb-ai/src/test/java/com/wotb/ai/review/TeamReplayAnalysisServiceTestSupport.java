@@ -40,7 +40,6 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** Shared gateway, logger, and replay fixtures for the team analysis contract suites. */
 class TeamReplayAnalysisServiceTestSupport {
 
     protected static final String PRIOR_JSON = """
@@ -75,10 +74,6 @@ class TeamReplayAnalysisServiceTestSupport {
                 + "\"reviewFocus\":[],\"highContributors\":[]}";
     }
 
-    /**
-     * 契约测试用 Gateway 替身：捕获传给 Gateway 的完整 {@link AiChatRequest}，
-     * 返回可配置的 {@link AiChatResponse}；从不发起真实 HTTP。
-     */
     protected static final class TeamGateway implements AiChatGateway {
         protected final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         protected final List<String> teamCompletionSequence = new CopyOnWriteArrayList<>();
@@ -155,7 +150,6 @@ class TeamReplayAnalysisServiceTestSupport {
                 System::nanoTime, null);
     }
 
-    /** 传给 Gateway 的最后一个请求的 user prompt（即原 HTTP body 的 user message 内容）。 */
     protected String lastBody() {
         return gateway.requests.getLast().userPrompt();
     }
@@ -177,7 +171,6 @@ class TeamReplayAnalysisServiceTestSupport {
         return teamRequests().getLast().userPrompt();
     }
 
-    // ========== Raw team forbidden labels helper ==========
 
     protected static void assertNoRawTeamLabels(final String body) {
         assertFalse(body.contains("队伍1"), "Body must not contain 队伍1");
@@ -191,9 +184,6 @@ class TeamReplayAnalysisServiceTestSupport {
     }
 
 
-    /**
-     * 取 perspective 主体证据（对方阵容段之前的部分）。
-     */
     protected static String perspectiveBodySection(final String body) {
         final int idx = body.indexOf("OPPOSING_TEAM_LINEUP_AUTHORITATIVE");
         return idx < 0 ? body : body.substring(0, idx);
@@ -231,9 +221,7 @@ class TeamReplayAnalysisServiceTestSupport {
                 features, null, List.of(), null);
     }
 
-    // ========== Test helpers ==========
 
-    /** battle + reconstruction 测试夹具：AI 入口直接接收领域事实。 */
     protected record TeamFixture(Battle battle, ReplayReconstruction reconstruction) {
     }
 
@@ -273,10 +261,6 @@ class TeamReplayAnalysisServiceTestSupport {
         return new TeamFixture(battle, null);
     }
 
-    /**
-     * {@link #teamResult} 的有效重建变体：通过 Team canonical Timeline hard gate
-     * —— analyzeTeam 在 LLM 调用前要求 timeline 可构建。
-     */
     protected static TeamFixture teamResultWithRecon(
             final String arenaId,
             final String recorderNickname, final long recorderAccountId,
@@ -286,7 +270,6 @@ class TeamReplayAnalysisServiceTestSupport {
         return new TeamFixture(base.battle(), teamReconstruction(base.battle()));
     }
 
-    /** 由 battle roster 派生最小有效重建（IDENTIFIED 时钟 + 逐 player 映射/位置/血量）。 */
     protected static ReplayReconstruction teamReconstruction(final Battle battle) {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);

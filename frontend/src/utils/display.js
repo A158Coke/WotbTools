@@ -20,7 +20,6 @@ export function apiErrorLabel(t, te, error) {
   ].filter(Boolean)
   const key = keys.find(candidate => te(candidate))
   const label = key ? t(key) : String(apiError.errorCode)
-  // 用户看到的诊断 ID = 后端返回的单错误 id（ApiException 实例 id 或请求关联 id）。
   const diagnosticId = apiError.id || apiError.traceId
   return diagnosticId
     ? `${label} · ${t('errors.diagnostic_id', { id: diagnosticId })}`
@@ -35,10 +34,6 @@ export function apiCodeLabel(t, te, code, fallbackKey) {
   return fallbackKey ? t(fallbackKey) : (code || '')
 }
 
-/**
- * 只做错误码本地化（无诊断 ID、无 status 兜底）：
- * 批量删除的逐条结果只带 errorCode，找不到映射时直接显示原始 code。
- */
 export function apiErrorCodeLabel(t, te, code) {
   if (!code) return ''
   const key = `api_errors.${code}`

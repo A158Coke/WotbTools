@@ -10,13 +10,6 @@ export interface PendingRemove {
   label: string
 }
 
-/**
- * Replay 的唯一 session state owner。
- *
- * 本地解析副作用由 useLocalReplayAnalysis 驱动；本 composable 只拥有 selection、
- * 分析状态 / 结果以及 Workspace view state，避免同一状态在多处各有一份可写副本。
- * 服务器没有 parser：分析完全在本机完成，没有 job / 上传 / 轮询状态。
- */
 export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const files = ref<File[]>([])
   const selectionRevision = ref(0)
@@ -32,10 +25,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const analysis = ref<ReplayAnalysis>({ phase: 'idle', done: 0, total: 0, failure: null })
 
   const activeWorkspaceTab = ref<ReplayCapability>(toReplayCapability(initialCapability))
-  /**
-   * 当前场次的身份是 File，sourceId 只是它在 files 里的位置：集合增删会移动位置，但不能换场。
-   * 这里只有一份状态：currentBattleId 由它派生，写入时再解析回 File。
-   */
   const currentBattleFile = shallowRef<File | null>(null)
   const currentBattleId = computed<SourceId | null>({
     get() {
@@ -88,7 +77,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     return files.value[Number.parseInt(match[1], 10)] ?? null
   })
 
-  /** 选择变化的原子提交：先由 useReplay 停止副作用，再调用本方法。 */
   function replaceSelection(next: File[]) {
     demoFile.value = null
     files.value = next
@@ -101,7 +89,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     dataViewMode.value = 'SUMMARY'
   }
 
-  /** 当前文件被移出时的落点：同位置的下一场，末位取前一场。 */
   function fallbackBattleFile(current: File, next: Set<File>): File | null {
     const battleFiles = parsedBattles.value
       .map(b => files.value[Number.parseInt(String(b?.sourceId).slice(1), 10)])
@@ -113,10 +100,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
       ?? null
   }
 
-  /**
-   * 集合增删（有结果时）：保留结果与当前场次，只换 files。落点先于 files 写入，
-   * currentTargetFile 的 sync 观察者因此只会看到一次真实换场，看不到中间态。
-   */
   function changeSelection(next: File[]) {
     const current = currentBattleFile.value
     const rawNext = next.map(file => toRaw(file))
@@ -127,7 +110,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     selectionRevision.value++
   }
 
-  /** Only the verified loader can supply this identity. Ordinary selection always revokes it. */
   function replaceDemoSelection(file: File) {
     if (!isOfficialDemo(file)) throw new Error('Unverified official replay')
     replaceSelection([file])
@@ -166,7 +148,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     dataViewMode.value = 'SUMMARY'
   }
 
-  // Result commit is the sole place that normalizes selected battle/view state.
   watch(resp, (result) => {
     if (!result) {
       currentBattleId.value = null
@@ -174,7 +155,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
       return
     }
     const battles = Array.isArray(result.battles) ? result.battles : []
-    // 集合增删后的新结果：当前场次还在就原地不动，连同数据视图一起保留。
     if (currentBattleId.value && battles.some(b => b?.sourceId === currentBattleId.value)) return
     currentBattleId.value = battles[0]?.sourceId ?? null
     dataViewMode.value = battles.length === 1 ? 'SINGLE' : 'SUMMARY'

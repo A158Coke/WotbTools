@@ -33,7 +33,6 @@ import java.util.Map;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.move;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.stationary;
 
-/** Builds synthetic single-player replay evidence for deterministic AI evaluation tests. */
 final class AiEvalPlayerFixtures {
     record PlayerFixture(
             Battle battle,
@@ -61,7 +60,6 @@ final class AiEvalPlayerFixtures {
         };
     }
 
-    /** 随机战开局分散（中性 signal）：录像者开局散开、未接火未阵亡 → OPENING_SPREAD。 */
     private static PlayerFixture playerOpeningMapControl() {
         return playerFixtureOf(
                 0, true,
@@ -73,7 +71,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f, 200f});
     }
 
-    /** 随机战静止分离：录像者静止 + 敌情压力（中性分离窗口；是否拖延由 LLM 判断）。 */
     private static PlayerFixture playerDelayHold() {
         return playerFixtureOf(
                 200, true,
@@ -85,7 +82,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** 随机战移动分离 + 承伤高（中性分离窗口；是否脱节由 LLM 判断）。 */
     private static PlayerFixture playerDetachPush() {
         return playerFixtureOf(
                 1800, true,
@@ -97,7 +93,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 240f});
     }
 
-    /** 随机战 false-positive：窗口内移动但距离无增长 + 承伤 → 不应判脱节。 */
     private static PlayerFixture playerNoGrowth() {
         return playerFixtureOf(
                 1800, true,
@@ -109,7 +104,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** 随机战 false-positive：窗口内移动覆盖不足（未知）≠ MOVING → 不应判任何候选。 */
     private static PlayerFixture playerUnknownStationary() {
         return playerFixtureOf(
                 1800, true,
@@ -121,7 +115,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šå¼€å±€çª—å£å†…æœ‰äº¤ç«ï¼ˆçª—å£å†…æ‰¿ä¼¤>0ï¼‰â†’ ä¸å¾—åˆ¤å¼€å±´å›¾æŽ§ã€‚ */
     private static PlayerFixture playerOpeningContact() {
         return playerFixtureOf(
                 200, true,
@@ -133,7 +126,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f, 200f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šçª—å£å†…ç§»åŠ¨è¦†ç›–æžä½Žï¼ˆ1s/15sï¼‰â‰  MOVINGï¼Œå³³ä½¿çª—å£å†…æ‰¿ä¼¤ 1800 ä¹Ÿä¸åˆ¤è„±èŠ‚ã€‚ */
     private static PlayerFixture playerThinCoverage() {
         return playerFixtureOf(
                 1800, true,
@@ -145,7 +137,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f, 240f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šå½•åƒè€…éƒ¨åˆ†é‡å äº¤ç«ï¼ˆ40-65sï¼‰+ çª—å£å†…æ‰¿ä¼¤ 1000 + æ‹‰å¤§è·ç¦» â†’ ä¸å¾—ç¡¬ç”Ÿæˆè„±èŠ‚/æ‹–å»¶ã€‚ */
     private static PlayerFixture playerPartialOverlapStrongSignals() {
         return playerFixtureOf(
                 0, true,
@@ -157,7 +148,6 @@ final class AiEvalPlayerFixtures {
                 new float[]{200f, 200f, 240f});
     }
 
-    /** éšæœºæˆ˜ false-positiveï¼šOBSERVED_DAMAGE_IS_PARTIAL + å¼€å±´æœªè§‚å¯Ÿåˆ°äº¤ç« â†’ ä¸å¾—ç”¨â€œæ²¡æœ‰è§‚å¯Ÿåˆ°â€è¯æ˜ŽæœªæŽ¥ç«ã€‚ */
     private static PlayerFixture playerDamagePartialOpening() {
         return playerFixtureOf(
                 0, true,
@@ -277,7 +267,6 @@ final class AiEvalPlayerFixtures {
 
     private static EngagementSummary playerEngagement(final float start, final float end,
                                                       final int damageReceived) {
-        // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
         return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(100f, 0f, 150f), new Vector3(100f, 0f, 150f),
                 DecodeConfidence.PARTIAL);

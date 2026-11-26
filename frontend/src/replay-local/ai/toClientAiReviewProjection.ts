@@ -1,17 +1,3 @@
-/**
- * WotbTools client canonical AI projection（`ClientAiReviewProjection`，`contracts/http/openapi.yaml`）。
- *
- * 数据流：Agent WASM → 校验过的 AiReviewFacet / PlaybackData → WotbTools canonical replay facts
- * （`replay-local/canonical`）→ **本投影** → AI 请求信封（`api/ai-review.ts`）→ ai-service。
- * ai-service 不解析回放：它把本投影装配成内存里的 canonical 事件流，再走原有 BattleTimeline / 证据链。
- *
- * 规则：
- *  - 只携带 canonical 层确认过的参战实体（结算实际参战者 + 可用身份），身份 / 队伍 / 录像者 / 视角取
- *    canonical 结论，不让服务端重新联表；
- *  - 证据保持原始形态（原始时钟、原始 HP u16、原始位姿观测、已分类的 method8 通知），派生语义
- *    （knowledge / 掉血 / 归属 / 击毁）由服务端 canonical 层按与 2D 回放同一套规则求得；
- *  - 上游不提供的证据进 `unavailableEvidence`，影响能力的缺口进 `limitations`——绝不编造。
- */
 
 import type { components } from '../../api/generated/http-contract.js'
 import type { AgentAiReviewFacet, AgentBattleResult, AgentPlaybackFacet } from '../../api/agent-replay-facets.js'
@@ -21,13 +7,10 @@ import { classifyHpRaw } from '../canonical/hpRawState.js'
 export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
 
 export interface AgentEngineInfo {
-  /** 上游 Release tag（WASM 产物 fingerprint.json 的 `tag`） */
   release: string
-  /** 上游源码提交（fingerprint.json 的 `upstream_commit`） */
   commit: string
 }
 
-/** 新引擎不提供的证据类（Java 旧解码器在本仓库 fixture 上同样为空；不得渲染成「没有发生」） */
 export const UNAVAILABLE_EVIDENCE = ['PACKET_DECODE_COVERAGE', 'SHOT_LIFECYCLE', 'TARGETING', 'AMMUNITION'] as const
 
 export const AI_LIMITATION = {
@@ -44,7 +27,6 @@ export interface ProjectionInput {
   engine: AgentEngineInfo
 }
 
-/** 时间轴 / 身份不可用（canonical facts 建不起来）→ null：AI 复盘不可执行（与 Java TIMELINE_* 拒绝同义） */
 export function toClientAiReviewProjection(input: ProjectionInput): ClientAiReviewProjection | null {
   const facts = buildCanonicalReplayFacts({
     result: input.result, aiReview: input.aiReview, streamEndRaw: input.playback.meta.duration,
@@ -77,9 +59,6 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
   const prop3Health: ClientAiReviewProjection['prop3Health'] = []
   for (const e of input.aiReview.events) {
     if (e.type === 'health' && combatant(e.eid)) {
-      // hpState = canonical 层对同一 hpRaw 的权威分类（与 facts.hpSamples 同一函数、同一输入）。
-      // 服务端在场即权威、不再重新分类——`DEATH_TERMINAL` 让 0xFFFE/0xFFFF/0xFFFD 全族在 Java
-      // 重建里也是终态（2D/3D 与 AI 复盘对同一事件的生命状态一致）。
       prop3Health.push({
         entityId: e.eid, rawClockSec: e.t, hpRaw: e.hp_raw,
         hpState: classifyHpRaw(e.hp_raw, e.hp_state),
@@ -120,12 +99,10 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
     positions,
     turrets,
     prop3Health,
-    // hpState 取 canonical facts 已完成的分类（facts.ts 对同一 hp_raw/hp_state 的权威结论）
     healthEvents: facts.healthEvents.filter((h) => combatant(h.entityId)).map((h) => ({
       entityId: h.entityId, rawClockSec: raw(h.t), hpRaw: h.hpRaw, hpState: h.rawState,
       sourceEntityId: h.sourceEntityId, causeFlag: h.causeFlag,
     })),
-    // 分类已在 canonical 层完成（仅战斗车辆 envelope；录像者 Avatar 实体上的 method8 不是伤害通知）
     damageNotices: facts.damageNotices.map((n) => ({
       rawClockSec: raw(n.t), kind: n.kind, envelopeEntityId: n.envelopeEntityId,
       attackerEntityId: n.attackerEntityId, victimEntityId: n.victimEntityId,

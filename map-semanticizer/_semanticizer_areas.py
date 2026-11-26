@@ -109,9 +109,6 @@ def aggregate_area_tags(component_cells: Sequence[dict[str, Any]]) -> list[str]:
         if tag_counts[tag] >= math.ceil(count / 2):
             result.append(tag)
 
-    # The dominant class was selected per cell, so every connected component
-    # must retain its defining tag even when a small component makes rounding
-    # thresholds awkward.
     dominant = component_cells[0]["dominantClass"]
     defining_tag = {
         "HARD_COVER_ZONE": "HARD_COVER_DENSE",

@@ -45,7 +45,6 @@ class DeathCascadeSkillTest {
     @Test
     void singleDeathsAreNotCascades() {
         final List<AiEvidence> cascades = new DeathCascadeSkill().detect(battleWithDeaths(), 2);
-        // 130s 单亡不入连锁；两个有效连锁（TEAM_1 与 TEAM_2 各 2 辆）
         assertEquals(2, cascades.size());
         final AiEvidence enemyCascade = cascades.stream()
                 .filter(e -> "TEAM_1".equals(e.labels().get("team")))

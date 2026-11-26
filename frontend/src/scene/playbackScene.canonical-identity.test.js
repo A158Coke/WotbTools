@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-// 拆分自 playbackScene.destroyed-visuals.test.js：只保留两条 canonical 身份重解析回归。
-// 其余 44 个 destroyed visual 用例已由 playbackScene.part05.test.js 覆盖，不再重复注册。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createPlaybackStore } from './playbackStore.js'
@@ -67,9 +65,6 @@ vi.mock('three', async (importOriginal) => {
 const state = { api: null, created: [], pending: [] }
 installSceneTestSetup({ source, muzzleTip: { reach: 0 }, state })
 
-// attack_enemy 账号目标随 canonical 身份修正重解析（评审 P2）：目标 eid 在 buildCommandEvents
-// 时按当时身份固定，晚到的 canonical 身份修正必须经 setBattleClock 重建标记事件源重选车；
-// 显式 target_eid（0x2e）由 payload 原样重推、不重新映射。独立挂载（WebGL 用替身）。
 describe('attack_enemy 目标身份：canonical 修正后重解析', () => {
   const mkVehicle = (overrides = {}) => ({
     eid: 1, account_id: 77, tank_id: 6929, team: 1, max_hp: 1000, is_author: true,
@@ -91,15 +86,13 @@ describe('attack_enemy 目标身份：canonical 修正后重解析', () => {
     const oldCar = mkVehicle({ eid: 42, account_id: 2001, team: 2, is_author: false, pos: [10, 0, 0], coverage: [42, 300], death_t: null, tank_id: 6929, nickname: 'Old-2001', tank_name: 'T-34' })
     const newCar = mkVehicle({ eid: 49, account_id: 2001, team: 2, is_author: false, pos: [30, 0, 30], coverage: [42, 300], death_t: null, tank_id: 6929, nickname: 'New-2001', tank_name: 'BZT-70' })
     const data = dataFor([recorder, oldCar, newCar])
-    data.markers = [{ t: 111, entity_id: 1, account_id: 11, marker_type: 4, target_eid: 42 }]   // 显式 EID：不重映射
-    data.chat_events = [{ t: 110, channel: 0, sender: 'Sniper', command_name: 'attack_enemy', target: 2001 }]  // 账号目标：随身份重解析
-    // AoI 在场段（group.visible 的依据）：三辆车全程在场
+    data.markers = [{ t: 111, entity_id: 1, account_id: 11, marker_type: 4, target_eid: 42 }]
+    data.chat_events = [{ t: 110, channel: 0, sender: 'Sniper', command_name: 'attack_enemy', target: 2001 }]
     data.visibility = [
       { eid: 1, t_in: 42, t_out: 300 },
       { eid: 42, t_in: 42, t_out: 300 },
       { eid: 49, t_in: 42, t_out: 300 },
     ]
-    // 预载 canonical：EID 49 在指令时刻（战斗秒 110-42=68）已是活动实体 → 账号目标固定 49（x=30）
     const entityStartsByAccount = mapOf([[2001, [[42, 0], [49, 60]]]])
     const canonical = {
       clock: { startRaw: 42, durationSec: 200 },
@@ -110,7 +103,6 @@ describe('attack_enemy 目标身份：canonical 修正后重解析', () => {
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
     vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
-    // overlay 桩同步拷贝锚点/行（labelsRuntime 复用零分配 scratch 逐行调用——记录引用会全读到最后一行）
     const markerAnchors = []
     const markerLabelRows = []
     const overlay = {
@@ -127,35 +119,32 @@ describe('attack_enemy 目标身份：canonical 修正后重解析', () => {
     await apiLocal.loadData({ kind: 'local', file: new File(['replay'], 'marker-identity.wotbreplay'), session })
     apiLocal.setPlaying(false)
     apiLocal.seekTime(112.5)
-    frames.shift()()   // 单次按需重绘：标记落场景 + 来源卡投影
+    frames.shift()()
 
     const anchorByKey = (key) => markerAnchors.filter((a) => a.key === key).at(-1)
-    const before0 = anchorByKey('0')   // 0x2f attack_enemy → 新车 EID 49
-    const before1 = anchorByKey('1')   // 0x2e attack（显式 target_eid）→ EID 42
+    const before0 = anchorByKey('0')
+    const before1 = anchorByKey('1')
     expect(before0).toBeTruthy()
     expect(before1).toBeTruthy()
     expect(before0.visible).toBe(true)
     expect(before1.visible).toBe(true)
-    expect(before0.x).not.toBe(before1.x)   // 两辆车 x/z 都不同 → 投影不同
-    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'BZT-70')).toBe(true)   // 卡片目标行 = 被指车辆（新车）
+    expect(before0.x).not.toBe(before1.x)
+    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'BZT-70')).toBe(true)
 
-    // 晚到的 canonical 身份修正：接管时刻移到战斗秒 130（指令时刻旧车在场）→ 重解析
     entityStartsByAccount.get(2001).set(49, 130)
     apiLocal.setBattleClock(canonical.clock)
     frames.shift()()
 
     const after0 = anchorByKey('0')
     expect(after0.visible).toBe(true)
-      expect(after0.y).toBeCloseTo(before1.y, 6)   // 与显式 EID 42 的投影重合（同一辆车）→ 已重选车
-    expect(after0.y).not.toBe(before0.y)   // 且确实从 EID 49 的投影移到了 EID 42
-      expect(anchorByKey('1').y).toBeCloseTo(before1.y, 6)   // 显式 target_eid 不重映射：投影不变
-    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(true)   // 卡片目标行随重解析切换（旧车）
+      expect(after0.y).toBeCloseTo(before1.y, 6)
+    expect(after0.y).not.toBe(before0.y)
+      expect(anchorByKey('1').y).toBeCloseTo(before1.y, 6)
+    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(true)
     expect(markerLabelRows.at(-1)?.some((row) => row.target === 'BZT-70')).toBe(false)
   })
 })
 
-// 跨会话复用 SceneApi：A 场晚到身份 → EID 49（New）；换到 B 场（建源时无身份）→ fallback EID 42（Old）；
-// B 的同款身份晚到 → 必须重解析回 EID 49（New）——快照随 teardown 清空、随建源同步（评审 P2）。
 describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
   const mkVehicle = (overrides = {}) => ({
     eid: 1, account_id: 77, tank_id: 6929, team: 1, max_hp: 1000, is_author: true,
@@ -179,7 +168,7 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
         mkVehicle({ eid: 42, account_id: 2001, team: 2, is_author: false, pos: [10, 0, 0], coverage: [42, 300], death_t: null, tank_id: 6929, nickname: 'Old-2001', tank_name: 'T-34' }),
         mkVehicle({ eid: 49, account_id: 2001, team: 2, is_author: false, pos: [30, 0, 30], coverage: [42, 300], death_t: null, tank_id: 6929, nickname: 'New-2001', tank_name: 'BZT-70' }),
       ])
-      data.markers = []   // 只留 chat_events 的 attack_enemy（账号目标）：卡片目标行只随身份重解析切换
+      data.markers = []
       data.chat_events = [{ t: 110, channel: 0, sender: 'Sniper', command_name: 'attack_enemy', target: 2001 }]
       data.visibility = [
         { eid: 1, t_in: 42, t_out: 300 },
@@ -188,8 +177,6 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
       ]
       return data
     }
-    // rAF 桩必须先于 initPlayback：initPlayback 自身 S.animate() 起帧循环（P4 初始化），
-    // 桩后装会把唯一一次起帧排进真实 rAF，frames 永远为空
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
@@ -199,7 +186,6 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
       if (typeof cb !== 'function') throw new Error(label + ': animate loop died, frames=' + frames.length)
       cb()
     }
-    // overlay 桩同步拷贝锚点/行（labelsRuntime 复用零分配 scratch 逐行调用——记录引用会全读到最后一行）
     const markerAnchors = []
     const markerLabelRows = []
     const overlay = {
@@ -214,9 +200,6 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 960 })
     apiLocal = initPlayback(container, store, overlay)
 
-    // 会话 A：建源时无身份 → fallback EID 42（x=10 / Old）。晚到身份走 workspace 的真实写回路径：
-    // getState 返回的对象引用原样进 store.playbackSession（sessionLifecycle 196→P4 publishSessionData），
-    // 变更 state.canonical 即评审 P2 所说的「canonical 写回」。
     const canonicalA = { clock: { startRaw: 42, durationSec: 200 }, dataset: { vehicles: [] }, entityStartsByAccount: mapOf([[2001, [[42, 0], [49, 60]]]]) }
     const stateA = { canonical: null }
     const sessionA = { loadScene: vi.fn().mockResolvedValue(mkData()), getState: () => stateA }
@@ -224,17 +207,16 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
     apiLocal.setPlaying(false)
     apiLocal.seekTime(112.5)
     pump('A-fallback')
-    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(true)   // fallback：旧车
+    expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(true)
     const fallbackA = anchorY('0')
 
-    stateA.canonical = canonicalA              // 晚到身份写回 playbackSession
-    apiLocal.setBattleClock(canonicalA.clock)  // 指纹 ≠ 快照（null）→ 重建 → 重解析 EID 49（x=30 / New）
+    stateA.canonical = canonicalA
+    apiLocal.setBattleClock(canonicalA.clock)
     pump('A-late')
     expect(markerLabelRows.at(-1)?.some((row) => row.target === 'BZT-70')).toBe(true)
     expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(false)
-    expect(anchorY('0')).not.toBe(fallbackA)   // 环随重解析换车投影
+    expect(anchorY('0')).not.toBe(fallbackA)
 
-    // 同一 SceneApi 换到会话 B：teardown 清快照 + 建源时无身份 → fallback 仍 EID 42（旧车）
     markerLabelRows.length = 0
     const stateB = { canonical: null }
     const sessionB = { loadScene: vi.fn().mockResolvedValue(mkData()), getState: () => stateB }
@@ -245,7 +227,6 @@ describe('attack_enemy 目标身份：跨会话复用 SceneApi', () => {
     expect(markerLabelRows.at(-1)?.some((row) => row.target === 'T-34')).toBe(true)
     const fallbackB = anchorY('0')
 
-    // B 的同款身份晚到：指纹 ≠ 快照（teardown 已清）→ 必须重解析回 EID 49（评审 P2 复现态的修复）
     stateB.canonical = canonicalA
     apiLocal.setBattleClock(canonicalA.clock)
     pump('B-late')

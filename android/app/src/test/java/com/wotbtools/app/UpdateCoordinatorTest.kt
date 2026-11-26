@@ -133,7 +133,7 @@ class UpdateCoordinatorTest {
         coordinator.refresh(true)
         finish(state, io)
         coordinator.reconcile()
-        state.drain() // 对账 I/O 尚未执行。
+        state.drain()
         var accepted: Boolean? = null
         coordinator.beginDownload(3028000) { accepted = it }
         state.drain()
@@ -234,7 +234,7 @@ class UpdateCoordinatorTest {
         recreated.refresh(true)
         finish(state, io)
         assertTrue(recreated.status.optionalPromptSuppressed)
-        assertEquals("optional", recreated.state()) // 手动检查仍暴露可更新状态。
+        assertEquals("optional", recreated.state())
         next = manifest(latest = 3029000)
         recreated.refresh(true)
         finish(state, io)
@@ -363,7 +363,7 @@ class UpdateCoordinatorTest {
         assertEquals("hashMismatch", coordinator.status.download.failureReason)
         assertTrue(notifications.activeNotifications.isEmpty())
         assertFalse(updater.privateFile(task).exists())
-        assertEquals(0, downloads.requestCount) // 坏包及其系统任务已清理，绝不保留为可安装下载。
+        assertEquals(0, downloads.requestCount)
     }
 
     @Test fun readyInstallWaitsForInFlightReconcile() {
@@ -388,7 +388,7 @@ class UpdateCoordinatorTest {
         finish(state, io)
         assertEquals("ready", coordinator.status.download.state)
         coordinator.reconcile()
-        state.drain() // 保持对账 I/O 尚未执行。
+        state.drain()
         val replies = mutableListOf<File?>()
         coordinator.prepareInstall(task.token) { replies.add(it) }
         state.drain()
@@ -438,7 +438,7 @@ class UpdateCoordinatorTest {
                 }
                 "cancel" -> coordinator.cancelPendingInstall(task.token)
                 "cancelInFlight" -> {
-                    io.drain(); state.drain() // 对账完成、安装校验 I/O 已排队。
+                    io.drain(); state.drain()
                     coordinator.cancelPendingInstall(task.token)
                 }
             }
@@ -537,7 +537,7 @@ class UpdateCoordinatorTest {
         val (coordinator, _, task, state, io) = readyFixture(next)
         val replies = mutableListOf<File?>()
         coordinator.prepareInstall(task.token) { replies.add(it) }
-        state.drain(); io.drain(); state.drain() // hash done; main callback not dispatched
+        state.drain(); io.drain(); state.drain()
         next.set(next.get().copy(latestVersionCode = 3029000, minSupportedVersionCode = 3029000))
         coordinator.refresh(true)
         state.drain(); io.drain(); state.drain()
@@ -590,7 +590,6 @@ class UpdateCoordinatorTest {
         assertEquals(1, calls)
     }
 
-    /** 验证实际 producer JSON，而不是复制一份预期 wire shape。 */
     private fun assertContract(value: JSONObject) {
         val schema = JSONObject(File("../../contracts/android-native-bridge.json").readText())
             .getJSONObject("methods").getJSONObject("getUpdateStatus").getJSONObject("response")

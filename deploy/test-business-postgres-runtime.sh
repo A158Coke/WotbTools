@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
-# Disposable Business PostgreSQL runtime smoke. It proves three contracts on a
-# throwaway postgres:18-alpine container and never contacts TX:
-#   1. the Compose definition ships the expected service, image, volume, port,
-#      healthcheck, and restart policy;
-#   2. the OpenTofu root declares only the authoritative database, the
-#      application role, and its grant, with a mirror-only provider and a
-#      non-destructive plan policy;
-#   3. the real cyrilgdn/postgresql provider applies against a real PostgreSQL 18
-#      instance, the application role is a non-superuser that can create tables,
-#      and the follow-up plan is completely clean;
-#   4. backup -> SHA-256 -> pg_restore catalog validation -> restore into a
-#      disposable database preserves explicit ids, the unique key, literal
-#      historical Keycloak UUIDs, and the identity sequence.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -156,8 +143,6 @@ export CHECKPOINT_DISABLE="1"
 MIRROR="$WORK/provider-mirror"
 mkdir -p "$MIRROR"
 "$TOFU" -chdir="$TOFU_ROOT" providers mirror "$MIRROR" >/dev/null
-# The OpenTofu CLI config must carry a path in the host OS convention; Git Bash
-# on Windows would otherwise write a POSIX path the Windows binary cannot open.
 if command -v cygpath >/dev/null 2>&1; then
   MIRROR_FOR_CLI="$(cygpath -m "$MIRROR")"
 else
@@ -315,7 +300,6 @@ else
   fail "restored schema is missing hall_of_fame_record"
 fi
 
-# The source database must still hold exactly its original rows.
 source_rows="$(docker exec "$NAME" psql -U "$ADMIN_USER" -d "$DB_NAME" -tAc 'select count(*) from hall_of_fame_record')"
 [ "$source_rows" = "4" ] || fail "source database was modified by backup/restore: $source_rows rows"
 

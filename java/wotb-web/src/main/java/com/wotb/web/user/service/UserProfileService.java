@@ -25,14 +25,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** 用户资料服务。创建/查询分离，username 和 displayName 来自 Keycloak 不可修改。 */
 @Service
 public class UserProfileService implements UserProfiles {
 
-    /** WG Provider 支持的区服（与 Keycloak {@code WargamingRegion} 枚举一致）。 */
     private static final Set<String> WG_REGIONS = Set.of("ASIA", "EU", "NA");
 
-    /** {@code (wotb_server, wotb_account_id)} 唯一约束：该 WotB 账号已属于其他用户。 */
     private static final String UK_WOTB_ACCOUNT = "uk_user_profile_wotb_account";
 
     private final UserProfileRepository repository;
@@ -43,7 +40,6 @@ public class UserProfileService implements UserProfiles {
         this.mapper = mapper;
     }
 
-    /** 查询用户资料，不存在则返回 empty。 */
     @Transactional(readOnly = true)
     public Optional<UserProfileDto> findByKeycloakUserId(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
@@ -56,7 +52,6 @@ public class UserProfileService implements UserProfiles {
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 
-    /** Serialize receipts with the existing profile lock: newer epochs win, then completion at the same epoch. */
     @Transactional
     public OnboardingReceiptDto saveOnboardingReceipt(final String keycloakUserId,
                                                        final int coreEpoch, final String disposition) {
@@ -76,12 +71,6 @@ public class UserProfileService implements UserProfiles {
         return mapper.toOnboardingReceipt(profile);
     }
 
-    /**
-     * 当前登录用户绑定的 canonical WotB 业务身份 {@code (区服, 账号)}；
-     * profile 不存在或未绑定账号 → empty。
-     *
-     * <p>这是 HoF 等业务域解析 ownership 的唯一入口，避免各域各写一份「解析当前绑定账号」的规则。</p>
-     */
     @Override
     @Transactional(readOnly = true)
     public Optional<WotbAccountIdentity> currentWotbIdentity(final String keycloakUserId) {
@@ -91,30 +80,23 @@ public class UserProfileService implements UserProfiles {
                         : new WotbAccountIdentity(profile.getWotbServer(), profile.getWotbAccountId()));
     }
 
-    /** 供其他业务域读取用户资料值，不暴露持久化实体。 */
     @Override
     @Transactional(readOnly = true)
     public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserId(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toSnapshot);
     }
 
-    /** 当前 JWT 是否为可用于 WG 资料同步的可信 ASIA/EU/NA 身份。 */
     @Override
     public boolean hasTrustedWargamingIdentity() {
         return trustedWgRegionOrNull() != null;
     }
 
-    /** 供跨域写操作串行化用户删除与换绑。 */
     @Override
     @Transactional
     public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserIdForUpdate(final String keycloakUserId) {
         return repository.findByKeycloakUserIdForUpdate(keycloakUserId).map(mapper::toSnapshot);
     }
 
-    /**
-     * 管理端用户分页检索，Repository 保持封装在 user 域内。
-     * 返回 {@link Page} 以便调用方拿到权威 totalElements/totalPages，不做内存伪造分页。
-     */
     @Override
     @Transactional(readOnly = true)
     public Page<UserProfileSnapshot> searchForAdministration(final String query, final int page, final int size) {
@@ -124,7 +106,6 @@ public class UserProfileService implements UserProfiles {
                 : repository.findAll(pageable).map(mapper::toSnapshot);
     }
 
-    /** 按 Keycloak sub 批量取本地资料；跨域编排（admin）用，禁止逐用户查询。 */
     @Override
     @Transactional(readOnly = true)
     public List<UserProfileSnapshot> findByKeycloakUserIdIn(final Collection<String> keycloakUserIds) {
@@ -134,7 +115,6 @@ public class UserProfileService implements UserProfiles {
         return repository.findByKeycloakUserIdIn(keycloakUserIds).stream().map(mapper::toSnapshot).toList();
     }
 
-    /** 管理端删除入口；flush 让约束异常在调用方补偿范围内暴露。 */
     @Override
     @Transactional
     public void deleteForAdministration(final String keycloakUserId) {
@@ -144,25 +124,6 @@ public class UserProfileService implements UserProfiles {
         repository.flush();
     }
 
-    /**
-     * 幂等的「确保当前用户存在业务资料」（account bootstrap 的唯一入口）。
-     *
-     * <p>语义是 <em>ensure</em>，不是 create：</p>
-     * <ul>
-     *   <li>已有 profile → 原样返回，<strong>不修改任何业务绑定</strong>
-     *       （{@code wotb_server} / {@code wotb_account_id} / {@code wotb_nickname} /
-     *       {@code wotb_account_source} / {@code wotb_account_verified_at} 全部保持）。</li>
-     *   <li>没有 profile → 按 {@link #newProfile} 的 canonical provisioning 语义创建
-     *       （可信 WG claims → 对应区服 + {@code WARGAMING}；否则 → {@code CN} + {@code MANUAL}）。</li>
-     * </ul>
-     *
-     * <p><strong>刻意不加外层 {@code @Transactional}</strong>：两个并发 ensure 的败者会在
-     * {@code keycloak_user_id} 唯一约束上失败，而 PostgreSQL 会把该事务标记为 aborted
-     * （后续任何语句都报 25P02）。只有让「插入」与「冲突后重读」落在各自独立的短事务里
-     * （{@code saveAndFlush} 与派生查询各自持有自己的事务），败者才能读到胜者已提交的 profile
-     * 并幂等成功——这正是「1 个 KC sub 恰好 1 条 profile，两个调用方都成功」的实现方式。
-     * 若在这里加上 {@code @Transactional}，冲突会污染唯一的事务，败者将无法完成重读。</p>
-     */
     public UserProfileDto ensureCurrentProfile(final String keycloakUserId,
                                                final String username,
                                                final String displayName) {
@@ -172,10 +133,6 @@ public class UserProfileService implements UserProfiles {
                 : provision(keycloakUserId, username, displayName);
     }
 
-    /**
-     * canonical profile creation：唯一的「首次创建业务资料」实现，ensure 与
-     * {@link #syncFromLogin} 共用，禁止各自再写一份 CN 默认 / 可信 WG 判定。
-     */
     private static UserProfile newProfile(final String keycloakUserId,
                                           final String username,
                                           final String displayName) {
@@ -185,7 +142,6 @@ public class UserProfileService implements UserProfiles {
         profile.setDisplayName(displayName);
         final String trustedRegion = trustedWgRegionOrNull();
         if (trustedRegion != null) {
-            // WG 用户（ASIA/EU/NA）：首次创建即写入官方资料，来源 WARGAMING、验证时间=首次可信同步时间。
             profile.setWotbServer(trustedRegion);
             profile.setWotbAccountId(JwtUtil.currentWotbAccountId());
             profile.setWotbNickname(JwtUtil.currentWotbNickname());
@@ -199,57 +155,30 @@ public class UserProfileService implements UserProfiles {
         return profile;
     }
 
-    /**
-     * 插入 canonical profile，冲突时按<strong>重读优先</strong>判别成因。
-     *
-     * <p>「不要把真实身份冲突吞成幂等成功」的落点，判定顺序刻意是先看事实、再看约束名：</p>
-     * <ol>
-     *   <li><strong>重读优先</strong>：该 sub 已经有 profile ⇒ 这次冲突只可能是「同一 Keycloak sub
-     *       被并发创建」的败者路径，直接幂等返回胜者。这条判定只看数据库事实，**不依赖** PostgreSQL
-     *       自动生成的约束名字符串，因此即使约束名与预期不同也不会把并发收敛误报成业务冲突。</li>
-     *   <li>该 sub 仍然不存在 ⇒ 不是并发收敛路径，此时才按约束名判定：
-     *       {@code (wotb_server, wotb_account_id)} 冲突 = 该 WotB 账号已属于别人 →
-     *       保持 canonical {@code WOTB_ACCOUNT_ALREADY_USED}，绝不返回他人的 profile，
-     *       也绝不写入被抢走的绑定。</li>
-     *   <li>其余完整性冲突（CHECK / NOT NULL / 值超长 / 将来的新约束）不得伪装成业务冲突，
-     *       按服务端不变量问题上报 {@code PROFILE_BOOTSTRAP_FAILED}。</li>
-     * </ol>
-     */
     private UserProfileDto provision(final String keycloakUserId,
                                      final String username,
                                      final String displayName) {
         final UserProfile profile = newProfile(keycloakUserId, username, displayName);
         try {
-            // saveAndFlush：让约束冲突在本方法内、该语句自己的事务回滚之后暴露，而不是拖到外层提交点。
             return mapper.toDto(repository.saveAndFlush(profile));
         } catch (final DataIntegrityViolationException e) {
-            // 1) 重读优先：读到胜者即收敛，不需要也不依赖约束名。
             final Optional<UserProfile> concurrent = repository.findByKeycloakUserId(keycloakUserId);
             if (concurrent.isPresent()) {
                 return mapper.toDto(concurrent.get());
             }
-            // 2) 该 sub 仍不存在：只有确实是 WotB 账号占用才是业务冲突。
             if (ConstraintViolations.causedByConstraint(e, UK_WOTB_ACCOUNT)) {
                 throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED", e);
             }
-            // 3) 其余完整性冲突是服务端问题，不得伪装成 409 业务冲突。
             throw new IllegalStateException("PROFILE_BOOTSTRAP_FAILED", e);
         }
     }
 
-    /** 跨域同步入口不返回 HTTP DTO；外层事务覆盖下方不会重新经过代理的 self-call。 */
     @Override
     @Transactional
     public void synchronizeFromLogin(final String keycloakUserId) {
         syncFromLogin(keycloakUserId);
     }
 
-    /**
-     * 幂等同步接口：仅 WG 可信 claims（ASIA/EU/NA）可调用。
-     * Profile 不存在时创建 WARGAMING Profile；空 Profile（未绑定任何账号）升级为
-     * WARGAMING；已绑定同 (region, account_id) 时幂等刷新官方昵称（不刷新 verified_at）；
-     * 已绑定其他账号（MANUAL 或跨区服/跨账号）返回 409；账号被他人占用返回 409。
-     */
     @Transactional
     public UserProfileDto syncFromLogin(final String keycloakUserId) {
         final String trustedRegion = trustedWgRegionOrNull();
@@ -269,20 +198,17 @@ public class UserProfileService implements UserProfiles {
             final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                     .orElse(null);
             if (profile == null) {
-                // Profile 不存在：原子创建 WARGAMING Profile（与 ensure 共用同一 canonical 语义）。
                 final UserProfile created = newProfile(
                         keycloakUserId, JwtUtil.currentUsername(), JwtUtil.currentDisplayName());
                 return mapper.toDto(repository.save(created));
             }
             if (profile.getWotbAccountId() == null) {
-                // 空 Profile（尚未绑定任何账号）：升级为 WARGAMING。
                 profile.setWotbServer(trustedRegion);
                 profile.setWotbAccountId(accountId);
                 profile.setWotbNickname(nickname);
                 profile.setWotbAccountSource("WARGAMING");
                 profile.setWotbAccountVerifiedAt(OffsetDateTime.now());
             } else {
-                // 已绑定账号：必须同 source/region/account_id，否则明确冲突。
                 if (!"WARGAMING".equals(profile.getWotbAccountSource())
                         || !trustedRegion.equals(profile.getWotbServer())) {
                     throw new IllegalArgumentException("PROFILE_REGION_MISMATCH");
@@ -292,18 +218,15 @@ public class UserProfileService implements UserProfiles {
                 }
                 if (!nickname.equals(profile.getWotbNickname())) {
                     profile.setWotbNickname(nickname);
-                    // 决策 D8：昵称刷新不更新 verified_at。
                 }
             }
             profile.setUpdatedAt(OffsetDateTime.now());
             return mapper.toDto(repository.save(profile));
         } catch (final DataIntegrityViolationException e) {
-            // 并发窗口内 (region, account_id) 被其他用户占用：与手动绑定同一错误码。
             throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
         }
     }
 
-    /** 更新坦克世界账号绑定。 */
     @Transactional
     public UserProfileDto updateWotbAccount(final String keycloakUserId,
                                             final Long wotbAccountId,
@@ -312,7 +235,6 @@ public class UserProfileService implements UserProfiles {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
-        // 最终保护：JWT 明确是 WG 身份时（即使 DB 同步异常仍为空/MANUAL）也禁止 MANUAL 绑定。
         if (trustedWgRegionOrNull() != null
                 || "WARGAMING".equals(profile.getWotbAccountSource())) {
             throw new IllegalArgumentException(readOnlyErrorCode(profile.getWotbServer()));
@@ -334,7 +256,6 @@ public class UserProfileService implements UserProfiles {
             throw new IllegalArgumentException("WOTB_ACCOUNT_ALREADY_USED");
         }
 
-        // 换绑 = 换了「哪个账号」这个事实：既有验证只对旧账号成立，必须一并失效（含仅区服变化）。
         final boolean identityChanged = !Objects.equals(profile.getWotbServer(), server)
                 || !Objects.equals(profile.getWotbAccountId(), wotbAccountId);
 
@@ -353,13 +274,11 @@ public class UserProfileService implements UserProfiles {
         }
     }
 
-    /** 清空坦克世界账号绑定。 */
     @Transactional
     public UserProfileDto deleteWotbAccount(final String keycloakUserId) {
         final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
 
-        // 最终保护：JWT 明确是 WG 身份时禁止解绑（与手动绑定同一规则）。
         if (trustedWgRegionOrNull() != null
                 || "WARGAMING".equals(profile.getWotbAccountSource())) {
             throw new IllegalArgumentException(readOnlyErrorCode(profile.getWotbServer()));
@@ -367,24 +286,11 @@ public class UserProfileService implements UserProfiles {
         profile.setWotbAccountId(null);
         profile.setWotbNickname(null);
         profile.setWotbServer("CN");
-        // 解绑后不存在「被验证的账号」：留着时间戳会让之后绑定其他账号继承陈旧验证。
         profile.setWotbAccountVerifiedAt(null);
         profile.setUpdatedAt(OffsetDateTime.now());
         return mapper.toDto(repository.save(profile));
     }
 
-    /**
-     * 用回放验证绑定账号：客户端本地解析出回放录像者的数值 accountId，提交到这里与当前绑定账号比对。
-     *
-     * <p>服务器没有 parser——录像者 accountId 由客户端（上游 Rust Core）给出。已验证状态只用于个人主页
-     * 徽章展示，不授予任何权限。</p>
-     *
-     * <p><b>只比数值 accountId</b>：绝不按昵称、绝不以「账号出现在名册里」为依据。
-     * <b>幂等</b>：已 verified 直接返回，保留首次成功验证时间。</p>
-     *
-     * @throws IllegalArgumentException PROFILE_NOT_FOUND / WOTB_ACCOUNT_NOT_BOUND /
-     *                                  REPLAY_RECORDER_REQUIRED / REPLAY_RECORDER_MISMATCH
-     */
     @Transactional
     public UserProfileDto verifyWotbAccountFromReplay(final String keycloakUserId, final Long recorderAccountId) {
         if (recorderAccountId == null || recorderAccountId <= 0) {
@@ -407,7 +313,6 @@ public class UserProfileService implements UserProfiles {
         return mapper.toDto(profile);
     }
 
-    /** 可信 WG claims：verified == true && region ∈ {ASIA, EU, NA} && accountId 有效 && 昵称非空。 */
     private static String trustedWgRegionOrNull() {
         final String region = JwtUtil.currentWotbRegion();
         final Long accountId = JwtUtil.currentWotbAccountId();
@@ -418,7 +323,6 @@ public class UserProfileService implements UserProfiles {
         return accountId != null && StringUtils.hasText(nickname) ? region : null;
     }
 
-    /** ASIA 沿用既有错误码（前端已消费）；EU/NA 使用泛化错误码。 */
     private static String readOnlyErrorCode(final String server) {
         return "ASIA".equals(server) ? "ASIA_PROFILE_READONLY" : "WARGAMING_PROFILE_READONLY";
     }

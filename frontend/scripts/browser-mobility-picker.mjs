@@ -1,4 +1,3 @@
-/** #1090: real app, real portals, native Chromium touch input. No DIALOG_INLINE_KEY. */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -139,8 +138,6 @@ try {
       assert.equal(opened.dialogs.length, 1, 'picker retains a single modal')
       assert.ok(opened.panel.reachable, 'filter panel must receive actual input')
       assert.equal(opened.url, initialUrl, 'opening filters must not navigate')
-      // Linux/Windows font metrics can let all options fit at 440x956. Give this
-      // overflow case a fixed 320px panel viewport; keep the actual device viewport.
       for (const selector of ['#tp-nation summary', '#tp-type summary', '#tp-category summary']) await tap(selector)
       const overflowGeometry = await page.probe(async () => {
         await document.fonts.ready
@@ -175,14 +172,12 @@ try {
       assert.ok(scrollAfter.after > scrollAfter.before, 'list immediately scrolls after closing filters')
       await shot('list-restored')
       await tap('[data-testid="filter-toggle"]')
-      // Shift-Tab can reach the outer Dialog close button; Escape still belongs to the subpanel.
       await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 })
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
       assert.equal(await page.evaluate(`document.activeElement?.classList.contains('dialog-close')`), true, 'Shift-Tab reaches the outer close button')
       await escape()
       assert.equal(await page.evaluate(`document.querySelectorAll('[role="dialog"]').length`), 1, 'Escape only closes subpanel')
       assert.equal(await page.evaluate(`document.activeElement?.dataset.testid`), 'filter-toggle', 'Escape restores focus')
-      // Real search input and hidden draft. Keep filter changes independent from confirmation.
       await tap('[data-testid="tank-search"]')
       await send('Input.insertText', { text: 'e100' })
       await page.waitFor(() => document.querySelectorAll('[data-testid="tank-card"]').length === 1)

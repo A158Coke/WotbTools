@@ -178,7 +178,6 @@ def classify_feature(name: str) -> str | None:
     value = name.lower().replace("\\", "/")
     if value.startswith("snd_") or "_fx" in value or "dust" in value:
         return None
-    # The order matters: some tent assets contain the word "house".
     if any(token in value for token in ("tent", "beduin")):
         return "soft_cover"
     if any(token in value for token in ("bridge", "estacade", "viaduct")):

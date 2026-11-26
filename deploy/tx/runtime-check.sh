@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Read-only TX runtime verification. It loads the existing TX deploy helpers and
-# never stages, promotes, recreates, stops, deletes, or changes DNS.
-#
-#   runtime-check.sh
 set -Eeuo pipefail
 
 [ "$#" -eq 0 ] || {
@@ -17,10 +13,6 @@ DEPLOY_SH="$SCRIPT_DIR/deploy.sh"
   exit 1
 }
 
-# Keep an explicitly supplied source root. Otherwise only infer the repository
-# root when its deployment and Keycloak OpenTofu roots prove that this is a
-# checkout; promoted TX runtime layouts intentionally leave the source root
-# unset and run against the promoted docker-compose.yml next to this script.
 if [ -z "${WOTB_SOURCE_ROOT:-}" ]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
   if [ -f "$REPO_ROOT/deploy/docker-compose.prod.yml" ] \

@@ -3,10 +3,6 @@ function positiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null
 }
 
-/**
- * Read the actual WebGL renderbuffer limit exposed by the active context.
- * Three.js does not expose MAX_RENDERBUFFER_SIZE on renderer.capabilities.
- */
 export function getMaxRenderBufferSize(renderer) {
   try {
     const context = renderer?.getContext?.()
@@ -17,14 +13,6 @@ export function getMaxRenderBufferSize(renderer) {
   }
 }
 
-/**
- * Compute a 2.5D renderer target from the CSS size that the browser actually laid out.
- *
- * Battle Playback uses a layout-scaled viewport, so the host's client dimensions already
- * include view.scale. Keeping this helper based on measured CSS pixels prevents applying
- * view.scale a second time inside the WebGL renderer. The source and renderbuffer limits
- * cap physical work once the drawing buffer has reached useful detail/capability bounds.
- */
 export function computeMap3dRenderTarget({
   cssWidth,
   cssHeight,

@@ -3,10 +3,6 @@ package com.wotbtools.app.auth
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * [AuthResult] 的纯 JVM 测试：失败原因到 wire `error` 的投影是契约的一部分
- * （`error ∈ null | unauthenticated | refresh-failed`），必须逐项固定。
- */
 class AuthResultTest {
 
     @Test
@@ -39,7 +35,6 @@ class AuthResultTest {
 
     @Test
     fun logTokenIsTheSnakeCaseReasonAndCarriesNoPayload() {
-        // 日志 token 只由封闭枚举派生：不可能把 token / code / URI 混进日志。
         assertEquals("redirect_mismatch", AuthResult.Failure(AuthFailureReason.REDIRECT_MISMATCH).logToken)
         assertEquals("cancelled", AuthResult.Failure(AuthFailureReason.CANCELLED).logToken)
         assertEquals("refresh_failed", AuthResult.Failure(AuthFailureReason.REFRESH_FAILED).logToken)
@@ -47,7 +42,6 @@ class AuthResultTest {
 
     @Test
     fun everyReasonIsCoveredByTheClosedSet() {
-        // 固定封闭集合：新增原因必须显式改这里（防止悄悄扩大 wire 语义）。
         assertEquals(
             setOf(
                 "STATE_MISMATCH",

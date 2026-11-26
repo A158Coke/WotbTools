@@ -11,7 +11,6 @@ import com.wotb.ai.review.TeamAiPromptBuilder;
 
 import java.util.List;
 
-/** 不调 AI：按 golden case 构建 user/system prompt（team/player 按 mode 分流）。 */
 public final class AiEvalPromptProbe {
 
     private AiEvalPromptProbe() {
@@ -25,7 +24,6 @@ public final class AiEvalPromptProbe {
         return TeamAiPromptBuilder.single(context, List.of(), null, null, Integer.MAX_VALUE).content();
     }
 
-    /** 返回实际 team system prompt，供模块化战术技能的契约断言使用。 */
     public static String systemPrompt(final AiEvalCase caze) {
         if ("PLAYER_FOCUSED".equals(caze.mode())) {
             return "";
@@ -33,7 +31,6 @@ public final class AiEvalPromptProbe {
         return AiPromptLibrary.zh("team/single");
     }
 
-    /** player 路径：真实证据链（EvidenceSkillEngine 含 PlayerSeparationEvidenceSkill）→ TacticalReviewPromptBuilder。 */
     private static String playerPrompt(final AiEvalCase caze) {
         final AiEvalFixtures.PlayerFixture fixture = AiEvalFixtures.playerFixture(caze.fixtureKey());
         final EvidenceSkillResult evidence = new EvidenceSkillEngine().run(new EvidenceSkillContext(

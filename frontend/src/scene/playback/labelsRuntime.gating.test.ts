@@ -1,7 +1,3 @@
-// 标签运行时发布门控行为测试（#827 接替 sceneryMaterials.test.js 的 :1128 源码守卫）：
-// 装填条求值 = publishLabels 的节流快照。两条不变量：
-//   1. 关标签时整段不做（store.labelsOn 早退）；
-//   2. 同一回放时刻 T 只求值/发布一次（时间戳门控；setLabelPrefs/invalidateLabels 失效重发）。
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { createLabelsRuntime } from './labelsRuntime.js'
@@ -57,19 +53,17 @@ describe(':1128 装填条求值门控', () => {
     try {
       const { deps, overlay, setT } = makeDeps(true)
       const rt = createLabelsRuntime(deps)
-      rt.publishLabels(true)   // force 首发快照
+      rt.publishLabels(true)
       expect(overlay.setLabels).toHaveBeenCalledTimes(1)
       now = 10
-      rt.publishLabels()       // 同 T：时间戳门控拦下（暂停/空转零成本）
+      rt.publishLabels()
       expect(overlay.setLabels).toHaveBeenCalledTimes(1)
-      rt.setLabelPrefs()       // 名牌偏好变化：labelsTime=null + force 立即重发
+      rt.setLabelPrefs()
       expect(overlay.setLabels).toHaveBeenCalledTimes(2)
-      // 节流窗外（>100ms）、同一回放时间：只有时间戳门控能拦下；删掉 T===labelsTime
-      // 会让这里重发全部标签（暂停时空转每 100ms 重算的回归）。
       now = 250
       rt.publishLabels()
       expect(overlay.setLabels).toHaveBeenCalledTimes(2)
-      now = 400; setT(43)      // 节流窗过后 + 新 T：恢复发布
+      now = 400; setT(43)
       rt.publishLabels()
       expect(overlay.setLabels).toHaveBeenCalledTimes(3)
     } finally {

@@ -7,7 +7,6 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 百场 DTO 的 admin-only 证据映射契约。 */
 class HundredBattleMapperTest {
 
     private final HundredBattleMapper mapper = new HundredBattleMapper();
@@ -38,11 +37,9 @@ class HundredBattleMapperTest {
                         .as("status %s", status)
                         .isNull();
             }
-            // ownership 重构：详情字段 gameAccountIdSnapshot → wotbAccountId（记录的 canonical owner）
             assertThat(detail.wotbAccountId())
                     .as("status %s", status)
                     .isEqualTo(111L);
-            // canonical owner 含区服：详情必须原样暴露记录的 wotb_server
             assertThat(detail.wotbServer())
                     .as("status %s", status)
                     .isEqualTo("CN");
@@ -63,9 +60,7 @@ class HundredBattleMapperTest {
 
         assertThat(adminListItem.approvedAverageDamage()).isEqualTo(3_814);
         assertThat(adminListItem.approvedBattleCount()).isEqualTo(103L);
-        // 列表行同样以 wotbAccountId 暴露 canonical owner（Keycloak 身份不再属于 submission）
         assertThat(adminListItem.wotbAccountId()).isEqualTo(222L);
-        // 区服是 canonical owner 的另一半，不能只暴露账号（不同区服同号会显示成同一账号）
         assertThat(adminListItem.wotbServer()).isEqualTo("EU");
     }
 }

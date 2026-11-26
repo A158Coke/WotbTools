@@ -1,6 +1,5 @@
 package com.wotb.web.mark3.enums;
 
-/** 名人堂「三环」submission 状态；三环记录没有 SUPERSEDED。 */
 public enum Mark3Status {
 
     PENDING,

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { activeVariantOf, pruneForeignVariants, pruneForeignVariantsDetailed } from './variantFilter.js'
 
-// 最小节点 fake：children + parent.remove（与 three Object3D 接口同形）
 function node(extras = {}, children = []) {
   const n = {
     userData: { ...extras },
@@ -27,7 +26,7 @@ describe('activeVariantOf', () => {
     expect(activeVariantOf(null, 7)).toBeNull()
     expect(activeVariantOf({}, 7)).toBeNull()
     expect(activeVariantOf({ 7: 'md1' }, 46)).toBeNull()
-    expect(activeVariantOf({ 7: 42 }, 7)).toBeNull()  // 非字符串值口径外
+    expect(activeVariantOf({ 7: 42 }, 7)).toBeNull()
   })
 })
 
@@ -35,8 +34,8 @@ describe('pruneForeignVariants', () => {
   it('剔除非激活变体节点（含子树），保留激活组与无标签节点', () => {
     const stone = node({ mdVariant: 'md3' })
     const wall = node({ mdVariant: 'md3' })
-    const tree = node({})                       // 无标签 = 全变体共有
-    const md1tree = node({ mdVariant: 'md1' })  // 本变体组
+    const tree = node({})
+    const md1tree = node({ mdVariant: 'md1' })
     const root = node({ variantByMapId: { 7: 'md1', 46: 'md2', 47: 'md3' } },
       [stone, tree, md1tree, wall])
     expect(pruneForeignVariants(root, 7)).toBe(2)
@@ -51,7 +50,6 @@ describe('pruneForeignVariants', () => {
     expect(group.children).toEqual([])
   })
   it('有变体节点但没有可用激活组 → fail-closed，隐藏全部带标记节点', () => {
-    // 旧行为是 fail-open 全量渲染（幻影布景）；现在映射缺失/mapId 缺失都不得猜默认组。
     const noMapping = node({}, [node({ mdVariant: 'md3' })])
     expect(pruneForeignVariants(noMapping, 7)).toBe(1)
     expect(noMapping.children).toEqual([])
@@ -60,7 +58,6 @@ describe('pruneForeignVariants', () => {
     expect(pruneForeignVariants(missingId, 46)).toBe(1)
     expect(missingId.children).toEqual([])
 
-    // 没有变体节点时仍是 no-op（单变体/普通场景）
     const plain = node({}, [node({})])
     expect(pruneForeignVariants(plain, 7)).toBe(0)
     expect(plain.children).toHaveLength(1)

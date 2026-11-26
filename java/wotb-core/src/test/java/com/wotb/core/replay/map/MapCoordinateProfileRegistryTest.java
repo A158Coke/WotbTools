@@ -16,11 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Per-map coordinate profile 与 semantic.json 一致性的回归测试：
- * 每张语义地图都有基于 playableBounds 的 profile，且 profile 覆盖整个可玩区；
- * areas.gridRegions 与 per-map 九宫格解析自洽（防止统一 ±250 假设导致区域错位）。
- */
 class MapCoordinateProfileRegistryTest {
 
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
@@ -70,13 +65,11 @@ class MapCoordinateProfileRegistryTest {
 
     @Test
     void asymmetricMapGetsCenteredProfile() {
-        // himmelsdorf playableBounds x[-259.1,182.9] y[-260.8,255.1]
         final MapCoordinateProfile p = MapCoordinateProfileRegistry.fromBounds(
                 -259.1, 182.9, -260.8, 255.1);
         assertEquals(-38.1f, p.centerX(), 0.01f);
         assertEquals(-2.85f, p.centerZ(), 0.01f);
         assertEquals(257.95f, p.halfExtent(), 0.01f);
-        // 可玩区边缘应解析为 canonical 边界附近，而不是被裁掉
         final var left = MapRegionResolver.resolve(-259.1f, 0f, p);
         final var right = MapRegionResolver.resolve(182.9f, 0f, p);
         assertTrue(left.usable());

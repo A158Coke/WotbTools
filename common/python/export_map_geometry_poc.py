@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Export a renderer-neutral derived map-geometry PoC from Maps.zip.
 
 The output intentionally strips textures, materials, normals, tangents, and

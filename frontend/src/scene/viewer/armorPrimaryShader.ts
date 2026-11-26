@@ -1,12 +1,5 @@
 import { RC_GLSL_CONST, RC_GLSL_FUNCS } from '../armorCollisionPack.js'
 
-// ===== 实时穿透热力图（逐行对齐 BlitzKit PrimaryArmorSceneComponent fragment.glsl）=====
-// fragment shader 逐像素计算击穿概率着色：绿=稳定击穿 红=稳定挡住 渐变=概率过渡；
-// 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮。
-// HE（canSplash）始终画随点击判定的溅射伤害渐变（Armor Inspector 口径，爆点由
-// heActive/heCenter 给出）；heatmapMask（击穿视图）时再把它判定为「可直穿」的像素
-// 盖成白色——白色与结果卡 PENETRATION 同源，优先级高于该点的渐变读数。
-// logdepthbuf 代码块只在 ?logdepth 渲染器下生效（3D 回放），装甲查看器展开为空。
 export const PBR_VERT = `
     #include <common>
     #include <logdepthbuf_pars_vertex>

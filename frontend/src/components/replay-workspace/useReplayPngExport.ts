@@ -1,7 +1,3 @@
-/**
- * ReplayPage —— 赛果 PNG 导出管线（拆分自 ReplayPage.vue，行为原样）。
- * 克隆 DOM → 表格展开/测量 → html2canvas → 下载；失败写回 workspace error。
- */
 import { ref } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
 import type { ReplayResult } from '../../types/replay.js'
@@ -45,7 +41,6 @@ function createExportClone(target: HTMLElement, theme: 'light' | 'dark') {
 
 function prepareReplayExportClone(clone: HTMLElement) {
   if (!clone) return
-  // PNG 总是导出表格：卡片模式下表格只是被隐藏
   for (const el of clone.querySelectorAll('.player-cards')) el.remove()
   for (const el of clone.querySelectorAll<HTMLElement>('.tablewrap, .scroll-hint')) el.style.display = ''
   for (const el of clone.querySelectorAll('.selected')) {
@@ -108,7 +103,6 @@ function measureExportClone(clone: HTMLElement) {
 
 function waitForLayout(nextTick: () => Promise<void>) {
   return new Promise<void>(resolve => {
-    // 等一帧：nextTick 后 requestAnimationFrame
     nextTick().then(() => requestAnimationFrame(() => resolve()))
   })
 }

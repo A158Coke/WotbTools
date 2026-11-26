@@ -1,18 +1,7 @@
-/**
- * Vehicle-aware playback marker sizing.
- *
- * `vehicleSizes` carries the real hull length/width in metres for every tankId
- * (BlitzKit hull bounding box), so markers are drawn to map scale. A resolved
- * Tier X model's own hull bounds and the per-class table remain as fallbacks
- * for tankIds the table does not cover. The returned dimensions are CSS pixels
- * before the map viewport transform; the viewport scale then enlarges the
- * complete marker together with the map.
- */
 
 import { DEFAULT_VEHICLE_LENGTH_M, vehicleSizes } from '../data/vehicleSizes'
 import { MARKER_CORE_PX } from './labelLayout'
 
-// 下限只保证「还看得见」，点击目标另有 HIT_TARGET_MIN_PX 兜底，所以可以放到接近真实尺寸。
 export const MARKER_SIZE_LIMITS = Object.freeze({
   desktop: Object.freeze({ min: 10, max: 30 }),
   mobile: Object.freeze({ min: 10, max: 26 }),
@@ -24,19 +13,15 @@ const CLASS_FOOTPRINT_M = Object.freeze({
   heavy: Object.freeze({ width: 4.0, length: 9.0 }),
   tankDestroyer: Object.freeze({ width: 3.6, length: 9.5 }),
   spg: Object.freeze({ width: 3.8, length: 9.5 }),
-  // 未知车种用全表真实中位车长，而不是拍一个数。
   unknown: Object.freeze({ width: 3.2, length: DEFAULT_VEHICLE_LENGTH_M }),
 })
 
-// 车体图形约占方形烘焙的 88%，这里补回来让贴图边界贴合真实车体；不再额外放大。
 const READABILITY_SCALE = 1.14
 const FALLBACK_WORLD_SPAN_M = 600
 const HIT_TARGET_EXTRA_PX = 4
 const HIT_TARGET_MIN_PX = Object.freeze({ desktop: 20, mobile: 18 })
-// Matches --space-1: screen-space gap around the artwork, independent of map zoom.
 const HEALTH_RING_PADDING_PX = 4
 
-/** Shared screen-space diameter for the ring renderer and its collision footprint. */
 export function healthRingDiameter(marker, classIcons = false) {
   const inv = finitePositive(marker?.overlayInverse) || 1
   const box = marker?.markerSize?.renderBox
@@ -59,7 +44,6 @@ function classFootprint(vehicle) {
   return CLASS_FOOTPRINT_M.unknown
 }
 
-/** 真实车体尺寸（米），按回放 tankId 查表——覆盖全部 735 辆，优先于 metadata 与 class 猜测。 */
 function blitzkitFootprint(vehicle) {
   const id = vehicle?.tankId
   const size = id == null ? null : vehicleSizes[id]
@@ -87,11 +71,6 @@ function projectedPixelsPerWorld(mapView, mapWidthPx, mapHeightPx) {
   }
 }
 
-/**
- * Compute separate square raster, physical collision footprint and click target.
- * The raster stays isotropic because hull.webp already contains the vehicle
- * aspect ratio. Physical dimensions are retained only for collision geometry.
- */
 export function computeVehicleMarkerSize(vehicle, {
   model = null,
   mapView = null,

@@ -1,10 +1,3 @@
-/**
- * 3D 回放路径的契约门禁回归（PR #411 review blocker）：
- * 真实 3D 路径 = playbackScene → loadPlaybackData → loadFromLocalFile →
- * mod.parsePlayback；此前该路径只做 JSON.parse，错版 WASM 可静默载入 v1 数据
- * （缺 supremacy_bases/supremacy_points），版本门禁形同虚设。
- * 本测试证明该路径现在复用 validateAgentPlayback：v1 被拒、v2 通过。
- */
 import { assetProvider } from './assetProvider.js'
 import * as pitchLimits from './pitchLimits.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,10 +21,8 @@ import {
   mapStaticUrl,
 } from './replaySource.js'
 
-/** 独立实现（Node 内建）的 SHA-256 hex——用于校验生产代码走的是完整内容摘要 */
 const sha256hex = (bytes) => createHash('sha256').update(Buffer.from(bytes)).digest('hex')
 
-// 最小合法 v2 PlaybackData（字段齐备且版本为 2）
 function v2Doc() {
   return {
     version: 2,
@@ -43,10 +34,6 @@ function v2Doc() {
 const stub = (doc) => ({ parsePlayback: () => JSON.stringify(doc) })
 const blob = () => new Blob([new Uint8Array([1, 2, 3])])
 
-/**
- * 装载器桩：3D 路径与表格/AI 路径共用 `loadAgentWasmModule`，测试在此注入产物
- * （不依赖真实 WASM）。fingerprint 门禁仍生效，所以同时桩住 versioned 清单。
- */
 function setWasm(doc) {
   __setAgentWasmResolverForTest(() => Promise.resolve(stub(doc)))
   vi.stubGlobal('fetch', vi.fn(async (url) => {
@@ -58,7 +45,7 @@ function setWasm(doc) {
 beforeEach(() => {
   vi.unstubAllGlobals()
   __resetAgentWasmForTest()
-  __resetPlaybackJsonCacheForTest()   // 同一份字节 + 不同 WASM 桩：跨用例必须清缓存
+  __resetPlaybackJsonCacheForTest()
 })
 
 describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () => {
@@ -81,7 +68,7 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
     const file = blob()
     const a = await loadFromLocalFile(file)
     const b = await loadFromLocalFile(file)
-    expect(parseCalls).toBe(1)          // 第二次命中缓存：WASM 解析只跑了一次
+    expect(parseCalls).toBe(1)
     expect(b.version).toBe(2)
     expect(a.version).toBe(b.version)
   })
@@ -90,7 +77,6 @@ describe('3D 路径（loadFromLocalFile / loadPlaybackData）契约门禁', () =
     setWasm({ ...v2Doc(), version: 1 })
     const file = blob()
     await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
-    // 第二次走缓存（缓存的是解析产物，不是校验结论），仍必须被拒
     await expect(loadFromLocalFile(file)).rejects.toThrow(/不支持的契约版本/)
   })
 
@@ -116,8 +102,6 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
   const fileWith = (bytes, name = 'same.wotbreplay', lastModified = 123456) =>
     new File([new Uint8Array(bytes)], name, { lastModified })
 
-  /** 已移除的旧实现（首/中/尾各 ≤4KB 采样的 FNV-1a）**test-only 复刻**：
-   *  仅用于证明下面的构造确实命中旧 collision 类；生产代码不得再出现采样身份。 */
   const legacySampledFingerprint = (bytes) => {
     const n = bytes.byteLength
     let h = 2166136261
@@ -130,7 +114,6 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
     return (h >>> 0).toString(36)
   }
 
-  /** 统一桩：可计数的 parsePlayback + fingerprint 门禁的 fetch */
   function countParses(docs) {
     let parseCalls = 0
     __setAgentWasmResolverForTest(() => Promise.resolve({
@@ -152,7 +135,6 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
 
     const a = fileWith([1, 2, 3, 4])
     const b = fileWith([1, 2, 9, 4])
-    // 前提：三者（name / lastModified / 长度）确实相同
     expect(b.name).toBe(a.name)
     expect(b.lastModified).toBe(a.lastModified)
     expect(b.size).toBe(a.size)
@@ -161,7 +143,7 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
     const second = await loadFromLocalFile(b)
     expect(parseCalls()).toBe(2)
     expect(first.meta.map_name).toBe('A')
-    expect(second.meta.map_name).toBe('B')   // 第二次必须返回 B，不得复用 A
+    expect(second.meta.map_name).toBe('B')
   })
 
   it('64KB：只改「旧采样窗口之外」的一个字节 → 必须 miss（旧首/中/尾方案在此必然 collision）', async () => {
@@ -169,26 +151,21 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
     const a = new Uint8Array(size).fill(7)
     const b = new Uint8Array(size).fill(7)
     const step = Math.max(1, Math.floor(size / 3))
-    const blindSpot = Math.floor(size * 0.7)          // 0.7×size 明确落在三个窗口之外
+    const blindSpot = Math.floor(size * 0.7)
     b[blindSpot] = 9
 
-    // 前提 1：metadata 全同（name / mtime / byteLength）
     const fileA = new File([a], 'blind-spot.wotbreplay', { lastModified: 777 })
     const fileB = new File([b], 'blind-spot.wotbreplay', { lastModified: 777 })
     expect(fileB.name).toBe(fileA.name)
     expect(fileB.lastModified).toBe(fileA.lastModified)
     expect(fileB.size).toBe(fileA.size)
 
-    // 前提 2：旧采样窗口 [0,4KB) / [n/3,+4KB) / [n-4KB,n) 内逐字节完全相同，
-    // 差异只在窗口之外——这正是概率性指纹无法覆盖的构造
     const legacyWindows = [[0, 4096], [step, step + 4096], [size - 4096, size]]
     for (const [s, e] of legacyWindows) {
       expect(a.subarray(s, e)).toEqual(b.subarray(s, e))
     }
     expect(legacyWindows.some(([s, e]) => blindSpot >= s && blindSpot < e)).toBe(false)
-    // 前提 3：旧实现（test-only 复刻）给出**相同**指纹——旧代码在这里会误命中
     expect(legacySampledFingerprint(a)).toBe(legacySampledFingerprint(b))
-    // 且完整内容摘要必须不同（新身份的依据）
     expect(await replayContentDigest(a)).not.toBe(await replayContentDigest(b))
 
     const docs = [
@@ -198,7 +175,7 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
     const parseCalls = countParses(docs)
     const first = await loadFromLocalFile(fileA)
     const second = await loadFromLocalFile(fileB)
-    expect(parseCalls()).toBe(2)                     // 完整内容身份 → cache miss
+    expect(parseCalls()).toBe(2)
     expect(first.meta.map_name).toBe('A')
     expect(second.meta.map_name).toBe('B')
   })
@@ -212,31 +189,30 @@ describe('解析结果缓存的 key 正确性（metadata 相同 ≠ 同一场）
   })
 
   it('WebCrypto 不可用 → 完全不使用缓存（宁可多解析一次，也不做概率性回退）', async () => {
-    vi.stubGlobal('crypto', {})                      // 无 subtle：非安全上下文形态
+    vi.stubGlobal('crypto', {})
     const parseCalls = countParses([v2Doc()])
     const file = fileWith([1, 2, 3, 4])
     const first = await loadFromLocalFile(file)
     const second = await loadFromLocalFile(file)
-    expect(parseCalls()).toBe(2)                     // 同一文件也不命中（缓存被禁用）
+    expect(parseCalls()).toBe(2)
     expect(first.version).toBe(2)
     expect(second.version).toBe(2)
   })
 
   it('LRU 仍为最近 3 场：第 4 场挤出最旧，被触碰过的保留', async () => {
     const parseCalls = countParses([v2Doc()])
-    // 同名同 mtime，只靠完整内容摘要区分（同时压测摘要必须真的参与 key）
     const one = fileWith([1, 1, 1, 1]); const two = fileWith([2, 2, 2, 2])
     const three = fileWith([3, 3, 3, 3]); const four = fileWith([4, 4, 4, 4])
 
     await loadFromLocalFile(one); await loadFromLocalFile(two); await loadFromLocalFile(three)
     expect(parseCalls()).toBe(3)
-    await loadFromLocalFile(one)          // 命中并把 one 推到最新
+    await loadFromLocalFile(one)
     expect(parseCalls()).toBe(3)
-    await loadFromLocalFile(four)         // 第 4 场 → 挤出最旧（two）
+    await loadFromLocalFile(four)
     expect(parseCalls()).toBe(4)
-    await loadFromLocalFile(one)          // one 被触碰过 → 仍在
+    await loadFromLocalFile(one)
     expect(parseCalls()).toBe(4)
-    await loadFromLocalFile(two)          // two 已被挤出 → 重新解析
+    await loadFromLocalFile(two)
     expect(parseCalls()).toBe(5)
   })
 })
@@ -291,18 +267,16 @@ describe('Supremacy base 空态可空性（PR #411 review blocker）', () => {
     setWasm(doc)
     const data = await loadFromLocalFile(blob())
     const b0 = data.supremacy_bases[0]
-    // null 必须原样保留（不是 undefined、不是 0）——渲染侧据此判定"无主/未占领"
     expect(b0.owner_team).toBeNull()
     expect(b0.capturing_team).toBeNull()
     expect(b0.capture_progress).toBeNull()
-    expect(b0.owner_team).not.toBe(0)      // 0 是一个合法队伍值，不得混淆
+    expect(b0.owner_team).not.toBe(0)
     const b1 = data.supremacy_bases[1]
     expect(b1.owner_team).toBe(1)
     expect(b1.capturing_team).toBeNull()
   })
 })
 
-// URL ownership is explicit even when an older map resolution finishes after the current one.
 it('迟到地图解析不会改变当前会话的资产 URL', async () => {
   const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
   const json = vi.spyOn(assetProvider, 'json').mockResolvedValue({ maps: { 1: { key: 'map_a' }, 2: { key: 'map_b' } } })
@@ -320,12 +294,6 @@ it('迟到地图解析不会改变当前会话的资产 URL', async () => {
   }
 })
 
-/**
- * "线上有时资产加载完成却看不到地图"回归：索引（id → key）是所有地图资产 URL 的前置，
- * 它失败 / miss 时 `mapStaticUrl` 全部返回 null，资产阶段照常走完（缺失按完成计），
- * 场景只剩占位地面——用户视角就是"加载完了却没地图"。这里锁两条语义：
- * 瞬时失败**不缓存**（下一场重试）；索引 miss 在 console 点名（否则无法区分"没配源"和"图不在包里"）。
- */
 describe('地图索引的失败语义', () => {
   it('index.json 瞬时失败 → 本次 null（告警），但不得缓存失败：下一次加载重试成功', async () => {
     const configured = vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
@@ -339,11 +307,9 @@ describe('地图索引的失败语义', () => {
       expect(json).toHaveBeenCalledTimes(1)
       expect(warn).toHaveBeenCalledTimes(1)
 
-      // 关键：失败没有写进缓存 → 下一次解析重新请求并成功
       expect(await resolveMapKey('id=3&name=middleburg')).toBe('middleburg')
       expect(json).toHaveBeenCalledTimes(2)
 
-      // 成功后整页缓存：不再重复请求
       expect(await resolveMapKey('id=3')).toBe('middleburg')
       expect(json).toHaveBeenCalledTimes(2)
     } finally {
@@ -361,7 +327,6 @@ describe('地图索引的失败语义', () => {
       expect(await resolveMapKey('id=42&name=new_map')).toBeNull()
       expect(warn).toHaveBeenCalledTimes(1)
       expect(String(warn.mock.calls[0][0])).toContain('42')
-      // 同一张图重复加载不刷屏；别的图 miss 仍各自点名
       expect(await resolveMapKey('id=42&name=new_map')).toBeNull()
       expect(warn).toHaveBeenCalledTimes(1)
       expect(await resolveMapKey('id=43')).toBeNull()
@@ -388,13 +353,6 @@ describe('地图索引的失败语义', () => {
   })
 })
 
-/**
- * 解析生命周期（P0：replay parser lifecycle is session-owned）回归：
- * 「A → 清空 / 换文件 → B」时被撤下的解析必须**真正结束**并让出 Worker 队列；
- * Worker「不回包也不报错」（装载链网络停滞一类）时看门狗必须整体放弃并允许重建——
- * 否则 3D 永远卡在「解析中」。happy-dom 造不出真 Worker：Worker 路径语义用注入的
- * 假 Worker 验证，主线程回退路径用 resolver 桩验证。
- */
 describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
   it('abort：被撤下的解析立即以 AbortError 结束；同文件之后仍可正常解析（无残留状态）', async () => {
     setWasm(v2Doc())
@@ -402,7 +360,6 @@ describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
     const stale = loadPlaybackData({ kind: 'local', file: blob(), signal: controller.signal })
     controller.abort()
     await expect(stale).rejects.toMatchObject({ name: 'AbortError' })
-    // 同一份文件、新 signal：正常完成（撤下没有留下任何半成品状态）
     const data = await loadPlaybackData({ kind: 'local', file: blob(), signal: new AbortController().signal })
     expect(data.version).toBe(2)
   })
@@ -414,15 +371,12 @@ describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
     try {
       const controller = new AbortController()
       const stale = loadPlaybackData({ kind: 'local', file: blob(), signal: controller.signal })
-      // 等请求真正到达 Worker（摘要 / arrayBuffer 都是异步前置），再撤下
       await vi.waitFor(() => { if (!fake.postMessage.mock.calls.length) throw new Error('not posted yet') })
       const requestId = fake.postMessage.mock.calls[0][0].id
-      const staleSettled = expect(stale).rejects.toMatchObject({ name: 'AbortError' })   // 先挂 handler
-      controller.abort()   // 同步拒绝：上面已挂好，不会被记成 unhandled
+      const staleSettled = expect(stale).rejects.toMatchObject({ name: 'AbortError' })
+      controller.abort()
       await staleSettled
-      // 该请求仍在 Worker 上 → 整体放弃：terminate + Worker 置空（下次请求重建）
       expect(fake.terminate).toHaveBeenCalledTimes(1)
-      // 迟到回包：pending 已被清空 → 被忽略，绝不悬挂
       expect(() => fake.onmessage({ data: { id: requestId, json: JSON.stringify(v2Doc()) } })).not.toThrow()
     } finally {
       __setParseWorkerForTest(null)
@@ -432,23 +386,21 @@ describe('解析生命周期：abort / 看门狗 / 迟到回包', () => {
   })
 
   it('看门狗：Worker 不回包也不报错 → 超时整体失败 + terminate；下次请求重建并完成', async () => {
-    setWasm(v2Doc())   // 看门狗放弃后的「下一次解析」走主线程回退，需要 WASM 桩
+    setWasm(v2Doc())
     vi.useFakeTimers()
     try {
       const fake = { postMessage: vi.fn(), terminate: vi.fn(), onmessage: null, onerror: null }
       __setParseWorkerForTest(fake)
       const stuck = loadFromLocalFile(blob())
-      // 真实定时器下等请求停进 Worker（挂起状态），再切假定时器推进看门狗
       await vi.waitFor(() => { if (!fake.postMessage.mock.calls.length) throw new Error('not posted yet') })
       vi.useFakeTimers()
-      const watchdogSettled = expect(stuck).rejects.toThrow(/未回包/)   // 先挂 handler
+      const watchdogSettled = expect(stuck).rejects.toThrow(/未回包/)
       await vi.advanceTimersByTimeAsync(120_000)
       await watchdogSettled
       expect(fake.terminate).toHaveBeenCalledTimes(1)
-      expect(fake.postMessage).toHaveBeenCalledTimes(1)   // 只有这一条请求，不会重发
+      expect(fake.postMessage).toHaveBeenCalledTimes(1)
       __setParseWorkerForTest(null)
       vi.useRealTimers()
-      // 看门狗放弃后，下一次解析从重建开始并正常完成（happy-dom 无真 Worker → 主线程回退）
       const data = await loadFromLocalFile(blob())
       expect(data.version).toBe(2)
     } finally {

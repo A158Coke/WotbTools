@@ -1,4 +1,3 @@
-/** BlitzInfo WG handling_run_ups / handling_hull_traverse, kernel SHA e8c87476 (see docs). */
 export const terrains = ['Firm', 'Medium', 'Soft'] as const
 export type Terrain = typeof terrains[number]
 export const stepSeconds = 0.02
@@ -48,7 +47,6 @@ function dynamics(input: Mobility | null, ground: Terrain) {
   return { power, drag, upper, limit: input.limit / 3.6 }
 }
 
-/** Phases are ordered by start time. Only the initial state can imply a whole-run upper bound. */
 export function simulate(phases: Phase[], ground: Terrain, seconds = 90): Run {
   const result: Run = { speeds: [], status: 'missing', upper: null, reached: null, near: null }
   if (!phases.length || phases[0].start !== 0 || !positive(seconds)) return result
@@ -99,7 +97,6 @@ export function speedAt(speeds: number[], time: number) {
   return speeds[lo] + ((speeds[lo + 1] ?? speeds[lo]) - speeds[lo]) * (index - lo)
 }
 
-/** Equal sample runs become intervals. Sign changes interpolate between the original samples. */
 export function intersections(a: number[], b: number[]) {
   const matches: Array<[number, number]> = []
   let start = -1

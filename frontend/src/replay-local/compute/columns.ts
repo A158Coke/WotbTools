@@ -1,7 +1,3 @@
-/**
- * 列契约（Java `Columns` / `AggregateColumns` / `LeagueColumns`）：key + numeric + 取值，
- * 顺序即 API 列顺序。显示名由前端 i18n 映射，不在此处。
- */
 
 import { javaRound, r1, r2 } from './java.js'
 import {
@@ -27,7 +23,6 @@ import {
 } from './performance.js'
 import type { TankInfo } from './tankopedia.js'
 
-/** 单场玩家行取值上下文：PlayerResult + Tankopedia 展示派生（Java `Players.enrich` 回填的字段）。 */
 export interface EnrichedPlayer {
   p: PlayerResult
   tank: TankInfo
@@ -39,13 +34,11 @@ interface PlayerColumn {
   get: (e: EnrichedPlayer) => unknown
 }
 
-/** 0-100 一位小数比例；分母 <= 0 → null（Java `Columns.rate`）。 */
 function rate(denominator: number, numerator: number): number | null {
   if (denominator <= 0) return null
   return javaRound(1000.0 * numerator / denominator) / 10.0
 }
 
-/** 单场「玩家数据」表完整列（IDENTITY + STAT + TAIL）。tank_type/tank_nation/survived_label 的码值由 Mapper 转换。 */
 export const PLAYER_COLUMNS: readonly PlayerColumn[] = [
   { key: 'nickname', num: false, get: ({ p }) => p.nickname },
   { key: 'clan', num: false, get: ({ p }) => p.clan },
@@ -82,7 +75,6 @@ function rateOrNull(v: number | null): number | null {
   return v === null ? null : r1(v)
 }
 
-/** 核心跨场事实列（顺序 = API aggregateColumns 顺序）。 */
 export const AGGREGATE_CORE_COLUMNS: readonly CoreColumn[] = [
   { key: 'nickname', num: false, get: (a) => a.nickname },
   { key: 'clan', num: false, get: (a) => a.clan },
@@ -116,18 +108,15 @@ interface PerfColumn {
   get: (row: PerformanceRow) => unknown
 }
 
-/** 跨场表现派生列：HP 全部 UNKNOWN 时多伤率 unavailable（null）。 */
 export const AGGREGATE_PERFORMANCE_COLUMNS: readonly PerfColumn[] = [
   { key: 'multi_damage_rate', num: true, get: (row) => (row.hpEligible ? r1(row.multiDamageRate) : null) },
 ]
 
-// ---------- LeagueColumns ----------
 
 export const LEAGUE_RATING = 'league_rating'
 export const LEAGUE_OBSERVED_MEAN = 'league_observed_mean'
 export const VICTORY_POINTS_EARNED = 'victory_points_earned'
 
-/** 七个 Rating 维度列 key（顺序与 dimensionScores / DIM_MAX 对齐）。 */
 export const LEAGUE_DIM_KEYS: readonly string[] = [
   'league_damage_score',
   'league_assist_score',

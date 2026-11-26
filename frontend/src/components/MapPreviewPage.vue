@@ -1,16 +1,4 @@
 <script setup>
-/**
- * 地图预览页（?view=map-preview）：不依赖回放文件，从资产包清单选择地图后进入
- * 与回放一致的 2D 战术图 / 3D 场景（相机与标注绘制全保留，无车辆、无传输）。
- *
- * 职责边界：本页只拥有**地图选择与模式切换**（URL 契约 ?map= &mode=）；场景生命周期
- * 归 3D 面板（playbackScene.loadMapOnly），2D 手势与标注归 2D 面板。地图清单来自
- * 资产包 /index.json（loadMapIndex），按 key 去重——变体空间（milbase 50-54 等）归并
- * 基础图，取首个出现的 id 作为 3D 装载入口。picker 默认只列 `common/map_names.json`
- * 已登记中文名的 key（= 人工认可的地图目录，hasChineseMapName），其余资产条目由
- * 「显示全部地图」开关展开；可见性只作用于列表渲染，?map= 深链与 2D/3D 加载始终
- * 使用完整清单（maps），因此默认隐藏的地图仍可被旧链接打开。
- */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -39,18 +27,12 @@ const router = useRouter()
 const { authenticated } = useAuth()
 const { maps, visibleMaps, showAllMaps, mapQuery, indexFailed, indexLoaded, loadMaps, onThumbError, onFallbackError } = useMapPreviewCatalog(locale, authenticated)
 
-// ---- URL 契约：?map=<key> &mode=3d|2d（缺省 2d） &bases=supremacy|encounter ----
 const selected = computed(() => maps.value.find((m) => m.key === route.query.map) || null)
-/** 当前变体条目（?variant=<map_id>；缺省/非法值回落到基础变体）。 */
 const selectedVariant = computed(() => {
   const variants = selected.value?.variants || []
   const id = Number(route.query.variant)
   return variants.find((v) => v.id === id) || variants[0] || null
 })
-/**
- * 当前变体的展示名：基础变体沿用已本地化的 selected.name（切语言即时更新）；
- * 额外变体先按 variantKey 本地化，未登记（如 neptune_01）再回退资产 display。
- */
 const selectedName = computed(() => {
   const base = selected.value
   const variant = selectedVariant.value
@@ -61,7 +43,6 @@ const selectedName = computed(() => {
   const localized = key ? mapLabel(key, locale.value) : key
   return localized && localized !== key ? localized : (variant.display || base.name)
 })
-/** 当前变体的基地点位：mapBases[key].variants[label]（标签由 index 下发）。 */
 const selectedBases = computed(() => {
   const entry = selected.value ? mapBases[selected.value.key] : null
   const label = selectedVariant.value?.variant
@@ -69,27 +50,10 @@ const selectedBases = computed(() => {
 })
 const mode = computed(() => (route.query.mode === '3d' ? '3d' : '2d'))
 
-/**
- * 基地点位（贴地环 / 2D 圆标）模式：?bases=supremacy|encounter 显式选择；
- * 无该键或值不可选时按「有争霸先争霸」回落。kind 是下发到两个 pane 的
- * mapBases 组键（'supremacy' | 'assault' | null）；遭遇的几何承载在 mapBases
- * 的 assault 组（攻防/遭遇共用，客户端 .sc2 提取）。无几何 → null（不显示、
- * 不显示切换），绝不由内容猜。
- */
-// 遭遇可用性（assault 恰 1 个 candidate）与 URL→组键解析在 mapBasesKind.js
-// （纯函数可单测；renderer 内部防御性判据原样保留）。
 const basesKind = computed(() => resolveBasesKind(selectedBases.value, route.query.bases))
-/**
- * 出生点（#835）：语义档案 sceneEvidence.battlePoints 的 spawnpoint 条目
- * （parseMapGridProfile 解析，非有限坐标/缺档已在其内 fail-closed）。3D 预览
- * 贴地标记与 2D 预览（BattleMap spawnPoints）同一份数据源；预览无 friendlyTeam
- * 上下文，两端都按中性点呈现。下发引用只读，内核侧 fail-closed 兜底。
- */
 const spawnPoints = computed(() => {
   if (!selected.value) return null
   const profile = mapGridProfile(selected.value.key)
-  // 语义档案标注了 battleVariant（如 neptune=nt0）时，只有该变体可用；
-  // nt1/nt2 没有已验证数据 ⇒ 隐藏，不能把基础档位的出生点当成变体事实。
   const variants = selected.value.variants || []
   return profileMatchesVariant(
     profile,
@@ -114,10 +78,9 @@ const basesOptions = computed(() => {
 
 function openMap(entry) {
   const query = { ...route.query, map: entry.key, mode: mode.value }
-  delete query.variant   // 打开地图 = 基础变体
+  delete query.variant
   router.replace({ query })
 }
-/** 变体切换：只改 variant（3D 边界按 map_id 裁剪，基地按 variant 标签取）。 */
 function setVariant(value) {
   router.replace({ query: { ...route.query, variant: String(value) } })
 }
@@ -126,7 +89,6 @@ const variantOptions = computed(() => (selected.value?.variants || []).map((v) =
   label: v.display || String(v.id),
   testid: `map-variant-${v.id}`,
 })))
-// 强制横屏只针对 3D 场景（design-language §9）：2D 战术图是正方形，竖屏放得下；地图选择列表也不强制。
 const forcedLandscape = useForcedLandscape(computed(() => mode.value === '3d' && !!selected.value))
 
 function setMode(value) {
@@ -201,7 +163,6 @@ const modeOptions = computed(() => [
         :title="$t('mapPreview.empty')"
       />
 
-      <!-- 地图选择网格 -->
       <div v-else-if="!selected" class="map-picker">
         <p v-if="mapQuery.trim() && !visibleMaps.length" class="map-picker-empty" data-testid="map-search-empty">{{ $t('mapPreview.searchEmpty') }}</p>
         <ul class="map-grid" data-testid="map-grid">
@@ -238,7 +199,6 @@ const modeOptions = computed(() => [
         </ul>
       </div>
 
-      <!-- 地图视图：2D / 3D（v-show 保留 3D 场景，切模式不重建） -->
       <div v-else class="map-stage">
         <header class="map-stage-head">
           <AppButton variant="ghost" size="sm" data-testid="map-back" @click="backToPicker">
@@ -321,8 +281,6 @@ const modeOptions = computed(() => [
   .map-picker-tools, .map-picker-search { inline-size: 100%; }
 }
 
-/* Switch（DC-SEL-06：只用于立即生效的布尔状态）：track/thumb 与仓库既有
-   role="switch" 同一套 token，不新建共享组件（第二个使用方）。 */
 .map-picker-switch {
   display: inline-flex;
   align-items: center;
@@ -477,7 +435,6 @@ const modeOptions = computed(() => [
   flex-shrink: 0;
 }
 
-/* 右侧控件组（点位切换 + 2D/3D）整体推到行尾，两组相邻 */
 .map-bases-switch {
   margin-inline-start: auto;
 }

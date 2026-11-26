@@ -6,35 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
 
-/**
- * Browser-level interaction regression for the Replay Workspace capability tabs and the
- * Battle Playback transport controls.
- *
- * 为什么必须是真浏览器：本次回归的两类症状（「点了没反应」、透明层吃掉 pointer）在 jsdom 里
- * 结构上不可见 —— jsdom 没有真实布局/层叠/hit-testing，`elementFromPoint` 恒为 null。
- * 因此这里启动真实 Chrome（独立 user-data-dir）、按设备指标仿真 mobile/tablet/desktop，
- * 用真实输入管线（原始 touch / mouse 序列）点击真实坐标，并断言
- * `document.elementFromPoint(按钮中心)` 确实命中按钮本身。
- *
- * 例外：`roster-geometry-*` 场景里对 3D 面板的开关点击走 `clickElement()`——它把
- * 「滚动进视口 + `elementFromPoint` 命中测试 + `el.click()`」压在**同一次 evaluate** 里。
- * 原因见该函数注释：分两步（先量坐标、再由 CDP 点击）会在 fixture 注入后 HUD 高度还在收敛时
- * 点到别的控件上。命中测试仍然是真浏览器语义（透明层/遮挡照样暴露），只是把 measure→click
- * 合成一步；纯坐标点击的覆盖由上面那些场景保留。
- *
- * 与 `browser-playback-layout.mjs` 的分工：
- *   - 那个是 file:// + 生产 CSS 的**几何**夹具（布局/尺寸契约）；
- *   - 本文件是 Vite dev server + **真实生产应用**（router/AppShell/ReplayWorkspace/全部 CSS）
- *     的**交互**夹具，替换 Keycloak / 解析 / 场景加载边界（browser-fixtures/*-stub.js）。
- */
 export const here = dirname(fileURLToPath(import.meta.url))
 export const frontendRoot = resolve(here, '..')
 
-/**
- * 替换外部运行时边界。用 resolveId 插件而不是 `resolve.alias` 正则：
- * rollup alias 的 RegExp 分支只替换「匹配到的那一段」，先把已解析的真实文件定位出来
- * 再整体换掉，才不会拼出假路径。
- */
 export const AUTH_BOUNDARY_STUBS = new Map([
   [resolve(frontendRoot, 'src/composables/useAuth.ts'), resolve(here, 'browser-fixtures/use-auth-stub.js')],
   [resolve(frontendRoot, 'src/composables/useBusinessUserBootstrap.ts'), resolve(here, 'browser-fixtures/use-business-user-bootstrap-stub.js')],
@@ -43,18 +17,15 @@ export const AUTH_BOUNDARY_STUBS = new Map([
   [resolve(frontendRoot, 'src/scene/tankViewer.js'), resolve(here, 'browser-fixtures/armor-handoff-stub.js')],
 ])
 
-/** 假文件场景专用：批次分析也换成替身，见 browser-fixtures/local-analysis-stub.js。 */
 export const LOCAL_ANALYSIS_STUBS = new Map([
   [resolve(frontendRoot, 'src/replay-local/parseReplays.ts'), resolve(here, 'browser-fixtures/local-analysis-stub.js')],
   [resolve(frontendRoot, 'src/replay-local/analyzeReplays.ts'), resolve(here, 'browser-fixtures/local-analysis-stub.js')],
 ])
 
-// 这些映射按解析后的绝对路径匹配：源文件改名后替身会静默失效，门禁就会走真实实现。
 for (const from of [...AUTH_BOUNDARY_STUBS.keys(), ...LOCAL_ANALYSIS_STUBS.keys()]) {
   if (!existsSync(from)) throw new Error(`Browser fixture stub source does not exist: ${from}`)
 }
 
-/** Vite 的 module id 在 Windows 上是正斜杠、可能带盘符前导斜杠，且大小写不敏感；比较前统一规整。 */
 export function normalizeId(id) {
   const forward = id.replace(/\\/g, '/').replace(/^\/+/, '')
   return process.platform === 'win32' ? forward.toLowerCase() : forward
@@ -68,8 +39,6 @@ export function authBoundaryStubPlugin({ realReplay = false, fakeAnalysis = fals
     name: 'wotb-browser-fixture-boundary',
     enforce: 'pre',
     async resolveId(source, importer, options) {
-      // 只接管「应用内部的相对 import」，不碰裸模块名（vue / vue-router / keycloak-js 等）：
-      // stub 入口自己由测试用绝对路径 import，不会被这里接管。
       if (!importer || !source.startsWith('.')) return null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       if (!resolved) return null
@@ -84,13 +53,10 @@ export async function startFixtureServer({ realReplay = false, fakeAnalysis = fa
   const server = await createServer({
     configFile: resolve(frontendRoot, 'vite.config.js'),
     root: frontendRoot,
-    // Stubbed dependency graphs must not invalidate an already-running developer server.
     cacheDir: resolve(frontendRoot, 'node_modules/.vite-browser-interaction'),
     logLevel: 'error',
     plugins: [authBoundaryStubPlugin({ realReplay, fakeAnalysis })],
-    // Keep the production WASM pin and safe dev artifact middleware from the real Vite config.
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
-    // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
     publicDir: resolve(frontendRoot, '../common/assets'),
     server: { host: '127.0.0.1', port: 0, strictPort: false },
   })
@@ -101,14 +67,11 @@ export async function startFixtureServer({ realReplay = false, fakeAnalysis = fa
 }
 
 export let fakeAnalysisServer = null
-/** 假文件场景的独立应用夹具；真实解析场景继续用主夹具。 */
 export async function fakeAnalysisOrigin() {
   if (!fakeAnalysisServer) fakeAnalysisServer = await startFixtureServer({ fakeAnalysis: true })
   return fakeAnalysisServer.origin
 }
 
-/* ------------------------------------------------------------------ 页面内探针
-   写成真实函数再序列化执行，避免模板字符串里的转义错误。 */
 
 export function playbackControlProbe() {
   const play = document.querySelector('[data-test="pb-play"]')
@@ -124,15 +87,11 @@ export function playbackControlProbe() {
   const minHit = parseFloat(sceneStyle.getPropertyValue('--hit-min-comfortable')) || 44
   const space4 = parseFloat(sceneStyle.getPropertyValue('--space-4')) || 16
   const compactScene = matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches
-  // 视觉框只有 36px 时，紧凑档靠透明伪元素把命中区补到 40px。
-  // 边界采样点本身是否算命中取决于亚像素取整，因此取目标框内缩 0.25px 的四边中点。
   const hitBoxAt = (button) => {
     const r = button.getBoundingClientRect()
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2
     const dx = minHit / 2 - 0.25, dy = minHit / 2 - 0.25
     const reaches = (x, y) => {
-      // 控件贴住视口边缘时，边框最后 0.5px 会被 Chrome 的可命中区域裁掉；
-      // 采样点限制在视口内 1px，避免把亚像素裁切误判成伪元素没有补足命中区。
       const px = Math.min(Math.max(x, 1), innerWidth - 1)
       const py = Math.min(Math.max(y, 1), innerHeight - 1)
       const hit = document.elementFromPoint(px, py)
@@ -153,7 +112,6 @@ export function playbackControlProbe() {
       ? `${hit.tagName}${typeof hit.className === 'string' && hit.className.trim() ? `.${hit.className.trim().split(/\s+/).join('.')}` : ''}`
       : null,
     formClass: root ? Array.from(root.classList).find((name) => name.startsWith('pb-form-')) || null : null,
-    /** 所有可见速度档位按钮都提供 minHit × minHit 的有效命中区（紧凑档 40 / 常规触屏 44） */
     speedHit: (() => {
       const buttons = [...document.querySelectorAll('button[data-test^="pb-speed-"]')]
         .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
@@ -175,7 +133,6 @@ export function playbackControlProbe() {
         return { test: b.dataset.test, w: r.width, h: r.height, center: at(cx, cy), left: at(cx - dx, cy), right: at(cx + dx, cy), top: at(cx, cy - dy), bottom: at(cx, cy + dy) }
       })
     })(),
-    /** 速度档位菜单展开后必须一行排开且不越出自身容器（档位个数变化时的回归点） */
     speedMenu: (() => {
       const group = document.querySelector('.pb-speed-menu')
       if (!group) return null
@@ -195,9 +152,7 @@ export function playbackControlProbe() {
     pageScrollWidth: document.documentElement.scrollWidth,
     viewportWidth: innerWidth,
     viewportHeight: innerHeight,
-    /** 排除滚动条后的真实内容宽度：区分「真横向溢出」与 innerWidth 含滚动条的假阳性。 */
     contentWidth: document.documentElement.clientWidth,
-    /** 横向溢出时直接点名越界的元素，避免只报一个差值。 */
     overflowing: (() => {
       const limit = document.documentElement.clientWidth
       const offenders = []
@@ -214,7 +169,6 @@ export function playbackControlProbe() {
       }
       return offenders
     })(),
-    /** 几何诊断：控件被挤出视口时，直接指出是谁把它推下去的。 */
     geometry: (() => {
       const box = (selector) => {
         const element = document.querySelector(selector)
@@ -234,7 +188,6 @@ export function playbackControlProbe() {
   }
 }
 
-/* ------------------------------------------------------------------ 页面驱动 */
 
 export class Page {
   constructor(client, sessionId) {
@@ -254,7 +207,6 @@ export class Page {
   async enable({ locale = 'zh', profile = 'summer' } = {}) {
     await this.client.send('Runtime.enable', {}, this.sessionId)
     await this.client.send('Page.enable', {}, this.sessionId)
-    // 页面共享 origin 的 localStorage；每个场景都在首屏前设置自己的偏好，避免矩阵污染后续场景。
     await this.client.send('Page.addScriptToEvaluateOnNewDocument', {
       source: `localStorage.setItem('wotb-lang', ${JSON.stringify(locale)}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)});`,
     }, this.sessionId)
@@ -270,20 +222,14 @@ export class Page {
     return result.value
   }
 
-  /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
   callWith(fn, ...args) {
     return callPageFunction(this.client, this.sessionId, fn, ...args)
   }
 
-  /** 序列化执行 `fn()`（探针不依赖闭包，因此可以安全地跨进程传递）。 */
   probe(fn) {
     return this.evaluate(`(${fn.toString()})()`)
   }
 
-  /**
-   * 轮询页面表达式直到 predicate 成立。
-   * navigate 期间执行上下文会被销毁，`Runtime.evaluate` 会失败 —— 那是预期噪声，重试即可。
-   */
   async waitForValue(expression, predicate, { timeout = 20_000, label = expression } = {}) {
     const deadline = Date.now() + timeout
     let last
@@ -321,7 +267,6 @@ export class Page {
     await this.waitForValue('document.readyState', (value) => value === 'complete', { label: 'document readyState=complete' })
   }
 
-  /** 场景失败时的现场快照：页面异常 + 关键状态位，避免「timeout 但不知道为什么」。 */
   async diagnose() {
     const state = await this.probe(function diagnosticsProbe() {
       const present = (selector) => !!document.querySelector(selector)
@@ -338,13 +283,6 @@ export class Page {
     return [`page state: ${JSON.stringify(state)}`, `page errors: ${this.consoleErrors.join(' | ') || '(none)'}`]
   }
 
-  /**
-   * 真实输入管线点击。
-   *
-   * 只用原始事件注入（touch 序列 / 鼠标序列），**不用 `Input.synthesizeTapGesture`**：
-   * 本机 Chrome 上该 API 只派发 touch 事件、不合成兼容 click（已实测：连 topbar 控制组
-   * 按钮也拿不到 click），会让「点击是否真的产生行为」这条断言全部假阳性。
-   */
   async tap(point) {
     const touch = point.touch !== false
     if (touch) {
@@ -363,11 +301,6 @@ export class Page {
     await delay(150)
   }
 
-  /**
-   * 记录**真实输入事件**实际落到哪个元素上。
-   * 这是「click/touch 真的到达 button」的权威证据 —— 比 `elementFromPoint` 更强，
-   * 因为它证明的是输入管线真实派发的 target，而不是静态几何。
-   */
   async installInputTrace() {
     await this.evaluate(`(() => {
       const describe = (element) => {
@@ -403,10 +336,6 @@ export class Page {
     return this.evaluate('window.__wsInput')
   }
 
-  /**
-   * 把控件滚进视口后再探针。用于「非全屏横屏地图高于视口」这类形态：
-   * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
-   */
   async revealControl(selector) {
     await this.callWith((sel) => {
       const el = document.querySelector(sel)
@@ -434,20 +363,10 @@ export class Page {
 
 export const results = []
 
-/** 最近一次创建的场景页面：场景抛错时用它打印现场（诊断用，不参与断言）。 */
 export let lastPage = null
 export function setLastPage(page) { lastPage = page }
 export function getLastPage() { return lastPage }
 
-/**
- * 原子「命中测试 + 点击」：几何与 `el.click()` 在同一次 Runtime.evaluate 里完成，
- * 中间不给事件循环任何机会。分两步（先量坐标、再由 CDP 点击）在 1024x768 上必翻车：
- * fixture 注入后 HUD 高度还在收敛，量到的 y 在点击时已经落到另一个复选框上。
- * 命中测试仍然证明"目标没有被遮住"（真点击语义），只是把 measure→click 压成一步。
- *
- * 若目标在可滚动容器（.display-panel）内，先在容器内把它滚进可视区；若目标整体在视口外
- * （矮窗口里 .pb-root 会被推到视口外），先把页面滚到它可见——真机上用户也是这么点的。
- */
 export function clickElement(page, selector) {
   return page.evaluate(`(() => {
     const el = document.querySelector(${JSON.stringify(selector)})
@@ -494,7 +413,6 @@ export function check(failures, ok, message) {
   if (!ok) failures.push(message)
 }
 
-/** 场景根的有效触控下限：紧凑档 40px，常规触屏 44px；普通内容页不读场景 token。 */
 export async function sceneHitTarget(page) {
   const value = await page.evaluate(`(() => {
     const scene = document.querySelector('[data-scene-surface]')
@@ -505,7 +423,6 @@ export async function sceneHitTarget(page) {
   return value
 }
 
-/* ------------------------------------------------------------------ 场景 */
 
 export const PARSE_LIFECYCLE_BRIDGE = `(() => {
   window.__pbSelect = (name, bytes) => {
@@ -520,7 +437,6 @@ export const PARSE_LIFECYCLE_BRIDGE = `(() => {
   return true
 })()`
 
-/** 打开回放列表并返回第一行移除按钮的命中中心（含按钮盒，供事后证明真实 click 的落点）。 */
 export async function openCollectionRemove(page, scenario) {
   const trigger = await page.waitForValue(clickCenterExpression('[data-testid="collection-trigger"]'), Boolean, { label: 'collection trigger' })
   await page.tap({ ...trigger, touch: scenario.touch })
@@ -541,7 +457,6 @@ export async function confirmCollectionRemove(page, scenario) {
   await page.tap({ ...confirm, touch: scenario.touch })
 }
 
-/** 可点击中心点（hit-test 通过才返回；与其它场景同一口径） */
 export function clickCenterExpression(selector) {
   return `(() => {
     const element = document.querySelector(${JSON.stringify(selector)})
@@ -555,14 +470,10 @@ export function clickCenterExpression(selector) {
   })()`
 }
 
-/** 进入统一回放面板的 3D 模式（2026-11-19：3D 不再是独立能力标签）。 */
 export async function enterReplay3d(page, scenario) {
   const tab = await page.waitForValue(clickCenterExpression('[data-testid="ws-tab"][data-cap="replay"]'), Boolean, { label: 'replay capability tab' })
   await page.tap({ ...tab, touch: scenario.touch })
   await page.waitFor(() => !!document.querySelector('[data-testid="viewer-mode-3d"]'), { label: '3D mode switch' })
-  // 模式开关在面板自动居中/布局收敛期间会移位：measure→tap 两步会落到旧坐标
-  // （740x360 landscape 实测点击丢失，URL 停在 battle-playback）。与 roster-geometry
-  // 同款：同一次 evaluate 内滚动 + 命中测试 + click，仍保留「目标未被遮挡」的真浏览器语义。
   const tapped = await tapElement(page, '[data-testid="viewer-mode-3d"]', {
     touch: scenario.touch,
     verify: () => page.waitForValue('new URLSearchParams(location.search).get("view")', (view) => view === 'agent-replay',
@@ -571,10 +482,6 @@ export async function enterReplay3d(page, scenario) {
   if (!tapped) throw new Error('3D mode switch not hit-testable or tap did not change the route')
   await page.waitFor(() => new URLSearchParams(location.search).get('view') === 'agent-replay', { label: '3D mode route' })
 }
-/**
- * 真实指针拖动，把详情的拖动柄从 from 拖到 to。触屏场景走原始 touch 事件（设备仿真开着触屏时
- * 注入的鼠标事件不会合成 pointer 拖动），桌面走鼠标事件——两者都由浏览器合成 pointer 事件。
- */
 export async function dragPointer(page, from, to, { touch = false } = {}) {
   const steps = 6
   const along = (i) => ({ x: from.x + (to.x - from.x) * i / steps, y: from.y + (to.y - from.y) * i / steps })
@@ -619,11 +526,6 @@ export async function captureMobileReview(page, scenario, state = 'battlefield')
   await delay(100)
 }
 
-/**
- * 真实 CDP 点击（非脚本 el.click）：同一 evaluate 内滚动 + 命中测试（只接受目标自身或子树，
- * 祖先命中不算），随后用 CDP touch/mouse 点一次；目标状态未达成的场景在稳定布局后重试。
- * measure 与 tap 之间布局仍可能收敛，verify 让「点击确实生效」成为重试条件。
- */
 export async function tapElement(page, selector, { touch = false, attempts = 4, verify = null } = {}) {
   for (let attempt = 0; attempt < attempts; attempt++) {
     const point = await page.evaluate(`(() => {
@@ -647,10 +549,6 @@ export async function tapElement(page, selector, { touch = false, attempts = 4, 
   return false
 }
 
-/**
- * 关闭场景 target。响应可能永远不来（渲染器崩溃、target 已消失、浏览器主线程卡住）：
- * 有界等待并在超时后继续矩阵，避免单个 close 把整个分片拖到 job 超时；浏览器在 finally 统一关闭。
- */
 export async function closePageTarget(chrome, targetId, { timeout = 8000 } = {}) {
   let timer
   const timeoutPromise = new Promise((_, reject) => {

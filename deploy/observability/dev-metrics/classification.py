@@ -60,8 +60,6 @@ def head_bound_areas(override, head_sha):
 
 
 def classify_area(pr, paths=(), overrides=None):
-    # Frozen overrides describe merged/closed history only. An open or reopened PR
-    # always uses its current changed paths so an active PR is not permanently frozen.
     override = (overrides or {}).get(str(pr['number']))
     if override is not None and pr.get('state') != 'open':
         return override_areas(override)
@@ -76,7 +74,6 @@ def classify_area(pr, paths=(), overrides=None):
 def actor_type(user):
     user = user or {}
     login = user.get('login', '').lower()
-    # Only known service identities; prose about AI assistance is never identity.
     if login in {'chatgpt-codex-connector[bot]', 'claude[bot]'} and user.get('type') == 'Bot':
         return 'agent'
     if user.get('type') == 'Bot' or login in {'dependabot[bot]', 'github-actions[bot]'}:

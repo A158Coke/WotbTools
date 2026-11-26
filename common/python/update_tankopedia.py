@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia-tier{1..10}.json。
 
@@ -165,7 +164,6 @@ def main(argv=None):
             "vehicles": tier_vehicles,
         })
 
-    # 名册取**未过滤**的解析结果（全 tier），与 tier 文件同一次快照
     roster = roster_payload(all_vehicles, generated_at)
     try:
         validate_roster(roster, load_existing_roster(args.existing_dir))

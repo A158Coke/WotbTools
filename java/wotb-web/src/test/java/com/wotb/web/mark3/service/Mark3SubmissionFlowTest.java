@@ -31,7 +31,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 三环核心状态机和排行回归：不复用百场的可替代 CURRENT 语义。 */
 @ExtendWith(MockitoExtension.class)
 class Mark3SubmissionFlowTest extends Mark3SubmissionTestSupport {
 
@@ -48,7 +47,6 @@ class Mark3SubmissionFlowTest extends Mark3SubmissionTestSupport {
         verify(repository).saveAndFlush(captor.capture());
         final Mark3Submission saved = captor.getValue();
         assertThat(saved.getStatus()).isEqualTo("PENDING");
-        // canonical owner 冻结：区服 + WotB 账号都必须在创建瞬间落库
         assertThat(saved.getWotbServer()).isEqualTo(WOTB_SERVER);
         assertThat(saved.getWotbAccountId()).isEqualTo(GAME_ID);
         assertThat(saved.getClaimedBattleCount()).isEqualTo(123);
@@ -63,7 +61,6 @@ class Mark3SubmissionFlowTest extends Mark3SubmissionTestSupport {
     @Test
     void currentRecordBlocksNewSubmissionBeforeReplayParsing() {
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
-        // ownership/canonical owner 改为 (区服, WotB 账号)：预检按 profile 的区服 + 账号查询
         when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(true);
@@ -212,7 +209,6 @@ class Mark3SubmissionFlowTest extends Mark3SubmissionTestSupport {
         final Mark3SubmissionService limitedService = newService(new ReplayCapacityLimiter(1));
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        // 容量许可内失败（首个回放的 facts 不含本人账号）→ 许可必须释放，下一次提交仍可进入
         final List<String> firstForeign = new ArrayList<>(facts(fiveReplays()));
         final Battle foreign = battle("a1");
         foreign.players.getFirst().accountId = 999L;
@@ -234,7 +230,6 @@ class Mark3SubmissionFlowTest extends Mark3SubmissionTestSupport {
     void rejectsMissingOrMiscountedReplayFactsBeforePersistence() {
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        // 服务器没有 parser：facts 必填且与回放一一对应
         for (final List<String> facts : java.util.Arrays.asList(null, List.<String>of(),
                 facts(fiveReplays()).subList(0, 4))) {
             assertThatThrownBy(() -> service.createSubmission(

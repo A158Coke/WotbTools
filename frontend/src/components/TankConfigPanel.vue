@@ -1,15 +1,4 @@
 <script setup>
-/**
- * 车辆配置面板（模块 / 装备 3×3 / 补给 / 消耗品 / 涂装）。
- *
- * 唯一状态 owner 是 URL（pages 侧解析后以 selection 传入）；本组件只把用户动作折算成
- * 下一份 selection 并通过 update 事件交回，不保存副本、不做第二套默认值。
- * 公式与对号规则在 replay-local/compute/tankSetup.ts（纯函数，golden 覆盖）。
- *
- * 视觉对齐客户端：模块行 = 类型图标 + 该槽候选（图标/等级/名称）；装备 = 3×3 图标格
- * （左右两件）；补给/消耗品 = 图标格。图标来自客户端 UI 样式表的 bg-sprite 映射
- * （上游导出 icons/items + icons/modules），缺失时回退名称文本（仅美术层，fail-soft）。
- */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from './AppButton.vue'
@@ -22,22 +11,15 @@ import TankModuleSelection from './TankModuleSelection.vue'
 import TankEquipmentGrid from './TankEquipmentGrid.vue'
 
 const props = defineProps({
-  /** tank/{id}.json */
   detail: { type: Object, required: true },
-  /** 资产包 research/modules/{nation}.json 的单车条目 */
   modules: { type: Object, required: true },
-  /** tankSetup.SetupSelection */
   selection: { type: Object, required: true },
-  /** 资产包 research 全局目录（物品目录 + 预设 + 过滤器） */
   catalog: { type: Object, required: true },
-  /** 宿主可拒绝缺少投影源字段的满级状态。 */
   upgradeSupported: { type: Boolean, default: true },
-  /** 乘员技能 / 涂装块 */
   showCrew: { type: Boolean, default: true },
   showEquipment: { type: Boolean, default: true },
   showConsumables: { type: Boolean, default: true },
   showProvisions: { type: Boolean, default: true },
-  /** 嵌入查看器已有分区，只调整表面与标题，不复制配置状态。 */
   embedded: { type: Boolean, default: false },
   comparisonLayout: { type: Boolean, default: false },
   showUpgradeDetails: { type: Boolean, default: true },
@@ -47,7 +29,6 @@ const emit = defineEmits(['update', 'reset', 'preset', 'cycle-skill', 'max-skill
 const { t, locale } = useI18n()
 
 
-/** 客户端物品名只有 en / zh-Hans 两套；ru 回退 en（数据文档已记录）。 */
 const lang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
 function itemName(item) {
   if (!item) return ''
@@ -60,7 +41,6 @@ const upgrades = computed(() => {
   return { ...state, supported: state.supported && props.upgradeSupported }
 })
 const slots = computed(() => presetSlots(props.modules, props.catalog))
-/** 已选装备 id（101/118 等计时加成与参数区同源）。 */
 const deviceIds = computed(() => new Set(resolveDeviceIds(slots.value, props.selection.devices, props.catalog.devices)))
 
 const consumables = computed(() => availableItems(props.catalog.consumables, tankRef(props.detail, props.modules)))
@@ -68,7 +48,6 @@ const provisions = computed(() => availableItems(props.catalog.provisions, tankR
 const consumableSlots = computed(() => Number(props.modules?.consumableSlots) || 0)
 const provisionSlots = computed(() => Number(props.modules?.provisionSlots) || 0)
 
-/** 多选：已选则取消；未选且未满槽则追加；满槽时不动作（客户端同语义）。 */
 function toggleStem(key, stem, limit) {
   const current = props.selection[key]
   if (current.includes(stem)) {
@@ -83,12 +62,10 @@ function setCamo(event) {
   emit('update', { camouflage: event.target.checked })
 }
 
-/** 消耗品计时：客户端 script 原值 × 装备 101/118（见 tankSetup.consumableTiming）。 */
 function itemTiming(item) {
   return consumableTiming(item?.script, deviceIds.value, props.catalog)
 }
 
-/** 秒数徽标：整数省略小数（12s），非整数保留两位（1.15s）。 */
 function secondsText(value) {
   const n = Number(value)
   return `${Number.isInteger(n) ? n : Math.round(n * 100) / 100}s`
@@ -104,11 +81,6 @@ function consumableHint(item) {
   })
 }
 
-/**
- * 当前生效的隐蔽加成（百分比本身，不是点数）：迷彩网 script 的逐车型 bonus 与静止翻倍，
- * 涂装 camouflages.xml 默认类别。参数区的 delta 是“百分点”，这里显示“加成比例”，
- * 避免把 +0.5 个百分点误读成只加了 0.5%。
- */
 const camoBonus = computed(() => {
   const classKey = props.detail?.type
   const pick = (map) => {
@@ -170,7 +142,6 @@ const camoBonusParts = computed(() => {
       <template v-if="$slots.devices" #devices><slot name="devices" /></template>
     </TankEquipmentGrid>
 
-    <!-- 补给 / 消耗品：图标格（名称走 aria-label / tooltip） -->
     <section v-if="showProvisions" class="tp-config-block">
       <div class="tp-block-head tp-loadout-head">
         <h3>{{ t('agentTanks.configurator.provisions') }}</h3>
@@ -266,7 +237,6 @@ const camoBonusParts = computed(() => {
 
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 
-/* ---------- 装备 3×3 ---------- */
 .tp-config-block { display: grid; gap: var(--space-2); min-inline-size: 0; }
 .tp-config > .tp-config-block + .tp-config-block { padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-subtle); }
 .is-comparison { --loadout-action-width: 16rem; --loadout-count-width: 3.5rem; }
@@ -287,7 +257,6 @@ const camoBonusParts = computed(() => {
 .tp-block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-2); }
 .tp-config-block > h3, .tp-block-head h3 { margin: 0; font: var(--type-body); font-weight: 600; }
 
-/* ---------- 补给 / 消耗品 ---------- */
 .tp-icon-grid { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .tp-icon-tile {
   position: relative;
@@ -316,7 +285,6 @@ const camoBonusParts = computed(() => {
   font: var(--type-caption);
   font-variant-numeric: tabular-nums;
 }
-/* 生效时间（duration）与冷却（cooldown）分开：左上角强调色 = 持续，右下角次要色 = 冷却 */
 .tp-icon-duration {
   position: absolute;
   inset-block-start: 0;
@@ -339,7 +307,6 @@ const camoBonusParts = computed(() => {
 .tp-camo input { inline-size: var(--control-check); block-size: var(--control-check); margin: 0; accent-color: var(--color-accent); }
 
 @media (width < 768px) {
-  /* 补给 / 消耗品图标与装备图标同比缩小到 32px，同时保留 44px 触控区域 */
   .tp-icon-tile { inline-size: var(--hit-min-comfortable); block-size: var(--hit-min-comfortable); padding: 3px; }
   .tp-icon-tile img { inline-size: 32px; block-size: 32px; }
 }

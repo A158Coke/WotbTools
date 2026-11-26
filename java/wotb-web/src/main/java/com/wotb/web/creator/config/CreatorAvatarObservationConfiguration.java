@@ -9,7 +9,6 @@ import io.micrometer.observation.ObservationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Stable WotbTools business taxonomy for the creator avatar upload observation. */
 @Configuration
 public class CreatorAvatarObservationConfiguration {
     private static final String ERROR_CODE = "error.code";

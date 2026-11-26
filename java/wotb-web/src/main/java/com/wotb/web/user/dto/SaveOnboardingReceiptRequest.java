@@ -3,7 +3,6 @@ package com.wotb.web.user.dto;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import tools.jackson.databind.JsonNode;
 
-/** Strict JSON shape at the HTTP boundary; terminal/epoch business validation belongs to the service. */
 public record SaveOnboardingReceiptRequest(int coreEpoch, String disposition) {
 
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)

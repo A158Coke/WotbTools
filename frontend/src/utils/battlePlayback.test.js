@@ -74,7 +74,6 @@ describe('recentPositionTrailsFromPose（位姿通道版尾迹）', () => {
 
   it('0.1s 步长沿位姿通道连线，只保留最近 2 秒（端点含当前时刻）', () => {
     const trails = recentPositionTrailsFromPose([vehicle()], (v, t) => ({ x: t, y: 0 }), () => true, 10)
-    // 2s / 0.1s = 20 段
     expect(trails).toHaveLength(20)
     expect(trails[trails.length - 1].to.timeSec).toBeCloseTo(10, 6)
     expect(trails[0].from.timeSec).toBeCloseTo(8, 6)
@@ -82,7 +81,6 @@ describe('recentPositionTrailsFromPose（位姿通道版尾迹）', () => {
   })
 
   it('未观测区间断链：不跨 AoI 空隙连线（canonical 知识层门控）', () => {
-    // 仅在 [8.5, 9.5] 观测：链被切成连续采样段，其余不连线
     const covered = (v, t) => t >= 8.5 - 1e-9 && t <= 9.5 + 1e-9
     const trails = recentPositionTrailsFromPose([vehicle()], (v, t) => ({ x: t, y: 0 }), covered, 10)
     expect(trails.length).toBeGreaterThan(0)
@@ -138,9 +136,7 @@ describe('positionAt', () => {
       { x: 100, y: 50, timeSec: 14 },
       { x: 200, y: 100, timeSec: 30 }
     ]
-    // 20 落在 14→30 的 gap 内（gap 16s）→ 仍为 null（不穿线插值）
     expect(positionAt(reentry, 20)).toBeNull()
-    // 30 恰为重新上报首点 → 返回该点本身，而非被 gap 误判为 null（否则 lastKnown 残留淡化）
     expect(positionAt(reentry, 30)).toEqual({ x: 200, y: 100, timeSec: 30 })
   })
 
@@ -155,7 +151,7 @@ describe('positionAt', () => {
     expect(pos).not.toBeNull()
     expect(pos.x).toBe(5)
     expect(pos.y).toBe(6)
-    expect(pos.timeSec).toBe(10) // 不是 30：last-known 时间不得随 currentTime 增长
+    expect(pos.timeSec).toBe(10)
   })
 
   it('handles empty/null inputs', () => {
@@ -203,7 +199,6 @@ describe('direction utilities', () => {
   })
 
   it('screenRotation maps the four cardinal map yaws to screen rotations', () => {
-    // 地图：yaw 从北(+Z)起顺时针。屏幕：0=朝上、90=朝右(东)、180=朝下、270=朝左。
     expect(screenRotation(0)).toBe(0)
     expect(screenRotation(90)).toBe(90)
     expect(screenRotation(180)).toBe(-180)
@@ -271,9 +266,8 @@ describe('tracerLines', () => {
     expect(at[0].x1).toBeCloseTo(50)
     expect(at[0].y2).toBeCloseTo(100)
     expect(at[0].opacity).toBeCloseTo(1)
-    // 前 0.3s（真实时间）保持全亮（激光感），之后线性淡出到 0.8s 窗口结束
     expect(tracerLines([damage], routes, 12.3, 1)[0].opacity).toBeCloseTo(1)
-    expect(tracerLines([damage], routes, 12.5, 1)[0].opacity).toBeCloseTo(0.6) // 1 - 0.2/0.5
+    expect(tracerLines([damage], routes, 12.5, 1)[0].opacity).toBeCloseTo(0.6)
     expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
     expect(tracerLines([damage], routes, 12, 1)).toHaveLength(1)
   })
@@ -292,43 +286,32 @@ describe('tracerLines', () => {
   })
 
   it('impact flash: short peak curve (invisible→0.9 at 0.1s→0) and vanishes at window end', () => {
-    // flashProgress 0→1 over 0.7s real at any speed
     expect(tracerLines([damage], routes, 12, 1)[0].flashProgress).toBeCloseTo(0)
     expect(tracerLines([damage], routes, 12.2, 1)[0].flashProgress).toBeCloseTo(0.2 / 0.7)
-    // flashOpacity 峰值曲线：0ms 不可见 → 0.2s 达峰值 0.9 → 0.7s 归零
     expect(tracerLines([damage], routes, 12, 1)[0].flashOpacity).toBeCloseTo(0)
     expect(tracerLines([damage], routes, 12.2, 1)[0].flashOpacity).toBeCloseTo(0.9)
-    // 闪光窗口结束点（真实 0.7s）：flashProgress 钳制为 1、flashOpacity 归零，
-    // 而炮线本体仍在淡出（0.3→0.8s），不随闪光一起消失
     const atFlashEnd = tracerLines([damage], routes, 12.7, 1)[0]
     expect(atFlashEnd.flashProgress).toBeCloseTo(1)
     expect(atFlashEnd.flashOpacity).toBeCloseTo(0)
     expect(atFlashEnd.opacity).toBeCloseTo(0.2)
-    // 炮线窗口结束（真实 0.8s）后整条线消失
     expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
-    // 2×/4×：真实 0.7s 对应游戏 1.4s / 2.8s
     expect(tracerLines([damage], routes, 12.7, 2)[0].flashProgress).toBeCloseTo(0.5)
     expect(tracerLines([damage], routes, 13.4, 4)[0].flashProgress).toBeCloseTo(0.5)
   })
 
   it('windows scale with playback speed (1x/2x/4x) — short shot effect', () => {
     expect(tracerLines([damage], routes, 12.8, 1)).toEqual([])
-    // 1×：窗口 0.8s、保持 0.3s → 12.6（elapsed 0.6）opacity = 1-(0.6-0.3)/0.5 = 0.4
     expect(tracerLines([damage], routes, 12.6, 1)[0].opacity).toBeCloseTo(0.4)
-    // 2×：窗口 1.6s、保持 0.6s → 13.5（elapsed 1.5）opacity = 1-(1.5-0.6)/1.0
     expect(tracerLines([damage], routes, 13.5, 2)[0].opacity).toBeCloseTo(1 - 0.9 / 1.0)
     expect(tracerLines([damage], routes, 13.6, 2)).toEqual([])
-    // 4×：窗口 3.2s、保持 1.2s → 15（elapsed 3.0）opacity = 1-(3.0-1.2)/2.0
     expect(tracerLines([damage], routes, 15, 4)[0].opacity).toBeCloseTo(1 - 1.8 / 2.0)
     expect(tracerLines([damage], routes, 15.2, 4)).toEqual([])
   })
 
   it('real visible duration is ≈0.8s at 1x/2x/4x (identical perceived lifetime)', () => {
-    // 真实时间 0.6s：三种倍速都仍可见（游戏时间 = 0.6 × speed）
     expect(tracerLines([damage], routes, 12.6, 1)).toHaveLength(1)
     expect(tracerLines([damage], routes, 13.2, 2)).toHaveLength(1)
     expect(tracerLines([damage], routes, 14.4, 4)).toHaveLength(1)
-    // 真实时间 0.81s：三种倍速都已消失
     expect(tracerLines([damage], routes, 12.81, 1)).toEqual([])
     expect(tracerLines([damage], routes, 13.62, 2)).toEqual([])
     expect(tracerLines([damage], routes, 15.24, 4)).toEqual([])
@@ -339,29 +322,26 @@ describe('tracerLines', () => {
       [1, { points: [{ x: 0, y: 0, timeSec: 10 }, { x: 100, y: 0, timeSec: 12 }, { x: 400, y: 0, timeSec: 14 }] }],
       [2, { points: [{ x: 0, y: 100, timeSec: 10 }, { x: 100, y: 100, timeSec: 12 }, { x: 400, y: 400, timeSec: 14 }] }]
     ])
-    // t=12（事件时刻）两端 = 采样点 (100,0)/(100,100)；此后双方继续移动
     const l = tracerLines([damage], moving, 12.3, 1)[0]
     expect(l.x1).toBeCloseTo(100)
     expect(l.y1).toBeCloseTo(0)
     expect(l.x2).toBeCloseTo(100)
     expect(l.y2).toBeCloseTo(100)
-    // 禁止把端点改成 currentTime 车辆位置（此刻 attacker≈(400,0)、target≈(400,400)）
     expect(l.x1).not.toBeCloseTo(400)
     expect(l.y2).not.toBeCloseTo(400)
   })
 
   it('seek semantics: no tracer before the event, visible inside, gone after', () => {
-    expect(tracerLines([damage], routes, 11.9, 1)).toEqual([]) // 事件前
-    expect(tracerLines([damage], routes, 12.2, 1)).toHaveLength(1) // 窗口内
-    expect(tracerLines([damage], routes, 12.3, 4)).toHaveLength(1) // 4× 窗口内（游戏时间 1.2s）
-    expect(tracerLines([damage], routes, 12.9, 1)).toEqual([]) // 1× 窗口后
+    expect(tracerLines([damage], routes, 11.9, 1)).toEqual([])
+    expect(tracerLines([damage], routes, 12.2, 1)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 12.3, 4)).toHaveLength(1)
+    expect(tracerLines([damage], routes, 12.9, 1)).toEqual([])
   })
 
   it('dedupes DAMAGE+KILL of the same shot into one line', () => {
     const kill = { type: 'KILL', timeSec: 12.1, accountId: 1, targetAccountId: 2, damage: null }
     expect(tracerLines([damage, kill], routes, 12.05, 1)).toHaveLength(1)
     expect(tracerLines([damage, kill], routes, 12.3, 2)).toHaveLength(1)
-    // 不同射击（相距 > 判同窗口）各画各的
     const d2 = { type: 'DAMAGE', timeSec: 13.5, accountId: 1, targetAccountId: 2, damage: 100 }
     expect(tracerLines([damage, d2], routes, 13.5, 1)).toHaveLength(1)
     expect(tracerLines([damage, d2], routes, 13.5, 4).map(l => l.timeSec)).toEqual([12, 13.5])
@@ -370,13 +350,10 @@ describe('tracerLines', () => {
   it('dedupes across bucket boundaries by actual time difference (no fixed buckets)', () => {
     const d1 = { type: 'DAMAGE', timeSec: 12.249, accountId: 1, targetAccountId: 2, damage: 100 }
     const kill = { type: 'KILL', timeSec: 12.251, accountId: 1, targetAccountId: 2, damage: null }
-    // 相差 2ms（≤0.25s）必须算同一炮
     expect(tracerLines([d1, kill], routes, 12.25, 1)).toHaveLength(1)
-    // KILL 在前时优先保留 DAMAGE
     const pref = tracerLines([kill, d1], routes, 12.25, 1)
     expect(pref).toHaveLength(1)
     expect(pref[0].timeSec).toBeCloseTo(12.249)
-    // 真正超过阈值的两次射击保留两条
     const d2 = { type: 'DAMAGE', timeSec: 12.6, accountId: 1, targetAccountId: 2, damage: 100 }
     expect(tracerLines([d1, d2], routes, 12.3, 1)).toHaveLength(1)
     expect(tracerLines([d1, d2], routes, 12.6, 4).map(l => l.timeSec)).toEqual([12.249, 12.6])
@@ -441,7 +418,6 @@ describe('zoomViewAt / clampViewPan', () => {
     expect(panned.tx).toBe(0)
     expect(panned.ty).toBe(-300)
     expect(clampViewPan({ scale: 2, tx: -500, ty: 0 }, 400, 300).tx).toBe(-400)
-    // 尺寸未知（无布局环境）不钳制
     expect(clampViewPan({ scale: 2, tx: 50, ty: 20 }, 0, 0)).toEqual({ scale: 2, tx: 50, ty: 20 })
   })
 })
@@ -466,41 +442,26 @@ describe('eventsCrossed / transients', () => {
   it('pushFeed / activeFeed: real banner queue — max 2 visible, 3rd waits (not sliced away)', () => {
     const shown = new Map()
     const mk = (id) => ({ id, durationMs: KILL_FEED_MS })
-    // pushFeed 只追加，不 slice 掉旧事件
     expect(pushFeed([{ id: 1 }], { id: 2 })).toEqual([{ id: 1 }, { id: 2 }])
-    // 三条同时到达：只显示前两条，第三条排队（不挤出）
     expect(activeFeed([mk(1), mk(2), mk(3)], 1000, shown).map(i => i.id)).toEqual([1, 2])
     expect(activeFeed([mk(1), mk(2), mk(3)], 1500, shown).map(i => i.id)).toEqual([1, 2])
-    // 4s 后：前两条已展示完，第三条被提升展示（事件仍在队列中，未被挤出）
     expect(activeFeed([mk(1), mk(2), mk(3)], 7000, shown).map(i => i.id)).toEqual([3])
   })
 
   it('clampViewPan: pan bounds based on visible stage vs rendered map rect (cover/fit)', () => {
-    // 方形地图、宽 stage：scale=1 时 map 宽=stage 宽、map 高>stage 高 → 纵向可平移（被裁区域可达）
     expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 1600, 1600)).toEqual({ scale: 1, tx: 0, ty: 0 })
     expect(clampViewPan({ scale: 1, tx: 0, ty: -400 }, 1600, 900, 1600, 1600).ty).toBe(-400)
-    // fit（scale<1 使完整地图可见）→ 居中，不可平移
     expect(clampViewPan({ scale: 0.5, tx: 999, ty: 999 }, 1600, 900, 1600, 1600)).toEqual({ scale: 0.5, tx: 400, ty: 50 })
-    // 地图小于 stage（窄图宽视口）→ 居中
     expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1600, 900, 600, 900)).toEqual({ scale: 1, tx: 500, ty: 0 })
-    // 超宽视口（3440×1440）cover-fill：地图宽=stage 宽、高度超高 → 纵向被裁区域可达（底边 ty=-2000 可到），
-    // 横向无裁切则居中（tx=0）。这是对「宽视口几何」的真实回归：没被 clamp 钉死在 tx/ty=0。
     expect(clampViewPan({ scale: 1, tx: 0, ty: -5000 }, 3440, 1440, 3440, 3440)).toEqual({ scale: 1, tx: 0, ty: -2000 })
     expect(clampViewPan({ scale: 1, tx: 999, ty: 0 }, 3440, 1440, 3440, 3440).tx).toBe(0)
-    // 宽视口拟合（地图高 < stage 高）→ 纵向居中，不可平移。
     expect(clampViewPan({ scale: 1, tx: 0, ty: 999 }, 3440, 1440, 3440, 900).ty).toBe(270)
   })
 
   it('clampViewPan: 1500×1080 stage + 1500×1500 map — 顶边/底边可达 + Reset View fit(scale<1) 不偏移', () => {
-    // §Blocker 1：锚定 origin（无 CSS 居中偏移）后，cover 下上下裁剪区域都必须可达，
-    // 且 fit(scale<1) 得到完整地图视图不被 clamp 偏移。
-    // 顶边：ty=0 即地图顶部（无法再往上 pan）→ 顶端可见。
     expect(clampViewPan({ scale: 1, tx: 0, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: 0 })
-    // 底边：ty 可下探到 stageH - mapH = 1080 - 1500 = -420（被裁底端可达，而非钉在 0）。
     expect(clampViewPan({ scale: 1, tx: 0, ty: -9999 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 1, tx: 0, ty: -420 })
     expect(clampViewPan({ scale: 1, tx: 0, ty: -420 }, 1500, 1080, 1500, 1500).ty).toBe(-420)
-    // Reset View full-map fit：scale = min(1500/1500, 1080/1500) = 0.72，横向居中(210)、纵向恰好贴满(0)。
-    // clampViewPan 需保留该 fit 视图（不被错误重置/偏移）。
     expect(clampViewPan({ scale: 0.72, tx: 210, ty: 0 }, 1500, 1080, 1500, 1500)).toEqual({ scale: 0.72, tx: 210, ty: 0 })
   })
 })

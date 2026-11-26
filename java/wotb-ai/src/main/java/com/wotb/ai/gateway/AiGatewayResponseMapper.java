@@ -21,7 +21,6 @@ import java.util.Locale;
 import java.util.Map;
 
 import static com.wotb.ai.gateway.AiGatewayRuntimeState.PROVIDER_NAME;
-/** Projects provider prompts, responses, and usage into gateway contracts. */
 final class AiGatewayResponseMapper {
     private final Logger logger;
     private final AiGatewayFailurePolicy failurePolicy;
@@ -63,9 +62,6 @@ final class AiGatewayResponseMapper {
         options.model(model);
         options.maxTokens(request.maxOutputTokens());
         options.extraBody(extraBody);
-        // Per-request output format：JSON_OBJECT → 原生
-        // response_format=json_object；TEXT 不发送 response_format（最小 provider surface，
-        // 绝不全局污染连接级 model options）。
         if (request.responseFormat() == AiResponseFormat.JSON_OBJECT) {
             options.responseFormat(OpenAiChatModel.ResponseFormat.builder()
                     .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT)
@@ -103,9 +99,6 @@ final class AiGatewayResponseMapper {
             return null;
         }
         final String reason = response.getResult().getMetadata().getFinishReason();
-        // The SDK normalizes finish_reason to an enum name (e.g. "STOP"); the
-        // legacy gateway returned the raw provider value ("stop"). Keep the
-        // original casing contract by normalizing to lower case.
         return reason != null ? reason.toLowerCase(Locale.ROOT) : null;
     }
 
@@ -158,7 +151,6 @@ final class AiGatewayResponseMapper {
             return false;
         }
         final Usage usage = response.getMetadata().getUsage();
-        // Spring AI supplies an empty Usage for chunks without provider usage.
         return usage != null && (usage.getNativeUsage() instanceof CompletionUsage
                 || (usage.getTotalTokens() != null && usage.getTotalTokens() > 0));
     }

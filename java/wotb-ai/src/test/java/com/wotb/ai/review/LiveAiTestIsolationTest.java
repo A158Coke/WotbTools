@@ -14,11 +14,6 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Deterministic guard for the boundary between normal AI tests and paid external
- * provider probes. It scans source and the module POM; it never creates a gateway
- * or makes a network request.
- */
 class LiveAiTestIsolationTest {
 
     private static final String LIVE_TAG = "@Tag(\"ai-live\")";

@@ -1,9 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 3D 标签覆盖层的锚点契约：setAnchor **同步拷贝**进自有 per-eid 存储，不持有调用方
- * 对象引用。场景内核逐帧逐车复用同一个 scratch 对象喂所有 eid（60Hz ×14 的分配热路径），
- * 若这里存引用，全部 eid 会共享最后一辆车的坐标——这是无 GPU 单测里唯一能锁的观察面。
- */
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
@@ -25,7 +20,6 @@ const row = (eid) => ({
 
 const hpRow = (eid) => ({ ...row(eid), hp: { current: 800, pct: 80, state: 'CURRENT' } })
 
-/** happy-dom 不做布局：几何一律显式 stub（这是本组测试要锁的真实输入）。 */
 const rect = (left, top, width, height) => ({
   left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
 })
@@ -58,7 +52,7 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
   it('同一 scratch 对象喂多个 eid：各自保留自己那一次的值（不共享最后写入）', async () => {
     const wrapper = mountOverlay()
     wrapper.vm.setLabels([row(1), row(2)])
-    await nextTick()   // 等 v-for 的 ref 绑定完成
+    await nextTick()
 
     const scratch = { x: 0, y: 0, visible: false, occluded: false }
     scratch.x = 10; scratch.y = 20; scratch.visible = true
@@ -86,7 +80,6 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     wrapper.vm.beginAnchors({ x: 500, y: 600 })
     wrapper.vm.setAnchor(1, { x: 10, y: 20, visible: true, occluded: false })
     wrapper.vm.setAnchor(2, { x: 30, y: 40, visible: true, occluded: true })
-    // flush 之前只收集，不逐车写 DOM（否则又是逐车写→读抖动）
     expect(a.element.hidden).toBe(true)
     wrapper.vm.endAnchors()
     expect(a.element.style.transform).toContain('translate(10px, 20px)')
@@ -112,14 +105,9 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     expect(ping.element.hidden).toBe(false)
     expect(wrapper.get('[data-marker="0"]').text()).toContain('Anonyme')
     expect(wrapper.get('[data-marker="0"]').text()).toContain('BZT-70')
-    // visible=false → 立即隐藏（与车辆名牌 hidden 同语义）
     wrapper.vm.setMarkerAnchor('0', { x: 40, y: 50, visible: false })
     expect(ping.element.hidden).toBe(true)
-    // 空行不渲染：来源缺失的卡（player/tank 全空）不会出现在内容行里（由 runtime 侧过滤）
     expect(ping.text()).not.toBe('')
-    // 动作章：target 类 = **单行来源标注**「{发起者} 要求攻击/要求撤退 {目标车型}」
-// （who/target 过投影桥，模板可以是函数 = Replay3DPane 的 i18n 动态插值）；
-// 不再叠第二块身份卡（目标自己的玩家/坦克由车辆名牌负责）。
     await wrapper.setProps({ markerKindLabels: {
       attack: '攻击目标', retreat: '请求撤退',
       target_attack: (target, who) => `${who} 要求攻击 ${target}`,
@@ -135,17 +123,13 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
     expect(wrapper.get('[data-marker="2"] .battle-marker-kind').text()).toBe('A · X 要求攻击 KRV')
     expect(wrapper.get('[data-marker="3"] .battle-marker-kind').text()).toBe('B · Y 要求 FV4005 撤退')
     expect(wrapper.get('[data-marker="2"]').attributes('data-target')).toBe('KRV')
-    // 单行卡：target 类不再渲染第二块身份卡（身高只剩一行 → 能贴近目标）
     expect(wrapper.get('[data-marker="2"]').find('.pb-labels').exists()).toBe(false)
-    // 来源联不到：动作词 + 目标车型（不伪造身份）
     expect(wrapper.get('[data-marker="4"] .battle-marker-kind').text()).toBe('攻击目标 · KRV')
     expect(wrapper.find('[data-marker="5"] .battle-marker-kind').exists()).toBe(false)
-    // 末段淡出渐进透明：opacity 过桥写入 style（评审 P2——卡不继承淡出的回归）
     wrapper.vm.setMarkerAnchor('2', { x: 1, y: 2, visible: true, opacity: 0.5 })
     expect(wrapper.get('[data-marker="2"]').element.style.opacity).toBe('0.5')
     wrapper.vm.setMarkerAnchor('2', { x: 1, y: 2, visible: true, opacity: 0 })
     expect(wrapper.get('[data-marker="2"]').element.style.opacity).toBe('0')
-    // 清空：clear 一并回收 marker 卡（会话切换同语义）
     wrapper.vm.clear()
     await nextTick()
     expect(wrapper.findAll('.battle-marker-anchor')).toHaveLength(0)
@@ -170,21 +154,15 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
   })
 })
 
-/**
- * 伤害数字的落点契约：出生在受击车 **HP 血条右侧**（不覆盖血条本身），HP 关掉退回名牌
- * 右侧，整块名牌关掉 / 真实 0×0 空名牌退回锚点上方（车辆模型上方）；镜像到左侧后漂移方向
- * 必须反向（远离血条）；屏幕位置每帧跟随当前 anchor，不缓存绝对坐标。
- */
 describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
   afterEach(() => vi.useRealTimers())
 
-  /** 挂一块名牌（锚点几何 = 名牌块底边中点）并返回 { wrapper, anchorEl } */
   async function mountedLabel({ hpPrefs = { showHp: true }, rowValue = hpRow(7), markerPrefs } = {}) {
     const wrapper = mountOverlay({ hpPrefs, markerPrefs })
     wrapper.vm.setLabels([rowValue])
     await nextTick()
     const anchorEl = wrapper.get('.vehicle-label-anchor').element
-    stubRect(anchorEl, rect(100, 40, 40, 60))   // 名牌块底边中点 = (120, 100)
+    stubRect(anchorEl, rect(100, 40, 40, 60))
     return { wrapper, anchorEl }
   }
   const shownAnchor = { x: 120, y: 100, visible: true, occluded: false, projected: true }
@@ -194,15 +172,14 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
   it('落在血条右缘 + 间隙、垂直居中于血条：不覆盖血条，也不覆盖名牌文本', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountedLabel()
-    stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))   // 右缘 132、中心 72
+    stubRect(wrapper.get('.pb-hp-bar').element, rect(108, 64, 24, 16))
     wrapper.vm.spawnDamage(7, 342, 2000)
-    await nextTick()                                   // 等伤害节点挂载（ref 绑定）
+    await nextTick()
     wrapper.vm.setAnchor(7, shownAnchor)
     const el = damage(wrapper)
     expect(el.text()).toBe('-342')
     expect(el.element.hidden).toBe(false)
     expect(el.element.style.transform).toBe('translate3d(140px, 72px, 0)')
-    // 数字左缘 140 > 血条右缘 132：不覆盖血条
     wrapper.unmount()
   })
 
@@ -213,13 +190,12 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
       rowValue: { ...row(7), hp: null },
     })
     expect(wrapper.find('.pb-hp-bar').exists()).toBe(false)
-    stubRect(wrapper.get('.vehicle-label').element, rect(104, 50, 32, 40))   // 右缘 136、中心 70
+    stubRect(wrapper.get('.vehicle-label').element, rect(104, 50, 32, 40))
     wrapper.vm.spawnDamage(7, 400, 2000)
     await nextTick()
     wrapper.vm.setAnchor(7, shownAnchor)
     expect(damage(wrapper).element.style.transform).toBe('translate3d(144px, 70px, 0)')
 
-    // 名牌整块没有可见内容（姓名也关）→ 落回锚点上方
     wrapper.vm.clearDamages()
     await nextTick()
     stubRect(wrapper.get('.vehicle-label').element, rect(120, 100, 0, 0))
@@ -238,7 +214,7 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
       rowValue: { ...row(7), hp: null, playerName: '', tankName: '' },
       markerPrefs: { classIcons: false, showStatus: true },
     })
-    stubRect(anchorEl, rect(120, 100, 0, 0))       // 名牌合法地 0×0（DOM 已挂载，只是没有内容）
+    stubRect(anchorEl, rect(120, 100, 0, 0))
     wrapper.vm.spawnDamage(7, 400, 2000)
     await nextTick()
     wrapper.vm.setAnchor(7, shownAnchor)
@@ -252,7 +228,7 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     vi.useFakeTimers()
     const wrapper = mountOverlay({ hpPrefs: { showHp: true } })
     wrapper.vm.spawnDamage(7, 400, 2000)
-    wrapper.vm.setAnchor(7, shownAnchor)          // 还没有任何名牌行
+    wrapper.vm.setAnchor(7, shownAnchor)
     await nextTick()
     expect(damage(wrapper).element.hidden).toBe(true)
 
@@ -275,7 +251,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.vm.setAnchor(7, shownAnchor)
     expect(damage(wrapper).element.hidden).toBe(false)
 
-    // 车辆出屏：宿主与数字一起隐藏，但数字仍在寿命内；此时 labelsSeq 失效让布局重算。
     wrapper.vm.setAnchor(7, { ...shownAnchor, visible: false, projected: false })
     expect(anchorEl.hidden).toBe(true)
     wrapper.vm.setLabels([hpRow(7)])
@@ -334,7 +309,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     const { wrapper } = await mountedLabel()
     wrapper.vm.spawnDamage(7, 500, 2000)
     await nextTick()
-    // 关名牌：visible=false，但车辆仍在视锥内（projected）
     wrapper.vm.setAnchor(7, { ...shownAnchor, visible: false })
     const el = damage(wrapper)
     expect(el.element.hidden).toBe(false)
@@ -362,17 +336,13 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.vm.spawnDamage(7, 1234, 2000)
     await nextTick()
     stubNumber(damage(wrapper).element, 'offsetWidth', 90)
-    // 逻辑舞台宽度由 labelsRuntime 传入（不读 rootEl.clientWidth）
     wrapper.vm.beginAnchors({ x: 300, y: 600 })
     wrapper.vm.setAnchor(7, { ...shownAnchor, x: 200 })
     wrapper.vm.endAnchors()
-    // 右侧：200 + 20 + 90 = 310 > 300 → 镜像；左侧：血条左缘 108 − 间隙 8 − 宽 90 = 10 → x = 90
     const el = damage(wrapper).element
     expect(el.style.transform).toBe('translate3d(90px, 72px, 0)')
-    // 数字右缘 = 90 + 90 = 180 < 血条左缘（含 anchor 偏移）→ 不覆盖血条
     expect(200 + (-110) + 90).toBeLessThan(200 + 20)
     expect(el.style.getPropertyValue('--pb-damage-drift-x')).toBe('-20px')
-    // 漂移后（左移 20px）仍不出左边界
     expect(90 - 20).toBeGreaterThanOrEqual(0)
     wrapper.unmount()
   })
@@ -387,7 +357,6 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.vm.beginAnchors({ x: 320, y: 600 })
     wrapper.vm.setAnchor(7, { ...shownAnchor, x: 200 })
     wrapper.vm.endAnchors()
-    // 出生帧右缘 = 200 + 20 + 90 = 310 ≤ 320（放得下），但漂移 20px 后 330 > 320
     const el = damage(wrapper).element
     expect(el.style.transform, '只看出生帧就会漏掉漂移后的裁切').toBe('translate3d(90px, 72px, 0)')
     expect(el.style.getPropertyValue('--pb-damage-drift-x')).toBe('-20px')
@@ -401,11 +370,11 @@ describe('PlaybackVehicleLabels3D 伤害数字落点', () => {
     wrapper.vm.spawnDamage(7, 342, 2000)
     await nextTick()
     const delayBefore = textOf(wrapper).style.animationDelay
-    expect(delayBefore).toBe('')                    // 首次挂载：CSS 默认 delay = 0
+    expect(delayBefore).toBe('')
 
     vi.advanceTimersByTime(100)
-    wrapper.vm.setLabels([hpRow(7), hpRow(8)])      // 名牌内容刷新 → rerender
-    wrapper.vm.spawnDamage(7, 100, 2000)            // 新数字出生 → 同一次 rerender
+    wrapper.vm.setLabels([hpRow(7), hpRow(8)])
+    wrapper.vm.spawnDamage(7, 100, 2000)
     await nextTick()
     expect(textOf(wrapper).style.animationDelay, 'delay 必须保持稳定').toBe(delayBefore)
     expect(textOf(wrapper).style.animationDuration).toBe('2000ms')
@@ -618,18 +587,6 @@ it('late marks use accountId rather than scene eid and disappear with hidden tan
   wrapper.unmount()
 })
 
-/**
- * 3D 名牌卡的绘制成本契约（2026-11-17，2560×1440 实测）。
- *
- * 名牌卡在 2D / 3D 共用一个组件，但两边的**背景**代价完全不同：3D 覆盖层背后是每帧都在
- * 变化的 WebGL 画布，`backdrop-filter` 会让合成器每帧重新采样并模糊 14 块背景
- * （帧间隔 p50 32.9 ms、8 s 窗口内 >50 ms 帧 15 个；去掉后 16.0 ms），而同窗口场景自身的
- * GPU 主 pass 只有 ~9 ms、animate 总计 ~4 ms——瓶颈完全在这条 CSS，不在 3D 渲染。
- *
- * 只能锁在源码上：happy-dom 不跑合成器，`getComputedStyle` 拿不到真实渲染成本，
- * 浏览器里也只能靠帧率统计间接观察。3D 覆盖层因此用平面底色替换磨砂玻璃，
- * 且底色继续走 `--color-canvas`（winter 主题会在 `[data-scene-surface]` 上重定义它）。
- */
 describe('3D 名牌卡不得使用 backdrop-filter', () => {
   const source = overlaySource
 

@@ -1,6 +1,3 @@
-// 碰撞打包/续飞链门面：类型与 GLSL 注入串留在此处（源码契约测试直接读取本文件），
-// 实现（build / query / RC 常量）已出仓（#LOC 拆分，原样平移）。既有消费方
-// （armorShaders / judgment / heatmap / diagnosticProbe / heSplash / 各单测）仍从本入口导入。
 import type { Vector3, Plane } from 'three';
 import { RC, RC_DIAG } from './armorPackConstants.js';
 import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
@@ -23,7 +20,6 @@ export {
   raycastPackAll, raycastGridAll, isClippedModuleHit, isBackfaceNormal,
 } from './armorPackQuery.js';
 
-/** GLSL 常量声明（注入 PBR_FRAG；由 RC 生成，禁止手写数值） */
 export const RC_GLSL_CONST = `
 ${Object.entries(RC_DIAG).map(([key, value]) => `#define RC_DIAG_${key} ${value}.0`).join("\n")}
 // ==== 跳弹续飞常量（单一来源 armorCollisionPack.js RC；禁止手改数值）====
@@ -51,12 +47,6 @@ ${Object.entries(RC_DIAG).map(([key, value]) => `#define RC_DIAG_${key} ${value}
 #define RC_SEC_GUN_BARREL ${RC.SECTION.gunBarrel}
 `;
 
-/**
- * GLSL 续飞实现（uniforms + rcContinue），注入 PBR_FRAG 的 main() 之前。
- * 依赖主着色器既有 uniform：caliber / normalization（弧度）。
- * 精度：几何量全部 highp；注入的片元 shader 现在整体 `precision highp float`
- * （PR #713），这里仍保留显式标注，避免被误改回 mediump。
- */
 export const RC_GLSL_FUNCS = `
 ${AI_NORMAL_CDF_GLSL}
 // ==== 跳弹续飞：反射线网格 DDA 求交 + 出射段层链（语义=penetration.js calculate；每段首个命中层可再跳弹）====
@@ -309,14 +299,6 @@ int rcContinue(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out 
 }
 `;
 
-/**
- * JS 参考实现：跳弹续飞层链（与 GLSL rcContinue 同常量同语义，在线推进 tCur）。
- * params: { remIn(=pen×0.75), caliber, normalizationRad, thickMul, ricochetRad?, clipPlane? }。
- * 跳弹后的炮弹可以再次跳弹：首段之后执行一段续飞（剩余穿深 ×0.75）；该段
- * 首个命中层若满足跳弹角/3×口径规则，则发生第二次跳弹，炮弹消失，不再有第三段。
- * clipPlane = 世界系 gun_mask 裁切面；负侧 gunBarrel 命中在命中收集阶段即剔除。
- * 返回 { cls(0 紫|1 绿|2 红), penChance, layers[层快照（调试/测试）] }。
- */
 export function simulateContinuation(
     pack: CollisionPack,
     bouncePos: Vector3,
@@ -337,13 +319,10 @@ export function simulateContinuation(
     let origin = bouncePos.clone();
     let dir = reflDir.clone();
     const allLayers: ContinuationLayer[] = [];
-    // 本函数从第一次跳弹点开始：只执行第二段；该段若再次跳弹即为终态。
     for (let seg = 1; seg <= 1; seg++) {
         const ro = origin.clone().addScaledVector(dir, RC.ORIGIN_OFFSET);
         const hits = raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);
-        // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
         if (!hits.some(h => isPrimary(h.section))) break;
-        // 收集：variant 去重；确定性判定与概率链都停在首个 primary（含）
         const seen = new Set<number>();
         const collected: CollisionHit[] = [];
         for (const h of hits) {
@@ -381,17 +360,12 @@ export function simulateContinuation(
             }
             const cosA = Math.min(Math.abs(h.normal.dot(dir)), 1);
             const angle = Math.acos(cosA);
-            // 与 penetration.js 一致：0mm 板也满足 3× 口径规则（overmatch）。
             const threeCal = caliber > th * 3;
-            // 与 penetration.js 相同：只有本段首个非外部层可以新跳弹（首个命中可以是
-            // 间隙甲；外部模块已在 variant 分支 flat 消费并递增 hitIndex）。
             const ricocheted = (primaryLayer || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
             if (ricocheted) {
                 allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff: 0, remBefore: rem, penetrated: false, ricochet: true, angle, seg });
-                // 第二次跳弹：炮弹消失，不再做后续判定。
                 return { cls: 0, penChance: 0, layers: allLayers };
             }
-            // 0mm 合法板厚：只对正厚度应用 2× 增强转正。
             const twoCal = th > 0 && caliber > th * 2;
             const normR = twoCal
               ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th)

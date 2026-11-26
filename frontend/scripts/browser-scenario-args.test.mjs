@@ -64,7 +64,6 @@ describe('selectShard', () => {
     expect(() => selectShard([], parseScenarioArgs(['missing']))).toThrow('no scenario matches')
   })
 
-  // 分片不变量对任意 n 成立：用与真实门禁同规模的两组输入覆盖 n = 1..4。
   it.each([
     ['28', Array.from({ length: 28 }, (_, index) => `scenario-${index}`)],
     ['166', Array.from({ length: 166 }, (_, index) => `scenario-${index}`)],
@@ -76,7 +75,6 @@ describe('selectShard', () => {
       const sizes = shards.map((shard) => shard.length)
       expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(1)
       for (const [index, shard] of shards.entries()) {
-        // 片内顺序必须与全集一致；并集完整与互斥由上面的 length + Set 证明。
         expect(shard).toEqual(list.filter((name) => shard.includes(name)))
         for (const other of shards.slice(index + 1)) {
           expect(shard.filter((name) => other.includes(name))).toEqual([])

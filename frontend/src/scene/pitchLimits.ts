@@ -1,12 +1,5 @@
-// 俯仰锚定表构建（3D 回放与射击复现共用）：
-// playback 名册 → tank_id → tank/{id}.json 的顶级 pitch_limits → GunPitchRange 形状。
-// 注入 WASM parsePlayback 的 limitsJson 后，prop2 俯仰按车型极限解码
-// （缺省空表时 gun_pitch 走 hull_pitch 兜底——坡上炮管俯仰不正确的根因）。
-// **只传基础 models.pb 极限**：实体实际携带的 122 改进型垂直稳定器（+4°仰/+3°俯）
-// 由 Agent core 按同 eid 的 Type5 配件串在解码时叠加；在这里预加会双重计算。
 import { assetProvider } from './assetProvider.js'
 
-/** 单车俯仰锚定（dep = 俯角下限，ele = 仰角上限；front/back/transition 为火力组扇区，透传资产包原值）。 */
 export interface PitchRange {
   dep: number
   ele: number
@@ -15,12 +8,10 @@ export interface PitchRange {
   transition?: number
 }
 
-/** tank/{id}.json configs[] 条目中 buildPitchLimits 消费的形状（资产包 producer 保证条目完整）。 */
 export interface TankPitchConfig {
   pitch_limits?: { max?: number; min?: number; front?: number[]; back?: number[]; transition?: number } | null
 }
 
-/** playback 名册中 buildPitchLimits 需要的字段。 */
 export interface PitchLimitVehicle {
   nickname: string
   tank_id: number

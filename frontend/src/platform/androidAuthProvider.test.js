@@ -2,7 +2,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// 模拟 keycloak-js：android provider 只允许走 bridge，构造 keycloak 就是回归。
 const kcInstances = []
 
 vi.mock('keycloak-js', () => ({
@@ -20,10 +19,8 @@ vi.mock('keycloak-js', () => ({
 import Keycloak from 'keycloak-js'
 import { createAndroidAuthProvider, createUnsupportedAuthProvider } from './androidAuthProvider.js'
 
-/** 哨兵：Native 永不回这条 RPC（模拟网络挂起，只能由 callBridge 的超时兜底）。 */
 const NO_REPLY = Symbol('no-reply')
 
-/** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件（同 id）。 */
 function stubNative(results = {}) {
   const listeners = []
   const calls = []
@@ -266,12 +263,10 @@ describe('androidAuthProvider', () => {
     expect(provider.tokenParsed).toEqual(ADMIN_CLAIMS)
     expect(provider.token()).toBe('')
 
-    // Native permanent rejection/log-out, unlike offline refresh, clears the projection.
     native.results.authGetState = { authenticated: false }
     await expect(provider.ensureToken(30)).resolves.toBe(false)
     expect(provider.authenticated).toBe(false)
     expect(provider.tokenParsed).toBe(null)
-    // 未登录后不再发起任何 RPC。
     const callsBefore = native.calls.length
     await expect(provider.ensureToken(30)).resolves.toBe(false)
     expect(native.calls.length).toBe(callsBefore)
@@ -285,7 +280,6 @@ describe('androidAuthProvider', () => {
     let settled = false
     const pending = provider.init().then(() => { settled = true })
 
-    // 通用 5s 预算不适用于 auth 调用（OIDC discovery + refresh 可以更久）。
     await vi.advanceTimersByTimeAsync(5_000)
     expect(settled).toBe(false)
 
@@ -319,7 +313,6 @@ describe('androidAuthProvider', () => {
 
     expect(typeof window.wotbtoolsOnAuthChanged).toBe('function')
 
-    // Native 在 external browser 里完成登录后推送：WebView 停在原页面，只回读状态。
     native.results.authGetState = { authenticated: true, expiresAt: 1_700_000_100 }
     native.results.authGetAccessToken = {
       token: 'fresh-token',

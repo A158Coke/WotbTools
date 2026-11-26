@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** Timeline 测试共享 fixture（battle-relative 时间 = raw - START_RAW）。 */
 final class TimelineTestFixtures {
 
     static final float START_RAW = 100f;
@@ -124,7 +123,6 @@ final class TimelineTestFixtures {
                 List.copyOf(events), List.of(), finalState, coverage, diag);
     }
 
-    /** 标准个人复盘场景：双方各 2 车、录像者/友方位置流 + 敌方位置流 + HP + 伤害。 */
     static List<ReplayEvent> standardEvents() {
         seq = 0;
         final List<ReplayEvent> out = new ArrayList<>();

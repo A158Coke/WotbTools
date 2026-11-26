@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
-# Production observability gate. It fails closed and never prints credentials.
-#
-# Execution vehicle: every HTTP check runs inside a disposable alpine container
-# attached to wotb_internal (the same BusyBox wget path the Grafana API helper
-# always assumed). No retired Yecao `wotb-backend` container is required:
-# business metrics are scraped by Prometheus from the TX WireGuard endpoint and
-# ai-service metrics come from the shared Docker network. The Loki checks below
-# do start disposable canaries named `wotb-backend-observability-canary-*` /
-# `keycloak-observability-canary-*`; reusing those service identities in the
-# container name is deliberate — it is the label the Yecao Alloy keep-rules match
-# on, so the assertion proves the deployment ingestion path rather than a
-# long-running business container. Keycloak plus both public domains are proven
-# end to end over trusted TLS.
 set -euo pipefail
 
 readonly RETRIES="${WOTB_OBSERVABILITY_RETRIES:-20}"
@@ -22,13 +9,8 @@ readonly ALLOY_CONFIG="${WOTB_ALLOY_CONFIG:-$DEPLOY_ROOT/deploy/observability/al
 readonly ALLOY_VALIDATOR="${WOTB_ALLOY_VALIDATOR:-$DEPLOY_ROOT/deploy/validate-alloy-config.sh}"
 readonly GRAFANA_API_HELPER="${WOTB_GRAFANA_API_HELPER:-$DEPLOY_ROOT/deploy/grafana-api-request.sh}"
 readonly NETWORK="${WOTB_OBSERVABILITY_NETWORK:-wotb_internal}"
-# The business runtime (business-api) publishes its management port on the TX
-# WireGuard address only; Prometheus scrapes it there and so does this gate.
 readonly BACKEND_METRICS_URL="${WOTB_BACKEND_METRICS_URL:-http://10.20.0.1:8088/actuator/prometheus}"
-# AI Review is an independent Yecao runtime on the shared Docker network.
 readonly AI_SERVICE_METRICS_URL="${WOTB_AI_SERVICE_METRICS_URL:-http://ai-service:8080/actuator/prometheus}"
-# Keycloak and both public domains are reached over their real public TLS chain;
-# verification is never disabled and no curl -k equivalent is used.
 readonly KEYCLOAK_METADATA_URL="${WOTB_KEYCLOAK_METADATA_URL:-https://auth.wotbtools.com/realms/wotbtools/.well-known/openid-configuration}"
 readonly MONITOR_HEALTH_URL="${WOTB_MONITOR_HEALTH_URL:-https://monitor.wotbtools.com/api/health}"
 readonly WEB_DOWNLOAD_URL="${WOTB_WEB_DOWNLOAD_URL:-https://wotbtools.com/download/android}"
@@ -43,8 +25,6 @@ fail() {
   echo "OBSERVABILITY FAIL [$domain]: $*" >&2
   exit 1
 }
-# BusyBox wget with a bounded timeout; the container is disposable, so state
-# never leaks between checks.
 net_exec() { docker run --rm --network "$NETWORK" alpine:3.22 wget -qO- -T 8 "$1"; }
 grafana_api() {
   local path="$1"
@@ -233,9 +213,6 @@ cleanup_canaries() {
 }
 trap cleanup_canaries EXIT
 
-# Both canaries are plain alpine containers on wotb_internal: their names carry
-# the service identity the Yecao Alloy keep-rules match on, so the streams get
-# the same container_name labels the queries below (and the dashboards) use.
 docker run -d --network "$NETWORK" --name "$backend_name" alpine:3.22 \
   sh -c "printf '%s\\n' '$backend_marker'; sleep $((RETRIES * INTERVAL_SEC + 30))" >/dev/null \
   || fail "LOKI_INGESTION" "could not start backend deployment canary"
@@ -266,10 +243,6 @@ for attempt in $(seq 1 "$RETRIES"); do
     [ "$attempt" -eq "$RETRIES" ] && fail "LOKI_INGESTION" "Loki backend or Keycloak canary was not ingested"
 done
 
-# This request may return 404: it verifies the real nginx access-log path on TX
-# (shipped by alloy-tx to Loki over WireGuard), while the Android dashboard
-# counts only status=200. The assertion below proves the sanitized event reached
-# Loki without any raw field (client IP, request line, User-Agent, Referer).
 frontend_canary_start_epoch="$(date +%s)"
 frontend_canary_start_ns="${frontend_canary_start_epoch}000000000"
 net_exec "$WEB_DOWNLOAD_URL/$frontend_apk" >/dev/null 2>&1 || true

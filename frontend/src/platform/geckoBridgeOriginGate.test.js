@@ -1,19 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-/**
- * content script 的第一道门必须是 **exact local origin**：`http://127.0.0.1:21653` 的 top frame。
- *
- * 这里直接在 Node 里执行真实的 `bridge.js`（用一个最小的 `window` / `location` / `browser` /
- * `cloneInto` 替身），因此断言的是行为而不是源码文本：只有 exact origin 才会 `connectNative` 并
- * 暴露 `window.WotbNative`。任何只比对 hostname（漏掉 port）的实现都会在这些用例上失败——
- * `http://127.0.0.1/`、`http://127.0.0.1:21654/` 之类必须被拒绝。
- */
 const BRIDGE = new URL('../../../android/app/src/main/assets/gecko-bridge/bridge.js', import.meta.url)
 const MANIFEST = new URL('../../../android/app/src/main/assets/gecko-bridge/manifest.json', import.meta.url)
 const source = readFileSync(BRIDGE, 'utf8')
 
-/** 用真实 location 形态（protocol / hostname / port，默认端口为空串）执行一次 bridge.js。 */
 function runBridge(url, { topFrame = true } = {}) {
   const parsed = new URL(url)
   const location = { protocol: parsed.protocol, hostname: parsed.hostname, port: parsed.port }
@@ -36,12 +27,12 @@ function runBridge(url, { topFrame = true } = {}) {
 
 const TRUSTED = [
   'http://127.0.0.1:21653/',
-  'http://127.0.0.1:21653', // 同一 origin，路径为空
+  'http://127.0.0.1:21653',
   'http://127.0.0.1:21653/index.html',
   'http://127.0.0.1:21653/index.html?view=replay',
 ]
 const REJECTED = [
-  'http://127.0.0.1/', // 默认端口 80
+  'http://127.0.0.1/',
   'http://127.0.0.1:80/',
   'http://127.0.0.1:21654/',
   'http://127.0.0.1:9999/',
@@ -85,11 +76,6 @@ describe('GeckoView bridge content-script origin gate', () => {
     expect(source).toContain('loc.port === "21653"')
   })
 
-  /**
-   * Firefox 的 WebExtension match pattern 不支持 port（MDN match patterns；bug 1362809 / 1468162），
-   * 写成 `http://127.0.0.1:21653/*` 是无效 pattern。因此 manifest 保持粗 host 匹配，port 由
-   * bridge.js + Native sender 校验执行；这里钉住这个分工，防止有人写回无效的 port pattern。
-   */
   it('keeps the coarse host match pattern because Gecko cannot match a port', () => {
     const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'))
     const matches = manifest.content_scripts.flatMap((entry) => entry.matches)

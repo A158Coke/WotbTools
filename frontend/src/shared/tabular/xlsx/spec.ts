@@ -1,4 +1,3 @@
-/** Business-neutral data model consumed by the shared XLSX renderer. */
 
 export type CellValue = string | number | null
 
@@ -61,7 +60,6 @@ export interface MergeSpec {
 export interface SheetSpec {
   name: string
   columns: ColumnSpec[]
-  /** A null entry preserves a sparse row in the source workbook description. */
   rows: (RowSpec | null | undefined)[]
   freeze?: { xSplit: number; ySplit: number } | null
   autoFilter?: string | { from: { row: number; column: number }; to: { row: number; column: number } } | null

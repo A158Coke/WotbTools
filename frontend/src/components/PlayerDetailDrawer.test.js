@@ -11,12 +11,10 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, locale: { value: 'zh' } })
 }))
 
-// 坦克贴图懒加载 mock 成可控 promise（未知 tankId → null，缺图文字降级）。
 vi.mock('../vehicle-portraits/runtime.js', () => ({
   loadVehiclePortrait: vi.fn(() => Promise.resolve(null)),
 }))
 
-// html2canvas / downloadBlob mock harness（导出行为测试，捕获 offscreen 卡与文件名）。
 const h2c = vi.hoisted(() => {
   const calls = []
   let impl
@@ -135,7 +133,6 @@ describe('PlayerDetailDrawer', () => {
   })
 
   it('mobile(<768px) backdrop 点击关闭（modal，§34）；desktop backdrop 点击不关闭（非模态）', async () => {
-    // 桌面：backdrop 是 click-through，点击不应关闭
     window.innerWidth = 1024
     const desktop = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     await desktop.find('.drawer-backdrop').trigger('click')
@@ -143,7 +140,6 @@ describe('PlayerDetailDrawer', () => {
     expect(desktop.emitted('close')).toBeFalsy()
     expect(desktop.find('.drawer-backdrop').classes()).not.toContain('pd-modal')
 
-    // 移动端：isMobile=true → modal backdrop 点击关闭（slide-out 后 emit close）
     window.innerWidth = 375
     const mobile = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     vi.useFakeTimers()
@@ -191,7 +187,6 @@ describe('PlayerDetailDrawer header / scope（V4.1 vs League V6）', () => {
     expect(text).toContain('league.drawer.observed_mean')
     expect(text).toContain('league.drawer.rated_battles')
     expect(text).toContain('8')
-    // 头部不再依赖 facts 重复展示 median/rated_battles
     const rating = wrapper.find('[data-testid="drawer-rating"]')
     expect(rating.exists()).toBe(true)
     expect(rating.text()).toBe('850.4')
@@ -260,7 +255,6 @@ describe('PlayerDetailDrawer Radar（仅 League 七维 + 参考平均）', () =>
     const labels = wrapper.find('.radar-stub').text().split(',')
     expect(labels).toEqual(['radar_labels.league_kill_score',
       'radar_labels.league_damage_score', 'radar_labels.league_assist_score'])
-    // picker 不含 kast/contribution/impact
     expect(labels.join(',')).not.toContain('kast')
   })
 
@@ -280,7 +274,6 @@ describe('PlayerDetailDrawer Radar（仅 League 七维 + 参考平均）', () =>
     expect(pickerText).not.toContain('player_labels.kast')
     expect(pickerText).not.toContain('player_labels.contribution')
     expect(pickerText).not.toContain('player_labels.impact')
-    // 取消一个维度 → 持久化
     const killLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('radar_labels.league_kill_score'))
     await killLi.find('input').setValue(false)
     const saved = JSON.parse(localStorage.getItem('wotb-radar-metric-order'))
@@ -293,7 +286,7 @@ describe('PlayerDetailDrawer Radar（仅 League 七维 + 参考平均）', () =>
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
     await wrapper.find('[data-testid="radar-settings"]').trigger('click')
     const damageLi = wrapper.findAll('.radar-picker-list li').find(li => li.text().includes('radar_labels.league_damage_score'))
-    await damageLi.find('input').setValue(false) // 尝试减到 2
+    await damageLi.find('input').setValue(false)
     expect(wrapper.find('.radar-hint').exists()).toBe(true)
   })
 
@@ -330,7 +323,6 @@ describe('PlayerDetailDrawer reference average', () => {
     )
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER, { scopePlayers: row })
     const ref = radarReference(wrapper)
-    // 两玩家等权：(250+150)/2 = 200
     expect(ref.find(r => r.key === 'league_damage_score').rawValue).toBeCloseTo(200, 6)
     expect(wrapper.find('.radar-stub').attributes('data-reference')).toBeTruthy()
     expect(wrapper.find('.radar-stub').attributes('data-reference-label')).toBe('league.drawer.global_average')
@@ -528,7 +520,6 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     expect(wrapper.text()).toContain('league.drawer.most_used_vehicle')
     expect(wrapper.text()).toContain('IS-7')
     expect(wrapper.text()).toContain('league.drawer.vehicle_battles')
-    // 3 / 8 = 37.5%
     expect(wrapper.find('[data-testid="player-vehicle-rate"]').text()).toBe('37.5%')
   })
 
@@ -539,7 +530,6 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     expect(wrapper.find('[data-testid="player-vehicle"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('league.drawer.battle_vehicle')
     expect(wrapper.text()).toContain('Heavy Tank')
-    // 单场不显示无意义的“1 场 · 100%”
     expect(wrapper.find('[data-testid="player-vehicle-battles"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="player-vehicle-rate"]').exists()).toBe(false)
   })
@@ -572,18 +562,15 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     }))
     const playerA = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 111, tankName: 'A', battles: 3 }, ratedBattles: 8 }
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, playerA)
-    await flushPromises() // 动态 import 完成，loadVehiclePortrait(111) 已注册
+    await flushPromises()
     expect(typeof deferred[111]).toBe('function')
-    // 切到玩家 B
     const playerB = { ...SUMMARY_PLAYER, mostUsedVehicle: { tankId: 222, tankName: 'B', battles: 2 }, ratedBattles: 8 }
     await wrapper.setProps({ player: playerB })
     await flushPromises()
     expect(typeof deferred[222]).toBe('function')
-    // 旧玩家 A 的图晚到：必须被丢弃（token 已变）
     deferred[111]('http://a.png')
     await flushPromises()
     expect(wrapper.find('[data-testid="player-vehicle-img"]').exists()).toBe(false)
-    // 新玩家 B 的图到：正确显示
     deferred[222]('http://b.png')
     await flushPromises()
     expect(wrapper.find('[data-testid="player-vehicle-img"]').attributes('src')).toBe('http://b.png')
@@ -596,7 +583,6 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
     expect(source).toContain('rp-vehicle')
     expect(source).toContain('exportPortrait')
     expect(source).toContain('ensureVehiclePortraitForExport')
-    // Blocker 2：不得顶层静态 import vehicle-portraits runtime（须动态 import 保持分离）
     expect(source).not.toContain("import { loadVehiclePortrait } from '../vehicle-portraits/runtime.js'")
     expect(source).toContain("import('../vehicle-portraits/runtime.js')")
   })
@@ -627,7 +613,6 @@ describe('PlayerDetailDrawer 坦克展示（Summary=最常使用；Battle=本场
 })
 
 describe('Rating Profile PNG 导出不可变快照', () => {
-  // happy-dom 不加载图片，stub 全局 Image 使 onload 触发，否则 ensureImageLoaded 悬挂卡住导出。
   class MockImage {
     set src(v) { this._src = v; queueMicrotask(() => this.onload && this.onload()) }
     get src() { return this._src }
@@ -649,31 +634,29 @@ describe('Rating Profile PNG 导出不可变快照', () => {
 
     await wrapper.find('[data-testid="export-profile"]').trigger('click')
     await flushPromises()
-    expect(typeof deferred[7169]).toBe('function') // 导出正在等待坦克 A 图
+    expect(typeof deferred[7169]).toBe('function')
 
-    // 导出等待期间切换为玩家 B（坦克 B=9999 "Maus"）
     const playerB = { ...SUMMARY_PLAYER, nickname: 'Beta', mostUsedVehicle: { tankId: 9999, tankName: 'Maus', battles: 1 }, ratedBattles: 8 }
     await wrapper.setProps({ player: playerB })
     await flushPromises()
 
-    // resolve 坦克 A 的图
     deferred[7169]('http://a.png')
     await flushPromises()
 
     expect(h2c.getCalls().length).toBe(1)
     const card = h2c.getCalls()[0][0]
     const cardText = card.textContent
-    expect(cardText).toContain('Alpha') // 玩家 A
-    expect(cardText).toContain('IS-7')  // 坦克 A
-    expect(cardText).toContain('850')   // 玩家 A 总 Rating
+    expect(cardText).toContain('Alpha')
+    expect(cardText).toContain('IS-7')
+    expect(cardText).toContain('850')
     expect(cardText).not.toContain('Beta')
     expect(cardText).not.toContain('Maus')
     const img = card.querySelector('img.rp-vehicle-img')
     expect(img).toBeTruthy()
-    expect(img.getAttribute('src')).toBe('http://a.png') // 坦克 A 图
+    expect(img.getAttribute('src')).toBe('http://a.png')
 
     expect(dl.downloadBlob.mock.calls.length).toBe(1)
-    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha') // 文件名用玩家 A
+    expect(dl.downloadBlob.mock.calls[0][1]).toContain('Alpha')
     wrapper.unmount()
   })
 
@@ -690,7 +673,7 @@ describe('Rating Profile PNG 导出不可变快照', () => {
     const card = h2c.getCalls()[0][0]
     expect(card.textContent).toContain('Alpha')
     expect(card.textContent).toContain('IS-7')
-    expect(card.querySelector('img.rp-vehicle-img')).toBeNull() // 纯文字降级
+    expect(card.querySelector('img.rp-vehicle-img')).toBeNull()
     expect(dl.downloadBlob).toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -736,7 +719,6 @@ describe('Rating Profile PNG 导出不可变快照', () => {
     await flushPromises()
     expect(dl.downloadBlob).not.toHaveBeenCalled()
 
-    // 首次失败后状态被清理，可再次导出
     fail = false
     const btn = wrapper.find('[data-testid="export-profile"]')
     expect(btn.attributes('disabled')).toBeUndefined()
@@ -794,7 +776,7 @@ describe('PlayerDetailDrawer Side Panel resize（仅桌面）', () => {
     const max = Math.floor(1400 * 0.45)
     localStorage.setItem('radarSidePanelWidth', '800')
     const wrapper = mountDrawer({ scope: 'summary', accountId: 1001 }, SUMMARY_PLAYER)
-    await flushPromises() // onMounted 异步写入 drawerWidth，需 flush 后读取
+    await flushPromises()
     expect(widthNum(wrapper)).toBe(max)
   })
 
@@ -869,8 +851,8 @@ describe('PlayerDetailDrawer Side Panel resize（仅桌面）', () => {
     expect(wrapper.emitted('next')).toHaveLength(1)
     await swipe(90)
     expect(wrapper.emitted('prev')).toHaveLength(1)
-    await swipe(-40) // 太短
-    await swipe(-90, 120) // 以纵向滚动为主
+    await swipe(-40)
+    await swipe(-90, 120)
     expect(wrapper.emitted('next')).toHaveLength(1)
     await wrapper.setProps({ hasNext: false })
     await swipe(-90)

@@ -27,8 +27,6 @@ const tankopedia = createTankopedia([tier7, tier8, tier9, tier10])
 
 async function arrange(file: string) {
   const raw = await fixtureFacets(file)
-  // 严格读取：fixture 被 trust boundary 拒绝时在此抛出**原始 validation error**，
-  // 而不是把 null 灌进 mock、让下游崩在 `null.meta` 的二次症状上。
   expect(raw.playbackError, String(raw.playbackError)).toBeNull()
   expect(raw.aiReviewError, String(raw.aiReviewError)).toBeNull()
   const f = requireFixtures(raw)
@@ -54,7 +52,6 @@ describe('parseLocalPlayback', () => {
 
   it('复活轨道注入（上游 v0.4.8 字段形态）：DESTROYED 事件覆盖每次死亡 + 复活后血量落未知（3.1.0 review P2）', async () => {
     const f = await arrange('random-battle-example.wotbreplay')
-    // 深拷贝注入，避免污染 fixture 缓存；选一辆死亡时刻足够早（+40 s 仍在场内）的车
     const playback = structuredClone(f.playback!)
     const facts = buildCanonicalReplayFacts({
       result: f.result, aiReview: f.aiReview, streamEndRaw: playback.meta.duration,
@@ -63,14 +60,12 @@ describe('parseLocalPlayback', () => {
     const vehicle = playback.vehicles.find((v) =>
       Number.isFinite(v.death_t) && (v.death_t as number) - clock.startRaw + 40 < clock.durationSec)!
     const deathRaw = vehicle.death_t as number
-    vehicle.death_times = [deathRaw, deathRaw + 30]      // 上游：≥2 死才输出（首死 = death_t）
-    vehicle.resurrection_times = [deathRaw + 15]         // 上游：非空才输出
+    vehicle.death_times = [deathRaw, deathRaw + 30]
+    vehicle.resurrection_times = [deathRaw + 15]
     const ds = toBattlePlaybackDataset(playback, f.result, f.aiReview!, { tankopedia, canonicalFacts: facts })!
-    // 1) DESTROYED 事件 = 轨道死亡列（canonical 每账号至多一条终态 → 只发它就会少一次爆焰）
     const destroyed = ds.events.filter((e) => e.type === 'DESTROYED' && e.accountId === vehicle.account_id)
     expect(destroyed.map((e) => Math.round(e.timeSec)))
       .toEqual([Math.round(deathRaw - clock.startRaw), Math.round(deathRaw - clock.startRaw + 30)])
-    // 2) 复活后（+15 s）直到新证据：血量未知（绝不沿用死前的 0 / 终态值）
     const track = ds.vehicles.find((v) => v.accountId === vehicle.account_id)!
     const atResurrection = track.healthTransitions!.filter((h) => h.timeSec >= deathRaw - clock.startRaw + 15)
     expect(atResurrection[0]?.currentHp).toBeNull()
@@ -99,7 +94,6 @@ describe('parseLocalPlayback', () => {
     const vehicle = f.playback!.vehicles.find((v) => v.team === f.playback!.meta.friendly_team)!
     const raw = {
       ...f.playback!,
-      // Render-grid origin deliberately differs from canonical 2D battle t=0.
       meta: { ...f.playback!.meta, t_start: clock.startRaw - 20 },
       reloads: [{ eid: vehicle.eid, clock: clock.startRaw + 10, phase: 3, duration_s: 8, count: null }],
       reload_effective: [{ eid: vehicle.eid, clock: clock.startRaw, duration_s: 4 }],

@@ -1,20 +1,8 @@
-/**
- * #845 View transition loading boundary 的浏览器级确定性回归。
- *
- * 驱动真实应用（router / AppShell / ViewHost / defineLazyView），只把**外部时间边界**
- * 换成确定性的：CDP Fetch 拦截对指定 view 模块注入 delay / 失败，不依赖真实网络慢速，
- * 生产代码里没有任何用户可触发的 debug 协议（注入只存在于本 harness 的 CDP 会话）。
- *
- * 覆盖：fast（无 loader）/ slow（loader 在 #main、壳可交互）/ A→B→C latest-wins /
- * import 失败 error surface / Back-Forward 同边界 / desktop + compact 几何稳定。
- */
 import assert from 'node:assert/strict'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// loader 只在超过 viewRegistry.js 的 VIEW_LOAD_FEEDBACK_DELAY_MS(300ms) 后出现；
-// 本脚本按行为断言（等元素出现/不出现），只需要「观察窗口 > 阈值」的数量级。
 const LOADER_WINDOW_MS = 1200
 const HISTORY_MODULE = '/src/components/HistoryPage.vue'
 const CONTACT_MODULE = '/src/components/ContactPage.vue'
@@ -61,7 +49,6 @@ async function scenario(name, width, height, touch, run) {
 const loaderVisible = `!!document.querySelector('[data-testid=view-loading]')`
 const viewIs = (page, view) => page.waitForValue(`new URL(location.href).searchParams.get("view")`, value => value === view, { label: `view=${view}` })
 
-/** 桌面导航：侧边栏「更多」弹出面板（同步壳）→ aboutLinks 的 RouterLink push。 */
 async function navigateViaMore(page, target) {
   await tap(page, '[data-testid=nav-more]', false)
   await page.waitForValue(`!!document.querySelector('[data-testid=more-link-${target}]')`, Boolean, { label: `more-link-${target}` })
@@ -81,7 +68,6 @@ async function tap(page, selector, touch) {
   await page.tap({ ...point, touch })
 }
 
-/** 在 ms 窗口内轮询：loader 一旦出现即失败（fast 用例；阈值保证可见期 ≥ 300ms，50ms 轮询不会漏）。 */
 async function assertNoLoader(page, ms = LOADER_WINDOW_MS) {
   const deadline = Date.now() + ms
   while (Date.now() < deadline) {
@@ -90,7 +76,6 @@ async function assertNoLoader(page, ms = LOADER_WINDOW_MS) {
   }
 }
 
-/** loader 在 #main 内、布局几何稳定（无横向溢出、Footer 可见且在 loader 之下）。 */
 async function assertGeometry(page) {
   const geometry = await page.evaluate(`(() => {
     const loader = document.querySelector('[data-testid=view-loading]')?.getBoundingClientRect()
@@ -108,13 +93,12 @@ async function assertGeometry(page) {
   assert.equal(geometry.footerVisible, true, 'footer must stay fully visible')
 }
 
-/** 加载期间壳仍可交互：侧边栏「更多」可打开、面板链接可导航。 */
 async function assertShellInteractiveDuringLoader(page, target) {
   await navigateViaMore(page, target)
   await viewIs(page, target)
 }
 
-await scenario('fast-transition-desktop', 1440, 900, false, async page => {  // 预热：首次加载允许 loader（dev transform 冷启动不可控），不作为断言对象
+await scenario('fast-transition-desktop', 1440, 900, false, async page => {
   await navigateViaMore(page, 'history')
   await page.waitForValue(`!!document.querySelector('.history-page')`, Boolean, { label: 'history rendered (warmup)' })
   await navigateViaMore(page, 'contact')
@@ -143,7 +127,6 @@ await scenario('latest-wins-desktop', 1440, 900, false, async (page, modulePlan)
   await navigateViaMore(page, 'contact')
   await page.waitForValue(`!!document.querySelector('.contact-page')`, Boolean, { label: 'contact wins' })
   assert.equal(await page.evaluate(`!!document.querySelector('.history-page')`), false, 'B must not render')
-  // history（先发起、更慢）此刻 resolve：不得覆盖 C，也不得残留它的 loader
   await delay(1500)
   assert.equal(await page.evaluate(`!!document.querySelector('.contact-page')`), true, 'contact must stay rendered')
   assert.equal(await page.evaluate(`!!document.querySelector('.history-page')`), false, 'history must never overwrite contact')
@@ -168,7 +151,6 @@ await scenario('back-forward-desktop', 1440, 900, false, async (page, modulePlan
   modulePlan.set(CONTACT_MODULE, { delayMs: 700 })
   await navigateViaMore(page, 'contact')
   await page.waitForValue(loaderVisible, Boolean, { label: 'loader on forward transition' })
-  // contact 还在 pending 时 Back：latest-wins 同样适用于 popstate，history 立即可用
   await page.evaluate('history.back()')
   await viewIs(page, 'history')
   await page.waitForValue(`!!document.querySelector('.history-page')`, Boolean, { label: 'history rendered after back' })
@@ -186,7 +168,6 @@ await scenario('slow-transition-compact-390', 390, 844, true, async (page, modul
   await page.goto(`${origin}/?view=history`)
   await page.waitForValue(loaderVisible, Boolean, { label: 'loader appears (compact deep link)' })
   await assertGeometry(page)
-  // 顶栏菜单不被 loader 覆盖且可点击；经抽屉仍能离开加载中的页面
   const menuReachable = await page.evaluate(`(() => { const menu = document.querySelector('[data-testid=nav-menu]'); if (!menu) return null; const r = menu.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('[data-testid=nav-menu]') != null })()`)
   assert.equal(menuReachable, true, 'top bar menu must stay clickable above the loader')
   await tap(page, '[data-testid=nav-menu]', true)

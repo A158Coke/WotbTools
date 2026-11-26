@@ -10,7 +10,6 @@ import { state, makeResp, mountPage, pngButton, setCloneScrollConfig, interceptA
 describe('ReplayPage PNG export', () => {
   let origCreateObjectURL, origRevokeObjectURL, mockCanvas, wrapper, h2cDefaultImpl
 
-  // Shared deferred promise controls
   let resolveH2c
 
   function pauseH2c() {
@@ -31,7 +30,6 @@ describe('ReplayPage PNG export', () => {
     wrapper = null
     state.clear()
     stripOffscreen()
-    // Reset initial values for next test
     state.init = { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en' }
   })
 
@@ -117,7 +115,6 @@ describe('ReplayPage PNG export', () => {
 
     it('uses profile-derived theme:winter→light, summer→dark (data-theme 由 useUiProfile 派生)', async () => {
       state.init.resp = makeResp()
-      // 寒冬 → data-theme=light → 浅色导出
       setUiProfile('winter')
       h2c.resetCalls()
       wrapper = mountPage()
@@ -125,7 +122,6 @@ describe('ReplayPage PNG export', () => {
       await flushPromises()
       expect(document.documentElement.getAttribute('data-theme')).toBe('light')
       expect(h2c.getCalls()[0][1].backgroundColor).toBe('#ffffff')
-      // 盛夏 → data-theme=dark → 深色导出
       setUiProfile('summer')
       h2c.resetCalls()
       wrapper = mountPage()
@@ -291,11 +287,9 @@ describe('ReplayPage PNG export', () => {
       await startExportAndWaitForH2c()
       expect(h2c.getCalls()[0][0].textContent).toContain('Lagoon')
 
-      // Verify we're in single view (b0)
       expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
       expect(activeTabButton(wrapper).text()).not.toContain('result.aggregate_tab')
 
-      // Switch to b1 via REAL ref: view still single (toggle unchanged), target row follows currentSingleIndex
       state.setActiveTab('b1')
       await flushPromises()
       expect(activeTabButton(wrapper).text()).toContain('result.single_tab')
@@ -345,17 +339,14 @@ describe('ReplayPage PNG export', () => {
       await startExportAndWaitForH2c()
       expect(h2c.getCalls()[0][0].textContent).toContain('Lagoon')
 
-      // Clear response via REAL ref
       state.setResp(null)
       await flushPromises()
-      // PNG button should disappear since resp is null
       expect(pngButton(wrapper)).toBeUndefined()
 
       await completeExport()
 
       const anchors = captureAnchors()
       expect(anchors.length).toBe(1)
-      // Must still contain Lagoon from saved context, not fallback to battle-N
       expect(anchors[0].outerHTML).toMatch(/Lagoon/)
       expect(anchors[0].outerHTML).not.toMatch(/battle-/)
     })
@@ -512,8 +503,6 @@ describe('ReplayPage PNG export', () => {
       return () => clone
     }
 
-    // 视图忠实 stub：渲染 sticky 列 + selected 行（正是 color-mix 所在 selector），
-    // 用于验证 prepareReplayExportClone 把 clone 变成确定性静态快照。
     function safeStubs() {
       return {
         CwPlayerSummaryTable: {
@@ -565,7 +554,6 @@ describe('ReplayPage PNG export', () => {
     })
 
     it('export-safe CSS overrides every color-mix-bearing table cell/header selector', async () => {
-      // export-safe CSS 已拆至 sidecar：契约覆盖宿主源 + css
       const cssText = readFileSync(join(process.cwd(), 'src/components/replay-page.css'), 'utf8')
       const src = (await import('./ReplayPage.vue?raw')).default + '\n' + cssText
       expect(src).toMatch(/\.replay-export-root \.sticky-col \{[\s\S]*?position: static !important;/)
@@ -615,7 +603,6 @@ describe('ReplayPage PNG export', () => {
       })
     }
 
-    /** 视图忠实 stub：按 props 渲染当前可见列/顺序（PNG 克隆的就是这段 DOM，不再替换）。 */
     function viewStubs() {
       return {
         BattleTable: {
@@ -672,7 +659,6 @@ describe('ReplayPage PNG export', () => {
       expect(headerKeys(html)).toEqual([
         'player_labels.nickname', 'player_labels.league_rating', 'player_labels.league_shooting_score', 'player_labels.damage_dealt'
       ])
-      // 未勾选的列不得偷偷进入 PNG（不再是「全量列导出」contract）
       expect(headerKeys(html)).not.toContain('player_labels.kills')
       expect(headerKeys(html)).not.toContain('player_labels.league_damage_score')
       expect(headerKeys(html)).not.toContain('player_labels.victory_points_earned')
@@ -702,7 +688,6 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       const html = getClone().querySelector('.tablewrap').innerHTML
-      // Beta（league_rating / 七维 null）→ '--'；不出现 0 / 0% 伪造
       expect(html).toContain('--')
       expect(html).not.toContain('0 / 1000')
       expect(html).not.toContain('0 / 400')
@@ -719,7 +704,6 @@ describe('ReplayPage PNG export', () => {
           { key: 'nickname', num: false }, { key: 'battles', num: true }, { key: 'wins', num: true },
           { key: 'damage_avg', num: true }, { key: 'earned_avg', num: true },
           { key: 'multi_damage_rate', num: true }, { key: 'survival_time_avg', num: true },
-          // B6：tanks 仍在 wire（结构化 vehicle usage），但列层不展示
           { key: 'tanks', num: false },
         ],
         playerColumns: [{ key: 'nickname', num: false }],
@@ -758,15 +742,12 @@ describe('ReplayPage PNG export', () => {
       await pngButton(wrapper).trigger('click')
       await flushPromises()
       const wraps = getClone().querySelectorAll('.tablewrap')
-      expect(wraps.length).toBeGreaterThanOrEqual(2) // 玩家统一表 + 战队汇总表
-      // 玩家统一表 = 当前 cw 可见列（不包含隐藏的七维），顺序严格保持
+      expect(wraps.length).toBeGreaterThanOrEqual(2)
       expect(headerKeys(wraps[0].innerHTML)).toEqual([
         'agg_labels.nickname', 'agg_labels.league_rating', 'agg_labels.multi_damage_rate',
         'agg_labels.rated_battles', 'agg_labels.damage_avg'
       ])
-      // B6：tanks 不在列 universe → PNG 也不得出现
       expect(headerKeys(wraps[0].innerHTML)).not.toContain('agg_labels.tanks')
-      // 战队汇总表 = 当前完整显示列
       const teamKeys = headerKeys(wraps[1].innerHTML)
       expect(teamKeys[0]).toBe('league.summary.team_name')
       expect(teamKeys).toContain('league.summary.league_rating')

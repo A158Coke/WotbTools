@@ -10,24 +10,6 @@ import java.util.List;
 import jdk.jfr.Recording;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Explicit real-provider benchmark for the bounded AI worker thread model.
- * It is deliberately independent from replay processing and uses a tiny fixed
- * prompt so provider generation cost does not dominate the thread comparison.
- *
- * <p>Run only with an out-of-band key and an explicit enable flag:</p>
- * <pre>
- * $env:AI_API_KEY = "..."
- * mvn -pl wotb-web -am test `
- *   "-Dtest=AiVirtualThreadBenchmarkTest" `
- *   "-Dai.probe.excludedGroups=" `
- *   "-Dai.vt.enabled=true" `
- *   "-Dai.vt.jfrFile=target/ai-vt-benchmark/ai-vt.jfr"
- * </pre>
- *
- * <p>The benchmark concurrency values are experimental admission limits for
- * this test only. They do not change production AI or replay limits.</p>
- */
 @Tag("ai-live")
 class AiVirtualThreadBenchmarkTest extends AiVirtualThreadBenchmarkSupport {
 

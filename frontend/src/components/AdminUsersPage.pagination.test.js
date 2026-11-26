@@ -13,7 +13,6 @@ const api = vi.hoisted(() => ({
   deleteUsers: vi.fn()
 }))
 
-// login / ensureToken 必须可断言：离线时页面**不允许**走到认证路径（既不 refresh 也不跳登录）。
 const auth = vi.hoisted(() => ({
   ensureToken: vi.fn(() => Promise.resolve(true)),
   login: vi.fn()
@@ -40,7 +39,6 @@ vi.mock('../utils/display.js', () => ({
   apiErrorCodeLabel: (_t, _te, code) => (code ? 'code:' + code : '')
 }))
 
-// t(key, params) → "key(k=v,...)"：断言时同时锁定 key 与插值参数。
 const i18n = vi.hoisted(() => ({
   translate: (key, params) => (params
     ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
@@ -51,10 +49,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.translate, te: () => true })
 }))
 
-/**
- * 连通性夹具：AdminUsersPage 是 ONLINE_REQUIRED，本套件用**真实** connectivity store
- * （只替换 navigator.onLine），从而验证「门禁 → 认证 → backend」的真实顺序。
- */
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
 }
@@ -65,7 +59,6 @@ async function goOnline() {
   await useConnectivity().start()
 }
 
-/** AdminUserListItem fixture（Keycloak segment 默认：无本地资料）。 */
 function kcUser(keycloakUserId, overrides = {}) {
   return {
     keycloakUserId,
@@ -97,7 +90,6 @@ describe('AdminUsersPage', () => {
     ))
     api.deleteUsers.mockResolvedValue({ requested: 2, deleted: 2, failed: 0, results: [] })
     auth.ensureToken.mockResolvedValue(true)
-    // 默认在线：绝大多数用例测的是页面行为，不是连通性。
     await goOnline()
   })
 
@@ -124,7 +116,6 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    // 首次加载：page 0-based、默认每页 25，绝不出现 limit 式大页请求。
     expect(api.searchUsers).toHaveBeenCalledWith('', {
       segment: 'keycloak', idpAlias: '', page: 0, size: 25
     })
@@ -150,7 +141,6 @@ describe('AdminUsersPage', () => {
       segment: 'keycloak', idpAlias: '', page: 0, size: 25
     })
 
-    // 每页数量变化 → 回到第一页重新请求。
     await wrapper.find('.admin-pagination select').setValue('50')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', {
@@ -158,7 +148,6 @@ describe('AdminUsersPage', () => {
     })
   })
 
-  // 指定页跳转：UI 页码 1-based → 后端 page 0-based，一次直达目标页（不加载中间页）
   it('jumps straight to the requested page with 1-based input mapped to 0-based backend page', async () => {
     api.searchUsers.mockImplementation((_query, options) => Promise.resolve(
       pageResult([kcUser(`kc-page-${options.page}`)], options.page, options.size, 6000, 120)
@@ -178,7 +167,6 @@ describe('AdminUsersPage', () => {
     expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=20,total=120,items=6000)')
     expect(input.element.value).toBe('')
 
-    // UI 第 1 页 → 后端 page=0
     await input.setValue('1')
     await wrapper.find('.admin-page-go').trigger('click')
     await flushPromises()
@@ -203,7 +191,6 @@ describe('AdminUsersPage', () => {
       expect(api.searchUsers).toHaveBeenCalledTimes(1)
     }
 
-    // 当前页（UI 第 1 页）不重复请求
     await input.setValue('1')
     await input.trigger('keydown.enter')
     await flushPromises()
@@ -250,13 +237,11 @@ describe('AdminUsersPage', () => {
 
     expect(wrapper.find('.admin-bulk-bar').exists()).toBe(false)
 
-    // 表头 checkbox = 全选当前页。
     const headCheckbox = wrapper.find('.admin-table thead input[type="checkbox"]')
     await headCheckbox.setValue(true)
     expect(rows().every(row => row.find('input[type="checkbox"]').element.checked)).toBe(true)
     expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=2)')
 
-    // 取消一行 → 计数跟随（partial selection 时不勾表头）。
     await rows()[1].find('input[type="checkbox"]').setValue(false)
     expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
     expect(headCheckbox.element.checked).toBe(false)
@@ -267,7 +252,6 @@ describe('AdminUsersPage', () => {
     expect(modal.exists()).toBe(true)
     expect(modal.text()).toContain('admin.bulkConfirmText(count=1)')
 
-    // 未输入 DELETE 前不可提交。
     const confirmButton = modal.find('.bulk-confirm')
     expect(confirmButton.attributes('disabled')).toBeDefined()
     await modal.find('.admin-confirm-input').setValue('DELET')
@@ -280,7 +264,6 @@ describe('AdminUsersPage', () => {
     expect(api.deleteUsers).toHaveBeenCalledTimes(1)
     expect(api.deleteUsers.mock.calls[0][1]).toBe(true)
     expect(api.deleteUsers.mock.calls[0][0]).toEqual(['kc-a'])
-    // 删除完成后 reload 当前页。
     expect(api.searchUsers).toHaveBeenCalledTimes(2)
   })
 
@@ -307,7 +290,6 @@ describe('AdminUsersPage', () => {
     expect(modal.text()).toContain('admin.bulkFailures')
     expect(modal.text()).toContain('kc-b')
     expect(modal.text()).toContain('code:USER_HAS_DEPENDENCIES')
-    // 失败项保留选择以便重试，成功项移出选择集。
     expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
 
     await modal.find('.bulk-cancel').trigger('click')
@@ -318,7 +300,6 @@ describe('AdminUsersPage', () => {
     const requestedPages = []
     api.searchUsers.mockImplementation((_query, options) => {
       requestedPages.push(options.page)
-      // 删除前 3 页；删除后只剩 1 页 5 条 —— 第 3 页已不存在。
       return Promise.resolve(requestedPages.length <= 3
         ? pageResult([kcUser(`kc-${options.page}`)], options.page, options.size, 60, 3)
         : pageResult([kcUser('kc-last')], 0, options.size, 5, 1))
@@ -337,7 +318,6 @@ describe('AdminUsersPage', () => {
     await wrapper.find('.bulk-confirm-modal .bulk-confirm').trigger('click')
     await flushPromises()
 
-    // 先按 page=2 重新加载，发现 totalPages=1 后回落到最后一个有效页 page=0。
     expect(requestedPages.slice(-2)).toEqual([2, 0])
     expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=1,total=1,items=5)')
     expect(wrapper.find('.admin-page-prev').attributes('disabled')).toBeDefined()

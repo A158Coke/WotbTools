@@ -1,10 +1,3 @@
-/**
- * 各工作簿的表结构（Java `com.wotb.core.export`：SingleBattleSheets / AggregateSheets /
- * LeagueSingleSheets / LeagueAggregateSheets / LeagueExcelColumns），输出纯数据 {@link WorkbookSpec}。
- *
- * 逐格与 Java 一致由 `__golden__/java-export.json` 锁定（export.golden.test.ts）。
- * 与 Java 的结构差异：Java 用 `Players.enrich` 原地改写共享 Battle 的展示字段，这里只在取值时派生。
- */
 
 import { AGGREGATE_CORE_COLUMNS, AGGREGATE_PERFORMANCE_COLUMNS, LEAGUE_DIM_KEYS, LEAGUE_DIM_MAX, PLAYER_COLUMNS } from '../compute/columns.js'
 import { compareNumbers, doubleCompare, hasText } from '../compute/java.js'
@@ -23,7 +16,6 @@ import { dimensionTitle, PLAYER_PRESENTATION, SUMMARY_PRESENTATION, type TitleWi
 import { duration, formatEpoch, javaDoubleToString, mapNameCn, r1, teamName } from './format.js'
 import { autoFilter, newSheet, put, setCell, writeHeader, type Fill, type SheetSpec, type WorkbookSpec } from './spec.js'
 
-/** 战队名称覆盖（仅本次导出使用）：battle = `{arenaId}:{team}` → 名；summary = 批次 teamKey → 名。 */
 export interface TeamNameOverrides {
   battle: ReadonlyMap<string, string>
   summary: ReadonlyMap<string, string>
@@ -31,18 +23,14 @@ export interface TeamNameOverrides {
 
 export interface SheetContext {
   tankopedia: Tankopedia
-  /** IANA 时区；省略 = 浏览器本地时区（对应 Java `ZoneId.systemDefault()`）。 */
   timeZone?: string
 }
 
-// ---------- 共享取值 ----------
 
-/** Java `Players.sorted`：先队伍升序，同队伤害降序（稳定）。 */
 function sortedPlayers(players: readonly PlayerResult[]): PlayerResult[] {
   return [...players].sort((a, b) => compareNumbers(a.team, b.team) || compareNumbers(b.damageDealt, a.damageDealt))
 }
 
-/** Java `SingleBattleSheets.playerColumnValue`：survival_time 渲染为时长，其余直接取列值。 */
 function playerColumnValue(key: string, get: (e: { p: PlayerResult; tank: ReturnType<Tankopedia['info']> }) => unknown,
   p: PlayerResult, tankopedia: Tankopedia): unknown {
   const value = get({ p, tank: tankopedia.info(p.tankId) })
@@ -53,13 +41,11 @@ function playerHeader(): TitleWidth[] {
   return PLAYER_COLUMNS.map((c) => PLAYER_PRESENTATION[c.key])
 }
 
-/** `Map.get(k)` + `!isBlank()`。 */
 function override(map: ReadonlyMap<string, string>, key: string): string | null {
   const v = map.get(key)
   return v !== undefined && hasText(v) ? v : null
 }
 
-// ---------- 单场（SingleBattleSheets） ----------
 
 type PlayerRowTail = (sheet: SheetSpec, row: number, p: PlayerResult, fill: Fill, startCol: number) => void
 
@@ -94,7 +80,6 @@ function writeBattleInfo(wb: WorkbookSpec, b: Battle, ctx: SheetContext, extraRo
     ['战斗时长', duration(b.durationS)],
     ['获胜队伍', teamName(b.winnerTeam)],
     ['录像者', b.recorder],
-    // 客户端：上游 parseResult 暂未提供录像者车辆，battleFacts 填 ''（单元格保留）
     ['录像者车辆', b.recorderVehicle],
     ['玩家数', String(b.players?.length ?? 0)],
     ['竞技场ID', b.arenaId],
@@ -112,7 +97,6 @@ function toHex(bytes: Uint8Array): string {
   return [...bytes].map((x) => x.toString(16).padStart(2, '0')).join('')
 }
 
-/** 原始字段（protobuf field-number 透视）；客户端 Battle.raw 恒为 null → 只有玩家/账号ID 两列。 */
 function writeRaw(wb: WorkbookSpec, b: Battle): void {
   const ws = newSheet(wb, '原始字段')
   const fieldNums = new Set<number>()
@@ -136,7 +120,6 @@ function writeRaw(wb: WorkbookSpec, b: Battle): void {
   }
 }
 
-/** 单场工作簿：玩家数据 / 战斗信息 / 原始字段（Java `ExcelExporter.writeSingle`）。 */
 export function singleWorkbook(battle: Battle, ctx: SheetContext): WorkbookSpec {
   const wb: WorkbookSpec = { sheets: [], activeTab: 0 }
   writePlayers(wb, battle, ctx, null, null)
@@ -146,7 +129,6 @@ export function singleWorkbook(battle: Battle, ctx: SheetContext): WorkbookSpec 
   return wb
 }
 
-// ---------- League 单场（LeagueSingleSheets） ----------
 
 function percent(v: number, max: number): number {
   return max <= 0 || v <= 0 ? 0 : r1(100.0 * v / max)
@@ -156,12 +138,10 @@ function byAccount(result: LeagueRatingResult, accountId: number) {
   return result.players.find((p) => p.accountId === accountId) ?? null
 }
 
-/** Java `LeagueRatingResult.team(int)`：1 → team1，其余 → team2。 */
 function resultTeam(result: LeagueRatingResult, team: number): TeamLeagueRating {
   return team === 1 ? result.team1 : result.team2
 }
 
-/** League 单场工作簿（Java `ExcelExporter.writeSingleLeague`）。 */
 export function singleLeagueWorkbook(battle: Battle, result: LeagueRatingResult, ctx: SheetContext,
   battleOverrides: ReadonlyMap<string, string>): WorkbookSpec {
   const wb: WorkbookSpec = { sheets: [], activeTab: 0 }
@@ -205,9 +185,7 @@ export function singleLeagueWorkbook(battle: Battle, result: LeagueRatingResult,
   return wb
 }
 
-// ---------- 多场汇总（AggregateSheets） ----------
 
-/** 结构化用车 → 文本（名称由 Tankopedia 解析；未知/空名显式退化为 #id）。 */
 function vehicleUsageText(usage: readonly PlayerVehicleUsage[], tankopedia: Tankopedia): string {
   return usage.map((u) => {
     const name = tankopedia.info(u.tankId).name
@@ -318,7 +296,6 @@ function writeAggregateSheets(wb: WorkbookSpec, battles: readonly Battle[], sour
   battleListSheet(wb, battles, sourceNames, duplicates, ctx, prefix)
 }
 
-/** 多场汇总工作簿：汇总 / 明细 / 战斗列表（Java `ExcelExporter.writeAggregate`）。 */
 export function aggregateWorkbook(battles: readonly Battle[], sourceNames: readonly string[],
   duplicates: readonly [string, string][], ctx: SheetContext): WorkbookSpec {
   const wb: WorkbookSpec = { sheets: [], activeTab: 0 }
@@ -326,7 +303,6 @@ export function aggregateWorkbook(battles: readonly Battle[], sourceNames: reado
   return wb
 }
 
-// ---------- League 批量（LeagueAggregateSheets） ----------
 
 function failureLabel(code: string): string {
   switch (code) {
@@ -462,7 +438,6 @@ function leagueBattleList(wb: WorkbookSpec, battles: readonly Battle[], sourceNa
   ws.freeze = { xSplit: 1, ySplit: 1 }
 }
 
-/** League 批量工作簿：Replay 汇总/明细/战斗列表 + 选手汇总/战队汇总/每场明细/战斗列表（Java `writeAggregateLeague`）。 */
 export function aggregateLeagueWorkbook(battles: readonly Battle[], sourceNames: readonly string[],
   duplicates: readonly [string, string][], batch: LeagueRatingBatch, ctx: SheetContext,
   overrides: TeamNameOverrides): WorkbookSpec {

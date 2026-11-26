@@ -3,7 +3,6 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// 第三方 UI primitive 只允许出现在 WotbTools 组件边界内（design-language：Reka/motion 不泄漏成页面层的新 design system API）。
 const SRC = fileURLToPath(new URL('../', import.meta.url))
 
 const OWNERS: Record<string, string[]> = {
@@ -25,7 +24,6 @@ const OWNERS: Record<string, string[]> = {
   ],
 }
 
-// breakpoint 归 useBreakpoint()，持久化归现有 owner：这些 VueUse composable 不得引入第二个 owner。
 const FORBIDDEN_VUEUSE = ['useStorage', 'useLocalStorage', 'useSessionStorage', 'useBreakpoints']
 
 function productionFiles(directory: string): string[] {

@@ -52,7 +52,6 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     for (const card of cards) {
       const media = card.find('.tp-media')
       expect(media.find('[data-testid="tank-cover-nation"]').exists()).toBe(true)
-      // 背景层必须是第一个子节点，坦克图在其后（后绘制的坦克图覆盖背景，不被布旗遮挡）。
       expect(media.element.firstElementChild.className).toContain('tank-cover-flag')
       expect(media.element.children[1].tagName).toBe('IMG')
       expect(media.element.children[1].className).not.toContain('tank-cover-flag')
@@ -182,7 +181,6 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
       const toggle = wrapper.get('[data-testid="filter-toggle"]')
       search.element.focus()
       expect(document.activeElement).toBe(search.element)
-      // Dispatch activation without focusing the button, as touch browsers may do.
       await toggle.trigger('click')
       await flushPromises()
       const done = wrapper.get('[data-testid="filter-sheet-done"]')
@@ -255,12 +253,10 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
     await wrapper.find('#tp-nation [data-value="germany"]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0]).toMatchObject({ nation: 'germany', tier: '10', sort: 'name' })
-    // sort / type 是 Choice Group（DC-SEL-01）：点选而非 <select>.setValue
     await wrapper.find('#tp-sort [data-value="hp"]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0].sort).toBe('hp')
     await wrapper.find('#tp-type [data-value="heavyTank"]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0].type).toBe('heavyTank')
-    // 「全部」= 空值选项：仍可清除筛选（不计入候选数）
     await wrapper.find('#tp-type [data-value=""]').trigger('click')
     expect(wrapper.emitted('update:filters')?.at(-1)?.[0].type).toBe('')
     wrapper.unmount()

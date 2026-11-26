@@ -16,14 +16,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/**
- * Field-specific method1 raw-cause validator contract.
- *
- * <p>Semantic comes from the packet-local invariant (causeFlag + sourceEntity relationship); settlement
- * deathReason must never gate intermediate FIRE / RAMMING / DIRECT events. The raw event keeps
- * {@code cause=null} while unvalidated (decoder-like), and the semantic is absent when the entity is not
- * a settled combatant.</p>
- */
 class VehicleHealthCauseValidatorTest {
 
     private static final int EID = 7;
@@ -52,7 +44,6 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void drowningRequiresProvenSelfSource() {
-        // flag5 without the self/environment source relation is not a proven drowning.
         assertNull(VehicleHealthCauseValidator.validate(event(5, 99), null, mapping()));
         assertEquals(VehicleHealthStateEvent.Cause.DROWNING,
                 VehicleHealthCauseValidator.validate(event(5, EID), null, mapping()));
@@ -60,8 +51,6 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void intermediateFireAndRammingNotDroppedByDifferentSettlementReason() {
-        // Final settlement deathReason = 5 (drowning), but intermediate FIRE (flag=1) / RAMMING (flag=2)
-        // must still validate from the packet-local invariant, not be dropped by cross-evidence.
         final Battle battle = battle(5, false);
         assertEquals(VehicleHealthStateEvent.Cause.FIRE,
                 VehicleHealthCauseValidator.validate(event(1, 99), battle, mapping()));
@@ -73,8 +62,6 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void survivorIntermediateCauseStillValidates() {
-        // A survivor (settlement deathReason = -1 sentinel) must not cause the validator to drop a
-        // packet-local proven intermediate cause.
         final Battle battle = battle(-1, true);
         assertEquals(VehicleHealthStateEvent.Cause.FIRE,
                 VehicleHealthCauseValidator.validate(event(1, 99), battle, mapping()));
@@ -84,17 +71,13 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void unvalidatableCauseWithholdsSemantic() {
-        // Unknown flag (no packet-local invariant) -> semantic absent, raw retained.
         assertNull(VehicleHealthCauseValidator.validate(event(9, 99), null, mapping()));
-        // Entity not resolvable to a settled combatant -> semantic absent.
         final TeamEntityMapping empty = new TeamEntityMapping(Map.of(), Map.of(), 0, List.of());
         assertNull(VehicleHealthCauseValidator.validate(event(5, EID), null, empty));
     }
 
     @Test
     void packetLocalSemanticMatchesDerivation() {
-        // The packet-local derivation (consumed by reconstruction) is the same semantic the identity
-        // gate wraps; it is not decoder promotion (cause field stays null on the raw event).
         assertEquals(VehicleHealthStateEvent.Cause.DIRECT,
                 VehicleHealthStateEvent.deriveSemanticCause(event(0, 99)));
         assertEquals(VehicleHealthStateEvent.Cause.FIRE,
@@ -111,8 +94,6 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void sourceRelationshipIsThePacketLocalInvariant() {
-        // flag1/flag2 require an external source; flag3/flag5 require the self/environment source.
-        // An unmet relation withholds the semantic (absent), never guesses a cause.
         assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(1, EID)), "flag1 self -> absent");
         assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(2, EID)), "flag2 self -> absent");
         assertNull(VehicleHealthStateEvent.deriveSemanticCause(event(3, 99)), "flag3 external -> absent");
@@ -129,9 +110,7 @@ class VehicleHealthCauseValidatorTest {
 
     @Test
     void rawCauseAlwaysRetainedWhenSemanticAbsent() {
-        // When the invariant is unmet the raw fields (causeFlag/sourceEntity) are retained and the
-        // decoder keeps the semantic cause=null (raw is never overwritten by a guessed semantic).
-        final VehicleHealthStateEvent e = event(5, 99); // flag5 + external source -> semantic absent
+        final VehicleHealthStateEvent e = event(5, 99);
         assertNull(e.cause());
         assertEquals(5, e.causeFlag());
         assertEquals(99, e.sourceEntity());

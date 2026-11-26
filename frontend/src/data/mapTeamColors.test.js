@@ -1,4 +1,3 @@
-// Playback 语义色 SSOT：角色 / 变体 / 视角映射 / root CSS vars。
 import { describe, expect, it } from 'vitest'
 import {
   PLAYBACK_ON_NEUTRAL,

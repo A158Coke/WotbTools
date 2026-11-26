@@ -7,7 +7,6 @@ import AppButton from './AppButton.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import { copyText } from '../utils/clipboard.js'
 
-// design-language §8：不用 emoji 当图标。Lucide 不收录品牌 logo，用语义相近的通用图标，平台名写在卡片标题里
 const contacts = [
   { key: 'qq', icon: MessageCircle, value: '1582536892' },
   { key: 'wechat', icon: MessageSquareText, value: 'a1582536892' },
@@ -31,7 +30,6 @@ async function copyContact(contact) {
   <div class="contact-page layout-content">
     <ShowcaseHero section="community" :kicker="$t('nav.groups.community')" :title="$t('contact.title')" :description="$t('contact.subtitle')" />
 
-    <!-- 最快的方式：站内反馈（4.0「联系我」稿） -->
     <button v-if="openFeedback" type="button" class="contact-feedback" data-testid="contact-feedback" @click="openFeedback()">
       <MessageSquare class="contact-feedback-icon" :size="24" aria-hidden="true" />
       <span class="contact-feedback-text"><strong>{{ $t('contact.fastestTitle') }}</strong><span>{{ $t('contact.fastestDesc') }}</span></span>
@@ -50,8 +48,6 @@ async function copyContact(contact) {
       </div>
     </div>
 
-    <!-- 正式投诉/举报渠道声明（公安自评估「是否建立投诉举报机制」），整段保留。放在联系方式卡片
-         下方，文案里的「上方联系方式」指向真实入口。 -->
     <section class="contact-report" data-testid="contact-report">
       <h2>{{ $t('contact.report_title') }}</h2>
       <p>{{ $t('contact.report_body') }}</p>

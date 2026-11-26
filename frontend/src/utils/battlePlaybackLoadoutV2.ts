@@ -5,12 +5,7 @@ import type {
   ModuleCrewTransition,
 } from '../types/playback-v2.js'
 
-/**
- * V2 装载（consumable / module / crew）运行时状态的纯查询工具（自 battlePlaybackV2.ts
- * 出仓，2026-11-21 结构拆分：代码与搬移前逐字一致，公共入口仍由 battlePlaybackV2 re-export）。
- */
 
-/** Current runtime state keyed by canonical consumable slot, not array position or wire code. */
 export function consumableRuntimeSlotsAt(
   transitions: readonly ConsumableTransition[] | null | undefined,
   t: number,
@@ -33,7 +28,6 @@ export function consumableRuntimeSlotsAt(
   return states
 }
 
-/** Current recorder-visible state per module/crew component. */
 export function moduleCrewStatesAt(
   transitions: readonly ModuleCrewTransition[] | null | undefined,
   t: number,

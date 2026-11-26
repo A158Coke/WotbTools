@@ -33,13 +33,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/**
- * RequestIdFilter 行为测试：
- * <ul>
- *   <li>单元层：MDC 设置/清理、请求头继承、未传时生成 UUID、长度限制。</li>
- *   <li>集成层：2xx / 401 / 403 响应都必须带 X-Request-ID（验证 filter 先于 Security 执行）。</li>
- * </ul>
- */
 class RequestIdFilterTest {
 
     private AnnotationConfigWebApplicationContext context;
@@ -51,7 +44,6 @@ class RequestIdFilterTest {
         }
     }
 
-    // ---------- 单元层 ----------
 
     @Test
     void generatedUuidIsSetOnResponseAndMdc() throws Exception {
@@ -141,7 +133,6 @@ class RequestIdFilterTest {
         }
     }
 
-    // ---------- 集成层（2xx/401/403 都带 X-Request-ID） ----------
 
     @Test
     void publicRouteReturnsXRequestId() throws Exception {

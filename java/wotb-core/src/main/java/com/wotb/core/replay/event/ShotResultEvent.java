@@ -45,14 +45,9 @@ public record ShotResultEvent(
         List<Integer> modifierIds
 ) implements ReplayEvent {
 
-    /** 组件/乘员命中结果（method38 componentToken + rawState）。 */
     public record ComponentResult(int token, int state) {
     }
 
-    /**
-     * method38 组件 token 语义（docs/research/replay/method38-component-token-namespace.md）。
-     * 42 未在 corpus 观测 → {@link #UNKNOWN}，保留 raw。
-     */
     public enum ComponentKind {
         ENGINE(31),
         AMMO_RACK(32),
@@ -74,7 +69,6 @@ public record ShotResultEvent(
             this.token = token;
         }
 
-        /** token → 语义化组件；未观测 token → UNKNOWN（保留 raw）。 */
         public static ComponentKind of(final int token) {
             for (final ComponentKind kind : values()) {
                 if (kind.token == token) {

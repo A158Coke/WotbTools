@@ -1,16 +1,3 @@
-/**
- * Tier X 专属车型 — validator（纯逻辑，vitest 与 CLI 脚本共用）。
- *
- * 校验层次（docs/assets/tier-x-models/README.md「Validation」）：
- * 1. validateCoverage     — Tankopedia Tier X 100% mapping 覆盖 + mapping 完整性
- * 2. validateMetadata     — metadata.json 契约（含与 mapping 的 kind 一致性）
- * 3. validateSvgText      — SVG 技术契约（仅 Legacy/debug extractor 输出；正式资产无 SVG）
- * 4. validateModelEntry   — 单车型目录完整性（hull.webp 必填、turreted 必配 turret.webp +
- *                           turretPivot + turretRaster、turretless 禁止 turret、禁止多余文件）
- *
- * 设计：assets/ 下出现 metadata.json 即视为“资产已就位”，hull.webp（+turret.webp，turreted）
- * 必须同时完整——半成品目录会直接 FAIL，防止覆盖率静默退化。
- */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +12,6 @@ import {
 
 const ASSETS_DIR = fileURLToPath(new URL('./assets/', import.meta.url))
 
-/** 简单 XML 结构检查：根元素 + 标签平衡（不引入 XML 解析依赖）。 */
 export function validateSvgText(svgText) {
   const errors = []
   if (typeof svgText !== 'string' || svgText.trim() === '') {
@@ -55,11 +41,6 @@ export function validateSvgText(svgText) {
   return errors
 }
 
-/**
- * metadata.json 契约校验（Source-faithful PBR top-view asset）。
- * expectedKind 来自 mapping（null = 非映射目录）。
- * 正式资产（mapping 内 modelKey）强制 source.provider === 'blitzkit'。
- */
 export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   const errors = []
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
@@ -77,7 +58,6 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else if (expectedKind && meta.kind !== expectedKind) {
     errors.push(`metadata.kind=${meta.kind} 与 mapping ${modelKey}.kind=${expectedKind} 不一致`)
   }
-  // —— source（BlitzKit 数据源契约：视觉 model.glb + models.pb）——
   const src = meta.source
   if (!src || typeof src !== 'object') {
     errors.push('metadata 必须提供 source（几何来源）')
@@ -88,7 +68,6 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       errors.push(`正式资产（mapping 内）source.provider 必须为 blitzkit，实际 ${JSON.stringify(src.provider)}`)
     }
     if (src.provider === SOURCE_PROVIDER_BLITZKIT) {
-      // 正式 blitzkit 资产：tankId + 数据源 URL 必填
       if (!Number.isInteger(src.tankId) || src.tankId <= 0) {
         errors.push('source.tankId 必须为正整数')
       }
@@ -107,7 +86,6 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       }
     }
   }
-  // —— generation（生成记录）——
   const gen = meta.generation
   if (!gen || typeof gen !== 'object') {
     errors.push('metadata 必须提供 generation（生成记录）')
@@ -123,14 +101,9 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
     if (gen.notes !== undefined && typeof gen.notes !== 'string') {
       errors.push('generation.notes 必须为字符串')
     }
-    // turretRaster 是 authoritative runtime geometry contract，只允许在顶层——
-    // generation 内重复出现视为 schema 漂移（PR2 用顶层做 asset positioning）
     if (gen.turretRaster !== undefined) {
       errors.push('generation 内禁止 turretRaster（authoritative 契约只在顶层 metadata.turretRaster）')
     }
-    // Source-faithful PBR 契约（正式资产强制）：fidelity=high、geometryScale=faithful；
-    // visibleDetailRetentionTarget ∈ (0,1] 仅为 visual QA target（非 geometric-detail-retention
-    // guarantee——几何上限 = BlitzKit/WoTB LOD0 source）
     if (expectedKind) {
       if (gen.fidelity !== 'high') {
         errors.push('正式资产 generation.fidelity 必须为 "high"（HIGH-FIDELITY ASSET）')
@@ -144,7 +117,6 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       }
     }
   }
-  // —— turretRaster（raster overflow contract：炮管超出 320 画布的 turret 资产）——
   if (meta.kind === 'turreted') {
     const r = meta.turretRaster
     if (!r || typeof r !== 'object') {
@@ -157,14 +129,12 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
       }
       if (typeof r.pixelWidth === 'number' && r.pixelWidth <= 0) errors.push('turretRaster.pixelWidth 必须 > 0')
       if (typeof r.pixelHeight === 'number' && r.pixelHeight <= 0) errors.push('turretRaster.pixelHeight 必须 > 0')
-      // pivot 是 image-local 逻辑坐标，必须落在 raster bounds 内（0..logicalW/H）
       if (typeof r.pivotX === 'number' && !(r.pivotX >= 0 && r.pivotX <= r.pixelWidth / 2 + 0.01)) {
         errors.push('turretRaster.pivotX 必须落在 image-local raster bounds 内（0..pixelWidth/2）')
       }
       if (typeof r.pivotY === 'number' && !(r.pivotY >= 0 && r.pivotY <= r.pixelHeight / 2 + 0.01)) {
         errors.push('turretRaster.pivotY 必须落在 image-local raster bounds 内（0..pixelHeight/2）')
       }
-      // turretPivot（320 画布坐标）与 raster 数学映射一致：pivot = logicalMin + image-local pivot
       const pv = meta.turretPivot
       if (pv && typeof pv.x === 'number' && typeof pv.y === 'number' && typeof r.logicalMinX === 'number' && typeof r.pivotX === 'number') {
         if (Math.abs(pv.x - (r.logicalMinX + r.pivotX)) > 0.11) {
@@ -178,7 +148,6 @@ export function validateMetadata(meta, { modelKey, expectedKind = null }) {
   } else if (meta.turretRaster !== undefined) {
     errors.push('turretless 禁止 turretRaster')
   }
-  // —— turretPivot ——
   if (meta.kind === 'turreted') {
     const p = meta.turretPivot
     if (!p || typeof p !== 'object') {
@@ -219,12 +188,10 @@ export function validateModelEntry({ modelKey, kind, files }) {
       errors.push(`metadata.json 不是合法 JSON：${e.message}`)
     }
     if (meta) errors.push(...validateMetadata(meta, { modelKey, expectedKind: kind }))
-    // 非映射目录（kind=null，如 sample）用 metadata 自声明的 kind 继续做资产校验
     if (kind === null && meta && (meta.kind === 'turreted' || meta.kind === 'turretless')) {
       kind = meta.kind
     }
   }
-  // 正式资产 = texture-baked webp（hull.webp 必填；turreted 必配 turret.webp）
   if (!files.hull || !isWebp(files.hull)) {
     errors.push('hull.webp 缺失或不是 WebP 二进制')
   }
@@ -232,7 +199,6 @@ export function validateModelEntry({ modelKey, kind, files }) {
     if (!files.turret || !isWebp(files.turret)) {
       errors.push('turreted 车型必须提供 turret.webp（WebP 二进制）')
     } else {
-      // turretRaster.pixelWidth/pixelHeight 必须与实际 turret.webp 尺寸一致
       let meta2 = null
       try { meta2 = files.metadata ? JSON.parse(files.metadata) : null } catch { meta2 = null }
       const r = meta2?.turretRaster
@@ -261,7 +227,6 @@ export function validateModelEntry({ modelKey, kind, files }) {
   return errors
 }
 
-/** 解析 WebP 尺寸（VP8X/VP8/VP8L 头；失败返回 null）。 */
 function webpDimensions(buf) {
   if (typeof buf !== 'string' || buf.length < 24) return null
   let off = 12
@@ -283,7 +248,6 @@ function webpDimensions(buf) {
   return null
 }
 
-/** WebP 魔数检查（RIFF....WEBP）。 */
 function isWebp(buf) {
   return (
     typeof buf === 'string' &&
@@ -293,7 +257,6 @@ function isWebp(buf) {
   )
 }
 
-/** 读取 assets/<modelKey>/ 目录（缺失文件为 null；webp 按 latin1 读以便魔数检查）。 */
 export function readModelDir(modelKey) {
   const dir = path.join(ASSETS_DIR, modelKey)
   const files = { hull: null, turret: null, metadata: null, bakeReport: null, extra: [] }
@@ -301,7 +264,7 @@ export function readModelDir(modelKey) {
   try {
     names = fs.readdirSync(dir)
   } catch {
-    return files // 目录不存在
+    return files
   }
   for (const name of names) {
     const full = path.join(dir, name)
@@ -318,7 +281,6 @@ export function readModelDir(modelKey) {
   return files
 }
 
-/** 列出 assets/ 下所有子目录（modelKey）。 */
 export function listModelKeys() {
   let names = []
   try {
@@ -329,11 +291,6 @@ export function listModelKeys() {
   return names.filter((n) => fs.statSync(path.join(ASSETS_DIR, n)).isDirectory())
 }
 
-/**
- * Tier X 覆盖校验：tankopedia 全量 vs mapping；传入 assetKeys 时继续校验
- * mapping → source asset 目录，避免只从现有目录反向遍历而漏掉整组缺失资产。
- * 返回 { errors, stats }；errors 为空即通过。
- */
 export function validateCoverage({ tankopedia, tankIdToModel, modelDefinitions, assetKeys = null }) {
   const errors = []
   const stats = { tankCount: 0, mappedCount: 0, modelKeyCount: Object.keys(modelDefinitions).length }

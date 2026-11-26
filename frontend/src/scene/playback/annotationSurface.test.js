@@ -79,7 +79,7 @@ describe('annotation surface picking policy', () => {
   it('accepts a rough elevated bridge face but rejects a low flat terrain plate', () => {
     const { raycaster } = cameraFromAbove()
     const bridgeFace = box(20, 1, 10, 0, 8, 0)
-    bridgeFace.rotation.x = Math.PI / 4 // 45°: stone/roof facet, but elevated
+    bridgeFace.rotation.x = Math.PI / 4
     bridgeFace.updateMatrixWorld(true)
     expect(pickDrawableSurfaceHit(raycaster, [bridgeFace], () => 0)).not.toBeNull()
 
@@ -148,8 +148,6 @@ describe('annotation surface picking policy', () => {
       mesh,
       geometry: { boundingSphere: new THREE.Sphere(new THREE.Vector3(), 5) },
       material: mesh.material,
-      // 旧实现会把任一 node.userData.annotationSurface=false 当成整批不可绘制；
-      // 批次只共享 geometry/material，item 级 tag 不得连坐（bridge + ground plate 同批）。
       items: [
         { x: 0, y: 0, node: { userData: { annotationSurface: false } } },
         { x: 0, y: 0, node: { userData: {} } },

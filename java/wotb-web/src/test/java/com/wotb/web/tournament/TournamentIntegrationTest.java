@@ -44,7 +44,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** Real PostgreSQL: migration/JSONB/context plus locking/publication and source-scoped evidence lifecycle. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class TournamentIntegrationTest {
@@ -150,7 +149,7 @@ class TournamentIntegrationTest {
         assertEquals(50,service.publicStandings(id).rows().stream().filter(row->row.clanTag().equals("B")).findFirst().orElseThrow().totalPoints());
         publish(id,1,1,"second");
         assertEquals(0,service.publicStandings(id).rows().stream().filter(row->row.clanTag().equals("A")).findFirst().orElseThrow().totalPoints());
-        assertEquals(2,evidence.findByEventId(id).size()); // Published before/after audit retains evidence.
+        assertEquals(2,evidence.findByEventId(id).size());
         service.clearPoints("admin",id,new TournamentDtos.ClearRequest(service.config(id).event().version(),1,1,"A","appeal",true));
         assertEquals(100,service.publicStandings(id).rows().getFirst().totalPoints());
     }
@@ -249,7 +248,6 @@ class TournamentIntegrationTest {
         final CountDownLatch clansLocked=new CountDownLatch(1); final CountDownLatch publish=new CountDownLatch(1);
         try(final var executor=Executors.newFixedThreadPool(2)) {
             final var writer=executor.submit(()->new TransactionTemplate(transactionManager).execute(transaction->{
-                // Pause exactly after the public day query and before its roster query can finish.
                 jdbc.execute("lock table tournament_clan in access exclusive mode"); clansLocked.countDown();
                 try { assertTrue(publish.await(10,TimeUnit.SECONDS)); }
                 catch(final InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IllegalStateException(interrupted); }

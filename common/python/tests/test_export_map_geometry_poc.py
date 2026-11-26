@@ -15,8 +15,6 @@ from export_map_geometry_poc import (
 
 
 def mesh_entity():
-    # Deliberately reverse archive-key insertion order. Correct batch-option lookup
-    # must use the DAVA GenKeyFromIndex key rather than dict enumeration order.
     batches = {
         "0004": {"rb.datasource": 104},
         "0003": {"rb.datasource": 103},

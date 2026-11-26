@@ -15,42 +15,22 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-/**
- * 争霸赛点数局势证据（纯函数，确定性战斗语义）。
- * <p>数据边界：终局前任意时刻的实时比分/占点进度/被动产分均未解码（见
- * {@code PointsEvidenceProbeTest} 结论），本技能只产出可证明的点数压力信号，全部
- * 结果禁止冒充实时比分或占点进度：</p>
- * <ul>
- *   <li>击杀夺分时间线：±40/击杀业务规则（项目所有者确认）按双方阵亡时刻对齐，仅叙述口径；</li>
- *   <li>占领点区域位置存在：服务器位置流（type-10）在占领点九宫格区域内的存在，
- *       几何可证；位置存在 ≠ 占点产分（产分规则未解码）；</li>
- *   <li>控制点区域进入窗口（ControlRegionEntryWindow）：车辆从非控制点区域持续移动进入
- *       控制点区域的时间窗口（仅 MOVING 相邻采样位移判定，不声称进攻/抢点/防守意图）。</li>
- * </ul>
- * <p>位置流覆盖 ≠ 点亮：所有存在/推进判断都基于服务器上报位置，不表达任何一方的可见性。</p>
- */
 public final class PointsSituationSkill {
 
     private PointsSituationSkill() {
     }
 
 
-    /** 占领点存在聚合时间窗（秒）。 */
     public static final float PRESENCE_BIN_SEC = 15f;
 
-    /** 相邻位置采样间 canonical 位移 ≥ 该值（米）视为移动（位置流 2s 采样 → 约 2 m/s）。 */
     public static final float MIN_MOVE_METERS_PER_SAMPLE = 4f;
 
-    /** 进入控制点区域前向前追溯移动采样的上限（秒）。 */
     public static final float MAX_ENTRY_LOOKBACK_SEC = 20f;
 
-    /** 同队进入窗口合并的最大间隔（秒）。 */
     public static final float ENTRY_MERGE_GAP_SEC = 8f;
 
-    /** 相邻位置采样时间差超过该值视为位置流中断，不得跨断线判移动/驻留。 */
     public static final float POSITION_STREAM_GAP_SEC = 5f;
 
-    /** battle-relative 秒的可信位置样本（raw replay 坐标 x/z）。 */
     public record PositionSample(float timeSec, float x, float z) {
         public PositionSample {
             if (!Float.isFinite(timeSec) || timeSec < 0
@@ -62,14 +42,12 @@ public final class PointsSituationSkill {
         }
     }
 
-    /** 一车的按时间升序位置样本序列。 */
     public record VehicleTrack(long accountId, int team, List<PositionSample> samples) {
         public VehicleTrack {
             samples = samples == null ? List.of() : List.copyOf(samples);
         }
     }
 
-    /** 击杀夺分事件：victimTeam 掉车（−40），beneficiaryTeam 得 40（叙述口径）。 */
     public record KillPointsEvent(float timeSec, int victimTeam, int beneficiaryTeam) {
         public KillPointsEvent {
             if (!Float.isFinite(timeSec) || timeSec < 0) {
@@ -78,12 +56,9 @@ public final class PointsSituationSkill {
         }
     }
 
-    /** 占领点区域位置存在窗口：窗口内两队各有几辆车在该区域出现过（去重计数）。 */
     public record CapturePresence(float startSec, float endSec, int team1Vehicles, int team2Vehicles) {
     }
 
-    /** 控制点区域进入窗口：team 的若干车辆从非控制点区域移动进入控制点区域的时间窗口
-     *  （中性结构分类；不表达进攻/抢点/防守意图——那是 LLM 的战术解释）。 */
     public record ControlRegionEntryWindow(
             float startSec,
             float endSec,
@@ -96,12 +71,6 @@ public final class PointsSituationSkill {
         }
     }
 
-    /**
-     * 击杀夺分时间线：按双方阵亡时刻升序。
-     * 只取权威结算中已知阵亡时刻（deathSec &gt; 0）且队伍有效的玩家；
-     * 无击杀者的坠落/自毁无法与正常击杀区分，同样按「受害队 −40 / 对方 +40」叙述口径对齐，
-     * 调用方必须标注该口径与局限，不得将其说成实时比分。
-     */
     public static List<KillPointsEvent> killPointsTimeline(final Battle battle) {
         if (battle == null || battle.players == null) {
             return List.of();
@@ -125,11 +94,6 @@ public final class PointsSituationSkill {
         return List.copyOf(events);
     }
 
-    /**
-     * 占领点区域位置存在：按 {@link #PRESENCE_BIN_SEC} 秒窗聚合，
-     * 只输出至少一辆车出现的窗口；每队按去重车辆数计数。
-     * 样本区域由调用方给定的占领点九宫格区域集合判定（几何可证；位置存在 ≠ 占点产分）。
-     */
     public static List<CapturePresence> capturePresence(
             final List<VehicleTrack> tracks,
             final Set<String> controlRegions,
@@ -173,15 +137,6 @@ public final class PointsSituationSkill {
         return List.copyOf(result);
     }
 
-    /**
-     * 控制点区域进入窗口：对每辆车识别「从非控制点区域移动进入控制点区域」——
-     * 进入必须满足 previous→entry 段连续且 canonical 位移 ≥ {@link #MIN_MOVE_METERS_PER_SAMPLE}
-     * （九宫格边界小幅移动/坐标抖动不算进入）；进入时刻向前追溯到进入前连续移动的最早采样
-     * （上限 {@link #MAX_ENTRY_LOOKBACK_SEC}），向后延续到离开控制点区域为止；
-     * 同队同目标区域窗口按 {@link #ENTRY_MERGE_GAP_SEC} 合并，不同目标区域不合并。
-     * 位置流中断（相邻采样时间差 &gt; {@link #POSITION_STREAM_GAP_SEC}）处不跨断线。
-     * 只表达「车辆从非控制点区域移动进入控制点区域」这一结构事实，不声称进攻/抢点/防守意图。
-     */
     public static List<ControlRegionEntryWindow> controlRegionEntryWindows(
             final List<VehicleTrack> tracks,
             final Set<String> controlRegions,
@@ -217,11 +172,8 @@ public final class PointsSituationSkill {
             final PositionSample previous = samples.get(i - 1);
             if (inside(previous, controlRegions, mapCode)
                     || entry.timeSec() - previous.timeSec() > POSITION_STREAM_GAP_SEC) {
-                // 进入时刻前一个采样已在占领点区域，或跨位置流断线：无「从外进入」证据
                 continue;
             }
-            // 创建窗口前必须验证 previous→entry 的 canonical 位移达到移动阈值：
-            // 九宫格边界附近的小幅移动/坐标抖动（位移 < MIN_MOVE_METERS_PER_SAMPLE）不算推进
             final float entryDisplacement = MapRegionResolver.canonicalDistanceMeters(
                     previous.x(), previous.z(), entry.x(), entry.z(), mapCode);
             if (entryDisplacement < MIN_MOVE_METERS_PER_SAMPLE) {
@@ -235,7 +187,6 @@ public final class PointsSituationSkill {
         return windows;
     }
 
-    /** 从进入采样向前追溯连续移动采样；停在不移动、已在占领点区域或跨断线处。 */
     private static float approachStart(
             final List<PositionSample> samples,
             final int entryIndex,
@@ -266,7 +217,6 @@ public final class PointsSituationSkill {
         return start;
     }
 
-    /** 从进入采样向后延续，直到离开占领点区域或位置流断线。 */
     private static float presenceEnd(
             final List<PositionSample> samples,
             final int entryIndex,
@@ -301,8 +251,6 @@ public final class PointsSituationSkill {
         return MapRegionResolver.resolveRegionFromRaw(x, z, mapCode);
     }
 
-    /** 同队同目标区域窗口按开始时刻排序、间隔 ≤ ENTRY_MERGE_GAP_SEC 时合并（车辆去重）；
-     *  不同目标区域不得合并（同一队伍同时进入不同控制点区域是两个独立进入窗口）。 */
     private static List<ControlRegionEntryWindow> mergeByTeamAndRegion(
             final List<ControlRegionEntryWindow> windows) {
         final List<ControlRegionEntryWindow> sorted = new ArrayList<>(windows);

@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// 统一事件流 pane（借鉴 blitzinfo 战斗日志）：合并 Playback facet 的事件源为单一
-// 时间轴，过滤器 chips + 点击 seek（切到 3D 后由工作台执行）。
-// 数据源 = playbackSession.loadScene(file)（与 3D 面板同一缓存解析，不重复跑 WASM）。
-// 射击事件的「装甲检视」走现有射击复现入口（storeShotsForViewer + shotViewerQuery，
-// 与 ReplayShotsPane.openInViewer 同一交接通道），本 pane 不自建任何 viewer 契约。
 import { computed, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
@@ -21,11 +16,9 @@ import type { AgentPlaybackFacet, AgentPlaybackShot } from '../api/agent-replay-
 import type { PlaybackEventRow } from '../utils/playbackEventStream'
 import type { EventFilterKey } from '../utils/playbackEventStream'
 
-/** 工作台会话的最小消费面（loadScene 命中缓存，不重复解析）。 */
 interface PlaybackSessionLike {
   loadScene?: (file: File) => Promise<AgentPlaybackFacet>
 }
-/** 射击复现交接用的 facet 行：ShotViewerInput（交接契约）+ 事件匹配所需的三个字段。 */
 type ShotReplayRow = ShotViewerInput & {
   time_s?: number
   shooter_eid?: number
@@ -37,11 +30,8 @@ const props = withDefaults(defineProps<{
   file?: File | null
   active?: boolean
   playbackSession?: PlaybackSessionLike | null
-  /** 与 ReplayShotsPane 同一导航通道（armor 查看器路由由工作台拥有） */
   navigate?: NavigateFn | null
-  /** 工作台页面是否在前台（离页 = 在途装甲交接作废；默认 true 便于独立挂载） */
   pageActive?: boolean
-  /** 内嵌在统一回放面板下方：滚动容器收窄为事件列表（过滤栏固定），由外层给固定高度。 */
   embedded?: boolean
 }>(), { file: null, active: false, playbackSession: null, navigate: null, pageActive: true, embedded: false })
 const emit = defineEmits(['seek'])
@@ -53,27 +43,18 @@ const loading = ref(false)
 const err = ref('')
 const facet = ref<AgentPlaybackFacet | null>(null)
 const parsedFile = ref<File | null>(null)
-/** 解析代次：换文件/重入即递增；迟到的旧结果不得覆盖新文件的状态（同 ReplayShotsPane 纪律）。 */
 let loadGen = 0
-/** 装甲交接代次：换文件/离开事件流/新点击即作废在途请求。 */
 let handoffSeq = 0
 const filter = ref<EventFilterKey>('all')
-/** 单次渲染上限与「显示更多」步长：事件全量可达（分页，不靠缩小过滤片） */
 const RenderCap = 800
 const showCount = ref(RenderCap)
 
-/**
- * 车型名表（tank_cache `{id: name}`）。facet 的 `tank_name` 是 `tank_<id>` 占位
- * （WASM 未注入名表）——事件流必须用真实车型名，否则行里只剩数字编号。
- */
-// 车型名表（tank_cache）单例组合式：与 3D 快捷指令/聊天滚动流共用同一份加载与缓存
 const tankNames = useTankNames()
 
 const events = computed(() => buildEventStream(facet.value, { tankNames: tankNames.value }))
 const filtered = computed(() => filterEvents(events.value, filter.value))
 const shown = computed(() => filtered.value.slice(0, showCount.value))
 const overflow = computed(() => Math.max(0, filtered.value.length - shown.value.length))
-// 切过滤片/换场：分页回到首屏
 watch(filter, () => { showCount.value = RenderCap })
 function showMore() { showCount.value += RenderCap }
 const counts = computed<Record<string, number>>(() => {
@@ -86,17 +67,15 @@ async function ensureFacet() {
   const file = props.file
   if (!file || !props.playbackSession?.loadScene) return
   if (parsedFile.value === file) return
-  // 名表与解析并行走（useTankNames 单例，失败允许重试）；失败不阻塞事件流（行内退化为昵称）。
   void useTankNames()
   const gen = ++loadGen
   loading.value = true
   err.value = ''
   try {
     const loaded = await props.playbackSession.loadScene(file)
-    if (gen !== loadGen) return // 迟到结果：文件已切换/重入，丢弃
+    if (gen !== loadGen) return
     facet.value = loaded
     parsedFile.value = file
-    // 换文件后射击缓存与旧文件绑定，必须作废（装甲检视不得读上一场的行）
     shotsCache = { file: null, rows: [] }
   } catch (e) {
     if (gen !== loadGen) return
@@ -106,7 +85,6 @@ async function ensureFacet() {
   }
 }
 
-/** 换文件：清除旧场展示并让在途请求作废；激活时立即按新文件重载。 */
 watch(
   () => props.file,
   () => {
@@ -123,30 +101,23 @@ watch(
 watch(
   () => props.active,
   (active) => {
-    // 离开事件流 = 在途装甲交接作废（旧 query 返回后不得把用户拉走）
     if (!active) handoffSeq++
     if (active) {
-      // 名表在 useTankNames 首次消费时自动加载（失败允许下次重试，不阻塞 facet 缓存命中）。
       void useTankNames()
       if (!facet.value) void ensureFacet()
     }
   },
   { immediate: true },
 )
-// 工作台离页（pageActive=false）同样作废在途交接
 watch(() => props.pageActive, (on) => { if (!on) handoffSeq++ })
-// KeepAlive 切走 / v-if 卸载：异步续体不得再导航（评审 4595575111）
 onDeactivated(() => { handoffSeq++ })
 onBeforeUnmount(() => { handoffSeq++ })
 
-/** 点击事件 → seek 当前激活的视图（2D/3D 由统一回放面板决定）。
- *  时钟属于各 pane（2D usePlaybackClock / 3D sceneApi），本 pane 只发出请求。 */
 function onClick(ev: PlaybackEventRow | null) {
   if (ev == null) return
   emit('seek', ev.t)
 }
 
-// ---- 装甲检视（射击事件；现有射击复现入口，见 ReplayShotsPane.openInViewer）----
 const shotsBusy = ref(false)
 let shotsCache: { file: File | null; rows: ShotReplayRow[] } = { file: null, rows: [] }
 
@@ -159,24 +130,20 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
   const s: AgentPlaybackShot | undefined = ev?.shot
   if (!s || !rowHas3d(s as ShotReplayRow)) return
   if (!props.navigate || !props.file) return
-  // 快照归属：文件 + 当时的 facet（车型/开战时钟/周期都按它算，不得读切场后的 live）
   const file = props.file
   const facetSnap = facet.value
   const seq = ++handoffSeq
   const stillCurrent = () => seq === handoffSeq && file === props.file && props.active && props.pageActive
   shotsBusy.value = true
   try {
-    // 射击复现消费 shots facet 行（含 ball_a/ball_b 段与配件串）——按需解析一次并缓存
     if (shotsCache.file !== file) {
       const bytes = new Uint8Array(await file.arrayBuffer())
-      // 俯仰锚定（与 ReplayShotsPane 同一实现）：只传基础极限，122 稳定器由 core 叠加
       let pitchLimits: Awaited<ReturnType<typeof buildPitchLimits>> | null = null
       try {
         pitchLimits = await buildPitchLimits(facetSnap?.vehicles || [])
       } catch { /* 资产不可用：如实降级 */ }
       if (!stillCurrent()) return
       const outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined).catch(async () => {
-        // 锚定注入失败（产物过旧等）→ 裸解析兜底（与 ReplayShotsPane 同款）
         return parseAgentShotsFromBytes(bytes)
       })
       if (!stillCurrent()) return
@@ -185,16 +152,11 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
       if (Array.isArray(vehicles)) enrichShotsFromRoster(parsedRows as never[], vehicles)
       shotsCache = { file, rows: parsedRows.filter(rowHas3d) }
     }
-    // 事件行 → shots facet 行：同一发 = (shooter_eid, target_eid, |Δt|≤0.05s)
     const row = shotsCache.rows.find(
       (r) => r.shooter_eid === s.shooter_eid && r.target_eid === s.target_eid
         && Math.abs((r.time_s ?? 0) - ev!.t) <= 0.05,
     )
     if (!row) return
-    // 搭载配置富化覆盖**全部可导航行**（交接数组包含它们，缺证据 = 查看器回退
-    // 顶级炮管/弹表——评审 4597024398），选中行排最前（其证据最先就绪）；
-    // 1500ms 有界等待兜底：超时行按无证据降级，不阻塞导航（评审 4595675888）。
-    // annotate 原地改写 row（config_idx），快照在其后取即包含。
     const vehicles = facetSnap?.vehicles
     const ordered = [row, ...shotsCache.rows.filter((r) => r !== row)]
     await Promise.race([
@@ -202,17 +164,13 @@ async function openInArmorViewer(ev: PlaybackEventRow | null) {
       new Promise((r) => setTimeout(r, 1500)),
     ])
     if (!stillCurrent()) return
-    // 快照语义与 ReplayShotsPane 一致：交接 JSON 按点击时版本序列化
     const snapshot = JSON.parse(JSON.stringify(row)) as ShotReplayRow
-    // 开战时钟原点与射击分析入口同一推导（3D 场景 / ReplayShotsPane 同源）：
-    // 有开战前倒计时的场次，原始 time_s 不是开战相对时间。
     const battleStartRaw = resolveReplayClock(
       facetSnap?.periods || [], null, facetSnap?.meta?.duration,
     )?.startRaw ?? 0
     storeShotsForViewer(JSON.parse(JSON.stringify(shotsCache.rows)), { battleStartRaw })
     const query = await shotViewerQuery(snapshot)
     if (!query) return
-    // query 返回后再次校验：切场后旧 query 不得把用户带进上一场的装甲检视
     if (!stillCurrent()) return
     props.navigate({ query: query as Record<string, string> })
   } finally {
@@ -232,17 +190,13 @@ function verdictClass(ev: PlaybackEventRow): string {
 }
 
 function eventTitle(ev: PlaybackEventRow): string {
-  // 行文案唯一事实源在 utils/playbackEventStream.eventRowTitle（3D 快捷指令/聊天
-  // 滚动流同消费）：本封装只注入 vue-i18n 实例。
   return eventRowTitle(ev, t)
 }
 
-/** 该行是否可直接进射击复现（有目标的事实行） */
 function canOpenShot(ev: PlaybackEventRow): boolean {
   return ev.kind === 'shot' && ev.shot != null && ev.targetEid != null
 }
 
-/** 行 tooltip：射击提示；地图标记暴露上游未闭合的原始目标值（不占主文本）。 */
 function rowTitle(ev: PlaybackEventRow): string {
   if (canOpenShot(ev)) return t('eventStream.open_shot_hint')
   if (ev.kind === 'marker' && ev.commandTarget
@@ -252,7 +206,6 @@ function rowTitle(ev: PlaybackEventRow): string {
   return ''
 }
 
-/** 行主体点击：射击行 → 射击复现；其余 → 跳到该时刻 */
 function onRowClick(ev: PlaybackEventRow) {
   if (canOpenShot(ev)) {
     void openInArmorViewer(ev)
@@ -328,11 +281,7 @@ function filterCount(key: EventFilterKey): number {
 </template>
 
 <style scoped>
-/* 设计语言 token 化（stylelint: 禁 hex/rgba，字号/圆角/z 必须走 token；
-   胶囊圆角与 corner-shape 同条声明是仓库的 squircle 守卫要求）。 */
 .event-stream { display: flex; flex-direction: column; gap: var(--space-2); block-size: 100%; overflow: auto; }
-/* 内嵌（统一回放面板下方）：展开态是自然流列表——列表随内容增高、由页面滚动，
-   不设固定高度或内部滚动条（播放窗口因此保持满高）。 */
 .event-stream--embedded { gap: var(--space-1); block-size: auto; overflow: visible; }
 .event-stream--embedded .es-filters { flex: none; }
 .event-stream--embedded .es-list { flex: none; min-block-size: 0; overflow: visible; }
@@ -349,13 +298,8 @@ function filterCount(key: EventFilterKey): number {
 }
 .es-chip.on { background: var(--color-accent); border-color: transparent; color: var(--color-on-accent); }
 .es-count { opacity: .7; margin-inline-start: var(--space-1); }
-/* 选中 chip 为实心强调底：计数与主标签同用 on-accent 且不降透明度（4.5:1） */
 .es-chip.on .es-count { opacity: 1; }
 .es-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-/* 手机窄屏（390px 实测）：长模块 token（MULTI_PURPOSE_RESTORATION…）没有断行点，
-   行内容撑出 ~140px 横向溢出——Chrome 移动端随后把布局视口扩到内容宽（390→520），
-   整页几何漂移（信息流/教程命中测试全部错位）。行与 es-body 允许收缩，
-   让 es-text 的 ellipsis 真正接管长 token。 */
 .es-row { display: flex; align-items: center; gap: var(--space-2); padding: 2px var(--space-1); border-radius: var(--radius-sm); min-inline-size: 0; }
 .es-row:hover { background: color-mix(in srgb, var(--color-text-primary) 5%, transparent); }
 .es-time { font-variant-numeric: tabular-nums; font: var(--type-caption); color: var(--color-text-tertiary); min-inline-size: 56px; }

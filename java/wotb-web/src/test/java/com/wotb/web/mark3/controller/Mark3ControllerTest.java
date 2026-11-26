@@ -28,7 +28,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 三环 HTTP 参数绑定：字段名与前端 FormData 契约必须保持一致。 */
 class Mark3ControllerTest {
 
     @AfterEach
@@ -121,7 +120,6 @@ class Mark3ControllerTest {
                 eq(List.of("data:image/png;base64,AAAA", "data:image/jpeg;base64,BBBB")), anyList(), eq(List.of()));
     }
 
-    /** 每个回放一份 facts JSON（含逗号），必须按多值参数逐份透传、不被逗号拆分。 */
     private static final List<String> FACTS = List.of("a", "b", "c", "d", "e").stream()
             .map(arena -> "{\"arenaId\":\"" + arena + "\",\"recorder\":\"P\"}")
             .toList();

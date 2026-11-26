@@ -1,4 +1,3 @@
-/** Replay workbook helpers and Replay-owned presentation styles. */
 
 import { columnLetter, displayWidth } from './format.js'
 import type { CellStyle, CellValue, SheetSpec, WorkbookSpec } from '../../shared/tabular/xlsx/index.js'
@@ -55,7 +54,6 @@ function setColumnWidth(sheet: SheetSpec, index: number, width: number): void {
   column[index] = { ...column[index], width }
 }
 
-/** Replay's presentation rules stay in the feature and become generic cell styles here. */
 export function setCell(sheet: SheetSpec, row: number, col: number, value: unknown, fill: Fill, key: string): void {
   let cellValue: string | number
   if (typeof value === 'number') cellValue = value
@@ -64,7 +62,6 @@ export function setCell(sheet: SheetSpec, row: number, col: number, value: unkno
   put(sheet, row, col, cellValue, `${fill}${LEFT_ALIGN.has(key) ? 'L' : 'C'}` as StyleKey)
 }
 
-/** Java `ExcelStyles.writeHeader`: preserve POI column widths and header padding. */
 export function writeHeader(sheet: SheetSpec, titleWidth: readonly (readonly [string, number])[]): void {
   titleWidth.forEach(([title, width], column) => {
     put(sheet, 0, column, title, 'hdr')
@@ -72,7 +69,6 @@ export function writeHeader(sheet: SheetSpec, titleWidth: readonly (readonly [st
   })
 }
 
-/** POI `setAutoFilter(new CellRangeAddress(0, lastRow, 0, lastCol))`. */
 export function autoFilter(sheet: SheetSpec, lastRow: number, lastCol: number): void {
   sheet.autoFilter = `A1:${columnLetter(lastCol)}${lastRow + 1}`
 }

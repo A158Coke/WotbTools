@@ -28,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Executes the reviewed seed against real PostgreSQL, including administrator-owned data. */
 @Testcontainers(disabledWithoutDocker = true)
 class BroadcastSeedMigrationTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine")
@@ -119,10 +118,9 @@ class BroadcastSeedMigrationTest {
                 try (final var statement = seed.createStatement()) { statement.setQueryTimeout(10); statement.execute(sql); }
                 return null;
             });
-            // Observe the real lock wait rather than relying on thread scheduling or a fixed sleep.
             await().atMost(Duration.ofSeconds(10)).until(() -> jdbc.queryForObject(
                     "select exists(select 1 from pg_locks where pid=? and relation='tournament_broadcast_season'::regclass and mode='ExclusiveLock' and not granted)",Boolean.class,seedPid));
-            assertCounts(1,1,1,1); // Ordinary readers stay available while the seed waits.
+            assertCounts(1,1,1,1);
             try (final var statement = administrator.createStatement()) {
                 statement.setQueryTimeout(10); statement.executeUpdate("update tournament_broadcast_season set version=version+1 where id="+season);
             }
@@ -230,7 +228,6 @@ class BroadcastSeedMigrationTest {
             if (entry.get("node").get("roundNumber").isNull()) { assertNull(row.get("round_number")); }
             else { assertEquals(entry.get("node").get("roundNumber").asInt(),row.get("round_number")); }
             assertEquals(replay.get("title").asText(),row.get("title")); assertEquals(replay.get("matchDate").asText(),row.get("match_date").toString());
-            // The source timestamp starts the whole stream, not this selected battle.
             assertTrue(replay.get("startsAt").isNull()); assertNull(row.get("match_starts_at"));
             assertEquals(replay.get("dayNumber").asInt(),row.get("day_number"));
             if (replay.get("groupNumber").isNull()) { assertNull(row.get("group_number")); } else { assertEquals(replay.get("groupNumber").asInt(),row.get("group_number")); }
@@ -239,7 +236,6 @@ class BroadcastSeedMigrationTest {
             if (replay.get("bracket").isNull()) { assertNull(row.get("bracket")); } else { assertEquals(replay.get("bracket").asText(),row.get("bracket")); }
             assertEquals(replay.get("teams"),JSON.readTree(row.get("teams").toString())); assertEquals(replay.get("perspective").asText(),row.get("perspective"));
         }
-        // Official New Horizons DE spans March 15–16; stream-title "Day 3" is not the stage day.
         for (final String video : List.of("VWT0AE2RmWc","GU9PXRxLG2I","2Te4Q2hwn7g","1rPFxY60wXs")) {
             final var corrected = jdbc.queryForMap("select replay.match_date,replay.day_number,season.year,season.name_en,category.type "
                     + "from tournament_broadcast_replay replay join tournament_broadcast_node node on node.id=replay.node_id "
@@ -279,7 +275,6 @@ class BroadcastSeedMigrationTest {
         final var before = jdbc.queryForMap("select * from tournament_broadcast_replay");
         final var seasonBefore = jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner);
         jdbc.execute(verifiedSeedSql());
-        // The administrator's existing video stays in its Top 4 node; no empty PYS #1 node is created.
         assertCounts(19,28,31,71);
         assertEquals(before,jdbc.queryForMap("select * from tournament_broadcast_replay where id=?",before.get("id")));
         assertEquals(seasonBefore,jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner));

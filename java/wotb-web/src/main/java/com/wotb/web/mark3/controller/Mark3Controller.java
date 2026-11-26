@@ -19,7 +19,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** 三环公开排行榜（匿名）与人工申请/取消（需登录）HTTP 映射。 */
 @RestController
 @RequestMapping(ApiPaths.HOF_MARK3)
 public class Mark3Controller {
@@ -42,10 +41,6 @@ public class Mark3Controller {
         return leaderboardService.leaderboard(vehicleId, nation, vehicleType, page, size);
     }
 
-    /**
-     * 人工三环申请 multipart fields：vehicleId、battleCount、averageDamage、winRate、
-     * proofScreenshots（1–2 个 base64 data:image 值）和 replays（恰好 5 个）。
-     */
     @PostMapping("/submissions")
     public Mark3CreateResult create(
             @RequestParam(name = "vehicleId") final long vehicleId,
@@ -54,12 +49,10 @@ public class Mark3Controller {
             @RequestParam(name = "winRate") final BigDecimal winRate,
             @RequestParam(name = "replays") final List<MultipartFile> replays,
             final HttpServletRequest request) {
-        // Spring converts one String to List<String> as a comma-delimited value, but every data URL contains a comma.
         final String[] proofScreenshotValues = request.getParameterValues("proofScreenshots");
         final List<String> proofScreenshots = proofScreenshotValues == null
                 ? List.of()
                 : List.of(proofScreenshotValues);
-        // facts：每个回放一份结算事实 JSON（与 replays 同序）；JSON 含逗号，同样按多值参数读取。
         final String[] factValues = request.getParameterValues("facts");
         return service.createSubmission(
                 JwtUtil.requireUserId(), vehicleId, battleCount, averageDamage, winRate, proofScreenshots, replays,

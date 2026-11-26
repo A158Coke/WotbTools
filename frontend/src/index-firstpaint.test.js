@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// 首屏防 FOUC 契约：index.html 内联脚本在任何渲染前按 localStorage 投影 data-ui-profile、
-// 派生的 data-theme 与 theme-color；合法值 / 旧值映射 / 默认与 src/composables/useUiProfile.js 一致。
-// 这里真实执行内联脚本，而不是匹配源码文本。
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'

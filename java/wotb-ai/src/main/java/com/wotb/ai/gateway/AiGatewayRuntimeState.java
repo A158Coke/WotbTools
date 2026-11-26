@@ -5,7 +5,6 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import java.util.function.LongSupplier;
 
-/** Single owner for the gateway's configuration and per-call transport seams. */
 final class AiGatewayRuntimeState {
     static final String PROVIDER_NAME = "DeepSeek";
     static final long DEFAULT_CALL_TIMEOUT_NANOS = 315_000_000_000L;

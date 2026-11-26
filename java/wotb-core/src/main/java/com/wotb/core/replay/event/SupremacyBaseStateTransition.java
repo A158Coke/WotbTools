@@ -1,10 +1,5 @@
 package com.wotb.core.replay.event;
 
-/**
- * Reconstructed full-state Supremacy base transition for playback consumers.
- * Every transition carries the complete state needed by a renderer; omitted
- * raw fields have already been resolved by the backend reconstructor.
- */
 public record SupremacyBaseStateTransition(
         int sequence,
         ReplayTimestamp timestamp,

@@ -1,16 +1,3 @@
-/**
- * HoF 管理页吸顶 Tab 条浏览器门禁（真实浏览器 computed style，不是源码正则）。
- *
- * 锁定的 invariant（历史回归：showcase-regressions.css 曾把 .hof-admin-tabs 从 sticky 改成
- * relative，Tab 条滑到筛选栏下面——生产「百场审核 Tab 不可见」，#827）：
- * - .hof-admin-tabs computed position: sticky，top == --header-h + --space-2（顶栏下方）；
- * - z-index == --z-sticky（不被后加载的全局样式表压下去）；
- * - 页面滚动后 Tab 条真实吸附在 top 位置（sticky 生效，不是只写了属性）；
- * - 窄屏 Tab 条横向可滚动（overflow-x: auto），最后一个 Tab 滚动后完整可见（不被裁掉）。
- *
- * 复用 fixture-server.mjs（真实 Vite 应用 + auth stub）： HofAdminPage 走真实路由
- * ?view=hof-admin，admin API 用确定性空夹具。
- */
 import assert from 'node:assert/strict'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
@@ -24,7 +11,6 @@ const hofAdminMiddleware = (request, response, next) => {
   else response.end(JSON.stringify({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 }))
 }
 
-/** 页面内探针：Tab 条 computed 定位几何 + token 值。 */
 function tabsProbe() {
   const bar = document.querySelector('.hof-admin-tabs')
   if (!bar) return null
@@ -49,8 +35,6 @@ function tabsProbe() {
 const px = (value) => parseFloat(value) || 0
 const check = (failures, ok, message) => { if (!ok) failures.push(message) }
 
-/** 桌面：sticky 属性与真实吸附行为（滚动到深处后 Tab 条仍在顶栏下方）。
- * 用矮视口让空数据的管理页也能滚动（sticky 的行为证据需要真实滚动量）。 */
 async function runSticky(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -68,7 +52,6 @@ async function runSticky(env) {
     check(failures, Math.abs(px(state.top) - expectedTop) <= 0.5, `tabs top must equal --header-h + --space-2 = ${expectedTop}px (got ${state.top}, --header-h=${state.headerH})`)
     check(failures, state.zIndex === String(parseInt(state.zSticky, 10)), `tabs z-index must equal --z-sticky=${state.zSticky} (got ${state.zIndex})`)
 
-    // sticky 的行为证据：滚动到页面深处，Tab 条视口位置必须钉在 computed top 上。
     const stuck = await page.evaluate(`(() => {
       const bar = document.querySelector('.hof-admin-tabs')
       document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight
@@ -85,7 +68,6 @@ async function runSticky(env) {
   return failures
 }
 
-/** 窄屏：Tab 条横向可滚动，最后一个 Tab 滚动到末尾后完整可见（不被裁掉，审计 PG-10）。 */
 async function runNarrowScrollable(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -98,10 +80,8 @@ async function runNarrowScrollable(env) {
     await page.goto(`${env.origin}/?view=hof-admin&ws-auth=1&ws-roles=wotbtools-admin&ws-auth-init=resolve-authenticated`)
     const state = await page.waitForValue(`(${tabsProbe.toString()})()`, probe => Boolean(probe?.tabCount), { label: 'narrow: hof-admin tabs rendered' })
 
-    // <768px 档 .hof-admin-tabs 有意回退为 static（手机端不做吸顶），此处只锁滚动语义。
     check(failures, state.overflowX === 'auto', `narrow: tabs must be horizontally scrollable (got overflow-x ${state.overflowX})`)
     if (state.scrollWidth > state.clientWidth) {
-      // 有溢出就必须真的能滚到末尾且最后一个 Tab 完整可见。
       const end = await page.evaluate(`(() => {
         const bar = document.querySelector('.hof-admin-tabs')
         bar.scrollLeft = bar.scrollWidth
@@ -122,7 +102,6 @@ async function runNarrowScrollable(env) {
   return failures
 }
 
-/* ------------------------------------------------------------------ main */
 
 const chromeBinary = findChrome()
 const { server, origin } = await startFixtureServer({ middleware: hofAdminMiddleware })

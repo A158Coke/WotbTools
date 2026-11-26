@@ -64,7 +64,6 @@ describe('parseTankopediaQuery', () => {
     const current = parseTankopediaQuery({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,23,-1,x,0,1.2,24' })
     expect(current).toMatchObject({ upgrade: 'top', abilities: [23, 24], config: 0 })
     expect(serializeTankopediaQuery(current)).toEqual({ tank: '15153', config: '0', upgrade: 'top', abilities: '23,24' })
-    // 显式 stock 必须能写回 URL（缺省已不再等价于 stock）
     const stock = parseTankopediaQuery({ tank: '15153', upgrade: 'stock' })
     expect(stock.upgrade).toBe('stock')
     expect(serializeTankopediaQuery(stock)).toEqual({ tank: '15153', upgrade: 'stock' })
@@ -166,11 +165,10 @@ describe('sameTankopediaQuery / withTankopediaState', () => {
   it('eq（回放装配 id 透传）：正整数集合序列化；非法/空不写', () => {
     expect(serializeTankopediaQuery({ tank: 3, eq: [103, 110] })).toEqual({ tank: '3', eq: '103,110' })
     expect(serializeTankopediaQuery({ tank: 3, eq: [] })).toEqual({ tank: '3' })
-    // 解析：0=空槽垫底过滤、越界剔除、去重、上限 9
     const parsed = parseTankopediaQuery({ tank: '3', eq: '103,0,110,103,999,abc' })
     expect(parsed.eq).toEqual([103, 110])
     expect(parseTankopediaQuery({ tank: '3' }).eq).toBeNull()
-    expect(parseTankopediaQuery({ eq: '103' }).eq).toBeNull() // 仅详情态有效
+    expect(parseTankopediaQuery({ eq: '103' }).eq).toBeNull()
   })
 })
 
@@ -207,7 +205,6 @@ describe('selectTanks', () => {
 })
 
 describe('selectTanks — 别名搜索', () => {
-  // alias 只扩召回：命中后的身份与显示名仍然是 tank_cache 的正式车名。
   const tanks = [
     { id: 9297, name: 'FV215b 183', tier: 10, nation: 'uk', type: 'AT-SPG', aliases: ['183', '大白兔', '死星', 'Death Star'] },
     { id: 2, name: 'IS-7', tier: 10, nation: 'ussr', type: 'heavyTank', aliases: [] },
@@ -239,7 +236,6 @@ describe('selectTanks — 别名搜索', () => {
 
   it('alias 与筛选叠加，且不改变相关度排序', () => {
     expect(names(selectTanks(tanks, { q: '大白兔', nation: 'ussr' }))).toEqual([])
-    // 正式车名精确前缀命中的车排在仅 alias 子序列命中的车之前（现有 fuzzy ranking 不变）。
     const ranked = selectTanks(
       [
         { id: 1, name: 'Death Dealer', aliases: [] },
@@ -278,7 +274,6 @@ describe('normalizeTankCache — alias 投影', () => {
 
   it('卡片穿深优先 penetration_top（XI 强化树点满），普通车/旧包回落 penetration', () => {
     const rows = normalizeTankCache({
-      // t11r3 Ho-Ri 4：基础 298/363/84，点满强化树 320/390/90（包内 *_top）
       10593: {
         name: 'Ho-Ri 4', tier: 11,
         shells: [
@@ -287,7 +282,6 @@ describe('normalizeTankCache — alias 投影', () => {
           { shell_type: 'he', penetration: 84, penetration_top: 90 },
         ],
       },
-      // 旧包格式（无 *_top）：回落基础值
       1: { name: 'T-34', tier: 5, shells: [{ shell_type: 'ap', penetration: 120 }] },
     })
     expect(rows.find(row => row.id === 10593).pen_max).toBe(390)
@@ -303,12 +297,10 @@ describe('normalizeTankCache — alias 投影', () => {
     expect(configured).toHaveLength(1)
     expect(configured[0]).toMatchObject({ id: 12345, name: 'FV215b 183', aliases: ['大白兔'] })
     expect(rows.every(row => Array.isArray(row.aliases))).toBe(true)
-    // 搜索别名命中后，展示用的仍然是正式车名。
     expect(selectTanks(rows, { q: '大白兔' }).map(tank => tank.name)).toEqual(['FV215b 183'])
   })
 
   it('默认从仓库数据按 tank_id 投影，未配置车辆仍只按正式车名搜索', () => {
-    // 不固定名称总量；所有已配置条目都必须接入默认搜索路径。
     const entries = Object.entries(TANK_ALIASES)
     const cache = Object.fromEntries(entries.map(([id]) => [id, { name: `Tank ${id}` }]))
     cache[1] = { name: 'Unconfigured' }
@@ -318,7 +310,6 @@ describe('normalizeTankCache — alias 投影', () => {
       expect(rows.find(row => row.id === Number(id)).aliases).toEqual(aliases)
     }
     expect(rows.find(row => row.id === 1).aliases).toEqual([])
-    // 没有别名的车型仍可按正式车名搜索。
     expect(selectTanks(rows, { q: 'unconfigured' }).map(tank => tank.name)).toEqual(['Unconfigured'])
   })
 })
@@ -406,7 +397,6 @@ describe('normalizeTankCache', () => {
   })
 
   it('异常输入双 true 时 normalize 不改写上游字段（互斥不在这里伪造）', () => {
-    // 两个源标志继续透传；单独派生的类别用于筛选和卡片，沿用金币优先。
     expect(normalizeTankCache([{ id: 49, name: 'Type 59', is_collector: 1, is_premium: 1 }])[0])
       .toMatchObject({ is_collector: true, is_premium: true, category: 'premium' })
   })

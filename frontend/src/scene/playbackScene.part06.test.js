@@ -1,33 +1,5 @@
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { watchEffect } from 'vue'
@@ -70,10 +42,6 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 
-/**
- * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
- * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
- */
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -97,16 +65,11 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 })
 
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
- * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
- * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
     constructor(params = {}) {
-      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
+      this.params = params
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -129,10 +92,6 @@ vi.mock('three', async (importOriginal) => {
 })
 
 
-/**
- * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
- * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
- */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
 
 vi.mock('./battleFx.ts', async (importOriginal) => {
@@ -157,9 +116,6 @@ import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 
-/** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
- *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
- *  继续跑了 DATA 派生状态写入」的可观测探针（无 WebGL 时 hasData 不具区分度）。 */
 function minimalData(tStart = 42, mapName = 'probe_map') {
   return {
     meta: { map_id: 1, map_name: mapName, t_start: tStart, friendly_team: 1 },
@@ -177,7 +133,6 @@ function deferred() {
 }
 
 
-/** 场景内核需要一个容器元素；渲染器在数据就位后才惰性创建，这里给空节点即可。 */
 function mountContainer() {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -187,11 +142,8 @@ function mountContainer() {
 
 let api = null
 
-/** 本用例创建过的全部实例（含被取代的 A）：每个实例都有自己的渲染器与事件监听，
- *  只销毁最后一个会让前面的实例继续跑，串到下个用例。 */
 let created = []
 
-/** 仍挂起的 defer：afterEach 兜底结算，避免悬挂 promise 把在途续体泄漏到下个用例。 */
 let pending = []
 
 
@@ -202,11 +154,6 @@ function track(d) {
 
 
 beforeEach(() => {
-  // 单元测试必须**无网**：happy-dom 的 fetch 会真发请求，而开发机常带 `.env.local`
-  // （`VITE_ASSET_BASE_URL=http://127.0.0.1:8123`），高档位
-  // `forceGlb: true` 的用例于是真的去下载 `/glb/<id>/model.glb` 与履带/悬挂资产 ⇒ 5 s 预算内
-  // 必超时（CI 无 .env.local ⇒ 相对地址快速失败 ⇒ 绿）——这就是 "wreck smoke …" 用例长期
-  // 「本机红 / CI 绿」的根因。默认钉成无网：需要资产的用例各自 `vi.stubGlobal('fetch', …)` 覆盖。
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
@@ -261,7 +208,6 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
 }
 
 
-/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
 function stubFrames() {
   const frames = []
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -270,11 +216,6 @@ function stubFrames() {
 }
 
 
-/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
- *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
- *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
- *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
- *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
 let zoomPump = null
 
 async function settleZoomFrames() {
@@ -282,13 +223,12 @@ async function settleZoomFrames() {
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
     const frame = stubFrames()
     zoomPump = { stub: globalThis.requestAnimationFrame, frame }
-    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+    await new Promise((r) => setTimeout(r, 25))
   }
   for (let i = 0; i < 17; i++) zoomPump.frame()
 }
 
 
-/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
 async function pumpZoomAt(dt, frames) {
   vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
@@ -300,7 +240,6 @@ async function pumpZoomAt(dt, frames) {
 }
 
 
-/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
@@ -315,7 +254,6 @@ function createScene(existingStore = null) {
 }
 
 
-/** 每次 initPlayback 一个独立实例（跨实例竞态测试要同时持有 A 与 B） */
 function createInstance(store) {
   const instance = initPlayback(mountContainer(), store)
   created.push(instance)
@@ -397,8 +335,7 @@ describe('3D annotation pointer ownership', () => {
     }
     const layer = window.__annotationLayer
     expect(layer.pick(380, 300).semantic).toEqual(expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }))
-    expect(annotation.width).toBeCloseTo(3, 6)   // unknown map key -> stable 1:1 map units
-    // 独立 oracle：semantic point 反投影必须回到按下时的 client px（锁 x 取负与 z 映射）。
+    expect(annotation.width).toBeCloseTo(3, 6)
     const first = annotation.points[0]
     camera.updateMatrixWorld()
     camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
@@ -452,8 +389,8 @@ describe('3D annotation pointer ownership', () => {
   it('touch: a terrain miss followed by a far valid hit still applies reconnect protection', async () => {
     const { canvas, onAnnotationCommit } = await setup()
     canvas.dispatchEvent(touch('pointerdown', 380, 300, 22))
-    canvas.dispatchEvent(touch('pointermove', 5000, 300, 22))   // 地形外：miss
-    canvas.dispatchEvent(touch('pointermove', 600, 300, 22))    // 回到地形但 XZ 跳 > 25m
+    canvas.dispatchEvent(touch('pointermove', 5000, 300, 22))
+    canvas.dispatchEvent(touch('pointermove', 600, 300, 22))
     canvas.dispatchEvent(touch('pointerup', 600, 300, 22))
     expect(onAnnotationCommit).not.toHaveBeenCalled()
   })
@@ -811,7 +748,6 @@ describe('3D annotation pointer ownership', () => {
 describe('坦克接地阴影（High / Ultra opt-in）', () => {
   const shadowMeshes = () => (window.__scene?.children ?? []).filter((o) => o.name === 'tankContactShadow')
   const N = 120
-  /** 沿 +X 匀速 0.5 m/样本；coverage 只到 42+20 s，其后车辆不可见（非阵亡） */
   function movingData() {
     const data = minimalData(42)
     data.meta.samples = N
@@ -865,7 +801,7 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
     expect(store.hasData).toBe(true)
     expect(shadowMeshes()).toHaveLength(0)
     expect(window.__pbV).toHaveLength(1)
-    expect(window.__renderer.params.stencil).toBe(false)   // 关闭路径：渲染上下文与原来一致
+    expect(window.__renderer.params.stencil).toBe(false)
   })
 
   it('开启时渲染器带模板缓冲（轮廓投影用）；下一场关闭后重建为不带模板的上下文', async () => {
@@ -899,18 +835,18 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
     api.seekTime(42 + 5)
     expect(shadow.visible).toBe(true)
     const x5 = centerX(), vx5 = v.group.position.x
-    expect(Math.abs(x5 - vx5)).toBeLessThan(4)                  // 中心 ≈ 车位（太阳偏移有上限）
+    expect(Math.abs(x5 - vx5)).toBeLessThan(4)
     api.seekTime(42 + 15)
     expect(Math.abs(v.group.position.x - vx5)).toBeGreaterThan(10)
-    expect(centerX() - x5).toBeCloseTo(v.group.position.x - vx5, 4)   // 同朝向：阴影与车同位移
-    api.seekTime(42 + 5)                                          // 向后 seek：无旧位置残留
+    expect(centerX() - x5).toBeCloseTo(v.group.position.x - vx5, 4)
+    api.seekTime(42 + 5)
     expect(centerX()).toBeCloseTo(x5, 5)
-    api.seekTime(42 + 40)                                         // coverage 之外：车辆与阴影都隐藏
+    api.seekTime(42 + 40)
     expect(v.group.visible).toBe(false)
     expect(shadow.visible).toBe(false)
     api.reset()
     expect(shadowMeshes()).toHaveLength(0)
-    expect(store.contactShadows).toBe(true)                      // 资源随会话释放；选择由面板换文件时清零
+    expect(store.contactShadows).toBe(true)
   })
 
   it('地图预览会话：即使选择为 ON 也不创建阴影', async () => {
@@ -922,14 +858,10 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
   })
 })
 
-// 战场标记迟到数据重算（评审 P2）：暂停期间迟到的回放数据（canonical 位姿/名册重建、
-// markers/chat 晚到）只驱动按需重绘帧、不触发 tick —— 帧体必须在非播放态重算
-// battleMarkers（update(T) 幂等），否则攻击目标环停在迟到数据前的旧位姿。
-// 由 playbackScene.annotation.test.js 迁移：只保留主文件没有的新增用例。
 describe('playbackScene 战场标记迟到数据重算（源码守卫）', () => {
   it('按需重绘帧在非播放态重算 battleMarkers；tick 的逐帧更新保留', () => {
     expect(PLAYBACK_SCENE_SOURCE).toContain('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);')
-    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers?.update(S.T);   // 战场快捷标记：回放时钟窗口状态（tick/seekTo 共用）')
+    expect(PLAYBACK_SCENE_SOURCE).toContain('S.battleMarkers?.update(S.T);')
   })
   it('重算必须先于来源卡投影（labels.updateLabels）——否则卡停在旧屏幕坐标（评审 P2）', () => {
     const markerAt = PLAYBACK_SCENE_SOURCE.indexOf('if (!(S.DATA && S.PLAYING)) S.battleMarkers?.update(S.T);')

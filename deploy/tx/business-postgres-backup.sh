@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# TX Business PostgreSQL backup. The business database is authoritative state:
-# this script only reads it, validates the archive, and records a SHA-256 sidecar.
-# It never drops, truncates, or deletes the source database or its rows.
 set -Eeuo pipefail
 
 umask 077
@@ -14,8 +11,6 @@ readonly SOURCE_DATABASE="wotb"
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
 project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
-# Optional container override. The disposable CI smoke uses this to drive the
-# real script against a throwaway container without starting a Compose project.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 backup_root="${WOTB_TX_BUSINESS_POSTGRES_BACKUP_ROOT:-$BACKUP_ROOT_DEFAULT}"
 retention_minutes="${WOTB_TX_BUSINESS_POSTGRES_BACKUP_RETENTION_MINUTES:-10080}"
@@ -87,15 +82,11 @@ if [ -z "$container_override" ]; then
   [ -f "$compose_file" ] || { echo "Missing compose file: $compose_file" >&2; exit 1; }
 fi
 
-# TX root-only storage. `install -m 700` is the Linux production path; the
-# mkdir fallback keeps the script runnable from a POSIX-emulation shell without
-# POSIX chmod support.
 install -d -m 700 "$backup_root" 2>/dev/null || mkdir -p "$backup_root"
 exec 9>"$backup_root/.maintenance.lock"
 flock -n 9 || { echo "Another Business PostgreSQL backup or restore is running." >&2; exit 1; }
 trap cleanup EXIT
 
-# stdin is forwarded so pg_dump/pg_restore streams work from the host.
 db_exec() {
   if [ -n "$container_override" ]; then
     docker exec -i "$container_override" "$@"
@@ -147,8 +138,6 @@ db_exec pg_dump -U "$admin_user" -d "$database" --format=custom --no-owner --no-
   > "$temporary_file"
 [ -s "$temporary_file" ] || { echo "Backup archive is empty: $temporary_file" >&2; exit 1; }
 
-# Validate the catalog and every compressed data block without connecting to or
-# changing any database, then record the archive hash for restore verification.
 db_exec pg_restore --list < "$temporary_file" >/dev/null
 db_exec pg_restore --file=/dev/null < "$temporary_file"
 sha256sum "$temporary_file" | awk '{print $1}' > "${temporary_file}.sha256"

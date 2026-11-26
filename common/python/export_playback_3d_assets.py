@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate local-only 2.5D terrain facts for Battle Playback.
 
 The prototype deliberately does *not* reconstruct the client 3D scene. It keeps
@@ -240,7 +239,6 @@ def export_terrain(
             "min": min(heights),
             "max": max(heights),
         },
-        # Local audit fact only; not a production URL or redistributed resource.
         "sourceMember": normalize_member(member.filename),
     }
 
@@ -299,7 +297,6 @@ def extract_procedural_water_planes(scene: dict[str, Any]) -> list[dict[str, Any
             "zMeters": round(world_z, 4),
             "evidence": "WATER_FLAT_BBOX_Z_PLUS_SC2_WORLD_TRANSFORM",
             "localZSpanMeters": round(local_z_span, 6),
-            # Kept only for local debugging; no geometry is exported.
             "entityPath": entity_path,
         })
 

@@ -30,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 三环管理审核 API；SecurityConfig 的 HOF_ADMIN_PATTERN 要求 HoF-admin 或 wotbtools-admin。 */
 @RestController
 @RequestMapping(ApiPaths.HOF_MARK3_ADMIN)
 public class Mark3AdminController {
@@ -83,7 +82,6 @@ public class Mark3AdminController {
                 .body(download.data());
     }
 
-    /** 通过不接收请求体，管理员不能修改 battleCount/averageDamage/winRate。 */
     @PostMapping("/submissions/{id}/approve")
     public Mark3SubmissionSummaryDto approve(@PathVariable final long id) {
         return moderationService.approve(JwtUtil.requireUserId(), id);
@@ -103,10 +101,6 @@ public class Mark3AdminController {
         return moderationService.deleteCurrent(JwtUtil.requireUserId(), id, body.deleteReason(), body.deleteReasonText());
     }
 
-    /**
-     * 批量删除 CURRENT：逐条复用单条删除语义（每条独立事务 + 终态证据清理），允许 partial success。
-     * 非 CURRENT 的记录逐条返回既有错误码（MARK3_NOT_CURRENT），不影响其他记录。
-     */
     @PostMapping("/submissions/bulk-delete")
     public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteModerationRequest body) {
         return moderationService.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),

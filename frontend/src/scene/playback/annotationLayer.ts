@@ -1,8 +1,3 @@
-// 3D annotation GPU 资源层 owner（committed/draft ribbon 合批 mesh + 橡皮 ring + 派生投影
-// 缓存）——自 annotationScene.ts 出仓（2026-11-21 #LOC 结构拆分：代码与搬移前逐字一致；
-// 闭包读数改经 deps 注入）。committed annotation 的权威 owner 是 Replay3DPane；本模块只
-// 保存最后一次 projection 引用作为 terrain rebuild 的派生缓存。draft/GPU 资源归本模块，
-// 绝不回写 history。纯几何在 ./annotation3d.js。
 import * as THREE from 'three'
 import {
   ANNOTATION_LIFT, buildPenRibbon, reprojectRibbonPositions,
@@ -10,37 +5,27 @@ import {
 import type { SemanticPoint, PenAnnotation, PenRibbonResult } from './annotation3d.js'
 import type { AnnotationInput } from './annotationScene.js'
 
-/** ?debug 诊断钩子（window.__annotationLayer；宿主 JS 域裸写口径同 mapWorld.ts）。 */
 const debugWindow = (typeof window !== 'undefined' ? window : {}) as Window & { __annotationLayer?: unknown }
 
-/** 图层消费的宿主依赖（getter 快照；语义见 annotationScene.ts 的 deps 注释）。 */
 export interface AnnotationLayerDeps {
   getScene(): import('three').Scene | null
   invalidate(): void
   debug: boolean
-  /** 地表采样（世界事实 owner = mapWorld；经宿主 deps 注入）。 */
   annotationSurfaceHeightAt(x: number, z: number): number | null
-  /** 共享 perf 统计（owner = annotationScene 的 handle.stats）。 */
   stats: {
     committedBuilds: number; draftBuilds: number; eraseCallbacks: number; terrainRebuilds: number
     lastBuildMs: number; lastPickMs: number; committedVertices: number; draftVertices: number
   }
-  /** ?perf 域（与宿主同口径：探针期间才测 lastBuildMs）。 */
   perfEnabled(): boolean
-  /** 会话清空时的手势复位（owner = gesture 状态机；晚绑定箭头；含指针表复位）。 */
   cancelGesture(): void
   resetPointerState(): void
-  /** ?debug 诊断探针内容（ensureAnnotationLayer 时装配；debug 关闭时不调用）。 */
   debugProbe: () => Record<string, unknown>
 }
 
-/** 图层句柄（宿主与 gesture 状态机的唯一消费面）。 */
 export interface AnnotationLayerHandle {
-  /** renderer 装配/重建后的 layer 挂载（幂等；未就绪返回 false）。 */
   ensure(): boolean
   rebuildCommitted(): void
   rebuildDraft(): void
-  /** 白 ring + 半透明黑外圈：任意地表（尤其雪地/亮石面）都保留可见的半径 affordance。 */
   setRingPositions(positions: Float32Array | null, outlinePositions?: Float32Array | null): void
   hasRing(): boolean
   setDraft(draft: PenAnnotation | null): void
@@ -56,7 +41,6 @@ export interface AnnotationLayerHandle {
 
 export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLayerHandle {
   let projectedAnnotations: AnnotationInput[] = []
-  // 提交时算一次的 ribbon 拓扑：细分校验很贵，LOD 变化只刷新高度，不重算。
   let annotationRibbons = new WeakMap<object, PenRibbonResult | null>()
   let annotationsVisible = true
   let annotationGroup: THREE.Group | null = null
@@ -70,8 +54,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
   let annotationRingOutlineMaterial: THREE.LineBasicMaterial | null = null
   const annotationStats = deps.stats
 
-  // ---------- 3D annotation layer（scene-owned derived geometry）----------
-  // annotation 的 x 是 replay X，进入 scene 时取负；回调时再转回 semantic。
   function emptyAnnotationGeometry() {
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3))
@@ -89,10 +71,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     if (old && old !== geometry) old.dispose()
   }
 
-  /**
-   * 把 pane 的 semantic annotations 投影成当前 terrain 上的 merged geometry。
-   * 颜色写进 per-vertex color：一个 material / 一个 draw call，不需要 per-stroke material。
-   */
   function ribbonFor(ann: AnnotationInput, sceneAnn: PenAnnotation, refine: boolean) {
     if (refine && annotationRibbons.has(ann)) return annotationRibbons.get(ann)
     const ribbon = buildPenRibbon(sceneAnn, {
@@ -114,8 +92,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     const list = Array.isArray(annotations) ? annotations : []
     for (const ann of list) {
       if (!ann || ann.type !== 'pen') continue
-      // pane 的 SSOT 是 semantic (x=replay X, y=replay Z)；scene 系 x 取负后交给纯几何。
-      // 防御异常/旧 state：缺 points 的 pen 不能让整个 annotation layer 抛错。
       const points = Array.isArray(ann.points)
         ? ann.points.filter((point) => point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
         : []
@@ -150,7 +126,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     return { geometry, vertices: positions.length / 3 }
   }
 
-  /** semantic → scene（annotation 的 x 是 replay X，进入 scene 时取负）。 */
   function sceneFromSemantic(point: SemanticPoint) {
     const out: SemanticPoint & { surfaceN?: { x: number; y: number; z: number } } = { x: -point.x, y: point.y }
     if (Number.isFinite(point.surfaceY)) out.surfaceY = point.surfaceY
@@ -163,9 +138,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     const scene = deps.getScene()
     if (!scene) return false
     if (annotationGroup) {
-      // rebuildRenderer() replaces THREE.Scene without disposing the annotation layer
-      // (materials/geometries are reusable). Reattach before returning; otherwise the
-      // layer keeps rebuilding into a scene that is no longer rendered.
       if (annotationGroup.parent !== scene) {
         annotationGroup.parent?.remove(annotationGroup)
         scene.add(annotationGroup)
@@ -270,7 +242,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     if (old) old.dispose()
   }
 
-  /** 地表整体更换（首次就绪 / 2D 回退）：拓扑失效，全部重建。 */
   function rebuildAnnotationProjection() {
     if (!annotationGroup) return
     annotationStats.terrainRebuilds++
@@ -279,7 +250,6 @@ export function createAnnotationLayer(deps: AnnotationLayerDeps): AnnotationLaye
     rebuildDraftAnnotation()
   }
 
-  /** 地形 LOD 变化：XZ 来自 semantic points，只在原 geometry 上刷新 Y。 */
   function reprojectAnnotationHeights() {
     if (!annotationGroup) return
     annotationStats.terrainRebuilds++

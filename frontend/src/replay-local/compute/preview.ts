@@ -1,11 +1,3 @@
-/**
- * Preview 投影（Java `Mapper.toPreviewResponse` 8 参版本 + `dto/*`）：ProcessedDataset →
- * 与 `/api/replay/processing-jobs/{id}/result` 同形状的 JSON（字段名 / null / 数组顺序 / 数值
- * 均与 Jackson 序列化一致）。
- *
- * 与 Java 的唯一结构差异：Java 在此处 `Players.enrich` 原地改写共享 Battle 的
- * tankName/tankTier 等展示字段；这里只在投影时派生，不修改 dataset（输出相同）。
- */
 
 import {
   AGGREGATE_CORE_COLUMNS,
@@ -31,7 +23,6 @@ import type { Battle, PlayerResult, PlayerVehicleUsage } from './model.js'
 import { aggAvg, aggregatePlayers, computePerformance, type Agg, type PerformanceRow } from './performance.js'
 import type { Tankopedia } from './tankopedia.js'
 
-// ---------- DTO（Java records，字段顺序同 Jackson 输出） ----------
 
 export interface ColumnDef {
   key: string
@@ -80,7 +71,6 @@ export interface BattleDto {
   durationS: number | null
   startTime: number | null
   winnerTeam: number | null
-  /** 只由 markDraws 在客户端边界写入，见其注释。 */
   draw?: boolean
   sourceId: string | null
   sourceName: string
@@ -145,7 +135,6 @@ export interface LeagueRatingDto {
   playerSummaryColumns: ColumnDef[]
   teamSummaryColumns: ColumnDef[]
   failures: LeagueFailureDto[]
-  /** 恒为 0 的 wire 兼容槽位（Java `LeagueRatingQualityDto`，deprecated）。 */
   ratingQuality: { unknownDeathTimePlayers: number }
 }
 
@@ -161,7 +150,6 @@ export interface PreviewResponse {
   leagueMode: boolean
 }
 
-// ---------- 列定义 ----------
 
 function playerColumns(): ColumnDef[] {
   return PLAYER_COLUMNS.map((c) => ({ key: c.key, num: c.num }))
@@ -209,7 +197,6 @@ function leagueTeamSummaryColumns(): ColumnDef[] {
   ]
 }
 
-// ---------- VehicleCodes ----------
 
 function classCode(value: string): string {
   if (!hasText(value)) return 'OTHER'
@@ -237,9 +224,7 @@ function nationCode(value: string): string {
   }
 }
 
-// ---------- Battle / 单场 ----------
 
-/** 统一排序：先队伍升序，同队按伤害降序（稳定）。 */
 function sortedPlayers(players: readonly PlayerResult[]): PlayerResult[] {
   return [...players].sort((a, b) => compareNumbers(a.team, b.team) || compareNumbers(b.damageDealt, a.damageDealt))
 }
@@ -321,7 +306,6 @@ function leagueTeamDto(team: TeamLeagueRating, battle: Battle): LeagueTeamDto {
   }
 }
 
-// ---------- 汇总 ----------
 
 function toAggregate(aggMap: Map<number, Agg>, perfById: Map<number, PerformanceRow>): AggRowDto[] {
   const list = [...aggMap.values()].sort((x, y) => doubleCompare(aggAvg(y, y.damage), aggAvg(x, x.damage)))
@@ -334,7 +318,6 @@ function toAggregate(aggMap: Map<number, Agg>, perfById: Map<number, Performance
   })
 }
 
-// ---------- League 批次汇总 ----------
 
 function isAuthoritativeName(name: string | null): name is string {
   if (name === null) return false
@@ -342,7 +325,6 @@ function isAuthoritativeName(name: string | null): name is string {
   return trimmed !== '' && !trimmed.startsWith('#')
 }
 
-/** 最常使用坦克：只取最大使用场次候选，排除占位名，按官方名忽略大小写 → tankId 升序。 */
 function mostUsedVehicle(usage: readonly PlayerVehicleUsage[], tankopedia: Tankopedia): LeagueVehicleUsageDto | null {
   if (usage.length === 0) return null
   const maxBattles = Math.max(...usage.map((u) => u.battles))
@@ -400,10 +382,6 @@ function leagueDto(league: LeagueRatingBatch, tankopedia: Tankopedia): LeagueRat
   }
 }
 
-/**
- * 由已处理的 dataset 构建完整 Preview 响应（League 模式 ⇔ dataset.league != null）。
- * 每场 Rating 按 arenaId identity 绑定；多场或 League 批次输出基础 Replay Aggregate。
- */
 export function toPreviewResponse(dataset: ProcessedDataset, tankopedia: Tankopedia): PreviewResponse {
   const { battles, league } = dataset
   const battlesDto = battles.map((battle, i) => toBattle(
@@ -434,10 +412,6 @@ export function toPreviewResponse(dataset: ProcessedDataset, tankopedia: Tankope
   }
 }
 
-/**
- * 有结算但无胜方是平局；没有结算时胜负未知。Preview 与 Java golden 严格同形，
- * 这个区分只服务工作台文案，所以在提交结果时补上，不进入 toPreviewResponse。
- */
 export function markDraws(preview: PreviewResponse, dataset: Pick<ProcessedDataset, 'battles'>): PreviewResponse {
   const drawn = new Set((dataset.battles ?? [])
     .filter(b => b.winnerTeam === null && b.settlementFinishReasonRaw !== null)

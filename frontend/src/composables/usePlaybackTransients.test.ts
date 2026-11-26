@@ -5,8 +5,6 @@ import { usePlaybackTransients } from './usePlaybackTransients.js'
 import type { BattleEvent, DamageLoss, PositionSegment } from '../types/playback-v2.js'
 import type { TransientVehicleTrack } from './usePlaybackTransients.js'
 
-// 真实时钟替换：composable 的 bornRealMs 取 performance.now（真实 wall clock owner），
-// 测试用可控时钟驱动消费/过期转换（不 mock 内部逻辑，只替换时间事实源）。
 let clockMs = 1000
 const perfSpy = vi.spyOn(performance, 'now').mockImplementation(() => clockMs)
 
@@ -48,7 +46,6 @@ function track(accountId: number, overrides: Partial<TransientVehicleTrack> = {}
   }
 }
 
-/** 真实 composable 状态机：驱动 consume/reset/prune/visibleFeed 的真实转换。 */
 function setup(events: BattleEvent[], tracks: TransientVehicleTrack[], feedVisible?: () => boolean) {
   const nowMs = ref(1000)
   const t = usePlaybackTransients({
@@ -67,12 +64,9 @@ describe('usePlaybackTransients — 事件消费 exactly-once', () => {
     const t = setup([ev('KILL', 14, 1, 2)], [track(1), victim])
     t.consumeEvents(0, 12)
     expect(t.floatItems.value).toHaveLength(1)
-    // resume 帧（如 seek 精确落在事件时刻后播放）：cursor=12 恰在 loss@12 上——
-    // 左开语义下不重复；(12,14] 内新事件（loss@13/14 + KILL@14）正常消费。
     t.consumeEvents(12, 14)
     expect(t.floatItems.value).toHaveLength(3)
     expect(t.eventCursor.value).toBe(14)
-    // 同一 cursor 重放重叠区间（含事件所在点）不得生成第二条
     t.consumeEvents(0, 14)
     expect(t.floatItems.value).toHaveLength(3)
   })
@@ -81,16 +75,14 @@ describe('usePlaybackTransients — 事件消费 exactly-once', () => {
     const victim = track(2, { damageLosses: [loss(12)] })
     const t = setup([], [track(1), victim])
     t.consumeEvents(0, 13)
-    t.consumeEvents(0, 13) // 闭区间实现会在此重复生成 → 本测试用例失败
+    t.consumeEvents(0, 13)
     expect(t.floatItems.value).toHaveLength(1)
   })
 
   it('数值伤害唯一权威 = canonical DamageLoss；DAMAGE 通知事件只负责生命周期反馈', () => {
-    // 有 DAMAGE 通知但无 canonical damageLosses → 不生成任何数值 float
     const noLoss = setup([ev('DAMAGE', 12, 1, 2, 999)], [track(1), track(2)])
     noLoss.consumeEvents(0, 13)
     expect(noLoss.floatItems.value).toHaveLength(0)
-    // 补上 canonical loss：float 数值取 loss.hpLoss（300），不取通知事件的 observedHpLoss（999）
     const victim = track(2, { damageLosses: [loss(12, 300)] })
     const withLoss = setup([ev('DAMAGE', 12, 1, 2, 999)], [track(1), victim])
     withLoss.consumeEvents(0, 13)
@@ -99,14 +91,12 @@ describe('usePlaybackTransients — 事件消费 exactly-once', () => {
   })
 
   it('不可见 AoI / 无位置覆盖 / 非法位置不产生虚假 feedback', () => {
-    // transientAllowed=false（AoI 不可见伤害）→ 无 float/ghost/flash
     const aoi = track(2, { damageLosses: [loss(12, 300, { transientAllowed: false })] })
     const tAoi = setup([], [track(1), aoi])
     tAoi.consumeEvents(0, 13)
     expect(tAoi.floatItems.value).toHaveLength(0)
     expect(tAoi.ghostFor(2)).toBeNull()
     expect(tAoi.flashFor(2)).toBe(false)
-    // 受击方在事件时刻无位置覆盖 → DESTROYED 无 burst；未知账号 → 无 feed
     const hidden = track(3, { positionSegments: [seg(30, 60, [[30, 0, 0], [60, 10, 10]])] })
     const tHidden = setup(
       [ev('DESTROYED', 12, 3), ev('KILL', 12, 1, 3), ev('KILL', 12, 1, 9999)],
@@ -114,8 +104,6 @@ describe('usePlaybackTransients — 事件消费 exactly-once', () => {
     )
     tHidden.consumeEvents(0, 13)
     expect(tHidden.burstItems.value).toHaveLength(0)
-    // kill feed 是身份驱动（受害者 identity 存在即入队，无位置门槛——与 baseline 一致）：
-    // 未知账号 9999 被跳过，位置不覆盖的 3 仍按 canonical identity 入队
     tHidden.nowMs.value = clockMs
     expect(tHidden.visibleFeed.value.map(it => it.victimAccountId)).toEqual([3])
   })
@@ -142,12 +130,10 @@ describe('usePlaybackTransients — seek / pause / prune 生命周期', () => {
     t.consumeEvents(0, 13)
     expect(t.floatItems.value).toHaveLength(1)
     t.resetTransients(5)
-    // negative control：seek 若不清空，这里必然失败
     expect(t.floatItems.value).toHaveLength(0)
     expect(t.burstItems.value).toHaveLength(0)
     expect(t.feedItems.value).toHaveLength(0)
     expect(t.eventCursor.value).toBe(5)
-    // seek 后新时间线：只消费 (5, 13]，历史 (0,5] 不补播
     t.consumeEvents(0, 13)
     expect(t.floatItems.value).toHaveLength(1)
     expect(t.visibleFeed.value).toHaveLength(1)
@@ -161,7 +147,6 @@ describe('usePlaybackTransients — seek / pause / prune 生命周期', () => {
     clockMs += FLOAT_DMG_MS + 1
     t.nowMs.value = clockMs
     t.pruneTransients(clockMs)
-    // baseline 语义：过期 float/burst 留在队列中由 transientsActive 显示过滤，不再视为 pending
     expect(transientsActive(t.floatItems.value, clockMs)).toHaveLength(0)
     expect(t.hasPendingTransients(clockMs)).toBe(false)
   })
@@ -171,13 +156,11 @@ describe('usePlaybackTransients — seek / pause / prune 生命周期', () => {
     const t = setup([ev('KILL', 12, 1, 2)], [track(1), victim])
     t.consumeEvents(0, 13)
     expect(t.feedItems.value).toHaveLength(1)
-    // 首次读取 visibleFeed → 排队条目提升为展示中（shownAt 记录此刻）
     t.nowMs.value = clockMs
     const shown = t.visibleFeed.value
     expect(shown).toHaveLength(1)
     expect(shown[0]).toMatchObject({ victimPlayerName: 'P2', victimName: 'Tank2', durationMs: KILL_FEED_MS })
     expect(t.hasPendingTransients(clockMs)).toBe(true)
-    // 展示完毕（> 4s）：可见队列清空，prune 移除条目与 shownAt 记录
     clockMs += KILL_FEED_MS + 1
     t.nowMs.value = clockMs
     expect(t.visibleFeed.value).toHaveLength(0)
@@ -195,16 +178,13 @@ describe('usePlaybackTransients — seek / pause / prune 生命周期', () => {
     t.consumeEvents(0, 14)
     expect(t.feedItems.value).toHaveLength(3)
     t.nowMs.value = clockMs
-    // KILL_FEED_MAX（默认 2）slots：前两条立即展示，第 3 条排队（shownAt 空 → prune 保留）
     const first = t.visibleFeed.value
     expect(first.length).toBe(2)
     t.pruneTransients(clockMs)
     expect(t.feedItems.value).toHaveLength(3)
-    // 第一条展示完毕 → 空位出现，第 3 条按队列顺序提升
     clockMs += KILL_FEED_MS + 1
     t.nowMs.value = clockMs
     t.pruneTransients(clockMs)
-    // 展示完毕的 [2,3] 连同 shownAt 一并移除；从未展示的 4 保留
     expect(t.feedItems.value.map(it => it.victimAccountId)).toEqual([4])
     expect(t.visibleFeed.value.map(it => it.victimAccountId)).toEqual([4])
   })
@@ -220,12 +200,11 @@ describe('usePlaybackTransients — loop 回绕与跨战局隔离', () => {
     const feedAfterEnd = t.feedItems.value.length
     expect(floatsAfterEnd).toBe(2)
     expect(feedAfterEnd).toBe(1)
-    // 回绕：只重置 cursor，不清 transient（「末尾消费一次」继续自然完成）
     t.eventCursor.value = 0
-    t.consumeEvents(0, 1.3) // 下一轮前段：只消费 DAMAGE@0.5（新事件）
+    t.consumeEvents(0, 1.3)
     expect(t.floatItems.value).toHaveLength(floatsAfterEnd + 1)
-    expect(t.burstItems.value).toHaveLength(1) // DESTROYED@20 不重复
-    expect(t.feedItems.value).toHaveLength(feedAfterEnd) // KILL@20 不重复
+    expect(t.burstItems.value).toHaveLength(1)
+    expect(t.feedItems.value).toHaveLength(feedAfterEnd)
     expect(t.floatItems.value.filter(it => it.hpLoss === 400)).toHaveLength(1)
   })
 
@@ -235,35 +214,30 @@ describe('usePlaybackTransients — loop 回绕与跨战局隔离', () => {
     const first = setup(events, [track(1), victim])
     first.consumeEvents(0, 13)
     expect(first.floatItems.value).toHaveLength(1)
-    // 新战局：全新实例（cursor 归零、队列为空），同一 dataset 重放从零开始
     const second = setup(events, [track(1), victim])
     expect(second.floatItems.value).toHaveLength(0)
     expect(second.eventCursor.value).toBe(0)
     second.consumeEvents(0, 13)
     expect(second.floatItems.value).toHaveLength(1)
-    expect(first.floatItems.value).toHaveLength(1) // 首个实例不受影响
+    expect(first.floatItems.value).toHaveLength(1)
   })
 
   it('feed 隐藏时排队条目不算 pending（不驱动暂停时钟）；恢复可见后重新算 pending', () => {
     const victim = track(2)
     const events = [ev('KILL', 12, 1, 2)]
-    // 隐藏（模板不消费 visibleFeed → 排队条目无 shownAt）：不得让暂停时钟无限续约
     const hidden = setup(events, [track(1), victim], () => false)
     hidden.consumeEvents(0, 13)
     expect(hidden.feedItems.value).toHaveLength(1)
     hidden.nowMs.value = clockMs
-    // 模板不消费 visibleFeed → 无 shownAt 提升（这里刻意不读 visibleFeed，与模板一致）
     expect(hidden.hasPendingTransients(clockMs)).toBe(false)
-    // 已展示条目（shownAt 已记录）仍按原寿命 pending，即使此刻隐藏
     const shown = setup(events, [track(1), victim], () => false)
     shown.consumeEvents(0, 13)
     shown.nowMs.value = clockMs
-    void shown.visibleFeed.value // 提升并记录 shownAt
+    void shown.visibleFeed.value
     expect(shown.hasPendingTransients(clockMs)).toBe(true)
     clockMs += KILL_FEED_MS + 1
     shown.nowMs.value = clockMs
     expect(shown.hasPendingTransients(clockMs)).toBe(false)
-    // 可见时排队条目照常 pending（caller 据此续约暂停时钟）
     const visible = setup(events, [track(1), victim], () => true)
     visible.consumeEvents(0, 13)
     expect(visible.hasPendingTransients(clockMs)).toBe(true)

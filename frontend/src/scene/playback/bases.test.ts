@@ -1,4 +1,3 @@
-// 变体基地点位选择单测：mapBases[key].variants[label] 优先，缺标签/缺该变体回退基础组。
 import { describe, expect, it } from 'vitest'
 import { basesForVariant } from './bases.js'
 

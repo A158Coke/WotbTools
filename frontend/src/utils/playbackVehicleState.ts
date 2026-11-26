@@ -9,16 +9,10 @@ type MarkerSize = {
   hitTarget?: { width: number; height: number } | null
 }
 
-/**
- * 位姿通道取值（`replay-local/pose/vehiclePose.ts` 的 game 系采样结果）：
- * `y` = 游戏 z（2D 地图的纵向坐标由 mapView 负责翻转）。缺失 = 回退 canonical 原始观测。
- */
 export type VehiclePoseInput = {
   x: number
   y: number
-  /** 车体偏航（game 系 rad） */
   yawRad: number
-  /** 炮塔相对车体偏航（rad） */
   turretRelRad: number
 } | null
 
@@ -36,7 +30,6 @@ type ProjectVehicleStateInput = {
   markerTop: (y: number) => string
   markerTransform: string
   overlayInverseScale: number | string
-  // 运行时恒为 1/view.scale 的数值（VehicleMarker 以 Number.isFinite 消费）。
   overlayInverse: number
   translate: (key: string) => string
 }
@@ -48,13 +41,6 @@ const HULL_HITBOX = Object.freeze({
 
 const RAD2DEG = 180 / Math.PI
 
-/**
- * Project one canonical V2 track into the render-neutral vehicle state consumed by VehicleMarker.
- *
- * 分层契约（2026-10-16）：
- * - **画在哪 / 朝哪** → `pose`（与 3D 场景同源同插值的位姿通道）；缺失时回退 canonical 观测；
- * - **可不可信** → 仍是 canonical：`covered`（观测区间）/ `lastKnown` / `pos.timeSec`（最后观测时刻）。
- */
 export function projectVehicleState({
   vehicle,
   track,
@@ -78,11 +64,9 @@ export function projectVehicleState({
   if (!canonicalPos) return null
   const covered = positionCoveredAtV2(track.positionSegments, time)
   const recorder = vehicle.accountId === recorderAccountId
-  // 位置：位姿通道优先；timeSec 恒取 canonical（最后观测时刻，供"最后已知"面板）。
   const pos = pose && Number.isFinite(pose.x) && Number.isFinite(pose.y)
     ? { x: pose.x, y: pose.y, timeSec: canonicalPos.timeSec }
     : canonicalPos
-  // 朝向：位姿通道优先；缺失时回退 canonical 原始观测（含 LAST_KNOWN 冻结语义）。
   const direction = orientationAtV2(track.orientationSegments, time)
   const hullYawDeg = pose && Number.isFinite(pose.yawRad)
     ? screenRotation(pose.yawRad * RAD2DEG)
@@ -92,8 +76,6 @@ export function projectVehicleState({
     : (direction && isFiniteNumber(direction.hullYawDeg) && isFiniteNumber(direction.turretRelativeYawDeg)
         ? screenRotation(turretWorldYawDeg(direction.hullYawDeg, direction.turretRelativeYawDeg))
         : null)
-  // friendly is a canonical track fact. The perspective team is presentation
-  // context only and must not re-derive vehicle identity from team numbers.
   const friendly = track.friendly === true ? true : track.friendly === false ? false : null
   return {
     vehicle,

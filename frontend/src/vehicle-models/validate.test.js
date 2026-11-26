@@ -1,6 +1,3 @@
-/**
- * Validator 单测：SVG 契约 / metadata 契约 / 目录完整性 / 覆盖校验（含非法输入）。
- */
 import { describe, expect, it } from 'vitest'
 import { VIEWBOX } from './types.js'
 import { MODEL_DEFINITIONS } from './mapping.js'
@@ -15,7 +12,6 @@ const GOOD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX
   <g id="hull"><rect x="100" y="50" width="120" height="200"/></g>
 </svg>`
 
-/** 最小合法 WebP 二进制（RIFF....WEBP 魔数 + 填充）。 */
 const GOOD_WEBP = 'RIFF' + String.fromCharCode(0x20, 0, 0, 0) + 'WEBP' + 'x'.repeat(64)
 
 const GOOD_META = {
@@ -104,8 +100,6 @@ describe('validateMetadata', () => {
   })
   it('turretPivot 与 turretRaster 映射一致；不一致 FAIL', () => {
     const meta = { ...GOOD_META, turretRaster: { ...GOOD_META.turretRaster, pivotX: 50, pivotY: 200 } }
-    // GOOD_META: pivot(160,193.23)；raster logicalMin(120.01,-19.6) → 映射 160+? 需一致
-    // 直接构造一致 case：logicalMin(110,0) + pivot(50,193.23) = (160,193.23)
     const consistent = {
       ...GOOD_META,
       turretRaster: { ...GOOD_META.turretRaster, logicalMinX: 110, logicalMinY: 0, pivotX: 50, pivotY: 193.23 },
@@ -139,7 +133,6 @@ describe('validateMetadata', () => {
     expect(validateMetadata(notFaithful, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
     const badTarget = { ...GOOD_META, generation: { ...GOOD_META.generation, visibleDetailRetentionTarget: 0 } }
     expect(validateMetadata(badTarget, { modelKey: 'maus', expectedKind: 'turreted' })).not.toEqual([])
-    // 非正式资产（expectedKind=null，如 sample 目录）不强制 fidelity 契约
     expect(validateMetadata({ ...GOOD_META, generation: { ...GOOD_META.generation, fidelity: undefined } }, { modelKey: 'maus' })).toEqual([])
   })
   it('source 缺失 / sourceTankId 非法 FAIL', () => {

@@ -1,4 +1,3 @@
-// 跟随相机近端：真实 Three 包围盒，锁定「模型外表面 1 m」而不是固定战术距离。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
@@ -17,7 +16,6 @@ function groupAt(x: number, z: number, sizeX: number, sizeY: number, sizeZ: numb
   return group
 }
 
-/** 只填跟随测距实际读取的字段；运行时装配由调用方负责。 */
 function vehicle(group: THREE.Group, glb: THREE.Object3D | null = null): RuntimeVehicle {
   return { group, glb } as unknown as RuntimeVehicle
 }
@@ -37,7 +35,7 @@ describe('followCameraMinDistance', () => {
     const group = new THREE.Group()
     group.position.set(0, 0, 0)
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), new THREE.MeshBasicMaterial())
-    mesh.position.set(5, 0, 0)   // 世界包围盒 x∈[4,6]，原点仍在 0
+    mesh.position.set(5, 0, 0)
     group.add(mesh)
     group.updateMatrixWorld(true)
     expect(followModelRadius(vehicle(group))).toBeCloseTo(Math.hypot(6, 1), 6)

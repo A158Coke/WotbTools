@@ -1,18 +1,3 @@
-/**
- * 装甲查看器门禁的「部位像素扫描」表达式构造器（browser-armor-aiming.mjs 用）。
- *
- * 表达式在页面里求值（page.evaluate）：用 __raytrace 找炮管/炮塔壳/车体三处部位的
- * client 坐标像素。候选必须通过 elementFromPoint 实际命中 canvas，排除被 UI 遮挡的部位。
- * 每处候选分两档：
- *   - 首选：射线触达主装甲板（Primary）→ 短按必出结论，断言最强；
- *   - 次选：仅触达间隙甲/外部模块（记 primary:false）→ 按 BlitzKit 触发面语义必须无结论
- *     （真实资产覆盖下炮管装甲可能全归 spaced，此时该部位只有次选）。
- * 返回时首选优先于次选；两档分开缓存——**次选不得阻止后续首选写入**（扫描顺序不决定
- * 优先级，见 armor-spot-scan.test.mjs 的回归用例）。
- *
- * 独立成模块是为了让这套选择逻辑能被单测确定性驱动（假 window/document + 假射线）；
- * 判定分类由调用方传入（与 scene/penetration.js 的 isPrimary 同源），脚本里不另抄一份。
- */
 
 /**
  * @param {object} opts

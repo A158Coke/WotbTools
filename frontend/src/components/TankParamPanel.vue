@@ -1,10 +1,4 @@
 <script setup>
-/**
- * 参数区（protectability / gun / mobility）：每行「名称 + 主值/单位 + 上一次值 delta」。
- * 数值来自 replay-local/compute/characteristics（与配置面板同一套选择态），
- * 分组/小数位/单位/越大越好来自客户端 params/{structure,format}.json。
- * 显示口径对齐客户端 NumberValue：delta 绿色 = 有利、红色 = 不利（biggerIsBetter 决定方向）。
- */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { armorRows } from '../replay-local/compute/tankSetup'
@@ -12,26 +6,18 @@ import GunArcDiagram from './GunArcDiagram.vue'
 
 const props = defineProps({
   previewConsumables: { type: Boolean, default: false },
-  /** paramGroups() 输出 */
   groups: { type: Array, required: true },
-  /** 引擎输出（当前值） */
   current: { type: Object, required: true },
-  /** 上一次渲染的特性（BK useDelta）：delta = 当前 − 上一次；初次为空 */
   base: { type: Object, default: () => ({}) },
-  /** 当前配置的火炮元信息（口径 + 循环类型），来自 tank/{id}.json */
   gunMeta: { type: Object, default: null },
-  /** 当前配置的 pitch_limits / yaw_limits（交互射界图的原始数据） */
   pitchLimits: { type: Object, default: null },
   yawLimits: { type: Object, default: null },
-  /** 装备加成（improvedPitchLimitsSystem） */
   pitchBonus: { type: Object, default: null },
-  /** 当前配置的弹种（含每个弹种的选择态/联动值） */
   shells: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['select-shell'])
 
 const { t, locale } = useI18n()
-// 只格式化显示，保持计算器给出的精度与数值。
 const numberFormatters = new Map()
 function fmtNum(value, digits = 1) {
   if (value == null || !Number.isFinite(Number(value))) return '—'
@@ -41,13 +27,11 @@ function fmtNum(value, digits = 1) {
   }
   return numberFormatters.get(key).format(Number(value))
 }
-// 两条独立列避免长火力卡把机动分组向下挤；窄容器自然变成一列。
 const groupColumns = computed(() => [
   props.groups.filter(group => group.group !== 'gun'),
   props.groups.filter(group => group.group === 'gun'),
 ].filter(column => column.length))
 
-/** 概览条（BlitzInfo “Characteristics” 同构）：HP / 单发伤害 / 穿深 / 极速 / 视野 */
 const summary = computed(() => {
   const current = props.current || {}
   return [

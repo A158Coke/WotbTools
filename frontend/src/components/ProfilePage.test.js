@@ -27,8 +27,6 @@ const api = vi.hoisted(() => ({
 
 const authFlag = ref(true)
 const authInitError = ref(null)
-// 身份驱动代数（与生产 useAuth 同规则）：未登录→已登录、已登录→未登录、A→B（sub 变化）各前进一次。
-// 测试用 signInAs()/signOut() 改变会话身份，而不是手工 +1（review blocker 2 的测试口径）。
 let projectedIdentityKey = null
 let identityEpoch = 0
 function projectIdentity(isAuthed, parsedToken) {
@@ -48,25 +46,12 @@ function signOut() {
   tokenRef.value = null
   projectIdentity(false, null)
 }
-// 让 mock 的 authenticated 具备**响应式**语义（真实 useAuth 是 ref）：组件的
-// computed / watcher 才能观察到登录 / 登出翻转。既有 `api.authenticated = X`
-// 的写法保持不变（getter/setter 转发到 authFlag）。
 Object.defineProperty(api, 'authenticated', {
   get: () => authFlag.value,
   set: (value) => { authFlag.value = value },
   configurable: true,
 })
 
-/**
- * 真实 useAuth 的 `initPromise` 是**模块级一次性**的 init 交易 promise：第一次落定之后，
- * `logout()` 只把 reactive session 投影成 unauthenticated，**不会重建这笔交易** —— 之后每个
- * `useAuth()`（= 组件重新挂载）拿到的都是同一个已经 resolve 的历史结果。
- *
- * 这里刻意保留 **legacy boolean 语义**（= Android 2.1.0 APK 里那份前端的行为，也正是本 bug
- * 的触发条件）：页面必须对「历史 promise resolve true」免疫。一旦有组件再把这个值当成
- * session truth，下面的 stale-init 回归测试就会失败。
- * （生产代码里 `initPromise` 已不再 resolve 值，见 useAuth.providers.test.js 的契约断言。）
- */
 let initSettlement = null
 function staleInitPromise() {
   if (!initSettlement) initSettlement = Promise.resolve(api.authenticated)
@@ -98,7 +83,6 @@ const userApi = vi.hoisted(() => ({
 }))
 
 vi.mock('../api/user-profile.js', () => ({
-  // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
   ensureUserProfile: userApi.ensureUserProfile,
   getUserProfile: (...args) =>
     (profileFailures-- > 0 ? Promise.reject(new Error('boom')) : userApi.getUserProfile(...args)),
@@ -108,7 +92,6 @@ vi.mock('../api/user-profile.js', () => ({
   verifyUserWotbAccountFromReplay: (...args) => userApi.verifyUserWotbAccountFromReplay(...args)
 }))
 
-// 「用回放验证账号」：本机解析回放拿录像者 accountId（服务器没有 parser），再交服务端比对。
 const verifyApi = vi.hoisted(() => ({
   replayRecorderAccountId: vi.fn(),
   verifyUserWotbAccountFromReplay: vi.fn()
@@ -154,16 +137,12 @@ function mountProfile() {
   return wrapper
 }
 
-/** 连通性默认在线：ProfilePage 的 backend 动作现在都过 capability 门禁。 */
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
 }
 
 beforeEach(async () => {
-  // 3D 自动播放偏好按用户存 localStorage；每个用例从干净存储开始。
   localStorage.clear()
-  // 每个用例都从「一次全新的 auth bootstrap」开始：init 交易只在第一次 useAuth() 时建立，
-  // 之后（同一个用例内）跨挂载保持不变 —— 这正是 stale init 结果的来源。
   initSettlement = null
   authInitError.value = null
   useConnectivity().stop()
@@ -173,7 +152,6 @@ beforeEach(async () => {
 
 afterEach(() => {
   localStorage.clear()
-  // 卸载本轮挂载的组件：否则它们残留的 connectivity watcher 会在后续测试里继续发请求。
   while (mountedWrappers.length) mountedWrappers.pop().unmount()
   useConnectivity().stop()
   useConnectivityNotice().close()
@@ -444,7 +422,6 @@ describe('ProfilePage Wargaming regions', () => {
     const wrapper = mountProfile()
     await flushPromises()
 
-    // current + pending + rejected sections render
     expect(wrapper.text()).toContain('hundred.profileTitle')
     expect(wrapper.text()).toContain('hundred.currentRecords')
     expect(wrapper.text()).toContain('Object 277')
@@ -459,7 +436,6 @@ describe('ProfilePage Wargaming regions', () => {
     expect(wrapper.text()).toContain('INSUFFICIENT_PROOF')
     expect(wrapper.text()).toContain('Screenshot unclear')
 
-    // withdraw triggers cancel API and refreshes status
     const withdrawButton = wrapper.findAll('button').find(b => b.text().includes('hundred.withdraw'))
     expect(withdrawButton).toBeTruthy()
     await withdrawButton.trigger('click')
@@ -566,7 +542,6 @@ describe('ProfilePage identity card', () => {
     expect(wrapper.text()).toContain('profile.keycloakUsername')
     const value = wrapper.get('[data-testid="profile-keycloak-username"]')
     expect(value.text()).toBe('wg_asia_512345678')
-    // 只读：Keycloak 用户名不允许站内编辑（无输入控件 / 编辑入口）。
     expect(value.findAll('input, textarea, select, button, [contenteditable]')).toHaveLength(0)
   })
 
@@ -596,7 +571,6 @@ describe('ProfilePage identity card', () => {
     await flushPromises()
     const button = wrapper.get('[data-testid="profile-copy-user-id"]')
 
-    // writeText 拒绝且无 execCommand 降级可用：不得显示「已复制」。
     await button.trigger('click')
     await flushPromises()
     expect(button.text()).toBe('profile.copy')
@@ -623,7 +597,6 @@ describe('ProfilePage identity card', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(userIdB)
 
-    // 剪贴板里是 A 的 ID：B 的按钮必须保持「复制」。
     finishCopyA()
     await flushPromises()
     expect(wrapper.get('[data-testid="profile-copy-user-id"]').text()).toBe('profile.copy')
@@ -662,7 +635,6 @@ describe('ProfilePage replay playback settings', () => {
 
   afterEach(() => {
     currentProfile = null
-    // 恢复后续套件依赖的动态 profile 实现（不留在本套件的固定返回值上）。
     userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
   })
 
@@ -803,13 +775,6 @@ describe('ProfilePage verify with replay', () => {
   })
 })
 
-/**
- * ProfilePage 的连通性门禁（PR #467 review blocker）。
- *
- * 页面所有 backend 动作都必须经 capability 门禁（ACCOUNT_PROFILE / HALL_OF_FAME），
- * offline / unknown / degraded / service-unavailable 一律**不发请求**、不进入 error 态，
- * 恢复在线后自动加载且不产生请求风暴。
- */
 describe('ProfilePage connectivity gating', () => {
   function resetApi() {
     for (const spy of Object.values(userApi)) spy.mockClear()
@@ -849,7 +814,6 @@ describe('ProfilePage connectivity gating', () => {
     expect(userApi.syncUserWotbAccountFromLogin).not.toHaveBeenCalled()
     expect(userApi.getUserHofRecords).not.toHaveBeenCalled()
     expect(hundredApi.hofHundredMyStatus).not.toHaveBeenCalled()
-    // 中性状态（不是 error / 不是 signedOut），文案来自 capability 模型。
     expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('featureOffline.accountProfile')
     expect(wrapper.text()).not.toContain('profile.loadError')
@@ -871,7 +835,6 @@ describe('ProfilePage connectivity gating', () => {
   })
 
   it('losing connectivity blocks every backend action the page would otherwise fire', async () => {
-    // CN 手工填写 + 已绑定 + 未验证：edit / unbind / verify-with-replay 三块都会渲染。
     currentProfile = {
       wotbAccountSource: 'USER_FILLED',
       wotbServer: 'CN',
@@ -887,20 +850,17 @@ describe('ProfilePage connectivity gating', () => {
     await flushPromises()
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
 
-    // 掉线后（页面已渲染）逐个动作都必须被门禁挡住。
     setOnline(false)
     window.dispatchEvent(new Event('offline'))
     await flushPromises()
     resetApi()
 
-    // unbind（profile 已绑定 → 「解绑」按钮存在）
     const unbind = wrapper.findAll('button').find(b => b.text().includes('profile.unbind'))
     expect(unbind).toBeTruthy()
     await unbind.trigger('click')
     await flushPromises()
     expect(userApi.deleteUserWotbAccount).not.toHaveBeenCalled()
 
-    // 用回放验证：本地解析也不会被触发（门禁在最前，避免用户选完文件才发现无法提交）
     const input = wrapper.get('[data-testid="profile-verify-input"]')
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.wotbreplay')], configurable: true })
     await input.trigger('change')
@@ -908,7 +868,6 @@ describe('ProfilePage connectivity gating', () => {
     expect(verifyApi.replayRecorderAccountId).not.toHaveBeenCalled()
     expect(verifyApi.verifyUserWotbAccountFromReplay).not.toHaveBeenCalled()
 
-    // edit → save：不得调用 updateUserWotbAccount（放最后：进入编辑态会隐藏 verify 区）
     const edit = wrapper.findAll('button').find(b => b.text().includes('profile.edit'))
     expect(edit).toBeTruthy()
     await edit.trigger('click')
@@ -919,7 +878,6 @@ describe('ProfilePage connectivity gating', () => {
     await flushPromises()
     expect(userApi.updateUserWotbAccount).not.toHaveBeenCalled()
 
-    // 掉线期间页面不会重新触发 ensure / get / hof（retry 的离线路径由上一个用例覆盖）
     expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
     expect(userApi.getUserHofRecords).not.toHaveBeenCalled()
@@ -938,7 +896,6 @@ describe('ProfilePage connectivity gating', () => {
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(false)
 
-    // 重复的 online 通知（推送抖动）不得再触发第二次加载
     window.dispatchEvent(new Event('online'))
     window.dispatchEvent(new Event('online'))
     await flushPromises()
@@ -951,7 +908,6 @@ describe('ProfilePage connectivity gating', () => {
     expect(wrapper.text()).toContain('featureOffline.accountProfile')
     resetApi()
 
-    // 挂起资料读取：phase 在请求完成前仍是 connectivity-unavailable。
     let resolveProfile
     userApi.getUserProfile.mockImplementationOnce(() => new Promise((resolve) => { resolveProfile = resolve }))
     setOnline(true)
@@ -970,7 +926,6 @@ describe('ProfilePage connectivity gating', () => {
   })
 })
 
-/** 业务失败与连通性变化分开，异步等待后在真实 backend boundary 再次 gate。 */
 describe('ProfilePage bootstrap failure and asynchronous connectivity changes', () => {
   function deferred() {
     let resolve
@@ -1026,7 +981,6 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
     expect(useBusinessUserBootstrap().state.value).toBe('failed')
     expect(useBusinessUserBootstrap().error.value).toEqual(failure)
 
-    // 即使状态重新发布 online，业务 error 也不应自行重试。
     useConnectivity().stop()
     await useConnectivity().start()
     window.dispatchEvent(new Event('online'))
@@ -1117,12 +1071,6 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
   })
 })
 
-/**
- * 2.1.0 Phase 6/7：认证状态的**响应式**语义与账户隔离。
- * - 登录回站（false→true）不需要重新挂载/刷新，页面自己进入已登录并恰好加载一次；
- * - 登出（true→false）立即清空上一账号的一切投影；
- * - 账户切换（A→B）时 A 时代的在途请求迟到返回，不得写进 B 的页面（epoch 归属）。
- */
 describe('ProfilePage 响应式认证与账户隔离', () => {
   beforeEach(() => {
     profileFailures = 0
@@ -1136,11 +1084,6 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
 
 
   it('P1 守卫：每个 finally 里的 pending 清理都做身份归属检查（源码级不变量）', () => {
-    // review P1：`finally { loading.value = false }` 这类无条件清理会让 A 时代的迟到响应
-    // 把 B 正在进行的加载/pending 误判为空闲（重连 / watch 路径可能因此再起一次请求）。
-    // 只审 **finally 块**内：登出清理（watcher true→false 分支）无条件清空是刻意的，不在范围内。
-    // happy-dom 环境下 import.meta.url 不是 file: URL：按 vitest 的 cwd（frontend/）取源文件
-    // pending 清理逻辑已拆分至 profile/ 模块：不变量覆盖宿主 + 各模块源码
     const source = [
       'src/components/ProfilePage.vue',
       'src/components/profile/useProfileSession.ts',
@@ -1190,13 +1133,11 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
     expect(calls).toBe(0)
 
-    // 登录回站：只翻转 authenticated（模拟 Android authChanged 推送 / 浏览器回程），
-    // 不重新挂载、不刷新页面
-    signInAs('user-b')                                     // 身份变化 → 代数前进（与生产同规则）
+    signInAs('user-b')
     tokenRef.value = { sub: 'user-b', preferred_username: 'back-from-login' }
     await flushPromises()
 
-    expect(calls).toBe(1)                                  // 自己加载，恰好一次
+    expect(calls).toBe(1)
     expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -1207,7 +1148,7 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('profile.serverAsia')
 
-    signOut()                                              // 登出 → 身份回到 null → 代数前进
+    signOut()
     await flushPromises()
 
     expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
@@ -1222,9 +1163,8 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     }))
 
     const wrapper = mountProfile()
-    await flushPromises()                       // A 的请求在途（挂起）
+    await flushPromises()
 
-    // A 登出、B 登录：身份边界两次前进（每次都由身份变化驱动）
     signOut()
     await flushPromises()
     signInAs('user-b')
@@ -1232,7 +1172,6 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('profile.serverEu')
 
-    // A 的响应现在才到：必须被丢弃（页面仍是 B 的数据）
     releaseA()
     await flushPromises()
     expect(wrapper.text()).toContain('profile.serverEu')
@@ -1241,18 +1180,6 @@ describe('ProfilePage 响应式认证与账户隔离', () => {
   })
 })
 
-/**
- * Android 2.1.0 真机 bug：Native Auth 登录 → 进入 Profile → Logout → 回 Home → 再进 Profile，
- * 页面**永久**停在「正在初始化登录…」。
- *
- * 根因：ProfilePage 把 `await initPromise` 的历史 boolean 当成了当前登录态。
- * init 交易在第一次 authenticated 时就 resolve(true)，`logout()` 只把 reactive session
- * 投影成 unauthenticated（不重建交易），所以重挂载读到 stale `true` → 误进 `done` →
- * 当前 session 实际未登录 → `loadProfile()` 被 epoch 守卫丢弃 → `profile` 保持 null →
- * 模板落到最后的 `profile.loading`。
- *
- * 修复后的语义：`initPromise` 只用于等 bootstrap **落定**；登录态只认当前 reactive session。
- */
 describe('ProfilePage logout 后重挂载（stale init 结果）', () => {
   beforeEach(() => {
     profileFailures = 0
@@ -1262,28 +1189,23 @@ describe('ProfilePage logout 后重挂载（stale init 结果）', () => {
     userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
     userApi.getUserHofRecords.mockResolvedValue([])
     hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
-    // 重挂载前把 business bootstrap 状态机放回 idle，等价于"下一次 app bootstrap 起点"：
-    // bug 版本会因此真的去触发 ensure，下面「零 backend 流量」的断言才有区分度。
     resetBusinessUserBootstrap()
   })
 
   afterEach(() => resetBusinessUserBootstrap())
 
   it('remount 只认当前 session：stale initPromise 不得驱动 profile 加载', async () => {
-    // 1) startup authenticated → Profile 正常加载
     signInAs('user-a')
     const first = mountProfile()
     await flushPromises()
     expect(first.find('[data-testid="profile-logout"]').exists()).toBe(true)
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
 
-    // 2) Logout → authState=false，页面立即 signedOut（响应式 watcher，不需要重挂载）
     signOut()
     await flushPromises()
     expect(api.authenticated).toBe(false)
     expect(first.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
 
-    // 3) 离开 Profile 再回来：initPromise 仍是第一次那笔已经 resolve(true) 的历史交易
     first.unmount()
     await flushPromises()
     resetBusinessUserBootstrap()
@@ -1291,19 +1213,15 @@ describe('ProfilePage logout 后重挂载（stale init 结果）', () => {
     hundredApi.hofHundredMyStatus.mockClear()
     expect(await staleInitPromise()).toBe(true)
 
-    // 4) 重挂载：登录态按当前 session 判定 → signedOut（不是 done）
     const second = mountProfile()
     await flushPromises()
     expect(second.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
 
-    // 5) 不得发起任何 backend 流量：profile 读取与 business bootstrap 都不许被触发
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
     expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
 
-    // 6) 绝不显示「正在初始化登录…」
     expect(second.text()).not.toContain('profile.loading')
 
-    // 7) 再次登录（false→true）：仍然恰好加载一次，不需要刷新 / 重挂载
     signInAs('user-a')
     await flushPromises()
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)

@@ -54,9 +54,9 @@ describe('usePlaybackTransport', () => {
     expect(adapter.restart).toHaveBeenCalledTimes(1)
     expect(adapter.restart.mock.invocationCallOrder[0]).toBeLessThan(adapter.play.mock.invocationCallOrder[0])
     expect(state.playing).toBe(true)
-    t.togglePlay() // 播放中 → 暂停，不回卷
+    t.togglePlay()
     expect(state.playing).toBe(false)
-    t.handleKeydown(key({ code: 'Space', key: ' ' })) // 中途暂停后继续
+    t.handleKeydown(key({ code: 'Space', key: ' ' }))
     expect(adapter.restart).toHaveBeenCalledTimes(1)
     expect(state.playing).toBe(true)
   })
@@ -102,7 +102,7 @@ describe('usePlaybackTransport', () => {
     t.handleKeydown(next)
     expect(jumpShot).toHaveBeenCalledWith(1)
 
-    const bare = usePlaybackTransport(adapter, { keyboard: false })   // 2D：未接 jumpShot
+    const bare = usePlaybackTransport(adapter, { keyboard: false })
     const untouched = key({ code: 'Comma', key: ',' })
     bare.handleKeydown(untouched)
     expect(jumpShot).toHaveBeenCalledTimes(2)
@@ -138,12 +138,11 @@ describe('usePlaybackTransport', () => {
     expect(eight.defaultPrevented).toBe(false)
     expect(rideVehicle).toHaveBeenCalledTimes(3)
 
-    const bare = usePlaybackTransport(adapter, { keyboard: false })   // 2D：未接 rideVehicle
+    const bare = usePlaybackTransport(adapter, { keyboard: false })
     const untouched = key({ code: 'Digit1', key: '1' })
     bare.handleKeydown(untouched)
     expect(untouched.defaultPrevented).toBe(false)
     expect(rideVehicle).toHaveBeenCalledTimes(3)
-    // Ctrl/Meta/Alt 组合键不得劫持（浏览器标签页切换等系统快捷键）
     for (const mod of ['ctrlKey', 'metaKey', 'altKey']) {
       const combo = key({ code: 'Digit1', key: '1', [mod]: true })
       t.handleKeydown(combo)
@@ -160,7 +159,6 @@ describe('usePlaybackTransport', () => {
     t.handleKeydown(digit)
     expect(rideVehicle).not.toHaveBeenCalled()
     expect(digit.defaultPrevented).toBe(false)
-    // 同一 usage 下飞行态按事件当次判定：切出自由飞行后数字键归骑乘
     const fly = { value: true }
     const dynamic = usePlaybackTransport({ ...adapter, rideVehicle, isFlyMode: () => fly.value }, { keyboard: false })
     dynamic.handleKeydown(key({ code: 'Digit3', key: '3' }))

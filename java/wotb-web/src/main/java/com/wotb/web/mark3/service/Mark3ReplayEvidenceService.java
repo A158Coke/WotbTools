@@ -22,7 +22,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 三环审核回放 evidence 的内容寻址落盘、元数据与终态清理编排。 */
 @Service
 public class Mark3ReplayEvidenceService {
 
@@ -48,7 +47,6 @@ public class Mark3ReplayEvidenceService {
         this.replayHashLock = replayHashLock;
     }
 
-    /** 创建阶段已解析并验证的单个原始回放。 */
     public record PendingReplay(
             int slot,
             String originalFilename,
@@ -59,7 +57,6 @@ public class Mark3ReplayEvidenceService {
     ) {
     }
 
-    /** 在外层 sorted advisory locks 内幂等落盘；失败时仅清理本次已落盘且未被 evidence 引用的文件。 */
     public void storeAll(final List<PendingReplay> replays) {
         final List<String> stored = new ArrayList<>();
         try {
@@ -73,7 +70,6 @@ public class Mark3ReplayEvidenceService {
         }
     }
 
-    /** 与 submission 创建同一事务插入全部 evidence metadata。 */
     @Transactional
     public void attach(final long submissionId, final List<PendingReplay> replays) {
         for (final PendingReplay replay : replays) {
@@ -89,7 +85,6 @@ public class Mark3ReplayEvidenceService {
         repository.flush();
     }
 
-    /** 终态迁移时删 metadata；commit 后在 hash 锁内清理自身独立存储命名空间的无引用文件。 */
     @Transactional
     public void discardForSubmission(final long submissionId) {
         final List<String> hashes = repository.findBySubmissionId(submissionId).stream()
@@ -103,7 +98,6 @@ public class Mark3ReplayEvidenceService {
         scheduleAfterCommit(() -> cleanupFilesLocked(hashes));
     }
 
-    /** 创建事务已回滚后的失败清理；调用者必须仍持有外层 hash 锁。 */
     public void cleanupStoredFiles(final List<String> sha256s) {
         cleanupFilesUnlocked(sha256s);
     }
@@ -132,7 +126,6 @@ public class Mark3ReplayEvidenceService {
         }
     }
 
-    /** APPROVE 前的后端证据门禁：5 个连续 slot、物理文件存在、1–2 张 data:image 截图。 */
     @Transactional(readOnly = true)
     public void requireCompleteEvidenceForApproval(
             final long submissionId,

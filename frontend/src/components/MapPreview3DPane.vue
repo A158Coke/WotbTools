@@ -1,14 +1,4 @@
 <script setup>
-/**
- * 地图预览 3D 面板：playbackScene.loadMapOnly 的宿主——地图面资产
- * （ground/terrain/lighting/IBL/scenery/destructibles 完好预状态）+ 相机（俯视 / 自由飞行）
- * + 表面锚定标注绘制（无 scenery 锚点时回落地形），无车辆、无传输、不依赖回放文件。
- *
- * 会话生命周期与 Replay3DPane 同一不变量（sceneApi 存在 ⟺ 活的 stage DOM ∧ WebGL 可用
- * ∧ 资产连通），加载纪律（loading/err/assetStage/assetProgress 唯一写入权）归内核
- * `loadMapOnly`，本组件只发命令。标注状态机与 3D 回放同源（utils/annotation 全套），
- * 差异只有就绪门控（mapReady 而非 hasData）与标注的文件导入/导出。
- */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Download, PencilRuler, TriangleAlert, Upload } from 'lucide-vue-next'
@@ -35,24 +25,11 @@ import { useMapPreviewAnnotationFile } from '../composables/useMapPreviewAnnotat
 import { useMapPreview3DSession } from '../composables/useMapPreview3DSession.js'
 
 const props = defineProps({
-  /** 资产面数字地图 id（loadMapOnly 'id=' 解析入口） */
   mapId: { type: Number, required: true },
-  /** 已本地化的地图名（picker 侧解析；内核只用于顶栏名） */
   mapName: { type: String, default: '' },
-  /** 资产面 key（标注导入/导出归属校验） */
   mapKey: { type: String, required: true },
-  /**
-   * 基地点位组键（页面 ?bases= 解析后下发）：'supremacy' | 'assault' | null。
-   * 推给内核 setMapBasesKind——画哪组贴地基地环由宿主显式指定，渲染与回放
-   * 同一条管线（playback/bases.js），几何 fail-closed 在内核。
-   */
   basesKind: { type: String, default: null },
-  /**
-   * 出生点列（#835；页面按 mapKey 从语义档案解析后下发）：内核 setMapSpawns
-   * 建贴地标记——缺档/非数组不画（fail-closed 在内核与解析器两端）。
-   */
   spawnPoints: { type: Array, default: null },
-  /** 隐藏时停帧不销毁（页面 v-show 切 2D/3D） */
   active: { type: Boolean, default: true },
 })
 
@@ -65,15 +42,11 @@ const store = createPlaybackStore()
 const stage = ref(null)
 const sceneApi = ref(null)
 const getSceneApi = () => sceneApi.value
-// Stage 高度（usePaneFillHeight：视口剩余高度的 JS 度量，全屏吃满）。
-// rootEl 必须先于 fullscreen/fly 等 composable 声明——它们的 option getter 同步读取它。
 const rootEl = ref(null)
 const { height: stageH } = usePaneFillHeight(rootEl)
 
-// ---------- 相机 / 画质 / 全屏 / 飞行 ----------
 const CAMERAS = computed(() => [
   { value: 'free', label: t('agentReplay.cam_free') },
-  // 俯视是持续模式（OrbitControls 绕地图中心旋转/缩放），与自由并列；地图预览无跟随
   { value: 'top', label: t('agentReplay.cam_top') },
 ])
 function chooseCamera(mode) {
@@ -98,21 +71,15 @@ const fly = useSceneFlyControls({
   getSceneApi: () => sceneApi.value,
 })
 
-// ---------- 标注（selected-surface drawing；无 surfaceY/surfaceN 时 terrain fallback）----------
-// 会话唯一 owner = useSceneAnnotations（与 3D 回放共用）；就绪门 = store.mapReady。
 const {
   annotationOpen, annotations, replaceAnnotations, pushAnnotationProjection, pushAnnotationInteraction,
   pushAnnotationVisibility, commitAnnotationFromScene, eraseFromScene, openAnnotation, closeAnnotation,
   resetAnnotationState, toolbarProps: annotationToolbarProps, toolbarHandlers: annotationToolbarHandlers,
 } = useSceneAnnotations({ getSceneApi: () => sceneApi.value, interactionReady: () => store.mapReady })
 
-// ---------- 标注导入 / 导出（会话内的文件落盘；fail-closed 校验）----------
-// 文件 schema owner = useMapPreviewAnnotationFile（与 2D 预览共用，可互导）。
-// surfaceY / surfaceN 是 session-local 3D 锚点，不进入文件 schema：导入导出都剥离。
 const { importMessage, exportAnnotations, importAnnotations } = useMapPreviewAnnotationFile({
   mapKey: () => props.mapKey,
   annotations,
-  // 内核标注只支持 pen，半校验条目（如 route+null 点）会在渲染或 applyEraser 里 TypeError。
   validate: isImportableAnnotation,
   sanitize: stripSurfaceAnchors,
   suffix: '3d',
@@ -120,7 +87,6 @@ const { importMessage, exportAnnotations, importAnnotations } = useMapPreviewAnn
   t,
 })
 
-/** 本面板的标注几何只有 pen（表面锚定画笔，缺锚点时回落地形）：点列 ≥2、坐标有限、宽度为正。 */
 function isImportableAnnotation(a) {
   return !!a && a.type === 'pen'
     && typeof a.color === 'string'
@@ -142,7 +108,6 @@ const { destroyScene, reloadMap, changeQuality } = useMapPreview3DSession({
 watch(() => props.active, (active) => {
   if (!active && annotationOpen.value) closeAnnotation()
 })
-// ---------- 「隐藏全部 UI」（与 3D 回放同一语义，不持久化）----------
 const uiHidden = ref(false)
 const importFile = ref(null)
 function toggleUiHidden() {
@@ -158,14 +123,12 @@ function onUiToggleKeydown(event) {
   toggleUiHidden()
 }
 
-// ---------- 帧率角标（与 3D 回放同源 store 字段）----------
 const fpsText = computed(() => (store.fps > 0
   ? `${store.fps.toFixed(1)} FPS · ${store.frameMs.toFixed(1)}/${store.framePeakMs.toFixed(1)} ms`
   : '— FPS'))
 const fpsJanky = computed(() => store.fps > 0
   && (store.fps < 45 || (store.framePeakMs > 0 && store.framePeakMs > store.frameMs * 2.5)))
 
-// ---------- 就绪 / 状态投影（加载纪律在内核，组件只读）----------
 const statusMode = computed(() => {
   if (store.err) return 'error'
   if (store.loading || store.assetStage) return 'loading'
@@ -180,7 +143,6 @@ const paneReady = computed(() => !online.value.available || !webgl.supported
 
 onMounted(() => {
   window.addEventListener('keydown', onUiToggleKeydown)
-  // 场景拉起归上面的 immediate reconcile watcher（覆盖连通性 pending 竞态）
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onUiToggleKeydown)
@@ -197,10 +159,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
 
 <template>
   <div ref="rootEl" class="map3d" data-scene-surface :data-pane-ready="paneReady ? 'true' : undefined" data-testid="map-3d-pane">
-    <!-- 连通性不可用是环境事实，stage 不渲染（available 翻转后由 reconcile watcher 建场景）。
-         注意 loading/error **不得**走模板分支：initScene 的 canvas append 在 loadMapOnly
-         开跑时执行，分支切换会卸载 stage、把 canvas 丢进游离 DOM（矿井阵地空白页根因）。
-         因此 stage 常驻，加载/错误是覆盖层（与回放 3D 的 pb-root 同一结构）。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="map3d-note" data-testid="map-3d-connectivity">{{ $t(online.messageKey) }}</p>
     </template>
@@ -220,7 +178,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
           :message="statusMessage"
           @retry="reloadMap"
         />
-        <!-- 资产降级是非阻塞状态（与回放 3D 同一口径）：场景可交互，但缺失必须可见 -->
         <div
           v-if="!uiHidden && store.mapReady && store.assetDegraded"
           class="map3d-degraded"
@@ -301,7 +258,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
           />
         </div>
         <p v-if="importMessage" class="map3d-import-note" role="status" data-testid="map-3d-import-note">{{ importMessage }}</p>
-        <!-- #835：飞行/缩放操作提示（速度档 1–6 此前完全不可发现；桌面手感验收见 PR 清单） -->
         <p class="map3d-hint" data-testid="map-3d-controls-hint">{{ t('mapPreview.controlsHint') }}</p>
       </div>
       <button
@@ -314,8 +270,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
         @click="toggleUiHidden"
       >{{ t('agentReplay.show_all_ui') }}</button>
     </div>
-    <!-- 全屏入口统一右上角浮动（四个场景宿主同一契约；位置在 uiHidden 之外，
-         Hide All UI 不得造成无法退出全屏） -->
     <SceneFullscreenButton
       v-if="fullscreenSupported"
       floating
@@ -323,9 +277,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
       data-testid="map-3d-fullscreen"
       @toggle="toggleFullscreen()"
     />
-    <!-- 移动端竖向距离滑条：仅手机横屏显示（竖屏隐藏，判据与回放同一
-         usePlaybackPortraitViewport）；全屏按钮正下方，free/top 可用，follow/recorder
-         场景返回 unavailable（这里以 cam 判定隐藏）；Hide All UI 时随控件一起隐藏。 -->
     <SceneDistanceSlider
       :get-scene-api="getSceneApi"
       :visible="isPhone && !isPortrait && !uiHidden && (store.cam === 'free' || store.cam === 'top')"

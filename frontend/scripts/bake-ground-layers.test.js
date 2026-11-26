@@ -1,7 +1,3 @@
-// 俯视烘焙分层地表读取 fail-closed 回归（scripts/bake-ground-layers.js；PR #621 review blocker）：
-// 有地形时分层地表缺/坏任一份 ⇒ 读取必须抛出带资源名的错误（并释放已解码纹理），不得返回
-// null 让烘焙页以 mapTexture:null（纯白 MeshBasicMaterial）建地面、再写 ground=true 交给
-// composite_overhead.py 覆盖 ground.webp。页面侧 ground 标志接线的源码守卫在 src/scene/groundPass.test.js。
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { createHash } from 'node:crypto'
@@ -11,7 +7,6 @@ import { CLIENT_NORMAL_CAMERA_FOV_H } from '../src/scene/terrainMesh.js'
 
 const BASE = 'http://bake.test/pack/map/demo/'
 
-// 结构与真实 ground.layers.json 同键（groundShaderMaterial 逐键读取）
 function layersJson({ heightBlend = false } = {}) {
   const v4 = [1, 1, 1, 1]
   return {
@@ -22,7 +17,6 @@ function layersJson({ heightBlend = false } = {}) {
   }
 }
 
-/** 伪资产面：files = { 'ground.layers.json': body, 'ground/cm.webp': bytes, ... }；缺键 = 404 */
 function packFetch(files, { throwOn = null } = {}) {
   const requested = []
   const fetchFn = async (url) => {
@@ -41,7 +35,6 @@ function completeFiles(L) {
   return files
 }
 
-/** 纹理解码桩：记录每张解码出的纹理（真实 THREE.Texture，dispose 走真实事件）与释放情况 */
 function textureLoader({ failOn = null, failWith = new Error('decode failed') } = {}) {
   const made = []
   const loadTexture = async (blob) => {
@@ -65,9 +58,9 @@ describe('烘焙分层地表读取 fail-closed（缺/坏即抛出，不返回半
     const { loadTexture, made } = textureLoader()
     await expect(loadBakeGroundLayers({ base: BASE, fetchFn, loadTexture }))
       .rejects.toThrow(/^ground layer 缺失: tile1（HTTP 404）$/)
-    expect(made).toHaveLength(3)                           // cm, lm, tile0
+    expect(made).toHaveLength(3)
     expect(made.every((m) => m.disposed)).toBe(true)
-    expect(requested).not.toContain('ground/mask0.webp')   // 首个缺失即止，不再继续下载
+    expect(requested).not.toContain('ground/mask0.webp')
   })
 
   it('ground.layers.json 缺失 ⇒ reject（此前 r.ok=false 时静默得到 null）', async () => {
@@ -88,12 +81,11 @@ describe('烘焙分层地表读取 fail-closed（缺/坏即抛出，不返回半
 
   it('TextureLoader 解码失败 ⇒ reject「ground layer 解码失败: <层>」，此前已解码的纹理释放', async () => {
     const { fetchFn } = packFetch(completeFiles(layersJson()))
-    const { loadTexture, made } = textureLoader({ failOn: 4 })  // 第 5 张 = mask0
+    const { loadTexture, made } = textureLoader({ failOn: 4 })
     await expect(loadBakeGroundLayers({ base: BASE, fetchFn, loadTexture }))
       .rejects.toThrow(/^ground layer 解码失败: mask0: decode failed$/)
     expect(made).toHaveLength(4)
     expect(made.every((m) => m.disposed)).toBe(true)
-    // 真实 TextureLoader 以 DOM Event reject（无 message）：错误仍须可读
     const ev = textureLoader({ failOn: 0, failWith: new Event('error') })
     await expect(loadBakeGroundLayers({ base: BASE, fetchFn, loadTexture: ev.loadTexture }))
       .rejects.toThrow(/^ground layer 解码失败: cm: error$/)
@@ -130,7 +122,6 @@ describe('烘焙分层地表读取 fail-closed（缺/坏即抛出，不返回半
       expect(Object.keys(groundLayers.texs)).toEqual(groundLayerKeys(L))
       expect(made.some((m) => m.disposed)).toBe(false)
 
-      // 与 bake-ground-overhead.mjs 的 load() 同参：field 存在 + 完整分层 → 地面网格
       const n = 64, span = 600
       const field = new Float32Array(n * n)
       const mesh = new THREE.Mesh(buildGroundGeometry({
@@ -148,11 +139,10 @@ describe('烘焙分层地表读取 fail-closed（缺/坏即抛出，不返回半
 })
 
 describe('烘焙地形配对 fail-closed（真实 loadTerrain → requireBakeTerrain；PR #621 re-review P2）', () => {
-  const N = 512                                     // decodeTerrainField 的缺省 size：json 缺失时恰好可解
+  const N = 512
   const BIN = new Uint8Array(N * N * 2)
   const sha = createHash('sha256').update(BIN).digest('hex')
   const META = { size: N, zmin: -5, zmax: 60, terrainLayout: 2, worldBounds: { min: [-400, -400], max: [400, 400] }, terrainBinSha256: sha }
-  /** json/bin：undefined = 404；数字 = 该 HTTP 状态；否则为响应体（json 对象自动序列化） */
   async function terrainOf({ json, bin }) {
     const respond = (body) => (body === undefined ? new Response('nf', { status: 404 })
       : typeof body === 'number' ? new Response('err', { status: body })
@@ -170,8 +160,6 @@ describe('烘焙地形配对 fail-closed（真实 loadTerrain → requireBakeTer
 
   it('terrain.json 404 + 恰好 512²×2 的 bin ⇒ 不产 field，但烘焙仍按 HTTP 事实抛出', async () => {
     const t = await terrainOf({ bin: BIN })
-    // 2026-10-18：loadTerrain 不再按缺省 layout/zmax 解码 ⇒ field=null；
-    // requireBakeTerrain 仍据 metaStatus=404 / binStatus=200 判“不完整”，不会把 bin 当无地形。
     expect(t.field).toBeNull()
     expect(t.meta).toEqual({})
     expect(() => requireBakeTerrain(t)).toThrow(/^terrain 不完整: terrain\.json 缺失（HTTP 404）但 terrain\.u16\.bin 存在/)

@@ -1,7 +1,3 @@
-/**
- * 交互射界图的几何层 golden：径向映射（BI 11.21 Gun arcs 锚点）、方位角换算、
- * 射界钳制、带路径轮廓与装备加成。数值语义由 tankSetup.pitchAtBearing 提供。
- */
 import { describe, expect, it } from 'vitest'
 import {
   arcBearingRange,
@@ -16,11 +12,9 @@ import {
 describe('radiusForPitch / pitchForRadius（BI 锚点内外翻转）', () => {
   it('俯角向内、仰角向外，锚点取 BI 半径镜像', () => {
     expect(radiusForPitch(0)).toBeCloseTo(0.5, 4)
-    // 外圈 = 仰角（BI 原半径的镜像）
     expect(radiusForPitch(10)).toBeCloseTo(0.7126, 4)
     expect(radiusForPitch(18)).toBeCloseTo(0.8295, 4)
     expect(radiusForPitch(26)).toBeCloseTo(0.8964, 4)
-    // 内圈 = 俯角
     expect(radiusForPitch(-3)).toBeCloseTo(0.4315, 4)
     expect(radiusForPitch(-6)).toBeCloseTo(0.366, 4)
     expect(radiusForPitch(-8)).toBeCloseTo(0.3252, 4)
@@ -32,8 +26,8 @@ describe('radiusForPitch / pitchForRadius（BI 锚点内外翻转）', () => {
     for (const pitch of [-20, -10, -6, -3, 0, 10, 18, 26, 45]) {
       expect(pitchForRadius(radiusForPitch(pitch))).toBeCloseTo(pitch, 1)
     }
-    expect(pitchForRadius(0)).toBe(-22) // 圆心 = 最大俯角
-    expect(pitchForRadius(1)).toBe(60) // 外沿 = 最大仰角
+    expect(pitchForRadius(0)).toBe(-22)
+    expect(pitchForRadius(1)).toBe(60)
   })
 })
 

@@ -26,15 +26,9 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 百场 submission 业务契约测试（Mockito，无 DB，任何环境可跑）。
- * 覆盖：submission 校验矩阵 / CURRENT 门槛 / snapshot /
- * approval / terminal transition 竞争 / delete / rank / files。
- */
 @ExtendWith(MockitoExtension.class)
 class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
 
-    // ── Submission：创建校验矩阵 ────────────────────────────────────────
 
     @Test
     void validSubmissionCreatesPendingWithFrozenSnapshot() throws Exception {
@@ -48,12 +42,10 @@ class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
         verify(repository).saveAndFlush(captor.capture());
         final HundredBattleSubmission s = captor.getValue();
         assertThat(s.getStatus()).isEqualTo("PENDING");
-        // ownership 重构：记录只冻结 canonical owner（区服 + WotB 账号），不再保存 Keycloak 身份
         assertThat(s.getWotbServer()).isEqualTo(WOTB_SERVER);
         assertThat(s.getWotbAccountId()).isEqualTo(GAME_ID);
         assertThat(s.getVehicleId()).isEqualTo(TIER10_VEHICLE);
         assertThat(s.getVehicleName()).isEqualTo("Progetto 65");
-        // 身份快照冻结：创建瞬间的 nickname，与之后 Profile 修改无关
         assertThat(s.getNicknameSnapshot()).isEqualTo("PlayerOne");
         assertThat(s.getClaimedAverageDamage()).isEqualTo(4200);
         assertThat(s.getClaimedBattleCount()).isEqualTo(136);
@@ -261,7 +253,6 @@ class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
     void rejectsMissingReplayFacts() {
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        // 服务器没有 parser：facts 必填，且与回放一一对应
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), List.of()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -294,7 +285,6 @@ class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
                 "data:image/png;base64,AAAA", fiveReplays(), invalidFacts(fiveReplays())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("INVALID_REPLAY_FACTS");
-        // 单份结构非法（缺 team）也整单拒绝
         final List<String> oneBroken = new ArrayList<>(facts(fiveReplays()));
         final Battle noTeam = battle("a3");
         noTeam.players.getFirst().team = 0;
@@ -335,7 +325,6 @@ class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
     void rejectsDuplicateBattleAmongFiveReplays() throws Exception {
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
-        // 第二份与第一份同 arena（a2 重复）→ 不是 5 场不同 battle
         final List<MultipartFile> files = replays(5, "a1", "a2", "a2", "a3", "a4");
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", files, facts(files)))
@@ -344,12 +333,9 @@ class HundredSubmissionValidationTest extends HundredSubmissionTestSupport {
         verify(repository, never()).saveAndFlush(any());
     }
 
-    // ── Submission：PENDING 唯一性 & CURRENT 门槛 ───────────────────────
 
     @Test
     void rejectsWhenSameUserSameVehicleAlreadyPending() {
-        // PENDING cheap check 在 replay parse 之前：不解析任何 replay 即拒绝。
-        // ownership 已改为 canonical owner（profile 的 (wotbServer, wotbAccountId)），不再按 Keycloak id 查询。
         when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "PENDING"))

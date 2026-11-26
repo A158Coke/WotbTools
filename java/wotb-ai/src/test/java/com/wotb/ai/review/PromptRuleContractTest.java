@@ -9,7 +9,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 三语资源的业务规则契约。 */
 class PromptRuleContractTest {
 
     @Test
@@ -54,8 +53,6 @@ class PromptRuleContractTest {
 
     @Test
     void coachStandardKillValueUsesConsistentScoreBasis() {
-        // 80-point swing (+40/-40) vs one base's measured income r: 80/r and 40/r; r is not inferred from the base count
-        // (lagoon and forgecity have 3 bases but 1.5 points/s).
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("80/r 秒"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("r = 2.5 时约 32 / 16 秒，r = 1.5 时约 53 / 27 秒"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("about 32 / 16 seconds at r = 2.5 and about 53 / 27 seconds at r = 1.5"));
@@ -75,21 +72,17 @@ class PromptRuleContractTest {
         assertTrue(zh.contains("只在列出的前提都有当时证据"));
         assertTrue(zh.contains("前提缺证据或命中例外时不套用规则"));
         assertFalse(zh.contains("最高优先级") || zh.contains("以本规范为准"), "压缩规则不得声明覆盖其他模块");
-        // RULE-003 / RULE-010 keep the preconditions the Coach Book states.
         assertTrue(zh.contains("第二个方向的敌车当时 CURRENT") && zh.contains("自身血量只够再吃 2–3 发") && zh.contains("有撤离路线"));
         assertTrue(zh.contains("唯一在点里卡点或拒止的车"));
-        // RULE-003 keeps two separate fixing exceptions: sustained damage for numbers, and holding the main body for income (no damage needed).
         assertTrue(zh.contains("它拖住对方主力、用时间保住己方收入，不要求持续输出"));
         assertFalse(zh.contains("以多打少或保住收入"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("with no sustained damage required"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("постоянный урон не требуется"));
         assertTrue(zh.contains("对方只剩 1 辆或极少数车"));
-        // RULE-011's 5 m figure is not a verified threshold.
         for (final String rule : List.of(zh, TeamPromptLocalizer.COACH_STANDARD_RULE_EN, TeamPromptLocalizer.COACH_STANDARD_RULE_RU)) {
             assertFalse(rule.contains("5 米以上") || rule.contains("at least 5 m") || rule.contains("минимум на 5 м"));
         }
         assertFalse(zh.contains("010 多打一时优先全歼"));
-        // Support: a hit proves a firing line; no hit never proves no support. Only human-confirmed roles carry a verdict.
         assertTrue(zh.contains("没有命中不能反推没有支援"));
         assertFalse(zh.contains("看队友是否实际打到攻击者，不看距离"));
         assertTrue(zh.contains("只有标“人工确认”的定位能单独支撑"));
@@ -115,14 +108,11 @@ class PromptRuleContractTest {
             assertTrue(PlayerPromptRules.systemPrompt(key, AllowedLanguage.RU)
                     .contains("5. Сначала разберитесь с тем, кто по вам стреляет"));
         }
-        // Team review keeps its own supremacy standard; the solo standard is random-battle only.
         assertFalse(AiPromptLibrary.zh("team/single").contains("随机战个人复盘规范"));
     }
 
     @Test
     void soloStandardUsesOnlyProductionEvidenceAndNoSamplePrior() {
-        // ClientAiReviewProjection marks SHOT_LIFECYCLE / TARGETING / AMMUNITION unavailable: no rule may need
-        // shot timing, aimed target or reload state, and tournament sample statistics are not a prior.
         for (final String rule : List.of(PlayerPromptRules.SOLO_STANDARD_RULE,
                 PlayerPromptRules.SOLO_STANDARD_RULE_EN, PlayerPromptRules.SOLO_STANDARD_RULE_RU)) {
             for (final String banned : List.of("90%", "81%", "八成", "两成", "80%", "20%",
@@ -133,20 +123,15 @@ class PromptRuleContractTest {
         }
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("没有伤害记录不等于没开炮"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不得把它当成本局的先验"));
-        // No hindsight: a later double hit or third hit alone does not make the earlier decision a mistake.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("本身不证明前压是错的"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("前压前至少两条威胁已经 CURRENT 或可靠的 LAST_KNOWN"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("它的方向对你已经已知"));
-        // Rule 5 judges sustained exposure only; no damage is a trade result, never proof the player did not respond.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不作为判失误的依据"));
-        // Random teammates are not trusted by default; reliance is judged by the information at decision time.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("7. 野队队友不可靠"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("判的是依赖本身，不得从队友后来没来或数据缺失反推"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("7. Random teammates are unreliable"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("7. Союзники в случайном бою ненадёжны"));
-        // Teammate support is proven only by positive evidence; partial coverage or missing hits never prove absence.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("位置或距离单独不够"));
-        // No-support needs the same standard as support: distance alone is never proof.
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("CURRENT 位置很远"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("a distant CURRENT position"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("далёкая CURRENT позиция"));

@@ -11,15 +11,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 团队证据的对方信息。
- * <p>此前团队 prompt 只描述录像者所在队伍（TEAM_MEMBERS / FORMATION / ENGAGEMENTS…），
- * 对方阵容完全缺失，AI 无从做威胁分析。对方名册来自权威结算，属 mandatory 事实。</p>
- */
 class TeamOpposingLineupEvidenceTest {
 
-    private static final long SPHT_TANK_ID = 29985L;   // tankopedia: SPHT / Heavy tank / 10 / USA
-    private static final long IS_TANK_ID = 513L;       // tankopedia: IS / Heavy tank / 7 / USSR
+    private static final long SPHT_TANK_ID = 29985L;
+    private static final long IS_TANK_ID = 513L;
 
     @Test
     void opposingTeamLineupIsPresentWithAuthoritativePerVehicleFacts() {
@@ -44,7 +39,6 @@ class TeamOpposingLineupEvidenceTest {
         final String content = TeamAiPromptBuilder.single(context()).content();
 
         assertTrue(content.contains("OPPOSING_TEAM_AUTHORITATIVE_RESULT（对方合计·权威结算）"), content);
-        // 两名对手：2100+800 输出、1500+600 损失血量、2+1 击杀、1 名存活
         assertTrue(content.contains("opponentCount=2"), content);
         assertTrue(content.contains("finalDamage=2900"), content);
         assertTrue(content.contains("damageReceived=2100"), content);
@@ -64,7 +58,6 @@ class TeamOpposingLineupEvidenceTest {
     void ownMembersAlsoCarryStructuredTierAndNation() {
         final String content = TeamAiPromptBuilder.single(context()).content();
 
-        // 本队成员行（member accountId=…）同样带结构化等级/国家
         final int memberIdx = content.indexOf("member accountId=");
         assertTrue(memberIdx >= 0, content);
         final String memberLine = content.substring(memberIdx, content.indexOf('\n', memberIdx));
@@ -78,10 +71,9 @@ class TeamOpposingLineupEvidenceTest {
         final String content = TeamAiPromptBuilder.single(context()).content();
 
         if (!content.contains("=== MEMBER_MOVEMENTS ===")) {
-            return; // 该 fixture 无移动段时跳过：归属断言由下面的结构断言覆盖
+            return;
         }
         final String movements = content.substring(content.indexOf("=== MEMBER_MOVEMENTS ==="));
-        // 移动段之前必须先出现归属成员行，不能是匿名平铺列表
         final int firstMovement = movements.indexOf("  movement[");
         final int firstMember = movements.indexOf("member accountId=");
         assertTrue(firstMember >= 0 && firstMember < firstMovement, movements);
@@ -101,7 +93,6 @@ class TeamOpposingLineupEvidenceTest {
         assertFalse(prompt.contains("对方阵容逐车分析"), "团队复盘不得强制逐车作文");
     }
 
-    // ---- fixture：走真实管线构造单队上下文 ----
 
     private static SingleTeamBattleAnalysisContext context() {
         final List<PlayerResult> players = new ArrayList<>();
@@ -151,7 +142,6 @@ class TeamOpposingLineupEvidenceTest {
         battle.players = players;
         battle.recorder = ownAce.nickname;
 
-        // 视角解析失败 / 特征不可用会在构建时直接抛错（旧 perspective group 分组已删除）。
         return TeamContextBuilder.buildSingleTeamContext(battle, null);
     }
 }

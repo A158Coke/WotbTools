@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Regression test for the production Grafana upstream refresh contract.
-#
-# A frontend nginx process must not require Grafana to exist while nginx starts.
-# The monitor upstream is resolved through Docker embedded DNS at request time,
-# so Grafana failure remains isolated to monitor traffic.
 set -euo pipefail
 
 if [ -n "${WOTB_TEST_ROOT:-}" ]; then
@@ -41,18 +36,6 @@ grafana_diagnostics() {
   docker network inspect "$NETWORK" 2>&1 || true
 }
 
-# This fixture creates an explicit 172.29.0.0/16 subnet, so nothing else may hold that
-# range. Earlier steps in the same job run the real `-p deploy` Compose project
-# (`caddy adapt` through deploy/tx/validate-caddy-config.sh), which leaves behind two
-# candidates: `wotb_tx_internal`, whose Compose definition pins exactly 172.29.0.0/16,
-# and `deploy_default`, taken from the daemon's default address pool. `compose down`
-# does not reliably reap them here (the broken / not-adaptable fixtures run the same
-# project name from temp copies), so release both by name before claiming the subnet.
-# This used to work only as a side effect of deploy/test-caddy-route-inventory.sh
-# running last in the same job; that script now belongs to the Caddy owner, so the
-# precondition belongs to the fixture that needs it. Same rationale as
-# deploy/test-tx-runtime-config.sh. Both removals are no-ops when the network is absent
-# or still in use, so a developer's live `-p deploy` project is never torn down silently.
 for stale_network in wotb_tx_internal deploy_default; do
   docker network rm "$stale_network" >/dev/null 2>&1 || true
 done
@@ -105,8 +88,6 @@ docker run -d --name "$NGINX" --network "$NETWORK" -p "127.0.0.1:${PORT}:80" \
   --add-host wotb-backend:172.29.0.10 --add-host keycloak:172.29.0.10 \
   -v "$CFG:/etc/nginx/conf.d/default.conf:ro" nginx:alpine >/dev/null
 
-# The frontend nginx must start successfully while Grafana is absent. A
-# request to the monitor host is allowed to be a temporary 502 at this point.
 docker exec "$NGINX" nginx -t >/dev/null 2>&1 \
   || { nginx_diagnostics; echo "FAIL: nginx could not start without Grafana" >&2; exit 1; }
 docker inspect "$NGINX" --format '{{.State.Status}}' | grep -Fxq running \
@@ -126,8 +107,6 @@ done
 assert_monitor_health old \
   || { nginx_diagnostics; echo "FAIL: monitor proxy did not return HTTP 200/database=ok for the initial Grafana container" >&2; exit 1; }
 
-# Recreate Grafana at a different address. The still-running nginx process must
-# discover the new address through runtime Docker DNS without a restart.
 docker rm -f "$OLD_GRAFANA" >/dev/null
 start_grafana_stub "$NEW_GRAFANA" 172.29.0.11 new
 wait_for_grafana_dns

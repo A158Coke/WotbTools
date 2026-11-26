@@ -10,7 +10,6 @@ import {
 const here = dirname(fileURLToPath(import.meta.url))
 
 const chainObj = (names) => {
-  // names 自顶向下 → 返回最底端节点（parent 链向上）
   let node = null
   let parent = null
   for (const nm of names) {
@@ -81,35 +80,26 @@ describe('formatPickReport', () => {
   })
 })
 
-// 源码守卫：调试拾取必须独立于空处/车辆选中语义接入两条路径（评审 P2：
-// 车辆命中时 emptyDownAt=null，只挂空处路径会使车辆点击零报告）
 const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
-// 拾取报告器 2026-10-24 出仓 playback/pickReport.js（工厂 + ctx 快照），守卫随实现迁移
 const pickSrc = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
-// 场景装配块（含可破坏物发布时序）2026-10-24 出仓 playback/mapAssets.js，守卫随实现迁移
 const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
-// 指针选中/拾取接线 2026-11-06 出仓 playback/cameraRuntime.ts（#820 Step 2），守卫随实现迁移
 const cameraSrc = readFileSync(resolve(here, 'playback/cameraFlyInput.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
-// 地图资产 teardown（含 meshOwner/destruct 释放）owner = playback/mapWorld.ts
 const mapWorldSrc = readFileSync(resolve(here, 'playback/mapWorld.ts'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('buildMeshOwnerMap', () => {
-  // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
-  // 精确归属必须按「命中网格属于哪棵树」胜过距离查询。
-  // 实例化条目形状：{ batch: {mesh}, idx, name }——归属键 = mesh.uuid#idx
   const inst7 = { id: 7, pos: [0, 0, 0], serverId: { cell: [0, 0], slot: 7 } }
   const inst8 = { id: 8, pos: [6, 0, 0], serverId: { cell: [0, 0], slot: 8 } }
-  const sharedBatch = { mesh: { uuid: 'batch-shared' } }   // 两实例共用同一批次 mesh
+  const sharedBatch = { mesh: { uuid: 'batch-shared' } }
   const findMeshes = (px, py, wantDestroyed) => {
     if (wantDestroyed) return []
     if (Math.hypot(px, py) < 1) return [
@@ -147,7 +137,6 @@ describe('拾取接线（源码级守卫）', () => {
     const body = cameraSrc.slice(at, at + 1200)
     expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) deps\.reportPick\(e\)/)
     const reportAt = body.indexOf('deps.reportPick(e)')
-    // 自由飞行接管后选中 = up 判定（eid ?? null 经统一入口 onVehicleSelect 上报）
     const clearAt = body.indexOf('deps.onVehicleSelect?.(down.eid ?? null, e)')
     expect(reportAt).toBeGreaterThan(-1)
     expect(clearAt).toBeGreaterThan(-1)
@@ -176,9 +165,9 @@ describe('chainVisible', () => {
     const leaf = node(true, mid)
     expect(chainVisible(leaf, root)).toBe(true)
     mid.visible = false
-    expect(chainVisible(leaf, root)).toBe(false)   // 隐藏父节点情形
+    expect(chainVisible(leaf, root)).toBe(false)
     leaf.visible = false
-    expect(chainVisible(leaf, root)).toBe(false)   // 自身隐藏（D_ 损毁网格）
+    expect(chainVisible(leaf, root)).toBe(false)
   })
   it('visible 未定义（undefined）视为可见', () => {
     expect(chainVisible({ parent: null })).toBe(true)
@@ -203,8 +192,6 @@ describe('nearestInstance', () => {
 })
 
 describe('拾取报告诊断行接线（playbackScene 源级守卫）', () => {
-  // 2026-10-11 回归：诊断变量曾声明在 `if (heightField && heightMeta)` 块内、return 在块外
-  // 引用 ⇒ ReferenceError: render is not defined ⇒ 整个拾取面板"点击没反应"。锁定共声明。
   it('terrain / render 诊断变量在 buildPickReport 函数作用域共声明（return 可达）', () => {
     const src = readFileSync(resolve(here, 'playback/pickReport.ts'), 'utf8')
     expect(src).toMatch(/let terrain = null;\s*\r?\n\s*let render = null;/)

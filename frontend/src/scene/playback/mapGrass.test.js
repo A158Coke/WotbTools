@@ -1,10 +1,3 @@
-// 草层静态消费（mapGrass.ts）纯函数单测：npx vitest run src/scene/playback/mapGrass.test.js
-//
-// 上游契约（Agent 仓 tools/export_map_glb.py 的 grass.json/bin，2026-11-17 审计 H1）：
-//   实例 = 12 字节小端：u16 xQ / u16 zQ / u16 rotQ / u8 scaleQ / u8 variation / u8 flipped /
-//   u8 r / u8 g / u8 b（逐实例植被色）；位置按 meta.bounds 归一化；
-//   scale = 0.4 + q/255×1.2；rot = q/65535×2π。
-// fail-closed：stride 不符 / 长度非整数倍 / bounds 缺失或退化 ⇒ null（不渲染半截草层）。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { buildGrassMeshes, makeGrassMaterial, parseGrassBin } from './mapGrass.js'
@@ -54,7 +47,6 @@ function packInstance(xq, zq, rq, sq, variation, flipped, r = 0, g = 0, b = 0) {
 }
 
 function twoInstances() {
-  // 左下角 / 右上角；第二实例带植被色 (64, 128, 255)
   const a = packInstance(0, 0, 0, 0, 0, 0, 10, 20, 30)
   const b = packInstance(65535, 65535, 32768, 255, 1, 1, 64, 128, 255)
   const out = new Uint8Array(24)
@@ -75,7 +67,7 @@ describe('parseGrassBin', () => {
     expect(inst[0].flipped).toBe(false)
     expect(inst[1].x).toBeCloseTo(300, 6)
     expect(inst[1].y).toBeCloseTo(300, 6)
-    expect(inst[1].rot).toBeCloseTo(Math.PI, 3)   // u16 量化（1/65535×2π ≈ 9.6e-5 rad）
+    expect(inst[1].rot).toBeCloseTo(Math.PI, 3)
     expect(inst[1].scale).toBeCloseTo(1.6, 6)
     expect(inst[1].variation).toBe(1)
     expect(inst[1].flipped).toBe(true)
@@ -103,7 +95,6 @@ describe('makeGrassMaterial（作者风参数）', () => {
     expect(m.uniforms.uMaxZ.value).toBeCloseTo(1.3, 6)
     expect(m.side).toBe(THREE.DoubleSide)
     expect(m.transparent).toBe(false)
-    // 对数深度：与地形/场景 shader 同一深度域（?logdepth=1 时草不会被地形盖掉）
     expect(m.vertexShader).toMatch(/#include <common>/)
     expect(m.vertexShader).toMatch(/#include <logdepthbuf_pars_vertex>/)
     expect(m.vertexShader).toMatch(/#include <logdepthbuf_vertex>/)
@@ -134,13 +125,11 @@ describe('buildGrassMeshes（变体 × 世界分块 InstancedMesh）', () => {
       heightAt: (x, y) => { seen.push([x, y]); return 12.5 },
       albedo: null,
     })
-    // 两条实例落在不同角（不同块）+ 不同变体 ⇒ 2 个 InstancedMesh
     expect(built.group.children.length).toBe(2)
     expect(built.group.rotation.order).toBe('YXZ')
     expect(built.group.rotation.y).toBeCloseTo(Math.PI, 6)
     expect(built.group.rotation.x).toBeCloseTo(-Math.PI / 2, 6)
     expect(built.materials.length).toBe(1)
-    // 高度回调收到客户端世界坐标；矩阵平移 z 分量 = 地形高
     expect(seen.length).toBe(2)
     const matrices = []
     for (const child of built.group.children) {
@@ -149,7 +138,6 @@ describe('buildGrassMeshes（变体 × 世界分块 InstancedMesh）', () => {
       matrices.push(m.elements.slice(12, 15))
     }
     for (const t of matrices) expect(t[2]).toBeCloseTo(12.5, 6)
-    // 逐实例植被色属性（客户端 vegetationColorMap 采样）已挂到桶几何
     for (const child of built.group.children) {
       const attr = child.geometry.getAttribute('aVegColor')
       expect(attr).toBeTruthy()
@@ -159,7 +147,7 @@ describe('buildGrassMeshes（变体 × 世界分块 InstancedMesh）', () => {
     const disposeSpies = children.map((c) => vi.spyOn(c, 'dispose'))
     built.dispose()
     expect(built.group.children.length).toBe(0)
-    for (const spy of disposeSpies) expect(spy).toHaveBeenCalledTimes(1)   // InstancedMesh 实例缓冲
+    for (const spy of disposeSpies) expect(spy).toHaveBeenCalledTimes(1)
     for (const g of geos) g.dispose()
   })
 
@@ -212,7 +200,6 @@ describe('buildGrassMeshes 实例预算（G1）', () => {
         xs.push(m.elements[12])
       }
     }
-    // 前缀抽样会丢掉右半（x 上限约 -43）；等步长会保留右半（本例最大 ≈214）
     expect(Math.min(...xs)).toBeLessThan(-250)
     expect(Math.max(...xs)).toBeGreaterThan(150)
     half.dispose()

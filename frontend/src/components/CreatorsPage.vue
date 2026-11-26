@@ -23,7 +23,6 @@ const props = withDefaults(defineProps<{ type?: RecommendationType }>(), { type:
 const video = computed(() => props.type === 'VIDEO')
 const route = useRoute(), router = useRouter(), editorDirty = ref(false)
 const { t, te } = useI18n()
-// 4.0：bilibili 推荐合成一页，「推荐 UP | 优秀作品」页签切换并写入深链 ?view=creators / recommended-videos（类型目录页已删除）
 const availability = useCreatorAvailability()
 const typeTabs = computed(() => [
   availability.typeVisible('UP') && { value: 'UP', label: t('creators.upType'), testid: 'recommendation-tab-UP' },

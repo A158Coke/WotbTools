@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** ClusterTermSanitizer：「簇」字确定性兜底——每个组合词精确替换、输出不再含「簇」、普通文本不受影响。 */
 class ClusterTermSanitizerTest {
 
     @Test
@@ -25,7 +24,6 @@ class ClusterTermSanitizerTest {
 
     @Test
     void bareClusterCharacterBecomesGroup() {
-        // 兜底用单字「群」而非「集群」，避免把已替换出的「集群」二次污染成「集集群」
         assertEquals("这群坦克", ClusterTermSanitizer.sanitize("这簇坦克"));
     }
 
@@ -56,14 +54,12 @@ class ClusterTermSanitizerTest {
 
     @Test
     void protectedNicknameStaysUntouched() {
-        // 权威 proper noun 内合法的「簇」必须原样保留（不得变成「星群」）
         final String out = ClusterTermSanitizer.sanitize("星簇（Kranvagn）推进", List.of("星簇"));
         assertEquals("星簇（Kranvagn）推进", out);
     }
 
     @Test
     void protectedNicknameAndTermCoexist() {
-        // 昵称保留 + 内部术语照常转换
         final String out = ClusterTermSanitizer.sanitize(
                 "星簇（Kranvagn）随主力簇推进", List.of("星簇"));
         assertEquals("星簇（Kranvagn）随主力集群推进", out);
@@ -71,14 +67,12 @@ class ClusterTermSanitizerTest {
 
     @Test
     void protectedLiteralOverlappingTermIsNotPolluted() {
-        // protected literal 恰好与术语重叠（如昵称=「主力簇」）时原样保留
         final String out = ClusterTermSanitizer.sanitize("主力簇压向中路", List.of("主力簇"));
         assertEquals("主力簇压向中路", out);
     }
 
     @Test
     void longestProtectedLiteralWinsAtSamePosition() {
-        // 同位置重叠 literal 取最长（「星簇王」与「星簇」都命中时按最长保留，不互相污染）
         final String out = ClusterTermSanitizer.sanitize("星簇王（Kranvagn）推进",
                 List.of("星簇王", "星簇"));
         assertEquals("星簇王（Kranvagn）推进", out);

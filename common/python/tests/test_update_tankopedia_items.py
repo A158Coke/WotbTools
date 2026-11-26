@@ -19,7 +19,6 @@ from _tankopedia_test_fixtures import (
 
 class EquipmentTest(unittest.TestCase):
     def test_allowed_equipment_from_preset(self):
-        # VK 72.01 形状：特殊预设带 俯角/履带齿 专属装备（122/123）
         tanks_pb = root(tank_data(
             58641, 10, 2, 2100, turret(600,
                 gun(100, [shell("ap", 460, 250)])),
@@ -80,7 +79,6 @@ class ItemFilterTest(unittest.TestCase):
                 "guns": [{"clip": clip}]}
 
     def test_tiers_and_nations_include_are_and(self):
-        # 小口粮（中国）：tier 4-10 AND nation china
         item = {"id": 14, "name": "Tofu Soup",
                 "include": [("tiers", (4, 10)), ("nations", ["china"])],
                 "exclude": []}
@@ -95,7 +93,6 @@ class ItemFilterTest(unittest.TestCase):
         self.assertFalse(ut.item_allowed(self.vehicle(tank_id=999), item))
 
     def test_clip_category_exclude(self):
-        # Adrenaline：非弹夹车可用
         item = {"id": 18, "name": "Adrenaline",
                 "include": [("tiers", (4, 10))],
                 "exclude": [("categories", [0])]}
@@ -103,7 +100,6 @@ class ItemFilterTest(unittest.TestCase):
         self.assertFalse(ut.item_allowed(self.vehicle(clip=True), item))
 
     def test_exclude_ids(self):
-        # First Aid Kit：除指定车外全部可用
         item = {"id": 3, "name": "First Aid Kit",
                 "include": [("tiers", (4, 10))],
                 "exclude": [("ids", [49])]}
@@ -152,7 +148,6 @@ class ItemFilterTest(unittest.TestCase):
         v = vehicles["49"]
         self.assertEqual(v["allowedProvision"], ["SMALL_FOOD", "STANDARD_FUEL"])
         self.assertEqual(v["allowedConsumables"], ["ADRENALINE", "AUTOMATIC_FIRE_EXTINGUISHER"])
-        # 弹夹车：Adrenaline 被 CLIP 排除
         vehicles_clip = ut.apply_items(
             {"49": self.vehicle(clip=True)},
             [], ut.parse_item_defs(consumables_pb),

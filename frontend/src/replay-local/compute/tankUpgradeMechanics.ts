@@ -15,7 +15,6 @@ function shotInterval(clip: unknown): number | null {
 
 function mainGunClip(modules: Data): Data | undefined {
   const guns = records(modules.turrets).flatMap(turret => records(turret.guns))
-  // 车辆级机制只展示唯一主炮的参数，多炮时不能猜正在使用哪一门。
   return guns.length === 1 ? child(child(guns[0], 'stats'), 'clip') : undefined
 }
 
@@ -33,7 +32,6 @@ function auxiliaryValue(field: 'reloadTime' | 'clip' | 'burst' | 'damage' | 'spe
     if (!gun) return null
     if (field === 'clip' || field === 'burst') return shotInterval(gun[field])
     if (field === 'reloadTime') return finite(gun.reloadTime) ? gun.reloadTime : null
-    // 当前两门副武器各有一发明确引用的弹种。若将来有多弹种，需要选择上下文。
     if (!Array.isArray(gun.shots) || gun.shots.length !== 1) return null
     const shot = gun.shots[0]
     if (!record(shot) || typeof shot.stem !== 'string' || !shot.stem.trim()) return null
@@ -41,7 +39,6 @@ function auxiliaryValue(field: 'reloadTime' | 'clip' | 'burst' | 'damage' | 'spe
   }
 }
 
-/** 客户端属性与内建机制来源的已核对映射；不按车辆名称或等级猜绑定。 */
 const MECHANIC_PARAMETERS: Record<string, [string, string, MechanicParameter]> = {
   EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME: ['provisions', 'externalAmmoModule', (_item, modules) => shotInterval(mainGunClip(modules))],
   EXTERNAL_AMMO_MODULE_ALLOW_NON_DAMAGING_HITS: ['provisions', 'externalAmmoModule', 'allowNonDamagingHits'],
@@ -99,7 +96,6 @@ function mechanicInitial(name: string, modifier: UpgradeDefinition['modifier'], 
   return typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null
 }
 
-/** 同版机制基础值 + 升级变化；无来源的基值返回 null，仍可展示已知改变量。 */
 export function upgradeMechanicEffects(selection: UpgradeSelection, modules?: unknown, catalog?: unknown): Array<{
   name: string; modifier: UpgradeDefinition['modifier']; current: UpgradeValue | null
   initial: UpgradeValue | null; value: UpgradeValue | null
@@ -128,7 +124,6 @@ function baseRow(name: string, raw: unknown): MechanicRow {
   return { name, initial: value, value }
 }
 
-/** A shot's ballistic facts belong to its own row group. Only a unique shot can inherit a gun-wide damage upgrade. */
 export function mechanicParameterGroups(selection: UpgradeSelection, modules: unknown, catalog: unknown) {
   const effects = upgradeMechanicEffects(selection, modules, catalog)
   const groups: { label?: string; index?: number; rows: MechanicRow[] }[] = []
@@ -149,7 +144,6 @@ export function mechanicParameterGroups(selection: UpgradeSelection, modules: un
       if (effect) remaining.delete(name)
       return effect ?? baseRow(name, raw)
     }
-    // A legacy item can lack the gun or shots. Keep the verified upgrade deltas and explicit unknown base values.
     for (const [index, shot] of (shots.length ? shots : [{} as Data]).entries()) {
       const rows = [baseRow('AUX_SHELL_TYPE', shot.type_id), baseRow('AUX_PENETRATION', shot.penetration)]
       if (finite(shot.penetration_far) && shot.penetration_far !== shot.penetration)

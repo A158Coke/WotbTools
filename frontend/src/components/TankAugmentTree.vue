@@ -1,15 +1,4 @@
 <script setup lang="ts">
-/**
- * XI 升级研发树（客户端 TankProgress/UpgradeProgression 复刻）。
- *
- * 数据面 = 资产包 research/modules/{nation}.json 的 upgradeProgression
- * （matrix/gridPosition/xpCost/requiredNodes/alternativeGroups/attributeDefinitions，
- * 上游 Agent 仓导出）；图标 = common/research/icons/upgrades（客户端 @2x 贴图）。
- * 几何与状态计算在 replay-local/compute/tankAugmentTree.ts（纯函数，单测覆盖）。
- *
- * 交互（预览态，无账号）：单击未研发节点即研发（连带前置）；单击已研发节点
- * 回退其下游分支；组圆研发/回退；扇区三选一。数值显示口径见 formatEffect。
- */
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -24,16 +13,13 @@ interface AugmentNodeView { id: number; techName: string; type?: string; attribu
 
 const props = defineProps<{
   modules: Record<string, unknown>
-  /** 已研发节点 id 表（URL 状态投影；父层为唯一 owner） */
   installed: number[]
-  /** 组备选：groupId → 已选节点 id */
   chosen: Record<string, number>
 }>()
 
 const { t, te } = useI18n()
 
 const progression = computed(() => parseAugmentProgression(props.modules))
-/** 该车绑定的机制 stem（vehicleAbilities；键与 augment_mechanics 三语表对齐） */
 const abilityStems = computed<string[]>(() => Array.isArray(props.modules.vehicleAbilities)
   ? props.modules.vehicleAbilities.filter((v): v is string => typeof v === 'string')
   : [])
@@ -48,7 +34,6 @@ const mechanicDescription = computed(() => {
   const p = mechanicPath.value
   return p && te(`${p}.description`) ? t(`${p}.description`) : ''
 })
-/** 客户端未本地化的组名/描述是资源键（如 `Ch67_BZ_79/Upgrades/Group/Name`）。 */
 function isResourceKey(value: string | undefined): boolean {
   return !!value && (value.includes('/') || value.startsWith('$'))
 }
@@ -65,11 +50,9 @@ const groupDescription = computed(() => {
 
 const installedSet = computed(() => new Set(props.installed))
 const chosen = computed(() => props.chosen)
-/** 选中项 id：节点/备选为数字 id，组为字符串组 id */
 const selectedId = ref<number | string | null>(null)
 
 const emit = defineEmits<{
-  /** 研发/回退 → 父层写回 URL（upgrade=custom + abilities=已研发 id 表） */
   (e: 'research', installedIds: number[]): void
   (e: 'research-all'): void
   (e: 'research-none'): void
@@ -146,7 +129,6 @@ function onGroupClick(): void {
   selectedId.value = g.id
   const byTech = new Map(progression.value.nodes.map(n => [n.techName, n]))
   if (!groupIsInstalled(g)) {
-    // 研发组 = 全部前置链 + 默认选第一备选（客户端 top 语义）
     const next = new Set(installedSet.value)
     for (const req of g.requiredNodes ?? []) {
       const reqNode = byTech.get(req)
@@ -157,7 +139,6 @@ function onGroupClick(): void {
     emitState(next)
     return
   }
-  // 回退组：清三选一（前置节点保留）
   const next = new Set(installedSet.value)
   for (const choice of g.choices) next.delete(choice)
   emitState(next)
@@ -165,14 +146,12 @@ function onGroupClick(): void {
 function groupIsInstalled(g: AugmentGroup): boolean {
   return g.choices.some(id => installedSet.value.has(id))
 }
-  /** 可读名称：客户端未本地化的资源键（含 `/Upgrades/` 路径）不外露，退回属性标签/技术名。 */
 function readableName(node: AugmentNodeView | null | undefined): string {
   if (!node) return ''
   if (node.displayName && !isResourceKey(node.displayName)) return node.displayName
   const labels = nodeEffectLines(node)
   return labels.length ? labels.join(' · ') : node.techName
 }
-/** 可点击单元的无障碍名：可读名称 + 当前状态（节点/组/备选共用口径）。 */
 function nodeAriaLabel(node: AugmentNodeView | null | undefined): string {
   if (!node) return ''
   const status = installedSet.value.has(node.id)
@@ -191,7 +170,6 @@ function onSectorClick(nodeId: number): void {
   const g = group.value
   if (!g || !progression.value) return
   selectedId.value = nodeId
-  // 选备选 = 研发组前置链 + 该备选（组内互斥）；与配置卡换选共用同一助手
   emitState(researchGroupChoice(progression.value, g.id, nodeId, installedSet.value))
 }
 function researchAll(): void {
@@ -205,18 +183,15 @@ const fmtCost = (v: number): string => String(Math.trunc(v)).replace(/\B(?=(\d{3
 const fmtCompact = (v: number): string => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : String(v))
 
 interface SelectedEffectRow { id: number; label?: string; lines: string[]; chosen?: boolean }
-/** 节点/备选选中：增量行（字符串表） */
 const selectedNodeLines = computed<string[]>(() => {
   const sel = selected.value
   return sel && sel.kind !== 'group' ? nodeEffectLines(sel.node) : []
 })
-/** 组选中：三选一行（含选中标记） */
 const selectedGroupRows = computed<SelectedEffectRow[]>(() => {
   const sel = selected.value
   if (!sel || sel.kind !== 'group') return []
   return sel.group.choices.map(choiceId => {
     const alt = nodesById.value.get(choiceId)
-    // 备选 displayName 也是未本地化资源键：与配置卡同口径退回本地化属性标签
     return { id: choiceId, label: readableName(alt), lines: nodeEffectLines(alt), chosen: chosen.value[sel.group.id] === choiceId }
   })
 })
@@ -384,7 +359,6 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 </template>
 
 <style scoped>
-/* 设计语言：颜色/字号/圆角/阴影只引用语义 token（docs/frontend/design-language.md） */
 .at-root { color: var(--color-text-primary); font: var(--type-body); }
 .at-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 4px 2px 10px; }
 .at-hint { margin: 4px 0 0; color: var(--color-text-tertiary); font: var(--type-caption); max-width: 640px; }
@@ -408,7 +382,6 @@ const selectedGroup = computed(() => (selected.value && selected.value.kind !== 
 .at-sector-installed { fill: var(--color-border-strong); }
 .at-sector-chosen { fill: var(--color-accent); stroke: var(--color-accent); stroke-width: 3; }
 .at-sector-selected { stroke: var(--color-accent-text); stroke-width: 3; }
-/* 可点击单元是原生 button（键盘 Enter/Space 天然可用）：清掉 UA 外观，保留格位 */
 .at-cell {
   position: absolute; width: 96px; height: 96px;
   appearance: none; border: 0; background: none; padding: 0; margin: 0;

@@ -7,7 +7,6 @@ import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-/** 只接受已信任反向代理覆盖的单地址 X-Real-IP，不读取客户端 XFF 链。 */
 public final class TrustedClientSource {
     private final List<IpAddressMatcher> proxies;
 

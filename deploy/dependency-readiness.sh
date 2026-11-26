@@ -4,9 +4,6 @@ set -Eeuo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PYTHON_PROBE_IMAGE="${WOTB_DEPENDENCY_PROBE_IMAGE:-python:3.13.7-alpine3.22}"
 readonly POSTGRES_PROBE_IMAGE="${WOTB_POSTGRES_PROBE_IMAGE:-postgres:18-alpine}"
-# The canonical fail-closed logical endpoint validators live in the TX deploy
-# helper. This read-only probe loads that file as a library instead of keeping a
-# second allowlist that could drift from the one guarding the deployment.
 readonly TX_DEPLOY_LIBRARY="$SCRIPT_DIR/tx/deploy.sh"
 [ -f "$TX_DEPLOY_LIBRARY" ] \
   || { echo "ERROR: the TX deploy helper is missing: $TX_DEPLOY_LIBRARY" >&2; exit 1; }
@@ -24,11 +21,6 @@ require_env() {
   export "$name"
 }
 
-# Both probes carry a secret to a network endpoint: the PostgreSQL probe sends
-# PGPASSWORD/TX_BUSINESS_DB_PASSWORD and the protocol probe sends
-# KEYCLOAK_ADMIN_CLIENT_SECRET. The endpoints are therefore resolved and
-# validated *before* any container starts, so a public or unreviewed placement
-# can never receive a credential first and be rejected later by deploy.sh.
 resolve_logical_endpoints() {
   export TX_BUSINESS_DB_HOST="${TX_BUSINESS_DB_HOST:-business-postgres}"
   export TX_BUSINESS_DB_PORT="${TX_BUSINESS_DB_PORT:-5432}"
@@ -89,8 +81,6 @@ check_business_api() {
   check_business_postgres
 
   require_env KEYCLOAK_ADMIN_CLIENT_SECRET
-  # The probe never invents an endpoint: it only ever receives the value this
-  # script validated above, and refuses to run without an explicit one.
   run_protocol_probe business-api wotb_tx_internal \
     --env KEYCLOAK_ADMIN_CLIENT_SECRET --env TX_KEYCLOAK_ADMIN_SERVER_URL
 }

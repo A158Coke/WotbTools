@@ -1,12 +1,5 @@
 package com.wotb.core.replay.event;
 
-/**
- * 统一的领域事件接口。
- * <p>
- * 所有已知的、部分已知的和未知的事件都必须实现此接口。
- * 一个原始包可以产生零个、一个或多个 ReplayEvent。
- * </p>
- */
 public sealed interface ReplayEvent
         permits PositionChangedEvent,
                 AttachedTransformEvent,

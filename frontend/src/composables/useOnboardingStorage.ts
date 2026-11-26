@@ -1,4 +1,3 @@
-/** 新手引导回执与 pending-login 存储层（拆分自 useOnboarding.ts，行为原样）。 */
 import { ONBOARDING_GUIDES } from './useOnboardingGuides.js'
 import type { OnboardingTopic } from '../shared/onboarding.js'
 import type { OnboardingReceipt } from '../api/onboarding.js'
@@ -11,7 +10,6 @@ export type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
 export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
 export interface OnboardingGuidePosition { topic: OnboardingTopic; index: number; stageIndex: number; generation?: number }
 export interface PendingLogin { requestedAt: number; receipt?: LocalOnboardingReceipt; guide?: OnboardingGuidePosition }
-/** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */
 export const EMPTY_RECEIPT: LocalOnboardingReceipt = { coreEpoch: 0, disposition: 'NONE' }
 export const PRECEDENCE: Record<Disposition, number> = { NONE: 0, OFFERED: 1, SKIPPED: 2, COMPLETED: 3 }
 
@@ -25,7 +23,6 @@ export function validOnboardingReceipt(value: unknown): value is LocalOnboarding
     && (receipt.migrationConsumed === undefined || typeof receipt.migrationConsumed === 'boolean')
 }
 
-/** Same-epoch completion wins; old devices cannot overwrite a newer release. */
 export function mergeOnboardingReceipts(a: LocalOnboardingReceipt, b: LocalOnboardingReceipt): LocalOnboardingReceipt {
   if (a.coreEpoch !== b.coreEpoch) return { ...(a.coreEpoch > b.coreEpoch ? a : b) }
   return { ...(PRECEDENCE[a.disposition] > PRECEDENCE[b.disposition] ? a : b),
@@ -52,11 +49,6 @@ export function validGuidePosition(value: unknown): value is OnboardingGuidePosi
     && (position.generation === undefined || Number.isSafeInteger(position.generation) && position.generation >= 0)
 }
 
-/**
- * The 30-minute TTL must be re-checked at consume time, not only when the storage is read:
- * Android keeps one document alive while the external user-agent authenticates, so a marker
- * can sit in memory long after it became stale.
- */
 export function pendingLoginFresh(pending: PendingLogin | null | undefined): pending is PendingLogin {
   if (!pending) return false
   const age = Date.now() - pending.requestedAt

@@ -7,15 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * Resolves player side (FRIENDLY / ENEMY / UNKNOWN) for random-battle
- * player-focused analysis.
- * <p>
- * Uses the authoritative recorder team from {@code battle.recorderResult()}.
- * Raw teams are restricted to 1 or 2 per WoT Blitz domain.
- * Does NOT modify {@link PlayerResult#team}. Does NOT apply to
- * TEAM_PERSPECTIVE scope (training / tournament).
- */
 public final class PlayerSideResolver {
 
     private PlayerSideResolver() {}
@@ -26,7 +17,6 @@ public final class PlayerSideResolver {
         UNKNOWN
     }
 
-    /** WoT Blitz only uses raw team numbers 1 and 2. */
     public static boolean isValidRawTeam(final int team) {
         return team == 1 || team == 2;
     }

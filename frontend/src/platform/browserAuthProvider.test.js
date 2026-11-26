@@ -177,14 +177,12 @@ describe('browserAuthProvider', () => {
     abandonedAdapter.authenticated = true
     abandonedAdapter.tokenParsed = { displayName: 'stale' }
 
-    // retry / login-recovery 会新建 provider，因此拿到全新 adapter（不复用被放弃的实例）。
     const current = createBrowserAuthProvider()
     await current.init({ mode: 'login-recovery' })
 
     expect(lastAdapter()).not.toBe(abandonedAdapter)
     expect(current.authenticated).toBe(false)
     expect(current.tokenParsed).toBe(null)
-    // 旧 provider 仍指向自己的 adapter，但它已不是任何 transaction 的 owner。
     expect(abandoned.authenticated).toBe(true)
   })
 })

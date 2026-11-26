@@ -9,29 +9,19 @@ defineOptions({ name: 'BattleMap' })
 
 const props = defineProps({
   image: { type: Object, required: true },
-  /** 2D 底图 URL 覆盖（Android OTA 升级生效时为 blob URL；null ⇒ 用 image.src，行为与旧版一致）。 */
   imageSrc: { type: String, default: null },
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
-  /** 可玩边界（2D 地图预览 opt-in）：默认关闭，回放 2D UI 不改变。
-   *  仅当 pbOverview.playableBounds 存在且投影出有效矩形时绘制，缺数据不画。 */
   showPlayableBoundary: { type: Boolean, default: false },
   friendlyTeam: { type: [Number, String], default: null },
-  /** 出生点配色模式（纯展示选择，不持久化、不写入任何业务状态）：
-   *  'replay'（默认）＝既有相对阵营语义（friendlyTeam vs spawn.team）；
-   *  'scene-team'＝地图预览的场景分组身份色（spawn.team 严格 1/2，其余中性）——
-   *  这是**固定场景分组**，不是 friendly/enemy 相对语义，绝不复用 friendlyTeam 判断。 */
   spawnColorMode: { type: String, default: 'replay' },
   bases: { type: Array, default: () => [] },
   visibleTracers: { type: Array, default: () => [] },
   visibleTrails: { type: Array, default: () => [] },
   tracerColor: { type: Function, required: true },
   viewScale: { type: Number, default: 1 },
-  /** 未缩放且非全屏时允许单指纵向滑动滚动页面（审计 PB-01）；缩放 / 标注时由地图接管手势。 */
   touchPan: { type: Boolean, default: false },
   viewportStyle: { type: [String, Array], default: '' },
-  /** 2.5D 地形起伏投影开关：回放宿主默认开启；独立地图预览（平底图 + 平面输入
-   *  转换）必须显式传 false，避免消费回放会话残留的全局投影模型。 */
   terrainRelief: { type: Boolean, default: true },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
@@ -62,8 +52,6 @@ const mapEl = ref(null)
 const textInputRef = ref(null)
 defineExpose({ mapEl, textInputRef })
 
-/** 出生点 class：默认 replay 模式行为逐字不变（无 friendlyTeam → 全中性）；
- *  scene-team 模式只按 spawn.team 严格 1/2 选身份色，未知值 fail-closed 落中性。 */
 function spawnClass(spawn) {
   if (props.spawnColorMode === 'scene-team') {
     if (spawn.team === 1) return 'pb-spawn-team-1'
@@ -77,9 +65,6 @@ function spawnClass(spawn) {
 }
 
 const reliefModel = computed(() => {
-  // 2.5D 投影是**回放会话的 opt-in 能力**：全局 activeTerrainRelief 由回放组件
-  // 激活并在卸载时清理，但 ViewHost 会保活 ReplayWorkspace——独立地图预览等
-  // 非回放宿主必须显式关闭，否则消费到残留模型导致标注错位（平底图配起伏投影）。
   if (!props.terrainRelief) return null
   const model = activeTerrainRelief.value
   return model && model.mapCode === String(props.pbOverview?.mapCode || '') ? model : null
@@ -154,8 +139,6 @@ function projectedCirclePoints(annotation) {
   return points.join(' ')
 }
 
-// Project route vertices once per geometry change. Heads are built after projection so relief
-// does not distort the intention arrow; presentation stays derived from the existing owner.
 const annotationPresentation = computed(() => props.renderedAnnotations.map(annotation => {
   if (annotation.type !== 'route') return annotation
   const routeSvgPoints = projectSvgPointString(annotation.svgPoints)
@@ -178,8 +161,6 @@ function onTextKeydown(event) {
 }
 
 const presentedVehicleStates = computed(() => {
-  // 标记**不做**防重叠位移：2.5D 起伏只是把"真实位置"投影一次，绝不叠加偏移
-  //（2026-10-16 用户裁定：图标严格落在真实位置，密集处允许压盖）。
   if (!reliefModel.value) return props.vehicleStates
   return props.vehicleStates.map((state) => {
     const point = projectSemantic(state.pos.x, state.pos.y)
@@ -194,11 +175,8 @@ const presentedVehicleStates = computed(() => {
   })
 })
 
-// clipPath id 是文档级的，多个实例同时挂载时不能撞名。
 const clipPrefix = `pb-base-clip-${useId()}`
 
-// Tactical base symbol stays screen-readable in relief mode; only its anchor is
-// height-projected. It is deliberately not distorted into a physical ground ellipse.
 function baseRadius(base) {
   return props.mapView.toX(base.x + base.radius) - props.mapView.toX(base.x)
 }
@@ -212,8 +190,6 @@ function fillTop(base) {
   return projectedY(base.x, base.y) + baseRadius(base) - fillHeight(base)
 }
 
-/** 可玩边界 rect（平底图）：语义 x/y → SVG；y 轴反转，所以先转换再取 min/abs。
- *  opt-in 默认关闭；缺 bounds / 非有限值 / 退化矩形 → null（fail-closed）。 */
 const playableBoundaryRect = computed(() => {
   if (!props.showPlayableBoundary) return null
   const bounds = props.pbOverview?.playableBounds
@@ -229,7 +205,6 @@ const playableBoundaryRect = computed(() => {
   return { x: Math.min(x1, x2), y: Math.min(y1, y2), width, height }
 })
 
-/** pan-y 下浏览器不处理捏合，但第一根手指先纵向移动会被当成滚动；两指时阻止默认行为，让地图自己的捏合生效。 */
 function onTwoFingerTouch(event) {
   if (props.touchPan && event.touches && event.touches.length >= 2 && event.cancelable) event.preventDefault()
 }
@@ -323,7 +298,6 @@ function onTwoFingerTouch(event) {
         </g>
         <g class="pb-tracers" aria-hidden="true">
           <template v-for="(line, index) in props.visibleTracers" :key="`tracer-${line.timeSec}-${index}`">
-            <!-- 深色衬底：亮色地图（雪地）上保留炮线轮廓；不属于阵营色，也不替代阵营 tracer。 -->
             <line v-if="line.hasLine" class="pb-tracer-casing" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="var(--color-on-team-neutral)" :stroke-width="10 / props.viewScale" :opacity="line.opacity" />
             <line v-if="line.hasLine" class="pb-tracer" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" :stroke="props.tracerColor(line.attackerAccountId)" :stroke-width="6 / props.viewScale" :opacity="line.opacity * 0.35" />
             <line v-if="line.hasLine" class="pb-tracer-core" :x1="projectedX(line.x1, line.y1)" :y1="projectedY(line.x1, line.y1)" :x2="projectedX(line.x2, line.y2)" :y2="projectedY(line.x2, line.y2)" stroke="#fff" :stroke-width="1.75 / props.viewScale" :opacity="line.opacity" />
@@ -392,10 +366,7 @@ function onTwoFingerTouch(event) {
 .pb-annot-unit-ring { fill: none; }
 .pb-annot-unit-label { font: var(--type-caption); font-weight: 700; paint-order: stroke; stroke: var(--color-surface-1); stroke-width: 3; stroke-linejoin: round; }
 
-/* 场景自成局部层叠上下文（§5）：地图内部的反馈层 / 文本输入 / 车辆标记各自的叠放只在
-   这里比较，不会越过工作台的 HUD / 控制条 / 瞬态面刻度。 */
 .pb-map { position: relative; isolation: isolate; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
-/* user-select: none —— 车辆标记 / 名牌 / 标注文字不可被选中：鼠标拖动平移或画标注、触屏长按都不该出现蓝色选区 */
 .pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); user-select: none; }
 .pb-viewport.pb-touch-pan { touch-action: pan-y; }
 .pb-viewport:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
@@ -408,19 +379,15 @@ function onTwoFingerTouch(event) {
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }
 .pb-base-label { fill: currentColor; font-size: 13px; font-weight: 700; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 2.5; }
-/* 圆圈颜色 = 当前归属；进度弧颜色 = 正在占领的一方。两个信息都要看得出来。 */
-/* 基地配色与 3D / 顶部基地状态条统一：友绿 / 敌红 / 中立白（阵营 token，design-language §3.3） */
 .pb-base-neutral { color: var(--color-team-neutral); }
 .pb-base-friendly_controlled { color: var(--color-team-ally); }
 .pb-base-enemy_controlled { color: var(--color-team-enemy); }
 .pb-base-controlled { color: var(--text, #e8e8e8); }
-/* 占领进度：水位从下往上涨，100% 时整圆铺满占领方颜色。 */
 .pb-base-fill { stroke: none; animation: pb-base-pulse 1.3s ease-in-out infinite; }
 .pb-base-fill-clip { transition: y .35s linear, height .35s linear; }
 .pb-capture-friendly { fill: var(--color-team-ally); }
 .pb-capture-enemy { fill: var(--color-team-enemy); }
 .pb-capture-unknown { fill: var(--color-team-neutral); }
-/* 单基地协议不给占领方：进度只表示"有进度"，用目标色，不承载阵营 */
 .pb-base-assault .pb-capture-unknown { fill: var(--color-objective); }
 @keyframes pb-base-pulse { 0%, 100% { opacity: .95; } 50% { opacity: .6; } }
 @media (prefers-reduced-motion: reduce) {
@@ -432,12 +399,8 @@ function onTwoFingerTouch(event) {
 .pb-spawn-friendly { fill: var(--map-spawn-friendly, #8ef7b0); }
 .pb-spawn-enemy { fill: var(--map-spawn-enemy, #ff8d8d); }
 .pb-spawn-neutral { fill: var(--text-muted, #999); }
-/* 场景分组身份色（仅 scene-team 模式，spawnColorMode opt-in）：--color-team-1/2 与
-   3D 出生点标记同一 token（固定分组色，非 friendly/enemy 相对语义）；轻量深色描边
-   提高草地/道路/建筑背景上的辨识度（与 3D 外环 --color-on-team-neutral 同 token）。 */
 .pb-spawn-team-1 { fill: var(--color-team-1, #5cc280); stroke: var(--color-on-team-neutral, #1c1f1d); stroke-width: 1.5; }
 .pb-spawn-team-2 { fill: var(--color-team-2, #f2786d); stroke: var(--color-on-team-neutral, #1c1f1d); stroke-width: 1.5; }
-/* 可玩边界（2D 地图预览 opt-in）：与 3D 边界带同义色，不是阵营色 */
 .pb-playable-boundary { stroke: var(--color-map-playable-boundary); }
 .pb-feedback-layer { position: absolute; inset: 0; pointer-events: none; z-index: 9; overflow: hidden; }
 .pb-float-dmg { position: absolute; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 90%, transparent), 0 1px 2px color-mix(in srgb, var(--bg) 80%, transparent); animation: pb-float-rise 1s ease-out forwards; white-space: nowrap; }
@@ -452,8 +415,6 @@ function onTwoFingerTouch(event) {
 @keyframes pb-burst-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); } }
 .pb-annotations { pointer-events: none; }
 .pb-annot-text { paint-order: stroke; stroke: color-mix(in srgb, var(--bg) 65%, transparent); stroke-width: 1; }
-/* 画标注时整层车辆都不接指针：.pb-hitbox 与名牌 tooltip 自身是 pointer-events: auto，只关父层会被它们顶掉——
-   从车辆上起笔就会选中那台车、弹出详情。多一级 .pb-vehicle，特异性高于 VehicleMarker 的 scoped 规则。 */
 .pb-drawing,
 .pb-markers.pb-drawing .pb-vehicle,
 .pb-markers.pb-drawing .pb-vehicle * { pointer-events: none; }

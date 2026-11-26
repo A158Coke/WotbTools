@@ -2,7 +2,6 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
-# Delta 身份与实际重建必须同时成立；不依赖正式网络、密钥或持久化环境。
 python3 - "$ROOT" <<'PY'
 import argparse, hashlib, importlib.util, json, pathlib, tempfile
 from unittest.mock import patch
@@ -139,7 +138,6 @@ for name in ("frontend.yml", "frontend-replica.yml"):
     assert web_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com", name
 PY
 
-# 对 workflow 的真实 shell 逻辑执行成功、首次可选失败和不可变重试失败三条路径。
 if command -v jq >/dev/null; then
   POLICY_DIR="$TMP/delta-policy"
   mkdir -p "$POLICY_DIR"
@@ -164,7 +162,6 @@ PYCODE
   jq -e '.patches | length == 1' "$POLICY_DIR/delta-metadata.json" >/dev/null || fail 'existing evidence was changed'
   echo 'Android optional delta stage policy: PASS'
 
-  # 执行实际上传 step 的 shell；模拟云端同字节、缺失和冲突，不接触网络或密钥。
   mkdir -p "$POLICY_DIR/bin" "$POLICY_DIR/release-staging"
   printf 'immutable patch\n' > "$POLICY_DIR/release-staging/fixture.vcdiff"
   expected_sha="$(sha256sum "$POLICY_DIR/release-staging/fixture.vcdiff" | awk '{print $1}')"

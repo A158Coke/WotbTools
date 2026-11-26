@@ -12,10 +12,8 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
       hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
     ]
     const r = calculate(req('ap', 100.0, 100.0, hits))
-    // 确定性：100mm 间隙甲等厚不穿透 → 只留下间隙甲层。
     expect(r.result).toBe('BLOCKED')
     expect(r.layers.map(l => l.part_name)).toEqual(['spaced'])
-    // 概率：完整路径含间隙甲 + 主装甲；1× 消耗后剩余 0，主装甲 0%。
     expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
   })
@@ -45,8 +43,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
   })
 
   it('Super Conqueror 炮塔相邻点击：首个 Primary 后的车体底板/履带不参与概率', () => {
-    // 用户 2026-10-18 调试快照：板10(20) + 板9(225) 确定性击穿；其后的
-    // Hull Plate 8(5) 与右侧履带(25) 曾把概率从 19% 压到 0（相邻点击 19% vs 0%）。
     const hits = [
       hit(ArmorSection.SPACED, 20.0, [-0.7413889015023738, 2.2819733858516886, -1.653710476213479], {
         plate_id: '10',
@@ -72,8 +68,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(r.result).toBe('PENETRATION')
     expect(r.layers).toHaveLength(2)
     expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'turret'])
-    // 1× 区间：[239.4,264.6] −20 → [219.4,244.6]；板9 eff≈229.64 →
-    // Φ((232−229.64)/4.2) ≈ 0.713（不再被后方车体/履带耗尽）。
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.713, 2)
   })
 
@@ -85,7 +79,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     ]
     const r = calculate(req('ap', 100.0, 100.0, hits))
     expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
-    // [95,105] −20 → [75,85]；spaced80 → 50%；再平移 [−5,5]；hull1 → Φ(−0.6)=0.274253。
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1371265, 6)
   })
 
@@ -98,8 +91,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     const r = calculate(req('ap', 199.0, 100.0, hits))
     expect(r.result).toBe('BLOCKED')
     expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
-    // [189.05,208.95] −200 = [−10.95,8.95]（均值−1，区间未耗尽）；spaced1 →
-    // Φ(−0.6030)≈0.2732；hull1 → Φ(−0.9045)≈0.1829；乘积≈4.9966%。
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.049966, 5)
   })
 
@@ -107,7 +98,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     const r = calculate(req('he', 100.0, 100.0, [hit(ArmorSection.HULL, 102.0, [0, 0, 0])], {
       explosion_radius: 3.0,
     }))
-    // 名义溅射结果仍由 SPLASH/BLOCKED 分支持有；概率链单独给出击穿机会。
     expect(r.result).toBe('SPLASH')
     expect(r.probability_layers.map(l => l.section)).toEqual(['hull'])
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1150697, 5)
@@ -122,8 +112,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(r.result).toBe('BLOCKED')
     expect(r.probability_layers.map(l => l.section)).toContain('gap')
     expect(r.probability_layers.map(l => l.section)).toContain('hull')
-    // [95,105] → spaced100 CDF 0.5 → [−5,5]；gap 0.1m ×0.95 → [−4.75,4.75]；
-    // hull1 → Φ(−1/(9.5/6)) ≈ 0.2638；乘积 ≈ 13.1915483%。
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.131915, 4)
   })
 
@@ -138,8 +126,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
   })
 
   it('Super Conqueror 首上：20mm 间隙板 + 155mm 主甲 @42°，252AP 等效厚度足够 → 穿透', () => {
-    // 用户实车截图：layer13 eff≈21.5（20mm 首层 2×口径增强转正）+ layer1
-    // eff≈194（155mm 第二层仍独立套 5° 转正），252 − 21.5 > 194 → 穿透。
     const a = 42 * Math.PI / 180
     const normal = [Math.sin(a), Math.cos(a), 0]
     const hits = [
@@ -152,9 +138,7 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(r.layers.every(l => l.penetrated)).toBe(true)
     expect(r.damage).toBe(400.0)
     expect(Math.abs(r.layers[0].effective - 21.5)).toBeLessThan(0.2)
-    // 155mm @42° 是第二层，但 BlitzKit 仍对它独立套用 5° 转正：155/cos37° ≈ 194.1mm。
     expect(Math.abs(r.layers[1].effective - 194.1)).toBeLessThan(2.0)
-    // 1× 概率区间也必须给出穿透，不能是 0%：252−21.5=230.5 >194。
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeGreaterThan(0.999)
   })
 
@@ -166,7 +150,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
       hit(ArmorSection.HULL, 155.0, [0, 0, 1], { normal: [Math.sin(a2), Math.cos(a2), 0] }),
     ]
     const r = calculate(req('ap', 252.0, 120.0, hits, { normalization_deg: 5 }))
-    // 层0：20mm 首层 2× 增强转正 21° → 22.65；层1：155mm 独立 5° → 155/cos43°≈211.9。
     expect(Math.abs(r.layers[0].effective - 22.65)).toBeLessThan(0.2)
     expect(Math.abs(r.layers[1].effective - 211.9)).toBeLessThan(0.5)
     expect(r.result).toBe('PENETRATION')
@@ -176,9 +159,6 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
 
 
 
-// 点击判定的触发面（查看器相机点击路径依赖）：射线未触达 Primary 时，末层就是间隙甲/外部模块
-// 自身 —— 末层规则照样给出 PENETRATION + 全额伤害，所以这种栈必须由查看器拦下
-//（BlitzKit 的 shoot() 也只挂在 Primary 网格上，不由它们触发）。
 describe('isPrimary（Primary = 击穿判定的触发面；spaced/外部模块不是）', () => {
   it('主装甲三类为 Primary，间隙甲与外部模块不是', () => {
     expect(isPrimary(ArmorSection.HULL)).toBe(true)
@@ -277,7 +257,6 @@ describe('require_primary（射击复现无主装甲链门禁）', () => {
     expect(gated.damage).toBe(0)
     expect(gated.blocked_no_primary).toBe(true)
     expect(gated.layers).toHaveLength(1)
-    // 卡片不能用概率链把 BLOCKED/0 回填成「可能击穿 + 满伤」。
     expect(resolveCardChance({
       heInfo: null, heChance: 0, probabilityMode: false,
       overallChance: null, rawChance: 0.73, allowChance: false,

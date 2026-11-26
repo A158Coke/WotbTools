@@ -92,7 +92,6 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
                 TeamAiPromptBuilder.single(context);
 
         assertTrue(input.content().contains("durationSec=UNKNOWN"));
-        // 胜负只输出中文，不再暴露 TEAM_WIN/TEAM_LOSS/DRAW_OR_UNKNOWN 机器码
         assertTrue(input.content().contains("result=平局或未知"), input.content());
         assertFalse(input.content().contains("DRAW_OR_UNKNOWN"), input.content());
         assertTrue(input.content().contains("win=UNKNOWN"));
@@ -116,7 +115,6 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
         final TeamAiPromptBuilder.PromptInput input =
                 TeamAiPromptBuilder.single(context);
 
-        // 无权威胜方：禁止按占点分推断胜方 → fail closed 为未知
         assertTrue(input.content().contains("result=平局或未知"), input.content());
         assertFalse(input.content().contains("落败"), input.content());
     }
@@ -131,8 +129,6 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
     }
     @Test
     void teamPromptIncludesStructuredTankFactsInMembersAndOpponents() {
-        // 本队成员：SPHT（29985，单炮 400 / hp 3400）；
-        // 对方：Kranvagn（4481，单炮 410 / hp 2400）+ E 100（9489，多终局炮，无权威 alphaDamage）
         final Battle battle = new Battle();
         battle.arenaId = "team-facts-arena";
         battle.mapName = "map1";
@@ -160,15 +156,12 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
 
         final String content = TeamAiPromptBuilder.single(context).content();
 
-        // TEAM_MEMBERS 路径：SPHT 事实进入 prompt
         assertTrue(content.contains("=== TEAM_MEMBERS ==="), content);
         assertTrue(content.contains("alphaDamage=400"), content);
         assertTrue(content.contains("hp=3400"), content);
-        // OPPOSING_TEAM_LINEUP_AUTHORITATIVE 路径：Kranvagn 事实进入 prompt
         assertTrue(content.contains("OPPOSING_TEAM_LINEUP_AUTHORITATIVE"), content);
         assertTrue(content.contains("alphaDamage=410"), content);
         assertTrue(content.contains("hp=2400"), content);
-        // E 100 无权威 alphaDamage：不得出现其任意一门炮的伤害
         assertFalse(content.contains("alphaDamage=645"), content);
         assertFalse(content.contains("alphaDamage=460"), content);
     }
@@ -185,12 +178,10 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
     }
     @Test
     void extraInfoFactIsQuotedAndWiredOnlyWhenPresent() {
-        // 空串不输出；非空必须 JSON 引用/转义（不可信数据）
         assertEquals("", TeamAiPromptBuilder.extraInfoFact(""));
         assertEquals(
                 " extraInfo=\"炮塔弱点\\\"注入\\\"\"",
                 TeamAiPromptBuilder.extraInfoFact("炮塔弱点\"注入\""));
-        // 真实数据当前无 extraInfo：事实行不含 extraInfo=
         assertFalse(TeamAiPromptBuilder.structuredTankFacts(29985L).contains("extraInfo="));
     }
     @Test
@@ -256,8 +247,6 @@ class TeamAiPromptBuilderHeaderTest extends TeamAiPromptBuilderTestSupport {
         final var input = TeamAiPromptBuilder.single(contextWithMembers(1, 1));
         assertTrue(input.content().contains("map="),
                 "Prompt must contain map field");
-        // battleIdentity= 以 BattleIdentity.toString() 渲染；ARENA 场景该记录的 mapName 必须为空
-        // （与迁移前 BattleGroupingKey.toBattleIdentity() 一致），因此整个 prompt 都不得出现内部 map code。
         assertFalse(input.content().contains("budget_map"),
                 "Prompt must not contain raw internal map code 'budget_map'");
     }

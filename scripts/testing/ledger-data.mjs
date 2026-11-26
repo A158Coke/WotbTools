@@ -1,11 +1,3 @@
-/**
- * Issue #827 台账结构化数据（F1/F2）。
- * 统计单位：u:'case'=一个测试用例；u:'clause'=用例内断言子句（不单独计数）。
- * d: R=改写 K=保留 D=删除 PK=提请用户复核；p: HIGH/MED/LOW。
- * t: R=目标 owner；D=接替者证据；K=保留理由；PK=复核类别。
- * 行条目：[ledgerLine, d, u, t, p]；区间条目：[{from,to}, d, u, t, p]。
- * 生成脚本（ledger-stats.mjs）会把行号对齐到 inventory 的 case 起始行（取 ≤ 行号的最近 case）。
- */
 export const blocks = [
   { file: 'sceneryMaterials.test', rows: [
     [65,'R','case','sceneryAssembly.assembleSceneryMaterials 缓存键去重','MED'],
@@ -293,10 +285,6 @@ export const blocks = [
     [205,'K','case','寒冬继承 bug 守卫+计算半句','MED'],
   ]},
 
-  // ---- scope 缺口分诊（2026-11-12）：审计 251 例之外新发现的读源用例 ----
-  // 处置依据：Issue #827 范围 =「3D 与 CSS 的纯文本断言」；所有权守卫与数据契约明文不在范围。
-  // 数据契约/产物读取（extractor/texture-bake/data-version/csv）= 审计保留组；
-  // 组件 DOM 契约（AgentArmorView.dom-contract 等）= 所有权/集成契约类，逐例深改写不在本轮范围。
   { file: 'replay-capabilities.test', rows: [[16,'K','case','审计范围外：负面/契约守卫（server 无 parser 不拉产物）','LOW']] },
   { file: 'navigation-context.test', rows: [[28,'K','case','审计范围外：magic-string 负面守卫','LOW']] },
   { file: 'navigationPressedFeedback.test', rows: [[27,'K','case','CSS 顺序契约（pressed>hover），stylelint 不可表达；PR #953 已有取消语义取证','LOW']] },

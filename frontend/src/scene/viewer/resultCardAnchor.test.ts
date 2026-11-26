@@ -1,6 +1,3 @@
-// 结果卡世界锚点投影（纯几何）：命中点 → 画布容器坐标。
-// 2026-11-16 用户裁示：结果卡跟随命中位置，旋转视角时同步移动；相机后方的点不可解释，
-// 返回 inFront=false 由调用方隐藏（不固定到某个边角）。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { projectCardAnchor } from './resultCardAnchor.ts'
@@ -25,7 +22,6 @@ describe('projectCardAnchor', () => {
   it('相机绕目标旋转后，同一世界命中点的屏幕投影改变（不是固定锚点）', () => {
     const anchor = new THREE.Vector3(2, 0, 0)
     const front = projectCardAnchor(anchor, cameraAt(0, 0, 10), 800, 600)!
-    // 相机移到 +X 轴上、朝原点看：命中点落在视线轴上 → 屏幕中心。
     const side = projectCardAnchor(anchor, cameraAt(10, 0, 0), 800, 600)!
     expect(front.inFront).toBe(true)
     expect(side.inFront).toBe(true)

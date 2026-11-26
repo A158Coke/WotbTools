@@ -46,7 +46,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Actual migrations, FK order, JSONB, and competing administrator transactions. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class BroadcastIntegrationTest {
@@ -445,7 +444,6 @@ class BroadcastIntegrationTest {
         final long quarters = category("QUARTER_FINALS");
         final long quarter = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).data().nodes().getFirst().id();
         final var survivor = service.createReplay(quarter,new BroadcastDtos.TimedReplaySave(request("Preserved","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null).data().nodes().getFirst().replays().getFirst();
-        // Legacy/shared references must remain safe even though new uploads use one replay per cover.
         jdbc.update("update tournament_broadcast_replay set cover_id=?,legacy_group_label='Archived original' where id=?",shared.coverId(),survivor.id());
         final var preserved = service.category(quarters).data().nodes();
         final var preview = service.categoryDeletionPreview(points);

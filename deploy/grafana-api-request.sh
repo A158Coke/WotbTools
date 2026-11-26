@@ -1,6 +1,4 @@
 #!/bin/sh
-# Shared Alpine/BusyBox-compatible Grafana API request path.
-# The caller passes only an API path; this script owns the hostname prefix.
 set -eu
 
 path="${1:?Grafana API path is required}"

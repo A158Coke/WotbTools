@@ -76,8 +76,6 @@ describe('DataVersionMenu', () => {
 
     await openByKeyboard()
     expect(options()).toHaveLength(4)
-    // 陈列顺序（2026-11-14 反馈）：默认项沉底（最新超测得以置顶）；datasets 按上游
-    // useDataVersion 给出的顺序原样渲染（排序 owner 在 composable，组件只管展示）。
     expect(options()[options().length - 1].textContent).toContain('默认（跟随服务器）')
     expect(options()[options().length - 1].textContent).toContain('服务器默认：11.21.0')
     expect(options()[0].textContent).toContain('11.21.0')
@@ -110,7 +108,7 @@ describe('DataVersionMenu', () => {
 
     mountMenu({ modelValue: 'supertest' })
     await openByKeyboard()
-    const fallback = options()[options().length - 1] // 默认项已沉底
+    const fallback = options()[options().length - 1]
     fallback.focus()
     key(fallback, 'Enter')
     await flushPromises()

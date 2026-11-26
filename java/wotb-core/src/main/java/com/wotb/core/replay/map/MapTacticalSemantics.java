@@ -38,7 +38,6 @@ public record MapTacticalSemantics(
         displayName = displayName == null ? "" : displayName;
     }
 
-    /** 无语义数据时返回的空语义；{@link #hasSemantics()} 为 false。 */
     public static final MapTacticalSemantics UNKNOWN =
             new MapTacticalSemantics("", Map.of(), List.of(), Map.of(), false, "", "");
 
@@ -46,7 +45,6 @@ public record MapTacticalSemantics(
         return !areas.isEmpty();
     }
 
-    /** 单个战术区域。 */
     public record TacticalArea(
             String id,
             String label,
@@ -69,13 +67,6 @@ public record MapTacticalSemantics(
         }
     }
 
-    /**
-     * 区域可信度（语义化器 area.confidence）。
-     * EXACT_CLIENT_DATA / EXACT_SCENE_DATA = 客户端直接事实；
-     * NAME_HEURISTIC = 对象位置精确但建筑/植被/铁路等类别由资源名推断；
-     * GRID_RULE_DERIVED = 区域名称/边界/合并是确定性规则候选；
-     * RULE_DERIVED_CANDIDATE = favors/risks 只是战术假设候选。
-     */
     public record AreaConfidence(
             String geometry,
             String objectPositions,
@@ -95,11 +86,6 @@ public record MapTacticalSemantics(
                 new AreaConfidence("", "", "", "", "");
     }
 
-    /**
-     * 区域关系（与 semantic.json 原始语义一致，不做有损分组/改名）。
-     * type 可能为 ADJACENT_TO / HIGHER_THAN / CONTAINS_CONTROL_POINT /
-     * CONTAINS_STRATEGIC_POINT；reason 与 confidence 必须原样保留。
-     */
     public record TacticalRelationship(
             String from,
             String type,
@@ -116,10 +102,6 @@ public record MapTacticalSemantics(
         }
     }
 
-    /**
-     * 单队出生点语义（语义化器 spawnSemantics 的子集）。
-     * {@code status} 为 UNKNOWN 时仅表示出生点无法可靠确定，不得输出具体区域。
-     */
     public record SpawnSemantics(
             String status,
             int spawnCount,

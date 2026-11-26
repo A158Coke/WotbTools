@@ -12,10 +12,6 @@ import com.wotb.core.util.PlayerResultFormat;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 团队权威/观测聚合提取器：名册、权威 TeamAggregateResult、胜负判定、观测聚合与伤害证据门禁。
- * <p>从 {@link DefaultTeamBattleFeatureExtractor} 拆出，纯静态工具类，不做编排。</p>
- */
 final class TeamAggregateExtractor {
 
     private TeamAggregateExtractor() {
@@ -66,11 +62,6 @@ final class TeamAggregateExtractor {
                 resolveAggregateWin(battle, perspectiveTeam));
     }
 
-    /**
-     * Resolve aggregate win as Boolean（team perspective / supremacy 规则）。
-     * 结算 winnerTeam 缺失时 fail closed：victoryPointsEarned 的精确定义及是否包含被动增长/击杀夺分仍未证明，禁止比较推断胜方；
-     * 无法判定返回 null。
-     */
     static Boolean resolveAggregateWin(final Battle battle, final int perspectiveTeam) {
         final TeamBattleWinner w = FriendlyEnemyResult.resolveTeamBattle(battle, perspectiveTeam);
         return switch (w.winner()) {
@@ -80,11 +71,6 @@ final class TeamAggregateExtractor {
         };
     }
 
-    /**
-     * Evidence-quality + identity gate for damage (time is already gated by
-     * {@link BattleStartResolution#tryRelative}): confidence must be usable and both attacker and victim must map
-     * to a usable identity. In-battle damage that fails this is genuine unattributed damage.
-     */
     static boolean usableDamageEvidence(
             final DamageEvent damage,
             final TeamEntityIdentity attacker,
@@ -102,8 +88,6 @@ final class TeamAggregateExtractor {
             final int perspectiveTeam,
             final int unattributedCount
     ) {
-        // dealt 只计有支持证据且攻击者属本队的掉血；received 计本队车辆全部掉血
-        // （含不可归属——掉血真实发生，不计入任何攻击者即可）。Type-8 raw 不得参与。
         int dealt = 0;
         int received = 0;
         int attributed = 0;

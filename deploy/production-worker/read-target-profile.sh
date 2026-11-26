@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Read one reviewed production-worker target profile for the workflow (K7A).
-#
-# The workflow never inlines host parameters: it reads them from
-# `deploy/production-worker/targets/<target>/target.env` through the same
-# `load_target_profile` validation the host-side scripts use, so a profile that the
-# host would reject can never be staged in the first place.
-#
-# Usage: read-target-profile.sh <target> <github-output-file>
 set -Eeuo pipefail
 umask 077
 

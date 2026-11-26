@@ -1,9 +1,5 @@
 package com.wotb.core.replay.processing;
 
-/**
- * BattleCategory 识别工具。
- * 从 meta.json#arenaBonusType 映射。
- */
 public final class BattleCategoryUtils {
 
     private BattleCategoryUtils() {}
@@ -24,9 +20,6 @@ public final class BattleCategoryUtils {
         };
     }
 
-    /**
-     * 根据 BattleCategory 解析 AI 分析范围。
-     */
     public static ReplayAnalysisScope resolveScope(BattleCategory category) {
         return switch (category) {
             case RANDOM -> ReplayAnalysisScope.PLAYER_FOCUSED;
@@ -36,9 +29,6 @@ public final class BattleCategoryUtils {
         };
     }
 
-    /**
-     * 从 arenaBonusType 直接解析 scope。
-     */
     public static ReplayAnalysisScope scopeFromArenaBonusType(Integer arenaBonusType) {
         return resolveScope(fromArenaBonusType(arenaBonusType));
     }

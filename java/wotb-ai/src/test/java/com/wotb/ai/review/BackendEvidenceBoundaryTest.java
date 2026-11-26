@@ -20,15 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Backend Evidence Boundary（PR #103 架构收口）生产链路回归测试 R1–R8。
- * <p>核心原则：Backend Evidence 只表示 observed facts / deterministic derived measurements /
- * neutral structural classifications；不输出 player intent、tactical correctness、tactical
- * benefit、tactical blame 或 recommendation——战术解释全部由 LLM 完成。</p>
- */
 class BackendEvidenceBoundaryTest {
 
-    // R1 — Team separation 满足旧 SOLO_DELAY 条件时只输出中性证据
     @Test
     void r1TeamSeparationDoesNotEmitTacticalVerdictForDelayPattern() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-delay-hold-01");
@@ -39,7 +32,6 @@ class BackendEvidenceBoundaryTest {
         for (final AiEvidence e : evidence) {
             assertEquals(EvidenceType.SPATIAL_SEPARATION, e.type());
             assertEquals("SEPARATION_WINDOW", e.labels().get("kind"), e.summary());
-            // 旧战术 verdict 词汇必须消失
             assertFalse(e.summary().contains("SOLO_DELAY"), e.summary());
             assertFalse(e.summary().contains("单走拖延"), e.summary());
             assertFalse(e.summary().contains("队友获利"), e.summary());
@@ -47,7 +39,6 @@ class BackendEvidenceBoundaryTest {
             assertFalse(e.summary().contains("守点"), e.summary());
             assertFalse(e.numbers().containsKey("teammateBenefit"));
             assertFalse(e.labels().containsKey("intent"));
-            // 事实必须存在
             assertTrue(e.numbers().containsKey("distanceM"));
             assertTrue(e.numbers().containsKey("stationaryRatio"));
             assertTrue(e.numbers().containsKey("observedEnemyNearby"));
@@ -55,7 +46,6 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R2 — 旧 SOLO_DETACHED 条件：只输出中性证据 + 事实
     @Test
     void r2TeamSeparationDoesNotEmitTacticalVerdictForDetachPattern() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-detach-push-01");
@@ -76,7 +66,6 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R3 — OPENING_SPREAD 仍允许，但 summary 只描述空间结构
     @Test
     void r3OpeningSpreadSummaryDescribesOnlySpatialStructure() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-opening-mapcontrol-01");
@@ -96,7 +85,6 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R4 — partial coverage：数字 UNKNOWN/省略，不通过「没有观察到 → false → verdict」
     @Test
     void r4PartialCoverageNeverLeadsToTacticalVerdict() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-partial-observation-01");
@@ -105,14 +93,12 @@ class BackendEvidenceBoundaryTest {
                 MapTacticalSemantics.UNKNOWN);
         for (final AiEvidence e : evidence) {
             assertFalse(e.summary().contains("拖延") || e.summary().contains("脱节"), e.summary());
-            // movementState=UNKNOWN 表示覆盖不足，不得当 MOVING 下结论
             if ("UNKNOWN".equals(e.labels().get("movementState"))) {
                 assertFalse(e.summary().contains("MOVING"), e.summary());
             }
         }
     }
 
-    // R5 — Team production integration: Skill → Team evidence formatters → TeamAiPromptBuilder
     @Test
     void r5TeamProductionPromptHasFactsButNoBackendVerdict() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-delay-hold-01");
@@ -129,7 +115,6 @@ class BackendEvidenceBoundaryTest {
         assertFalse(user.contains("intent="), "production prompt 不得包含 intent= 标签");
     }
 
-    // R6 — Player production integration：Skill → TacticalReviewPromptBuilder
     @Test
     void r6PlayerProductionPromptHasFactsButNoBackendVerdict() {
         final AiEvalFixtures.PlayerFixture fixture =
@@ -151,7 +136,6 @@ class BackendEvidenceBoundaryTest {
         assertFalse(user.contains("SOLO_DETACHED"), "player prompt 不得包含 SOLO_DETACHED");
     }
 
-    // R7 — Prompt contract：Backend evidence != tactical verdict；LLM 拥有解释权
     @Test
     void r7PromptContractSaysBackendEvidenceIsNotTacticalVerdict() {
         final String zh = AiPromptLibrary.zh("team/single");
@@ -161,18 +145,13 @@ class BackendEvidenceBoundaryTest {
         assertTrue(zh.contains("SPATIAL_SEPARATION_EVIDENCE"), "prompt 必须引用 SPATIAL_SEPARATION_EVIDENCE");
         assertFalse(zh.contains("SOLO_DELAY"), "prompt 不得再引用 SOLO_DELAY 候选");
         assertFalse(zh.contains("SOLO_DETACHED"), "prompt 不得再引用 SOLO_DETACHED 候选");
-        // EN/RU 同步
         final String en = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertTrue(en.contains("NOT tactical verdicts"), "EN 必须声明不是战术 verdict");
         final String ru = TeamPromptLocalizer.systemPrompt(AllowedLanguage.RU);
         assertTrue(ru.contains("а НЕ тактические вердикты"), "RU 必须声明不是战术 verdict");
     }
 
-    // R8 — Golden 3:1 由 TeamReviewRealReplayProbeTest（wotb-core）负责硬断言：
-    // 109–128s / 3:1 / 7v7→4v6 / collapse core；样本存在时断言，样本缺失时自动跳过。
-    // 此处不保留 fake test（原 assertTrue(true) 已删除）。
 
-    // R9 — RelativeDepthHp production 不再输出吸血/避战/利用队友等战术 verdict，且不输出战术角色标签
     @Test
     void r9BehindLineProductionEmitsOnlyMeasurements() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-delay-hold-01");
@@ -190,7 +169,6 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R10 — Formation production 不输出权威 map-control verdict
     @Test
     void r10FormationOutputHasCoverageMeasurementsButNoControlVerdict() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-opening-mapcontrol-01");
@@ -205,7 +183,6 @@ class BackendEvidenceBoundaryTest {
         }
     }
 
-    // R11 — Team/Player Prompt 无 PUSH_WINDOWS，统一 CONTROL_REGION_ENTRY_WINDOWS
     @Test
     void r11PromptsUseControlRegionEntryWindowsNotPushWindows() {
         final String team = AiPromptLibrary.zh("team/single");
@@ -214,7 +191,6 @@ class BackendEvidenceBoundaryTest {
         final String player = AiPromptLibrary.zh("player/tactical");
         assertFalse(player.contains("PUSH_WINDOWS"), "player prompt 不得含 PUSH_WINDOWS");
         assertTrue(player.contains("CONTROL_REGION_ENTRY_WINDOWS"), "player prompt 必须统一 CONTROL_REGION_ENTRY_WINDOWS");
-        // EN/RU 同步（本地化后不得残留中文规则、不得含旧术语）
         final String teamEn = TeamPromptLocalizer.systemPrompt(AllowedLanguage.EN);
         assertFalse(teamEn.contains("PUSH_WINDOWS"), "team EN 不得含 PUSH_WINDOWS");
         final String playerEn = PlayerPromptRules.systemPrompt("player/tactical", AllowedLanguage.EN);
@@ -223,8 +199,6 @@ class BackendEvidenceBoundaryTest {
         assertFalse(teamRu.contains("PUSH_WINDOWS"), "team RU 不得含 PUSH_WINDOWS");
     }
 
-    // R12 — 无 evidence→mandatory mistake 固定映射：旧句式「…时，必须指出防守方失误」不得再出现
-    // （新规则只以否定语境引用该说法：「不得把…固定映射成『必须指出防守方失误』」，允许出现）
     @Test
     void r12NoEvidenceToMandatoryDefensiveMistakeMapping() {
         final String team = AiPromptLibrary.zh("team/single");
@@ -234,7 +208,6 @@ class BackendEvidenceBoundaryTest {
         assertFalse(player.contains("过路费明显不足）时，必须指出你方防守失误"), "player 不得存在固定映射: " + player);
     }
 
-    // R13 — Player separation numeric consistency：numbers 与 summary 同源（0/0 bug 回归）
     @Test
     void r13PlayerSeparationNumbersAndSummaryConsistent() {
         final AiEvalFixtures.PlayerFixture fixture =
@@ -248,7 +221,6 @@ class BackendEvidenceBoundaryTest {
             }
             final double dealt = e.numbers().getOrDefault("damageDealtDuringSpan", 0.0);
             final double received = e.numbers().getOrDefault("damageReceivedDuringSpan", 0.0);
-            // numbers 与 summary 必须一致：summary 引用同一组测量
             if (dealt > 0 || received > 0) {
                 final String s = e.summary();
                 assertTrue(s.contains("窗口内输出 " + Math.round(dealt)),
@@ -256,13 +228,11 @@ class BackendEvidenceBoundaryTest {
                 assertTrue(s.contains("承伤 " + Math.round(received)),
                         "summary 必须引用与 numbers 相同的承伤测量: " + s + " vs " + received);
             }
-            // numbers 自身不得出现 0/0 但 summary 有值的不一致（两个 key 必须都在）
             assertTrue(e.numbers().containsKey("damageDealtDuringSpan"));
             assertTrue(e.numbers().containsKey("damageReceivedDuringSpan"));
         }
     }
 
-    // R14 — Team EN points rule：points-pressure signal != tactical action verdict（三语一致）
     @Test
     void r14TeamPointsRuleSemanticsAlignedAcrossLanguages() {
         final String zh = AiPromptLibrary.zh("team/single");
@@ -286,7 +256,6 @@ class BackendEvidenceBoundaryTest {
     }
 
 
-    // R15 — FormationDepth production 不输出 tactical-role 标签，保留纯几何三分位与覆盖测量
     @Test
     void r15FormationDepthHasNoTacticalRoleLabels() {
         final SingleTeamBattleAnalysisContext ctx = AiEvalFixtures.context("cw-opening-mapcontrol-01");
@@ -307,7 +276,6 @@ class BackendEvidenceBoundaryTest {
     }
 
 
-    // R16 — RelativeDepthHp prompt 规则：neutral reference + partial fail-closed + HP_RATIO_UNKNOWN
     @Test
     void r16RelativeDepthHpPromptRuleIsNeutral() {
         final String team = AiPromptLibrary.zh("team/single");
@@ -325,13 +293,11 @@ class BackendEvidenceBoundaryTest {
         final String player = AiPromptLibrary.zh("player/single");
         assertTrue(player.contains("RELATIVE_DEPTH_HP_MEASUREMENT"), "player prompt 必须引用中性段名");
         assertFalse(player.contains("BEHIND_LINE_HP_ADVANTAGE"), "player prompt 不得残留 BEHIND_LINE_HP_ADVANTAGE");
-        // 「扛线队友」只允许出现在禁止性措辞中（「不得把 reference 理解成扛线队友」），旧筛选定义必须消失
         assertFalse(player.contains("若你具备扛线能力"), "player prompt 不得残留「扛线能力」旧筛选条件");
         assertFalse(player.contains("血量比率 ≥ 扛线队友 × 1.2"), "player prompt 不得残留「扛线队友」旧 reference 公式");
     }
 
 
-    // R17 — docs lesson contract：ai-lessons 不再把 SOLO_DELAY/SOLO_DETACHED/teammateBenefit/「拖延=行为模式+队友获利」当 Backend expectation
     @Test
     void r17LessonDocsDoNotTreatBackendVerdictsAsExpectation() {
         final java.util.List<String> forbidden = java.util.List.of(
@@ -339,7 +305,6 @@ class BackendEvidenceBoundaryTest {
                 "拖延需行为 + 队友获利双条件",
                 "单走卡点拖延（队友获利）",
                 "正确判定：**拖延**（可观测行为：静止/卡点/守点 + 敌情压力 + 队友利用时间）");
-        // surefire fork 的工作目录是模块目录（如 java/wotb-web）：沿父目录向上查找仓库根
         java.io.File lessonsDir = new java.io.File(new java.io.File("").getAbsolutePath(), "docs/ai-lessons");
         java.io.File cursor = new java.io.File("").getAbsoluteFile();
         while (!lessonsDir.isDirectory() && cursor.getParentFile() != null) {
@@ -347,7 +312,7 @@ class BackendEvidenceBoundaryTest {
             lessonsDir = new java.io.File(cursor, "docs/ai-lessons");
         }
         if (!lessonsDir.isDirectory()) {
-            return; // 非仓库工作树内运行（如 IDE 单测）时跳过目录断言
+            return;
         }
         final java.io.File[] files = lessonsDir.listFiles((d, name) -> name.endsWith(".md"));
         assertTrue(files != null && files.length > 0, "docs/ai-lessons 目录应存在 lesson 文件");

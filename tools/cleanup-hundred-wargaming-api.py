@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Remove retired WARGAMING_API Hundred submissions safely.
 
 The command is deliberately read-only unless both --apply and the exact
@@ -152,7 +151,6 @@ def delete_rows(db: Database, ids: list[int]) -> None:
     if not ids:
         return
     marks = placeholders(ids)
-    # V19 owns the FK from evidence to submission: child rows first.
     db.execute(f"DELETE FROM hundred_battle_replay_evidence WHERE submission_id IN ({marks})", ids)
     db.execute(
         f"DELETE FROM hundred_battle_submission WHERE id IN ({marks}) AND verification_source = %s",
@@ -314,8 +312,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         pending_manifest_hashes = load_manifest(manifest_path, replay_dir)
         candidate_hashes = hashes | pending_manifest_hashes
-        # Calculate the protected set before deleting DB evidence, then checkpoint
-        # only the hashes that may need filesystem removal before the transaction.
         deletion_hashes = candidate_hashes - referenced_hashes(db, candidate_hashes, ids)
         save_manifest(manifest_path, replay_dir, deletion_hashes)
         delete_rows(db, ids)
@@ -330,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
         manifest_path.unlink()
         print("Cleanup verification: PASS")
         return 0
-    except Exception as exc:  # operational tool: fail closed and non-zero
+    except Exception as exc:
         if connection is not None:
             try:
                 connection.rollback()
