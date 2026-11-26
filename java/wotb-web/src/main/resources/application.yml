@@ -84,6 +84,9 @@ logging:
   level:
     # COS logs signed Authorization headers on failures; the domain reports sanitized error types.
     com.qcloud.cos: "OFF"
+    com.aliyun.sdk.service.oss2: "OFF"
+    org.apache.http.wire: "OFF"
+    org.apache.http.headers: "OFF"
   structured:
     format:
       console: logstash
@@ -96,6 +99,16 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 wotb:
+  images:
+    provider: ${BUSINESS_IMAGE_PROVIDER:cos}
+    cover-prefix: ${wotb.broadcast.cos.prefix:league-broadcasts/covers/}
+    avatar-prefix: ${wotb.creator.cos.prefix:creator-avatars/}
+    oss:
+      bucket: ${BUSINESS_OSS_BUCKET:}
+      region: ${BUSINESS_OSS_REGION:}
+      key-id: ${BUSINESS_OSS_ACCESS_KEY_ID:}
+      key-secret: ${BUSINESS_OSS_ACCESS_KEY_SECRET:}
+      security-token: ${BUSINESS_OSS_SECURITY_TOKEN:}
   creator:
     cos:
       # Credentials and private bucket are shared with broadcast covers; only the namespace differs.

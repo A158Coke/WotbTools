@@ -58,7 +58,7 @@ URL 的 `lbServer/lbSeason/lbCategory` 由 Vue Router 所有，可分享、刷�
 服务端检查实际解码结果，不只相信扩展名或声明 MIME。选择图片只产生本地预览，保存时才上传；
 取消表单不会上传。编辑明确保留、移除、替换动作，未选新图不会误删旧封面。
 
-文件由 Business API 转传腾讯 COS，回放只引用封面 ID。公开图片接口仅返回仍被回放引用的
+文件由 Business API 转传到配置的私有对象存储（默认腾讯 COS，可显式选择阿里云 OSS），回放只引用封面 ID。公开图片接口仅返回仍被回放引用的
 READY 封面，桶、key 和凭据不由客户端指定。图片失败时仍可阅读回放信息与打开链接。
 Android 通过现有业务 API URL resolver 读取图片，不能把 `/api/...` 当作 APK loopback 静态资源。
 

@@ -45,8 +45,14 @@ services:
       # Tournament-only permits; this is not an AI provider credential. The same
       # runtime secret is passed to ai-service, which verifies the image permit.
       TOURNAMENT_RECOGNITION_SIGNING_KEY: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:-}
-      # Optional, prefix-scoped COS credentials for league broadcast covers.
+      # Private Business images: select one provider and scope its identity to both prefixes.
       # No configuration is required for browsing or records without covers.
+      BUSINESS_IMAGE_PROVIDER: ${BUSINESS_IMAGE_PROVIDER:-cos}
+      BUSINESS_OSS_BUCKET: ${BUSINESS_OSS_BUCKET:-}
+      BUSINESS_OSS_REGION: ${BUSINESS_OSS_REGION:-}
+      BUSINESS_OSS_ACCESS_KEY_ID: ${BUSINESS_OSS_ACCESS_KEY_ID:-}
+      BUSINESS_OSS_ACCESS_KEY_SECRET: ${BUSINESS_OSS_ACCESS_KEY_SECRET:-}
+      BUSINESS_OSS_SECURITY_TOKEN: ${BUSINESS_OSS_SECURITY_TOKEN:-}
       BROADCAST_COS_BUCKET: ${BROADCAST_COS_BUCKET:-}
       BROADCAST_COS_REGION: ${BROADCAST_COS_REGION:-}
       BROADCAST_COS_PREFIX: ${BROADCAST_COS_PREFIX:-league-broadcasts/covers/}

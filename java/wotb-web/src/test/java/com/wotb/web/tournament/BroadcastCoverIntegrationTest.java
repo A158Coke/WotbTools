@@ -3,7 +3,7 @@ package com.wotb.web.tournament;
 import com.wotb.web.tournament.entity.BroadcastCover;
 import com.wotb.web.tournament.repository.BroadcastCoverRepository;
 import com.wotb.web.tournament.repository.BroadcastSeasonRepository;
-import com.wotb.web.tournament.service.BroadcastCosStorage;
+import com.wotb.web.tournament.service.BroadcastImageStorage;
 import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
@@ -76,7 +76,7 @@ class BroadcastCoverIntegrationTest {
     @Autowired PlatformTransactionManager transactions;
     @Autowired JdbcTemplate jdbc;
     @Autowired WebApplicationContext webContext;
-    @MockitoBean BroadcastCosStorage storage;
+    @MockitoBean BroadcastImageStorage storage;
     private long seasonId;
     private long nodeId;
 

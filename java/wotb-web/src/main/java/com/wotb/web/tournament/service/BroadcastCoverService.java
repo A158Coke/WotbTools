@@ -31,12 +31,12 @@ public class BroadcastCoverService {
     private static final Logger LOG = LoggerFactory.getLogger(BroadcastCoverService.class);
     private final BroadcastCoverRepository covers;
     private final BroadcastReplayRepository replays;
-    private final BroadcastCosStorage storage;
+    private final BroadcastImageStorage storage;
     private final TransactionTemplate independent;
     private final TransactionTemplate metadataReads;
 
     public BroadcastCoverService(final BroadcastCoverRepository covers, final BroadcastReplayRepository replays,
-                                 final BroadcastCosStorage storage, final PlatformTransactionManager transactions) {
+                                 final BroadcastImageStorage storage, final PlatformTransactionManager transactions) {
         this.covers = covers;
         this.replays = replays;
         this.storage = storage;
@@ -79,7 +79,7 @@ public class BroadcastCoverService {
         }
         independent.executeWithoutResult(tx -> {
             final BroadcastCover cover = locked(id);
-            // No season lock may be acquired while waiting for this bounded COS operation.
+            // Only the reservation row is locked during the storage request.
             storage.put(cover.objectKey, image);
             cover.status = "READY";
         });
