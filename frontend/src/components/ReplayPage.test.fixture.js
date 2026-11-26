@@ -29,7 +29,6 @@ vi.mock('html2canvas', () => ({
   default: (...args) => h2c.call(...args)
 }))
 
-// ===== Reactive state store: tests control REAL refs used by the component =====
 const state = vi.hoisted(() => {
   let _activeTab
   let _resp
@@ -56,14 +55,12 @@ const state = vi.hoisted(() => {
   }
 
   return {
-    // Store ref once created
     capture: (r) => { _activeTab = r.activeTab; _resp = r.resp; _error = r.error; _loading = r.loading; _locale = r.locale; _files = r.files },
     captureFns: (fns) => { _fns = fns },
     get replay() { return _fns || {} },
     getError: () => _error?.value,
     clear: () => { _activeTab = null; _resp = null; _error = null; _loading = null; _locale = null },
     setActiveTab, setResp, setError, setLoading, setLocale,
-    // Default initial values
     init: { activeTab: 'aggregate', resp: null, error: '', loading: false, locale: 'en', files: [] },
   }
 })
@@ -82,7 +79,6 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-// We need locale ref from i18n mock. Store it in a shared module var.
 const localeHolder = vi.hoisted(() => ({ ref: null }))
 
 
@@ -98,13 +94,11 @@ vi.mock('../composables/useReplay.js', async () => {
   const playerCols = computed(() => resp.value?.playerColumns || [])
   const aggCols = computed(() => resp.value?.aggregateColumns || [])
 
-  // Mirror i18n locale ref
   const i18nModule = await import('vue-i18n')
   const localeRef = i18nModule.useI18n().locale
 
   return {
     useReplay: () => {
-      // Apply initial values on first call
       if (state.init) {
         activeTab.value = state.init.activeTab
         resp.value = state.init.resp
@@ -139,8 +133,6 @@ vi.mock('../composables/useColumns.js', async () => {
   const { ref, computed } = await import('vue')
   return {
     useColumns: () => {
-      // 测试 seam：window.__testLeagueMode 控制 league 模式渲染；
-      // window.__testCwVisible / __testCwOrder 模拟 useColumns cw scope
       const cwKeys = window.__testCwVisible || [
         'nickname', 'league_rating', 'clan', 'battles', 'wins', 'win_rate',
         'damage_avg', 'earned_avg', 'multi_damage_rate', 'survival_time_avg'
@@ -153,10 +145,8 @@ vi.mock('../composables/useColumns.js', async () => {
         cwOrder: ref([...cwOrder]),
         showColPicker: ref(false), pickerScope: ref('player'), colScope: computed(() => 'player'),
         currentOrder: computed(() => []),
-        // 测试 seam：当前视图列（PNG 所见即所得断言用）
         shownCols: computed(() => window.__testShownCols || []),
         shownAggCols: computed(() => window.__testShownAggCols || []),
-        // 测试 seam：window.__testLeagueMode 控制 league 模式渲染
         leagueMode: computed(() => !!window.__testLeagueMode),
         toggleColPicker: vi.fn(), toggleCol: vi.fn(),
         selectAllCols: vi.fn(), resetCols: vi.fn(),
@@ -223,16 +213,10 @@ function mountPage(overrides = {}) {
 }
 
 function panelDisplay(wrapper, testId) {
-  // happy-dom 的 getComputedStyle 不反映 inline style（v-show 依赖），
-  // 故直接检查 element.style.display（与项目既有 v-show 测试一致）。
   const el = wrapper.find(`[data-test="${testId}"]`)
   return el.exists() ? el.element.style.display : null
 }
 
-/**
- * PNG 导出入口在「导出 ▾」菜单里。返回一个与按钮包装器同形的句柄：
- * attributes / text 读菜单触发按钮（loading / 导出中时整个菜单禁用），trigger 打开菜单再点 PNG 项。
- */
 function pngButton(wrapper) {
   const menuTrigger = wrapper.find('[data-testid="export-menu"]')
   if (!menuTrigger.exists()) return undefined

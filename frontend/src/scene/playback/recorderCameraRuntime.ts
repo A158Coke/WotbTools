@@ -22,11 +22,9 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   let cameraBlend: { position: THREE.Vector3; quaternion: THREE.Quaternion; fov: number; elapsed: number } | null = null
   let fovRestore: { fov: number; elapsed: number } | null = null
   const recorderVehicle = () => deps.vehicles.vehicleByEid(deps.getData()?.meta?.author_eid ?? 0);
-  /** Type39/23/31 的归属止于第一次死亡：之后可能属于观战视点，复活不能证明相机回到录像者。 */
   function recorderOwnsCamera(v: RuntimeVehicle) {
     return !deps.deathAt(v, deps.getT()) && deps.deathTimesOf(v).every((death) => deps.getT() < death);
   }
-  /** Type23 未知时不伪装成 Arcade：保留 raw，消费层退出。 */
   function recorderViewAvailable() {
     const v = recorderVehicle();
     return !!recorderCamera && !!v && recorderOwnsCamera(v)
@@ -59,7 +57,6 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     };
     fovRestore = null;
     recorderBoomScale = 1;
-    // 开镜前预取敌方车型 armor 模板，减少首次瞄准新车型的 GLB 下载/解析卡顿。
     if (deps.armorHighlightPref() && deps.getRenderer()) {
       prewarmArmorHighlight(camera);
     }
@@ -73,14 +70,13 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     if (hidden) setScopedLayer(hidden, false);
     foliageClip.value = 0;
     deps.recorderReticle?.hide();
-    // 开镜结束即释放全尺寸 RT（下次开镜命中目标时按需重建），不把 2×W×H 显存挂到会话结束。
     hooks.releaseArmorHighlight();
   }
   function setScopedLayer(v: RuntimeVehicle, hidden: boolean) {
     const layer = hidden ? SCOPED_HIDDEN_LAYER : 0;
     v.group.traverse((node) => { node.layers.set(layer); });
     v.glb?.traverse((node) => { node.layers.set(layer); });
-    deps.syncContactShadow(v);   // 开镜摘掉本车 = 不留阴影（#907 主干随迁）
+    deps.syncContactShadow(v);
   }
   function applyCameraFov(fov: number) {
     const camera = deps.getCamera();
@@ -89,7 +85,6 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     camera.updateProjectionMatrix();
     deps.invalidate();
   }
-  // 暂停时最后一帧也可能落在 HIGH 倒影的跳帧上；只在过渡收口时强制刷新。
   function settleCameraTransition() {
     deps.requestWaterReflectionRefresh();
     deps.invalidate();
@@ -116,7 +111,6 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
   const _recorderQuat = new THREE.Quaternion();
   const _recorderLastPos = new THREE.Vector3();
   const _recorderLastQuat = new THREE.Quaternion();
-  /** 回放数据驱动相机：开镜相机在炮位、朝向与 FOV 全部来自回放，不做平滑。 */
   function driveRecorderCamera(dt: number) {
     const camera = deps.getCamera();
     const controls = deps.getControls();
@@ -131,15 +125,11 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     if (hiddenEid !== scopedHiddenEid) {
       scopedHiddenEid = hiddenEid;
       setScopedLayer(v, scoped);
-      // Arcade ↔ Sniper 是离散切换：本车/武器/视野层同帧换掉，镜面里的场景也随之变。
-      // 隔帧反射档不能等下一次到期帧，否则退镜后的水面仍倒映上一帧的开镜车体。
       deps.requestWaterReflectionRefresh();
-      // SNIPER→ARCADE（含 seek 回 Arcade）：叠加渲染停止，释放全尺寸 RT；
-      // 下次命中目标再按需重建。进入开镜/待在开镜不释放。
       if (wasScoped && !scoped) hooks.releaseArmorHighlight();
       if (scoped && !wasScoped && deps.armorHighlightPref()) prewarmArmorHighlight(camera);
     } else if (scoped && v.glb && !v.glb.layers.isEnabled(SCOPED_HIDDEN_LAYER)) {
-      setScopedLayer(v, true);   // 开镜期间 GLB 才装配完成
+      setScopedLayer(v, true);
     }
     foliageClip.value = scoped ? FOLIAGE_CLIP_SCOPED_M : FOLIAGE_CLIP_ARCADE_M;
     let fov = BASE_FOV_DEG;
@@ -148,7 +138,7 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
         v.gunPivot.updateWorldMatrix(true, false);
         v.gunPivot.getWorldPosition(_recorderPos);
       }
-      fov = fovFromZoomRaw(sample.zoomRaw as number);   // SNIPER 采样必带 zoomRaw（原 JS 同口径）
+      fov = fovFromZoomRaw(sample.zoomRaw as number);
       recorderBoomScale = 1;
     } else {
       deps.vehicles.posAt(v, deps.getT(), _recorderAnchor);
@@ -191,12 +181,9 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     }
     updateRecorderReticle(sample, v);
   }
-  /** Type39 瞄准点（场景坐标）：准星与穿深着色的选目标共用这一点。 */
   function recorderAimPoint(sample: RecorderCameraSample, out: THREE.Vector3) {
     return out.set(-sample.rayX, sample.rayY, sample.rayZ);
   }
-  /** 世界点 → 舞台像素；投影不到返回 null，不伪造屏幕位置。
-   *  视口由调用方一次取快照传入（逻辑舞台尺寸，非 drawing buffer）。 */
   function projectToStage(point: THREE.Vector3, out: CameraVec3, stage: { x: number; y: number }): CameraVec3 | null {
     point.project(deps.getCamera());
     if (![point.x, point.y, point.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 1)) return null;
@@ -204,10 +191,6 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     out.y = (1 - point.y) * stage.y / 2;
     return out;
   }
-  /**
-   * Arcade 相机沿 Type39 看，所以中心点按定义在屏幕中间；扩散圆画在炮管实际指向上，
-   * 炮塔转动滞后时才会偏离中心再追上来，开镜时两者接近重合。
-   */
   function updateRecorderReticle(sample: RecorderCameraSample, v: RuntimeVehicle) {
     if (!deps.recorderReticle) return;
     const camera = deps.getCamera();
@@ -220,7 +203,7 @@ export function createRecorderCamera(deps: CameraRuntimeDeps, hooks: {
     recorderAimPoint(sample, _recorderRay);
     const distance = Math.max(RETICLE_MIN_GUN_DISTANCE_M, _recorderGun.distanceTo(_recorderRay));
     _recorderGun.addScaledVector(_recorderGunDir, distance);
-    const stage = deps.getViewportSize();   // 一次快照供 aim/gun/半径共用（不逐点读）
+    const stage = deps.getViewportSize();
     const aim = projectToStage(_recorderRay, _reticleAim, stage);
     const gun = projectToStage(_recorderGun, _reticleGun, stage);
     if (!aim && !gun) { deps.recorderReticle.hide(); return; }

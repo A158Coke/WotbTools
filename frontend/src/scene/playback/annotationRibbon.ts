@@ -20,13 +20,10 @@ const TRIANGLE_CLEARANCE_SAMPLES = [
 ]
 
 interface RibbonFrame {
-  /** semantic 水平坐标（x = 回放 x，z = 回放 y） */
   x: number
   z: number
-  /** 横向单位向量（左法线） */
   nx: number
   nz: number
-  /** miter 后的半宽（米） */
   half: number
   surfaceY?: number
   normal: { x: number; y: number; z: number } | null
@@ -84,7 +81,6 @@ function ribbonRows(frames: RibbonFrame[], fractions: number[], sampleHeight: He
     const anchored = Number.isFinite(frame.surfaceY)
     for (const fraction of fractions) {
       if (anchored) {
-        // anchored row：整行落在选中的 surface 局部 plane；无 surfaceN 时退化为水平截面。
         const p = crossPoint3D(frame, fraction, liftValue)
         row.push({ x: p.x, y: p.y, z: p.z })
         continue
@@ -115,7 +111,6 @@ function triangleClear(a: { x: number; y: number; z: number }, b: { x: number; y
     const y = wa * a.y + wb * b.y + wc * c.y
     const z = wa * a.z + wb * b.z + wc * c.z
     const terrain = sampleOrNull(sampleHeight, x, z)
-    // clearance = allowed penetration epsilon，不是“必须高于 terrain 的正 clearance”。
     if (terrain === null || y < terrain - clearance) return false
     maxDeviation = Math.max(maxDeviation, Math.abs(terrain - (wa * ta + wb * tb + wc * tc)))
   }
@@ -127,10 +122,7 @@ function triangleClear(a: { x: number; y: number; z: number }, b: { x: number; y
   const converged = maxDeviation <= ANNOTATION_VALIDATION_DEVIATION_TRIGGER
     && maxEdge <= ANNOTATION_VALIDATION_EDGE_LIMIT
   if (converged) return true
-  // Depth exhaustion is NOT a proof of safety: not converged + cannot recurse = unresolved/fail closed.
   if (depth >= ANNOTATION_VALIDATION_MAX_DEPTH) return false
-  // Recursive sub-triangle validation: hidden terrain between the 7 fixed samples
-  // must be probed at smaller scales; spatial/error bounds terminate deterministically.
   const ab = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 }
   const bc = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2, z: (b.z + c.z) / 2 }
   const ca = { x: (c.x + a.x) / 2, y: (c.y + a.y) / 2, z: (c.z + a.z) / 2 }
@@ -140,10 +132,8 @@ function triangleClear(a: { x: number; y: number; z: number }, b: { x: number; y
     && triangleClear(ab, bc, ca, sampleHeight, clearance, depth + 1)
 }
 
-/** 贴地行网格 cell（ribbonRows 的行内条目；null = 采样空洞，row 断 strip）。 */
 type RibbonCell = { x: number; y: number; z: number } | null
 
-/** 对最终 triangulation 的两个 triangle 做 interior clearance 检查；失败 cell 会触发 2D refinement。 */
 function ribbonCellFailures(rows: RibbonCell[][], valid: boolean[], crossCount: number, sampleHeight: HeightSampler | null | undefined, clearance: number) {
   const failing: Array<{ i: number; j: number }> = []
   let checked = 0
@@ -154,7 +144,7 @@ function ribbonCellFailures(rows: RibbonCell[][], valid: boolean[], crossCount: 
       const b = rows[i][j + 1]
       const c = rows[i + 1][j + 1]
       const d = rows[i + 1][j]
-      if (!a || !b || !c || !d) continue   // valid 行内 cell 不会是 null；防御性跳过（与 valid 门控同语义）
+      if (!a || !b || !c || !d) continue
       checked++
       if (!triangleClear(a, b, d, sampleHeight, clearance)
         || !triangleClear(b, c, d, sampleHeight, clearance)) {
@@ -173,7 +163,6 @@ function unitDirection(a: SemanticPoint, b: SemanticPoint) {
   return { x: dx / len, z: dz / len }
 }
 
-/** Cross sample 上限由单笔 vertex budget 约束；至少 2，最多 33（含 center）。 */
 function annotationCrossBudget(pointCount: number): number {
   return Math.max(2, Math.min(ANNOTATION_MAX_CROSS_SAMPLES, Math.floor(ANNOTATION_MAX_RIBBON_VERTICES / Math.max(1, pointCount))))
 }
@@ -183,16 +172,10 @@ function crossPoint(frame: RibbonFrame, fraction: number) {
   return { x: frame.x + frame.nx * offset, z: frame.z + frame.nz * offset }
 }
 
-/**
- * Anchored row 的 cross vertex：先保留 canonical semantic XZ offset，再仅用命中局部
- * plane equation 求 Y。不能把 cross vector 投到 plane 后重新 normalize——那会让
- * 斜面上的 XZ visible width 小于 semanticWidthFromSlider 的 map-space width。
- */
 function crossPoint3D(frame: RibbonFrame, fraction: number, liftValue: number) {
   const offset = frame.half * (1 - 2 * fraction)
   const x = frame.x + frame.nx * offset
   const z = frame.z + frame.nz * offset
-  // anchored row 恒带 finite surfaceY（ribbonFrames 只在 finite 时写入锚点）
   const anchor = frame.surfaceY as number
   let y = anchor
   const n = frame.normal
@@ -202,15 +185,12 @@ function crossPoint3D(frame: RibbonFrame, fraction: number, liftValue: number) {
   return { x, y: y + liftValue, z }
 }
 
-/** 在 A/B 中点检测 terrain error 或实际 transverse span（含 miter）。 */
 function crossIntervalNeedsSplit(frames: RibbonFrame[], sampleHeight: HeightSampler | null | undefined, fa: number, fb: number): boolean {
   const fm = (fa + fb) / 2
   for (const frame of frames) {
-    // anchored row 的 cross 在 surface plane 内；span 必须按 3D 长度判，不能只看水平投影。
     if (Number.isFinite(frame.surfaceY)) {
       const pa = crossPoint3D(frame, fa, 0)
       const pb = crossPoint3D(frame, fb, 0)
-      // canonical footprint 是 XZ；Y 只是 plane-derived，不能把斜率算进 width 细分。
       if (Math.hypot(pb.x - pa.x, pb.z - pa.z) > ANNOTATION_CROSS_MAX_SEGMENT) return true
       continue
     }
@@ -227,7 +207,6 @@ function crossIntervalNeedsSplit(frames: RibbonFrame[], sampleHeight: HeightSamp
   return false
 }
 
-/** 从 center sample 开始，自适应细分 cross fractions，直到误差合格或 vertex budget 用尽。 */
 function adaptiveCrossFractions(frames: RibbonFrame[], sampleHeight: HeightSampler | null | undefined, pointCount: number): number[] {
   const maxSamples = annotationCrossBudget(pointCount)
   if (maxSamples < 3) return [0, 1]
@@ -246,14 +225,8 @@ function adaptiveCrossFractions(frames: RibbonFrame[], sampleHeight: HeightSampl
   return fractions
 }
 
-/**
- * 地形 LOD 变化后只刷新高度：ribbon 的 XZ 拓扑来自语义点，与 LOD 无关。
- * 每个顶点采样一次，是逐帧可承受的量级；细分校验只在提交时做。
- * 采样不到的顶点保持原高度。
- */
 export function reprojectRibbonPositions(positions: Float32Array, sampleHeight: HeightSampler, lift = ANNOTATION_LIFT, anchored?: Uint8Array | boolean[] | null): Float32Array {
   for (let i = 0; i + 2 < positions.length; i += 3) {
-    // anchored 顶点属于选中表面层：LOD 重建只刷新 terrain 顶点，锚点高度保持。
     if (anchored && anchored[i / 3]) continue
     const y = sampleHeight(positions[i], positions[i + 2])
     if (y != null && Number.isFinite(y)) positions[i + 1] = y + lift
@@ -261,20 +234,11 @@ export function reprojectRibbonPositions(positions: Float32Array, sampleHeight: 
   return positions
 }
 
-/**
- * committed pen -> 贴地 ribbon。每个语义点生成 cross-width grid（center + adaptive fractions），
- * 每行顶点都采样 terrain；任一 cross sample 为 null 时该 row 断开 strip。
- * 最终对每个 cell 的两个 triangle interior 做 clearance validation；失败时同时细分
- * longitudinal row 与 cross fraction，预算耗尽则跳过 unsafe cell（不输出已知穿地 triangle）。
- * 返回 { strips, pointCount, crossCount, vertexCount, vertexBudget, validation } 或 null。
- */
-/** 贴地 ribbon 的单条 strip（顶点/索引已按 unsafe-cell 断 strip 处理）。 */
 export interface PenRibbonStrip {
   positions: Float32Array
   indices: Uint32Array
   rowCount: number
   crossCount: number
-  /** 逐 row 的锚点标记（LOD 重建时锚点行保持表面高度） */
   anchored: Uint8Array
 }
 
@@ -302,7 +266,6 @@ export function buildPenRibbon(annotation: PenAnnotation | null | undefined, {
   maxPoints = ANNOTATION_MAX_PROJECTED_POINTS,
   refine = true,
 }: {
-  /** 缺省时 buildPenRibbon fail-closed 返回 null（与 JS 同式 typeof 守卫） */
   sampleHeight?: HeightSampler
   lift?: number
   maxSegment?: number
@@ -315,8 +278,6 @@ export function buildPenRibbon(annotation: PenAnnotation | null | undefined, {
   if (typeof sampleHeight !== 'function') return null
   const width = Number(annotation.width)
   if (!Number.isFinite(width) || width <= 0) return null
-  // annotation.points 已是 commit-normalized durable centerline；renderer 只做
-  // terrain subdivision + cross-width tessellation，不再修改 semantic centerline。
   const points = subdividePolyline(annotation.points, sampleHeight, {
     maxSegment, midpointError, maxDepth, maxPoints, maxInputPoints: null,
   })
@@ -337,7 +298,7 @@ export function buildPenRibbon(annotation: PenAnnotation | null | undefined, {
     const built = ribbonRows(frames, fractions, sampleHeight, liftValue)
     rows = built.rows
     valid = built.valid
-    if (!refine) break   // 草稿逐点重建，只做一次贴地，不跑逐 cell 校验
+    if (!refine) break
     failures = ribbonCellFailures(rows, valid, crossCount, sampleHeight, ANNOTATION_CLEARANCE_EPS)
     if (!failures.failing.length || iterations === ANNOTATION_MAX_REFINEMENT_ITERATIONS) break
 
@@ -400,7 +361,7 @@ export function buildPenRibbon(annotation: PenAnnotation | null | undefined, {
       for (let k = 0; k < rowCount; k++) {
         for (let c = 0; c < crossCount; c++) {
           const cell = rows[i + k][c]
-          if (!cell) continue   // unsafe/断 strip 行已由 strip 边界排除；防御性跳过
+          if (!cell) continue
           const o = (k * crossCount + c) * 3
           positions[o] = cell.x
           positions[o + 1] = cell.y

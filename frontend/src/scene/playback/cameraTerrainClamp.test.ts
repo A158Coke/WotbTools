@@ -1,6 +1,3 @@
-// cameraTerrainClamp 单测（#820 Wave B6A）：真实 THREE.Vector3，假 camera/controls。
-// 断言的是出仓前 playbackScene.js 的既有语义（净空回退顺序、24 轮重采样、minDistance
-// 锁定/释放、target 钳制框），不重复播放场景的装配。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
@@ -64,7 +61,7 @@ describe('applyCameraClamp', () => {
     clamp.applyCameraClamp(300);
     expect(clamp.baseMinDistance()).toBe(1);
     expect(controls.minDistance).toBe(1);
-    expect(controls.maxDistance).toBeCloseTo(660, 9);   // 300 × 2.2
+    expect(controls.maxDistance).toBeCloseTo(660, 9);
 
     clamp.applyCameraClamp(100);
     expect(clamp.baseMinDistance()).toBe(1);
@@ -109,7 +106,6 @@ describe('terrainHeightForCameraClamp', () => {
 
   it('高度场边界外返回 null：不拿 0 制造假净空', () => {
     const clamp = createCameraTerrainClamp(makeHarness({ height: () => 7 }).deps);
-    // span 1000 → 半幅 500，右/上边界闭区间外
     expect(clamp.terrainHeightForCameraClamp(499, 0)).toBe(7);
     expect(clamp.terrainHeightForCameraClamp(500, 0)).toBeNull();
     expect(clamp.terrainHeightForCameraClamp(0, -500)).toBe(7);
@@ -150,14 +146,13 @@ describe('clampOrbitCameraToTerrain', () => {
   it('相机高于净空：只复位 minDistance，不动相机', () => {
     const { camera, controls, deps } = makeHarness();
     const clamp = createCameraTerrainClamp(deps);
-    controls.minDistance = 999;                        // 上一帧可能锁过
+    controls.minDistance = 999;
     expect(clamp.clampOrbitCameraToTerrain()).toBe(false);
     expect(camera.position.toArray()).toEqual([10, 10, 0]);
-    expect(controls.minDistance).toBe(1);              // 释放回基准近端
+    expect(controls.minDistance).toBe(1);
   });
 
   it('沿射线退到安全距离（target 全程不动）', () => {
-    // target 在平地，相机在 3 m 高的台地上方 2 m：抬高到净空 3.5 m。
     const { camera, controls, deps } = makeHarness({
       camera: makeCamera(0, 2, 0),
       height: () => 3,
@@ -166,14 +161,12 @@ describe('clampOrbitCameraToTerrain', () => {
     expect(clamp.clampOrbitCameraToTerrain()).toBe(true);
     expect(camera.position.x).toBe(0);
     expect(camera.position.z).toBe(0);
-    expect(camera.position.y).toBeCloseTo(3.5, 6);      // 地形 3 + 净空 0.5
+    expect(camera.position.y).toBeCloseTo(3.5, 6);
     expect(controls.target.toArray()).toEqual([0, 0, 0]);
-    expect(controls.minDistance).toBe(3.5);             // 安全距离 3.5 > 基准 1：锁实际净空
+    expect(controls.minDistance).toBe(3.5);
   });
 
   it('坡面穿地：垂直抬到净空并按实际距离锁 minDistance', () => {
-    // 斜坡 h = 0.5x，相机在 x=30 高 1 m（地形 15 m）：射线外推会出高度场，
-    // 走垂直回退；锁定距离 = |camera - target|。
     const { camera, controls, deps } = makeHarness({
       camera: makeCamera(30, 1, 0),
       height: (x) => x * 0.5,
@@ -202,7 +195,7 @@ describe('clampOrbitCameraToTerrain', () => {
 
   it('相机点无地形数据：复位 minDistance 且不移动相机', () => {
     const { camera, controls, deps } = makeHarness({
-      camera: makeCamera(600, -5, 0),                   // 高度场半幅 500 之外
+      camera: makeCamera(600, -5, 0),
       height: () => 0,
     });
     const clamp = createCameraTerrainClamp(deps);
@@ -240,7 +233,7 @@ describe('clampOrbitCameraToTerrain', () => {
     const clamp = createCameraTerrainClamp(deps);
     expect(clamp.clampOrbitCameraToTerrain()).toBe(true);
     expect(camera.position.y).toBeCloseTo(6.5, 6);
-    expect(controls.minDistance).toBeCloseTo(Math.hypot(0, 6.5), 6);   // max(2, |cam-target|)
+    expect(controls.minDistance).toBeCloseTo(Math.hypot(0, 6.5), 6);
   });
 });
 
@@ -258,7 +251,7 @@ describe('clampCameraTarget', () => {
     const { deps } = makeHarness({ controls, worldCenter: { cx: 0, cz: 0, ext: 1000 } });
     const clamp = createCameraTerrainClamp(deps);
     clamp.clampCameraTarget();
-    expect(controls.target.toArray()).toEqual([1050, 0, -1050]);   // 1100 内：不动
+    expect(controls.target.toArray()).toEqual([1050, 0, -1050]);
   });
 
   it('钳制框随世界中心平移', () => {
@@ -267,7 +260,7 @@ describe('clampCameraTarget', () => {
     const clamp = createCameraTerrainClamp(deps);
     controls.target.set(-500, 5, 500);
     clamp.clampCameraTarget();
-    expect(controls.target.toArray()).toEqual([-240, 5, 140]);       // 100−340 / −200+340
+    expect(controls.target.toArray()).toEqual([-240, 5, 140]);
   });
 
   it('跟随中 target 钉在坦克上：不钳制', () => {

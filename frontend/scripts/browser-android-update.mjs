@@ -2,8 +2,6 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-// Real application/shell/sheet/CSS, with only the Android transport boundary replaced.
-// This verifies browser layout and interaction; it does not emulate DownloadManager or Gecko.
 function nativeBoundary({ promptSuppressed = false, installPermissionRequired = false } = {}) {
   const listeners = new Set()
   const status = {
@@ -79,7 +77,6 @@ function geometry() {
     panel: rect ? { left: rect.left, right: rect.right } : null, controls }
 }
 
-/** 可选更新提示与固定外壳的真实几何 / hit-test 探针（在页面内执行）。 */
 function noticeGeometry() {
   const measure = (element) => {
     if (!element) return null
@@ -158,7 +155,6 @@ try {
         source: `(${nativeBoundary.toString()})(${JSON.stringify({ promptSuppressed, ...boundaryArgs })}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)}); localStorage.setItem('wotb-lang', ${JSON.stringify(lang)});`,
       }, sessionId)
       await chrome.client.send('Page.navigate', { url }, sessionId)
-      // Cold Vite dependency transforms can exceed the shared navigation budget on CI.
       await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
       if (expectNotice) {
         const ready = waitForMoreLink
@@ -241,9 +237,6 @@ try {
   }
 
   {
-    // 320px + 俄文 + installPermissionRequired：AppButton 默认 nowrap，长操作文案（Разрешить установку и продолжить）
-    // 必须允许按钮内换行且不产生水平溢出，同时保持 44px 触控高度（PR #939 评审 P2）。
-    // 有进行中下载时可选提示不出现（showPrompt 要求 download.state==='idle'），改从 More 入口直达面板。
     const { targetId, page } = await openAppPage({ width: 320, lang: 'ru', expectNotice: false, boundaryArgs: { installPermissionRequired: true } })
     try {
       await page.evaluate('window.scrollTo(0, 0)')

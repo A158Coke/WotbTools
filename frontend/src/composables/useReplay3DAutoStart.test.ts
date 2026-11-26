@@ -103,14 +103,12 @@ describe('useReplay3DAutoStart', () => {
     first.auto.enabled.value = false
     first.scope.stop()
 
-    // 模拟 Profile 与回放面板是两个实例：后挂载者读不到持久值，但必须共享本次会话的关闭状态。
     const second = mountAuto('user-storage-fail')
     expect(second.auto.enabled.value).toBe(false)
 
     const other = mountAuto('user-storage-other')
     expect(other.auto.enabled.value).toBe(true)
 
-    // 同一偏好不会被错误地当成全局开关。
     expect(localStorage.getItem(PREFIX + 'user-storage-fail')).toBeNull()
   })
 

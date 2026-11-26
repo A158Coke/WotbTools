@@ -1,7 +1,5 @@
 import { damageLogAtV2, victimFeedbackAllowedV2 } from './battlePlaybackV2.ts'
 
-/** 数据集 → 账号索引缓存（WeakMap，随数据集回收）：回放数据解析后不可变，
- * 详情面板在 HUD 节流频率（~10Hz）重建伤害日志，逐调用重建 Map 是纯浪费。 */
 const byAccountCache = new WeakMap()
 
 function vehiclesByAccount(dataset) {
@@ -13,7 +11,6 @@ function vehiclesByAccount(dataset) {
   return byAccount
 }
 
-/** Details labels share canonical attribution and event-time visibility in both renderers. */
 export function detailsDamageLogAtV2(dataset, track, time, unknownLabel) {
   if (!dataset || !track) return []
   const byAccount = vehiclesByAccount(dataset)

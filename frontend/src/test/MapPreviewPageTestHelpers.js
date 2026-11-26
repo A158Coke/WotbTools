@@ -31,19 +31,15 @@ export function createMapPreviewPageTestHelpers({ MapPreviewPage, createRouter, 
     },
   }
 
-  /** fixture 的去重 key（id 54 与 id 3 同为 erlenberg）。 */
   const ALL_KEYS = [
     'canal_01', 'canyon', 'erlenberg', 'erlenberg_old', 'grossberg',
     'iceworld', 'moon', 'rudniki_01', 'rudniki_03', 'savanna_old',
   ]
-  /** fixture 中 map_names.json 已登记 zh 的 key → 默认可见。 */
   const ZH_KEYS = [
     'canyon', 'erlenberg', 'erlenberg_old', 'grossberg', 'iceworld', 'moon', 'savanna_old',
   ]
-  /** 资产条目存在、但目录没有中文名 → 默认隐藏。 */
   const HIDDEN_KEYS = ['canal_01', 'rudniki_01', 'rudniki_03']
 
-  /** 渲染出的卡片 key（排序后比较，避免把排序/计数当 contract）。 */
   function cardKeys(wrapper) {
     return wrapper.findAll('.map-card')
       .map((card) => (card.attributes('data-testid') || '').replace('map-card-', ''))

@@ -14,8 +14,7 @@ describe('impactKind（弹着结果不得靠视觉猜）', () => {
     for (const b of [0x0010, 0x0040, 0x0100, 0x1000]) {
       expect(impactKind(shot({ is_author: true, hit_flags: b }))).toBe('pen')
     }
-    expect(impactKind(shot({ is_author: true, hit_flags: 0x0020 }))).toBe('nonpen')   // 未击穿位
-    // 跳弹位优先于击穿位
+    expect(impactKind(shot({ is_author: true, hit_flags: 0x0020 }))).toBe('nonpen')
     expect(impactKind(shot({ is_author: true, hit_flags: 0x0008 | 0x0010 }))).toBe('ricochet')
   })
 
@@ -25,11 +24,9 @@ describe('impactKind（弹着结果不得靠视觉猜）', () => {
   })
 
   it('非作者路径：game_hit_result 枚举里没有跳弹——1/2 必须 nonpen，4 保持 null', () => {
-    // 枚举：0=无 1=未击穿 2=间隙止 3=有伤害 4=raw 未定 255=未获取
     expect(impactKind(shot({ is_author: false, game_hit_result: 3 }))).toBe('pen')
     expect(impactKind(shot({ is_author: false, game_hit_result: 1 }))).toBe('nonpen')
     expect(impactKind(shot({ is_author: false, game_hit_result: 2 }))).toBe('nonpen')
-    // 4 = raw 未定：不生成 impact（不伪装 nonpen/ricochet）
     expect(impactKind(shot({ is_author: false, game_hit_result: 4 }))).toBeNull()
     for (const r of [0, 5, 255, undefined]) {
       expect(impactKind(shot({ is_author: false, game_hit_result: r }))).toBeNull()

@@ -13,12 +13,6 @@ import {
   profileBackendAllowed,
 } from './featureCapabilities.js'
 
-/**
- * capability 模型的确定性矩阵（计划 §29）：测**判定**，不测文案。
- *
- * 这是「离线是受支持的运行模式」这条产品约定的可执行形式：本地球功能任何情况下可用，
- * 联网功能在离线时**立刻**不可用（不给「先等超时再说」留任何空间）。
- */
 describe('feature capability model', () => {
   const offline = { connectivity: ConnectivityState.OFFLINE }
   const online = { connectivity: ConnectivityState.ONLINE }
@@ -99,13 +93,11 @@ describe('feature capability model', () => {
       const ai = getFeatureAvailability(Feature.AI_REVIEW, { connectivity: state })
       expect(ai.available, String(state)).toBe(false)
       expect(ai.online, String(state)).toBe(false)
-      // 本地功能不受影响：连通性判断永远不能锁死本地能力。
       expect(getFeatureAvailability(Feature.RATING, { connectivity: state }).available, String(state)).toBe(true)
     }
   })
 
   it('maps each non-online reason to its own copy (never calls unknown/degraded "offline")', () => {
-    // offline：确实是用户离线 ⇒ 功能专属文案 + 「你现在离线」标题
     const offline = getFeatureAvailability(Feature.AI_REVIEW, { connectivity: ConnectivityState.OFFLINE })
     expect(offline.reason).toBe(ConnectivityState.OFFLINE)
     expect(offline.messageKey).toBe('featureOffline.aiReview')
@@ -126,7 +118,6 @@ describe('feature capability model', () => {
       expect(availability.hintKey, state).toBe('connectivityNotice.retry')
       keys.add(availability.messageKey)
     }
-    // 四个 reason 四套文案：绝不允许全部落到同一个 offline key。
     expect(keys.size).toBe(4)
   })
 
@@ -154,7 +145,6 @@ describe('feature capability model', () => {
     expect(availability.available).toBe(false)
     expect(availability.reason).toBe(UNKNOWN_FEATURE_REASON)
     expect(availability.requirement).toBeNull()
-    // 未知功能不是连通性问题：不得伪装成 connectivity 文案。
     expect(availability.messageKey).toBeNull()
     expect(availability.titleKey).toBeNull()
     expect(isKnownFeature('not-a-feature')).toBe(false)
@@ -174,13 +164,6 @@ describe('feature capability model', () => {
   })
 })
 
-/**
- * capability 模型给出的每个 messageKey 必须真的能翻译出来。
- *
- * 这条断言的存在理由（PR 467 review P1）：新增 `Feature.ADMIN_USERS` 时如果只注册需求而不补
- * `featureOffline.adminUsers`，门禁会显示一个裸 key（或空白提示）—— 而 capability 测试本身
- * 只断言 key 存在，不会发现翻译缺失。这里把「注册表」与「三语 locale」钉在一起。
- */
 describe('capability message keys resolve in every locale', () => {
   const states = [
     ConnectivityState.OFFLINE,
@@ -214,7 +197,6 @@ describe('capability message keys resolve in every locale', () => {
         expect(lookup(locale, `featureOffline.${feature}`), `${locale} featureOffline.${feature}`).toBeTruthy()
       }
     }
-    // 每个功能一份文案：拿掉任何一个功能的离线说明都必须让本用例失败。
     const offlineCopy = featuresByRequirement(FeatureRequirement.ONLINE_REQUIRED)
       .map(feature => lookup('zh', `featureOffline.${feature}`))
     expect(new Set(offlineCopy).size).toBe(offlineCopy.length)

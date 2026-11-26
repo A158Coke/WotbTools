@@ -20,7 +20,6 @@ const emit = defineEmits(['update'])
 const { t } = useI18n()
 const { isCompact } = useBreakpoint()
 const currentTurret = computed(() => props.modules?.turrets?.[props.selection.turret] || null)
-/** 四个模块槽的候选（图标 = 客户端 ModulesTechTree 类型图；名称/等级来自数据）。 */
 const moduleRows = computed<ModuleRow[]>(() => {
   const turrets = props.modules?.turrets || []
   const guns = currentTurret.value?.guns || []
@@ -36,8 +35,6 @@ const moduleRows = computed<ModuleRow[]>(() => {
       key: 'gun',
       icon: moduleIconUrl('gun'),
       selected: props.selection.gun,
-      // 炮候选 = 全车炮的全集（跨炮塔去重）：当前炮塔不能直接装配的置灰禁用，
-      // 不隐藏（用户 2026-10-27 要求）。value 只对当前炮塔内的炮有效（pickGun 下标）。
       options: (() => {
         const seen = new Set()
         const all = []
@@ -98,7 +95,6 @@ const moduleRows = computed<ModuleRow[]>(() => {
         title: t('agentTanks.configurator.track_option', {
           name: props.itemName(track),
           rotation: fmtNum(track?.stats?.rotationSpeed, 1),
-          // 客户端 chassis maxLoad 单位是 kg（T-34 31300），tooltip 显示吨
           load: Number(track?.stats?.maxLoad) > 0 ? fmtNum(Number(track.stats?.maxLoad) / 1000, 1) : '—',
         }),
       })),
@@ -107,7 +103,6 @@ const moduleRows = computed<ModuleRow[]>(() => {
   ]
 })
 
-/** 模块矩阵的选项行：按选项序号逐行展开，4 列一起对齐（炮塔1|火炮1|发动机1|履带1…）。 */
 const moduleMatrix = computed(() => {
   const rows = moduleRows.value
   const depth = Math.max(0, ...rows.map(row => row.options.length))
@@ -115,15 +110,11 @@ const moduleMatrix = computed(() => {
     rows.map(row => ({ row, option: row.options[index] || null })))
 })
 
-/** 手机布局按类型分组；没有选项的类型连标题都不渲染，避免孤立标签。 */
 const moduleGroups = computed(() => moduleRows.value.filter(row => row.options.length > 0))
 
-/** 装备槽位按 (level, group) 定位：presetSlots 数组顺序是 level-major。 */
 </script>
 
 <template>
-    <!-- 桌面/平板：首行 = 4 个类型标签，之后按选项序号逐行展开（炮塔1|火炮1|发动机1|履带1，
-         下一行炮塔2|火炮2…），4 列严格对齐，避免右侧空白。 -->
     <div v-if="!isCompact" class="tp-module-matrix">
       <div v-for="row in moduleRows" :key="row.key" class="tp-module-head" :data-testid="`tank-module-${row.key}`">
         <span>{{ t(`agentTanks.configurator.${row.key}`) }}</span>
@@ -154,8 +145,6 @@ const moduleGroups = computed(() => moduleRows.value.filter(row => row.options.l
       </template>
     </div>
 
-    <!-- 手机：按类型 2×2 分组（炮塔|火炮 // 发动机|履带），每组一个标题 + 纵向选项；
-         不按序号拼行，因此只有 1 个选项的类型不会留下带标题的空格子。 -->
     <div v-else class="tp-module-groups">
       <section
         v-for="row in moduleGroups"
@@ -193,7 +182,6 @@ const moduleGroups = computed(() => moduleRows.value.filter(row => row.options.l
 </template>
 
 <style scoped>
-/* ---------- 模块矩阵：4 列（炮塔/火炮/发动机/履带），选项按序号逐行对齐 ---------- */
 .tp-module-matrix {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -245,12 +233,10 @@ const moduleGroups = computed(() => moduleRows.value.filter(row => row.options.l
 .tp-module-name { inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
 
 @media (width < 768px) {
-  /* 手机：类型分组 2×2（炮塔|火炮 // 发动机|履带），每组标题 + 纵向选项 */
   .tp-module-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
   .tp-module-group { display: grid; align-content: start; gap: var(--space-1); min-inline-size: 0; }
   .tp-module-group-head { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
   .tp-module-group-list { display: grid; gap: var(--space-1); }
-  /* 横向紧凑卡片：小图标 + 名称 + 等级徽标，44px 触控高度 */
   .tp-module-tile {
     grid-template-columns: 28px minmax(0, 1fr) auto;
     grid-template-areas: "pic name level";

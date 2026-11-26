@@ -1,6 +1,3 @@
-// transientFeedback3d 单测（#820 Wave B6B）：假钟 + 假车辆/覆盖层，断言的是出仓前
-// playbackScene.js 的既有语义——血量链事件源、回放时钟游标、壁钟寿命幽灵段/受击闪、
-// seek 不补播。
 import { describe, expect, it, vi } from 'vitest'
 import {
   createTransientFeedback3d,
@@ -78,7 +75,6 @@ describe('事件源', () => {
     t.rebuildSources()
     const seen: Array<[number, number, number]> = []
     h.deps.onBurst = () => {}
-    // 用 advanceTo 逐秒推进观察（伤害事件没有公开读接口）
     for (let sec = 0; sec <= 40; sec++) {
       const before = h.spawnDamage.mock.calls.length
       t.advanceTo(sec)
@@ -105,7 +101,7 @@ describe('事件源', () => {
     const t = createTransientFeedback3d(h.deps)
     t.rebuildSources()
     t.advanceTo(100)
-    expect(h.bursts).toEqual([1, 2, 1])   // 12 → 20 → 40
+    expect(h.bursts).toEqual([1, 2, 1])
   })
 })
 
@@ -168,7 +164,7 @@ describe('伤害反馈（伤害数字 + 幽灵段 + 受击闪）', () => {
     const t = createTransientFeedback3d(h.deps)
     t.rebuildSources()
     t.advanceTo(10)
-    expect(h.spawnDamage).toHaveBeenCalledWith(1, 200, 2000)   // 1000 ms × scale 2
+    expect(h.spawnDamage).toHaveBeenCalledWith(1, 200, 2000)
     expect(t.ghostOf(1)).toMatchObject({ fromFrac: 0.8, toFrac: 1, bornMs: 0, untilMs: 1000 })
     expect(t.hasFlash(1)).toBe(true)
     expect(h.invalidateLabels).toHaveBeenCalled()
@@ -194,9 +190,9 @@ describe('伤害反馈（伤害数字 + 幽灵段 + 受击闪）', () => {
     })
     const t = createTransientFeedback3d(h.deps)
     t.rebuildSources()
-    t.advanceTo(10)                  // 1000 → 800
-    h.clock.ms = 5000                // 远超过 untilMs=1000
-    t.advanceTo(30)                  // 900 → 700（中间 800→900 是回血，不算伤害）
+    t.advanceTo(10)
+    h.clock.ms = 5000
+    t.advanceTo(30)
     expect(t.ghostOf(1)).toMatchObject({ fromFrac: 0.7, toFrac: 0.9 })
   })
 
@@ -238,16 +234,16 @@ describe('壁钟寿命与清理', () => {
     expect(t.hasActive()).toBe(true)
 
     h.clock.ms = 500
-    expect(t.updateNow()).toBe(true)       // 闪光 until=200 先到期
+    expect(t.updateNow()).toBe(true)
     expect(t.hasFlash(1)).toBe(false)
     expect(t.ghostOf(1)).toBeDefined()
 
     h.clock.ms = 1000
-    expect(t.updateNow()).toBe(true)       // 幽灵 until=1000
+    expect(t.updateNow()).toBe(true)
     expect(t.ghostOf(1)).toBeUndefined()
     expect(t.hasActive()).toBe(false)
     expect(h.invalidate).toHaveBeenCalled()
-    expect(t.updateNow()).toBe(false)      // 无变化
+    expect(t.updateNow()).toBe(false)
   })
 
   it('clear 清空壁钟状态并调用覆盖层/FX 的清理', () => {

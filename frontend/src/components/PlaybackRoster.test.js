@@ -6,11 +6,8 @@ import { createI18n } from 'vue-i18n'
 import { describe, expect, it } from 'vitest'
 import PlaybackRoster from './PlaybackRoster.vue'
 
-/** 组件的标题走 `t()`，所以必须真正装上 i18n（不是只 mock `$t`）。 */
 const i18n = createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false, messages: { en: {} } })
 
-/** 2D 的行形状（playbackV2.vehicles）按**物理队伍**分组：{ team1, team2, unknown }。
- *  friendly 标志是录像者视角，故意与物理队伍交错（录像者在 Team 2）——它不得影响分组。 */
 const twoDimensionalTeams = {
   team1: [
     { accountId: 1001, playerName: 'You', tankName: 'Maus', team: 1, friendly: false },
@@ -19,7 +16,6 @@ const twoDimensionalTeams = {
   team2: [{ accountId: 2001, playerName: 'Foe', tankName: 'IS-7', team: 2, friendly: true }],
 }
 
-/** 3D 物理队伍形状：{ team1, team2, unknown }（场景内核的 store.roster 投影） */
 const threeDimensionalTeams = {
   team1: [{ eid: 1, team: 1, nick: 'Alpha', tank: 'Kranvagn', hp: 1950, maxHp: 1950, dead: false, followed: false, color: 'rgb(1, 2, 3)' }],
   team2: [{ eid: 2, team: 2, nick: 'Bravo', tank: 'Maus', hp: 824, maxHp: 1950, dead: false, followed: true, color: 'rgb(4, 5, 6)' }],
@@ -40,7 +36,6 @@ describe('PlaybackRoster', () => {
     expect(wrapper.get('.pb-roster-team2').findAll('[data-test="pb-roster-row"]')).toHaveLength(1)
     expect(wrapper.get('.pb-roster-team1 .pb-team-head').text()).toBe('agentReplay.team1')
     expect(wrapper.get('.pb-roster-team2 .pb-team-head').text()).toBe('agentReplay.team2')
-    // 录像者视角的 friendly / enemy 分组已经不存在
     expect(wrapper.find('.pb-roster-friendly').exists()).toBe(false)
     expect(wrapper.find('.pb-roster-enemy').exists()).toBe(false)
     expect(wrapper.text()).toContain('You')
@@ -66,17 +61,13 @@ describe('PlaybackRoster', () => {
       destroyed: new Set([1001]),
     })
     const [dead, alive] = wrapper.findAll('[data-test="pb-roster-row"]')
-    // 阵亡：有量程 → `0 / max`；条为空；阵亡样式
     expect(dead.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('0 / 2600')
     expect(dead.classes()).toEqual(expect.arrayContaining(['is-destroyed', 'dead']))
-    // 存活且权威：exact 数值在 aria-label，**没有** `100%` 后缀
     const bar = alive.get('[data-test="roster-hp"]')
     expect(bar.attributes('aria-label')).toBe('1950 / 1950')
     expect(bar.attributes('aria-label')).not.toContain('%')
-    // 血量条宽度按比例
     expect(bar.classes()).toContain('hp-mode-exact')
     expect(bar.element.querySelector('.pb-roster-hpfill').style.width).toBe('100%')
-    // 行背景 = 血条 track：整行血条的 mode 类同时落在行 button 上（unknown 中性底靠它）
     expect(alive.classes()).toContain('hp-mode-exact')
     expect(alive.get('[data-test="pb-roster-player"]').text()).toBe('Wingman')
     expect(alive.get('[data-test="pb-roster-tank"]').text()).toBe('T-62A')
@@ -86,9 +77,7 @@ describe('PlaybackRoster', () => {
   it('HP 呈现：relative / unknown 不伪造 exact 数值，unknown 不画满绿', () => {
     const wrapper = mountRoster({
       health: {
-        // 敌方尚未点亮：只有相对证据（backend relativeFull）→ 100%，没有 current/max
         1001: { currentHp: null, maxHp: null, relativeFull: true },
-        // 只有相对比例 → 52%
         1002: { currentHp: null, maxHp: null, pct: 52 },
       },
     })
@@ -96,15 +85,12 @@ describe('PlaybackRoster', () => {
     expect(relative.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('100%')
     expect(relative.get('[data-test="roster-hp"]').classes()).toContain('hp-mode-relative')
     expect(damaged.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('52%')
-    // relative 不是 unknown：fill 按比例画
     expect(damaged.element.querySelector('.pb-roster-hpfill').style.width).toBe('52%')
 
-    // 没有任何健康事实（第三行没有投影）→ unknown：`—`，且绝不画满绿（fill 节点根本不渲染）
     const bare = mountRoster()
     const unknownRow = bare.findAll('[data-test="pb-roster-row"]')[1]
     expect(unknownRow.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('—')
     expect(unknownRow.get('[data-test="roster-hp"]').classes()).toContain('hp-mode-unknown')
-    // 整行血条：unknown 行的中性底从 52px 胶囊上移到整行
     expect(unknownRow.classes()).toContain('hp-mode-unknown')
     expect(unknownRow.find('.pb-roster-hpfill').exists()).toBe(false)
     bare.unmount()
@@ -114,12 +100,10 @@ describe('PlaybackRoster', () => {
   it('HP 呈现：上限不可信时退回 relative/unknown，绝不把未知上屏成 0%', async () => {
     const wrapper = mountRoster({ health: { 1001: { currentHp: 800, maxHp: 0 } } })
     const first = () => wrapper.findAll('[data-test="pb-roster-row"]')[0]
-    // maxHp=0 不可信 → 不能写 `800 / 0`，也不能算成 0%
     expect(first().get('[data-test="roster-hp"]').attributes('aria-label')).not.toContain('0 / 0')
     expect(first().get('[data-test="roster-hp"]').classes()).toContain('hp-mode-unknown')
     expect(first().get('[data-test="roster-hp"]').attributes('aria-label')).toBe('—')
 
-    // 真实归零（有可信上限）才显示 0 / max
     await wrapper.setProps({ health: { 1001: { currentHp: 0, maxHp: 2600 } } })
     expect(first().get('[data-test="roster-hp"]').attributes('aria-label')).toBe('0 / 2600')
     wrapper.unmount()
@@ -134,7 +118,6 @@ describe('PlaybackRoster', () => {
         team2: [], unknown: [],
       },
     })
-    // 有权威 telemetry 也不渲染弹夹分段（2026-10-05 需求：行样式回归原始版）
     expect(wrapper.find('[data-test="roster-reload"]').exists()).toBe(false)
     expect(wrapper.find('.pb-roster-reload').exists()).toBe(false)
     const alpha = wrapper.get('.team1 [data-test="pb-roster-row"]')
@@ -144,9 +127,6 @@ describe('PlaybackRoster', () => {
   })
 
   it('HP 条源码回归：填充段 = 整条行宽（绝对定位到行），数值保留行尾 52px 槽位；无弹夹分段节点', () => {
-    // happy-dom 没有布局引擎（computed style 量不到真实尺寸），所以这里锁的是**声明本身**；
-    // 真实渲染后的比值由 browser gate 断言。2026-11-19 用户口径：血条显示范围 = 整个条目，
-    // 不再在标签内部画一个小血条；数值位置保持行尾原位。
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
     const block = (selector) => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -156,25 +136,21 @@ describe('PlaybackRoster', () => {
     const hpBar = block('.pb-roster-hpbar')
     expect(hpBar).toContain('inline-size: 52px')
     expect(hpBar).toContain('block-size: var(--space-4)')
-    // 填充层：绝对定位到行、铺满整行高度（血条保持完整）、z-index:-1 垫在身份文字下方
     const fill = block('.pb-roster-hpfill')
     expect(fill).toContain('position: absolute')
     expect(fill).toContain('inset-block: 0')
     expect(fill).not.toContain('block-size: 66.667%')
     expect(fill).toContain('inset-inline-start: 0')
     expect(fill).toContain('z-index: var(--roster-rowfill-z)')
-    // 行：track 背景 + 隔离栈（负 z-index 填充盖住行背景、不压文字）
     const row = block('.pb-roster-row')
     expect(row).toContain('--roster-rowfill-z: -1')
     expect(row).toContain('flex-direction: row')
     expect(row).toContain('isolation: isolate')
     expect(row).toContain('overflow: hidden')
     expect(source).toMatch(/\.pb-roster-team \.pb-roster-row \{ background: var\(--color-playback-label-track\)/)
-    // 2026-11-19 用户口径：桌面/平板整体名册高度 = 车道的 2/3（dense / 竖屏保持内容高）
     const card = block('.pb-roster-3d')
     expect(card).toContain('flex: 0 0 auto')
     expect(source).toContain('.pb-roster-3d.pb-roster-compact:not(.pb-roster-dense) { flex: 0 0 66.667%; }')
-    // 数值槽位不再自绘胶囊底（不再有小血条），只有数字；unknown 行的中性底上移到整行
     expect(block('.pb-roster-hpvalue')).not.toContain('position: absolute')
     expect(source).toContain('.pb-roster-team .pb-roster-row.hp-mode-unknown')
     expect(source).not.toContain('pb-roster-hptext')
@@ -186,10 +162,8 @@ describe('PlaybackRoster', () => {
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
     const m = source.match(/\.pb-roster-row \.tank \{([^}]*)\}/)
     expect(m).toBeTruthy()
-    // flex: none 会禁止收缩 → 行内容总宽超出车道 → 行被裁切 + 横向滚动条（2026-10-05 实测故障）
     expect(m[1]).not.toContain('flex: none')
     expect(m[1]).toMatch(/flex:\s*0 1 auto/)
-    // 血条保持固定宽（主状态视觉锚点，不可被挤压）
     expect(source).toMatch(/\.pb-roster-hpbar \{[^}]*flex: none/)
   })
 
@@ -197,7 +171,6 @@ describe('PlaybackRoster', () => {
     const wrapper = mountRoster({ compact: true, health: { 1001: { currentHp: 1300, maxHp: 2600 } } })
     const shell = wrapper.get('[data-test="pb-shell-roster"]')
     expect(shell.classes()).toContain('pb-roster-compact')
-    // 宽档侧车道需要纵向铺满（header 固定 + 列表吃满剩余高度）
     expect(shell.classes()).toContain('pb-roster-fill')
     const row = wrapper.findAll('[data-test="pb-roster-row"]')[0]
     expect(row.get('[data-test="pb-roster-player"]').text()).toBe('You')
@@ -210,19 +183,15 @@ describe('PlaybackRoster', () => {
     const wrapper = mountRoster({ compact: true, dense: true, gunMarks: new Map([[1001, 2]]) })
     const shell = wrapper.get('[data-test="pb-shell-roster"]')
     expect(shell.classes()).toContain('pb-roster-dense')
-    // 手机横屏必须按内容高度排 7 行，不再被车道剩余高度 1fr 拉伸
     expect(shell.classes()).not.toContain('pb-roster-fill')
     const list = wrapper.get('.pb-roster-team1 .pb-roster-list')
     expect(list.attributes('style')).toContain('repeat(2, var(--roster-row-dense, 30px))')
-    // 行仍是带 data-test 的 button，信息与状态不变
     const row = wrapper.findAll('[data-test="pb-roster-row"]')[0]
     expect(row.element.tagName).toBe('BUTTON')
     expect(row.get('[data-test="pb-roster-player"]').text()).toBe('You')
     expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Maus')
     expect(row.get('[data-test="roster-hp"]').exists()).toBe(true)
-    // 车章在这个密度下让位给名字（非 dense 行仍保留）
     expect(row.find('[data-gun-marks]').exists()).toBe(false)
-    // 两行 grid + 行尾 44×20 细血条（happy-dom 无量纲，锁声明）
     const source = readFileSync('src/components/PlaybackRoster.vue', 'utf8')
     const block = (selector) => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -236,7 +205,6 @@ describe('PlaybackRoster', () => {
     expect(denseHp).toContain('inline-size: 44px')
     expect(denseHp).toContain('block-size: 20px')
 
-    // 密度变化不改变状态语义：选中 / 阵亡 / 阵营色变量照旧落在同一行 button 上。
     const stateful = mountRoster({
       compact: true,
       dense: true,
@@ -255,7 +223,6 @@ describe('PlaybackRoster', () => {
   it('纵向铺满：列表轨道是 N × minmax(可读下限, 1fr)，不是固定大 px', () => {
     const wrapper = mountRoster({ compact: true })
     const list = wrapper.get('.pb-roster-team1 .pb-roster-list')
-    // 2 行 → repeat(2, minmax(<min>px, 1fr))：固定值只作 guard，正常高度由 1fr 连续决定
     expect(list.attributes('style')).toContain('repeat(2, minmax(')
     expect(list.attributes('style')).toContain('1fr)')
     wrapper.unmount()
@@ -267,7 +234,6 @@ describe('PlaybackRoster', () => {
     expect(rows[0].get('[data-test="pb-roster-player"]').text()).toBe('You')
     expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Maus')
     expect(rows[0].get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1300 / 2600')
-    // 没有投影的一行：unknown → —（unknown ≠ 0）
     expect(rows[1].get('[data-test="roster-hp"]').attributes('aria-label')).toBe('—')
     expect(rows[1].get('[data-test="roster-hp"]').classes()).toContain('hp-mode-unknown')
     wrapper.unmount()
@@ -289,27 +255,22 @@ describe('PlaybackRoster', () => {
       variant: '3d',
       selectedId: 1,
     })
-    // 空分组不渲染（unknown 为空）
     expect(wrapper.find('.team-unknown').exists()).toBe(false)
     expect(wrapper.get('.team1').findAll('[data-test="pb-roster-row"]')).toHaveLength(1)
     expect(wrapper.get('.team2').findAll('[data-test="pb-roster-row"]')).toHaveLength(1)
     expect(wrapper.get('.team1 .pb-team-head').text()).toBe('agentReplay.team1')
-    // 行首圆点只存在于 3D 变体（2D 用左侧物理队色条），颜色来自行本身（物理队伍色）
     const dot = wrapper.get('.team1 .dot')
     expect(dot.attributes('style')).toContain('--color-text-secondary')
     expect(wrapper.get('.team2 .dot').attributes('style')).toContain('--color-text-secondary')
-    // 2D 行没有圆点
     const twoD = mountRoster()
     expect(twoD.find('.dot').exists()).toBe(false)
     twoD.unmount()
-    // selected / followed 是两个独立状态
     const selected = wrapper.get('.team1 [data-test="pb-roster-row"]')
     const followed = wrapper.get('.team2 [data-test="pb-roster-row"]')
     expect(selected.classes()).toContain('selected')
     expect(selected.classes()).not.toContain('followed')
     expect(followed.classes()).toContain('followed')
     expect(followed.classes()).not.toContain('selected')
-    // 3D 行自带 hp / maxHp / dead，不需要外部 health 投影 → exact 数值
     expect(wrapper.get('.team2 [data-test="roster-hp"]').attributes('aria-label')).toBe('824 / 1950')
     expect(wrapper.get('.team2 [data-test="pb-roster-player"]').text()).toBe('Bravo')
     wrapper.unmount()
@@ -320,7 +281,6 @@ describe('PlaybackRoster', () => {
     expect(wrapper.get('.team1').findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
     expect(wrapper.get('.team2').findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
     expect(wrapper.get('.team-unknown').findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
-    // 默认（不开 showEmptyTeams）不画空标题——3D 的 unknown 常态为空，空标题是噪音
     const compact = mountRoster({ teams: { team1: [], team2: [], unknown: [] }, variant: '3d' })
     expect(compact.find('.team-unknown').exists()).toBe(false)
     expect(compact.find('.team1').exists()).toBe(false)

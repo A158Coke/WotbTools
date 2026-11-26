@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 批量删除二次确认（单场 / 百场 / 三环各用一个实例；整批只弹一次）。确认态由本组件持有；
-// 选择集归调用方分区：完成后 emit 仍失败的 id，由分区收敛选择集并重载列表。
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '../api/generated/http-contract.js'
@@ -22,7 +20,6 @@ const confirmText = ref('')
 const deleting = ref(false)
 const result = ref<components['schemas']['BulkDeleteResult'] | null>(null)
 const msg = ref('')
-// 百场/三环批量删除复用既有单条删除的同一组 reason 选项与校验规则（不新造第二套）。
 const reason = ref('')
 const reasonText = ref('')
 
@@ -64,7 +61,6 @@ async function confirm() {
   try {
     result.value = domain
       ? await domain.bulkDelete(ids, { reason: reason.value, ...(text ? { reasonText: text } : {}) })
-      // 单场删除语义不带 reason。
       : await hofAdminBulkDeleteRecords(ids)
   } catch (e) {
     msg.value = apiErrorLabel(t, te, e)
@@ -72,7 +68,6 @@ async function confirm() {
   } finally {
     deleting.value = false
   }
-  // partial success：失败项留在选择集里便于重试，已被处理的项移出。
   const failed = new Set(failures.value.map(item => item.id))
   confirmText.value = ''
   emit('settled', ids.filter(id => failed.has(id)))

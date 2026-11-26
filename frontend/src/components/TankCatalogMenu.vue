@@ -1,13 +1,4 @@
 <script setup>
-/**
- * 坦克目录菜单（单一实现）：坦克百科列表与装甲查看器选车弹窗共用。
- * 数据面由父级提供已 normalizeTankCache 的车辆（含 search aliases / hp / pen_max）；
- * 本组件只负责搜索（模糊 + 别名）、tier/nation/type/category 精确筛选、排序、筛选 chips/sheet、
- * 增量卡片网格、空/加载/错误态与选择事件。URL 状态、详情与弹窗壳归父级。
- *
- * layout="page"：随页面文档滚动（坦克百科）；layout="dialog"：结果区在弹窗内滚动
- * （装甲查看器），标题/关闭按钮由 title 属性开启。
- */
 import { romanLevel } from '../utils/tierFormat.js'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -28,25 +19,19 @@ import TankCoverNation from './TankCoverNation.vue'
 
 const DEFAULT_FILTERS = Object.freeze({ q: '', tier: '', nation: '', type: '', category: '', sort: 'name' })
 const SEARCH_DEBOUNCE_MS = 250
-const ICON_BOX_ASPECT = 8 / 5 // 与 .tp-media 的 aspect-ratio 一致
+const ICON_BOX_ASPECT = 8 / 5
 
 const props = defineProps({
-  /** normalizeTankCache 的输出（含 aliases / hp / pen_max） */
   tanks: { type: Array, default: () => [] },
-  /** loading | ready | error */
   state: { type: String, default: 'ready' },
   error: { type: String, default: '' },
   filters: { type: Object, default: () => ({}) },
   selectedId: { type: [Number, String], default: null },
-  /** 非空时渲染弹窗标题栏与关闭按钮 */
   title: { type: String, default: '' },
-  /** page | dialog */
   layout: { type: String, default: 'page' },
   pageSize: { type: Number, default: 48 },
   multiple: { type: Boolean, default: false },
-  /** 弹窗打开时把焦点交给搜索框 */
   autofocus: { type: Boolean, default: false },
-  /** 机动选车复用外层 Dialog 的筛选子面板；其他调用方保持独立 Sheet。 */
   inlineFilters: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:filters', 'select', 'confirm', 'retry', 'close'])
@@ -64,8 +49,6 @@ const filtersOpen = ref(false)
 const filterPanelOpen = computed(() => props.inlineFilters && props.layout === 'dialog' && isCompact.value && filtersOpen.value)
 
 const local = reactive({ ...DEFAULT_FILTERS, ...props.filters })
-// 只回灌“外部值真的变了”的字段：父级在详情/无关路由变化时会生成新的 filters 对象，
-// 深度 watch 不能因此把用户正在输入的搜索草稿重置为空。
 const lastExternal = { ...DEFAULT_FILTERS, ...props.filters }
 let searchTimer = null
 
@@ -83,7 +66,6 @@ function emitFilters() {
   emit('update:filters', { ...local })
 }
 watch(() => local.q, (value) => {
-  // 父级把已提交的 q 回灌时不重复发事件；输入草稿只防抖提交 URL/父级状态。
   if (value === (props.filters?.q ?? '')) return
   clearTimeout(searchTimer)
   searchTimer = setTimeout(emitFilters, SEARCH_DEBOUNCE_MS)
@@ -95,8 +77,6 @@ function setFilter(key, value) {
 }
 onBeforeUnmount(() => {
   clearTimeout(searchTimer)
-  // 组件真正卸载（离开百科/装甲页）时 flush 尚未提交的搜索草稿；
-  // 列表→详情已改为保持挂载，不会走到这里。
   if (local.q !== (props.filters?.q ?? '') && local.q !== lastExternal.q) emitFilters()
 })
 
@@ -109,7 +89,6 @@ const { visible, hasMore, loadMore, sentinel } = useIncrementalList(filtered, {
   pageSize: props.pageSize,
   resetKey: () => [local.q, local.tier, local.nation, local.type, local.category, local.sort].join('|'),
 })
-// Selection covers the complete filter result, independently of the rendered page.
 const draft = ref(new Set())
 const selectedHere = computed(() => filtered.value.reduce((n, tank) => n + Number(draft.value.has(tank.id)), 0))
 function selectFiltered(select) {
@@ -131,7 +110,6 @@ const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
 const countText = computed(() => t('agentTanks.count', { shown: filtered.value.length, total: props.tanks.length }))
 
-// Ordered tiers and the nine game nations have a catalog-specific flat-choice exception.
 const tierOptions = computed(() => [
   { value: '', label: t('agentTanks.all') },
   ...tiers.value.map(tier => ({ value: String(tier), label: tierLabel(tier) })),
@@ -175,11 +153,9 @@ function clearFilters() {
 }
 
 function hideBrokenImage(event) {
-  // 封面缺失：保留固定比例的占位框，不显示破图标
   event.target.hidden = true
 }
 
-// 封面图展示裁剪：客户端图标是原始画布，按逐车内容框缩放定位；数据缺失时回退 contain。
 const iconCrops = ref(null)
 loadTankIconCrops().then((crops) => { iconCrops.value = crops })
 function iconCropStyle(id) {
@@ -334,8 +310,6 @@ function choose(tank) {
   padding: var(--space-3);
 }
 
-/* 弹窗内（装甲页）所有控件走 --scene-hit（常规触控 44px；场景短视口横屏紧凑档 40px），
-   包括 FilterChips / AppButton 等子组件内部按钮。 */
 .tank-catalog-menu.is-dialog :deep(button),
 .tank-catalog-menu.is-dialog :deep(select),
 .tank-catalog-menu.is-dialog :deep(input) {
@@ -356,7 +330,6 @@ function choose(tank) {
 
 .tp-pill { display: inline-flex; align-items: center; gap: var(--space-1); }
 
-/* ---------- 结果区与卡片网格 ---------- */
 .tp-results { min-block-size: 0; }
 .tp-results.is-dialog-results {
   flex: 1;
@@ -391,18 +364,8 @@ function choose(tank) {
 }
 
 .tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-/* 高级 / 收藏战车：整卡底色标识（2026-11-14 反馈：底色保留、封面底框去除）。
-   hover 在各自底色上加深；选中态仍以 accent 边框区分。混色底上的文字不单独调暗：
-   车名继承 text-primary；属性标签常态用 tertiary，染色底上覆写为 text-primary——
-   tertiary（1.96–3.53）与 secondary（2.85–5.26）对自身 36%/46% 底色都到不了 4.5:1
-   （语义色与底色同源，任何比例混色亦然），由 tokens/color-contrast.test.ts 按
-   全部主题×语义×常态/hover 锁定。 */
 .tp-card.is-premium { background: color-mix(in oklab, var(--color-warning) 36%, var(--color-surface-1)); }
 .tp-card.is-collector:not(.is-premium) { background: color-mix(in oklab, var(--color-info) 36%, var(--color-surface-1)); }
-/* 车名语义色（2026-11-14 用户裁示恢复）：90% 语义 + 10% text-primary 的 Oklab 混色，
-   在同源混色底上是可读性最好的语义色形态。实测对 36%/46% 自身底色为 3.27–3.89，
-   低于 WCAG AA 正文 4.5——这是**有意的产品取舍**（车名辨识优先于 AA 正文门槛），
-   契约见 tokens/color-contrast.test.ts：车名门槛为 3.0，规则 token/比例进映射契约。 */
 .tp-card.is-premium .tp-card-name { color: color-mix(in oklab, var(--color-warning) 90%, var(--color-text-primary)); }
 .tp-card.is-collector:not(.is-premium) .tp-card-name { color: color-mix(in oklab, var(--color-info) 90%, var(--color-text-primary)); }
 .tp-card.is-premium .tp-stat-label,
@@ -423,7 +386,7 @@ function choose(tank) {
   inline-size: 100%;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: transparent; /* 封面四周不再露出底色框（2026-11-14 反馈：去边框） */
+  background: transparent;
 }
 
 .tp-media img {
@@ -486,8 +449,6 @@ function choose(tank) {
 
 .tp-more { display: flex; justify-content: center; padding-block: var(--space-4); }
 
-/* 手机：三列卡片（用户反馈 2026-11-08：小屏加大密度，一屏可见大部分车型；
-   360px 下单卡约 104px，名称/徽标/参数仍为 12px 正文下限），筛选进 sheet */
 @media (width < 768px) {
   .tp-card { padding: var(--space-2); }
   .tp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }

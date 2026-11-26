@@ -1,4 +1,3 @@
-/** Battle Playback compatibility facade for presentation math, events, and view utilities. */
 
 export type { RouteLike } from './battlePlaybackMotion.js'
 export { positionAt, trustedPositionAt, recentPositionTrails, recentPositionTrailsFromPose } from './battlePlaybackMotion.js'

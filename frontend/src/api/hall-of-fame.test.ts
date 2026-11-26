@@ -4,8 +4,6 @@ import * as hof from './hall-of-fame.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../utils/http.js'
 
-// 只 mock useAuth（避免实例化 Keycloak）与全局 fetch——
-// 绝不 mock hall-of-fame.ts 本身，否则会漏掉 hofUpload() 的真实实现 bug。
 const auth = vi.hoisted(() => ({
   token: vi.fn(() => 'test-token'),
   ensureToken: vi.fn(async () => true),
@@ -24,8 +22,6 @@ vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => auth,
 }))
 
-// 服务器没有 parser：HoF 提交前在本机解析回放得到结算事实。mock 最底层的 WASM 解析入口，
-// 保留真实 submissionFacts（facts 顺序 / 失败映射都在那里）。
 const localParse = vi.hoisted(() => ({
   parseAgentResultFromBytes: vi.fn(async (bytes) => ({ text: new TextDecoder().decode(bytes) })),
 }))
@@ -393,8 +389,6 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
         headers: { Authorization: 'Bearer test-token' },
       }),
     )
-    // 旧实现 return requireOk(r).json()（requireOk 是 async → Promise 无 .json）会抛
-    // TypeError，本用例直接 fail，正是该回归测试的意义。
   })
 
   it('rejects with ApiError UNSUPPORTED_BATTLE_TYPE on HTTP 400, not a generic network failure', async () => {
@@ -437,7 +431,6 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
       '/api/hof/42/replay',
       expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     )
-    // 401 在创建 blob / object URL / 触发下载之前抛错，不得有任何下载副作用
     expect(objectUrlSpy).not.toHaveBeenCalled()
   })
 

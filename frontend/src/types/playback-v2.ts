@@ -1,4 +1,3 @@
-/** Playback application/view types backed by the generated HTTP contract. */
 
 import type { PlaybackDirection, PlaybackPosition } from './playback.js'
 import type { components } from '../api/generated/http-contract.js'
@@ -28,15 +27,8 @@ export type BattleEvent = components['schemas']['BattleEvent']
 export type PointsSample = components['schemas']['PointsSample']
 export type BaseStateTransition = components['schemas']['BaseStateTransition']
 
-/** Local Playback telemetry, separate from the HTTP dataset and generic ReplayFacts. */
 export interface PlaybackReloadTelemetry extends Pick<AgentPlaybackFacet, 'reloads' | 'reload_effective' | 'shots'> {
-  /**
-   * `burst_size` = 实际搭载配置的弹夹容量（弹容 N 权威，contracts/agent §4h）；
-   * `turret_local`/`gun_local` = comp blob 模块局部 id（客户端证据链证据 0）；
-   * `shell_ids`/`max_hp` = 证据链证据 1/2 的回放侧输入。
-   */
   vehicles: Array<Pick<AgentVehicleTrack, 'eid' | 'account_id' | 'team' | 'tank_id' | 'shell_ids' | 'max_hp' | 'config_idx' | 'burst_size' | 'turret_local' | 'gun_local'>>
-  /** Raw clock corresponding to the canonical 2D battle-relative t=0. */
   timeOrigin: number
   friendlyTeam: number | null
 }
@@ -45,7 +37,6 @@ export function isBattlePlaybackDataset(value: unknown): value is BattlePlayback
   return validateBattlePlaybackDataset(value).data !== null
 }
 
-/** Validate the generated wire contract; application models are built only after this boundary. */
 export function parseBattlePlaybackDataset(value: unknown): BattlePlaybackDataset | null {
   return validateBattlePlaybackDataset(value).data
 }

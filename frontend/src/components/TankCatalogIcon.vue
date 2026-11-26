@@ -13,8 +13,6 @@ const assets: Record<string, { canvas: number[]; bounds: number[]; remote?: stri
 const classStems: Record<string, string> = { LT: 'light', MT: 'medium', HT: 'heavy', TD: 'at-spg' }
 const key = computed(() => {
   if (props.kind === 'nation') {
-    // 筛选控件一律用 flag_filter_*（无轮播图顶部压暗）；其它场景保留共享的
-    // nation-*（美国/德国/中国为轮播大图，其余为 text 小图）。
     const filtered = `nation-filter-${props.value}`
     if (props.variant === 'filter' && assets[filtered]) return filtered
     const shared = `nation-${props.value}`
@@ -26,8 +24,6 @@ const key = computed(() => {
   return `category-${props.value}`
 })
 const asset = computed(() => assets[key.value])
-// 目录图标全部走资产 origin 的 `/ui/**`，bundle 内不再保留任何 tank-catalog 图片。
-// origin 未配置（纯数据页、Android 能力门禁）时图标隐藏，不阻断列表/筛选。
 const url = computed<string | null>(() => {
   const meta = asset.value
   if (!meta?.remote) return null
@@ -35,7 +31,6 @@ const url = computed<string | null>(() => {
 })
 const failed = ref(false)
 watch(url, () => { failed.value = false })
-// Packed client textures include transparent padding. Keep every visible pixel and its original aspect.
 const cropStyle = computed(() => {
   if (!asset.value) return {}
   const [x, y, right, bottom] = asset.value.bounds

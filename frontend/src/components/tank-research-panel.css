@@ -1,9 +1,5 @@
-/* 坦克研究面板局部样式（随拆分自 TankResearchPanel.vue，scoped 原样）。 */
-/* 客户端 ModulesTree 的横向结构：前驱车 → 当前车面板 → 研发图。
-   左两栏固定窄宽，研发图吃掉全部剩余空间（不再被挤成需要左右拖的小窗）。 */
 .tr-panel {
   display: grid;
-  /* 没有前驱车（金币车等）时不保留空侧栏：单列铺满，否则图被挤进 190px 首列 */
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-4);
@@ -38,7 +34,6 @@
 .tr-prev-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tr-prev-cost { color: var(--color-warning); font-variant-numeric: tabular-nums; }
 
-/* 当前车面板（客户端 TankPanel 的紧凑形态） */
 .tr-node.is-current-tank { border-color: var(--color-border-strong); }
 .tr-node.is-current-tank .tr-node-name { color: var(--color-text-primary); font-weight: 600; }
 
@@ -48,7 +43,6 @@
 .tr-note { color: var(--color-text-secondary); font: var(--type-caption); }
 .tr-empty { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
-/* 研发图区：占满剩余宽高，内容居中（图比容器小时不贴左上角留死白） */
 .tr-scroll {
   display: grid;
   place-content: safe center;
@@ -63,11 +57,9 @@
 .tr-grid { position: absolute; inset-block-start: 0; }
 .tr-edges { position: absolute; inset: 0; pointer-events: none; }
 .tr-edge { stroke: var(--color-border-strong); stroke-width: 1.5; }
-/* 已研发链路的线也只提亮成中性白，不用金色（金色 = 高级车） */
 .tr-edge.is-installed { stroke: var(--color-text-primary); }
 .tr-arrow-head { fill: var(--color-border-strong); }
 
-/* 节点 64×64（客户端 ModuleNode）；已安装 = 高亮 + 勾，点击安装 */
 .tr-node {
   position: absolute;
   display: grid;
@@ -83,19 +75,15 @@
 }
 .tr-node:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
 .tr-node:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-/* 已安装 = 中性高亮 + 右下勾，不用强调色：蓝/金在客户端是收藏车/高级车的等级编码，
-   研发图里借来标“已安装/可切换”会被读成坦克类别（用户 2026-10-27）。 */
 .tr-node.is-installed {
   border-color: var(--color-border-strong);
   background: var(--color-surface-3);
 }
-/* 下一级坦克节点：类型由坦克图 + 等级角标表达，边框保持普通样式 */
 .tr-node.is-next-tank {
   color: var(--color-text-primary);
 }
 .tr-node.is-next-tank:disabled { cursor: default; opacity: 0.6; }
 
-/* 客户端 ModuleNode 的模块图是 97×60 居中（几乎铺满 64×72 节点），不是小角标 */
 .tr-node-pic {
   position: absolute;
   inset: 0;
@@ -105,8 +93,6 @@
   border-radius: inherit;
   corner-shape: inherit;
 }
-/* 必须**绝对定位**铺满：grid 容器里 `block-size:100%` 解不出确定高度，
-   img 会退回固有尺寸（96×96），被 62 高的容器从下方裁掉 32px——实测如此。 */
 .tr-node-pic img {
   position: absolute;
   inset: 0;
@@ -128,7 +114,6 @@
   font: var(--type-caption);
   font-weight: 700;
 }
-/* 研发成本：左上角小标（等级标在右上、勾在右下，互不遮挡） */
 .tr-node-cost {
   position: absolute;
   inset-block-start: 0;
@@ -159,8 +144,6 @@
   background: var(--color-accent);
   color: var(--color-canvas);
 }
-/* 客户端 ModulesTree 的节点里**只有图标**（名字在 tooltip/详情）；这里把名字放到
-   节点下方的行间距里，图标因此能完整铺满格子不被文字盖住。 */
 .tr-node-name {
   position: absolute;
   inset-block-start: calc(100% + 1px);
@@ -178,10 +161,7 @@
   pointer-events: none;
 }
 
-/* 平板/手机：横向三段改为纵向堆叠（前驱车 → 当前车 → 研发图） */
 @media (width < 1200px) {
-  /* has-side 的桌面规则是 .tr-panel.has-side（0,2,0），这里必须同特异性覆盖，否则
-     平板/手机会继续保留 190px 前驱车列，把研发图挤成一条无法阅读的滚动缝。 */
   .tr-panel,
   .tr-panel.has-side { grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
   .tr-side { grid-template-columns: minmax(150px, 0.9fr) minmax(0, 1.1fr); align-items: start; }

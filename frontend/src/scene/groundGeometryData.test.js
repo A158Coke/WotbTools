@@ -1,5 +1,3 @@
-// 地形几何纯数据阶段（buildGroundGeometryData）与同步路径 / three 原生计算的一致性护栏。
-// 这是「Worker 路径与同步路径几何逐字节相等」的根：Worker 只是 buildGroundGeometryData 的执行位置。
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
@@ -32,7 +30,6 @@ describe('buildGroundGeometryData', { timeout: 60000 }, () => {
     it(`${c.name}：与 three 原生路径逐字节相等（positions/uv/index/normal/boundingSphere）`, () => {
       const args = { ...base, cam: c.cam, refineMask: c.refineMask }
       const data = buildGroundGeometryData(args)
-      // 参考实现 = 拆分前的 buildGroundGeometry 逻辑（直接用 three）
       const ref = buildAdaptiveTerrain(args)
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', new THREE.BufferAttribute(ref.positions, 3))

@@ -5,16 +5,10 @@ import { readLocale } from '../i18n/locale-preference.js'
 import type { AuthClaims, AuthProvider } from '../types/auth.js'
 import type { NativeBridgeRequest } from '../api/generated/android-native-bridge.js'
 
-/** readLocale 只会返回 SUPPORTED_LOCALES（zh / en / ru），与契约枚举同集合。 */
 type LoginLocale = NonNullable<NativeBridgeRequest<'authLogin'>['locale']>
 
-/**
- * native-auth RPC 的单次上限：Android 侧可能在回复前做 OIDC discovery + token refresh
- * （真实网络往返），5s 的通用默认预算不够；超时仍按「本次 auth 操作失败」处理，绝不挂起。
- */
 const NATIVE_AUTH_TIMEOUT_MS = 20_000
 
-/** init / authChanged 重新同步时要求的最小剩余有效期（与 keycloak-js 时代一致）。 */
 const AUTH_TOKEN_MIN_VALIDITY_SECONDS = 30
 
 const AUTH_RPC_OPTIONS = Object.freeze({ timeoutMs: NATIVE_AUTH_TIMEOUT_MS })
@@ -23,12 +17,6 @@ function isAuthenticatedState(state: unknown) {
   return isRecord(state) && state.authenticated === true
 }
 
-/**
- * Android 壳的认证 owner：OIDC 会话在 Native（AppAuth + external user-agent），
- * 页面只经 Native Bridge 读取状态 / 触发登录登出，**从不导航、从不构造 keycloak-js**。
- *
- * 调用方（useAuth.ts）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
- */
 export function createAndroidAuthProvider(): AuthProvider {
   let authenticated = false
   let claims: AuthClaims | null = null
@@ -43,11 +31,6 @@ export function createAndroidAuthProvider(): AuthProvider {
     return false
   }
 
-  /**
-   * `authGetAccessToken` 的返回值是 token / claims 的唯一事实源：
-   * Transient refresh failure invalidates the API token, not the Native-owned cached session.
-   * Only a confirmed Native logout or malformed reply clears the local projection.
-   */
   async function applyTokenReply(rawReply: unknown, expectedGeneration: number) {
     if (generation !== expectedGeneration) return false
     const reply = isRecord(rawReply) ? rawReply : null
@@ -57,7 +40,6 @@ export function createAndroidAuthProvider(): AuthProvider {
       if (generation !== expectedGeneration) return false
       if (!isAuthenticatedState(state)) return clear()
       authenticated = true
-      // Cached claims preserve local UI permissions; no expired token is exposed to API callers.
       if (isRecord(reply?.claims)) claims = reply.claims as AuthClaims
       return false
     }
@@ -76,10 +58,6 @@ export function createAndroidAuthProvider(): AuthProvider {
     )
   }
 
-  /**
-   * 唯一的状态加载路径：init 与 Native 的 authChanged 推送共用。
-   * Native reports whether a cached session remains when refreshing cannot reach the server.
-   */
   async function syncFromNative() {
     const expectedGeneration = ++generation
     const state = await callBridge(NATIVE_AUTH_METHODS.getState, {}, AUTH_RPC_OPTIONS)
@@ -107,18 +85,12 @@ export function createAndroidAuthProvider(): AuthProvider {
       return accessToken
     },
 
-    /**
-     * Native 用 external user-agent 打开授权页并立刻返回；redirectUri / view 因此无意义
-     * （页面不导航，登录结果经 wotbtoolsOnAuthChanged 就地把状态同步回来）。
-     */
     async login() {
       generation += 1
-      // 站点语言作为 OIDC ui_locales 交给 Native，登录页默认与站点一致（与浏览器端 keycloak-js locale 同一语义）。
       return (await callBridge(NATIVE_AUTH_METHODS.login, { locale: readLocale() as LoginLocale }, AUTH_RPC_OPTIONS)) === true
     },
 
     async logout() {
-      // Invalidate pending token/state replies before the logout RPC can finish.
       clear()
       await callBridge(NATIVE_AUTH_METHODS.logout, {}, AUTH_RPC_OPTIONS)
     },
@@ -129,11 +101,6 @@ export function createAndroidAuthProvider(): AuthProvider {
       return applyTokenReply(await readAccessToken(minValidity), expectedGeneration)
     },
 
-    /**
-     * Native 完成 login / logout 后调用页面全局 `wotbtoolsOnAuthChanged`（页面停在原地）。
-     * 推送不携带 payload：状态一律回读 Native，再通知 owner 重新投影。
-     * 返回的退订函数会把全局槽位清掉（仅当它仍属于本次订阅）。
-     */
     onAuthChanged(cb) {
       if (typeof window === 'undefined') return () => {}
       let subscribed = true
@@ -151,14 +118,6 @@ export function createAndroidAuthProvider(): AuthProvider {
   }
 }
 
-/**
- * Android 壳报告 bridge v1 / 版本未知 / 缺 `native-auth` 能力时的 fail-closed provider。
- *
- * 该客户端的认证 owner 仍是 WebView 里的 keycloak-js（bridge v1 时代），而本前端已经
- * 删除了那条路径：这里只把失败显式暴露给 `useAuth` 的 initError / initFailureReason /
- * authInitState，由既有 UI 提示；强制更新由 Native 的 mandatory-update gate 负责。
- * **绝不构造 keycloak-js，绝不导航页面。**
- */
 export function createUnsupportedAuthProvider(reason: string): AuthProvider {
   function unsupportedError() {
     const error: Error & { code?: string; reason?: string } = new Error(`NATIVE_AUTH_UNSUPPORTED: ${reason}`)
@@ -186,7 +145,6 @@ export function createUnsupportedAuthProvider(reason: string): AuthProvider {
       throw unsupportedError()
     },
 
-    /** 没有可结束的 Native 会话：不抛错，也不做任何导航（保持登出按钮不会挂）。 */
     async logout() {},
 
     async ensureToken() {

@@ -1,8 +1,3 @@
-/**
- * 批次分析边界替身：3D / 射击门禁用几个字节的假文件驱动面板，场景与解析由各自的 stub 提供。
- * 工作台选文件即加载，假文件过不了真实解析器，所以这些场景连批次分析一起替换：
- * 每个文件成功产出一场。真实解析链路由 multifile / offline / replay-collection 场景覆盖。
- */
 export class ReplayEngineUnavailableError extends Error {}
 
 export async function parseReplayFiles(files, { onFile, onProgress } = {}) {

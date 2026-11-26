@@ -99,7 +99,6 @@ function mapDevices(source: BatchSetup, target: ComparisonEntry, context: BatchS
       differences.push({ slot, before: stem ? [stem] : [], after: before, reason: 'unsupportedSlot' })
       continue
     }
-    // An empty source slot may clear a shared choice, never a target-only suspension.
     if (!stem && current && slot.left !== current && slot.right !== current) {
       differences.push({ slot, before, after: before, reason: 'unsupportedSlot' })
       continue

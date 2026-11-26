@@ -67,7 +67,6 @@ function pickerButton(wrapper, labelKey) {
   return btn
 }
 
-/** 点击真实按钮 → 断言目标隐藏 input 的 native click() 被调用（不 mock whole input，不触发 change）。 */
 async function expectNativePickerClick(wrapper, labelKey, testId) {
   const input = wrapper.get(`[data-testid="${testId}"]`).element
   const clickSpy = vi.spyOn(input, 'click').mockImplementation(() => {})
@@ -91,7 +90,6 @@ describe('FileDrop 回放上传面', () => {
     expect(wrapper.text()).toContain('upload.drop_hint')
   })
 
-  // ---- 共享 upload preflight（选择文件/文件夹/add/drop 同一 contract）----
 
   it('101 个文件 rejected：不更新 selection，显示数量上限', async () => {
     const { wrapper } = mountUploader([])
@@ -233,7 +231,6 @@ describe('FileDrop 回放上传面', () => {
     const emitted = wrapper.emitted('update:files')
     expect(emitted).toBeTruthy()
     expect(emitted[0][0].map(f => f.name)).toEqual(['replay-a.wotbreplay'])
-    // 非回放 70MiB 不计入总量 → 单文件 1KiB 完全合法（无 total 超限提示）
     expect(wrapper.find('[data-testid="upload-validation-error"]').exists()).toBe(false)
   })
 
@@ -293,9 +290,6 @@ describe('FileDrop 回放上传面', () => {
 
 })
 
-// ---- native picker：真实按钮点击必须落到对应隐藏 input 的 click()（WS-07）----
-// 回归：openPicker() 曾对 template ref 再取 .value（`input.value?.click()`），
-// 实际对 file input 的 value 字符串调 click() → 生产环境 "P.click is not a function"。
 
 describe('FileDrop native picker（真实按钮 → 隐藏 input.click）', () => {
   it('空态：Select files → select-files-input.click()', async () => {

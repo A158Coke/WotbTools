@@ -1,6 +1,3 @@
-// #820 Wave B3C：动态装甲单次 Mesh 状态应用出仓测试（真实 THREE.Mesh）。
-// 宿主保留集合计算/retag/枢轴/姿态重放；本文件只验证 helper 的 mesh 级契约，
-// 并用 negative control 证明关键分支（deco 摘除、姿态不触碰）真实生效。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
@@ -129,14 +126,14 @@ describe('反复切态与材质所有权', () => {
         const node = meshNamed('hull_state_01_armor_10')
         const gltf = new THREE.MeshStandardMaterial()
         const gltfSpy = vi.spyOn(gltf, 'dispose')
-        applyArmorStateToMesh(node, params())                       // gltf → owned#1（gltf 不动）
+        applyArmorStateToMesh(node, params())
         expect(gltfSpy).not.toHaveBeenCalled()
         const first = node.material as THREE.MeshStandardMaterial
         const firstSpy = vi.spyOn(first, 'dispose')
-        applyArmorStateToMesh(node, params({ collisionMode: true })) // owned#1 dispose → owned#2
+        applyArmorStateToMesh(node, params({ collisionMode: true }))
         expect(firstSpy).toHaveBeenCalledTimes(1)
         expect((node.material as THREE.MeshStandardMaterial).opacity).toBe(0.95)
-        replaceArmorMaterial(node, gltf)                             // owned#2 dispose，gltf 仍不动
+        replaceArmorMaterial(node, gltf)
         expect(gltfSpy).not.toHaveBeenCalled()
         expect(node.material).toBe(gltf)
         expect(firstSpy).toHaveBeenCalledTimes(1)

@@ -1,9 +1,3 @@
-/**
- * 端到端 parity：上游 Rust Core parseResult（wasm-results.json）→ toBattleFacts → 批次计算 → Preview，
- * 与服务端 Java 全链路（ReplayParser → finalizeBatch → Mapper）的 java-preview.json 逐字段相等。
- *
- * 失败文本只比较文件名；客户端新增的环线列以原始 WASM 字段扩展期望值，Java 历史基准保持只读。
- */
 import { describe, expect, it } from 'vitest'
 import { analyzeReplays } from './analyzeReplays.js'
 import { createTankopedia } from './compute/index.js'
@@ -30,7 +24,6 @@ function parsedFiles(paths: readonly string[]): ParsedReplayFile[] {
   })
 }
 
-/** failures: [[sourceName, message]] —— 只比文件名，措辞属于各自解析器 */
 function normalizeFailures<T extends { failures: string[][] }>(preview: T): T {
   return { ...preview, failures: preview.failures.map(([name]) => [name]) }
 }

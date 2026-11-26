@@ -7,14 +7,12 @@ import {
 import { useAnnotationState } from './useAnnotationState.js'
 import type { MapAnnotation } from './useAnnotationState.js'
 
-/** 3D 场景内核的标注接口最小集（playbackScene 的 setAnnotations* 三件套）。 */
 interface SceneAnnotationApi {
   setAnnotations?: (annotations: MapAnnotation[]) => void
   setAnnotationInteraction?: (config: Record<string, unknown>) => void
   setAnnotationsVisible?: (visible: boolean) => void
 }
 
-/** 内核擦除回调载荷：擦除路径（语义坐标）+ 半径。 */
 export interface SceneErasePath {
   points: { x: number; y: number }[]
   radius: number
@@ -22,15 +20,6 @@ export interface SceneErasePath {
 
 const ALLOWED_TOOLS = ['pen', 'eraser']
 
-/**
- * 3D 标注会话的唯一 owner（Replay3DPane 与 MapPreview3DPane 共用）：
- * 开关 / 工具 / 颜色 / 宽度 / 橡皮半径 / 可见性，以及 pane → scene 的唯一推送方向
- * （projection / interaction / visibility）。快照历史归 useAnnotationState。
- *
- * 宿主只注入差异：场景句柄（pane 内 `let sceneApi`）、交互就绪门（回放 `store.hasData`、
- * 预览 `store.mapReady`；门关闭时自动收起 drawing）、可选的打开前置条件与打开副作用。
- * 何时 reset（换场次 / 换图 / 场景消失）仍由宿主决定。V1 不持久化。
- */
 export function useSceneAnnotations(hooks: {
   getSceneApi: () => SceneAnnotationApi | null | undefined
   interactionReady: () => boolean
@@ -102,14 +91,11 @@ export function useSceneAnnotations(hooks: {
     api?.setAnnotationsVisible?.(true)
   }
 
-  // annotation 投影 / 交互 / 可见性的唯一推送方向（pane → scene）。没有这组 watch，
-  // 画笔提交 / 导入 / 撤销 / 擦除 / 工具与可见性变化只改 refs，内核侧画面永远不更新。
   watch(annotations, pushProjection)
   watch([open, tool, color, widthSlider, eraserRadius, hooks.interactionReady], pushInteraction)
   watch(visible, pushVisibility)
   watch(hooks.interactionReady, (ready) => { if (!ready && open.value) closeAnnotation() })
 
-  /** AnnotationToolbar 的 3D 形态绑定（宿主模板 `v-bind` / `v-on`；`compact` 由宿主给）。 */
   const toolbarProps = computed(() => ({
     open: open.value,
     activeTool: tool.value,

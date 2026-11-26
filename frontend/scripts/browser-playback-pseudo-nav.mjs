@@ -3,7 +3,6 @@ import { compileStyle, parse } from 'vue/compiler-sfc'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 
-// Compile scoped styles exactly as Vue does; stripping :global() hides selector loss.
 const filename = new URL('../src/app/AppShell.vue', import.meta.url)
 const { descriptor } = parse(readFileSync(filename, 'utf8'))
 const scopeId = 'data-v-pseudo-nav-test'

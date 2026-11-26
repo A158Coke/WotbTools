@@ -43,27 +43,15 @@ import zhMessages from '../locales/zh.json'
 import enMessages from '../locales/en.json'
 import ruMessages from '../locales/ru.json'
 
-/**
- * 地图预览页 contract：
- * - 登录门（未登录只给认证入口，不渲染任何清单/场景）。
- * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）；
- *   默认只显示 common/map_names.json 登记了 zh 的 key（人工认可目录，与 UI locale 无关），
- *   「显示全部地图」开关展开其余资产条目（会话状态：不写 URL、不写持久化）。
- * - URL 契约 ?map= &mode=：默认隐藏的地图仍可由深链打开；点击地图缺省写 mode=2d；
- *   切模式/基地只改自己的键，返回 picker 清掉 map/mode/bases。
- */
 
 const { ROUTER, IDX, ALL_KEYS, ZH_KEYS, HIDDEN_KEYS, cardKeys, toggleShowAll, openAt } = createMapPreviewPageTestHelpers({ MapPreviewPage, createRouter, createMemoryHistory, mount, DIALOG_INLINE_KEY, flushPromises })
 
 beforeEach(() => {
-  // 每个用例模拟一次新的页面加载：dataset 在页面内固定，切换只经整页重载。
   __resetAssetBaseForTests()
   auth.authenticated.value = false
   if (i18n.locale) i18n.locale.value = 'zh'
   source.loadMapIndex.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
-  // ground.webp 回退封面依赖资产源已配置（CI 无 .env.local）：与 replaySource.test.js
-  // 同款 spy，URL 断言不随运行环境漂移
   vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
   vi.spyOn(assetProvider, 'url').mockImplementation((p) => 'https://assets.test' + p)
 })
@@ -78,12 +66,9 @@ describe('MapPreviewPage', () => {
   })
 
   it('fixture 自证：可见性判据是 map_names.json 的 zh，不是资产 display 文案', () => {
-    // 双锁：字面量列表与真实目录一致（避免用生产判据当唯一 oracle，也避免写死卡片总数）
     expect(ZH_KEYS.every((key) => hasChineseMapName(key))).toBe(true)
     expect(HIDDEN_KEYS.some((key) => hasChineseMapName(key))).toBe(false)
     expect([...ZH_KEYS, ...HIDDEN_KEYS].sort()).toEqual([...ALL_KEYS].sort())
-    // 这些 key 的资产 display 都是英文，其中 grossberg 的 display 与 key 完全不同——
-    // 若实现改成「name !== key」或 CJK 正则判断，下面的默认过滤测试会失败
     expect(IDX.maps[31].display).toBe("Dynasty's Pearl")
   })
 
@@ -123,7 +108,6 @@ describe('MapPreviewPage', () => {
     expect(wrapper.find('[data-testid="map-card-grossberg"] .map-card-name').text()).toBe('王朝的珍珠')
     i18n.locale.value = 'en'
     await flushPromises()
-    // 同一批卡片（可见集合不变），只是显示名切到英文
     expect(cardKeys(wrapper)).toEqual(before)
     expect(wrapper.find('[data-testid="map-card-grossberg"] .map-card-name').text()).toBe("Dynasty's Pearl")
     expect(wrapper.find('[data-testid="map-card-moon"] .map-card-name').text()).toBe('Sea of Tranquility')
@@ -160,7 +144,6 @@ describe('MapPreviewPage', () => {
   it('默认隐藏的地图仍可被 ?map= 深链打开（2D/3D），返回 picker 后仍默认隐藏', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    // 2D/3D 都必须用真正没有 zh 的 hidden key（moon 已登记中文名，属默认可见）
     expect(HIDDEN_KEYS).toContain('rudniki_01')
     const w2d = await openAt({ map: 'rudniki_01', mode: '2d' })
     expect(ROUTER.currentRoute.value.query).toMatchObject({ view: 'map-preview', map: 'rudniki_01', mode: '2d' })
@@ -172,7 +155,6 @@ describe('MapPreviewPage', () => {
     const w3d = await openAt({ map: 'rudniki_03', mode: '3d' })
     expect(w3d.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
     expect(w3d.findComponent({ name: 'MapPreview3DPane' }).props('mapKey')).toBe('rudniki_03')
-    // #835：无语义档的地图 spawnPoints 下发 null（fail-closed，内核不画、不猜坐标）
     expect(w3d.findComponent({ name: 'MapPreview3DPane' }).props('spawnPoints')).toBeNull()
     await w3d.find('[data-testid="map-back"]').trigger('click')
     await flushPromises()
@@ -192,15 +174,12 @@ describe('MapPreviewPage', () => {
     source.loadMapIndex.mockResolvedValue(IDX)
     const wrapper = await openAt()
     await toggleShowAll(wrapper)
-    // 变体 id 54 与 id 3 同为 erlenberg → 只渲染一张卡
     expect(cardKeys(wrapper)).toEqual([...ALL_KEYS].sort())
     expect(wrapper.findAll('[data-testid="map-card-erlenberg"]')).toHaveLength(1)
     const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
     const moon = wrapper.find('[data-testid="map-card-moon"]')
-    // 双图都有 2D 徽标（ground.webp 回退后 43 图全可进 2D）
     expect(erlenberg.find('.map-card-badge').exists()).toBe(true)
     expect(moon.find('.map-card-badge').exists()).toBe(true)
-    // 封面统一 cover.webp（512² 战术风格，43/43 同源）：bundled 不再走打包图
     expect(erlenberg.find('.map-card-thumb img').attributes('src')).toContain('/cover/erlenberg.webp')
     expect(moon.find('.map-card-thumb img').attributes('src')).toContain('/cover/moon.webp')
   })
@@ -208,7 +187,6 @@ describe('MapPreviewPage', () => {
   it('cover URL 不可用（Android 离线门控抛错）→ 有 bundled 的图用打包底图兜底', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    // 只让 cover URL 抛（模拟 NETWORK_ERROR），其余不变
     assetProvider.url.mockImplementation((p) => {
       if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
       return 'https://assets.test' + p
@@ -216,10 +194,8 @@ describe('MapPreviewPage', () => {
     const wrapper = await openAt()
     await toggleShowAll(wrapper)
     const erlenberg = wrapper.find('[data-testid="map-card-erlenberg"]')
-    // 无 cover → 走 thumbFallback（打包底图），不落占位图标
     expect(erlenberg.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(true)
     expect(erlenberg.find('.map-card-thumb-fallback').exists()).toBe(false)
-    // moon 无打包图 → 占位图标
     expect(wrapper.find('[data-testid="map-card-moon"]').find('.map-card-thumb-fallback').exists()).toBe(true)
   })
 
@@ -231,7 +207,6 @@ describe('MapPreviewPage', () => {
     expect(coverImg.attributes('src')).toContain('/cover/erlenberg.webp')
     await coverImg.trigger('error')
     await flushPromises()
-    // thumb 置空 → 模板改渲染 fallback（打包底图），远端 URL 不再出现
     expect(wrapper.find('[data-testid="map-thumb-erlenberg"]').exists()).toBe(false)
     const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
     expect(fb.exists()).toBe(true)
@@ -242,7 +217,6 @@ describe('MapPreviewPage', () => {
   it('bundled 兜底图自身加载失败 → 落占位图标，两个 URL 都不再重试', async () => {
     auth.authenticated.value = true
     source.loadMapIndex.mockResolvedValue(IDX)
-    // cover 直接不可得（Android 离线门控）→ 模板走 bundled 兜底
     assetProvider.url.mockImplementation((p) => {
       if (p.startsWith('/cover/')) throw new Error('NETWORK_ERROR')
       return 'https://assets.test' + p
@@ -250,7 +224,6 @@ describe('MapPreviewPage', () => {
     const wrapper = await openAt()
     const fb = wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]')
     expect(fb.exists()).toBe(true)
-    // bundled 兜底自己加载失败（@error）→ 独立失败集合置空 thumbFallback → 占位图标
     await fb.trigger('error')
     await flushPromises()
     expect(wrapper.find('[data-testid="map-thumb-fallback-erlenberg"]').exists()).toBe(false)

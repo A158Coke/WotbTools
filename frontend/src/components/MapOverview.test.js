@@ -13,8 +13,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.t, locale: { value: 'zh' } })
 }))
 
-// 受控素材表：holland 带 coordinateBounds（世界坐标 -300..300），
-// desert_train 无 coordinateBounds（验证旧配置回退 playableBounds 的兼容策略）。
 vi.mock('../data/mapImages', () => ({
   mapImages: {
     desert_train: { src: 'desert-sands.png', width: 765, height: 772 },
@@ -110,7 +108,6 @@ function mountOverview(overview) {
   })
 }
 
-/** 与 MapOverview.vue 相同的世界坐标 → SVG 像素换算（y 反转）。 */
 function toSvg(x, y, bounds, w, h) {
   return {
     x: ((x - bounds.xMin) / (bounds.xMax - bounds.xMin)) * w,
@@ -165,11 +162,8 @@ describe('MapOverview', () => {
 
   it('draws nine-grid boxes without numeric labels and keeps width purely in CSS', () => {
     const wrapper = mountOverview(makeOverview())
-    // 9 个九宫格分区框保留（region-line），数字标注（region-label）不再渲染。
     expect(wrapper.findAll('.region-line').length).toBe(9)
     expect(wrapper.find('.region-label').exists()).toBe(false)
-    // 宽度由 scoped CSS 控制（桌面/平板 66.7%，≤768px 100%）；测试环境无法真实计算媒体查询，
-    // 这里只验证 SVG 不存在内联宽度绑定。
     expect(wrapper.find('.map-svg').attributes('style')).toBeUndefined()
   })
 
@@ -185,7 +179,6 @@ describe('MapOverview', () => {
     const wrapper = mountOverview(overview)
     expect(wrapper.find('.map-title').text()).toBe('黄沙荒漠')
 
-    // 无 displayNames 时回退 displayName
     const fallback = mountOverview(makeOverview())
     expect(fallback.find('.map-title').text()).toBe('Desert Sands')
   })
@@ -193,10 +186,8 @@ describe('MapOverview', () => {
   it('switches heatmap team and type filters', async () => {
     const wrapper = mountOverview(makeOverview())
     const buttons = wrapper.findAll('.filter-btn')
-    // 阵营：本方/敌方
     await buttons[1].trigger('click')
     expect(buttons[1].classes()).toContain('active')
-    // 类型：驻留/伤害/阵亡
     const typeButtons = wrapper.findAll('.filter-group')[1].findAll('button')
     await typeButtons[1].trigger('click')
     expect(typeButtons[1].classes()).toContain('active')
@@ -253,7 +244,6 @@ describe('MapOverview', () => {
   })
 
   it('discards a late palette result when src changes again（embedded→remote 同一 race 形状）', async () => {
-    // 第一次取亮度故意悬空；第二次（换图 / OTA 生效）先完成——迟到的第一次不得覆盖调色板。
     let resolveFirst
     luminanceOfImage
       .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
@@ -271,7 +261,6 @@ describe('MapOverview', () => {
 
   it('calibrates Molendijk against worldBounds: Spawn_1_02 maps to ~(152.4, 693.7)', () => {
     const wrapper = mountOverview(makeHollandOverview())
-    // 用 playableBounds 映射会得到 (110.6, 741.7)——若回归到旧行为本断言即失败。
     const spawn = wrapper.findAll('.spawns circle')[0]
     expect(Number(spawn.attributes('cx'))).toBeCloseTo(152.4, 1)
     expect(Number(spawn.attributes('cy'))).toBeCloseTo(693.7, 1)
@@ -279,7 +268,6 @@ describe('MapOverview', () => {
 
   it('maps the map center (0,0) to the image center and does not push the top-right spawn to the edge', async () => {
     const wrapper = mountOverview(makeHollandOverview())
-    // Molendijk 右上出生点 Spawn_2_14（真实世界坐标）不再被推近图片边缘。
     const spawn = wrapper.findAll('.spawns circle')[1]
     const expected = toSvg(180.2034, 252.0772, MOLENDIJK_WORLD, 766, 769)
     expect(Number(spawn.attributes('cx'))).toBeCloseTo(expected.x, 1)
@@ -293,8 +281,6 @@ describe('MapOverview', () => {
 
     const spawn = toSvg(-180.6257, -241.2817, MOLENDIJK_WORLD, 766, 769)
 
-    // 分析网格 F1 仍由 playableBounds 系坐标绘制，但经 coordinateBounds 换算：
-    // 只覆盖可玩区左上角，不再被拉伸铺满整张图片。
     const cell = wrapper.find('.grid-cell')
     const xMin = toSvg(MOLENDIJK_CELL_F1.xMin, MOLENDIJK_CELL_F1.yMax, MOLENDIJK_WORLD, 766, 769)
     const xMax = toSvg(MOLENDIJK_CELL_F1.xMax, MOLENDIJK_CELL_F1.yMin, MOLENDIJK_WORLD, 766, 769)
@@ -306,7 +292,6 @@ describe('MapOverview', () => {
   })
 
   it('falls back to playableBounds when a map config has no coordinateBounds', () => {
-    // desert_train 无 coordinateBounds：明确回退 playableBounds（旧行为兼容）。
     const wrapper = mountOverview(makeOverview())
     const spawn = wrapper.find('.spawns circle')
     const expected = toSvg(-200, 200, { xMin: -256, xMax: 260, yMin: -251, yMax: 254.3 }, 765, 772)
@@ -318,7 +303,6 @@ describe('MapOverview', () => {
     const wrapper = mountOverview(makeOverview())
     expect(wrapper.find('[data-test="map-tab-playback"]').exists()).toBe(false)
     expect(wrapper.findAll('.map-tab')).toHaveLength(0)
-    // 默认热力视图渲染地图 SVG
     expect(wrapper.find('.map-svg').exists()).toBe(true)
   })
 

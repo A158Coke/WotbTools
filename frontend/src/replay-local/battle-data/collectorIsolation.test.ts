@@ -20,7 +20,6 @@ function collector(fault: string) {
     postMessage: vi.fn(() => {
       if (fault === 'postMessage') throw Error('clone failed')
       if (fault === 'crash') w.onerror?.({ preventDefault: vi.fn() } as unknown as ErrorEvent)
-      // pending deliberately never completes.
     }),
   }
   const factory = vi.fn(() => {

@@ -40,7 +40,6 @@ describe('login continuity (#670)', () => {
     guest.controller.loginAiGuide()
     expect(guest.controller.mode.value).toBe('idle')
     expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
-    // Full-document redirect: the next document starts with no login in flight.
     guest.wrapper.unmount()
     boundary.auth.loginInFlight.value = false
 
@@ -56,7 +55,6 @@ describe('login continuity (#670)', () => {
     expect(pending()).toBeNull()
     resumed.wrapper.unmount()
 
-    // One-shot: a reload without a new login never reopens the guide.
     const nextPage = harness()
     await flushPromises()
     expect(nextPage.controller.mode.value).not.toBe('tour')
@@ -98,14 +96,12 @@ describe('login continuity (#670)', () => {
     boundary.auth.loginInFlight.value = true
     expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
 
-    // Android native login RPC returns before the external user-agent authenticates.
     boundary.auth.loginInFlight.value = false
     await nextTick()
     await nextTick()
     expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
     expect(h.controller.mode.value).toBe('tour')
 
-    // wotbtoolsOnAuthChanged pushes the authenticated session later.
     account('A')
     await flushPromises()
     expect(h.controller.mode.value).toBe('tour')
@@ -130,7 +126,6 @@ describe('login continuity (#670)', () => {
     expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 0, stageIndex: 0 }))
     guest.wrapper.unmount()
 
-    // Page B: full reload, auth init settles unauthenticated because Keycloak was canceled.
     boundary.auth.loginInFlight.value = false
     const canceled = harness({ view: 'profile' })
     await flushPromises()
@@ -148,7 +143,6 @@ describe('login continuity (#670)', () => {
     expect(pendingGuide()).toBeUndefined()
     expect(pending()).toBeNull()
 
-    // Ordinary profile login: it must not resurrect the abandoned lesson.
     boundary.auth.loginInFlight.value = true
     expect(pendingGuide()).toBeUndefined()
     expect(pending()).toBeNull()
@@ -169,7 +163,6 @@ describe('login continuity (#670)', () => {
     expect(pending()?.receipt).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
     guest.wrapper.unmount()
 
-    // Canceled redirect: only the guide is discarded; the receipt contract survives.
     boundary.auth.loginInFlight.value = false
     const canceled = harness({ view: 'profile' })
     await flushPromises()
@@ -306,7 +299,6 @@ describe('login continuity (#670)', () => {
     vi.useFakeTimers()
     try {
       vi.setSystemTime(new Date('2026-10-18T18:00:00Z'))
-      // A terminal receipt from an earlier document: only the pending marker can migrate it.
       localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ version: 1, receipts: {
         anonymous: { coreEpoch: 1, disposition: 'SKIPPED' },
       } }))

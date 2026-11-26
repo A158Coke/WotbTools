@@ -1,8 +1,5 @@
-// 时间滑块插值辅助（#820 从 shotReplay.ts 拆出以守住单文件行数预算）：
-// 位姿采样线性插值 + 炮塔/炮管时间线插值（跨 ±π 按短弧）。逐行平移，语义不变。
 import type { PoseTickSample, TimelineTuple, Vec3 } from './viewerContracts.js'
 
-/** 渲染时间线条目在运行时以数字下标携带 [dt, value]，故需允许数字索引。 */
 export type PoseSampleLike = PoseTickSample & Record<number, number>
 
 export function interpTick(samples: PoseSampleLike[] | PoseTickSample[] | null,
@@ -41,7 +38,6 @@ export function lerpTl(tl: TimelineTuple[] | null, dt2: number): number | null {
     return dt2 <= tl[0][0] ? tl[0][1] : tl[tl.length - 1][1];
 }
 
-/** 角度版：跨 ±π 时按短弧插值（与客户端 0x1441e00 短弧归一化一致）。 */
 export function lerpTlAngle(tl: TimelineTuple[] | null, dt2: number): number | null {
     if (!tl || tl.length < 2) return null;
     for (let i = 0; i < tl.length - 1; i++) {

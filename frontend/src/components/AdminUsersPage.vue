@@ -1,9 +1,4 @@
 <script setup>
-/**
- * Admin 用户管理页（Keycloak + 本地 user_profile 聚合）。
- * 分页 / 筛选分段 / 选择集与批量删除 / 详情抽屉与删除流拆分至 admin-users/
- * （LOC 预算；行为原样）。门禁 → 认证 → backend 的唯一顺序约定见 requireAdminUsersOnline。
- */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConnectivity } from '../composables/useConnectivity.js'
@@ -42,21 +37,16 @@ const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const { connectivity } = useConnectivity()
 
-// 门禁 → 认证（ensureToken / login） → backend：非-online 时先被门禁挡住，绝不发 admin API。
-// 门禁/认证细节见 admin-users/adminUsersGate.ts（PR 467 review blocker 的顺序约定）。
 const { requireAdminUsersOnline, apiError, errorCodeLabel, ensureToken } = createAdminUsersGate({
   gate: () => requireFeature(Feature.ADMIN_USERS),
   initPromise, ensureAuthToken, login, t, te,
 })
 
-/** 首次被门禁挡下的加载：只有「确实什么都没加载过」才允许 reconnect 自动补一次。 */
 const blockedByConnectivity = ref(false)
 
-/** 当前 capability 判定（页面只读它渲染中性提示，不据此自己拼文案；四态措辞由模型决定）。 */
 const adminAvailability = computed(() => availability(Feature.ADMIN_USERS))
 
 onMounted(async () => {
-  // 门禁先于认证：非-online 时既不 ensureToken（不发 token refresh）、也不 login()、也不请求 backend。
   if (!requireAdminUsersOnline()) {
     blockedByConnectivity.value = true
     return
@@ -69,12 +59,6 @@ onMounted(async () => {
   }
 })
 
-/**
- * 恢复在线后，只补「因为离线从来没加载过」的列表，且只补一次：
- *  - 已加载过的数据 / 搜索条件 / 分页 / 选择集原样保留，掉线不清空；
- *  - **不**重放任何破坏性动作（删除 / 批量删除）或上一次详情 / 搜索，用户的下一次点击才算数；
- *  - `loading` + 一次性 flag 双重去重，重复 online 通知不会形成请求风暴。
- */
 watch(connectivity, () => {
   if (users.value.length || loading.value || !blockedByConnectivity.value) return
   if (!availability(Feature.ADMIN_USERS).available) return
@@ -120,15 +104,12 @@ const {
 })
 
 async function loadUsers() {
-  // 门禁在所有 backend 入口的第一行：搜索 / 换 segment / 换 IdP / 换页长 / 翻页 / 删除后 reload
-  // 都只经过这一个函数，因此非-online 时 adminSearchUsers 调用数恒为 0。
   if (!requireAdminUsersOnline()) return
   const generation = ++userLoadGeneration
   loading.value = true
   try {
     const res = await api.adminSearchUsers(searchQuery.value, {
       segment: segment.value,
-      // 后端在 local segment 收到 idpAlias 会 400；禁用输入之外再兜一层。
       idpAlias: segment.value === 'keycloak' ? idpAlias.value.trim() : '',
       page: page.value,
       size: size.value,
@@ -136,7 +117,6 @@ async function loadUsers() {
     if (generation !== userLoadGeneration) return
     const lastPage = Math.max((res?.totalPages || 0) - 1, 0)
     if (page.value > lastPage) {
-      // 批量删除后当前页可能已不存在：退到最后一个有效页，由它自己结算 loading。
       page.value = lastPage
       await loadUsers()
       return
@@ -152,21 +132,6 @@ async function loadUsers() {
   }
 }
 
-// 翻页 / 换页长 / 换数据源 / 换搜索词都会改变可见行集合，
-// 「全选当前页」的选择集不跨这些边界保留（否则会出现看不见的选中项）。
-/**
- * 会改变「已应用查询」的动作一律**先门禁、后改状态**（review P2）。
- *
- * 之前的顺序是「先 mutation，再由 loadUsers 里的门禁挡下」，非-online 时会出现
- * 「page/segment/size 已经变了、rows 还是上一次的结果」的不一致状态。这里的顺序约定是：
- *
- * ```text
- * 门禁 → 改 applied 状态（page/size/segment/selection） → loadUsers() 发请求
- * ```
- *
- * `loadUsers()` 内部仍保留一次门禁：它还有别的调用方（删除后 reload、reconnect 自动补一次），
- * 那些路径不能绕过准入。v-model 的 select 另有 handler 级回滚兜底（见模板）。
- */
 function reloadFirstPage() {
   if (!requireAdminUsersOnline()) return
   clearSelection()
@@ -198,8 +163,6 @@ onBeforeUnmount(() => {
       </template>
     </ShowcaseHero>
 
-    <!-- 非-online 的中性状态（不是错误态）：文案来自 capability 模型，四态各有措辞。
-         已加载的列表 / 搜索条件 / 选择集一律保留，只是新的 ONLINE_REQUIRED 动作被挡住。 -->
     <p
       v-if="!adminAvailability.pending && !adminAvailability.available"
       class="admin-list-status"
@@ -220,7 +183,6 @@ onBeforeUnmount(() => {
       </template>
       <label class="admin-list-field admin-idp-field">
         <span>{{ $t('admin.idpAlias') }}</span>
-        <!-- idpAlias 是**草稿**输入：非-online 时允许继续编辑（回车不生效），不会被当成已应用条件。 -->
         <input
           v-model="idpAlias"
           class="admin-list-input"
@@ -328,7 +290,6 @@ onBeforeUnmount(() => {
         </span>
         <label>
           <span>{{ $t('admin.size') }}</span>
-          <!-- 受控 select + data-applied-value：非-online 时回滚，避免「每页显示 50 但表格还是 25 条」。 -->
           <select
             class="admin-list-input admin-size-select"
             :value="size"
@@ -344,7 +305,6 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 详情抽屉（右侧 AppSheet：焦点陷阱 / Esc / 关闭后焦点回到该行的打开按钮）；删除在抽屉底部 -->
     <AdminDetailDrawer :open="!!detailRow" :title="$t('admin.detail')" :return-focus-to="detailReturnFocus" class="admin-user-drawer" @close="closeDetail">
       <template v-if="detailRow">
         <div class="admin-user-identity">
@@ -415,7 +375,6 @@ onBeforeUnmount(() => {
       </template>
     </AdminDetailDrawer>
 
-    <!-- 批量删除确认（整批只弹一次，输入 DELETE） -->
     <AppDialog
       :open="showBulkConfirm"
       :title="$t('admin.bulkConfirmDelete')"
@@ -461,7 +420,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 列表模板的共享样式在 admin-list.css；这里只放用户管理页自己的布局。 */
 .admin-users { color: var(--color-text-primary); font: var(--type-body); }
 .admin-search-input { flex: 1 1 auto; }
 .admin-idp-field { min-width: var(--form-field-min); }

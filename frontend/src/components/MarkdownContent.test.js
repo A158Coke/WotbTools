@@ -88,7 +88,6 @@ describe('MarkdownContent XSS safety', () => {
   it('removes script tags', () => {
     const wrapper = render('<script>alert(1)</script>')
     expect(wrapper.find('script').exists()).toBe(false)
-    // Raw HTML is escaped by markdown-it when html=false
     expect(wrapper.html()).toContain('&lt;script&gt;')
   })
 
@@ -98,7 +97,6 @@ describe('MarkdownContent XSS safety', () => {
   })
 
   it('removes javascript: URL when html allowed', () => {
-    // With html: false, raw HTML is escaped, so no javascript: link is rendered
     const wrapper = render('<a href="javascript:alert(1)">click</a>')
     expect(wrapper.find('a').exists()).toBe(false)
   })
@@ -127,8 +125,6 @@ describe('MarkdownContent edge cases', () => {
 })
 
 describe('MarkdownContent heading normalization (closes # ##-literal bug)', () => {
-  // happy-dom 的 DOMPurify 会剥掉 h1-h6 元素（真实浏览器保留），因此组件层只能
-  // 断言文本：标题内容被渲染且无字面 `##`；h2 语义由 utils 单测 + markdown-it 断言。
   it('renders `##一、` (no space after ##) without literal ## in output', () => {
     const wrapper = render('##一、战前预测\n正文')
     expect(wrapper.text()).toContain('一、战前预测')

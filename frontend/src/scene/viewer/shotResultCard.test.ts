@@ -1,9 +1,3 @@
-// 射击结果卡 presentation 的行为测试（Issue #820 Wave B3A）。
-// renderShotResultCardHtml 是从 tankViewer.js showTrajectory() 出仓的纯函数；
-// 这里锁定卡片语义：概率 0/部分/100 与边界显示、HE 命中/溅射/采样不可用、
-// 跳弹多段标题与概率层着色、无主装甲不回填伤害、三语 labels 与 HTML escaping、
-// 紧凑/普通卡片尺寸。判定输入（概率链、伤害、轨迹色）由调用方计算——本文件
-// 只构造已算好的确定性输入，不重复实现领域逻辑。
 import { describe, expect, it } from 'vitest'
 import { evaluateProbabilityChain } from '../armorInspectorChance.js'
 import { renderShotResultCardHtml } from './shotResultCard.js'
@@ -90,7 +84,6 @@ describe('shotResultCard · 概率显示（0 / 部分 / 100 / 边界）', () => 
       overallChance: 0.5,
       cardChance: 0.5,
     })
-    // 总体仍是“可能击穿”黄标题；层行圆点分别表达本层状态。
     expect(html).toContain('font-weight:bold;color:var(--yellow);margin-bottom')
     expect(html).toContain('color:var(--green);">●')
     expect(html).toContain('color:var(--red);">●')
@@ -218,8 +211,7 @@ describe('shotResultCard · 跳弹多段与概率层着色', () => {
     expect(html).toContain('ricochet (-25% penetration)</span>')
     expect(html).toContain('<span>May penetrate</span>')
     expect(html).toContain('penetration chance: 60%')
-    expect(html).toContain('· 400</span>')   // 1–99% 中段满伤，不是确定性 0
-    // 跳弹段紫色（热力图同色相）、最终段按累计概率黄色
+    expect(html).toContain('· 400</span>')
     expect(html).toContain('color:var(--purple);">●')
     expect(html).toContain('color:var(--yellow);">●')
   })
@@ -366,7 +358,6 @@ describe('shotResultCard · labels 三语与 HTML escaping', () => {
     expect(html).toContain('&lt;script&gt;')
     expect(html).toContain('&quot;&gt;')
     expect(html).toContain('&lt;b&gt;May&lt;/b&gt; penetrate')
-    // title 属性同样转义
     expect(html).toContain('title="&quot;&gt;&lt;script&gt;')
   })
   it('中文 labels：判定/概率行/顶行走宿主注入文案', () => {
@@ -420,7 +411,6 @@ describe('shotResultCard · 卡片尺寸与 HTML 语义', () => {
     expect(html).toContain('border-left:4px solid var(--green)')
     expect(html).toContain('effective penetration: 200mm')
     expect(html).toContain('>●</span>')
-    // 概率行用 tabular-nums
     expect(html).toContain('font-variant-numeric:tabular-nums;')
   })
 })

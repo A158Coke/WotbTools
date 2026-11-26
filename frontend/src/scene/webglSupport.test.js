@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { WEBGL_STATUS, detectWebGL } from './webglSupport.js'
 
-/** 假 document：按上下文名返回假的 GL 对象（带 WEBGL_lose_context 以验证释放） */
 function fakeDocument(available) {
   const loseContext = vi.fn()
   const requested = []

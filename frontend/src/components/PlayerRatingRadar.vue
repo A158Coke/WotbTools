@@ -7,26 +7,13 @@ import {
 } from '../utils/radarGeometry.js'
 import { formatRadarVisualScore, radarAxisVisualScore } from '../utils/radarScale.js'
 
-/**
- * 选手画像雷达图：只消费展示轴对象（{key,label,rawValue,visualValue,normalized,displayValue,available}）。
- * 支持 player + reference 双多边形：
- * - player：实线 + 半透明填充 + 顶点圆点（§16）；
- * - reference：细虚线 + 无填充 + 无点（§16）；缺失 → 不画、detail 显示 '--'、提示（§25）。
- * 缺失契约（§24/§67）：player 缺任一所选维 → 整图 unavailable（不伪造闭合多边形）。
- * 几何/刻度/网格共用 utils/radarGeometry.js（与导出同构，§48）。
- */
 const { t } = useI18n()
 
 const props = defineProps({
-  /** player 轴对象（顺序即绘制顺序）。 */
   metrics: { type: Array, default: () => [] },
-  /** 可选 reference 轴对象（与 metrics 同维度同顺序）。 */
   reference: { type: Array, default: null },
-  /** reference 系列名（Battle Average / Global Average），用于列头与图例。 */
   referenceLabel: { type: String, default: '' },
-  /** player 系列名（昵称），用于图例。 */
   playerLabel: { type: String, default: '' },
-  /** Optional caller-specific incomplete-reference text; League keeps its bounded default. */
   referenceUnavailableLabel: { type: String, default: '' },
 })
 
@@ -50,7 +37,6 @@ function adjustRadarZoom(delta) {
   radarZoom.value = Math.min(RADAR_ZOOM_MAX, Math.max(RADAR_ZOOM_MIN, radarZoom.value + delta))
 }
 
-/** player 归一化数组（available 时全可用）。 */
 const playerNormals = computed(() =>
   props.metrics.map(m => (m.available ? Math.max(0, Math.min(1, m.normalized)) : null)))
 
@@ -86,7 +72,6 @@ const scoreLabels = computed(() => {
     position ? { ...position, label: props.metrics[index]?.label || '' } : null)
 })
 
-/** detail 行：dimension / player / reference。 */
 const detailRows = computed(() =>
   props.metrics.map((m, i) => ({
     label: m.label,
@@ -122,29 +107,22 @@ const detailRows = computed(() =>
                :style="{ width: radarSize }"
                role="img" :aria-label="'Radar: ' + (metrics || []).map(m => m.label).join(', ')">
         <desc>{{ t('radarScale.ariaDescription', { label: referenceLabel }) }}</desc>
-        <!-- 可见网格：25/50/100；75 由规则 reference 环表达，150 边界不可见。 -->
         <polygon v-for="g in gridPolys" :key="'grid-' + g.value"
                  :points="g.points" class="radar-grid" :class="{ 'radar-grid-strong': g.isStrong }" />
-        <!-- 轴线 -->
         <line v-for="(r, i) in axisRays" :key="'axis-' + i"
               :x1="RADAR.CENTER" :y1="RADAR.CENTER" :x2="r.x" :y2="r.y" class="radar-axis" />
-        <!-- 单侧刻度（12 点方向） -->
         <text v-for="t in scaleTicks" :key="'tick-' + t.value"
               :x="t.p.x" :y="t.p.y" text-anchor="middle" dominant-baseline="middle"
               class="radar-scale">{{ t.value }}</text>
-        <!-- reference 虚线多边形（无填充、无点） -->
         <polygon v-if="referenceComplete && props.reference && props.reference.length"
                  :points="referencePoints" class="radar-ref" />
-        <!-- player 实线多边形 + 填充 -->
         <polygon :points="playerPoints" class="radar-data" />
-        <!-- player 顶点圆点（template 包裹：v-for 项才有 i 供 v-if 用） -->
         <template v-for="(m, i) in metrics" :key="'dot-' + i">
           <circle v-if="playerNormals[i] != null"
                   :cx="axisPoint(i, metrics.length, playerNormals[i])[0]"
                   :cy="axisPoint(i, metrics.length, playerNormals[i])[1]"
                   r="3" class="radar-dot" />
         </template>
-        <!-- 玩家相对分数：始终显示，明细模式切换不改变顶点标注。 -->
         <template v-for="(score, i) in scoreLabels" :key="'score-' + i">
           <g v-if="score" class="radar-score-badge" :aria-label="score.label + ': ' + score.value">
             <rect :x="score.x - score.width / 2" :y="score.y - RADAR.SCORE_BADGE_HEIGHT / 2"
@@ -154,7 +132,6 @@ const detailRows = computed(() =>
                   class="radar-score">{{ score.value }}</text>
           </g>
         </template>
-        <!-- 轴标签（只显示维度名；RC 带 native title 提示全称） -->
         <text v-for="(p, i) in labelPositions" :key="'label-' + i"
               :x="p.x" :y="p.y" text-anchor="middle" dominant-baseline="middle"
               class="radar-label"><title v-if="p.tip">{{ p.tip }}</title>{{ p.label }}</text>
@@ -162,7 +139,6 @@ const detailRows = computed(() =>
         </div>
       </div>
 
-      <!-- 图例：player（实线） vs reference（虚线） -->
       <div class="radar-legend">
         <span class="lg-item"><span class="lg-swatch lg-swatch-player"></span>{{ playerLabel || '' }}</span>
         <span v-if="referenceComplete && props.reference && props.reference.length"
@@ -183,7 +159,6 @@ const detailRows = computed(() =>
         </button>
       </div>
 
-      <!-- detail：score 模式显示 0..150 视觉分；raw 模式显示原始玩家值与真实 reference。 -->
       <table class="radar-detail">
         <thead>
           <tr>

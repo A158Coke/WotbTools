@@ -44,7 +44,7 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     expect(wrapper.emitted('ready').at(-1)).toEqual([true])
     expect(wrapper.find('[data-testid="tank-configurator"]').exists()).toBe(true)
     expect(wrapper.getComponent(TankConfigPanel).props('embedded')).toBe(true)
-    expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6) // 炮塔1+火炮1+发动机2+履带2
+    expect(wrapper.findAll('.tp-module-tile')).toHaveLength(6)
     expect(wrapper.findAll('.tp-dev-btn')).toHaveLength(0)
     expect(wrapper.find('.tp-skills-block').exists()).toBe(false)
     expect(wrapper.find('.tp-camo-block').exists()).toBe(false)
@@ -65,7 +65,6 @@ describe('ArmorSideConfig（一侧的模块 + 配件完整选择）', () => {
     const payload = wrapper.emitted('apply').at(-1)[0]
     expect(payload.track).toBe(0)
     expect(payload.config).toBe(0)
-    // engine 未显式传入：保持 resolveSetup 的最后一档，而不是 Number(null) -> 0
     expect(payload.engine).toBe(1)
     expect(payload.configChanged).toBe(false)
     expect(typeof payload.dev).toBe('string')

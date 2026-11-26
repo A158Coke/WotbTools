@@ -74,7 +74,6 @@ describe('primary navigation', () => {
       expect(primarySection(view)).toBe('more')
     }
     for (const view of ['agent-tankopedia', 'agent-armor']) expect(primarySection(view)).toBe('tankopedia')
-    // 科技树是坦克百科的**平级**栏目（不是坦克百科的子页）
     expect(primarySection('agent-techtree')).toBe('techtree')
     expect(sectionTitleKey('agent-techtree')).toBe('research.title')
     expect(PRIMARY_NAV.findIndex(item => item.id === 'techtree'))
@@ -127,7 +126,6 @@ describe('primary navigation', () => {
     expect(PRIMARY_NAV.findIndex(item => item.id === 'maps'))
       .toBe(PRIMARY_NAV.findIndex(item => item.id === 'techtree') + 1)
     expect(PRIMARY_NAV.find(item => item.id === 'maps').view).toBe('map-preview')
-    // 离开地图预览丢弃 map/mode 参数；进入方向保留（它们是目的地参数）
     const leaving = { path: '/', query: { view: 'map-preview', map: 'erlenberg', mode: '3d', lang: 'ru' } }
     expect(locationForView('replay', leaving).query).toEqual({ view: 'replay', lang: 'ru' })
     expect(locationForView('map-preview', leaving).query).toEqual(leaving.query)
@@ -178,17 +176,13 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
         upgrade: 'top', abilities: '23', supgrade: 'top', sabilities: '24',
       },
     }
-    // 侧边栏切走：不留任何场景参数（用户实测：此前会带上 tank/shot/shooter/…）
     expect(locationForView('replay', armorRoute).query).toEqual({ view: 'replay', lang: 'x' })
     expect(locationForView('agent-tankopedia', armorRoute).query).toEqual({ view: 'agent-tankopedia', lang: 'x' })
     expect(locationForView('hof', armorRoute).query).toEqual({ view: 'hof', lang: 'x' })
-    // 留在装甲查看器内（如切换能力后又回到同一视图）保留全部场景参数
     expect(locationForView('agent-armor', armorRoute).query).toEqual(armorRoute.query)
   })
 
   it('进入装甲查看器时保留场景参数：交接链接不得在入场方向被吞掉', () => {
-    // 以 URL 表达的交接（射击分析的复现链接 / 坦克百科的详情入口）在入场时必须原样保留——
-    // 清理只针对"离开场景"，与坦克百科那条规则同向。任何方向的误删都会让复现那发直接丢参数。
     const handoff = {
       path: '/',
       query: {
@@ -198,7 +192,6 @@ describe('locationForView：名人堂筛选只属于名人堂', () => {
     }
     expect(locationForView('agent-armor', handoff).query).toEqual({ ...handoff.query, view: 'agent-armor' })
 
-    // 场景独有键（world / heatmap / clean）同理：入场保留，切走才清
     const sceneOnly = { path: '/', query: { view: 'replay', world: '1', heatmap: '1', clean: '1' } }
     expect(locationForView('agent-armor', sceneOnly).query)
       .toEqual({ view: 'agent-armor', world: '1', heatmap: '1', clean: '1' })
@@ -209,7 +202,6 @@ describe('sponsor 与 android 专用路径：深链往返保持各自的目的�
   it('sponsor 路径解析为 sponsor 视图且覆盖同名 view 参数，返回时映射回专用路径', () => {
     expect(viewFromRoute({ path: '/sponsor', query: {} })).toBe('sponsor')
     expect(viewFromRoute({ path: '/sponsor/', query: {} })).toBe('sponsor')
-    // 专用路径优先于 query.view：/sponsor?view=replay 仍落在 sponsor
     expect(viewFromRoute({ path: '/sponsor', query: { view: 'replay' } })).toBe('sponsor')
     const target = locationForView('sponsor', { path: '/', query: { view: 'sponsor', utm: 'video' } })
     expect(target.path).toBe('/sponsor')

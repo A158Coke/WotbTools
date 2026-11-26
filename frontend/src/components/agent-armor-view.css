@@ -1,11 +1,9 @@
-/* Agent 3D 装甲查看器全局样式（Scene IDs 是 DOM 契约；样式随拆分自 AgentArmorView.vue，原样迁移）。 */
 
 .armor-view {
     --bg: var(--color-canvas); --panel: color-mix(in srgb, var(--color-surface-1) 96%, transparent);
     --panel2: var(--color-surface-2); --border: var(--color-border-subtle); --border-hi: var(--color-border-strong);
     --accent: var(--color-accent-text); --accent-2: var(--color-accent-text); --accent-3: var(--color-text-primary);
     --green: var(--color-success); --orange: color-mix(in oklab, var(--color-warning) 55%, var(--color-danger)); --red: var(--color-danger);
-    /* 跳弹紫 = 热力图跳弹高亮（--color-ricochet）的同色相别名；与文本主色混色保证明暗主题可读。 */
     --purple: color-mix(in oklab, var(--color-ricochet) 62%, var(--color-text-primary));
     --blue: var(--color-info); --yellow: var(--color-warning); --txt: var(--color-text-primary); --muted: var(--color-text-secondary);
     --shadow: var(--elevation-2); --radius: var(--radius-lg); --radius-sm: var(--radius-md);
@@ -53,7 +51,6 @@
 .armor-view #turret-controls .ctrl-row { display: inline-flex; gap: var(--space-2); margin-inline-end: var(--space-3); }
 .armor-view #turret-controls .ctrl-row span { font-weight: 700; font-variant-numeric: tabular-nums; }
 .armor-view #view-toggle > button { flex: 1; }
-/* 射击复现的图形面板就绪后，场景自带的校准弹/强化装甲勾选只作为资产缺失时的回退 */
 .armor-view #tank-selectors.has-shot-hud .eq-opt:not(#armor-state-opt) { display: none; }
 .armor-view #tank-selectors.has-shot-hud .armor-equipment-caption { display: none; }
 .armor-view #tank-selectors { padding: var(--space-3); inline-size: 23rem; max-block-size: 54dvh; overflow-y: auto; z-index: var(--pb-z-hud); }
@@ -69,8 +66,6 @@
 .armor-view #tank-selection-status { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .armor-view #shooter-label { color: var(--color-accent-text); }
 .armor-view #target-label { color: var(--color-info); }
-/* 右上角是一块整体面板：射击 HUD、模式切换、装甲组成、点选结果共用同一张卡片。
-   固定宽度：进入厚度视图（过滤行/点选结果出现）时面板不会突然变宽。 */
 .armor-view #corner-tr {
     inset-block-start: var(--space-5);
     inset-inline-end: var(--space-5);
@@ -91,9 +86,7 @@
 .armor-view #shell-selector label { color: var(--muted); font: var(--type-caption); }
 .armor-view #shell-selector select { max-inline-size: 100%; min-inline-size: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
 .armor-view #view-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-/* 模式按钮文案固定（状态用 active/aria-pressed 表示）：避免开关时标签变长变短把面板宽度挤动 */
 .armor-view #view-toggle > button { white-space: nowrap; }
-/* 装甲组成显隐是同一面板内的第二行（只在厚度视图出现），不再是浮在产品外的独立卡片 */
 .armor-view .armor-filters {
     flex: 1 1 100%;
     display: flex;
@@ -103,7 +96,6 @@
     border-block-start: 1px solid var(--color-border-subtle);
 }
 .armor-view .armor-filters[hidden] { display: none; }
-/* 结果色图例：与射线/层点/卡片标题同一套语义别名；厚度视图由场景脚本隐藏。 */
 .armor-view .armor-legend {
     display: flex;
     flex-wrap: wrap;

@@ -3,13 +3,11 @@ import { effectScope, reactive, readonly, ref, watch } from 'vue'
 export interface PlaybackLabelPreferences {
   showPlayerName: boolean
   showTankName: boolean
-  /** 实时装填状态（2D / 3D 共享）——只在有可信遥测时才有内容，无遥测不画 */
   showReload: boolean
 }
 
 export interface PlaybackHpPreferences {
   showHp: boolean
-  /** 2D marker presentation. 3D labels keep their existing bar rendering. */
   mode: 'bar' | 'ring'
 }
 
@@ -19,22 +17,10 @@ export interface PlaybackTrailPreferences {
 
 export interface PlaybackMarkerPreferences {
   classIcons: boolean
-  /**
-   * Recorder/death badges; battle facts remain unchanged. 2D floating damage also
-   * follows it, while 3D combat feedback only follows Hide All UI.
-   */
   showStatus: boolean
-  /**
-   * 战场快捷标记 3D 呈现（0x2e markers + attention_to_cell：移动 ping / 目标光环 /
-   * 注意扇区高亮；owner = scene markerRuntime）。默认开；不被防遮预设触碰。
-   */
   battleMarkers: boolean
 }
 
-/**
- * 战场 UI 分块开关（3D 回放覆盖层）。与标签/血量偏好同一个 owner ——
- * 场景组件不再自建第二套 localStorage 状态。
- */
 export interface PlaybackUiPreferences {
   showTopbar: boolean
   showRoster: boolean
@@ -42,10 +28,6 @@ export interface PlaybackUiPreferences {
   showBaseStatus: boolean
 }
 
-/**
- * 「可视性诚实呈现」开关（离场坦克显示最后已知位置；默认开）。独立成组、不进防遮预设：
- * 它是回放事实边界的呈现约定（未记录时段不重建位置），不是可被「一键防遮」重置的杂物偏好。
- */
 export interface PlaybackLastKnownPreferences {
   showLastKnown: boolean
 }
@@ -83,7 +65,6 @@ function createPlaybackPreferences() {
       return {
         showPlayerName: record.showPlayerName === true,
         showTankName: record.showTankName !== false,
-        // 新增字段：老持久化值（无该键）默认开启，不重置用户已有的昵称/车型选择
         showReload: record.showReload !== false,
       }
     },
@@ -126,7 +107,6 @@ function createPlaybackPreferences() {
     { classIcons: false, showStatus: true, battleMarkers: true },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      // 新增字段：老持久化值（无该键）默认开启，不重置用户已有 classIcons/showStatus
       return { classIcons: record.classIcons === true, showStatus: record.showStatus !== false, battleMarkers: record.battleMarkers !== false }
     },
   ))
@@ -136,7 +116,6 @@ function createPlaybackPreferences() {
     { showLastKnown: true },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      // 新增字段：老持久化值（无该键）默认开启，不重置用户已有偏好
       return { showLastKnown: record.showLastKnown !== false }
     },
   ))
@@ -148,8 +127,6 @@ function createPlaybackPreferences() {
   let previous: ReturnType<typeof capture> | null = null
   let applyingPreset = false
   function persistPresentation() {
-    // The preset is temporary. Reloading returns to the user's saved settings,
-    // rather than losing the restoration snapshot and leaving an unexplained mix.
     const value = previous || capture()
     persistJson(LABEL_PREFS_KEY, value.labels)
     persistJson(HP_PREFS_KEY, value.hp)
@@ -180,8 +157,6 @@ function createPlaybackPreferences() {
   }
   watch([labelPrefs, hpPrefs, trailPrefs, markerPrefs], () => {
     if (applyingPreset) return
-    // An explicit setting change becomes the new custom view; never restore
-    // an older snapshot over a subsequent user edit.
     previous = null
     declutterActive.value = false
     persistPresentation()
@@ -192,8 +167,6 @@ function createPlaybackPreferences() {
   return { labelPrefs, hpPrefs, trailPrefs, markerPrefs, uiPrefs, lastKnownPrefs, declutterActive: readonly(declutterActive), toggleDeclutter }
 }
 
-// Initialize lazily so persisted values hydrate on the first consumer. A detached
-// scope owns persistence: unmounting that consumer must not stop session writes.
 let sharedPreferences: ReturnType<typeof createPlaybackPreferences> | undefined
 
 export function usePlaybackPreferences() {

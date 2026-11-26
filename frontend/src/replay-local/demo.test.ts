@@ -72,8 +72,6 @@ describe('official sample provenance', () => {
 })
 
 describe('bundled sample teaching cues', () => {
-  // This integration case boots pinned WASM and decodes a real replay under concurrent CI;
-  // the provenance policy cases above retain the ordinary test timeout.
   it('resolves the published time and shot identity with the pinned real parser', async () => {
     const parsed = requireFixtures(await replayFacets(fileURLToPath(samplePath)))
     expect(Buffer.from(parsed.bytes)).toEqual(sampleBytes)

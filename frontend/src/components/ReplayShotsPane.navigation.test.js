@@ -1,12 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 射击分析面板状态链回归：
- * - author_path="error" 且他人宽松路径 0 发 → 警示必须可见，且与空态并存——
- *   绝不允许只显示"没有射击"把作者链失败伪装成正常空结果（契约 v0.1.9 评审 blocker）；
- * - 射击者筛选三态（未知阵营绝不并入我方）；
- * - Master–Detail：一行一 Shot、选中出检视、窄容器整屏 + 焦点管理；
- * - 术语：界面不得出现内部 id（eid）、WebAssembly / Agent 等实现层词汇。
- */
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -50,7 +42,6 @@ vi.mock('../scene/agentData.js', () => ({
   fetchShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
-/** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
 const observers = []
 class ResizeObserverStub {
   constructor(cb) { this.cb = cb; observers.push(this) }
@@ -73,7 +64,6 @@ function mkFile(name = 'cn.wotbreplay') {
 
 const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 }
 
-/** 新手教程表面（ONBOARDING_KEY）：compact 检视面板只在教程引导中出现，测试用它模拟引导态 */
 const guideSurfaces = {}
 const guideActive = ref(false)
 const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
@@ -93,7 +83,6 @@ async function mountPane(props = {}) {
     global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
     attachTo: document.body,
   })
-  // 只有"应当解码"的场景才等终态（无文件 / 被阻断 / 未激活时不发解码）
   const shouldDecode = props.active !== false && !props.blockedReason && props.file !== null
   if (shouldDecode) {
     await vi.waitFor(() => {
@@ -145,7 +134,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     return wrapper
   }
 
-  /** compact 详情里的真实滑动：pointerdown → pointerup，水平位移压过纵向位移 */
   async function swipe(wrapper, dx, dy = 0) {
     const detail = wrapper.get('[data-testid="shot-inspector"]')
     await detail.trigger('pointerdown', { clientX: 200, clientY: 300 })
@@ -205,7 +193,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="shot-prev"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="shot-next"]').attributes('disabled')).toBeUndefined()
-    // 边界上仍按键 / 滑动：停在原地，不回绕到最后一发
     await swipe(wrapper, 80)
     expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-2')
 
@@ -228,7 +215,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
       author_path: 'ok', author_eid: 100, others: baseOthers,
     })
     const wrapper = await mountCompact()
-    // 只留射击者 A：可见列表变成 [2, 7, 11]
     await wrapper.get('#shots-shooter-select').setValue('player-0')
     await flushPromises()
     expect(wrapper.findAll('.shot-row').map(r => r.attributes('data-testid')))
@@ -238,7 +224,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     await flushPromises()
     await wrapper.get('[data-testid="shot-next"]').trigger('click')
     await flushPromises()
-    // 5 被筛掉了，下一发必须是 11 —— 若按原始 shots 走会落到 8/5
     expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-11')
 
     await swipe(wrapper, 80)
@@ -249,7 +234,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
   })
 
   it('键盘方向键与按钮等价；焦点在 select 上时不劫持', async () => {
-    // 需要 ≥2 位射击者，筛选下拉才会渲染（这正是"不劫持"的验证对象）
     parseAgentShotsFromBytes.mockResolvedValue({
       shots: [
         { index: 2, time_s: 10, damage: 0, is_kill: false, shooter_eid: 100, shooter_name: 'A', target_eid: null, hit_flags: 0, game_hit_result: 255, shell_id: 0, shooter_team: 'ally' },
@@ -272,7 +256,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     await flushPromises()
     expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-7')
 
-    // 表单控件聚焦时不劫持方向键（原生 select 行为优先）
     const select = wrapper.get('#shots-shooter-select')
     await select.trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
@@ -286,11 +269,9 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
     await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
     await flushPromises()
 
-    // 位移不小，但纵向明显压过横向 → 视为滚动，不切换
     await swipe(wrapper, 60, 120)
     expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-7')
 
-    // 横向位移不足阈值 → 也不切换
     await swipe(wrapper, 20)
     expect(wrapper.get('.shot-row.is-selected').attributes('data-testid')).toBe('shot-row-7')
     wrapper.unmount()
@@ -305,7 +286,6 @@ describe('ReplayShotsPane compact 上一发 / 下一发', () => {
       author_path: 'ok', author_eid: 100, others: baseOthers,
     })
     const wrapper = await mountCompact()
-    // 显式查看全员，再选 B；本人默认不混入其他玩家。
     await wrapper.get('#shots-shooter-select').setValue('all')
     await wrapper.get('[data-testid="shot-row-5"]').trigger('click')
     await flushPromises()

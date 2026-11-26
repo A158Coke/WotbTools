@@ -324,12 +324,10 @@ describe('ReplayWorkspace', () => {
     const wrapper = mountWorkspace(cap, { authenticated: false })
     await flushPromises()
     expect(capKeys(wrapper)).toEqual(['data', 'replay', 'shots', 'ai'])
-    // 匿名 + 离线：连通性提示优先于登录门禁，且不触发任何 login。
     expect(wrapper.find(`[data-testid="ws-${cap}-connectivity"]`).exists()).toBe(true)
     expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
     expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
     expect(authState.login).not.toHaveBeenCalled()
-    // 本地能力（2D / 射击）在离线 + 未登录时仍可用；射击是登录门禁，不是连通性门禁。
     await switchTo(wrapper, 'playback')
     expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
     await switchTo(wrapper, 'shots')
@@ -369,8 +367,6 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  // 冷启动深链（?view=ai-review / ?view=agent-replay）：连通性首次检测未完成时，占位 UNKNOWN
-  // 不是结论 —— 不得出现任何连通性提示，也不得提前挂载需要网络的面板或落到登录门禁。
   it.each(['ai', '3d'])('cold-start deep link to %s shows no connectivity verdict until detection settles ONLINE', async (cap) => {
     connectivityState.state.value = 'unknown'
     connectivityState.settled.value = false
@@ -384,7 +380,6 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find(`[data-test="ws-${cap}-pane"]`).exists()).toBe(false)
     expect(useConnectivityNotice().notice.value).toBe(null)
 
-    // 首次检测结果 ONLINE（生产中 settled 与状态在同一个同步块里提交）。
     connectivityState.settled.value = true
     connectivityState.state.value = 'online'
     await flushPromises()
@@ -392,7 +387,6 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.text()).not.toContain('connectivityNotice.')
     const pane = wrapper.get(`[data-test="ws-${cap}-pane"]`)
     expect(pane.text()).toContain('true')
-    // 深链入口的门禁补判按真实 ONLINE 进行：全局 connectivity 提示（AppShell 弹层）也不得出现。
     expect(useConnectivityNotice().notice.value).toBe(null)
     wrapper.unmount()
   })
@@ -415,8 +409,6 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  // settle 后的真实结论必须照常显示。UNKNOWN → UNKNOWN 时连通性值不变，只有 settled
-  // false → true 能驱动 UI 从「暂未下结论」切到真实 unknown 提示（锁死 settled 必须是响应式）。
   it.each([
     ['unknown', 'connectivityNotice.unknown'],
     ['offline', 'featureOffline.aiReview'],
@@ -433,7 +425,6 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="ws-ai-connectivity"]').text()).toContain(messageKey)
     expect(wrapper.find('[data-test="ws-ai-pane"]').exists()).toBe(false)
-    // 深链入口被拒绝的门禁在 settle 后按真实结论补提示一次。
     expect(useConnectivityNotice().notice.value).toMatchObject({ messageKey })
     wrapper.unmount()
   })
@@ -456,12 +447,9 @@ describe('ReplayWorkspace', () => {
     const navigate = vi.fn()
     const wrapper = mountWorkspace('events', { navigate })
     await flushPromises()
-    // 懒加载组件必须绑定到模板标识符（仅声明 module 会让 <ReplayEventStreamPane> 解析失败）
     expect(wrapper.find('[data-test="ws-event-stream"]').exists()).toBe(true)
-    // 默认隐藏的唯一例外：events 深链自动打开事件流（否则 auto-center 目标高度为 0）
     expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('')
     expect(wrapper.get('[data-testid="viewer-events-toggle"]').attributes('aria-checked')).toBe('true')
-    // 事件流已并入「回放」入口：切到 data 再进回放走 2D 路由（agent-events 深链本身仍有效）
     await switchTo(wrapper, 'data')
     await switchTo(wrapper, 'playback')
     expect(navigate).toHaveBeenLastCalledWith('battle-playback')
@@ -587,7 +575,6 @@ describe('ReplayWorkspace', () => {
     expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
     await switchTo(wrapper, 'data')
     expect(wrapper.find('[data-test="ws-playback-pane"]').exists()).toBe(true)
-    // 统一面板整体 v-show 隐藏；pane 实例保留（切回不重新解析/不丢状态）。
     expect(wrapper.get('[data-testid="ws-replay"]').element.style.display).toBe('none')
     wrapper.unmount()
   })
@@ -690,7 +677,6 @@ describe('ReplayWorkspace', () => {
     withBattles(3)
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    // 数据模式的选择器在 ReplayPage 工具栏里（此处为 mock），它调用的就是 workspaceContext.selectBattle
     wrapper.findComponent({ name: 'ReplayPageMock' }).props('workspaceContext').selectBattle('r2')
     await flushPromises()
     for (const cap of ['playback', '3d', 'shots', 'ai']) {
@@ -747,7 +733,6 @@ describe('ReplayWorkspace', () => {
     const c = new File(['c'], 'c.wotbreplay')
     const pickerId = 'replay-battle-picker'
     const pane = () => wrapper.get(`[data-test="ws-${cap}-pane"]`)
-    // 只替代分析结果边界；上传控件、Workspace、session 和场次选择器都使用真实实现。
     replayState.current.analyze.mockImplementation(async () => {
       replayState.current.session.commitReadyResult({
         leagueMode: false,
@@ -839,7 +824,6 @@ describe('ReplayWorkspace', () => {
       return { completed: true }
     })
     await choose(wrapper, files)
-    // 部分失败不是失败态：有警示，内容可用，当前是第一场有效回放。
     expect(wrapper.find('[data-test="processing"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="workspace-partial-failure"]').text()).toContain('workspace.partial_failure')
     expect(wrapper.get('.workspace-content').isVisible()).toBe(true)
@@ -1044,7 +1028,6 @@ describe('ReplayWorkspace', () => {
     expect(dataVm.props('embedded')).toBe(true)
     expect(dataVm.props('replayContext')).toBe(replayState.current)
     expect(dataVm.props('workspaceContext')).toBeTruthy()
-    // v-show 隐藏 Data capability 时，ReplayPage 必须收到 active=false 才能关闭自己的 picker。
     expect(dataVm.props('active')).toBe(true)
     await switchTo(wrapper, 'playback')
     expect(dataVm.props('active')).toBe(false)
@@ -1065,7 +1048,6 @@ describe('ReplayWorkspace', () => {
     await flushPromises()
     expect(replayState.current.updateFiles).toHaveBeenCalledWith([file])
     expect(replayState.current.analyze).toHaveBeenCalledTimes(1)
-    // 导入总是切回数据模式展示结果
     expect(tab(wrapper, 'data').classes()).toContain('is-active')
     wrapper.unmount()
   })
@@ -1093,12 +1075,10 @@ describe('ReplayWorkspace', () => {
     await group.trigger('keydown', { key: 'Home' })
     await flushPromises()
     expect(tab(wrapper, 'data').classes()).toContain('is-active')
-    // ARIA 单选组语义：选中项 aria-checked=true；其它项不在 Tab 顺序里（方向键移动见 SegmentedControl.test）
     expect(tab(wrapper, 'data').attributes('role')).toBe('radio')
     expect(tab(wrapper, 'data').attributes('aria-checked')).toBe('true')
     expect(tab(wrapper, 'ai').attributes('aria-checked')).toBe('false')
     expect(tab(wrapper, 'ai').attributes('tabindex')).toBe('-1')
-    // 视觉 / 键盘行为归 canonical 组件：adapter 不再自带选项样式与状态机
     expect(wrapper.find('.capability-option').exists()).toBe(false)
     expect(wrapper.get('.segmented').classes()).toContain('is-wrapping')
     wrapper.unmount()

@@ -1,21 +1,6 @@
-/**
- * 浏览器级门禁共用的 CDP 页面外壳与工具（browser-workspace-interaction / browser-armor-mobile 共用）。
- *
- * 为什么必须有真实浏览器：点击是否真的到达目标、透明层是否吃掉 pointer、CSS 布局在真实
- * 层叠 / hit-testing / 设备指标下是否成立——这些在 happy-dom / jsdom 里结构上不可见
- * （没有真实布局，`document.elementFromPoint` 恒为 null）。本模块只提供与具体页面无关的
- * 通用能力：设备仿真、真实输入管线（touch 序列 / 鼠标序列）、输入落点记录与几何探针执行。
- * 页面专属的探针（返回什么 JSON、断言什么）留在各自门禁脚本里。
- *
- * 本文件从 browser-workspace-interaction.mjs 原样搬出（单一来源，避免第二份分叉）。
- */
 
 export const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/**
- * 以 CDP 参数调用页面函数：参数作为 Runtime 调用参数传递，不拼进表达式源码。
- * 门禁脚本的 selector / 场景数据只走这一条通道，页面侧永远不会把它当代码解析。
- */
 export async function callPageFunction(client, sessionId, fn, ...args) {
   const { result, exceptionDetails } = await client.send('Runtime.evaluate', {
     expression: `(${fn.toString()})`,
@@ -36,7 +21,6 @@ export async function callPageFunction(client, sessionId, fn, ...args) {
   return call.result.value
 }
 
-/** 页面外壳：一个 CDP target/session 上的导航、求值、设备仿真与真实输入。 */
 export class Page {
   constructor(client, sessionId) {
     this.client = client
@@ -67,15 +51,10 @@ export class Page {
     return result.value
   }
 
-  /** 序列化执行 `fn()`（探针不依赖闭包，因此可以安全地跨进程传递）。 */
   probe(fn) {
     return this.evaluate(`(${fn.toString()})()`)
   }
 
-  /**
-   * 轮询页面表达式直到 predicate 成立。
-   * navigate 期间执行上下文会被销毁，`Runtime.evaluate` 会失败 —— 那是预期噪声，重试即可。
-   */
   async waitForValue(expression, predicate, { timeout = 20_000, label = expression } = {}) {
     const deadline = Date.now() + timeout
     let last
@@ -110,12 +89,9 @@ export class Page {
 
   async goto(url, { timeout = 45_000 } = {}) {
     await this.client.send('Page.navigate', { url }, this.sessionId)
-    // 每个 fixture 服务器都用独立 Vite cacheDir：冷启动要现场优化依赖 + 加载整张模块图，
-    // 慢机器/CI runner 上 20s 会卡在 readyState=interactive。默认放宽到 45s；个别场景可显式覆盖。
     await this.waitForValue('document.readyState', (value) => value === 'complete', { timeout, label: 'document readyState=complete' })
   }
 
-  /** 场景失败时的现场快照：页面异常 + 可选的状态探针，避免「timeout 但不知道为什么」。 */
   async diagnose(probeFn = null) {
     const state = probeFn ? await this.probe(probeFn).catch(() => null) : null
     return [
@@ -124,10 +100,6 @@ export class Page {
     ]
   }
 
-  /**
-   * 等有限时长的 CSS / Web 动画（对话框、sheet 进场位移等）落定。
-   * 真实用户看到稳定后才点；在滑动中途量坐标再 tap 会落在旧位置。无限循环动画（spinner）不计入。
-   */
   async animationsSettled(timeout = 3000) {
     await this.waitForValue(
       `document.getAnimations().every(animation => animation.playState !== 'running' || animation.effect?.getComputedTiming().iterations === Infinity)`,
@@ -136,13 +108,6 @@ export class Page {
     ).catch(() => {})
   }
 
-  /**
-   * 真实输入管线点击。
-   *
-   * 只用原始事件注入（touch 序列 / 鼠标序列），**不用 `Input.synthesizeTapGesture`**：
-   * 本机 Chrome 上该 API 只派发 touch 事件、不合成兼容 click（已实测：连 topbar 控制组
-   * 按钮也拿不到 click），会让「点击是否真的产生行为」这条断言全部假阳性。
-   */
   async tap(point) {
     const touch = point.touch !== false
     if (touch) {
@@ -164,11 +129,6 @@ export class Page {
     await delay(150)
   }
 
-  /**
-   * 记录**真实输入事件**实际落到哪个元素上。
-   * 这是「click/touch 真的到达 button」的权威证据 —— 比 `elementFromPoint` 更强，
-   * 因为它证明的是输入管线真实派发的 target，而不是静态几何。
-   */
   async installInputTrace() {
     await this.evaluate(`(() => {
       const describe = (element) => {
@@ -203,7 +163,6 @@ export class Page {
     return this.evaluate('window.__inputTrace = { primary: null, click: null, clickCount: 0 }; window.__inputTrace')
   }
 
-  /** 把元素滚进视口、等顶栏收起 / 出现的过渡（L5）落定后，用真实输入点它的中心。 */
   async tapSelector(selector, touch = true) {
     await this.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean, { label: `present ${selector}` })
     await this.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
@@ -216,10 +175,6 @@ export class Page {
     await this.tap({ ...point, touch })
   }
 
-  /**
-   * 经外壳导航到一个栏目（design-language §9）：抽屉外壳（手机竖屏 / 横屏）走「菜单 → 抽屉 → 栏目」，
-   * 侧边栏外壳直接点侧边栏项。返回实际点击的选择器。
-   */
   async navigateViaShell(id, touch = true) {
     await this.waitForValue('!!document.querySelector("[data-testid=nav-menu],[data-testid=app-sidebar]")', Boolean, { label: 'app shell ready' })
     const drawer = await this.evaluate('!!document.querySelector("[data-testid=nav-menu]")')
@@ -247,15 +202,10 @@ export class Page {
     await this.waitForValue('!document.querySelector("[data-testid=nav-drawer-panel]")', Boolean, { label: 'nav drawer closed' })
   }
 
-  /** 以 CDP 参数调用页面函数，参数不进入表达式源码。 */
   callWith(fn, ...args) {
     return callPageFunction(this.client, this.sessionId, fn, ...args)
   }
 
-  /**
-   * 把控件滚进视口后再探针。用于「非全屏横屏地图高于视口」这类形态：
-   * 判定标准是「可滚动触达 + 触达后真的可点」，而不是「永远在首屏」。
-   */
   async revealControl(selector, probeFn) {
     await this.callWith((sel) => {
       const el = document.querySelector(sel)

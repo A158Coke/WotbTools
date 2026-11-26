@@ -1,5 +1,3 @@
-// HoFPage 三个榜单（单场 / 百场 / 三环）共用的纯函数与无状态 composable。
-// 只服务 HoFPage 及其 Hof* 子组件；管理页有自己的实现，不在此共用。
 import { computed, nextTick, watch, type Ref } from 'vue'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -8,16 +6,13 @@ import { replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import type { parseHofQuery } from '../utils/hofQuery.js'
 
-/** vue-i18n 的 t / te，按这里实际用到的调用形状收窄。 */
 export type Translate = (key: string, params?: Record<string, unknown>) => string
 export type TranslateExists = (key: string) => boolean
-/** HoFPage 解析后的 URL 状态（`utils/hofQuery.js` 是唯一解析入口）。 */
 export type HofQuery = ReturnType<typeof parseHofQuery>
 export type TierXVehicle = (typeof HUNDRED_VEHICLES)[number]
 export interface FilterChip { key: string, label: string }
 export interface PickerOption { id: number, label: string, hint: string }
 
-/** 名人堂联网门禁 + 登录门禁（包装既有 useFeatureGate / useAuth，不持有状态）。 */
 export function useHofAccess() {
   const { isAuthenticated, login } = useAuth()
   const { availability, requireFeature } = useFeatureGate()
@@ -32,10 +27,6 @@ export function useHofAccess() {
   return { hofAvailability, isAuthenticated, requireHofOnline, requireLogin }
 }
 
-/**
- * 失联纪元：名人堂变为不可用时自增，在途请求据此丢弃结果；`onLost` 由状态 owner 复位自己的 loading / generation。
- * 恢复后的重新加载由 HoFPage 统一编排（只有它知道当前 URL 与 tab）。
- */
 export function useHofEpoch(hofAvailability: Readonly<Ref<{ available: boolean }>>, onLost: () => void) {
   let epoch = 0
   watch(() => hofAvailability.value.available, (available) => {
@@ -58,7 +49,6 @@ export function vehicleValueLabel(t: Translate, te: TranslateExists, value: stri
   return value ? replayValueLabel(t, te, value) : ''
 }
 
-/** 百场 / 三环车辆选项：全部是 Tier X，提示里只放国家 / 车种。 */
 export function tierXPickerOption(t: Translate, te: TranslateExists, vehicle: TierXVehicle): PickerOption {
   return {
     id: vehicle.id,
@@ -67,14 +57,12 @@ export function tierXPickerOption(t: Translate, te: TranslateExists, vehicle: Ti
   }
 }
 
-/** 候选车辆里缺少草稿已选的车时补回来，避免筛选条件把已填的草稿车辆藏掉。 */
 export function withDraftVehicle(candidates: readonly TierXVehicle[], draftVehicleId: number | null): readonly TierXVehicle[] {
   const draftVehicle = HUNDRED_VEHICLES.find(vehicle => vehicle.id === Number(draftVehicleId))
   if (!draftVehicle || candidates.some(vehicle => vehicle.id === draftVehicle.id)) return candidates
   return [draftVehicle, ...candidates].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** 手机筛选 chip：国家 / 车种 / 车辆。 */
 export function vehicleChips(t: Translate, te: TranslateExists, nation: string, type: string, vehicleName: string): FilterChip[] {
   return compactChips([
     nation && { key: 'nation', label: vehicleValueLabel(t, te, nation) },
@@ -87,13 +75,11 @@ export function compactChips(chips: readonly (FilterChip | '' | 0 | false | null
   return chips.filter((chip): chip is FilterChip => Boolean(chip))
 }
 
-/** 按车辆 id 在个人状态列表（pending / current）里找对应条目。 */
 export function findVehicleStatus<T extends { vehicleId: number }>(items: readonly T[] | null | undefined, vehicleId: number | string | null | undefined): T | null {
   if (!vehicleId) return null
   return (items || []).find(item => Number(item.vehicleId) === Number(vehicleId)) || null
 }
 
-/** 接口返回 totalItems 时显示总数；缺失时只显示页码。 */
 export function pageTotalItems(res: { totalItems?: number | null } | null | undefined): number | null {
   const total = res?.totalItems
   return Number.isInteger(total) ? Number(total) : null
@@ -123,16 +109,11 @@ export function fmtDate(s: string | null | undefined) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-/** 接口错误的业务码（ApiError.code）；其他异常返回 undefined。 */
 export function errorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null || !('code' in error)) return undefined
   return typeof error.code === 'string' ? error.code : undefined
 }
 
-/**
- * 翻页后回到当前榜单的表格顶部（审计 PG-07）。表格容器自身也会纵向滚动（PG-06 表头吸顶），一并复位。
- * 表格顶部已在吸顶 Tab 下方可见时不滚动页面；偏移量读表格的 scroll-margin-top（与吸顶 Tab 同一 CSS 变量）。
- */
 export function scrollBoardIntoView(paneRef: Readonly<Ref<HTMLElement | null>>) {
   nextTick(() => {
     const board = paneRef.value?.querySelector?.('[data-hof-board]')
@@ -149,10 +130,6 @@ export function replayFileKey(file: File) {
 
 export const REPLAY_EVIDENCE_COUNT = 5
 
-/**
- * 百场 / 三环回放证据的多选合并：只收 .wotbreplay、按文件身份去重、总数不超过 5。
- * 返回 `error`（'type' | 'limit' | null）；出错时 additions 为空，调用方不改动已有列表。
- */
 export function mergeReplayFiles(existing: readonly File[], files: readonly File[]) {
   if (files.some(file => !file.name.toLowerCase().endsWith('.wotbreplay'))) {
     return { error: 'type' as const, additions: [], duplicateCount: 0 }
@@ -175,7 +152,6 @@ export function mergeReplayFiles(existing: readonly File[], files: readonly File
   return { error: null, additions, duplicateCount }
 }
 
-/** `<input type="file">` 的 change：取出文件并清空输入，同一批文件可以再次选择。 */
 export function takeInputFiles(event: Event): File[] {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])

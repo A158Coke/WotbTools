@@ -1,7 +1,3 @@
-/**
- * PlayerDetailDrawer —— Radar Metric Selection（拆分自 PlayerDetailDrawer.vue，行为原样）。
- * 默认七维，仅 League 维度；Summary/Battle 共用同一配置（localStorage 持久化）。
- */
 import { ref } from 'vue'
 import { loadRadarPreference, saveRadarPreference, RADAR_MIN_AXES, RADAR_MAX_AXES } from '../../utils/radarMetrics.js'
 

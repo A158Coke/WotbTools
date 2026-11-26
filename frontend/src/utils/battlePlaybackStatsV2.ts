@@ -5,17 +5,7 @@ import type {
 } from '../types/playback-v2.js'
 import { receivedFromHealthAt } from './battlePlaybackHealthInternals.js'
 
-/**
- * 详情面板累计统计 / canonical 伤害日志的纯查询工具（自 battlePlaybackV2.ts 出仓，
- * 2026-11-21 结构拆分：代码与搬移前逐字一致，公共入口仍由 battlePlaybackV2 re-export）。
- */
 
-// ---- 详情面板累计统计的惰性预聚合 ----
-// cumulativeStatsAtV2 在 HUD 节流频率（~10Hz，详情面板打开时）逐 tick 调用，此前的
-// 击杀计数全事件扫描 + dealt 兜底全 tracks×losses flatMap 是 O(事件+Σ损失)/tick 的
-// 纯浪费。回放数据解析后不可变：按对象身份（events 数组 / track 对象）WeakMap 缓存。
-// 等价性：Map 键用 SameValueZero，与 `===` 仅在 NaN 上不同——构建与查询都跳过 NaN
-// 账号（=== 永不匹配 NaN），其余键值逐位一致。
 
 const killsIndexCache = new WeakMap<object, Map<PropertyKey, number[]>>()
 
@@ -37,7 +27,6 @@ function killsIndexFor(events: readonly BattleEvent[] | null | undefined) {
   return index
 }
 
-/** 升序数组中 ≤ t 的元素个数（upper bound 二分）。 */
 function countAtMost(times: number[], t: number) {
   let lo = 0
   let hi = times.length
@@ -49,7 +38,6 @@ function countAtMost(times: number[], t: number) {
   return lo
 }
 
-/** 每条 track 的"可靠归属对外损失"按攻击者分组的前缀和（toSec 升序）。 */
 type OutLossPrefix = { times: number[]; prefix: number[] }
 const outLossesCache = new WeakMap<object, Map<PropertyKey, OutLossPrefix>>()
 
@@ -64,8 +52,6 @@ function outLossesIndexFor(track: Pick<VehiclePlaybackTrack, 'accountId' | 'dama
         || !Number.isFinite(loss.hpLoss)) continue
       const list = index.get(loss.attackerAccountId)
       if (list) {
-        // times 与 prefix（原始 hpLoss，reorder 后再前缀化）必须同序同步 push——
-        // 漏 push prefix 会让多损失车辆在第二次查询起读 undefined → NaN
         list.times.push(loss.toSec)
         list.prefix.push(loss.hpLoss)
       } else {
@@ -90,7 +76,6 @@ function outLossesIndexFor(track: Pick<VehiclePlaybackTrack, 'accountId' | 'dama
   return index
 }
 
-/** 前缀表在 ≤ t 处的累计和（无匹配/空表 → 0）。 */
 function prefixSumAt(list: OutLossPrefix | undefined, t: number) {
   if (!list || list.times.length === 0) return 0
   const idx = countAtMost(list.times, t)
@@ -111,8 +96,6 @@ export function cumulativeStatsAtV2(
       && Number.isSafeInteger(sample.total) && sample.total >= 0)
     .reduce<DamageDealtSample | null>((latest, sample) => !latest || sample.timeSec > latest.timeSec
       || (sample.timeSec === latest.timeSec && sample.total > latest.total) ? sample : latest, null)
-  // A cumulative broadcast already includes the attributed hits. Never add the two sources.
-  // 兜底走每 track 前缀和索引（等价于原全量 flatMap 过滤求和，见上方预聚合说明）
   const dealt = latestTotal?.total ?? (() => {
     if (typeof accountId !== 'number' || !Number.isFinite(accountId)) return 0
     let sum = 0
@@ -121,7 +104,6 @@ export function cumulativeStatsAtV2(
     }
     return sum
   })()
-  // 击杀计数走按账号索引的 KILL 时刻表（二分计数，等价于原全事件扫描）
   let kills = 0
   if (typeof accountId === 'number' && Number.isFinite(accountId)) {
     const times = killsIndexFor(events)?.get(accountId)
@@ -130,7 +112,6 @@ export function cumulativeStatsAtV2(
   return { dealt, received, kills }
 }
 
-/** Canonical damage log: incoming/outgoing rows are direct projections of DamageLoss facts. */
 export function damageLogAtV2(
   _events: readonly BattleEvent[] | null | undefined,
   selectedTrack: Pick<VehiclePlaybackTrack, 'accountId' | 'damageLosses'> | null | undefined,

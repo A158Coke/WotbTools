@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// 数据版本（game-version dataset）显式选择器。
-// 设置页（更多）用 setting 变体；回放工作台页头用 compact 变体，保证在回放现场也能
-// 直接看到并手动切换，而不是只能改 URL。切换会整页重载（见 useDataVersion）。
-// 下拉面板与侧边栏共用 DataVersionMenu，保证同一概念只有一种选择控件（DC-SEL-08）。
 import { computed } from 'vue'
 import { ChevronDown, Database } from 'lucide-vue-next'
 import DataVersionMenu from './DataVersionMenu.vue'
@@ -19,7 +15,6 @@ const props = withDefaults(defineProps<{
 
 const { state, selected, options, select } = useDataVersion()
 
-/** 生产 origin 尚未部署 versions.json 时，紧凑选择器隐藏而不是在每个回放页显示错误。 */
 const visible = computed(() => {
   if (state.value.status === 'unavailable') return false
   if (state.value.status === 'error') return props.variant !== 'compact'
@@ -137,7 +132,6 @@ function onSelect(id: string): void {
   font: var(--type-caption);
 }
 
-/* 页头紧凑形态：图标 + 下拉，宽度受限，不抢 capability tabs 的位置。 */
 .data-version.is-compact {
   flex-direction: row;
   align-items: center;

@@ -18,7 +18,6 @@ describe('isClosedSurfaceGeometry', () => {
     const box = new THREE.BoxGeometry(1, 1, 1)
     const pos = box.attributes.position
     const index = box.index.array
-    // 丢掉第一个面（两个三角形）→ 出现 4 条边界边。
     const trimmed = new THREE.BufferGeometry()
     trimmed.setAttribute('position', pos)
     trimmed.setIndex(Array.from(index.slice(6)))
@@ -79,8 +78,6 @@ describe('resolveSpacedHitMask（点击链同板去重，与 per-key stencil 同
   })
 
   it('判定区间止于首个 Primary：区间外的同键 front 不得抑制面前的 back', () => {
-    // back(120mm) → hull Primary → 同键 front：collectFilteredHits 在 hull 截断，
-    // GPU 侧主装甲深度先写、远处 front 也写不了位 —— back 必须保留。
     const hits = [
       hit('gun:2', true), hit('hull:1', false, false), hit('gun:2', false),
     ]
@@ -157,7 +154,6 @@ describe('判定链与区间（back → Primary → 同键 front）', () => {
       { key: 'hull:1', spaced: false, backface: false },
       { key: 'gun:2', spaced: true, backface: false },
     ]
-    // 判定区间 = 首个 Primary（index 1）→ spanEnd = 2。
     const keep = resolveSpacedHitMask(candidates, 2)
     const chain = candidates.filter((_, i) => keep[i])
     const hits = chain.map((c, i) => ({
@@ -174,7 +170,6 @@ describe('判定链与区间（back → Primary → 同键 front）', () => {
       calibrated_shells: false, enhanced_armor: false, allow_ricochet: true,
     }
     const r = calculate(req)
-    // 未修（整条射线抑制）：面前的 120mm 间隙甲被删 → hull 40mm 被 100mm 穿深击穿。
     expect(r.result).toBe('BLOCKED')
     expect(r.layers[0].thickness).toBe(120)
   })

@@ -4,7 +4,6 @@ import { webcrypto } from 'node:crypto'
 import Keycloak from 'keycloak-js'
 import { createBrowserAuthProvider } from './browserAuthProvider.js'
 
-// Use the installed SDK and its actual callback store/PKCE/nonce handling. Only HTTP is fake.
 const config = { url: 'https://auth.wotbtools.com', realm: 'wotbtools', clientId: 'wotbtools-web' }
 const requests = []
 let nonce = ''
@@ -111,7 +110,6 @@ describe('browser callback recovery with real keycloak-js', () => {
     expect(requests).toHaveLength(0)
     expect(document.querySelector('iframe')).toBeNull()
     expect(window.location.hash).toBe('')
-    // Explicit retry starts a fresh S256 transaction in this browser; it does not reuse the rejected state.
     const freshState = await startLogin()
     expect(freshState).not.toBe('not-in-this-browser')
     returnToSite(freshState)

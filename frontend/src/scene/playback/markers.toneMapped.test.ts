@@ -1,6 +1,3 @@
-// 标记层材质字面色直出行为测试（#827 接替 sceneryMaterials.test.js 的 :1265 基地半句）：
-// 基地环/圆盘必须 toneMapped:false——逐图曝光（toneMappingExposure =
-// 基准太阳强度/该图强度）不得压深 UI 语义色（山地图 expo≈0.21 会压到 1/5）。
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import * as THREE from 'three'
@@ -27,13 +24,12 @@ describe(':1265 标记层 toneMapped:false（字面色直出）', () => {
       const mesh = o as THREE.Mesh
       if (mesh.isMesh) mats.push(mesh.material as THREE.MeshBasicMaterial)
     })
-    expect(mats.length).toBe(2)   // 环 + 圆盘
+    expect(mats.length).toBe(2)
     for (const m of mats) {
       expect(m.toneMapped).toBe(false)
       expect(m.transparent).toBe(true)
-      expect(m.depthWrite).toBe(false)   // 贴地层不参与深度
+      expect(m.depthWrite).toBe(false)
     }
-    // 圆盘画布贴图：显示内容 → SRGB
     const disc = mats.find((m) => m.map)
     expect(disc?.map?.colorSpace).toBe(THREE.SRGBColorSpace)
     markers.clear()

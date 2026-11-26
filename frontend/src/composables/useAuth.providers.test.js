@@ -8,13 +8,6 @@ const kcUpdateToken = vi.fn(() => Promise.resolve(false))
 const kcInit = vi.fn()
 const kcInstances = []
 
-/**
- * keycloak-js 替身 scenario：
- * - `initResult` 同时决定 init() 的 resolve 值与落定后的 `adapter.authenticated`
- *   （真实 keycloak-js 中两者同源：check-sso 命中 → true + tokenParsed）；
- * - `initImpl` 覆盖 init 返回的 promise，用于悬挂 / reject 场景；
- * - `tokenParsed` 是 check-sso 命中时 adapter 上的 claims。
- */
 const kcScenario = {
   initResult: false,
   tokenParsed: null,
@@ -36,7 +29,6 @@ vi.mock('keycloak-js', () => ({
       const settle = (value) => {
         this.authenticated = value === true
         this.tokenParsed = value === true ? kcScenario.tokenParsed : null
-        // A query-looking return cannot match the SDK's default fragment callback.
         if (!this.authenticated && options.onLoad && returnUrl.searchParams.has('state')
           && !new URLSearchParams(returnUrl.hash.slice(1)).has('state')) this.login()
         return value
@@ -70,7 +62,6 @@ describe('useAuth — provider selection', () => {
   it('普通浏览器 → BrowserAuthProvider：生产 issuer 配置 + check-sso，initPromise 正常落定', async () => {
     const auth = useAuth()
 
-    // initPromise 只是"bootstrap 已落定"这个事件：刻意不 resolve 任何值，避免被当成 session truth。
     await expect(auth.initPromise).resolves.toBeUndefined()
 
     expect(kcInstances).toHaveLength(1)

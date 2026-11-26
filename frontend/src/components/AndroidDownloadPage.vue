@@ -10,7 +10,6 @@ import ShowcaseHero from './ShowcaseHero.vue'
 
 const { t, locale } = useI18n()
 
-/** 与本地 nginx 静态托管 / Android 壳使用的同一份 release metadata（规格 §91）。 */
 const MANIFEST_URL = '/download/android/version.json'
 
 const manifest = ref(null)
@@ -27,9 +26,6 @@ async function loadManifest() {
 }
 
 function recordDownloadClick() {
-  // 这个页面的最终 APK 按钮是 Android downloads 唯一产品统计口径。
-  // 独立事件与旧版 page-open telemetry 在协议层区分，历史页面打开不会污染点击指标。
-  // 直接 best-effort + keepalive 上报，不走 5 秒 usage queue，也绝不阻塞链接跳转。
   try {
     void postUsageEvents([{
       event_id: crypto.randomUUID(),
@@ -43,7 +39,6 @@ function recordDownloadClick() {
   }
 }
 
-/** APK 大小：manifest.apkSizeBytes 换算成 MB（缺失时不显示，不伪造）。 */
 const apkSize = computed(() => {
   const bytes = Number(manifest.value?.apkSizeBytes)
   if (!Number.isFinite(bytes) || bytes <= 0) return ''

@@ -1,11 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * canonical SegmentedControl 的契约。
- *
- * 它是 6 个消费方共用的 canonical primitive（回放能力切换、数据视图、播放相机、更多面板、
- * 更多页、数据工具栏），所以键盘模型与滚动行为在这里锁死：
- * ARIA 单选组 + 方向键循环 + Home / End 跳首尾；选项多时横向滚动且不换行。
- */
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import SegmentedControl from './SegmentedControl.vue'
@@ -35,7 +28,6 @@ describe('SegmentedControl', () => {
     expect(option(wrapper, 'data').attributes('role')).toBe('radio')
     expect(option(wrapper, 'data').attributes('aria-checked')).toBe('true')
     expect(option(wrapper, 'ai').attributes('aria-checked')).toBe('false')
-    // roving focus：其它选项不进 Tab 顺序；Tab 进入组时焦点落在选中项
     expect(option(wrapper, 'ai').attributes('tabindex')).toBe('-1')
     wrapper.get('[role="radiogroup"]').element.focus()
     await flushPromises()

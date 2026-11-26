@@ -1,7 +1,3 @@
-// 分区主视觉（design-language §2「分区主视觉」）：每个导航分区固定一张 key visual，不随季节切换。
-// 原图在 frontend/art-source/heroes/，产物由 scripts/build-section-heroes.mjs 生成到 assets/theme/。
-// 这里同时维护背景焦点位置：桌面横版取 center（宽幅只裁上下），竖屏取偏左的百分比，
-// 把主体留在画面右侧，避免被左下角的标题盖住。
 import heroAdmin from '../assets/theme/hero-admin.webp'
 import heroCommunity from '../assets/theme/hero-community.webp'
 import heroDocs from '../assets/theme/hero-docs.webp'
@@ -34,7 +30,6 @@ interface SectionHero {
   image: string
   position: string
   mobilePosition: string
-  /** 紧凑横幅的焦点位置：可见带约 43%，对准主体中线；缺省回退 position */
   compactPosition?: string
 }
 
@@ -52,7 +47,6 @@ export const SECTION_HEROES: Record<SectionHeroId, SectionHero> = {
   admin: { image: heroAdmin, position: 'center 45%', mobilePosition: '40% center' },
 }
 
-/** ShowcaseHero / 卡片背景用：把图片与焦点位置注入成 CSS 变量，四套主题共用同一张图。 */
 export function sectionHeroStyle(section: SectionHeroId): Record<string, string> {
   const hero = SECTION_HEROES[section]
   return {

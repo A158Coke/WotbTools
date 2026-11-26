@@ -25,7 +25,6 @@ describe('loadoutItems', () => {
       for (const [id, entry] of Object.entries(map)) {
         expect(entry.zh, `${id}.zh`).toBeTruthy()
         expect(entry.en, `${id}.en`).toBeTruthy()
-        // ru 由 overlay 提供；库中暂无 ru 的条目允许为 null 并在 loadoutItemLabel 回退 en
         expect(entry.ru === null || typeof entry.ru === 'string', `${id}.ru`).toBe(true)
       }
     }
@@ -58,11 +57,9 @@ describe('loadoutItems', () => {
     expect(loadoutItemLabel('consumable', 'REPAIR_KIT', 'ru')).toBe('Ремкомплект')
     expect(loadoutItemLabel('consumable', 'REPAIR_KIT', 'en')).toBe('Repair Kit')
     expect(loadoutItemLabel('equipment', 114, 'ru')).toBe('Улучшенная оптика')
-    // 未知 id / null / 空 -> null（Inspector 走 localized fallback）
     expect(loadoutItemLabel('equipment', 9999, 'zh')).toBeNull()
     expect(loadoutItemLabel('consumable', null, 'zh')).toBeNull()
     expect(loadoutItemLabel('consumable', '', 'zh')).toBeNull()
-    // 未知 locale 回退英文
     expect(loadoutItemLabel('consumable', 'REPAIR_KIT', 'fr')).toBe('Repair Kit')
   })
 

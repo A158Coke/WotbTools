@@ -1,29 +1,16 @@
-/** Agent 回放数据契约 —— 形状校验（trust boundary：进 view model 前的结构契约锁定）。
- *  拆分自 agent-replay-facets.ts；公共入口仍为 `../agent-replay-facets.ts`。 */
 
 import type { AgentAiReviewFacet, AiReviewValidationMode } from './aiTypes.js'
 import type { AgentBattleResult, AgentAuthorInitialPosition, AgentRecorderCamera } from './resultTypes.js'
 import type { AgentPlaybackFacet, AgentArmorStateTrack } from './playbackTypes.js'
 import { AI_HP_STATE_SET, AI_REVIEW_CONTRACT_VERSION } from './aiTypes.js'
 
-// ---------- AiReviewFacet 形状校验 ----------
 
-/**
- * AiReviewFacet 形状校验（trust boundary）。除结构外还锁定 canonical 语义**必需**的
- * v0.3.5 证据：`damage.hp_raw`（区分 HP=0 与终态哨兵）。缺失即拒绝——旧产物不得被
- * 静默投影成「哨兵 = 血量 0」的错误事实（fail closed，而不是降级猜测）。
- *
- * `mode` **必填**：当前 pin 的 producer 路径（`current-producer`）把 `hp_state` 当必填字段，
- * 旧 artifact / 显式 legacy 摄入（`legacy-compatible`）才允许缺省。没有默认值——两条路径
- * 由调用方显式选择，避免未来新增调用方静默拿到宽松口径。
- */
 export function validateAgentAiReview(value: unknown, mode: AiReviewValidationMode): AgentAiReviewFacet {
   const doc = assertObject(value, 'ai_review')
   assertFacetVersion(doc.version, 'ai_review.version', AI_REVIEW_CONTRACT_VERSION)
   const battle = assertObject(doc.battle, 'ai_review.battle')
   assertArray(battle.periods, 'ai_review.battle.periods')
   for (const key of ['rosters', 'events', 'settlements']) assertArray(doc[key], `ai_review.${key}`)
-  // 原始位姿是位置证据的唯一来源（回放网格是渲染滤波输出，不是观测）
   for (const key of ['poses', 'turrets']) {
     if (!Array.isArray(doc[key])) throw new Error(`agent facets: ai_review.${key} 缺失（canonical 投影需要上游 ≥ v0.3.7）`)
   }
@@ -32,9 +19,6 @@ export function validateAgentAiReview(value: unknown, mode: AiReviewValidationMo
     if (e.type === 'damage' && typeof e.hp_raw !== 'number') {
       throw new Error('agent facets: ai_review damage.hp_raw 缺失（canonical 投影需要上游 ≥ v0.3.7）')
     }
-    // hp_state：**两个方向都 fail closed**。①当前 pin（v0.4.9+）的 producer 恒输出该字段——
-    // 计数型 HP 事件缺字段 = producer 漂移，必须拒绝；若静默走 legacy 回退，0xFFFE 档弹药架殉爆
-    // 会重新被判成存活（本 PR 修的正是这个 bug）。②在场值必须落在闭集内，绝不静默回退 hp_raw。
     if (e.type === 'damage' || e.type === 'health') {
       if (e.hp_state === undefined) {
         if (mode === 'current-producer') {
@@ -48,7 +32,6 @@ export function validateAgentAiReview(value: unknown, mode: AiReviewValidationMo
       throw new Error('agent facets: ai_review ' + e.type + '.hp_state 非法（须为 current|zero|terminal）')
     }
   }
-  // prop3 血量广播是录像者血量帧的唯一来源：整场没有任何 health 事件 = 旧产物，拒绝而不是缺帧投影
   const evts = doc.events as Array<Record<string, unknown>>
   if (evts.some((e) => e.type === 'damage') && !evts.some((e) => e.type === 'health')) {
     throw new Error('agent facets: ai_review 缺 health（prop3）事件（canonical 投影需要上游 ≥ v0.3.7）')
@@ -56,16 +39,10 @@ export function validateAgentAiReview(value: unknown, mode: AiReviewValidationMo
   return value as unknown as AgentAiReviewFacet
 }
 
-// ---------- 形状校验辅助与各能力入口 ----------
 
-// ---------- 形状校验（trust boundary：进 view model 前的结构契约锁定） ----------
 
-/** PlaybackData 契约版本（上游 v0.2.0 起 = 2：+supremacy_bases/supremacy_points；
- *  上游 2026-10-03 起不再产出 `aim_frames`——该字段自始可选且无消费方，版本保持 2）。
- *  错版 WASM 在此显式拒绝，不允许被静默解析成半残数据（trust boundary）。 */
 export const PLAYBACK_CONTRACT_VERSION = 2
 
-/** 切面契约版本（v1 切面字段口径沿用；原 agent-replay-facets.ts 内私有，HoF 投影复用） */
 export const CONTRACT_VERSION = 1
 
 export function isObject(v: unknown): v is Record<string, unknown> {
@@ -94,15 +71,6 @@ function assertNonNegativeInteger(v: unknown, path: string, max: number = Number
   return v
 }
 
-/**
- * 可空有限数值（producer 的 `Option<f32>` 线形状）：`null`（上游缺省）或**任何有限数值**。
- *
- * 这里**不施加 `> 0`**：该字段是 producer 的原始透传（arena update subtype 15/16/17 的
- * 原始 f3），producer 没有「正时长」这个 invariant——真实回放会给出 `-0.039` 这样的负
- * finite 值（时长变更事件相对上一刻的差值）。把消费方「可解释定时相位」的语义规则提升成
- * wire contract 会让真实 producer 输出被拒。语义过滤属于消费层（见 `scene/reloadBar.js`
- * 的 `isUsablePhase`），不属于 trust boundary。
- */
 function assertNullableFiniteNumber(v: unknown, path: string): number | null {
   if (v === null) return null
   try {
@@ -121,11 +89,6 @@ function validateReloadEvent(value: unknown, path: string): void {
   if (e.count !== null) assertNonNegativeInteger(e.count, `${path}.count`)
 }
 
-/**
- * method 35（0x23）「当前生效完整装填时长」：`finite && > 0` 是 **producer 自己的**
- * invariant（它表示一个完整装填配置的时长，取值必然为正），故这里是 wire contract 的
- * 合法收紧，与上面 raw `reloads[].duration_s` 的宽松口径不矛盾——两者不是同一个东西。
- */
 function validateReloadEffectiveEvent(value: unknown, path: string): void {
   const e = assertObject(value, path)
   assertFiniteNumber(e.clock, `${path}.clock`)
@@ -134,11 +97,6 @@ function validateReloadEffectiveEvent(value: unknown, path: string): void {
   if (d <= 0) throw new Error(`agent facets: ${path}.duration_s 必须为正数`)
 }
 
-/**
- * Type32 消耗品 lifecycle（v0.4.18 additive）：3D 名牌直接消费 facet 原始事件，
- * 时钟/实体/线码/状态必须在 trust boundary 锁定；派生字段（state_name/duration_s/
- * ends_at/ever_activated/slot/logical_item_id）缺省即旧产物，出现时校验形状。
- */
 function validateConsumableEvent(value: unknown, path: string): void {
   const e = assertObject(value, path)
   assertFiniteNumber(e.clock, `${path}.clock`)
@@ -160,17 +118,12 @@ function validateConsumableEvent(value: unknown, path: string): void {
   }
 }
 
-/** 切面契约版本锁定（v1 切面字段口径沿用；能力拆分见契约 v2 文档） */
 function assertFacetVersion(v: unknown, path: string, expected: number = CONTRACT_VERSION): void {
   if (v !== expected) {
     throw new Error(`agent facets: ${path} = ${String(v)}，不支持的契约版本（期望 ${expected}）`)
   }
 }
 
-/**
- * BattleResult 形状校验：花名册齐备 + 身份键在册。
- * 轻校验（DTO 冻结、字段全透传；时序键出现视为非法形状——结果能力不得物化时序）。
- */
 export function validateAgentBattleResult(value: unknown): AgentBattleResult {
   const r = assertObject(value, 'result')
   assertArray(r.players, 'result.players')
@@ -181,12 +134,6 @@ export function validateAgentBattleResult(value: unknown): AgentBattleResult {
   return value as unknown as AgentBattleResult
 }
 
-/**
- * 录像者初始世界位姿 trust boundary：合法返回只有 `null`（证据不足）或严格三字段对象。
- *
- * `author_eid` 必须是正 u32、`clock` 有限非负、`position` 恰好 3 个有限数值。缺字段、
- * NaN/Infinity、长度漂移一律 throw——不把未知伪装成 `[0,0,0]`，也不做 map/spawn 语义转换。
- */
 export function validateAgentAuthorInitialPosition(value: unknown): AgentAuthorInitialPosition | null {
   if (value === null) return null
   const obj = assertObject(value, 'author_initial_position')
@@ -222,10 +169,6 @@ function assertU32Column(v: unknown, path: string, length: number): number[] {
   return values
 }
 
-/**
- * 录像者相机形状校验（`parseRecorderCamera`）：`null` 是上游结构校验未通过的合法结果；
- * 形状漂移一律 throw，由调用方按「不支持」处理，不做降级补值。
- */
 export function validateAgentRecorderCamera(value: unknown): AgentRecorderCamera | null {
   if (value === null) return null
   const obj = assertObject(value, 'recorder_camera')
@@ -265,10 +208,6 @@ export function validateAgentRecorderCamera(value: unknown): AgentRecorderCamera
   }
 }
 
-/**
- * PlaybackData 形状校验：version === PLAYBACK_CONTRACT_VERSION(2)、meta、必备数组 + v2 新键。
- * 未知键忽略 = 契约的同版本加字段策略；字段级取值语义由类型承载。
- */
 export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   const pb = assertObject(value, 'playback')
   assertFacetVersion(pb.version, 'playback.version', PLAYBACK_CONTRACT_VERSION)
@@ -276,7 +215,6 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   for (const key of ['vehicles', 'shots', 'kills', 'periods', 'visibility']) {
     assertArray(pb[key], `playback.${key}`)
   }
-  // contract v2 additive 能力：在场时必须为数组（aim_frames 上游已移除，不再校验）
   for (const key of ['supremacy_bases', 'supremacy_points', 'assault_bases']) {
     if (pb[key] !== undefined) assertArray(pb[key], `playback.${key}`)
   }
@@ -319,20 +257,15 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       }
     })
   }
-  // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
   if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
     throw new Error('agent facets: playback.assault_objective_present 必须是布尔')
   }
-  // 可破坏地形（additive）：在场时校验为对象/事件数组，字段形状由消费端
-  // scene/destructibles.js 容错（寻址失败逐事件跳过，不 fail 整场回放）
   if (pb.destructible_areas !== undefined) {
     assertArray(pb.destructible_areas, 'playback.destructible_areas')
   }
   if (pb.destructible_events !== undefined) {
     assertArray(pb.destructible_events, 'playback.destructible_events')
   }
-  // 位姿关键帧（additive）：在场时列必须等长且 pos = 3×t（渲染逐帧读取，形状错误会变成
-  // 每帧静默错位而不是一次性失败，故在边界拦下）
   const vehicles = assertArray(pb.vehicles, 'playback.vehicles')
   vehicles.forEach((vehicle, i) => {
     const kf = isObject(vehicle) ? vehicle.pose_kf : undefined
@@ -348,10 +281,6 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       )
     }
   })
-  // 复活生命轨道（additive，上游 v0.4.8）：在场时必须为数组、数值有限、非负且非降序——
-  // 消费端按「死亡 ↔ 复活」交替重建生命史（canonical lifeTransitions / defLifeAt / rosterState），
-  // 形状漂移会静默篡改终态迁移，故在边界拦下。缺省 = 无复活证据（死亡终态，行为与既往逐位一致），
-  // 不据数组长度反推复活模式。
   vehicles.forEach((vehicle, i) => {
     if (!isObject(vehicle)) return
     for (const key of ['death_times', 'resurrection_times'] as const) {
@@ -368,7 +297,6 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       }
     }
   })
-  // 独立炮塔必须带完整的原始实体轨迹。只校验新字段与车辆 eid 的联表，保持旧车辆形状兼容。
   if (pb.detached_turrets !== undefined) {
     const tracks = assertArray(pb.detached_turrets, 'playback.detached_turrets')
     const vehicleEids = new Set(vehicles.filter(isObject).map((vehicle) => vehicle.eid))
@@ -429,7 +357,6 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
         }
         previousTime = time
       }
-      // 每个 AoI 段由 Type5 初帧锚定；末帧后可在段内保持，但不可把未来首帧或段间插值当观测。
       let sample = 0
       for (let j = 0; j < coverage.length; j += 2) {
         if (t[sample] !== coverage[j]) {

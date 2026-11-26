@@ -1,9 +1,3 @@
-// 静态子树矩阵冻结 + 实例化合批行为测试（#827 接替 playbackScene.staticFreeze.test.js
-// 的 :16/:23/:59/:67/:75/:91；:45 PK 与 :101 dynres 装配无 GPU seam 保留源码守卫）：
-// - 装配定型后 bake 世界矩阵并冻结全树（含 mapScenery 根组）；
-// - 合批后原节点摘出渲染图、InstancedMesh 入场景；D_ 损毁态实例隐藏且不进遮挡候选；
-// - poseGlb 逐帧姿态不强制全树 updateMatrixWorld（renderer 根遍历已传播）；
-// - 树倒 = 逐实例矩阵（fallMatrix）+ 倒带复位；同帧多树同批次只触发一次 needsUpdate。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import * as THREE from 'three'
 
@@ -83,10 +77,10 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
       scene.add(m)
       originals.push(m)
     }
-    const dMat = new THREE.MeshBasicMaterial()   // 独立材质 + 独立 geometry：主线的小批跨宫格合并按 geometry/material uuid 分组，位置不再决定批次
+    const dMat = new THREE.MeshBasicMaterial()
     const dNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), dMat)
     dNode.name = 'D_tree_001'
-    dNode.position.set(10, 300, 0)   // 远隔宫格（gltf 地面系 x/y）；独立材质保证 D_ 独占批次
+    dNode.position.set(10, 300, 0)
     scene.add(dNode)
     const ctx: MapAssemblyContext = {
       DATA: {
@@ -113,24 +107,20 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
     expect(result.stale).toBe(false)
     const mapScenery = result.writes.mapScenery as THREE.Group
 
-    // 合批：原节点摘出渲染图（漏摘 = 原 Mesh 照常画一遍，优化失效）
     for (const o of originals) expect(o.parent).toBeNull()
     expect(dNode.parent).toBeNull()
     const instanced = gltfSceneInstanced(scene)
-    expect(instanced.length).toBeGreaterThanOrEqual(2)   // 可见批 + D_ 独立批
+    expect(instanced.length).toBeGreaterThanOrEqual(2)
     expect(mapScenery.parent).toBe(ctx.scene)
 
-    // 冻结：bake 世界矩阵后全树（含 mapScenery 根组与合批节点）matrixAutoUpdate=false
     expect(mapScenery.matrixAutoUpdate).toBe(false)
     expect((scene as THREE.Object3D).matrixAutoUpdate).toBe(false)
     for (const im of instanced) expect(im.matrixAutoUpdate).toBe(false)
 
-    // D_ 损毁态实例初始隐藏（远处 + 微缩矩阵），且该批次不进遮挡候选
     const dBatch = instanced.find((im) => hasHiddenInstance(im))!
     expect(dBatch.visible).toBe(canActivate)
     const occlValues = [...(result.writes.occlGrid as Map<string, unknown[]>).values()].flat()
     expect(occlValues).not.toContain(dBatch)
-    // 可见批次按世界位置 + 半径登记进候选格
     const visibleBatch = instanced.find((im) => !hasHiddenInstance(im))!
     expect(visibleBatch.visible).toBe(true)
     expect(occlValues).toContain(visibleBatch)
@@ -142,7 +132,7 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
     const scene = new THREE.Group()
     const building = new THREE.Mesh(geo, mat)
     building.name = 'building_001'
-    building.position.set(20, 5, 20)   // 足印 0..40 → 16m 格 (0..2)×(0..2) = 9 格
+    building.position.set(20, 5, 20)
     scene.add(building)
     const ctx: MapAssemblyContext = {
       DATA: { meta: { map_id: 6 }, destructible_areas: [], destructible_events: [] },
@@ -155,9 +145,8 @@ describe('assembleMapScenery：矩阵冻结 + 合批摘除 + D_ 隐藏（行为�
     const result = await assembleMapScenery({ scene } as never, ctx)
     const occl = result.writes.occlGrid as Map<string, unknown[]>
     const keys = [...occl.keys()]
-    // 登记半径 = 几何包围球（40m 盒 → r≈28.3 → 足印 -8..48 → 5×5 格）
     expect(keys.length).toBe(25)
-    expect(keys).toContain('0,1')   // 非对角线覆盖格（线段遍历登记会漏的评审 P0 回归）
+    expect(keys).toContain('0,1')
     expect(keys).toContain('2,1')
     for (const list of occl.values()) expect(list).toContain((scene.children[0] as never))
   })
@@ -172,7 +161,7 @@ function hasHiddenInstance(im: THREE.InstancedMesh): boolean {
   const m = new THREE.Matrix4()
   for (let i = 0; i < im.count; i++) {
     im.getMatrixAt(i, m)
-    if (m.elements[13] < -1e5) return true   // 隐藏槽位 y=-1e6
+    if (m.elements[13] < -1e5) return true
   }
   return false
 }
@@ -240,7 +229,6 @@ describe('updateDestructibles：逐实例矩阵倒伏 + 倒带复位 + needsUpda
     const setSpy = vi.fn((v: boolean) => { nu = v })
     Object.defineProperty(mesh.instanceMatrix, 'needsUpdate', { configurable: true, get: () => nu, set: setSpy })
 
-    // 前进越过倒伏窗口：50 槽位逐实例矩阵 ≠ base；同帧同批次只置一次 needsUpdate
     handle.updateDestructibles(11)
     expect(setSpy).toHaveBeenCalledTimes(1)
     expect(nu).toBe(true)
@@ -251,12 +239,10 @@ describe('updateDestructibles：逐实例矩阵倒伏 + 倒带复位 + needsUpda
     const expected = fallMatrix(base(0), st0.pivotPos.x, st0.pivotPos.y, st0.pivotPos.z, axis, frame.angle, new THREE.Matrix4())
     const applied = new THREE.Matrix4()
     mesh.getMatrixAt(0, applied)
-    // 逐实例矩阵 = T(p)·R·T(−p)·base（逐元素近似比对，避免浮点位图差异）
     for (let k = 0; k < 16; k++) expect(applied.elements[k]).toBeCloseTo(expected.elements[k], 5)
-    expect(st0.fallQuat.w).not.toBe(1)            // settled 自校验的 fallQuat 同步维护
+    expect(st0.fallQuat.w).not.toBe(1)
     expect((handle.destruct() as { animating: boolean }).animating).toBe(true)
 
-    // 倒带（seek 后退）：恢复 base 直立矩阵、fallQuat 归位、游标重置
     handle.updateDestructibles(5)
     expect(setSpy).toHaveBeenCalledTimes(2)
     const back = new THREE.Matrix4()
@@ -318,7 +304,6 @@ describe('poseGlb：逐帧姿态不强制全树 updateMatrixWorld（renderer 根
     const rt = createVehicleRuntime(deps)
     const worldSpy = vi.spyOn(THREE.Object3D.prototype, 'updateMatrixWorld')
     rt.poseGlbRig(v, 5, new THREE.Vector3(1, 0, 2))
-    // 纯重（compose/multiply 本地矩阵），根位姿与炮塔矩阵已写，但不强制全树刷新
     expect(worldSpy).not.toHaveBeenCalled()
     expect((v as unknown as { glb: THREE.Group }).glb.position.equals(new THREE.Vector3(1, 0, 2))).toBe(true)
     expect((v as unknown as { glbParts: { poseT: THREE.Matrix4 } }).glbParts.poseT).not.toEqual(new THREE.Matrix4())

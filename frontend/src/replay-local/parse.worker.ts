@@ -1,8 +1,4 @@
 /// <reference lib="webworker" />
-/**
- * 回放解析 Worker：在后台线程跑上游 Rust Core WASM `parseResult`，主线程只收进度与结果，
- * 批量拖入几十场回放时页面不卡顿。文件不出本机。
- */
 import { loadAgentWasmModule, parseAgentResultFromBytes } from '../api/agent-replay-facets.js'
 import type { ParseMessage, ParseRequest } from './parseWorkerProtocol.js'
 

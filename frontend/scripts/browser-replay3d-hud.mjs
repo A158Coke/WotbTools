@@ -1,15 +1,3 @@
-/**
- * Replay3D HUD SegmentedControl 布局浏览器门禁（真实浏览器 computed style，不是源码正则）。
- *
- * 锁定的 invariant（接替 replay3d-hud-layout.test.js 的源码断言，#827）：
- * - 受限宽度（240px 夹具容器 + 8 个选项）下选项不得被 flex 压缩：computed flex-shrink 0 /
- *   flex-basis auto（源码 `flex: none`），容器单行横向可滚动（overflow-x: auto）；
- * - pointer: coarse 档：每个选项的点击区域必须抬到 --hit-min（design-language §5），
- *   computed min-height / min-width ≥ token 值。
- *
- * 夹具 scripts/browser-fixtures/replay3d-hud.html 挂载 canonical SegmentedControl
- * （Replay3DPane / ReplayCapabilityTabs 的 HUD 选项条即该组件），不 mock 任何样式。
- */
 import assert from 'node:assert/strict'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
@@ -17,7 +5,6 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 const FINE_POINTER = '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'
 
-/** 页面内探针：选项条的 computed flex / 滚动几何与 hit token。 */
 function hudProbe() {
   const bar = document.querySelector('.segmented')
   if (!bar) return null
@@ -49,7 +36,6 @@ function hudProbe() {
 
 const check = (failures, ok, message) => { if (!ok) failures.push(message) }
 
-/** fine 指针 + 受限宽度：flex:none 不收缩，单行横向滚动。 */
 async function runConstrainedLayout(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -66,7 +52,6 @@ async function runConstrainedLayout(env) {
       check(failures, option.flexBasis === 'auto', `option ${index} must keep intrinsic basis (flex-basis ${option.flexBasis})`)
       check(failures, option.width > 0, `option ${index} must keep a positive intrinsic width`)
     }
-    // 行为证据：滚到末尾后最后一个选项完整可见（单行滚动而不是裁切/换行）。
     const end = await page.evaluate(`(() => {
       const bar = document.querySelector('.segmented')
       bar.scrollLeft = bar.scrollWidth
@@ -83,7 +68,6 @@ async function runConstrainedLayout(env) {
   return failures
 }
 
-/** coarse 指针：触控命中面积抬到 --hit-min。 */
 async function runCoarseHitTargets(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -105,7 +89,6 @@ async function runCoarseHitTargets(env) {
   return failures
 }
 
-/* ------------------------------------------------------------------ main */
 
 const chromeBinary = findChrome()
 const { server, origin } = await startFixtureServer({})

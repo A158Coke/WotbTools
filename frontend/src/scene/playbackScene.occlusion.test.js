@@ -8,20 +8,20 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
   it('同一格内的短线段 → 单格；跨格 → 首尾格都在集合里', () => {
     expect([...occlusionCells(2, 2, 6, 6, 16)]).toEqual(['0,0'])
     const c = [...occlusionCells(5, 5, 40, 5, 16)]
-    expect(c).toContain('0,0')   // 起点格
-    expect(c).toContain('2,0')   // 终点格（40/16 = 2）
+    expect(c).toContain('0,0')
+    expect(c).toContain('2,0')
     expect(c.length).toBeGreaterThanOrEqual(3)
   })
 
   it('负坐标与轴向线段：只占一行/一列格（不撒满平面）', () => {
     const c = [...occlusionCells(-20, -20, -20, 20, 16)]
     expect(c.every((k) => k.endsWith(',-2') || k.endsWith(',-1') || k.endsWith(',1') || k.endsWith(',0'))).toBe(true)
-    expect(new Set(c.map((k) => k.split(',')[0])).size).toBe(1)   // x 恒为 -2
+    expect(new Set(c.map((k) => k.split(',')[0])).size).toBe(1)
   })
 
   it('采样步长 ≤ 半格：长线段不漏格（相邻格键在 x 或 y 上连续）', () => {
     const c = [...occlusionCells(0, 0, 160, 0, 16)]
-    expect(c.length).toBeGreaterThanOrEqual(11)        // 0..10 格
+    expect(c.length).toBeGreaterThanOrEqual(11)
     expect(c).toContain('10,0')
   })
 })
@@ -29,15 +29,13 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
 describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', () => {
   it('格内小遮挡物 → 单格；跨格大建筑 → 矩形全枚举（含非对角线格）', () => {
     expect(occlusionFootprintCells(2, 2, 6, 6, 16)).toEqual(['0,0'])
-    const c = occlusionFootprintCells(0, 0, 40, 40, 16)   // 40m 建筑 → 0..2 × 0..2
+    const c = occlusionFootprintCells(0, 0, 40, 40, 16)
     expect(c).toHaveLength(9)
     expect(c).toContain('0,1')
     expect(c).toContain('2,1')
   })
 
   it('评审 P0 回归：大遮挡物跨多格时，非对角线覆盖格必须在表内（线段遍历登记会漏）', () => {
-    // 40m 建筑足印 0..40；格子 (0,1)（足印西北角）不在包围盒对角线上——
-    // 旧实现用线段 DDA 登记只采样对角线，穿 (0,1) 的相机→标签射线查不到该遮挡物
     const diag = occlusionCells(0, 0, 40, 40, 16)
     const fp = occlusionFootprintCells(0, 0, 40, 40, 16)
     expect(fp).toContain('0,1')
@@ -52,22 +50,17 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 })
 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
-  // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
   const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.ts'), 'utf8')
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {
-    // #820 Step 2：updateDestructibles owner = playback/mapWorld.ts
     const mapWorldSrc = readFileSync(resolve(__dirname, 'playback/mapWorld.ts'), 'utf8')
     expect(mapWorldSrc).toMatch(/if \(T < destruct\.lastT\) \{[\s\S]{0,80}destruct\.ptr = 0;[\s\S]{0,400}st\.prop === 3\) st\.settled = false;[\s\S]{0,40}\}\s*destruct\.lastT = T;/)
   })
 })
 
 describe('Sniper 穿深着色接线', () => {
-  // 2026-11-22：逐帧渲染编排出仓 playback/renderLoop.js，画质/着色开关注入在
-  // playback/sceneState.js，公开设置器在 playback/publicApi.js（守卫随实现迁移）。
   const renderLoopSrc = readFileSync(resolve(__dirname, 'playback/renderLoop.ts'), 'utf8')
   const stateSrc = readFileSync(resolve(__dirname, 'playback/sceneState.ts'), 'utf8')
   const apiSrc = readFileSync(resolve(__dirname, 'playback/publicApi.ts'), 'utf8')
-  // #820 Step 4：录像者相机/穿深着色 owner = playback/cameraRuntime.ts（守卫随实现迁移）
   const cameraSrc = readFileSync(resolve(__dirname, 'playback/cameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   const recorderSrc = readFileSync(resolve(__dirname, 'playback/recorderCameraRuntime.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
   const cameraArmorSrc = readFileSync(resolve(__dirname, 'playback/cameraArmorHighlight.ts'), 'utf8').replace(/\/\/[^\n]*/g, '')
@@ -92,7 +85,6 @@ describe('Sniper 穿深着色接线', () => {
   })
 
   it('悬挂改写履带顶点后只打标记，不在主路径重算或置空 bounds', () => {
-    // Suspension geometry is owned by vehicleModelPose.
     const vehicleSrc = readFileSync(resolve(__dirname, 'playback/vehicleModelPose.ts'), 'utf8')
     expect(vehicleSrc).toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
     expect(vehicleSrc.replace('markPickBoundsStale(gp.mesh.geometry);', '')).not.toMatch(/gp\.posAttr\.needsUpdate = true;\s+markPickBoundsStale\(gp\.mesh\.geometry\);/)
@@ -151,8 +143,6 @@ describe('Sniper 穿深着色接线', () => {
     expect(hl).toMatch(/bindBuffers\(target, camera, spacedRect\)/)
     const shaders = ['viewer/armorShaders.ts', 'viewer/armorPrimaryShader.ts'].map(path => readFileSync(resolve(__dirname, path), 'utf8')).join('\n')
     expect(shaders).toMatch(/uniform vec4 spacedRect/)
-    // review R1 blocker：全画面 UV → **rect 局部** RT UV（rect 左下 → (0,0)，右上 → (1,1)）；
-    // 反向公式（sc*zw+xy）会让整车错误采样 RT 中央一小块
     expect(shaders).toMatch(/\(sc - spacedRect\.xy\) \/ spacedRect\.zw/)
     expect(shaders).not.toMatch(/sc \* spacedRect\.zw \+ spacedRect\.xy/)
     expect(shaders).toMatch(/spacedRect: \{ value: new THREE\.Vector4\(0, 0, 1, 1\) \}/)
@@ -170,11 +160,9 @@ describe('Sniper 穿深着色接线', () => {
     const start = cameraArmorSrc.indexOf('function occluderRoots')
     expect(start).toBeGreaterThanOrEqual(0)
     const body = cameraArmorSrc.slice(start, cameraArmorSrc.indexOf('function ', start + 20))
-    // 地形/场景 GLB/占位地面 + 每车低模组、GLB、飞炮塔
     expect(body).toMatch(/deps\.mapWorld\.terrainMesh\(\), deps\.mapWorld\.mapScenery\(\), deps\.mapWorld\.mapPlane\(\), deps\.mapWorld\.groundMesh\(\)/)
     expect(body).toContain('v.glb')
     expect(body).toContain('detachedTurrets')
-    // v.glb 是 v.group 的场景级兄弟，两者都必须在根清单里
     expect(body).toContain('v.group')
     expect(cameraArmorSrc).toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)
     expect(cameraArmorSrc.replace('occluderRoots: occluderRoots(target.def.eid as number)', '')).not.toMatch(/occluderRoots: occluderRoots\(target\.def\.eid as number\)/)

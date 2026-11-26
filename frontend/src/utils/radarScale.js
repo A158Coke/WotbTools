@@ -1,9 +1,3 @@
-/**
- * Presentation-only Radar scales.
- *
- * Business score/raw values stay untouched. V2 keeps the relative log scale;
- * League V6 uses the bounded average=75 / authoritative max=150 scale.
- */
 export const RADAR_AVERAGE_VALUE = 75
 export const RADAR_STRONG_VALUE = 100
 export const RADAR_DISPLAY_CAP = 150
@@ -24,11 +18,6 @@ export function radarVisualValue(playerRaw, referenceRaw) {
   return Math.min(RADAR_DISPLAY_CAP, Math.max(0, visual))
 }
 
-/**
- * League-only bounded presentation scale. The current comparison-group average is
- * the regular 75 ring and the authoritative League dimension max is 150.
- * Rating formulas/raw values stay untouched.
- */
 export function radarBoundedVisualValue(playerRaw, referenceRaw, maxRaw) {
   if (!isFiniteRaw(playerRaw) || !isFiniteRaw(referenceRaw) || !isFiniteRaw(maxRaw)) return null
   const player = playerRaw
@@ -45,7 +34,6 @@ export function radarRadiusRatio(visualValue) {
   return Math.min(1, Math.max(0, visualValue / RADAR_DISPLAY_CAP))
 }
 
-/** Resolve the 0..150 score consumed by chart labels and score-mode details. */
 export function radarAxisVisualScore(axis) {
   if (axis?.available !== true) return null
   if (isFiniteRaw(axis.visualValue)) {
@@ -97,20 +85,11 @@ function scaleSeries(metrics, reference, resolveVisualValue) {
   return { metrics: scaledMetrics, reference: scaledReference }
 }
 
-/**
- * Scales player/reference axes together while preserving raw/display values.
- * Returned reference axes follow player order and form a regular 75 ring.
- */
 export function scaleRadarSeries(metrics = [], reference = []) {
   return scaleSeries(metrics, reference,
     (metric, ref) => radarVisualValue(metric.rawValue, ref.rawValue))
 }
 
-/**
- * League-only series scaler. Unlike scaleRadarSeries (V2 relative scale), this
- * consumes authoritative League column maxima so every dimension max maps to
- * the invisible 150 boundary.
- */
 export function scaleBoundedRadarSeries(metrics = [], reference = [], maxByKey = {}) {
   return scaleSeries(metrics, reference, (metric, ref) =>
     radarBoundedVisualValue(metric.rawValue, ref.rawValue, Number(maxByKey?.[metric?.key])))

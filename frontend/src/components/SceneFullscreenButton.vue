@@ -1,11 +1,4 @@
 <script setup lang="ts">
-// 场景全屏按钮的单一呈现组件：Maximize/Minimize 图标、aria-pressed、既有
-// `recon.map.playback.enter_fullscreen/exit_fullscreen` 文案。四个场景宿主
-// （Map Preview 2D/3D、Replay 2D/3D）共用；全屏状态事实源仍归
-// usePlaybackFullscreen（本组件不持有任何状态）。
-//
-// floating：绝对定位到宿主根（= 全屏 target）右上角——移动端统一入口位置；
-// 桌面沿用宿主既有位置（如 PlaybackTransport 内联按钮）时传 floating=false。
 import { Maximize, Minimize } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
@@ -57,7 +50,6 @@ const { t } = useI18n()
   outline-offset: var(--focus-outline-offset);
 }
 
-/* 右上角浮动位（移动端统一契约）：宿主根必须可定位（fullscreen target 自身）。 */
 .scene-fs-btn.floating {
   position: absolute;
   top: var(--space-2);
@@ -65,7 +57,6 @@ const { t } = useI18n()
   z-index: var(--z-sticky);
 }
 
-/* 短视口横屏紧凑档：按钮的 --control-h-sm 是 32px，场景里仍要保证 40×40 可点。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   [data-scene-surface] .scene-fs-btn {
     min-height: var(--hit-min-comfortable);

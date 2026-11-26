@@ -1,11 +1,9 @@
 <script setup>
-// 2D adapter for the shared primary Playback composition.
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
 import PlaybackTransport from './PlaybackTransport.vue'
 
 defineOptions({ name: 'PlaybackControls' })
 
-// Phone form only controls intrinsic button density; speed disclosure is shared in all forms.
 const { isPhone } = usePlaybackPhoneForm()
 
 const props = defineProps({
@@ -17,18 +15,13 @@ const props = defineProps({
   duration: { type: Number, default: 0 },
   fullscreenSupported: Boolean,
   isFullscreen: Boolean,
-  /** 全屏入口由宿主右上角浮动按钮呈现：不在传输条里重复渲染（见 PlaybackTransport）。 */
   floatingFullscreen: Boolean,
   formatClock: { type: Function, required: true },
-  /** 透传给 PlaybackTransport：控制条当前是否可见（决定是否托管菜单入口）。 */
   navEligible: { type: Boolean, default: true },
-  /** 名册浮层入口（横屏 / 桌面才有）：竖屏名册在纵向流里，不需要这个入口。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
-  /** 时间轴刻度（与 3D 同一份 scenePlayback 换算产物）：缺省空 = 无刻度数据。 */
   shotTicks: { type: Array, default: () => [] },
   killTicks: { type: Array, default: () => [] },
-  /** 是否渲染事件刻度层（回放面板统一开关；默认关闭，不影响时间轴 seek）。 */
   showEventMarkers: { type: Boolean, default: false },
 })
 

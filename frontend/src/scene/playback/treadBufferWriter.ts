@@ -1,43 +1,23 @@
-// 履带印 GPU Buffer 写入器（#820 Wave B4A 自 playbackScene.js 出仓）。
-//
-// 单一职责：把**已存在**的 TrailState（路径事实由 treadMarks.ts 生成、updateTrails() 拥有）
-// 投影为动态合并几何的 position/color Buffer——槽位编排、显示权切换、fround 量化门控、
-// needsUpdate / setDrawRange 全在这里；不生成路径、不拥有 mesh 生命周期、无任何状态副本。
-//
-// Buffer 布局契约（ensureTreadMesh 侧固定）：50 槽/侧、左右交错
-// —— 第 k 个已提交戳占槽 2k（L）/ 2k+1（R），槽内 position 4 顶点 ×3、color 4 顶点 ×4
-// （rgb 恒 1，a = 寿命 alpha）；活戳槽 = total % cap（50 槽含 active，无第 51 槽）。
 import type { BufferAttribute, BufferGeometry } from 'three'
 import { openStampOf, trailStampCorners, treadAlphaAt } from '../treadMarks.js'
 import type { TrailState } from '../treadMarks.js'
 
-/** 两侧履带的路径态（playbackScene 的 v.trail）。 */
 export interface TrailPair {
   L: TrailState
   R: TrailState
 }
 
-/** writeTreadBuffer / ageTreadBuffer 共用的显式输入：全部事实由调用方提供。 */
 export interface TreadBufferInput {
-  /** treadMesh.geometry（动态合并几何，槽位布局见文件头契约） */
   geometry: BufferGeometry
   trail: TrailPair
-  /** 印记条带宽（m，v.tread.width） */
   width: number
-  /** 纹理 texScale（v.tread.texScale） */
   texScale: number
-  /** 回放时钟 T（暂停时冻结 ⇒ 淡出冻结） */
   now: number
-  /** 地形高度采样（heightField 就绪时 = sampleHeight，否则恒 0） */
   heightAt: (x: number, z: number) => number
-  /** 单侧环容量（TRAIL_CAP_PER_SIDE = TREAD_RING = 50，含活戳） */
   cap: number
-  /** 总槽位（TRAIL_SLOTS = cap × 2），决定 drawRange */
   slots: number
 }
 
-/** 槽位 alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——比较必须
- * 按同一量化值（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick 重新上传） */
 function alphaAt(input: TreadBufferInput, t: number): number {
   return Math.fround(treadAlphaAt(input.now - t) * (input.texScale || 1));
 }
@@ -71,12 +51,7 @@ export function writeTreadBuffer(input: TreadBufferInput): boolean {
     }
   };
   for (const st of [trail.L, trail.R]) {
-    const quad = st === trail.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
-    // 环满时的显示权切换点 = **active 激活**（open != null，即净位移已达 0.3 m），
-    // 不是上一次提交完成时——客户端 0x3632a54 的语义：< 0.3 m 时 active 不占 write 槽
-    // 的显示权，最老 committed 槽继续显示（第 50 次提交后仍应有 50 个可见槽）。
-    // open 存在时 write 槽（= total % cap）才切给活戳并顶掉最老 committed 槽；
-    // 提交循环跳过该槽（否则会把活戳 alpha 顶回旧戳值）。（四轮 review P2 边界）
+    const quad = st === trail.L ? 0 : 1;
     const writeSlot = ((st.total % cap) + cap) % cap;
     const openActive = !!openStampOf(st);
     for (let k = st.written; k < st.total; k++) {
@@ -84,7 +59,6 @@ export function writeTreadBuffer(input: TreadBufferInput): boolean {
       if (openActive && slot === writeSlot && st.total >= cap) continue;
       const seg = st.segs[slot];
       if (!seg) {
-        // 防御：未定型槽（理论不可达——total 只计已提交）显式隐藏
         const co = slot * 32 + quad * 16;
         if (carr[co + 3] !== 0) {
           carr[co + 3] = 0; carr[co + 7] = 0; carr[co + 11] = 0; carr[co + 15] = 0;
@@ -103,17 +77,11 @@ export function writeTreadBuffer(input: TreadBufferInput): boolean {
       wrote = true;
     }
     st.written = st.total;
-    // 环内空槽显式隐藏（k ∈ [total, cap)：环形里可能残留上一轮更长运行的旧戳）。
-    // openSlot（若 active 存在）跳过——否则先清 0 再被活戳块写回，paused/static tick
-    // 也会无意义地标脏重传（四轮 review P3）。
     const openSlotNow = st.total % cap;
     for (let k = Math.min(st.total, cap); k < cap; k++) {
       if (openActive && k === openSlotNow) continue;
       hideQuads((k % cap) * 32 + quad * 16);
     }
-    // 活戳 = write 槽（= total % cap，cap 槽含 active——客户端 0x727b80 同构，无第 51 槽）。
-    // 逐帧写入拉伸中的活戳（位置 + alpha），位置按 fround 变化检测——静止且时钟未动时
-    // 零上传（与环槽同一门控）；无活戳（未起步/未激活/已复位）则隐藏该槽。
     const openSlot = st.total % cap;
     const pos0 = openSlot * 24 + quad * 12;
     const col0 = openSlot * 32 + quad * 16;
@@ -133,9 +101,6 @@ export function writeTreadBuffer(input: TreadBufferInput): boolean {
         }
       }
     } else if (openActive || st.total < cap) {
-      // ownership 三态：active 已激活但几何无效，或环未满且无 active 时，这个 write 槽
-      // 不属于历史 committed，必须隐藏；环已满 + open==null 时 write 槽仍由最老
-      // committed 占有，不能在这里清零（review 七轮 P2）。
       hideQuads(col0);
     }
   }
@@ -165,13 +130,9 @@ export function ageTreadBuffer(input: TreadBufferInput): boolean {
     const openActive = !!openStampOf(st);
     for (let k = k0; k < st.total; k++) {
       const slot = k % cap;
-      // 活戳槽：**仅当 active 已激活**显示权才切给活戳（四轮 review P2 边界：
-      // open == null 时该槽仍显示最老 committed，老化照常按旧戳计算）
       if (openActive && slot === writeSlot && st.total >= cap) continue;
       const co = slot * 32 + quad * 16;
       const seg = st.segs[slot];
-      // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，拿
-      // double 严格比较恒不相等 ⇒ 时钟没动也每 tick 标脏重传。
       const a = seg ? Math.fround(treadAlphaAt(input.now - seg.t) * (input.texScale || 1)) : 0;
       for (let q = 0; q < 4; q++) {
         if (carr[co + q * 4 + 3] !== a) {

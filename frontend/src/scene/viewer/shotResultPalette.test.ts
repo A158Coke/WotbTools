@@ -1,5 +1,3 @@
-// 装甲结果语义色单源：角色映射、标定色相与受控亮变体、调试标注调色板。
-// 色相偏差 ≤10°：亮变体只允许提高明度/彩度，不能漂移语义色相。
 import { describe, expect, it } from 'vitest'
 import {
   ANNOTATION_COLORS, RESULT_CSS_VAR, RICOCHET_HEATMAP_HUE_COLOR, SCENE_RESULT_COLORS,
@@ -7,7 +5,6 @@ import {
   resultRoleForOutcome, sceneResultColor,
 } from './shotResultPalette.js'
 
-/** sRGB hex → HSL 色相（度）。 */
 function hueOf(hex: number): number {
   const r = ((hex >> 16) & 0xff) / 255
   const g = ((hex >> 8) & 0xff) / 255
@@ -51,21 +48,16 @@ describe('shotResultPalette · 角色映射', () => {
     expect(role({ penetrated: true }, false)).toBe('PENETRATION')
     expect(role({ ricochet: true }, false)).toBe('RICOCHET')
     expect(role({}, false)).toBe('BLOCKED')
-    // 概率模式：接触点表达当前层自身状态，不继承前层累计概率。
     expect(role({ layerChance: 0 }, true)).toBe('BLOCKED')
     expect(role({ layerChance: 0.5 }, true)).toBe('MAY_PENETRATE')
     expect(role({ layerChance: 1 }, true)).toBe('PENETRATION')
     expect(role({ chance: 0.5, layerChance: 1 }, true)).toBe('PENETRATION')
-    // 跳弹层优先于概率（跳弹紫不能被累计/局部概率染成黄/绿）。
     expect(role({ ricochet: true, layerChance: 1 }, true)).toBe('RICOCHET')
-    // 未到达层中性灰（与卡片行同优先级；未到达不冒充跳弹/挡下）。
     expect(role({ reached: false, layerChance: 1 }, true)).toBe('UNREACHED')
     expect(role({ reached: false, penetrated: true }, false)).toBe('UNREACHED')
     expect(role({ reached: false, ricochet: true }, false)).toBe('UNREACHED')
-    // 无主装甲门禁 / 续飞局部概率：与卡片行同口径。
     expect(role({ penetrated: true }, false, { blockedNoPrimary: true })).toBe('BLOCKED')
     expect(role({}, false, { partialChance: 0.5 })).toBe('MAY_PENETRATE')
-    // 缺 layerChance 时兼容旧输入（累计 chance）。
     expect(role({ chance: 0 }, true)).toBe('BLOCKED')
   })
 
@@ -85,17 +77,14 @@ describe('shotResultPalette · 角色映射', () => {
 
 describe('shotResultPalette · 标定色相', () => {
   it('3D 亮变体与语义 token 的色相偏差 ≤10°（只提亮，不换色相）', () => {
-    // token 取深色场景档（color.css 的 --color-success/warning/danger）。
     expect(circularDelta(hueOf(SCENE_RESULT_COLORS.PENETRATION), hueOf(0x5cc280))).toBeLessThanOrEqual(10)
     expect(circularDelta(hueOf(SCENE_RESULT_COLORS.MAY_PENETRATE), hueOf(0xf5ca76))).toBeLessThanOrEqual(10)
     expect(circularDelta(hueOf(SCENE_RESULT_COLORS.BLOCKED), hueOf(0xf2786d))).toBeLessThanOrEqual(10)
-    // 跳弹紫与热力图跳弹高亮同色相（#ff00ff = 300°），只提亮不换色相。
     expect(circularDelta(
       hueOf(SCENE_RESULT_COLORS.RICOCHET),
       hueOf(RICOCHET_HEATMAP_HUE_COLOR),
     )).toBeLessThanOrEqual(10)
     expect(circularDelta(hueOf(RICOCHET_HEATMAP_HUE_COLOR), 300)).toBeLessThanOrEqual(1)
-    // HE 溅射橙落在 warning(≈40°) 与 danger(≈5°) 之间（跳弹紫已独立，不再复用它）。
     expect(circularDelta(hueOf(SCENE_RESULT_COLORS.SPLASH), hueOf(0xff9b3d))).toBeLessThanOrEqual(1)
     const splash = hueOf(SCENE_RESULT_COLORS.SPLASH)
     expect(splash).toBeGreaterThan(hueOf(0xf2786d))

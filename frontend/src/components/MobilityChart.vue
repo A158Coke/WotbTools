@@ -63,7 +63,6 @@ watch(() => [lines.value.map(line => line.key), props.loading] as const, ([keys,
 const visible = computed(() => lines.value.filter(l => !hidden.value.includes(l.key) && (!isolated.value || l.key === isolated.value)))
 const readings = computed(() => rankCurveReadings(visible.value, cursor.value))
 const readingsOpen = ref(false)
-// The covered plot keeps its last rendered time; the dialog owns no second cursor.
 const plotCursor = computed<number>(previous => readingsOpen.value ? previous ?? cursor.value : cursor.value)
 const expandedReadings = ref(false)
 let consumeAltUp = false
@@ -169,8 +168,6 @@ const tipPosition = computed(() => {
   return { [before ? 'right' : 'left']: (before ? W.value - at : at) + 'px',
     '--tip-space': (before ? at : W.value - at) + 'px' }
 })
-// Cache the drawing for each run while other vehicles finish loading. Physics samples
-// remain full precision for the cursor, speed bounds and intersections.
 const drawing = new WeakMap<Run, { view: string; points: string }>()
 const paths = computed(() => {
   const [lo, hi] = extent.value

@@ -9,7 +9,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key, te: () => false, locale: { value: 'zh' } })
 }))
 
-// ResizeObserver mock（happy-dom 无真实布局）：捕获回调供 Test D/E 手动触发宽度变化
 let roCallback = null
 class MockResizeObserver {
   constructor(cb) { roCallback = cb }
@@ -46,7 +45,6 @@ function mountTable(battle, cols) {
 
 describe('BattleTable columns', () => {
   it('B6：已退役的 contribution/kast/impact 不再被 % 特殊化（列层已移除）', () => {
-    // 回归锁：即使旧 wire 数据里残留这些 key，组件也不得再有派生 % 展示
     const wrapper = mountTable(makeBattle([
       { team: 1, accountId: 1001, vehicleId: 7169, cells: { nickname: 'A', damage_dealt: 3000, contribution: 22.4, kast: 100, impact: 151.2 } }
     ]), [
@@ -59,7 +57,6 @@ describe('BattleTable columns', () => {
     const text = wrapper.text()
     expect(text).not.toContain('22.4%')
     expect(text).not.toContain('151.2%')
-    // 列值按原始值渲染（不再有派生 % 展示）
     expect(text).toContain('22.4')
   })
 
@@ -70,11 +67,8 @@ describe('BattleTable columns', () => {
       { key: 'pen_rate', num: true }
     ]
     const wrapper = mountTable(makeBattle([
-      // shots=10 hits=5 pens=4 → 命中率 50，击穿率 80
       { team: 1, accountId: 1, vehicleId: 1, cells: { nickname: 'A', hit_rate: 50, pen_rate: 80 } },
-      // shots=0 → 无射击 → null（unavailable，显示 --，禁止 0/0 伪装 0%）
       { team: 1, accountId: 2, vehicleId: 2, cells: { nickname: 'B', hit_rate: null, pen_rate: null } },
-      // shots=10 hits=0 → 命中率 0（合法），击穿率 null
       { team: 1, accountId: 3, vehicleId: 3, cells: { nickname: 'C', hit_rate: 0, pen_rate: null } }
     ]), cols)
 
@@ -91,8 +85,6 @@ describe('BattleTable columns', () => {
       { team: 1, accountId: 2, vehicleId: 2, cells: { nickname: 'B', damage_dealt: 2000, hit_rate: 9 } },
       { team: 1, accountId: 3, vehicleId: 3, cells: { nickname: 'C', damage_dealt: 1000, hit_rate: 21 } }
     ]), makeCols())
-    // 排序状态由父组件持有（props 单一事实源 + update 事件回写，见 ReplayPage battleSorts）：
-    // 测试模拟父组件把 update 事件回灌 props
     const applySort = async () => {
       const emitted = wrapper.emitted()
       await wrapper.setProps({
@@ -101,14 +93,12 @@ describe('BattleTable columns', () => {
       })
     }
 
-    // click hit_rate header -> ascending numeric
     const th = wrapper.findAll('th').find(t => t.text().includes('hit_rate'))
     await th.trigger('click')
     await applySort()
     let firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
     expect(firstCols.at(2).text()).toBe('9')
 
-    // click again -> descending
     await th.trigger('click')
     await applySort()
     firstCols = wrapper.findAll('tbody tr').at(0).findAll('td')
@@ -116,7 +106,6 @@ describe('BattleTable columns', () => {
   })
 })
 
-// ---- League Rating：概览、Rating 单元格、MVP 徽标、sticky 列、队名编辑 ----
 
 function makeLeagueBattle() {
   return {
@@ -170,11 +159,9 @@ function mountLeague(battle, cols, teamNames, extraProps = {}) {
 describe('BattleTable League Rating', () => {
   it('renders league overview with auto team names and ratings', () => {
     const wrapper = mountLeague(makeLeagueBattle())
-    // 自动多数军团标签在队名输入框 value 中
     const inputs = wrapper.findAll('input.team-name-input')
     expect(inputs[0].element.value).toBe('AAA')
     expect(inputs[1].element.value).toBe('BBB')
-    // 战队 Rating 展示保留 1 位小数，不显示冗余 /1000 完成度
     const text = wrapper.text()
     expect(text).toContain('880.5')
     expect(text).not.toContain('88.1%')
@@ -183,8 +170,8 @@ describe('BattleTable League Rating', () => {
   it('renders MVP and team best badges', () => {
     const wrapper = mountLeague(makeLeagueBattle())
     const text = wrapper.text()
-    expect(text).toContain('MVP')          // A 全场 MVP
-    expect(text).toContain('★')            // B 队2 队内最佳
+    expect(text).toContain('MVP')
+    expect(text).toContain('★')
   })
 
   it('总 Rating 在前端展示层保留 1 位小数，不显示 /1000 冗余完成度', () => {
@@ -204,11 +191,9 @@ describe('BattleTable League Rating', () => {
       { team: 1, accountId: 1002, vehicleId: 10785, cells: { nickname: 'B', league_rating: 927.8, league_damage_score: 350.2, damage_dealt: 3100 } },
     ]
     const wrapper = mountLeague(battle, leagueCols())
-    // 展示保留 1 位小数，不显示更多后端精度或百分比
     expect(wrapper.text()).toContain('927.4')
     expect(wrapper.text()).toContain('927.8')
     expect(wrapper.text()).not.toMatch(/92\.7%/)
-    // 点击 Rating 表头 ASC：raw 927.4 排在 raw 927.8 之前
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     const firstRow = wrapper.findAll('tbody tr').at(0)
@@ -233,8 +218,6 @@ describe('BattleTable League Rating', () => {
     expect(damageTh.classes()).not.toContain('sticky-col')
   })
 
-  // ---- sticky lifecycle：hidden→visible remeasure / ResizeObserver / zero-width protection
-  //       （left:0px 也会通过——必须断言具体测量值） ----
 
   function stubNickWidth(wrapper, width) {
     const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
@@ -243,7 +226,6 @@ describe('BattleTable League Rating', () => {
   }
 
   async function flushSticky() {
-    // 组件：nextTick → rAF（happy-dom 用 setTimeout 模拟）→ stickyLeft 写入 → 下一次 render 反映到 style
     await nextTick()
     await new Promise(resolve => setTimeout(resolve, 20))
     await nextTick()
@@ -267,7 +249,6 @@ describe('BattleTable League Rating', () => {
     const ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     expect(nickTh.attributes('style')).toContain('left: 0px')
     expect(ratingTh.attributes('style')).toContain('left: 132px')
-    // 两队的 sticky 玩家/Rating cell 必须带 team semantic class（不丢队色）
     const stickyT1 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t1'))
     const stickyT2 = wrapper.findAll('tbody td').filter(td => td.classes().includes('sticky-t2'))
     expect(stickyT1.length).toBeGreaterThan(0)
@@ -356,24 +337,19 @@ describe('BattleTable League Rating', () => {
     expect(wrapper.emitted('select-player')).toBeUndefined()
   })
 
-  // ---- leagueMode（CW UI）与 league（Rating 结果）是两个独立状态 ----
 
   it('leagueMode=true + league=null（Rating-ineligible CW 场）：仍是 CW——点击打开 Drawer、Rating 显示 --、sticky 契约保持', async () => {
     const battle = makeLeagueBattle()
-    battle.league = null // 本场未评分（如名册不完整），但仍是 CW
+    battle.league = null
     const wrapper = mountLeague(battle, leagueCols())
-    // 概览仍渲染（CW UI），但 Rating/MVP 不伪造
     const text = wrapper.text()
     expect(text).toContain('league.title')
-    expect(text).not.toContain('88.1%') // 战队 Rating 不得伪造
-    expect(text).not.toContain('MVP')   // 无 MVP 徽标（league null）
-    // Rating 单元格显示 '--'（不得 0 · 0%）
+    expect(text).not.toContain('88.1%')
+    expect(text).not.toContain('MVP')
     expect(text).toContain('--')
-    // sticky 契约：nickname + league_rating 仍 sticky
     const ths = wrapper.findAll('th')
     expect(ths.find(t => t.text().includes('nickname')).classes()).toContain('sticky-col')
     expect(ths.find(t => t.text().includes('league_rating')).classes()).toContain('sticky-col')
-    // 点击玩家行 → 仍打开 Drawer（Rating-ineligible 场）
     const rowA = wrapper.findAll('tbody tr').find(r => r.text().includes('A'))
     await rowA.trigger('click')
     const emitted = wrapper.emitted('select-player')
@@ -398,7 +374,6 @@ describe('BattleTable League Rating', () => {
     await flushSticky()
     let ratingTh = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     expect(ratingTh.attributes('style')).toContain('left: 132px')
-    // reorder 后昵称列变宽 → 必须重测（不得假设 nickname 宽度不变）
     stubNickWidth(wrapper, 148)
     await wrapper.setProps({ shownCols: [...leagueCols()].reverse() })
     await flushSticky()
@@ -418,8 +393,8 @@ describe('BattleTable selected row highlight', () => {
       selectedArenaId: '111',
     })
     const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].classes()).not.toContain('selected') // 1001（index 0）未选中
-    expect(rows[1].classes()).toContain('selected')     // 2001（index 1）选中
+    expect(rows[0].classes()).not.toContain('selected')
+    expect(rows[1].classes()).toContain('selected')
   })
 
   it('arenaId 不匹配（另一场）→ 无 highlight（禁止跨场误亮）', () => {

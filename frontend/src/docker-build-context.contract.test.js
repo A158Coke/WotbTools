@@ -1,7 +1,3 @@
-// Docker 构建上下文契约：前端源码里所有逃出 frontend/ 的构建期输入（common JSON、map-semantics glob、
-// ?raw Markdown）必须在 docker/Dockerfile.frontend 的 build 阶段 COPY 到同一相对位置，且未被 .dockerignore 排除。
-// 防「本地 / CI pnpm build 绿、生产 Docker build 红」（#447：Could not resolve common/tankopedia-tier7.json）。
-// 不复制第二份数据进 frontend——common/ 是唯一事实源，Docker 只是把它放到与仓库相同的相对路径。
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +15,6 @@ function sourceFiles(dir) {
   })
 }
 
-/** 生产代码引用的、位于 frontend/ 之外的仓库相对路径（glob 取其目录） */
 function externalBuildInputs() {
   const inputs = new Map()
   for (const file of sourceFiles(join(FRONTEND, 'src'))) {
@@ -42,7 +37,6 @@ function buildStageCopies() {
   return [...buildStage.matchAll(/^COPY\s+(?!--from)(.+)$/gm)].flatMap(([, args]) => {
     const parts = args.trim().split(/\s+/)
     const dest = parts.pop()
-    // 多源或以 / 结尾的目标是目录：每个源落在 <dest>/<basename>
     const intoDir = parts.length > 1 || dest.endsWith('/')
     return parts.map((raw) => {
       const src = raw.replace(/\/$/, '')
@@ -61,7 +55,6 @@ function dockerIgnored(path) {
     const pattern = negate ? rule.slice(1) : rule
     const re = new RegExp('^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/\*\*\//g, '(?:.*/)?').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$')
-    // 规则命中路径本身或其任一父目录
     if (segments.some((_, i) => re.test(segments.slice(0, i + 1).join('/')))) ignored = !negate
   }
   return ignored
@@ -78,20 +71,16 @@ describe('docker/Dockerfile.frontend build context contract', () => {
   })
 
   it.each([...inputs.keys()].map(p => [p]))('%s is copied into the build stage at its repo-relative path', (path) => {
-    // WORKDIR /app = frontend/，故 ../<path> 在镜像里是 /<path>
     const covered = copies.some(({ src, dest }) => dest === '/' + src && (path === src || path.startsWith(src + '/')))
     expect(covered, `${path} (imported by ${inputs.get(path)}) is not COPY'd to /${path} in docker/Dockerfile.frontend`).toBe(true)
     expect(dockerIgnored(path), `${path} is excluded by .dockerignore`).toBe(false)
   })
 
-  // 反向护栏（2026-10-15）：DELETE 一个构建输入后，忘记同步删掉 Dockerfile 的 COPY
-  // 会让 `docker build` 在 "failed to compute cache key" 处炸掉，而上面的正向断言
-  //（引用了没 COPY）天然看不见这种"COPY 了不存在的源"。此断言锁死方向二。
   it('every COPY source exists in the repo (no COPY of deleted inputs)', () => {
     const docker = readFileSync(join(REPO, 'docker/Dockerfile.frontend'), 'utf8')
     const sources = [...docker.matchAll(/^COPY\s+(?!--from)(.+)$/gm)].flatMap(([, args]) => {
       const parts = args.trim().split(/\s+/)
-      parts.pop() // 末位 = 目标
+      parts.pop()
       return parts.map(raw => raw.replace(/\/$/, ''))
     })
     expect(sources.length).toBeGreaterThan(0)

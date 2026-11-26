@@ -1,22 +1,8 @@
 // @vitest-environment happy-dom
 
-/**
- * Historical end-to-end regression matrix for the playback orchestrator.
- * Component ownership contracts live in BattleMap/PlaybackControls/
- * PlaybackTimeline/VehicleDetailsPanel focused tests; this suite remains
- * intentionally broad so the PR4 extraction does not discard proven replay
- * protocol, visibility, marker, and interaction regressions.
- */
 
 // @vitest-environment happy-dom
 
-/**
- * Historical end-to-end regression matrix for the playback orchestrator.
- * Component ownership contracts live in BattleMap/PlaybackControls/
- * PlaybackTimeline/VehicleDetailsPanel focused tests; this suite remains
- * intentionally broad so the PR4 extraction does not discard proven replay
- * protocol, visibility, marker, and interaction regressions.
- */
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 
@@ -70,7 +56,6 @@ vi.mock('../data/mapImages', () => ({
       src: 'malinovka.png', width: 766, height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     },
-    // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
     map_without_base_geometry: {
       src: 'no-bases.webp',
       width: 766,
@@ -114,7 +99,6 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
 }
 
 
-// Secondary settings and Events share the Gear-anchored surface.
 async function openPanel(wrapper, name) {
   if (!wrapper.find('[data-testid="display-panel"]').exists()) {
     await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
@@ -149,8 +133,6 @@ const mountedWrappers = []
 
 
 beforeEach(async () => {
-  // Preferences have one persistent in-memory owner. Clearing storage alone does not
-  // reset that owner between tests; restore its logical defaults before each mount.
   const prefs = usePlaybackPreferences()
   Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
   Object.assign(prefs.hpPrefs, { showHp: true, mode: 'bar' })
@@ -176,7 +158,6 @@ function stubRaf() {
 }
 
 
-/** canonical V2 Details Panel HP：读 v2-inspector-hp 值区首个数字（去掉 LAST_KNOWN badge / capacity）。 */
 function detailsHpNum(info) {
   const val = info.find('[data-test="v2-inspector-hp"] .v2-inspector-val').text()
   const m = val.match(/\d+/)
@@ -184,13 +165,10 @@ function detailsHpNum(info) {
 }
 
 
-/** marker HUD HP 数字（账号 2001）。 */
 function enemyHudNum(wrapper) {
   return wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()
 }
 describe('Supremacy 基地 overlay', () => {
-  // 底图不再烤基地图形，几何来自 mapBases（客户端场景），状态来自 baseStates（回放）。
-  // 这条断言覆盖 BattlePlayback -> BattleMap 的 bases 接线，接线断掉时必须失败。
   it('renders one circle per Supremacy base and colours it from baseStates', async () => {
     const dataset = makePlaybackV2({
       baseStates: [
@@ -201,18 +179,14 @@ describe('Supremacy 基地 overlay', () => {
     })
     const wrapper = await mountPlayback(makeOverview(), null, dataset)
 
-    // holland 在 mapBases 里是 3 个争霸基地
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(3)
     expect(wrapper.find('[data-test="pb-bases"]').text()).toContain('A')
-    // 圆圈颜色 = 当前归属；C 还没易主，所以是 neutral 而不是占领方颜色
     expect(wrapper.findAll('.pb-base-friendly_controlled')).toHaveLength(1)
     expect(wrapper.findAll('.pb-base-enemy_controlled')).toHaveLength(1)
     expect(wrapper.findAll('.pb-base-neutral')).toHaveLength(1)
-    // 进度水位只画在正在被占的 C 上，颜色是占领方（敌方）
     const fills = wrapper.findAll('[data-test="pb-base-fill"]')
     expect(fills).toHaveLength(1)
     expect(fills[0].classes()).toContain('pb-capture-enemy')
-    // 水位由 clipPath 的矩形高度决定：40% 进度 → 高度是直径的 40%
     const clipRects = wrapper.findAll('clipPath rect')
     expect(clipRects).toHaveLength(3)
     const diameter = Number(clipRects[2].attributes('width'))
@@ -258,7 +232,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(true)
     expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.35, 3)
 
-    // Explicit protocol 0 is a reset: objective remains visible, progress visuals return to idle.
     await wrapper.setProps({ seekTo: 20 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-base-BASE"]').exists()).toBe(true)
@@ -267,7 +240,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.find('[data-testid="base-badge-ring"]').exists()).toBe(false)
     expect(wrapper.find('.base-objective-progress').exists()).toBe(false)
 
-    // A later positive update starts a new visible capture after the reset.
     await wrapper.setProps({ seekTo: 30 })
     await flushPromises()
     rect = wrapper.find('clipPath rect')
@@ -275,7 +247,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(Number(rect.attributes('height'))).toBeCloseTo(Number(rect.attributes('width')) * 0.12, 3)
     expect(wrapper.find('.base-objective-progress').text()).toBe('12%')
 
-    // Backward/forward seeks deterministically restore reset vs active presentation.
     await wrapper.setProps({ seekTo: 20 })
     await flushPromises()
     expect(wrapper.find('[data-test="pb-base-fill"]').exists()).toBe(false)
@@ -302,9 +273,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.findAll('[data-test="pb-bases"] .pb-base-circle')).toHaveLength(0)
   })
 
-  // 非争霸战（baseStates 为空，或旧 producer 未发该字段）不得靠地图几何画出基地。
-  // HUD chip 是 fallback：地图能画基地时不重复；mapBases 未收录该图时 HUD 必须仍然显示，
-  // 否则新地图上线到素材补齐之间会完全看不到基地归属。
   it('keeps the HUD base chips when mapBases has no geometry for the map', async () => {
     const states = [
       { timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null },
@@ -321,8 +289,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(hud.text()).toContain('B')
   })
 
-  // 反向：地图画得出基地时 HUD 不再重复一份。
-  // 顶部基地状态条与 3D 共用，始终显示（不再只是地图缺几何时的兜底）；地图上的圆照常画
   it('shows the base status bar alongside the map bases', async () => {
     const dataset = makePlaybackV2({
       baseStates: [{ timeSec: 0, baseId: 'A', ownerTeam: 1, capturingTeam: null, captureProgress: null }],
@@ -333,12 +299,9 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.find('[data-testid="base-badge-A"]').classes()).toContain('is-owner-friendly')
   })
 
-  // wire 契约不保证 baseStates 按 timeSec 排序。靠数组顺序取「当前状态」会选中过期的一条，
-  // 表现就是车早已离开、占领已清空，地图上却还画着进度。
   it('uses the latest transition by time, not by array order', async () => {
     const dataset = makePlaybackV2({
       baseStates: [
-        // 故意乱序：清空（t=5）排在开始占领（t=1）之前
         { timeSec: 5, baseId: 'A', ownerTeam: null, capturingTeam: null, captureProgress: 60 },
         { timeSec: 1, baseId: 'A', ownerTeam: null, capturingTeam: 1, captureProgress: 60 },
       ],
@@ -347,8 +310,6 @@ describe('Supremacy 基地 overlay', () => {
     expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
   })
 
-  // 契约：省略的字段保留旧值，所以放弃占领后 captureProgress 仍是旧数，只有 capturingTeam 归 null。
-  // 水位必须跟着 capturingTeam 消失，否则地图上会一直挂着一个没踩下来的进度。
   it('clears the capture fill when the capture is abandoned but progress is retained', async () => {
     const dataset = makePlaybackV2({
       baseStates: [
@@ -358,7 +319,6 @@ describe('Supremacy 基地 overlay', () => {
     })
     const wrapper = await mountPlayback(makeOverview(), 6, dataset)
     expect(wrapper.findAll('[data-test="pb-base-fill"]')).toHaveLength(0)
-    // 圆圈本身仍在（基地还是中立），只是没有进度水位
     expect(wrapper.findAll('.pb-base-circle')).toHaveLength(3)
   })
 
@@ -390,15 +350,12 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('00:12 / 01:00')
     expect(wrapper.find('svg').exists()).toBe(true)
-    // 从未被观测到的车辆不出现在地图上（阵容列表来自结算名单，仍会列出全员）
     expect(wrapper.find('[data-test="pb-map"]').text()).not.toContain('NeverSeen')
     expect(wrapper.findAll('.pb-vehicle')).toHaveLength(2)
   })
 
   it('Blocker 2：V2 dataset 为核心输入——overview 为 null 时 PRIMARY 仍渲染', async () => {
     stubRaf()
-    // V2 权威元数据（mapCode/friendlyTeam/recorderAccountId/arenaBonusType）都在 dataset 内，
-    // MapOverview 缺失时 Battle Playback PRIMARY 必须可渲染（不被 map-overview artifact 锁死）。
     const v2Only = {
       ...makePlaybackV2(),
       mapCode: 'holland',
@@ -410,7 +367,6 @@ describe('BattlePlayback', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="battle-playback"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
-    // 事件面板默认折叠：二级面未打开时事件行不在 DOM 里，入口在 Display 面里的 pb-panel-events。
     expect(wrapper.find('[data-test="pb-event-panel"]').exists()).toBe(false)
     await openPanel(wrapper, 'display')
     expect(wrapper.find('[data-test="pb-panel-events"]').exists()).toBe(true)
@@ -427,9 +383,6 @@ describe('BattlePlayback', () => {
     stubRaf()
     const wrapper = mountBattlePlayback({ overview: makeOverview(), playbackV2: makePlaybackV2(), seekTo: 30 })
     await flushPromises()
-    // t=30：EnemyA 在 V2 中已 DESTROYED（lifeTransition 25s）→ 存在 destroyed marker
-    // （legacy overview 里 EnemyA deathSec=null，因此 destroyed 只能来自 V2 lifeTransition，
-    //  证明 V2 canonical fact 驱动渲染，满足 AC-10）。
     const destroyedMarkers = wrapper.findAll('.pb-vehicle.pb-destroyed')
     expect(destroyedMarkers.length).toBeGreaterThan(0)
   })
@@ -465,10 +418,8 @@ describe('BattlePlayback', () => {
 
   function gapOverview() {
     const overview = makeOverview()
-    // EnemyA 位置上报覆盖 [10,20]（OBSERVED）。samples 稀疏（14→20 采样间隔 >5s）——
-    // V2 中「位置流覆盖」由 OBSERVED 段表达，段内允许插值，不因采样稀疏而降级 last-known。
     const ds = makePlaybackV2()
-    ds.vehicles[1].lifeTransitions = [] // EnemyA 未 destroyed（原 makePlaybackV2 有 DESTROYED@25）
+    ds.vehicles[1].lifeTransitions = []
     ds.vehicles[1].positionSegments = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 20,
         samples: [
@@ -482,7 +433,6 @@ describe('BattlePlayback', () => {
 
   it('gap vehicles stay at the faded last-known position instead of disappearing', async () => {
     stubRaf()
-    // t=25 超出 observed position segment [10,20]：位置流未覆盖 → 真实 gap，淡化停驻
     const { overview, ds } = gapOverview()
     const wrapper = mountPlayback(overview, 25, ds)
     await flushPromises()
@@ -500,7 +450,7 @@ describe('BattlePlayback', () => {
     expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.pause')
     await wrapper.find('.pb-range').trigger('pointerdown')
     expect(wrapper.find('[data-test="pb-play"]').attributes('aria-label')).toBe('recon.map.playback.play')
-    rafCb(1000) // 残留 RAF 回调不得再推进时间
+    rafCb(1000)
     await flushPromises()
     expect(wrapper.text()).toContain('00:00 / 01:00')
   })
@@ -536,15 +486,13 @@ describe('BattlePlayback', () => {
     await flushPromises()
     await wrapper.find('[data-test="pb-play"]').trigger('click')
     expect(rafCalls).toBe(1)
-    await wrapper.find('[data-test="pb-play"]').trigger('click') // 暂停
-    await wrapper.find('[data-test="pb-play"]').trigger('click') // 再次播放
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
+    await wrapper.find('[data-test="pb-play"]').trigger('click')
     expect(rafCalls).toBe(2)
   })
 
   it('covered vehicles are not faded even when sampled route points have a >5s gap (position stream coverage)', async () => {
     stubRaf()
-    // t=20 落在 observed position segment [10,20] 内（位置上报中）但 route 采样点 14→40 gap>5s：
-    // 不得因 live=null 误判 lastKnown（修复「位置流覆盖却半透明」）
     const { overview, ds } = gapOverview()
     const wrapper = mountPlayback(overview, 20, ds)
     await flushPromises()
@@ -558,7 +506,6 @@ describe('BattlePlayback', () => {
     const overview = makeOverview()
     const ds = makePlaybackV2()
     trackOf(ds, 2001).lifeTransitions = []
-    // EnemyA：10–20 覆盖 → 位置流中断（gap）→ 40–60 再覆盖（两段区间）；t=50 在第二段区间内
     trackOf(ds, 2001).positionSegments = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 20, interpolationAllowed: true,
         samples: [{ x: -50, y: -50, timeSec: 10 }, { x: -100, y: -100, timeSec: 14 }] },
@@ -605,7 +552,6 @@ describe('2D Playback reload telemetry', () => {
     await wrapper.setProps({ seekTo: 12 })
     await flushPromises()
     expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
-    // wall-clock time advancing while playback stays paused cannot change gun progress.
     await new Promise((resolve) => setTimeout(resolve, 5))
     expect(marker(wrapper, 1001).props('marker').reloadShells).toEqual([{ state: 'loading', progress: 0.5 }])
   })
@@ -653,7 +599,6 @@ describe('destroyed markers (symmetric contract)', () => {
       expect(m.findAll('img')).toHaveLength(2)
       expect(m.find('.pb-death').exists()).toBe(true)
     }
-    // 唯一允许的差异：阵营 PNG src
     expect(friendly.findAll('img')[0].attributes('src')).toContain('tank-marker-friendly-hull')
     expect(friendly.findAll('img')[1].attributes('src')).toContain('tank-marker-friendly-turret')
     expect(enemy.findAll('img')[0].attributes('src')).toContain('tank-marker-enemy-hull')
@@ -666,10 +611,8 @@ describe('destroyed markers (symmetric contract)', () => {
     const wrapper = mountPlayback(overview, 40, ds)
     await flushPromises()
     const friendly = wrapper.find('[data-test="pb-marker-1001"]')
-    // 友方方向冻结在最后可信样本（hull 90°、turret world 120°），不随当前时间继续旋转
     expect(friendly.findAll('img')[0].attributes('style')).toContain('rotate(90deg)')
     expect(friendly.findAll('img')[1].attributes('style')).toContain('rotate(120deg)')
-    // 敌方无方向样本：双层以素材默认 0° 渲染（不代表朝向），✕ 标记阵亡
     const enemy = wrapper.find('[data-test="pb-marker-2001"]')
     expect(enemy.findAll('img')[0].attributes('style')).toContain('rotate(0deg)')
     expect(enemy.findAll('img')[1].attributes('style')).toContain('rotate(0deg)')
@@ -686,7 +629,6 @@ describe('destroyed markers (symmetric contract)', () => {
     const mark = friendly.find('.pb-selected-mark')
     expect(mark.exists()).toBe(true)
     expect(mark.classes()).toContain('pb-selected-restrained')
-    // ✕ 中心定位 + overlayInverseScale 反缩放（1× = scale(1)），覆盖车辆主体
     const deathStyle = friendly.find('.pb-death').attributes('style')
     expect(deathStyle).toContain('font-size: 30px')
     expect(deathStyle).toContain('translate(-50%, -50%) scale(1)')
@@ -747,16 +689,15 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.exists()).toBe(true)
     expect(marker.find('.pb-hull-dedicated').attributes('src')).toBe('/vm/maus/hull.webp')
-    // t=12：hull 0→90 插值 45°；turret = 45 + 15(relative 0→30 插值) = 60°
-    expect(marker.find('.pb-hull-dedicated').attributes('style')).toContain('rotate(45deg)') // H
+    expect(marker.find('.pb-hull-dedicated').attributes('style')).toContain('rotate(45deg)')
     const assembly = marker.find('.pb-turret-assembly')
     expect(assembly.exists()).toBe(true)
-    expect(assembly.attributes('style')).toContain('rotate(45deg)') // 父层 H
+    expect(assembly.attributes('style')).toContain('rotate(45deg)')
     const turret = marker.find('.pb-turret-dedicated')
     expect(turret.attributes('src')).toBe('/vm/maus/turret.webp')
-    expect(turret.attributes('style')).toContain('rotate(15deg)') // T - H = 60 - 45
+    expect(turret.attributes('style')).toContain('rotate(15deg)')
     expect(marker.find('.pb-hull.pb-hull-dedicated').exists()).toBe(true)
-    expect(marker.find('.pb-hull:not(.pb-hull-dedicated)').exists()).toBe(false) // 无 generic 层
+    expect(marker.find('.pb-hull:not(.pb-hull-dedicated)').exists()).toBe(false)
   })
 
   for (const [modelKey, tankName] of representativeTurretedModels) {
@@ -800,7 +741,7 @@ describe('PR2 — Tier X dedicated models in Battle Playback', () => {
     const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
-    expect(marker.find('.pb-hull').exists()).toBe(true) // generic 双层
+    expect(marker.find('.pb-hull').exists()).toBe(true)
     expect(marker.find('.pb-turret').exists()).toBe(true)
     expect(marker.find('.pb-hull-dedicated').exists()).toBe(false)
     expect(marker.find('.pb-turret-assembly').exists()).toBe(false)
@@ -847,16 +788,13 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     const tank = wrapper.find('[data-test="pb-show-tank"]')
     expect(player.element.checked).toBe(false)
     expect(tank.element.checked).toBe(true)
-    // 默认只显示坦克名行
     expect(wrapper.findAll('.pb-label-tank').length).toBe(2)
     expect(wrapper.findAll('.pb-label-player').length).toBe(0)
     await player.setValue(true)
     expect(wrapper.findAll('.pb-label-player').length).toBe(2)
     expect(wrapper.findAll('.pb-label-player')[0].text()).toBe('You')
-    // 持久化：localStorage 写入（含新增的 showReload —— 同一份共享偏好里的标签行开关）
     const saved = JSON.parse(localStorage.getItem('wotb.pb.label-prefs'))
     expect(saved).toEqual({ showPlayerName: true, showTankName: true, showReload: true })
-    // 重新挂载 → 读取持久化值
     const w2 = mountPlayback(makeOverview(), 12)
     await flushPromises()
     await openPanel(w2, 'display')
@@ -869,7 +807,6 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     const overview = makeOverview()
     const ds = makePlaybackV2()
     trackOf(ds, 2001).lifeTransitions = []
-    // 两车同位 → 标签必然冲突（player 名够长保证与对方 tank 盒重叠）
     setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
     setPositionSamples(ds, 2001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
     trackOf(ds, 2001).playerName = 'VeryLongEnemyPlayerNameCollisionTest'
@@ -878,15 +815,13 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await flushPromises()
     await openPanel(wrapper, 'display')
     await wrapper.find('[data-test="pb-show-player"]').setValue(true)
-    await wrapper.find('.pb-range').setValue(12.5) // 触发 seek（值变化）→ 重算 labelLayout
+    await wrapper.find('.pb-range').setValue(12.5)
     await flushPromises()
     const a = wrapper.find('[data-test="pb-marker-1001"]')
     const b = wrapper.find('[data-test="pb-marker-2001"]')
     const labelsStyle = (m) => (m.find('.pb-presentation').attributes('style') || '')
-    // 标签位移为有限 screen px（稳定 lane），不产生 display:none
     expect(Number.isFinite(parseFloat(labelsStyle(a).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
     expect(Number.isFinite(parseFloat(labelsStyle(b).match(/calc\(100% \+ (-?[\d.]+)px\)/)?.[1] || 'NaN'))).toBe(true)
-    // 玩家名/坦克名/HP：碰撞永不隐藏
     expect(a.find('.pb-label-player').attributes('style')).toBeUndefined()
     expect(b.find('.pb-label-player').attributes('style')).toBeUndefined()
     expect(a.find('.pb-label-player').isVisible()).toBe(true)
@@ -901,19 +836,14 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     stubRaf()
     const overview = makeOverview()
     const ds = makePlaybackV2()
-    // A 中心 content x=100（map -225），B 中心 content x=90（map -232.5），y 相同
-    // A 按钮盒 x∈[82,118]，A hitbox x∈[83.8,116.2]，B hitbox x∈[73.8,106.2] → 点击 x=84 两盒都命中
     setPositionSamples(ds, 1001, [{ x: -225, y: -204.2, timeSec: 10 }, { x: -225, y: -204.2, timeSec: 14 }], 0, 60)
     setPositionSamples(ds, 2001, [{ x: -232.5, y: -204.2, timeSec: 10 }, { x: -232.5, y: -204.2, timeSec: 14 }], 0, 60)
     const wrapper = mountPlayback(overview, 12, ds)
     await flushPromises()
     Object.defineProperty(wrapper.find('[data-test="pb-map"]').element, 'clientWidth', { value: 800, configurable: true })
     const aBtn = wrapper.find('[data-test="pb-marker-1001"]')
-    // 点击 A 的按钮，坐标 (90, 675)：A/B generic hitbox 都命中（A 中心 (100,675)、B 中心 (90,675)）
     await aBtn.trigger('click', { clientX: 90, clientY: 675 })
-    // 距离最近者 2001（B，dist 0）被选中（A dist 10）
     expect(wrapper.find('[data-test="pb-info"]').text()).toContain('EnemyA')
-    // PR5 §8.1：再点同一点保持选中（不 toggle-off）；× 显式关闭
     await aBtn.trigger('click', { clientX: 90, clientY: 675 })
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-info"]').text()).toContain('EnemyA')
@@ -937,7 +867,6 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await wrapper.get('[data-test="pb-speed-current"]').trigger('click')
     await wrapper.find('[data-test="pb-speed-1"]').trigger('click')
     expect(wrapper.get('[data-test=\"pb-speed-current\"]').text()).toBe('1×')
-    // loop：seek 到接近末尾 → 播放 → 越过末尾自动回 0 继续
     await wrapper.setProps({ loop: true })
     const wrap = mountPlayback(makeOverview(), 59)
     await flushPromises()
@@ -945,7 +874,7 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
     await wrap.find('[data-test="pb-play"]').trigger('click')
     expect(rafCb).toBeTruthy()
     rafCb(0)
-    rafCb(1000) // 推进 1s → 59 + 1 = 60 = duration → loop 回 0
+    rafCb(1000)
     await flushPromises()
     expect(wrap.find('.pb-time').text()).toBe('00:00 / 01:00')
   })
@@ -959,7 +888,6 @@ describe('PR4 §33 B3 — 标签防重叠：标签与 HP 永不因碰撞隐藏�
     vi.useRealTimers()
   })
 
-  /** 两车同位（t=12 恒冲突）的 overview；2001 玩家名足够长。 */
   function overlapOverview() {
     const overview = makeOverview()
     const ds = makePlaybackV2()
@@ -1134,25 +1062,20 @@ describe('PR4 §33 B3 — 标签防重叠：标签与 HP 永不因碰撞隐藏�
   })
 
   it('标记严格落在真实位置（无防重叠位移），标签的防重叠车道仍然生效', async () => {
-    // 2026-10-16 用户裁定：2D 车体不再被推开（密集处允许压盖），与 3D 一致；
-    // 名牌 / HP 的防重叠由 labelLayout 的车道机制承担（本用例锁住它没被一起删掉）。
     stubRaf()
     const wrapper = mountWithPlayer(overlapOverview(), 12)
     await flushPromises()
 
     const styleOf = (accountId) => markerOf(wrapper, accountId).attributes('style') || ''
-    // 位置表达式必须是纯百分比（无 `+ Npx` 位移项）
     expect(styleOf(2001)).toMatch(/left: \d+(\.\d+)?%/)
     expect(styleOf(2001)).not.toMatch(/left: calc\(/)
     expect(styleOf(2001)).not.toMatch(/top: calc\(/)
 
-    // 1× 与 4× 下位置表达式形态一致（相机是 layout-scaled，不再有 screen-px 位移）
     for (let i = 0; i < 14; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
     expect(styleOf(2001)).not.toMatch(/left: calc\(/)
-    // 车道位移仍然存在（标签块自己会被挪开，车体不动）
     const labelStyle = markerOf(wrapper, 2001).find('.pb-presentation').attributes('style') || ''
     expect(labelStyle).toContain('bottom:')
   })

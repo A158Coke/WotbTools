@@ -6,10 +6,6 @@ import type { ReplayCapability } from '../types/workspace.js'
 
 export { chooseInitialResultTab }
 
-/**
- * Replay facade/orchestrator。共享状态由 useReplaySession 持有；分析（本机 WASM 解析 + 批次计算）
- * 与导出（客户端 xlsx）委托 useLocalReplayAnalysis。服务器没有 parser，也没有 job / 轮询。
- */
 export function useReplay(initialCapability: ReplayCapability = 'data') {
   const { t } = useI18n()
   const session = useReplaySession(initialCapability)

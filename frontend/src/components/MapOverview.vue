@@ -5,11 +5,6 @@ import { mapImages } from '../data/mapImages'
 import { map2dSrc } from '../data/map2dOverlay'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 
-/**
- * 地图鸟瞰：底图（按图片 coordinateBounds 渲染）+ 6x6 分析网格（playableBounds 系）+ 九宫格分区框 + 出生点；
- * 热力视图（阵营 × 类型）。战局回放由宿主 BattlePlaybackPanel 作为 PRIMARY 渲染，
- * 本组件只做 secondary 地图鸟瞰；overview.routes 保留在数据合同中供其他消费者使用。
- */
 const props = defineProps({
   overview: {
     type: Object,
@@ -20,13 +15,8 @@ const props = defineProps({
 const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
-/** 底图 URL：包内兜底 + Android OTA 覆盖（见 data/map2dOverlay.js）。 */
 const imageSrc = computed(() => (image.value ? map2dSrc(props.overview.mapCode, image.value.src) : null))
 
-// 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/features/battle-playback.md）。
-// `imageSrc` 会二次变化（包内 → OTA blob），两次取亮度的完成顺序不保证；用 request token 丢弃
-// 迟到的旧结果，避免"已是远端底图、却被打回旧调色板"的 last-request-wins 竞态
-//（BattlePlayback 用同一套 guard，见其 paletteRequestToken）。
 const palette = ref(darkMapPalette)
 let paletteRequestToken = 0
 watch(imageSrc, async (src) => {
@@ -39,25 +29,19 @@ watch(imageSrc, async (src) => {
   }
 }, { immediate: true })
 
-// 热力筛选
 const teamTab = ref('friendly')
-const typeTab = ref('dwell')    // dwell|damage|deaths
+const typeTab = ref('dwell')
 
 const W = computed(() => image.value ? image.value.width : 800)
 const H = computed(() => image.value ? image.value.height : 800)
-// 渲染坐标边界：优先用图片自身的 coordinateBounds（语义 JSON 的 worldBounds，逐图校准）；
-// 旧配置无 coordinateBounds 时回退 playableBounds（兼容策略）。
-// playableBounds 仍承担分析职责：gridCells/热力/区域判断都用它，绘制时经 renderBounds 统一换算。
 const renderBounds = computed(() =>
   image.value?.coordinateBounds ?? props.overview.playableBounds)
-// 标题：按当前 locale 取 displayNames（zh/en/ru），缺失回退 displayName
 const title = computed(() => {
   const names = props.overview.displayNames
   const localized = names && locale && locale.value ? names[locale.value] : null
   return localized || props.overview.displayName
 })
 
-// 语义坐标（x=回放 x，y=回放 z）→ SVG 像素（y 反转：语义 y 向上，图片 y 向下）
 function toX(x) {
   return ((x - renderBounds.value.xMin) / (renderBounds.value.xMax - renderBounds.value.xMin)) * W.value
 }
@@ -65,7 +49,6 @@ function toY(y) {
   return ((renderBounds.value.yMax - y) / (renderBounds.value.yMax - renderBounds.value.yMin)) * H.value
 }
 
-// ---- 热力 ----
 const heatLayer = computed(() => {
   const team = props.overview.heatmaps[teamTab.value]
   return team ? (team[typeTab.value] || []) : []
@@ -79,7 +62,6 @@ const heatColor = computed(() => (teamTab.value === 'friendly' ? palette.value.h
 
 const friendlyTeam = computed(() => props.overview.friendlyTeam)
 
-// 自适应配色 CSS 变量（网格/九宫格/出生点对比色）。
 const mapStyle = computed(() => ({
   '--map-grid-stroke': palette.value.gridStroke,
   '--map-region-stroke': palette.value.regionStroke,
@@ -141,7 +123,6 @@ const gridRegions = computed(() => {
     >
       <image :href="imageSrc" :width="W" :height="H" preserveAspectRatio="none" />
 
-      <!-- 6x6 网格 -->
       <g class="grid-cells">
         <rect
           v-for="(cell, index) in overview.gridCells"
@@ -156,7 +137,6 @@ const gridRegions = computed(() => {
         />
       </g>
 
-      <!-- 九宫格分区框 -->
       <g class="grid-regions">
         <g v-for="[region, r] in gridRegions" :key="region">
           <rect
@@ -169,7 +149,6 @@ const gridRegions = computed(() => {
         </g>
       </g>
 
-      <!-- 出生点 -->
       <g class="spawns">
         <circle
           v-for="(spawn, i) in overview.spawnPoints"

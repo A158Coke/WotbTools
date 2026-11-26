@@ -9,7 +9,6 @@
 .creator-filters [aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-surface-3); }
 .creator-card, .creator-panel { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .creator-card { border-top: var(--space-1) solid var(--color-accent); border-radius: var(--radius-lg); box-shadow: var(--elevation-1); transition: border-color var(--duration-base) var(--ease-standard), box-shadow var(--duration-base) var(--ease-standard); }
-/* Share content tracks within each row; long copy never separates the footer actions. */
 @supports (grid-template-rows: subgrid) {
   .creator-card { display: grid; grid-row: span 4; grid-template-rows: subgrid; }
 }

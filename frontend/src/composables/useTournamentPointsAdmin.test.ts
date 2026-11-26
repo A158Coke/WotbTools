@@ -338,7 +338,6 @@ describe('shared tournament draft owner', () => {
     expect(f.owner.reviewError.value).toBe('duplicate')
     await f.owner.saveDraft()
     expect(f.transport.saveTournamentDraft).not.toHaveBeenCalled()
-    // An invalid superseded image cannot block its explicitly reviewed replacement.
     f.owner.reviews.value[0].complete = false
     f.owner.reviews.value[1].duplicateAction = 'REPLACE'
     expect(f.owner.reviewError.value).toBeNull()

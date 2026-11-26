@@ -1,41 +1,4 @@
 #!/usr/bin/env node
-/**
- * turretPivot 独立几何验证（PR #92 Review B1，第三轮——collectVerts matrix traversal 修复）。
- *
- * 数据流（不变量：待验证的 metadata.turretPivot / computeTurretModelPivot 不参与生成样本）：
- * - GLB 旋转层原始顶点（模型坐标，yaw=0 装配姿态）经 collectNodeVerts 采集——
- *   与 extractor-lib.mjs::collectNodeTriangles **同一 hierarchy 语义**（单源复用，
- *   不维护两套 traversal）：
- *     worldMatrix = parentMatrix · nodeLocalMatrix（node 自身 TRS 乘入后作用于自己的 mesh，
- *     children 递归传 worldMatrix）；
- * - 逐行复刻 BlitzKit useTankTransform.ts scene graph：
- *     turretContainer.position = turretPosition(yaw)
- *       = R_z(yaw)·(-(hullOrigin+turretOrigin))
- *         [若有 initial_turret_rotation：再 .applyAxisAngle(I, pitch).applyAxisAngle(J, roll).applyAxisAngle(K, yaw)]
- *         + hullOrigin + turretOrigin
- *     turretContainer.rotation = Euler(initialPitch, initialRoll, yaw + initialYaw)（three.js XYZ 序）
- *     world(yaw) = R(rotation)·v + position（origins 直接取自 models.pb 原始数据）；
- * - 只根据 world(yaw0) 与 world(yawN) 两批顶点反求 2D rotation center（垂直平分线最小二乘），
- *   最后才经 bake-report.fit 反投影与 metadata.turretPivot 比对（err < 0.05m）。
- *
- * 旋转角：无 yaw 限位 0°/90°；limited-traverse 自动读 models.pb yaw 限位（grille-15 65°、
- * nc-70 10°、fv215b-183/xm66f/minotauro 45°）。
- *
- * minotauro：真实包含 initial_turret_rotation（pitch=3°）——完整复刻；pitch 使顶视投影
- * 非纯 2D 旋转，反推中心有 ~2-3cm 物理偏差，报告原值不放宽阈值。
- *
- * 另输出（可复现工程证据）：
- * - 每台 selected 节点（turret_01 / gun_01 / gun_01_mask）的实际 local TRS；
- * - **bottom turret-ring anchor**：turret_01 子树底部带（z ∈ [minZ, minZ+0.2]）顶视质心
- *   vs pivot 模型坐标距离——座圈环中心应落在 pivot 附近（数值仅作几何佐证，不作为
- *   PASS/FAIL 判据；输出可复现，供 QA/评审核对）。
- *
- * 依赖 developer 缓存（frontend/scripts/.vehicle-model-refs/）；CI 不执行。
- *
- * 用法（frontend 目录）：
- *   node scripts/verify-pivot-independent.mjs                # 全部 turreted
- *   node scripts/verify-pivot-independent.mjs maus grille-15
- */
 import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,7 +20,6 @@ const models = decodeBlitzkitPb(readFileSync(join(CACHE, 'definitions', 'models.
 const tanks = decodeBlitzkitPb(readFileSync(join(CACHE, 'definitions', 'tanks.pb')), 'blitzkit.TankDefinitions', BLITZKIT_TANKS_MIN_PROTO)
 const io = new NodeIO()
 
-/** 节点 local TRS 摘要（用于报告；无 TRS 时显示 null）。 */
 function trsSummary(node) {
   const t = node.getTranslation() || null
   const r = node.getRotation() || null
@@ -95,7 +57,6 @@ function buildTurretContainer(o) {
   }
 }
 
-/** 垂直平分线最小二乘求 2D 旋转中心（顶视投影）。 */
 function solveRotationCenter(pairs) {
   let A = 0, B = 0, C = 0, D = 0, E = 0, used = 0
   for (const [[x0, y0], [x1, y1]] of pairs) {
@@ -111,12 +72,10 @@ function solveRotationCenter(pairs) {
   return { x: (C * D - B * E) / det, y: (A * E - B * C) / det, used }
 }
 
-/** 模型坐标 → metadata 同坐标系（bake-report.fit 的逆变换）。 */
 function pivotModelFromMetadata(metaPivot, fit) {
   return { x: (metaPivot.x - fit.tx) / fit.scale, y: (fit.ty - metaPivot.y) / fit.scale }
 }
 
-/** models.pb turret 模块 yaw 限位（±max，用于 limited-traverse 车型的样本角）。 */
 function yawMaxDeg(mdef, turretId) {
   const tm = mdef.turrets[String(turretId)]
   const yaw = tm?.yaw
@@ -125,7 +84,6 @@ function yawMaxDeg(mdef, turretId) {
   return max > 0.5 && max < 90 ? max : 90
 }
 
-/** bottom turret-ring anchor：turret 网格底部带顶视质心（模型坐标；z∈[minZ, minZ+0.2]）。 */
 function bottomRingCenter(verts) {
   if (!verts.length) return null
   let minZ = Infinity
@@ -163,14 +121,11 @@ async function verify(modelKey) {
     const n = nodes.find((node) => node.getName() === name)
     if (n) {
       trsReport.push(name + ' ' + trsSummary(n))
-      // collectNodeVerts：与 collectNodeTriangles 同一 hierarchy 语义
-      // （自身 TRS → 自己的 mesh；children 递归传 worldMatrix）
       collectNodeVerts(n, pts, new THREE.Matrix4())
     }
   }
   if (!pts.length) return { skipped: '旋转层 mesh 缺失' }
 
-  // —— bottom turret-ring anchor（turret_01 子树，几何佐证，可复现输出）——
   const tNode = nodes.find((node) => node.getName() === turretName)
   let ring = null
   if (tNode) {
@@ -179,7 +134,6 @@ async function verify(modelKey) {
     ring = bottomRingCenter(tpts)
   }
 
-  // —— origins（models.pb 原始数据；不调用 computeTurretModelPivot）——
   const trackOrigin = (mdef.tracks && mdef.tracks[String(trackId)] && mdef.tracks[String(trackId)].origin) || { x: 0, y: 0, z: 0 }
   const turretOrigin = mdef.turretOrigin || { x: 0, y: 0, z: 0 }
   const correctZY = (v) => ({ x: v.x ?? 0, y: v.z ?? 0, z: v.y ?? 0 })
@@ -195,7 +149,6 @@ async function verify(modelKey) {
   const wA = container(yawA)
   const wB = container(yawB)
 
-  // —— 只根据 world positions 反推（不接触 metadata）——
   const step = Math.max(1, Math.floor(pts.length / 1200))
   const pairs = []
   for (let i = 0; i < pts.length; i += step) {
@@ -205,7 +158,6 @@ async function verify(modelKey) {
   }
   const solved = solveRotationCenter(pairs)
 
-  // —— 与 metadata.turretPivot 比较（经 bake-report.fit 反投影）——
   const brPath = join(ASSETS, modelKey, 'bake-report.json')
   const metaPath = join(ASSETS, modelKey, 'metadata.json')
   let pivotModel = null

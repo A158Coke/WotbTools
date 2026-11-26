@@ -98,15 +98,11 @@ describe('App shell navigation, 更多 and account', () => {
       const { wrapper } = await mountApp('/?view=replay')
       await wrapper.get('[data-testid="ws-immersive-request"]').trigger('click')
       await settle()
-      // 兜底菜单走 AppShell 自己的 Teleport（不受 DIALOG_INLINE_KEY 影响）：
-      // 必须落在全屏元素里，留在全屏层外的外壳会被浏览器整体隐藏。
       const menu = document.querySelector('[data-testid="nav-menu"]')
       expect(menu).toBeTruthy()
       expect(fullscreenRoot.contains(menu)).toBe(true)
       menu.click()
       await settle()
-      // 抽屉本体在组件测试里原地渲染（DIALOG_INLINE_KEY），打开状态由 aria-expanded 断言；
-      // 全屏下抽屉自身 portal 进全屏根的行为由 AppNavDrawer.test.ts 持有。
       expect(menu.getAttribute('aria-expanded')).toBe('true')
       expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
     } finally {
@@ -119,16 +115,13 @@ describe('App shell navigation, 更多 and account', () => {
     layoutState.isCompact.value = false
     layoutState.isDrawerShell.value = false
     const { wrapper } = await mountApp('/?view=replay')
-    // 桌面基线：侧栏承载导航，抽屉外壳不挂载。
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(false)
-    // 播放器申请沉浸（伪全屏）并托管菜单：侧栏被 CSS 隐藏，唯一的导航入口是播放器按钮。
     await wrapper.get('[data-testid="ws-desktop-pseudo-nav"]').trigger('click')
     await settle()
-    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true) // 仍由 CSS 隐藏，不是卸载
+    expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
     await wrapper.get('[data-testid="nav-menu"]').trigger('click')
     await settle()
-    // 抽屉必须真实挂载并打开；只改 navDrawerOpen 而没有 AppNavDrawer 就是死按钮。
     expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)
   })
 
@@ -138,11 +131,10 @@ describe('App shell navigation, 更多 and account', () => {
     const { wrapper } = await mountApp('/?view=replay')
     await wrapper.get('[data-testid="ws-desktop-pseudo-nav"]').trigger('click')
     await settle()
-    expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)   // 播放器托管中
-    // 控制条收起 / UI 隐藏 → PlaybackTransport hostNav(false)；桌面侧栏仍被伪全屏 CSS 隐藏。
+    expect(wrapper.find('[data-testid="nav-menu"]').exists()).toBe(true)
     await wrapper.get('[data-testid="ws-desktop-pseudo-nav-release"]').trigger('click')
     await settle()
-    expect(wrapper.findAll('[data-testid="nav-menu"]')).toHaveLength(1)    // 外壳兜底入口接上
+    expect(wrapper.findAll('[data-testid="nav-menu"]')).toHaveLength(1)
     await wrapper.get('[data-testid="nav-menu"]').trigger('click')
     await settle()
     expect(wrapper.find('[data-testid="nav-drawer-panel"]').exists()).toBe(true)

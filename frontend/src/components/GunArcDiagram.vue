@@ -1,12 +1,4 @@
 <script setup>
-/**
- * 火炮射界交互图（BlitzInfo “Gun arcs” 同构）。
- *
- * 俯视、车头朝上：悬停/拖动圆盘 → 该方位角的 Bearing / Up / Down 实时更新；
- * 阴影带 = 炮管在该方位能达到的全部俯仰范围（models.pb pitch_limits，含装备加成）。
- * 指针半径对应一个具体俯仰（Barrel），离开圆盘复位到 0°（鼠标；触屏保留最后值）。
- * 数值语义与 3D 瞄准/回放共用 replay-local/compute 的 pitchAtBearing。
- */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fmtNum } from '../scene/tankMeta.js'
@@ -20,11 +12,8 @@ import {
 import { pitchAtBearing } from '../replay-local/compute/tankSetup'
 
 const props = defineProps({
-  /** 当前配置的 pitch_limits（models.pb 的 min/max/front/back/transition） */
   pitchLimits: { type: Object, required: true },
-  /** 当前配置的 yaw_limits（null = 全向炮塔） */
   yawLimits: { type: Object, default: null },
-  /** 装备加成（improvedPitchLimitsSystem：+4 仰角 / +3 俯角） */
   bonus: { type: Object, default: null },
 })
 
@@ -62,7 +51,6 @@ watch(
   { immediate: true, deep: true },
 )
 
-/** 屏幕坐标 → SVG 单位坐标（getScreenCTM 不可用时按正方 viewBox 回退）。 */
 function localPoint(event) {
   const svg = event.currentTarget
   const ctm = typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null
@@ -96,7 +84,6 @@ function update(event) {
 }
 
 function onLeave(event) {
-  // 触屏点按后不应立即复位（pointerleave 在抬手后触发）。
   if (event.pointerType === 'touch') return
   reset()
 }

@@ -1,14 +1,3 @@
-/**
- * 火炮射界交互图（BlitzInfo “Gun arcs” 同构）的纯几何层。
- *
- * 方位角：0° = 车头，90° = 右舷，±180° = 车尾（俯视、车头朝上）。
- * 俯仰：`up` 为正仰角，`down` 为带符号下限（负 = 可压低，正 = 车体挡住、至少抬起）。
- *
- * 径向映射是**显示层**：半径锚点取 BlitzInfo 11.21 的 Gun arcs 数值，但**内外翻转**
- * （2026-10-27 用户要求）：**内圈 = 俯角、外圈 = 仰角**。当前半径 = 1 − BI 原半径，
- * 即 +10°=0.7126、+18°=0.8295、−3°=0.4315、−6°=0.3660；地平线仍为 0.5。
- * 只影响画面比例，不参与任何数值判定。
- */
 import { pitchAtBearing } from './tankSetup'
 
 export interface PitchBonus {
@@ -52,17 +41,13 @@ function interpolate(anchors: Array<[number, number]>, value: number) {
   return anchors[anchors.length - 1][1]
 }
 
-/** 俯仰角 → 圆盘半径（0.5 = 地平线；仰角向内、俯角向外）。 */
 export function radiusForPitch(pitch: number): number {
-  // 内外翻转：BI 原半径 r 映射到 1−r（内圈俯角 / 外圈仰角）
   return pitch >= 0
     ? 1 - interpolate(UP_ANCHORS, pitch)
     : 1 - interpolate(DOWN_ANCHORS, -pitch)
 }
 
-/** 圆盘半径 → 俯仰角（分段线性反解；超出锚点范围即钳到端点）。 */
 export function pitchForRadius(radius: number): number {
-  // 反解：先把新半径换回 BI 原半径，再按原锚点反查
   const target = 1 - Math.min(1, Math.max(0, radius))
   const anchors = target <= 0.5 ? UP_ANCHORS : DOWN_ANCHORS
   for (let i = 0; i < anchors.length - 1; i += 1) {
@@ -79,7 +64,6 @@ export function pitchForRadius(radius: number): number {
   return target <= 0.5 ? anchors[anchors.length - 1][0] : -anchors[anchors.length - 1][0]
 }
 
-/** 炮塔水平射界（与 3D 同口径：钳制到 [-max, -min]；缺省/360° = 全向）。 */
 export function arcBearingRange(yawLimits: any) {
   const hasYaw = yawLimits
     && Number.isFinite(Number(yawLimits.min))
@@ -98,7 +82,6 @@ export function clampBearing(bearing: number, yawLimits: any) {
   return Math.min(hi, Math.max(lo, bearing))
 }
 
-/** 屏幕/图形坐标 → 方位角（0 = 上，顺时针为正）。 */
 export function bearingFromPoint(x: number, y: number) {
   return Math.atan2(x, -y) * 180 / Math.PI
 }
@@ -110,7 +93,6 @@ function polar(bearing: number, radius: number) {
   return `${x} ${y}`
 }
 
-/** 均匀采样当前可转射界上的俯仰极限（含两端点；步长默认 2°）。 */
 export function gunArcSamples(
   pitch: any,
   yawLimits: any,
@@ -127,10 +109,6 @@ export function gunArcSamples(
   return out
 }
 
-/**
- * 阴影带路径：外沿 = 该方位**仰角上限**、内沿 = **俯角下限**（内外翻转后的映射）。
- * 全向炮塔用两条闭合轮廓（evenodd 环形）；有限射界用单条带端盖的闭合多边形。
- */
 export function gunArcBandPath(
   pitch: any,
   yawLimits: any,

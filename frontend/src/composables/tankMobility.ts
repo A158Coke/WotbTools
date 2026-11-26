@@ -73,7 +73,6 @@ const seriesColors = [
 ]
 export function vehicleColor(id: string, index?: number) {
   if (index !== undefined && seriesColors[index]) return seriesColors[index]
-  // Stable across filtering, moving and restoring a vehicle.
   let hash = 0
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   const hue = index !== undefined && index >= 4 ? ((index - 4) * 137.507764 + 60) % 360 : hash % 360
@@ -172,7 +171,6 @@ function readCrew(value: unknown, allowed?: Set<string>): CrewSettings | null {
     typeof level !== 'number' || !Number.isInteger(level) || level < 1 || level > 7)) return null
   return { skills: Object.fromEntries(pairs.sort(([a], [b]) => a.localeCompare(b)).map(([id, level]) => [id, Number(level)])), conditionalSkills: value.conditionalSkills }
 }
-/** Called only after raw snapshot validation; comparison ignores cosmetic paint. */
 export function projectMobilitySetup(raw: SetupResolved, crew: CrewSettings): SetupResolved {
   return { ...raw, skills: crew.skills, conditionalSkills: crew.conditionalSkills, camouflage: false }
 }
@@ -185,7 +183,6 @@ export function crewForEntry(document: ComparisonDocument, id: string): CrewSett
   return overrides && Object.hasOwn(overrides, id) ? overrides[id] : document.crew
 }
 
-/** Read a legacy list/seed or a v2 document. Parsing never rewrites storage. */
 export function parseComparison(value: unknown, skillIds?: Iterable<string>): ComparisonLoad {
   const allowed = skillIds ? new Set(skillIds) : undefined
   const legacy = Array.isArray(value) ? value : record(value) && value.v === 1 && record(value.vehicle) && value.vehicle.config ? [value.vehicle] : null
@@ -271,7 +268,6 @@ function boostOptions(input: ComputeInput | null, catalog?: ItemCatalog | null) 
   })
 }
 
-/** A carried consumable affects the run only during its explicit activation window. */
 export function mobilityVehicle({ id, name, input, catalog, activations = {}, color, summary, loading = false }: VehicleArgs) {
   const hasUnknownUpgrade = Number(input?.modules?.tier) === 11 && !input?.modules?.upgradeProgression
   const options = boostOptions(hasUnknownUpgrade ? null : input, catalog)

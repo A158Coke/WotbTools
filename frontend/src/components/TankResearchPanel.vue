@@ -1,16 +1,4 @@
 <script setup>
-/**
- * 单车研发界面（客户端 ModulesTree 的数据面复刻）。
- *
- * 结构（客户端 ModulesTree.yaml）：左列 PreviousTanks（前驱车）→ 当前车面板 →
- * 右侧模块研发图。网格 = 客户端常量 64×64 节点 + 104/97 pitch；**节点坐标由客户端
- * 模型计算、数据没有**，这里用 utils/techTreeLayout 的分层 DAG（列=最长入边路径、
- * 行就着父节点放），UI 明示「布局为复刻推导」。下一级坦克是图里的节点，由解锁它的
- * 模块连出去（与客户端同构）。
- *
- * 交互 = 客户端「点击节点 → 安装」：炮塔/炮经 `?config=` 对号，发动机/履带写各自
- * 下标；下一级坦克节点点击切车。不做研发/购买/解锁流程（无账号状态）。
- */
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Check } from 'lucide-vue-next'
@@ -22,15 +10,10 @@ import { formatXpCompact } from '../utils/xpFormat.js'
 import { romanLevel } from '../utils/tierFormat.js'
 
 const props = defineProps({
-  /** tank/{id}.json */
   detail: { type: Object, required: true },
-  /** research/modules/{nation}.json 单车条目 */
   modules: { type: Object, required: true },
-  /** tankSetup.resolveSetup 结果（?config= 对号的当前搭载） */
   selection: { type: Object, default: null },
-  /** 前驱车：[{ node, cost, name }]（科技树边 to=当前车；可能多父） */
   prevVehicles: { type: Array, default: () => [] },
-  /** 后继车：[{ stem, cost, name, tankId, sourceModule, sourceKind }]（模块 `<unlocks><vehicle>` 目标） */
   nextVehicles: { type: Array, default: () => [] },
 })
 
@@ -48,22 +31,16 @@ const layout = computed(() => {
   try {
     return moduleTreeLayout(props.modules, props.selection, { nextVehicles: props.nextVehicles })
   } catch (error) {
-    // 拓扑环等数据异常：整块降级为不可用（fail-closed），不渲染半残图。
     console.error('module tree layout failed:', error)
     return null
   }
 })
 
-/* 客户端节点 64×64 / pitch 104×97；这里把**宽度**放宽到 96（pitch 136）——
-   小字号下 64 宽只能放约 10 字符/行，两行放不下 "110 mm Destiny Gun V1"
-   （实测 4/16 截断）；96 宽两行可容纳 ~28 字符。高度保持客户端 64。 */
 const NODE_W = 96
 const NODE_H = 64
 const PITCH_X = 136
 const PITCH_Y = 97
-/** 左侧竖干（客户端：当前坦克 → 各行分叉）的宽度 */
 const TRUNK_W = 32
-/** 本级坦克节点与下一级坦克同尺寸、同呈现（用户 2026-10-27），占最左一个节点位 */
 const CURRENT_X = 0
 
 const gridStyle = computed(() => ({
@@ -71,9 +48,6 @@ const gridStyle = computed(() => ({
   height: `${layout.value.rows * PITCH_Y}px`,
 }))
 
-/** 研发图按自然尺寸渲染（96×64 节点 / 136×97 pitch）：容器 .tr-scroll 负责滚动。
- * 不做整图 `transform: scale()`——缩放会把节点文字和 44px 触控目标一起缩小，窄屏上
- * 无法阅读/点击（整图 scale 不是合法布局手段）。 */
 const gridW = computed(() => (layout.value?.columns || 0) * PITCH_X)
 const canvasW = computed(() => NODE_W + TRUNK_W + gridW.value)
 const gridH = computed(() => (layout.value?.rows || 0) * PITCH_Y)
@@ -82,7 +56,6 @@ const canvasStyle = computed(() => ({
   height: `${gridH.value}px`,
 }))
 const gridInCanvasStyle = computed(() => ({ ...gridStyle.value, left: `${NODE_W + TRUNK_W}px` }))
-/** 当前坦克节点：纵向对齐各链行的中点（不超出画布）。 */
 const currentTop = computed(() => {
   const l = layout.value
   if (!l?.branches?.length) return 0
@@ -91,7 +64,6 @@ const currentTop = computed(() => {
   return Math.max(0, Math.min(gridH.value - NODE_H, mid - NODE_H / 2))
 })
 
-/** 竖干：从当前坦克节点右缘中点横出 → 竖线贯穿各链行 → 逐行横出箭头（直角折线）。 */
 const trunk = computed(() => {
   const l = layout.value
   if (!l?.branches?.length) return { lines: [], height: gridH.value }
@@ -101,16 +73,13 @@ const trunk = computed(() => {
   const currentY = currentTop.value + NODE_H / 2
   const trunkX = NODE_W + 12
   const lines = [
-    // 当前坦克右缘 → 竖干
     { x1: NODE_W, y1: currentY, x2: trunkX, y2: currentY, arrow: false },
-    // 竖干本体（覆盖当前节点中心与全部分行）
     { x1: trunkX, y1: Math.min(top, currentY), x2: trunkX, y2: Math.max(bottom, currentY), arrow: false },
   ]
   for (const y of ys) lines.push({ x1: trunkX, y1: y, x2: NODE_W + TRUNK_W, y2: y, arrow: true })
   return { lines, height: gridH.value }
 })
 
-/** 连线：直角折线（客户端同样不画斜线）：源右缘 → 列间中线 → 竖直 → 目标左缘箭头。 */
 const edges = computed(() => {
   const l = layout.value
   if (!l) return []
@@ -134,9 +103,7 @@ function cellPos(node) {
   return { left: `${node.col * PITCH_X}px`, top: `${node.row * PITCH_Y}px` }
 }
 
-/** 连线端点 = 节点中心（宽高各自按节点尺寸取半）。 */
 const KIND_I18N = { chassis: 'track', turret: 'turret', gun: 'gun', engine: 'engine' }
-/** 模块类型图标（客户端 ModulesTechTree 图集）。 */
 const KIND_ICON = { chassis: 'chassis', turret: 'turret', gun: 'gun', engine: 'engine' }
 
 function nodeIcon(kind) {
@@ -147,7 +114,6 @@ function nodeLabelText(node) {
   return node.kind === 'vehicle' ? (node.name || node.stem) : moduleName(node.module)
 }
 
-/** 节点成本：XP 与活动代币（`prx_*`）分开显示，都按 k 缩写（tooltip 给全值）。 */
 function nodeCostText(node) {
   if (node.cost != null) return formatXpCompact(node.cost)
   if (node.costTokens?.amount != null) return formatXpCompact(node.costTokens.amount)
@@ -177,7 +143,6 @@ function nodeTitle(node) {
   return [name, kindLabel, level, cost, action].filter(Boolean).join(' · ')
 }
 
-/** 本级坦克节点图：与下一级坦克节点同一裁剪口径（96×64）。 */
 const iconCrops = ref(null)
 onMounted(() => {
   loadTankIconCrops().then((crops) => { iconCrops.value = crops })
@@ -188,8 +153,6 @@ function cropStyle(id, boxAspect) {
   return transform ? { transform } : null
 }
 const iconStyle = computed(() => cropStyle(tankId.value, NODE_W / NODE_H))
-/** 下一级坦克节点的小图同样要套内容框裁剪（原始画布坦克锚左上，不然看着偏）。 */
-/** 车辆节点图铺满格子（96×64 → aspect 1.5），与模块图同一裁剪口径。 */
 function vehicleIconStyle(id) {
   return cropStyle(id, NODE_W / NODE_H)
 }
@@ -205,7 +168,6 @@ function activate(node) {
 
 <template>
   <section class="tr-panel" :class="{ 'has-side': prevVehicles.length }" data-testid="research-panel">
-    <!-- ============ 左：前驱车 → 当前车面板 ============ -->
     <aside v-if="prevVehicles.length" class="tr-side">
       <div class="tr-prev" data-testid="research-prev-tanks">
         <h3 class="tr-side-title">{{ t('research.prev_tanks') }}</h3>
@@ -225,7 +187,6 @@ function activate(node) {
       </div>
     </aside>
 
-    <!-- ============ 右：研发图（模块 + 下一级坦克，点击安装/切车） ============ -->
     <div class="tr-main">
       <header class="tr-head">
         <h3 class="tr-title">{{ t('research.modules_title') }}</h3>
@@ -239,7 +200,6 @@ function activate(node) {
         </p>
         <div class="tr-scroll">
           <div class="tr-canvas" :style="canvasStyle">
-          <!-- 本级坦克：与下一级坦克同一呈现（节点 + 下方名字），竖干从它右缘接出 -->
           <div
             class="tr-node is-current-tank"
             :style="{ left: `${CURRENT_X}px`, top: `${currentTop}px` }"

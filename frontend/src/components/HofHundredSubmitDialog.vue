@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 百场人工提交弹窗：表单草稿 / 证据 / 本地校验 / 提交的唯一 owner。弹窗 keep-mounted，关闭后草稿保留。
-// 个人状态（pending / current）与候选车辆归 HofHundredBoard，这里只读。
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
@@ -15,11 +13,9 @@ import VehiclePicker from './VehiclePicker.vue'
 type SubmissionSummary = components['schemas']['HundredSubmissionSummary']
 
 const props = defineProps<{
-  /** 百场榜当前筛选后的候选车辆 */
   vehicles: readonly TierXVehicle[]
   pendingList: readonly SubmissionSummary[]
   currentList: readonly SubmissionSummary[]
-  /** 提交成功（草稿已清空、弹窗已关闭）后由榜单刷新；提交中状态持续到它完成 */
   afterSubmit: () => Promise<void>
 }>()
 
@@ -54,10 +50,6 @@ const hasDraft = computed(() => Boolean(
 
 const pickerOptions = computed(() => withDraftVehicle(props.vehicles, form.vehicleId).map(vehicle => tierXPickerOption(t, te, vehicle)))
 
-/**
- * 提交弹窗里的当前门槛（审计 BZ-18）：门槛是「你在该车的当前纪录」。没有纪录时明确说明这是第一条纪录，
- * 而不是提示「须高于当前纪录」。
- */
 const threshold = computed(() => {
   const vehicleId = form.vehicleId
   if (!vehicleId) return { key: 'hofRules.threshold.chooseVehicle' }
@@ -164,7 +156,6 @@ async function submit() {
     submitError.value = t('hundred.fillRequired')
     return
   }
-  // 提交前本地提示：所选车辆已有 PENDING 时立即阻止（backend 409 仍保留为最终兜底）。
   if (findVehicleStatus(props.pendingList, form.vehicleId)) {
     submitError.value = t('hundred.pendingExistsLocal')
     return

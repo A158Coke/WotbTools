@@ -1,4 +1,3 @@
-/** Resolve the authoritative display identity used by team review text and UI. */
 export function teamIdentityLabel(result, playerKey, t) {
   const identity = Array.isArray(result.teamPlayers)
     ? result.teamPlayers.find(item => item?.playerKey === playerKey)
@@ -8,7 +7,6 @@ export function teamIdentityLabel(result, playerKey, t) {
   return `${displayName} / ${tankName}`
 }
 
-/** Produce exactly the text offered by the copy action, including its footer. */
 export function buildAiReviewReplyText(result, t) {
   const team = result.teamReview
   const text = team

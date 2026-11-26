@@ -1,21 +1,15 @@
 // @vitest-environment happy-dom
-// 键盘自由视角（useSceneFlyControls.tickFly）的纯推进语义锁：
-// 朝向基准 / 水平投影（俯视不钻地）/ QE 世界系升降 / 速率倍乘 / dt=0 零位移 /
-// follow 由调用方短路（内核 flyTick 职责，此处不测）/ 高度限制由场景统一负责；
-// 以及面板失活时飞行循环必须自停并清键（评审 P2）。
 import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, classifyTwoFinger, groundPanOffset, freeVerticalDistancePose, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.ts'
 
-// 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
-//（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。
 function makeRig(pressedKeys, { cam = [0, 20, 30], target = [0, 0, 0] } = {}) {
   const pressed = new Set(pressedKeys)
   const camera = { position: { x: cam[0], y: cam[1], z: cam[2] } }
   const controls = { target: { x: target[0], y: target[1], z: target[2] } }
   function tick(dt, fallbackYaw = null) {
-    return advanceFly(pressed, dt, camera, controls, FLY_SPEEDS[0], fallbackYaw)   // 恒档 1 = 2 m/s
+    return advanceFly(pressed, dt, camera, controls, FLY_SPEEDS[0], fallbackYaw)
   }
   return { camera, controls, tick }
 }
@@ -85,8 +79,6 @@ describe('classifyTwoFinger 判定', () => {
   })
 })
 
-// 回归（2026-10-24 用户实测）：模式按钮点击后仍持有焦点；曾把 BUTTON 一并当交互目标
-// 跳过，导致「点过自由/跟随按钮之后 WASD 全部无反应」。只有文本输入才让出键盘。
 describe('fly 键盘守卫只让出文本输入', () => {
   it('按钮 / 链接 / 滑杆不拦截；文本类输入拦截', () => {
     expect(isTextEntryTarget({ tagName: 'BUTTON' })).toBe(false)
@@ -104,23 +96,20 @@ describe('fly 键盘守卫只让出文本输入', () => {
 describe('tickFly 位移语义', () => {
   it('W = 沿观察方向水平前进；target 重钉固定视距（旋转中心 = 相机自身）', () => {
     const rig = makeRig(['KeyW'], { cam: [0, 20, 30], target: [0, 0, 0] })
-    // 朝 -z 看（forward = -z 归一）；dt=2s、2m/s ⇒ 相机前进 4m
     expect(rig.tick(2)).toBe(true)
     expect(rig.camera.position.x).toBeCloseTo(0)
     expect(rig.camera.position.z).toBeCloseTo(26)
-    // target = 相机 + 原方向 × 原视距（30）：视向不变、环绕半径恒定 = 绕自己转
     expect(rig.controls.target.z).toBeCloseTo(-4)
     expect(rig.controls.target.x).toBeCloseTo(0)
   })
 
   it('水平投影：俯冲视角下 W 不改变高度、水平速度恒定', () => {
-    // 相机在高处俯视 target（forward 有大 -y 分量）——fwd 只取 x/z
     const rig = makeRig(['KeyW'], { cam: [0, 100, 10], target: [0, 0, 0] })
     const y0 = rig.camera.position.y
     rig.tick(1)
-    expect(rig.camera.position.y).toBe(y0)             // 高度不变（不钻地）
+    expect(rig.camera.position.y).toBe(y0)
     const horiz = Math.hypot(rig.camera.position.x, rig.camera.position.z - 10)
-    expect(horiz).toBeCloseTo(2)                       // 水平位移 = 2 m（dt=1s）
+    expect(horiz).toBeCloseTo(2)
   })
 
   it('正俯视没有水平投影时，Free 朝向 yaw 仍让 WASD 可用且不改变相机高度', () => {
@@ -138,13 +127,13 @@ describe('tickFly 位移语义', () => {
   })
 
   it('Q 升 E 降（世界系，与朝向无关；高度由场景约束负责）', () => {
-    const up = makeRig(['KeyQ'], { cam: [10, 20, 10], target: [-40, 0, 10] })   // Q 升（用户裁定）
+    const up = makeRig(['KeyQ'], { cam: [10, 20, 10], target: [-40, 0, 10] })
     up.tick(1)
     expect(up.camera.position.y).toBeCloseTo(22)
-    expect(up.controls.target.y).toBeCloseTo(2)        // 视向不变（平行移动）：target 同升 2m
+    expect(up.controls.target.y).toBeCloseTo(2)
     const down = makeRig(['KeyE'])
     down.tick(1)
-    expect(down.camera.position.y).toBeCloseTo(18)     // 默认机位 y=20，降 2
+    expect(down.camera.position.y).toBeCloseTo(18)
     const overview = makeRig(['KeyQ', 'KeyW'], { cam: [0, 300, 0.01], target: [0, 0, 0] })
     expect(overview.tick(1)).toBe(true)
     expect(overview.camera.position.y).toBe(302)
@@ -155,7 +144,7 @@ describe('tickFly 位移语义', () => {
     const diag = makeRig(['KeyW', 'KeyA'], { cam: [0, 20, 30], target: [0, 0, 0] })
     diag.tick(1)
     const dx = diag.camera.position.x, dz = diag.camera.position.z - 30
-    expect(Math.hypot(dx, dz)).toBeCloseTo(2)          // 归一：合位移 = 单键位移
+    expect(Math.hypot(dx, dz)).toBeCloseTo(2)
     const still = makeRig([])
     expect(still.tick(1)).toBe(false)
     const zeroDt = makeRig(['KeyW'])
@@ -163,8 +152,6 @@ describe('tickFly 位移语义', () => {
   })
 })
 
-// 评审 P2：isActive 此前只在 keydown 检查——按住 W 用鼠标切到 2D/数据页签
-// （v-show 隐藏，不触发 window.blur，也还没 keyup），隐藏的 3D 相机持续前进。
 describe('飞行循环的生命周期（评审 P2）', () => {
   it('面板失活：下一帧即停推进并清空按键，重新激活不会自己继续飞', async () => {
     let active = true
@@ -188,20 +175,18 @@ describe('飞行循环的生命周期（评审 P2）', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))
     await vi.waitFor(() => expect(calls.length).toBeGreaterThan(0), { timeout: 1000 })
     active = false
-    await new Promise((r) => setTimeout(r, 80))     // 已排队的帧在此窗口内被丢弃
+    await new Promise((r) => setTimeout(r, 80))
     const stopped = calls.length
     await new Promise((r) => setTimeout(r, 120))
-    expect(calls.length).toBe(stopped)               // 失活后不再推进
+    expect(calls.length).toBe(stopped)
     active = true
     await new Promise((r) => setTimeout(r, 120))
-    expect(calls.length).toBe(stopped)               // 按键已清空：不自恢复
+    expect(calls.length).toBe(stopped)
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
     wrapper.unmount()
   })
 })
 
-// 评审 P2：HIGH 档水面反射隔帧更新，WASD 最后一个键松开后不能再靠 flyTick 产生
-// dirty frame——收口必须在 keyup / blur 当次显式请求一次反射刷新。
 describe('WASD 交互收口（评审 P2）', () => {
   function mountFly(settleCamera) {
     const api = { flyTick: () => false, invalidate: () => {}, settleCamera }
@@ -229,7 +214,7 @@ describe('WASD 交互收口（评审 P2）', () => {
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))
     expect(settleCamera).toHaveBeenCalledTimes(1)
     window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA' }))
-    expect(settleCamera).toHaveBeenCalledTimes(1)   // 未登记键的 keyup 不重复收口
+    expect(settleCamera).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
@@ -240,7 +225,7 @@ describe('WASD 交互收口（评审 P2）', () => {
     window.dispatchEvent(new Event('blur'))
     expect(settleCamera).toHaveBeenCalledTimes(1)
     window.dispatchEvent(new Event('blur'))
-    expect(settleCamera).toHaveBeenCalledTimes(1)   // 已无按键：不重复收口
+    expect(settleCamera).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 })
@@ -249,16 +234,15 @@ describe('freeVerticalDistancePose 竖向距离位姿（滑条 Free 模式）', 
   const base = { terrainY: 0, clearanceMin: 0.5, heightMax: 100 }
 
   it('斜视降低相机：camera 与 target 加同一高度差，yaw/pitch 不变', () => {
-    // 相机 (·,100,·) 看向 target (·,0,·)（−45° 俯视）；滑到 v=1 → 贴地下限 0.5
     const pose = freeVerticalDistancePose({ ...base, camY: 100, targetY: 0, v: 1 })
     expect(pose.camY).toBe(0.5)
-    expect(pose.targetY).toBe(0 - (100 - 0.5))   // 同一 delta，−45° 朝向保持
+    expect(pose.targetY).toBe(0 - (100 - 0.5))
   })
 
   it('升高相机：target 同步上移，方向保持', () => {
     const pose = freeVerticalDistancePose({ ...base, camY: 20, targetY: 5, v: 0 })
-    expect(pose.camY).toBe(100)                    // heightMax 上限
-    expect(pose.targetY).toBe(5 + 80)              // 同一 delta
+    expect(pose.camY).toBe(100)
+    expect(pose.targetY).toBe(5 + 80)
   })
 
   it('撞到贴地下限：相机停在 terrain+clearance，target 只跟随实际生效差值', () => {
@@ -269,7 +253,7 @@ describe('freeVerticalDistancePose 竖向距离位姿（滑条 Free 模式）', 
 
   it('地形不为 0 时上下限整体随 terrainY 平移', () => {
     const pose = freeVerticalDistancePose({ ...base, terrainY: 10, camY: 200, targetY: 20, v: 1 })
-    expect(pose.camY).toBe(10.5)                   // terrainY + clearanceMin
+    expect(pose.camY).toBe(10.5)
     expect(pose.targetY).toBe(20 - (200 - 10.5))
   })
 })

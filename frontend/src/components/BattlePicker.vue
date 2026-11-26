@@ -1,8 +1,4 @@
 <script setup>
-// 场次选择器（design-language §7 SearchSelect，单选）：WAI-ARIA combobox + listbox。
-// 桌面 / 平板为 Popover 下拉面板；手机为底部 AppSheet。超过 6 场显示搜索框，按地图 / 文件名 / 胜方过滤。
-// 键盘导航、aria-activedescendant、Esc、outside click、portal 与碰撞定位由 Reka Listbox / Popover 提供；
-// 这里只拥有场次选项/过滤语义与桌面 vs 手机的产品策略。
 import { computed, inject, onDeactivated, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
@@ -15,26 +11,21 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
-  /** [{ value, label, meta, search }]：label 主文本，meta 次要信息，search 额外检索文本。 */
   options: { type: Array, required: true },
   modelValue: { type: String, default: null },
   ariaLabel: { type: String, required: true },
-  /** 父级 capability 可见性；false 时关闭已打开的 overlay（v-show 隐藏不会移除 portal 到 body 的 sheet）。 */
   visible: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
 const { isCompact } = useBreakpoint()
-// 与 AppDialog 同口径：组件测试 / fullscreen 宿主内原地渲染
 const inline = inject(DIALOG_INLINE_KEY, false)
 
 const SEARCH_THRESHOLD = 6
 const open = ref(false)
 const query = ref('')
 const root = ref(null)
-// 触发按钮由 PopoverTrigger as-child 接管 ref，这里从容器里取
 const triggerEl = computed(() => root.value?.querySelector('.picker-trigger') ?? null)
-// 桌面面板与手机 sheet 共用同一份列表模板
 const [DefineBody, ReuseBody] = createReusableTemplate()
 
 const selected = computed(() => props.options.find(option => option.value === props.modelValue) || null)
@@ -53,12 +44,9 @@ function setOpen(value) {
 
 function choose(value) {
   setOpen(false)
-  // Listbox 单选里再次点击当前项会取消选择（value 为空）；场次不允许为空
   if (value != null && value !== props.modelValue) emit('update:modelValue', value)
 }
 
-// 桌面面板是非模态的：Tab 不能被 Reka 的循环 FocusScope 困在面板里。
-// 关闭面板并把焦点放回触发按钮，键盘用户从按钮继续 Tab / Shift+Tab。
 function onPanelTab(event) {
   event.preventDefault()
   setOpen(false)
@@ -68,7 +56,6 @@ function onPanelTab(event) {
 watch(() => props.visible, (visible) => {
   if (!visible) setOpen(false)
 })
-// KeepAlive 停用（离开 Replay 页面）时组件不会 unmount：portal 到 body 的面板不随父 DOM 隐藏，必须主动关闭。
 onDeactivated(() => setOpen(false))
 </script>
 
@@ -108,7 +95,6 @@ onDeactivated(() => setOpen(false))
     </ListboxRoot>
   </DefineBody>
 
-  <!-- 只有一场时没有可选项：显示同样的上下文，不给用户一个打不开的下拉 -->
   <div v-if="options.length === 1" class="battle-picker" role="group" :aria-label="ariaLabel" v-bind="$attrs">
     <span class="picker-value picker-static">
       <span class="picker-label">{{ options[0].label }}</span>
@@ -173,7 +159,6 @@ onDeactivated(() => setOpen(false))
 .picker-meta { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .picker-static { align-items: center; min-height: var(--control-h-md); }
 
-/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
 :deep(.picker-panel) {
   z-index: var(--z-menu);
   width: 360px;
@@ -230,7 +215,6 @@ onDeactivated(() => setOpen(false))
 }
 </style>
 
-<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会；退场不加 CSS 动画——Reka Presence 会等 animationend，没有退场动画时才立即卸载 -->
 <style>
 @keyframes wotb-picker-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
 </style>

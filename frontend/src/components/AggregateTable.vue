@@ -11,14 +11,11 @@ const props = defineProps({
   aggregate: Array,
   shownCols: Array,
   aggStats: Object,
-  /** 呈现方式：table（默认）/ cards（手机卡片列表；表格保留在 DOM 里供 PNG 导出）。 */
   layout: { type: String, default: 'table' },
 })
 const sortKey = ref('')
 const sortReverse = ref(false)
-// 跨场表现派生列：百分比展示；HP 全部 UNKNOWN 时为 null（显示 "--"，不冒充 0）
 const PERCENT_KEYS = new Set(['multi_damage_rate'])
-// 跨场原始比例列：分母为 0（无射击/无命中）→ null（unavailable，显示 "--"，禁止 0/0 伪装 0%）
 const RATE_KEYS = new Set(['hit_rate', 'pen_rate'])
 
 function percentCell(value) {
@@ -26,7 +23,6 @@ function percentCell(value) {
   return (Math.round(value * 10) / 10) + '%'
 }
 
-/** 原始比例（0-100 标尺）：denominator==0 → null（unavailable，显示 "--"）；否则展示数值。 */
 function rateCell(value) {
   if (value == null || value === '') return '--'
   return String(Math.round(Number(value) * 10) / 10)
@@ -59,7 +55,6 @@ const aggregateStats = computed(() => props.aggStats ? [
   { key: 'max_damage', label: t('metric.max_damage'), value: props.aggStats.maxDmg },
 ] : [])
 
-// ---- 卡片列表（手机）：与表格共用排序与单元格格式 ----
 const CARD_IDENTITY_KEYS = new Set(['nickname', 'clan'])
 
 function cellText(row, c) {

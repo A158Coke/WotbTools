@@ -1,6 +1,4 @@
-/* Legacy Hall of Fame presentation, pending its component migration. */
 
-/* ========================= Hall of Fame ========================= */
 .lb-wrap {
   color: var(--color-text-primary);
 }
@@ -18,18 +16,7 @@
   color: var(--color-accent-text) !important;
 }
 
-/* .lb-head 已删除：全仓库无 DOM 消费者（见 showcase-rankings.css 同注）。 */
 
-/* The filter bar is a dense operations toolbar. CSS Grid gives every field real
- * width instead of squeezing labels into one narrow flex line:
- *   row 1: Nation | Vehicle Type | Tier | Vehicle (spans 2 → widest field)
- *   row 2: Battle Type | Player Search (spans 2) | Limit | Refresh
- * Each label stays on one line, the nickname input is usable, limit/refresh align.
- * Tablet wraps to two columns, mobile is task-first with the wide fields spanning
- * the full row. */
-/* .lb-toolbar 基础样式唯一 owner：网格/颜色/间距/背景在此，position/z-index（相对定位、
- * 低于吸顶 Tab 但高于表格吸头，保证下拉列表可达）也在此。HoFPage.vue scoped 版同 selector
- * 更高 specificity，故网格/颜色需 !important 压制；移动端 grid-area 布局归 showcase-rankings.css。 */
 .lb-wrap .lb-toolbar {
   position: relative;
   top: auto;
@@ -93,7 +80,7 @@
   opacity: .52;
 }
 .lb-wrap .lb-toolbar input::placeholder { color: var(--color-text-tertiary) !important; }
-.lb-wrap .lb-toolbar button:not(.vp-btn) { /* 车辆选择器内部的图标按钮自带样式（VehiclePicker） */
+.lb-wrap .lb-toolbar button:not(.vp-btn) {
   min-height: 38px;
   justify-self: start;
   border: 1px solid var(--color-border-strong) !important;
@@ -118,8 +105,6 @@
   background: color-mix(in srgb, var(--color-surface-1) 50%, transparent) !important;
   backdrop-filter: blur(8px);
 }
-/* 在 ShowcaseHero 内部（横幅盖在主视觉图上）撤掉玻璃底板：浅色主题的半透明白底
-   在遮罩全撤后会变成一大块灰白玻璃（2026-11-11 用户反馈）；底板只属于页面表面。 */
 .showcase-hero .lb-submit-row {
   background: transparent !important;
   border-color: transparent !important;
@@ -167,8 +152,6 @@
 .lb-wrap table tbody tr:hover { background: color-mix(in srgb, var(--color-surface-3) 96%, transparent) !important; }
 .lb-wrap table tbody td { color: var(--color-text-primary); }
 
-/* Error/warning states should integrate with the dark workspace instead of becoming
- * huge pastel strips that visually reset the page back to the old light UI. */
 .lb-wrap .lb-upload-msg.err {
   color: var(--color-danger) !important;
 }

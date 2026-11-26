@@ -7,7 +7,6 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 
-// Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
 async function pressEscape() {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await flushPromises()
@@ -19,7 +18,6 @@ const api = vi.hoisted(() => ({
   deleteUsers: vi.fn()
 }))
 
-// login / ensureToken 必须可断言：离线时页面**不允许**走到认证路径（既不 refresh 也不跳登录）。
 const auth = vi.hoisted(() => ({
   ensureToken: vi.fn(() => Promise.resolve(true)),
   login: vi.fn()
@@ -46,7 +44,6 @@ vi.mock('../utils/display.js', () => ({
   apiErrorCodeLabel: (_t, _te, code) => (code ? 'code:' + code : '')
 }))
 
-// t(key, params) → "key(k=v,...)"：断言时同时锁定 key 与插值参数。
 const i18n = vi.hoisted(() => ({
   translate: (key, params) => (params
     ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
@@ -57,10 +54,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.translate, te: () => true })
 }))
 
-/**
- * 连通性夹具：AdminUsersPage 是 ONLINE_REQUIRED，本套件用**真实** connectivity store
- * （只替换 navigator.onLine），从而验证「门禁 → 认证 → backend」的真实顺序。
- */
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
 }
@@ -71,7 +64,6 @@ async function goOnline() {
   await useConnectivity().start()
 }
 
-/** AdminUserListItem fixture（Keycloak segment 默认：无本地资料）。 */
 function kcUser(keycloakUserId, overrides = {}) {
   return {
     keycloakUserId,
@@ -103,7 +95,6 @@ describe('AdminUsersPage', () => {
     ))
     api.deleteUsers.mockResolvedValue({ requested: 2, deleted: 2, failed: 0, results: [] })
     auth.ensureToken.mockResolvedValue(true)
-    // 默认在线：绝大多数用例测的是页面行为，不是连通性。
     await goOnline()
   })
 
@@ -138,7 +129,6 @@ describe('AdminUsersPage', () => {
 
     await wrapper.find('[data-testid="admin-segment-local"]').trigger('click')
     await flushPromises()
-    // local segment：IdP 输入禁用、值清空，请求不带 idpAlias（否则后端 400）。
     expect(idpInput.attributes('disabled')).toBeDefined()
     expect(idpInput.element.value).toBe('')
     expect(wrapper.find('.admin-filter-hint').text()).toBe('admin.idpAliasKeycloakOnly')
@@ -167,7 +157,6 @@ describe('AdminUsersPage', () => {
     expect(badges.map(badge => badge.text())).toEqual(['admin.noLocalProfile', 'admin.kcUserMissing'])
     expect(badges[1].classes()).toContain('is-warning')
 
-    // 孤儿绑定：抽屉能打开并显示列表行字段与说明，但不向 Keycloak 拉详情；删除仍可用（释放唯一槽位）。
     await rows()[1].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
     const drawer = wrapper.find('[data-testid="admin-detail-drawer"]')
@@ -191,7 +180,6 @@ describe('AdminUsersPage', () => {
     expect(rows()[1].text()).not.toContain('admin.unbound')
   })
 
-  // —— 点行在右侧详情抽屉打开（AppSheet side="end"），不再弹模态框；危险操作在抽屉底部 ——
   async function openDrawer(index = 0) {
     await rows()[index].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
@@ -202,7 +190,6 @@ describe('AdminUsersPage', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    // 点整行（非行内控件）与点主列按钮是同一个动作。
     await rows()[0].find('td.admin-list-muted').trigger('click')
     await flushPromises()
     const drawer = wrapper.find('[data-testid="admin-detail-drawer"]')
@@ -272,10 +259,3 @@ describe('AdminUsersPage', () => {
   })
 })
 
-/**
- * PR #467 review blocker：Admin Users 整体是 ONLINE_REQUIRED，且门禁必须**先于认证**。
- *
- * 不变量：非-online ⇒ 0 次 login()、0 次 token refresh 网络路径、0 次 admin API，
- * 并且立刻给出统一 connectivity notice（offline 用功能文案，unknown/degraded/
- * service-unavailable 用各自的 connectivityNotice 文案 —— 不谎称「你离线」）。
- */

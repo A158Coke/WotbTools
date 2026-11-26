@@ -54,12 +54,10 @@ function statusOrNull(value: unknown): number | null {
 export class ApiError extends Error implements ApiErrorApplicationModel {
   readonly name = 'ApiError'
   readonly errorCode: ApplicationErrorCode
-  /** Backward-compatible alias; new code should branch on errorCode. */
   readonly code: string
   readonly status: number | null
   readonly errorMsg: string | null
   readonly id: string | null
-  /** Legacy request-header correlation, never the canonical body identifier. */
   readonly traceId: string | null
   readonly retryable: boolean
   readonly details: JsonObject
@@ -134,7 +132,6 @@ async function responseBody(response: Pick<Response, 'headers'> & Partial<Pick<R
   return { body: null, malformed: false }
 }
 
-/** Canonical body first, then legacy `{error}`, then stable status/proxy fallback. */
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
   const status = Number.isFinite(response.status) ? response.status : null
   const { body, malformed } = await responseBody(response)
@@ -164,7 +161,6 @@ export async function apiErrorFromResponse(response: Response): Promise<ApiError
   })
 }
 
-/** Normalize fetch rejection, abort, legacy Error and already-canonical ApiError. */
 export function normalizeApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error
   if (isRecord(error) && error.name === 'AbortError') {
@@ -190,7 +186,6 @@ export function normalizeApiError(error: unknown): ApiError {
   })
 }
 
-/** Phase-1 adapter for existing Processing/Export Job FAILED payloads. */
 export function normalizeJobError(job: unknown): ApiError {
   const record = isRecord(job) ? job : {}
   const nested = isRecord(record.error) ? record.error : {}
@@ -213,16 +208,6 @@ export async function requireOk(response: Response): Promise<Response> {
   return response
 }
 
-/**
- * REST 前缀 → 功能 id 的**纯映射**（无 Vue、无 connectivity、无副作用，可确定性单测）。
- *
- * 前缀边界必须按 segment 判定：`/api/admin/users-evil` 不是 `/api/admin/users` 的子资源，
- * 因此 `startsWith` 式的字符串前缀在这里是错的，用「等于自身 或 后接 `/`」。
- * 判定顺序从最具体到最一般，`/api/admin/hof` 先于 `/api/hof`、`/api/admin/users` 先于 `/api/users`。
- *
- * 未登记的前缀返回 null（**不** fail-closed 成某个功能）：未知路由由后端 404 表达，
- * 不该被这里伪造成「功能不可用」。
- */
 const API_PATH_FEATURES: readonly (readonly [string, string])[] = Object.freeze([
   ['/api/admin/ai-review-feedback', Feature.ADMIN_AI_FEEDBACK],
   ['/api/ai-review-feedback', Feature.AI_FEEDBACK],
@@ -244,15 +229,6 @@ export function featureForApiPath(pathname: string): string | null {
   return null
 }
 
-/**
- * Fetch wrapper guaranteeing transport failures are also canonical ApiError instances.
- *
- * 连通性门禁的分工（review P2）：
- *  - **业务策略的 owner 是页面 / 组件**：页面用 `useFeatureGate()` + `Feature.*` 决定是否发起动作，
- *    并给出中性状态与提示（见 ProfilePage / AdminUsersPage）。这是唯一的功能准入 SSOT。
- *  - **这里的 transport 映射只是 defense-in-depth**：万一某个页面漏了门禁，Android 运行时也
- *    不会把请求发到一个已知不可达的后端；它**不**参与产品决策，也**不**负责提示文案。
- */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   try {
     const resolved = resolveApiUrl(input)
@@ -263,7 +239,6 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Pr
         throw new ApiError({ code: 'NETWORK_ERROR', retryable: true })
       }
     }
-    // Native Bearer owns Android authentication; never send cross-origin cookies.
     return isAndroidRuntime()
       ? await fetch(resolved, { ...init, credentials: 'omit' })
       : init === undefined ? await fetch(resolved) : await fetch(resolved, init)
@@ -278,7 +253,6 @@ export interface XhrErrorResponse {
   getResponseHeader?: (name: string) => string | null
 }
 
-/** XHR non-2xx response using the same canonical/legacy/status precedence. */
 export function apiErrorFromXhr(xhr: XhrErrorResponse): ApiError {
   let body: unknown = null
   let malformed = false

@@ -11,10 +11,6 @@ export const projectionB = Object.freeze({
   projection: Object.freeze({ id: 'proj-B' }),
 })
 
-/**
- * ReplayAnalysisAction is replaced with its DOM contract so layout and click tests
- * share the same mount. Failure text and actions still use the real Banner/AppButton.
- */
 export function mountAiReviewPanel(mount, AiReviewPanel, props = {}) {
   return mount(AiReviewPanel, {
     props: { file: { name: 'a.wotbreplay' }, ...props },
@@ -40,7 +36,6 @@ export function mountAiReviewPanel(mount, AiReviewPanel, props = {}) {
   })
 }
 
-/** Request calls, excluding cancel endpoints. */
 export function createRequestHelpers(aiReviewsUrl) {
   return {
     analyzeCalls(fetchMock) {
@@ -57,7 +52,6 @@ export function createRequestHelpers(aiReviewsUrl) {
   }
 }
 
-/** Decode the gzip request body back into JSON. */
 export const requestBody = async call => JSON.parse(
   gunzipSync(new Uint8Array(await call[1].body.arrayBuffer())).toString('utf8'),
 )
@@ -78,7 +72,6 @@ export function emptySseResponse() {
 export const sseFrame = (event, data) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 export const sseEvent = (event, data) => new TextEncoder().encode(sseFrame(event, data))
 
-/** Frame-driven SSE response with a fresh cursor and frame list per call. */
 export function sseFromFrames(...frames) {
   let index = 0
   return {

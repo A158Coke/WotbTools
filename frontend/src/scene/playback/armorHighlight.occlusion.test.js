@@ -69,7 +69,6 @@ describe('遮挡 pass 裁剪', () => {
     const track = mesh(40, 0, -50)
     track.material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
     expect(canOccludeTarget(track, view)).toBe(false)
-    // 顶点被悬挂移进目标矩形，包围球仍是旧的
     const position = track.geometry.getAttribute('position')
     for (let i = 0; i < position.count; i++) position.setX(i, position.getX(i) - 40)
     expect(canOccludeTarget(track, view)).toBe(false)
@@ -110,7 +109,7 @@ describe('isSolidOccluder', () => {
 
 describe('遮挡剔除批次 AABB', () => {
   const camera = () => {
-    const c = new THREE.PerspectiveCamera(1, 2, 0.5, 2000)   // 1° 窄视锥 ≈ 远目标长走廊
+    const c = new THREE.PerspectiveCamera(1, 2, 0.5, 2000)
     c.lookAt(0, 0, -1)
     c.updateMatrixWorld(true)
     c.updateProjectionMatrix()
@@ -131,18 +130,15 @@ describe('遮挡剔除批次 AABB', () => {
 
   it('盒在视锥外但包围球相交：不进遮挡集（宫格球整批重画的根因）', () => {
     const view = viewOf(camera(), 120)
-    // 长盒沿 x 转 45°：中心 (24,0,-100)，世界 AABB 半宽 ≈21.9（够不到 ±1.7 的窄视锥），
-    // 包围球半径 ≈30（伸得进）——3.30.0 的球判定会把这类批次整批拉进遮挡集。
     const mesh = batch(new THREE.Box3(new THREE.Vector3(2.1, -21.9, -101.9), new THREE.Vector3(45.9, 21.9, -98.1)))
     expect(canOccludeTarget(mesh, view)).toBe(false)
-    mesh.userData.occluderBox = null                      // 可破坏物批次回退球
+    mesh.userData.occluderBox = null
     mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(24, 0, -100), 30)
     expect(canOccludeTarget(mesh, view)).toBe(true)
   })
 
   it('盒支撑函数：球因半径膨胀误判可遮挡，盒按最小可能视线深度判退', () => {
     const view = viewOf(camera(), 50)
-    // 细高盒（半 y=60）中心深度 100：支撑深度 99 > 50 → 不可遮挡；球半径 ≈60 → 40 ≤ 50 误判
     const mesh = batch(new THREE.Box3(new THREE.Vector3(-1, -60, -101), new THREE.Vector3(1, 60, -99)))
     expect(canOccludeTarget(mesh, view)).toBe(false)
     mesh.userData.occluderBox = null

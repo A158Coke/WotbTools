@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// 数据版本下拉面板（design-language §7 Menu / §7.1 Select）。
-// Reka Select 提供 listbox 语义、方向键/Home/End/typeahead、Esc 关闭并还焦点、portal 与
-// 碰撞定位；这里只拥有选项信息层级与视觉 token。触发器由调用方以 #trigger 插槽提供，
-// 保证侧边栏块、设置项、页头紧凑形态共用同一份列表。
 import { computed } from 'vue'
 import {
   SelectContent,
@@ -18,8 +14,6 @@ import {
 import { Check } from 'lucide-vue-next'
 import type { DatasetOption, DatasetStatus } from '../composables/useDataVersion.js'
 
-// Reka/Radix Select 禁止空字符串作为 item value；用不可能与 dataset id 冲突的哨兵值映射
-// 到「默认（跟随服务器）」。
 const DEFAULT_VALUE = '__default__'
 
 const props = withDefaults(defineProps<{
@@ -52,7 +46,6 @@ interface MetaPart {
   params?: { count: number }
 }
 
-/** 第二行分段：版本来源 / 车辆数 / 非 active 状态；分隔符只在两段之间出现。 */
 function metaParts(option: DatasetOption): MetaPart[] {
   const parts: MetaPart[] = []
   if (option.title) parts.push({ text: option.title })
@@ -125,7 +118,6 @@ function metaParts(option: DatasetOption): MetaPart[] {
 </template>
 
 <style scoped>
-/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素用 :deep 命中 */
 :deep(.dv-menu) {
   z-index: var(--z-menu);
   min-width: max(248px, var(--reka-select-trigger-width));
@@ -224,7 +216,6 @@ function metaParts(option: DatasetOption): MetaPart[] {
 }
 </style>
 
-<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会 -->
 <style>
 @keyframes wotb-dv-in {
   from {

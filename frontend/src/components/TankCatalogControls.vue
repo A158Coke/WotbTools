@@ -104,8 +104,6 @@ function closeSheet() {
   nextTick(() => opener?.isConnected && opener.focus({ preventScroll: true }))
 }
 
-// The outer Dialog's close button is also in the tab order. Escape from anywhere
-// inside this modal returns to the list before Reka's window listener dismisses it.
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   const scope = panel.value?.closest('[role="dialog"]') ?? panel.value
   if (event.key !== 'Escape' || !panelOpen.value || !(event.target instanceof Node) || !scope?.contains(event.target)) return
@@ -271,8 +269,6 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus())
 .is-sheet .tp-field { min-inline-size: 0; }
 .is-sheet .tp-nations { grid-column: 1 / -1; }
 
-/* Compact filters keep touch targets in both page sheets and dialog subpanels. The segmented selector needs
-   its extra class in the selector to outrank its own 32px control-height rule. */
 .tp-filters.is-sheet :deep(button),
 .tp-filters.is-sheet :deep(select),
 .tp-filters.is-sheet :deep(input),

@@ -19,14 +19,11 @@ const STORAGE_KEYS = {
   aggOrder: 'wotb-replay-agg-order',
 }
 
-/** League Rating（CW）模式独立 storage scope：普通与 League 列偏好互不污染。 */
 const LEAGUE_STORAGE_KEYS = {
   playerVisible: 'wotb-league-player-visible-cols',
   playerOrder: 'wotb-league-player-order',
   aggVisible: 'wotb-league-agg-visible-cols',
   aggOrder: 'wotb-league-agg-order',
-  // CW 统一玩家表 scope（复用同一 useColumns/ColumnPicker 基础设施，
-  // 复用现有 toggle/reorder/persistence，不另建第二套系统）
   cwVisible: 'wotb-league-cw-visible-cols',
   cwOrder: 'wotb-league-cw-order',
 }
@@ -42,10 +39,6 @@ function readStoredList(key) {
   }
 }
 
-/**
- * 列默认值迁移的版本标记：只在第一次（标记缺失）把「与旧默认值相同」的存档视为未改过；
- * 之后完全信任存档——否则用户主动「全选」或恰好选回旧默认集合，每次加载都会被重置。
- */
 const COLUMN_DEFAULTS_VERSION_KEY = 'wotb-columns-defaults-v'
 const COLUMN_DEFAULTS_VERSION = '2'
 
@@ -80,7 +73,6 @@ function mergeOrder(availableKeys, storedOrder) {
 }
 
 function restorePlayerVisible(availableKeys, storedOrder, storedVisible, defaults) {
-  // 没有可见列存档（新用户或迁移后）：直接用默认值，不能再用旧顺序推算「新出现的列」
   if (storedVisible == null) return availableKeys.filter(key => defaults.includes(key))
   const available = new Set(availableKeys)
   const visible = uniqueKeys((storedVisible || []).filter(key => available.has(key)))
@@ -89,10 +81,6 @@ function restorePlayerVisible(availableKeys, storedOrder, storedVisible, default
   return [...visible, ...missingDefault.filter(key => !visible.includes(key))]
 }
 
-/**
- * 已存的可见列与某一版旧默认值完全相同 → 用户从未改过列，返回 null 让调用方采用当前默认值。
- * （初始化时 watch 会立即把可见列写回 storage，所以「没改过」的用户也一定有存档。）
- */
 function migrateUntouchedDefaults(storedVisible, legacyDefaults, migrate) {
   if (storedVisible == null) return null
   if (!migrate) return storedVisible
@@ -107,7 +95,6 @@ function aggDefaults(availableKeys) {
   return defaults.length ? defaults : [...availableKeys]
 }
 
-/** 汇总表：以前默认全部可见，所以「存档 = 当时全部列」也视为没改过，迁到核心列。 */
 function restoreAggVisible(availableKeys, storedOrder, storedVisible, migrate) {
   if (storedVisible == null || (migrate && hadAllColumnsVisible(storedOrder, storedVisible))) return aggDefaults(availableKeys)
   const available = new Set(availableKeys)
@@ -129,7 +116,6 @@ function hadAllColumnsVisible(storedOrder, storedVisible) {
     && storedOrder.every(key => storedVisible.includes(key))
 }
 
-/** League 固定列（玩家 + 总 Rating）必须位于前两位并始终可见（sticky 布局依据）。 */
 function pinLeagueOrder(order) {
   const rest = order.filter(key => !LEAGUE_FIXED_KEYS.includes(key))
   return [...LEAGUE_FIXED_KEYS, ...rest]
@@ -144,21 +130,14 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
   const aggVisibleKeys = ref([])
   const playerOrder = ref([])
   const aggOrder = ref([])
-  /** CW 统一玩家表 scope：nickname + league_rating 固定，其余列用户控制可见/顺序。 */
   const cwVisibleKeys = ref([])
   const cwOrder = ref([])
   const cwAvailableKeys = ref([])
   const showColPicker = ref(false)
   const pickerScope = ref('player')
 
-  /** League（CW）模式：显式消费页面级 leagueMode（resp.leagueMode），不从列内容推断。 */
   const leagueMode = computed(() => leagueModeRef.value)
 
-  /**
-   * ColumnPicker 作用域（Blocker #2）：由 dataViewMode 驱动。
-   * SUMMARY（汇总视图）→ 普通模式 agg / League 模式 cw（统一玩家表）；
-   * SINGLE（单场视图）→ player（单场玩家表，League 与普通共用同一偏好）。
-   */
   const colScope = computed(() => {
     if (dataViewModeRef.value === 'SUMMARY') return leagueMode.value ? 'cw' : 'agg'
     return 'player'
@@ -169,7 +148,6 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
         : playerOrder.value)
   const basePlayerCols = computed(() =>
     playerCols.value.filter(c => !EXTENDED_ONLY_PLAYER_KEYS.has(c.key)))
-  /** B6：wire 上仍存在但列层不展示的 key（`tanks`）不进 aggregate 列 universe。 */
   const presentableAggCols = computed(() =>
     (aggCols.value || []).filter(c => !UNPRESENTABLE_COLUMN_KEYS.has(c.key)))
 
@@ -183,7 +161,6 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
 
   function initFromResponse(resp) {
     const migrate = needsDefaultsMigration()
-    // 唯一事实源 resp.leagueMode；playerColumns 是否含 league_rating 不决定模式
     const league = resp.leagueMode === true
     const storage = league ? LEAGUE_STORAGE_KEYS : STORAGE_KEYS
     const defaults = league ? LEAGUE_DEFAULT_VISIBLE : DEFAULT_VISIBLE
@@ -193,7 +170,6 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     const ak = presentableAggCols.value.map(c => c.key)
 
     const storedPlayerOrder = readStoredList(storage.playerOrder)
-    // League 单场表的默认值（LEAGUE_DEFAULT_VISIBLE）本来就是核心列，没有旧版本需要迁移
     const storedPlayerVisible = league
       ? readStoredList(storage.playerVisible)
       : migrateUntouchedDefaults(readStoredList(storage.playerVisible), LEGACY_DEFAULT_VISIBLE, migrate)
@@ -209,8 +185,6 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     aggOrder.value = mergeOrder(ak, storedAggOrder)
     aggVisibleKeys.value = restoreAggVisible(ak, storedAggOrder, storedAggVisible, migrate)
 
-    // CW 统一玩家表列 universe = league.playerSummaryColumns ∪ aggregateColumns：
-    // mergeCwPlayerColumns 只负责提供合法 universe/去重，最终可见顺序由用户偏好决定
     if (league) {
       const ck = mergeCwPlayerColumns(
         resp.league?.playerSummaryColumns || [],
@@ -234,7 +208,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
 
   function toggleCol(e) {
     if (e.scope === 'cw') {
-      if (LEAGUE_FIXED_KEYS.includes(e.key)) return // 玩家/Rating 固定显示，不可隐藏
+      if (LEAGUE_FIXED_KEYS.includes(e.key)) return
       cwVisibleKeys.value = cwVisibleKeys.value.includes(e.key)
         ? cwVisibleKeys.value.filter(k => k !== e.key)
         : [...cwVisibleKeys.value, e.key]
@@ -242,7 +216,7 @@ export function useColumns(playerCols, aggCols, dataViewModeRef, leagueModeRef =
     }
     const target = e.scope === 'agg' ? aggVisibleKeys : visibleKeys
     if (e.scope === 'player' && leagueMode.value && LEAGUE_FIXED_KEYS.includes(e.key)) {
-      return // 总 Rating 固定显示，不允许被 ColumnPicker 隐藏
+      return
     }
     target.value = target.value.includes(e.key)
       ? target.value.filter(k => k !== e.key)

@@ -109,15 +109,12 @@ describe('vehicle-aware vehicle markers', () => {
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
-    // 1×：标记自身保持 1×
     expect(parseMarkerScale(marker.attributes('style'))).toBe(1)
-    // 2× → 4×（wheel）：camera content 改为 layout 放大，marker 保留自身同比缩放，名称按 1/view.scale 反缩放
     for (let i = 0; i < 14; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBe(4)
     expect(parseMarkerScale(marker.attributes('style'))).toBe(4)
-    // 反缩放宿主是 .pb-presentation（标签呈现层已抽成共享组件 PlaybackVehicleLabel.vue）
     expect(marker.find('.pb-presentation').attributes('style')).toContain('scale(0.25)')
   })
 
@@ -136,8 +133,6 @@ describe('vehicle-aware vehicle markers', () => {
       const m = style.match(/--pb-overlay-inv: ([\d.]+)/)
       return m ? Number(m[1]) : null
     }
-    // 三角偏移 = 名称块屏幕常量偏移(62) + 三角自身反缩放（见 VehicleMarker 内的实测说明）。
-    // 这里锁定：偏移按 overlayInverse 反缩放、恒为正（三角不落进标签块）、recorder 与车身恒 5px。
     const HALF = 4.5
     const BLOCK_SCREEN_TOP = 62
     const NAME_GAP = 3
@@ -150,26 +145,20 @@ describe('vehicle-aware vehicle markers', () => {
       expect(x).toBeTruthy()
       expect(r).toBeTruthy()
       expect(inv).toBeTruthy()
-      // 偏移随 inv 反缩放，且恒为正 → 三角始终在名称块之上
       expect(x).toBeCloseTo(selectedOffset(inv), 6)
       expect(x).toBeGreaterThan(0)
-      // recorder → vehicle 恒 5px
       expect(r * currentScale).toBeCloseTo(5, 6)
-      // 浮动幅度 = 2px × inv × s = 2px（inv = 1/s）
       expect(inv * currentScale).toBeCloseTo(1, 6)
     }
-    // 1×：三角偏移 = 3 + 4.5 + 57.5 = 65（真实 Chrome 实测值）/ recorder 5px
     expect(viewportScale(wrapper)).toBe(1)
     expect(readOffset('.pb-selected-mark')).toBe(selectedOffset(1))
     expect(readOffset('.pb-recorder-badge')).toBe(5)
     check()
-    // ≈2×（1.2^4 ≈ 2.07）
     for (let i = 0; i < 4; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(viewportScale(wrapper)).toBeGreaterThan(1.9)
     check()
-    // 4×（钳制）
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
@@ -194,10 +183,10 @@ describe('vehicle-aware vehicle markers', () => {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     const leftTopAfter = marker.attributes('style').match(/left: ([^;]+); top: ([^;]+);/).slice(1, 3)
-    expect(leftTopAfter).toEqual(leftTopBefore) // 中心仍锚定同一地图坐标
-    expect(marker.findAll('img')[0].attributes('style')).toBe(hullRotateBefore) // 旋转不被反缩放覆盖
+    expect(leftTopAfter).toEqual(leftTopBefore)
+    expect(marker.findAll('img')[0].attributes('style')).toBe(hullRotateBefore)
     expect(marker.findAll('img')[1].attributes('style')).toBe(turretRotateBefore)
-    expect(marker.find('.pb-death').exists()).toBe(true) // ✕ 随标记保持固定屏幕尺寸（同一结构）
+    expect(marker.find('.pb-death').exists()).toBe(true)
   })
 })
 
@@ -206,14 +195,12 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 1×：深色衬底 10px / 外层光晕 6px / 内芯 1.75px（逐元素绑定，屏幕宽度恒定）
     expect(wrapper.find('.pb-tracer-casing').attributes('stroke-width')).toBe('10')
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('6')
     expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('1.75')
     for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
-    // 4×：除以 view.scale 保持屏幕宽度（长度仍随地图坐标缩放）
     expect(wrapper.find('.pb-tracer-casing').attributes('stroke-width')).toBe('2.5')
     expect(wrapper.find('.pb-tracer').attributes('stroke-width')).toBe('1.5')
     expect(wrapper.find('.pb-tracer-core').attributes('stroke-width')).toBe('0.4375')
@@ -223,12 +210,10 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 命中瞬间四层齐全：深色衬底、光晕（阵营色）、内芯（亮白）、命中闪光圆点
     expect(wrapper.findAll('.pb-tracer-casing')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-core')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tracer-flash')).toHaveLength(1)
-    // 光晕描边来自共享 tracer variant（射击者 1001 为友军）；衬底来自中性底板墨色 SSOT
     expect(wrapper.find('.pb-tracer').attributes('stroke')).toBe(playbackTracerColor(true))
     expect(wrapper.find('.pb-tracer-casing').attributes('stroke')).toBe('var(--color-on-team-neutral)')
     const core = wrapper.find('.pb-tracer-core')
@@ -236,8 +221,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(core.attributes('opacity')).toBe('1')
     const flash = wrapper.find('.pb-tracer-flash')
     expect(flash.attributes('cx')).toBeTruthy()
-    expect(flash.attributes('r')).toBe('3') // flashProgress=0 → 起始半径 3px
-    // 0.1s 后闪光扩散（flashProgress≈0.286 → r≈5.57）
+    expect(flash.attributes('r')).toBe('3')
     const later = mountPlayback(makeOverview(), 12.1)
     await flushPromises()
     const rLater = Number(later.find('.pb-tracer-flash').attributes('r'))
@@ -264,7 +248,7 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     expect(imgs.length).toBe(2)
     for (const img of imgs) {
       const style = img.attributes('style')
-      expect(style).toContain('translate(-50%, -50%)') // 以素材共同 pivot 居中（vehicle-aware marker box）
+      expect(style).toContain('translate(-50%, -50%)')
       expect(style).toContain('rotate(')
     }
   })
@@ -273,19 +257,16 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
     stubRaf()
     const wrapper = mountPlayback(makeOverview(), 12)
     await flushPromises()
-    // 1× 即常显（不再依赖 ≥2× 缩放）
     const labels = wrapper.findAll('.pb-labels')
-    expect(labels.length).toBe(2) // 两辆可见车都显示标签
+    expect(labels.length).toBe(2)
     expect(labels[0].text()).toContain('Maus')
     expect(labels[1].text()).toContain('T49')
-    // 标签块位于图标上方（bottom: calc(100% + 2px)），自身反缩放（overlayInverseScale）→ 屏幕字号恒定
-    // 反缩放宿主是 .pb-presentation（呈现层已抽成共享组件）
     for (const presentation of wrapper.findAll('.pb-presentation')) {
       expect(presentation.attributes('style')).toContain('scale(')
     }
     const firstStyle = wrapper.find('.pb-vehicle').attributes('style')
-    expect(firstStyle).toContain('scale(1)') // marker 自身保留缩放，避免 layout camera 改变其屏幕尺寸
-    for (let i = 0; i < 12; i++) { // 1× → 4×
+    expect(firstStyle).toContain('scale(1)')
+    for (let i = 0; i < 12; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 0, clientY: 0 })
     }
     expect(wrapper.findAll('.pb-labels').length).toBe(2)
@@ -303,8 +284,6 @@ describe('fixed-size strokes and always-visible tank name labels', () => {
 
 describe('marker anchors', () => {
   it('标记严格落在真实位置：忽略任何残留 presentationOffset，且不画虚线引导线', () => {
-    // 2026-10-16 用户裁定：删除防重叠位移与虚线引导线——车体必须落在真实位置
-    //（密集处允许图标互相压盖），与 3D 一致（3D 从不移动车体模型）。
     activeTerrainRelief.value = createTerrainReliefModel({
       mapCode: 'test',
       worldBounds: { xMin: -100, xMax: 100, yMin: -100, yMax: 100 },
@@ -319,7 +298,6 @@ describe('marker anchors', () => {
         vehicle: { accountId: 1, team: 1 },
         pos: { x: 0, y: 0 },
         markerStyle: { left: '50%', top: '50%' },
-        // 残留字段（旧数据/旧状态）必须被忽略
         presentationOffset: { x: 20, y: -16 },
       }],
     })

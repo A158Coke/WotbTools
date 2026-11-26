@@ -1,15 +1,10 @@
 // @vitest-environment happy-dom
-/**
- * VehicleMarker 正式组件测试（PR2 — §17）：generic / dedicated turreted / dedicated
- * turretless 三条渲染路径 + 状态 class + select 事件。
- */
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import VehicleMarker from './VehicleMarker.vue'
 import markerSourceBase from './VehicleMarker.vue?raw'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-// scoped 样式已拆至 sidecar css；源码契约断言仍需看到样式文本
 const markerStyles = readFileSync(join(import.meta.dirname, 'vehicle-marker.css'), 'utf8')
 const markerSource = markerSourceBase + markerStyles
 import labelSource from './PlaybackVehicleLabel.vue?raw'
@@ -27,7 +22,6 @@ const genericMarker = {
   markerStyle: { left: '10%', top: '20%', transform: 'translate(-50%, -50%)' },
   overlayInverseScale: 'scale(1)',
   overlayInverse: 1,
-  // PR4 §36：hull hitbox 比例（generic 车体 55%×88% + padding；dedicated 0.9 方）
   hitbox: { w: 0.58, h: 0.9 },
   playerName: 'You',
   tankName: 'Maus',
@@ -155,8 +149,6 @@ describe('generic（非 Tier X / fallback）', () => {
 
 
   it('纯俯视：视觉层不施加任何 3D 倾斜（即便残留 terrainAttitude 字段）', () => {
-    // 2026-10-16：2D = 3D 的严格俯视投影，"多出的维度"（俯仰/侧倾）不再呈现——
-    // 原地形高度场合成倾斜已删；此守卫防它随状态字段回流。
     const w = mountMarker({
       ...genericMarker,
       terrainAttitude: { pitchDeg: 8, rollDeg: -3 },
@@ -165,7 +157,6 @@ describe('generic（非 Tier X / fallback）', () => {
     expect(style).not.toContain('rotateX')
     expect(style).not.toContain('rotateY')
     expect(style).not.toContain('rotateZ')
-    // 平面内朝向照常（hull 各自 rotate）
     expect(w.find('.pb-hull').attributes('style')).toContain('rotate(30deg)')
   })
 
@@ -198,16 +189,14 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(hull.attributes('style')).toContain('rotate(30deg)')
     const assembly = w.find('.pb-turret-assembly')
     expect(assembly.exists()).toBe(true)
-    expect(assembly.attributes('style')).toContain('rotate(30deg)') // 父层 rotate(H)
+    expect(assembly.attributes('style')).toContain('rotate(30deg)')
     const turret = w.find('.pb-turret-dedicated')
     expect(turret.attributes('src')).toBe('/assets/maus/turret.webp')
     expect(turret.attributes('style')).toContain('left: 35.0594%')
     expect(turret.attributes('style')).toContain('top: -6.1375%')
     expect(turret.attributes('style')).toContain('width: 29.8438%')
-    // transform-origin 相对 image 自身盒（image-local pivot / image 尺寸）：
-    // 47.81/95.5 = 50.0628%，212.87/287 = 74.1707%（不是 marker-global 的 14.9406%/66.5219%）
     expect(turret.attributes('style')).toContain('transform-origin: 50.0628% 74.1707%')
-    expect(turret.attributes('style')).toContain('rotate(30deg)') // T - H = 60 - 30
+    expect(turret.attributes('style')).toContain('rotate(30deg)')
   })
 
   it('marker 收到 null 方向 → 不自行伪造朝向（projector 负责 destroyed presentation fallback）', () => {
@@ -222,16 +211,14 @@ describe('dedicated turreted（嵌套 transform）', () => {
     expect(death.exists()).toBe(true)
     expect(death.text()).toBe('✕')
     const style = death.attributes('style') || ''
-    expect(style).toContain('color: #ff4d4f') // 红色
-    expect(style).toContain('font-size: 30px') // 22px → 30px 明显放大（主状态）
-    expect(style).toContain('z-index: 6') // 高于 hull(1)/turret(2)/name(5)
-    expect(style).toContain('translate(-50%, -50%)') // 车体中心定位（覆盖车辆主体，非名字旁角标）
+    expect(style).toContain('color: #ff4d4f')
+    expect(style).toContain('font-size: 30px')
+    expect(style).toContain('z-index: 6')
+    expect(style).toContain('translate(-50%, -50%)')
     expect(markerSource).toMatch(/\.pb-death \{[^}]*top: 50%[^}]*left: 50%[^}]*\}/)
-    // ✕ 是 button 直接子元素、与 .pb-graphics 视觉层容器平级——不继承 destroyed opacity/grayscale
     const graphics = w.find('.pb-graphics')
     expect(graphics.exists()).toBe(true)
     expect(death.element.parentElement).toBe(graphics.element.parentElement)
-    // 非 destroyed 不渲染 ✕（与 last-known 语义区分：淡化无 ✕）
     const lk = mountMarker({ ...genericMarker, lastKnown: true, destroyed: false })
     expect(lk.find('.pb-death').exists()).toBe(false)
     expect(lk.find('button').classes()).toContain('pb-last-known')
@@ -244,7 +231,6 @@ describe('dedicated turreted（嵌套 transform）', () => {
     for (const w of [g, t, tl]) {
       expect(w.find('.pb-graphics').exists()).toBe(true)
       expect(w.find('button').classes()).toContain('pb-destroyed')
-      // hull/turret/assembly 都是 .pb-graphics 的后代；✕ 是 button 直接子元素
       const graphicsEl = w.find('.pb-graphics').element
       const deathEl = w.find('.pb-death').element
       expect(deathEl.parentElement).toBe(graphicsEl.parentElement)
@@ -314,19 +300,16 @@ describe('marker 根元素（按钮）', () => {
   })
 
   it('DESTROYED（lifeState）隐藏单车 HP number+bar；保留 ✕ / label / selected', async () => {
-    // ALIVE + known HP → 单车 HP HUD 可见
     const alive = mountMarker({ ...genericMarker, destroyed: false })
     await alive.setProps({ hp: { current: 800, pct: 80, destroyed: false, state: 'CURRENT', knowledge: 'CURRENT' } })
     expect(alive.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
 
-    // DESTROYED + HP=0 → 隐藏单车 HP（lifeState 权威，非 hp===0）
     const dead0 = mountMarker({ ...genericMarker, destroyed: true })
     await dead0.setProps({ hp: { current: 0, pct: 0, destroyed: true, state: 'DESTROYED' } })
     expect(dead0.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
     expect(dead0.find('.pb-death').exists()).toBe(true)
     expect(dead0.find('[data-test="pb-label-tank"]').exists()).toBe(true)
 
-    // DESTROYED + stale HP=500 → 仍隐藏单车 HP（不得因残留血量而重新显示）
     const dead500 = mountMarker({ ...genericMarker, destroyed: true })
     await dead500.setProps({ hp: { current: 500, pct: 50, destroyed: true, state: 'DESTROYED' } })
     expect(dead500.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
@@ -352,7 +335,6 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
     expect(friendlyRule).toContain('var(--pb-team-glow')
     expect(enemyRule).toContain('var(--pb-enemy-outline')
     expect(enemyRule).toContain('var(--pb-enemy-glow')
-    // PR2 B3 过渡色（暖 amber/冷 cyan）已被 PR3 正式 team token 取代
     expect(src).not.toContain('rgba(255, 166, 77')
     expect(src).not.toContain('rgba(64, 192, 255')
     expect(src).not.toContain('pb-graphics-dedicated')
@@ -360,10 +342,9 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
 
   it('destroyed：中度变暗（0.55）+ grayscale + team outline 弱化保留；红 X 在容器外完整强度', () => {
     const src = markerSource
-    expect(src).toContain('opacity: 0.55') // §24 不再极端透明（原 0.35）
+    expect(src).toContain('opacity: 0.55')
     expect(src).toMatch(/\.pb-destroyed\.pb-friendly \.pb-graphics \{[^}]*grayscale\(1\)[^}]*var\(--pb-team-outline[^}]*\}/)
     expect(src).toMatch(/\.pb-destroyed\.pb-enemy \.pb-graphics \{[^}]*grayscale\(1\)[^}]*var\(--pb-enemy-outline[^}]*\}/)
-    // 一次性 transition <1s + reduced-motion 直达终态
     expect(src).toContain('transition: opacity 0.45s ease, filter 0.45s ease')
     expect(src).toContain('@media (prefers-reduced-motion: reduce)')
     expect(src).toContain('.pb-destroyed .pb-graphics { transition: none; }')
@@ -377,16 +358,13 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   it('last-known：模型淡化 + 仅弱 outline（无 glow）；label 文字弱化、background 正常', () => {
     const src = markerSource
     expect(src).toMatch(/\.pb-last-known\.pb-friendly \.pb-graphics \{[^}]*opacity: 0\.35[^}]*\}/)
-    expect(src).not.toContain('.pb-last-known { opacity: .3') // root opacity 已移除（✕/name 不被连带淡化）
-    // PR4 §25 的 label 弱化规则随呈现层迁到共享组件 PlaybackVehicleLabel.vue：
-    // 只弱化文字两行（.65），HP HUD / 血条保持正常——契约本身不变，位置变了。
+    expect(src).not.toContain('.pb-last-known { opacity: .3')
     expect(labelSource).toMatch(/\.label-last-known \.pb-label-tank,\s*\n\s*\.label-last-known \.pb-label-player \{ opacity: \.65; \}/)
     expect(labelSource, 'last-known 不得整块淡化（会连背景一起弱化）')
       .not.toMatch(/\.label-last-known \.pb-labels \{[^}]*opacity/)
     const w = mountMarker({ ...dedicatedMarker, friendly: true, lastKnown: true, destroyed: false })
     expect(w.find('button').classes()).toContain('pb-last-known')
     expect(w.find('button').classes()).toContain('pb-friendly')
-    // 呈现层把 last-known 传成同一个语义类
     expect(w.find('[data-test="playback-vehicle-label"]').classes()).toContain('label-last-known')
   })
 
@@ -405,7 +383,7 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   it('recorder：空心菱形（tank 下方、friendly team 色、静态）', () => {
     const src = markerSource
     expect(src).toContain('.pb-recorder-badge {')
-    expect(src).toContain('border: 1.5px solid var(--pb-team-outline, #ffd76a)') // rotate(45deg) 由 inline style 提供
+    expect(src).toContain('border: 1.5px solid var(--pb-team-outline, #ffd76a)')
     const w = mountMarker({ ...dedicatedMarker, recorder: true })
     const badge = w.find('.pb-recorder-badge')
     expect(badge.exists()).toBe(true)
@@ -416,16 +394,13 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
 
   it('destroyed + selected：selected 克制变体（更小更淡，destroyed > selected）；generic/dedicated 都正常', () => {
     const src = markerSource
-    // 克制规则：透明度 0.55 + 三角线性缩小（9px→6px 高、6px→4px 边）
     expect(src).toMatch(/\.pb-selected-restrained \{[^}]*opacity: 0\.55[^}]*border-left-width: 4px[^}]*border-right-width: 4px[^}]*border-top-width: 6px[^}]*\}/)
     const g = mountMarker({ ...genericMarker, destroyed: true }, true)
     expect(g.find('.pb-selected-mark').classes()).toContain('pb-selected-restrained')
     const d = mountMarker({ ...dedicatedMarker, destroyed: true }, true)
     expect(d.find('.pb-selected-mark').classes()).toContain('pb-selected-restrained')
-    // 存活 selected：正常完整强度（无克制 class）
     const alive = mountMarker(genericMarker, true)
     expect(alive.find('.pb-selected-mark').classes()).not.toContain('pb-selected-restrained')
-    // 非 selected 不渲染任何 mark
     const none = mountMarker({ ...genericMarker, destroyed: true }, false)
     expect(none.find('.pb-selected-mark').exists()).toBe(false)
   })
@@ -433,20 +408,13 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
   it('destroyed ✕ 与 label 块保持 inverse-scale（不随地图 zoom 异常放大）；✕ 无 filter/opacity', () => {
     const w = mountMarker({ ...genericMarker, destroyed: true, overlayInverseScale: 'scale(0.5)', overlayInverse: 0.5 })
     expect(w.find('.pb-death').attributes('style')).toContain('translate(-50%, -50%) scale(0.5)')
-    // 反缩放宿主从 .pb-labels 上移到 .pb-presentation（内含共享呈现组件）
     expect(w.find('.pb-presentation').attributes('style')).toContain('translateX(-50%) scale(0.5)')
-    // ✕ 不套用 .pb-graphics 的 grayscale/opacity（自身规则不含 filter/opacity）
     expect(markerSource).not.toMatch(/\.pb-death[^}]*filter:/)
     expect(markerSource).not.toMatch(/\.pb-death[^}]*opacity:/)
   })
 
   it('selected/recorder layout offset 按 overlayInverse 反缩放：selected→name gap 与 recorder→vehicle 恒定', () => {
-    // 三角偏移由「名称块屏幕常量偏移 + 三角自身反缩放」推导（见 VehicleMarker 内的实测说明）。
-    // 这里锁定两条真实契约：
-    //   1) 1× 时三角底边停在名称块顶边上方 3px（真实 Chrome 实测 3.00）；
-    //   2) 偏移整体按 overlayInverse 反缩放（zoom 下屏幕间距不线性增长），且恒为正、
-    //      即三角始终在名称块之上、不会压住名称。
-    const HALF = 4.5 // 三角高 9px 的一半
+    const HALF = 4.5
     const BLOCK_SCREEN_TOP = 62
     const GAP = 3
     for (const inv of [1, 0.5, 0.25]) {
@@ -454,17 +422,14 @@ describe('PR3 §19–§25 — team outline/glow 与状态视觉', () => {
       const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
       const x = GAP + HALF + (BLOCK_SCREEN_TOP - HALF) * inv
       expect(markStyle).toContain(`bottom: calc(100% + ${x}px)`)
-      expect(markStyle).toContain(`scale(${inv})`) // 元素尺寸同步反缩放
-      expect(x).toBeGreaterThan(0) // 三角恒在车辆上方，不会落进标签块
-      // 浮动幅度：2px × inv × s = 2px 恒定（var 注入 + keyframes calc）
+      expect(markStyle).toContain(`scale(${inv})`)
+      expect(x).toBeGreaterThan(0)
       expect(markStyle).toContain(`--pb-overlay-inv: ${inv}`)
       expect(markerSource).toContain('margin-top: calc(2px * var(--pb-overlay-inv, 1))')
-      // recorder：offset × scale = 5 恒定
       const badgeStyle = w.find('.pb-recorder-badge').attributes('style') || ''
       expect(badgeStyle).toContain(`top: calc(100% + ${5 * inv}px)`)
       expect(badgeStyle).toContain(`scale(${inv})`)
     }
-    // 缺省 overlayInverse（旧 fixture 兼容）：回退 1× 间距（实测契约值 65 = 3 + 4.5 + 57.5）
     const legacy = mountMarker({ ...genericMarker, recorder: true }, true)
     expect(legacy.find('.pb-selected-mark').attributes('style'))
       .toContain(`bottom: calc(100% + ${GAP + HALF + (BLOCK_SCREEN_TOP - HALF)}px)`)
@@ -480,37 +445,27 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     const labels = w.find('.pb-labels')
     expect(labels.exists()).toBe(true)
     expect(w.find('.pb-label-tank').text()).toBe('Maus')
-    expect(w.find('.pb-label-player').exists()).toBe(false) // 默认玩家名关
+    expect(w.find('.pb-label-player').exists()).toBe(false)
     const two = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
     expect(two.find('.pb-label-player').text()).toBe('You')
     expect(two.find('.pb-label-player').isVisible()).toBe(true)
-    // 两行都在同一背景块内（共享 canvas §28）
     expect(two.find('.pb-labels').element.contains(two.find('.pb-label-player').element)).toBe(true)
     expect(two.find('.pb-labels').element.contains(two.find('.pb-label-tank').element)).toBe(true)
   })
 
-  /**
-   * §29 team 文字色：语义类由 marker 判定（friendly/enemy），色值由**共享呈现组件**给出。
-   *
-   * 说明：Playback root 由 `teamCssVars()` 注入 `--pb-team-text/--pb-enemy-text`（SSOT），
-   * 所以生产回放里走第一顺位；fallback `--color-team-ally/enemy` 只在组件被单独挂载、
-   * 没有 Playback root 作用域时生效，仍是同一语义体系的设计 token。
-   */
   it('§29 team 文字色：friendly/enemy 语义类 → 设计 token（fallback 位）', () => {
     expect(markerSource).toContain("'pb-friendly': st.value.friendly === true")
     expect(markerSource).toContain("'pb-enemy': st.value.friendly === false")
     expect(labelSource).toMatch(/\.label-friendly \{ color: var\(--pb-team-text, var\(--color-team-ally\)\); \}/)
     expect(labelSource).toMatch(/\.label-enemy \{ color: var\(--pb-enemy-text, var\(--color-team-enemy\)\); \}/)
-    // 运行期：friendly 车拿到 label-friendly 类（语义类由 marker 判定后传入）
     const w = mount(VehicleMarker, { props: { marker: { ...genericMarker, friendly: true }, selected: false, label } })
     expect(w.find('[data-test="playback-vehicle-label"]').classes()).toContain('label-friendly')
   })
 
   it('§30 tooltip：只有 PlayerName 截断（scrollWidth > clientWidth）才显示完整名 title', async () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
-    await new Promise((r) => setTimeout(r, 0)) // nextTick 测量
-    expect(w.find('.pb-label-player').attributes('title')).toBeUndefined() // 未截断 → 无 tooltip
-    // 模拟截断：scrollWidth > clientWidth，然后由呈现层的 watch 重测（依赖 playerName）
+    await new Promise((r) => setTimeout(r, 0))
+    expect(w.find('.pb-label-player').attributes('title')).toBeUndefined()
     Object.defineProperty(w.find('.pb-label-player').element, 'scrollWidth', { value: 200, configurable: true })
     Object.defineProperty(w.find('.pb-label-player').element, 'clientWidth', { value: 60, configurable: true })
     await w.setProps({ marker: { ...genericMarker, playerName: 'You (moved)' } })
@@ -523,17 +478,15 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     expect(src).not.toContain('.pb-label-fading')
     expect(src).not.toContain('pb-label-fade-in')
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: false, label: { ...label, showPlayer: true } } })
-    expect(w.find('.pb-label-player').exists()).toBe(true) // 恒渲染
-    expect(w.find('.pb-label-player').attributes('style')).toBeUndefined() // 无 v-show 隐藏 style
-    expect(w.find('.pb-label-player').isVisible()).toBe(true) // 恒可见
+    expect(w.find('.pb-label-player').exists()).toBe(true)
+    expect(w.find('.pb-label-player').attributes('style')).toBeUndefined()
+    expect(w.find('.pb-label-player').isVisible()).toBe(true)
   })
 
   it('§34 tankDy：标签块 bottom 上移（tankDy×inv），selected 三角同步上移；车体不受影响', () => {
     const w = mount(VehicleMarker, { props: { marker: genericMarker, selected: true, label: { ...label, tankDy: -10 } } })
-    // 定位/位移宿主是 .pb-presentation（内含共享呈现组件）
     const labelsStyle = w.find('.pb-presentation').attributes('style') || ''
-    expect(labelsStyle).toContain('bottom: calc(100% + 12px)') // 2 - (-10)×1
-    // 三角底边 = 1× 基准偏移，再随 tankDy 上移 10
+    expect(labelsStyle).toContain('bottom: calc(100% + 12px)')
     const markStyle = w.find('.pb-selected-mark').attributes('style') || ''
     expect(markStyle).toContain(`bottom: calc(100% + ${3 + 4.5 + (62 - 4.5) + 10}px)`)
     expect(w.find('button').attributes('style')).toContain('left: 10%')
@@ -545,7 +498,6 @@ describe('PR4 — 玩家/坦克标签与碰撞（§26–§36）', () => {
     expect(hitbox.exists()).toBe(true)
     expect(hitbox.attributes('style')).toContain('width: 58%')
     expect(hitbox.attributes('style')).toContain('height: 90%')
-    // 居中定位 + 可点 + 在图形层之上（CSS 提供，inline 只给 % 尺寸）
     expect(markerSource).toMatch(/\.pb-hitbox \{[^}]*left: 50%[^}]*top: 50%[^}]*transform: translate\(-50%, -50%\)[^}]*pointer-events: auto[^}]*\}/)
     const d = mount(VehicleMarker, { props: { marker: { ...dedicatedMarker, hitbox: { w: 0.9, h: 0.9 } }, selected: false, label } })
     expect(d.find('.pb-hitbox').attributes('style')).toContain('width: 90%')

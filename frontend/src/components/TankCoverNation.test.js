@@ -22,7 +22,6 @@ describe('TankCoverNation（整幅封面国籍背景）', () => {
     expect(flag.attributes('aria-hidden')).toBe('true')
     expect(flag.get('img').attributes('src')).toBe('https://assets.test/ui/flags/flag_tutor-tank_ussr@2x.webp')
     expect(provider.imageUrl).toHaveBeenCalledWith('/ui/flags/flag_tutor-tank_ussr@2x.webp')
-    // 装饰图不能走会触发 Android PLAYBACK_3D 提示的 url()。
     expect(provider.url).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -31,8 +30,6 @@ describe('TankCoverNation（整幅封面国籍背景）', () => {
     const wrapper = mount(TankCoverNation, { props: { nation: 'ussr' } })
     const crop = wrapper.get('.tank-cover-flag-crop')
     const image = wrapper.get('.tank-cover-flag-crop img')
-    // 1024×512 画布、可见 884×496 → 可见宽高比 1.782 > 8:5：
-    // 裁剪窗按高度 100% 铺满，宽度放大到 111.39%；整图再放大 115.84% / 103.23% 并归零偏移。
     expect(crop.attributes('style')).toContain('inline-size: 111.39')
     expect(crop.attributes('style')).toContain('block-size: 100%')
     expect(image.attributes('style')).toContain('inline-size: 115.83')

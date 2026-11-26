@@ -29,43 +29,27 @@ import { useBreakpoint } from '../composables/useBreakpoint.js'
 defineOptions({ name: 'ReplayPage' })
 
 const props = defineProps({
-  /** 嵌入 Replay Workspace 时的结果 tab：不重复渲染上传器 / Processing 面板。 */
   embedded: { type: Boolean, default: false },
-  /** Workspace 直接传入唯一 Replay session；独立使用时为空并回退 useReplay。 */
   replayContext: { type: Object, default: null },
-  /** Workspace presentation state（dataViewMode/currentBattleIndex 等）；独立使用时为空。 */
   workspaceContext: { type: Object, default: null },
-  /** Workspace capability 是否为 data；embedded 时由 v-show 控制，false 时关闭 Teleport 到 body 的 picker。 */
   active: { type: Boolean, default: true },
 })
 const { locale, t, te } = useI18n()
 const replay = props.replayContext || useReplay()
 const replayWorkspace = props.workspaceContext
 const { files, loading, error, resp, activeTab, aggStats, selectionRevision, exportExcel } = replay
-/**
- * 页面级 CW（League）模式：唯一事实源 resp.leagueMode（后端显式标记，普通/混合批次为 false）。
- * Batch contract：leagueMode=true ⟺ 纯 CW 批次，resp.league envelope 始终存在
- * （无论评分场数，playerSummaries 可为空）。
- * Battle contract：battle.league 可能为 null（Rating-ineligible 场次）——该场仍是 CW UI
- * （Player Drawer / Performance metrics / Replay facts 照常，Rating/七维显示 "--"）。
- * useColumns 的 leagueMode 只负责列系统（storage scope / fixed keys / picker）；
- * 页面 tab 存在性 / 统一玩家表 / 默认 activeTab 看这里。
- */
 const leagueMode = computed(() => resp.value?.leagueMode === true)
 
-/** 数据子视图轴（Blocker #1/#2）：SUMMARY=汇总视图 / SINGLE=单场视图。 */
 const isSummaryView = computed(() =>
   replayWorkspace
     ? replayWorkspace.dataViewMode.value === 'SUMMARY'
     : activeTab.value === 'aggregate')
-/** 当前单场 index；SUMMARY 或未选中时为 -1。 */
 const currentSingleIndex = computed(() => {
   if (isSummaryView.value) return -1
   if (replayWorkspace) return replayWorkspace.currentBattleIndex.value
   const m = /^b(\d+)$/.exec(activeTab.value)
   return m ? parseInt(m[1], 10) : -1
 })
-/** 供 useColumns 的 colScope 判定（SUMMARY -> agg/cw，SINGLE -> player）。 */
 const dataViewModeRef = computed(() => isSummaryView.value ? 'SUMMARY' : 'SINGLE')
 
 const cols = useColumns(replay.playerCols, replay.aggCols, dataViewModeRef, leagueMode)
@@ -73,16 +57,11 @@ const { visibleKeys, aggVisibleKeys, cwVisibleKeys, cwOrder, playerOrder, aggOrd
   currentOrder, shownCols, shownAggCols,
   toggleColPicker, toggleCol, selectAllCols, resetCols, handleReorder } = cols
 
-// Data presentation owns its hydration: authoritative Processing response is sufficient
-// regardless of which capability created the Dataset. Immediate execution also covers
-// mounting the Data tab after a READY response already exists.
 watch(resp, (result) => {
   if (result) cols.initFromResponse(result)
 }, { immediate: true })
 
-/** 数据页视图切换：汇总视图 / 单场视图（单场由工具栏的场次选择器决定）。 */
 function setDataView(mode) {
-  // 列选择面板按视图分 scope；切换视图时收起，避免面板编辑的列与正在看的表不一致。
   showColPicker.value = false
   if (replayWorkspace) {
     replayWorkspace.setDataViewMode(mode)
@@ -96,23 +75,14 @@ function setDataView(mode) {
   activeTab.value = `b${idx}`
 }
 
-/** League Rating 模式元数据（resp.league；普通模式 null）。 */
 const leagueData = computed(() => resp.value?.league || null)
 
-/**
- * CW 统一玩家表：以 Replay Aggregate（Replay Core 全量玩家/场次）为基底，
- * 按 accountId join League Player Summary（可为空——0 评分场次的 CW 批次仍完整
- * 展示 aggregate 玩家，Rating/七维补 "--"）。列 = league 特有列前置 + aggregate 全部列。
- * 存在性由 leagueMode 决定（CW UI），不依赖 league envelope 内容。
- */
 const unifiedRows = computed(() => leagueMode.value
   ? mergeCwPlayerRows(resp.value?.aggregate || [], leagueData.value?.playerSummaries || [])
   : [])
 const unifiedAllCols = computed(() => leagueMode.value
   ? mergeCwPlayerColumns(leagueData.value?.playerSummaryColumns || [], resp.value?.aggregateColumns || [])
   : [])
-/** 统一表可见列：useColumns cw scope 驱动（可见性 + 顺序 + 持久化）。
- * 只有 nickname + league_rating 固定（cwOrder 已 pin 在前两位），七维/MVP/表现指标/facts 全部用户可隐藏、可拖拽。 */
 const unifiedShownCols = computed(() => {
   if (!leagueMode.value) return []
   const byKey = new Map(unifiedAllCols.value.map(c => [c.key, c]))
@@ -158,7 +128,6 @@ const leagueUnavailableMessage = computed(() => {
 })
 const aggregatePlayerCount = computed(() => replayAggregatePlayerCount(resp.value))
 
-// ---- 数据工具栏：视图切换 · 场次选择 · 操作（审计 BZ-06 / BZ-09，design-language §7） ----
 const hasSummaryView = computed(() => !!resp.value && (resp.value.aggregate.length > 0 || leagueMode.value))
 const hasSingleView = computed(() => (resp.value?.battles?.length || 0) > 0)
 const dataViewOptions = computed(() => [
@@ -179,10 +148,6 @@ function selectBattle(sourceId) {
   if (index >= 0) activeTab.value = `b${index}`
 }
 
-/**
- * 玩家表呈现方式：手机默认卡片列表，可切回表格；平板 / 桌面固定表格（design-language §7 DataTable）。
- * 用户的选择只在本页会话内有效。
- */
 const { isCompact } = useBreakpoint()
 const layoutChoice = ref('cards')
 const dataLayout = computed(() => (isCompact.value ? layoutChoice.value : 'table'))
@@ -191,14 +156,12 @@ const layoutOptions = computed(() => [
   { value: 'table', label: t('workspace.layout_table'), testid: 'data-layout-table' },
 ])
 
-/** 「列 8/20」：让用户知道还有指标收在列面板里（默认只显示核心列，审计 BZ-07）。 */
 const columnCounts = computed(() => {
   if (colScope.value === 'cw') return { shown: unifiedShownCols.value.length, total: cwOrder.value.length }
   if (colScope.value === 'agg') return { shown: shownAggCols.value.length, total: aggOrder.value.length }
   return { shown: shownCols.value.length, total: playerOrder.value.length }
 })
 
-/** 客户端 xlsx 导出在进行中（exceljs 首次按需加载 + 生成工作簿） */
 const exportingExcel = ref(false)
 const exportItems = computed(() => [
   { key: 'aggregate', label: t('workspace.export_excel_summary'), disabled: exportingExcel.value, testid: 'export-aggregate' },
@@ -254,23 +217,15 @@ function teamNamesPayload() {
 watch(selectionRevision, () => {
   battleTeamNames.value = {}
   summaryTeamNames.value = {}
-  // 逐场排序状态随批次清空（Codex review round-2 复审）：replaceSelection 后新批次
-  // 不得继承旧批次同索引的排序（否则行序与 PNG 导出继承旧表的排序）。同批次内
-  // 切场/汇总往返不受影响（selectionRevision 不变）。
   battleSorts.value = []
 })
 const aggregateRef = ref(null)
 const battleRefs = ref([])
 
 function setBattleRef(el, index) {
-  // v-if 挂载/卸载都会以 el=null 回调：无条件写入让数组始终只反映当前在 DOM 里的表，
-  // 防止换批/切换后残留对已卸载元素的引用（导出恒取 currentSingleIndex，见 getExportTarget）
   battleRefs.value[index] = el
 }
 
-// 逐场排序状态（Codex review 2026-10-31）：v-if 挂载口径下 BattleTable 隐藏即卸载，
-// 其本地排序 ref 会随之丢失——「排序 → 切场次 → 回来」重置行序并改变后续 PNG 导出。
-// 轻量 { key, reverse } 留在父组件，随表下传回写。
 const battleSorts = ref([])
 
 function setBattleSort(index, patch) {
@@ -406,11 +361,6 @@ function openRatingDocs() {
           </template>
         </div>
 
-        <!-- 仅挂载当前批次表（此前 v-show 全量挂载：100 文件批次 = 100 张全表 DOM +
-             打开玩家抽屉时逐表 VDOM 重渲染）。PNG 导出恒取 currentSingleIndex 的表
-             （getExportTarget 只消费 battleRefs[current]，见 exportBattleIdx），隐藏表
-             从不需要 DOM 存在。Vue 3 中 v-if 与 v-for 同元素时 v-if 先求值（拿不到 i），
-             故用 template 包裹。 -->
         <template v-for="(b, i) in resp.battles" :key="i">
           <div v-if="!isSummaryView && currentSingleIndex === i"
                :ref="(el) => setBattleRef(el, i)">

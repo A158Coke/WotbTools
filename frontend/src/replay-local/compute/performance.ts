@@ -1,15 +1,9 @@
-/**
- * 战斗表现派生指标与跨场汇总：Java `BattleHpFacts` + `PerformanceMetricsCalculator` +
- * `Aggregator` / `Agg`。只读消费 Battle facts（populateBattle 例外：按 Java 契约回填
- * contribution/kast/impact）。
- */
 
 import { compareNumbers, compareStrings, hasText } from './java.js'
 import { deathSec, tradedDeaths } from './league-rating.js'
 import type { Battle, PlayerResult, PlayerVehicleUsage } from './model.js'
 import { tankMaxHpValue, type Tankopedia } from './tankopedia.js'
 
-// ---------- BattleHpFacts ----------
 
 const STANDARD_BATTLE_PLAYER_COUNT = 14
 const EXPECTED_BATTLE_SHARE = 1.0 / STANDARD_BATTLE_PLAYER_COUNT
@@ -21,13 +15,11 @@ interface BattleAverageHp {
 
 const UNKNOWN_HP: BattleAverageHp = { value: 0, complete: false }
 
-/** OBSERVED_EXACT → entryHp；否则 tankopedia base（Java `ObservedMaxHp.fullMaxHp`）。 */
 function fullMaxHp(p: PlayerResult, tankopedia: Tankopedia): number | null {
   if (p.entryHpSource === 'OBSERVED_EXACT' && p.entryHp !== null && p.entryHp > 0) return p.entryHp
   return tankMaxHpValue(tankopedia, p.tankId)
 }
 
-/** 场均进场满血（fail-closed：14 名 team 1/2 玩家全部 HP 已知才 complete）。 */
 function averageHp(battle: Battle, tankopedia: Tankopedia): BattleAverageHp {
   if (battle.players == null) return UNKNOWN_HP
   let total = 0
@@ -43,7 +35,6 @@ function averageHp(battle: Battle, tankopedia: Tankopedia): BattleAverageHp {
   return { value: total / STANDARD_BATTLE_PLAYER_COUNT, complete: true }
 }
 
-// ---------- PerformanceMetricsCalculator ----------
 
 function safeTeam(team: number): number {
   return team === 1 || team === 2 ? team : 0
@@ -110,7 +101,6 @@ function isWin(battle: Battle, player: PlayerResult): boolean {
   return winner !== null && winner !== 0 && player.team === winner
 }
 
-/** 单场逐玩家 contribution/kast/impact 直写 PlayerResult（Java `populateBattle`，幂等）。 */
 export function populateBattle(battle: Battle, tankopedia: Tankopedia): void {
   const ctx = battleContext(battle, tankopedia)
   for (const player of battle.players) {
@@ -128,14 +118,12 @@ export function populateBattle(battle: Battle, tankopedia: Tankopedia): void {
   }
 }
 
-/** 跨场表现聚合行（只保留 Preview 投影消费的字段：多伤率 + HP eligibility）。 */
 export interface PerformanceRow {
   accountId: number
   multiDamageRate: number
   hpEligible: boolean
 }
 
-/** 跨场表现聚合（Java `compute`；多伤率只计 HP 已知场次）。 */
 export function computePerformance(battles: readonly Battle[], tankopedia: Tankopedia): Map<number, PerformanceRow> {
   const acc = new Map<number, { kastBattles: number; multiDamageBattles: number; multiDamageEligible: number }>()
   for (const battle of battles) {
@@ -163,9 +151,7 @@ export function computePerformance(battles: readonly Battle[], tankopedia: Tanko
   return out
 }
 
-// ---------- Aggregator / Agg ----------
 
-/** 一位选手的跨场累计（Java `Agg`）。 */
 export interface Agg {
   accountId: number
   nickname: string
@@ -187,7 +173,6 @@ export interface Agg {
   enemiesDamaged: number
   survivalSum: number
   survivalKnownBattles: number
-  /** vehicleId → battles（Java TreeMap，按 key 升序）。 */
   vehicleBattles: Map<number, number>
 }
 
@@ -203,7 +188,6 @@ export function aggSurvivalRate(a: Agg): number {
   return a.battles === 0 ? 0 : 100.0 * a.survived / a.battles
 }
 
-/** 全部场次 survival time 可证明才可计算；否则 null。 */
 export function aggSurvivalTimeAvg(a: Agg): number | null {
   return a.battles > 0 && a.survivalKnownBattles === a.battles ? a.survivalSum / a.battles : null
 }
@@ -216,7 +200,6 @@ export function aggPenRate(a: Agg): number | null {
   return a.hits === 0 ? null : 100.0 * a.pens / a.hits
 }
 
-/** 用车统计：场次降序 → tankId 十进制字符串升序。 */
 export function aggVehicleUsage(a: Agg): PlayerVehicleUsage[] {
   return [...a.vehicleBattles]
     .sort((x, y) => compareNumbers(y[1], x[1]) || compareStrings(String(x[0]), String(y[0])))
@@ -228,7 +211,6 @@ function canonicalSurvivalSec(battle: Battle, player: PlayerResult): number {
   return deathSec(player)
 }
 
-/** 跨场次按 accountId 汇总（插入顺序 = 首次出现顺序）。 */
 export function aggregatePlayers(battles: readonly Battle[]): Map<number, Agg> {
   const map = new Map<number, Agg>()
   for (const b of battles) {

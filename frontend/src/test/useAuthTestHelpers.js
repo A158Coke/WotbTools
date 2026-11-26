@@ -9,7 +9,6 @@ const USER_CLAIMS = Object.freeze({
   realm_access: { roles: ['wotbtools-user'] },
 })
 
-/** 模拟 origin-scoped bridge：postMessage → native reply → 'message' 事件（同 id）。 */
 function stubNative(results = {}) {
   const listeners = []
   const calls = []

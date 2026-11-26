@@ -10,8 +10,6 @@ const mountedWrappers = getMountedWrappers()
 
 describe('Business user bootstrap', () => {
   beforeEach(() => {
-    // bootstrap 状态是模块级的（一个 SPA 一份），必须逐用例重置，否则前一个用例的 ready
-    // 会让后一个用例短路。
     resetBusinessUserBootstrap()
     bootstrapApi.ensureUserProfile.mockReset()
   })
@@ -45,7 +43,6 @@ describe('Business user bootstrap', () => {
     const { wrapper } = await mountApp(path)
 
     expect(wrapper.find(`[data-test="${testId}"]`).exists()).toBe(true)
-    // 页面级 provisioning 已收敛：即便没挂载 ProfilePage 也必须 ensure。
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
   })
 
@@ -70,7 +67,6 @@ describe('Business user bootstrap', () => {
   })
 
   it('re-runs the canonical ensure after a watchdog-failed generation recovers as authenticated', async () => {
-    // Generation 1's watchdog has already settled the public init promise as failed.
     setAuthState('failed', false, Promise.resolve(false))
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
@@ -111,19 +107,16 @@ describe('Business user bootstrap', () => {
 
     const notice = wrapper.find('[data-testid="business-bootstrap-notice"]')
     expect(notice.exists()).toBe(true)
-    // 失败不改变认证状态：用户仍然处于已登录的 SPA 中。
     expect(authState.authenticated).toBe(true)
   })
 
   it('allows a later bootstrap to succeed after a transient failure', async () => {
     setAuthState('authenticated', true)
-    // 第一次 bootstrap：transient 5xx。
     bootstrapApi.ensureUserProfile.mockRejectedValueOnce(new Error('502'))
     const first = await mountApp('/?view=replay')
     await settle()
     expect(first.wrapper.find('[data-testid="business-bootstrap-notice"]').exists()).toBe(true)
 
-    // 用户刷新 / 重新挂载：同一个 rejected Promise 绝不能锁死后续 ensure。
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
     const second = await mountApp('/?view=replay')
     await settle()

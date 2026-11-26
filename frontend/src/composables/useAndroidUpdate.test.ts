@@ -188,7 +188,6 @@ describe('Android update Native projection', () => {
     expect(update.acting.value).toBe(true)
     await update.install()
     expect(bridge.installUpdate).toHaveBeenCalledTimes(1)
-    // 普通 READY 对账无法证明 Native 已取消排队请求。
     bridge.getUpdateStatus.mockResolvedValue({ ...ready, revision: 3 })
     window.dispatchEvent(new Event('focus'))
     await flushPromises()
@@ -261,7 +260,6 @@ describe('Android update Native projection', () => {
     expect(isAndroidUpdateSnapshot({ ...snapshot(), download: { ...snapshot().download, totalBytes: 0 } })).toBe(false)
     expect(isAndroidUpdateSnapshot({ ...snapshot(), download: { ...snapshot().download, packageType: 'delta', state: 'applyingDelta' } })).toBe(true)
     expect(isAndroidUpdateSnapshot({ ...snapshot(), download: { ...snapshot().download, packageType: 'other' } })).toBe(false)
-    // An apparently inverted version relation is not reclassified by Vue: Native owns the decision.
     expect(isAndroidUpdateSnapshot({ ...snapshot(), state: 'mandatory', currentVersionCode: 9999999 })).toBe(true)
   })
 })

@@ -1,11 +1,3 @@
-/**
- * XI 强化树的“资源完整性”门禁：数据面引用的每个属性名/图标/机制，前端必须都有。
- *
- * 事实来源 = 资产包 t11r3（11.4.0.138）9 辆 XI 的 upgradeProgression ——
- * `__fixtures__/augment-assets.json` 由该包导出（attributeNames / iconBasenames /
- * mechanicStems）。新增 XI 或客户端重导后刷新该 fixture：缺三语标签或缺图标，
- * 这里直接失败，而不是运行时渲染出原始 i18n 键或空图。
- */
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'

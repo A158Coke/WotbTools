@@ -1,8 +1,5 @@
-// 调试/诊断 UI（#820 Agent A 出仓）：射击复现错误条、技术证据调试窗口、
-// segment/模块解码与单发质量提示。原 tankViewer.js 闭包内对应函数整体平移。
 import type { ReplayShot } from './viewerContracts.js'
 
-/** 调试/诊断 UI owner 的工厂依赖。 */
 interface DebugUiDeps {
   L: { technicalEvidence: string; [key: string]: string }
   escapeText(value: unknown): string
@@ -12,8 +9,6 @@ interface DebugUiDeps {
 
 export function createDebugUi(deps: DebugUiDeps) {
     const { L, escapeText, isDestroyed } = deps
-    // showShotError 的持久错误行：World View HUD 重建 #turret-controls 时
-    // 会覆盖它，所以错误消息保存在模块状态并在每次重建时重新插入。
     let shotReplayError = '';
 
 function shotErrorHtml() {
@@ -32,12 +27,10 @@ function showShotError(msg: string): void {
             if (isDestroyed()) return;
             shotReplayError = msg;
             console.error('[shot-replay] ' + msg);
-            // 用户可见的常显错误条；不进入 #turret-controls 的 debug details/隐藏逻辑。
             const alert = document.getElementById('shot-replay-error');
             if (alert) { alert.textContent = msg; alert.style.display = 'block'; }
             const st = document.getElementById('turret-controls');
             if (st) {
-                // 世界模式调试关闭时该面板被收纳——错误必须强制可见
                 st.style.display = 'block';
                 st.innerHTML = shotErrorHtml();
             }
@@ -73,7 +66,6 @@ function dbgInfo(id: string, color: string, name: string, text: string): void {
         }
 
 function setupShotDebug(extraRefresh: ((on: boolean) => void) | null): void {
-            // Group raw protocol and geometry evidence for the explicit developer URL mode.
             const panel = document.getElementById('turret-controls');
             if (panel) {
                 const evidence = document.createElement('details');
@@ -96,10 +88,8 @@ function setupShotDebug(extraRefresh: ((on: boolean) => void) | null): void {
                 if (window.__shooterMuzzleMk) window.__shooterMuzzleMk.visible = on;
                 if (window.__shooterMuzzleLine) window.__shooterMuzzleLine.visible = on;
                 if (extraRefresh) extraRefresh(on);
-                // 面板与移动标注复选框仅在调试模式可交互
                 const st = document.getElementById('turret-controls');
                 if (st) st.style.display = on ? 'block' : 'none';
-                // 开发诊断窗口随模式显隐（内容行由各标记更新函数写入）
                 const di = document.getElementById('debug-info');
                 if (di) di.style.display = on ? 'block' : 'none';
             };

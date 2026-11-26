@@ -1,8 +1,4 @@
 // @vitest-environment happy-dom
-// 装甲视图 owner 的行为回归（#820 review P1-B / P2-A / P2-B / P2-C / P2-E）：
-// 动态装甲状态必须经 armorMeshState.applyArmorStateToMesh 落到网格；
-// 热力图 clone 更新/跳弹重建必须真正执行并携带新激活板集；
-// 分类过滤通过 collisionView 的显式操作完成，judgment 仍是有有效可见性的唯一口径。
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -95,7 +91,6 @@ describe('collisionView dynamic armor state (P1-B)', () => {
     cvs.resolveArmorStateDecl(8305)
     cvs.applyArmorStateToModel()
 
-    // 默认态 0：armor_13 激活、armor_14 按 deco 口径摘除。
     expect(activeDefault.visible).toBe(true)
     expect(activeDefault.userData.armorSection).toBe('hull')
     expect(activeDefault.userData.armorSectionOrig).toBe('hull')
@@ -109,7 +104,6 @@ describe('collisionView dynamic armor state (P1-B)', () => {
     expect(inactive.userData.armorStateHidden).toBe(true)
     expect(inactive.userData.armorThickness).toBe(120)
 
-    // 切到非默认态 1：板集互换，厚度/材质重新落到网格上。
     cvs.setArmorState(1)
 
     expect(activeDefault.visible).toBe(false)
@@ -214,7 +208,6 @@ describe('collisionView category filtering (P2-C / P2-E)', () => {
     expect(cvs.toggleCategory('unknown')).toBeNull()
     expect(spaced.visible).toBe(true)
 
-    // façade 不再持有 hiddenCategories：唯一状态在 collisionView。
     const facade = tankViewerSource()
     expect(facade).not.toContain('hiddenCategories')
     expect(facade).toContain('cvs.toggleCategory(name)')
@@ -233,7 +226,6 @@ describe('collisionView category filtering (P2-C / P2-E)', () => {
       tc: {},
       cvs: {},
     })
-    // judgment 是有效可见性的唯一 owner；collisionView 只消费它。
     cvs.setHighlightedArmorNode(spaced)
     expect(judgment.isEffectivelyVisible(spaced)).toBe(true)
 

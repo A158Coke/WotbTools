@@ -7,26 +7,16 @@ import AiReviewFeedbackDialog from './AiReviewFeedbackDialog.vue'
 import { copyText } from '../utils/clipboard.js'
 import { buildAiReviewReplyText, teamIdentityLabel as identityLabel } from '../utils/aiReviewReplyText.js'
 
-// 普通用户页面只展示 AI 复盘正文/Team 结构化结果 + 可折叠的「赛前预测」区块。
-// 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
-// preBattleSection 为 null/空（Call #1 失败/降级）时整个区块不渲染。
-// 地图鸟瞰（热力/路线/战局回放）已拆为页面级独立区块（ReplayPage Workspace / BattlePlaybackPanel 加载），
-// 不随 AI 复盘结果渲染。4.0：团队复盘的关键回合可以「在 2D 中查看」——本面板只发出 `view-2d(startSec)`，
-// 跳转与 seek 由工作台（ReplayWorkspace → BattlePlaybackPanel.seekTo）负责；AI episode 的 startSec 与
-// 2D 回放共用开战为 0 的战斗时钟（docs/features/battle-playback.md「同一战斗时钟」）。
 const props = defineProps({
   result: {
     type: Object,
     required: true
   },
-  /** 宿主能把用户带到 2D 回放时为 true（工作台内）；独立渲染时不显示「在 2D 中查看」。 */
   canViewIn2d: { type: Boolean, default: false },
 })
 const emit = defineEmits(['view-2d'])
 
-// 默认展开，用户可折叠收起
 const preBattleOpen = ref(true)
-// 复盘正文（call2）折叠状态，默认展开
 const analysisOpen = ref(true)
 const copied = ref(false)
 const feedbackOpen = ref(false)
@@ -34,7 +24,6 @@ const feedbackSnapshot = ref('')
 const feedbackSent = ref(false)
 let copyTimer
 const { t, locale } = useI18n()
-/** 战斗时钟 mm:ss（与 2D 回放顶栏同一格式：开战为 0 的已过时间）。 */
 function formatClock(sec) {
   const total = Math.max(0, Math.round(sec))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
@@ -65,8 +54,6 @@ function feedbackSuccess() {
   feedbackSent.value = true
 }
 
-/** 一键复制最终复盘正文（团队结果使用 authoritative display identity；不含独立的赛前预测与地图鸟瞰）。
- * 末尾附带一行网站宣传（recon.copy_footer，三语随界面语言）。 */
 function teamIdentityLabel(playerKey) {
   return identityLabel(props.result, playerKey, t)
 }
@@ -203,8 +190,6 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 </template>
 
 <style scoped>
-/* AI 复盘结果 Card：宽度由父级 .ai-review-panel 拥有（唯一 width owner），
-   本组件只负责内部 component styling，不再自行决定页面宽度/居中。 */
 .analysis-panel {
   margin-top: 16px;
   width: 100%;
@@ -227,15 +212,12 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   padding: 10px 14px;
   margin: 0;
   border-bottom: 1px solid var(--border);
-  /* 长报告滚动时头部吸顶：top 使用全局顶栏高度 token（--topbar-h 是 --header-h 的 deprecated 别名），
-     禁止硬编码重复事实源。 */
   position: sticky;
   top: var(--topbar-h);
   z-index: 20;
   background: var(--bg-card2);
 }
 @media (max-width: 1080px) {
-  /* 窄屏回退普通流式头部：复制按钮随面板滚动（不重叠、可操作、滚出面板后消失）。 */
   .panel-head {
     position: static;
     top: auto;
@@ -256,7 +238,6 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 }
 .toggle-btn:hover, .copy-btn:hover { border-color: var(--accent); color: var(--accent-dark); }
 .copy-btn.copied { border-color: var(--accent); color: var(--accent-dark); }
-/* 正文统一水平 padding；Header 已自带 padding，正文区块不再各自用 margin 修位置 */
 .analysis-text {
   white-space: pre-wrap;
   line-height: 1.6;
@@ -264,8 +245,6 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
   color: var(--text);
   padding: 12px 14px 14px;
   margin: 0;
-  /* 超宽表格（MarkdownContent :deep(table) width:100%）在正文区域内横向滚动，
-     不再被 .analysis-panel 的 overflow:hidden（圆角裁切所需，保留）切断。 */
   overflow-x: auto;
 }
 .prebattle-block {
@@ -303,7 +282,6 @@ onBeforeUnmount(() => clearTimeout(copyTimer))
 .team-card h4 { display: inline; margin: 0; color: var(--text-heading); }
 .team-card .analysis-text, .team-verdict .analysis-text, .team-timeline .analysis-text { padding: 0; }
 
-/* 4.0：团队结论置顶卡 + 关键回合时间线 */
 .team-verdict {
   display: grid;
   gap: var(--space-2);

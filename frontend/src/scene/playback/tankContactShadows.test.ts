@@ -8,7 +8,6 @@ import {
 const O = { x: 0, y: 0, z: 0 }
 const at = (x: number, y: number, z: number) => ({ x, y, z })
 
-/** 阴影外框中心（网格顶点包围盒中心）：背光侧尾巴把它推向传播方向 */
 function center(x: number, z: number, yaw: number, sun = sunShadowFrom(at(0, 100, 0), O), fp = PROXY_FOOTPRINT) {
   const out = shadowGridXZ(x, z, yaw, fp, sun, new Float32Array(GRID * GRID * 2))
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
@@ -17,7 +16,6 @@ function center(x: number, z: number, yaw: number, sun = sunShadowFrom(at(0, 100
   }
   return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, out }
 }
-/** 内核（车体）四角：网格线 1 与 3 的交点 */
 const CORE = [GRID + 1, GRID + 3, 3 * GRID + 1, 3 * GRID + 3]
 
 describe('sunShadowFrom：传播方向 = target − light', () => {
@@ -77,7 +75,7 @@ describe('sunShadowFrom：传播方向 = target − light', () => {
 })
 
 describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光侧渐隐尾', () => {
-  const grazing = sunShadowFrom(at(-1000, 60, -700), O)   // 低太阳、斜向：尾巴打满上限
+  const grazing = sunShadowFrom(at(-1000, 60, -700), O)
 
   it('任何太阳 / 朝向下，内核四角都恰好是车体四角（不再有被平移/拉伸的实心暗板）', () => {
     const fp = { halfW: 1.6, halfL: 3.4 }
@@ -89,7 +87,7 @@ describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光�
         return [10 + lx * c + lz * s, 20 - lx * s + lz * c]
       })
       CORE.forEach((k, n) => {
-        expect(out[k * 2]).toBeCloseTo(want[n][0], 4)        // Float32 输出
+        expect(out[k * 2]).toBeCloseTo(want[n][0], 4)
         expect(out[k * 2 + 1]).toBeCloseTo(want[n][1], 4)
       })
     }
@@ -97,12 +95,12 @@ describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光�
 
   it('尾巴总长 = tailFactor × halfL，沿传播方向；背光对侧只剩基础 margin', () => {
     const fp = { halfW: 1.6, halfL: 3.4 }
-    const sun = sunShadowFrom(at(-1000, 60, 0), O)   // 传播 +X
+    const sun = sunShadowFrom(at(-1000, 60, 0), O)
     const out = shadowGridXZ(0, 0, 0, fp, sun, new Float32Array(GRID * GRID * 2))
     const m = shadowMargin(fp)
-    expect(out[4 * 2]).toBeCloseTo(fp.halfW + m + sun.tailFactor * fp.halfL, 6)   // +X 外线
-    expect(out[0]).toBeCloseTo(-(fp.halfW + m), 6)                                 // −X 外线
-    expect(out[(4 * GRID) * 2 + 1]).toBeCloseTo(fp.halfL + m, 6)                   // ±Z 不受影响
+    expect(out[4 * 2]).toBeCloseTo(fp.halfW + m + sun.tailFactor * fp.halfL, 6)
+    expect(out[0]).toBeCloseTo(-(fp.halfW + m), 6)
+    expect(out[(4 * GRID) * 2 + 1]).toBeCloseTo(fp.halfL + m, 6)
   })
 
   it('转向不改变尾巴方向（方向在世界系，按车体系分解到两轴）', () => {
@@ -129,14 +127,13 @@ describe('shadowGridXZ：不透明内核恒等于车体，太阳只加长背光�
 
 describe('车体外可见性（俯视时车体盖住内核，只看得到车外一圈）', () => {
   const overhead = sunShadowFrom(at(0, 1000, 0), O)
-  /** 网格线 q 对应的 uv → 贴图坐标（-1..1） */
   const tex = (q: number) => (q / (GRID - 1)) * 2 - 1
 
   it('内网格线恰好压在车体边缘，外网格线在车外 margin 处', () => {
     const fp = { halfW: 1.6, halfL: 3.4 }
     const out = shadowGridXZ(0, 0, 0, fp, overhead, new Float32Array(GRID * GRID * 2))
-    const xAt = (q: number) => out[q * 2]                       // 第 0 行，沿 X
-    const zAt = (r: number) => out[(r * GRID) * 2 + 1]          // 第 0 列，沿 Z
+    const xAt = (q: number) => out[q * 2]
+    const zAt = (r: number) => out[(r * GRID) * 2 + 1]
     expect(xAt(1)).toBeCloseTo(-fp.halfW, 6)
     expect(xAt(3)).toBeCloseTo(fp.halfW, 6)
     expect(zAt(1)).toBeCloseTo(-fp.halfL, 6)
@@ -149,8 +146,6 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
     expect(shadowAlpha(tex(3), tex(3))).toBe(1)
     expect(shadowAlpha(tex(4), 0)).toBe(0)
     expect(shadowAlpha(0, tex(0))).toBe(0)
-    // 车外 margin 的前 1/4 处仍保留大部分遮蔽
-    // 车外渐隐带前 30% 保持全深（给阴影实在的面积），之后平滑淡出
     expect(shadowAlpha(0.5 + 0.5 * 0.25, 0)).toBe(1)
     expect(shadowAlpha(0.5 + 0.5 * 0.5, 0)).toBeGreaterThan(0.75)
     expect(shadowAlpha(0.5 + 0.5 * 0.9, 0)).toBeLessThan(0.1)
@@ -164,13 +159,13 @@ describe('车体外可见性（俯视时车体盖住内核，只看得到车外�
 
   it('迎光侧只有窄接触带，明显的渐隐只在背光侧（典型 35° 太阳下背光侧至少是迎光侧的 3 倍）', () => {
     const fp = { halfW: 1.75, halfL: 3.6 }
-    const sun = sunShadowFrom(at(-Math.cos(0.61) * 1000, Math.sin(0.61) * 1000, 0), O)   // 仰角 35°，传播 +X
+    const sun = sunShadowFrom(at(-Math.cos(0.61) * 1000, Math.sin(0.61) * 1000, 0), O)
     const out = shadowGridXZ(0, 0, 0, fp, sun, new Float32Array(GRID * GRID * 2))
-    const lit = -out[0] - fp.halfW            // −X 外线到车体边
-    const shade = out[4 * 2] - fp.halfW       // +X 外线到车体边
+    const lit = -out[0] - fp.halfW
+    const shade = out[4 * 2] - fp.halfW
     expect(lit).toBeLessThanOrEqual(0.6)
     expect(shade).toBeGreaterThan(3 * lit)
-    expect(shade).toBeGreaterThan(2)          // 面积要够：按车宽算尾巴时只有约 1.5 m，验收判为不明显
+    expect(shade).toBeGreaterThan(2)
   })
 })
 
@@ -184,7 +179,7 @@ describe('视线方向深度拉近（地表 / 贴地物件 / 深度量化不得�
     const logdepth = v.indexOf('#include <logdepthbuf_vertex>')
     expect(project).toBeGreaterThan(-1)
     expect(pull).toBeGreaterThan(project)
-    expect(logdepth).toBeGreaterThan(pull)   // 对数深度从被拉近后的 gl_Position 计算
+    expect(logdepth).toBeGreaterThan(pull)
     expect(v).toContain(`float pull = min(${DEPTH_PULL.height.toFixed(4)} / viewSin, ${DEPTH_PULL.max.toFixed(4)})`)
     expect(v).toContain(`, ${DEPTH_PULL.minSin.toFixed(4)});`)
   })
@@ -197,9 +192,8 @@ describe('视线方向深度拉近（地表 / 贴地物件 / 深度量化不得�
     expect(v).toContain(`float keepDepth = ${DEPTH_PULL.nearKeep.toFixed(4)} * projectionMatrix[3][2] / (projectionMatrix[2][2] - 1.0);`)
     expect(v).toContain('pull = eyeDepth > keepDepth ? min(pull, pullDist * (1.0 - keepDepth / eyeDepth)) : 0.0;')
     expect(v.indexOf('keepDepth')).toBeLessThan(v.indexOf('mvPosition.xyz *='))
-    // 着色器从投影矩阵反推 near 的口径与 three 的 makePerspective 一致
     const cam = new THREE.PerspectiveCamera(55, 1, 0.5, 4000)
-    const e = cam.projectionMatrix.elements   // 列主序：e[14] = P[3][2]，e[10] = P[2][2]
+    const e = cam.projectionMatrix.elements
     expect(e[14] / (e[10] - 1)).toBeCloseTo(0.5, 9)
   })
 
@@ -227,7 +221,7 @@ describe('车模轮廓投影（silhouettes）', () => {
   function setup(silhouettes: boolean, heightAt: (x: number, z: number) => number | null = () => 0) {
     const scene = new THREE.Scene()
     const sunLight = new THREE.DirectionalLight()
-    sunLight.position.set(-1000, 600, 0)   // 低太阳：没有轮廓时接地阴影会加尾巴
+    sunLight.position.set(-1000, 600, 0)
     scene.add(sunLight, sunLight.target)
     const shadows = createTankContactShadows({ scene, sunLight, heightAt, silhouettes })
     const named = (n: string) => scene.children.filter(o => o.name === n) as THREE.Mesh[]
@@ -252,7 +246,7 @@ describe('车模轮廓投影（silhouettes）', () => {
     const el = 21 * Math.PI / 180
     const scene = new THREE.Scene()
     const sunLight = new THREE.DirectionalLight()
-    sunLight.position.set(-Math.cos(el) * 1000, Math.sin(el) * 1000, 0)   // 传播 (cos21°, −sin21°, 0)
+    sunLight.position.set(-Math.cos(el) * 1000, Math.sin(el) * 1000, 0)
     scene.add(sunLight, sunLight.target)
     const shadows = createTankContactShadows({ scene, sunLight, heightAt: (x) => -slope * x, silhouettes: true })
     const root = new THREE.Group()
@@ -266,10 +260,10 @@ describe('车模轮廓投影（silhouettes）', () => {
     root.updateMatrixWorld(true)
     shadow.onBeforeRender({} as THREE.WebGLRenderer, scene, new THREE.PerspectiveCamera(), shadow.geometry,
       shadow.material as THREE.Material, new THREE.Group())
-    const p = new THREE.Vector3(0, 0, 0).applyMatrix4(shadow.matrixWorld)   // 部件原点 = 世界 (0, 2, 0)
-    expect(p.x).toBeGreaterThan(-1)                       // 修复前 −11.4993（落到太阳一侧上坡）
-    expect(p.y).toBeLessThan(2)                           // 修复前 6.41（影子跑到车模上方）
-    expect(p.y).toBeCloseTo(-slope * p.x + 0.04, 1)       // 仍落在车底局部地表平面上
+    const p = new THREE.Vector3(0, 0, 0).applyMatrix4(shadow.matrixWorld)
+    expect(p.x).toBeGreaterThan(-1)
+    expect(p.y).toBeLessThan(2)
+    expect(p.y).toBeCloseTo(-slope * p.x + 0.04, 1)
   })
 
   it('先有阴影条目、后挂车模（GLB 迟到）也建立轮廓影子', () => {
@@ -309,7 +303,6 @@ describe('车模轮廓投影（silhouettes）', () => {
 
 describe('measureShadowFootprint（GLB 模型系 Z-up：X = 车宽、Y = 车长、Z = 高）', () => {
   it('按模型轴取车宽 / 车长（不是按大小猜轴）；不可信时回落代理尺寸', () => {
-    // 宽 3、长 7、高 2：旧实现量场景 x/z 会把「高」当成车长
     const tank = new THREE.Mesh(new THREE.BoxGeometry(3, 7, 2))
     expect(measureShadowFootprint(tank)).toEqual({ halfW: 1.5, halfL: 3.5 })
     expect(measureShadowFootprint(new THREE.Group())).toEqual(PROXY_FOOTPRINT)
@@ -338,11 +331,10 @@ describe('measureShadowFootprint（GLB 模型系 Z-up：X = 车宽、Y = 车长�
     root.add(track(-1), track(1), hull, gun)
     const fp = measureShadowFootprint(root)
     expect(fp.halfW).toBeCloseTo(1.8, 5)
-    expect(fp.halfL).toBeCloseTo(3.2, 5)   // 整车包围盒会是 (5 + 3) = 8
+    expect(fp.halfL).toBeCloseTo(3.2, 5)
   })
 })
 
-/** 阴影网格 X 范围的中点（太阳尾巴把它推向传播方向） */
 function meshCenterX(mesh: THREE.Mesh): number {
   const a = mesh.geometry.getAttribute('position').array
   let lo = Infinity, hi = -Infinity
@@ -393,7 +385,7 @@ describe('createTankContactShadows', () => {
     const v = {}
     h.shadows.update(v, 0, 0, 0, true)
     expect(h.meshes()[0].visible).toBe(false)
-    h.shadows.update(v, 0, 0, 0, true)   // 同位姿：仍隐藏
+    h.shadows.update(v, 0, 0, 0, true)
     expect(h.meshes()[0].visible).toBe(false)
     ready = true
     h.shadows.reground()
@@ -408,7 +400,7 @@ describe('createTankContactShadows', () => {
     expect(h.sampler).toHaveBeenCalledTimes(GRID * GRID)
     h.shadows.update(v, 50, 60, 0, true)
     expect(h.sampler).toHaveBeenCalledTimes(2 * GRID * GRID)
-    expect(meshCenterX(h.meshes()[0])).toBeGreaterThan(50)   // 太阳自 −X：尾巴落在 +X 侧
+    expect(meshCenterX(h.meshes()[0])).toBeGreaterThan(50)
   })
 
   it('不可见 → 隐藏；太阳改变 → 尾巴方向随之改变', () => {

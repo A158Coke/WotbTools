@@ -1,18 +1,5 @@
-// 俯视烘焙地面 pass 的输入完整性：分层地表读取 + 地形配对判定（**页面侧**：由
-// scripts/bake-ground-overhead.mjs 的 /bake 页面以 vite 模块 URL 导入，同 shader-check-page.js；
-// 独立成文件是为了让读取/判定策略可被 vitest 直接执行）。
-//
-// fail-closed（PR #621 review blocker）：此前页面内联读取在 ground.layers.json 或任一
-// ground/<layer>.webp 缺失/解码失败时只 console.warn、留 groundLayers=null，随后仍以
-// mapTexture:null 建地面网格——groundPass.makeGroundMaterial 的回退档即无贴图
-// MeshBasicMaterial（不透明纯白）——meta 却写 ground=true，tools/composite_overhead.py
-// 据此"覆盖即替换"，把白地面盖到 ground.webp 上。烘焙侧没有回退底图（回退档只对 3D 运行时
-// 合法：那里 mapTexture 是真实资源），所以这里只有两种结局：返回完整分层，或抛出带资源名的
-// 错误（抛出前释放已解码的纹理）。键集 = groundPass.groundLayerKeys（与运行时同一份）；
-// 上传契约（setupGroundTextures）由调用方按渲染器能力施加。
 import { groundLayerKeys } from '../src/scene/groundPass.js'
 
-// TextureLoader 解码失败 reject 的是 DOM Event（无 message）——取 type，免得日志只剩 [object Event]
 const reason = (e) => (e && (e.message || e.type)) || String(e)
 
 /**

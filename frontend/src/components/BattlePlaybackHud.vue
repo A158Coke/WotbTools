@@ -15,9 +15,7 @@ const props = defineProps({
   enemyPoints: { type: Number, default: null },
   baseStates: { type: Array, default: () => [] },
   friendlyTeam: { type: Number, default: null },
-  // seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
   hpNoTransition: { type: Boolean, default: false },
-  /** 手机横屏：地图名与时钟 / 比分同排并入中列，整个 HUD 只占一行（把高度让给正方形地图）。 */
   compact: { type: Boolean, default: false },
 })
 
@@ -30,8 +28,6 @@ function finiteNumber(value) {
 function compactNumber(value) {
   const n = finiteNumber(value)
   if (n === null) return '—'
-  // §11：HUD 禁止缩写（1k / 22.3k），必须显示完整整数（1000 / 22305）；
-  // 空间不足时靠 responsive layout 调整，不牺牲 authoritative value 精度。
   return String(Math.round(n))
 }
 
@@ -58,13 +54,8 @@ function hasPoints() {
   return props.friendlyPoints != null || props.enemyPoints != null
 }
 
-// ---- Team HP delayed-damage bar ----
-// authoritative current HP 立即更新；delayed bar 短暂停留在旧值，随后追赶当前值
-//（150–250ms 克制过渡）；seek/恢复（hpNoTransition）直接同步，不补播伤害动画。
 function fillPctNum(hp) {
   if (!hp || typeof hp !== 'object') return 0
-  // Aggregated states only：FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN
-  // （TEAM HUD 用 friendlyHealthAt 聚合态，不用单车 RELATIVE_FULL/CURRENT/LAST_KNOWN/DESTROYED）。
   if (hp.state === 'UNKNOWN') return 0
   if (hp.state === 'FULL_RELATIVE') return 100
   const totalValue = finiteNumber(hp.totalMax)
@@ -91,7 +82,6 @@ function trackHp(team, hp) {
 watch(() => props.friendlyHp, (hp) => trackHp('friendly', hp), { immediate: true })
 watch(() => props.enemyHp, (hp) => trackHp('enemy', hp), { immediate: true })
 
-// 基地状态条与 3D 共用（BaseStatusBar + utils/baseStatus.js 同一口径）
 const baseViews = computed(() => props.baseStates.map((state) => baseView(state, props.friendlyTeam)))
 
 </script>
@@ -162,7 +152,6 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 .pb-hud-column-center { grid-column: 2; }
 .pb-hud-points { display: grid; justify-items: center; }
 .pb-hud-column-enemy { grid-column: 3; }
-/* 队伍血量：数值居中在血条上方（无标签文字）。 */
 .pb-hud-team { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: var(--space-1); min-width: 0; }
 .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: center; white-space: nowrap; font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
 .pb-hud-track { position: relative; grid-column: 1 / -1; grid-row: 2; display: flex; min-width: 0; height: var(--space-1); overflow: hidden; border-radius: 0; background: var(--color-surface-3); }
@@ -186,12 +175,8 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   .pb-hud-value { white-space: normal; overflow-wrap: anywhere; }
   .pb-hud-enemy .pb-hud-track { grid-column: 1; grid-row: 2; }
 }
-/* 紧凑单行：己方 值+血条 │ 基地 / 时钟 / 比分 │ 敌方 血条+值。 */
 .pb-hud-compact { gap: 0; padding-block: var(--space-1); }
-/* 667px 横屏：8px 中列间隙会把两侧血条压到 39.7px；4px 让单行 HUD 在最小手机横屏仍 ≥40px。 */
 .pb-hud-compact .pb-hud-grid {
-  /* 左右两支等宽（血条对称）；把完整 HP 数字的 max-content 作为两侧下限，避免 5 位
-     数字溢出 HUD；中列允许缩到内容下限，地图名先让位给底座/时钟/比分。 */
   grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
   gap: var(--space-1);
 }
@@ -205,12 +190,9 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
   white-space: nowrap;
   vertical-align: bottom;
 }
-/* 667px 横屏的宽度账：完整 HP 数字 + ≥40px 血条放不进同一行时，数字叠到血条上方；
-   整块仍是单行 HUD（高度由 24px 基地徽标决定），但数字不参与和血条抢宽度。 */
 .pb-hud-compact .pb-hud-team { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
 .pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: center; white-space: nowrap; overflow-wrap: normal; }
 .pb-hud-compact .pb-hud-track { grid-row: 2; grid-column: 1; min-inline-size: 40px; }
-/* 中列三项（基地 / 时钟 / 比分）不可压缩；地图名是唯一的弹性项。 */
 .pb-hud-compact .pb-hud-center {
   display: flex;
   align-items: center;

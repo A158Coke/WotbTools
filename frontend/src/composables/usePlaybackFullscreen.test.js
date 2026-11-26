@@ -1,16 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 回放全屏 / 方向锁的**共享产品语义**（2D 与 3D 共用 composables/usePlaybackFullscreen）。
- *
- * 这些用例针对契约而不是某个组件：两边的全屏按钮最终都走同一实现，所以语义在这里锁一次。
- * 重点覆盖那个最容易出错、也最难在桌面上发现的点：
- *
- *   手机竖屏 412×915  →  点 Fullscreen  →  全屏横屏 915×412
- *
- * 横屏后**内宽 915 > 768**。如果按"宽度 ≥ 768 就是平板"重新判断，刚收起来的
- * controls 会全部展开、全屏锁横屏也永远不会发生。正确判据是 2D 早就用的
- * `PLAYBACK_MOBILE_QUERY`（宽度 < 768，**或**触屏且视口高 ≤ 500）。
- */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
@@ -28,14 +16,11 @@ describe('回放 form factor：手机横屏/全屏后仍是手机', () => {
   })
 
   it('手机竖屏与**全屏横屏**都命中 phone 形态（后者靠 coarse + 矮视口，不靠宽度）', () => {
-    // 竖屏 412×915：命中宽度分支
     const portrait = /max-width:\s*([\d.]+)px/.exec(PLAYBACK_MOBILE_QUERY)[1]
     expect(412).toBeLessThanOrEqual(Number(portrait))
-    // 全屏横屏 915×412：宽度分支已失效（915 > 767.98），必须由第二个分支接住
     expect(PLAYBACK_MOBILE_QUERY).toContain('(pointer: coarse) and (max-height: 500px)')
     expect(915).toBeGreaterThan(Number(portrait))
     expect(412).toBeLessThanOrEqual(500)
-    // 平板竖屏 768×1024：两个分支都不命中 → tablet 形态（触屏 ≠ 手机）
     expect(768).toBeGreaterThan(Number(portrait))
     expect(1024).toBeGreaterThan(500)
   })
@@ -53,7 +38,6 @@ describe('回放 form factor：手机横屏/全屏后仍是手机', () => {
     let phone
     scope.run(() => { phone = usePlaybackPhoneForm() })
     expect(phone.isPhone.value).toBe(true)
-    // 旋转/全屏后查询仍命中 → 形态不变
     listeners.forEach((cb) => cb({ matches: true }))
     expect(phone.isPhone.value).toBe(true)
     scope.stop()
@@ -66,7 +50,7 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     const { calls } = stubBrowserApis()
     const { api, stop } = mountFullscreen()
     expect(api.fullscreenSupported.value).toBe(true)
-    expect(calls.lock).toEqual([])              // 全屏之前绝不请求方向锁
+    expect(calls.lock).toEqual([])
     api.toggleFullscreen()
     expect(calls.request).toBe(1)
     await flush()
@@ -81,7 +65,6 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     api.toggleFullscreen()
     await flush()
     expect(api.isFullscreen.value).toBe(true)
-    // 外部退出：直接清 fullscreenElement 再派发事件（等价于用户按 ESC）
     Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
     document.dispatchEvent(new Event('fullscreenchange'))
     expect(api.isFullscreen.value).toBe(false)
@@ -121,7 +104,6 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     expect(calls.exit).toBe(0)
     expect(target2d.requestFullscreen).not.toHaveBeenCalled()
     expect(calls.unlock).toBe(0)
-    // Removing the hidden pane also must not release the visible pane's lock.
     two.stop()
     expect(calls.unlock).toBe(0)
 
@@ -184,7 +166,7 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     api.toggleFullscreen()
     await flush()
     expect(calls.lock).toEqual(['landscape'])
-    expect(api.isFullscreen.value).toBe(true)   // 全屏仍然有效
+    expect(api.isFullscreen.value).toBe(true)
     stop()
   })
 
@@ -221,8 +203,6 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     stubMatchMedia({})
     const { root, calls } = stubBrowserApis()
     const pending = []
-    // 浏览器里 requestFullscreen() 在用户手势后可能长时间悬挂；两次请求指向同一个 target，
-    // ownsFullscreen() 无法区分新旧会话，只能由请求代次判断谁建立了当前会话。
     root.requestFullscreen = vi.fn(() => new Promise((resolve) => {
       pending.push(() => {
         Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
@@ -231,17 +211,17 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
       })
     }))
     const { api, stop } = mountFullscreen()
-    api.toggleFullscreen()                  // 请求 A 悬挂
+    api.toggleFullscreen()
     expect(pending).toHaveLength(1)
-    api.exitOwnedFullscreen()               // 失活 / 宿主退出：取消 A，代次前进
-    api.toggleFullscreen()                  // 请求 B
+    api.exitOwnedFullscreen()
+    api.toggleFullscreen()
     expect(pending).toHaveLength(2)
-    pending[1]()                            // B 成功建立会话
+    pending[1]()
     await flush()
     expect(api.isFullscreen.value).toBe(true)
     expect(calls.exit).toBe(0)
 
-    pending[0]()                            // A 迟到 resolve：不得补刀 B 的会话
+    pending[0]()
     await flush()
     expect(api.isFullscreen.value).toBe(true)
     expect(calls.exit).toBe(0)
@@ -275,7 +255,7 @@ describe('usePlaybackFullscreen：手机一键全屏 + 横屏锁', () => {
     stubMatchMedia({})
     const { calls, root } = stubBrowserApis()
     const { api, stop } = mountFullscreen()
-    api.exitOwnedFullscreen() // 没在全屏：不调用
+    api.exitOwnedFullscreen()
     expect(calls.exit).toBe(0)
     api.toggleFullscreen()
     await flush()

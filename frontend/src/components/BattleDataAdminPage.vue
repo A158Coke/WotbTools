@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 战斗数据管理（列表模板，docs/frontend/ui-system.md「管理后台列表模板」）：
-// 页头（kicker / 标题 / 说明 / 时间范围切换 + 刷新）→ 口径提示 → KPI 卡 → 每日柱图与占比条 → 出生侧胜率分段条表 →
-// 筛选条 → 最近战斗表（小屏卡片）→ 加载更多；点行在右侧抽屉看明细。只读，没有批量与删除。
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
@@ -60,7 +57,6 @@ const spawnModes = computed(() => [
   { value: 'RANDOM', label: mode(1), testid: 'spawn-mode-random' },
   { value: 'RATING', label: mode(7), testid: 'spawn-mode-rating' },
 ])
-// 筛选里的出生模式是两选项 + 全部：用单选组（Choice Group），不用下拉；'all' 只是控件内部值，线上值仍是 '' / '1' / '7'。
 const modeFilterOptions = computed(() => [
   { value: 'all', label: t('battleDataAdmin.all'), testid: 'mode-filter-all' },
   { value: '1', label: mode(1), testid: 'mode-filter-random' },
@@ -71,7 +67,6 @@ const modeFilter = computed({
   set: (value: string) => { filters.value.arenaBonusType = value === 'all' ? '' : value },
 })
 const mapOptions = computed(() => {
-  // Advanced from/to reach outside the summary window, so the universe cannot be limited to that window.
   const keys = new Set([...coverage.value.reviewed, ...coverage.value.other].map(row => row.key))
   if (filters.value.mapKey) keys.add(filters.value.mapKey)
   return [...keys].sort((a, b) => mapName(a).localeCompare(mapName(b), locale.value))
@@ -105,7 +100,6 @@ const kpis = computed(() => {
     { label: t('battleDataAdmin.versions'), value: data.distinctClientVersions },
   ]
 })
-/** 客户端版本分布：最多列前 5 个，其余合并为「其他」，避免版本多了把整块撑长。 */
 const versionRows = computed(() => {
   const rows = summary.value?.clientVersions ?? []
   const head = rows.slice(0, 5).map(row => ({ key: row.key, count: row.count, latest: row.latestReceivedAt as string | null }))
@@ -144,8 +138,6 @@ async function refresh() {
   const generation = ++summaryGeneration
   const currentListGeneration = ++listGeneration
   loading.value = true; moreLoading.value = false; summaryError.value = ''; listError.value = ''
-  // Invalidate the previous page before the replacement request settles: the old cursor/filter must not
-  // be able to append a stale page while summary/list are switching ranges.
   nextCursor.value = null
   applied.value = {}
   const interval = rangeQuery()
@@ -192,7 +184,6 @@ async function loadMore() {
   } catch (error) { if (generation === listGeneration) listError.value = explain(error) }
   finally { if (generation === listGeneration) moreLoading.value = false }
 }
-/** 点行 / 主列按钮：抽屉立即打开，明细随后补上；离线时被门禁挡住，不打开。 */
 async function openDetail(battle: api.BattlePage['items'][number], event?: Event) {
   if (!gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
   const generation = ++detailGeneration
@@ -230,7 +221,6 @@ function winner(n: number) {
   return t('battleDataAdmin.team2')
 }
 type SpawnRow = ReturnType<typeof spawnTables>[number]['rows'][number]
-/** 出生侧胜率分段条：先手侧胜 | 平局 | 后手侧胜，三段合计 = 样本数；样本为 0 不画。 */
 function spawnSegments(row: SpawnRow) {
   const [first, second] = row.sides
   return { first: first?.wins ?? 0, draw: row.draws, second: second?.wins ?? 0 }
@@ -421,7 +411,6 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 .battle-card { padding: var(--space-3) var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
 .battle-card .battle-h2 { margin-block-start: 0; }
 
-/* 每日柱图：每天一根柱，柱高按窗口内最大值归一；窗口很长时横向滚动，不压扁柱子 */
 .trend { display: flex; align-items: stretch; gap: var(--space-1); margin: 0; padding: 0; overflow-x: auto; list-style: none; }
 .trend-col { position: relative; display: grid; flex: 1 0 var(--space-6); grid-template-rows: auto var(--chart-bar-h) auto; justify-items: center; gap: var(--space-1); min-inline-size: var(--space-6); font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .trend-count { color: var(--color-text-secondary); }
@@ -429,14 +418,10 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 .bar { display: block; inline-size: 100%; block-size: var(--bar-share, 0%); background: var(--color-accent); border-radius: var(--radius-sm); }
 .trend-date { color: var(--color-text-secondary); }
 
-/* 占比条：文字行 + 细条 */
 .share-row { display: grid; gap: var(--space-1); margin: 0 0 var(--space-2); }
 .share-track { display: block; block-size: var(--space-1); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-2); overflow: hidden; }
 .share-fill { display: block; inline-size: var(--share, 0%); block-size: 100%; background: var(--color-accent); }
 
-/* 出生侧胜率分段条：先手侧胜 | 平局 | 后手侧胜。底轨用更深的 surface-3 + 1px 实边框，
- * 条形自带宽边界；不依赖行背景 / 玻璃层。颜色是物理出生侧语义，四季固定：
- * 先手侧（NORTH / WEST）红、平局中性灰、后手侧（SOUTH / EAST）蓝，不随主题 accent 变化。 */
 .spawn-cell { min-inline-size: calc(var(--control-h-md) * 4); }
 .spawn-bar { box-sizing: border-box; display: flex; inline-size: 100%; min-inline-size: calc(var(--control-h-md) * 3); block-size: var(--space-3); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-full); corner-shape: round; background: var(--color-surface-3); overflow: hidden; }
 .spawn-seg { display: block; inline-size: var(--seg, 0%); block-size: 100%; }

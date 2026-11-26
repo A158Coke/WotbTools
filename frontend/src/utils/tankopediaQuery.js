@@ -1,31 +1,13 @@
-/**
- * 坦克百科的 URL 状态（与 utils/hofQuery.js 同一模式）：搜索、筛选、排序、详情写进 query，
- * 返回 / 分享 / 刷新都能恢复。纯函数：只做校验、序列化与列表筛选，读写路由由 AgentTankopedia 负责。
- * 默认值不写进 URL，保持链接干净。
- *
- * 键：q（搜索词）· tier · nation · type · category · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
- * · engine / track（发动机/履带下标）· shell（弹种下标）· dev（装备 9 槽 0/1/-）· cons / prov（物品 stem 逗号表）
- * · skills（已训练技能 id:等级 逗号表，兼容裸 id=7）· skillTriggers（模拟条件技能触发 0/1）· camo（涂装 0/1）
- * · upgrade（XI，缺省 stock / top）· abilities（XI 互斥技能节点 ID 逗号表）
- */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
-// 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
-// 没配 alias 的车辆直接不出现在文件里（缺 key == aliases []）。与 map_names.json 同一机制：
-// 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
-// 契约与维护流程见 docs/architecture/tankopedia-reference-data.md。
 import TANK_ALIASES from '../../../common/tank_aliases.json'
 import { TANKOPEDIA_QUERY_KEYS } from '../shared/tankopediaQueryKeys.js'
 
 export { TANKOPEDIA_QUERY_KEYS }
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
 export const TANKOPEDIA_CATEGORIES = Object.freeze(['regular', 'premium', 'collector'])
-/** 坦克百科默认按等级降序（同级按名称升序）；显式 sort 仍按 URL 恢复。 */
 const DEFAULT_SORT = 'tier'
-/** 搜索词上限：防止超长 query 拖慢模糊匹配 */
 const MAX_QUERY_LENGTH = 64
-/** 装备槽位数（与客户端 3 组 × 3 级一致） */
 const DEVICE_SLOTS = 9
-/** 单个物品表上限（槽位数由车辆数据再夹一次） */
 const MAX_ITEM_STEMS = 8
 const STEM_RE = /^[A-Za-z0-9_]+$/
 
@@ -50,7 +32,6 @@ function nonNegativeInt(value) {
   return Number.isInteger(n) && n >= 0 ? n : null
 }
 
-/** 物品 stem 列表：键缺省 → null（用客户端默认表）；键存在但空 → []（用户清空）。 */
 function stemList(value) {
   const raw = first(value)
   if (raw === undefined) return null
@@ -59,7 +40,6 @@ function stemList(value) {
   return unique.slice(0, MAX_ITEM_STEMS)
 }
 
-/** 装备槽串：只取前 9 位，非 0/1 的字符按空槽处理（保持槽位对齐），去尾随空槽。 */
 function skillLevels(value) {
   const raw = first(value)
   if (raw === undefined) return {}
@@ -75,11 +55,6 @@ function skillLevels(value) {
   return out
 }
 
-/**
- * 回放装配 id 透传（`shooter_equipment.raw`，Type5 九字节、0=空槽垫底）：只做一次性
- * 「在配置器中打开」的中转参数——AgentTankopedia 加载模块/目录后反解成 `dev` 槽位选择
- * 并从 URL 移除（歧义 fail-closed 丢弃，见 tankSetup.devicesFromEquipmentIds）。
- */
 function equipmentIds(value) {
   const raw = first(value)
   if (raw == null || raw === '') return null
@@ -87,7 +62,6 @@ function equipmentIds(value) {
   return out.length ? [...new Set(out)].slice(0, DEVICE_SLOTS) : null
 }
 
-/** XI 技能 node ID；组归属与互斥校验由客户端 upgradeProgression 决定。 */
 function abilityIds(value) {
   const raw = first(value)
   if (typeof raw !== 'string') return []
@@ -102,14 +76,11 @@ function deviceSlots(value) {
   return chars.join('').replace(/-+$/, '')
 }
 
-/** route.query → 已校验的状态；非法值回落到默认值。 */
 export function parseTankopediaQuery(query = {}) {
   const sort = text(query.sort)
   const category = text(query.category)
   const tier = positiveInt(query.tier)
   const tank = positiveInt(query.tank)
-  // XI 缺省 = top（由 resolveUpgradeSelection 的 tier 默认决定）；这里保留 tri-state：
-  // null/缺省 = 默认，'stock'/'top' = 用户显式选择。
   const upgrade = tank ? first(query.upgrade) : undefined
   return {
     q: text(query.q).slice(0, MAX_QUERY_LENGTH),
@@ -119,7 +90,6 @@ export function parseTankopediaQuery(query = {}) {
     category: TANKOPEDIA_CATEGORIES.includes(category) ? category : '',
     sort: TANKOPEDIA_SORTS.includes(sort) ? sort : DEFAULT_SORT,
     tank,
-    // 以下只在详情态有意义
     config: tank ? nonNegativeInt(query.config) : null,
     engine: tank ? nonNegativeInt(query.engine) : null,
     track: tank ? nonNegativeInt(query.track) : null,
@@ -136,7 +106,6 @@ export function parseTankopediaQuery(query = {}) {
   }
 }
 
-/** 状态 → query（只含非默认值）。 */
 export function serializeTankopediaQuery(state = {}) {
   const query = {}
   const q = typeof state.q === 'string' ? state.q.trim().slice(0, MAX_QUERY_LENGTH) : ''
@@ -173,7 +142,6 @@ export function serializeTankopediaQuery(state = {}) {
   return query
 }
 
-/** 比较两个 query 的百科部分是否相同（忽略 view 等其他键与键顺序）。 */
 export function sameTankopediaQuery(a, b) {
   const left = serializeTankopediaQuery(parseTankopediaQuery(a))
   const right = serializeTankopediaQuery(parseTankopediaQuery(b))
@@ -181,7 +149,6 @@ export function sameTankopediaQuery(a, b) {
   return [...keys].every(key => left[key] === right[key])
 }
 
-/** 当前 query 中非百科键（view、lang 等）原样保留，再叠加百科状态。 */
 export function withTankopediaState(query = {}, state = {}) {
   const rest = { ...query }
   for (const key of TANKOPEDIA_QUERY_KEYS) delete rest[key]
@@ -198,12 +165,7 @@ const COMPARATORS = {
   pen: byNumberDesc('pen_max'),
 }
 
-/**
- * 单车命中分 = max(正式车名, 各 alias)：alias 只扩搜索召回，命中后展示与排序仍走正式车名
- * （同分回落既有 byName）。不做 exact-alias / 语言 / 热度 boost。
- */
 function tankSearchScore(tank, query) {
-  // 国服 T-34* 是 Type T-34 的正式名称，星号是车型限定，不能作为标点丢掉。
   const starredQuery = query.includes('*')
   const name = tank.name || ''
   const canonicalScore = !starredQuery || name.includes('*') ? tankFuzzyScore(name, query) : 0
@@ -212,7 +174,6 @@ function tankSearchScore(tank, query) {
     const alias = String(value || '').trim()
     const starredAlias = alias.includes('*')
     if (starredQuery && !starredAlias) continue
-    // 无星查询已命中正式名时保持其相关度；未命中时仍让 Mk I*重型坦克等别名补召回。
     if (!starredQuery && starredAlias && canonicalScore > 0) continue
     const aliasScore = tankFuzzyScore(alias, query)
     if (aliasScore > score) score = aliasScore
@@ -220,10 +181,6 @@ function tankSearchScore(tank, query) {
   return score
 }
 
-/**
- * 列表筛选 + 排序：tier / nation / type / category 精确匹配，q 走模糊打分（正式车名 + alias）。
- * 有搜索词时精确正式车名优先，其后按相关度及正式车名排序；否则按 sort。
- */
 export function selectTanks(tanks, state = {}) {
   const category = TANKOPEDIA_CATEGORIES.includes(state.category) ? state.category : ''
   const base = tanks.filter(tank =>
@@ -248,10 +205,6 @@ export function selectTanks(tanks, state = {}) {
   return base.slice().sort(COMPARATORS[state.sort] || COMPARATORS[DEFAULT_SORT] || byName)
 }
 
-/**
- * 类别在原始记录上判定，避免 !! 把缺失标志误当作普通车。
- * 数值 0/1 兼容旧缓存；双真沿用金币优先，缺 premium 的旧典藏记录仍可识别。
- */
 function tankCategory(value) {
   const premium = value.is_premium
   const collector = value.is_collector
@@ -262,11 +215,6 @@ function tankCategory(value) {
   return 'unknown'
 }
 
-/**
- * tank_cache.json（对象或数组）→ 列表视图模型。车辆身份与显示名只来自 tank_cache
- * 事实数据；`aliases` 是独立的搜索 metadata（缺 key 的车辆得到 `[]`，新车进 tank_cache
- * 不需要同步改 alias 文件）。aliasMap 参数只为测试注入稀疏数据集。
- */
 export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
   const entries = Array.isArray(cache)
     ? cache.map(tank => [tank?.id, tank])
@@ -274,9 +222,6 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
   return entries
     .filter(([id, value]) => Number.isFinite(Number(id)) && value)
     .map(([id, value]) => {
-      // 卡片显示口径 = 无配件 + 强化树点满（与 hp_top 同一约定）：XI 逐弹带
-      // `penetration_top`（基础穿深 + 强化树 ShellPiercingPowerUpgrade 近距加成），
-      // 缺失（普通车 / 旧包）回落基础 `penetration`。
       const pens = Array.isArray(value.shells)
         ? value.shells.map(shell => shell?.penetration_top ?? shell?.penetration ?? 0)
         : []
@@ -290,12 +235,7 @@ export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
         type: value.type || 'unknown',
         category: tankCategory(value),
         is_premium: !!value.is_premium,
-        // 收藏车（tanks.pb field13 == 2；与 is_premium == 1 在上游数据里互斥）。
-        // projection 只做布尔归一化，**不**替上游强制互斥；异常双 true 原样透传，
-        // category 单独保留严格证据判定，筛选与卡片外观共用它。
         is_collector: !!value.is_collector,
-        // XI 卡片默认顶级血量：hp_top 由上游按升级树 MAX_HEALTH 节点算好；
-        // 普通车没有该字段，继续用 hp（车体 + 顶炮塔）。
         speed: value.speed_forward ?? value.speed ?? null,
         hp: value.hp_top ?? value.hp ?? null,
         pen_max: penMax || null,

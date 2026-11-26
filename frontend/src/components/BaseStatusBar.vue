@@ -1,15 +1,10 @@
 <script setup>
-// 基地状态条（2D / 3D 回放共用）：每个基地一枚圆形徽章——底色 = 当前归属（友绿 / 敌红 / 中立白），
-// 外圈进度环 = 占领进度，颜色跟占领方；单基地（攻防 / 遭遇战）协议不给占领方，徽章放旗帜图标、
-// 进度环用目标色，旁边显示百分比。两端可选显示争霸积分。
-// 输入是 utils/baseStatus.js 的视图模型（baseView），本组件不做任何协议推断。
 import { useI18n } from 'vue-i18n'
 import { Flag } from 'lucide-vue-next'
 
 defineOptions({ name: 'BaseStatusBar' })
 
 const props = defineProps({
-  /** [{ baseId, kind: 'supremacy'|'assault', owner, capturing, progress }] */
   bases: { type: Array, default: () => [] },
   compact: { type: Boolean, default: false },
   friendlyPoints: { type: Number, default: null },
@@ -133,14 +128,12 @@ function baseLabel(base) {
 
 .is-owner-neutral .base-badge-letter { fill: var(--color-on-team-neutral); }
 
-/* 旗帜图标叠在徽章圆心（单基地没有字母） */
 .base-badge-flag { color: var(--color-on-team-neutral); }
 .base-objective-progress { color: var(--color-objective); font: var(--type-caption); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 @media (width < 768px) {
   .base-status-bar { gap: var(--space-1); padding: 2px var(--space-2); }
 }
-/* HUD metadata shares a single compact row with map and time. */
 .base-status-bar.is-compact { gap: var(--space-1); padding: 0; border: 0; background: transparent; backdrop-filter: none; }
 .is-compact .base-badge-svg { width: var(--space-6); height: var(--space-6); }
 @media (width >= 1200px) {

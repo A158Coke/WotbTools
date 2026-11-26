@@ -1,12 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 射击分析面板状态链回归：
- * - author_path="error" 且他人宽松路径 0 发 → 警示必须可见，且与空态并存——
- *   绝不允许只显示"没有射击"把作者链失败伪装成正常空结果（契约 v0.1.9 评审 blocker）；
- * - 射击者筛选三态（未知阵营绝不并入我方）；
- * - Master–Detail：一行一 Shot、选中出检视、窄容器整屏 + 焦点管理；
- * - 术语：界面不得出现内部 id（eid）、WebAssembly / Agent 等实现层词汇。
- */
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -50,7 +42,6 @@ vi.mock('../scene/agentData.js', () => ({
   fetchShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
-/** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
 const observers = []
 class ResizeObserverStub {
   constructor(cb) { this.cb = cb; observers.push(this) }
@@ -73,7 +64,6 @@ function mkFile(name = 'cn.wotbreplay') {
 
 const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 }
 
-/** 新手教程表面（ONBOARDING_KEY）：compact 检视面板只在教程引导中出现，测试用它模拟引导态 */
 const guideSurfaces = {}
 const guideActive = ref(false)
 const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
@@ -86,7 +76,6 @@ async function mountPane(props = {}) {
     global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
     attachTo: document.body,
   })
-  // 只有"应当解码"的场景才等终态（无文件 / 被阻断 / 未激活时不发解码）
   const shouldDecode = props.active !== false && !props.blockedReason && props.file !== null
   if (shouldDecode) {
     await vi.waitFor(() => {
@@ -150,7 +139,6 @@ describe('ReplayShotsPane unmount authorization boundary', () => {
   })
 })
 afterEach(() => {
-  // 用例内 mockImplementation（挂起的资产请求/弹表查询）不得泄漏到后续用例
   fetchShotTankData.mockReset()
   fetchShotTankData.mockImplementation(async () => ({ configs: [] }))
   assetProvider.json.mockReset()
@@ -172,7 +160,6 @@ describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', 
     const warn = wrapper.get('[data-testid="shots-author-error"]')
     expect(warn.text()).toContain('agentShots.author_path_error')
     expect(warn.text()).toContain('type=5 名册')
-    // 与空态并存：no_shots 仍渲染（用户知道确实 0 发），但警示是第一眼信息
     expect(wrapper.get('[data-testid="shots-no-shots"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -228,7 +215,6 @@ describe('ReplayShotsPane author_path fail-visible（评审 blocker 回归）', 
     expect(wrapper.findAll('.shot-row')).toHaveLength(0)
     await wrapper.get('#shots-shooter-select').setValue('all')
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
-    // 命中在案（target_eid）但结果未知（255）→ "命中·结果未知"，不得伪装成未击穿
     expect(wrapper.text()).toContain('agentShots.res_hit_unknown')
     expect(wrapper.text()).not.toContain('agentShots.res_miss')
     expect(wrapper.text()).not.toContain('agentShots.res_nopen')
@@ -252,7 +238,6 @@ describe('ReplayShotsPane 数据与筛选', () => {
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('1')
     expect(wrapper.text()).toContain('agentShots.res_ric')
-    // 时间走 canonical helper（mm:ss，无十分位）：110.26 → 01:50
     expect(wrapper.text()).toContain('01:50')
     expect(wrapper.text()).not.toContain('01:50.')
     wrapper.unmount()
@@ -311,7 +296,6 @@ describe('ReplayShotsPane 数据与筛选', () => {
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('1')
     await wrapper.get('#shots-shooter-select').setValue('all')
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('2')
-    // 选项值用列表序号，DOM 里不出现内部 id
     expect(wrapper.findAll('#shots-shooter-select option').map(o => o.attributes('value'))).toEqual(['own', 'all', 'player-0', 'player-1'])
     await wrapper.get('#shots-shooter-select').setValue('player-0')
     expect(wrapper.get('[data-stat="shots"] .stat-value').text()).toBe('1')
@@ -335,7 +319,6 @@ describe('ReplayShotsPane Master–Detail 与可访问性', () => {
   }
 
   it('射击时间以开战为 00:00（与 2D / 3D 同一时钟），不显示原始回放时钟', async () => {
-    // 原始时钟 140.4s、开战（period 3）在 13.4s → 开战后 127s = 02:07
     parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [], periods: [{ clock: 13.4, period: 3 }], meta: { duration: 280 } })
     parseAgentShotsFromBytes.mockResolvedValue({ ...oneShot, shots: [{ ...oneShot.shots[0], time_s: 140.4 }] })
     const wrapper = await mountPane()
@@ -407,7 +390,3 @@ describe('ReplayShotsPane Master–Detail 与可访问性', () => {
   })
 })
 
-/**
- * Master–Detail 的导航（design-language §9）：compact 全屏详情要有上一发 / 下一发，
- * 键盘与滑动等价；**导航只在当前筛选结果内移动**（不是原始 shots），首尾不循环。
- */

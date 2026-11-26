@@ -8,7 +8,6 @@ import { ConnectivityState } from '../platform/connectivity.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 
-// Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
 async function pressEscape() {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await flushPromises()
@@ -20,7 +19,6 @@ const api = vi.hoisted(() => ({
   deleteUsers: vi.fn()
 }))
 
-// login / ensureToken 必须可断言：离线时页面**不允许**走到认证路径（既不 refresh 也不跳登录）。
 const auth = vi.hoisted(() => ({
   ensureToken: vi.fn(() => Promise.resolve(true)),
   login: vi.fn()
@@ -47,7 +45,6 @@ vi.mock('../utils/display.js', () => ({
   apiErrorCodeLabel: (_t, _te, code) => (code ? 'code:' + code : '')
 }))
 
-// t(key, params) → "key(k=v,...)"：断言时同时锁定 key 与插值参数。
 const i18n = vi.hoisted(() => ({
   translate: (key, params) => (params
     ? `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
@@ -58,10 +55,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: i18n.translate, te: () => true })
 }))
 
-/**
- * 连通性夹具：AdminUsersPage 是 ONLINE_REQUIRED，本套件用**真实** connectivity store
- * （只替换 navigator.onLine），从而验证「门禁 → 认证 → backend」的真实顺序。
- */
 function setOnline(value) {
   Object.defineProperty(window.navigator, 'onLine', { value, configurable: true })
 }
@@ -72,7 +65,6 @@ async function goOnline() {
   await useConnectivity().start()
 }
 
-/** 离线用浏览器事件驱动；unknown / degraded / service-unavailable 直接注入状态。 */
 function goOffline() {
   setOnline(false)
   window.dispatchEvent(new Event('offline'))
@@ -82,7 +74,6 @@ function setConnectivityState(state) {
   useConnectivity().setStateForTest(state)
 }
 
-/** AdminUserListItem fixture（Keycloak segment 默认：无本地资料）。 */
 function kcUser(keycloakUserId, overrides = {}) {
   return {
     keycloakUserId,
@@ -105,7 +96,6 @@ function pageResult(items, page, size, totalItems, totalPages) {
   return { items, page, size, totalItems, totalPages }
 }
 
-/** 表格数据行（两个 describe 共用）。 */
 function rows(wrapper) {
   return wrapper.findAll('.admin-table tbody tr')
 }
@@ -121,7 +111,6 @@ describe('AdminUsersPage connectivity gating', () => {
     expect(api.searchUsers).not.toHaveBeenCalled()
     expect(api.getUser).not.toHaveBeenCalled()
     expect(api.deleteUsers).not.toHaveBeenCalled()
-    // 门禁在认证之前：既不 ensureToken（无 token refresh 网络路径）也不 login（不跳登录页）。
     expect(auth.ensureToken).not.toHaveBeenCalled()
     expect(auth.login).not.toHaveBeenCalled()
   }
@@ -132,7 +121,6 @@ describe('AdminUsersPage connectivity gating', () => {
     ))
     api.deleteUsers.mockResolvedValue({ requested: 1, deleted: 1, failed: 0, results: [{ userId: 'kc-a', deleted: true }] })
     auth.ensureToken.mockResolvedValue(true)
-    // 先真正启动一次来源（否则 setStateForTest 没有 store 可注入），每个用例再自行改状态。
     await goOnline()
     useConnectivityNotice().close()
   })
@@ -155,10 +143,8 @@ describe('AdminUsersPage connectivity gating', () => {
     await flushPromises()
 
     expectZeroBackendWork()
-    // 中性状态可见（不是 error 态），文案来自 capability 模型。
     expect(wrapper.find('[data-testid="admin-connectivity-unavailable"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('featureOffline.adminUsers')
-    // 用户点击时立刻得到统一提示，而不是等超时后的 generic error。
     expect(useConnectivityNotice().visible.value).toBe(true)
     expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.adminUsers')
   })
@@ -226,7 +212,6 @@ describe('AdminUsersPage connectivity gating', () => {
     await wrapper.find('[data-testid="admin-segment-local"]').trigger('click')
     await wrapper.find('.admin-pagination select').setValue('50')
     await wrapper.find('.admin-page-next').trigger('click')
-    // 跳页控件本身 disabled；再绕过 disabled 直接派发输入 / click，handler 的门禁仍必须挡住。
     const jumpInput = wrapper.find('.admin-page-jump input')
     const jumpGo = wrapper.find('.admin-page-go')
     expect(jumpInput.attributes('disabled')).toBeDefined()
@@ -237,7 +222,6 @@ describe('AdminUsersPage connectivity gating', () => {
     jumpGo.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
 
-    // 掉线后所有会改可见行集合的动作都没有 backend 出口（也不再走 token 路径）。
     expect(api.searchUsers).not.toHaveBeenCalled()
     expect(auth.ensureToken).not.toHaveBeenCalled()
   })
@@ -254,7 +238,6 @@ describe('AdminUsersPage connectivity gating', () => {
     await rows(wrapper)[0].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
 
-    // 抽屉可以显示列表行已有的字段，但详情请求被门禁挡住；删除入口不可用。
     expect(api.getUser).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="admin-detail-drawer"] [data-testid="admin-danger-start"]').attributes('disabled')).toBeDefined()
   })
@@ -264,14 +247,12 @@ describe('AdminUsersPage connectivity gating', () => {
     wrapper = mountPage()
     await flushPromises()
 
-    // 在线时打开抽屉、展开删除确认并输入 DELETE。
     await rows(wrapper)[0].find('[data-testid="admin-row-open"]').trigger('click')
     await flushPromises()
     await wrapper.find('[data-testid="admin-danger-start"]').trigger('click')
     await wrapper.find('[data-testid="admin-danger-input"]').setValue('DELETE')
     expect(wrapper.find('[data-testid="admin-danger-confirm"]').attributes('disabled')).toBeUndefined()
 
-    // 确认前掉线。
     goOffline()
     await flushPromises()
     api.deleteUsers.mockClear()
@@ -318,13 +299,11 @@ describe('AdminUsersPage connectivity gating', () => {
     goOffline()
     await flushPromises()
 
-    // 掉线不清空数据 / 不登出 / 不整页重载：只挡住新的 ONLINE_REQUIRED 动作。
     expect(rows(wrapper).length).toBe(1)
     expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=2,total=3,items=60)')
     expect(wrapper.find('.admin-bulk-summary').text()).toBe('admin.selectedCount(count=1)')
     expect(wrapper.find('[data-testid="admin-connectivity-unavailable"]').exists()).toBe(true)
     expect(api.searchUsers).toHaveBeenCalledTimes(2)
-    // 会改变 server-backed 结果集的控件在非-online 时不可用，避免「显示改了、数据没改」。
     expect(wrapper.find('.admin-page-prev').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-page-next').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.admin-page-jump input').attributes('disabled')).toBeDefined()
@@ -347,22 +326,13 @@ describe('AdminUsersPage connectivity gating', () => {
     await flushPromises()
     await flushPromises()
 
-    // 只补一次列表；不重放删除 / 批量删除。
     expect(api.searchUsers).toHaveBeenCalledTimes(1)
     expect(api.deleteUsers).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="admin-connectivity-unavailable"]').exists()).toBe(false)
 
-    // 重复的 online 通知（重连抖动）不得形成请求风暴。
     window.dispatchEvent(new Event('online'))
     await flushPromises()
     expect(api.searchUsers).toHaveBeenCalledTimes(1)
   })
 })
 
-/**
- * review P2：非-online 时，会改变 server-backed 结果集的动作必须**先门禁、后改状态**。
- *
- * 不变量：applied state（rows / page / size / segment / selection）永远与最后一次成功加载一致。
- * 即使控件被程序化地绕过 disabled（setValue 会先摘掉 disabled），handler 也必须回滚，而不是留下
- * 「UI 显示已改、数据没改」的假 applied 状态。
- */

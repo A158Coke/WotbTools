@@ -1,13 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 认证诊断（2.1.0 Phase 2.5）的字段纪律与接线回归：
- *
- * `cookie_not_found` 取证的前提是诊断**存在且不泄密**。这里锁两件事：
- * 1. 事件里只出现布尔 / 枚举（URL 参数存在性、Keycloak 错误码），绝不复制参数值
- *    （code/state/token/cookie 值是 secrets，进了日志就等于泄漏）；
- * 2. browserAuthProvider 在**正确的时点**留下 breadcrumbs：login 跳转前、
- *    adapter init 之前（失败路径也留痕）。
- */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   __resetAuthDiagnosticsForTest,
@@ -33,7 +24,6 @@ describe('returnParamFacts：只读存在性，绝不复制参数值', () => {
       hasCode: true, hasState: true, hasSessionState: true,
       hasError: false, error: 'none', hasIss: true,
     })
-    // 快照里永远不出现参数值
     expect(JSON.stringify(facts)).not.toContain('SECRET')
   })
 
@@ -65,7 +55,7 @@ describe('record / snapshot：环形缓冲 + console 输出', () => {
     const snap = snapshot()
     expect(snap).toHaveLength(30)
     expect(snap[0].event).toBe('probe')
-    expect(snap[0].seq).toBe(5)                       // 最旧的 5 条被挤出
+    expect(snap[0].seq).toBe(5)
     expect(Number.isNaN(Date.parse(snap[0].at))).toBe(false)
     expect(spy).toHaveBeenCalledTimes(35)
     const [, payload] = spy.mock.calls[0]
@@ -77,7 +67,6 @@ describe('record / snapshot：环形缓冲 + console 输出', () => {
     const circular = {}
     circular.self = circular
     expect(() => record('bad', { circular })).not.toThrow()
-    // 缓冲只收序列化成功的条目（快照永远是 JSON 安全的）
     expect(snapshot()).toHaveLength(0)
     expect(spy).toHaveBeenCalledTimes(0)
   })

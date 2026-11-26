@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// 3D 快捷指令 / 聊天 / 地图标记滚动流（左下）：从 Replay3DPane 出仓（源码行预算回归
-// 1500）。数据与呈现都在本组件：复用事件流的行文案事实源（eventRowTitle，同一 i18n 键
-// 与「玩家 · 车名」身份纪律）+ useTankNames 单例 tankNames 表（事件流 pane 同消费）。
-// 只列 ≤ 当前回放时刻最近 6 条（旧条淡显、marker 行 objective 强调色）；隐藏全部 UI 时
-// 随覆盖层一并隐藏；pointer-events 关闭不拦截战场操作。
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentPlaybackFacet } from '../api/agent-replay-facets.js'
@@ -11,11 +6,8 @@ import { buildEventStream, eventRowTitle } from '../utils/playbackEventStream.ts
 import { useTankNames } from '../composables/useTankNames.js'
 
 const props = defineProps<{
-  /** 回放数据面（AgentPlaybackFacet；markers/chat_events 所在）。 */
   facet: AgentPlaybackFacet | null
-  /** 回放时刻（秒）：只显示 t <= time 的事件。 */
   time: number
-  /** 隐藏全部 UI / 无数据 → 整层隐藏（与覆盖层同语义）。 */
   hidden: boolean
 }>()
 
@@ -37,9 +29,6 @@ const feed = computed(() => feedRows.value.filter((ev) => ev.t <= props.time).sl
 </template>
 
 <style scoped>
-/* 快捷指令 / 聊天 / 地图标记滚动流（左下）：与游戏内聊天 feed 同位的呈现层。
-   屏幕尺寸固定 px；行数由 JS 截尾（最近 6 条），越旧越淡；pointer-events 关闭——
-   纯呈现层，不拦截战场点击/拖拽。 */
 .pb-chat-feed {
   position: absolute;
   left: var(--space-4, 16px);

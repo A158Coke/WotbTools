@@ -1,6 +1,3 @@
-// 交接搭载配置富化的回归测试（评审 4597024398）：
-// 真实实现（不 mock annotateMountedConfigs）+ 可控的逐车资产 Promise，
-// 锁定「单车就绪即写回、无关慢车不清空已到证据」的增量语义。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -32,10 +29,8 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-/** 让挂起的 async 续体走完（真实定时器，不引入 fake timer 与组件计时耦合）。 */
 const settle = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
 
-/** 交接行最小形状：注入了 config idx 的字段在断言期可见。 */
 interface TestShot {
   shooter_eid: number
   target_eid: number | null
@@ -48,7 +43,6 @@ interface TestShot {
 beforeEach(() => {
   mocks.json.mockReset()
   mocks.resolveMountedConfig.mockReset()
-  // 测试专用：vehicle.config_index 直接对号 data.configs（真实实现由 comp locals 判定）。
   mocks.resolveMountedConfig.mockImplementation((vehicle: { config_index?: number } | undefined, data: {
     configs?: ReadonlyArray<unknown>
   } | null | undefined) => data?.configs?.[vehicle?.config_index ?? 0] ?? null)
@@ -78,21 +72,18 @@ describe('annotateMountedConfigs', () => {
     const pending = annotateMountedConfigs(shots as never, vehicles as never)
     expect(mocks.json).toHaveBeenCalledTimes(3)
 
-    // 只有 100 返回：引用它的两行立刻拿到射手配置；目标证据未到仍为空。
     d100.resolve({ configs: [{ id: 's0' }, { id: 's1' }] })
     await settle()
     expect(shots[0].shooter_config_idx).toBe(0)
     expect(shots[1].shooter_config_idx).toBe(0)
     expect(shots[0].target_config_idx).toBeUndefined()
 
-    // 200 返回：目标配置按自己的 config 表命中 index 1，与 300 是否返回无关。
     d200.resolve({ configs: [{ id: 't0' }, { id: 't1' }] })
     await settle()
     expect(shots[0].target_config_idx).toBe(1)
     expect(shots[1].target_config_idx).toBe(1)
     expect(shots[2].shooter_config_idx).toBeUndefined()
 
-    // 300 仍挂起：函数本身未结算，但已到证据已经写入行对象（调用方有界等待可取快照）。
     let settled = false
     void pending.then(() => { settled = true })
     await settle()

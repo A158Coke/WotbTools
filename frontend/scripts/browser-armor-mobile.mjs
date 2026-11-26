@@ -9,31 +9,8 @@ import { parseScenarioArgs, selectShard } from './browser-scenario-args.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
-/** 视觉证据放被 .gitignore 忽略的仓库根 tmp/，不进入提交；失败时也可直接打开排查。 */
 const COMPACT_SCREENSHOT_DIR = fileURLToPath(new URL('../../tmp/armor-landscape-compact-hud/', import.meta.url))
 
-/**
- * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
- *
- * 为什么必须是真浏览器：本次改动把手机端从「四角面板 + 上下两条可滚动窄带」改成
- * 「顶栏一行 + 底栏一行 + 参数面板默认收起」。这类断言的本质是真实 CSS 几何
- * （元素 rect、互相遮挡、触控尺寸、断点边界）——happy-dom / jsdom 没有布局引擎，
- * 只能靠 source-text 猜，那个不算验证（不得用正则测试冒充浏览器验证）。
- *
- * 与另外两个浏览器门禁的分工：
- *   - browser-playback-layout.mjs：file:// + 生产 CSS 的**静态几何**夹具；
- *   - browser-workspace-interaction.mjs：工作台 / 回放控件的**交互**夹具；
- *   - 本文件：Vite dev server + **真实装甲查看器**（AgentArmorView + tankViewer 内核 +
- *     全部 CSS）在手机 / 平板 / 桌面三档设备指标下的几何与真实触摸接线。
- *
- * 环境前提与三处显式让位（都不影响被测契约）：
- *   1. 正常态使用与瞄准/加载门禁共用的确定性夹具资产包，等待实际初始化完成再测量。
- *      资产不可达场景显式使用不可达 origin，测量前移除错误遮罩，只验证外壳与禁用入口。
- *   2. 加载态布局（顶栏单行 / 弹种不截断 / 面板控件 ≥44px）用 `applyLoadedFixture`
- *      注入 worst-case 内容后测量——不依赖资产，避免"退化态下空跑"（评审 BLOCKER 2）。
- *   3. 3D 画面本身不在断言之列（视觉归属用户）；这里只断言
- *      DOM/CSS chrome 的几何与接线。
- */
 
 async function dismissStatusOverlays(page) {
   await page.evaluate(`(() => {
@@ -46,21 +23,15 @@ async function dismissStatusOverlays(page) {
 const results = []
 let lastPage = null
 
-/* ------------------------------------------------------------------ 场景 */
 
 const MOBILE_SCENARIOS = [
   { name: 'armor-390x844-portrait-coarse', width: 390, height: 844, touch: true },
   { name: 'armor-360x640-small-coarse', width: 360, height: 640, touch: true },
-  // 断点边界：767px 仍必须是手机档（面板收起、顶栏单行）
   { name: 'armor-767x1024-narrow', width: 767, height: 1024, touch: false },
 ]
 
-// 资产源不可达（CI 就是这种环境）：车名 / 坦克数据不加载，顶栏只剩「参数」开关——
-// 这时布局同样必须成立（不能塌成 0 高、不能把开关挤出视口）。
-// 排在最后跑：URL 上的非空 ?assets= 会持久化进 localStorage，不让它污染其它场景。
 const ASSETLESS_SCENARIO = { name: 'armor-390x844-no-assets-coarse', width: 390, height: 844, touch: true, assetless: true }
 
-// 「从射击分析 / 坦克百科经路由打开」的形态：history.state.back 存在 → 返回键出现
 const BACK_SCENARIO = { name: 'armor-390x844-with-back-coarse', width: 390, height: 844, touch: true }
 
 async function runMobileScenario(env, scenario) {
@@ -72,12 +43,9 @@ async function runMobileScenario(env, scenario) {
   await page.emulate(scenario)
 
   const label = scenario.name
-  // assetless 场景显式把资产源指向不可达端口：无论本机有没有跑资产包，都稳定复现
-  // 「资产加载失败」态（CI 环境本来就没有资产源）
   const assetQuery = '&assets=' + encodeURIComponent(scenario.assetless ? 'http://127.0.0.1:1/' : env.assets)
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}${assetQuery}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  // 正常场景必须加载成功，不能用后续的布局文案夹具掩盖目标模型加载失败。
   if (scenario.assetless) {
     await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'assetless failure' })
     await dismissStatusOverlays(page)
@@ -91,9 +59,6 @@ async function runMobileScenario(env, scenario) {
       `${label}: 设备仿真未生效（pointer: coarse 必须为 true）`)
   }
 
-  // —— 默认收起态：顶栏一行 + 底栏一行 + 场景带 ——
-  // 加载态夹具：非 assetless 场景注入 worst-case 内容，让「顶栏单行 / 弹种不截断 /
-  // 面板控件 ≥44px」在有无资产包时都可确定复现（评审 BLOCKER 2）
   if (!scenario.assetless) {
     await page.probe(applyLoadedFixture)
     await delay(120)
@@ -101,7 +66,6 @@ async function runMobileScenario(env, scenario) {
   const initial = await page.probe(armorLayoutProbe)
   check(failures, initial.hasStage && !initial.unsupported, `${label}: 场景未渲染（hasStage=${initial.hasStage} unsupported=${initial.unsupported}）`)
   checkCommonGeometry(failures, initial, label)
-  // 竖屏（含窄桌面窗口）不申请沉浸：外壳顶栏必须保留（沉浸契约只属于手机横屏）；没有底部 Tab 栏（L1）
   check(failures, initial.appTopBar?.visible === true && initial.appTabBar === null,
     `${label}: 竖屏外壳顶栏必须保留且没有 Tab 栏（top=${initial.appTopBar?.visible} tab=${!!initial.appTabBar}）`)
   check(failures, initial.shellChrome !== 'immersive', `${label}: 竖屏不应进入沉浸态（dataset=${initial.shellChrome}）`)
@@ -111,8 +75,6 @@ async function runMobileScenario(env, scenario) {
     check(failures, initial.topBar && initial.topBar.height >= 44,
       `${label}: 车名未加载时顶栏塌陷（height=${initial.topBar?.height}）`)
   } else {
-    // 加载态：worst-case 车名/等级/类型/国籍必须在**一行**内（评审「额外关注」：
-    // 越界由省略号接管，不许换行把顶栏撑高）
     check(failures, initial.infoPanel?.visible === true && initial.infoPanelHeight !== null && initial.infoPanelHeight <= 26,
       `${label}: 顶栏信息行不是单行（#info-panel 高 ${initial.infoPanelHeight}px；长车名 + ru 等级/类型/国籍不得换行）`)
     check(failures, initial.infoPanelOverflowX === 'hidden',
@@ -136,14 +98,12 @@ async function runMobileScenario(env, scenario) {
     `${label}: 顶栏参数开关中心被 ${initial.tools?.hitDescription} 覆盖`)
   check(failures, initial.viewToggleDisplay === 'grid',
     `${label}: 视图开关不是移动端三档网格（display=${initial.viewToggleDisplay}）`)
-  // 弹种文案是「弹种 穿深mm / 伤害dmg」，被限宽截断过一轮（用户实测反馈）：锁死不许截断
   if (initial.shellSelectClipped) {
     check(failures, initial.shellSelectClipped.clipped === false,
       `${label}: 弹种下拉被截断（scrollWidth=${initial.shellSelectClipped.scrollWidth} > clientWidth=${initial.shellSelectClipped.clientWidth}，最长选项 ${initial.shellSelectClipped.widestOptionChars} 字）`)
   }
   checkTouchTargets(failures, initial, label)
   checkSceneBand(failures, initial, label)
-  // 炮塔 / 炮管角度条：单行（两行并排），且在顶栏与底栏之间不与任何一条重叠
   if (initial.turretControls?.visible) {
     check(failures, initial.turretRowsInline === true, `${label}: 炮塔 / 炮管角度条不是单行`)
     check(failures, initial.turretControls.height <= 48, `${label}: 角度条高度 ${initial.turretControls.height}px 超过单行预算`)
@@ -153,7 +113,6 @@ async function runMobileScenario(env, scenario) {
       `${label}: 角度条与底栏重叠（bottom=${initial.turretControls.bottom} > 底栏 top=${initial.bottomBar.top}）`)
   }
 
-  // —— 真实触摸：展开 / 收起参数面板 ——
   await page.installInputTrace()
   await page.tap({ ...initial.tools.center, touch: scenario.touch })
   const tapInput = await page.inputTrace()
@@ -173,10 +132,6 @@ async function runMobileScenario(env, scenario) {
   check(failures, opened.selectors && opened.selectors.height <= opened.root.height * 0.46 + 2,
     `${label}: 参数面板高度 ${opened.selectors?.height}px 超过 46% 视口上限`)
   check(failures, opened.targetSelect?.visible === true, `${label}: 参数面板里没有可用的目标 / 选车按钮`)
-  // 参数面板内的真实交互控件 ≥44px（评审 BLOCKER 1：配置下拉 + 装备复选框 label）。
-  // 动态装甲项（#armor-state-opt）只在有 XML 声明车出现，静态夹具下按设计 display:none；
-  // 122 俯仰配件项（#pitch-device-opt）只在目标车预设提供该槽位时显示，静态夹具同样隐藏——
-  // 命中区/文案断言只对**可见**控件成立（隐藏项 0×0 不是违规），隐藏项按 id 单独锁定。
   if (!scenario.assetless) {
     check(failures, opened.configSelect?.visible === true && opened.configSelect.height >= 43.5,
       `${label}: 配置下拉缺失或命中区不足 44px（${JSON.stringify(opened.configSelect)}）`)
@@ -191,7 +146,6 @@ async function runMobileScenario(env, scenario) {
     for (const option of visibleEq) {
       check(failures, option.height >= 43.5,
         `${label}: 装备「${option.text}」label 命中区 ${option.width}x${option.height}，低于 44px`)
-      // 文案盒不得被压窄（width:auto 被 `#tank-selectors label{width:58px}` 按优先级盖回过一轮）
       check(failures, option.clipped === false,
         `${label}: 装备「${option.text}」label 文案溢出盒子（width=${option.width} 需要 ≥${option.needed}）`)
     }
@@ -202,7 +156,6 @@ async function runMobileScenario(env, scenario) {
     }
   }
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
-  // 逐场景指标（CI 日志里的证据：证明夹具真的注入、断言不是空跑）
   console.log(`[browser-armor-mobile] ${label} metrics: topBar=${initial.topBar?.height}px infoPanel=${initial.infoPanelHeight}px `
     + `shellClipped=${initial.shellSelectClipped ? initial.shellSelectClipped.clipped : 'n/a'} `
     + `configSelect=${opened.configSelect ? opened.configSelect.height + 'px' : 'n/a'} `
@@ -213,8 +166,7 @@ async function runMobileScenario(env, scenario) {
   check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
     `${label}: 再次点击未收起（is-tools-open=${collapsed.toolsOpen} selectors visible=${collapsed.selectors?.visible}）`)
 
-  // —— 选车弹窗：全屏 + 头部不换行 + 关闭键 44px ——
-  await page.tap({ ...opened.tools.center, touch: scenario.touch })   // 重新展开
+  await page.tap({ ...opened.tools.center, touch: scenario.touch })
   const expanded = await page.probe(armorLayoutProbe)
   check(failures, expanded.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见，无法打开选车弹窗`)
   await page.tap({ x: expanded.targetSelect.left + Math.round(expanded.targetSelect.width / 2), y: expanded.targetSelect.top + Math.round(expanded.targetSelect.height / 2), touch: scenario.touch })
@@ -241,8 +193,6 @@ async function runMobileScenario(env, scenario) {
       `${label}: 关闭键超出 armor-view 右缘（right=${picker.pickerClose.right} root right=${picker.root.right}）`)
     check(failures, picker.pickerSearch.top >= picker.pickerTitle.bottom - 1,
       `${label}: 搜索框没有独占一行（search top=${picker.pickerSearch.top} title bottom=${picker.pickerTitle.bottom}）`)
-    // 共享 TankCatalogMenu：手机筛选收进 chips + sheet（与坦克百科同一实现），
-    // 不再在弹窗头部平铺三个下拉。搜索框与筛选入口都必须满足 44px 命中区。
     check(failures, picker.pickerSearch.height >= 43.5,
       `${label}: 选车搜索框高度 ${picker.pickerSearch.height}px，低于 44px`)
     check(failures, picker.pickerFilterToggle && Math.min(picker.pickerFilterToggle.width, picker.pickerFilterToggle.height) >= 43.5,
@@ -257,10 +207,8 @@ async function runMobileScenario(env, scenario) {
         { timeout: 5000, label: 'picker filter sheet' }).catch(() => null)
       check(failures, !!sheet && sheet.boxes.every(box => box && box.height >= 43.5) && sheet.done && sheet.done.height >= 43.5,
         `${label}: 筛选 sheet 的筛选控件/完成按钮缺失或低于 44px（boxes=${JSON.stringify(sheet?.boxes)} done=${JSON.stringify(sheet?.done)}）`)
-      // sheet 有进场位移动画：等它落定再量坐标，否则真实 tap 会落在滑动中的旧位置
       await page.waitForValue(`document.getAnimations().every(animation => animation.playState !== 'running')`, value => value === true,
         { timeout: 3000, label: 'sheet enter animation settled' }).catch(() => {})
-      // 关闭 sheet：优先点「完成」按钮（确定性入口；scrim 点击在弹窗叠层下时序不稳定）。
       const done = await page.evaluate(`(() => {
         const el = document.querySelector('[data-testid="filter-sheet-done"]')
         if (!el) return null
@@ -273,13 +221,11 @@ async function runMobileScenario(env, scenario) {
       }
       await page.waitForValue(`!document.querySelector('[role="dialog"] [data-testid="tank-filters"]')`, value => value === true,
         { timeout: 5000, label: 'picker filter sheet closed' }).catch(() => {})
-      // 模态 sheet 关闭后 Reka 会把 body 的 pointer-events 恢复；残留 none 会让后面的真实点击全部落空
       const released = await page.waitForValue(`getComputedStyle(document.body).pointerEvents !== 'none'`, value => value === true,
         { timeout: 3000, label: 'body pointer-events released' }).then(() => true).catch(() => false)
       const releaseState = released ? null : await page.evaluate(`JSON.stringify({ style: document.body.getAttribute('style'), layers: [...document.querySelectorAll('[data-dismissable-layer],[data-state]')].filter(e => /sheet|dialog|drawer/i.test(e.className + e.getAttribute('role'))).map(e => e.className + '|' + e.getAttribute('data-state')), scrims: document.querySelectorAll('[data-testid=sheet-scrim]').length, sheets: document.querySelectorAll('.sheet').length })`)
       check(failures, released, `${label}: 筛选 sheet 关闭后 body 仍是 pointer-events: none ${releaseState || ''}`)
     }
-    // 关闭弹窗：真实点击关闭键
     await page.tap({ x: picker.pickerClose.left + Math.round(picker.pickerClose.width / 2), y: picker.pickerClose.top + Math.round(picker.pickerClose.height / 2), touch: scenario.touch })
     const closed = await page.waitForValue(`document.querySelector('#tank-picker').classList.contains('open')`, (value) => value === false, { timeout: 5000, label: 'tank picker closed' })
       .then(() => true)
@@ -301,7 +247,6 @@ async function runMobileBackScenario(env, scenario) {
 
   const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`
   await page.goto(url)
-  // 模拟「从射击分析 / 坦克百科经路由打开」：history.state.back 存在 → 返回键出现
   await page.evaluate(`history.replaceState({ back: '/', current: location.href, forward: null }, '', location.href)`)
   await env.chrome.client.send('Page.reload', {}, sessionId)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage after reload' })
@@ -326,14 +271,9 @@ async function runMobileBackScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height} (with back)` })
 }
 
-/** 桌面 / 平板回归：移动端规则只作用于 <768px；桌面复用左上信息卡，参数面板默认收起。 */
 const DESKTOP_SCENARIOS = [
-  // 横屏粗指针手机必须走平板式布局（左上信息卡 + 四角浮层），而不是竖屏 mobile 的上下窄带，
-  // 并通过 shared/shellChrome 申请沉浸（AppShell 卸载顶栏 / Tab 栏，armor-view 占满整屏）。
   { name: 'armor-740x360-landscape-coarse', width: 740, height: 360, touch: true, phoneLandscape: true },
-  // 横屏粗指针平板同一套布局（信息行压单行；不再有额外的 height 断点）；不申请沉浸。
   { name: 'armor-1024x768-landscape-tablet-coarse', width: 1024, height: 768, touch: true, tabletLandscape: true },
-  // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
   { name: 'armor-1280x800-desktop', width: 1280, height: 800, touch: false },
@@ -356,7 +296,6 @@ async function runDesktopScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.hasStage && !layout.unsupported, `${label}: 场景未渲染（hasStage=${layout.hasStage} unsupported=${layout.unsupported}）`)
   checkCommonGeometry(failures, layout, label)
-  // 沉浸态契约：手机横屏申请（外壳 bar 卸载、armor-view 占满整屏）；平板横屏不申请
   if (scenario.phoneLandscape) {
     check(failures, layout.shellChrome === 'immersive',
       `${label}: 手机横屏未申请沉浸态（dataset=${layout.shellChrome}）`)
@@ -364,8 +303,6 @@ async function runDesktopScenario(env, scenario) {
       `${label}: 沉浸态下外壳顶栏仍渲染或出现 Tab 栏（top=${!!layout.appTopBar} tab=${!!layout.appTabBar}）`)
     check(failures, layout.root && layout.root.top === 0 && Math.abs(layout.root.height - layout.viewport.height) <= 1,
       `${label}: armor-view 没有占满整屏（root=${JSON.stringify(layout.root)} viewport=${JSON.stringify(layout.viewport)}）`)
-    // 深链直达（本场景 goto 即无 history.back）也必须有应用内退出：返回键恒在，
-    // 无历史时点击回坦克百科（#767 复审 P2：沉浸态不得让站内导航全部消失）
     check(failures, layout.back?.visible === true,
       `${label}: 沉浸态缺少返回/退出入口（返回键未显示）`)
   }
@@ -379,16 +316,10 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 桌面档设置面板默认应收起（visible=${layout.selectors?.visible}）`)
   check(failures, layout.toolsOpen === false && layout.tools?.ariaExpanded === 'false',
     `${label}: 桌面档默认收起状态不正确（is-tools-open=${layout.toolsOpen} aria=${layout.tools?.ariaExpanded}）`)
-  // 返回键恒在（深链直达也必须有站内退出）：has-back 共存布局下顶栏为返回键让位——
-  // 或下移 44+8（base 规则，横屏 / 桌面档），或右移 44+8（并排变体）；两种都要求返回键
-  // 自身贴 armor-view 顶边 inset 20、顶栏与它保持 space-2 间距且不重叠。不再锁死旧的
-  // 「顶栏相对 20/20」单一期望（那会让恒在返回键的正常布局必然失败）。
   const backRel = layout.back && layout.root
     ? { top: layout.back.top - layout.root.top, left: layout.back.left - layout.root.left } : null
   const barRel = layout.topBar && layout.root
     ? { top: layout.topBar.top - layout.root.top, left: layout.topBar.left - layout.root.left } : null
-  // 紧凑档的 space-2 / space-5 会随场景 token 收窄（6/15）；常规触控与桌面仍是 8/20。
-  // 期望值同样锁死，防止 token 回退后测试跟着放宽。
   const compactScene = isCompactScene(layout)
   const expectedSpace2 = compactScene ? 6 : 8
   const expectedSpace5 = compactScene ? 15 : 20
@@ -402,13 +333,10 @@ async function runDesktopScenario(env, scenario) {
   const coexistHorizontal = layout.back && layout.topBar
     && Math.abs((layout.topBar.left - layout.back.right) - sceneSpace2) <= 2
     && Math.abs(barRel.top - sceneSpace5) <= 2
-  // 短横屏（<=500）胶囊把返回键并进同一条：两者等高、同顶、边缘相接（不再留 space-2）。
   const coexistMergedCapsule = scenario.phoneLandscape && scenario.height <= 500 && layout.back && layout.topBar
     && Math.abs(layout.topBar.left - layout.back.right) <= 1
     && Math.abs(layout.topBar.top - layout.back.top) <= 1
     && Math.abs(layout.topBar.height - layout.back.height) <= 1
-  // 沉浸态（手机横屏）外壳在左上放菜单按钮，返回键右移 44+8 让出（--immersive-nav-reserve）。
-  // 这个 reserve 由外壳按常规触控档计算，场景紧凑档也不改它（菜单按钮在场景外，仍是 44px）。
   const backInsetLeft = scenario.phoneLandscape ? sceneSpace5 + 52 : sceneSpace5
   check(failures, !!backRel && Math.abs(backRel.top - sceneSpace5) <= 2 && Math.abs(backRel.left - backInsetLeft) <= 2,
     `${label}: 返回键没有贴 armor-view 左上 inset ${sceneSpace5}/${backInsetLeft}（back=${JSON.stringify(backRel)}）`)
@@ -419,8 +347,6 @@ async function runDesktopScenario(env, scenario) {
   }
   check(failures, coexistVertical || coexistHorizontal || coexistMergedCapsule,
     `${label}: 顶栏未在返回键下方 / 右侧留出 space-2，也未与返回键并成同一条胶囊（bar=${JSON.stringify(barRel)} back=${JSON.stringify(layout.back && { bottom: layout.back.bottom, right: layout.back.right })}）`)
-  // 手机横屏场景 HUD：射击快捷面板在右下拇指区（距底 space-2）；平板 / 桌面仍在右上角（20/20）。
-  // 紧凑档的 space-2 / space-5 是 6/15，所以这里从场景 token 取期望值。
   if (scenario.phoneLandscape) {
     check(failures, layout.bottomBar && layout.root
       && Math.abs((layout.root.bottom - layout.bottomBar.bottom) - sceneSpace2) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - sceneSpace5) <= 2,
@@ -430,12 +356,9 @@ async function runDesktopScenario(env, scenario) {
       && Math.abs((layout.bottomBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.root.right - layout.bottomBar.right) - 20) <= 2,
       `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
   }
-  // 短横屏（height <= 500）把厚度/击穿合并成两列 segmented control；桌面 / 平板仍是 flex。
   const compactLandscape = scenario.phoneLandscape && scenario.height <= 500
   check(failures, layout.viewToggleDisplay === 'flex' || (compactLandscape && layout.viewToggleDisplay === 'grid'),
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
-  // 右上角是一块固定宽度面板：进入厚度视图（装甲组成过滤行出现）不得把面板撑宽
-  // （2026-10-29 用户报障：点厚度模式后这一栏突然变宽）。
   const panelWidth = layout.bottomBar?.width
   await page.evaluate(`document.getElementById('collision-btn').click()`)
   await delay(200)
@@ -445,7 +368,6 @@ async function runDesktopScenario(env, scenario) {
   await page.evaluate(`document.getElementById('collision-btn').click()`)
   await delay(200)
 
-  // Desktop mirrors mobile portrait: the toggle expands the setup fields inside the top-left info card.
   await page.installInputTrace()
   await page.tap({ ...layout.tools.center, touch: scenario.touch })
   const tapInput = await page.inputTrace()
@@ -456,7 +378,6 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
   check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
   if (scenario.phoneLandscape) {
-    // 手机横屏：完整设置是右侧整高参数面板，场景在左侧保持可见，参数开关不被面板盖住
     check(failures, opened.selectors && opened.root
       && Math.abs(opened.selectors.right - opened.root.right) <= 1 && opened.selectors.top <= opened.root.top + 1
       && Math.abs(opened.selectors.bottom - opened.root.bottom) <= 1 && opened.selectors.width <= opened.root.width * 0.5,
@@ -476,8 +397,6 @@ async function runDesktopScenario(env, scenario) {
   check(failures, opened.configSelect?.visible === true, `${label}: 展开后配置下拉不可见`)
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
 
-  // Per-config armor: switching stock/top must update both armor plates and the gun-barrel
-  // module cache, not just the initially loaded config. The fixture has two distinct configs.
   const setConfig = async (index) => {
     await page.evaluate(`(() => {
       const sel = document.getElementById('config-select')
@@ -546,9 +465,7 @@ async function runDesktopScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/* ------------------------------------------------- 手机横屏短视口紧凑 HUD */
 
-/** worst-case 车名：真实加载态之上写长名，验证胶囊只会省略号裁剪、不会换行撑高。 */
 function applyCompactHeaderFixture() {
   const title = document.getElementById('tank-name')
   if (title) title.textContent = '116-F3 X · 重型坦克 · 实验型'
@@ -561,7 +478,6 @@ function applyCompactHeaderFixture() {
   return true
 }
 
-/** 真实结果卡的默认展开态（2026-11-16 用户反馈：手机端不能只给极简一行）；点卡片可收起。 */
 function applyCompactResultBadge() {
   const click = document.getElementById('click-info')
   if (click) click.style.display = 'none'
@@ -586,7 +502,6 @@ async function captureCompactScreenshot(env, page, name) {
   console.log(`[browser-armor-mobile] screenshot ${file}`)
 }
 
-/** 滚进可滚动面板后用 elementFromPoint 取真实触控点；返回可点击性，不在这里 tap。 */
 async function compactTarget(page, selector) {
   await page.callWith((sel) => document.querySelector(sel)?.scrollIntoView({ block: 'nearest', inline: 'nearest' }), selector)
   await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -610,7 +525,6 @@ async function compactTarget(page, selector) {
   })()`)
 }
 
-/** 厚度分类过滤的真实网格可见性（不是只读 aria）：主装/间隙来自 armorModel，外部模块来自场景。 */
 function armorVisibilityProbe() {
   const counts = { primary: 0, spaced: 0, external: 0 }
   const dbg = window.__DBG__
@@ -630,7 +544,6 @@ function armorVisibilityProbe() {
 
 const COMPACT_LANDSCAPE_SCENARIOS = [
   { name: 'armor-compact-landscape-844x390', width: 844, height: 390, touch: true, safeAreaInsets: { left: 47, right: 47 } },
-  // 768px 断点边界：>=768 结果胶囊回到左上胶囊右侧，可用宽度被两侧安全区与面板夹到最窄。
   { name: 'armor-compact-landscape-780x360', width: 780, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
   { name: 'armor-compact-landscape-768x360', width: 768, height: 360, touch: true, safeAreaInsets: { left: 47, right: 47 } },
   { name: 'armor-compact-landscape-740x360', width: 740, height: 360, touch: true },
@@ -648,7 +561,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   if (scenario.safeAreaInsets) {
     await env.chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets: scenario.safeAreaInsets }, sessionId)
   }
-  // HUD 的装备目录是独立资产；只有紧凑横屏场景需要真实 HUD，避免改变其它场景的原生弹种下拉。
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.compactAssets)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled,
@@ -657,7 +569,6 @@ async function runCompactLandscapeScenario(env, scenario) {
 
   const hudAppeared = await page.waitFor(() => !!document.querySelector('[data-testid="armor-shot-hud"]'), { timeout: 6000, label: 'shot hud ready' })
     .then(() => true).catch(() => false)
-  // HUD 就绪后原生弹种下拉必须让位；否则紧凑面板会多出一整行大号 select。
   const nativeShellHidden = await page.waitFor(() => getComputedStyle(document.querySelector('#shell-selector')).display === 'none', { timeout: 3000, label: 'native shell selector hidden' })
     .then(() => true).catch(() => false)
   const hudDebug = await page.evaluate(`(() => ({
@@ -678,11 +589,8 @@ async function runCompactLandscapeScenario(env, scenario) {
   await delay(100)
   const layout = await page.probe(armorLayoutProbe)
   checkCompactLandscapeHud(failures, layout, label, scenario.height)
-  // 抽屉与厚度过滤行也在场景根内，命中区按紧凑档 token（40）校验。
   const compactFloor = layout.sceneTokens?.hitComfortable ?? 44
 
-  // 设置抽屉：打开 → 真实交互（目标坦克选择器）→ 关闭 → 再次打开并关闭。
-  // 600px 宽时参数开关中心会被 19rem 抽屉盖住，必须由抽屉内明确的关闭按钮接手。
   await page.installInputTrace()
   await page.tap({ ...layout.tools.center, touch: true })
   const tapInput = await page.inputTrace()
@@ -731,7 +639,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   check(failures, collapsedAgain.toolsOpen === false && collapsedAgain.selectors?.visible === false,
     `${label}: 第二次打开后无法关闭设置面板`)
 
-  // 装甲厚度：真实切换到厚度视图，过滤行不能被 flex shrink 压扁/裁掉。
   await page.evaluate(`(() => {
     const traj = document.querySelector('#traj-info')
     if (traj) traj.style.display = 'none'
@@ -797,7 +704,6 @@ async function runCompactLandscapeScenario(env, scenario) {
     console.log(`[browser-armor-mobile] ${label} filter ${category.name}: before=${JSON.stringify(countsBefore)} off=${JSON.stringify(off.counts)} on=${JSON.stringify(on.counts)}`)
   }
 
-  // 真实厚度点选：在画布上命中装甲板，验证 #click-info 数值节点没有被 overflow:hidden 裁切。
   let realThickness = null
   const canvasPoints = [[0.4, 0.4], [0.5, 0.35], [0.35, 0.55], [0.45, 0.55], [0.3, 0.45], [0.55, 0.3]]
   for (const [fx, fy] of canvasPoints) {
@@ -854,7 +760,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   await checkThicknessValue('Hull', '200 mm', '200 mm', 'Base armor')
   await checkThicknessValue('炮塔正面附加装甲模块', '1280 mm', '1280 mm')
 
-  // 回到击穿模式：过滤行必须重新隐藏，布局恢复正常。
   const penetrationButton = await compactTarget(page, '#penetration-btn')
   check(failures, penetrationButton?.hit === true && penetrationButton?.inside === true,
     `${label}: 击穿模式开关不可触达（${JSON.stringify(penetrationButton)}）`)
@@ -872,7 +777,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   check(failures, restoredLayout.viewToggle?.height <= 38,
     `${label}: 恢复击穿模式后分段开关高度 ${restoredLayout.viewToggle?.height}px`)
 
-  // 最终截图回到击穿结果胶囊，并再次确认四盒几何。
   await page.probe(applyCompactResultBadge)
   await page.animationsSettled()
   const finalLayout = await page.probe(armorLayoutProbe)
@@ -880,7 +784,6 @@ async function runCompactLandscapeScenario(env, scenario) {
 
   await captureCompactScreenshot(env, page, scenario.name)
 
-  // 结果卡默认展开：明细行无需点击即可见；点卡片收起为一行，再点恢复展开。
   const badge = await compactTarget(page, '#traj-info')
   check(failures, badge?.hit === true && badge?.inside === true,
     `${label}: 默认展开态结果卡不可触达（${JSON.stringify(badge)}）`)
@@ -924,7 +827,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   check(failures, collapsedState.aria === 'false' && collapsedState.height <= 40,
     `${label}: 结果卡收起异常（${JSON.stringify(collapsedState)}）`)
 
-  // 收起后卡片变矮，触控点必须按新矩形重取；再点一次恢复默认展开。
   const collapsedBadge = await compactTarget(page, '#traj-info')
   check(failures, collapsedBadge?.hit === true && collapsedBadge?.inside === true,
     `${label}: 收起态结果卡不可触达（${JSON.stringify(collapsedBadge)}）`)
@@ -952,7 +854,6 @@ async function runCompactLandscapeScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-// A real roster response drives makeCard/loadMoreCards; do not synthesize card DOM or change product CSS.
 const PICKER_TANK_CACHE = {
   ...FIXTURE_TANK_CACHE,
   ...Object.fromEntries(Array.from({ length: 120 }, (_, index) => {
@@ -960,7 +861,7 @@ const PICKER_TANK_CACHE = {
     return [id, { ...FIXTURE_TANK_CACHE[FIXTURE_TANK_ID], id, name: `Picker Medium ${String(index).padStart(3, '0')}` }]
   })),
 }
-const PICKER_PAGE_SIZE = 48   // 共享 TankCatalogMenu 的首屏页大小（useIncrementalList 默认）
+const PICKER_PAGE_SIZE = 48
 const PICKER_SCENARIOS = ['summer', 'winter'].flatMap(profile => [
   { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
   { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
@@ -995,7 +896,6 @@ function pickerCardsProbe() {
     wheel: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
   }
 }
-/** 共享 TankCatalogMenu 的手机筛选 sheet 探针：四个筛选控件在 dialog 内可见。 */
 function pickerSheetProbe() {
   const sheet = document.querySelector('[role="dialog"] [data-testid="tank-filters"]')
   const boxes = ['#tp-tier', '#tp-nation', '#tp-type', '#tp-sort'].map(selector => {
@@ -1017,14 +917,12 @@ async function runPickerCardsScenario(env, scenario) {
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
   const PICKER_TOTAL = Object.keys(PICKER_TANK_CACHE).length
-  /** 真实滚轮逐页加载到目标条数（共享 useIncrementalList 每页 PICKER_PAGE_SIZE）。 */
   const exhaustPicker = async (total) => {
     for (let attempt = 0; attempt < 10; attempt++) {
       const count = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
       if (count >= total) return count
       const probe = await page.probe(pickerCardsProbe)
       await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...probe.wheel, deltaX: 0, deltaY: probe.scrollHeight }, sessionId)
-      // 等名册实际增长（IO 回调 + Vue patch 可能超过一帧），而不是固定延时。
       await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, next => next > count,
         { timeout: 3000, label: 'roster growth after wheel' }).catch(() => {})
     }
@@ -1036,20 +934,16 @@ async function runPickerCardsScenario(env, scenario) {
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.pickerAssets)}`)
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && document.querySelector('#target-select')?.disabled === false,
     { timeout: 30000, label: 'picker fixture initialized' })
-  // The setup panel is collapsed by default on every viewport; open it before choosing a target.
   const initialChrome = await page.probe(armorLayoutProbe)
   if (!initialChrome.selectors?.visible) {
     await page.tap({ ...initialChrome.tools.center, touch: scenario.touch })
   }
-  // The setup body scrolls inside the card; multiple configs push the target row below the
-  // tablet-height fold. Scroll it into view before issuing real input.
   await page.evaluate(`document.getElementById('target-select').scrollIntoView({ block: 'nearest' })`)
   await delay(80)
   const controls = await page.probe(armorLayoutProbe)
   await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
   await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 48,
     { timeout: 5000, label: 'first roster page' })
-  // 大视口首屏会自动续页（IntersectionObserver 在哨兵可见时追加）；等它稳定后再取初始快照。
   if (scenario.fillViewport) {
     await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > PICKER_PAGE_SIZE,
       { timeout: 5000, label: 'large viewport auto-fills' }).catch(() => {})
@@ -1066,8 +960,6 @@ async function runPickerCardsScenario(env, scenario) {
   if (failures.length === 0) {
     if (scenario.resize) {
       await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
-      // 视口扩大只靠 IO 续页：先不送滚轮，断言 resize 确实追加了一页（共享增量列表
-      // 只补到可滚动，不要求一次到全量）；滚动加载剩余页在下一步单独测试。
       await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > initial.count,
         { timeout: 5000, label: 'resize appends a page without input' }).catch(() => {})
       const resized = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
@@ -1114,13 +1006,8 @@ async function runPickerCardsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/**
- * Context-loss lifecycle: losing WebGL during initialization must keep the error card
- * (no later modelProgress/ready overwrite) and retry must recreate the renderer.
- */
 const CONTEXT_LOSS_SCENARIO = { name: 'armor-context-lost-init', width: 1024, height: 768, touch: false }
 const CONTEXT_LOSS_SELECTION_SCENARIO = { name: 'armor-context-lost-selection', width: 1024, height: 768, touch: false }
-/** 选择场景专用名册：默认夹具名册保持单车，避免影响其它门禁的首卡选择。 */
 const CONTEXT_LOSS_SELECTION_TANK_CACHE = {
   ...FIXTURE_TANK_CACHE,
   [FIXTURE_SECOND_TANK_ID]: { id: FIXTURE_SECOND_TANK_ID, name: 'Fixture Heavy', tier: 8, nation: 'ussr', type: 'heavyTank' },
@@ -1179,7 +1066,6 @@ async function runContextLossScenario(env, scenario, { prepare = null, verify = 
   const errorText = await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]')?.textContent || ''`)
   check(failures, /3D|WebGL|context/i.test(errorText),
     `${scenario.name}: context-lost 错误卡文案异常：${JSON.stringify(errorText.slice(0, 160))}`)
-  // 给仍在途的 JSON/GLB/modelProgress 链足够时间走完；错误卡不得被 loading/ready 覆盖。
   await delay(1500)
   const afterLoad = await page.evaluate(`(() => ({
     error: !!document.querySelector('[data-testid="scene3d-error"]'),
@@ -1208,10 +1094,6 @@ async function runContextLossScenario(env, scenario, { prepare = null, verify = 
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/**
- * Same-view route rebuild: the replacement viewer must not resurrect the previous route's
- * picker selection. Delayed tank_cache keeps the "before onTankSelection" window open.
- */
 const CONTEXT_LOSS_ROUTE_REBUILD_SCENARIO = { name: 'armor-context-lost-route-rebuild', width: 1024, height: 768, touch: false }
 async function runContextLossRouteRebuildScenario(env, scenario) {
   const failures = []
@@ -1223,7 +1105,6 @@ async function runContextLossRouteRebuildScenario(env, scenario) {
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.contextLossRouteRebuildAssets)}`)
   await selectSecondFixtureTarget(page)
   await page.evaluate(`window.__OLD_ARMOR_CANVAS__ = document.querySelector('#canvas-container canvas')`)
-  // 同一 view 只换 query：URL 目标仍是 9001，旧 picker 选择是 9002。
   const navigated = await page.evaluate(`(() => {
     const router = document.querySelector('#app').__vue_app__.config.globalProperties.$router
     const query = Object.fromEntries(new URLSearchParams(location.search))
@@ -1236,7 +1117,6 @@ async function runContextLossRouteRebuildScenario(env, scenario) {
     return !!canvas && canvas !== window.__OLD_ARMOR_CANVAS__
   }, { timeout: 10000, label: 'route rebuild creates the replacement canvas' }).then(() => true).catch(() => false)
   check(failures, replaced, `${scenario.name}: 路由重建没有生成新 canvas`)
-  // tank_cache 延迟 1.5s：此刻新 viewer 尚未发布 onTankSelection，选择 refs 仍是旧路线的。
   const lost = await page.evaluate(`(() => {
     const canvas = document.querySelector('#canvas-container canvas')
     const gl = canvas && canvas.getContext('webgl2')
@@ -1274,7 +1154,6 @@ async function runContextLossRouteRebuildScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/** Load-order regression: collision enabled before the delayed armor GLB finishes, visual first. */
 const STAGGERED_LOAD_SCENARIO = { name: 'armor-staggered-visual-first', width: 1024, height: 768, touch: false }
 async function runStaggeredLoadScenario(env, scenario) {
   const failures = []
@@ -1285,13 +1164,11 @@ async function runStaggeredLoadScenario(env, scenario) {
   await page.emulate(scenario)
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.staggeredAssets)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  // viewer 静态控件事件必须先挂上；按钮置灰期内的程序化点击会被浏览器忽略（真实用户同样点不动）。
   await page.waitFor(() => { const button = document.getElementById('collision-btn'); return !!button && !button.disabled },
     { timeout: 10000, label: 'viewer controls ready' })
   const beforeLoad = await page.evaluate('window.__LOAD__')
   check(failures, beforeLoad !== 'ok:' + FIXTURE_TANK_ID,
     `${scenario.name}: visual 在开启碰撞前已完成，竞态未被复现（__LOAD__=${beforeLoad}）`)
-  // Programmatic click reaches the collision handler even while the status overlay is visible.
   const clicked = await page.evaluate(`(() => {
     const button = document.getElementById('collision-btn')
     if (!button) return null
@@ -1344,15 +1221,12 @@ async function runStaggeredLoadScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/* ------------------------------------------------------------------ main */
 
-// 启动夹具前校验：非法分片参数不起 Chrome。
 const scenarioArgs = parseScenarioArgs(process.argv.slice(2))
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
 const compactAssets = await startFixtureAssetPack({ extraRoutes: {
-  // HUD 的装备目录：缺这个文件时 ArmorShotHud 不挂载，紧凑横屏就测不到真实布局。
   '/research/devices.json': { type: 'application/json', body: JSON.stringify({ meta: { gameVersion: 'fixture' }, devices: [], presets: [] }) },
 } })
 const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
@@ -1370,8 +1244,6 @@ try {
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
-      // 本门禁要求 WebGL2 预检通过（否则整页走 unsupported 分支、没有可测的 stage）。
-      // 无 GPU 的机器 / CI runner 上允许软件 WebGL 兜底（未知此 flag 的旧版本会忽略它）。
       '--enable-unsafe-swiftshader',
     ],
   })
@@ -1420,7 +1292,6 @@ try {
         viewport: `${scenario.width}x${scenario.height}`,
       })
     }
-    // 逐场景实时输出：job 超时被杀时，日志仍保留已跑完场景的状态与耗时。
     const elapsed = Math.round(performance.now() - startedAt)
     const result = results.at(-1)
     if (result.failures.length === 0) {

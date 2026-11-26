@@ -11,7 +11,6 @@ function changeAll(target: Data | undefined, transform: (value: number) => numbe
 function changePitch(pitch: Data | undefined, up: number, down: number): void {
   if (!pitch) return
   change(pitch, 'min', value => value - up); change(pitch, 'max', value => value + down)
-  // front/back 等扇区只有角度端点变化；yaw/from/to 等扇区边界保持原值。
   for (const [key, value] of Object.entries(pitch)) {
     if (key !== 'min' && key !== 'max' && record(value)) changePitch(value, up, down)
   }
@@ -27,10 +26,6 @@ function scaleArmor(detail: Data, factor: number): void {
   }
 }
 
-/**
- * 只在 detail 和 modules 均为 XI 且具可靠升级元数据时投影。
- * 未知脚本/坏数据不产生部分结果；调用方据 supported 显示不可用。
- */
 export function projectTankUpgrades<D, M>(detail: D, modules: M, mode?: unknown, choices?: unknown): {
   detail: D; modules: M; selection: UpgradeSelection
 } {
@@ -107,7 +102,6 @@ export function projectTankUpgrades<D, M>(detail: D, modules: M, mode?: unknown,
     switch (def.script) {
       case 'MaxHealthUpgrade': change(child(projectedModules, 'hull'), 'hp', add); change(projectedDetail, 'hp', add); break
       case 'EnginePowerUpgrade': statChange(engines, 'power', add); change(projectedDetail, 'engine_power', add); break
-      // ADD 指节点奖励相加；FireStartChangeUpgrade 把总奖励乘到原始概率。
       case 'FireStartChangeUpgrade': statChange(engines, 'fireStartingChance', multiply); break
       case 'SpeedLimitUpgrade':
         change(child(projectedModules, 'speedLimits'), p.type!, add)
@@ -156,16 +150,11 @@ export function projectTankUpgrades<D, M>(detail: D, modules: M, mode?: unknown,
       }
     }
   }
-  // 弹种伤害/装填被节点改过之后，`dpm` 与 `standard_damage` 必须同一次重算——否则
-  // 同一页会出现“伤害 600 / 装填 11.5 / DPM 2732”这种三量互不成立的组合（2732 是
-  // stock 的 560×60/12.3）。口径与包内 `dump-tank-data` 完全一致：标准弹 = 优先 ap、
-  // 否则首个非金币弹、再否则最大伤害；DPM = 标准弹伤害 × 60 / 装填（连发炮恒为 null）。
   if (configs.length) {
     configs.forEach(cfg => {
       if (!record(cfg) || !Array.isArray(cfg.shells)) return
       const standard = standardDamageOf(cfg.shells)
       if (standard != null) change(cfg, 'standard_damage', () => standard)
-      // 连发炮（包内 `is_burst`）的 dpm 恒为 null——投影同样置空，不保留可能过期的数字。
       if (cfg.is_burst === true) { cfg.dpm = null; return }
       const reload = cfg.reload_time
       if (!finite(reload) || reload <= 0) return
@@ -175,10 +164,6 @@ export function projectTankUpgrades<D, M>(detail: D, modules: M, mode?: unknown,
   return { detail: projectedDetail, modules: projectedModules, selection }
 }
 
-/**
- * 配置的“标准弹”伤害（DPM/Alpha 基准）：与 Rust `dump-tank-data` 同序——优先 `ap`、
- * 否则首个非金币弹（type 含 premium 不算）、再否则最大伤害；整表不可解析返回 null。
- */
 function standardDamageOf(shells: unknown[]): number | null {
   const rows = shells.filter(record)
   if (!rows.length) return null

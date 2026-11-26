@@ -1,5 +1,4 @@
 <script setup>
-// 全局错误提示（useError 的唯一渲染出口）：统一走 AppDialog（审计 PG-09）
 import AppDialog from '../components/AppDialog.vue'
 import AppButton from '../components/AppButton.vue'
 

@@ -1,9 +1,4 @@
 <script setup>
-// 侧边栏底部的"更多"弹出面板（平板 / 桌面）：低频的显示设置 + 关于与支持。
-// 非模态 disclosure：触发按钮 aria-expanded / aria-controls；Esc 关闭并把焦点还给触发按钮，
-// 点面板外或焦点移出面板时关闭；选一个链接后关闭。内容与手机"更多"页同源（useMoreMenu）。
-// Teleport 到 body：侧边栏是 fixed + z-index 的层叠上下文，面板留在里面会被页面里更高的层
-// （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { BookOpen, Download, MessageSquare } from 'lucide-vue-next'
@@ -17,7 +12,6 @@ import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  /** 触发按钮元素：用于"点外部关闭"时排除它，以及 Esc 后还原焦点 */
   anchor: { type: Object, default: null },
   id: { type: String, required: true },
 })
@@ -45,7 +39,6 @@ function onKeydown(event) {
   }
 }
 
-/** Tab 出面板（非模态，不锁焦点）：焦点去了面板与触发按钮之外就收起 */
 function onFocusOut(event) {
   const next = event.relatedTarget
   if (!next || panel.value?.contains(next) || props.anchor?.contains(next)) return
@@ -100,7 +93,6 @@ watch(() => props.open, async (open) => {
       <div class="more-panel-setting" data-testid="more-panel-feedback">
         <AppSwitch :model-value="feedbackPrefs.haptics" :label="$t('feedbackPrefs.haptics')" @update:model-value="value => setFeedbackPref('haptics', value)" />
         <AppSwitch :model-value="feedbackPrefs.sound" :label="$t('feedbackPrefs.sound')" @update:model-value="value => setFeedbackPref('sound', value)" />
-        <!-- 3D 回放炮声：与 MorePage 同名开关（桌面/平板侧栏走本面板，是这些布局的正常设置入口） -->
         <AppSwitch :model-value="feedbackPrefs.battleSound" :label="$t('feedbackPrefs.battleSound')" :description="$t('feedbackPrefs.battleSoundHint')" @update:model-value="value => setFeedbackPref('battleSound', value)" />
       </div>
     </section>

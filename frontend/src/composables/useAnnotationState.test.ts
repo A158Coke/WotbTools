@@ -39,7 +39,6 @@ describe('useAnnotationState', () => {
     expect(s.selectedAnnotationIndex.value).toBe(-1)
     s.redo()
     expect(s.annotations.value.map((a) => a.id)).toEqual(['a', 'b'])
-    // 边界保护：栈尾 redo / 栈底 undo 都是无操作，历史与选中不被破坏
     s.redo()
     expect(s.historyIndex.value).toBe(2)
     s.undo(); s.undo()
@@ -90,7 +89,6 @@ describe('useAnnotationState', () => {
     s.deleteSelected()
     expect(s.annotations.value.map((a) => a.id)).toEqual(['b'])
     expect(s.selectedAnnotationIndex.value).toBe(-1)
-    // 无选中时删除是无操作
     s.deleteSelected()
     expect(s.annotations.value.map((a) => a.id)).toEqual(['b'])
   })

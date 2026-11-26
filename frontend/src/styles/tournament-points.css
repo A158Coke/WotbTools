@@ -66,7 +66,6 @@
 .tournament-default-switch[aria-checked='true'] .tournament-default-track { background: var(--color-info); border-color: var(--color-info); }
 .tournament-default-switch[aria-checked='true'] .tournament-default-thumb { background: var(--color-surface-1); transform: translateX(calc(var(--control-check) + var(--space-2))); }
 
-/* Admin pages share the public board's surfaces, without its published-only semantics. */
 .tournament-admin { gap: var(--space-6); }
 .tournament-admin > *, .tournament-admin .tournament-toolbar > * { min-width: 0; }
 .tournament-admin .tournament-card { padding: var(--space-5); gap: var(--space-4); border-radius: var(--radius-md); }
@@ -110,18 +109,15 @@
   .tournament-admin .app-button { white-space: normal; overflow-wrap: anywhere; }
 }
 
-/* Admin page header controls: the compact event picker and secondary page links. */
 .tournament-admin .showcase-hero-toolbar { align-items: end; }
 .tournament-event-compact { flex: 0 1 calc(var(--form-field-min) * 2); }
 .tournament-header-link { display: inline-flex; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-2); border-radius: var(--radius-md); color: var(--color-accent-text); font-weight: 600; text-decoration: none; }
 .tournament-header-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) { .tournament-header-link:hover { background: var(--color-surface-2); } }
 
-/* Sticky bottom bar shared by the statistics day actions and the rules save bar. */
 .tournament-sticky-bar { position: sticky; bottom: 0; z-index: var(--z-sticky); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: var(--border-width) solid var(--color-border-subtle); background: var(--color-surface-2); box-shadow: var(--elevation-2); }
 .tournament-sticky-status { flex: 1 1 var(--form-field-min); min-width: 0; color: var(--color-text-secondary); overflow-wrap: anywhere; }
 
-/* Rules configuration: structure / source on the side, round-tabbed rank × day matrix on the right. */
 .tournament-config-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
 .tournament-config-side { display: grid; gap: var(--space-4); min-width: 0; }
 .tournament-config-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
@@ -150,7 +146,6 @@
 .tournament-missing { margin: 0; padding-inline-start: var(--space-5); color: var(--color-warning); font: var(--type-caption); }
 .tournament-rules-form > .tournament-sticky-bar { justify-content: flex-end; }
 
-/* Statistics workflow: match-day strip, five-step progress, review-card grid and the day action bar. */
 .tournament-day-strip { display: flex; gap: var(--space-2); overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: var(--space-1); }
 .tournament-day-chip { display: grid; flex: none; gap: var(--space-1); min-width: calc(var(--form-field-min) * .8); min-height: var(--control-h-lg); padding: var(--space-2) var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-align: start; cursor: pointer; }
 .tournament-day-chip[aria-pressed='true'] { border-color: var(--color-accent); background: color-mix(in oklab, var(--color-accent) 14%, var(--color-surface-1)); }

@@ -1,10 +1,3 @@
-/**
- * shotTrajectoryGeometry 单测（Issue #820 Wave B3B；2026-11 射线视觉重做）。
- *
- * 使用真实 Three.js 对象锁工厂不变量：屏幕空间 Line2 射线（2px 核心 + 4px 描边）、
- * 层点角色色、跳弹截断与续飞段、renderOrder、300m 默认回退、输入向量不可变、
- * 不挂载到任何 scene。等价基准 = 装甲判定链的层链语义。
- */
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { Line2 } from 'three/addons/lines/Line2.js'
@@ -28,7 +21,6 @@ function dotObjects(group: THREE.Object3D): THREE.Points[] {
   group.traverse((o) => { if (o instanceof THREE.Points) out.push(o) })
   return out
 }
-/** 每个折线是一个 Group（描边 + 核心），用于区分 incoming / reflected 段。 */
 function polylineGroups(group: THREE.Object3D): THREE.Group[] {
   const out: THREE.Group[] = []
   group.traverse((o) => { if (o instanceof THREE.Group && o.userData.overlayRole === 'polyline') out.push(o) })
@@ -118,7 +110,6 @@ describe('createShotTrajectoryGroup — 原点回退', () => {
     })
     const core = lineObjects(group).find((line) => (line.material as { linewidth: number }).linewidth === 2)!
     const box = core.geometry.boundingBox!
-    // origin = first + camDir*300 = (0,0,300)；入射段从 origin 铺到命中点 (0,0,10)
     expect(box.min.z).toBeCloseTo(10, 3)
     expect(box.max.z).toBeCloseTo(300, 3)
   })
@@ -149,7 +140,6 @@ describe('createShotTrajectoryGroup — 跳弹', () => {
     const incoming = polylineGroups(group)[0]
     const firstLine = incoming.children[0]
     const box = firstLine instanceof Line2 ? firstLine.geometry.boundingBox : null
-    // 入射段各点共线于 z 轴，x 范围严格为 0；若截断失效会延到续飞点 (x=5)
     expect(box).not.toBeNull()
     expect(box!.min.x).toBeCloseTo(0, 6)
     expect(box!.max.x).toBeCloseTo(0, 6)
@@ -163,8 +153,8 @@ describe('createShotTrajectoryGroup — 跳弹', () => {
     expect(lines).toHaveLength(2)
     const core = lines[1].children[1] as Line2
     const box = core.geometry.boundingBox!
-    expect(box.min.z).toBeCloseTo(10, 1) // 从 ricochet 点起
-    expect(box.max.z).toBeCloseTo(15, 1) // 到续飞点止
+    expect(box.min.z).toBeCloseTo(10, 1)
+    expect(box.max.z).toBeCloseTo(15, 1)
   })
 
   it('有 ricochet 但无 seg===1 续飞点：不产生 reflected 段', () => {
@@ -176,8 +166,6 @@ describe('createShotTrajectoryGroup — 跳弹', () => {
   })
 
   it('seg===1 续飞点出现在 ricochet 之前（无 ricochet）：与原实现等价地构造失败（生产层链不可达）', () => {
-    // 原 showTrajectory() 在该输入下会向 reflected 补 null ricPoint；折线工厂逐点读取
-    // 坐标时同样抛 TypeError。生产链路中 seg===1 只随 ricochet 出现。
     expect(() => createShotTrajectoryGroup({
       firstPoint: v(0, 0, 0), cameraPosition: v(0, 0, 100),
       layers: [layer({ point: v(0, 0, 5), seg: 1 }), layer({ point: v(0, 0, 10) })],
@@ -202,11 +190,8 @@ describe('createShotTrajectoryGroup — 层色', () => {
     expect(role({ layerChance: 0 }, true)).toBe('BLOCKED')
     expect(role({ layerChance: 0.5 }, true)).toBe('MAY_PENETRATE')
     expect(role({ layerChance: 1 }, true)).toBe('PENETRATION')
-    expect(role({}, true)).toBe('BLOCKED') // 缺 chance → 0
-    // 累计概率 50% 但当前层自身 100%：接触点仍然表达本层状态（绿），
-    // 不能把前层的不确定度画到后层的接触点上。
+    expect(role({}, true)).toBe('BLOCKED')
     expect(role({ chance: 0.5, layerChance: 1 }, true)).toBe('PENETRATION')
-    // 跳弹层优先于概率色。
     expect(role({ ricochet: true, layerChance: 1 }, true)).toBe('RICOCHET')
   })
 

@@ -2,7 +2,6 @@ import {
   BookOpen, Database, CircleUser, Clapperboard, House, Map, Menu, MessageSquare, Network, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 
-// 主导航图标（侧边栏、底部 Tab 栏与「更多」快捷入口共用，键为 PRIMARY_NAV.id / ADMIN_NAV.id）
 export const PRIMARY_NAV_ICONS = Object.freeze({
   home: House,
   replay: Clapperboard,
@@ -27,5 +26,4 @@ export const ADMIN_NAV_ICONS = Object.freeze({
   'creators-config': Users,
 })
 
-// 账户入口（进入个人中心）
 export const ACCOUNT_ICON = CircleUser

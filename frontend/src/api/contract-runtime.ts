@@ -29,17 +29,12 @@ export function validateBattlePlaybackDataset(value: unknown): {
 } {
   if (validator(value)) {
     const data = value as BattlePlaybackDataset
-    // Additive wire field (PR #229 rolling deployment): the previous production contract
-    // omits baseStates, so a missing value must validate and normalize to [] at the
-    // contract/application boundary — not by scattering a fallback in components.
     if (!Array.isArray(data.baseStates)) {
       return { data: { ...data, baseStates: [] }, diagnostics: [] }
     }
     return { data, diagnostics: [] }
   }
   const diagnostics = (validator.errors || []).map(error => ({
-    // Server has no replay parser: this schema now validates a locally produced dataset
-    // (frontend/src/replay-local/playback), not the deleted `/api/replay/battle-playback-v2` response.
     endpoint: 'local replay dataset (client-side projection)',
     schema: 'BattlePlaybackDataset',
     path: error.instancePath || '$',

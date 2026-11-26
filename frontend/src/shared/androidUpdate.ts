@@ -1,7 +1,6 @@
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
 import type { NativeBridgeResponse } from '../api/generated/android-native-bridge.js'
 
-/** Native-owned data after validation against android-native-bridge.json. */
 export type AndroidUpdateSnapshot = NativeBridgeResponse<'getUpdateStatus'>
 
 export interface AndroidUpdateController {

@@ -1,14 +1,9 @@
 // @vitest-environment happy-dom
-// 3D 视图的 WebGL 预检与加载状态（审计 3D-23）：AgentArmorView（装甲查看器）/ Scene3DStatus。
-// 回放侧的 3D 面板（Replay3DPane）有独立测试文件。
-// WebGL 通过 HTMLCanvasElement.prototype.getContext 模拟；three.js 场景内核整体 mock。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import Scene3DStatus from './Scene3DStatus.vue'
-// 静态导入：动态 import 的首次编译会落进第一个用例的 5s 预算（冷 Vite 下约 6s），
-// 超时后仍在后台 mounted 的组件会在下一个用例里再创建一个 viewer，造成串扰。
 import AgentArmorView from './AgentArmorView.vue'
 
 const viewer = vi.hoisted(() => ({ calls: [], retryResult: true }))
@@ -20,8 +15,6 @@ vi.mock('../scene/tankViewer.js', () => ({
   }),
 }))
 
-// 装甲 HUD 会为当前射击方拉取坦克配置与配置器目录；这里只验证视图壳，
-// 给资产源一个空的成功响应即可（缺 json 会留下未处理的 rejected promise）。
 vi.mock('../scene/assetProvider.js', () => ({
   assetProvider: {
     configured: () => true,
@@ -39,7 +32,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: ref('zh'), t: translate, te: () => false }),
 }))
 
-/** WebGL 模拟：'webgl2' | 'webgl1' | 'none' */
 function mockWebGL(level) {
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (name) {
     const ok = (level === 'webgl2' && name === 'webgl2') || (level === 'webgl1' && name === 'webgl')
@@ -118,7 +110,6 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
     onLoadState({ state: 'ready', progress: 1 })
     await nextTick()
     expect(wrapper.find('[data-testid="scene3d-loading"]').exists()).toBe(false)
-    // 场景脚本的加载阶段名走 i18n
     expect(viewer.calls[0].options.labels.phase('armor model')).toBe('armor.phase_armor_model')
   })
 
@@ -159,7 +150,6 @@ describe('AgentArmorView WebGL 预检与加载状态', () => {
     const stage = wrapper.find('[data-testid="armor-stage"]')
     const tools = wrapper.find('[data-testid="armor-tools"]')
     expect(tools.exists()).toBe(true)
-    // 默认收起：面板的显隐由 .is-tools-open 经移动端 CSS 控制（桌面端该按钮不可见、面板常驻）
     expect(stage.classes()).not.toContain('is-tools-open')
     expect(tools.attributes('aria-expanded')).toBe('false')
     await tools.trigger('click')
@@ -185,8 +175,6 @@ describe('回放工作台能力归属', () => {
     expect(VIEW_COMPONENTS['agent-shots']).toBe(VIEW_COMPONENTS.replay)
     expect(replayInitialCapability('agent-replay')).toBe('3d')
     expect(replayInitialCapability('agent-shots')).toBe('shots')
-    // 装甲查看器仍是独立页面（坦克百科侧）
     expect(VIEW_COMPONENTS['agent-armor']).not.toBe(VIEW_COMPONENTS.replay)
-    // Loading the real registry compiles every page; bound compilation separately from UI timing.
   }, 15_000)
 })

@@ -1,47 +1,9 @@
-/**
- * 2D 底图 OTA 覆盖层（Android 专用）：**包内兜底 + 在线校验**。
- *
- * 形状（判据与理由见 Agent 仓 docs/game-data-sources.md §5.6 与
- * docs/reference/maps.md §2026-10-16）：
- *   包内  = `src/assets/maps/*.webp`（随 APK，离线永远可用）——兜底层；
- *   远端  = Alibaba `/agent-assets/map2d/<code>.webp`（经 AgentAssetProxy 直连 + ETag 磁盘缓存）；
- *   判据  = Alibaba `/agent-assets/map2d/index.json`（逐图 sha256 + `generated`）。
- *
- * 决策规则（纯函数 `selectMap2dSources` / `pickNewestIndex`，无启发式）：
- *   1) 无包内清单（web / 旧包）⇒ 关闭通道，全部包内；
- *   2) 候选里没有**有效**索引（在线拉取失败且无持久化副本 / schema 不受支持 / 时间戳不可解析）⇒ 全部包内；
- *   3) 候选里取 **`generated` 最大**的有效索引——`index.json` 在同一 URL 下会更新（mutable），
- *      而 AgentAssetProxy 上游失败时会返回**陈旧磁盘缓存**，所以"remote 优先"会把已见过的新版
- *      覆盖成旧版（甚至 OTA 回退）。远端只在**不旧于**已持久化副本时才写回 localStorage；
- *   4) **`generated ≤ 包内 contentGeneratedAt` ⇒ 全部包内**——包内那份的内容本身就是较新的
- *      （或同一批），此时远端没有更新可拿；
- *   5) **逐图世界框/取向必须与注册表一致**（`worldBounds` + `orientation`，见下）——换了图但取景
- *      变了（裁剪、补边、换框）时 sha256/尺寸都能"看起来正常"，只有世界框能判出来；
- *   6) 逐图：`index.sha256 == 包内 sha256` ⇒ 用包内（字节相同，零流量）；不同 ⇒ 走远端。
- *   远端字节在使用前必须 sha256 校验（下载即验证），失败/取不到/几何不符 ⇒ 该图回落包内。
- *
- * ⚠️ **几何契约（索引 schemaVersion 2，Agent 仓 `tools/export_2d_basemaps.py` 起）**：
- *   2D 渲染把回放坐标按注册表 `coordinateBounds`（±300 m）线性映射到整幅图（`utils/mapView.js`），
- *   即"顶行 = +Z、左列 = +X、全幅覆盖 ±300"。**栅格分辨率不参与映射**（图与标记同框拉伸），
- *   所以唯一会错位的是**取景**——索引必须逐图声明 `worldBounds` + `orientation`，本模块据此
- *   与注册表比对后才允许换图；schemaVersion 1 的索引没有这份声明（无法判定取景）⇒ 一律不换
- *   （fail-closed 回落包内，`map2dState.status = 'schema'`）。
- *
- * ⚠️ `contentGeneratedAt` 是**底图内容自身的生成时刻**（Agent 仓导出时写进 `map2d-source.json`，
- * 与 COS 索引的 `generated` 同源），**不是** CI 构建时间：用 wall-clock 会把"内容其实更新"
- * 判成更旧（Android stage 晚于 COS 发布才构建时永久拒绝升级），也会让同一 commit 的两次构建
- * 产出不同字节的 bundle。**不要在这个字段上引入 `new Date()`。**
- *
- * 传输与离线缓存复用现有 AgentAssetProxy（条件请求 + 磁盘缓存 + 上游失败回落陈旧），
- * 因此本模块不做任何原生改动。
- */
 
 import { reactive, ref } from 'vue'
 import { isAndroidRuntime } from '../platform/runtime.js'
 import { androidAssetBase, dataVersionId } from '../scene/assetBase.js'
 import { mapImages } from './mapImages.js'
 
-/** map2d 索引条目（Agent 仓 INDEX_SCHEMA v2；几何契约字段见文件头）。 */
 export interface Map2dIndexEntry {
   sha256?: unknown
   path?: unknown
@@ -53,7 +15,6 @@ export interface Map2dIndexEntry {
   [key: string]: unknown
 }
 
-/** map2d 索引（schemaVersion 2；`maps` 缺省 = 旧产物，按 no-index 处理）。 */
 export interface Map2dIndex {
   schemaVersion?: unknown
   generated?: unknown
@@ -62,14 +23,12 @@ export interface Map2dIndex {
   [key: string]: unknown
 }
 
-/** 包内清单（`/map2d-embedded.json`；contentGeneratedAt 与 COS 索引 generated 同源）。 */
 export interface Map2dEmbeddedManifest {
   contentGeneratedAt?: unknown
   maps?: Record<string, { sha256?: unknown } | null> | null
   [key: string]: unknown
 }
 
-/** 世界框（注册表 coordinateBounds；几何契约的比对面）。 */
 export interface Map2dBounds {
   xMin: number
   xMax: number
@@ -95,35 +54,25 @@ export interface Map2dDecision {
 }
 
 const EMBEDDED_URL = '/map2d-embedded.json'
-// 延迟到真正初始化时求值：本模块会在非 DOM 测试环境里被 import，
-// 模块加载期读 location 会直接 ReferenceError（assetBase 的 dataset 段依赖 URL）。
 const indexUrl = () => `${androidAssetBase()}/map2d/index.json`
 const LEGACY_STORE_KEY = 'wotb.map2d.index.v1'
-// 选择 dataset 时索引缓存必须按 dataset 隔离：否则 A 版本的 stored index 可能
-// 被当成 B 版本的候选（sha256/路径对不上，或更糟：同 generated 时误用 A 的图）。
-// 未选择 dataset 时仍用旧键，保持既有安装的缓存与测试契约不变。
 const storeKey = () => {
   const datasetId = dataVersionId()
   return datasetId ? `${LEGACY_STORE_KEY}:${datasetId}` : LEGACY_STORE_KEY
 }
-/** 远端索引 schema（Agent 仓 INDEX_SCHEMA）：2 起逐图带几何契约（worldBounds + orientation）。 */
 const SCHEMA_VERSION = 2
-/** 取向契约常量（契约不搜索：顶行 = +Z_scene、左列 = +X_scene）。 */
 const ORIENTATION = 'top=+Z,left=+X'
 const INDEX_TIMEOUT_MS = 8000
 const IMAGE_TIMEOUT_MS = 20000
 
-/** 任一覆盖生效即 +1：给"必须感知换图"的命令式消费方（如 2.5D 贴图）一个可 watch 的信号。 */
 export const map2dRevision = ref(0)
 
-/** map2dState.maps 条目（诊断面）。 */
 export interface Map2dDiagnosticEntry {
   source: 'embedded' | 'remote' | 'pending' | 'rejected'
   reason?: string
   bytes?: number | null
 }
 
-/** 诊断面（本地测试/自检用；不含任何凭据）。 */
 export interface Map2dState {
   status: 'off' | 'no-embedded' | 'no-index' | 'schema' | 'timestamp' | 'stale-index' | 'active' | 'error'
   contentGeneratedAt: string | null
@@ -132,16 +81,15 @@ export interface Map2dState {
   maps: Record<string, Map2dDiagnosticEntry>
 }
 
-/** 诊断面（本地测试/自检用；不含任何凭据）。 */
 export const map2dState = reactive<Map2dState>({
-  status: 'off',        // off | no-embedded | no-index | schema | timestamp | stale-index | active | error
+  status: 'off',
   contentGeneratedAt: null,
   indexGenerated: null,
-  indexSource: null,    // remote | stored | null
+  indexSource: null,
   maps: {},             // code → { source: embedded|remote|pending|rejected, reason?, bytes? }
 })
 
-const overrides = reactive<Record<string, { url: string; sha256: string; bytes: number }>>({})   // code → { url, sha256, bytes }
+const overrides = reactive<Record<string, { url: string; sha256: string; bytes: number }>>({})
 const triggered = new Set<string>()
 let readyPromise: Promise<Map2dDecision> | null = null
 
@@ -184,7 +132,6 @@ function writeStoredIndex(index: Map2dIndex): void {
   }
 }
 
-/** 索引可用性：schema 受支持且 `generated` 可解析。 */
 export function isValidIndex(index: Map2dIndex | null | undefined): boolean {
   if (!index || typeof index !== 'object') return false
   if (index.schemaVersion !== SCHEMA_VERSION) return false
@@ -197,10 +144,6 @@ function invalidReason(index: Map2dIndex | null | undefined): string {
   return 'timestamp'
 }
 
-/**
- * 从候选（`{ index, source }`）里取 **`generated` 最大**的有效索引；全都无效返回 null。
- * 并列时按传入顺序取后者（调用方按 stored → remote 传，因此并列偏向 live 的 remote）。
- */
 export function pickNewestIndex(candidates: Array<{ index: Map2dIndex | null | undefined; source: 'remote' | 'stored' }>): { index: Map2dIndex; source: 'remote' | 'stored'; time: number } | null {
   let best: { index: Map2dIndex; source: 'remote' | 'stored'; time: number } | null = null
   for (const candidate of candidates) {
@@ -211,19 +154,10 @@ export function pickNewestIndex(candidates: Array<{ index: Map2dIndex | null | u
   return best
 }
 
-/**
- * 纯函数：给定（远端索引、持久化索引、包内清单），决定每张地图的来源。
- * 返回 { active, reason, index, source, use: { code: { sha256, path, bytes } }, rejected }。
- *
- * `boundsByCode`（`code → coordinateBounds | undefined`）：注册表的世界框（**几何契约的比对面**）。
- * 生产调用传 `mapImages` 派生表；索引条目声明 `worldBounds`/`orientation` 且与注册表逐值一致
- * 才允许换图——见头部「几何契约」段。
- */
 export function selectMap2dSources({ remoteIndex = null, storedIndex = null, embedded = null, boundsByCode = {} }: {
   remoteIndex?: Map2dIndex | null
   storedIndex?: Map2dIndex | null
   embedded?: Map2dEmbeddedManifest | null
-  /** code → 注册表 coordinateBounds（几何契约的比对面；生产调用传 mapImages 派生表） */
   boundsByCode?: Record<string, Map2dBounds | undefined>
 } = {}): Map2dDecision {
   const embeddedMaps = embedded && typeof embedded === 'object' ? embedded.maps : null
@@ -254,7 +188,7 @@ export function selectMap2dSources({ remoteIndex = null, storedIndex = null, emb
     if (!local || !entry) continue
     if (typeof entry.sha256 !== 'string' || typeof entry.path !== 'string') continue
     if (!geometryMatches(entry, boundsByCode[code])) { rejected[code] = 'geometry'; continue }
-    if (entry.sha256 === local.sha256) continue   // 字节相同 ⇒ 包内那份就是最新，零流量
+    if (entry.sha256 === local.sha256) continue
     use[code] = {
       sha256: entry.sha256,
       path: entry.path,
@@ -267,11 +201,6 @@ export function selectMap2dSources({ remoteIndex = null, storedIndex = null, emb
            index: newest.index, source: newest.source, use, rejected }
 }
 
-/**
- * 几何契约判定（**只有 schemaVersion 2 的索引才带这些字段**）：
- * 取向常量逐字相等、像素尺寸为正方形、世界框与注册表 `coordinateBounds` 逐值相等
- * （无注册表条目 ⇒ 判否）。任何一项不成立 ⇒ 该图不换（回落包内）。
- */
 export function geometryMatches(entry: Map2dIndexEntry | null | undefined, bounds: Map2dBounds | null | undefined): boolean {
   if (!entry || typeof entry !== 'object') return false
   if (entry.orientation !== ORIENTATION) return false
@@ -299,7 +228,6 @@ async function init(): Promise<Map2dDecision> {
   map2dState.contentGeneratedAt = (embedded.contentGeneratedAt ?? null) as string | null
   const stored = readStoredIndex()
   const remote = await fetchJson<Map2dIndex>(indexUrl())
-  // 只在远端**不旧于**已持久化副本时覆盖：proxy 的陈旧缓存不得把见过的新版打回去。
   if (remote && isValidIndex(remote)) {
     const remoteTime = Date.parse(String(remote.generated))
     const storedTime = stored && isValidIndex(stored) ? Date.parse(String(stored.generated)) : Number.NEGATIVE_INFINITY
@@ -317,7 +245,6 @@ async function init(): Promise<Map2dDecision> {
   return decision
 }
 
-/** 注册表世界框（几何契约的比对面）：`code → coordinateBounds`。 */
 function registryBounds(): Record<string, Map2dBounds> {
   const out: Record<string, Map2dBounds> = {}
   for (const [code, entry] of Object.entries(mapImages || {})) {
@@ -326,7 +253,6 @@ function registryBounds(): Record<string, Map2dBounds> {
   return out
 }
 
-/** 共享一次初始化（首次真正需要 2D 底图时才触发，不占启动时间）。 */
 export function ensureMap2dReady(): Promise<Map2dDecision> {
   if (!readyPromise) {
     readyPromise = init().catch((): Map2dDecision => ({
@@ -338,15 +264,11 @@ export function ensureMap2dReady(): Promise<Map2dDecision> {
 
 async function sha256Hex(buffer: ArrayBuffer): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle
-  if (!subtle) return null                       // 无 SubtleCrypto ⇒ 无法校验 ⇒ 不启用远端
+  if (!subtle) return null
   const digest = await subtle.digest('SHA-256', buffer)
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-/**
- * 取该 code 的可用 URL（远端已校验并通过时返回 blob URL；否则 null = 沿用包内）。
- * 供命令式消费方（2.5D 贴图）在**后台** await；2D 渲染走 `map2dSrc`（同步 + 反应式）。
- */
 export async function ensureMap2dImage(code: string): Promise<string | null> {
   const decision = await ensureMap2dReady()
   const want = decision && decision.active ? decision.use[code] : null
@@ -362,8 +284,6 @@ export async function ensureMap2dImage(code: string): Promise<string | null> {
     if (!digest) throw new Error('no-subtle-crypto')
     if (digest !== want.sha256) throw new Error('sha256 mismatch')
     const url = URL.createObjectURL(new Blob([buffer], { type: 'image/webp' }))
-    // 字节校验通过后**再验解码几何**：索引声明的像素尺寸必须与实际解码一致（防"索引写 1254²
-    // 实际是别的取景/尺寸"——sha256 只能证明拿到的就是索引描述的那份字节，不能证明取景正确）。
     try {
       await assertDecodedGeometry(url, want)
     } catch (error) {
@@ -376,13 +296,12 @@ export async function ensureMap2dImage(code: string): Promise<string | null> {
     return url
   } catch (error) {
     map2dState.maps[code] = { source: 'rejected', reason: String((error as Error)?.message || error) }
-    return null                                   // fail closed：回落包内
+    return null
   } finally {
     done()
   }
 }
 
-/** 解码远端底图并核对像素尺寸（与索引声明一致；WebView/浏览器共用同一路径）。 */
 async function assertDecodedGeometry(url: string, want: Map2dUseEntry): Promise<void> {
   if (!(typeof want.width === 'number' && typeof want.height === 'number')) throw new Error('geometry:no-dims')
   const image = new Image()
@@ -394,10 +313,6 @@ async function assertDecodedGeometry(url: string, want: Map2dUseEntry): Promise<
   }
 }
 
-/**
- * 2D 渲染层用的同步解析：返回当前应加载的 URL，并**惰性**触发该图的升级（不阻塞渲染）。
- * 在 computed 中调用即可获得反应式更新（overrides 是 reactive）。
- */
 export function map2dSrc(code: string, fallbackSrc: string): string {
   const override = overrides[code]
   if (override) return override.url
@@ -408,7 +323,6 @@ export function map2dSrc(code: string, fallbackSrc: string): string {
   return fallbackSrc
 }
 
-/** 测试/自检用：清空模块内状态（不改 localStorage）。 */
 export function __resetMap2dForTests() {
   readyPromise = null
   triggered.clear()
@@ -417,7 +331,7 @@ export function __resetMap2dForTests() {
   map2dState.status = 'off'
   map2dState.contentGeneratedAt = null
   map2dState.indexGenerated = null
-  map2dState.indexSource = null  // reset
+  map2dState.indexSource = null
   map2dRevision.value = 0
 }
 

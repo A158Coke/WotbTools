@@ -6,7 +6,6 @@ const props = defineProps({
   scope: String,
   order: Array,
   visible: Array,
-  /** 固定列 key：不可隐藏、不可拖拽（League 模式总 Rating 列）。 */
   fixedKeys: { type: Array, default: () => [] },
 })
 
@@ -15,8 +14,6 @@ const dragIdx = ref(-1)
 const panelEl = ref(null)
 let opener = null
 
-// 浮层即非模态对话框：打开时焦点进入面板，Esc/Done/卸载后归还给打开它的控件
-// （引导据此把 Esc 交给它，而不是退出教程）。
 onMounted(() => {
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   panelEl.value?.focus()
@@ -33,9 +30,6 @@ function onEscape(event) {
 }
 
 function onDragStart(i) { dragIdx.value = i }
-/** 合法移动判断（▲/▼ 按钮与 drag/drop 共用，唯一语义）：目标不越界、被移列非固定列，
- *  且移动后所有 fixedKeys 仍停留在原索引（不可跨越或插入固定列区域）。
- *  合法时返回重排后的新数组，非法返回 null。 */
 function legalReorder(idx, to) {
   if (to < 0 || to >= props.order.length) return null
   if (props.fixedKeys.includes(props.order[idx])) return null
@@ -78,8 +72,6 @@ function onDrop(i) {
           {{ $t((scope === 'player' ? 'player_labels.' : 'agg_labels.') + key) }}
         </label>
         <span class="cat">{{ catOf(key, $t) }}</span>
-        <!-- 触屏/键盘替代拖拽的上下移按钮：fixedKeys 不渲染（占位 span 保持 grid 对齐），
-             方向不合法（越界/会穿过固定列）时禁用；桌面仍可用 HTML5 拖拽。 -->
         <span class="colmove">
           <template v-if="!fixedKeys.includes(key)">
             <button type="button" class="colmove-btn" :disabled="!legalReorder(idx, idx - 1)"

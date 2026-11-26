@@ -12,8 +12,6 @@ vi.mock('../utils/researchCatalog.js', async original => ({
 beforeEach(() => { assetProvider.json.mockReset(); research.modules.mockReset() })
 
 describe('armor asset loader with official XI upgrade modules', () => {
-  // Module/upgrade nodes are exact client exports. Detail armor/shell values are
-  // controlled mapping inputs, as stated by this fixture's manifest.
   it('projects Object 432U armor, pitch and shell data without mutating its initial data', async () => {
     const { detail, modules } = fixtures.find(item => item.modules.tankId === 27905)
     const before = JSON.stringify(detail)
@@ -23,7 +21,6 @@ describe('armor asset loader with official XI upgrade modules', () => {
       fetchTankData(27905), fetchTankData(27905, { upgrade: 'top' }),
     ])
     expect(initial).toBe(detail)
-    // Client COMMON nodes: armor +3% +5%; upper pitch +5°, lower pitch +1°.
     expect(max.armor_model.hull.plates['1']).toBeCloseTo(108)
     expect(max.configs[0].turret_plates['1']).toBeCloseTo(216)
     expect(max.configs[0].pitch_limits).toMatchObject({ min: -20, max: 8 })

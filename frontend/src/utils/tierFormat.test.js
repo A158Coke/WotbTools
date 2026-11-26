@@ -13,6 +13,6 @@ describe('romanLevel（等级统一罗马数字）', () => {
     expect(romanLevel(null)).toBe('')
     expect(romanLevel(undefined)).toBe('')
     expect(romanLevel('abc')).toBe('')
-    expect(romanLevel(12)).toBe('12') // 超出 XI 时退化为数字，不吞值
+    expect(romanLevel(12)).toBe('12')
   })
 })

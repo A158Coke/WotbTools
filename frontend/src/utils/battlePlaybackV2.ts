@@ -4,23 +4,6 @@ import type {
   VehiclePlaybackTrack,
 } from '../types/playback-v2.js'
 
-/**
- * Battle Playback V2（canonical sparse transition tracks）纯查询工具。
- *
- * 设计原则（见 docs/features/battle-playback-hp-authority.md 与 docs/architecture/battle-timeline.md）：
- * - 前端<b>不再</b>做 HP/AoI/death/loadout 业务推理 —— 只消费 canonical projection 已标注的
- *   knowledge / provenance / observation boundary；
- * - {@code displayCapacityHp} 是 presentation-only HP bar 量程（anti-future-leak），
- *   不是 canonical max HP；绝不用未来采样；
- * - loadout 是持久配置（离开 AoI 仍 KNOWN）；consumable runtime 在 hidden interval = UNKNOWN。
- *
- * 2026-11-21 #LOC 结构拆分（本文件为公共入口 façade，导入方零改动）：
- * - 详情累计统计 / canonical 伤害日志 → ./battlePlaybackStatsV2.ts；
- * - 位姿 / 方向 / 观测边界查询 → ./battlePlaybackPoseV2.ts；
- * - consumable / module / crew 运行时状态 → ./battlePlaybackLoadoutV2.ts；
- * - HP 条读数工具（receivedFromHealthAt）→ ./battlePlaybackHealthInternals.ts。
- * 全部 re-export，公共 API 与拆分前逐符号一致。
- */
 
 export {
   cumulativeStatsAtV2,
@@ -40,7 +23,6 @@ export {
   moduleCrewStatesAt,
 } from './battlePlaybackLoadoutV2.js'
 
-/** 二分查找：最近一次 <= t 的 transition（列表按 timeSec 升序）。无 → null。 */
 function lastAtOrBefore<T extends { timeSec: number }>(
   items: readonly T[] | null | undefined,
   t: number,
@@ -62,7 +44,6 @@ function lastAtOrBefore<T extends { timeSec: number }>(
   return ans
 }
 
-/** 最近一次 <= t 的 canonical health fact。 */
 export function healthAt(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
   t: number,
@@ -82,7 +63,6 @@ export function healthAt(
   }
 }
 
-/** 最近一次 <= t 的 life transition。 */
 export function lifeAt(
   track: Pick<VehiclePlaybackTrack, 'lifeTransitions'> | null | undefined,
   t: number,
@@ -102,19 +82,10 @@ export type DefLifeState = {
 
 type DefLifeFields = {
   death_t: number | null
-  /** 上游 additive：仅该车死亡 ≥2 次（复活模式）才输出 */
   death_times?: number[]
-  /** 上游 additive：仅非空才输出 */
   resurrection_times?: number[]
 }
 
-/**
- * def 层生命状态（PlaybackData 车辆字段直读；canonical 轨道缺位时的权威回退）。
- *
- * 消费上游复活轨道（issue #622，2026-10-15 additive）：复活字段缺省 = 死亡终态语义
- * （`t >= death_t → DESTROYED`，行为与既往逐位一致）；字段在场 = 死亡/复活交替，
- * 最后一次 ≤t 的事件决定状态（首死前 ALIVE）。纯 def 字段推导，不读 canonical。
- */
 export function defLifeAt(def: DefLifeFields | null | undefined, t: number): DefLifeState | null {
   if (def == null || !Number.isFinite(t)) return null
   const death = def.death_t
@@ -146,12 +117,6 @@ export function defLifeAt(def: DefLifeFields | null | undefined, t: number): Def
   return { lifeState: state, destroyedKnownAtSec: destroyedAt }
 }
 
-/**
- * Canonical HP presentation for one track at t.
- *
- * `relativeFull` is a client-projection presentation-safe fact: it never
- * invents an actual current/max HP pair. A missing enemy fact remains UNKNOWN.
- */
 export function healthDisplayAt(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions' | 'lifeTransitions'> | null | undefined,
   t: number,
@@ -209,7 +174,6 @@ export function healthDisplayAt(
   }
 }
 
-/** Aggregate canonical health by the canonical friendly perspective. */
 export function friendlyHealthAt(
   tracks: readonly VehiclePlaybackTrack[] | null | undefined,
   friendly: boolean,
@@ -219,13 +183,6 @@ export function friendlyHealthAt(
   return aggregateHealth(perspectiveTracks, t)
 }
 
-/**
- * Presentation scale is a sticky, already-disclosed fact: a later canonical HP transition with
- * displayCapacityHp=null means "this transition does not provide a new capacity", not "forget the
- * previously disclosed scale". This is deliberately separate from current HP authority so an
- * enemy switching from tankopedia provisional HP to replay HP cannot make the team bar jump to
- * PARTIAL/100%. A later positive replay capacity replaces the older scale naturally.
- */
 function presentationCapacityAt(track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined, t: number) {
   let capacity = null
   for (const tr of track?.healthTransitions || []) {
@@ -255,9 +212,6 @@ function aggregateHealth(teamTracks: readonly Pick<VehiclePlaybackTrack, 'health
     && display.relativeFull === true && display.destroyed !== true)
   const knownRemaining = displays.reduce((sum, display) =>
     sum + (display?.currentHp != null && Number.isFinite(display.currentHp) ? display.currentHp : 0), 0)
-  // Keep a stable presentation denominator when every member has already disclosed one. A null
-  // capacity on the latest replay HP transition does not erase the older scale and therefore cannot
-  // turn a real 80% bar into a fake 100% PARTIAL bar. This never fabricates capacity from currentHp.
   const totalMax = hasCompletePresentationScale
     ? capacities.reduce((sum, capacity) => sum + capacity, 0)
     : 0

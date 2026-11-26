@@ -6,9 +6,6 @@ import {
   terrainPitchRoll, clampHullAttitude, SUSP_TRAVEL_M,
 } from './glbRig.ts'
 
-// 复刻 GLTFLoader 的赋值：省略 metallicFactor 时取 glTF 规范默认 1.0（three 自己的
-// MeshStandardMaterial 默认是 0.0，所以必须显式设成 1 才是真实的装载结果）；
-// 有 metallicRoughness 贴图时该贴图同时绑到 metalnessMap 与 roughnessMap。
 const nonPbrMaterial = () => {
   const m = new THREE.MeshStandardMaterial({ roughness: 1 })
   m.metalness = 1
@@ -21,7 +18,6 @@ const pbrMaterial = () => {
   return m
 }
 const mesh = (material) => new THREE.Mesh(new THREE.BufferGeometry(), material)
-/** 按 hull → turret_01 → gun_01 的层级挂链（真实模型的子树形态），返回根节点 */
 const tree = (material) => {
   const gun = new THREE.Group()
   gun.name = 'gun_01'
@@ -59,7 +55,7 @@ describe('neutralizeDefaultMetalness（老式车不得按全金属渲染）', ()
     const m = nonPbrMaterial()
     neutralizeDefaultMetalness(tree(m))
     expect(m.metalness).toBe(0)
-    const root = new THREE.Group()   // 无 material 的节点不得抛错
+    const root = new THREE.Group()
     neutralizeDefaultMetalness(root)
     expect(root.children).toHaveLength(0)
   })
@@ -86,7 +82,6 @@ describe('neutralizeDefaultMetalness（老式车不得按全金属渲染）', ()
 })
 
 describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_mask）', () => {
-  /** 造一个和真实 GLB 同形的子树：组节点 → mesh 子节点（几何在子节点上） */
   const piece = (name, geo) => {
     const group = new THREE.Group(); group.name = name
     const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial())
@@ -100,14 +95,13 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
     const r = root(piece('turret_01', box(2, 2, 2)), piece('gun_01_mask', box(1, 3, 1)), piece('mask_01', box(1, 3, 1)))
     expect(dropDuplicateGunMasks(r)).toBe(1)
     expect(r.getObjectByName('mask_01')).toBeUndefined()
-    expect(r.getObjectByName('gun_01_mask')).toBeTruthy()   // 保留被 rig 摆位的那一份
+    expect(r.getObjectByName('gun_01_mask')).toBeTruthy()
     expect(r.getObjectByName('turret_01')).toBeTruthy()
   })
 
   it('无同名对手件 / mesh 数不同 → 保留', () => {
     expect(dropDuplicateGunMasks(root(piece('mask_01', box(1, 1, 1))))).toBe(0)
     const r = root(piece('gun_01_mask', box(1, 1, 1)), piece('mask_01', box(1, 1, 1)))
-    // mesh 数不同（子树多一个 mesh）→ 视为不同几何
     r.getObjectByName('mask_01').add(new THREE.Mesh(box(1, 1, 1), new THREE.MeshBasicMaterial()))
     expect(dropDuplicateGunMasks(r)).toBe(0)
   })
@@ -125,8 +119,6 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
     const bb = { min: new THREE.Vector3(), max: new THREE.Vector3() }
     reference.computeBoundingBox()
     bb.min.copy(reference.boundingBox.min); bb.max.copy(reference.boundingBox.max)
-    // 找一个 x/y 都严格位于 bbox 内部的顶点，沿 x 微移：顶点数与包围盒都不变，只有位置数据变了
-    // （表面网格的顶点至少在一条轴上贴边，所以判据不能要求三轴都靠内）
     const v = new THREE.Vector3()
     let moved = false
     for (let i = 0; i < pos.count; i++) {
@@ -140,7 +132,6 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
     }
     expect(moved, '测试前提：分段 box 必须存在内部顶点').toBe(true)
     tampered.computeBoundingBox()
-    // 前提成立：旧判据（顶点数 + bbox）在这里会判定「重复」
     expect(tampered.attributes.position.count).toBe(reference.attributes.position.count)
     expect(tampered.boundingBox.min.distanceTo(bb.min)).toBeLessThan(1e-4)
     expect(tampered.boundingBox.max.distanceTo(bb.max)).toBeLessThan(1e-4)
@@ -196,8 +187,8 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
     const keptSpy = vi.spyOn(keptGeo, 'dispose')
     const r = root(piece('gun_01_mask', keptGeo), piece('mask_01', dupGeo))
     expect(dropDuplicateGunMasks(r)).toBe(1)
-    expect(dupSpy).toHaveBeenCalledTimes(1)     // 被删节点独占的 geometry 正常释放
-    expect(keptSpy).not.toHaveBeenCalled()      // 保留节点绝不被牵连
+    expect(dupSpy).toHaveBeenCalledTimes(1)
+    expect(keptSpy).not.toHaveBeenCalled()
   })
 
   it('mask_NN 与 gun_NN_mask 共享同一 geometry object → 不得 dispose（保留节点仍引用）', () => {
@@ -206,7 +197,7 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
     const r = root(piece('gun_01_mask', shared), piece('mask_01', shared))
     expect(dropDuplicateGunMasks(r)).toBe(1)
     expect(r.getObjectByName('mask_01')).toBeUndefined()
-    expect(spy).not.toHaveBeenCalled()          // 共享几何被释放会让保留部件丢 GPU buffer
+    expect(spy).not.toHaveBeenCalled()
   })
 
   it('几何被第三方保留节点引用 → 仍不 dispose', () => {
@@ -218,14 +209,11 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
   })
 
   it('几何对象不同、但共享 uv/index 属性对象（真实 Maus 形态）→ 仍不 dispose', () => {
-    // 实测 6929 资产：两份副本的 TEXCOORD_0/TEXCOORD_1/INDEX 是同一 accessor 对象，
-    // POSITION/NORMAL 各写一份（仅 float32 舍入噪声）。释放被删几何会连带回收保留部件
-    // 仍在用的 uv/index GPU buffer。
     const reference = box(1, 3, 1)
     const dup = reference.clone()
     expect(dup).not.toBe(reference)
-    dup.attributes.uv = reference.attributes.uv      // 共享 uv attribute 对象
-    dup.index = reference.index                      // 共享 index attribute 对象
+    dup.attributes.uv = reference.attributes.uv
+    dup.index = reference.index
     const spy = vi.spyOn(dup, 'dispose')
     const r = root(piece('gun_01_mask', reference), piece('mask_01', dup))
     expect(dropDuplicateGunMasks(r)).toBe(1)
@@ -239,26 +227,16 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
 
 
 describe('悬挂准备件（当前无调用方）：地形姿态 / 限幅残差 / 逆合成', () => {
-  // ⚠️ 2026-10-10：下面三组函数是纯函数准备件，**场景内核已不引用**——
-  // 「根吃地形局部平面 + 车体收限幅残差」的近似整段回退（车体恢复记录位姿，客户端同构；
-  // 见 playbackScene.poseGlb 头注）。保留测试因函数仍导出、下一步逐轮悬挂可能复用；
-  // 届时若确定不用，实现与测试一并删除。
-  // 合成斜面高度场 h(x,z) = gx·x + gz·z（场景系），用于锁符号域（pitch 正=车头下坡、
-  // roll 正=车体向左倾——与回放 type=10 同域，实测残差中位 0.06°/0.53° 即由此验证）
   const plane = (gx, gz) => (x, z) => gx * x + gz * z
 
   it('地形姿态与记录姿态同域：前方低 → pitch 正；右侧低 → roll 负（左倾才为正）', () => {
-    // 车头沿 +x（yaw = π/2 ⇒ 场景前向 (sinθ,cosθ) = (1,0)；右舷 = (−cosθ,sinθ) = (0,1)）
     const downX = terrainPitchRoll(plane(-0.2, 0), 0, 0, Math.PI / 2)
     expect(downX.pitch).toBeGreaterThan(0.05)
     expect(Math.abs(downX.roll)).toBeLessThan(1e-9)
-    // 同上但车头沿 −x（yaw = −π/2）：斜面改成沿 −x 降，前方低同样 pitch 正
-    const downX2 = terrainPitchRoll(plane(+0.2, 0), 0, 0, -Math.PI / 2)   // 沿 −x 下降 = 前方低
+    const downX2 = terrainPitchRoll(plane(+0.2, 0), 0, 0, -Math.PI / 2)
     expect(downX2.pitch).toBeGreaterThan(0.05)
-    // 斜面沿 +z 降（yaw = π/2 时 +z 是**右舷**）⇒ 右侧低 ⇒ 向左倾为负
     const downZ = terrainPitchRoll(plane(0, -0.2), 0, 0, Math.PI / 2)
     expect(downZ.roll).toBeLessThan(-0.05)
-    // 水平面 → 两者恒 0（不引入伪姿态）
     const flat = terrainPitchRoll(() => 7.5, 3, -4, 1.234)
     expect(flat.pitch).toBe(0)
     expect(flat.roll).toBe(0)
@@ -266,17 +244,14 @@ describe('悬挂准备件（当前无调用方）：地形姿态 / 限幅残差 
 
   it('限幅：残差超行程时按行程截断，未超时原样保留；dy 同样限幅', () => {
     const terr = { pitch: 0, roll: 0 }
-    // 记录姿态 20° 远大于行程角（atan(0.25/3.3) ≈ 4.33°）
     const big = clampHullAttitude(20 * Math.PI / 180, 0, 5, terr, 0)
     expect(big.pitch).toBeLessThan(5 * Math.PI / 180)
     expect(big.pitch).toBeGreaterThan(4 * Math.PI / 180)
     expect(big.dy).toBeCloseTo(SUSP_TRAVEL_M, 9)
-    // 小残差（1°）不被改动
     const small = clampHullAttitude(Math.PI / 180, -Math.PI / 180, 0.1, terr, 0)
     expect(small.pitch).toBeCloseTo(Math.PI / 180, 9)
     expect(small.roll).toBeCloseTo(-Math.PI / 180, 9)
     expect(small.dy).toBeCloseTo(0.1, 9)
-    // 负向同样限幅
     const neg = clampHullAttitude(-20 * Math.PI / 180, 0, -5, terr, 0)
     expect(neg.pitch).toBeGreaterThan(-5 * Math.PI / 180)
     expect(neg.dy).toBeCloseTo(-SUSP_TRAVEL_M, 9)
@@ -286,12 +261,9 @@ describe('悬挂准备件（当前无调用方）：地形姿态 / 限幅残差 
     const parent = poseFromYPR(-0.7, 0.12, -0.2)
     const child = poseFromYPR(-0.7, 0.18, -0.2)
     const local = poseLocalBetween(parent, child)
-    // parent · local === child（残差乘回父朝向即得子世界朝向）
     const back = parent.clone().multiply(local)
     expect(back.angleTo(child)).toBeLessThan(1e-6)
-    // 同姿态 → 单位残差
     expect(poseLocalBetween(parent, parent.clone()).angleTo(new (parent.constructor)())).toBeLessThan(1e-6)
-    // yprScene 与 poseFromYPR 的差 = 帧变换（两者混用会把模型翻倒）
     const a = yprScene(0, 0, 0)
     const b = poseFromYPR(0, 0, 0)
     expect(a.angleTo(b)).toBeGreaterThan(0.5)
@@ -312,7 +284,7 @@ describe('cloneDetachedTurret: original mounted meshes and pivot', () => {
     model.add(new THREE.Mesh(geometry, material))
     const parts = { turretNode: turret, gunNodes: [gun], tP: [5, 2, 3], gP: [5, 2, 3], itr: null }
     const head = cloneDetachedTurret(model, parts, Math.PI / 2)
-    expect(head.children).toHaveLength(2) // nested gun once, hidden children stay hidden
+    expect(head.children).toHaveLength(2)
     const centre = new THREE.Vector3().setFromMatrixPosition(head.children[0].matrix)
     expect(centre.length()).toBeCloseTo(0)
     const barrel = new THREE.Vector3().setFromMatrixPosition(head.children[1].matrix)

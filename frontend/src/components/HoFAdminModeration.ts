@@ -1,6 +1,3 @@
-// 百场 / 三环审核的领域差异表：两者是同一套人工审核流程（列表 → 详情 → 证据 → 通过 / 拒绝 / 删除），
-// 只在 API 族、i18n 前缀、状态集合、截图形态与对照行上不同。状态由 HoFAdminModeration.vue 的每个实例各自持有；
-// 请求与 wire 校验仍只在 api/hall-of-fame.ts。
 import type { components } from '../api/generated/http-contract.js'
 import * as api from '../api/hall-of-fame.js'
 
@@ -9,7 +6,6 @@ type Translate = (key: string, params?: Record<string, unknown>) => string
 
 export type ModerationKind = 'hundred' | 'mark3'
 
-/** 组件读取的列表行字段（两个领域生成类型的公共视图；百场列表没有申报值）。 */
 export interface ModerationRow {
   id: number
   status: string
@@ -20,7 +16,6 @@ export interface ModerationRow {
   approvedAverageDamage?: number | null
 }
 
-/** 组件读取的详情字段（两个领域生成类型的公共视图）。 */
 export interface ModerationDetail extends ModerationRow {
   wotbServer: string
   wotbAccountId: number
@@ -100,14 +95,12 @@ function screenshotFileName(src: string) {
   return m ? ('screenshot.' + (m[1] === 'jpeg' ? 'jpg' : m[1])) : 'screenshot.png'
 }
 
-/** 单条与批量删除共用的 reason 规则：必填；选择「其他」时必须带补充说明。 */
 export function reasonError(t: Translate, prefix: string, kind: 'reject' | 'delete', reason: string, text: string) {
   if (!reason) return t(`${prefix}.${kind}ReasonRequired`)
   if (reason === 'OTHER' && !text.trim()) return t(`${prefix}.${kind}ReasonText`)
   return ''
 }
 
-// 三环请求体的 reason 是后端枚举；前端值只来自同一枚举生成的 i18n 选项 key，越界值由后端拒绝。
 type Mark3Reject = Schemas['Mark3RejectRequest']
 type Mark3Delete = Schemas['Mark3DeleteRequest']
 
@@ -125,7 +118,6 @@ export const MODERATION_DOMAINS: Record<ModerationKind, ModerationDomain> = {
     remove: (id, body) => api.hofAdminHundredDelete(id, body),
     bulkDelete: (ids, body) => api.hofAdminBulkDeleteHundred(ids, body),
     screenshots: d => (d?.proofScreenshot ? [d.proofScreenshot] : []),
-    // 与 backend approve invariant 对齐：必须有截图 + exactly 5 行 evidence。
     screenshotsComplete: d => Boolean(d.proofScreenshot),
     screenshotName: src => screenshotFileName(src),
     zoomTitleParams: undefined,
@@ -135,7 +127,6 @@ export const MODERATION_DOMAINS: Record<ModerationKind, ModerationDomain> = {
       { label: t('hofAdmin.reviewBattles'), claimed: formatNumber(d.claimedBattleCount), confirmed: formatNumber(confirmed(d.approvedBattleCount, d.claimedBattleCount)) },
     ],
   },
-  // 三环仅人工证据；状态不含 SUPERSEDED；没有改分字段。
   mark3: {
     prefix: 'mark3Admin',
     filterPrefix: 'mark3',

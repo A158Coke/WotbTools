@@ -9,19 +9,8 @@ import {
   stripDatasetSuffix,
 } from '../scene/assetBase.js'
 
-/**
- * 数据版本（dataset）选择器状态。
- *
- * 目录来自资产 origin 的 `/versions.json`（WoT-Blitz-Agent `tools/asset_release.py catalog`
- * 生成）。选择结果写进 URL `?data=<id>` 与 localStorage，并**整页重载**——资产 provider、
- * 场景与 map2d 的模块级缓存在加载时按当前基址固化，重载是唯一不会留下旧 dataset 状态的
- * 切换方式（也避免每个消费方各写一套 reset）。
- *
- * 选择 `''` = 默认：删除 ?data=，回到 origin 根路径（服务端 current / versions.json.default）。
- */
 
 const CATALOG_SCHEMA = 1
-// `_` 供客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）；与 Agent 仓 asset_release.py 同款契约。
 const DATASET_ID_RE = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/
 const STATUSES = new Set(['active', 'deprecated', 'revoked'])
 
@@ -58,7 +47,6 @@ export interface CatalogState {
   error: string | null
 }
 
-/** 共享给 MorePage / MorePanel / ReplayWorkspace 的目录状态（同一页面只拉一次）。 */
 const state = ref<CatalogState>({
   status: 'idle',
   datasets: [],
@@ -89,7 +77,6 @@ function isCatalog(doc: unknown): doc is { schema: number; default?: unknown; da
   return candidate.schema === CATALOG_SCHEMA && Array.isArray(candidate.datasets)
 }
 
-/** 纯函数：切换 dataset 后的目标 URL（保留其它查询参数）。 */
 export function dataVersionUrl(href: string, id: string): string {
   const url = new URL(href)
   if (id) url.searchParams.set(DATA_VERSION_QUERY, id)
@@ -111,7 +98,6 @@ function requestedDatasetId(): string {
 function persistDataset(value: string): void {
   if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
   else localStorage.removeItem(DATA_VERSION_STORAGE)
-  // A versioned dev override takes precedence over ?data= in assetBase.
   const storedBase = localStorage.getItem(ASSET_BASE_STORAGE)
   if (storedBase && storedBase !== stripDatasetSuffix(storedBase)) {
     localStorage.setItem(ASSET_BASE_STORAGE, stripDatasetSuffix(storedBase))
@@ -125,7 +111,6 @@ async function resolveUnlistedDataset(origin: string, requested: string, dataset
     const stamp = await response.json()
     return datasets.find(entry => entry.id === stamp?.dataset_id && entry.status !== 'revoked')?.id ?? ''
   } catch {
-    // A transient network failure leaves the current selection intact.
     return null
   }
 }
@@ -175,8 +160,6 @@ export function useDataVersion() {
   if (state.value.status === 'idle') void loadDataVersionCatalog()
 
   const selected = ref(requestedDatasetId())
-  // The catalog may already be ready at mount. Resolve an alias before falling back
-  // to the default, and allow only one navigation across selector instances.
   watch(state, async (snapshot) => {
     const requested = selected.value
     if (resolvingStaleSelection || snapshot.status !== 'ready' || !requested) return
@@ -190,13 +173,10 @@ export function useDataVersion() {
     persistDataset(target)
     location.replace(dataVersionUrl(location.href, target))
   }, { immediate: true })
-  // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式 → 其余版本号递降。
   const options = computed<DatasetOption[]>(() => orderDatasetsForDisplay(state.value.datasets).map((entry) => ({
     value: entry.id,
     label: entry.label,
     tankCount: typeof entry.tank_count === 'number' ? entry.tank_count : null,
-    // Agent 的 collect_datasets 不输出 version.json.preview；预览通道以 catalog 的
-    // variant 标记（stamp --variant），消费方只用真实存在的字段。
     preview: Boolean(entry.variant),
     status: entry.status,
     title: [entry.game_version, entry.variant ? `+ ${entry.variant}` : null, entry.release]
@@ -207,7 +187,6 @@ export function useDataVersion() {
     () => state.value.datasets.find((entry) => entry.id === selected.value) ?? null,
   )
 
-  /** 切换并重载；id 为空 = 默认。 */
   function select(id: string): void {
     const value = id && DATASET_ID_RE.test(id) ? id : ''
     persistDataset(value)

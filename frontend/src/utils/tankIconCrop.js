@@ -1,19 +1,3 @@
-// 封面图展示裁剪（数据驱动，2026-10-15）：客户端图标是原始画布（256×128 / 128×128），
-// 坦克斜向绘制且锚定左上、右侧与底部留白近半——直接 contain 展示比旧 BlitzKit
-// 紧裁版显得小。数据面 `tank_images/crops.json` 给出逐车内容框（alpha>0 紧裁，
-// canvas 像素坐标），本模块把内容框换算成容器内的 `translate(%) scale()`：
-// 等效于把内容框当整张图做 contain（居中、至多铺满），与旧紧裁口径一致，
-// **不改图标字节**。
-//
-// 约定：img 以 `object-fit: contain` 绝对定位铺满固定宽高比容器（见 AgentTankopedia
-// 的 `.tp-media`）。变换合成顺序 = 先以元素中心 scale、再平移（CSS 列表
-// `translate(...) scale(...)` 即 T·S）；平移百分比相对元素自身盒（= 容器盒）。
-//
-// 数学（box 宽归一化为 1，高 = 1/A）：
-//   s = den = min(1/Wc, 1/(A·Hc))          -- contain 缩放（每单位容器宽的像素比例）
-//   k = min(1/w, 1/(A·h)) / den            -- 把内容框放到与整图同规则的 contain
-//   tx = k·den·(Wc/2 − x − w/2)            -- 内容框中心对回容器中心
-//   ty = k·A·den·(Hc/2 − y − h/2)
 
 const EPS = 1e-6
 
@@ -41,7 +25,6 @@ export function tankIconCropMetrics(crop, boxAspect) {
   }
 }
 
-/** 内容框 → CSS transform 字符串；crop 缺失/非法返回 ''（回退原始 contain 展示）。 */
 export function tankIconCropTransform(crop, boxAspect) {
   const m = tankIconCropMetrics(crop, boxAspect)
   if (!m) return ''

@@ -91,12 +91,6 @@ const rulerStyle = computed(() => ({
   gridTemplateColumns: `repeat(${props.grid?.columns.length || 0}, ${CELL_W}px)`,
 }))
 
-/**
- * The client TankCell/Lines{mask} geometry exits 20px from the source cell's right edge
- * (RightHLine 19.5px + 0.5px margin), puts cross-row trunks on the column boundary
- * (VL/VR at ±0.5px), and enters 13px into the target cell (LeftHLine 13.5px); the arrow
- * is LeftCenterArrow at 13px. Same-row neighbors use a straight line.
- */
 function edgePath(edge: TechEdge) {
   const xOut = (edge.x1 + 1) * CELL_W - 20
   const yFrom = edge.y1 * CELL_H + CELL_H / 2
@@ -168,7 +162,6 @@ function hideBrokenImage(event: Event) {
               <path d="M0,0 L7,3.5 L0,7 z" class="tt-arrow-head" />
             </marker>
           </defs>
-          <!-- 客户端连线几何：出线从源格右侧 20px 处出发，跨行干线骑列边界，入线 13px 后是箭头。 -->
           <path
             v-for="edge in grid.drawnEdges"
             :key="`${edge.from}-${edge.to}-${edge.sourceModule}`"
@@ -256,7 +249,6 @@ function hideBrokenImage(event: Event) {
 .tt-pending-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .tt-card-icon { position: absolute; inset-block-start: 4px; inset-inline-start: 40px; inline-size: 97px; block-size: 60px; overflow: hidden; }
 .tt-card-icon img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: contain; }
-/* The label overlaps the dark tank image; the surface scrim keeps text legible in light themes. */
 .tt-card-name { position: absolute; inset-block-end: 0; inset-inline: 0; padding: 0 4px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; background: linear-gradient(to top, var(--color-surface-1) 70%, transparent); color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
 .tt-card-meta { position: absolute; inset-block-start: 2px; inset-inline-start: 4px; display: flex; gap: 2px; }
 .tt-card-cost { position: absolute; inset-block-start: 2px; inset-inline-end: 4px; color: var(--color-warning); font: var(--type-caption); font-variant-numeric: tabular-nums; font-weight: 600; }

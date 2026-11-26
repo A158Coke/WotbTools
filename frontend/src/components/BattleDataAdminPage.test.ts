@@ -59,7 +59,6 @@ describe('BattleDataAdminPage', () => {
     expect(select.element.tagName).toBe('SELECT')
     expect((select.element as HTMLSelectElement).multiple).toBe(false)
     const options = select.findAll('option')
-    // 29 addressable maps + one observed unknown key + "all": a map with no rows in this window stays selectable.
     expect(options).toHaveLength(31)
     expect(options[0].text()).toBe('battleDataAdmin.allMaps')
     expect(options.map(option => option.text())).toContain('Middleburg')

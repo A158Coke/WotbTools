@@ -1,15 +1,4 @@
 <script setup>
-/**
- * 坦克百科（?view=agent-tankopedia，2026-10-01 起对所有用户公开）：列表 + 详情两态。
- * 数据面：tank_cache.json（列表/概要）+ tank/{id}.json（详情，configs/armor_model/shells）
- * 经 agentData → assetProvider 走配置的 remote asset origin（client-only，无同源回退）。
- *
- * URL 是筛选 / 详情状态的唯一 owner（utils/tankopediaQuery.js 解析与序列化）：
- * q / tier / nation / type / category / sort 用 replace 写入（不堆历史），?tank= 详情用 push（返回键回到列表），
- * ?config= 记录详情页选中的配置下标并联动装甲查看器入口。
- * 列表增量渲染（审计 3D-18）：首屏一页，滚动到底由 IntersectionObserver 追加，按钮兜底。
- * 坦克百科中的 3D 检视入口保留当前角色显示策略；装甲页面本身只要求登录。
- */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { locationForView } from '../app/navigation'
@@ -46,20 +35,15 @@ import { Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
 
 const VIEW = 'agent-tankopedia'
-/** 车种枚举 → i18n 键（AT-SPG 含连字符，不直接作键） */
 
 const { t, te, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-// ---------- URL 状态（唯一 owner） ----------
-/** 已提交但可能尚未落到 route.query 的最近一次写入：在同一 tick / 同一次点击里连写两次
- *  （研发弹窗里点模块、紧接着再点）时，第二次若仍以 route.query 为底就会覆盖第一击。 */
 const pendingQuery = ref(null)
 const effectiveQuery = computed(() => pendingQuery.value || route.query)
 const urlState = computed(() => parseTankopediaQuery(effectiveQuery.value))
 const onView = () => route.query?.view === VIEW
-// 导航落地后 URL 重新成为唯一事实来源
 watch(() => route.query, () => { pendingQuery.value = null }, { flush: 'sync' })
 
 function writeState(patch, { push = false } = {}) {
@@ -71,8 +55,6 @@ function writeState(patch, { push = false } = {}) {
   router[push ? 'push' : 'replace']({ query })
 }
 
-// 搜索 / 筛选 / 排序的唯一实现是 TankCatalogMenu（与装甲查看器选车弹窗共用）：
-// 本页只负责 URL 状态与详情；组件内的输入草稿即时筛选，防抖后通过 update:filters 提交。
 const listFilters = computed(() => ({
   q: urlState.value.q,
   tier: urlState.value.tier,
@@ -92,14 +74,12 @@ function writeFilters(filters) {
   })
 }
 
-// ---------- 显示名（审计 3D-16：不直接显示 china / heavyTank 等原始值） ----------
 const nationLabel = nation => tankNationLabel(t, te, nation)
 const typeLabel = type => tankTypeLabel(t, te, type)
 const tierLabel = tier => romanLevel(tier)
 
-// ---------- 列表态 ----------
 const cache = ref({})
-const listState = ref('loading')   // loading | ready | error
+const listState = ref('loading')
 const listError = ref('')
 
 const tanks = computed(() => normalizeTankCache(cache.value))
@@ -118,12 +98,9 @@ async function loadList() {
 }
 
 function openDetail(id) {
-  // upgrade:null = 交给 resolveUpgradeSelection 按 tier 取默认（XI→top，其他→stock）。
   writeState({ tank: id, config: null, upgrade: null, abilities: [] }, { push: true })
 }
 function backToList() {
-  // In-app back must collapse the detail history entry instead of adding another one.
-  // Otherwise list → detail → in-app back → browser Back re-opens the same detail.
   writeState({ tank: null, config: null })
 }
 
@@ -148,9 +125,6 @@ const {
   configForArmor,
 } = setupModel
 
-// 列表在详情往返期间保持挂载：TankCatalogMenu 内部保存增量条数与搜索草稿
-//（组件卸载会清掉防抖 timer，详情期间提交的 q 也会丢）。直达详情时不提前挂载列表，
-// 避免隐藏卡片发图片请求；返回列表时再挂载。
 const listMounted = ref(detailId.value == null)
 watch(detailId, id => { if (id == null) listMounted.value = true })
 
@@ -182,25 +156,15 @@ function openMobility(withVehicle) {
 }
 
 function openTechTree() {
-  // 科技树入口：locationForView 保留 assets/lang 等与视图无关的键。
   const dest = locationForView('agent-techtree', route)
   router.push({ path: dest.path, query: { ...dest.query, view: 'agent-techtree' } })
 }
 
-function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
-  // 走 locationForView：它按"离开坦克百科"删掉列表筛选（nation/q/…），同时保留
-  // 与视图无关的键（`assets` 资产源 override、`lang`、`admin` 等）——此前手写的
-  // `query: { view, tank, config }` 会把 `assets` 一并丢掉，导致进入装甲查看器后
-  // 资产源回落（模型/贴图加载不到）。
-  // 配置器可用时把装备/物品选择一并带上（dev/cons/prov），并把装甲查看器只认的两个
-  // 射击相关装备折成 eqcal/eqenh（103 校准弹 / 110 强化装甲）——装甲页不再展示完整装备。
+function open3d() {
   const dest = locationForView('agent-armor', route)
   const handoff = setup.value.canConfigure
     ? {
         ...(upgradeSelection.value.available ? {
-          // 显式传递模式（装甲页按同一 resolveSetup 口径解析 custom+abilities）：
-          // stock 必须写成 upgrade=stock 才能保留；custom 必须连 abilities 一起带，
-          // 否则部分研发语义丢失、装甲/火炮数值会按整套 top 静默展示。
           upgrade: setup.value.upgrade ?? 'top',
           ...(setup.value.abilities?.length ? { abilities: setup.value.abilities.join(',') } : {}),
         } : {}),
@@ -209,9 +173,6 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
         prov: setup.value.provisions.join(','),
         ...(deviceIds.value.has(103) ? { eqcal: '1' } : {}),
         ...(deviceIds.value.has(110) ? { eqenh: '1' } : {}),
-        // 122 改进型垂直稳定器：装甲查看器初始化 122 what-if 读的是 eqpitch，
-        // 只带 dev= 不会自动推导——配置器选了 122 必须折成 eqpitch=1，否则
-        // 进入装甲页后拖炮仍按基础俯仰扇区限制。
         ...(deviceIds.value.has(122) ? { eqpitch: '1' } : {}),
       }
     : {}
@@ -228,14 +189,10 @@ function open3d() {  // 审计 3D-09：在当前标签页打开装甲查看器�
 }
 
 function hideBrokenImage(event) {
-  // 封面缺失：保留固定比例的占位框，不显示破图标
   event.target.hidden = true
 }
 
-// 封面图展示裁剪：客户端图标是原始画布（坦克锚定左上、右侧/底部留白近半），
-// 按数据面的逐车内容框缩放定位（utils/tankIconCrop.js），视觉对齐旧紧裁口径；
-// 数据缺失（旧包/资产源未配置）时 transform 为空串 → 回退原始 contain 展示。
-const ICON_BOX_ASPECT = 8 / 5 // 与 .tp-media 的 aspect-ratio 一致
+const ICON_BOX_ASPECT = 8 / 5
 const iconCrops = ref(null)
 loadTankIconCrops().then((crops) => { iconCrops.value = crops })
 function iconCropStyle(id) {
@@ -245,13 +202,12 @@ function iconCropStyle(id) {
 
 onMounted(() => {
   loadList()
-  if (detailId.value != null) loadDetail(detailId.value)   // 详情直达（刷新 / 分享链接）
+  if (detailId.value != null) loadDetail(detailId.value)
 })
 </script>
 
 <template>
   <section class="tankopedia" data-testid="tankopedia">
-    <!-- ================= 详情态 ================= -->
     <template v-if="detailId != null">
       <div class="tp-detail-nav">
         <AppButton variant="ghost" size="sm" data-testid="tank-back" @click="backToList">
@@ -315,8 +271,6 @@ onMounted(() => {
           </div>
         </Motion>
 
-        <!-- 工作台：左 = 模型入口 + 配置面板，右 = 参数区（BlitzKit 式两栏）。
-             参数卡片顺序：防护 → 机动 → 火力（火力卡内弹种选择置顶）。 -->
         <div class="tp-workbench">
           <div class="tp-workbench-left">
           <section class="tp-card-section tp-model-card surface-glass-1" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
@@ -362,7 +316,6 @@ onMounted(() => {
           />
           </div>
 
-        <!-- 研发弹窗：客户端 ModulesTree 的形态；改动与背后的配置栏同源（URL） -->
         <AppDialog
           :open="researchOpen"
           :title="isXiResearch ? t('agentTanks.configurator.augment_title') : t('research.modules_title')"
@@ -431,7 +384,6 @@ onMounted(() => {
 
         </div>
 
-        <!-- 无模块数据的静态详情：保留只读弹种表（可配置时弹种表已并入火力卡） -->
         <section v-if="!characteristics" class="tp-card-section surface-glass-1">
           <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
           <div class="tp-table-wrap">
@@ -466,8 +418,6 @@ onMounted(() => {
       </template>
     </template>
 
-    <!-- ================= 列表态 ================= -->
-    <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
     <ShowcaseHero v-if="listMounted" v-show="detailId == null" section="tankopedia" :kicker="t('nav.groups.reference')" :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
       <template v-if="tanks.length" #stats><div><span class="tp-hero-stat-label">{{ t('tankopedia.heroCount') }}</span><strong data-testid="tankopedia-count">{{ tanks.length.toLocaleString(locale) }}</strong></div></template>
       <template #actions>

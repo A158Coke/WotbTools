@@ -13,7 +13,6 @@ type ProjectionCamera = ProjectionArgs[1]
 type ProjectionReplayData = ProjectionArgs[2]
 type ProjectionDeps = ProjectionArgs[3]
 
-/** D 段读取的跨段共享状态（结构性最小集；运行时实体在 SFC 里逐个赋值）。 */
 export interface BpDParts {
   hpPrefs: { showHp: boolean }
   markerPrefs: { classIcons: boolean; showStatus: boolean }
@@ -60,7 +59,6 @@ export interface BpDProps {
   playbackV2: BattlePlaybackDataset | null
 }
 
-/** 回放事件行：canonical 事件 + host 侧补的掉血观测（§11 只展示可证明的掉血）。 */
 type PlaybackEventRow = BattleEvent & { observedHpLoss?: number | null }
 
 export function bpD(S: BpDParts, props: BpDProps): void {
@@ -79,7 +77,6 @@ export function bpD(S: BpDParts, props: BpDProps): void {
     const type = S.t(`recon.map.playback.event_${event.type}`)
     switch (event.type) {
       case 'DAMAGE':
-        // §11：raw Type-8 协议值语义未证明，不得作为精确伤害展示；只显示可证明的掉血
         return event.observedHpLoss != null
           ? `${playerName(event.accountId)} → ${playerName(event.targetAccountId)} −${event.observedHpLoss}`
           : `${playerName(event.accountId)} → ${playerName(event.targetAccountId)}`
@@ -92,7 +89,6 @@ export function bpD(S: BpDParts, props: BpDProps): void {
     }
   }
 
-  // ---- PR4 §36/§37：hull hitbox 点击选中（重叠时取指针最近车辆；tie 保持 selected / render order）----
   const {
     currentTime,
     playing,
@@ -119,11 +115,8 @@ export function bpD(S: BpDParts, props: BpDProps): void {
     onPlayStart: () => { if (S.annotationOpen.value) S.closeAnnotation() },
     seekTo: () => props.seekTo,
   })
-  // 统一回放面板：把 2D 时钟发布到跨视图镜像，切到 3D 时按同一位置 seek。
   watch([currentTime, playing, () => props.clockOffset, speed], ([t, p, off, s]) => publishViewerClock('2d', t, p, true, off ?? 0, s), { immediate: true })
 
-  // ---- 车辆呈现投影：preload/vehicleStates/着色/轨迹/炮线/marker 屏幕定位的唯一 owner
-  // = usePlaybackVehicleProjection（#820 Agent C Step 3，时间来自 playback clock）。
   const {
     vehicleStates,
     visibleTracers,
@@ -167,7 +160,6 @@ export function bpD(S: BpDParts, props: BpDProps): void {
     },
   )
 
-  // The workspace's guide requests real actions; drawing and clock state stay here.
 
   Object.assign(S, {
     hpPrefsForMap,

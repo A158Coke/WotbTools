@@ -1,8 +1,3 @@
-<!--
-  回放工作台 · AI 复盘：为当前目标回放在本机建立 AI 输入（结算事实 + client canonical AI projection，
-  replay-local/ai），交给 AiReviewPanel 发起分析。服务器没有 parser——文件不出本机，只上传投影。
-  公开显示、登录后使用；时间轴不可用 / 解析失败只显示原因，不回退服务端。
--->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -17,14 +12,10 @@ import AiReviewPanel from './AiReviewPanel.vue'
 import AppButton from './AppButton.vue'
 
 const props = defineProps({
-  /** 目标回放（单场）；null = 尚未选择 */
   file: { type: Object as () => File | null, default: null },
-  /** 能力面板是否可见（不可见时不解析） */
   active: { type: Boolean, default: false },
-  /** 多文件未选场次等阻断原因（已本地化） */
   blockedReason: { type: String, default: '' },
 })
-/** 关键回合「在 2D 中查看」：只向工作台转发战斗时钟秒数，切能力页与 seek 由 ReplayWorkspace 负责。 */
 const emit = defineEmits<{ 'view-2d': [sec: number] }>()
 
 
@@ -32,7 +23,6 @@ const { t } = useI18n()
 const { authenticated, login } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
 const online = computed(() => availability(Feature.AI_REVIEW))
-/** main 侧把 AI 入口的登录目的地改成 'ai-review'；这里保留该参数，只是先过连通性门禁。 */
 function loginOnline() {
   if (requireFeature(Feature.AI_REVIEW)) login('ai-review')
 }
@@ -43,7 +33,6 @@ let builtFile: File | null = null
 let seq = 0
 
 const projectionError = computed(() => (errorKey.value ? t(errorKey.value) : ''))
-/** 视窗是否已过加载阶段：本机投影构建中（有 file、在线、已登录、无错误、无投影）不置位。 */
 const paneReady = computed(() => !online.value.available || !authenticated.value || !props.file
   || !!errorKey.value || !!input.value)
 
@@ -62,7 +51,6 @@ async function build() {
     if (mine !== seq) return
     console.warn('[ai-local] projection failed', e)
     builtFile = null
-    // 版本不一致优先于通用引擎错误：刷新页面即可拿到与本 build 同身份的 Agent 产物
     errorKey.value = e instanceof AgentWasmVersionMismatchError ? 'workspace.ai_engine_version_mismatch'
       : e instanceof ReplayEngineUnavailableError ? 'workspace.ai_engine_unavailable'
         : e instanceof AiProjectionUnavailableError ? 'workspace.ai_projection_unavailable'
@@ -70,11 +58,6 @@ async function build() {
   }
 }
 
-/**
- * 重建本地 AI 输入（面板失败态里的「重试」动作）：
- * 投影构建是可重复的本机解析，重跑一次即可区分「一次性失败」与「这份回放真的建不起来」。
- * 必须先清空 builtFile——build() 靠它去重，不清会让按钮变成假的。
- */
 function rebuildProjection() {
   seq++
   builtFile = null
@@ -91,7 +74,6 @@ watch(() => props.file, () => {
 })
 watch(authenticated, (signedIn) => {
   if (!signedIn) {
-    // 退出登录使在途结果失效，重新登录仍可为同一文件构建输入。
     seq++
     builtFile = null
     input.value = null
@@ -102,9 +84,7 @@ watch(() => [props.file, props.active, props.blockedReason, authenticated.value,
 </script>
 
 <template>
-  <!-- data-pane-ready：本机投影构建中不置位；终态（离线/未登录/无文件/错误）与就绪均置位。 -->
   <div class="ai-workspace-pane" data-testid="ws-ai" :data-pane-ready="paneReady ? 'true' : undefined">
-    <!-- pending（首次检测未完成）：不下结论、不挂载 AI 面板，保持中性空白。 -->
     <template v-if="!online.available">
       <p v-if="!online.pending" class="ws-note" data-testid="ai-connectivity">{{ $t(online.messageKey!) }}</p>
     </template>

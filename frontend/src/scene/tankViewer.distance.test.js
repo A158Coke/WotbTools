@@ -6,7 +6,6 @@ import { transformWithEsbuild } from 'vite'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-// 执行场景内真实 setter，不复制实现；只提供其闭包依赖，保留真实 OrbitControls 数学和输入处理。
 const source = readFileSync(new NodeURL('./tankViewer/tankTransport.ts', import.meta.url), 'utf8')
 const setterSource = (await transformWithEsbuild(source.slice(source.indexOf('function setDistance('), source.indexOf('function setCameraPreset(')), 'tankDistance.ts', { loader: 'ts' })).code
 function bindSetter(camera, controls) {
@@ -53,7 +52,6 @@ describe('装甲距离调节保留惯性中的观察姿态', () => {
         }
         pointer(document, 'pointerup', 443)
         for (let frame = 0; frame < 12; frame++) controls.update()
-        // 先证明真实输入留下未消退惯性，防止测试在静止空跑。
         const position = camera.position.clone(), target = controls.target.clone()
         controls.update()
         expect(mode === 'pan' ? controls.target.distanceTo(target) : camera.position.distanceTo(position)).toBeGreaterThan(1e-4)

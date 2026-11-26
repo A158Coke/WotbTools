@@ -1,7 +1,3 @@
-// sceneryInstancing 纯模块测试：three 数学可无头运行，这里锁定三件事——
-// 1) fallMatrix 与旧 pivot 装配**逐值等价**（树倒动画换实现不换语义的根锁）；
-// 2) 分组稳定性与键完整性；
-// 3) InstancedMesh 构造的矩阵/包围球正确性 + 隐藏实例不可命中。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
@@ -10,9 +6,6 @@ import { geo, mat } from '../test/sceneryInstancingTestHelpers.js'
 
 
 describe('sceneryInstancing · fallMatrix 与旧 pivot 装配等价', () => {
-  // 旧模型（playbackScene 加载段）：pivot 在 (px,py,pz)，命中 mesh 改位重挂为
-  // childLocal = T(pos−p)·R·S，倒伏 = pivot.quaternion = R(axis, angle)。
-  // 世界 = pivot.matrix · childLocal。实例模型必须得到同一个世界矩阵。
   it('随机位姿/轴向/角度下，实例矩阵 ≡ pivot·child 世界矩阵（平差 < 1e-5）', () => {
     let seed = 42
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 }
@@ -25,7 +18,6 @@ describe('sceneryInstancing · fallMatrix 与旧 pivot 装配等价', () => {
       const axis = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize()
       const angle = rnd() * Math.PI / 2
 
-      // 旧：pivot ∘ child
       const pivot = new THREE.Group()
       pivot.position.copy(p)
       pivot.quaternion.setFromAxisAngle(axis, angle)
@@ -37,7 +29,6 @@ describe('sceneryInstancing · fallMatrix 与旧 pivot 装配等价', () => {
       parent.add(pivot)
       parent.updateMatrixWorld(true)
 
-      // 新：fallMatrix(base)
       const out = fallMatrix(nodeM, p.x, p.y, p.z, axis, angle, new THREE.Matrix4())
 
       const oldW = child.matrixWorld
@@ -73,7 +64,6 @@ describe('sceneryInstancing · 收集与分组', () => {
     b.name = 'rock'
     b.position.set(50, 50, 2)
     root.add(b)
-    // 嵌套父链：变换要沿链累积
     const mid = new THREE.Object3D()
     mid.position.set(100, 0, 0)
     const c = new THREE.Mesh(shared, m1)
@@ -89,17 +79,13 @@ describe('sceneryInstancing · 收集与分组', () => {
     const shared = geo(2), m1 = mat()
     for (let i = 0; i < 4; i++) {
       const a = new THREE.Mesh(shared, m1)
-      a.position.set(i * 200 - 300, 0, 0)   // 跨 ±300m
+      a.position.set(i * 200 - 300, 0, 0)
       root.add(a)
     }
     root.updateMatrixWorld(true)
-    // 小三角量组（12 tri × 4 = 48 ≤ 预算）默认整组合并单批（见 SCENERY_COLLAPSE_MAX_TRIS）；
-    // 逐格分片语义用 maxCollapseTris: 0 显式开启（性能对照/诊断形态）
     const batches = groupInstanceBatches(collectInstanceEntries(root), 75, { maxCollapseTris: 0 })
-    // 4 实例相距 ≥200m → 每格一片 = 4 片（整批形态是 1 片跨全图）
     expect(batches).toHaveLength(4)
     for (const b of batches) expect(b.items).toHaveLength(1)
-    // 不传 cellSize = 单批（兼容形态）
     expect(groupInstanceBatches(collectInstanceEntries(root))).toHaveLength(1)
   })
 
@@ -113,7 +99,6 @@ describe('sceneryInstancing · 收集与分组', () => {
     }
     root.updateMatrixWorld(true)
     const batches = groupInstanceBatches(collectInstanceEntries(root), 75)
-    // 12 tri × 4 实例 = 48 ≤ 预算 → 跨 4 格合并为 1 批
     expect(batches).toHaveLength(1)
     expect(batches[0].items).toHaveLength(4)
     const mesh = buildInstancedMesh(batches[0])
@@ -128,7 +113,6 @@ describe('sceneryInstancing · 收集与分组', () => {
   it('同组跨区超预算时，稀疏相邻格合批，稠密相邻格分别剔除', () => {
     const root = new THREE.Group()
     const geometry = new THREE.BoxGeometry(), material = mat()
-    // 一盒 12 个三角：负坐标区有两个实例，可合并；正坐标区有三个，须按细格划分。
     for (const x of [-149, -74, 1, 2, 76]) {
       const mesh = new THREE.Mesh(geometry, material)
       mesh.position.x = x
@@ -154,7 +138,6 @@ describe('sceneryInstancing · 收集与分组', () => {
 
   it('大几何密集组不合并：总三角超预算仍按宫格分片（剔除粒度保留）', () => {
     const root = new THREE.Object3D()
-    // 10000 三角的几何 × 4 实例 = 40000 > 预算 → 不合并
     const bigGeo = new THREE.BufferGeometry()
     bigGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3))
     const idx = []
@@ -183,7 +166,7 @@ describe('sceneryInstancing · 收集与分组', () => {
     expect(batches).toHaveLength(2)
     const big = batches.find((b) => b.geometry === shared)
     expect(big.material).toBe(m1)
-    expect(big.items).toHaveLength(4)   // 3 平铺 + 1 嵌套
+    expect(big.items).toHaveLength(4)
     const rock = batches.find((b) => b.geometry !== shared)
     expect(rock.material).toBe(m2)
     expect(rock.items).toHaveLength(1)
@@ -200,7 +183,6 @@ describe('sceneryInstancing · 收集与分组', () => {
       mesh.getMatrixAt(i, m)
       expect(m).toEqual(it.matrix)
     })
-    // 嵌套实例在 x≈101，几何自身球（半径 ~1）罩不住它——包围球必须已扩到全部实例
     expect(mesh.boundingSphere.radius).toBeGreaterThan(50)
     expect(mesh.isInstancedMesh).toBe(true)
     expect(mesh.matrixAutoUpdate).toBe(false)
@@ -215,10 +197,9 @@ describe('sceneryInstancing · 收集与分组', () => {
     const m = new THREE.Matrix4()
     mesh.getMatrixAt(0, m)
     const e = m.elements
-    expect(e[13]).toBeLessThan(-1e5)            // y 平移在 -1e6
-    const det = e[0] * e[5] * e[10]             // 对角微缩 → 行列式 ~1e-18
+    expect(e[13]).toBeLessThan(-1e5)
+    const det = e[0] * e[5] * e[10]
     expect(Math.abs(det)).toBeLessThan(1e-12)
-    // 其余实例未动
     mesh.getMatrixAt(1, m)
     expect(m).toEqual(batch.items[1].matrix)
   })

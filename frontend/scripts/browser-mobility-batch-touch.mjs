@@ -1,4 +1,3 @@
-// PR #1008 regression: padding beside a short label must toggle that target on touch.
 import assert from 'node:assert/strict'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'

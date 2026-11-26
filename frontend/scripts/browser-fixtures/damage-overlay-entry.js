@@ -1,10 +1,3 @@
-/**
- * 3D 伤害数字覆盖层的浏览器门禁夹具：挂**真实组件 + 真实 CSS**（Vite dev server 编译 SFC），
- * 不用 WebGL、不加载资产——被验收的是 DOM 几何与 CSS 动画（跟随 anchor / 出屏隐藏 / 镜像侧 /
- * 漂移方向 / fit 边界 / 0×0 兜底 / rerender 不重算 delay）。
- *
- * 3D 场景本身的画面观感仍归用户人工验收。
- */
 import { createApp, h, nextTick, onMounted, reactive, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import PlaybackVehicleLabels3D from '../../src/components/PlaybackVehicleLabels3D.vue'
@@ -35,7 +28,6 @@ const Root = {
 }
 createApp(Root).use(i18n).mount('#stage')
 
-// 门禁探针只用这个入口：真实组件实例的 exposed API + 真实响应式偏好
 const stageSize = () => {
   const rect = document.getElementById('stage').getBoundingClientRect()
   return { x: rect.width, y: rect.height }
@@ -44,8 +36,6 @@ window.__damageOverlay = {
   ready: () => !!overlay,
   async setHidden(value) { hidden.value = value; await settle() },
   async setLabels(rows) { overlay.setLabels(rows); await settle() },
-  // 门禁必须走生产同款批处理：begin(逻辑舞台) → 逐车 setAnchor → end 统一读几何/写 DOM。
-  // 单条 setAnchor 不传 stage 时舞台宽度为 0，右缘镜像用例会假通过（fitsRight 恒真）。
   async setAnchor(eid, anchor) {
     overlay.beginAnchors(stageSize())
     overlay.setAnchor(eid, anchor)

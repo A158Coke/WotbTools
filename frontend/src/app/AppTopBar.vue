@@ -8,10 +8,6 @@ import { defaultView, isWorkspaceView, locationForView, primarySection, sectionT
 import { ACCOUNT_ICON } from './navIcons.js'
 import BrandMark from '../components/BrandMark.vue'
 
-// 抽屉外壳（手机竖屏 / 手机横屏）的顶栏：菜单（打开左侧抽屉）· logo · 当前栏目名 · 账户（§9 L1 / L3）。
-// 普通页面向下滚动收起、向上滚动出现（L5）；工作台（回放、装甲查看器、地图、科技树）不收起。
-// 平板 / 桌面没有顶栏，导航在左侧边栏（AppSidebar）。
-// 首页首屏：顶栏浮在主视觉上（玻璃底、无分隔线），并多一个「♥ 赞助」按钮；滚过首屏后恢复实底。
 const props = defineProps({ navOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['open-nav'])
 const menuButton = ref(null)
@@ -27,7 +23,6 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   ? 'environment.productionRemote'
   : 'environment.local'
 
-/** 滚动方向超过这个距离才切换，避免手指轻微抖动让顶栏闪烁。 */
 const SCROLL_HYSTERESIS_PX = 8
 const hidden = ref(false)
 const pinned = computed(() => isWorkspaceView(activeView.value) || props.navOpen)
@@ -143,10 +138,8 @@ onBeforeUnmount(() => {
   transition: transform var(--duration-base) var(--ease-standard);
 }
 
-/* 首页首屏：浮在主视觉上 */
 .app-top-bar.is-over-hero { border-bottom-color: transparent; background: var(--theme-glass); }
 
-/* L5：收起时整体移出视口（含顶部安全区），焦点进入时立即恢复 */
 .app-top-bar.is-hidden { transform: translateY(-100%); }
 
 .menu-button {
@@ -163,7 +156,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .menu-button[aria-expanded="true"] { background: var(--color-surface-2); }
-/* 按压反馈（DC-CMP-01 active 状态）：比悬停/展开的 surface-2 深一档；触屏没有 hover，这是按下时唯一的视觉反馈 */
 .menu-button:active { background: var(--color-surface-3); }
 
 .brand { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: var(--control-h-lg); }
@@ -206,7 +198,6 @@ onBeforeUnmount(() => {
   text-decoration: none;
   white-space: nowrap;
 }
-/* 窄屏：命中区保持控件高度（触屏 48px），可见的胶囊边框收窄到中间一段，顶栏不再显得拥挤 */
 @media (width < 768px) {
   .app-top-bar { gap: var(--space-1); }
   .sponsor-link { position: relative; padding: 0 var(--space-2); border-color: transparent; }
@@ -250,7 +241,6 @@ onBeforeUnmount(() => {
 .brand:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 .dev-notice {
-  /* 环境标签只是提示：空间不够时省略号收缩，不能把账号入口挤出屏幕 */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

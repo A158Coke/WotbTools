@@ -67,7 +67,6 @@ describe('TankAugmentTree 可访问性与操作文案', () => {
     expect(first.attributes('type')).toBe('button')
     expect(first.attributes('aria-label')).toBeTruthy()
     expect(first.attributes('aria-pressed')).toBe('false')
-    // 原生 button：trigger('click') 即等价键盘 Enter/Space 的激活路径
     await first.trigger('click')
     expect(wrapper.emitted('research')).toBeTruthy()
     expect(wrapper.find('button[data-testid="tank-augment-group"]').exists()).toBe(true)
@@ -102,7 +101,6 @@ describe('TankAugmentTree 可访问性与操作文案', () => {
     await groupButton.trigger('click')
     const panel = wrapper.get('[data-testid="tank-augment-info"]').text()
     expect(panel).not.toContain('Upgrades/Alternative')
-    // 三项分别有可读文案（属性标签），不是空行/内部键
     const rows = wrapper.findAll('.at-optrow')
     expect(rows).toHaveLength(3)
     for (const row of rows) expect(row.text().trim().length).toBeGreaterThan(0)
@@ -111,7 +109,6 @@ describe('TankAugmentTree 可访问性与操作文案', () => {
 
   it('MODIFIER_MULTIPLY 属性按系数（×）展示，不显示为加法', async () => {
     const wrapper = render()
-    // BZ-79 节点 5（tier11_stabilisation_01）：散布系数 0.98 = 乘数语义（降 2%）
     await wrapper.get('[data-testid="tank-augment-node-5"]').trigger('click')
     const text = wrapper.get('[data-testid="tank-augment-info"]').text()
     expect(text).toContain('×0.98')

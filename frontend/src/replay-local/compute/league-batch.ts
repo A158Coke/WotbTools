@@ -1,10 +1,3 @@
-/**
- * League Rating 批次汇总（V6 projection）：Java `LeagueRatingBatchAggregator` +
- * `LeagueBatchRatingCalculator` + `LeagueRatingBatch`。
- *
- * rating/维度累加沿用 Java 的 `BigDecimal` 精确十进制求和（{@link DecimalSum}），
- * 投影时再 `doubleValue()`——与 double 逐项累加结果不同，必须照搬才能逐位一致。
- */
 
 import { DecimalSum, compareNumbers, compareStrings } from './java.js'
 import {
@@ -50,7 +43,6 @@ export interface TeamLeagueSummary {
   arenaTeams: string[]
 }
 
-/** 一个训练赛/联赛批次的完整 League Rating（battleResults 只含 eligible 场次）。 */
 export interface LeagueRatingBatch {
   battleResults: LeagueRatingResult[]
   playerSummaries: PlayerLeagueSummary[]
@@ -58,13 +50,11 @@ export interface LeagueRatingBatch {
   failures: LeagueFailure[]
 }
 
-/** 按 arenaId identity 查找该场评分（不依赖数组 index）。 */
 export function resultFor(batch: LeagueRatingBatch, arenaId: string | null): LeagueRatingResult | null {
   if (arenaId === null) return null
   return batch.battleResults.find((r) => r.arenaId === arenaId) ?? null
 }
 
-// ---------- LeagueBatchRatingCalculator ----------
 
 function validateAggregate(sum: number, ratedBattleCount: number): void {
   if (ratedBattleCount < 0) throw new RangeError(`ratedBattleCount must not be negative, got ${ratedBattleCount}`)
@@ -80,7 +70,6 @@ function validateAggregate(sum: number, ratedBattleCount: number): void {
 
 function observedMean(sum: number, count: number): number {
   validateAggregate(sum, count)
-  // Java 返回 null 后被 DTO 拆箱：count 恒 >= 1（只为评分场次建 acc）。
   return sum / count
 }
 
@@ -99,7 +88,6 @@ function requireObservation(rating: number): void {
   }
 }
 
-// ---------- LeagueRatingBatchAggregator ----------
 
 interface PlayerAcc {
   nickname: string
@@ -129,7 +117,6 @@ function zeroSums(): DecimalSum[] {
   return Array.from({ length: DIM_COUNT }, () => new DecimalSum())
 }
 
-/** 批次 team key：多数军团标签优先，否则 `arenaId:team`。 */
 export function teamKey(battle: Battle, team: TeamLeagueRating): string {
   if (team.autoName !== null && team.autoName !== '') return `clan:${team.autoName}`
   return `${battle.arenaId}:${team.team}`
@@ -139,7 +126,6 @@ function dimensionMeans(sums: readonly DecimalSum[], ratedBattles: number): numb
   return sums.map((s) => (ratedBattles === 0 ? 0.0 : s.doubleValue() / ratedBattles))
 }
 
-/** 汇总一批已评分的 league 场次（battles 与 results 按下标对齐）。 */
 export function aggregateLeagueBatch(battles: readonly Battle[], results: readonly LeagueRatingResult[],
   failures: readonly LeagueFailure[]): LeagueRatingBatch {
   const players = new Map<number, PlayerAcc>()

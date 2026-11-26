@@ -16,7 +16,6 @@ describe('issue 557 recorded damage evidence', () => {
     expect(recorder.damageDealtSamples!.at(-1)!.total).toBe(expected)
     expect(cumulativeStatsAtV2(dataset.events, recorder, dataset.durationSec, dataset.vehicles).dealt).toBe(expected)
     expect(dataset.vehicles.filter(v => v !== recorder).every(v => v.damageDealtSamples === undefined)).toBe(true)
-    // Final settlement totals are a comparison, never the numeric source of the live curve.
     const changedResult = { ...f.result, players: f.result.players.map(p => ({ ...p, damage_dealt: 999999 })) }
     const unchanged = toBattlePlaybackDataset(f.playback, changedResult, f.aiReview)!
     expect(unchanged.vehicles.find(v => v.accountId === recorder.accountId)!.damageDealtSamples).toEqual(recorder.damageDealtSamples)

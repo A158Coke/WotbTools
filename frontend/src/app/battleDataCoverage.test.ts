@@ -11,7 +11,6 @@ describe('reviewed coverage from Collector semantics', () => {
     expect(value.reviewed.find(row => row.key === 'rift')?.count).toBe(3)
     expect(value.reviewed.find(row => row.key === 'malinovka')?.count).toBe(0)
     expect(value.other.map(row => row.key)).toEqual(['unmapped'])
-    // Canonical universe: every semantic with a replay mapCode. Semantic-only files stay out.
     expect(value.reviewed).toHaveLength(29)
     expect(value.reviewed.map(row => row.key)).toContain('karieri')
     expect(value.reviewed.map(row => row.key)).not.toContain('06_rudniki_rd')

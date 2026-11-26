@@ -4,7 +4,6 @@ defineProps({
     type: Boolean,
     required: true
   },
-  /** 数据集未就绪（processingJobId/sourceId 缺失）时禁用，防止点击裸抛错误码。 */
   disabled: {
     type: Boolean,
     default: false
@@ -26,7 +25,6 @@ defineEmits(['analyze', 'cancel'])
 </template>
 
 <style scoped>
-/* AI 战术复盘主按钮：与 btn-primary 主题一致（accent 强调色，双主题变量） */
 .ai-action {
   display: flex;
   align-items: center;

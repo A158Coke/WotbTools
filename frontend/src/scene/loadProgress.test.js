@@ -14,7 +14,7 @@ describe('createLoadProgress', () => {
     progress.update('armor', 50, 100)
     expect(progress.snapshot()).toEqual({ fraction: 0.25, done: 0, total: 2 })
     progress.complete('armor')
-    progress.update('visual', 30, 0)   // 长度未知：完成前不推进
+    progress.update('visual', 30, 0)
     expect(progress.snapshot().fraction).toBe(0.5)
     progress.complete('visual')
     expect(progress.snapshot()).toEqual({ fraction: 1, done: 2, total: 2 })

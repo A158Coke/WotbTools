@@ -12,13 +12,9 @@ import ThemePicker from './ThemePicker.vue'
 import AppSwitch from './AppSwitch.vue'
 import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 
-// 「更多与设置」（4.0）：显示设置、反馈与提示、赞助 / 反馈卡、关于与帮助。全部栏目都在左侧抽屉 / 侧边栏里，
-// 这里不重复导航；管理入口只在抽屉 / 侧边栏的「管理」分组按角色显示。
-// 平板 / 桌面的同一份链接清单也在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
 const { setLocale, aboutLinks, openGuide, openFeedback, openAndroidUpdate } = useMoreMenu()
 const { state: dataVersionState } = useDataVersion()
-// 赞助单独做成强调卡，不在「关于与帮助」列表里重复
 const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== 'sponsor'))
 </script>
 
@@ -112,7 +108,6 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
 .more-section + .more-section,
 .more-support + .more-section { margin-top: var(--space-6); }
 
-/* 赞助（强调色）与反馈卡并排；小屏上下堆叠，赞助在最上面 */
 .more-support { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .more-sponsor,
 .more-feedback-card {

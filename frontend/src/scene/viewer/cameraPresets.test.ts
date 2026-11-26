@@ -68,7 +68,6 @@ describe('armor camera presets', () => {
 describe('armor preset view placement', () => {
   const world = new Matrix4().makeRotationX(-Math.PI / 2)
   const gunLine = () => armorCameraPreset(pivot, world, 15)
-  // world = Rx(-90°)：局部 (0,0,2) 枢轴 → 世界 (0,2,0)，局部炮线 (0,1,0) → 世界 (0,0,-1)。
   const pivotWorld = new Vector3(0, 2, 0)
   const gunDirection = new Vector3(0, 0, -1)
   const MAXD = 500
@@ -76,15 +75,12 @@ describe('armor preset view placement', () => {
   it('rotation center unchanged AND camera on the gun axis at the user distance', () => {
     const pose = gunLine()
     const prevTarget = new Vector3(3, 1, 4)
-    const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7)) // 用户距离 7m
+    const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
     const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
-    // 约束 1：旋转中心不动。
     expect(placement.target.distanceTo(prevTarget)).toBeCloseTo(0)
-    // 约束 2：机位在炮轴线上（x=0, y=2 的竖线）→ 炮管正对镜头。
     expect(placement.position.x).toBeCloseTo(0, 9)
     expect(placement.position.y).toBeCloseTo(pivotWorld.y, 9)
     expect(placement.position.clone().sub(pivotWorld).dot(gunDirection)).toBeGreaterThan(0)
-    // 距中心 = 用户距离（缩放层级保留）。
     expect(placement.position.distanceTo(prevTarget)).toBeCloseTo(7, 6)
   })
 
@@ -99,7 +95,6 @@ describe('armor preset view placement', () => {
 
   it('unreachable (D < perp): center kept, camera on the axis at the safe station', () => {
     const pose = gunLine()
-    // 中心 (50,2,0)：到炮轴垂距 50m > 用户距离 7m → 垂足不可达，取安全站位 15m。
     const prevTarget = new Vector3(50, 2, 0)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
     const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
@@ -112,8 +107,6 @@ describe('armor preset view placement', () => {
 
   it('station beyond OrbitControls maxDistance is not chosen (update() would break aiming)', () => {
     const pose = gunLine()
-    // 中心 (600,2,0)：炮轴垂距 600m > maxDistance 500m——轴上任何站位都会被
-    // controls.update() 拉回 500m 内而破坏指向 → 不摆位，保持用户当前取景。
     const prevTarget = new Vector3(600, 2, 0)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
     const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)
@@ -123,7 +116,6 @@ describe('armor preset view placement', () => {
 
   it('center behind the breech: exact user distance still solvable on the forward axis', () => {
     const pose = gunLine()
-    // 中心在枢轴后方（proj = -3）：前向轴上仍有精确解 t = 4 → 距中心 7m。
     const prevTarget = new Vector3(0, 2, 3)
     const prevCamera = prevTarget.clone().add(new Vector3(0, 0, 7))
     const placement = armorPresetViewPlacement(prevTarget, prevCamera, pose, MAXD)

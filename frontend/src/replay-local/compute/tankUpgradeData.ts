@@ -8,7 +8,6 @@ export function child(value: unknown, key: string): Data | undefined {
   return record(value) && record(value[key]) ? value[key] : undefined
 }
 export function cloneData<T>(value: T): T {
-  // 资产是 JSON；递归读取同时支持 Vue reactive proxy（structuredClone 不接受 proxy）。
   if (Array.isArray(value)) return value.map(item => cloneData(item)) as T
   if (record(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneData(item)])) as T
   return value

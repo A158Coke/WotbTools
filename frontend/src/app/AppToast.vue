@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 全站 toast 的唯一渲染出口（design-language §10「反馈」）：大屏右下最多 3 条，小屏在顶栏下方，
-// 不压工作台底部操作栏；横屏沉浸时只显示警告 / 错误。成功 / 提示 role=status（4 秒消失，悬停或按住暂停）；
-// 警告 / 错误 role=alert，不自动消失，带关闭与可选的下一步操作。
 import { computed, inject } from 'vue'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-vue-next'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
@@ -9,7 +6,6 @@ import { dismissToast, pauseToast, resumeToast, toasts } from '../composables/us
 import type { Toast } from '../composables/useToast.js'
 
 const ICONS = { success: CircleCheck, info: Info, warning: TriangleAlert, error: CircleAlert }
-// 横屏沉浸（场景铺满）时成功 / 提示不叠在场景上（它们照常进入通知中心或自动过期），只显示需要处理的警告 / 错误
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 const visibleToasts = computed(() => (shellChrome?.immersive.value ? toasts.value.filter(toast => toast.persistent) : toasts.value))
 
@@ -62,7 +58,6 @@ function runAction(toast: Toast) {
   pointer-events: none;
 }
 
-/* 抽屉外壳（手机竖屏 / 横屏）：顶栏下方，不压工作台底部操作栏 */
 @media (width < 768px), (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   .app-toasts {
     inset-block: calc(var(--header-h) + env(safe-area-inset-top) + var(--space-2)) auto;
@@ -71,7 +66,6 @@ function runAction(toast: Toast) {
   }
 }
 
-/* 手机横屏（矮屏）：横贯整行的提示会盖住工作台的能力页签，改为靠右的窄条 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   .app-toasts {
     inset-inline: auto max(var(--space-4), env(safe-area-inset-right));

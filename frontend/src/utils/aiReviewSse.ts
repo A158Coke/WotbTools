@@ -125,7 +125,6 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
   }
 
   const preBattleSection = optionalString(payload, 'preBattleSection')
-  // JSON cannot carry undefined; an explicitly malformed non-undefined value is rejected.
   if ('preBattleSection' in payload && payload.preBattleSection !== undefined
     && preBattleSection === undefined) return null
 
@@ -146,34 +145,28 @@ function resultFromPayload(payload: unknown): AiReviewResult | null {
   }
 }
 
-/** Runtime guard for the terminal analysis result carried by a `done` event. */
 export function isAiReviewResult(value: unknown): value is AiReviewResult {
   return resultFromPayload(value) !== null
 }
 
-/** Runtime guard for the `call1_*` and `evidence_done` events. */
 export function isAiReviewStageEvent(value: unknown): value is AiReviewStageEvent {
   return isRecord(value) && typeof value.type === 'string' && STAGE_EVENTS.has(value.type as AiReviewStageEvent['type'])
 }
 
-/** Runtime guard for the streamed main-review token event. */
 export function isAiReviewTokenEvent(value: unknown): value is AiReviewTokenEvent {
   return isRecord(value) && value.type === 'call2_token' && typeof value.delta === 'string'
 }
 
-/** Runtime guard for the terminal event. `capability` and `preBattleSection` remain additive. */
 export function isAiReviewDoneEvent(value: unknown): value is AiReviewDoneEvent {
   return isRecord(value) && value.type === 'done' && isAiReviewResult(value.result)
 }
 
-/** Runtime guard for stable error-code events; unknown future uppercase codes remain valid. */
 export function isAiReviewErrorEvent(value: unknown): value is AiReviewErrorEvent {
   return isRecord(value) && value.type === 'error' && isContractCode(value.code)
     && (value.id === null || typeof value.id === 'string')
     && (value.errorMsg === null || typeof value.errorMsg === 'string')
 }
 
-/** Runtime guard for the discriminated event union. */
 export function isAiReviewEvent(value: unknown): value is AiReviewEvent {
   return isAiReviewStageEvent(value)
     || isAiReviewTokenEvent(value)
@@ -181,10 +174,6 @@ export function isAiReviewEvent(value: unknown): value is AiReviewEvent {
     || isAiReviewErrorEvent(value)
 }
 
-/**
- * Convert one backend SSE event and its decoded JSON payload into a typed event.
- * Unknown event names and malformed payloads are deliberately ignored at this boundary.
- */
 export function parseAiReviewEvent(eventName: unknown, payload: unknown): AiReviewEvent | null {
   if (typeof eventName !== 'string' || !KNOWN_EVENTS.has(eventName)) return null
 
@@ -204,8 +193,6 @@ export function parseAiReviewEvent(eventName: unknown, payload: unknown): AiRevi
   }
 
   if (!isRecord(payload)) return null
-  // `code` remains a read-only compatibility alias for older deployed backends;
-  // the canonical SSE error contract uses errorCode/id/errorMsg.
   const errorCode = isContractCode(payload.errorCode)
     ? payload.errorCode
     : isContractCode(payload.code) ? payload.code : null
@@ -218,7 +205,6 @@ export function parseAiReviewEvent(eventName: unknown, payload: unknown): AiRevi
   }
 }
 
-/** Decode the JSON data field and parse a single event. */
 export function parseAiReviewEventData(eventName: unknown, rawData: string): AiReviewEvent | null {
   let payload: unknown = {}
   if (rawData.trim()) {
@@ -232,16 +218,10 @@ export function parseAiReviewEventData(eventName: unknown, rawData: string): AiR
 }
 
 export interface AiReviewSseParser {
-  /** Feed a UTF-8 chunk (or string in tests) and return complete, validated events. */
   push(chunk: Uint8Array | string): AiReviewEvent[]
-  /** Flush decoder and any final frame, returning only validated events. */
   finish(): AiReviewEvent[]
 }
 
-/**
- * Small SSE framing parser for the backend's JSON event stream. It handles chunk boundaries,
- * CRLF, multi-line data fields, comments, and ignores unknown/malformed events safely.
- */
 export function createAiReviewSseParser(): AiReviewSseParser {
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
@@ -283,7 +263,6 @@ export function createAiReviewSseParser(): AiReviewSseParser {
     }
 
     if (flush && buffer) {
-      // A final line without a trailing newline is valid enough to retain as a frame.
       const line = buffer.replace(/\r$/, '')
       buffer = ''
       if (line.startsWith('event:')) eventName = line.slice(6).trim()

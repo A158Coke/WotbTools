@@ -17,7 +17,6 @@ describe('mapLabel locale selection', () => {
     expect(mapLabel('savanna_old', 'zh')).toBe('沙漠之心2014版')
     expect(mapLabel('moon', 'zh')).toBe('寂静星海')
     expect(mapLabel('iceworld', 'zh')).toBe('永恒冻土')
-    // en 保持国际服正式名（资产 display 原文），不因新增中文名而变
     expect(mapLabel('grossberg', 'en')).toBe("Dynasty's Pearl")
     expect(mapLabel('moon', 'en')).toBe('Sea of Tranquility')
     expect(mapLabel('savanna_old', 'en')).toBe('Oasis Palms mod. 2014')
@@ -28,10 +27,8 @@ describe('hasChineseMapName（地图页默认可见性判据）', () => {
   it('is true only for keys the catalog accepted with a Chinese name', () => {
     expect(hasChineseMapName('erlenberg')).toBe(true)
     expect(hasChineseMapName('moon')).toBe(true)
-    // 归一化与 mapLabel 一致（资产 key 本身是小写）
     expect(hasChineseMapName('MOON')).toBe(true)
     expect(hasChineseMapName(' moon ')).toBe(true)
-    // 资产里有这张图，但我们没有登记中文名 → 默认隐藏
     expect(hasChineseMapName('rudniki_03')).toBe(false)
     expect(hasChineseMapName('does_not_exist')).toBe(false)
     expect(hasChineseMapName('')).toBe(false)

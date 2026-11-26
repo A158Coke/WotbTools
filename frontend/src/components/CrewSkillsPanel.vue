@@ -23,11 +23,6 @@ function skillText(item: CrewSkill | null, field: string): string {
   return typeof value === 'string' ? value : ''
 }
 
-/**
- * 客户端 effect 模板的占位符替换：模板在占位符后带 `%` 时，effects 值是**比例**
- * （0.15 → 15%，1.0 → 100%）；`*PerLevel` 再乘当前等级。其余计数/半径等原样；
- * 未提供的参数不显示（不猜）。数值全部来自 avatar.xml。
- */
 function skillEffectText(item: CrewSkill | null, level: number) {
   const effects = item?.effects || {}
   return skillText(item, 'effect')
@@ -48,7 +43,6 @@ function skillEffectText(item: CrewSkill | null, level: number) {
     .trim() || skillText(item, 'tip')
 }
 
-/** 全部 20 个车型技能（训练资格按车型，效果全局；这里按类分组展示）。 */
 const skillGroups = computed(() => SKILL_CLASS_ORDER.map(({ key, labelKey }) => {
   const ids: string[] = props.catalog?.crewSkillClasses?.[key] || []
   return {

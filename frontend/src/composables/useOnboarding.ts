@@ -24,19 +24,15 @@ import { createOnboardingReceiptSync } from './useOnboardingSync.js'
 import { createOnboardingDemoLoad, waitForValue } from './useOnboardingDemoLoad.js'
 import { ONBOARDING_GUIDES, SURFACES_READY_BEFORE_PREPARE } from './useOnboardingGuides.js'
 
-// —— 公共面保持稳定：内容注册表 / 存储键 / 回执工具从本入口 re-export ——
 export { ONBOARDING_GUIDES, ONBOARDING_TOPICS } from './useOnboardingGuides.js'
 export type { GuideStage, GuideStep } from './useOnboardingGuides.js'
 export { ONBOARDING_PENDING_LOGIN_KEY, ONBOARDING_STORAGE_KEY, mergeOnboardingReceipts, shouldOfferOnboarding, validOnboardingReceipt } from './useOnboardingStorage.js'
 
-/** Increment epoch only when existing users need the core guide again. Copy/anchor changes use revision. */
 const isReplaceDeclined = (e: unknown) => (e as { name?: string } | null)?.name === REPLACE_DECLINED
 const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-events', 'agent-shots', 'ai-review'])
-/** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */
 
 
 
-/** AppShell is the single lifecycle owner; panes only register their existing commands. */
 export function useOnboarding(options: {
   navigate: (view: string) => void | Promise<unknown>
   view: Readonly<Ref<string>>
@@ -79,15 +75,8 @@ export function useOnboarding(options: {
   })
   let explicitLoginPending = auth.loginInFlight?.value === true
   let pendingLogin = readPendingLogin()
-  /**
-   * A guide marker read at document boot may belong to an OIDC round-trip that was canceled;
-   * one written by this document belongs to an in-place (Android) login whose result is still
-   * pending. Only the former may be discarded by a settled unauthenticated init.
-   */
   let guideFromBoot = Boolean(pendingLogin?.guide)
-  /** Ownership generation: a guide login stamps it, user cancel/replace bumps it. */
   let guideLoginGeneration = pendingLogin?.guide?.generation ?? 0
-  /** Set by `loginAiGuide()` so the loginInFlight watcher knows this login owns the AI lesson. */
   let guideLoginIntent: OnboardingGuidePosition | null = null
   const preparingDemo = ref(false)
   const { beginDemoLoad, awaitDemoLoad, cancelDemoLoad, currentDemoGeneration } = createOnboardingDemoLoad({
@@ -113,15 +102,6 @@ export function useOnboarding(options: {
     hintVisible.value = false
   }
 
-  /**
-   * A login can take the whole document away (OIDC redirect), so remember *why* it was requested in
-   * the same one-shot handoff the receipt migration uses. Only a terminal anonymous receipt and the
-   * guide position are kept — never replay files or account data.
-   *
-   * Only a login the guide itself issued may own a continuation. A plain profile/header login
-   * passes `null` and therefore drops any older guide instead of inheriting and refreshing it,
-   * so a canceled tutorial cannot resurface from an unrelated login (#690 review).
-   */
   function rememberLogin(position: OnboardingGuidePosition | null) {
     const anonymous = cache.value.anonymous
     const receipt = pendingLogin?.receipt || (identity.value === 'anonymous' && anonymous && !anonymous.migrationConsumed
@@ -134,12 +114,6 @@ export function useOnboarding(options: {
     writePendingLogin(pendingLogin)
   }
 
-  /**
-   * A user action that withdraws the pending guide continuation (skip/close, start/switch guide,
-   * open the directory, finish). Bumping the generation makes a late auth result unable to
-   * resume the abandoned lesson. Internal lifecycle interrupts (identity change, view change,
-   * loginAiGuide) must never call this.
-   */
   function cancelGuideContinuation() {
     if (!pendingLogin?.guide) return
     guideLoginGeneration += 1
@@ -157,9 +131,6 @@ export function useOnboarding(options: {
   }
 
   if (auth.loginInFlight) watch(auth.loginInFlight, requested => {
-    // loginInFlight only covers the login() call / native RPC. Android's login RPC returns long
-    // before the external user-agent reports success, so `false` is not a canceled transaction:
-    // the continuation must survive until the real auth result (or expiry) arrives.
     if (!requested) { guideLoginIntent = null; return }
     explicitLoginPending = true
     const position = guideLoginIntent ?? (mode.value === 'tour'
@@ -179,13 +150,8 @@ export function useOnboarding(options: {
       interrupt()
       if (migration) transferAnonymous(migration, identity.value)
     }
-    // A confirmed session is enough to resume a tutorial, even before claims/sub are available
-    // (Android can report authenticated=true with tokenParsed=null). Account receipt migration
-    // still requires a stable subject, so the two concerns are judged separately.
     if (auth.authenticated.value && auth.authInitState.value === 'authenticated' && pendingLogin) {
       if (!pendingLoginFresh(pendingLogin)) {
-        // Same-document Android can consume 30+ minutes after the marker was written; the TTL
-        // applies to the whole pending-login object and to both consumption paths.
         pendingLogin = null
         guideFromBoot = false
         writePendingLogin(null)
@@ -197,33 +163,22 @@ export function useOnboarding(options: {
         }
         const position = pendingLogin?.guide
         if (position && (position.generation ?? guideLoginGeneration) === guideLoginGeneration) {
-          // Guide consumed; an account-owned receipt (no stable subject yet) stays pending.
           pendingLogin = withoutGuide(pendingLogin)
           guideFromBoot = false
           writePendingLogin(pendingLogin)
           void begin(false, position)
         } else if (position) {
-          // Ownership was withdrawn; never resurrect the lesson, but keep the receipt.
           pendingLogin = withoutGuide(pendingLogin)
           guideFromBoot = false
           writePendingLogin(pendingLogin)
         }
       }
     }
-    // Fresh document + settled unauthenticated init = the OIDC round-trip produced no session
-    // (cancel/failure). Discard the guide inherited from that document; a guide written here
-    // belongs to an in-place Android login and must wait for its authChanged callback, while an
-    // initializing init keeps the marker until it settles (#690 review).
     if (guideFromBoot && auth.authInitState.value === 'unauthenticated') {
       pendingLogin = withoutGuide(pendingLogin)
       guideFromBoot = false
       writePendingLogin(pendingLogin)
     }
-    // `bootstrap.state` 是依赖，但**失败态不是触发源**：whenBusinessUserSettled 在非 ready 时会
-    // 主动 ensure，失败再落回 failed ⇒ 本 watcher 被自己的状态翻转反复唤醒 =
-    // failed → ensure → pending → failed 的请求风暴（本机实测 ≈380 req/s 的
-    // `PUT /api/users/profile`）。失败的重试权属于 owner：AppShell 的认证 / 连通性变化，
-    // 或用户在失败横幅上的显式 retry。bootstrap 转 ready 时本 watcher 仍会重跑并完成同步。
     if (bootstrap.state.value === 'failed') return
     void synchronize()
   }, { immediate: true })
@@ -246,7 +201,6 @@ export function useOnboarding(options: {
       { coreEpoch: ONBOARDING_RELEASE.coreEpoch, disposition: 'OFFERED', coreStep: index.value })
   }, { flush: 'sync' })
 
-  // State comes from the actual pane, so 3D Start and shot selection keep their normal user semantics.
   watchEffect(() => {
     if (mode.value !== 'tour' || issue.value === 'loading') return
     const stage = currentStage.value
@@ -263,7 +217,6 @@ export function useOnboarding(options: {
       if (stageIndex.value < currentStep.value.stages.length - 1) {
         stageIndex.value++
         issue.value = ''
-        // 这条路径不经过 prepareStep：下一阶段的目标可能在 prepare 才打开的面里
         const nextStage = currentStage.value
         if (nextStage?.prepare && nextStage.surface) {
           Promise.resolve(surfaces.value[nextStage.surface]?.prepare?.()).catch(() => { issue.value = 'unavailable' })
@@ -272,7 +225,6 @@ export function useOnboarding(options: {
     }
   })
 
-  // A route chosen outside the current lesson interrupts it. The legitimate shot handoff is allowed.
   watch(options.view, (view) => {
     if (mode.value !== 'tour') return
     const expected = currentStep.value?.view
@@ -320,7 +272,6 @@ export function useOnboarding(options: {
   }
 
   async function ensureReplayView() {
-    // A cached workspace owner does not prove that its real page is currently visible.
     if (!REPLAY_VIEWS.has(options.view.value)) await options.navigate('replay')
   }
 
@@ -381,7 +332,6 @@ export function useOnboarding(options: {
       try {
         await beginDemoLoad()
       } catch (e) {
-        // 用户在「替换当前回放」确认里选了保留：不是加载失败，直接结束教程，原回放原样保留。
         if (generation === runGeneration && mode.value === 'tour' && isReplaceDeclined(e)) { skip(); return }
         if (generation === runGeneration && mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
         return
@@ -391,18 +341,12 @@ export function useOnboarding(options: {
     await prepareStep()
   }
 
-  /**
-   * Retry reloads the sample in place: the current topic/index/stage stays put.
-   * begin(false) would reset an optional guide to its first page, so it must not be used here.
-   */
   async function retry() {
     if (mode.value !== 'tour') return
     if (!demoFailed.value) return prepareStep()
     demoFailed.value = false
     issue.value = 'loading'
     const load = beginDemoLoad()
-    // A retry can outlive its guide. Capture this load's ownership before awaiting so a late
-    // rejection/success from the old load never writes into a guide started meanwhile.
     const generation = currentDemoGeneration()
     const owns = () => generation === currentDemoGeneration() && mode.value === 'tour'
     try {
@@ -443,7 +387,6 @@ export function useOnboarding(options: {
   }
   function registerWorkspace(value: OnboardingWorkspace | null) {
     if (!value && workspace.value && mode.value === 'tour' && !preparingDemo && options.view.value !== 'agent-armor') {
-      // The workspace legitimately unmounts during the shot → viewer handoff.
       if (!currentStep.value?.stages.some(stage => stage.surface === 'armor')) interrupt()
     }
     workspace.value = value
@@ -474,8 +417,6 @@ export function useOnboarding(options: {
     try {
       return auth.login('ai-review')
     } finally {
-      // The flush-sync watcher consumes the intent when loginInFlight flips; if the login never
-      // started, drop it so a later unrelated login cannot inherit this lesson.
       if (auth.loginInFlight?.value !== true) guideLoginIntent = null
     }
   }

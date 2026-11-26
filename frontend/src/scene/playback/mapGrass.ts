@@ -1,19 +1,5 @@
-// 草系统静态消费（上游 tools/export_map_glb.py 产物 map/<key>/grass.{json,bin,glb}，
-// 2026-11-17 上游审计 H1；数据面证据见导出器区块头注）。
-//
-// 客户端 VegetationRenderObject = 程序化植被：几何内嵌在 .sc2（4 变体 × 3 LOD）、
-// 逐图 albedo、密度取草地植被/光照图 alpha、128×128 网格翻转位、风参数逐层。
-// 本模块把上游烘好的实例（60k/图，9 字节/实例）铺成 **按变体 × 世界分块的 InstancedMesh**
-// （每块独立包围球 ⇒ 视锥剔除有效），风动在顶点着色器里按作者参数摆动。
-//
-// 帧与坐标：上游实例是**客户端世界系**（z 上）；本模块的 group 施加与 mapScenery 同款
-// qFrame（Ry(π)·Rx(−π/2)），故位置用客户端 (x, y, z=地形高) 直接构造，旋转绕客户端 z 轴，
-// 风摆在客户端 xy 平面内——与草原型几何的坐标系一致。
-//
-// 高度：调用方给 heightAt(客户端 x, 客户端 y)（渲染用地形高度场），实例贴地。
 import * as THREE from 'three'
 
-/** grass.json 契约（上游 export_grass 的写出形状）。 */
 export interface GrassDoc {
   space: string
   version: number
@@ -45,7 +31,6 @@ export interface GrassDoc {
   instanceStride: number
 }
 
-/** 解码后的一条草实例（客户端世界系；flipped 为作者翻转位，仅留档）。 */
 export interface GrassInstance {
   x: number
   y: number
@@ -53,7 +38,6 @@ export interface GrassInstance {
   scale: number
   variation: number
   flipped: boolean
-  /** 逐实例植被色（0..1；客户端 grass-vp.sl:117 的 vegetationColorMap 采样） */
   r: number
   g: number
   b: number
@@ -63,12 +47,6 @@ const STRIDE = 12
 const SCALE_MIN = 0.4
 const SCALE_MAX = 1.6
 
-/**
- * 解析 grass.bin → 实例数组（纯函数，测试锚点）。
- * 布局（小端）：u16 xQ / u16 zQ / u16 rotQ / u8 scaleQ / u8 variation / u8 flipped /
- * u8 r / u8 g / u8 b（逐实例植被色 = vegetationColorMap 采样，客户端 grass-vp.sl:117）。
- * 长度不是 stride 的整数倍 / meta 缺失 ⇒ 返回 null（fail-closed 不渲染半截草层）。
- */
 export function parseGrassBin(doc: GrassDoc, buffer: ArrayBuffer | Uint8Array): GrassInstance[] | null {
   if (!doc || !doc.meta || !doc.meta.bounds) return null
   if (doc.instanceStride !== undefined && doc.instanceStride !== STRIDE) return null
@@ -108,7 +86,6 @@ export function parseGrassBin(doc: GrassDoc, buffer: ArrayBuffer | Uint8Array): 
   return out
 }
 
-/** 草材质（作者 albedo × baseColorMultiplier，alpha 裁切 + 作者风摆参数）。 */
 export function makeGrassMaterial(map: THREE.Texture | null, params: GrassDoc['params'], maxZ: number): THREE.ShaderMaterial {
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true }
   const amp = Array.isArray(params.windAmplitude) && params.windAmplitude.length ? params.windAmplitude[0] : 0.2
@@ -174,7 +151,6 @@ export function makeGrassMaterial(map: THREE.Texture | null, params: GrassDoc['p
   })
 }
 
-/** 每块的世界边长（米，客户端系）：块级 InstancedMesh 独立包围球 ⇒ 视锥剔除有效。 */
 const TILE_SIZE = 128
 
 /**
@@ -192,8 +168,6 @@ export function buildGrassMeshes(
   options?: {
     heightAt?: ((x: number, y: number) => number) | null
     albedo?: THREE.Texture | null
-    /** 画质档实例预算（QUALITY_FEATURES.grass.instances）。缺省/负数 = 全量。
-     *  超出预算时按等步长抽取（保持空间分布），不取前缀（前缀会按导出顺序聚集）。 */
     maxInstances?: number | null
   },
 ): { group: THREE.Group; materials: THREE.ShaderMaterial[]; dispose(): void } {
@@ -201,7 +175,7 @@ export function buildGrassMeshes(
   const group = new THREE.Group()
   group.name = 'grassLayer'
   group.rotation.order = 'YXZ'
-  group.rotation.set(-Math.PI / 2, Math.PI, 0)   // qFrame，与 mapScenery 同帧
+  group.rotation.set(-Math.PI / 2, Math.PI, 0)
   const buckets = new Map<string, { variation: number; matrices: THREE.Matrix4[]; colors: number[] }>()
   const mat4 = new THREE.Matrix4()
   const quat = new THREE.Quaternion()
@@ -226,7 +200,6 @@ export function buildGrassMeshes(
     const gz = opts.heightAt ? opts.heightAt(inst.x, inst.y) : 0
     pos.set(inst.x, inst.y, gz)
     quat.setFromAxisAngle(zAxis, inst.rot)
-    // flipped 格 = 几何镜像（逐格打散重复；客户端 flippedDensityMap 的用途，见导出器注）
     scl.set(inst.flipped ? -inst.scale : inst.scale, inst.scale, inst.scale)
     mat4.compose(pos, quat, scl)
     bucket.matrices.push(mat4.clone())
@@ -246,7 +219,6 @@ export function buildGrassMeshes(
   for (const bucket of buckets.values()) {
     const proto = geometries[bucket.variation]
     if (!proto) continue
-    // 每桶 clone 一份几何挂逐实例颜色属性（原型几何跨桶共享，直接加属性会互相覆盖）
     const geo = proto.clone()
     geo.setAttribute('aVegColor', new THREE.InstancedBufferAttribute(
       new Float32Array(bucket.colors), 3))
@@ -265,17 +237,13 @@ export function buildGrassMeshes(
     materials,
     dispose() {
       material.dispose()
-      for (const mesh of instancedMeshes) mesh.dispose()   // 释放 instanceMatrix GPU 缓冲
+      for (const mesh of instancedMeshes) mesh.dispose()
       for (const g of ownedGeometries) g.dispose()
       group.clear()
     },
   }
 }
 
-/**
- * 从上游 grass.glb 提取变体几何（按节点 extras.grassVariation；按变体序号去重）。
- * 几何 **归原型 GLB 场景所有**（随它 dispose）；材质/贴图由本模块替换。
- */
 export function extractGrassPrototypes(gltfScene: THREE.Object3D): {
   geometries: THREE.BufferGeometry[]
   albedo: THREE.Texture | null

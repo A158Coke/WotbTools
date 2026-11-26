@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 名人堂「单场」榜：筛选 / 分页 / 榜单行 / 回放上传与下载的唯一 owner。
-// URL query 归 HoFPage：本组件只在加载时 emit('query-change')，并通过 expose 的 queryState / applyQuery 收发。
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
@@ -76,7 +74,6 @@ const filteredVehicles = computed(() => vehicleOptions.value
     && (!vehicleType.value || vehicle.type === vehicleType.value)
     && (!vehicleTier.value || String(vehicle.tier) === vehicleTier.value)))
 
-// ── 车辆显示名（审计 BZ-17）：后端查不到车名时回退为 `#4657`，前端再用 Tier X 车表与已加载榜单行补全 ──
 const tier10NameById = vehicleNameIndex(HUNDRED_VEHICLES)
 const rowNameById = computed(() => vehicleNameIndex(rows.value, 'tankId', 'tankName'))
 function knownTankName(tankId: number | null, ...candidates: (string | null | undefined)[]): string {
@@ -90,13 +87,11 @@ const pickerOptions = computed<PickerOption[]>(() => filteredVehicles.value
     hint: vehicleHint(vehicle.tier == null ? '' : `T${vehicle.tier}`, vehicleValueLabel(vehicle.nation), vehicleValueLabel(vehicle.type)),
   }))
   .sort((a, b) => a.label.localeCompare(b.label)))
-/** 当前单场车辆的显示名：深链 ?tank= 指向的车辆不在选项里时也要显示为已选（能解析出车名就用车名，否则 `#id`）。 */
 const selectedTankLabel = computed(() => {
   if (!selectedTankId.value) return ''
   const option = pickerOptions.value.find(item => item.id === Number(selectedTankId.value))
   return option?.label || knownTankName(selectedTankId.value, selectedTankName.value) || `#${selectedTankId.value}`
 })
-/** 领奖台只用前三行；mapName 的 null 按「无地图」传给 HofPodium。 */
 const podiumRows = computed(() => rows.value.slice(0, 3).map(row => ({ ...row, mapName: row.mapName ?? undefined })))
 
 async function load() {
@@ -181,7 +176,6 @@ function onVehicleChange() {
   reloadFirstPage()
 }
 
-// ── 版本列（审计 BZ-17）：只展示游戏版本号，忽略平台 / 渠道后缀 ──
 const fmtVersion = (value: string | null) => formatGameVersion(value) || '-'
 const fmtTime = (value: string | null) => formatDateTimeMinute(value, 2014)
 
@@ -217,14 +211,12 @@ async function download(id: number) {
   }
 }
 
-// 车辆名在选项加载后才能解析（直接打开带 tank 的链接时）
 watch(vehicleOptions, (options) => {
   if (selectedTankId.value && !selectedTankName.value) {
     selectedTankName.value = vehicleNameFromOptions(selectedTankId.value, options)
   }
 })
 
-// ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet，已生效条件显示为 chip ──
 const chips = computed(() => compactChips([
   ...vehicleChips(t, te, nation.value, vehicleType.value, ''),
   vehicleTier.value && { key: 'tier', label: `T${vehicleTier.value}` },
@@ -261,7 +253,6 @@ defineExpose({
     page.value = q.page
     load()
   },
-  // 直接打开百场 / 三环链接时单场榜还没加载过
   activate() { if (!rows.value.length && !loading.value) load() },
   reload: load,
   loadVehicleOptions,
@@ -284,7 +275,6 @@ defineExpose({
 
     <HofPodium v-if="page === 1 && rows.length >= 3 && !error" :rows="podiumRows" :compact="isCompact" :locale="locale" />
 
-    <!-- 提交记录 Modal（§29：上传入口不再长期占据首屏，Ranking 成为核心） -->
     <AppDialog :open="showUploadModal" :title="$t('hof.upload_title')" class="hof-upload-modal" @close="showUploadModal = false">
         <section class="hof-rules" data-testid="hof-rules-single">
           <h3 class="hof-rules-title">{{ $t('hofRules.title') }}</h3>
@@ -436,7 +426,6 @@ defineExpose({
         </tbody>
       </table>
     </div>
-    <!-- 手机：卡片列表（审计 PG-05：10 列表格在 375 宽下要横向滚动，下载按钮被挤到屏幕外） -->
     <ol v-else class="lb-cards" data-hof-board data-tour="hof-records" :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
       <li v-for="r in rows" :key="r.id" class="lb-card">
         <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>

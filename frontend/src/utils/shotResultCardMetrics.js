@@ -1,18 +1,8 @@
-// 射击结果卡（armor viewer #traj-info）的尺寸口径。
-// 竖屏手机屏幕窄且卡片是 fixed overlay，桌面尺寸会占掉过多纵向空间；
-// 这里只负责“紧凑档”数值，渲染仍由 scene/viewer/trajectoryCard.ts 的 showTrajectory 消费。
 export function isCompactShotResultCard(viewportWidth, viewportHeight) {
   if (!Number.isFinite(viewportWidth) || !Number.isFinite(viewportHeight)) return false
-  // 窄屏竖屏手机（原口径）+ **横屏手机 / 矮视口**：结果卡是 fixed overlay，720p 桌面档
-  // 在 390–430px 高的横屏里会盖掉大半视口（用户 2026-10-28 反馈；2026-10-30 再缩小一档）。
   return (viewportWidth < 768 && viewportHeight > viewportWidth) || viewportHeight < 520
 }
 
-/**
- * 紧凑档的**比例缩放**（2026-11-15 用户裁示：结果卡改为跟随命中位置后，手机端不能占太大面积）。
- * 以视口短边为基准线性缩放，320–520px 之间从 0.88 收敛到 1；桌面档恒为 1。
- * 只缩字号/行高/间距，不缩圆角与左边框（视觉身份保持不变）。
- */
 export function shotResultCardScale(viewportWidth, viewportHeight) {
   if (!isCompactShotResultCard(viewportWidth, viewportHeight)) return 1
   const shortSide = Math.min(viewportWidth, viewportHeight)
@@ -27,7 +17,6 @@ const SCALED_FIELDS = [
 
 const round1 = (value) => Math.round(value * 10) / 10
 
-/** 数值字段按 scale 缩小；padding 的 px 值同样按比例收（渲染端只读这些字段）。 */
 function scaleMetrics(metrics, scale) {
   if (scale === 1) return metrics
   const scaled = { ...metrics }
@@ -82,11 +71,6 @@ export function shotResultCardMetrics(compact, scale = 1) {
   return scaleMetrics(metrics, Number.isFinite(scale) && scale > 0 ? scale : 1)
 }
 
-/**
- * 结果卡最大宽度：随画布宽度走（侧栏/窄画布不能按视口算）；紧凑档（竖屏手机 / 横屏矮视口）
- * 再封顶 360px，并限制在画布宽度的 82% 以内（2026-11-15 用户裁示：跟随点击后手机端卡片
- * 不得铺满视口）。hostWidth 无效时返回 null（不设上限）。
- */
 export function shotResultCardMaxWidth(hostWidth, viewportWidth, viewportHeight) {
   const width = Number(hostWidth)
   if (!(width > 0)) return null

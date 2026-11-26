@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../utils/http.js'
 
-// mock 最底层 WASM 解析与结算事实投影：只测 submissionFacts 的顺序 / 失败映射契约。
 const wasm = vi.hoisted(() => ({ parseAgentResultFromBytes: vi.fn() }))
 vi.mock('../api/agent-replay-facets.js', () => wasm)
 vi.mock('./battleFacts.js', () => ({

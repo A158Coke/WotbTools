@@ -1,20 +1,5 @@
-// 四档渲染预设（2026-10-24 自 playbackScene.js 出仓，拆分计划见 #820；
-// 代码与搬移前逐字一致——预设表同时被面板与场景消费，公开 API 仍由 playbackScene.js
-// re-export，导入方零改动）。
 import { FX_BUDGETS } from '../battleFx.js'
 
-// 四档渲染预设（面板与场景共用；桌面默认高清，Tauri/移动 WebView 默认均衡）。
-// 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
-// 四档均加载完整场景以保留桥梁、建筑等立体结构；低档仍按各自预算控制车辆、
-// 抗锯齿、DPR、各向异性、地表分层和特效。场景资产会增加下载与渲染成本。
-// 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
-// 均衡档地面 = **俯视烘焙底图**（4096²，上游资产管线 tools/bake_ground_roofs.py
-// 把场景 GLB 的屋顶/树冠/草丛正交俯视烘进地形图；低档仍使用该底图。
-// treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
-// **强制** GLB 真实车模——印记的左右轨距取自 suspension 解析的模型实测 halfW，
-// 低模回落常数与之不同，允许中途切车模会让同一车前后的印记轨距突变。
-// fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
-// 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
   low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: true,  groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, waterReflection: false, fx: FX_BUDGETS.low },
   mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: true,  groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, waterReflection: false, fx: FX_BUDGETS.mid },
@@ -22,58 +7,33 @@ export const QUALITY_PRESETS = {
   ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, waterReflection: true,  fx: FX_BUDGETS.ultra },
 }
 
-/**
- * 坦克接地阴影的画质门禁（唯一实现）：仅高清 / 极致可由用户开启。
- * 面板（开关 disabled）与场景（setter + 装配点复核）共用，不另建画质配置。
- */
 export function shadowQualityEligible(key: string): boolean {
   return key === 'high' || key === 'ultra'
 }
 
-/**
- * 画质档**语义表**（画质计划 P1）：把"低/均衡/高清/极致"映射到各渲染子系统的
- * 预算与开关。渲染器数值旋钮仍在 QUALITY_PRESETS；本表是跨模块的唯一语义来源，
- * 新增增强项（反射档位/草密度/CSM/贴花投影）先落这张表，再在各模块消费。
- *
- * 约束：表里的值必须是**当前已实现**的能力，不能提前写"未来支持"。未实现项
- * （CSM/折射/贴花投影）固定 false；实现后改表并由单元测试锁一致性。
- */
 export type QualityKey = keyof typeof QUALITY_PRESETS
 export type WaterTier = 'medium' | 'high' | 'ultra'
 
 export interface QualityFeatures {
   water: {
     tier: WaterTier
-    /** HIGH/ULTRA：当帧场景平面反射 */
     reflection: boolean
-    /** ULTRA：屏幕空间折射（W2，未实现） */
     refraction: boolean
-    /** 反射 RT 相对主画面比例（0 = 不建 RT） */
     reflectionScale: number
-    /** 反射 pass 更新间隔（1 = 每帧；反射关闭时写 0，消费端按 1 处理） */
     reflectionIntervalFrames: number
   }
   grass: {
-    /** 草实例预算（0 = 不加载草层） */
     instances: number
-    /** 原型几何档（顶点量最大档；500 档为当前导出档） */
     geometryTier: 500
   }
   shadows: {
-    /** 方向光 CSM（L1，未实现） */
     csm: boolean
-    /** 坦克接地阴影**可用性**（默认仍关闭，用户面板显式开启） */
     tankContact: boolean
-    /** 坦克 stencil 轮廓投影**可用性**（随接地阴影开关） */
     silhouettes: boolean
   }
   decals: { projected: boolean }
 }
 
-/**
- * 草层总开关（2026-11-19 用户报障：地面草分布待核查）。关闭时高清/极致档也不加载草层；
- * 数据面（grass.json/bin/glb）与 60k 预算保持原样，恢复显示只需改回 true。
- */
 export const GRASS_LAYER_ENABLED = false
 
 export const QUALITY_FEATURES: Record<QualityKey, QualityFeatures> = {

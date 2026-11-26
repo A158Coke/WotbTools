@@ -15,7 +15,6 @@ const COLS = [
   { key: 'earned_avg', num: true },
 ]
 
-// B6：account_id 不再是列——身份是结构化 row.accountId
 const ROWS = [
   { team: 1, accountId: 1, cells: { nickname: 'A', damage_avg: 100, win_rate: 50, earned_avg: 80 } },
   { team: 2, accountId: 2, cells: { nickname: 'B', damage_avg: 9, win_rate: 90, earned_avg: 40 } },
@@ -51,7 +50,6 @@ describe('AggregateTable raw rates', () => {
     const cols = [{ key: 'survival_time_avg', num: true }]
     const rows = [{ team: 1, accountId: 1, cells: { survival_time_avg: 125, survival_avg: 999 } }]
     const wrapper = mountTable({ aggregate: rows, shownCols: cols })
-    // fmtDuration → $t('duration', {min, sec})；旧 key 会被当成普通数字渲染成 999
     expect(wrapper.find('tbody td').text()).toBe('duration')
     expect(wrapper.find('th').attributes('title')).toBe('agg_labels.survival_time_avg_tip')
   })
@@ -78,11 +76,11 @@ describe('AggregateTable sorting', () => {
   it('missing always last (ASC and DESC)', async () => {
     const wrapper = mountTable()
     const th = wrapper.findAll('th').find(t => t.text().includes('win_rate'))
-    await th.trigger('click') // ASC: 50 90 --(missing last)
+    await th.trigger('click')
     let rows = wrapper.findAll('tbody tr')
     expect(rows.at(0).text()).toContain('50')
-    expect(rows.at(2).text()).toContain('C') // null win_rate last
-    await th.trigger('click') // DESC: 90 50 --(still last)
+    expect(rows.at(2).text()).toContain('C')
+    await th.trigger('click')
     rows = wrapper.findAll('tbody tr')
     expect(rows.at(0).text()).toContain('90')
     expect(rows.at(2).text()).toContain('C')

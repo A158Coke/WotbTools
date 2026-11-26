@@ -1,13 +1,3 @@
-/**
- * Agent WASM dist 契约（Docker build / CI dist smoke / TX 镜像校验共用同一实现）。
- *
- * 锁定三件事：
- *  1. 产物只在 `/wasm/<source.json ref>/` 下——stable `/wasm/wotb_replay_wasm.js` 禁止回归；
- *  2. fingerprint 与 `deploy/agent/source.json` 逐字段一致（错版产物不得进镜像）；
- *  3. `_bg.wasm` 是真实 WASM（magic），不是占位文件/HTML 错误页。
- *
- * 用真实 `deploy/agent/source.json` + 临时目录构造 dist，不依赖真实构建产物。
- */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'

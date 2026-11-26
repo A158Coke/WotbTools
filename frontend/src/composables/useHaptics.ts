@@ -2,13 +2,6 @@ import { callBridge, getCapabilities, isAndroidApp } from './usePlatformBridge.j
 import { NATIVE_HAPTICS_CAPABILITY, NATIVE_HAPTICS_METHODS } from '../platform/nativeBridgeContract.js'
 import { feedbackPrefs } from './useFeedbackPrefs.js'
 
-/**
- * 触感（design-language §10「反馈」）：同一事件同一种反馈，视觉反馈始终存在，触感只是加强。
- * - Android App：Native Bridge 可选能力 `haptics`（系统触感常量，随系统触感设置）；
- * - Android 浏览器：navigator.vibrate；
- * - iPhone Safari：不支持，静默。
- * 设置里关闭或不支持时一律静默，不抛错。
- */
 export type HapticKind = 'selection' | 'primary' | 'success' | 'error' | 'endpoint'
 export const HAPTIC_PATTERNS: Record<HapticKind, number | number[]> = Object.freeze({
   selection: 10,

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 三环人工提交弹窗：表单草稿 / 1–2 张证明截图 / 5 份回放 / 本地校验 / 提交的唯一 owner。弹窗 keep-mounted，关闭后草稿保留。
-// 个人状态（current / pending）与候选车辆归 HofMark3Board，这里只读。
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
@@ -17,11 +15,9 @@ interface ProofScreenshot { key: string, data: string, name: string }
 interface SubmissionValues { vehicleId: number, battleCount: number, averageDamage: number, winRate: number }
 
 const props = defineProps<{
-  /** 三环榜当前筛选后的候选车辆 */
   vehicles: readonly TierXVehicle[]
   currentList: readonly SubmissionSummary[]
   pendingList: readonly SubmissionSummary[]
-  /** 提交成功（草稿已清空、弹窗已关闭）后由榜单刷新；提交中状态持续到它完成 */
   afterSubmit: () => Promise<void>
 }>()
 
@@ -57,7 +53,6 @@ const hasDraft = computed(() => Boolean(
 
 const pickerOptions = computed(() => withDraftVehicle(props.vehicles, form.vehicleId).map(vehicle => tierXPickerOption(t, te, vehicle)))
 
-/** 三环没有分数门槛：已有通过纪录即不能再提交，没有纪录时说明这是第一条纪录（审计 BZ-18）。 */
 const threshold = computed(() => {
   const vehicleId = form.vehicleId
   if (!vehicleId) return { key: 'hofRules.threshold.chooseVehicle' }

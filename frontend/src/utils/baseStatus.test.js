@@ -39,7 +39,6 @@ describe('baseStatus', () => {
       { clock: 10, progress: 0 },
       { clock: 15, progress: 12 },
     ]
-    // Folding preserves the protocol fact (0); only the shared presentation model hides it.
     expect(foldAssaultProgress(resetTrack, 12).captureProgress).toBe(0)
     expect(baseView(foldAssaultProgress(resetTrack, 12), 1).progress).toBeNull()
     expect(baseView(foldAssaultProgress(resetTrack, 16), 1).progress).toBe(12)

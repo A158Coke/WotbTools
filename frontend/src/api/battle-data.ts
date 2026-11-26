@@ -2,7 +2,6 @@ import type { components } from './generated/http-contract.js'
 import { battleDataRequestValidator } from './generated/contract-validators.js'
 import { resolveApiUrl } from '../platform/runtime.js'
 
-/** Collector 专用静默 transport：没有认证、cookie、重试或用户错误副作用。 */
 export async function postBattleData(payload: components['schemas']['BattleDataRequest']): Promise<void> {
   try {
     if (navigator.onLine === false || !battleDataRequestValidator(payload)) return

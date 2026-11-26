@@ -30,8 +30,6 @@ let reliefModel = null
 let sourceTextureSize = null
 let loadToken = 0
 
-// The 2.5D product is a tactical-map relief, not a physical 3D scene. Height
-// perception comes from the Z-derived screen warp plus renderer-owned hillshade.
 const RELIEF_NORMAL_GAIN = 2.15
 const RELIEF_CONTRAST = 1.45
 const RELIEF_MIN_SHADE = 0.56
@@ -90,8 +88,6 @@ function fitRenderer() {
   if (!host.value || !renderer) return
   const width = Math.max(1, host.value.clientWidth)
   const height = Math.max(1, host.value.clientHeight)
-  // host.clientWidth/clientHeight are the post-layout dimensions of the 2D camera box;
-  // view.scale is already represented by them and must not be multiplied again here.
   const target = computeMap3dRenderTarget({
     cssWidth: width,
     cssHeight: height,
@@ -192,10 +188,6 @@ function buildTerrainGeometry(terrainMeta, heights, model) {
       const p = vertex * 3
       const uv = vertex * 2
 
-      // Pre-project the terrain into the tactical-map plane. The original 2D map
-      // footprint remains authoritative; Z only warps interior Y. Edge fade pins
-      // the perimeter to the original raster frame so the map never shrinks into
-      // a physical-camera trapezoid/bowl.
       positions[p] = projected.u
       positions[p + 1] = projected.v
       positions[p + 2] = 0
@@ -289,9 +281,6 @@ async function loadMap() {
     const nextScene = new THREE.Scene()
     nextScene.background = new THREE.Color(0x111820)
 
-    // Footprint-preserving orthographic presentation. The mesh has already been
-    // transformed into its tactical relief plane, so this camera does not add any
-    // second foreshortening/perspective step.
     const pb = model.projectedBounds
     const nextCamera = new THREE.OrthographicCamera(
       pb.left,
@@ -312,9 +301,6 @@ async function loadMap() {
     nextRenderer.shadowMap.enabled = false
     host.value.appendChild(nextRenderer.domElement)
 
-    // **包内图立即用作贴图**：2.5D 的 ready 不被 OTA 判定/下载阻塞（离线或慢网时
-    // `ensureMap2dImage` 可能等满 8s(index)/20s(image) 超时——那属于"可选升级"，
-    // 绝不能挡住本地已有底图的渲染）。远端那份校验通过后在后台热替换（见下方）。
     const applyTerrainTexture = (target) => {
       target.colorSpace = THREE.SRGBColorSpace
       target.wrapS = THREE.ClampToEdgeWrapping
@@ -364,12 +350,9 @@ async function loadMap() {
     status.value = 'ready'
     renderScene()
 
-    // 后台可选升级：远端底图 sha256 校验通过后热替换贴图（失败/无更新/已切图 ⇒ 什么都不做）。
-    // 只动 material.map，不重建几何/相机/relief，因此不会闪断已就绪的 2.5D。
     void ensureMap2dImage(props.mapCode).then(async (remoteSrc) => {
       if (!remoteSrc || token !== loadToken) return
       const upgraded = applyTerrainTexture(await new THREE.TextureLoader().loadAsync(remoteSrc))
-      // 等待期间可能已切图/卸载（disposeScene 会把 scene 置空）——那时必须丢弃新贴图。
       if (token !== loadToken || scene !== nextScene) {
         upgraded.dispose()
         return
@@ -419,8 +402,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* BattleMap still owns tactical overlays and the replay clock. Only the original
-   raster is hidden; the SVG/DOM layers are reprojected by the shared relief model. */
 :global(.pb-viewport.pb-25d-active .pb-svg) {
   position: relative;
   z-index: 1;

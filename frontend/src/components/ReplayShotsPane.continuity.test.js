@@ -1,12 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 射击分析面板状态链回归：
- * - author_path="error" 且他人宽松路径 0 发 → 警示必须可见，且与空态并存——
- *   绝不允许只显示"没有射击"把作者链失败伪装成正常空结果（契约 v0.1.9 评审 blocker）；
- * - 射击者筛选三态（未知阵营绝不并入我方）；
- * - Master–Detail：一行一 Shot、选中出检视、窄容器整屏 + 焦点管理；
- * - 术语：界面不得出现内部 id（eid）、WebAssembly / Agent 等实现层词汇。
- */
 
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
@@ -50,7 +42,6 @@ vi.mock('../scene/agentData.js', () => ({
   fetchShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
-/** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
 const observers = []
 class ResizeObserverStub {
   constructor(cb) { this.cb = cb; observers.push(this) }
@@ -73,7 +64,6 @@ function mkFile(name = 'cn.wotbreplay') {
 
 const baseOthers = { total_launches: 0, skipped_no_endpoint: 0, skipped_no_target_state: 0, muzzle_fallback: 0 }
 
-/** 新手教程表面（ONBOARDING_KEY）：compact 检视面板只在教程引导中出现，测试用它模拟引导态 */
 const guideSurfaces = {}
 const guideActive = ref(false)
 const guideHost = { guideActive, registerSurface: (id, surface) => { guideSurfaces[id] = surface } }
@@ -93,7 +83,6 @@ async function mountPane(props = {}) {
     global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: guideHost } },
     attachTo: document.body,
   })
-  // 只有"应当解码"的场景才等终态（无文件 / 被阻断 / 未激活时不发解码）
   const shouldDecode = props.active !== false && !props.blockedReason && props.file !== null
   if (shouldDecode) {
     await vi.waitFor(() => {
@@ -294,7 +283,6 @@ describe('ReplayShotsPane 自动全屏与连续性（Android 手机 App）', () 
     author_path: 'ok', author_eid: 100, others: baseOthers,
   }
 
-  /** happy-dom 没有 Fullscreen API：request 成功时设置 fullscreenElement 并派发 fullscreenchange */
   function stubFullscreen(root, { reject = false, deferred = null } = {}) {
     const request = vi.fn(async () => {
       if (deferred) await deferred.promise
@@ -346,7 +334,6 @@ describe('ReplayShotsPane 自动全屏与连续性（Android 手机 App）', () 
     expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
     expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(1)
     expect(request).toHaveBeenCalledTimes(1)
-    // 仍 Ready、重渲染、再次点击行都不会自动重入
     await wrapper.setProps({ blockedReason: '' })
     await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
     await flushPromises()

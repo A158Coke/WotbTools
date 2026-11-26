@@ -1,6 +1,3 @@
-// Recorder 开/退镜的反射调度 guard（源码级）：Arcade ↔ Sniper 是离散图层切换，
-// 不能等 HIGH 档 intervalFrames 的下一次到期帧，否则镜面保留上一帧开镜车体。
-// 自动相机过渡完成时同样要补齐最终投影。
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'

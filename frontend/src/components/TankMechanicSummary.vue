@@ -18,7 +18,6 @@ const rocket = computed(() => stem.value === 'unguidedRocket')
 const secondary = computed(() => rocket.value || stem.value === 'auxilliaryWeapons')
 const rows = computed(() => props.sections.flatMap(section => section.rows))
 function row(name: string) {
-  // A summary has no selected projectile. Leave ambiguous multi-shot values in their individual tables.
   const matches = rows.value.filter(entry => entry.name === name)
   return matches.length === 1 ? matches[0] : undefined
 }

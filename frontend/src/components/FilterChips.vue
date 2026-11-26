@@ -1,12 +1,10 @@
 <script setup>
-// 手机上的筛选入口（design-language §9 筛选：compact 下一个「筛选」按钮 → sheet，已生效条件以 chip 显示在列表上方）。
 import { useI18n } from 'vue-i18n'
 import { SlidersHorizontal, X } from 'lucide-vue-next'
 import { AnimatePresence, Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
 
 defineProps({
-  /** 已生效的筛选：[{ key, label }] */
   chips: { type: Array, default: () => [] },
   open: { type: Boolean, default: false },
 })

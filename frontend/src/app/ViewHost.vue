@@ -14,8 +14,6 @@ const route = useRoute(), router = useRouter()
 const { authenticated, isAdmin, isTournamentAdmin, isContentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
 const { typeAvailable, typeVisible, available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
-// 4.0：bilibili 推荐合成一页（「推荐 UP | 优秀作品」页签）。`recommendations` 入口缺省第一个可见类型；
-// `creators` / `recommended-videos` 深链直接对应页签。
 const recommendationType = computed(() => activeView.value === 'recommended-videos' ? 'VIDEO'
   : activeView.value === 'creators' ? 'UP' : typeVisible('UP') ? 'UP' : 'VIDEO')
 const recommendationList = computed(() => ['creators', 'recommended-videos', 'recommendations'].includes(activeView.value))
@@ -23,7 +21,6 @@ const creatorUnavailable = computed(() => activeView.value === 'recommendations'
   : recommendationList.value ? !typeVisible(recommendationType.value) : activeView.value === 'creators-config' && !creatorsAvailable.value)
 const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value && activeView.value !== 'recommendations'
   ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
-// 装甲查看器匿名可用，ViewHost 只保留管理页的登录/角色门：内容配置归 content-admin，积分赛归 tournament-admin。
 const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback'].includes(activeView.value))
 const adminCopy = computed(() => {
   if (activeView.value === 'admin-battle-data') {
@@ -44,7 +41,6 @@ const adminAllowed = computed(() => adminCopy.value.allowed)
 const adminNeedsLogin = computed(() => adminView.value && !authenticated.value)
 const adminDenied = computed(() => adminView.value && authenticated.value && !adminAllowed.value)
 const adminTitleKey = computed(() => adminCopy.value.title)
-// 内容管理页的登录/权限提示必须说「内容管理员」，不能复用联赛文案（否则会告诉已具备联赛权限的人缺联赛权限）。
 const adminLoginKey = computed(() => adminCopy.value.login)
 const adminDeniedKey = computed(() => adminCopy.value.denied)
 const loginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
@@ -67,7 +63,6 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
       <AppButton :disabled="creatorsChecking" data-testid="creators-availability-retry" @click="retryCreators">{{ $t('creators.retry') }}</AppButton>
       <AppButton v-if="recommendationList && activeView !== 'recommendations'" data-testid="recommendations-back" @click="router.push(locationForView('recommendations', route))">{{ $t('creators.backToTypes') }}</AppButton>
     </Banner>
-    <!-- 回放工作台是唯一 capability host：五种能力切换、从装甲查看器返回都保留同一个工作台实例 -->
     <KeepAlive :include="['ReplayWorkspace']">
       <component v-if="!adminNeedsLogin && !adminDenied && !creatorUnavailable" :is="currentView" :initial-capability="initialCapability" v-bind="recommendationList ? { type: recommendationType } : {}" />
     </KeepAlive>
@@ -75,15 +70,11 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
 </template>
 
 <style scoped>
-/* 顶栏是 fixed：内容区只在这里让出一次高度（含顶部安全区）；用 --header-block，顶栏随滚动收起时内容不跳动 */
 .app-main {
   flex: 1 0 auto;
   padding-top: calc(var(--header-block) + env(safe-area-inset-top));
 }
 
-/* view loading/error surface（#845）在场时是 main 的唯一元素子节点（KeepAlive 不产生 DOM）：
-   main 临时变成列 flex、surface flex:1 填满 main 的增长高度 —— Footer 贴底不上跳，
-   不需要任何视口减法 magic number。 */
 :global(.app-main:has(> .view-loading)),
 :global(.app-main:has(> .view-load-error)) {
   display: flex;

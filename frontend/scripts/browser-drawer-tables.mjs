@@ -38,7 +38,6 @@ export async function runDrawerTableScenario(env, scenario) {
     await page.goto(`${env.origin}/scripts/browser-fixtures/drawer-tables.html?profile=${scenario.profile}`)
     await page.waitForValue('document.querySelectorAll(".cw-table tbody tr").length', n => n === 2)
 
-    // 三种真实表格在横向滚动后仍能访问末列，不依赖页面横向溢出。
     for (const id of ['cw-fixture','battle-fixture','aggregate-fixture']) {
       const container = `[data-testid=${id}] .tablewrap`
       await page.waitForValue(`!!document.querySelector(${q(container)})`, Boolean)
@@ -50,7 +49,6 @@ export async function runDrawerTableScenario(env, scenario) {
     }
     check(await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'tables must not overflow the document horizontally')
 
-    // sticky 昵称列在横向滚动后仍可真实选中，打开生产玩家详情。
     await tap('[data-testid=cw-fixture] tbody tr:first-child td:first-child')
     await page.waitForValue('!!document.querySelector("[data-testid=player-drawer]")', Boolean)
     await page.animationsSettled()
@@ -84,7 +82,6 @@ export async function runDrawerTableScenario(env, scenario) {
     await reach('[data-testid=export-profile]')
     await tap('[data-testid=radar-settings]')
     await page.waitForValue('!!document.querySelector("[data-testid=radar-picker]")', Boolean)
-    // 雷达列表既有内层滚动容器；分别验证首末选项的 label，而非仅检查 DOM 存在。
     await reach('.radar-picker-list li:first-child .rp-item')
     await reach('.radar-picker-list li:last-child .rp-item')
     await reach('.radar-picker-list li:first-child .rp-arrow:last-child')
@@ -96,14 +93,12 @@ export async function runDrawerTableScenario(env, scenario) {
     await tap('.pd-close')
     await page.waitForValue('!document.querySelector("[data-testid=player-drawer]")', Boolean)
 
-    // AI 报告表头 + 内容折叠组合，不能以截图存在代替真实操作。
     await reach('[data-test=toggle-analysis]')
     await reach('[data-test=copy-analysis-btn]')
     await tap('[data-test=toggle-analysis]')
     await page.waitForValue('document.querySelector("[data-test=toggle-analysis]").getAttribute("aria-expanded")', value => value === 'false')
     await tap('[data-test=toggle-analysis]')
     await page.waitForValue('document.querySelector("[data-test=toggle-analysis]").getAttribute("aria-expanded")', value => value === 'true')
-    // 列选择器：常驻表格之上的非模态面，首末项、移动按钮都要真实可点，Esc 把焦点还给触发按钮。
     await tap('[data-testid=column-picker-open]')
     await page.waitForValue('!!document.querySelector(".colpanel")', Boolean)
     await reach('.colpanel .linkbtn:last-of-type')

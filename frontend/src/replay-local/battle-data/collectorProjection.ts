@@ -1,7 +1,6 @@
 import type { AgentBattleResult } from '../../api/agent-replay-facets.js'
 import type { CollectorSeed } from './collectorWorkerProtocol.js'
 
-/** 主线程仅做有界准入投影；完整 wire validation 在 Worker 发送前执行。 */
 export function toCollectorSeed(result: AgentBattleResult): CollectorSeed | null {
   if (!result || (result.arena_bonus_type !== 1 && result.arena_bonus_type !== 7)
     || (result.author_team !== 1 && result.author_team !== 2)

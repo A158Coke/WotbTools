@@ -25,19 +25,15 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
     const sel = resolveUpgradeSelection(bz.modules, 'custom', [rootId])
     expect(sel.available).toBe(true)
     expect(sel.mode).toBe('custom')
-    // 根节点自己的属性已计入
     const names = Object.keys(sel.attributes)
     expect(names.length).toBeGreaterThan(0)
-    // abilities = 完整已研发表（配置栏/研发树往返依赖它不被裁剪）
     expect(sel.abilities).toEqual([rootId])
-    // 组备选未安装：不产生 choices
     expect(Object.values(sel.choices).flat()).toEqual([])
   })
 
   it('custom：安装组 + 备选后机制属性生效，前置闭包自动补齐', () => {
     const group = progression.alternativeGroups[0]
     const altId = group.choices[0]
-    // 只给备选：组前置由前置闭包补齐（客户端不存在缺前置的已研发状态）
     const sel = resolveUpgradeSelection(bz.modules, 'custom', [altId])
     expect(sel.choices[group.id]).toBe(altId)
     expect(sel.abilities).toContain(altId)
@@ -53,19 +49,16 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
 
   it('custom：手工多选同组备选被归一化为每组一项，互斥效果不叠加', () => {
     const group = progression.alternativeGroups[0]!
-    // URL 解析器接受 abilities=22,23,24（分享/手改链接）——三选一只保留一项
     const sel = resolveUpgradeSelection(bz.modules, 'custom', [22, 23, 24])
     expect(sel.supported).toBe(true)
     expect(sel.choices[group.id]).toBe(group.choices[0])
-    // 归一化结果=前置闭包 + 每组唯一备选；未选中的同组备选不出现
     expect(sel.abilities).toContain(group.choices[0])
     expect(sel.abilities).not.toContain(group.choices[1])
     expect(sel.abilities).not.toContain(group.choices[2])
     for (const req of group.requiredNodes!) expect(sel.abilities).toContain(techToId.get(req)!)
-    // 只聚合选中项：同组其余备选的专属属性不出现（前置节点的属性照常计入）
     expect(sel.attributes.RECHARGEABLE_NITRO_HEATING_DURATION).toBe(5)
-    expect(sel.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).not.toBe(0.15) // 23 专属
-    expect(sel.attributes.RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR).toBeUndefined() // 24 专属
+    expect(sel.attributes.RECHARGEABLE_NITRO_FWD_SPEED_LIMIT_FACTOR).not.toBe(0.15)
+    expect(sel.attributes.RECHARGEABLE_NITRO_ROTATION_SPEED_FACTOR).toBeUndefined()
   })
 
   it('custom：真实 URL（parseTankopediaQuery）到投影全程保持互斥', () => {
@@ -83,14 +76,12 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
 
   it('custom 深链缺前置：投影边界补前置闭包（含组级 requiredNodes）', () => {
     const group = progression.alternativeGroups[0]!
-    // 审阅用例：abilities=1,22（只有根节点 + 备选）——组前置 19/20/21 不在表里
     const sel = resolveUpgradeSelection(bz.modules, 'custom', '1,22')
     expect(sel.supported).toBe(true)
     expect(sel.choices[group.id]).toBe(22)
     for (const req of group.requiredNodes!) {
       expect(sel.abilities).toContain(techToId.get(req)!)
     }
-    // 不是逐例判断：同一规则也作用于单个孤立节点（12 = 引擎功率，前提前置一并补齐）
     const engine = resolveUpgradeSelection(bz.modules, 'custom', [12])
     const engineNode = progression.nodes.find(node => node.id === 12)!
     const nodeByTech = new Map(progression.nodes.map(node => [node.techName, node]))
@@ -104,7 +95,6 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
     const parsed = parseAugmentProgression(bz.modules)!
     const group = parsed.alternativeGroups[0]!
     const byTech = new Map(parsed.nodes.map(node => [node.techName, node]))
-    // 审阅用例：只装了组前置 19/20/21（缺它们的祖先），再选 22 应把祖先补齐
     const orphans = new Set<number>(group.requiredNodes!.map(req => byTech.get(req)!.id))
     const next = researchGroupChoice(parsed, group.id, group.choices[0]!, orphans)
     for (const id of orphans) {
@@ -116,8 +106,7 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
 
   it('custom→top/stock 切换时保留已选备选（备选位于长表后段也不丢）', () => {
     const group = progression.alternativeGroups[0]!
-    const chosen = group.choices[2]! // 24：排在根节点链之后
-    // 模拟 custom 的完整已研发表：8 个前置节点 + 组备选
+    const chosen = group.choices[2]!
     const longList = [...progression.nodes.filter(n => n.gridPosition).slice(0, 8).map(n => n.id), chosen]
     expect(longList.indexOf(chosen)).toBeGreaterThanOrEqual(8)
     const top = resolveUpgradeSelection(bz.modules, 'top', longList)
@@ -128,7 +117,6 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
   })
 
   it('custom 部分研发的引擎功率升级计入车体转向（stock 功率仍是基准）', () => {
-    // BZ-79 前置完整的研发表 [3,7,11,12] 含引擎功率升级
     const sel = resolveUpgradeSelection(bz.modules, 'custom', [3, 7, 11, 12])
     expect(sel.supported).toBe(true)
     const withBaseline = buildComputeInput({
@@ -136,7 +124,6 @@ describe('XI 研发树 custom 模式（部分研发 ↔ 面板/配置栏联动�
       catalog: { devices: [], devicePresets: {} },
     })
     expect(withBaseline.stockEnginePower).toBe(Number(bz.modules.engines[0].stats.power))
-    // 功率比基准必须来自初始发动机，而不是投影后的功率
     expect(withBaseline.stockEnginePower).toBeLessThan(Number(withBaseline.modules.engines[0].stats.power))
     expect(computeCharacteristics(withBaseline)._mobility.power).toBe(Number(withBaseline.modules.engines[0].stats.power))
   })
@@ -184,7 +171,6 @@ describe('XI 技能升级变化展示', () => {
     const wrongVersion = { ...catalog, [`${kind}GameVersion`]: 'other' }
     expect(row('top', choice, wrongVersion)).toMatchObject({ initial: null, value: null })
     expect(row('top', choice, catalog, { ...modules, vehicleAbilities: [] })).toMatchObject({ initial: null, value: null })
-    // 只有机制展示变化；互斥机制不能更改静态车辆投影。
     const selected = projectTankUpgrades(tank.detail, modules, 'top', [choice])
     const alternative = projectTankUpgrades(tank.detail, modules, 'top', [other[0]])
     expect(selected.detail).toEqual(alternative.detail)
@@ -223,7 +209,6 @@ describe('XI 技能升级变化展示', () => {
   })
 })
 
-// 来自同版客户端 XML 的手工核对总量。detail 的炮弹、装甲值是映射测试输入，见 fixture manifest。
 const expected = [
   { id: 15153, hp: 2250, power: 880, speed: 41, reload: 19.2, pitch: [-17, 6], dispersion: .4464, damage: [430, 410, 630], velocity: [980, 930, 880] },
   { id: 27905, hp: 1800, power: 930, speed: 53, reload: 7.5, pitch: [-20, 8], dispersion: .3525, damage: [410, 390, 610], velocity: [950, 900, 850] },
@@ -332,7 +317,6 @@ describe('真实五车静态升级投影', () => {
     const p = projectTankUpgrades(black.detail, black.modules, 'top')
     expect(p.modules.chassis[0]!.stats.dispersionFactors.vehicleMovement).toBeCloseTo(
       black.modules.chassis[0]!.stats.dispersionFactors.vehicleMovement * .9409)
-    // BlitzInfo当前公开core.wasm独立对照：.27 * (1 - .444) = .15012。
     expect(p.modules.engines[0]!.stats.fireStartingChance).toBeCloseTo(.15012)
     expect(p.modules.turrets[0]!.stats.maxHealth).toBe(black.modules.turrets[0]!.stats.maxHealth)
     expect(p.selection.mechanicsAttributes.ATTRIBUTE_NAME_MODULES_TURRET_ROTATOR_MAX_HEALTH_FACTOR).toBeCloseTo(1.32)
@@ -378,7 +362,6 @@ describe('真实五车静态升级投影', () => {
     expect(topStats.enginePower).toBe(880)
     expect(topStats._mobility.power).toBe(880)
     expect(topStats._mobility.power).toBeGreaterThan(stockStats._mobility.power)
-    // 保留现有乘员系数；升级相对初始的独立变化为 1.11 × 880/830。
     expect(topStats.chassiRotationSpeed / stockStats.chassiRotationSpeed).toBeCloseTo(1.11 * 880 / 830, 4)
     expect(topStats.chassiRotationSpeed).toBeCloseTo(30.683, 3)
     expect(topStats.maxHealth - stockStats.maxHealth).toBe(230)

@@ -1,12 +1,3 @@
-/**
- * 2D 战局回放 canonical 语义 ↔ 已退役 Java `BattlePlaybackProjector` golden（`__golden__/java-playback.json`，
- * Java 删除前在同一批 fixture 回放上生成，只读）。
- *
- * 输入是现场跑 `deploy/agent/source.json` 锁定版本的上游 WASM（`agentWasmNode`），不是手工导出的中间件。
- * 比较的是语义而不是「字段差不多」：Java 帧是 1 Hz 整秒，所以在**每个整秒**上逐项比较 Java 帧语义
- * （位置/朝向 knowledge、血量值 + knowledge + provenance + 置信度 + 量程、生命状态），掉血 / 归属 / 击杀 /
- * 伤害事件按多重集精确相等。唯一放行的差异逐条列在 `PINNED_KNOWLEDGE_DIFFS`，每条写明原因。
- */
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -34,54 +25,27 @@ const tankopedia = createTankopedia([tier7, tier8, tier9, tier10])
 interface JavaEntry { battlePlaybackV2?: BattlePlaybackDataset | null; mapOverview?: LocalMapOverview | null }
 const java = javaGolden as unknown as Record<string, JavaEntry>
 
-/**
- * 固定下来的 knowledge 差异（整秒帧）。位置事实取上游原始 type=10 观测（v0.3.7）后与 Java 帧逐帧一致，
- * 目前为空；新增条目必须写明原因。
- */
 const PINNED_KNOWLEDGE_DIFFS: Array<{ file: string; accountId: number; t: number; java: string | null; local: string | null; reason: string }> = []
 
-/**
- * 放行的基地差异（上游 **v0.3.11 契约补正**）：服务端用「全缺省行」（争霸 wrapper12）/「双缺省块」
- * （单基地 wrapper8）表达**占领中断**（车辆出圈/被击毁 → 进度作废）。Java 基线是旧行为（把"字段缺省"
- * 当"维持前值"）的产物，所以本地允许且**仅允许**两类差异：
- *   ① 同刻同基地被清成 `null:null:null`（Java 仍挂着 occupying/progress）→ PINNED_BASE_ABORT_CLEARS
- *   ② 单基地多出一条 `BASE:null:null:0` 归零行（Java 无此语义）→ PINNED_ASSAULT_RESET_ROWS
- * 两张表按 fixture **冻结条数**：数字变化必须重新核对（变多 = 语义又改；变少 = 基线不再覆盖该语义）。
- * 其余任何差异（行数、时刻漂移 > 0.02 s、别的字段）依旧失败。
- */
 const PINNED_BASE_ABORT_CLEARS: Record<string, number> = {
   'random-battle-example.wotbreplay': 0,
   'cw-training-15-14-example.wotbreplay': 0,
-  // B 基地 t≈40.39 被 1 队占到 30 后中断（全缺省行）→ 清空；末尾 t≈79.4 同理
   'tournament-14-14-example.wotbreplay': 2,
 }
 const PINNED_ASSAULT_RESET_ROWS: Record<string, number> = {
-  // 单基地占领 t≈174.01 中断（双缺省块）→ 多出一条归零行
   'random-battle-example.wotbreplay': 1,
   'cw-training-15-14-example.wotbreplay': 0,
   'tournament-14-14-example.wotbreplay': 0,
 }
 
-/**
- * 放行的 `loadout` 差异（上游 **v0.4.3**：Type5 物化尾部配件串改变长解析）——线路串是
- * `0B <n>` + nB（n=1..=9 = 实装件数、空槽省略）；Java 基线与旧解析器只认定长 9 件，
- * 凡不满 9 件的玩家**整条 loadout 丢弃**（canonical 判 null）。现按实装件数解析，这些
- * 玩家拿到自己的 loadout（`confidence` 由描述符 wire 是否可映射决定）。允许**且仅允许**
- * 「Java null → 本地非 null」这一方向（其余字段仍逐字段相等），条数按 fixture 冻结——
- * 数字变化必须重新核对（变多 = 又有新来源；变少 = 基线不再覆盖该形态）。
- */
 const PINNED_LOADOUT_UPGRADES: Record<string, number> = {
   'random-battle-example.wotbreplay': 5,
   'cw-training-15-14-example.wotbreplay': 0,
   'tournament-14-14-example.wotbreplay': 1,
 }
 
-/**
- * 放行的 `loadout` 语义纠正：按 account 冻结纠正值，其余字段仍逐字段相等。
- */
 const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions?: string[]; confidence?: string }>> = {
   'tournament-14-14-example.wotbreplay': {
-    // 波兰补给 0x6D 由 WotbTools 线码回退表闭合（Zurek/LARGE_FOOD）；Java 旧映射为 null/LOW
     3105519605: {
       provisions: ['LARGE_FOOD', 'IMPROVED_FUEL', 'IMPROVED_GEAR_OIL'],
       confidence: 'HIGH',
@@ -93,16 +57,11 @@ const PINNED_LOADOUT_CORRECTIONS: Record<string, Record<number, { provisions?: s
   },
 }
 
-/**
- * fixture 三切面 → canonical dataset。经 [`requireFixtures`] 严格读取：被 trust boundary 拒绝的
- * producer 输出在此抛出**原始 validation error**，而不是降级成 `null.meta` 的二次症状。
- */
 function datasetOf(f: FixtureFacets): ReturnType<typeof toBattlePlaybackDataset> {
   const { playback, result, aiReview } = requireFixtures(f)
   return toBattlePlaybackDataset(playback, result, aiReview, { tankopedia })
 }
 
-// ---------- 整秒帧语义 ----------
 
 function segmentAt<T extends { startSec: number; endSec: number }>(segments: T[], t: number): T | null {
   let hit: T | null = null
@@ -147,7 +106,6 @@ function multisetDiff(a: string[], b: string[]): { missing: string[]; extra: str
   return { missing, extra: pool }
 }
 
-// ---------- golden ----------
 
 const comparable = Object.keys(java).filter((f) => java[f].battlePlaybackV2)
 
@@ -156,11 +114,8 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
     expect(Object.keys(java).sort()).toEqual(Object.keys(FIXTURE_REPLAYS).sort())
     const room = await fixtureFacets('training-room-example.wotbreplay')
     expect(java['training-room-example.wotbreplay'].battlePlaybackV2).toBeNull()
-    // 切面本身必须校验通过：null 如果来自 trust boundary 拒绝（而非「时间轴不可用」），
-    // 这个测试就会把 contract 错误伪装成预期结果——先钉死原始错误为空。
     expect(room.playbackError, String(room.playbackError)).toBeNull()
     expect(room.aiReviewError, String(room.aiReviewError)).toBeNull()
-    // 9.8 训练室没有 period 广播、也无法由结算反推开战时刻 → 时间轴不可用（与 Java 204 同义）
     expect(datasetOf(room)).toBeNull()
   })
 
@@ -183,8 +138,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
       })
 
       it('定时消耗品 lifecycle 携带上游派生的 duration/endsAt（v0.4.18 pin）', () => {
-        // HUD 徽标只消费 ACTIVATED 且 duration>0 的条目：pin 断链或字段改名会让 2D/3D
-        // 静默失去全部徽标，而其余 golden 字段仍然全绿——在这里显式钉住上游派生链。
         const observed = l.vehicles.flatMap((v) => v.consumableTransitions)
           .filter((t) => !t.invalidation && t.state === 'ACTIVATED'
             && typeof t.durationSec === 'number' && t.durationSec > 0)
@@ -212,13 +165,11 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
         for (let i = 0; i < jr.length; i++) {
           const a = jr[i]
           const b = lr[i]
-          // 唯一放行类别（见 PINNED_LOADOUT_UPGRADES）：Java null → 本地有 loadout。
           if (a.loadout === null && b.loadout !== null) {
             upgrades.push(a.accountId)
-            expect({ ...b, loadout: null }).toEqual(a) // loadout 之外不允许任何差异
+            expect({ ...b, loadout: null }).toEqual(a)
             continue
           }
-          // 已冻结的 loadout 语义纠正（见 PINNED_LOADOUT_CORRECTIONS）：只允许列出的字段值。
           const correction = PINNED_LOADOUT_CORRECTIONS[file]?.[a.accountId]
           if (correction && a.loadout) {
             expect(b).toEqual({ ...a, loadout: { ...a.loadout, ...correction } })
@@ -238,7 +189,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
             const jk = segmentAt(jv.positionSegments, t)?.knowledge ?? null
             const lk = segmentAt(lv.positionSegments, t)?.knowledge ?? null
             if (jk !== lk) diffs.push({ accountId: jv.accountId, t, java: jk, local: lk })
-            // 朝向段与位置段同一 knowledge 规则（OBSERVED ⇔ CURRENT）
             const jo2 = segmentAt(jv.orientationSegments, t)?.knowledge ?? null
             const lo2 = segmentAt(lv.orientationSegments, t)?.knowledge ?? null
             if (jk === lk) expect([jv.accountId, t, lo2]).toEqual([jv.accountId, t, jo2])
@@ -267,7 +217,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
           if (errs.length) worstRms = Math.max(worstRms, Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / errs.length))
         }
         hull.sort((a, b) => a - b)
-        // 上游 = 渲染滤波 0.1 s 网格；Java = 整秒前最后一个原始位置包（实测 RMS ≤ 2 m、车体 P95 ≤ 8°）
         expect(worstRms).toBeLessThan(3)
         expect(hull[Math.floor(hull.length * 0.95)]).toBeLessThan(10)
       })
@@ -338,11 +287,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
         expect(pts(l)).toEqual(pts(j))
         l.pointsSamples.forEach((p, i) => expect(Math.abs(p.timeSec - j.pointsSamples[i].timeSec)).toBeLessThan(0.01))
         const bases = (d: BattlePlaybackDataset) => (d.baseStates ?? []).map((b) => `${b.baseId}:${b.ownerTeam}:${b.capturingTeam}:${b.captureProgress}`)
-        // **放行的基地差异（上游 v0.3.11 契约补正）**：服务端用「全缺省行」（争霸）/「双缺省块」（单基地）
-        // 表达占领中断（车辆出圈/被击毁 → 进度作废）。Java 基线是旧行为（把"字段缺省"当"维持前值"）的
-        // 产物，所以本地只允许这两类差异，**其余任何差异都必须失败**：
-        //   ① 单基地多出一条归零行 `BASE:null:null:0`（Java 无此语义）——比较前从本地剔除；
-        //   ② 同刻同基地被清成 `null:null:null`（Java 仍挂着 occupying/progress）——逐项放行并计数。
         const ZERO_ASSAULT = /^BASE:null:null:0$/
         const all = bases(l)
         const resets = all.filter((r) => ZERO_ASSAULT.test(r))
@@ -367,8 +311,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
           const lv = byId.get(jv.accountId)!
           const c = (v: VehiclePlaybackTrack) => v.consumableTransitions.map((x) => `${x.state}|${x.logicalItemId}|${Math.round(x.timeSec)}`)
           expect(multisetDiff(c(jv), c(lv)).missing).toEqual([])
-          // 模块/乘员：Java 冻结样本里 method16 一条都没解出（解码器 raw-preserve），本地按 Java 同一投影规则
-          // 消费上游证据——固定的证据可得性差异：只允许出现在录像者车辆、且全部 recorderVisible
           const m = (v: VehiclePlaybackTrack) => v.moduleCrewTransitions.map((x) => `${x.component}|${x.state}|${Math.round(x.timeSec)}`)
           if (jv.moduleCrewTransitions.length > 0) expect(m(lv)).toEqual(m(jv))
           else if (lv.moduleCrewTransitions.length > 0) {
@@ -393,7 +335,6 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
   }
 })
 
-// ---------- 场景（每个都落在真实 fixture 或其上的单点扰动） ----------
 
 describe('2D canonical 场景', () => {
   let random: FixtureFacets, cw: FixtureFacets, tournament: FixtureFacets
@@ -410,7 +351,6 @@ describe('2D canonical 场景', () => {
     expect(d.arenaBonusType).toBe(1)
     expect(d.assaultObjectivePresent).toBe(true)
     expect(d.baseStates!.every((b) => b.baseId === 'BASE' && b.ownerTeam === null && b.capturingTeam === null)).toBe(true)
-    // 末项 0 = 占领中断（双缺省块）→ 归零行（上游 v0.3.11 契约补正；此前进度停在最后一个正值）
     expect(d.baseStates!.map((b) => b.captureProgress)).toEqual([1, 2, 3, 0])
   })
 
@@ -465,8 +405,6 @@ describe('2D canonical 场景', () => {
         const eids = f.aiReview!.rosters.filter((r) => r.account_id === v.accountId).map((r) => r.eid)
         const windows = f.aiReview!.events.filter((e) => e.type === 'visibility' && eids.includes(e.eid))
           .map((e) => e as { t_in: number; t_out?: number }).map((e) => [e.t_in - start, e.t_out === undefined ? Infinity : e.t_out - start])
-        // LAST_KNOWN 始于某个观测段关闭之后（一个采样步内）；重新 OBSERVED 必须落在下一观测段内，
-        // 且不早于开段（新段的第一个原始位置观测可能晚于开段）
         expect(windows.some(([, out]) => segs[i].startSec >= out - 1e-6 && segs[i].startSec - out <= 0.5 + 1e-6)).toBe(true)
         expect(windows.some(([inn, out]) => segs[i + 1].startSec >= inn - 1e-6 && segs[i + 1].startSec < out)).toBe(true)
         checked++

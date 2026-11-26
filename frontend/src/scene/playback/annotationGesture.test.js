@@ -67,8 +67,6 @@ describe('annotation touch pointer lifecycle', () => {
     container.dispatchEvent(pointer('pointerdown', 2))
     expect(gesture.hasGesture()).toBe(false)
 
-    // Same behavior as annotation layer temporary visibility toggle: cancel the
-    // current stroke without resetting the pointer table owned by the gesture.
     visible = false
     gesture.cancelAnnotationGesture()
     visible = true

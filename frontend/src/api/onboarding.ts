@@ -9,7 +9,6 @@ export type SaveOnboardingReceipt = components['schemas']['SaveOnboardingReceipt
 
 const endpoint = '/api/users/onboarding'
 
-/** Caller owns profile bootstrap and connectivity; this boundary owns Bearer, identity and wire validation. */
 async function request(options: RequestInit = {}): Promise<OnboardingReceipt> {
   const auth = useAuth()
   const epoch = auth.authEpoch()

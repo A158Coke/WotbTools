@@ -1,7 +1,3 @@
-// battleMarkerRuntime 数据面单测：事件源构建（fail-closed 逐条丢弃）、来源卡解析、
-// 扇区矩形聚合与坐标镜像。窗口状态/帧行为见 battleMarkerRuntime.test.ts 与
-// battleMarkerRuntime.wiring.test.ts。
-// mapSemantics 用 importOriginal 包装：默认走真实档案，单测按用例临时注入合成档案。
 import { describe, expect, it, vi } from 'vitest'
 import { attention } from './battleMarkerRuntime.test.harness.js'
 import {
@@ -42,11 +38,11 @@ describe('buildMarkerEvents（数据面 → 场景事件，fail-closed）', () =
   it('畸形 payload 逐条丢弃：缺 at / 非法坐标 / 非法 target / 未知 marker_type / 缺 t', () => {
     const events = buildMarkerEvents({
       markers: [
-        { t: 1, entity_id: 1, account_id: 11, marker_type: 1 },                    // 缺 at
-        { t: 2, entity_id: 1, account_id: 11, marker_type: 1, at: [1, NaN, 3] },   // 坐标脏值
-        { t: 3, entity_id: 1, account_id: 11, marker_type: 4 },                    // 缺 target_eid
-        { t: 4, entity_id: 1, account_id: 11, marker_type: 4, target_eid: -5 },    // 非正整数
-        { t: 5, entity_id: 1, account_id: 11, marker_type: 9 },                    // 未知类型不消费
+        { t: 1, entity_id: 1, account_id: 11, marker_type: 1 },
+        { t: 2, entity_id: 1, account_id: 11, marker_type: 1, at: [1, NaN, 3] },
+        { t: 3, entity_id: 1, account_id: 11, marker_type: 4 },
+        { t: 4, entity_id: 1, account_id: 11, marker_type: 4, target_eid: -5 },
+        { t: 5, entity_id: 1, account_id: 11, marker_type: 9 },
         { entity_id: 1, account_id: 11, marker_type: 1, at: [0, 0, 0] },           // 缺 t
       ],
     }, null)
@@ -62,14 +58,11 @@ describe('buildMarkerEvents（数据面 → 场景事件，fail-closed）', () =
       ],
     })
     try {
-      // region 6 并集 = 语义系 (-20..40, 20..50) → 场景系 x 镜像 = (-40..20)
       expect(buildMarkerEvents({ chat_events: [attention(3, 6, ' 队友 ')] }, 'some-map')).toEqual([
         { id: '0', t: 3, kind: 'sector', region: 6, rect: { xMin: -40, zMin: 20, xMax: 20, zMax: 50 }, source: '队友' },
       ])
-      // 缺档案：指令丢弃，不猜坐标
       profileHolder.fn = () => null
       expect(buildMarkerEvents({ chat_events: [attention(3, 6)] }, 'some-map')).toEqual([])
-      // 域外扇区号（0 / 10）丢弃
       profileHolder.fn = () => ({ gridCells: [] })
       for (const target of [0, 10]) {
         expect(buildMarkerEvents({ chat_events: [attention(3, target)] }, 'some-map')).toEqual([])
@@ -98,7 +91,6 @@ describe('markerSourceCard（来源卡解析）', () => {
     expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'BZT-70', tank_id: 1 })).toEqual({ player: 'Anonyme', tank: 'BZT-70' })
     expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'tank_14129', tank_id: 14129 }, (id) => (id === 14129 ? 'Tiger II' : undefined)))
       .toEqual({ player: 'Anonyme', tank: 'Tiger II' })
-    // 占位名 + 表未命中 → 只出玩家行（tank 行为空不上）
     expect(markerSourceCard({ nickname: 'Anonyme', tank_name: 'tank_14129', tank_id: 14129 })).toEqual({ player: 'Anonyme', tank: '' })
     expect(markerSourceCard({ nickname: 'Anonyme', tank_name: '', tank_id: 1 })).toEqual({ player: 'Anonyme', tank: '' })
     expect(markerSourceCard({ nickname: '', tank_name: 'BZT-70', tank_id: 1 })).toEqual({ player: '', tank: 'BZT-70' })
@@ -122,14 +114,13 @@ describe('sectorRectFromCells / sectorRectForMapKey（区域聚合 + 坐标镜�
   })
 
   it('真实语义档案：erlenberg 九宫格 1..9 各有矩形、成 tile（3D 与 2D 概览同一聚合）', () => {
-    profileHolder.fn = null   // 走真实档案
+    profileHolder.fn = null
     const rects = new Map<number, NonNullable<ReturnType<typeof sectorRectForMapKey>>>()
     for (let region = 1; region <= 9; region++) {
       const rect = sectorRectForMapKey('erlenberg', region)
       expect(rect, `region ${region}`).toBeTruthy()
       rects.set(region, rect!)
     }
-    // 九个区域两两内部不相交（同一套 gridCells 的 tile 划分）
     const keys = [...rects.keys()]
     for (let i = 0; i < keys.length; i++) {
       for (let j = i + 1; j < keys.length; j++) {
@@ -138,7 +129,6 @@ describe('sectorRectFromCells / sectorRectForMapKey（区域聚合 + 坐标镜�
         expect(disjoint, `region ${keys[i]} vs ${keys[j]}`).toBe(true)
       }
     }
-    // fail-closed：缺档 key → null
     expect(sectorRectForMapKey('no-such-map-key', 6)).toBeNull()
     expect(sectorRectForMapKey(null, 6)).toBeNull()
   })

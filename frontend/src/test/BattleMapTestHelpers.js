@@ -2,7 +2,6 @@ import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 import BattleMap from '../components/BattleMap.vue'
 
-/** Create isolated BattleMap fixtures for one test suite. */
 export function createBattleMapTestFixtures() {
   const markerStub = defineComponent({
     props: ['marker', 'selected', 'label', 'hp', 'hpVisible', 't', 'hpGhost', 'hpFlash', 'hpNoTransition'],

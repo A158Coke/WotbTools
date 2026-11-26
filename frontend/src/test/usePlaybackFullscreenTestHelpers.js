@@ -16,7 +16,6 @@ export function stubMatchMedia(matchesByQuery = {}) {
   vi.stubGlobal('matchMedia', mql)
 }
 
-/** happy-dom 没有 Fullscreen / Orientation API：按用例装/卸 */
 export function stubBrowserApis({ fullscreen = true, lock = 'resolve', unlock = true } = {}) {
   const calls = { request: 0, exit: 0, lock: [], unlock: 0 }
   const root = document.createElement('div')
@@ -47,8 +46,6 @@ export function stubBrowserApis({ fullscreen = true, lock = 'resolve', unlock = 
     })
   }
   if (unlock) orientation.unlock = vi.fn(() => { calls.unlock++ })
-  // `screen` 始终存在：`lock: 'absent'` 模拟的是「有 screen、但没有 orientation.lock」
-  //（Safari / 部分 WebView 的真实形状），而不是 screen 本身缺失。
   vi.stubGlobal('screen', { orientation })
   return { root, calls }
 }

@@ -1,27 +1,3 @@
-/**
- * 3D 回放战斗特效（只服务 3D 场景；2D 回放与 `utils/battlePlayback.ts` 的 2D 常量不受影响）。
- *
- * 职责：击毁爆炸、开火、命中、残骸持续烟、曳光弹头与弹道光迹的外观，画质档位预算，
- * 以及这些特效的 GPU 资源（唯一 owner）。`playbackScene.js` 只负责"何时发生"（事件泵、
- * seek 语义、生命判据），这里负责"长什么样"。
- *
- * 结构：
- * - 所有 billboard 粒子（火球、烟、尘、碎片、炮口焰、命中火光、火星头）每帧**立即模式**
- *   写进两个实例化批次：加色一批、普通混合一批（后者按视深从远到近排序），各一次 draw call；
- *   火星拖尾一个 `LineSegments`。容量按档位封顶，超出的粒子直接丢弃——交火再激烈、残骸
- *   再多，粒子的 GPU 成本也有上限。
- * - 每个粒子的状态都是「特效年龄 → 外观」的纯函数（确定性哈希取随机），不积累逐粒子状态：
- *   seek、暂停、重绘任何一帧都得到同一结果。
- * - 曳光弹头 / 弹道光迹是相机朝向的条带 shader，宽度取「世界宽度」与「屏幕像素下限」的较大者，
- *   拉远看全场也不会细到消失。条带对象由本模块池化，`playbackScene` 只借用与归还。
- *
- * 时钟：爆炸 / 开火 / 命中按**壁钟**（与旧 impact 同语义：任意倍速下可读时长一致，暂停时自然
- * 播完）；弹道光迹停留与残骸烟是否存在按**回放时钟**（由调用方传入），残骸烟的翻滚相位由调用方
- * 传入的"播放中壁钟累计秒"驱动（倍速不加快、暂停冻结，不强制重绘）。
- *
- * 自定义 shader 一律手挂 logdepthbuf 代码块（`?logdepth` 开启时深度与内建材质一致），
- * 且不做 tone mapping（特效颜色直出，不被逐图曝光压暗）。
- */
 import * as THREE from 'three'
 import type { Color, Mesh, Object3D, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
 import { atlasData, TILE, ATLAS_COLS, ATLAS_ROWS, createBatch, createSparkLines, RIBBON_VS, RIBBON_FS, noop } from './battleFxAtlas.js'
@@ -31,44 +7,27 @@ import { BURST_SECS, MUZZLE_FLASH_SECS, MUZZLE_SMOKE_SECS, IMPACT_FLASH_SECS, IM
 import { GLOW_TILE } from './battleFxAtlas.js'
 import { WHITE } from './battleFxEmitters.js'
 
-/** battleFx 生命周期内的爆炸事件（壁钟驱动）。 */
 export interface BurstEvent { x: number; y: number; z: number; seed: number; bornMs: number }
-/** 开火事件（含炮口朝向与侧向单位向量）。 */
 export interface MuzzleEvent extends BurstEvent { dx: number; dy: number; dz: number; sx: number; sz: number }
-/** 命中事件（kind = impactKind() 的结果；跳弹时带出射方向）。 */
 export interface ImpactEvent extends BurstEvent { kind: ImpactKind; dx: number; dy: number; dz: number; ox: number; oy: number; oz: number }
 export type ImpactKind = 'pen' | 'nonpen' | 'ricochet'
 
-/** 条带网格（tracer/trail 池化对象；material 恒为 ShaderMaterial）。 */
 type RibbonMesh = Mesh<THREE.BufferGeometry, ShaderMaterial>
 
-// FX_BUDGETS 画质档位预算 owner = battleFxAtlas.ts（叶子模块；本处 re-export 保持 API）。
 export { FX_BUDGETS } from './battleFxAtlas.js'
 export type { FxBudget } from './battleFxAtlas.js'
 
-/** 击毁爆炸壁钟寿命（秒）。3D 专用，不再由 2D 的 `BURST_MS` 推导。（owner = battleFxEmitters，本文件 import 后同名导出） */
 export { BURST_SECS }
-/** 弹道光迹：弹头走完全程后停留 / 淡出（回放秒）。 */
 export const TRAIL_HOLD_SECS = 2.5
 export const TRAIL_FADE_SECS = 1.5
-/** 曳光弹头尾迹长度（米）。 */
 export const TRACER_STREAK_M = 14
 
-// MUZZLE_*/IMPACT_* 寿命常量 owner = battleFxEmitters.ts（本文件 import）。
-/**
- * 命中特效最小屏幕尺寸。镜头拉远时 2 m 的命中火光只有十几像素，余火与烟几乎看不见
- * （2026-10-13 实机近景）。参考尺寸 IMPACT_REF_M 至少占 IMPACT_MIN_PX 像素：镜头拉远时
- * 整套命中特效（火光、余火、烟、火星的大小与散布）等比放大，最多 IMPACT_MAX_ZOOM 倍；
- * 回放相机可以贴近到约 1 m，离得近时保持世界尺寸，不额外放大。
- */
 
-/** 弹道光迹不透明度系数：`secsAfterFlight` = 回放时刻 − 弹头到达终点时刻（飞行中为负）。 */
 export function trailOpacityAt(secsAfterFlight: number): number {
   if (!(secsAfterFlight > TRAIL_HOLD_SECS)) return 1
   return Math.max(0, 1 - (secsAfterFlight - TRAIL_HOLD_SECS) / TRAIL_FADE_SECS)
 }
 
-/** 炮管末端到开火起点的合理距离（米）：超出说明炮管姿态与弹道对不上，回落到记录起点。 */
 const MUZZLE_REACH_M = [0.3, 15]
 const _corner = new THREE.Vector3()
 /**
@@ -115,15 +74,12 @@ export function createBattleFx(budget: FxBudget) {
   const glow = createBatch(budget.capacity, atlas, { additive: true, sorted: false, name: 'battle-fx-glow' })
   const smoke = createBatch(budget.capacity, atlas, { additive: false, sorted: true, name: 'battle-fx-smoke' })
   const sparks = createSparkLines(Math.ceil(budget.capacity / 2))
-  // 特效不写深度：排在场景其他透明物（水面、贴花等）之后画，组内按 光迹 → 烟 → 曳光 → 火光 叠放
   smoke.mesh.renderOrder = 10
   glow.mesh.renderOrder = sparks.lines.renderOrder = 12
   root.add(smoke.mesh, glow.mesh, sparks.lines)
 
   const pxScale: { value: number } = { value: 0.001 }
   const camPos = new THREE.Vector3()
-  // 发射器（spark/emitBurst/emitMuzzle/emitImpact/emitWreck）自 2026-11-21 起出仓
-  // battleFxEmitters.ts（#LOC 结构拆分）：闭包读数改经 deps 注入，外观逐字一致。
   const { emitBurst, emitMuzzle, emitImpact, emitWreck } = createBattleFxEmitters({ budget, glow, smoke, sparks, pxScale, camPos })
   const ribbonGeometry = new THREE.PlaneGeometry(1, 1, 1, 1)
   const ribbonPool: { tracer: RibbonMesh[]; trail: RibbonMesh[] } = { tracer: [], trail: [] }
@@ -147,7 +103,7 @@ export function createBattleFx(budget: FxBudget) {
     mesh.name = 'battle-fx-' + kind
     mesh.renderOrder = additive ? 11 : 9
     mesh.userData.ribbonKind = kind
-    mesh.frustumCulled = false   // 顶点在 shader 里展开，几何包围球不代表真实位置
+    mesh.frustumCulled = false
     mesh.matrixAutoUpdate = false
     mesh.raycast = noop
     return mesh
@@ -175,7 +131,6 @@ export function createBattleFx(budget: FxBudget) {
     headGlow(pos: Vector3, hex: number): void
     wreck(x: number, y: number, z: number, yaw: number, since: number, phase: number, seed: number): void
   } = {
-    /** 曳光弹头光晕（阵营色偏白）。 */
     headGlow(pos: Vector3, hex: number): void {
       glow.push(pos.x, pos.y, pos.z, 0, 2.2, 2.2, GLOW_TILE, teamColor(hex).glow, 0.9)
     },
@@ -198,7 +153,6 @@ export function createBattleFx(budget: FxBudget) {
     root,
     budget,
 
-    /** 借一条条带（`tracer` = 加色曳光弹头，`trail` = 普通混合弹道光迹），已挂进 root。 */
     takeRibbon(kind: 'tracer' | 'trail'): RibbonMesh {
       const mesh = ribbonPool[kind].pop() || makeRibbon(kind)
       mesh.visible = true
@@ -212,12 +166,10 @@ export function createBattleFx(budget: FxBudget) {
       mesh.visible = false
       ribbonPool[mesh.userData.ribbonKind as 'tracer' | 'trail'].push(mesh)
     },
-    /** 曳光弹头：tail → head，白热弹头 + 阵营色渐隐尾迹。 */
     setTracer(mesh: RibbonMesh, tail: Vector3, head: Vector3, hex: number): void {
       const c = teamColor(hex)
       writeRibbon(mesh, tail, head, 0.08, 0.6, 2.4, c.team, c.head, 0, 1, 0.35, 1, 1)
     },
-    /** 弹道光迹：阵营色细线、柔边、整段等宽，`opacity` 见 trailOpacityAt。 */
     setTrail(mesh: RibbonMesh, a: Vector3, b: Vector3, hex: number, opacity: number): void {
       const c = teamColor(hex)
       writeRibbon(mesh, a, b, 0.16, 0.16, 1.6, c.team, c.team, 0.62, 0.62, 0.3, 0, opacity)
@@ -226,13 +178,11 @@ export function createBattleFx(budget: FxBudget) {
     spawnBurst(pos: Vector3, nowMs: number, seed: number): void {
       bursts.push({ x: pos.x, y: pos.y, z: pos.z, seed: seed | 0, bornMs: nowMs })
     },
-    /** dir：炮口朝向（单位向量）。 */
     spawnMuzzle(pos: Vector3, dir: Vector3, nowMs: number, seed: number): void {
       const sl = Math.hypot(dir.z, dir.x) || 1
       muzzles.push({ x: pos.x, y: pos.y, z: pos.z, dx: dir.x, dy: dir.y, dz: dir.z,
         sx: dir.z / sl, sz: -dir.x / sl, seed: seed | 0, bornMs: nowMs })
     },
-    /** kind：impactKind() 的结果；dir：来弹方向；out：跳弹出射方向（缺省按来弹方向上挑）。 */
     spawnImpact(kind: ImpactKind, pos: Vector3, dir: Vector3, out: { x: number; y: number; z: number } | null | undefined, nowMs: number, seed: number): void {
       if (!IMPACT_FLASH_SECS[kind]) return
       let ox = 0, oy = 0, oz = 0
@@ -245,15 +195,12 @@ export function createBattleFx(budget: FxBudget) {
         seed: seed | 0, bornMs: nowMs })
     },
 
-    /** 有尚未播完的壁钟特效（爆炸 / 开火 / 命中）：调用方据此保持逐帧重绘。 */
     active(): boolean { return bursts.length > 0 || muzzles.length > 0 || impacts.length > 0 },
-    /** 存活中的爆炸（只读快照：位置、种子、出生壁钟）。 */
     activeBursts(): BurstEvent[] { return bursts.map(({ x, y, z, seed, bornMs }) => ({ x, y, z, seed, bornMs })) },
     stats(): { bursts: number; muzzles: number; impacts: number; glow: number; smoke: number; sparks: number; ribbons: number } {
       return { bursts: bursts.length, muzzles: muzzles.length, impacts: impacts.length,
         glow: glow.count, smoke: smoke.count, sparks: sparks.count, ribbons: ribbonsOut.size }
     },
-    /** seek：壁钟特效直接清空，不补播；回放时钟驱动的条带由调用方归还。 */
     clearTransients(): void { bursts.length = 0; muzzles.length = 0; impacts.length = 0 },
 
     /**
@@ -275,7 +222,6 @@ export function createBattleFx(budget: FxBudget) {
       sparks.finish()
     },
 
-    /** 着色器预热：临时显示批次与两种条带样本，交给调用方的 compile。 */
     prewarm(compile: () => void): void {
       const samples = [this.takeRibbon('tracer'), this.takeRibbon('trail')]
       const objects = [glow.mesh, smoke.mesh, sparks.lines]

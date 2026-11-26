@@ -1,5 +1,3 @@
-// 地形 LOD 异步调度：单在途 + 最新者胜出、代号丢弃、回退、销毁；以及「真 Worker 入口 → 调度 → 换装」
-// 与同步路径逐字节一致。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createTerrainLodScheduler } from './terrainLodScheduler.ts'
 import type { TerrainWorkerLike, TerrainWorkerIn, TerrainWorkerOut, TerrainBuildRequest } from './terrainLodScheduler.ts'
@@ -46,7 +44,6 @@ describe('terrainLodScheduler', () => {
     expect(w.builds()).toHaveLength(1)
     w.reply(w.builds()[0].id, 'a')
     expect(swaps).toEqual(['a'])
-    // 结果返回后调度器自己不再发任何请求（120 ms 节流由调用方每帧判据 + 换装时刻控制，不被绕过）
     expect(w.builds()).toHaveLength(1)
     expect(s.busy).toBe(false)
     expect(s.request(job('d', { cam: { x: 1, y: 2, z: 3 } }))).toBe(true)
@@ -63,7 +60,7 @@ describe('terrainLodScheduler', () => {
     t = 5
     w.reply(w.builds()[0].id, 'a')
     t = 50
-    expect(w.builds()).toHaveLength(1)   // 120 ms 窗口内没有自发请求
+    expect(w.builds()).toHaveLength(1)
   })
 
   it('代号不符的结果被丢弃（invalidate / setSource / setMask 各自作废在途），并通知宿主重评估', () => {
@@ -75,7 +72,7 @@ describe('terrainLodScheduler', () => {
       bump(s)
       w.reply(w.builds()[0].id, 'old')
       expect(swaps).toEqual([])
-      expect(discarded).toEqual(['old'])   // 宿主据此唤醒一帧（停手场景没有「下一帧」）
+      expect(discarded).toEqual(['old'])
       expect(s.request(job('new'))).toBe(true)
       w.reply(w.builds()[1].id, 'new')
       expect(swaps).toEqual(['new'])
@@ -86,14 +83,12 @@ describe('terrainLodScheduler', () => {
     const { w, s, swaps, discarded } = make()
     expect(s.request(job('old'))).toBe(true)
     s.setMask(new Uint8Array(1))
-    // 宿主在掩码完成后立刻请求：在途 → 返回 true 但不发新任务（调用方不能据此认为已排队）
     expect(s.request(job('new'))).toBe(true)
     expect(w.builds()).toHaveLength(1)
     w.reply(w.builds()[0].id, 'old')
     expect(swaps).toEqual([])
     expect(discarded).toEqual(['old'])
     expect(s.busy).toBe(false)
-    // 宿主收到 onDiscard → 重新评估 → 此时才真正发出携带新掩码的任务
     expect(s.request(job('new'))).toBe(true)
     expect(w.builds()).toHaveLength(2)
     w.reply(w.builds()[1].id, 'new')
@@ -170,11 +165,11 @@ describe('terrainLodScheduler', () => {
       const s = createTerrainLodScheduler<string>({ createWorker: () => w, onSwap: () => {}, onWorkerLost: (_j, r) => lost.push(r) })
       if (failOn === 'mask') {
         s.setSource(SRC)
-        expect(s.request(job('a'))).toBe(true)   // init 发出、build 在途
+        expect(s.request(job('a'))).toBe(true)
         expect(() => s.setMask(new Uint8Array(1))).not.toThrow()
       } else {
         s.setSource(SRC)
-        expect(() => s.request(job('a'))).not.toThrow()   // ensureWorker 里发 init 时抛错
+        expect(() => s.request(job('a'))).not.toThrow()
       }
       expect(lost).toEqual(['post-failed'])
       expect(w.terminated).toBe(true)
@@ -217,7 +212,6 @@ describe('Worker 入口 → 调度 → 换装 与同步路径逐字节一致', (
   afterEach(() => { (globalThis as { self?: unknown }).self = prevSelf; vi.resetModules() })
 
   it.each([true, false])('经真实 terrainBuild.worker 与 structuredClone 转移（includeNormals=%s）', { timeout: 60000 }, async (includeNormals) => {
-    // 真 Worker 入口跑在伪 self 上；消息往返用 structuredClone(transfer) 模拟 Worker 边界
     let toMain: ((m: TerrainWorkerOut, t: Transferable[]) => void) | null = null
     const fakeSelf: { onmessage: ((e: { data: TerrainWorkerIn }) => void) | null; postMessage: (m: TerrainWorkerOut, t: Transferable[]) => void } = {
       onmessage: null,

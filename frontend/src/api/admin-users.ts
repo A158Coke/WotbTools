@@ -3,7 +3,6 @@ import { adminUserPageValidator, adminUserDetailValidator, deleteUsersResponseVa
 import { useAuth } from '../composables/useAuth.js'
 import { ApiError, apiErrorFromResponse, apiFetch } from '../utils/http.js'
 
-/** 管理端 authed JSON 请求：401 交由调用方/上层按既有语义处理（不在这里 redirect）。 */
 async function adminUsersRequest(url: string, options: RequestInit = {}): Promise<unknown | null> {
   const { token, ensureToken } = useAuth()
   await ensureToken(30)
@@ -22,7 +21,6 @@ async function adminUsersRequest(url: string, options: RequestInit = {}): Promis
   }
 }
 
-/** 管理端用户搜索（服务端分页，0-based page）。 */
 export async function adminSearchUsers(query = '', { segment = 'keycloak', idpAlias = '', page = 0, size = 25 }: NonNullable<operations['searchAdminUsers']['parameters']['query']> = {}): Promise<components['schemas']['AdminUserPage'] | null> {
   const params = new URLSearchParams()
   if (query) params.set('query', query)

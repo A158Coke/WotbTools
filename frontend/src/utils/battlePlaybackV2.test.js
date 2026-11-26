@@ -25,7 +25,6 @@ describe('healthAt', () => {
     const track = { healthTransitions: [lh(90, 1500, 'CURRENT', 1500), lh(140, 600, 'CURRENT', 1500)] }
     expect(healthAt(track, 120)).toEqual(expect.objectContaining({ currentHp: 1500, knowledge: 'CURRENT', displayCapacityHp: 1500 }))
     expect(healthAt(track, 145).currentHp).toBe(600)
-    // 120s 绝不能拿到 140s 的 600（anti-future-leak）
     expect(healthAt(track, 120).currentHp).toBe(1500)
     expect(healthAt(track, 50)).toBeNull()
   })
@@ -64,7 +63,6 @@ describe('lifeAt', () => {
     const track = { lifeTransitions: [{ timeSec: 150, lifeState: 'DESTROYED', destroyedKnownAtSec: 150 }] }
     const life = lifeAt(track, 160)
     expect(life.lifeState).toBe('DESTROYED')
-    // death 不与 HP=0 强耦合；currentHp 由 healthAt 独立给出
     expect(healthAt({ healthTransitions: [lh(149, 500, 'CURRENT', 1500)] }, 160).currentHp).toBe(500)
   })
 })
@@ -73,7 +71,7 @@ describe('positionCoveredAtV2', () => {
   it('uses OBSERVED segments as AoI boundary, not 5s rule', () => {
     const segs = [{ startSec: 0, endSec: 100, knowledge: 'OBSERVED' }, { startSec: 140, endSec: 200, knowledge: 'OBSERVED' }]
     expect(positionCoveredAtV2(segs, 50)).toBe(true)
-    expect(positionCoveredAtV2(segs, 120)).toBe(false) // hidden interval
+    expect(positionCoveredAtV2(segs, 120)).toBe(false)
     expect(positionCoveredAtV2(segs, 160)).toBe(true)
   })
 })
@@ -127,12 +125,10 @@ describe('positionAtV2', () => {
     const mid = positionAtV2(segs, 50)
     expect(mid.x).toBeCloseTo(50, 5)
     expect(mid.y).toBeCloseTo(25, 5)
-    // 段外（hidden）：返回最后已知
     expect(positionAtV2(segs, 120).timeSec).toBe(100)
   })
 
   it('anti-future-leak: future-only OBSERVED segment is invisible (never leaks 186s)', () => {
-    // anti-future-leak: currentTime=23, 敌方第一次观测=186 → 绝不能提前显示
     const segs = [
       { knowledge: 'OBSERVED', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 999, y: 888 }] },
     ]
@@ -152,7 +148,6 @@ describe('positionAtV2', () => {
   })
 
   it('anti-future-leak: future LAST_KNOWN segment must not freeze into lastSeen', () => {
-    // anti-future-leak：不得因为段标记为 LAST_KNOWN 就取它的最后样本
     const segs = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 15, samples: [{ timeSec: 10, x: 10, y: 20 }, { timeSec: 15, x: 11, y: 21 }] },
       { knowledge: 'LAST_KNOWN', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 500, y: 500 }, { timeSec: 190, x: 600, y: 600 }] },
@@ -285,9 +280,7 @@ describe('canonical event statistics', () => {
     expect(cumulativeStatsAtV2(events, recorder, 9, [recorder, victim]).dealt).toBe(0)
     expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim])).toEqual({ dealt: 900, received: 0, kills: 0 })
     expect(cumulativeStatsAtV2(events, recorder, 40, [recorder, victim])).toEqual({ dealt: 1200, received: 0, kills: 1 })
-    // Seek backwards queries the same evidence timeline rather than retaining the later total.
     expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim]).dealt).toBe(900)
-    // 30s 的 900 → 800 是 HP 条上的可信下降（没有对应 DamageLoss，例如 materialization 读数）：承受伤害按 HP 条计
     expect(cumulativeStatsAtV2(events, victim, 40, [recorder, victim]).received).toBe(1200)
   })
 
@@ -301,7 +294,6 @@ describe('canonical event statistics', () => {
   })
 
   it('received matches the HP bar: a drop first seen on a materialization read still counts (issue: 承受伤害漏算)', () => {
-    // 点亮时 materialization 满血 3536，首发命中后第一条 prop3 = 3067（Java 口径没有 DamageLoss）
     const track = {
       accountId: 9,
       healthTransitions: [
@@ -313,7 +305,6 @@ describe('canonical event statistics', () => {
       damageLosses: [{ fromSec: 95, toSec: 110, hpLoss: 459, attackerAccountId: 1, attackerReliable: true, damageEventCount: 1 }],
     }
     expect(cumulativeStatsAtV2([], track, 90).received).toBe(0)
-    // provisional 种子不作下降起点（3350 → 3536 是量程修正，不是回血也不是掉血）
     expect(cumulativeStatsAtV2([], track, 95).received).toBe(469)
     expect(cumulativeStatsAtV2([], track, 110).received).toBe(928)
   })

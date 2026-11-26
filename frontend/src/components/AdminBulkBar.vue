@@ -1,12 +1,8 @@
 <script setup lang="ts">
-// 管理列表模板的批量条：勾选后出现。大屏在表格上方行内；小屏固定在底部安全区上方（DC-RSP-05），
-// 外层占位保留同等高度，列表末尾不被它盖住（DC-OCC-01）。默认插槽放批量动作按钮。
 import { useI18n } from 'vue-i18n'
 
 defineProps<{
-  /** 「已选 N 项」 */
   summary: string
-  /** 作用范围说明（例如「只作用于本页勾选的行」），小屏隐藏 */
   hint?: string
 }>()
 const { t } = useI18n()
@@ -40,7 +36,6 @@ const { t } = useI18n()
 .admin-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
 
 @media (width < 768px) {
-  /* 占位高度 = 固定条高度（控件 + 上下内边距 + 底部安全区） */
   .admin-bulk-slot { min-height: calc(var(--hit-min) + var(--space-6) + env(safe-area-inset-bottom)); margin: 0; }
   .admin-bulk-bar {
     position: fixed;

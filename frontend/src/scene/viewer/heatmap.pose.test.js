@@ -1,8 +1,4 @@
 // @vitest-environment happy-dom
-// 热力图管线与炮塔 rig 的边界回归（#820 review P1-A / NEW P2）：
-// - gun_mask 裁切面必须读取 rig 的 gunPoseMatrix（rig 仍是姿态唯一 owner）；
-// - rig 姿态变化必须在同一任务内让碰撞几何缓存失效（HE 溅射无 rAF 窗口）；
-// - 姿态未变时 splash 查询复用同一 pack/grid，不得每帧全量重建。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createHeatmapPipeline } from './heatmap.js'
@@ -94,8 +90,6 @@ describe('heatmap + turret rig pose ownership', () => {
     hm.computeGunClipPlane()
     const plane = hm.getGunClipPlane()
 
-    // 模型系 +Y 前向经炮塔 +90°（绕 Z）后指向世界 −X；平面必须随姿态旋转，
-    // 证明管线读取的是 rig 的 gunPoseMatrix，而不是自成一套姿态来源。
     expect(plane).toBeTruthy()
     expect(plane.normal.x).toBeCloseTo(-1, 5)
     expect(plane.normal.y).toBeCloseTo(0, 5)
@@ -116,7 +110,6 @@ describe('heatmap + turret rig pose ownership', () => {
     const invalidate = vi.fn()
     const rig = makeRig({ tankModel, armorModel, onPoseChanged: invalidate })
     const hm = makePipeline({ rig, models: { tankModel, armorModel } })
-    // 与 composition root 相同：rig 的回调直接落到热力图 owner 的失效入口。
     invalidate.mockImplementation(() => hm.invalidateRicochetPose())
     rig.collectConfigNodes(tankModel)
 
@@ -129,7 +122,6 @@ describe('heatmap + turret rig pose ownership', () => {
 
     expect(invalidate).toHaveBeenCalled()
     expect(hm.isRicochetPoseDirty()).toBe(true)
-    // 无 rAF：HE 溅射在 applyConfig 同一任务内读取几何，必须立刻看到新姿态。
     const splash = hm.buildSplashGeometry()
     expect(splash.pack.ok).toBe(true)
     expect(splash.pack).not.toBe(initialPack)
@@ -153,7 +145,6 @@ describe('heatmap + turret rig pose ownership', () => {
     expect(second.pack).toBe(first.pack)
     expect(second.grid).toBe(first.grid)
 
-    // 下一次帧准备看到姿态未变：不重建、代数不变。
     hm.prepareRicochetFrame()
     expect(hm.getRicochetGridGeneration()).toBe(generation)
     expect(hm.isRicochetPoseDirty()).toBe(false)

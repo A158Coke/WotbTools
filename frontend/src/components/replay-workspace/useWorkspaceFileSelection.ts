@@ -1,6 +1,3 @@
-/**
- * ReplayWorkspace —— 文件选择 / 移除 / 装载取消的处理链（拆分自 ReplayWorkspace.vue，行为原样）。
- */
 import { nextTick } from 'vue'
 import type { Ref } from 'vue'
 
@@ -33,7 +30,6 @@ export function useWorkspaceFileSelection({ workspace, analyze, cancelAnalysis, 
     updateFiles([])
   }
 
-  /** 选择即加载：这里是普通选择的唯一入口，Demo 与 Android 各自负责自己的那一次加载。 */
   function onFilesUpdate(next: File[]) {
     if (!next.length) {
       clearSelection()
@@ -45,7 +41,6 @@ export function useWorkspaceFileSelection({ workspace, analyze, cancelAnalysis, 
     }
   }
 
-  /** 没有手动解析入口后，「已取消」无处可去：取消就是不打开这批回放。 */
   function onCancelLoading() {
     cancelAnalysis()
     clearSelection()

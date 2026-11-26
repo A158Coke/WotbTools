@@ -1,8 +1,3 @@
-// 共面水面合并/显示去重（waterMerge.ts）单测：客户端 WaterRenderObject 会把同一水面
-// 存成两套三角化（batch0/batch1），导出按原样保留；显示端只画覆盖更大的那块，其余同
-// 材质互不包含的水面合并成单 draw（索引顺序固定，不再随相机距离翻转）⇒ 不再闪烁。
-// 这里锁：包含判据（顶点全落在另一块三角化内/边界）、超集保留、互不包含都保留、
-// 世界变换烘焙、属性集统一、非水面不动。
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { mergeCoincidentWaterMeshes } from './waterMerge.js'
@@ -13,7 +8,6 @@ function waterMat() {
   return m
 }
 
-// 水平面四边形（导出坐标系：水平 = XY，Z 为高度）。默认 1m×1m。
 function quad(x = 0, y = 0, size = 1) {
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute([
@@ -37,9 +31,7 @@ describe('mergeCoincidentWaterMeshes', () => {
     const meshes = root.children.filter((o) => o.isMesh)
     expect(meshes.length).toBe(1)
     expect(meshes[0].name).toBe('water_merged')
-    // 固定绘制顺序带（透明队列排序稳定性）：合并网格落回水面顺序带起点
     expect(meshes[0].renderOrder).toBe(10)
-    // 两块四边形 = 8 顶点；第二块经过矩阵平移（x=15..16）
     const pos = meshes[0].geometry.getAttribute('position')
     expect(pos.count).toBe(8)
     let maxX = -Infinity
@@ -50,14 +42,14 @@ describe('mergeCoincidentWaterMeshes', () => {
   it('完全被另一块覆盖的重复水面只显示覆盖超集（不合并、不双画）', () => {
     const root = new THREE.Group()
     const mat = waterMat()
-    const full = new THREE.Mesh(quad(0, 0, 2), mat)      // 2m×2m 覆盖超集
-    const inner = new THREE.Mesh(quad(0.5, 0.5, 1), mat) // 完全落在 full 的三角化内
+    const full = new THREE.Mesh(quad(0, 0, 2), mat)
+    const inner = new THREE.Mesh(quad(0.5, 0.5, 1), mat)
     root.add(full, inner)
     const res = mergeCoincidentWaterMeshes(root)
     expect(res).toEqual({ groups: 1, merged: 0, dropped: 1, failed: 0 })
     const meshes = root.children.filter((o) => o.isMesh)
     expect(meshes.length).toBe(1)
-    expect(meshes[0]).toBe(full)              // 保留覆盖超集，不是被覆盖的小块
+    expect(meshes[0]).toBe(full)
     expect(inner.parent).toBeNull()
     expect(meshes[0].name).not.toBe('water_merged')
   })
@@ -84,7 +76,7 @@ describe('mergeCoincidentWaterMeshes', () => {
     expect(res.groups).toBe(2)
     expect(res.merged).toBe(4)
     expect(res.dropped).toBe(0)
-    expect(plainMesh.parent).toBe(root)          // 非水面保持原位
+    expect(plainMesh.parent).toBe(root)
   })
 
   it('单块水面不合并（少于 2 个网格零动作）', () => {

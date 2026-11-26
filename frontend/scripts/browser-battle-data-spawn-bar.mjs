@@ -1,16 +1,3 @@
-/**
- * Battle Data 出生侧胜率分段条浏览器门禁（真实浏览器 computed style，不是源码正则）。
- *
- * 锁定的 invariant（物理出生侧语义，四季固定）：
- * - .spawn-seg.is-first = --color-danger（红，NORTH / WEST）；.is-draw = --color-border-strong（中性灰）；
- *   .is-second = --color-info（蓝，SOUTH / EAST）；不随主题 accent 漂移；
- * - .spawn-bar：track = --color-surface-3、1px --color-border-strong 实边框、条高 12px（--space-3）；
- * - 三段宽度比例与样本数一致（first 70 / draw 5 / second 53，共 128）；
- * - 文档与表格容器无横向溢出（中 / 英 / 俄三种 locale 下布局不变）。
- *
- * 复用 fixture-server.mjs（真实 Vite 应用 + auth stub），admin API 用确定性夹具；
- * 四季主题经 wotb-ui-profile 持久化 key 切换后重载，取真实层叠后的 computed style。
- */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -43,7 +30,6 @@ function adminMiddleware(request, response, next) {
   else response.end(JSON.stringify({ battle, vehicles }))
 }
 
-/** 页面内探针：token 值 + 第一条 spawn bar 的真实 computed style 与几何。 */
 function spawnBarProbe() {
   const style = (selector, properties) => {
     const element = document.querySelector(selector)
@@ -86,12 +72,10 @@ async function runTheme(env, theme) {
   const page = new Page(env.chrome.client, sessionId)
   await page.enable()
   try {
-    // 主题是启动时从 localStorage 投影到 <html data-ui-profile> 的：先种 key，再带 view 参数进入页面。
     await page.goto(`${env.origin}/`)
     await page.evaluate(`localStorage.setItem(${JSON.stringify(THEME_KEY)}, ${JSON.stringify(theme)}); localStorage.setItem('wotb-lang', 'en')`)
     await page.goto(`${env.origin}/?view=admin-battle-data&ws-auth=1&ws-roles=wotbtools-admin&ws-auth-init=resolve-authenticated`)
     const state = await page.waitForValue(`(${spawnBarProbe.toString()})()`, probe => Boolean(probe?.first && probe.segWidths.length === 3), { label: `${theme}: spawn bar rendered` })
-    // 防误通过：断言页面真的加载了目标主题，而不是四季都跑在默认夏季上。
     check(failures, state.uiProfile === theme, `${theme}: page must render data-ui-profile=${theme} got ${state.uiProfile}`)
     const tokens = state.tokens
     check(failures, state.first.backgroundColor === hexToRgb(tokens.danger), `${theme}: first seg must be danger(${tokens.danger}) got ${state.first.backgroundColor}`)
@@ -102,18 +86,15 @@ async function runTheme(env, theme) {
     check(failures, state.bar.borderWidth === '1px' && state.bar.borderStyle === 'solid', `${theme}: border must be 1px solid got ${state.bar.borderWidth} ${state.bar.borderStyle}`)
     const height = parseFloat(state.bar.height)
     check(failures, Math.abs(height - 12) <= 0.5, `${theme}: bar height must stay 12px got ${state.bar.height}`)
-    // 三段比例：70 / 5 / 53，共 128。
     const total = state.segWidths.reduce((sum, width) => sum + width, 0)
     const expected = [70 / 128, 5 / 128, 53 / 128]
     expected.forEach((share, index) => {
       const actual = state.segWidths[index] / state.barWidth
       check(failures, Math.abs(actual - share) < 0.01, `${theme}: seg ${index} width ${(actual * 100).toFixed(1)}% must be ${(share * 100).toFixed(1)}%`)
     })
-    // border-box：三段填满的是内容盒（barWidth − 左右 1px 边框）。
     check(failures, Math.abs(total - (state.barWidth - 2)) < 1.5, `${theme}: three segments must fill the bar content box (${total.toFixed(1)} vs ${(state.barWidth - 2).toFixed(1)})`)
     check(failures, (state.ariaLabel || '').includes('North'), `${theme}: aria label must name the physical spawn side got ${state.ariaLabel}`)
     check(failures, state.overflowX === false, `${theme}: document must not gain horizontal overflow`)
-    // 截图前把 spawn 表滚进视口，让分段条真实入镜。
     await page.evaluate('document.querySelector(\'[data-testid=spawn-stats] .spawn-bar\')?.scrollIntoView({ block: \'center\' })')
     await page.evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const { data } = await env.chrome.client.send('Page.captureScreenshot', { format: 'png' }, sessionId)
@@ -127,7 +108,6 @@ async function runTheme(env, theme) {
   return failures
 }
 
-/** 俄文 locale 下重开一次（冬季浅色主题）：确认长译名不破坏条形布局。 */
 async function runRussianWinter(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -148,7 +128,6 @@ async function runRussianWinter(env) {
   return failures
 }
 
-/* ------------------------------------------------------------------ main */
 
 const chromeBinary = findChrome()
 const { server, origin } = await startFixtureServer({ middleware: adminMiddleware })

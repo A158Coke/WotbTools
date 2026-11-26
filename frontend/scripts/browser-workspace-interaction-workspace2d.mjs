@@ -7,11 +7,8 @@ import { checkAnnotationDrag, checkAnnotationMode, checkDisplaySurface, checkPla
 export const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-375x812-portrait-coarse', width: 375, height: 812, touch: true, layout: 'portrait' },
   { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
-  // 手机横屏：地图是主角。minMap = 地图边长下限（由 740×360 基线 96px + 产品目标推出：
-  // 外壳让出 104px、传输条合成一行、HUD 一行后的预算，留 ~6% 余量）。
   { name: 'ws2d-600x320-landscape-coarse', width: 600, height: 320, touch: true, layout: 'lanes', minMap: 170 },
   { name: 'ws2d-667x375-landscape-coarse', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270 },
-  // 紧凑 HUD 宽度竞争：非空四基地 + 完整 5 位 HP 数字 + 超长地图名；mixed 再加 PARTIAL/UNKNOWN。
   { name: 'ws2d-667x375-hud-exact', width: 667, height: 375, touch: true, layout: 'lanes', minMap: 270, hudStress: 'exact' },
   { name: 'ws2d-740x360-hud-mixed', width: 740, height: 360, touch: true, layout: 'lanes', minMap: 260, hudStress: 'mixed' },
   { name: 'ws2d-844x390-hud-exact', width: 844, height: 390, touch: true, layout: 'lanes', minMap: 290, hudStress: 'exact' },
@@ -22,14 +19,12 @@ export const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-844x390-landscape-recorder-team2', width: 844, height: 390, touch: true, layout: 'lanes', recorder: 2, minMap: 290 },
   { name: 'ws2d-844x390-fullscreen-coarse', width: 844, height: 390, touch: true, layout: 'lanes', fullscreen: true, minMap: 290 },
   { name: 'ws2d-1024x768-tablet', width: 1024, height: 768, touch: false, layout: 'lanes' },
-  // 1280 宽桌面：侧边车道（≈320）比详情浮窗（340）窄——初始落位必须收窄浮窗，而不是伸进中心栏盖住 HUD
   { name: 'ws2d-1280x720-desktop', width: 1280, height: 720, touch: false, layout: 'lanes' },
   { name: 'ws2d-1280x800-desktop', width: 1280, height: 800, touch: false, layout: 'lanes' },
   { name: 'ws2d-1600x900-desktop', width: 1600, height: 900, touch: false, layout: 'lanes' },
   { name: 'ws2d-1792x922-fullscreen-desktop', width: 1792, height: 922, touch: false, layout: 'lanes', fullscreen: true },
 ]
 
-/** workspace 几何探针（只读）。 */
 export async function runWorkspace2DScenario(env, scenario) {
   const failures = []
   const viewport = `${scenario.fullscreen ? 'fullscreen ' : ''}${scenario.width}x${scenario.height}`
@@ -40,24 +35,16 @@ export async function runWorkspace2DScenario(env, scenario) {
   await page.emulate(scenario)
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-transport-toggle"]'), { label: '2D transport toggle' })
-  // §roster-overlay：手机横屏默认**收纳**名册浮层（地图优先），桌面 / 平板默认展开。
   const defaultLanes = await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`)
   const defaultPhoneLandscape = await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-phone-landscape')`)
   if (scenario.width > scenario.height) {
     check(failures, defaultLanes === !defaultPhoneLandscape,
       `roster overlay default state wrong (phoneLandscape=${defaultPhoneLandscape} lanes=${defaultLanes})`)
   }
-  // §5 遮挡契约按**生产默认态**测量（F4）：手机横屏默认收纳（常驻控件 = HUD/传输条）；
-  // 桌面 / 平板默认展开的浮层落在地图两侧空隙里，这里同时守住「用户首屏看到的默认呈现
-  // 没有实质遮挡」，不允许为了通过而把桌面名册藏起来再量。
   await delay(300)
 
-  // —— #727 主内容遮挡（design-language §5）：常驻 quick actions 不得实质占住地图 ——
-  // 这里量的是真实应用（不是夹具）：真实 locale 文字宽度 + 真实布局决定占比。
   const mapOcclusion = await measureOcclusion(page, {
     primary: '.pb-map',
-    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它，由网格命中发现；
-    // 清单只留不参与命中的装饰层。
     persistent: ['.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
     ignore: ['.pb-vehicle'],
   })
@@ -65,7 +52,6 @@ export async function runWorkspace2DScenario(env, scenario) {
   for (const failure of mapOcclusion.failures) {
     check(failures, false, `地图遮挡（上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）: ${failure}`)
   }
-  // 手机横屏默认收纳：为后续名册 / 选车断言展开浮层；桌面已处于默认展开态，不要动它（F4）。
   if (scenario.width > scenario.height && !(await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`))) {
     await page.evaluate(`document.querySelector('[data-test="pb-roster-entry"]')?.click()`)
   }
@@ -160,8 +146,6 @@ export async function runWorkspace2DScenario(env, scenario) {
     `viewport collapsed: requested ${scenario.width}x${scenario.height}, measured ${g.width}x${g.height}`)
   if (scenario.fullscreen) check(failures, g.fullscreen, 'fullscreen did not engage')
   check(failures, !g.pageOverflowX, 'page-level horizontal overflow')
-  // 正方形 Stage：2D 地图元素带的是地图自己的逻辑画框（mapView W/H，如 766×769，底图 / SVG /
-  // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
   check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(g.primaryIds),
@@ -184,12 +168,10 @@ export async function runWorkspace2DScenario(env, scenario) {
     }
   }
   if (scenario.minMap) {
-    // 手机横屏的高度账：地图 ≥ minMap；HUD 与传输条各一行（传输条横跨全宽，不再两行）。
     check(failures, g.map && g.map.h >= scenario.minMap, `phone-landscape map must be >= ${scenario.minMap}px: ${JSON.stringify(g.map)}`)
     check(failures, g.hud && g.hud.h <= 36, `phone-landscape HUD must be a single row (<=36px): ${JSON.stringify(g.hud)}`)
     check(failures, g.transport && g.transport.h <= 56 && g.transport.w >= scenario.width - 4,
       `phone-landscape transport must be one full-width row (<=56px): ${JSON.stringify(g.transport)}`)
-    // 紧凑 HUD 两侧血条必须真的有宽度且对称（敌方曾因 grid 列顺序与模板不匹配被压成 0 宽）。
     const bars = await page.evaluate(`(() => {
       const w = (s) => document.querySelector(s)?.parentElement.getBoundingClientRect().width ?? 0
       return { friendly: w('[data-test="pb-hp-fill-friendly"]'), enemy: w('[data-test="pb-hp-fill-enemy"]') }
@@ -216,7 +198,6 @@ export async function runWorkspace2DScenario(env, scenario) {
         `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth })}`)
       console.log(`[browser-interaction] ${scenario.name} hud=${JSON.stringify({ width: h.width, height: h.height, tracks: h.tracks, values: h.values, bases: h.baseCount, mapW: h.title?.width })}`)
     }
-    // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
     if (!scenario.fullscreen) {
       const inset = 44
       await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: inset, right: inset } }, page.sessionId)
@@ -232,7 +213,6 @@ export async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 手机横屏 / 桌面：六项同一行（全屏入口内联）；手机竖屏：五项同一行（全屏浮在 HUD）。
   const tops = g.primaryTops.filter((t) => t != null)
   check(failures, tops.length === g.primaryIds.length && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
@@ -262,10 +242,8 @@ export async function runWorkspace2DScenario(env, scenario) {
     check(failures, JSON.stringify(g.inlineRosterIds) === JSON.stringify([...team1, ...team2]),
       `portrait roster order must be Team 1 then Team 2: ${JSON.stringify(g.inlineRosterIds)}`)
     check(failures, g.map && Math.abs(g.map.w - scenario.width) <= 2, 'portrait Stage must use the full column width')
-    // 竖屏允许页面纵向延伸（纵向流），不是把名册塞进一个滚动盒
     const longPage = await page.evaluate('document.documentElement.scrollHeight > innerHeight')
     check(failures, longPage, 'portrait vertical flow should extend the page (no nested roster scroll box)')
-    // 选中 → inline 详情排在传输控件之后、名册之前；× 只关详情
     await clickElement(page, '[data-test="pb-roster-row"][data-account-id="2002"]')
     await delay(200)
     const opened = await page.callWith(workspace2dProbe, scenario.touch)
@@ -282,7 +260,6 @@ export async function runWorkspace2DScenario(env, scenario) {
     return result()
   }
 
-  // ---- 三段式 ----
   check(failures, g.rootClass.includes('pb-roster-lanes'), `expected Team 1 | Stage | Team 2 lanes (class=${g.rootClass})`)
   check(failures, !!g.left && !!g.right, 'both physical lanes must be visible without opening any menu')
   if (!g.left || !g.right || !g.map) {
@@ -291,8 +268,6 @@ export async function runWorkspace2DScenario(env, scenario) {
   }
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
-  // §roster-overlay：车道是 Stage 内侧的浮层——贴 Stage 左右边缘（地图居中时落在侧带空隙里），
-  // 任何形态都不得越过地图中心，也不得把地图压窄（地图正方形仍由纵向预算决定）。
   check(failures, g.left.box.r <= (g.map.l + g.map.r) / 2 + 1 && g.right.box.l >= (g.map.l + g.map.r) / 2 - 1,
     `overlay lanes must stay on their own side of the map center: left=${JSON.stringify(g.left.box)} right=${JSON.stringify(g.right.box)} map=${JSON.stringify(g.map)}`)
   check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
@@ -304,11 +279,9 @@ export async function runWorkspace2DScenario(env, scenario) {
     check(failures, g.transport.t >= g.map.b - 1, `transport must sit below the Stage (transport=${JSON.stringify(g.transport)} map=${JSON.stringify(g.map)})`)
   }
   if (scenario.recorder === 2) {
-    // HUD 仍是录像者视角：friendly 总血量 = Team 2 的当前总血量
     check(failures, /\d/.test(g.friendlyHp || ''), 'friendly HUD value missing')
   }
 
-  // ---- 选择 Team 1 → 浮窗；名册两条都在 ----
   const time0 = g.time
   const leftPlayer = scenario.recorder === 2 ? 2002 : 1002
   const rightPlayer = scenario.recorder === 2 ? 1003 : 2003
@@ -321,15 +294,12 @@ export async function runWorkspace2DScenario(env, scenario) {
   check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
   check(failures, !!s.left && !!s.right, 'details must not hide either lane')
   check(failures, s.details && s.details.l >= s.map.l - 1, 'clicking a left-lane row should place details away from the left lane')
-  // 初始落位不压中心栏（HUD / Stage / 传输控件同一列）：侧边放得下（≥ 240px）时，浮窗整个落在那一列之外
   const column = s.transport && s.transport.w > 0 ? s.transport : s.map
   if (s.main.r - 16 - (column.r + 8) >= 240) {
     check(failures, s.details && s.details.l >= column.r + 7.5 && (!s.hud || s.details.l >= s.hud.r - 0.5),
       `initial details must keep the HUD / Stage column clear: details=${JSON.stringify(s.details)} column=${JSON.stringify(column)} hud=${JSON.stringify(s.hud)}`)
   }
 
-  // ---- 拖到 Team 1 / Stage / Team 2 三个区域 ----
-  // 右 → 中 → 左：最后停在 Team 1 之上，Team 2 车道保持可点（用户的真实流程：开着详情连点 Team 2）。
   const regions = [['right', (s.right.box.l + s.right.box.r) / 2], ['center', (s.map.l + s.map.r) / 2], ['left', (s.left.box.l + s.left.box.r) / 2]]
   let lastPos = null
   for (const [label, x] of regions) {
@@ -345,21 +315,15 @@ export async function runWorkspace2DScenario(env, scenario) {
     if (d.transport && d.transport.h > 0) {
       check(failures, panel && panel.b <= d.transport.t + 0.5, `details covers the transport after dragging ${label}`)
     }
-    // 记录宿主相对坐标：下面点 Team 2 时 clickElement 可能把行滚进视口，页面 scrollY 变化会
-    // 同时移动面板与宿主，只比较视口坐标会把滚动误判成“面板被重新摆放”。
     lastPos = { panel, main: d.main, transport: d.transport }
   }
 
-  // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
   const team2Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
   await delay(250)
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化；ResizeObserver 的合法结果
-  // 由生产同一份 detailsPlacementLimits 推导：old top 仍合法就**原位保留**，只有真正越过
-  // transport / host 下界才 clamp。不能用「上移不超过增高量」这类弱谓词（会放过不必要的位移）。
   const oldPanel = lastPos?.panel
   const oldMain = lastPos?.main
   const dx = oldPanel && oldMain && s.details && s.main ? (s.details.l - s.main.l) - (oldPanel.l - oldMain.l) : NaN
@@ -379,7 +343,6 @@ export async function runWorkspace2DScenario(env, scenario) {
     && (!s.transport || s.details.b <= s.transport.t + 0.5),
     `user-dragged details position must survive selection changes (host-relative): dx=${dx} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)} host=${JSON.stringify(s.main)} padding=${JSON.stringify(s.mainPadding)} transport=${JSON.stringify(s.transport)}`)
 
-  // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
   await delay(200)
   s = await page.callWith(workspace2dProbe, scenario.touch)
@@ -391,7 +354,6 @@ export async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
 
-  // ---- 名册关闭：车道消失，Stage 仍是居中正方形，详情与选中保留 ----
   if (!scenario.fullscreen) {
     check(failures, (await setRosterVisible(page, false)) === 'ok', 'roster preference toggle missing')
     await delay(300)
@@ -406,15 +368,11 @@ export async function runWorkspace2DScenario(env, scenario) {
     check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), 'roster ON must restore lanes with the existing selection')
   }
 
-  // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
   await checkDisplaySurface(page, failures, scenario.layout, scenario)
 
-  // Opening the editor changes the height budget. Closed-editor geometry does not cover
-  // short landscape fullscreen or the touch palette, so exercise the visible tools too.
   await checkAnnotationMode(page, failures, scenario)
   await checkPlaybackDeclutter(page, failures, scenario)
 
-  // ---- 标注：真实鼠标从车辆上起笔拖一条箭头——只画线，不选中车辆、不出现浏览器选区 ----
   if (!scenario.touch) await checkAnnotationDrag(page, failures)
 
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)

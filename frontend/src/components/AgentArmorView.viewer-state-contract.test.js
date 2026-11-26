@@ -1,9 +1,3 @@
-// 装甲查看器 ↔ 场景内核的 DOM 契约守卫（审计 3D-14 移动端重排的护栏）。
-//
-// tankViewer.js 不看 props、不响应组件状态：它按固定 ID 在 .armor-view 子树里查节点
-// （getElementById），查不到时静默跳过（null 保护）——重排布局、搬动/删除元素时漏一个 ID，
-// 表现只是「某个控件点了没反应」，没有任何报错。这里锁定：内核查找的每个静态 ID 都必须由
-// 组件模板提供；内核自己创建的节点（调试面板 / 世界模式滑块等）不属于模板契约。
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -11,7 +5,6 @@ import { tankViewerSource } from '../scene/__tests__/sceneSource.ts'
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const plateModel = read('../scene/viewer/armorPlateModel.ts') + '\n' + read('../scene/viewer/armorPenetrationScenes.ts')
-// 板分类/配置选择/穿透场景构建的共享实现（装甲查看器与 3D 回放同用）
 
 describe('shot impact view first-frame pose propagation', () => {
   const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
@@ -49,9 +42,6 @@ describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   })
 })
 
-// 间隙甲双面判定（2026-10-28 用户裁定）：间隙屏从背面命中同样参与判定；闭合间隙甲
-// 正/背面是同一块板，只计一层（否则重复消耗厚度）。显示/采样材质是 FrontSide，求交
-// 时临时切 DoubleSide，同步求交后立即恢复。
 describe('spaced armor double-sided judgment', () => {
   const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   const hits = read('../scene/viewer/judgmentHits.ts')
@@ -68,7 +58,6 @@ describe('spaced armor double-sided judgment', () => {
     expect(hits).toMatch(/function collectJudgmentHits\(intersects: THREE\.Intersection\[\], rayDir: THREE\.Vector3, minDistance = 0\)/)
     expect(hits).toMatch(/const origSection = entry\.object\?\.userData\?\.armorSectionOrig \|\| entry\.section \|\| '';/)
     expect(hits).toMatch(/import \{ resolveSpacedHitMask, spacedDedupKey, firstPhysicalHit \} from '\.\.\/armorMeshTopology\.js'/)
-    // HEAT 间距原点经兼容入口共享；Node 24 原生加载其 TypeScript owner。
     expect(result).toMatch(/import \{ isPrimary, hasPrimaryLayer, matchHitsByOccurrence, ricochetSurface, withGapOrigin \} from '\.\.\/penetration\.js'/)
     expect(hits).toMatch(/key: spacedDedupKey\(origSection, entry\.section, entry\.plateId\)/)
     expect(hits).toMatch(/const keep = resolveSpacedHitMask\(candidates, spanEnd\);/)
@@ -83,8 +72,6 @@ describe('spaced armor double-sided judgment', () => {
   })
 })
 
-// 换车/换弹的状态归属：URL 是 owner，viewer 的恢复输入不能停留在初始化快照；
-// 选车器换车不写 route，编辑器/HUD 就绪标志必须按当前车重置。
 describe('armor shell and readiness ownership', () => {
   const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   const view = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.ts'), read('./agent-armor/useArmorShotPage.ts'), read('./agent-armor/useArmorPitchAvailability.ts'), read('./agent-armor/armorViewerLabels.ts'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css'), read('./agent-armor-view-hud-responsive.css')].join('\n')
@@ -143,7 +130,6 @@ describe('armor shell and readiness ownership', () => {
   it('射击复现换装备/换配置沿权威 launch/lvDir 重跑', () => {
     expect(kernel).toMatch(/function rerunAuthoritativeShotCheck\(\)/)
     expect(kernel).toMatch(/if \(!rerunAuthoritativeShotCheck\(\)\) jc\.doPenetrationCheck\(0, 0\);/)
-    // 普通检视换装备同样清掉旧结果
     expect(kernel).toMatch(/else if \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\) \{[\s\S]*?tc\.tidyTrajectory\(\);/)
   })
   it('目标配置切换清空旧结果并使在途判定失效', () => {
@@ -167,19 +153,10 @@ describe('armor shell and readiness ownership', () => {
     expect(view).toMatch(/\.armor-view #tank-selectors\.has-shot-hud \.eq-opt:not\(#armor-state-opt\)/)
     expect(view).toMatch(/const configChanged = patch\.configChanged === true/)
     expect(read('./ArmorSideConfig.vue')).toMatch(/configChanged: next\.config !== sel\.config/)
-    // 旧车的模块请求失败/迟到不得改写新车的 modules 与 ready 状态
     expect(read('./ArmorSideConfig.vue')).toMatch(/\} catch \{\s*if \(seq !== request\) return\s*modules\.value = null\s*\}/)
   })
 })
 
-// 间隙甲渲染：additive 层按网格拓扑选面——闭合网格单面累计（正/背两表面只算一次）；
-// 开放面片拆 front/back 双 clone + stencil 去重（同键入射面计一次、出射面抑制，
-// 与点击链 resolveSpacedHitMask 同口径：按整条射线判定，与穿越顺序无关）；背面片元
-// 把法线翻向相机（与 classifyHit 同口径）。
-// 本 describe 只保留**既有**的材质状态接线断言；同板去重的真实行为（stencil 抑制、
-// 背面屏等效厚度、resize 后仍带 stencil 附件）由 browser gate
-// `test:browser-armor-spaced-backside` 以真实 GPU readback 验证，不用源码正则冒充
-//（source guard 只锁 dependency/API ownership）。
 describe('spaced armor surface selection', () => {
   const shaders = [read('../scene/viewer/armorShaders.ts'), read('../scene/viewer/armorPrimaryShader.ts')].join('\n')
   const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
@@ -199,8 +176,6 @@ describe('spaced armor surface selection', () => {
   })
 })
 
-// 选车器的外层键盘 trap 与二级模态层（手机筛选 AppSheet，portal 到 body）的隔离：
-// 按键发生在 #tank-picker 之外的 dialog 内时，外层不得介入（否则 Esc 会连带关闭整个选车器、Tab 被拉回外层）。
 describe('tank picker keyboard isolation from nested modal layers', () => {
   const template = [read('./AgentArmorView.vue'), read('./agent-armor/ArmorToolsPanel.vue'), read('./agent-armor/ArmorSideCard.vue'), read('./agent-armor/useArmorSetupQuery.ts'), read('./agent-armor/useArmorShotPage.ts'), read('./agent-armor/useArmorPitchAvailability.ts'), read('./agent-armor/armorViewerLabels.ts'), read('./agent-armor-view.css'), read('./agent-armor-view-responsive.css'), read('./agent-armor-view-hud-responsive.css')].join('\n')
   it('onPickerKeydown 在 #tank-picker 之外的 dialog 内直接放行', () => {
@@ -215,8 +190,6 @@ describe('tank picker keyboard isolation from nested modal layers', () => {
   })
 })
 
-// 回放装备真值只属于射击记录的目标车：目标被选车器换掉后，场景内核不得继续把
-// 原目标的 122 当成当前车装备（否则 HUD 仍亮、拖炮仍加 4°/3°）。
 describe('122 装备真值的目标身份（场景内核）', () => {
   const kernel = [tankViewerSource(), read('../scene/viewer/turretRig.ts'), read('../scene/viewer/modelLifecycle.ts'), read('../scene/viewer/heatmap.ts'), read('../scene/viewer/judgment.ts'), read('../scene/viewer/trajectoryCard.ts'), read('../scene/viewer/diagnosticProbe.ts'), read('../scene/viewer/shotReplay.ts'), read('../scene/viewer/shotReplayMiss.ts'), read('../scene/viewer/debugUi.ts'), read('../scene/viewer/equipmentState.ts'), read('../scene/viewer/collisionView.ts'), read('../scene/viewer/viewerMath.ts'), read('../scene/viewer/dataLoader.ts'), read('../scene/viewer/aimInput.ts')].join('\n')
   it('瞄准/判定上下文按当前目标过滤回放装备真值', () => {
@@ -224,8 +197,6 @@ describe('122 装备真值的目标身份（场景内核）', () => {
     expect(kernel).toMatch(/const recorded = recordedTargetMatchesShot\(s, getCurrentTargetId\(\)\) \? \(s\.target_equipment \|\| null\) : null/)
   })
   it('换目标后原生勾选回到手动且不保留上一辆车的勾选态', () => {
-    // 判据走 tankSetup 纯函数（override ?? recorded ?? false；recorded 缺失 ⇒ override ?? false，
-    // 与旧字面量行为等价，单测覆盖 null 分支）。这里锁住「回退态由共享判据决定且非录制分支解除禁用」。
     expect(kernel).toContain('resolvePitchCheckboxChecked({ override: equipmentOverride.pitch')
     const start = Math.max(
       kernel.lastIndexOf("const pit = document.getElementById('eq-pitch-device');"),
@@ -245,7 +216,6 @@ describe('122 装备徽标走 labels 边界（i18n 守卫）', () => {
     const start = kernel.indexOf('function eqBadge(')
     const body = kernel.slice(start, start + 600)
     expect(body).toContain('L.pitchDevice')
-    // 中文徽标字面量不得回到内核（注释里出现「改进型垂直稳定器」不算 UI 文案）
     expect(body).not.toMatch(/>[^<]*稳定器/)
   })
 

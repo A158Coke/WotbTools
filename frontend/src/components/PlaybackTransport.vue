@@ -1,5 +1,4 @@
 <script setup>
-// Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
 import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
@@ -16,52 +15,36 @@ const props = defineProps({
   isFullscreen: Boolean,
   displayOpen: Boolean,
   displayEnabled: Boolean,
-  /** 标记模式入口：只有需要它的形态才挂（手机横屏没有独立的模式行，入口必须落在控制条里，
-      而不是浮在地图上——实测 740×360 的地图只有 96×96，放不下任何合规的常驻控件）。 */
   annotationEnabled: Boolean,
   speed: { type: Number, default: 1 },
   speeds: { type: Array, default: () => PLAYBACK_SPEEDS },
   currentTime: { type: Number, default: 0 },
-  /** 时间轴起点（3D 场景的 t_start 不一定是 0）；duration 是终点（绝对时间） */
   startTime: { type: Number, default: 0 },
   duration: { type: Number, default: 0 },
-  /** 前进 / 后退的秒数；0 = 不显示这两个按钮 */
   stepSeconds: { type: Number, default: 5 },
-  /** Phone-form styling, including fullscreen landscape. */
   compact: Boolean,
-  /** 全屏入口由宿主以右上角浮动按钮呈现（移动端统一契约）：本条不再渲染第二个重复按钮。 */
   floatingFullscreen: Boolean,
   formatClock: { type: Function, default: formatPlaybackClock },
-  /** 本条此刻是否真的看得见：宿主用 v-show 收起控制条、能力切走时传 false，菜单入口交还外壳。 */
   navEligible: { type: Boolean, default: true },
-  /** 名册浮层入口：宿主决定是否需要（2D 横屏 / 桌面浮层形态；3D 与竖屏纵向流不需要）。 */
   rosterEntryVisible: { type: Boolean, default: false },
   rosterOpen: { type: Boolean, default: false },
-  /** 事件刻度（炮击 / 击毁；宿主经 utils/playbackShortcuts.js 预换算）：缺省空 = 无刻度数据。 */
   shotTicks: { type: Array, default: () => [] },
   killTicks: { type: Array, default: () => [] },
-  /** 是否渲染事件刻度层：回放面板统一开关控制，默认关闭；只隐藏展示，不影响 seek。 */
   showEventMarkers: { type: Boolean, default: false },
-  /** 快捷键说明 tooltip（宿主按需传入，缺省无提示）。 */
   shortcutsHint: { type: String, default: '' },
 })
 
-// 横屏沉浸态（无顶栏）：菜单入口作为控制条的第一项，外壳不再叠悬浮按钮（design-language §9「强制横屏」）
 const shellChrome = inject(SHELL_CHROME_KEY, null)
 const openNav = inject(OPEN_NAV_DRAWER_KEY, null)
 const navOwner = Symbol('playback-transport-nav')
-// 回放工作台在 KeepAlive 里：切到别的页面（如装甲查看器）时本组件仍挂载但不可见，
-// 此时必须交还菜单入口，否则外壳以为菜单已被托管而不画悬浮按钮，新页面就没有抽屉入口
 const alive = ref(true)
 onActivated(() => { alive.value = true })
 onDeactivated(() => { alive.value = false })
-// v-show 收起（3D 控制条折叠、2D 紧凑标注）或能力切走时组件同样不卸载、不停用：由宿主经 navEligible 告知
 const hostsNav = computed(() => alive.value && props.navEligible && !!openNav && !!shellChrome?.immersive.value)
 watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
 const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation', 'toggle-roster'])
 
-/** 紧凑档的速度菜单开合；选中或点空白即收起（与 MenuButton 同口径的渐进披露） */
 const speedOpen = ref(false)
 const speedRoot = ref(null)
 const gearEl = ref(null)
@@ -76,8 +59,6 @@ function onDocPointerDown(event) {
 useEventListener(() => (typeof document === 'undefined' ? undefined : document), 'pointerdown', onDocPointerDown, { capture: true })
 
 const speedTrigger = ref(null)
-/** Esc：焦点在触发按钮或任一档位上都收起菜单并把焦点还给触发按钮；
-    stopPropagation 避免同一次按键继续冒泡触发播放器的其他 Esc 行为（标注退出等）。 */
 function onSpeedKeydown(event) {
   if (event.key !== 'Escape' || !speedOpen.value) return
   event.preventDefault()
@@ -86,13 +67,7 @@ function onSpeedKeydown(event) {
   speedTrigger.value?.focus()
 }
 
-/**
- * 时间轴不可用（duration 不大于起点）时，播放 / 跳秒 / 进度条都是 silent no-op——
- * 必须显式 disabled 并说明原因，不保留"看起来可用但什么都不发生"的控件。
- * 速度档位与 actions 插槽里的按钮不依赖时间轴，保持可用。
- */
 const timelineUsable = computed(() => Number(props.duration) > Number(props.startTime))
-/** 时钟统一显示「已播放 / 总时长」，从 00:00 起算（3D 的绝对时间轴起点 t_start 不一定是 0） */
 const elapsed = computed(() => Number(props.currentTime) - Number(props.startTime))
 const total = computed(() => Number(props.duration) - Number(props.startTime))
 </script>
@@ -169,13 +144,11 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 <style scoped>
 .pb-controls { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
 
-/* 紧凑档速度选择器：当前值常驻 + 向上展开的档位菜单（绝对定位，不参与控件条高度计算） */
 .pb-speed-picker { position: relative; display: inline-flex; }
 .pb-speed-menu {
   position: absolute;
   inset-block-end: calc(100% + var(--space-1));
   inset-inline-end: 0;
-  /* 与控件条同一层（--pb-z-hud），不再自造数值——它只是控件的一个子菜单，不需要更高层 */
   z-index: var(--pb-z-hud);
   display: flex;
   flex-direction: column;
@@ -186,8 +159,6 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   background: var(--color-surface-2);
   box-shadow: var(--elevation-3);
 }
-/* Primary 组合的固有尺寸：--control-h-md 触屏默认 44px、场景短视口横屏紧凑档 36px
-   （fine pointer 下 32px），布局按可用空间收紧，不用断点区分形态。 */
 .pb-btn {
   display: inline-flex;
   align-items: center;
@@ -205,9 +176,6 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
   cursor: pointer;
 }
 
-/* 紧凑档档位按钮保持最低 52px 宽：必须写在 .pb-btn 之后。横排书写模式下
-   min-inline-size 与 min-width 解析为同一物理属性，同 specificity 时后写的
-   min-width 会覆盖它。竖屏与桌面沿用 .pb-btn 的既有宽度，不因这次修复改变。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   .pb-speed-item { min-inline-size: calc(var(--hit-min) + var(--space-4)); }
 }
@@ -219,7 +187,6 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 }
 
 .pb-play-btn { min-inline-size: calc(var(--control-h-md) + var(--space-3)); border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
-/* 手机形态不再额外加宽播放键：命中区仍是 --control-h-md（触屏 44），六个动作更紧凑。 */
 .pb-controls.phone-form .pb-play-btn { min-inline-size: var(--control-h-md); }
 .pb-btn:hover:not(:disabled) { border-color: var(--color-border-strong); }
 .pb-play-btn:hover:not(:disabled) { filter: brightness(1.08); }
@@ -232,11 +199,8 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
 .pb-unavailable { flex-basis: 100%; color: var(--color-text-tertiary); font: var(--type-caption); }
 .pb-time { margin-inline: auto; color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* compact 只改对齐与「时间独占一行」：六个 primary action 的视觉尺寸由 --control-h-md
-   统一控制（触屏 44px / 场景紧凑档 36px），命中区由 playback-workspace.css 的紧凑档补到 40px。 */
 .pb-controls.phone-form { justify-content: center; }
 .phone-form .pb-btn { padding: 0 var(--space-1); }
-/* Time occupies its own row so all six primary actions remain together. */
 .phone-form .pb-time {
   flex-basis: 100%;
   margin-inline: 0;

@@ -1,18 +1,3 @@
-// 地面 pass SSOT：地形数据读取 + 地形几何装配 + 分层地表材质 + 水面"海岸线"资源——
-// 3D 运行时（playbackScene）与俯视烘焙（scripts/bake-ground-overhead.mjs）共用同一份。
-//
-// 2026-10-14 抽层（用户裁示"直接完全照搬 3D 回放的代码接入渲染"）：此前烘焙**不渲染地面**，
-// 底图来自客户端自带地图图（pack 的 ground.webp），与 3D 档的实时分层渲染
-// （`cm × lm × tile/mask/heightblend`，见 groundShaderMaterial）差异显著——夜图/带 lm 图上
-// 直接可见（faust"地面太亮"的来源即此：客户端图是亮的、分层渲染是夜色的 cm×lm）。
-// 收编后两侧的地面像素级同源：几何（terrainMesh.buildAdaptiveTerrain + groundMapUv 装配）、
-// 材质（分层着色 / 回退整图）、海岸线资源（makeWaterCoast）都只此一份。
-//
-// 宿主差异只留 I/O 与相机（有意保留，两侧各有平台约束）：
-//   · 贴图/数据抓取方式（assetProvider.fetch vs 页面 fetch）、进度/stale 复查；
-//   · 相机：运行为透视自由相机 + 视距 LOD；烘焙为固定正交俯拍（纹理契约见
-//     tools/composite_overhead.py 头部；正交直下时地表着色是 (x,z) 的函数，
-//     细分级不影响成像，故烘焙传 refineMask=null）。
 import * as THREE from 'three';
 import {
   buildRefineMask, decodeTerrainField,
@@ -20,19 +5,14 @@ import {
 } from './terrainMesh.js';
 import { buildGroundGeometryData } from './groundGeometryData.js';
 
-// 纯数据阶段（无 THREE 依赖，Worker 可直接 import）在 groundGeometryData.js；此处再导出，调用面不变。
 export { buildGroundGeometryData, groundGeometryTransferables } from './groundGeometryData.js';
 
-/** 分层地表纹理键集（客户端 `height_blend` 决定是否带 hmap 对）。 */
 export function groundLayerKeys(L) {
   return L.height_blend
     ? ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1', 'hmap0', 'hmap1']
     : ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1'];
 }
 
-/** 分层贴图上传契约：tile/hmap 用 Repeat 平铺原生分辨率采样；全部开各向异性。
- *  ⚠️ cm/lm/mask **不得**设 colorSpace——客户端 legacy DXT 原样采样口径（C3 守卫）；
- *  flipY 沿用 TextureLoader 缺省（两边同式，这是像素级契约的一部分）。 */
 export function setupGroundTextures(texs, anisotropy) {
   for (const k of ['tile0', 'tile1', 'hmap0', 'hmap1']) if (texs[k]) {
     texs[k].wrapS = texs[k].wrapT = THREE.RepeatWrapping;
@@ -126,7 +106,6 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
   return out(null);
 }
 
-/** 纯数据 → `BufferGeometry`（主线程换装用；不做任何数值计算）。 */
 export function groundGeometryFromData(data) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
@@ -139,8 +118,6 @@ export function groundGeometryFromData(data) {
   return g;
 }
 
-/** 地形几何装配（客户端同构自适应细分；算法与 UV 契约在 terrainMesh.js）。几何直接建在场景系。
- *  = 纯数据阶段 + 包装的同步组合（俯视烘焙脚本与回退路径用；签名与行为不变）。 */
 export function buildGroundGeometry({
   field, n, span, cam, fovY, aspect = 16 / 9, hFovDeg = null, refineMask = null, cx = 0, cz = 0,
   includeNormals = true, onDiagnostics = null,
@@ -154,8 +131,6 @@ export function buildGroundGeometry({
   return g;
 }
 
-/** 地面材质：分层地表优先（客户端 tilemask-fp.sl 实时合成，见 groundShaderMaterial）；
- *  缺失时回退整图底图（MeshBasicMaterial，toneMapped=false 保持烘焙色彩逐像素对齐客户端）。 */
 export function makeGroundMaterial({ layers = null, texs = null, size, cx = 0, cz = 0, mapTexture = null }) {
   if (layers && texs) return groundShaderMaterial(layers, texs, size, cx, cz);
   const mat = new THREE.MeshBasicMaterial({ map: mapTexture });
@@ -163,13 +138,7 @@ export function makeGroundMaterial({ layers = null, texs = null, size, cx = 0, c
   return mat;
 }
 
-/** 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial）共享资源：
- *  真值高度场做成可线性滤波的浮点纹理 + near/far/深度位深（淡出阈值的量纲）。
- *  `depthBits` 由调用方按各自上下文实测（运行时/烘焙同一个探测法）。 */
 export function makeWaterCoast({ field, n, span, near, far, depthBits = 24 }) {
-  // 岸线高度只取**带限低频**版本：逐像素采原始高度场（无 mip 的浮点纹理）在远处会混叠，
-  // 岸线 alpha 随相机移动逐像素抖（2026-11-17 用户"较远处移动视角水面闪烁"）。
-  // 128² 盒式降采样 + 世界空间淡出带（shader 的 uCoastFade）把这条判据变成稳定量。
   const COAST_N = 128;
   let data = field;
   let size = n;
@@ -198,7 +167,7 @@ export function makeWaterCoast({ field, n, span, near, far, depthBits = 24 }) {
   htex.magFilter = THREE.LinearFilter;
   htex.wrapS = THREE.ClampToEdgeWrapping;
   htex.wrapT = THREE.ClampToEdgeWrapping;
-  htex.colorSpace = THREE.NoColorSpace;      // 数据纹理（C3 口径：不加 sRGB 解码）
+  htex.colorSpace = THREE.NoColorSpace;
   htex.needsUpdate = true;
   return {
     heightTex: htex, mapSpan: span,
@@ -273,13 +242,6 @@ export function buildCorridorRefineMask({ meshes, field, n, span, marginTexels =
   return { mask, candidates: candidates.length, texels };
 }
 
-// 客户端 Landscape/tilemask-fp.sl 非 PBR 路径的实时合成材质（离线着色器解码
-// 逐分支核对）：GLOBAL_TINT（globalFlatColor×2 + lightmap 通道 brightness/
-// contrast/gamma 调整）、SCALED_TILES（每通道各自 tileScale）、HEIGHT_BLEND
-// （tilemaskWeight×(mask×2−1) + hMap×scale + offset，softness 归一加权）。
-// UV 在片元由世界坐标反推（colormap 原始空间，分层贴图行序未翻转：
-// u = 0.5−X/s、v = 0.5−Z/s）；tile/height 用 Repeat 平铺原生分辨率采样，
-// 清晰度等同客户端。伽马空间直出（客户端着色器同为 sRGB 纹理直采直写）。
 export function groundShaderMaterial(L, texs, size, cx, cz) {
   return new THREE.ShaderMaterial({
     defines: {

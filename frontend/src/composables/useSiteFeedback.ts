@@ -5,7 +5,6 @@ import { viewFromRoute } from '../app/navigation.js'
 import { useAuth } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 
-/** 站点反馈入口的唯一判定：先过联网门禁，未登录直接去登录，避免填完表单才发现提交不了。 */
 export function useSiteFeedback(route: RouteLocationNormalizedLoaded) {
   const { requireFeature } = useFeatureGate()
   const { authenticated, login } = useAuth()

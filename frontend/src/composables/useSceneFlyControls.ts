@@ -1,58 +1,29 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import type { Vector3 } from 'three'
 
-/** 键盘事件目标的文本输入判定面（KeyboardEvent.target 的结构子集）。 */
 interface TextEntryTarget {
   isContentEditable?: boolean
   tagName?: string
   type?: string
 }
 
-/** advanceFly 的相机面（PerspectiveCamera 的位置向量；本模块只写 position）。 */
 export interface FlyCamera {
   position: Vector3
 }
 
-/** advanceFly 的 controls 面（OrbitControls 的 target 向量 + 飞行视距缓存）。 */
 export interface FlyControls {
   target: Vector3
-  /** 飞行视距缓存（首飞行帧冻结；缩放改距离后下轮飞行重新冻结） */
   __flyDist?: number
 }
 
-/** useSceneFlyControls 的场景 adapter（pane 持键盘态、内核持相机数学的参数线切分）。 */
 export interface SceneFlyControlsAdapter {
-  /** 1–6 档位写入场景（透传给内核） */
   setFlySpeed: (n: number) => void
-  /** 播放器当前是否可见/可交互（缺省可交互） */
   isActive?: () => boolean
-  /** 当前是否允许飞行（如 DATA 就绪、非触屏） */
   canFly?: () => boolean
-  /** 场景内核 API（flyTick 推进相机；invalidate 请求按需重绘；settleCamera 收口相机交互并强制反射刷新） */
   getSceneApi?: () => { flyTick?: (dt: number, pressed: Set<string>) => boolean; invalidate?: () => void; settleCamera?: () => void } | null
 }
 
-/**
- * 3D 回放的键盘自由视角移动（PC）：WASD 平移、Q 升 E 降、1–6 调速率。
- *
- * 不持有相机：唯一 owner 仍是场景内核（OrbitControls）。本 composable 只做三件事：
- * - keydown/keyup 维护按下键集合（keydown 重复触发不重复登记；窗口失焦即清空，
- *   防"按住 W 切走再回来一直在飞"）；
- * - 1–6 直接调 adapter.setFlySpeed(n)（即时生效，不需要按住）；
- * - 暴露 tickFly(dt, camera, controls)：以相机朝向为基准推进一帧位移，
- *   返回是否发生位移——调用方把它并入按需渲染的 cameraMoved 判定（暂停时也要出帧）。
- *
- * 键位与播放传输（空格 / ←→，usePlaybackTransport）并行不冲突；**只跳过文本输入**
- * （INPUT 文本类 / TEXTAREA / SELECT / contentEditable）——按钮不跳过：模式按钮点击后
- * 仍持有焦点，若按 BUTTON 跳过，用户「点过自由按钮再按 WASD」会全部失效（实测）。
- * 跟随（follow）模式不接管——跟随语义是车体锚定；自由模式的高度边界由场景统一处理。
- *
- * 触屏手势的指针状态在场景内核（onFlyCapture*），这里只放它们用的纯函数：
- * groundPanOffset（单指贴地平移）与 classifyTwoFinger（双指转视角 / 缩放判定）。
- */
 
-/** 焦点是否落在**文本输入**目标上（只有这类目标需要让出键盘）。
- *  按钮 / 链接 / 滑杆等不消费 WASD/QE/数字键，继续响应飞行。 */
 export function isTextEntryTarget(target: TextEntryTarget | null | undefined): boolean {
   if (!target) return false
   if (target.isContentEditable) return true
@@ -65,11 +36,8 @@ export function isTextEntryTarget(target: TextEntryTarget | null | undefined): b
   return false
 }
 
-/** 视角移动速率档（1–6 选择；与播放速度档独立）：米/秒。
- *  用户实测两轮校准：[0.5..16] 与 [1..60] 均反馈"太慢/没反应"——回放地图 ±300m、
- *  初始机位数百米外，日常巡航需要 10m/s 量级才可感；精细贴地仍留低速档。 */
 export const FLY_SPEEDS = Object.freeze([2, 6, 15, 40, 90, 200])
-export const DEFAULT_FLY_SPEED_INDEX = 3   // 档 3 = 15 m/s（默认即可感的巡航速度）
+export const DEFAULT_FLY_SPEED_INDEX = 3
 
 export function isFlySpeedIndex(n: unknown): boolean {
   return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= FLY_SPEEDS.length
@@ -77,18 +45,11 @@ export function isFlySpeedIndex(n: unknown): boolean {
 
 const FLY_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE'])
 
-// 触屏手势初值，真机手感由用户验收后校准。
-export const TOUCH_PAN_MIN_HEIGHT = 5        // 相机贴地时平移比例的下限（米）
-const TOUCH_PAN_MIN_GRAZE_TAN = 0.14         // 射线掠地角下限（约 8°）：防贴地平线时手指动 1px 相机飞几百米
-const TWO_FINGER_DECIDE_PX = 12              // 快的手指走够这么多才判定，之前相机不动
-const TWO_FINGER_SAME_DIR_RATIO = 0.4        // 慢的手指至少走到快的手指这个比例，才算两指一起拖
+export const TOUCH_PAN_MIN_HEIGHT = 5
+const TOUCH_PAN_MIN_GRAZE_TAN = 0.14
+const TWO_FINGER_DECIDE_PX = 12
+const TWO_FINGER_SAME_DIR_RATIO = 0.4
 
-/**
- * 手指射线落到相机下方 height 米水平面时，相对相机的水平偏移。
- * 相机只做水平平移时射线方向不变，所以偏移只由屏幕位置决定：
- * 相机 XZ 加上 offset(起点) − offset(当前) 就能让抓住的地面点留在手指下。
- * 指向地平线以上的射线按最小掠地角处理（手指按在天空时只有横向分量起作用）。
- */
 export function groundPanOffset(dir: { x: number; y: number; z: number }, height: number): { x: number; z: number } {
   const horiz = Math.hypot(dir.x, dir.z)
   const down = Math.max(-dir.y, horiz * TOUCH_PAN_MIN_GRAZE_TAN)
@@ -96,15 +57,6 @@ export function groundPanOffset(dir: { x: number; y: number; z: number }, height
   return { x: dir.x * height / down, z: dir.z * height / down }
 }
 
-/**
- * 移动端竖向距离滑条的 Free 模式位姿（纯函数；场景内核消费）。
- *
- * 值语义 v ∈ [0,1]：1=近（贴地下限 clearanceMin），0=远（高度上限 heightMax）。
- * 返回相机与 target 的新 Y：两者**加上同一个**高度差——竖直平移相机时 target
- * 同步平移，yaw/pitch 保持不变（只动 camera.y 会把「降低相机」变成「抬头」）；
- * 相机撞到 [terrain + clearanceMin, heightMax] 边界时，target 只跟随**实际生效**
- * 的差值（钳制停住 = 朝向不变、相机停在真实限制处）。
- */
 export function freeVerticalDistancePose(
   { camY, targetY, terrainY, clearanceMin, heightMax, v }: {
     camY: number; targetY: number; terrainY: number; clearanceMin: number; heightMax: number; v: number
@@ -117,11 +69,6 @@ export function freeVerticalDistancePose(
   return { camY: clampedY, targetY: targetY + deltaY }
 }
 
-/**
- * 双指手势判定：两指朝同一方向走 = 'look'（转视角），否则 = 'pinch'（缩放），
- * 走得还不够远 = null（继续等）。只看运动不看指距：捏合放大本来就从两指并拢开始。
- * a0/b0 是判定起点，a1/b1 是当前位置。
- */
 export function classifyTwoFinger(
   a0: { x: number; y: number },
   b0: { x: number; y: number },
@@ -148,21 +95,17 @@ export function classifyTwoFinger(
  */
 export function advanceFly(pressed: Set<string> | null | undefined, dt: number, camera: FlyCamera | null | undefined, controls: FlyControls | null | undefined, speed = 1, fallbackYaw: number | null = null): boolean {
   if (!pressed || !pressed.size || !camera || !controls || !(dt > 0)) return false
-  // 飞行视距：**移动前**取值冻结（首帧 = 进入飞行时的实际相机→target 距离；缩放
-  // 改距离后下一轮飞行首帧重新冻结）。放最前，防「移动后测距」把首帧距离算错。
   const tx0 = controls.target.x - camera.position.x
   const ty0 = controls.target.y - camera.position.y
   const tz0 = controls.target.z - camera.position.z
   const dist = controls.__flyDist ?? Math.hypot(tx0, ty0, tz0)
   controls.__flyDist = dist
   const step = speed * dt
-  // 朝向 = target − camera（OrbitControls 的观察方向）
   const fwd = { x: controls.target.x - camera.position.x, z: controls.target.z - camera.position.z }
   const fwdLen = Math.hypot(fwd.x, fwd.z)
   let ux = 0, uz = 0
   if (fwdLen > 1e-6) { ux = fwd.x / fwdLen; uz = fwd.z / fwdLen }
   else if (fallbackYaw != null && Number.isFinite(fallbackYaw)) { ux = -Math.sin(fallbackYaw); uz = -Math.cos(fallbackYaw) }
-  // 水平左向量 = forward × up（右手系）归一：朝 -z 看时左 = -x ✓，朝 +x 看时左 = +z ✓
   const lx = uz, lz = -ux
   const moveW = pressed.has('KeyW') ? 1 : 0
   const moveS = pressed.has('KeyS') ? 1 : 0
@@ -178,14 +121,12 @@ export function advanceFly(pressed: Set<string> | null | undefined, dt: number, 
     camera.position.z += dz * step
     moved = true
   }
-  // Q 升 / E 降（世界系垂直，与朝向无关）。
   const dy = (pressed.has('KeyQ') ? 1 : 0) - (pressed.has('KeyE') ? 1 : 0)
   if (dy !== 0) {
     camera.position.y += dy * step
     moved = true
   }
   if (moved) {
-    // target 重钉到相机前方固定视距（环绕半径恒定 = 绕自己旋转）
     const n = Math.hypot(tx0, ty0, tz0) || 1
     controls.target.x = camera.position.x + (tx0 / n) * dist
     controls.target.y = camera.position.y + (ty0 / n) * dist
@@ -202,17 +143,15 @@ export function advanceFly(pressed: Set<string> | null | undefined, dt: number, 
  */
 export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
   const pressed = new Set<string>()
-  // 速率档存 composable 内（键 1–6 的唯一写者；场景侧只存展示值）
   let speedIndex = DEFAULT_FLY_SPEED_INDEX
 
   function flySpeed() { return FLY_SPEEDS[speedIndex - 1] }
 
-  // 文本输入目标不劫持（按钮持有焦点时照常响应——模式按钮点击后焦点不会自动离开）
   function handleKeydown(event: KeyboardEvent): void {
     if (adapter.isActive && !adapter.isActive()) return
     if (adapter.canFly && !adapter.canFly()) return
     if (isTextEntryTarget(event.target as TextEntryTarget | null)) return
-    if (event.code === 'Space' || event.key === ' ') return   // 播放传输的键，不碰
+    if (event.code === 'Space' || event.key === ' ') return
     if (/^Digit[1-6]$/.test(event.code)) {
       event.preventDefault()
       const n = Number(event.code.slice(5))
@@ -223,7 +162,7 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
     if (FLY_KEYS.has(event.code)) {
       event.preventDefault()
       pressed.add(event.code)
-      startLoop()   // 首键即起循环（幂等；空闲时循环自停）
+      startLoop()
     }
   }
 
@@ -233,7 +172,6 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
 
   function handleKeyup(event: KeyboardEvent): void {
     const wasPressed = pressed.delete(event.code)
-    // 最后一个飞行键松开：相机随即静止，不能等下一帧 flyTick（那时已无位移输入）。
     if (wasPressed && pressed.size === 0) settleCamera()
   }
 
@@ -242,7 +180,6 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
   function handleBlur(): void {
     const wasFlying = pressed.size > 0
     clearPressed()
-    // 失焦同样结束相机交互；按键被清空后 loop 不会再产生 dirty frame。
     if (wasFlying) settleCamera()
   }
 
@@ -257,30 +194,19 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
     return advanceFly(pressed, dt, camera, controls, flySpeed())
   }
 
-  // ---- 场景飞行循环（组件层自驱；场景内核的 animate 不感知键盘）----
-  // rAF 为主、按住键期间 setInterval(16ms) 兜底：后台 tab / 无合成器信号的环境
-  // （无头、部分省电模式）rAF 被节流到 1–2Hz，飞行会"按了没反应"；interval 保证
-  // 键按住期间推进稳定，rAF 恢复时 interval 帧因 rafId 去重不重复跑。空闲零成本。
   let rafId = 0
   let ivId: ReturnType<typeof setInterval> | 0 = 0
   let lastT = 0
   function stepFly() {
-    // 面板失活 / 不可飞行（切到 2D / 数据页签：v-show 隐藏，不触发 window.blur）：
-    // 立即停双驱动并清空按键——否则按住 W 切页签，隐藏的 3D 相机仍持续前进、
-    // 切回后视角已漂移（评审 P2：isActive 此前只在 keydown 检查）。
     if (adapter.isActive?.() === false || adapter.canFly?.() === false) { stopLoop(); return }
     const now = performance.now()
     const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0
     lastT = now
     const api = adapter.getSceneApi?.()
     if (api?.flyTick) {
-      // pressed 集合由本实例持有，经参数交给内核 flyTick（相机数学/钳制在内核，
-      // 键盘态在 pane——两侧职责以这条参数线切分）。invalidate 缺席（旧内核）
-      // 不致命：播放中场景本来每帧都画。
       if (api.flyTick(dt, pressed)) api.invalidate?.()
     }
     if (!pressed.size || adapter.canFly?.() === false) {
-      // 松键/失能：停双驱动并重置 dt 基准（恢复按键时首帧不跳变）
       if (rafId) cancelAnimationFrame(rafId)
       if (ivId) clearInterval(ivId)
       rafId = 0; ivId = 0; lastT = 0
@@ -293,19 +219,15 @@ export function useSceneFlyControls(adapter: SceneFlyControlsAdapter) {
       rafId = requestAnimationFrame(frame)
     }
   }
-  /** 有键按下时确保双驱动在跑（keydown 后调用；幂等） */
   function startLoop() {
     if (!rafId && !ivId && pressed.size && typeof requestAnimationFrame !== 'undefined') {
       lastT = 0
       rafId = requestAnimationFrame(frame)
       ivId = setInterval(() => {
-        // rAF 正常时它自己会推进；这里只在 rAF 被节流/停摆时补帧
-        // （判断：距上次推进 >50ms 且仍有按键）
         if (pressed.size && performance.now() - lastT > 50) stepFly()
       }, 16)
     }
   }
-  /** 场景销毁/组件卸载时停双驱动并清键 */
   function stopLoop() {
     if (rafId) cancelAnimationFrame(rafId)
     if (ivId) clearInterval(ivId)

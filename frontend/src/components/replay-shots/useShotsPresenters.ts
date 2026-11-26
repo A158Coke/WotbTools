@@ -1,7 +1,3 @@
-/**
- * ReplayShotsPane —— 列表 / 汇总派生态（拆分自 ReplayShotsPane.vue，行为原样）。
- * 射手筛选、命中率/穿透率汇总、徽标与展示文案。
- */
 import { computed } from 'vue'
 import type { Ref } from 'vue'
 import type { AgentShotReplay } from '../../api/agent-facets/shotTypes.js'
@@ -24,7 +20,6 @@ type ShotQuality = Record<string, unknown> & { shooter_state_dt_ms?: number; tar
 type Shot = AgentShotReplay & { shooter_tank_name?: string; target_tank_name?: string; shooter_team?: string; quality?: ShotQuality }
 type PresenterContext = { shots: Ref<Shot[]>; authorEid: Ref<number | null>; recorderTankName: Ref<string>; battleStartRaw: Ref<number>; shooter: Ref<string>; selectedIndex: Ref<number | null>; props: { file: unknown }; t: ReturnType<typeof useI18n>['t'] }
 export function useShotsPresenters({ shots, authorEid, recorderTankName, battleStartRaw, shooter, selectedIndex, t }: PresenterContext) {
-  /** 射击时刻（开战相对）：与 2D / 3D 时间轴同一时钟 */
   const shotClock = (shot: Shot) => formatShotBattleClock(shot.time_s, battleStartRaw.value)
 
   const shellBadge = (s: Shot) => {
@@ -43,10 +38,8 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
     return { label, pen, tone: /premium/.test(kind) ? 'warning' : 'neutral' }
   }
 
-  /** 命中结果：hit_flags 位图 → 击穿 / HE / 跳弹 / 未穿 / 脱靶；无位图按 game_hit_result 降级 */
   const resultBadge = (shot: Shot) => shotResultBadge(shot, t)
 
-  /** 数据质量徽章：降级 / 陈旧项汇总（悬停显示详情）——与上游同一规则 */
   function qualityIssues(s: Shot) {
     const q = s.quality
     if (!q) return []
@@ -71,16 +64,11 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
     return issues
   }
 
-  /**
-   * 玩家名：解析结果里的昵称优先；拿不到昵称时**不暴露内部 id**（design-language §11），
-   * 统一显示「未知玩家」。
-   */
   function playerName(name: string | undefined) {
     const text = (name || '').trim()
     return text || t('agentShots.unknown_player')
   }
 
-  /** Recorder identity comes from the parse outcome/roster, never from shot count. */
   function isOwnShot(shot: Shot) {
     return authorEid.value != null ? shot.shooter_eid === authorEid.value : shot.is_author === true
   }
@@ -91,7 +79,6 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
     return shot.target_eid == null ? t('agentShots.no_target') : tankName(shot, 'target')
   }
 
-  /** Options keep their insertion token when group counts or display metadata change. */
   const shooterOptions = computed(() => {
     const byKey = new Map<number | string, { key: number | string; value: string; name: string; tankName: string; n: number; isAuthor: boolean; team: string | undefined }>()
     for (const shot of shots.value) {
@@ -137,10 +124,6 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
     return selectedShooter.value?.name || t('agentShots.all_shots_hint')
   })
 
-  /**
-   * 总览（随筛选联动）：total 按上游顶层 Shot 行计（unique shotId / 一次开火），
-   * 绝不按 interaction 数膨胀；命中率 = 命中 / 开火，穿透率 = 击穿 / 命中。
-   */
   const shotSummary = computed(() => {
     const rows = filteredShots.value
     const total = rows.length
@@ -167,7 +150,6 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
   const selectedShot = computed(() =>
     selectedIndex.value == null ? null : shots.value.find((s) => s.index === selectedIndex.value) || null)
 
-  /** 弹道两点距离（米）：只做展示，不参与任何判定 */
   function trajectoryLength(s: Shot) {
     const a = s.ball_a, b = s.ball_b
     if (!Array.isArray(a) || !Array.isArray(b) || a.length < 3 || b.length < 3) return null
@@ -175,12 +157,10 @@ export function useShotsPresenters({ shots, authorEid, recorderTankName, battleS
     return Math.hypot(dx, dy, dz)
   }
 
-  /** 行内 3D 复现可用性：仅命中弹（有目标 = 服务器命中通知在案） */
   function rowHas3d(s: Shot) {
     return s.target_eid != null
   }
 
-  /** 该弹的射手配件串有可显示内容（Type5 物化在案且含非空槽 id；未知 id 由徽标 fail-closed）。 */
   function hasEquipment(s: Shot) {
     return Array.isArray(s?.shooter_equipment?.raw) && s.shooter_equipment.raw.some(id => Number.isInteger(id) && id > 0)
   }

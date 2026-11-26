@@ -10,7 +10,6 @@ const md = new MarkdownIt({
   breaks: true
 })
 
-// Custom render for links: target="_blank" rel="noopener noreferrer"
 const defaultRender = md.renderer.rules.link_open || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options, env, self))
 
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {

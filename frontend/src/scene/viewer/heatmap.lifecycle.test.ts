@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// 热力图叠加层生命周期（#827 接替 heHeatmapProjection.test.js:76）：
-// 释放后必须把 Scene 引用一并置 null（只 clear() 不置 null 会让「已构建」判断始终
-// truthy、重建永不发生，评审 P2）——dispose → getPrimaryArmorScene() null → 重建非空新实例。
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createHeatmapPipeline } from './heatmap.js'
@@ -82,7 +79,6 @@ describe('heatmap 叠加层释放/重建生命周期', () => {
     const hm = makePipeline()
     vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    // 未构建：引用为 null（「已构建」判断依赖同一引用）
     expect(hm.getPrimaryArmorScene()).toBeNull()
 
     hm.rebuildHeatmapScenes()
@@ -90,11 +86,9 @@ describe('heatmap 叠加层释放/重建生命周期', () => {
     expect(first).not.toBeNull()
     expect(first!.children.length).toBeGreaterThan(0)
 
-    // 释放：三个 Scene 清空后引用一并置 null（不是 truthy 空场景）
     hm.disposePenetrationResources()
     expect(hm.getPrimaryArmorScene()).toBeNull()
 
-    // 重建走 rebuildHeatmapScenes（null 时「已构建」判断不再跳过）：全新机械
     hm.rebuildHeatmapScenes()
     const second = hm.getPrimaryArmorScene()
     expect(second).not.toBeNull()

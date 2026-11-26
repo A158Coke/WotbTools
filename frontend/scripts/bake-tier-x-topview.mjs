@@ -1,34 +1,4 @@
 #!/usr/bin/env node
-/**
- * Texture-Baked Top-View baker（production-grade，泛化自 Maus prototype）。
- *
- * BlitzKit GLB + tanks.pb + models.pb → 真实 geometry/UV/material/textures
- * → 确定性正交俯视 bake（z-buffer + barycentric UV + alpha test + 中性化）
- * → 正式资产：hull.webp（固定 640×640）/ turret.webp（turreted，尺寸可变）/ metadata.json
- *   （320 logical；turret 尺寸/原点/枢轴以顶层 turretRaster 为准）。
- *
- * 数据驱动（不依赖 display name、不假设 turret_01/gun_01 永远最终模块）：
- * - tankId / baseModelKey / kind：frontend/src/vehicle-models/mapping.js（已审核 inventory）；
- * - selected turret/gun/track：tanks.pb + models.pb（turrets/tracks/guns 数组最后，
- *   BlitzKit tankToDuelMember 语义）→ model_id → GLB 节点名；
- * - turretPivot：models.pb turretOrigin（引擎坐标 → 模型坐标 → 投影）。
- *
- * Contract：
- * - turreted：hull 场景 = hull + tracks；turret 场景 = selected turret + mantlet + gun
- *   （独立 z-buffer/bake——旋转 turret 不会暴露 hull 空洞）；
- * - turretless：不生成独立 turret 层——gun/mantlet/casemate 全部 bake 进 hull asset；
- * - metallic/roughness：顶视中性 bake 无 specular——检查后报告，不加入（§5）；
- * - 输出适度去色（desaturate=0.25 → 75% 原色 + 25% luma）保留纹理结构
- *   （grille/panel/vent/AO/relief）（§6；Blocker 3 语义反向修复，视觉不变）。
- *
- * 网络边界与 extractor CLI 相同：本脚本是唯一允许访问 BlitzKit 网络的 developer 工具；
- * production / Battle Playback / CI 不访问。依赖 python + PIL（仅 developer 环境）。
- *
- * 用法（frontend 目录）：
- *   node scripts/bake-tier-x-topview.mjs --model-key maus
- *   node scripts/bake-tier-x-topview.mjs --tank-id 6929
- *   node scripts/bake-tier-x-topview.mjs --model-key maus --out-dir ../tmp/x
- */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -54,9 +24,7 @@ const CACHE_DIR = join(ROOT, 'frontend', 'scripts', '.vehicle-model-refs')
 const API = 'https://api.blitzkit.app'
 const VIEWBOX = { width: 320, height: 320 }
 const PHYSICAL = 640
-const SUPERSAMPLE = 2 // 1280 内部渲染 → 640 输出（4x AA）
-// desaturate 语义（Blocker 3 修复）：neutralize amount = 去色强度（0=原色，1=纯灰）。
-// 0.25 = 保留 75% 原色 + 25% luma ——与旧 0.75（反向语义）视觉数学等价，像素不变。
+const SUPERSAMPLE = 2
 const DESATURATE = 0.25
 
 const args = process.argv.slice(2)
@@ -95,7 +63,6 @@ async function download(url, dest) {
   return dest
 }
 
-// —— 数据驱动：tanks.pb + models.pb → selected modules ——
 const glbPath = await download(`${API}/tanks/${tankId}/model.glb`, join(CACHE_DIR, 'models', `${tankId}.glb`))
 const modelsPbPath = await download(`${API}/definitions/models.pb`, join(CACHE_DIR, 'definitions', 'models.pb'))
 const tanksPbPath = await download(`${API}/definitions/tanks.pb`, join(CACHE_DIR, 'definitions', 'tanks.pb'))
@@ -108,7 +75,6 @@ const io = new NodeIO()
 const doc = await io.read(glbPath)
 const root = doc.getRoot()
 
-// —— 材质 / 纹理解析（baseColor / occlusion / normal；MR 检查后报告不加入）——
 const materials = root.listMaterials()
 const texDefs = []
 const texIndex = new Map()
@@ -133,7 +99,6 @@ for (let i = 0; i < texDefs.length; i++) {
   const webpPath = join(tmpDir, `tex-${i}.webp`)
   const rgbaPath = join(tmpDir, `tex-${i}.rgba`)
   writeFileSync(webpPath, Buffer.from(texDefs[i].bytes))
-  // stdio:'inherit'——沙箱/后台环境禁止捕获子进程 pipe 输出（EPERM）；结果走磁盘文件，仅需退出码
   const py = spawnSync('python', [join(ROOT, 'frontend', 'scripts', 'decode-webp.py'), webpPath, rgbaPath], { stdio: 'inherit' })
   if (py.status !== 0) throw new Error(`WEBP 解码失败 tex${i}（python 退出码 ${py.status}，详见上方输出）`)
   const buf = readFileSync(rgbaPath)
@@ -146,7 +111,6 @@ for (let i = 0; i < texDefs.length; i++) {
 console.log(`  textures: ${texDefs.map((t, i) => `${t.name} ${textures[i].width}x${textures[i].height}`).join(' | ')}`)
 console.log(`  metallicRoughness textures present: ${mrPresent.length ? mrPresent.join(', ') : 'none'}——顶视中性 bake 无 specular，不加入（§5）`)
 
-// —— 场景组装（resolveBakeScenes 按真实模块 id → 节点名）——
 const allNodes = root.listNodes()
 const nodeNames = allNodes.map((n) => n.getName())
 const { hullNames, turretNames } = resolveBakeScenes(nodeNames, {
@@ -219,7 +183,6 @@ if (hullScene.length === 0) throw new Error('hull 场景为空——节点名匹
 if (kind === 'turreted' && turretScene.length === 0) throw new Error(`turreted 但 turret 场景为空（turret_${String(modules.turretModelId).padStart(2, '0')} 未找到）`)
 console.log(`  tris: hull=${hullScene.length} turret=${turretScene.length} gun=${gunScene.length}`)
 
-// —— fit（与 extractor 相同的逻辑空间；turreted = hull + turret 主体，gun 允许 overflow）——
 const boundsOf = (tris) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const t of tris) {
@@ -243,7 +206,7 @@ const fitB = kind === 'turreted'
       maxX: Math.max(hullB.maxX, turretMainB.maxX),
       maxY: Math.max(hullB.maxY, turretMainB.maxY),
     }
-  : hullB // turretless：gun/casemate 全部进 hull，fit 含全部
+  : hullB
 const w = fitB.maxX - fitB.minX
 const h = fitB.maxY - fitB.minY
 if (!(w > 0) || !(h > 0)) throw new Error('fit bounds 无效')
@@ -271,16 +234,12 @@ const materialsDef = materials.map((mat) => {
   }
 })
 
-// —— bake（raster overflow contract）——
-// hull：固定 320 logical 画布（640×640，outputSize 固定）；turret：画布扩展为
-// turret+mantlet+完整 gun 的 logical bounds（保持同一 fit.scale——车辆主体不缩放，
-// 透明 canvas 向 320 画布外扩展，避免炮管裁切）。
-const pxPerM = scale * 2 // 输出像素/米（640/320）
+const pxPerM = scale * 2
 const bakeScene = (scene, boundsWorld, outputSize = null) => {
   const w = boundsWorld.maxX - boundsWorld.minX
   const h = boundsWorld.maxY - boundsWorld.minY
   if (!(w > 0) || !(h > 0)) throw new Error('scene bounds 无效')
-  const resW = Math.max(2, Math.ceil(w * pxPerM * SUPERSAMPLE / 2) * 2) // 偶数（可整除 supersample）
+  const resW = Math.max(2, Math.ceil(w * pxPerM * SUPERSAMPLE / 2) * 2)
   const resH = Math.max(2, Math.ceil(h * pxPerM * SUPERSAMPLE / 2) * 2)
   const out = bakeTopView({ triangles: scene, textures, materials: materialsDef, bounds: boundsWorld, resolution: Math.max(resW, resH), desaturate: DESATURATE })
   const W = outputSize ? outputSize.w : Math.floor(out.width / SUPERSAMPLE)
@@ -310,7 +269,6 @@ const bakeScene = (scene, boundsWorld, outputSize = null) => {
   return { rgba, width: W, height: H, covered: out.covered }
 }
 const hullBaked = bakeScene(hullScene, canvasBounds, { w: PHYSICAL, h: PHYSICAL })
-// turret 完整 bounds（含 mantlet + complete gun——raster overflow contract）
 const turretFullB = kind === 'turreted' ? boundsOf(turretScene) : null
 const turretBaked = kind === 'turreted' ? bakeScene(turretScene, turretFullB) : null
 console.log(`  bake: hull ${hullBaked.width}x${hullBaked.height} covered=${hullBaked.covered}px${turretBaked ? ` turret ${turretBaked.width}x${turretBaked.height} covered=${turretBaked.covered}px` : ''}`)
@@ -319,7 +277,6 @@ const hullOrientation = rasterFingerprint(hullBaked, canvasBounds)
 const turretOrientation = kind === 'turreted' ? rasterFingerprint(turretBaked, turretFullB) : null
 console.log(`  orientation: hull topModelY=${hullOrientation.topModelY} topW=${hullOrientation.topWidthMean} botW=${hullOrientation.bottomWidthMean}${turretOrientation ? ` turret topModelY=${turretOrientation.topModelY} topW=${turretOrientation.topWidthMean} botW=${turretOrientation.bottomWidthMean}` : ''}`)
 
-// —— 输出（正式资产：webp + metadata；debug：PNG + 通道图 + report）——
 const outDir = outDirArg ? join(ROOT, outDirArg) : join(ROOT, 'frontend', 'src', 'vehicle-models', 'assets', modelKey)
 mkdirSync(outDir, { recursive: true })
 const debugDir = join(CACHE_DIR, 'debug', modelKey)
@@ -341,7 +298,6 @@ const writeAsset = (label, baked, isOfficial) => {
 const hullAsset = writeAsset('hull', hullBaked, true)
 const turretAsset = kind === 'turreted' ? writeAsset('turret', turretBaked, true) : null
 
-// debug 通道图（source-color / normal / ao；与正式 bake 同一 bounds/scale）
 const debugChannel = (name, scene, boundsWorld, slot) => {
   const mats = materialsDef.map((m) => ({ ...m, baseColor: m[slot], occlusion: slot === 'occlusion' ? m.occlusion : -1, normal: slot === 'normal' ? m.normal : -1 }))
   const out = bakeSceneWith(scene, boundsWorld, mats, 0)
@@ -349,7 +305,6 @@ const debugChannel = (name, scene, boundsWorld, slot) => {
 }
 const bakeSceneWith = (scene, boundsWorld, matsOverride, desaturate) => {
   const prevMats = materialsDef
-  // 复用 bakeScene 逻辑但允许材质/去色覆盖——bakeScene 引用模块级 materialsDef/desaturate
   const w = boundsWorld.maxX - boundsWorld.minX
   const h = boundsWorld.maxY - boundsWorld.minY
   const resW = Math.max(2, Math.ceil(w * pxPerM * SUPERSAMPLE / 2) * 2)
@@ -384,9 +339,6 @@ if (kind === 'turreted') {
   debugChannel('turret-ao', turretScene, turretFullB, 'occlusion')
 }
 
-// turretPivot（turreted）——BlitzKit useTankTransform.ts 契约（PR92 Review）：
-// yaw 旋转中心 = correctZYTuple(trackModelDefinition.origin) + correctZYTuple(tankModelDefinition.turret_origin)
-// （运行时 turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot；hullOrigin 缺失 = 零向量）
 let turretPivot = null
 let pivotSource = null
 if (kind === 'turreted') {
@@ -415,7 +367,6 @@ const report = {
   kind,
   sourceModel: { glbBytes: readFileSync(glbPath).length },
   selectedModules: { turretId: modules.turretId, gunId: modules.gunId, trackId: modules.trackId ?? null, turretModelId: modules.turretModelId, gunModelId: modules.gunModelId },
-  // hullPhysicalPixelSize：仅指 hull.webp 固定画布；turret.webp 尺寸可变（见 turretRaster）——不得误导 PR2
   output: { hullPhysicalPixelSize: [PHYSICAL, PHYSICAL], logicalViewBox: '0 0 320 320', supersample: SUPERSAMPLE },
   materials: materials.map((m) => m.getName()),
   texturesUsed: texDefs.map((t) => t.name),
@@ -429,8 +380,6 @@ const report = {
   turretPivot,
   pivotSource,
   rasterOrientation: { hull: hullOrientation, ...(turretOrientation ? { turret: turretOrientation } : {}) },
-  // raster overflow contract：turret.webp 画布 = turret+mantlet+完整 gun 的 logical bounds
-  // （保持同一 fit.scale，主体不缩放；透明 canvas 向 320 逻辑画布外扩展，避免炮管裁切）
   turretRaster: kind === 'turreted'
     ? (() => {
         const lMinX = turretFullB.minX * scale + tx
@@ -475,7 +424,7 @@ writeFileSync(join(outDir, 'metadata.json'), JSON.stringify({
   generation: {
     method: 'blitzkit-model-topdown-texture-bake',
     viewBox: `0 0 ${VIEWBOX.width} ${VIEWBOX.height}`,
-    hullPhysicalPixelSize: [PHYSICAL, PHYSICAL], // hull.webp 固定 640×640；turret 尺寸以 turretRaster 为准
+    hullPhysicalPixelSize: [PHYSICAL, PHYSICAL],
     hullBounds: report.hullBounds,
     turretBounds: report.turretBounds,
     gunBounds: report.gunBounds,

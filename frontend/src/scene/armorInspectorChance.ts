@@ -1,38 +1,9 @@
-/**
- * Armor Inspector 击穿概率机制（客户端复刻）。
- *
- * 来源（逆向 static.wotinspector.com/ai/webapp4.5.3-4/armor-inspector.wasm）：
- * - 概率函数 `func[22167]`：穿深区间 [min,max] 被当作正态分布的 ±3σ 边界；
- *   均值 μ=(min+max)/2，σ=(max-min)/6，概率为 Φ((μ-T)/σ)，区间外夹到 1/0。
- * - Blitz 弹数据：min/max = 0.95P / 1.05P（±5%，σ=P/60）；
- *   PC 弹数据：0.75P / 1.25P（±25%，σ=P/12）。
- * - 逐层：每层用当前剩余区间算一次 CDF，然后把 **min/max 同时**扣掉一次该层
- *   等效厚度——平移不改变 σ；外部模块是 flat 消耗（同样平移），不参与 CDF。
- *   （2026-10-18 复核修正：Armor Inspector 的层区间是 1× 等效厚度扣减；
- *   此前 3× 实现会把确定性穿透误判为 0%。）
- *
- * 本模块只负责“概率”，不改 penetration.js 的确定性判定。视图层把
- * 同一套 [min/max, 1×等效厚度] 语义用于：
- * - 点击面板的击穿概率（输入必须是完整命中链，不能是确定性提前截断的层链）；
- * - 主装甲热力图着色；
- * - 跳弹续飞概率带。
- *
- * 说明：wasm 里的 CDF 是多项式近似（误差约 0.002）；这里用标准
- * Abramowitz-Stegun erf 近似（误差 ~1.5e-7），分布语义相同、数值更接近精确高斯。
- */
 
-/** WoT Blitz 穿深随机化范围（±5%）。 */
 export const ARMOR_INSPECTOR_BLITZ_RANDOMIZATION = 0.05
-/** WoT PC 穿深随机化范围（±25%）。 */
 export const ARMOR_INSPECTOR_PC_RANDOMIZATION = 0.25
 
 const EXTERNAL_SECTIONS = new Set(['chassis', 'gunBarrel'])
 
-/**
- * 概率链层条目：接受 penetration.js 的 probability_layers（snake_case）或
- * tankViewer trajLayers（camelCase）。已知字段显式声明，其余字段经索引签名
- * 透传进结果卡的层链（record 直接展开原层）。
- */
 export interface ProbabilityChainLayer {
   effective?: number | null
   eff?: number | null
@@ -56,7 +27,6 @@ export interface ProbabilityChainEvaluation extends ProbabilityChainLayer {
   chance: number
   probChance: number
   layerChance: number
-  /** 炮弹是否到达该层；概率链归零后的后续层为 false（未到达，不得画成“挡下”）。 */
   reached: boolean
 }
 
@@ -96,14 +66,12 @@ export function formatProbabilityPercent(chance: number): string {
   return String(Math.round(pct))
 }
 
-/** ±range 随机化区间；randomization=0 时退化为单点（确定性穿深）。 */
 function intervalFor(penetration: number, randomization: number): { min: number; max: number } {
   const p = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
   if (!(randomization > 0)) return { min: p, max: p }
   return { min: p * (1 - randomization), max: p * (1 + randomization) }
 }
 
-/** 区间 [min,max] 上 P(roll > thickness)。 */
 function cdfForInterval(min: number, max: number, thickness: number): number {
   if (max <= 0) return 0
   if (min === max) return min > thickness ? 1 : 0
@@ -165,7 +133,6 @@ function gapDistance(layer: ProbabilityChainLayer | null | undefined): number {
 function isExternalLayer(layer: ProbabilityChainLayer): boolean {
   if (typeof layer?.external === 'boolean') return layer.external
   if (layer?.section) return EXTERNAL_SECTIONS.has(layer.section)
-  // 点击面板的 trajLayers 不带 section；外部模块没有角度，间隙层由名字区分。
   return !isGapLayer(layer) && layer?.angle == null
 }
 
@@ -195,7 +162,6 @@ export function evaluateProbabilityChain(
   randomization: number = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION,
 ): { chance: number; layers: ProbabilityChainEvaluation[] } {
   const all = layers || []
-  // 空链没有可判定的层：fail-closed 返回 0%，不得默认必穿。
   if (all.length === 0) return { chance: 0, layers: [] }
 
   const firstContinuation = all.findIndex(layer => (layer?.seg ?? 0) > 0)
@@ -210,7 +176,6 @@ export function evaluateProbabilityChain(
   let chance = 1
   let pendingSegmentReset = false
   const evaluations: ProbabilityChainEvaluation[] = []
-  // 单层累计概率是 UI 的唯一层链：红色 0%、黄色 1–99%、绿色 100%。
   const record = (layer: ProbabilityChainLayer, layerChance: number, reached = true): void => {
     evaluations.push({
       ...layer,
@@ -222,18 +187,13 @@ export function evaluateProbabilityChain(
   }
   const fail = (index: number, layer: ProbabilityChainLayer | null | undefined, layerChance = 0): { chance: number; layers: ProbabilityChainEvaluation[] } => {
     chance = 0
-    // 失败层本身到达过（它就是挡下/耗尽的那层）；后续层未到达。
     if (layer) record(layer, layerChance, true)
-    // 概率归零后仍保留到首个 Primary 的完整层链：结果卡/轨迹用这条链，
-    // 提前截断会让后续主装甲层行、层点与轨迹终点整段消失；剩余层统一累计 0%，
-    // 但标记 reached=false，展示层用中性灰而不是“挡下红”。
     for (let j = index + 1; j < all.length; j++) record(all[j], 0, false)
     return { chance: 0, layers: evaluations }
   }
 
   for (let i = startIndex; i < all.length; i++) {
     const layer = all[i]
-    // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
     if ((layer?.seg ?? 0) > 0 && i !== startIndex && pendingSegmentReset) {
       const start = layerRemainingBefore(layer)
       ;({ min, max } = intervalFor(start != null ? start : penetration, randomization))
@@ -252,7 +212,6 @@ export function evaluateProbabilityChain(
     if (isGapLayer(layer)) {
       const distance = gapDistance(layer)
       if (distance > 0) {
-        // penetration.js：remainingPen -= 0.5 × remainingPen × distance
         const loss = Math.max(0, 1 - 0.5 * distance)
         min *= loss
         max *= loss
@@ -283,8 +242,6 @@ export function evaluateProbabilityChain(
     if (!(chance > 0)) return fail(i, layer, layerChance)
     record(layer, layerChance)
 
-    // Armor Inspector 层区间：每层同时平移一次等效厚度；σ 不变——不得按
-    // 扣减后的均值重算 σ。此前误用 3× 会把 252AP 打 21.5+207 误判成 0%。
     min -= eff
     max -= eff
   }
@@ -303,7 +260,6 @@ export function penetrationChance(penetration: number, layers: readonly Probabil
   return evaluateProbabilityChain(penetration, layers, randomization).chance
 }
 
-/** resolveCardChance 的输入（结果卡击穿概率口径）。 */
 export interface CardChanceInput {
   heInfo: object | null
   heChance: number
@@ -313,11 +269,6 @@ export interface CardChanceInput {
   allowChance: boolean
 }
 
-/**
- * 结果卡击穿概率的单一取值口径。无效 HE（零/缺失爆炸半径导致 heInfo=null 且
- * allowChance=false）必须 fail-closed 为 0%，不能沿用穿透原始值 rawChance。
- * 正常 HE 用 heChance；概率模式用累计概率；其余用穿透链概率。
- */
 export function resolveCardChance({ heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance }: CardChanceInput): { chance: number; unavailable: boolean } {
   const unavailable = !heInfo && allowChance === false
   const chance = unavailable
@@ -328,10 +279,6 @@ export function resolveCardChance({ heInfo, heChance, probabilityMode, overallCh
   return { chance, unavailable }
 }
 
-/**
- * GLSL 版本的正态 CDF（与 normalCdf 同系数），供主装甲热力图与续飞着色器注入。
- * 约束：GLSL ES 1.0（mediump/highp 由调用方声明）。
- */
 export const AI_NORMAL_CDF_GLSL = `
 float aiErf(float x) {
   float s = x < 0.0 ? -1.0 : 1.0;

@@ -23,7 +23,6 @@ const structureCategory = ref<BroadcastCategory | null>(null)
 const replayCategory = computed(() => state.categories.find(category => category.id === replayEditor.value?.node.categoryId) ?? null)
 const replayEditor = ref<{ node: BroadcastNode; replay: BroadcastReplay | null } | null>(null)
 const failedCovers = ref(new Set<string>())
-/** 当前选中的轮次（本页视图状态，不进 URL）；赛段由 URL 的 lbCategory 决定，缺省为第一个。 */
 const selectedNodeId = ref<number | null>(null)
 const invalid = ref(false)
 const form = reactive({ year: new Date().getFullYear(), nameZh: '', nameEn: '', nameRu: '', startDate: '', type: 'POINTS' as BroadcastCategory['type'], roundNumber: 1, format: 'ROUND_ROBIN' as NonNullable<BroadcastNode['format']>, expectedVersion: 0 })
@@ -55,8 +54,6 @@ const displayNodes = computed(() => state.nodes.map(node => ({ ...node, label: n
 const sections = computed(() => state.categories.map(category => ({ ...category,
   nodes: displayNodes.value.filter(node => node.categoryId === category.id),
 })).filter(section => state.allowed || section.nodes.some(node => node.replays.length > 0)))
-// 4.0 版式：区服 · 赛季 · 时区在同一顶栏；赛段是页签；左侧轮次、右侧视频网格。
-// 缺省选择用 replace 写进 URL（不新增历史记录）：区服缺省第一个，赛季缺省最新一届（年份最大，同年取 id 最大）。
 const sortedSeasons = computed(() => [...state.seasons].sort((a, b) => b.year - a.year || b.id - a.id))
 watch(() => [state.loading, state.readFailed, state.network.available, state.server, state.seasonId, state.servers.length, state.seasons.length] as const, () => {
   if (state.loading || state.readFailed || !state.network.available) return
@@ -138,7 +135,6 @@ async function refreshPage() {
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
     <ShowcaseHero section="events" :kicker="t('nav.groups.events')" :title="t('leagueBroadcasts.title')" :description="state.season ? `${state.season.year} · ${broadcastSeasonName(state.season, locale)}` : undefined" />
 
-    <!-- 顶栏：区服（分段）· 赛季（下拉）· 显示时区 · 刷新 · 管理操作 -->
     <div class="broadcast-toolbar" data-testid="broadcast-toolbar">
       <SegmentedControl
         v-if="state.servers.length"
@@ -301,7 +297,6 @@ async function refreshPage() {
 .broadcast-node-actions { flex: none; flex-wrap: nowrap; gap: var(--space-1); }
 .broadcast-icon-action { min-width: var(--control-h-md); padding-inline: var(--space-2); }
 
-/* 视频网格：16:9 封面 + 标题、时间 / 赛日 / 视角、队伍；点开外链到原地址 */
 .broadcast-records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(var(--space-12) * 6)), 1fr)); gap: var(--space-4); }
 .broadcast-record { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-3); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
 .broadcast-cover { position: relative; display: block; border-radius: var(--radius-md); }
@@ -326,7 +321,6 @@ async function refreshPage() {
   .broadcast-select, .broadcast-time-zone { flex: 1 1 100%; }
   .broadcast-select select, .broadcast-time-zone select { width: 100%; }
   .broadcast-toolbar-actions { margin-inline-start: 0; }
-  /* 小屏：轮次变横向胶囊，视频变左图右文列表 */
   .broadcast-stage-body.has-rounds { grid-template-columns: minmax(0, 1fr); }
   .broadcast-rounds { display: flex; gap: var(--space-2); overflow-x: auto; padding-block-end: var(--space-1); }
   .broadcast-round { flex: none; border-color: var(--color-border-subtle); border-radius: var(--radius-full); corner-shape: round; }

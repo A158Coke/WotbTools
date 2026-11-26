@@ -1,13 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 懒加载可用性边界：部署换掉 chunk 文件名后，旧页面进入能力时 import 必然失败。
- * 该失败**不得**中断整页渲染，必须变成可见、可操作、可恢复的失败态。
- * （生产事故：AiReviewWorkspacePane chunk 404 把整个工作台打成空壳）
- *
- * 关键 regression：`retry()` 必须创建**新一代** async wrapper，并让 Pane 真正回到 DOM。
- * 只断言「raw loader 第二次成功」是不够的——那正是被修掉的假恢复：
- * error 被清空、Banner 消失，而 async wrapper 仍停在已 reject 的 pendingRequest 上，面板空白。
- */
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, defineComponent, nextTick, ref } from 'vue'
@@ -28,7 +19,6 @@ const Pane = defineComponent({
   template: '<div data-testid="lazy-pane">loaded</div>',
 })
 
-/** 等 Vue 的 async wrapper 落定（loader promise → 渲染 → DOM）。 */
 async function settle() {
   await flushPromises()
   await vi.dynamicImportSettled()
@@ -37,16 +27,11 @@ async function settle() {
   await flushPromises()
 }
 
-/** 让异步组件的加载（含其内部 delay 定时器）有机会发起。 */
 async function triggerLoad() {
   await new Promise((resolve) => setTimeout(resolve, 0))
   await flushPromises()
 }
 
-/**
- * 宿主模拟能力的真实消费方式：失败态由 module.error 驱动，Pane 由 module.component 渲染。
- * 两者同处一个宿主，因此「error 清空但 Pane 没回来」会立刻暴露。
- */
 function mountHost(module: ReturnType<typeof defineLazyModule>) {
   const Host = defineComponent({
     components: { Pane: module.component },
@@ -70,7 +55,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     })
     const wrapper = mountHost(module)
 
-    // attempt #1：404
     await triggerLoad()
     first.reject(new Error(CSS_404))
     await settle()
@@ -80,7 +64,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     expect(wrapper.find('[data-testid="lazy-pane"]').exists()).toBe(false)
     expect(module.error.value).toBeInstanceOf(Error)
 
-    // 用户按下 Retry：必须创建新一代 async wrapper（一次 retry = 恰好一次加载）
     const retryResult = module.retry()
     await triggerLoad()
     await expect(retryResult).resolves.toBe(Pane)
@@ -101,13 +84,11 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     })
     const wrapper = mountHost(module)
 
-    // attempt #1 fail
     await triggerLoad()
     attempts[0].reject(new Error(CHUNK_404))
     await settle()
     expect(wrapper.find('[data-testid="failure-banner"]').exists()).toBe(true)
 
-    // attempt #2 fail：失败态必须保留，不能出现空白
     const second = module.retry()
     await triggerLoad()
     attempts[1].reject(new Error(CHUNK_404))
@@ -117,7 +98,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     expect(wrapper.find('[data-testid="lazy-pane"]').exists()).toBe(false)
     expect(module.error.value).toBeInstanceOf(Error)
 
-    // attempt #3 success
     const third = module.retry()
     await triggerLoad()
     attempts[2].resolve(Pane)
@@ -138,7 +118,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     await triggerLoad()
     expect(attempts.length).toBeGreaterThanOrEqual(1)
 
-    // 首次加载失败：失败的 promise 已被这一代 wrapper 记住
     attempts[0].reject(new Error(CHUNK_404))
     await settle()
     const afterFirstFailure = attempts.length
@@ -147,7 +126,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
     await triggerLoad()
     expect(attempts.length).toBeGreaterThan(afterFirstFailure)
 
-    // 新一代加载成功后 retry 才能 settle（不依赖旧 wrapper 的 reject 缓存）
     attempts[attempts.length - 1].resolve(Pane)
     await expect(retryResult).resolves.toBe(Pane)
   })
@@ -175,13 +153,6 @@ describe('defineLazyModule — 真实 DOM 恢复', () => {
   })
 })
 
-/**
- * Test 2 —— 失败态必须**持久**。
- *
- * 宿主按 ReplayWorkspace 的真实形态最小化复刻：能力面板由 `v-if="visible && !loadError"` 控制挂载，
- * 失败 Banner 由 `loadError` 控制显示（Banner 显示期间面板本身不在树上）。
- * 这里锁定的是被修掉的行为：重新进入 capability 时偷偷清掉失败态 → 面板空白且没有任何提示。
- */
 describe('懒加载失败态的持久性（能力切走再切回）', () => {
   function mountCapabilityHost(module: ReturnType<typeof defineLazyModule>) {
     const Host = defineComponent({
@@ -209,12 +180,10 @@ describe('懒加载失败态的持久性（能力切走再切回）', () => {
     expect(wrapper.find('[data-testid="failure-banner"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="lazy-pane"]').exists()).toBe(false)
 
-    // 切到别的 capability：面板卸载
     wrapper.vm.visible = false
     await nextTick()
     expect(wrapper.find('[data-testid="failure-banner"]').exists()).toBe(true)
 
-    // 切回来：必须仍然是「有提示的失败」，而不是「没有提示的空白」
     wrapper.vm.visible = true
     await settle()
     expect(module.error.value).toBeInstanceOf(Error)
@@ -239,7 +208,6 @@ describe('懒加载失败态的持久性（能力切走再切回）', () => {
     await settle()
     expect(calls).toBe(callsAfterFailure)
 
-    // 用户显式重试：才会发起新一代加载
     const retried = module.retry()
     await expect(retried).resolves.toBeNull()
     expect(calls).toBeGreaterThan(callsAfterFailure)
@@ -348,10 +316,8 @@ describe('tryReloadForFreshBundle contract', () => {
 
   it('explicit：automatic 刚写入 guard（cooldown 内）→ 用户主动点击仍 reload', () => {
     const { target, reload } = reloadTarget()
-    // automatic 恢复已触发并写入 guard
     expect(tryReloadForFreshBundle(() => {}, target, { requirePersistentGuard: true })).toBe(true)
     reload.mockClear()
-    // 用户在同一 cooldown 窗口内主动点击 Reload：不被静默拦截
     expect(tryReloadForFreshBundle(() => {}, target, { explicit: true })).toBe(true)
     expect(reload).toHaveBeenCalledTimes(1)
   })

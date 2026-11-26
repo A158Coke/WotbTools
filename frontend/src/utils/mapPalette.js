@@ -1,19 +1,10 @@
-/**
- * 地图鸟瞰自适应配色（2026-08-12 落档规则）：
- * 按地图底图平均相对亮度（sRGB 加权，降采样 64×64）自动选择「暗图/亮图」两套调色板，
- * 避免热力/路线/网格与地图底图颜色混淆。canvas 不可用或计算失败时回退暗图默认色板。
- * 规则与阈值同步见 docs/features/battle-playback.md。
- */
 
-/** 亮度阈值：平均相对亮度 < 0.45 视为暗图，否则为亮图。 */
 export const LUMINANCE_THRESHOLD = 0.45
 
-/** 暗图默认色板（现状配色：亮色系 + 白系网格）。 */
 export const darkMapPalette = {
   heatFriendly: '#22c55e',
   heatEnemy: '#ef4444',
   gridStroke: 'rgba(255,255,255,.16)',
-  /** Battle Playback 6x6 网格：需要「每一列可见地隔开」，弱化网格仅用于热力/路线地图鸟瞰。 */
   gridStrokeStrong: 'rgba(255,255,255,.55)',
   regionStroke: 'rgba(255,255,255,.55)',
   spawnFriendly: '#4ade80',
@@ -22,12 +13,10 @@ export const darkMapPalette = {
   deathMark: '#ff3b30'
 }
 
-/** 亮图色板：深饱和色系 + 深色网格，保证浅色底图上的可区分度。 */
 export const lightMapPalette = {
   heatFriendly: '#15803d',
   heatEnemy: '#b91c1c',
   gridStroke: 'rgba(0,0,0,.22)',
-  /** 亮图下 Battle Playback 网格：深色清晰分隔线。 */
   gridStrokeStrong: 'rgba(0,0,0,.55)',
   regionStroke: 'rgba(0,0,0,.55)',
   spawnFriendly: '#15803d',
@@ -36,7 +25,6 @@ export const lightMapPalette = {
   deathMark: '#dc2626'
 }
 
-/** 按平均相对亮度选择色板；null/非有限值（计算失败）回退暗图默认色板。 */
 export function paletteForLuminance(luminance) {
   if (luminance == null || !Number.isFinite(luminance)) return darkMapPalette
   return luminance < LUMINANCE_THRESHOLD ? darkMapPalette : lightMapPalette

@@ -4,7 +4,6 @@ import type { Battle, PlayerResult } from './model.js'
 const TEAM_SIZE = 7
 export const TOTAL_PLAYERS = 14
 
-// ---------- 失败码（LeagueFailure） ----------
 
 export interface LeagueFailure {
   fileName: string
@@ -24,11 +23,9 @@ export const LEAGUE_FAILURE_CODE = {
   CONFLICTING_REPLAYS_FOR_ARENA: 'CONFLICTING_REPLAYS_FOR_ARENA',
 } as const
 
-// ---------- 校验（LeagueRatingValidator） ----------
 
 const DEATH_TIME_TOLERANCE_SEC = 1.0
 
-/** 校验一场 battle；通过返回空列表（按严重度排序，调用方取第一条；fileName 待绑定）。 */
 export function validateLeagueBattle(battle: Battle): LeagueFailure[] {
   const C = LEAGUE_FAILURE_CODE
   const failures: LeagueFailure[] = []
@@ -63,7 +60,6 @@ export function validateLeagueBattle(battle: Battle): LeagueFailure[] {
 
   if (players.some((p) => p.tankId === 0)) fail(C.MISSING_TANK)
 
-  // #201 roster 完整性不参与 League Rating（rosterComplete 仅供 AI/reconstruction 推断）。
 
   const winner = battle.winnerTeam
   if (winner === null || (winner !== 1 && winner !== 2)) fail(C.NO_DECISIVE_WINNER)

@@ -3,8 +3,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 import GunMarksBadge from './GunMarksBadge.vue'
 import PlaybackConsumableBadge from './PlaybackConsumableBadge.vue'
 
-// One presentation for map-positioned and camera-projected vehicles. Facts and
-// reload interpretation belong to the callers; this component only presents them.
 const props = defineProps({
   playerName: { type: String, default: '' },
   tankName: { type: String, default: '' },
@@ -18,14 +16,12 @@ const props = defineProps({
   showReload: { type: Boolean, default: true },
   hp: { type: Object, default: null },
   reload: { type: Array, default: null },
-  /** 定时消耗品状态（consumableRuntimeAt 输出；ACTIVE/COOLDOWN + remainingSec/durationSec） */
   consumables: { type: Array, default: () => [] },
   hpGhost: { type: Object, default: null },
   hpFlash: Boolean,
   hpNoTransition: Boolean,
   hpTitle: { type: String, default: '' },
   nameTooltips: Boolean,
-  /** 「最后已知」标记文案（lastKnown 时显示；空串 = 不显示——2D 侧保持既有呈现不变） */
   lastKnownLabel: { type: String, default: '' },
 })
 const playerLine = ref(null)
@@ -51,10 +47,8 @@ const ghostWidth = computed(() => {
 const ghostStyle = computed(() => ({
   left: `${props.hpGhost.nextPct}%`,
   width: `${ghostWidth.value}%`,
-  // 未带寿命（2D）时沿用 CSS 默认时长
   animationDuration: props.hpGhost.durationMs ? `${props.hpGhost.durationMs}ms` : undefined,
 }))
-/** 只展示正在生效且身份已闭合的定时消耗品（未知线码不占位，fail-closed）。 */
 const activeConsumables = computed(() => (Array.isArray(props.consumables) ? props.consumables : [])
   .filter((c) => c && typeof c.logicalItemId === 'string' && c.logicalItemId.length > 0
     && Number.isFinite(c.remainingSec) && c.remainingSec > 0
@@ -73,17 +67,13 @@ const classes = computed(() => ({
       <span v-if="showPlayerName && playerName" ref="playerLine" class="pb-label-player" data-test="pb-label-player"
         :class="{ 'name-tooltip': nameTooltips }" :title="nameTooltips && playerTruncated ? playerName : undefined">{{ playerName }}</span>
       <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }} <GunMarksBadge :marks="gunMarks" /></span>
-      <!-- 最后已知标记：离场坦克（AoI 在场段之外）的名牌诚实标记；文案由宿主按 locale 传入 -->
       <span v-if="lastKnown && lastKnownLabel" class="pb-last-known-tag" data-test="pb-last-known">{{ lastKnownLabel }}</span>
     </div>
-    <!-- combat state block：HP（主要）在上、reload（次级瞬时）在下，两者视觉上属于同一块，
-         但与上面的身份两行保持更大的间距。 -->
     <div v-if="!destroyed && ((showHp && hp) || (showReload && friendly === true && reload?.length))" class="pb-combat-state">
       <div v-if="showHp && hp && !destroyed" class="pb-hp-hud" data-test="pb-hp-hud"
         :class="{ 'pb-hp-lastknown': hp.state === 'LAST_KNOWN', 'pb-hp-flash': hpFlash, 'pb-hp-no-transition': hpNoTransition, 'pb-hp-full-spawn': hp.state === 'RELATIVE_FULL' }"
         :title="hpTitle">
         <span class="pb-hp-row">
-          <!-- 定时消耗品徽标：绝对定位在血条左侧，不改变血条中心/伤害数字右缘几何。 -->
           <span v-if="activeConsumables.length" class="pb-consumables" data-test="pb-consumables">
             <PlaybackConsumableBadge v-for="c in activeConsumables" :key="c.slot"
               :logical-item-id="c.logicalItemId"
@@ -91,7 +81,6 @@ const classes = computed(() => ({
           </span>
           <span class="pb-hp-bar" :class="{ 'pb-hp-unknown-track': hpFillUnknown }">
             <span class="pb-hp-fill" :class="{ 'pb-hp-fill-unknown': hpFillUnknown }" :style="{ width: hpFillWidth }"></span>
-            <!-- key：每次掉血 nextPct 必变，换节点才能重启已结束的 forwards 动画；rerender 同值不重启。 -->
             <span v-if="ghostWidth != null" :key="hpGhost.nextPct" class="pb-hp-ghost" data-test="pb-hp-ghost"
               :data-born-ms="hpGhost.bornMs" :style="ghostStyle"></span>
             <span class="pb-hp-num" data-test="pb-hp-num">{{ hp.current ?? '—' }}</span>
@@ -108,10 +97,6 @@ const classes = computed(() => ({
 </template>
 
 <style scoped>
-/* 层级 contract（从上到下）：玩家昵称 → 车辆昵称 → HP → reload。
-   身份两行先建立"这是谁"，HP 是主要 combat state，reload 是最下方次级瞬时状态。
-   间距刻意克制：两行身份名之间只有行距，身份块 → combat block 是两个 space-1，
-   combat block 内部（HP → reload）回到一个 space-1，让两者读起来像同一块。 */
 .vehicle-label {
   display: flex;
   flex-direction: column;
@@ -131,16 +116,11 @@ const classes = computed(() => ({
 .pb-label-player { max-width: var(--pb-label-player-width); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .name-tooltip { pointer-events: auto; }
 .label-destroyed .pb-labels { color: var(--color-playback-label-destroyed); text-decoration: line-through; }
-/* §25 last-known：**只弱化文字两行**（.65），HP HUD / 血条等背景块保持正常强度。
-   不要写成整块 opacity（那会把背景一起淡化，是重构时丢过一次的契约）。 */
 .label-last-known .pb-label-tank,
 .label-last-known .pb-label-player { opacity: .65; }
 .label-last-known .pb-hp-hud { opacity: .55; }
-/* 「最后已知」诚实标记：与破坏色同源（stale 语义），但整行不透明（标记本身要一眼可见） */
 .pb-last-known-tag { color: var(--color-playback-label-destroyed); font-weight: 600; }
 .pb-hp-hud { display: flex; flex-direction: column; align-items: center; gap: var(--space-0); }
-/* 血条中心保持与身份两行同轴；消耗品徽标绝对定位到左侧，不参与居中布局，
-   也不改变 `.pb-hp-bar` 右缘（伤害数字落点仍按血条几何计算）。 */
 .pb-hp-row { position: relative; display: flex; justify-content: center; align-items: center; }
 .pb-consumables {
   position: absolute;
@@ -153,20 +133,14 @@ const classes = computed(() => ({
   margin-right: var(--space-1);
 }
 .pb-hp-num { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-playback-label-text); font-variant-numeric: tabular-nums; }
-/* 等宽轨道：HP 容纳数值，reload 保持较细的分段状态。 */
 .pb-hp-bar, .reload-bar { border-radius: 0; background: var(--color-playback-label-track); overflow: hidden; }
 .pb-hp-bar { position: relative; width: var(--pb-label-hp-bar-width); height: var(--space-4); }
 .pb-hp-fill, .pb-hp-ghost { position: absolute; inset-block: 0; left: 0; background: currentColor; }
 .pb-hp-fill { transition: width var(--duration-base) linear; }
 .pb-hp-fill-unknown { background: var(--color-playback-label-destroyed); opacity: .5; }
-/* 实心暗色段：只靠 opacity 在亮背景和窄血条上读不出。动画只管"停留后淡出"。 */
 .pb-hp-ghost { background: color-mix(in oklab, currentColor 55%, var(--color-canvas)); animation: label-ghost var(--duration-slow) linear forwards; }
 .pb-hp-flash .pb-hp-fill { filter: brightness(1.5); }
 .pb-hp-no-transition .pb-hp-fill { transition: none; }
-/* reload 是次级状态：等宽、更细。弹夹分段保持，每段仍按 state 区分 full / loading / locked / empty。
-   外描边 = token `--pb-label-reload-outline`（半透明黑）勾出整条轮廓——白填充/亮空槽在
-   雪地等亮背景上会糊进背景，黑边在明暗背景都能把白色状态条衬出来（分段间隙露出的是
-   页面背景）。box-shadow 不占布局、跟随矩形轮廓，随 3D 标签 transform 缩放保持同一比例。 */
 .reload-bar {
   display: flex;
   width: var(--pb-label-hp-bar-width);

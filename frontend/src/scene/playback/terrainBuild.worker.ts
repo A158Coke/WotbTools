@@ -1,13 +1,9 @@
-// 地形 LOD 构建 Worker：只是 `buildGroundGeometryData`（groundPass 的纯数据阶段）的执行位置，
-// 不持有任何细分判据或阈值（判据在 terrainMesh.js，由 mapWorld 在主线程判定「何时重建」）。
-// 协议见 terrainLodScheduler.ts：init（高度场 + 几何参数，Worker 内常驻）/ mask（走廊掩码）/ build。
 import { buildGroundGeometryData, groundGeometryTransferables } from '../groundGeometryData.js'
 import type { TerrainWorkerIn, TerrainWorkerOut } from './terrainLodScheduler'
 
 interface Source { field: Float32Array; n: number; span: number; cx: number; cz: number; refineMask: unknown }
 let source: Source | null = null
 
-// 模块 Worker 的全局：lib.dom 把 `self` 当 Window，postMessage 签名不同；这里只用 Worker 一侧的签名。
 const scope = self as typeof self & { postMessage(m: unknown, t: Transferable[]): void }
 const post = (msg: TerrainWorkerOut, transfer: Transferable[] = []) => scope.postMessage(msg, transfer)
 

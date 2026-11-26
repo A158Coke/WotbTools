@@ -1,6 +1,3 @@
-/**
- * ProfilePage —— 「我的百场成绩」状态与撤销（拆分自 ProfilePage.vue，行为原样）。
- */
 import { ref } from 'vue'
 import { hofHundredCancel, hofHundredMyStatus } from '../../api/hall-of-fame.js'
 
@@ -30,7 +27,6 @@ export function useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEp
   const hundredWithdrawingId = ref<number | null>(null)
   const hundredMessage = ref('')
 
-  /** 个人中心「我的百场成绩」：当前认证 / 当前申请 / 最近拒绝。 */
   async function loadHundredStatus(epochInput: unknown) {
     const epoch = epochArg(epochInput)
     if (!ownEpoch(epoch)) return
@@ -47,7 +43,6 @@ export function useProfileHundred({ requireHofOnline, ownEpoch, epochArg, authEp
     }
   }
 
-  /** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
   async function withdrawHundred(id: number) {
     if (!requireHofOnline()) return
     const epoch = authEpoch()

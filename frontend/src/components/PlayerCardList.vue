@@ -1,18 +1,11 @@
 <script setup>
-// 玩家卡片列表（design-language §7 DataTable：窄屏自动切换为卡片列表）。
-// 三张玩家表（单场 / 普通汇总 / CW 汇总）共用：各表按自己的格式化规则生成 items，这里只负责呈现、排序控件与选中。
 import { useI18n } from 'vue-i18n'
 import GunMarksBadge from './GunMarksBadge.vue'
 import { ArrowDownWideNarrow, ArrowUpNarrowWide } from 'lucide-vue-next'
 
 defineProps({
-  /**
-   * [{ key, title, subtitle?, team?: 1|2, badge?, primary?: { label, value }, metrics: [{ key, label, value }], selected? }]
-   */
   items: { type: Array, required: true },
-  /** 可点击（打开玩家详情）。 */
   clickable: { type: Boolean, default: false },
-  /** 排序：[{ key, label }]；sortKey 为空 = 原始顺序。 */
   sortOptions: { type: Array, default: () => [] },
   sortKey: { type: String, default: '' },
   sortDesc: { type: Boolean, default: false },

@@ -70,7 +70,6 @@ describe('buildAiReviewRequest', () => {
     expect(request.correlationId).toBe(CORRELATION_ID)
     expect(request.battle).toBe(projection.battle)
     expect(request.projection).toBe(projection.projection)
-    // 只有结算事实 + client canonical 投影：不携带回放字节，也不携带 Agent 原始切面
     expect(Object.keys(request).sort()).toEqual([
       'battle', 'correlationId', 'locale', 'projection',
     ])
@@ -102,7 +101,6 @@ describe('AI Review transport', () => {
     expect(init.method).toBe('POST')
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token')
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
-    // 请求体 gzip 压缩发送，服务端限额解压后得到原样 JSON
     expect((init.headers as Record<string, string>)['Content-Encoding']).toBe('gzip')
     const inflated = gunzipSync(new Uint8Array(await (init.body as Blob).arrayBuffer())).toString('utf8')
     expect(JSON.parse(inflated)).toEqual(JSON.parse(JSON.stringify(buildAiReviewRequest({

@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Developer-only 辅助：WEBP → raw RGBA（PIL，确定性解码）。
 用法: python decode-webp.py <in.webp> <out.rgba>
 输出 RGBA 文件前附加 8 字节头: <W u32le><H u32le>，之后为 W*H*4 字节。

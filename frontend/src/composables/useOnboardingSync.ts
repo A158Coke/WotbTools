@@ -1,7 +1,3 @@
-/**
- * 新手引导回执持久化与远端同步（拆分自 useOnboarding.ts，行为原样）。
- * 归属代数（syncGeneration/syncAbort）在本工厂内闭环；宿主卸载时调用 stopSync()。
- */
 import type { ComputedRef, Ref } from 'vue'
 import { readOnboardingReceipt, saveOnboardingReceipt } from '../api/onboarding.js'
 import { profileBackendAllowed, type ProfileBackendContext } from '../app/featureCapabilities.js'
@@ -33,7 +29,6 @@ export function createOnboardingReceiptSync(ctx: OnboardingReceiptSyncCtx) {
   let syncAbort = new AbortController()
 
   function persist(identityKey: string, incoming: LocalOnboardingReceipt) {
-    // Read before writing so a same-browser account switch/tab cannot erase other users' receipts.
     const disk = readCache()
     const merged = { ...disk, ...ctx.cache.value }
     for (const [key, value] of Object.entries(disk)) merged[key] = mergeOnboardingReceipts(merged[key] || EMPTY_RECEIPT, value)
@@ -77,7 +72,6 @@ export function createOnboardingReceiptSync(ctx: OnboardingReceiptSyncCtx) {
     } catch { /* Unknown server receipt must never be interpreted as a fresh account. Manual guides remain available. */ }
   }
 
-  /** 宿主卸载：使在飞同步失效并中止请求（原 onBeforeUnmount 内联逻辑）。 */
   function stopSync() {
     ++syncGeneration
     syncAbort.abort()

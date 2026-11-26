@@ -3,11 +3,8 @@ import type { ConsumableTransition, ModuleCrewTransition, PlaybackConfidence, Ve
 import { EPS, type CanonicalReplayFacts, type ReplayClock } from '../canonical/facts.js'
 import { consumableItemId, consumableStateName, provisionItemId } from './itemCodes.js'
 
-// ---------- 装载 / 消耗品 / 模块 ----------
 
 export function toLoadout(vehicles: AgentVehicleTrack[], replayVersion: string | null): VehicleBattleLoadout | null {
-  // v0.4.17：优先消费 Agent 解码后的 loadout（3 消耗品 + 0..3 给养 + 模式能力），
-  // 7 条 Type5 布局（GravityMode 额外能力）不再被旧 loadout_items.length===6 门禁丢弃。
   const decoded = vehicles.find((x) => x.loadout
     && Array.isArray(x.loadout.consumables) && Array.isArray(x.loadout.provisions))
     ?.loadout
@@ -44,7 +41,6 @@ export function toLoadout(vehicles: AgentVehicleTrack[], replayVersion: string |
       confidence: unknown ? 'LOW' : 'HIGH',
     }
   }
-  // 旧产物回退：只有完整 6 条 Type5 描述符时才能可靠切分 3+3。
   const v = vehicles.find((x) => Array.isArray(x.loadout_items) && x.loadout_items.length === 6
     && Array.isArray(x.equipment) && x.equipment.length === 9)
   if (!v) return null
@@ -71,7 +67,6 @@ export function toLoadout(vehicles: AgentVehicleTrack[], replayVersion: string |
   }
 }
 
-/** Java `BattlePlaybackProjector.consumableSlot`：wireCode 在装载里唯一命中的槽位。 */
 function consumableSlot(loadout: VehicleBattleLoadout | null, wire: number | null): number | null {
   if (!loadout || wire === null) return null
   let match: number | null = null
@@ -84,7 +79,6 @@ function consumableSlot(loadout: VehicleBattleLoadout | null, wire: number | nul
   return match
 }
 
-/** Java `BattlePlaybackProjector.consumableTransitions`（开战前 INITIALIZED 种子 + AoI 关闭失效）。 */
 export function consumableTransitions(
   pb: AgentPlaybackFacet, facts: CanonicalReplayFacts, entityIds: number[], clock: ReplayClock, loadout: VehicleBattleLoadout | null,
 ): ConsumableTransition[] {
@@ -182,7 +176,6 @@ const MODULE_COMPONENTS = new Set([
   'OBSERVATION_DEVICE', 'COMMANDER', 'DRIVER', 'GUNNER', 'LOADER', 'RADIOMAN', 'RADIO',
 ])
 
-/** Java `BattlePlaybackProjector.moduleCrewTransitions`：仅录像者车辆（recorder-visible）。 */
 export function moduleCrewTransitions(
   pb: AgentPlaybackFacet, entityIds: number[], clock: ReplayClock, recorderVisible: boolean,
 ): ModuleCrewTransition[] {

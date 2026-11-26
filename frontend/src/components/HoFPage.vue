@@ -1,7 +1,4 @@
 <script setup>
-// 名人堂页面外壳：连接横幅 / Tab / URL query 同步 / 手机筛选 sheet 的开合与焦点归还。
-// 三个榜单的业务状态各归其组件（HofSingleBoard / HofHundredBoard / HofMark3Board）；本组件是 URL query 的唯一 owner，
-// 通过 board 暴露的 queryState() 读取、applyQuery() / activate() / reload() 下发一次性命令，不缓存任何榜单状态。
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { parseHofQuery, sameHofQuery, serializeHofQuery } from '../utils/hofQuery.js'
@@ -20,16 +17,12 @@ const mark3Board = ref(null)
 const boards = { single: singleBoard, hundred: hundredBoard, mark3: mark3Board }
 const activeBoard = () => boards[activeTab.value].value
 
-// ── URL 状态（审计 PG-08）：Tab / 筛选 / 页码写进 query；前进 / 后退 / 刷新 / 分享都能恢复 ──
-// 页面可能被 KeepAlive 保留，只在 view=hof 时读写，离开后不改别的页面的 URL。
 const route = useRoute()
 const router = useRouter()
 const onHofView = () => route?.query?.view === 'hof'
 const currentHofQuery = () => ({ view: 'hof', ...serializeHofQuery(activeBoard().queryState()) })
 
-/** 最近一次自己写入的 query：路由监听遇到它就跳过（它反映的是当时的状态，不是外部导航） */
 let lastWrittenQuery = null
-/** board 每次加载时 emit('query-change')；写入的始终是当前 Tab 的状态。 */
 function writeHofQuery() {
   if (!router || !onHofView()) return
   const next = currentHofQuery()
@@ -38,7 +31,6 @@ function writeHofQuery() {
   router.replace({ query: next })
 }
 
-/** 把 URL 状态应用到对应榜单并加载（首次进入 / 前进后退）。 */
 function applyHofQuery(query) {
   const q = parseHofQuery(query)
   activeTab.value = q.tab
@@ -53,9 +45,8 @@ if (route) {
   })
 }
 
-// ── 手机筛选（审计 PG-05 / design-language §9）：筛选收进底部 sheet；同一时间最多一个 Tab 的 sheet 打开 ──
 const boardTop = ref(null)
-const filterSheet = ref(null) // null | 'single' | 'hundred' | 'mark3'
+const filterSheet = ref(null)
 let filterSheetOpener = null
 function toggleFilterSheet(tab) {
   if (filterSheet.value === tab) return closeFilterSheet()
@@ -84,8 +75,6 @@ onMounted(() => {
   singleBoard.value.loadVehicleOptions()
 })
 
-// Only availability recovery resumes the visible board; business errors remain explicit retries.
-// 失联时各 board 自行作废在途请求（useHofEpoch）；恢复时由这里按当前 URL / Tab 重新加载。
 watch(() => hofAvailability.value.available, (available, previous) => {
   if (!available || previous !== false || (route && !onHofView())) return
   if (route && onHofView()) applyHofQuery(route.query)
@@ -126,13 +115,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </style>
 
 <style>
-/* 非 scoped：规则作用在 Hof* 子组件内部 DOM（含 Teleport 出去的对话框），统一挂 HoF 专属祖先前缀，
- * specificity 与原 scoped 版逐条相同（:is() 取一个 class）。迁移到设计语言 token 前保留在本文件（stylelint legacy）。 */
-/* 手机筛选 sheet（审计 PG-05）：容器 / 遮罩 / 焦点 / 安全区由 AppSheet 提供，这里只负责工具栏在 sheet 内的网格 */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-toolbar-host.is-sheet { display: grid; gap: var(--space-3); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-toolbar-host.is-sheet .lb-toolbar :is(select, input, button) { min-height: var(--hit-min); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-sheet-head { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-primary); font: var(--type-h3); }
-/* 手机卡片列表（审计 PG-05 / PG-19：下载按钮与车辆链接满足 44px 点击区域） */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-cards { display: grid; gap: var(--space-2); margin: var(--space-3) 0 0; padding: 0; list-style: none; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-card {
   display: grid;
@@ -176,7 +161,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-card-download:disabled { cursor: progress; opacity: .5; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-card-tank:focus-visible,
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-card-download:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-/* 审计 BZ-18：提交弹窗里的上榜规则与当前门槛 */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .hof-rules {
   margin: var(--space-3) 0;
   padding: var(--space-3) var(--space-4);
@@ -191,11 +175,9 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .hof-threshold { display: grid; gap: var(--space-0); margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-body); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .hof-threshold strong { color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .hof-threshold.is-blocked { color: var(--color-warning); }
-/* 审计 BZ-15：空榜说明怎样上榜 */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-empty { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-6) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); text-align: center; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-empty-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-empty-how { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
-/* 审计 PG-07：翻页 / 改筛选时保留旧数据并变暗，不整表替换成一行文字导致跳动 */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .tablewrap.is-stale,
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-cards.is-stale { opacity: .55; transition: opacity var(--duration-base) var(--ease-standard); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .lb-toolbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 14px;
@@ -282,7 +264,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .pagination button { padding: 6px 14px; border: 1px solid var(--border-ghost); border-radius: 7px; background: var(--bg-card2); color: var(--text-label); cursor: pointer; font-family: inherit; font-size: .82rem; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .pagination button:hover:not(:disabled) { background: var(--bg-card-hover); }
-/* 直接跳页：输入框与相邻按钮同高同字号，宽度按 3–5 位页码设计（含数字输入的步进箭头） */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .page-jump { display: inline-flex; align-items: center; gap: 8px; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .page-jump input {
   width: 5.5rem;
@@ -298,7 +279,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .page-jump input:focus-visible,
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .page-jump button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* ── 百场 Tab ─────────────────────────────────── */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-vehicle-filter, :is(.lb-wrap, .hof-upload-modal, .h100-modal) .mark3-vehicle-filter { flex-wrap: wrap; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .hof-vehicle-select, :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-vehicle-select, :is(.lb-wrap, .hof-upload-modal, .h100-modal) .mark3-vehicle-select { min-width: 200px; }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-submit-vehicle, :is(.lb-wrap, .hof-upload-modal, .h100-modal) .mark3-submit-vehicle { max-width: 360px; }
@@ -315,7 +295,6 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-pending-time { color: var(--text-muted); }
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-pending-card .ghost { margin-left: auto; }
 
-/* 提交弹窗 */
 :is(.lb-wrap, .hof-upload-modal, .h100-modal) .h100-draft-hint {
   margin: 8px 0 12px; padding: 8px 10px;
   border: 1px solid var(--border-ghost); border-radius: 7px;

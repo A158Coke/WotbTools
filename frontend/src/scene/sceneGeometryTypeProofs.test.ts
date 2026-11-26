@@ -1,5 +1,3 @@
-// Wave C（#741）C2 批次的编译期负向证明：geometry / Three.js helper 边界。
-// 过去 JS 能静默接受的错误数据形状（section 拼错 / Vector3 当 Quaternion /
 // 把 buildPack 的失败包当有效网格用），现在编译期拦截。@ts-expect-error 仅限本文件。
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
@@ -19,7 +17,6 @@ describe('C2 geometry / Three.js 边界的编译期负向证明', () => {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial())
     mesh.name = 'hull1'
     const entry: PackEntry = { mesh, section: 'hull', thickness: 40, variant: null }
-    // 打包失败（非刚性矩阵/坏 section）→ ok:false，调用方必须禁用续飞
     expect(buildPack([{ ...entry, thickness: -1 }]).ok).toBe(false)
 
     // @ts-expect-error — negative compile proof: section 拼写错误（'hull1'）不能通过编译（JS 时代会静默产出坏包）

@@ -59,7 +59,7 @@ describe('useIncrementalList', () => {
     await nextTick()
     expect(wrapper.findAll('.item')).toHaveLength(4)
 
-    observers[0].fire(false)   // 离开视口不追加
+    observers[0].fire(false)
     await nextTick()
     expect(wrapper.findAll('.item')).toHaveLength(4)
 

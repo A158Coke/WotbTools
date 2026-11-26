@@ -4,8 +4,6 @@ import { resolve } from 'node:path'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 
-// Isolated browser fixture uses the real components and generated HTTP validators;
-// auth and connectivity are deterministic boundaries, and fetch records requests.
 const root = process.cwd()
 const name = `__feedback_fixture_${randomUUID()}`
 const html = resolve(root, `${name}.html`)

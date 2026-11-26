@@ -1,7 +1,4 @@
 <script setup>
-// 回放集合管理：回答「加载了哪些回放」，只增删，不切场。切场只归 BattlePicker，
-// 两者共用 battlePickerOptions() 的文案，状态都由工作台的 session 持有。
-// 列表行要放移除按钮，不能是 BattlePicker 的 Listbox option，所以这里是普通列表。
 import { computed, onDeactivated, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
@@ -14,9 +11,7 @@ import AppSheet from './AppSheet.vue'
 defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
-  /** replayCollectionRows() 的返回值。 */
   rows: { type: Array, required: true },
-  /** 后台加载新回放时的进度 { done, total }；没有则为 null。 */
   progress: { type: Object, default: null },
   disabled: { type: Boolean, default: false },
   folderAvailable: { type: Boolean, default: false },
@@ -70,7 +65,6 @@ function openDemo() {
   emit('open-demo')
 }
 
-/** 确认框不叠在模态弹层上：先关，焦点回到触发按钮，再由工作台询问。 */
 function removeRow(row) {
   close()
   emit('remove', row.file)
@@ -81,7 +75,6 @@ function clearAll() {
   emit('clear')
 }
 
-// 弹层 portal 到 body，KeepAlive 离开页面时不会随工作台隐藏。
 onDeactivated(close)
 
 defineExpose({ open })

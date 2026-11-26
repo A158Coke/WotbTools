@@ -1,11 +1,4 @@
 <script setup>
-/**
- * 装甲查看器右上角的射击 HUD（BlitzKit 式布局）：
- *   - 弹种：射击方当前主炮的弹种图标（点击切换，穿深/伤害判定重跑）
- *   - 右侧三枚装备图标：射击方「校准弹」/ 受击方「强化装甲」/ 受击方「改进型垂直稳定器」
- *     （122，俯仰 +4°/+3°），高亮 = 已装配
- * 当前弹种显示观察距离下的标称穿深（含校准弹），距离由场景统一持有。
- */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Crosshair, MoveVertical, Shield } from 'lucide-vue-next'
@@ -17,7 +10,6 @@ import { calibratedPenMul, shellTypeOf, rolledPenetration } from '../scene/viewe
 const props = defineProps({
   distanceState: { type: Object, default: null },
   shooterId: { type: Number, default: null },
-  /** 射击方配置（&scfg=；缺省用射手自身默认顶级配置 configs 末位，不从目标推导） */
   scfg: { type: [Number, String], default: null },
   config: { type: [Number, String], default: null },
   upgrade: { type: String, default: null },
@@ -25,12 +17,10 @@ const props = defineProps({
   shell: { type: [Number, String], default: null },
   eqcal: { type: [Number, String], default: null },
   eqenh: { type: [Number, String], default: null },
-  /** 122 改进型垂直稳定器（受击方/被展示车；手动勾选或射击复现自动判定） */
   eqpitch: { type: [Number, String], default: null },
   calibratedDefault: { type: Boolean, default: false },
   enhancedDefault: { type: Boolean, default: false },
   pitchDefault: { type: Boolean, default: false },
-  /** 目标车预设是否提供 122（无该配件的车不显示按钮） */
   pitchAvailable: { type: Boolean, default: false },
 })
 const emit = defineEmits(['shell', 'calibrated', 'enhanced', 'pitch', 'ready', 'distance'])
@@ -47,10 +37,6 @@ async function load(shooterId) {
   devices.value = { calibrated: null, enhanced: null, pitch: null }
   if (!(shooterId > 0)) return
   try {
-    // HUD 常驻且只读 devices：不要为三枚装备图标拉整份配置器目录（skills/camo/params…）。
-    // 缺省 = XI 顶级；显式 stock 才回退基础值（非 XI 传 top 会由 fetchTankData 原样返回）。
-    // custom（部分研发）原样透传：折叠成 top 会让提示/无障碍标签报满级伤害，
-    // 与实际场景按部分研发算出的射击结果不一致。
     const upgrade = props.upgrade === 'stock' ? 'stock'
       : props.upgrade === 'custom' ? 'custom' : 'top'
     const detailRequest = fetchTankData(shooterId, { upgrade, abilities: props.abilities })
@@ -73,8 +59,6 @@ const configs = computed(() => details.value?.configs || [])
 const cfgIndex = computed(() => {
   if (!configs.value.length) return null
   const raw = props.scfg ?? props.config
-  // 与 tankViewer 的缺省完全一致：没有显式 scfg/config 时用最后一档（顶级炮），
-  // 不能 Number(null) → 0 选成 stock 炮——否则 HUD 的弹种索引对应错弹表。
   const wanted = raw == null || raw === '' ? NaN : Number(raw)
   return Number.isInteger(wanted) && wanted >= 0 && wanted < configs.value.length
     ? wanted
@@ -83,10 +67,8 @@ const cfgIndex = computed(() => {
 const shells = computed(() => {
   const configured = configs.value[cfgIndex.value]?.shells
   if (Array.isArray(configured) && configured.length) return configured
-  // 与 tankViewer.loadShooter 的回退一致：config shells 为空时用坦克顶层弹表。
   return details.value?.shells || []
 })
-/** readiness 必须双向：切换配置导致 HUD 消失时要交还原生 shell/装备控件。 */
 const hasShells = computed(() => shells.value.length > 0)
 watch(hasShells, value => { emit('ready', value) }, { immediate: true })
 const shellIndex = computed(() => {
@@ -96,7 +78,6 @@ const shellIndex = computed(() => {
 const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault : String(props.eqcal) === '1'))
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
 const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault : String(props.eqpitch) === '1'))
-// 与场景判定共用弹种分类和校准系数；仅在展示的最后一步取整，不把显示值写回炮弹。
 const distance = computed(() => props.distanceState?.distance ?? null)
 const distanceHint = computed(() => t(props.distanceState?.readOnly ? 'armor.recorded_distance' : 'armor.distance_center'))
 function changeDistance(event) {
@@ -199,7 +180,6 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 </template>
 
 <style scoped>
-/* 外卡由宿主统一提供；内部按选择、距离、结果排列。 */
 .shot-hud { display: grid; gap: var(--space-2); min-inline-size: 0; inline-size: 100%; }
 .hud-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .hud-row { display: flex; align-items: center; gap: var(--space-1); }
@@ -223,8 +203,6 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .hud-penetration { color: var(--color-accent-text); }
 .hud-unit { color: var(--color-text-secondary); font-weight: 400; }
 
-/* 短横屏：5 个弹种 36px / 装备图标一行；距离滑条与 AP 数值共用一行，
-   整个 HUD 交给宿主 15rem 卡片收口，避免占满右侧车体。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .shot-hud {
         grid-template-columns: auto minmax(0, 1fr) auto auto;

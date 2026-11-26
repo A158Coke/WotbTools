@@ -1,14 +1,3 @@
-/**
- * Agent WASM 装载的 URL identity 与版本门禁（stale WASM 的根因回归）。
- *
- * 旧行为：固定 `/wasm/wotb_replay_wasm.js` → 浏览器长期缓存里躺着**别的 build 的
- * Agent**，同一个 frontend 用错版引擎解析，直到 AI Review 才以 `poses` 缺失暴露。
- *
- * 现在锁定：
- *  - URL 是 commit-addressed（`/wasm/<source.json ref>/…`），不再有 stable 路径；
- *  - fingerprint 在 dynamic import **之前**校验（commit/tag 任一不符即失败）；
- *  - 不一致抛 `AgentWasmVersionMismatchError`，且**绝不调用 parse\***。
- */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,7 +10,6 @@ const PIN = JSON.parse(readFileSync(resolve(REPO, 'deploy/agent/source.json'), '
 const PINNED_COMMIT = PIN.ref
 const PINNED_RELEASE = PIN.artifact.release
 
-/** 假 pin（与真实 source.json 无关），用于驱动装载路径的成功/失败分支 */
 const FAKE_PIN = { release: 'v0.9.9', commit: 'a'.repeat(40) }
 const FAKE_MODULE = { parseResult: () => '{}', default: async () => {} }
 
@@ -45,7 +33,6 @@ afterEach(() => {
 
 describe('Agent WASM URL identity（commit-addressed，stable 路径已废除）', () => {
   it('装载 URL 与 fingerprint URL 都带 build 期 pin 的 commit', () => {
-    // vite `define` 在测试里已被替换为真实 source.json 的值（vite.config.js 是唯一 SSOT）
     expect(api.AGENT_WASM_COMMIT).toBe(PINNED_COMMIT)
     expect(api.AGENT_WASM_RELEASE).toBe(PINNED_RELEASE)
     expect(api.agentWasmBase()).toBe(`/wasm/${PINNED_COMMIT}`)
@@ -68,7 +55,6 @@ describe('Agent WASM 版本门禁（fingerprint 先于模块解析）', () => {
       return FAKE_MODULE
     })
     await expect(api.loadAgentWasmModule(FAKE_PIN)).resolves.toBe(FAKE_MODULE)
-    // fingerprint 请求带专属 AbortSignal（body 阶段超时要能真正切断请求）
     expect(fetchMock).toHaveBeenCalledWith(
       `/wasm/${FAKE_PIN.commit}/fingerprint.json`,
       expect.objectContaining({ signal: expect.anything() }),
@@ -116,8 +102,6 @@ describe('Agent WASM 版本门禁（fingerprint 先于模块解析）', () => {
     api.__setAgentWasmResolverForTest(async () => { resolverCalls++; return FAKE_MODULE })
     vi.stubGlobal('fetch', fetchServing({ tag: 'v0.0.1', upstream_commit: 'f'.repeat(40) }))
 
-    // 真实路径下的顺序是「先 fingerprint 再解析模块」，所以错版时模块从未装载，
-    // 桩 resolver 一次都不会被调用——parse* 在拿到引擎之前就失败了。
     expect(api.agentWasmIdentity()).toBeNull()
     for (const parse of [
       api.parseAgentResultFromBytes,
@@ -135,26 +119,13 @@ describe('Agent WASM 版本门禁（fingerprint 先于模块解析）', () => {
     api.__setAgentWasmResolverForTest(null)
     vi.stubGlobal('fetch', fetchServing({ tag: FAKE_PIN.release, upstream_commit: 'f'.repeat(40) }))
     await expect(api.loadAgentWasm(FAKE_PIN)).rejects.toBeInstanceOf(api.AgentWasmVersionMismatchError)
-    // 失败不得留下"已装载"的 identity（否则后续调用会以为产物可用）
     expect(api.agentWasmIdentity()).toBeNull()
   })
 })
 
-/**
- * 看门狗必须覆盖**完整 fingerprint request lifecycle**（request → headers → body →
- * JSON parse），不能只包 `fetch()`。
- *
- * 为什么这是独立的 P0 回归：`fetch()` 在**收到 response headers 后就 resolve**。
- * CDN / 代理「headers 正常返回、body 永久不结束」时，只包 fetch 的 20s 看门狗形同虚设——
- * `await response.json()` 仍可永久 pending，而 `fingerprintPromises` 会把这个 pending
- * Promise 缓存起来给整个页面会话复用（它是 thenable，不是 null），于是「解析永久卡住」
- * 的原始 failure mode 原样保留。这里用 `json()` 永不 settle 的 Response-like 对象锁死它：
- * 删除 body 阶段的看门狗（回到只包 fetch）后，用例 1 会以「永久 pending」失败。
- */
 describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久不结束）', () => {
   const STALL_TIMEOUT_MS = 50
 
-  /** headers 正常返回的 Response-like：`json()` 永不 settle（body 停滞） */
   function fetchWithStalledBody() {
     const signals: AbortSignal[] = []
     const fetchMock = vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
@@ -180,10 +151,9 @@ describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久
       () => { throw new Error('body 停滞的 fingerprint 竟然成功了') },
       (e) => e,
     )
-    expect(error).toBeInstanceOf(api.AgentWasmVersionMismatchError)   // fail closed，保持既有语义
+    expect(error).toBeInstanceOf(api.AgentWasmVersionMismatchError)
     expect(String(error.message)).toMatch(/未完成/)
-    expect(String(error.message)).toMatch(/fingerprint .*fingerprint\.json/)   // 点明是哪个 URL 停滞
-    // 专属 AbortController：超时不是「放弃等待」，而是真的 abort 掉网络请求 / body stream
+    expect(String(error.message)).toMatch(/fingerprint .*fingerprint\.json/)
     expect(signals).toHaveLength(1)
     expect(signals[0].aborted).toBe(true)
     expect((signals[0].reason as DOMException | undefined)?.name).toBe('TimeoutError')
@@ -195,16 +165,14 @@ describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久
     await expect(api.verifyAgentWasmFingerprint(FAKE_PIN)).rejects.toBeInstanceOf(api.AgentWasmVersionMismatchError)
     expect(stalled.fetchMock).toHaveBeenCalledTimes(1)
 
-    // 第二次：正常 body（缓存必须已被超时清掉，否则这里会拿到上一次的 pending/拒绝）
     const fetchMock = fetchServing({ tag: FAKE_PIN.release, upstream_commit: FAKE_PIN.commit })
     vi.stubGlobal('fetch', fetchMock)
     await expect(api.verifyAgentWasmFingerprint(FAKE_PIN)).resolves.toEqual({
       tag: FAKE_PIN.release,
       upstream_commit: FAKE_PIN.commit,
     })
-    expect(fetchMock).toHaveBeenCalledTimes(1)   // 重新发起，而不是复用缓存
+    expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    // 成功结果照常进缓存：第三次不再请求
     await expect(api.verifyAgentWasmFingerprint(FAKE_PIN)).resolves.toEqual({
       tag: FAKE_PIN.release,
       upstream_commit: FAKE_PIN.commit,
@@ -218,15 +186,13 @@ describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久
     let resolverCalls = 0
     api.__setAgentWasmResolverForTest(async () => { resolverCalls++; return FAKE_MODULE })
 
-    // 无超时的话这两条都是永久 pending（装载链没有别的失败出口）
     await expect(api.loadAgentWasm(FAKE_PIN)).rejects.toBeInstanceOf(api.AgentWasmVersionMismatchError)
     await expect(api.loadAgentWasmModule(FAKE_PIN)).rejects.toBeInstanceOf(api.AgentWasmVersionMismatchError)
-    expect(resolverCalls).toBe(0)              // 产物身份没通过门禁，模块桩从未被调用
+    expect(resolverCalls).toBe(0)
     expect(api.agentWasmIdentity()).toBeNull()
   })
 
   it('boundary：HTTP error / 非法 JSON / 身份不一致 仍按原语义立刻失败，不吃看门狗', async () => {
-    // 这些分支不依赖 body 停滞：必须在远早于看门狗的时刻就结束（用超长超时证明）
     api.__setAgentWasmTimeoutForTest(60_000)
     const cases: Array<[ReturnType<typeof vi.fn>, RegExp]> = [
       [fetchServing(null, { ok: false, status: 503 }), /HTTP 503/],
@@ -240,9 +206,8 @@ describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久
       const error = await api.verifyAgentWasmFingerprint(FAKE_PIN).catch((e) => e)
       expect(error).toBeInstanceOf(api.AgentWasmVersionMismatchError)
       expect(String(error.message)).toMatch(pattern)
-      expect(String(error.message)).not.toMatch(/未完成/)   // 不是被看门狗兜掉的
+      expect(String(error.message)).not.toMatch(/未完成/)
     }
-    // 身份/HTTP/JSON 失败同样是 fail closed：产物从未建立
     expect(api.agentWasmIdentity()).toBeNull()
   })
 
@@ -260,8 +225,6 @@ describe('fingerprint 看门狗覆盖 body 阶段（headers 已到、body 永久
     expect(seen).toHaveLength(1)
     expect(seen[0].aborted).toBe(false)
 
-    // 成功路径必须摘掉 listener / 清掉 timer：切到假定时器把超时窗口推过去，
-    // 若还有残留的 abort 任务，signal 会被 abort（挂着的 listener 也会被调用）
     vi.useFakeTimers()
     try {
       let aborted = false

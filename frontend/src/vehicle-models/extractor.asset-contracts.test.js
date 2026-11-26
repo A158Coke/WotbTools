@@ -1,7 +1,3 @@
-/**
- * Generated vehicle asset and scene assembly contracts.
- * Covers committed Maus WebP/metadata, node traversal, raster visibility, bake scenes, and turret pivot.
- */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -77,24 +73,20 @@ describe('Maus 生成资产契约（assets/maus，texture-bake 正式契约）',
     }
   })
   it('高保真：真实比例无夸大——gun 宽度与模型投影一致（faithful geometry scale，bake 无放大）', () => {
-    // gunBounds 模型宽度 0.497m（-0.254..0.243）× fit.scale 31.17 ≈ 15.5 units；
-    // bake 直接按真实比例渲染（bake-report fit.scale 与 metadata 一致），无 intentional exaggeration。
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     const [gMinX, gMaxX] = [meta.generation.gunBounds.min[0], meta.generation.gunBounds.max[0]]
     const hb = meta.generation.hullBounds
     const hullMaxDim = Math.max(hb.max[0] - hb.min[0], hb.max[1] - hb.min[1])
     const scale = (VIEWBOX.width * 0.88) / hullMaxDim
     const expectedUnits = (gMaxX - gMinX) * scale
-    // bake 栅格 = scale × 2（640/320）→ gun 物理宽度不得超出预期
-    expect(expectedUnits).toBeGreaterThan(10) // Maus gun ≈ 15.5 units
-    expect(expectedUnits).toBeLessThan(20) // 无放大（真实模型宽度）
+    expect(expectedUnits).toBeGreaterThan(10)
+    expect(expectedUnits).toBeLessThan(20)
   })
   it('高保真：Source-faithful 契约写入 metadata（fidelity=high / geometryScale=faithful / retention target）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
     expect(meta.generation.fidelity).toBe('high')
     expect(meta.generation.geometryScale).toBe('faithful')
     expect(meta.generation.visibleDetailRetentionTarget).toBe(0.9)
-    // 正式契约 = texture bake（无 SVG detail thresholds）
     expect(meta.generation.method).toBe('blitzkit-model-topdown-texture-bake')
     expect(meta.generation.detailThresholds).toBeUndefined()
   })
@@ -107,9 +99,7 @@ describe('Maus 生成资产契约（assets/maus，texture-bake 正式契约）',
   })
 })
 
-// —— Phase A（2026-08-19）：geometry correctness cleanup ——
 
-/** 构造 @gltf-transform 风格 mock 节点（仅 collectNodeTriangles/groupRenderNodes 使用的接口）。 */
 function mockNode(name, { mesh = null, children = [], t = null, r = null, s = null } = {}) {
   return {
     getName: () => name,
@@ -134,7 +124,6 @@ function mockMesh(positions, indices) {
 
 describe('Phase A1 — hide_elements 子树采集（复刻 TankModel.tsx 完整子树渲染）', () => {
   const tri = (x, y, z) => [x, y, z]
-  // hull 主 mesh：单个三角形；hull_hide_elements 子树：另一个三角形
   const hullMain = mockMesh(
     new Float32Array([...tri(0, 0, 2), ...tri(1, 0, 2), ...tri(0, 1, 2)]),
     new Uint16Array([0, 1, 2]),
@@ -156,7 +145,6 @@ describe('Phase A1 — hide_elements 子树采集（复刻 TankModel.tsx 完整�
   ]
   it('matched render node 的 hide_elements child 会被采集（BlitzKit 实际渲染整个子树）', () => {
     const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
-    // hull 组包含主 mesh + hide 子树两个三角形
     const tris = groups.hullBody.reduce((n, m) => n + m.indices.length / 3, 0)
     expect(tris).toBe(2)
     expect(groups.hullBody.some((m) => m.indices.length === 3)).toBe(true)
@@ -165,31 +153,25 @@ describe('Phase A1 — hide_elements 子树采集（复刻 TankModel.tsx 完整�
     const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
     const all = [...groups.hullBody, ...groups.tracks, ...groups.turret, ...groups.mantlet, ...groups.gun]
     const total = all.reduce((n, m) => n + m.indices.length / 3, 0)
-    expect(total).toBe(5) // hull 2 + turret 1 + gun 1 + mantlet 1（无 mask_01）
+    expect(total).toBe(5)
   })
   it('不是通过名字黑名单提前删除 hide 命名节点', () => {
     const groups = groupRenderNodes(nodes, { turretId: 1, gunId: 1, withWheels: false })
-    // 直接调用 collectNodeTriangles 递归——hide 命名子树被遍历
     const out = []
     collectNodeTriangles(nodes[0], out, new (require('three').Matrix4)())
     expect(out.length).toBe(2)
   })
 })
 describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第三轮）', () => {
-  // 与 collectNodeTriangles 同一 hierarchy 语义：worldMatrix = parentMatrix · nodeLocalMatrix，
-  // node 自身 TRS 乘入后作用于自己的 mesh，children 递归传 worldMatrix。
   const tri = (x, y, z) => [x, y, z]
-  // parent：非 identity TRS（T(1,2,3) · Rz(90°) · S(2,1,1)），自带 mesh 单点 [1,0,0]
   const parentMesh = mockMesh(
     new Float32Array(tri(1, 0, 0)),
     new Uint16Array([0, 1, 2]),
   )
-  // child：非 identity TRS（T(0.5,0,0) · S(1,2,1)），自带 mesh 单点 [0,1,0]
   const childMesh = mockMesh(
     new Float32Array(tri(0, 1, 0)),
     new Uint16Array([0, 1, 2]),
   )
-  // Rz(90°) quaternion：(x=0, y=0, z=sin45°, w=cos45°)
   const Rz90 = [0, 0, Math.SQRT1_2, Math.SQRT1_2]
   const parent = mockNode('parent', {
     mesh: parentMesh,
@@ -204,7 +186,6 @@ describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第�
   it('node 自身 TRS 作用于自己的 mesh（parent mesh 顶点 = P·v）', () => {
     const out = []
     collectNodeVerts(parent, out, new (require('three').Matrix4)())
-    // P = T(1,2,3)·Rz90·S(2,1,1)：v=[1,0,0] → S:(2,0,0) → Rz90:(0,2,0) → T:(1,4,3)
     expect(out[0][0]).toBeCloseTo(1, 9)
     expect(out[0][1]).toBeCloseTo(4, 9)
     expect(out[0][2]).toBeCloseTo(3, 9)
@@ -213,8 +194,6 @@ describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第�
   it('parent + child matrix composition 正确（child mesh 顶点 = P·C·v）', () => {
     const out = []
     collectNodeVerts(parent, out, new (require('three').Matrix4)())
-    // C = T(0.5,0,0)·S(1,2,1)：v=[0,1,0] → S:(0,2,0) → T:(0.5,2,0)
-    // P·C·v：S:(1,2,0) → Rz90:(-2,1,0) → T:(-1,3,3)
     expect(out[1][0]).toBeCloseTo(-1, 9)
     expect(out[1][1]).toBeCloseTo(3, 9)
     expect(out[1][2]).toBeCloseTo(3, 9)
@@ -226,7 +205,6 @@ describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第�
     const p2 = mockNode('p2', { children: [child2], t: [1, 2, 3], r: Rz90, s: [2, 1, 1] })
     const out = []
     collectNodeVerts(p2, out, new (require('three').Matrix4)())
-    // G·v = [1,1,1]+[1,0,0] = [2,1,1]；C:(S:(2,2,1), T:(2.5,2,1))；P:(S:(5,2,1), Rz90:(-2,5,1), T:(-1,7,4))
     expect(out[0][0]).toBeCloseTo(-1, 9)
     expect(out[0][1]).toBeCloseTo(7, 9)
     expect(out[0][2]).toBeCloseTo(4, 9)
@@ -237,7 +215,6 @@ describe('Phase A1b — collectNodeVerts matrix traversal（PR92 Review B1 第�
     collectNodeVerts(parent, outV, new (require('three').Matrix4)())
     const outT = []
     collectNodeTriangles(parent, outT, new (require('three').Matrix4)())
-    // 三角形 positions 含索引（3 顶点三角形但只有 1 个唯一顶点？——mock 用 3 顶点，这里只比较首个顶点）
     const t0 = outT[0].positions
     expect(outV[0][0]).toBeCloseTo(t0[0], 9)
     expect(outV[0][1]).toBeCloseTo(t0[1], 9)
@@ -285,9 +262,9 @@ describe('Phase A2 — filterDegeneratePolys（几何退化判定，替代长窄
 })
 
 describe('Phase A3 — rasterVisibility（真实 z-buffer 顶视可见性）', () => {
-  const deck = [[[0, 0, 2.0], [4, 0, 2.0], [0, 4, 2.0]]] // 顶层甲板
-  const under = [[[1, 1, 1.0], [3, 1, 1.0], [1, 3, 1.0]]] // 甲板下方（完全遮挡）
-  const peek = [[[3.2, 0.4, 1.5], [4.2, 0.4, 1.5], [3.2, 1.4, 1.5]]] // 部分露出（超出甲板 xy）
+  const deck = [[[0, 0, 2.0], [4, 0, 2.0], [0, 4, 2.0]]]
+  const under = [[[1, 1, 1.0], [3, 1, 1.0], [1, 3, 1.0]]]
+  const peek = [[[3.2, 0.4, 1.5], [4.2, 0.4, 1.5], [3.2, 1.4, 1.5]]]
   it('被上层完全遮挡的三角形可见像素 = 0（tracks 语义）', () => {
     const vis = rasterVisibility([...deck, ...under], { resolution: 64 })
     expect(vis.visiblePx[1]).toBe(0)
@@ -298,7 +275,7 @@ describe('Phase A3 — rasterVisibility（真实 z-buffer 顶视可见性）', (
     expect(vis.visiblePx[1]).toBeGreaterThan(0)
   })
   it('按输入索引对齐（非 top-facing = 0）', () => {
-    const vertical = [[[0, 0, 0], [1, 0, 0], [0, 0, 1]]] // 垂直壁（nz = 0）
+    const vertical = [[[0, 0, 0], [1, 0, 0], [0, 0, 1]]]
     const vis = rasterVisibility([...deck, ...vertical], { resolution: 64 })
     expect(vis.visiblePx[0]).toBeGreaterThan(0)
     expect(vis.visiblePx[1]).toBe(0)
@@ -313,15 +290,13 @@ describe('Phase A3 — rasterVisibility（真实 z-buffer 顶视可见性）', (
     const b = rasterVisibility(deck, { resolution: 64 })
     expect(a.visiblePx).toEqual(b.visiblePx)
     expect(a.visibleMask).toBeTruthy()
-    // visibilityPixel 查询与 visibleMask 一致
-    const mid = { x: 1, y: 1 } // deck 内部
+    const mid = { x: 1, y: 1 }
     const pi = visibilityPixel(mid.x, mid.y, a)
     expect(pi >= 0 && a.visibleMask[pi] === 1).toBe(true)
   })
-})// —— Phase C（2026-08-19）：bake pipeline 泛化契约测试（§10）——
+})
 describe('Generalization — selectDefaultModules（models.pb/tanks.pb 数据驱动）', () => {
   it('turrets/tracks/guns 数组最后 = 默认配置（不假设 turret_01/gun_01 永远最终模块）', () => {
-    // 构造多模块配置：turret 100/200、gun 300/400——必须选最后
     const tankDefs = { tanks: { '1': { turrets: [{ id: 100, guns: [{ id: 300 }] }, { id: 200, guns: [{ id: 400 }] }], tracks: [{ id: 10 }, { id: 20 }] } } }
     const modelDefs = { models: { '1': { turrets: { '100': { modelId: 2 }, '200': { modelId: 7 } }, turretOrigin: { x: 0, y: 1, z: 2 } } } }
     const m = selectDefaultModules(tankDefs, { models: { '1': { ...modelDefs.models['1'], turrets: { ...modelDefs.models['1'].turrets, '200': { modelId: 7, guns: { '400': { modelId: 9 } } }, '100': { modelId: 2, guns: { '300': { modelId: 5 } } } } } } }, 1)
@@ -348,7 +323,7 @@ describe('Generalization — resolveBakeScenes（turreted / turretless contract�
     expect(s.turretNames).toEqual(['turret_01', 'gun_01', 'gun_01_mask'])
     expect(s.turretNames).not.toContain('turret_02')
     expect(s.turretNames).not.toContain('gun_02')
-    expect(s.turretNames).not.toContain('mask_01') // 无关节点排除
+    expect(s.turretNames).not.toContain('mask_01')
   })
   it('turretless：gun/mantlet（casemate）全部 bake 进 hull 场景，无独立 turret 层', () => {
     const s = resolveBakeScenes(nodes, { turretModelId: 1, gunModelId: 1, kind: 'turretless' })
@@ -364,17 +339,14 @@ describe('Generalization — resolveBakeScenes（turreted / turretless contract�
 })
 describe('computeTurretModelPivot（BlitzKit useTankTransform yaw 中心契约，PR92）', () => {
   it('modelPivot = correctZYTuple(hullOrigin) + correctZYTuple(turretOrigin)', () => {
-    // maus 真实数据：track origin 缺失（零）、turret_origin engine (0, 2.1403, -1.1447)
     const p = computeTurretModelPivot({ x: 0, y: 0, z: 0 }, { x: 0, y: 2.140294075012207, z: -1.144700050354004 })
     expect(p.x).toBeCloseTo(0, 9)
-    expect(p.y).toBeCloseTo(-1.1447, 4) // 模型 y = 引擎 z
-    expect(p.z).toBeCloseTo(2.1403, 4) // 模型 z = 引擎 y
+    expect(p.y).toBeCloseTo(-1.1447, 4)
+    expect(p.z).toBeCloseTo(2.1403, 4)
   })
 
   it('hullOrigin 与 turretOrigin 向量相加（含非零 track origin 情形）', () => {
-    // 引擎坐标：track origin (0, 0.9, 0.3)（高 0.9、前 0.3）+ turret_origin (0, 1.5, -0.5)
     const p = computeTurretModelPivot({ x: 0, y: 0.9, z: 0.3 }, { x: 0, y: 1.5, z: -0.5 })
-    // hullModel = (0, 0.3, 0.9)；turretModel = (0, -0.5, 1.5) → (0, -0.2, 2.4)
     expect(p.x).toBeCloseTo(0, 9)
     expect(p.y).toBeCloseTo(-0.2, 9)
     expect(p.z).toBeCloseTo(2.4, 9)
@@ -388,12 +360,8 @@ describe('computeTurretModelPivot（BlitzKit useTankTransform yaw 中心契约�
   })
 
   it('不消费 initial_turret_rotation（仅影响初始朝向角，不影响顶视 pivot——minotauro pitch=3° 证据）', () => {
-    // minotauro：initial_turret_rotation={pitch:3,yaw:0,roll:0}——pivot 公式无该参数；
-    // 运行时影响 = turretRotation.x += -3°（初始朝向）与 ≤|θ|·|c|≈0.13m 的世界原点小修正，
-    // 不改变 yaw 旋转中心（hull+turret）。
     const p = computeTurretModelPivot({ x: 0, y: 0, z: 0 }, { x: 0, y: 1.45136296749115, z: 0.6842650175094604 })
-    expect(p.y).toBeCloseTo(0.6843, 4) // 与 initial 无关
-    // 公式签名不接收 initial——结构性证明：pivot 只由两个 origin 决定
+    expect(p.y).toBeCloseTo(0.6843, 4)
     expect(computeTurretModelPivot.length).toBe(2)
   })
 })

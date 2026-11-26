@@ -1,33 +1,5 @@
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { watchEffect } from 'vue'
@@ -70,10 +42,6 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 
-/**
- * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
- * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
- */
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -97,16 +65,11 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 })
 
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
- * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
- * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
     constructor(params = {}) {
-      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
+      this.params = params
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -129,10 +92,6 @@ vi.mock('three', async (importOriginal) => {
 })
 
 
-/**
- * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
- * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
- */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
 
 vi.mock('./battleFx.ts', async (importOriginal) => {
@@ -155,9 +114,6 @@ import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 
-/** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
- *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
- *  继续跑了 DATA 派生状态写入」的可观测探针（无 WebGL 时 hasData 不具区分度）。 */
 function minimalData(tStart = 42, mapName = 'probe_map') {
   return {
     meta: { map_id: 1, map_name: mapName, t_start: tStart, friendly_team: 1 },
@@ -175,7 +131,6 @@ function deferred() {
 }
 
 
-/** 场景内核需要一个容器元素；渲染器在数据就位后才惰性创建，这里给空节点即可。 */
 function mountContainer() {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -185,11 +140,8 @@ function mountContainer() {
 
 let api = null
 
-/** 本用例创建过的全部实例（含被取代的 A）：每个实例都有自己的渲染器与事件监听，
- *  只销毁最后一个会让前面的实例继续跑，串到下个用例。 */
 let created = []
 
-/** 仍挂起的 defer：afterEach 兜底结算，避免悬挂 promise 把在途续体泄漏到下个用例。 */
 let pending = []
 
 
@@ -200,11 +152,6 @@ function track(d) {
 
 
 beforeEach(() => {
-  // 单元测试必须**无网**：happy-dom 的 fetch 会真发请求，而开发机常带 `.env.local`
-  // （`VITE_ASSET_BASE_URL=http://127.0.0.1:8123`），高档位
-  // `forceGlb: true` 的用例于是真的去下载 `/glb/<id>/model.glb` 与履带/悬挂资产 ⇒ 5 s 预算内
-  // 必超时（CI 无 .env.local ⇒ 相对地址快速失败 ⇒ 绿）——这就是 "wreck smoke …" 用例长期
-  // 「本机红 / CI 绿」的根因。默认钉成无网：需要资产的用例各自 `vi.stubGlobal('fetch', …)` 覆盖。
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
@@ -259,7 +206,6 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
 }
 
 
-/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
 function stubFrames() {
   const frames = []
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -268,11 +214,6 @@ function stubFrames() {
 }
 
 
-/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
- *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
- *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
- *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
- *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
 let zoomPump = null
 
 async function settleZoomFrames() {
@@ -280,13 +221,12 @@ async function settleZoomFrames() {
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
     const frame = stubFrames()
     zoomPump = { stub: globalThis.requestAnimationFrame, frame }
-    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+    await new Promise((r) => setTimeout(r, 25))
   }
   for (let i = 0; i < 17; i++) zoomPump.frame()
 }
 
 
-/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
 async function pumpZoomAt(dt, frames) {
   vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
@@ -298,7 +238,6 @@ async function pumpZoomAt(dt, frames) {
 }
 
 
-/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
@@ -313,7 +252,6 @@ function createScene(existingStore = null) {
 }
 
 
-/** 每次 initPlayback 一个独立实例（跨实例竞态测试要同时持有 A 与 B） */
 function createInstance(store) {
   const instance = initPlayback(mountContainer(), store)
   created.push(instance)
@@ -395,26 +333,22 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       api.seekTime(50)
       expect(shadow().visible).toBe(true)
       api.setCam('recorder')
-      api.seekTime(65)   // mode 0 = SNIPER
+      api.seekTime(65)
       run(12)
       expect(shadow().visible).toBe(false)
-      api.seekTime(75)   // 回到 Arcade
+      api.seekTime(75)
       run(12)
       expect(shadow().visible).toBe(true)
     })
 
     describe('recorder backward_zoom 倒车判定（#913 review：恢复拆分前坐标转换——只反 x，保 z）', () => {
-      // pose_kf 关键帧（绕开 1 采样网格回退）上 5 m/s 的直线运动：yaw=0（车体前向 = +z），
-      // 相机航向 ray (0,2,100)（≈正 +z）。seek 落 T=75（Arcade 档：mode raw 1）。
-      // 倒车拉远收敛后 boom = 14 × 1.35 = 18.9 m，不触发时恒 14 m——
-      // 以 camera.z − 车体 z 的水平间距（负 = 相机在车后）判定。
       const motionKf = (sign) => ({ t: [42, 75], pos: [0, 0, 0, 0, 0, sign * 165], yaw: [0, 0], pitch: [0, 0] })
       const backwardFacet = () => facet({ client_options: { backward_zoom: true } })
       const settledGap = async (sign) => {
         const { api, run } = await load({ camera: backwardFacet(), vehicleOverrides: { pose_kf: motionKf(sign) } })
         api.seekTime(75)
         api.setCam('recorder')
-        run(40)   // dt=0.1 × 40 帧 ≫ tau=0.25s：boom 缩放完全收敛到 1 或 1.35
+        run(40)
         const v = window.__pbV[0]
         return window.__camera.position.z - v.group.position.z
       }
@@ -450,7 +384,6 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       run(1)
       const camera = window.__camera
       expect(camera.fov).toBe(27)
-      // 只从渲染中摘掉：车辆仍「在场」，炮口与击毁特效依赖 group.visible
       expect(vehicle.group.visible).toBe(true)
       expect(vehicle.meshHull.layers.test(camera.layers)).toBe(false)
       const gun = vehicle.gunPivot.getWorldPosition(new THREE.Vector3())
@@ -458,7 +391,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
 
       api.seekTime(75)
       run(1)
-      expect(camera.fov).toBe(55)   // Arcade/Sniper 由回放驱动，硬切
+      expect(camera.fov).toBe(55)
       expect(vehicle.meshHull.layers.test(camera.layers)).toBe(true)
     })
 
@@ -514,7 +447,6 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       run(5)
       const [dot, circle] = reticle.update.mock.lastCall
       expect(Math.abs(dot.x - 450)).toBeLessThan(40)
-      // 炮塔朝 +z、相机朝右偏 0.3 rad：圆必须落在中心一侧，不能跟着相机锁在中间
       expect(Math.abs(circle.x - dot.x)).toBeGreaterThan(100)
     })
 
@@ -546,7 +478,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
         const { api, run, store } = await load({ ...options, overlay })
         api.seekTime(65)
         api.setCam('recorder')
-        run(12)   // 镜头过渡结束，开镜状态已生效
+        run(12)
         expect(store.cam).toBe('recorder')
         api.setPlaying(true)
         run(3)
@@ -589,7 +521,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       api.seekTime(90)
       run(8)
       expect(window.__camera.fov).toBe(55)
-      expect(renderedFov.at(-1)).toBe(55)   // 记录渲染当时的值：暂停时最后一帧也要画出来
+      expect(renderedFov.at(-1)).toBe(55)
     })
 
     it('falls back to Free near the old pose when the recorder dies, and only re-enables on seek back', async () => {
@@ -864,7 +796,7 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(QUALITY_PRESETS[t].scenery).toBe(true)
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
-      expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
+      expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])
     }
     expect(keys.map((t) => {
       const { antialias, maxDpr, anisotropy, terrainSeg, allowGlb, treadMarks, forceGlb, groundLayers } = QUALITY_PRESETS[t]
@@ -878,12 +810,9 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
   })
 
   it('地面贴图四档统一用契约化的 `map`（ground.webp）；客户端 HUD 小地图不再进地面链路', async () => {
-    // 2026-10-16 用户裁定（以 ±300 为准）：客户端小地图覆盖约 620 m、多出外围一圈，按 600 m 铺
-    // 会压缩内容约 3% 并把圈外内容摊进边界 ⇒ 地面链路（含最低档）只认 ground.webp。
     const src = (await import('./playbackScene.js?raw')).default
     expect(src).not.toMatch(/map-mini/)
     expect(src).not.toMatch(/miniMap/)
-    // All quality levels use the map loader's ground.webp path.
     const worldSrc = (await import('./playback/mapWorldLoader.ts?raw')).default
     expect(worldSrc).not.toMatch(/map-mini/)
     const groundPath = /const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/
