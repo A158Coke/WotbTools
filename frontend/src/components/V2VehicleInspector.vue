@@ -220,6 +220,7 @@ function moduleStateLabel(state) {
         >
           <img v-if="c.icon" class="v2-chip-icon" :src="c.icon" alt="" width="32" height="32" loading="lazy">
           <span v-else class="v2-chip-placeholder"></span>
+          <span class="v2-chip-name">{{ c.label }}</span>
         </div>
           </div>
         </div>
@@ -238,6 +239,7 @@ function moduleStateLabel(state) {
         >
           <img v-if="p.icon" class="v2-chip-icon" :src="p.icon" alt="" width="32" height="32" loading="lazy">
           <span v-else class="v2-chip-placeholder"></span>
+          <span class="v2-chip-name">{{ p.label }}</span>
         </div>
           </div>
         </div>
@@ -256,6 +258,7 @@ function moduleStateLabel(state) {
             >
               <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
               <span v-else class="v2-chip-placeholder"></span>
+              <span class="v2-chip-name">{{ e.label }}</span>
             </div>
           </div>
           <button
@@ -312,19 +315,13 @@ function moduleStateLabel(state) {
 .v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
 .v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
 .v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.v2-equipment-row { display: block; }
 .v2-inspector-chip {
   display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
 }
-.v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
 @media (width < 768px) {
   .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
-  .v2-equipment-row { display: block; }
 }
-.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
-.v2-chip-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.v2-chip-item img { flex: none; inline-size: 24px; block-size: 24px; object-fit: contain; }
 .v2-configurator-link {
   margin-block-start: var(--space-1);
   align-self: flex-start;
@@ -340,10 +337,13 @@ function moduleStateLabel(state) {
 .v2-configurator-link:hover { border-color: var(--color-border-strong); }
 .v2-configurator-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-.v2-inspector-chip.is-empty .v2-chip-item { color: var(--color-text-tertiary); font-style: italic; }
-.v2-inspector-chip.is-empty .v2-chip-type { opacity: .7; }
-
 .v2-inspector-chip .v2-chip-icon { width: 32px; height: 32px; object-fit: contain; }
+.v2-chip-name {
+  display: block; max-width: 100%; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; text-align: center;
+  color: var(--color-text-secondary); font: var(--type-caption);
+}
+.v2-inspector-chip.is-empty .v2-chip-name { color: var(--color-text-tertiary); }
 .v2-inspector-chip .v2-chip-placeholder {
   width: 32px; height: 32px; border-radius: var(--radius-sm);
   border: 1px dashed var(--color-border-subtle); opacity: .5;
