@@ -30,7 +30,16 @@ current_default() {
 }
 
 usage() {
-  sed -n '/^# Usage:/,/^set -Eeuo pipefail/p' "$0" | sed 's/^# \{0,1\}//' | sed '$d'
+  cat <<'USAGE'
+Usage:
+  dataset.sh link --dataset 11.21.0 --release 20261105-3f9a2c1b [--default] [--dry-run]
+  dataset.sh default --dataset 11.21.0 [--dry-run]
+  dataset.sh catalog [--default <id>] [--dry-run]   # default 从 current 推导，仅作校验
+  dataset.sh rollback --dataset 11.21.0 --release 20261015-aaaaaaaa [--dry-run]
+  dataset.sh unlink --dataset 11.21.0 [--redirect-to <active-id>] [--dry-run]
+  dataset.sh list
+  dataset.sh verify [--full]
+USAGE
   exit "${1:-0}"
 }
 

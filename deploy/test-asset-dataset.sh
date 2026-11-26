@@ -222,4 +222,18 @@ fi
 run unlink --dataset supertest >/dev/null
 assert_catalog_default "11.21.0"
 
+help_out="$(run --help)" || { echo "--help must exit 0" >&2; exit 1; }
+[[ -n "$help_out" ]] || { echo "--help output must not be empty" >&2; exit 1; }
+[[ "$help_out" == *"dataset.sh link"* ]] || { echo "--help must contain usage text" >&2; exit 1; }
+
+help_out="$(run help)" || { echo "help must exit 0" >&2; exit 1; }
+[[ -n "$help_out" ]] || { echo "help output must not be empty" >&2; exit 1; }
+[[ "$help_out" == *"dataset.sh link"* ]] || { echo "help must contain usage text" >&2; exit 1; }
+
+if unknown_out="$(run no-such-command 2>&1)"; then
+  echo "unknown subcommand must fail" >&2; exit 1
+fi
+[[ -n "$unknown_out" ]] || { echo "unknown subcommand must print usage" >&2; exit 1; }
+[[ "$unknown_out" == *"dataset.sh link"* ]] || { echo "unknown subcommand usage must contain usage text" >&2; exit 1; }
+
 echo "asset dataset host contract: PASS"
