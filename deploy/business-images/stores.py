@@ -84,6 +84,10 @@ class OssTarget:
         for obj in oss2.ObjectIteratorV2(self.bucket, prefix=prefix):
             yield obj.key
 
+    def require_public_access_block(self):
+        if self.bucket.get_bucket_public_access_block().block_public_access is not True:
+            raise PublicAccessBlockRequired("Enable and retain Block Public Access on the OSS bucket")
+
     def check_destination(self):
         if self.bucket.get_bucket_acl().acl != "private":
             raise ValueError("Target requires a private bucket")
@@ -107,3 +111,7 @@ class OssTarget:
                 return False
             raise
         return True
+
+
+class PublicAccessBlockRequired(ValueError):
+    """Safe operator-facing error with no request or credential details."""

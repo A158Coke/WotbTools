@@ -12,7 +12,7 @@ import sqlite3
 import sys
 from uuid import UUID, uuid4
 
-from stores import configuration, open_stores
+from stores import PublicAccessBlockRequired, configuration, open_stores
 
 LIMITS = {"cover": 10 * 1024 * 1024, "avatar": 512 * 1024}
 SCHEMA = """
@@ -43,16 +43,20 @@ def ledger():
             yield from rows
 
 
+def inventory_keys(topology, source, target):
+    for side, store in (("source", source), ("target", target)):
+        for ns, prefix in topology["prefixes"].items():
+            for key in store.keys(prefix):
+                yield side, ns, key
+
+
 def snapshot(db, topology, rows, source, target):
     started = datetime.now(timezone.utc).isoformat()
     db.executescript(SCHEMA)
     with db:
         db.executemany("""INSERT INTO image(namespace,id,object_key,status,content_type,size,hash,
                           refs,owner_ok,consumer) VALUES(?,?,?,?,?,?,?,?,?,?)""", rows)
-        for side, store in (("source", source), ("target", target)):
-            for ns, prefix in topology["prefixes"].items():
-                db.executemany("INSERT INTO inventory VALUES(?,?,?)",
-                               ((side, ns, key) for key in store.keys(prefix)))
+        db.executemany("INSERT INTO inventory VALUES(?,?,?)", inventory_keys(topology, source, target))
         # Only a complete snapshot gets an identity and can be processed.
         db.execute("INSERT INTO run VALUES(?,?,?)", (str(uuid4()), started,
                                                     json.dumps(topology, sort_keys=True)))
@@ -109,6 +113,9 @@ def reconcile(db, row, prefix, source, target, copy, evidence):
         if target.create(row["object_key"], row["content_type"], body):
             with db:
                 db.execute("UPDATE image SET created_by_run=1 WHERE rowid=?", (row["rowid"],))
+        else:
+            # A competing writer chose the object's ACL. Re-check the bucket safeguard.
+            target.require_public_access_block()
         dst, _ = check_object(target, row, evidence, "target")
         if dst != "match":
             return "target_" + dst
@@ -119,6 +126,7 @@ def process(db, topology, source, target, copy, limit):
     run = db.execute("SELECT topology FROM run").fetchone()
     if not run or json.loads(run[0]) != topology:
         raise ValueError("Incomplete snapshot or different storage configuration")
+    target.require_public_access_block()
     if copy:
         target.check_destination()
     # Freeze the work list before updating attempts/results. A first-row failure must
@@ -143,11 +151,24 @@ def process(db, topology, source, target, copy, limit):
                        {**evidence, "result": result, "id": row["rowid"]})
 
 
-def summary(db):
+def verify_inventory(db, topology, source, target):
+    # Publish the new listing only after all four prefix scans and the privacy check succeed.
+    with db:
+        db.execute("CREATE TABLE IF NOT EXISTS verify_inventory AS SELECT * FROM inventory WHERE 0")
+        db.execute("DELETE FROM verify_inventory")
+        db.executemany("INSERT INTO verify_inventory VALUES(?,?,?)", inventory_keys(topology, source, target))
+        target.require_public_access_block()
+
+
+def summary(db, fresh_inventory=False):
     groups = [dict(row) for row in db.execute("""SELECT namespace,status,consumer,result,
               count(*) AS count,sum(size) AS ledger_bytes FROM image
               GROUP BY namespace,status,consumer,result ORDER BY namespace,status,consumer,result""")]
-    extras = [dict(row) for row in db.execute("""SELECT side,namespace,count(*) AS count FROM inventory i
+    table = "verify_inventory" if fresh_inventory else "inventory"
+    new_count = "" if not fresh_inventory else """, count(*) FILTER (WHERE NOT EXISTS (
+              SELECT 1 FROM inventory s WHERE (s.side,s.namespace,s.object_key) =
+              (i.side,i.namespace,i.object_key))) AS new_since_snapshot"""
+    extras = [dict(row) for row in db.execute(f"""SELECT side,namespace,count(*) AS count {new_count} FROM {table} i
               WHERE NOT EXISTS (SELECT 1 FROM image l WHERE l.namespace=i.namespace
                                 AND l.object_key=i.object_key) GROUP BY side,namespace""")]
     print(json.dumps({"snapshot": db.execute("SELECT id FROM run").fetchone()[0],
@@ -180,6 +201,10 @@ def main(argv=None):
             summary(db)
             return 0
         process(db, topology, source, target, args.action == "copy", args.limit)
+        if args.action == "verify":
+            verify_inventory(db, topology, source, target)
+            return summary(db, fresh_inventory=True)
+        target.require_public_access_block()
         return summary(db)
 
 
@@ -187,5 +212,7 @@ if __name__ == "__main__":
     logging.disable(logging.CRITICAL)
     try:
         sys.exit(main())
+    except PublicAccessBlockRequired as exc:
+        sys.exit(str(exc))
     except Exception as exc:
         sys.exit("Snapshot/operation incomplete (" + type(exc).__name__ + ")")

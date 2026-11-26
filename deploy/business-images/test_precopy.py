@@ -13,6 +13,12 @@ import precopy
 
 
 class MemoryStore(dict):
+    block_public_access = True
+
+    def require_public_access_block(self):
+        if not self.block_public_access:
+            raise precopy.PublicAccessBlockRequired()
+
     def keys(self, prefix):
         return (key for key in self if key.startswith(prefix))
 
@@ -157,6 +163,50 @@ class PrecopyTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.action("copy")
         self.assertFalse(self.target)
+
+    def test_matching_preexisting_object_requires_public_access_block(self):
+        key = self.image()
+        self.target[key] = self.source[key]
+        self.target.block_public_access = False
+        self.action("snapshot")
+        for action in ("copy", "verify"):
+            with self.assertRaises(precopy.PublicAccessBlockRequired):
+                self.action(action)
+        self.assertEqual(self.state(key)[0], "unchecked")
+
+    def test_matching_409_cannot_pass_if_privacy_gate_changes_during_copy(self):
+        key = self.image()
+        self.action("snapshot")
+
+        def other_writer(key, mime, body):
+            self.target[key] = (mime, body)
+            self.target.block_public_access = False
+            return False
+
+        with patch.object(self.target, "create", side_effect=other_writer):
+            with self.assertRaises(precopy.PublicAccessBlockRequired):
+                self.action("copy")
+        self.assertEqual(self.state(key)[:3], ("error_PublicAccessBlockRequired", 1, 0))
+        with self.assertRaises(precopy.PublicAccessBlockRequired):
+            self.action("verify")
+
+    def test_verify_relists_both_stores_and_preserves_snapshot(self):
+        old = "avatars/original-orphan"
+        self.source[old] = ("image/png", b"old")
+        self.action("snapshot")
+        self.source["avatars/late"] = self.target["covers/late"] = ("image/png", b"late")
+        report = self.action("verify", expected=1)
+        self.assertEqual(report["untracked_objects"], [
+            {"side": "source", "namespace": "avatar", "count": 2, "new_since_snapshot": 1},
+            {"side": "target", "namespace": "cover", "count": 1, "new_since_snapshot": 1}])
+        self.source.clear()
+        self.target.clear()
+        with patch.object(self.target, "keys", side_effect=PermissionError), self.assertRaises(PermissionError):
+            self.action("verify")
+        with closing(sqlite3.connect(self.manifest)) as db:
+            self.assertEqual(db.execute("SELECT object_key FROM inventory").fetchall(), [(old,)])
+            self.assertEqual(db.execute("SELECT count(*) FROM verify_inventory").fetchone(), (3,))
+        self.assertEqual(self.action("verify")["untracked_objects"], [])
 
 
 if __name__ == "__main__":

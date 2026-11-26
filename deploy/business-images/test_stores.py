@@ -7,7 +7,7 @@ import oss2
 from qcloud_cos import CosConfig, CosS3Client
 from qcloud_cos.cos_exception import CosServiceError
 
-from stores import CosSource, OssTarget
+from stores import CosSource, OssTarget, PublicAccessBlockRequired
 
 
 class StorageFixture(BaseHTTPRequestHandler):
@@ -28,7 +28,12 @@ class StorageFixture(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlsplit(self.path)
         query = parse_qs(url.query, keep_blank_values=True)
-        if "acl" in query:
+        if "publicAccessBlock" in query:
+            if self.server.block is None:
+                self.fail("AccessDenied", 403)
+            else:
+                self.reply(f"<PublicAccessBlockConfiguration>{self.server.block}</PublicAccessBlockConfiguration>".encode())
+        elif "acl" in query:
             self.reply(f"<AccessControlPolicy><AccessControlList><Grant>{self.server.acl}</Grant>"
                        "</AccessControlList></AccessControlPolicy>".encode())
         elif "versioning" in query:
@@ -66,6 +71,7 @@ class StoreProtocolTest(unittest.TestCase):
         server.received = []
         server.acl = "private"
         server.version = ""
+        server.block = "<BlockPublicAccess>true</BlockPublicAccess>"
         self.addCleanup(server.server_close)
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -105,6 +111,16 @@ class StoreProtocolTest(unittest.TestCase):
         self.server.acl = "public-read"
         with self.assertRaises(ValueError):
             self.target.check_destination()
+
+    def test_private_bucket_requires_positive_public_access_block_evidence(self):
+        self.target.require_public_access_block()
+        for block in ("<BlockPublicAccess>false</BlockPublicAccess>", ""):
+            self.server.block = block
+            with self.assertRaises(PublicAccessBlockRequired):
+                self.target.require_public_access_block()
+        self.server.block = None
+        with self.assertRaises(oss2.exceptions.ServerError):
+            self.target.require_public_access_block()
 
 
 if __name__ == "__main__":
