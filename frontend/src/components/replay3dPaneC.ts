@@ -6,6 +6,7 @@ import { Feature } from '../app/featureCapabilities.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { initPlayback } from '../scene/playbackScene.js'
+import { contactShadowOverrideFor, type ReplayShadowRequest } from './replay3dShadowRequest.js'
 import type { SceneApiLike } from './replay3dPaneA.js'
 import type { LocalPlayback } from '../replay-local/playback/parseLocalPlayback.js'
 import type { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -20,6 +21,7 @@ type Store = ReturnType<typeof createPlaybackStore>
 type FlyControls = ReturnType<typeof useSceneFlyControls>
 type I18nT = ReturnType<typeof useI18n>['t']
 type RosterRowLike = { eid: number; accountId: number | null; tankId: number | null; team: number | null; nick: string; tank: string; dead?: boolean; hp?: number; maxHp?: number }
+
 
 interface PlaybackSessionLike {
   loadScene(file: File): unknown
@@ -55,8 +57,8 @@ export interface R3dCParts {
   recorderReticle: Ref<HTMLElement | null>
   labelOverlay: Ref<HTMLElement | null>
   stage: Ref<HTMLElement | null>
-  /** 渲染设置整页重载前暂存当前回放（A 段定义，随场景宿主转交）。 */
-  stageReloadReplay?: () => Promise<void>
+  /** 渲染设置整页重载前暂存当前回放与接地阴影目标（A 段定义，随场景宿主转交）。 */
+  stageReloadReplay?: (contactShadows?: boolean) => Promise<void>
   /** 恢复重播信号由 A 段拥有（绑定 File），C 段只在播放条件齐备后 claim。 */
   resumePending?: Ref<boolean>
   claimResume?: () => boolean
@@ -84,6 +86,7 @@ export interface R3dCProps {
   file: File | null
   playbackSession: PlaybackSessionLike | null
   autoStartUserId: string
+  shadowRequest?: ReplayShadowRequest | null
 }
 
 export function r3dC(S: R3dCParts, props: R3dCProps): void {
@@ -197,6 +200,7 @@ function ensureScene(): boolean {
     onAnnotationErase: S.eraseFromScene,
     recorderReticle: S.recorderReticle.value,
     stageReloadReplay: S.stageReloadReplay ?? null,
+    contactShadowOverride: contactShadowOverrideFor(props.file, props.shadowRequest),
   })
   S.sceneApi?.setPaused?.(!S.renderActive.value)
   S.sceneApi?.setFlySpeed?.(S.fly.flySpeedIndex())

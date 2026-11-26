@@ -68,8 +68,12 @@ describe('buildRenderSettingsReloadUrl', () => {
     expect(url.searchParams.has('q')).toBe(false)
   })
 
-  it('接地阴影总是显式写入 ?shadows=（没有 localStorage 可依赖）', () => {
-    expect(buildRenderSettingsReloadUrl('https://x.test/replay', { contactShadows: true }).searchParams.get('shadows')).toBe('1')
-    expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=1', { contactShadows: false }).searchParams.get('shadows')).toBe('0')
+  it('接地阴影不进重载 URL，并清掉旧 ?shadows= 参数', () => {
+    expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=1', { contactShadows: true })
+      .searchParams.has('shadows')).toBe(false)
+    expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=0', { contactShadows: false })
+      .searchParams.has('shadows')).toBe(false)
+    expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=1', { logdepth: true })
+      .searchParams.has('shadows')).toBe(false)
   })
 })

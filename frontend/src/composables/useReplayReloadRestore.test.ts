@@ -17,6 +17,7 @@ function deps(overrides = {}) {
     updateDemoFile: vi.fn(),
     selectBattleIndex: vi.fn(),
     analyze: vi.fn().mockResolvedValue({ completed: true }),
+    onRestoring: vi.fn(),
     onRestored: vi.fn(),
     onError: vi.fn(),
     ...overrides,
@@ -25,7 +26,10 @@ function deps(overrides = {}) {
 
 const fileA = new File(['a'], 'a.wotbreplay')
 const fileB = new File(['b'], 'b.wotbreplay')
-const stagedFiles = { id: 'reload-1', replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1 } }
+const stagedFiles = {
+  id: 'reload-1',
+  replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1, contactShadows: true },
+}
 
 describe('restoreStagedReplay', () => {
   beforeEach(() => {
@@ -55,6 +59,9 @@ describe('restoreStagedReplay', () => {
     expect(await restoreStagedReplay(d)).toBe(true)
     expect(d.updateFiles).toHaveBeenCalledWith([fileA, fileB])
     expect(d.selectBattleIndex).toHaveBeenCalledWith(1)
+    expect(d.onRestoring).toHaveBeenCalledWith(fileB, 'reload-1', true)
+    expect(d.onRestoring.mock.invocationCallOrder[0])
+      .toBeLessThan(d.analyze.mock.invocationCallOrder[0])
     expect(d.analyze).toHaveBeenCalledTimes(1)
     expect(d.onRestored).toHaveBeenCalledWith(fileB, 'reload-1')
   })
@@ -68,23 +75,25 @@ describe('restoreStagedReplay', () => {
     })
     expect(await restoreStagedReplay(d)).toBe(false)
     expect(d.updateFiles).not.toHaveBeenCalled()
+    expect(d.onRestoring).not.toHaveBeenCalled()
     expect(d.onRestored).not.toHaveBeenCalled()
   })
 
   it('官方示例：重新下载校验后走 demo 选择路径', async () => {
-    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo' } })
+    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo', contactShadows: false } })
     demo.load.mockResolvedValue(fileA)
     const d = deps()
     expect(await restoreStagedReplay(d)).toBe(true)
     expect(demo.load).toHaveBeenCalledTimes(1)
     expect(d.updateDemoFile).toHaveBeenCalledWith(fileA)
     expect(d.updateFiles).not.toHaveBeenCalled()
+    expect(d.onRestoring).toHaveBeenCalledWith(fileA, 'reload-demo', false)
     expect(d.analyze).toHaveBeenCalledTimes(1)
     expect(d.onRestored).toHaveBeenCalledWith(fileA, 'reload-demo')
   })
 
   it('下载官方示例期间用户已选择别的回放：不再替换选择', async () => {
-    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo' } })
+    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo', contactShadows: true } })
     const d = deps()
     demo.load.mockImplementation(async () => {
       d.files.value = [fileB]

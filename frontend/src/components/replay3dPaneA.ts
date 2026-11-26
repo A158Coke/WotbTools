@@ -30,8 +30,8 @@ export interface R3dAParts {
   shortWorkspace: Ref<boolean>
   CAMERAS: Ref<ReadonlyArray<{ id: string; label: string }> | string[]>
   sceneApi: SceneApiLike | null
-  /** 渲染设置整页重载前暂存当前回放；失败时抛错并中止重载。 */
-  stageReloadReplay?: () => Promise<void>
+  /** 渲染设置整页重载前暂存当前回放与本次接地阴影目标；失败时抛错并中止重载。 */
+  stageReloadReplay?: (contactShadows?: boolean) => Promise<void>
   /** 重载恢复的自动重播信号（A 段拥有匹配/消费，C 段只在完整就绪后 claim）。 */
   resumePending?: Ref<boolean>
   claimResume?: () => boolean
@@ -121,15 +121,19 @@ async function saveSettings(): Promise<void> {
 function sameReplayFiles(next: readonly unknown[], previous: readonly File[]): boolean {
   return next.length === previous.length && next.every((file, index) => file === previous[index])
 }
-async function stageReloadReplay(): Promise<void> {
+async function stageReloadReplay(contactShadows?: boolean): Promise<void> {
   const file = props.file
   if (!(file instanceof File)) return
   const capturedFiles = (props.replayFiles ?? []).filter((item): item is File => item instanceof File)
   const files = capturedFiles.includes(file) ? capturedFiles : [file, ...capturedFiles]
   const selectionRevision = props.selectionRevision
+  // 显式传入本次重载后的有效目标；缺省（例如只改画质）沿用当前选择。
+  const shadowTarget = contactShadows ?? S.store.contactShadows
   let reloadId: string | null = null
   try {
-    reloadId = await stageReplayForReload({ files, currentIndex: files.indexOf(file), demo: !!props.demo })
+    reloadId = await stageReplayForReload({
+      files, currentIndex: files.indexOf(file), demo: !!props.demo, contactShadows: shadowTarget,
+    })
     const unchanged = props.selectionRevision === selectionRevision
       && props.file === file
       && sameReplayFiles(props.replayFiles ?? [], capturedFiles)

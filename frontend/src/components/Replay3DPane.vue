@@ -41,6 +41,8 @@ const props = defineProps({
   /** 重载恢复出的完整批次与选择代次：暂存前快照，异步写完后复核选择没有变。 */
   replayFiles: { type: Array, default: () => [] },
   selectionRevision: { type: Number, default: 0 },
+  /** 恢复出的接地阴影目标 `{ id, file, contactShadows }`：只允许应用到同一个 File 的场景。 */
+  shadowRequest: { type: Object, default: null },
   /** 恢复解析完成后由工作台给出 `{ id, file }`：这一次自动开始绑定该 File、不受日常偏好限制。 */
   resumeRequest: { type: Object, default: null },
 })

@@ -26,7 +26,10 @@ vi.mock('../composables/useConnectivity.js', async () => {
 })
 
 vi.mock('../scene/playbackScene.js', () => {
-  playback.init = vi.fn((container, store) => {
+  playback.init = vi.fn((container, store, _labelOverlay, options = {}) => {
+    // 真实 initPlayback 在 installSceneState 时用显式 override 决定初始接地阴影：
+    // 没有绑定当前 File 的恢复请求就一律 OFF。
+    store.contactShadows = options.contactShadowOverride === true
     let generation = 0
     const api = {
       store,

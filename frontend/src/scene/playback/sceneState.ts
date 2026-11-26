@@ -4,13 +4,13 @@ import { spansContainAt } from '../trackInterp.js'
 import { makeReplacedAt } from './identity.ts'
 import { GRID_DT } from './util.js'
 import { QUALITY_PRESETS, shadowQualityEligible } from './quality.js'
-import { boolPref, consumeUrlBool, persistBoolPref, resolveQualityKey } from './preferences.ts'
+import { boolPref, persistBoolPref, resolveQualityKey } from './preferences.ts'
 import { buildRenderSettingsReloadUrl, type RenderSettingsPatch } from './renderSettings.ts'
 import { createContactShadowControl } from './contactShadowControl.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
 
-export function installSceneState(S: Host) {
+export function installSceneState(S: Host, contactShadowOverride?: boolean) {
   Object.assign(S, {
     setQuality: bind(S, setQuality),
     applyRenderSettings: bind(S, applyRenderSettings),
@@ -63,14 +63,12 @@ export function installSceneState(S: Host) {
   S.store.logdepth = S.LOGDEPTH;
   S.store.dynres = S.DYNRES;
   S.store.armorHighlight = S.ARMOR_HIGHLIGHT;
+
   S.contactShadowCtl = createContactShadowControl({
     store: S.store, qualityKey: () => S.QKEY, getScene: () => S.scene, getSunLight: () => S.sunLight,
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
-  // ?shadows=1/0 只属于本次整页重载：读一次就从 URL 消费掉，之后换文件 / 新建场景
-  // 仍按「无选择 = OFF」处理，不会把上一场的接地阴影带给下一场。
-  const contactShadowOverride = consumeUrlBool('shadows');
-  S.contactShadowCtl.setEnabled(contactShadowOverride ?? boolPref('pb_contact_shadows', 'shadows', false));
+  S.contactShadowCtl.setEnabled(contactShadowOverride === true);
   // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};
@@ -88,7 +86,7 @@ export function installSceneState(S: Host) {
     };
     if (S.DATA) {
       const reload = async () => {
-        try { await S.stageReloadReplay?.(); } catch (e) { return; }
+        try { await S.stageReloadReplay?.(S.store.contactShadows && shadowQualityEligible(k)); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
         location.replace(buildRenderSettingsReloadUrl(location.href, {
@@ -118,9 +116,8 @@ export function installSceneState(S: Host) {
     const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
     const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
     // 接地阴影受画质门禁约束；一次 Save 同时改画质时按新档位算有效目标。
-    // 没有显式 patch 时沿用当前选择：任何一次重载都必须把它写进 URL，否则
-    // 待开播卡片开过阴影（URL 无 ?shadows）后改画质重载会静默丢选择，
-    // 或降档后遗留 ?shadows=1 让下次升档意外恢复。
+    // 没有显式 patch 时沿用当前选择：任何一次重载都要把有效目标写进本次暂存记录，
+    // 否则待开播卡片开过阴影后改画质重载会静默丢选择。
     const nextQuality = qualityChanged && quality ? quality : S.QKEY;
     const contactDesired = patch.contactShadows !== undefined ? !!patch.contactShadows : S.store.contactShadows;
     const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
@@ -129,7 +126,7 @@ export function installSceneState(S: Host) {
     // 已开播：整页重载前先把当前回放暂存到 IndexedDB（重载后由工作台恢复）；
     // 暂存失败就中止本次应用，保留当前会话，绝不带着回放丢失风险重载。
     if (S.DATA) {
-      try { await S.stageReloadReplay?.(); } catch (e) { return false; }
+      try { await S.stageReloadReplay?.(contactTarget); } catch (e) { return false; }
     }
     if (logdepthChanged) {
       S.LOGDEPTH = !!patch.logdepth;
@@ -161,8 +158,8 @@ export function installSceneState(S: Host) {
     // 只有真的变化的偏好进 URL；URL 未显式携带的 logdepth/dynres 仍由 localStorage 承载。
     if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
     if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
-    // 接地阴影没有 localStorage 载体：既然本次重载，就把有效目标显式带过去。
-    patchForUrl.contactShadows = contactTarget;
+    // 接地阴影没有 localStorage 载体，也不进 URL：它的有效目标已随 stageReloadReplay
+    // 绑定本次 reloadId，重载后只在恢复 File 匹配时应用。
     // 装甲高亮是 live 项：重载前把刚写入的当前值带进 URL（仅当 URL 原本已有 ?armorhl=）。
     patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;
     location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));

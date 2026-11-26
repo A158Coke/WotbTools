@@ -24,14 +24,14 @@ export { COLOR_FRIENDLY, COLOR_ENEMY, COLOR_UNKNOWN, TRACER_FRIENDLY, TRACER_ENE
  * @param {HTMLElement} container
  * @param {ReturnType<import('./playbackStore').createPlaybackStore>} store
  * @param {HTMLElement | null} labelOverlay
- * @param {{onVehicleSelect?: (eid: number | null, event: MouseEvent | null) => void, onAnnotationCommit?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['commitAnnotationFromScene'], onAnnotationErase?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['eraseFromScene'], recorderReticle?: HTMLElement | null, stageReloadReplay?: (() => Promise<void>) | null}} [options]
+ * @param {{onVehicleSelect?: (eid: number | null, event: MouseEvent | null) => void, onAnnotationCommit?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['commitAnnotationFromScene'], onAnnotationErase?: ReturnType<import('../composables/useSceneAnnotations').useSceneAnnotations>['eraseFromScene'], recorderReticle?: HTMLElement | null, stageReloadReplay?: ((contactShadows?: boolean) => Promise<void>) | null, contactShadowOverride?: boolean}} [options]
  */
 
-export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle = null, stageReloadReplay = null } = {}) {
+export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle = null, stageReloadReplay = null, contactShadowOverride } = {}) {
   const S = createSceneHost({
     container, store, labelOverlay, onVehicleSelect, onAnnotationCommit, onAnnotationErase, recorderReticle, stageReloadReplay,
   })
-  installSceneState(S)
+  installSceneState(S, contactShadowOverride)
   installRenderLoop(S)
   installTransport(S)
   installSessionRuntime(S)

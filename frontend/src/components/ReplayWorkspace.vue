@@ -108,15 +108,16 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       : t('workspace.native_replay_read_failed')
   },
 })
-// 渲染设置整页重载后恢复完整回放选择（一次性 id；普通进入不触碰 IndexedDB）。
-// 自动重播请求绑定恢复出来的 File，由 Pane 消费后清除；用户换场即失效，绝不落到另一场。
-const replayResumeRequest = ref(null)
+// 整页重载后恢复完整回放选择与接地阴影（一次性 id；普通进入不触碰 IndexedDB）；请求均绑定恢复 File。
+const replayShadowRequest = ref(null), replayResumeRequest = ref(null)
 useReplayReloadRestore({
   files, selectionRevision, updateFiles, updateDemoFile, selectBattleIndex: workspace.replay.selectBattleIndex, analyze,
+  onRestoring: (file, id, contactShadows) => { if (targetFile.value === file) replayShadowRequest.value = { id, file, contactShadows } },
   onRestored: (file, id) => { if (targetFile.value === file) replayResumeRequest.value = { id, file } },
-  onError: () => { error.value = t('workspace.replay_restore_failed') },
+  onError: () => { replayShadowRequest.value = null; replayResumeRequest.value = null; error.value = t('workspace.replay_restore_failed') },
 })
 watch(targetFile, (file) => {
+  if (replayShadowRequest.value && replayShadowRequest.value.file !== file) replayShadowRequest.value = null
   if (replayResumeRequest.value && replayResumeRequest.value.file !== file) replayResumeRequest.value = null
 })
 
@@ -352,7 +353,7 @@ watch(() => props.initialCapability, (val) => {
               :show-event-markers="showEventMarkers"
               :auto-start-user-id="autoStartUserId"
               :demo="isDemoSelection"
-              :replay-files="files" :selection-revision="selectionRevision"
+              :replay-files="files" :selection-revision="selectionRevision" :shadow-request="replayShadowRequest"
               :resume-request="replayResumeRequest"
               @resume-consumed="replayResumeRequest = null"
             />

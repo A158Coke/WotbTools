@@ -17,11 +17,17 @@ const STORE_NAME = 'replays'
 export const RELOAD_PENDING_KEY = 'wotb-replay-reload-pending'
 
 export type StagedReplay =
-  | { kind: 'demo' }
-  | { kind: 'files', files: File[], currentIndex: number }
+  | { kind: 'demo', contactShadows: boolean }
+  | { kind: 'files', files: File[], currentIndex: number, contactShadows: boolean }
 
 export interface StagedReload { id: string, replay: StagedReplay }
-export interface StageReplayInput { files: readonly File[], currentIndex: number, demo?: boolean }
+export interface StageReplayInput {
+  files: readonly File[]
+  currentIndex: number
+  demo?: boolean
+  /** 本次重载完成后，仅绑定恢复出来的那个 File 的接地阴影目标。 */
+  contactShadows?: boolean
+}
 
 interface StoredReload { replay: StagedReplay }
 
@@ -105,7 +111,10 @@ export async function stageReplayForReload(input: StageReplayInput): Promise<str
   const files = demo ? [] : input.files.slice()
   if (!demo && files.length === 0) throw new Error('No replay files to stage')
   const currentIndex = demo ? 0 : Math.min(Math.max(0, Math.trunc(input.currentIndex)), files.length - 1)
-  const replay: StagedReplay = demo ? { kind: 'demo' } : { kind: 'files', files, currentIndex }
+  const contactShadows = input.contactShadows === true
+  const replay: StagedReplay = demo
+    ? { kind: 'demo', contactShadows }
+    : { kind: 'files', files, currentIndex, contactShadows }
   const id = reloadId()
   const db = await openDb()
   try {
@@ -136,7 +145,9 @@ export async function takeReloadReplay(): Promise<StagedReload | null> {
   const db = await openDb()
   try {
     const record = await takeRecord(db, id)
-    return record && validReplay(record.replay) ? { id, replay: record.replay } : null
+    if (!record || !validReplay(record.replay)) return null
+    // 旧记录没有 contactShadows：按 OFF 迁移，绝不把缺失字段当成开启。
+    return { id, replay: { ...record.replay, contactShadows: record.replay.contactShadows === true } }
   } finally {
     db.close()
   }

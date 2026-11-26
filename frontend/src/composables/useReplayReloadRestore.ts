@@ -17,6 +17,8 @@ export interface ReplayReloadRestoreDeps {
   /** 批次恢复后先指向原场次，再统一解析（不依赖 parsedBattles 的先后）。 */
   selectBattleIndex: (index: number) => void
   analyze: () => Promise<unknown>
+  /** 选择已放回工作台、解析开始前：把本次暂存的接地阴影目标绑定到这个 File。 */
+  onRestoring?: (file: File, reloadId: string, contactShadows: boolean) => void
   /** 恢复解析成功后通知工作台这次自动重播请求绑定哪个 File。 */
   onRestored?: (file: File, reloadId: string) => void
   onError: (error: unknown) => void
@@ -43,6 +45,7 @@ export async function restoreStagedReplay(deps: ReplayReloadRestoreDeps): Promis
   if (!staged || selectionChanged(deps, revision)) return false
   try {
     let file: File
+    const contactShadows = staged.replay.contactShadows === true
     if (staged.replay.kind === 'demo') {
       file = await loadOfficialDemo()
       if (selectionChanged(deps, revision)) return false
@@ -53,6 +56,8 @@ export async function restoreStagedReplay(deps: ReplayReloadRestoreDeps): Promis
       deps.updateFiles(files)
       deps.selectBattleIndex(currentIndex)
     }
+    // 早于 analyze：Pane 看到 targetFile 后会立刻建场景，阴影 override 必须已按 File 就位。
+    deps.onRestoring?.(file, staged.id, contactShadows)
     const result = (await deps.analyze()) as { completed?: boolean } | null | undefined
     if (result?.completed !== false) deps.onRestored?.(file, staged.id)
     return true

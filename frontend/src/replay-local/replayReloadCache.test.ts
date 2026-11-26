@@ -62,7 +62,7 @@ describe('replayReloadCache 一次性恢复记录', () => {
     expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBe(id)
     await expect(takeReloadReplay()).resolves.toEqual({
       id,
-      replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1 },
+      replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1, contactShadows: false },
     })
     expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBeNull()
     await expect(takeReloadReplay()).resolves.toBeNull()
@@ -74,7 +74,7 @@ describe('replayReloadCache 一次性恢复记录', () => {
     const second = await stageReplayForReload({ files: [fileB], currentIndex: 0 })
     expect(first).not.toBe(second)
     sessionStorage.setItem(RELOAD_PENDING_KEY, first)
-    await expect(takeReloadReplay()).resolves.toEqual({ id: first, replay: { kind: 'files', files: [fileA], currentIndex: 0 } })
+    await expect(takeReloadReplay()).resolves.toEqual({ id: first, replay: { kind: 'files', files: [fileA], currentIndex: 0, contactShadows: false } })
   })
 
   it('discard 只清理本次 id，不影响其他标签页的待恢复记录', async () => {
@@ -83,13 +83,32 @@ describe('replayReloadCache 一次性恢复记录', () => {
     const current = await stageReplayForReload({ files: [fileB], currentIndex: 0 })
     await discardReloadReplay(stale)
     expect(sessionStorage.getItem(RELOAD_PENDING_KEY)).toBe(current)
-    await expect(takeReloadReplay()).resolves.toEqual({ id: current, replay: { kind: 'files', files: [fileB], currentIndex: 0 } })
+    await expect(takeReloadReplay()).resolves.toEqual({ id: current, replay: { kind: 'files', files: [fileB], currentIndex: 0, contactShadows: false } })
   })
 
   it('越界场次收敛到批次内，避免恢复出不存在的选择', async () => {
     vi.stubGlobal('indexedDB', fakeIdb().indexedDB)
     await stageReplayForReload({ files: [fileA, fileB], currentIndex: 9 })
     const staged = await takeReloadReplay()
-    expect(staged?.replay).toEqual({ kind: 'files', files: [fileA, fileB], currentIndex: 1 })
+    expect(staged?.replay).toEqual({ kind: 'files', files: [fileA, fileB], currentIndex: 1, contactShadows: false })
+  })
+
+  it('把本次接地阴影目标随 reloadId 一起暂存，供恢复时绑定 File', async () => {
+    vi.stubGlobal('indexedDB', fakeIdb().indexedDB)
+    const id = await stageReplayForReload({ files: [fileA], currentIndex: 0, contactShadows: true })
+    await expect(takeReloadReplay()).resolves.toEqual({
+      id,
+      replay: { kind: 'files', files: [fileA], currentIndex: 0, contactShadows: true },
+    })
+  })
+
+  it('旧记录没有 contactShadows 时按 OFF 迁移，不把缺失字段当成开启', async () => {
+    const fake = fakeIdb()
+    vi.stubGlobal('indexedDB', fake.indexedDB)
+    fake.data.set('legacy', { replay: { kind: 'files', files: [fileA], currentIndex: 0 } })
+    sessionStorage.setItem(RELOAD_PENDING_KEY, 'legacy')
+    await expect(takeReloadReplay()).resolves.toEqual({
+      id: 'legacy', replay: { kind: 'files', files: [fileA], currentIndex: 0, contactShadows: false },
+    })
   })
 })

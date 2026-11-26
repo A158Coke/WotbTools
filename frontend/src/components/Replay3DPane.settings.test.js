@@ -180,9 +180,48 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     const stage = playback.init.mock.calls.at(-1)?.[3]?.stageReloadReplay
     await stage()
     expect(cache.stage).toHaveBeenCalledWith({
-      files: [fileA, fileB], currentIndex: 0, demo: false,
+      files: [fileA, fileB], currentIndex: 0, demo: false, contactShadows: false,
     })
     wrapper.unmount()
+  })
+
+  it('重载暂存本次接地阴影目标：显式 false 不能被当前 store 的 true 覆盖', async () => {
+    const fileA = mkFile('a.wotbreplay')
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ file: fileA })
+    await start(wrapper)
+    const stage = playback.init.mock.calls.at(-1)?.[3]?.stageReloadReplay
+    playback.api.store.contactShadows = true
+    await stage(false)
+    expect(cache.stage).toHaveBeenLastCalledWith({
+      files: [fileA], currentIndex: 0, demo: false, contactShadows: false,
+    })
+    await stage()
+    expect(cache.stage).toHaveBeenLastCalledWith({
+      files: [fileA], currentIndex: 0, demo: false, contactShadows: true,
+    })
+    wrapper.unmount()
+  })
+
+  it('恢复的接地阴影只注入同一个 File 的场景，另一场保持 OFF', async () => {
+    const fileA = mkFile('a.wotbreplay')
+    const fileB = mkFile('b.wotbreplay')
+    mockWebGL('webgl2')
+    const wrapperA = mountPane({
+      file: fileA, shadowRequest: { id: 'reload-1', file: fileA, contactShadows: true },
+    })
+    await start(wrapperA)
+    expect(playback.init.mock.calls.at(-1)?.[3]?.contactShadowOverride).toBe(true)
+    expect(playback.api.store.contactShadows).toBe(true)
+    wrapperA.unmount()
+
+    const wrapperB = mountPane({
+      file: fileB, shadowRequest: { id: 'reload-1', file: fileA, contactShadows: true },
+    })
+    await start(wrapperB)
+    expect(playback.init.mock.calls.at(-1)?.[3]?.contactShadowOverride).toBeUndefined()
+    expect(playback.api.store.contactShadows).toBe(false)
+    wrapperB.unmount()
   })
 
   it('暂存期间切换场次：只清理本次暂存并中止重载，不把 A 的状态带到 B', async () => {

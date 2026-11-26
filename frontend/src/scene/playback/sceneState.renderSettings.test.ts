@@ -20,11 +20,12 @@ function makeHost() {
   } as any
 }
 
-function installAt(query: string) {
+/** override = 本次重载恢复请求绑定到当前场景 File 的显式接地阴影目标。 */
+function installAt(query: string, contactShadowOverride?: boolean) {
   window.history.replaceState({}, '', '/replay' + query)
   localStorage.clear()
   const S = makeHost()
-  installSceneState(S)
+  installSceneState(S, contactShadowOverride)
   S.DATA = {}   // 模拟回放已开始（渲染上下文已定型，applyRenderSettings 走重载分支）
   return S
 }
@@ -47,58 +48,75 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
     return new URL(String(replace.mock.calls[0][0]))
   }
 
-  it('待开播卡片开启的接地阴影在改画质重载时仍随 URL 保留', async () => {
+  it('待开播卡片开启的接地阴影在改画质重载时进入本次暂存目标，不写入 URL', async () => {
     const S = installAt('?q=high')
+    S.stageReloadReplay = vi.fn()
     S.contactShadowCtl.setEnabled(true)
     expect(S.store.contactShadows).toBe(true)
 
     expect(await S.applyRenderSettings({ qualityKey: 'ultra' })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
     const url = lastUrl()
     expect(url.searchParams.get('q')).toBe('ultra')
-    expect(url.searchParams.get('shadows')).toBe('1')
+    expect(url.searchParams.has('shadows')).toBe(false)
   })
 
-  it('降档清掉接地阴影后，再次升档不会因遗留 ?shadows=1 意外恢复', async () => {
-    const first = installAt('?q=ultra&shadows=1')
+  it('降档清掉接地阴影后，再次升档不会因旧 URL 参数意外恢复', async () => {
+    const first = installAt('?q=ultra&shadows=1', true)
+    first.stageReloadReplay = vi.fn()
     expect(first.store.contactShadows).toBe(true)
     expect(await first.applyRenderSettings({ qualityKey: 'low' })).toBe(true)
+    expect(first.stageReloadReplay).toHaveBeenCalledWith(false)
     const downgraded = lastUrl()
     expect(downgraded.searchParams.get('q')).toBe('low')
-    expect(downgraded.searchParams.get('shadows')).toBe('0')
+    expect(downgraded.searchParams.has('shadows')).toBe(false)
 
-    // 模拟一次真实重载：新页面从降档后的 URL 恢复（此时阴影已 OFF）。
+    // 模拟一次真实重载：新页面没有恢复请求，旧 URL 里的 shadows 也不得再生效。
     replace.mockClear()
-    window.history.replaceState({}, '', String(downgraded))
-    const second = makeHost()
-    installSceneState(second)
-    second.DATA = {}
+    const second = installAt(downgraded.search)
+    second.stageReloadReplay = vi.fn()
     expect(second.store.contactShadows).toBe(false)
 
     expect(await second.applyRenderSettings({ qualityKey: 'high' })).toBe(true)
+    expect(second.stageReloadReplay).toHaveBeenCalledWith(false)
     const upgraded = lastUrl()
     expect(upgraded.searchParams.get('q')).toBe('high')
-    expect(upgraded.searchParams.get('shadows')).toBe('0')
+    expect(upgraded.searchParams.has('shadows')).toBe(false)
   })
 
-  it('只改接地阴影也走同一次重载，并显式写 ?shadows=1', async () => {
+  it('只改接地阴影也走同一次重载，目标随暂存记录而非 URL', async () => {
     const S = installAt('?q=high')
+    S.stageReloadReplay = vi.fn()
     expect(S.store.contactShadows).toBe(false)
 
     expect(await S.applyRenderSettings({ contactShadows: true })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
     const url = lastUrl()
     expect(url.searchParams.get('q')).toBe('high')
-    expect(url.searchParams.get('shadows')).toBe('1')
+    expect(url.searchParams.has('shadows')).toBe(false)
   })
 
-  it('只改 Log Depth 时保留当前已开启的接地阴影', async () => {
-    const S = installAt('?q=high&shadows=1&logdepth=0')
+  it('只改 Log Depth 时保留当前已开启的接地阴影目标', async () => {
+    const S = installAt('?q=high&logdepth=0', true)
+    S.stageReloadReplay = vi.fn()
     expect(S.store.contactShadows).toBe(true)
 
     expect(await S.applyRenderSettings({ logdepth: true })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
     const url = lastUrl()
     expect(url.searchParams.get('logdepth')).toBe('1')
-    expect(url.searchParams.get('shadows')).toBe('1')
+    expect(url.searchParams.has('shadows')).toBe(false)
     expect(localStorage.getItem('pb_logdepth')).toBe('1')
+  })
+
+  it('旧 ?shadows=1 不参与场景初始化，也不会在重载时被重新带上', async () => {
+    const S = installAt('?q=high&shadows=1')
+    expect(S.store.contactShadows).toBe(false)
+    S.stageReloadReplay = vi.fn()
+
+    expect(await S.applyRenderSettings({ logdepth: true })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(false)
+    expect(lastUrl().searchParams.has('shadows')).toBe(false)
   })
 
   it('无变化时不重载', async () => {
