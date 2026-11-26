@@ -107,7 +107,7 @@ const shellOptions = computed(() => shells.value.map(shell => {
     penetration,
     damage,
     multiplier,
-    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${Math.round(damage)} HP`}`,
+    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${Math.round(damage)}`}`,
   }
 }))
 const selected = computed(() => shellOptions.value[shellIndex.value])
