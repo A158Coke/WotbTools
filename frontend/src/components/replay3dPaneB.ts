@@ -125,16 +125,8 @@ const fly = useSceneFlyControls({
 })
 const webgl = detectWebGL()
 
-/**
- * 3D 类型图标的独立投影：场景 wire 合同仍是 classIcons，值只取 3D 偏好。
- * 其他字段透传，2D 的 classIcons 不会进入 3D。
- */
 const markerPrefs3d = computed(() => ({ ...S.markerPrefs, classIcons: S.markerPrefs.classIcons3d }))
 
-/**
- * 把共享偏好推给场景内核（唯一方向：偏好 → 场景；场景只读，不回写）。
- * 建场景时要补推一次——内核在 initPlayback 之后才有 setLabelPrefs。
- */
 function pushLabelPrefs() {
   S.sceneApi?.setLabelPrefs?.({
     enabled: !S.uiHidden.value,

@@ -17,8 +17,6 @@ const props = defineProps({
   displayEnabled: Boolean,
   settingsOpen: Boolean,
   settingsEnabled: Boolean,
-  /** 标记模式入口：只有需要它的形态才挂（手机横屏没有独立的模式行，入口必须落在控制条里，
-      而不是浮在地图上——实测 740×360 的地图只有 96×96，放不下任何合规的常驻控件）。 */
   annotationEnabled: Boolean,
   speed: { type: Number, default: 1 },
   speeds: { type: Array, default: () => PLAYBACK_SPEEDS },

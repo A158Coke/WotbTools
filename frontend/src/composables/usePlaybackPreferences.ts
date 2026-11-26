@@ -16,14 +16,8 @@ export interface PlaybackTrailPreferences {
 }
 
 export interface PlaybackMarkerPreferences {
-  /** 2D 类型图标（2D 面板 / 2D 防遮使用；不得影响 3D 模型可见性）。 */
   classIcons: boolean
-  /** 3D 类型图标：独立于 2D classIcons，默认关闭；开启才把 3D 车模替换为类型符号。 */
   classIcons3d: boolean
-  /**
-   * Recorder/death badges; battle facts remain unchanged. 2D floating damage also
-   * follows it, while 3D combat feedback only follows Hide All UI.
-   */
   showStatus: boolean
   battleMarkers: boolean
 }
@@ -157,7 +151,6 @@ function createPlaybackPreferences() {
       if (healthStyle === 'hidden') hpPrefs.showHp = false
       else Object.assign(hpPrefs, { showHp: true, mode: 'ring' })
       trailPrefs.showTrail = false
-      // 类型图标按表面独立：2D 防遮不动 3D classIcons3d，3D 防遮不动 2D classIcons。
       Object.assign(markerPrefs, surface === '3d'
         ? { classIcons3d: true, showStatus: false }
         : { classIcons: true, showStatus: false })

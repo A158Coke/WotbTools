@@ -7,7 +7,6 @@ const props = defineProps({
   portrait: Boolean,
   anchor: Object,
   host: Object,
-  // 默认值保持 2D / Display 原有契约；3D 回放设置面用同一套定位/焦点实现，只换标识。
   panelTestid: { type: String, default: 'display-panel' },
   ariaLabelKey: { type: String, default: 'recon.map.playback.panel_display' },
   closeTestid: { type: String, default: 'display-close' },

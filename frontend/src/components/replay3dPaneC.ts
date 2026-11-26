@@ -57,9 +57,7 @@ export interface R3dCParts {
   recorderReticle: Ref<HTMLElement | null>
   labelOverlay: Ref<HTMLElement | null>
   stage: Ref<HTMLElement | null>
-  /** 渲染设置整页重载前暂存当前回放与接地阴影目标（A 段定义，随场景宿主转交）。 */
   stageReloadReplay?: (contactShadows?: boolean) => Promise<void>
-  /** 恢复重播信号由 A 段拥有（绑定 File），C 段只在播放条件齐备后 claim。 */
   resumePending?: Ref<boolean>
   claimResume?: () => boolean
   consumeResume?: () => void
@@ -235,7 +233,6 @@ function maybeAutoStart(): void {
   if (startedFile.value === file) { S.consumeResume?.(); return }
   if (!S.online.value.available || !S.webgl.supported || props.blockedReason) return
   if (!S.requireFeature(Feature.PLAYBACK_3D)) return
-  // 渲染设置重载恢复的那一场优先于日常自动播放偏好；仍复用同一条手动开始路径。
   const resume = S.resumePending?.value === true
   if (!resume && (!autoStart.available.value || !autoStart.enabled.value)) return
   if (resume && !S.claimResume?.()) return
@@ -279,8 +276,6 @@ const KILLFEED_ROW_BORDER_PX = 2
 const killfeedMaxLines = ref(KILLFEED_MAX_LINES)
 const visibleKillfeed = computed(() => S.store.killfeed.slice(-killfeedMaxLines.value))
 const shortWorkspace = ref(false)
-// 全屏只扩大可用像素，不切换控制条档位：记住最近一次非全屏的工作台高度，
-// 全屏期间沿用它，避免同一回放进出全屏时工具条在紧凑 / 宽形态之间跳变。
 let windowedWorkspaceH = 0
 function measurePresentationBounds(): void {
   const root = rootEl.value

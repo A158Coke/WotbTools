@@ -36,13 +36,10 @@ const props = defineProps({
   pendingSeek: { type: Object, default: null },
   showEventMarkers: { type: Boolean, default: false },
   autoStartUserId: { type: String, default: '' },
-  /** 当前回放是官方示例：整页重载后需重新下载校验，不能直接复用 File 身份。 */
   demo: { type: Boolean, default: false },
-  /** 重载恢复出的完整批次与选择代次：暂存前快照，异步写完后复核选择没有变。 */
   replayFiles: { type: Array, default: () => [] },
   selectionRevision: { type: Number, default: 0 },
   shadowRequest: { type: Object, default: null },
-  /** 恢复解析完成后由工作台给出 `{ id, file }`：这一次自动开始绑定该 File、不受日常偏好限制。 */
   resumeRequest: { type: Object, default: null },
 })
 const emit = defineEmits(['resume-consumed'])
@@ -295,9 +292,6 @@ const {
         >{{ t('app.close') }}</button>
       </PlaybackDisplaySurface>
 
-      <!-- 回放设置：会写渲染 / 音频配置的项集中在这里。画质与性能项在播放中保存后会按
-           既有生命周期重载回放（一次 Save 只重载一次）；其余开关立即生效。
-           入口常驻传输条，不依赖待开播卡片，自动播放后仍然可打开。 -->
       <PlaybackDisplaySurface
         :open="settingsOpen && !uiHidden"
         :portrait="portraitFlow"
@@ -341,8 +335,6 @@ const {
         </div>
       </PlaybackDisplaySurface>
 
-      <!-- 隐藏全部 UI 后唯一的恢复入口：常驻、极简、不遮场景中心；`H` 键等效。
-           不得做成不可逆状态（该状态也不写入持久化偏好）。 -->
       <button
         v-if="uiHidden" type="button" class="ui-restore tool-btn panel"
         :class="{ 'ui-restore-shifted': isPhone && fullscreenSupported }"

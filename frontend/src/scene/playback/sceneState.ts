@@ -69,7 +69,6 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
   S.contactShadowCtl.setEnabled(contactShadowOverride === true);
-  // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};
   function setQuality(S: Host, k: keyof typeof QUALITY_PRESETS) {
@@ -103,29 +102,16 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     }
     apply();
   }
-  /**
-   * 统一应用「重建渲染上下文」类设置（画质 / Log Depth / 动态分辨率 / 接地阴影）。
-   * 设置面板 Save 一次可能改多项：这里只发**一次**整页重载，不弹二次确认
-   * （Save 本身已是显式动作，面板内的 reload 说明在提交前已告知）。
-   * 未开播时渲染器尚未创建，就地记偏好即可，下次 initScene 按新偏好装配。
-   * live 项（装甲高亮 / 炮声）不经过本函数。
-   * @returns 是否触发了整页重载
-   */
   async function applyRenderSettings(S: Host, patch: RenderSettingsPatch): Promise<boolean> {
     const quality = patch.qualityKey;
     const qualityChanged = quality !== undefined && !!QUALITY_PRESETS[quality] && quality !== S.QKEY;
     const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
     const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
-    // 接地阴影受画质门禁约束；一次 Save 同时改画质时按新档位算有效目标。
-    // 没有显式 patch 时沿用当前选择：任何一次重载都要把有效目标写进本次暂存记录，
-    // 否则待开播卡片开过阴影后改画质重载会静默丢选择。
     const nextQuality = qualityChanged && quality ? quality : S.QKEY;
     const contactDesired = patch.contactShadows !== undefined ? !!patch.contactShadows : S.store.contactShadows;
     const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
     const contactShadowsChanged = patch.contactShadows !== undefined && contactTarget !== S.store.contactShadows;
     if (!qualityChanged && !logdepthChanged && !dynresChanged && !contactShadowsChanged) return false;
-    // 已开播：整页重载前先把当前回放暂存到 IndexedDB（重载后由工作台恢复）；
-    // 暂存失败就中止本次应用，保留当前会话，绝不带着回放丢失风险重载。
     if (S.DATA) {
       try { await S.stageReloadReplay?.(contactTarget); } catch (e) { return false; }
     }
@@ -140,7 +126,6 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       S.store.dynres = !!patch.dynres;
     }
     if (!S.DATA) {
-      // 未开播：画质沿用既有 apply 链（含 GLB / 履带门禁），不重载。
       if (qualityChanged && quality) setQuality(S, quality);
       if (contactTarget !== S.store.contactShadows) S.contactShadowCtl.setEnabled(contactTarget);
       return false;
@@ -153,19 +138,15 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       try { localStorage.setItem('pb_quality', quality); } catch (e) {}
       S.store.qualityKey = quality;
       S.store.qualityLabel = '画质 · ' + S.Q.label;
-      if (!shadowQualityEligible(quality)) S.contactShadowCtl.setEnabled(false);   // 降档清零，与 setQuality 同语义
+      if (!shadowQualityEligible(quality)) S.contactShadowCtl.setEnabled(false);
       patchForUrl.qualityKey = quality;
     }
-    // 只有真的变化的偏好进 URL；URL 未显式携带的 logdepth/dynres 仍由 localStorage 承载。
     if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
     if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
-    // 装甲高亮是 live 项：重载前把刚写入的当前值带进 URL（仅当 URL 原本已有 ?armorhl=）。
     patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;
     location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));
     return true;
   }
-  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）；
-  // 高/极致反向强制 GLB（履带印轨距一致性，见 QUALITY_PRESETS 注）
   function applyGlbGate(S: Host) {
     S.store.glbAllowed = S.Q.allowGlb && !S.Q.forceGlb;
     S.store.treadAllowed = !!S.Q.treadMarks;

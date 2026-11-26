@@ -199,7 +199,6 @@
 .dp-note { margin: var(--space-1) 0 0; color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 .dp-declutter { inline-size: 100%; }
 .dp-hide { margin-block-start: var(--space-2); inline-size: 100%; }
-/* 回放设置：草稿式面板，内容与 Display 面共用 .toggle / .tool-btn / .dp-title 皮肤 */
 .settings-group { display: grid; gap: var(--space-1); margin-block-start: var(--space-1); }
 .settings-actions { position: sticky; inset-block-end: calc(var(--space-3) * -1); display: flex; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-3); padding-block: var(--space-2); background: var(--color-surface-2); }
 .settings-save { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }

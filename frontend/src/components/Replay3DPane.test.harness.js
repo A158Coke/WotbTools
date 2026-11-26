@@ -66,8 +66,6 @@ vi.mock('../scene/playbackScene.js', () => {
       setBattleMarkers: vi.fn(),
       setQuality: vi.fn(),
       setContactShadows: vi.fn((on) => { store.contactShadows = !!on }),
-      // 回放设置统一应用入口：render 项一次调用（真实契约：已开播最多一次整页重载），
-      // live 项分别走各自 setter。mock 只记录，不模拟重载。
       applyRenderSettings: vi.fn(),
       setArmorHighlight: vi.fn((on) => { store.armorHighlight = !!on }),
       setPaused: vi.fn(),

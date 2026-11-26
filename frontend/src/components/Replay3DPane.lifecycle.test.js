@@ -238,7 +238,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
-    // 自动播放与手动开始走同一条 startReplay：设置入口不依赖待开播卡片，开播后常驻。
     expect(wrapper.find('[data-testid="replay3d-settings-toggle"]').exists()).toBe(true)
 
     await wrapper.setProps({ active: false })
@@ -270,7 +269,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(canonical.load).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
 
-    // 恢复解析完成后工作台给出绑定该 File 的请求：这一次不受日常自动播放偏好限制。
     await wrapper.setProps({ resumeRequest: { id: 'reload-1', file } })
     await flush()
     expect(canonical.load).toHaveBeenCalledTimes(1)
@@ -318,7 +316,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(first.emitted('resume-consumed')).toHaveLength(1)
     first.unmount()
 
-    // 同一请求（仍指向 A）在重新挂载到 B 时既不能匹配，也不能越过已关闭的偏好自动开播。
     canonical.load.mockClear()
     const second = mountPane({ file: fileB, autoStartUserId: 'user-a', resumeRequest: { id: 'reload-consume', file: fileA } })
     await flush()

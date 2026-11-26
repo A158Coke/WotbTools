@@ -2,7 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RELOAD_PENDING_KEY, discardReloadReplay, stageReplayForReload, takeReloadReplay } from './replayReloadCache.ts'
 
-/** 只实现缓存层用到的 IDB 面：open + 单 store 的 put/get/delete + 事务完成事件。 */
 function fakeIdb() {
   const data = new Map<string, unknown>()
   const db = {
@@ -20,7 +19,6 @@ function fakeIdb() {
           queueMicrotask(() => tx.oncomplete?.())
         },
         delete: (key: string) => {
-          // 与真实 IDB 请求队列一致：先让同一事务里的 get 读到旧值，再删除。
           queueMicrotask(() => { data.delete(key); tx.oncomplete?.() })
         },
       }

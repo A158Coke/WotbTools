@@ -177,17 +177,14 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     gunfire.onShot(shotOf(1), new THREE.Vector3(0, 0, 0))
     await vi.waitFor(() => expect(audio.started).toHaveLength(1))
     expect(audio.gains[0].gain.value).toBe(1)
-    // 近 → 中：相机移动后重算，而不是开炮瞬间的一次性距离
     camera.position.set(250, 0, 0)
     gunfire.update()
     expect(audio.gainTargets.at(-1)?.value).toBeCloseTo(0.5, 6)
     expect(audio.gainTargets.at(-1)?.time).toBe(1)
     expect(audio.gainTargets.at(-1)?.timeConstant).toBe(0.05)
-    // 静止帧不重复写 AudioParam（避免自动化事件堆积/抖动）
     const writes = audio.gainTargets.length
     gunfire.update()
     expect(audio.gainTargets).toHaveLength(writes)
-    // 中 → 近 → 衰减外 → 再靠近：目标随距离双向更新
     camera.position.set(100, 0, 0)
     gunfire.update()
     expect(audio.gainTargets.at(-1)?.value).toBeCloseTo(0.8, 6)
@@ -210,7 +207,6 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     expect(audio.gains.map(g => g.gain.value)).toEqual([1, 0.5])
     camera.position.set(250, 0, 0)
     gunfire.update()
-    // 第一发 0→250m 降到 0.5；第二发 250m→0 升到 1（互不影响）
     expect(audio.gainTargets.map(t => t.value)).toEqual([0.5, 1])
     audio.sources[0].onended?.()   // 第一发声源自然结束
     const writes = audio.gainTargets.length
@@ -282,7 +278,6 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     gate.bytesDelay = null
     await new Promise(r => setTimeout(r, 30))
     expect(audio.started).toHaveLength(0)   // 迟到的 buffer 不得按开炮瞬间的距离发声
-    // 回到范围内仍是正常炮声（证明只是这一发被距离挡下，不是整体失效）
     camera.position.set(0, 0, 0)
     gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
     await vi.waitFor(() => expect(audio.started).toHaveLength(1))

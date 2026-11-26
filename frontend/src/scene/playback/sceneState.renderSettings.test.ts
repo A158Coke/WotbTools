@@ -149,7 +149,6 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
 
   it('URL 显式携带 armorhl 时，重载前同步刚写入的装甲高亮值', async () => {
     const S = installAt('?q=high&armorhl=0')
-    // 模拟 live setter：当前会话立即生效并写 localStorage（URL 仍优先）。
     S.ARMOR_HIGHLIGHT = true
     S.store.armorHighlight = true
 

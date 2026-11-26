@@ -1,13 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * 3D 回放设置面板（Draft / Save）契约：
- * - 入口常驻传输条（齿轮旁），自动播放后仍可打开，不依赖待开播卡片；
- * - 打开时按**当前生效配置**取快照，面板内改动只写 Draft，不触达场景；
- * - Cancel / 关闭 / 无修改 Save 丢弃 Draft 且不调用任何 setter；
- * - Save 只把真实差异下发：live 项各走 setter，render 项合并成**一次** applyRenderSettings
- *   （一次 Save 最多一次重载），炮声只写反馈偏好、不重建渲染器；
- * - 画质降到不支持接地阴影的档位时，Draft 里该开关按场景门禁失效。
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   installPaneTestLifecycle, mountPane, mockWebGL, flush, start, testState, nextTick, mkFile,
@@ -25,13 +16,11 @@ beforeEach(() => {
   cache.discard.mockReset().mockResolvedValue(undefined)
 })
 
-/** 开播后打开设置面：入口由传输条常驻渲染，与待开播卡片无关。 */
 async function openSettings(wrapper) {
   await wrapper.get('[data-testid="replay3d-settings-toggle"]').trigger('click')
   await nextTick()
 }
 
-/** 稳定初值：store 是 mock initPlayback 注入的真实 reactive store，可直接写当前生效配置。 */
 async function startedPane() {
   mockWebGL('webgl2')
   const wrapper = mountPane()
@@ -75,12 +64,10 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     await wrapper.get('[data-testid="settings-logdepth"]').setValue(true)
     await wrapper.get('[data-testid="replay3d-settings-quality"] button[data-value="low"]').trigger('click')
     await nextTick()
-    // Draft 阶段：不写场景、不写 store、不重载
     expect(playback.api.setArmorHighlight).not.toHaveBeenCalled()
     expect(playback.api.applyRenderSettings).not.toHaveBeenCalled()
     expect(store.qualityKey).toBe('high')
     expect(store.logdepth).toBe(false)
-    // 降档后接地阴影按门禁失效
     expect(wrapper.get('[data-testid="settings-contact-shadows"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-testid="replay3d-settings-cancel"]').trigger('click')
     await nextTick()
@@ -129,7 +116,6 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     await nextTick()
     expect(playback.api.applyRenderSettings).toHaveBeenCalledTimes(1)
     expect(playback.api.applyRenderSettings).toHaveBeenCalledWith({ qualityKey: 'low', logdepth: true, dynres: false })
-    // 画质不再走旧的 setQuality（面板统一走一次应用入口），也不额外触发第二次
     expect(playback.api.setQuality).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -164,8 +150,6 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
 
   it('场景宿主收到重载暂存钩子：Render 设置重载前能暂存当前回放（P2-1 wiring）', async () => {
     const { wrapper } = await startedPane()
-    // 回归点：钩子必须经 initPlayback 的 options 进入场景宿主；只挂在 Vue parts 上时
-    // 场景侧 S.stageReloadReplay 为 undefined，会在真正重载前静默跳过暂存。
     const options = playback.init.mock.calls.at(-1)?.[3]
     expect(typeof options?.stageReloadReplay).toBe('function')
     wrapper.unmount()

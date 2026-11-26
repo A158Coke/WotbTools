@@ -30,9 +30,7 @@ export interface R3dAParts {
   shortWorkspace: Ref<boolean>
   CAMERAS: Ref<ReadonlyArray<{ id: string; label: string }> | string[]>
   sceneApi: SceneApiLike | null
-  /** 渲染设置整页重载前暂存当前回放与本次接地阴影目标；失败时抛错并中止重载。 */
   stageReloadReplay?: (contactShadows?: boolean) => Promise<void>
-  /** 重载恢复的自动重播信号（A 段拥有匹配/消费，C 段只在完整就绪后 claim）。 */
   resumePending?: Ref<boolean>
   claimResume?: () => boolean
   consumeResume?: () => void
@@ -45,12 +43,9 @@ export interface ReplayResumeRequest { id: string, file: File }
 export interface R3dAProps {
   active: boolean
   file: unknown
-  /** 当前回放是否为官方示例（重载后需重新下载校验，不能直接复用 File 身份）。 */
   demo?: boolean
-  /** 重载暂存用的完整批次与选择代次（当前 File 可能只是批次中的一场）。 */
   replayFiles?: readonly File[]
   selectionRevision?: number
-  /** 已恢复并解析完成的回放；只有 file 匹配时才允许触发一次自动重播。 */
   resumeRequest?: ReplayResumeRequest | null
 }
 

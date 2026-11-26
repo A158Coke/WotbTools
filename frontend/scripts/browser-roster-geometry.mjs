@@ -428,7 +428,6 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
   await waitForStableLayout(page)
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  // 紧凑档的距离滑条让开右侧名册后停在名册左侧，仍属贴边常驻控件（侵入中心远小于 15%）。
   const EDGE_DOCKED = ['.team-lane', '.killfeed', '.scene-dist']
   const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: compactBar ? EDGE_DOCKED : [] }
   await page.evaluate(`(() => {

@@ -134,10 +134,6 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     dataViewMode.value = 'SINGLE'
   }
 
-  /**
-   * 重载恢复专用：在解析完成前把当前场次指回原下标（不要求 parsedBattles 已就绪）。
-   * 普通 UI 仍走 selectBattle 的「只接受已解析场次」门禁。
-   */
   function selectBattleIndex(index: number): boolean {
     const file = files.value[index]
     currentBattleFile.value = file ? toRaw(file) : null

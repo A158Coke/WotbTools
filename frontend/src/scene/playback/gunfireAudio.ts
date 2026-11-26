@@ -25,9 +25,7 @@ export function panForCameraSpace(x: number): number {
   return Math.max(-0.8, Math.min(0.8, x))
 }
 const MAX_VOICES = 12
-/** 距离增益平滑时间常数（秒）：相机移动/跳切时按 AudioParam 指数趋近，不产生爆音。 */
 const GAIN_SMOOTHING_SECS = 0.05
-/** 增益目标死区：静止或微小移动不重复写 AudioParam，避免每帧自动化事件堆积。 */
 const GAIN_TARGET_EPSILON = 0.002
 
 type SoundIndex = Partial<Record<GunClass, Partial<Record<string, string[]>>>>
@@ -49,11 +47,9 @@ export interface GunfireAudio {
   invalidatePending(): void
   dispose(): void
   onShot(shot: AgentPlaybackShot, muzzle: THREE.Vector3): void
-  /** 帧更新（battleRuntime 在渲染前调用）：按当前相机位置刷新在响声源的距离增益。 */
   update(): void
 }
 
-/** 一个在响声源：保留炮口世界坐标，相机移动后重算距离增益。 */
 interface Voice {
   src: AudioBufferSourceNode
   gain: GainNode
@@ -160,7 +156,6 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     })()
   }
 
-  /** @param gen 发起时（onShot）的会话代；每个 await 之后与 start 前核对，过期即弃。 */
   async function play(cls: GunClass, muzzle: THREE.Vector3, gen: number): Promise<void> {
     if (disabled || gen !== generation) return
     const camera = deps.getCamera()
@@ -169,8 +164,6 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     const buffers = await loadBuffers(cls, 'close')
     if (gen !== generation || disabled || !feedbackPrefs.value.battleSound) return
     if (!buffers.length || voices.size >= MAX_VOICES) return
-    // 等待期间相机可能已移出衰减范围：开炮瞬间的距离不能决定迟到的 buffer 是否发声，
-    // 必须用当前相机重算；否则会在下一次帧 update 前先响一声（评审：异步距离竞态）。
     const nowCamera = deps.getCamera()
     const nowDistance = muzzle.distanceTo(nowCamera.position)
     if (nowDistance >= GUN_MAX_ATTENUATION_M) return
@@ -196,7 +189,6 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     voices.clear()
   }
 
-  /** 逐帧距离增益：相机移动后按世界距离重算；静止/微动跳过写入，变化经 AudioParam 平滑。 */
   function update(): void {
     if (!voices.size || !ctx) return
     const camera = deps.getCamera()

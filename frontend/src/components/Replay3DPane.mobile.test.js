@@ -98,7 +98,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       store.roster = roster
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
-      // 2026-11-26 用户口径：镜头设置必须在工具栏，不能藏进 Display 二次菜单。
       expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
       expect(wrapper.find('.controls .controls-content > .tool-row').exists()).toBe(true)
       expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('tool-row')).toBe(true)
@@ -378,7 +377,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
         await wrapper.get('[data-test="pb-fullscreen"]').trigger('click')
         await flush()
-        // 全屏后视口变高：控制条档位必须沿用进入全屏前的紧凑形态，镜头行也仍在工具栏。
         height.mockReturnValue(900)
         window.dispatchEvent(new Event('resize'))
         await flush()
