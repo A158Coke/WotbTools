@@ -5,32 +5,19 @@ set -euo pipefail
 TARGET="android/app/build/outputs/apk/release/app-release.apk"
 TARGET_CODE="$STEP_VERSION_VERSIONCODE"
 TARGET_SHA="$STEP_ARTIFACT_SHA256"
-APK_NAME="$STEP_ARTIFACT_APKNAME"
-STAGING_NAME="${APK_NAME%.apk}.staging.json"
 EXISTING="$RUNNER_TEMP/delta-existing-staging.json"
 META="$RUNNER_TEMP/delta-metadata.json"
-STATUS="$(bash scripts/android-release/staging-evidence.sh collect "$STAGING_NAME" "$EXISTING")"
-if [ "$STATUS" = 200 ]; then
-  python3 scripts/android-release/android_contract.py bundle \
-    --badging "$RUNNER_TEMP/apk-badging.txt" --apk "$TARGET" --contract contracts/android-native-bridge.json \
-    --pin deploy/agent/source.json --source "$STEP_VERSION_COMMIT" \
-    --version "$STEP_VERSION_VERSIONNAME" --evidence "$EXISTING" >/dev/null
-  python3 scripts/android-release/delta_artifact.py verify --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --evidence "$EXISTING" > "$META"
+if [[ $EXISTING_EVIDENCE == 200 ]]; then
   PATCH_URL="$(jq -r '.patches[0].url // empty' "$META")"
   if [ -n "$PATCH_URL" ]; then
     PATCH_NAME="${PATCH_URL##*/}"
     curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 -o "release-staging/$PATCH_NAME" "$PATCH_URL"
     python3 scripts/android-release/delta_artifact.py verify --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --evidence "$EXISTING" --patch-dir release-staging >/dev/null
   fi
-elif [ "$STATUS" = 404 ]; then
+else
   BASE_MANIFEST="$RUNNER_TEMP/prod-version.json"
-  if [ -s "$BASE_MANIFEST" ] && jq -e --argjson target "$TARGET_CODE" '.latestVersionCode == $target' "$BASE_MANIFEST" >/dev/null; then
-    echo "::error::Production already advertises this version but both staging evidence files are missing" >&2
-    exit 1
-  fi
   BASE_APK="$RUNNER_TEMP/delta-base.apk"
   XDELTA="$RUNNER_TEMP/xdelta3-3.2.2-linux-x86_64/xdelta3"
-  built=false
   if [ -s "$BASE_MANIFEST" ] && jq -e --argjson target "$TARGET_CODE" '(.latestVersionCode | type == "number" and . >= 4000000 and . < $target) and (.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and (.apkUrl | type == "string" and test("^https://wotbtools[.]com/download/android/wotbtools-android-v[0-9]+[.][0-9]+[.][0-9]+[.]apk$"))' "$BASE_MANIFEST" >/dev/null; then
     BASE_URL="$(jq -r '.apkUrl' "$BASE_MANIFEST")"
     BASE_SHA="$(jq -r '.sha256' "$BASE_MANIFEST")"
@@ -50,21 +37,13 @@ elif [ "$STATUS" = 404 ]; then
       TARGET_CERT="$("$APKSIGNER" verify --print-certs "$TARGET" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" || TARGET_CERT=""
       BASE_CERT="$("$APKSIGNER" verify --print-certs "$BASE_APK" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" || BASE_CERT=""
       if [[ "$BASE_BADGING" == "package: name='com.wotbtools.app' versionCode='$BASE_CODE' "* ]] && [ -n "$TARGET_CERT" ] && [ "$BASE_CERT" = "$TARGET_CERT" ] &&
-         python3 scripts/android-release/delta_artifact.py build --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --xdelta "$XDELTA" --output-dir release-staging --output "$META" --base-manifest "$BASE_MANIFEST" --base-file "$BASE_APK"; then
-        built=true
+         python3 scripts/android-release/delta_artifact.py build --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --xdelta "$XDELTA" --output-dir release-staging --output "$META.tmp" --base-manifest "$BASE_MANIFEST" --base-file "$BASE_APK"; then
+        mv "$META.tmp" "$META"
       fi
     fi
   fi
-  if [ "$built" = false ]; then
-    echo "::notice::Direct delta unavailable; stage the full APK without a patch."
-    python3 scripts/android-release/delta_artifact.py build --target "$TARGET" --target-sha "$TARGET_SHA" --target-code "$TARGET_CODE" --xdelta "$XDELTA" --output-dir release-staging --output "$META"
-  fi
-else
-  echo "::error::Cannot check immutable staging evidence (HTTP $STATUS)" >&2
-  exit 1
 fi
 PATCH_NAME="$(jq -r '.patches[0].url // empty | split("/") | last' "$META")"
 echo "patchSha=$(jq -r '.patches[0].sha256 // empty' "$META")" >> "$GITHUB_OUTPUT"
 echo "patchName=$PATCH_NAME" >> "$GITHUB_OUTPUT"
-echo "existingEvidence=$STATUS" >> "$GITHUB_OUTPUT"
 cat "$META"

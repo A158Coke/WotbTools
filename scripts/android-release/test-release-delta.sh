@@ -113,6 +113,17 @@ steps = release_workflow["jobs"]["stage"]["steps"]
 assert all(next(step for step in steps if step.get("id") == item).get("continue-on-error") is True for item in delta_ids)
 policy = next(step for step in steps if step.get("name") == "Resolve optional Android delta availability")
 assert all("steps." + item + ".outcome" in policy["env"]["DELTA_RESULTS"] for item in delta_ids)
+# The limits emitted by the real budget gate cover the complete optional chain.
+budget = next(step for step in steps if step.get("id") == "delta_budget")
+assert release_workflow["jobs"]["stage"]["timeout-minutes"] * 60 == int(release_workflow["jobs"]["stage"]["env"]["JOB_TIMEOUT_SECONDS"])
+assert steps[0]["timeout-minutes"] == 5
+optional = steps[steps.index(budget) + 1:steps.index(policy)]
+assert [step["id"] for step in optional] == ["delta", *delta_ids]
+expected_limits = ["prepareMinutes", "uploadMinutes", "uploadMinutes"] + ["replicaMinutes"] * 7
+for step, limit in zip(optional, expected_limits, strict=True):
+    assert step["timeout-minutes"] == "${{ fromJSON(steps.delta_budget.outputs." + limit + " || '1') }}"
+    assert step["continue-on-error"] is True
+assert "steps.delta.outcome != 'success'" in policy["if"]
 resolution = policy["run"]
 assert 'EXISTING_EVIDENCE' in resolution and "'.patches = []'" in resolution and 'exit 1' in resolution
 staged_source = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "stagedref")

@@ -4,6 +4,8 @@
 
 Stage 将同一份签名 APK 写入阿里云和清华。生成的差分也写入两处。客户端与 manifest 继续使用主站的稳定下载 URL，TX 仍将流量导向清华。每个产物分别通过阿里云直链和稳定入口检查 HTTP 200、实际大小、完整 SHA-256 和尾段续传字节。稳定入口还要返回该文件对应的清华分享地址。已有 staging evidence 引用的差分验证失败会阻断重跑；首次生成的可选差分仍可退回全量包。
 
+Stage 在主包回读、建 tag 和 staging 身份核验后，按作业启动时刻计算差分剩余时间。预算扣除 checkout 上限 5 分钟、写入与回读 staging evidence 的 15 分钟，以及步骤切换的 2 分钟。准备差分、两个云端上传、六个 TX 操作和稳定入口回读均有独立时限，总和受剩余预算约束。预算不足时，首次候选直接生成全量包记录；已有差分记录则明确失败，已有全量包记录可直接复用。
+
 首次双写前按[资产源操作说明](../../deploy/assets/README.md#android-candidate-download-origin)准备受限 SSH 上传身份、目录与 Caddy 服务。缺少必需配置会阻断发布。Publish 在首次上传生产清单前，按指定版本的已核验 APK 和 staging 差分清单复核两个下载源。既有全量包证据缺少大小字段时，从已核验 SHA 的 APK 读取实际大小。
 
 生产试切另按 [#801 实施方案](https://github.com/A158Coke/WotbTools/issues/801#issuecomment-7197531164) 记录带宽、费用与余量，取得 GO 并验证回滚源。
