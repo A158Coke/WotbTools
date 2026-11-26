@@ -62,6 +62,10 @@ export interface BattleRuntimeHandle {
   trajLineCount(): number
   fxStats(): { impacts: number; bursts: number } | null
   prepareGunfire(defs: readonly { tank_id?: number | null, gun_local?: unknown, config_idx?: unknown }[]): void
+  /** 炮声逐帧距离增益（renderLoop 在渲染前调用；相机移动后按炮口世界距离更新）。 */
+  updateGunfire(): void
+  /** 会话 teardown：clearEffects + battleFx.dispose + battleFx=null + window.__battleFx 删除
+   *（含炮声在响声源停止）。 */
   dispose(): void
 }
 
@@ -298,6 +302,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     trajLineCount: () => trajLines.length,
     fxStats() { return battleFx ? battleFx.stats() : null; },
     prepareGunfire: (defs) => gunfire.prepare(defs),
+    updateGunfire: () => gunfire.update(),
     dispose,
   };
 }

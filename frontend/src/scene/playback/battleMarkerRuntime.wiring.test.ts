@@ -175,7 +175,7 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
       clampCameraTarget: () => {},
       labels,
       updateBases: vi.fn(),
-      battle: { isActive: () => false, transients: { updateNow: () => {} }, updateBattleFx: () => {}, advanceWreckClock: () => {} },
+      battle: { isActive: () => false, transients: { updateNow: () => {} }, updateBattleFx: () => {}, updateGunfire: () => {}, advanceWreckClock: () => {} },
       battleMarkers: markerRuntime,
       vehicles: { frameTiming: () => {}, getVehicles: () => [] },
       session: { isReadySession: () => false, tryMarkFirstReadyFrame: () => {} },

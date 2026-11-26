@@ -133,6 +133,7 @@ export function installRenderLoop(S: Host) {
     S.updateBases();
     S.battle.transients.updateNow();
     S.battle.updateBattleFx();
+    S.battle.updateGunfire();
     const perfT1 = S.PERF ? performance.now() : 0;
     S.mapWorld.maybeRebuildTerrainLod();
     const terrainFinished = S.PERF ? performance.now() : 0;

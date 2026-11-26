@@ -663,6 +663,26 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('旧持久化 2D classIcons:true 不隐藏 3D 车模；3D 面板开关只写 classIcons3d', async () => {
+    localStorage.setItem('wotb.pb.marker-prefs', JSON.stringify({ classIcons: true, showStatus: true, battleMarkers: true }))
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false }))
+    playback.api.store.hasData = true
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    const box = wrapper.get('[data-testid="disp-class-icons"]')
+    expect(box.element.checked).toBe(false)
+    await box.setValue(true)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: true }))
+    await box.setValue(false)
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs'))).toMatchObject({ classIcons: true, classIcons3d: false })
+    wrapper.unmount()
+  })
+
   it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()

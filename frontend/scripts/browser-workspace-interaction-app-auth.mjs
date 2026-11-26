@@ -732,8 +732,11 @@ export async function runOnboardingScenario(env, scenario) {
         await page.tap({ ...startPoint, touch: scenario.touch })
         await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'replay3d-camera',
           { timeout: 60_000, label: 'guide auto-advances to the camera stage' })
-        await page.waitFor(() => !!document.querySelector('.pb-root.compact-bar [data-testid="display-panel"] [data-tour="replay3d-camera"]'),
-          { label: 'compact guide opens Display and the camera anchor exists' })
+        await page.waitFor(() => {
+          const el = document.querySelector('.pb-root.compact-bar .controls [data-tour="replay3d-camera"]')
+          const r = el?.getBoundingClientRect()
+          return !!r && r.width > 0 && r.height > 0
+        }, { label: 'compact camera anchor stays visible in the toolbar' })
       }
       await hit('[data-testid="onboarding-next"]')
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })

@@ -262,6 +262,9 @@ const KILLFEED_ROW_BORDER_PX = 2
 const killfeedMaxLines = ref(KILLFEED_MAX_LINES)
 const visibleKillfeed = computed(() => S.store.killfeed.slice(-killfeedMaxLines.value))
 const shortWorkspace = ref(false)
+// 全屏只扩大可用像素，不切换控制条档位：记住最近一次非全屏的工作台高度，
+// 全屏期间沿用它，避免同一回放进出全屏时工具条在紧凑 / 宽形态之间跳变。
+let windowedWorkspaceH = 0
 function measurePresentationBounds(): void {
   const root = rootEl.value
   if (!root) return
@@ -272,7 +275,8 @@ function measurePresentationBounds(): void {
   const top = full ? 0 : header
   const workspaceH = Math.max(1, viewportH - top - (full ? 0 : (parseFloat(getComputedStyle(root).getPropertyValue('--pb-viewer-reserve')) || 0)))
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
-  shortWorkspace.value = workspaceH <= SHORT_WORKSPACE_MAX_H
+  if (!full) windowedWorkspaceH = workspaceH
+  shortWorkspace.value = (windowedWorkspaceH || workspaceH) <= SHORT_WORKSPACE_MAX_H
   const style = getComputedStyle(root)
   const gap = parseFloat(style.getPropertyValue('--space-1')) || 0
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)

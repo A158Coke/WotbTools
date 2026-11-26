@@ -4,7 +4,8 @@ import { spansContainAt } from '../trackInterp.js'
 import { makeReplacedAt } from './identity.ts'
 import { GRID_DT } from './util.js'
 import { QUALITY_PRESETS, shadowQualityEligible } from './quality.js'
-import { boolPref, resolveQualityKey } from './preferences.ts'
+import { boolPref, persistBoolPref, resolveQualityKey } from './preferences.ts'
+import { buildRenderSettingsReloadUrl, type RenderSettingsPatch } from './renderSettings.ts'
 import { createContactShadowControl } from './contactShadowControl.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
@@ -12,6 +13,7 @@ import { bind } from '../hostBind.ts'
 export function installSceneState(S: Host) {
   Object.assign(S, {
     setQuality: bind(S, setQuality),
+    applyRenderSettings: bind(S, applyRenderSettings),
     applyGlbGate: bind(S, applyGlbGate),
     idxOf: bind(S, idxOf),
     hpAt: bind(S, hpAt),
@@ -65,6 +67,8 @@ export function installSceneState(S: Host) {
     store: S.store, qualityKey: () => S.QKEY, getScene: () => S.scene, getSunLight: () => S.sunLight,
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
+  S.contactShadowCtl.setEnabled(boolPref('pb_contact_shadows', 'shadows', false));
+  // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};
   function setQuality(S: Host, k: keyof typeof QUALITY_PRESETS) {
@@ -94,6 +98,65 @@ export function installSceneState(S: Host) {
     }
     apply();
   }
+  /**
+   * 统一应用「重建渲染上下文」类设置（画质 / Log Depth / 动态分辨率 / 接地阴影）。
+   * 设置面板 Save 一次可能改多项：这里只发**一次**整页重载，不弹二次确认
+   * （Save 本身已是显式动作，面板内的 reload 说明在提交前已告知）。
+   * 未开播时渲染器尚未创建，就地记偏好即可，下次 initScene 按新偏好装配。
+   * live 项（装甲高亮 / 炮声）不经过本函数。
+   * @returns 是否触发了整页重载
+   */
+  function applyRenderSettings(S: Host, patch: RenderSettingsPatch): boolean {
+    const quality = patch.qualityKey;
+    const qualityChanged = quality !== undefined && !!QUALITY_PRESETS[quality] && quality !== S.QKEY;
+    const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
+    const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
+    // 接地阴影受画质门禁约束；一次 Save 同时改画质时按新档位算有效目标。
+    // 没有显式 patch 时沿用当前选择：任何一次重载都必须把它写进 URL，否则
+    // 待开播卡片开过阴影（URL 无 ?shadows）后改画质重载会静默丢选择，
+    // 或降档后遗留 ?shadows=1 让下次升档意外恢复。
+    const nextQuality = qualityChanged && quality ? quality : S.QKEY;
+    const contactDesired = patch.contactShadows !== undefined ? !!patch.contactShadows : S.store.contactShadows;
+    const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
+    const contactShadowsChanged = patch.contactShadows !== undefined && contactTarget !== S.store.contactShadows;
+    if (!qualityChanged && !logdepthChanged && !dynresChanged && !contactShadowsChanged) return false;
+    if (logdepthChanged) {
+      S.LOGDEPTH = !!patch.logdepth;
+      persistBoolPref('pb_logdepth', !!patch.logdepth);
+      S.store.logdepth = !!patch.logdepth;
+    }
+    if (dynresChanged) {
+      S.DYNRES = !!patch.dynres;
+      persistBoolPref('pb_dynres', !!patch.dynres);
+      S.store.dynres = !!patch.dynres;
+    }
+    if (!S.DATA) {
+      // 未开播：画质沿用既有 apply 链（含 GLB / 履带门禁），不重载。
+      if (qualityChanged && quality) setQuality(S, quality);
+      if (contactTarget !== S.store.contactShadows) S.contactShadowCtl.setEnabled(contactTarget);
+      return false;
+    }
+    if (S.perf) S.perf.interrupt('render-settings-change');
+    const patchForUrl: RenderSettingsPatch = {};
+    if (qualityChanged && quality) {
+      S.QKEY = quality;
+      S.Q = QUALITY_PRESETS[quality];
+      try { localStorage.setItem('pb_quality', quality); } catch (e) {}
+      S.store.qualityKey = quality;
+      S.store.qualityLabel = '画质 · ' + S.Q.label;
+      if (!shadowQualityEligible(quality)) S.contactShadowCtl.setEnabled(false);   // 降档清零，与 setQuality 同语义
+      patchForUrl.qualityKey = quality;
+    }
+    // 只有真的变化的偏好进 URL；URL 未显式携带的 logdepth/dynres 仍由 localStorage 承载。
+    if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
+    if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
+    // 接地阴影没有 localStorage 载体：既然本次重载，就把有效目标显式带过去。
+    patchForUrl.contactShadows = contactTarget;
+    location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));
+    return true;
+  }
+  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）；
+  // 高/极致反向强制 GLB（履带印轨距一致性，见 QUALITY_PRESETS 注）
   function applyGlbGate(S: Host) {
     S.store.glbAllowed = S.Q.allowGlb && !S.Q.forceGlb;
     S.store.treadAllowed = !!S.Q.treadMarks;

@@ -1,6 +1,7 @@
 import { foliageClip } from '../sceneryMaterials.js'
 import { QUALITY_PRESETS } from './quality.js'
 import { persistBoolPref } from './preferences.ts'
+import type { RenderSettingsPatch } from './renderSettings.ts'
 import type { Host } from '../playbackScene.js'
 
 export function createPlaybackApi(S: Host) {
@@ -120,8 +121,12 @@ export function createPlaybackApi(S: Host) {
       }
       S.invalidate();
     },
+    // 待开播卡片直接调用：只改选择，startPlayback 装配时生效。
+    // 已开播的统一修改入口是 applyRenderSettings（?shadows= 一次性重载后装配）。
     setContactShadows: (on: boolean) => S.contactShadowCtl.setEnabled(on),
     setQuality: S.setQuality,
+    /** 画质 / Log Depth / 动态分辨率 / 接地阴影一次应用；已开播时最多触发一次整页重载。 */
+    applyRenderSettings: (patch: RenderSettingsPatch) => S.applyRenderSettings(patch),
     setPaused: S.setPaused,
     qualityPresets: QUALITY_PRESETS,
     destroy() {

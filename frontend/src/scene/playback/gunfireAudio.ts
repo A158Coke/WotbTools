@@ -25,6 +25,10 @@ export function panForCameraSpace(x: number): number {
   return Math.max(-0.8, Math.min(0.8, x))
 }
 const MAX_VOICES = 12
+/** 距离增益平滑时间常数（秒）：相机移动/跳切时按 AudioParam 指数趋近，不产生爆音。 */
+const GAIN_SMOOTHING_SECS = 0.05
+/** 增益目标死区：静止或微小移动不重复写 AudioParam，避免每帧自动化事件堆积。 */
+const GAIN_TARGET_EPSILON = 0.002
 
 type SoundIndex = Partial<Record<GunClass, Partial<Record<string, string[]>>>>
 type GunClassTable = Record<string, Record<string, string>>
@@ -45,6 +49,16 @@ export interface GunfireAudio {
   invalidatePending(): void
   dispose(): void
   onShot(shot: AgentPlaybackShot, muzzle: THREE.Vector3): void
+  /** 帧更新（battleRuntime 在渲染前调用）：按当前相机位置刷新在响声源的距离增益。 */
+  update(): void
+}
+
+/** 一个在响声源：保留炮口世界坐标，相机移动后重算距离增益。 */
+interface Voice {
+  src: AudioBufferSourceNode
+  gain: GainNode
+  muzzle: THREE.Vector3
+  target: number
 }
 
 let soundIndexPromise: Promise<SoundIndex> | null = null
@@ -113,7 +127,7 @@ function acquireContext(): AudioContext {
 }
 
 export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
-  const voices = new Set<AudioBufferSourceNode>()
+  const voices = new Set<Voice>()
   const classCache = new Map<string, GunClass | null>()
   let generation = 0
 
@@ -162,18 +176,32 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     const src = audio.createBufferSource()
     src.buffer = buffers[Math.floor(Math.random() * buffers.length)]
     const gain = audio.createGain()
-    gain.gain.value = gainForDistance(distance)
+    const voice: Voice = { src, gain, muzzle: muzzle.clone(), target: gainForDistance(distance) }
+    gain.gain.value = voice.target
     const panner = audio.createStereoPanner()
     panner.pan.value = pan
     src.connect(gain).connect(panner).connect(audio.destination)
-    src.onended = () => voices.delete(src)
-    voices.add(src)
+    src.onended = () => voices.delete(voice)
+    voices.add(voice)
     src.start()
   }
 
   function stopVoices(): void {
-    for (const v of voices) { try { v.stop() } catch { /* already stopped */ } }
+    for (const v of voices) { try { v.src.stop() } catch { /* already stopped */ } }
     voices.clear()
+  }
+
+  /** 逐帧距离增益：相机移动后按世界距离重算；静止/微动跳过写入，变化经 AudioParam 平滑。 */
+  function update(): void {
+    if (!voices.size || !ctx) return
+    const camera = deps.getCamera()
+    const now = ctx.currentTime
+    for (const voice of voices) {
+      const target = gainForDistance(voice.muzzle.distanceTo(camera.position))
+      if (Math.abs(target - voice.target) < GAIN_TARGET_EPSILON) continue
+      voice.target = target
+      voice.gain.gain.setTargetAtTime(target, now, GAIN_SMOOTHING_SECS)
+    }
   }
 
   return {
@@ -193,6 +221,7 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
         }
       })()
     },
+    update,
     onShot(shot, muzzle) {
       if (disabled || !feedbackPrefs.value.battleSound) return
       const def = deps.getVehicleDef(shot)

@@ -45,6 +45,7 @@ export function createPlaybackStore() {
     treadAllowed: true,
     logdepth: false,
     dynres: true,
+    armorHighlight: false,
     contactShadows: false,
     banner: null as { text?: string; color?: string; outcome?: string } | null,
     killfeed: [],

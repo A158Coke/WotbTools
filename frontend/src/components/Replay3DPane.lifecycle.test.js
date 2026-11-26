@@ -238,6 +238,8 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+    // 自动播放与手动开始走同一条 startReplay：设置入口不依赖待开播卡片，开播后常驻。
+    expect(wrapper.find('[data-testid="replay3d-settings-toggle"]').exists()).toBe(true)
 
     await wrapper.setProps({ active: false })
     await flush()
