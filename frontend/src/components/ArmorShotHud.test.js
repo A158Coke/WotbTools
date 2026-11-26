@@ -86,6 +86,14 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
       expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe(`${damage} HP`)
       expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe(multiplier)
     }
+    // 分段按未取整的弹道长度选（与 judgment 同源），距离读数仍取整：
+    // 50.4m 必须走 ×120%（372），不能因为显示为 50 而错用 ×140%（434）。
+    await wrapper.setProps({ shell: 0, distanceState: { ...distanceState, distance: 50, exactDistance: 50.4 } })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('372 HP')
+    expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe('×120%')
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 50, exactDistance: 50 } })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('434 HP')
+    expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe('×140%')
     // 距离未就绪：突击弹的期望伤害不可计算，显示 —（不拿基础伤害冒充）
     await wrapper.setProps({ shell: 0, distanceState: null })
     expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('— HP')

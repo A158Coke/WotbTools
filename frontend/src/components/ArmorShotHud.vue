@@ -80,6 +80,12 @@ const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
 const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault : String(props.eqpitch) === '1'))
 const distance = computed(() => props.distanceState?.distance ?? null)
+// 分段/穿深必须用未取整的弹道长度（与 judgment 同源）；distance 只负责显示。
+// 旧状态无 exactDistance 时回退到取整值（兼容既有调用方/测试）。
+const exactDistance = computed(() => {
+  const exact = props.distanceState?.exactDistance
+  return typeof exact === 'number' && Number.isFinite(exact) ? exact : distance.value
+})
 const distanceHint = computed(() => t(props.distanceState?.readOnly ? 'armor.recorded_distance' : 'armor.distance_center'))
 function changeDistance(event) {
   if (!props.distanceState || props.distanceState.readOnly) return
@@ -87,8 +93,8 @@ function changeDistance(event) {
   if (Number.isFinite(value)) emit('distance', value)
 }
 const shellOptions = computed(() => shells.value.map(shell => {
-  const penetration = distance.value != null && typeof shell.penetration === 'number' && Number.isFinite(shell.penetration) && shell.penetration >= 0
-    ? Math.round(rolledPenetration(shell.penetration, shell.penetration_far, distance.value, shellTypeOf(shell) === 'he') * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
+  const penetration = exactDistance.value != null && typeof shell.penetration === 'number' && Number.isFinite(shell.penetration) && shell.penetration >= 0
+    ? Math.round(rolledPenetration(shell.penetration, shell.penetration_far, exactDistance.value, shellTypeOf(shell) === 'he') * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
     : null
   const name = (typeof shell.name === 'string' && shell.name.trim()) || shellLabel(shell) || shell.type || ''
   // TrayShell（突击弹）：按当前距离给平均伤害乘倍率（仅 APCR；HE/AP 不乘）。
@@ -97,10 +103,10 @@ const shellOptions = computed(() => shells.value.map(shell => {
   const baseDamage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? shell.damage : null
   // 突击弹必须知道距离才能给期望伤害；距离未就绪（加载/切车过渡）显示 —，
   // 不拿基础伤害冒充当前距离值（非突击弹不受影响，基础伤害就是其期望值）。
-  const damage = tray && (distance.value == null || !Number.isFinite(distance.value))
+  const damage = tray && (exactDistance.value == null || !Number.isFinite(exactDistance.value))
     ? null
-    : trayShellDamage(baseDamage, tray?.sectors, distance.value)
-  const multiplier = tray ? damageFactorAt(tray.sectors, distance.value) : null
+    : trayShellDamage(baseDamage, tray?.sectors, exactDistance.value)
+  const multiplier = tray ? damageFactorAt(tray.sectors, exactDistance.value) : null
   return {
     shell,
     name,
