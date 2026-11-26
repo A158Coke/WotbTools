@@ -181,7 +181,7 @@ export async function runRosterGeometryScenario(env, scenario) {
     await page.evaluate(`(() => {
       const style = document.createElement('style')
       style.id = 'distance-occlusion-negative-control'
-      style.textContent = '.pb-root.playback-workspace .scene-dist { top: 120px !important; bottom: auto !important; }'
+      style.textContent = '.pb-root.playback-workspace .scene-dist { top: 120px !important; bottom: auto !important; right: var(--space-2) !important; left: auto !important; }'
       document.head.append(style)
     })()`)
     await waitForStableLayout(page)
@@ -240,7 +240,8 @@ export async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
   await waitForStableLayout(page)
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const EDGE_DOCKED = ['.team-lane', '.killfeed']
+  // 紧凑档的距离滑条让开右侧名册后停在名册左侧，仍属贴边常驻控件（侵入中心远小于 15%）。
+  const EDGE_DOCKED = ['.team-lane', '.killfeed', '.scene-dist']
   const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: compactBar ? EDGE_DOCKED : [] }
   await page.evaluate(`(() => {
     window.__sceneKillfeed = window.__pbPane.store.killfeed

@@ -269,6 +269,25 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     expect(audio.started).toHaveLength(0)
   })
 
+  it('异步取 buffer 期间相机移出 500m：release 后不 start（异步距离竞态）', async () => {
+    const { gunfire, defs, camera } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })   // auto（独立于其它用例的 class）
+    let release!: () => void
+    gate.bytesDelay = new Promise<void>((r) => { release = r })
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 10))
+    expect(audio.started).toHaveLength(0)
+    camera.position.set(600, 0, 0)   // buffer 还在路上，相机已离开衰减范围
+    release()
+    gate.bytesDelay = null
+    await new Promise(r => setTimeout(r, 30))
+    expect(audio.started).toHaveLength(0)   // 迟到的 buffer 不得按开炮瞬间的距离发声
+    // 回到范围内仍是正常炮声（证明只是这一发被距离挡下，不是整体失效）
+    camera.position.set(0, 0, 0)
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
+  })
+
   it('元数据临时失败可恢复：503 后下一次开炮重新请求并播放（评审 P2）', async () => {
     const { gunfire, defs } = makeHarness()
     defs.set(1, { tank_id: 5, gun_local: 13 })

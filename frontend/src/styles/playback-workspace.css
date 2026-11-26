@@ -150,4 +150,17 @@
 .pb-root.playback-workspace.compact-bar .controls-content > .tool-row {
   flex: 1 0 100%;
   min-inline-size: 0;
+  /* 镜头行必须单行：不可换行，否则控制条整体变高，距离滑条与右侧名册会被顶到一起。
+     录像者不可用的原因仍留在同一行，空间不足时省略号截断，完整文案在 title。 */
+  flex-wrap: nowrap;
+}
+.pb-root.playback-workspace.compact-bar .controls-content > .tool-row > :not([data-testid="replay3d-camera-hint"]) {
+  flex: none;
+}
+.pb-root.playback-workspace.compact-bar .controls-content > .tool-row > [data-testid="replay3d-camera-hint"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

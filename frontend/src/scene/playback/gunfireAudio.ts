@@ -169,14 +169,19 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     const buffers = await loadBuffers(cls, 'close')
     if (gen !== generation || disabled || !feedbackPrefs.value.battleSound) return
     if (!buffers.length || voices.size >= MAX_VOICES) return
+    // 等待期间相机可能已移出衰减范围：开炮瞬间的距离不能决定迟到的 buffer 是否发声，
+    // 必须用当前相机重算；否则会在下一次帧 update 前先响一声（评审：异步距离竞态）。
+    const nowCamera = deps.getCamera()
+    const nowDistance = muzzle.distanceTo(nowCamera.position)
+    if (nowDistance >= GUN_MAX_ATTENUATION_M) return
     const audio = acquireContext()
-    const local = muzzle.clone().applyMatrix4(camera.matrixWorldInverse)
+    const local = muzzle.clone().applyMatrix4(nowCamera.matrixWorldInverse)
     const horiz = Math.hypot(local.x, local.z)
     const pan = panForCameraSpace(horiz > 1e-6 ? local.x / horiz : 0)
     const src = audio.createBufferSource()
     src.buffer = buffers[Math.floor(Math.random() * buffers.length)]
     const gain = audio.createGain()
-    const voice: Voice = { src, gain, muzzle: muzzle.clone(), target: gainForDistance(distance) }
+    const voice: Voice = { src, gain, muzzle: muzzle.clone(), target: gainForDistance(nowDistance) }
     gain.gain.value = voice.target
     const panner = audio.createStereoPanner()
     panner.pan.value = pan

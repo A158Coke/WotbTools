@@ -840,7 +840,7 @@ export async function check3DDrawingSurface(page, failures, scenario, viewport, 
   if (scenario.layout !== 'portrait') {
     await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
     await waitForStableLayout(page)
-    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
+    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed', '.scene-dist'] : [] })
     for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
   }
   check(failures, opened.transport.order.length === expectedPrimary && opened.transport.oneRow

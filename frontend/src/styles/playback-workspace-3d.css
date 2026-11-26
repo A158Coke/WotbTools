@@ -220,6 +220,9 @@
 .pb-root.playback-workspace.transport-docked.phone-form:not(.portrait-flow) .scene-dist {
   bottom: calc(var(--pb-controls-dock-h, 0px) + max(var(--space-2), var(--pb-safe-bottom)) + var(--space-2));
 }
+.pb-root.playback-workspace.compact-bar.roster-side.phone-form:not(.portrait-flow) .scene-dist {
+  right: calc(var(--space-1) + var(--pb-overlay-lane-w) + var(--space-2));
+}
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .pb-fps {
   inset-inline-end: auto;
   inset-inline-start: max(var(--space-2), var(--pb-safe-left));
