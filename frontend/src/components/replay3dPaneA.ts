@@ -13,6 +13,8 @@ import { createPlaybackStore } from '../scene/playbackStore.js'
 import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 import { shadowQualityEligible } from '../scene/playback/quality.js'
 import { replaySettingsDiff, type Replay3DSettings } from '../scene/playback/renderSettings.js'
+import { stageReplayForReload } from '../replay-local/replayReloadCache.js'
+import { showToast } from '../composables/useToast.js'
 import type { initPlayback } from '../scene/playbackScene.js'
 
 type Store = ReturnType<typeof createPlaybackStore>
@@ -28,11 +30,15 @@ export interface R3dAParts {
   shortWorkspace: Ref<boolean>
   CAMERAS: Ref<ReadonlyArray<{ id: string; label: string }> | string[]>
   sceneApi: SceneApiLike | null
+  /** 渲染设置整页重载前暂存当前回放；失败时抛错并中止重载。 */
+  stageReloadReplay?: () => Promise<void>
 }
 
 export interface R3dAProps {
   active: boolean
   file: unknown
+  /** 当前回放是否为官方示例（重载后需重新下载校验，不能直接复用 File 身份）。 */
+  demo?: boolean
 }
 
 export function r3dA(S: R3dAParts, props: R3dAProps): void {
@@ -90,15 +96,30 @@ function setDraftQuality(key: Replay3DSettings['qualityKey']): void {
     contactShadows: shadowQualityEligible(key) ? settingsDraft.value.contactShadows : false,
   }
 }
-function saveSettings(): void {
+async function saveSettings(): Promise<void> {
   const diff = replaySettingsDiff(settingsDraft.value, currentSettings())
   settingsOpen.value = false
   if (!diff.changed) return
   if (diff.live.armorHighlight !== undefined) S.sceneApi?.setArmorHighlight?.(diff.live.armorHighlight)
   if (diff.live.battleSound !== undefined) setFeedbackPref('battleSound', diff.live.battleSound)
-  if (diff.render) S.sceneApi?.applyRenderSettings?.(diff.render)
+  if (diff.render) await S.sceneApi?.applyRenderSettings?.(diff.render)
 }
 
+async function stageReloadReplay(): Promise<void> {
+  const file = props.file
+  if (!(file instanceof File)) return
+  try {
+    await stageReplayForReload(file, { demo: !!props.demo })
+  } catch (error) {
+    showToast({
+      id: 'replay3d-reload-stage',
+      tone: 'error',
+      messageKey: 'agentReplay.settings_reload_failed',
+    })
+    throw error
+  }
+}
+S.stageReloadReplay = stageReloadReplay
 const displayOpen = ref(false)
 const displayAnchor = ref<HTMLElement | null>(null)
 function toggleDisplay(anchor: HTMLElement | null): void {

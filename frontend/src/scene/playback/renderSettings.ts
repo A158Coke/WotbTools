@@ -20,6 +20,8 @@ export interface RenderSettingsPatch {
   logdepth?: boolean
   dynres?: boolean
   contactShadows?: boolean
+  /** 仅用于同步 URL 已显式携带的 ?armorhl=；装甲高亮本身仍是 live 项。 */
+  armorHighlight?: boolean
 }
 
 export interface ReplaySettingsLive {
@@ -59,6 +61,9 @@ export function replaySettingsDiff(draft: Replay3DSettings, current: Replay3DSet
  * 携带，重载前必须同步改写；URL 没写的参数保持不写（不把一次面板操作变成永久 URL 覆盖）。
  * q 同理：只有画质真的变了才写，避免给原本没有 ?q= 的地址钉上画质。
  * 接地阴影不写 localStorage，只能靠本次 ?shadows= 在重载后恢复选择，因此总是显式写入。
+ * 装甲高亮是 live 项（写 localStorage），但 URL 已显式携带 ?armorhl= 时 URL 优先：
+ * 重载前必须把刚写入的 live 值同步进 URL，否则重载会回到旧的 URL 值。
+ * 原 URL 没有 ?armorhl= 时不新增，避免一次面板操作变成永久 URL 覆盖。
  */
 export function buildRenderSettingsReloadUrl(href: string, patch: RenderSettingsPatch): URL {
   const url = new URL(href)
@@ -71,6 +76,9 @@ export function buildRenderSettingsReloadUrl(href: string, patch: RenderSettings
   }
   if (patch.contactShadows !== undefined) {
     url.searchParams.set('shadows', patch.contactShadows ? '1' : '0')
+  }
+  if (patch.armorHighlight !== undefined && url.searchParams.has('armorhl')) {
+    url.searchParams.set('armorhl', patch.armorHighlight ? '1' : '0')
   }
   return url
 }

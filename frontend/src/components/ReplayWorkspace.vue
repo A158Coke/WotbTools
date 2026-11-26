@@ -15,6 +15,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { useConfirm } from '../composables/useConfirm.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
+import { useReplayReloadRestore } from '../composables/useReplayReloadRestore.js'
 import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
@@ -106,6 +107,14 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       ? t('workspace.native_client_upgrade_required')
       : t('workspace.native_replay_read_failed')
   },
+})
+// 渲染设置整页重载后恢复当前回放（一次性标记；普通进入不触碰 IndexedDB）。
+useReplayReloadRestore({
+  files,
+  updateFiles,
+  updateDemoFile,
+  analyze,
+  onError: () => { error.value = t('workspace.replay_restore_failed') },
 })
 
 function confirmRemove() {
@@ -347,6 +356,7 @@ watch(() => props.initialCapability, (val) => {
               :pending-seek="pending3dSeek"
               :show-event-markers="showEventMarkers"
               :auto-start-user-id="autoStartUserId"
+              :demo="isDemoSelection"
             />
           </template>
           <template #events>

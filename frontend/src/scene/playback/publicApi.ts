@@ -126,7 +126,7 @@ export function createPlaybackApi(S: Host) {
     setContactShadows: (on: boolean) => S.contactShadowCtl.setEnabled(on),
     setQuality: S.setQuality,
     /** 画质 / Log Depth / 动态分辨率 / 接地阴影一次应用；已开播时最多触发一次整页重载。 */
-    applyRenderSettings: (patch: RenderSettingsPatch) => S.applyRenderSettings(patch),
+    applyRenderSettings: async (patch: RenderSettingsPatch): Promise<boolean> => S.applyRenderSettings(patch),
     setPaused: S.setPaused,
     qualityPresets: QUALITY_PRESETS,
     destroy() {

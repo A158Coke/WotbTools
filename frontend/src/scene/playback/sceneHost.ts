@@ -11,6 +11,8 @@ export interface SceneHostOptions {
   onAnnotationCommit?: AnnotationApi['commitAnnotationFromScene']
   onAnnotationErase?: AnnotationApi['eraseFromScene']
   recorderReticle?: HTMLElement | null
+  /** 渲染设置整页重载前暂存当前回放（由 3D pane 提供；场景宿主只转发给 sceneState）。 */
+  stageReloadReplay?: (() => Promise<void>) | null
 }
 
 export function createSceneHost({
@@ -21,6 +23,7 @@ export function createSceneHost({
   onAnnotationCommit,
   onAnnotationErase,
   recorderReticle,
+  stageReloadReplay = null,
 }: SceneHostOptions) {
   return {
     container,
@@ -30,5 +33,6 @@ export function createSceneHost({
     onAnnotationCommit,
     onAnnotationErase,
     recorderReticle,
+    stageReloadReplay,
   }
 }

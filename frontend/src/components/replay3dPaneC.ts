@@ -55,6 +55,8 @@ export interface R3dCParts {
   recorderReticle: Ref<HTMLElement | null>
   labelOverlay: Ref<HTMLElement | null>
   stage: Ref<HTMLElement | null>
+  /** 渲染设置整页重载前暂存当前回放（A 段定义，随场景宿主转交）。 */
+  stageReloadReplay?: () => Promise<void>
   isPhone: Ref<boolean>
   markerPrefs: { battleMarkers?: boolean }
   uiHidden: Ref<boolean>
@@ -190,6 +192,7 @@ function ensureScene(): boolean {
     onAnnotationCommit: S.commitAnnotationFromScene,
     onAnnotationErase: S.eraseFromScene,
     recorderReticle: S.recorderReticle.value,
+    stageReloadReplay: S.stageReloadReplay ?? null,
   })
   S.sceneApi?.setPaused?.(!S.renderActive.value)
   S.sceneApi?.setFlySpeed?.(S.fly.flySpeedIndex())

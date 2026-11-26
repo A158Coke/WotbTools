@@ -36,6 +36,8 @@ const props = defineProps({
   pendingSeek: { type: Object, default: null },
   showEventMarkers: { type: Boolean, default: false },
   autoStartUserId: { type: String, default: '' },
+  /** 当前回放是官方示例：整页重载后需重新下载校验，不能直接复用 File 身份。 */
+  demo: { type: Boolean, default: false },
 })
 
 const playbackTeamCssVars = teamCssVars('')

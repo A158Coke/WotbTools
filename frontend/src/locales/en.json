@@ -1665,6 +1665,7 @@
     "pane_load_failed": "This panel could not load, usually because the site was updated. Reload to get the new version; if it was only a network interruption, retry first.",
     "pane_reload": "Reload",
     "pane_retry": "Retry",
+    "replay_restore_failed": "The previous replay could not be restored after the reload. Please select the file again.",
     "rotate_view_data": "View battle data"
   },
   "league": {
@@ -1836,6 +1837,7 @@
     "settings_sound_hint": "Spatial gunfire from vehicles firing in the replay; volume follows camera distance. Only this switch changes — the renderer is not rebuilt.",
     "settings_reload_note": "Changing quality, log depth, dynamic resolution or contact shadows reloads the replay from the start; the other options apply immediately. One save triggers at most one reload.",
     "settings_save": "Save",
+    "settings_reload_failed": "Could not stage the current replay, so the reload was cancelled and the current view kept. Try again.",
     "team1": "Team 1",
     "team2": "Team 2",
     "teamUnknown": "Unknown team",

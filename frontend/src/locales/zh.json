@@ -1665,6 +1665,7 @@
     "pane_load_failed": "这个面板加载不出来，通常是页面版本已更新。重新加载即可拿到新版本；若只是网络中断，可先重试。",
     "pane_reload": "重新加载",
     "pane_retry": "重试",
+    "replay_restore_failed": "重载后无法恢复上一场回放，请重新选择文件。",
     "rotate_view_data": "看赛后数据"
   },
   "league": {
@@ -1836,6 +1837,7 @@
     "settings_sound_hint": "回放中车辆开炮的空间音效，音量随镜头距离变化；只改这个开关，不会重建渲染器。",
     "settings_reload_note": "修改画质、对数深度、动态分辨率或接地阴影会从头重载回放；其余选项立即生效。一次保存最多只重载一次。",
     "settings_save": "保存",
+    "settings_reload_failed": "无法暂存当前回放，已取消重载并保留当前画面。请重试。",
     "team1": "队伍 1",
     "team2": "队伍 2",
     "teamUnknown": "未识别阵营",

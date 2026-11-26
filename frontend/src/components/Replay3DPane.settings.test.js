@@ -153,6 +153,15 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     wrapper.unmount()
   })
 
+  it('场景宿主收到重载暂存钩子：Render 设置重载前能暂存当前回放（P2-1 wiring）', async () => {
+    const { wrapper } = await startedPane()
+    // 回归点：钩子必须经 initPlayback 的 options 进入场景宿主；只挂在 Vue parts 上时
+    // 场景侧 S.stageReloadReplay 为 undefined，会在真正重载前静默跳过暂存。
+    const options = playback.init.mock.calls.at(-1)?.[3]
+    expect(typeof options?.stageReloadReplay).toBe('function')
+    wrapper.unmount()
+  })
+
   it('设置面与 Display 面互斥：打开一个会收起另一个', async () => {
     const { wrapper } = await startedPane()
     await openSettings(wrapper)

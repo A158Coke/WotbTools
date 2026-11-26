@@ -84,16 +84,19 @@ export function installSceneState(S: Host) {
       S.applyGlbGate();
     };
     if (S.DATA) {
-      const reload = () => {
+      const reload = async () => {
+        try { await S.stageReloadReplay?.(); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
-        const u = new URL(location.href); u.searchParams.set('q', k); location.replace(u);
+        location.replace(buildRenderSettingsReloadUrl(location.href, {
+          qualityKey: k, armorHighlight: S.ARMOR_HIGHLIGHT,
+        }));
       };
-      if (window.__TAURI__) { reload(); return; }
+      if (window.__TAURI__) { void reload(); return; }
       appConfirm({
         title: '切换画质',
         message: '切换到「' + QUALITY_PRESETS[k].label + '」画质将重新加载回放，继续？',
-      }).then((ok) => { if (ok) reload(); });
+      }).then((ok) => { if (ok) void reload(); });
       return;
     }
     apply();
@@ -106,7 +109,7 @@ export function installSceneState(S: Host) {
    * live 项（装甲高亮 / 炮声）不经过本函数。
    * @returns 是否触发了整页重载
    */
-  function applyRenderSettings(S: Host, patch: RenderSettingsPatch): boolean {
+  async function applyRenderSettings(S: Host, patch: RenderSettingsPatch): Promise<boolean> {
     const quality = patch.qualityKey;
     const qualityChanged = quality !== undefined && !!QUALITY_PRESETS[quality] && quality !== S.QKEY;
     const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
@@ -120,6 +123,11 @@ export function installSceneState(S: Host) {
     const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
     const contactShadowsChanged = patch.contactShadows !== undefined && contactTarget !== S.store.contactShadows;
     if (!qualityChanged && !logdepthChanged && !dynresChanged && !contactShadowsChanged) return false;
+    // 已开播：整页重载前先把当前回放暂存到 IndexedDB（重载后由工作台恢复）；
+    // 暂存失败就中止本次应用，保留当前会话，绝不带着回放丢失风险重载。
+    if (S.DATA) {
+      try { await S.stageReloadReplay?.(); } catch (e) { return false; }
+    }
     if (logdepthChanged) {
       S.LOGDEPTH = !!patch.logdepth;
       persistBoolPref('pb_logdepth', !!patch.logdepth);
@@ -152,6 +160,8 @@ export function installSceneState(S: Host) {
     if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
     // 接地阴影没有 localStorage 载体：既然本次重载，就把有效目标显式带过去。
     patchForUrl.contactShadows = contactTarget;
+    // 装甲高亮是 live 项：重载前把刚写入的当前值带进 URL（仅当 URL 原本已有 ?armorhl=）。
+    patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;
     location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));
     return true;
   }
