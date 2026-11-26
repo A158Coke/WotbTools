@@ -192,6 +192,7 @@ deployment:
   # production workflow owns deploy/komodo/** + infra/tofu/komodo/** only).
   - 'infra/komodo/resources/**'
 python:
+  - 'deploy/business-images/**'
   - '.github/workflows/ci-python.yml'
   - 'common/python/**'
   # 人工维护的别名数据集 + 其 tank_id 校验源（完整车辆名册）：
