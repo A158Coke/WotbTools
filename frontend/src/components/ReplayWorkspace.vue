@@ -114,9 +114,7 @@ useReplayReloadRestore({
   files, updateFiles, updateDemoFile, analyze, onRestored: () => { replayResumeToken.value += 1 }, onError: () => { error.value = t('workspace.replay_restore_failed') },
 })
 
-function confirmRemove() {
-  workspace.replay.confirmRemove()
-}
+const confirmRemove = () => workspace.replay.confirmRemove()
 
 function clearSelection() {
   updateFiles([])
