@@ -63,17 +63,8 @@ else
   echo "::error::Cannot check immutable staging evidence (HTTP $STATUS)" >&2
   exit 1
 fi
-# Immutable evidence is reused only when the live edge routes deltas to offload.
-if [ "$(jq '.patches | length' "$META")" -gt 0 ]; then
-  headers="$RUNNER_TEMP/delta-offload-headers"
-  code="$(curl -sS -I --connect-timeout 5 --max-time 20 -o "$headers" -w '%{http_code}' 'https://wotbtools.com/download/android/wotbtools-android-delta-probe.vcdiff')" || code=000
-  if [ "$code" != 302 ] || ! tr -d '\r' < "$headers" | grep -Fqi 'location: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/'; then
-    if [ "$STATUS" = 200 ]; then echo "::error::Immutable delta requires offload" >&2; exit 1; fi
-    echo "::notice::Delta offload inactive; release full APK only."
-    jq '.patches = []' "$META" > "$META.tmp" && mv "$META.tmp" "$META"
-  fi
-fi
 PATCH_NAME="$(jq -r '.patches[0].url // empty | split("/") | last' "$META")"
+echo "patchSha=$(jq -r '.patches[0].sha256 // empty' "$META")" >> "$GITHUB_OUTPUT"
 echo "patchName=$PATCH_NAME" >> "$GITHUB_OUTPUT"
 echo "existingEvidence=$STATUS" >> "$GITHUB_OUTPUT"
 cat "$META"

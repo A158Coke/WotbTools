@@ -3,7 +3,7 @@ name: Release / Android
 #
 #   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract + **cutover 守卫**
 #              （guard_min_supported / guard_local_first_cutover / guard_bridge_covered）→ 构建/签名 →
-#              证书校验 → 清华副本上传（distribution replica，可 replace 覆盖，不锁定版本）→
+#              证书校验 → Aliyun 不可变落位和公网回读（成功落位即锁版本）→ 清华副本上传（distribution replica，可 replace 覆盖，不锁定版本）→
 #              immutable APK seed（TX1 → TX2 依次从副本拉取，逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗该
 #              版本号，之后改变 Android candidate 的修改必须换版本）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
@@ -16,7 +16,7 @@ name: Release / Android
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
 #              不重建 APK（复用 staged 的 immutable APK），校验 staged 身份（版本/SHA/tag/URL/
 #              source SHA）→ minSupported 覆盖 breaking bridge cutover → Keycloak runtime client
-#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（Android 客户端 rollout 的唯一 commit point）。
+#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → Aliyun 与稳定入口核验 APK 和差分 → 才写 version.json（Android 客户端 rollout 的唯一 commit point）。
 #              真机测试仍有价值，但不再是 version.json 之前的人工审批门：它在 rollout 之后做 production
 #              smoke / regression，发现问题按正常版本规则发布更高版本。
 #

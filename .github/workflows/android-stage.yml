@@ -16,7 +16,7 @@ env:
 jobs:
   stage:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 210
     steps:
     - name: Checkout release source
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -157,6 +157,19 @@ jobs:
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
         STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-16-classify-origins.sh"
+    - name: Install and verify Aliyun APK
+      if: steps.preflight.outputs.releaseAction == 'publish'
+      timeout-minutes: 43
+      shell: bash
+      env:
+        ALI_HOST: ${{ secrets.ANDROID_DOWNLOAD_SSH_HOST }}
+        ALI_USER: ${{ secrets.ANDROID_DOWNLOAD_SSH_USER }}
+        ALI_PORT: ${{ vars.ANDROID_DOWNLOAD_SSH_PORT || '22' }}
+        ALI_KEY: ${{ secrets.ANDROID_DOWNLOAD_SSH_KEY }}
+        ALI_HOST_KEY: ${{ vars.ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY }}
+        DOWNLOAD_NAME: ${{ steps.artifact.outputs.apkName }}
+        DOWNLOAD_SHA: ${{ steps.artifact.outputs.sha256 }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/install-aliyun-download.sh"
     - name: Upload APK to Tsinghua Cloud (public download offload + origin seed source)
       if: steps.preflight.outputs.releaseAction == 'publish'
       shell: bash
@@ -164,8 +177,8 @@ jobs:
         TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
         STEP_ARTIFACT_APKNAME: ${{ steps.artifact.outputs.apkName }}
         STEP_ARTIFACT_SHA256: ${{ steps.artifact.outputs.sha256 }}
-        JOB_TIMEOUT_SECONDS: "7200"
-        POST_STAGE_RESERVE_SECONDS: "900"
+        JOB_TIMEOUT_SECONDS: "12600"
+        POST_STAGE_RESERVE_SECONDS: "3480"
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-17-upload-tsinghua.sh"
     - name: Seed APK to TX from Tsinghua replica (pull; SHA-256 verified, atomic)
       if: steps.preflight.outputs.releaseAction == 'publish' && steps.apkcheck.outputs.tx1State == 'apk_absent'
@@ -230,6 +243,21 @@ jobs:
         STEP_VERSION_VERSIONCODE: ${{ steps.version.outputs.versionCode }}
         STEP_VERSION_VERSIONNAME: ${{ steps.version.outputs.versionName }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-20-prepare-delta.sh"
+    - name: Install and verify Aliyun delta
+      id: delta_aliyun
+      continue-on-error: true
+      if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
+      timeout-minutes: 43
+      shell: bash
+      env:
+        ALI_HOST: ${{ secrets.ANDROID_DOWNLOAD_SSH_HOST }}
+        ALI_USER: ${{ secrets.ANDROID_DOWNLOAD_SSH_USER }}
+        ALI_PORT: ${{ vars.ANDROID_DOWNLOAD_SSH_PORT || '22' }}
+        ALI_KEY: ${{ secrets.ANDROID_DOWNLOAD_SSH_KEY }}
+        ALI_HOST_KEY: ${{ vars.ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY }}
+        DOWNLOAD_NAME: ${{ steps.delta.outputs.patchName }}
+        DOWNLOAD_SHA: ${{ steps.delta.outputs.patchSha }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/install-aliyun-download.sh"
     - name: Upload Android delta to Tsinghua Cloud
       id: delta_cloud
       continue-on-error: true
@@ -331,7 +359,7 @@ jobs:
       if: steps.preflight.outputs.releaseAction == 'publish' && steps.delta.outputs.patchName != ''
       shell: bash
       env:
-        DELTA_RESULTS: ${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
+        DELTA_RESULTS: ${{ steps.delta_aliyun.outcome }},${{ steps.delta_cloud.outcome }},${{ steps.delta_tx_prepare.outcome }},${{ steps.delta_tx_upload.outcome }},${{ steps.delta_tx_install.outcome }},${{ steps.delta_tx2_prepare.outcome }},${{ steps.delta_tx2_upload.outcome }},${{ steps.delta_tx2_install.outcome }},${{ steps.delta_public.outcome }}
         EXISTING_EVIDENCE: ${{ steps.delta.outputs.existingEvidence }}
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/stage-23-resolve-delta-availability.sh"
     - name: Write immutable staging evidence (production version.json 保持不变)
