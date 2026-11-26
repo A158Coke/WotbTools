@@ -25,6 +25,8 @@ export function panForCameraSpace(x: number): number {
   return Math.max(-0.8, Math.min(0.8, x))
 }
 const MAX_VOICES = 12
+const GAIN_SMOOTHING_SECS = 0.05
+const GAIN_TARGET_EPSILON = 0.002
 
 type SoundIndex = Partial<Record<GunClass, Partial<Record<string, string[]>>>>
 type GunClassTable = Record<string, Record<string, string>>
@@ -45,6 +47,14 @@ export interface GunfireAudio {
   invalidatePending(): void
   dispose(): void
   onShot(shot: AgentPlaybackShot, muzzle: THREE.Vector3): void
+  update(): void
+}
+
+interface Voice {
+  src: AudioBufferSourceNode
+  gain: GainNode
+  muzzle: THREE.Vector3
+  target: number
 }
 
 let soundIndexPromise: Promise<SoundIndex> | null = null
@@ -113,7 +123,7 @@ function acquireContext(): AudioContext {
 }
 
 export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
-  const voices = new Set<AudioBufferSourceNode>()
+  const voices = new Set<Voice>()
   const classCache = new Map<string, GunClass | null>()
   let generation = 0
 
@@ -146,7 +156,6 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     })()
   }
 
-  /** @param gen 发起时（onShot）的会话代；每个 await 之后与 start 前核对，过期即弃。 */
   async function play(cls: GunClass, muzzle: THREE.Vector3, gen: number): Promise<void> {
     if (disabled || gen !== generation) return
     const camera = deps.getCamera()
@@ -155,25 +164,41 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
     const buffers = await loadBuffers(cls, 'close')
     if (gen !== generation || disabled || !feedbackPrefs.value.battleSound) return
     if (!buffers.length || voices.size >= MAX_VOICES) return
+    const nowCamera = deps.getCamera()
+    const nowDistance = muzzle.distanceTo(nowCamera.position)
+    if (nowDistance >= GUN_MAX_ATTENUATION_M) return
     const audio = acquireContext()
-    const local = muzzle.clone().applyMatrix4(camera.matrixWorldInverse)
+    const local = muzzle.clone().applyMatrix4(nowCamera.matrixWorldInverse)
     const horiz = Math.hypot(local.x, local.z)
     const pan = panForCameraSpace(horiz > 1e-6 ? local.x / horiz : 0)
     const src = audio.createBufferSource()
     src.buffer = buffers[Math.floor(Math.random() * buffers.length)]
     const gain = audio.createGain()
-    gain.gain.value = gainForDistance(distance)
+    const voice: Voice = { src, gain, muzzle: muzzle.clone(), target: gainForDistance(nowDistance) }
+    gain.gain.value = voice.target
     const panner = audio.createStereoPanner()
     panner.pan.value = pan
     src.connect(gain).connect(panner).connect(audio.destination)
-    src.onended = () => voices.delete(src)
-    voices.add(src)
+    src.onended = () => voices.delete(voice)
+    voices.add(voice)
     src.start()
   }
 
   function stopVoices(): void {
-    for (const v of voices) { try { v.stop() } catch { /* already stopped */ } }
+    for (const v of voices) { try { v.src.stop() } catch { /* already stopped */ } }
     voices.clear()
+  }
+
+  function update(): void {
+    if (!voices.size || !ctx) return
+    const camera = deps.getCamera()
+    const now = ctx.currentTime
+    for (const voice of voices) {
+      const target = gainForDistance(voice.muzzle.distanceTo(camera.position))
+      if (Math.abs(target - voice.target) < GAIN_TARGET_EPSILON) continue
+      voice.target = target
+      voice.gain.gain.setTargetAtTime(target, now, GAIN_SMOOTHING_SECS)
+    }
   }
 
   return {
@@ -193,6 +218,7 @@ export function createGunfireAudio(deps: GunfireAudioDeps): GunfireAudio {
         }
       })()
     },
+    update,
     onShot(shot, muzzle) {
       if (disabled || !feedbackPrefs.value.battleSound) return
       const def = deps.getVehicleDef(shot)

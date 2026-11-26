@@ -62,6 +62,7 @@ export interface BattleRuntimeHandle {
   trajLineCount(): number
   fxStats(): { impacts: number; bursts: number } | null
   prepareGunfire(defs: readonly { tank_id?: number | null, gun_local?: unknown, config_idx?: unknown }[]): void
+  updateGunfire(): void
   dispose(): void
 }
 
@@ -298,6 +299,7 @@ export function createBattleRuntime(deps: BattleRuntimeDeps): BattleRuntimeHandl
     trajLineCount: () => trajLines.length,
     fxStats() { return battleFx ? battleFx.stats() : null; },
     prepareGunfire: (defs) => gunfire.prepare(defs),
+    updateGunfire: () => gunfire.update(),
     dispose,
   };
 }

@@ -141,3 +141,22 @@
   flex: none;
   flex-wrap: nowrap;
 }
+.pb-root.playback-workspace.compact-bar .controls-content {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pb-root.playback-workspace.compact-bar .controls-content > .tool-row {
+  flex: 1 0 100%;
+  min-inline-size: 0;
+  flex-wrap: nowrap;
+}
+.pb-root.playback-workspace.compact-bar .controls-content > .tool-row > :not([data-testid="replay3d-camera-hint"]) {
+  flex: none;
+}
+.pb-root.playback-workspace.compact-bar .controls-content > .tool-row > [data-testid="replay3d-camera-hint"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

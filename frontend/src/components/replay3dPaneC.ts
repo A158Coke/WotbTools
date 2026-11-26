@@ -6,6 +6,7 @@ import { Feature } from '../app/featureCapabilities.js'
 import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { initPlayback } from '../scene/playbackScene.js'
+import { contactShadowOverrideFor, type ReplayShadowRequest } from './replay3dShadowRequest.js'
 import type { SceneApiLike } from './replay3dPaneA.js'
 import type { LocalPlayback } from '../replay-local/playback/parseLocalPlayback.js'
 import type { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -20,6 +21,7 @@ type Store = ReturnType<typeof createPlaybackStore>
 type FlyControls = ReturnType<typeof useSceneFlyControls>
 type I18nT = ReturnType<typeof useI18n>['t']
 type RosterRowLike = { eid: number; accountId: number | null; tankId: number | null; team: number | null; nick: string; tank: string; dead?: boolean; hp?: number; maxHp?: number }
+
 
 interface PlaybackSessionLike {
   loadScene(file: File): unknown
@@ -55,6 +57,10 @@ export interface R3dCParts {
   recorderReticle: Ref<HTMLElement | null>
   labelOverlay: Ref<HTMLElement | null>
   stage: Ref<HTMLElement | null>
+  stageReloadReplay?: (contactShadows?: boolean) => Promise<void>
+  resumePending?: Ref<boolean>
+  claimResume?: () => boolean
+  consumeResume?: () => void
   isPhone: Ref<boolean>
   markerPrefs: { battleMarkers?: boolean }
   uiHidden: Ref<boolean>
@@ -78,6 +84,7 @@ export interface R3dCProps {
   file: File | null
   playbackSession: PlaybackSessionLike | null
   autoStartUserId: string
+  shadowRequest?: ReplayShadowRequest | null
 }
 
 export function r3dC(S: R3dCParts, props: R3dCProps): void {
@@ -190,6 +197,8 @@ function ensureScene(): boolean {
     onAnnotationCommit: S.commitAnnotationFromScene,
     onAnnotationErase: S.eraseFromScene,
     recorderReticle: S.recorderReticle.value,
+    stageReloadReplay: S.stageReloadReplay ?? null,
+    contactShadowOverride: contactShadowOverrideFor(props.file, props.shadowRequest),
   })
   S.sceneApi?.setPaused?.(!S.renderActive.value)
   S.sceneApi?.setFlySpeed?.(S.fly.flySpeedIndex())
@@ -203,6 +212,7 @@ function ensureScene(): boolean {
 }
 
 const startedFile = shallowRef<File | null>(null)
+
 const autoStart = useReplay3DAutoStart(() => props.autoStartUserId)
 const qualityOptions = computed(() =>
   S.QUALITY_ORDER.map((k) => ({ value: k, label: S.t('agentReplay.q_' + k) })),
@@ -210,18 +220,22 @@ const qualityOptions = computed(() =>
 
 function startReplay(): void {
   if (!props.file) return
+  S.consumeResume?.()
   startedFile.value = props.file
   reconcileScene()
 }
 
 function maybeAutoStart(): void {
   autoStart.refresh()
-  if (!autoStart.available.value || !autoStart.enabled.value) return
   if (!props.active || !S.renderActive.value) return
   const file = props.file
-  if (!file || startedFile.value === file) return
+  if (!file) return
+  if (startedFile.value === file) { S.consumeResume?.(); return }
   if (!S.online.value.available || !S.webgl.supported || props.blockedReason) return
   if (!S.requireFeature(Feature.PLAYBACK_3D)) return
+  const resume = S.resumePending?.value === true
+  if (!resume && (!autoStart.available.value || !autoStart.enabled.value)) return
+  if (resume && !S.claimResume?.()) return
   startReplay()
 }
 
@@ -262,6 +276,7 @@ const KILLFEED_ROW_BORDER_PX = 2
 const killfeedMaxLines = ref(KILLFEED_MAX_LINES)
 const visibleKillfeed = computed(() => S.store.killfeed.slice(-killfeedMaxLines.value))
 const shortWorkspace = ref(false)
+let windowedWorkspaceH = 0
 function measurePresentationBounds(): void {
   const root = rootEl.value
   if (!root) return
@@ -272,7 +287,8 @@ function measurePresentationBounds(): void {
   const top = full ? 0 : header
   const workspaceH = Math.max(1, viewportH - top - (full ? 0 : (parseFloat(getComputedStyle(root).getPropertyValue('--pb-viewer-reserve')) || 0)))
   root.style.setProperty('--pb-workspace-h', `${workspaceH}px`)
-  shortWorkspace.value = workspaceH <= SHORT_WORKSPACE_MAX_H
+  if (!full) windowedWorkspaceH = workspaceH
+  shortWorkspace.value = (windowedWorkspaceH || workspaceH) <= SHORT_WORKSPACE_MAX_H
   const style = getComputedStyle(root)
   const gap = parseFloat(style.getPropertyValue('--space-1')) || 0
   const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
@@ -317,7 +333,6 @@ if (typeof window !== 'undefined' && new URLSearchParams(window.location.search)
   }
 }
 
-
 onMounted(() => {
   reconcileScene()
   maybeAutoStart()
@@ -358,7 +373,6 @@ const shellChrome = inject(SHELL_CHROME_KEY, null)
 watch(() => shellChrome?.immersive.value, () => nextTick(measurePresentationBounds))
 onMounted(() => window.addEventListener('resize', onViewportResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
-
   Object.assign(S, {
     selectedTrack,
     selectedLife,

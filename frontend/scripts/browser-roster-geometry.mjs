@@ -111,7 +111,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHi
     check(failures, !scenario.touch || (before.entry.width >= sceneHit - 0.5 && before.entry.height >= sceneHit - 0.5),
       label + `: Drawing entry must keep a ${sceneHit}px touch target`)
   }
-  check(failures, compactBar ? !before.toolRow : before.toolRow, label + ': tool-row belongs to the controls only in wide forms')
+  check(failures, !!before.toolRow, label + ': tool-row must stay in the controls in every form')
   check(failures, !before.inTransport && !before.entryInTransport, label + ': Drawing entry must live outside the shared transport')
   check(failures, !before.entryInDisplay, label + ': Drawing is a creation tool, not a Display preference')
   const expectedPrimary = portrait ? 5 : 6
@@ -148,7 +148,7 @@ async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHi
   if (scenario.layout !== 'portrait') {
     await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
     await waitForStableLayout(page)
-    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed'] : [] })
+    const drawingOcclusion = await measureOcclusion(page, { primary: '.pb-root .scene', overlayHud: true, edgeDocked: compactBar ? ['.team-lane', '.killfeed', '.scene-dist'] : [] })
     for (const failure of drawingOcclusion.failures) check(failures, false, `${label}: Drawing 打开时遮挡: ${failure}`)
   }
   check(failures, opened.transport.order.length === expectedPrimary && opened.transport.oneRow
@@ -159,11 +159,14 @@ async function check3DDrawingSurface(page, failures, scenario, viewport, sceneHi
   if (!closedByClick) return
   await page.waitFor(() => !document.querySelector('[data-test="pb-annot-toolbar"]'), { label: '3D drawing toolbar closed' })
   const restored = await page.callWith(probe, scenario.touch, portrait)
-  check(failures, (compactBar ? !!restored.entry : restored.toolRow) && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  check(failures, !!restored.entry && !!restored.toolRow && !restored.toolbar, label + ': original tool-row must return after Drawing closes')
+  check(failures, await page.evaluate(`!!document.querySelector('.controls [data-testid="replay3d-camera"]') && !!document.querySelector('.controls [data-testid="disp-glb"]')`),
+    label + ': Camera and GLB must stay in the toolbar')
   if (compactBar) {
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
-    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"] [data-testid="replay3d-camera"]'), { label: 'compact Camera stays in Display' })
-    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="display-panel"] [data-testid="disp-glb"]')`), label + ': compact GLB stays in Display')
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display opens' })
+    check(failures, await page.evaluate(`!document.querySelector('[data-testid="display-panel"] [data-testid="replay3d-camera"]') && !document.querySelector('[data-testid="display-panel"] [data-testid="disp-glb"]')`),
+      label + ': Camera and GLB must not be duplicated in Display')
     await page.evaluate(`document.querySelector('[data-testid="display-toggle"]').click()`)
     await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'compact Display closes' })
   }
@@ -425,7 +428,7 @@ async function runRosterGeometryScenario(env, scenario) {
   await page.evaluate(`document.querySelector('.pb-root .scene').scrollIntoView({ block: 'center' })`)
   await waitForStableLayout(page)
   const compactBar = await page.evaluate(`document.querySelector('.pb-root').classList.contains('compact-bar')`)
-  const EDGE_DOCKED = ['.team-lane', '.killfeed']
+  const EDGE_DOCKED = ['.team-lane', '.killfeed', '.scene-dist']
   const SCENE_OCCLUSION = { primary: '.pb-root .scene', persistent: ['.pb-root .hud', '.pb-root .killfeed'], overlayHud: true, edgeDocked: compactBar ? EDGE_DOCKED : [] }
   await page.evaluate(`(() => {
     window.__sceneKillfeed = window.__pbPane.store.killfeed

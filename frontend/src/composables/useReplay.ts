@@ -63,6 +63,7 @@ export function useReplay(initialCapability: ReplayCapability = 'data') {
     currentTargetFile: session.currentTargetFile,
     setWorkspaceTab: session.setWorkspaceTab,
     selectBattle: session.selectBattle,
+    selectBattleIndex: session.selectBattleIndex,
     setDataViewMode: session.setDataViewMode,
     askRemoveFile, cancelRemove, confirmRemove,
   }

@@ -440,35 +440,23 @@ export async function runAppScenario(env, scenario) {
       const after3d = await page.evaluate(eventProbe)
       check(failures, after3d.checked === 'true' && after3d.displayed && after3d.sectionMounted,
         `event details switch must stay open across 2D→3D: ${JSON.stringify(after3d)}`)
-      const after3dToggle = await page.evaluate(`(() => {
-        const button = document.querySelector('[data-testid="viewer-events-toggle"]')
-        if (!button) return null
-        button.scrollIntoView({ block: 'center', inline: 'nearest' })
-        const r = button.getBoundingClientRect()
-        const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-        const hit = document.elementFromPoint(center.x, center.y)
-        return { center, hitIsButton: hit === button || button.contains(hit) }
-      })()`)
-      check(failures, !!after3dToggle?.hitIsButton,
-        `event details switch not hit-testable in 3D: ${JSON.stringify(after3dToggle)}`)
-      if (after3dToggle?.hitIsButton) {
-        await page.tap({ ...after3dToggle.center, touch: scenario.touch })
-        await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden in 3D' })
-        const reopen3dToggle = await page.evaluate(`(() => {
-          const button = document.querySelector('[data-testid="viewer-events-toggle"]')
-          if (!button) return null
-          button.scrollIntoView({ block: 'center', inline: 'nearest' })
-          const r = button.getBoundingClientRect()
-          const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-          const hit = document.elementFromPoint(center.x, center.y)
-          return { center, hitIsButton: hit === button || button.contains(hit) }
-        })()`)
-        check(failures, !!reopen3dToggle?.hitIsButton,
-          `event details switch not hit-testable after closing in 3D: ${JSON.stringify(reopen3dToggle)}`)
-        if (reopen3dToggle?.hitIsButton) {
-          await page.tap({ ...reopen3dToggle.center, touch: scenario.touch })
-          await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events reopened in 3D' })
-        }
+      const closedIn3d = await tapElement(page, '[data-testid="viewer-events-toggle"]', {
+        touch: scenario.touch,
+        verify: async () => {
+          const value = await page.evaluate(eventProbe)
+          return value.checked === 'false' && !value.displayed && value.sectionMounted
+        },
+      })
+      check(failures, closedIn3d, 'event details switch must close in 3D after a real tap')
+      if (closedIn3d) {
+        const reopenedIn3d = await tapElement(page, '[data-testid="viewer-events-toggle"]', {
+          touch: scenario.touch,
+          verify: async () => {
+            const value = await page.evaluate(eventProbe)
+            return value.checked === 'true' && value.displayed
+          },
+        })
+        check(failures, reopenedIn3d, 'event details switch must reopen in 3D after a real tap')
       }
     }
   }
@@ -732,8 +720,11 @@ export async function runOnboardingScenario(env, scenario) {
         await page.tap({ ...startPoint, touch: scenario.touch })
         await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'replay3d-camera',
           { timeout: 60_000, label: 'guide auto-advances to the camera stage' })
-        await page.waitFor(() => !!document.querySelector('.pb-root.compact-bar [data-testid="display-panel"] [data-tour="replay3d-camera"]'),
-          { label: 'compact guide opens Display and the camera anchor exists' })
+        await page.waitFor(() => {
+          const el = document.querySelector('.pb-root.compact-bar .controls [data-tour="replay3d-camera"]')
+          const r = el?.getBoundingClientRect()
+          return !!r && r.width > 0 && r.height > 0
+        }, { label: 'compact camera anchor stays visible in the toolbar' })
       }
       await hit('[data-testid="onboarding-next"]')
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })

@@ -55,8 +55,15 @@ function shotOf(eid: number): AgentPlaybackShot {
   return { t_fire: 1, shooter_eid: eid, from: [0, 0, 0], to: [0, 0, 0], flight_secs: 1, shell_speed: 0, hit: false, ricochet: false, game_hit_result: 0, damage: 0, is_kill: false, is_author: false } as AgentPlaybackShot
 }
 
-const audio = { started: [] as string[], stopped: 0 }
+const audio = {
+  started: [] as string[],
+  stopped: 0,
+  gains: [] as Array<{ gain: { value: number } }>,
+  gainTargets: [] as Array<{ value: number; time: number; timeConstant: number }>,
+  sources: [] as Array<{ onended: (() => void) | null }>,
+}
 class FakeContext {
+  currentTime = 1
   decodeAudioData(buf: ArrayBuffer) { return Promise.resolve(new TextDecoder().decode(buf)) }
   createBufferSource() {
     const node: Record<string, unknown> = {
@@ -64,10 +71,23 @@ class FakeContext {
       connect: (n: unknown) => n,
       start: () => { audio.started.push(String(node.buffer)) },
       stop: () => { audio.stopped += 1 },
+      onended: null,
     }
+    audio.sources.push(node as unknown as { onended: (() => void) | null })
     return node
   }
-  createGain() { return { gain: { value: 0 }, connect: (n: unknown) => n } }
+  createGain() {
+    const param = {
+      value: 0,
+      setTargetAtTime(value: number, time: number, timeConstant: number) {
+        param.value = value
+        audio.gainTargets.push({ value, time, timeConstant })
+      },
+    }
+    const node = { gain: param, connect: (n: unknown) => n }
+    audio.gains.push(node)
+    return node
+  }
   createStereoPanner() { return { pan: { value: 0 }, connect: (n: unknown) => n } }
   state = 'running'
   resume() { return Promise.resolve() }
@@ -82,7 +102,7 @@ function makeHarness() {
     getCamera: () => camera,
     getVehicleDef: shot => defs.get(shot.shooter_eid) ?? null,
   })
-  return { gunfire, defs }
+  return { gunfire, defs, camera }
 }
 
 beforeEach(() => {
@@ -91,6 +111,9 @@ beforeEach(() => {
   __resetGunfireAudioForTest()
   audio.started.length = 0
   audio.stopped = 0
+  audio.gains.length = 0
+  audio.gainTargets.length = 0
+  audio.sources.length = 0
   gate.bytesDelay = null
   gate.jsonFail.remaining = 0
   gate.jsonFail.permanent = false
@@ -148,6 +171,55 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     expect(audio.started).toHaveLength(1)
   })
 
+  it('相机移动：按世界距离持续更新增益（AudioParam 平滑、静止不重复写、≥500m 归零）', async () => {
+    const { gunfire, defs, camera } = makeHarness()
+    defs.set(1, { tank_id: 1, gun_local: 5 })   // main
+    gunfire.onShot(shotOf(1), new THREE.Vector3(0, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
+    expect(audio.gains[0].gain.value).toBe(1)
+    camera.position.set(250, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets.at(-1)?.value).toBeCloseTo(0.5, 6)
+    expect(audio.gainTargets.at(-1)?.time).toBe(1)
+    expect(audio.gainTargets.at(-1)?.timeConstant).toBe(0.05)
+    const writes = audio.gainTargets.length
+    gunfire.update()
+    expect(audio.gainTargets).toHaveLength(writes)
+    camera.position.set(100, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets.at(-1)?.value).toBeCloseTo(0.8, 6)
+    camera.position.set(600, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets.at(-1)?.value).toBe(0)
+    camera.position.set(50, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets.at(-1)?.value).toBeCloseTo(0.9, 6)
+  })
+
+  it('多车各自更新；自然结束 / dispose 后不再写参数（无残留声源）', async () => {
+    const { gunfire, defs, camera } = makeHarness()
+    defs.set(1, { tank_id: 1, gun_local: 5 })   // main
+    defs.set(2, { tank_id: 2, gun_local: 7 })   // huge
+    gunfire.onShot(shotOf(1), new THREE.Vector3(0, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
+    gunfire.onShot(shotOf(2), new THREE.Vector3(250, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(2))
+    expect(audio.gains.map(g => g.gain.value)).toEqual([1, 0.5])
+    camera.position.set(250, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets.map(t => t.value)).toEqual([0.5, 1])
+    audio.sources[0].onended?.()   // 第一发声源自然结束
+    const writes = audio.gainTargets.length
+    camera.position.set(750, 0, 0)   // 第二发距离 500m → 0
+    gunfire.update()
+    expect(audio.gainTargets).toHaveLength(writes + 1)
+    expect(audio.gainTargets.at(-1)?.value).toBe(0)
+    gunfire.dispose()
+    camera.position.set(0, 0, 0)
+    gunfire.update()
+    expect(audio.gainTargets).toHaveLength(writes + 1)
+  })
+
   it('距离 ≥500m 不播；偏好关闭不播；dispose 停声源', async () => {
     const { gunfire, defs } = makeHarness()
     defs.set(1, { tank_id: 2, gun_local: 7 })
@@ -191,6 +263,24 @@ describe('createGunfireAudio（炮→等级联表 + 触发）', () => {
     gate.bytesDelay = null
     await new Promise(r => setTimeout(r, 30))
     expect(audio.started).toHaveLength(0)
+  })
+
+  it('异步取 buffer 期间相机移出 500m：release 后不 start（异步距离竞态）', async () => {
+    const { gunfire, defs, camera } = makeHarness()
+    defs.set(1, { tank_id: 5, gun_local: 13 })   // auto（独立于其它用例的 class）
+    let release!: () => void
+    gate.bytesDelay = new Promise<void>((r) => { release = r })
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await new Promise(r => setTimeout(r, 10))
+    expect(audio.started).toHaveLength(0)
+    camera.position.set(600, 0, 0)   // buffer 还在路上，相机已离开衰减范围
+    release()
+    gate.bytesDelay = null
+    await new Promise(r => setTimeout(r, 30))
+    expect(audio.started).toHaveLength(0)   // 迟到的 buffer 不得按开炮瞬间的距离发声
+    camera.position.set(0, 0, 0)
+    gunfire.onShot(shotOf(1), new THREE.Vector3(30, 0, 0))
+    await vi.waitFor(() => expect(audio.started).toHaveLength(1))
   })
 
   it('元数据临时失败可恢复：503 后下一次开炮重新请求并播放（评审 P2）', async () => {

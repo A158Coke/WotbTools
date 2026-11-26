@@ -17,6 +17,7 @@ export interface PlaybackTrailPreferences {
 
 export interface PlaybackMarkerPreferences {
   classIcons: boolean
+  classIcons3d: boolean
   showStatus: boolean
   battleMarkers: boolean
 }
@@ -104,10 +105,10 @@ function createPlaybackPreferences() {
 
   const markerPrefs = reactive<PlaybackMarkerPreferences>(readJson(
     MARKER_PREFS_KEY,
-    { classIcons: false, showStatus: true, battleMarkers: true },
+    { classIcons: false, classIcons3d: false, showStatus: true, battleMarkers: true },
     (value) => {
       const record = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-      return { classIcons: record.classIcons === true, showStatus: record.showStatus !== false, battleMarkers: record.battleMarkers !== false }
+      return { classIcons: record.classIcons === true, classIcons3d: record.classIcons3d === true, showStatus: record.showStatus !== false, battleMarkers: record.battleMarkers !== false }
     },
   ))
 
@@ -133,7 +134,7 @@ function createPlaybackPreferences() {
     persistJson(TRAIL_PREFS_KEY, value.trails)
     persistJson(MARKER_PREFS_KEY, value.markers)
   }
-  function toggleDeclutter(healthStyle: 'ring' | 'hidden' = 'ring') {
+  function toggleDeclutter(healthStyle: 'ring' | 'hidden' = 'ring', surface: '2d' | '3d' = '2d') {
     const restore = previous
     applyingPreset = true
     if (restore) {
@@ -150,7 +151,9 @@ function createPlaybackPreferences() {
       if (healthStyle === 'hidden') hpPrefs.showHp = false
       else Object.assign(hpPrefs, { showHp: true, mode: 'ring' })
       trailPrefs.showTrail = false
-      Object.assign(markerPrefs, { classIcons: true, showStatus: false })
+      Object.assign(markerPrefs, surface === '3d'
+        ? { classIcons3d: true, showStatus: false }
+        : { classIcons: true, showStatus: false })
     }
     applyingPreset = false
     persistPresentation()

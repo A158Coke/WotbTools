@@ -1,6 +1,7 @@
 import { foliageClip } from '../sceneryMaterials.js'
 import { QUALITY_PRESETS } from './quality.js'
 import { persistBoolPref } from './preferences.ts'
+import type { RenderSettingsPatch } from './renderSettings.ts'
 import type { Host } from '../playbackScene.js'
 
 export function createPlaybackApi(S: Host) {
@@ -122,6 +123,7 @@ export function createPlaybackApi(S: Host) {
     },
     setContactShadows: (on: boolean) => S.contactShadowCtl.setEnabled(on),
     setQuality: S.setQuality,
+    applyRenderSettings: async (patch: RenderSettingsPatch): Promise<boolean> => S.applyRenderSettings(patch),
     setPaused: S.setPaused,
     qualityPresets: QUALITY_PRESETS,
     destroy() {

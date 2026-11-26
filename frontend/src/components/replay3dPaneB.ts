@@ -17,7 +17,7 @@ export interface R3dBParts {
   hpPrefs: { showHp: boolean }
   labelPrefs: { showPlayerName: boolean; showTankName: boolean; showReload: boolean }
   lastKnownPrefs: { showLastKnown: boolean }
-  markerPrefs: { classIcons: boolean; showStatus: boolean; battleMarkers?: boolean }
+  markerPrefs: { classIcons: boolean; classIcons3d: boolean; showStatus: boolean; battleMarkers?: boolean }
   online: Ref<Availability>
   startedFile: Ref<unknown>
   uiHidden: Ref<boolean>
@@ -125,6 +125,8 @@ const fly = useSceneFlyControls({
 })
 const webgl = detectWebGL()
 
+const markerPrefs3d = computed(() => ({ ...S.markerPrefs, classIcons: S.markerPrefs.classIcons3d }))
+
 function pushLabelPrefs() {
   S.sceneApi?.setLabelPrefs?.({
     enabled: !S.uiHidden.value,
@@ -132,7 +134,7 @@ function pushLabelPrefs() {
     showTankName: S.labelPrefs.showTankName,
     showHp: S.hpPrefs.showHp,
     showReload: S.labelPrefs.showReload,
-    classIcons: S.markerPrefs.classIcons,
+    classIcons: markerPrefs3d.value.classIcons,
     showStatus: S.markerPrefs.showStatus,
     lastKnown: S.lastKnownPrefs.showLastKnown,
   })
@@ -257,6 +259,7 @@ watch(detailPlayback, (canonical) => S.sceneApi?.setBattleClock?.(canonical?.clo
     fly,
     webgl,
     pushLabelPrefs,
+    markerPrefs3d,
     consumedSeekId,
     lastFileName,
     loadingMessage,

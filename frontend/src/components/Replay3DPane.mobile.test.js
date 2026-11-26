@@ -17,7 +17,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       team2: [], unknown: [],
     }
 
-    it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
+    it('紧凑档与宽档镜头都在控制条；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       layout.portrait = true
@@ -89,7 +89,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       layout.portrait = false
     })
 
-    it('手机横屏：控制条只留传输，镜头进 Display，且不新建第二份相机状态', async () => {
+    it('手机横屏：镜头行常驻控制条，不被收进 Display，且不新建第二份相机状态', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const wrapper = mountPane()
@@ -98,11 +98,12 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       store.roster = roster
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
-      expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
+      expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('.controls .controls-content > .tool-row').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('tool-row')).toBe(true)
       await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
-      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('controls')).toBe(true)
       expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
       store.cam = 'free'
       await nextTick()
@@ -360,6 +361,31 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         wrapper.unmount()
         layout.compact = false
         layout.portrait = false
+      })
+    })
+
+    it('桌面矮工作台：进入全屏不切换控制条档位，工具栏内容保持一致', async () => {
+      await withRequestFullscreen(true, async () => {
+        const height = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(640)
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        playback.api.store.hasData = true
+        await flush()
+        const root = wrapper.get('[data-testid="replay3d-root"]')
+        expect(root.classes()).toContain('compact-bar')
+        expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
+        await wrapper.get('[data-test="pb-fullscreen"]').trigger('click')
+        await flush()
+        height.mockReturnValue(900)
+        window.dispatchEvent(new Event('resize'))
+        await flush()
+        expect(document.fullscreenElement).not.toBeNull()
+        expect(root.classes()).toContain('compact-bar')
+        expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('tool-row')).toBe(true)
+        wrapper.unmount()
       })
     })
   })

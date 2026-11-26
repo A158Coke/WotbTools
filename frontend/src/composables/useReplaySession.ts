@@ -134,6 +134,14 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     dataViewMode.value = 'SINGLE'
   }
 
+  function selectBattleIndex(index: number): boolean {
+    const file = files.value[index]
+    currentBattleFile.value = file ? toRaw(file) : null
+    if (!file) return false
+    dataViewMode.value = 'SINGLE'
+    return true
+  }
+
   function setDataViewMode(mode: DataViewMode) {
     if (mode === 'SINGLE') {
       const battles = parsedBattles.value
@@ -168,7 +176,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     activeWorkspaceTab, currentBattle, currentBattleIndex,
     currentTargetBattleId, currentSourceId, currentTargetFile,
     replaceSelection, changeSelection, replaceDemoSelection, commitReadyResult,
-    setWorkspaceTab, selectBattle, setDataViewMode,
+    setWorkspaceTab, selectBattle, selectBattleIndex, setDataViewMode,
   }
 }
 

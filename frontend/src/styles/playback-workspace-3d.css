@@ -47,7 +47,11 @@
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-content { flex: 1 1 auto; min-inline-size: 0; }
 .pb-root.playback-workspace:not(.portrait-flow) > .controls > .controls-toggle { order: 1; flex: none; }
 .pb-root.playback-workspace:not(.portrait-flow) .replay3d-annotations > .pb-annotation-toolbar { padding-block: 0; border-block-width: 0; scrollbar-width: none; }
-.pb-root.playback-workspace.compact-bar .controls-content > .replay3d-annotations { flex: 1 1 0; min-inline-size: 0; }
+.pb-root.playback-workspace.compact-bar .controls-content > .replay3d-annotations {
+  flex: 1 0 100%;
+  min-inline-size: 0;
+  min-block-size: calc(var(--control-h-lg) + var(--space-2));
+}
 .pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) > .pb-progress,
 .pb-root.playback-workspace.compact-bar .controls-content:has(> .replay3d-annotations) .pb-time { display: none; }
 .pb-root.playback-workspace.compact-bar:not(.portrait-flow) > .controls {
@@ -215,6 +219,9 @@
 }
 .pb-root.playback-workspace.transport-docked.phone-form:not(.portrait-flow) .scene-dist {
   bottom: calc(var(--pb-controls-dock-h, 0px) + max(var(--space-2), var(--pb-safe-bottom)) + var(--space-2));
+}
+.pb-root.playback-workspace.compact-bar.roster-side.phone-form:not(.portrait-flow) .scene-dist {
+  right: calc(var(--space-1) + var(--pb-overlay-lane-w) + var(--space-2));
 }
 .pb-root.playback-workspace.phone-form:not(.portrait-flow) .pb-fps {
   inset-inline-end: auto;

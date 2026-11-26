@@ -4,14 +4,16 @@ import { spansContainAt } from '../trackInterp.js'
 import { makeReplacedAt } from './identity.ts'
 import { GRID_DT } from './util.js'
 import { QUALITY_PRESETS, shadowQualityEligible } from './quality.js'
-import { boolPref, resolveQualityKey } from './preferences.ts'
+import { boolPref, persistBoolPref, resolveQualityKey } from './preferences.ts'
+import { buildRenderSettingsReloadUrl, type RenderSettingsPatch } from './renderSettings.ts'
 import { createContactShadowControl } from './contactShadowControl.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
 
-export function installSceneState(S: Host) {
+export function installSceneState(S: Host, contactShadowOverride?: boolean) {
   Object.assign(S, {
     setQuality: bind(S, setQuality),
+    applyRenderSettings: bind(S, applyRenderSettings),
     applyGlbGate: bind(S, applyGlbGate),
     idxOf: bind(S, idxOf),
     hpAt: bind(S, hpAt),
@@ -61,10 +63,12 @@ export function installSceneState(S: Host) {
   S.store.logdepth = S.LOGDEPTH;
   S.store.dynres = S.DYNRES;
   S.store.armorHighlight = S.ARMOR_HIGHLIGHT;
+
   S.contactShadowCtl = createContactShadowControl({
     store: S.store, qualityKey: () => S.QKEY, getScene: () => S.scene, getSunLight: () => S.sunLight,
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
+  S.contactShadowCtl.setEnabled(contactShadowOverride === true);
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};
   function setQuality(S: Host, k: keyof typeof QUALITY_PRESETS) {
@@ -80,19 +84,68 @@ export function installSceneState(S: Host) {
       S.applyGlbGate();
     };
     if (S.DATA) {
-      const reload = () => {
+      const reload = async () => {
+
+        try { await S.stageReloadReplay?.(S.store.contactShadows && shadowQualityEligible(k)); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
-        const u = new URL(location.href); u.searchParams.set('q', k); location.replace(u);
+        location.replace(buildRenderSettingsReloadUrl(location.href, {
+          qualityKey: k, armorHighlight: S.ARMOR_HIGHLIGHT,
+        }));
       };
-      if (window.__TAURI__) { reload(); return; }
+      if (window.__TAURI__) { void reload(); return; }
       appConfirm({
         title: '切换画质',
         message: '切换到「' + QUALITY_PRESETS[k].label + '」画质将重新加载回放，继续？',
-      }).then((ok) => { if (ok) reload(); });
+      }).then((ok) => { if (ok) void reload(); });
       return;
     }
     apply();
+  }
+  async function applyRenderSettings(S: Host, patch: RenderSettingsPatch): Promise<boolean> {
+    const quality = patch.qualityKey;
+    const qualityChanged = quality !== undefined && !!QUALITY_PRESETS[quality] && quality !== S.QKEY;
+    const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
+    const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
+    const nextQuality = qualityChanged && quality ? quality : S.QKEY;
+    const contactDesired = patch.contactShadows !== undefined ? !!patch.contactShadows : S.store.contactShadows;
+    const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
+    const contactShadowsChanged = patch.contactShadows !== undefined && contactTarget !== S.store.contactShadows;
+    if (!qualityChanged && !logdepthChanged && !dynresChanged && !contactShadowsChanged) return false;
+    if (S.DATA) {
+      try { await S.stageReloadReplay?.(contactTarget); } catch (e) { return false; }
+    }
+    if (logdepthChanged) {
+      S.LOGDEPTH = !!patch.logdepth;
+      persistBoolPref('pb_logdepth', !!patch.logdepth);
+      S.store.logdepth = !!patch.logdepth;
+    }
+    if (dynresChanged) {
+      S.DYNRES = !!patch.dynres;
+      persistBoolPref('pb_dynres', !!patch.dynres);
+      S.store.dynres = !!patch.dynres;
+    }
+    if (!S.DATA) {
+      if (qualityChanged && quality) setQuality(S, quality);
+      if (contactTarget !== S.store.contactShadows) S.contactShadowCtl.setEnabled(contactTarget);
+      return false;
+    }
+    if (S.perf) S.perf.interrupt('render-settings-change');
+    const patchForUrl: RenderSettingsPatch = {};
+    if (qualityChanged && quality) {
+      S.QKEY = quality;
+      S.Q = QUALITY_PRESETS[quality];
+      try { localStorage.setItem('pb_quality', quality); } catch (e) {}
+      S.store.qualityKey = quality;
+      S.store.qualityLabel = '画质 · ' + S.Q.label;
+      if (!shadowQualityEligible(quality)) S.contactShadowCtl.setEnabled(false);
+      patchForUrl.qualityKey = quality;
+    }
+    if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
+    if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
+    patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;
+    location.replace(buildRenderSettingsReloadUrl(location.href, patchForUrl));
+    return true;
   }
   function applyGlbGate(S: Host) {
     S.store.glbAllowed = S.Q.allowGlb && !S.Q.forceGlb;

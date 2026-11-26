@@ -26,7 +26,8 @@ vi.mock('../composables/useConnectivity.js', async () => {
 })
 
 vi.mock('../scene/playbackScene.js', () => {
-  playback.init = vi.fn((container, store) => {
+  playback.init = vi.fn((container, store, _labelOverlay, options = {}) => {
+    store.contactShadows = options.contactShadowOverride === true
     let generation = 0
     const api = {
       store,
@@ -65,6 +66,8 @@ vi.mock('../scene/playbackScene.js', () => {
       setBattleMarkers: vi.fn(),
       setQuality: vi.fn(),
       setContactShadows: vi.fn((on) => { store.contactShadows = !!on }),
+      applyRenderSettings: vi.fn(),
+      setArmorHighlight: vi.fn((on) => { store.armorHighlight = !!on }),
       setPaused: vi.fn(),
       setAnnotations: vi.fn(),
       setAnnotationInteraction: vi.fn(),

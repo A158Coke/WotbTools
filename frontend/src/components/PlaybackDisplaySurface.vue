@@ -2,7 +2,16 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 
-const props = defineProps({ open: Boolean, portrait: Boolean, anchor: Object, host: Object })
+const props = defineProps({
+  open: Boolean,
+  portrait: Boolean,
+  anchor: Object,
+  host: Object,
+  panelTestid: { type: String, default: 'display-panel' },
+  ariaLabelKey: { type: String, default: 'recon.map.playback.panel_display' },
+  closeTestid: { type: String, default: 'display-close' },
+  tourId: { type: String, default: 'playback-display-options' },
+})
 const emit = defineEmits(['close'])
 const panel = ref(null)
 const placement = ref({})
@@ -81,7 +90,7 @@ function focusIfPossible(element) {
 let focusMovedIn = false
 function syncFocus(open) {
   if (open) {
-    focusMovedIn = focusIfPossible(panel.value?.querySelector('[data-testid="display-close"]'))
+    focusMovedIn = focusIfPossible(panel.value?.querySelector(`[data-testid="${props.closeTestid}"]`))
       || focusIfPossible(panel.value)
     return
   }
@@ -115,7 +124,7 @@ useEventListener(() => document, 'keydown', dismiss)
 </script>
 
 <template>
-  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" data-tour="playback-display-options" @pointerdown.stop @click.stop>
+  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t(props.ariaLabelKey)" :data-testid="props.panelTestid" :data-tour="props.tourId" @pointerdown.stop @click.stop>
     <slot />
   </section>
 </template>

@@ -36,12 +36,18 @@ const props = defineProps({
   pendingSeek: { type: Object, default: null },
   showEventMarkers: { type: Boolean, default: false },
   autoStartUserId: { type: String, default: '' },
+  demo: { type: Boolean, default: false },
+  replayFiles: { type: Array, default: () => [] },
+  selectionRevision: { type: Number, default: 0 },
+  shadowRequest: { type: Object, default: null },
+  resumeRequest: { type: Object, default: null },
 })
+const emit = defineEmits(['resume-consumed'])
 
 const playbackTeamCssVars = teamCssVars('')
 
 const S = {}
-let guideOpenedDisplay = false
+S.emitResumeConsumed = () => emit('resume-consumed')
 let sceneApi = null
 let jumpBase = null
 let lastFile = null
@@ -49,7 +55,6 @@ let portraitGeneration = 0
 let parseController = null
 let loadedFile = null
 let laneBoundsObserver = null
-Object.defineProperty(S, 'guideOpenedDisplay', { get: () => guideOpenedDisplay, set: (v) => { guideOpenedDisplay = v }, configurable: true })
 Object.defineProperty(S, 'sceneApi', { get: () => sceneApi, set: (v) => { sceneApi = v }, configurable: true })
 Object.defineProperty(S, 'jumpBase', { get: () => jumpBase, set: (v) => { jumpBase = v }, configurable: true })
 Object.defineProperty(S, 'lastFile', { get: () => lastFile, set: (v) => { lastFile = v }, configurable: true })
@@ -63,8 +68,9 @@ r3dC(S, props)
 
 const {
   t, locale, onboarding, availability, requireFeature, online, labelPrefs, hpPrefs,
-  markerPrefs, uiPrefs, lastKnownPrefs, declutterActive, toggleDeclutter, uiHidden, displayOpen, displayAnchor,
-  toggleDisplay, controlsCollapsed, controlsContentId, controlsDocked, slideContentFrom, slideContentOpen, slideContentClose, slideContentShut,
+  markerPrefs, markerPrefs3d, uiPrefs, lastKnownPrefs, declutterActive, toggleDeclutter, uiHidden, displayOpen, displayAnchor,
+  toggleDisplay, settingsOpen, settingsAnchor, settingsDraft, toggleSettings, closeSettings, setDraftQuality, saveSettings,
+  controlsCollapsed, controlsContentId, controlsDocked, slideContentFrom, slideContentOpen, slideContentClose, slideContentShut,
   clearSlideHeight, dockControls, toggleControls, isPhone, isPortrait, portraitFlow, compactBar, phoneLandscape,
   selectedEid, detailsOpen, detailsSide, followFromRoster, followUnlessRecorder, handleSceneSelect, selectVehicle, detailsSideFor,
   closeDetails, cameraTools, chooseCamera, setUiHidden, toggleUiHidden, onUiToggleKeydown, showTopbar, showRoster,
@@ -109,7 +115,7 @@ const {
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackChatFeed :facet="playbackFacet" :time="store.time" :hidden="uiHidden || !store.hasData" />
-          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay"  :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :last-known-label="t('agentReplay.label_last_known')" :marker-kind-labels="markerKindLabels" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
+          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay"  :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs3d" :last-known-label="t('agentReplay.label_last_known')" :marker-kind-labels="markerKindLabels" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" :interactive="!annotationTool" @select="handleSceneSelect" />
           <RecorderReticle ref="recorderReticle" :suppressed="uiHidden" />
           <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
@@ -196,7 +202,7 @@ const {
           <div v-if="annotationOpen" class="replay3d-annotations" data-test="replay3d-annotations">
             <AnnotationToolbar v-bind="annotationToolbarProps" compact v-on="annotationToolbarHandlers" />
           </div>
-          <ReplayCameraTools v-if="!compactBar && !annotationOpen" v-bind="cameraTools" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
+          <ReplayCameraTools v-if="!annotationOpen" v-bind="cameraTools" :hint="recorderUnavailableReason" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)">
             <button
               type="button" class="tool-btn drawing-entry"
               data-testid="replay3d-drawing-entry"
@@ -215,8 +221,11 @@ const {
             :floating-fullscreen="isPhone && isPortrait"
             :display-open="displayOpen"
             display-enabled
+            :settings-open="settingsOpen"
+            settings-enabled
             @toggle-fullscreen="toggleFullscreen()"
             @toggle-display="toggleDisplay"
+            @toggle-settings="toggleSettings"
             :playing="store.playing"
             :speed="store.speed"
             :speeds="PLAYBACK_SPEEDS"
@@ -243,22 +252,9 @@ const {
           </PlaybackTransport>
         </div>
         </Transition>
-        <button
-          v-if="compactBar && !annotationOpen && !controlsCollapsed"
-          type="button" class="pb-quick-action drawing-entry"
-          data-testid="replay3d-drawing-entry"
-          :disabled="store.cam === 'recorder'"
-          data-tour="playback-annotation-entry"
-          :aria-label="t('recon.map.playback.annot.mode')"
-          :title="t('recon.map.playback.annot.mode')"
-          @click="openAnnotation()"
-        >
-          <PencilRuler :size="16" aria-hidden="true" />
-        </button>
       </div>
 
       <PlaybackDisplaySurface :open="displayOpen && !uiHidden" :portrait="portraitFlow" :anchor="displayAnchor" :host="rootEl" @close="displayOpen = false">
-          <ReplayCameraTools v-if="compactBar" v-bind="cameraTools" :hint="recorderUnavailableReason" @update:cam="chooseCamera($event)" @update:glb="sceneApi.setGlb($event)" />
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
         <label class="toggle" :title="store.treadAllowed ? '' : t('agentReplay.tread_gate_hint')">
           <input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" :disabled="!store.treadAllowed" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}
@@ -273,12 +269,12 @@ const {
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>
-        <button type="button" class="tool-btn dp-declutter" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
+        <button type="button" class="tool-btn dp-declutter" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden', '3d')">
           <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
         </button>
         <label class="toggle"><input type="checkbox" data-testid="disp-base" :checked="uiPrefs.showBaseStatus" @change="uiPrefs.showBaseStatus = $event.target.checked"> {{ t('agentReplay.display_base') }}</label>
         <p class="dp-title">{{ t('agentReplay.display_labels') }}</p>
-        <label class="toggle"><input type="checkbox" data-testid="disp-class-icons" :checked="markerPrefs.classIcons" @change="markerPrefs.classIcons = $event.target.checked"> {{ t('recon.map.playback.class_icons') }}</label>
+        <label class="toggle"><input type="checkbox" data-testid="disp-class-icons" :checked="markerPrefs.classIcons3d" @change="markerPrefs.classIcons3d = $event.target.checked"> {{ t('recon.map.playback.class_icons') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-status" :checked="markerPrefs.showStatus" @change="markerPrefs.showStatus = $event.target.checked"> {{ t('recon.map.playback.show_status_3d') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-player" :checked="labelPrefs.showPlayerName" @change="labelPrefs.showPlayerName = $event.target.checked"> {{ t('recon.map.playback.show_player_name') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-tank" :checked="labelPrefs.showTankName" @change="labelPrefs.showTankName = $event.target.checked"> {{ t('recon.map.playback.show_tank_name') }}</label>
@@ -294,6 +290,49 @@ const {
           type="button" class="tool-btn dp-close"
           data-testid="display-close" @click="displayOpen = false"
         >{{ t('app.close') }}</button>
+      </PlaybackDisplaySurface>
+
+      <PlaybackDisplaySurface
+        :open="settingsOpen && !uiHidden"
+        :portrait="portraitFlow"
+        :anchor="settingsAnchor"
+        :host="rootEl"
+        panel-testid="replay3d-settings"
+        aria-label-key="agentReplay.settings_title"
+        close-testid="replay3d-settings-cancel"
+        tour-id="playback-settings"
+        @close="closeSettings"
+      >
+        <p class="dp-title">{{ t('agentReplay.settings_title') }}</p>
+        <SegmentedControl
+          :model-value="settingsDraft.qualityKey"
+          :options="qualityOptions"
+          :aria-label="t('agentReplay.quality')"
+          data-testid="replay3d-settings-quality"
+          @update:model-value="setDraftQuality($event)"
+        />
+        <div class="settings-group" role="group" :aria-label="t('agentReplay.performance_options')">
+          <label class="toggle" :title="t('agentReplay.perf_logdepth_hint')">
+            <input type="checkbox" data-testid="settings-logdepth" :checked="settingsDraft.logdepth" @change="settingsDraft.logdepth = $event.target.checked"> {{ t('agentReplay.perf_logdepth') }}
+          </label>
+          <label class="toggle" :title="t('agentReplay.perf_dynres_hint')">
+            <input type="checkbox" data-testid="settings-dynres" :checked="settingsDraft.dynres" @change="settingsDraft.dynres = $event.target.checked"> {{ t('agentReplay.perf_dynres') }}
+          </label>
+          <label class="toggle" :title="t('agentReplay.perf_armor_highlight_hint')">
+            <input type="checkbox" data-testid="settings-armor-highlight" :checked="settingsDraft.armorHighlight" @change="settingsDraft.armorHighlight = $event.target.checked"> {{ t('agentReplay.perf_armor_highlight') }}
+          </label>
+          <label class="toggle" :title="t('agentReplay.perf_contact_shadows_hint')">
+            <input type="checkbox" data-testid="settings-contact-shadows" :disabled="!shadowQualityEligible(settingsDraft.qualityKey)" :checked="settingsDraft.contactShadows" @change="settingsDraft.contactShadows = $event.target.checked"> {{ t('agentReplay.perf_contact_shadows') }}
+          </label>
+        </div>
+        <label class="toggle" :title="t('agentReplay.settings_sound_hint')">
+          <input type="checkbox" data-testid="settings-battle-sound" :checked="settingsDraft.battleSound" @change="settingsDraft.battleSound = $event.target.checked"> {{ t('agentReplay.settings_sound') }}
+        </label>
+        <p class="dp-note" data-testid="replay3d-settings-reload-note">{{ t('agentReplay.settings_reload_note') }}</p>
+        <div class="settings-actions">
+          <button type="button" class="tool-btn" data-testid="replay3d-settings-cancel" @click="closeSettings">{{ t('app.close') }}</button>
+          <button type="button" class="tool-btn settings-save" data-testid="replay3d-settings-save" @click="saveSettings">{{ t('agentReplay.settings_save') }}</button>
+        </div>
       </PlaybackDisplaySurface>
 
       <button

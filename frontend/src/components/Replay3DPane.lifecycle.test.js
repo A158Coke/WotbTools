@@ -238,6 +238,7 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-settings-toggle"]').exists()).toBe(true)
 
     await wrapper.setProps({ active: false })
     await flush()
@@ -257,6 +258,69 @@ describe('Replay3DPane 3D annotation wiring', () => {
     await start(wrapper)
     expect(canonical.load).toHaveBeenCalledTimes(1)
     wrapper.unmount()
+  })
+
+  it('偏好关闭时，渲染设置重载恢复同一场仍自动开始', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    const file = mkFile('reload.wotbreplay')
+    const wrapper = mountPane({ file, autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+
+    await wrapper.setProps({ resumeRequest: { id: 'reload-1', file } })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('偏好关闭时，重载恢复请求在面板挂载前已就绪也自动开始', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-b', '0')
+    const file = mkFile('reload-before-mount.wotbreplay')
+    const wrapper = mountPane({ file, autoStartUserId: 'user-b', resumeRequest: { id: 'reload-before-mount', file } })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('恢复请求绑定恢复出的 File：切到另一场不会把自动重播落到 B', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    const fileA = mkFile('reload-a.wotbreplay')
+    const fileB = mkFile('reload-b.wotbreplay')
+    const wrapper = mountPane({ file: fileA, autoStartUserId: 'user-a' })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ file: fileB, resumeRequest: { id: 'reload-a', file: fileA } })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('恢复请求消费后重新挂载另一场：同一请求不得再次自动播放', async () => {
+    mockWebGL('webgl2')
+    localStorage.setItem('wotb.pb.3d-auto-start:user-a', '0')
+    const fileA = mkFile('reload-consume-a.wotbreplay')
+    const fileB = mkFile('reload-consume-b.wotbreplay')
+    const first = mountPane({ file: fileA, autoStartUserId: 'user-a', resumeRequest: { id: 'reload-consume', file: fileA } })
+    await flush()
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(first.emitted('resume-consumed')).toHaveLength(1)
+    first.unmount()
+
+    canonical.load.mockClear()
+    const second = mountPane({ file: fileB, autoStartUserId: 'user-a', resumeRequest: { id: 'reload-consume', file: fileA } })
+    await flush()
+    expect(canonical.load).not.toHaveBeenCalled()
+    second.unmount()
   })
 
   it('Profile 关闭偏好后，KeepAlive 实例换文件不再自动开始', async () => {

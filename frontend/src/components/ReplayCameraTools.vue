@@ -37,7 +37,7 @@ function reselect(value) {
     <button type="button" class="top-view" data-testid="replay3d-top-view" @click="emit('update:cam', 'top-view')">
       {{ t('agentReplay.cam_top') }}
     </button>
-    <span v-if="hint" class="dim" data-testid="replay3d-camera-hint">{{ hint }}</span>
+    <span v-if="hint" class="dim" data-testid="replay3d-camera-hint" :title="hint">{{ hint }}</span>
     <label class="toggle" :title="glbAllowed ? '' : t(glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
       <input type="checkbox" data-testid="disp-glb" :checked="glbOn" :disabled="!glbAllowed" @change="emit('update:glb', $event.target.checked)"> {{ t('agentReplay.glb') }}
     </label>

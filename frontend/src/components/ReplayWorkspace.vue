@@ -15,6 +15,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { useConfirm } from '../composables/useConfirm.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
+import { useReplayReloadRestore } from '../composables/useReplayReloadRestore.js'
 import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
@@ -107,14 +108,21 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       : t('workspace.native_replay_read_failed')
   },
 })
+const replayShadowRequest = ref(null), replayResumeRequest = ref(null)
+useReplayReloadRestore({
+  files, selectionRevision, updateFiles, updateDemoFile, selectBattleIndex: workspace.replay.selectBattleIndex, analyze,
+  onRestoring: (file, id, contactShadows) => { if (targetFile.value === file) replayShadowRequest.value = { id, file, contactShadows } },
+  onRestored: (file, id) => { if (targetFile.value === file) replayResumeRequest.value = { id, file } },
+  onError: () => { replayShadowRequest.value = null; replayResumeRequest.value = null; error.value = t('workspace.replay_restore_failed') },
+})
+watch(targetFile, (file) => {
+  if (replayShadowRequest.value && replayShadowRequest.value.file !== file) replayShadowRequest.value = null
+  if (replayResumeRequest.value && replayResumeRequest.value.file !== file) replayResumeRequest.value = null
+})
 
-function confirmRemove() {
-  workspace.replay.confirmRemove()
-}
+const confirmRemove = () => workspace.replay.confirmRemove()
 
-function clearSelection() {
-  updateFiles([])
-}
+function clearSelection() { updateFiles([]) }
 
 function onFilesUpdate(next) {
   if (!next.length) {
@@ -141,11 +149,7 @@ async function onRemoveFile(file) {
   onFilesUpdate(files.value.filter(item => item !== file))
 }
 
-async function openOtherReplay() {
-  clearSelection()
-  await nextTick()
-  sourcePicker.value?.chooseFiles()
-}
+async function openOtherReplay() { clearSelection(); await nextTick(); sourcePicker.value?.chooseFiles() }
 
 function onWorkspaceDrop(event) {
   sourcePicker.value?.addDropped(event.dataTransfer?.files)
@@ -347,6 +351,10 @@ watch(() => props.initialCapability, (val) => {
               :pending-seek="pending3dSeek"
               :show-event-markers="showEventMarkers"
               :auto-start-user-id="autoStartUserId"
+              :demo="isDemoSelection"
+              :replay-files="files" :selection-revision="selectionRevision" :shadow-request="replayShadowRequest"
+              :resume-request="replayResumeRequest"
+              @resume-consumed="replayResumeRequest = null"
             />
           </template>
           <template #events>

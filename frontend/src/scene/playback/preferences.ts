@@ -13,6 +13,7 @@ export function persistBoolPref(key: string, on: boolean): void {
   try { localStorage.setItem(key, on ? '1' : '0') } catch (_) {}
 }
 
+
 export function resolveQualityKey(): string {
   const usp = new URLSearchParams(location.search)
   let q = (usp.get('q') || '').toLowerCase()

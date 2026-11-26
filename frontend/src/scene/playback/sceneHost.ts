@@ -11,6 +11,7 @@ export interface SceneHostOptions {
   onAnnotationCommit?: AnnotationApi['commitAnnotationFromScene']
   onAnnotationErase?: AnnotationApi['eraseFromScene']
   recorderReticle?: HTMLElement | null
+  stageReloadReplay?: ((contactShadows?: boolean) => Promise<void>) | null
 }
 
 export function createSceneHost({
@@ -21,6 +22,7 @@ export function createSceneHost({
   onAnnotationCommit,
   onAnnotationErase,
   recorderReticle,
+  stageReloadReplay = null,
 }: SceneHostOptions) {
   return {
     container,
@@ -30,5 +32,6 @@ export function createSceneHost({
     onAnnotationCommit,
     onAnnotationErase,
     recorderReticle,
+    stageReloadReplay,
   }
 }
