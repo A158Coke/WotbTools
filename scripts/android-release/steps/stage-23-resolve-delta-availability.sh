@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 36: Resolve optional Android delta availability).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 if [ "$DELTA_RESULTS" = 'success,success,success,success,success,success,success,success' ]; then exit 0; fi
 if [ "$EXISTING_EVIDENCE" = 200 ]; then

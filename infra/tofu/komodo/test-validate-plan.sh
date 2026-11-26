@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Local fixtures for the Komodo plan guard. No backend, no cloud credentials, and
-# no network access: `tofu` is replaced by a stub that echoes a saved plan JSON.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,8 +17,6 @@ chmod +x "$work/bin/tofu"
 komodo_address=tencentcloud_dnspod_record.komodo
 dnspod_type=tencentcloud_dnspod_record
 
-# The exact intended record. The guard locks all eight fields, so each fixture
-# below differs from this one in exactly one of them.
 after_ok='{"domain":"wotbtools.com","sub_domain":"komodo","record_type":"A","record_line":"默认","value":"118.25.18.105","ttl":600,"status":"ENABLE","remark":"WotBTools Komodo controller ingress"}'
 after_string_ttl='{"domain":"wotbtools.com","sub_domain":"komodo","record_type":"A","record_line":"默认","value":"118.25.18.105","ttl":"600","status":"ENABLE","remark":"WotBTools Komodo controller ingress"}'
 after_wrong_domain='{"domain":"example.com","sub_domain":"komodo","record_type":"A","record_line":"默认","value":"118.25.18.105","ttl":600,"status":"ENABLE","remark":"WotBTools Komodo controller ingress"}'
@@ -32,22 +28,18 @@ after_wrong_ttl='{"domain":"wotbtools.com","sub_domain":"komodo","record_type":"
 after_wrong_status='{"domain":"wotbtools.com","sub_domain":"komodo","record_type":"A","record_line":"默认","value":"118.25.18.105","ttl":600,"status":"DISABLE","remark":"WotBTools Komodo controller ingress"}'
 after_wrong_remark='{"domain":"wotbtools.com","sub_domain":"komodo","record_type":"A","record_line":"默认","value":"118.25.18.105","ttl":600,"status":"ENABLE","remark":"something else"}'
 
-# record <address> <type> <actions-json> <after-json> -> one resource change
 record() {
   printf '{"address":"%s","type":"%s","change":{"actions":%s,"after":%s}}' "$1" "$2" "$3" "$4"
 }
 
-# plan <records-json> <fixture-name> -> a complete saved-plan document
 plan() {
   printf '{"resource_changes":[%s]}\n' "$1" > "$work/$2.json"
 }
 
-# plan_create <fixture-name> <after-json> -> a create of the Komodo record
 plan_create() {
   plan "$(record "$komodo_address" "$dnspod_type" '["create"]' "$2")" "$1"
 }
 
-# plan_action <fixture-name> <after-json> <actions-json> -> a full plan document
 plan_action() {
   plan "$(record "$komodo_address" "$dnspod_type" "$3" "$2")" "$1"
 }
@@ -55,7 +47,6 @@ plan_action() {
 plan_create create "$after_ok"
 plan_action noop "$after_ok" '["no-op"]'
 plan_action update "$after_ok" '["update"]'
-# The provider may encode `ttl` as a JSON string; the guard accepts 600 either way.
 plan_create string-ttl "$after_string_ttl"
 
 plan_action replace "$after_ok" '["delete","create"]'
@@ -115,7 +106,6 @@ done
 rejects create --require-no-changes
 rejects update --require-no-changes
 
-# The guard also refuses an unknown mode and a missing plan file.
 if bash "$ROOT/validate-plan.sh" "$work/plan.tfplan" --unknown-mode >/dev/null 2>&1; then
   echo 'an unknown Komodo plan-guard mode was accepted' >&2
   exit 1

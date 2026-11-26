@@ -13,7 +13,6 @@ from _tankopedia_test_fixtures import (
 
 class ParseTanksTest(unittest.TestCase):
     def test_extracts_full_vehicle(self):
-        # T-34 形状：车体 496 + 炮塔 124 = 620；76mm：AP 140/85 + HEAT 120/115
         pb = root(tank_data(
             1, 5, 1, 496, turret(124,
                 gun(100, [shell("ap", 140, 85), shell("hc_premium", 120, 115)])),
@@ -32,7 +31,7 @@ class ParseTanksTest(unittest.TestCase):
         self.assertEqual(v["reverseSpeed"], 20)
         self.assertEqual(v["turretRotationSpeed"], 42.0)
         self.assertEqual(v["hullRotationSpeed"], 46.0)
-        self.assertEqual(v["powerToWeightRatio"], 40.0)  # 400 hp / 10 t
+        self.assertEqual(v["powerToWeightRatio"], 40.0)
         self.assertEqual(v["guns"][0]["gunId"], 100)
         self.assertTrue(v["guns"][0]["isDefault"])
         self.assertEqual(v["guns"][0]["alphaDamage"], 140)
@@ -43,7 +42,6 @@ class ParseTanksTest(unittest.TestCase):
         ])
 
     def test_tier10_multi_gun_goes_into_guns_array(self):
-        # E 100 形状：顶配炮塔两把炮 -> vehicle 单条记录 + guns 数组两条
         pb = root(tank_data(
             9489, 10, 2, 2070,
             turret(680,
@@ -56,7 +54,6 @@ class ParseTanksTest(unittest.TestCase):
         v = vehicles["9489"]
         self.assertEqual(len(v["guns"]), 2)
         self.assertEqual(v["guns"][0]["gunId"], 269329)
-        # 10 级多终局炮：不标默认、不输出权威 alphaDamage（回放无可靠实际炮）
         self.assertFalse(v["guns"][0]["isDefault"])
         self.assertFalse(v["guns"][1]["isDefault"])
         self.assertNotIn("alphaDamage", v)
@@ -65,8 +62,6 @@ class ParseTanksTest(unittest.TestCase):
         self.assertEqual(v["guns"][1]["alphaDamage"], 645)
 
     def test_tier7_9_top_gun_selected_as_default(self):
-        # T-34-2 回归：5 把炮（200/200/280/400/280），顶配炮塔最高 tier=8，
-        # 同 tier 取最高 alpha -> 122mm 400 为默认，不能把数组第一把 200 当默认
         pb = root(tank_data(
             1585, 8, 1, 1300,
             turret(360,
@@ -81,10 +76,9 @@ class ParseTanksTest(unittest.TestCase):
         self.assertEqual(v["alphaDamage"], 400)
         defaults = [g["gunId"] for g in v["guns"] if g["isDefault"]]
         self.assertEqual(defaults, [2353])
-        self.assertFalse(v["guns"][0]["isDefault"])  # 第一把 200 不再是默认
+        self.assertFalse(v["guns"][0]["isDefault"])
 
     def test_tier10_single_gun_still_authoritative(self):
-        # SPHT 形状：10 级单炮 -> 正常输出 alphaDamage
         pb = root(tank_data(
             29985, 10, 2, 3400, turret(1000,
                 gun(272929, [shell("ap", 400, 252)])),

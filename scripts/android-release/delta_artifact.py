@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """绑定已签名 APK 与可选增量产物的身份；发布策略仍由 version.json 拥有。"""
 import argparse
 import hashlib
@@ -12,7 +11,7 @@ from urllib.parse import urlsplit
 
 ALGORITHM = "xdelta3-vcdiff"
 MAX_DELTA_RATIO_DENOMINATOR = 10
-MIN_BASE_CODE = 4_000_000  # 4.0.0 首次携带增量解码能力。
+MIN_BASE_CODE = 4_000_000
 BASE_URL = "https://wotbtools.com/download/android/"
 SHA = re.compile(r"^[0-9a-f]{64}$")
 NAME = re.compile(r"^wotbtools-android-delta-([0-9]+)-([0-9]+)-([0-9a-f]{64})\.vcdiff$")
@@ -35,7 +34,6 @@ def validate(meta, target_code, target_sha, target_size):
         raise ValueError("invalid target identity")
     size = meta.get("apkSizeBytes")
     patches = meta.get("patches", [])
-    # 旧 staged evidence 不含增量字段；不得为旧证据猜测 patch 身份。
     if size is None and patches == [] and "apkSizeBytes" not in meta:
         return []
     if type(size) is not int or size != target_size or type(patches) is not list or len(patches) > 1:
@@ -79,7 +77,6 @@ def build(args):
     metadata = {"apkSizeBytes": target_size, "patches": []}
     if target_sha != args.target_sha or not integer(args.target_code) or not integer(target_size):
         raise ValueError("target artifact identity mismatch")
-    # 基础版本必须是已发布且有增量客户端的版本；旧客户端忽略字段但无法消费补丁。
     if args.base_manifest and args.base_file:
         base = json.loads(Path(args.base_manifest).read_text(encoding="utf-8"))
         code, sha = base.get("latestVersionCode"), base.get("sha256")

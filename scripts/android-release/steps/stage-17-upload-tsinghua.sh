@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 22: Upload APK to Tsinghua Cloud (public download offload + origin seed source)).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 APK_NAME="$STEP_ARTIFACT_APKNAME"
 APK_FILE="release-staging/$APK_NAME"
 EXPECTED_SHA="$STEP_ARTIFACT_SHA256"
-# 网盘约定（与 TX1 Caddyfile 的 redir 目标一一对应，改这边必须同步改 Caddy）：
-# 仓库 = 个人资料库，目录 = /wotbtools-android/，
-# 分享 = https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/（可下载、无密码、不过期）。
 REPO_ID="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
 PARENT_DIR="/wotbtools-android"
 SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
@@ -18,14 +13,7 @@ UPLOAD_ATTEMPTS=3
 VERIFY_ATTEMPTS=5
 VERIFY_ATTEMPTS_CONTENT=2
 VERIFY_RETRY_DELAY=3
-# Keep enough time for at least one full public-share download before a write.
 VERIFY_RESERVE_SECONDS="${TSINGHUA_UPLOAD_VERIFY_RESERVE_SECONDS:-900}"
-# Budget for this stage. The android-stage job allows 120 minutes and this
-# step runs near its end. The workflow records the job start epoch immediately
-# after checkout; use the job's remaining time (minus a reserve for later
-# steps) as a hard ceiling, and never spend more than the stage's own budget.
-# Checkout time is not counted and is covered by the post-stage reserve.
-# Every HTTP operation is capped by the remaining effective budget.
 STAGE_BUDGET_SECONDS="${TSINGHUA_UPLOAD_BUDGET_SECONDS:-3600}"
 case "$STAGE_BUDGET_SECONDS" in
   ''|*[!0-9]*) echo "::error::TSINGHUA_UPLOAD_BUDGET_SECONDS must be a non-negative integer; release gate remains closed." >&2; exit 1 ;;
@@ -79,8 +67,6 @@ budget_remaining() {
 }
 
 REMAINING_BUDGET=0
-# Exit before starting an operation that would otherwise be killed by the job
-# timeout. Called directly (not in command substitution) so exit aborts stage.
 require_budget() {
   local label="$1"
   REMAINING_BUDGET="$(budget_remaining)"
@@ -90,7 +76,6 @@ require_budget() {
   fi
 }
 
-# Do not sleep past the absolute deadline; fail closed with a diagnostic first.
 sleep_budgeted() {
   local seconds="$1"
   require_budget "retry backoff"
@@ -101,8 +86,6 @@ sleep_budgeted() {
   sleep "$seconds"
 }
 
-# Keep diagnostics bounded and free of credentials or signed URLs. A signed
-# upload-link is itself a URL, so every URL is redacted instead of truncated.
 sanitize() {
   sed -E     -e 's#https?://[^"[:space:]]+#<redacted-url>#g'     -e 's/("?(token|access_token|signature|password)"?[[:space:]]*[:=][[:space:]]*"?)[^",}&[:space:]]+/\1<redacted>/g'     -e 's/[[:cntrl:]]+/ /g'     | cut -c1-400
 }
@@ -115,14 +98,6 @@ PROBE_RC=0
 PROBE_HTTP=000
 PROBE_BYTES=0
 PROBE_OUTCOME=""
-# Download the public-share object and compare its SHA-256. This is the sole
-# release gate; an upload response is never accepted as proof of success.
-# Outcomes:
-#   match        - HTTP 200 and the expected SHA-256
-#   missing      - HTTP 404/410: safe to (re)upload
-#   sha_mismatch - HTTP 200 with the wrong bytes: safe to (re)upload
-#   unconfirmed  - transport error, empty HTTP 200, or HTTP 403/429/5xx:
-#                  retry reads only
 probe_remote() {
   local label="$1" diag actual max_time sha_rc=0 sha_out
   PROBE_RC=0
@@ -193,9 +168,6 @@ probe_remote() {
   return 1
 }
 
-# Before an upload, only a definite match (skip), a definite absence (upload)
-# or a confirmed SHA mismatch (repair) are actionable. An unconfirmed read is
-# retried, then the stage fails closed instead of overwriting an unknown object.
 preupload_probe() {
   local attempt=1
   while [ "$attempt" -le "$VERIFY_ATTEMPTS" ]; do
@@ -213,11 +185,6 @@ preupload_probe() {
   return 1
 }
 
-# A failed or unconfirmed upload may still have written the object. Verify the
-# public share before deciding that another upload is needed. Total probes and
-# full-content downloads are counted separately: transport/HTTP errors get up
-# to 5 probes, while HTTP 200 wrong bytes get at most 2 full downloads per
-# upload. The download counter is not shortened by the probe number.
 CONFIRM_OUTCOME=""
 confirm_remote() {
   local phase="$1" probe=1 downloads=0
@@ -303,12 +270,6 @@ UPLOAD_HTTP=000
 UPLOAD_UPBYTES=0
 UPLOAD_SECONDS=0
 UPLOAD_SPEED=0
-# reuse=1 only makes the upload-link idempotent; it is not an overwrite switch.
-# replace=1 keeps the immutable APK name stable instead of renaming the object
-# to "name (1).apk". The response is diagnostic only: this deployment can return
-# HTTP 400 "Parent dir doesn't exist" after a completed write, and transport
-# errors can hide a completed write. The response body is not printed because
-# it comes from an authenticated endpoint; only its size is logged.
 upload_once() {
   local attempt="$1" diag body_bytes max_time err_bytes=0
   UPLOAD_RC=0
@@ -349,7 +310,6 @@ upload_once() {
   fi
 }
 
-# If a previous run already delivered the expected object, do not upload again.
 if preupload_probe; then
   echo "Tsinghua Cloud object already matches $EXPECTED_SHA; skipping upload."
   exit 0
@@ -377,9 +337,6 @@ SAW_UPLOAD_HTTP_ERROR=false
 SAW_HTTP_400=false
 attempt=1
 while [ "$attempt" -le "$UPLOAD_ATTEMPTS" ]; do
-  # Seafile upload links are short-lived. Fetch a fresh link for every attempt
-  # instead of reusing one across the retry window; the budgeted upload max-time
-  # stays inside Seafile's default 1h link lifetime.
   if ! fetch_upload_link; then
     echo "::error::Tsinghua Cloud upload-link unavailable; release gate remains closed." >&2
     exit 1
@@ -406,8 +363,6 @@ while [ "$attempt" -le "$UPLOAD_ATTEMPTS" ]; do
   fi
   case "$CONFIRM_OUTCOME" in
     missing|sha_mismatch)
-      # A definite absence or a definite wrong SHA is safe to repair with
-      # replace=1. The loop below is bounded by UPLOAD_ATTEMPTS.
       ;;
     unconfirmed)
       UNCONFIRMED_AFTER_UPLOAD=true

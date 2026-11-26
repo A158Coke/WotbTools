@@ -74,7 +74,7 @@ class MainPathTest(unittest.TestCase):
 
             self.assertEqual(rc, 0)
             with open(old_path, "rb") as f:
-                self.assertEqual(f.read(), old_bytes_before)  # 旧文件未被修改
+                self.assertEqual(f.read(), old_bytes_before)
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
                 sorted([*ut.TIER_FILES.values(), ut.ROSTER_FILE]),
@@ -87,7 +87,7 @@ class MainPathTest(unittest.TestCase):
             self.assertEqual(vehicle["id"], 1)
             self.assertEqual(vehicle["extraInfo"], "保留我")
             self.assertEqual(vehicle["hp"], 2650)
-            self.assertEqual(vehicle["alphaDamage"], 420)  # 单炮车权威炮伤
+            self.assertEqual(vehicle["alphaDamage"], 420)
             self.assertEqual(vehicle["guns"][0]["shells"][0]["penetration"], 258)
             self.assertEqual(vehicle["allowedEquipment"], [
                 "CALIBRATED_SHELLS", "GUN_RAMMER",
@@ -95,7 +95,6 @@ class MainPathTest(unittest.TestCase):
             ])
 
     def test_main_includes_lower_tiers_and_preserves_high_tier_data(self):
-        # 全等级车型资料：低级车不得被丢弃；原有高等级炮伤与知识点仍须保留。
         tanks_pb = root(
             tank_data(1, 5, 1, 496, turret(124,
                 gun(100, [shell("ap", 140, 85)])),
@@ -148,7 +147,6 @@ class MainPathTest(unittest.TestCase):
             new_dir = os.path.join(tmp, "new")
             os.makedirs(old_dir)
             os.makedirs(new_dir)
-            # 旧 tier8 数据只有 T-34-2，带 extraInfo
             with open(os.path.join(old_dir, "tankopedia-tier8.json"), "w", encoding="utf-8") as f:
                 json.dump({"meta": {}, "vehicles": [
                     {"id": 1585, "extraInfo": "保留我"},
@@ -158,7 +156,6 @@ class MainPathTest(unittest.TestCase):
                 rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
 
             self.assertEqual(rc, 0)
-            # 10 个 tier 文件 + 完整车辆名册
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
                 sorted([*ut.TIER_FILES.values(), ut.ROSTER_FILE]),
@@ -168,7 +165,6 @@ class MainPathTest(unittest.TestCase):
                 with open(os.path.join(new_dir, name), encoding="utf-8") as f:
                     files[name] = json.load(f)
             all_ids = {v["id"] for payload in files.values() for v in payload["vehicles"]}
-            # tier 5 T-34 与高等级车辆一起进入最终资料
             self.assertIn(1, all_ids)
             lower = files["tankopedia-tier5.json"]["vehicles"][0]
             self.assertEqual(lower["name"], "T-34")
@@ -181,15 +177,12 @@ class MainPathTest(unittest.TestCase):
             self.assertEqual(roster["vehicles"]["1"], "T-34")
             self.assertIn("1585", roster["vehicles"])
             self.assertEqual(roster["meta"]["count"], len(roster["vehicles"]))
-            # tier 8 T-34-2 正常生成：alphaDamage=400、extraInfo 保留
             tier8_vehicles = files["tankopedia-tier8.json"]["vehicles"]
             t82 = next(v for v in tier8_vehicles if v["id"] == 1585)
             self.assertEqual(t82["alphaDamage"], 400)
             self.assertEqual(t82["extraInfo"], "保留我")
             self.assertEqual(len(t82["guns"]), 5)
-            # tier 10 SPHT 单炮仍为 400
             spht = next(v for v in files["tankopedia-tier10.json"]["vehicles"] if v["id"] == 29985)
             self.assertEqual(spht["alphaDamage"], 400)
-            # 无 7/9 级车辆时对应文件存在且为空
             self.assertEqual(files["tankopedia-tier7.json"]["meta"]["count"], 0)
             self.assertEqual(files["tankopedia-tier9.json"]["meta"]["count"], 0)

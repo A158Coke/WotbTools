@@ -12,13 +12,7 @@ services:
     ports:
       - "10.20.0.1:8081:80"
     environment:
-      # nginx's official template entrypoint expands this value before nginx
-      # starts. K6B keeps the Docker-local default but permits a reviewed TX1/TX2
-      # WireGuard Business API endpoint for later placement cutovers.
       BACKEND_UPSTREAM: ${TX_BACKEND_UPSTREAM:-http://business-api:8087}
-      # The standalone AI service is pre-deployed on Yecao and published only on its
-      # WireGuard address, so /api/ai/ is proxied over WireGuard instead of to the TX
-      # business runtime. Same fail-closed treatment as BACKEND_UPSTREAM.
       AI_UPSTREAM: ${TX_AI_UPSTREAM:-http://10.20.0.2:8089}
       NGINX_ENVSUBST_FILTER: ^(BACKEND_UPSTREAM|AI_UPSTREAM)$$
     volumes:

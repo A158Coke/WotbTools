@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# TX runtime deployment. A single selected service is reconciled per invocation.
 set -Eeuo pipefail
 
 readonly WOTB_DIR="${WOTB_TX_DIR:-/opt/wotb-tx}"
@@ -107,9 +106,6 @@ is_selected() {
   return 1
 }
 
-# One credential group is required only when a service in that group is
-# selected. Keeping the groups explicit is what keeps Keycloak-only and
-# business-postgres-only deployments isolated from each other's secrets.
 is_keycloak_postgres_group_selected() {
   is_selected keycloak-postgres || is_selected keycloak
 }
@@ -122,10 +118,6 @@ is_business_postgres_group_selected() {
   is_selected business-postgres
 }
 
-# The TX business runtime owns the application database role, so it is the only
-# group that requires the application credentials. AI provider configuration
-# belongs to the Yecao ai-service, so this group never requires an AI key. A
-# database-only deployment must never depend on them.
 is_business_api_group_selected() {
   is_selected business-api
 }
@@ -166,9 +158,6 @@ validate_inputs() {
     [[ "$frontend_digest" =~ ^[0-9a-f]{64}$ ]] \
       || die "TX_FRONTEND_IMAGE_REF must contain a 64-character lowercase sha256 digest."
     validate_http_endpoint TX_BACKEND_UPSTREAM "$BACKEND_UPSTREAM_VALUE" http://business-api:8087 8087
-    # /api/ai/ is the only route that leaves TX: the standalone AI service runs on
-    # Yecao and has no public port, so its upstream is the WireGuard address. Any
-    # other value would be a public hop, the wrong service, or a different port.
     [ "$AI_UPSTREAM_VALUE" = "http://10.20.0.2:8089" ] \
       || die "TX_AI_UPSTREAM must be the Yecao ai-service WireGuard endpoint http://10.20.0.2:8089."
   fi
@@ -183,8 +172,6 @@ validate_inputs() {
     0|1) ;;
     *) die "WOTB_TX_BOOTSTRAP_KEYCLOAK must be 0 or 1." ;;
   esac
-  # Only selected runtime services may require their credentials.
-  # Business-postgres-only reconciliation must not depend on Keycloak inputs.
   if is_keycloak_postgres_group_selected; then
     for required in KC_POSTGRES_ADMIN_USER KC_POSTGRES_ADMIN_PASSWORD; do
       require_env "$required"
@@ -216,10 +203,6 @@ validate_inputs() {
     esac
     local business_api_digest="${TX_BUSINESS_API_IMAGE_REF_VALUE##*@sha256:}"
     [[ "$business_api_digest" =~ ^[0-9a-f]{64}$ ]]       || die "TX_BUSINESS_API_IMAGE_REF must contain a 64-character lowercase sha256 digest."
-    # The business runtime is TX-internal, so it consumes exactly the
-    # credentials below: the OpenTofu-owned application database role and the
-    # Keycloak Admin API client. It carries no AI provider configuration: AI
-    # Review runs in the standalone Yecao ai-service.
     for required in TX_BUSINESS_DB_NAME TX_BUSINESS_DB_USERNAME TX_BUSINESS_DB_PASSWORD \
       KEYCLOAK_ADMIN_CLIENT_SECRET; do
       require_env "$required"

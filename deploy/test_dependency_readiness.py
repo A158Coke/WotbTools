@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Tests for the read-only production dependency probe.
 
 The probe carries two secrets: the application PostgreSQL password and the
@@ -97,9 +96,6 @@ class KeycloakProbeTests(unittest.TestCase):
         ))
 
     def test_never_invents_an_endpoint_without_validation(self) -> None:
-        # dependency-readiness.sh always hands over a validated value. If it is
-        # absent, no validation ran, so the probe must not pick a default and
-        # must not send the admin client secret anywhere.
         with mock.patch.dict("os.environ", {}, clear=True), \
                 mock.patch.object(readiness.urllib.request, "urlopen") as urlopen:
             with self.assertRaises(readiness.ReadinessError):
@@ -226,10 +222,6 @@ class EndpointValidationOrderTests(unittest.TestCase):
             self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.2", TX_KEYCLOAK_DB_PORT="15432"),
             "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
         )
-        # K6B-2D: the two PostgreSQL placements are not interchangeable, so the Business
-        # PostgreSQL port must be refused for the Keycloak database consumer - and it
-        # must be refused before any container (or the Keycloak container carrying
-        # KC_DB_PASSWORD) is started.
         self.assert_refused_before_any_container(
             self.run_probe("keycloak", TX_KEYCLOAK_DB_HOST="10.20.0.1", TX_KEYCLOAK_DB_PORT="25432"),
             "TX_KEYCLOAK_DB must be keycloak-postgres:5432",
@@ -277,11 +269,9 @@ class SecretLoggingTests(unittest.TestCase):
         self.assertTrue(printed, "the probe must print its PASS/failure lines")
         for line in printed:
             for name in self.SECRET_NAMES:
-                # Interpolation, not a bare identifier: `--env SECRET_NAME` is fine.
                 self.assertNotIn(f"{{{name}}}", line, line)
                 self.assertNotIn(f"${{{name}}}", line, line)
                 self.assertNotIn(f"${name}", line, line)
-        # Failures must stay message-free: only the exception type name is disclosed.
         self.assertIn("dependency readiness failed: {type(error).__name__}", source)
         self.assertIn("({type(last_error).__name__})", source)
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Exercise one TX owner deploy without a release registry or unrelated images.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
@@ -12,16 +11,7 @@ cat > "$WORK/bin/ip" <<'IP'
 #!/usr/bin/env bash
 if [ "${1:-}" = -4 ]; then echo 'inet 10.20.0.1/24'; fi
 IP
-# `validate-caddy-config.sh` asserts against the JSON Caddy **adapts** the staged file to
-# (the adapted routes, their order, their handlers and the response they answer with), so
-# a fake `adapt` reply would either hide a real shape regression or reject a valid
-# configuration. This fixture delegates config rendering and that adapt invocation to the
-# real Docker CLI - the same pinned caddy image the Caddy validation step already pulls - and
-# keeps the fake behaviour for everything else (including the deliberate
-# FAKE_CADDY_VALIDATE_FAIL knob on `validate`, and the canned readiness/log responses).
 REAL_DOCKER="$(command -v docker || true)"
-# Validate native Compose output before installing the deployment fixture CLI.
-# No container starts here; fixtures use dummy credentials and immutable refs.
 export TX_RUNTIME_ROOT="$WORK/runtime"
 export TX_FRONTEND_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-frontend@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
 export TX_BUSINESS_API_IMAGE_REF=ccr.ccs.tencentyun.com/wotbtools/wotbtools-business-api@sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd
@@ -40,9 +30,6 @@ for owner in frontend business-api keycloak keycloak-postgres business-postgres;
   docker compose -p deploy -f "$ROOT/deploy/tx/$owner.compose.yml" config --format json \
     | assert_tx_service_ports "$service"
 done
-# Exercise the shared production validator against mutations of real rendered
-# JSON: missing endpoints, unreviewed interfaces/ports/protocols, duplicates and
-# app/management target swaps must all fail. Port declaration order is irrelevant.
 python3 - "$WORK/tx-compose.json" "$ROOT/deploy/tx/runtime-check-lib.sh" <<'PY'
 import copy, json, subprocess, sys
 with open(sys.argv[1], encoding="utf-8") as handle:
@@ -83,9 +70,6 @@ for name in names:
 print(f"TX rendered Compose service-plane contract: PASS ({count} rejected mutations)")
 PY
 
-# K6B logical endpoint validators are pure fail-closed guards. Exercise them
-# directly so every owner gets both a reviewed-WG positive and unsafe negative
-# without creating another standalone test entrypoint.
 validate_endpoint() {
   bash -c '
     set -euo pipefail
@@ -97,9 +81,6 @@ validate_endpoint() {
 }
 validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://business-api:8087 http://business-api:8087 8087
 validate_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8087 http://business-api:8087 8087
-# A bare `! command` cannot assert anything under `set -e` (bash exempts inverted
-# commands from errexit), so every rejection below is an explicit guard: it fails the
-# fixture when the canonical validator accepts a value it must refuse.
 reject_endpoint() {
   if validate_endpoint "$@"; then
     echo "the canonical validator accepted a placement it must refuse: $*" >&2
@@ -108,18 +89,8 @@ reject_endpoint() {
 }
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM https://api.example.invalid http://business-api:8087 8087
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:9999 http://business-api:8087 8087
-# Yecao is not a reviewed TX placement host: the retired business runtime address and
-# the management port must both stay rejected, otherwise a cutover could silently send
-# public API traffic to the wrong host or the wrong surface. The runtime gate asserts
-# the same fence with its own `frontend-upstream-yecao` fixture.
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.2:8087 http://business-api:8087 8087
 reject_endpoint validate_http_endpoint TX_BACKEND_UPSTREAM http://10.20.0.1:8088 http://business-api:8087 8087
-# K6B-2C moves the Business API -> Keycloak Admin consumer onto the reviewed TX1
-# WireGuard endpoint, guarded by the same canonical HTTP validator. The reviewed
-# values (Docker-local, TX1 WG, TX2 WG) are accepted; a public host, the retired Yecao
-# address, the business app/management port, a non-http scheme, URL credentials, and a
-# path/query/fragment are refused before any Admin request or client secret can leave
-# the host.
 validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://keycloak:8080 http://keycloak:8080 8080
 validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.1:8080 http://keycloak:8080 8080
 validate_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL http://10.20.0.3:8080 http://keycloak:8080 8080
@@ -134,11 +105,6 @@ reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.2
 reject_endpoint validate_http_endpoint TX_KEYCLOAK_ADMIN_SERVER_URL 'http://10.20.0.1:8080#frag' http://keycloak:8080 8080
 validate_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.1 25432 business-postgres 5432 25432
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.3 15432 keycloak-postgres 5432 15432
-# K6B-2D moves the Keycloak -> Keycloak PostgreSQL consumer onto the reviewed TX1
-# WireGuard endpoint, guarded by the same canonical database validator. The reviewed
-# values (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao address, the
-# wrong WireGuard host port, and - importantly - the OTHER PostgreSQL placement's port
-# are refused, so the two database consumers can never be swapped by accident.
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres 5432 keycloak-postgres 5432 15432
 validate_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.1 15432 keycloak-postgres 5432 15432
 reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB 10.20.0.2 15432 keycloak-postgres 5432 15432
@@ -154,11 +120,6 @@ reject_endpoint validate_database_endpoint TX_KEYCLOAK_DB keycloak-postgres abc 
 reject_endpoint validate_database_endpoint TX_BUSINESS_DB 10.20.0.2 25432 business-postgres 5432 25432
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.1:8081 wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM frontend.example.invalid:8081 wotb-frontend:80 8081
-# K6B-2E moves the Caddy -> Frontend consumer onto the reviewed TX1 WireGuard endpoint,
-# guarded by the same canonical Caddy upstream validator. The reviewed values
-# (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao address, public hosts,
-# a URL-shaped value, and - importantly - every other service-plane port are refused, so
-# 8081 (Frontend), 8080 (Keycloak) and 8087 (Business API) can never be swapped.
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM wotb-frontend:80 wotb-frontend:80 8081
 validate_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.3:8081 wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 10.20.0.2:8081 wotb-frontend:80 8081
@@ -174,15 +135,6 @@ reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM 'user:pass@10.20
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM ':8081' wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:' wotb-frontend:80 8081
 reject_endpoint validate_caddy_upstream CADDY_FRONTEND_UPSTREAM '10.20.0.1:abc' wotb-frontend:80 8081
-# Caddy -> Keycloak (K6B-2F) is guarded by the same canonical Caddy upstream validator.
-# The reviewed values (Docker-local, TX1 WG, TX2 WG) are accepted; the retired Yecao
-# address, every other service-plane port, public hosts, and URL-shaped values are
-# refused, so 8080 (Keycloak), 8081 (Frontend) and 8087 (Business API) can never be
-# swapped. `keycloak:8080` stays legal in the allowlist because it is the rollback value
-# for this consumer; after K6B-2F it is no longer the reviewed production placement, and
-# that is asserted by the desired-state contracts (CURRENT_K6B_CUTOVERS in
-# scripts/ci/test-workflow-contract.sh plus the `k6b2f-*` fixtures in
-# deploy/test-tx-runtime-check.sh).
 validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM keycloak:8080 keycloak:8080 8080
 validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.1:8080 keycloak:8080 8080
 validate_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM 10.20.0.3:8080 keycloak:8080 8080
@@ -203,13 +155,6 @@ reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM ':8080' keycloak
 reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:' keycloak:8080 8080
 reject_endpoint validate_caddy_upstream CADDY_KEYCLOAK_UPSTREAM '10.20.0.1:abc' keycloak:8080 8080
 
-# K6B-2A moves the Frontend -> Business API consumer onto a WireGuard placement, so the
-# frontend owner's own deploy must fail when that placement is unreachable instead of
-# leaving a half-broken consumer for the manual runtime gate. The probe has to traverse
-# the frontend (nginx -> BACKEND_UPSTREAM): probing the Business API directly would stay
-# green while the running container dials something else, which is the false green this
-# step exists to prevent. A failing probe must also be attributed to wotb-frontend so
-# stop_failed_service actually acts on the affected service.
 frontend_health_block="$(sed -n '/if is_selected wotb-frontend; then/,/^  fi$/p' "$ROOT/deploy/tx/deploy-health.sh")"
 grep -Fq 'wait_for_probe frontend-api http://wotb-frontend/api/health' <<< "$frontend_health_block" \
   || { echo 'the frontend deploy must probe /api/health through the frontend' >&2; exit 1; }
@@ -286,8 +231,6 @@ run_frontend() {
 run_frontend FAKE_DOCKER_LOG="$WORK/docker.log" >/dev/null
 run_frontend TX_BACKEND_UPSTREAM=http://10.20.0.1:8087 FAKE_DOCKER_LOG="$WORK/frontend-wg.log" >/dev/null
 
-# Old/offline backends must stop before pull, promotion, recreate or stopping the
-# live frontend. Test the real deploy entrypoint, not only a source-order assertion.
 find "$WORK/host/deploy" -type f -exec sha256sum {} + | sort > "$WORK/live-before-capability-check"
 for health in '{"status":"ok"}' '{"status":"ok","capabilities":["recommendations-v1"]}' \
   '{"status":"ok","capabilities":"broadcast-season-contents-v1"}' \
@@ -329,7 +272,6 @@ grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/docker.log" \
 grep -Fq 'image: ${TX_FRONTEND_IMAGE_REF:?TX_FRONTEND_IMAGE_REF is required}' "$WORK/host/deploy/frontend.compose.yml"
 [ ! -e "$WORK/host/production-release.json" ]
 
-# The selected owner must reject unsafe rendered binds before any live recreate.
 cp "$WORK/incoming/deploy/tx/frontend.compose.yml" "$WORK/frontend.compose.yml.bak"
 sed -i 's/10.20.0.1:8081:80/0.0.0.0:8081:80/' "$WORK/incoming/deploy/tx/frontend.compose.yml"
 if run_frontend FAKE_DOCKER_LOG="$WORK/frontend-wildcard.log" >/dev/null 2>&1; then
@@ -348,11 +290,6 @@ fi
 grep -q '^up ' "$WORK/frontend-tag-ref.log" 2>/dev/null \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:233' >&2; exit 1; }
 
-# The live TX edge is this promoted template: Caddy terminates TLS and proxies the
-# whole wotbtools.com site to wotb-frontend:80, where the nginx template entrypoint
-# renders it to /etc/nginx/conf.d/default.conf. /api/ai/** must therefore be a
-# more-specific ^~ prefix (ahead of the generic /api/ location) that proxies to the
-# Yecao ai-service without rewriting the path and keeps the SSE contract intact.
 TEMPLATE="$WORK/host/deploy/nginx/frontend.conf.template"
 AI_ROUTE="$WORK/ai-route.conf"
 awk '/^    location \^~ \/api\/ai\/ \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
@@ -363,7 +300,6 @@ if grep -Fq 'rewrite ' "$AI_ROUTE"; then
   echo 'FAIL: the AI route must not rewrite the /api/ai/ path' >&2
   exit 1
 fi
-# No path rewrite: the public path and the ai-service controller path are both /api/ai/...
 grep -Fq 'proxy_pass ${AI_UPSTREAM};' "$AI_ROUTE" \
   || { echo 'FAIL: the AI route must proxy ${AI_UPSTREAM} with no URI suffix' >&2; exit 1; }
 for setting in \
@@ -382,26 +318,13 @@ for setting in \
   grep -Fq "$setting" "$AI_ROUTE" \
     || { echo "FAIL: the AI route is missing: $setting" >&2; exit 1; }
 done
-# ^~ already outranks a plain prefix, but the route must also be declared first so the
-# boundary stays obvious to a reader.
 ai_line="$(grep -n 'location ^~ /api/ai/ {' "$TEMPLATE" | head -n1 | cut -d: -f1)"
 api_line="$(grep -n '^    location /api/ {' "$TEMPLATE" | head -n1 | cut -d: -f1)"
 [ "$ai_line" -lt "$api_line" ] \
   || { echo 'FAIL: the AI route must precede the generic /api/ route' >&2; exit 1; }
-# The generic route keeps its TX business runtime target and is never repointed.
 grep -Fq 'proxy_pass ${BACKEND_UPSTREAM}/api/;' "$TEMPLATE" \
   || { echo 'FAIL: the generic /api/ route must stay on the TX business runtime' >&2; exit 1; }
 
-# Agent WASM is served from a commit-addressed directory (/wasm/<40-hex commit>/);
-# the directory name IS the content identity, so immutable long caching of successful
-# responses is correct (a new Agent gets a new URL and a plain refresh picks it up).
-# The header must NOT use `always`: nginx would then attach immutable to the 404 that
-# `try_files` produces during version skew / deploy windows, and browsers would cache
-# that 404 for a year (2026-10-06 incident: affected users permanently stuck on a
-# spinner). The regex must stay
-# pinned to the 40-hex commit segment: a bare `/wasm/` location would freeze
-# whatever else lands in that directory. The regex contains `{}` and must stay quoted,
-# otherwise nginx ends the location header at `{` (emerg: unknown directive "40}/").
 WASM_ROUTE="$WORK/wasm-route.conf"
 awk '/^    location ~ "\^\/wasm\/\[0-9a-f\]\{40\}\/" \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
   "$TEMPLATE" > "$WASM_ROUTE"
@@ -420,9 +343,6 @@ if grep -Eq '^    location /wasm/ \{' "$TEMPLATE"; then
   exit 1
 fi
 
-# Same no-`always` contract for the hash-named /assets/ route: immutable is correct
-# for 200s, but a 404 during version skew (index and asset served by different peers)
-# must never be cached — same 2026-10-06 incident, JS/CSS flavor.
 ASSETS_ROUTE="$WORK/assets-route.conf"
 awk '/^    location \/assets\/ \{/{inside=1} inside{print} inside&&/^    \}$/{exit}' \
   "$TEMPLATE" > "$ASSETS_ROUTE"
@@ -437,9 +357,6 @@ fi
 grep -Fq 'try_files $uri =404;' "$ASSETS_ROUTE" \
   || { echo 'FAIL: the /assets/ route must not fall back to the SPA index' >&2; exit 1; }
 
-# Fail closed: a wrong AI upstream (the TX business runtime, a public host, another
-# port) or a staged template that drops / rewrites the AI route must stop the deploy
-# before the live frontend is recreated.
 if run_frontend TX_AI_UPSTREAM=http://business-api:8087 FAKE_DOCKER_LOG="$WORK/frontend-ai-upstream.log" \
   >/dev/null 2>&1; then
   echo 'TX deployment accepted a non-ai-service AI upstream' >&2
@@ -466,8 +383,6 @@ grep -q '^up ' "$WORK/frontend-ai-rewrite.log" 2>/dev/null \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:325' >&2; exit 1; }
 cp "$WORK/frontend.conf.template.bak" "$STAGED_TEMPLATE"
 
-# Frontend owns the live lock wrapper. A later deployment from another owner may
-# stage older wrapper bytes, but it must preserve the already-promoted live copy.
 printf '%s\n' '# live-wrapper-sentinel' > "$WORK/host/deploy/with-deploy-lock.sh"
 printf '%s\n' '# stale-staged-wrapper' > "$WORK/incoming/deploy/tx/with-deploy-lock.sh"
 
@@ -479,9 +394,6 @@ env -i PATH="$WORK/bin:$PATH" HOME="$WORK" \
 grep -q '^up -d --no-deps --force-recreate caddy$' "$WORK/caddy.log"
 grep -Fxq '# live-wrapper-sentinel' "$WORK/host/deploy/with-deploy-lock.sh" \
   || { echo 'non-frontend deployment replaced the frontend-owned TX lock wrapper' >&2; exit 1; }
-# The staged gateway config must be validated by the real Caddy executable before
-# the gateway is recreated: the published image has no ENTRYPOINT, so the
-# validation has to pin `--entrypoint caddy` explicitly.
 grep -q '^run .*--entrypoint caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile$' "$WORK/caddy.log"
 grep -Eq '^up .*business-api|^up .*keycloak' "$WORK/caddy.log" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:346' >&2; exit 1; }
@@ -497,9 +409,6 @@ fi
 grep -q '^up ' "$WORK/caddy-fail.log" \
   && { echo 'forbidden construction still present at deploy/test-tx-runtime-config.sh:357' >&2; exit 1; }
 
-# The delegated `caddy adapt` runs the real Compose project (`-p deploy`), which allocates a Docker
-# network from the daemon's default address pool. Release it here so later fixtures in the same job
-# keep the full pool (the nginx/Grafana fixture needs an explicit 172.29.0.0/16 subnet).
 if [ -n "$REAL_DOCKER" ]; then
   "$REAL_DOCKER" network rm deploy_default >/dev/null 2>&1 || true
 fi

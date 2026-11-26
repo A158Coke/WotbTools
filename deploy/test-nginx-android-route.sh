@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Android download route smoke test (CI-safe, docker required).
-#
-# Validates the production nginx routing for the public Android download page:
-#   1. /download/android           -> SPA index.html (renders AndroidDownloadPage)
-#   2. /download/android/          -> SPA index.html (trailing slash must not 404)
-#   3. /download/android/version.json -> real static manifest (no-store)
-#   4. /download/android/wotbtools-android-vX.Y.Z.apk -> real static APK
-#   5. /download/android/nonexistent.apk -> real 404, NOT index.html
-#
-# Uses the UNMODIFIED production nginx config and asserts nginx -t passes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,12 +13,9 @@ cleanup() {
 HTML_ROOT="$(mktemp -d)"
 trap cleanup EXIT
 
-# 0) production config syntax check.
 docker run --rm --add-host grafana:127.0.0.1 --add-host keycloak:127.0.0.1 --add-host wotb-backend:127.0.0.1 \
   -v "$CFG:/etc/nginx/conf.d/default.conf:ro" --entrypoint nginx nginx:alpine -t
 
-# Static contract checks: the SPA-page exact locations must exist and must NOT be a shared fallback
-# that would also swallow APK / version.json. We also require version.json + the static prefix to remain.
 grep -q 'location = /download/android {' "$CFG" \
   || { echo "FAIL: 'location = /download/android' must exist (SPA page route)" >&2; exit 1; }
 grep -q 'location = /download/android/ {' "$CFG" \
@@ -40,16 +27,11 @@ grep -q 'location /download/android/ {' "$CFG" \
 grep -q 'location = /.well-known/assetlinks.json' "$CFG" \
   || { echo "FAIL: assetlinks exact location must exist in the auth server block" >&2; exit 1; }
 
-# Build a deterministic payload matching production layout: a stub index.html at root (SPA marker),
-# version.json + apk under /download/android. 路由验证只关心「页面路由落到 index.html」，不校验
-# 真实 bundle 内容（真实 bundle 的完整性由 frontend build / Dist 契约测试负责）。
 mkdir -p "$HTML_ROOT/download/android"
 printf '<!doctype html><html><body>SPA-index</body></html>' > "$HTML_ROOT/index.html"
 printf '{"latestVersionName":"1.0.0","apkUrl":"/download/android/wotbtools-android-v1.0.0.apk"}\n' \
   > "$HTML_ROOT/download/android/version.json"
 head -c 2048 /dev/urandom > "$HTML_ROOT/download/android/wotbtools-android-v1.0.0.apk"
-# mktemp -d 创建的目录为 0700（所有者才能 traversal），而容器内 nginx 以 uid 101 (nginx)
-# 运行，无法读取 → SPA/静态全变 403/404。授予 world read+traverse 后 nginx 才能镜像真实产物。
 chmod -R a+rX "$HTML_ROOT"
 
 docker run -d --name "$CONTAINER" \
@@ -70,24 +52,20 @@ code() { curl -s -o /dev/null -w '%{http_code}' -H 'Host: wotbtools.com' -H "X-F
 content() { curl -s -H 'Host: wotbtools.com' "http://127.0.0.1:18081/$1"; }
 content_auth() { curl -s -H 'Host: auth.wotbtools.com' "http://127.0.0.1:18081/$1"; }
 
-# 供 auth.wotbtools.com/.well-known/assetlinks.json 静态路由验证的 domain-association payload。
 mkdir -p "$HTML_ROOT/.well-known"
 printf '[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.wotbtools.app","sha256_cert_fingerprints":["BD:1B:66:9D:79:93:51:A4:E5:96:BC:11:6B:8F:AE:08:43:29:AC:74:7A:F7:8D:EF:61:97:48:FC:B4:28:06:CE"]}}]\n' \
   > "$HTML_ROOT/.well-known/assetlinks.json"
 
-# 1) /download/android -> SPA index.html
 [[ "$(code 9.9.9.1 download/android)" == "200" ]] \
   || { echo "FAIL: /download/android must return 200 (SPA)" >&2; exit 1; }
 [[ "$(content "download/android")" == *"SPA-index"* ]] \
   || { echo "FAIL: /download/android must render index.html, not a 404 body" >&2; exit 1; }
 
-# 2) /download/android/ -> SPA index.html (trailing slash)
 [[ "$(code 9.9.9.1 download/android/)" == "200" ]] \
   || { echo "FAIL: /download/android/ must return 200 (SPA) and not be captured by static location" >&2; exit 1; }
 [[ "$(content "download/android/")" == *"SPA-index"* ]] \
   || { echo "FAIL: /download/android/ must render index.html" >&2; exit 1; }
 
-# 3) version.json -> real static manifest, no-store
 [[ "$(code 9.9.9.1 download/android/version.json)" == "200" ]] \
   || { echo "FAIL: /download/android/version.json must return a real static manifest (200)" >&2; exit 1; }
 [[ "$(content "download/android/version.json")" == *"latestVersionName"* ]] \
@@ -96,20 +74,17 @@ curl -s -D - -o /dev/null -H 'Host: wotbtools.com' "http://127.0.0.1:18081/downl
   | grep -qi 'cache-control: no-store' \
   || { echo "FAIL: version.json must be no-store" >&2; exit 1; }
 
-# 4) existing APK -> real static APK (binary, not HTML)
 [[ "$(code 9.9.9.1 download/android/wotbtools-android-v1.0.0.apk)" == "200" ]] \
   || { echo "FAIL: existing APK must return 200" >&2; exit 1; }
 apk_bytes="$(content "download/android/wotbtools-android-v1.0.0.apk" | wc -c)"
 [[ "$apk_bytes" == "2048" ]] \
   || { echo "FAIL: APK must be served as the real binary ($apk_bytes != 2048)" >&2; exit 1; }
 
-# 5) nonexistent APK -> real 404, NOT index.html
 [[ "$(code 9.9.9.1 download/android/nonexistent.apk)" == "404" ]] \
   || { echo "FAIL: nonexistent APK must return real 404" >&2; exit 1; }
 [[ "$(content "download/android/nonexistent.apk")" != *"SPA-index"* ]] \
   || { echo "FAIL: nonexistent APK must not fallback to index.html" >&2; exit 1; }
 
-# 6) auth.wotbtools.com/.well-known/assetlinks.json -> 真实 static JSON，绝不代理给 Keycloak。
 auth_asset_code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: auth.wotbtools.com' "http://127.0.0.1:18081/.well-known/assetlinks.json")"
 [[ "$auth_asset_code" == "200" ]] \
   || { echo "FAIL: auth.wotbtools.com/.well-known/assetlinks.json must return 200 (static)" >&2; exit 1; }

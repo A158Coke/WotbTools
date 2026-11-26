@@ -9,10 +9,6 @@ x-logging: &default-logging
 services:
   health-probe:
     image: curlimages/curl:8.12.1
-    # Keep normal probe semantics unchanged, but tolerate a short-lived Yecao
-    # Loki /ready 503 during observability convergence. The TX Alloy deploy calls
-    # this exact endpoint with --fail; all other health probes are forwarded as-is.
-    # Double dollars are required so Compose passes shell variables through.
     entrypoint:
       - /bin/sh
       - -c

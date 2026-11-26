@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Fixtures for the two Komodo safety guards shared through `lib.sh`. Everything
-# runs against a disposable directory: no host path, no root, no Docker, and no
-# network. The guards `exit 1`, so each case runs in its own subshell and the
-# assertion is the subshell status.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +7,6 @@ trap 'rm -rf "$work"' EXIT
 
 marker_value=local-tofu-state-bootstrap-v1
 
-# run <function> <path> -> guard status (stdout/stderr discarded)
 run() {
   bash -c 'source "$1"; "$2" "$3"' _ "$ROOT/lib.sh" "$1" "$2" >/dev/null 2>&1
 }
@@ -36,13 +31,10 @@ state_ok() {
   printf '%s\n' "$marker_value" > "$dir/bootstrap-complete"
 }
 
-# require_bootstrap_state -----------------------------------------------------
 fresh="$work/state/fresh"
 mkdir -p "$fresh"
 accepts require_bootstrap_state "$fresh"
 
-# A completely absent state directory is still a legitimate first bootstrap: the
-# guard creates it (0700) instead of refusing.
 absent="$work/state/absent"
 accepts require_bootstrap_state "$absent"
 [[ -d "$absent" && ! -L "$absent" && "$(stat -c '%a' "$absent")" == 700 ]] || {
@@ -66,8 +58,6 @@ for case in state-without-marker marker-without-state; do
   rejects require_bootstrap_state "$dir"
 done
 
-# The state directory itself is part of the invariant: a valid-looking pair
-# reached through a symlinked `tofu-state` must not satisfy the guard.
 behind_symlink="$work/state/behind-symlink"
 mkdir -p "$behind_symlink"
 state_ok "$behind_symlink"
@@ -121,7 +111,6 @@ printf '%s\n' '{"version":4}' > "$dangling_marker/terraform.tfstate"
 ln -s absent "$dangling_marker/bootstrap-complete"
 rejects require_bootstrap_state "$dangling_marker"
 
-# require_real_dir ------------------------------------------------------------
 created="$work/dir/created"
 accepts require_real_dir "$created"
 [[ -d "$created" && ! -L "$created" ]] || { echo 'require_real_dir did not create the directory' >&2; exit 1; }

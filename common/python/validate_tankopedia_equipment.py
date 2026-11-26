@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fail closed when tier 7-10 Tankopedia equipment coverage is incomplete."""
 
 import urllib.request
@@ -12,8 +11,6 @@ from update_tankopedia import (
     parse_tanks,
 )
 
-# Empty by default. Any business-tier vehicle without a preset must be reviewed
-# and explicitly allowlisted by tank id before the data sync can proceed.
 KNOWN_NO_EQUIPMENT_PRESET_IDS = set()
 
 

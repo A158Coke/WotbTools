@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# TX Business PostgreSQL OpenTofu ownership and production-safety contract.
-#
-# Responsibility split (do not duplicate the other layers here):
-#   tofu fmt / tofu validate / plan  -> syntax, schema and provider-legal fields
-#   infra/tofu/postgres-business/test-validate-plan.sh -> destructive plan policy
-#   deploy/test-business-postgres-runtime.sh -> real disposable PostgreSQL apply
-#   deploy/test-tx-runtime-config.sh         -> Compose runtime + deploy inputs
-# This file pins what native tooling considers valid but would still break the
-# project's ownership boundary or production safety.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Fixtures for the TX Caddy public-site inventory guard.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -160,9 +159,6 @@ awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
 rejects 'android callback absent from the inventory' "$callback_removed_entirely" \
   'auth.wotbtools.com must declare handle /android/oauth/callback'
 
-# 合规安全访问日志的守卫必须是真守卫：删掉覆盖面收窄、删掉字段删除、或把 query string
-# 重新 append 回来，都必须在 live gateway 之前被拦下。前三个变体在文本层就被拒绝（docker
-# 还没被调用），最后一个只在适配后的 JSON 里才看得出来，所以用 CORS 变体同样的手法断言。
 log_skip_gone="$(caddyfile compliance-log-skip-gone)"
 sed -i '/^\tlog_skip @notApi$/d' "$log_skip_gone/Caddyfile"
 rejects 'compliance access log covers more than /api/*' "$log_skip_gone" \

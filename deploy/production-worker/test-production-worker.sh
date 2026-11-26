@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# Fixtures for the production-worker owner (K7A).
-#
-# Executable rather than string-only: the real `install.sh` / `verify.sh` /
-# `reconcile.sh` are driven against a disposable fake host root with stubbed
-# docker/systemctl/apt-get/wg/ip/ss, so the fail-closed matrix, the conditional
-# Docker restart, credential rotation and the readiness token are checked as
-# behaviour. No production secret, no SSH, no real Docker; the only network use is
-# loopback listeners this fixture starts itself.
-#
-# Run as root (the CI job uses sudo): the mode/permission assertions are real, and
-# the lifecycle is root-only by design, exactly as Komodo/Periphery runs Docker.
-#
-# This is the owner's single fixture entrypoint: the checks are production-safety
-# invariants that no native validator can carry.
 set -Eeuo pipefail
 umask 077
 
@@ -37,11 +23,8 @@ FAKE_USERNAME=fixture-user
 FAKE_PASSWORD=fixture-not-a-real-password
 MIRROR=https://mirror.ccs.tencentyun.com
 
-## --- loopback service-plane stand-ins ----------------------------------------
 
 listen_port() {
-  # stdout/stderr are detached: the backgrounded listener must not hold this
-  # command substitution's pipe open.
   python3 - "$1" >/dev/null 2>&1 <<'PY' &
 import socket, sys, time
 server = socket.socket()
@@ -68,7 +51,6 @@ done
 sleep 1
 FIXTURE_ENDPOINTS="127.0.0.1:$port_a 127.0.0.1:$port_b 127.0.0.1:$port_c"
 
-## --- fake host root -----------------------------------------------------------
 
 host="$work/host"
 lock_root="$host/opt/wotb-tx2"
@@ -123,10 +105,6 @@ reviewed_daemon() {
   printf '{\n  "registry-mirrors": [\n    "%s"\n  ]\n}\n' "$MIRROR"
 }
 
-## --- stubbed host commands ----------------------------------------------------
-#
-# Every filesystem effect and every `stat -c '%a'` mode assertion is real: the
-# fixture replaces only the commands that would otherwise touch this machine.
 
 cat > "$bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -303,14 +281,10 @@ export TCR_NAMESPACE="$NAMESPACE"
 export TCR_USERNAME="$FAKE_USERNAME"
 export TCR_PASSWORD="$FAKE_PASSWORD"
 export STUB_USERNAME="$FAKE_USERNAME"
-# The auth entry the fixture's "current GitHub secret" produces, and the default
-# accepted set when a case does not pin `state/valid_auth` itself.
 STUB_AUTH="$(printf '%s:%s' "$FAKE_USERNAME" "$FAKE_PASSWORD" | base64 | tr -d '\n')"
 export STUB_AUTH
-# Reviewed generation used by every case that is not specifically about rotation.
 export TCR_CREDENTIAL_VERSION=2
 
-# A reviewed worker always finds Periphery healthy: individual cases break it.
 : > "$state/unit_active"
 : > "$state/unit_enabled"
 
@@ -331,7 +305,6 @@ expect_fail() {
 
 stage_runtime
 
-## --- A. reviewed TX2 profile contract ----------------------------------------
 
 bash "$ROOT/read-target-profile.sh" tx2 "$work/profile.out" >/dev/null
 for expected in \
@@ -365,8 +338,6 @@ expect_fail 'a malformed target name' 'Invalid production worker target' \
   env bash "$runtime/install.sh" TX2 "$SHA" "$stage"
 expect_fail 'an unknown staging root' 'is not a real file' \
   env bash "$runtime/reconcile.sh" tx2 "$SHA" "$work/elsewhere"
-# A stage that exists but does not correspond to the frozen SHA must be refused:
-# the staged bytes and the reconciled source identity may never disagree.
 OTHER_SHA=89abcdef0123456789abcdef0123456789abcdef
 other_stage="$staging_root/incoming/$OTHER_SHA"
 bash "$ROOT/staging-root.sh" prepare "$OTHER_SHA" "$staging_root" >/dev/null
@@ -377,7 +348,6 @@ expect_fail 'a mismatched staging SHA' 'Unexpected production-worker staging roo
 rm -rf -- "$other_stage"
 pass 'profile and staging-root shape refused when wrong'
 
-## --- B. staging-root safety ---------------------------------------------------
 
 rm -rf -- "$stage"
 ln -s "$work" "$stage"
@@ -387,14 +357,12 @@ rm -f "$stage"
 stage_runtime
 pass 'symlinked staging roots are refused, never followed'
 
-## --- C. host lock -------------------------------------------------------------
 
 mv "$lock_root/.deploy.lock" "$lock_root/.deploy.lock.hidden"
 expect_fail 'a missing host lock file' 'lock file does not exist' reconcile_cmd
 mv "$lock_root/.deploy.lock.hidden" "$lock_root/.deploy.lock"
 pass 'the TX2 host lock must already exist (owned by the deploy owner)'
 
-## --- D. clean bootstrap -------------------------------------------------------
 
 rm -f "$state/compose_present" "$state/auth" "$daemon_config" "$root_config" \
   "$host/var/lib/wotbtools-production-worker/tcr-credential-version" "$state/valid_auth"
@@ -418,7 +386,6 @@ diff -q <(reviewed_daemon) "$daemon_config" >/dev/null \
   || fail 'daemon.json must contain exactly the reviewed configuration'
 pass 'clean bootstrap (Compose + mirror + root credential + all tokens)'
 
-## --- E. idempotency -----------------------------------------------------------
 
 : > "$state/restarts"
 mv "$state/apt" "$state/apt.first"
@@ -431,7 +398,6 @@ grep -q 'no rewrite' "$work/second.log" || fail 'an unchanged credential must no
 [[ "$(tail -n1 "$work/second.log")" == 'TX2_PRODUCTION_WORKER_READY' ]] || fail 'the second run must stay ready'
 pass 'idempotent reconcile (no restart, no reinstall, no rewrites)'
 
-## --- F. Compose, plugin and daemon health ------------------------------------
 
 rm -f "$state/compose_present"
 expect_fail 'a failed Compose install' 'Installing docker-compose-v2 failed' install_cmd STUB_INSTALL_FAILS=true
@@ -440,7 +406,6 @@ expect_fail 'an unusable Compose plugin' 'the Compose plugin is not usable' inst
 expect_fail 'a broken Docker daemon' 'not healthy after reconciliation' install_cmd STUB_DOCKER_BROKEN=true
 pass 'Compose install, plugin usability and daemon health fail closed'
 
-## --- G. Docker Hub mirror ----------------------------------------------------
 
 write_daemon "$(printf '{\n  "registry-mirrors": [\n    "https://mirror.example.invalid"\n  ]\n}')"
 expect_ok 'a drifted mirror' "$work/mirror-drift.log" install_cmd
@@ -459,9 +424,6 @@ expect_fail 'an unsupported daemon setting' 'does not own these daemon settings'
 write_daemon '{"registry-mirrors":["https://mirror.ccs.tencentyun.com"]}'
 expect_ok 'a supported daemon config' "$work/mirror-ok.log" install_cmd
 
-# Docker's runtime view canonicalizes a registry mirror by appending one trailing
-# slash. That representation is equivalent to the reviewed host-only URL, but no
-# other scheme/host/path drift is accepted.
 expect_ok 'a Docker-canonical trailing slash mirror' "$work/mirror-trailing-slash.log" \
   verify_cmd STUB_MIRRORS_OVERRIDE='["https://mirror.ccs.tencentyun.com/"]'
 expect_ok 'an exact active mirror' "$work/mirror-exact.log" \
@@ -476,11 +438,6 @@ pass 'active mirror canonicalization accepts only one insignificant trailing sla
 
 pass 'daemon.json is strictly validated (malformed and unsupported settings refuse)'
 
-## --- H. credential model and generation convergence --------------------------
-#
-# The applied credential generation is authoritative: a reviewed version change MUST
-# converge the host even while the previous credential still authenticates. These are
-# the regression fixtures for the rotation blocker.
 
 expect_fail 'a missing TCR username' 'TCR_USERNAME is required' install_cmd TCR_USERNAME=
 expect_fail 'a missing TCR password' 'TCR_PASSWORD is required' install_cmd TCR_PASSWORD=
@@ -494,7 +451,6 @@ expect_fail 'a zero credential version' 'TCR_CREDENTIAL_VERSION must be a review
   install_cmd TCR_CREDENTIAL_VERSION=0
 pass 'credential version is validated (missing, malformed and zero refused)'
 
-# Fresh host: provisioning records generation 2.
 marker="$host/var/lib/wotbtools-production-worker/tcr-credential-version"
 rm -f "$root_config" "$marker" "$state/valid_auth"
 login_count_before="$(grep -c '^login ' "$state/docker.log" || true)"
@@ -504,7 +460,6 @@ expect_ok 'provisioning generation 2' "$work/gen2.log" install_cmd TCR_CREDENTIA
   || fail 'a fresh host must log in'
 pass 'fresh host provisions and records the reviewed generation'
 
-# Unchanged generation: no login, no rewrite, still ready.
 digest_before="$(sha256sum "$root_config" | cut -d' ' -f1)"
 login_count_before="$(grep -c '^login ' "$state/docker.log" || true)"
 expect_ok 'an unchanged generation' "$work/gen2-again.log" install_cmd TCR_CREDENTIAL_VERSION=2
@@ -517,10 +472,6 @@ grep -q 'generation 2 already applied and authenticating (no rewrite)' "$work/ge
 [[ "$(cat "$marker")" == 2 ]] || fail 'an unchanged generation must keep the marker'
 pass 'unchanged generation: no login, no rewrite, ready'
 
-# ROTATION WHILE THE OLD CREDENTIAL REMAINS VALID (the blocker regression): the GitHub
-# secret becomes a NEW value while the old one is still accepted for pulls, so
-# authentication alone would keep the host on generation 2. The reviewed version must
-# force the login and install the newly reviewed secret.
 old_auth="$(python3 -c 'import json,sys; print(next(iter(json.load(open(sys.argv[1]))["auths"].values()))["auth"])' "$root_config")"
 NEW_PASSWORD="fixture-rotated-not-a-real-password"
 export TCR_PASSWORD="$NEW_PASSWORD"
@@ -538,7 +489,6 @@ new_digest="$(sha256sum "$root_config" | cut -d' ' -f1)"
 [[ "$(tail -n1 "$work/rotate-3.log")" == 'TX2_PRODUCTION_WORKER_READY' ]] || fail 'a rotation must end ready'
 pass 'stale marker with a working credential rotates (blocker regression)'
 
-# Second reconcile after the successful rotation: converged, no rewrite.
 expect_ok 'after rotation' "$work/after-rotate.log" install_cmd TCR_CREDENTIAL_VERSION=3
 grep -q 'generation 3 already applied and authenticating (no rewrite)' "$work/after-rotate.log" \
   || fail 'a converged generation must not rotate again'
@@ -546,7 +496,6 @@ grep -q 'generation 3 already applied and authenticating (no rewrite)' "$work/af
   || fail 'a converged generation must not rewrite the credential'
 pass 'second reconcile after rotation: no rewrite, ready'
 
-# Failed rotated login: readiness is false and the marker must not advance.
 expect_fail 'a failed rotated login' 'Registry authentication failed' \
   install_cmd TCR_CREDENTIAL_VERSION=4 STUB_LOGIN_FAILS=true
 [[ "$(cat "$marker")" == 3 ]] || fail 'a failed login must not advance the marker'
@@ -555,9 +504,6 @@ expect_fail 'a failed rotated login' 'Registry authentication failed' \
 rm -f "$state/valid_auth"
 pass 'failed rotated login: marker stays, credential unchanged'
 
-# Failed post-install verification: the login succeeds with a credential the registry
-# does not (yet) accept for pulls. The run must fail, restore the previous credential
-# byte for byte, and keep the marker on the old generation.
 THIRD_PASSWORD="fixture-unaccepted-not-a-real-password"
 third_auth="$(python3 -c 'import base64,sys; print(base64.b64encode(("%s:%s" % (sys.argv[1], sys.argv[2])).encode()).decode())' "$FAKE_USERNAME" "$THIRD_PASSWORD")"
 printf '%s\n' "$new_auth" > "$state/valid_auth"
@@ -574,7 +520,6 @@ fi
 rm -f "$state/valid_auth"
 pass 'failed post-install verification: rollback, marker stays'
 
-# Verify refuses a valid credential whose recorded generation is behind.
 printf '%s' 2 > "$marker"
 chmod 600 "$marker"
 expect_fail 'a stale generation marker' 'not the reviewed generation 3' verify_cmd TCR_CREDENTIAL_VERSION=3
@@ -582,7 +527,6 @@ printf '%s\n' 3 > "$marker"
 chmod 600 "$marker"
 pass 'a working credential with a stale marker is never reported ready'
 
-# An unsafe existing credential is an incident, and is never silently replaced.
 chmod 644 "$root_config"
 expect_fail 'a world-readable credential' 'must be mode 600' install_cmd TCR_CREDENTIAL_VERSION=6
 chmod 600 "$root_config"
@@ -597,11 +541,8 @@ chmod 600 "$root_config"
 expect_fail 'an unsupported credential store' 'unsupported root Docker configuration keys' install_cmd TCR_CREDENTIAL_VERSION=6
 pass 'unsafe credential state is refused, never silently replaced'
 
-## --- I. rotation, cleanup and leakage ----------------------------------------
 
 rm -f "$root_config" "$marker"
-# The currently reviewed secret is accepted for pulls, so a fresh provisioning is
-# verifiable exactly as it is in production.
 printf '%s\n' "$new_auth" > "$state/valid_auth"
 expect_ok 'a provisioning run' "$work/provision.log" install_cmd TCR_CREDENTIAL_VERSION=6
 grep -q 'provisioning generation 6' "$work/provision.log" || fail 'a missing credential must be provisioned'
@@ -621,16 +562,11 @@ fi
   || fail 'only the container snapshot and the generation marker may persist in the state root'
 pass 'rotation works, no credential material persists outside the root Docker config'
 
-# Every later section verifies the host in its converged state, so the reviewed
-# generation stays at the one the host actually applied.
 export TCR_CREDENTIAL_VERSION=6
 
-## --- J. private image access -------------------------------------------------
 
 expect_fail 'a failed private manifest' 'cannot resolve the private production image' verify_cmd STUB_MANIFEST_FAILS=true
 expect_fail 'a failed private pull' 'cannot pull the private production image' verify_cmd STUB_PULL_FAILS=true
-# A credential that the registry no longer accepts: the root context is present but
-# unauthenticated, so readiness must be refused.
 printf 'not-the-accepted-entry\n' > "$state/valid_auth"
 expect_fail 'an unauthenticated root context' 'cannot resolve the private production image' verify_cmd
 printf '%s\n' "$new_auth" > "$state/valid_auth"
@@ -638,7 +574,6 @@ expect_ok 'a working private image path' "$work/verify.log" verify_cmd
 grep -qxF 'private-image-pull: PASS' "$work/verify.log" || fail 'the pull proof must be reported'
 pass 'authenticated private image access (manifest + pull), unauthenticated refused'
 
-## --- K. readiness token gating ----------------------------------------------
 
 expect_fail 'an unhealthy Docker daemon' 'Docker daemon is not healthy' verify_cmd STUB_DOCKER_BROKEN=true
 rm -f "$state/compose_present"
@@ -648,8 +583,6 @@ mv "$daemon_config" "$daemon_config.hidden"
 expect_fail 'a missing daemon config' 'not the reviewed state' verify_cmd
 mv "$daemon_config.hidden" "$daemon_config"
 write_daemon "$(printf '{\n  "registry-mirrors": [\n    "%s"\n  ]\n}' "$MIRROR")"
-# The file may match the reviewed state while the *running* daemon still reports a
-# different set (it only reads daemon.json at start): readiness must refuse that.
 expect_fail 'a daemon that does not report the reviewed mirror' 'does not report the reviewed mirror' \
   verify_cmd STUB_MIRRORS_OVERRIDE='["https://drift.invalid"]'
 chmod 664 "$daemon_config"
@@ -658,7 +591,6 @@ chmod 644 "$daemon_config"
 expect_ok 'a restored worker' "$work/restored.log" verify_cmd
 pass 'readiness requires daemon health, Compose, the reviewed mirror and safe modes'
 
-## --- L. Periphery regression -------------------------------------------------
 
 rm -f "$state/unit_active"
 expect_fail 'an inactive Periphery unit' 'unit is not active' verify_cmd
@@ -671,7 +603,6 @@ expect_fail 'an inbound Periphery listener' 'outbound-only agent' verify_cmd STU
 expect_ok 'a healthy Periphery' "$work/periphery.log" verify_cmd
 pass 'Periphery regression (active, enabled, outbound link, no :8120 listener)'
 
-## --- M. WireGuard regression -------------------------------------------------
 
 expect_fail 'a missing WireGuard interface' 'No WireGuard interface is present' verify_cmd STUB_NO_WG=true
 expect_fail 'a missing reviewed address' 'reviewed WireGuard address' verify_cmd STUB_WG_ADDR_MISSING=true
@@ -684,22 +615,15 @@ write_profile
 expect_ok 'a healthy WireGuard' "$work/wireguard.log" verify_cmd
 pass 'WireGuard regression (interface, reviewed address, endpoint reachability)'
 
-## --- N. no workload created --------------------------------------------------
 
 : > "$state/new_container"
 expect_fail 'a container created during reconcile' 'running container set changed' verify_cmd
 rm -f "$state/new_container"
-# An unrelated container that was already running before the reconcile is not a
-# scope violation: readiness compares against the set the reconcile itself found.
 printf 'existing-container\n' > "$state/containers"
 expect_ok 'an unrelated running container' "$work/unrelated.log" reconcile_cmd
 rm -f "$state/containers"
 pass 'the worker never creates a workload, and never disturbs an existing one'
 
-## --- O. architectural boundary ----------------------------------------------
-#
-# The worker owns host Docker prerequisites only. These assertions are structural:
-# they fail if the lifecycle ever grows a second responsibility.
 
 for script in lib.sh install.sh verify.sh reconcile.sh staging-root.sh; do
   path="$ROOT/$script"
@@ -718,8 +642,6 @@ for script in lib.sh install.sh verify.sh reconcile.sh staging-root.sh; do
     fail "$script must never write Periphery state"
   fi
 done
-# Scanned over the lifecycle scripts only: this fixture necessarily contains the
-# patterns it looks for.
 for script in lib.sh staging-root.sh install.sh verify.sh reconcile.sh read-target-profile.sh; do
   path="$ROOT/$script"
   if grep -Fq -- '--password ' "$path"; then
@@ -731,13 +653,6 @@ for script in lib.sh staging-root.sh install.sh verify.sh reconcile.sh read-targ
 done
 pass 'architectural boundary (no Komodo/Caddy/Periphery/WireGuard/workload ownership)'
 
-## --- P. sudo registry-contract handoff ---------------------------------------
-#
-# Production enters reconcile.sh as the non-root SSH account. That OUTER sudo is
-# the authoritative privilege boundary: if it drops desired-state values,
-# install.sh can never recover them. install.sh keeps the same full contract for
-# standalone use; verify.sh preserves only its three non-secret desired-state
-# inputs because it reads the credential from root's Docker store.
 assert_preserve_contract() {
   local path="$1" label="$2"; shift 2
   local code loop required

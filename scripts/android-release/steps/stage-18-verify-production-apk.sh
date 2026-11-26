@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 25: Verify production APK (HTTP 200 + non-empty + SHA matches)).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 APK_NAME="$STEP_ARTIFACT_APKNAME"
 EXPECTED_SHA="$STEP_ARTIFACT_SHA256"

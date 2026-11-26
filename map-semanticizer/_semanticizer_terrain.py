@@ -113,7 +113,6 @@ def sample_height(
     x: float,
     y: float,
 ) -> float:
-    # DAVA maps world positions to sample coordinates with x / size and y / size.
     sx = (x - bounds[0]) / (bounds[3] - bounds[0]) * terrain.size
     sy = (y - bounds[1]) / (bounds[4] - bounds[1]) * terrain.size
     sx = max(0.0, min(terrain.size - 1.0, sx))

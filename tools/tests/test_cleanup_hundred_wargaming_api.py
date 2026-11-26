@@ -54,8 +54,6 @@ class ResumableApplyDb:
         if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE submission_id" in sql:
             return [] if self.deleted else [("b" * 64,)]
         if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256" in sql:
-            # Before deletion the hash is still referenced by the WG evidence,
-            # but the production query must exclude this batch's submission ID.
             return [] if "submission_id NOT IN" in sql else ([] if self.deleted else [("b" * 64,)])
         if "SELECT replay_hash FROM hall_of_fame_record" in sql:
             return []
@@ -181,8 +179,6 @@ class CleanupToolTest(unittest.TestCase):
                 if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE submission_id" in sql:
                     return [] if self.deleted else [("b" * 64,), (self.shared,)]
                 if "SELECT sha256 FROM hundred_battle_replay_evidence WHERE sha256" in sql:
-                    # The shared hash is the MANUAL reference. A query that fails
-                    # to exclude the WG batch would incorrectly return both hashes.
                     return [(self.shared,)] if "submission_id NOT IN" in sql else (
                         [] if self.deleted else [("b" * 64,), (self.shared,)])
                 return super().query(sql, params)

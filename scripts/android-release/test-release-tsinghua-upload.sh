@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Mocked-HTTP regression matrix for stage-17 Tsinghua Cloud offload.
-# Exercises the real stage script; no network access or credentials are used.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

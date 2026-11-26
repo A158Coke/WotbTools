@@ -10,9 +10,6 @@ if [ -z "${COS_SECRET_ID:-}" ] || [ -z "${COS_SECRET_KEY:-}" ] || [ -z "${COS_BU
 fi
 REGION="${COS_REGION:-ap-shanghai}"
 export REGION
-# 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
-# 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。完整哈希锁定（--require-hashes）
-# 需要按平台维护锁文件，属后续工作。
 python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
 python3 - <<'PY'
 import os

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """scripts/fetch-agent-wasm.sh 下载器的故障注入测试（本地 HTTP fixture，不访问上游）。
 
 每个用例在临时目录中复制 `scripts/fetch-agent-wasm.sh` 与 `scripts/agent-wasm-artifact.py`，
@@ -27,8 +26,7 @@ import tempfile
 import threading
 import zipfile
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent  # scripts/
-# Windows 上 subprocess 的 "bash" 会先命中 System32 的 WSL 启动器，故按 PATH 解析 Git Bash
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "bash"
 REF = "a" * 40
 RELEASE = "v0.0.1"
@@ -38,7 +36,7 @@ OWNER_REPO = "o/n"
 META_PATH = f"/api/repos/{OWNER_REPO}/releases/tags/{RELEASE}"
 ASSET_PATH = f"/api/repos/{OWNER_REPO}/releases/assets/{ASSET_ID}"
 BLOB_PATH = "/blob/signed"
-DIRECT_PATH = f"/{OWNER_REPO}/releases/download/{RELEASE}/{ASSET}"  # 旧直链：不得被访问
+DIRECT_PATH = f"/{OWNER_REPO}/releases/download/{RELEASE}/{ASSET}"
 SIG_SECRET = "SIGSECRET123"
 
 
@@ -96,7 +94,7 @@ class Fixture:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def log_message(self, *args):  # 静默
+            def log_message(self, *args):
                 pass
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -116,7 +114,7 @@ def closed_port_url() -> str:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    return f"http://127.0.0.1:{port}"  # 已关闭，连接必然被拒绝
+    return f"http://127.0.0.1:{port}"
 
 
 def run_case(name: str, routes_fn=None, *, sha: str | None = None, api_closed: bool = False,
@@ -194,14 +192,14 @@ def ok_routes(base_closed: str, **overrides) -> dict[str, list[dict]]:
         META_PATH: [R(200, meta_json())],
         ASSET_PATH: [R(302, location="{base}" + BLOB_PATH + f"?X-Amz-Signature={SIG_SECRET}")],
         BLOB_PATH: [R(200, GOOD_ZIP)],
-        DIRECT_PATH: [R(200, GOOD_ZIP)],  # 若误回退到直链会被计数
+        DIRECT_PATH: [R(200, GOOD_ZIP)],
     }
     routes.update(overrides)
     return routes
 
 
 def main() -> int:
-    truncated = b"x" * 9  # 声明 100 字节，只发 9 字节后断开
+    truncated = b"x" * 9
 
     run_case(
         "api-200-correct-sha",
@@ -230,7 +228,7 @@ def main() -> int:
     run_case(
         "302-target-refused-then-ok",
         lambda closed: ok_routes(closed, **{ASSET_PATH: [
-            R(302, location=closed + f"/x?X-Amz-Signature={SIG_SECRET}"),  # 跳转目标拒绝连接
+            R(302, location=closed + f"/x?X-Amz-Signature={SIG_SECRET}"),
             R(302, location="{base}" + BLOB_PATH + f"?X-Amz-Signature={SIG_SECRET}"),
         ]}),
         expect_ok=True,

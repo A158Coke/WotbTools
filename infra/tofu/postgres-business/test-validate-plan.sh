@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Deterministic plan-safety policy contract for the Business PostgreSQL root.
-# It needs no database: tofu is stubbed to replay fixture plan JSON.
 set -Eeuo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,7 +52,6 @@ assert_rejects unknown-resource
 assert_rejects application-password-rotation --require-no-changes
 assert_rejects initial-create --require-no-changes
 
-# A completely clean follow-up plan must be accepted when no changes occurred.
 write_plan clean '{"resource_changes":[{"address":"postgresql_role.control_api","change":{"actions":["no-op"]}},{"address":"postgresql_database.wotb","change":{"actions":["no-op"]}},{"address":"postgresql_grant.control_api_database_access","change":{"actions":["no-op"]}}]}'
 assert_passes clean --require-no-changes
 

@@ -32,7 +32,6 @@ WOTB_TX_DEPLOY_LOCK_FILE="$LOCK" bash "$WRAPPER" bash -c '
   flock -n 9
 '
 
-# Once the wrapped command exits, the caller can acquire the same lock immediately.
 flock -n "$LOCK" -c true || fail "wrapper leaked the TX deploy lock after command exit"
 
 (

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Resolve the split Android release workflows into the original logical model.
 
 The release protocol lives in one orchestrator plus three workflow_call

@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Run immediately before publishing an application image as latest.
-#
-# Exit codes (the caller decides what to do with them):
-#   0  publish: source SHA is current main, or main advanced without touching this
-#      service's PRODUCTION_INPUT_PATHS (the image would be byte-for-byte the same build).
-#   10 superseded: main advanced AND changed this service's inputs. Skip latest/deploy
-#      without failing — the newer commit touched these paths, so its own run publishes.
-#   *  real error (bad SHA, checkout mismatch, fetch failure, ...).
 set -euo pipefail
 
 SUPERSEDED=10

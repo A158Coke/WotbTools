@@ -1,8 +1,3 @@
-# Yecao runtime. This host owns exactly two responsibilities: the AI review service (`ai-service`)
-# and the shared observability stack. The business runtime (`business-api`), its PostgreSQL,
-# Keycloak, its PostgreSQL, and the public frontend run on TX and are deployed by
-# deploy/tx/deploy.sh; none of them is declared here. Replay parsing runs in the browser, so there
-# is no parser execution plane, message broker, or object store on either host.
 x-logging: &default-logging
   driver: json-file
   options:
@@ -29,7 +24,6 @@ services:
     logging: *default-logging
     mem_limit: 1536m
     cpus: 1.5
-  # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
   dev-metrics-exporter:
     image: ${DEV_METRICS_IMAGE:-ghcr.io/a158coke/dev-metrics-exporter:unconfigured}
     container_name: dev-metrics-exporter
@@ -91,8 +85,6 @@ services:
       - ./deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
       - loki_data:/loki
     ports:
-      # WireGuard-only ingestion endpoint for the TX-side alloy-tx log shipper.
-      # Never published publicly; same class as the Grafana 10.20.0.2:3000 bind.
       - "10.20.0.2:3100:3100"
     restart: unless-stopped
     logging: *default-logging
@@ -126,8 +118,6 @@ services:
       - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      # WireGuard-only bind consumed by the TX Caddy gateway (monitor.wotbtools.com
-      # reverse proxy) and by the host-local Grafana Tofu root. Never public.
       - "10.20.0.2:3000:3000"
     depends_on:
       - prometheus

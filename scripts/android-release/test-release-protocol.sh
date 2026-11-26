@@ -2,7 +2,6 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
-# Keep the repair job's wall-clock limits in sync with stage-17's write guard.
 python3 - "$ROOT" <<'PY'
 import re
 import sys
@@ -36,10 +35,6 @@ assert 0 < download_seconds < public["timeout-minutes"] * 60
 print("Repair job budgets cover checkout, origin transfer and final public verification.")
 PY
 
-# 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
-#（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
-# 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin
-# absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。顺序：classify → 清华 → seed×2。
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path
@@ -89,9 +84,6 @@ assert order.index(classify) < order.index(tsinghua) < order.index(seeds[0]["nam
     < order.index(seeds[1]["name"]) < order.index(verify), order
 PY
 
-# 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 由自动续跑或手动 recovery 触发、
-# 绝不重建 APK，并且必须在写 manifest 之前证明四件事（staged 身份 / Keycloak client /
-# bundled frontend / API / assets / minSupported 覆盖 cutover）。
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path

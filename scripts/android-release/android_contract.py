@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Deterministic Android version and Native Bridge contract gates."""
 
 from __future__ import annotations
@@ -90,7 +89,6 @@ def field_breaking(prefix: str, base: dict, head: dict, breaking: list[str]) -> 
         if old.get("type") != new.get("type"):
             breaking.append(f"changed type {prefix}.{name}: {old.get('type')} -> {new.get('type')}")
         if old.get("required", False) and not new.get("required", False):
-            # Relaxing a requirement is backward compatible.
             continue
         if not old.get("required", False) and new.get("required", False):
             breaking.append(f"made field required {prefix}.{name}")
@@ -101,9 +99,6 @@ def field_breaking(prefix: str, base: dict, head: dict, breaking: list[str]) -> 
 
 def contract_breaking_changes(base: dict, head: dict) -> list[str]:
     breaking: list[str] = []
-    # Bridge v2 returns the resource URI in pending metadata. The reviewed local
-    # runtime adds an origin while retaining both production compatibility origins;
-    # it does not change the RPC or resource path/header/method semantics.
     local_origin_addition = (
         base.get("bridgeVersion") == head.get("bridgeVersion") == 2
         and base.get("origin") == "https://wotbtools.com"
@@ -177,8 +172,6 @@ def auth_surface(contract: dict) -> tuple[list[str], list[str], list[str]]:
 
 def validate_native_sources(contract: dict, paths: list[str]) -> None:
     source = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
-    # Resolve the actual canonical Kotlin reference, rather than demanding that
-    # Native duplicate a full URL literal in ReplayIntentHandler.
     local = re.search(r'const\s+val\s+LOCAL_APP_ORIGIN\s*=\s*"([^"]+)"', source)
     resource_source = source
     if local:
@@ -299,12 +292,9 @@ def command_gate(args: argparse.Namespace) -> None:
     print(json.dumps(result, sort_keys=True))
 
 
-# 已审查的 Android 资产 origin（docs/operations/agent-asset-origin.md）。资产源历经
-# 两代配置，publish 旧 staged 候选时必须按其 staged 时的取值放行——main 前进不得作废
-# 已 staged 的候选；不在此白名单内的 origin 一律拒绝。
 REVIEWED_ASSET_ORIGINS = (
-    "/agent-assets",  # native-proxy：AgentAssetProxy 原生直连对象存储（2.1.7+）
-    "https://wotbtools.com/agent-assets",  # legacy-gateway：生产网关反代（≤ 2.1.6 已 staged 候选）
+    "/agent-assets",
+    "https://wotbtools.com/agent-assets",
 )
 
 REVIEWED_REMOTE_ASSET_ORIGINS = {
@@ -350,12 +340,9 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
         expected = {
             "schemaVersion": 2, "target": "android", "buildCommit": source,
             "runtimeOrigin": contract["origin"], "apiOrigin": "https://wotbtools.com",
-            # assetOrigin 单独校验（见 REVIEWED_ASSET_ORIGINS）：历经两代已审查配置，
-            # publish 旧候选时必须按其 staged 时的配置放行。
             "entry": "index.html",
             "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
         }
-        # Bridge v3：本机 loopback origin（LocalRuntimeServer，固定端口）；只接受 127.0.0.1 字面量。
         if not re.fullmatch(r"http://127\.0\.0\.1:[1-9][0-9]{0,4}", contract["origin"]):
             fail("APK runtime contract must use the trusted local origin")
         for key, value in expected.items():
@@ -454,7 +441,7 @@ def command_cors(args: argparse.Namespace) -> None:
     headers = {}
     for line in Path(args.headers).read_text(encoding="utf-8").splitlines():
         if line.startswith("HTTP/"):
-            headers = {}  # curl may include an intermediary CONNECT response.
+            headers = {}
         elif ":" in line:
             name, value = line.split(":", 1)
             name = name.lower().strip()

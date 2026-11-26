@@ -1,6 +1,3 @@
-# Prometheus 配置 — WotBTools 观测栈
-# 抓取业务服务、主机 exporter 以及观测栈自身；所有 target 都保持低基数 job 名称。
-# 数据保留 7 天，磁盘上限 2GiB（见 docker-compose 的 storage.tsdb.* 参数）。
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -13,10 +10,6 @@ scrape_configs:
         labels:
           service: dev-metrics-exporter
 
-  # The business runtime (business-api) runs on TX and publishes its management
-  # port on the TX WireGuard address only; Prometheus dials it across the
-  # existing TX<->Yecao WireGuard link. The job name stays `wotb-backend` so all
-  # dashboard PromQL and the verification contract keep their stable identity.
   - job_name: wotb-backend
     metrics_path: /actuator/prometheus
     static_configs:
@@ -25,9 +18,6 @@ scrape_configs:
         labels:
           service: wotb-backend
 
-  # AI Review executes as an independent Yecao runtime. Scrape it over the
-  # shared wotb_internal Docker network; do not route local telemetry through
-  # the host WireGuard-published port.
   - job_name: ai-service
     metrics_path: /actuator/prometheus
     static_configs:

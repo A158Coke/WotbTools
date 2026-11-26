@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# TX-local Keycloak OpenTofu ownership and production-safety contract. Reads
-# repository files only, so it runs in the fast CI contract stage.
-#
-# Responsibility split (do not duplicate the other layers here):
-#   tofu fmt / tofu validate / plan  -> syntax, schema and provider-legal fields
-#   deploy/test-keycloak-tofu.sh     -> real fresh-realm apply + Admin API smoke
-#   deploy/test-keycloak-runtime.sh  -> real Keycloak container contract
-# This file only pins what native tooling considers valid but would still break
-# the project's privilege boundary or production safety. It also replays fixture
-# plan JSON through validate-plan.sh, so the destructive-change policy is tested
-# without a Keycloak and without touching production state.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -395,11 +384,6 @@ assert "echo \"$KEYCLOAK_ADMIN_CLIENT_SECRET\"" not in apply_script
 print("TX-local Keycloak ownership and production-safety contract OK")
 PY
 
-# --- the plan guard audits destruction, it is not a no-deletion rule ---------
-# A reviewed plan that retires realm roles must pass the guard, while deleting
-# the realm, an authentication client or an identity provider must still fail
-# closed through the rule that owns it. `tofu show -json` is stubbed with fixture
-# plan JSON, so this needs neither a Keycloak nor network access.
 guard_work="$(mktemp -d)"
 trap 'rm -rf -- "$guard_work"' EXIT
 mkdir -p "$guard_work/bin"
@@ -431,8 +415,6 @@ assert_guard_rejects() {
     echo "ERROR: $name must be rejected by the Keycloak plan guard." >&2
     exit 1
   fi
-  # A fixture that merely crashes the validator must never count as a rejection,
-  # and each fixture must be refused by the rule it is written to cover.
   grep -Fq -- "$expected" <<< "$output" \
     || { echo "ERROR: $name was not rejected by the expected rule." >&2; printf '%s\n' "$output" >&2; exit 1; }
 }
@@ -443,8 +425,6 @@ readonly MASS_REPLACEMENT_RULE="unexpected mass resource replacement"
 readonly ANDROID_ACTIONS_RULE="only the plan that creates or settles this client is approved"
 readonly ANDROID_MAPPER_RULE="deletes or replaces an Android protocol mapper"
 
-# The production Boost retirement shape: two roles leave desired state, the
-# surviving roles are no-ops, and nothing else moves.
 write_guard_plan boost-role-retirement '{"resource_changes":[
   {"address":"keycloak_role.realm[\"wotbtools-admin\"]","change":{"actions":["no-op"]}},
   {"address":"keycloak_role.realm[\"wotbtools-user\"]","change":{"actions":["no-op"]}},
@@ -452,7 +432,6 @@ write_guard_plan boost-role-retirement '{"resource_changes":[
   {"address":"keycloak_role.realm[\"booster\"]","change":{"actions":["delete"]}},
   {"address":"keycloak_role.realm[\"boost-manager\"]","change":{"actions":["delete"]}}
 ]}'
-# Retiring any other role is the same legitimate desired-state transition.
 write_guard_plan other-role-retirement \
   '{"resource_changes":[{"address":"keycloak_role.realm[\"HoF-admin\"]","change":{"actions":["delete"]}}]}'
 write_guard_plan realm-delete \
@@ -464,13 +443,10 @@ write_guard_plan idp-delete \
 write_guard_plan malformed-json '{"resource_changes":'
 write_guard_plan missing-resource-changes '{"format_version":"1.0"}'
 write_guard_plan wrong-resource-changes-type '{"resource_changes":{}}'
-# Dropping the role rule must not weaken the identity rules in the same plan.
 write_guard_plan role-and-idp-delete '{"resource_changes":[
   {"address":"keycloak_role.realm[\"booster\"]","change":{"actions":["delete"]}},
   {"address":"keycloak_oidc_identity_provider.qq","change":{"actions":["delete"]}}
 ]}'
-# The mass-replacement cap is a different invariant: it bounds unexpected
-# recreation of resources the guard does not pin individually.
 write_guard_plan mass-replacement '{"resource_changes":[
   {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"display_name\"]","change":{"actions":["delete","create"]}},
   {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"region\"]","change":{"actions":["delete","create"]}},
@@ -478,9 +454,6 @@ write_guard_plan mass-replacement '{"resource_changes":[
   {"address":"keycloak_openid_user_attribute_protocol_mapper.wotbtools_web[\"nickname\"]","change":{"actions":["delete","create"]}}
 ]}'
 
-# --- Android client contract (the native PKCE client) ------------------------
-# These fixtures are built as JSON with jq because the same body has to be reused
-# across four cases and a fifth copy of it would only invite drift.
 android_mapper_entry() {
   local key="$1" name="$2" actions="$3"
   jq -nc --arg address "keycloak_openid_user_attribute_protocol_mapper.wotbtools_android[\"$key\"]" \
@@ -533,10 +506,6 @@ write_guard_plan android-client-pkce-plain "$(jq -nc --argjson client "$(android
 write_guard_plan android-client-wildcard-redirect "$(jq -nc --argjson client "$(android_client_json '["create"]')" \
   --argjson mappers "$(android_mappers_json '["create"]')" \
   '{resource_changes: ([$client | .change.after.valid_redirect_uris += ["https://*.wotbtools.com/*"]] + $mappers)}')"
-# The post-apply second plan `deploy/tx/keycloak-tofu.sh` requires to be all no-op:
-# `resource_changes` is not diff-only, so a settled client and its mappers appear
-# here as no-ops carrying their full `after` state. This must pass - requiring a
-# create/non-no-op action would block every future Keycloak deploy forever.
 write_guard_plan android-client-all-noop "$(jq -nc --argjson client "$(android_client_json '["no-op"]')" \
   --argjson mappers "$(android_mappers_json '["no-op"]')" '{resource_changes: ([$client] + $mappers)}')"
 write_guard_plan android-client-delete "$(jq -nc --argjson client "$(android_client_json '["delete"]' | jq -c '.change.after = null')" \
@@ -549,11 +518,6 @@ write_guard_plan android-mapper-delete "$(jq -nc --argjson client "$(android_cli
   --argjson mappers "$(android_mappers_json '["create"]' | jq -c '.[0].change.actions = ["delete"]')" \
   '{resource_changes: ([$client] + $mappers)}')"
 
-# --- controlled security event logging (public-security self-assessment) ------
-# 合规开关的反向用例：关掉 events / admin events、打开 admin event details、摘掉
-# jboss-logging listener、从清单里拿掉 LOGIN，或者整份声明被删除/替换，都必须在 apply
-# 之前被拦下。同时必须保留 all-no-op 这个正向用例——落定后的第二个 plan 全是 no-op，
-# 如果守卫要求「必须有变更」，以后每次 Keycloak 部署都会被自己的守卫卡住。
 realm_events_json() {
   jq -nc --argjson actions "$1" '{
     address: "keycloak_realm_events.wotbtools",

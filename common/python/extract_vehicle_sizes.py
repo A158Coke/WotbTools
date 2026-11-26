@@ -44,7 +44,6 @@ MODELS_URL = "https://api.blitzkit.app/definitions/models.pb"
 BBOX_FIELD = 6
 USER_AGENT = "WotbTools-vehicle-sizes/1"
 
-# 消毒范围（米）：BlitzKit 的 bbox 已经是车体尺寸，越界值说明结构变了而不是出了辆怪车。
 LENGTH_RANGE = (2.0, 16.0)
 WIDTH_RANGE = (0.5, 8.0)
 

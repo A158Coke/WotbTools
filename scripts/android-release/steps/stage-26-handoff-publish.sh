@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 45: Hand off to the guarded publish phase).
-# Behavior is preserved; edit this script, not the workflow YAML.
 {
   echo "### stage complete — production version.json untouched"
   echo ""

@@ -1,7 +1,3 @@
-# K7A: the TX2 production-worker owner is a separate lifecycle from the Periphery
-# agent lifecycle and from every workload owner. It owns host Docker prerequisites
-# only (Compose, the reviewed daemon mirror, the root registry credential), so its
-# inputs must not reach - and must not be reachable from - any workload owner.
 worker_workflow = load(workflow_dir / "production-worker.yml")
 worker_events = worker_workflow.get("on", worker_workflow.get(True, {}))
 assert worker_events["push"]["branches"] == ["main"]
@@ -14,11 +10,8 @@ assert set(worker_events["push"]["paths"]) == {
 worker_jobs = worker_workflow["jobs"]
 assert set(worker_jobs) == {"reconcile_tx2"}, sorted(worker_jobs)
 worker_job = worker_jobs["reconcile_tx2"]
-# A host mutating workflow serializes with every other TX mutation through the shared maintenance queue.
 assert worker_workflow["concurrency"]["group"] == "production-maintenance"
 assert worker_workflow["concurrency"]["cancel-in-progress"] == "false"
-# One owner, one host: the worker owns no other domain, and no workload owner's
-# artifact may appear inside it.
 worker_text = json.dumps(worker_workflow, ensure_ascii=False)
 for forbidden in (
     "infra/komodo", "resource-sync", "komodo-", "CADDY_", "TX_BACKEND_UPSTREAM",
@@ -28,10 +21,8 @@ for forbidden in (
 ):
     assert forbidden not in worker_text, f"the production-worker owner must not own {forbidden}"
 worker_steps = {step.get("name"): step for step in worker_job["steps"]}
-# Host parameters come from the reviewed profile, exactly like the Periphery owner.
 assert worker_steps["Read the TX2 worker profile"]["env"]["TARGET"] == "tx2"
 assert "read-target-profile.sh" in worker_steps["Read the TX2 worker profile"]["run"]
-# TX2's own SSH boundary, and only that host's.
 for secret in ("TX2_VPS_HOST", "TX2_VPS_USER", "TX2_VPS_PORT", "TX2_VPS_SSH_KEY"):
     assert secret in json.dumps(worker_job, ensure_ascii=False), secret
 worker_ssh_steps = [step for step in worker_job["steps"]
@@ -44,7 +35,6 @@ for staging_name in ("Prepare safe TX2 worker staging root", "Cleanup staged TX2
     assert staging_step["with"]["script_path"] == "deploy/production-worker/staging-root.sh", staging_name
     assert staging_step["env"]["WORKER_STAGING_ROOT"] == "${{ steps.target.outputs.staging_root }}", staging_name
 assert worker_steps["Cleanup staged TX2 worker inputs"]["if"] == "always()"
-# Only this owner's reviewed inputs are staged: fixtures and every other owner stay in CI.
 staged = " ".join(worker_steps["Stage exact worker inputs on TX2"]["with"]["source"].split())
 staged_files = {part for part in staged.replace(" ", "").split(",") if part}
 assert staged_files == {
@@ -56,15 +46,11 @@ assert staged_files == {
     "deploy/production-worker/read-target-profile.sh",
     "deploy/production-worker/targets/tx2/target.env",
 }, sorted(staged_files)
-# The reconcile runs the staged lifecycle under the host lock and asserts the
-# host-scoped readiness token instead of trusting the exit status alone.
 worker_reconcile = worker_steps["Reconcile the TX2 production worker under the TX2 host lock"]
 assert 'bash "$stage/deploy/production-worker/reconcile.sh"' in worker_reconcile["with"]["script"]
 assert 'grep -qx "$WORKER_READY_TOKEN" "$log"' in worker_reconcile["with"]["script"]
 assert "TX2_PRODUCTION_WORKER_READY" not in json.dumps(worker_workflow, ensure_ascii=False), \
     "the readiness token must come from the reviewed host profile, never inlined"
-# The registry credential is read from repository-level Actions secrets and handed over
-# through the SSH action's environment: never inline, never an argument, never a file.
 worker_envs = worker_reconcile["with"]["envs"].split(",")
 for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_CREDENTIAL_VERSION", "TCR_USERNAME", "TCR_PASSWORD"):
     assert name in worker_envs, name
@@ -72,14 +58,9 @@ assert worker_reconcile["env"]["TCR_USERNAME"] == "${{ secrets.TCR_USERNAME }}"
 assert worker_reconcile["env"]["TCR_PASSWORD"] == "${{ secrets.TCR_PASSWORD }}"
 assert worker_reconcile["env"]["TCR_REGISTRY"] == "${{ vars.TCR_REGISTRY }}"
 assert worker_reconcile["env"]["TCR_NAMESPACE"] == "${{ vars.TCR_NAMESPACE }}"
-# The credential generation is the authoritative, non-secret convergence input: it must
-# come from a reviewed repository variable, so a rotation can never be ignored just
-# because the previous credential still authenticates.
 assert worker_reconcile["env"]["TCR_CREDENTIAL_VERSION"] == "${{ vars.TCR_CREDENTIAL_VERSION }}"
 assert "secrets.TCR_CREDENTIAL_VERSION" not in json.dumps(worker_workflow, ensure_ascii=False)
 assert "--password" not in json.dumps(worker_workflow, ensure_ascii=False)
-# Ownership is mutual: worker inputs trigger only the worker owner, and no workload
-# owner's inputs can reach the worker lifecycle.
 assert affected("deploy/production-worker/install.sh") == {"production_worker"}
 assert affected(".github/workflows/production-worker.yml") == {"production_worker"}
 assert affected("deploy/production-worker/targets/tx2/target.env") == {"production_worker"}
@@ -89,17 +70,12 @@ assert not (affected("deploy/production-worker/install.sh")
 for workload_input in (".github/workflows/frontend.yml", "deploy/tx/Caddyfile",
                        "deploy/tx/business-api.compose.yml", "infra/komodo/resources/servers.toml"):
     assert "production_worker" not in affected(workload_input), workload_input
-# The worker never predicts or reads workload placement, and never expands the K4.1
-# declarative Komodo scope (Servers + ResourceSync only; Stacks arrive in K7B).
 for owner_path in ("deploy/production-worker/install.sh", "deploy/production-worker/verify.sh",
                    "deploy/production-worker/reconcile.sh", "deploy/production-worker/lib.sh"):
     worker_script = (root / owner_path).read_text(encoding="utf-8")
     for forbidden in ("infra/komodo", "resource-sync", "CADDY_", "TX_BACKEND_UPSTREAM",
                       "periphery.service", "wg set", "docker compose up"):
         assert forbidden not in worker_script, (owner_path, forbidden)
-# The worker serializes through the host's existing mutation lock. A second, worker-only
-# lock would let it race Periphery and any future workload, so the lifecycle must take
-# the deploy-owned lock and must not name or create another one.
 for lock_path in ("deploy/production-worker/install.sh", "deploy/production-worker/reconcile.sh"):
     lock_script = (root / lock_path).read_text(encoding="utf-8")
     assert "require_host_lock" in lock_script, lock_path
@@ -109,9 +85,6 @@ for lock_path in ("deploy/production-worker/install.sh", "deploy/production-work
                       'install -d "$WORKER_LOCK_ROOT', ' > "$WORKER_LOCK_ROOT/.deploy.lock'):
         assert forbidden not in lock_script, (lock_path, forbidden)
     assert lock_script.count(".deploy.lock") <= 2, lock_path
-# No tracked file may carry a Docker registry credential. The worker materialises it on
-# the host from repository-level Actions secrets, so the repository stays credential-free; only
-# the owner's own fixture may contain a deliberately fake credential document.
 for tracked in sorted(root.rglob("*")):
     if not tracked.is_file() or ".git" in tracked.parts:
         continue
@@ -120,16 +93,11 @@ for tracked in sorted(root.rglob("*")):
     text = tracked.read_text(encoding="utf-8", errors="ignore")
     if '"auths"' in text and '"auth":' in text:
         relative = tracked.relative_to(root).as_posix()
-        # The owner's fixture carries a deliberately fake credential document, and this
-        # scanner necessarily contains the markers it looks for.
         assert relative in {
             "deploy/production-worker/test-production-worker.sh",
             "scripts/ci/test-workflow-contract.sh",
             "scripts/ci/test-workflow-contract-extra.py",
         }, f"a Docker credential must never be committed: {relative}"
-    # A registry credential assigned in a tracked file (a Compose file, a Komodo
-    # resource, the Periphery config, a tracked env file) is the same violation as a
-    # committed credential document: the worker reads it from the protected environment.
     for assignment in re.finditer(
         r"^\s*(?:export\s+)?(TCR_PASSWORD|TCR_USERNAME|DOCKER_PASSWORD)\s*[=:]\s*[\"']?([^\s\"']+)",
         text, re.MULTILINE,
@@ -138,8 +106,6 @@ for tracked in sorted(root.rglob("*")):
         value = assignment.group(2)
         assert relative.startswith("deploy/production-worker/test-") or value.startswith("$"), \
             f"a registry credential must never be assigned in the repository: {relative}"
-# Every sudo host maps only its own onboarding secret into the generic runtime
-# variable, and never echoes it.
 for host, spec in periphery_hosts.items():
     if host == "yecao":
         continue
@@ -153,7 +119,6 @@ for host, spec in periphery_hosts.items():
     assert reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == f"${{{{ secrets.{secret_name} }}}}", host
     script = reconcile["with"]["script"]
     assert "KOMODO_PERIPHERY_ONBOARDING_KEY" not in script.replace("$KOMODO_PERIPHERY_ONBOARDING_KEY", ""), host
-# The per-host parameters are reviewed data, not workflow text.
 for profile, expected in {
     "yecao": {"connect_as": "yecao", "lock_root": "/opt/wotb", "staging_root": "/opt/periphery", "privilege": "root"},
     "tx1": {"connect_as": "tx1", "lock_root": "/opt/wotb-tx", "staging_root": "/opt/wotb-tx/periphery", "privilege": "sudo"},
@@ -165,12 +130,8 @@ for profile, expected in {
     assert f"PERIPHERY_LOCK_ROOT:={expected['lock_root']}" in text, profile
     assert f"PERIPHERY_STAGING_ROOT:={expected['staging_root']}" in text, profile
     assert f"PERIPHERY_PRIVILEGE={expected['privilege']}" in text, profile
-    # A profile is data: it may never assign a credential (comments excluded, and
-    # `load_target_profile` enforces the same rule at runtime).
     effective_profile = "\n".join(line for line in text.splitlines() if not line.strip().startswith("#"))
     assert not re.search(r"(?i)(secret|password|passwd|token|private_key|onboarding_key)\s*=", effective_profile), profile
-# Each target's config is outbound only, with its own Server identity, and the
-# effective bodies are otherwise identical.
 normalized_configs = {}
 for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1"), ("tx2", "tx2")):
     config_text = (root / f"deploy/periphery/targets/{profile}/periphery.config.toml").read_text(encoding="utf-8")
@@ -190,7 +151,6 @@ for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1"), ("tx2", "tx2")):
                                  if line.strip() and not line.strip().startswith("#"))
     normalized_configs[profile] = effective_config.replace(f'connect_as = "{connect_as}"', 'connect_as = "X"')
 assert len(set(normalized_configs.values())) == 1, sorted(normalized_configs)
-# No per-host lifecycle script may exist: only reviewed profiles differ.
 for path in sorted((root / "deploy/periphery").glob("*.sh")):
     assert not any(host in path.name for host in periphery_hosts), path.name
 periphery_unit_text = (root / "deploy/periphery/periphery.service").read_text(encoding="utf-8")
@@ -203,7 +163,6 @@ for invariant in (
     assert invariant in periphery_unit_text, invariant
 assert "PERIPHERY_ONBOARDING_KEY" not in periphery_unit_text, \
     "the bootstrap credential must only reach Periphery through the transient /run file"
-# The pinned release is a sha256 manifest, never a floating tag or image.
 periphery_release_text = (root / "deploy/periphery/periphery.release").read_text(encoding="utf-8")
 assert "latest" not in periphery_release_text.lower()
 assert "40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13" in periphery_release_text
@@ -232,8 +191,6 @@ for owner in owners:
     else:
         assert workflow["concurrency"] == queue, owner
 
-# Replay parsing runs in the browser: the server-side parser plane, broker, and object store
-# (and their CI/production owners) are retired and must not come back.
 for retired in (
     "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
     "minio.yml", "ci-minio.yml",
@@ -255,11 +212,6 @@ for invariant in (
 ):
     assert invariant in freshness, invariant
 
-# 诊断通道的 cookie 脱敏契约（review blocker 3）：prod-diagnostics 会把线上 Set-Cookie
-# 打进 Actions 日志，而 AUTH_SESSION_ID / KC_RESTART 的值是动态 secret——GitHub 的
-# secret masking 不认它们。这里锁两件事：
-#   1) 任何读取 set-cookie 的管道之后必须紧跟脱敏（`=<redacted>`），且
-#   2) 出现裸打印的形态（grep set-cookie 但没有脱敏）即失败。
 diagnostics = (workflow_dir / "prod-diagnostics.yml").read_text(encoding="utf-8")
 assert "set-cookie" in diagnostics, "prod-diagnostics must still probe live cookie attributes"
 all_lines = diagnostics.splitlines()
@@ -270,15 +222,12 @@ read_pipelines = [
 assert read_pipelines, "cookie probe step disappeared"
 assert "<redacted>" in diagnostics, "cookie values must be redacted before stdout"
 for index in read_pipelines:
-    # 脱敏必须出现在**读取 cookie 的管道本身**（同一段窗口内、到达 stdout 之前）
     window = "\n".join(all_lines[index:index + 3])
     assert "<redacted>" in window, (
         "a set-cookie pipeline without redaction can leak live session identifiers: "
         + all_lines[index].strip()
     )
 
-# The exporter package may be private on first publication. Its pull credentials
-# belong only to the exporter mutation and must never become host Docker state.
 observability = load(workflow_dir / "observability.yml")
 obs_steps = observability["jobs"]["observability"]["steps"]
 obs_reconcile = next(step for step in obs_steps if step.get("name") == "Reconcile selected runtime, apply Grafana plan, and verify")
@@ -291,12 +240,6 @@ assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
 assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
 assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
 
-# --- asset origin source transport (Komodo Stack `wotbtools-asset-origin`) -----
-# This owner may mutate ONLY the asset-owned Gitee transport branch. It is also the
-# single, narrowly scoped exception to "infra/komodo/resources/** is owned by no
-# production workflow": only asset-origin.toml is an input, and only for the
-# source-transport gate. It never applies ResourceSync, mutates Komodo resources,
-# or deploys the Stack.
 asset_workflow = load(workflow_dir / "asset-origin.yml")
 asset_events = asset_workflow.get("on", asset_workflow.get(True, {}))
 asset_inputs = [
@@ -315,7 +258,6 @@ assert affected("deploy/assets/Caddyfile") == {"deployment"}
 assert "scripts/ci/test-komodo-resources.py" in (
     workflow_dir / "ci-deployment.yml"
 ).read_text(encoding="utf-8")
-# The resource tree stays non-production except this one source-transport input.
 resource_production_inputs = {}
 for candidate in sorted(workflow_dir.glob("*.yml")):
     document = load(candidate)
@@ -340,7 +282,6 @@ for candidate in sorted(workflow_dir.glob("*.yml")):
 assert resource_push_paths == [
     ("asset-origin.yml", "infra/komodo/resources/asset-origin.toml")
 ], resource_push_paths
-# A resource change must never reconcile Komodo Core/Mongo/DNS via the controller.
 controller = load(workflow_dir / "komodo-controller.yml")
 controller_paths = controller["on"]["push"]["paths"]
 assert controller_paths == controller["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
@@ -348,8 +289,6 @@ for controller_path in controller_paths:
     assert not fnmatch.fnmatchcase("infra/komodo/resources/asset-origin.toml", controller_path), \
         controller_path
 assert "infra/komodo/resources" not in (workflow_dir / "komodo-controller.yml").read_text(encoding="utf-8")
-# The source transport itself stays Gitee-only: no ResourceSync apply, no Stack
-# deploy, no controller coupling, and only the existing Gitee credential.
 asset_text = (workflow_dir / "asset-origin.yml").read_text(encoding="utf-8")
 for forbidden in ("docker compose up", "docker run", "komodo-controller", "tofu apply",
                   "resource_sync", "infra/komodo/resources/**"):
@@ -370,7 +309,6 @@ assert freeze_index < push_index < verify_index, asset_step_names
 assert asset_steps[freeze_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert asset_steps[push_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert asset_steps[push_index]["env"]["PRODUCTION_REQUIRE_EXACT_MAIN"] == "1"
-# The job may only publish the derived GitHub pointer branch; nothing else.
 assert asset_workflow["jobs"]["mirror_gitee"]["permissions"] == {"contents": "write"}, \
     asset_workflow["jobs"]["mirror_gitee"].get("permissions")
 freeze_run = asset_steps[freeze_index]["run"]
@@ -391,7 +329,6 @@ assert "refs/heads/asset-origin" in verify_run
 assert "refs/heads/main" not in verify_run, \
     "the asset gate must verify its own transport ref, not shared main"
 assert "force_update" not in asset_text, "account-level mirroring cannot freeze the event SHA"
-# The Stack consumes ONLY the asset-owned transport ref and never holds a host lock.
 asset_toml = (root / "infra/komodo/resources/asset-origin.toml").read_text(encoding="utf-8")
 assert re.search(r'^branch = "asset-origin"$', asset_toml, re.MULTILINE), \
     "the asset Stack must track the asset-origin transport ref"
@@ -399,8 +336,6 @@ assert not re.search(r'^branch = "main"$', asset_toml, re.MULTILINE), \
     "the asset Stack must never track shared Gitee main"
 assert 'compose_cmd_wrapper = ""' in asset_toml
 assert 'compose_cmd_wrapper_include = []' in asset_toml
-# The canonical runbook and the authoritative workflow contract must state the same
-# narrow exception, so neither can drift into "the whole tree is production-inert".
 runbook_text = " ".join(
     (root / "docs/operations/komodo-resource-sync.md").read_text(encoding="utf-8").split()
 )

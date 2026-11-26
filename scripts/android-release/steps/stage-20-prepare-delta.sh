@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 27: Prepare verified direct Android delta).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 TARGET="android/app/build/outputs/apk/release/app-release.apk"
 TARGET_CODE="$STEP_VERSION_VERSIONCODE"
@@ -63,7 +61,6 @@ else
   echo "::error::Cannot check immutable staging evidence (HTTP $STATUS)" >&2
   exit 1
 fi
-# Immutable evidence is reused only when the live edge routes deltas to offload.
 if [ "$(jq '.patches | length' "$META")" -gt 0 ]; then
   headers="$RUNNER_TEMP/delta-offload-headers"
   code="$(curl -sS -I --connect-timeout 5 --max-time 20 -o "$headers" -w '%{http_code}' 'https://wotbtools.com/download/android/wotbtools-android-delta-probe.vcdiff')" || code=000

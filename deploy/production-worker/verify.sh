@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Production-worker readiness verification for one reviewed target (K7A).
-#
-# Read-only: every check below proves a condition and emits one acceptance token.
-# The final `<TARGET>_PRODUCTION_WORKER_READY` token is printed only when all of
-# them passed, so a partially prepared host can never report readiness. This token
-# is the worker boundary only; the TX1 production topology keeps its own
-# `TX_RUNTIME_READY` gate.
-#
-# The verification context is the one Komodo/Periphery actually uses: root Docker,
-# root Docker credential store, host systemd and host WireGuard.
 set -Eeuo pipefail
 umask 077
 
@@ -16,7 +6,6 @@ TARGET="${1:?usage: verify.sh <target> <staged-root>}"
 stage="${2:?usage: verify.sh <target> <staged-root>}"
 runtime="$stage/deploy/production-worker"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=deploy/production-worker/lib.sh
 source "$script_dir/lib.sh"
 
 load_target_profile "$TARGET" "$runtime"
@@ -24,9 +13,6 @@ load_target_profile "$TARGET" "$runtime"
 if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to verify target $WORKER_TARGET."
-  # Standalone verification needs only the non-secret desired-state registry
-  # inputs. Credentials are re-proved from root's Docker config and must not be
-  # propagated into this read-only phase.
   preserve=()
   for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION; do
     if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
@@ -46,26 +32,20 @@ for command_name in "$docker_bin" "$systemctl_bin" ss python3 stat "$wg_bin" "$i
   command -v "$command_name" >/dev/null || fail "$command_name is required to verify $WORKER_TARGET."
 done
 
-# The verification may not assume a credential is present in its environment: it
-# re-proves what the host already holds. The reviewed generation and the registry
-# variables are needed; the password is not.
 require_credential_version "${TCR_CREDENTIAL_VERSION:-}"
 validate_registry_prefix "${TCR_REGISTRY:?TCR_REGISTRY is required}" "${TCR_NAMESPACE:?TCR_NAMESPACE is required}"
 image_ref="$registry_prefix/$WORKER_VERIFY_IMAGE_REPOSITORY:$WORKER_VERIFY_IMAGE_TAG"
 
-## 1. Docker daemon healthy ----------------------------------------------------
 
 docker_daemon_healthy || fail 'The Docker daemon is not healthy.'
 pass docker-daemon
 
-## 2. Docker Compose v2 --------------------------------------------------------
 
 "$docker_bin" compose version >/dev/null 2>&1 || fail 'Docker Compose v2 is unavailable.'
 "$docker_bin" compose ls --all --format json >/dev/null 2>&1 \
   || fail 'docker compose ls failed; the Compose plugin is not usable.'
 pass docker-compose-v2
 
-## 3. Reviewed Docker Hub mirror ----------------------------------------------
 
 daemon_config="$(docker_daemon_config_path)"
 daemon_config_matches "$daemon_config" \
@@ -76,10 +56,6 @@ assert_active_mirror "$WORKER_DOCKER_HUB_MIRROR" \
   || fail "The reviewed Docker Hub mirror is not active: $WORKER_DOCKER_HUB_MIRROR"
 pass docker-hub-mirror
 
-## 4. Root Docker credential state --------------------------------------------
-#
-# The credential is the one Komodo/Periphery needs, because Periphery operates
-# Docker as root. It may hold only this registry, and only root may read it.
 
 root_config="$(root_docker_config_path)"
 require_real_file "$root_config" 'the root Docker credential'
@@ -101,31 +77,17 @@ auths = document.get("auths", {})
 if not isinstance(auths, dict) or sorted(set(auths) - {registry}):
     raise SystemExit(1)
 PY
-# The applied generation is authoritative: a credential that still works must not keep
-# the host on an older generation than the reviewed one, so readiness requires the
-# recorded generation to match the desired one exactly.
 applied_version="$(applied_credential_version)"
 [[ "$applied_version" == "$credential_version" ]] \
   || fail "The root Docker credential generation is ${applied_version:-none}, not the reviewed generation $credential_version."
 pass tcr-root-credential
 
-## 5. Authenticated private image access --------------------------------------
-#
-# The manifest resolution and the pull both authenticate through the root Docker
-# credential, so they prove the same boundary from two directions: the registry
-# accepts the credential, and the layers of a private WotBTools image are actually
-# retrievable. No container is created and none is left running.
 DOCKER_CONFIG="$root_docker_config_dir" "$docker_bin" manifest inspect "$image_ref" >/dev/null 2>&1 \
   || fail "The root Docker context cannot resolve the private production image: $image_ref"
 DOCKER_CONFIG="$root_docker_config_dir" "$docker_bin" pull --quiet "$image_ref" >/dev/null 2>&1 \
   || fail "The root Docker context cannot pull the private production image: $image_ref"
 pass private-image-pull
 
-## 6. Periphery regression -----------------------------------------------------
-#
-# The worker owner never writes Periphery's identity, config or unit: this only
-# proves the agent is still healthy, still connected outbound to Core, and still
-# not an inbound server.
 
 "$systemctl_bin" is-active --quiet "$WORKER_PERIPHERY_UNIT" \
   || fail "The $WORKER_PERIPHERY_UNIT unit is not active."
@@ -144,11 +106,6 @@ for owned in $WORKER_PERIPHERY_STATE; do
 done
 pass periphery-regression
 
-## 7. WireGuard regression -----------------------------------------------------
-#
-# K7A never modifies WireGuard. It proves the reviewed address is still present and
-# that the service-plane endpoints a future TX2 workload needs are reachable, with
-# the K6B values frozen in Git.
 
 "$wg_bin" show interfaces 2>/dev/null | grep -q . || fail 'No WireGuard interface is present.'
 "$ip_bin" -4 addr show 2>/dev/null | grep -q "inet $WORKER_WIREGUARD_ADDRESS/" \
@@ -161,12 +118,6 @@ for endpoint in $WORKER_REQUIRED_ENDPOINTS; do
 done
 pass wireguard-regression
 
-## 8. No workload was created by the worker reconcile -------------------------
-#
-# `install.sh` records the running container set it found before mutating anything;
-# readiness requires that the set is still identical, so a worker reconcile can
-# never adopt, create, or start a workload. The check remains valid once Komodo
-# starts managing workloads: it constrains this lifecycle, not the workloads.
 
 snapshot="$worker_state_dir/containers.before"
 require_real_file "$snapshot" 'the production-worker container snapshot'

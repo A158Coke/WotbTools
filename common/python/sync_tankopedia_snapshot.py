@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate Tankopedia from one stable BlitzKit definition set."""
 
 import argparse
@@ -151,7 +150,6 @@ def main(argv=None):
             "vehicles": tier_vehicles,
         })
 
-    # 完整车辆名册（全 tier，alias 校验与 tank_id 查询用）：同一快照、过滤之前的解析结果
     roster = ut.roster_payload(all_vehicles, generated_at, game_version, hashes)
     try:
         ut.validate_roster(roster, ut.load_existing_roster(args.existing_dir))

@@ -1,7 +1,3 @@
-# Brokered Web logins do not submit Keycloak's username/password Remember Me form.
-# Run this after every external IdP login and let the custom authenticator mark only
-# wotbtools-web authentication sessions as remember-me before Keycloak attaches the
-# final user session. Android enters the same IdP-level flow but is deliberately a no-op.
 resource "keycloak_authentication_flow" "post_broker_session" {
   realm_id    = keycloak_realm.wotbtools.id
   alias       = "wotbtools-post-broker-session"

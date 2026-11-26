@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """前端镜像不可变 tag 的 identity 口径一致性门禁（无 Docker / 无网络）。
 
 ## 事故背景（2026-10-10）
@@ -42,21 +41,15 @@ FINGERPRINT_SCRIPT = ROOT / "deploy/tx/sponsor-fingerprint.sh"
 
 HISTORICAL_ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
 PRODUCTION_ASSET_BASE_URL = "https://assets.wotbtools.com"
-# 数据点来自真实 run 的构建日志（`RESULT image=...:sha-<12>`）：
-#   76cf8acb… = Merge PR #581（Frontend run 38060016028 / build 侧 tag f52430fb1b7f）
-#   e3ba28f0… = 事故期间的 main 提交（run 38046307993 / build 侧 tag ff0a703af8f8）
 SPONSOR_FINGERPRINT = "75cdd72f1e1714cacd81cc6ce97e7918a58eb9657a2a224d965ca28d7578b2bf"
 DATA_POINTS = [
     ("76cf8acbdfbcf9c53970d6e680cf039fb2fd34a7", "sha-f52430fb1b7f"),
     ("e3ba28f0a103ae345197978e51549345e7ca5359", "sha-ff0a703af8f8"),
 ]
-# 无 pin 数据点（复审复现，2026-10-10）：同一 source SHA 下 builder 归一化为空串得
-# `sha-f1698ee92506`；若第三输入取 `-` 则得 `sha-6d521aeadd3e`（deploy/replica 曾算出后者）。
 NO_PIN_SHA = "f84f49833c8251b81288c782c393d4fab8994e7e"
 NO_PIN_BUILDER_TAG = "sha-f1698ee92506"
 NO_PIN_DASH_TAG = "sha-6d521aeadd3e"
 
-# printf 的格式串（`%s\n%s\n%s`）与参数列表一起提取：参数顺序即 identity 输入顺序。
 IDENTITY_RE = re.compile(
     r"""identity="\$\(printf\s+'(?P<fmt>[^']*)'\s+(?P<args>[^|]*?)\s*\|\s*sha256sum\s*\|\s*cut\s+-c1-12\)"""
 )
@@ -110,7 +103,6 @@ class IdentityFormula(unittest.TestCase):
         deploy/replica=sha-6d521aeadd3e——两枚 tag 的真实值在此锁定。
         """
         builder_text = BUILDER.read_text(encoding="utf-8")
-        # 归一化规则必须仍在构建器 CLI 入口（`-` ⇒ 空串），我们从源码解析而不是抄一份。
         self.assertRegex(
             builder_text,
             r'\[ "\$sponsor_fingerprint" != "-" \] \|\| sponsor_fingerprint=""',
@@ -172,13 +164,10 @@ class FrontendWorkflowDeployFormula(unittest.TestCase):
         self.assertEqual(names, builder_names)
 
     def test_deploy_derives_sponsor_fingerprint_on_tx(self) -> None:
-        # 指纹必须由随包 stage 的 pin 就地派生（同一 source commit 的同一值），不得来自 runner 侧传递。
         self.assertIn("deploy/tx/sponsor-fingerprint.sh", self.deploy_body)
         self.assertIn("/opt/wotb-tx/deploy.incoming", self.deploy_body)
 
     def test_sponsor_pin_staging_is_split_and_guarded(self) -> None:
-        # pin 可被删除：可选目录不能并入必选 scp（否则步骤失败），且必须单独拷到与必选步骤
-        # 相同的 target（远端路径 deploy.incoming/deploy/sponsor/content.json 是 identity 输入）。
         self.assertNotIn("source: deploy/tx,deploy/sponsor", self.text,
                          "sponsor staging 不得合并进必选步骤（pin 缺失时整个目录不存在）")
         sponsor_step = self.text.split("- name: Stage sponsor pin when present", 1)
@@ -191,9 +180,6 @@ class FrontendWorkflowDeployFormula(unittest.TestCase):
         self.assertIn("source: deploy/tx\n", mandatory)
 
     def test_staged_identity_inputs_are_declared_production_inputs(self) -> None:
-        # 远端派生 fingerprint 依赖的两个路径（新脚本 + pin）必须登记为生产输入：
-        # push.paths 与 PRODUCTION_INPUT_PATHS 逐条相等（scripts/ci/test-workflow-contract.sh），
-        # 且被 owner 过滤器覆盖（.github/ci-owner-paths.yml）。
         push_paths = self.text.split("    paths:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
         for entry in ("deploy/tx/sponsor-fingerprint.sh", "deploy/sponsor/**"):
             self.assertIn(entry, push_paths)
@@ -203,8 +189,6 @@ class FrontendWorkflowDeployFormula(unittest.TestCase):
             self.assertIn(f"'{entry}'", owner_paths)
 
     def test_identity_does_not_cross_job_outputs(self) -> None:
-        # scripts/ci/test-workflow-contract.sh 的既有契约：GitHub 会对形似密钥的 SHA/digest 打码，
-        # release identity 不得跨 job-output 边界（本地再挡一层，避免两处口径反向漂移）。
         self.assertNotIn("needs.build.outputs", self.text)
         build_block = self.text.split("\n  build:", 1)[1].split("\n  deploy:", 1)[0]
         self.assertNotIn("\n    outputs:", build_block)
@@ -254,7 +238,6 @@ class StagingContinuity(unittest.TestCase):
         self.assertIn("WOTB_TX_ROOT", script,
                       "准备步骤需允许本地回归注入 root（默认路径不变）")
         with tempfile.TemporaryDirectory() as tmp:
-            # 上一轮部署留下的旧文件：sponsor pin + tx 运行时文件
             stale_pin = Path(tmp) / "deploy.incoming/deploy/sponsor/content.json"
             stale_tx = Path(tmp) / "deploy.incoming/deploy/tx/deploy.sh"
             for path in (stale_pin, stale_tx):
@@ -268,7 +251,6 @@ class StagingContinuity(unittest.TestCase):
             self.assertFalse(stale_tx.exists(), "旧 tx 文件必须被清掉")
             self.assertTrue((Path(tmp) / "deploy.incoming/deploy/tx").is_dir(),
                             "必选 tx 目录需重建（供必选 scp 落位）")
-            # 清理后远端派生出的指纹 = 无 pin 值（与构建侧同一发布路径）
             out = subprocess.run(["bash", str(FINGERPRINT_SCRIPT),
                                   str(Path(tmp) / "deploy.incoming")],
                                  check=True, capture_output=True, text=True).stdout
@@ -277,8 +259,6 @@ class StagingContinuity(unittest.TestCase):
 
 class BackendCapabilityTests(unittest.TestCase):
     def test_tx1_deploy_entrypoint_checks_before_pull_or_promotion(self) -> None:
-        # Exercise production main() and its probe, replacing host-specific setup
-        # and mutation commands. This also runs without Linux flock or Docker.
         harness = '''set -euo pipefail
 TX_DEPLOY_LIBRARY_ONLY=1 source "$1/deploy.sh"
 source "$1/runtime-check-lib.sh"
@@ -337,8 +317,6 @@ main
         start = script.index('source "$incoming/runtime-check-lib.sh"')
         end = script.index('assert_frontend_backend_capabilities <<< "$health"', start)
         preflight = script[start:end] + 'assert_frontend_backend_capabilities <<< "$health"\n'
-        # Execute the actual workflow preflight and shared JSON predicate. Docker
-        # is a shell fixture; no production host or credential is accessed.
         harness = '''set -euo pipefail
 incoming="$1"
 docker_cmd() {

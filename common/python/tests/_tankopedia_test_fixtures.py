@@ -38,7 +38,6 @@ def shell(shell_type, damage, pen):
 def gun(gun_id, shells, clip=False, tier=10):
     out = f_varint(4, gun_id)
     out += f_varint(9, tier)
-    # GunDefinition oneof：field 1 = regular，field 2 = auto_loader（弹夹）
     out += f_bytes(2 if clip else 1, b"")
     for s in shells:
         out += f_bytes(10, s)

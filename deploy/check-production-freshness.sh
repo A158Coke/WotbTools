@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Shared production freshness gate.
-#
-# Usage: check-production-freshness.sh SOURCE_SHA EVENT_NAME EVENT_REF EVENT_SHA
-#
-# Requires PRODUCTION_INPUT_PATHS (one repo-relative path/glob per line).
-#
-# Default contract: the source must be an ancestor of current main and the owner's
-# owned inputs must be unchanged between the source and current main, so an
-# unrelated main commit does not supersede an in-flight owner run.
-#
-# PRODUCTION_REQUIRE_EXACT_MAIN=1 additionally requires the frozen SOURCE_SHA to
-# still be EXACT current main. An owner that force-updates a SHARED ref (the Gitee
-# source mirror) must not tolerate "main advanced elsewhere": pushing a stale SHA
-# would roll that shared ref backward. Such an owner enables this flag on the gate
-# it runs immediately before mutating the ref.
 set -euo pipefail
 
 if [[ $# -ne 4 ]]; then

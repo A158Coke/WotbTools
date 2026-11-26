@@ -107,9 +107,6 @@ def capture_points(
         position = entity_position(entity)
         if position is None:
             continue
-        # 变体标签（LabelComponent，形如 nt0/am1/cn0）：同一场景文件里，不同地图变体
-        # （基础图与 _01/_02 子图）各有一组点位；不按标签过滤会把所有变体的点位
-        # 混成一组（诺曼底遭遇点变 3 个 candidate ⇒ 预览端 fail-closed 不提供遭遇选项）。
         label = None
         components = entity.get("components") or {}
         if isinstance(components, dict):
@@ -228,8 +225,6 @@ def extract_map(raw: bytes, map_code: str) -> dict[str, Any]:
     base = groups[base_label] if base_label is not None else group_points(points, map_code)
     result = dict(base)
     if groups:
-        # 完整变体表：预览端按当前地图 id 对应的标签取自己那套点位；
-        # 顶层 supremacy/assault 保留基础变体（回放/旧消费者契约不变）。
         result["variants"] = groups
     return result
 

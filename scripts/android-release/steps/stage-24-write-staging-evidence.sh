@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (stage step 37: Write immutable staging evidence (production version.json 保持不变)).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
-# staging evidence 的唯一用途：让 publish 阶段**不重建 APK**也能证明「它要广播的那个
-# APK 就是这里验证过的那个」。production version.json 是强制更新的 commit point，
-# 本阶段绝不触碰它 —— 真机 A14 验证失败或未完成时，线上 manifest 必须原样不动。
 APK_NAME="$STEP_ARTIFACT_APKNAME"
 STAGING_NAME="${APK_NAME%.apk}.staging.json"
 EXISTING="$RUNNER_TEMP/delta-existing-staging.json"

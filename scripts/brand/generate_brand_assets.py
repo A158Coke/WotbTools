@@ -28,7 +28,6 @@ ANDROID_RES = ROOT / "android" / "app" / "src" / "main" / "res"
 
 MARK_VIEWBOX = (230, 360, 780, 365)
 
-# 扳手负形（mask 内黑色 = 挖掉）：圆环头 + 右上开口钳口（白色 = 保留车体）+ 斜向手柄
 WRENCH_MASK = """
   <circle cx="530" cy="622" r="46" fill="none" stroke="#000" stroke-width="20"/>
   <path d="M535 595.8 L576 554.8 L597.2 576 L556.2 617 Z" fill="#fff"/>
@@ -43,11 +42,10 @@ BARS = [
     "M857 612 V405 L912 372 V612 Z",
 ]
 
-# 配色：车体随背景反相，增长柱固定为设计语言琥珀（tokens/color.css --color-accent）
 INK_ON_LIGHT = "#313942"
 INK_ON_DARK = "#e9ecea"
 ACCENT = "#e0a02e"
-TILE = "#0d1117"  # 与 Android ic_launcher_background 一致
+TILE = "#0d1117"
 
 
 def mark_svg(body: str, accent: str, mask_id: str = "wotbtools-wrench") -> str:
@@ -137,14 +135,12 @@ def main() -> None:
     chrome = find_chrome()
     BRAND.mkdir(parents=True, exist_ok=True)
 
-    # 1) 矢量原稿
     (BRAND / "wotbtools-mark.svg").write_text(standalone_mark(INK_ON_LIGHT, ACCENT), encoding="utf-8")
     (BRAND / "wotbtools-mark-on-dark.svg").write_text(standalone_mark(INK_ON_DARK, ACCENT), encoding="utf-8")
     icon_svg = app_icon()
     (BRAND / "wotbtools-app-icon.svg").write_text(icon_svg, encoding="utf-8")
     (KEYCLOAK_IMG / "login-favicon.svg").write_text(icon_svg, encoding="utf-8")
 
-    # 2) Web：favicon / 应用图标 / 旧文件名兼容（Dockerfile 与 Keycloak 主题引用）
     rasterize(icon_svg, 256, 256, ASSETS / "icon.png", chrome)
     rasterize(icon_svg, 1024, 1024, ASSETS / "wotbtoolslogo.png", chrome)
     rasterize(icon_svg, 128, 128, BRAND / "_tmp-128.png", chrome)
@@ -153,7 +149,6 @@ def main() -> None:
     Image.open(ASSETS / "icon.png").save(ASSETS / "icon.ico", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     shutil.copyfile(ASSETS / "wotbtoolslogo.png", KEYCLOAK_IMG / "wotbtoolslogo.png")
 
-    # 3) Android：传统方形 / 圆形启动图标 + 自适应图标前景（108dp 画布，图形落在 66dp 安全区内）
     densities = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
     round_svg = app_icon(shape="circle", mark_width=0.74)
     for density, size in densities.items():

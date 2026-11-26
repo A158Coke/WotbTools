@@ -52,7 +52,7 @@ def parse_item_defs(pb_bytes):
         msg = decode_protobuf(f1(kv, FIELD_MAP_VALUE, b""))
         name = i18n_en(f1(msg, FIELD_ITEM_NAME, b""))
         if not name:
-            continue  # 占位条目（空名）跳过
+            continue
         items.append({
             "id": item_id,
             "name": name,

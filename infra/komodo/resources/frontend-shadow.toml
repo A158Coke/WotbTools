@@ -1,13 +1,3 @@
-# K7B originally introduced this as the first production workload owned
-# declaratively by Komodo. K7C keeps the Stack metadata for visibility, while the
-# running TX2 frontend image is reconciled by the Frontend Replica workflow from
-# the immutable artifact published by TX1 to TCR. Komodo must therefore never
-# auto-deploy or auto-update this Stack behind that workflow's back. `auto_pull`
-# remains enabled as part of the reviewed declarative Stack contract; by itself it
-# does not enable polling, webhook deployment, or automatic workload updates.
-#
-# GitHub remains the source authority. Gitee is the domestic source transport for TX
-# workers so the Komodo view can still resolve the reviewed stack definition.
 [[stack]]
 name = "wotbtools-frontend-shadow"
 description = "K7C TX2 frontend replica; runtime image is owned by Frontend Replica workflow"

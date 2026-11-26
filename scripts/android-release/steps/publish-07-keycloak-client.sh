@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# Extracted from .github/workflows/android-release.yml (publish step 7: Verify the wotbtools-android runtime client (readiness, rerun)).
-# Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
-# version.json 是发布的 commit point：一旦它指向 2.x，旧客户端就会被强制更新到一个新
-# 客户端。因此广播之前必须证明 Keycloak 侧的 wotbtools-android 已经可用。
-# 探测是只读 GET：客户端存在且 redirect URI 已注册时 Keycloak 返回 200 登录页；
-# 客户端不存在返回 Client not found，redirect 未注册返回 Invalid parameter:
-# redirect_uri，因此断言「200 且不含错误页标记」同时覆盖这两条契约。
 AUTH_ENDPOINT="https://auth.wotbtools.com/realms/wotbtools/protocol/openid-connect/auth"
 STATE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 NONCE="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"

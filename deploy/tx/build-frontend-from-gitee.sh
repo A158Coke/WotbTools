@@ -1,26 +1,11 @@
 #!/usr/bin/env bash
-# Frontend 在 TX2 从 Gitee main 历史中的 exact reviewed SHA 构建。
-# GitHub 拥有发布权威；Gitee 是唯一生产 Git 来源，等待耗尽即 fail closed。
-# Agent WASM、Sponsor 内容由 runner 单独 stage；镜像构建与 TCR 发布留在国内。
-#
-# 2026-10-26 placement: the Frontend image builds on TX2, not TX1. TX1 has 1.9 GiB RAM
-# and runs the production containers; after #753 (Reka/VueUse/motion-v) the build needs
-# ~1.05 GiB of V8 old space and a 1152 MiB heap trial left TX1 at 174 MiB available /
-# 229 MiB free swap. TX2 has 3.6 GiB (2.9 GiB available) and completed the same build
-# with no swap use. TX1 still owns deployment and pulls the immutable TCR artifact.
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
-# Cache/lock 属于**构建宿主**：Frontend 在 TX2 构建，Business API 仍在 TX1 构建，
-# 两侧缓存与 build.lock 刻意分离（同一 commit 同时改两个应用时不再争用 TX1 的
-# CPU/RAM，也不会共享一份 Gitee clone）。
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
-# 构建源固定为持久 Gitee clone。
 SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
-# TX2 build 与同一宿主上的 Production Worker / Frontend replica 共用既有主机维护锁；
-# 空值 = 不获取（单测与 TX1 调试路径）。workflow 显式传 /opt/wotb-tx2/.deploy.lock。
 readonly HOST_LOCK_FILE="${WOTB_BUILD_HOST_LOCK:-}"
 readonly HOST_LOCK_WAIT_SECONDS="${HOST_LOCK_WAIT_SECONDS:-600}"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
@@ -90,11 +75,6 @@ validate_asset_base_url() {
   [ "${value%/}" = "$value" ] || die "ASSET_BASE_URL must not end with /"
 }
 
-# 构建身份的确定性（见 docs/android/release-process.md「构建身份的确定性」）：源 commit 的
-# unix 时间戳。生产镜像由本脚本构建，而 Docker 上下文没有 .git，必须在这里显式注入
-# SOURCE_DATE_EPOCH；否则 version.json / `__BUILD_TIME__` 回落 wall-clock，同一 source_sha
-# 重跑会产出不同字节的镜像，撞 immutable tag/evidence 纪律。$1 = 含该 commit 的 git 目录，
-# $2 = 完整 SHA。
 source_commit_epoch() {
   local git_dir="$1" sha="$2" epoch
   epoch="$(git -C "$git_dir" show -s --format=%ct "$sha" 2>/dev/null)" \
@@ -124,14 +104,8 @@ validate_common() {
     command -v "$command_name" >/dev/null || die "$command_name is required"
   done
   docker version >/dev/null
-  # buildx 不是每个构建宿主的发行版 Docker 都带（TX2 的 Ubuntu 包就没有）。构建本身
-  # 走 `docker build`；只有远端 immutable digest 查询需要 buildx，缺失时回退到
-  # `docker manifest inspect --verbose`（见 docker_image_digest）。
 }
 
-# Sponsor 运行时内容（收款码 + 配置）由 GitHub 在构建期从 CI secrets 注入并 stage 过来：
-# 它既不能进 Git，又必须真的出现在镜像里（Web 同源伺服）。这里校验「staged 包 = 声明的指纹」，
-# 并把指纹纳入镜像 identity —— 换码必须换 tag、必须重建，不能被 immutable tag 复用悄悄吞掉。
 validate_sponsor_bundle() {
   local bundle="$1" fingerprint="$2"
 
@@ -145,8 +119,6 @@ validate_sponsor_bundle() {
     || die "staged sponsor bundle sha256 does not match the announced fingerprint"
 }
 
-# 构建上下文里的内容来自外部 staged 输入，必须 fail closed：只接受 sponsor-config.json 与
-# sponsor-assets/ 下的普通文件/目录，拒绝符号链接、绝对路径与 .. 逃逸。
 unpack_sponsor_bundle() {
   local bundle="$1" target="$2"
 
@@ -206,7 +178,6 @@ wait_for_gitee_sha() {
   return 1
 }
 
-# 唯一生产 Git 来源是 Gitee；等待耗尽即失败，不切换来源。
 materialize_source() {
   local source_sha="$1"
   wait_for_gitee_sha "$source_sha" \
@@ -236,9 +207,6 @@ PY
 verify_frontend_image() {
   local image="$1" source_sha="$2" asset_base_url="$3" sponsor_expected_dir="${4:-}"
   local container temp
-  # Agent identity 从**该 source commit 自己的** deploy/agent/source.json 读取：发布证据
-  # 链 = source.json ref/release → ZIP fingerprint → common/assets/wasm/<ref>/ →
-  # dist/wasm/<ref>/ → 镜像。镜像里必须正好是这个 commit 的产物。
   local agent_ref agent_release
   read -r agent_ref agent_release < <(git -C "$SOURCE_DIR" show "$source_sha:deploy/agent/source.json" \
     | python3 -c '
@@ -249,9 +217,6 @@ print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
   [[ "$agent_ref" =~ ^[0-9a-f]{40}$ ]] || die "source.json at $source_sha has no valid ref"
   [ -n "$agent_release" ] || die "source.json at $source_sha has no artifact.release"
 
-  # 镜像内 version.json 的 buildTime 必须等于源 commit 时间（= 构建时注入的 SOURCE_DATE_EPOCH）。
-  # 这条把"确定性构建身份"从脚本传参升级为**产物级断言**：wall-clock 回落、参数丢失、或有人
-  # 改回 new Date() 都会在这里被拦住（Docker 上下文无 .git，时间只能由本脚本给）。
   local source_epoch expected_build_time
   source_epoch="$(source_commit_epoch "$SOURCE_DIR" "$source_sha")"
   expected_build_time="$(SOURCE_EPOCH="$source_epoch" python3 -c '
@@ -271,7 +236,6 @@ print(datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y
     grep -Fq "\"buildTime\": \"$expected_build_time\"" "$temp/html/version.json"
     grep -R --binary-files=text -Fq "$source_sha" "$temp/html/assets"
     grep -R --binary-files=text -Fq "$asset_base_url" "$temp/html/assets"
-    # commit-addressed 产物目录：恰好是 source commit 的 ref，且没有 stable 路径
     [ -d "$temp/html/wasm/$agent_ref" ]
     for file in wotb_replay_wasm.js wotb_replay_wasm_bg.wasm fingerprint.json; do
       [ -s "$temp/html/wasm/$agent_ref/$file" ]
@@ -280,7 +244,6 @@ print(datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y
     [ ! -e "$temp/html/wasm/wotb_replay_wasm.js" ]
     [ ! -e "$temp/html/wasm/wotb_replay_wasm_bg.wasm" ]
     [ ! -e "$temp/html/wasm/fingerprint.json" ]
-    # 目录集合只能是 <ref> 一个（别的 build 的 Agent 不得混进同一镜像）
     [ "$(find "$temp/html/wasm" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | tr '\n' ' ')" = "$agent_ref " ]
     AGENT_FINGERPRINT="$temp/html/wasm/$agent_ref/fingerprint.json" \
       AGENT_REF="$agent_ref" AGENT_RELEASE="$agent_release" \
@@ -303,16 +266,10 @@ if fingerprint.get("tag") != release:
     done
     docker cp "$container:/etc/nginx/conf.d/default.conf" "$temp/default.conf"
     [ -s "$temp/default.conf" ]
-    # 镜像内 nginx 必须给 commit-addressed 目录 immutable 长缓存（刷新即生效的机制）
     grep -Fq '/wasm/[0-9a-f]{40}/' "$temp/default.conf" \
       || { echo 'frontend image nginx has no commit-addressed /wasm/ cache rule' >&2; exit 1; }
     grep -Fq 'immutable' "$temp/default.conf"
-    # Sponsor 运行时内容：**以 staged 包实际声明的文件集为准**（`enabled: false` 的包只有
-    # sponsor-config.json，没有 sponsor-assets/），镜像里必须逐文件一致；没 staged 就必须不在
-    # （防止陈旧注入物跟着复用 tag 混进发布面）。
     if [ -n "$sponsor_expected_dir" ]; then
-      # find 对不存在的路径返回非零（`enabled: false` 的包没有 sponsor-assets/），必须容错；
-      # 「包里有配置」由下面的非空断言保证，不靠 find 的退出码。
       sponsor_expected_list="$(cd "$sponsor_expected_dir" && { find sponsor-config.json sponsor-assets -type f 2>/dev/null | LC_ALL=C sort; } || true)"
       [ -n "$sponsor_expected_list" ] || { echo 'staged sponsor bundle carries no sponsor-config.json' >&2; exit 1; }
       sponsor_actual_list="$(cd "$temp/html" && { find sponsor-config.json sponsor-assets -type f 2>/dev/null | LC_ALL=C sort; } || true)"
@@ -343,8 +300,6 @@ build_publish() {
   validate_sponsor_bundle "$sponsor_bundle" "$sponsor_fingerprint"
 
   local identity tag remote_image local_image worktree digest lookup_status reused sponsor_tmp="" source_epoch=""
-  # identity 纳入 sponsor 内容指纹：换二维码 ⇒ 新 tag ⇒ 必然重建（immutable tag 复用不会把新码
-  # 悄悄吞掉）；内容未变 ⇒ 同 tag ⇒ 复用（可复现）。
   identity="$(printf '%s\n%s\n%s' "$source_sha" "$asset_base_url" "$sponsor_fingerprint" | sha256sum | cut -c1-12)"
   tag="sha-$identity"
   remote_image="$registry/$namespace/wotbtools-frontend:$tag"
@@ -357,9 +312,6 @@ build_publish() {
   mkdir -p "$CACHE_ROOT"
   exec 8>"$BUILD_LOCK_FILE"
   flock -n 8 || die "another TX Frontend build is already running"
-  # 主机维护锁在 cache lock 之后获取：两个 build 先串行，再与 Production Worker /
-  # Frontend replica 的 /opt/wotb-tx2/.deploy.lock 互斥。先 host 后 cache 会让
-  # build A 持 host 等 cache、build B 持 cache 等 host 形成死锁。
   if [ -n "$HOST_LOCK_FILE" ]; then
     [ -e "$HOST_LOCK_FILE" ] || die "host maintenance lock is missing: $HOST_LOCK_FILE"
     exec 7>"$HOST_LOCK_FILE"
@@ -376,7 +328,6 @@ build_publish() {
     rm -rf -- "$worktree"
     [ -z "$sponsor_tmp" ] || rm -rf -- "$sponsor_tmp"
   }
-  # Capture quoted paths now: EXIT runs after build_publish's locals leave scope.
   trap "$(printf 'cleanup_build_leftovers %q %q' "$worktree" "$sponsor_tmp")" EXIT
 
   if [ -n "$sponsor_fingerprint" ]; then
@@ -404,7 +355,6 @@ build_publish() {
       verify_agent_archive "$worktree" "$agent_archive"
       WOTB_AGENT_ARTIFACT_FILE="$agent_archive" bash "$worktree/scripts/fetch-agent-wasm.sh"
       if [ -n "$sponsor_tmp" ]; then
-        # publicDir（common/assets/）——Vite 原样拷进 dist，随镜像进 nginx root。
         mkdir -p "$worktree/common/assets"
         cp -R "$sponsor_tmp/." "$worktree/common/assets/"
       fi
@@ -455,7 +405,6 @@ shift
 
 case "$mode" in
   build-publish)
-    # 第 6/7 个参数是 sponsor 运行时内容（staged bundle 路径 + 指纹）；`-` 或空 = 未配置。
     sponsor_bundle="$6"
     sponsor_fingerprint="$7"
     [ "$sponsor_bundle" != "-" ] || sponsor_bundle=""

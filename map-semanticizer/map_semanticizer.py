@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate evidence-backed WoT Blitz map semantics from DAVA client resources.
 
 The script is intentionally deterministic. It reads the scene and heightmap,
