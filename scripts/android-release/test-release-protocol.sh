@@ -3,7 +3,6 @@ set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
 python3 - "$ROOT" <<'PY'
-import re
 import sys
 from pathlib import Path
 
@@ -23,15 +22,15 @@ def step_running(command):
 
 fetch = step_running("fetch-published-apk.sh")
 upload = step_running("stage-17-upload-tsinghua.sh")
-public = step_running("cmp ")
-assert steps.index(fetch) < steps.index(upload) < steps.index(public)
+public = step_running("--replica stable")
+candidate = step_running("install-aliyun-download.sh")
+assert steps.index(fetch) < steps.index(upload) < steps.index(public) < steps.index(candidate)
 job_seconds = job["timeout-minutes"] * 60
 reserve = int(upload["env"]["POST_STAGE_RESERVE_SECONDS"])
 assert int(upload["env"]["JOB_TIMEOUT_SECONDS"]) == job_seconds
 assert 0 < fetch["timeout-minutes"] * 60 < job_seconds - reserve
-assert reserve > (checkout["timeout-minutes"] + public["timeout-minutes"]) * 60
-download_seconds = int(re.search(r"--max-time (\d+)", public["run"])[1])
-assert 0 < download_seconds < public["timeout-minutes"] * 60
+assert reserve > (checkout["timeout-minutes"] + public["timeout-minutes"] + candidate["timeout-minutes"]) * 60
+assert all(not step.get("continue-on-error") for step in (public, candidate))
 print("Repair job budgets cover checkout, origin transfer and final public verification.")
 PY
 
@@ -80,7 +79,7 @@ order = [s.get("name") for s in steps]
 tsinghua = named("Upload APK to Tsinghua Cloud")["name"]
 classify = named("Classify origin APK on TX1/TX2")["name"]
 verify = named("Verify production APK")["name"]
-assert order.index(classify) < order.index(tsinghua) < order.index(seeds[0]["name"]) \
+assert order.index(classify) < order.index(named("Install and verify Aliyun APK")["name"]) < order.index(tsinghua) < order.index(seeds[0]["name"]) \
     < order.index(seeds[1]["name"]) < order.index(verify), order
 PY
 
@@ -308,6 +307,10 @@ assert "steps.staged.outputs.stagedSource" in write_sources, \
     "version.json must record the staged release source, not the checkout HEAD"
 scp_indices = [i for i, step in enumerate(publish["steps"])
                if str(step.get("uses", "")).startswith("appleboy/scp-action")]
+distribution = next(i for i, step in enumerate(publish["steps"]) if step.get("run_path", "").endswith("/publish-verify-distribution.sh"))
+assert staged_i < distribution < next(i for i, step in enumerate(publish["steps"]) if step.get("run_path", "").endswith("/publish-09-write-version-json.sh")) < min(scp_indices)
+assert publish["steps"][distribution]["if"] == publish["steps"][min(scp_indices)]["if"]
+assert not publish["steps"][distribution].get("continue-on-error")
 assert max(scp_indices) == upload_index, "the version.json upload must be the last artifact upload"
 for step in publish["steps"][upload_index + 1:]:
     assert not str(step.get("uses", "")).startswith(("appleboy/scp-action", "appleboy/ssh-action")), step

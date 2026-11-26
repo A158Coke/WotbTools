@@ -39,7 +39,7 @@ build the game assets.
 outbound Periphery agent is already connected and healthy. This PR deliberately does
 **not** manage that agent's lifecycle:
 
-- no Alibaba target profile, adoption script, SSH secret, or reusable Periphery
+- no Alibaba Periphery target profile, adoption script, lifecycle SSH secret, or reusable Periphery
   workflow exists in this repository;
 - ResourceSync only declares the existing Komodo Server (`address = ""`,
   `enabled = true`, outbound only, no inbound `:8120`), which means "Komodo knows
@@ -122,11 +122,31 @@ the actual size and SHA of a full direct GET, checks immutable caching and
 compares a resumed range against that download. Run the existing
 `bash deploy/assets/verify.sh` to check the Agent routes after redeployment.
 
-Record object identity, run, timestamp, host, and both command results in
-the migration inventory. Before redirecting any supported object, also
-verify the same bytes and Range on its rollback replica and record the
-production capacity and cost decision. The release workflow and TX routing
-continue to use the existing distribution path during this preparation.
+For Stage and Repair, install the reviewed script as a root-owned executable
+at `/usr/local/libexec/install-android-download` on the origin. Configure a
+dedicated unprivileged SSH account with write access to the two directories
+and read access to the lock. Keep its SSH configuration and the installer
+outside the account's write permissions. Pin its release key to this entry
+in the server-managed authorized keys file:
+
+```text
+restrict,command="/usr/local/libexec/install-android-download --receive" ssh-ed25519 <runner-public-key>
+```
+
+Set repository Actions secrets `ANDROID_DOWNLOAD_SSH_HOST`,
+`ANDROID_DOWNLOAD_SSH_USER`, and `ANDROID_DOWNLOAD_SSH_KEY` for this
+account. Set the Actions variable `ANDROID_DOWNLOAD_SSH_HOST_PUBLIC_KEY` to
+the independently verified server key (`ssh-ed25519 <base64>`) and optionally
+`ANDROID_DOWNLOAD_SSH_PORT` (default 22). The receiver reads one artifact
+from stdin, checks its declared size and digest, and uses the same locked
+installation path as local backfill. An SSH disconnect can follow a successful
+installation. Retry with identical bytes and verify the public URL.
+
+Record object identity, run, timestamp, host, and results in the migration
+inventory. Stage and Repair require the candidate reads to succeed. Publish
+rechecks both public paths for every staged object before announcing a new
+version. The stable URL still redirects to Tsinghua. Verify the rollback
+replica and record the production capacity and cost decision before cutover.
 
 ## Dataset versions
 

@@ -78,7 +78,8 @@ else
   printf '{}' > "$out"; printf 404; exit 22
 fi
 ''')
-for command in ("ssh", "curl"):
+(work / "bin/date").write_text('#!/bin/sh\necho "$CLOCK_EPOCH"\n')
+for command in ("ssh", "curl", "date"):
     (work / "bin" / command).chmod(0o755)
 shim_dir = (work / "bin").as_posix()
 if os.name == "nt" and re.match(r"^[A-Za-z]:", shim_dir):
@@ -99,9 +100,11 @@ def step_env(step, extra=None):
     return rendered
 delta_step = next(s for s in steps if s.get("id") == "delta")
 staging_step = next(s for s in steps if s.get("id") == "staging")
+budget_step = next(s for s in steps if s.get("id") == "delta_budget")
+budget, budget_env = budget_step["run"], step_env(budget_step)
 delta, delta_env = delta_step["run"], step_env(delta_step)
 staging = staging_step["run"]
-env = dict(os.environ, FIXTURE_ROOT=work.as_posix(), RUNNER_TEMP=str(runner), GITHUB_OUTPUT=str(work / "output"), BASH_ENV=(work / "shim-env.sh").as_posix())
+env = dict(os.environ, CLOCK_EPOCH="10000", JOB_START_EPOCH="10000", JOB_TIMEOUT_SECONDS="12600", FIXTURE_ROOT=work.as_posix(), RUNNER_TEMP=str(runner), GITHUB_OUTPUT=str(work / "output"), BASH_ENV=(work / "shim-env.sh").as_posix())
 for node in ("TX1", "TX2"):
     for key, value in {"HOST": node.lower(), "USER": "user", "PORT": "22", "KEY": "fixture"}.items():
         env[node + "_SSH_" + key] = value
@@ -111,41 +114,58 @@ def run(text, success=True, env_extra=None, **overrides):
     return result
 # A1: partial E[P], public E=404 and base fetch unavailable. Reuse E[P], no patch regeneration.
 (work / "tx1" / name).write_bytes(original)
-run(delta, env_extra=delta_env)
+run(budget, env_extra=budget_env)
+run(delta, env_extra=delta_env, EXISTING_EVIDENCE="200")
 assert (runner / "delta-existing-staging.json").read_bytes() == original
 assert not ".staging.json" in (work / "curl.log").read_text()
-run(staging, env_extra=step_env(staging_step, {"steps.delta.outputs.existingEvidence": "200"}))
+run(staging, env_extra=step_env(staging_step, {"steps.delta_budget.outputs.existingEvidence": "200"}))
 assert (work / "release-staging" / name).read_bytes() == original
 # Existing patch failure/tampering cannot silently turn E[P] into full-only.
-run(delta, False, env_extra=delta_env, MOCK_PATCH="missing")
-run(delta, False, env_extra=delta_env, MOCK_PATCH="corrupt")
+run(delta, False, env_extra=delta_env, EXISTING_EVIDENCE="200", MOCK_PATCH="missing")
+run(delta, False, env_extra=delta_env, EXISTING_EVIDENCE="200", MOCK_PATCH="corrupt")
+assert (work / "tx1" / name).read_bytes() == original
+# After a slow APK readback only 28 minutes remain. A locked patch cannot be dropped.
+slow_clock = str(10000 + (210 - 28) * 60)
+result = run(budget, False, env_extra=budget_env, CLOCK_EPOCH=slow_clock)
+assert "Insufficient Stage time for the immutable staged patch" in result.stderr
 assert (work / "tx1" / name).read_bytes() == original
 # A2: even semantically equal JSON with different bytes is a conflict.
 (work / "tx2" / name).write_text(json.dumps(evidence))
-run(delta, False, env_extra=delta_env)
+run(budget, False, env_extra=budget_env)
 # A4: same bytes on both nodes is idempotent, with identity validation still enforced.
 (work / "tx2" / name).write_bytes(original)
-run(delta, env_extra=delta_env)
+run(budget, env_extra=budget_env)
+run(delta, env_extra=delta_env, EXISTING_EVIDENCE="200")
 invalid = dict(evidence, sourceSha="c" * 40)
 for node in ("tx1", "tx2"): (work / node / name).write_text(json.dumps(invalid))
-run(delta, False, env_extra=delta_env)
+run(budget, False, env_extra=budget_env)
 for node in ("tx1", "tx2"): (work / node / name).write_bytes(original)
 # A5: unreachable never becomes missing (including when the other node is missing).
-run(delta, False, env_extra=delta_env, UNREACHABLE_NODE="tx2")
+run(budget, False, env_extra=budget_env, UNREACHABLE_NODE="tx2")
 for node in ("tx1", "tx2"): (work / node / name).unlink()
-run(delta, False, env_extra=delta_env, UNREACHABLE_NODE="tx2")
+run(budget, False, env_extra=budget_env, UNREACHABLE_NODE="tx2")
 # A3: both origins explicitly missing; optional base HTTP failure yields a NEW full-only E.
 (runner / "prod-version.json").write_text(json.dumps({"latestVersionCode":4000000, "sha256":"b"*64,
     "apkUrl":"https://wotbtools.com/download/android/wotbtools-android-v4.0.0.apk"}))
-run(delta, env_extra=delta_env)
+run(budget, env_extra=budget_env)
+run(delta, env_extra=delta_env, EXISTING_EVIDENCE="404")
+# Exactly one unit fits above the checkout + finish + runner reserves.
+(work / "output").write_text("")
+run(budget, env_extra=budget_env, CLOCK_EPOCH=str(10000 + (210 - 39) * 60))
+limits = dict(line.split("=") for line in (work / "output").read_text().splitlines())
+assert limits["tryDelta"] == "true"
+assert int(limits["prepareMinutes"]) + 2 * int(limits["uploadMinutes"]) + 7 * int(limits["replicaMinutes"]) == 17
+(work / "output").write_text("")
+run(budget, env_extra=budget_env, CLOCK_EPOCH=slow_clock)
+assert (work / "output").read_text().splitlines() == ["existingEvidence=404"]
 meta = json.loads((runner / "delta-metadata.json").read_text())
 assert meta == {"apkSizeBytes":target.stat().st_size, "patches":[]}
 (runner / "bundle-evidence.json").write_text(json.dumps(evidence | {"patches":[]}))
-run(staging, env_extra=step_env(staging_step, {"steps.delta.outputs.existingEvidence":"404"}))
+run(staging, env_extra=step_env(staging_step, {"steps.delta_budget.outputs.existingEvidence":"404"}))
 assert json.loads((work / "release-staging" / name).read_text())["patches"] == []
 # A version already advertised without either immutable record must not mint new evidence.
 (runner / "prod-version.json").write_text(json.dumps({"latestVersionCode":4000001}))
-run(delta, False, env_extra=delta_env)
+run(budget, False, env_extra=budget_env)
 print("Android immutable workflow A1-A5 (real shell and identity verifiers): PASS")
 PYFLOW
 else

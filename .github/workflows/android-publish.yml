@@ -16,7 +16,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
     - name: Checkout current main (current release policy + ancestry history)
       uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -87,6 +87,13 @@ jobs:
       run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-08-api-readiness.sh"
       env:
         STEP_STAGED_ASSETORIGIN: ${{ steps.staged.outputs.assetOrigin }}
+    - name: Verify both distribution replicas before writing the production manifest
+      if: steps.pubpreflight.outputs.publishAction == 'publish'
+      shell: bash
+      env:
+        STEP_STAGEDREF_APKNAME: ${{ steps.stagedref.outputs.apkName }}
+        STEP_STAGED_APKSHA: ${{ steps.staged.outputs.apkSha }}
+      run: bash -eo pipefail "$GITHUB_WORKSPACE/scripts/android-release/steps/publish-verify-distribution.sh"
     - name: Write version.json (commit point, LAST)
       if: steps.pubpreflight.outputs.publishAction == 'publish'
       shell: bash
