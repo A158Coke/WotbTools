@@ -4,7 +4,7 @@ import { spansContainAt } from '../trackInterp.js'
 import { makeReplacedAt } from './identity.ts'
 import { GRID_DT } from './util.js'
 import { QUALITY_PRESETS, shadowQualityEligible } from './quality.js'
-import { boolPref, persistBoolPref, resolveQualityKey } from './preferences.ts'
+import { boolPref, consumeUrlBool, persistBoolPref, resolveQualityKey } from './preferences.ts'
 import { buildRenderSettingsReloadUrl, type RenderSettingsPatch } from './renderSettings.ts'
 import { createContactShadowControl } from './contactShadowControl.ts'
 import type { Host } from '../playbackScene.js'
@@ -67,7 +67,10 @@ export function installSceneState(S: Host) {
     store: S.store, qualityKey: () => S.QKEY, getScene: () => S.scene, getSunLight: () => S.sunLight,
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
-  S.contactShadowCtl.setEnabled(boolPref('pb_contact_shadows', 'shadows', false));
+  // ?shadows=1/0 只属于本次整页重载：读一次就从 URL 消费掉，之后换文件 / 新建场景
+  // 仍按「无选择 = OFF」处理，不会把上一场的接地阴影带给下一场。
+  const contactShadowOverride = consumeUrlBool('shadows');
+  S.contactShadowCtl.setEnabled(contactShadowOverride ?? boolPref('pb_contact_shadows', 'shadows', false));
   // 装配段替换（建场景后才有反射句柄）；dirty frame 强制刷新反射（按需渲染只有一帧）。
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};

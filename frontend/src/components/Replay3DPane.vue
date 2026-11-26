@@ -38,13 +38,18 @@ const props = defineProps({
   autoStartUserId: { type: String, default: '' },
   /** 当前回放是官方示例：整页重载后需重新下载校验，不能直接复用 File 身份。 */
   demo: { type: Boolean, default: false },
-  /** 恢复解析完成后由工作台递增：这一次自动开始不受日常自动播放偏好限制。 */
-  resumeToken: { type: Number, default: 0 },
+  /** 重载恢复出的完整批次与选择代次：暂存前快照，异步写完后复核选择没有变。 */
+  replayFiles: { type: Array, default: () => [] },
+  selectionRevision: { type: Number, default: 0 },
+  /** 恢复解析完成后由工作台给出 `{ id, file }`：这一次自动开始绑定该 File、不受日常偏好限制。 */
+  resumeRequest: { type: Object, default: null },
 })
+const emit = defineEmits(['resume-consumed'])
 
 const playbackTeamCssVars = teamCssVars('')
 
 const S = {}
+S.emitResumeConsumed = () => emit('resume-consumed')
 let sceneApi = null
 let jumpBase = null
 let lastFile = null

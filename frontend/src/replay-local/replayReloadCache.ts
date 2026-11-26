@@ -5,20 +5,25 @@
 // 只存在于内存，页面重载后无法自行恢复——若不暂存，用户会回到空工作台。
 //
 // 存储分工：
-//   · IndexedDB 存 File 本身（结构化克隆支持 File/Blob，不复制字节到内存字符串）；
-//   · sessionStorage 只存「本次重载有一次待恢复」的标记，避免普通进入工作台时访问 IDB。
-// 标记是一次性的：takeReloadReplay() 无论成败都先消费标记，重载恢复失败不会反复重试。
-// 官方示例不存 File（重载后 WeakSet 身份会丢失，updateDemoFile 会拒绝），只存 kind=demo，
-// 重载后重新下载并按 manifest 校验，避免绕过官方示例的完整性检查。
+//   · IndexedDB 按**每次重载独立的 id** 存完整选择（多选批次 + 当前场次下标）；
+//   · sessionStorage 只存本次标签页的待恢复 id，避免普通进入工作台时访问 IDB，也让
+//     两个标签页各自重载时不会互相覆盖 / 消费对方的记录；
+//   · 官方示例不存 File（重载后 WeakSet 身份会丢失，updateDemoFile 会拒绝），只存
+//     kind=demo，重载后重新下载并按 manifest 校验，避免绕过完整性检查。
+// 标记是一次性的：takeReloadReplay() 无论成败都先消费标记，恢复失败不会反复重试。
 const DB_NAME = 'wotb-replay-reload'
 const DB_VERSION = 1
 const STORE_NAME = 'replays'
-const RECORD_KEY = 'current'
 export const RELOAD_PENDING_KEY = 'wotb-replay-reload-pending'
 
-export type StagedReplay = { kind: 'demo' } | { kind: 'file', file: File }
+export type StagedReplay =
+  | { kind: 'demo' }
+  | { kind: 'files', files: File[], currentIndex: number }
 
-interface StoredReplay { kind: 'demo' | 'file', file?: File }
+export interface StagedReload { id: string, replay: StagedReplay }
+export interface StageReplayInput { files: readonly File[], currentIndex: number, demo?: boolean }
+
+interface StoredReload { replay: StagedReplay }
 
 function openDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === 'undefined') {
@@ -36,81 +41,112 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
-function writeRecord(db: IDBDatabase, record: StoredReplay): Promise<void> {
+function writeRecord(db: IDBDatabase, id: string, record: StoredReload): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(record, RECORD_KEY)
+    tx.objectStore(STORE_NAME).put(record, id)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error ?? new Error('IndexedDB write failed'))
     tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted'))
   })
 }
 
-function deleteRecord(db: IDBDatabase): Promise<void> {
+function deleteRecord(db: IDBDatabase, id: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).delete(RECORD_KEY)
+    tx.objectStore(STORE_NAME).delete(id)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error ?? new Error('IndexedDB delete failed'))
     tx.onabort = () => reject(tx.error ?? new Error('IndexedDB delete aborted'))
   })
 }
 
-function takeRecord(db: IDBDatabase): Promise<StoredReplay | null> {
+function takeRecord(db: IDBDatabase, id: string): Promise<StoredReload | null> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
-    let value: StoredReplay | null = null
-    const read = store.get(RECORD_KEY)
-    read.onsuccess = () => { value = (read.result as StoredReplay | undefined) ?? null }
-    store.delete(RECORD_KEY)
+    let value: StoredReload | null = null
+    const read = store.get(id)
+    read.onsuccess = () => { value = (read.result as StoredReload | undefined) ?? null }
+    store.delete(id)
     tx.oncomplete = () => resolve(value)
     tx.onerror = () => reject(tx.error ?? new Error('IndexedDB read failed'))
     tx.onabort = () => reject(tx.error ?? new Error('IndexedDB read aborted'))
   })
 }
 
+function reloadId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  return uuid ?? `reload-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isFileList(value: unknown): value is File[] {
+  return Array.isArray(value) && value.length > 0
+    && value.every(file => typeof File !== 'undefined' && file instanceof File)
+}
+
+function validReplay(value: unknown): value is StagedReplay {
+  if (!value || typeof value !== 'object') return false
+  const replay = value as StagedReplay
+  if (replay.kind === 'demo') return true
+  if (replay.kind !== 'files' || !isFileList(replay.files)) return false
+  return Number.isInteger(replay.currentIndex)
+    && replay.currentIndex >= 0 && replay.currentIndex < replay.files.length
+}
+
 /**
- * 重载前暂存当前回放。失败会抛出，由调用方中止重载并提示用户；
+ * 重载前暂存完整回放选择。失败会抛出，由调用方中止重载并提示用户；
  * 绝不能先重载再发现没存上（那正是这个 P2 要修的数据丢失）。
+ * @returns 本次暂存的 id；调用方在异步写入后若发现选择已变，用它只清理自己的记录。
  */
-export async function stageReplayForReload(file: File, { demo = false }: { demo?: boolean } = {}): Promise<void> {
+export async function stageReplayForReload(input: StageReplayInput): Promise<string> {
   if (typeof sessionStorage === 'undefined') throw new Error('sessionStorage unavailable')
+  const demo = !!input.demo
+  const files = demo ? [] : input.files.slice()
+  if (!demo && files.length === 0) throw new Error('No replay files to stage')
+  const currentIndex = demo ? 0 : Math.min(Math.max(0, Math.trunc(input.currentIndex)), files.length - 1)
+  const replay: StagedReplay = demo ? { kind: 'demo' } : { kind: 'files', files, currentIndex }
+  const id = reloadId()
   const db = await openDb()
   try {
-    await writeRecord(db, demo ? { kind: 'demo' } : { kind: 'file', file })
+    await writeRecord(db, id, { replay })
     try {
-      sessionStorage.setItem(RELOAD_PENDING_KEY, '1')
+      sessionStorage.setItem(RELOAD_PENDING_KEY, id)
     } catch (error) {
-      try { await deleteRecord(db) } catch { /* 保留原始失败原因 */ }
+      try { await deleteRecord(db, id) } catch { /* 保留原始失败原因 */ }
       throw error
     }
   } finally {
     db.close()
   }
+  return id
 }
 
 /**
- * 取回并消费上一次重载暂存的回放。没有待恢复标记时直接返回 null，不访问 IndexedDB。
- * 标记在读取前就被清掉：恢复失败只报一次，不会让后续每次进入工作台都重试。
+ * 取回并消费上一次重载暂存的回放。没有待恢复 id 时直接返回 null，不访问 IndexedDB。
+ * 每个标签页只读自己 sessionStorage 里的 id，因此多标签页重载不会互相覆盖。
  */
-export async function takeReloadReplay(): Promise<StagedReplay | null> {
+export async function takeReloadReplay(): Promise<StagedReload | null> {
   if (typeof sessionStorage === 'undefined') return null
-  let pending = null
-  try { pending = sessionStorage.getItem(RELOAD_PENDING_KEY) } catch { return null }
-  if (pending !== '1') return null
+  let id: string | null = null
+  try { id = sessionStorage.getItem(RELOAD_PENDING_KEY) } catch { return null }
+  if (!id) return null
   try { sessionStorage.removeItem(RELOAD_PENDING_KEY) } catch { /* 标记清理失败也不能重复恢复 */ }
 
   const db = await openDb()
   try {
-    const record = await takeRecord(db)
-    if (!record) return null
-    if (record.kind === 'demo') return { kind: 'demo' }
-    if (record.kind === 'file' && record.file && typeof File !== 'undefined' && record.file instanceof File) {
-      return { kind: 'file', file: record.file }
-    }
-    return null
+    const record = await takeRecord(db, id)
+    return record && validReplay(record.replay) ? { id, replay: record.replay } : null
   } finally {
     db.close()
   }
+}
+
+/** 暂存后又发现选择已变：只清理本次 id 对应的记录 / 标记，不影响其他标签页。 */
+export async function discardReloadReplay(id: string): Promise<void> {
+  try {
+    const db = await openDb()
+    try { await deleteRecord(db, id) } finally { db.close() }
+  } catch { /* 清理失败不能掩盖原始中止原因 */ }
+  try { if (sessionStorage.getItem(RELOAD_PENDING_KEY) === id) sessionStorage.removeItem(RELOAD_PENDING_KEY) } catch { /* ignore */ }
 }

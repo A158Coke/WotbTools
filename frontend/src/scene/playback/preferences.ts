@@ -13,6 +13,16 @@ export function persistBoolPref(key: string, on: boolean): void {
   try { localStorage.setItem(key, on ? '1' : '0') } catch (_) {}
 }
 
+export function consumeUrlBool(urlKey: string): boolean | null {
+  try {
+    const url = new URL(location.href)
+    if (!url.searchParams.has(urlKey)) return null
+    const value = url.searchParams.get(urlKey) !== '0'
+    url.searchParams.delete(urlKey)
+    history.replaceState(history.state, '', url)
+    return value
+  } catch { return null }
+}
 export function resolveQualityKey(): string {
   const usp = new URLSearchParams(location.search)
   let q = (usp.get('q') || '').toLowerCase()

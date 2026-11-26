@@ -108,17 +108,21 @@ const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayI
       : t('workspace.native_replay_read_failed')
   },
 })
-// 渲染设置整页重载后恢复当前回放（一次性标记；普通进入不触碰 IndexedDB）。
-const replayResumeToken = ref(0)
+// 渲染设置整页重载后恢复完整回放选择（一次性 id；普通进入不触碰 IndexedDB）。
+// 自动重播请求绑定恢复出来的 File，由 Pane 消费后清除；用户换场即失效，绝不落到另一场。
+const replayResumeRequest = ref(null)
 useReplayReloadRestore({
-  files, updateFiles, updateDemoFile, analyze, onRestored: () => { replayResumeToken.value += 1 }, onError: () => { error.value = t('workspace.replay_restore_failed') },
+  files, selectionRevision, updateFiles, updateDemoFile, selectBattleIndex: workspace.replay.selectBattleIndex, analyze,
+  onRestored: (file, id) => { if (targetFile.value === file) replayResumeRequest.value = { id, file } },
+  onError: () => { error.value = t('workspace.replay_restore_failed') },
+})
+watch(targetFile, (file) => {
+  if (replayResumeRequest.value && replayResumeRequest.value.file !== file) replayResumeRequest.value = null
 })
 
 const confirmRemove = () => workspace.replay.confirmRemove()
 
-function clearSelection() {
-  updateFiles([])
-}
+function clearSelection() { updateFiles([]) }
 
 function onFilesUpdate(next) {
   if (!next.length) {
@@ -145,11 +149,7 @@ async function onRemoveFile(file) {
   onFilesUpdate(files.value.filter(item => item !== file))
 }
 
-async function openOtherReplay() {
-  clearSelection()
-  await nextTick()
-  sourcePicker.value?.chooseFiles()
-}
+async function openOtherReplay() { clearSelection(); await nextTick(); sourcePicker.value?.chooseFiles() }
 
 function onWorkspaceDrop(event) {
   sourcePicker.value?.addDropped(event.dataTransfer?.files)
@@ -351,7 +351,10 @@ watch(() => props.initialCapability, (val) => {
               :pending-seek="pending3dSeek"
               :show-event-markers="showEventMarkers"
               :auto-start-user-id="autoStartUserId"
-              :demo="isDemoSelection" :resume-token="replayResumeToken"
+              :demo="isDemoSelection"
+              :replay-files="files" :selection-revision="selectionRevision"
+              :resume-request="replayResumeRequest"
+              @resume-consumed="replayResumeRequest = null"
             />
           </template>
           <template #events>

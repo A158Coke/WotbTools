@@ -8,13 +8,22 @@
  *   （一次 Save 最多一次重载），炮声只写反馈偏好、不重建渲染器；
  * - 画质降到不支持接地阴影的档位时，Draft 里该开关按场景门禁失效。
  */
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  installPaneTestLifecycle, mountPane, mockWebGL, flush, start, testState, nextTick,
+  installPaneTestLifecycle, mountPane, mockWebGL, flush, start, testState, nextTick, mkFile,
 } from './Replay3DPane.test.harness.js'
 
+const cache = vi.hoisted(() => ({ stage: vi.fn(), discard: vi.fn() }))
+vi.mock('../replay-local/replayReloadCache.js', () => ({
+  stageReplayForReload: cache.stage,
+  discardReloadReplay: cache.discard,
+}))
 const { playback } = testState
 installPaneTestLifecycle()
+beforeEach(() => {
+  cache.stage.mockReset().mockResolvedValue('reload-test')
+  cache.discard.mockReset().mockResolvedValue(undefined)
+})
 
 /** 开播后打开设置面：入口由传输条常驻渲染，与待开播卡片无关。 */
 async function openSettings(wrapper) {
@@ -159,6 +168,38 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     // 场景侧 S.stageReloadReplay 为 undefined，会在真正重载前静默跳过暂存。
     const options = playback.init.mock.calls.at(-1)?.[3]
     expect(typeof options?.stageReloadReplay).toBe('function')
+    wrapper.unmount()
+  })
+
+  it('重载暂存完整多选批次与当前场次，而不是只存当前文件', async () => {
+    const fileA = mkFile('a.wotbreplay')
+    const fileB = mkFile('b.wotbreplay')
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ file: fileA, replayFiles: [fileA, fileB] })
+    await start(wrapper)
+    const stage = playback.init.mock.calls.at(-1)?.[3]?.stageReloadReplay
+    await stage()
+    expect(cache.stage).toHaveBeenCalledWith({
+      files: [fileA, fileB], currentIndex: 0, demo: false,
+    })
+    wrapper.unmount()
+  })
+
+  it('暂存期间切换场次：只清理本次暂存并中止重载，不把 A 的状态带到 B', async () => {
+    const fileA = mkFile('a.wotbreplay')
+    const fileB = mkFile('b.wotbreplay')
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ file: fileA, replayFiles: [fileA, fileB] })
+    await start(wrapper)
+    const stage = playback.init.mock.calls.at(-1)?.[3]?.stageReloadReplay
+    let release
+    cache.stage.mockImplementation(() => new Promise((resolve) => { release = resolve }))
+    const pending = stage()
+    await flush()
+    await wrapper.setProps({ file: fileB })
+    release('reload-stale')
+    await expect(pending).rejects.toThrow('Replay selection changed before reload')
+    expect(cache.discard).toHaveBeenCalledWith('reload-stale')
     wrapper.unmount()
   })
 

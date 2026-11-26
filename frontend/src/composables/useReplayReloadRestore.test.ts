@@ -11,15 +11,21 @@ import { restoreStagedReplay } from './useReplayReloadRestore.ts'
 
 function deps(overrides = {}) {
   return {
-    files: ref([]),
+    files: ref<File[]>([]),
+    selectionRevision: ref(0),
     updateFiles: vi.fn(),
     updateDemoFile: vi.fn(),
+    selectBattleIndex: vi.fn(),
     analyze: vi.fn().mockResolvedValue({ completed: true }),
     onRestored: vi.fn(),
     onError: vi.fn(),
     ...overrides,
   }
 }
+
+const fileA = new File(['a'], 'a.wotbreplay')
+const fileB = new File(['b'], 'b.wotbreplay')
+const stagedFiles = { id: 'reload-1', replay: { kind: 'files', files: [fileA, fileB], currentIndex: 1 } }
 
 describe('restoreStagedReplay', () => {
   beforeEach(() => {
@@ -43,28 +49,51 @@ describe('restoreStagedReplay', () => {
     expect(d.updateFiles).not.toHaveBeenCalled()
   })
 
-  it('用户文件：放回工作台并重新解析', async () => {
-    const file = new File(['replay'], 'battle.wotbreplay')
-    cache.take.mockResolvedValue({ kind: 'file', file })
+  it('完整批次：恢复全部文件、指回原场次再重新解析，并交付绑定 File 的重播请求', async () => {
+    cache.take.mockResolvedValue(stagedFiles)
     const d = deps()
     expect(await restoreStagedReplay(d)).toBe(true)
-    expect(d.updateFiles).toHaveBeenCalledWith([file])
-    expect(d.updateDemoFile).not.toHaveBeenCalled()
+    expect(d.updateFiles).toHaveBeenCalledWith([fileA, fileB])
+    expect(d.selectBattleIndex).toHaveBeenCalledWith(1)
     expect(d.analyze).toHaveBeenCalledTimes(1)
-    expect(d.onRestored).toHaveBeenCalledWith(file)
+    expect(d.onRestored).toHaveBeenCalledWith(fileB, 'reload-1')
+  })
+
+  it('等待存储期间用户已建立自己的选择：放弃恢复，不覆盖', async () => {
+    const d = deps()
+    cache.take.mockImplementation(async () => {
+      d.files.value = [fileA]
+      d.selectionRevision.value += 1
+      return stagedFiles
+    })
+    expect(await restoreStagedReplay(d)).toBe(false)
+    expect(d.updateFiles).not.toHaveBeenCalled()
+    expect(d.onRestored).not.toHaveBeenCalled()
   })
 
   it('官方示例：重新下载校验后走 demo 选择路径', async () => {
-    const file = new File(['demo'], 'official.wotbreplay')
-    cache.take.mockResolvedValue({ kind: 'demo' })
-    demo.load.mockResolvedValue(file)
+    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo' } })
+    demo.load.mockResolvedValue(fileA)
     const d = deps()
     expect(await restoreStagedReplay(d)).toBe(true)
     expect(demo.load).toHaveBeenCalledTimes(1)
-    expect(d.updateDemoFile).toHaveBeenCalledWith(file)
+    expect(d.updateDemoFile).toHaveBeenCalledWith(fileA)
     expect(d.updateFiles).not.toHaveBeenCalled()
     expect(d.analyze).toHaveBeenCalledTimes(1)
-    expect(d.onRestored).toHaveBeenCalledWith(file)
+    expect(d.onRestored).toHaveBeenCalledWith(fileA, 'reload-demo')
+  })
+
+  it('下载官方示例期间用户已选择别的回放：不再替换选择', async () => {
+    cache.take.mockResolvedValue({ id: 'reload-demo', replay: { kind: 'demo' } })
+    const d = deps()
+    demo.load.mockImplementation(async () => {
+      d.files.value = [fileB]
+      d.selectionRevision.value += 1
+      return fileA
+    })
+    expect(await restoreStagedReplay(d)).toBe(false)
+    expect(d.updateDemoFile).not.toHaveBeenCalled()
+    expect(d.analyze).not.toHaveBeenCalled()
   })
 
   it('取回暂存失败：提示一次且不解析', async () => {
@@ -76,8 +105,7 @@ describe('restoreStagedReplay', () => {
   })
 
   it('恢复或解析失败：交给工作台错误态，不抛到挂载链', async () => {
-    const file = new File(['replay'], 'battle.wotbreplay')
-    cache.take.mockResolvedValue({ kind: 'file', file })
+    cache.take.mockResolvedValue(stagedFiles)
     const d = deps({ analyze: vi.fn().mockRejectedValue(new Error('parse crashed')) })
     expect(await restoreStagedReplay(d)).toBe(false)
     expect(d.onError).toHaveBeenCalledTimes(1)
@@ -85,8 +113,7 @@ describe('restoreStagedReplay', () => {
   })
 
   it('解析没有完成：恢复输入但不标记自动重播', async () => {
-    const file = new File(['replay'], 'battle.wotbreplay')
-    cache.take.mockResolvedValue({ kind: 'file', file })
+    cache.take.mockResolvedValue(stagedFiles)
     const d = deps({ analyze: vi.fn().mockResolvedValue({ completed: false, reason: 'ENGINE_UNAVAILABLE' }) })
     expect(await restoreStagedReplay(d)).toBe(true)
     expect(d.onRestored).not.toHaveBeenCalled()

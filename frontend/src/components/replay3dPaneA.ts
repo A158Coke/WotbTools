@@ -13,7 +13,7 @@ import { createPlaybackStore } from '../scene/playbackStore.js'
 import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
 import { shadowQualityEligible } from '../scene/playback/quality.js'
 import { replaySettingsDiff, type Replay3DSettings } from '../scene/playback/renderSettings.js'
-import { stageReplayForReload } from '../replay-local/replayReloadCache.js'
+import { discardReloadReplay, stageReplayForReload } from '../replay-local/replayReloadCache.js'
 import { showToast } from '../composables/useToast.js'
 import type { initPlayback } from '../scene/playbackScene.js'
 
@@ -32,13 +32,26 @@ export interface R3dAParts {
   sceneApi: SceneApiLike | null
   /** 渲染设置整页重载前暂存当前回放；失败时抛错并中止重载。 */
   stageReloadReplay?: () => Promise<void>
+  /** 重载恢复的自动重播信号（A 段拥有匹配/消费，C 段只在完整就绪后 claim）。 */
+  resumePending?: Ref<boolean>
+  claimResume?: () => boolean
+  consumeResume?: () => void
+  maybeAutoStart?: () => void
+  emitResumeConsumed?: () => void
 }
+
+export interface ReplayResumeRequest { id: string, file: File }
 
 export interface R3dAProps {
   active: boolean
   file: unknown
   /** 当前回放是否为官方示例（重载后需重新下载校验，不能直接复用 File 身份）。 */
   demo?: boolean
+  /** 重载暂存用的完整批次与选择代次（当前 File 可能只是批次中的一场）。 */
+  replayFiles?: readonly File[]
+  selectionRevision?: number
+  /** 已恢复并解析完成的回放；只有 file 匹配时才允许触发一次自动重播。 */
+  resumeRequest?: ReplayResumeRequest | null
 }
 
 export function r3dA(S: R3dAParts, props: R3dAProps): void {
@@ -105,12 +118,24 @@ async function saveSettings(): Promise<void> {
   if (diff.render) await S.sceneApi?.applyRenderSettings?.(diff.render)
 }
 
+function sameReplayFiles(next: readonly unknown[], previous: readonly File[]): boolean {
+  return next.length === previous.length && next.every((file, index) => file === previous[index])
+}
 async function stageReloadReplay(): Promise<void> {
   const file = props.file
   if (!(file instanceof File)) return
+  const capturedFiles = (props.replayFiles ?? []).filter((item): item is File => item instanceof File)
+  const files = capturedFiles.includes(file) ? capturedFiles : [file, ...capturedFiles]
+  const selectionRevision = props.selectionRevision
+  let reloadId: string | null = null
   try {
-    await stageReplayForReload(file, { demo: !!props.demo })
+    reloadId = await stageReplayForReload({ files, currentIndex: files.indexOf(file), demo: !!props.demo })
+    const unchanged = props.selectionRevision === selectionRevision
+      && props.file === file
+      && sameReplayFiles(props.replayFiles ?? [], capturedFiles)
+    if (!unchanged) throw new Error('Replay selection changed before reload')
   } catch (error) {
+    if (reloadId) await discardReloadReplay(reloadId)
     showToast({
       id: 'replay3d-reload-stage',
       tone: 'error',
@@ -120,6 +145,36 @@ async function stageReloadReplay(): Promise<void> {
   }
 }
 S.stageReloadReplay = stageReloadReplay
+const resumePending = ref(false)
+let consumedResumeId: string | null = null
+function resumeMatches(): boolean {
+  const request = props.resumeRequest
+  return !!request && request.file === props.file
+}
+function consumeResume(): void {
+  const request = props.resumeRequest
+  if (!request || !resumeMatches() || request.id === consumedResumeId) return
+  resumePending.value = false
+  consumedResumeId = request.id
+  S.emitResumeConsumed?.()
+}
+function claimResume(): boolean {
+  const request = props.resumeRequest
+  if (!resumePending.value || !request || !resumeMatches() || request.id === consumedResumeId) return false
+  resumePending.value = false
+  consumedResumeId = request.id
+  S.emitResumeConsumed?.()
+  return true
+}
+resumePending.value = resumeMatches()
+watch([() => props.resumeRequest?.id ?? '', () => props.file], () => {
+  const request = props.resumeRequest
+  resumePending.value = !!request && request.file === props.file && request.id !== consumedResumeId
+  if (resumePending.value) S.maybeAutoStart?.()
+}, { flush: 'post' })
+S.resumePending = resumePending
+S.claimResume = claimResume
+S.consumeResume = consumeResume
 const displayOpen = ref(false)
 const displayAnchor = ref<HTMLElement | null>(null)
 function toggleDisplay(anchor: HTMLElement | null): void {
