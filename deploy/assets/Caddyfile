@@ -31,6 +31,32 @@ assets.wotbtools.com {
 	# a year-long TTL until the package is moved behind a versioned path.
 	header Cache-Control "public, max-age=300, must-revalidate"
 
+	# Android releases live outside the replaceable Agent tree.
+	@android path /android /android/*
+	handle @android {
+		root * /srv/wotb-downloads
+		route {
+			header Cache-Control "no-store"
+			@artifact {
+				method GET HEAD
+				path_regexp androidArtifact ^/android/(wotbtools-android-v[0-9]+\.[0-9]+\.[0-9]+\.apk|wotbtools-android-delta-[0-9]+-[0-9]+-[0-9a-f]{64}\.vcdiff)$
+				file {path}
+			}
+			handle @artifact {
+				header {
+					Cache-Control "no-store"
+					match status 4xx 5xx
+				}
+				header {
+					Cache-Control "public, max-age=31536000, immutable"
+					match status 200 206 304
+				}
+				file_server
+			}
+			respond "not found" 404
+		}
+	}
+
 	# Versioned datasets: /v/<dataset_id>/... -> /srv/wotb-assets/datasets/<id>/...
 	# `handle_path` strips the /v prefix; the dataset tree is immutable per release
 	# (datasets/<id> is a symlink, flipped atomically by deploy/assets/dataset.sh).

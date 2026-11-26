@@ -66,3 +66,44 @@ secret 不进入源码、前端、镜像 build args 或主机持久 `.env`。
 官方接口参考：[Java 上传](https://cloud.tencent.com/document/product/436/65935)、
 [下载](https://cloud.tencent.com/document/product/436/65937)、
 [删除](https://cloud.tencent.com/document/product/436/65939)。
+
+## #810 业务图片预复制
+
+离线工具从 Business PostgreSQL 的同一语句快照读取联赛封面、UP 头像和视频推荐封面，包括未引用的 READY 和 PENDING。它分页列举两端前缀，在独立 SQLite 文件保存原始台账、清单、逐项检查结果和写入归属。每次新快照使用新文件名，文件和备份放在仅迁移人员可访问的目录。Issue 只附命令输出的聚合数字。
+
+### 准备迁移环境
+
+在独立 Python 3.12 虚拟环境运行 `python -m pip install -r deploy/business-images/requirements.txt`。数据库连接使用 libpq 的 `PGSERVICE` 或 `PGHOST` 等参数及只读角色。两个迁移身份均使用短期凭据。
+
+| 环境变量 | 范围 |
+| --- | --- |
+| `MIGRATION_COS_BUCKET`、`MIGRATION_COS_REGION`、`MIGRATION_COS_SECRET_ID`、`MIGRATION_COS_SECRET_KEY`、`MIGRATION_COS_TOKEN` | 源桶，仅列举和读取两个业务前缀 |
+| `MIGRATION_OSS_BUCKET`、`MIGRATION_OSS_REGION`、`MIGRATION_OSS_KEY_ID`、`MIGRATION_OSS_KEY_SECRET`、`MIGRATION_OSS_TOKEN` | 目标桶，列举和读取两个前缀。`verify` 和 `copy` 需要 `oss:GetBucketPublicAccessBlock`，`copy` 还需查询桶 ACL、版本状态及向前缀创建私有对象 |
+| `BROADCAST_COS_PREFIX`、`CREATOR_AVATAR_COS_PREFIX` | 与当前 Business 实例一致，缺省值分别为 `league-broadcasts/covers/`、`creator-avatars/` |
+
+确认迁移主机能通过 HTTPS 访问两端。目标桶应专用于私有图片，先验证匿名 GET 被拒绝，并在整个复制窗口内保持 ACL、桶策略和版本状态稳定。OSS 的防覆盖头在版本控制启用或暂停时失效，工具在这两种情况下拒绝开始复制。[OSS PutObject 契约](https://www.alibabacloud.com/help/en/oss/developer-reference/putobject)
+
+在目标桶级别启用并持续保留「阻止公共访问」（Block Public Access），覆盖预存对象 ACL 和桶策略中的公开授权。`verify` 和 `copy` 在开始、结束时读取该设置；条件创建遇到 409 时也会在复用对象前复查。设置关闭、缺失或无权读取时命令失败。迁移身份只需读取此设置。[OSS 阻止公共访问说明](https://www.alibabacloud.com/help/en/oss/user-guide/block-public-access)
+
+### 运行与读数
+
+```sh
+python deploy/business-images/precopy.py snapshot /restricted/precopy.sqlite
+python deploy/business-images/precopy.py verify /restricted/precopy.sqlite
+python deploy/business-images/precopy.py copy /restricted/precopy.sqlite --limit 100
+python deploy/business-images/precopy.py verify /restricted/precopy.sqlite
+```
+
+1. `snapshot` 仅读云端，完成台账和两端清单后返回 0。失败的快照不能用于复制，另选文件名重建。每个 manifest 同时由一个进程操作。
+2. `verify` 逐行重新 GET 两端，与数据库长度、SHA-256 和内容类型核对，并检查图片文件头。`copy` 只处理尚待处理的行；目标已存在时重新核对内容。并发创建冲突后再次读取目标，内容不一致记为冲突。PENDING 保持原状态，未引用的 READY 没有年龄过滤。
+3. `copy` 可重复分批执行；优先处理尝试次数较少的行。中断后复用原文件。写入结果未知时 `write_attempted=1`，只有确认条件创建成功才记录 `created_by_run=1`。超时后发现相同内容可以完成校验，清理时仍需独立证明归属。
+4. `copy` 的 JSON 将快照清单与台账对照。`verify` 在逐行回读后重新分页列举两端前缀，`untracked_objects` 显示本次列举中无快照台账的数量，`new_since_snapshot` 标出其中快照列举后才出现的数量。对应明细保存在 `verify_inventory`，原始清单仍在 `inventory`。每次完整核验更新 `verify_inventory`。返回 0 需要所有台账行为 `verified` 或 `pending_absent`、对应清单无多余对象且隐私检查通过。
+5. 对源端缺失的 READY 回查最新台账。若已被正常清理，在新快照中确认；仍有引用或仍可挂接时阻断切流。PENDING 两端都缺失可记作 `pending_absent`，继续保留源清理责任。源存在但台账已删除的对象保留在清单中调查。
+
+### 最终对账与回滚
+
+在线预复制期间，数据库、对象正文和分页列举各有读取时点。最终对账前，冻结所有 Business 实例的上传、挂接、替换、删除及清理，同时停掉能写两个前缀的其他迁移进程、人工操作与后台任务。排空在途操作并核查结果不明的 PUT 后，使用新 manifest 依次运行 `snapshot`、`copy`、`verify`。最终 `verify` 完成并切流前保持所有写入方冻结。以新快照识别已经撤销或清理的条目，目标残留结合原 manifest 的创建记录核对，交由 owner 处理。保留所有源清单和 PENDING 清理记录直至实际完成清理。
+
+停止预复制只需停止工具，线上继续读取 COS。恢复 OSS 业务写入后的回切另需按当时的数据库冻结、反向补齐和逐项校验。本工具只实现 COS 到 OSS 方向。#801、Android/Agent 消费者证明、目标 Business adapter、三入口生产生命周期及 owner 退桶验收仍按 [#810 最终方案](https://github.com/A158Coke/WotbTools/issues/810#issuecomment-7197343642) 执行。
+
+本地回归使用临时 PostgreSQL 和 loopback 对象服务。在上述虚拟环境额外安装测试依赖 `pgserver==0.1.4` 后运行 `python -m unittest discover -s deploy/business-images -v`。
