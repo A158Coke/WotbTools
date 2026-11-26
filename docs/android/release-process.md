@@ -1,5 +1,11 @@
 # Android 发布
 
+## 阿里云候选下载源（#801）
+
+候选源准备阶段保留清华公开分发和两台 TX 的现有副本。运维可从原始签名 APK 或已有差分回填候选源，按[资产源操作说明](../../deploy/assets/README.md#android-candidate-download-origin)核对落盘与公网完整字节、缓存及 Range。客户端与 manifest 继续使用主站的稳定下载 URL。
+
+下一阶段接入 Stage 双写、Publish 提交前校验和 Repair。生产试切前按 [#801 实施方案](https://github.com/A158Coke/WotbTools/issues/801#issuecomment-7197531164) 记录发布峰的实际出口、费用和余量，取得 GO，并核验同版同 SHA 回滚源。
+
 ## 版本与 Bridge 契约
 
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
