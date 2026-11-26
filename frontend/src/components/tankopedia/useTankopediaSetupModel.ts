@@ -6,9 +6,10 @@ import type { TankCharacteristics } from '../../replay-local/compute/characteris
 import type { useTankopediaDetailData } from './useTankopediaDetailData'
 import { moduleTreeLayout } from '../../utils/techTreeLayout.js'
 import { computeCharacteristics, penetrationCoefficient } from '../../replay-local/compute/characteristics'
-import { shellLabel, normType, isPremiumShell } from '../../scene/tankMeta.js'
+import { shellLabel, normType, isPremiumShell, fmtNum } from '../../scene/tankMeta.js'
 import { shellIconUrl } from '../../utils/researchCatalog.js'
 import { pitchDeviceBonus } from '../../replay-local/compute/tankSetup'
+import { mechanicTextFor, trayShellFor } from '../../scene/tankMechanics'
 
 import {
   buildComputeInput, decodeDevices, defaultShellIndex, encodeDevices, paramGroups, pickGun, pickTurret,
@@ -31,9 +32,10 @@ type SetupContext = {
   detailId: ComputedRef<number | null>; writeState: (patch: Record<string, unknown>) => void
   data: ReturnType<typeof useTankopediaDetailData>; cache: Ref<Record<string, { name?: string; tier?: number }>>
   route: RouteLocationNormalizedLoaded; VIEW: string; locale: Ref<string>
+  t: (key: string, params?: unknown) => string
 }
-export function useTankopediaSetupModel({ detailId, writeState, data, cache, route, VIEW, locale }: SetupContext) {
-  const { detail, modules, catalog, techTree, upgradeSelection, cfgs, setup } = data
+export function useTankopediaSetupModel({ detailId, writeState, data, cache, route, VIEW, locale, t }: SetupContext) {
+  const { detail, modules, catalog, techTree, mechanicsCatalog, upgradeSelection, cfgs, setup } = data
 
   const researchOpen = ref(false)
   const isXiResearch = computed(() => !!modules.value?.upgradeProgression)
@@ -184,12 +186,46 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     : []))
   const deviceIds = computed(() => new Set(computeInput.value?.deviceIds || []))
 
+  const mechanicRows = computed(() => {
+    const list = Array.isArray(detail.value?.mechanics) ? detail.value.mechanics : []
+    return list.map(mechanic => {
+      const text = mechanicTextFor(mechanicsCatalog.value, mechanic, locale.value)
+      return { ...mechanic, title: text.title, description: text.description }
+    })
+  })
+
   const shellRows = computed(() => data.shells.value.map((shell, index) => {
     const calibrated = deviceIds.value.has(103)
     const penetrationCoefficientValue = penetrationCoefficient(shell.type, calibrated)
     const near = shell.penetration == null ? null : shell.penetration * penetrationCoefficientValue
     const farRaw = shell.penetration_far == null ? null : shell.penetration_far * penetrationCoefficientValue
     const falloff = characteristics.value?._farPenetrationFalloffFactor ?? 1
+    const tunedDamage = (shell.damage ?? 0) * (characteristics.value?._damageCoeff ?? 1)
+    // 突击弹（TrayShell）逐段期望伤害：倍率乘在配置器算出的平均伤害上；只对 kinds
+    // 内的弹种生效（APCR）。段标签按客户端文案语义：首段“≤d”，中段“a–b”，末段“≥a”
+    // （末段的 distance 是最大射程，不是文案边界）。
+    const tray = trayShellFor(detail.value?.mechanics, shell)
+    const traySectors = tray?.sectors ?? null
+    const damageByDistance = traySectors
+      ? traySectors.map((sector, i) => {
+        const previous = traySectors[i - 1]
+        const lower = fmtNum(previous?.distance ?? sector.distance, 0)
+        const label = i === 0
+          ? t('agentTanks.mechanics.distance_at_most', { distance: fmtNum(sector.distance, 0) })
+          : i === traySectors.length - 1
+            ? t('agentTanks.mechanics.distance_at_least', { distance: lower })
+            : t('agentTanks.mechanics.distance_range', {
+              from: lower,
+              to: fmtNum(sector.distance, 0),
+            })
+        return {
+          ...sector,
+          label,
+          percent: Math.round(sector.factor * 100),
+          damage: Math.round(tunedDamage * sector.factor),
+        }
+      })
+      : null
     return {
       ...shell,
       index,
@@ -202,9 +238,10 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
       explosionRadius: shell.explosion_radius ?? null,
       tunedPenetration: near,
       tunedPenetrationFar: near == null || farRaw == null ? farRaw : near - (near - farRaw) * falloff,
-      tunedDamage: (shell.damage ?? 0) * (characteristics.value?._damageCoeff ?? 1),
+      tunedDamage,
       tunedVelocity: shell.velocity == null ? null : shell.velocity * (characteristics.value?._shellVelocityFactor ?? 1),
       tunedModuleDamage: (shell.module_damage ?? 0) * (characteristics.value?._damageCoeff ?? 1),
+      damageByDistance,
     }
   }))
 
@@ -323,7 +360,7 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     installFromGraph, openVehicleFromGraph,
     computeInput, characteristics, previousCharacteristics,
     effectiveShell, selectionKey, paramTable, deviceIds,
-    shellRows, moduleLang, moduleName,
+    mechanicRows, shellRows, moduleLang, moduleName,
     currentTurret, currentGun, currentEngine, currentTrack,
     gunMeta, yawLimits, pitchBonus,
     applyModulePreset, writeSetup, selectShell, cycleSkill, maxSkills, clearSkills, resetSetup,

@@ -30,6 +30,7 @@ import MobilityChart from './MobilityChart.vue'
 import MobilityActivations from './MobilityActivations.vue'
 import { mobilityVehicle, saveComparison, snapshot, useMobilityDataset, describeSetup } from '../composables/tankMobility'
 import TankParamPanel from './TankParamPanel.vue'
+import TankMechanicsChips from './tankopedia/TankMechanicsChips.vue'
 import AppDialog from './AppDialog.vue'
 import { Motion } from 'motion-v'
 import { motionTransition } from '../shared/motion/motionPolicy'
@@ -119,7 +120,7 @@ const {
   onAugmentResearch, onAugmentResearchAll, onAugmentResearchNone,
   researchPrevVehicles, researchNextVehicles, installFromGraph, openVehicleFromGraph,
   computeInput, characteristics, previousCharacteristics, paramTable, deviceIds,
-  shellRows, moduleName, currentTurret, currentGun, currentEngine, currentTrack,
+  mechanicRows, shellRows, moduleName, currentTurret, currentGun, currentEngine, currentTrack,
   gunMeta, yawLimits, pitchBonus,
   applyModulePreset, writeSetup, selectShell, cycleSkill, maxSkills, clearSkills, resetSetup,
   configForArmor,
@@ -257,6 +258,8 @@ onMounted(() => {
               <span class="tp-pill" :class="TYPE_CLS[detail.type] || 't-unknown'">{{ typeLabel(detail.type) }}</span>
               <span v-if="summary?.is_premium" class="tp-pill is-premium">{{ t('agentTanks.premium') }}</span>
             </div>
+            <!-- 车级机制：头卡内只显示名称，点击打开原文说明；key 保证换车时弹窗重置 -->
+            <TankMechanicsChips :key="detailId" :mechanics="mechanicRows" />
           </div>
           <div v-if="modules && setup.canConfigure" class="tp-detail-actions">
             <AppButton

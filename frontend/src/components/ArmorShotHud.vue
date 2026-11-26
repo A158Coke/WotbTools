@@ -6,6 +6,7 @@ import { fetchTankData } from '../scene/agentData.js'
 import { loadDevices, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
 import { shellLabel } from '../scene/tankMeta.js'
 import { calibratedPenMul, shellTypeOf, rolledPenetration } from '../scene/viewer/armorPlateModel.js'
+import { damageFactorAt, trayShellDamage, trayShellFor } from '../scene/tankMechanics'
 
 const props = defineProps({
   distanceState: { type: Object, default: null },
@@ -90,12 +91,23 @@ const shellOptions = computed(() => shells.value.map(shell => {
     ? Math.round(rolledPenetration(shell.penetration, shell.penetration_far, distance.value, shellTypeOf(shell) === 'he') * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
     : null
   const name = (typeof shell.name === 'string' && shell.name.trim()) || shellLabel(shell) || shell.type || ''
-  const damage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? Math.round(shell.damage) : null
+  // TrayShell（突击弹）：按当前距离给平均伤害乘倍率（仅 APCR；HE/AP 不乘）。
+  // HUD 与判定链共用 tankMechanics 的边界语义（sector.distance = 该段上界）。
+  const tray = trayShellFor(details.value?.mechanics, shell)
+  const baseDamage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? shell.damage : null
+  // 突击弹必须知道距离才能给期望伤害；距离未就绪（加载/切车过渡）显示 —，
+  // 不拿基础伤害冒充当前距离值（非突击弹不受影响，基础伤害就是其期望值）。
+  const damage = tray && (distance.value == null || !Number.isFinite(distance.value))
+    ? null
+    : trayShellDamage(baseDamage, tray?.sectors, distance.value)
+  const multiplier = tray ? damageFactorAt(tray.sectors, distance.value) : null
   return {
     shell,
     name,
     penetration,
-    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${damage}`}`,
+    damage,
+    multiplier,
+    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${Math.round(damage)} HP`}`,
   }
 }))
 const selected = computed(() => shellOptions.value[shellIndex.value])
@@ -175,6 +187,11 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
     <div class="hud-summary" :title="selected?.label">
       <span class="hud-shell-name">{{ selected?.name }}</span>
       <span class="hud-reading hud-penetration" data-testid="hud-penetration">{{ selected?.penetration ?? '—' }}<span class="hud-unit"> mm</span></span>
+      <span class="hud-damage-label">
+        {{ t('armor.shot_damage') }}
+        <span v-if="selected?.multiplier != null" class="hud-multiplier" data-testid="hud-multiplier">×{{ Math.round(selected.multiplier * 100) }}%</span>
+      </span>
+      <span class="hud-reading hud-damage" data-testid="hud-damage">{{ selected?.damage == null ? '—' : Math.round(selected.damage) }}<span class="hud-unit"> HP</span></span>
     </div>
   </div>
 </template>
@@ -202,6 +219,9 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .hud-reading { color: var(--color-text-primary); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: end; }
 .hud-penetration { color: var(--color-accent-text); }
 .hud-unit { color: var(--color-text-secondary); font-weight: 400; }
+.hud-damage-label { color: var(--color-text-secondary); font: var(--type-caption); }
+.hud-damage { color: var(--color-text-primary); }
+.hud-multiplier { margin-inline-start: var(--space-1); color: var(--color-warning); font-variant-numeric: tabular-nums; }
 
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .shot-hud {
@@ -245,5 +265,7 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
     .hud-summary { display: contents; }
     .hud-shell-name { display: none; }
     .hud-penetration { grid-column: 4; grid-row: 3; }
+    .hud-damage-label { grid-column: 1; grid-row: 4; font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs); }
+    .hud-damage { grid-column: 3 / -1; grid-row: 4; }
 }
 </style>

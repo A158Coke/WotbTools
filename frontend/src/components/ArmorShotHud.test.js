@@ -58,6 +58,47 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(shells[0].penetration).toBe(200.49)
   })
 
+  it('突击弹按当前距离显示期望伤害与倍率（APCR 专用）', async () => {
+    data.fetchTankData.mockResolvedValueOnce({
+      mechanics: [{
+        name: 'TrayShell',
+        kinds: ['ARMOR_PIERCING_CR'],
+        sectors: [
+          { distance: 50, factor: 1.4 },
+          { distance: 120, factor: 1.2 },
+          { distance: 200, factor: 1.0 },
+          { distance: 720, factor: 0.8 },
+        ],
+      }],
+      configs: [{
+        shells: [
+          { type: 'ap_cr', type_id: 1, damage: 310, penetration: 255 },
+          { type: 'ap', type_id: 0, damage: 310, penetration: 255 },
+          { type: 'he', type_id: 3, damage: 520, penetration: 62 },
+        ],
+      }],
+    })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    await flushPromises()
+    for (const [distance, damage, multiplier] of [[30, '434', '×140%'], [100, '372', '×120%'], [150, '310', '×100%'], [500, '248', '×80%']]) {
+      await wrapper.setProps({ distanceState: { ...distanceState, distance } })
+      await wrapper.setProps({ shell: 0 })
+      expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe(`${damage} HP`)
+      expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe(multiplier)
+    }
+    // 距离未就绪：突击弹的期望伤害不可计算，显示 —（不拿基础伤害冒充）
+    await wrapper.setProps({ shell: 0, distanceState: null })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('— HP')
+    expect(wrapper.find('[data-testid="hud-multiplier"]').exists()).toBe(false)
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 150 } })
+    // 非 APCR：不乘突击弹倍率，也没有倍率徽标
+    for (const [shell, damage] of [[1, '310 HP'], [2, '520 HP']]) {
+      await wrapper.setProps({ shell })
+      expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe(damage)
+      expect(wrapper.find('[data-testid="hud-multiplier"]').exists()).toBe(false)
+    }
+  })
+
   it('按各炮弹near/far衰减，包含有衰减的HEAT；HE/缺far/等值保持', async () => {
     data.fetchTankData.mockResolvedValueOnce({ shells: [
       { type: 'ap', penetration: 300, penetration_far: 260 },

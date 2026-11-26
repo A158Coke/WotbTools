@@ -9,6 +9,7 @@ import GunArcDiagram from './GunArcDiagram.vue'
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
   fetchTankData: vi.fn(),
+  loadTankMechanics: vi.fn(async () => null),
   tankImageUrl: vi.fn(id => `https://assets.test/tank_images/${id}.webp`),
   loadTankIconCrops: vi.fn(async () => null),
 }))

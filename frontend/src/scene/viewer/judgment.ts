@@ -7,6 +7,7 @@ import { createJudgmentHits, type JudgmentHit } from './judgmentHits.js'
 import { createScreenSpaceDot, disposeHitMarker } from './overlayStroke.js'
 import { OVERLAY_METRICS } from './shotResultPalette.js'
 import { shellTypeOf } from './armorPlateModel.js'
+import { trayShellDamage, trayShellFor, type TankMechanic } from '../tankMechanics'
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { ModelReferences } from './modelLifecycle.js'
 import type { TrajectoryCardHandle } from './trajectoryCard.js'
@@ -37,7 +38,7 @@ export interface JudgmentDeps {
     getSelectedShell: () => ShellSpec | null
     getShooterShells: () => ShellSpec[]
     getShooterCaliber: () => number | null
-    getShooterData: () => { caliber?: number | null } | null
+    getShooterData: () => { caliber?: number | null; mechanics?: TankMechanic[] | null } | null
     isDestroyed: () => boolean
     isShooterLoading: () => boolean
     isShotReplay: () => boolean
@@ -230,7 +231,12 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
 
             const shellType = shellTypeOf(getSelectedShell()!);
             const pen = getSelectedShell() ? (getSelectedShell()!.penetration || 0) : 0;
-            const dmg = getSelectedShell() ? (getSelectedShell()!.damage || 0) : 0;
+            const trayShell = trayShellFor(getShooterData()?.mechanics, getSelectedShell());
+            const dmg = trayShellDamage(
+                getSelectedShell() ? (getSelectedShell()!.damage || 0) : 0,
+                trayShell?.sectors,
+                dist,
+            ) || 0;
             const modDmg = getSelectedShell() ? (getSelectedShell()!.module_damage || 0) : 0;
             const caliber = resolveShotCaliber();
             const isHE = shellType === 'he';

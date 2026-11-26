@@ -295,6 +295,15 @@
       "performance_options": "性能选项"
     },
     "agentTanks": {
+      "mechanics": {
+        "title": "机制",
+        "description_unavailable": "该机制的官方说明不可用。",
+        "distance_at_most": "{distance} 米或以内",
+        "distance_range": "{from}–{to} 米",
+        "distance_at_least": "{distance} 米或以上",
+        "multiplier": "×{percent}%",
+        "tray_shell_damage": "突击弹伤害（随距离）"
+      },
       "category": "车辆类别",
       "categories": {"regular": "普通", "premium": "金币", "collector": "典藏"},
       "title": "坦克百科",
@@ -1321,6 +1330,15 @@
       "performance_options": "Performance options"
     },
     "agentTanks": {
+      "mechanics": {
+        "title": "Mechanics",
+        "description_unavailable": "The official description for this mechanic is unavailable.",
+        "distance_at_most": "{distance} m or less",
+        "distance_range": "{from}–{to} m",
+        "distance_at_least": "{distance} m or more",
+        "multiplier": "×{percent}%",
+        "tray_shell_damage": "Assault Shells damage by distance"
+      },
       "category": "Vehicle category",
       "categories": {"regular": "Regular", "premium": "Premium", "collector": "Collector"},
       "title": "Tankopedia",
@@ -2347,6 +2365,15 @@
       "performance_options": "Параметры производительности"
     },
     "agentTanks": {
+      "mechanics": {
+        "title": "Механики",
+        "description_unavailable": "Официальное описание этой механики недоступно.",
+        "distance_at_most": "не более {distance} м",
+        "distance_range": "{from}–{to} м",
+        "distance_at_least": "{distance} м или более",
+        "multiplier": "×{percent}%",
+        "tray_shell_damage": "Урон штурмовых снарядов в зависимости от дистанции"
+      },
       "category": "Категория техники",
       "categories": {"regular": "Обычная", "premium": "Премиум", "collector": "Коллекционная"},
       "title": "Энциклопедия танков",

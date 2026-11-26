@@ -6,6 +6,8 @@ import { loadResearchCatalog, loadTankModules, loadTechTree } from '../../utils/
 import { findTankModules } from '../../replay-local/compute/tankSetup'
 import { projectTankUpgrades } from '../../replay-local/compute/tankUpgrades'
 import { devicesFromEquipmentIds, encodeDevices, resolveSetup } from '../../replay-local/compute/tankSetup'
+import { loadTankMechanics } from '../../scene/agentData.js'
+import type { TankMechanic, TankMechanicsTable } from '../../scene/tankMechanics'
 
 /** @param {{
  *  urlState: import('vue').ComputedRef<object>,
@@ -13,7 +15,7 @@ import { devicesFromEquipmentIds, encodeDevices, resolveSetup } from '../../repl
  *  writeState: (patch: object, options?: object) => void,
  * }} ctx */
 type TankShell = { type: string; penetration?: number | null; penetration_far?: number | null; damage?: number | null; velocity?: number | null; module_damage?: number | null; range?: number | null; explosion_radius?: number | null }
-type TankDetail = { tank_id?: number; stem?: string; tier?: number; nation?: string; configs?: TankConfig[]; shells?: TankShell[]; gun_depression?: number; gun_elevation?: number }
+type TankDetail = { tank_id?: number; stem?: string; tier?: number; nation?: string; configs?: TankConfig[]; shells?: TankShell[]; mechanics?: TankMechanic[] | null; gun_depression?: number; gun_elevation?: number }
 type TankConfig = { turret_local?: number | null; shells?: TankShell[]; pitch_limits?: { min?: number; max?: number }; yaw_limits?: unknown; is_drum?: boolean; is_burst?: boolean; caliber?: number }
 type TankSummary = { gun_depression?: number; gun_elevation?: number }
 type DetailContext = { urlState: ComputedRef<ReturnType<typeof parseTankopediaQuery>>; detailId: ComputedRef<number | null>; writeState: (patch: Record<string, unknown>) => void }
@@ -25,6 +27,8 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }: Deta
   const modules = ref<ReturnType<typeof findTankModules> | null>(null)
   const catalog = ref<Awaited<ReturnType<typeof loadResearchCatalog>> | null>(null)
   const techTree = ref<Awaited<ReturnType<typeof loadTechTree>> | null>(null)
+  /** 全局机制文案（data/tankMechanics.json；一次装载，按车 mechanics 联表）。 */
+  const mechanicsCatalog = ref<TankMechanicsTable | null>(null)
   let modulesRequest = 0
 
   let cacheGetter: () => Record<string, TankSummary> = () => ({})
@@ -73,9 +77,15 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }: Deta
     modules.value = null
     modulesRequest += 1
     try {
-      const data = await fetchTankData(id)
+      // 机制文案是全局表（一次装载）；失败不拖垮详情（机制区显示“说明不可用”），
+      // 但成功时与详情并行，避免详情就绪后再补一轮网络等待。
+      const [data, mechanics] = await Promise.all([
+        fetchTankData(id),
+        loadTankMechanics().catch(() => null),
+      ])
       if (request !== detailRequest) return
       detail.value = data
+      mechanicsCatalog.value = (mechanics || null) as TankMechanicsTable | null
       detailState.value = 'ready'
       loadModules(id, data.nation, data.configs)
     } catch (e) {
@@ -130,7 +140,7 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }: Deta
 
   return {
     detail, detailState, detailError,
-    modules, catalog, techTree,
+    modules, catalog, techTree, mechanicsCatalog,
     summary, bindCache,
     upgradeSelection, upgradeProjection,
     cfgs, cfgIdx, curCfg, shells, pitchLimits, gunDepression, gunElevation,
