@@ -314,7 +314,10 @@ REVIEWED_REMOTE_ASSET_ORIGINS = {
 
 
 def remote_asset_origin(native_source: str | Path) -> str:
-    source = Path(native_source).read_text(encoding="utf-8")
+    return parse_remote_asset_origin(Path(native_source).read_text(encoding="utf-8"))
+
+
+def parse_remote_asset_origin(source: str) -> str:
     declarations = re.findall(
         r'^[ \t]*(?:private[ \t]+)?const[ \t]+val[ \t]+'
         r'(COS_BASE|REMOTE_ASSET_BASE)[ \t]*=[ \t]*"([^"]+)"',
@@ -391,7 +394,10 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
                 fail(f"APK bundle required file hash mismatch: {name}")
         apk.read(f"assets/web/wasm/{pin['ref']}/wotb_replay_wasm.js")
     with open(apk_path, "rb") as apk_file:
-        apk_sha = hashlib.sha256(apk_file.read()).hexdigest()
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: apk_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+        apk_sha = digest.hexdigest()
     apk_name = f"wotbtools-android-v{version}.apk"
     return {
         "schemaVersion": 2, "versionCode": version_code(parse_version(version)), "versionName": version,
