@@ -440,35 +440,23 @@ export async function runAppScenario(env, scenario) {
       const after3d = await page.evaluate(eventProbe)
       check(failures, after3d.checked === 'true' && after3d.displayed && after3d.sectionMounted,
         `event details switch must stay open across 2D→3D: ${JSON.stringify(after3d)}`)
-      const after3dToggle = await page.evaluate(`(() => {
-        const button = document.querySelector('[data-testid="viewer-events-toggle"]')
-        if (!button) return null
-        button.scrollIntoView({ block: 'center', inline: 'nearest' })
-        const r = button.getBoundingClientRect()
-        const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-        const hit = document.elementFromPoint(center.x, center.y)
-        return { center, hitIsButton: hit === button || button.contains(hit) }
-      })()`)
-      check(failures, !!after3dToggle?.hitIsButton,
-        `event details switch not hit-testable in 3D: ${JSON.stringify(after3dToggle)}`)
-      if (after3dToggle?.hitIsButton) {
-        await page.tap({ ...after3dToggle.center, touch: scenario.touch })
-        await page.waitForValue(eventProbe, (value) => value.checked === 'false' && !value.displayed, { label: 'events hidden in 3D' })
-        const reopen3dToggle = await page.evaluate(`(() => {
-          const button = document.querySelector('[data-testid="viewer-events-toggle"]')
-          if (!button) return null
-          button.scrollIntoView({ block: 'center', inline: 'nearest' })
-          const r = button.getBoundingClientRect()
-          const center = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
-          const hit = document.elementFromPoint(center.x, center.y)
-          return { center, hitIsButton: hit === button || button.contains(hit) }
-        })()`)
-        check(failures, !!reopen3dToggle?.hitIsButton,
-          `event details switch not hit-testable after closing in 3D: ${JSON.stringify(reopen3dToggle)}`)
-        if (reopen3dToggle?.hitIsButton) {
-          await page.tap({ ...reopen3dToggle.center, touch: scenario.touch })
-          await page.waitForValue(eventProbe, (value) => value.checked === 'true' && value.displayed, { label: 'events reopened in 3D' })
-        }
+      const closedIn3d = await tapElement(page, '[data-testid="viewer-events-toggle"]', {
+        touch: scenario.touch,
+        verify: async () => {
+          const value = await page.evaluate(eventProbe)
+          return value.checked === 'false' && !value.displayed && value.sectionMounted
+        },
+      })
+      check(failures, closedIn3d, 'event details switch must close in 3D after a real tap')
+      if (closedIn3d) {
+        const reopenedIn3d = await tapElement(page, '[data-testid="viewer-events-toggle"]', {
+          touch: scenario.touch,
+          verify: async () => {
+            const value = await page.evaluate(eventProbe)
+            return value.checked === 'true' && value.displayed
+          },
+        })
+        check(failures, reopenedIn3d, 'event details switch must reopen in 3D after a real tap')
       }
     }
   }
