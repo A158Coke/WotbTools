@@ -6,6 +6,7 @@ TARGET="${1:?usage: verify.sh <target> <staged-root>}"
 stage="${2:?usage: verify.sh <target> <staged-root>}"
 runtime="$stage/deploy/production-worker"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/production-worker/lib.sh
 source "$script_dir/lib.sh"
 
 load_target_profile "$TARGET" "$runtime"

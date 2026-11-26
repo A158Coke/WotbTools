@@ -4,6 +4,7 @@ set -Eeuo pipefail
 TARGET="${1:?usage: verify.sh <target> <runtime-dir>}"
 runtime="${2:?usage: verify.sh <target> <runtime-dir>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/periphery/lib.sh
 source "$script_dir/lib.sh"
 
 load_target_profile "$TARGET" "$runtime"

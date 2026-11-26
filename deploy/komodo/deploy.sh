@@ -7,6 +7,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   echo 'Komodo controller helper library is missing or unsafe.' >&2
   exit 1
 }
+# shellcheck source=deploy/komodo/lib.sh
 source "$script_dir/lib.sh"
 
 SOURCE_SHA="${1:?usage: deploy.sh <source-sha> <staged-runtime-dir>}"

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=/dev/null
 source "$ROOT/scripts/ci/run-with-network-retry.sh"
 
 NETWORK_RETRY_BACKOFF_FIRST_SECONDS=0

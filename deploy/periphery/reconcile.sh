@@ -7,6 +7,7 @@ SOURCE_SHA="${2:?usage: reconcile.sh <target> <source-sha> <staged-root>}"
 stage="${3:?usage: reconcile.sh <target> <source-sha> <staged-root>}"
 runtime="$stage/deploy/periphery"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/periphery/lib.sh
 source "$script_dir/lib.sh"
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid Komodo Periphery source SHA.'

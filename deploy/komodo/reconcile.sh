@@ -29,6 +29,7 @@ done
 for command_name in docker tofu jq flock ip; do
   command -v "$command_name" >/dev/null || { echo "$command_name is required." >&2; exit 2; }
 done
+# shellcheck source=deploy/komodo/lib.sh
 source "$runtime/lib.sh"
 
 [[ "$stage" == "$root/incoming/$SOURCE_SHA" ]] || { echo "Unexpected Komodo staging root: $stage" >&2; exit 1; }

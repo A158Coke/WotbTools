@@ -5,6 +5,7 @@ umask 077
 TARGET="${1:?usage: read-target-profile.sh <target> <github-output-file>}"
 output="${2:?usage: read-target-profile.sh <target> <github-output-file>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/production-worker/lib.sh
 source "$script_dir/lib.sh"
 
 load_target_profile "$TARGET" "$script_dir"

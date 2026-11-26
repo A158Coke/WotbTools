@@ -7,6 +7,7 @@ SOURCE_SHA="${2:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact
 runtime="${3:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
 artifact="${4:?usage: install.sh <target> <source-sha> <runtime-dir> <artifact-path>}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=deploy/periphery/lib.sh
 source "$script_dir/lib.sh"
 
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'Invalid Komodo Periphery source SHA.'
