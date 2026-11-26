@@ -3,7 +3,7 @@ package com.wotb.web.creator.service;
 import com.wotb.web.creator.entity.CreatorAvatar;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
-import com.wotb.web.util.CosImageStorage;
+import com.wotb.web.util.PrivateImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
@@ -34,13 +34,13 @@ public class CreatorAvatarService {
     private static final Logger LOG = LoggerFactory.getLogger(CreatorAvatarService.class);
     private final CreatorAvatarRepository avatars;
     private final CreatorRepository creators;
-    private final CosImageStorage.Namespace storage;
+    private final PrivateImageStorage.Namespace storage;
     private final TransactionTemplate independent;
     private final TransactionTemplate metadataReads;
 
     public CreatorAvatarService(final CreatorAvatarRepository avatars, final CreatorRepository creators,
-                                final CosImageStorage storage, final PlatformTransactionManager transactions,
-                                @Value("${wotb.creator.cos.prefix:creator-avatars/}") final String prefix) {
+                                final PrivateImageStorage storage, final PlatformTransactionManager transactions,
+                                @Value("${wotb.images.avatar-prefix:creator-avatars/}") final String prefix) {
         this.avatars = avatars;
         this.creators = creators;
         this.storage = storage.namespace(prefix, ApiErrorCode.CREATOR_STORAGE_UNAVAILABLE,
@@ -108,7 +108,8 @@ public class CreatorAvatarService {
         if (avatar.size < 1 || avatar.size > MAX_BYTES
                 || !("image/png".equals(avatar.contentType) || "image/jpeg".equals(avatar.contentType))) { throw unavailable(); }
         final byte[] bytes = storage.get(avatar.objectKey, MAX_BYTES);
-        if (bytes.length != avatar.size || !ImageValidation.sha256(bytes).equals(avatar.hash)) { throw unavailable(); }
+        if (bytes.length != avatar.size || !ImageValidation.matchesContentType(bytes, avatar.contentType)
+                || !ImageValidation.sha256(bytes).equals(avatar.hash)) { throw unavailable(); }
         return new AvatarImage(bytes, avatar.contentType, avatar.hash);
     }
 

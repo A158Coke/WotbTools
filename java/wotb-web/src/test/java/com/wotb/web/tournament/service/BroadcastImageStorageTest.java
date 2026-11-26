@@ -46,15 +46,15 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class BroadcastCosStorageTest {
+class BroadcastImageStorageTest {
     private static final String PREFIX = "league-broadcasts/covers/";
 
     @Test void missingOrUnsafeConfigurationDisablesOnlyCoverStorage() {
         final CosImageStorage missingAdapter = new CosImageStorage("", "", "", "", PREFIX, "avatars/");
         final CosImageStorage unsafeAdapter = new CosImageStorage("covers-1251234567", "ap-shanghai",
                 "test-only", "test-only", "../assets/", "avatars/");
-        final BroadcastCosStorage missing = new BroadcastCosStorage(missingAdapter, PREFIX);
-        final BroadcastCosStorage unsafe = new BroadcastCosStorage(unsafeAdapter, "../assets/");
+        final BroadcastImageStorage missing = new BroadcastImageStorage(missingAdapter, PREFIX);
+        final BroadcastImageStorage unsafe = new BroadcastImageStorage(unsafeAdapter, "../assets/");
         try {
             assertFalse(missing.configured());
             assertFalse(unsafe.configured());
@@ -107,7 +107,7 @@ class BroadcastCosStorageTest {
         final ClientConfig config = loopbackConfig(server.getLocalPort());
         final CosImageStorage adapter = new CosImageStorage(
                 new COSClient(new BasicCOSCredentials("test-only", "test-only"), config), "covers-1251234567", PREFIX);
-        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
+        final BroadcastImageStorage storage = new BroadcastImageStorage(adapter, PREFIX);
         try {
             final ImageValidation.Image image = image();
             final String key = storage.key(UUID.randomUUID().toString());
@@ -135,7 +135,7 @@ class BroadcastCosStorageTest {
         config.setMaxErrorRetry(0);
         final CosImageStorage adapter = new CosImageStorage(
                 new COSClient(new BasicCOSCredentials("test-only", "test-only"), config), "covers-1251234567", PREFIX);
-        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
+        final BroadcastImageStorage storage = new BroadcastImageStorage(adapter, PREFIX);
         try {
             final String key = storage.key(UUID.randomUUID().toString());
             assertTimeoutPreemptively(Duration.ofSeconds(3), () -> assertEquals(ApiErrorCode.BROADCAST_STORAGE_ERROR,
@@ -147,7 +147,7 @@ class BroadcastCosStorageTest {
     @Test void failuresAreCanonicalAndKeysCannotEscapeTheNamespace() throws Exception {
         final COSClient client = mock(COSClient.class);
         final CosImageStorage adapter = new CosImageStorage(client, "covers-1251234567", PREFIX);
-        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
+        final BroadcastImageStorage storage = new BroadcastImageStorage(adapter, PREFIX);
         final String key = storage.key(UUID.randomUUID().toString());
         try {
             assertEquals(ApiErrorCode.BROADCAST_COVER_INVALID,

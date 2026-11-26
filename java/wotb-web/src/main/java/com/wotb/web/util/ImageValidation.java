@@ -111,6 +111,15 @@ public final class ImageValidation {
         return new Image(result, sha256(result), alpha ? "image/png" : "image/jpeg");
     }
 
+    /** Identify stored thumbnails without applying the original-upload size or dimension rules. */
+    public static boolean matchesContentType(final byte[] bytes, final String mime) {
+        if ("image/png".equals(mime)) {
+            return bytes.length >= Long.BYTES && java.nio.ByteBuffer.wrap(bytes).getLong() == 0x89504e470d0a1a0aL;
+        }
+        return "image/jpeg".equals(mime) && bytes.length >= 3 && bytes[0] == (byte) 0xff
+                && bytes[1] == (byte) 0xd8 && bytes[2] == (byte) 0xff;
+    }
+
     public static String sha256(final byte[] bytes) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
         catch (final NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
