@@ -35,7 +35,7 @@ def git_file(commit, path):
     return subprocess.check_output(["git", "show", f"{commit}:{path}"]).decode("utf-8")
 
 
-def catalog(manifest, tags, historical):
+def required_tags(manifest, tags, historical):
     latest = manifest["latestVersionName"]
     ceiling = contract.version_code(contract.parse_version(latest))
     floor = manifest["minSupportedVersionCode"]
@@ -44,12 +44,16 @@ def catalog(manifest, tags, historical):
         raise ValueError("Production manifest and advertised release range disagree")
     if not set(historical) <= tags.keys():
         raise ValueError("Requested historical tag is absent")
+    codes = {v: contract.version_code(contract.parse_version(v)) for v in tags}
+    if floor not in codes.values():
+        raise ValueError(f"Incomplete tag coverage: floor {floor} has no advertised release tag")
+    return {v: tags[v] for v in sorted(tags, key=codes.get) if floor <= codes[v] <= ceiling or v in historical}
+
+
+def catalog(manifest, tags, historical):
+    required = required_tags(manifest, tags, historical)
     rows = []
-    for version in sorted(tags, key=lambda s: contract.version_code(contract.parse_version(s))):
-        code = contract.version_code(contract.parse_version(version))
-        if not floor <= code <= ceiling and version not in historical:
-            continue
-        commit = tags[version]
+    for version, commit in required.items():
         props = contract.properties(git_file(commit, "android/gradle.properties"))
         if props.get("wotbVersion") != version:
             raise ValueError(f"Tag and committed version disagree: {version}")
@@ -60,7 +64,24 @@ def catalog(manifest, tags, historical):
         rows.append({"version": version, "commit": commit, "tagOrigin": contract.parse_remote_asset_origin(source),
                      "bridge": bridge,
                      "pin": json.loads(git_file(commit, "deploy/agent/source.json"))})
-    return {"manifest": manifest, "candidates": rows}
+    return {"manifest": manifest, "historicalVersions": historical, "requiredTags": required, "candidates": rows}
+
+
+def validate_coverage(data, tags):
+    expected = required_tags(data["manifest"], tags, data["historicalVersions"])
+    if data["requiredTags"] != expected:
+        raise ValueError("Catalog selection disagrees with the saved remote tag snapshot")
+    actual = {}
+    for row in data["candidates"]:
+        version = row["version"]
+        if version in actual:
+            raise ValueError(f"Duplicate catalog candidate: {version}")
+        actual[version] = row["commit"]
+    if actual != expected:
+        missing = sorted(expected.keys() - actual.keys())
+        extra = sorted(actual.keys() - expected.keys())
+        changed = sorted(v for v in actual.keys() & expected.keys() if actual[v] != expected[v])
+        raise ValueError(f"Incomplete or inconsistent candidates: missing={missing}, extra={extra}, changed={changed}")
 
 
 def verify_bundle(row, manifest, staging, apk):
@@ -128,6 +149,7 @@ def main():
     prepare.add_argument("--historical", action="append", default=[])
     verify = commands.add_parser("verify", help="verify immutable release artifacts against a saved catalog")
     verify.add_argument("--catalog", type=Path, required=True)
+    verify.add_argument("--refs", type=Path, required=True, help="the independent tag snapshot used for catalog")
     verify.add_argument("--releases", type=Path, required=True, help="directory with APKs and .staging.json records")
     verify.add_argument("--build-tools", type=Path, required=True)
     args = parser.parse_args()
@@ -136,6 +158,7 @@ def main():
                          args.historical)
     else:
         data = read_json(args.catalog)
+        validate_coverage(data, remote_tags(args.refs.read_text(encoding="utf-8-sig").splitlines()))
         result = []
         for row in data["candidates"]:
             version = row["version"]
@@ -150,12 +173,13 @@ def main():
                 receipt = {"version": version, "error": "release contract rejected (see stderr)"
                            if isinstance(exc, SystemExit) else str(exc)}
             result.append(receipt)
-        if not result or not any(r["version"] == data["manifest"]["latestVersionName"] for r in result):
-            raise ValueError("Incomplete release catalog")
     print(json.dumps(result, indent=2))
     if args.command == "verify" and any(not r.get("tagMatchesStaging") for r in result):
         raise SystemExit(1)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyError, ValueError, OSError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(str(exc)) from exc

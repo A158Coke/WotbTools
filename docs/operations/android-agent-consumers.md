@@ -51,9 +51,11 @@ python3 scripts/android-release/consumer_inventory.py catalog \
 
 ```sh
 python3 scripts/android-release/consumer_inventory.py verify \
-  --catalog audit/catalog.json --releases audit/releases \
+  --catalog audit/catalog.json --refs audit/remote-tags.txt --releases audit/releases \
   --build-tools "$ANDROID_HOME/build-tools/35.0.0" > audit/verified.json
 ```
+
+保存完整的远端引用快照。两个命令均要求它涵盖 floor 和 latest；`verify` 从这份独立文件重新计算区间内及显式历史版本的应审集合，在读取 APK 前逐个核对 catalog 的版本、唯一性和提交。核验范围以采集时远端实际广告的标签为准。
 
 核验器复用发布流程的 APK bundle 合同，并用 `aapt dump badging` 读取包名和版本。它只接受目标代理类反汇编中的 HTTPS 常量加载指令，避免把 APK 其他类、文档或资源中的域名算作原生实现。签发提交与标签漂移、APK 缺失、大小/摘要不符或原生证据缺失时返回非零。包含 3.17.0 的本次报告应保留 `tagMatchesStaging=false`；这项差异可独立于 APK 字节校验复核。发布期间清单可能前移，结束时再次回读并核对最新提交、摘要和 floor。
 

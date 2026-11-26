@@ -32,6 +32,28 @@ class AndroidConsumersTest(unittest.TestCase):
         self.assertEqual([r["version"] for r in rows], ["3.17.0", "5.4.1", "5.5.0", "5.7.2"])
         with self.assertRaises(ValueError):
             audit.catalog({**manifest, "sourceSha": tags["5.8.0"]}, tags, [])
+        with self.assertRaisesRegex(ValueError, "floor 5004001"):
+            audit.catalog(manifest, {"5.7.2": tags["5.7.2"]}, [])
+
+    def test_verify_requires_exact_selection_from_saved_refs_including_historical(self):
+        tags = {v: str(i) * 40 for i, v in enumerate(["3.17.0", "5.4.1", "5.5.0", "5.7.2", "6.0.0"])}
+        manifest = dict(latestVersionName="5.7.2", latestVersionCode=5007002, minSupportedVersionCode=5004001,
+                        sourceSha=tags["5.7.2"])
+        required = audit.required_tags(manifest, tags, ["3.17.0"])
+        rows = [{"version": v, "commit": sha} for v, sha in required.items()]
+        data = dict(manifest=manifest, historicalVersions=["3.17.0"], requiredTags=required, candidates=rows)
+        audit.validate_coverage(data, tags)
+        for version in required:
+            with self.subTest(missing=version), self.assertRaisesRegex(ValueError, "missing="):
+                audit.validate_coverage({**data, "candidates": [r for r in rows if r["version"] != version]}, tags)
+        for invalid in (rows + [rows[0]], rows + [{"version": "6.0.0", "commit": tags["6.0.0"]}],
+                        [{**rows[0], "commit": "f" * 40}, *rows[1:]]):
+            with self.assertRaises(ValueError):
+                audit.validate_coverage({**data, "candidates": invalid}, tags)
+        truncated = {v: sha for v, sha in required.items() if v != "5.5.0"}
+        with self.assertRaisesRegex(ValueError, "saved remote tag snapshot"):
+            audit.validate_coverage({**data, "requiredTags": truncated,
+                                     "candidates": [r for r in rows if r["version"] in truncated]}, tags)
 
     def test_dex_requires_one_proxy_with_the_expected_load_instruction(self):
         current = "https://assets.wotbtools.com"
