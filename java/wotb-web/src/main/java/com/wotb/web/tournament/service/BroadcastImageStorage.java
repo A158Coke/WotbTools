@@ -1,16 +1,17 @@
 package com.wotb.web.tournament.service;
 
-import com.wotb.web.util.CosImageStorage;
+import com.wotb.web.util.PrivateImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+/** Broadcast policy around the shared, bounded private image adapter. */
 @Service
-public class BroadcastCosStorage {
-    private final CosImageStorage.Namespace namespace;
-    public BroadcastCosStorage(final CosImageStorage storage,
-                               @Value("${wotb.broadcast.cos.prefix:league-broadcasts/covers/}") final String prefix) {
+public class BroadcastImageStorage {
+    private final PrivateImageStorage.Namespace namespace;
+    public BroadcastImageStorage(final PrivateImageStorage storage,
+                               @Value("${wotb.images.cover-prefix:league-broadcasts/covers/}") final String prefix) {
         this.namespace = storage.namespace(prefix, ApiErrorCode.BROADCAST_STORAGE_UNAVAILABLE,
                 ApiErrorCode.BROADCAST_COVER_INVALID, ApiErrorCode.BROADCAST_STORAGE_ERROR, ApiErrorCode.RESOURCE_NOT_FOUND);
     }

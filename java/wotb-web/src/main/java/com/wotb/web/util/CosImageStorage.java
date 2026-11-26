@@ -3,39 +3,34 @@ package com.wotb.web.util;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
-import com.qcloud.cos.exception.CosClientException;
 import com.qcloud.cos.exception.CosServiceException;
+import com.qcloud.cos.exception.CosClientException;
 import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.region.Region;
-import com.wotb.web.util.apierror.ApiErrorCode;
-import com.wotb.web.util.apierror.ApiException;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 
+/** One private COS client; domain services retain ownership and reservation lifecycles. */
 @Component
-public class CosImageStorage {
+@ConditionalOnProperty(name = "wotb.images.provider", havingValue = "cos", matchIfMissing = true)
+public class CosImageStorage extends PrivateImageStorage {
     private static final int REQUEST_TIMEOUT_MS = 30_000;
     private final COSClient client;
     private final String bucket;
-    private final Set<String> prefixes;
     private final ScheduledExecutorService deadlines = Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().daemon().name("cos-image-deadline").factory());
 
@@ -44,110 +39,64 @@ public class CosImageStorage {
                            @Value("${wotb.broadcast.cos.region:}") final String region,
                            @Value("${wotb.broadcast.cos.secret-id:}") final String secretId,
                            @Value("${wotb.broadcast.cos.secret-key:}") final String secretKey,
-                           @Value("${wotb.broadcast.cos.prefix:league-broadcasts/covers/}") final String broadcastPrefix,
-                           @Value("${wotb.creator.cos.prefix:creator-avatars/}") final String avatarPrefix) {
+                           @Value("${wotb.images.cover-prefix:league-broadcasts/covers/}") final String broadcastPrefix,
+                           @Value("${wotb.images.avatar-prefix:creator-avatars/}") final String avatarPrefix) {
+        super(broadcastPrefix, avatarPrefix);
         this.bucket = bucket;
-        this.prefixes = safePrefixes(broadcastPrefix, avatarPrefix);
         this.client = validBucket(bucket) && region != null && region.matches("[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*")
-                && StringUtils.hasText(secretId) && StringUtils.hasText(secretKey) && !prefixes.isEmpty()
+                && StringUtils.hasText(secretId) && StringUtils.hasText(secretKey)
                 ? new COSClient(new BasicCOSCredentials(secretId, secretKey), clientConfig(region)) : null;
+        org.slf4j.LoggerFactory.getLogger(CosImageStorage.class).info("Business image storage provider=cos, clientConfigured={}", client != null);
     }
 
+    /** Explicit client injection for loopback tests; production credentials have one configuration source. */
     public CosImageStorage(final COSClient client, final String bucket, final String... prefixes) {
+        super(prefixes);
         this.client = validBucket(bucket) ? client : null;
         this.bucket = bucket;
-        this.prefixes = safePrefixes(prefixes);
     }
 
-    public Namespace namespace(final String prefix, final ApiErrorCode unavailable, final ApiErrorCode invalid,
-                               final ApiErrorCode failure, final ApiErrorCode missing) {
-        return new Namespace(prefix, unavailable, invalid, failure, missing);
+    @Override boolean available() { return client != null; }
+
+    @Override void putObject(final String key, final ImageValidation.Image image) throws IOException {
+        final ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(image.bytes().length);
+        metadata.setContentType(image.contentType());
+        try { client.putObject(bucket, key, new ByteArrayInputStream(image.bytes()), metadata); }
+        catch (CosClientException e) { throw new IOException("COS PUT failed"); }
     }
 
-    public final class Namespace {
-        private final String prefix;
-        private final ApiErrorCode unavailable;
-        private final ApiErrorCode invalid;
-        private final ApiErrorCode failure;
-        private final ApiErrorCode missing;
-
-        private Namespace(final String prefix, final ApiErrorCode unavailable, final ApiErrorCode invalid,
-                          final ApiErrorCode failure, final ApiErrorCode missing) {
-            this.prefix = prefix; this.unavailable = unavailable; this.invalid = invalid;
-            this.failure = failure; this.missing = missing;
-        }
-        public boolean configured() { return client != null && prefix != null && prefixes.contains(prefix); }
-        public String key(final String id) {
-            requireConfigured();
-            if (!uuid(id)) { throw new ApiException(invalid); }
-            return prefix + id;
-        }
-        public void put(final String objectKey, final ImageValidation.Image image) {
-            checkKey(objectKey);
-            final ObjectMetadata metadata = new ObjectMetadata();
-            metadata.setContentLength(image.bytes().length);
-            metadata.setContentType(image.contentType());
-            try { client.putObject(bucket, objectKey, new ByteArrayInputStream(image.bytes()), metadata); }
-            catch (final CosClientException e) { throw new ApiException(failure); }
-        }
-        public byte[] get(final String objectKey) {
-            return get(objectKey, ImageValidation.MAX_BYTES);
-        }
-        public byte[] get(final String objectKey, final int maxBytes) {
-            if (maxBytes < 1 || maxBytes > ImageValidation.MAX_BYTES) { throw new IllegalArgumentException("Invalid image bound"); }
-            checkKey(objectKey);
-            final AtomicBoolean expired = new AtomicBoolean();
-            final AtomicReference<COSObjectInputStream> stream = new AtomicReference<>();
-            final var deadline = deadlines.schedule(() -> {
-                expired.set(true);
-                final COSObjectInputStream input = stream.get();
-                if (input != null) { input.abort(); }
-            }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            try (final COSObject object = client.getObject(bucket, objectKey)) {
-                if (object == null) { throw new ApiException(failure); }
-                final COSObjectInputStream input = object.getObjectContent();
-                if (input == null) { throw new ApiException(failure); }
-                stream.set(input);
-                if (expired.get()) { input.abort(); throw new ApiException(failure); }
-                final byte[] bytes = input.readNBytes(maxBytes + 1);
-                if (expired.get() || bytes.length > maxBytes) {
-                    input.abort(); throw new ApiException(failure);
-                }
-                return bytes;
-            } catch (final CosServiceException e) {
-                throw new ApiException(e.getStatusCode() == 404 ? missing : failure);
-            } catch (final CosClientException | IOException e) { throw new ApiException(failure); }
-            finally { deadline.cancel(false); }
-        }
-        public void delete(final String objectKey) {
-            checkKey(objectKey);
-            try { client.deleteObject(bucket, objectKey); }
-            catch (final CosServiceException e) {
-                if (e.getStatusCode() != 404) { throw new ApiException(failure); }
-            } catch (final CosClientException e) { throw new ApiException(failure); }
-        }
-        private void requireConfigured() {
-            if (!configured()) { throw new ApiException(unavailable); }
-        }
-        private void checkKey(final String objectKey) {
-            requireConfigured();
-            if (objectKey == null || !objectKey.startsWith(prefix)
-                    || !uuid(objectKey.substring(prefix.length()))) { throw new ApiException(invalid); }
-        }
+    @Override byte[] readObject(final String key, final int maxBytes) throws IOException {
+        // The COS request timeout ends at headers, so also abort a stalled response body.
+        final AtomicBoolean expired = new AtomicBoolean();
+        final AtomicReference<COSObjectInputStream> stream = new AtomicReference<>();
+        final var deadline = deadlines.schedule(() -> {
+            expired.set(true);
+            final COSObjectInputStream input = stream.get();
+            if (input != null) { input.abort(); }
+        }, REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        try (final COSObject object = client.getObject(bucket, key)) {
+            if (object == null || object.getObjectContent() == null) { throw new IOException("Empty COS response"); }
+            final COSObjectInputStream input = object.getObjectContent();
+            stream.set(input);
+            if (expired.get()) { input.abort(); throw new IOException("COS read timed out"); }
+            final byte[] bytes = input.readNBytes(maxBytes + 1);
+            if (expired.get() || bytes.length > maxBytes) { input.abort(); throw new IOException("Invalid COS read"); }
+            return bytes;
+        } catch (CosServiceException e) {
+            if (e.getStatusCode() == 404) { return null; }
+            throw new IOException("COS GET failed");
+        } catch (CosClientException e) { throw new IOException("COS GET failed"); }
+        finally { deadline.cancel(false); }
     }
-    private static boolean uuid(final String value) {
-        try { return value != null && UUID.fromString(value).toString().equals(value); }
-        catch (final IllegalArgumentException e) { return false; }
+
+    @Override void deleteObject(final String key) throws IOException {
+        try { client.deleteObject(bucket, key); }
+        catch (CosServiceException e) { if (e.getStatusCode() != 404) { throw new IOException("COS DELETE failed"); } }
+        catch (CosClientException e) { throw new IOException("COS DELETE failed"); }
     }
     private static boolean validBucket(final String bucket) {
         return bucket != null && bucket.matches("[a-z0-9][a-z0-9-]{1,49}-[0-9]{5,20}");
-    }
-    private static Set<String> safePrefixes(final String... candidates) {
-        final List<String> all = Arrays.asList(candidates);
-        if (all.stream().distinct().count() != all.size()) { return Set.of(); }
-        return all.stream().filter(prefix -> prefix != null
-                        && prefix.matches("[a-z0-9][a-z0-9/_-]{0,180}/") && !prefix.contains("//"))
-                .collect(Collectors.toUnmodifiableSet());
     }
     public static ClientConfig clientConfig(final String region) {
         final ClientConfig config = new ClientConfig(new Region(region));

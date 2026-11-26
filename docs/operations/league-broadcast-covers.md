@@ -1,9 +1,9 @@
-# 联赛直播封面 COS 运维
+# Business 私有图片存储运维
 
 产品规则见 [联赛直播回放](../features/league-broadcasts.md)。本功能使用 Business API
 转传图片和代理公开读取，不借用静态模型资产发布凭据，也不要求开放 COS 桶匿名访问。
 
-## 配置与权限
+## 腾讯 COS 配置与权限
 
 在 GitHub repository-level Actions variables / secrets 配置以下项目：
 
@@ -34,6 +34,20 @@ secret 不进入源码、前端、镜像 build args 或主机持久 `.env`。
 开启版本控制的桶不在默认物理回收保证内：普通 DeleteObject 可能只写删除标记，旧版本仍占用空间。
 若部署选择这种桶，必须另外落实非当前版本 lifecycle 或版本感知回收；不能把删除标记当作物理删除。
 同样不要对整个专用前缀设置“到期全部删除”，仍被业务引用的封面需要长期保留。
+
+## Business API 的 OSS 适配
+
+`BUSINESS_IMAGE_PROVIDER` 取 `cos`（默认）或 `oss`。服务启动日志记录选中的 provider 与客户端配置状态。每个实例只构造选定实现。缺少 OSS 桶或凭据时，图片存储报告不可用。数据库台账、对象 key、调用方 URL 和宽限期沿用既有契约。
+
+| GitHub Actions 配置 | 类型 | 用途 |
+| --- | --- | --- |
+| `BUSINESS_IMAGE_PROVIDER`、`BUSINESS_OSS_BUCKET`、`BUSINESS_OSS_REGION` | Variable | 选择 OSS，填写私有桶名和区域，例如 `cn-hangzhou`。客户端使用该区域的官方 HTTPS 公网 endpoint。 |
+| `BUSINESS_OSS_ACCESS_KEY_ID`、`BUSINESS_OSS_ACCESS_KEY_SECRET` | Secret | Business 运行身份，仅授权两个业务前缀的 GetObject、PutObject（含私有 ACL）、DeleteObject。 |
+| `BUSINESS_OSS_SECURITY_TOKEN` | Secret，可空 | 使用 STS 时与对应的 ID 和密钥一起注入。静态配置的临时令牌需在到期前轮换并重新部署。 |
+
+两个 provider 使用相同的 `BROADCAST_COS_PREFIX` 与 `CREATOR_AVATAR_COS_PREFIX`，与迁移 manifest 保持一致。OSS 请求使用官方 Java SDK 的 V4 签名；连接数最多 8，连接和池等待各 5 秒，socket 读取 15 秒，单次网络操作总时限 30 秒。超时会中止底层 HTTP 请求。SDK 和传输层均关闭重试；结果不明的 PUT 由 PENDING 台账承接，清理任务对临时删除失败保留台账。
+
+切流前，使用独立身份确认桶级 Block Public Access 持续开启，从每个 Business 实例所在网络验证私有对象可达，并按下文完成预复制、冻结、最终对账。停写状态下统一实例配置，核验联赛封面、UP 头像、视频推荐封面的 API 读取，再按计划恢复写入和清理。目标恢复写入后回切前须按当前数据库反向补齐并校验。
 
 ## 保存、失败与回收
 

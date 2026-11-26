@@ -25,17 +25,18 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 
+/** Durable reservations survive failed PUTs, process exits, or later replay transaction rollbacks. */
 @Service
 public class BroadcastCoverService {
     private static final Logger LOG = LoggerFactory.getLogger(BroadcastCoverService.class);
     private final BroadcastCoverRepository covers;
     private final BroadcastReplayRepository replays;
-    private final BroadcastCosStorage storage;
+    private final BroadcastImageStorage storage;
     private final TransactionTemplate independent;
     private final TransactionTemplate metadataReads;
 
     public BroadcastCoverService(final BroadcastCoverRepository covers, final BroadcastReplayRepository replays,
-                                 final BroadcastCosStorage storage, final PlatformTransactionManager transactions) {
+                                 final BroadcastImageStorage storage, final PlatformTransactionManager transactions) {
         this.covers = covers;
         this.replays = replays;
         this.storage = storage;
@@ -54,6 +55,7 @@ public class BroadcastCoverService {
         if (!configured()) { throw new ApiException(ApiErrorCode.BROADCAST_STORAGE_UNAVAILABLE); }
         final ImageValidation.Image image = validate(file);
         final String id = UUID.randomUUID().toString();
+        // Commit before any external write. Even an ambiguous successful PUT remains discoverable.
         try {
             independent.executeWithoutResult(tx -> {
                 final BroadcastCover cover = new BroadcastCover();
@@ -69,6 +71,7 @@ public class BroadcastCoverService {
                 covers.saveAndFlush(cover);
             });
         } catch (final DataIntegrityViolationException e) {
+            // The reservation insert has one FK: its season may have been deleted after preflight.
             if (e.getMostSpecificCause() instanceof SQLException sql && "23503".equals(sql.getSQLState())) {
                 throw new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND);
             }
@@ -76,12 +79,14 @@ public class BroadcastCoverService {
         }
         independent.executeWithoutResult(tx -> {
             final BroadcastCover cover = locked(id);
+            // Only the reservation row is locked during the storage request.
             storage.put(cover.objectKey, image);
             cover.status = "READY";
         });
         return id;
     }
 
+    /** Caller holds season first, in the same transaction as the replay insert/update. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void attach(final long seasonId, final String coverId) {
         final BroadcastCover cover = locked(coverId);
@@ -92,6 +97,7 @@ public class BroadcastCoverService {
         cover.unreferencedAt = null;
     }
 
+    /** Caller flushes removal of replay references first, still holding its season lock. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void detach(final String coverId) {
         if (coverId == null) { return; }
@@ -109,6 +115,8 @@ public class BroadcastCoverService {
             }
             return stored;
         });
+        // Only immutable metadata leaves the short read transaction. Public I/O and
+        // decoding must never retain a connection or block maintenance on this row.
         final byte[] bytes = storage.get(cover.objectKey);
         try {
             final ImageValidation.Image image = ImageValidation.validate(bytes);
@@ -137,6 +145,7 @@ public class BroadcastCoverService {
                     covers.delete(cover);
                 });
             } catch (final RuntimeException e) {
+                // No SDK message/object path/credentials in diagnostics. Metadata remains for retry.
                 LOG.warn("Broadcast cover cleanup failed: coverId={}, type={}", id, e.getClass().getSimpleName());
             }
         }

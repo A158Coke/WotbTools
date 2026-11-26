@@ -8,31 +8,63 @@ x-logging: &default-logging
 
 services:
   business-api:
+    # The same business image, published as wotbtools-business-api; the TX service
+    # name is intentionally distinct from the retired Yecao runtime.
     image: ${TX_BUSINESS_API_IMAGE_REF:?TX_BUSINESS_API_IMAGE_REF is required}
     environment:
+      # Trust the private TX bridge (including hairpin gateway) and TX2 frontend host.
+      # nginx overwrites X-Real-IP; public peers must never be added here.
       WOTB_OBSERVABILITY_TRUSTED_PROXIES: "172.29.0.0/16,10.20.0.3/32"
       WOTB_OBSERVABILITY_HASH_KEY: ${WOTB_OBSERVABILITY_HASH_KEY:-}
+      # 独立于主回放处理；修改后重新创建 business-api 容器生效。
       BATTLE_DATA_ENABLED: ${BATTLE_DATA_ENABLED:-true}
       BATTLE_DATA_PER_SOURCE_PER_MINUTE: ${BATTLE_DATA_PER_SOURCE_PER_MINUTE:-60}
       BATTLE_DATA_PER_INSTANCE_PER_MINUTE: ${BATTLE_DATA_PER_INSTANCE_PER_MINUTE:-3000}
       BATTLE_DATA_MAX_SOURCE_KEYS: ${BATTLE_DATA_MAX_SOURCE_KEYS:-4096}
+      # Flyway owns every application table in the OpenTofu-provisioned business
+      # database; the application role is separate from the PostgreSQL bootstrap
+      # administrator.
+      # K6B logical endpoint: defaults stay Docker-local; reviewed WireGuard
+      # endpoints can be selected later without changing the service definition.
       POSTGRES_HOST: ${TX_BUSINESS_DB_HOST:-business-postgres}
       POSTGRES_PORT: "${TX_BUSINESS_DB_PORT:-5432}"
       POSTGRES_DB: ${TX_BUSINESS_DB_NAME:?TX_BUSINESS_DB_NAME is required}
       POSTGRES_USER: ${TX_BUSINESS_DB_USERNAME:?TX_BUSINESS_DB_USERNAME is required}
       POSTGRES_PASSWORD: ${TX_BUSINESS_DB_PASSWORD:?TX_BUSINESS_DB_PASSWORD is required}
+      # The public issuer must stay the public URL: Keycloak mints the `iss`
+      # claim from its configured hostname, and the JWT decoder fetches the JWKS
+      # from whichever deployment currently owns that public name.
       KEYCLOAK_ISSUER_URI: https://auth.wotbtools.com/realms/wotbtools
+      # Admin traffic never uses the public hostname. K6B may point this at the
+      # reviewed TX1/TX2 WireGuard endpoint; the Docker-local default preserves
+      # today's production path.
       KEYCLOAK_ADMIN_SERVER_URL: ${TX_KEYCLOAK_ADMIN_SERVER_URL:-http://keycloak:8080}
       KEYCLOAK_ADMIN_REALM: wotbtools
       KEYCLOAK_ADMIN_CLIENT_ID: wotbtools-admin-api
       KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:?KEYCLOAK_ADMIN_CLIENT_SECRET is required}
+      # Tournament-only permits; this is not an AI provider credential. The same
+      # runtime secret is passed to ai-service, which verifies the image permit.
       TOURNAMENT_RECOGNITION_SIGNING_KEY: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:-}
+      # Private Business images: select one provider and scope its identity to both prefixes.
+      # No configuration is required for browsing or records without covers.
+      BUSINESS_IMAGE_PROVIDER: ${BUSINESS_IMAGE_PROVIDER:-cos}
+      BUSINESS_OSS_BUCKET: ${BUSINESS_OSS_BUCKET:-}
+      BUSINESS_OSS_REGION: ${BUSINESS_OSS_REGION:-}
+      BUSINESS_OSS_ACCESS_KEY_ID: ${BUSINESS_OSS_ACCESS_KEY_ID:-}
+      BUSINESS_OSS_ACCESS_KEY_SECRET: ${BUSINESS_OSS_ACCESS_KEY_SECRET:-}
+      BUSINESS_OSS_SECURITY_TOKEN: ${BUSINESS_OSS_SECURITY_TOKEN:-}
       BROADCAST_COS_BUCKET: ${BROADCAST_COS_BUCKET:-}
       BROADCAST_COS_REGION: ${BROADCAST_COS_REGION:-}
       BROADCAST_COS_PREFIX: ${BROADCAST_COS_PREFIX:-league-broadcasts/covers/}
       CREATOR_AVATAR_COS_PREFIX: ${CREATOR_AVATAR_COS_PREFIX:-creator-avatars/}
       BROADCAST_COS_SECRET_ID: ${BROADCAST_COS_SECRET_ID:-}
       BROADCAST_COS_SECRET_KEY: ${BROADCAST_COS_SECRET_KEY:-}
+      # AI provider configuration deliberately does not exist here: AI Review runs
+      # in the standalone stateless Yecao ai-service (deploy/docker-compose.prod.yml),
+      # and TX only routes /api/ai/** to its WireGuard endpoint.
+      # HoF replay originals are permanent content-addressed files migrated onto
+      # this TX volume by the operator. Replay parsing itself runs in the browser;
+      # the server only stores these files for admin review and download.
       HOF_REPLAY_DIR: "${HOF_REPLAY_DIR:-/data/replays}"
       HOF_REPLAY_MIN_FREE_BYTES: "${HOF_REPLAY_MIN_FREE_BYTES:-536870912}"
       BOOST_AUTO_CONFIRM_HOURS: "${BOOST_AUTO_CONFIRM_HOURS:-72}"
