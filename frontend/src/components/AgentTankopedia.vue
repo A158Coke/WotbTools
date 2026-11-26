@@ -258,16 +258,10 @@ onMounted(() => {
               <span class="tp-pill" :class="TYPE_CLS[detail.type] || 't-unknown'">{{ typeLabel(detail.type) }}</span>
               <span v-if="summary?.is_premium" class="tp-pill is-premium">{{ t('agentTanks.premium') }}</span>
             </div>
-            <!-- 车级机制：头卡内只显示名称，点击打开原文说明；key 保证换车时弹窗重置 -->
             <TankMechanicsChips :key="detailId" :mechanics="mechanicRows" />
           </div>
           <div v-if="modules && setup.canConfigure" class="tp-detail-actions">
-            <AppButton
-              variant="secondary"
-              size="md"
-              data-testid="tank-open-research"
-              @click="researchOpen = true"
-            >
+            <AppButton variant="secondary" size="md" data-testid="tank-open-research" @click="researchOpen = true">
               <GitBranch :size="18" aria-hidden="true" />
               {{ t('research.open_research') }}
             </AppButton>
