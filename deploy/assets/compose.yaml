@@ -1,7 +1,7 @@
 name: wotbtools-asset-origin
 
-# Static-only origin for the Agent 3D asset pack. The asset payload is host state
-# under /srv/wotb-assets and is intentionally not baked into this image or repo.
+# Static-only origin for Agent 3D assets and Android downloads. The asset payload is host state
+# in separate read-only mounts and is intentionally not baked into this image or repo.
 services:
   caddy:
     image: caddy:2.10.2-alpine
@@ -11,6 +11,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - /srv/wotb-assets:/srv/wotb-assets:ro
+      - /srv/wotb-downloads/android:/srv/wotb-downloads/android:ro
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
