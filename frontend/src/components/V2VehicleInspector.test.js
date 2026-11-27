@@ -166,14 +166,50 @@ describe('V2VehicleInspector', () => {
     expect(w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')).toHaveLength(9)
 
     const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
-    expect(equipment.map(cell => String(cell.attributes('aria-label')))).toEqual([
+    const names = [
       '火炮输弹机', '改进型模块+', '改进型光学系统',
       '改进型炮控系统', '改进型组装', '发动机加速器',
       '精密火炮', '工具箱', '高级消耗品',
-    ])
-    expect(equipment.map(cell => cell.text().trim())).toEqual(Array(9).fill(''))
+    ]
+    expect(equipment.map(cell => String(cell.attributes('aria-label')))).toEqual(names)
+    expect(equipment.map(cell => cell.get('.v2-chip-name').text())).toEqual(names)
     expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-chip-icon').length).toBeGreaterThan(0)
     expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-chip-icon').length).toBeGreaterThan(0)
+  })
+
+  it('图标下显示本地化名称：空槽显示「未装备」，完整名称仍留在 title / aria-label', () => {
+    const t = track()
+    t.loadout.consumables = [null, 'REPAIR_KIT', null]
+    t.loadout.consumableWireCodes = [null, 0x0D, null]
+    t.loadout.provisions = [null, null, null]
+    t.loadout.provisionWireCodes = [null, null, null]
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'zh', t)
+    const visibleNames = scope => w.findAll(`[data-test="v2-inspector-${scope}"] .v2-chip-name`).map(el => el.text())
+    expect(visibleNames('consumables')).toEqual(['未装备', '修理箱', '未装备'])
+    expect(visibleNames('provisions')).toEqual(['未装备', '未装备', '未装备'])
+    const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
+    const names = visibleNames('equipment')
+    expect(names).toHaveLength(9)
+    for (const [i, chip] of equipment.entries()) {
+      expect(names[i]).toBe(chip.attributes('aria-label'))
+      expect(chip.attributes('title')).toBe(chip.attributes('aria-label'))
+      expect(names[i].length).toBeGreaterThan(0)
+    }
+    expect(names.join(' ')).not.toMatch(/REPAIR_KIT|ADRENALINE|SANDBAG_ARMOR|100|114/)
+    w.unmount()
+  })
+
+  it('真实长名称在 chip 内以可见文本完整呈现，不依赖 tooltip / aria-label', () => {
+    const t = track()
+    t.loadout.consumables = ['MULTI_PURPOSE_RESTORATION_PACK', null, null]
+    t.loadout.consumableWireCodes = [0x14, null, null]
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'en', t)
+    const chip = w.get('[data-consumable-slot="0"]')
+    expect(chip.get('.v2-chip-name').text()).toBe('Multi-Purpose Restoration Pack')
+    expect(chip.attributes('aria-label')).toContain('Multi-Purpose Restoration Pack')
+    w.unmount()
   })
 
   it('已装备防破片内衬使用 anti-high-explosive 图标，不降级为空占位', () => {
