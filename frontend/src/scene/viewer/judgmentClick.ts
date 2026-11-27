@@ -1,13 +1,15 @@
 import * as THREE from 'three'
 import { isClippedModuleHit } from '../armorCollisionPack.js'
+import { disposeHitMarker } from './overlayStroke.js'
 import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.js'
 import type { JudgmentDeps } from './judgment.js'
 import type { JudgmentHit } from './judgmentHits.js'
 
 export function createJudgmentClick(deps: JudgmentDeps, classifyHit: (hit: THREE.Intersection, rayDir?: THREE.Vector3 | null) => JudgmentHit | null,
   faceAngleAndEffective: (thickness: number, normal: THREE.Vector3, rayDir: THREE.Vector3) => { angleDeg: number | null; effective: number | null },
-  doPenetrationCheck: (x: number, y: number) => void) {
-  const { models, getRenderer, getCollisionMode, tc, getRaycaster, getCamera, getModuleMeshes, hm, cvs, L } = deps
+  doPenetrationCheck: (x: number, y: number) => void,
+  invalidateJudgment?: () => void) {
+  const { models, getRenderer, getCollisionMode, tc, getRaycaster, getCamera, getModuleMeshes, hm, cvs, L, getFxScene } = deps
     let lastClickNdc: { x: number; y: number } | null = null;
     let lastClickClient: { x: number; y: number } | null = null;
 
@@ -85,7 +87,13 @@ function placeClickInfo(clientX: number, clientY: number): void {
 }
 
 function showArmorPartInfo(_event: MouseEvent, ndcX: number, ndcY: number): void {
+            // 厚度点击也是一次判定失效：先递增判定代数，丢弃可能仍在途的 async 响应。
+            invalidateJudgment?.();
             tc.tidyTrajectory();
+            // tidyTrajectory 只拥有轨迹/结果卡/HE 爆点；命中点圆点由 overlayStroke 拥有。
+            // 厚度模式点击 = 放弃上一发判定，两者必须一起清，否则旧命中点会留在新读数旁。
+            disposeHitMarker(getFxScene());
+            lastClickNdc = null;
             getRaycaster().setFromCamera(new THREE.Vector2(ndcX, ndcY), getCamera());
             const objects = models.armorModel ? [models.armorModel, ...getModuleMeshes()] : [];
             const rayDir = getRaycaster().ray.direction.clone().normalize();

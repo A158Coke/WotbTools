@@ -22,6 +22,12 @@ function makeArmorMesh(name, section = 'deco', thickness = 0) {
   return mesh
 }
 
+function makeModuleMesh(name, plateId, thickness = 20, section = 'chassis') {
+  const mesh = makeArmorMesh(name, section, thickness)
+  mesh.userData.armorPlateId = plateId
+  return mesh
+}
+
 function makeView({ modules = [], hmOverrides = {} } = {}) {
   const armorModel = new THREE.Group()
   const tankModel = new THREE.Group()
@@ -130,11 +136,59 @@ describe('collisionView dynamic armor state (P1-B)', () => {
     cvs.setArmorState(1)
 
     expect(inactive.visible).toBe(true)
-    expect(inactive.material.transparent).toBe(true)
-    expect(inactive.material.opacity).toBe(0.95)
+    expect(inactive.material.isMeshBasicMaterial).toBe(true)
+    expect(inactive.material.transparent).toBe(false)
+    expect(inactive.material.opacity).toBe(1)
     expect(inactive.material.depthWrite).toBe(true)
     expect(inactive.material.color.getHex()).toBe(0x123456)
     expect(activeDefault.visible).toBe(false)
+  })
+
+  it('keeps the selected fixed plate highlighted across dynamic state changes', () => {
+    const fixed = makeArmorMesh('hull_armor_12', 'hull', 80)
+    fixed.userData.armorPlateId = '12'
+    const activeDefault = makeArmorMesh('hull_state_01_armor_13')
+    const inactive = makeArmorMesh('hull_state_01_armor_14')
+    const { cvs, armorModel, setCollisionMode } = makeView()
+    armorModel.add(fixed, activeDefault, inactive)
+    cvs.resolveArmorStateDecl(8305)
+    cvs.applyArmorStateToModel()
+
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+    cvs.applyArmorHighlight(fixed)
+    expect(fixed.material.opacity).toBe(1)
+
+    cvs.setArmorState(1)
+
+    // 新激活的板必须重新进入“未选中”态，不能以默认不透明材质盖住当前选中板。
+    expect(inactive.visible).toBe(true)
+    expect(inactive.material.opacity).toBe(0.18)
+    expect(inactive.material.transparent).toBe(true)
+    expect(inactive.material.depthWrite).toBe(false)
+    expect(inactive.children.find(child => child.isLineSegments).visible).toBe(false)
+    expect(fixed.material.opacity).toBe(1)
+    expect(fixed.children.find(child => child.isLineSegments).visible).toBe(true)
+  })
+
+  it('clears the selection when a dynamic state hides the selected plate', () => {
+    const activeDefault = makeArmorMesh('hull_state_01_armor_13')
+    const inactive = makeArmorMesh('hull_state_01_armor_14')
+    const { cvs, armorModel, setCollisionMode } = makeView()
+    armorModel.add(activeDefault, inactive)
+    cvs.resolveArmorStateDecl(8305)
+    cvs.applyArmorStateToModel()
+
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+    cvs.applyArmorHighlight(activeDefault)
+
+    cvs.setArmorState(1)
+
+    expect(cvs.getHighlightedArmorNode()).toBeNull()
+    expect(clickInfoCard().style.display).toBe('none')
+    expect(inactive.material.opacity).toBe(1)
+    expect(inactive.children.find(child => child.isLineSegments).visible).toBe(true)
   })
 })
 
@@ -235,5 +289,96 @@ describe('collisionView category filtering (P2-C / P2-E)', () => {
     expect(judgment.isEffectivelyVisible(spaced)).toBe(false)
     expect(cvs.getHighlightedArmorNode()).toBeNull()
     expect(clickInfoCard().style.display).toBe('none')
+  })
+})
+
+describe('thickness view BlitzKit-style appearance', () => {
+  it('uses flat category materials, BlitzKit opacities and non-pickable outlines', () => {
+    const primary = makeArmorMesh('hull_armor_13', 'hull', 100)
+    const spaced = makeArmorMesh('turret_armor_20', 'spaced', 20)
+    spaced.userData.armorPlateId = '20'
+    const track = makeModuleMesh('chassis_track_L', 'leftTrack', 20)
+    const gun = makeModuleMesh('gun_01_barrel', 'gun', 80, 'gunBarrel')
+    const { cvs, armorModel, setCollisionMode } = makeView({ modules: [track, gun] })
+    armorModel.add(primary, spaced)
+
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+
+    expect(primary.material.isMeshBasicMaterial).toBe(true)
+    expect(primary.material.toneMapped).toBe(false)
+    expect(primary.material.opacity).toBe(1)
+    expect(primary.material.transparent).toBe(false)
+    expect(primary.material.depthWrite).toBe(true)
+
+    expect(spaced.material.isMeshBasicMaterial).toBe(true)
+    expect(spaced.material.opacity).toBeCloseTo(0.6)
+    expect(spaced.material.transparent).toBe(true)
+    expect(spaced.material.depthWrite).toBe(true)
+    expect(spaced.material.side).toBe(THREE.DoubleSide)
+
+    for (const module of [track, gun]) {
+      expect(module.material.isMeshBasicMaterial).toBe(true)
+      expect(module.material.opacity).toBeCloseTo(0.125)
+      expect(module.material.transparent).toBe(true)
+      expect(module.material.depthWrite).toBe(false)
+    }
+
+    const outlines = (mesh) => mesh.children.filter(child => child.isLineSegments)
+    for (const mesh of [primary, spaced, track, gun]) {
+      expect(outlines(mesh)).toHaveLength(1)
+      const hits = []
+      outlines(mesh)[0].raycast(new THREE.Raycaster(), hits)
+      expect(hits).toHaveLength(0)
+    }
+
+    // 换配置/重进视图会反复调用 applyArmorViewStyle：勾线只能复用，不能重复挂载。
+    cvs.applyArmorViewStyle(true)
+    for (const mesh of [primary, spaced, track, gun]) expect(outlines(mesh)).toHaveLength(1)
+
+    cvs.applyArmorViewStyle(false)
+    for (const mesh of [primary, spaced, track, gun]) expect(outlines(mesh)).toHaveLength(0)
+  })
+})
+
+describe('thickness view track module highlight', () => {
+  it('highlights the whole left/right chassis side from any child mesh', () => {
+    const leftTrack = makeModuleMesh('chassis_track_L', 'leftTrack', 20)
+    const leftWheel = makeModuleMesh('chassis_wheel_L_01', 'leftTrack', 20)
+    const rightTrack = makeModuleMesh('chassis_track_R', 'rightTrack', 20)
+    const rightWheel = makeModuleMesh('chassis_wheel_R_01', 'rightTrack', 20)
+    const hull = makeArmorMesh('hull_armor_13', 'hull', 100)
+    const { cvs, armorModel, setCollisionMode } = makeView({
+      modules: [leftTrack, leftWheel, rightTrack, rightWheel],
+    })
+    armorModel.add(hull)
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+
+    cvs.applyArmorHighlight(leftWheel)
+
+    for (const mesh of [leftTrack, leftWheel]) {
+      expect(mesh.material.opacity).toBe(1)
+      expect(mesh.material.transparent).toBe(false)
+      expect(mesh.material.depthWrite).toBe(true)
+      expect(mesh.children.find(child => child.isLineSegments).visible).toBe(true)
+    }
+    for (const mesh of [rightTrack, rightWheel]) {
+      expect(mesh.material.opacity).toBe(0.15)
+      expect(mesh.material.transparent).toBe(true)
+      expect(mesh.material.depthWrite).toBe(false)
+      expect(mesh.children.find(child => child.isLineSegments).visible).toBe(false)
+    }
+    expect(hull.material.opacity).toBe(0.18)
+    expect(hull.children.find(child => child.isLineSegments).visible).toBe(false)
+
+    cvs.resetArmorHighlight()
+    for (const mesh of [leftTrack, leftWheel, rightTrack, rightWheel]) {
+      expect(mesh.material.opacity).toBeCloseTo(0.125)
+      expect(mesh.material.depthWrite).toBe(false)
+      expect(mesh.children.find(child => child.isLineSegments).visible).toBe(true)
+    }
+    expect(hull.material.opacity).toBe(1)
+    expect(hull.children.find(child => child.isLineSegments).visible).toBe(true)
   })
 })

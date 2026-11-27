@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 import type { Mesh } from 'three'
+import {
+    thicknessDepthWrite, thicknessSurfaceOpacity, type ThicknessClass,
+} from './armorThicknessPalette.js'
 
 export type ArmorStateSection = 'hull' | 'turret' | 'gun'
 
@@ -40,11 +43,17 @@ export function applyArmorStateToMesh(node: Mesh, p: ArmorMeshStateParams): void
         node.userData.armorThickness = thickness;
         node.visible = !node.userData.configHidden;
         node.userData.armorSection = p.spaced ? 'spaced' : p.section;
+        const kind: ThicknessClass = p.spaced ? 'spaced' : 'primary';
+        const opacity = thicknessSurfaceOpacity(kind, thickness);
         replaceArmorMaterial(node, p.collisionMode
-            ? new THREE.MeshStandardMaterial({
-                color: p.colorOf(node.userData.armorThickness),
-                metalness: 0.4, roughness: 0.6,
-                transparent: true, opacity: 0.95, depthWrite: true,
+            ? new THREE.MeshBasicMaterial({
+                color: p.colorOf(thickness),
+                toneMapped: false,
+                transparent: opacity < 1,
+                opacity,
+                depthWrite: thicknessDepthWrite(kind),
+                // 间隙甲双面：厚度视图下从背面看/点也可见（与判定/高亮口径一致）
+                side: p.spaced ? THREE.DoubleSide : THREE.FrontSide,
             })
             : new THREE.MeshStandardMaterial({
                 color: 0x444444, metalness: 0.3, roughness: 0.8,

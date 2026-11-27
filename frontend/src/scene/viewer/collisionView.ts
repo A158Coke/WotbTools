@@ -1,6 +1,13 @@
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
 import { hasGunMask } from './armorPlateModel.js'
+import {
+    thicknessDepthWrite, thicknessSurfaceOpacity, type ThicknessClass,
+} from './armorThicknessPalette.js'
+import {
+    clearThicknessOutlines, collectArmorMeshes, outlineOf, setOutlineVisible,
+    syncThicknessOutlines as syncThicknessOutlineMeshes,
+} from './armorThicknessOutline.js'
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../../data/armorStates.js'
 import type { ArmorStateSection } from './armorMeshState.js'
 import type { ModelReferences } from './modelLifecycle.js'
@@ -159,17 +166,50 @@ function applyCategoryFilters(): void {
             }
         }
 
-function collectHighlightMeshes(): THREE.Mesh[] {
-            const list: THREE.Mesh[] = [];
-            if (models.armorModel) {
-                models.armorModel.traverse(function(node: THREE.Object3D) {
-                    const mesh = node as THREE.Mesh;
-                    if (!mesh.isMesh || mesh.userData.armorSection === 'deco') return;
-                    list.push(mesh);
-                });
+/** 厚度视图类别：模块碰撞体统一 external，装甲板按 spaced/primary 分。 */
+function thicknessClassForMesh(mesh: THREE.Mesh, modules: ReadonlySet<THREE.Object3D>): ThicknessClass {
+            if (modules.has(mesh)) return 'external';
+            return mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary';
+        }
+
+/** 厚度表面平涂材质（BlitzKit StaticArmor 同语义：无光照、色阶直出）。 */
+function createThicknessMaterial(mesh: THREE.Mesh, kind: ThicknessClass): THREE.MeshBasicMaterial {
+            const thickness = mesh.userData.armorThickness;
+            const opacity = thicknessSurfaceOpacity(kind, thickness);
+            return new THREE.MeshBasicMaterial({
+                color: thicknessToColor(thickness),
+                toneMapped: false,
+                transparent: opacity < 1,
+                opacity,
+                depthWrite: thicknessDepthWrite(kind),
+                side: kind === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
+            });
+        }
+
+/** 选中集合：单侧履带/负重轮按 armorPlateId 整组，其余只选被点网格。 */
+function highlightSelection(selected: THREE.Object3D | null, modules: ReadonlySet<THREE.Object3D>): Set<THREE.Object3D> {
+            const selectedSet = new Set<THREE.Object3D>();
+            if (!selected) return selectedSet;
+            const plateId = selected.userData?.armorPlateId;
+            if (selected.userData?.armorSection === 'chassis' && plateId != null) {
+                for (const node of modules) {
+                    if (node.userData?.armorSection === 'chassis' && node.userData?.armorPlateId === plateId) {
+                        selectedSet.add(node);
+                    }
+                }
             }
-            for (const node of getModuleMeshes()) list.push(node as THREE.Mesh);
-            return list;
+            if (selectedSet.size === 0) selectedSet.add(selected);
+            return selectedSet;
+        }
+
+function syncThicknessOutlines(): void {
+            if (!getCollisionMode() || !models.armorModel) return;
+            const moduleMeshes = getModuleMeshes();
+            const modules = new Set<THREE.Object3D>(moduleMeshes);
+            const selectedSet = highlightSelection(highlightedArmorNode, modules);
+            syncThicknessOutlineMeshes(
+                models.armorModel, moduleMeshes, highlightedArmorNode, selectedSet, thicknessToColor,
+            );
         }
 
 function applyArmorMaterialState(m: THREE.Material, transparent: boolean, opacity: number, depthWrite: boolean): void {
@@ -183,29 +223,29 @@ function resetArmorHighlight(): void {
             highlightedArmorNode = null;
             if (!getCollisionMode() || !models.armorModel) return;
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
-            for (const node of collectHighlightMeshes()) {
+            for (const node of collectArmorMeshes(models.armorModel, getModuleMeshes())) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
-                applyArmorMaterialState(m, true, modules.has(node) ? 1 : 0.95, true);
-                const em = m as THREE.MeshStandardMaterial;
-                if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
+                const kind = thicknessClassForMesh(node, modules);
+                const opacity = thicknessSurfaceOpacity(kind, node.userData.armorThickness);
+                applyArmorMaterialState(m, opacity < 1, opacity, thicknessDepthWrite(kind));
+                setOutlineVisible(node, true);
             }
         }
 
 function applyArmorHighlight(selected: THREE.Object3D | null): void {
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
-            for (const node of collectHighlightMeshes()) {
+            const selectedSet = highlightSelection(selected, modules);
+            for (const node of collectArmorMeshes(models.armorModel, getModuleMeshes())) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
-                if (node === selected) {
-                    applyArmorMaterialState(m, true, 1, true);
-                    const em = m as THREE.MeshStandardMaterial;
-                    if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
+                if (selectedSet.has(node)) {
+                    // 选中板保持原色、不透明并写深度；不引入自发光（会被误读成厚度变色）。
+                    applyArmorMaterialState(m, false, 1, true);
                 } else {
                     applyArmorMaterialState(m, true, modules.has(node) ? 0.15 : 0.18, false);
-                    const em = m as THREE.MeshStandardMaterial;
-                    if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
                 }
+                setOutlineVisible(node, selectedSet.has(node));
             }
             highlightedArmorNode = selected;
         }
@@ -213,7 +253,7 @@ function applyArmorHighlight(selected: THREE.Object3D | null): void {
 function syncModuleClipPlanes(): void {
             for (const node of getModuleMeshes()) {
                 const mesh = node as THREE.Mesh;
-                const mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
+                const mat = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
                 if (!mat || mesh.material !== mat) continue;
                 let clipPlanes: THREE.Plane[] | null = null;
                 if (mesh.userData.armorSection === 'gunBarrel') {
@@ -225,6 +265,17 @@ function syncModuleClipPlanes(): void {
                     mat.clippingPlanes = clipPlanes;
                     mat.needsUpdate = true;
                 }
+                // 勾线与炮管实体同源裁剪：炮尾/炮根段被 mask 平面切掉时，轮廓不能残留。
+                const line = outlineOf(mesh);
+                if (!line) continue;
+                const lineMat = line.material as THREE.LineBasicMaterial;
+                const lineHadClip = !!(lineMat.clippingPlanes && lineMat.clippingPlanes.length);
+                if (lineHadClip !== !!clipPlanes) {
+                    lineMat.clippingPlanes = clipPlanes;
+                    lineMat.needsUpdate = true;
+                } else if (clipPlanes) {
+                    lineMat.clippingPlanes = clipPlanes;
+                }
             }
         }
 
@@ -235,18 +286,28 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     if (!moduleOriginalMaterials.has(mesh)) moduleOriginalMaterials.set(mesh, mesh.material);
                     const t = Number(mesh.userData.armorThickness);
                     const color = thicknessToColor(t);
+                    const opacity = thicknessSurfaceOpacity('external', t);
                     const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
-                    let mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
+                    let mat = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
                     if (!mat) {
-                        mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.6 });
+                        mat = new THREE.MeshBasicMaterial({
+                            color,
+                            toneMapped: false,
+                            transparent: opacity < 1,
+                            opacity,
+                            depthWrite: thicknessDepthWrite('external'),
+                        });
                         mesh.userData.collisionSolidMaterial = mat;
                     } else {
                         mat.color.set(color);
+                        // 复用缓存材质时恢复厚度视图默认值：高亮可能改过
+                        // transparent/opacity/depthWrite，不恢复会让外部模块回退成不透明实心。
+                        mat.transparent = opacity < 1;
+                        mat.opacity = opacity;
+                        mat.depthWrite = thicknessDepthWrite('external');
                     }
+                    // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见。
                     mat.side = side;
-                    mat.transparent = false;
-                    mat.opacity = 1;
-                    mat.depthWrite = true;
                     mat.depthTest = true;
                     mat.needsUpdate = true;
                     mesh.material = mat;
@@ -256,10 +317,14 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     moduleOriginalMaterials.delete(mesh);
                 }
             }
+            // 厚度视图的炮管外部模块按 gun_mask 平面裁剪（与热力图外部模块 clone 同一
+            // 口径）：掩体平面之后的炮尾/炮根段不显示，避免整根炮管插进炮塔。
             if (on) syncModuleClipPlanes();
         }
 
 function applyArmorViewStyle(collision: boolean): void {
+            // 退出厚度视图先摘勾线：armor 尚未就绪时也必须把模块上的轮廓清掉。
+            if (!collision) clearThicknessOutlines(models.armorModel, getModuleMeshes());
             if (!models.armorModel) return;
             if (collision) hmRef().computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
@@ -293,16 +358,13 @@ function applyArmorViewStyle(collision: boolean): void {
                 if (!mesh.isMesh) return;
                 if (mesh.userData.armorSection === 'deco') { mesh.visible = false; return; }
                 replaceArmorMaterial(mesh, collision
-                    ? new THREE.MeshStandardMaterial({
-                        color: thicknessToColor(mesh.userData.armorThickness), metalness: 0.4, roughness: 0.6,
-                        transparent: true, opacity: 0.95, depthWrite: true,
-                        side: node.userData.armorSection === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
-                    })
+                    ? createThicknessMaterial(mesh, mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary')
                     : new THREE.MeshStandardMaterial({
                         color: 0x444444, metalness: 0.3, roughness: 0.8,
                         transparent: true, opacity: 0, depthWrite: false,
                     }));
             });
+            if (collision) syncThicknessOutlines();
             applyCategoryFilters();
         }
 
@@ -362,6 +424,8 @@ function applyArmorStateToModel(): void {
             });
             alignArmorModulesFn();
             updateTurretGunFn(getLastAppliedTurretDegFn(), getLastAppliedGunDegFn());
+            // 动态装甲板换材质后，勾线颜色必须跟着板色走（否则切态会留下旧色轮廓）。
+            if (getCollisionMode()) syncThicknessOutlines();
         }
 
 function setArmorState(stateId: number): void {
@@ -370,6 +434,10 @@ function setArmorState(stateId: number): void {
             armorStateCurrent = stateId;
             applyArmorStateToModel();
             applyCategoryFilters();
+            // 切态会给新激活的板换回默认不透明材质；若当前选中仍有效，重放高亮，
+            // 否则 applyCategoryFilters 已经清掉失效选中。这样新激活的未选中板保持
+            // 0.18 / 不写深度 / 无勾线，不会把真正选中的板遮住。
+            if (getCollisionMode() && highlightedArmorNode) applyArmorHighlight(highlightedArmorNode);
             if ((getPenetrationMode() || hmRef().getPrimaryArmorScene()) && models.armorModel) {
                 applyArmorStateToHeatmapClonesFn(activePlateSet(armorStateDecl, stateId));
                 rebuildRicochetPackFn();

@@ -85,8 +85,15 @@ export function createJudgment(deps: JudgmentDeps) {
     let __shotRayTarget: THREE.Vector3 | null = null;
     let __penCheckSeq = 0;
     let judgmentCount = 0;
+    /** 判定代数递增：在途 async 判定据此丢弃，不再回写卡片/命中点。 */
+    function bumpPenSeq(): void { __penCheckSeq++; }
+    /** 厚度点击也是一次判定失效：丢弃在途响应并清空 HUD 的本发距离读数。 */
+    function invalidateForThicknessClick(): void {
+        bumpPenSeq();
+        deps.onJudgmentDistance?.(null);
+    }
 const { isEffectivelyVisible, classifyHit, intersectArmorDoubleSidedSpaced, collectJudgmentHits } = createJudgmentHits(deps)
-const { onClick, showArmorPartInfo, getLastClickNdc, setLastClickNdc, clearLastClickNdc } = createJudgmentClick(deps, classifyHit, faceAngleAndEffective, doPenetrationCheck)
+const { onClick, showArmorPartInfo, getLastClickNdc, setLastClickNdc, clearLastClickNdc } = createJudgmentClick(deps, classifyHit, faceAngleAndEffective, doPenetrationCheck, invalidateForThicknessClick)
 
 function resolveCaliberFor(shell: ShellSpec | null): number {
             const candidates: Array<number | null | undefined> = [
@@ -370,7 +377,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
         resolveShotCaliber: () => resolveCaliberFor(getSelectedShell()),
         setShotRay(origin: THREE.Vector3 | null, target: THREE.Vector3 | null) { __shotRayOrigin = origin; __shotRayTarget = target; },
         clearShotRay() { __shotRayOrigin = null; __shotRayTarget = null; },
-        bumpPenSeq() { __penCheckSeq++; },
+        bumpPenSeq,
         getJudgmentCount: () => judgmentCount,
         getLastClickNdc, setLastClickNdc, clearLastClickNdc,
     };
