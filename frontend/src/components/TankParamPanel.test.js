@@ -61,4 +61,30 @@ describe('TankParamPanel 数据展示', () => {
     expect(detail.findAll('.tp-param-unit').map(unit => unit.text())).toContain(messages.en.agentTanks.units.METER_PER_SECOND)
     wrapper.unmount()
   })
+
+  it('突击弹逐段显示期望伤害与倍率，非突击弹不渲染该表', async () => {
+    const { wrapper } = panel({
+      shells: [{
+        index: 0, selected: true, label: 'APCR', tunedPenetration: 255, tunedDamage: 310,
+        tunedVelocity: 1100, tunedPenetrationFar: 205, tunedModuleDamage: 150, normalization: 2, ricochet: 70,
+        damageByDistance: [
+          { distance: 50, factor: 1.4, label: '50 m or less', percent: 140, damage: 434 },
+          { distance: 120, factor: 1.2, label: '50–120 m', percent: 120, damage: 372 },
+          { distance: 200, factor: 1.0, label: '120–200 m', percent: 100, damage: 310 },
+          { distance: 720, factor: 0.8, label: '200 m or more', percent: 80, damage: 248 },
+        ],
+      }],
+    })
+    const tray = wrapper.get('[data-testid=tank-shell-tray]')
+    expect(tray.findAll('.tp-shell-tray-row')).toHaveLength(4)
+    expect(tray.get('[data-testid=tank-shell-tray-0]').text()).toContain('434')
+    expect(tray.get('[data-testid=tank-shell-tray-0]').text()).toContain('×140%')
+    expect(tray.get('[data-testid=tank-shell-tray-3]').text()).toContain('248')
+    expect(tray.get('[data-testid=tank-shell-tray-3]').text()).toContain('×80%')
+    wrapper.unmount()
+
+    const plain = panel()
+    expect(plain.wrapper.find('[data-testid=tank-shell-tray]').exists()).toBe(false)
+    plain.wrapper.unmount()
+  })
 })

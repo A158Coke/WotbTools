@@ -20,6 +20,8 @@ export interface TrajectoryCardOptions {
     probabilityMode?: boolean
     heInfo?: ShotResultCardHeInfo | null
     heDirectHit?: { name: string; thickness: number } | null
+    damageFactor?: number | null
+    cameraPosition?: THREE.Vector3 | null
 }
 
 export interface TrajectoryCardHandle {
@@ -206,7 +208,7 @@ function showTrajectory(
             if (window.__hitMarker) setOverlayDotColor(window.__hitMarker, sceneResultColor(hitPointRole));
             const { group: builtTrajGroup, lastPoint } = createShotTrajectoryGroup({
                 firstPoint,
-                cameraPosition: getCamera().position,
+                cameraPosition: options.cameraPosition ?? getCamera().position,
                 trajOrigin,
                 layers: displayLayers as ReadonlyArray<ShotTrajectoryGeometryLayer>,
                 layerRoles,
@@ -227,7 +229,7 @@ function showTrajectory(
             trajLayoutDirty = true;
             div.innerHTML = renderShotResultCardHtml({
                 result, layers: displayLayers, layerRoles, partialChainLayers, chancePen,
-                dmgVal, distVal, dmgDealt, resultRole,
+                dmgVal, distVal, damageFactor: options.damageFactor ?? null, dmgDealt, resultRole,
                 fragValidated: window.__shotCtx?.fragValidated ?? null,
                 cardChance, heInfo, heChance, heDirectHit,
                 probabilityMode, overallChance: overall, hasChance, chancePartial, blockedNoPrimary,

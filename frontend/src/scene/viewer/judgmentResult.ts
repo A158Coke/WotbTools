@@ -13,7 +13,7 @@ interface BounceDebugEntry { bounce: number; result: string; reflect: number[]; 
   hits: Array<{ partName: string; section: string; thickness: number; point: number[]; normal: number[] }> }
 type ResultDeps = Pick<JudgmentDeps, 'tc' | 'armorDebug' | 'getCurrentConfig' | 'getTankData' | 'getCurrentConfigIdx' | 'getSelectedShell' | 'equipmentCoeffs' | 'getCamera' | 'getControls' | 'getWorldOverviewMode' | 'getPenetrationMode'> & {
   isStale: () => boolean; hitsForCheck: JudgmentHit[]; point: THREE.Vector3; isHE: boolean; pen: number; dmg: number; first: JudgmentHit
-  heRadius: number; eqCal: number; eqEnh: number; dist: number; viewDir: THREE.Vector3; incomingDirection: THREE.Vector3
+  heRadius: number; eqCal: number; eqEnh: number; dist: number; trayFactor: number | null; launchPoint: THREE.Vector3; viewDir: THREE.Vector3; incomingDirection: THREE.Vector3
   intersectArmorDoubleSidedSpaced: (objects: THREE.Object3D[], caster: THREE.Raycaster) => THREE.Intersection[]
   collectJudgmentHits: (hits: THREE.Intersection[], dir: THREE.Vector3, minDistance?: number) => { hits: JudgmentHit[]; firstContact: JudgmentHit | null }
   objects: THREE.Object3D[]; shellType: ReturnType<typeof shellTypeOf>; shellNormDeg: number | null | undefined; shellRicoDeg: number | null
@@ -22,7 +22,7 @@ type ResultDeps = Pick<JudgmentDeps, 'tc' | 'armorDebug' | 'getCurrentConfig' | 
 export async function renderJudgmentResult(res: PenetrationResult, context: ResultDeps): Promise<void> {
   const { tc, armorDebug, getCurrentConfig, getTankData, getCurrentConfigIdx, getSelectedShell, equipmentCoeffs, getCamera, getControls,
     getWorldOverviewMode, getPenetrationMode, isStale, hitsForCheck, point, isHE, pen, dmg, first, heRadius, eqCal, eqEnh,
-    dist, viewDir, incomingDirection, intersectArmorDoubleSidedSpaced, collectJudgmentHits, objects, shellType, shellNormDeg,
+    dist, trayFactor, launchPoint, viewDir, incomingDirection, intersectArmorDoubleSidedSpaced, collectJudgmentHits, objects, shellType, shellNormDeg,
     shellRicoDeg, requirePrimary, mpu, penDisp, modDmg, shotRayO, caliber, ndcX, ndcY } = context
                 if (isStale()) return;
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
@@ -262,6 +262,8 @@ export async function renderJudgmentResult(res: PenetrationResult, context: Resu
                         tc.showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
                             ...(heInfo ? { heInfo, heDirectHit } : {}),
                             blockedNoPrimary: res.blocked_no_primary === true,
+                            damageFactor: trayFactor,
+                            cameraPosition: launchPoint,
                         });
                         return;
                     }
@@ -269,8 +271,8 @@ export async function renderJudgmentResult(res: PenetrationResult, context: Resu
 
                 const blockedNoPrimary = res.blocked_no_primary === true;
                 if (useProbabilityMode) {
-                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, probRawLayers!, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers!, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary, damageFactor: trayFactor, cameraPosition: launchPoint });
                 } else {
-                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
+                    tc.showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary, damageFactor: trayFactor, cameraPosition: launchPoint });
                 }
 }

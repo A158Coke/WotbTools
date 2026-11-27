@@ -58,6 +58,61 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     expect(shells[0].penetration).toBe(200.49)
   })
 
+  it('突击弹按当前距离显示期望伤害与倍率（APCR 专用）', async () => {
+    data.fetchTankData.mockResolvedValueOnce({
+      mechanics: [{
+        name: 'TrayShell',
+        kinds: ['ARMOR_PIERCING_CR'],
+        sectors: [
+          { distance: 50, factor: 1.4 },
+          { distance: 120, factor: 1.2 },
+          { distance: 200, factor: 1.0 },
+          { distance: 720, factor: 0.8 },
+        ],
+      }],
+      configs: [{
+        shells: [
+          { type: 'ap_cr', type_id: 1, damage: 310, penetration: 255 },
+          { type: 'ap', type_id: 0, damage: 310, penetration: 255 },
+          { type: 'he', type_id: 3, damage: 520, penetration: 62 },
+        ],
+      }],
+    })
+    const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
+    await flushPromises()
+    expect(wrapper.get('label[for="armor-distance"]').text()).toBe('armor.distance_short')
+    expect(wrapper.get('.hud-damage-label').text()).toContain('armor.estimated_damage')
+    for (const [distance, damage, multiplier] of [[30, '434', '×140%'], [100, '372', '×120%'], [150, '310', '×100%'], [500, '248', '×80%']]) {
+      await wrapper.setProps({ distanceState: { ...distanceState, distance } })
+      await wrapper.setProps({ shell: 0 })
+      expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe(`${damage} HP`)
+      expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe(multiplier)
+    }
+    await wrapper.setProps({ shell: 0, distanceState: { ...distanceState, distance: 50, exactDistance: 50.4 } })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('372 HP')
+    expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe('×120%')
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 50, exactDistance: 50 } })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('434 HP')
+    expect(wrapper.get('[data-testid="hud-multiplier"]').text()).toBe('×140%')
+    await wrapper.setProps({ shotState: { distance: 48, exactDistance: 48.4, factor: 1.4 } })
+    expect(wrapper.get('[data-testid="hud-shot-distance"]').text()).toContain('48.4')
+    expect(wrapper.get('[data-testid="hud-shot-multiplier"]').text()).toBe('×140%')
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 300, exactDistance: 300.4 } })
+    expect(wrapper.get('[data-testid="hud-shot-distance"]').text()).toContain('48.4')
+    expect(wrapper.get('[data-testid="hud-shot-multiplier"]').text()).toBe('×140%')
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 700, readOnly: true } })
+    expect(wrapper.find('[data-testid="hud-shot"]').exists()).toBe(false)
+    await wrapper.setProps({ shell: 0, distanceState: null, shotState: null })
+    expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe('— HP')
+    expect(wrapper.find('[data-testid="hud-multiplier"]').exists()).toBe(false)
+    await wrapper.setProps({ distanceState: { ...distanceState, distance: 150 } })
+    for (const [shell, damage] of [[1, '310 HP'], [2, '520 HP']]) {
+      await wrapper.setProps({ shell })
+      expect(wrapper.get('[data-testid="hud-damage"]').text()).toBe(damage)
+      expect(wrapper.find('[data-testid="hud-multiplier"]').exists()).toBe(false)
+    }
+  })
+
   it('按各炮弹near/far衰减，包含有衰减的HEAT；HE/缺far/等值保持', async () => {
     data.fetchTankData.mockResolvedValueOnce({ shells: [
       { type: 'ap', penetration: 300, penetration_far: 260 },
@@ -87,8 +142,10 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     await slider.setValue('300')
     expect(wrapper.emitted('distance').at(-1)).toEqual([300])
     expect(wrapper.get('[data-testid="hud-distance-value"]').text()).toContain('100')
+    expect(wrapper.get('label[for="armor-distance"]').text()).toBe('armor.distance_short')
     await wrapper.setProps({ distanceState: { ...distanceState, distance: 700, readOnly: true } })
     expect(slider.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('label[for="armor-distance"]').text()).toBe('armor.distance_recorded_short')
     expect(wrapper.get('[data-testid="hud-distance-value"]').text()).toContain('700')
     await slider.trigger('input')
     expect(wrapper.emitted('distance')).toHaveLength(1)
