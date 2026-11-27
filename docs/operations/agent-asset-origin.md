@@ -3,6 +3,8 @@
 > 何时查阅：部署 / 排障 Agent 3D 功能（全场回放、装甲查看器、坦克百科、射击复现）
 > 的静态资产取用，或需要更换资产源（origin）时。
 
+Android 历史 APK 的原生远端源、公开下载结果与生产 floor 见[消费者核验记录](android-agent-consumers.md)。
+
 ## 边界：运行时不绑定任何基础设施
 
 Playback / Tank Viewer / Armor Viewer / Agent Data 的资产访问只有一条通路：
