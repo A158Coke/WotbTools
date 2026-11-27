@@ -35,6 +35,7 @@ const px = (value) => parseFloat(value) || 0
 const check = (failures, ok, message) => { if (!ok) failures.push(message) }
 
 async function runSticky(env) {
+  fixture.reset(20)
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
@@ -44,6 +45,11 @@ async function runSticky(env) {
     await page.goto(`${env.origin}/`)
     await page.evaluate(`localStorage.setItem('wotb-lang', 'zh-CN')`)
     await page.goto(`${env.origin}/?view=hof-admin&ws-auth=1&ws-roles=wotbtools-admin&ws-auth-init=resolve-authenticated`)
+    await page.waitForValue('document.querySelectorAll(".hof-admin-table tbody tr").length', count => count === 20, { label: 'sticky fixture rows loaded' })
+    await page.waitForValue('document.querySelector("[data-testid=hof-pending-badge]")?.textContent.trim()', count => count === '12')
+    await page.evaluate('window.scrollTo({ top: 0, behavior: "instant" })')
+    await page.evaluate('document.fonts.ready')
+    await page.animationsSettled()
     const state = await page.waitForValue(`(${tabsProbe.toString()})()`, probe => Boolean(probe?.tabCount), { label: 'hof-admin tabs rendered' })
 
     check(failures, state.position === 'sticky', `tabs must be position:sticky (got ${state.position})`)
@@ -51,16 +57,22 @@ async function runSticky(env) {
     check(failures, Math.abs(px(state.top) - expectedTop) <= 0.5, `tabs top must equal --header-h + --space-2 = ${expectedTop}px (got ${state.top}, --header-h=${state.headerH})`)
     check(failures, state.zIndex === String(parseInt(state.zSticky, 10)), `tabs z-index must equal --z-sticky=${state.zSticky} (got ${state.zIndex})`)
 
-    const stuck = await page.evaluate(`(() => {
+    const geometry = await page.probe(() => {
       const bar = document.querySelector('.hof-admin-tabs')
-      document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight
-      return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve({
-        viewportTop: bar.getBoundingClientRect().top,
-        scrollTop: document.scrollingElement.scrollTop,
-      }))))
-    })()`)
-    check(failures, stuck.scrollTop > 0, 'page must be scrollable for the sticky regression to be meaningful')
-    check(failures, Math.abs(stuck.viewportTop - px(state.top)) <= 1, `scrolled tabs must stick at ${state.top} (got viewportTop ${stuck.viewportTop.toFixed(1)})`)
+      const root = document.scrollingElement
+      return { naturalTop: bar.getBoundingClientRect().top + root.scrollTop,
+        maxScroll: root.scrollHeight - root.clientHeight, parentBottom: bar.parentElement.getBoundingClientRect().bottom + root.scrollTop,
+        height: bar.getBoundingClientRect().height }
+    })
+    const threshold = geometry.naturalTop - expectedTop
+    const target = Math.ceil(threshold + geometry.height)
+    assert.ok(threshold > 0 && target < geometry.maxScroll && target + expectedTop + geometry.height < geometry.parentBottom,
+      'fixture must reach beyond the sticky threshold and stay inside the container: ' + JSON.stringify(geometry))
+    await page.callWith(y => window.scrollTo({ top: y, behavior: 'instant' }), target)
+    await page.waitForValue('document.scrollingElement.scrollTop', y => Math.abs(y - target) <= 1)
+    const stuckTop = await page.evaluate('document.querySelector(".hof-admin-tabs").getBoundingClientRect().top')
+    check(failures, Math.abs(stuckTop - expectedTop) <= 1, 'sticky top ' + stuckTop + ', expected ' + expectedTop + ', threshold ' + threshold + ', scroll ' + target)
+    console.log('[browser-hof-admin-tabs] sticky geometry', { threshold, target, stuckTop, expectedTop })
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
@@ -141,13 +153,16 @@ async function checkRecordActions(page, tap, present) {
   await page.waitForValue("document.querySelector('.hof-admin-tabs button:nth-child(2)')?.getAttribute('aria-selected')", v => v === 'true')
 }
 
-async function reviewTwoSubmissions({ page, tap, present, domain, list }) {
+async function reviewTwoSubmissions({ page, tap, present, domain, list, snapshot }) {
   const queue = '.hof-queue-item'
   for (const position of [1, 2]) {
+    if (position === 1) await snapshot(domain + '-queue', queue)
     await tap(`${queue}:nth-child(${position}) [data-testid=hof-queue-open]`)
     const approve = '.hof-review-decision .ok:not(:disabled)'
     await present(approve)
     if (position === 1) {
+      await snapshot(domain + '-detail', '.hof-review-top')
+      await snapshot(domain + '-actions', approve)
       await tap('.hof-zoom-proof')
       await present('.screenshot-zoom [role=dialog]')
       await key(page, 'Escape', 27)
@@ -223,9 +238,16 @@ async function runVehiclesAndReviews(env, { width, height, theme, review }) {
     const shot = await env.chrome.client.send('Page.captureScreenshot', { format: 'png' }, sessionId)
     await writeFile(join(process.env.HOF_SCREENSHOTS, `after-${width}-${domain}.png`), Buffer.from(shot.data, 'base64'))
   }
+  async function snapshot(name, selector) {
+    if (!process.env.HOF_SCREENSHOTS) return
+    await present(selector)
+    await page.callWith(sel => document.querySelector(sel).scrollIntoView({ block: 'center' }), selector)
+    await page.animationsSettled()
+    await capture(width, theme + '-' + name)
+  }
   try {
     await page.enable()
-    await page.emulate({ width, height, touch })
+    await page.emulate({ width, height, touch, deviceScaleFactor: 1 })
     await page.goto(env.origin)
     await page.callWith(profile => {
       localStorage.setItem('wotb-lang', 'en')
@@ -239,7 +261,7 @@ async function runVehiclesAndReviews(env, { width, height, theme, review }) {
       const list = domain === 'records' ? '/api/admin/hof' : `/api/admin/hof/${domain}/submissions`
       await chooseVehicle({ page, tap, present, touch, list, domain, width, screenshot: capture })
       if (review && domain === 'records') await checkRecordActions(page, tap, present)
-      if (review && domain !== 'records') await reviewTwoSubmissions({ page, tap, present, domain, list })
+      if (review && domain !== 'records') await reviewTwoSubmissions({ page, tap, present, domain, list, snapshot })
     }
     return []
   } finally {
@@ -264,6 +286,7 @@ try {
   const scenarios = [['hof-admin-tabs-sticky', runSticky], ['hof-admin-tabs-narrow-scrollable', runNarrowScrollable]]
   for (const [theme, width, height, review] of [
     ['summer', 1280, 850, true], ['winter', 390, 664, true], ['spring', 900, 850, false], ['autumn', 360, 740, false],
+    ['winter', 1280, 850, true], ['summer', 390, 664, true],
   ]) scenarios.push([`hof-admin-vehicles-${theme}-${width}`, env => runVehiclesAndReviews(env, { width, height, theme, review })])
   const args = parseScenarioArgs(process.argv.slice(2))
   const selected = scenarios.filter(([name]) => !args.nameFilter || name.includes(args.nameFilter))

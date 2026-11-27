@@ -34,9 +34,9 @@ export function createHofAdminFixture() {
     return () => { if (countBarriers.get(domain) === promise) countBarriers.delete(domain); resolve() }
   }
   let records
-  function reset() {
+  function reset(recordCount = 3) {
     requests.length = 0
-    records = [71, 72, 73].map(id => ({
+    records = Array.from({ length: recordCount }, (_, i) => 71 + i).map(id => ({
       id, accountId: id + 100, nickname: 'Pilot ' + id, tankId: 1011, tankName: 'Fixture Tank 12',
       battleType: 'RANDOM', damageDealt: 3500, mapName: 'erlenberg', version: '11.0', battleTime: at,
       createdAt: at, replayHash: 'a'.repeat(64), replayFileName: 'battle.wotbreplay', replaySize: 32,
