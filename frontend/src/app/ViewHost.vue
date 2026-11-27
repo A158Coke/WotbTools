@@ -21,8 +21,11 @@ const creatorUnavailable = computed(() => activeView.value === 'recommendations'
   : recommendationList.value ? !typeVisible(recommendationType.value) : activeView.value === 'creators-config' && !creatorsAvailable.value)
 const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value && activeView.value !== 'recommendations'
   ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
-const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback'].includes(activeView.value))
+const adminView = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config', 'admin-users', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback'].includes(activeView.value))
 const adminCopy = computed(() => {
+  if (activeView.value === 'admin-users') {
+    return { allowed: isAdmin.value, title: 'admin.title', login: 'admin.loginRequired', denied: 'adminPreview.denied' }
+  }
   if (activeView.value === 'admin-battle-data') {
     return { allowed: isAdmin.value, title: 'battleDataAdmin.title', login: 'battleDataAdmin.loginRequired', denied: 'battleDataAdmin.adminRequired' }
   }

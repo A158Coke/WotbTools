@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildEventStream, filterEvents, nearestEventTime, sectorLabel, shotVerdict, EVENT_FILTERS,
+  buildEventStream, eventRowTitle, filterEvents, nearestEventTime, sectorLabel, shotVerdict, EVENT_FILTERS,
 } from './playbackEventStream.ts'
 
 const FACET = {
@@ -127,6 +127,17 @@ describe('buildEventStream', () => {
       chat_messages: [{ t: 10.2, tag: 1, seq: 2, text: 'hi' }],
     })
     expect(dup.filter((e) => e.kind === 'chat')).toHaveLength(2)
+  })
+
+  it('command/marker 标题不再拼接内部频道名', () => {
+    const facet = {
+      ...FACET,
+      chat_channels: [{ id: 1549648, channel_name: '#chat:channels/battle/team' }],
+    }
+    const evs = buildEventStream(facet)
+    const cmd = evs.find((e) => e.kind === 'command' && e.t === 23)
+    expect(cmd.channelName).toBe('team')
+    expect(eventRowTitle(cmd, (key) => key)).toBe('eventStream.cmd_attack_enemy')
   })
 
   it('指令目标/通知主体/发送者按 eid 或 accountId 联表到玩家与坦克', () => {

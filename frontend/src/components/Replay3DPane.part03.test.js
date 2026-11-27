@@ -165,6 +165,11 @@ async function openDetailsViaScene(eid) {
 
 
 function mountPane(props = {}) {
+  // 未显式指定用户时按手动开始测试：匿名自动开始由 lifecycle 用例覆盖。
+  const manualAutoStart = !Object.prototype.hasOwnProperty.call(props, 'autoStartUserId')
+  if (manualAutoStart) {
+    try { localStorage.setItem('wotb.pb.3d-auto-start:manual-test', '0') } catch (e) {}
+  }
   const states = new WeakMap()
   const getState = file => {
     if (!states.has(file)) states.set(file, shallowReactive({ canonical: null, sceneState: 'idle' }))
@@ -179,7 +184,7 @@ function mountPane(props = {}) {
     },
   }
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...(manualAutoStart ? { autoStartUserId: 'manual-test' } : {}), ...props },
     global: { mocks: { $t: translate } },
   })
 }

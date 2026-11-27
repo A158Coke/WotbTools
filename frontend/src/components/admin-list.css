@@ -207,6 +207,9 @@
   }
   .admin-list-table tbody tr td:first-child { border-inline-start: 0; }
   .admin-list-table tbody td[data-label]::before { content: attr(data-label); flex: none; color: var(--color-text-secondary); font: var(--type-caption); text-align: start; }
+  .feedback-admin .admin-list-table tbody,
+  .feedback-admin .admin-list-table tbody tr { grid-template-columns: minmax(0, 1fr); }
+  .admin-list-table tbody td.feedback-status-cell { flex-wrap: wrap; align-items: center; }
   .admin-list-table tbody td.cell-primary { text-align: start; }
   .admin-list-table tbody td.cell-check { position: absolute; inset-block-start: var(--space-1); inset-inline-start: var(--space-1); width: auto; }
   .admin-list-table tbody td.cell-actions { justify-content: flex-end; }

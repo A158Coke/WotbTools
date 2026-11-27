@@ -5,23 +5,14 @@ import * as api from '../../api/admin-users.js'
 
 type AdminUserRow = components['schemas']['AdminUserPage']['items'][number]
 type SelectionContext = {
-  users: Ref<AdminUserRow[]>
-  requireOnline: () => boolean
-  loadUsers: () => Promise<void>
+  users: Readonly<Ref<AdminUserRow[]>>
+  canDelete: () => boolean
+  loadUsers: () => Promise<unknown>
   showApiError: (message: string) => void
   errorText: (error: unknown) => string
 }
 
-/**
- * @param {{
- *  users: import('vue').Ref<Array<{ keycloakUserId: string }>>,
- *  requireOnline: () => boolean,
- *  loadUsers: () => Promise<void>,
- *  showApiError: (error: unknown) => void,
- *  errorText: (error: unknown) => string,
- * }} ctx
- */
-export function useAdminUserSelection({ users, requireOnline, loadUsers, showApiError, errorText }: SelectionContext) {
+export function useAdminUserSelection({ users, canDelete, loadUsers, showApiError, errorText }: SelectionContext) {
   const selectedIds = ref<string[]>([])
   const selectedSet = computed(() => new Set(selectedIds.value))
   const selectedCount = computed(() => selectedIds.value.length)
@@ -59,7 +50,7 @@ export function useAdminUserSelection({ users, requireOnline, loadUsers, showApi
   }
 
   function startBulkDelete() {
-    if (!selectedCount.value) return
+    if (!selectedCount.value || bulkDeleting.value || !canDelete()) return
     bulkConfirmText.value = ''
     bulkResult.value = null
     bulkDeleting.value = false
@@ -71,15 +62,17 @@ export function useAdminUserSelection({ users, requireOnline, loadUsers, showApi
   }
 
   async function confirmBulkDelete() {
+    retainVisible()
     const ids = [...selectedIds.value]
-    if (!ids.length || bulkConfirmText.value !== 'DELETE') return
-    if (!requireOnline()) return
+    if (bulkDeleting.value || !ids.length || bulkConfirmText.value !== 'DELETE') return
+    if (!canDelete()) return
     bulkDeleting.value = true
     try {
       const res = await api.adminDeleteUsers(ids, true)
       bulkResult.value = res
       const failed = new Set((res?.results || []).filter(r => !r.deleted).map(r => r.userId))
       selectedIds.value = ids.filter(id => failed.has(id))
+      retainVisible()
       bulkConfirmText.value = ''
       await loadUsers()
     } catch (e) {

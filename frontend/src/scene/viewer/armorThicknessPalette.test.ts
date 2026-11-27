@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  THICKNESS_BANDS, THICKNESS_UNKNOWN_COLOR, thicknessToColor,
+  THICKNESS_BANDS, THICKNESS_EXTERNAL_OPACITY, THICKNESS_UNKNOWN_COLOR,
+  thicknessDepthWrite, thicknessOutlineColor, thicknessSurfaceOpacity, thicknessToColor,
 } from './armorThicknessPalette.js'
 import { SCENE_RESULT_COLORS } from './shotResultPalette.js'
 
@@ -32,5 +33,42 @@ describe('armorThicknessPalette', () => {
     expect(colors).toContain(SCENE_RESULT_COLORS.MAY_PENETRATE)
     expect(colors).toContain(SCENE_RESULT_COLORS.SPLASH)
     expect(colors).toContain(SCENE_RESULT_COLORS.BLOCKED)
+  })
+})
+
+describe('thicknessSurfaceOpacity', () => {
+  it('primary 始终不透明', () => {
+    expect(thicknessSurfaceOpacity('primary', 0)).toBe(1)
+    expect(thicknessSurfaceOpacity('primary', 500)).toBe(1)
+    expect(thicknessSurfaceOpacity('primary', null)).toBe(1)
+  })
+
+  it('spaced 按 200mm 归一的 BlitzKit clamp：0.5–1', () => {
+    expect(thicknessSurfaceOpacity('spaced', 0)).toBe(0.5)
+    expect(thicknessSurfaceOpacity('spaced', 20)).toBeCloseTo(0.6)
+    expect(thicknessSurfaceOpacity('spaced', 100)).toBe(1)
+    expect(thicknessSurfaceOpacity('spaced', 200)).toBe(1)
+    expect(thicknessSurfaceOpacity('spaced', -10)).toBe(0.5)
+    expect(thicknessSurfaceOpacity('spaced', Number.NaN)).toBe(0.5)
+  })
+
+  it('external 固定 1/8，且不写深度', () => {
+    expect(thicknessSurfaceOpacity('external', 0)).toBe(THICKNESS_EXTERNAL_OPACITY)
+    expect(thicknessSurfaceOpacity('external', 500)).toBe(THICKNESS_EXTERNAL_OPACITY)
+    expect(thicknessDepthWrite('external')).toBe(false)
+    expect(thicknessDepthWrite('primary')).toBe(true)
+    expect(thicknessDepthWrite('spaced')).toBe(true)
+  })
+})
+
+describe('thicknessOutlineColor', () => {
+  it('primary/external 压暗一半', () => {
+    expect(thicknessOutlineColor('primary', 0xffffff)).toBe(0x808080)
+    expect(thicknessOutlineColor('external', 0x336699)).toBe(0x1a334d)
+  })
+
+  it('spaced 提亮四倍并按通道 clamp', () => {
+    expect(thicknessOutlineColor('spaced', 0x336699)).toBe(0xccffff)
+    expect(thicknessOutlineColor('spaced', 0x010101)).toBe(0x040404)
   })
 })

@@ -303,7 +303,7 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
-  it('接地阴影开关：流畅 / 均衡停用，高清 / 极致可开；换文件后新待开播回到 OFF', async () => {
+  it('接地阴影开关：流畅 / 均衡停用，高清 / 极致可开；换文件后新待开播沿用跨回放偏好', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ file: mkFile('a.wotbreplay') })
     await flush()
@@ -320,8 +320,8 @@ describe('Replay3DPane', () => {
     expect(box().element.checked).toBe(true)
     await wrapper.setProps({ file: mkFile('b.wotbreplay') })
     await flush()
-    expect(playback.api.setContactShadows).toHaveBeenLastCalledWith(false)
-    expect(box().element.checked).toBe(false)
+    expect(playback.api.setContactShadows).toHaveBeenLastCalledWith(true)
+    expect(box().element.checked).toBe(true)
     wrapper.unmount()
   })
 

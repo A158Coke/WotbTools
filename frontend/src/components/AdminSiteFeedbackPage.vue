@@ -9,6 +9,7 @@ import { normalizeApiError } from '../utils/http.js'
 import AdminDangerZone from './AdminDangerZone.vue'
 import AdminDetailDrawer from './AdminDetailDrawer.vue'
 import AdminFilterBar from './AdminFilterBar.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import { isRowControlClick, rowOpenTarget } from './adminListRow'
@@ -23,6 +24,7 @@ const { requireFeature, availability } = useFeatureGate()
 const items = ref<FeedbackItem[]>([]), page = ref(0), totalPages = ref(0), totalItems = ref(0), reason = ref<SiteFeedbackReason | ''>('')
 const loading = ref(false), error = ref(''), deleting = ref(false)
 const selected = ref<FeedbackItem | null>(null), detail = ref<FeedbackDetail | null>(null)
+const pageRoot = ref<HTMLElement | null>(null)
 const returnFocus = ref<HTMLElement | null>(null)
 const dangerZone = ref<InstanceType<typeof AdminDangerZone> | null>(null)
 const loaded = ref(false), savingStatus = ref<Record<string, boolean>>({})
@@ -92,6 +94,10 @@ function reasonChips() {
   return reason.value ? [{ key: 'reason', label: `${t('siteFeedback.filter')}: ${t(`siteFeedback.reasons.${reason.value}`)}` }] : []
 }
 
+function statusOptions(id: string) {
+  return feedbackStatuses.map(value => ({ value, label: t('siteFeedback.status.' + value), disabled: !!savingStatus.value[id] }))
+}
+
 function applyStatus(id: string, status: FeedbackStatus): void {
   statusEpoch++
   invalidateDetailRequests(id)
@@ -102,12 +108,8 @@ function applyStatus(id: string, status: FeedbackStatus): void {
   if (detail.value && detail.value.id === id) detail.value = { ...detail.value, status }
   else if (pendingDetailId.value === id && selected.value?.id === id) void loadDetail(id)
 }
-async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
-  const select = event.target as HTMLSelectElement
-  const next = select.value as FeedbackStatus
-  const previous = item.status
-  if (next === previous || savingStatus.value[item.id]) { select.value = previous; return }
-  if (!requireFeature(Feature.ADMIN_SITE_FEEDBACK)) { select.value = previous; return }
+async function changeStatus(item: FeedbackItem, next: FeedbackStatus): Promise<void> {
+  if (next === item.status || savingStatus.value[item.id] || !requireFeature(Feature.ADMIN_SITE_FEEDBACK)) return
   savingStatus.value = { ...savingStatus.value, [item.id]: true }
   error.value = ''
   try {
@@ -115,10 +117,9 @@ async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
     applyStatus(item.id, next)
   } catch (cause) {
     if (isDefiniteStatusRejection(cause)) {
-      select.value = previous
       error.value = apiErrorLabel(t, te, cause)
     } else {
-      await reconcileStatus(item, select, previous)
+      await reconcileStatus(item)
     }
   } finally {
     const rest = { ...savingStatus.value }
@@ -126,13 +127,11 @@ async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
     savingStatus.value = rest
   }
 }
-async function reconcileStatus(item: FeedbackItem, select: HTMLSelectElement, previous: FeedbackStatus): Promise<void> {
+async function reconcileStatus(item: FeedbackItem): Promise<void> {
   try {
     const result = await getSiteFeedback(item.id)
     applyStatus(item.id, result.status)
-    select.value = result.status
   } catch {
-    select.value = previous
     error.value = t('siteFeedback.statusUnconfirmed')
   }
 }
@@ -168,8 +167,13 @@ async function remove() {
   const target = selected.value
   if (deleting.value || !target || !requireFeature(Feature.ADMIN_SITE_FEEDBACK)) return
   deleting.value = true; error.value = ''
-  try { await deleteSiteFeedback(target.id); deleting.value = false; closeDetail(); await load() }
-  catch (cause) { error.value = apiErrorLabel(t, te, cause) }
+  try {
+    await deleteSiteFeedback(target.id)
+    returnFocus.value = pageRoot.value
+    deleting.value = false
+    closeDetail()
+    await load()
+  } catch (cause) { error.value = apiErrorLabel(t, te, cause) }
   finally { deleting.value = false }
 }
 onMounted(load)
@@ -180,7 +184,7 @@ onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value 
 </script>
 
 <template>
-  <section class="feedback-admin admin-page">
+  <section ref="pageRoot" class="feedback-admin admin-page" tabindex="-1" :aria-label="$t('siteFeedback.adminTitle')">
     <ShowcaseHero compact section="admin" :kicker="$t('siteFeedback.adminKicker')" :title="$t('siteFeedback.adminTitle')">
       <template #actions>
         <AppButton size="sm" :disabled="loading" @click="load">{{ $t('siteFeedback.refresh') }}</AppButton>
@@ -207,10 +211,9 @@ onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value 
             <td :data-label="$t('siteFeedback.filter')">{{ reasonLabels(item.reasonCodes) }}</td>
             <td class="is-wrap" :data-label="$t('siteFeedback.comment')">{{ previewText(item.feedbackText) }}</td>
             <td :data-label="$t('siteFeedback.page')">{{ item.pageView || '—' }}</td>
-            <td :data-label="$t('siteFeedback.statusLabel')">
-              <select class="admin-list-input status-select" :value="item.status" :disabled="!!savingStatus[item.id]" :aria-label="$t('siteFeedback.statusLabel')" @change="changeStatus(item, $event)">
-                <option v-for="value in feedbackStatuses" :key="value" :value="value">{{ $t(`siteFeedback.status.${value}`) }}</option>
-              </select>
+            <td class="feedback-status-cell" :data-label="$t('siteFeedback.statusLabel')">
+              <SegmentedControl :model-value="item.status" :options="statusOptions(item.id)" wrap
+                :ariaLabel="$t('siteFeedback.statusLabel')" @update:model-value="changeStatus(item, $event)" />
             </td>
           </tr>
         </tbody>
