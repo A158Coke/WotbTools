@@ -4,8 +4,9 @@
 > 功能的条件能力存在——没有独立入口、没有独立上传页。实现见客户端
 > `frontend/src/replay-local/compute/league-rating.ts`（纯函数评分 core：模式判定 / 完整性校验 /
 > 冲突指纹 / 归一化 / 评分 / 战队命名）与 `frontend/src/replay-local/compute/league-batch.ts`
-> （V6 批次汇总：选手/战队 summary 与维度均值）。原服务端 Java 评分包（`wotb-core/.../league/` 与
-> `wotb-web/.../replay/`）已随解析器退役（2026-10-02）删除。
+> （V6 批次汇总：选手/战队 summary 与维度均值）。原服务端 Java 评分代码（`wotb-core/.../league/` 与
+> `wotb-web` 的评分/解析类）已随解析器退役（2026-10-02）删除；`wotb-web` 的 `replay/` 包现仅剩
+> `ReplayBusyException` 与 `ReplayCapacityLimiter` 两个非评分类。
 
 **这不是旧 Rating V2 综合评分**：Rating V2 已随「战斗表现」重构移除；本功能是全新的、只消费
 当前上传回放可证明事实的内存级评分，与排行榜、名人堂、AI 复盘均无关系。
@@ -45,24 +46,28 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
   Radar 只允许七维 League Rating（见「Excel 导出」与「Build-to-Learn」）。
 - 全部结果（评分、战队名称覆盖、MVP）只存在于当前本地分析批次与前端页面内存中；
   刷新 / 重新上传后不保留。不写数据库、localStorage、服务端文件。
-- 复用 `TradeFacts`（V4.1 directional 互换窗口：玩家死亡后 `[0, +5]` 秒内存在敌方死亡，
+- 复用 `tradedDeaths` / `deathSec` 派生（V4.1 directional 互换窗口：玩家死亡后 `[0, +5]` 秒内存在敌方死亡，
   时间窗口启发式，非精确 killer attribution）。
 
 ## 严格完整性门槛（7v7）
 
 每场必须：14 个结算记录、14 个唯一非零 accountId、队伍只能为 1/2、两队各 7 人、
-14 名玩家非零 tankId、`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值/非有限/
-违反真实字段关系（命中≤射击、击穿≤命中）。
+14 名玩家非零 tankId、`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值且不
+违反真实字段关系（命中≤射击、击穿≤命中；关系比较按分子超分母，分别在 `nShots > 0`、
+`nHitsDealt > 0` 时启用）。普通统计字段未单独做有限值校验：`-Infinity` 被非负校验拒绝；
+分子为 `+Infinity` 且分母为有限正数时被关系校验拒绝，而分母为非有限值（如
+`nShots = +Infinity`）或比较未启用（如 `nShots = 0` 时的 `nHitsDealt`）时不拒绝；
+NaN 因比较恒假全部通过。通过校验的非有限值由评分层 clamp 兜底为 0。
 League Rating 以 **#301 的 14 settled combatants 为 authority**；#201 仅用于
 nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞评分（`Battle.rosterComplete`
 保留给 SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating）。
 
-**结算死亡时间门槛**：阵亡玩家必须有有效的 settlement `field24 lifeTime`（有限、正数且不超过战斗时长）；
-缺失、非正、非有限或超时一律 `LEAGUE_INVALID_STAT_FACTS`，不再降级为普通 UNKNOWN。Trade 只消费
+**结算死亡时间门槛**：阵亡玩家必须有有效的 settlement `field24 lifeTime`。缺失或非正数在
+facts 转换阶段直接拒绝，该回放按解析失败处理（进入失败列表，不返回 `LEAGUE_INVALID_STAT_FACTS`）；
+NaN 或明显超过战斗时长（`> duration + 1s`）的 `settlementLifeTimeSec` 属非法 stat facts
+（`LEAGUE_INVALID_STAT_FACTS`），整场拒绝评分。Trade 只消费
 settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即 fail-closed 返回 0，绝不猜测；其它六维按真实 Replay facts 正常评分，
-总分保持 0–1000 不重新归一化。`survivalTimeSec < 0` / NaN / Infinity /
-明显超过战斗时长（`> duration + 1s`）仍为非法 stat facts（`LEAGUE_INVALID_STAT_FACTS`），
-整场拒绝评分。
+总分保持 0–1000 不重新归一化。
 
 **protobuf 零值策略**：身份/队伍/车辆/胜方等结构字段按真实存在性 fail-closed（0/非法值拒绝）；
 伤害/助攻/阻挡/击杀/占点等统计字段**合法为 0**——proto 未编码字段解码为 0 与真实 0 不可区分
@@ -99,7 +104,7 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
 - **已知限制（clan tag 未归一化）**：`battleFacts.ts` 原样转发 `clan_tag`，`autoName()` 做字面比较，`teamKey()` 因此把 `CHRD` 与 `CHRD ` 视为不同战队；混合批次可能生成重复战队汇总或覆盖 key。golden fixtures 已包含带 padding 的形式；当前未做 trim/normalize。
 - **已知限制（导出失败标签）**：`export/sheets.ts:failureLabel()` 未覆盖 `LEAGUE_ARENA_ID_MISSING` / `LEAGUE_INVALID_TEAM` / `LEAGUE_DUPLICATE_ACCOUNT_ID` / `LEAGUE_MISSING_TANK` / `LEAGUE_INVALID_STAT_FACTS`；这些失败在中文战斗列表 sheet 中会显示原始 error code。已有本地化描述，但导出映射尚未接上。
 - **已知限制（车辆用量并列排序）**：`aggVehicleUsage()` 在 battles 数相同时当前按 tankId 的十进制字符串排序；例如 `100` 会排在 `20` 前，可能不符合 numeric ascending contract。该排序差异仍存在，运行时 comparator 尚未修复。
-- **已知限制（已退役但仍在计算的字段）**：`finalize.ts:populateBattle()` 仍计算并写入 `contribution` / `kast` / `impact`，但当前没有生产 reader；这些字段与计算属于清理债务，不属于当前评分/展示契约。
+- **已知限制（已退役但仍在计算的字段）**：`finalize.ts` 调用的 `performance.ts:populateBattle()` 仍计算并写入 `contribution` / `kast` / `impact`，但当前没有生产 reader；这些字段与计算属于清理债务，不属于当前评分/展示契约。
 
 ## 七维度公式（合计 1000）
 
@@ -197,7 +202,7 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 - **V6 主 Rating**：选手的 `S` 是有效单场选手 V4.1 Final Rating 之和；战队的 `T` 是每场
   `TeamBattleRating` 之和，其中 `TeamBattleRating` 是该场 7 名选手 Final Rating 的算术平均值。
   以 `N` 表示有效评分场次、`A=475`：选手 `rating=(S+5A)/(N+5)`；战队
-  `rating=(T+A)/(N+1)`。`N=0` 时结果为 null。
+  `rating=(T+A)/(N+1)`。`N=0` 的选手/战队不产生 summary 行（无可评分场次即无记录）。
   不使用 median、证据曲线、series/opponent/map factor 或 hard release threshold。
 - **Observed Mean**：选手为 `S/N`，战队为 `T/N`，仅用于透明展示；维度使用同一 rated-only
   分母的 pooled 算术均值。主 Rating、维度、排行和 MVP 均不使用 median。
@@ -271,8 +276,9 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   cw scope（wotb-league-cw-* storage），同样复用同一 ColumnPicker /拖拽/持久化基础设施，
   不另建第二套系统。
 - League 默认可见列：单场表 = 玩家/战队/车辆/伤害/助攻/击杀/总 Rating；CW 统一玩家表默认 =
-  玩家/总 Rating/七维/MVP/场次/评分场次/胜场/胜率/场均伤害/场均助攻/场均击杀/获取点数每场
-  （rated_battles 进入生产 Column contract：leaguePlayerSummaryColumns → mergeCwPlayerColumns
+  玩家/总 Rating/军团/场次/评分场次/胜场/MVP/场均伤害（`CW_SUMMARY_DEFAULT_VISIBLE`）；
+  七维、观察均值等其余 League 列在列面板按需开启（rated_battles 进入生产 Column contract：
+  leaguePlayerSummaryColumns → mergeCwPlayerColumns
   → useColumns cw scope → ColumnPicker）。列名与原始字段区分（「伤害」vs「伤害评分」）。
   contribution/kast/impact/traded_deaths/account_id/tank_id/alpha_damage/victory_points_seized
   已退役，不在任何列 universe 中。
@@ -290,17 +296,18 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 
 ## 测试
 
-- core 单测：T/G 边界、七维度满分/零分（V4.1 精确 365/110/110/180/50/75/110）、
-  换血（零承伤/零输出/参与度限制/高助攻/高阻挡）、Soft Wilson（0/0、1/1 不得满分、
-  多次高效、高效率低参与、精确公式、低/高样本机械偏差收敛）、存活状态
-  （胜方存活 75 / directional trade 50 / 败方存活恒 0 —— LOSER_TOP4 回归锁）、
-  trade 边界（[0,+5s] 含边界、敌方早死不计、同队/存活/UNKNOWN 不计）、
-  胜方 ×1.05 与 1000 封顶、MVP/队内最佳/重复徽标、战队七人平均、七维满分总和=1000、
-  争霸点数不影响 Rating（points independence）。
-- 完整性：标准 7v7、13/15 人、非 7/7、重复账号、缺 tankId、roster 不完整、队伍冲突、
-  未知胜方、平局、阵亡者 settlementLifeTimeSec 缺失/非正拒绝评分、负数/NaN/Infinity/
-  超时长死亡时间拒绝、合法零值、protobuf 缺失字段不误拒、非法数值关系、
-  arenaId 重复一致/冲突、UNKNOWN 不得推断 trade。
+- golden 端到端锁：8 个冻结批次由 4 份合法回放夹具与 1 份损坏文件重组
+  （single:random / single:cw-training / single:tournament / single:training-no-winner /
+  league:cw+tournament / mixed:random+cw / duplicate:cw+cw / failure:random+corrupt），
+  在 `compute.golden.test.ts` 下逐 JSON 全等比对，锁定模式判定（T/G 边界、MIXED 组合拒绝、
+  无决胜胜方不评分）、合法批次上的评分数学（七维满分与权重 365/110/110/180/50/75/110=1000、
+  换血、Soft Wilson、存活状态、trade 边界、胜方 ×1.05 与 1000 封顶、MVP 排序、V6 汇总公式）、
+  同文件重复回放去重与损坏文件失败披露；另有 export golden/roundtrip 与 radarScale 单测。
+- 已知限制（无直接测试覆盖的门槛分支）：重复账号、缺 tankId、非法数值关系、arenaId 冲突、
+  阵亡者 settlementLifeTimeSec 非正（解析失败路径）与 NaN/超时长拒绝（`LEAGUE_INVALID_STAT_FACTS`
+  分支）当前没有直接单测或 golden 批次覆盖；缺失结算寿命已有 facts 层直接测试
+  （`battleFacts.test.ts` 删除阵亡玩家 `life_time_secs` 断言抛错）。回归只能靠人工构造
+  夹具或端到端验证发现。
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 为 `MIXED_UNSUPPORTED`，保留普通分析结果但不聚合 League、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
