@@ -1,6 +1,6 @@
 # 管理页 MUST 逐条验收
 
-实现候选为 `535d91fab8c7afeaab2f95cb3dfa21d1d68efcc3`。规则 ID、强度、适用范围和正式例外以[设计契约](../../../frontend/design-language.md)为准。本表逐条登记该版本的 75 条 MUST，保留页面摘要中的成功场景，也记录证据未覆盖的部分。
+实现候选为 `b2e2cafa7f555b092cb94fdfce7193daf8131e80`。规则 ID、强度、适用范围和正式例外以[设计契约](../../../frontend/design-language.md)为准。本表逐条登记该版本的 75 条 MUST，保留页面摘要中的成功场景，也记录证据未覆盖的部分。
 
 ## 样本与读法
 
@@ -25,7 +25,7 @@
 | DC-THM-09 | 环境背景由外壳统一渲染 | AppShell 的单一固定背景覆盖四边，使用背景 token、负层级及 pointer-events:none，页面复用该壳。[外壳][Shell] | compliant |
 | DC-THM-10 | 环境图解码后显示，减少动效时直接显示 | 代码中有解码及 reduced-motion 降级；冷缓存首屏切换未按八页实测。[Shell] | pending/unverified |
 | DC-THM-11 | 卡片、表格、输入与玻璃降级符合表面约定 | 筛选栏有不支持 backdrop-filter 时的纯色回退；其他实际表面及设备性能仍待验。[筛选栏][Filter]、[Contrast] | pending/unverified |
-| DC-THM-12 | 分区页头用同一张主视觉，标题可读 | 八页使用管理分区图。图片由静态 import 经 Vite 发布，宽屏检查整图、右边缘和字号，手机验证原焦点构图。[分区资产][Art]、[V] | compliant |
+| DC-THM-12 | 分区页头用同一张主视觉，标题可读 | 八页使用管理分区图。图片由静态 import 经 Vite 发布，用户管理在宽屏核对背景满宽、保持比例及文字可读，手机验证原焦点构图。[分区资产][Art]、[V] | compliant |
 | DC-CLR-01 | 四季文字与 UI 图形符合对比度门槛 | 有 token、横幅和状态条取样；未测每个内联状态、禁用态与浮层文字组合。[Contrast]、[V] | pending/unverified |
 | DC-CLR-02 | 一个视图最多一个强调填充主操作 | 默认根视图已列出实际主按钮；复杂编辑态、确认弹层仍需按视图上下文检查。[M]、[页面摘要](README.md) | pending/unverified |
 | DC-CLR-03 | 战斗数据的阵营不能只用颜色区分 | 出生侧表头、胜/平/负文字和分段位置同时标识结果，条带有可访问名称。[出生侧场景][Spawn] | compliant |
@@ -47,7 +47,7 @@
 | DC-RSP-01 | 全站三档断点及 CSS range 写法 | 新横幅复用 768px 边界，八入口按三档检查。所有存量样式分支未核完。[Hero]、[M] | pending/unverified |
 | DC-RSP-02 | 三档保留相同操作能力 | 筛选、审批、配置、录分有交互证据；所有页面的全部操作未在三档逐一执行。[D]、[H]、[T] | pending/unverified |
 | DC-RSP-03 | 360/390 根页面无横溢，宽表在容器内滚动 | 8 个入口在两个宽度的根页面横溢检查通过，赛事和 HoF 另有宽表滚动断言。[M]、[T]、[H] | compliant |
-| DC-RSP-04 | 断点改布局，普通尺寸有伸缩边界 | 配图随横幅高度缩放；其他页面每个尺寸声明未逐一核对。[Hero] | pending/unverified |
+| DC-RSP-04 | 断点改布局，普通尺寸有伸缩边界 | 用户管理背景随页头尺寸等比覆盖；其他页面每个尺寸声明未逐一核对。[Hero] | pending/unverified |
 | DC-RSP-05 | 贴边元素避让四边安全区 | 五个 L6 视口断言真实 CSS env、可见控件、横屏抽屉；浮层专项未遍历全部安全区组合。[M]、[P]、[T] | pending/unverified |
 | DC-RSP-06 | hover 有媒体条件，核心操作无需悬停 | 审核、查询和导入可由触屏完成；所有 hover 样式未核完。[H]、[D]、[T] | pending/unverified |
 | DC-RSP-07 | 页面允许浏览器缩放 | 八页共用入口的 viewport 未设置 user-scalable=no 或 maximum-scale 限制。[入口 HTML][Index] | compliant |
@@ -71,7 +71,7 @@
 | DC-SEL-08 | 同一概念跨页控件一致 | 两反馈页状态组复用同一 primitive；两赛事页共用赛事选择。尚未盘点所有同概念字段。[D]、[T] | pending/unverified |
 | DC-ICN-01 | 控件使用 Lucide；游戏资产适用已登记例外 | 侧栏与新选择控件复用 Lucide。其他页面、动态内容和所有状态图标未完全盘点。[Nav]、[选择器][Picker] | pending/unverified |
 | DC-ARC-01 | 单一页头，下接工具条、数据或表单区 | 8 个根入口均有唯一可见 h1、紧凑页头；页头自身不包含交互按钮。[M] | compliant（八个根入口） |
-| DC-ARC-02 | 管理工具用紧凑页头，操作位于页头下 | 已查八页紧凑样式和可见操作位置；用户管理横幅桌面和手机高度另有几何断言。[M]、[V] | compliant |
+| DC-ARC-02 | 管理工具用紧凑页头，操作位于页头下 | 已查八页紧凑样式和可见操作位置；用户管理保持 Owner 确认的放大分区，另实测三种矮屏首条用户完整可见。[M]、[V] | compliant |
 | DC-ARC-03 | 桌面/平板行内筛选，手机使用 Sheet 和生效芯片 | 用户与战斗按最后成功查询，名人堂复核搜索、即时筛选及当前页选择；其余子流程是否为筛选或导航尚待盘点。[D]、[B]、[H] | pending/unverified |
 | DC-ARC-04 | 导航配置唯一，桌面和抽屉共用 | 注册表与 ADMIN_NAV 差集、7 种角色的两种导航集合一致，手机复用 AppSidebar。[M]、[Nav] | compliant |
 | DC-ARC-07 | 全部 PRIMARY_NAV 均能从两种外壳实际点击进入 | 管理项属于 ADMIN_NAV；该规则指向全站主导航。此处不把管理入口集合测试作 PRIMARY_NAV 验收。[导航定义][Navigation] | 不适用（管理项） |
@@ -100,8 +100,8 @@ DC-TYP-02 已有源码反例。表内未覆盖的适用 MUST 仍需对应的测�
 | 本地命令 | 结果 | 独立覆盖 |
 |---|---|---|
 | `pnpm run test:browser-hof-pending` | 5/5 通过 | 5 种导航形态 |
-| `pnpm run test:browser-admin-directory` | 18/18 通过 | 3 个入口 × 6 组主题及视口 |
-| `pnpm run test:browser-tournament-admin` | 16/16 通过 | 2 个赛事入口 × 8 个视口 |
+| `pnpm run test:browser-admin-directory` | 37/37 通过 | 18 个既有场景及 19 个三语分页、矮屏、俄语卡片场景 |
+| `pnpm run test:browser-tournament-admin` | 28/28 通过 | 两个赛事入口，含不同语言、视口与四季组合 |
 | `pnpm run test:browser-admin-contract` | 19/19 通过 | 7 组角色、7 组视口、4 组主题、1 个探针反例 |
 
 [逐场景执行输出](local-browser-results.txt)。该提交后的矩阵和回执属于文档变更。

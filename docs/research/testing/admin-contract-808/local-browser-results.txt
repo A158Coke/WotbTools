@@ -1,4 +1,4 @@
-实现候选 535d91fab8c7afeaab2f95cb3dfa21d1d68efcc3
+实现候选 b2e2cafa7f555b092cb94fdfce7193daf8131e80
 Windows / Chrome / 2026-11-27
 
 pnpm run test:browser-hof-pending
@@ -27,24 +27,55 @@ PASS admin-site-feedback spring 900
 PASS admin-site-feedback autumn 360
 PASS admin-site-feedback winter 1280
 PASS admin-site-feedback summer 390
+PASS admin-users-footer-en-summer-1280-850
+PASS admin-users-footer-en-winter-1280-850
+PASS admin-users-footer-en-summer-390-850
+PASS admin-users-footer-en-winter-390-850
+PASS admin-users-footer-zh-summer-1280-850
+PASS admin-users-footer-zh-winter-1280-850
+PASS admin-users-footer-zh-summer-390-850
+PASS admin-users-footer-zh-winter-390-850
+PASS admin-users-footer-ru-summer-1280-850
+PASS admin-users-footer-ru-winter-1280-850
+PASS admin-users-footer-ru-summer-390-850
+PASS admin-users-footer-ru-winter-390-850
+PASS admin-users-first-row-en-winter-900-600
+PASS admin-users-first-row-en-winter-1280-600
+PASS admin-users-first-row-en-winter-1440-650
+PASS admin-ai-review-feedback-status-ru-winter-320-800
+PASS admin-ai-review-feedback-status-ru-winter-390-800
+PASS admin-site-feedback-status-ru-winter-320-800
+PASS admin-site-feedback-status-ru-winter-390-800
 
 pnpm run test:browser-tournament-admin
-[browser-tournament-admin] tournament-points-admin-1280x850-summer OK
-[browser-tournament-admin] tournament-points-config-1280x850-summer OK
-[browser-tournament-admin] tournament-points-admin-390x850-winter OK
-[browser-tournament-admin] tournament-points-config-390x850-winter OK
-[browser-tournament-admin] tournament-points-admin-900x850-spring OK
-[browser-tournament-admin] tournament-points-config-900x850-spring OK
-[browser-tournament-admin] tournament-points-admin-360x740-autumn OK
-[browser-tournament-admin] tournament-points-config-360x740-autumn OK
-[browser-tournament-admin] tournament-points-admin-412x839-spring OK
-[browser-tournament-admin] tournament-points-config-412x839-spring OK
-[browser-tournament-admin] tournament-points-admin-390x664-winter OK
-[browser-tournament-admin] tournament-points-config-390x664-winter OK
-[browser-tournament-admin] tournament-points-admin-375x553-autumn OK
-[browser-tournament-admin] tournament-points-config-375x553-autumn OK
-[browser-tournament-admin] tournament-points-admin-844x340-winter OK
-[browser-tournament-admin] tournament-points-config-844x340-winter OK
+[browser-tournament-admin] tournament-points-admin-1280x850-summer-en OK
+[browser-tournament-admin] tournament-points-config-1280x850-summer-en OK
+[browser-tournament-admin] tournament-points-admin-390x850-winter-en OK
+[browser-tournament-admin] tournament-points-config-390x850-winter-en OK
+[browser-tournament-admin] tournament-points-admin-1280x850-winter-en OK
+[browser-tournament-admin] tournament-points-config-1280x850-winter-en OK
+[browser-tournament-admin] tournament-points-admin-390x850-summer-en OK
+[browser-tournament-admin] tournament-points-config-390x850-summer-en OK
+[browser-tournament-admin] tournament-points-admin-1280x850-summer-ru OK
+[browser-tournament-admin] tournament-points-config-1280x850-summer-ru OK
+[browser-tournament-admin] tournament-points-admin-390x850-winter-ru OK
+[browser-tournament-admin] tournament-points-config-390x850-winter-ru OK
+[browser-tournament-admin] tournament-points-admin-1280x850-winter-ru OK
+[browser-tournament-admin] tournament-points-config-1280x850-winter-ru OK
+[browser-tournament-admin] tournament-points-admin-390x850-summer-ru OK
+[browser-tournament-admin] tournament-points-config-390x850-summer-ru OK
+[browser-tournament-admin] tournament-points-admin-900x850-spring-en OK
+[browser-tournament-admin] tournament-points-config-900x850-spring-en OK
+[browser-tournament-admin] tournament-points-admin-360x740-autumn-en OK
+[browser-tournament-admin] tournament-points-config-360x740-autumn-en OK
+[browser-tournament-admin] tournament-points-admin-412x839-spring-zh OK
+[browser-tournament-admin] tournament-points-config-412x839-spring-zh OK
+[browser-tournament-admin] tournament-points-admin-390x664-winter-en OK
+[browser-tournament-admin] tournament-points-config-390x664-winter-en OK
+[browser-tournament-admin] tournament-points-admin-375x553-autumn-ru OK
+[browser-tournament-admin] tournament-points-config-375x553-autumn-ru OK
+[browser-tournament-admin] tournament-points-admin-844x340-winter-en OK
+[browser-tournament-admin] tournament-points-config-844x340-winter-en OK
 
 pnpm run test:browser-admin-contract
 probe-scrollport rows 1 failures 0 []
@@ -66,3 +97,26 @@ theme-spring rows 8 failures 0 []
 theme-summer rows 8 failures 0 []
 theme-autumn rows 8 failures 0 []
 theme-winter rows 8 failures 0 []
+
+pnpm run test:browser-hof-admin-tabs
+[browser-hof-admin-tabs] hof-admin-tabs-sticky OK
+[browser-hof-admin-tabs] hof-admin-tabs-narrow-scrollable OK
+[browser-hof-admin-tabs] hof-admin-vehicles-summer-1280 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-winter-390 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-spring-900 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-autumn-360 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-winter-1280 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-summer-390 OK
+
+pnpm run test:browser-showcase-hero
+[browser-showcase-hero] all scenarios passed
+
+管理页四季标题与短标签取样
+contrast-spring-390 rows 8 failures 0 []
+contrast-summer-390 rows 8 failures 0 []
+contrast-autumn-390 rows 8 failures 0 []
+contrast-winter-390 rows 8 failures 0 []
+contrast-spring-1280 rows 8 failures 0 []
+contrast-summer-1280 rows 8 failures 0 []
+contrast-autumn-1280 rows 8 failures 0 []
+contrast-winter-1280 rows 8 failures 0 []
