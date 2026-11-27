@@ -354,7 +354,7 @@ describe('engagement-distance result line localization', () => {
   })
   it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
     const card = read('../scene/viewer/shotResultCard.ts')
-    expect(view).toContain("shotDistance: t('armor.distance')")
+    expect(view).toContain("shotDistance: t('armor.hit_distance')")
     expect(view).toContain("distanceUnit: t('armor.distance_unit')")
     expect(view).toContain("effectivePenetration: t('armor.effective_penetration')")
     expect(view).toContain("shotAvgShort: t('armor.avg_short')")
@@ -362,6 +362,9 @@ describe('engagement-distance result line localization', () => {
     const locales = JSON.parse(read('../locales/feature-messages.json'))
     expect(locales.en.armor.distance).toBe('Engagement distance')
     expect(locales.ru.armor.distance).toBe('Дистанция боя')
+    expect(locales.zh.armor.hit_distance).toBe('命中距离')
+    expect(locales.en.armor.hit_distance).toBe('Hit distance')
+    expect(locales.ru.armor.hit_distance).toBe('Дистанция попадания')
     expect(locales.en.armor.distance_unit).toBe('m')
     expect(locales.ru.armor.distance_unit).toBe('м')
     expect(locales.zh.armor.effective_penetration).toBe('有效穿深')

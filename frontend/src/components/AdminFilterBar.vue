@@ -45,6 +45,12 @@ function close() { sheetOpen.value = false }
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
   backdrop-filter: blur(16px) saturate(1.2);
 }
+@media (width >= 768px) {
+  .admin-filter-bar:has([role='combobox'][aria-expanded='true']) {
+    position: relative;
+    z-index: var(--z-sticky);
+  }
+}
 @supports not (backdrop-filter: blur(1px)) {
   .admin-filter-bar { background: var(--color-surface-1); }
 }

@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 const source = readFileSync(new NodeURL('./tankViewer/tankTransport.ts', import.meta.url), 'utf8')
 const setterSource = (await transformWithEsbuild(source.slice(source.indexOf('function setDistance('), source.indexOf('function setCameraPreset(')), 'tankDistance.ts', { loader: 'ts' })).code
+const reportSource = (await transformWithEsbuild(source.slice(source.indexOf('function reportDistance('), source.indexOf('function setDistance(')), 'tankReportDistance.ts', { loader: 'ts' })).code
 function bindSetter(camera, controls) {
   return new Function('THREE', 'camera', 'controls', 'QP', `
     const tankModel = {}, armorModel = {};
@@ -23,6 +24,18 @@ function bindSetter(camera, controls) {
     ${setterSource}
     return (value) => setDistance(S, value);
   `)(THREE, camera, controls, new URLSearchParams())
+}
+function bindReporter(camera, controls, states) {
+  return new Function('THREE', 'camera', 'controls', 'states', `
+    const tankModel = {}, armorModel = {};
+    const ml = { getWorldMetersPerUnit: () => 1, models: { tankModel, armorModel } };
+    const S = {
+      QP: new URLSearchParams(), contextLost: false, camera, controls, ml,
+      onDistanceChange: state => states.push(state),
+    };
+    ${reportSource}
+    return () => reportDistance(S);
+  `)(THREE, camera, controls, states)
 }
 
 describe('装甲距离调节保留惯性中的观察姿态', () => {
@@ -66,6 +79,47 @@ describe('装甲距离调节保留惯性中的观察姿态', () => {
         expect(camera.position.clone().sub(target).normalize().distanceTo(direction)).toBeLessThan(1e-9)
         controls.update()
       }
+    } finally {
+      controls.dispose()
+      canvas.remove()
+    }
+  })
+})
+
+describe('距离上报保留未取整值（HUD 分段与 judgment 同源）', () => {
+  it('distance 取整用于显示，exactDistance 保留弹道长度；整数相同但小数跨界仍刷新', () => {
+    const canvas = document.createElement('canvas')
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000)
+    const controls = new OrbitControls(camera, canvas)
+    controls.minDistance = 3
+    controls.maxDistance = 500
+    controls.target.set(0, 0, 0)
+    camera.position.set(0, 0, 50)
+    controls.update()
+    const states = []
+    const report = bindReporter(camera, controls, states)
+    try {
+      report()
+      expect(states).toHaveLength(1)
+      expect(states[0].distance).toBe(50)
+      expect(states[0].exactDistance).toBeCloseTo(50, 6)
+      report()
+      expect(states).toHaveLength(1)
+      camera.position.set(0, 0, 50.0004)
+      report()
+      expect(states).toHaveLength(2)
+      expect(states[1].distance).toBe(50)
+      expect(states[1].exactDistance).toBeCloseTo(50.0004, 6)
+      camera.position.set(0, 0, 50.49)
+      report()
+      expect(states).toHaveLength(3)
+      expect(states[2].distance).toBe(50)
+      expect(states[2].exactDistance).toBeCloseTo(50.49, 6)
+      camera.position.set(0, 0, 50.6)
+      report()
+      expect(states).toHaveLength(4)
+      expect(states[3].distance).toBe(51)
+      expect(states[3].exactDistance).toBeCloseTo(50.6, 6)
     } finally {
       controls.dispose()
       canvas.remove()

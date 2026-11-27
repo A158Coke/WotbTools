@@ -51,7 +51,7 @@ export function armorViewerLabels({ t, te }: LabelContext) {
         shotNominal: t('armor.shot_nominal'),
         shotBlocked: t('armor.shot_blocked'),
         fragMismatch: t('armor.frag_mismatch'),
-        shotDistance: t('armor.distance'),
+        shotDistance: t('armor.hit_distance'),
         effectivePenetration: t('armor.effective_penetration'),
         distanceUnit: t('armor.distance_unit'),
         mayPenetrate: t('armor.may_penetrate'),
