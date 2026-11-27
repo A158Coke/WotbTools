@@ -58,11 +58,19 @@ export function pairAssetUrl(pair: { path?: string } | null | undefined, rel: st
   return `${diffOrigin()}/diffs/${path}/${rel}`
 }
 
+function releaseStamp(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
 function validPair(pair: unknown): pair is DiffPair {
   if (!isRecord(pair) || !isRecord(pair.from) || !isRecord(pair.to)) return false
   return typeof pair.id === 'string'
     && typeof pair.from.dataset === 'string'
     && typeof pair.to.dataset === 'string'
+    // 与 Android 门禁同一口径：release 必须是两侧的非空字符串；缺省时 undefined===undefined
+    // 会让目录与 summary 的身份校验互相「对上」，旧数据就能冒充当前版本。
+    && releaseStamp(pair.from.release)
+    && releaseStamp(pair.to.release)
     && typeof pair.path === 'string'
     && isRecord(pair.counts)
 }

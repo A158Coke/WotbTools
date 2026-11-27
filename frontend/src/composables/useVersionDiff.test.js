@@ -111,6 +111,29 @@ describe('useVersionDiff', () => {
     expect(state.error).toContain('非法')
   })
 
+  it('rejects a pair whose release stamps are missing, empty or non-string', async () => {
+    for (const side of [
+      { dataset: 'a' },
+      { dataset: 'a', release: '' },
+      { dataset: 'a', release: 123 },
+    ]) {
+      const bad = {
+        schema: 1,
+        pairs: [{
+          id: 'p',
+          from: side,
+          to: { dataset: 'b', release: 'ok' },
+          path: 'p',
+          counts: {},
+        }],
+      }
+      const { loadVersionDiffCatalog } = await load({ fetchImpl: catalogFetch(bad) })
+      const state = await loadVersionDiffCatalog()
+      expect(state.status, JSON.stringify(side)).toBe('error')
+      expect(state.error).toContain('非法')
+    }
+  })
+
   it('surfaces HTTP errors without wedging the loader', async () => {
     const fetchMock = vi.fn(async () => ({ ok: false, status: 503 }))
     const { loadVersionDiffCatalog } = await load({ fetchImpl: fetchMock })
@@ -158,6 +181,15 @@ describe('useVersionDiff', () => {
     const missing = vi.fn(async () => ({ ok: true, json: async () => ({ schema: 1, tanks: [] }) }))
     const missingLoad = await load({ fetchImpl: missing })
     await expect(missingLoad.fetchPairSummary(INDEX.pairs[0])).rejects.toThrow('版本身份')
+
+    // 两侧都省略 release：不能因为 undefined === undefined 就放行（与门禁同一口径）。
+    const noRelease = {
+      schema: 1,
+      pair: { from: { dataset: '11.21.0_1' }, to: { dataset: '11.22.0' } },
+    }
+    const noReleaseFetch = vi.fn(async () => ({ ok: true, json: async () => noRelease }))
+    const noReleaseLoad = await load({ fetchImpl: noReleaseFetch })
+    await expect(noReleaseLoad.fetchPairSummary(INDEX.pairs[0])).rejects.toThrow('版本身份')
   })
 
   it('fetches per-version tank documents and crop metadata for the comparison viewer', async () => {
