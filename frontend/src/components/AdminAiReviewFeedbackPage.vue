@@ -211,8 +211,8 @@ onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value 
             <td :data-label="$t('aiFeedback.filter')">{{ reasonLabels(item.reasonCodes) }}</td>
             <td class="is-wrap" :data-label="$t('aiFeedback.comment')">{{ previewText(item.feedbackText) }}</td>
             <td :data-label="$t('aiFeedback.model')">{{ item.model || '—' }}</td>
-            <td :data-label="$t('aiFeedback.statusLabel')">
-              <SegmentedControl :model-value="item.status" :options="statusOptions(item.id)"
+            <td class="feedback-status-cell" :data-label="$t('aiFeedback.statusLabel')">
+              <SegmentedControl :model-value="item.status" :options="statusOptions(item.id)" wrap
                 :ariaLabel="$t('aiFeedback.statusLabel')" @update:model-value="changeStatus(item, $event)" />
             </td>
           </tr>

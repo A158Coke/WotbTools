@@ -99,7 +99,7 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   .showcase-hero.is-compact[data-section='admin'] {
     background: linear-gradient(to right, var(--color-surface-1), var(--color-surface-3));
   }
-  .showcase-hero.is-compact[data-section='admin'] .showcase-hero-art {
+  :where(.showcase-hero-host:not(.admin-users-hero)) > .showcase-hero.is-compact[data-section='admin'] .showcase-hero-art {
     inset-inline-start: auto;
     aspect-ratio: 16 / 9;
     background: var(--hero-image) right center / contain no-repeat;
@@ -171,15 +171,21 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
     display: grid;
     align-items: center;
     min-block-size: clamp(132px, min(36vw, 54svh), 480px);
-    background: linear-gradient(100deg, var(--color-surface-1) 10%, var(--color-surface-2) 30%, var(--color-hero-photo-scrim) 72%), var(--color-surface-1);
+  }
+  .admin-users-hero .showcase-hero.is-compact .showcase-hero-art {
+    background: var(--hero-image) var(--hero-pos, center) / cover no-repeat;
   }
   .admin-users-hero .showcase-hero.is-compact .showcase-hero-content {
     --title-fade: clamp(var(--space-12), 12vw, 12rem);
     min-block-size: 0;
     align-self: stretch;
     padding-inline: var(--gutter) var(--title-fade);
-    background: linear-gradient(to right, var(--color-surface-1) calc(100% - var(--title-fade)), transparent);
+    background: linear-gradient(to right, var(--color-hero-photo-scrim) calc(100% - var(--title-fade)), transparent);
   }
-  .admin-users-hero .showcase-hero.is-compact .showcase-hero-title { font: var(--type-display-hero); }
+  .admin-users-hero .showcase-hero-kicker { color: var(--theme-hero-kicker-color, var(--color-accent-text)); }
+  .admin-users-hero .showcase-hero.is-compact .showcase-hero-title {
+    color: var(--theme-hero-title-color, var(--color-text-primary));
+    font: var(--type-display-hero);
+  }
 }
 </style>

@@ -152,6 +152,7 @@ onBeforeUnmount(() => {
         <SegmentedControl
           :model-value="segment"
           :options="segmentOptions"
+          wrap
           :aria-label="$t('admin.segment')"
           class="admin-segment"
           @update:model-value="onSegmentChange"
@@ -266,11 +267,15 @@ onBeforeUnmount(() => {
     <div v-if="totalPages > 0" class="admin-list-pagination admin-pagination">
       <span class="admin-page-info">{{ $t('admin.pageInfo', { page: page + 1, total: totalPages, items: totalItems }) }}</span>
       <div class="admin-list-pagination-controls">
-        <AppButton size="sm" class="admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</AppButton>
-        <AppButton size="sm" class="admin-page-next" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</AppButton>
-        <span v-if="totalPages > 1" class="admin-page-jump">
+        <div class="admin-page-step">
+          <AppButton size="sm" class="admin-page-prev" :disabled="page <= 0 || !adminAvailability.available" @click="goPage(page - 1)">{{ $t('admin.prev') }}</AppButton>
+          <AppButton size="sm" class="admin-page-next" :disabled="page + 1 >= totalPages || !adminAvailability.available" @click="goPage(page + 1)">{{ $t('admin.next') }}</AppButton>
+        </div>
+        <div v-if="totalPages > 1" class="admin-page-jump">
+          <label for="admin-jump-page">{{ $t('admin.pageNumber') }}</label>
           <input
-            v-model="jumpPage"
+            id="admin-jump-page" v-model="jumpPage"
+            :style="{ '--page-digits': String(totalPages).length + 'ch' }"
             type="number"
             inputmode="numeric"
             min="1"
@@ -278,12 +283,10 @@ onBeforeUnmount(() => {
             step="1"
             class="admin-list-input"
             :disabled="!adminAvailability.available"
-            :aria-label="$t('admin.jumpLabel')"
-            :placeholder="$t('admin.jumpPlaceholder')"
             @keydown.enter.prevent="goJumpPage"
           />
           <AppButton size="sm" class="admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</AppButton>
-        </span>
+        </div>
         <div class="admin-page-size-field">
           <span>{{ $t('admin.size') }}</span>
           <SegmentedControl :model-value="String(size)" :options="pageSizeOptions" :aria-label="$t('admin.size')"
@@ -413,10 +416,10 @@ onBeforeUnmount(() => {
 .admin-idp-field { min-width: var(--form-field-min); }
 .admin-filter-hint { margin: 0; }
 .admin-kc-email { display: block; }
-.admin-pagination .admin-list-pagination-controls,
-.admin-page-jump { align-items: stretch; }
-.admin-page-jump, .admin-page-size-field { display: inline-flex; gap: var(--space-2); }
-.admin-page-size-field { align-items: center; color: var(--color-text-secondary); font: var(--type-caption); }
+.admin-pagination .admin-list-pagination-controls { align-items: stretch; gap: var(--space-2) var(--space-5); }
+.admin-page-step, .admin-page-jump, .admin-page-size-field { display: inline-flex; gap: var(--space-2); }
+.admin-page-size-field, .admin-page-jump label { align-items: center; color: var(--color-text-secondary); font: var(--type-caption); }
+.admin-page-jump input.admin-list-input { inline-size: calc(max(4ch, var(--page-digits)) + var(--space-3) * 2 + var(--control-h-sm)); }
 
 .admin-user-identity { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-5); }
 .admin-user-avatar {

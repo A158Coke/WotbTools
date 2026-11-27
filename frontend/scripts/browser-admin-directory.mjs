@@ -134,6 +134,74 @@ try {
       }
     }
   }
+  const presentationCases = []
+  for (const locale of ['en', 'zh', 'ru']) for (const width of [1280, 390]) for (const theme of ['summer', 'winter']) {
+    presentationCases.push({ view: 'admin-users', mode: 'footer', locale, width, height: 850, theme })
+  }
+  for (const [width, height] of [[900,600], [1280,600], [1440,650]]) {
+    presentationCases.push({ view: 'admin-users', mode: 'first-row', locale: 'en', width, height, theme: 'winter' })
+  }
+  for (const view of ['admin-ai-review-feedback', 'admin-site-feedback']) for (const width of [320,390]) {
+    presentationCases.push({ view, mode: 'status', locale: 'ru', width, height: 800, theme: 'winter' })
+  }
+  for (const { view, mode, locale, width, height, theme } of presentationCases) {
+    fixture = createAdminDirectory(mode === 'footer' ? 25_001 : 27)
+    const { sessionId, targetId } = await chrome.openPage()
+    const page = new Page(chrome.client, sessionId)
+    const name = [view, mode, locale, theme, width, height].join('-')
+    try {
+      await page.enable()
+      await page.emulate({ width, height, touch: width < 768, deviceScaleFactor: 1 })
+      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source:
+        'localStorage.setItem("wotb-ui-profile",' + JSON.stringify(theme) + ');localStorage.setItem("wotb-lang",' + JSON.stringify(locale) + ')' }, sessionId)
+      await page.goto(origin + '/?view=' + view + '&ws-auth=1&ws-roles=wotbtools-admin')
+      await exists(page, view === 'admin-users' ? userRow : feedbackRow)
+      await page.evaluate('document.fonts.ready')
+      assert.equal(await page.evaluate('document.documentElement.lang.split("-")[0]'), locale)
+      assert.equal(await page.evaluate('document.documentElement.dataset.uiProfile'), theme)
+      if (mode === 'footer') {
+        const input = '#admin-jump-page'
+        await page.tapSelector(input, width < 768)
+        await page.client.send('Input.insertText', { text: '1001' }, sessionId)
+        await page.waitForValue('document.querySelector("#admin-jump-page").value', value => value === '1001')
+        await capture(page, name, '.admin-pagination')
+        const facts = await page.probe(() => {
+          const input = document.querySelector('#admin-jump-page')
+          const controls = document.querySelector('.admin-list-pagination-controls')
+          const groups = [...controls.children]
+          const label = input.labels[0]
+          return { label: label?.textContent.trim(), inputMax: input.max, inputScroll: input.scrollLeft,
+            viewportFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+            groupGap: parseFloat(getComputedStyle(controls).columnGap), innerGap: parseFloat(getComputedStyle(input.parentElement).columnGap),
+            fits: groups.every(g => { const b = g.getBoundingClientRect()
+              return b.left >= 0 && b.right <= innerWidth + 1 && [...g.children].every(c => { const r = c.getBoundingClientRect()
+                return r.left >= b.left - 1 && r.right <= b.right + 1 && r.top >= b.top - 1 && r.bottom <= b.bottom + 1 &&
+                  c.scrollWidth <= c.clientWidth + 1 }) }) }
+        })
+        assert.equal(facts.label, { en:'Page', zh:'页码', ru:'Страница' }[locale])
+        assert.ok(facts.viewportFits && facts.fits && facts.groupGap > facts.innerGap && facts.inputMax === '1001' && facts.inputScroll === 0, JSON.stringify(facts))
+      } else if (mode === 'first-row') {
+        await page.animationsSettled()
+        const row = await page.callWith(sel => document.querySelector(sel).closest('tr').getBoundingClientRect().toJSON(), userRow)
+        assert.ok(row.top >= 0 && row.bottom <= height, JSON.stringify(row))
+        const shot = await chrome.client.send('Page.captureScreenshot', { format:'png' }, sessionId)
+        await writeFile(resolve(shotDirectory, name + '.png'), Buffer.from(shot.data,'base64'))
+      } else {
+        const selector = 'tbody tr:first-child [role=radiogroup]'
+        await capture(page, name, selector)
+        const fits = await page.callWith(sel => {
+          const group = document.querySelector(sel), cell = group.closest('td').getBoundingClientRect()
+          return cell.left >= -1 && cell.right <= document.documentElement.clientWidth + 1 && document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1 && [...group.querySelectorAll('[role=radio]')].every(b => { const r=b.getBoundingClientRect()
+            return r.left >= cell.left - 1 && r.right <= cell.right + 1 && b.scrollWidth <= b.clientWidth + 1 })
+        }, selector)
+        assert.ok(fits, 'Russian status options overflow the feedback card at ' + width)
+      }
+      console.log('PASS', name)
+    } catch (error) {
+      console.error('FAIL', name, error.message)
+      process.exitCode = 1
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
 } finally {
   await chrome.close()
   await server.close()

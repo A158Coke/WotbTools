@@ -1,7 +1,7 @@
 // 管理员目录及反馈的本地 HTTP fixture。每个场景独立持有读写记录。
-export function createAdminDirectory() {
+export function createAdminDirectory(userCount = 27) {
   const requests = []
-  const users = Array.from({ length: 27 }, (_, index) => {
+  const users = Array.from({ length: userCount }, (_, index) => {
     const id = String(index + 1)
     return {
       keycloakUserId: id, keycloakUsername: 'fixture-' + id, keycloakEmail: null,
