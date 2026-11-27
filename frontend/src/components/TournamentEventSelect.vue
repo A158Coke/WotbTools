@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue'
+import { ref, watch, computed, nextTick, useId } from 'vue'
 import type { TournamentEvent } from '../api/tournament-points.js'
 import { useI18n } from 'vue-i18n'
 import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
 import SegmentedControl from './SegmentedControl.vue'
+import SearchableSelect from './SearchableSelect.vue'
+const eventInputId = useId()
 const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean; includeGlobal?: boolean; globalSelected?: boolean; compact?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number | null]; 'select-global': [] }>()
 const { t } = useI18n()
@@ -21,8 +23,12 @@ const compactEvents = computed(() => [...props.events].sort((a, b) => b.year - a
   || TOURNAMENT_REGIONS.indexOf(a.region) - TOURNAMENT_REGIONS.indexOf(b.region)
   || TOURNAMENT_SEASONS.indexOf(a.season) - TOURNAMENT_SEASONS.indexOf(b.season)))
 const compactValue = computed(() => props.globalSelected ? 'GLOBAL' : props.modelValue === null ? '' : String(props.modelValue))
-function selectCompact(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
+const compactOptions = computed(() => [
+  ...(props.includeGlobal ? [{ value: 'GLOBAL', label: t('tournament.globalConfiguration') }] : []),
+  ...compactEvents.value.map(item => ({ value: String(item.id),
+    label: `${item.year} · ${t('tournament.regions.' + item.region)} · ${t('tournament.seasons.' + item.season)}` })),
+])
+function selectCompact(value: string) {
   if (value === 'GLOBAL') emit('select-global')
   else emit('update:modelValue', value ? Number(value) : null)
 }
@@ -56,12 +62,11 @@ function select(level: 'year' | 'region' | 'season') {
 }
 </script>
 <template>
-  <label v-if="compact" class="tournament-field tournament-event-compact"><span>{{ $t('tournament.event') }}</span>
-    <select :value="compactValue" :disabled="disabled" data-testid="event-compact" @change="selectCompact">
-      <option value="">{{ $t('tournament.choose') }}</option><option v-if="includeGlobal" value="GLOBAL">{{ $t('tournament.globalConfiguration') }}</option>
-      <option v-for="item in compactEvents" :key="item.id" :value="String(item.id)">{{ item.year }} · {{ t('tournament.regions.' + item.region) }} · {{ t('tournament.seasons.' + item.season) }}</option>
-    </select>
-  </label>
+  <div v-if="compact" class="tournament-field tournament-event-compact" data-testid="event-compact">
+    <label :for="eventInputId">{{ $t('tournament.event') }}</label>
+    <SearchableSelect :input-id="eventInputId" :model-value="compactValue" :options="compactOptions" :disabled="disabled"
+      :label="$t('tournament.event')" :empty-label="$t('tournament.choose')" inline @update:model-value="selectCompact" />
+  </div>
   <div v-else class="tournament-toolbar">
     <label class="tournament-field"><span>{{ $t('tournament.year') }}</span>
       <select v-model="year" :disabled="disabled" data-testid="event-year" @change="select('year')">

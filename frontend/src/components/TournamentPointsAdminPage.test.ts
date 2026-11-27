@@ -93,7 +93,7 @@ describe('independent CSV administration flow', () => {
     expect(p.wrapper.find('[data-testid="tournament-admin-empty"] a').exists()).toBe(false)
     await p.select()
     expect(p.wrapper.find('[data-testid="tournament-admin-empty"]').exists()).toBe(false)
-    expect(p.wrapper.get<HTMLSelectElement>('[data-testid="event-compact"]').element.selectedOptions[0].text).toBe('2026 · 国服 · 战火杯')
+    expect(p.wrapper.get<HTMLInputElement>('[data-testid="event-compact"] input').element.value).toBe('2026 · 国服 · 战火杯')
     expect(p.wrapper.get('.tournament-admin-preview').text()).toContain(p.i18n.global.t('tournament.draftHint'))
     expect(p.wrapper.findAll('.tournament-admin-preview thead tr')).toHaveLength(2)
     expect(p.wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)

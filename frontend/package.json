@@ -16,6 +16,7 @@
     "test:browser-mobility-picker": "node scripts/browser-mobility-picker.mjs",
     "test:browser-pseudo-nav": "node scripts/browser-playback-pseudo-nav.mjs",
     "test:browser-broadcasts": "node scripts/browser-league-broadcasts.mjs",
+    "test:browser-tournament-admin": "node scripts/browser-tournament-admin.mjs",
     "test:browser-creators": "node scripts/browser-creators.mjs",
     "test:browser-admin-directory": "node scripts/browser-admin-directory.mjs",
     "test:browser-feedback": "node scripts/browser-feedback.mjs",

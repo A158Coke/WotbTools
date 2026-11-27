@@ -20,8 +20,12 @@ if [[ "$periphery_privilege" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to reconcile target $periphery_target."
   sudo_args=(-n)
-  if [[ -n "${KOMODO_PERIPHERY_ONBOARDING_KEY:-}" ]]; then
-    sudo_args+=(--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY)
+  preserve=()
+  for name in KOMODO_PERIPHERY_ONBOARDING_KEY PERIPHERY_LOCK_WAIT_SEC; do
+    if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
+  done
+  if (( ${#preserve[@]} > 0 )); then
+    sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
   fi
   exec sudo "${sudo_args[@]}" env \
     PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
@@ -51,7 +55,18 @@ bash "$runtime/staging-root.sh" verify "$SOURCE_SHA" "$periphery_staging_root"
 require_existing_real_dir "$periphery_lock_root" "the $periphery_target host mutation lock root"
 require_existing_lock_file "$periphery_lock_file"
 exec 9>"$periphery_lock_file"
-flock -n 9 || fail "Another $periphery_target host mutation is running."
+periphery_lock_wait="${PERIPHERY_LOCK_WAIT_SEC:-900}"
+if ! flock -w "$periphery_lock_wait" 9; then
+  echo "Another $periphery_target host mutation is running (waited ${periphery_lock_wait}s)." >&2
+  if command -v lsof >/dev/null 2>&1; then
+    echo "Current lock file holders:" >&2
+    lsof "$periphery_lock_file" >&2 || true
+  elif command -v fuser >/dev/null 2>&1; then
+    echo "Current lock file holders:" >&2
+    fuser -v "$periphery_lock_file" >&2 || true
+  fi
+  fail "the $periphery_target host mutation lock was not released within ${periphery_lock_wait}s."
+fi
 export PERIPHERY_DEPLOY_LOCK_FD=9
 
 bash "$runtime/install.sh" "$TARGET" "$SOURCE_SHA" "$runtime" "$artifact"

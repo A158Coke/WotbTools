@@ -18,10 +18,11 @@ command -v flock >/dev/null 2>&1 || {
 }
 
 lock_file="${WOTB_TX_DEPLOY_LOCK_FILE:-/opt/wotb-tx/.deploy.lock}"
+lock_wait="${WOTB_TX_DEPLOY_LOCK_WAIT_SEC:-900}"
 exec 9>"$lock_file"
 
-if ! flock -n 9; then
-  echo "Another TX production deployment is running; lock: $lock_file" >&2
+if ! flock -w "$lock_wait" 9; then
+  echo "Another TX production deployment is running; lock: $lock_file (waited ${lock_wait}s)" >&2
   if command -v lsof >/dev/null 2>&1; then
     echo "Current lock file holders:" >&2
     lsof "$lock_file" >&2 || true

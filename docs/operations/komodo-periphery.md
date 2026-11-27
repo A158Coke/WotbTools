@@ -104,7 +104,11 @@ The lock root and its lock file belong to the host's deploy owner, so the reconc
 **requires them to already exist** and fails closed if they do not. Creating the
 file as root would leave a root-only lock that the host's own non-root deploy user
 could no longer take. Each target's lock root is distinct, and the contract tests
-assert that no two targets share one.
+assert that no two targets share one. When the lock is already held by another
+legitimate mutation (a concurrent workflow, Komodo, or manual operation), the
+reconcile waits a bounded time (`PERIPHERY_LOCK_WAIT_SEC`, default 900s) before
+failing with current-holder diagnostics; it never creates or replaces the lock
+file.
 
 ## Staging root（Yecao 暂存根）
 
@@ -120,9 +124,9 @@ Yecao 暂存根 `/opt/komodo/incoming/<SHA>` 及其两级父目录必须先经
 - **TX1** and **TX2** do not assume root. The same generic `PERIPHERY_PRIVILEGE=sudo`
   path applies to both: `reconcile.sh` re-executes itself through
   **non-interactive sudo** (`sudo -n`) and requires that to be available, failing
-  closed otherwise. Only the generic onboarding variable is preserved
-  (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential travels
-  in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
+  closed otherwise. Only the generic onboarding variable and the lock wait budget
+  are preserved (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY,PERIPHERY_LOCK_WAIT_SEC`),
+  so they travel in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
   is set for the privileged half. There is no per-host sudo implementation.
 
 ## Binary pin
