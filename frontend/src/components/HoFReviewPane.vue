@@ -109,7 +109,9 @@ function trapTab(event: KeyboardEvent) {
             <template v-if="pending">
               <div class="mark3-admin-screenshots">
                 <div v-for="(src, index) in screenshots" :key="index" class="hundred-proof-row">
-                  <img class="hundred-proof" :src="src" :alt="$t(prefix + '.screenshot', { number: index + 1 })" @click="emit('zoom', index)" />
+                  <button type="button" class="hof-zoom-proof" @click="emit('zoom', index)">
+                    <img class="hundred-proof" :src="src" :alt="$t(prefix + '.screenshot', { number: index + 1 })" />
+                  </button>
                   <button type="button" class="btn-sm" @click="emit('downloadScreenshot', index)">{{ $t(prefix + '.downloadScreenshot') }}</button>
                 </div>
               </div>
@@ -241,6 +243,8 @@ function trapTab(event: KeyboardEvent) {
 .hof-review-note { flex: 1 1 var(--form-field-min); color: var(--color-text-secondary); }
 .hundred-reason-label, .hundred-review-label { display: block; margin: 0 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .hundred-confirm, .hundred-legacy-warn { margin: var(--space-2) 0; color: var(--color-warning); }
+.hof-zoom-proof { min-width: var(--hit-min); min-height: var(--hit-min); padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; cursor: zoom-in; }
+.hof-zoom-proof:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); cursor: zoom-in; }
 .hundred-proof-empty, .muted { color: var(--color-text-tertiary); }
 .hundred-proof-row { display: flex; align-items: flex-start; gap: var(--space-3); }

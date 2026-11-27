@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, toRefs } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -7,6 +7,10 @@ import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { apiErrorLabel, formatDateTimeMinute as fmtTime, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import AppDialog from './AppDialog.vue'
+import AdminFilterBar from './AdminFilterBar.vue'
+import VehiclePicker from './VehiclePicker.vue'
+import SegmentedControl from './SegmentedControl.vue'
+import { compactChips, tierXPickerOption } from './hofBoardShared.js'
 import HoFAdminBulkDeleteDialog from './HoFAdminBulkDeleteDialog.vue'
 import HoFReviewPane from './HoFReviewPane.vue'
 import HoFReviewQueue from './HoFReviewQueue.vue'
@@ -14,9 +18,9 @@ import {
   MODERATION_DOMAINS, fmtSize, formatNumber, reasonError,
   type ModerationDetail, type ModerationKind, type ModerationRow, type ReplayEvidence,
 } from './HoFAdminModeration.js'
-import { createSelection, uniqueValues } from './HoFAdminSelection.js'
+import { createFilterState, createSelection, PAGE_SIZES, uniqueValues } from './HoFAdminSelection.js'
 
-const props = defineProps<{ kind: ModerationKind; size: number }>()
+const props = defineProps<{ kind: ModerationKind; size: number; capturePendingSettlement?: () => () => void }>()
 const emit = defineEmits<{ 'update:size': [size: number] }>()
 
 const { t, te, tm } = useI18n()
@@ -25,16 +29,17 @@ const { isExpanded } = useBreakpoint()
 const domain = MODERATION_DOMAINS[props.kind]
 const prefix = domain.prefix
 
+const sectionRoot = ref<HTMLElement | null>(null)
+let disposed = false
+onUnmounted(() => { disposed = true })
 const rows = ref<ModerationRow[]>([])
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
 const totalPages = ref(0)
 const totalItems = ref(0)
-const status = ref('')
-const nation = ref('')
-const vehicleType = ref('')
-const vehicleId = ref<number | null>(null)
+const { draft, applied, without } = createFilterState({ status: '', nation: '', vehicleType: '', vehicleId: null as number | null })
+const { status, nation, vehicleType, vehicleId } = toRefs(draft)
 let gen = 0
 
 const nations = uniqueValues(HUNDRED_VEHICLES.map(vehicle => vehicle.nation))
@@ -42,6 +47,8 @@ const vehicleTypes = uniqueValues(HUNDRED_VEHICLES.map(vehicle => vehicle.vehicl
 const filteredVehicles = computed(() => HUNDRED_VEHICLES.filter(vehicle =>
   (!nation.value || vehicle.nation === nation.value)
     && (!vehicleType.value || vehicle.vehicleType === vehicleType.value)))
+
+const pickerOptions = computed(() => filteredVehicles.value.map(vehicle => tierXPickerOption(t, te, vehicle)))
 
 const selection = createSelection(rows)
 const bulkOpen = ref(false)
@@ -63,21 +70,33 @@ const zoomSrc = ref('')
 let reviewGen = 0
 let evidenceGen = 0
 
-async function load() {
+const filterChips = computed(() => {
+  const f = applied.value
+  return compactChips([
+    f.nation && { key: 'nation', label: replayValueLabel(t, te, f.nation) },
+    f.vehicleType && { key: 'vehicleType', label: replayValueLabel(t, te, f.vehicleType) },
+    f.vehicleId != null && { key: 'vehicleId', label: HUNDRED_VEHICLES.find(v => v.id === f.vehicleId)?.name ?? String(f.vehicleId) },
+    f.status && { key: 'status', label: statusLabel(f.status) },
+  ])
+})
+
+function removeChip(key: string) {
+  if (loading.value) return
+  const next = without(key)
+  if (!next) return
+  page.value = 1
+  void load(next)
+}
+
+async function load(filters = { ...draft }) {
   if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++gen
   loading.value = true
   error.value = ''
   try {
-    const res = await domain.list({
-      page: page.value,
-      size: props.size,
-      status: status.value,
-      nation: nation.value,
-      vehicleType: vehicleType.value,
-      vehicleId: vehicleId.value,
-    })
+    const res = await domain.list({ ...filters, page: page.value, size: props.size })
     if (g !== gen) return
+    applied.value = filters
     rows.value = res.items || []
     totalPages.value = res.totalPages || 0
     totalItems.value = res.totalItems || 0
@@ -95,7 +114,7 @@ function search() {
 }
 
 function onVehicleFilterChange() {
-  if (vehicleId.value && !filteredVehicles.value.some(vehicle => vehicle.id === Number(vehicleId.value))) {
+  if (vehicleId.value != null && !filteredVehicles.value.some(vehicle => vehicle.id === vehicleId.value)) {
     vehicleId.value = null
   }
   search()
@@ -106,8 +125,8 @@ function goPage(p: number) {
   load()
 }
 
-async function onSizeChange(event: Event) {
-  emit('update:size', Number((event.target as HTMLSelectElement).value))
+async function onSizeChange(value: string) {
+  emit('update:size', Number(value))
   await nextTick()
   search()
 }
@@ -183,8 +202,18 @@ async function loadEvidence(submissionId: number) {
   }
 }
 
-function closeReview() {
+async function restoreReviewFocus(id: number) {
+  await nextTick()
+  if (!active.value || target.value || document.activeElement !== document.body) return
+  const root = sectionRoot.value
+  const opener = root?.querySelector<HTMLElement>(`.hof-queue-main[data-record-id="${id}"]`)
+  const fallback = root?.querySelector<HTMLElement>('.hof-queue-main') ?? root?.querySelector<HTMLElement>('button:not(:disabled), select:not(:disabled)')
+  ;(opener ?? fallback)?.focus()
+}
+
+function closeReview(restoreFocus = true) {
   if (busy.value) return
+  const id = target.value?.id
   ++reviewGen
   ++evidenceGen
   target.value = null
@@ -193,6 +222,7 @@ function closeReview() {
   evidenceError.value = ''
   msg.value = ''
   zoomSrc.value = ''
+  if (restoreFocus && id != null) void restoreReviewFocus(id)
 }
 
 const screenshots = computed(() => domain.screenshots(detail.value))
@@ -261,16 +291,21 @@ async function decide(kind: Decision) {
   busy.value = true
   msg.value = ''
   const submissionId = target.value.id
+  const settlePending = kind === 'delete' ? undefined : props.capturePendingSettlement?.()
   try {
     await call(submissionId)
   } catch (e) {
     if (target.value?.id === submissionId) msg.value = apiErrorLabel(t, te, e)
     return
   } finally {
+    settlePending?.()
     busy.value = false
   }
-  if (target.value?.id === submissionId) closeReview()
-  load()
+  if (disposed) return
+  const closed = target.value?.id === submissionId
+  if (closed) closeReview(false)
+  await load()
+  if (closed) await restoreReviewFocus(submissionId)
 }
 
 const REPLAY_CHECKS = [['replayParseOk', 'valParsed'], ['replayGameIdMatch', 'valGameId'], ['replayVehicleMatch', 'valVehicle'], ['replayDistinctBattles', 'valDistinct']] as const
@@ -349,25 +384,31 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <div :class="`hof-${kind}`">
-    <div class="hof-admin-filters">
-      <select v-model="nation" @change="onVehicleFilterChange">
-        <option value="">{{ $t(`${domain.filterPrefix}.allNations`) }}</option>
-        <option v-for="value in nations" :key="value" :value="value">{{ replayValueLabel(t, te, value) }}</option>
-      </select>
-      <select v-model="vehicleType" @change="onVehicleFilterChange">
-        <option value="">{{ $t(`${domain.filterPrefix}.allVehicleTypes`) }}</option>
-        <option v-for="value in vehicleTypes" :key="value" :value="value">{{ replayValueLabel(t, te, value) }}</option>
-      </select>
-      <select v-model="vehicleId" @change="search">
-        <option :value="null">{{ $t(`${domain.filterPrefix}.allVehicles`) }}</option>
-        <option v-for="vehicle in filteredVehicles" :key="vehicle.id" :value="vehicle.id">{{ vehicle.name }}</option>
-      </select>
-      <select v-model="status" @change="search">
-        <option value="">{{ $t(`${prefix}.statusAll`) }}</option>
-        <option v-for="value in domain.statuses" :key="value" :value="value">{{ $t(`${prefix}.status.${value}`) }}</option>
-      </select>
-    </div>
+  <div ref="sectionRoot" :class="`hof-${kind}`">
+    <AdminFilterBar :chips="filterChips" :remove-disabled="loading" @remove="removeChip">
+      <template #default="{ compact }">
+        <div class="hof-admin-filters">
+          <select v-model="nation" :aria-label="$t(`${domain.filterPrefix}.allNations`)" @change="onVehicleFilterChange">
+            <option value="">{{ $t(`${domain.filterPrefix}.allNations`) }}</option>
+            <option v-for="value in nations" :key="value" :value="value">{{ replayValueLabel(t, te, value) }}</option>
+          </select>
+          <select v-model="vehicleType" :aria-label="$t(`${domain.filterPrefix}.allVehicleTypes`)" @change="onVehicleFilterChange">
+            <option value="">{{ $t(`${domain.filterPrefix}.allVehicleTypes`) }}</option>
+            <option v-for="value in vehicleTypes" :key="value" :value="value">{{ replayValueLabel(t, te, value) }}</option>
+          </select>
+          <VehiclePicker
+            :inline="compact"
+            :model-value="vehicleId ?? undefined" :options="pickerOptions" :input-label="$t('hofAdmin.tank')"
+            :null-label="$t(`${domain.filterPrefix}.allVehicles`)"
+            @update:model-value="vehicleId = $event" @change="search"
+          />
+          <select v-model="status" :aria-label="$t(`${prefix}.statusAll`)" @change="search">
+            <option value="">{{ $t(`${prefix}.statusAll`) }}</option>
+            <option v-for="value in domain.statuses" :key="value" :value="value">{{ $t(`${prefix}.status.${value}`) }}</option>
+          </select>
+        </div>
+      </template>
+    </AdminFilterBar>
 
     <p v-if="error" class="error">{{ error }}</p>
     <div v-if="selection.count()" class="hof-bulk-bar">
@@ -390,13 +431,9 @@ defineExpose({ reload: load })
       <span>{{ $t(`${prefix}.pageInfo`, { page, total: totalPages, items: totalItems }) }}</span>
       <button :disabled="page >= totalPages" @click="goPage(page + 1)">{{ $t(`${prefix}.next`) }}</button>
     </div>
-    <label class="page-size">{{ $t(`${prefix}.size`) }}
-      <select :value="size" @change="onSizeChange">
-        <option :value="20">20</option>
-        <option :value="50">50</option>
-        <option :value="100">100</option>
-      </select>
-    </label>
+    <div class="page-size"><span>{{ $t(`${prefix}.size`) }}</span>
+      <SegmentedControl :model-value="String(size)" :ariaLabel="$t(`${prefix}.size`)" :options="PAGE_SIZES" @update:model-value="onSizeChange" />
+    </div>
 
     <AppDialog
       :open="active && !!zoomSrc"

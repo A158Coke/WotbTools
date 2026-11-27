@@ -24,6 +24,7 @@ const initError = ref(null)
 const initFailureReason = ref(null)
 const loginInFlight = ref(false)
 const tokenParsed = ref({
+  sub: 'fixture-user',
   preferred_username: 'fixture-user',
   realm_access: { roles: String(params.get('ws-roles') || '').split(',').filter(Boolean) },
 })
