@@ -89,6 +89,7 @@ function currentSettings(): Replay3DSettings {
 }
 function toggleSettings(anchor: HTMLElement | null): void {
   if (settingsOpen.value) { settingsOpen.value = false; return }
+  if (uiHidden.value) setUiHidden(false)
   displayOpen.value = false
   S.closeAnnotation()
   settingsDraft.value = currentSettings()

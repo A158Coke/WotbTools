@@ -81,6 +81,17 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     wrapper.unmount()
   })
 
+  it('隐藏场景 UI 后从顶部入口打开设置会恢复 UI', async () => {
+    const { wrapper } = await startedPane()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(true)
+    await openSettings(wrapper)
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('挂载前已存在的设置请求在挂载后立即打开，关闭请求也生效', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ settingsRequest: { id: 1, open: true, anchor: null } })
