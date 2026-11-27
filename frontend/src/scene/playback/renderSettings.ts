@@ -58,6 +58,7 @@ export function buildRenderSettingsReloadUrl(href: string, patch: RenderSettings
     url.searchParams.set('dynres', patch.dynres ? '1' : '0')
   }
   url.searchParams.delete('shadows')
+  if (patch.contactShadows !== undefined) url.searchParams.delete('contactshadows')
   if (patch.armorHighlight !== undefined && url.searchParams.has('armorhl')) {
     url.searchParams.set('armorhl', patch.armorHighlight ? '1' : '0')
   }

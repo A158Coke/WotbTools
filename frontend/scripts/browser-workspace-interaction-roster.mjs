@@ -11,7 +11,7 @@ export async function runRosterGeometryScenario(env, scenario) {
   await page.enable({ locale: scenario.locale ?? 'zh', profile: scenario.profile ?? 'summer' })
   await page.emulate(scenario)
 
-  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
+  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&ws-3d-manual-start=1&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { label: 'capability tabs' })
 
   await page.evaluate(`(() => {
