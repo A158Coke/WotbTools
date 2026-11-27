@@ -97,6 +97,13 @@ onBeforeUnmount(() => {
       </ol>
     </details>
 
+    <ShowcaseHero v-if="sectionHero && doc.title" class="doc-hero" section="docs" :title="doc.title" />
+
+    <div class="doc-main">
+      <slot name="header" />
+      <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
+    </div>
+
     <nav v-if="doc.toc.length > 1" class="doc-toc" :aria-label="$t('doc.toc')" data-testid="doc-toc">
       <p class="doc-toc-title">{{ $t('doc.toc') }}</p>
       <ol class="doc-toc-list">
@@ -105,12 +112,6 @@ onBeforeUnmount(() => {
         </li>
       </ol>
     </nav>
-
-    <div class="doc-main">
-      <ShowcaseHero v-if="sectionHero && doc.title" section="docs" :title="doc.title" />
-      <slot name="header" />
-      <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
-    </div>
 
 
     <button v-if="showBackToTop" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
@@ -125,12 +126,18 @@ onBeforeUnmount(() => {
   max-width: calc(var(--reading-measure) * 4 / 3 + var(--gutter) * 2);
   gap: var(--space-6);
   color: var(--color-text-secondary);
+  --doc-measure: calc(var(--space-12) * 21);
 }
 
-.doc-page.has-toc { grid-template-columns: calc(var(--space-12) * 5) minmax(0, var(--doc-measure)); justify-content: center; }
-.doc-page { --doc-measure: calc(var(--space-12) * 15); }
+/* 有目录时正文列贴左、目录贴右，分区页头横跨两列与全站分区页头同宽 */
+.doc-page.has-toc {
+  max-width: var(--layout-wide-max);
+  grid-template-columns: minmax(0, var(--doc-measure)) calc(var(--space-12) * 5);
+  justify-content: space-between;
+}
 
-.doc-main { min-width: 0; }
+.doc-hero { grid-column: 1 / -1; }
+.doc-main { grid-column: 1; min-width: 0; }
 .doc-body { min-width: 0; padding: var(--space-6); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); font: var(--type-body); font-size: var(--font-size-doc); line-height: var(--line-height-doc); overflow-wrap: anywhere; }
 .doc-body :deep(h1),
 .doc-body :deep(h2),
@@ -157,11 +164,14 @@ onBeforeUnmount(() => {
 .doc-toc {
   position: sticky;
   top: calc(var(--header-h) + var(--space-4));
+  grid-column: 2;
   align-self: start;
   max-height: calc(100dvh - var(--header-h) - var(--space-8));
-  padding-inline-end: var(--space-3);
+  padding-inline-start: var(--space-3);
   overflow-y: auto;
-  border-inline-end: 1px solid var(--color-border-subtle);
+  /* 全页只保留窗口一个可见滚动条；目录超高时滚轮仍可滚动 */
+  scrollbar-width: none;
+  border-inline-start: 1px solid var(--color-border-strong);
 }
 
 .doc-toc-title { margin: 0 0 var(--space-2); color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }

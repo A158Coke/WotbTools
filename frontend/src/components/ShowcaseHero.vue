@@ -102,6 +102,8 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   padding-inline-end: var(--title-fade);
   background: linear-gradient(to right, var(--color-hero-photo-scrim) calc(100% - var(--title-fade)), transparent);
 }
+/* 长标题（文档页 H1）不得逐字断行，只能在词边界换行 */
+.showcase-hero[data-section] .showcase-hero-title { word-break: keep-all; }
 @media (width >= 768px) {
   .showcase-hero:not([data-section]) {
     --theme-hero-kicker-color: var(--color-accent-text);
