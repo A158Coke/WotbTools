@@ -56,6 +56,7 @@ function heroProbe() {
     compact: section.classList.contains('is-compact'),
     height: Math.round(rect.height),
     width: Math.round(rect.width),
+    artWidth: art.getBoundingClientRect().width,
     backgroundImage: cs.backgroundImage,
     imagePosition: positions[imageLayer] ?? null,
     backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[imageLayer] ?? null,
@@ -133,7 +134,8 @@ try {
     try {
       const hero = await page.probe(heroProbe)
       assertDesktopCompact(hero, { section, position })
-      const [lo, hi] = section === 'replay' ? [240, 400] : [120, 140]
+      const heightRanges = { admin: [300, 500], replay: [240, 400], techtree: [120, 140] }
+      const [lo, hi] = heightRanges[section]
       assert.ok(hero.height >= lo && hero.height <= hi, `desktop ${section} hero height must stay ${lo}-${hi}px at 1440: ${hero.height}`)
       console.log(`[browser-showcase-hero] desktop ${section}: height=${hero.height} pos=${hero.imagePosition} scrim=${hero.backgroundImage.slice(0, 48)}… passed`)
     } catch (error) {
@@ -156,6 +158,10 @@ try {
           await page.emulate({ width, height: 900, touch: false, deviceScaleFactor: 1 })
           const hero = await page.probe(heroProbe)
           assertDesktopCompact(hero, { section, position: '100% 50%' })
+          assert.ok(hero.height >= Math.min(280, width * 0.28), 'users section must expand on desktop at ' + width)
+          assert.ok(hero.artWidth >= hero.width / 2, 'the complete image must occupy at least half of this desktop section')
+          const firstRow = await page.waitForValue('document.querySelector("[data-testid=admin-row-open]")?.getBoundingClientRect().top', Number.isFinite)
+          assert.ok(firstRow < 900, 'first user row must remain in the initial viewport')
           const edges = await page.probe(() => ['.showcase-hero', '.admin-filter-bar', '.admin-list-table-wrap'].map(
             selector => document.querySelector(selector).getBoundingClientRect().right))
           assert.ok(Math.max(...edges) - Math.min(...edges) <= 1, 'users hero, filters and table must share their right edge at ' + width)
