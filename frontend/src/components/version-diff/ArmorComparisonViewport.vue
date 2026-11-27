@@ -75,9 +75,13 @@ function setCompare(position: number) {
 }
 
 // 旁注芯片点击与文字行点击同一语义：切换该板的隔离（其余装甲透明化）。
+// 只有 键 + 配置 都与当前选中一致时才算"取消"——手动切到另一配置后，
+// 同名板号（gun:5）在该配置里仍是未选中，首次点击应当选中而不是清空。
 function handleIsolateRequest(key: string) {
   const current = props.isolateKeys ?? []
-  emit('select', { configKey: choice.value?.key ?? '', keys: current.includes(key) ? [] : [key] })
+  const configKey = choice.value?.key ?? ''
+  const sameConfig = !props.isolateConfigKey || props.isolateConfigKey === configKey
+  emit('select', { configKey, keys: sameConfig && current.includes(key) ? [] : [key] })
 }
 
 // 旁注文案：每块改动装甲一条，同时带修改前后数值（绘制在场景的 2D 叠加画布上，

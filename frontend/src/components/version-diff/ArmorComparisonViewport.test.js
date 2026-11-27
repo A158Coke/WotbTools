@@ -82,6 +82,15 @@ it('switches the 3D configuration and applies that configuration isolation keys'
   await flushPromises()
   expect(mocks.select).toHaveBeenLastCalledWith(expect.objectContaining({ key: '2/9' }))
   expect(mocks.isolate).toHaveBeenLastCalledWith(null)
+  // 手动切配置后，旁注芯片的同名板号（gun:5）仍是未选中：首次点击要选中而不是清空。
+  mocks.onIsolateRequest('gun:5')
+  await flushPromises()
+  expect(wrapper.emitted('select').at(-1)).toEqual([{ configKey: '2/9', keys: ['gun:5'] }])
+  // 配置一致时再点同一芯片才是取消。
+  await wrapper.setProps({ isolateKeys: ['gun:5'], isolateConfigKey: '2/9' })
+  mocks.onIsolateRequest('gun:5')
+  await flushPromises()
+  expect(wrapper.emitted('select').at(-1)).toEqual([{ configKey: '2/9', keys: [] }])
   wrapper.unmount()
 })
 
