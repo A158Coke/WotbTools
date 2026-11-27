@@ -1,16 +1,13 @@
-<script setup>
+<script setup lang="ts">
 import { ChevronDown, Settings2 } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import AppButton from './AppButton.vue'
 
 defineOptions({ name: 'Replay3DSettingsEntry' })
 
-defineProps({
-  open: Boolean,
-  compact: Boolean,
-})
+defineProps<{ open?: boolean; compact?: boolean }>()
 
-defineEmits(['toggle'])
+const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
 
 const { t } = useI18n()
 </script>
@@ -23,7 +20,7 @@ const { t } = useI18n()
     :aria-expanded="open"
     :aria-label="compact ? t('agentReplay.settings_title') : undefined"
     :title="compact ? t('agentReplay.settings_title') : undefined"
-    @click="$emit('toggle', $event)"
+    @click="emit('toggle', $event)"
   >
     <Settings2 :size="16" aria-hidden="true" />
     <span v-if="!compact">{{ t('agentReplay.settings_title') }}</span>
