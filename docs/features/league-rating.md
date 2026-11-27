@@ -53,8 +53,9 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 每场必须：14 个结算记录、14 个唯一非零 accountId、队伍只能为 1/2、两队各 7 人、
 14 名玩家非零 tankId、`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值且不
-违反真实字段关系（命中≤射击、击穿≤命中）；非有限值（NaN/Infinity）不在该门槛拒绝，
-评分内 clamp 兜底为 0。
+违反真实字段关系（命中≤射击、击穿≤命中；关系比较分别在 `nShots > 0`、`nHitsDealt > 0`
+时执行）。普通统计字段未单独做有限值校验：`-Infinity` 被非负校验拒绝，可参与关系比较
+字段的 `+Infinity` 被关系校验拒绝，NaN 因比较恒假可通过（评分内 clamp 兜底为 0）。
 League Rating 以 **#301 的 14 settled combatants 为 authority**；#201 仅用于
 nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞评分（`Battle.rosterComplete`
 保留给 SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating）。
@@ -293,16 +294,16 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
 
 ## 测试
 
-- golden 端到端锁：8 个冻结批次（含 `league:cw+tournament`、`mixed:random+cw`、
-  `duplicate:cw+cw`、`failure:*`）在 `compute.golden.test.ts` 下逐 JSON 全等比对，
-  锁定模式判定（T/G 边界、MIXED 组合）、七维满分与权重（365/110/110/180/50/75/110=1000）、
-  换血（零承伤/零输出/参与度限制）、Soft Wilson、存活状态（胜方存活 75 / directional
-  trade 50 / 败方存活恒 0）、trade 边界（[0,+5s] 含边界、敌方早死不计）、
-  胜方 ×1.05 与 1000 封顶、MVP 排序、V6 汇总公式、争霸点数不影响 Rating；
-  完整性门槛（标准 7v7、重复账号、缺 tankId、roster、平局/未知胜方、阵亡者
-  settlementLifeTimeSec 缺失/非正/NaN/超时长拒绝、非法数值关系、arenaId 冲突）
-  与失败/重复披露同由 golden 批次与失败路径用例覆盖；另有 export golden/roundtrip
-  与 radarScale 单测。
+- golden 端到端锁：8 个冻结批次由 4 份合法回放夹具与 1 份损坏文件重组
+  （single:random / single:cw-training / single:tournament / single:training-no-winner /
+  league:cw+tournament / mixed:random+cw / duplicate:cw+cw / failure:random+corrupt），
+  在 `compute.golden.test.ts` 下逐 JSON 全等比对，锁定模式判定（T/G 边界、MIXED 组合拒绝、
+  无决胜胜方不评分）、合法批次上的评分数学（七维满分与权重 365/110/110/180/50/75/110=1000、
+  换血、Soft Wilson、存活状态、trade 边界、胜方 ×1.05 与 1000 封顶、MVP 排序、V6 汇总公式）、
+  同文件重复回放去重与损坏文件失败披露；另有 export golden/roundtrip 与 radarScale 单测。
+- 已知限制（无直接测试覆盖的门槛分支）：重复账号、缺 tankId、非法数值关系、arenaId 冲突、
+  阵亡者 settlementLifeTimeSec 缺失/非正（解析失败路径）与 NaN/超时长拒绝等完整性分支
+  当前没有直接单测或 golden 批次覆盖，回归只能靠人工构造夹具或端到端验证发现。
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 为 `MIXED_UNSUPPORTED`，保留普通分析结果但不聚合 League、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
