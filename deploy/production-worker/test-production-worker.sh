@@ -292,6 +292,19 @@ install_cmd() { env "$@" bash "$runtime/install.sh" tx2 "$SHA" "$stage"; }
 verify_cmd() { env "$@" bash "$runtime/verify.sh" tx2 "$stage"; }
 reconcile_cmd() { env "$@" bash "$runtime/reconcile.sh" tx2 "$SHA" "$stage"; }
 
+# Deterministic holder acquisition: the background holder takes the lock with a
+# blocking flock and only then creates the sentinel, so waiting for the file
+# proves the lock is actually held (unlike probing with flock -n, which races
+# the holder and can steal the lock).
+wait_for_holder() {
+  local attempt
+  for attempt in $(seq 1 200); do
+    [ -f "$1" ] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
 expect_ok() {
   local label="$1" out="$2"; shift 2
   if ! "$@" > "$out" 2>&1; then cat "$out" >&2; fail "$label should have succeeded"; fi
@@ -364,24 +377,36 @@ mv "$lock_root/.deploy.lock.hidden" "$lock_root/.deploy.lock"
 pass 'the TX2 host lock must already exist (owned by the deploy owner)'
 
 
-flock -n "$lock_root/.deploy.lock" -c 'sleep 10' &
+rm -f "$work/lock-held"
+(
+  exec 8>"$lock_root/.deploy.lock"
+  flock 8
+  : > "$work/lock-held"
+  sleep 10
+) &
 lock_pid=$!
-for attempt in $(seq 1 20); do
-  flock -n "$lock_root/.deploy.lock" -c true 2>/dev/null || break
-  sleep 0.2
-done
+wait_for_holder "$work/lock-held" || {
+  kill "$lock_pid" 2>/dev/null || true
+  fail 'fixture holder did not acquire the host lock'
+}
 expect_fail 'a held host lock times out with diagnostics' 'host mutation is running' \
   reconcile_cmd WORKER_LOCK_WAIT_SEC=1
 kill "$lock_pid" 2>/dev/null || true
 wait "$lock_pid" 2>/dev/null || true
 pass 'a held host lock times out instead of failing fast or hanging'
 
-flock -n "$lock_root/.deploy.lock" -c 'sleep 2' &
+rm -f "$work/lock-held"
+(
+  exec 8>"$lock_root/.deploy.lock"
+  flock 8
+  : > "$work/lock-held"
+  sleep 2
+) &
 lock_pid=$!
-for attempt in $(seq 1 20); do
-  flock -n "$lock_root/.deploy.lock" -c true 2>/dev/null || break
-  sleep 0.2
-done
+wait_for_holder "$work/lock-held" || {
+  kill "$lock_pid" 2>/dev/null || true
+  fail 'short-lived fixture holder did not acquire the host lock'
+}
 rm -f "$state/compose_present" "$state/auth" "$daemon_config" "$root_config" \
   "$host/var/lib/wotbtools-production-worker/tcr-credential-version" "$state/valid_auth"
 : > "$state/restarts"
