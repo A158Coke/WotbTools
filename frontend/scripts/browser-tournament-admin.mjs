@@ -38,6 +38,34 @@ async function clearDialog(page, touch) {
   await page.tapSelector('[data-testid=tournament-admin-clear]', touch)
   await page.waitForValue('!!document.querySelector("#clear-clan")', Boolean)
 }
+const SEGMENTED_STABLE = `(() => {
+  const read = () => [...document.querySelectorAll('.segmented')].flatMap(group => {
+    const option = group.querySelector('.segmented-option.is-active')
+    const indicator = option?.querySelector(':scope .segmented-indicator')
+    if (!option || !indicator) return []
+    const optionRect = option.getBoundingClientRect()
+    const indicatorRect = indicator.getBoundingClientRect()
+    const border = Number.parseFloat(getComputedStyle(option).borderLeftWidth) || 0
+    const drift = Math.max(
+      Math.abs(optionRect.left - indicatorRect.left),
+      Math.abs(optionRect.right - indicatorRect.right),
+      Math.abs(optionRect.top - indicatorRect.top),
+      Math.abs(optionRect.bottom - indicatorRect.bottom),
+    )
+    return { ok: drift <= border + 0.5, drift, key: [optionRect.left, optionRect.top, optionRect.width, optionRect.height].map(v => v.toFixed(2)).join(',') }
+  })
+  const now = JSON.stringify(read())
+  const previous = window.__segmentedGeometry
+  window.__segmentedGeometry = now
+  return { settled: now === previous, entries: JSON.parse(now) }
+})()`
+async function settleSegmented(page) {
+  await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  await page.animationsSettled()
+  await page.waitForValue(SEGMENTED_STABLE, value => value.settled && value.entries.every(entry => entry.ok), {
+    label: 'segmented indicator aligned and stable',
+  })
+}
 async function screenshot(page, name) {
   if (!process.env.TOURNAMENT_SCREENSHOTS) return
   await mkdir(process.env.TOURNAMENT_SCREENSHOTS, { recursive: true })
@@ -119,6 +147,7 @@ async function auditAdmin(page, touch, name) {
 async function auditConfig(page, touch, name) {
   const test = id => '[data-testid=' + id + ']'
   await page.waitForValue('!!document.querySelector("[data-testid=rule-1-1]")', Boolean)
+  await settleSegmented(page)
   const fields = await page.probe(() => {
     const rect = id => document.querySelector('[data-testid=' + id + ']').getBoundingClientRect()
     const year = rect('config-year'), season = rect('config-season'), region = rect('config-region')
@@ -132,7 +161,12 @@ async function auditConfig(page, touch, name) {
   })
   assert.ok(fields.gapDiff <= 1 && fields.heightDiff <= 1 && fields.afterYear && fields.afterSeason && Math.abs(fields.regionWidth - fields.gridWidth) <= 1, JSON.stringify(fields))
   await page.callWith(sel => document.querySelector(sel).scrollIntoView({ block: 'center' }), '[data-testid=config-region]')
+  await settleSegmented(page)
   await screenshot(page, name)
+  await page.tapSelector(test('config-day-naming') + ' [data-value=STAGE]', touch)
+  await settleSegmented(page)
+  await page.tapSelector(test('config-day-naming') + ' [data-value=DAY]', touch)
+  await settleSegmented(page)
   const start = writes.length
   await page.tapSelector(test('default-rules-switch'), touch)
   await page.tapSelector(test('cancel-default-rules'), touch)
@@ -218,6 +252,46 @@ try {
       console.error(await page.evaluate('({ active:document.activeElement?.outerHTML?.slice(0,220), status:document.querySelector("[role=status]")?.textContent, dialog:document.querySelector("[role=dialog]")?.textContent?.slice(0,220) })'))
       throw error
     } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+  const shots = process.env.TOURNAMENT_SCREENSHOTS
+  delete process.env.TOURNAMENT_SCREENSHOTS
+  try {
+    for (const { width, height, profile, touch, locale = 'en' } of [
+      { width: 1280, height: 850, profile: 'summer', touch: false },
+      { width: 390, height: 850, profile: 'winter', touch: true },
+    ]) {
+      const { sessionId, targetId } = await chrome.openPage()
+      const page = new Page(chrome.client, sessionId)
+      try {
+        await page.enable()
+        await page.emulate({ width, height, touch, deviceScaleFactor: 1 })
+        await page.client.send('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
+        }, sessionId)
+        await page.goto(origin)
+        await page.callWith((p, l) => { localStorage.setItem('wotb-ui-profile', p); localStorage.setItem('wotb-lang', l) }, profile, locale)
+        for (const view of ['tournament-points-admin', 'tournament-points-config']) {
+          reset()
+          await page.goto(origin + '/?view=' + view + '&ws-roles=tournament-admin')
+          await page.waitForValue('!!document.querySelector("[data-testid=event-compact] input:not(:disabled)")', Boolean)
+          const media = await page.callWith(() => matchMedia('(prefers-reduced-motion: reduce)').matches, null)
+          assert.equal(media, true, 'reduced motion must be emulated')
+          await search(page, eventInput, '2026', view.endsWith('admin') ? 13 : 14, touch)
+          if (view.endsWith('admin')) await auditAdmin(page, touch, 'reduced-motion')
+          else {
+            await page.waitForValue('!!document.querySelector("[data-testid=rule-1-1]")', Boolean)
+            await settleSegmented(page)
+            await page.tapSelector('[data-testid=config-day-naming] [data-value=STAGE]', touch)
+            await settleSegmented(page)
+            await page.tapSelector('[data-testid=config-day-naming] [data-value=DAY]', touch)
+            await settleSegmented(page)
+          }
+          console.log('[browser-tournament-admin] reduced-motion', view, width + 'x' + height, profile, 'OK')
+        }
+      } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+    }
+  } finally {
+    if (shots !== undefined) process.env.TOURNAMENT_SCREENSHOTS = shots
   }
   assert.deepEqual(unexpected, [])
 } finally {
