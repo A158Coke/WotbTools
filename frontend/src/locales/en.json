@@ -989,7 +989,7 @@
     "map": "Map",
     "playbackSettingsTitle": "Replay settings",
     "autoStart3d": "Auto-play when entering 3D replay",
-    "autoStart3dHint": "When signed in and online, opening a replay and switching to 3D downloads the assets and starts playback automatically, using your last quality setting.",
+    "autoStart3dHint": "When online, opening a replay and switching to 3D downloads the assets and starts playback automatically with your last quality setting. Signed-in users can turn this off in Profile.",
     "securityTitle": "Account Security",
     "loginMethod": "Login method",
     "authService": "Auth provider",

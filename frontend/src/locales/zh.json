@@ -989,7 +989,7 @@
     "map": "地图",
     "playbackSettingsTitle": "回放设置",
     "autoStart3d": "进入 3D 回放时自动播放",
-    "autoStart3dHint": "登录且在线时，打开回放并切换到 3D 后自动下载资源并开始播放；使用上次的画质设置。",
+    "autoStart3dHint": "在线时，打开回放并切换到 3D 后自动下载资源并开始播放，使用上次的画质设置；登录用户可在个人资料关闭自动播放。",
     "securityTitle": "账号安全",
     "loginMethod": "登录方式",
     "authService": "认证服务",

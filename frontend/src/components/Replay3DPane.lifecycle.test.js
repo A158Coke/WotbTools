@@ -354,12 +354,12 @@ describe('Replay3DPane 3D annotation wiring', () => {
     wrapper.unmount()
   })
 
-  it('无用户 sub 时自动播放不可用，保留手动开始', async () => {
+  it('无用户 sub 时没有可关闭的 Profile 偏好，进入 3D 默认自动开始', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ autoStartUserId: null })
     await flush()
-    expect(canonical.load).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(true)
+    expect(canonical.load).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

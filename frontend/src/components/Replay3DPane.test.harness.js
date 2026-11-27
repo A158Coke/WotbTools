@@ -136,6 +136,10 @@ export async function openDetailsViaScene(eid) {
 }
 
 export function mountPane(props = {}) {
+  const manualAutoStart = !Object.prototype.hasOwnProperty.call(props, 'autoStartUserId')
+  if (manualAutoStart) {
+    try { localStorage.setItem('wotb.pb.3d-auto-start:manual-test', '0') } catch (e) {}
+  }
   const states = new WeakMap()
   const getState = file => {
     if (!states.has(file)) states.set(file, shallowReactive({ canonical: null, sceneState: 'idle' }))
@@ -150,7 +154,7 @@ export function mountPane(props = {}) {
     },
   }
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...(manualAutoStart ? { autoStartUserId: 'manual-test' } : {}), ...props },
     global: { mocks: { $t: translate } },
   })
 }
