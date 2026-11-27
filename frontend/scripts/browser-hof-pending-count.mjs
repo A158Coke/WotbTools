@@ -37,10 +37,12 @@ async function verifyLink(page, total) {
     return {
       hit: link.contains(document.elementFromPoint(b.left + b.width/2,b.top + b.height/2)),
       inside: b.left >= l.left - 1 && b.right <= l.right + 1 && b.top >= l.top - 1 && b.bottom <= l.bottom + 1,
+      fontSize: parseFloat(getComputedStyle(badge).fontSize),
       name: link.getAttribute('aria-label'), badgeHidden: badge.getAttribute('aria-hidden'),
       nestedControls: link.querySelectorAll('button,a,input,[tabindex="0"]').length,
     }
   }, link)
+  assert.ok(result.fontSize >= 12, 'pending count font size: ' + result.fontSize)
   assert.ok(result.hit && result.inside, JSON.stringify(result))
   assert.ok(result.name.includes(String(total)), result.name)
   assert.equal(result.badgeHidden, 'true')

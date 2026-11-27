@@ -155,7 +155,7 @@ export async function runParseLifecycleScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&debug`)
+  await page.goto(`${await fakeAnalysisOrigin()}/?view=replay&ws-auth=1&ws-login=resolve&ws-manual-3d=1&debug`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
@@ -294,9 +294,10 @@ export async function runOfflineWorkspaceScenario(env) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   setLastPage(page)
+  let phase = 'offline'
   const businessAttempts = []
-  const healthProbes = []
-  const publicCategoryProbes = []
+  const recoveredReads = []
+  const pendingQueries = ['/api/admin/hof/hundred/submissions', '/api/admin/hof/mark3/submissions']
   const interceptionErrors = []
   let closing = false
   await page.enable()
@@ -310,34 +311,32 @@ export async function runOfflineWorkspaceScenario(env) {
     const url = new URL(params.request.url)
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
-    const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
-      && params.request.method === 'POST'
-    if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
-      await env.chrome.client.send('Fetch.fulfillRequest', { requestId: params.requestId, responseCode: 204 }, sessionId)
-      return
-    }
-    const health = url.origin === env.origin && url.pathname === '/api/health' && params.request.method === 'GET'
-    if (health && await page.evaluate('window.__offlineFixtureOnline === true')) {
-      healthProbes.push(params.request.url)
-      await env.chrome.client.send('Fetch.fulfillRequest', {
-        requestId: params.requestId, responseCode: 200,
-        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['recommendations-v1'] })).toString('base64'),
-      }, sessionId)
-      return
-    }
-    const publicCategories = url.origin === env.origin && url.pathname === '/api/recommendations/categories' && params.request.method === 'GET'
-    if (publicCategories && await page.evaluate('window.__offlineFixtureOnline === true')) {
-      publicCategoryProbes.push(params.request.url)
-      await env.chrome.client.send('Fetch.fulfillRequest', {
-        requestId: params.requestId, responseCode: 200,
-        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify([{ id: 1, name: 'Creator fixture', type: 'UP' }])).toString('base64'),
-      }, sessionId)
-      return
-    }
+    const stage = phase
+    const method = params.request.method
     const business = (url.origin !== env.origin || url.pathname.startsWith('/api/')) && !assetPath
-    if (business) businessAttempts.push(params.request.url)
+    const sameOrigin = url.origin === env.origin
+    const telemetry = url.pathname === '/api/observability/events' && method === 'POST'
+    let payload
+    if (stage === 'online' && sameOrigin && method === 'GET') {
+      if (url.pathname === '/api/health' && !url.search) payload = { status: 'ok', tanks: 1, capabilities: ['recommendations-v1'] }
+      if (url.pathname === '/api/recommendations/categories' && !url.search) {
+        payload = [{ id: 1, name: 'Creator fixture', type: 'UP' }]
+      }
+      if (url.pathname === '/api/users/onboarding' && !url.search) payload = { coreEpoch: 1, disposition: 'SKIPPED' }
+      if (pendingQueries.includes(url.pathname) && url.searchParams.size === 3 && url.searchParams.get('status') === 'PENDING'
+        && url.searchParams.get('page') === '1' && url.searchParams.get('size') === '1') {
+        payload = { items: [], page: 1, size: 1, totalItems: 0, totalPages: 0 }
+      }
+    }
+    if (payload !== undefined || (stage === 'online' && sameOrigin && telemetry)) {
+      if (payload !== undefined) recoveredReads.push(url.pathname)
+      await env.chrome.client.send('Fetch.fulfillRequest', payload === undefined
+        ? { requestId: params.requestId, responseCode: 204 }
+        : { requestId: params.requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+            body: Buffer.from(JSON.stringify(payload)).toString('base64') }, sessionId)
+      return
+    }
+    if (business) businessAttempts.push(stage + ' ' + method + ' ' + params.request.url)
     try {
       await env.chrome.client.send(business ? 'Fetch.failRequest' : 'Fetch.continueRequest',
         business ? { requestId: params.requestId, errorReason: 'InternetDisconnected' } : { requestId: params.requestId }, sessionId)
@@ -384,17 +383,21 @@ export async function runOfflineWorkspaceScenario(env) {
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="ai"]').click()`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'offline AI gate' })
   check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, 'AI started login offline')
-  await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
+  phase = 'online'
+  await page.evaluate(`performance.clearResourceTimings(); window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
   await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-creators"]'), { label: 'read-only backend capability probe completed' })
-  await delay(300)
+  const expectedReads = ['/api/health', '/api/recommendations/categories', '/api/users/onboarding', ...pendingQueries]
+  await page.waitForValue('performance.getEntriesByType("resource").map(e => new URL(e.name).pathname)',
+    paths => expectedReads.every(path => paths.includes(path)), { label: 'all reconnect reads completed' })
+  phase = 'offline again'
   await page.evaluate(`window.__offlineFixtureOnline = false; window.dispatchEvent(new Event('offline'))`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'disconnect capability update' })
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="shots"]').click()`)
   check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
   check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
-  check(failures, healthProbes.length === 1, `reconnection must make exactly one read-only capability probe: ${healthProbes.length}`)
-  check(failures, publicCategoryProbes.length === 1, `reconnection must make exactly one read-only public category probe: ${publicCategoryProbes.length}`)
+  check(failures, recoveredReads.sort().join(',') === expectedReads.sort().join(','),
+    'expected each reconnect GET exactly once, got ' + recoveredReads.join(', '))
   check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
   closing = true
   await closePageTarget(env.chrome, targetId)
