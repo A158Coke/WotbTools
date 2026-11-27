@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
 import { hasGunMask } from './armorPlateModel.js'
+import {
+    thicknessDepthWrite, thicknessOutlineColor, thicknessSurfaceOpacity, type ThicknessClass,
+} from './armorThicknessPalette.js'
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../../data/armorStates.js'
 import type { ArmorStateSection } from './armorMeshState.js'
 import type { ModelReferences } from './modelLifecycle.js'
@@ -172,6 +175,133 @@ function collectHighlightMeshes(): THREE.Mesh[] {
             return list;
         }
 
+const OUTLINE_ANGLE = 45;
+const OUTLINE_RENDER_ORDER = 1;
+
+/** 厚度视图类别：模块碰撞体统一 external，装甲板按 spaced/primary 分。 */
+function thicknessClassForMesh(mesh: THREE.Mesh, modules: ReadonlySet<THREE.Object3D>): ThicknessClass {
+            if (modules.has(mesh)) return 'external';
+            return mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary';
+        }
+
+/** 厚度表面平涂材质（BlitzKit StaticArmor 同语义：无光照、色阶直出）。 */
+function createThicknessMaterial(mesh: THREE.Mesh, kind: ThicknessClass): THREE.MeshBasicMaterial {
+            const thickness = mesh.userData.armorThickness;
+            const opacity = thicknessSurfaceOpacity(kind, thickness);
+            return new THREE.MeshBasicMaterial({
+                color: thicknessToColor(thickness),
+                toneMapped: false,
+                transparent: opacity < 1,
+                opacity,
+                depthWrite: thicknessDepthWrite(kind),
+                side: kind === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
+            });
+        }
+
+function outlineOf(mesh: THREE.Mesh): THREE.LineSegments | null {
+            return (mesh.userData.collisionOutline as THREE.LineSegments | undefined) ?? null;
+        }
+
+function setOutlineVisible(mesh: THREE.Mesh, visible: boolean): void {
+            const line = outlineOf(mesh);
+            if (line) line.visible = visible;
+        }
+
+/** 每块板/模块一条 45° 硬边勾线；重复调用只更新颜色，不重建几何。 */
+function ensureThicknessOutline(mesh: THREE.Mesh, kind: ThicknessClass): void {
+            if (!mesh.geometry) return;
+            let line = outlineOf(mesh);
+            if (!line) {
+                line = new THREE.LineSegments(
+                    new THREE.EdgesGeometry(mesh.geometry, OUTLINE_ANGLE),
+                    new THREE.LineBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }),
+                );
+                // 勾线是纯视觉轮廓，必须从 intersectObjects 的装甲/模块拾取链里消失；
+                // Line 命中沿父网格仍能读到 armorSection，漏掉会污染厚度点选与判定。
+                line.raycast = () => {};
+                line.renderOrder = OUTLINE_RENDER_ORDER;
+                mesh.add(line);
+                mesh.userData.collisionOutline = line;
+            }
+            const surface = mesh.material;
+            const baseColor = !Array.isArray(surface) && surface && (surface as THREE.MeshBasicMaterial).color
+                ? (surface as THREE.MeshBasicMaterial).color.getHex()
+                : thicknessToColor(mesh.userData.armorThickness);
+            const material = line.material as THREE.LineBasicMaterial;
+            const color = thicknessOutlineColor(kind, baseColor);
+            if (material.color.getHex() !== color) material.color.setHex(color);
+            // 炮管勾线与实体共用 gun_mask 裁剪面；其余模块清空，避免重进厚度视图时残留旧平面。
+            const solid = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
+            const clipPlanes = kind === 'external' && mesh.userData.armorSection === 'gunBarrel' && solid
+                ? (solid.clippingPlanes ?? null)
+                : null;
+            const hadClip = !!(material.clippingPlanes && material.clippingPlanes.length);
+            if (hadClip !== !!clipPlanes) {
+                material.clippingPlanes = clipPlanes;
+                material.needsUpdate = true;
+            } else if (clipPlanes) {
+                material.clippingPlanes = clipPlanes;
+            }
+        }
+
+function disposeThicknessOutline(mesh: THREE.Mesh): void {
+            const line = outlineOf(mesh);
+            if (!line) return;
+            mesh.remove(line);
+            line.geometry.dispose();
+            const material = line.material;
+            if (Array.isArray(material)) material.forEach(item => item.dispose());
+            else material.dispose();
+            delete mesh.userData.collisionOutline;
+        }
+
+function clearThicknessOutlines(): void {
+            const roots: THREE.Object3D[] = [];
+            if (models.armorModel) roots.push(models.armorModel);
+            roots.push(...getModuleMeshes());
+            for (const root of roots) {
+                root.traverse(function(node: THREE.Object3D) {
+                    const mesh = node as THREE.Mesh;
+                    if (mesh.isMesh) disposeThicknessOutline(mesh);
+                });
+            }
+        }
+
+/** 选中集合：单侧履带/负重轮按 armorPlateId 整组，其余只选被点网格。 */
+function highlightSelection(selected: THREE.Object3D | null, modules: ReadonlySet<THREE.Object3D>): Set<THREE.Object3D> {
+            const selectedSet = new Set<THREE.Object3D>();
+            if (!selected) return selectedSet;
+            const plateId = selected.userData?.armorPlateId;
+            if (selected.userData?.armorSection === 'chassis' && plateId != null) {
+                for (const node of modules) {
+                    if (node.userData?.armorSection === 'chassis' && node.userData?.armorPlateId === plateId) {
+                        selectedSet.add(node);
+                    }
+                }
+            }
+            if (selectedSet.size === 0) selectedSet.add(selected);
+            return selectedSet;
+        }
+
+function syncThicknessOutlines(): void {
+            if (!getCollisionMode() || !models.armorModel) return;
+            models.armorModel.traverse(function(node: THREE.Object3D) {
+                const mesh = node as THREE.Mesh;
+                if (!mesh.isMesh || mesh.userData.armorSection === 'deco') return;
+                ensureThicknessOutline(mesh, mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary');
+            });
+            for (const node of getModuleMeshes()) {
+                const mesh = node as THREE.Mesh;
+                if (!mesh.isMesh) continue;
+                ensureThicknessOutline(mesh, 'external');
+            }
+            const modules = new Set<THREE.Object3D>(getModuleMeshes());
+            const selectedSet = highlightSelection(highlightedArmorNode, modules);
+            for (const mesh of collectHighlightMeshes()) {
+                setOutlineVisible(mesh, !highlightedArmorNode || selectedSet.has(mesh));
+            }
+        }
+
 function applyArmorMaterialState(m: THREE.Material, transparent: boolean, opacity: number, depthWrite: boolean): void {
             if (m.transparent !== transparent || m.depthWrite !== depthWrite) m.needsUpdate = true;
             m.transparent = transparent;
@@ -186,26 +316,26 @@ function resetArmorHighlight(): void {
             for (const node of collectHighlightMeshes()) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
-                applyArmorMaterialState(m, true, modules.has(node) ? 1 : 0.95, true);
-                const em = m as THREE.MeshStandardMaterial;
-                if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
+                const kind = thicknessClassForMesh(node, modules);
+                const opacity = thicknessSurfaceOpacity(kind, node.userData.armorThickness);
+                applyArmorMaterialState(m, opacity < 1, opacity, thicknessDepthWrite(kind));
+                setOutlineVisible(node, true);
             }
         }
 
 function applyArmorHighlight(selected: THREE.Object3D | null): void {
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
+            const selectedSet = highlightSelection(selected, modules);
             for (const node of collectHighlightMeshes()) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
-                if (node === selected) {
-                    applyArmorMaterialState(m, true, 1, true);
-                    const em = m as THREE.MeshStandardMaterial;
-                    if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
+                if (selectedSet.has(node)) {
+                    // 选中板保持原色、不透明并写深度；不引入自发光（会被误读成厚度变色）。
+                    applyArmorMaterialState(m, false, 1, true);
                 } else {
                     applyArmorMaterialState(m, true, modules.has(node) ? 0.15 : 0.18, false);
-                    const em = m as THREE.MeshStandardMaterial;
-                    if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
                 }
+                setOutlineVisible(node, selectedSet.has(node));
             }
             highlightedArmorNode = selected;
         }
@@ -213,7 +343,7 @@ function applyArmorHighlight(selected: THREE.Object3D | null): void {
 function syncModuleClipPlanes(): void {
             for (const node of getModuleMeshes()) {
                 const mesh = node as THREE.Mesh;
-                const mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
+                const mat = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
                 if (!mat || mesh.material !== mat) continue;
                 let clipPlanes: THREE.Plane[] | null = null;
                 if (mesh.userData.armorSection === 'gunBarrel') {
@@ -225,6 +355,17 @@ function syncModuleClipPlanes(): void {
                     mat.clippingPlanes = clipPlanes;
                     mat.needsUpdate = true;
                 }
+                // 勾线与炮管实体同源裁剪：炮尾/炮根段被 mask 平面切掉时，轮廓不能残留。
+                const line = outlineOf(mesh);
+                if (!line) continue;
+                const lineMat = line.material as THREE.LineBasicMaterial;
+                const lineHadClip = !!(lineMat.clippingPlanes && lineMat.clippingPlanes.length);
+                if (lineHadClip !== !!clipPlanes) {
+                    lineMat.clippingPlanes = clipPlanes;
+                    lineMat.needsUpdate = true;
+                } else if (clipPlanes) {
+                    lineMat.clippingPlanes = clipPlanes;
+                }
             }
         }
 
@@ -235,18 +376,28 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     if (!moduleOriginalMaterials.has(mesh)) moduleOriginalMaterials.set(mesh, mesh.material);
                     const t = Number(mesh.userData.armorThickness);
                     const color = thicknessToColor(t);
+                    const opacity = thicknessSurfaceOpacity('external', t);
                     const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
-                    let mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
+                    let mat = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
                     if (!mat) {
-                        mat = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.6 });
+                        mat = new THREE.MeshBasicMaterial({
+                            color,
+                            toneMapped: false,
+                            transparent: opacity < 1,
+                            opacity,
+                            depthWrite: thicknessDepthWrite('external'),
+                        });
                         mesh.userData.collisionSolidMaterial = mat;
                     } else {
                         mat.color.set(color);
+                        // 复用缓存材质时恢复厚度视图默认值：高亮可能改过
+                        // transparent/opacity/depthWrite，不恢复会让外部模块回退成不透明实心。
+                        mat.transparent = opacity < 1;
+                        mat.opacity = opacity;
+                        mat.depthWrite = thicknessDepthWrite('external');
                     }
+                    // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见。
                     mat.side = side;
-                    mat.transparent = false;
-                    mat.opacity = 1;
-                    mat.depthWrite = true;
                     mat.depthTest = true;
                     mat.needsUpdate = true;
                     mesh.material = mat;
@@ -256,10 +407,14 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     moduleOriginalMaterials.delete(mesh);
                 }
             }
+            // 厚度视图的炮管外部模块按 gun_mask 平面裁剪（与热力图外部模块 clone 同一
+            // 口径）：掩体平面之后的炮尾/炮根段不显示，避免整根炮管插进炮塔。
             if (on) syncModuleClipPlanes();
         }
 
 function applyArmorViewStyle(collision: boolean): void {
+            // 退出厚度视图先摘勾线：armor 尚未就绪时也必须把模块上的轮廓清掉。
+            if (!collision) clearThicknessOutlines();
             if (!models.armorModel) return;
             if (collision) hmRef().computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
@@ -293,16 +448,13 @@ function applyArmorViewStyle(collision: boolean): void {
                 if (!mesh.isMesh) return;
                 if (mesh.userData.armorSection === 'deco') { mesh.visible = false; return; }
                 replaceArmorMaterial(mesh, collision
-                    ? new THREE.MeshStandardMaterial({
-                        color: thicknessToColor(mesh.userData.armorThickness), metalness: 0.4, roughness: 0.6,
-                        transparent: true, opacity: 0.95, depthWrite: true,
-                        side: node.userData.armorSection === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
-                    })
+                    ? createThicknessMaterial(mesh, mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary')
                     : new THREE.MeshStandardMaterial({
                         color: 0x444444, metalness: 0.3, roughness: 0.8,
                         transparent: true, opacity: 0, depthWrite: false,
                     }));
             });
+            if (collision) syncThicknessOutlines();
             applyCategoryFilters();
         }
 
@@ -362,6 +514,8 @@ function applyArmorStateToModel(): void {
             });
             alignArmorModulesFn();
             updateTurretGunFn(getLastAppliedTurretDegFn(), getLastAppliedGunDegFn());
+            // 动态装甲板换材质后，勾线颜色必须跟着板色走（否则切态会留下旧色轮廓）。
+            if (getCollisionMode()) syncThicknessOutlines();
         }
 
 function setArmorState(stateId: number): void {
