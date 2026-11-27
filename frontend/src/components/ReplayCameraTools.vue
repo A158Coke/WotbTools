@@ -24,7 +24,6 @@ function reselect(value) {
 
 <template>
   <div class="tool-row" data-testid="replay3d-toolrow" data-tour="replay3d-camera">
-    <span class="dim">{{ t('agentReplay.camera') }}</span>
     <SegmentedControl
       class="camera-control"
       data-testid="replay3d-camera"
