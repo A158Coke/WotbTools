@@ -1225,6 +1225,7 @@
     "WOTB_ACCOUNT_NOT_BOUND": "请先绑定游戏账号"
   },
   "admin": {
+    "loginRequired": "请登录以管理用户。",
     "title": "用户管理",
     "hint": "不能修改用户信息。删除会同时移除 WotBTools 与 Keycloak 账号。",
     "kicker": "管理 · 只读与删除",
@@ -1290,8 +1291,7 @@
     "prev": "上一页",
     "next": "下一页",
     "pageInfo": "第 {page}/{total} 页 · 共 {items} 个用户",
-    "jumpLabel": "跳转页码",
-    "jumpPlaceholder": "页码",
+    "pageNumber": "页码",
     "jumpGo": "前往",
     "size": "每页"
   },

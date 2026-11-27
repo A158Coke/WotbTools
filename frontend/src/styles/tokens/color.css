@@ -1,5 +1,6 @@
 @layer tokens {
   :root {
+    --color-hero-photo-scrim: rgb(8 15 22 / .75);
     --color-playback-grid-fallback: rgba(255,255,255,.55);
     --color-playback-region-fallback: rgba(255,255,255,.28);
     --color-playback-spawn-friendly-fallback: #8ef7b0;
@@ -271,7 +272,6 @@
     --theme-hero-image-portrait: url("../../assets/theme/theme-winter-portrait.webp");
     --theme-hero-scrim: linear-gradient(90deg, rgb(238 243 248 / .96) 0%, rgb(238 243 248 / .86) 45%, rgb(238 243 248 / .1) 100%);
     --theme-hero-scrim-portrait: linear-gradient(0deg, rgb(238 243 248 / .97) 18%, rgb(238 243 248 / .4) 100%);
-    --theme-hero-section-scrim: linear-gradient(90deg, rgb(238 243 248 / .94) 0%, rgb(238 243 248 / .78) 48%, rgb(238 243 248 / .12) 100%);
     --theme-hero-section-scrim-portrait: linear-gradient(180deg, rgb(238 243 248 / .15) 0%, rgb(238 243 248 / 0) 45%);
     --theme-hero-title-color: #f2f7fb;
     --theme-hero-kicker-color: #cfe3f5;

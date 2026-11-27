@@ -18,6 +18,8 @@ const { t } = useI18n()
 
 const armed = ref(false)
 const typed = ref('')
+const startButton = ref<InstanceType<typeof AppButton> | null>(null)
+const cancelButton = ref<InstanceType<typeof AppButton> | null>(null)
 const input = ref<HTMLInputElement | null>(null)
 const ready = computed(() => !props.keyword || typed.value === props.keyword)
 
@@ -25,11 +27,17 @@ async function arm() {
   armed.value = true
   typed.value = ''
   await nextTick()
-  input.value?.focus()
+  if (input.value) input.value.focus()
+  else cancelButton.value?.$el.focus()
 }
 function reset() {
   armed.value = false
   typed.value = ''
+}
+async function cancel() {
+  reset()
+  await nextTick()
+  startButton.value?.$el.focus()
 }
 function confirm() {
   if (!ready.value || props.busy) return
@@ -42,7 +50,7 @@ defineExpose({ reset })
   <section class="admin-danger" :aria-label="t('adminList.dangerZone')" data-testid="admin-danger-zone">
     <div v-if="!armed" class="admin-danger-row">
       <span v-if="hint" class="admin-danger-hint">{{ hint }}</span>
-      <AppButton variant="danger" class="admin-danger-start" data-testid="admin-danger-start" :disabled="disabled" @click="arm">{{ actionLabel }}</AppButton>
+      <AppButton ref="startButton" variant="danger" class="admin-danger-start" data-testid="admin-danger-start" :disabled="disabled" @click="arm">{{ actionLabel }}</AppButton>
     </div>
     <div v-else class="admin-danger-confirm-panel">
       <p v-if="message" class="admin-danger-message">{{ message }}</p>
@@ -52,7 +60,7 @@ defineExpose({ reset })
         <input ref="input" v-model="typed" class="admin-danger-input" data-testid="admin-danger-input" autocomplete="off" autocapitalize="characters" spellcheck="false" :placeholder="keyword" @keydown.enter.prevent="confirm" />
       </label>
       <div class="admin-danger-actions">
-        <AppButton variant="ghost" data-testid="admin-danger-cancel" :disabled="busy" @click="reset">{{ t('adminList.cancel') }}</AppButton>
+        <AppButton ref="cancelButton" variant="ghost" data-testid="admin-danger-cancel" :disabled="busy" @click="cancel">{{ t('adminList.cancel') }}</AppButton>
         <AppButton variant="danger" class="admin-danger-confirm" data-testid="admin-danger-confirm" :disabled="!ready || busy" :loading="busy" @click="confirm">{{ confirmLabel || actionLabel }}</AppButton>
       </div>
     </div>

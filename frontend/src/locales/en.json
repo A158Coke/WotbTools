@@ -1225,6 +1225,7 @@
     "WOTB_ACCOUNT_NOT_BOUND": "Bind a game account first"
   },
   "admin": {
+    "loginRequired": "Sign in to manage users.",
     "title": "User Management",
     "hint": "User details cannot be edited. Deleting removes both the WotBTools and the Keycloak account.",
     "kicker": "Admin · Read-only and delete",
@@ -1290,8 +1291,7 @@
     "prev": "Prev",
     "next": "Next",
     "pageInfo": "Page {page}/{total} · {items} users",
-    "jumpLabel": "Go to page",
-    "jumpPlaceholder": "Page",
+    "pageNumber": "Page",
     "jumpGo": "Go",
     "size": "Per page"
   },
