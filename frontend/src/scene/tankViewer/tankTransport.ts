@@ -76,7 +76,7 @@ function setCameraPreset(S: Host, kind: 'front' | 'hull_down', { preserveView = 
             S.controls.enableDamping = damping;
             byId('turret-val').textContent = '0°';
             byId('gun-val').textContent = S.currentGunDeg.toFixed(0) + '°';
-            S.tc.tidyTrajectory();
+            S.invalidateJudgment();
             return true;
         }
 

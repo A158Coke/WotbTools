@@ -62,7 +62,8 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).not.toContain('(penetrationMode || primaryArmorScene) && lastClickNdc');
         expect(viewer).not.toContain('if (!penetrationMode && !primaryArmorScene) return;');
         expect(viewer).toMatch(/refreshEquipmentEffects\(\) \{[\s\S]*?if \(!QP\.get\('shot'\) && \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\)\) \{[\s\S]*?if \(penetrationMode \|\| hm\.getPrimaryArmorScene\(\)\) \{/);
-        expect(viewer).toMatch(/jc\.clearLastClickNdc\(\);\s*\n\s*onJudgmentDistance\?\.\(null\);\s*\n\s*\}[\s\S]*?hm\.syncHeatOverlay\(\);/);
+        expect(viewer).toMatch(/if \(!QP\.get\('shot'\) && \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\)\) \{\s*invalidateJudgment\(\);\s*\}/);
+        expect(viewer).toMatch(/\} else if \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\) \{\s*invalidateJudgment\(\);\s*\}/);
     });
     it('退出厚度视图时先恢复网格可见性再重建叠加层（Codex 复核 P2）', () => {
         expect(viewer).toMatch(/cvs\.applyArmorViewStyle\(collisionMode\);[\s\S]{0,800}?hm\.syncHeatOverlay\(\);/);
@@ -97,7 +98,7 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     });
     it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {
         expect(viewer).toContain('jc.getLastClickNdc');
-        expect(viewer).toContain('jc.clearLastClickNdc();');
+        expect(viewer).toContain('invalidateJudgment();');
         expect(viewer).toContain('clipPlane: hm.getGunClipPlane()');
         expect(viewer).toContain('explosion_radius: isHE ? heRadius : 0');
         expect(viewer).toContain("document.getElementById('canvas-container')");

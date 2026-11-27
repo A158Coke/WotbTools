@@ -398,8 +398,19 @@ try {
     const after = await readShot()
     assert.notEqual(after.centerDamage, shot.centerDamage, 'center estimate follows the camera')
     assert.equal(after.distance, shot.distance, 'camera movement does not rewrite the fixed shot distance')
-    assert.equal(after.multiplier, shot.multiplier, 'camera movement does not rewrite the fixed shot multiplier')
+assert.equal(after.multiplier, shot.multiplier, 'camera movement does not rewrite the fixed shot multiplier')
     assert.equal(after.card, shot.card, 'camera movement does not rewrite the judgment card')
+    await page.evaluate(`document.querySelector('[data-testid="armor-camera-front"]').click()`)
+    await page.waitForValue('document.querySelector("[data-testid=hud-shot]")', value => value === null,
+      { timeout: 10000, label: 'pose preset clears the stale shot HUD' })
+    assert.equal(await page.evaluate('document.querySelector("#traj-info").getClientRects().length'), 0, 'pose preset clears the result card with the shot HUD')
+    await page.waitFor(() => window.__armorRicochet.aimingState().cameraSettledMs > 400, { timeout: 20000, label: 'pose preset camera settled' })
+    const second = await page.evaluate(buildFindSpotsExpr({ need: ['hull'], primarySections: [ArmorSection.HULL, ArmorSection.TURRET, ArmorSection.GUN] }))
+    assert.ok(second.hull, 'TrayShell scene still has a hittable hull after the pose preset')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: second.hull.x, y: second.hull.y, button: 'left', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: second.hull.x, y: second.hull.y, button: 'left', clickCount: 1 })
+    await page.waitForValue('document.querySelector("[data-testid=hud-shot]")', value => value != null,
+      { timeout: 30000, label: 'second shot restores the shot HUD' })
     await page.evaluate(`(() => {
       const select = document.querySelector('#shell-select');
       select.value = '1';
@@ -411,7 +422,7 @@ try {
     assert.equal(await page.evaluate('!!document.querySelector("[data-testid=hud-multiplier]")'), false, 'shell change drops the obsolete assault-shell multiplier')
     response = ammo
     targetResponse = plainAmmo
-    console.log('[shot-readiness] PASS: TrayShell launch-to-hit path stays fixed while the center estimate moves; shell change clears the stale shot HUD')
+    console.log('[shot-readiness] PASS: TrayShell launch-to-hit path stays fixed while the center estimate moves; pose preset and shell change clear the stale shot HUD')
   }
   response = ammo
   targetResponse = plainAmmo
