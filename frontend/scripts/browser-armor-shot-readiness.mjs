@@ -333,6 +333,76 @@ try {
     { timeout: 5000, label: 'range Home moves camera to 3m' })
   assert.equal(await page.evaluate('location.search'), distanceQuery, 'distance gestures never rewrite URL')
   console.log('[shot-readiness] PASS: range keyboard 3–500m, wheel synchronization, real far penetration, stable URL')
+  {
+    const trayAmmo = structuredClone(FIXTURE_TANK_DATA)
+    trayAmmo.tank_id = shooterId
+    trayAmmo.mechanics = [{
+      name: 'TrayShell',
+      kinds: ['ARMOR_PIERCING_CR'],
+      sectors: [
+        { distance: 50, factor: 1.4 },
+        { distance: 120, factor: 1.2 },
+        { distance: 200, factor: 1.0 },
+        { distance: 720, factor: 0.8 },
+      ],
+    }]
+    const trayShell = { ...trayAmmo.configs[0].shells[0], type: 'apcr', type_id: 1, name: 'APCR', penetration: 300, damage: 320 }
+    trayAmmo.configs[0] = { ...trayAmmo.configs[0], shells: [trayShell], shell_global_ids: [1] }
+    trayAmmo.shells = [trayShell]
+    response = trayAmmo
+    targetResponse = null
+    await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${shooterId}&heatmap=1&shell=0&scfg=0&assets=${encodeURIComponent(assets.origin)}`)
+    await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0,
+      { timeout: 30000, label: 'TrayShell static viewer ready' })
+    await page.evaluate(`(() => {
+      const input = document.querySelector('[data-testid="hud-distance"]');
+      input.value = '51';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
+    await page.waitForValue('window.__armorRicochet.aimingState().cameraDistance', value => Math.abs(value - 51) < 0.01,
+      { timeout: 5000, label: 'center estimate at 51m' })
+    await page.waitForValue('document.querySelector("[data-testid=hud-damage]").textContent.trim()', value => value === '384 HP',
+      { timeout: 10000, label: 'center estimate damage at 51m' })
+    assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-multiplier]").textContent.trim()'), '×120%', 'center estimate uses the 51m band')
+    assert.equal(await page.evaluate(`document.querySelector('label[for="armor-distance"]').textContent.trim()`), labels.distance_short)
+    await page.waitFor(() => window.__armorRicochet.aimingState().cameraSettledMs > 400, { timeout: 20000, label: 'TrayShell camera settled' })
+    const { hull } = await page.evaluate(buildFindSpotsExpr({ need: ['hull'], primarySections: [ArmorSection.HULL, ArmorSection.TURRET, ArmorSection.GUN] }))
+    assert.ok(hull, 'TrayShell scene has a hittable hull')
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: hull.x, y: hull.y, button: 'left', clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: hull.x, y: hull.y, button: 'left', clickCount: 1 })
+    const hitLine = new RegExp(`${labels.hit_distance}:\\s*([\\d.]+) ${labels.distance_unit} · ×140%`)
+    await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => hitLine.test(text || ''),
+      { timeout: 30000, label: 'static hit card lists the actual path distance and multiplier' })
+    const readShot = () => page.evaluate(`(() => ({
+      card: document.querySelector('#traj-info')?.textContent || '',
+      distance: document.querySelector('[data-testid="hud-shot-distance"]')?.textContent || '',
+      multiplier: document.querySelector('[data-testid="hud-shot-multiplier"]')?.textContent || '',
+      centerDamage: document.querySelector('[data-testid="hud-damage"]')?.textContent || '',
+      centerMultiplier: document.querySelector('[data-testid="hud-multiplier"]')?.textContent || '',
+    }))()`)
+    const shot = await readShot()
+    const hitMatch = shot.card.match(new RegExp(`${labels.hit_distance}:\\s*([\\d.]+)`))
+    assert.ok(Number(hitMatch?.[1]) > 0 && Number(hitMatch?.[1]) < 50, `actual hit is inside the 50m band (got ${hitMatch?.[1]})`)
+    assert.equal(parseFloat(shot.distance), Number(hitMatch?.[1]), 'HUD shot readout shows the same path distance as the judgment card')
+    assert.ok(/\b448\b/.test(shot.card), 'judgment damage uses the hit-distance multiplier (320 × 140% = 448)')
+    assert.equal(shot.multiplier, '×140%', 'HUD shot readout matches the judgment multiplier')
+    assert.equal(shot.centerDamage, '384 HP', 'HUD center estimate stays at 51m')
+    assert.equal(shot.centerMultiplier, '×120%', 'HUD center multiplier stays at 51m')
+    const canvasPoint = await page.evaluate(`(() => { const r = document.querySelector('#canvas-container canvas').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`)
+    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...canvasPoint, deltaX: 0, deltaY: -300 })
+    await page.waitForValue('window.__armorRicochet.aimingState().cameraDistance', value => value < 50.5,
+      { timeout: 5000, label: 'camera moves after the shot' })
+    await page.waitForValue('window.__armorRicochet.aimingState().cameraSettledMs', value => value > 600,
+      { timeout: 10000, label: 'camera settles after the shot' })
+    const after = await readShot()
+    assert.notEqual(after.centerDamage, shot.centerDamage, 'center estimate follows the camera')
+    assert.equal(after.distance, shot.distance, 'camera movement does not rewrite the fixed shot distance')
+    assert.equal(after.multiplier, shot.multiplier, 'camera movement does not rewrite the fixed shot multiplier')
+    assert.equal(after.card, shot.card, 'camera movement does not rewrite the judgment card')
+    response = ammo
+    targetResponse = plainAmmo
+    console.log('[shot-readiness] PASS: TrayShell launch-to-hit path stays fixed while the center estimate moves')
+  }
   response = ammo
   targetResponse = plainAmmo
 

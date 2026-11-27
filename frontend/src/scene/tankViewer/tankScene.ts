@@ -273,6 +273,7 @@ S.SESS = Math.random().toString(36).slice(2);
             shellPenMul: S.eqs.shellPenMul,
             L: S.L,
             showShotError: S.du.showShotError,
+            onJudgmentDistance: (...a) => S.onJudgmentDistance?.(...a),
         });
         createDiagnosticProbe({
             hm: S.hm,

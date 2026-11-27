@@ -10,6 +10,7 @@ import { damageFactorAt, trayShellDamage, trayShellFor } from '../scene/tankMech
 
 const props = defineProps({
   distanceState: { type: Object, default: null },
+  shotState: { type: Object, default: null },
   shooterId: { type: Number, default: null },
   scfg: { type: [Number, String], default: null },
   config: { type: [Number, String], default: null },
@@ -111,6 +112,16 @@ const shellOptions = computed(() => shells.value.map(shell => {
   }
 }))
 const selected = computed(() => shellOptions.value[shellIndex.value])
+const shotDistance = computed(() => {
+  const exact = props.shotState?.exactDistance
+  if (typeof exact !== 'number' || !Number.isFinite(exact)) return props.shotState?.distance ?? null
+  const rounded = Math.round(exact)
+  return Math.abs(rounded - exact) < 0.05 ? rounded : (Math.round(exact * 10) / 10).toFixed(1)
+})
+const shotMultiplier = computed(() => {
+  const value = props.shotState?.factor
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100) : null
+})
 </script>
 
 <template>
@@ -188,10 +199,17 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
       <span class="hud-shell-name">{{ selected?.name }}</span>
       <span class="hud-reading hud-penetration" data-testid="hud-penetration">{{ selected?.penetration ?? '—' }}<span class="hud-unit"> mm</span></span>
       <span class="hud-damage-label">
-        {{ t('armor.shot_damage') }}
+        {{ t('armor.estimated_damage') }}
         <span v-if="selected?.multiplier != null" class="hud-multiplier" data-testid="hud-multiplier">×{{ Math.round(selected.multiplier * 100) }}%</span>
       </span>
       <span class="hud-reading hud-damage" data-testid="hud-damage">{{ selected?.damage == null ? '—' : Math.round(selected.damage) }}<span class="hud-unit"> HP</span></span>
+    </div>
+    <div v-if="shotState && !distanceState?.readOnly" class="hud-shot" data-testid="hud-shot">
+      <span class="hud-shot-label">{{ t('armor.shot_path') }}</span>
+      <span class="hud-shot-values">
+        <span class="hud-reading" data-testid="hud-shot-distance">{{ shotDistance ?? '—' }}<span class="hud-unit"> {{ t('armor.distance_unit') }}</span></span>
+        <span v-if="shotMultiplier != null" class="hud-multiplier" data-testid="hud-shot-multiplier">×{{ shotMultiplier }}%</span>
+      </span>
     </div>
   </div>
 </template>
@@ -222,6 +240,9 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .hud-damage-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .hud-damage { color: var(--color-text-primary); }
 .hud-multiplier { margin-inline-start: var(--space-1); color: var(--color-warning); font-variant-numeric: tabular-nums; }
+.hud-shot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: var(--type-caption); }
+.hud-shot-label { color: var(--color-text-secondary); white-space: nowrap; }
+.hud-shot-values { display: inline-flex; align-items: baseline; gap: var(--space-1); min-inline-size: 0; white-space: nowrap; }
 
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .shot-hud {
@@ -267,5 +288,6 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
     .hud-penetration { grid-column: 4; grid-row: 3; }
     .hud-damage-label { grid-column: 1; grid-row: 4; font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs); }
     .hud-damage { grid-column: 3 / -1; grid-row: 4; }
+    .hud-shot { grid-column: 1 / -1; grid-row: 5; }
 }
 </style>
