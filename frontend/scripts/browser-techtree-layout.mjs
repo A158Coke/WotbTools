@@ -74,8 +74,8 @@ async function assertCatalogIcons(page) {
       naturalAspect: image.naturalWidth / image.naturalHeight,
     }
   }))
-  assert.ok(icons.some(icon => icon.source.includes('flag_filter_china')), 'CN filter asset is present')
-  assert.ok(icons.some(icon => icon.source.includes('flag_text_ussr') || icon.source.includes('flag_filter_ussr')), 'client USSR icon is present')
+  assert.ok(icons.some(icon => icon.source.includes('flag_tank-tree_china')), 'CN filter asset is present')
+  assert.ok(icons.some(icon => icon.source.includes('flag_tank-tree_ussr')), 'client USSR icon is present')
   for (const icon of icons.filter(icon => icon.width > 0 && icon.height > 0)) {
     assert.ok(Math.abs(icon.width / icon.height - icon.expectedCropAspect) < 0.03, `visible icon crop distorted: ${icon.source}`)
     assert.ok(Math.abs(icon.imageAspect - icon.naturalAspect) < 0.03, `source image distorted: ${icon.source}`)
@@ -231,7 +231,10 @@ function layoutProbe() {
   const header = q('.techtree .showcase-hero.is-compact')
   const legacyHeader = q('.techtree .page-header')
   const tabs = q('.tt-tabs')
-  const icon = q('.tt-tier-cell[data-testid="techtree-cell-Fixture_10_1"] .tt-card-icon')
+  // 竖屏卡片与网格节点共用 .tt-cell + data-testid（前者多一个 .tt-tier-cell），
+  // 单一选择器同时覆盖两种形态；两种形态都必须看到封面布旗层。
+  const icon = q('.tt-cell[data-testid="techtree-cell-Fixture_10_1"] .tt-card-icon')
+  const coverImg = icon?.querySelector('.tank-cover-flag img')
   return {
     viewport: { width: innerWidth, height: innerHeight },
     document: {
@@ -249,7 +252,9 @@ function layoutProbe() {
     cells: document.querySelectorAll('.tt-cell').length,
     tierRows: document.querySelectorAll('.tt-tier-row').length,
     iconFrame: rect(icon),
-    iconImage: rect(icon?.querySelector('img')),
+    // 坦克图是 .tt-card-icon 的直接子元素；:scope 避免命中 TankCoverNation 的布旗 img。
+    iconImage: rect(icon?.querySelector(':scope > img')),
+    iconCoverLoaded: !!coverImg && coverImg.complete && coverImg.naturalWidth > 0,
     typeFilter: rect(q('[data-testid="techtree-type-filter"]')),
     smallestCell: [...document.querySelectorAll('.tt-tier-cell')].reduce((min, el) => { const r = el.getBoundingClientRect(); return Math.min(min, r.height, r.width) }, Infinity),
   }
@@ -351,8 +356,14 @@ try {
         { timeout: 30_000, label: `${scenario.name}: tech tree rendered` },
       )
       await page.animationsSettled()
+      // 封面布旗（TankCoverNation）是 .tt-card-icon 里第一个 img；坦克图取直接子 img，
+      // fixture 坦克贴图 256×128、布旗画布 1024×512，两者都要等到加载完成再探针。
+      await page.waitFor(() => {
+        const img = document.querySelector('[data-testid="techtree-cell-Fixture_10_1"] .tank-cover-flag img')
+        return !!img && img.complete && img.naturalWidth > 0
+      }, { label: `${scenario.name}: cover flag loaded` })
       if (scenario.portrait) {
-        await page.waitFor(() => document.querySelector('[data-testid="techtree-cell-Fixture_10_1"] img')?.naturalWidth === 256,
+        await page.waitFor(() => document.querySelector('[data-testid="techtree-cell-Fixture_10_1"] .tt-card-icon > img')?.naturalWidth === 256,
           { label: `${scenario.name}: fixture cover loaded` })
       }
       const layout = await page.probe(layoutProbe)
@@ -382,7 +393,7 @@ try {
         console.log(`[browser-techtree-layout] negative control PASS（ruler.bottom=${broken.ruler.bottom} > viewport=${broken.viewport.height}）`)
       }
     } catch (error) {
-      failures.push(`${scenario.name}: ${error.message}`)
+      failures.push(`${scenario.name}: ${error.message}; ${(await page.diagnose()).join('; ')}`)
     } finally {
       try { await cdp.client.send('Target.closeTarget', { targetId }) } catch { /* page already gone */ }
     }
