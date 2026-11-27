@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, CircleHelp, Play, Settings2 } from 'lucide-vue-next'
+import { CircleHelp, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY, REPLACE_DECLINED } from '../shared/onboarding.js'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
@@ -35,6 +35,7 @@ import { notify } from '../composables/useNotifications.js'
 import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
+import Replay3DSettingsEntry from './Replay3DSettingsEntry.vue'
 import Banner from './Banner.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import BattlePicker from './BattlePicker.vue'
@@ -335,21 +336,8 @@ watch(() => props.initialCapability, (val) => {
           @update:mode="setViewerMode"
         >
           <template #viewer-actions>
-            <AppButton
-              v-if="show3dSettingsEntry"
-              variant="ghost"
-              size="sm"
-              data-testid="replay3d-settings-entry"
-              data-test="pb-settings-entry"
-              data-tour="playback-settings"
-              aria-haspopup="dialog"
-              :aria-expanded="settingsOpen"
-              @click="toggle3dSettings"
-            >
-              <Settings2 :size="16" aria-hidden="true" />
-              <span>{{ $t('agentReplay.settings_title') }}</span>
-              <ChevronDown :size="14" :class="['viewer-settings-chevron', { 'is-open': settingsOpen }]" aria-hidden="true" />
-            </AppButton>
+            <Replay3DSettingsEntry v-if="show3dSettingsEntry" :open="settingsOpen" @toggle="toggle3dSettings"
+              data-testid="replay3d-settings-entry" data-test="pb-settings-entry" data-tour="playback-settings" />
           </template>
           <template #viewer-2d="{ showEventMarkers }">
             <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
@@ -499,8 +487,6 @@ watch(() => props.initialCapability, (val) => {
 .workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .capability-pane { margin-top: var(--space-1); scroll-margin-top: calc(var(--header-h, 0px) + env(safe-area-inset-top)); }
 .workspace-file-controls:has(.dropzone, .banner) { margin-bottom: var(--space-4); }
-.viewer-settings-chevron { transition: transform var(--duration-fast) var(--ease-standard); }
-.viewer-settings-chevron.is-open { transform: rotate(180deg); }
 .workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
 .single-battle-picker { flex: 1; min-width: 0; }
 @media (width < 768px) {

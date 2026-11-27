@@ -58,6 +58,29 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     wrapper.unmount()
   })
 
+  it('原生全屏时工具条保留设置入口，复用同一面板且关闭后不用退出全屏', async () => {
+    const { wrapper } = await startedPane()
+    const root = wrapper.get('[data-testid="replay3d-root"]').element
+    Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+    const entry = wrapper.get('[data-testid="replay3d-settings-entry-fullscreen"]')
+    expect(entry.attributes('aria-expanded')).toBe('false')
+    await entry.trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
+    expect(entry.attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-testid="replay3d-settings-cancel"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-settings-entry-fullscreen"]').exists()).toBe(true)
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-settings-entry-fullscreen"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('挂载前已存在的设置请求在挂载后立即打开，关闭请求也生效', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ settingsRequest: { id: 1, open: true, anchor: null } })

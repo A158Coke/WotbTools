@@ -12,6 +12,7 @@ import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import RecorderReticle from './RecorderReticle.vue'
 import ReplayCameraTools from './ReplayCameraTools.vue'
+import Replay3DSettingsEntry from './Replay3DSettingsEntry.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -222,6 +223,8 @@ watch(() => props.settingsRequest, (request) => {
             >
               <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
             </button>
+            <Replay3DSettingsEntry v-if="isFullscreen" compact :open="settingsOpen" @toggle="toggleSettings($event.currentTarget)"
+              data-testid="replay3d-settings-entry-fullscreen" data-test="pb-settings-entry-fullscreen" />
           </ReplayCameraTools>
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
