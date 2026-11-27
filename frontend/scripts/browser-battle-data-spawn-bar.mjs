@@ -3,32 +3,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { createBattleDataFixture } from './browser-fixtures/battle-data.mjs'
+import { verifyBattleFilters } from './browser-battle-data-filters.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 import { dirname } from 'node:path'
 const SCREENSHOT_DIR = resolve(HERE, '../../tmp/battle-data-spawn-bar')
-
-const stat = (mapKey, arenaBonusType, side, wins, draws, losses) => ({ mapKey, arenaBonusType, side, battles: wins + draws + losses, wins, draws, losses })
-const summary = {
-  asOf: '2026-11-10T00:00:00Z', totalBattles: 128, last24Hours: 128, last7Days: 128, last30Days: 128, windowBattles: 128,
-  latestReceivedAt: '2026-11-10T00:00:00Z', distinctMaps: 1, distinctClientVersions: 1,
-  modes: [{ key: 0, count: 128 }], winnerTeams: [{ key: 1, count: 70 }], schemaVersions: [{ key: 1, count: 128 }], daily: [],
-  maps: [{ key: 'erlenberg', count: 128, latestReceivedAt: '2026-11-10T00:00:00Z' }], clientVersions: [],
-  spawnStats: [stat('erlenberg', null, 'NORTH', 70, 5, 53), stat('erlenberg', null, 'SOUTH', 53, 5, 70)],
-}
-const battle = { id: '1', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 1, mapKey: 'erlenberg', clientVersion: '11.18', winnerTeam: 1, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-11-10T00:00:00Z' }
-const vehicles = Array.from({ length: 14 }, (_, i) => ({ team: i < 7 ? 1 : 2, spawn: i < 7 ? 'NORTH' : 'SOUTH', slot: i % 7, vehicleId: 10 + i }))
-
-function adminMiddleware(request, response, next) {
-  const path = request.url?.split('?')[0]
-  if (request.method !== 'GET' || !path.startsWith('/api/admin/battle-data/')) { next(); return }
-  response.setHeader('Content-Type', 'application/json')
-  if (path === '/api/admin/battle-data/summary') response.end(JSON.stringify(summary))
-  else if (path === '/api/admin/battle-data/battles') response.end(JSON.stringify({ items: [battle], nextCursor: null }))
-  else response.end(JSON.stringify({ battle, vehicles }))
-}
 
 function spawnBarProbe() {
   const style = (selector, properties) => {
@@ -130,7 +112,8 @@ async function runRussianWinter(env) {
 
 
 const chromeBinary = findChrome()
-const { server, origin } = await startFixtureServer({ middleware: adminMiddleware })
+const fixture = createBattleDataFixture()
+const { server, origin } = await startFixtureServer({ middleware: fixture.middleware })
 let chromeCdp = null
 const results = []
 try {
@@ -138,6 +121,13 @@ try {
     extraArgs: ['--window-size=1440,900', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
   })
   const env = { origin, chrome: chromeCdp }
+  for (const [theme, width] of [['summer', 1280], ['winter', 390], ['winter', 1280], ['summer', 390], ['spring', 900], ['autumn', 360]]) {
+    const name = 'filters-' + theme + '-' + width
+    try {
+      await verifyBattleFilters(env, fixture, theme, width, SCREENSHOT_DIR)
+      results.push({ name, failures: [] })
+    } catch (error) { results.push({ name, failures: [error.message] }) }
+  }
   for (const theme of ['spring', 'summer', 'autumn', 'winter']) {
     try {
       results.push({ name: theme, failures: await runTheme(env, theme) })
