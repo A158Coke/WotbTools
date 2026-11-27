@@ -241,6 +241,32 @@ describe('versionDiffFormat rows', () => {
     expect(rows.some(row => row.plate === '6' && row.kind === 'configPlate')).toBe(false)
   })
 
+  it('keeps configuration rows whose values differ from the model row', () => {
+    // model 级行只代表装甲模型自身那一次变化；同板号但数值不同的配置行必须保留并带配置身份。
+    const rows = armorRows(
+      {
+        summary: {},
+        model: {
+          plates: [{ module: 'gun', plate: '5', old: 50, new: 60 }],
+          addedPlates: [], removedPlates: [], primary: [], spaced: [], chassis: [], changed: true,
+        },
+      },
+      { configs: { configs: [
+        {
+          key: { gun: 'Gun X', turretLocal: 1, gunLocal: 9 },
+          changes: [{ path: 'gun_plates', category: 'armor', old: { '5': 50 }, new: { '5': 60 } }],
+        },
+        {
+          key: { gun: 'Gun X', turretLocal: 2, gunLocal: 9 },
+          changes: [{ path: 'gun_plates', category: 'armor', old: { '5': 70 }, new: { '5': 80 } }],
+        },
+      ] } },
+    )
+    expect(rows.filter(row => row.kind === 'configPlate')).toEqual([
+      { kind: 'configPlate', module: 'gun', plate: '5', configKey: '2/9', configLabel: '#2 / Gun X', old: 70, new: 80 },
+    ])
+  })
+
   it('filters tanks by status, category and model-only rows', () => {
     expect(tankMatchesFilter({ status: 'added', categories: ['added'] }, 'all')).toBe(true)
     expect(tankMatchesFilter({ status: 'changed', categories: ['armor'] }, 'armor')).toBe(true)

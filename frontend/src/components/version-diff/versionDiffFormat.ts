@@ -395,10 +395,22 @@ export function armorRows(armor: unknown, detail: unknown = null): ArmorRow[] {
   }
   for (const item of model.chassis || []) rows.push({ kind: 'chassis', ...item })
   // 配置级装甲（gun_plates/turret_plates/*_spaced）：多炮车的炮塔/火炮板件变化只在配置 diff
-  // 里出现。同一块板若已由 model 级行覆盖（车体/单配置车），跳过配置级行——避免文字版重复。
-  const covered = new Set(rows
-    .filter(row => row.kind != null && ['plate', 'addedPlate', 'removedPlate'].includes(row.kind))
-    .map(row => `${row.module}:${row.plate}`))
+  // 里出现。model 级行只代表装甲模型自身的那一次变化：仅当配置级行与它「同一块板且新旧值完全相同」
+  // 时才去重；同板号但数值不同的配置行必须保留（带配置身份），否则会被一条无配置的 model 行吞掉。
+  const armorSignature = (oldValue: unknown, newValue: unknown): string => {
+    const value = (input: unknown): string => (input === null || input === undefined ? '' : String(input))
+    return `${value(oldValue)}|${value(newValue)}`
+  }
+  const covered = new Set<string>()
+  for (const row of rows) {
+    if (row.kind === 'plate') {
+      covered.add(`${row.module}:${row.plate}:${armorSignature(row.old, row.new)}`)
+    } else if (row.kind === 'addedPlate') {
+      covered.add(`${row.module}:${row.plate}:${armorSignature(null, row.thickness)}`)
+    } else if (row.kind === 'removedPlate') {
+      covered.add(`${row.module}:${row.plate}:${armorSignature(row.thickness, null)}`)
+    }
+  }
   const detailSource = (detail ?? {}) as { configs?: { configs?: Array<{ key?: DiffConfigKey; changes?: DiffChange[] }> } }
   for (const config of detailSource.configs?.configs || []) {
     for (const change of config.changes || []) {
@@ -420,13 +432,15 @@ export function armorRows(armor: unknown, detail: unknown = null): ArmorRow[] {
         const oldPlates = (change.old && typeof change.old === 'object') ? change.old as Record<string, unknown> : {}
         const newPlates = (change.new && typeof change.new === 'object') ? change.new as Record<string, unknown> : {}
         for (const plate of new Set([...Object.keys(oldPlates), ...Object.keys(newPlates)])) {
-          if (oldPlates[plate] === newPlates[plate]) continue
-          if (covered.has(`${module}:${plate}`)) continue
+          const oldValue = oldPlates[plate] ?? null
+          const newValue = newPlates[plate] ?? null
+          if (oldValue === newValue) continue
+          if (covered.has(`${module}:${plate}:${armorSignature(oldValue, newValue)}`)) continue
           rows.push({
             kind: 'configPlate', module, plate,
             configKey: configIdentity.key,
             ...(configIdentity.label ? { configLabel: configIdentity.label } : {}),
-            old: oldPlates[plate] ?? null, new: newPlates[plate] ?? null,
+            old: oldValue, new: newValue,
           })
         }
       } else {

@@ -149,7 +149,7 @@ function openVersion(dataset: string) {
           </button>
         </nav>
 
-        <div v-if="configOptions.length > 1 && ['firepower', 'mobility', 'armor'].includes(tab)" class="vd-config-row">
+        <div v-if="configOptions.length > 1 && ['firepower', 'mobility'].includes(tab)" class="vd-config-row">
           <label class="vd-config-label" for="vd-config">{{ t('versionDiff.tank.config') }}</label>
           <select id="vd-config" v-model.number="configIndex" class="vd-select">
             <option v-for="option in configOptions" :key="option.index" :value="option.index">{{ option.label }}</option>

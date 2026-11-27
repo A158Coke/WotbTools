@@ -347,6 +347,38 @@ describe('AgentVersionDiff', () => {
     expect(wrapper.find('.vd-tank .vd-inline-actions').exists()).toBe(false)
   })
 
+  it('does not show the inert configuration picker on the armor tab', async () => {
+    // 装甲 tab 的内容只来自 model 级装甲摘要：配置下拉在这是无作用控件，不应渲染。
+    const detail = {
+      ...TANK_DETAIL,
+      configs: {
+        ...TANK_DETAIL.configs,
+        configs: [
+          {
+            key: { gun: 'Gun A', turretLocal: 1, gunLocal: 9 },
+            changes: [{ path: 'reload_time', category: 'firepower', old: 5, new: 6 }],
+          },
+          {
+            key: { gun: 'Gun B', turretLocal: 2, gunLocal: 10 },
+            changes: [{ path: 'reload_time', category: 'firepower', old: 7, new: 8 }],
+          },
+        ],
+      },
+    }
+    mocks.fetchTankDiff.mockImplementationOnce(async () => detail)
+    const { wrapper } = await openAt()
+    await wrapper.get('.vd-vehicle .vd-identity-action').trigger('click')
+    await flushPromises()
+    const firepower = wrapper.findAll('.vd-tank .vd-tab')
+      .find(item => item.text() === 'versionDiff.tabs.firepower')
+    await firepower.trigger('click')
+    expect(wrapper.find('.vd-tank #vd-config').exists()).toBe(true)
+    const armorTab = wrapper.findAll('.vd-tank .vd-tab')
+      .find(item => item.text() === 'versionDiff.tabs.armor')
+    await armorTab.trigger('click')
+    expect(wrapper.find('.vd-tank #vd-config').exists()).toBe(false)
+  })
+
   it('opens the map dialog and fetches the map detail', async () => {
     const { wrapper } = await openAt()
     const row = wrapper.findAll('.vd-map-row').find(item => item.text().includes('Rockfield'))
