@@ -14,6 +14,7 @@ const { t } = useI18n()
 
 <template>
   <AppButton
+    class="viewer-settings-entry"
     variant="ghost"
     size="sm"
     aria-haspopup="dialog"

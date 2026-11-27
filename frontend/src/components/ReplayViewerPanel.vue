@@ -124,7 +124,8 @@ watch([() => props.mode, narrow], () => nextTick(measureReserve), { flush: 'post
 }
 .viewer-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
 .viewer-actions { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
-.viewer-events-toggle { min-inline-size: 0; }
+.viewer-events-toggle { min-inline-size: 0; flex: none; }
+.viewer-actions :deep(.viewer-settings-entry) { max-inline-size: 100%; white-space: normal; }
 .viewer-events-toggle :deep(.app-switch) { inline-size: auto; gap: var(--space-2); }
 .viewer-mode { min-inline-size: 0; }
 .viewer-events {
