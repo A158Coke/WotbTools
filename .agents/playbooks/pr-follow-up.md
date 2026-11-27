@@ -6,6 +6,7 @@
 
 - 仅在用户授权的当前会话内跟进指定 PR，不跨会话持久化状态；不新增状态文件或第二个 SSOT。
 - 启动及上下文恢复时重读 GitHub 的当前 PR、Review、inline review comment、conversation comment 和 CI 状态，并核对意见对应的实际修复状态；用会话内最后已处理的 Review / Comment ID 去重，先补扫所有已到达但未处理意见，处理后推进游标。上下文丢失时重新补扫并核实修复，不以监视器启动时间过滤。
+- 不要只处理一轮，也不要只处理用户点名的一条：每轮 push 后与 CI 终态后，必须重新补扫 conversation comment、inline review comment 与未 resolve 的 review thread（GraphQL），包括 bot（Codex）findings；以最后处理的 comment/thread ID 为游标，任何晚于游标的意见都按新 finding 修复、补回归、push、回复，然后重新补扫。一次完整补扫不再有未处理意见才算本轮收尾；CI 全绿或已回复一条 comment 都不算完成。
 
 ## 启动与 push 自检
 

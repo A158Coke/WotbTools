@@ -86,6 +86,7 @@ const exactDistance = computed(() => {
   return typeof exact === 'number' && Number.isFinite(exact) ? exact : distance.value
 })
 const distanceHint = computed(() => t(props.distanceState?.readOnly ? 'armor.recorded_distance' : 'armor.distance_center'))
+const distanceLabel = computed(() => t(props.distanceState?.readOnly ? 'armor.distance_recorded_short' : 'armor.distance_short'))
 function changeDistance(event) {
   if (!props.distanceState || props.distanceState.readOnly) return
   const value = Number(event.target.value)
@@ -187,7 +188,7 @@ const shotMultiplier = computed(() => {
       </div>
     </div>
     <div class="hud-distance" :title="distanceHint">
-      <label for="armor-distance">{{ t('armor.distance_short') }}</label>
+      <label for="armor-distance">{{ distanceLabel }}</label>
       <input id="armor-distance" data-testid="hud-distance" type="range"
         :min="distanceState?.min ?? 3" :max="distanceState?.max ?? 500" step="1"
         :value="distance ?? 3" :disabled="!distanceState || distanceState.readOnly"

@@ -29,6 +29,7 @@ function refreshEquipmentEffects(S: Host) {
                 S.tc.tidyTrajectory();
                 disposeHitMarker(S.fxScene);
                 S.jc.clearLastClickNdc();
+                S.onJudgmentDistance?.(null);
             }
             if (S.penetrationMode || S.hm.getPrimaryArmorScene()) {
                 const sh = S.selectedShell || (S.dl.getShooterShells()[0]) || null;
@@ -60,6 +61,7 @@ function setupEventHandlers(S: Host) {
                         S.tc.tidyTrajectory();
                         disposeHitMarker(S.fxScene);
                         S.jc.clearLastClickNdc();
+                        S.onJudgmentDistance?.(null);
                     }
                     S.hm.syncHeatOverlay();
                     S.onShellSelection?.(idx);

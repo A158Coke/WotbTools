@@ -347,8 +347,9 @@ try {
       ],
     }]
     const trayShell = { ...trayAmmo.configs[0].shells[0], type: 'apcr', type_id: 1, name: 'APCR', penetration: 300, damage: 320 }
-    trayAmmo.configs[0] = { ...trayAmmo.configs[0], shells: [trayShell], shell_global_ids: [1] }
-    trayAmmo.shells = [trayShell]
+    const trayHe = { ...trayShell, type: 'he', type_id: 3, name: 'HE', penetration: 60, damage: 520 }
+    trayAmmo.configs[0] = { ...trayAmmo.configs[0], shells: [trayShell, trayHe], shell_global_ids: [1, 2] }
+    trayAmmo.shells = [trayShell, trayHe]
     response = trayAmmo
     targetResponse = null
     await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${shooterId}&heatmap=1&shell=0&scfg=0&assets=${encodeURIComponent(assets.origin)}`)
@@ -399,9 +400,18 @@ try {
     assert.equal(after.distance, shot.distance, 'camera movement does not rewrite the fixed shot distance')
     assert.equal(after.multiplier, shot.multiplier, 'camera movement does not rewrite the fixed shot multiplier')
     assert.equal(after.card, shot.card, 'camera movement does not rewrite the judgment card')
+    await page.evaluate(`(() => {
+      const select = document.querySelector('#shell-select');
+      select.value = '1';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`)
+    await page.waitForValue('document.querySelector("[data-testid=hud-shot]")', value => value === null,
+      { timeout: 10000, label: 'stale shot HUD clears on shell change' })
+    assert.equal(await page.evaluate('document.querySelector("#traj-info").getClientRects().length'), 0, 'shell change clears the result card with the shot HUD')
+    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=hud-multiplier]")'), false, 'shell change drops the obsolete assault-shell multiplier')
     response = ammo
     targetResponse = plainAmmo
-    console.log('[shot-readiness] PASS: TrayShell launch-to-hit path stays fixed while the center estimate moves')
+    console.log('[shot-readiness] PASS: TrayShell launch-to-hit path stays fixed while the center estimate moves; shell change clears the stale shot HUD')
   }
   response = ammo
   targetResponse = plainAmmo
@@ -416,6 +426,7 @@ try {
   await assertShellTable(1, [200, 300])
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-distance]").disabled'), true, 'recorded distance is read-only')
+  assert.equal(await page.evaluate(`document.querySelector('label[for="armor-distance"]').textContent.trim()`), labels.distance_recorded_short, 'recorded distance label names the recorded ballistic path')
   console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')
   {
     const missShot = {

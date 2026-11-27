@@ -222,6 +222,7 @@ S.SESS = Math.random().toString(36).slice(2);
             setUrlApplied: (v) => { S.urlApplied = v; },
             getTurretDeg: () => S.currentTurretDeg,
             getGunDeg: () => S.currentGunDeg,
+            clearShotState: () => S.onJudgmentDistance?.(null),
         });
         S.du = createDebugUi({
             L: S.L,

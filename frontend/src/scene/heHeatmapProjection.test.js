@@ -62,7 +62,7 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(viewer).not.toContain('(penetrationMode || primaryArmorScene) && lastClickNdc');
         expect(viewer).not.toContain('if (!penetrationMode && !primaryArmorScene) return;');
         expect(viewer).toMatch(/refreshEquipmentEffects\(\) \{[\s\S]*?if \(!QP\.get\('shot'\) && \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\)\) \{[\s\S]*?if \(penetrationMode \|\| hm\.getPrimaryArmorScene\(\)\) \{/);
-        expect(viewer).toMatch(/jc\.clearLastClickNdc\(\);\s*\n\s*\}[\s\S]*?hm\.syncHeatOverlay\(\);/);
+        expect(viewer).toMatch(/jc\.clearLastClickNdc\(\);\s*\n\s*onJudgmentDistance\?\.\(null\);\s*\n\s*\}[\s\S]*?hm\.syncHeatOverlay\(\);/);
     });
     it('退出厚度视图时先恢复网格可见性再重建叠加层（Codex 复核 P2）', () => {
         expect(viewer).toMatch(/cvs\.applyArmorViewStyle\(collisionMode\);[\s\S]{0,800}?hm\.syncHeatOverlay\(\);/);

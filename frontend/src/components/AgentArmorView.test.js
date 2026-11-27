@@ -67,6 +67,9 @@ describe('Armor recorded-shot navigation', () => {
     scenes[1].options.onJudgmentDistance({ ...state, distance: 15, exactDistance: 15.2 })
     await flushPromises()
     expect(wrapper.getComponent(ArmorShotHud).props('shotState').distance).toBe(15)
+    scenes[1].options.onJudgmentDistance(null)
+    await flushPromises()
+    expect(wrapper.getComponent(ArmorShotHud).props('shotState')).toBeNull()
   })
   it('shows tank names and recorded facts, disposes the previous scene, and respects navigation bounds', async () => {
     const { wrapper, router } = await setup()
