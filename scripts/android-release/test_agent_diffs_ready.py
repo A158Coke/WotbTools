@@ -75,13 +75,20 @@ class AgentDiffsReadyTest(unittest.TestCase):
         to: dict | None = None,
         from_release: str = FROM_RELEASE,
         to_release: str = TO_RELEASE,
+        summary_pair: dict | None = None,
     ) -> dict[str, tuple[int, dict]]:
         return {
             "/diffs/index.json": (200, index_doc(
                 frm if frm is not None else {"dataset": "11.21.0", "release": FROM_RELEASE},
                 to if to is not None else {"dataset": "11.22.0", "release": TO_RELEASE},
             )),
-            f"/diffs/{PAIR_PATH}/summary.json": (200, {"schema": 1}),
+            f"/diffs/{PAIR_PATH}/summary.json": (200, {
+                "schema": 1,
+                "pair": summary_pair if summary_pair is not None else {
+                    "from": {"dataset": "11.21.0", "release": FROM_RELEASE},
+                    "to": {"dataset": "11.22.0", "release": TO_RELEASE},
+                },
+            }),
             "/v/11.21.0/version.json": (200, {"release": from_release}),
             "/v/11.22.0/version.json": (200, {"release": to_release}),
         }
@@ -90,6 +97,21 @@ class AgentDiffsReadyTest(unittest.TestCase):
         result = self.check(self.routes())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("channel readiness: OK", result.stdout)
+
+    def test_stale_summary_identity_fails(self) -> None:
+        result = self.check(self.routes(summary_pair={
+            "from": {"dataset": "11.21.0", "release": "11.21.0-20261120-old"},
+            "to": {"dataset": "11.22.0", "release": TO_RELEASE},
+        }))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("stale summary", result.stderr)
+
+    def test_missing_summary_pair_fails(self) -> None:
+        routes = self.routes()
+        routes[f"/diffs/{PAIR_PATH}/summary.json"] = (200, {"schema": 1})
+        result = self.check(routes)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("missing its pair identity", result.stderr)
 
     def test_missing_release_field_fails(self) -> None:
         result = self.check(self.routes(frm={"dataset": "11.21.0"}))

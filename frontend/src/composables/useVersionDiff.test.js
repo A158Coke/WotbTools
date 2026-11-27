@@ -124,18 +124,40 @@ describe('useVersionDiff', () => {
     expect(again.status).toBe('ready')
   })
 
+  const SUMMARY = {
+    schema: 1,
+    pair: {
+      from: { dataset: '11.21.0_1', release: '20261120-aaaa' },
+      to: { dataset: '11.22.0', release: '20261126-bbbb' },
+    },
+    tanks: [],
+  }
   it('fetches per-pair summary, tank and map documents by relative path', async () => {
     const docs = {
-      [`${ORIGIN}/diffs/11.21.0_1__11.22.0/20261120-aaaa__20261126-bbbb/summary.json`]: { schema: 1, tanks: [] },
+      [`${ORIGIN}/diffs/11.21.0_1__11.22.0/20261120-aaaa__20261126-bbbb/summary.json`]: SUMMARY,
       [`${ORIGIN}/diffs/11.21.0_1__11.22.0/20261120-aaaa__20261126-bbbb/tanks/42.json`]: { tankId: 42 },
       [`${ORIGIN}/diffs/11.21.0_1__11.22.0/20261120-aaaa__20261126-bbbb/maps/7.json`]: { mapId: 7 },
     }
     const fetchMock = vi.fn(async url => ({ ok: true, json: async () => docs[url] }))
     const { fetchPairSummary, fetchTankDiff, fetchMapDiff } = await load({ fetchImpl: fetchMock })
 
-    await expect(fetchPairSummary(INDEX.pairs[0])).resolves.toEqual({ schema: 1, tanks: [] })
+    await expect(fetchPairSummary(INDEX.pairs[0])).resolves.toEqual(SUMMARY)
     await expect(fetchTankDiff(INDEX.pairs[0], 42)).resolves.toEqual({ tankId: 42 })
     await expect(fetchMapDiff(INDEX.pairs[0], 7)).resolves.toEqual({ mapId: 7 })
+  })
+
+  it('rejects a summary whose pair identity is stale or missing', async () => {
+    const stale = {
+      ...SUMMARY,
+      pair: { from: { dataset: '11.21.0_1', release: '20261110-old' }, to: SUMMARY.pair.to },
+    }
+    const fetchStale = vi.fn(async () => ({ ok: true, json: async () => stale }))
+    const staleLoad = await load({ fetchImpl: fetchStale })
+    await expect(staleLoad.fetchPairSummary(INDEX.pairs[0])).rejects.toThrow('版本身份')
+
+    const missing = vi.fn(async () => ({ ok: true, json: async () => ({ schema: 1, tanks: [] }) }))
+    const missingLoad = await load({ fetchImpl: missing })
+    await expect(missingLoad.fetchPairSummary(INDEX.pairs[0])).rejects.toThrow('版本身份')
   })
 
   it('fetches per-version tank documents and crop metadata for the comparison viewer', async () => {

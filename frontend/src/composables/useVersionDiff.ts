@@ -114,6 +114,16 @@ export function loadVersionDiffCatalog({ force = false }: { force?: boolean } = 
 export function fetchPairSummary(pair: DiffPair): Promise<Record<string, unknown>> {
   return fetchJson(pairAssetUrl(pair, 'summary.json')).then((summary) => {
     if (!isRecord(summary) || summary.schema !== CATALOG_SCHEMA) throw new Error('summary.json schema 不支持')
+    // 目录与 summary 的版本身份必须一致：旧 summary 落在新 pair 路径下时 fail-closed，
+    // 否则页面会把上一组数据的差异当成当前版本的变更展示。
+    const meta = isRecord(summary.pair) ? summary.pair : null
+    for (const side of ['from', 'to'] as const) {
+      const stamped = meta && isRecord(meta[side]) ? meta[side] as Record<string, unknown> : null
+      const expected = pair[side]
+      if (!stamped || stamped.dataset !== expected.dataset || stamped.release !== expected.release) {
+        throw new Error(`summary.json ${side} 版本身份与目录不一致`)
+      }
+    }
     return summary
   })
 }

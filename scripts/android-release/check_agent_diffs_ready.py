@@ -7,7 +7,8 @@ the stage preflight (before any immutable candidate exists) and again in publish
 readiness:
 
   - /diffs/index.json must be HTTP 200, schema 1 and contain at least one pair;
-  - every pair's summary.json must be HTTP 200 with schema 1;
+  - every pair's summary.json must be HTTP 200 with schema 1 and its own
+    pair.from/to dataset+release must match the index (a stale summary fails);
   - both datasets referenced by a pair must serve /v/<dataset>/version.json whose
     `release` matches the pair metadata (a stale diff tree fails).
 
@@ -78,6 +79,13 @@ def main(argv: list[str]) -> int:
         summary = fetch_json(f"{origin}/diffs/{path}/summary.json", f"agent /diffs/{path}/summary.json")
         if summary.get("schema") != 1:
             raise SystemExit(f"::error::agent /diffs/{path}/summary.json has an unsupported schema.")
+        # index 与 /v/version.json 的版本戳一致并不能证明 summary 属于这组数据；
+        # summary 自带的 pair.from/to 才是该文件的版本身份（旧 summary 放在新路径下也必须拒绝）。
+        summary_pair = summary.get("pair")
+        if not isinstance(summary_pair, dict):
+            raise SystemExit(
+                f"::error::agent /diffs/{path}/summary.json is missing its pair identity."
+            )
         for side in ("from", "to"):
             identity = pair.get(side)
             if not isinstance(identity, dict) or not isinstance(identity.get("dataset"), str):
@@ -89,6 +97,16 @@ def main(argv: list[str]) -> int:
                 raise SystemExit(
                     f"::error::agent /diffs pair {path} is missing a non-empty {side} release "
                     f"for dataset {dataset}."
+                )
+            stamped = summary_pair.get(side)
+            if (
+                not isinstance(stamped, dict)
+                or stamped.get("dataset") != dataset
+                or stamped.get("release") != expected
+            ):
+                raise SystemExit(
+                    f"::error::agent /diffs/{path}/summary.json {side} identity does not match "
+                    f"the index for dataset {dataset} (stale summary)."
                 )
             if dataset not in versions:
                 stamp = fetch_json(f"{origin}/v/{dataset}/version.json", f"dataset {dataset} version.json")

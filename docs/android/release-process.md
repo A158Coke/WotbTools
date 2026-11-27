@@ -96,7 +96,7 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 
 - `android-stage` 在 preflight 分类之后、构建/签名/落位之前执行 `scripts/android-release/steps/check-agent-diffs-ready.sh <origin> <wotbVersion>`；
 - publish readiness（`publish-08-api-readiness.sh`）对 staged 版本再执行一次；
-- 检查内容：`/diffs/index.json`（HTTP 200 / schema 1 / pair 非空）→ 每个 pair 的 `summary.json`（schema 1）→ pair 两端 `/v/<dataset>/version.json` 的 `release` 与 pair 元数据一致（pair 的 `release` 必须是两端的非空字符串，缺字段/空值/错类型同样失败）；任一失败即 `exit 1`（stage 不会产生不可变候选）；
+- 检查内容：`/diffs/index.json`（HTTP 200 / schema 1 / pair 非空）→ 每个 pair 的 `summary.json`（schema 1，且自带的 `pair.from/to` 的 `dataset`/`release` 必须与 index 逐项一致——旧 summary 放在新路径下同样失败）→ pair 两端 `/v/<dataset>/version.json` 的 `release` 与 pair 元数据一致（pair 的 `release` 必须是两端的非空字符串，缺字段/空值/错类型同样失败）；任一失败即 `exit 1`（stage 不会产生不可变候选）；前端 `fetchPairSummary` 也做同一身份校验，不一致直接进入错误态；
 - `wotbVersion < 5.8.0` 跳过（页面尚未随包）。通道发布后门禁自动放行，无需改代码。
 
 ## 两阶段发布（stage → publish）
