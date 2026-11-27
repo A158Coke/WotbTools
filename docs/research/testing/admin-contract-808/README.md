@@ -2,6 +2,8 @@
 
 2026-11-27 在 Windows 的 Chrome 158 上对照管理导航、视图注册表和本地 API 夹具核验了 8 个入口。修复前基线为 `de76b12b956ae2b9c067241f0b3eb2bf90b60df5`。目录内对照图左侧为基线，右侧为修复后的同一操作。表中的结论限于列出的断言与场景。[Issue #808 及方案](https://github.com/A158Coke/WotbTools/issues/808) · [规则原文](../../../frontend/design-language.md)
 
+[逐条 MUST 判定、未验项与四个专项执行记录](must-matrix.md) · [用户管理宽屏横幅修复前后](admin-users-hero.webp)
+
 ## 页面、规则与证据
 
 命令在 `frontend` 下运行。用户、战斗数据及反馈使用 `wotbtools-admin`，名人堂专项使用 `HoF-admin`，赛事使用 `tournament-admin`，推荐配置使用 `content-admin`。所有写操作均由本地夹具处理。

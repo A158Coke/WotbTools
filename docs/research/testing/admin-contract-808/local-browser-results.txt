@@ -1,0 +1,68 @@
+实现候选 535d91fab8c7afeaab2f95cb3dfa21d1d68efcc3
+Windows / Chrome / 2026-11-27
+
+pnpm run test:browser-hof-pending
+[hof-pending] 1280 850 summer PASS
+[hof-pending] 900 850 winter PASS
+[hof-pending] 390 664 spring PASS
+[hof-pending] 360 740 autumn PASS
+[hof-pending] 844 340 winter PASS
+
+pnpm run test:browser-admin-directory
+PASS admin-users summer 1280
+PASS admin-users winter 390
+PASS admin-users spring 900
+PASS admin-users autumn 360
+PASS admin-users winter 1280
+PASS admin-users summer 390
+PASS admin-ai-review-feedback summer 1280
+PASS admin-ai-review-feedback winter 390
+PASS admin-ai-review-feedback spring 900
+PASS admin-ai-review-feedback autumn 360
+PASS admin-ai-review-feedback winter 1280
+PASS admin-ai-review-feedback summer 390
+PASS admin-site-feedback summer 1280
+PASS admin-site-feedback winter 390
+PASS admin-site-feedback spring 900
+PASS admin-site-feedback autumn 360
+PASS admin-site-feedback winter 1280
+PASS admin-site-feedback summer 390
+
+pnpm run test:browser-tournament-admin
+[browser-tournament-admin] tournament-points-admin-1280x850-summer OK
+[browser-tournament-admin] tournament-points-config-1280x850-summer OK
+[browser-tournament-admin] tournament-points-admin-390x850-winter OK
+[browser-tournament-admin] tournament-points-config-390x850-winter OK
+[browser-tournament-admin] tournament-points-admin-900x850-spring OK
+[browser-tournament-admin] tournament-points-config-900x850-spring OK
+[browser-tournament-admin] tournament-points-admin-360x740-autumn OK
+[browser-tournament-admin] tournament-points-config-360x740-autumn OK
+[browser-tournament-admin] tournament-points-admin-412x839-spring OK
+[browser-tournament-admin] tournament-points-config-412x839-spring OK
+[browser-tournament-admin] tournament-points-admin-390x664-winter OK
+[browser-tournament-admin] tournament-points-config-390x664-winter OK
+[browser-tournament-admin] tournament-points-admin-375x553-autumn OK
+[browser-tournament-admin] tournament-points-config-375x553-autumn OK
+[browser-tournament-admin] tournament-points-admin-844x340-winter OK
+[browser-tournament-admin] tournament-points-config-844x340-winter OK
+
+pnpm run test:browser-admin-contract
+probe-scrollport rows 1 failures 0 []
+role-anonymous rows 10 failures 0 []
+role-member rows 10 failures 0 []
+role-site rows 10 failures 0 []
+role-hof rows 10 failures 0 []
+role-tournament rows 10 failures 0 []
+role-content rows 10 failures 0 []
+role-combined rows 10 failures 0 []
+layout-android-360 rows 8 failures 0 []
+layout-android-412 rows 8 failures 0 []
+layout-iphone-390 rows 8 failures 0 []
+layout-iphone-se rows 8 failures 0 []
+layout-iphone-land rows 8 failures 0 []
+layout-tablet rows 8 failures 0 []
+layout-desktop rows 8 failures 0 []
+theme-spring rows 8 failures 0 []
+theme-summer rows 8 failures 0 []
+theme-autumn rows 8 failures 0 []
+theme-winter rows 8 failures 0 []
