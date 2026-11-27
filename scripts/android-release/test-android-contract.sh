@@ -242,3 +242,5 @@ with tempfile.TemporaryDirectory() as temp:
 
 print("Android contract tests passed")
 PY
+
+python3 "$SCRIPT_DIR/test_consumer_inventory.py"
