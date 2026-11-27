@@ -383,6 +383,19 @@ marker_is_valid() {
   return 0
 }
 
+# Deterministic holder acquisition: the background holder takes the lock with a
+# blocking flock and only then creates the sentinel, so waiting for the file
+# proves the lock is actually held (unlike probing with flock -n, which races
+# the holder and can steal the lock).
+wait_for_holder() {
+  local attempt
+  for attempt in $(seq 1 200); do
+    [ -f "$1" ] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
 run_install() {
   local key="${1:-}"
   env \
@@ -732,8 +745,10 @@ fi
 reconcile_script="$ROOT/reconcile.sh"
 grep -Fq 'sudo -n true' "$reconcile_script" \
   || die 'reconcile.sh must fail closed when non-interactive sudo is unavailable'
-grep -Fq -- '--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY' "$reconcile_script" \
-  || die 'reconcile.sh must preserve only the generic credential through the environment'
+grep -Fq -- '--preserve-env="$(IFS=,; echo "${preserve[*]}")"' "$reconcile_script" \
+  || die 'reconcile.sh must preserve only the explicitly listed variables through sudo'
+grep -Fq -- 'for name in KOMODO_PERIPHERY_ONBOARDING_KEY PERIPHERY_LOCK_WAIT_SEC; do' "$reconcile_script" \
+  || die 'reconcile.sh must preserve only the generic credential and the lock wait budget'
 grep -Fq 'PERIPHERY_PRIVILEGE' "$ROOT/lib.sh" || die 'lib.sh must read the privilege model'
 for script in lib.sh install.sh verify.sh reconcile.sh; do
   if grep -q 'KOMODO_PERIPHERY_ONBOARDING_KEY=' "$ROOT/$script"; then
@@ -891,13 +906,19 @@ prepare_case lock-contract yecao
 printf '%s\n' 'fixture-periphery-identity' > "$identity"
 printf '%s\n' 'fixture-core-public-key' > "$core_pub"
 write_marker
-flock -n "$case_lock_file" -c 'sleep 10' &
+rm -f "$case_dir/lock-held"
+(
+  exec 8>"$case_lock_file"
+  flock 8
+  : > "$case_dir/lock-held"
+  sleep 10
+) &
 lock_pid=$!
-for attempt in $(seq 1 20); do
-  flock -n "$case_lock_file" -c true 2>/dev/null || break
-  sleep 0.2
-done
-if run_install; then
+wait_for_holder "$case_dir/lock-held" || {
+  kill "$lock_pid" 2>/dev/null || true
+  die 'fixture holder did not acquire the host lock'
+}
+if PERIPHERY_LOCK_WAIT_SEC=1 run_install; then
   kill "$lock_pid" 2>/dev/null || true
   die 'a reconcile must refuse to run while the host lock is held'
 fi
@@ -905,6 +926,28 @@ kill "$lock_pid" 2>/dev/null || true
 wait "$lock_pid" 2>/dev/null || true
 grep -q 'Another yecao host mutation is running' "$case_dir/install.log" \
   || { cat "$case_dir/install.log" >&2; die 'the held-lock failure was not reported'; }
+grep -q 'waited 1s' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the bounded-wait timeout was not reported'; }
+rm -f "$case_dir/lock-held"
+(
+  exec 8>"$case_lock_file"
+  flock 8
+  : > "$case_dir/lock-held"
+  sleep 2
+) &
+lock_pid=$!
+wait_for_holder "$case_dir/lock-held" || {
+  kill "$lock_pid" 2>/dev/null || true
+  die 'short-lived fixture holder did not acquire the host lock'
+}
+if ! PERIPHERY_LOCK_WAIT_SEC=30 run_install; then
+  cat "$case_dir/install.log" >&2
+  kill "$lock_pid" 2>/dev/null || true
+  die 'a reconcile must ride out a short-lived host lock holder'
+fi
+kill "$lock_pid" 2>/dev/null || true
+wait "$lock_pid" 2>/dev/null || true
+pass 'a bounded host-lock wait rides out a short-lived holder'
 rm -f "$case_lock_file"
 if run_install; then
   die 'a missing host mutation lock must fail closed instead of being created'

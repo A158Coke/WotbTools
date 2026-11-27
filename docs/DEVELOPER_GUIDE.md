@@ -719,7 +719,8 @@ TX builders 还共用 host build lock；production mutation 另由各宿主 depl
 应用 lane 在 mutation 前执行 current-main/freshness 校验，固定基础设施仍使用各自 maintenance 契约。
 TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`
 （源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell
-直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。这不是 distributed lock。
+直接 `exec 9>` 持锁；冲突时 wrapper 先有界等待（`WOTB_TX_DEPLOY_LOCK_WAIT_SEC`，默认 900s），
+超时后输出当前 holder 诊断并失败。这不是 distributed lock。
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
