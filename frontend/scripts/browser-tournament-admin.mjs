@@ -38,11 +38,15 @@ async function clearDialog(page, touch) {
   await page.tapSelector('[data-testid=tournament-admin-clear]', touch)
   await page.waitForValue('!!document.querySelector("#clear-clan")', Boolean)
 }
+const SEGMENTED_CONTROLS = ['config-region', 'config-round-count', 'config-day-count', 'config-day-naming']
 const SEGMENTED_STABLE = `(() => {
-  const read = () => [...document.querySelectorAll('.segmented')].flatMap(group => {
+  const controls = ${JSON.stringify(SEGMENTED_CONTROLS)}
+  const read = () => controls.map(id => {
+    const group = document.querySelector('[data-testid="' + id + '"]')
+    if (!group || !group.matches('.segmented')) return { missing: id }
     const option = group.querySelector('.segmented-option.is-active')
     const indicator = option?.querySelector(':scope .segmented-indicator')
-    if (!option || !indicator) return []
+    if (!option || !indicator) return { missing: id }
     const optionRect = option.getBoundingClientRect()
     const indicatorRect = indicator.getBoundingClientRect()
     const border = Number.parseFloat(getComputedStyle(option).borderLeftWidth) || 0
@@ -62,7 +66,8 @@ const SEGMENTED_STABLE = `(() => {
 async function settleSegmented(page) {
   await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   await page.animationsSettled()
-  await page.waitForValue(SEGMENTED_STABLE, value => value.settled && value.entries.every(entry => entry.ok), {
+  await page.waitForValue(SEGMENTED_STABLE, value => value.entries.length === SEGMENTED_CONTROLS.length
+    && value.entries.every(entry => !entry.missing && entry.ok), {
     label: 'segmented indicator aligned and stable',
   })
 }
