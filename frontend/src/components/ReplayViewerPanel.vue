@@ -79,6 +79,9 @@ watch([() => props.mode, narrow], () => nextTick(measureReserve), { flush: 'post
         :ariaLabel="t('workspace.tab_replay')"
         @update:model-value="onModeChange"
       />
+      <div class="viewer-actions">
+        <slot name="viewer-actions" />
+      </div>
       <div class="viewer-events-toggle">
         <AppSwitch
           v-model="showEventDetails"
@@ -120,7 +123,8 @@ watch([() => props.mode, narrow], () => nextTick(measureReserve), { flush: 'post
   gap: var(--space-2) var(--space-3);
 }
 .viewer-title { margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
-.viewer-events-toggle { margin-inline-start: auto; min-inline-size: 0; }
+.viewer-actions { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-2); min-inline-size: 0; }
+.viewer-events-toggle { min-inline-size: 0; }
 .viewer-events-toggle :deep(.app-switch) { inline-size: auto; gap: var(--space-2); }
 .viewer-mode { min-inline-size: 0; }
 .viewer-events {

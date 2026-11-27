@@ -238,7 +238,6 @@ describe('Replay3DPane 3D annotation wiring', () => {
     expect(playback.api.loadData).toHaveBeenCalledWith(expect.objectContaining({ kind: 'local', file }))
     expect(wrapper.find('[data-test="replay3d-start"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="replay3d-settings-toggle"]').exists()).toBe(true)
 
     await wrapper.setProps({ active: false })
     await flush()

@@ -55,6 +55,9 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
   S.LOGDEPTH = boolPref('pb_logdepth', 'logdepth', false);
   S.DYNRES = boolPref('pb_dynres', 'dynres', true);
   S.ARMOR_HIGHLIGHT = boolPref('pb_armor_highlight', 'armorhl', false);
+  S.CONTACT_SHADOWS_PREF = contactShadowOverride !== undefined
+    ? !!contactShadowOverride
+    : boolPref('pb_contact_shadows', 'contactshadows', false);
 
   S.QKEY = resolveQualityKey();
   S.Q = QUALITY_PRESETS[S.QKEY as keyof typeof QUALITY_PRESETS];
@@ -63,12 +66,13 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
   S.store.logdepth = S.LOGDEPTH;
   S.store.dynres = S.DYNRES;
   S.store.armorHighlight = S.ARMOR_HIGHLIGHT;
+  S.store.contactShadowsPref = S.CONTACT_SHADOWS_PREF;
 
   S.contactShadowCtl = createContactShadowControl({
     store: S.store, qualityKey: () => S.QKEY, getScene: () => S.scene, getSunLight: () => S.sunLight,
     surfaceHeightAt: (x, z) => S.mapWorld.annotationSurfaceHeightAt(x, z), stencilAssembled: () => !!S.rendererCaps?.stencil,
   });
-  S.contactShadowCtl.setEnabled(contactShadowOverride === true);
+  S.contactShadowCtl.setEnabled(S.CONTACT_SHADOWS_PREF);
   S.applyQualityFeatures = () => {};
   S.requestWaterReflectionRefresh = () => {};
   function setQuality(S: Host, k: keyof typeof QUALITY_PRESETS) {
@@ -80,13 +84,14 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       S.store.qualityKey = S.QKEY;
       S.store.qualityLabel = '画质 · ' + S.Q.label;
       if (!shadowQualityEligible(k)) S.contactShadowCtl.setEnabled(false);
+      else S.contactShadowCtl.setEnabled(!!S.CONTACT_SHADOWS_PREF);
       S.applyQualityFeatures();
       S.applyGlbGate();
     };
     if (S.DATA) {
       const reload = async () => {
 
-        try { await S.stageReloadReplay?.(S.store.contactShadows && shadowQualityEligible(k)); } catch (e) { return; }
+        try { await S.stageReloadReplay?.(!!S.CONTACT_SHADOWS_PREF); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
         location.replace(buildRenderSettingsReloadUrl(location.href, {
@@ -108,12 +113,22 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
     const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
     const nextQuality = qualityChanged && quality ? quality : S.QKEY;
-    const contactDesired = patch.contactShadows !== undefined ? !!patch.contactShadows : S.store.contactShadows;
-    const contactTarget = contactDesired && shadowQualityEligible(nextQuality);
-    const contactShadowsChanged = patch.contactShadows !== undefined && contactTarget !== S.store.contactShadows;
-    if (!qualityChanged && !logdepthChanged && !dynresChanged && !contactShadowsChanged) return false;
-    if (S.DATA) {
-      try { await S.stageReloadReplay?.(contactTarget); } catch (e) { return false; }
+    const nextContactPref = patch.contactShadows !== undefined
+      ? !!patch.contactShadows
+      : !!S.CONTACT_SHADOWS_PREF;
+    const contactPrefChanged = patch.contactShadows !== undefined
+      && nextContactPref !== !!S.CONTACT_SHADOWS_PREF;
+    const contactTarget = nextContactPref && shadowQualityEligible(nextQuality);
+    const contactShadowsChanged = contactTarget !== S.store.contactShadows;
+    const needsReload = qualityChanged || logdepthChanged || dynresChanged || contactShadowsChanged;
+    if (!needsReload && !contactPrefChanged) return false;
+    if (S.DATA && needsReload) {
+      try { await S.stageReloadReplay?.(nextContactPref); } catch (e) { return false; }
+    }
+    if (contactPrefChanged) {
+      S.CONTACT_SHADOWS_PREF = nextContactPref;
+      S.store.contactShadowsPref = nextContactPref;
+      persistBoolPref('pb_contact_shadows', nextContactPref);
     }
     if (logdepthChanged) {
       S.LOGDEPTH = !!patch.logdepth;
@@ -130,6 +145,7 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       if (contactTarget !== S.store.contactShadows) S.contactShadowCtl.setEnabled(contactTarget);
       return false;
     }
+    if (!needsReload) return false;
     if (S.perf) S.perf.interrupt('render-settings-change');
     const patchForUrl: RenderSettingsPatch = {};
     if (qualityChanged && quality) {
@@ -141,6 +157,7 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       if (!shadowQualityEligible(quality)) S.contactShadowCtl.setEnabled(false);
       patchForUrl.qualityKey = quality;
     }
+    if (contactTarget !== S.store.contactShadows) S.contactShadowCtl.setEnabled(contactTarget);
     if (logdepthChanged) patchForUrl.logdepth = !!patch.logdepth;
     if (dynresChanged) patchForUrl.dynres = !!patch.dynres;
     patchForUrl.armorHighlight = !!S.ARMOR_HIGHLIGHT;

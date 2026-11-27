@@ -20,9 +20,10 @@ function makeHost() {
   } as any
 }
 
-function installAt(query: string, contactShadowOverride?: boolean) {
+function installAt(query: string, contactShadowOverride?: boolean, clearStorage = true, seedContactPref = false) {
   window.history.replaceState({}, '', '/replay' + query)
-  localStorage.clear()
+  if (clearStorage) localStorage.clear()
+  if (seedContactPref) localStorage.setItem('pb_contact_shadows', '1')
   const S = makeHost()
   installSceneState(S, contactShadowOverride)
   S.DATA = {}   // 模拟回放已开始（渲染上下文已定型，applyRenderSettings 走重载分支）
@@ -48,9 +49,8 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
   }
 
   it('待开播卡片开启的接地阴影在改画质重载时进入本次暂存目标，不写入 URL', async () => {
-    const S = installAt('?q=high')
+    const S = installAt('?q=high&contactshadows=1')
     S.stageReloadReplay = vi.fn()
-    S.contactShadowCtl.setEnabled(true)
     expect(S.store.contactShadows).toBe(true)
 
     expect(await S.applyRenderSettings({ qualityKey: 'ultra' })).toBe(true)
@@ -60,26 +60,47 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
     expect(url.searchParams.has('shadows')).toBe(false)
   })
 
-  it('降档清掉接地阴影后，再次升档不会因旧 URL 参数意外恢复', async () => {
-    const first = installAt('?q=ultra&shadows=1', true)
+  it('降档只关闭有效效果并保留偏好，升档后恢复并进入本次暂存目标', async () => {
+    const first = installAt('?q=ultra', undefined, true, true)
     first.stageReloadReplay = vi.fn()
     expect(first.store.contactShadows).toBe(true)
+
     expect(await first.applyRenderSettings({ qualityKey: 'low' })).toBe(true)
-    expect(first.stageReloadReplay).toHaveBeenCalledWith(false)
+    expect(first.stageReloadReplay).toHaveBeenCalledWith(true)
+    expect(first.store.contactShadows).toBe(false)
+    expect(first.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
     const downgraded = lastUrl()
     expect(downgraded.searchParams.get('q')).toBe('low')
     expect(downgraded.searchParams.has('shadows')).toBe(false)
 
     replace.mockClear()
-    const second = installAt(downgraded.search)
+    const second = installAt(downgraded.search, undefined, false)
     second.stageReloadReplay = vi.fn()
     expect(second.store.contactShadows).toBe(false)
+    expect(second.CONTACT_SHADOWS_PREF).toBe(true)
 
     expect(await second.applyRenderSettings({ qualityKey: 'high' })).toBe(true)
-    expect(second.stageReloadReplay).toHaveBeenCalledWith(false)
+    expect(second.stageReloadReplay).toHaveBeenCalledWith(true)
+    expect(second.store.contactShadows).toBe(true)
     const upgraded = lastUrl()
     expect(upgraded.searchParams.get('q')).toBe('high')
     expect(upgraded.searchParams.has('shadows')).toBe(false)
+  })
+
+  it('接地阴影偏好默认关闭，开启后跨安装保留；低画质只关闭有效效果', () => {
+    const off = installAt('?q=high')
+    expect(off.CONTACT_SHADOWS_PREF).toBe(false)
+    expect(off.store.contactShadows).toBe(false)
+
+    localStorage.setItem('pb_contact_shadows', '1')
+    const on = installAt('?q=high', undefined, false)
+    expect(on.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(on.store.contactShadows).toBe(true)
+
+    const low = installAt('?q=low', undefined, false)
+    expect(low.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(low.store.contactShadows).toBe(false)
   })
 
   it('只改接地阴影也走同一次重载，目标随暂存记录而非 URL', async () => {
@@ -89,6 +110,7 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
 
     expect(await S.applyRenderSettings({ contactShadows: true })).toBe(true)
     expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
     const url = lastUrl()
     expect(url.searchParams.get('q')).toBe('high')
     expect(url.searchParams.has('shadows')).toBe(false)

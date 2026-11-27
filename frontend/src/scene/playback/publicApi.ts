@@ -121,7 +121,13 @@ export function createPlaybackApi(S: Host) {
       }
       S.invalidate();
     },
-    setContactShadows: (on: boolean) => S.contactShadowCtl.setEnabled(on),
+    setContactShadows: (on: boolean) => {
+      const v = !!on;
+      S.CONTACT_SHADOWS_PREF = v;
+      S.store.contactShadowsPref = v;
+      persistBoolPref('pb_contact_shadows', v);
+      S.contactShadowCtl.setEnabled(v);
+    },
     setQuality: S.setQuality,
     applyRenderSettings: async (patch: RenderSettingsPatch): Promise<boolean> => S.applyRenderSettings(patch),
     setPaused: S.setPaused,

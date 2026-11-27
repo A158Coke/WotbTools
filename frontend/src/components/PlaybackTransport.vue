@@ -2,7 +2,7 @@
 import { computed, inject, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { OPEN_NAV_DRAWER_KEY, SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 import { useEventListener } from '@vueuse/core'
-import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, Settings, SlidersHorizontal, Users } from 'lucide-vue-next'
+import { Maximize2, Menu, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal, Users } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -15,8 +15,6 @@ const props = defineProps({
   isFullscreen: Boolean,
   displayOpen: Boolean,
   displayEnabled: Boolean,
-  settingsOpen: Boolean,
-  settingsEnabled: Boolean,
   annotationEnabled: Boolean,
   speed: { type: Number, default: 1 },
   speeds: { type: Array, default: () => PLAYBACK_SPEEDS },
@@ -45,12 +43,11 @@ onDeactivated(() => { alive.value = false })
 const hostsNav = computed(() => alive.value && props.navEligible && !!openNav && !!shellChrome?.immersive.value)
 watch(hostsNav, (on) => shellChrome?.hostNav(navOwner, on), { immediate: true })
 onBeforeUnmount(() => shellChrome?.hostNav(navOwner, false))
-const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-settings', 'toggle-annotation', 'toggle-roster'])
+const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation', 'toggle-roster'])
 
 const speedOpen = ref(false)
 const speedRoot = ref(null)
 const gearEl = ref(null)
-const settingsEl = ref(null)
 function chooseSpeed(option) {
   speedOpen.value = false
   emit('set-speed', option)
@@ -137,9 +134,6 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     </button>
     <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" data-tour="playback-display" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
       <SlidersHorizontal :size="16" aria-hidden="true" />
-    </button>
-    <button v-if="props.settingsEnabled" ref="settingsEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-settings-entry" data-testid="replay3d-settings-toggle" data-tour="playback-settings" :aria-expanded="props.settingsOpen" aria-haspopup="dialog" :aria-label="$t('agentReplay.settings_title')" @click="emit('toggle-settings', settingsEl)">
-      <Settings :size="16" aria-hidden="true" />
     </button>
     <span class="pb-time" data-test="pb-time">{{ props.formatClock(elapsed) }} / {{ props.formatClock(total) }}</span>
     <span v-if="!timelineUsable" class="pb-unavailable" data-test="pb-play-unavailable" role="status">{{ $t('recon.map.playback.timeline_unavailable') }}</span>
