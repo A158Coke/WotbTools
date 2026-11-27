@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID } from './browser-fixtures/fixture-asset-pack.mjs'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { createAdminDirectory } from './browser-fixtures/admin-directory.mjs'
@@ -55,14 +58,15 @@ function heroProbe() {
     section: section.dataset.section ?? null,
     compact: section.classList.contains('is-compact'),
     height: Math.round(rect.height),
-    width: Math.round(rect.width),
+    width: rect.width,
     artWidth: art.getBoundingClientRect().width,
+    gutter: rect.left - document.querySelector('main').getBoundingClientRect().left,
+    topInset: rect.top - document.querySelector('main').getBoundingClientRect().top,
+    contentScrim: getComputedStyle(section.querySelector('.showcase-hero-content')).backgroundImage,
     backgroundImage: cs.backgroundImage,
     imagePosition: positions[imageLayer] ?? null,
     backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[imageLayer] ?? null,
     titleColor: getComputedStyle(section.querySelector('h1')).color,
-
-
     titleBottom: Math.round(section.querySelector('h1').getBoundingClientRect().bottom),
     heroBottom: Math.round(rect.bottom),
   }
@@ -87,7 +91,6 @@ function fullHeroProbe() {
 function assertDesktopCompact(hero, { section, position }) {
   assert.equal(hero.section, section, `desktop ${section} must use its section hero`)
   assert.ok(hero.compact, `desktop ${section} must render compact`)
-  assert.match(hero.backgroundImage, section === 'admin' ? /url\(/ : /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
   assert.equal(hero.imagePosition, position, `desktop ${section} compact focus must be ${position}`)
   assert.equal(hero.backgroundSize, 'cover', 'desktop image sizing for ' + section)
   assert.ok(hero.titleBottom <= hero.heroBottom, `desktop ${section} title must stay inside the banner`)
@@ -100,9 +103,21 @@ function assertMobileCompact(hero, { section, position }) {
   assert.equal(hero.backgroundSize, 'cover', `mobile ${section} must keep cover`)
 }
 
+const screenshotDirectory = resolve('../tmp/section-heroes')
+await mkdir(screenshotDirectory, { recursive: true })
 const directory = createAdminDirectory()
+const fixtureData = new Map([
+  ['/api/users/profile', { id: 7, keycloakUserId: 'fixture-user', username: 'fixture', displayName: 'Fixture', wotbServer: 'CN', wotbAccountSource: 'MANUAL' }],
+  ['/fixture-assets/data/tank_cache.json', FIXTURE_TANK_CACHE],
+  ['/fixture-assets/tank/' + FIXTURE_TANK_ID + '.json', FIXTURE_TANK_DATA],
+  ['/fixture-assets/index.json', { schema: 1, maps: { 26: { key: 'faust', display: 'Faust' } } }],
+])
 const { server, origin } = await startFixtureServer({ middleware(req, res, next) {
-  if (req.url.startsWith('/api/admin/users?')) return directory.middleware(req, res, next)
+  if (fixtureData.has(req.url)) {
+    res.setHeader('Content-Type', 'application/json')
+    return res.end(JSON.stringify(fixtureData.get(req.url)))
+  }
+  if (req.url.startsWith('/api/admin/')) return directory.middleware(req, res, next)
   return next()
 } })
 let chrome
@@ -113,7 +128,7 @@ try {
     const { targetId, sessionId } = await chrome.openPage()
     const page = new Page(chrome.client, sessionId)
     await page.enable()
-    await page.emulate({ width, height, touch: width < 1200 })
+    await page.emulate({ width, height, touch: width < 1200, deviceScaleFactor: 1 })
     const initScript = PROFILE_INIT_SCRIPTS[profile]
     if (!initScript) throw new Error(`unknown UI profile: ${profile}`)
     await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
@@ -125,23 +140,51 @@ try {
     return { targetId, page }
   }
 
-  for (const [view, extraAuth, section, position] of [
-    ['replay', '', 'replay', '50% 50%'],
-    ['agent-techtree', '', 'techtree', '50% 58%'],
-    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '50% 45%'],
-  ]) {
-    const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
-    try {
-      const hero = await page.probe(heroProbe)
-      assertDesktopCompact(hero, { section, position })
-      const heightRanges = { admin: [300, 500], replay: [240, 400], techtree: [120, 140] }
-      const [lo, hi] = heightRanges[section]
-      assert.ok(hero.height >= lo && hero.height <= hi, `desktop ${section} hero height must stay ${lo}-${hi}px at 1440: ${hero.height}`)
-      console.log(`[browser-showcase-hero] desktop ${section}: height=${hero.height} pos=${hero.imagePosition} scrim=${hero.backgroundImage.slice(0, 48)}… passed`)
-    } catch (error) {
-      console.error(await page.diagnose(heroProbe))
-      throw error
-    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  // Exercise the real routes so a page-specific thumbnail or missing gutter fails here.
+  for (const [section, views] of Object.entries({
+    tankopedia: ['agent-tankopedia', 'agent-tankopedia&tank=' + FIXTURE_TANK_ID],
+    techtree: ['agent-techtree'],
+    maps: ['map-preview'],
+    community: ['recommendations', 'creators', 'recommended-videos', 'contact', 'more', 'android', 'sponsor'],
+    admin: ['admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback', 'admin-users', 'creators-config', 'hof-admin', 'tournament-points-admin', 'tournament-points-config'],
+    replay: ['replay'],
+    hof: ['hof', 'hof&tab=hundred'],
+    mark3: ['hof&tab=mark3'],
+    docs: ['history', 'technical-evolution', 'rating-docs'],
+    events: ['league-broadcasts', 'tournament-points'],
+    profile: ['profile'],
+  })) {
+    for (const view of views) {
+      const { targetId, page } = await openAppPage({ width: 1440, profile: 'winter', view, extraAuth: '&ws-auth=1&ws-roles=wotbtools-admin,content-admin,tournament-admin&assets=' + encodeURIComponent(origin + '/fixture-assets') })
+      try {
+        await page.waitForValue("document.querySelector('.showcase-hero')?.dataset.section", value => value === section)
+        const hero = await page.probe(heroProbe)
+        assert.equal(hero.height, 480, view + ' expanded height')
+        assert.ok(Math.abs(hero.artWidth - hero.width) <= 2, `${view} art width ${hero.artWidth} of ${hero.width}`)
+        assert.equal(hero.backgroundSize, 'cover', view)
+        assert.match(hero.backgroundImage, /^url\(/, view + ' clear artwork')
+        assert.match(hero.contentScrim, /linear-gradient/, view + ' text contrast')
+        assert.equal(hero.titleColor, WINTER_TITLE_COLOR, view)
+        if (view === 'map-preview') {
+          assert.ok(hero.topInset >= 16 && hero.gutter >= 16, 'map picker must have page gutters')
+          await page.waitForValue("!!document.querySelector('[data-testid=map-search]')", Boolean)
+        }
+        if (view === 'agent-tankopedia') await page.waitForValue("!!document.querySelector('[data-testid=tankopedia-count]')", Boolean)
+        await page.evaluate('document.fonts.ready')
+        await page.probe(async () => {
+          const img = new Image()
+          img.src = getComputedStyle(document.querySelector('.showcase-hero-art')).getPropertyValue('--hero-image').trim().replace(/^url\(["']?|["']?\)$/g, '')
+          await img.decode()
+        })
+        const shot = await chrome.client.send('Page.captureScreenshot', { format: 'webp', quality: 80 }, page.sessionId)
+        await writeFile(resolve(screenshotDirectory, view.replaceAll('&', '-') + '.webp'), Buffer.from(shot.data, 'base64'))
+        await page.emulate({ width: 390, height: 844, touch: true, deviceScaleFactor: 1 })
+        const mobile = await page.probe(heroProbe)
+        assert.ok(mobile.width > 0 && mobile.width <= 390 && mobile.height > 0, view + ' mobile banner bounds')
+        assert.ok(mobile.titleBottom <= mobile.heroBottom, view + ' mobile title bounds')
+        console.log('[browser-showcase-hero] ' + view + ' desktop and mobile passed')
+      } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+    }
   }
 
   for (const [view, extraAuth, section, mobilePosition, heightLo, heightHi] of [
@@ -217,7 +260,7 @@ try {
       const probe = heroProbe
       const desktop = await page.probe(probe)
       assert.ok(!desktop.compact, `desktop full hero on ${view} must not be compact`)
-      assert.ok(desktop.height >= 280 && desktop.height <= 400, `desktop full hero on ${view} must take the 20vw clamp height at 1440: ${desktop.height}`)
+      assert.ok(desktop.height === 480, `desktop full hero on ${view} must use the shared section height at 1440: ${desktop.height}`)
       assert.ok(desktop.titleBottom <= desktop.heroBottom, `desktop ${view} title must stay inside the banner`)
       const text = await page.probe(fullTextProbe)
       assert.ok(text.kickerH === null || text.kickerH <= 30, `full hero kicker on ${view} must keep its natural row height (grid rows must not stretch): ${text.kickerH}`)

@@ -42,35 +42,7 @@
   margin-inline: auto !important;
   padding: var(--space-6) 0 var(--space-12);
 }
-.profile-page .hero-avatar { display: none !important; }
 .profile-page .profile-main { display: grid; gap: 14px; }
-.profile-page .profile-card.profile-hero {
-  position: relative;
-  overflow: hidden;
-  min-height: 118px;
-  padding: 24px 28px !important;
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
-  background:
-    var(--theme-hero-section-scrim, var(--theme-hero-scrim)),
-    var(--hero-image) var(--hero-pos, right center) / cover,
-    var(--color-surface-1) !important;
-}
-.profile-page .profile-card.profile-hero::after {
-  content: '';
-  position: absolute;
-  right: -60px;
-  top: -130px;
-  width: 340px;
-  height: 340px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  border-radius: 50%;
-  corner-shape: round;
-  box-shadow: 0 0 0 54px color-mix(in srgb, var(--accent) 3%, transparent);
-  pointer-events: none;
-}
-.profile-page .hero-left { gap: 0 !important; }
-.profile-page .hero-name { font-size: 1.65rem !important; letter-spacing: -.02em; }
-.profile-page .hero-subtitle { color: var(--text-sub) !important; }
 .profile-page .profile-body { gap: 14px !important; }
 .profile-page .profile-card {
   border-color: var(--showcase-tactical-border) !important;
@@ -103,21 +75,4 @@
   .profile-page .profile-body { display: block !important; }
   .profile-page .profile-left,
   .profile-page .profile-right { display: grid; gap: 12px; }
-  .profile-page .profile-card.profile-hero {
-    padding: 20px !important;
-    min-height: 100px;
-    background:
-      var(--theme-hero-section-scrim-portrait, var(--theme-hero-scrim-portrait)),
-      var(--hero-image) var(--hero-pos-mobile, center) / cover,
-      var(--color-surface-1) !important;
-  }
-  .profile-page .hero-name { font-size: 1.35rem !important; }
-  .profile-page .hero-name {
-    color: var(--theme-hero-title-color, var(--text-heading)) !important;
-    text-shadow: var(--theme-hero-text-shadow, none);
-  }
-  .profile-page .hero-subtitle {
-    color: var(--theme-hero-description-color, var(--text-sub)) !important;
-    text-shadow: var(--theme-hero-text-shadow, none);
-  }
 }

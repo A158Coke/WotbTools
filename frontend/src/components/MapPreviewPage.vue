@@ -113,7 +113,7 @@ const modeOptions = computed(() => [
 </script>
 
 <template>
-  <section class="map-preview" data-testid="map-preview-page">
+  <section class="map-preview" :class="{ 'layout-data-workspace': authenticated && !selected }" data-testid="map-preview-page">
     <ReplayCapabilityAuthGate
       v-if="!authenticated"
       :icon="MapIcon"
@@ -260,7 +260,6 @@ const modeOptions = computed(() => [
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4);
 }
 
 .map-picker-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
