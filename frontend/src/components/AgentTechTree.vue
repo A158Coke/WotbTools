@@ -218,6 +218,7 @@ onMounted(() => {
       :error="treeError"
       :tier-rows="tierRows"
       :grid="grid"
+      :nation="urlNation"
       :summaries="cache"
       :cost-by-stem="costByStem"
       :image-url="tankImageUrl"
