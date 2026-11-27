@@ -203,6 +203,8 @@ function linkAttrs(id) {
   padding-inline-start: calc(var(--space-3) + env(safe-area-inset-left));
   overflow-x: hidden;
   overflow-y: auto;
+  /* 全页只保留窗口一个可见滚动条；内容超高时滚轮仍可滚动 */
+  scrollbar-width: none;
   border-inline-end: 1px solid var(--color-border-subtle);
   background: var(--color-surface-1);
 }
