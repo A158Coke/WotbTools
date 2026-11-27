@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
     font-weight: 600;
     cursor: pointer;
   }
-  .doc-toc-compact .doc-toc-list { max-height: 50dvh; margin-top: var(--space-2); overflow-y: auto; }
+  .doc-toc-compact .doc-toc-list { max-height: 50dvh; margin-top: var(--space-2); overflow-y: auto; /* 全站滚动条视觉规范：隐藏指示器、保留滚动能力 */ scrollbar-width: none; }
 }
 @media (width < 768px) { .doc-body { padding: var(--space-4); } }
 </style>
