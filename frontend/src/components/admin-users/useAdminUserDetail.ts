@@ -7,22 +7,13 @@ type AdminUserRow = NonNullable<Awaited<ReturnType<typeof api.adminSearchUsers>>
 type AdminUserDetail = components['schemas']['AdminUserDetail']
 type DetailContext = {
   requireOnline: () => boolean
-  loadUsers: () => Promise<void>
+  loadUsers: () => Promise<unknown>
   showError: (message: string) => void
   apiError: (error: unknown) => string
   isRowControlClick: (event: Event) => boolean
 }
 type DangerZoneHandle = { reset: () => void }
 
-/**
- * @param {{
- *  requireOnline: () => boolean,
- *  loadUsers: () => Promise<void>,
- *  showError: (message: string) => void,
- *  apiError: (error: unknown) => string,
- *  isRowControlClick: (event: unknown) => boolean,
- * }} ctx
- */
 export function useAdminUserDetail({ requireOnline, loadUsers, showError, apiError, isRowControlClick }: DetailContext) {
   const detailRow = ref<AdminUserRow | null>(null)
   const detailUser = ref<AdminUserDetail | null>(null)

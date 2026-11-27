@@ -28,9 +28,17 @@ import './admin-list.css'
 const { t, te } = useI18n()
 const { rowName, rowState, fmtTime } = createAdminUsersRowPresenter(t)
 const { show: showError } = useError()
-const users = ref([])
+const list = ref({
+  query: { query: '', segment: 'keycloak', idpAlias: '', page: 0, size: 25 },
+  users: [], totalItems: 0, totalPages: 0,
+})
+const applied = computed(() => list.value.query)
+const users = computed(() => list.value.users)
+const page = computed(() => applied.value.page)
+const size = computed(() => applied.value.size)
+const totalPages = computed(() => list.value.totalPages)
+const totalItems = computed(() => list.value.totalItems)
 const loading = ref(false)
-const searchQuery = ref('')
 let userLoadGeneration = 0
 
 const { initPromise, ensureToken: ensureAuthToken, login } = useAuth()
@@ -45,6 +53,10 @@ const { requireAdminUsersOnline, apiError, errorCodeLabel, ensureToken } = creat
 const blockedByConnectivity = ref(false)
 
 const adminAvailability = computed(() => availability(Feature.ADMIN_USERS))
+const removeDisabled = computed(() => loading.value || !adminAvailability.value.available)
+const pageSizeOptions = computed(() => ['25', '50', '100'].map(value => ({
+  value, label: value, disabled: !adminAvailability.value.available,
+})))
 
 onMounted(async () => {
   if (!requireAdminUsersOnline()) {
@@ -67,8 +79,8 @@ watch(connectivity, () => {
 })
 
 const {
-  segment, idpAlias, onSegmentChange, segmentOptions, onIdpAliasChange, filterChips, removeFilterChip,
-} = useAdminUserFilters({ requireOnline: requireAdminUsersOnline, reloadFirstPage, adminAvailability, t })
+  segment, idpAlias, searchQuery, onSearch, onSegmentChange, segmentOptions, filterChips, removeFilterChip,
+} = useAdminUserFilters({ requireOnline: requireAdminUsersOnline, applied, reloadFirstPage, removeDisabled, adminAvailability, t })
 
 const {
   selectedIds, selectedSet, selectedCount, allPageSelected,
@@ -77,19 +89,17 @@ const {
   startBulkDelete, cancelBulkDelete, confirmBulkDelete,
 } = useAdminUserSelection({
   users,
-  requireOnline: requireAdminUsersOnline,
+  canDelete: () => !loading.value && requireAdminUsersOnline(),
   loadUsers,
   showApiError: showError,
   errorText: apiError,
 })
 
 const {
-  page, size, totalItems, totalPages, jumpPage, onSizeChange, goPage, jumpTargetPage, goJumpPage,
+  jumpPage, onSizeChange, goPage, jumpTargetPage, goJumpPage,
 } = useAdminUserPagination({
-  requireOnline: requireAdminUsersOnline,
-  clearSelection,
-  loadUsers,
-  reloadFirstPage,
+  requireOnline: requireAdminUsersOnline, page, size, totalPages,
+  requestPage: (page, size) => loadUsers({ ...applied.value, page, size }, true),
 })
 
 const {
@@ -103,44 +113,30 @@ const {
   isRowControlClick,
 })
 
-async function loadUsers() {
-  if (!requireAdminUsersOnline()) return
+async function loadUsers(request = applied.value, resetSelection = false) {
+  if (!requireAdminUsersOnline()) return false
   const generation = ++userLoadGeneration
   loading.value = true
   try {
-    const res = await api.adminSearchUsers(searchQuery.value, {
-      segment: segment.value,
-      idpAlias: segment.value === 'keycloak' ? idpAlias.value.trim() : '',
-      page: page.value,
-      size: size.value,
-    })
-    if (generation !== userLoadGeneration) return
+    const { query, ...options } = request
+    const res = await api.adminSearchUsers(query, options)
+    if (generation !== userLoadGeneration) return false
     const lastPage = Math.max((res?.totalPages || 0) - 1, 0)
-    if (page.value > lastPage) {
-      page.value = lastPage
-      await loadUsers()
-      return
-    }
-    users.value = res?.items || []
-    totalItems.value = res?.totalItems || 0
-    totalPages.value = res?.totalPages || 0
-    retainVisible()
+    if (request.page > lastPage) return await loadUsers({ ...request, page: lastPage }, true)
+    list.value = { query: request, users: res?.items ?? [], totalItems: res?.totalItems ?? 0, totalPages: res?.totalPages ?? 0 }
+    if (resetSelection) clearSelection()
+    else retainVisible()
+    return true
   } catch (e) {
     if (generation === userLoadGeneration) showError(apiError(e))
+    return false
   } finally {
     if (generation === userLoadGeneration) loading.value = false
   }
 }
 
-function reloadFirstPage() {
-  if (!requireAdminUsersOnline()) return
-  clearSelection()
-  page.value = 0
-  loadUsers()
-}
-
-function onSearch() {
-  reloadFirstPage()
+function reloadFirstPage(filters) {
+  return loadUsers({ ...applied.value, ...filters, page: 0 }, true)
 }
 
 onBeforeUnmount(() => {
@@ -169,7 +165,7 @@ onBeforeUnmount(() => {
       data-testid="admin-connectivity-unavailable"
     >{{ $t(adminAvailability.messageKey) }}</p>
 
-    <AdminFilterBar :chips="filterChips" @remove="removeFilterChip">
+    <AdminFilterBar :chips="filterChips" :remove-disabled="removeDisabled" @remove="removeFilterChip">
       <template #search>
         <input
           v-model="searchQuery"
@@ -189,7 +185,7 @@ onBeforeUnmount(() => {
           data-testid="admin-idp-input"
           :disabled="segment !== 'keycloak'"
           :placeholder="$t('admin.idpAliasPlaceholder')"
-          @keyup.enter="onIdpAliasChange"
+          @keyup.enter="onSearch"
         />
       </label>
       <p v-if="segment !== 'keycloak'" class="admin-list-muted admin-filter-hint">{{ $t('admin.idpAliasKeycloakOnly') }}</p>
@@ -200,7 +196,7 @@ onBeforeUnmount(() => {
 
     <AdminBulkBar v-if="selectedCount" :summary="$t('admin.selectedCount', { count: selectedCount })" :hint="$t('adminList.bulkScope')">
       <AppButton variant="ghost" size="sm" data-testid="admin-clear-selection" @click="clearSelection">{{ $t('admin.clearSelection') }}</AppButton>
-      <AppButton variant="danger" size="sm" data-testid="admin-bulk-delete" :disabled="!adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</AppButton>
+      <AppButton variant="danger" size="sm" data-testid="admin-bulk-delete" :disabled="loading || !adminAvailability.available" @click="startBulkDelete">{{ $t('admin.bulkDelete') }}</AppButton>
     </AdminBulkBar>
 
     <p v-if="loading" class="admin-list-empty" role="status">{{ $t('admin.loading') }}</p>
@@ -288,20 +284,11 @@ onBeforeUnmount(() => {
           />
           <AppButton size="sm" class="admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</AppButton>
         </span>
-        <label>
+        <div class="admin-list-field">
           <span>{{ $t('admin.size') }}</span>
-          <select
-            class="admin-list-input admin-size-select"
-            :value="size"
-            :data-applied-value="size"
-            :disabled="!adminAvailability.available"
-            @change="onSizeChange"
-          >
-            <option :value="25">25</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-          </select>
-        </label>
+          <SegmentedControl :model-value="String(size)" :options="pageSizeOptions" :aria-label="$t('admin.size')"
+            data-testid="admin-page-size" @update:model-value="onSizeChange" />
+        </div>
       </div>
     </div>
 
@@ -422,6 +409,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .admin-users { color: var(--color-text-primary); font: var(--type-body); }
 .admin-search-input { flex: 1 1 auto; }
+.admin-table th { position: static; }
 .admin-idp-field { min-width: var(--form-field-min); }
 .admin-filter-hint { margin: 0; }
 .admin-kc-email { display: block; }

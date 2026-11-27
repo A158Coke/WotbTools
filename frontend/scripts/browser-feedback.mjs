@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { writeFile, rm } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
+import { Page } from './browser-page.mjs'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 
 const root = process.cwd()
 const name = `__feedback_fixture_${randomUUID()}`
 const html = resolve(root, `${name}.html`)
 const entry = resolve(root, `${name}.js`)
-const delay = ms => new Promise(resolvePromise => setTimeout(resolvePromise, ms))
 const plugin = {
   name: 'feedback-test-boundaries', enforce: 'pre',
   resolveId(source) {
@@ -70,19 +70,12 @@ try {
   client.on('Runtime.consoleAPICalled', event => { if (event.type === 'error') console.error('Browser console:', event.args.map(arg => arg.value || arg.description).join(' ')) })
   for (const surface of ['ai', 'site']) for (const [width, theme] of [[390, 'dark'], [390, 'light'], [900, 'dark'], [900, 'light'], [1280, 'dark'], [1280, 'light']]) {
     const { sessionId, targetId } = await chrome.openPage()
-    await client.send('Runtime.enable', {}, sessionId)
-    await client.send('Emulation.setDeviceMetricsOverride', { width, height: 850, deviceScaleFactor: 1, mobile: width < 600 }, sessionId)
-    await client.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/${name}.html?theme=${theme}&surface=${surface}` }, sessionId)
-    let ready = false
-    for (let attempt = 0; attempt < 100 && !ready; attempt++) {
-      await delay(100)
-      const result = await client.send('Runtime.evaluate', { expression: `!!document.querySelector('.feedback-admin table') && (${surface === 'site'} || !!document.querySelector('[data-test=feedback-btn]'))`, returnByValue: true }, sessionId)
-      ready = result.result.value === true
-    }
-    if (!ready) {
-      const info = await client.send('Runtime.evaluate', { expression: 'JSON.stringify({url:location.href, state:document.readyState, body:document.body.outerHTML.slice(0,3000),requests:window.requests})', returnByValue: true }, sessionId)
-      throw new Error(`fixture did not load at ${width}px: ${info.result.value}`)
-    }
+    const page = new Page(client, sessionId)
+    await page.enable()
+    await page.emulate({ width, height: 850, deviceScaleFactor: 1, touch: width < 600 })
+    await page.goto(`http://127.0.0.1:${address.port}/${name}.html?theme=${theme}&surface=${surface}`)
+    await page.waitForValue(`!!document.querySelector('.feedback-admin table') && (${surface === 'site'} || !!document.querySelector('[data-test=feedback-btn]'))`, Boolean,
+      { label: `${surface} feedback ready at ${width}px` })
     const siteExpression = `(async () => {
       const wait = ms => new Promise(r => setTimeout(r, ms))
       window.openSite(); await wait(100)

@@ -1225,6 +1225,7 @@
     "WOTB_ACCOUNT_NOT_BOUND": "请先绑定游戏账号"
   },
   "admin": {
+    "loginRequired": "请登录以管理用户。",
     "title": "用户管理",
     "hint": "不能修改用户信息。删除会同时移除 WotBTools 与 Keycloak 账号。",
     "kicker": "管理 · 只读与删除",

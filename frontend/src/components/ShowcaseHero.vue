@@ -144,4 +144,17 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   .showcase-hero.is-compact .showcase-hero-title { font: var(--type-h3); }
   .showcase-hero-toolbar { justify-content: flex-start; }
 }
+/* 管理页的长标题也覆盖在底图上，遮罩的实色区随文字宽度延伸。 */
+.showcase-hero.is-compact[data-section='admin'] .showcase-hero-content {
+  --hero-text-surface: var(--color-surface-1-glass);
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  padding-inline-end: var(--space-12);
+  background: linear-gradient(to right, var(--hero-text-surface) calc(100% - var(--space-12)), transparent);
+}
+@media (width < 768px) {
+  .showcase-hero.is-compact[data-section='admin'] .showcase-hero-content {
+    --hero-text-surface: var(--color-hero-photo-scrim);
+  }
+}
 </style>

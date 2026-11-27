@@ -1,5 +1,6 @@
 @layer tokens {
   :root {
+    --color-hero-photo-scrim: rgb(8 15 22 / .75);
     --color-playback-grid-fallback: rgba(255,255,255,.55);
     --color-playback-region-fallback: rgba(255,255,255,.28);
     --color-playback-spawn-friendly-fallback: #8ef7b0;

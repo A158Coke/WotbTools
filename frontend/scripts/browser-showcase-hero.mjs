@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
+import { createAdminDirectory } from './browser-fixtures/admin-directory.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
 const PROFILE_INIT_SCRIPTS = {
@@ -97,12 +98,16 @@ function assertMobileCompact(hero, { section, position }) {
   assert.equal(hero.backgroundSize, 'cover', `mobile ${section} must keep cover`)
 }
 
-const { server, origin } = await startFixtureServer()
+const directory = createAdminDirectory()
+const { server, origin } = await startFixtureServer({ middleware(req, res, next) {
+  if (req.url.startsWith('/api/admin/users?')) return directory.middleware(req, res, next)
+  return next()
+} })
 let chrome
 try {
   chrome = await launchChromeForCdp(findChrome())
 
-  async function openAppPage({ width, height = 900, profile = 'summer', view, extraAuth = '' }) {
+  async function openAppPage({ width, height = 900, profile = 'summer', view, extraAuth = '', locale = 'zh' }) {
     const { targetId, sessionId } = await chrome.openPage()
     const page = new Page(chrome.client, sessionId)
     await page.enable()
@@ -110,7 +115,7 @@ try {
     const initScript = PROFILE_INIT_SCRIPTS[profile]
     if (!initScript) throw new Error(`unknown UI profile: ${profile}`)
     await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: initScript,
+      source: initScript + `localStorage.setItem('wotb-lang',${JSON.stringify(locale)})`,
     }, sessionId)
     await chrome.client.send('Page.navigate', { url: `${origin}/?view=${view}${extraAuth}` }, sessionId)
     await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
@@ -275,6 +280,44 @@ try {
   }
 
 
+
+  // 管理页文字区随标题长度扩展，长标签也要测实际底图上的最差像素。
+  for (const profile of Object.keys(PROFILE_INIT_SCRIPTS)) {
+    for (const width of [390, 1280]) {
+      const { targetId, page } = await openAppPage({ width, profile, locale: 'en', view: 'admin-users', extraAuth: '&ws-auth=1&ws-roles=wotbtools-admin' })
+      try {
+        await page.waitForValue("document.querySelector('.showcase-hero-title')?.textContent", label => label === 'User Management')
+        await page.waitForValue('!!document.querySelector("[data-testid=admin-row-open]")', Boolean)
+        await page.evaluate('document.fonts.ready')
+        await page.animationsSettled()
+        for (const selector of ['.showcase-hero-title', '.showcase-hero-kicker']) {
+          const sample = await page.callWith(sel => {
+            const node = document.querySelector(sel)
+            const style = getComputedStyle(node)
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            const rect = range.getBoundingClientRect()
+            const color = style.color.match(/[\d.]+/g).map(Number)
+            const large = parseFloat(style.fontSize) >= 24 || (Number(style.fontWeight) >= 700 && parseFloat(style.fontSize) >= 18.667)
+            node.style.visibility = 'hidden'
+            return { color, threshold: large ? 3 : 4.5, clip: { x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height, scale: 1 } }
+          }, selector)
+          await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+          const { data } = await page.client.send('Page.captureScreenshot', { format: 'png', clip: sample.clip }, page.sessionId)
+          await page.callWith(sel => { document.querySelector(sel).style.visibility = '' }, selector)
+          const { default: sharp } = await import('sharp')
+          const { data: pixels, info } = await sharp(Buffer.from(data, 'base64')).raw().toBuffer({ resolveWithObject: true })
+          const textLum = relativeLuminance(sample.color)
+          let minimum = Infinity
+          for (let offset = 0; offset < pixels.length; offset += info.channels) {
+            const bg = relativeLuminance(pixels.subarray(offset, offset + 3))
+            minimum = Math.min(minimum, (Math.max(textLum, bg) + 0.05) / (Math.min(textLum, bg) + 0.05))
+          }
+          assert.ok(minimum >= sample.threshold, [profile, width, selector, minimum, sample.threshold].join(' '))
+        }
+      } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+    }
+  }
 
   console.log('[browser-showcase-hero] all scenarios passed')
 } finally {
