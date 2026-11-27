@@ -30,7 +30,7 @@ function installAt(query: string, contactShadowOverride?: boolean, clearStorage 
   return S
 }
 
-describe('sceneState.applyRenderSettings 重载参数', () => {
+describe('sceneState 渲染设置重载参数', () => {
   let replace: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
@@ -40,6 +40,7 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
   afterEach(() => {
     replace.mockRestore()
     localStorage.clear()
+    delete (window as any).__TAURI__
     window.history.replaceState({}, '', '/')
   })
 
@@ -58,6 +59,44 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
     const url = lastUrl()
     expect(url.searchParams.get('q')).toBe('ultra')
     expect(url.searchParams.has('shadows')).toBe(false)
+  })
+
+  it('切换画质时清掉旧 URL 接地阴影覆盖，并按已持久化偏好暂存', async () => {
+    const S = installAt('?q=high&contactshadows=0', undefined, true, true)
+    S.stageReloadReplay = vi.fn()
+    expect(S.CONTACT_SHADOWS_PREF).toBe(false)
+    ;(window as any).__TAURI__ = {}
+
+    S.setQuality('ultra')
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1))
+
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
+    const url = lastUrl()
+    expect(url.searchParams.get('q')).toBe('ultra')
+    expect(url.searchParams.has('contactshadows')).toBe(false)
+
+    const next = installAt(url.search, undefined, false)
+    expect(next.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(next.store.contactShadows).toBe(true)
+  })
+
+  it('面板切画质时也清掉旧 URL 覆盖，并按已持久化偏好应用与暂存', async () => {
+    const S = installAt('?q=high&contactshadows=0', undefined, true, true)
+    S.stageReloadReplay = vi.fn()
+    expect(S.CONTACT_SHADOWS_PREF).toBe(false)
+    expect(S.store.contactShadows).toBe(false)
+
+    expect(await S.applyRenderSettings({ qualityKey: 'ultra' })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
+    expect(S.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(S.store.contactShadows).toBe(true)
+    const url = lastUrl()
+    expect(url.searchParams.get('q')).toBe('ultra')
+    expect(url.searchParams.has('contactshadows')).toBe(false)
+
+    const next = installAt(url.search, undefined, false)
+    expect(next.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(next.store.contactShadows).toBe(true)
   })
 
   it('降档只关闭有效效果并保留偏好，升档后恢复并进入本次暂存目标', async () => {

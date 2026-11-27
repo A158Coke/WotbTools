@@ -10,6 +10,21 @@ import { createContactShadowControl } from './contactShadowControl.ts'
 import type { Host } from '../playbackScene.js'
 import { bind } from '../hostBind.ts'
 
+// 画质切换会重建场景，必须以 localStorage 中的偏好为准，排除旧 URL 覆盖的临时值。
+function persistedContactShadows(S: Host): boolean {
+  try {
+    const stored = localStorage.getItem('pb_contact_shadows')
+    if (stored !== null) return stored === '1'
+  } catch (e) {}
+  return !!S.CONTACT_SHADOWS_PREF
+}
+
+function resolveContactPref(S: Host, patch: RenderSettingsPatch, qualityChanged: boolean): boolean {
+  if (patch.contactShadows !== undefined) return !!patch.contactShadows
+  if (qualityChanged) return persistedContactShadows(S)
+  return !!S.CONTACT_SHADOWS_PREF
+}
+
 export function installSceneState(S: Host, contactShadowOverride?: boolean) {
   Object.assign(S, {
     setQuality: bind(S, setQuality),
@@ -90,12 +105,12 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     };
     if (S.DATA) {
       const reload = async () => {
-
-        try { await S.stageReloadReplay?.(!!S.CONTACT_SHADOWS_PREF); } catch (e) { return; }
+        const contactShadows = persistedContactShadows(S)
+        try { await S.stageReloadReplay?.(contactShadows); } catch (e) { return; }
         if (S.perf) S.perf.interrupt('quality-change');
         try { localStorage.setItem('pb_quality', k); } catch (e) {}
         location.replace(buildRenderSettingsReloadUrl(location.href, {
-          qualityKey: k, armorHighlight: S.ARMOR_HIGHLIGHT,
+          qualityKey: k, armorHighlight: S.ARMOR_HIGHLIGHT, contactShadows,
         }));
       };
       if (window.__TAURI__) { void reload(); return; }
@@ -113,11 +128,8 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     const logdepthChanged = patch.logdepth !== undefined && !!patch.logdepth !== S.LOGDEPTH;
     const dynresChanged = patch.dynres !== undefined && !!patch.dynres !== S.DYNRES;
     const nextQuality = qualityChanged && quality ? quality : S.QKEY;
-    const nextContactPref = patch.contactShadows !== undefined
-      ? !!patch.contactShadows
-      : !!S.CONTACT_SHADOWS_PREF;
-    const contactPrefChanged = patch.contactShadows !== undefined
-      && nextContactPref !== !!S.CONTACT_SHADOWS_PREF;
+    const nextContactPref = resolveContactPref(S, patch, qualityChanged);
+    const contactPrefChanged = nextContactPref !== !!S.CONTACT_SHADOWS_PREF;
     const contactTarget = nextContactPref && shadowQualityEligible(nextQuality);
     const contactShadowsChanged = contactTarget !== S.store.contactShadows;
     const needsReload = qualityChanged || logdepthChanged || dynresChanged || contactShadowsChanged;
@@ -155,7 +167,7 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     if (!needsReload) return false;
     if (S.perf) S.perf.interrupt('render-settings-change');
     const patchForUrl: RenderSettingsPatch = {};
-    if (contactPrefChanged) patchForUrl.contactShadows = nextContactPref;
+    if (contactPrefChanged || qualityChanged) patchForUrl.contactShadows = nextContactPref;
     if (qualityChanged && quality) {
       S.QKEY = quality;
       S.Q = QUALITY_PRESETS[quality];
