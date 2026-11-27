@@ -48,6 +48,7 @@ function heroProbe() {
   const art = section?.querySelector('.showcase-hero-art')
   if (!section || !art) return null
   const cs = getComputedStyle(art)
+  const imageLayer = cs.backgroundImage.startsWith('url(') ? 0 : 1
   const positions = cs.backgroundPosition.split(',').map(s => s.trim())
   const rect = section.getBoundingClientRect()
   return {
@@ -56,8 +57,8 @@ function heroProbe() {
     height: Math.round(rect.height),
     width: Math.round(rect.width),
     backgroundImage: cs.backgroundImage,
-    imagePosition: positions[1] ?? null,
-    backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[1] ?? null,
+    imagePosition: positions[imageLayer] ?? null,
+    backgroundSize: cs.backgroundSize.split(',').map(s => s.trim())[imageLayer] ?? null,
     titleColor: getComputedStyle(section.querySelector('h1')).color,
 
 
@@ -85,9 +86,9 @@ function fullHeroProbe() {
 function assertDesktopCompact(hero, { section, position }) {
   assert.equal(hero.section, section, `desktop ${section} must use its section hero`)
   assert.ok(hero.compact, `desktop ${section} must render compact`)
-  assert.match(hero.backgroundImage, /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
+  assert.match(hero.backgroundImage, section === 'admin' ? /url\(/ : /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
   assert.equal(hero.imagePosition, position, `desktop ${section} compact focus must be ${position}`)
-  assert.equal(hero.backgroundSize, 'cover', `desktop ${section} must keep cover (no distortion)`)
+  assert.equal(hero.backgroundSize, section === 'admin' ? 'contain' : 'cover', 'desktop image sizing for ' + section)
   assert.ok(hero.titleBottom <= hero.heroBottom, `desktop ${section} title must stay inside the banner`)
 }
 
@@ -126,7 +127,7 @@ try {
   for (const [view, extraAuth, section, position] of [
     ['replay', '', 'replay', '50% 50%'],
     ['agent-techtree', '', 'techtree', '50% 58%'],
-    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '50% 45%'],
+    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '100% 50%'],
   ]) {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
@@ -149,7 +150,17 @@ try {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
       const desktop = await page.probe(heroProbe)
-      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '50% 45%' })
+      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '100% 50%' })
+      if (section === 'admin') {
+        for (const width of [900, 1280, 1890]) {
+          await page.emulate({ width, height: 900, touch: false, deviceScaleFactor: 1 })
+          const hero = await page.probe(heroProbe)
+          assertDesktopCompact(hero, { section, position: '100% 50%' })
+          const edges = await page.probe(() => ['.showcase-hero', '.admin-filter-bar', '.admin-list-table-wrap'].map(
+            selector => document.querySelector(selector).getBoundingClientRect().right))
+          assert.ok(Math.max(...edges) - Math.min(...edges) <= 1, 'users hero, filters and table must share their right edge at ' + width)
+        }
+      }
       await page.emulate({ width: 390, height: 844, touch: true })
       await page.waitForValue(`window.innerWidth`, value => value === 390, { timeout: 20_000, label: 'mobile viewport applied' })
       const mobile = await page.probe(heroProbe)
