@@ -100,6 +100,7 @@ export interface DataLoaderDeps {
     onTankList?: (list: TankListEntry[]) => void
     onTankSelection?: (selection: { shooter: number | null; target: number | null }) => void
     getCollisionMode: () => boolean
+    clearShotState?: () => void
 }
 
 export interface DataLoaderHandle {
@@ -145,6 +146,7 @@ export function createDataLoader(deps: DataLoaderDeps): DataLoaderHandle {
         onTankList, onTankSelection,
         getUrlApplied, setUrlApplied, getTurretDeg, getGunDeg, eqsRef, getPenetrationMode,
         getUpgradeOptions,
+        clearShotState,
     } = deps
 
         let initDone = false;
@@ -176,6 +178,7 @@ async function loadTarget(tid: number | string): Promise<boolean> {
             setUrlApplied(false);
             tcRef().tidyTrajectory();
             jcRef().clearLastClickNdc();
+            clearShotState?.();
             reportLoad({ state: 'loading', progress: null });
             const nextTankData = await fetchTankData(tid, getUpgradeOptions('target'));
             if (isDestroyed() || gen !== targetLoadGen.get()) return false;
@@ -249,6 +252,7 @@ function applyConfig(idx: number): void {
                 tcRef().tidyTrajectory();
                 disposeHitMarker(getFxScene());
                 jcRef().clearLastClickNdc();
+                clearShotState?.();
             } else {
                 rerunAuthoritativeShotCheckFn();
             }
@@ -283,6 +287,7 @@ async function loadShooter(tid: number | string): Promise<void> {
                 tcRef().tidyTrajectory();
                 disposeHitMarker(getFxScene());
                 jcRef().clearLastClickNdc();
+                clearShotState?.();
             }
             try {
                 const data = await fetchTankData(tid, getUpgradeOptions('shooter'));

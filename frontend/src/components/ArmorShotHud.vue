@@ -6,9 +6,11 @@ import { fetchTankData } from '../scene/agentData.js'
 import { loadDevices, shellIconUrl, itemIconUrl } from '../utils/researchCatalog.js'
 import { shellLabel } from '../scene/tankMeta.js'
 import { calibratedPenMul, shellTypeOf, rolledPenetration } from '../scene/viewer/armorPlateModel.js'
+import { damageFactorAt, trayShellDamage, trayShellFor } from '../scene/tankMechanics'
 
 const props = defineProps({
   distanceState: { type: Object, default: null },
+  shotState: { type: Object, default: null },
   shooterId: { type: Number, default: null },
   scfg: { type: [Number, String], default: null },
   config: { type: [Number, String], default: null },
@@ -79,26 +81,48 @@ const calibrated = computed(() => (props.eqcal == null ? props.calibratedDefault
 const enhanced = computed(() => (props.eqenh == null ? props.enhancedDefault : String(props.eqenh) === '1'))
 const pitchDevice = computed(() => (props.eqpitch == null ? props.pitchDefault : String(props.eqpitch) === '1'))
 const distance = computed(() => props.distanceState?.distance ?? null)
+const exactDistance = computed(() => {
+  const exact = props.distanceState?.exactDistance
+  return typeof exact === 'number' && Number.isFinite(exact) ? exact : distance.value
+})
 const distanceHint = computed(() => t(props.distanceState?.readOnly ? 'armor.recorded_distance' : 'armor.distance_center'))
+const distanceLabel = computed(() => t(props.distanceState?.readOnly ? 'armor.distance_recorded_short' : 'armor.distance_short'))
 function changeDistance(event) {
   if (!props.distanceState || props.distanceState.readOnly) return
   const value = Number(event.target.value)
   if (Number.isFinite(value)) emit('distance', value)
 }
 const shellOptions = computed(() => shells.value.map(shell => {
-  const penetration = distance.value != null && typeof shell.penetration === 'number' && Number.isFinite(shell.penetration) && shell.penetration >= 0
-    ? Math.round(rolledPenetration(shell.penetration, shell.penetration_far, distance.value, shellTypeOf(shell) === 'he') * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
+  const penetration = exactDistance.value != null && typeof shell.penetration === 'number' && Number.isFinite(shell.penetration) && shell.penetration >= 0
+    ? Math.round(rolledPenetration(shell.penetration, shell.penetration_far, exactDistance.value, shellTypeOf(shell) === 'he') * (calibrated.value ? calibratedPenMul(shellTypeOf(shell)) : 1))
     : null
   const name = (typeof shell.name === 'string' && shell.name.trim()) || shellLabel(shell) || shell.type || ''
-  const damage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? Math.round(shell.damage) : null
+  const tray = trayShellFor(details.value?.mechanics, shell)
+  const baseDamage = typeof shell.damage === 'number' && Number.isFinite(shell.damage) ? shell.damage : null
+  const damage = tray && (exactDistance.value == null || !Number.isFinite(exactDistance.value))
+    ? null
+    : trayShellDamage(baseDamage, tray?.sectors, exactDistance.value)
+  const multiplier = tray ? damageFactorAt(tray.sectors, exactDistance.value) : null
   return {
     shell,
     name,
     penetration,
-    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${damage}`}`,
+    damage,
+    multiplier,
+    label: `${name} · ${penetration ?? '—'}mm · ${t('armor.shell_distance_basis', { distance: distance.value ?? '—' })}${damage == null ? '' : ` · ${Math.round(damage)}`}`,
   }
 }))
 const selected = computed(() => shellOptions.value[shellIndex.value])
+const shotDistance = computed(() => {
+  const exact = props.shotState?.exactDistance
+  if (typeof exact !== 'number' || !Number.isFinite(exact)) return props.shotState?.distance ?? null
+  const rounded = Math.round(exact)
+  return Math.abs(rounded - exact) < 0.05 ? rounded : (Math.round(exact * 10) / 10).toFixed(1)
+})
+const shotMultiplier = computed(() => {
+  const value = props.shotState?.factor
+  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 100) : null
+})
 </script>
 
 <template>
@@ -164,7 +188,7 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
       </div>
     </div>
     <div class="hud-distance" :title="distanceHint">
-      <label for="armor-distance">{{ t('armor.distance_short') }}</label>
+      <label for="armor-distance">{{ distanceLabel }}</label>
       <input id="armor-distance" data-testid="hud-distance" type="range"
         :min="distanceState?.min ?? 3" :max="distanceState?.max ?? 500" step="1"
         :value="distance ?? 3" :disabled="!distanceState || distanceState.readOnly"
@@ -175,6 +199,18 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
     <div class="hud-summary" :title="selected?.label">
       <span class="hud-shell-name">{{ selected?.name }}</span>
       <span class="hud-reading hud-penetration" data-testid="hud-penetration">{{ selected?.penetration ?? '—' }}<span class="hud-unit"> mm</span></span>
+      <span class="hud-damage-label">
+        {{ t('armor.estimated_damage') }}
+        <span v-if="selected?.multiplier != null" class="hud-multiplier" data-testid="hud-multiplier">×{{ Math.round(selected.multiplier * 100) }}%</span>
+      </span>
+      <span class="hud-reading hud-damage" data-testid="hud-damage">{{ selected?.damage == null ? '—' : Math.round(selected.damage) }}<span class="hud-unit"> HP</span></span>
+    </div>
+    <div v-if="shotState && !distanceState?.readOnly" class="hud-shot" data-testid="hud-shot">
+      <span class="hud-shot-label">{{ t('armor.shot_path') }}</span>
+      <span class="hud-shot-values">
+        <span class="hud-reading" data-testid="hud-shot-distance">{{ shotDistance ?? '—' }}<span class="hud-unit"> {{ t('armor.distance_unit') }}</span></span>
+        <span v-if="shotMultiplier != null" class="hud-multiplier" data-testid="hud-shot-multiplier">×{{ shotMultiplier }}%</span>
+      </span>
     </div>
   </div>
 </template>
@@ -202,6 +238,12 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
 .hud-reading { color: var(--color-text-primary); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: end; }
 .hud-penetration { color: var(--color-accent-text); }
 .hud-unit { color: var(--color-text-secondary); font-weight: 400; }
+.hud-damage-label { color: var(--color-text-secondary); font: var(--type-caption); }
+.hud-damage { color: var(--color-text-primary); }
+.hud-multiplier { margin-inline-start: var(--space-1); color: var(--color-warning); font-variant-numeric: tabular-nums; }
+.hud-shot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); font: var(--type-caption); }
+.hud-shot-label { color: var(--color-text-secondary); white-space: nowrap; }
+.hud-shot-values { display: inline-flex; align-items: baseline; gap: var(--space-1); min-inline-size: 0; white-space: nowrap; }
 
 @media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .shot-hud {
@@ -245,5 +287,8 @@ const selected = computed(() => shellOptions.value[shellIndex.value])
     .hud-summary { display: contents; }
     .hud-shell-name { display: none; }
     .hud-penetration { grid-column: 4; grid-row: 3; }
+    .hud-damage-label { grid-column: 1; grid-row: 4; font-size: var(--font-size-caption-xs); line-height: var(--line-height-caption-xs); }
+    .hud-damage { grid-column: 3 / -1; grid-row: 4; }
+    .hud-shot { grid-column: 1 / -1; grid-row: 5; }
 }
 </style>
