@@ -66,7 +66,7 @@ const SEGMENTED_STABLE = `(() => {
 async function settleSegmented(page) {
   await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   await page.animationsSettled()
-  await page.waitForValue(SEGMENTED_STABLE, value => value.entries.length === SEGMENTED_CONTROLS.length
+  await page.waitForValue(SEGMENTED_STABLE, value => value.settled && value.entries.length === SEGMENTED_CONTROLS.length
     && value.entries.every(entry => !entry.missing && entry.ok), {
     label: 'segmented indicator aligned and stable',
   })
