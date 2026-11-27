@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue'
 
 const params = new URLSearchParams(window.location.search)
+const manualStart = params.get('ws-manual-3d') === '1'
+const subject = manualStart ? 'manual-start-fixture' : 'fixture-user'
+if (manualStart) localStorage.setItem('wotb.pb.3d-auto-start:' + subject, '0')
 const onboardingCase = params.get('ws-onboarding')
 if (onboardingCase) {
   if (sessionStorage.getItem('ws-onboarding-case') !== onboardingCase) {
@@ -24,7 +27,7 @@ const initError = ref(null)
 const initFailureReason = ref(null)
 const loginInFlight = ref(false)
 const tokenParsed = ref({
-  sub: 'fixture-user',
+  sub: subject,
   preferred_username: 'fixture-user',
   realm_access: { roles: String(params.get('ws-roles') || '').split(',').filter(Boolean) },
 })

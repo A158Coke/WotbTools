@@ -347,8 +347,6 @@ function linkAttrs(id) {
   padding-inline: 0;
   min-inline-size: var(--space-4);
   justify-content: center;
-  font-size: var(--font-size-caption-xs);
-  line-height: var(--line-height-caption-xs);
 }
 .sidebar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
