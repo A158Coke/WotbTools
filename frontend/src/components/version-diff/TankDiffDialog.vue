@@ -179,7 +179,7 @@ function openVersion(dataset: string) {
             </div>
           </div>
           <p v-else class="vd-muted">{{ t('versionDiff.armor.noDirections') }}</p>
-          <div class="vd-inline-actions">
+          <div v-if="armor" class="vd-inline-actions">
             <AppButton variant="secondary" @click="emit('open-armor')">
               {{ t('versionDiff.tank.openArmor') }}
             </AppButton>

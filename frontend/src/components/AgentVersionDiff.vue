@@ -256,7 +256,8 @@ function itemFileLabel(name: string): string {
                     :pair="pair"
                     selectable
                     :selected-keys="armorSelectionKeys(row)"
-                    @select="keys => toggleArmorSelection(row, keys)"
+                    :selected-config-key="armorSelectionConfigKey(row)"
+                    @select="selection => toggleArmorSelection(row, selection)"
                   />
                 </details>
               </header>

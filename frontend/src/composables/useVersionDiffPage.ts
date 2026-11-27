@@ -406,6 +406,10 @@ export function useVersionDiffPage() {
     const keys = selection.keys
     const configKey = selection.configKey || ''
     const current = armorSelection.value
+    if (!keys.length) {
+      armorSelection.value = { tankId: null, configKey: '', keys: [] }
+      return
+    }
     const same = current.tankId === row.id && current.configKey === configKey
       && keys.length === current.keys.length
       && keys.every(key => current.keys.includes(key))

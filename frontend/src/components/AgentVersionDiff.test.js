@@ -301,6 +301,52 @@ describe('AgentVersionDiff', () => {
     expect(wrapper.text()).toContain('85 mm Škoda 29')
   })
 
+  it('keeps config-level armor rows active and scoped to their configuration', async () => {
+    const detail = {
+      ...TANK_DETAIL,
+      configs: {
+        ...TANK_DETAIL.configs,
+        configs: [{
+          ...TANK_DETAIL.configs.configs[0],
+          changes: [
+            ...TANK_DETAIL.configs.configs[0].changes,
+            { path: 'gun_plates', category: 'armor', old: { 5: 100 }, new: { 5: 120 } },
+          ],
+        }],
+      },
+    }
+    mocks.fetchTankDiff.mockImplementationOnce(async () => detail)
+    const { wrapper } = await openAt()
+    const section = wrapper.get('#vd-section-armor')
+    const row = section.findAll('.vd-armor-list tbody tr')
+      .find(item => item.text().includes('85 mm Škoda 29'))
+    expect(row).toBeTruthy()
+    await row.trigger('click')
+    await flushPromises()
+    const viewport = wrapper.getComponent(ArmorComparisonViewport)
+    expect(viewport.props('isolateKeys')).toEqual(['gun:5'])
+    expect(viewport.props('isolateConfigKey')).toEqual('94/106')
+    expect(row.classes()).toContain('is-active')
+    await row.trigger('click')
+    await flushPromises()
+    expect(viewport.props('isolateKeys')).toEqual([])
+    expect(viewport.props('isolateConfigKey')).toEqual('')
+    expect(row.classes()).not.toContain('is-active')
+  })
+
+  it('hides the armor action when the tank has no armor diff', async () => {
+    const { armor: _armor, ...noArmor } = TANK_DETAIL
+    mocks.fetchTankDiff.mockImplementationOnce(async () => noArmor)
+    const { wrapper } = await openAt()
+    await wrapper.get('.vd-vehicle .vd-identity-action').trigger('click')
+    await flushPromises()
+    const armorTab = wrapper.findAll('.vd-tank .vd-tab')
+      .find(item => item.text() === 'versionDiff.tabs.armor')
+    await armorTab.trigger('click')
+    expect(wrapper.get('.vd-tank').text()).toContain('versionDiff.armor.noDirections')
+    expect(wrapper.find('.vd-tank .vd-inline-actions').exists()).toBe(false)
+  })
+
   it('opens the map dialog and fetches the map detail', async () => {
     const { wrapper } = await openAt()
     const row = wrapper.findAll('.vd-map-row').find(item => item.text().includes('Rockfield'))
