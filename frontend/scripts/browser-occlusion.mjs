@@ -419,6 +419,23 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       }
       return null
     }
+    // 普通流里的控件只有完整滚进每层滚动容器，才参与本轮五点命中。
+    // hidden/clip 造成的不可达，以及定位元素或吸顶层的遮挡，仍交给原探针报告。
+    function outsideScrollport(el, rect) {
+      for (let child = el; child.parentElement && child.parentElement !== document.body; child = child.parentElement) {
+        if (getComputedStyle(child).position === 'absolute') return false
+        const port = child.parentElement
+        const style = getComputedStyle(port)
+        const scrollsX = /^(auto|scroll)$/.test(style.overflowX) && port.scrollWidth > port.clientWidth + tol
+        const scrollsY = /^(auto|scroll)$/.test(style.overflowY) && port.scrollHeight > port.clientHeight + tol
+        if (!scrollsX && !scrollsY) continue
+        const bounds = port.getBoundingClientRect()
+        const left = bounds.left + port.clientLeft, top = bounds.top + port.clientTop
+        if (scrollsX && (rect.left < left - tol || rect.right > left + port.clientWidth + tol)) return true
+        if (scrollsY && (rect.top < top - tol || rect.bottom > top + port.clientHeight + tol)) return true
+      }
+      return false
+    }
     const name = (el) => el.getAttribute('data-test') || el.getAttribute('data-testid')
       || `${el.tagName.toLowerCase()}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}「${(el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 20)}」`
     const describe = (el) => el ? `${el.tagName.toLowerCase()}${el.dataset?.testid ? `[${el.dataset.testid}]` : ''}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}` : 'null'
@@ -435,6 +452,7 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       const isChrome = chromeEls.some((c) => c.contains(el))
       const top = owner ? 0 : chromeBottom
       if (!owner && (r.top < top - tol || r.bottom > vh - safe.bottom + tol || r.left < -tol || r.right > vw + tol)) continue
+      if (!owner && outsideScrollport(el, r)) continue
       if (owner && (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw)) continue
       checked += 1
       if (r.top < safe.top - tol || r.bottom > vh - safe.bottom + tol || r.left < safe.left - tol || r.right > vw - safe.right + tol) {
