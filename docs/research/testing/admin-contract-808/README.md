@@ -9,7 +9,7 @@
 | 入口 | 规则 | 数据、操作与结论 | 复验入口 |
 |---|---|---|---|
 | 用户管理 | DC-ARC-03、SEL-01、STA-02/03/04、FOC-02 | 身份源、页码、条数和列表依据同一成功响应更新。验证未提交输入、查询失败及乱序。27 个用户分两页，首页全选后翻页，用第二页两人执行取消、确认、部分失败和重试，重试只带失败 ID。已修复并验证。 | `test:browser-admin-directory`、`AdminUsersPage.*.test.js`、[对照](admin-users.webp) |
-| 战斗数据 | DC-SEL-01/03/07、ARC-03、STA-03、FOC-02 | 29 张已审地图，可按本地化名称或原 key 查找。1280 像素宽时在地图选项与表格的重叠处用鼠标选择，核对实际命中元素和选中值。键盘选择、收起、无结果、默认日期、未知地图、平局 0、分页、旧响应与请求中编辑均有断言。删地图芯片只发送成功快照中的其余条件。已修复并验证。 | `test:browser-battle-data`、`BattleDataAdminPage.test.ts`、`SearchableSelect.test.ts`、[对照](battle.webp) |
+| 战斗数据 | DC-SEL-01/03/07、ARC-03、STA-03、FOC-02 | 29 张已审地图，可按本地化名称或原 key 查找。桌面场景在地图选项与表格的重叠处用鼠标选择，核对实际命中元素和选中值。筛选字段换行使两者错开时，测试展开到 1920 像素宽后重测同一交点条件。键盘选择、收起、无结果、默认日期、未知地图、平局 0、分页、旧响应与请求中编辑均有断言。删地图芯片只发送成功快照中的其余条件。已修复并验证。 | `test:browser-battle-data`、`BattleDataAdminPage.test.ts`、`SearchableSelect.test.ts`、[对照](battle.webp) |
 | AI 复盘反馈 | DC-SEL-02、STA-02/03/04、FOC-02 | 两态行内控件只在更新或回读成功后显示新状态。验证 PATCH 拒绝、重试、详情、删除取消零写入，取消回到删除按钮，删除第二页最后记录后焦点回到列表区域。 | `test:browser-admin-directory`、`AdminAiReviewFeedbackPage.test.js`、[对照](admin-ai-review-feedback.webp) |
 | 站点反馈 | DC-SEL-02、STA-02/03/04、FOC-02 | 在独立站点反馈 endpoint 上重复翻页、状态更新、详情、取消和确认删除。检查行内操作不会误开详情，以及回读失败、其他记录的迟到响应。 | `test:browser-admin-directory`、`AdminSiteFeedbackPage.test.js`、[对照](admin-site-feedback.webp) |
 | 名人堂管理 | DC-SEL-01/03/04、ARC-03/08、OCC、FOC-02、STA-03/04 | 单场 12 辆夹具车，百场/三环各 85 辆。选车只查询一次，手机在筛选面板操作。单场验证下载、删除和取消，百场与三环各连续审批两份记录，缺少回放不能通过。操作后按记录返焦。Tier 和单场三处双项下拉沿用契约和 `selection-policy.test.ts` 登记的例外。导航计数见下文。 | `test:browser-hof-admin-tabs`、`test:browser-hof-pending`、`HoFAdminPage.test.js`、[对照](hof.webp) |
