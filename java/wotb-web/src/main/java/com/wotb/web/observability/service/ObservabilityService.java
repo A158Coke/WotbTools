@@ -26,7 +26,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Bounded telemetry intake. No persistent identity, arbitrary text, or raw client exception logging. */
 @Service
 public class ObservabilityService {
     private static final Logger log = LoggerFactory.getLogger(ObservabilityService.class);
@@ -44,7 +43,6 @@ public class ObservabilityService {
     private static final int ANONYMOUS_EVENTS_PER_MINUTE = 6_000;
     private static final int MAX_AUTHENTICATED_KEYS = 4_096;
     private static final int MAX_ANONYMOUS_KEYS = 4_096;
-    // Ephemeral fixed-minute counters, never logged or persisted.
     private final Map<String, Integer> authenticatedSubjects = new HashMap<>();
     private final AnonymousAdmission anonymous;
     private final Clock clock;
@@ -82,7 +80,6 @@ public class ObservabilityService {
             throw rejected(HttpStatus.BAD_REQUEST);
         }
         final Instant now = clock.instant();
-        // Validate the entire batch first so a rejected request never partially contributes events.
         for (final JsonNode event : events) {
             validate(event, jwt, now);
         }

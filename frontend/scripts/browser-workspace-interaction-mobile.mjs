@@ -23,7 +23,6 @@ export async function runMobileFullscreenScenario(env, scenario) {
     const r = document.querySelector('[data-test="pb-fullscreen"]').getBoundingClientRect()
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
   })()`)
-  // 真实触摸 = user gesture，requestFullscreen 才会被浏览器放行
   await page.tap({ ...button, touch: scenario.touch })
   await page.waitFor(() => !!document.fullscreenElement, { timeout: 5000, label: 'document.fullscreenElement' })
   await delay(200)
@@ -39,8 +38,6 @@ export async function runMobileFullscreenScenario(env, scenario) {
   check(failures, state.fullscreenIsRoot, 'fullscreen element is not the playback root')
   check(failures, state.formClass === 'pb-form-mobile', `fullscreen form=${state.formClass}, expected pb-form-mobile`)
   check(failures, !state.displayOpen, 'mobile fullscreen must not open the Display surface before ⚙')
-  // 手机全屏与非全屏横屏同一个几何（Team 1 | 正方形 Stage | Team 2）：⚙ 打开的是锚定在
-  // gear 上的 workspace 级浮面，不是常驻左栏，也不改变三段式布局。
   await page.evaluate(`document.querySelector('[data-test="pb-secondary-entry"]').click()`)
   await delay(200)
   const drawer = await page.evaluate(`(() => {
@@ -62,8 +59,6 @@ export async function runMobileFullscreenScenario(env, scenario) {
   check(failures, !!drawer && drawer.insideViewport,
     `Display must stay inside the viewport in mobile fullscreen: ${JSON.stringify(drawer)}`)
 
-  // 全屏中经导航抽屉离开：回放被 v-show 缓存、不卸载，只收到 active=false。
-  // 必须由真实 Fullscreen API 退出，否则新页面被挡在旧 fullscreen root 后面。
   await page.evaluate(`window.__pbFixture.setActive(false)`)
   const exited = await page.waitFor(() => !document.fullscreenElement, { timeout: 5000, label: 'fullscreen exits on deactivate' })
     .then(() => true, () => false)
@@ -73,32 +68,7 @@ export async function runMobileFullscreenScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `fullscreen ${scenario.width}x${scenario.height}` })
 }
 
-/* ------------------------------------------------------------------ 解析生命周期（P0） */
 
-/**
- * A → 清空 → B 的**真实在途**生命周期回归（线上 P0：replay parser lifecycle is not
- * session-owned）。
- *
- * 与同文件 roster-geometry 场景里那段「A → 清空 → B」的区别（review 指出的覆盖缺口）：
- * 那段必须先把 A 等成 `err` / `hasData` 才能注入就绪态，所以 clear 时 A 早已 settled——
- * 它证明的是"结算完之后再换文件"，**没有**覆盖线上真实故障序列：
- *
- *     A 正在解析（Worker 不回包）→ 用户清空 / 换 B → A 必须被真正撤下 → B 必须能继续
- *
- * 这里用 fixture Worker（`playback-parse-worker-stub.mjs`，经 `?debug` 的
- * `__setParseWorkerForTest` 注入点替换 Worker 来源）把 A 确定性地挂在 in-flight：
- * 不依赖真实网络随机卡顿，也不等 A 的 `err` / `hasData`。全程真实用户路径（工作台文件
- * 选择 → 3D 能力页 → 真实点击「开始」→ 真实点击 remove chip → 再选 B → 再点「开始」），
- * 只把 Worker 的实现换成可控闸门。
- *
- * 关键断言：
- *  1. clear 那一刻 A 仍在解析（store.loading、无 err/hasData）且请求已到 Worker；
- *  2. clear 真的撤下 A：Worker 被 terminate（生产代码的 abort 路径）；
- *  3. B 重新发起解析并**自己**收敛（hasData，无 err）——旧解析不占队列；
- *  4. 放行 A 的迟到回包 → 无人认领（不被 B 或任何会话消费）。
- */
-/** Foreground event wiring through the real workspace and 3D pane; events are
- * simulated in Chrome and do not claim OS/WebView background behavior. */
 export async function runSceneActivityScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -130,7 +100,6 @@ export async function runSceneActivityScenario(env, scenario) {
     await page.evaluate(`window.__activityProbe.visibility = 'hidden'; document.dispatchEvent(new Event('visibilitychange'))`)
     await page.waitForValue('window.__activityProbe.pauses.at(-1)', value => value === true, { label: 'hidden scene pauses' })
     await page.evaluate(`window.dispatchEvent(new PageTransitionEvent('pagehide')); window.__activityProbe.visibility = 'visible'; document.dispatchEvent(new Event('visibilitychange'))`)
-    // A settled task boundary lets Vue flush both events before checking no resume.
     await page.evaluate('new Promise(resolve => setTimeout(resolve, 0))')
     check(failures, await page.evaluate('window.__activityProbe.pauses.at(-1)') === true, 'visibility alone must not resume a pagehidden scene')
     await page.evaluate(`window.dispatchEvent(new PageTransitionEvent('pageshow'))`)
@@ -155,11 +124,8 @@ export const LIFECYCLE_SCENARIOS = [
   { name: 'parse-lifecycle-a-clear-b-740x360-coarse', width: 740, height: 360, touch: true },
 ]
 
-/** 在 fixture server 上传入 main world 的 Worker stub 入口（`.mjs` 不是应用源码） */
 export const PARSE_WORKER_STUB_URL = '/scripts/browser-fixtures/playback-parse-worker-stub.mjs'
 
-/** 页面内辅助（main world）：真实 File 选择 */
-/** fixture Worker 状态（页面内）：请求 id / terminate 次数 / 迟到回包无人认领数 */
 export const PARSE_WORKER_STATE = `(() => {
   const fixture = window.__pbWorkerFixture
   const workers = fixture ? fixture.workers : []
@@ -175,7 +141,6 @@ export const PARSE_WORKER_STATE = `(() => {
   }
 })()`
 
-/** 放行全部已登记请求 + 清零「无人认领」计数（之后新增的条目 = 本次放行里的迟到回包） */
 export const RELEASE_WORKER_RESPONSES = `(() => {
   const fixture = window.__pbWorkerFixture
   for (const worker of fixture.workers) { worker.unclaimed.length = 0; worker.releaseResponses() }
@@ -194,10 +159,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="replay"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
-  // —— A：先开 3D 面板（未选文件 ⇒ 不触发解析）→ 注入闸门 Worker → 再选文件 → 真实点击「开始」——
-  // 统一面板会立即激活常驻事件流，它与 2D/3D 共用 playbackSession.loadScene：若先选文件，
-  // 事件流的真实解析会先行（伪 ZIP → Invalid zip header），3D 随后复用失败的共享 promise，
-  // 「A 在途 → 清除终止」的断言就失去意义（上一轮 CI 实测 0 个模拟 Worker / 0 请求）。
   await enterReplay3d(page, scenario)
   await page.waitFor(() => !!window.__pbReplaySource, { label: 'replaySource debug bridge' })
   const injected = await page.evaluate(`(async () => {
@@ -209,12 +170,9 @@ export async function runParseLifecycleScenario(env, scenario) {
   })()`).catch((error) => `Error: ${error?.message || error}`)
   check(failures, injected === true, `worker fixture injection failed: ${JSON.stringify(injected)}`)
 
-  // 文件在闸门 Worker 就位之后才进入工作台：事件流/3D/2D 的共享解析从第一步起就受控。
   await page.evaluate('window.__pbSelect("lifecycle-a.wotbreplay", [1, 2, 3, 4])')
   await page.waitFor(() => !!document.querySelector('.pb-root'), { label: '3D pane root' })
 
-  // 待开播卡片在面板自动居中后仍在收敛：measure→tap 两步会在矮视口落到旧坐标
-  // （740x360 实测）。与 roster-geometry 同款用同一次 evaluate 的命中+click。
   const startA = await tapElement(page, '[data-test="replay3d-start"]', {
     touch: scenario.touch,
     verify: () => page.waitForValue(PARSE_WORKER_STATE, (state) => state.requests >= 1, { timeout: 5000, label: 'battle A parse request' }),
@@ -226,8 +184,6 @@ export async function runParseLifecycleScenario(env, scenario) {
     return
   }
 
-  // A 必须真的停在 in-flight（闸门 Worker 不回包）：请求已到 Worker，且内核仍在 loading、
-  // 既没有 err 也没有 hasData —— 这正是线上「A 正在解析」的那一刻。
   const inFlight = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.requests >= 1, {
       timeout: 15_000,
@@ -240,7 +196,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   check(failures, inFlight?.paneStore?.err === '' && inFlight?.paneStore?.hasData === false,
     `battle A must still be pending (no err / no data) at clear time (state=${JSON.stringify(inFlight)})`)
 
-  // —— clear A：打开回放列表 → 真实点击移除 → 确认 ——
   const chipCenter = await openCollectionRemove(page, scenario)
   check(failures, !!chipCenter, 'collection remove button must be hit-testable')
   if (!chipCenter) {
@@ -248,7 +203,6 @@ export async function runParseLifecycleScenario(env, scenario) {
     results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
     return
   }
-  // Dragging over the remove button is a scroll gesture: it must leave A selected and its parse alive.
   await page.installInputTrace()
   await dragPointer(page, chipCenter, { x: chipCenter.x - 24, y: chipCenter.y - 24 }, { touch: scenario.touch })
   const dragInput = await page.inputTrace()
@@ -256,7 +210,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   check(failures, await page.evaluate(`!!document.querySelector('[data-testid="collection-remove"]') && !!window.__pbPane?.store.loading`),
     'remove-button drag cleared selection or stopped battle A parse')
   await page.resetInputTrace()
-  // 真实输入事件必须落在移除按钮上：用页面内记录的真实 click 目标 + 坐标证明
   await page.tap({ ...chipCenter, touch: scenario.touch })
   const clearInput = await page.inputTrace()
   const click = clearInput?.click
@@ -273,7 +226,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   await confirmCollectionRemove(page, scenario)
   await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
 
-  // clear 必须**真的撤下** A 的解析：生产代码在 abort 时整体 terminate 当前 Worker
   const aborted = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.terminations >= 1, {
       timeout: 10_000,
@@ -283,7 +235,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   check(failures, aborted !== null,
     `clearing battle A did not abort the in-flight parse (worker never terminated): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
 
-  // —— B：选文件 → 真实点击「开始」 ——
   await page.evaluate('window.__pbSelect("lifecycle-b.wotbreplay", [5, 6, 7, 8])')
   await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { label: 'pre-start for battle B' })
   const startB = await page.evaluate(clickCenterExpression('[data-test="replay3d-start"]'))
@@ -303,15 +254,11 @@ export async function runParseLifecycleScenario(env, scenario) {
     .catch(() => null)
   check(failures, bRequest !== null,
     `battle B parse never reached the worker (stuck behind the abandoned A request?): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
-  // A 的解析被撤下时必须整体放弃那个 Worker（terminate）→ B 只能在**重建后的** Worker 上跑。
-  // 若 abort 没有真的让位（旧请求仍占着旧 Worker 的队列），B 会排在 A 后面而不是新 Worker。
   check(failures, bRequest !== null && bRequest.workers >= 2 && bRequest.ids?.[1]?.length === 1,
     `battle B must parse on a re-created worker (abort must release the old queue): ${JSON.stringify(bRequest)}`)
 
-  // —— 放行闸门：A 的迟到回包 + B 的正常回包（同一次放行；顺序 = 请求顺序） ——
   await page.evaluate(RELEASE_WORKER_RESPONSES)
 
-  // B 必须自己收敛：旧解析不再占队列，B 的解析跑完并落到就绪态
   const settledB = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.paneStore !== null && state.paneStore.loading === false
       && (state.paneStore.hasData === true || state.paneStore.err !== ''), {
@@ -324,7 +271,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   check(failures, settledB?.paneStore?.hasData === true && settledB?.paneStore?.err === '',
     `battle B must settle ready (old parse must not own the new session): ${JSON.stringify(settledB?.paneStore)}`)
 
-  // A 的迟到回包必须无人认领（旧解析已经被 abort 结算，不得再写任何会话）
   const lateSettlement = await page.evaluate(`(async () => {
     const store = window.__pbPane && window.__pbPane.store
     const snapshot = () => (store ? { hasData: store.hasData, err: store.err, loading: store.loading } : null)
@@ -343,10 +289,6 @@ export async function runParseLifecycleScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
 }
 
-/** B13: real local parser/UI with every business HTTP attempt intercepted and counted.
- * Local fixture resources remain available, as the APK-bundled local origin does in airplane mode.
- * This checks state and requests only; it never inspects or captures a 3D scene.
- */
 export async function runOfflineWorkspaceScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -366,14 +308,8 @@ export async function runOfflineWorkspaceScenario(env) {
   env.chrome.client.on('Fetch.requestPaused', async (params, session) => {
     if (session !== sessionId) return
     const url = new URL(params.request.url)
-    // 资产通道（打包器布局 /glb /map /tank /tank_images /data）不是业务 API：离线时同样
-    // 以 InternetDisconnected 失败（应用按设计 fail-soft 降级），但**不计入**业务违规——
-    // 俯仰锚定两阶段解析会拉 /tank/{id}.json 与 /data/tank_cache.json（资产源）。
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
-    // Foreground activity is intentionally reported when connectivity recovers.
-    // Telemetry and read-only capability/content discovery are accepted only online;
-    // offline telemetry and all automatic business submissions still fail below.
     const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
       && params.request.method === 'POST'
     if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
@@ -406,7 +342,6 @@ export async function runOfflineWorkspaceScenario(env) {
       await env.chrome.client.send(business ? 'Fetch.failRequest' : 'Fetch.continueRequest',
         business ? { requestId: params.requestId, errorReason: 'InternetDisconnected' } : { requestId: params.requestId }, sessionId)
     } catch (error) {
-      // Navigation cancels intercepted old-document requests before CDP can continue them.
       if (!closing && !error.message.includes('Invalid InterceptionId')) interceptionErrors.push(error.message)
     }
   })
@@ -423,7 +358,6 @@ export async function runOfflineWorkspaceScenario(env) {
     await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean, { label: `offline deep link ${view}` })
     check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, `${view} started login offline`)
   }
-  // Cold start and restart both initialize the ordinary local data workspace.
   for (let restart = 0; restart < 2; restart++) {
     await page.goto(`${env.origin}/?view=replay${params}`)
     await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'offline shell/restart' })
@@ -450,7 +384,6 @@ export async function runOfflineWorkspaceScenario(env) {
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="ai"]').click()`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'offline AI gate' })
   check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, 'AI started login offline')
-  // Recovering connectivity may prepare local AI projection but must never submit it.
   await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
   await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-creators"]'), { label: 'read-only backend capability probe completed' })
@@ -468,10 +401,6 @@ export async function runOfflineWorkspaceScenario(env) {
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
 }
 
-/**
- * 回放集合管理（真实 WASM）：加文件不打断当前场次，部分失败可继续用其余回放，
- * 键盘可完成管理，三档视口内容起点达标。只查状态与几何，不做 3D 画面验收。
- */
 export async function runReplayCollectionScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -492,7 +421,6 @@ export async function runReplayCollectionScenario(env) {
     const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
     await page.tap({ ...point, touch: false })
   }
-  // 切能力后的自动居中是异步滚动：量到的坐标可能在点击前失效，所以以弹层真的出现为准。
   const openList = async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       await hit('[data-testid="collection-trigger"]')
@@ -503,14 +431,11 @@ export async function runReplayCollectionScenario(env) {
   }
   const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
   const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
-  // 分区主视觉是页面标题区的一部分：密度预算只放行这段紧凑横幅本身，
-  // 不允许标题区在横幅之外再长出额外高度。旧基线与当前实测的差值必须只等于横幅高度。
   const heroHeight = `Math.round(document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect().height ?? 0)`
   const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
   try {
     await page.enable()
     await page.emulate({ width: 1440, height: 900, touch: false })
-    // 从工作台之外进入：结尾用浏览器后退验证 KeepAlive 不会把弹层留在目标页上。
     await page.goto(`${env.origin}/?view=agent-tankopedia&ws-auth=1`)
     await hit('[data-testid="nav-replay"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'empty workspace' })
@@ -523,15 +448,9 @@ export async function runReplayCollectionScenario(env) {
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="replay-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
     const singleHero = await page.evaluate(heroHeight)
-    // Replay 紧凑横幅是密度预算的唯一例外（design-language §2）：桌面放宽到 clamp(132px, min(20vw, 42vh), 384px)，
-    // 1440×900 实测 288px——~43% 可见带容纳坦克整体；其余 compact 页保持 132px 密度。
     check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
     const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
-    // ReplayWorkspace.centerReplayPane() intentionally scrolls the ready pane into view.
-    // Check the toolbar's document-relative position: it must fit the initial viewport
-    // when entering from the page top, even if pane auto-centering has already scrolled it away.
-    // Unlike resetting scrollY, this does not interfere with the product scroll contract.
     const toolbarAtDocumentTop = await page.evaluate(`(() => {
       const rect = document.querySelector('.workspace-toolbar')?.getBoundingClientRect()
       if (!rect) return null
@@ -549,14 +468,12 @@ export async function runReplayCollectionScenario(env) {
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
-    // 矮桌面窗口降级：height < 700px 回退默认密度，横幅让出工作区空间，收集入口仍可直接点到。
     await page.emulate({ width: 1920, height: 540, touch: false })
     const shortHero = await page.evaluate(heroHeight)
     check(failures, shortHero >= 120 && shortHero <= 140, `replay hero must fall back to compact density in short windows: ${shortHero}`)
     check(failures, await page.evaluate(`(() => { const t = document.querySelector('[data-testid="collection-trigger"]')?.getBoundingClientRect(); return !!t && t.top >= 0 && t.bottom <= innerHeight })()`), 'collection trigger must stay visible in short windows')
     await page.emulate({ width: 1440, height: 900, touch: false })
 
-    // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
     const broken = join(tempDir, 'broken.wotbreplay')
     await writeFile(broken, Buffer.alloc(64, 7))
     await page.evaluate(`(window.__collectionPane = document.querySelector('[data-test="battle-playback"]'), true)`)
@@ -571,7 +488,6 @@ export async function runReplayCollectionScenario(env) {
     await page.waitFor(() => !document.querySelector('[data-testid="workspace-partial-failure"]'), { label: 'warning acknowledged' })
     check(failures, /1/.test((await page.evaluate(trigger)).replace(/.*·/, '').replace(/^\s*4/, '')), `acknowledged failure stays on the trigger: ${await page.evaluate(trigger)}`)
 
-    // 键盘：触发按钮 → Enter 打开 → Esc 关闭 → 焦点回到触发按钮。
     await page.evaluate(`document.querySelector('[data-testid="collection-trigger"]').focus()`)
     await press('Enter', 13)
     await page.waitFor(() => !!document.querySelector('[data-testid="collection-row"]'), { label: 'keyboard opens the list' })
@@ -582,7 +498,6 @@ export async function runReplayCollectionScenario(env) {
     await press('Escape', 27)
     await page.waitForValue(`document.activeElement?.dataset?.testid`, value => value === 'collection-trigger', { label: 'focus returns to the trigger' })
 
-    // 移除失败文件：先关列表再确认，确认后当前场次不变，焦点回到触发按钮。
     await openList()
     await page.waitFor(() => document.querySelectorAll('[data-testid="collection-remove"]').length === 4, { label: 'remove buttons' })
     await page.evaluate(`document.querySelector('[data-testid="collection-row"][data-status="failed"] [data-testid="collection-remove"]').click()`)
@@ -595,7 +510,6 @@ export async function runReplayCollectionScenario(env) {
       await page.emulate({ width, height, touch })
       await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { label: 'Data capability' })
-      // 从单回放追加：赛后数据留在原来那一场，汇总由用户切换。
       await page.evaluate(`document.querySelector('[data-testid="data-view-summary"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="series-overview"]'), { label: 'Data summary' })
       const hero = await page.evaluate(heroHeight)
@@ -643,13 +557,6 @@ export async function runReplayCollectionScenario(env) {
   results.push({ name: 'replay-collection', failures, viewport: '1440x900 → 768x1024 → 390x844' })
 }
 
-/** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
-/**
- * 强制横屏（design-language §9「强制横屏」）：判定只看设备，不看视口。真实应用 + 真实回放：
- * - iPhone Safari 竖屏：2D 回放上出现旋转提示，提示里的「看赛后数据」回到数据能力；
- * - iPad（含竖屏）与缩窄的桌面浏览器：同样的视口不出提示；
- * - iPhone 横屏 844×340：没有提示，外壳沉浸、左上菜单可达并能打开抽屉。
- */
 export const FORCED_UA = {
   iphone: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
   ipad: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
@@ -681,7 +588,6 @@ export async function runForcedLandscapeScenario(env, scenario) {
       resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
     ] }, sessionId)
     await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: '2D playback loaded' })
-    // 设备判定是异步的：给它充足时间，再断言「出现」或「始终不出现」
     const prompt = await page.waitForValue('!!document.querySelector("[data-testid=rotate-prompt]")',
       value => value === scenario.expectPrompt, { timeout: 5000, label: `rotate prompt = ${scenario.expectPrompt}` }).catch(() => !scenario.expectPrompt)
     if (!scenario.expectPrompt) {
@@ -707,10 +613,6 @@ export async function runForcedLandscapeScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
-/**
- * 装甲查看器同样强制横屏（2026-11-08 用户确认：只装甲查看器，科技树不强制）：
- * iPhone Safari 竖屏出现旋转提示；iPhone 横屏、iPad、缩窄的桌面浏览器都不出。
- */
 export const ARMOR_FORCED_LANDSCAPE_SCENARIOS = [
   { name: 'armor-forced-landscape-iphone-portrait', ua: 'iphone', width: 390, height: 664, touch: true, expectPrompt: true },
   { name: 'armor-forced-landscape-iphone-landscape', ua: 'iphone', width: 844, height: 340, touch: true, expectPrompt: false },
@@ -779,9 +681,6 @@ export async function runMultiFileWorkspaceScenario(env) {
     await hit('[data-testid="battle-picker-option"][data-value="r0"]')
     await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
 
-    // 手机回归：picker 是 fixed 底部 sheet。Replay Workspace 的 layout-data-workspace 有
-    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层外壳之下。
-    // 断言 sheet 贴住视口底部、底边命中 sheet 本身且第二场在视口内，并用真实触摸完成切换。
     await page.emulate({ width: 390, height: 844, touch: true })
     await page.waitFor(() => !!document.querySelector('[data-testid="app-top-bar"]'), { label: 'mobile app top bar after resize' })
     await hit('[data-testid="replay-battle-picker"]', { touch: true })
@@ -805,7 +704,6 @@ export async function runMultiFileWorkspaceScenario(env) {
     check(failures, Math.abs(sheet.bottom - sheet.viewportHeight) <= 1, `mobile battle picker sheet must end at viewport bottom: ${JSON.stringify(sheet)}`)
     check(failures, sheet.bottomOverShell, `shell chrome paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
     check(failures, sheet.optionInViewport, `Battle 2 option is outside the viewport: ${JSON.stringify(sheet)}`)
-    // §5 可见即可达：逐个选项判定真实命中 / 裁剪 / 视口 / 触控命中区，而不是只看第二场那一项。
     const sheetReach = await measureReachability(page, {
       options: ['[data-testid="battle-picker-option"]'],
       touch: true,
@@ -814,12 +712,9 @@ export async function runMultiFileWorkspaceScenario(env) {
     check(failures, sheetReach.sampled > 0, 'battle picker sheet 可达性断言空跑：没有任何选项被实际命中采样')
     await hit('[data-testid="battle-picker-option"][data-value="r1"]', { touch: true })
     await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
-    // 退场动画期间 DrawerContent 由 Reka Presence 挂起（~duration-slow），等待真实卸载再断言（比同步判更强）
     await page.waitForValue(`!document.querySelector('[data-testid="battle-picker-panel"]')`, Boolean,
       { timeout: 10_000, label: 'mobile battle picker sheet unmount after selection' })
 
-    // 手机横屏沉浸态（真实应用）：回放就绪的触屏手机横屏隐藏顶栏，地图拿走顶栏高度；
-    // 转回竖屏 / 切到数据 capability 立即恢复，地图回到竖屏契约（= 视口宽）。
     const shellState = `(() => ({
       topBar: !!document.querySelector('[data-testid="app-top-bar"]'),
       tabBar: !!document.querySelector('[data-testid="app-tab-bar"]'),
@@ -843,7 +738,6 @@ export async function runMultiFileWorkspaceScenario(env) {
     await page.emulate({ width: 740, height: 360, touch: true })
     await page.waitForValue(shellState, (state) => !state.topBar, { label: 'immersive shell again' })
     await hit('[data-testid="ws-tab"][data-cap="data"]', { touch: true })
-    // 离开回放后仍处于手机横屏：导航是顶栏菜单 + 左侧抽屉（L3），没有侧边栏，也没有 Tab 栏
     await page.waitForValue(shellState,
       (state) => !state.sidebar && state.topBar && !state.tabBar && state.headerH === '48px',
       { label: 'drawer shell restored when leaving playback' })
@@ -853,16 +747,4 @@ export async function runMultiFileWorkspaceScenario(env) {
   results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900 → 390x844 → 740x360' })
 }
 
-/* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
 
-/**
- * 真实 `BattlePlayback`（playback-controls.html，正常 7v7）在真实设备指标下的 workspace 契约：
- *
- *   竖屏手机   = 纵向流：正方形 Stage → 传输控件 → 详情（inline）→ Team 1 → Team 2
- *   横屏 / 全屏 / 平板 / 桌面 = `Team 1 | 正方形 Stage | Team 2`，传输控件在 Stage 之下
- *   左车道恒为物理 Team 1、右车道恒为物理 Team 2（录像者在 Team 2 时也不交换）
- *   详情是**整个战场 workspace（.pb-main）**的浮窗：可拖到三栏任意一栏之上，不越出 workspace、
- *   不压传输控件；× 只关详情不清选中；名册与详情互不影响
- *
- * 每个横屏场景都断言页面实测视口与请求一致（不把回退成竖屏的视口算作横屏覆盖）。
- */

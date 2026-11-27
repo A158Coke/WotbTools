@@ -21,7 +21,6 @@ type CameraOptions = {
 }
 
 export function useMapPreview2DCamera({ props, rootEl, stageEl, squareEl, controlsEl, mapComponent, image, mapView }: CameraOptions) {
-  /** Use BattleMap's actual map element: on wide layouts it is narrower than the stage. */
   const mapEl = computed(() => mapComponent.value?.mapEl || null)
   const { height: stageHeight } = usePaneFillHeight(rootEl)
   const { isPhone } = usePlaybackPhoneForm()
@@ -37,7 +36,6 @@ export function useMapPreview2DCamera({ props, rootEl, stageEl, squareEl, contro
   const ZOOM_STEP = 1.2
   const PAN_THRESHOLD_PX = 5
   const FIT_MARGIN = 0.98
-  /** Mobile uses available width, mobile fullscreen reserves toolbar height, desktop fits the stage. */
   const squareSide = ref(0)
   function measureSquare() {
     const w = stageEl.value?.clientWidth || 0
@@ -82,7 +80,6 @@ export function useMapPreview2DCamera({ props, rootEl, stageEl, squareEl, contro
     return 1
   }
   function applyView(next: View) {
-    // Clamp to the stage while measuring the rendered map element.
     const clamped = clampViewPan(next, stageWidth(), stageHeightPx(), renderRect().width, renderRect().height)
     view.scale = clamped.scale
     view.tx = clamped.tx
@@ -104,7 +101,6 @@ export function useMapPreview2DCamera({ props, rootEl, stageEl, squareEl, contro
   watch(mapEl, (el, prev) => {
     if (prev && mapSizeObserver) mapSizeObserver.unobserve(prev)
     if (el && mapSizeObserver) mapSizeObserver.observe(el)
-    // A new map element needs a fresh fit after its real dimensions become available.
     fitObserved.value = false
   }, { flush: 'post' })
   watch(stageHeight, measureSquare, { flush: 'post' })
@@ -116,30 +112,25 @@ export function useMapPreview2DCamera({ props, rootEl, stageEl, squareEl, contro
       mapSizeObserver = new ResizeObserver(() => {
         const prevSide = lastValidSide
         measureSquare()
-        // A v-show-hidden pane reports zero; preserve the last valid size and view.
         if (!squareSide.value) return
         const firstValid = prevSide === 0
         const sideChanged = !firstValid && squareSide.value !== prevSide
         lastValidSide = squareSide.value
-        // Refit a newly loaded map even when its dimensions match the previous image.
         if (!firstValid && !sideChanged && fitObserved.value) return
-        // Wait for Vue to commit the new square size before measuring and clamping.
         nextTick(() => {
           if (!squareSide.value) return
           if (!fitObserved.value) {
-            // Keep the initial fit pending until the basemap element has a usable size.
             if (mapEl.value && mapEl.value.clientWidth > 0) {
               fitObserved.value = true
               fitView()
             }
             return
           }
-          if (sideChanged) applyView(view)   // 保留用户 scale/tx/ty，按新边界 clamp
+          if (sideChanged) applyView(view)
         })
       })
       if (mapEl.value) mapSizeObserver.observe(mapEl.value)
       if (stageEl.value) mapSizeObserver.observe(stageEl.value)
-      // Fullscreen sizing depends on toolbar height.
       if (controlsEl.value) mapSizeObserver.observe(controlsEl.value)
     }
   })

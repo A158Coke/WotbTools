@@ -58,7 +58,7 @@ def shell_entry(raw_shell):
 def top_turret(td):
     """取顶配炮塔：最高 tier（平局取 hp 高者），返回 (turret_fields, 总血量)。"""
     hull_hp = as_int(f1(td, FIELD_TANK_HULL_HP))
-    best_turret = None  # (tier, hp, turret_fields)
+    best_turret = None
     for raw_turret in td.get(FIELD_TANK_TURRETS, []):
         turret = decode_protobuf(raw_turret)
         turret_tier = as_int(f1(turret, FIELD_TURRET_TIER, 0), 0)
@@ -101,7 +101,7 @@ def guns_of_turret(turret):
 
 def top_track_traverse(td):
     """顶配履带（最高 tier，平局取转速高者）-> traverse（deg/s）。"""
-    best = None  # (tier, traverse)
+    best = None
     for raw_track in td.get(FIELD_TANK_TRACKS, []):
         track = decode_protobuf(raw_track)
         tier = as_int(f1(track, FIELD_TRACK_TIER, 0), 0)
@@ -115,7 +115,7 @@ def top_track_traverse(td):
 
 def top_engine(td):
     """顶配引擎（最高 tier，平局取功率高者）-> power（hp，uint32）。"""
-    best = None  # (tier, power)
+    best = None
     for raw_engine in td.get(FIELD_TANK_ENGINES, []):
         engine = decode_protobuf(raw_engine)
         tier = as_int(f1(engine, FIELD_ENGINE_TIER, 0), 0)
@@ -163,11 +163,6 @@ def parse_tanks(pb_bytes):
         if engine_power and weight_kg:
             item["powerToWeightRatio"] = round(engine_power / (weight_kg / 1000.0), 1)
         item["_equipmentPreset"] = as_str(f1(td, FIELD_TANK_EQUIPMENT_PRESET, b""))
-        # 权威默认炮：
-        # - 1-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（T-34-2 取 122mm 400，
-        #   与旧 main 规则一致，不能用数组顺序猜）。
-        # - 10 级多炮车：存在多个合法终局炮且回放无可靠实际 gunId，
-        #   不标 isDefault、不输出 vehicle 级 alphaDamage（避免把不确定值伪装成权威事实）。
         authoritative_gun_id = None
         if guns and not (tier == 10 and len(guns) > 1):
             max_tier = max(g["tier"] for g in guns)

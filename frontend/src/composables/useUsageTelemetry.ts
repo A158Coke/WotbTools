@@ -20,7 +20,6 @@ function discardQueue(): void {
   flushTimer = undefined
 }
 
-/** No disk queue, persistent visitor identifier, file names or raw exceptions. */
 export function recordUsage(input: Pick<GenericUsageEvent, 'event' | 'feature'> & Partial<Pick<GenericUsageEvent,
   'outcome' | 'operation_id' | 'error_code' | 'error_id'>>): void {
   try {
@@ -51,13 +50,11 @@ const FEATURE_BY_VIEW: Readonly<Record<string, GenericUsageEvent['feature']>> = 
   'tournament-points': 'tournament', sponsor: 'sponsor', profile: 'profile',
 })
 
-// One foreground lifecycle owner even if a shell is temporarily mounted twice during navigation.
 let currentOwner: symbol | undefined
 const owners = new Map<symbol, (previous?: string) => void>()
 let lastActivity: { epoch: number; at: number } | undefined
 let activityInFlight = false
 
-/** AppShell supplies the canonical router view; query-only changes do not reopen a feature. */
 export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
   const auth = useAuth()
   const { connectivity, settled } = useConnectivity()
@@ -109,8 +106,6 @@ export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
       pendingView = undefined
     }
   }, { flush: 'sync' })
-  // The connectivity owner sets settled before projecting its first state.
-  // Observe the completed Vue update rather than consuming that intermediate state.
   const stopInitialView = watch([connectivity, settled], () => {
     if (settled.value && initialView) {
       const next = initialView

@@ -17,7 +17,7 @@ describe('usePlaybackPreferences', () => {
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: true })
     expect({ ...prefs.hpPrefs }).toEqual({ showHp: true, mode: 'bar' })
     expect({ ...prefs.trailPrefs }).toEqual({ showTrail: true })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, showStatus: true, battleMarkers: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: false, classIcons3d: false, showStatus: true, battleMarkers: true })
     expect(prefs.declutterActive.value).toBe(false)
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
@@ -36,29 +36,31 @@ describe('usePlaybackPreferences', () => {
     prefs.toggleDeclutter()
     expect(otherRenderer.declutterActive.value).toBe(true)
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: false, showTankName: true, showReload: false })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: false, battleMarkers: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, classIcons3d: false, showStatus: false, battleMarkers: true })
     expect(prefs.hpPrefs.showHp).toBe(true)
     expect(prefs.hpPrefs.mode).toBe('ring')
     expect(prefs.trailPrefs.showTrail).toBe(false)
     expect(prefs.uiPrefs.showRoster).toBe(false)
-    // Roster toggles are independent; they must not discard the restoration snapshot.
     prefs.uiPrefs.showRoster = true
     otherRenderer.toggleDeclutter()
     expect({ ...prefs.labelPrefs }).toEqual({ showPlayerName: true, showTankName: false, showReload: true })
-    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, showStatus: true, battleMarkers: true })
+    expect({ ...prefs.markerPrefs }).toEqual({ classIcons: true, classIcons3d: false, showStatus: true, battleMarkers: true })
     expect(prefs.hpPrefs.showHp).toBe(true)
     expect(prefs.hpPrefs.mode).toBe('bar')
     expect(prefs.trailPrefs.showTrail).toBe(false)
     expect(prefs.uiPrefs.showRoster).toBe(true)
   })
 
-  it('keeps the original 3D declutter health presentation and restores the 2D mode', () => {
+  it('keeps the original 3D declutter health presentation and only marks the 3D type-icon preference', () => {
     const prefs = usePlaybackPreferences()
+    prefs.markerPrefs.classIcons = true
     prefs.hpPrefs.mode = 'ring'
-    prefs.toggleDeclutter('hidden')
+    prefs.toggleDeclutter('hidden', '3d')
     expect(prefs.hpPrefs).toEqual({ showHp: false, mode: 'ring' })
-    prefs.toggleDeclutter('hidden')
+    expect(prefs.markerPrefs).toEqual({ classIcons: true, classIcons3d: true, showStatus: false, battleMarkers: true })
+    prefs.toggleDeclutter('hidden', '3d')
     expect(prefs.hpPrefs).toEqual({ showHp: true, mode: 'ring' })
+    expect(prefs.markerPrefs).toEqual({ classIcons: true, classIcons3d: false, showStatus: true, battleMarkers: true })
   })
 
   it('manual changes exit the preset and become the next restorable custom view', () => {
@@ -73,7 +75,7 @@ describe('usePlaybackPreferences', () => {
     prefs.toggleDeclutter()
     expect(prefs.hpPrefs.showHp).toBe(false)
     expect(prefs.labelPrefs.showReload).toBe(false)
-    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, showStatus: false, battleMarkers: true })
+    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs')!)).toEqual({ classIcons: true, classIcons3d: false, showStatus: false, battleMarkers: true })
   })
 
   it('refreshing while declutter is active hydrates saved settings instead of stranding a preset', async () => {
@@ -87,6 +89,19 @@ describe('usePlaybackPreferences', () => {
     expect(fresh.labelPrefs.showPlayerName).toBe(true)
     expect(fresh.hpPrefs.showHp).toBe(true)
     expect(fresh.markerPrefs.classIcons).toBe(false)
+    expect(fresh.markerPrefs.classIcons3d).toBe(false)
+  })
+
+  it('legacy 2D classIcons hydrates with 3D type icons off; explicit classIcons3d is preserved', async () => {
+    localStorage.setItem('wotb.pb.marker-prefs', JSON.stringify({ classIcons: true, showStatus: false, battleMarkers: true }))
+    vi.resetModules()
+    const legacy = (await import('./usePlaybackPreferences.js')).usePlaybackPreferences()
+    expect(legacy.markerPrefs).toMatchObject({ classIcons: true, classIcons3d: false })
+
+    localStorage.setItem('wotb.pb.marker-prefs', JSON.stringify({ classIcons: false, classIcons3d: true, showStatus: true, battleMarkers: true }))
+    vi.resetModules()
+    const explicit = (await import('./usePlaybackPreferences.js')).usePlaybackPreferences()
+    expect(explicit.markerPrefs).toMatchObject({ classIcons: false, classIcons3d: true })
   })
 
   it('hydrates a ring choice, normalizes legacy/invalid values and preserves reload preference', async () => {
@@ -128,7 +143,6 @@ describe('usePlaybackPreferences', () => {
       showPlayerName: true, showTankName: false, showReload: true,
     })
 
-    // Persistence belongs to the module, not the first mounted caller's scope.
     first.unmount()
     b.labelPrefs.showReload = false
     await nextTick()
@@ -154,7 +168,6 @@ describe('usePlaybackPreferences', () => {
     localStorage.setItem('wotb.pb.hp-prefs', JSON.stringify({ showHp: false }))
     localStorage.setItem('wotb.pb.trail-prefs', JSON.stringify({ showTrail: false }))
     localStorage.setItem('wotb.pb.ui-prefs', JSON.stringify({ showTopbar: false, showRoster: true, showKillfeed: false, showBaseStatus: true }))
-    // 已移除的 rail / 列宽偏好：残留的旧键不得再被读回，也不得被重写。
     localStorage.setItem('wotb.pb.pane-widths', JSON.stringify({ rail: 240, details: 360 }))
     localStorage.setItem('wotb.pb.rail-collapsed.v2', '1')
 
@@ -184,7 +197,6 @@ describe('usePlaybackPreferences', () => {
     expect(prefs.labelPrefs.showPlayerName).toBe(true)
     expect(prefs.labelPrefs.showTankName).toBe(true)
     expect(prefs.labelPrefs.showReload).toBe(true)
-    // ui-prefs 缺失 → 全开（0 键与显式 false 不同：不得把缺省读成"隐藏"）
     expect({ ...prefs.uiPrefs }).toEqual({
       showTopbar: true, showRoster: true, showKillfeed: true, showBaseStatus: true,
     })

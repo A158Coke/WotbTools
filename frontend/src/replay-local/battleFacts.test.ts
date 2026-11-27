@@ -10,7 +10,6 @@ type JavaBattle = Record<string, unknown> & { players?: Record<string, unknown>[
 const wasm = wasmResults as unknown as Record<string, AgentBattleResult & { error?: string }>
 const java = javaBattles as unknown as Record<string, JavaBattle>
 
-/** 已知缺口：无（上游 v0.3.8 补齐录像者车辆与阵容完整性）。每个键都必须与 Java Battle 同名同值。 */
 const KNOWN_GAPS = new Set<string>()
 
 function pick(source: Record<string, unknown>, keys: string[]) {
@@ -55,9 +54,6 @@ describe('toBattleFacts —— 与 Java ReplayParser 逐字段一致（golden）
   })
 
   it('damage_received null = 无证据（v0.3.16 契约）：聚合归 0，不得 NaN', () => {
-    // 解析确定性收口后，无受击证据的结算方 damage_received = null（≠ 0）。
-    // count() 必须把 null 归 0 进聚合——下游 performance/league-rating 的算术
-    // 才不会 NaN 级联（v0.3.15 旧产物恒为数字，此用例锁前向兼容）。
     const file = files[0]
     const input = structuredClone(wasm[file])
     const first = input.players[0]

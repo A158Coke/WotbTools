@@ -66,14 +66,12 @@ describe('consumableRuntimeAt', () => {
   })
 
   it('since 与事件时钟按 producer 的 0.01s 网格对齐：同 tick 新激活不被丢弃', () => {
-    // visibility.t_in 保留原始 f32（120.0039978…）；consumable.clock 经 r2 为 120.00。
     const activation = tr({
       timeSec: 120, state: 'ACTIVATED', durationSec: 20, endsAt: 140,
       wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
     })
     expect(consumableRuntimeAt([activation], 121, 120.00399780273438)[0])
       .toMatchObject({ remainingSec: 19 })
-    // 真正早于重入点的旧事件（上一 tick）仍被排除
     const stale = tr({
       timeSec: 119.99, state: 'ACTIVATED', durationSec: 20, endsAt: 139.99,
       wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
@@ -85,7 +83,6 @@ describe('consumableRuntimeAt', () => {
     const active = activeAt10()
     expect(consumableRuntimeAt([active], 20, 5)).toHaveLength(1)
     expect(consumableRuntimeAt([active], 20, 15)).toEqual([])
-    // 重入后新事件仍可用
     const fresh = tr({
       timeSec: 22, state: 'ACTIVATED', durationSec: 20, endsAt: 42,
       wireCode: 0x09, logicalItemId: 'ADRENALINE', everActivated: true,
@@ -115,8 +112,6 @@ describe('consumableRuntimeAt', () => {
   })
 
   it('接受 3D facet 原始事件形状（clock/state_name/duration_s/ends_at/slot/logical_item_id）', () => {
-    // 3D 场景直接消费 Playback facet（snake_case、state 为数字），3D 的 T 与 clock 同 base；
-    // 字段名不匹配曾导致 3D 徽标静默全空。
     const raw = (over = {}) => ({
       clock: 0, eid: 1, wire_code: 9, state: 1, state_name: 'INITIALIZED',
       duration_s: null, ends_at: null, ever_activated: false, slot: 0, logical_item_id: null,

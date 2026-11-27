@@ -37,11 +37,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 百场回放审核证据编排契约测试（Mockito，无 DB/FS 依赖；下载字节用 @TempDir 真实文件）。
- * 覆盖 docs/features/hall-of-fame.md（百场 evidence）：storeAll 幂等/失败清理、attach 原子 5 行、
- * admin list/download ownership、审批前完整性校验与跨表引用计数。
- */
 @ExtendWith(MockitoExtension.class)
 class HundredReplayEvidenceServiceTest {
 
@@ -93,10 +88,8 @@ class HundredReplayEvidenceServiceTest {
     }
 
     private static void noRefs() {
-        // 默认无引用（各用例按需覆盖）
     }
 
-    // ── storeAll ──────────────────────────────────────────────────────────
 
     @Test
     void storeAllStoresEveryReplay() {
@@ -122,7 +115,6 @@ class HundredReplayEvidenceServiceTest {
                 pending(1, SHA_A, new byte[]{1}), pending(2, SHA_B, new byte[]{2}))))
                 .isInstanceOf(HallOfFameStorageException.class);
 
-        // 已成功落盘的 A 被 best-effort 清理；失败的 B 从未落盘
         verify(storage).delete(SHA_A);
         verify(storage, never()).delete(SHA_B);
     }
@@ -131,13 +123,11 @@ class HundredReplayEvidenceServiceTest {
     void storeAllFailureKeepsFileWhenHofStillReferences() {
         when(storage.store(any(), eq(SHA_A)))
                 .thenThrow(new HallOfFameStorageException("REPLAY_STORAGE_FULL", HttpStatus.INSUFFICIENT_STORAGE, "full"));
-        // 首个文件失败 → 无已存文件；即便有引用计数也无删除
         assertThatThrownBy(() -> service.storeAll(List.of(pending(1, SHA_A, new byte[]{1}))))
                 .isInstanceOf(HallOfFameStorageException.class);
         verify(storage, never()).delete(anyString());
     }
 
-    // ── attach ────────────────────────────────────────────────────────────
 
     @Test
     void attachInsertsExactlyFiveRowsInSameTransaction() {
@@ -150,7 +140,6 @@ class HundredReplayEvidenceServiceTest {
         verify(repository).flush();
     }
 
-    // ── discardForSubmission ─────────────────────────────────────────────
 
     @Test
     void discardDeletesMetadataAndUnreferencedPhysicalFiles() {
@@ -179,7 +168,6 @@ class HundredReplayEvidenceServiceTest {
         verify(storage, never()).delete(SHA_A);
     }
 
-    // ── adminListEvidence ─────────────────────────────────────────────────
 
     @Test
     void adminListEvidenceRejectsMissingSubmission() {
@@ -218,7 +206,6 @@ class HundredReplayEvidenceServiceTest {
         assertThat(service.adminListEvidence(10L)).isEmpty();
     }
 
-    // ── downloadEvidence ──────────────────────────────────────────────────
 
     @Test
     void downloadEvidenceRejectsReplayNotOwnedBySubmission() {
@@ -262,7 +249,6 @@ class HundredReplayEvidenceServiceTest {
         assertThat(download.fileName()).isEqualTo("b1.wotbreplay");
     }
 
-    // ── requireCompleteEvidenceForApproval（approve 前置权威校验）────────────
 
     private static List<HundredBattleReplayEvidence> rows(final int count) {
         final List<HundredBattleReplayEvidence> out = new ArrayList<>();
@@ -298,7 +284,6 @@ class HundredReplayEvidenceServiceTest {
 
     @Test
     void approvalValidationRejectsIncompleteSlots() {
-        // 5 行但 slot 重复（1,2,3,4,4）→ 防数据异常；DB unique 约束下正常不可能，防御性校验
         final List<HundredBattleReplayEvidence> bad = rows(5);
         bad.get(4).setSlot(4);
         when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(bad);
@@ -312,7 +297,6 @@ class HundredReplayEvidenceServiceTest {
     void approvalValidationRejectsMissingPhysicalFile() {
         final List<HundredBattleReplayEvidence> complete = rows(5);
         when(repository.findBySubmissionIdOrderBySlotAsc(10L)).thenReturn(complete);
-        // 只让前 4 个文件存在，第 5 个缺失
         for (int i = 0; i < 4; i++) {
             when(storage.load(complete.get(i).getSha256())).thenReturn(Optional.of(Path.of("t")));
         }
@@ -345,7 +329,6 @@ class HundredReplayEvidenceServiceTest {
 
         service.requireCompleteEvidenceForApproval(10L, "data:image/png;base64,AAAA");
 
-        // 校验通过：无异常；不读取/不清理任何东西
         verify(storage, never()).delete(anyString());
     }
 

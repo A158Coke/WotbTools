@@ -2,10 +2,6 @@ package com.wotb.web.hundred.dto;
 
 import java.time.OffsetDateTime;
 
-/**
- * 管理后台百场详情（审核页一屏数据）。PENDING 可返回 proofScreenshot；
- * 终态文件证据已清理，普通用户无任何读取入口。
- */
 public record HundredAdminDetailDto(
     Long id,
     String status,

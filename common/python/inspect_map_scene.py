@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Inspect one map's main SC2 scene directly from Maps.zip.
 
 This is an evidence tool for 3D Playback research. It reuses the repository's

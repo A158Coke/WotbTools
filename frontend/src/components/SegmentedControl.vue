@@ -1,9 +1,4 @@
 <script setup>
-// 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
-// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；「方向键 / Home / End 移动焦点即选中」由这里保证，
-// 不依赖 Reka 对 keydown / keyup 时序的判断。只有这些导航键引起的焦点移动才提交选择：
-// Tab / 鼠标 / 程序性的重新聚焦（包括聚焦到外部值变化后仍带旧 tab stop 的选项）不能改写受控值。
-// 选中指示器用 motion shared layout 在选项间平滑移动；溢出策略由 scrollable / wrap 显式选择。
 import { useId } from 'vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import { Motion } from 'motion-v'
@@ -12,14 +7,10 @@ import { haptic } from '../composables/useHaptics.js'
 
 const props = defineProps({
   modelValue: { type: String, required: true },
-  /** [{ value, label, testid?, data?, disabled?, title? }]；data 是附加到按钮上的 data-* 键值（如 data-cap） */
   options: { type: Array, required: true },
   ariaLabel: { type: String, required: true },
-  /** 撑满可用宽度并按需横向滚动，保持单行。 */
   scrollable: { type: Boolean, default: false },
-  /** 按可用宽度换行，窄屏各行填满宽度，长标签仍完整可见。 */
   wrap: { type: Boolean, default: false },
-  /** 单选呈现（design-language §7.1）：由调用方显式选择；chips 始终换行，tiles 等宽平铺，两者不接受 scrollable。 */
   presentation: { type: String, default: 'segmented', validator: v => ['segmented', 'chips', 'tiles'].includes(v) },
 })
 const emit = defineEmits(['update:modelValue', 'reselect'])
@@ -29,16 +20,13 @@ const indicatorId = `segmented-indicator-${useId()}`
 function select(value) {
   if (value === props.modelValue) return
   emit('update:modelValue', value)
-  // 切换选项（筛选、分段、主题）：轻触感（§10「反馈」）
   void haptic('selection')
 }
-/** 点已选中项不改值；需要「再点一次」语义的调用方监听 reselect。 */
 function onOptionClick(value) {
   if (value === props.modelValue) emit('reselect', value)
 }
 
 const NAVIGATION_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
-// 导航键 keydown 之后、同一轮 microtask 内发生的 focus 才算「由方向键移动」
 let navigating = false
 function markNavigation(event) {
   if (!NAVIGATION_KEYS.includes(event.key)) return
@@ -111,8 +99,6 @@ function onKeydown(event) {
   background: var(--color-surface-2);
 }
 
-/* 选项多 / 容器窄：横向滚动、不换行、**选项不得被压缩**
-   （flex-shrink 会把触屏 44px 点击区域压到 42px，CI 在 375px coarse 实测到过） */
 .segmented.is-scrollable {
   display: flex;
   max-width: 100%;
@@ -161,7 +147,6 @@ function onKeydown(event) {
   font-weight: 600;
 }
 
-/* 选中底板：shared layout 元素在选项之间移动；label 叠在它上面 */
 .segmented-indicator {
   position: absolute;
   inset: 0;
@@ -216,8 +201,6 @@ function onKeydown(event) {
   .segmented-option:not(.is-active):hover { color: var(--color-text-primary); }
 }
 
-/* 触屏：点击区域抬到 --hit-min（design-language §5；coarse 档 token = 44px）。
-   单行滚动模式禁止收缩；换行模式的长标签可收缩，但仍守住触控下限。 */
 @media (pointer: coarse) {
   .segmented-option { min-height: var(--hit-min); min-width: var(--hit-min); }
 }

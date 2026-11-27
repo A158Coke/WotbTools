@@ -35,12 +35,10 @@ function matches(value: unknown, field: Field): boolean {
   )
 }
 
-/** The contract owns enum/nullable/required rules; malformed producers never look up-to-date. */
 export function isAndroidUpdateSnapshot(value: unknown): value is AndroidUpdateSnapshot {
   return matches(value, contract.methods.getUpdateStatus.response)
 }
 
-/** One shell-owned, read-only projection. Native alone classifies and persists update state. */
 export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoaded, router: Router }): AndroidUpdateController {
   const supported = ref(false)
   const snapshot = shallowRef<AndroidUpdateSnapshot | null>(null)
@@ -94,8 +92,6 @@ export function useAndroidUpdate(routing?: { route: RouteLocationNormalizedLoade
     }
   }
 
-  // A system download notification is an explicit request to open the existing panel.
-  // Consume only on capable Native; ordinary Web/legacy clients never auto-open it.
   watch([supported, () => routing?.route.query.androidUpdate], async ([available, marker]) => {
     if (!routing || !available || marker !== '1' || consumingNotification || disposed) return
     consumingNotification = true

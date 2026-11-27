@@ -25,11 +25,9 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
   let paneReadyState
 
   const paneHeight = (el) => paneHeights.get(el) ?? 0
-  /** 模拟真实 pane 的多阶段加载：加载外壳（无 data-pane-ready）→ 内容（置位）。 */
   const setStage = (wrapper, { height, ready }) => {
     const pane = wrapper.get('[data-testid="ws-playback"]').element
     paneHeights.set(pane, height)
-    // 桩 pane 的根元素（testid 固定）；就绪标记按阶段挂/摘，模拟真实 pane 的加载阶段
     const marker = pane.querySelector('[data-testid="ws-playback-pane"]')
     if (marker) {
       if (ready) marker.setAttribute('data-pane-ready', 'true')
@@ -70,7 +68,6 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
       observe() {}
       disconnect() {}
     }
-    // 拆分后本文件自带 session owner：不再隐式依赖主 describe 的 beforeEach 残留。
     connectivityState.state.value = 'online'
     connectivityState.settled.value = true
     replayState.current = buildState()
@@ -93,7 +90,6 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     await flushPromises()
     Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
 
-    // 事件流已就绪（面板壳内的事件 pane 自带 data-pane-ready，高 400）；2D pane 未就绪（高度 0、无标记）
     const events = wrapper.get('[data-testid="ws-events"]').element
     expect(events.style.display).toBe('')
     expect(wrapper.get('[data-testid="viewer-events-toggle"]').attributes('aria-checked')).toBe('true')
@@ -103,9 +99,8 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
 
     expect(scrollCalls.length).toBeGreaterThan(0)
     expect(scrollCalls.at(-1).el.dataset.testid).toBe('ws-events')
-    expect(lastBlock()).toBe('center') // 400 < 900 → 垂直居中
+    expect(lastBlock()).toBe('center')
 
-    // 2D 后续才就绪：不得重定位到地图（每次进入只定位一次）
     const playback = wrapper.get('[data-testid="ws-playback"]').element
     paneHeights.set(playback, 1600)
     playback.querySelector('[data-testid="ws-playback-pane"]')?.setAttribute('data-pane-ready', 'true')
@@ -123,21 +118,17 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     await switchTo(wrapper, 'playback')
     const before = scrollCalls.length
 
-    // 阶段 1：懒加载 chunk 未完成 → pane 高度 0、无标记
     setStage(wrapper, { height: 0, ready: false })
     expect(scrollCalls.length).toBe(before)
 
-    // 阶段 2：标题栏 + LOADING 提示（高度 80，仍未就绪）→ 不得据此定位
     setStage(wrapper, { height: 80, ready: false })
     expect(scrollCalls.length).toBe(before)
 
-    // 阶段 3：真实视窗（高度 1600 高于视口）→ 定位一次，且对齐顶端
     setStage(wrapper, { height: 1600, ready: true })
     expect(scrollCalls.length).toBe(before + 1)
     expect(lastBlock()).toBe('start')
     expect(scrollCalls.at(-1).el.dataset.testid).toBe('ws-playback')
 
-    // 同一次激活内不再重复定位（不跟用户后来的滚动抢）
     setStage(wrapper, { height: 1700, ready: true })
     expect(scrollCalls.length).toBe(before + 1)
     wrapper.unmount()
@@ -172,18 +163,15 @@ describe('ReplayWorkspace 回放视窗自动居中', () => {
     const wrapper = mountWorkspace('data')
     await flushPromises()
     Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true })
-    // 多文件 + 尚无解析结果 + 解析中：targetFile 为空
     withBattles(2)
     replayState.current.resp.value = null
     replayState.current.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
     await flushPromises()
     await switchTo(wrapper, 'playback')
     const before = scrollCalls.length
-    // pane 已渲染就绪标记（空态外壳），但批次在途 → 不得消耗唯一一次定位
     setStage(wrapper, { height: 90, ready: true })
     expect(scrollCalls.length).toBe(before)
 
-    // 批次落定（analysis ready + resp/target 出现）→ 真实视窗就绪 → 定位一次
     withBattles(2)
     replayState.current.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
     await flushPromises()

@@ -9,7 +9,6 @@ import { contentAdminAllowed, useAuth } from './useAuth.js'
 
 export { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 
-/** AppShell owns both capability and public content; private metadata never enters this cache. */
 export function provideCreatorAvailability() {
   const gate = useFeatureGate(), auth = useAuth()
   const online = computed(() => gate.availability(Feature.CREATORS).available)
@@ -29,7 +28,6 @@ export function provideCreatorAvailability() {
     if (!online.value) return Promise.resolve()
     const gen = ++generation, request = new AbortController()
     controller = request; loading.value = true; error.value = null
-    // Settle even when an underlying transport ignores AbortSignal; late completions have no ownership.
     const aborted = new Promise<never>((_resolve, reject) => request.signal.addEventListener('abort', () => reject(new Error('REQUEST_ABORTED')), { once: true }))
     const timer = setTimeout(() => request.abort(), 5000)
     inFlight = (async () => {
@@ -44,7 +42,6 @@ export function provideCreatorAvailability() {
         if (gen !== generation || request.signal.aborted) return
         publicCategories.value = categories; contentKnown.value = true
       } catch (value) {
-        // A failed read preserves the last successful snapshot, including an acknowledged empty one.
         if (gen === generation) error.value = value
       } finally {
         clearTimeout(timer)
@@ -54,7 +51,6 @@ export function provideCreatorAvailability() {
     return inFlight
   }
   function refreshPublicCategories() {
-    // An ACK invalidates any pre-write read, while subsequent page/focus refreshes share this request.
     cancel()
     return refresh()
   }

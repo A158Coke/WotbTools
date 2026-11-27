@@ -51,7 +51,7 @@ describe('AgentTankopedia — XI 数据完整性', () => {
 
   it('升级数据 unsupported 时 custom 也 fail-closed：不显示 stock 数值冒充已研发', async () => {
     const { detail, modules } = structuredClone(UPGRADE_TANKS[0])
-    modules.gameVersion = 'release/11.99' // 版本不匹配 → supported=false
+    modules.gameVersion = 'release/11.99'
     data.fetchTankData.mockReset().mockResolvedValue(detail)
     data.fetchTankEncyclopedia.mockReset().mockResolvedValue(makeCache())
     research.loadResearchCatalog.mockReset().mockResolvedValue(CATALOG)

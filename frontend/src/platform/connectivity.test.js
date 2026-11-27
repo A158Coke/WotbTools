@@ -12,7 +12,6 @@ import {
 } from './connectivity.js'
 import { NATIVE_CONNECTIVITY_CHANGED_GLOBAL } from './nativeBridgeContract.js'
 
-/** 与 usePlatformBridge.test.js 相同的 bridge 模拟：postMessage → 同 id 的 reply 事件。 */
 function stubNative(results) {
   const listeners = []
   const calls = []
@@ -57,7 +56,6 @@ describe('connectivity normalization', () => {
     expect(normalizeConnectivityState(' offline ')).toBe(ConnectivityState.OFFLINE)
     expect(normalizeConnectivityState(true)).toBe(ConnectivityState.ONLINE)
     expect(normalizeConnectivityState(false)).toBe(ConnectivityState.OFFLINE)
-    // 未知 / 缺失 / 类型不符一律 UNKNOWN —— 绝不猜成 online。
     for (const raw of ['degraded', 'service-unavailable', 'nonsense', '', null, undefined, 42, {}]) {
       const state = normalizeConnectivityState(raw)
       expect([ConnectivityState.DEGRADED, ConnectivityState.SERVICE_UNAVAILABLE,
@@ -116,7 +114,6 @@ describe('connectivity sources', () => {
     const source = createAndroidConnectivitySource()
     const seen = []
     const unsubscribe = source.subscribe(next => seen.push(next))
-    // Native 推送不带 payload：页面必须回读，事件本身不是事实源。
     await window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL]()
     expect(seen).toEqual([ConnectivityState.ONLINE])
     unsubscribe()
@@ -124,8 +121,6 @@ describe('connectivity sources', () => {
   })
 
   it('a failing or malformed native reply degrades to UNKNOWN and keeps processing later events', async () => {
-    // review §12：事件 handler 的返回值没人接 ⇒ 桥报错 / 回复畸形 / 超时都必须自己兜住，
-    // 规范化为 UNKNOWN（绝不算在线），且不能中断后续事件。
     let mode = 'null'
     const listeners = []
     window.WotbNative = {
@@ -144,14 +139,12 @@ describe('connectivity sources', () => {
     const seen = []
     const unsubscribe = source.subscribe(next => seen.push(next))
 
-    // null / malformed / throw 三种失败形态 → 全部 UNKNOWN，且不抛 unhandled rejection。
     for (const failing of ['null', 'malformed', 'throw']) {
       mode = failing
       await expect(window[NATIVE_CONNECTIVITY_CHANGED_GLOBAL]()).resolves.toBeUndefined()
     }
     expect(seen).toEqual([ConnectivityState.UNKNOWN, ConnectivityState.UNKNOWN, ConnectivityState.UNKNOWN])
 
-    // 后续事件仍然被处理：桥恢复后能重新报告 online。
     mode = 'online'
     window.WotbNative.postMessage = (json) => {
       const msg = JSON.parse(json)

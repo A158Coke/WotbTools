@@ -37,7 +37,6 @@ import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
-/** Stateless recognition boundary with bounded provider admission, independent of Business DB. */
 @Service
 public class TournamentGroupRecognizer {
     public static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -77,7 +76,6 @@ public class TournamentGroupRecognizer {
 
     public Recognition recognize(final MultipartFile image, final String permit, final String callerId) {
         if (permitDecoder == null) throw rejected(HttpStatus.SERVICE_UNAVAILABLE, "TOURNAMENT_RECOGNITION_NOT_CONFIGURED");
-        // Admission precedes image allocation. Invalid input releases the slot without consuming provider budget.
         if (!active.tryAcquire()) throw rejected(HttpStatus.SERVICE_UNAVAILABLE, "TOURNAMENT_RECOGNITION_BUSY");
         try {
             final byte[] bytes = readImage(image);
@@ -111,8 +109,6 @@ public class TournamentGroupRecognizer {
             if (!"wotbtools-tournament".equals(jwt.getClaimAsString("iss"))
                     || jwt.getAudience() == null || !jwt.getAudience().contains("tournament-recognition")
                     || !callerId.equals(jwt.getSubject()) || jwt.getIssuedAt() == null || jwt.getExpiresAt() == null
-                    // TX issues permits and Yecao verifies them; bound clock drift independently
-                    // from the encoded lifetime, which remains limited to five minutes.
                     || jwt.getIssuedAt().isAfter(now.plus(PERMIT_CLOCK_SKEW))
                     || !jwt.getExpiresAt().plus(PERMIT_CLOCK_SKEW).isAfter(now)
                     || !jwt.getExpiresAt().isAfter(jwt.getIssuedAt())
@@ -170,7 +166,6 @@ public class TournamentGroupRecognizer {
                         || (long) width * height > 20_000_000L) {
                     throw rejected(HttpStatus.BAD_REQUEST, "INVALID_TOURNAMENT_IMAGE_DIMENSIONS");
                 }
-                // Validate actual pixel decoding only after rejecting oversized image headers.
                 if (reader.read(0) == null) throw rejected(HttpStatus.BAD_REQUEST, "INVALID_TOURNAMENT_IMAGE");
             } finally {
                 reader.dispose();

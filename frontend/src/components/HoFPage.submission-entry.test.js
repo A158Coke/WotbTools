@@ -102,8 +102,6 @@ describe('HoFPage', () => {
     expect(wrapper.find('[data-testid="hof-rules-mark3"]').text()).toContain('hofRules.mark3.once')
   })
 
-  // #678：弹层打开后焦点必须在弹层内的可见控件上，隐藏的 file input 不得成为焦点目标；
-  // Esc 关闭并把焦点还给“提交记录”。
 
   it('focuses the visible upload control and closes the submit dialog with Escape', async () => {
     const wrapper = mount(HoFPage, {
@@ -248,7 +246,6 @@ describe('HoFPage', () => {
     Object.defineProperty(input.element, 'files', { value: [file] })
     await input.trigger('change')
     await flushPromises()
-    // 榜单刷新仍在进行：成功提示已出现，按钮不得仍是「上传中…」
     expect(wrapper.text()).toContain('hof.upload_success')
     expect(wrapper.text()).not.toContain('hof.uploading')
     finishReload({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })

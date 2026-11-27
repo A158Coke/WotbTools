@@ -1,7 +1,3 @@
-// Issue #827 Wave 2 — 相机距离钳制行为测试（接替 seekPointer.test.js 的源码文本守卫）。
-// 钳制实现 owner = playback/cameraTerrainClamp.ts（#820 Wave B6A 出仓）；
-// 行为断言：applyCameraClamp(ext) 设置 min/max 且近端固定 1 m（跟随由模型外廓回调抬高）。
-// 宿主注入与调用（applyCameraClamp();）为无注入点的 glue，守卫见 seekPointer.test.js 窄化子句。
 import { describe, expect, it } from 'vitest'
 import { createCameraTerrainClamp } from './cameraTerrainClamp.ts'
 

@@ -1,17 +1,5 @@
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
-/**
- * 表格 sticky 核心列对（玩家列 + Rating 列）测量 helper。
- *
- * 抽取自 BattleTable 已验证的 sticky lifecycle：
- * - invariant：nickname.left = 0；league_rating.left = 真实可见 nickname 列宽（>0）。
- * - hidden（active=false 或 width<=0）时禁止写入，已有有效 offset 不被覆盖成 0。
- * - 测量链：nextTick → rAF → getBoundingClientRect().width（happy-dom 无 rAF 时回退 setTimeout）。
- * - ResizeObserver 监听昵称表头（ref 改变重连）；resize / 列变化 / 排序箭头 / reorder 重新测量。
- *
- * 两处消费方必须提供 enabled（CW leagueMode）与 active（v-show 可见性），
- * 由父组件真实持有（组件不通过 DOM 猜 visibility）。
- */
 
 const nextFrame = typeof requestAnimationFrame === 'function'
   ? (cb) => requestAnimationFrame(cb)

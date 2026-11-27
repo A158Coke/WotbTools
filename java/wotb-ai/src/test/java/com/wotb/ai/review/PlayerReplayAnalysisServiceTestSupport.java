@@ -22,10 +22,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** Shared gateway setup and replay fixtures for Player AI service contract tests. */
 abstract class PlayerReplayAnalysisServiceTestSupport {
 
-    /** 捕获传给 Gateway 的完整请求；从不发起真实 HTTP。 */
     protected static final class RecordingGateway implements AiChatGateway {
         protected final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         protected volatile String completionText = "ok";
@@ -57,12 +55,10 @@ abstract class PlayerReplayAnalysisServiceTestSupport {
                 200000, 131072, 8192, 1000, true, "high", 315, 4096));
     }
 
-    /** 传给 Gateway 的最后一个请求的 user prompt（即原 HTTP body 的 user message 内容）。 */
     protected String lastBody() {
         return gateway.requests.getLast().userPrompt();
     }
 
-    // ========== Test helpers ==========
 
     protected static void assertNoRawTeamLabels(final String body) {
         assertFalse(body.contains("队伍1"), "Body must not contain 队伍1");
@@ -156,7 +152,6 @@ abstract class PlayerReplayAnalysisServiceTestSupport {
         return p;
     }
 
-    /** 无重建的随机战 Battle：player 复盘入口必须在任何 AI 调用前拒绝。 */
     protected static Battle randomBattleWithoutReconstruction() {
         final Battle battle = new Battle();
         battle.arenaId = "random-arena";

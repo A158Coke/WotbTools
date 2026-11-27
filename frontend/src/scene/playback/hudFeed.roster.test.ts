@@ -1,7 +1,3 @@
-// 名册桥接行为测试（#827 接替 rosterState.test.js:133/:140）：
-// - store 名册 = buildRosterRows 静态身份 + projectRoster(getV, getT, deathAt) 运行时投影
-//   （HP/阵亡走场景 resolver，不另起一套判据）；
-// - teardown 清空 eid → 行 索引：resetRoster 后 updateRoster 是 no-op（不写旧会话的行）。
 import { describe, expect, it, vi } from 'vitest'
 import { createHudFeed } from './hudFeed.js'
 import type { HudFeedStore } from './hudFeed.js'
@@ -43,17 +39,14 @@ describe('createHudFeed 名册投影（行为）', () => {
     const deathAt = vi.fn((_v, t) => t >= 12)
     const { feed, store } = makeFeed({ vehicles, deathAt, t: 5 })
     feed.buildRoster()
-    // 静态身份分组：store 行 = buildRosterRows(V)（team1/team2 按 def.team）
     expect(store.roster.team1.map((r) => (r as { eid: number }).eid)).toEqual([1])
     expect(store.roster.team2.map((r) => (r as { eid: number }).eid)).toEqual([2])
     expect(store.friendlyTeam).toBe(1)
-    // 运行时投影：t=5 → hp=600、未阵亡
     feed.updateRoster()
     const row1 = store.roster.team1[0] as { hp: number; dead: boolean }
     expect(row1.hp).toBe(600)
     expect(row1.dead).toBe(false)
     expect(deathAt).toHaveBeenCalled()
-    // t=12 之后：hp=0 且 resolver 判阵亡（死亡判据复用注入的 deathAt）
     const { feed: feed2, store: store2 } = makeFeed({ vehicles, deathAt, t: 12 })
     feed2.buildRoster()
     feed2.updateRoster()
@@ -65,7 +58,6 @@ describe('createHudFeed 名册投影（行为）', () => {
   it('resetRoster 清空 eid → 行 索引：其后 updateRoster 不写旧会话的行（teardown 语义）', () => {
     const vehicles = [makeVehicle(1, 1, 'ally')]
     const deathAt = vi.fn((_v, time) => time >= 12)
-    // 正控：索引未清空时，同一时间跳变确实会改写行（证明下面的断言不是恒真）。
     let t = 5
     const live = makeFeed({ vehicles, deathAt, t: () => t })
     live.feed.buildRoster()
@@ -77,8 +69,6 @@ describe('createHudFeed 名册投影（行为）', () => {
     expect(liveRow.hp).toBe(0)
     expect(liveRow.dead).toBe(true)
 
-    // teardown：索引清空。旧行对象仍被外部持有（store 已被新会话重建），但
-    // 旧 hudFeed 的 updateRoster 不再触碰它们（无索引即跳过）。
     t = 5
     const torn = makeFeed({ vehicles, deathAt, t: () => t })
     torn.feed.buildRoster()
@@ -86,9 +76,9 @@ describe('createHudFeed 名册投影（行为）', () => {
     const row = torn.store.roster.team1[0] as { hp: number; dead: boolean; followed: boolean }
     expect(row.hp).toBe(600)
     torn.feed.resetRoster()
-    t = 12                     // 旧索引若未清空，这一跳会把旧行写成 hp=0/dead=true
+    t = 12
     torn.feed.updateRoster()
-    expect(row.hp).toBe(600)   // 未被 stale 投影污染
+    expect(row.hp).toBe(600)
     expect(row.dead).toBe(false)
   })
 })

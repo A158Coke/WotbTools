@@ -44,7 +44,7 @@ function collectRicochetEntries() {
                 if (node.parent && node.parent.visible === false) return;
                 const t = node.userData.armorThickness;
                 if (typeof t !== 'number') return;
-                const sec = node.userData.armorSection;   // 'chassis' | 'gunBarrel'
+                const sec = node.userData.armorSection;
                 if (sec !== 'chassis' && sec !== 'gunBarrel') return;
                 list.push({ mesh: mesh, section: sec, thickness: t, variant: sec === 'chassis' ? 'track' : 'gun' });
             });
@@ -63,7 +63,6 @@ function rebuildRicochetPack() {
             const entries = collectRicochetEntries();
             const pack = buildPack(entries);
             if (!pack.ok) {
-                // fail-closed：超限/非刚性 → 续飞整体关闭，跳弹维持紫色（现状行为）
                 ricochetPackReason = pack.reason + ' (entries=' + entries.length + ')';
                 console.warn('[armor-ricochet] continuation disabled:', ricochetPackReason);
                 return;
@@ -87,11 +86,11 @@ function rebuildRicochetGrid() {
                 if (ricochetGridRetries >= RC_GRID_RETRY_MAX) {
                     rcUniforms.rcEnabled.value = false;
                     ricochetPoseDirty = false;
-                    ricochetFailedPose = snapshotPackPose(ricochetPack); // 新姿态才重新尝试
+                    ricochetFailedPose = snapshotPackPose(ricochetPack);
                     console.warn('[armor-ricochet] grid disabled after retries:', grid.reason);
                     return false;
                 }
-                ricochetPoseDirty = true;        // 矩阵可能未就位 → 下一帧重试
+                ricochetPoseDirty = true;
                 return false;
             }
             ricochetGridRetries = 0;
@@ -122,23 +121,19 @@ function disposeRicochetGrid() {
                 for (const texture of Object.values(ricochetGrid.textures)) texture.dispose();
             }
             ricochetGrid = null;
-            ricochetPoseSnapshot = null; // a disposed grid has no valid successful-pose snapshot
+            ricochetPoseSnapshot = null;
             rcUniforms.rcWorldTris.value = null;
             rcUniforms.rcGridCells.value = null;
             rcUniforms.rcGridEntries.value = null;
         }
 
 function updateCollisionWorldMatrices() {
-            // 只传播矩阵；syncTransforms 会重新收集/对齐模块，不能作为每帧准备。
             models.armorModel?.updateWorldMatrix(true, true);
             models.tankModel?.updateWorldMatrix(true, true);
             getCamera().updateWorldMatrix(true, false);
         }
 
 function prepareRicochetFrame() {
-            // 传播门控在 pack 上：packPoseChanged / raycastPackAll 这类 CPU 矩阵读者都以
-            // ricochetPack 存在为前提；无 pack（未进热力图）时无本帧 CPU 读者，传播交给
-            // getRenderer().render 的根遍历（显示分支各自自更新），不为每帧白付两棵全树重算。
             if (ricochetPack) {
                 updateCollisionWorldMatrices();
                 const changed = packPoseChanged(ricochetPack, ricochetPoseSnapshot);

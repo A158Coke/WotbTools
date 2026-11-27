@@ -12,7 +12,6 @@ function encodeRecord(row: readonly string[]): string {
   return fields.length === 1 && fields[0] === '' ? '""' : fields.join(',')
 }
 
-/** Encode a string table as UTF-8 RFC4180 records separated by CRLF. */
 export function encodeCsv(document: CsvDocument, options: CsvEncodeOptions = {}): Uint8Array {
   const records = [document.headers, ...document.rows]
     .map(encodeRecord)

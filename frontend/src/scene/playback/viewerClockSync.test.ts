@@ -1,6 +1,3 @@
-// 统一面板跨视图时钟镜像契约（2026-11-19）：
-// 位置（战斗相对秒）+ 播放状态 + 倍速 + canonical startRaw 必须一起发布；
-// 任何字段缺失都会让切换同步静默失效（曾经的真实回归：文件被截回旧版，切换后 2D 回到开头）。
 import { describe, expect, it } from 'vitest'
 import { publishViewerClock, resetViewerClocks, viewerClocks } from './viewerClockSync.js'
 

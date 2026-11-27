@@ -1,15 +1,11 @@
-/* Remaining WotBTools pages: contact, changelog, admin review surfaces. */
 
-/* Changelog */
 
-/* HoF admin and other admin-like pages */
 .hof-admin {
   width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
   max-width: none !important;
   margin-inline: auto !important;
   padding: 24px 0 64px !important;
 }
-/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language），这里只保留页面容器宽度。 */
 
 @media (width < 768px) {
   .hof-admin {

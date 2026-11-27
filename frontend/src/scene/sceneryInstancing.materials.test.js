@@ -13,7 +13,6 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     const entries = [entryOf(a), entryOf(b)]
     canonicalizeEntryMaterials(entries)
     expect(entries[0].material).toBe(entries[1].material)
-    // 代表 = 首个出现的原对象
     expect(entries[0].material).toBe(a)
   })
 
@@ -33,7 +32,7 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     const entries = [entryOf(base), ...variants.map(v => entryOf(v()))]
     canonicalizeEntryMaterials(entries)
     const mats = entries.map(e => e.material)
-    expect(new Set(mats).size).toBe(mats.length)   // 全部互不相同
+    expect(new Set(mats).size).toBe(mats.length)
   })
 
   it('多材质叶子（契约外）原样跳过，不抛错', () => {
@@ -43,18 +42,15 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('几何不做内容级签名：同签名不同 uuid 的几何仍分属不同组（形状差异不可凭签名断言）', () => {
-    // 该不变量由分组键 = geometry.uuid 锁定：两份同形几何不合并
     const root = new THREE.Object3D()
     root.add(new THREE.Mesh(geo(2), mat()))
     root.add(new THREE.Mesh(geo(2), mat()))
     root.updateMatrixWorld(true)
     const batches = groupInstanceBatches(collectInstanceEntries(root))
-    expect(batches).toHaveLength(2)   // 两个几何对象 = 两批（宁可少合不错合）
+    expect(batches).toHaveLength(2)
   })
 
   it('ShaderMaterial 按 uniforms+着色器签名：uniform 不同不合并（2026-11-14 建筑物贴图串图回归）', () => {
-    // 回归根因：标准属性白名单读不到 ShaderMaterial 的 uniforms——光照图建筑材质
-    // （makeLightmappedMaterial）全部同签名并到第一个对象上，全图贴图串到一张。
     const shaderOf = (tex, tint) => {
       const m = new THREE.ShaderMaterial({
         uniforms: { map: { value: tex }, uTint: { value: tint }, uOpacity: { value: 1 } },
@@ -64,15 +60,15 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     }
     const texA = new THREE.Texture(), texB = new THREE.Texture()
     const sA = shaderOf(texA, new THREE.Color(0xffffff))
-    const sB = shaderOf(texB, new THREE.Color(0xffffff))      // 仅 map 不同 → 不合并
-    const sC = shaderOf(texA, new THREE.Color(0x808080))      // 仅 tint 不同 → 不合并
-    const sD = shaderOf(texA, new THREE.Color(0xffffff))      // 全同 → 合并
+    const sB = shaderOf(texB, new THREE.Color(0xffffff))
+    const sC = shaderOf(texA, new THREE.Color(0x808080))
+    const sD = shaderOf(texA, new THREE.Color(0xffffff))
     const entries = [entryOf(sA), entryOf(sB), entryOf(sC), entryOf(sD)]
     canonicalizeEntryMaterials(entries)
     expect(entries[0].material).toBe(sA)
     expect(entries[1].material).toBe(sB)
     expect(entries[2].material).toBe(sC)
-    expect(entries[3].material).toBe(sA)   // 与 sA 全同 → 并入代表
+    expect(entries[3].material).toBe(sA)
   })
 
   it('带 onBeforeCompile 注入的材质一律不合并（无法静态签名）', () => {
@@ -85,10 +81,6 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('仅 defines 不同的 ShaderMaterial 不合并（评审 P2：makeDecalMaterial 的 DECAL_SEPARATE_LM）', () => {
-    // 反例形态：colormapLm uniform 两种材质都存在，只有 defines 决定是否乘光照图。
-    // **隔离变量（评审复核）**：两种材质共享同一个 Texture/Color 对象，源码与 uniforms
-    // 完全相同——差异只剩 defines；否则纹理 uuid 天然不同，旧 uniform 签名也会让它们
-    // 不合并，用例就证明不了 defines 进签名的必要性。
     const sharedLmTex = new THREE.Texture()
     const sharedTint = new THREE.Color(0xffffff)
     const mk = (separateLm) => new THREE.ShaderMaterial({
@@ -100,12 +92,10 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     const entries = [entryOf(withLm), entryOf(withoutLm)]
     canonicalizeEntryMaterials(entries)
     expect(entries[0].material).toBe(withLm)
-    expect(entries[1].material).toBe(withoutLm)   // 逐实例光照语义不得被并掉
+    expect(entries[1].material).toBe(withoutLm)
   })
 
   it('HDR tint 不合并：颜色签名用原始 RGB，不经 8-bit hex（评审 P2）', () => {
-    // (1,1,1) 与 (1.77,1.77,1.77) 的 getHexString() 都是 "ffffff"，但着色器用原始
-    // uTint 乘算 → 亮度不同；必须按原始 r/g/b 进签名。
     const sharedTex = new THREE.Texture()
     const mk = (tint) => new THREE.ShaderMaterial({
       uniforms: { colormapLm: { value: sharedTex }, uTint: { value: tint } },
@@ -117,8 +107,7 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     const entries = [entryOf(unit), entryOf(hdr)]
     canonicalizeEntryMaterials(entries)
     expect(entries[0].material).toBe(unit)
-    expect(entries[1].material).toBe(hdr)   // 亮度语义不同，不得并成一份
-    // 相同原始 RGB（不同对象）仍可合并
+    expect(entries[1].material).toBe(hdr)
     const same = mk(new THREE.Color(1.77, 1.77, 1.77))
     const pair = [entryOf(mk(new THREE.Color(1.77, 1.77, 1.77))), entryOf(same)]
     canonicalizeEntryMaterials(pair)
@@ -126,9 +115,6 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('仅 annotationSurface 策略不同的材质不合并（评审 P2：薄片贴花 vs 实体可绘制面）', () => {
-    // sceneryAssembly.markNotDrawable 给薄片贴花写 userData.annotationSurface=false，
-    // 实体（如贴花桥）保持 undefined/true；两者渲染签名可以完全相同，策略必须进身份，
-    // 否则代表材质决定整批 → traversal 顺序左右标注可选中性。
     const sharedTex = new THREE.Texture()
     const sharedTint = new THREE.Color(0xffffff)
     const mk = (annotationSurface) => {
@@ -139,13 +125,12 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
       if (annotationSurface !== undefined) m.userData.annotationSurface = annotationSurface
       return m
     }
-    const solid = mk(undefined)          // 可绘制（消费口径：undefined 等价 true）
-    const overlay = mk(false)            // 不可绘制
+    const solid = mk(undefined)
+    const overlay = mk(false)
     const entries = [entryOf(solid), entryOf(overlay)]
     canonicalizeEntryMaterials(entries)
     expect(entries[0].material).toBe(solid)
-    expect(entries[1].material).toBe(overlay)   // 策略差异不得被并掉
-    // undefined 与显式 true 等价（同一策略）→ 可以合并
+    expect(entries[1].material).toBe(overlay)
     const explicitTrue = mk(true)
     const merged = [entryOf(mk(undefined)), entryOf(explicitTrue)]
     canonicalizeEntryMaterials(merged)
@@ -153,7 +138,6 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
   })
 
   it('仅渲染状态（side / depthWrite / transparent）不同的 ShaderMaterial 不合并', () => {
-    // 同样隔离变量：共享 uniform 对象，差异只在渲染状态
     const sharedTex = new THREE.Texture()
     const mk = (patch) => Object.assign(new THREE.ShaderMaterial({
       uniforms: { uMap: { value: sharedTex } },
@@ -167,6 +151,6 @@ describe('canonicalizeEntryMaterials · 材质签名规整（2026-11-14 帧率�
     ]
     const entries = [entryOf(base), ...variants.map(entryOf)]
     canonicalizeEntryMaterials(entries)
-    expect(new Set(entries.map(e => e.material)).size).toBe(4)   // 四种状态互不相同
+    expect(new Set(entries.map(e => e.material)).size).toBe(4)
   })
 })

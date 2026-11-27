@@ -2,7 +2,6 @@ import { AGGREGATE_CORE_COLUMNS, AGGREGATE_PERFORMANCE_COLUMNS, LEAGUE_DIM_KEYS,
 
 export type TitleWidth = readonly [string, number]
 
-// ---------- Columns.PLAYER presentation（中文表头 + Excel 宽） ----------
 
 export const PLAYER_PRESENTATION: Readonly<Record<string, TitleWidth>> = {
   nickname: ['玩家', 20],
@@ -30,7 +29,6 @@ export const PLAYER_PRESENTATION: Readonly<Record<string, TitleWidth>> = {
   gun_marks: ['环线', 7],
 }
 
-/** 汇总表 presentation（Java `AggregateSheets.SUMMARY_PRESENTATION`）。 */
 export const SUMMARY_PRESENTATION: Readonly<Record<string, TitleWidth>> = {
   nickname: ['玩家', 18],
   clan: ['战队', 10],
@@ -59,7 +57,6 @@ export const SUMMARY_PRESENTATION: Readonly<Record<string, TitleWidth>> = {
   multi_damage_rate: ['多伤率%', 9],
 }
 
-/** League 七维标题（Java `LeagueExcelColumns`）。 */
 const DIMENSION_TITLES: Readonly<Record<string, string>> = {
   league_damage_score: '伤害评分',
   league_assist_score: '助攻评分',
@@ -70,7 +67,6 @@ const DIMENSION_TITLES: Readonly<Record<string, string>> = {
   league_shooting_score: '射击效率评分',
 }
 
-// fail fast（同 Java 类加载期校验）：canonical key 必须全部有 presentation
 for (const c of PLAYER_COLUMNS) {
   if (!(c.key in PLAYER_PRESENTATION)) throw new Error(`player column presentation missing: ${c.key}`)
 }

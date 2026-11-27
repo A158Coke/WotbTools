@@ -30,8 +30,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Avatar ledger state machine without Docker: attach/detach reference bookkeeping and the
- * cleanup invariant that a referenced avatar is never physically deleted. */
 class CreatorAvatarLifecycleTest {
     private final CreatorAvatarRepository avatars = mock(CreatorAvatarRepository.class);
     private final CreatorRepository creators = mock(CreatorRepository.class);

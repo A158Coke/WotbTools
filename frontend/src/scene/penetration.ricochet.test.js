@@ -94,7 +94,6 @@ describe('动能弹首层跳弹按物理首触面判定（厚度几何不改）'
     const withContact = withContactRicochet(chain, armor(ArmorSection.SPACED, '2', 30, 80, 1))
     const r = calculate(apReq(withContact))
     expect(r.result).toBe('RICOCHET')
-    // 结果卡按首触板呈现（炮管只是被穿过的保留层），角度取首触面 80°。
     expect(r.layers[0].part_name).toBe('gunBarrel-1')
     expect(r.layers[0].contact_part_name).toBe('spaced-2')
     expect(r.layers[0].contact_thickness).toBe(30)
@@ -111,9 +110,7 @@ describe('动能弹首层跳弹按物理首触面判定（厚度几何不改）'
       hits: withContact, damage: 400, explosion_radius: 0,
       calibrated_shells: false, enhanced_armor: enhanced, allow_ricochet: true,
     })
-    // 未强化：76.2 > 25×3 = 75 → overmatch 抑制跳弹。
     expect(calculate(req(false)).result).toBe('PENETRATION')
-    // 强化：76.2 < 26×3 = 78 → 不抑制，按 80° 判跳弹；概率链同样带跳弹标记。
     const r = calculate(req(true))
     expect(r.result).toBe('RICOCHET')
     expect(r.probability_layers[0].ricochet).toBe(true)

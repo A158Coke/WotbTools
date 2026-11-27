@@ -28,11 +28,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 名人堂管理后台（HoF-admin / wotbtools-admin）。
- * 仅治理：查看/搜索/筛选/下载/hard delete/审计。禁止人工修改 replay-derived authoritative facts。
- * delete 语义：audit + record delete 单事务；commit 后最后引用清理物理文件（best-effort，失败仅 WARN）。
- */
 @Service
 public class HallOfFameAdminService {
 
@@ -70,7 +65,6 @@ public class HallOfFameAdminService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /** 向后兼容的管理查询入口（无车辆分类条件）。 */
     public HofAdminPageDto search(final String nickname, final Long accountId,
                                   final String uploadedBy, final String battleType, final Long tankId,
                                   final Boolean replayAvailable, final String sort,
@@ -79,7 +73,6 @@ public class HallOfFameAdminService {
                 null, null, null, replayAvailable, sort, page, size);
     }
 
-    /** 管理列表：全部文本/状态条件与 nation ∩ vehicleType ∩ tier ∩ tankId 组合搜索。 */
     public HofAdminPageDto search(final String nickname,
                                   final Long accountId,
                                   final String uploadedBy,
@@ -93,7 +86,6 @@ public class HallOfFameAdminService {
                                   final int page,
                                   final int size) {
         final Pageable pageable = PageRequest.of(page - 1, clamp(size), sortOf(sort));
-        // 昵称模糊匹配：服务端预计算小写 pattern（含 %），避免 JPQL lower(concat(...)) 的 PG 类型推断问题
         final String nicknamePattern = StringUtils.hasText(nickname)
                 ? "%" + nickname.trim().toLowerCase() + "%" : null;
         final Page<HallOfFameRecord> records;
@@ -112,7 +104,6 @@ public class HallOfFameAdminService {
         return recordMapper.toAdminPageDto(records, page, size);
     }
 
-    /** 操作审计（只读，第一版 DELETE_ENTRY）。 */
     public HofAdminAuditPageDto audit(final int page, final int size) {
         final Pageable pageable = PageRequest.of(page - 1, clamp(size),
                 Sort.by(Sort.Direction.DESC, "createdAt", "id"));
@@ -122,21 +113,6 @@ public class HallOfFameAdminService {
                 page, size, logs.getTotalElements(), logs.getTotalPages());
     }
 
-    /**
-     * Hard delete（真实删除，无 tombstone / blocklist）。
-     * <pre>
-     * BEGIN
-     *   lock / validate target record
-     *   create audit snapshot (DELETE_ENTRY)
-     *   delete hall_of_fame_record
-     * COMMIT
-     * </pre>
-     * audit 失败 → 记录不删除；记录删除失败 → 不留下假 DELETE audit。
-     * commit 后：replay_hash 非空且无其他引用 → 删除 {sha256}.wotbreplay；
-     * 清理失败 → 仅 WARN（orphan 保留，不制造 DB 脏状态，不回滚已 commit 的删除）。
-     * 同一 hash 删除/上传并发由 {@link ReplayHashLock} 串行化，保证
-     * 「DB 引用 H ⇒ 物理 H 文件存在」不变量。
-     */
     public void deleteEntry(final long id) {
         deleteEntryInternal(id, JwtUtil.requireUserId(), JwtUtil.currentUsername());
     }
@@ -164,13 +140,10 @@ public class HallOfFameAdminService {
         return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
     }
 
-    /** 单条删除的唯一实现：单条端点与批量端点共用。 */
     private void deleteEntryInternal(final long id, final String adminSub, final String adminUsername) {
-        // 预读 hash 用于 advisory lock key（权威读取/删除在事务内）。
         final String hash = repository.findById(id)
                 .map(HallOfFameRecord::getReplayHash).orElse(null);
         if (hash == null) {
-            // 记录不存在（→404）或该记录无 replay 文件：无需锁与文件清理。
             deleteInTransaction(id, adminSub, adminUsername);
             return;
         }
@@ -180,11 +153,6 @@ public class HallOfFameAdminService {
         });
     }
 
-    /**
-     * 单事务（TransactionTemplate，避免 @Transactional 自调用被代理绕过）：
-     * BEGIN → validate record → audit snapshot(DELETE_ENTRY) → delete record → flush → COMMIT。
-     * audit 失败 → 记录不删除；record 删除失败 → 不留下假 DELETE audit（同事务回滚）。
-     */
     private DeletedEntry deleteInTransaction(final long id, final String adminSub,
                                              final String adminUsername) {
         return transactionTemplate.execute(status -> {
@@ -198,13 +166,6 @@ public class HallOfFameAdminService {
         });
     }
 
-    /**
-     * commit 后文件清理：<b>跨域引用计数</b>（hall_of_fame_record + hundred_battle_replay_evidence
-     * 均无引用）才删除物理文件。HoF 侧用本域 repository 自数，Hundred 侧通过
-     * {@code HundredReplayReferenceCounter} 接口获取——防止重复计算，也防止删除最后一个
-     * HoF record 后误删仍被 Hundred evidence 引用的文件（Hundred admin download 404）。
-     * 失败仅 WARN，orphan 保留。
-     */
     private void cleanupReplayFile(final DeletedEntry deleted) {
         if (deleted.replayHash() == null) {
             return;
@@ -220,13 +181,11 @@ public class HallOfFameAdminService {
             storage.delete(deleted.replayHash());
             log.info("HoF admin delete: replay file {} removed (last reference)", deleted.replayHash());
         } catch (final RuntimeException e) {
-            // DB delete 已 commit 且 authoritative；物理清理失败仅 WARN，orphan 保留。
             log.warn("HoF admin delete: replay file {} cleanup failed, orphan retained: {}",
                     deleted.replayHash(), e.getMessage());
         }
     }
 
-    /** 删除记录快照：audit 使用 + commit 后文件清理使用（原记录已删除）。 */
     record DeletedEntry(long id, String arenaId, long accountId, String nickname, long tankId,
                         String tankName, String battleType, int arenaBonusType, int damageDealt,
                         String replayHash) {

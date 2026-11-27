@@ -32,11 +32,9 @@ abstract class DefaultPlayerBattleFeatureTestFixture {
         return new DamageEvent(seq, ts(time), 8, DecodeConfidence.EXACT, att, vic, null, null, dmg, false);
     }
 
-    /** Type-7 propId=3 当前血量（EXACT；掉血推导的数据源）。 */
     protected static HealthChangedEvent health(final int seq, final float time, final int eid, final int hp) {
         return new HealthChangedEvent(seq, ts(time), 7, DecodeConfidence.EXACT, eid, hp, null, true);
     }
-    /** dual-clock 血量样本。 */
     protected static HealthChangedEvent health(final int seq, final float raw, final Float battle, final int eid, final int hp) {
         return new HealthChangedEvent(seq, ts(raw, battle), 7, DecodeConfidence.EXACT, eid, hp, null, true);
     }
@@ -62,7 +60,6 @@ abstract class DefaultPlayerBattleFeatureTestFixture {
         return new RecorderEntityMapping(1001L, 1, 1, "Recorder", 1, 1, DecodeConfidence.EXACT);
     }
 
-        // ===== Dual-clock timestamp helpers =====
 
     protected static ReplayTimestamp ts(final float rawSec, final Float battleSec) {
         return new ReplayTimestamp(rawSec, battleSec);

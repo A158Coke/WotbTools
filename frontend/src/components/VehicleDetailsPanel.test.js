@@ -131,7 +131,6 @@ describe('VehicleDetailsPanel', () => {
     const wrapper = mountPanel({ phoneForm: true })
     const element = wrapper.find('[data-test="pb-info"]').element
     expect(wrapper.find('[data-test="pb-info"]').classes()).toContain('phone-form')
-    // The renderer owns geometry; changing form keeps this common panel mounted.
     await wrapper.setProps({ phoneForm: false })
     expect(wrapper.find('[data-test="pb-info"]').classes()).not.toContain('phone-form')
     expect(wrapper.find('[data-test="pb-info"]').element).toBe(element)
@@ -163,7 +162,6 @@ describe('VehicleDetailsPanel inline (phone / portrait) selection feedback', () 
       await flushPromises()
       expect(scrollIntoView).toHaveBeenCalledTimes(1)
       expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
-      // 同一台车的时间推进 / 统计刷新不触发滚动
       await inline.setProps({ currentTime: 99, selCurStats: { dealt: 1, received: 2, kills: 0 } })
       await flushPromises()
       expect(scrollIntoView).toHaveBeenCalledTimes(1)

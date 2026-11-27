@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  本项目专用 Maven 配置（已跟踪，干净 clone 可直接使用）。
-  与公司 feed / 凭据完全隔离；命令需在 java/ 目录执行。
-   - 镜像: 所有依赖走 Aliyun 公共仓库 (Maven Central 在本网络被拦)。
-   - 本地仓库: 单独放在项目内 .m2repo, 不与 ~/.m2/repository (含公司构件) 混用。
--->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0

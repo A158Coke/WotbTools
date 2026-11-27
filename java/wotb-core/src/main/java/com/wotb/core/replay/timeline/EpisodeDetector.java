@@ -3,41 +3,16 @@ package com.wotb.core.replay.timeline;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 确定性 Episode 切分器（docs/architecture/battle-timeline.md §23）。
- * <p>禁止固定 30 秒机械切块；关键战术变化优先于固定长度：
- * 强信号（首次接敌/阵亡/存活人数变化/点数变化/信息空窗 HP 差异）触发切分，
- * 同时受时长约束（首选 15–45s，硬最小 8s，硬最大 60s）。覆盖整场、连续、无重叠。</p>
- * <p><b>Episode state/event boundary contract（PR #102）</b>：segment 为半开秒区间
- * {@code [start, end)}，second=start 的 delta 属于<b>该</b> Episode；
- * {@code BattleFrame(second=N).world()} 已消费所有 battle-relative time ≤ N 的事件
- * （stateAt=N、事件窗口 (N-1, N]），因此：
- * <ul>
- *   <li>{@code BEFORE} = {@code frameWorld(max(0, start - 1))}——非首段时表示 second=start
- *       delta 发生<b>前</b>的状态（frame(start) 已包含该秒 delta 的效果，不能用作 BEFORE）；</li>
- *   <li>首个 Episode 的 {@code start=0} 钳制到 0：t=0 之前无状态，取初始帧（roster 基线），
- *       {@code BEFORE == AFTER} 于 t=0 已知状态；</li>
- *   <li>{@code AFTER} = {@code frameWorld(lastInclusiveSecond)}（最后包含秒），包含该段全部
- *       delta 的效果——保证 BEFORE → EVENTS → AFTER 因果顺序。</li>
- * </ul></p>
- */
 public final class EpisodeDetector {
 
-    /** 硬最小章节时长（秒）。 */
     public static final double MIN_EPISODE_SEC = 8.0;
-    /** 首选最大章节时长（秒）。 */
     public static final double PREFERRED_MAX_SEC = 45.0;
-    /** 硬最大章节时长（秒）。 */
     public static final double HARD_MAX_SEC = 60.0;
-    /** 静默间隙（秒）：超过视为安静期，可切分。 */
     public static final double QUIET_GAP_SEC = 10.0;
 
     private EpisodeDetector() {
     }
 
-    /**
-     * 对 timeline 切分 episode；timeline 为 null / 无帧时返回空列表。
-     */
     public static List<TacticalEpisode> detect(final BattleTimeline timeline) {
         if (timeline == null || timeline.frames() == null || timeline.frames().isEmpty()) {
             return List.of();
@@ -49,7 +24,6 @@ public final class EpisodeDetector {
             return List.of();
         }
 
-        // 逐秒聚合 delta（按 frame second）
         final List<List<BattleDelta>> deltasBySecond = new ArrayList<>(maxSecond + 1);
         for (int i = 0; i <= maxSecond; i++) {
             deltasBySecond.add(new ArrayList<>());
@@ -63,7 +37,6 @@ public final class EpisodeDetector {
             lastDeltaSecond = Math.max(lastDeltaSecond, frame.second());
         }
 
-        // 边界强度评分
         final double[] scores = new double[maxSecond + 1];
         for (int s = 0; s <= maxSecond; s++) {
             double score = 0;
@@ -86,7 +59,6 @@ public final class EpisodeDetector {
                         }
                     }
                     default -> {
-                        // 其它 delta 不构成强切分信号
                     }
                 }
             }
@@ -96,11 +68,9 @@ public final class EpisodeDetector {
             scores[s] = score;
         }
 
-        // 贪心切分：segment = [start, end) 半开秒区间（end 排他；最后一段 end = maxSecond+1）。
-        // 区间契约：每个 second 的 delta 恰好属于一个 segment（边界秒不重复）。
-        final List<int[]> raw = new ArrayList<>(); // [start, endExclusive)
+        final List<int[]> raw = new ArrayList<>();
         int start = 0;
-        int lastDeltaSeen = 0; // 开局无 delta 历史：从 0 起算 quiet gap
+        int lastDeltaSeen = 0;
         for (int s = 0; s <= maxSecond; s++) {
             final double length = s - start;
             final double elapsedSinceDelta = s - lastDeltaSeen;
@@ -123,7 +93,6 @@ public final class EpisodeDetector {
             raw.add(new int[]{start, Math.max(start + 1, maxSecond + 1)});
         }
 
-        // 合并过短 episode（< MIN）
         final List<int[]> merged = new ArrayList<>();
         for (final int[] seg : raw) {
             if (merged.isEmpty()) {
@@ -148,16 +117,12 @@ public final class EpisodeDetector {
             }
         }
 
-        // 组装：segment [start, endExclusive) → episode [startSec, endSec]，最后包含秒 = endExclusive-1
         final List<TacticalEpisode> episodes = new ArrayList<>();
         int idx = 0;
         for (final int[] seg : merged) {
             final double s = seg[0];
             final int lastInclusiveSecond = Math.min(seg[1] - 1, maxSecond);
             final double e = Math.max(s + MIN_EPISODE_SEC, lastInclusiveSecond + 1.0);
-            // BEFORE 因果契约：frame(second=seg[0]) 已消费 ≤seg[0] 的事件（含本段起始秒
-            // delta 的效果），BEFORE 必须取 seg[0]-1 的状态；首段 seg[0]=0 钳制到 0
-            // （t=0 前无状态，取初始帧）。after 取最后包含秒——BEFORE → EVENTS → AFTER 成立。
             final WorldSummary before = frameWorld(timeline, Math.max(0, seg[0] - 1));
             final WorldSummary after = frameWorld(timeline, lastInclusiveSecond);
             final List<BattleDelta> deltas = collectDeltas(deltasBySecond, seg[0], seg[1]);
@@ -175,7 +140,6 @@ public final class EpisodeDetector {
         return frame == null ? WorldSummary.EMPTY : frame.world();
     }
 
-    /** 半开区间 [startSecond, endExclusiveSecond) 收集 delta：边界秒只归前一段（无重复）。 */
     private static List<BattleDelta> collectDeltas(
             final List<List<BattleDelta>> deltasBySecond,
             final int startSecond,
@@ -187,7 +151,6 @@ public final class EpisodeDetector {
         return out;
     }
 
-    /** 确定性短标签（供 Context Compiler 渲染；结构化，不编造）。 */
     static List<String> changes(final List<BattleDelta> deltas) {
         final List<String> out = new ArrayList<>();
         for (final BattleDelta d : deltas) {
@@ -210,7 +173,6 @@ public final class EpisodeDetector {
                         + Math.round(d.number("damageInWindow", 0)));
                 case REGION_CHANGE -> out.add("ROTATION");
                 default -> {
-                    // 其它 delta 不产生章节标签
                 }
             }
         }

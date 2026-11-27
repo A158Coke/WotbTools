@@ -1,5 +1,3 @@
-// 车轮/履带运动学（自 suspension.ts 原样平移）：车轮自转/履带 UV 推进、
-// 节点名解析与链几何小工具。数值行为保持原样。
 import * as THREE from 'three'
 import type { Object3D, Quaternion, Vector3 } from 'three'
 import type { ChainPoint } from './suspension.js'
@@ -40,7 +38,7 @@ const _wpV = new THREE.Vector3();
 export function applyWheelSpin(node: Object3D, restPos: Vector3, restQuat: Quaternion, pivot: Vector3, restPivotRot: Vector3, spinQuat: Quaternion,
                                travelAxis: Vector3, travel: number): void {
   node.quaternion.copy(restQuat).multiply(spinQuat);
-  _wpV.copy(pivot).applyQuaternion(spinQuat).applyQuaternion(restQuat);   // R_rest·R_spin·pivot
+  _wpV.copy(pivot).applyQuaternion(spinQuat).applyQuaternion(restQuat);
   node.position.copy(restPos).add(restPivotRot).sub(_wpV)
     .addScaledVector(travelAxis, travel);
 }
@@ -78,20 +76,12 @@ export function measureBeltUvSlope(samples: readonly (readonly [number, number])
   for (let i = 1; i < keys.length; i++) {
     const ds = (keys[i] - keys[i - 1]) * bucket;
     if (!(ds > minStep && ds < maxStep)) continue;
-    // 图集式 per-link V 的两个真实形态（Grille 15 样本 19217 实测）：
-    // ① 顶点不按弧长排布——同一弧长桶内混多块板/多行图集的顶点，桶内中位会把
-    //    相邻板的 V 混在一起；② **图集两行的 V 推进方向相反**（贴图行对称铺设：
-    //    下行族 +1.24 V/m、上行族 −1.25 V/m）——两族斜率在中位数里互相抵消 = 0。
-    // 修法：逐对 (v_i, v_j) 配对（dedupeV 去掉横向重复行），剔除换行跳变后
-    // **取 |斜率| 的中位为幅值**——两族的 |slope| 相等（同一物理滚动速度），符号
-    // 歧义由调用方的 chainBottomRunDir（底段走向）定滚动方向；线性带（单一符号）
-    // 的 |中位| = |中位斜率|，与旧契约数值一致（符号交给 dir）。
     const prev = dedupeV(buckets.get(keys[i - 1]));
     const cur = dedupeV(buckets.get(keys[i]));
     for (const dv0 of cur) {
       for (const v0 of prev) {
         const dv = dv0 - v0;
-        if (Math.abs(dv) >= maxJump) continue;        // 图集换行
+        if (Math.abs(dv) >= maxJump) continue;
         slopes.push(Math.abs(dv) / ds);
       }
     }
@@ -102,8 +92,6 @@ export function measureBeltUvSlope(samples: readonly (readonly [number, number])
   return { slope, pairs: slopes.length, ok: slope > 0.02 };
 }
 
-/** 桶内 V 去重（0.01 网格）：横向重复行的同值 V 只留一个——重复行是几何事实
- *  （履带板同弧长多行顶点），不剔除会把逐顶点对的斜率中位稀释向 0。 */
 function dedupeV(vArr: number[]): number[] {
   const seen = new Set<number>();
   const out: number[] = [];
@@ -116,36 +104,23 @@ function dedupeV(vArr: number[]): number[] {
   return out;
 }
 
-/**
- * 节点名解析：`chassis_wheel_{L,R}_NN` → `{side, index}`（客户端 `chassis_wheel_L_%.2d`
- * 同款绑定，编号从 01 起 = yaml `wheels` 数组下标 + 1）。
- */
 export function parseWheelNodeName(name: string | null | undefined): { side: 'L' | 'R'; index: number } | null {
-  const m = /^chassis_wheel_([LR])_(\d{2})$/.exec(name || '');   // 与客户端 `%.2d` 格式串同宽
+  const m = /^chassis_wheel_([LR])_(\d{2})$/.exec(name || '');
   if (!m) return null;
   return { side: m[1] as 'L' | 'R', index: parseInt(m[2], 10) };
 }
 
-/**
- * 节点名解析：`chassis_track_{L,R}`（单段）或 `chassis_track_{L,R}_NN`（多段模型，
- * 4/735 辆）→ `{side, segment}`；单段 segment = 0。
- */
 export function parseTrackNodeName(name: string | null | undefined): { side: 'L' | 'R'; segment: number } | null {
   const m = /^chassis_track_([LR])(?:_(\d+))?$/.exec(name || '');
   if (!m) return null;
   return { side: m[1] as 'L' | 'R', segment: m[2] ? parseInt(m[2], 10) : 0 };
 }
 
-/**
- * 轮半径：纵剖面（模型 y/z）半跨的均值——圆柱轮胎的两个投影各给一条直径；
- * 取均值对网格偏心/多零件更稳（客户端从骨骼几何现算，同量级口径）。
- */
 export function wheelRadiusFromExtents(extentY: number, extentZ: number): number {
   const r = (extentY + extentZ) / 4;
   return r > 1e-3 ? r : 0.3;
 }
 
-/** 链路平均段长 = 客户端的 `chunkLength`（相邻链点间距；多段模型取首段） */
 export function chainAverageSegment(chain: readonly ChainPoint[]): number {
   if (!Array.isArray(chain) || chain.length < 2) return 0.25;
   let sum = 0;
@@ -157,10 +132,6 @@ export function chainAverageSegment(chain: readonly ChainPoint[]): number {
   return avg > 1e-4 ? avg : 0.25;
 }
 
-/**
- * 侧向履带纵向位移（图省事的等价形）：由两侧"接触线中心"的世界位置差投影到车体前向。
- * 调用方传入上一帧与当前帧的侧中心位置与前向单位向量；返回带符号位移（m）。
- */
 export function sideTravel(prevX: number, prevZ: number, curX: number, curZ: number, fwdX: number, fwdZ: number): number {
   return (curX - prevX) * fwdX + (curZ - prevZ) * fwdZ;
 }

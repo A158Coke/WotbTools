@@ -10,11 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 团队/成员交火提取器：按伤害时间间隔切分交火段、计算成员与团队 EngagementSummary、
- * 识别集火候选（同一目标短窗口内多攻击者）。
- * <p>从 {@link DefaultTeamBattleFeatureExtractor} 拆出，纯静态工具类，不做编排。</p>
- */
 final class TeamEngagementExtractor {
 
     private TeamEngagementExtractor() {
@@ -196,7 +191,6 @@ final class TeamEngagementExtractor {
         int dealt = 0;
         int received = 0;
         DecodeConfidence confidence = DecodeConfidence.EXACT;
-        // allies/enemies/confidence 来自事件级结构（时间/方向/身份）；dealt/received 用 loss 级聚合
         for (final DefaultTeamBattleFeatureExtractor.TimedTeamDamage td : timedEvents) {
             final DefaultTeamBattleFeatureExtractor.AttributedDamage damage = td.event();
             if (damage.attacker().team() == perspectiveTeam) {

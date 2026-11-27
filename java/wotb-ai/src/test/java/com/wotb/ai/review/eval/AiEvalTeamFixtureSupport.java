@@ -53,7 +53,6 @@ final class AiEvalTeamFixtureSupport {
                         cluster(start, end, smallX, smallZ, small)));
     }
 
-    // ===== 构建辅助 =====
 
     static List<TeamMemberFeatureSet> compactTeam() {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
@@ -100,7 +99,6 @@ final class AiEvalTeamFixtureSupport {
         battle.arenaBonusType = arenaBonusType;
         battle.durationS = 300.0;
         battle.winnerTeam = winnerTeam;
-        // 合成 7v7 完整结算阵容：名册/战绩齐全，允许全歼与 SURVIVOR_SETTLEMENT 判定
         battle.rosterComplete = true;
         battle.recorder = FRIENDLY_NAMES[0];
         battle.players = new ArrayList<>();
@@ -223,7 +221,6 @@ final class AiEvalTeamFixtureSupport {
                 0f, 0f, DecodeConfidence.EXACT);
     }
 
-    /** 15s 窗口序列：单走簇质心（可选渐变）+ 主力簇质心（可选渐变），首尾拼接成连续单走时段。 */
     static List<TeamFormationPhase> soloPhases(
             final float start, final float end,
             final float soloX1, final float soloZ1, final float soloX2, final float soloZ2,

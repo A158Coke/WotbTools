@@ -13,26 +13,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 实体观测（AoI）生命周期构建器。
- *
- * <p>状态机（research entity-presence-aoi-lifecycle.md）：
- * <pre>
- *   on Type33(eid):   pending entry（pre-materialization announcement，不开启观察）
- *   on Type5(eid):    open OBSERVED_SEGMENT（observedFrom = Type5 时刻）
- *   on Type10(eid):   仅 world-coordinate（attachmentParentEntityId==0）确保段已开；
- *                      attached/local（parent != 0）不得开启 world AoI 段
- *   on Type4(eid):    close OBSERVED_SEGMENT（absentFrom = Type4 时刻）→ UNKNOWN_AOI；
- *                    无开段记录的 orphan Type4 忽略（不伪造零长段）
- * </pre>
- * 段间 gap 是 UNKNOWN_AOI：不得跨 gap 插值，也不得把 last-known 当真实当前位置。</p>
- *
- * <p>对盟友（corpus 238/238 仅入场一次、无 Type4）观测近似连续；
- * 反复 leave→re-entry 是敌方专属（485/485）。</p>
- */
 public final class ReplayAoiLifecycle {
 
-    /** 观测来源语义：replay POV（非服务器全局 spotted）。 */
     public static final String SOURCE_REPLAY_POV = "REPLAY_POV";
 
     private ReplayAoiLifecycle() {
@@ -67,13 +49,10 @@ public final class ReplayAoiLifecycle {
             final double t = clockOf(event, start);
             switch (event) {
                 case MaterializationAnnouncedEvent ignored -> {
-                    // pre-materialization announcement：段由 Type5 真正打开
                 }
                 case MaterializationEvent m -> openSegment(segmentsByEntity, openFrom,
                         m.entityId(), t, m.confidence());
                 case PositionChangedEvent p -> {
-                    // attached/local transform (attachmentParentEntityId != 0) is a parented/local
-                    // frame, not a world-coordinate observation; must not open a world AoI segment.
                     if (p.attachmentParentEntityId() == 0) {
                         openSegment(segmentsByEntity, openFrom,
                                 p.entityId(), t, p.confidence());
@@ -82,12 +61,10 @@ public final class ReplayAoiLifecycle {
                 case EntityRemovedEvent removed ->
                         closeSegment(segmentsByEntity, openFrom, removed.entityId(), t);
                 default -> {
-                    // 其它事件不影响观测段
                 }
             }
         }
 
-        // 战斗结束时仍打开的段：absentFrom = null
         final List<AoiObservationSegment> result = new ArrayList<>();
         openFrom.forEach((entityId, from) ->
                 result.add(new AoiObservationSegment(entityId, from, null, SOURCE_REPLAY_POV)));
@@ -97,11 +74,6 @@ public final class ReplayAoiLifecycle {
         return List.copyOf(result);
     }
 
-    /**
-     * 将观测段按 entityId 分组索引（构建一次，后续帧查询 O(k)）。
-     * 这是 BattleTimeline / Playback / MapOverview / FormationDepth 的
-     * 唯一 AoI segment 查询入口（canonical authority）。
-     */
     public static Map<Integer, List<AoiObservationSegment>> indexByEntity(
             final List<AoiObservationSegment> segments) {
         final Map<Integer, List<AoiObservationSegment>> byEntity = new HashMap<>();
@@ -113,10 +85,6 @@ public final class ReplayAoiLifecycle {
         return byEntity;
     }
 
-    /**
-     * 查询实体在 t 时刻所处的观测段；段间 gap（UNKNOWN_AOI）/ 未观测 → null。
-     * 每实体观测段互不重叠（段间即 gap），最多一个段 observesAt(t)。
-     */
     public static AoiObservationSegment segmentAt(
             final Map<Integer, List<AoiObservationSegment>> byEntity,
             final int entityId,
@@ -129,7 +97,6 @@ public final class ReplayAoiLifecycle {
         return null;
     }
 
-    /** battle-relative 时间；无 battle start 时退回 raw（与 ReplayHpTimeline 同语义）。 */
     private static double clockOf(final ReplayEvent event, final double startRawClockSec) {
         final Float battle = event.timestamp().battleClockSec();
         if (battle != null && Float.isFinite(battle)) {
@@ -147,11 +114,9 @@ public final class ReplayAoiLifecycle {
             final int entityId,
             final double t,
             final DecodeConfidence confidence) {
-        // 低置信度位置不得开启观测段（防止损坏/噪声位置打开假段）
         if (confidence == DecodeConfidence.PARTIAL || confidence == DecodeConfidence.UNKNOWN) {
             return;
         }
-        // 已在段中：忽略重复进入（Type33/Type5 配对内只开一次）
         if (openFrom.containsKey(entityId)) {
             return;
         }
@@ -165,8 +130,6 @@ public final class ReplayAoiLifecycle {
             final double t) {
         final Double from = openFrom.remove(entityId);
         if (from == null) {
-            // orphan Type4 (no open observed segment): keep as leave-boundary evidence only — do NOT
-            // fabricate a zero-length observed-from-t-to-t interval (that would be a fake AoI segment).
             return;
         }
         segmentsByEntity.computeIfAbsent(entityId, k -> new ArrayList<>())

@@ -2,7 +2,6 @@ package com.wotb.ai.review.eval;
 
 import java.util.List;
 
-/** Gold contains structural evidence constraints only; it never contains a model answer. */
 public record TeamReplayQualityCase(
         String id,
         String replay,

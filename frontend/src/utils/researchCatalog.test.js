@@ -1,7 +1,3 @@
-/**
- * 数据面加载器契约：客户端图标覆盖（配置器只做图标展示，缺图会退化成文字，必须在测试里
- * 锁住覆盖）＋ 装备槽位解析。图标来源 = 客户端 UI 样式表 bg-sprite 映射（上游导出器裁剪）。
- */
 import { describe, expect, it } from 'vitest'
 import ICON_MANIFEST from '../../../common/research/icons/manifest.json'
 import DEVICES from '../replay-local/compute/__fixtures__/research/devices.json'
@@ -36,7 +32,6 @@ describe('research icons', () => {
   it('装备/消耗品/补给图标全部解析到构建期 URL', () => {
     const missing = []
     for (const item of RESEARCH_META.devices) {
-      // stereoscope 无任何预设引用（数据文档已记录），客户端也不给装备图标
       if (item.stem !== 'stereoscope' && !itemIconUrl('devices', item.icon)) missing.push(`devices:${item.stem}`)
     }
     for (const item of RESEARCH_META.consumables.filter(entry => entry.mode === 'common')) {
@@ -145,7 +140,7 @@ describe('vehicleFilter 语义（一个 include 块内是 AND，不是 OR）', (
   it('exclude 的 clip 条件命中即排除（弹夹/连发车没有 berserk）', () => {
     expect(itemAvailableForTank(consumable('berserk'), ref('ussr', 10, { tags: ['clip'] }))).toBe(false)
     expect(itemAvailableForTank(consumable('berserk'), ref('ussr', 10))).toBe(true)
-    expect(itemAvailableForTank(consumable('berserk'), ref('ussr', 3))).toBe(false) // 4 级起
+    expect(itemAvailableForTank(consumable('berserk'), ref('ussr', 3))).toBe(false)
   })
 
   it('战斗内技能（isAbility）不进入装配物品池：desertPower 不再出现在任何车的补给里', () => {

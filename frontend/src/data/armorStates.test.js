@@ -43,7 +43,6 @@ describe('armorStates 声明与纯函数助手', () => {
     expect(dynamicDeclarationByTankId(9001)).toBeNull()
     expect(dynamicDeclarationByTankId(0)).toBeNull()
     expect(dynamicDeclarationByTankId(null)).toBeNull()
-    // 表与声明互洽：每个 id 的 stem 都能解析回声明
     for (const [id, stem] of Object.entries(DYNAMIC_TANK_IDS)) {
       expect(dynamicArmorDeclaration(stem)).not.toBeNull()
       expect(Number(id)).toBeGreaterThan(0)
@@ -84,7 +83,6 @@ describe('armorStates 声明与纯函数助手', () => {
     expect(stateAtTime(decl, timeline, 10.5)).toBe(1)
     expect(stateAtTime(decl, timeline, 25)).toBe(0)
     expect(stateAtTime(decl, timeline, 99)).toBe(1)
-    // 非法状态值（∉ 声明集）丢弃——门控语义与消费端一致
     const noisy = { t: [10, 20], state: [7, 1] }
     expect(stateAtTime(decl, noisy, 15)).toBe(0)
     expect(stateAtTime(decl, noisy, 25)).toBe(1)

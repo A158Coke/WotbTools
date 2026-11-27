@@ -99,8 +99,6 @@ class CreatorHttpTest {
         for (final String path : List.of("/api/admin/recommendations/7?type=UP", "/api/admin/recommendations/metadata?type=UP")) {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             mvc.perform(get(path).with(jwt().authorities())).andExpect(status().isForbidden());
-            // Domain separation: the tournament role never implies content administration, and the
-            // super-admin realm role only works because Keycloak expands its composite claims.
             for (final String role : List.of("ROLE_wotbtools-user", "ROLE_HoF-admin", "ROLE_tournament-admin", "ROLE_wotbtools-admin")) {
                 mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority(role)))).andExpect(status().isForbidden());
             }
@@ -126,7 +124,6 @@ class CreatorHttpTest {
             mvc.perform(post(path).contentType("application/json").content("{\"name\":\"New\"}").with(jwt().authorities()))
                     .andExpect(status().isForbidden());
         }
-        // Content writes are owned by content-admin: the tournament role is not a compatibility fallback.
         final SimpleGrantedAuthority tournament = new SimpleGrantedAuthority("ROLE_tournament-admin");
         mvc.perform(multipart("/api/admin/recommendations").file(payload(SAVE)).with(jwt().authorities(tournament)))
                 .andExpect(status().isForbidden());

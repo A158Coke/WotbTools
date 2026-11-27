@@ -23,9 +23,7 @@ const catalog = {
 describe('pitchAtBearing（客户端 front/back 扇区 + transition）', () => {
   it('back 扇区：0° 默认、过渡中点、后向极限', () => {
     const pitch = { max: 6, min: -18, back: { max: 3, min: -18, range: 30 } }
-    // 0° 正前：默认（仰 18 / 俯 6）；165°/180° 后向扇区：俯角只剩 3°
     expect(pitchAtBearing(pitch, 0)).toEqual({ up: 18, down: -6 })
-    // 155°：距车尾 25°，落在 15+20 的过渡带中点 → 3° 与 6° 的均值
     expect(pitchAtBearing(pitch, 155)).toEqual({ up: 18, down: -4.5 })
     expect(pitchAtBearing(pitch, 165)).toEqual({ up: 18, down: -3 })
     expect(pitchAtBearing(pitch, 180)).toEqual({ up: 18, down: -3 })
@@ -100,17 +98,15 @@ describe('devicesFromEquipmentIds（回放装配 → 槽位反解）', () => {
   const modules = findTankModules(USSRS as any, 5137) ?? Object.values(USSRS.tanks)[0]
 
   it('id 命中预设一侧 → 该侧；两侧都命中/都未命中 → null', () => {
-    // level0 attack：左 rammer(100) / 右 calibratedShells(103)
     expect(devicesFromEquipmentIds([100], modules, catalog)[0]).toBe(0)
     expect(devicesFromEquipmentIds([103], modules, catalog)[0]).toBe(1)
-    // 未命中：槽位空（fail-closed），不猜
     expect(devicesFromEquipmentIds([], modules, catalog)[0]).toBeNull()
-    expect(devicesFromEquipmentIds([101], modules, catalog)[0]).toBeNull() // 101 不在该槽两侧
+    expect(devicesFromEquipmentIds([101], modules, catalog)[0]).toBeNull()
   })
 
   it('0 = 空槽垫底：过滤掉；左右候选 id 同时在场 = 歧义 → null', () => {
     const slots = devicesFromEquipmentIds([0, 100, 101], modules, catalog)
-    expect(slots[0]).toBe(0) // 100 → rammer（左）
+    expect(slots[0]).toBe(0)
     expect(devicesFromEquipmentIds([100, 103], modules, catalog)[0]).toBeNull()
   })
 
@@ -136,25 +132,19 @@ describe('122 生效与原生回退勾选（review P2：撤销覆盖不得留 st
   })
 
   it('checkbox 回退态：录制真值在场跟随真值，缺失则关闭（不清真值、不留旧勾选）', () => {
-    // 切回原目标：真值 true → 勾选保持（覆盖已撤销）
     expect(resolvePitchCheckboxChecked({ override: null, recorded: true })).toBe(true)
     expect(resolvePitchCheckboxChecked({ override: null, recorded: false })).toBe(false)
-    // 无适用真值：必须关闭，否则 effectivePitchDevice 会从残留勾选重新启用 122
     expect(resolvePitchCheckboxChecked({ override: null, recorded: null })).toBe(false)
     expect(resolvePitchCheckboxChecked({ override: null, recorded: undefined })).toBe(false)
-    // 覆盖优先
     expect(resolvePitchCheckboxChecked({ override: false, recorded: true })).toBe(false)
     expect(resolvePitchCheckboxChecked({ override: true, recorded: null })).toBe(true)
   })
 
   it('非 shot 切走→切回：清覆盖后勾选关闭，effective 不再被旧勾选点亮', () => {
-    // 非 shot 页面：无录制真值
     const cleared = resolvePitchCheckboxChecked({ override: null, recorded: null })
     expect(cleared).toBe(false)
     expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: cleared })).toBe(false)
-    // 切回支持 122 的车但无真值：默认关闭（与已清 URL 的 HUD 一致），用户可手动再勾
     expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: null, checkboxChecked: false })).toBe(false)
-    // 切到带真值的车：真值重新生效（覆盖已撤销，不被 stale false/null 压住）
     expect(resolvePitchDeviceEffective({ available: true, override: null, recorded: true, checkboxChecked: false })).toBe(true)
   })
 })

@@ -7,12 +7,11 @@ expected="$(jq -r '.patches[0].sha256' "$RUNNER_TEMP/delta-metadata.json")"
 repo="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
 dir="/wotbtools-android"
 public="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$name&dl=1"
-# 已有相同字节直接复用，避免 replace=0 的重试生成重复副本；任何现存二进制冲突都 fail closed。
 probe="$(curl -sSL --connect-timeout 10 --max-time 300 -o "$RUNNER_TEMP/thu-delta-existing" -w '%{http_code} %{content_type}' "$public")" || exit 1
 code="${probe%% *}"; content_type="${probe#* }"
 if [ "$code" = 200 ] && [ "$(sha256sum "$RUNNER_TEMP/thu-delta-existing" | awk '{print $1}')" = "$expected" ]; then exit 0; fi
 case "$code:$content_type" in
-  404:*|200:text/html*) ;; # 该共享链接对不存在的文件返回 HTML 页面。
+  404:*|200:text/html*) ;;
   *) echo "::error::Existing delta is unreadable or conflicts with its immutable name" >&2; exit 1 ;;
 esac
 link="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" "https://cloud.tsinghua.edu.cn/api2/repos/$repo/upload-link/?p=$dir&reuse=1" | jq -r '.')"

@@ -8,9 +8,7 @@ defineOptions({ name: 'AnnotationToolbar' })
 const props = defineProps({
   open: Boolean,
   compact: Boolean,
-  /** 能力过滤：null = 既有 2D 全量工具；数组 = 只渲染这些 tool key。 */
   allowedTools: { type: Array, default: null },
-  /** 3D 的 eraser visual radius（CSS px）；null = 不渲染第二个滑块。 */
   eraserRadiusSlider: { type: Number, default: null },
   eraserRadiusMin: { type: Number, default: 6 },
   eraserRadiusMax: { type: Number, default: 40 },
@@ -30,7 +28,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['toggle-tool', 'set-annot-color', 'update:annot-width', 'update:eraser-radius', 'undo', 'redo', 'clear-annotations', 'toggle-annotations', 'close', 'rename-selected', 'delete-selected', 'finish-route', 'cancel-route'])
 const toolbarEl = ref(null)
-// A newly opened context must be reachable even if the user scrolled to a distant tool.
 watch([() => props.compact, () => props.activeTool === 'route', () => !!props.selectedAnnotation], async ([compact, route, selected]) => {
   if (!compact || (!route && !selected)) return
   await nextTick()
@@ -47,7 +44,6 @@ const allowedToolButtons = computed(() => {
   const allowed = new Set(props.allowedTools)
   return tools.filter((tool) => allowed.has(tool.key))
 })
-// 3D 通过 allowedTools 复用同一个 toolbar；每次只展示当前 tool 相关 slider。
 const is3D = computed(() => Array.isArray(props.allowedTools))
 </script>
 
@@ -137,8 +133,6 @@ const is3D = computed(() => Array.isArray(props.allowedTools))
 .pb-annot-context { padding: var(--space-2); border-radius: var(--radius-md); background: var(--color-surface-2); }
 .pb-annot-context > span { color: var(--color-text-secondary); }
 .pb-annotation-toolbar :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-/* Phone landscape shares the existing measured workspace budget. Keep one control row;
-   horizontal scrolling reveals tools without reducing the battlefield to a sliver. */
 .pb-annotation-toolbar.pb-annot-compact { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--space-1); padding: var(--space-1); max-inline-size: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scroll-padding-inline-start: calc(var(--control-h-md) + var(--space-2)); }
 .pb-annot-compact > .pb-annot-tools:first-child, .pb-annot-compact > .pb-annot-options { display: contents; }
 .pb-annot-compact .pb-annot-tools, .pb-annot-compact .pb-annot-colors, .pb-annot-compact .pb-annot-context, .pb-annot-compact .pb-annot-width, .pb-annot-compact .pb-annot-name, .pb-annot-compact .pb-annot-unit-btn span { flex-wrap: nowrap; flex-shrink: 0; }
@@ -152,8 +146,6 @@ const is3D = computed(() => Array.isArray(props.allowedTools))
   .pb-annot-btn, .pb-annot-color { min-height: var(--control-h-md); }
   .pb-annot-color { width: var(--control-h-md); }
 }
-/* 短视口横屏紧凑档：标注工具、输入框与色板按 40px 命中高度渲染；
-   只作用于场景根，竖屏触控仍为 44px、桌面沿用常规控件尺寸。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   [data-scene-surface] .pb-annot-btn,
   [data-scene-surface] .pb-annot-color,

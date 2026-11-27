@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Safely sync the WotB equipment catalog from BlitzKit.
 
 The updater separates two equipment classes:
@@ -231,8 +230,6 @@ def sync_upstream_metadata(payload, equipment_pb, tanks_pb):
         if upstream_name and upstream_name != item.get("nameEn"):
             item["nameEn"] = upstream_name
 
-    # Synchronize only the standard preset's canonical grid. Special presets are
-    # vehicle-specific substitutions and must never redefine global catalog slots.
     canonical_grid = parse_canonical_grid(equipment_pb)
     for equipment_id, grid in canonical_grid.items():
         item = catalog_by_id.get(equipment_id)

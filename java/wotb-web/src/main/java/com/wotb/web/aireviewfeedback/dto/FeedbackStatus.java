@@ -1,6 +1,5 @@
 package com.wotb.web.aireviewfeedback.dto;
 
-/** AI 复盘反馈处理状态；数据库列 status 为唯一持久化 owner。 */
 public enum FeedbackStatus {
     PENDING,
     FIXED;

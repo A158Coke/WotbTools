@@ -1,8 +1,3 @@
-/**
- * 装甲查看器 chrome 的几何快照。真函数（不用闭包），跨进程序列化执行。
- * 资产缺失时 #info-panel 保持 display:none，因此顶部卡片里只有「参数」开关；
- * 断言不依赖车名是否加载成功。
- */
 export function armorLayoutProbe() {
   const box = (selector) => {
     const element = document.querySelector(selector)
@@ -41,7 +36,6 @@ export function armorLayoutProbe() {
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
     },
     coarse: matchMedia('(pointer: coarse)').matches,
-    /** 场景根上的密度 token：短视口横屏紧凑档会把它收窄到 40px，断言从实际 token 取值而不是写死 44。 */
     sceneTokens: {
       space2: sceneToken('--space-2'),
       space5: sceneToken('--space-5'),
@@ -57,7 +51,6 @@ export function armorLayoutProbe() {
     back: box('.armor-back'),
     viewToggle: box('#view-toggle'),
     viewToggleDisplay: viewToggle ? getComputedStyle(viewToggle).display : null,
-    /** 弹种下拉：不得把选项文案（「弹种 穿深mm / 伤害dmg」）截断 */
     shellSelectClipped: (() => {
       const select = document.querySelector('#shell-select')
       if (!select || select.getClientRects().length === 0) return null
@@ -70,12 +63,10 @@ export function armorLayoutProbe() {
         text: button.textContent.trim(),
         width: Math.round(rect.width),
         height: Math.round(rect.height),
-        // 装甲组成过滤行只在厚度视图出现；隐藏时不是触控目标（0x0 不参与 44px 判定）
         visible: button.getClientRects().length > 0,
       }
     }),
     turretControls: box('#turret-controls'),
-    /** 手机横屏短视口：左上胶囊 = 返回键 + 信息卡 + 参数按钮（视觉上一条胶囊）。 */
     capsule: (() => {
       const back = box('.armor-back')
       const card = box('#corner-tl')
@@ -121,7 +112,6 @@ export function armorLayoutProbe() {
       }
     })(),
     clickPart: box('#click-part'),
-    /** 厚度值节点本身是否完整落在结果卡内（overflow:hidden 裁切不能只看外层 box）。 */
     clickArmor: (() => {
       const card = box('#click-info')
       const value = document.querySelector('#click-armor')
@@ -137,7 +127,6 @@ export function armorLayoutProbe() {
         textRight: Math.round(textRect.right),
         insideCard: textRect.left >= card.left - 1 && textRect.right <= card.right + 1
           && textRect.top >= card.top - 1 && textRect.bottom <= card.bottom + 1,
-        // 父级 #click-info 是 overflow:hidden，外框内不等于可见：必须落在 padding/border 之后的内容区。
         ...(() => {
           const style = getComputedStyle(document.querySelector('#click-info'))
           const contentLeft = card.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
@@ -206,8 +195,6 @@ export function armorLayoutProbe() {
       const rect = label.getBoundingClientRect()
       const requestRect = label.querySelector('.eq-opt-label')?.getBoundingClientRect() || null
       const inputRect = label.querySelector('input')?.getBoundingClientRect() || null
-      // 文案需要的最小宽度 = 复选框 + gap(3px) + 文案；被 `label{width:58px}` 之类压窄时
-      // scrollWidth 会大于 clientWidth（评审：EN/RU 文案在 58px 盒子里溢出重叠）
       const needed = requestRect && inputRect ? Math.round(inputRect.width + 3 + requestRect.width) : null
       return {
         id: label.id || null,
@@ -218,12 +205,10 @@ export function armorLayoutProbe() {
         needed, clipped: label.scrollWidth > label.clientWidth + 1,
       }
     }),
-    /** 顶栏信息行是否被压成多行（行高 ≤ 26px = 单行；多行会把它撑高） */
     infoPanelHeight: (() => {
       const el = document.querySelector('#info-panel')
       return el ? Math.round(el.getBoundingClientRect().height) : null
     })(),
-    /** 单行信息必须裁剪，长车名不得画到「参数」按钮下面 */
     infoPanelOverflowX: (() => {
       const el = document.querySelector('#info-panel')
       return el ? getComputedStyle(el).overflowX : null
@@ -231,7 +216,6 @@ export function armorLayoutProbe() {
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
-    /** 外壳沉浸态（shared/shellChrome）：手机横屏申请后 AppShell 卸载顶栏并归零高度 token；任何形态都没有底部 Tab 栏（L1） */
     shellChrome: document.documentElement.dataset.shellChrome || null,
     appTopBar: box('[data-testid="app-top-bar"]'),
     appTabBar: box('[data-testid="app-tab-bar"]'),
@@ -240,13 +224,6 @@ export function armorLayoutProbe() {
   }
 }
 
-/**
- * 加载态夹具（评审 BLOCKER 2）：资产缺失时 `#info-panel` / `#shell-selector` / `#config-row`
- * 默认 hidden，门禁会在**退化态**下空跑——「顶栏单行」只证明了「一个按钮不会撑高顶栏」，
- * 「弹种不截断」也因下拉隐藏而变成 no-op。这里向真实组件注入 worst-case 内容
- * （长车名 + 俄语 等级/类型/国籍 + 长弹种文案 + 两项配置），让 loaded 布局在任何资产条件下
- * 都可确定复现；注入的是内容，测的仍是生产 CSS / 生产 DOM 结构。
- */
 export function applyLoadedFixture() {
   const setText = (selector, text) => {
     const element = document.querySelector(selector)
@@ -283,7 +260,6 @@ export function applyLoadedFixture() {
     configRow.style.display = 'flex'
   }
 
-  // 装备复选框文案用最长的俄语变体（评审：EN/RU 文案才照得出 58px 盒子溢出）
   const eqTexts = ['Калибр. снаряды', 'Усил. броня']
   document.querySelectorAll('#tank-selectors .eq-opt-label').forEach((span, index) => {
     if (eqTexts[index]) span.textContent = eqTexts[index]
@@ -291,12 +267,10 @@ export function applyLoadedFixture() {
   return true
 }
 
-/** 资产不可达场景测量外壳前移除遮罩；真实失败状态由加载门禁覆盖。 */
 export function check(failures, ok, message) {
   if (!ok) failures.push(message)
 }
 
-/** 顶栏 / 底栏共同的空间预算：这两行之外的高度必须全部留给 3D 场景。 */
 const SCENE_BAND_MIN_RATIO = 0.6
 
 export function checkCommonGeometry(failures, layout, label) {
@@ -316,9 +290,6 @@ export function isCompactScene(layout) {
 }
 
 export function checkTouchTargets(failures, layout, label) {
-  // 场景 token 本身也要锁死：紧凑档 40px，其余触控/桌面 44px。
-  // 视觉尺寸允许两处例外，但都必须由独立断言锁定：普通场景控件按 token 下限，
-  // 装甲短横屏（<=500px）胶囊按 PR #932 的 38px / 36px 紧凑尺寸。
   const expected = isCompactScene(layout) ? 40 : 44
   const floor = layout.sceneTokens?.hitComfortable ?? 44
   check(failures, floor === expected, `${label}: 场景命中 token 为 ${floor}px，期望 ${expected}px`)
@@ -340,10 +311,6 @@ export function checkTouchTargets(failures, layout, label) {
   }
 }
 
-/** 两个可见矩形是否相交（边缘相接不算）。 */
-/** 结果卡高度预算（2026-11-14 用户裁示恢复五行读数后重定）：窄横屏下结果卡从单行胶囊
- *  变成「部件名 + 五行读数」，40px 上限不再适用。预算 = 视口高的 45%（下限仍 40px），
- *  既给五行留出空间，又保证卡片不超过小视口的一半——超出即视为布局退化。 */
 export function resultHeightBudget(viewportHeight) {
   return Math.max(40, Math.round((viewportHeight || 0) * 0.45))
 }
@@ -354,7 +321,6 @@ export function rectsOverlap(a, b) {
     && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 0.5
 }
 
-/** 手机横屏短视口专用几何：紧凑胶囊 / 结果胶囊 / 右下射击 / 左下姿态四块互不相交。 */
 export function checkCompactLandscapeHud(failures, layout, label, viewportHeight) {
   checkCommonGeometry(failures, layout, label)
   const missing = (layout.requiredNodes || []).filter(node => !node.present).map(node => node.selector)
@@ -374,7 +340,6 @@ export function checkCompactLandscapeHud(failures, layout, label, viewportHeight
   for (const [name, box] of missingBoxes) {
     check(failures, false, `${label}: ${name} 不可见/不可测（${JSON.stringify(box)}）`)
   }
-  // 盒子缺失时后续尺寸断言全都会读到 undefined；记录上面这条失败后直接结束，避免 TypeError。
   if (missingBoxes.length > 0) return
   const pairs = [
     ['capsule', 'result'], ['capsule', 'shotPanel'], ['capsule', 'posturePanel'],
@@ -390,7 +355,6 @@ export function checkCompactLandscapeHud(failures, layout, label, viewportHeight
   check(failures, layout.capsule.width <= 280,
     `${label}: 左上胶囊宽 ${layout.capsule.width}px，超过 280px`)
   if (layout.viewport.width < 768) {
-    // 窄横屏：结果胶囊移到胶囊下方第二行，必须同左对齐且不压住胶囊。
     check(failures, Math.abs(result.left - layout.capsule.left) <= 2 && result.top >= layout.capsule.bottom + 2,
       `${label}: 结果胶囊没有排在左上胶囊下方第二行（capsule=${JSON.stringify(layout.capsule)} result=${JSON.stringify(result)}）`)
   } else {

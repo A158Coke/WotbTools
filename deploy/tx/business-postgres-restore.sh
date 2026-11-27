@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# TX Business PostgreSQL restore verification. The authoritative business
-# database is never dropped, truncated, or deleted here: this script restores a
-# validated archive into an explicitly named disposable/scratch database so the
-# archive's integrity and identity/sequence state can be verified in isolation.
 set -Eeuo pipefail
 
 umask 077
@@ -14,7 +10,6 @@ readonly SOURCE_DATABASE="wotb"
 compose_file="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_FILE:-$COMPOSE_FILE_DEFAULT}"
 compose_service="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_SERVICE:-$COMPOSE_SERVICE_DEFAULT}"
 project_name="${WOTB_TX_BUSINESS_POSTGRES_COMPOSE_PROJECT:-deploy}"
-# Optional container override, used by the disposable CI smoke.
 container_override="${WOTB_TX_BUSINESS_POSTGRES_CONTAINER:-}"
 admin_user="${TX_BUSINESS_POSTGRES_ADMIN_USER:-wotb}"
 source_database="${TX_BUSINESS_DB_NAME:-$SOURCE_DATABASE}"

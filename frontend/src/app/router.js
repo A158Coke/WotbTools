@@ -7,8 +7,6 @@ import { canonicalView, LEGACY_VIEW_ALIASES, primarySection } from './navigation
 export function createAppRouter(history = createWebHistory()) {
   const router = createRouter({
     history,
-    // 前进 / 后退恢复原位置；切换到另一个页面时回到顶部。回放工作台内的模式切换（replay / ai-review /
-    // battle-playback）属于同一页面，不打断滚动位置。
     scrollBehavior(to, from, savedPosition) {
       if (savedPosition) return savedPosition
       const samePage = to.path === from.path
@@ -38,8 +36,6 @@ export function createAppRouter(history = createWebHistory()) {
 
   router.beforeEach((to) => {
     const view = to.query.view
-    // Home is not an Android destination. Strip stale Home query state universally so the
-    // current path regains authority: / => Replay, /download/android => Android page, /sponsor => Sponsor.
     if (isAndroidRuntime() && view === 'home') {
       const query = { ...to.query }
       delete query.view

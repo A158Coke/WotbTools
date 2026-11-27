@@ -1,20 +1,7 @@
 import polygonClipping from 'polygon-clipping'
 import { projectTriangles, simplifyRing, unionTriangles } from './extractor-planar.mjs'
 
-/**
- * Layer B — 真实模型驱动的内部结构细节提取（当前目标）。
- *
- * 思路（调查 Maus 顶面 z 分布后确定）：
- * - hull 顶面存在多个高度层（主甲板 z≈2.2 / 过渡 1.0-1.6 / 裙板 0.4-0.9）；
- * - 对每个 triangle 用法线判定 top-facing，按高度聚类成"主要表面区域"；
- * - 顶面内部边按 高度差/法线差 提取"主要结构边界"；
- * - 全部经过屏幕空间过滤（marker 28px → 1px ≈ 11.4 SVG units）。
- * 禁止输出 wireframe（边数量与长度受阈值约束）。
- */
 
-/**
- * 三角形法线（未归一化向量 [nx,ny,nz]）。
- */
 export function triangleNormal(a, b, c) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2]
   const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2]
@@ -96,7 +83,6 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
       area,
     })
   }
-  // 2) 共享 3D 边邻接 + union-find 合并（视觉连续条件）
   const keyOf = (a, b) => {
     const pa = a.map((v) => v.toFixed(6)).join(',')
     const pb = b.map((v) => v.toFixed(6)).join(',')
@@ -136,7 +122,6 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
       }
     }
   }
-  // 3) 分量 → 2D union → { polys, areaM2, zMean, faceCount }
   const comps = new Map()
   for (let i = 0; i < faces.length; i++) {
     const root = find(i)
@@ -150,7 +135,6 @@ export function mergeVisualSurfaces(triangles3d, opts = {}) {
     const area = polys.reduce((s, p) => s + ringArea(p.ring), 0)
     const wSum = comp.reduce((s, i) => s + faces[i].area, 0)
     const zMean = wSum > 0 ? comp.reduce((s, i) => s + faces[i].z * faces[i].area, 0) / wSum : 0
-    // faceIdx：surface 的组成三角形在 triangles3d 输入中的索引（surface 级可见性/审计用）
     const faceIdx = comp.map((i) => faces[i].inputIdx)
     out.push({ polys, areaM2: +area.toFixed(3), zMean: +zMean.toFixed(2), faceCount: comp.length, faceIdx })
   }
@@ -198,7 +182,7 @@ export function filterOccludedSurfaces(surfaces, opts = {}) {
       const visible = polygonClipping.difference(myUnion, ...covered)
       const visArea = visible.reduce((sum, poly) => sum + ringArea(poly[0]), 0)
       const myArea = myUnion.reduce((sum, poly) => sum + ringArea(poly[0]), 0)
-      if (myArea > 0 && visArea / myArea < 1 - occludeRatio) continue // 被遮挡 → hidden
+      if (myArea > 0 && visArea / myArea < 1 - occludeRatio) continue
     }
     kept.push(s)
     covered = polygonClipping.union(covered, myUnion)
@@ -230,7 +214,7 @@ export function filterOccludedSurfaces(surfaces, opts = {}) {
 export function rasterVisibility(triangles3d, opts = {}) {
   const topFacingCos = opts.topFacingCos ?? 0.35
   const resolution = opts.resolution ?? 1024
-  const groups = opts.groups ?? null // 与 triangles3d 等长；每组累计可见像素（-1 不统计）
+  const groups = opts.groups ?? null
   const faces = []
   for (let ti = 0; ti < triangles3d.length; ti++) {
     const tri = triangles3d[ti]
@@ -294,7 +278,6 @@ export function rasterVisibility(triangles3d, opts = {}) {
       }
     }
   }
-  // per-input-triangle visible pixel count（非 top-facing = 0）——调用方按输入索引对齐
   const perInput = new Uint32Array(triangles3d.length)
   const topFacing = new Array(faces.length)
   for (let i = 0; i < faces.length; i++) {
@@ -307,7 +290,6 @@ export function rasterVisibility(triangles3d, opts = {}) {
   }
   const visibleMask = new Uint8Array(W * H)
   for (let i = 0; i < owner.length; i++) if (owner[i] >= 0) visibleMask[i] = 1
-  // per-group visible pixel count（group = 输入三角形所属表面等；-1 不统计）
   let visibleGroupPx = null
   if (groups) {
     const maxG = Math.max(-1, ...groups)
@@ -333,10 +315,6 @@ export function rasterVisibility(triangles3d, opts = {}) {
   }
 }
 
-/**
- * 世界坐标点 → rasterVisibility 栅格像素索引（与 visibleMask 同坐标系）。
- * 仅用于可见性判定查询（如结构边中点）。
- */
 export function visibilityPixel(worldX, worldY, vis) {
   const px = Math.floor((worldX - vis.bounds.minX) * vis.pxPerM)
   const py = Math.floor((worldY - vis.bounds.minY) * vis.pxPerM)
@@ -344,7 +322,6 @@ export function visibilityPixel(worldX, worldY, vis) {
   return py * vis.width + px
 }
 
-/** 线段严格相交（不含端点接触）——自交检测用。 */
 function segmentsProperIntersect(a, b, c, d) {
   const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
   const d1 = cross(a, b, c)
@@ -354,7 +331,6 @@ function segmentsProperIntersect(a, b, c, d) {
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
 }
 
-/** ring 自交判定（非简单多边形——polygon-clipping 数值伪影特征）。 */
 function isSelfIntersecting(ring) {
   const n = ring.length
   for (let i = 0; i < n; i++) {
@@ -362,7 +338,7 @@ function isSelfIntersecting(ring) {
     const b = ring[(i + 1) % n]
     for (let j = i + 1; j < n; j++) {
       const nextJ = (j + 1) % n
-      if (nextJ === i || j === (i + 1) % n) continue // 跳过相邻边
+      if (nextJ === i || j === (i + 1) % n) continue
       const c = ring[j]
       const d = ring[nextJ]
       if (segmentsProperIntersect(a, b, c, d)) return true
@@ -427,7 +403,6 @@ export function filterDegeneratePolys(polys, opts = {}) {
   return { kept, removed }
 }
 
-/** 2D ring 面积（Shoelace，正值）。 */
 function ringArea(ring) {
   let area = 0
   for (let i = 0; i < ring.length; i++) {

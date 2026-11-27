@@ -5,7 +5,6 @@ import { nextTick } from 'vue'
 import { state, columnsState, makeResp, mountPage } from './ReplayPage.test.fixture.js'
 
 describe('ReplayPage Excel export menu (client-side xlsx)', () => {
-  // 导出统一收进「导出 ▾」菜单（design-language §7 Menu）：菜单项只在打开后渲染。
   async function openExportMenu(wrapper) {
     await wrapper.get('[data-testid="export-menu"]').trigger('click')
     await flushPromises()
@@ -21,7 +20,6 @@ describe('ReplayPage Excel export menu (client-side xlsx)', () => {
     await openExportMenu(wrapper)
     await wrapper.get('[data-testid="export-aggregate"]').trigger('click')
     await flushPromises()
-    // 无覆盖时 teamNamesPayload() = null（名称必须经 payload 传递）
     expect(state.replay.exportExcel).toHaveBeenCalledWith('aggregate', null)
     wrapper.unmount()
   })
@@ -162,14 +160,12 @@ describe('ReplayPage League Rating', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    // 默认：汇总可见，详情（文件名/错误码）折叠——不得默认铺满红色解析失败
     expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).not.toContain('is-danger')
     expect(wrapper.find('[data-testid="league-failure-summary"]').classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.rated_count')
     expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
-    // 展开详情 → 分组错误码 + 展开分组 → 具体文件与 arenaId
     await wrapper.find('[data-testid="league-failure-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="league-failure-detail"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('LEAGUE_NOT_SEVEN_VS_SEVEN')
@@ -193,8 +189,6 @@ describe('ReplayPage League Rating', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    // Death provenance remains outside League business state; the compatibility
-    // response slot must not create a League warning.
     expect(wrapper.find('[data-testid="league-failure-summary"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="league-quality-warning"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('league.summary.no_rateable')
@@ -268,7 +262,6 @@ describe('ReplayPage League Rating', () => {
     wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
     expect(wrapper.vm.battleTeamNames).not.toEqual({})
-    // 触发真实 selection 变化（统一 updateFiles 入口 → selectionRevision++）
     state.replay.updateFiles(['b.wotbreplay'])
     await nextTick()
     expect(wrapper.vm.battleTeamNames).toEqual({})
@@ -281,7 +274,6 @@ describe('ReplayPage League Rating', () => {
     await flushPromises()
     wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
-    // 删除单个 replay：同样走 updateFiles → selection 变化
     state.replay.updateFiles(['a.wotbreplay'])
     await nextTick()
     expect(wrapper.vm.battleTeamNames).toEqual({})
@@ -294,7 +286,6 @@ describe('ReplayPage League Rating', () => {
     await flushPromises()
     wrapper.vm.battleTeamNames['arenaA:1'] = 'CHRD'
     wrapper.vm.summaryTeamNames['clan:CHRD'] = 'CHRD A队'
-    // 同一 selection 重新解析：selectionRevision 不变 → overrides 保留
     await state.replay.analyze()
     await nextTick()
     expect(wrapper.vm.battleTeamNames['arenaA:1']).toBe('CHRD')
@@ -319,24 +310,21 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'b0'
     const wrapper = mountPage()
     await flushPromises()
-    // 无 aggregate 且非 league → 汇总视图不渲染（无可展示内容），只有单场视图，因此不显示视图切换。
     expect(wrapper.find('[data-testid="data-view-summary"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="data-view"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some(b => b.text().includes('Lagoon #1'))).toBe(false)
     expect(wrapper.findAll('button').some(b => b.text().includes('Frozen #2'))).toBe(false)
-    // 至少一个 BattleTable panel 可见（结果区不为空）
     const battlePanels = wrapper.findAll('.battle-table-stub')
     expect(battlePanels.length).toBeGreaterThan(0)
     expect(battlePanels[0].isVisible()).toBe(true)
-    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动）
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
   })
 
   it('league 模式以 resp.leagueMode 为唯一事实源：即使 playerColumns 无 league_rating，aggregate tab + 统一玩家表也显示', async () => {
-    delete window.__testLeagueMode // 列派生 league mode（测试 seam）关闭，页面只看 resp.leagueMode
+    delete window.__testLeagueMode
     state.init.resp = makeResp({
       aggregate: [],
-      playerColumns: [{ key: 'nickname', label: '昵称' }], // 不含 league_rating
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
       leagueMode: true,
       league: {
         mode: 'LEAGUE_RATING',
@@ -353,7 +341,6 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     await flushPromises()
     const tabs = wrapper.findAll('[data-testid="data-view"] [role="radio"]')
     expect(tabs.some(b => b.text().includes('result.aggregate_tab'))).toBe(true)
-    // CW 模式：玩家信息只走统一玩家表，不再渲染两张平级玩家表
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
     expect(wrapper.find('.league-summary').exists()).toBe(false)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
@@ -365,7 +352,7 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
         { cells: { nickname: 'P1', damage_dealt: 5000 } },
         { cells: { nickname: 'P2', damage_dealt: 3000 } }
       ],
-      playerColumns: [{ key: 'nickname', label: '昵称' }], // 不含 league_rating
+      playerColumns: [{ key: 'nickname', label: '昵称' }],
       leagueMode: true,
       league: {
         mode: 'LEAGUE_RATING',
@@ -380,7 +367,6 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // CW 模式：玩家只有一个主表（统一表），基础 AggregateTable 与 League 玩家表都不得再出现
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary').exists()).toBe(false)
@@ -409,14 +395,11 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // 0 可评分 ≠ Replay 没数据：统一玩家表仍渲染 aggregate 玩家（Missing side 不删玩家）
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
-    // 战队区块为明确 neutral 空态，而不是 "--"
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="league-summary-empty"]').classes()).not.toContain('error')
     expect(wrapper.find('.league-summary').exists()).toBe(false)
-    // 汇总 tab 人数来自 resp.aggregate（2），不是 league.playerSummaries（0）
     const tabs = wrapper.findAll('[data-testid="data-view"] [role="radio"]')
     const aggTab = tabs.find(b => b.text().includes('result.aggregate_tab'))
     expect(aggTab.text()).toContain('result.aggregate_tab:2')
@@ -434,7 +417,6 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
   })
 
   it('leagueMode=false 即使构造异常 league metadata + playerColumns 含 league_rating → 仍是标准模式（第二事实源不得改变 mode）', async () => {
-    // 唯一事实源 resp.leagueMode：league 对象与 playerColumns 列内容都不能把标准批次变成 CW
     state.init.resp = makeResp({
       aggregate: [
         { cells: { nickname: 'P1', damage_dealt: 5000 } },
@@ -454,14 +436,12 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // 无 CW UI：不渲染统一玩家表 / League 标题，走基础 AggregateTable
     expect(wrapper.find('.cw-player-summary').exists()).toBe(false)
     expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(false)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(true)
   })
 
   it('leagueMode=true + league envelope 存在但 0 评分（battle.league=null、playerSummaries=[]）：CW UI + 统一表保留 aggregate 玩家', async () => {
-    // 生产 contract：纯 CW 批次必有 league envelope（无论评分场数）；单场是否评分由 battle.league 决定。
     state.init.resp = makeResp({
       aggregate: [
         { team: 1, accountId: 1001, cells: { nickname: 'P1', damage_dealt: 5000 } },
@@ -482,15 +462,12 @@ describe('ReplayPage result visibility (no blank results; league mode from resp.
     state.init.activeTab = 'aggregate'
     const wrapper = mountPage()
     await flushPromises()
-    // CW UI 存在（aggregate tab + 统一玩家表 + League 标题），不退化为基础表
     expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('.cw-player-summary').exists()).toBe(true)
-    // 统一表保留 Replay Aggregate 玩家（0 评分不删玩家；Rating/七维补 "--"）
     const rows = wrapper.findAll('.cw-player-summary tbody tr')
     expect(rows.length).toBeGreaterThan(0)
     expect(wrapper.text()).toContain('P1')
-    // 战队区块为明确 neutral 空态，不伪造 Team Rating / MVP
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('.league-summary').exists()).toBe(false)
   })
@@ -613,7 +590,6 @@ describe('ReplayPage Player Detail Drawer', () => {
     await flushPromises()
     const rows = wrapper.findAll('.cw-player-summary tbody tr')
     await rows[0].trigger('click')
-    // 排序：点击 nickname 表头 → ASC（Alpha/Beta 不变顺序）
     const th = wrapper.findAll('.cw-player-summary th').find(t => t.text().includes('nickname'))
     await th.trigger('click')
     const drawer = wrapper.find('.drawer-stub')
@@ -643,7 +619,6 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     delete window.__testCwOrder
   })
 
-  /** 富 league 响应：playerSummaryColumns 含七维 + mvp_count；aggregateColumns 含 facts + 幸存的 Performance Metrics。 */
   function cwResp() {
     return makeResp({
       aggregate: [
@@ -655,7 +630,6 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
         { key: 'wins', num: true }, { key: 'win_rate', num: true }, { key: 'damage_avg', num: true },
         { key: 'earned_avg', num: true }, { key: 'multi_damage_rate', num: true },
         { key: 'survival_time_avg', num: true },
-        // B6：tanks 仍在 aggregate wire 上，但列层不展示（无本地化 label）
         { key: 'tanks', num: false },
       ],
       playerColumns: [{ key: 'nickname', label: '昵称' }, { key: 'league_rating', label: 'Rating' }],
@@ -672,7 +646,6 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
         ],
         playerSummaryColumns: [
           { key: 'nickname', num: false }, { key: 'clan', num: false }, { key: 'battles', num: true },
-          // rated_battles 进入生产 playerSummaryColumns（后端 ColumnDef）
           { key: 'rated_battles', num: true },
           { key: 'league_rating', num: true }, { key: 'league_damage_score', num: true },
           { key: 'league_shooting_score', num: true }, { key: 'mvp_count', num: true },
@@ -684,7 +657,6 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
   }
 
   function cwThKeys(wrapper) {
-    // $t mock 返回完整 key（'agg_labels.nickname'）→ 去掉前缀还原列 key
     return wrapper.findAll('.cw-player-summary th').map(t =>
       t.text().replace(/[▼▲]/g, '').replace(/^agg_labels\./, ''))
   }
@@ -696,19 +668,14 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
     const wrapper = mountPage()
     await flushPromises()
     const keys = cwThKeys(wrapper)
-    // 七维/MVP 不在 cwVisibleKeys → 不渲染（不再是 alwaysVisible）
     expect(keys).not.toContain('league_damage_score')
     expect(keys).not.toContain('mvp_count')
-    // nickname + league_rating 固定出现
     expect(keys[0]).toBe('nickname')
     expect(keys[1]).toBe('league_rating')
-    // 幸存的 Performance Metrics 与 facts 可显示
     expect(keys).toContain('multi_damage_rate')
     expect(keys).toContain('survival_time_avg')
     expect(keys).toContain('earned_avg')
-    // rated_battles 走真实生产链（playerSummaryColumns → merge → cwVisibleKeys → 表头）
     expect(keys).toContain('rated_battles')
-    // B6：tanks 在 aggregateColumns 里也不可能进入统一表
     expect(keys).not.toContain('tanks')
     wrapper.unmount()
   })
@@ -749,7 +716,6 @@ describe('ReplayPage CW unified table column contract + CW/Rating boundary', () 
       }
     })
     await flushPromises()
-    // leagueMode=true（CW 批次），即使该场 league=null：仍是 CW UI
     expect(wrapper.find('[data-testid="league-summary-title"]').exists()).toBe(true)
     await wrapper.find('.battle-table-stub').trigger('click')
     const drawer = wrapper.find('.drawer-stub')
@@ -860,10 +826,8 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    // 不得出现红色解析失败块（result.failures 只用于真正 parser failure）
     expect(wrapper.find('[data-testid="result-failures"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('result.failures')
-    // League failure 汇总存在且为 warning 语义
     const summary = wrapper.find('[data-testid="league-failure-summary"]')
     expect(summary.exists()).toBe(true)
     expect(summary.classes()).toContain('is-warning')
@@ -917,8 +881,6 @@ describe('ReplayPage League failure UX separation', () => {
     })
     const wrapper = mountPage()
     await flushPromises()
-    // v-if 挂载口径（2026-10-31 批量优化，此前 v-show 全量挂载隐藏表）：
-    // 单场视图仅当前场表进 DOM；「逐场可看」= 切场次后对应表挂载
     state.setActiveTab('b0')
     await flushPromises()
     expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
@@ -937,9 +899,7 @@ describe('ReplayPage League failure UX separation', () => {
     state.init.activeTab = 'b0'
     const wrapper = mountPage()
     await flushPromises()
-    // 单场视图可渲染 battle table（League-ineligible battle 仍完整展示）。
     expect(wrapper.findAll('.battle-table-stub').length).toBeGreaterThan(0)
-    // 重复的 AI / 回放 toolbar 入口已被删除。
     expect(wrapper.find('[data-testid="battle-ai-btn"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="battle-playback-btn"]').exists()).toBe(false)
     wrapper.unmount()
@@ -967,7 +927,6 @@ describe('ReplayPage League failure UX separation', () => {
     expect(notice.exists()).toBe(true)
     expect(notice.classes()).toContain('is-warning')
     expect(wrapper.text()).toContain('league.unavailable_mixed')
-    // v-if 挂载口径：逐场切换各挂载一张表（此前 v-show 两张全挂）
     state.setActiveTab('b0')
     await flushPromises()
     expect(wrapper.findAll('.battle-table-stub').length).toBe(1)
@@ -979,7 +938,6 @@ describe('ReplayPage League failure UX separation', () => {
   })
 })
 
-// ---- Workspace Dataset stale response ownership（generation/revision）----
 
 describe('ReplayPage League 算法说明入口', () => {
   afterEach(() => {
@@ -1010,13 +968,8 @@ describe('ReplayPage League 算法说明入口', () => {
   })
 })
 
-// ---- battleSorts 批次边界（Codex round-2 复审回归）----
-// ReplayPage.test 的 BattleTable 是 stub（无真实行序），回归锁**接线与状态机**：
-// 父组件持有逐场排序 → 子表 prop 同步；同批次切场保留；selectionRevision++ 清空。
-// 「sortKey='' → 默认行序」由 BattleTable 自身 sorted 语义保证（其单测覆盖）。
 
 describe('ReplayPage battleSorts 批次边界', () => {
-  // state.init 在首次 useReplay 后置空——每条用例前重建（与本文件其他 describe 同款）
   beforeEach(() => {
     state.clear()
     state.init = { activeTab: 'aggregate', resp: makeResp(), error: '', loading: false, locale: 'en', files: [] }
@@ -1024,7 +977,6 @@ describe('ReplayPage battleSorts 批次边界', () => {
 
   const sortAttr = (wrapper) => wrapper.get('.battle-table-stub').attributes('data-sort-key')
 
-  /** 挂载并把 battle 0 排到 damage_dealt（写入父组件状态 → 子表 prop 同步）。 */
   async function mountSortedAtBattle0() {
     const wrapper = mountPage()
     await flushPromises()
@@ -1037,7 +989,6 @@ describe('ReplayPage battleSorts 批次边界', () => {
     return wrapper
   }
 
-  // 回归 1（同批次）：v-if 卸载不丢用户排序——状态在父组件，切场/汇总往返保留
   it('同批次：battle 0 排序 → battle 1 → 回 battle 0，排序仍保留', async () => {
     const wrapper = await mountSortedAtBattle0()
     state.setActiveTab('b1')
@@ -1048,8 +999,6 @@ describe('ReplayPage battleSorts 批次边界', () => {
     wrapper.unmount()
   })
 
-  // 回归 2（跨批次）：replaceSelection（updateFiles → selectionRevision++）必须清空，
-  // 新批次 battle 0 回默认排序，不继承旧批次同 index 的排序
   it('跨批次：旧批次排序 → replaceSelection → 新批次 battle 0 恢复默认排序', async () => {
     const wrapper = await mountSortedAtBattle0()
     state.setResp(makeResp())

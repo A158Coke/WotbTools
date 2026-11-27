@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-// 重新导出 `src/replay-local/__golden__/wasm-results.json`：用 `deploy/agent/source.json` 锁定的上游 WASM
-// （先 `bash scripts/fetch-agent-wasm.sh`）在 `batches.json` 列出的仓库 fixture 回放上跑 parseResult。
-// Java 侧 golden（java-*）只读不再生成；上游 pin 升级后跑本脚本，再跑 replay-local 全部 golden 测试。
-//
-// 用法（在 frontend/ 下）：node scripts/export-wasm-results.mjs
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -12,7 +7,6 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '../..')
 const golden = join(repo, 'frontend/src/replay-local/__golden__')
 const pin = JSON.parse(readFileSync(join(repo, 'deploy/agent/source.json'), 'utf8'))
-// 产物落位是 commit-addressed 目录（stable `/wasm/wotb_replay_wasm.js` 已废除）
 const wasmDir = join(repo, 'common/assets/wasm', pin.ref)
 const fp = JSON.parse(readFileSync(join(wasmDir, 'fingerprint.json'), 'utf8'))
 if (fp.tag !== pin.artifact.release || fp.upstream_commit !== pin.ref) {

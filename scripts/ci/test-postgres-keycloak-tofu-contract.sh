@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# TX-local postgres-keycloak OpenTofu contract.
-#
-# Responsibility split (do not duplicate the other layers here):
-#   tofu fmt / tofu validate / plan  -> syntax, schema and provider-legal fields
-#   infra/tofu/postgres-keycloak/validate-plan.sh -> destructive plan policy
-#   deploy/test-keycloak-tofu.sh     -> real apply + Admin API runtime smoke
-# This file pins what native tooling considers valid but would still break the
-# project's privilege boundary or production safety, plus the saved-plan policy
-# fixtures for the root's own plan guard.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

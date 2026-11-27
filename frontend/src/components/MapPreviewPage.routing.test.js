@@ -38,27 +38,15 @@ vi.mock('../scene/replaySource.js', async (importOriginal) => ({
 import MapPreviewPage from './MapPreviewPage.vue'
 import { assetProvider } from '../scene/assetProvider.js'
 
-/**
- * 地图预览页 contract：
- * - 登录门（未登录只给认证入口，不渲染任何清单/场景）。
- * - picker = 资产包 index.json 按 key 去重（变体空间归并基础图，首个 id 为 3D 装载入口）；
- *   默认只显示 common/map_names.json 登记了 zh 的 key（人工认可目录，与 UI locale 无关），
- *   「显示全部地图」开关展开其余资产条目（会话状态：不写 URL、不写持久化）。
- * - URL 契约 ?map= &mode=：默认隐藏的地图仍可由深链打开；点击地图缺省写 mode=2d；
- *   切模式/基地只改自己的键，返回 picker 清掉 map/mode/bases。
- */
 
 const { ROUTER, IDX, openAt } = createMapPreviewPageTestHelpers({ MapPreviewPage, createRouter, createMemoryHistory, mount, DIALOG_INLINE_KEY, flushPromises })
 
 beforeEach(() => {
-  // 每个用例模拟一次新的页面加载：dataset 在页面内固定，切换只经整页重载。
   __resetAssetBaseForTests()
   auth.authenticated.value = false
   if (i18n.locale) i18n.locale.value = 'zh'
   source.loadMapIndex.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
-  // ground.webp 回退封面依赖资产源已配置（CI 无 .env.local）：与 replaySource.test.js
-  // 同款 spy，URL 断言不随运行环境漂移
   vi.spyOn(assetProvider, 'configured').mockReturnValue(true)
   vi.spyOn(assetProvider, 'url').mockImplementation((p) => 'https://assets.test' + p)
 })
@@ -87,7 +75,6 @@ describe('MapPreviewPage', () => {
     const points = pane.props('spawnPoints')
     expect(Array.isArray(points)).toBe(true)
     expect(points.length).toBeGreaterThan(0)
-    // 解析面契约：每点至少有限 x/y（parseMapGridProfile 已过滤非有限条目）
     for (const pt of points) {
       expect(Number.isFinite(pt.x)).toBe(true)
       expect(Number.isFinite(pt.y)).toBe(true)
@@ -101,7 +88,6 @@ describe('MapPreviewPage', () => {
     expect(ROUTER.currentRoute.value.query.mode).toBeUndefined()
     expect(w.find('[data-testid="map-2d-pane"]').isVisible()).toBe(true)
     expect(w.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('none')
-    // 显式 3D 深链不被缺省值改写
     const w3 = await openAt({ map: 'erlenberg', mode: '3d' })
     expect(ROUTER.currentRoute.value.query.mode).toBe('3d')
     expect(w3.find('[data-testid="map-3d-pane"]').element.parentElement.style.display).toBe('')
@@ -122,7 +108,6 @@ describe('MapPreviewPage', () => {
     await wrapper.find('[data-testid="map-mode-2d"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toMatchObject({ map: 'canyon', bases: 'encounter', mode: '2d' })
-    // 基地 selector 是独立维度：切争霸只改 bases
     await wrapper.find('[data-testid="map-bases-supremacy"]').trigger('click')
     await flushPromises()
     expect(ROUTER.currentRoute.value.query).toMatchObject({ map: 'canyon', mode: '2d', bases: 'supremacy' })
@@ -141,7 +126,6 @@ describe('MapPreviewPage', () => {
     expect(pane3d.element.parentElement.style.display).toBe('none')
     const pane = wrapper.findComponent({ name: 'MapPreview2DPane' })
     expect(pane.props('mapKey')).toBe('moon')
-    // 页面只下发描述符；map2d 1254² 的异步解析与 fail-visible 在面板自身
     expect(pane.props('basemap')).toEqual({ kind: 'map2d', mapKey: 'moon' })
   })
 
@@ -170,5 +154,4 @@ describe('MapPreviewPage', () => {
     }
   })
 
-  // ---- 基地点位（?bases=）：争霸/遭遇切换，两个 pane 共用同一 kind ----
 })

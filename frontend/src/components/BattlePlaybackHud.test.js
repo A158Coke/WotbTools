@@ -6,7 +6,6 @@ import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-// happy-dom 环境下 import.meta.url 不是 file: URL，只能走 cwd（vitest 在 frontend/ 下运行）。
 const hudSource = readFileSync(resolve(process.cwd(), 'src/components/BattlePlaybackHud.vue'), 'utf8')
 const hudMobileBlock = hudSource.slice(hudSource.indexOf('@media (width < 768px)'))
 
@@ -40,7 +39,6 @@ describe('BattlePlaybackHud', () => {
     const wrapper = mountHud({ mapTitle: 'Canal', battleTime: '03:20', compact: true })
 
     expect(wrapper.find('[data-test="pb-hud-meta"]').exists()).toBe(false)
-    // 单行 HUD 仍要保留任务要求的地图名（旧断言要求隐藏；新布局改为塞进中列）
     expect(wrapper.get('[data-test="pb-hud-map"]').text()).toBe('Canal')
     const center = wrapper.get('[data-test="pb-hud-center"]')
     expect(center.get('[data-test="pb-hud-map"]').text()).toBe('Canal')
@@ -51,11 +49,7 @@ describe('BattlePlaybackHud', () => {
   })
 
   it('compact reserves HP track width and lets only the map name yield', () => {
-    // 667px 横屏的真实失败模式：完整 HP 数字与血条抢同一行，血条被压到 36.6px；
-    // 五位数的双方总血量还会从 46px 的 team 列向外溢出 HUD（浏览器实测 398 > 385）。
-    // 结构上把数字叠到血条上方（共用单列），并用 HP 数字的 max-content 作为两侧下限；
-    // 中列只剩地图名可收缩。
-    const compact = hudSource.slice(hudSource.indexOf('/* 紧凑单行'))
+    const compact = hudSource.slice(hudSource.indexOf('.pb-hud-compact {'))
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-grid \{[^}]*minmax\(max-content, 1fr\) minmax\(0, max-content\) minmax\(max-content, 1fr\)/)
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-team \{ grid-template-columns: minmax\(0, 1fr\);/)
     expect(compact).toMatch(/\.pb-hud-compact \.pb-hud-track \{[^}]*min-inline-size: 40px/)
@@ -107,7 +101,6 @@ describe('BattlePlaybackHud', () => {
       enemyPoints: 0,
     })
 
-    // 完整整数，而非 "22.3k" / "1.5k"
     expect(wrapper.find('[data-test="pb-hp-value-friendly"]').text()).toBe('22305 / 21446')
     expect(wrapper.find('[data-test="pb-hp-value-enemy"]').text()).toBe('0 / 21446')
     expect(wrapper.find('[data-test="pb-hud-score"]').text()).toBe('584 : 0')
@@ -116,15 +109,12 @@ describe('BattlePlaybackHud', () => {
 
   it('无标签文字：HP 数字居中在血条上方，比分只留数字（2026-10-05 需求）', () => {
     const wrapper = mountHud()
-    // 三个语义标签（己方总HP / 敌方总HP / 击杀数）已按需求移除
     expect(wrapper.find('[data-test="pb-hud-points-label-friendly"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-hud-points-label-enemy"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-hud-points-label"]').exists()).toBe(false)
-    // 数值与比分保留
     expect(wrapper.find('[data-test="pb-hp-value-friendly"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hp-value-enemy"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hud-score"]').text()).toBe('3 : 1')
-    // 居中：数值独占单列并 justify-self: center（源码回归——样式在 scoped CSS 中）
     const css = hudSource
     expect(css).toMatch(/\.pb-hud-value \{[^}]*justify-self: center/)
   })
@@ -133,9 +123,7 @@ describe('BattlePlaybackHud', () => {
     const wrapper = mountHud({ friendlyHp: hp('EXACT', 3000, 3000) })
     expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hud-lag-enemy"]').exists()).toBe(true)
-    // 稳态：无 lag chip
     expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').attributes('style')).toContain('width: 0%')
-    // seek/恢复（hpNoTransition）→ 直接同步新 HP，不补播伤害动画（lag 保持 0%）
     await wrapper.setProps({ friendlyHp: hp('EXACT', 2000, 3000), hpNoTransition: true })
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').attributes('style')).toContain('width: 0%')
@@ -160,7 +148,6 @@ describe('BattlePlaybackHud', () => {
     expect(wrapper.find('[data-test="pb-hp-fill-enemy"]').attributes('style')).toContain('width: 0%')
   })
 
-  // 基地归属改由地图上的圆圈表达，HUD 不再重复一份 chip。
   it('does not render base chips', () => {
     const wrapper = mountHud({
       friendlyPoints: null,
@@ -180,9 +167,7 @@ describe('BattlePlaybackHud', () => {
 })
 
 describe('BattlePlaybackHud 手机版式（源码回归）', () => {
-  // 手机上 .pb-hud-team 压成单列，标签与数值都落在 row1/col1 —— 两段文字直接叠在一起。
 
-  // 「点数」是这一列的标题，排在比分正上方，而不是和比分并排。
   it('stacks the points label above the score', () => {
     const rule = hudSource.slice(hudSource.indexOf('.pb-hud-points {'))
     const body = rule.slice(rule.indexOf('{') + 1, rule.indexOf('}'))

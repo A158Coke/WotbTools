@@ -141,7 +141,6 @@ describe('useLocalReplayAnalysis', () => {
     })
 
     describe('sourceId 始终与 File 指向同一场', () => {
-      // preview() 只按下标造场次；这里让每场带上来源文件名，才能证明 sourceId 与 File 的对应。
       const byName = parsed => ({ dataset: {}, preview: { ...preview(0), battles: parsed.map((file, i) => ({
         sourceId: `r${i}`, sourceName: file.name, mapName: 'Lagoon', players: [],
       })) } })
@@ -220,7 +219,6 @@ describe('useLocalReplayAnalysis', () => {
         const api = await pendingAdd()
         const [, b, c] = api.files
         const [e, f] = ['e', 'f'].map(name => replayFile(`${name}.wotbreplay`))
-        // 后面的文件先回包：e 还没解析，f 已经解析。
         local.parseReplayFiles.mockImplementationOnce(async (_files, { onFile }) => {
           onFile(2, parsedOf([f])[0])
           throw new ReplayEngineUnavailableError('worker crashed')
@@ -229,7 +227,6 @@ describe('useLocalReplayAnalysis', () => {
         expect(aligned(api.session)).toBe(true)
         expect(api.session.files.value.map(file => file.name)).toEqual(['a.wotbreplay', 'b.wotbreplay', 'c.wotbreplay'])
 
-        // 下一次移除同样只按前缀重算，已解析的 f 不会跨过 e 进入结果。
         const pending = deferred()
         local.parseReplayFiles.mockReturnValueOnce(pending.promise)
         void api.changeFiles([b, c, e, f])

@@ -77,7 +77,6 @@ describe('rosterState · 状态在时刻投影', () => {
   })
 
   it('阵亡判定走权威 death_t，而不是 hp === 0', () => {
-    // 残骸：HP 已归零但 death_t 缺失 → 不得当阵亡；HP 非零但 death_t 已过 → 必须当阵亡
     const odd = [
       vehicle(1, 1, { hp: [[0, 0]], death_t: null }),
       vehicle(2, 2, { hp: [[0, 2000]], death_t: 30 }),
@@ -101,7 +100,6 @@ describe('rosterState · 物理队伍分组', () => {
     expect(rows.team1.map((r) => r.eid)).toEqual([1])
     expect(rows.team2.map((r) => r.eid)).toEqual([2])
     expect(rows.unknown.map((r) => r.eid)).toEqual([3, 4, 5])
-    // team 字段本身也只保留物理身份，未知一律 null（呈现层据此取中性 token）
     expect(rows.unknown.every((r) => r.team === null)).toBe(true)
     expect(rows.team1[0].team).toBe(1)
     expect(rows.team2[0].team).toBe(2)
@@ -122,11 +120,6 @@ describe('rosterState · 物理队伍分组', () => {
   })
 })
 
-/**
- * reload 投影的响应式契约：resolver 产物 10Hz 引用恒变（progress 连续），而呈现层只消费
- * 各弹位的 `state` 相位序列——applyRosterRuntime 按相位序列去重引用，相位不变时不写代理，
- * 双名册才不会被 10Hz 全量重渲染；相位跳变（开火/装满/阵亡清空）仍必须对 Vue 可见。
- */
 describe('rosterState · applyRosterRuntime reload 引用稳定性', () => {
   it('相位序列不变 → 不通知；相位跳变 / 阵亡清空 → 必须通知', () => {
     const row = reactive({ eid: 1, hp: 1000, maxHp: 2000, dead: false, followed: false })
@@ -134,7 +127,6 @@ describe('rosterState · applyRosterRuntime reload 引用稳定性', () => {
     effect(() => { void row.hp; void row.dead; void row.reload; runs++ })
     expect(runs).toBe(1)
 
-    // resolver 每次新建数组，但相位序列相同：引用不得变化（progress 连续变化不算跳变）
     applyRosterRuntime(row, { reload: [{ state: 'loading', progress: 0.5 }] })
     expect(runs).toBe(2)
     const stable = row.reload
@@ -142,25 +134,18 @@ describe('rosterState · applyRosterRuntime reload 引用稳定性', () => {
     expect(runs).toBe(2)
     expect(row.reload).toBe(stable)
 
-    // 相位跳变（装填 → 满弹）必须通知
     applyRosterRuntime(row, { reload: [{ state: 'full', progress: 1 }] })
     expect(runs).toBe(3)
-    // 阵亡清空（数组 → null）必须通知
     applyRosterRuntime(row, { reload: null })
     expect(runs).toBe(4)
     expect(row.reload).toBeNull()
 
-    // 对照组：展示字段变化照常通知——去重没有把 hp 一起静默
     applyRosterRuntime(row, { hp: 500 })
     expect(runs).toBe(5)
     expect(row.hp).toBe(500)
   })
 })
 
-/**
- * HP 呈现模型：名册与名牌共用同一份判定，渲染层不自己猜。
- * 契约核心是「exact 不重复百分比 / relative 不伪造数值 / unknown ≠ 0% / destroyed 归零」。
- */
 describe('rosterState · HP 呈现模型（exact / relative / unknown / destroyed）', () => {
   it('exact：有权威 current + max → 只写 `current / max`，不重复百分比', () => {
     const hp = hpPresentationFor({ currentHp: 742, maxHp: 1995 })
@@ -230,7 +215,6 @@ describe('rosterState · HP 呈现模型（exact / relative / unknown / destroye
   })
 })
 
-// Perspective changes lane placement without altering physical identities.
 describe('rosterLanesFor', () => {
   it.each([1, 2, null])('keeps unknown separate for Recorder team %s', (friendlyTeam) => {
     const groups = { team1: [{ eid: 1, team: 1 }], team2: [{ eid: 2, team: 2 }], unknown: [{ eid: 3, team: null }] }

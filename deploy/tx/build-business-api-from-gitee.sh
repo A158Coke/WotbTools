@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Business API 在 TX1 从 Gitee main 历史中的 exact reviewed SHA 构建。
-# GitHub 拥有发布权威；Gitee 是唯一生产 Git 来源，等待耗尽即 fail closed。
 set -Eeuo pipefail
 
 readonly GITEE_REPO_URL="${WOTB_GITEE_REPO_URL:-https://gitee.com/A158Coke/Wotbtools.git}"
 readonly CACHE_ROOT="${WOTB_TX_BUILD_CACHE_ROOT:-$HOME/.cache/wotbtools-production-build}"
 readonly REPO_DIR="$CACHE_ROOT/repo"
-# 构建源固定为持久 Gitee clone。
 SOURCE_DIR="$REPO_DIR"
 readonly BUILD_LOCK_FILE="$CACHE_ROOT/build.lock"
 readonly GITEE_WAIT_ATTEMPTS="${GITEE_WAIT_ATTEMPTS:-12}"
@@ -132,7 +129,6 @@ wait_for_gitee_sha() {
   return 1
 }
 
-# 唯一生产 Git 来源是 Gitee；等待耗尽即失败，不切换来源。
 materialize_source() {
   local source_sha="$1"
   wait_for_gitee_sha "$source_sha" \

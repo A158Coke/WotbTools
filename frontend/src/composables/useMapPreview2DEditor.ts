@@ -68,7 +68,6 @@ export function useMapPreview2DEditor({ mapView, camera, mapComponent }: EditorO
     clearAll()
   }
   function renameSelected(label: string) {
-    // 空 text 不是可持久化 schema；保持原值，避免导出的 JSON 无法重新导入。
     if (selectedAnnotation.value?.type === 'text' && !String(label).trim()) return
     renameSelectedState(label)
   }
@@ -256,7 +255,6 @@ export function useMapPreview2DEditor({ mapView, camera, mapComponent }: EditorO
 
   function onPointerDown(e: PointerEvent) {
     if (e.button != null && e.button !== 0) return
-    // 文本输入框是 BattleMap 内的真实交互控件：不能让 stage 抢焦点/开始绘图。
     const target = e.target as (Element & { setPointerCapture?: (pointerId: number) => void }) | null
     if (target?.closest('input, textarea') || (target instanceof HTMLElement && target.isContentEditable)) return
     if (e.pointerType === 'mouse' && e.button === 0) e.preventDefault()

@@ -36,7 +36,6 @@ describe('VehiclePicker', () => {
     await box.trigger('keydown', { key: 'ArrowDown' })
     expect(box.attributes('aria-expanded')).toBe('true')
     expect(optionLabels(wrapper)).toEqual(['all', 'Progetto 65', 'FV4005', 'Object 261'])
-    // 打开时高亮当前值（null → 「全部」）
     expect(box.attributes('aria-activedescendant')).toBe(wrapper.findAll('[role="option"]')[0].attributes('id'))
     wrapper.unmount()
   })

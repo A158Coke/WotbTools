@@ -88,8 +88,6 @@ describe('installUploadTracking', () => {
     }
     const context = new FakeGL()
     const counts = stats()
-    // Review validation order: upload counter first, timing hook second. The counter must
-    // dispatch through the prototype's current method instead of a bound native snapshot.
     expect(installUploadTracking(context as never, counts, new WeakSet<object>())).toBe(true)
     for (const key of ['bufferData', 'bufferSubData'] as const) {
       const descriptor = Object.getOwnPropertyDescriptor(FakeGL.prototype, key)!
@@ -108,7 +106,7 @@ describe('installUploadTracking', () => {
     context.bufferData(0, new Uint8Array(8), 0)
     context.bufferSubData(0, 0, new Uint8Array(4))
 
-    expect(nativeCalls).toEqual(['data', 'sub'])   // 无递归、无重复调用
+    expect(nativeCalls).toEqual(['data', 'sub'])
     expect(counts).toEqual({ bufferDataCalls: 1, bufferDataBytes: 8, bufferSubDataCalls: 1, bufferSubDataBytes: 4 })
     expect(samples.map(sample => sample.key)).toEqual(['bufferData', 'bufferSubData'])
     expect(samples.every(sample => Number.isFinite(sample.start) && sample.ms >= 0)).toBe(true)

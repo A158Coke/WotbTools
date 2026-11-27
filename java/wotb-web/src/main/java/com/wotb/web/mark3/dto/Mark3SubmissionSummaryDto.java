@@ -3,7 +3,6 @@ package com.wotb.web.mark3.dto;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
-/** 当前用户三环申请的摘要；不返回截图、回放、游戏账号 ID。 */
 public record Mark3SubmissionSummaryDto(
         Long id,
         long vehicleId,

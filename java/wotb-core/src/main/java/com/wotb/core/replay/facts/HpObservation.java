@@ -21,7 +21,6 @@ public record HpObservation(
         HpObservationKind kind,
         ReplayFactSource source
 ) {
-    /** 是否可信正 HP（>0 且 < 0xFF00，与 HealthChangedEvent.isPlausibleHp 同口径）。 */
     public boolean plausible() {
         return hp != null && hp > 0 && hp < 0xFF00;
     }

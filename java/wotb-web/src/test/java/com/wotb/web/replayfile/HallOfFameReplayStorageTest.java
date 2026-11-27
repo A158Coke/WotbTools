@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 内容寻址存储单元测试（真实文件系统，无 DB，任何环境可跑）。 */
 class HallOfFameReplayStorageTest {
 
     private static final String SHA = "c".repeat(64);
@@ -40,7 +39,6 @@ class HallOfFameReplayStorageTest {
         assertTrue(r.created());
         assertTrue(Files.exists(dir.resolve(SHA + ".wotbreplay")));
         assertArrayEquals(new byte[]{1, 2, 3}, Files.readAllBytes(r.path()));
-        // 临时目录不残留
         try (var s = Files.list(dir.resolve(".tmp"))) {
             assertEquals(0, s.count());
         }
@@ -50,7 +48,6 @@ class HallOfFameReplayStorageTest {
     void storeSameHashIsIdempotentAndNeverOverwrites(@TempDir final Path dir) throws IOException {
         final var storage = storage(dir);
         assertTrue(storage.store(new byte[]{1, 2, 3}, SHA).created());
-        // 同 hash 再存（内容相同）→ created=false，文件不变
         final var r2 = storage.store(new byte[]{1, 2, 3}, SHA);
         assertFalse(r2.created());
         assertArrayEquals(new byte[]{1, 2, 3}, Files.readAllBytes(r2.path()));
@@ -77,12 +74,8 @@ class HallOfFameReplayStorageTest {
             for (final Future<Boolean> f : futures) {
                 if (f.get(10, TimeUnit.SECONDS)) creators++;
             }
-            // ATOMIC_MOVE 下 target 已存在的 provider-specific 行为（替换 vs FileAlreadyExists）
-            // 取决于平台：允许 1..threads 个 creator，但 final 文件必须完整且内容正确。
             assertTrue(creators >= 1, "至少一个请求原子发布成功");
-            // final 文件 byte-for-byte 正确（同 hash 同内容 invariant）
             assertArrayEquals(data, Files.readAllBytes(dir.resolve(SHA + ".wotbreplay")));
-            // 无临时文件残留
             try (var s = Files.list(dir.resolve(".tmp"))) {
                 assertEquals(0, s.count());
             }
@@ -102,7 +95,6 @@ class HallOfFameReplayStorageTest {
         final HallOfFameStorageException e = assertThrows(HallOfFameStorageException.class,
                 () -> storage.store(new byte[]{1}, SHA));
         assertEquals("REPLAY_STORAGE_ERROR", e.getCode());
-        // 不 fallback：final 文件不存在、无半文件、tmp 清理
         assertFalse(Files.exists(dir.resolve(SHA + ".wotbreplay")));
         try (var s = Files.list(dir.resolve(".tmp"))) {
             assertEquals(0, s.count());
@@ -130,7 +122,6 @@ class HallOfFameReplayStorageTest {
 
     @Test
     void storeFailsWhenSpaceBelowReserveIncludingIncomingSize(@TempDir final Path dir) {
-        // minFreeBytes = Long.MAX_VALUE：任何写入（含 1 字节）都会低于 reserve
         final var storage = storage(dir, Long.MAX_VALUE);
         final HallOfFameStorageException e = assertThrows(HallOfFameStorageException.class,
                 () -> storage.store(new byte[]{1}, SHA));
@@ -144,7 +135,6 @@ class HallOfFameReplayStorageTest {
         storage.store(new byte[]{1}, SHA);
         storage.delete(SHA);
         assertTrue(storage.load(SHA).isEmpty());
-        // 删除不存在的文件不抛错
         storage.delete("d".repeat(64));
     }
 }

@@ -33,19 +33,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 删除用户单元测试（mock，无 DB）。
- *
- * <p>删除用户只有一个端点形态：请求体是 Keycloak sub 列表，删除单个用户就是长度为 1 的列表。
- * 核心契约：</p>
- * <ul>
- *   <li>逐用户复用删除的全部业务保护（self-delete 保护、本地资料清理、Keycloak 删除）；</li>
- *   <li>partial success —— 某个用户失败不回滚其他用户已完成的删除；</li>
- *   <li>失败用户不得被部分删除（本地资料删除失败时绝不继续删 Keycloak 用户）；</li>
- *   <li>self-delete 只让该条失败，不让整个请求失败；</li>
- *   <li>缺少 confirm 时整个请求被拒绝，不做任何删除。</li>
- * </ul>
- */
 class AdminUserDeleteTest {
 
     private static final int MAX_DELETE_BATCH = 100;
@@ -87,7 +74,6 @@ class AdminUserDeleteTest {
         when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.of(profileA));
         when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-b")).thenReturn(Optional.of(profileB));
         when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-c")).thenReturn(Optional.empty());
-        // kc-b 的本地资料删除因依赖被拒 → 该用户必须整体失败
         doThrow(new DataIntegrityViolationException("fk"))
                 .when(userProfileService).deleteForAdministration("kc-b");
 
@@ -106,12 +92,9 @@ class AdminUserDeleteTest {
         assertTrue(response.results().get(2).deleted());
         assertNull(response.results().get(0).errorCode());
 
-        // 失败用户没有被部分删除：本地删除失败后绝不继续删 Keycloak 用户
         verify(keycloakAdminUserService, never()).deleteUser("kc-b");
-        // 其余用户正常完成删除（partial success 不回滚）
         verify(keycloakAdminUserService).deleteUser("kc-a");
         verify(keycloakAdminUserService).deleteUser("kc-c");
-        // 每个用户一个独立事务：失败用户触发 rollback
         verify(txManager, atLeastOnce()).rollback(nullable(TransactionStatus.class));
     }
 

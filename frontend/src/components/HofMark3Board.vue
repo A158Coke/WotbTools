@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 名人堂「三环」榜：筛选 / 分页 / 榜单行 / 个人三环状态（current / pending）/ 撤回的唯一 owner。
-// URL query 归 HoFPage：本组件只在加载时 emit('query-change')，并通过 expose 的 queryState / applyQuery 收发。
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createReusableTemplate } from '@vueuse/core'
@@ -32,7 +30,6 @@ const [DefineFilters, ReuseFilters] = createReusableTemplate()
 const pane = ref<HTMLElement | null>(null)
 const submitDialog = ref<InstanceType<typeof HofMark3SubmitDialog> | null>(null)
 
-// 三环与百场共用 Tier X 车辆分类，但只允许人工证据审核。
 const vehicles = HUNDRED_VEHICLES
 const vehicleId = ref<number | null>(null)
 const vehicleName = ref('')
@@ -97,7 +94,6 @@ async function loadList() {
   }
 }
 
-// 个人三环状态仅在已登录时读取，匿名看榜单不会触发登录跳转。
 async function loadStatus() {
   if (!hofAvailability.value.available) return
   const epoch = currentEpoch()

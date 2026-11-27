@@ -1,6 +1,3 @@
-// 会话启动时序行为测试（#827 接替 sceneryMaterials.test.js 的 :1283 源码守卫）：
-// 场景就绪（buildWorld → 地图资产 → 车辆构建 → GLB 恢复挂载）后着色器预热 compile 恰一次，
-// 且先于开播（setPlaying）——首次开火才编译 = 开局/接火卡顿。
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('../replaySource.js', () => ({
@@ -77,15 +74,12 @@ describe(':1283 场景就绪时的着色器预热时序', () => {
     const handle = createSessionLifecycle(deps)
     const ok = await handle.startPlayback(0)
     expect(ok).toBe(true)
-    // 恰一次（重复预热 = 浪费加载窗口；漏预热 = 首次开火卡顿）
     expect(order.filter((s) => s === 'prewarmShaders').length).toBe(1)
     const at = (name: string) => order.indexOf(name)
-    // GLB 恢复挂载（高/极致 forceGlb）先于预热：预热要 compile 车模材质
     expect(at('applyGlbToggle')).toBeGreaterThan(-1)
     expect(at('prewarmShaders')).toBeGreaterThan(at('applyGlbToggle'))
     expect(at('prewarmShaders')).toBeGreaterThan(at('buildVehicles'))
     expect(at('prewarmShaders')).toBeGreaterThan(at('buildRoster'))
-    // 预热在开播之前（首个渲染帧已无编译阻塞）
     expect(at('setPlaying')).toBeGreaterThan(at('prewarmShaders'))
     expect(deps.store.startTime).toBe(0)
     expect(deps.store.assetStage).toBe(false)
@@ -101,7 +95,6 @@ describe(':1283 场景就绪时的着色器预热时序', () => {
     })
     const handle = createSessionLifecycle(deps)
     const pending = handle.startPlayback(0)
-    // 等 startPlayback 走到「await attach」：此时它必须仍停在资产阶段。
     await vi.waitFor(() => expect(order).toContain('applyGlbToggle'), { timeout: 2000 })
     expect(deps.store.assetStage).toBe(true)
     expect(order).not.toContain('prewarmShaders')
@@ -118,7 +111,7 @@ describe(':1283 场景就绪时的着色器预热时序', () => {
   it('过期会话（epoch 失效）：不预热、不开播', async () => {
     const { deps, order } = makeDeps()
     const handle = createSessionLifecycle(deps)
-    const ok = await handle.startPlayback(99)   // 非 current epoch → 入口即放弃
+    const ok = await handle.startPlayback(99)
     expect(ok).toBe(false)
     expect(order).not.toContain('prewarmShaders')
     expect(order).not.toContain('setPlaying')

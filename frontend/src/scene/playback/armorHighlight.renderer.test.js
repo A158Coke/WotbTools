@@ -3,8 +3,6 @@ import * as THREE from 'three'
 import { createArmorHighlight } from './armorHighlight.js'
 const AP = { type: 'ap', penetration: 200, caliber: 100 }
 
-// Renderer stub records actual passes while real Three matrices, meshes and target
-// construction exercise the occluder and render-target owners.
 vi.mock('three/examples/jsm/loaders/GLTFLoader.js', () => ({
   GLTFLoader: class {
     parse(_bytes, _path, done) {
@@ -70,8 +68,6 @@ describe('armor renderer execution', () => {
     expect(f.renderer.render.mock.calls.filter(([scene]) => scene === f.scene)).toHaveLength(1)
     expect(f.glb.children[0].layers.mask & (1 << 2)).toBe(0)
     expect(wall.layers.mask & (1 << 2)).not.toBe(0)
-    // A dynamic mesh with unreliable bounds must stay conservative even if its
-    // old geometry bounds are outside the camera corridor.
     const moving = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshBasicMaterial())
     moving.position.set(500, 0, -20); moving.frustumCulled = false
     f.scene.add(moving); f.scene.updateMatrixWorld(true)

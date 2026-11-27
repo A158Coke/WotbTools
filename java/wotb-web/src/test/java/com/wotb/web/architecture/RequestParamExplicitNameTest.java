@@ -19,22 +19,6 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * #821：「{@code @RequestParam(name="x")} 必须显式写 name」的机械门禁
- * （round 3 由 B-deferred 落地）。
- *
- * <p>{@code @RequestParam} 是 RUNTIME retention，编译后的参数注解元数据
- * 可直接由 ArchUnit（本仓 authoritative architecture-test entrypoint）读取，
- * 无需源码 regex / AST parser，天然免疫多行注解与注释形态。覆盖范围：
- * wotb-web production classes（本模块的 controller 域；wotb-ai 的 controller
- * 形态已核实全部显式 name，其 coverage 待该模块引入 ArchUnit infra 时镜像）。
- * 例外：unnamed 仅允许 {@code Map} / {@code MultiValueMap}
- * 聚合绑定（raw type assignable to Map，Spring 官方合法形态）。</p>
- *
- * <p>红线证明（committed）：{@code archfixture.requestparam.RequestParamFixture}
- * 的 unnamed 形态必须被<b>同一检查</b>拒绝，显式 name/value 与聚合绑定必须通过
- * ——失败原因只能是缺失显式 name，不是其他配置错误。</p>
- */
 class RequestParamExplicitNameTest {
 
     private static JavaClasses productionClasses() {
@@ -44,11 +28,6 @@ class RequestParamExplicitNameTest {
         return new ClassFileImporter().importPath(classes.toString());
     }
 
-    /**
-     * 返回违规列表：参数标注 {@code @RequestParam} 且未提供显式绑定名
-     * （name/value 均未声明，或声明了但值为空串——Spring 对空 name 回退到
-     * Java 参数名，正是本 gate 要阻止的隐式绑定），且 raw 类型不是 Map 聚合绑定。
-     */
     static List<String> unnamedRequestParamViolations(JavaClasses classes) {
         List<String> violations = new ArrayList<>();
         for (JavaClass clazz : classes) {
@@ -78,10 +57,6 @@ class RequestParamExplicitNameTest {
         return violations;
     }
 
-    /**
-     * 显式绑定名 = 属性声明为字面量 String 且非空串。非字面量值（如常量字段
-     * 引用）按违规处理：gate 偏向红而非放行（当前存量全为字面量）。
-     */
     private static boolean hasNonEmptyProperty(JavaAnnotation<JavaParameter> annotation, String property) {
         return annotation.tryGetExplicitlyDeclaredProperty(property)
                 .filter(String.class::isInstance)

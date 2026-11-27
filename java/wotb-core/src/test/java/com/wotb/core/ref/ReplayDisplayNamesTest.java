@@ -3,8 +3,6 @@ package com.wotb.core.ref;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Display-name resolution oracles: structured facts come only from tankopedia fields,
- * and unresolvable values degrade to stable placeholders instead of invented names. */
 class ReplayDisplayNamesTest {
 
     @Test
@@ -19,7 +17,6 @@ class ReplayDisplayNamesTest {
     @Test
     void tankNamesPreferTankopediaThenFallBackToTheReplayProvidedName() {
         assertEquals("KV-2", ReplayDisplayNames.tankName(10497, null));
-        // tankopedia 车辆名的权威专有名词契约：不解析名称文本、不由名称推断。
         assertEquals("Replay Label", ReplayDisplayNames.tankName(987654321L, "Replay Label"));
         assertEquals("未知坦克", ReplayDisplayNames.tankName(987654321L, null));
         assertEquals("未知坦克", ReplayDisplayNames.tankName(0, null));

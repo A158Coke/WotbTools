@@ -1,13 +1,4 @@
 // @vitest-environment happy-dom
-// BattlePlayback 集成矩阵的共享装配：mock、挂载器、dataset/RAF/HP 读取助手与生命周期。
-// 拆分后每个 suite 自行 installIntegrationLifecycle()，不得隐式依赖其他文件的钩子残留。
-/**
- * Historical end-to-end regression matrix for the playback orchestrator.
- * Component ownership contracts live in BattleMap/PlaybackControls/
- * PlaybackTimeline/VehicleDetailsPanel focused tests; this suite remains
- * intentionally broad so the PR4 extraction does not discard proven replay
- * protocol, visibility, marker, and interaction regressions.
- */
 
 import { PLAYBACK_MOBILE_QUERY } from '../shared/breakpoints.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,8 +26,6 @@ export function mountBattlePlayback(props) {
   return wrapper
 }
 
-// 与 playbackTestHarness 同形，但不经该模块导入：它会注册自己的 mapImages mock，
-// 覆盖本矩阵需要的 neptune/malinovka/map_without_base_geometry 条目。
 export function makeOverview() {
   return {
     mapCode: 'holland',
@@ -68,7 +57,6 @@ export function mountPlayback(overview = makeOverview(), seekTo = null, dataset 
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
-// Secondary settings and Events share the Gear-anchored surface.
 export async function openPanel(wrapper, name) {
   if (!wrapper.find('[data-testid="display-panel"]').exists()) {
     await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
@@ -99,8 +87,6 @@ export const mountedWrappers = []
 
 export function installIntegrationLifecycle() {
   beforeEach(async () => {
-  // Preferences have one persistent in-memory owner. Clearing storage alone does not
-  // reset that owner between tests; restore its logical defaults before each mount.
   const prefs = usePlaybackPreferences()
   Object.assign(prefs.labelPrefs, { showPlayerName: false, showTankName: true, showReload: true })
   Object.assign(prefs.hpPrefs, { showHp: true, mode: 'bar' })
@@ -124,14 +110,12 @@ export function stubRaf() {
   vi.stubGlobal('cancelAnimationFrame', () => {})
 }
 
-/** canonical V2 Details Panel HP：读 v2-inspector-hp 值区首个数字（去掉 LAST_KNOWN badge / capacity）。 */
 export function detailsHpNum(info) {
   const val = info.find('[data-test="v2-inspector-hp"] .v2-inspector-val').text()
   const m = val.match(/\d+/)
   return m ? m[0] : null
 }
 
-/** marker HUD HP 数字（账号 2001）。 */
 export function enemyHudNum(wrapper) {
   return wrapper.find('[data-test="pb-marker-2001"]').find('[data-test="pb-hp-num"]').text()
 }

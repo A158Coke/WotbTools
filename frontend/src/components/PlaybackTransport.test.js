@@ -34,7 +34,6 @@ describe('PlaybackTransport', () => {
     const wrapper = mountTransport({ duration: 60, fullscreenSupported: true, floatingFullscreen: true })
     expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
     wrapper.unmount()
-    // 桌面（floatingFullscreen=false）保持传输条内联按钮
     const desktop = mountTransport({ duration: 60, fullscreenSupported: true })
     expect(desktop.get('[data-testid="playback-fullscreen"]').exists()).toBe(true)
     desktop.unmount()
@@ -80,17 +79,12 @@ describe('PlaybackTransport', () => {
     expect(wrapper.emitted('scrub-end')).toHaveLength(1)
   })
 
-  /**
-   * 紧凑档（手机竖屏）：速度档位改成渐进披露——五个档位常驻会独占一整行，
-   * 把 2D 地图 / 3D 战场挤掉。这只改呈现，不改语义：同一个 speed prop、同一条 set-speed 事件。
-   */
   describe('紧凑档速度选择器（手机）', () => {
     it('不再永久渲染五个档位按钮，只常驻当前值', () => {
       const wrapper = mountTransport({ currentTime: 0, duration: 60, speed: 2, compact: true })
       expect(wrapper.find('[data-test="pb-speed-menu"]').exists()).toBe(false)
       expect(wrapper.get('[data-test="pb-speed-current"]').text()).toBe('2×')
-      // 档位按钮在菜单打开前不存在（不是「渲染了但被藏起来」）
-      expect(wrapper.findAll('[data-test^="pb-speed-"]')).toHaveLength(1)   // 只有 current 自己
+      expect(wrapper.findAll('[data-test^="pb-speed-"]')).toHaveLength(1)
     })
 
     it('点开当前值 → 列出既有全部档位；选中后收起并发出 set-speed', async () => {
@@ -102,7 +96,7 @@ describe('PlaybackTransport', () => {
         .toEqual(['0.5×', '1×', '2×', '4×', '8×'])
       await menu.get('[data-test="pb-speed-4"]').trigger('click')
       expect(wrapper.emitted('set-speed')).toEqual([[4]])
-      expect(wrapper.find('[data-test="pb-speed-menu"]').exists()).toBe(false)  // 选完即收起
+      expect(wrapper.find('[data-test="pb-speed-menu"]').exists()).toBe(false)
       expect(wrapper.get('[data-test="pb-speed-current"]').attributes('aria-expanded')).toBe('false')
     })
 
@@ -125,7 +119,6 @@ describe('PlaybackTransport', () => {
       expect(document.activeElement).toBe(trigger.element)
       expect(outer).not.toHaveBeenCalled()
       expect(wrapper.emitted('set-speed')).toBeUndefined()
-      // 菜单未打开时 Esc 不被吞，仍交给外层
       await trigger.trigger('keydown', { key: 'Escape' })
       expect(outer).toHaveBeenCalledTimes(1)
       document.removeEventListener('keydown', outer)
@@ -179,13 +172,13 @@ describe('PlaybackTransport', () => {
     const wrapper = mount(Host, { global: { mocks: { $t: (k) => k }, provide: { [SHELL_CHROME_KEY]: shellChrome, [OPEN_NAV_DRAWER_KEY]: () => {} } } })
     await nextTick()
     expect(hosted.size).toBe(1)
-    eligible.value = false // 收起
+    eligible.value = false
     await nextTick()
     expect(hosted.size).toBe(0)
-    eligible.value = true // 重新展开
+    eligible.value = true
     await nextTick()
     expect(hosted.size).toBe(1)
-    shellChrome.immersive.value = false // 退出沉浸态同样交还
+    shellChrome.immersive.value = false
     await nextTick()
     expect(hosted.size).toBe(0)
     wrapper.unmount()

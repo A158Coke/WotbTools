@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// #845：ViewHost 的 gate precedence 与 view loading 边界的组合行为。
-// viewRegistry 只替身 VIEW_COMPONENTS（受控 loader 走真实 defineLazyView），
-// ViewHost 本体、gates 与 KeepAlive 全部真实运行。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, reactive, ref } from 'vue'
@@ -33,8 +30,6 @@ vi.mock('./viewRegistry.js', async importOriginal => {
     VIEW_COMPONENTS: {
       home: { name: 'HomeStub', template: '<div data-testid="view-home" />' },
       replay: { name: 'ReplayWorkspace', template: '<div data-testid="view-replay" />' },
-      // 每个 admin view 一个独立 wrapper：resolvedComp 在 wrapper 定义内缓存，
-      // 慢加载与失败用例必须用不同 view，避免上一用例的 resolve 泄漏到下一用例。
       'admin-battle-data': controlled('admin-slow'),
       'admin-ai-review-feedback': controlled('admin-error'),
     },

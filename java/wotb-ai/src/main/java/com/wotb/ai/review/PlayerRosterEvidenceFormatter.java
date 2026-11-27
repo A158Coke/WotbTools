@@ -11,7 +11,6 @@ import com.wotb.core.util.PlayerResultFormat;
 import java.util.List;
 import java.util.Map;
 
-/** Player roster, result, aggregate, and death evidence rendering. */
 final class PlayerRosterEvidenceFormatter {
     private static final Tankopedia tankopedia = Tankopedia.load();
     private PlayerRosterEvidenceFormatter() {

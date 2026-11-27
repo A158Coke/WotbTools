@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# Resolve Android release metadata from committed repository files.
-# `android/gradle.properties` is authoritative for the **current** source (stage / push / tag).
-#
-# 两个 owner（PR #467 review P2）：
-#   - 默认路径：读工作区 android/gradle.properties ⇒ 当前 main 的版本（stage 用）。
-#   - WOTB_STAGED_PROPERTIES / WOTB_STAGED_FROM_REF：读 **tag target** 的版本 ⇒ 已 staged 的
-#     历史候选（publish 用）。此时 WOTB_REQUESTED_VERSION 必填，且必须与 staged 版本完全相等，
-#     否则 fail closed —— publish 绝不允许「按当前 main 的版本去猜候选」。
-#
-# A pushed android-vX.Y.Z tag remains a compatibility entry point and must match it.
 set -euo pipefail
 
 TRIGGER="${WOTB_TRIGGER:-}"

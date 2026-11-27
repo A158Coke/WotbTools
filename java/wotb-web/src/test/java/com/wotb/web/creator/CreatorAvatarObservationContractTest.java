@@ -54,7 +54,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 
-/** Fast Micrometer contract test: no database or Docker required. */
 @SpringJUnitConfig(CreatorAvatarObservationContractTest.Config.class)
 class CreatorAvatarObservationContractTest {
     private static final String PREFIX = "creator-avatars/";

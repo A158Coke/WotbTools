@@ -1,4 +1,3 @@
-// zoomSmoothing 纯函数测试：预算收敛、帧率无关、钳制吸收与事件公式锚点（#835）。
 import { describe, expect, it } from 'vitest'
 import {
   createFlyZoomSmoother, createZoomSmoother, flyWheelFactor, orbitWheelFactor,
@@ -14,17 +13,15 @@ describe('createZoomSmoother 预算收敛', () => {
 
   it('一格滚轮（fly 下滚拉远 12%）逐帧收敛：首帧立即生效、终点精确、尾部不拖尾', () => {
     const s = createZoomSmoother()
-    const target = flyWheelFactor(100)   // deltaY=100（下滚）→ 拉远 → 比例 >1
+    const target = flyWheelFactor(100)
     s.push(target)
     expect(s.active()).toBe(true)
-    // 首帧（16ms）就该走掉约 16% 预算：不引入输入延迟
     let cumulative = 1
     const first = s.advance(0.016)
     cumulative *= first
     const walkedFrac = (Math.log(cumulative) - 0) / Math.log(target)
-    expect(walkedFrac).toBeGreaterThan(0.1)                    // 首帧已走过 >10% 预算
-    expect(first).toBeGreaterThan(1)                           // 方向 = 拉远
-    // 连续推进：单调逼近终点，最后一帧整段收掉且终点精确
+    expect(walkedFrac).toBeGreaterThan(0.1)
+    expect(first).toBeGreaterThan(1)
     let frames = 0
     while (s.active() && frames < 200) {
       cumulative *= s.advance(0.016)
@@ -33,13 +30,13 @@ describe('createZoomSmoother 预算收敛', () => {
     expect(s.active()).toBe(false)
     expect(s.advance(0.016)).toBe(1)
     expect(Math.abs(Math.log(cumulative) - Math.log(target))).toBeLessThan(1e-9)
-    expect(frames).toBeLessThan(60)     // 0.09s tau：0.4% 残差内收敛 ≈ 0.5s ≈ 32 帧
+    expect(frames).toBeLessThan(60)
   })
 
   it('帧率无关：同一墙钟时间下 60fps 与 15fps 的收敛终点一致', () => {
     const run = (dt: number, seconds: number) => {
       const s = createZoomSmoother()
-      s.push(flyWheelFactor(-100))   // 上滚 = 推近 12%
+      s.push(flyWheelFactor(-100))
       let log = 0
       const steps = Math.round(seconds / dt)
       for (let i = 0; i < steps; i++) log += Math.log(s.advance(dt))
@@ -49,7 +46,6 @@ describe('createZoomSmoother 预算收敛', () => {
     const slow = run(1 / 15, 0.4)
     expect(fast.settled).toBe(true)
     expect(slow.settled).toBe(true)
-    // 都已收敛到剩余 0（<0.4% 残差整段收掉）：两条帧率路径终点一致
     expect(Math.abs(fast.log - Math.log(flyWheelFactor(-100)))).toBeLessThan(1e-9)
     expect(Math.abs(slow.log - Math.log(flyWheelFactor(-100)))).toBeLessThan(1e-9)
   })
@@ -63,11 +59,9 @@ describe('createZoomSmoother 预算收敛', () => {
   })
 
   it('钳制吸收：scene 没有施加本帧比例时预算照样按计划耗尽（不漂移）', () => {
-    // advance 的返回值只是「本帧应施加的比例」；scene 被视距钳制挡下时调用方
-    // 不重放该帧——预算仍按同一时间表收敛，实际效果由钳制决定（与即时缩放一致）。
     const s = createZoomSmoother()
     s.push(flyWheelFactor(-100))
-    for (let i = 0; i < 40; i++) s.advance(0.016)   // 假装全部被钳掉（返回值弃用）
+    for (let i = 0; i < 40; i++) s.advance(0.016)
     expect(s.active()).toBe(false)
   })
 
@@ -96,46 +90,40 @@ describe('createZoomSmoother 预算收敛', () => {
     expect(s.advance(0)).toBe(1)
     expect(s.active()).toBe(true)
     const f = s.advance(10)
-    expect(s.active()).toBe(false)   // dt ≫ tau：预算一步释放完
+    expect(s.active()).toBe(false)
     expect(Math.abs(Math.log(f) - Math.log(flyWheelFactor(100)))).toBeLessThan(1e-9)
   })
 })
 
 describe('滚轮事件公式锚点（与既有实现逐值同构）', () => {
   it('flyWheelFactor：视距比例 = 1 + clamp(deltaY*0.0012, ±0.3)（旧步长公式的比例面）', () => {
-    expect(flyWheelFactor(100)).toBeCloseTo(1.12, 12)      // 下滚一格 = 拉远 12%
-    expect(flyWheelFactor(-100)).toBeCloseTo(0.88, 12)     // 上滚一格 = 推近 12%
-    expect(flyWheelFactor(2500)).toBe(1.3)                 // 单事件拉远上限 +30%
-    expect(flyWheelFactor(-2500)).toBe(0.7)                // 单事件推近上限 −30%
-    expect(flyWheelFactor(0)).toBe(1)                      // 无位移 = 无缩放
-    expect(flyWheelFactor(-5)).toBeCloseTo(1 - 0.006, 12)  // 触控板小位移线性
+    expect(flyWheelFactor(100)).toBeCloseTo(1.12, 12)
+    expect(flyWheelFactor(-100)).toBeCloseTo(0.88, 12)
+    expect(flyWheelFactor(2500)).toBe(1.3)
+    expect(flyWheelFactor(-2500)).toBe(0.7)
+    expect(flyWheelFactor(0)).toBe(1)
+    expect(flyWheelFactor(-5)).toBeCloseTo(1 - 0.006, 12)
   })
 
   it('orbitWheelFactor：与 three OrbitControls._getZoomScale 同构（0.95^|Δ|·0.01）', () => {
-    // 一格鼠标滚轮（deltaY=±100）= 5%：与 OrbitControls 直收滚轮的单事件幅度一致
     expect(orbitWheelFactor(100)).toBeCloseTo(1 / 0.95, 12)
     expect(orbitWheelFactor(-100)).toBeCloseTo(0.95, 12)
-    // zoomSpeed 透传（scene 不再让 OrbitControls 直收滚轮，档位语义保留）
     expect(orbitWheelFactor(-100, 2)).toBeCloseTo(Math.pow(0.95, 2), 12)
     expect(orbitWheelFactor(0)).toBe(1)
     expect(orbitWheelFactor(Number.NaN)).toBe(1)
   })
 
   it('往返对称：fly 为加法对称（既有实现语义），orbit 为乘法互逆', () => {
-    // fly：一格的绝对比例偏移对称（|f(下)−1| == |f(上)−1|），1.12×0.88 = 0.9856 ≠ 1
-    // ——这是旧 additive 公式的原语义；逐格乘当前视距后连滚终点与旧实现逐值相等。
     expect(Math.abs(flyWheelFactor(100) - 1)).toBeCloseTo(1 - flyWheelFactor(-100), 12)
-    // orbit：与 OrbitControls dollyIn/dollyOut 同构，log 坐标严格互逆（精确往返抵消）
     expect(Math.log(orbitWheelFactor(100)) + Math.log(orbitWheelFactor(-100))).toBeCloseTo(0, 12)
   })
 })
 
 describe('createFlyZoomSmoother 可加位移预算（fly 旧语义）', () => {
-  /** 把预算按固定 dt 逐帧耗干，返回各帧位移之和（= 终点总位移，无钳制时）。 */
   function drain(smoother: ReturnType<typeof createFlyZoomSmoother>, dt: number, maxFrames: number): number {
     let total = 0
     for (let i = 0; i < maxFrames && smoother.active(); i++) total += smoother.advance(dt)
-    expect(smoother.active()).toBe(false)   // maxFrames 内必须收敛
+    expect(smoother.active()).toBe(false)
     return total
   }
 
@@ -170,7 +158,7 @@ describe('createFlyZoomSmoother 可加位移预算（fly 旧语义）', () => {
   it('尾段不拖尾：残差 ≤ FLY_SETTLE_EPS 时整段付清', () => {
     const s = createFlyZoomSmoother()
     s.pushDisplacement(0.008)
-    expect(s.advance(0)).toBeCloseTo(0.008, 12)   // dt=0 也不拖尾（残差已小于阈值）
+    expect(s.advance(0)).toBeCloseTo(0.008, 12)
   })
 
   it('fail-closed：非有限位移不进预算', () => {

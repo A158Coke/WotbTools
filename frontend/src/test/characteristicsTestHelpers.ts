@@ -29,9 +29,9 @@ export function setup(overrides: Partial<ComputeInput>): ComputeInput {
   const input: ComputeInput = {
     modules: T34,
     turretIdx: 1,
-    gunIdx: 3, // _76mm_S-54（顶级炮）
-    engineIdx: 1, // V-2-34
-    trackIdx: 1, // T-34 mod. 1943
+    gunIdx: 3,
+    engineIdx: 1,
+    trackIdx: 1,
     standardShell: S54,
     isBurstGun: false,
     deviceIds: [],

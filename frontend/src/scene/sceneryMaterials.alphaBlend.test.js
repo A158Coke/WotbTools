@@ -1,6 +1,3 @@
-/** extras.alphaBlend 在专用材质路由（SpeedTree / 光照图 / 贴花）上的软混合契约。
- *  旧包启发式「BLEND 且不透明度≈1 → 裁切」只适用于**无标记**材质；新包标记必须留在
- *  透明管线，不能被 ST|/lightmap/decal 分支改成 alpha 裁切或 alpha=1。 */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { foliageClip, makeBillboardMaterial, makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.ts'
@@ -27,7 +24,6 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
     expect(mat.fragmentShader).toMatch(/uniform float uOpacity;/)
     expect(mat.fragmentShader).toMatch(/c\.a \* uOpacity/)
-    // 无标记的伪透明仍走原有裁切启发式
     const old = makeSpeedtreeStaticMaterial(plainPseudo('ST|leaf'), true)
     expect(old.transparent).toBe(false)
     expect(old.depthWrite).toBe(true)

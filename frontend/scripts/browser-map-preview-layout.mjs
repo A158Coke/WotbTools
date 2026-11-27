@@ -1,16 +1,3 @@
-/**
- * Map Preview 移动布局门禁（真实应用 + 真实 Chrome）。
- *
- * 覆盖 docs/frontend/architecture.md「Map Preview」与 replay-workspace.md 的移动布局契约：
- *   - 手机形态（PLAYBACK_MOBILE_QUERY）：2D 正方形地图吃满可用宽度、水平居中（≤2px）、
- *     工具区紧随地图（间隙 ≤2px）、无横向溢出、右上角全屏按钮与工具行按钮真实可点；
- *     标注工具开合后几何仍然成立。
- *   - 桌面（≥1200px）：保持「固定填充高度」契约——stage 吃剩余、controls 收在 body 底部。
- *
- * 夹具：startFixtureServer 只替换 Keycloak 边界（同 browser-workspace-interaction），
- * 地图索引 / 封面走 /fixture-assets/* 中间件；faust 走打包注册表底图（无 3D 资产需求）。
- * 真实触摸标注与 3D pane v-show canvas 持留在本门禁验证；复杂缩放手势仍由专项回归覆盖。
- */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -22,7 +9,6 @@ import { verifyMapPreviewCanvasPersistence, verifyMapPreviewTouchDrawing } from 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
 
-// 场景矩阵：手机竖屏四档 + 手机横屏 coarse + 桌面回归
 const scenarios = [
   { name: 'phone-320x568', width: 320, height: 568, touch: true, phone: true },
   { name: 'phone-360x800', width: 360, height: 800, touch: true, phone: true },
@@ -50,8 +36,6 @@ function mapPreviewGeometryProbe() {
   const hitTest = (el) => {
     if (!el) return null
     let r = el.getBoundingClientRect()
-    // 竖屏横屏都可能折叠线以下：按「可滚动触达」口径，滚进视口后再做命中测试
-    // （这是几何断言，不涉及真实触点输入；tap 用例只在控件本屏可见时执行）。
     if (r.bottom > window.innerHeight || r.top < 0) {
       el.scrollIntoView({ block: 'center' })
       r = el.getBoundingClientRect()
@@ -66,18 +50,12 @@ function mapPreviewGeometryProbe() {
     stage: s,
     square: sq,
     controls: c,
-    // 水平居中（≤2px）
     centerXError: Math.abs((sq.left + sq.right) / 2 - (s.left + s.right) / 2),
-    // 手机契约：方形边长 = 舞台可用宽度（不被视口高度预算压缩；空间不足由页面滚动承接）
     widthError: Math.abs(sq.width - s.width),
-    // 正方形
     aspectError: Math.abs(sq.width - sq.height),
-    // 工具区紧随地图（≤2px）
     mapToControlsGap: c.top - sq.bottom,
-    // 无横向溢出
     horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
     fullscreenHit: hitTest(fullscreen),
-    // 右上角契约：按钮贴 root 右上角（≤4px）
     fullscreenTopRight: fullscreen
       ? (() => {
           const root = q('.map2d')
@@ -88,7 +66,6 @@ function mapPreviewGeometryProbe() {
       : null,
     toolButtons: ['map-2d-drawing-entry', 'map-2d-import', 'map-2d-export', 'map-2d-export-image']
       .map((id) => ({ id, hit: hitTest(q(`[data-testid="${id}"]`)) })),
-    // 桌面契约：controls 收在固定高度 body 底部
     bodyFillContractError: q('.map2d.map2d-phone')
       ? null
       : (() => {
@@ -98,8 +75,6 @@ function mapPreviewGeometryProbe() {
   }
 }
 
-/** 全屏内真实触摸打开 Drawing 工具栏：入口按钮必须在当前视口内直接可点
- *  （不 scrollIntoView——全屏契约是所有控件位于视口中）。 */
 async function openDrawingInFullscreen(page) {
   await delay(200)
   const entry = await page.probe(() => {
@@ -119,7 +94,7 @@ async function openDrawingInFullscreen(page) {
     (v) => v === true,
     { label: 'fullscreen drawing toolbar open', timeout: 8000 },
   )
-  await delay(400)   // ResizeObserver + 布局稳定
+  await delay(400)
   return entry
 }
 
@@ -184,7 +159,6 @@ async function main() {
           problems.push(`desktop body-fill contract error ${g.bodyFillContractError?.toFixed(1)}px`)
         }
         if (!g.fullscreenHit) problems.push('fullscreen button not hit-testable')
-        // 右上角契约：贴角但允许 --space-2（8px）浮动内边距 ±4px
         if (g.fullscreenTopRight && (Math.abs(g.fullscreenTopRight.topError - 8) > 4 || Math.abs(g.fullscreenTopRight.rightError - 8) > 4)) {
           problems.push(`fullscreen button not top-right (top ${g.fullscreenTopRight.topError.toFixed(1)}px, right ${g.fullscreenTopRight.rightError.toFixed(1)}px)`)
         }
@@ -199,12 +173,7 @@ async function main() {
         console.log(`[PASS] ${scenario.name} square=${g.square.width.toFixed(0)}x${g.square.height.toFixed(0)} gap=${g.mapToControlsGap?.toFixed(1)}`)
       }
 
-      // 标注工具开合后几何仍成立（手机形态工具区高度变化触发重测）。
-      // 工具区不在首屏的形态（横屏地图满宽后滚动承接）跳过 tap：scrollIntoView 会
-      // 平移 visual viewport 使触点坐标错位（本门禁顶部注释），触屏交互交真机验收。
       if (scenario.phone && g.controls.bottom <= scenario.height) {
-        // 不 scrollIntoView：它会平移 visual viewport（offsetTop ≠ 0），让后续触点
-        // 坐标与 client 坐标错位。地图 + 工具行在手机档本来就在首屏可见。
         let entryPoint = null
         for (let i = 0; i < 20; i++) {
           await delay(250)
@@ -242,7 +211,6 @@ async function main() {
           console.error(`[FAIL] ${scenario.name} (annotations open)\n  ${problems2.join('\n  ')}\n  geometry=${JSON.stringify(g2)}`)
         } else {
           console.log(`[PASS] ${scenario.name} (annotations open)`)
-          // 复位到工具行形态，供下一个场景
           const close = await page.probe(() => {
             const closeBtn = document.querySelector('[data-testid="map-2d-annotations"] [data-test="pb-annot-close"]')
             if (!closeBtn) return null
@@ -257,8 +225,6 @@ async function main() {
       }
     }
 
-    // 手机横屏全屏：真实触摸进入全屏后布局必须在视口内（工具区可点，不需要滚动），
-    // 退出后回到满宽 + 页面滚动布局，且地图状态不丢（方形边长回到满宽即证明重测生效）。
     if (scenarios.find((x) => x.fsTap)) {
       await page.emulate({ width: 844, height: 390, touch: true })
       await openMapPreview(page, origin)
@@ -287,7 +253,6 @@ async function main() {
       } else {
         console.log(`[PASS] phone-landscape-fullscreen square=${gFs.square.width.toFixed(0)}x${gFs.square.height.toFixed(0)} controlsBottom=${gFs.controls.bottom.toFixed(0)}`)
       }
-      // 全屏内 Drawing 开合：地图按工具栏实际高度重算（ResizeObserver 观察 controlsEl）
       const gOpen = await openDrawingInFullscreen(page)
       const gDraw = await page.probe(mapPreviewGeometryProbe)
       const problemsDraw = []
@@ -305,7 +270,6 @@ async function main() {
       } else {
         console.log(`[PASS] phone-landscape-fullscreen-drawing square=${gDraw.square.width.toFixed(0)}x${gDraw.square.height.toFixed(0)} controlsBottom=${gDraw.controls.bottom.toFixed(0)}`)
       }
-      // 关闭 Drawing：地图恢复原全屏尺寸
       const closePoint = await page.probe(() => {
         const el = document.querySelector('[data-testid="map-2d-annotations"] [data-test="pb-annot-close"]')
         if (!el) return null
@@ -328,7 +292,6 @@ async function main() {
         }
       }
 
-      // 退出全屏：回到满宽布局（全屏后按钮位置随布局变化，重新量）
       const btnExit = await page.probe(() => {
         const el = document.querySelector('[data-testid="map-2d-fullscreen"]')
         if (!el) return null
@@ -348,8 +311,6 @@ async function main() {
       }
     }
 
-    // Map Preview 3D：无论设备形态，恢复与浮动全屏按钮都必须各自可命中。
-    // 仅将夹具场景标记为就绪，不依赖外部 3D 地图资产；布局和输入使用真实组件。
     for (const scenario of [
       { name: 'phone', width: 844, height: 390, touch: true },
       { name: 'tablet', width: 1024, height: 768, touch: true },

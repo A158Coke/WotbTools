@@ -33,7 +33,6 @@ function moduleFixture() {
     speedLimits: { forward: 50, backward: 15 },
     invisibility: { still: 0.1, moving: 0.08, firePenalty: 0.4 },
     hull: { hp: 2000, weight: 50000 },
-    // 尺寸/维修（BI 11.21 同口径字段）：包围盒 [x 宽, y 长, z 高]，挂点 [x, 上, 前]
     turretOrigin: [0, 0.3, 1.5],
     bbox: {
       chassis: { min: [-1.75, -3.6, 0], max: [1.75, 3.6, 1.2] },
@@ -66,7 +65,6 @@ function moduleFixture() {
   }
 }
 
-/** 与 modules 夹具同形的 3 档配置（0 = 初始炮塔+首炮，2 = 顶级）。 */
 function configFixture() {
   const shell = { type: 'ap', damage: 490, penetration: 250, penetration_far: 230, velocity: 900, normalization: 5, ricochet: 70 }
   const he = { type: 'he', damage: 600, penetration: 90, penetration_far: 90, velocity: 700, normalization: 0, ricochet: 70 }
@@ -78,13 +76,11 @@ function configFixture() {
       turret_local: 1,
       gun_local: 1,
       shells: [shell, he],
-      // 顶级炮后向俯角受限（BlitzInfo Gun arcs 同源字段）
       pitch_limits: { max: 6, min: -18, back: { max: 3, min: -18, range: 30 } },
     },
   ]
 }
 
-/** 120 辆车：验证增量渲染只渲染第一页 */
 function makeCache(count = 120) {
   const cache = {}
   for (let i = 1; i <= count; i += 1) {
@@ -105,7 +101,6 @@ function createMountAt(Component) {
   return async (query = {}) => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push({ path: '/', query: { view: 'agent-tankopedia', ...query } })
-    // AppDialog 模板用全局 $t（真实应用由 i18n 插件提供）；测试整体 mock 了 vue-i18n
     const wrapper = mount(Component, {
       global: { plugins: [router], provide: { [DIALOG_INLINE_KEY]: true }, mocks: { $t: key => key } },
     })

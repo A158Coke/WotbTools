@@ -1,12 +1,3 @@
-/**
- * armorCollisionPack 等价性锁（跳弹续飞 GPU 求交 v5）：
- * 1. raycastPackAll ↔ THREE.Raycaster(intersectObjects, FrontSide)：同一射线的
- *    命中序列（对象与 t）必须一致——着色器求交与点击判定 raycast 的几何口径锁；
- * 2. simulateContinuation ↔ penetration.js calculate(allow_ricochet=false)：
- *    续飞层链（去重/flat 消耗/角度等效/严格大于/末层定论/前端 primary 门）的
- *    语义等价锁——GLSL rcContinue 与本 JS 参考同常量同语义，故此锁覆盖 GLSL；
- * 3. buildPack fail-closed 守卫（非刚性/超限/空集合禁用续飞）。
- */
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
@@ -27,7 +18,6 @@ function makeMesh(geometry, section, thickness, transform) {
     return mesh
 }
 
-/** 沿 +X 布置层链的便利构造：plates = [{ section, thickness, x, rotYDeg? }] */
 function buildChainScene(plates) {
     const meshes = plates.map(p => makeMesh(
         p.section === 'chassis' || p.section === 'gunBarrel'
@@ -37,7 +27,7 @@ function buildChainScene(plates) {
         (m) => {
             m.position.set(p.x, 0, 0)
             if (p.rotYDeg) m.rotation.y = p.rotYDeg * Math.PI / 180
-            else m.rotation.y = -Math.PI / 2   // 平面默认法线 +Z，转成 -X 朝向来向（正对）
+            else m.rotation.y = -Math.PI / 2
             m.updateMatrix()
         },
     ))
@@ -60,7 +50,6 @@ function packOf(meshes) {
     return pack
 }
 
-/** 前端口径的 oracle：raw 命中无 primary → 紫（不做二次判定）；有 → calculate */
 function oracleClass(pack, bouncePos, reflDir, params) {
     const ro = bouncePos.clone().addScaledVector(reflDir, RC.ORIGIN_OFFSET)
     const raw = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T, RC.FAR, false, params.clipPlane || null)
@@ -114,12 +103,10 @@ describe('buildPack 守卫（fail-closed）', () => {
     })
     it('单网格超三角形上限 → 按连续段分块（不禁用，命中集合不变）', () => {
         const m = makeMesh(new THREE.PlaneGeometry(30, 30, 30, 30), 'hull', 100)
-        // 30×30 段 = 1800 三角形 > MAX_TRI_PER_MESH(256) → 8 块
         const pack = buildPack([{ mesh: m, section: 'hull', thickness: 100, variant: null }])
         expect(pack.ok).toBe(true)
         expect(pack.meshCount).toBe(8)
         expect(pack.triTotal).toBe(1800)
-        // 分块后求交与 Raycaster（整网格）仍一致
         const raycaster = new THREE.Raycaster()
         raycaster.set(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1))
         const ref = raycaster.intersectObject(m, false)
@@ -202,14 +189,10 @@ describe('raycastPackAll ↔ THREE.Raycaster 几何口径', () => {
         const pack = packOf(meshes)
         const raycaster = new THREE.Raycaster()
         raycaster.far = RC.FAR
-        // 文档化边界：射线恰好穿过几何棱时，同一网格的两个面在同一 t 上各报一次命中
-        //（Raycaster 的重心判定与 MT 的 u/v 判定在浮点边界各自取舍）——同对象同 t 的
-        // 重合命中不是语义层（判定链按层消耗，重合层无独立意义），比对前两侧都去重。
         const dedupe = (arr) => arr.filter((h, i) => i === 0
             || !(Math.abs(h.t - arr[i - 1].t) < 1e-6 && h.uuid === arr[i - 1].uuid))
         let compared = 0
         for (let i = 0; i < 40; i++) {
-            // 从包围盒外随机点射向场景内部随机点
             const target = new THREE.Vector3(2 + (i * 37 % 60) / 10, (i * 53 % 40) / 10 - 2, (i * 71 % 40) / 10 - 2)
             const origin = target.clone().add(new THREE.Vector3(-6, (i * 29 % 30) / 10 - 1.5, (i * 17 % 30) / 10 - 1.5))
             const dir = target.clone().sub(origin).normalize()
@@ -258,7 +241,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('同 variant 履带去重：两块履带只扣一块', () => {
-        // 去重扣 20 → 余 230 > 210 穿透；若不去重扣 50 → 余 200 < 210 被挡（有判别力）
         const { sim, oracle } = runCase([
             { section: 'chassis', thickness: 20, x: 2 },
             { section: 'chassis', thickness: 30, x: 3 },
@@ -270,7 +252,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('炮管与履带为不同 variant：两者都消耗', () => {
-        // 250 − 30 − 20 = 200 > 180 穿透；若漏掉任一则与 180 的比较无判别力差 20+30 → 选 200/180 边界
         const { sim, oracle } = runCase([
             { section: 'gunBarrel', thickness: 30, x: 2 },
             { section: 'chassis', thickness: 20, x: 3.5 },
@@ -281,7 +262,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('间隙甲角度等效：60° 斜置 50mm → 等效 100mm', () => {
-        // 250 − 100(等效) = 150 > 145 穿透；flat/角度之判别由 layers[0].eff ≈ 100 断言承担
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 50, x: 2, rotYDeg: -90 + 60 },
             { section: 'hull', thickness: 145, x: 4 },
@@ -292,36 +272,29 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('每层独立转正：20mm 间隙@60° + 100mm 主装甲@60°（BlitzKit）', () => {
-        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× 增强转正 17.5°）：
-        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）也用自身 5° 转正：
-        // eff = 100/cos(55°) ≈ 174.34；220−27.13 >174.34 → 穿透。
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 20, x: 2, rotYDeg: -90 + 60 },
             { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
         ], { remIn: 220, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
         expect(Math.abs(sim.layers[0].eff - 27.1268)).toBeLessThan(0.02)
         expect(Math.abs(sim.layers[1].eff - 100 / Math.cos(55 * Math.PI / 180))).toBeLessThan(0.05)
-        expect(sim.layers[1].eff).toBeLessThan(180)       // 判别：首层专用旧规则 200
+        expect(sim.layers[1].eff).toBeLessThan(180)
         expect(sim.cls).toBe(1)
         expect(oracle).toBe(1)
     })
 
     it('外部模块不参与转正：履带 + 主装甲@60°，仍独立转正 5°', () => {
-        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 独立转正 5° →
-        // eff = 100/cos(55°) ≈ 174.34，190 > 174.34 → 穿透（绿）。
-        // 旧规则把模块计入首层 → 不转正 eff = 200 → 190 被挡（红）——本用例有判别力。
         const { sim, oracle } = runCase([
             { section: 'chassis', thickness: 20, x: 2 },
             { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
         ], { remIn: 210, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
         expect(Math.abs(sim.layers[1].eff - 100 / Math.cos(55 * Math.PI / 180))).toBeLessThan(0.05)
-        expect(sim.layers[1].eff).toBeLessThan(190)   // 判别：旧规则 200 → blocked
+        expect(sim.layers[1].eff).toBeLessThan(190)
         expect(sim.cls).toBe(1)
         expect(oracle).toBe(1)
     })
 
     it('0mm 首层装甲：模块后不产生 NaN，0mm 板穿透', () => {
-        // 0mm 合法板厚 + normalization=0：2× 公式必须要求正厚度，否则 0/0 NaN。
         const { sim, oracle } = runCase([
             { section: 'chassis', thickness: 20, x: 2 },
             { section: 'hull', thickness: 0, x: 4 },
@@ -332,10 +305,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('非平行间隙板/主装甲：续飞按间隙板自身几何（review 2026-10-13 用例）', () => {
-        // 40mm 间隙板入射 75°：其反射线沿 XZ 面前行 0.5m 处放 100mm 主装甲（入射 0°，
-        // 与间隙板不平行）。续飞必须从**间隙板**的跳弹点与其法线出发：
-        // 正确反射 → 命中主装甲并穿透（点击链 RICOCHET→PENETRATION 同结论）；
-        // 误用主装甲法线反射（本面假设）→ 折返、无命中（cls 0）。
         const gapAngle = 75 * Math.PI / 180
         const gapNormal = new THREE.Vector3(-Math.cos(gapAngle), 0, Math.sin(gapAngle))
         const bouncePos = new THREE.Vector3(2, 0, 0)
@@ -352,8 +321,8 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         const pack = packOf([gap, main])
         const params = { remIn: 225, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 }
         const sim = simulateContinuation(pack, bouncePos, refl, params)
-        expect(sim.cls).toBe(1)                                        // 命中主装甲并穿透
-        expect(oracleClass(pack, bouncePos, refl, params)).toBe(1)     // 与 calculate 平价
+        expect(sim.cls).toBe(1)
+        expect(oracleClass(pack, bouncePos, refl, params)).toBe(1)
         const wrongRefl = X_DIR.clone().sub(mainNormal.clone().multiplyScalar(2 * X_DIR.dot(mainNormal))).normalize()
         expect(simulateContinuation(pack, bouncePos, wrongRefl, params).cls).toBe(0)
     })
@@ -393,10 +362,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('强化装甲 ×1.04 两边同口径', () => {
-        // 主装甲 100×1.04=104；250>104 穿透；非强化也穿透——取 245 边界区分：
-        // 245 > 104 ✓ PEN；若漏乘 1.04（按 100 判）也 PEN → 需要更紧边界：
-        // 主装甲 240：强化后 249.6 < 250 仍 PEN…取 242：251.68>250? no…
-        // 直接校验层数值而非类别判别力
         const { sim, oracle } = runCase([
             { section: 'hull', thickness: 100, x: 2 },
         ], { ...P, thickMul: 1.04 })
@@ -415,8 +380,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('穿透概率带保留段首区间宽度：300→690 @1000 ≈ 72.57%', () => {
-        // 每层扣一次：1000 → [950,1050] − 300 = [650,750]，σ 仍 100/6；
-        // 主甲 690 → Φ((700−690)/(100/6)) = Φ(0.6) ≈ 0.7257469。
         const { sim } = runCase([
             { section: 'spaced', thickness: 300, x: 2 },
             { section: 'hull', thickness: 690, x: 4 },
@@ -426,8 +389,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('概率停在首个主装甲：其后的车体底板/履带命中不参与', () => {
-        // 用户 2026-10-18 相邻点击复现：炮塔板 10(20) + 板 9(225) 后，
-        // 车体底板 5 与右侧履带 25 不应把补充概率压成 0。
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 20, x: 2 },
             { section: 'turret', thickness: 225, x: 4 },
@@ -442,8 +403,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('续飞名义被挡但概率 1–99%：保留部分概率供热力图', () => {
-        // review 2026-10-18：remaining 100mm、主甲 102mm 名义被挡，但
-        // [95,105] 区间下 Φ((100−102)/(100/60)) ≈ 11.5%，卡片显示“可能击穿 12%”。
         const { sim, oracle } = runCase([
             { section: 'hull', thickness: 102, x: 2 },
         ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
@@ -453,8 +412,6 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
     })
 
     it('前置间隙甲名义被挡但到首个 Primary 的概率仍保留（spaced100→hull1）', () => {
-        // review 2026-10-18：续飞 100mm，spaced100 名义被挡；完整概率链
-        // spaced CDF 0.5 × hull1 CDF 0.274253 ≈ 13.71265%，不能提前返回 0。
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 100, x: 2 },
             { section: 'hull', thickness: 1, x: 4 },
@@ -490,18 +447,15 @@ describe('矩阵纹理与姿态', () => {
         const { meshes } = buildChainScene([{ section: 'hull', thickness: 100, x: 2, rotYDeg: -90 + 25 }])
         const pack = packOf(meshes)
         const before = raycastPackAll(pack, new THREE.Vector3(-5, 0, 0), new THREE.Vector3(1, 0, 0), 0)
-        // 旋转网格（模拟炮塔），矩阵纹理应跟上
         meshes[0].rotation.y += Math.PI / 6
         meshes[0].updateMatrix()
         meshes[0].updateWorldMatrix(true, false)
         updatePackMatrices(pack)
         const after = raycastPackAll(pack, new THREE.Vector3(-5, 0, 0), new THREE.Vector3(1, 0, 0), 0)
-        // 同一射线在旋转后仍应命中（板足够大），法线方向随旋转改变
         expect(after.length).toBeGreaterThan(0)
         if (before.length && after.length) {
             expect(Math.abs(before[0].normal.angleTo(after[0].normal) - Math.PI / 6)).toBeLessThan(0.05)
         }
-        // 整车世界包围盒（着色器早退 uniform 的数据源）随矩阵刷新且覆盖几何
         expect(pack.worldMin.every(Number.isFinite)).toBe(true)
         expect(pack.worldMax.every(Number.isFinite)).toBe(true)
         const bb = new THREE.Box3(
@@ -554,10 +508,8 @@ describe('世界网格加速结构（buildRicochetGrid）', () => {
                 const cnt = grid.cellsData[ci * 4 + 1]
                 const listed = []
                 for (let e = 0; e < cnt; e++) listed.push(grid.entriesData[(off + e) * 4])
-                // 命中点所在 cell 必须列出该三角形（浮点边界：邻 cell 列出亦可接受）
                 const inCell = listed.includes(h.slot)
                 if (!inCell) {
-                    // 边界容差：命中点可能在相邻 cell（floor 边界 ±1mm）
                     const eps = 1e-3
                     let neighbor = false
                     for (const [dx, dy, dz] of [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]]) {
@@ -595,7 +547,6 @@ describe('世界网格加速结构（buildRicochetGrid）', () => {
 
 describe('网格覆盖不变量（评审 P1）', () => {
     function packOfBoxes(boxes) {
-        // boxes: [{ size:[x,y,z], pos, section, thickness }] → buildPack
         const meshes = boxes.map(b => makeMesh(new THREE.BoxGeometry(...b.size), b.section, b.thickness, m => {
             m.position.set(...b.pos); m.updateMatrix(); m.updateWorldMatrix(true, false);
         }));
@@ -610,11 +561,8 @@ describe('网格覆盖不变量（评审 P1）', () => {
         expect(grid.ok).toBe(true);
         const [gx, gy, gz] = grid.dims;
         expect(gx).toBeLessThanOrEqual(48);
-        // 覆盖断言：网格 AABB 完全包含几何包围盒
-        // 末端 turret 盒（x∈[60.5,61.5]）必须落在网格内
         const maxX = grid.gridMin[0] + grid.dims[0] * grid.cellSize;
         expect(maxX).toBeGreaterThanOrEqual(61.5 - 1e-6);
-        // 覆盖性：暴力射线命中末端盒的三角形必在其命中点 cell 的条目表
         const far = new THREE.Vector3(61, 0, 5);
         const hits = raycastPackAll(pack, far, new THREE.Vector3(0, 0, -1), 0);
         expect(hits.length).toBeGreaterThan(0);
@@ -629,14 +577,13 @@ describe('网格覆盖不变量（评审 P1）', () => {
         expect(listed).toContain(hits[0].slot);
     });
     it('恰在上限的几何（单轴 = 48×0.45m）成功且覆盖', () => {
-        // 盒以原点为中心：x∈[-10.8, 10.8]，ext=21.6=48×0.45 → floor 恰为默认 0.45
         const pack = packOfBoxes([{ size: [48 * 0.45, 2, 2], pos: [0, 0, 0], section: 'hull', thickness: 80 }]);
         const grid = buildRicochetGrid(pack);
         expect(grid.ok).toBe(true);
         expect(grid.dims[0]).toBeLessThanOrEqual(48);
         const maxX = grid.gridMin[0] + grid.dims[0] * grid.cellSize;
         const minX = grid.gridMin[0];
-        expect(maxX).toBeGreaterThanOrEqual(10.8 - 1e-6);   // 覆盖到几何最远点
+        expect(maxX).toBeGreaterThanOrEqual(10.8 - 1e-6);
         expect(minX).toBeLessThanOrEqual(-10.8 + 1e-6);
     });
     it('DDA 步数上界 ≥ dims 之和（对角线路径可达）', () => {
@@ -648,11 +595,6 @@ describe('网格覆盖不变量（评审 P1）', () => {
         expect(RC.MAX_STEPS).toBeGreaterThanOrEqual(RC.GRID_DIM_MAX * 3);
     });
     it('密度细化重试可达（评审 P1）：初始 0.45m 过密 → 细化到更细 cell 成功且仍全覆盖', () => {
-        // 2m 平面 60×60 段 = 7200 三角形（均匀铺满、单元 AABB 极小）：0.45m cell 时单 cell
-        // ≈ 364 > MAX_CELL_ENTRIES(256)；0.225m 时 ≈ 91 ≤ 256。远置小盒把场景 extent 拉到
-        // 7.5m（coverageFloor = 7.5/48 ≈ 0.156 < 0.225，细化不被覆盖下界截断）。
-        // 旧实现把 GRID_CELL_SIZE 并入 floor → 初始 cell 恰等于 floor → 第一次密度失败即
-        // break（attempt 2..4 死代码）→ 此场景会直接 grid-too-dense（评审 P1 的回归锁）。
         const dense = makeMesh(new THREE.PlaneGeometry(2, 2, 60, 60), 'hull', 60, m => {
             m.rotation.x = -Math.PI / 2; m.position.set(0, 0, 0); m.updateMatrix();
         });
@@ -662,23 +604,20 @@ describe('网格覆盖不变量（评审 P1）', () => {
         const pack = packOf([dense, far]);
         const grid = buildRicochetGrid(pack);
         expect(grid.ok).toBe(true);
-        expect(grid.cellSize).toBeLessThan(RC.GRID_CELL_SIZE);   // 确实细化过（不是初始尺寸直接通过）
+        expect(grid.cellSize).toBeLessThan(RC.GRID_CELL_SIZE);
         const cov = grid.gridMin.map((v, a) => v + grid.dims[a] * grid.cellSize);
-        expect(cov[0]).toBeGreaterThanOrEqual(6.5 - 1e-6);       // far 盒右缘 x=6.5 —— 覆盖不破坏
+        expect(cov[0]).toBeGreaterThanOrEqual(6.5 - 1e-6);
         for (let ci = 0; ci < grid.cellTotal; ci++) {
             expect(grid.cellsData[ci * 4 + 1]).toBeLessThanOrEqual(RC.MAX_CELL_ENTRIES);
         }
     });
     it('极端密集（下界处仍超条目上限）→ fail-closed 而非截断成功', () => {
-        // 单网格 2 万三角形集中在 10m 平面（chunk 拆为 ~79 单元）：细化到覆盖下界仍超
-        // MAX_CELL_ENTRIES → 必须显式失败，禁止「capped 截断仍 ok」的静默半覆盖
         const dense = makeMesh(new THREE.PlaneGeometry(10, 10, 100, 100), 'hull', 60, m => {
             m.rotation.x = -Math.PI / 2; m.updateMatrix();
         });
         const pack = packOf([dense]);
         const grid = buildRicochetGrid(pack);
         if (grid.ok) {
-            // 允许成功，但必须全覆盖 + 条目不超上限
             const cov = grid.gridMin.map((v, a) => v + grid.dims[a] * grid.cellSize);
             expect(cov[0]).toBeGreaterThanOrEqual(5 - 1e-6);
             expect(cov[2]).toBeGreaterThanOrEqual(5 - 1e-6);
@@ -700,15 +639,12 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(RC_GLSL_CONST).toContain('#define RC_ADV_EPS 0.000100');
     });
     it('GLSL：初始接受阈 = RC_TSKIP 本身（不得叠加 RC_ADV_EPS）；推进 eps 只出现在吞层之后', () => {
-        // 旧实现 tStart = max(tStart, RC_TSKIP + RC_T_EPS) → GLSL 阈值实为 0.2mm，与 click 的
-        // 0.1mm 不一致（评审 P1）。锁死：初始接受只用 RC_TSKIP；RC_ADV_EPS 只在吞层推进处出现。
         expect(RC_GLSL_FUNCS).toContain('tStart = max(tStart, RC_TSKIP);');
         expect(RC_GLSL_FUNCS).not.toContain('RC_TSKIP + RC_ADV_EPS');
         expect(RC_GLSL_FUNCS).not.toContain('tCur + RC_ADV_EPS');
         expect(RC_GLSL_FUNCS).toContain('tCur = bestT + RC_ADV_EPS;');
     });
     it('click 路径续飞链与 pack 参考入口同一接受阈（#827 窄化：行为侧由下方 0.15/0.05mm 行为锁定；collectJudgmentHits 困于 judgment 闭包，保留 F3 Integration Contract 子句）', () => {
-        // pack 侧调用点源码子句已删（下方行为锁定覆盖同一阈值口径）
         const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8')
             + require('fs').readFileSync(new URL('./viewer/judgmentResult.ts', import.meta.url), 'utf8');
         expect(viewer).toMatch(/ricCollect = collectJudgmentHits\(ricIntersects, rc\.ray\.direction, RC\.MIN_CONTINUATION_T\)/);
@@ -716,8 +652,6 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(viewer).not.toContain('hit.distance < RC.MIN_CONTINUATION_T');
     });
     it('行为锁定：0.15mm 处的板被命中（旧 +eps 口径 0.2mm 会滤掉它）；0.05mm 处被滤', () => {
-        // 0.15mm > MIN(0.1mm) 且 < MIN + ADV(0.2mm)：命中与否正是两个口径的分叉点。
-        // 射线偏离平面中轴（y/z 非 0）避免打在两三角形共边上（共边会记 2 次命中）
         const at = (x) => makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 60, m => {
             m.rotation.y = -Math.PI / 2; m.position.set(x, 0, 0); m.updateMatrix();
         });
@@ -729,7 +663,6 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         expect(raycastPackAll(below, ro, dir, RC.MIN_CONTINUATION_T).length).toBe(0);
     });
     it('真实边界场景：跳弹点旁 0.5mm 处的薄板被保留（<0.1m 的接缝另一侧板命中）', () => {
-        // 跳弹板在 x=0，另一侧板在 x=0.0005（0.5mm）：远大于 0.1mm 滤值 → 必须命中
         const bounce = makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 60, m => {
             m.rotation.y = -Math.PI / 2; m.position.set(0, 0, 0); m.updateMatrix();
         });
@@ -740,7 +673,7 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
         const sim = simulateContinuation(pack, new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), {
             remIn: 300, caliber: 100, normalizationRad: 0, thickMul: 1,
         });
-        expect(sim.cls).toBe(1);   // 0.5mm 处的板被命中并穿透（正是接缝 bug 修复的语义）
+        expect(sim.cls).toBe(1);
     });
 });
 
@@ -766,7 +699,7 @@ describe('packed pose invalidation (#711)', () => {
         const pack = packOf(meshes);
         const snapshot = snapshotPackPose(pack);
         expect(packPoseChanged(pack, snapshot)).toBe(false);
-        scene.position.x = 0.00000001; // Float32 rounding must not hide a source change
+        scene.position.x = 0.00000001;
         scene.updateMatrixWorld(true);
         expect(packPoseChanged(pack, snapshot)).toBe(true);
         expect(snapshot[0][12]).toBe(2);
@@ -791,8 +724,6 @@ describe('gun_mask 裁切面之后的炮管不参与续飞（2026-10-20 KRV）',
     const origin = new THREE.Vector3(-5, 0, 0);
     const dir = new THREE.Vector3(1, 0, 0);
     const params = { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 };
-    // 射线 +X：裁切面 normal=+X、constant=-0.5 时，x=0 处的炮管/炮盾在负侧；
-    // constant=+1 时同一几何全部在正侧（可见）。
     const hidden = new THREE.Plane(new THREE.Vector3(1, 0, 0), -0.5);
     const visible = new THREE.Plane(new THREE.Vector3(1, 0, 0), 1.0);
 
@@ -822,16 +753,13 @@ describe('gun_mask 裁切面之后的炮管不参与续飞（2026-10-20 KRV）',
             { section: 'turret', thickness: 70, x: 0 },
         ]);
         const pack = packOf(meshes);
-        // 无裁切：炮管 50 + 炮盾 70 → 100mm 余量被炮盾挡下。
         expect(simulateContinuation(pack, origin, dir, params).cls).toBe(2);
         expect(oracleClass(pack, origin, dir, params)).toBe(2);
-        // 裁切隐藏炮管：只消费 70mm 炮盾 → 击穿；CPU 参考与 calculate oracle 一致。
         const withClip = { ...params, clipPlane: hidden };
         const sim = simulateContinuation(pack, origin, dir, withClip);
         expect(sim.cls).toBe(1);
         expect(sim.layers.map(l => l.section)).toEqual(['turret']);
         expect(oracleClass(pack, origin, dir, withClip)).toBe(1);
-        // 裁切面在几何之前（可见）：炮管仍参与，结果保持 BLOCKED。
         expect(simulateContinuation(pack, origin, dir, { ...params, clipPlane: visible }).cls).toBe(2);
     });
 
@@ -846,7 +774,6 @@ describe('gun_mask 裁切面之后的炮管不参与续飞（2026-10-20 KRV）',
 
 describe('第二次跳弹即终态（2026-10-20）', () => {
     it('续飞段再次跳弹后炮弹消失，不再进入第三段', () => {
-        // 唯一一块：法线 (-sin10,0,cos10)，+X 入射角 80° → 续飞段跳弹（总第 2 次）。
         const plate = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 50, (m) => {
             m.rotation.y = -10 * Math.PI / 180;
             m.position.set(0, 0, 0);
@@ -857,7 +784,6 @@ describe('第二次跳弹即终态（2026-10-20）', () => {
             remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1,
             ricochetRad: 70 * Math.PI / 180,
         });
-        // 第二段没有最终击穿/被挡结论；只记录这次（终态）跳弹。
         expect(sim.cls).toBe(0);
         expect(sim.layers.map(l => l.ricochet)).toEqual([true]);
         expect(sim.layers[0].seg).toBe(1);
@@ -871,7 +797,6 @@ describe('续飞首层间隙甲跳弹（2026-10-21）', () => {
             m.position.set(0, 0, 0);
             m.updateMatrix();
         });
-        // 间隙甲后方必须存在主装甲，否则前端门按 fail-closed 直接跳过续飞。
         const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 50, (m) => {
             m.position.set(4, 0, 0);
             m.rotation.y = -Math.PI / 2;
@@ -924,11 +849,8 @@ describe('背面命中过滤（FrontSide 判定口径）', () => {
         const box = makeMesh(new THREE.BoxGeometry(2, 2, 2), 'spaced', 50);
         box.material.side = THREE.DoubleSide;
         box.updateWorldMatrix(true, false);
-        // 偏离面中心，避开 BoxGeometry 每个面的对角分割线（否则每个面命中两个三角形）。
         const ray = new THREE.Raycaster(new THREE.Vector3(0.3, 0.2, 3), new THREE.Vector3(0, 0, -1));
         const hits = ray.intersectObject(box, false);
-        // DoubleSide 显示材质会返回闭合壳的正、背两面；判定收集必须剔背面，
-        // 否则同一块间隙甲被计两次厚度（KRV gun_01_armor_9 结果卡的重复层）。
         expect(hits).toHaveLength(2);
         const front = hits.filter(h => !isBackfaceNormal(
             h.face.normal.clone().transformDirection(box.matrixWorld), ray.ray.direction));

@@ -45,15 +45,12 @@ range_status="$(curl "${curl_common[@]}" -o /dev/null -D "$work/range" -w '%{htt
 [[ "$range_status" == "206" ]] || fail "Range request returned HTTP $range_status instead of 206"
 grep -qi '^content-range: bytes 0-0/' "$work/range" || fail "Range response did not expose Content-Range"
 
-# POSIX/mawk-compatible case-insensitive header-name match. Keep the original
-# header value byte-for-byte so weak/quoted ETags survive the conditional request.
 etag="$(awk 'tolower($0) ~ /^etag:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$work/head")"
 [[ -n "$etag" ]] || fail "could not parse ETag"
 conditional_status="$(curl "${curl_common[@]}" -o /dev/null -w '%{http_code}' \
   -H "If-None-Match: $etag" "$base/index.json")"
 [[ "$conditional_status" == "304" ]] || fail "If-None-Match returned HTTP $conditional_status instead of 304"
 
-# ---- dataset version catalog / versioned paths --------------------------------
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then

@@ -4,10 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * [RuntimeRecovery] 的纯 JVM 测试：content 进程在首个 `onLocationChange` 之前被杀时，
- * 恢复目标必须是已经请求的页面，后台 kill 的恢复标记只在真正恢复时消费，runtime 关闭后绝不复活。
- */
 class RuntimeRecoveryTest {
 
     private val entry = MainActivity.LOCAL_APP_ENTRY
@@ -24,7 +20,7 @@ class RuntimeRecoveryTest {
     fun pendingReplayColdStartKilledBeforeLocationChangeKeepsTheReplayTarget() {
         val recovery = RuntimeRecovery()
         recovery.requested(replay)
-        recovery.committed("about:blank") // 初始 about:blank 不得覆盖目标
+        recovery.committed("about:blank")
         assertEquals(replay, recovery.onKill(visible = true))
         assertEquals(replay, recovery.onCrash())
     }

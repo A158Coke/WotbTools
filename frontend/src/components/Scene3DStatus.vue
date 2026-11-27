@@ -1,11 +1,4 @@
 <script setup>
-/**
- * 3D 视图的状态层（审计 3D-23；design-language §7 Progress / EmptyState、§10 状态与反馈）：
- * - unsupported：WebGL 预检失败，替代整个场景，说明原因与下一步；
- * - loading：叠在场景上的进度条（progress 为 null 时显示不确定态）；
- * - error：叠在场景上的失败说明 + 重试。
- * AgentArmorView / AgentReplay3D 共用，文案统一走 i18n（scene3d.*）。
- */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MonitorX, RotateCcw, TriangleAlert } from 'lucide-vue-next'
@@ -15,17 +8,11 @@ import { WEBGL_STATUS } from '../scene/webglSupport.js'
 import { progressPercent } from '../scene/loadProgress.js'
 
 const props = defineProps({
-  /** unsupported | loading | error */
   mode: { type: String, required: true, validator: v => ['unsupported', 'loading', 'error'].includes(v) },
-  /** 0–1；null = 不确定进度 */
   progress: { type: Number, default: null },
-  /** loading：当前阶段文案；error：失败细节 */
   message: { type: String, default: '' },
-  /** unsupported：webglSupport.detectWebGL().status */
   webglStatus: { type: String, default: WEBGL_STATUS.UNAVAILABLE },
-  /** error：是否提供重试 */
   retryable: { type: Boolean, default: true },
-  /** error：是否提供"关闭"（回到上一状态，如换一个文件） */
   dismissible: { type: Boolean, default: false },
 })
 const emit = defineEmits(['retry', 'dismiss'])

@@ -113,25 +113,14 @@ describe('computeLabelLayout overlap-first UX', () => {
       [item(1, 200, 200, { destroyed: true, selected: true, recorder: true }), item(2, 200, 200)],
       opts,
     )
-    // 同位两车：tag 重叠 → v2 走非零 lane（保证测试非空转）
     expect(LABEL_LANES_PX).toContain(plain.get(2).tankDy)
     expect(plain.get(2).tankDy).not.toBe(0)
-    // 给 v1 加 destroyed / selected / recorder 盒（core 恒在）后 v2 的 lane 必须不变
-    // —— 这些盒不参与 lane 评分，只有 tankBox/playerBox/hpBox（tag）才参与。
     expect(overlay.get(2).tankDy).toBe(plain.get(2).tankDy)
     expect(overlay.get(1).tankDy).toBe(plain.get(1).tankDy)
   })
 
   it('只有 tag 重叠才触发 lane 位移：仅与车辆 core 重叠时 lane 为 0', () => {
     const opts = { showTank: true, showPlayer: true, viewportW: 800, viewportH: 600 }
-    // v2 的 HP 盒压在 v1 的 core 上，但两者的 tag 盒（tank/player/hp）互不相交 → lane 0
-    //（core 只作 lane 评分障碍，不驱动位移）。
-    //
-    // 几何按**真实层级**（player → tank → HP → marker）推导，两个 marker 相差 62px：
-    //   v1@200: core y∈[185,215]  tank[182,198]  player[166,182]  hp[138,158]
-    //   v2@262: core y∈[247,277]  tank[244,260]  player[228,244]  hp[200,220]
-    // v2 的 hp[200,220] 与 v1 的 core[185,215] 相交（200–215），但 v2 的 tank/player
-    // 都在 228 以下、v1 的 tank/player/hp 都在 198 以上 → 无 tag overlap。
     const res = computeLabelLayout([item(1, 200, 200), item(2, 200, 262)], opts)
     expect(res.get(2).tankDy).toBe(0)
   })
@@ -140,15 +129,6 @@ describe('computeLabelLayout overlap-first UX', () => {
 describe('computeLabelLayout vertical hierarchy (collision geometry == rendered DOM)', () => {
   const opts = { showTank: true, showPlayer: true, viewportW: 800, viewportH: 600 }
 
-  /**
-   * 真实呈现顺序（`PlaybackVehicleLabel.vue`，2D/3D 共用）：
-   *
-   *     PlayerName → TankName → HP → Reload → marker
-   *
-   * screen 坐标 y 向下增长，所以竖直方向必须满足
-   * `playerBox.y < tankBox.y < hpBox.y < markerTop`。
-   * 这里曾经是 `hp → player → tank → marker`，与渲染顺序相反。
-   */
   it('player 在 tank 之上、tank 在 HP 之上、HP 在 marker 之上', () => {
     const r = computeLabelLayout([item(1, 100, 300)], opts).get(1)
     expect(r.playerBox).not.toBeNull()
@@ -162,11 +142,8 @@ describe('computeLabelLayout vertical hierarchy (collision geometry == rendered 
 
   it('相邻块按约定的间距相接，不留缝也不重叠', () => {
     const r = computeLabelLayout([item(1, 100, 300)], opts).get(1)
-    // 身份两行之间无 gap（.pb-labels 是 flex column 且没有 gap）
     expect(r.playerBox.y + r.playerBox.h).toBe(r.tankBox.y)
-    // 身份块 → combat block = IDENTITY_TO_COMBAT_GAP_PX
     expect(r.tankBox.y + r.tankBox.h + IDENTITY_TO_COMBAT_GAP_PX).toBe(r.hpBox.y)
-    // HP → marker = LABEL_GAP_PX
     expect(r.hpBox.y + r.hpBox.h + LABEL_GAP_PX).toBe(r.coreBox.y)
   })
 
@@ -175,9 +152,7 @@ describe('computeLabelLayout vertical hierarchy (collision geometry == rendered 
     const fallback = computeLabelLayout([item(1, 100, 300)], opts).get(1)
     expect(measured.hpBox.h).toBe(34)
     expect(fallback.hpBox.h).toBe(HP_HUD_H_PX)
-    // HP 是 marker 之上最近的一块：它变高（底边不动）时自己也整体上移
     expect(measured.hpBox.y).toBe(fallback.hpBox.y - (34 - HP_HUD_H_PX))
-    // 身份块叠在 HP 之上，所以跟着一起上移同样的量
     expect(measured.tankBox.y).toBe(fallback.tankBox.y - (34 - HP_HUD_H_PX))
     expect(measured.playerBox.y).toBe(fallback.playerBox.y - (34 - HP_HUD_H_PX))
   })
@@ -185,7 +160,6 @@ describe('computeLabelLayout vertical hierarchy (collision geometry == rendered 
   it('关掉 HP 时身份块直接贴 marker，不留空白间距', () => {
     const r = computeLabelLayout([item(1, 100, 300, { hpRendered: false })], opts).get(1)
     expect(r.hpBox).toBeNull()
-    // 没有 combat block 时，marker 之上只剩两段间距：identity gap + label gap
     expect(r.tankBox.y + r.tankBox.h).toBe(r.coreBox.y - LABEL_GAP_PX - IDENTITY_TO_COMBAT_GAP_PX)
     expect(r.playerBox.y).toBeLessThan(r.tankBox.y)
   })

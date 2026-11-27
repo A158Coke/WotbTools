@@ -1,12 +1,5 @@
 package com.wotb.core.replay.feature;
 
-/**
- * Team Feature coverage statistics.
- * observedPositionEventCount includes both VALID and CLAMPED positions.
- * clampedPositionEventCount is a subset of observedPositionEventCount.
- * ignoredOutOfBoundsPositionEventCount and INVALID positions are NOT included
- * in observedPositionEventCount.
- */
 public record TeamFeatureCoverage(
         boolean authoritativeSummaryAvailable,
         boolean reconstructionAvailable,
@@ -20,7 +13,6 @@ public record TeamFeatureCoverage(
         int clampedPositionEventCount,
         int ignoredOutOfBoundsPositionEventCount,
         int ignoredInvalidTimestampEventCount,
-        /** 包解码覆盖率；null = 引擎不提供该证据（客户端 canonical 投影 unavailableEvidence=PACKET_DECODE_COVERAGE） */
         Double decodedPacketRatio,
         boolean fullFeaturesAvailable
 ) {
@@ -34,7 +26,6 @@ public record TeamFeatureCoverage(
             throw new IllegalArgumentException(
                     "clampedPositionEventCount must be >= 0: " + clampedPositionEventCount);
         }
-        // CLAMPED positions are a strict subset of observed positions.
         if (clampedPositionEventCount > observedPositionEventCount) {
             throw new IllegalArgumentException(
                     "clampedPositionEventCount " + clampedPositionEventCount
@@ -56,11 +47,6 @@ public record TeamFeatureCoverage(
         }
     }
 
-    /**
-     * AI-visible 渲染：排除 internal-only 的 {@code nonCombatantPositionEventCount}。
-     * non-#301 实体（观战/镜头/场景对象）位置对战术无影响，不得进入 LLM prompt；
-     * 该计数保留在字段供后端 metrics / probe / debug。
-     */
     @Override
     public String toString() {
         return "TeamFeatureCoverage[authoritativeSummaryAvailable=" + authoritativeSummaryAvailable

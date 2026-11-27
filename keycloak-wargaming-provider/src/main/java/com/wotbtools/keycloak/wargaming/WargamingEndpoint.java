@@ -12,15 +12,6 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Set;
 
-/**
- * WG 回调端点。职责：校验 state → 基础参数校验 → prolongate 验证 token 并取得
- * 服务端绑定的可信 account_id → account/info 获取官方昵称 → 构造稳定身份 → 立即 logout。
- *
- * <p>安全要点（需求文档 D5 / 第十五节）：浏览器回调的 {@code account_id} /
- * {@code nickname} / {@code expires_at} 都是不可信输入；最终身份只来自
- * {@code prolongate} 服务端响应的 account_id，回调值仅作一致性检查。
- * 任何一环失败都终止登录；token 不落库、不进属性/JWT/日志。</p>
- */
 final class WargamingEndpoint {
 
     private static final Logger log = Logger.getLogger(WargamingEndpoint.class);
@@ -63,7 +54,6 @@ final class WargamingEndpoint {
                                    @QueryParam("code") final String errorCode,
                                    @QueryParam("message") final String errorMessage) {
 
-        // ── 1. 会话校验（state 缺失/无效/过期/被篡改一律拒绝） ────────
         if (WargamingIdentityProvider.isBlank(state)) {
             return reject("callback-state", "missing-state");
         }
@@ -79,10 +69,7 @@ final class WargamingEndpoint {
             return reject("configuration", "missing-application-id");
         }
 
-        // ── 2. 基础校验 ──────────────────────────────────────────────
         if (!"ok".equals(status)) {
-            // code/message 均来自浏览器回调，属于不可信输入：code 只接受纯数字，
-            // message 只映射到固定 allowlist 分类，绝不把原始 callback 文本写入日志。
             log.warnf("Wargaming login rejected region=%s stage=callback-status reason=provider-error code=%s providerError=%s",
                     regionName(), safeProviderCode(errorCode), providerErrorClass(errorMessage));
             return WargamingIdentityProvider.errorResponse();
@@ -94,13 +81,11 @@ final class WargamingEndpoint {
         String wgToken = accessToken;
         String stage = "prolongate";
         try {
-            // ── 3. 服务端验证 token 并取得绑定的可信 account_id ────
             final WargamingApiClient.ProlongatedToken refreshed =
                     apiClient.prolongate(applicationId, wgToken);
             wgToken = refreshed.accessToken();
             final long trustedAccountId = refreshed.accountId();
 
-            // ── 4. 一致性检查：回调 account_id 可选；存在则必须与可信值一致 ──
             stage = "callback-account-check";
             if (!WargamingIdentityProvider.isBlank(accountId)) {
                 final Long callbackAccountId = parseAccountId(accountId);
@@ -110,7 +95,6 @@ final class WargamingEndpoint {
                 }
             }
 
-            // ── 5. 查询官方昵称（回调 nickname 仅作一致性检查） ──────
             stage = "account-info";
             final String officialNickname =
                     apiClient.fetchOfficialNickname(applicationId, trustedAccountId, wgToken);
@@ -122,7 +106,6 @@ final class WargamingEndpoint {
                 return reject(stage, "nickname-mismatch");
             }
 
-            // ── 6. 构造稳定身份（全部来自可信 account_id） ────────────
             stage = "identity-callback";
             final WargamingRegion region = config.region();
             final String externalId = "wg:" + region.key() + ":" + trustedAccountId;
@@ -130,12 +113,10 @@ final class WargamingEndpoint {
             context.setId(externalId);
             context.setBrokerUserId(externalId);
             context.setBrokerSessionId(externalId);
-            // username 带区服前缀避免跨区服 account_id 冲突；游戏账号 ID 保持纯数字存 wotb.account_id。
             context.setUsername("wg_" + region.key() + "_" + trustedAccountId);
             context.setIdp(provider);
             context.setAuthenticationSession(authenticationSession);
 
-            // 只写业务属性，绝不写 WG token。
             context.setUserAttribute("region", region.name());
             context.setUserAttribute("displayName", officialNickname);
             context.setUserAttribute("wotb.account_id", String.valueOf(trustedAccountId));
@@ -144,26 +125,18 @@ final class WargamingEndpoint {
 
             return authCallback.authenticated(context);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 服务端 API client 已剔除 token/application_id/error.value；这里只记录
-            // region / stage 与有界、去控制字符后的内部安全诊断。
             log.warnf("Wargaming login rejected region=%s stage=%s reason=wg-api-error detail=%s",
                     regionName(), stage, safeMessage(e));
             return WargamingIdentityProvider.errorResponse();
         } catch (final RuntimeException e) {
-            // 非预期异常：只记录安全的异常类名，不吞掉 JVM Error。
             log.warnf("Wargaming login failed region=%s stage=%s reason=unexpected-exception type=%s",
                     regionName(), stage, e.getClass().getSimpleName());
             return WargamingIdentityProvider.errorResponse();
         } finally {
-            // ── 7. 成功或失败路径都尽力立即销毁 token ────────────────
-            // Java 执行顺序：return 表达式（authenticated(context)）先完成求值，
-            // 随后才执行 finally；因此 logout 不会抢在身份处理之前执行，
-            // logout 失败也不会覆盖原登录结果。
             logoutBestEffort(applicationId, wgToken);
         }
     }
 
-    /** 测试与内部调用兼容入口；生产 JAX-RS 回调使用包含 code/message 的七参数方法。 */
     Response handleCallback(final String state,
                             final String status,
                             final String accessToken,
@@ -189,7 +162,6 @@ final class WargamingEndpoint {
         try {
             apiClient.logout(applicationId, accessToken);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // token 值绝不进日志。
             log.warnf("Wargaming token logout failed region=%s reason=wg-api-error detail=%s",
                     regionName(), safeMessage(e));
         }

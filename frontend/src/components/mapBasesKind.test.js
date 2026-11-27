@@ -1,5 +1,3 @@
-// 基地点位模式解析单测（mapBasesKind.js）：assault 恰 1 个 candidate 才提供遭遇；
-// 多 candidate / 空组 fail-closed；URL 优先级与回落顺序。
 import { describe, expect, it } from 'vitest'
 import { assaultSelectable, resolveBasesKind } from './mapBasesKind.js'
 

@@ -1,6 +1,3 @@
-/**
- * Texture-Baked Top-View prototype（Phase B）— 纯函数契约测试（B16 #9-18）。
- */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -9,9 +6,7 @@ import { computeTurretModelPivot } from '../../scripts/extractor-lib.mjs'
 
 const ASSETS = fileURLToPath(new URL('./assets/maus/', import.meta.url))
 
-/** 1×1 白纹理（单像素）。 */
 const whiteTex = { data: new Uint8Array([255, 255, 255, 255]), width: 1, height: 1 }
-/** 2×2 四色纹理。 */
 const quadTex = {
   data: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255]),
   width: 2,
@@ -48,8 +43,7 @@ describe('Phase B10 — texture sampling deterministic', () => {
 
 describe('Phase B11 — alpha cutoff（MASK 材质）', () => {
   it('alpha < cutoff 的片元透明且不遮挡下层（不写 z）', () => {
-    // 下层白面 + 上层半透明 MASK 面（alpha 0.01 < cutoff 0.05 → 丢弃）
-    const maskTex = { data: new Uint8Array([255, 0, 0, 2]), width: 1, height: 1 } // alpha=2/255
+    const maskTex = { data: new Uint8Array([255, 0, 0, 2]), width: 1, height: 1 }
     const lower = { p: [0, 0, 1, 4, 0, 1, 0, 4, 1], uv: [0, 0, 1, 0, 0, 1], material: 0 }
     const upper = { p: [0.5, 0.5, 2, 3.5, 0.5, 2, 0.5, 3.5, 2], uv: [0, 0, 1, 0, 0, 1], material: 1 }
     const out = bakeTopView({
@@ -59,10 +53,9 @@ describe('Phase B11 — alpha cutoff（MASK 材质）', () => {
       bounds,
       resolution: 32,
     })
-    // 上层被 alpha 丢弃 → 下层可见（白色，alpha 255）
     const i = (8 * 32 + 8) * 4
-    expect(out.rgba[i + 3]).toBe(255) // 不透明（下层）
-    expect(out.rgba[i]).toBe(255) // 白色（下层）
+    expect(out.rgba[i + 3]).toBe(255)
+    expect(out.rgba[i]).toBe(255)
   })
 })
 
@@ -79,7 +72,7 @@ describe('Phase B12 — z-buffer topmost surface', () => {
 describe('Phase B13 — hull/turret 独立 bake', () => {
   it('hull 场景不含 turret 三角形（独立资产语义）', () => {
     const hullTri = { p: [0, 0, 1, 4, 0, 1, 0, 4, 1], uv: null, material: 0 }
-    const turretTri = { p: [8, 8, 2, 9, 8, 2, 8, 9, 2], uv: null, material: 0 } // 画布外（hull 场景 bounds 内不可见）
+    const turretTri = { p: [8, 8, 2, 9, 8, 2, 8, 9, 2], uv: null, material: 0 }
     const out = bakeTopView({
       triangles: [hullTri, turretTri],
       textures: [whiteTex],
@@ -87,13 +80,11 @@ describe('Phase B13 — hull/turret 独立 bake', () => {
       bounds,
       resolution: 32,
     })
-    // hull 三角形覆盖模型 x+y<=4（0..4 方块的一半）；Y flip 后行序反向但覆盖面不变
-    const insideHull = (8 * 32 + 24) * 4 // 像素 (24,8) = 模型 (3.06,2.94) → x+y>4 → hull 外
+    const insideHull = (8 * 32 + 24) * 4
     expect(out.rgba[insideHull + 3]).toBe(0)
-    // turret 三角形在 bounds 外（x/y 均越界）→ Y flip 下被裁剪跳过；输出仍为 hull 独立资产
-    const clampedCorner = (0 * 32 + 31) * 4 // 像素 (31,0) = 模型 (3.94,3.94)：hull 外 + turret 不渲染 → 透明
+    const clampedCorner = (0 * 32 + 31) * 4
     expect(out.rgba[clampedCorner + 3]).toBe(0)
-    const inHull = (16 * 32 + 8) * 4 // 像素 (8,16) = 模型 (1,2) → x+y=3 <= 4 → hull 内
+    const inHull = (16 * 32 + 8) * 4
     expect(out.rgba[inHull + 3]).toBe(255)
   })
 })
@@ -113,7 +104,6 @@ describe('Phase B14 — turretPivot 不变 + 尺寸契约（RASTER_SIZE_RUNTIME_
     const meta = JSON.parse(readFileSync(fileURLToPath(new URL('./assets/grille-15/metadata.json', import.meta.url)), 'utf8'))
     expect(report.output.hullPhysicalPixelSize).toEqual([640, 640])
     expect(meta.generation.hullPhysicalPixelSize).toEqual([640, 640])
-    // turret.webp 不是固定 640×640：authoritative size 来自 turretRaster
     expect(meta.turretRaster.pixelWidth).toBe(160)
     expect(meta.turretRaster.pixelHeight).toBe(1010)
     expect(report.turretRaster.pixelWidth).toBe(160)
@@ -125,10 +115,9 @@ describe('Phase B15 — transparent background', () => {
   it('车辆外像素 alpha = 0（无黑/白底）', () => {
     const tri = { p: [1, 1, 1, 3, 1, 1, 1, 3, 1], uv: [0, 0, 1, 0, 0, 1], material: 0 }
     const out = bakeTopView({ triangles: [tri], textures: [whiteTex], materials: [OPAQUE], bounds, resolution: 64 })
-    expect(out.rgba[0 * 4 + 3]).toBe(0) // 角落（车辆外）透明
-    // Y flip 后模型 (1..3, 1..3) 覆盖 raster 行 16..48；像素 (32,40) = 模型 (2,1.5) → 车辆内
+    expect(out.rgba[0 * 4 + 3]).toBe(0)
     const i = (40 * 64 + 32) * 4
-    expect(out.rgba[i + 3]).toBeGreaterThan(0) // 车辆内不透明
+    expect(out.rgba[i + 3]).toBeGreaterThan(0)
   })
 })
 
@@ -151,14 +140,14 @@ describe('Phase B17 — texture missing controlled behavior', () => {
     const tri = { p: [0, 0, 1, 4, 0, 1, 0, 4, 1], uv: [0, 0, 1, 0, 0, 1], material: 0 }
     const out = bakeTopView({
       triangles: [tri],
-      textures: [], // 无纹理
+      textures: [],
       materials: [{ baseColor: 0, occlusion: -1, normal: -1, alphaMode: 'OPAQUE', alphaCutoff: 0.05 }],
       bounds,
       resolution: 32,
     })
     const i = (8 * 32 + 8) * 4
-    expect(out.rgba[i + 3]).toBe(255) // 有表面
-    expect(out.rgba[i]).toBe(255) // fallback 中性白
+    expect(out.rgba[i + 3]).toBe(255)
+    expect(out.rgba[i]).toBe(255)
   })
 })
 
@@ -172,7 +161,6 @@ describe('Phase B18 — production/runtime 无 BlitzKit 网络', () => {
 
 describe('Phase B19 — RASTER_Y_AXIS_CONTRACT（方向测试：model +Y → raster top，0° = 12 点）', () => {
   const DIR_BOUNDS = { minX: 0, minY: 0, maxX: 4, maxY: 4 }
-  // 非对称三角形：apex 在模型 +Y（forward 端），底边在 -Y（rear 端）
   const asymTri = { p: [1, 1, 1, 3, 1, 1, 2, 4, 1], uv: null, material: 0 }
 
   const rowSpan = (out, y) => {
@@ -183,15 +171,12 @@ describe('Phase B19 — RASTER_Y_AXIS_CONTRACT（方向测试：model +Y → ras
 
   it('+Y apex 必须出现在 raster 上方（top rows），-Y 底边在下方', () => {
     const out = bakeTopView({ triangles: [asymTri], textures: [whiteTex], materials: [OPAQUE], bounds: DIR_BOUNDS, resolution: 64 })
-    // 找首/末覆盖行（raster 行 = 屏幕 y，上小下大）
     let topRow = -1, bottomRow = -1
     for (let y = 0; y < out.height; y++) {
       if (rowSpan(out, y) > 0) { if (topRow < 0) topRow = y; bottomRow = y }
     }
-    // apex（model y=4）→ 翻转后必须贴 raster top；底边（model y=1）贴下方
     expect(topRow).toBeLessThanOrEqual(1)
     expect(bottomRow).toBeGreaterThanOrEqual(47)
-    // 顶窄底宽（apex 细、底边宽）——0° = 车头朝 12 点
     const topMean = (rowSpan(out, topRow) + rowSpan(out, topRow + 1)) / 2
     const botMean = (rowSpan(out, bottomRow) + rowSpan(out, bottomRow - 1)) / 2
     expect(topMean).toBeLessThan(botMean)
@@ -206,7 +191,6 @@ describe('Phase B19 — RASTER_Y_AXIS_CONTRACT（方向测试：model +Y → ras
 })
 
 describe('Phase B20 — orientation regression（正式资产 bake-report 真实 raster 方向指纹）', () => {
-  // 用户指定回归组：Grille 15 / Maus / Leopard 1 / FV4005（turret + hull）
   const REGRESSION_KEYS = ['grille-15', 'maus', 'leopard-1', 'fv4005']
   const readReport = (key) => JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/bake-report.json`, import.meta.url)), 'utf8'))
 
@@ -219,7 +203,6 @@ describe('Phase B20 — orientation regression（正式资产 bake-report 真实
       expect(Math.abs(ori.topModelY - expectedTop), `${key} topModelY 不是 forward 端`).toBeLessThan(0.01)
       expect(Math.abs(ori.topCoveredModelY - expectedTop), `${key} 实际 top 覆盖行不在 forward 端（方向错误）`).toBeLessThan(0.1)
       expect(ori.bottomCoveredModelY).toBeLessThan(ori.topCoveredModelY)
-      // 炮管（forward）窄于炮塔体（rear）——gun 必须在图片上方
       expect(ori.topWidthMean, `${key} top 行不窄于 bottom 行（gun 未朝上）`).toBeLessThan(ori.bottomWidthMean)
     }
   })
@@ -237,9 +220,9 @@ describe('Phase B20 — orientation regression（正式资产 bake-report 真实
   it('Grille 15 炮口（gun forward endpoint +8.04）位于 turret.webp 上方（像素级）', () => {
     const rep = readReport('grille-15')
     const ori = rep.rasterOrientation.turret
-    expect(ori.topModelY).toBeCloseTo(8.04, 2) // gunBounds.maxY
-    expect(ori.topRowCovered).toBeLessThanOrEqual(2) // forward 端贴 raster top
-    expect(ori.topWidthMean).toBeLessThan(ori.bottomWidthMean * 0.75) // 炮管明显窄于炮塔体
+    expect(ori.topModelY).toBeCloseTo(8.04, 2)
+    expect(ori.topRowCovered).toBeLessThanOrEqual(2)
+    expect(ori.topWidthMean).toBeLessThan(ori.bottomWidthMean * 0.75)
   })
 
   it('全部资产 bake-report 都带方向指纹且 hull top = forward 端', () => {
@@ -259,12 +242,10 @@ describe('Phase B20 — orientation regression（正式资产 bake-report 真实
 describe('Phase B — neutralize（B8 中性化，Blocker 3 语义反向修复）', () => {
   it('amount = 去色强度：0=原色、1=纯灰（文档语义与实现一致）', () => {
     const luma = 0.299 * 100 + 0.587 * 150 + 0.114 * 200
-    // amount=0 → 完全原色
     const [r0, g0, b0] = neutralize([100, 150, 200], 0)
     expect(r0).toBe(100)
     expect(g0).toBe(150)
     expect(b0).toBe(200)
-    // amount=1 → 纯灰（luma）
     const [r1, g1, b1] = neutralize([100, 150, 200], 1)
     expect(r1).toBeCloseTo(luma, 9)
     expect(g1).toBeCloseTo(luma, 9)
@@ -280,7 +261,6 @@ describe('Phase B — neutralize（B8 中性化，Blocker 3 语义反向修复�
   })
 })
 describe('Phase B21 — turretPivot BlitzKit contract invariant（PR92 Review：yaw 中心 = hullOrigin + turretOrigin）', () => {
-  // 回归组：Maus / Grille 15 / Leopard 1 / FV4005 + 前置炮塔（type-71）+ 后置炮塔（fv215b）
   const INVARIANT_KEYS = ['maus', 'grille-15', 'leopard-1', 'fv4005', 'type-71', 'fv215b']
   const readReport = (key) => JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/bake-report.json`, import.meta.url)), 'utf8'))
 
@@ -290,11 +270,9 @@ describe('Phase B21 — turretPivot BlitzKit contract invariant（PR92 Review：
       const meta = JSON.parse(readFileSync(fileURLToPath(new URL(`./assets/${key}/metadata.json`, import.meta.url)), 'utf8'))
       const ps = rep.pivotSource
       expect(ps, `${key} 缺 pivotSource`).toBeTruthy()
-      // 复算：由记录的引擎坐标 origins → 模型坐标向量和
       const recomputed = computeTurretModelPivot(ps.hullOrigin, ps.turretOrigin)
       expect(recomputed.x).toBeCloseTo(ps.modelPivot.x, 6)
       expect(recomputed.y).toBeCloseTo(ps.modelPivot.y, 6)
-      // fit 投影 → metadata.turretPivot（与 baker 同式）
       const { scale, tx, ty } = rep.fit
       expect(meta.turretPivot.x).toBe(+(recomputed.x * scale + tx).toFixed(2))
       expect(meta.turretPivot.y).toBe(+(-recomputed.y * scale + ty).toFixed(2))

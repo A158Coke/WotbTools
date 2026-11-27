@@ -1,6 +1,4 @@
 <script setup>
-// 长文档页（项目历史 / 技术演进，审计 PG-14：手机上约 26 屏、没有目录）。
-// 从 Markdown 的二级标题生成目录：桌面为右侧吸顶目录并高亮当前章节；平板 / 手机为顶部可折叠目录；附「回到顶部」。
 import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref } from 'vue'
 import { copyText } from '../utils/clipboard.js'
 import { showToast } from '../composables/useToast.js'
@@ -11,20 +9,17 @@ import ShowcaseHero from './ShowcaseHero.vue'
 
 const props = defineProps({
   source: { type: String, required: true },
-  /** 用文档 H1 生成分区主视觉（docs），并从正文移除重复标题 */
   sectionHero: { type: Boolean, default: false },
 })
 
 const markdown = new MarkdownIt({ html: false, linkify: true })
 
-/** 渲染并给每个二级标题编号锚点（标题多为中文，用序号比 slug 稳定） */
 const doc = computed(() => {
   const tokens = markdown.parse(props.source, {})
   const toc = []
   let title = ''
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]
-    // 页面主视觉接管一级标题：取第一个 H1 作为 banner 标题，并从正文删除它，避免重复
     if (token.type === 'heading_open' && token.tag === 'h1' && !title) {
       title = tokens[index + 1]?.content || ''
       if (props.sectionHero) {
@@ -45,10 +40,8 @@ const doc = computed(() => {
 
 const activeId = ref('')
 const activeTitle = computed(() => doc.value.toc.find(item => item.id === activeId.value)?.title || '')
-// v-html 注入的按钮不经模板：通过实例上的 $t 取文案（与模板同一个 i18n 实例）
 const instance = getCurrentInstance()
 
-/** 代码块右上角「复制」：按钮在挂载后注入（v-html 内容不经模板），点击由正文统一委托处理。 */
 function decorateCodeBlocks() {
   body.value?.querySelectorAll('pre').forEach((pre) => {
     if (pre.querySelector('.doc-copy')) return
@@ -82,7 +75,6 @@ onMounted(() => {
   window.addEventListener('scroll', onScroll, { passive: true })
   decorateCodeBlocks()
   if (typeof IntersectionObserver !== 'function' || !body.value) return
-  // 视口上部 30% 内最靠上的章节标题 = 当前章节
   observer = new IntersectionObserver((entries) => {
     const visible = entries.filter(entry => entry.isIntersecting).map(entry => entry.target.id)
     if (visible.length) activeId.value = visible[0]
@@ -100,7 +92,6 @@ onBeforeUnmount(() => {
   <div class="doc-page layout-wide" :class="{ 'has-toc': doc.toc.length > 1 }">
     <details v-if="doc.toc.length > 1" class="doc-toc-compact" data-testid="doc-toc-compact">
       <summary><ListTree :size="16" aria-hidden="true" />{{ $t('doc.toc') }}<span v-if="activeTitle" class="doc-toc-current"> · {{ activeTitle }}</span></summary>
-      <!-- 点了某一章就收起目录，让正文回到视野 -->
       <ol class="doc-toc-list" @click="$event.target.closest('a') && ($event.currentTarget.closest('details').open = false)">
         <li v-for="item in doc.toc" :key="item.id"><a :href="`#${item.id}`">{{ item.title }}</a></li>
       </ol>
@@ -117,15 +108,11 @@ onBeforeUnmount(() => {
 
     <div class="doc-main">
       <ShowcaseHero v-if="sectionHero && doc.title" section="docs" :title="doc.title" />
-      <!-- 页面自己的页头（如 Rating 说明的返回按钮）；历史 / 技术演进不传 -->
       <slot name="header" />
       <article ref="body" class="doc-body surface-glass-1" @click="onBodyClick" v-html="doc.html"></article>
     </div>
 
 
-    <!-- 回顶钮自身 sticky（fixed + IO 异步隐藏与 L6 探针存在竞态）：flow 位置在
-         .doc-page 末尾、app footer 之前，滚到文档末尾随流位升出贴靠线停在 footer
-         之上，与页脚备案链接几何上永不同区 -->
     <button v-if="showBackToTop" type="button" class="doc-top" data-testid="doc-back-to-top" :aria-label="$t('doc.back_to_top')" :title="$t('doc.back_to_top')" @click="scrollToTop">
       <ArrowUp :size="20" aria-hidden="true" />
     </button>
@@ -158,8 +145,6 @@ onBeforeUnmount(() => {
 .doc-body :deep(ul), .doc-body :deep(ol) { padding-inline-start: var(--space-6); }
 .doc-body :deep(blockquote) { margin: var(--space-4) 0; padding: var(--space-2) var(--space-4); border-inline-start: var(--space-1) solid var(--color-accent); background: var(--color-surface-2); }
 .doc-body :deep(pre) { position: relative; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); }
-/* 复制钮放代码块左下角：右上角与 fixed 的「回到顶部」.doc-top（视口右下）在窄屏必然
-   同区，L6 探针判内容控件被常驻面盖住；视口左下没有 fixed 控件，碰撞不可能发生。 */
 .doc-body :deep(.doc-copy) { position: absolute; inset-block-end: var(--space-2); inset-inline-start: var(--space-2); min-height: var(--control-h-sm); padding: 0 var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-secondary); font: var(--type-caption); cursor: pointer; }
 .doc-body :deep(.doc-copy:focus-visible) { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .doc-body :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: var(--space-4) 0; border-collapse: collapse; background: var(--color-surface-1); }
@@ -195,9 +180,6 @@ onBeforeUnmount(() => {
 
 .doc-toc-compact { display: none; }
 
-/* 回顶钮自身 sticky：flow 位置 = .doc-page 末尾（app footer 之前），滚过即贴视口右下；
-   到文档末尾流位升出贴靠线，按钮随内容上移停在 footer 之上 —— 与页脚备案链接
-   几何上永不同区（fixed + 异步隐藏会输给 L6 探针的同步采样） */
 .doc-top {
   position: sticky;
   inset-block-end: calc(env(safe-area-inset-bottom) + var(--space-4));
@@ -223,7 +205,6 @@ onBeforeUnmount(() => {
   .doc-toc-list a:hover { background: var(--color-surface-2); color: var(--color-text-primary); }
 }
 
-/* 平板 / 手机：目录收进顶部可折叠块，正文占满 */
 @media (width < 1200px) {
   .doc-page.has-toc { grid-template-columns: minmax(0, 1fr); }
   .doc-toc { display: none; }

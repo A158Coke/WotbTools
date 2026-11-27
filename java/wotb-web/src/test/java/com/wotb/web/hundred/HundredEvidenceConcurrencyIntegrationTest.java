@@ -55,22 +55,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 百场 evidence 跨域引用计数与锁协议的真实 PostgreSQL + filesystem 并发回归（PR #101 review blockers）。
- * 不靠 Mockito 证明 PostgreSQL transaction semantics：所有用例走真实 PG（Testcontainers）+ 真实
- * 内容寻址存储（data/replays-concurrency-it）+ 真实 ReplayHashLock（session 级 advisory lock）。
- * 服务器没有 parser：回放结算事实由客户端提交（facts JSON，按回放字节=arenaId 构造），facts 校验发生在
- * 锁协议之前，不属于本次验证范围；锁 → store → DB tx → commit 全部真实执行。
- *
- * <p>覆盖：</p>
- * <ul>
- *   <li>A：HoF admin delete 不得删除仍被 Hundred evidence 引用的物理文件（对称引用计数）</li>
- *   <li>B：Hundred 终态清理不得删除仍被 HoF record 引用的物理文件</li>
- *   <li>C：HoF delete ∥ Hundred create（同 hash）→ 物理 H 必须存在且可下载（锁协议）</li>
- *   <li>D：两个 Hundred create 并发撞 PENDING unique index → 恰好一个 PENDING、败者稳定
- *       HUNDRED_PENDING_EXISTS、无 aborted transaction / advisory lock 失败、无 partial evidence</li>
- * </ul>
- */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class HundredEvidenceConcurrencyIntegrationTest {
@@ -95,9 +79,8 @@ class HundredEvidenceConcurrencyIntegrationTest {
     }
 
     private static final Path REPLAY_DIR = Path.of("data/replays-concurrency-it");
-    private static final long VEHICLE = 385L; // Progetto 65 (Tier X)
+    private static final long VEHICLE = 385L;
     private static final long GAME_ID = 111L;
-    /** canonical owner 的区服维度：与 profile / submission 上的 wotb_server 同域。 */
     private static final String WOTB_SERVER = "CN";
     private static final String USER = "kc-user";
 
@@ -138,7 +121,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
         clearStorageDir();
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────
 
     private static void clearStorageDir() {
         for (final Path p : new Path[]{REPLAY_DIR, REPLAY_DIR.resolve(".tmp")}) {
@@ -234,10 +216,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
         return b;
     }
 
-    /**
-     * 真实走 createSubmission 全流程（真实锁 + 真实 store + 真实 DB 事务 + commit）；
-     * 客户端 facts 与回放一一对应（每份按回放字节=arenaId 构造）。
-     */
     private HundredCreateResult createWithReplays(final String userId, final List<byte[]> contents) {
         final List<MultipartFile> files = new ArrayList<>();
         for (int i = 0; i < contents.size(); i++) {
@@ -260,7 +238,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
         }
     }
 
-    // ── Test A：HoF delete 不得删除 Hundred evidence 引用的文件 ────────────
 
     @Test
     void hofDeleteRetainsFileWhenHundredEvidenceStillReferences() throws Exception {
@@ -275,7 +252,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
         hofAdminService.deleteEntry(rec.getId());
 
-        // HoF record 已删；Hundred evidence 行 + 物理文件保留；Hundred 下载正常
         assertTrue(hofRecordRepository.findById(rec.getId()).isEmpty());
         assertNotNull(evidenceRepository.findBySubmissionIdAndId(sub.getId(), evidence.getId()).orElse(null));
         final Path phys = REPLAY_DIR.resolve(hash + ".wotbreplay");
@@ -283,13 +259,11 @@ class HundredEvidenceConcurrencyIntegrationTest {
         final ReplayDownload dl = evidenceService.downloadEvidence(sub.getId(), evidence.getId());
         assertArrayEquals(content, dl.data());
 
-        // 终结 Hundred submission → 两域均无引用 → 物理文件最终删除
         evidenceService.discardForSubmission(sub.getId());
         assertFalse(Files.exists(phys), "两域均无引用后物理文件应删除");
         SecurityContextHolder.clearContext();
     }
 
-    // ── Test B：Hundred cleanup 不得删除 HoF 引用的文件 ────────────────────
 
     @Test
     void hundredCleanupRetainsFileWhenHofRecordStillReferences() throws Exception {
@@ -304,7 +278,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
 
         evidenceService.discardForSubmission(sub.getId());
 
-        // Hundred evidence 已清；HoF record + 物理文件保留；HoF 下载正常
         assertTrue(evidenceRepository.findBySubmissionId(sub.getId()).isEmpty());
         assertNotNull(hofRecordRepository.findById(rec.getId()).orElse(null));
         final Path phys = REPLAY_DIR.resolve(hash + ".wotbreplay");
@@ -312,13 +285,11 @@ class HundredEvidenceConcurrencyIntegrationTest {
         final ReplayDownload dl = hofService.downloadReplay(rec.getId());
         assertArrayEquals(content, dl.data());
 
-        // 删除 HoF record → 两域均无引用 → 物理文件最终删除
         hofAdminService.deleteEntry(rec.getId());
         assertFalse(Files.exists(phys), "两域均无引用后物理文件应删除");
         SecurityContextHolder.clearContext();
     }
 
-    // ── Test C：HoF delete ∥ Hundred create（同 hash）并发 ─────────────────
 
     @Test
     void hofDeleteConcurrentWithHundredCreateSameHashKeepsFile() throws Exception {
@@ -336,7 +307,7 @@ class HundredEvidenceConcurrencyIntegrationTest {
             final HallOfFameRecord rec = hofRecord("arena-hof-C-" + i, hash);
 
             final List<byte[]> contents = new ArrayList<>();
-            contents.add(hContent); // replay1 的 bytes 与 HoF record 同 hash
+            contents.add(hContent);
             contents.add(("r2-" + i).getBytes(StandardCharsets.UTF_8));
             contents.add(("r3-" + i).getBytes(StandardCharsets.UTF_8));
             contents.add(("r4-" + i).getBytes(StandardCharsets.UTF_8));
@@ -358,7 +329,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
                     loginAdmin();
                     hofAdminService.deleteEntry(rec.getId());
                 } catch (final Throwable t) {
-                    // 记录删除失败会 404——接受（并发下记录可能已被删）；真正需要验证的是文件不变量
                 } finally {
                     SecurityContextHolder.clearContext();
                 }
@@ -372,7 +342,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
             assertFalse(del.isAlive(), "delete 线程应结束");
             assertNull(createError.get(), "Hundred create 必须成功: " + createError.get());
 
-            // Hundred submission 成功 → evidence 行存在 → 物理 H 必须存在且可下载（不变量「DB 引用 H ⇒ H 存在」）
             final HundredBattleSubmission sub = submissionRepository
                     .findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                             WOTB_SERVER, GAME_ID, VEHICLE, "PENDING").orElseThrow();
@@ -386,7 +355,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
         }
     }
 
-    // ── Test D：两个 Hundred create 并发撞 PENDING unique index ───────────
 
     @Test
     void concurrentCreatesYieldExactlyOnePendingAndCleanLoser() throws Exception {
@@ -428,7 +396,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
             assertFalse(t1.isAlive(), "t1 应结束");
             assertFalse(t2.isAlive(), "t2 应结束");
 
-            // 恰好一个 winner；败者稳定 HUNDRED_PENDING_EXISTS，且无 aborted transaction / lock 失败
             final boolean t1Won = e1.get() == null;
             final boolean t2Won = e2.get() == null;
             assertTrue(t1Won != t2Won, "必须恰好一个成功（t1Won=" + t1Won + " t2Won=" + t2Won
@@ -437,7 +404,6 @@ class HundredEvidenceConcurrencyIntegrationTest {
             assertTrue(loser instanceof IllegalStateException, "败者错误类型: " + loser);
             assertTrue(loser.getMessage().contains("HUNDRED_PENDING_EXISTS"), "败者错误码: " + loser);
 
-            // 恰好一个 PENDING + 恰好 5 行 evidence（winner 的，无 partial）
             final List<HundredBattleSubmission> pendings =
                     submissionRepository.findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
                             WOTB_SERVER, GAME_ID, List.of("PENDING"));

@@ -1,18 +1,4 @@
 // @vitest-environment node
-/**
- * 2D 底图 OTA 覆盖层的契约测试（判据 + fail-closed 行为）。
- *
- * 锁的规则：
- *  - **绝不降级**：候选索引取 `generated` 最大者（`AgentAssetProxy` 的陈旧缓存返回旧索引时，
- *    不得覆盖已见过的新版，更不得据它把底图 OTA 回退）；索引不比包内内容新 ⇒ 一律包内；
- *  - **确定性内容时间戳**：包内清单携带 `contentGeneratedAt`（底图内容的生成时刻，与 COS 索引
- *    同源），不是构建时间；构建脚本里不得用 `new Date()`；
- *  - **几何契约**（索引 schemaVersion 2）：逐图 `worldBounds` 必须与注册表 `coordinateBounds` 一致、
- *    取向常量逐字相符、像素为方形且与实际解码一致——只校验 sha256/尺寸校不出"换了图但取景变了"；
- *  - 字节 sha256 校验不通过绝不启用；任何失败都回落包内而不是抛给渲染层。
- *
- * 真机上的"确实换图了 / 离线仍可用"属端到端行为，由用户在设备上确认（本文件覆盖可确定的部分）。
- */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -26,10 +12,10 @@ import { __resetAssetBaseForTests } from '../scene/assetBase.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-const CONTENT_TIME = '2026-10-16T00:47:16Z'     // 包内底图内容的生成时刻（= COS 索引同源）
+const CONTENT_TIME = '2026-10-16T00:47:16Z'
 const NEWER_INDEX_TIME = '2026-10-20T00:00:00Z'
-const OLDER_INDEX_TIME = '2026-10-18T00:00:00Z'      // 比 NEWER 旧，但仍晚于包内内容
-const BEFORE_CONTENT_TIME = '2026-10-15T00:00:00Z'   // 比包内内容还旧（真·陈旧索引）
+const OLDER_INDEX_TIME = '2026-10-18T00:00:00Z'
+const BEFORE_CONTENT_TIME = '2026-10-15T00:00:00Z'
 const EMBEDDED_HASH = 'a'.repeat(64)
 const IMAGE_BYTES = new Uint8Array([1, 2, 3, 4, 5])
 const IMAGE_HASH = createHash('sha256').update(Buffer.from(IMAGE_BYTES)).digest('hex')
@@ -51,9 +37,7 @@ const indexAt = (generated, sha256 = IMAGE_HASH, geometry = {}) => ({
     },
   },
 })
-/** 生产调用点总是带注册表世界框；纯决策测试同样显式传入（缺了就是"无注册表"⇒ 不换图）。 */
 const select = (props) => selectMap2dSources({ boundsByCode: BOUNDS_BY_CODE, ...props })
-/** Image 桩：解码几何即声明值（尺寸不符的用例单独覆盖）。 */
 const imageStub = (w = 1254, h = 1254) => class {
   constructor() { this.naturalWidth = w; this.naturalHeight = h }
   set src(_v) {}
@@ -70,7 +54,6 @@ function storeStub(initial = {}) {
   }
 }
 
-/** 按 URL 分派的 fetch 桩；未命中的 URL 返回 404（与代理的缺文件行为一致）。 */
 function fetchStub(routes) {
   return vi.fn(async (url) => {
     const key = String(url)
@@ -288,7 +271,6 @@ describe('ensureMap2dImage（取字节 + 校验 + 启用）', () => {
 
   it('**远端索引比本地副本旧 ⇒ 用副本且不回写**（stale proxy 不得降级）', async () => {
     localStorage.setItem('wotb.map2d.index.v1', JSON.stringify(indexAt(NEWER_INDEX_TIME, IMAGE_HASH)))
-    // 远端这份更旧，且其哈希等于包内（若被错误采用 ⇒ 不会发生升级，断言即可区分）
     vi.stubGlobal('fetch', fetchStub({
       '/map2d-embedded.json': embeddedManifest,
       '/agent-assets/map2d/index.json': indexAt(OLDER_INDEX_TIME, EMBEDDED_HASH),
@@ -333,11 +315,10 @@ describe('ensureMap2dImage（取字节 + 校验 + 启用）', () => {
 describe('构建产物契约', () => {
   const script = readFileSync(resolve(here, '../../scripts/build-android-bundle.mjs'), 'utf8')
   const body = script.match(/function buildMap2dEmbedded[\s\S]*?\n}/)?.[0] ?? ''
-  // 注释里可以说明"为什么不能用 wall-clock"——判据只看**代码**。
   const bodyCode = body.replace(/\/\/[^\n]*/g, '')
 
   it('兜底清单的时间戳来自 map2d-source.json（内容自身），不是构建时间', () => {
-    expect(body).toContain('map2d-source.json')
+    expect(body).toContain('MAP2D_SOURCE_NAME')
     expect(body).toContain('contentGeneratedAt')
     expect(bodyCode, 'buildMap2dEmbedded 不得引入 wall-clock（会破坏 OTA 判据与 stage 可重跑性）').not.toMatch(/new Date\(/)
   })

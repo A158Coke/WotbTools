@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Android release workflow contract checks, split from test-workflow-contract.sh."""
 import json
 import re
@@ -52,8 +51,6 @@ def main(root: Path) -> None:
     publish_text = _text(publish["steps"])
     release_text = stage_text + "\n" + publish_text
 
-    # APK/bundle content assertions must never pipe into grep -q: under pipefail a hit
-    # makes the producer take SIGPIPE (141) and a present file reads as missing.
     for name, text in (("ci-android.yml", ci_android), (CALLER, release_text)):
         offenders = [
             line.strip() for line in text.splitlines()
@@ -78,7 +75,6 @@ def main(root: Path) -> None:
     assert "android_contract.py bundle" in stage_text and "android_contract.py bundle" in publish_text
     assert "android_contract.py cors" in publish_text
 
-    # Publish candidate must come from the explicit workflow_dispatch version input.
     inputs = model["on"]["workflow_dispatch"]["inputs"]
     assert {"mode", "version", "auto_publish"} <= set(inputs), inputs
     version_input = inputs["version"]
@@ -91,7 +87,6 @@ def main(root: Path) -> None:
         "publish must resolve the staged version from the tag target"
     assert 'TAG="android-v$REQUESTED_VERSION"' in publish_text and "git archive" in publish_text
 
-    # staged versionCode 唯一来源是 stagedref 输出；不得把 Python 局部变量当 shell 变量。
     staged = next(step for step in publish["steps"] if step.get("id") == "staged")
     assert staged.get("env", {}).get("STAGED_VERSION_CODE") == \
         "${{ steps.stagedref.outputs.versionCode }}", staged.get("env", {})
@@ -106,7 +101,6 @@ def main(root: Path) -> None:
     for forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
         assert forbidden not in publish_text, f"publish must not rebuild or re-sign ({forbidden})"
 
-    # version.json 是最后一个 mutation，且只由 staged 身份写出。
     names = [step.get("name", "") for step in publish["steps"]]
     write_i = next(i for i, name in enumerate(names) if name.startswith("Write version.json"))
     upload_i = next(i for i, name in enumerate(names) if name.startswith("Upload version.json"))
@@ -122,7 +116,6 @@ def main(root: Path) -> None:
     assert upload_step.get("uses", "").startswith("appleboy/scp-action@"), upload_step.get("uses")
     assert upload_step.get("with", {}).get("source") == "release-staging/version.json", upload_step.get("with")
 
-    # Split structure: the orchestrator only dispatches; protocol lives in reusable workflows + scripts.
     assert set(caller["jobs"]) == set(WORKFLOW_FILES), set(caller["jobs"])
     for job_id, filename in WORKFLOW_FILES.items():
         caller_job = caller["jobs"][job_id]
@@ -136,8 +129,6 @@ def main(root: Path) -> None:
     assert caller["jobs"]["publish"].get("permissions") == {"contents": "read"}
     assert caller["jobs"]["publish"].get("needs") == "publish_gate"
 
-    # Android owner routing must include every production file of the release
-    # protocol, otherwise editing only a called workflow skips Android checks.
     owner_paths = _load(root / ".github" / "ci-owner-paths.yml")
     android_owned = set(owner_paths["android"])
     required_owned = {
@@ -148,8 +139,6 @@ def main(root: Path) -> None:
     }
     assert required_owned <= android_owned, sorted(required_owned - android_owned)
 
-    # Auto-publish resolves the stage job in both GitHub metadata shapes: the
-    # legacy bare 'stage' and the reusable workflow's 'stage / stage'.
     auto_publish = _load(workflow_dir / "android-auto-publish.yml")
     auto_steps = auto_publish["jobs"]["publish"]["steps"]
     verify = next(step for step in auto_steps if step.get("name") == "Verify triggering stage job succeeded")
@@ -187,7 +176,6 @@ def main(root: Path) -> None:
     for job_id in ("stage", "publish"):
         assert "version" in _on(called[job_id])["workflow_call"]["inputs"], called[job_id]
 
-    # Every run delegates to one step script; remote commands carry no workflow expressions.
     delegate = re.compile(
         r'bash -eo pipefail "\$GITHUB_WORKSPACE/scripts/android-release/steps/([A-Za-z0-9_.-]+\.sh)"'
     )

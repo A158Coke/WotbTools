@@ -25,7 +25,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
-/** Site-owned image ledger; a reservation is internal to one multipart save, never a user asset. */
 @Service
 public class CreatorAvatarService {
     public static final String OBSERVATION_NAME = "wotb.creator.avatar.upload";
@@ -70,8 +69,6 @@ public class CreatorAvatarService {
             avatar.createdAt = Instant.now(); avatar.unreferencedAt = avatar.createdAt;
             avatars.saveAndFlush(avatar);
         });
-        // Commit the ledger first. The avatar row lock protects bounded PUT from a cleanup race,
-        // while no directory/creator lock spans the network operation.
         independent.executeWithoutResult(tx -> {
             final CreatorAvatar avatar = locked(id);
             storage.put(avatar.objectKey, image);
@@ -80,7 +77,6 @@ public class CreatorAvatarService {
         return id;
     }
 
-    /** Caller holds catalog -> creator, in the same transaction as the reference update. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void attach(final String id) {
         final CreatorAvatar avatar = locked(id);
@@ -89,7 +85,6 @@ public class CreatorAvatarService {
         avatar.unreferencedAt = null;
     }
 
-    /** Caller flushes removal of the old reference before detaching. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void detach(final String id) {
         if (id == null) { return; }

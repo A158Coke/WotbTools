@@ -1,43 +1,20 @@
-/**
- * 遮挡 / 可达性探针：浏览器门禁共用（browser-playback-layout / browser-workspace-interaction）。
- *
- * 规则本身的 canonical owner 是 `docs/frontend/design-language.md` §5「遮挡与可达」。本模块只做
- * 测量与判定，不定义规则；`assertDocumentedLimits()` 反过来断言文档里写的数值与这里一致，
- * 两边任何一侧漂移都会让门禁失败，所以不存在"第二份阈值"。
- *
- * 为什么必须在真实浏览器里测：遮挡是层叠上下文 + containing block + transform + overflow 裁剪
- * 共同决定的绘制结果，可达性是真实 hit-testing 的结果。happy-dom / jsdom 没有布局，
- * `document.elementFromPoint` 恒为 null，正则断言也证明不了「这个选项还点不点得到」。
- */
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** 判定口径（见 design-language §5「遮挡与可达」）。 */
 export const OCCLUSION_LIMITS = {
-  /** 常驻控件与主内容盒的交集上限，占主内容面积的百分比。 */
   maxPrimaryCoveragePct: 5,
-  /** 中心保护区：主内容盒居中的这个比例内，常驻控件一律不得压入。 */
   centralBoxFraction: 0.6,
-  /** 触控档最小命中区（WCAG 2.5.8 的 24 之上取 Apple HIG / Material 的 44）。 */
   minTouchTargetPx: 44,
-  /** 部分裁剪 / 部分覆盖的容差：只放过边框、阴影级别的亚像素误差，超过即不可达。 */
   clipTolerancePx: 2,
-  /** 3D 紧凑形态（手机横屏与矮工作台）：贴边的名册车道与击杀流占中心保护区的上限（百分比）。其它形态与其它常驻面不得压入。 */
   maxEdgeDockedCentralPct: 15,
-  /** 网格命中的采样间距：小于最小触控目标，任何合规控件都至少落进一个采样点。 */
   gridSpacingPx: 20,
 }
 
-/** 常驻面发现与触控目标扫描共用的"可交互"定义。 */
 const INTERACTIVE_SELECTOR = 'a[href],button,input:not([type=hidden]):not([type=file]),select,textarea,summary,[role=button],[role=tab],[role=menuitem]'
 
-/**
- * 文档与门禁的反向一致性检查：design-language §5 必须写着同样的数值。
- * 任何一侧改了而另一侧没跟上 → 门禁失败。
- */
 export function assertDocumentedLimits() {
   const docPath = resolve(here, '../../docs/frontend/design-language.md')
   const doc = readFileSync(docPath, 'utf8')
@@ -67,10 +44,6 @@ export function assertDocumentedLimits() {
   }
 }
 
-/**
- * 页面内探针：自包含（不引用模块作用域），通过 `window.__occlusionInput` 读配置。
- * 返回测量结果 + failures；判定逻辑留在页面里，这样失败信息能直接指出"谁压住了谁、多少像素"。
- */
 const occlusionProbe = () => {
   const input = window.__occlusionInput
   const limits = input.limits
@@ -109,9 +82,6 @@ const occlusionProbe = () => {
   const halfH = ((primary.bottom - primary.top) * limits.centralBoxFraction) / 2
   const central = { left: cx - halfW, right: cx + halfW, top: cy - halfH, bottom: cy + halfH }
 
-  // 主内容上方的面**不靠清单发现**：网格逐点命中，凡不是主内容自身（或其内部的非交互元素）
-  // 的都算常驻面。清单只兜 `pointer-events: none` 的装饰层——它们不参与命中，网格看不见。
-  // 否则换个类名重新加回来的控件就是盲区（#727 的负向对照曾因此只能证明"清单内能抓"）。
   const ignored = (el) => input.ignore.some((selector) => el.closest(selector))
   const ownerOf = (hit) => {
     let owner = hit
@@ -144,7 +114,6 @@ const occlusionProbe = () => {
   const failures = []
   const items = []
   const clipped = []
-  // 主内容大半在视口外时网格没有样本，"没发现遮挡"不是结论，必须显式失败
   if (gridSampled < gridTotal / 2) {
     failures.push(`主内容 ${input.primary} 只有 ${gridSampled}/${gridTotal} 个网格点在视口内：先把它滚进视口再测`)
   }
@@ -165,8 +134,6 @@ const occlusionProbe = () => {
       failures.push(`常驻控件 ${label(el)} 压入主内容中心 ${Math.round(limits.centralBoxFraction * 100)}% 保护区 ${centralPct}%（交集 ${Math.round(centralOver)} px²）`)
     }
   }
-  // 面积取**并集**，不是逐个相加：容器与它的按钮、互相重叠的控件都只能算一次，
-  // 否则同一块像素会被重复计数，阈值就失去意义。坐标压缩 + 逐带扫描，矩形很少，够用。
   const xs = [...new Set(clipped.flatMap((r) => [r.left, r.right]))].sort((a, b) => a - b)
   let coveredArea = 0
   for (let i = 0; i < xs.length - 1; i += 1) {
@@ -195,17 +162,11 @@ const occlusionProbe = () => {
   return { primary, primaryArea: +primaryArea.toFixed(1), totalPct, items, gridSampled, failures }
 }
 
-/**
- * 页面内探针：可见选项是否真的可达。
- * 判定「看得见但点不到」：部分或全部被覆盖、被 containing block 链上的 overflow 部分或全部裁掉、
- * pointer-events 穿透、落在视口外且无法滚动触达、命中区过小。中心点露着不算可达。
- */
 const reachabilityProbe = () => {
   const input = window.__reachInput
   const limits = input.limits
   const results = []
   const failures = []
-  // 实际做了命中采样的选项数：滚出滚动容器的选项会跳过采样，调用方据此防止断言整体空跑
   let sampled = 0
   const label = (el) => {
     const t = el.getAttribute?.('data-test') || el.getAttribute?.('data-testid')
@@ -237,12 +198,8 @@ const reachabilityProbe = () => {
       const name = label(el)
       const tol = limits.clipTolerancePx
       const tag = (node) => `${node.tagName.toLowerCase()}.${(node.className || '').toString().trim().split(/\s+/)[0] || '?'}`
-      // 最坏一侧超出 box 多少像素（完全在内 = 0）
       const overhang = (rect, box) => Math.max(0, box.left - rect.left, rect.right - box.right, box.top - rect.top, rect.bottom - box.bottom)
 
-      // 裁剪只沿 **containing block 链**传递（CSS 2 §11.1.1）：`position: fixed / absolute` 的元素
-      // 逃出了中间那些祖先，它们的 overflow 裁不到它。按 DOM 父链逐级比较会把 teleport 出去的
-      // fixed sheet、绝对定位浮层误判成"被裁掉"。
       const createsContainingBlock = (s) => s.transform !== 'none' || s.filter !== 'none' || s.perspective !== 'none'
         || (s.backdropFilter && s.backdropFilter !== 'none')
         || /(paint|layout|strict|content)/.test(s.contain || '')
@@ -260,7 +217,6 @@ const reachabilityProbe = () => {
         }
         return node.parentElement === document.documentElement ? null : node.parentElement
       }
-      // `<html>` 是 visible 时 body 的 overflow 被提升给视口，body 自己不裁剪
       const bodyOverflowPropagated = getComputedStyle(document.documentElement).overflow === 'visible'
 
       let probe = { left: r.left, right: r.right, top: r.top, bottom: r.bottom }
@@ -273,7 +229,6 @@ const reachabilityProbe = () => {
         const overflow = `${s.overflowX} ${s.overflowY}`
         if (!/(auto|scroll|hidden|clip)/.test(overflow)) continue
         const cr = cb.getBoundingClientRect()
-        // 用 padding box（client box）：边框与滚动条不算可用区
         const box = {
           left: cr.left + cb.clientLeft, top: cr.top + cb.clientTop,
           right: cr.left + cb.clientLeft + cb.clientWidth, bottom: cr.top + cb.clientTop + cb.clientHeight,
@@ -283,7 +238,6 @@ const reachabilityProbe = () => {
         const scrollable = /(auto|scroll)/.test(overflow)
           && (cb.scrollHeight > cb.clientHeight + 1 || cb.scrollWidth > cb.clientWidth + 1)
         if (scrollable) {
-          // 滚出滚动容器 = 可滚动触达；此后真正要求的是**滚动容器本身**不被外层裁掉
           scrolledOutOf = scrolledOutOf || tag(cb)
           probe = box
           continue
@@ -299,9 +253,6 @@ const reachabilityProbe = () => {
       const outsideViewport = overhang(probe, viewportBox) > tol
       const reachableByScroll = !!scrolledOutOf || docScrolls
 
-      // 多点采样命中：中心点露着不等于可达。3×3 网格取 1/4 处（落在任何圆角之内），
-      // 再加四条边各内收 tol 的中点——底部被盖住 10px 这种只在边缘出现的遮挡也能抓到。
-      // 只采视口内、且元素完整在其滚动容器内的情况（滚出去的由上面的滚动判定负责）。
       const occludedAt = []
       const pointerEvents = getComputedStyle(el).pointerEvents
       if (!clippedBy && !scrolledOutOf && pointerEvents !== 'none') {
@@ -315,8 +266,6 @@ const reachabilityProbe = () => {
         for (const [px, py] of points) {
           if (px < 0 || py < 0 || px >= innerWidth || py >= innerHeight) continue
           const hit = document.elementFromPoint(px, py)
-          // 只有命中元素自身或其后代才算"点得到"。命中祖先 = 指针穿透了它（pointer-events 或自身不可命中），
-          // 那不是可达，是这次 review 指出的那个漏判。
           if (hit && (hit === el || el.contains(hit))) continue
           occludedAt.push({ x: Math.round(px - r.left), y: Math.round(py - r.top), hit: describe(hit), ancestor: !!hit && hit.contains(el) })
         }
@@ -402,11 +351,6 @@ export async function measureTouchTargets(page, { root = 'body', exclude = [] } 
   })
 }
 
-/**
- * 绘制次序判定：两个元素重叠区的中心点到底命中谁。
- * 这是「瞬态面压过常驻控件」唯一可信的证据——z-index 数值本身证明不了任何事，
- * 因为它只在同一个层叠上下文里可比。
- */
 export async function measurePaintOrder(page, { above, below }) {
   await page.evaluate(`window.__paintInput = ${JSON.stringify({ above, below })}`)
   return page.probe(() => {
@@ -484,14 +428,12 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       const el = node.matches('input[type=checkbox],input[type=radio]') ? node.closest('label') || node : node
       const s = getComputedStyle(el)
       if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) continue
-      // 折叠的 <details> 内容等 content-visibility 隐藏的元素保留布局盒，但不可见、不可点
       if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, opacityProperty: true, visibilityProperty: true })) continue
       const r = el.getBoundingClientRect()
       if (r.width < 2 || r.height < 2) continue
       const owner = pinnedOwner(el)
       const isChrome = chromeEls.some((c) => c.contains(el))
       const top = owner ? 0 : chromeBottom
-      // 普通内容：只判完整落在「视口 − 顶栏 − 安全区」里的控件
       if (!owner && (r.top < top - tol || r.bottom > vh - safe.bottom + tol || r.left < -tol || r.right > vw + tol)) continue
       if (owner && (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw)) continue
       checked += 1
@@ -503,7 +445,6 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
         failures.push(`${name(el)} 停在顶栏下面（top=${Math.round(r.top)} < ${Math.round(chromeBottom)}）`)
         continue
       }
-      // 正文里折行的行内链接（WCAG 2.5.8 inline 例外）：外接矩形的角落落在行间，只采每个行片段的中心
       const fragments = s.display === 'inline' ? [...el.getClientRects()] : []
       const samples = fragments.length > 1
         ? fragments.map(f => [f.left + f.width / 2, f.top + f.height / 2])

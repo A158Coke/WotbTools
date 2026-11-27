@@ -13,12 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 阵亡连锁 Skill：同一方在短时间窗口内连续阵亡产生证据。
- * <p>时间统一消费 {@link PlayerResultFormat#deathSec(PlayerResult)} 的 settlement death authority；
- * UNKNOWN（deathSec<=0）不得进入聚类，避免伪造“0 秒阵亡”。Skill 只描述发生了什么，
- * 不判断是否犯错。</p>
- */
 public final class DeathCascadeSkill {
 
     public static final float CASCADE_GAP_SEC = 12f;
@@ -47,7 +41,6 @@ public final class DeathCascadeSkill {
             return List.of();
         }
 
-        // 按队伍分别聚类，避免异队阵亡插入打断同队连锁
         final Map<Integer, List<Death>> byTeam = new LinkedHashMap<>();
         for (final Death d : deaths) {
             byTeam.computeIfAbsent(d.team(), ignored -> new ArrayList<>()).add(d);

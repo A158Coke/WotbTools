@@ -37,7 +37,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Real MVC/Jackson/security boundary with the production user service and an isolated repository. */
 class OnboardingControllerTest {
     private AnnotationConfigWebApplicationContext context;
     private MockMvc mvc;

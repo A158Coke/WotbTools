@@ -78,8 +78,6 @@ class BroadcastImageStorageTest {
     @Test void realSdkSimplePutGetDeleteWorkOnLoopbackWithTheBootManagedDependencies() throws Exception {
         final var objects = new ConcurrentHashMap<String, byte[]>();
         final AtomicInteger operations = new AtomicInteger();
-        // COS's metadata parser expects canonical Content-Length/ETag spelling. The JDK server
-        // normalizes these header names, so use the already-present Apache HTTP server instead.
         final var server = ServerBootstrap.bootstrap().setLocalAddress(InetAddress.getByName("127.0.0.1"))
                 .setListenerPort(0).registerHandler("*", (request, response, context) -> {
             final String path = request.getRequestLine().getUri();
@@ -162,7 +160,7 @@ class BroadcastImageStorageTest {
             assertEquals(ApiErrorCode.RESOURCE_NOT_FOUND,
                     assertThrows(ApiException.class, () -> storage.get(key)).errorCode());
             doThrow(missing).when(client).deleteObject(anyString(), anyString());
-            storage.delete(key); // Already absent is a successful cleanup.
+            storage.delete(key);
             final COSObject oversized = new COSObject();
             oversized.setObjectContent(new COSObjectInputStream(new ByteArrayInputStream(new byte[ImageValidation.MAX_BYTES + 1]),
                     mock(HttpRequestBase.class)));
@@ -185,7 +183,7 @@ class BroadcastImageStorageTest {
 
     private static ClientConfig loopbackConfig(final int port) {
         final ClientConfig config = CosImageStorage.clientConfig("ap-shanghai");
-        config.setHttpProtocol(HttpProtocol.http); // Test-only loopback, never a cloud endpoint.
+        config.setHttpProtocol(HttpProtocol.http);
         config.setEndpointBuilder(new EndpointBuilder() {
             @Override public String buildGeneralApiEndpoint(final String bucket) { return "127.0.0.1:" + port; }
             @Override public String buildGetServiceApiEndpoint() { throw new AssertionError("No bucket listing"); }

@@ -76,7 +76,6 @@ vi.mock('vue-i18n', () => ({
 }))
 
 
-/** 审计 PG-08：Tab / 筛选 / 页码进 URL，返回 / 刷新 / 分享都能恢复。 */
 describe('HoFPage URL 状态', () => {
   async function mountAt(query) {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
@@ -101,7 +100,6 @@ describe('HoFPage URL 状态', () => {
     expect(lbApi.hofList).toHaveBeenCalledWith(expect.objectContaining({ page: 3, size: 100, tankId: 4657, battleType: 'RATING', nickname: 'abc' }))
   })
 
-  // 审计 BZ-17：深链里的车辆不在当前选项中时，选择器仍显示为已选（能解析车名就显示车名，否则 #id）
   it('深链车辆不在选项里：选择器仍显示为已选，未知车名回退为 #id', async () => {
     const { wrapper } = await mountAt({ tank: '4657' })
     const box = wrapper.find('.hof-vehicle-select input[role="combobox"]')
@@ -139,7 +137,6 @@ describe('HoFPage URL 状态', () => {
     await tabs[1].trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ view: 'hof', tab: 'hundred' })
-    // 外部导航（前进 / 后退）到单场第 2 页 → 页面跟随并重新请求
     lbApi.hofList.mockClear()
     await router.replace({ query: { view: 'hof', page: '2' } })
     await flushPromises()
@@ -156,7 +153,6 @@ describe('HoFPage URL 状态', () => {
 })
 
 
-/** 审计 PG-05：手机上筛选收进 sheet、已生效条件显示为 chip、列表改为卡片。 */
 describe('HoFPage 手机布局', () => {
   beforeEach(() => {
     connectivityState.state.value = 'online'

@@ -15,10 +15,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Unified HP timeline. HP observations deliberately preserve terminal-sentinel provenance and do not
- * define death by themselves; terminal/death consumers use {@link ReplayTerminalLifecycle}.
- */
 public final class ReplayHpTimeline {
 
     private ReplayHpTimeline() {
@@ -56,7 +52,6 @@ public final class ReplayHpTimeline {
                 }
                 case VehicleHealthStateEvent v -> appendMethod1(out, v, mapping, t);
                 default -> {
-                    // no HP surface
                 }
             }
         }
@@ -82,7 +77,6 @@ public final class ReplayHpTimeline {
             }
             case HP_ZERO_TERMINAL -> out.add(new HpObservation(h.entityId(), account, t, 0,
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
-            // DEATH_TERMINAL = 投影判定的终态哨兵全族（字段权威）；与 legacy FFFD 同待遇
             case DEATH_TERMINAL_FFFD, DEATH_TERMINAL -> out.add(new HpObservation(h.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
@@ -90,7 +84,6 @@ public final class ReplayHpTimeline {
                     out.add(new HpObservation(h.entityId(), account, t, null,
                             HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
                 } else if (h.confidence() == DecodeConfidence.EXACT && h.currentHealth() != null) {
-                    // Backward-compatible synthetic event without raw provenance.
                     final int hp = h.currentHealth();
                     if (HealthChangedEvent.isPlausibleHp(hp)) {
                         out.add(new HpObservation(h.entityId(), account, t, hp,
@@ -112,8 +105,6 @@ public final class ReplayHpTimeline {
         if (v.confidence() != DecodeConfidence.EXACT) {
             return;
         }
-        // consume the decoder-classified rawState propagated with the event; never re-classify
-        // the raw u16 here.
         final HpRawState state = v.rawState() == null ? HpRawState.UNKNOWN_OTHER : v.rawState();
         final long account = accountOf(mapping, v.entityId());
         switch (state) {
@@ -129,7 +120,6 @@ public final class ReplayHpTimeline {
         }
     }
 
-    /** Settlement-derived initial actual HP cross-check only; not an enemy opening-HP authority. */
     public static Integer settlementInitialHp(final PlayerResult player) {
         if (player == null) {
             return null;

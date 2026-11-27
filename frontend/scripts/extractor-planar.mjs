@@ -1,6 +1,5 @@
 import polygonClipping from 'polygon-clipping'
 
-/** 2D 点集 bounds（用于 fit）。 */
 export function bounds2D(points) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const p of points) {
@@ -12,15 +11,10 @@ export function bounds2D(points) {
   return { minX, minY, maxX, maxY }
 }
 
-/** 模型坐标点 → SVG 坐标（0° 车头朝 12 点：SVG y = -模型 y）。 */
 export function toSvg(p, fit) {
   return { x: p.x * fit.scale + fit.tx, y: -p.y * fit.scale + fit.ty }
 }
 
-/**
- * 3D 三角形 → top-down 2D 投影（模型坐标 x/y 平面），丢弃退化三角形（面积 ~0，
- * 如垂直面/共线）。返回 2D 三角形列表 [[[x,y],[x,y],[x,y]], ...]。
- */
 export function projectTriangles(triangles3d, epsilon = 1e-9) {
   const out = []
   for (const [a, b, c] of triangles3d) {
@@ -33,10 +27,6 @@ export function projectTriangles(triangles3d, epsilon = 1e-9) {
   return out
 }
 
-/**
- * projected triangles 精确 union → [{ ring, holes }]（多边形含洞，GeoJSON 风格）。
- * 确定性：polygon-clipping 纯函数，相同输入相同输出。
- */
 export function unionTriangles(triangles2d) {
   const polys = triangles2d.map(([a, b, c]) => [[a, b, c, a]])
   if (polys.length === 0) return []
@@ -47,17 +37,8 @@ export function unionTriangles(triangles2d) {
   }))
 }
 
-/**
- * 轻量确定性简化：合并共线连续点（三点叉积 ~0 且中间点落在两端之间时删除中间点）。
- * tolerance 控制共线判定（默认 1e-6）。不做平滑/美化。
- *
- * 2026-08-18 修复：polygon-clipping 的 ring 可能含相邻重复点（含闭合处首尾重复），
- * 重复点会使叉积退化 → 真实角点被误删（Maus glacis 全宽带塌成细条、turret 环带塌成发丝）。
- * 先按坐标去重再简化，保证真实几何不被破坏。
- */
 export function simplifyRing(ring, tolerance = 1e-6) {
   if (ring.length < 4) return ring
-  // 相邻重复点去重（含闭合处首尾重复：先去掉尾部与首点相同的点）
   const pts = []
   for (const p of ring) {
     const last = pts[pts.length - 1]
@@ -77,18 +58,13 @@ export function simplifyRing(ring, tolerance = 1e-6) {
     const cur = pts[i]
     const next = pts[(i + 1) % pts.length]
     const c = cross(prev, cur, next)
-    const d = dot(prev, next, cur) // cur 是否在 prev..next 之间
+    const d = dot(prev, next, cur)
     if (Math.abs(c) > tolerance || d < 0) out.push(cur)
   }
-  // 兜底：全部被删时保留去重后的点
   return out.length >= 3 ? out : pts
 }
 
 
-/**
- * silhouette 多边形 → SVG path（outer ring + holes，fill-rule evenodd）。
- * 同一 fit 变换（toSvg）。返回 [{ d, fill, fillRule }]。
- */
 export function silhouetteToSvgPaths(polygons, fit, fill) {
   const paths = []
   for (const poly of polygons) {

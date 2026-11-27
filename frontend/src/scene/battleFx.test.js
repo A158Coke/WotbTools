@@ -21,7 +21,7 @@ function instances(mesh) {
   }))
 }
 const at = (x, y, z) => new THREE.Vector3(x, y, z)
-const near = (a, b) => Math.abs(a - b) < 1e-6   // GPU 数组是 Float32
+const near = (a, b) => Math.abs(a - b) < 1e-6
 
 describe('FX_BUDGETS 画质档位预算', () => {
   it('四档齐全；容量严格递增，数量与开关只增不减', () => {
@@ -66,14 +66,13 @@ describe('trailOpacityAt 弹道光迹停留与淡出（回放秒）', () => {
 })
 
 describe('muzzleTipOf 炮口定位（开火起点在火炮枢轴，火光要放到炮管末端）', () => {
-  // GLB 炮管：局部 +z 为炮管轴，炮尾伸进炮塔 0.6 m、炮口在枢轴前 4.4 m；外层组摆到世界弹道方向
   function gun(pivot, dir, { breech = 0.6, muzzle = 4.4, mantlet = true } = {}) {
     const node = new THREE.Group()
     node.position.copy(pivot)
     node.quaternion.setFromUnitVectors(at(0, 0, 1), dir)
     const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, breech + muzzle).translate(0, 0, (muzzle - breech) / 2))
     node.add(barrel)
-    if (mantlet) node.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.5)))   // 炮盾在枢轴处
+    if (mantlet) node.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.5)))
     node.updateMatrixWorld(true)
     return node
   }
@@ -130,7 +129,7 @@ describe('createBattleFx 粒子批次', () => {
       fx.frame(600, camera(), 720)
       const burst = instances(meshNamed(fx, 'battle-fx-smoke'))
       fx.clearTransients()
-      fx.frame(600, camera(), 720, (emit) => emit.wreck(0, 0, 0, 0, 3, 3, 1))   // 死后 3 s：烟已渐入、余火未熄
+      fx.frame(600, camera(), 720, (emit) => emit.wreck(0, 0, 0, 0, 3, 3, 1))
       return {
         debris: burst.filter((p) => p.tile === CHUNK_TILE).length,
         lowDust: burst.filter((p) => p.y < 1.6 && p.tile !== CHUNK_TILE).length,
@@ -187,7 +186,6 @@ describe('createBattleFx 粒子批次', () => {
     fx.frame(20, camera(), 720)
     const glow = meshNamed(fx, 'battle-fx-glow')
     expect(glow.geometry.instanceCount).toBe(FX_BUDGETS.low.capacity)
-    // 第一颗 = 命中火光（在命中点附近；爆炸都在 x ≥ 0）
     const [fx0, fy0, fz0] = glow.geometry.attributes.iA.array
     expect(Math.hypot(fx0 + 100, fy0 - 1.5, fz0)).toBeLessThan(6)
     expect(meshNamed(fx, 'battle-fx-smoke').geometry.instanceCount).toBeLessThanOrEqual(FX_BUDGETS.low.capacity)
@@ -213,8 +211,8 @@ describe('createBattleFx 粒子批次', () => {
       fx.frame(50, camera(), 720)
       return meshNamed(fx, 'battle-fx-glow').geometry.instanceCount
     }
-    expect(count('low')).toBe(4)   // 3 团前喷 + 星芒
-    expect(count('mid')).toBe(6)   // + 两侧制退器焰
+    expect(count('low')).toBe(4)
+    expect(count('mid')).toBe(6)
   })
 
   it('命中三类外观不同：击穿留橙色余火与暗烟，跳弹火花顺出射方向飞', () => {
@@ -223,14 +221,14 @@ describe('createBattleFx 粒子批次', () => {
       fx.spawnImpact(kind, at(0, 2, 0), at(1, 0, 0), out, 0, 4)
       return fx
     }
-    const close = camera([0, 4, 8])   // 近距离：命中特效保持世界尺寸（屏幕下限不触发）
+    const close = camera([0, 4, 8])
     const pen = run('pen')
     pen.frame(500, close, 720)
     const penGlow = instances(meshNamed(pen, 'battle-fx-glow'))
-    expect(penGlow.some((p) => near(p.w, 0.9))).toBe(true)   // 余火仍在
+    expect(penGlow.some((p) => near(p.w, 0.9))).toBe(true)
     const nonpen = run('nonpen')
     nonpen.frame(500, close, 720)
-    expect(instances(meshNamed(nonpen, 'battle-fx-glow')).some((p) => near(p.w, 0.6))).toBe(false)   // 0.4 s 已灭
+    expect(instances(meshNamed(nonpen, 'battle-fx-glow')).some((p) => near(p.w, 0.6))).toBe(false)
     const ric = run('ricochet', at(0, 0, 1))
     ric.frame(150, close, 720)
     const heads = instances(meshNamed(ric, 'battle-fx-glow')).filter((p) => near(p.w, 0.36))
@@ -253,7 +251,6 @@ describe('createBattleFx 粒子批次', () => {
     }
     const pxPerM = (dist) => 720 / (dist * 2 * Math.tan(THREE.MathUtils.degToRad(55) / 2))
     const close = shot([0, 4, 8]), app = shot([0, 20, 40]), far = shot([0, 300, 600])
-    // 应用最近缩放距离量级（~44 m）：火光约 30 px，而不是世界尺寸下的十几像素
     expect(app.flash * pxPerM(Math.hypot(18, 40))).toBeGreaterThan(28)
     expect(close.flash * pxPerM(Math.hypot(2, 8))).toBeGreaterThan(app.flash * pxPerM(Math.hypot(18, 40)))
     expect(far.flash / close.flash).toBeCloseTo(3, 4)
@@ -266,8 +263,8 @@ describe('createBattleFx 粒子批次', () => {
     fx.spawnImpact('pen', at(0, 2, 0), at(1, 0, 0), null, 0, 4)
     fx.frame(1, cam, 720)
     const flash = instances(meshNamed(fx, 'battle-fx-glow'))[0]
-    const drawn = at(flash.x, flash.y, flash.z), anchor = at(-0.2, 2, 0)   // 命中点沿来弹方向退 0.2 m
-    const ndcA = drawn.clone().project(cam), ndcB = anchor.clone().project(cam)   // 只比屏幕 xy（深度本来就变近）
+    const drawn = at(flash.x, flash.y, flash.z), anchor = at(-0.2, 2, 0)
+    const ndcA = drawn.clone().project(cam), ndcB = anchor.clone().project(cam)
     expect(Math.hypot(ndcA.x - ndcB.x, ndcA.y - ndcB.y)).toBeLessThan(1e-4)
     expect(anchor.distanceTo(cam.position) - drawn.distanceTo(cam.position)).toBeCloseTo(flash.w / 2, 4)
     fx.frame(400, cam, 720)
@@ -282,7 +279,6 @@ describe('createBattleFx 粒子批次', () => {
     fx.frame(400, camera([0, 4, 8]), 720)
     const puffs = instances(meshNamed(fx, 'battle-fx-smoke'))
     expect(puffs).toHaveLength(FX_BUDGETS.high.impactSmoke * 2)
-    // 烟芯 = 0.6 倍大小、同一不透明度，与外团在同一条视线上（各自朝相机挪半个自身尺寸）
     const cam = camera([0, 4, 8]).position
     const cores = puffs.filter((p) => puffs.some((q) => Math.abs(p.w - q.w * 0.6) < 1e-4 && Math.abs(p.alpha - q.alpha) < 1e-4
       && at(p.x, p.y, p.z).sub(cam).normalize().distanceTo(at(q.x, q.y, q.z).sub(cam).normalize()) < 1e-3))
@@ -315,7 +311,7 @@ describe('createBattleFx 条带与资源', () => {
     fx.setTracer(tracer, at(0, 1, 0), at(14, 1, 0), 0x3ee08a)
     const u = tracer.material.uniforms
     expect(u.uB.value.x).toBe(14)
-    expect(u.uWB.value).toBeGreaterThan(u.uWA.value)   // 弹头粗、尾迹细
+    expect(u.uWB.value).toBeGreaterThan(u.uWA.value)
     expect(u.uCA.value.getHex()).toBe(0x3ee08a)
     const cam = camera()
     fx.frame(0, cam, 900)
@@ -329,10 +325,10 @@ describe('createBattleFx 条带与资源', () => {
     fx.setTrail(trail, at(0, 0, 0), at(5, 0, 0), 0xff5a45, 0.25)
     expect(trail.material.uniforms.uOpacity.value).toBe(0.25)
     const t = trail.material.uniforms
-    expect(t.uWA.value).toBe(t.uWB.value)   // 光迹整段等宽
-    expect(t.uAA.value).toBeGreaterThanOrEqual(0.5)   // 低于 0.5 与地表混合后发灰（2026-10-05 用户反馈）
-    expect(u.uWB.value).toBeGreaterThan(t.uWB.value)   // 层级：弹头比光迹粗
-    expect(t.uMinPx.value).toBeGreaterThanOrEqual(1.5)   // 拉远看全场也不细到消失
+    expect(t.uWA.value).toBe(t.uWB.value)
+    expect(t.uAA.value).toBeGreaterThanOrEqual(0.5)
+    expect(u.uWB.value).toBeGreaterThan(t.uWB.value)
+    expect(t.uMinPx.value).toBeGreaterThanOrEqual(1.5)
     expect(u.uMinPx.value).toBeGreaterThan(t.uMinPx.value)
   })
 

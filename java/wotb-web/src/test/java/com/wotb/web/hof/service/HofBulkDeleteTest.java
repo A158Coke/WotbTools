@@ -40,21 +40,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 名人堂三域批量删除单元测试（mock，无 DB）。
- *
- * <p>核心契约：bulk delete == 逐条重复权威单条删除语义，不新造第二套删除规则。</p>
- * <ul>
- *   <li>百场 / 三环：只有 CURRENT 可删（→ DELETED），非 CURRENT 逐条失败于既有错误码，
- *       不阻塞其他记录；成功后清理该条 replay evidence。</li>
- *   <li>单场：沿用 hard delete（audit + 真删行）；不存在的 id 逐条失败于既有 404 错误码，
- *       其他记录继续完成。</li>
- * </ul>
- */
 class HofBulkDeleteTest {
 
     private static final String ADMIN_SUB = "admin-sub";
-    /** canonical owner 的区服维度：与 profile / submission 上的 wotb_server 同域。 */
     private static final String WOTB_SERVER = "CN";
 
     private final HundredBattleSubmissionRepository hundredRepository =
@@ -103,13 +91,11 @@ class HofBulkDeleteTest {
         assertEquals(List.of(true, false, false),
                 result.results().stream().map(com.wotb.web.hundred.dto.BulkDeleteItemResult::deleted).toList());
 
-        // 合法 CURRENT 走完整单条删除语义
         assertEquals("DELETED", current.getStatus());
         assertEquals(ADMIN_SUB, current.getDeletedBy());
         assertEquals("ADMIN_CORRECTION", current.getDeleteReason());
         verify(hundredEvidence).discardForSubmission(1L);
 
-        // 非法记录逐条返回既有错误码，且自身不被改动、不被清理
         assertEquals("PENDING", pending.getStatus());
         assertEquals("HUNDRED_NOT_CURRENT", result.results().get(1).errorCode());
         assertEquals("HUNDRED_SUBMISSION_NOT_FOUND", result.results().get(2).errorCode());
@@ -118,7 +104,6 @@ class HofBulkDeleteTest {
 
     @Test
     void hundredBulkDeleteValidatesReasonOnceForTheWholeBatch() {
-        // 批次级参数错误必须整体拒绝，不能表现为「每条都失败」
         assertThrows(IllegalArgumentException.class,
                 () -> hundredModerationService().bulkDeleteCurrent(
                         ADMIN_SUB, List.of(1L), "NOT_A_CATEGORY", null));

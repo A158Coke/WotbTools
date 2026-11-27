@@ -1,13 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-/**
- * 资产 origin 解析优先级（数据源接通的配置契约）：
- *   ?assets= URL 参数 > localStorage override > 生产构建默认 VITE_ASSET_BASE_URL
- *   空值逐级视为未设置，且显式 ?assets= 空会清除 localStorage override（回落到
- *   生产默认）。
- * assetBase 在模块作用域缓存结果，因此每个用例都要重置模块后动态 import。
- */
 async function loadAssetBase({ url = '/', storage = null, dataStorage = null, productionDefault = '' } = {}) {
   vi.resetModules()
   vi.stubEnv('VITE_ASSET_BASE_URL', productionDefault)
@@ -33,7 +26,6 @@ describe('assetBase origin precedence', () => {
 
   it('falls back to the production build default when nothing else is configured', async () => {
     const { assetBase } = await loadAssetBase({ productionDefault: `${PROD}/` })
-    // 尾部斜杠归一化：拼接方恒为 path（'/glb/...'）
     expect(assetBase()).toBe(PROD)
   })
 
@@ -52,7 +44,6 @@ describe('assetBase origin precedence', () => {
       productionDefault: PROD,
     })
     expect(assetBase()).toBe('https://query.example.com/pack')
-    // 既有行为：URL 参数写回 localStorage（一次配置会话内生效）
     expect(localStorage.getItem('wotb_asset_base')).toBe('https://query.example.com/pack')
   })
 
@@ -62,7 +53,6 @@ describe('assetBase origin precedence', () => {
   })
 
   it('clears a stale override when ?assets= is empty and falls back to the production default', async () => {
-    // 显式空值 = 清除 override 的手段，而不是把站点置成未配置
     const { assetBase } = await loadAssetBase({
       url: '/?assets=',
       storage: 'https://stale.example.com/pack',
@@ -76,7 +66,6 @@ describe('assetBase origin precedence', () => {
     const nothing = await loadAssetBase()
     expect(nothing.assetBase()).toBe('')
 
-    // 空 localStorage 同样回落到（空）生产默认
     const emptyStorage = await loadAssetBase({ storage: '' })
     expect(emptyStorage.assetBase()).toBe('')
   })
@@ -85,7 +74,6 @@ describe('assetBase origin precedence', () => {
     await loadAssetBase({ productionDefault: PROD })
     const configured = (await import('./assetProvider.js')).assetProvider
     expect(configured.configured()).toBe(true)
-    // origin 与 logical path 的拼接契约（消费方只给 path）
     expect(configured.url('/glb/1/model.glb')).toBe(`${PROD}/glb/1/model.glb`)
 
     await loadAssetBase()
@@ -111,12 +99,10 @@ describe('assetBase data version', () => {
       productionDefault: `${PROD}/`,
     })
     expect(assetBase()).toBe(`${PROD}/v/11.21.0`)
-    // 显式 ?data= 与运行手册一致地持久化：下次不带查询参数仍回到该 dataset。
     expect(localStorage.getItem('wotb_data_version')).toBe('11.21.0')
   })
 
   it('accepts client SmartDLC slot ids with underscore in ?data= and /v/ bases', async () => {
-    // 2026-11-11 放宽 `_`：客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）
     const { assetBase, stripDatasetSuffix } = await loadAssetBase({
       url: '/?data=11.21.0_1',
       productionDefault: PROD,
@@ -150,7 +136,6 @@ describe('assetBase data version', () => {
       productionDefault: PROD,
     })
     expect(assetBase()).toBe(PROD)
-    // 显式空 ?data= 同时清除持久化选择：下次不带查询参数也不会静默回到旧 dataset。
     expect(localStorage.getItem('wotb_data_version')).toBeNull()
   })
 
@@ -168,13 +153,9 @@ describe('assetBase data version', () => {
     })
     expect(dataVersionId()).toBe('11.21.0')
 
-    // 另一个标签页切换 dataset 只改共享 localStorage（并会自行 reload）；本页
-    // 未 reload 时必须继续使用启动时的 dataset，不能出现「资产基址已换、模块
-    // 缓存仍是旧 dataset」的混用。
     localStorage.setItem('wotb_data_version', 'supertest')
     expect(dataVersionId()).toBe('11.21.0')
 
-    // history 改变（无重载）同样不能改写本页的有效 dataset。
     window.history.replaceState({}, '', '/?data=supertest')
     expect(dataVersionId()).toBe('11.21.0')
   })

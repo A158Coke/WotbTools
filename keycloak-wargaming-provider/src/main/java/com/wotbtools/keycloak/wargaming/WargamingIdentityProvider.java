@@ -16,22 +16,11 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
-/**
- * Wargaming.net 自定义 Identity Provider（Keycloak 26.6.4）。
- *
- * <p>区服来自实例配置 {@code region}（ASIA/EU/NA，默认 ASIA），一个 SPI 类型可创建
- * 多个区服实例；应用 ID 来自环境变量 {@code WG_APPLICATION_ID}，缺失时登录报错而
- * 不导致 Keycloak 启动失败（需求文档 D14）。</p>
- */
 public class WargamingIdentityProvider
         extends AbstractIdentityProvider<WargamingIdentityProviderConfig> {
 
     private static final Logger log = Logger.getLogger(WargamingIdentityProvider.class);
 
-    /**
-     * 测试钩子：非空时优先返回，绕开只读的 {@link System#getenv()}。
-     * 仅测试类写入，生产代码保持默认 null。
-     */
     static volatile String applicationIdOverride = null;
 
     private final WargamingApiClient apiClient;
@@ -64,33 +53,21 @@ public class WargamingIdentityProvider
         return buildLoginResponseSafely(applicationId, state);
     }
 
-    /**
-     * 初始化阶段安全包装：WG API 错误转为通用错误响应并记录安全日志，
-     * 避免 Keycloak 只显示 generic unexpected error。
-     */
     Response buildLoginResponseSafely(final String applicationId, final String state) {
         try {
             return buildLoginResponse(applicationId, state);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 只记录安全错误信息（code/message/field），不含 token / application_id /
-            // 完整响应正文 / error.value / 跳转 URL。
             log.warnf("Wargaming login initialization failed: %s", e.getMessage());
             return errorResponse();
         }
     }
 
-    /**
-     * 构造 302 跳转 WG 官方登录页。拆出为 package-private 便于单测。
-     */
     Response buildLoginResponse(final String applicationId, final String state) {
         final String callbackUrl = brokerEndpointUri().toString() + "?state=" + encode(state);
         final String loginUrl = apiClient.fetchLoginRedirectUrl(applicationId, callbackUrl);
         return Response.status(302).header("Location", loginUrl).build();
     }
 
-    /**
-     * 构造 Keycloak broker 回调端点（package-private 便于测试覆写）。
-     */
     URI brokerEndpointUri() {
         return session.getContext().getUri().getBaseUriBuilder()
                 .path("realms/{realm}/broker/{provider}/endpoint")
@@ -110,7 +87,6 @@ public class WargamingIdentityProvider
                                    final RealmModel realm,
                                    final UserModel user,
                                    final BrokeredIdentityContext context) {
-        // 重复登录（决策 D11）：显式刷新展示名与昵称等可变属性，稳定身份不变。
         user.setSingleAttribute("region", getConfig().region().name());
         final String displayName = context.getUserAttribute("displayName");
         if (displayName != null) {
@@ -140,7 +116,6 @@ public class WargamingIdentityProvider
         return Response.status(400).entity("Token retrieval not supported").build();
     }
 
-    /** 读取环境变量中的 WG 应用 ID；未配置返回 null。 */
     static String applicationId() {
         final String override = applicationIdOverride;
         if (override != null) {

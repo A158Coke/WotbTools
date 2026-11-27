@@ -1,4 +1,3 @@
-/** Render a business-neutral workbook description to XLSX bytes. */
 
 import type { Alignment, Borders, Fill, Font, Workbook } from 'exceljs'
 
@@ -34,7 +33,6 @@ function build(ExcelJS: ExcelJsModule, spec: WorkbookSpec): Workbook {
       if (column.width === undefined) return
       const target = worksheet.getColumn(index + 1)
       target.width = column.width
-      // ExcelJS omits its default width 9; preserve the caller's explicit width in the file.
       if (column.width === 9) Object.defineProperty(target, 'isCustomWidth', { get: () => true })
     })
 
@@ -45,7 +43,6 @@ function build(ExcelJS: ExcelJsModule, spec: WorkbookSpec): Workbook {
       rowSpec.cells.forEach((cellSpec, columnIndex) => {
         if (cellSpec == null) return
         const cell = row.getCell(columnIndex + 1)
-        // ExcelJS only treats formula objects as formulas; strings remain text, including "=...".
         cell.value = cellSpec.value
         if (cellSpec.style) applyStyle(cell, cellSpec.style)
       })

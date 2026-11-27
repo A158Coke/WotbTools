@@ -26,14 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * Player 复盘 prompt 编排与摘要构建器。
- * <p>从 {@link PlayerReplayPromptBuilder} 拆出，职责：prepareFallback / prepareFullNoRecon /
- * prepareFull 三条入口、单场上下文摘要 {@link #buildPlayerContextSummary}、
- * 死亡时间线事件构建；证据渲染委托 PlayerCombatEvidenceFormatter、PlayerRosterEvidenceFormatter、PlayerReplayEventFormatter，
- * 规则/多语言来自 {@link PlayerPromptRules}。</p>
- * <p>纯静态工具类，不引入 Spring AI，不包含 API key 或 {@code Map<String,Object>} Provider 请求体。</p>
- */
 final class PlayerSummaryBuilder {
 
     private PlayerSummaryBuilder() {
@@ -58,13 +50,10 @@ final class PlayerSummaryBuilder {
         final List<KeyBattleEvent> keyEvents = buildDeathTimeline(battle);
         final String enemySection = EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
         final String phaseSection = BattlePhaseTimelineSection.renderPlayerSection(buildFallbackPhases(battle));
-        // 点数局势：fallback 无覆盖口径信号，伤害数字抑制（定性）；recon 缺失时仅击杀夺分时间线
         final Integer recorderTeam = PlayerSideResolver.resolveRecorderTeam(battle);
         final String pointsSection = recorderTeam == null ? ""
                 : PointsSituationEvidence.renderSection(
                         battle, recon, recorderTeam, true, "你的队伍", "敌方");
-        // Canonical Timeline 段：fallback 不再是 settlement-only——时间线化主叙事注入
-        // （recon 或 recorder 缺失时自动省略）
         final String timelineSection = timelineSection(battle, recon);
         final String summary = buildSummary(battle, recon, keyEvents)
                 + (phaseSection.isEmpty() ? "" : "\n" + phaseSection)
@@ -76,9 +65,6 @@ final class PlayerSummaryBuilder {
                 EvidenceDensity.LEVEL_1_COMPRESSED, 0);
     }
 
-    /**
-     * 构建 fallback 的个人 canonical timeline 段（不抛错：不可用时省略）。
-     */
     static String timelineSection(final Battle battle, final ReplayReconstruction recon) {
         if (battle == null || recon == null) {
             return "";
@@ -97,15 +83,10 @@ final class PlayerSummaryBuilder {
             return "\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n"
                     + PersonalAiContextCompiler.renderTimelineSection(result.timeline(), recorder.accountId);
         } catch (final RuntimeException e) {
-            // Timeline 构建失败不阻断 fallback（上游门禁已拦截不可用 replay）
             return "";
         }
     }
 
-    /**
-     * Fallback 路径的阶段时间线：无事件流分析，首次接敌未知（-1），
-     * 阶段边界只用 battle_results 的结束时刻 + 死亡时间线，人数来自权威结算。
-     */
     private static List<BattlePhaseSummary> buildFallbackPhases(final Battle battle) {
         final float battleEnd = battle != null && battle.durationS != null
                 ? battle.durationS.floatValue() : Float.NaN;
@@ -115,9 +96,6 @@ final class PlayerSummaryBuilder {
                         battle, PlayerSideResolver.resolveRecorderTeam(battle)));
     }
 
-    /**
-     * 单回放完整特征路径（无重建时）：依据 ctx 预算控制证据密度后产出 prompt。
-     */
     public static PreparedAiPrompt prepareFullNoRecon(
             final SinglePlayerBattleAnalysisContext ctx,
             final AiTokenEstimator estimator,
@@ -137,7 +115,6 @@ final class PlayerSummaryBuilder {
             final int maxOutputTokens,
             final int promptSafetyMarginTokens,
             final AllowedLanguage language) {
-        // 无重建路径：仅击杀夺分时间线（结算可证）；存在/进入控制点区域窗口需重建，不输出
         final Integer recorderTeam = ctx.battle() == null
                 ? null : PlayerSideResolver.resolveRecorderTeam(ctx.battle());
         final String pointsSection = recorderTeam == null ? ""
@@ -156,10 +133,6 @@ final class PlayerSummaryBuilder {
                 EvidenceDensity.LEVEL_1_COMPRESSED, estimatedTokens);
     }
 
-    /**
-     * 单回放完整特征路径（含重建）：在基础摘要上追加逐对手对炮与逐次伤害事件，
-     * 再交由 {@link SingleReplayPromptPlanner} 按 token 预算确定证据密度。
-     */
     public static PreparedAiPrompt prepareFull(
             final SinglePlayerBattleAnalysisContext ctx,
             final ReplayReconstruction recon,
@@ -184,8 +157,6 @@ final class PlayerSummaryBuilder {
         final long recorderAccountId = ctx.recorder() != null && ctx.recorder().accountId() != null
                 ? ctx.recorder().accountId() : -1L;
         final StringBuilder summaryBuilder = new StringBuilder(buildPlayerContextSummary(ctx));
-        // OBSERVED_DAMAGE_IS_PARTIAL 只计算一次：逐对手、逐炮、掉血窗口三段统一抑制，
-        // 覆盖完整时三段正常输出（不一边输出数字一边声明已抑制）。
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
         PlayerCombatEvidenceFormatter.appendDamageExchangeByOpponent(
                 summaryBuilder, ctx.battle(), recorderAccountId, recon, observedDamagePartial);
@@ -195,7 +166,6 @@ final class PlayerSummaryBuilder {
         }
         PlayerCombatEvidenceFormatter.appendRecorderDamageReceivedWindows(
                 summaryBuilder, ctx.battle(), recon, recorderAccountId, observedDamagePartial);
-        // 7b/7c：逐目标伤害交换与击杀归因需要事件流（recon）——仅在含重建路径输出
         final PlayerResult rec = ctx.battle() == null ? null : ctx.battle().recorderResult();
         if (rec != null) {
             PlayerCombatEvidenceFormatter.appendRecorderDamageExchange(
@@ -204,7 +174,6 @@ final class PlayerSummaryBuilder {
                     summaryBuilder, ctx.battle(), recon, rec, observedDamagePartial);
         }
         PlayerCombatEvidenceFormatter.appendEnemyLastKnownPositions(summaryBuilder, ctx.battle(), recon);
-        // 身后血量/位置优势测量：仅录像者自己，中性测量（个人路径不评价队友）
         final String behindLine = RelativeDepthHpEvidence.renderPlayerSection(
                 ctx.battle(), recon, recorderAccountId, observedDamagePartial);
         if (!behindLine.isEmpty()) {
@@ -238,7 +207,6 @@ final class PlayerSummaryBuilder {
                 "SINGLE_PLAYER_BATTLE", planned.density(), estimatedTokens);
     }
 
-    /** Player 与 Team 一致的 OBSERVED_DAMAGE_IS_PARTIAL 抑制口径（上下文与特征集任一命中即抑制）。 */
     private static boolean hasObservedDamagePartial(final SinglePlayerBattleAnalysisContext ctx) {
         if (ctx.limitations() != null
                 && ctx.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL")) {
@@ -252,7 +220,6 @@ final class PlayerSummaryBuilder {
         final StringBuilder sb = new StringBuilder(4096);
         final var battle = ctx.battle();
         final var features = ctx.features();
-        // 基础 summary 构建期就统一读取 partial 门禁：事件流观测伤害段一并抑制
         final boolean observedDamagePartial = hasObservedDamagePartial(ctx);
 
         int authoritativeDealt = 0;
@@ -262,7 +229,6 @@ final class PlayerSummaryBuilder {
             return sb.toString();
         }
 
-        // ====== 1. Battle result (authoritative) ======
         sb.append("=== 战斗结算数据（权威） ===\n");
         sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(battle.mapName))).append('\n');
         if (battle.arenaBonusType != null) {
@@ -276,14 +242,11 @@ final class PlayerSummaryBuilder {
         final PlayerResult rec = battle.recorderResult();
         final Side recSide = rec != null ? PlayerSideResolver.resolve(battle, rec) : Side.UNKNOWN;
 
-        // ====== 2. Recorder authoritative stats ======
-        // 战绩本身在下面的 YOU_AUTHORITATIVE 段统一输出，这里不再重复一份
         if (rec != null) {
             authoritativeDealt = rec.damageDealt;
             authoritativeReceived = rec.damageReceived;
         }
 
-        // ====== 3-4. FRIENDLY_LINEUP, ENEMY_LINEUP, UNKNOWN_LINEUP ======
         final List<PlayerResult> allPlayers = battle.players != null ? battle.players : List.of();
         final Map<PlayerResult, Side> allSides = PlayerSideResolver.resolveAll(battle);
         final List<PlayerResult> friendlies = allPlayers.stream()
@@ -293,7 +256,6 @@ final class PlayerSummaryBuilder {
         final List<PlayerResult> unknowns = allPlayers.stream()
                 .filter(p -> allSides.getOrDefault(p, Side.UNKNOWN) == Side.UNKNOWN).toList();
 
-        // 玩家本人单独成段，绝不再以「友方/队友」身份出现在队友阵容里
         if (rec != null) {
             sb.append("\n=== YOU_AUTHORITATIVE（你的战绩·权威结算） ===\n");
             PlayerRosterEvidenceFormatter.appendPlayerLine(sb, battle, rec, true, true);
@@ -324,25 +286,19 @@ final class PlayerSummaryBuilder {
             }
         }
 
-        // ====== 5. Class counts (backend-computed) ======
         PlayerRosterEvidenceFormatter.appendClassSummary(sb, friendlies, enemies, unknowns, battle);
 
-        // ====== 6. Backend-computed aggregates ======
         PlayerRosterEvidenceFormatter.appendAggregates(sb, battle, friendlies, enemies, unknowns);
 
-        // ====== 7. Recorder ranking ======
         if (rec != null && !friendlies.isEmpty()) {
             PlayerRosterEvidenceFormatter.appendRecorderRanking(sb, rec, friendlies, battle);
         }
 
-        // ====== 8. Death timeline (authoritative) ======
         sb.append("\n=== DEATH_TIMELINE_AUTHORITATIVE（阵亡时间线·权威结算） ===\n");
         PlayerRosterEvidenceFormatter.appendDeathTimeline(sb, battle);
 
-        // ====== 9. Event stream evidence ======
         PlayerReplayEventFormatter.appendEventStreamEvidence(sb, ctx, battle);
 
-        // ====== 10. Side-based limitations ======
         if (!unknowns.isEmpty()) {
             final boolean recUnresolved = rec == null || allSides.getOrDefault(rec, Side.UNKNOWN) == Side.UNKNOWN;
             if (recUnresolved) {
@@ -353,9 +309,6 @@ final class PlayerSummaryBuilder {
         return sb.toString();
     }
 
-    /**
-     * 从结算数据构建可靠的死亡时间线（按死亡时刻升序），外加战斗结束事件。
-     */
     private static List<KeyBattleEvent> buildDeathTimeline(final Battle battle) {
         final List<KeyBattleEvent> events = new ArrayList<>();
         if (battle.players != null) {
@@ -369,7 +322,6 @@ final class PlayerSummaryBuilder {
             final PlayerResult recorder = battle.recorderResult();
             for (final PlayerResult p : dead) {
                 final float deathSec = (float) PlayerResultFormat.deathSec(p);
-                // 玩家本人写「你」，同队写「队友」，对方写「敌方」；本人绝不出现为「友方」
                 final String who = PlayerAnalysisPromptFormatter.isSamePlayer(p, recorder)
                         ? "你"
                         : switch (PlayerSideResolver.resolve(battle, p)) {
@@ -391,9 +343,6 @@ final class PlayerSummaryBuilder {
         return List.copyOf(events);
     }
 
-    /**
-     * 构建以结算数据为准的紧凑战局摘要。
-     */
     static String buildSummary(final Battle battle, final ReplayReconstruction recon, final List<KeyBattleEvent> keyEvents) {
         final StringBuilder sb = new StringBuilder(2048);
         sb.append("地图: ").append(PlayerResultFormat.quoteForPrompt(ReplayDisplayNames.mapName(battle.mapName))).append('\n');
@@ -405,7 +354,6 @@ final class PlayerSummaryBuilder {
         }
         sb.append(PlayerAnalysisPromptFormatter.formatWinner(battle)).append('\n');
 
-        // 玩家本人的战绩由 formatAllPlayersBySide 的「=== 你 ===」段统一输出，此处不再重复
         if (battle.recorderResult() == null) {
             sb.append("\n(未能定位你的战绩)\n");
         }
@@ -418,7 +366,6 @@ final class PlayerSummaryBuilder {
                     .append(e.label()).append('\n');
         }
 
-        // 位置/走位维度：仅报告可用性，不臆断（逐帧血量无法可靠解码，已在文档中说明）
         if (recon != null) {
             sb.append("\n位置时间线: 可用（").append(recon.events().size())
                     .append(" 个领域事件，含位置流；如需走位分析可据此展开）\n");

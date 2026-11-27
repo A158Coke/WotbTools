@@ -1,8 +1,3 @@
-/**
- * PlayerDetailDrawer —— 导出 Rating Profile PNG（§41-48；拆分自 PlayerDetailDrawer.vue，行为原样）。
- * 专用卡片（非 Drawer 截图）：导出前捕获不可变快照，offscreen 卡只消费快照——
- * 导出期间切换玩家不产生「新玩家数据 + 旧坦克图」混合 PNG。
- */
 import { computed, nextTick, ref } from 'vue'
 import type { ComputedRef } from 'vue'
 import { downloadBlob, sanitizeFilename } from '../../utils/exportReplayPng.js'
@@ -37,7 +32,6 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
   const exportPortrait = ref<string | null>(null)
   const exportSnapshot = ref<ReturnType<typeof buildExportSnapshot> | null>(null)
 
-  // 出口卡只消费 exportSnapshot（快照未建时为空/占位），禁止再读实时 props/vehicle/radarMetrics/referenceSeries。
   const snapIsSummary = computed(() => !!exportSnapshot.value?.isSummary)
   const snapNickname = computed(() => exportSnapshot.value?.nickname || '--')
   const snapRating = computed(() => exportSnapshot.value?.rating || '--')
@@ -56,7 +50,6 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
   const snapScaleTicks = computed(() => exportSnapshot.value?.scaleTicks || [])
   const snapDetailRows = computed(() => exportSnapshot.value?.detailRows || [])
 
-  /** 从当前实时状态构建导出所需数据的一次性不可变快照（在任何 await 之前调用）。 */
   function buildExportSnapshot() {
     const p = props.player
     if (!p) throw new Error('Cannot export without a player')
@@ -100,7 +93,6 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
   async function exportProfile() {
     if (exportingProfile.value || !props.player) return
     exportingProfile.value = true
-    // 任何 await 之前固定快照：导出卡/图片/文件名全部来自它，抵御导出期间父组件 props / Tab / selection 变化。
     exportSnapshot.value = buildExportSnapshot()
     exportPortrait.value = null
     try {
@@ -109,7 +101,6 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
       await nextTick()
       if (!exportCardRef.value || !exportSnapshot.value) throw new Error('Export card unavailable')
       const html2canvas = (await import('html2canvas')).default
-      // 画布底色取导出卡自身的语义 token 底色（随主题），不再写死深色
       const cardEl = exportCardRef.value.querySelector('.rp-card') || exportCardRef.value
       const canvas = await html2canvas(exportCardRef.value, {
         scale: 2, useCORS: true, backgroundColor: getComputedStyle(cardEl).backgroundColor || null,
@@ -127,8 +118,6 @@ export function useRatingProfileExport({ props, vehicle, radarMetrics, reference
     }
   }
 
-  /** 导出卡坦克图：先懒加载 URL，再确认图片已解码；失败/缺图返回 null（文字版导出，不阻塞 PNG）。
-   * 只消费导出快照中的 vehicle，避免异步恢复后读到已切换选手的车辆。 */
   async function ensureVehiclePortraitForExport() {
     const v = exportSnapshot.value?.vehicle
     if (!v || v.tankId == null) {

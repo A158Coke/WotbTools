@@ -13,12 +13,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * PR #103 架构收口生产链路集成测试：TeamSeparationEvidenceSkill / PlayerSeparationEvidenceSkill
- * → Team outcome/evidence formatters / TacticalEvidenceFormatter → Call #2 user content。
- * <p>验证：OPENING_SPREAD（开局分散）以中性 signal 输出（summary 无拿视野/点亮/侦察），
- * 且 production Prompt 不暴露 OPENING_MAP_CONTROL 原始标签。</p>
- */
 class OpeningSpreadProductionIntegrationTest {
 
     @Test
@@ -36,7 +30,6 @@ class OpeningSpreadProductionIntegrationTest {
                 "production user content 不得再出现 intent= 战术标签: " + user);
         assertFalse(user.contains("SOLO_INTENT_SIGNALS"),
                 "旧 SOLO_INTENT_SIGNALS 段名必须删除: " + user);
-        // summary 必须是中性「开局分散」，不得声称拿视野/提供视野/点亮/侦察收益
         assertTrue(user.contains("开局分散"),
                 "summary 必须使用中性「开局分散」: " + user);
         assertFalse(user.contains("拿视野"), "summary 不得声称拿视野: " + user);

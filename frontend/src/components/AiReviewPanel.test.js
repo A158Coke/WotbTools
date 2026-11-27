@@ -25,7 +25,6 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
-/** 角色由测试改写：`tokenParsed` 是 ref，组件只读 `realm_access.roles`。 */
 const authToken = ref({ realm_access: { roles: ['wotbtools-user'] } })
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -53,14 +52,12 @@ describe('AiReviewPanel workspace layout ownership', () => {
     const wrapper = mountPanel()
     const panel = wrapper.find('.ai-review-panel')
 
-    // 流式状态：.ai-streaming 渲染在 .ai-review-panel 内部
     wrapper.vm.analyzing = true
     await nextTick()
     expect(panel.find('.ai-streaming').exists()).toBe(true)
     expect(wrapper.find('.ai-streaming').element.parentElement.classList.contains('ai-review-panel')).toBe(true)
     expect(panel.find('.stream-spinner').exists()).toBe(true)
 
-    // 结果状态：AnalysisResultPanel 渲染在 .ai-review-panel 内部
     wrapper.vm.analyzing = false
     wrapper.vm.analysisResult = { analysis: '复盘正文' }
     await nextTick()
@@ -85,7 +82,6 @@ describe('AiReviewPanel workspace layout ownership', () => {
   })
 })
 
-// ---- 客户端投影路径：POST /api/ai/reviews，body 恰为 AiReviewRequest（gzip，不上传回放）----
 
 describe('AiReviewPanel projection request', () => {
   it('请求体恰为 AiReviewRequest：结算事实 + canonical 投影，gzip 发送（无回放字节 / dataset 引用）', async () => {
@@ -109,7 +105,6 @@ describe('AiReviewPanel projection request', () => {
       battle: projectionA.battle,
       projection: projectionA.projection,
     })
-    // dataset 时代的 wire shape 不得回归：键集精确等于契约字段。
     expect(Object.keys(body).sort()).toEqual([
       'battle', 'correlationId', 'locale', 'projection',
     ])
@@ -209,11 +204,9 @@ describe('AiReviewPanel projection request', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountPanel({ projection: null })
 
-    // UI 层：投影未就绪时 Analyze 按钮禁用
     const button = wrapper.find('.ai-analyze')
     expect(button.attributes('disabled')).toBeDefined()
     await button.trigger('click')
-    // 状态机层：即使直接调用动作，ready guard 也必须拒绝
     await wrapper.vm.runAnalyze()
     await nextTick()
 
@@ -227,7 +220,6 @@ describe('AiReviewPanel projection request', () => {
   })
 })
 
-// ---- 投影就绪状态：本地解析/投影生命周期，不是 AI 模型错误 ----
 
 describe('AiReviewPanel projection readiness', () => {
   it('projection 为 null → 渲染 ai-projection-status 准备态（workspace.dataset_preparing）', () => {
@@ -268,12 +260,10 @@ describe('AiReviewPanel projection readiness', () => {
     await wrapper.find('.ai-analyze').trigger('click')
     await flushPromises()
 
-    // 用户可见文案被本地化，且诊断 ID 可用于排障。
     expect(wrapper.vm.failure.message).toContain('errors.ai_timeline_unusable')
     expect(wrapper.vm.failure.id).toBe('corr-404')
     expect(wrapper.find('[data-test="ai-error"]').text()).toContain('errors.ai_timeline_unusable')
     expect(wrapper.vm.analyzing).toBe(false)
-    // 投影（dataset identity）已由本地解析层拥有：组件不得再发 recover 事件。
     expect(wrapper.emitted('dataset-recover')).toBeFalsy()
     expect(wrapper.emitted('seek')).toBeFalsy()
     vi.unstubAllGlobals()

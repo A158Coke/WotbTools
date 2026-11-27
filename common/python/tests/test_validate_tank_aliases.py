@@ -30,24 +30,20 @@ class CommittedTankAliasesTest(unittest.TestCase):
     def test_committed_dataset_is_valid(self):
         document = validator.load_alias_document()
         known_tank_ids = validator.load_known_tank_ids()
-        # Cross-tank duplicates are a diagnostic, not a failure; only the contract raises.
         warnings = validator.validate_tank_aliases(document, known_tank_ids)
         self.assertIsInstance(warnings, list)
 
     def test_vehicle_reference_covers_every_tier_offline(self):
         """校验源是完整名册（common/tank_ids.json），覆盖全等级。"""
         known_tank_ids = validator.load_known_tank_ids()
-        # FV215b 183（tier 10）与 T-34（tier 5）都必须可解析
         self.assertIn(9297, known_tank_ids)
         self.assertIn(1, known_tank_ids)
-        # 名册覆盖全部 tier 文件；资料库同样全等级后允许人口相等。
         tier_ids = set()
         for filename in ut.TIER_FILES.values():
             with open(os.path.join(ut.REPO_COMMON_DIR, filename), encoding="utf-8") as handle:
                 tier_ids.update(vehicle["id"] for vehicle in json.load(handle)["vehicles"])
         self.assertTrue(tier_ids <= known_tank_ids)
         self.assertGreaterEqual(len(known_tank_ids), len(tier_ids))
-        # T-34 现已进入低级车型资料，并继续通过名册校验。
         self.assertIn(1, tier_ids)
 
     def test_alias_on_vehicle_outside_business_tiers_validates(self):
@@ -83,7 +79,6 @@ class CommittedTankAliasesTest(unittest.TestCase):
             self.assertEqual(validator.load_alias_document(common_dir), {"9297": ["大白兔"]})
 
     def test_duplicate_tank_id_keys_fail(self):
-        # json.load alone would silently keep the last entry and drop a hand-written alias set.
         with tempfile.TemporaryDirectory() as common_dir:
             self.write_alias_file(common_dir, '{"9297": ["183"], "9297": ["大白兔"]}')
             with self.assertRaisesRegex(RuntimeError, "TANK_ALIASES_DUPLICATE_TANK_ID"):
@@ -107,7 +102,6 @@ class TankAliasContractTest(unittest.TestCase):
         self.assertEqual(validate({"9297": ["183", "大白兔", "Death Star"]}), [])
 
     def test_empty_document_is_valid(self):
-        # 0 configured aliases is a legal state: every vehicle defaults to aliases=[].
         self.assertEqual(validate({}), [])
 
     def test_top_level_must_be_object(self):

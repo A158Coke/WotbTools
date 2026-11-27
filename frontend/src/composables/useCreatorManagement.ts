@@ -49,7 +49,6 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     const signal = controller.signal
     editingId = id
     draftEpoch.value++; savedForm = null
-    // Opening an editor supersedes an older dictionary refresh, including its loading indicator.
     loading.value = false
     editorOpen.value = true; editorLoading.value = true; detail.value = null; editorError.value = null
     try {
@@ -71,7 +70,6 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     busy.value = true; (editor ? editorError : error).value = null; notice.value = ''
     try {
       await run(controller.signal)
-      // The server acknowledged the write. A catalog refresh has its own read/error ownership.
       if (owns(gen, epoch)) void Promise.resolve().then(() => {
         if (!owns(gen, epoch)) return
         const publicRefresh = availability.refreshPublicCategories()
@@ -135,7 +133,6 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
       loading.value = false; busy.value = false; editorLoading.value = false
       return
     }
-    // A temporary disconnect cancels work without discarding this account's drafts or selected image.
     if (editorOpen.value && !detail.value && editingId != null) void editCreator(editingId)
     else void refresh()
   })

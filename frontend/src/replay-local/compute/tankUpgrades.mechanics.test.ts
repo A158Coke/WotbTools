@@ -92,7 +92,6 @@ describe('定义驱动扩展与错误边界', () => {
 
 describe('t11r3 的四种内建机制', () => {
   const catalog = { ...T11R3, consumablesGameVersion: T11R3.gameVersion, provisionsGameVersion: T11R3.gameVersion }
-  // 数组依次是 stock 与三种备选的 top，顺序来自客户端 alternativeGroups.choices。
   const values: Record<number, Record<string, Array<number | boolean>>> = {
     23361: {
       EXTERNAL_AMMO_MODULE_GUN_IN_CLIP_RELOAD_TIME: [3, 2, 3, 3],
@@ -141,7 +140,6 @@ describe('t11r3 的四种内建机制', () => {
       expect(partial.unsupported).toEqual([])
       expect(new Set(partial.abilities)).toEqual(installed)
       expect(upgradeMechanicEffects(partial, modules, catalog).every(row => row.initial != null)).toBe(true)
-      // 所有三个备选在德系/日系车上都只改机制，不能把副武器或条件收益注入主炮。
       if (modules.tankId !== 23361) {
         expect(projected.detail).toEqual(projectTankUpgrades(detail, modules, 'top', [group.choices[0]]).detail)
       }
@@ -192,7 +190,6 @@ describe('XI 投影后的 DPM 与伤害/装填自洽', () => {
   it('ShellDamageUpgrade 与装填加成落地后，dpm/standard_damage 同步重算', () => {
     const modules = {
       tankId: 90001, tier: 11, gameVersion: 'v1',
-      // 装填加成（VehicleDataMiscAttrAdditiveBonus）的可投影性校验要求炮有 reloadTime
       turrets: [{ guns: [{ stats: { reloadTime: 12.3 } }] }],
       upgradeProgression: {
         matrix: { rows: 1, columns: 2 },
@@ -225,13 +222,10 @@ describe('XI 投影后的 DPM 与伤害/装填自洽', () => {
     expect(cfg.shells[0].damage).toBe(600)
     expect(cfg.reload_time).toBeCloseTo(11.5, 5)
     expect(cfg.standard_damage).toBe(600)
-    // 600 × 60 / 11.5 = 3130.4 → 与 Rust dump-tank-data 同口径取整
     expect(cfg.dpm).toBe(3130)
-    // stock 保持包内原值（不重算、不改写）
     const stock = projectTankUpgrades(detail, modules, 'stock', []).detail.configs[0]
     expect(stock.dpm).toBe(2732)
     expect(stock.standard_damage).toBe(560)
-    // 连发炮的 dpm 恒为 null（与包内一致），不得被补成数字
     const burstDetail = { ...detail, configs: [{ ...detail.configs[0], is_burst: true }] }
     expect(projectTankUpgrades(burstDetail, modules, 'top', []).detail.configs[0].dpm).toBeNull()
   })

@@ -1,11 +1,3 @@
-/**
- * client canonical AI projection：语义不变量 + 永久 golden。
- *
- * golden（`common/fixtures/ai-projection/<fixture>.json.gz` = `{ battle, projection }`）由锁定版本的上游 WASM
- * 在仓库 fixture 回放上现场生成；本测试断言现场结果与已提交 golden 逐字段相等——上游 pin 或投影规则
- * 变化必须显式重生成（`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 pnpm exec vitest run <本文件>`）并在评审中可见。
- * Java 侧 `ClientAiProjectionParityTest` 读取同一 golden，与 Java 删除前冻结的 canonical 重建逐层比对语义。
- */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -24,13 +16,11 @@ const FIXTURES = ['random-battle-example', 'cw-training-15-14-example', 'tournam
 const UPDATE = process.env.WOTB_UPDATE_AI_PROJECTION_GOLDEN === '1'
 
 function engineOf(): { release: string; commit: string } {
-  // 产物落位是 commit-addressed 目录（stable `/wasm/fingerprint.json` 已废除）
   const pin = JSON.parse(readFileSync(join(REPO, 'deploy/agent/source.json'), 'utf8'))
   const fp = JSON.parse(readFileSync(join(REPO, 'common/assets/wasm', pin.ref, 'fingerprint.json'), 'utf8'))
   return { release: fp.tag, commit: fp.upstream_commit }
 }
 
-/** 经 [`requireFixtures`] 严格读取：契约校验失败时抛出原始 validation error，而不是 `null.meta`。 */
 function project(f: FixtureFacets): ClientAiReviewProjection | null {
   const { result, playback, aiReview } = requireFixtures(f)
   return toClientAiReviewProjection({ result, playback, aiReview, engine: engineOf() })
@@ -84,7 +74,6 @@ describe('client canonical AI projection', () => {
         for (const h of [...p.prop3Health, ...p.healthEvents]) {
           expect(Number.isInteger(h.hpRaw) && h.hpRaw >= 0 && h.hpRaw <= 0xffff).toBe(true)
         }
-        // 录像者实体按 Avatar 协议角色分派：它上面的 method8 不是伤害通知
         for (const n of p.damageNotices) expect(p.perspective.recorderEntityIds).not.toContain(n.envelopeEntityId)
         expect(new Set(p.damageNotices.map((n) => n.kind))).toEqual(new Set(['HIT', 'UNDECODED_VARIANT']))
       })
@@ -98,8 +87,6 @@ describe('client canonical AI projection', () => {
     })
   }
 
-  // writer 侧（不是只测 reader）：canonical 分类必须真的随载荷发出——Java 侧
-  // `HpRawState.fromProjection` 只有在 `hpState` 在场时才不重新解释 raw。
   it('canonical 终态分类随投影发送：hp_state=terminal + 0xFFFE → hpState = DEATH_TERMINAL', () => {
     const f = requireFixtures(facets['random-battle-example'])
     let hpPatched = false
@@ -122,7 +109,6 @@ describe('client canonical AI projection', () => {
     const health = p.healthEvents.find((h) => h.hpRaw === 0xfffe)!
     expect(prop3.hpState).toBe('DEATH_TERMINAL')
     expect(health.hpState).toBe('DEATH_TERMINAL')
-    // 写方恒发送该字段：任何携带 HP 的条目都必须带 wire 词汇的 canonical 分类
     const wire = new Set(['CURRENT_HP', 'HP_ZERO_TERMINAL', 'DEATH_TERMINAL_FFFD', 'DEATH_TERMINAL', 'UNKNOWN_FFFF', 'UNKNOWN_OTHER'])
     for (const h of [...p.prop3Health, ...p.healthEvents]) {
       expect(wire.has(h.hpState!), `${h.entityId}@${h.rawClockSec} hpState=${String(h.hpState)}`).toBe(true)
@@ -165,8 +151,6 @@ describe('client canonical AI projection', () => {
 
   it('时间轴不可用（9.8 训练室无 period 广播）→ null，AI 复盘不可执行', async () => {
     const raw = await fixtureFacets('training-room-example.wotbreplay')
-    // 切面本身必须校验通过：null 如果来自 trust boundary 拒绝（而非「时间轴不可用」），
-    // 这个测试就会把 contract 错误伪装成预期结果——先钉死原始错误为空。
     expect(raw.playbackError, String(raw.playbackError)).toBeNull()
     expect(raw.aiReviewError, String(raw.aiReviewError)).toBeNull()
     expect(project(requireFixtures(raw))).toBeNull()

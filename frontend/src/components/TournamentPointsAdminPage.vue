@@ -36,7 +36,6 @@ watch(() => network.value.available, value => { owner.networkAvailable.value = v
 const files = ref<File[]>([]), expected = ref<number | string>(''), reason = ref(''), correctionCount = ref(1)
 const clearClan = ref(''), clearDay = ref<number | null>(null), restore = ref(false)
 const dialog = ref<'' | 'finalize' | 'correction' | 'clear' | 'discard'>('')
-// 「更多」菜单打开的工作面板：CSV 导入、历史 JSON 导入、修改记录。
 const panel = ref<'' | 'csv' | 'historical' | 'audit'>('')
 const historicalConfirm = ref(false)
 const csvConfirm = ref(false)
@@ -123,8 +122,6 @@ async function confirmCsv() {
 }
 function dayName(value: number) { return config.value ? localizedDayLabel(config.value.event.dayLabels[value - 1], value, t) : '' }
 
-// 比赛日条：当前选中日用其真实状态；其余日只能从 standings.days[].published 推出「已最终确认」，
-// 草稿与空白在不加载该日的情况下无法区分，统一显示「未最终确认」（DC-STA-03：未知不冒充已知）。
 const matchDays = computed(() => {
   const event = config.value?.event
   if (!event) return []
@@ -152,7 +149,6 @@ const reviewedCount = computed(() => reviewCards.value.filter(card => card.state
 const issueCount = computed(() => reviewCards.value.filter(card => card.state === 'issue').length)
 const recognizedCount = computed(() => reviews.value.filter(review => review.result).length)
 
-// 小屏一次核对一组：focused 指向当前卡片对应的 review（排序随状态变化，按身份而不是下标追踪）。
 const focused = ref<TournamentImageReview | null>(null)
 const openCards = computed(() => reviewCards.value.filter(card => card.state !== 'reviewed'))
 const focusedCard = computed(() => openCards.value.find(card => card.review === focused.value) ?? openCards.value[0] ?? null)
@@ -172,7 +168,6 @@ function confirmFocused() {
   focused.value = next?.review ?? null
 }
 
-// 五步进度：只由当前日的真实状态与本地核对状态推出。
 const steps = computed(() => {
   const state = dayState.value
   if (!state) return []
@@ -197,7 +192,6 @@ const steps = computed(() => {
   }))
 })
 
-// 「最终确认」不可用时说明原因（与 canFinalize 同一组条件，按出现顺序取第一条）。
 const finalizeBlocker = computed(() => {
   const state = dayState.value
   if (!state || canFinalize.value || busy.value || recognizing.value || stale.value) return ''
@@ -276,7 +270,6 @@ onScopeDispose(clearLocal)
           <FileDrop :files="files" purpose="image" :disabled="!canUpload" :loading="recognizing || busy" @update:files="files = $event" />
           <div class="tournament-actions"><AppButton :disabled="!canUpload || !files.length" @click="owner.recognize(files)">{{ $t('tournament.recognize') }}</AppButton><AppButton v-if="recognizing" @click="owner.cancelRecognition">{{ $t('tournament.stop') }}</AppButton><span v-if="recognizing" role="status">{{ $t('tournament.recognizing', { current: progress, total: files.length }) }}</span></div>
         </section>
-        <!-- 手机核对模式会隐藏上面的上传区：识别仍在进行时，进度与「停止」必须留在可见位置 -->
         <div v-if="compactReviewing && recognizing" class="tournament-actions" data-testid="tournament-recognition-status">
           <span role="status">{{ $t('tournament.recognizing', { current: progress, total: files.length }) }}</span>
           <AppButton data-testid="tournament-stop-recognition" @click="owner.cancelRecognition">{{ $t('tournament.stop') }}</AppButton>

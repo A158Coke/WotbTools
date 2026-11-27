@@ -20,7 +20,6 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
         return toPublicDto(r, null);
     }
 
-    /** 公开 DTO；rank 为当前查询上下文位置排名（无排名上下文时传 null）。 */
     public HallOfFameRecordDto toPublicDto(final HallOfFameRecord r, final Integer rank) {
         return new HallOfFameRecordDto(r.getId(), rank, r.getTankId(), r.getTankName(),
                 r.getNickname(), r.getDamageDealt(), r.getBattleType(), r.getMapName(),
@@ -28,7 +27,6 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
                 r.getReplayHash() != null);
     }
 
-    /** 管理后台业务治理 DTO（不含内部战斗唯一键与 raw 模式码）。 */
     public HofAdminRecordDto toAdminDto(final HallOfFameRecord r) {
         return new HofAdminRecordDto(r.getId(), r.getAccountId(), r.getNickname(),
                 r.getTankId(), r.getTankName(), r.getBattleType(),
@@ -37,7 +35,6 @@ public class HallOfFameRecordMapper implements Mapper<HallOfFameRecord, HallOfFa
                 r.getReplayUploadedBy(), r.getReplayHash() != null);
     }
 
-    /** 公开分页 + 位置排名（rank = (page-1)*size + i + 1，基于当前 filter 上下文）。 */
     public HallOfFamePageDto toPageDtoWithRank(final Page<HallOfFameRecord> page,
                                                final int pageNumber, final int pageSize) {
         final long offset = (long) (pageNumber - 1) * pageSize;

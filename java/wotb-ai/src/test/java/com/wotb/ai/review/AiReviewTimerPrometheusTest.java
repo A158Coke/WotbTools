@@ -12,14 +12,6 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 验证 AI Review 自有 Timer（review 时长 / upstream 时长 / 队列等待）在 Prometheus
- * 注册表中真实产生 histogram 系列，并验证 worker 队列深度 gauge，从而保证 Grafana
- * Dashboard 的 P50/P95/P99（histogram_quantile）查询有真实数据支撑。
- *
- * 与生产代码一致：必须通过 builder 启用 {@code publishPercentileHistogram}，否则无
- * {@code _bucket} 系列。业务归属 wotb-ai：这些 Timer 只由 AI Review 链路产出。
- */
 class AiReviewTimerPrometheusTest {
 
     @Test
@@ -74,11 +66,6 @@ class AiReviewTimerPrometheusTest {
                 "AI queue wait timer must publish a count series");
     }
 
-    /**
-     * {@code wotb_ai_review_in_flight} 是生产告警/看板的饱和信号（Grafana
-     * "AI 执行中"/"AI 当前并发" 与 {@code deploy/verify-observability.sh} 的必需指标），
-     * 必须只统计“已进入 worker 且尚未完成”的请求。
-     */
     @Test
     void aiReviewInFlightGaugeTracksExecutingReviews() throws Exception {
         final PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);

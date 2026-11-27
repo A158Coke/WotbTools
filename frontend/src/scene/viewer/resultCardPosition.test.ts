@@ -1,6 +1,3 @@
-// 结果卡定位（纯函数）：跟随点击 + 候选位逐个避让 HUD 面板 + 视口钳制。
-// 候选顺序固定（右下/右上/左下/左上/正上/正下），是确定性几何排布而非统计打分。
-// 厚度点选卡（#click-info）与判定结果卡（#traj-info）共用这一处实现。
 import { describe, expect, it } from 'vitest'
 import { chooseResultCardPosition, type ResultCardRect } from './resultCardPosition.ts'
 
@@ -67,7 +64,7 @@ describe('chooseResultCardPosition', () => {
       viewportWidth: 800, viewportHeight: 600, panels: [rightBottom],
     })
     expect(overlaps(up, 160, 100, rightBottom)).toBe(false)
-    expect(up.top).toBeLessThan(150)   // 翻到点击点上方
+    expect(up.top).toBeLessThan(150)
 
     const band: ResultCardRect = { left: 100, top: 140, right: 600, bottom: 300 }
     const above = chooseResultCardPosition({
@@ -95,9 +92,6 @@ describe('chooseResultCardPosition', () => {
   })
 
   it('评审反例 3：面板夹缝恰好等于卡片尺寸时命中无缝贴合位', () => {
-    // 反例来源（评审）：600×320、190×120、点击 (155,125)，四面板把中间夹成
-    // x∈[100,290] × y∈[72,192] 的缝；唯一可行位是 (100,72)（右沿贴左面板、上沿贴上方面板）。
-    // 固定 gap 网格会漏掉它（dx=-55 / dy=-53 都不是步长整数倍），必须靠边缘坐标交叉积。
     const panels: ResultCardRect[] = [
       { left: 0, top: 0, right: 600, bottom: 72 },
       { left: 0, top: 192, right: 600, bottom: 320 },

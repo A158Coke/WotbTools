@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { __setParseWorkerFactoryForTest, parseReplayFiles, ReplayEngineUnavailableError } from './parseReplays.js'
 import type { ParseMessage, ParseRequest } from './parseWorkerProtocol.js'
 
-/** 桩 Worker：按脚本回放消息，记录 terminate */
 function stubWorker(script: (req: ParseRequest) => ParseMessage[]) {
   const worker = {
     onmessage: null as ((e: MessageEvent<ParseMessage>) => void) | null,

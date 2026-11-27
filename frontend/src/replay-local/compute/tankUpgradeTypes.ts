@@ -22,7 +22,6 @@ export interface UpgradeSelection {
   choices: Record<string, number>
   abilities: number[]
   attributes: Record<string, UpgradeValue>
-  /** 动态技能及未进入现有静态面板的内部模块属性，不假定技能已触发。 */
   mechanicsAttributes: Record<string, UpgradeValue>
   unsupported: string[]
   nodes: UpgradeNode[]

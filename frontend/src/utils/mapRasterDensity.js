@@ -1,9 +1,3 @@
-/**
- * Runtime raster capacity diagnostics.
- *
- * This describes how much source raster is available for a rendered map frame;
- * it is not a sharpness guarantee and must not alter camera limits.
- */
 export function mapRasterDensity({
   naturalWidth,
   naturalHeight,

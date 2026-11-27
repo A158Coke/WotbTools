@@ -25,12 +25,10 @@ import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.soloPhases;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.stationary;
 import static com.wotb.ai.review.eval.AiEvalTeamFixtureSupport.teammateAdvancing;
 
-/** Synthetic team evaluation scenarios grouped by the behavior evidence they exercise. */
 final class AiEvalTeamTacticalFixtures {
     private AiEvalTeamTacticalFixtures() {
     }
 
-    // ===== 场景一：开局分散（信息覆盖 trade-off，非脱节） =====
 
     static SingleTeamBattleAnalysisContext openingMapControl() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -64,7 +62,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
-    // ===== 场景二：单走卡点拖延（队友借机推进） =====
 
     static SingleTeamBattleAnalysisContext delayHold() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -83,7 +80,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
-    // ===== 场景三：残局 1vN 牺牲拖延（队友借机占点） =====
 
     static SingleTeamBattleAnalysisContext delaySacrificeCapped() {
         final double[] deaths = {240, 0, 0, 0, 0, 0, 0};
@@ -107,7 +103,6 @@ final class AiEvalTeamTacticalFixtures {
                 earned(10002, 60), earned(10003, 40));
     }
 
-    // ===== 场景四：单走推进被集火（队友无获利） =====
 
     static SingleTeamBattleAnalysisContext detachPush() {
         final double[] deaths = {0, 0, 90, 0, 0, 0, 0};
@@ -139,7 +134,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of());
     }
 
-    // ===== 场景五：观测不足（无法确定） =====
 
     static SingleTeamBattleAnalysisContext soloUnknown() {
         final List<TeamMemberFeatureSet> members = new ArrayList<>();
@@ -155,7 +149,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of("TEAM_MEMBER_POSITION_UNAVAILABLE"));
     }
 
-    // ===== 场景六：单走静止但无获利（不硬判拖延） =====
 
     static SingleTeamBattleAnalysisContext delayNoPayoff() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -177,7 +170,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
-    // ===== 场景七：脱节后队友转场接应成功 =====
 
     static SingleTeamBattleAnalysisContext detachRotate() {
         final List<TeamMemberFeatureSet> members = List.of(
@@ -210,7 +202,6 @@ final class AiEvalTeamTacticalFixtures {
                 List.of(keyEvent(60, "TEAM_FIRST_CONTACT", "damage=120")), List.of());
     }
 
-    // ===== 场景八：信号矛盾（静止+敌情 vs 队友半获利，不硬下标签） =====
 
     static SingleTeamBattleAnalysisContext delayVsDetachAmbiguous() {
         final List<TeamMemberFeatureSet> members = List.of(

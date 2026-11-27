@@ -54,7 +54,7 @@ describe('V2VehicleInspector', () => {
     t.loadout.equipmentIds = [103, 114, 0, 0, 0, 0, 0, 0, 0]
     const w = mountInspector(120, 'zh', t)
     const chips = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
-    expect(chips).toHaveLength(2)   // 只画实际装上的 2 件，不画 7 个伪空槽
+    expect(chips).toHaveLength(2)
     expect(chips.map(chip => chip.attributes('aria-label'))).toEqual(['校准炮弹', '改进型光学系统'])
     expect(w.get('[data-test="v2-inspector-equipment"]').text()).not.toContain('未装备')
     w.unmount()
@@ -78,10 +78,9 @@ describe('V2VehicleInspector', () => {
   it('renders anti-future-leak HP + last-known knowledge during hidden interval', () => {
     const w = mountInspector(120)
     const hp = w.get('[data-test="v2-inspector-hp"]').text()
-    expect(hp).toContain('1200')          // <=t sample, not future 600
-    expect(hp).toContain('最后已知 HP')   // LAST_KNOWN knowledge during hidden interval
+    expect(hp).toContain('1200')
+    expect(hp).toContain('最后已知 HP')
     expect(w.find('[data-test="v2-inspector-orientation"]').exists()).toBe(false)
-    // loadout 保持 KNOWN（持久配置），即使 120s 在 hidden interval
     expect(w.get('[data-test="v2-inspector-loadout"]').exists()).toBe(true)
     expect(w.get('[data-test="v2-inspector-module"]').text()).toContain('发动机')
   })
@@ -109,14 +108,14 @@ describe('V2VehicleInspector', () => {
   })
 
   it('loadout 图形化：名称只进 aria-label，不裸显 internal logical id / 数字 equipment id', () => {
-    const w = mountInspector(120) // zh
+    const w = mountInspector(120)
     const labels = w.findAll('[data-test="v2-inspector-loadout"] .v2-inspector-chip')
       .map(chip => String(chip.attributes('aria-label'))).join(' | ')
-    expect(labels).toContain('修理箱')         // REPAIR_KIT
-    expect(labels).toContain('肾上腺素')       // ADRENALINE
-    expect(labels).toContain('沙袋装甲')       // SANDBAG_ARMOR
-    expect(labels).toContain('改进型模块+')   // 120: Object 244 vehicle-specific preset
-    expect(labels).toContain('改进型光学系统') // 114
+    expect(labels).toContain('修理箱')
+    expect(labels).toContain('肾上腺素')
+    expect(labels).toContain('沙袋装甲')
+    expect(labels).toContain('改进型模块+')
+    expect(labels).toContain('改进型光学系统')
     expect(labels).not.toContain('REPAIR_KIT')
     expect(labels).not.toContain('ADRENALINE')
     expect(labels).not.toContain('SANDBAG_ARMOR')
@@ -137,7 +136,7 @@ describe('V2VehicleInspector', () => {
     const w = mountInspector(120, 'zh', t)
     const labels = w.findAll('[data-test="v2-inspector-consumables"] .v2-inspector-chip')
       .map(chip => String(chip.attributes('aria-label'))).join(' | ')
-    expect(labels).toContain('未知')   // consumable_state.UNKNOWN 本地化
+    expect(labels).toContain('未知')
     expect(labels).not.toContain('SOME_INTERNAL_STATE')
   })
 
@@ -167,15 +166,50 @@ describe('V2VehicleInspector', () => {
     expect(w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')).toHaveLength(9)
 
     const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
-    expect(equipment.map(cell => String(cell.attributes('aria-label')))).toEqual([
+    const names = [
       '火炮输弹机', '改进型模块+', '改进型光学系统',
       '改进型炮控系统', '改进型组装', '发动机加速器',
       '精密火炮', '工具箱', '高级消耗品',
-    ])
-    // 图形化：chip 内不再渲染可见文字，只保留图标/占位
-    expect(equipment.map(cell => cell.text().trim())).toEqual(Array(9).fill(''))
+    ]
+    expect(equipment.map(cell => String(cell.attributes('aria-label')))).toEqual(names)
+    expect(equipment.map(cell => cell.get('.v2-chip-name').text())).toEqual(names)
     expect(w.findAll('[data-test="v2-inspector-provisions"] .v2-chip-icon').length).toBeGreaterThan(0)
     expect(w.findAll('[data-test="v2-inspector-consumables"] .v2-chip-icon').length).toBeGreaterThan(0)
+  })
+
+  it('图标下显示本地化名称：空槽显示「未装备」，完整名称仍留在 title / aria-label', () => {
+    const t = track()
+    t.loadout.consumables = [null, 'REPAIR_KIT', null]
+    t.loadout.consumableWireCodes = [null, 0x0D, null]
+    t.loadout.provisions = [null, null, null]
+    t.loadout.provisionWireCodes = [null, null, null]
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'zh', t)
+    const visibleNames = scope => w.findAll(`[data-test="v2-inspector-${scope}"] .v2-chip-name`).map(el => el.text())
+    expect(visibleNames('consumables')).toEqual(['未装备', '修理箱', '未装备'])
+    expect(visibleNames('provisions')).toEqual(['未装备', '未装备', '未装备'])
+    const equipment = w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
+    const names = visibleNames('equipment')
+    expect(names).toHaveLength(9)
+    for (const [i, chip] of equipment.entries()) {
+      expect(names[i]).toBe(chip.attributes('aria-label'))
+      expect(chip.attributes('title')).toBe(chip.attributes('aria-label'))
+      expect(names[i].length).toBeGreaterThan(0)
+    }
+    expect(names.join(' ')).not.toMatch(/REPAIR_KIT|ADRENALINE|SANDBAG_ARMOR|100|114/)
+    w.unmount()
+  })
+
+  it('真实长名称在 chip 内以可见文本完整呈现，不依赖 tooltip / aria-label', () => {
+    const t = track()
+    t.loadout.consumables = ['MULTI_PURPOSE_RESTORATION_PACK', null, null]
+    t.loadout.consumableWireCodes = [0x14, null, null]
+    t.consumableTransitions = []
+    const w = mountInspector(120, 'en', t)
+    const chip = w.get('[data-consumable-slot="0"]')
+    expect(chip.get('.v2-chip-name').text()).toBe('Multi-Purpose Restoration Pack')
+    expect(chip.attributes('aria-label')).toContain('Multi-Purpose Restoration Pack')
+    w.unmount()
   })
 
   it('已装备防破片内衬使用 anti-high-explosive 图标，不降级为空占位', () => {

@@ -31,11 +31,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * {@link AiChatGateway#stream} unit tests: token callback order, final
- * aggregation (usage / finishReason), budget expiry AI_TIMEOUT, client
- * cancellation AI_CANCELLED, and fail-fast without in-stream retry.
- */
 class SpringAiChatGatewayStreamTest {
 
     private static final long START_NANOS = 1_000_000_000_000L;
@@ -147,8 +142,6 @@ class SpringAiChatGatewayStreamTest {
     void budgetExpiryBeforeFirstChunkMapsAiTimeout() {
         when(chatModel.stream(any(Prompt.class))).thenReturn(
                 Flux.just(chunk("x", null, null)));
-        // The watchdog fires before the first chunk arrives (attempt start hook
-        // simulates the deadline passing): the drain must stop immediately.
         gateway.state.attemptStartHook = context -> now.set(START_NANOS + 315_000_000_000L);
 
         final AiUpstreamException e = assertThrows(
@@ -274,7 +267,6 @@ class SpringAiChatGatewayStreamTest {
 
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                 () -> gateway.stream(request(), delta -> {
-                    // 第一片已发出后触发取消：下一片发送前的检查必须稳定映射为 AI_CANCELLED
                     if (cancelledOnce.compareAndSet(false, true)) {
                         cancellation.cancel();
                     }
@@ -292,7 +284,6 @@ class SpringAiChatGatewayStreamTest {
 
         final AiUpstreamException e = assertThrows(AiUpstreamException.class,
                 () -> gateway.stream(request(), delta -> {
-                    // 第一片后推进假时钟到 deadline：下一片发送前的检查必须稳定映射为 AI_TIMEOUT
                     if (advanced.compareAndSet(false, true)) {
                         now.set(START_NANOS + 315_000_000_000L);
                     }

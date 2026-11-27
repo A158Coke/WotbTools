@@ -1,7 +1,6 @@
 import { validateTournament } from '../api/tournament-points.js'
 import type { TournamentEvent, TournamentHistoricalPreviewRequest } from '../api/tournament-points.js'
 
-/** Imported JSON carries an event identity; it must never silently target another season. */
 export function parseTournamentHistoricalFile(text: string, event: TournamentEvent): TournamentHistoricalPreviewRequest {
   const file: unknown = JSON.parse(text)
   if (!file || typeof file !== 'object' || Array.isArray(file)) throw new SyntaxError('historicalInvalid')

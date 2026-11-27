@@ -179,11 +179,6 @@ describe('XHR and job compatibility', () => {
   })
 })
 
-/**
- * 传输层的 path → feature 映射必须是**纯函数**（review P2）：它是 defense-in-depth，
- * 不是业务准入 SSOT（那个 owner 是页面里的 useFeatureGate）。因此这里只测确定性映射与边界，
- * 不涉及 connectivity、Vue 响应式或网络。
- */
 describe('featureForApiPath', () => {
   it('maps each registered REST prefix to its capability', () => {
     expect(featureForApiPath('/api/ai')).toBe(Feature.AI_REVIEW)
@@ -199,7 +194,6 @@ describe('featureForApiPath', () => {
   })
 
   it('never matches a sibling path that merely shares a string prefix', () => {
-    // 前缀边界必须按 URL segment 判定：这几个都不是已登记资源的子路径。
     expect(featureForApiPath('/api/admin/users-evil')).toBeNull()
     expect(featureForApiPath('/api/admin/users2')).toBeNull()
     expect(featureForApiPath('/api/users-evil')).toBeNull()

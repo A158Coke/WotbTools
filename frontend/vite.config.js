@@ -13,7 +13,6 @@ import {
   SUPPORTED_NATIVE_BRIDGE_VERSIONS,
 } from './src/platform/nativeBridgeContract.js'
 
-// dev 时把 /api 代理到选定的后端；生产 bundle 由 nginx 反向代理。
 const configDirectory = fileURLToPath(new URL('.', import.meta.url))
 const DEV_PROXY_TARGETS = Object.freeze({
   local: 'http://localhost:8087',
@@ -21,31 +20,11 @@ const DEV_PROXY_TARGETS = Object.freeze({
 })
 const LOCAL_3D_ASSET_DIR = resolve(configDirectory, '../common/assets/map-3d-local')
 
-/**
- * 本机验收用的**按需**资产代理：`WOTB_ASSET_PROXY=<remote asset origin>` 时把 `/__assets/*`
- * 透传到该 origin（去掉前缀）。
- *
- * 为什么需要它：浏览器 v1 的资产源是远端 origin（`?assets=<url>`），而生产资产源的 CORS
- * 白名单不含 localhost —— 于是本机打开 3D 回放必然被浏览器拦下（`connect-src`/CORS），
- * 与代码无关。代理让请求从同源 dev server 出去，浏览器不再做跨域判定。
- *
- * **不设该环境变量时不注册任何代理**，默认 `pnpm run dev` 行为与本改动前完全一致；
- * 代理只存在于 dev server（`apply: 'serve'` 语义，不进 build 产物）。
- */
 function assetProxyTarget() {
   const target = (process.env.WOTB_ASSET_PROXY || '').trim()
   return target ? target.replace(/\/+$/, '') : ''
 }
 
-/**
- * Agent WASM identity SSOT：`deploy/agent/source.json`（repo 相对路径在 Docker 里
- * 通过 `COPY deploy/agent/source.json /deploy/agent/source.json` 保持同一布局）。
- *
- * build 期把它固化进 bundle（`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`），
- * 运行期据此拼出 commit-addressed URL `/wasm/<ref>/…`——同一个 frontend build 只能
- * 加载自己 pin 的 Agent。产物缺失时 build 直接失败（fail closed），不静默降级成
- * 「无 pin 的运行时」。
- */
 export function agentWasmIdentity() {
   const path = resolve(configDirectory, '../deploy/agent/source.json')
   if (!existsSync(path)) {
@@ -64,12 +43,6 @@ export function devProxyTarget(mode) {
   return DEV_PROXY_TARGETS[mode] || DEV_PROXY_TARGETS.local
 }
 
-/**
- * Client-derived heightfield assets are a local research input only. `publicDir`
- * is shared with local dev, so a generated map-3d-local directory would otherwise
- * be copied into dist during a production build. Fail closed instead of relying
- * on .gitignore, which only controls Git tracking and cannot protect build output.
- */
 export function assertLocal3dDistributionBoundary(command, localAssetsExist) {
   if (command === 'build' && localAssetsExist) {
     throw new Error(
@@ -79,7 +52,6 @@ export function assertLocal3dDistributionBoundary(command, localAssetsExist) {
   }
 }
 
-/** dev middleware 唯一允许读取的目录：Agent WASM 制品根（`publicDir` 下的 `/wasm/<ref>/…`）。 */
 export const WASM_DEV_ROOT = resolve(configDirectory, '../common/assets/wasm')
 
 /**
@@ -135,16 +107,6 @@ export function resolveWasmDevFile(requestUrl, wasmRoot = WASM_DEV_ROOT) {
   return { ok: true, file: realFile }
 }
 
-/**
- * 确定性构建时间（UTC ISO-8601）。优先级：
- *  ① `SOURCE_DATE_EPOCH`（reproducible-builds 惯例；Docker 构建由 workflow 传 commit 时间戳）；
- *  ② 当前 checkout 的 commit 时间（本地 / 有 .git 的 CI，浅克隆取 tip 时间即可）；
- *  ③ 才回落 wall-clock —— 此时该构建**不可逐字节复现**（无 git 且未传 env 的容器），
- *     仅作诊断用途，不得用于可复现断言。
- * 为什么必须确定性：`buildTime` 既进 `version.json`，又经 `define __BUILD_TIME__` 内联进入口 chunk；
- * 入口内容一变会沿 import 图级联改名 ⇒ 同一 commit 重跑会产出不同字节的 bundle/APK，与
- * stage 的「immutable APK/evidence、重跑不得换身份」纪律冲突（见 docs/android/release-process.md）。
- */
 function resolveBuildTime() {
   const epoch = Number(process.env.SOURCE_DATE_EPOCH)
   if (Number.isFinite(epoch) && epoch > 0) return new Date(epoch * 1000).toISOString()
@@ -157,10 +119,6 @@ function resolveBuildTime() {
   return new Date().toISOString()
 }
 
-/** Build identity：生产 bundle 可精确对应 git commit + 构建时间（见 /version.json 与 console 输出）。
- * 优先取 Docker 构建参数 BUILD_COMMIT（CI 传入，Docker 上下文无 .git 无法自行 rev-parse），
- * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。
- * `buildTime` 是确定性的（见 `resolveBuildTime`）。 */
 export function buildIdentity() {
   const fromEnv = process.env.BUILD_COMMIT
   let commit = fromEnv?.trim() || ''
@@ -177,13 +135,6 @@ export function buildIdentity() {
   }
 }
 
-/**
- * 生产前端的 native 运行面：直接取自 `src/platform/nativeBridgeContract.js`（FE 侧 bridge
- * 契约声明的 SSOT），因此它不可能与 bundle 里真正运行的常量漂移。
- *
- * Android release 从 immutable APK 内的 bundle manifest 核验相同声明，
- * 不依赖线上 Vue 部署的 commit。Web version.json 保留这份诊断信息。
- */
 export function nativeRuntimeIdentity() {
   return {
     supportedBridgeVersions: [...SUPPORTED_NATIVE_BRIDGE_VERSIONS],
@@ -193,7 +144,6 @@ export function nativeRuntimeIdentity() {
   }
 }
 
-/** Hash existing bootstrap scripts; Android has one reviewed network origin. */
 export function androidCsp(html) {
   const hashes = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:[ \t\n\r\f/][^>]*)?>/gi)]
     .filter(match => match[1].trim())
@@ -201,8 +151,6 @@ export function androidCsp(html) {
   return [
     "default-src 'none'", `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,
     "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob: ${PRODUCTION_API_ORIGIN}`,
-    // connect-src 必须含 blob:：GLTFLoader 经 ImageBitmapLoader 用 fetch(blob:) 加载 GLB
-    // **内嵌**贴图（装甲查看器 / 3D 回放的坦克模型）。漏掉它 → CSP 拒绝 → 模型无贴图纯白。
     `connect-src 'self' blob: ${PRODUCTION_API_ORIGIN}`, "font-src 'self' data:",
     "worker-src 'self' blob:", "media-src 'self' blob:", "object-src 'none'",
     "base-uri 'self'", "form-action 'none'",
@@ -214,17 +162,9 @@ const nativeRuntime = nativeRuntimeIdentity()
 
 export default defineConfig(({ command, mode }) => {
   assertLocal3dDistributionBoundary(command, existsSync(LOCAL_3D_ASSET_DIR))
-  // Agent identity 在每个 command 下都解析：dev server 也要把 /wasm/<ref>/ 拼对
-  // （Vite dev 直接伺服 publicDir，产物由 scripts/fetch-agent-wasm.sh 落位）。
   const agent = agentWasmIdentity()
-  // Android local-first runtime target（PR B §6）：**同一份产品源码**，只是输出目录不同，
-  // 由 frontend/scripts/build-android-bundle.mjs 复制进 APK assets（产物不进源码树）。
-  // 禁止为 Android 建第二套 frontend 源码树。
   const outDir = resolve(configDirectory, mode === 'android' ? 'dist-android' : 'dist')
   return {
-    // Vitest：重 façade import / 126×126 地形 oracle 的用例单跑 1–3s，但 446 个测试文件
-    // 并行时偶发贴 5s 默认超时（本轮复测已知，见 docs/research/testing/2026-11-11-retest-report.md
-    // Known Risks）。10s 只给并发留余量；真实挂起仍会失败。
     test: { testTimeout: 10000, hookTimeout: 20000 },
     plugins: [
       vue(),
@@ -237,19 +177,7 @@ export default defineConfig(({ command, mode }) => {
           },
         },
       }] : []),
-      // dev-only 修复：把 `/wasm/*.js` 按静态模块伺服，绕开 Vite 对 publicDir 里 .js 的拦截。
-      //
-      // 缺陷：`publicDir` 指向 root 之外的 `../common/assets`；importAnalysis 会把动态
       // `import()` 包成 `__vite__injectQuery(url, 'import')`（**`@vite-ignore` 不阻止这一步**），
-      // dev server 随即把带 `?import` 的请求判定为「源码 import」，对 publicDir 里的 .js 直接抛
-      // "should not be imported from source code"。实测（2026-10-03，Vite 6.4.3）：
-      //   `/wasm/<ref>/wotb_replay_wasm.js`          → 200 text/javascript
-      //   `/wasm/<ref>/wotb_replay_wasm.js?import`   → **500**（修前）
-      // 于是 dev 下 3D 回放 / 射击复现拿不到引擎（AgentWasm 懒加载，选中回放文件时才触发）。
-      //
-      // 修法：在 transform 之前按静态文件伺服，与构建产物行为一致（publicDir 原样拷进 dist、
-      // 按静态文件取、query 被忽略）。`apply: 'serve'` ⇒ 只影响 dev server，`pnpm run build`
-      // 产物与 CI 完全不受影响。
       {
         name: 'local-dev-public-wasm-as-module',
         apply: 'serve',
@@ -257,10 +185,7 @@ export default defineConfig(({ command, mode }) => {
           server.middlewares.use('/wasm', (req, res, next) => {
             const resolved = resolveWasmDevFile(req.url)
             if (!resolved.ok) {
-              // 非 .js 不归本中间件管（保持修前的 fall-through 契约）。
               if (resolved.reason === 'not-js') return next()
-              // 越界 / 非法编码 / 目录 / 缺失：本中间件直接给状态码，绝不 next()——
-              // next() 会把不可信路径交回 Vite 的其它中间件，等于把 containment 责任转手。
               res.statusCode = resolved.status
               res.end(resolved.status === 400 ? 'Bad Request' : resolved.status === 403 ? 'Forbidden' : 'Not Found')
               return
@@ -268,8 +193,6 @@ export default defineConfig(({ command, mode }) => {
             res.setHeader('Content-Type', 'text/javascript')
             res.setHeader('Cache-Control', 'no-cache')
             const stream = createReadStream(resolved.file)
-            // 读盘错误（权限/被删/IO）必须收在响应里：未监听的 stream error 会冒泡成
-            // dev server 未捕获异常，把后续请求链一起带崩。
             stream.on('error', () => {
               if (!res.headersSent) res.statusCode = 500
               res.end()
@@ -295,19 +218,13 @@ export default defineConfig(({ command, mode }) => {
     define: {
       __BUILD_COMMIT__: JSON.stringify(identity.buildCommit),
       __BUILD_TIME__: JSON.stringify(identity.buildTime),
-      // Agent WASM identity：运行期 URL 由它拼出（见 api/agent-replay-facets.ts）
       __AGENT_WASM_COMMIT__: JSON.stringify(agent.commit),
       __AGENT_WASM_RELEASE__: JSON.stringify(agent.release),
     },
     server: {
       port: 5173,
-      // 允许 dev server 读取仓库根的共享 JSON (common/map_names.json 等)。
       fs: { allow: ['..'] },
       watch: {
-        // 编辑器 / 工具在 `scripts/` 下写文件时会留下临时文件；watcher 一旦在文件仍被
-        // 占用时挂上监听就抛 `EBUSY: resource busy or locked`，而该异常会直接杀掉
-        // dev server（实测：一次 `.browser-workspace-interaction.mjs.<pid>.<uuid>.tmpdir/…tmp`
-        // 就让本机验收服务器整个挂掉）。这些临时文件从不参与构建，直接排除。
         ignored: ['**/.*.tmpdir/**', '**/*.tmp'],
       },
       proxy: {
@@ -316,14 +233,11 @@ export default defineConfig(({ command, mode }) => {
           changeOrigin: true,
           secure: mode === 'production-remote',
         },
-        // 赞助配置与二维码是部署时注入前端容器的内容（deploy/tx/build-frontend-from-gitee.sh），不在仓库里；
-        // 连接生产后端时一并从生产站点读取，否则本地赞助页只会显示「赞助方式暂未配置」。
         ...(mode === 'production-remote' ? Object.fromEntries(['/sponsor-config.json', '/sponsor-assets'].map(path => [path, {
           target: devProxyTarget(mode),
           changeOrigin: true,
           secure: true,
         }])) : {}),
-        // 仅当 WOTB_ASSET_PROXY 设置时存在（见 assetProxyTarget 说明）
         ...(assetProxyTarget() ? {
           '/__assets': {
             target: assetProxyTarget(),
@@ -334,16 +248,11 @@ export default defineConfig(({ command, mode }) => {
         } : {}),
       }
     },
-    // Worker 产物用 **ES module** 格式：两个 worker（parse.worker / canonical.worker）都以
-    // `new Worker(url, { type: 'module' })` 构造，且 canonical worker 的依赖图含代码分割
-    // （动态 import），Rollup 的默认 iife 会直接构建失败。
     worker: { format: 'es' },
     publicDir: '../common/assets',
     build: {
       outDir,
-      // 让 CI 将 mapping 期望的 source asset 与实际 emitted dist 文件逐项对照。
       manifest: true,
-      // 车型 WebP 必须保持独立生产文件，避免小型 turret 被内联后绕过 HTTP/dist 门禁。
       assetsInlineLimit: 0,
       rollupOptions: {
         input: {

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 名人堂管理 · 百场 / 三环审核分区（kind 选领域）。每个实例各自持有列表、筛选、选择集与审核详情状态；
-// 工作区 = 队列（左）+ HoFReviewPane（证据 / 申报确认对照 / 校验清单 / 决定栏）；小屏单条全屏详情。
 import { computed, nextTick, onActivated, onDeactivated, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Feature } from '../app/featureCapabilities.js'
@@ -24,11 +22,9 @@ const emit = defineEmits<{ 'update:size': [size: number] }>()
 const { t, te, tm } = useI18n()
 const { requireFeature } = useFeatureGate()
 const { isExpanded } = useBreakpoint()
-// kind 在实例生命周期内不变：父组件按 kind 设 key，两个领域各是一个缓存实例。
 const domain = MODERATION_DOMAINS[props.kind]
 const prefix = domain.prefix
 
-// ── 列表与筛选 ──
 const rows = ref<ModerationRow[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -50,24 +46,20 @@ const filteredVehicles = computed(() => HUNDRED_VEHICLES.filter(vehicle =>
 const selection = createSelection(rows)
 const bulkOpen = ref(false)
 
-// ── 详情（所有状态共用；只有详情内才可执行状态操作）──
 const target = ref<ModerationRow | null>(null)
 const detail = ref<ModerationDetail | null>(null)
 const reviewLoading = ref(false)
-const phase = ref('view') // view | approve-confirm | reject-form | delete-form
+const phase = ref('view')
 const rejectReason = ref('')
 const rejectText = ref('')
 const deleteReason = ref('')
 const deleteText = ref('')
 const msg = ref('')
 const busy = ref(false)
-// 管理员文件证据（仅 PENDING）
 const evidence = ref<ReplayEvidence[]>([])
 const evidenceLoading = ref(false)
 const evidenceError = ref('')
 const zoomSrc = ref('')
-// stale-response guard：详情请求与证据请求分别计代；openReview(A) → loadEvidence(A) 后立刻 openReview(B)，
-// 若 A 的请求最后才返回，禁止 A 的 detail / evidence 覆盖当前 B。
 let reviewGen = 0
 let evidenceGen = 0
 
@@ -143,7 +135,6 @@ function reasonLabel(kind: ReasonKind, reason: string | null | undefined) {
   return reasonOptions(kind)[reason] || reason
 }
 
-// ── 详情与证据 ──
 async function openReview(row: ModerationRow) {
   if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++reviewGen
@@ -174,7 +165,6 @@ async function openReview(row: ModerationRow) {
   }
 }
 
-/** 加载 MANUAL PENDING 的 replay evidence 元数据（旧记录可能为空）。 */
 async function loadEvidence(submissionId: number) {
   if (!requireFeature(Feature.HALL_OF_FAME)) return
   const g = ++evidenceGen
@@ -182,7 +172,7 @@ async function loadEvidence(submissionId: number) {
   evidenceError.value = ''
   try {
     const list = (await domain.replays(submissionId)) || []
-    if (g !== evidenceGen) return // 过期响应：当前已打开别的 submission，丢弃
+    if (g !== evidenceGen) return
     evidence.value = list
   } catch (e) {
     if (g !== evidenceGen) return
@@ -210,7 +200,6 @@ const zoomTitle = computed(() => (domain.zoomTitleParams
   ? t(`${prefix}.screenshot`, domain.zoomTitleParams)
   : t(`${prefix}.screenshot`)))
 
-/** 下载截图：base64 data URL 直接触发浏览器下载（无需后端端点）。 */
 function downloadScreenshot(index: number) {
   const src = screenshots.value[index]
   if (!src) return
@@ -222,7 +211,6 @@ function downloadScreenshot(index: number) {
   anchor.remove()
 }
 
-/** 下载单个 replay evidence（authenticated download API）。 */
 async function downloadReplay(raw: unknown) {
   if (!requireFeature(Feature.HALL_OF_FAME)) return
   const ev = evidence.value.find(item => item === raw)
@@ -234,7 +222,6 @@ async function downloadReplay(raw: unknown) {
   }
 }
 
-// ── 决定：通过 / 拒绝 / 删除 ──
 function setPhase(next: 'view' | 'approve-confirm' | 'reject-form' | 'delete-form') {
   if (next === 'delete-form') {
     deleteReason.value = ''
@@ -247,7 +234,6 @@ function setPhase(next: 'view' | 'approve-confirm' | 'reject-form' | 'delete-for
 type Decision = 'approve' | ReasonKind
 type Request = (id: number) => Promise<unknown>
 
-/** 返回请求函数，或 reason 校验失败时的提示文案。 */
 function requestFor(kind: Decision): Request | string {
   if (kind === 'approve') return id => domain.approve(id)
   if (kind === 'reject') {
@@ -274,7 +260,6 @@ async function decide(kind: Decision) {
   }
   busy.value = true
   msg.value = ''
-  // 结果按提交时的记录 ID 关联：返回时若当前审核对象已不是它，不把结果 / 错误套到别的记录上
   const submissionId = target.value.id
   try {
     await call(submissionId)
@@ -288,7 +273,6 @@ async function decide(kind: Decision) {
   load()
 }
 
-// ── 工作区投影 ──
 const REPLAY_CHECKS = [['replayParseOk', 'valParsed'], ['replayGameIdMatch', 'valGameId'], ['replayVehicleMatch', 'valVehicle'], ['replayDistinctBattles', 'valDistinct']] as const
 
 const evidenceComplete = computed(() => detail.value?.status === 'PENDING'
@@ -330,7 +314,6 @@ const pane = computed(() => {
     if (d.deleteReasonText) meta.push(item(t(`${prefix}.deleteReasonTextValue`), d.deleteReasonText))
     meta.push(item(t(`${prefix}.deletedAt`), fmtTime(d.deletedAt) || '-'))
   }
-  // 通过时后端把申报值原样写入确认值（HundredModerationService / Mark3ModerationService），所以待审核时「确认」列展示将被记录的值。
   const confirmed = (approved: number | null | undefined, claimed: number | null | undefined) => approved != null ? approved : d?.status === 'PENDING' ? claimed : null
   return {
     prefix, title: d ? `${d.nicknameSnapshot} · ${d.vehicleName}` : '', status: String(d?.status ?? ''), statusLabel: statusLabel(d?.status),
@@ -345,8 +328,6 @@ const pane = computed(() => {
   }
 })
 
-// 通过 / 拒绝 / 删除请求在途时不换目标：openReview 会重置 busy 并替换当前条，
-// 首个请求返回后会关掉新选中的条目或把错误显示到错误的记录上
 function step(delta: number) {
   const next = rows.value[position.value - 1 + delta]
   if (next && !busy.value) openReview(next)
@@ -357,7 +338,6 @@ const openById = (id: number) => {
 }
 const toggleById = (id: number, on: boolean) => selection.toggle(rows.value.find(row => row.id === id), on)
 
-// KeepAlive caches the queue; inactive partitions must release modal effects.
 const active = ref(true)
 onActivated(() => { active.value = true; if (!rows.value.length) load() })
 onDeactivated(() => {
@@ -418,7 +398,6 @@ defineExpose({ reload: load })
       </select>
     </label>
 
-    <!-- 截图放大（lightbox） -->
     <AppDialog
       :open="active && !!zoomSrc"
       :title="zoomTitle"

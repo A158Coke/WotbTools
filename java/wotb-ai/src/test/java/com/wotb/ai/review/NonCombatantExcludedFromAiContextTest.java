@@ -30,10 +30,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * PR #103：回归：Canonical BattleTimeline 的 ActualCombatantEntitySet 过滤后，
- * Team / Personal AI Context Compiler 输出不得包含 spectator entity（车辆#99 / account 9999）。
- */
 class NonCombatantExcludedFromAiContextTest {
 
     private static Battle battle() {
@@ -71,7 +67,6 @@ class NonCombatantExcludedFromAiContextTest {
                 DecodeConfidence.EXACT, 3, 2001));
         events.add(new ParticipantMappingEvent(3, new ReplayTimestamp(1000f, 0f), 8,
                 DecodeConfidence.EXACT, 4, 2002));
-        // spectator 99：broad-roster 完整身份（accountId=9999，team=2，tank 9489），但不在 #301
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(1000f, 0f), 8,
                 DecodeConfidence.EXACT, 99, 9999));
         events.add(new PositionChangedEvent(5, new ReplayTimestamp(1000f, 0f), 10,
@@ -82,7 +77,6 @@ class NonCombatantExcludedFromAiContextTest {
                 DecodeConfidence.EXACT, 3, 0, 0, -20f, 0f, -20f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new PositionChangedEvent(8, new ReplayTimestamp(1000f, 0f), 10,
                 DecodeConfidence.EXACT, 4, 0, 0, -25f, 0f, -25f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
-        // spectator 99 连续位置流 + >5s gap + region teleport + 阵亡（若未被 #301 过滤会污染 delta）
         events.add(new PositionChangedEvent(9, new ReplayTimestamp(1005f, 5f), 10,
                 DecodeConfidence.EXACT, 99, 0, 0, 100f, 0f, 100f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new PositionChangedEvent(10, new ReplayTimestamp(1010f, 10f), 10,
@@ -95,7 +89,6 @@ class NonCombatantExcludedFromAiContextTest {
                 DecodeConfidence.EXACT, 99, 0, 0, 600f, 0f, 600f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         events.add(new HealthChangedEvent(14, new ReplayTimestamp(1040f, 40f), 7,
                 DecodeConfidence.EXACT, 99, 0, null, false));
-        // 交火与 HP（产生 EPISODE）
         events.add(new HealthChangedEvent(15, new ReplayTimestamp(1000f, 0f), 7,
                 DecodeConfidence.EXACT, 1, 1800, null, true));
         events.add(new HealthChangedEvent(16, new ReplayTimestamp(1000f, 0f), 7,
@@ -119,17 +112,14 @@ class NonCombatantExcludedFromAiContextTest {
         assertTrue(tl.usable(), "fixture 必须能构建 timeline: " + tl.validation().errors());
         final BattleTimeline timeline = tl.timeline();
 
-        // timeline universe 本身不含 spectator（最早层过滤）
         assertTrue(timeline.frames().stream()
                         .allMatch(f -> f.vehicles().stream().noneMatch(v -> v.entityId() == 99)),
                 "spectator entity 99 不得进入任何 frame 的 FrameVehicle");
 
         final String teamSection = TeamAiContextCompiler.renderTimelineSection(timeline, 1);
         final String personalSection = PersonalAiContextCompiler.renderTimelineSection(timeline, 1001L);
-        // 必须有 EPISODE（否则断言空转）
         assertTrue(teamSection.contains("EPISODE 1"), "team 段必须渲染 EPISODE");
         assertTrue(personalSection.contains("EPISODE 1"), "personal 段必须渲染 EPISODE");
-        // spectator 不得以 车辆#99 或账号 9999 形式进入任何 AI 上下文
         assertFalse(teamSection.contains("车辆#99"),
                 "Team AI timeline 不得出现 spectator 车辆#99:\n" + teamSection);
         assertFalse(personalSection.contains("车辆#99"),

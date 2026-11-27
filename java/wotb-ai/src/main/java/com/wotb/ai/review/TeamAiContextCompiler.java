@@ -19,12 +19,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Team AI Context Compiler：
- * 把 canonical BattleTimeline 编译为团队视角的 Episode 化上下文——双方对称
- * （friendly deployment / enemy knowledge / local force / HP momentum / points）。
- * actor = perspectiveTeam，不以录像者为中心。
- */
 public final class TeamAiContextCompiler {
 
     static final int MAX_EPISODES = 14;
@@ -49,7 +43,6 @@ public final class TeamAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要
         final java.util.List<Integer> selected =
                 PersonalAiContextCompiler.selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
         for (final int i : selected) {
@@ -63,12 +56,6 @@ public final class TeamAiContextCompiler {
     }
 
 
-    /**
-     * 渲染 TEAM REVIEW FOCUS WINDOWS 段（确定性）：
-     * 1–3 个信息密度最高的决策窗口，每个窗口输出 BEFORE / EVENTS / AFTER /
-     * OBSERVED FACTS / EVIDENCE LIMITATIONS。全部来自已验证 canonical timeline，
-     * 不编造战术原因；timeline 为 null 或无可选窗口时返回空串。
-     */
     static String renderFocusWindowsSection(final BattleTimeline timeline, final int perspectiveTeam) {
         if (timeline == null) {
             return "";
@@ -93,9 +80,6 @@ public final class TeamAiContextCompiler {
                     .append("\n");
             if (!w.events().isEmpty()) {
                 sb.append("EVENTS\n");
-                // P0-10：窗口事件上限（避免 FOCUS WINDOWS 段被海量移动事件撑爆 prompt，
-                // 生产实测该段 13.4k 字符 ≈ 16.8k tokens）。优先保留高信息事件
-                // （阵亡/存活/HP/区域/接敌），移动/位置类事件折叠为一行摘要。
                 final List<BattleDelta> highInfo = w.events().stream()
                         .filter(TeamAiContextCompiler::isHighInfoDelta)
                         .toList();
@@ -169,11 +153,6 @@ public final class TeamAiContextCompiler {
         return sb.toString();
     }
 
-    /**
-     * Render the realtime objective facts carried by the canonical event stream.
-     * This is deliberately a neutral evidence section: ownership, capture progress,
-     * and points are facts for the LLM to interpret, not backend tactical verdicts.
-     */
     static String renderObjectiveStateSection(final BattleTimeline timeline, final int perspectiveTeam) {
         if (timeline == null || timeline.events() == null || timeline.events().isEmpty()) {
             return "";
@@ -296,7 +275,6 @@ public final class TeamAiContextCompiler {
         return out;
     }
 
-    /** P0-10：高信息事件（保留渲染）——阵亡/存活/HP/区域/接敌/失联/点数；移动类折叠。 */
     private static boolean isHighInfoDelta(final BattleDelta d) {
         return switch (d.kind()) {
             case DESTROYED, ALIVE_COUNT_CHANGE, HP_CHANGE, HP_GAP_DELTA,
@@ -369,7 +347,6 @@ public final class TeamAiContextCompiler {
         }
     }
 
-    /** HP 类 delta 称谓：side 来自 delta 属性（friendly → 我方 / enemy → 敌方）。 */
     private static String whoLabel(final BattleDelta d) {
         return "friendly".equals(d.attr("side", "enemy")) ? "我方" : "敌方";
     }

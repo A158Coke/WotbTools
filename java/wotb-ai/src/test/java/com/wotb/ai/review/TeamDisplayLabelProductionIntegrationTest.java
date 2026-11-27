@@ -26,13 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Team display label 生产路径集成测试——
- * Battle roster → {@link TeamRosterResolver}（display labels）→ {@link TeamAiPromptBuilder}
- * （system/user prompt 的 teamDisplayLabel / opponentDisplayLabel）→ {@link PreBattleSectionRenderer}。
- * <p>无 clan：不得出现 {@code 队伍-\d+} / 「对方主要军团」，PreBattle 只显示「我方画像/对方画像」；
- * 可靠 CHRD/KSR：prompt 明确拿到 CHRD / KSR，PreBattle 显示「我方（CHRD）画像」。</p>
- */
 class TeamDisplayLabelProductionIntegrationTest {
 
     private static final float START_RAW = 1000f;
@@ -110,7 +103,6 @@ class TeamDisplayLabelProductionIntegrationTest {
         assertEquals("Kranvagn", identities.getFirst().tankName());
     }
 
-    // ---- fixture ----
 
     private static PreBattleStrategicPrior prior() {
         return new PreBattleStrategicPrior(

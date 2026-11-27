@@ -1,4 +1,3 @@
-// 水面动态反射镜像相机单测（纯函数）：水平镜面 y=level 的位置/朝向/裁剪面。
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { createWaterReflection, mirrorCameraForPlane } from './waterReflection.js'
@@ -23,8 +22,7 @@ describe('mirrorCameraForPlane', () => {
     expect(out.position.z).toBeCloseTo(20, 6)
     const dir = new THREE.Vector3()
     out.getWorldDirection(dir)
-    expect(dir.y).toBeGreaterThan(0.3)      // 主相机俯视 ⇒ 镜像相机仰视
-    // 斜裁剪：投影矩阵被改写（不等于原相机的普通投影）
+    expect(dir.y).toBeGreaterThan(0.3)
     expect(out.projectionMatrix.elements[14]).not.toBeCloseTo(cam.projectionMatrix.elements[14], 8)
   })
 
@@ -50,7 +48,6 @@ describe('mirrorCameraForPlane', () => {
   })
 })
 
-// 伪渲染器：只观察反射 pass 的调用次数与 RT 尺寸（不建真实 GL 上下文）。
 function fakeRenderer(width = 800, height = 600) {
   const render = vi.fn()
   const setRenderTarget = vi.fn()
@@ -123,7 +120,7 @@ describe('createWaterReflection 画质档', () => {
     refl.configure({ scale: 0.5 })
     refl.update(renderer, scene, cam)
     const t2 = refl.debugTarget()
-    expect(t2).not.toBe(t1)          // 比例变化 ⇒ 惰性重建
+    expect(t2).not.toBe(t1)
     expect(t2!.width).toBe(400)
     expect(t2!.height).toBe(300)
     refl.dispose()
@@ -215,18 +212,16 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
       getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2,
     })
     refl.setEnabled(true)
-    refl.update(renderer, scene, cam)      // frame 1 → render
-    refl.update(renderer, scene, cam)      // frame 2 → skip（连续渲染）
+    refl.update(renderer, scene, cam)
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(1)
-    refl.requestRefresh()                  // seek / 孤立 dirty frame
-    refl.update(renderer, scene, cam)      // 本应 skip，仍强制刷新
+    refl.requestRefresh()
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(2)
-    // 关档再开档：frame 归零，首个 update 必须建 RT/渲染（不能命中旧间隔）
     refl.setEnabled(false)
     refl.setEnabled(true)
     refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(3)
-    // 会话 teardown 后再用同一运行时（换图）：dispose 归零帧计数，新图首帧必须重建 RT
     refl.dispose()
     refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(4)
@@ -242,24 +237,24 @@ describe('createWaterReflection 按需渲染强制刷新', () => {
       getWaterMeshes: () => [mesh], getWaterLevel: () => 0, intervalFrames: 2,
     })
     refl.setEnabled(true)
-    refl.update(renderer, scene, cam)      // frame 1 → render
-    refl.update(renderer, scene, cam)      // frame 2 → skip
-    refl.update(renderer, scene, cam)      // frame 3 → 自动到期 render（旧姿态）
+    refl.update(renderer, scene, cam)
+    refl.update(renderer, scene, cam)
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(2)
     cam.position.set(12, 70, 30)
     cam.lookAt(new THREE.Vector3(20, 0, 0))
     cam.updateMatrixWorld(true)
-    refl.requestRefresh()                  // 相机交互收口（pointerup / keyup / cancel）
-    refl.update(renderer, scene, cam)      // frame 4 → 本应 skip，force：必须用最后姿态
+    refl.requestRefresh()
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(3)
     const mirrored = renderer.render.mock.calls.at(-1)![1] as THREE.PerspectiveCamera
     expect(mirrored).not.toBe(cam)
     expect(mirrored.position.x).toBeCloseTo(12, 6)
     expect(mirrored.position.y).toBeCloseTo(-70, 6)
     expect(mirrored.position.z).toBeCloseTo(30, 6)
-    refl.update(renderer, scene, cam)      // frame 5 → 到期帧，正常 render
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(4)
-    refl.update(renderer, scene, cam)      // frame 6 → 强制已消费，恢复隔帧 skip
+    refl.update(renderer, scene, cam)
     expect(renderer.render).toHaveBeenCalledTimes(4)
     refl.dispose()
   })
@@ -313,15 +308,15 @@ describe('createWaterReflection 保守可见性剔除（W3）', () => {
     refl.setEnabled(true)
     const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
     const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
-    refl.update(renderer, scene, lookingDown)       // frame 1：到期，渲染
-    refl.update(renderer, scene, lookingDown)       // frame 2：跳过
-    refl.update(renderer, scene, lookingUp)         // frame 3：到期但不可见，不渲染
+    refl.update(renderer, scene, lookingDown)
+    refl.update(renderer, scene, lookingDown)
+    refl.update(renderer, scene, lookingUp)
     expect(renderer.render).toHaveBeenCalledTimes(1)
-    refl.update(renderer, scene, lookingDown)       // frame 4：未到期，但刚重入 → 必须渲染
+    refl.update(renderer, scene, lookingDown)
     expect(renderer.render).toHaveBeenCalledTimes(2)
-    refl.update(renderer, scene, lookingDown)       // frame 5：到期帧，正常刷新
+    refl.update(renderer, scene, lookingDown)
     expect(renderer.render).toHaveBeenCalledTimes(3)
-    refl.update(renderer, scene, lookingDown)       // frame 6：持续可见且未到期 → 恢复隔帧节流
+    refl.update(renderer, scene, lookingDown)
     expect(renderer.render).toHaveBeenCalledTimes(3)
     refl.dispose()
   })
@@ -334,14 +329,14 @@ describe('createWaterReflection 保守可见性剔除（W3）', () => {
     refl.setEnabled(true)
     const lookingUp = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 500, 40))
     const lookingDown = camera(new THREE.Vector3(0, 60, 40), new THREE.Vector3(0, 0, 0))
-    refl.update(renderer, scene, lookingUp)        // 第 1 帧（间隔到期）但水面不可见
+    refl.update(renderer, scene, lookingUp)
     expect(renderer.render).not.toHaveBeenCalled()
     refl.requestRefresh()
-    refl.update(renderer, scene, lookingUp)        // 强制帧仍不可见：forceRefresh 必须保留
+    refl.update(renderer, scene, lookingUp)
     expect(renderer.render).not.toHaveBeenCalled()
-    refl.update(renderer, scene, lookingDown)      // 未到间隔，但挂起的强制刷新应生效
+    refl.update(renderer, scene, lookingDown)
     expect(renderer.render).toHaveBeenCalledTimes(1)
-    refl.update(renderer, scene, lookingDown)      // 强制已消费：回到隔帧跳过
+    refl.update(renderer, scene, lookingDown)
     expect(renderer.render).toHaveBeenCalledTimes(1)
     refl.dispose()
   })

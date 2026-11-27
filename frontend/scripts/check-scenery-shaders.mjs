@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * 场景材质**着色器编译门禁**（无头 Chrome + 真 three.js 运行时）。
- *
- * 把 `sceneryMaterials` 的每种材质工厂真建一遍、以 InstancedMesh 渲染一帧，然后读
- * three 的 program diagnostics（`THREE.WebGLProgram: shader error …` 原文）。
- * 用途：这类失败在页面上只表现为"某些物体不渲染"（没有红屏），靠肉眼很难定位——
- * 2026-10-09 环境反射一版即因此两次让建筑/烟雾消失。本脚本把它变成命令行判据。
- *
- * 页面侧在真文件 `scripts/shader-check-page.js`（由 vite 以模块 URL 伺服，裸 `'three'`
- * 会被重写成与 sceneryMaterials.js 同一份依赖实例）。⚠️ 不要把它内联进中间件 HTML：
- * 中间件直出的 HTML 不经 vite 的 HTML 变换，裸说明符在浏览器里解析不了（上一版卡死在此）。
- *
- * 用法：node scripts/check-scenery-shaders.mjs
- * 退出码：0 = 全部程序编译通过；1 = 有失败（打印 ERROR 原文前后 20 行）。
- */
 import { createServer } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +15,7 @@ async function main() {
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
-    cacheDir: 'node_modules/.vite-shader-check',  // isolate from the user's running preview
+    cacheDir: 'node_modules/.vite-shader-check',
     logLevel: 'error',
     plugins: [{
       name: 'shader-check-page',

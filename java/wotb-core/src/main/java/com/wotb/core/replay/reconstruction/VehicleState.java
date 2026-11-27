@@ -1,11 +1,5 @@
 package com.wotb.core.replay.reconstruction;
 
-/**
- * 战场中一辆车的状态。
- * <p>
- * 所有可空字段表示未知或未更新的值。
- * </p>
- */
 public final class VehicleState {
 
     private final int entityId;
@@ -39,7 +33,6 @@ public final class VehicleState {
         this.lastObservedAt = firstObservedAt;
     }
 
-    // ---- Getters ----
 
     public int entityId() { return entityId; }
     public Long accountId() { return accountId; }
@@ -59,7 +52,6 @@ public final class VehicleState {
     public Float removedAt() { return removedAt; }
     public Float destroyedAt() { return destroyedAt; }
 
-    // ---- Setters (package-private for reconstructor) ----
 
     public void setAccountId(Long accountId) { this.accountId = accountId; }
     public void setVehicleId(Integer vehicleId) { this.vehicleId = vehicleId; }
@@ -103,9 +95,6 @@ public final class VehicleState {
         this.observationState = ObservationState.REMOVED;
     }
 
-    /**
-     * 创建此状态的深度拷贝。
-     */
     public VehicleState copy() {
         final VehicleState copy = new VehicleState(entityId, firstObservedAt);
         copy.accountId = this.accountId;

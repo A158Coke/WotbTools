@@ -1,4 +1,3 @@
-# Shared assertions and version resolver for the Android release test scripts.
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 resolve() {

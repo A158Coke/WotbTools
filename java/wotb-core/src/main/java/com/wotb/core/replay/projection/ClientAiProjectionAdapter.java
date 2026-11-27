@@ -37,29 +37,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-/**
- * client canonical AI projection → 内存中的 canonical {@link ReplayReconstruction}（AI 证据链的既有输入）。
- *
- * <p><b>不是 parser</b>：不读任何回放字节。投影里的每条事实都已由客户端 canonical 层确认（身份、AoI 观测段、
- * 原始 HP / 位姿 / method8 分类），这里只把它们按旧 canonical 事件的语义编码装回事件流，让下游
- * BattleTimeline / 证据 / 特征层原样运行：</p>
- * <ul>
- *   <li>AoI 观测段 → {@link MaterializationEvent}（entityTypeId=2，开段物化 HP）+ {@link EntityRemovedEvent}；</li>
- *   <li>原始位姿 → {@link PositionChangedEvent}（世界坐标，attachmentParent=0）；prop2 → {@link TurretDirectionChangedEvent}；</li>
- *   <li>prop3 → {@link HealthChangedEvent}、method1 → {@link VehicleHealthStateEvent}（{@link HpRawState} 由原始 u16 分类）；</li>
- *   <li>method8 HIT → {@link VehicleHitEvent}，其余变体 → {@link UnsupportedDamageEvent}（归属 fail-closed 证据）；</li>
- *   <li>period → {@link ArenaPeriodChangedEvent}，AFTERBATTLE → {@link RoundFinishedEvent}；目标 → 点数 / 基地迁移。</li>
- * </ul>
- * <p>同一原始时钟内按旧包流的典型顺序排序（位姿 → 炮塔 → 命中 → prop3 → method1 → 基地 → 点数 → 离场），
- * sequence 为排序后序号。</p>
- * <p>{@link #enrichBattle} 再按旧服务端处理链同一函数（{@link ObservedMaxHp#populate}）从装配后的事件流回填
- * 回放实测血量——纯事实归约，不是解析。</p>
- * <p>
- * 引擎不提供的证据（{@code unavailableEvidence}）不合成任何事件；包解码覆盖率不存在 → coverage = null。</p>
- */
 public final class ClientAiProjectionAdapter {
 
-    /** 请求结构不合法（服务端只做结构校验，不判断事实真伪）。 */
     public static final class InvalidProjectionException extends IllegalArgumentException {
         public InvalidProjectionException(final String message) {
             super(message);
@@ -75,10 +54,6 @@ public final class ClientAiProjectionAdapter {
     private ClientAiProjectionAdapter() {
     }
 
-    /**
-     * 回放实测血量回填（{@code players.observedMaxHp / entryHp / entryHpSource}）：旧服务端处理链在重建后对
-     * Battle 调用的同一函数，输入是已装配的 canonical 事件流。
-     */
     public static void enrichBattle(final Battle battle, final ReplayReconstruction reconstruction) {
         if (battle == null || reconstruction == null) {
             return;
@@ -86,13 +61,11 @@ public final class ClientAiProjectionAdapter {
         ObservedMaxHp.populate(battle, reconstruction.events(), TeamEntityMapper.resolve(battle, reconstruction));
     }
 
-    /** 结构校验 + 装配。 */
     public static ReplayReconstruction toReconstruction(final Battle battle, final ClientAiProjection p) {
         validate(p);
         final List<Ranked> ranked = new ArrayList<>();
         final ClientAiProjection.Clock clock = p.clock();
 
-        // 身份映射先于一切（旧流里 ParticipantMapping 在 0.2 s 左右的 Avatar 初始化包里）
         for (final ClientAiProjection.Participant pt : p.participants()) {
             ranked.add(new Ranked(0d, 0, seq -> new ParticipantMappingEvent(seq, ts(0d), 8, DecodeConfidence.EXACT,
                     pt.entityId(), pt.accountId(), pt.nickname(), pt.team())));
@@ -200,7 +173,6 @@ public final class ClientAiProjectionAdapter {
     }
 
     private static HealthChangedEvent prop3(final int seq, final ClientAiProjection.Prop3Health h) {
-        // 投影分类在场 = 权威（不重新分类 raw；缺省 = 旧载荷回退 legacy 现算）
         final HpRawState state = HpRawState.fromProjection(h.hpState(), h.hpRaw());
         final Integer current = switch (state) {
             case CURRENT_HP -> (int) (short) (h.hpRaw() & 0xFFFF);
@@ -227,11 +199,9 @@ public final class ClientAiProjectionAdapter {
         return new ReplayTimestamp((float) rawClockSec, null);
     }
 
-    /** 排序键：原始时钟 + 同刻包序等级；同键保持插入顺序（List.sort 稳定）。 */
     private record Ranked(double clock, int rank, Function<Integer, ReplayEvent> factory) {
     }
 
-    // ---------- 结构校验 ----------
 
     static void validate(final ClientAiProjection p) {
         require(p != null, "projection missing");
@@ -283,8 +253,6 @@ public final class ClientAiProjectionAdapter {
         }
     }
 
-    /** hpState：**缺省**（Java null，且读取边界已拒绝显式 null——见 ReplayFactsCodec）走 legacy；
-     *  在场必须是契约 enum 的 wire 字面量之一（显式映射；producer 漂移在边界拒绝）。 */
     private static boolean validHpState(final String name) {
         return name == null || HpRawState.fromWireName(name) != null;
     }

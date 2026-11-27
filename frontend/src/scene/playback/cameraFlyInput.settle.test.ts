@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-// 自由相机 pointer 交互收口（评审 P2）：HIGH 档反射隔帧时，pointerup / pointercancel /
-// 丢失按键后的最后相机姿态必须显式 requestRefresh + invalidate，不能等下一帧 flyTick。
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { createCameraFlyInput } from './cameraFlyInput.ts'

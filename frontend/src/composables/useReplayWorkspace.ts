@@ -18,19 +18,12 @@ export interface WorkspacePlayback {
   canonical: LocalPlayback | null
   canonicalError: unknown
   canonicalState: PlaybackReadiness
-  /** 完整回放内容 SHA-256（解析时已计算）；会话身份的一部分，供诊断晚订阅者复用。 */
   replayDigest: string | null
 }
 
-/**
- * Replay Workspace facade. The ReplaySession returned by useReplay is the
- * only owner of selection, result identity, selected battle, and workspace
- * view state; this module exposes that contract to the orchestration SFC.
- */
 export function useReplayWorkspace(initialCapability: ReplayCapability = 'data') {
   const replay = useReplay(initialCapability)
   const { session } = replay
-  // Independent readiness: 2D never waits for 3D network assets, nor scene for canonical.
   const entries = new WeakMap<File, {
     state: WorkspacePlayback
     scenePromise?: Promise<AgentPlaybackFacet>
@@ -57,7 +50,6 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
   }
   function invalidateCanonical(file: File) {
     const entry = entryFor(file)
-    // Canonical WASM projection has no AbortSignal: stale-discard only, not physical abort.
     entry.canonicalGeneration++
     entry.canonicalPromise = undefined
     entry.state.canonical = null
@@ -67,7 +59,7 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
   }
   function cancelPending() {
     for (const entry of pending) {
-      entry.controller?.abort() // Real Worker cancellation; also withdraw scheduled enrichment.
+      entry.controller?.abort()
       entry.controller = null
       entry.observers = undefined
       if (entry.state.sceneState === 'loading') {
@@ -105,7 +97,6 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
         if (observer) {
           emitPlaybackDiagnostic(observer, { stage: 'workspace.cache', status: entry.state.sceneState === 'ready' ? 'hit' : 'shared-inflight' })
           if (entry.state.sceneState === 'ready') {
-            // This call did not execute any parser work; don't reuse an earlier load's durations.
             for (const stage of [
               'file.arrayBuffer', 'replay.digest', 'json.cache',
               'first.worker.roundtrip', 'first.wasm.ready', 'first.parse', 'first.json.parse', 'first.worker.unattributed',
@@ -117,12 +108,10 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
             if (!entry.observers) emitPlaybackDiagnostic(observer, { stage: 'workspace.inflightTiming', status: 'unavailable' })
             else entry.observers.add(observer)
           }
-          // 2D 可能先于 3D 完成解析：新的诊断消费者仍要拿到这一场的真实输入摘要。
           if (entry.state.sceneState === 'ready' && entry.state.replayDigest) {
             emitPlaybackDiagnostic(observer, { stage: 'replay.identity', digest: entry.state.replayDigest })
           }
         }
-        // Reselecting a cached scene resumes enrichment withdrawn with the old selection.
         if (entry.state.sceneState === 'ready' && entry.state.canonicalState === 'idle') {
           void playbackSession.loadCanonical(file).catch(() => {})
         }
@@ -159,7 +148,6 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
         releasePending(entry)
       })
       entry.scenePromise = task
-      // Publish raw readiness first. Canonical runs in the background and never gates scene.
       task.then(() => {
         if (!controller.signal.aborted) void playbackSession.loadCanonical(file).catch(() => {})
       }, () => {})
@@ -174,12 +162,8 @@ export function useReplayWorkspace(initialCapability: ReplayCapability = 'data')
       const current = () => generation === entry.canonicalGeneration
       const task = (async () => {
         const playback = entry.state.scenePlayback ?? undefined
-        // 线程外投影（Worker 优先）：整条 canonical（3 次 Rust 解析 + 整场 JS 投影）在主线程
-        // 跑会停顿数百 ms~数秒——用户实测的"播放正常一小段后卡住"。见 canonicalRuntime.ts。
         const { parseLocalPlaybackOffThread } = await import('../replay-local/canonicalRuntime.js')
         if (!current()) throw new DOMException('Canonical projection withdrawn', 'AbortError')
-        // Reuse an already-ready scene facet; otherwise the Worker decodes the local file.
-        // Pitch limits and display names fetched for 3D must never gate offline 2D.
         const canonical = await parseLocalPlaybackOffThread(await file.arrayBuffer(), playback)
         if (!current()) throw new DOMException('Canonical projection withdrawn', 'AbortError')
         entry.state.canonical = canonical

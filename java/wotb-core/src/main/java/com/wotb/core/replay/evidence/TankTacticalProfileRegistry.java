@@ -13,11 +13,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * 坦克战术语义库：优先匹配人工精选条目，未收录车辆回退到车型级保守默认值。
- * <p>数据源 {@code common/tank_tactical_profiles.json}（构建时复制到 classpath）。
- * 语义字段只允许 HIGH / MEDIUM / LOW / UNKNOWN。</p>
- */
 public final class TankTacticalProfileRegistry {
 
     public static final String UNKNOWN_CLASS = "UNKNOWN";
@@ -39,7 +34,6 @@ public final class TankTacticalProfileRegistry {
                         parseProfile(e.getValue())));
             }
         } catch (final Exception ignored) {
-            // 缺库时仅保留车型级 fallback（与 Tankopedia 缺库策略一致）
         }
         return new TankTacticalProfileRegistry(Collections.unmodifiableMap(map));
     }
@@ -70,9 +64,6 @@ public final class TankTacticalProfileRegistry {
         return result;
     }
 
-    /**
-     * 按权威名（优先 tankId → tankopedia）查询；未收录时回退车型默认。
-     */
     public TankTacticalProfile profileFor(final long tankId, final String name,
                                           final String type, final Object tier) {
         final String authoritativeName = ReplayDisplayNames.tankName(tankId, name);
@@ -130,7 +121,6 @@ public final class TankTacticalProfileRegistry {
         };
     }
 
-    /** 归一化车种：中文 / 英文（含 blitzkit 新格式 "Heavy tank" 等）→ 语义枚举。 */
     static String normalizeClass(final String type) {
         if (!StringUtils.hasText(type)) {
             return UNKNOWN_CLASS;

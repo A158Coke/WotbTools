@@ -43,17 +43,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-/**
- * 名人堂「三环」人工审核业务。无 Wargaming API 自动认证路径；所有成绩均为创建时冻结的人工申报。
- *
- * <p>不变量：同 WotB 账号 + vehicle 最多一条 active PENDING/CURRENT；CURRENT 是最终三环记录，
- * 不能被后续申请替代。REJECTED / CANCELLED / DELETED 是终态，允许再次提交。</p>
- */
 @Service
 public class Mark3SubmissionService {
 
     private static final int MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-    // A FileReader data URL adds a short media-type prefix to base64's 4/3 expansion.
     private static final int MAX_IMAGE_DATA_URL_CHARS = ((MAX_IMAGE_BYTES + 2) / 3) * 4 + 64;
     private static final int REPLAY_COUNT = 5;
     private static final int MAX_REASON_TEXT_CHARS = 500;
@@ -88,10 +81,6 @@ public class Mark3SubmissionService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /**
-     * 创建人工三环申请。Tier X、账户/车辆/arenaId、5 回放、1–2 张截图以及三个申报指标
-     * 均在任何文件/数据库持久化前验证；任一失败不创建 PENDING。
-     */
     public Mark3CreateResult createSubmission(
             final String userId,
             final long vehicleId,
@@ -110,7 +99,6 @@ public class Mark3SubmissionService {
         if (!StringUtils.hasText(profile.wotbNickname())) {
             throw new IllegalArgumentException("MARK3_PROFILE_NICKNAME_REQUIRED");
         }
-        // canonical owner 含区服：(CN, 123456) 与 (EU, 123456) 是两个不同账号。
         final String wotbServer = profile.wotbServer();
         requireClaimedValues(claimedBattleCount, claimedAverageDamage, claimedWinRate);
         final BigDecimal normalizedWinRate = normalizeWinRate(claimedWinRate, "MARK3_INVALID_WIN_RATE");
@@ -119,7 +107,6 @@ public class Mark3SubmissionService {
         if (replays == null || replays.size() != REPLAY_COUNT) {
             throw new IllegalArgumentException("MARK3_REPLAY_COUNT");
         }
-        // 服务器没有 parser：结算事实由客户端本地解析后与回放一一对应提交，回放只作证据存档
         final List<Battle> battles = ClientReplayFacts.readAll(replayFacts, replays.size());
         requireNoActiveSubmission(wotbServer, gameId, vehicleId);
 
@@ -135,10 +122,6 @@ public class Mark3SubmissionService {
         }
     }
 
-    /**
-     * 全局 replay 容量许可覆盖完整的重型生命周期：校验、读入五个 byte[]、解析、hash 锁、落盘和事务。
-     * 进入许可后再次检查 active 状态，避免其他请求刚创建 PENDING 时仍重复解析整组证据。
-     */
     private Mark3CreateResult createSubmissionWithinReplayCapacity(
             final long vehicleId,
             final long gameId,
@@ -193,7 +176,6 @@ public class Mark3SubmissionService {
                 normalizedScreenshots, pendingReplays, hashes));
     }
 
-    /** 锁内：先将五个原始回放写入独立 mark3 命名空间，再单事务写 submission 与五行 evidence。 */
     private Mark3CreateResult createLocked(
             final long vehicleId,
             final long gameId,
@@ -227,7 +209,6 @@ public class Mark3SubmissionService {
                 return submission.getId();
             });
         } catch (final DataIntegrityViolationException e) {
-            // active partial unique index covers PENDING/CURRENT races after cheap preflight.
             evidenceService.cleanupStoredFiles(hashes);
             throw new IllegalStateException("MARK3_ACTIVE_EXISTS");
         } catch (final RuntimeException e) {
@@ -237,11 +218,6 @@ public class Mark3SubmissionService {
         return new Mark3CreateResult(submissionId, Mark3Status.PENDING.name());
     }
 
-    /**
-     * 用户取消自己尚未审核的申请。ownership 以当前绑定的 canonical 身份 {@code (区服, WotB 账号)} 判定：
-     * 未绑定账号、或记录归属其他 (区服, 账号) → 403。
-     * 记录创建后用户改绑到别的账号时记录仍属原 (区服, 账号)，不可再取消。
-     */
     @Transactional
     public Mark3SubmissionSummaryDto cancelSubmission(final String userId, final long submissionId) {
         final Mark3Submission submission = repository.findByIdForUpdate(submissionId)
@@ -259,10 +235,6 @@ public class Mark3SubmissionService {
         return result;
     }
 
-    /**
-     * 当前用户三环状态：CURRENT、PENDING 与最近十条 REJECTED。
-     * 归属按当前绑定的 {@code (区服, WotB 账号)} 查询；未绑定账号时没有任何属于该身份的记录，三个列表均为空。
-     */
     @Transactional(readOnly = true)
     public Mark3UserStatusDto userStatus(final String userId) {
         final WotbAccountIdentity owner = userProfileService.currentWotbIdentity(userId).orElse(null);
@@ -283,10 +255,6 @@ public class Mark3SubmissionService {
                 .stream().map(mapper::toSummary).toList();
     }
 
-    /**
-     * 记录是否属于当前绑定身份。canonical owner 是 {@code (区服, WotB 账号)}，
-     * 不是 Keycloak sub；只比账号 ID 会让跨服同号互相看见。
-     */
     private static boolean owns(final WotbAccountIdentity owner, final Mark3Submission submission) {
         return owner != null
                 && owner.accountId() == submission.getWotbAccountId()
@@ -328,7 +296,6 @@ public class Mark3SubmissionService {
         normalizeWinRate(winRate, "MARK3_INVALID_WIN_RATE");
     }
 
-    /** 审核时只接受冻结的 claimed 数据；脏历史数据不得静默变成 CURRENT。 */
     static void requireApprovedValues(
             final int battleCount,
             final int averageDamage,

@@ -5,20 +5,6 @@ import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.processing.TeamEntityIdentity;
 import com.wotb.core.replay.processing.TeamEntityMapping;
 
-/**
- * Field-specific method1 raw-cause validator.
- *
- * <p><b>Packet-local semantic core.</b> The semantic cause is derived from the PR147-proven
- * packet-local invariant — the preserved {@code causeFlag} plus the {@code sourceEntity} relationship
- * ({@link VehicleHealthStateEvent#deriveSemanticCause}). Cross-event / settlement evidence is <b>not</b>
- * a required gate for the semantic: intermediate FIRE / RAMMING / DIRECT events must validate from the
- * packet-local invariant regardless of the player's final settlement deathReason.</p>
- *
- * <p><b>Identity gate.</b> When a {@link TeamEntityMapping} is supplied the target entity must resolve
- * to a usable settled combatant, otherwise the semantic is absent (the event retains every raw field;
- * no UNKNOWN/PARTIAL state explosion). Settlement deathReason, when available, is only ever optional
- * corroboration for terminal death and never gates intermediate-event semantics.</p>
- */
 public final class VehicleHealthCauseValidator {
 
     private VehicleHealthCauseValidator() {

@@ -1,8 +1,3 @@
-/**
- * 配置器计算引擎 golden：期望值由上游仓（WoT-Blitz-Agent）同一公式表的独立 Python
- * 参照实现，对 common/research/ 导出数据逐项算出（双实现对拍；公式与裁定口径见
- * 上游 docs/wotbtools-research-loadout-plan.md §5）。改公式必须同时改两处并重生成。
- */
 import { describe, expect, it } from 'vitest'
 import { computeCharacteristics, invisibilityBonusFor, penetrationCoefficient } from './characteristics'
 import { degressiveStat, isConditionalCrewSkill, progressiveStat } from './crewStats'
@@ -61,25 +56,20 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     const out = computeCharacteristics(setup({
       gunCycle: { type: 'autoloader', reload: 20, intraClip: 3, shellCount: 3, shellReloads: [] },
     }))
-    // 装填手系数 0.9591：20×0.9591 + 2×3 = 25.18s；160×3×60/25.18 ≈ 1144
     expect(out.gunCommonDamagePerMin).toBeGreaterThan(1140)
     expect(out.gunCommonDamagePerMin).toBeLessThan(1150)
     expect(out.gunShellReloadTime).toBeNull()
     expect(out.gunClipShellCount).toBe(3)
     expect(out.gunClipShellReloadTime).toBe(3)
     expect(out.gunClipReloadTime).toBeCloseTo(19.18, 1)
-    // 普通弹夹没有连发组：三行留空（参数行隐藏）
     expect(out.gunClipBurstReloadTime).toBeNull()
     expect(out.gunBurstShellCount).toBeNull()
     expect(out.gunClipBurstCount).toBeNull()
-    expect(out.gunClipDamage).toBe(480) // 160 × 3
-    expect(out.gunEffectiveDamagePerMin).toBeNull() // 有效 DPM 只给 autoreloader
+    expect(out.gunClipDamage).toBe(480)
+    expect(out.gunEffectiveDamagePerMin).toBeNull()
   })
 
   it('连发组（PomPom，AC Atlas）：组内连发与组间弹间分开计，DPM 不再把组内时间重复计入', () => {
-    // 客户端 AC Atlas V2：整夹 6 发、组间 3s、每组 3 发、组内 0.25s、整夹装填 13s、单发 120。
-    // BK resolveDpm：13×装填系数 + (6/3−1)×3 + (6/3)×(3−1)×0.25 = 12.466 + 3 + 1 = 16.466s
-    // → 120×6×60/16.466 ≈ 2623（若按普通弹夹算组内也乘 3s 会得到 ~1573，明显偏低）。
     const out = computeCharacteristics(setup({
       standardShell: { damage: 120, penetration: 255, type: 'ap' },
       gunCycle: {
@@ -92,18 +82,14 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunShotsPerMinute).toBeGreaterThan(21.8)
     expect(out.gunShotsPerMinute).toBeLessThan(21.9)
     expect(out.gunClipShellCount).toBe(6)
-    expect(out.gunClipShellReloadTime).toBe(3) // 组间扳机间隔（组内 0.25s 走下面的连发行）
+    expect(out.gunClipShellReloadTime).toBe(3)
     expect(out.gunClipReloadTime).toBeCloseTo(12.466, 2)
-    // 连发行（客户端 hangarParams 同名参数）：组内弹间 / 每组发数 / 每夹组数
     expect(out.gunClipBurstReloadTime).toBe(0.25)
     expect(out.gunBurstShellCount).toBe(3)
     expect(out.gunClipBurstCount).toBe(2)
   })
 
   it('单组连发（Annihilator/Cerberus）：整夹即一组，弹间装填行隐藏、只显示组内间隔', () => {
-    // 客户端 Cerberus：整夹 3 发全部在同一个连发组里（一组 3 发、组内 0.333s），
-    // 一夹一组 ⇒ 不存在“组间扳机间隔”，gunClipShellReloadTime 应为空；
-    // 唯一的射击间隔是 gunClipBurstReloadTime，DPM 循环只加组内 (n−1) 个间隔。
     const out = computeCharacteristics(setup({
       standardShell: { damage: 160, penetration: 200, type: 'ap' },
       gunCycle: {
@@ -116,7 +102,6 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunClipBurstReloadTime).toBeCloseTo(0.3333333, 6)
     expect(out.gunClipShellReloadTime).toBeNull()
     expect(out.gunClipReloadTime).toBeCloseTo(10 * 0.958904, 4)
-    // 3 发 / (10×0.958904 + 2×0.3333)s ≈ 2808/min
     expect(out.gunCommonDamagePerMin).toBeGreaterThan(2800)
     expect(out.gunCommonDamagePerMin).toBeLessThan(2820)
   })
@@ -128,26 +113,22 @@ describe('弹夹 / 自动装填（客户端 config 字段 → BK resolveDpm）',
     expect(out.gunClipShellCount).toBe(3)
     expect(out.gunClipReloadTime).toBeCloseTo(34.53, 1)
     expect(out.timeBetweenPumpShots).toBe(2.727)
-    expect(out.gunClipShellReloadTime).toBeNull() // 自动装填只走 pump 字段
+    expect(out.gunClipShellReloadTime).toBeNull()
     expect(out.reloadingShellTime0).toBeCloseTo(13.43, 1)
     expect(out.reloadingShellTime2).toBeCloseTo(9.59, 1)
-    // 最短单发 10×0.9591 + 2.727 = 12.32 → 160×60/12.32 ≈ 779
     expect(out.gunCommonDamagePerMin).toBeGreaterThan(770)
     expect(out.gunCommonDamagePerMin).toBeLessThan(790)
-    // BK dpmEffective 60s 窗口：160/16.15×57.27 + 160×2 ≈ 887.4
     expect(out.gunEffectiveDamagePerMin).toBeCloseTo(887.4, 1)
     expect(out.gunShellReloadTime).toBeNull()
   })
 
   it('自动装填炮：首发装填显著更长时有效 DPM 取末发（BK longFirst 分支）', () => {
-    // Carro 45t 形态：首 19.51s、随后 7.24/6.40/4.18，弹间 3.333s
     const out = computeCharacteristics(setup({
       gunCycle: {
         type: 'autoreloader', reload: 19.51, intraClip: 3.333333, shellCount: 4,
         shellReloads: [19.51, 7.24, 6.4, 4.18],
       },
     }))
-    // 4.18×0.958904 + 3.333333 = 7.341552；160/7.341552×53.333334 + 160×3 = 1642.33
     expect(out.gunEffectiveDamagePerMin).toBeCloseTo(1642.33, 1)
   })
 
@@ -173,9 +154,8 @@ describe('消耗品对 DPM / 伤害的影响（与 BlitzInfo 对照）', () => {
     const boosted = computeCharacteristics(setup({ gunCycle: cycle, consumableStems: ['newAutoloader'] }))
     expect(base.gunClipShellReloadTime).toBe(3)
     expect(boosted.gunClipShellReloadTime).toBeCloseTo(2.1, 6)
-    expect(boosted.gunClipReloadTime).toBeCloseTo(base.gunClipReloadTime!, 6) // 整匣不受影响
+    expect(boosted.gunClipReloadTime).toBeCloseTo(base.gunClipReloadTime!, 6)
     expect(boosted.gunCommonDamagePerMin).toBeGreaterThan(base.gunCommonDamagePerMin!)
-    // 自动装填炮的“自动装填间隔”同样吃 ×0.7；有效 DPM 的弹间耗时同步缩短
     const autoCycle = { type: 'autoreloader' as const, reload: 14, intraClip: 2.727, shellCount: 3, shellReloads: [14, 12, 10] }
     const autoBase = computeCharacteristics(setup({ gunCycle: autoCycle }))
     const auto = computeCharacteristics(setup({ gunCycle: autoCycle, consumableStems: ['newAutoloader'] }))
@@ -241,7 +221,6 @@ describe('弹种分类 / 装甲系数 / 弹速（客户端词表）', () => {
     expect(skilled.dispersionShooting).toBeCloseTo(base.dispersionShooting! * 0.93, 3)
     expect(skilled.stillInvisibility).toBeCloseTo(base.stillInvisibility! * 1.21, 1)
     expect(skilled.chassiRotationSpeed).toBeCloseTo(base.chassiRotationSpeed! * 1.07, 2)
-    // 等级可缩放：1 级只吃 1 个 per-level（客户端 0.01）
     const levelOne = computeCharacteristics(setup({ skillLevels: { smooth_driving: 1 } }))
     expect(levelOne.dispersionMoving).toBeCloseTo(base.dispersionMoving! * 0.99, 3)
   })
@@ -283,7 +262,6 @@ describe('弹种分类 / 装甲系数 / 弹速（客户端词表）', () => {
     expect(triggered.circularVisionRadius).toBeGreaterThan(passive.circularVisionRadius)
     expect(triggered.gunAimingTime).toBeLessThan(passive.gunAimingTime)
     expect(triggered.turretRotationSpeed).toBeGreaterThan(passive.turretRotationSpeed)
-    // 概率/连续命中技能没有战斗输入，不把最高伤害/穿深强行加进常态面板。
     expect(triggered.baseShellAvgDamage).toBe(passive.baseShellAvgDamage)
     expect(triggered.baseShellAvgPiercingPower).toBe(passive.baseShellAvgPiercingPower)
     expect(triggered.dispersionMoving).toBe(passive.dispersionMoving)
@@ -323,7 +301,7 @@ describe('弹种分类 / 装甲系数 / 弹速（客户端词表）', () => {
 describe('履带维修时间（客户端 chassisRepairTime = hysteresisHealth / healthRegenPerSec）', () => {
   it('T-34 基准 6.857 s；工具箱 +20%、防护套件 +10% 同乘', () => {
     const base = computeCharacteristics(setup({}))
-    expect(base.chassisRepairTime).toBeCloseTo(6.857, 3) // 24 / 3.5
+    expect(base.chassisRepairTime).toBeCloseTo(6.857, 3)
     const buffed = computeCharacteristics(setup({ deviceIds: [113], provisionStems: ['safety_set'] }))
     expect(buffed.chassisRepairTime).toBeCloseTo(6.857 / (1.2 * 1.1), 3)
   })
@@ -337,7 +315,7 @@ describe('履带维修时间（客户端 chassisRepairTime = hysteresisHealth / 
       trackIdx: 0,
       standardShell: null,
     }))
-    expect(base.chassisRepairTime).toBeCloseTo(6.857, 3) // 66 / 9.625
+    expect(base.chassisRepairTime).toBeCloseTo(6.857, 3)
     const skilled = computeCharacteristics(setup({
       modules: IS4,
       turretIdx: 0,
@@ -382,7 +360,7 @@ describe('车体尺寸（BI 11.21 Dimensions：底盘 + 车体 + 所选炮塔碰
     const out = computeCharacteristics(setup({ modules: noTurret, turretIdx: 0, gunIdx: 0 }))
     expect(out.tankLength).toBe(5.72)
     expect(out.tankWidth).toBe(2.94)
-    expect(out.tankHeight).toBe(1.67) // 底盘 0.002..0.99 + 车体上移 0.745（无炮塔盒）
+    expect(out.tankHeight).toBe(1.67)
   })
 })
 
@@ -390,8 +368,8 @@ describe('初始炮塔 pitch（models.pb initial_turret_rotation，4 辆意系 A
   it('有效仰角 = |min| − pitch、有效俯角 = max + pitch（BI 11.21 同口径）', () => {
     const withPitch = { ...T34, initialTurretRotation: { yaw: 0, pitch: 3, roll: 0 } }
     const out = computeCharacteristics(setup({ modules: withPitch }))
-    expect(out.gunPitchUpLimit).toBe(23) // 26 − 3
-    expect(out.gunPitchDownLimit).toBe(11) // 8 + 3
+    expect(out.gunPitchUpLimit).toBe(23)
+    expect(out.gunPitchDownLimit).toBe(11)
   })
 
   it('Minotauro（真实数据）：18/7 + pitch 3 → 15/10', () => {

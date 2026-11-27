@@ -16,11 +16,9 @@ export function createCameraArmorHighlight(deps: CameraRuntimeDeps, state: {
   recorderSample: RecorderCameraSample
 }) {
   const { recorderVehicle, recorderAimPoint, recorderSample } = state
-  // ---------- Sniper 穿深着色 ----------
   let armorHighlight: ArmorHighlightInstance | null = null;
   const _armorAimPoint = new THREE.Vector3();
   const _armorAimDir = new THREE.Vector3();
-  /** 当前时刻可被准星选中的敌车（可见、复活/存活、真实车模）。 */
   function highlightEnemies(): AimedVehicleCandidate[] {
     const data = deps.getData();
     if (!data?.meta) return [];
@@ -31,7 +29,7 @@ export function createCameraArmorHighlight(deps: CameraRuntimeDeps, state: {
       .map((v) => v as AimedVehicleCandidate);
   }
   function ensureArmorHighlight() {
-    armorHighlight ??= createArmorHighlight({ renderer: deps.getRenderer()!, assetProvider });   // 相机域入口都在 initScene 之后
+    armorHighlight ??= createArmorHighlight({ renderer: deps.getRenderer()!, assetProvider });
     return armorHighlight;
   }
   const armorStats = { pickMs: 0, stateMs: 0, thicknessMs: 0, occluderMs: 0, colorMs: 0, calls: 0, _t0: 0 } as ArmorHighlightPerfStats;
@@ -49,10 +47,6 @@ export function createCameraArmorHighlight(deps: CameraRuntimeDeps, state: {
     }
     return _occluderRoots;
   }
-  /**
-   * 主渲染之后的叠加 pass：只有录像者开镜才可能运行，其余路径没有任何额外 render。
-   * 进入录像者的过渡期相机还没到炮位，距离衰减和入射角都不对，不着色。
-   */
   function renderArmorHighlight() {
     const camera = deps.getCamera();
     const PERF = deps.perfEnabled();
@@ -80,7 +74,7 @@ export function createCameraArmorHighlight(deps: CameraRuntimeDeps, state: {
       armorStats.pickMs = performance.now() - tPick0;
       if (blocked) return;
     } else if (blocked) return;
-    if (!target) return;   // TS 收窄：target 为空时 blocked === 'no_target'，上方已 return（原语义不可达分支）
+    if (!target) return;
     const { shell, caliber } = mountedShell(authorConfig, shellId)!;
     ensureArmorHighlight().render({
       scene: deps.getScene(), camera, vehicle: target as AimedVehicleCandidate & { def: { eid: number; tank_id?: number | null; equipment?: unknown } }, tankData: target.tankData as { model_url?: string | null; [key: string]: unknown }, config, shell, caliber,
@@ -91,7 +85,6 @@ export function createCameraArmorHighlight(deps: CameraRuntimeDeps, state: {
       gpu: deps.gpu() ?? undefined,
     });
   }
-  /** 穿深着色开启路径共用（enterRecorderView / setArmorHighlight-on）：预编译 + 预取。 */
   function prewarmArmorHighlight(camera: PerspectiveCamera) {
     const highlight = ensureArmorHighlight();
     highlight.prewarm(camera);

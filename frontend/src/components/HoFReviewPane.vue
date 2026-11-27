@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 百场 / 三环审核详情（design-language §7 / current-plan Step 11「审核模板」）：
-// 证据 + 「用户申报 / 管理员确认」对照 + Replay 校验清单，底部固定决定栏。纯展示组件，状态与请求都在 HoFAdminModeration（每个领域一个实例）。
-// 大屏内联在队列右侧；小屏经 Teleport 成为一屏全屏详情，顶部上一条 / 下一条，底部是拇指区决定栏。
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Check, ChevronLeft, ChevronRight, Download, X } from 'lucide-vue-next'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -50,10 +47,6 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 const pending = computed(() => props.status === 'PENDING')
 const confirmedHeader = computed(() => pending.value ? 'hofAdmin.reviewAfterApprove' : 'hofAdmin.reviewConfirmed')
 
-/*
- * 窄屏覆盖层是模态的：传送到 body 后，打开时把焦点移进来，Tab 在层内循环，背后的 #app 设为 inert
- * （键盘与读屏都操作不到看不见的队列）；关闭后焦点回到打开前的元素（队列里那一条）。
- */
 const root = ref<HTMLElement | null>(null)
 const back = ref<HTMLButtonElement | null>(null)
 let returnFocus: HTMLElement | null = null

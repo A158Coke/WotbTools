@@ -23,7 +23,6 @@ import java.util.List;
 final class TeamSeparationEvidenceFixtures {
     private TeamSeparationEvidenceFixtures() { }
 
-    // ===== helpers（与原测试一致） =====
 
     static TeamFormationPhase twoClusterPhase(
             final float start, final float end,

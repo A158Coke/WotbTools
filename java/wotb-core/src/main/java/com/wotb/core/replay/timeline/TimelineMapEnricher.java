@@ -9,12 +9,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * BattleFrame 车辆地图语义 enrich（确定性，复用 common/map-semantics）。
- * <p>边界（docs/architecture/battle-timeline.md §16.2）：只表达「该格含硬掩体/该位置较高/该区域有建筑」这类
- * 几何/语义证据，禁止声称 exact LOS / 具体障碍挡炮 / hull-down。仓库内无逐对象几何与
- * 逐位置 heightmap 栅格（只有聚合统计），因此 terrain/slope 只在可推导时给出候选，绝不编造。</p>
- */
 public final class TimelineMapEnricher {
 
     private final String mapCode;
@@ -27,7 +21,6 @@ public final class TimelineMapEnricher {
         this.semantics = semanticsRegistry.semanticsFor(this.mapCode);
     }
 
-    /** 对位置采样 enrich；无位置时返回 UNKNOWN。 */
     FrameMapState enrich(final EntityIndex.PosSample pos) {
         if (pos == null) {
             return FrameMapState.UNKNOWN;
@@ -70,7 +63,7 @@ public final class TimelineMapEnricher {
                 List.copyOf(areaLabels),
                 List.copyOf(tags),
                 elevation,
-                null, // slope 需要相邻采样推导，当前不编造
+                null,
                 null,
                 hasTag(tags, "HARD_COVER") ? Boolean.TRUE : null,
                 hasTag(tags, "SOFT_COVER") ? Boolean.TRUE : null,

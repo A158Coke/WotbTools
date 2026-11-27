@@ -4,7 +4,6 @@ import type { LocalPlayback } from '../../replay-local/playback/parseLocalPlayba
 import type { RuntimeVehicle } from './vehicleRuntimeTypes.js'
 import type { VehiclePlaybackTrack } from '../../types/playback-v2.js'
 
-/** Per-session canonical life evidence, including identity-sensitive death transitions. */
 export function createVehicleLife({ getCanonical, getVehicles }: {
   getCanonical: () => LocalPlayback | null | undefined
   getVehicles: () => RuntimeVehicle[]
@@ -19,7 +18,6 @@ export function createVehicleLife({ getCanonical, getVehicles }: {
     }
     return lifeTracksByAccount.get(v.def.account_id);
   }
-  /** Use the producer's canonical identity evidence; older local sessions retain coverage-based identity. */
   function canonicalDeathAppliesTo(v: RuntimeVehicle, rawDeath: number, canonical: LocalPlayback, startRaw: number) {
     const starts = canonical.entityStartsByAccount?.get(v.def.account_id);
     if (starts) return activeEntityAt(starts, rawDeath - startRaw) === v.def.eid;
@@ -28,7 +26,6 @@ export function createVehicleLife({ getCanonical, getVehicles }: {
     const legacyStarts = new Map(siblings.map(candidate => [candidate.def.eid, candidate.def.coverage?.[0] ?? null]));
     return activeEntityAt(legacyStarts, rawDeath) === v.def.eid;
   }
-  /** Canonical life uses battle-relative seconds; this render boundary returns raw seconds like T. */
   function sceneLifeAt(v: RuntimeVehicle, t: number) {
     const canonical = getCanonical();
     const dataset = canonical?.dataset;
@@ -49,8 +46,6 @@ export function createVehicleLife({ getCanonical, getVehicles }: {
           ? destroyedKnownAtSec + clock.startRaw : null,
       };
     }
-    // Canonical may still be loading/fail: retain the existing authoritative scene fact, never HP.
-    // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往逐位一致）。
     return defLifeAt(v.def, t);
   }
   function deathAt(v: RuntimeVehicle, t: number) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
@@ -66,7 +61,6 @@ export function createVehicleLife({ getCanonical, getVehicles }: {
         const destroyedKnownAtSec = life.destroyedKnownAtSec;
         const identityTime = (destroyedKnownAtSec ?? life.timeSec) + clock.startRaw;
         if (!canonicalDeathAppliesTo(v, identityTime, canonical, clock.startRaw)) continue;
-        // 同一次死亡的重复迁移只算一次（既有不变式）；真复活模式的多死 killedAtSec 互异
         const key = typeof destroyedKnownAtSec === 'number' && Number.isFinite(destroyedKnownAtSec) ? destroyedKnownAtSec : life.timeSec;
         if (seenDeaths.has(key)) continue;
         seenDeaths.add(key);

@@ -42,7 +42,6 @@ describe('BattleMap', () => {
 
   it('projects opted-in semantic playable bounds to the SVG rect with screen-constant stroke', async () => {
     const bounds = mountainSemantic.playableBoundsMeters
-    // harness hoists a one-map mapImages mock; bypass it to use the canonical registry
     const { mapImages: canonicalMapImages } = await vi.importActual('../data/mapImages.js')
     const image = canonicalMapImages.mountain
     const overview = { mapCode: 'mountain', spawnPoints: [], playableBounds: bounds }
@@ -59,14 +58,11 @@ describe('BattleMap', () => {
     const xMax = ((bounds.xMax - cb.xMin) / (cb.xMax - cb.xMin)) * image.width
     const yTop = ((cb.yMax - bounds.yMax) / (cb.yMax - cb.yMin)) * image.height
     const yBottom = ((cb.yMax - bounds.yMin) / (cb.yMax - cb.yMin)) * image.height
-    // 独立公式（coordinateBounds + 世界坐标）证明语义→SVG 的逐值转换，不用被测 mapView 自证
     expect(Number(rect.attributes('x'))).toBeCloseTo(Math.min(xMin, xMax), 6)
     expect(Number(rect.attributes('y'))).toBeCloseTo(Math.min(yTop, yBottom), 6)
     expect(Number(rect.attributes('width'))).toBeCloseTo(Math.abs(xMax - xMin), 6)
     expect(Number(rect.attributes('height'))).toBeCloseTo(Math.abs(yBottom - yTop), 6)
-    // 屏幕宽度恒定（2px / zoom），不随地图放大变粗
     expect(rect.attributes('stroke-width')).toBe('1')
-    // 层级：边界在基地 / 出生点之下
     expect(wrapper.get('[data-test="pb-bases"]').element.previousElementSibling).toBe(rect.element)
   })
 
@@ -99,7 +95,6 @@ describe('BattleMap', () => {
   it('scene-team mode colors spawns by scene group team, unknown stays neutral (#835)', async () => {
     const { mapImages: canonicalMapImages } = await vi.importActual('../data/mapImages.js')
     const image = canonicalMapImages.mountain
-    // 真实语义档（21_mountain_mnt，东西向分组）：严格取 type=spawnpoint、原序不重排
     const spawnPoints = mountainSemantic.sceneEvidence.battlePoints
       .filter(point => point.type === 'spawnpoint')
       .map(point => ({ name: point.name, team: point.team, x: point.position[0], y: point.position[1] }))
@@ -119,7 +114,6 @@ describe('BattleMap', () => {
     expect(team1.length + team2.length + neutral.length).toBe(spawnPoints.length)
     expect(team1.length).toBe(spawnPoints.filter(p => p.team === 1).length)
     expect(team2.length).toBe(spawnPoints.filter(p => p.team === 2).length)
-    // 未知 team 不会映射为 enemy
     expect(wrapper.findAll('.pb-spawn-enemy')).toHaveLength(0)
     expect(wrapper.findAll('.pb-spawn-friendly')).toHaveLength(0)
   })
@@ -152,7 +146,6 @@ describe('BattleMap', () => {
       bases: [],
       visibleTracers: [],
     })
-    // scene-team 显式 opt-in 时：按场景分组 1/2，与 friendlyTeam 无关
     expect(wrapper.findAll('.pb-spawn-team-1')).toHaveLength(1)
     expect(wrapper.findAll('.pb-spawn-team-2')).toHaveLength(1)
     expect(wrapper.findAll('.pb-spawn-friendly')).toHaveLength(0)
@@ -178,10 +171,9 @@ describe('BattleMap', () => {
       visibleTracers: [],
     })
     expect(noContext.findAll('.pb-spawn-neutral')).toHaveLength(2)
-    // 2D 地图坐标不受配色模式影响：cx/cy 与既有公式一致
     const circle = noContext.findAll('.pb-spawns circle')[0]
     expect(Number(circle.attributes('cx'))).toBeCloseTo(1, 6)
-    expect(Number(circle.attributes('cy'))).toBeCloseTo(99, 6)   // toY = 100 - y
+    expect(Number(circle.attributes('cy'))).toBeCloseTo(99, 6)
   })
 
   it('replay mode classifies spawns through the shared recorder-relative role', () => {

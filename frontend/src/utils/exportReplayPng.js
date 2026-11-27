@@ -1,7 +1,5 @@
-/** Chrome/Firefox/Safari safe upper limit for canvas width/height. */
 export const MAX_CANVAS_DIMENSION = 16384
 
-/** Maximum scale applied to content. */
 export const MAX_SCALE = 2
 
 /**
@@ -111,8 +109,6 @@ export function downloadBlob(blob, filename) {
     a.href = url
     a.download = filename
     a.style.display = 'none'
-    // Download-activation contract: this attribute marks the only programmatic click the
-    // onboarding click guard lets through (the anchor is hidden and never a pointer target).
     a.setAttribute('data-app-download', '')
     let appended = false
 

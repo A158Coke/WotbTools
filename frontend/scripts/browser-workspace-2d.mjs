@@ -23,15 +23,6 @@ async function setRosterVisible(page, visible) {
   })()`)
 }
 
-/**
- * Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外。
- *
- * 竖屏下 Display 是**流内**的一块面（不是浮层），必须紧跟传输控件，而不是被排到长长的
- * 详情 / 名册块之后——那种回归在 jsdom 里看不出来（没有布局引擎），只能在这里拦。
- * 宽档 / 横屏则必须是锚定 gear 的浮层。
- *
- * 必须在竖屏分支 return 之前调用：竖屏场景不走三段式断言。
- */
 async function checkDisplaySurface(page, failures, layout, scenario) {
   const anchorFocused = await page.evaluate(`(() => {
     const gear = document.querySelector('[data-test="pb-secondary-entry"]')
@@ -63,7 +54,6 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
   })()`)
   check(failures, !!display, 'Display must open from the gear')
   if (display) {
-    // 键盘落点：打开时进入面内（有明确关闭入口就优先给它），不在面外干等
     check(failures, display.focusInside,
       `Display must take the keyboard focus on open: ${JSON.stringify(display)}`)
     check(failures, display.focusOnClose,
@@ -82,17 +72,9 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
         `wide Display must be an anchored overlay: ${JSON.stringify(display)}`)
     }
   }
-  // —— #727 瞬态优先 + 可见即可达（design-language §5「遮挡与可达」）——
-  // 绘制次序只能用重叠区的真实命中证明：z-index 数值本身证明不了任何事（只在同一层叠上下文可比）。
   if (display) {
     const PAINT_PAIR = { above: '[data-testid="display-panel"]', below: '[data-test="pb-transport-slot"]' }
     const paint = await measurePaintOrder(page, PAINT_PAIR)
-    // 空跑守卫按形态逐场景判定，而不是整轮聚合（聚合会让按名字单跑竖屏、或 CI 分片只分到竖屏时误报）：
-    // 宽档 / 横屏的 Display 锚在 gear 上，gear 就在常驻传输条里，两者按契约必然重叠——那正是
-    // 「瞬态面压过常驻控件」要判定的区域，没重叠说明这条断言在该形态上空跑了。
-    // 竖屏的 Display 是紧跟传输条的流内静态面，按契约本来就不重叠。
-    // 手机横屏（minMap）传输条是底部全宽一行，Display 在其上方展开，按设计既不盖传输条也不盖详情：
-    // 此时改证「没有覆盖」（传输条整条可点），而不是要求重叠。
     const reflowed = !!scenario.minMap
     if (reflowed) {
       check(failures, !paint.overlaps, `手机横屏 Display 应在全宽传输条上方展开、不得盖住传输条: ${JSON.stringify(paint)}`)
@@ -102,7 +84,6 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
     }
     if (paint.overlaps) {
       for (const failure of paint.failures) check(failures, false, `Display 必须压过常驻传输条: ${failure}`)
-      // 负向对照：把常驻传输条强行提回 #727 之前的裸 25，探针必须报错。
       await page.evaluate(`(() => {
         const style = document.createElement('style')
         style.id = 'occlusion-negative-control'
@@ -114,23 +95,17 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       try {
         negative = await measurePaintOrder(page, PAINT_PAIR)
       } finally {
-        // 注入的样式必须无条件撤掉：留下来会把后续断言全部染成"常驻条在上面"。
         await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
       }
       check(failures, negative.failures.length > 0,
         `负向对照必须失败：常驻传输条提回 z-index 25 后探针仍然通过，说明它发现不了 #727 这类遮挡 ${JSON.stringify(negative)}`)
     }
-    // 详情面板与 Display 同时开着时，Display 必须在上：Display 在外点时即关闭，所以两者同时可见时
-    // 它一定是更晚打开的那个，被详情面板盖住就是"刚打开的面看不见"。
-    // 竖屏的详情是流内块、不是浮层；只有宽档 / 横屏才有两块浮动面板叠在一起的状态组合。
-    // 实测全部宽档 / 横屏形态两者都重叠（夹具开场即选中车辆），所以那里必须重叠——否则这条断言空跑。
     if (layout !== 'portrait' && !reflowed) {
       const detailsPaint = await measurePaintOrder(page, { above: '[data-testid="display-panel"]', below: '[data-test="pb-info"]' })
       check(failures, detailsPaint.overlaps === true,
         `宽档 Display 应与车辆详情面板重叠（夹具开场即选中车辆），实际没有：Display / 详情面板次序断言空跑了 ${JSON.stringify(detailsPaint)}`)
       for (const failure of detailsPaint.failures) check(failures, false, `Display 必须压过车辆详情面板: ${failure}`)
     }
-    // 选项不只是按钮：显示开关是 label 包着的复选框，只查 button 会漏掉整块被盖住的复选框区
     const compact = !!scenario.touch && scenario.height <= 520 && scenario.width > scenario.height
     const reach = await measureReachability(page, {
       options: ['[data-testid="display-panel"] button', '[data-testid="display-panel"] label'],
@@ -148,7 +123,6 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
     focusBackOnGear: document.activeElement === document.querySelector('[data-test="pb-secondary-entry"]'),
   }))()`)
   check(failures, closed.gone, 'Display close must remove the surface')
-  // 关掉之后键盘不能掉在 body 上：焦点回到触发它的 gear
   if (anchorFocused) {
     check(failures, closed.focusBackOnGear,
       `closing Display must return focus to the gear: ${JSON.stringify(closed)}`)
@@ -165,24 +139,16 @@ async function runWorkspace2DScenario(env, scenario) {
   await page.emulate(scenario)
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1${scenario.minMap ? '&shell=immersive' : ''}${scenario.hudStress ? `&hud=${scenario.hudStress}` : ''}`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-transport-toggle"]'), { label: '2D transport toggle' })
-  // §roster-overlay：手机横屏默认**收纳**名册浮层（地图优先），桌面 / 平板默认展开。
   const defaultLanes = await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`)
   const defaultPhoneLandscape = await page.evaluate(`document.querySelector('[data-test="battle-playback"]').classList.contains('pb-phone-landscape')`)
   if (scenario.width > scenario.height) {
     check(failures, defaultLanes === !defaultPhoneLandscape,
       `roster overlay default state wrong (phoneLandscape=${defaultPhoneLandscape} lanes=${defaultLanes})`)
   }
-  // §5 遮挡契约按**生产默认态**测量（F4）：手机横屏默认收纳（常驻控件 = HUD/传输条）；
-  // 桌面 / 平板默认展开的浮层落在地图两侧空隙里，这里同时守住「用户首屏看到的默认呈现
-  // 没有实质遮挡」，不允许为了通过而把桌面名册藏起来再量。
   await delay(300)
 
-  // —— #727 主内容遮挡（design-language §5）：常驻 quick actions 不得实质占住地图 ——
-  // 这里量的是真实应用（不是夹具）：真实 locale 文字宽度 + 真实布局决定占比。
   const mapOcclusion = await measureOcclusion(page, {
     primary: '.pb-map',
-    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它，由网格命中发现；
-    // 清单只留不参与命中的装饰层。
     persistent: ['.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
     ignore: ['.pb-vehicle'],
   })
@@ -190,7 +156,6 @@ async function runWorkspace2DScenario(env, scenario) {
   for (const failure of mapOcclusion.failures) {
     check(failures, false, `地图遮挡（上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）: ${failure}`)
   }
-  // 手机横屏默认收纳：为后续名册 / 选车断言展开浮层；桌面已处于默认展开态，不要动它（F4）。
   if (scenario.width > scenario.height && !(await page.evaluate(`!!document.querySelector('[data-test="pb-team-lane-left"]')`))) {
     await page.evaluate(`document.querySelector('[data-test="pb-roster-entry"]')?.click()`)
   }
@@ -285,8 +250,6 @@ async function runWorkspace2DScenario(env, scenario) {
     `viewport collapsed: requested ${scenario.width}x${scenario.height}, measured ${g.width}x${g.height}`)
   if (scenario.fullscreen) check(failures, g.fullscreen, 'fullscreen did not engage')
   check(failures, !g.pageOverflowX, 'page-level horizontal overflow')
-  // 正方形 Stage：2D 地图元素带的是地图自己的逻辑画框（mapView W/H，如 766×769，底图 / SVG /
-  // 标记共用这一个画框），与 1:1 的差 < 1%——拉成严格 1:1 反而会把地图拉伸变形。
   const squareish = (b) => b && b.w > 0 && Math.abs(b.w - b.h) <= Math.max(1.5, b.w * 0.01)
   check(failures, squareish(g.map), `Stage is not square: ${JSON.stringify(g.map)}`)
   check(failures, JSON.stringify(g.primaryOrder) === JSON.stringify(g.primaryIds),
@@ -309,12 +272,10 @@ async function runWorkspace2DScenario(env, scenario) {
     }
   }
   if (scenario.minMap) {
-    // 手机横屏的高度账：地图 ≥ minMap；HUD 与传输条各一行（传输条横跨全宽，不再两行）。
     check(failures, g.map && g.map.h >= scenario.minMap, `phone-landscape map must be >= ${scenario.minMap}px: ${JSON.stringify(g.map)}`)
     check(failures, g.hud && g.hud.h <= 36, `phone-landscape HUD must be a single row (<=36px): ${JSON.stringify(g.hud)}`)
     check(failures, g.transport && g.transport.h <= 56 && g.transport.w >= scenario.width - 4,
       `phone-landscape transport must be one full-width row (<=56px): ${JSON.stringify(g.transport)}`)
-    // 紧凑 HUD 两侧血条必须真的有宽度且对称（敌方曾因 grid 列顺序与模板不匹配被压成 0 宽）。
     const bars = await page.evaluate(`(() => {
       const w = (s) => document.querySelector(s)?.parentElement.getBoundingClientRect().width ?? 0
       return { friendly: w('[data-test="pb-hp-fill-friendly"]'), enemy: w('[data-test="pb-hp-fill-enemy"]') }
@@ -341,7 +302,6 @@ async function runWorkspace2DScenario(env, scenario) {
         `hud stress: content overlaps/overflows: ${JSON.stringify({ center: h.rects.center, friendly: h.rects.friendly, enemy: h.rects.enemy, hudOverflowX: h.hudOverflowX, centerOverflowX: h.centerOverflowX, hudScrollWidth: h.hudScrollWidth, hudClientWidth: h.hudClientWidth })}`)
       console.log(`[browser-interaction] ${scenario.name} hud=${JSON.stringify({ width: h.width, height: h.height, tracks: h.tracks, values: h.values, bases: h.baseCount, mapW: h.title?.width })}`)
     }
-    // 沉浸态横屏（非全屏）也贴屏幕边缘：模拟刘海侧 safe-area，车道与传输条不得进入该区域。
     if (!scenario.fullscreen) {
       const inset = 44
       await page.client.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: inset, right: inset } }, page.sessionId)
@@ -357,7 +317,6 @@ async function runWorkspace2DScenario(env, scenario) {
     }
     console.log(`[browser-interaction] ${scenario.name} map=${Math.round(g.map?.w)}x${Math.round(g.map?.h)} hud=${Math.round(g.hud?.h)} transport=${Math.round(g.transport?.h)}`)
   }
-  // 手机横屏 / 桌面：六项同一行（全屏入口内联）；手机竖屏：五项同一行（全屏浮在 HUD）。
   const tops = g.primaryTops.filter((t) => t != null)
   check(failures, tops.length === g.primaryIds.length && Math.max(...tops) - Math.min(...tops) <= 1,
     `primary controls are not one row: ${JSON.stringify(g.primaryTops)}`)
@@ -387,10 +346,8 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, JSON.stringify(g.inlineRosterIds) === JSON.stringify([...team1, ...team2]),
       `portrait roster order must be Team 1 then Team 2: ${JSON.stringify(g.inlineRosterIds)}`)
     check(failures, g.map && Math.abs(g.map.w - scenario.width) <= 2, 'portrait Stage must use the full column width')
-    // 竖屏允许页面纵向延伸（纵向流），不是把名册塞进一个滚动盒
     const longPage = await page.evaluate('document.documentElement.scrollHeight > innerHeight')
     check(failures, longPage, 'portrait vertical flow should extend the page (no nested roster scroll box)')
-    // 选中 → inline 详情排在传输控件之后、名册之前；× 只关详情
     await clickElement(page, '[data-test="pb-roster-row"][data-account-id="2002"]')
     await delay(200)
     const opened = await page.callWith(workspace2dProbe, scenario.touch)
@@ -407,7 +364,6 @@ async function runWorkspace2DScenario(env, scenario) {
     return result()
   }
 
-  // ---- 三段式 ----
   check(failures, g.rootClass.includes('pb-roster-lanes'), `expected Team 1 | Stage | Team 2 lanes (class=${g.rootClass})`)
   check(failures, !!g.left && !!g.right, 'both physical lanes must be visible without opening any menu')
   if (!g.left || !g.right || !g.map) {
@@ -416,8 +372,6 @@ async function runWorkspace2DScenario(env, scenario) {
   }
   check(failures, JSON.stringify(g.left.ids) === JSON.stringify(scenario.recorder === 2 ? team2 : team1), `left lane must be Recorder friendly: ${JSON.stringify(g.left.ids)}`)
   check(failures, JSON.stringify(g.right.ids) === JSON.stringify(scenario.recorder === 2 ? team1 : team2), `right lane must be Recorder enemy: ${JSON.stringify(g.right.ids)}`)
-  // §roster-overlay：车道是 Stage 内侧的浮层——贴 Stage 左右边缘（地图居中时落在侧带空隙里），
-  // 任何形态都不得越过地图中心，也不得把地图压窄（地图正方形仍由纵向预算决定）。
   check(failures, g.left.box.r <= (g.map.l + g.map.r) / 2 + 1 && g.right.box.l >= (g.map.l + g.map.r) / 2 - 1,
     `overlay lanes must stay on their own side of the map center: left=${JSON.stringify(g.left.box)} right=${JSON.stringify(g.right.box)} map=${JSON.stringify(g.map)}`)
   check(failures, !g.left.scrolls && !g.right.scrolls, `normal 7v7 lanes must not scroll: ${JSON.stringify({ left: g.left.dbg, right: g.right.dbg })}`)
@@ -429,11 +383,9 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, g.transport.t >= g.map.b - 1, `transport must sit below the Stage (transport=${JSON.stringify(g.transport)} map=${JSON.stringify(g.map)})`)
   }
   if (scenario.recorder === 2) {
-    // HUD 仍是录像者视角：friendly 总血量 = Team 2 的当前总血量
     check(failures, /\d/.test(g.friendlyHp || ''), 'friendly HUD value missing')
   }
 
-  // ---- 选择 Team 1 → 浮窗；名册两条都在 ----
   const time0 = g.time
   const leftPlayer = scenario.recorder === 2 ? 2002 : 1002
   const rightPlayer = scenario.recorder === 2 ? 1003 : 2003
@@ -446,15 +398,12 @@ async function runWorkspace2DScenario(env, scenario) {
   check(failures, s.detailsParentIsMain, 'floating details must be a child of the battlefield workspace (.pb-main)')
   check(failures, !!s.left && !!s.right, 'details must not hide either lane')
   check(failures, s.details && s.details.l >= s.map.l - 1, 'clicking a left-lane row should place details away from the left lane')
-  // 初始落位不压中心栏（HUD / Stage / 传输控件同一列）：侧边放得下（≥ 240px）时，浮窗整个落在那一列之外
   const column = s.transport && s.transport.w > 0 ? s.transport : s.map
   if (s.main.r - 16 - (column.r + 8) >= 240) {
     check(failures, s.details && s.details.l >= column.r + 7.5 && (!s.hud || s.details.l >= s.hud.r - 0.5),
       `initial details must keep the HUD / Stage column clear: details=${JSON.stringify(s.details)} column=${JSON.stringify(column)} hud=${JSON.stringify(s.hud)}`)
   }
 
-  // ---- 拖到 Team 1 / Stage / Team 2 三个区域 ----
-  // 右 → 中 → 左：最后停在 Team 1 之上，Team 2 车道保持可点（用户的真实流程：开着详情连点 Team 2）。
   const regions = [['right', (s.right.box.l + s.right.box.r) / 2], ['center', (s.map.l + s.map.r) / 2], ['left', (s.left.box.l + s.left.box.r) / 2]]
   let lastPos = null
   for (const [label, x] of regions) {
@@ -470,21 +419,15 @@ async function runWorkspace2DScenario(env, scenario) {
     if (d.transport && d.transport.h > 0) {
       check(failures, panel && panel.b <= d.transport.t + 0.5, `details covers the transport after dragging ${label}`)
     }
-    // 记录宿主相对坐标：下面点 Team 2 时 clickElement 可能把行滚进视口，页面 scrollY 变化会
-    // 同时移动面板与宿主，只比较视口坐标会把滚动误判成“面板被重新摆放”。
     lastPos = { panel, main: d.main, transport: d.transport }
   }
 
-  // ---- 点 Team 2 → 同一个窗更新、位置不动、Team 2 车道仍在 ----
   const team2Click = await clickElement(page, `[data-test="pb-roster-row"][data-account-id="${rightPlayer}"]`)
   check(failures, clicked(team2Click), `Team 2 row not clickable: ${team2Click}`)
   await delay(250)
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1 && s.detailsPlayer === rightName, `details did not update to the Team 2 vehicle: ${s.detailsPlayer}`)
   check(failures, !!s.right, 'Team 2 lane disappeared after selecting a Team 2 vehicle')
-  // 宿主相对坐标：页面滚动不影响。选中另一台车时内容高度可能变化；ResizeObserver 的合法结果
-  // 由生产同一份 detailsPlacementLimits 推导：old top 仍合法就**原位保留**，只有真正越过
-  // transport / host 下界才 clamp。不能用「上移不超过增高量」这类弱谓词（会放过不必要的位移）。
   const oldPanel = lastPos?.panel
   const oldMain = lastPos?.main
   const dx = oldPanel && oldMain && s.details && s.main ? (s.details.l - s.main.l) - (oldPanel.l - oldMain.l) : NaN
@@ -504,7 +447,6 @@ async function runWorkspace2DScenario(env, scenario) {
     && (!s.transport || s.details.b <= s.transport.t + 0.5),
     `user-dragged details position must survive selection changes (host-relative): dx=${dx} old=${JSON.stringify(oldPanel)} now=${JSON.stringify(s.details)} host=${JSON.stringify(s.main)} padding=${JSON.stringify(s.mainPadding)} transport=${JSON.stringify(s.transport)}`)
 
-  // ---- × 只关详情 ----
   await clickElement(page, '[data-test="pb-sb-close"]')
   await delay(200)
   s = await page.callWith(workspace2dProbe, scenario.touch)
@@ -516,7 +458,6 @@ async function runWorkspace2DScenario(env, scenario) {
   s = await page.callWith(workspace2dProbe, scenario.touch)
   check(failures, s.detailsCount === 1, 'clicking the selected vehicle again must reopen details')
 
-  // ---- 名册关闭：车道消失，Stage 仍是居中正方形，详情与选中保留 ----
   if (!scenario.fullscreen) {
     check(failures, (await setRosterVisible(page, false)) === 'ok', 'roster preference toggle missing')
     await delay(300)
@@ -531,15 +472,11 @@ async function runWorkspace2DScenario(env, scenario) {
     check(failures, !!s.left && !!s.right && JSON.stringify(s.selectedIds) === JSON.stringify([rightPlayer]), 'roster ON must restore lanes with the existing selection')
   }
 
-  // ---- Display 面开合：始终可从 gear 到达，且不把用户丢到首屏之外 ----
   await checkDisplaySurface(page, failures, scenario.layout, scenario)
 
-  // Opening the editor changes the height budget. Closed-editor geometry does not cover
-  // short landscape fullscreen or the touch palette, so exercise the visible tools too.
   await checkAnnotationMode(page, failures, scenario)
   await checkPlaybackDeclutter(page, failures, scenario)
 
-  // ---- 标注：真实鼠标从车辆上起笔拖一条箭头——只画线，不选中车辆、不出现浏览器选区 ----
   if (!scenario.touch) await checkAnnotationDrag(page, failures)
 
   check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
@@ -592,7 +529,6 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
     `HP ring must surround its marker and disable reload: ${JSON.stringify(ringGeometry)}`)
   await tap('[data-testid="pb-hp-mode-bar"]')
   await page.waitForValue(state, value => value.rings === before.rings && value.hp === before.hp, { label: 'bar mode restored' })
-  // #727 之后，防遮与名册开关都在 Display 面里（地图上不再放常驻控件），所以先确保面是开着的。
   const ensureDisplayOpen = async () => {
     const open = await page.evaluate(`!!document.querySelector('[data-testid="display-panel"]')`)
     if (!open) await tap('[data-test="pb-secondary-entry"]')
@@ -614,7 +550,6 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
   await tap('[data-test="pb-show-roster"]')
   const hidden = await page.waitForValue(state, s => s.expanded === 'false' && s.roster === 0, { label: 'roster hidden' })
   check(failures, hidden.mapWidth >= before.mapWidth - 1 && !hidden.overflow, 'hiding teams must preserve or expand the usable map without overflow')
-  // Height-constrained square maps cannot grow further; width-constrained maps must.
   if (before.stageWidth && before.stageWidth < before.mainWidth - 2) {
     check(failures, hidden.stageWidth > before.stageWidth + 1, 'collapsing team lanes must return their width to the map stage')
   }
@@ -625,8 +560,6 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
   await tap('[data-test="pb-show-roster"]')
   const shown = await page.waitForValue(state, s => s.expanded === 'true' && s.roster === before.roster, { label: 'roster restored' })
   check(failures, shown.time === before.time, 'display shortcuts must not change playback time')
-  // 这些开关现在都在 Display 面里：离开时把面关回去，否则它会挡住后续场景的地图交互
-  // （`@pointerdown.stop` 会吃掉标记拖拽）。
   await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
   await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'Display surface closed' })
 }
@@ -680,11 +613,6 @@ async function checkAnnotationMode(page, failures, scenario) {
   }
 }
 
-/**
- * 手机横屏 compactAnnotation：传输条隐藏后仍要有唯一可达的全屏入口。
- * 真正在浏览器里开标注、点两条未完成路线、进出全屏，再关标注恢复传输条——
- * 状态断言只看 route draft / toolbar / 入口可见性，不依赖组件内部 ref。
- */
 async function checkCompactAnnotationFullscreen(page, failures, scenario) {
   const map = await page.evaluate(`(() => {
     const r = document.querySelector('[data-test="pb-map"]').getBoundingClientRect()
@@ -805,10 +733,6 @@ async function checkCompactAnnotationFullscreen(page, failures, scenario) {
     `closing compact annotation must restore exactly one inline fullscreen entry: ${JSON.stringify(closed)}`)
 }
 
-/**
- * 标注模式下的鼠标拖动：车辆层整体不接指针（hitbox / 名牌 tooltip 不能把父层的 none 顶掉），
- * 地图上按下拖动也不能变成浏览器的文本 / 图片选择（车辆标记被选中成蓝色色块）。
- */
 async function checkAnnotationDrag(page, failures) {
   if (await page.evaluate(`!!document.querySelector('[data-test="pb-sb-close"]')`)) {
     await clickElement(page, '[data-test="pb-sb-close"]')

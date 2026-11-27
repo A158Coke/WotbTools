@@ -1,7 +1,3 @@
-/**
- * Geometry and projection contracts for the vehicle-model extractor.
- * Uses production pure functions and the committed Maus fixture; no network access.
- */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -40,7 +36,6 @@ function rotatePointAround({ point, origin, deg }) {
 const MAUS_DIR = fileURLToPath(new URL('./assets/maus/', import.meta.url))
 describe('correctZYTuple（引擎坐标 → 模型坐标）', () => {
   it('DAVA (x, y高, z长) → 模型 (x, z, y)', () => {
-    // BlitzKit: R_x(+90°)(x, y, -z) = (x, z, y)；Maus turret_origin=(0, 2.14, -1.14) → (0, -1.14, 2.14)
     const out = correctZYTuple({ x: 0, y: 2.140294075012207, z: -1.144700050354004 })
     expect(out.x).toBeCloseTo(0, 9)
     expect(out.y).toBeCloseTo(-1.1447, 4)
@@ -114,12 +109,9 @@ describe('buildMetadata（source 契约：provider/tankId/modelGlb）', () => {
 })
 
 describe('Blocker 1 — concave silhouette（projected triangle union）', () => {
-  // L 形：由两个矩形三角形对构成——union 必须保留 L 形凹轮廓
   const L_SHAPE_TRIS = [
-    // 底部横条 (0,0)-(4,1)
     [[0, 0], [4, 0], [4, 1]],
     [[0, 0], [4, 1], [0, 1]],
-    // 左侧竖条 (0,0)-(1,3)
     [[0, 0], [1, 0], [1, 3]],
     [[0, 0], [1, 3], [0, 3]],
   ]
@@ -127,17 +119,14 @@ describe('Blocker 1 — concave silhouette（projected triangle union）', () =>
     const union = unionTriangles(L_SHAPE_TRIS)
     expect(union.length).toBe(1)
     const ring = union[0].ring
-    // L 形外轮廓：4+4+1+1 = 10 个角点（含共线点简化前）
     const hull = convexHull2D(ring.map(([x, y]) => ({ x, y })))
-    // convex hull 只有 5 个角点（填掉凹角），union ring 必须保留凹角（更多点）
     expect(hull.length).toBe(5)
     expect(ring.length).toBeGreaterThan(5)
-    // 凹角 (1,1) 必须存在（hull 会丢失它）
     expect(ring.some((p) => Math.abs(p[0] - 1) < 1e-9 && Math.abs(p[1] - 1) < 1e-9)).toBe(true)
   })
   it('projectTriangles 过滤退化（垂直面投影为线）', () => {
     const tris = [
-      [[0, 0, 0], [1, 0, 0], [0, 1, 0]],   // 水平 → 保留
+      [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
       [[0, 0, 0], [1, 0, 0], [0.5, 0, 5]], // 与投影面垂直 → 投影退化
     ]
     const out = projectTriangles(tris)
@@ -152,7 +141,6 @@ describe('Blocker 1 — concave silhouette（projected triangle union）', () =>
     expect(paths.length).toBe(1)
     expect(paths[0].fillRule).toBe('evenodd')
     expect(paths[0].d).toMatch(/M[0-9.]+ [0-9.]+ /)
-    // 洞作为第二个 subpath（M 出现两次）
     expect(paths[0].d.split('M').length - 1).toBe(2)
   })
 })
@@ -177,23 +165,19 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
   it('simplifyRing 合并共线点且保持形状', () => {
     const ring = [[0, 0], [1, 0], [2, 0], [2, 1], [0, 1]]
     const simplified = simplifyRing(ring)
-    // (1,0) 共线应被合并
     expect(simplified.length).toBeLessThan(ring.length)
     expect(simplified.some((p) => p[0] === 2 && p[1] === 0)).toBe(true)
     expect(simplified.some((p) => p[0] === 0 && p[1] === 1)).toBe(true)
   })
   it('simplifyRing 去重相邻/闭合重复点且不丢真实角点（polygon-clipping 退化修复）', () => {
-    // 含闭合重复点 + 相邻重复点的 ring（polygon-clipping 典型输出）：首尾角点必须保留
     const ring = [
       [-1.7521, 4.511], [-0.3325, 4.0719], [-0.274, 2.5997], [1.7158, 3.4383], [1.7521, 4.511],
-      [-1.7521, 4.511], // 闭合重复
+      [-1.7521, 4.511],
       [-1.7521, 4.511], // 相邻重复
     ]
     const simplified = simplifyRing(ring)
-    // 真实角点（首尾）必须保留
     expect(simplified.some((p) => Math.abs(p[0] + 1.7521) < 1e-6 && Math.abs(p[1] - 4.511) < 1e-6)).toBe(true)
     expect(simplified.some((p) => Math.abs(p[0] - 1.7521) < 1e-6 && Math.abs(p[1] - 4.511) < 1e-6)).toBe(true)
-    // 无重复点
     for (let i = 0; i < simplified.length; i++) {
       const a = simplified[i]
       const b = simplified[(i + 1) % simplified.length]
@@ -201,7 +185,6 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
     }
   })
   it('simplifyRing 不缩小 polygon（bbox 保持不变）', () => {
-    // Maus glacis 带状多边形（曾因重复点塌成细条）：简化后 bbox 不变
     const ring = [
       [-1.7521, 4.511], [-0.3325, 4.0719], [-0.274, 2.5997], [-0.2699, 2.7611],
       [0.3335, 3.8659], [1.7158, 3.4383], [1.7521, 4.511], [-1.7521, 4.511],
@@ -218,9 +201,7 @@ describe('Blocker 2 — transform / hide_elements（collectTriangles 语义）',
   })
   it('Maus 资产：hide_elements 纳入后 turretBounds 保持（hide 在炮塔内，不改变轮廓；mantlet 独立）', () => {
     const meta = JSON.parse(readFileSync(MAUS_DIR + 'metadata.json', 'utf8'))
-    // turretBounds = 炮塔本体（hide_elements 子树已在炮塔内；mantlet 独立分组）→ y max ≈ 1.0（模型米）
     expect(meta.generation.turretBounds.max[1]).toBeCloseTo(1.0, 0)
-    // 正式资产 = webp（hull.webp 存在）
     const hull = readFileSync(MAUS_DIR + 'hull.webp', 'latin1')
     expect(hull.slice(0, 4)).toBe('RIFF')
   })
@@ -236,7 +217,6 @@ describe('Blocker 4 — generation method 命名', () => {
 
 describe('Layer B — top-facing surface extraction', () => {
   it('水平/垂直/倾斜三角形的 top-facing 判定（normal.z 阈值）', () => {
-    // 水平面 nz=1 → 保留；垂直面 nz=0 → 丢弃；45° 斜面 nz=0.707 → 保留（>0.35）
     const horizontal = [[[0,0,0],[1,0,0],[0,1,0]]]
     const vertical = [[[0,0,0],[1,0,0],[0,0,1]]]
     const slope = [[[0,0,0],[1,0,1],[0,1,1]]]
@@ -245,7 +225,6 @@ describe('Layer B — top-facing surface extraction', () => {
     expect(extractTopSurfaces(slope, { topFacingCos: 0.35, zTolerance: 0.5, minAreaM2: 0.01 }).length).toBe(1)
   })
   it('高度层聚类：不同高度平面分离，连续曲面合并', () => {
-    // 两层平台（z=0 与 z=1，gap 1.0 > 0.5）→ 2 层
     const tris = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,2,0],[2,0,0]],
       [[0,0,1],[2,0,1],[0,2,1]], [[0,0,1],[2,0,1],[2,2,1]], [[0,2,1],[2,2,1],[2,0,1]],
@@ -261,7 +240,6 @@ describe('Layer B — top-facing surface extraction', () => {
     expect(s[0].areaM2).toBeGreaterThan(10)
   })
   it('高度层内碎片 polygon 单独过滤（防碎块混入）', () => {
-    // 同层一个大区域 + 一个小碎片（不相连）
     const tris = [
       [[0,0,0],[4,0,0],[0,4,0]], [[0,0,0],[4,0,0],[4,4,0]], [[0,4,0],[4,4,0],[4,0,0]],
       [[10,10,0],[10.3,10,0],[10,10.3,0]],
@@ -278,25 +256,21 @@ describe('Layer B — major edge extraction', () => {
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
     ]
     expect(extractMajorEdges(flat, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 }).length).toBe(0)
-    // 平台（z=0 水平面）+ 垂直壁（共享边 [0,0,0]-[2,0,0]）→ 顶面边缘边
     const platform = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
       [[0,0,-1],[2,0,-1],[2,0,0]], [[0,0,-1],[2,0,0],[0,0,0]], // 垂直壁（z 向下）
     ]
     const e = extractMajorEdges(platform, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 })
-    // 顶面与壁共享边 [0,0,0]-[2,0,0] → 1 条 surface-edge（共享边去重）
     expect(e.length).toBe(1)
     expect(e[0].reason).toBe('surface-edge')
   })
   it('共享边去重（一条边只输出一次）', () => {
-    // 平台 + 两侧各一块垂直壁（共享同一条 [0,0,0]-[2,0,0] 边）
     const tris = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
       [[0,0,-1],[2,0,-1],[2,0,0]], [[0,0,-1],[2,0,0],[0,0,0]],
       [[0,0,1],[2,0,1],[2,0,0]], [[0,0,1],[2,0,0],[0,0,0]],
     ]
     const e = extractMajorEdges(tris, { topFacingCos: 0.35, heightDeltaM: 0.15, normalDeltaCos: 0.92, minEdgeLenM: 0.1 })
-    // 共享边只输出一次（即使有多个非顶面邻居）
     expect(e.length).toBe(1)
   })
   it('短边（minEdgeLenM）被过滤', () => {
@@ -308,7 +282,6 @@ describe('Layer B — major edge extraction', () => {
     expect(e.length).toBe(0)
   })
   it('高度差驱动：法线突变但高度差小（格栅凹槽）→ 不输出', () => {
-    // 两个水平三角形 z 差 0.05（< 0.15 且 < 0.6×0.15）→ 无边
     const gutter = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
       [[0,0,0.05],[2,0,0.05],[0,2,0.05]], [[0,0,0.05],[2,0,0.05],[2,2,0.05]], [[0,2,0.05],[2,0,0.05],[2,2,0.05]],
@@ -324,22 +297,18 @@ describe('Layer B — major edge extraction', () => {
     expect(extractMajorEdges(stepped, opts)).toEqual(extractMajorEdges(stepped, opts))
   })
   it('clusterEdges：近乎平行且位置重合的边聚类为一条（斜切台阶交叉线去重）', () => {
-    // Maus 前甲板 4 条 ~110.9 交叉斜线（±1.4°、中点距离 ~0.06-0.1m）→ 1 条
     const edges = [
-      { p1: [1.86, -0.13], p2: [-1.86, -0.13], reason: 'surface-edge' }, // 侧边（0°）
-      // 4 条 ~±1.4° 交叉斜线（Maus 前甲板斜切台阶），中点距离 ~0.05-0.1m
+      { p1: [1.86, -0.13], p2: [-1.86, -0.13], reason: 'surface-edge' },
       { p1: [-1.75, 3.943], p2: [1.8, 3.855], reason: 'height' },
       { p1: [-1.75, 3.855], p2: [1.8, 3.767], reason: 'height' },
       { p1: [1.75, 3.943], p2: [-1.8, 3.855], reason: 'height' },
       { p1: [1.75, 3.855], p2: [-1.8, 3.767], reason: 'height' },
     ]
     const clustered = clusterEdges(edges, { angleDeg: 5, maxDistM: 0.5 })
-    // 侧边（0° 但中点距离 ~4m）与斜切台阶簇分离；4 条斜线 → 1 条
     expect(clustered.length).toBe(2)
     expect(clustered.some((e) => Math.abs(e.p1[0] - 1.86) < 1e-9)).toBe(true)
   })
   it('clusterEdges：真实平行台阶（距离 > maxDistM）保持独立', () => {
-    // 炮塔侧三阶结构：0.33m 间距的三条平行竖边必须保留
     const edges = [
       { p1: [1.53, 2.5], p2: [1.53, -2.5], reason: 'surface-edge' },
       { p1: [1.21, 2.5], p2: [1.21, -2.5], reason: 'surface-edge' },
@@ -349,7 +318,6 @@ describe('Layer B — major edge extraction', () => {
     expect(clustered.length).toBe(3)
   })
   it('高保真：同一平滑曲面内共享边（tessellation）不输出', () => {
-    // 两个共面/近共面三角形（法线差 <1°，高度连续）共享边 → 无 feature edge
     const flat = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,2,0],[2,0,0]],
       [[2,0,0],[4,0,0],[2,2,0]], [[2,0,0],[4,0,0],[4,2,0]], [[2,2,0],[4,2,0],[4,0,0]],
@@ -358,7 +326,6 @@ describe('Layer B — major edge extraction', () => {
     expect(e.length).toBe(0)
   })
   it('高保真：真实 feature boundary（高度不连续）保留，无数量上限', () => {
-    // 双层平台 z=0 / z=0.5 + 连接竖壁（x=0 面）：壁顶/壁底与上下层共享边 → 2 条 surface-edge
     const stepped = [
       [[0,0,0],[4,0,0],[0,4,0]], [[4,0,0],[4,4,0],[0,4,0]],
       [[0,0,0.5],[4,0,0.5],[0,4,0.5]], [[4,0,0.5],[4,4,0.5],[0,4,0.5]],
@@ -369,7 +336,6 @@ describe('Layer B — major edge extraction', () => {
     expect(e.every((x) => x.reason === 'surface-edge')).toBe(true)
   })
   it('高保真：surface-edge 需要显著壁高（> heightDeltaM）——低模斜面面片台阶壁不输出', () => {
-    // 平台 + 0.05m 矮壁（tessellation 台阶）→ 不输出；0.3m 高壁（真实甲板边缘）→ 输出
     const lowWall = [
       [[0,0,0],[2,0,0],[0,2,0]], [[0,0,0],[2,0,0],[2,2,0]], [[0,2,0],[2,0,0],[2,2,0]],
       [[0,0,-0.05],[2,0,-0.05],[2,0,0]], [[0,0,-0.05],[2,0,0],[0,0,0]],

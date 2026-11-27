@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest'
 import { battleAverage, globalAverage } from './radarReference.js'
 
-// 七维 key（与 playerSummaryMerge.CW_DIM_KEYS 一致）
 const D = 'league_damage_score'
 const A = 'league_assist_score'
 const K = 'league_kill_score'
@@ -12,9 +11,6 @@ const B = 'league_blocked_score'
 const S = 'league_survival_score'
 const SH = 'league_shooting_score'
 
-/** 构造 battle player（cells 含 league_*_score）。rated=true → league_rating 有值（V4.1 finalRating），
- *  表明属于 valid rated population；rated=false → league_rating null（本场未评分 → 非成员）。
- *  B6：身份是结构性 accountId（不再是 cells.account_id）。 */
 function bp(accountId, scores, { rated = true } = {}) {
   return {
     accountId,
@@ -25,8 +21,6 @@ function bp(accountId, scores, { rated = true } = {}) {
   }
 }
 
-/** 构造 summary row。rated=true → league 有 PlayerSummary（dimensionMeans 按 CW_DIM_KEYS 顺序），
- *  表明属于 rated unique player；rated=false → league null（aggregate-only / 未评分 → 非成员）。 */
 function sr(accountId, means, { rated = true } = {}) {
   if (!rated) return { accountId, cells: {}, league: null }
   const keys = [D, A, K, E, B, S, SH]
@@ -35,13 +29,11 @@ function sr(accountId, means, { rated = true } = {}) {
 
 describe('battleAverage', () => {
   it('selected 玩家包含在内；不硬编码 14 人', () => {
-    // 3 名 rated 玩家：damage 300/200/100 → meanRaw 200
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 }), bp(3, { [D]: 100 })]
     const res = battleAverage(players, { dimKeys: [D] })
     expect(res.available).toBe(true)
     expect(res.axes).toHaveLength(1)
     expect(res.axes[0].rawValue).toBeCloseTo(200, 6)
-    // 2 人 count 也可算（不固定 14）
     const two = battleAverage([bp(1, { [D]: 400 }), bp(4, { [D]: 0 })], { dimKeys: [D] })
     expect(two.axes[0].rawValue).toBeCloseTo(200, 6)
   })
@@ -55,7 +47,6 @@ describe('battleAverage', () => {
   })
 
   it('cohort 任一 rated 成员缺任一所选维（全员缺）→ unavailable（不跨维换 cohort）', () => {
-    // 两名 rated 成员都缺 shooting → cohort 不完整 → unavailable
     const players = [bp(1, { [D]: 300 }), bp(2, { [D]: 200 })]
     const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
@@ -70,7 +61,6 @@ describe('battleAverage', () => {
   })
 
   it('partial incomplete cohort：某 rated 成员缺任一所选维 → 整图 unavailable（禁止静默缩小 cohort）', () => {
-    // A/B 完整，C 也是 rated（league_rating 有值）但缺 Shooting → 不得用 A+B 凑平均
     const players = [
       bp(1, { [D]: 300, [SH]: 60 }),
       bp(2, { [D]: 200, [SH]: 40 }),
@@ -79,16 +69,14 @@ describe('battleAverage', () => {
     const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(false)
     expect(res.axes.every(a => !a.available)).toBe(true)
-    // 绝不允许 A+B 平均（rawValue 必须 null，不得为 (300+200)/2=250）
     expect(res.axes[0].rawValue).toBeNull()
   })
 
   it('非成员（本场存在但未评分 league_rating=null）被排除，不使 Battle Average unavailable', () => {
-    // 只有 A 是 rated 成员且完整；B 是本场出现但未评分 → 非成员，排除
     const players = [bp(1, { [D]: 300, [SH]: 60 }), bp(2, { [D]: 200, [SH]: 40 }, { rated: false })]
     const res = battleAverage(players, { dimKeys: [D, SH] })
     expect(res.available).toBe(true)
-    expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
+    expect(res.axes[0].rawValue).toBeCloseTo(300, 6)
   })
 })
 
@@ -112,7 +100,7 @@ describe('globalAverage', () => {
       sr(2, { [D]: 200 }),
     ]
     const res = globalAverage(rows, { dimKeys: [D] })
-    expect(res.axes[0].rawValue).toBeCloseTo(250, 6) // (300+200)/2
+    expect(res.axes[0].rawValue).toBeCloseTo(250, 6)
   })
 
   it('确定性：不同输入顺序 → 相同结果', () => {
@@ -145,20 +133,18 @@ describe('globalAverage', () => {
   })
 
   it('非成员（aggregate-only / league==null）不属于 rated cohort，不使 Global Average unavailable', () => {
-    // 只有 A 是 rated 且完整；B 是 aggregate-only（league null）→ 非成员，排除
     const rows = [
       sr(1, { [D]: 300, [SH]: 60 }),
       { accountId: 2, cells: {}, league: null },
     ]
     const res = globalAverage(rows, { dimKeys: [D, SH] })
     expect(res.available).toBe(true)
-    expect(res.axes[0].rawValue).toBeCloseTo(300, 6) // cohort 只有 A
+    expect(res.axes[0].rawValue).toBeCloseTo(300, 6)
   })
 
   it('rated-but-incomplete 与 unrated 区分：rated 成员缺维 → unavailable，即便存在 unrated 行', () => {
-    // A 是 rated 但缺 Shooting；B 是 aggregate-only（league null）→ 因 A 是不完整成员 → unavailable
     const rows = [
-      sr(1, { [D]: 100 }, { rated: true }), // rated 但缺 SH
+      sr(1, { [D]: 100 }, { rated: true }),
       { accountId: 2, cells: {}, league: null }, // unrated 非成员
     ]
     const res = globalAverage(rows, { dimKeys: [D, SH] })

@@ -58,10 +58,6 @@ export function createTerrainReliefModel({
   const uPadding = spanX * Math.max(0, padding)
   const vPadding = spanY * Math.max(0, padding)
 
-  // Product contract: 2.5D is an upgrade of the existing 2D tactical map, not a
-  // physically foreshortened camera view. Keep the original X/Y footprint as the
-  // projection frame and use the approved 45° angle only as a Z-derived vertical
-  // relief cue. This prevents the whole map from shrinking into a trapezoid/bowl.
   return Object.freeze({
     mapCode: String(mapCode || ''),
     worldBounds: Object.freeze({ xMin, yMin, xMax, yMax }),

@@ -1,8 +1,4 @@
 <script setup>
-// 设计语言 Button（design-language §7）：primary / secondary / ghost / danger × sm / md / lg。
-// 每个视图最多一个 primary。传 href 渲染为链接，否则为 <button>。
-// 状态（§10「反馈」）：按下缩到 97% 并加深；loading 时保持宽度、显示转圈并 aria-busy；
-// confirmed 时显示确认态（调用方通常用 useConfirmFlash 维持 2 秒）。主操作按下给一次触感与轻点击音。
 import { haptic } from '../composables/useHaptics.js'
 import { playSound } from '../composables/useSound.js'
 
@@ -59,16 +55,13 @@ function onPress() {
   transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard);
 }
 
-/* display: contents：子元素仍是按钮的直接 flex 项，既有布局（space-between 等）不变；visibility 照常继承 */
 .app-button-content { display: contents; }
 
 .app-button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .app-button:disabled { cursor: not-allowed; opacity: .5; }
 
-/* 按下：缩到 97% 并加深（视觉反馈始终存在，触感 / 音效只是加强） */
 .app-button:active:not(:disabled) { transform: scale(.97); filter: brightness(.88); }
 
-/* 加载：内容占位保持宽度，转圈叠在中间 */
 .app-button.is-loading { cursor: progress; }
 .app-button.is-loading .app-button-content { visibility: hidden; }
 .app-button-spinner {

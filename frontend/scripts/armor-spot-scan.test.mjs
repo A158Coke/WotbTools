@@ -1,14 +1,9 @@
-// 部位像素扫描（门禁的 findSpotsExpr）选择逻辑单测：用假 window/document + 假射线
-// 确定性驱动表达式，锁定实际 DOM 命中、首选主装甲优先与首选齐备即早退。
-// 回归背景（评审 PR #563 P2）：次选（仅间隙甲/外部模块像素）曾会占住部位槽位，
-// 使后扫到的主装甲像素写不进去 → 真实车辆上炮塔/炮管落到屏幕上，丢掉主装甲短按覆盖。
 import { describe, expect, it } from 'vitest'
 import { buildFindSpotsExpr } from './armor-spot-scan.mjs'
 import { ArmorSection, isPrimary } from '../src/scene/penetration.js'
 
 const PRIMARY_SECTIONS = [ArmorSection.HULL, ArmorSection.TURRET, ArmorSection.GUN]
 
-/** 命中表：`"x,y"` → { hits: [{name, sec}], cls }；未列出的像素 = 未击中。 */
 function fakePage(table, { width = 80, height = 80, overlays = {} } = {}) {
   const calls = []
   const window = {
@@ -69,7 +64,7 @@ describe('部位像素扫描（首选主装甲优先）', () => {
 
   it('次选像素先出现、主装甲像素后出现 → 最终选主装甲（primary:true）', () => {
     const table = {
-      '20,28': spacedOnly('turret_01_armor_2', 'turret'),   // 先扫到：悬空间隙甲屏幕板
+      '20,28': spacedOnly('turret_01_armor_2', 'turret'),
       '28,28': hit('turret_01_armor_1', ArmorSection.TURRET, 'turret'),
       '20,20': hit('gun_01_armor_1', ArmorSection.GUN, 'gun'),
       '36,20': hit('hull_armor_1', ArmorSection.HULL, null),
@@ -85,7 +80,7 @@ describe('部位像素扫描（首选主装甲优先）', () => {
   it('该部位只有次选像素时，返回次选并记 primary:false（调用方按"不构成判定"断言）', () => {
     const table = {
       '20,20': hit('gun_01_armor_1', ArmorSection.GUN, 'gun'),
-      '28,20': spacedOnly('turret_01_armor_2', 'turret'),          // 炮塔只有间隙甲像素
+      '28,20': spacedOnly('turret_01_armor_2', 'turret'),
       '36,20': hit('hull_armor_1', ArmorSection.HULL, null),
       '20,28': spacedOnly('turret_01_armor_3', 'turret'),          // 细扫也拿不到主装甲像素
     }
@@ -104,7 +99,7 @@ describe('部位像素扫描（首选主装甲优先）', () => {
     const page = fakePage(table)
     const res = runScan(buildFindSpotsExpr({ need: ['gun', 'turret', 'hull'], primarySections: PRIMARY_SECTIONS }), page)
     expect(res.gun.primary && res.turret.primary && res.hull.primary).toBe(true)
-    expect(page.calls.length).toBe(3)     // 第三个像素齐备 → 立即返回，不继续扫
+    expect(page.calls.length).toBe(3)
   })
 
   it('need 裁剪：只要 turret 时，找到即停（触屏视口窄只用得到的部位）', () => {
@@ -114,7 +109,7 @@ describe('部位像素扫描（首选主装甲优先）', () => {
     }
     const page = fakePage(table)
     const res = runScan(buildFindSpotsExpr({ need: ['turret'], primarySections: PRIMARY_SECTIONS }), page)
-    expect(res.turret.primary).toBe(true)      // 次选先出现不占位，首选后到即用首选
+    expect(res.turret.primary).toBe(true)
     expect(res.gun).toBeNull()
     expect(page.calls.length).toBe(2)
   })

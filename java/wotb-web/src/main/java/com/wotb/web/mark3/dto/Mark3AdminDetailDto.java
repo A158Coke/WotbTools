@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-/** 管理后台三环详情；proofScreenshots 只在 PENDING 期间返回。 */
 public record Mark3AdminDetailDto(
         Long id,
         String status,

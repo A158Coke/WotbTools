@@ -8,12 +8,6 @@ interface TerrainSurfaceInput {
   span: number
 }
 
-/**
- * 常数时间采样自适应地形网格的真实三角面高度。
- * 使用 buildAdaptiveTerrain 生成时的 cell→step / grid-vertex→index 表和最终顶点高度，
- * 因此涵盖当前 LOD、morph 与跨 LOD 缝合，不做 mesh traversal 或重建。
- * 每格拓扑与发射器一致：沿反对角 (i+1,j)→(i,j+1) 分成两个三角形。
- */
 export function terrainSurfaceHeightAt({ positions, sizeAt, originIAt, originJAt, vertexIndexAt, n, span }: TerrainSurfaceInput, x: number, z: number): number | null {
   if (!positions || !sizeAt || !originIAt || !originJAt || !vertexIndexAt || !Number.isInteger(n) || n < 2
     || !Number.isFinite(span) || span <= 0 || !Number.isFinite(x) || !Number.isFinite(z)) return null;

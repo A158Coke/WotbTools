@@ -1,8 +1,3 @@
-/** Single-shot lifecycle gate. Uses real viewer/GLBs/penetration math; only asset
- * responses are delayed/replaced. No screenshots or visual assertions.
- * Separate from the aiming gate: exercises async initialization and route disposal,
- * not pointer gestures. Run: pnpm run test:browser-armor-shot-readiness
- */
 import assert from 'node:assert/strict'
 import featureMessages from '../src/locales/feature-messages.json' with { type: 'json' }
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
@@ -14,11 +9,6 @@ import { buildFindSpotsExpr } from './armor-spot-scan.mjs'
 import upgradeFixtures from '../src/replay-local/compute/__fixtures__/upgrades/tanks.json' with { type: 'json' }
 
 const shooterId = FIXTURE_TANK_ID + 1
-/**
- * 15 m default FOV after the viewer's 1.1 display product scale.
- * 18.75° is the Armor Inspector reference; the shipped profile is
- * 2*atan(tan(18.75/2)*1.1) ≈ 20.58668°.
- */
 const ARMOR_DEFAULT_FOV = 2 * Math.atan(Math.tan(18.75 * Math.PI / 360) * 1.1) * 180 / Math.PI
 const labels = featureMessages.zh.armor
 const penetrationText = labels.outcomes.penetration
@@ -26,8 +16,6 @@ const shellFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_sh
 const tankFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_tank_data).replace('{msg}', '')
 const ammo = structuredClone(FIXTURE_TANK_DATA)
 ammo.tank_id = shooterId
-// The URL deliberately selects the wrong shell; replay shell_id must win before
-// the first calculation. Both types retain the fixture's ordinary armor geometry.
 ammo.configs[0].shells = [
   { ...ammo.shells[0], penetration: 1 },
   { ...ammo.shells[0], type: 'heat', name: 'HEAT', penetration: 300 },
@@ -44,8 +32,6 @@ const shot = {
   shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
 }
 const { server, origin } = await startFixtureServer()
-// Exact official Object 432U progression on the existing controlled model. This
-// verifies wiring, not the real vehicle's armor geometry or baseline shell data.
 const xiSource = upgradeFixtures.find(item => item.modules.tankId === 27905)
 const xiModules = { ...xiSource.modules, tankId: FIXTURE_TANK_ID }
 const researchRoutes = {
@@ -84,7 +70,6 @@ try {
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
     body: Buffer.from(JSON.stringify(payload)).toString('base64'),
   })
-  /** 打开共享 TankCatalogMenu（Vue 下一 tick 才渲染卡片）→ 点第一张卡。 */
   const pickFirstCard = async (buttonId) => {
     await page.evaluate(`document.getElementById(${JSON.stringify(buttonId)}).click()`)
     await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > 0,
@@ -105,8 +90,6 @@ try {
       return
     }
     if (event.request.url.includes('/research/devices.json')) {
-      // 夹具资产包不含 research 目录；ArmorShotHud 的 load() 用 Promise.all 聚合
-      // devices，缺失会让整个 HUD details=null。空目录足以让 HUD 渲染弹种行。
       operations.push(release(event.requestId, { meta: {}, devices: [], presets: {} }))
       return
     }
@@ -143,11 +126,8 @@ try {
     await page.tap({ ...point, touch: false })
   }
   assert.equal(await page.evaluate('document.querySelector("#tank-picker").classList.contains("open")'), false, 'disabled selection cannot open the picker')
-  // Synthetic stale inputs must also leave initialization ownership intact.
   await page.evaluate(`document.querySelector('#shooter-select').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
   assert.equal(await page.evaluate('document.querySelector("#tank-picker").classList.contains("open")'), false, 'bootstrap guard also ignores synthetic clicks')
-  // Deliberately longer than both old 600/800ms timers. This is an injected slow
-  // network interval, not a timing-based assertion about a pointer intermediate state.
   await delay(1800)
   assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'no judgment with missing ammo')
   assert.equal(await page.evaluate('!!document.querySelector("[data-testid=scene3d-loading]")'), true, 'loading remains visible')
@@ -159,7 +139,6 @@ try {
   assert.equal(await page.evaluate(`['#shooter-select', '#target-select'].every(id => !document.querySelector(id).disabled) && document.querySelector('#tank-selection-status').hidden`), true, 'ready viewer restores selection and hides the loading hint')
   console.log('[shot-readiness] PASS: slow ammo, bootstrap ownership, automatic selection and first judgment')
 
-  // Only target data fails: retry must reuse the already valid shooter ammo.
   const shooterRequestsBeforeTargetFailure = shooterRequests
   failTarget = true
   await pickFirstCard('target-select')
@@ -183,7 +162,6 @@ try {
   })))
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'shooter switch failure' })
   assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'shooter failure has the shell-data phase')
-  // The retry error must retain the shell-data phase until ammo is recovered.
   failShooterSwitch = true
   await page.evaluate('document.querySelector("[data-testid=scene3d-retry]").click()')
   await waitHeld(failedSwitchRequests)
@@ -197,15 +175,12 @@ try {
   assert.equal(await page.evaluate('document.querySelector("#shell-select").options.length'), 1)
   console.log('[shot-readiness] PASS: shooter switch failure and retry')
 
-  // Same-document navigation is essential: destroying the document would mask a
-  // stale callback writing window globals or the next viewer DOM.
   const navigate = query => page.evaluate(`document.querySelector('#app').__vue_app__.config.globalProperties.$router.push(${JSON.stringify({ query })})`)
   await navigate({ view: 'home', 'ws-auth': '1' })
   hold = true
   await navigate(Object.fromEntries(new URL(url).searchParams))
   await waitHeld()
   await navigate({ view: 'home', 'ws-auth': '1' })
-  // Open a fresh viewer with different ammo while the old shooter is still pending.
   await navigate({ view: 'agent-armor', 'ws-auth': '1', tank: String(FIXTURE_TANK_ID), heatmap: '1', assets: assets.origin })
   await page.waitFor(() => window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'replacement viewer ready' })
   hold = false
@@ -221,15 +196,12 @@ try {
   await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { timeout: 20000, label: 'invalid ammo error state' })
   assert.equal(await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]').textContent.includes(${JSON.stringify(shellFailurePrefix)})`), true, 'bootstrap failure has the shell-data phase')
   assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'invalid ammo is not zero penetration')
-  // Retry must rebuild initialization, including shooter data, after an ammo failure.
   response = ammo
   await page.evaluate('document.querySelector("[data-testid=scene3d-error] button").click()')
   await page.waitForValue('document.querySelector("#traj-info")?.textContent', text => text?.includes(penetrationText), { timeout: 30000, label: 'retry reloads ammo' })
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   console.log('[shot-readiness] PASS: invalid ammo error and recovery')
 
-  // Plain inspection intentionally uses the displayed gun configuration. Keep
-  // the top-level table distinguishable and omit its normalization/ricochet.
   const plainAmmo = structuredClone(FIXTURE_TANK_DATA)
   const topShell = { ...plainAmmo.shells[0] }
   delete topShell.normalization
@@ -249,24 +221,17 @@ try {
     penetrations.forEach((pen, index) => assert.ok(state.options[index].includes(`${pen}mm`), `shell ${index} uses configuration penetration ${pen}`))
   }
   for (const scenario of [
-    // Shooter/target decoupling (2026-11-05): the shooter shell table belongs to
-    // the shooter (&scfg= or its own default top-level config = configs tail).
-    // Target &config= must not switch the shooter table; target gun switches
-    // keep the selected shell index.
     { query: '&config=0&shell=1', value: 1, pens: [400, 500], retarget: true },
     { query: '&shell=1', value: 1, pens: [400, 500] },
     { query: '&config=0&shell=99', value: 0, pens: [400, 500] },
     { query: '&config=1&shell=-1', value: 0, pens: [400, 500] },
     { query: '&config=0&shell=invalid', value: 0, pens: [400, 500] },
-    // Explicit &scfg= stays authoritative for the shooter regardless of target config.
     { query: '&config=0&scfg=0&shell=1', value: 1, pens: [200, 300] },
   ]) {
     await page.goto(plainUrl + scenario.query)
     await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && window.__armorRicochet?.info().meshCount > 0, { timeout: 30000, label: 'plain viewer ready' })
     await assertShellTable(scenario.value, scenario.pens)
     if (scenario.retarget) {
-      // Switching the target gun (via the native select) must not touch the
-      // shooter shell table or the selected shell index.
       await page.evaluate(`document.querySelector('#config-select').value = '1'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
       await assertShellTable(scenario.value, scenario.pens)
       await page.evaluate(`document.querySelector('#config-select').value = '0'; document.querySelector('#config-select').dispatchEvent(new Event('change'))`)
@@ -275,12 +240,6 @@ try {
   }
   console.log('[shot-readiness] PASS: plain configuration ammo, deep-link selection, invalid indices and shooter/target gun independence')
 
-  // P2 repair (review r4475085151): an explicit scfg pointing at a config with
-  // an EMPTY shell table must fall back to the tank top-level table (HUD
-  // contract), not the default last config — otherwise the HUD shows AP/200
-  // while the judgment uses the last config's HE/500 and its caliber. Caliber
-  // is sourced from the same selected table branch, so the table itself pins
-  // the caliber resolution; judgment inputs come from the asserted selection.
   const emptyCfgAmmo = structuredClone(FIXTURE_TANK_DATA)
   emptyCfgAmmo.shells = [{ ...emptyCfgAmmo.shells[0], penetration: 200, caliber: 100 }]
   const emptyCfgBase = emptyCfgAmmo.configs[0]
@@ -290,7 +249,6 @@ try {
   ]
   targetResponse = emptyCfgAmmo
   const assertHudMatchesNative = async () => {
-    // Geometry can be ready before the scene distance reaches the reactive HUD.
     await page.waitFor(() => /\d+\s*mm/.test(document.querySelector('[data-testid="hud-penetration"]')?.textContent || ''),
       { timeout: 10000, label: 'HUD penetration resolves at the scene distance' })
     const state = await page.evaluate(`(() => {
@@ -337,7 +295,6 @@ try {
   }
   targetResponse = plainAmmo
 
-  // 实际 range 键盘输入改变相机；滚轮反向同步 HUD，不写路由。
   const distanceAmmo = JSON.parse(JSON.stringify(plainAmmo))
   distanceAmmo.configs.forEach(config => { config.shells = [{ ...config.shells[0], type: 'ap', type_id: 0, penetration: 300, penetration_far: 260 }] })
   response = distanceAmmo
@@ -379,8 +336,6 @@ try {
   response = ammo
   targetResponse = plainAmmo
 
-  // Same tank type still does not make the victim's configuration authoritative
-  // for replay ammunition. scfg=0 and replay shell_id=2 must win over config=1.
   await page.goto(`${origin}/?view=home&ws-auth=1`)
   await page.evaluate(`(async () => {
     const { storeShotsForViewer } = await import('/src/scene/agentData.js');
@@ -392,14 +347,10 @@ try {
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   assert.equal(await page.evaluate('document.querySelector("[data-testid=hud-distance]").disabled'), true, 'recorded distance is read-only')
   console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')
-  // review 2026-10-13：脱靶（MISS）world 总览同样不得套 dolly-zoom 补偿——此前
-  // worldOverviewMode 只在命中路径置位，MISS 在弹道标注后提前返回漏置 → 远距落点裁出视锥。
-  // 400m 弦 + 非零 x via：总览必须保持原生 50°；随后切回命中发仍 50°（命中/MISS 切换）。
   {
     const missShot = {
       ...shot,
       target_eid: null, target_name: '',
-      // 弹道几何整体离原点（脱靶守卫要求 ball_a 非全零）：发射点 (0,1,60) → 落点 (400,1,60)
       target_pos: [400, 1, 60], ball_a: [0, 1, 60], ball_b: [400, 1, 60],
       via: [[180, 25, 60]],
       launch_velocity: [1000, 0, 0],
@@ -413,12 +364,6 @@ try {
         storeShotsForViewer([${JSON.stringify(value)}]);
       })()`)
       await page.goto(plainUrl + '&shot=1&scfg=0&shell=0&config=0')
-      // 只断言视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
-      // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
-      // 命中弹默认 = 命中点相对视角（15m/20.59° display profile；18.75° 是曲线参考）；MISS 无命中点 = world 总览 50°。
-      // shot-ready 标记必须存在：普通检视初始状态也满足 15m/20.59° 或 50°，
-      // 不能只凭相机数值判断。__shotCtx.shot 只在射击复现场景数据装载后出现，
-      // 且 target_eid 区分 MISS/HIT；相机数值再证明自动视角已执行。
       if (mode === 'overview') {
         await page.waitFor(() => {
           const v = window.__armorRicochet?.info()?.view
@@ -442,8 +387,6 @@ try {
     assert.ok(Math.abs(hitView.fov - ARMOR_DEFAULT_FOV) < 0.01, `HIT impact view must use display FOV (got ${hitView.fov})`)
     assert.ok(Math.abs(hitView.cameraDistance - 15) < 0.2, `HIT impact camera must be at 15m (got ${hitView.cameraDistance})`)
     console.log('[shot-readiness] PASS: HIT default impact view uses display 20.59° FOV at 15m')
-    // 相对视角 ↔ 双方位置切换：overview 必须 50°，切回命中视角必须回到 20.59°。
-    // 先等按钮真实挂上：viewer 初始化/夹具迟到响应期间 DOM 会短暂重建。
     const clickViewToggle = async (selector) => {
       await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`,
         (v) => v === true, { timeout: 30000, label: `${selector} ready` })
@@ -463,8 +406,6 @@ try {
     })()`, value => value === true, { timeout: 30000, label: 'HIT impact toggle ready (15m / 20.59° FOV)' })
     console.log('[shot-readiness] PASS: hit overview → impact returns to display 15m / 20.59° FOV')
   }
-  // 客户端解码盒缺失：shot 仍带姿态/弹道，但不得回退炮口弦出结论。
-  // 世界初始化与后续时间轴重判共用 doPenetrationCheck 的 __segBoxMissing 门。
   {
     const boxlessShot = { ...shot, hit_token: '3da6fd8a71d4', server_part_index: 1, armor_group: 1 }
     const boxlessTarget = structuredClone(FIXTURE_TANK_DATA)
@@ -476,7 +417,6 @@ try {
       storeShotsForViewer([${JSON.stringify(boxlessShot)}]);
     })()`)
     await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${shooterId}&heatmap=1&shot=1&shell=0&scfg=0&assets=${encodeURIComponent(assets.origin)}`)
-    // 错误条必须真正可见（#turret-controls 的诊断隐藏/折叠不影响它）。
     await page.waitForValue(`(() => {
       const e = document.querySelector('#shot-replay-error');
       return !!e && e.getClientRects().length > 0
@@ -494,8 +434,6 @@ try {
     const xi = structuredClone(FIXTURE_TANK_DATA)
     xi.tier = 11
     xi.configs = [{ ...xi.configs[0], ...xiSource.detail.configs[0],
-      // All official upgrade destinations must exist. Keep complete controlled
-      // shell records, including the fixture's judgment-only metadata.
       shells: xiSource.detail.configs[0].shells.map(shell => ({ ...xi.configs[0].shells[0], ...shell })),
     }]
     targetResponse = xi

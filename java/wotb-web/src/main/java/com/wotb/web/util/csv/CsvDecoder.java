@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Strict UTF-8 and RFC4180 decoder for generic string tables. */
 public final class CsvDecoder {
     public CsvDocument decode(final byte[] bytes) {
         final String text = decodeUtf8(bytes);

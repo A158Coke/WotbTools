@@ -13,20 +13,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 名人堂「百场」submission 仓库。
- * canonical owner = (wotb_server, wotb_account_id)；该组合 + vehicle 的 PENDING / CURRENT 唯一性
- * 由 V22 的 partial unique index 在 DB 层强制；
- * 终态迁移（APPROVE/REJECT/CANCEL/DELETE）通过 {@link #findByIdForUpdate} 行锁 + 状态复核串行化。
- */
 public interface HundredBattleSubmissionRepository extends JpaRepository<HundredBattleSubmission, Long> {
 
-    /** 行锁读取（终态迁移前调用，与并发 APPROVE/REJECT/CANCEL 串行化）。 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from HundredBattleSubmission s where s.id = :id")
     Optional<HundredBattleSubmission> findByIdForUpdate(@Param("id") long id);
 
-    /** 行锁读取当前 CURRENT（approve 时重新读取并比较 approvedAverageDamage）。 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select s from HundredBattleSubmission s
@@ -44,22 +36,18 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
     boolean existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
             String wotbServer, long wotbAccountId, long vehicleId, String status);
 
-    /** 公开排行榜：vehicle 独立排行，competition ranking 的稳定排序。 */
     Page<HundredBattleSubmission> findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
             long vehicleId, String status, Pageable pageable);
 
-    /** 默认公开榜：不按车辆筛选的 CURRENT 前十（固定数量，不触发无用 count 查询）。 */
     List<HundredBattleSubmission> findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
             String status);
 
-    /** 分类筛选候选：只读取实际进入公开榜上下文的 CURRENT Tier X vehicleId。 */
     @Query("""
             select distinct s.vehicleId from HundredBattleSubmission s
             where s.status = 'CURRENT' and s.approvedAverageDamage is not null
             """)
     List<Long> findDistinctCurrentVehicleIds();
 
-    /** 分类交集榜：候选 vehicleId 集合内的 CURRENT Top N（N 由 Pageable 控制，公开页固定 10）。 */
     @Query("""
             select s from HundredBattleSubmission s
             where s.status = 'CURRENT' and s.approvedAverageDamage is not null
@@ -69,7 +57,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
     List<HundredBattleSubmission> findTopCurrentByVehicleIds(
             @Param("vehicleIds") Collection<Long> vehicleIds, Pageable pageable);
 
-    /** 竞争排名：全部 CURRENT 按 approved_average_damage 分组计数（服务端前缀和计算 rank）。 */
     @Query("""
             select s.approvedAverageDamage, count(s) from HundredBattleSubmission s
             where s.vehicleId = :vehicleId and s.status = 'CURRENT' and s.approvedAverageDamage is not null
@@ -77,7 +64,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             """)
     List<Object[]> countCurrentGroupedByDamage(@Param("vehicleId") long vehicleId);
 
-    /** 默认公开榜的 competition ranking 分组来源。 */
     @Query("""
             select s.approvedAverageDamage, count(s) from HundredBattleSubmission s
             where s.status = 'CURRENT' and s.approvedAverageDamage is not null
@@ -85,7 +71,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             """)
     List<Object[]> countAllCurrentGroupedByDamage();
 
-    /** 分类交集榜的 competition ranking 分组来源（与 Top 10 使用完全相同的候选集合）。 */
     @Query("""
             select s.approvedAverageDamage, count(s) from HundredBattleSubmission s
             where s.status = 'CURRENT' and s.approvedAverageDamage is not null
@@ -95,11 +80,9 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
     List<Object[]> countCurrentGroupedByDamageForVehicles(
             @Param("vehicleIds") Collection<Long> vehicleIds);
 
-    /** 管理筛选候选：覆盖所有状态中实际出现过的车辆。 */
     @Query("select distinct s.vehicleId from HundredBattleSubmission s")
     List<Long> findDistinctVehicleIds();
 
-    /** 管理后台列表：按状态过滤（null = 全部），submitted_at 倒序。 */
     @Query("""
             select s from HundredBattleSubmission s
             where (:status is null or s.status = :status)
@@ -107,7 +90,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             """)
     Page<HundredBattleSubmission> searchAdmin(@Param("status") String status, Pageable pageable);
 
-    /** 管理分类/车辆交集搜索：status 继续作为独立可选条件。 */
     @Query("""
             select s from HundredBattleSubmission s
             where (:status is null or s.status = :status)
@@ -119,7 +101,6 @@ public interface HundredBattleSubmissionRepository extends JpaRepository<Hundred
             @Param("vehicleIds") Collection<Long> vehicleIds,
             Pageable pageable);
 
-    /** 个人中心：指定状态集合（CURRENT / PENDING / REJECTED 等）。 */
     List<HundredBattleSubmission> findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
             String wotbServer, long wotbAccountId, Collection<String> statuses);
 }

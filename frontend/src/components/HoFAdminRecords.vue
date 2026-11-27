@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// 名人堂管理 · 单场记录分区：列表、筛选、车辆选项、下载、单条删除确认与批量删除选择集都归本组件。
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '../api/generated/http-contract.js'
@@ -17,7 +16,6 @@ type HofAdminRecord = components['schemas']['HofAdminRecord']
 type VehicleOption = components['schemas']['HofVehicleOption']
 
 const props = defineProps<{
-  /** 认证就绪且有管理员角色：首次为真时加载列表与车辆选项。 */
   ready: boolean
   size: number
 }>()
@@ -61,7 +59,6 @@ const filteredVehicles = computed(() => vehicleOptions.value
 const selection = createSelection(rows)
 const bulkOpen = ref(false)
 
-// 删除确认：Hard delete 必须二次确认；单击删除不立即执行。
 const deleteTarget = ref<HofAdminRecord | null>(null)
 const deleting = ref(false)
 const deleteMsg = ref('')

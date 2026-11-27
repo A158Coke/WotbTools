@@ -12,18 +12,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Personal AI Context Compiler：
- * 把 canonical BattleTimeline 编译为按时间的 Episode 化 compact 上下文，
- * 供 Call #2 主 prompt 使用（TACTICAL TIMELINE 段）。
- * <p>不 dump 全部帧；使用 Episode + Delta + Keyframe 压缩；只输出当时已知道的信息
- * （timeline 已满足 anti-future-leak）。输出 deterministic、可测试。</p>
- */
 public final class PersonalAiContextCompiler {
 
-    /** Episode 渲染上限（超出折叠为一行摘要，保证 token 有界）。 */
     static final int MAX_EPISODES = 14;
-    /** 每个 Episode 的 delta 渲染上限。 */
     static final int MAX_DELTAS_PER_EPISODE = 8;
 
     private PersonalAiContextCompiler() {
@@ -52,7 +43,6 @@ public final class PersonalAiContextCompiler {
             sb.append("时间轴: battle-relative（由战斗结束事件推算，确定性）\n");
         }
 
-        // 首尾保留：高密度长战斗不丢残局关键决策；中间章节折叠为一行摘要
         final List<Integer> selected = selectedEpisodeIndices(episodes.size(), MAX_EPISODES);
         for (final int i : selected) {
             renderEpisode(sb, timeline, episodes.get(i), i, recorderAccountId);
@@ -64,10 +54,6 @@ public final class PersonalAiContextCompiler {
         return sb.toString();
     }
 
-    /**
-     * Episode 选区（升序原始 index）：≤ maxEpisodes 全选；否则保留首部（ceil(max/2)）与
-     * 尾部（floor(max/2)），中间折叠——残局关键决策不因截断丢失。
-     */
     static List<Integer> selectedEpisodeIndices(final int episodeCount, final int maxEpisodes) {
         if (episodeCount <= maxEpisodes) {
             final List<Integer> all = new ArrayList<>(episodeCount);
@@ -107,7 +93,6 @@ public final class PersonalAiContextCompiler {
                 .append(" enemy_unknown=").append(before.enemyUnknown())
                 .append("\n");
 
-        // 录像者该时刻状态（knowledge-world）
         final FrameVehicle recorder = recorderAt(timeline, ep.startSec(), recorderAccountId);
         if (recorder != null) {
             sb.append("YOU ");
@@ -128,7 +113,6 @@ public final class PersonalAiContextCompiler {
             sb.append("\n");
         }
 
-        // 事件/delta
         final List<String> lines = renderDeltas(timeline, ep, recorderAccountId);
         if (!lines.isEmpty()) {
             sb.append("EVENTS\n");
@@ -157,7 +141,6 @@ public final class PersonalAiContextCompiler {
             final BattleTimeline timeline, final TacticalEpisode ep, final Long recorderAccountId) {
         final List<String> out = new ArrayList<>();
         int count = 0;
-        // 确定性排序：按时间，再按 kind
         final List<BattleDelta> deltas = new ArrayList<>(ep.deltas());
         deltas.sort(Comparator.comparingDouble(BattleDelta::timeSec)
                 .thenComparing(d -> d.kind().name()));
@@ -242,10 +225,6 @@ public final class PersonalAiContextCompiler {
         }
     }
 
-    /**
-     * HP 类 delta 的称谓（side 来自 delta 属性，绝不用文本猜测）：
-     * friendly+录像者本人 → 「你」；friendly 其它 → 「队友」；enemy → 「敌方」。
-     */
     private static String whoLabel(
             final BattleTimeline timeline, final BattleDelta d, final Long recorderAccountId) {
         if ("friendly".equals(d.attr("side", "enemy"))) {
@@ -272,7 +251,6 @@ public final class PersonalAiContextCompiler {
         return false;
     }
 
-    /** Episode tacticalChanges 短标签 → 中文（结构化标签不进入 prompt）。 */
     static String changeLabel(final String change) {
         if (change == null || change.isBlank()) {
             return "";

@@ -3,7 +3,6 @@ package com.wotb.core.ref;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** API vehicle-code mapping oracles: Chinese and English class/nation values share one stable code space. */
 class VehicleCodesTest {
 
     @Test

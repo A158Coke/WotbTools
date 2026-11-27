@@ -2,13 +2,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PRODUCTION_CATALOG from './__fixtures__/versions.production.json'
 
-/**
- * 数据版本选择器的契约：
- *   - ?data=<id> 写/删与 ?assets= 完整版本基址的剥离（dataVersionUrl 纯函数）
- *   - select 同步剥离持久化 override 里的旧 dataset 段（选 A 仍取 B 的案例）
- *   - versions.json 的加载/校验/错误状态
- *   - 选项映射（label / tank_count / preview / status）
- */
 async function load({ url = '/', origin = 'https://assets.example.com', fetchImpl = null } = {}) {
   vi.resetModules()
   vi.stubEnv('VITE_ASSET_BASE_URL', origin)
@@ -94,7 +87,6 @@ describe('useDataVersion', () => {
   })
 
   it('accepts client SmartDLC slot ids with underscore and still rejects URL-unsafe ids', async () => {
-    // 2026-11-11 放宽 `_`：客户端 SmartDLC 槽位命名（s11.21.0_1.yaml → 11.21.0_1）
     const catalog = {
       schema: 1,
       default: '11.21.0',
@@ -155,7 +147,6 @@ describe('useDataVersion', () => {
     await mod.loadDataVersionCatalog()
     const { options, selected, currentDataset } = mod.useDataVersion()
     expect(selected.value).toBe('11.21.0-t11-preview')
-    // 陈列顺序（2026-11-14 反馈）：最新超测 → 最新正式
     expect(options.value.map((option) => option.value)).toEqual(['11.21.0-t11-preview', '11.21.0'])
     expect(options.value[0].tankCount).toBe(740)
     expect(options.value[0].preview).toBe(true)
@@ -219,14 +210,11 @@ describe('useDataVersion', () => {
   })
 
   it('真实生产 catalog（无 preview 字段）也用 variant 标记预览通道', async () => {
-    // 夹具来自 Assets Host 的实际 versions.json：Agent collect_datasets 不输出
-    // version.json.preview，因此消费契约只能依赖 catalog 已有的字段。
     expect('preview' in PRODUCTION_CATALOG.datasets[1]).toBe(false)
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => PRODUCTION_CATALOG }))
     const mod = await load({ fetchImpl: fetchMock })
     await mod.loadDataVersionCatalog()
     const { options } = mod.useDataVersion()
-    // 陈列顺序：最新超测（11.4.0.138-r5）→ 最新现行版本（11.21.0_1）→ 11.21.0
     expect(options.value.map((option) => [option.value, option.preview])).toEqual([
       ['11.4.0.138-r5', true],
       ['11.21.0_1', false],
@@ -235,17 +223,14 @@ describe('useDataVersion', () => {
   })
 
   it('目录就绪后选择器才挂载：下线的持久化 id 注册即自愈回默认（watch immediate）', async () => {
-    // 移动端抽屉开合会卸载/重建实例：目录请求在上一实例卸载后完成，新实例挂载时
-    // 目录已就绪、watcher 不会再触发变更——注册时必须检查当前快照（immediate）。
     const replace = vi.fn()
     vi.spyOn(window.location, 'replace').mockImplementation(replace)
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => CATALOG })
       .mockResolvedValue({ ok: false, status: 404 })
-    const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock }) // load 会 clear localStorage
-    await mod.loadDataVersionCatalog() // 上一实例周期：目录已就绪
-    localStorage.setItem('wotb_data_version', 'supertest') // 已从目录下线的 id（clear 之后写入）
-    const { selected } = mod.useDataVersion() // 新实例挂载：watcher 以 immediate 注册，注册即自愈
-    // select() 的语义 = 写存储 + 整页重载（不原地改 ref）；重载后即回默认。
+    const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock })
+    await mod.loadDataVersionCatalog()
+    localStorage.setItem('wotb_data_version', 'supertest')
+    const { selected } = mod.useDataVersion()
     await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1))
     expect(localStorage.getItem('wotb_data_version')).toBeNull()
     expect(replace).toHaveBeenCalledTimes(1)
@@ -253,8 +238,6 @@ describe('useDataVersion', () => {
   })
 
   it('选择器先挂载、目录后才就绪：快照就绪同样触发自愈', async () => {
-    // 同一自愈的另一半时序：单实例先挂载、目录请求后完成。watcher 依赖的是
-    // 快照状态变化，而不是挂载动作本身——两条时序都必须收敛到回默认。
     const replace = vi.fn()
     vi.spyOn(window.location, 'replace').mockImplementation(replace)
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => CATALOG })
@@ -262,7 +245,7 @@ describe('useDataVersion', () => {
     const mod = await load({ url: '/?localuser=1', fetchImpl: fetchMock })
     localStorage.setItem('wotb_data_version', 'supertest')
     const { selected } = mod.useDataVersion()
-    await mod.loadDataVersionCatalog() // 目录就绪 → watcher 检查当前快照
+    await mod.loadDataVersionCatalog()
     await vi.waitFor(() => expect(replace).toHaveBeenCalledTimes(1))
     expect(localStorage.getItem('wotb_data_version')).toBeNull()
     expect(replace).toHaveBeenCalledTimes(1)
@@ -270,9 +253,6 @@ describe('useDataVersion', () => {
   })
 
   it('strips a persisted versioned ?assets= override when selecting a dataset', async () => {
-    // review 复现案例：曾访问 ?assets=https://origin/v/11.21.0 会把完整版本基址
-    // 存进 wotb_asset_base；只更新 wotb_data_version 时 withDataset 走 escape
-    // hatch，选择器显示新 dataset、资产仍从旧 /v/<id> 取。select 必须同步剥掉。
     const assign = vi.fn()
     vi.spyOn(window.location, 'assign').mockImplementation(assign)
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => CATALOG }))

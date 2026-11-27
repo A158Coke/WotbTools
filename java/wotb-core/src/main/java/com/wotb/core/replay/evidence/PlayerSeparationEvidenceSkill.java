@@ -23,24 +23,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 空间分离证据 Skill（player 路径，Backend Evidence Boundary）。
- * <p>复用 {@link RouteSkill} 分离窗口，只输出【确定性派生证据】：录像者与主要友军集群保持
- * 空间分离的结构事实（距离、距离增长、静止占比、移动覆盖、窗口内输出/承伤、阵亡、局部敌情、
- * 目标点邻近关系）。<b>不输出任何战术判断</b>——「拖延 / 脱节 / 有效牵制 / 图控 / 拿视野」都是
- * LLM 基于这些事实做出的 supported tactical inference，不是 Backend label。</p>
- * <p>时间口径：接火/承伤/阵亡/距离增长只使用与当前窗口重叠的证据；整场承伤/最终存活不作为
- * 早期窗口依据。未知不等于结论：移动覆盖不足 ≠ MOVING，region/语义缺失 ≠ 远离目标点；
- * 阵亡时间只消费 Battle 上的显式 live/settlement observation，UNKNOWN 不得伪装为 0 秒。</p>
- * <p>开局分散（中性 signal）：OPENING 窗口（缺失时回退 45s 安全上限）内未接火/未阵亡；
- * 只证明位置/队形分离，不证明拿视野/点亮/侦察；后续掉血/阵亡不抑制已成立的早期分散。</p>
- */
 public final class PlayerSeparationEvidenceSkill {
 
     private static final MapTacticalSemanticsRegistry SEMANTICS = MapTacticalSemanticsRegistry.load();
 
     private static final int MAX_EVIDENCE = 6;
-    /** 移动覆盖门控：窗口内被移动证据覆盖时长占比低于该值时移动状态视为 UNKNOWN。 */
     public static final float MIN_MOVEMENT_COVERAGE_RATIO = SeparationThresholds.MIN_MOVEMENT_COVERAGE_RATIO;
 
     private PlayerSeparationEvidenceSkill() {

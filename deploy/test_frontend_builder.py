@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exercise the real frontend build function's cleanup without Docker or network."""
 import hashlib
 import io
@@ -14,7 +13,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "deploy/tx/build-frontend-from-gitee.sh"
-# Load production functions, replacing only external build/registry dependencies.
 def builder_source(builder):
     source = builder.read_text()
     if builder == BUILDER:
@@ -69,7 +67,6 @@ printf 'CALLER resumed\n'
 class FrontendBuilderCleanupTest(unittest.TestCase):
     def run_case(self, mode="fresh", sponsor=True, fail_stage="", unsafe_bundle=False,
                  host_lock=False, host_lock_busy=False):
-        # Spaces and apostrophes also exercise the trap's captured path quoting.
         with tempfile.TemporaryDirectory(prefix="frontend builder's fixture-") as directory:
             cache = Path(directory) / "cache"
             repo = cache / "repo"
@@ -126,9 +123,6 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
                 self.assertEqual(int((cache / "flock.count").read_text()), 2 if host_lock else 1,
                                  "cache lock 与 host lock 必须按顺序各取一次")
                 if mode == "fresh":
-                    # 确定性构建身份：真实生产构建方必须把**源 commit 的 epoch** 作为
-                    # SOURCE_DATE_EPOCH 传给 Docker（Docker 上下文无 .git，时间只能由脚本给）。
-                    # 缺参、传错值（例如 wall-clock）都在这里被拦住。
                     epoch = subprocess.check_output(
                         ["git", "-C", str(repo), "show", "-s", "--format=%ct", sha], text=True).strip()
                     docker_log = (cache / "docker.log").read_text()
@@ -209,13 +203,11 @@ printf 'CALLER resumed\n'
             self.assertEqual(result.returncode, 0, diagnostic)
             self.assertIn("source_transport=gitee-mirror", result.stdout, diagnostic)
             self.assertIn("CALLER resumed", result.stdout, diagnostic)
-            # Gitee 源供出确定性 epoch 与 WASM 注入。
             epoch = subprocess.check_output(
                 ["git", "-C", str(origin), "show", "-s", "--format=%ct", sha], text=True).strip()
             docker_log = (cache / "docker.log").read_text()
             self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", docker_log, docker_log)
             self.assertTrue((cache / "fetched").exists(), diagnostic)
-            # build 结束后不留注册的 worktree。
             worktrees = subprocess.check_output(
                 ["git", "-C", str(origin), "worktree", "list", "--porcelain"], text=True)
             self.assertEqual(worktrees.count("worktree "), 1, worktrees)
@@ -253,8 +245,6 @@ docker_image_digest repo:tag
         self.assertEqual(self.run_lookup(buildx_available=False), "sha256:" + "0" * 63 + "7")
 
     def test_manifest_timeout_keeps_timeout_status(self):
-        # 回归：fallback 不能把 timeout 的 124 变成 Python 空输入的 1，否则
-        # lookup_remote_digest 的有界重试会失效。
         fixture = '''
 timeout() { return 124; }
 docker() { if [ "$1" = buildx ]; then return 1; fi; return 0; }
@@ -285,8 +275,6 @@ lookup_remote_digest repo:tag
             self.assertEqual(counter.read_text().strip(), "2")
 
     def test_lookup_treats_no_such_manifest_as_missing_tag(self):
-        # TX2 的 docker manifest inspect 对缺失 tag 报 "no such manifest"，
-        # 必须返回 10（触发构建），不能当成致命错误。
         fixture = '''
 docker_image_digest() { printf 'no such manifest: repo:tag\\n' >&2; return 1; }
 lookup_remote_digest repo:tag
@@ -319,7 +307,6 @@ class BuilderSourceTransportTest(unittest.TestCase):
             if state in ("lag", "off-main"):
                 subprocess.run(["git", "-C", str(mirror), "update-ref", "refs/heads/main", first], check=True)
             if state == "off-main":
-                # 对象已在缓存，但不在刚 fetch 的 main 历史里。
                 repo = cache / "repo"
                 repo.parent.mkdir()
                 subprocess.run(["git", "clone", "-q", str(mirror), str(repo)], check=True)
@@ -341,7 +328,6 @@ git -C "$SOURCE_DIR" show "$SOURCE_SHA:marker.txt"
 printf 'SOURCE_READY\n'
 '''
             if state not in ("hit", "ancestor"):
-                # 运行真实 build_publish，证明取源失败在 registry lookup/build/push 之前中止。
                 driver = r'''
 validate_common() { :; }
 flock() { :; }
@@ -415,7 +401,6 @@ class GiteeMainSyncTest(unittest.TestCase):
                    "GITEE_USERNAME": "fixture", "GITEE_REPO_URL": target.resolve().as_uri(),
                    "RUNNER_TEMP": str(base), "CASE": case, "RACE_SHA": race,
                    "TARGET_DIR": str(target), "FIXTURE_ROOT": str(base)}
-            # sleep 不真实等待：只记录退避参数，并推进 $SECONDS 让重试预算可被确定性地耗尽。
             shim = r'''
 sleep() { echo "$1" >> "$FIXTURE_ROOT/sleeps"; SECONDS=$((SECONDS + $1)); }
 timeout() { while [[ "$1" = --* ]]; do shift; done; shift; "$@"; }
@@ -456,7 +441,6 @@ git() {
                 path = base / name
                 return int(path.read_text()) if path.exists() else 0
             sleeps = (base / "sleeps").read_text().split() if (base / "sleeps").exists() else []
-            # case -> (退避序列, Gitee ls-remote 次数, push 次数)；None 表示该计数不是此用例的断言点。
             expected = {
                 "transient-observation": (["10"], 3, 1),
                 "transient-timeout": (["10"], 3, 1),

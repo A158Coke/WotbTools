@@ -282,10 +282,8 @@ class TeamFeatureAggregationTest extends DefaultTeamBattleFeatureFixture {
     }
     @Test
     void clampedPositionsUseCanonicalDistance() {
-        // raw X1=255 (clamped to 250, cx=500), raw X2=200 (cx=450) → canonical distance 50m → same cluster
         final Fixture fixture = fixture();
         assertEquals(1, formationClusters(fixture, 255f, 200f));
-        // raw X1=255 (clamped to 250, cx=500), raw X2=100 (cx=350) → canonical distance 150m → separate cluster
         assertEquals(2, formationClusters(fixture, 255f, 100f));
     }
     @Test

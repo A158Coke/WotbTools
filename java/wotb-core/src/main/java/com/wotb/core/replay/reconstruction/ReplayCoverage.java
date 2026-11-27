@@ -27,9 +27,6 @@ public record ReplayCoverage(
         Map<Integer, PacketTypeCoverage> packetTypes
 ) {
 
-    /**
-     * 特定 packet type 的覆盖率详情。
-     */
     public record PacketTypeCoverage(
             int type,
             int count,

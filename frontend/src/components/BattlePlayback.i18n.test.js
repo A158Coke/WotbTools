@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-// 真实 vue-i18n 回归测试：不使用 mock $t，直接走 message compiler。
-// 覆盖「选中 last-known/已击毁车辆后整个战局回放消失」的 locale 裸 @ bug（zh/en/ru）。
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
@@ -67,7 +65,6 @@ function makeOverview() {
 }
 
 const locales = { zh, en, ru }
-// PR5 detail sidebar 文案（§8/§7.1）：最后已知 / 已击毁（AoI coverage ≠ spotting → observation 语义）
 const lastSpottedLabel = { zh: '最后已知', en: 'Last known', ru: 'Последнее известное' }
 const destroyedLabel = { zh: '已击毁', en: 'Destroyed', ru: 'Уничтожен' }
 

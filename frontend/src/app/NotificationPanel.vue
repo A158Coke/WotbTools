@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 本机通知中心面板（design-language §10「反馈」）：复用 AppSheet；打开即看到最近 20 条，可一键全部已读。
-// 点一条通知：标记已读并去它关联的页面（若有）。
 import { inject } from 'vue'
 import AppSheet from '../components/AppSheet.vue'
 import { markAllRead, markRead, notifications, unreadCount } from '../composables/useNotifications.js'

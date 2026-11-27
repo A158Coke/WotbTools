@@ -1,7 +1,4 @@
-# Read-only production runtime and end-to-end checks. Sourced by runtime-check.sh.
 
-# A healthy old backend is not enough for a frontend using newly added endpoints.
-# Shared by both frontend hosts; missing/malformed/legacy health fails closed.
 assert_frontend_backend_capabilities() {
   python3 -c '
 import json, sys
@@ -17,8 +14,6 @@ print("frontend-backend-capabilities: PASS")
 '
 }
 
-# Validate rendered Compose ports for all core services, or one selected owner.
-# Exact TCP tuples reject extra/public bindings and preserve local administration.
 assert_tx_service_ports() {
   python3 -c '
 import json, sys
@@ -42,9 +37,6 @@ for name in sys.argv[1:] or expected:
 
 source "$(dirname "${BASH_SOURCE[0]}")/runtime-business-probes.sh"
 
-# Public edge check: each public name must be served by the TX address over a
-# locally trusted certificate with 2xx. TLS verification is never disabled and
-# `curl -k` is never used, so an untrusted chain is a hard failure.
 edge_tls_probe() {
   local host="$1" url="$2" raw exit_code=0
   local -a args=(--silent --show-error --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" \
@@ -54,9 +46,6 @@ edge_tls_probe() {
   EDGE_STATUS="000"
   EDGE_REMOTE_IP=""
   EDGE_ERROR=""
-  # `if ! cmd` would make `$?` the status of the negation (always 0), so the real
-  # exit code is captured in the else branch, where `$?` is the command's status.
-  # The command inside an `if` condition stays exempt from errexit.
   if raw="$(docker compose -f "$LIVE_COMPOSE" run --rm --no-deps health-probe "${args[@]}")"; then
     exit_code=0
   else
@@ -72,8 +61,6 @@ edge_tls_probe() {
   return 0
 }
 
-# Edge token: the public name must be served by the TX address over a locally
-# trusted certificate with 2xx. Verification is never disabled.
 edge_tls_token() {
   local token="$1" host="$2" url="$3"
   if ! edge_tls_probe "$host" "$url"; then
@@ -103,16 +90,6 @@ public_tls_check() {
   [ "$failures" -eq 0 ]
 }
 
-# --- K6B logical endpoints ---------------------------------------------------
-# One contract, two sources. `declared` reads what the staged Compose project
-# renders from the current environment; `active` reads the Config.Env of the
-# container that is running. Only the second one is runtime truth, and both must
-# agree with the placement the TX deploy helper would choose right now: the same
-# canonical fail-closed validators guard the deployment, the read-only readiness
-# probe, and this gate, so there is exactly one reviewed allowlist.
-#
-# Only values are extracted here; every allowlist decision is delegated to
-# deploy.sh (sourced by runtime-check.sh, which is the only caller).
 tx_endpoint_violation() {
   local message
   if message="$("$@" 2>&1)"; then
@@ -136,7 +113,6 @@ tx_logical_endpoint_violations() {
           message="BACKEND_UPSTREAM=$first is not the expected placement $BACKEND_UPSTREAM_VALUE"
         fi
         ;;
-      # /api/ai/ is the only route that leaves TX: exactly one reviewed endpoint.
       frontend.ai-upstream)
         if [ "$first" != "$AI_UPSTREAM_VALUE" ]; then
           message="AI_UPSTREAM=$first is not the expected Yecao ai-service endpoint $AI_UPSTREAM_VALUE"
@@ -157,8 +133,6 @@ tx_logical_endpoint_violations() {
           message="KEYCLOAK_ADMIN_SERVER_URL=$first is not the expected placement $KEYCLOAK_ADMIN_SERVER_URL_VALUE"
         fi
         ;;
-      # The issuer is not a placement endpoint: Keycloak mints `iss` from its
-      # public hostname, so this value never moves with the service plane.
       business-api.keycloak-issuer)
         if [ "$first" != "https://auth.wotbtools.com/realms/wotbtools" ]; then
           message="KEYCLOAK_ISSUER_URI=$first is not the public canonical issuer"
@@ -257,8 +231,6 @@ print("\n".join(records))
 
 tx_logical_endpoint_report() {
   local token="$1" mode="$2" document="$3" violations status=0
-  # A broken evaluator (unreadable document, missing TX deploy helper state) must
-  # fail closed instead of reporting the empty violation list as success.
   violations="$(tx_logical_endpoint_violations "$mode" "$document")" || status=$?
   if [ "$status" -ne 0 ]; then
     echo "$token: FAIL (the $mode endpoint contract could not be evaluated: ${violations:-no output})" >&2
@@ -272,9 +244,6 @@ tx_logical_endpoint_report() {
   return 1
 }
 
-# The active contract, read from the running containers themselves. `docker
-# compose config` would only re-render a hypothetical file from the caller's own
-# environment, so it cannot prove what the live containers were started with.
 tx_active_endpoint_document() {
   local service container entries document="{"
   for service in wotb-frontend business-api keycloak caddy; do
@@ -311,13 +280,6 @@ tx_runtime_check() {
     return 1
   fi
 
-  # K6B logical endpoints are asserted twice, from two independent sources:
-  #   declared - the Compose project the current environment renders right now
-  #   active   - the environment of the containers that are actually running
-  # A rendered file alone is not runtime truth: the gate workflow can carry the
-  # reviewed placement while production still dials the previous one, and both
-  # sides would stay healthy. Each value must therefore be inside the reviewed
-  # allowlist *and* equal to the placement this invocation expects.
   tx_logical_endpoint_report tx-logical-endpoints-declared declared "$compose_json" || failures=1
   if active_endpoints="$(tx_active_endpoint_document)"; then
     tx_logical_endpoint_report tx-logical-endpoints-active active "$active_endpoints" || failures=1
@@ -370,10 +332,6 @@ assert "WOTB_REPLAY_PROCESSING_JOB_REPOSITORY" not in environment, "the retired 
     failures=1
   fi
 
-  # Business PostgreSQL is authoritative business state, so TX_RUNTIME_READY
-  # must not be emitted until its runtime, reviewed service bindings, and
-  # TX-local OpenTofu provisioning marker are all proven. These checks are
-  # read-only: they never create, modify, or delete any database or row.
   business_container="$(docker compose -f "$LIVE_COMPOSE" ps -q business-postgres 2>/dev/null || true)"
   health="$(docker compose -f "$LIVE_COMPOSE" ps --format '{{.Health}}' business-postgres 2>/dev/null || true)"
   if [ -n "$business_container" ] && [ "$health" = healthy ] \
@@ -423,14 +381,8 @@ assert "WOTB_REPLAY_PROCESSING_JOB_REPOSITORY" not in environment, "the retired 
   if [ -n "$source_root" ] && [ -f "$source_root/infra/tofu/keycloak/realm.tf" ]; then
     echo "realm-client-source-of-truth: PASS (Keycloak OpenTofu root present)"
   fi
-  # The TX deploy helper owns no DNS or Yecao retirement command; that boundary
-  # is enforced statically by the TX runtime contract tests.
 
-  # Real business chain: token -> business runtime -> PostgreSQL -> HoF storage.
-  # These tokens are the reason TX_RUNTIME_READY means "business works", not
-  # "containers are up".
   business_e2e_check || failures=1
-  # Public edge: both public hosts must be served by TX over trusted TLS with 2xx.
   public_tls_check || failures=1
 
   [ "$failures" -eq 0 ] && echo "QQ_IDP_STATUS=idp-qq=READY"

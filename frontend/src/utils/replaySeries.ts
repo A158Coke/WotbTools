@@ -1,11 +1,3 @@
-/**
- * 回放结果的系列赛视图模型（L2b · 审计 BZ-06）：系列赛比分 + 逐场胜负 + 场次选项。
- * 纯函数；只消费 ReplayResult，不复制状态。文案 / 本地化留给组件。
- *
- * 队伍身份来自 League 批次汇总（resp.league.teamSummaries）：teamKey 跨场稳定（多数军团标签），
- * arenaTeams 列出它在每场里对应的 `${arenaId}:${team}`。普通（非 CW）批次没有跨场队伍身份，
- * 只能给出逐场「队伍 1 / 2 胜」，不推算系列赛比分。
- */
 import { displayName, fileKey } from './helpers.js'
 
 type TeamSummary = { teamKey: string; autoName?: string | null; arenaTeams?: unknown[] | null }
@@ -30,14 +22,12 @@ type SeriesResult = {
 type Translate = (key: string, params?: Record<string, unknown>) => string
 type BattleOption = { value: string; label: string; meta: string; search: string }
 
-/** 战队显示名：批次覆盖名 → 自动名（军团标签）→ null（待命名）。 */
 function teamDisplayName(summary: TeamSummary, teamNames: TeamNames | null | undefined) {
   const override = teamNames?.[summary.teamKey]
   if (override) return override
   return summary.autoName || null
 }
 
-/** `${arenaId}:${team}` → teamSummary 索引。 */
 function arenaTeamIndex(teamSummaries: TeamSummary[]) {
   const index = new Map<string, TeamSummary>()
   for (const summary of teamSummaries) {
@@ -81,13 +71,10 @@ export function buildSeriesOverview(
       winnerTeam: winner,
       draw: !winner && battle.draw === true,
       winnerKey: summary ? summary.teamKey : null,
-      // 单场里改过的队名（{arenaId:team}）优先于批次名，与单场概览一致
       winnerName: (winner && battleTeamNames[`${battle.arenaId}:${winner}`]) || (summary ? teamDisplayName(summary, teamNames) : null),
     }
   })
 
-  // 只有恰好两支跨场稳定的队伍时才是「系列赛」：任何一支是 arenaId:team 兜底键都说明身份不可靠。
-  // 胜场按逐场结果计数（teamSummaries.wins 只覆盖可评分场次）；无法归属的场次单独计数，界面如实说明。
   const isSeries = teamSummaries.length === 2
     && teamSummaries.every(summary => String(summary.teamKey).startsWith('clan:'))
   const teams = isSeries
@@ -99,13 +86,11 @@ export function buildSeriesOverview(
       }))
       .sort((a, b) => b.wins - a.wins || String(a.key).localeCompare(String(b.key)))
     : null
-  // 只统计「有胜方但归属不到战队」的场次；平局 / 胜负未知不算
   const unresolved = isSeries ? rows.filter(row => row.winnerTeam && !row.winnerKey).length : 0
 
   return { teams, unresolved, battles: rows }
 }
 
-/** 逐场胜方文案：战队名 → 队伍编号 → 平局 → 未知。 */
 export function battleWinnerText(
   battle: { winnerName?: string | null; winnerTeam?: number | null; draw?: boolean },
   t: Translate,

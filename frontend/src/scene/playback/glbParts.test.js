@@ -2,19 +2,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import * as THREE from 'three'
 import { collectGlbParts } from './glbParts.ts'
 
-// 真实 THREE scene graph fixtures：节点命名与导出器产物一致（tools/export_tank_glb.py
-// 不造节点，按客户端源场景图忠实导出——gun_NN 组挂 turret_NN，turret_NN 挂根；
-// chassis_track/wheel_* 也挂根）。
 
-// 子 mesh 命名不得命中 ^gun_\d / ^turret_\d（traverse 全树收集，真实 GLB 里
-// 挂在 gun_NN 组下的部件不重复占用节点名——组本身就是被收集的节点）
 const namedMesh = (name) => {
   const m = new THREE.Mesh(new THREE.BufferGeometry())
   m.name = name
   return m
 }
 
-/** 普通坦克：turret_01/turret_02 + gun_01/gun_02 组（gun_01 带 mask 子树）+ 底盘节点 */
 function normalTank() {
   const root = new THREE.Group()
   const gun01 = new THREE.Group(); gun01.name = 'gun_01'
@@ -32,7 +26,6 @@ function normalTank() {
   return root
 }
 
-/** 固定战斗室 TD：无 turret_N 实体，gun_01 直接挂根 */
 function tdTank() {
   const root = new THREE.Group()
   const gun = new THREE.Group(); gun.name = 'gun_01'
@@ -53,15 +46,11 @@ describe('collectGlbParts（普通坦克）', () => {
     const p = collectGlbParts(model, sdOf(), null)
     expect(p).not.toBeNull()
     expect(p.turretNode.name).toBe('turret_01')
-    // gun_01 本体 + 精确命名的炮盾 gun_01_mask 都进摆位集
     expect(p.gunNodes.map(n => n.name)).toEqual(['gun_01', 'gun_01_mask'])
-    // 可见性：选中组/炮塔可见，其余隐藏
     expect(model.getObjectByName('turret_01').visible).toBe(true)
     expect(model.getObjectByName('turret_02').visible).toBe(false)
     expect(model.getObjectByName('gun_02').visible).toBe(false)
-    // 枢轴链：tP = track+turret
     expect(p.tP).toEqual([11, 22, 33])
-    // 无选中配置的 gun_origin → gP = tP 副本
     expect(p.gP).toEqual([11, 22, 33])
     expect(p.gP).not.toBe(p.tP)
     expect(p.itr).toBeNull()
@@ -127,7 +116,6 @@ describe('collectGlbParts（普通坦克）', () => {
     expect(p.hullGroup).toBe(hg)
     const childNames = hg.children.map(c => c.name).sort()
     expect(childNames).toEqual(['hull', 'turret_01', 'turret_02'])
-    // 底盘留根（被 hullGroup 排除）
     expect(model.children.map(c => c.name)).toContain('chassis_track_L')
     expect(model.children.map(c => c.name)).toContain('chassis_wheel_R_01')
   })
@@ -186,8 +174,8 @@ describe('collectGlbParts（节点顺序契约）', () => {
     gun.add(namedMesh('m_barrel'))
     const t3 = new THREE.Group(); t3.name = 'turret_03'; t3.add(namedMesh('m_t3'))
     const t1 = new THREE.Group(); t1.name = 'turret_01'; t1.add(gun)
-    root.add(t3, t1)   // 乱序：03 在 01 前
+    root.add(t3, t1)
     const p = collectGlbParts(root, sdOf(), { turret_index: 1, gun_index: 0 })
-    expect(p.turretNode.name).toBe('turret_03')   // dense 索引 1 = 升序第二位
+    expect(p.turretNode.name).toBe('turret_03')
   })
 })

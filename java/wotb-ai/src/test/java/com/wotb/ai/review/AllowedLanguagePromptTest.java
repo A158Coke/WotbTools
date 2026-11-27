@@ -33,10 +33,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 语言指令结构契约：EN/RU 最终 system prompt 不得包含互斥的中文输出强制句（简体中文、
- * XX分XX秒、车种中文写法），必须包含目标语言输出要求与本地化时间格式；ZH 字节级不变。
- */
 class AllowedLanguagePromptTest {
 
     private static final List<String> CHINESE_OUTPUT_MANDATES = List.of(
@@ -232,7 +228,6 @@ class AllowedLanguagePromptTest {
         return battle;
     }
 
-    /** 有效团队 reconstruction（IDENTIFIED battle-relative 时钟 + 双方实体位置/血量）：通过 Team hard gate。 */
     private static ReplayReconstruction teamRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 300.0, 0L);

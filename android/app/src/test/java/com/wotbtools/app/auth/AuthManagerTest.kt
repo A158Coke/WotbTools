@@ -7,14 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
-/**
- * [AuthManager] 投影边界与关键接线的纯 JVM 测试。
- *
- * Android 侧（Keystore / AppAuth / Activity）刻意不做单测：那些类只做胶水。这里固定的是
- * 「持久化状态 → 会话快照」这一条**无需 Android framework 就能判定**的规则，其中最重要的就是
- * 「条目缺失 / 解密失败 / JSON 为空 → 未认证」—— 恢复路径上出现 null 时不允许崩溃、
- * 不允许给出半成品会话。
- */
 class AuthManagerTest {
 
     @Test
@@ -36,7 +28,6 @@ class AuthManagerTest {
 
     @Test
     fun transientRefreshFailureDoesNotEmitAnAuthChangedRetryLoop() {
-        // AppAuth cannot run in plain JVM; lock the callback wiring around the behavioral policy above.
         val source = authManagerSource()
         assertTrue(source.contains("pending to (!success && sessionGeneration == generation && session == null)"))
         assertTrue(source.contains("if (changed) notifyListeners()"))
@@ -80,8 +71,6 @@ class AuthManagerTest {
 
     @Test
     fun absentStoredStateMeansUnauthenticated() {
-        // AuthSessionStore.load() 在「没有条目 / 解密失败 / 内容为空」时统一返回 null，
-        // 投影必须把这个 null 变成明确的未认证，而不是异常或空壳会话。
         val session = AuthManager.sessionOf(null)
         assertEquals(AuthSession.unauthenticated(), session)
         assertFalse(session.authenticated)
@@ -91,14 +80,6 @@ class AuthManagerTest {
         assertFalse(session.isValidFor(0, 1_700_000_000_000L))
     }
 
-    /**
-     * 交易归属校验的**接线**必须使用 OAuth 响应真正返回的 `response.state`。
-     *
-     * 这个调用点与 AppAuth 的 [net.openid.appauth.AuthorizationResponse]（Android 类型）耦合，
-     * 无法在普通 JVM 单测里执行；而「拿 `response.request.state` 与自己比较」是一个编译器与
-     * 行为测试都发现不了的自指接线错误（永远相等 ⇒ 这道独立校验形同不存在）。因此这里对那条
-     * 接线做一次窄断言，行为断言由 `AuthResponseGuardTest` 覆盖。
-     */
     @Test
     fun theTransactionOwnershipCheckIsWiredToTheReturnedState() {
         val source = authManagerSource()
@@ -117,13 +98,6 @@ class AuthManagerTest {
         )
     }
 
-    /**
-     * 失败与消费路径必须**按身份**清交易（[AuthTransactionStore.clearIfState]），不得无条件清空。
-     *
-     * 陈旧 / 外来的 callback（旧登录的回程、库判定的 STATE_MISMATCH、读不出 state 的取消）到达时
-     * 无条件清空会作废用户已经开始的那笔新登录。这里断言接线只用身份匹配的清理原语，行为断言由
-     * `AuthTransactionStoreTest.aStaleCallbackNeverClearsTheCurrentTransaction` 覆盖。
-     */
     @Test
     fun transactionCleanupOnCallbackPathsIsIdentityMatched() {
         val source = authManagerSource()
@@ -153,10 +127,6 @@ class AuthManagerTest {
         }
     }
 
-    /**
-     * 登录必须先成功落盘交易才允许启动 external user-agent（落盘失败 ⇒ 不启动、不假装已受理）。
-     * 该顺序无法用普通 JVM 单测执行（AppAuth + Keystore），因此窄断言这条接线。
-     */
     @Test
     fun theBrowserIsOnlyLaunchedAfterTheTransactionWasPersisted() {
         val source = authManagerSource()
@@ -181,11 +151,6 @@ class AuthManagerTest {
         assertTrue("save 必须发生在启动之前", saveIndex in 0 until launchIndex)
     }
 
-    /**
-     * 授权请求的 state / nonce 必须由 AppAuth 的 builder **自动生成**——本项目不得手工设置。
-     * 手工设置会引入第二个随机源（同一交易两处 state），并让"nonce 由库保证"的不变量失效；
-     * 计划 Phase 11 点名了这条接线，因此按本文件既有做法做窄的源契约断言。
-     */
     @Test
     fun stateAndNonceAreGeneratedByTheLibraryNotHandSet() {
         val code = authManagerCode()
@@ -200,10 +165,6 @@ class AuthManagerTest {
         )
     }
 
-    /**
-     * RP-initiated logout 的 post-logout 回程固定 private scheme（2.1.0 Phase 5.2）：
-     * 与授权回程同一传输决策——HTTPS App Link 降级为兼容回退后，登出也必须回到 App。
-     */
     @Test
     fun postLogoutRedirectUsesThePrivateScheme() {
         val code = authManagerCode()
@@ -213,16 +174,6 @@ class AuthManagerTest {
         )
     }
 
-    /**
-     * AppAuth 的 completion `PendingIntent` 必须允许 AppAuth **填入响应 Intent**。
-     *
-     * AppAuth 的 `AuthorizationManagementActivity` 用 `callback.send(context, 0, responseData)` 把
-     * 组装好的响应（`EXTRA_RESPONSE` / `EXTRA_EXCEPTION` + redirect URI 作为 data）交给调用方的
-     * PendingIntent。`FLAG_IMMUTABLE` 会冻结创建时的 Intent、静默忽略这次填充：
-     * `MainActivity.isAuthorizationIntent()` 于是看不到任何 extra，回程被当成普通启动，
-     * token 交换永远不会开始 —— 真机表现是「浏览器里认证成功，App 里始终未登录」，而这在
-     * JVM/CI 里完全测不出来。这里对 flag 策略与调用点做一次窄的源契约断言。
-     */
     @Test
     fun appAuthCallbackPendingIntentsAllowAppAuthToFillTheResponse() {
         val code = authManagerCode()
@@ -242,7 +193,6 @@ class AuthManagerTest {
             )
         )
 
-        // 登录与 end-session 这两个 AppAuth 回程 PendingIntent 必须共用同一份策略。
         assertEquals(
             "AppAuth 回程 PendingIntent 的数量变化了，flag 策略需要重新审查",
             2,
@@ -259,7 +209,6 @@ class AuthManagerTest {
             code.contains("FLAG_IMMUTABLE")
         )
 
-        // 可变 ≠ 隐式：基础 Intent 必须仍然是显式组件。
         assertEquals(
             "两个回程 PendingIntent 都必须携带显式组件 Intent",
             2,
@@ -272,10 +221,6 @@ class AuthManagerTest {
             .joinToString("\n") { it.readText() }
     }
 
-    /**
-     * 源码中**去掉注释行**的部分：flag 策略断言必须针对真实代码，而不是针对解释它的注释
-     * （helper 的文档注释里刻意提到了 `FLAG_IMMUTABLE`）。
-     */
     private fun authManagerCode(): String = authManagerSource().lines()
         .filterNot { line ->
             val trimmed = line.trimStart()

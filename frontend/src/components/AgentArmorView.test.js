@@ -117,7 +117,7 @@ describe('Armor recorded-shot navigation', () => {
 })
 describe('Armor exit entry (deep link without history)', () => {
   it('keeps an exit on phone-landscape deep link: immersive on, back goes to tankopedia', async () => {
-    window.history.replaceState(null, '') // 深链形态：无 history.state.back
+    window.history.replaceState(null, '')
     restoredMedia.push(() => window.history.replaceState(null, ''))
     const chrome = createShellChrome()
     mocks.coarse.value = true
@@ -135,7 +135,7 @@ describe('Armor exit entry (deep link without history)', () => {
     await wrapper.get('[data-testid="armor-back"]').trigger('click')
     expect(backSpy).toHaveBeenCalledOnce()
     await flushPromises()
-    expect(router.currentRoute.value.query.view).toBe('agent-armor') // 未走 replace 兜底
+    expect(router.currentRoute.value.query.view).toBe('agent-armor')
   })
 })
 describe('Armor immersive shell chrome', () => {
@@ -159,7 +159,6 @@ describe('Armor immersive shell chrome', () => {
     const chrome = createShellChrome()
     const { wrapper } = await setup({ shellChrome: chrome, phone: true })
     expect(chrome.immersive.value).toBe(false)
-    // coarse 是非响应式桩：无 provider 的挂载要在 mount 前置位，随后立刻还原
     mocks.coarse.value = true
     const { wrapper: bare } = await setup({ phone: true })
     mocks.coarse.value = false
@@ -177,7 +176,6 @@ describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
     const { router } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
     await flushPromises()
     expect(router.currentRoute.value.query.eqpitch).toBe('1', '瞬时失败不得删除共享链接覆盖')
-    // 重试成功：目标车预设不含 122 → 这是「确认不支持」，此时才允许清理 URL
     mocks.tank.mockResolvedValueOnce({ nation: 'germany' })
     mocks.modules.mockResolvedValueOnce({ tanks: {} })
     await vi.advanceTimersByTimeAsync(5000)
@@ -187,8 +185,6 @@ describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
 
   it('devices 重试成功后恢复 122 加成并保留 eqpitch 覆盖', async () => {
     vi.useFakeTimers()
-    // 目录的所有并发读者都先失败；重试前再整体切换为成功目录，避免首个调用被其他
-    // 组件（HUD/侧栏）抢走导致可用性路径根本没经历失败。
     mocks.devices.mockRejectedValue(new Error('offline'))
     mocks.modules.mockResolvedValue({
       tanks: { 'Type71_stem': { tankId: 2, optDevicePreset: 'AlternatePitchGrouserPreset' } },
@@ -208,7 +204,6 @@ describe('122 可用性容错（网络失败 ≠ 不支持）', () => {
   it('unmount 后迟到的目录失败不再挂重试', async () => {
     vi.useFakeTimers()
     const pending = deferred()
-    // 所有目录读者共用该挂起 promise：无论挂载期谁先调用，可用性请求都必然在飞行中。
     mocks.devices.mockImplementation(() => pending.promise)
     const { wrapper } = await setup({ query: { view: 'agent-armor', tank: '2', eqpitch: '1' } })
     wrapper.unmount()
@@ -236,7 +231,6 @@ describe('122 回放真值的目标身份', () => {
     await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
     await flushPromises()
     const scene = scenes.at(-1)
-    // bonus 可能在 viewer 创建前就绪（走构造参数），也可能之后才恢复（走 setter）。
     expect([scene.options.pitchDeviceBonus, ...scene.setPitchDeviceBonus.mock.calls.map(([v]) => v)])
       .toContainEqual({ up: 4, down: 3 })
     expect([scene.options.pitchDeviceAvailable, ...scene.setPitchDeviceAvailable.mock.calls.map(([v]) => v)])
@@ -244,8 +238,6 @@ describe('122 回放真值的目标身份', () => {
   })
 
   it('切到不支持 122 的车清覆盖时恢复 null（不写死 false），切回原目标 122 可再恢复', async () => {
-    // review P2：清理时若写 setEquipmentOverride('pitch', false)，effectivePitchDevice
-    // 的 `override != null 即采用` 会永久压住 after-switch-back 的 recorded truth。
     mocks.fetch.mockResolvedValue({
       shots: [{ ...shots[0], target_equipment: { improved_pitch_limits: true } }],
     })
@@ -263,14 +255,12 @@ describe('122 回放真值的目标身份', () => {
     const { router } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2', eqpitch: '1' } })
     await flushPromises()
     const scene = scenes.at(-1)
-    // 切到不支持 122 的目标：URL 覆盖被清，场景覆盖必须回 null（不是 false）
     mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
     await flushPromises()
     expect(router.currentRoute.value.query.eqpitch).toBeUndefined()
     const pitchCalls = scene.setEquipmentOverride.mock.calls.filter(([kind]) => kind === 'pitch')
     expect(pitchCalls.some(([, value]) => value === false)).toBe(false)
     expect(pitchCalls.at(-1)).toEqual(['pitch', null])
-    // 切回原目标：可用性随真值恢复（覆盖已撤销，不再被 stale false 压住）
     mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 2 })
     await flushPromises()
     expect(scene.setPitchDeviceAvailable.mock.calls.at(-1)[0]).toBe(true)
@@ -291,7 +281,6 @@ describe('122 回放真值的目标身份', () => {
     const { wrapper } = await setup({ query: { view: 'agent-armor', shot: '6', tank: '2' } })
     await flushPromises()
     expect(wrapper.get('[data-testid="hud-pitch-device"]').attributes('aria-pressed')).toBe('true')
-    // 选车器换目标：回放仍是原目标的射击记录，但当前目标已变成另一辆车。
     mocks.init.mock.calls.at(-1)[0].onTankSelection({ shooter: 1, target: 3 })
     await flushPromises()
     const button = wrapper.get('[data-testid="hud-pitch-device"]')

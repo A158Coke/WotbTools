@@ -17,10 +17,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Rule versioning, default-slot inheritance and rule-shape validation, extracted from
- * TournamentService. Same repository access semantics as the original inline code.
- */
 class TournamentRuleSupport {
     private final TournamentRuleRepository rules;
     private final TournamentDefaultRulesRepository defaults;
@@ -42,7 +38,6 @@ class TournamentRuleSupport {
         if (!"INHERIT".equals(event.ruleSource)) { return stored; }
         return stored.stream().map(original -> {
             final TournamentRule effective = new TournamentRule(); effective.eventId = event.id; effective.roundNumber = original.roundNumber;
-            // Default revisions are visible in legacy rule-version checks as well as the new explicit guard.
             effective.rulesVersion = slot.version;
             effective.days = slot.active ? slot.rounds.stream().filter(round -> round.roundNumber() == original.roundNumber)
                     .findFirst().map(TournamentSnapshot.RuleRound::days).orElse(List.of()).stream()

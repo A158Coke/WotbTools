@@ -1,4 +1,3 @@
-/** 异步 WebGL2 timer query；调用者只在启用诊断时创建，且在每个实际 render 边界调用。 */
 export type GpuTimerStatus = 'not-initialized' | 'available' | 'unsupported' | 'context-lost' | 'error' | 'destroyed'
 export type GpuSampleStatus = 'complete' | 'disjoint' | 'invalid'
 
@@ -28,10 +27,8 @@ export interface GpuTimer {
   readonly dropped: number
   readonly invalid: number
   readonly epoch: number
-  /** 不允许嵌套；失败时仍必须执行原 render。 */
   begin(frame: number, pass: string): boolean
   end(): void
-  /** 最多检查各 pending query 一次，永不等待 GPU。 */
   poll(): GpuSample[]
   reset(): void
   contextLost(): void
@@ -71,7 +68,6 @@ export function createGpuTimer(initialGl: WebGL2RenderingContext, maxPending = 6
 
   function clearQueries(): void {
     if (active) {
-      // endQuery is paired even when reset is requested between begin/end.
       if (status === 'available' && extension) {
         try { gl.endQuery(extension.TIME_ELAPSED_EXT) } catch { status = 'error'; invalid++ }
       }
@@ -171,7 +167,6 @@ export function createGpuTimer(initialGl: WebGL2RenderingContext, maxPending = 6
     begin, end, poll, reset,
     contextLost() {
       if (status === 'destroyed' || status === 'context-lost') return
-      // Lost contexts cannot produce trustworthy results. WebGL permits deleting lost objects.
       invalid += pending.length + (active ? 1 : 0)
       status = 'context-lost'
       clearQueries()
@@ -218,7 +213,6 @@ interface FrameQuery {
   recorded: boolean
 }
 
-/** 场景只在 ?perf 下创建；帧 id 跨 renderer 重建保持单调。 */
 export function createGpuFrameTracker(sink: GpuFrameSink, maxFrames = 240) {
   let renderer: GpuRenderer | null = null
   let timer: GpuTimer | null = null
@@ -231,8 +225,6 @@ export function createGpuFrameTracker(sink: GpuFrameSink, maxFrames = 240) {
 
   function complete(frame: FrameQuery): void {
     if (!frame.submitted || !frame.recorded || frame.completed !== frame.expected) return
-    // Sum only successfully measured render passes; this is not the complete GPU frame time.
-    // A failed required pass invalidates the sum rather than contributing zero.
     sink.gpuResult(frame.id, 'total', frame.failure ? null : frame.total)
     sink.gpuStatus(frame.id, frame.failure ?? 'complete')
     frames.delete(frame.id)

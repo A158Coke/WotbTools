@@ -1,7 +1,3 @@
-/* WotBTools Showcase dark visual layer
- * Visual-only layer on top of tokens.css. Business behavior stays in page components.
- * Goals: one WOTB-inspired language, wider containers, dense desktop tools, tablet/mobile reflow.
- */
 
 :root {
   --showcase-page-max: 1760px;
@@ -11,7 +7,6 @@
   --showcase-surface: var(--color-surface-1);
   --showcase-surface-2: var(--color-surface-2);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
-  /* Tactical surfaces follow the active season（tokens/color.css）. */
   --showcase-tactical: linear-gradient(160deg, var(--color-surface-2) 0%, var(--color-surface-1) 100%);
   --showcase-tactical-2: linear-gradient(165deg, var(--color-surface-2) 0%, var(--color-canvas) 100%);
   --showcase-tactical-border: var(--color-border-subtle);
@@ -29,7 +24,6 @@
   margin-inline: auto !important;
 }
 .layout-data-workspace {
-  /* 100% 而非 100vw：100vw 含滚动条宽度，有竖向滚动条时会产生横向溢出 */
   width: min(var(--layout-workspace-max), calc(100% - var(--gutter) * 2)) !important;
   max-width: none !important;
   padding: var(--space-6) 0 var(--space-12);
@@ -41,9 +35,7 @@
   padding: var(--space-6) 0 var(--space-12);
 }
 
-/* Hall of Fame / rankings */
 
-/* Profile: no avatar; identity reads like a tactical account header. */
 .profile-page {
   width: min(var(--layout-content-max), calc(100% - var(--gutter) * 2)) !important;
   max-width: none !important;
@@ -90,9 +82,7 @@
 }
 .profile-page .card-title { letter-spacing: -.01em; }
 
-/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language），这里只保留页面容器宽度。 */
 
-/* Tactical workspaces */
 
 @media (768px <= width < 1200px) {
   .layout-content,
@@ -122,8 +112,6 @@
       var(--color-surface-1) !important;
   }
   .profile-page .hero-name { font-size: 1.35rem !important; }
-  /* 共享竖屏遮罩在冬季已几乎全撤（.15 → 0）：Profile 横幅文字与 ShowcaseHero 同样
-     切浅色 + 深色描边；token 只在冬季定义，其他主题保持原深色 */
   .profile-page .hero-name {
     color: var(--theme-hero-title-color, var(--text-heading)) !important;
     text-shadow: var(--theme-hero-text-shadow, none);

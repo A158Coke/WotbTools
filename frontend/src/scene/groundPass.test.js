@@ -1,14 +1,3 @@
-// 地面 pass SSOT 守卫（src/scene/groundPass.js；2026-10-14 抽层，用户裁示"直接完全照搬
-// 3D 回放的代码接入渲染"）：
-//   ① 地形数据/几何、分层地表材质、水面海岸线资源只有一处实现——3D 运行时（playbackScene）
-//      与俯视烘焙（scripts/bake-ground-overhead.mjs）两侧消费同一模块，本地不得复辟副本；
-//   ② 烘焙接入面完整：terrain.json/bin → loadTerrain；ground.layers.json → fail-closed 读取
-//      （scripts/bake-ground-layers.js，键集 groundLayerKeys）/setupGroundTextures；地面网格/材质进场景；
-//      水件保留（keepWater）并入装配；meta 携带 ground 标志（合成器据它以"覆盖即替换"口径合并，
-//      tools/composite_overhead.py）——ground=true 只能来自分层地面网格真正建成。
-// 背景：抽层前烘焙不渲染地面——底图是客户端自带地图图（ground.webp），与 3D 档的实时分层
-// 渲染（cm×lm×tile/mask）在夜图/带 lm 图上差异显著（faust 用户报障"webp 与 3D 俯视图差
-// 别大"的直接来源）。
 import { describe, it, expect, vi } from 'vitest'
 import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
@@ -21,13 +10,11 @@ import { buildAnnotationSurfaceGrid, pickDrawableSurfaceHit } from './playback/a
 import { playbackSceneSource } from './__tests__/sceneSource.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF 锚点不匹配，CI 为 LF）
+const strip = (s) => s.replace(/\r\n/g, '\n')
   .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(playbackSceneSource())
-// 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
 const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.ts'), 'utf8'))
-// 地面/地形运行时块 2026-11-06 出仓 playback/mapWorld.ts（#820 Step 2），守卫随实现迁移
 const mapWorldSrc = ['playback/mapWorld.ts', 'playback/mapWorldLoader.ts', 'playback/mapWorldTerrain.ts'].map(path => strip(readFileSync(resolve(here, path), 'utf8'))).join('\n')
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
@@ -51,7 +38,6 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(mapWorldSrc).toMatch(/const need = groundLayerKeys\(L\);/)
     expect(mapWorldSrc).toMatch(/setupGroundTextures\(texs, ani\);/)
     expect(mapWorldSrc).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrainTyped\(\{/)
-    // 副本禁令（本地零残留）：宿主与出仓运行时模块都不得复辟
     for (const s of [src, mapWorldSrc]) {
       expect(s).not.toMatch(/function groundShaderMaterial/)
       expect(s).not.toMatch(/uniform sampler2D uCM;/)
@@ -64,7 +50,6 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
   it('烘焙侧：消费共享入口，本地不得复辟地面代码', () => {
     expect(bakeSrc).toMatch(/from '\/src\/scene\/groundPass\.js'/)
     expect(bakeSrc).toMatch(/loadTerrain\(\{/)
-    // 分层读取：页面导入 fail-closed 读取模块；键集仍取共享 groundLayerKeys（不复制层清单）
     expect(bakeSrc).toMatch(/import \{ loadBakeGroundLayers, requireBakeTerrain \} from '\/scripts\/bake-ground-layers\.js'/)
     expect(bakeLayersSrc).toMatch(/import \{ groundLayerKeys \} from '\.\.\/src\/scene\/groundPass\.js'/)
     expect(bakeLayersSrc).toMatch(/for \(const k of groundLayerKeys\(layers\)\) \{/)
@@ -89,7 +74,6 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(gpSrc).toMatch(/for \(const k of \['tile0', 'tile1', 'hmap0', 'hmap1'\]\) if \(texs\[k\]\) \{/)
     expect(gpSrc).toMatch(/texs\[k\]\.wrapS = texs\[k\]\.wrapT = THREE\.RepeatWrapping;/)
     expect(gpSrc).toMatch(/for \(const k of \['cm', 'lm', 'mask0', 'mask1'\]\) if \(texs\[k\]\) \{/)
-    // cm/lm/mask 不得设 colorSpace（legacy DXT 原样采样口径 C3）——共享函数内零 colorSpace 写入
     const setupFn = gpSrc.slice(gpSrc.indexOf('export function setupGroundTextures'),
       gpSrc.indexOf('export async function loadTerrain'))
     expect(setupFn.length).toBeGreaterThan(200)
@@ -136,19 +120,15 @@ describe('loadTerrain fail-closed（runtime 口径）', () => {
 
 describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   it('走廊掩码单实现：类判据/足迹取样/mask 生成只在 groundPass，两侧只留宿主接线', () => {
-    // 2026-10-14 用户报"轨道被下方地形遮挡"：烘焙此前未接入运行时的走廊细化机制
-    // （正交俯视下遮挡同样取决于插值高度——细分级不只影响成本）
     expect(gpSrc).toMatch(/export function buildCorridorRefineMask\(\{ meshes, field, n, span, marginTexels = 2 \}\) \{/)
     expect(gpSrc).toMatch(/if \(box\.isEmpty\(\) \|\| box\.max\.y - box\.min\.y > 2\.5\) continue;/)
     expect(gpSrc).toMatch(/Math\.abs\(box\.min\.y - t\) <= 1\.0/)
     expect(gpSrc).toMatch(/const mask = buildRefineMask\(pts, n, span, marginTexels\);/)
-    // 运行时：调用共享实现并把掩码喂进构建器（留宿主接线与 DEBUG 钩子）
     expect(mapAssetsSrc).toMatch(/const built = buildCorridorRefineMask\(\{/)
     expect(mapAssetsSrc).toMatch(/terrainRefineMask = built\.mask;/)
     expect(mapWorldSrc).toMatch(/refineMask: st\.terrainRefineMask,/)
     expect(mapWorldSrc.replaceAll('refineMask: st.terrainRefineMask,', '')).not.toMatch(/refineMask: st\.terrainRefineMask,/)
     expect(mapWorldSrc).toMatch(/st\.terrainRefineMask = null;/)
-    // 烘焙：同一实现 + 同一收集口径（onMesh 的 water 标记）；次序=掩码先于实例化合批
     expect(bakeSrc).toMatch(/buildCorridorRefineMask\(\{/)
     expect(bakeSrc).toMatch(/meshes: sceneryMeshes, field,/)
     expect(bakeSrc).toMatch(/onMesh: \(o, waterMarked\) => \{ sceneryMeshes\.push\(\{ o, water: waterMarked \}\); \},/)
@@ -157,7 +137,6 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     const instAt = bakeSrc.indexOf('collectInstanceEntries(gltf.scene)')
     expect(maskAt).toBeGreaterThan(0)
     expect(instAt).toBeGreaterThan(maskAt)
-    // 世界矩阵就绪（掩码按世界系取样）：掩码前必须有 updateMatrixWorld
     const wmAt = bakeSrc.indexOf('group.updateMatrixWorld(true)')
     expect(wmAt).toBeGreaterThan(0)
     expect(wmAt).toBeLessThan(maskAt)
@@ -172,19 +151,15 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
 
   it('水语义件保留渲染（keepWater）；"≥90% 图幅壳"几何剔除已删（运行时渲染件不得被剔）', () => {
     expect(bakeSrc).toMatch(/keepWater: true, skyFlagsAvailable \}\)\) drop\.push\(o\)/)
-    // 2026-10-14 用户报"米尔德堡右上角黑块"后删除：该规则把运行时正常渲染的外圈山体/
-    // 大地壳整块剔掉，露出可玩区外 colormap 暗色边带；真天空穹由 /sky/ 判据处理
     expect(bakeSrc).not.toMatch(/span \* 0\.9/)
     expect(bakeSrc).not.toMatch(/hasWater/)
   })
 
   it('装配实参：真实 groundLayers（贴花不复落 Lambert）+ 水面 waterCoast 同运行时', () => {
-    // 烘焙页为 CRLF 行尾：跨行断言一律 \s*（\n\s* 会被 \r 卡住）
     expect(bakeSrc).toMatch(/assembleSceneryMaterials\(gltf, \{\s*strictSurfaces,\s*masks,\s*groundLayers,\s*waterCoast,/)
   })
 
   it('材质装配先于 qFrame 挂载（两侧同序；PR #621 review P2：水下判定按 GLB z-up 世界包围盒）', () => {
-    // 源码顺序：运行时 assemble → mapScenery 挂载；烘焙 assemble → group 挂载 → 世界矩阵 → 走廊掩码
     const rtAsm = mapAssetsSrc.indexOf('assembleSceneryMaterials(gltf, {')
     expect(rtAsm).toBeGreaterThan(0)
     expect(mapAssetsSrc.indexOf('mapScenery.add(gltf.scene)')).toBeGreaterThan(rtAsm)
@@ -196,7 +171,6 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(bakeSrc.indexOf('group.updateMatrixWorld(true)')).toBeGreaterThan(bkMount)
     expect(bakeSrc.indexOf('buildCorridorRefineMask({')).toBeGreaterThan(bakeSrc.indexOf('group.updateMatrixWorld(true)'))
 
-    // 行为：z=10 水面下的 2 m 石块 → 水下不受光（MeshBasicMaterial）；z=10.2 水上薄板 → 常规 Lambert
     const NO_TEX = () => null
     const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
     const build = () => {
@@ -222,17 +196,14 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
       g.rotation.set(-Math.PI / 2, Math.PI, 0)
       return g
     }
-    // 现行顺序（两侧）：装配时 gltf.scene 尚未挂 qFrame
     const a = build()
     assembleSceneryMaterials(a.gltf, { strictSurfaces: true, masks })
     expect(a.stone.material.isMeshBasicMaterial).toBe(true)
     expect(a.plank.material.isMeshLambertMaterial).toBe(true)
-    // 3D annotation 可绘制表面语义：水面 / 水下件不是可绘制 3D 表面，水上薄板保留。
     expect(a.water.material.userData.annotationSurface).toBe(false)
     expect(a.stone.material.userData.annotationSurface).toBe(false)
     expect(a.plank.material.userData.annotationSurface).not.toBe(false)
     expect(a.card.material.userData.annotationSurface).toBe(false)
-    // 反例（锁住"顺序承重"）：先挂 qFrame 且组世界矩阵已更新 ⇒ 高度轴变成 y，水上/水下互换
     const b = build()
     const g = qFrame()
     g.add(b.gltf.scene)
@@ -359,7 +330,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     const mat = new THREE.MeshStandardMaterial({ name: 'skyobject_mat' })
     mat.userData.sky = true
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat)
-    mesh.name = 'bld_x.sc2'   // 名字不含 sky：必须靠 extras 标记
+    mesh.name = 'bld_x.sc2'
     root.add(mesh)
     const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
     expect(r.skyMeshes).toBe(1)
@@ -387,7 +358,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
     const root = new THREE.Group()
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ name: 'ordinary' }))
-    mesh.name = 'sky_dome'   // 名字像天，但材质无 extras.sky
+    mesh.name = 'sky_dome'
     root.add(mesh)
     const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, skyFlagsAvailable: true })
     expect(r.skyMeshes).toBe(0)
@@ -395,26 +366,17 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   })
 
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
-    // 逐图产物生命周期（删旧产物 / .tmp→rename / meta 内容）在 scripts/bake-overhead-key.mjs，
-    // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本
     expect(bakeSrc).toMatch(/import \{ bakeKey \} from '\.\/bake-overhead-key\.mjs'/)
     expect(bakeSrc).not.toMatch(/async function bakeKey\(/)
     expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD \}\)/)
     expect(bakeSrc).toMatch(/writeFileSync\(UPLOAD, body\)/)
     expect(bakeSrc).toMatch(/return \{ ok: true, span: effSpan, ground: groundReady \}/)
-    // 退化几何按 (ic/3)/vc 比率删除已撤除（同 3D 运行时；统计启发式不得复活）
     expect(bakeSrc).not.toMatch(/degenerate|\(ic \/ 3\) \/ vc > 15/)
   })
 
   it('Test C：ground=true 只来自分层地面网格建成（PR #621 blocker：缺层 → 白地面 → ground=true 覆盖 ground.webp）', () => {
-    // 语义漂移禁令：ground 不得再等价于"有地形"
     expect(bakeSrc).not.toMatch(/ground: !!field/)
-    // fail-closed：有地形即强制读取完整分层，读取失败直接冒泡（load reject → bakeKey 不写产物）；
-    // 不得再有吞错退化分支
     expect(bakeSrc).toMatch(/if \(field\) \{\s*groundLayers = await loadBakeGroundLayers\(\{/)
-    // 地形同样 fail-closed：terrain.json 读到（meta 有键）而 field=null ⇒ 抛出，且先于分层读取/出图
-    // 地形配对按 loadTerrain 回报的 HTTP 事实判定（requireBakeTerrain，行为回归见 bake-ground-layers.test.js），
-    // 不得再靠 meta 是否有键猜——json 404/缺字段时 loadTerrain 返回 field=null（bin 仍请求以记录事实）
     expect(bakeSrc).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
     expect(bakeSrc).not.toMatch(/Object\.keys\(tmeta\)/)
     const terrainAt = bakeSrc.indexOf('requireBakeTerrain({ field, metaStatus, binStatus })')
@@ -422,12 +384,9 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(terrainAt).toBeLessThan(bakeSrc.indexOf('await loadBakeGroundLayers({'))
     expect(bakeSrc).not.toMatch(/if \(field\) try/)
     expect(bakeSrc).not.toMatch(/分层地表缺失/)
-    // 烘焙侧没有回退底图：地面材质不得带 mapTexture（null = 纯白 MeshBasicMaterial），也不得
-    // 以可空的 groundLayers 取层（"groundLayers && groundLayers.layers" 即会落回回退档）
     expect(bakeSrc).not.toMatch(/mapTexture/)
     expect(bakeSrc).not.toMatch(/groundLayers && groundLayers\./)
     expect(bakeSrc).toMatch(/makeGroundMaterial\(\{\s*layers: groundLayers\.layers, texs: groundLayers\.texs, size: effSpan,\s*\}\)/)
-    // groundReady 唯一置真点：在地面网格入场景 + 分层着色自检之后
     expect(bakeSrc).toMatch(/let groundReady = false/)
     expect(bakeSrc.match(/groundReady = true/g)).toHaveLength(1)
     const addAt = bakeSrc.indexOf('scene.add(groundMesh)')
@@ -436,7 +395,6 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(addAt).toBeGreaterThan(0)
     expect(checkAt).toBeGreaterThan(addAt)
     expect(readyAt).toBeGreaterThan(checkAt)
-    // 逐图失败不改变批处理策略：bakeKey 抛出由主循环逐图 catch（输出 {key,error}，继续下一张）
     expect(bakeSrc).toMatch(/console\.log\(JSON\.stringify\(\{ key, error: String\(e\)\.slice\(0, 300\) \}\)\)/)
   })
 
@@ -446,7 +404,6 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(fallback.isMeshBasicMaterial).toBe(true)
     expect(fallback.map).toBe(mapTexture)
     expect(fallback.toneMapped).toBe(false)
-    // 对照：烘焙若沿用 mapTexture:null 得到的就是无贴图纯白材质——正是 bake 必须拒绝的形态
     const white = makeGroundMaterial({ size: 600, mapTexture: null })
     expect(white.isMeshBasicMaterial).toBe(true)
     expect(white.map).toBeNull()

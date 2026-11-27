@@ -1,15 +1,4 @@
-/**
- * 生产 runtime 车型资产解析测试（PR2 — Dedicated Tier X Models in Battle Playback；
- * PR #92 Review 补：module-lifetime cache 行为）。
- * import.meta.glob 在 vitest 中由 Vite 解析——直接读真实资产（maus / ho-ri / spht / ac-teichos / nc-70-blyskawica）。
- *
- * cache 测试隔离：module-lifetime cache 是模块级 Map——每个用例前 vi.resetModules() +
- * 动态 import 获取全新模块实例（不污染生产 API，不用 test-only reset hook）。
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-// cache 无关的纯符号用静态 import（fallow 可静态链接消费方）；
-// preloadBattleModels 依赖 module-lifetime cache，在 cache describe 内用
-// vi.resetModules + 动态 import 隔离（不污染生产 API）。
 import { PRELOAD_TIMEOUT_MS, modelKeyForTank, resolveModel } from './runtime.js'
 
 describe('modelKeyForTank（tankId → modelKey）', () => {
@@ -136,7 +125,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
   it('cache 1：第一次 preload Maus → imageLoader 被调用（hull + turret 各一次）', async () => {
     const loader = vi.fn(okLoader)
     await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(2) // hull.webp + turret.webp
+    expect(loader).toHaveBeenCalledTimes(2)
   })
 
   it('cache 2：第二次 preload Maus（同模块实例）→ 不再调用 imageLoader', async () => {
@@ -144,7 +133,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     await runtime.preloadBattleModels([6929], { imageLoader: loader })
     expect(loader).toHaveBeenCalledTimes(2)
     const again = await runtime.preloadBattleModels([6929, 6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(2) // 完全复用缓存
+    expect(loader).toHaveBeenCalledTimes(2)
     expect(again.resolved.get('maus')).toBeTruthy()
     expect(again.failed.size).toBe(0)
   })
@@ -163,7 +152,6 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
       runtime.preloadBattleModels([6929], { imageLoader: loader }),
       runtime.preloadBattleModels([6929], { imageLoader: loader }),
     ])
-    // 两个并发调用：hull+turret 各只加载一次（共享 in-flight）
     expect(loader).toHaveBeenCalledTimes(2)
     expect(maxInFlight).toBeLessThanOrEqual(2)
     expect(a.resolved.has('maus')).toBe(true)
@@ -174,7 +162,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     const loader = vi.fn(okLoader)
     await runtime.preloadBattleModels([6929], { imageLoader: loader })
     const again = await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(2) // 原子：一次成功缓存 hull+turret，不再重载
+    expect(loader).toHaveBeenCalledTimes(2)
     const m = again.resolved.get('maus')
     expect(m.kind).toBe('turreted')
     expect(m.turretSrc).toMatch(/turret\.webp$/)
@@ -185,9 +173,8 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     const first = await runtime.preloadBattleModels([6929], { imageLoader: loader })
     expect(first.failed.has('maus')).toBe(true)
     const second = await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(4) // 第一次 2 URL，各 bounded retry 一次；第二次 0 新调用
+    expect(loader).toHaveBeenCalledTimes(4)
     expect(second.failed.has('maus')).toBe(true)
-    // 失败缓存不扩散：其他 modelKey 照常
     const third = await runtime.preloadBattleModels([6929, 3937], { imageLoader: okLoader })
     expect(third.resolved.has('ho-ri')).toBe(true)
     expect(third.failed.has('maus')).toBe(true)
@@ -198,7 +185,7 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     await runtime.preloadBattleModels([6929], { imageLoader: loader })
     expect(loader).toHaveBeenCalledTimes(2)
     await runtime.preloadBattleModels([3937], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(3) // ho-ri 仅 hull 1 次
+    expect(loader).toHaveBeenCalledTimes(3)
   })
 
   it('cache 7：non-Tier-X 不进入 cache（byTank null；不触发 loader）', async () => {
@@ -207,7 +194,6 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     expect(loader).not.toHaveBeenCalled()
     expect(r.resolved.size).toBe(0)
     expect(r.failed.size).toBe(0)
-    // 再次调用同样零加载
     await runtime.preloadBattleModels([1], { imageLoader: loader })
     expect(loader).not.toHaveBeenCalled()
   })
@@ -216,9 +202,8 @@ describe('preloadBattleModels（module-lifetime cache，PR #92 Blocker 2）', ()
     const loader = vi.fn(async () => { throw new Error('boom') })
     const first = await runtime.preloadBattleModels([6929], { imageLoader: loader })
     expect(first.failed.has('maus')).toBe(true)
-    // 第二次不再调用 loader（失败已缓存）
     const second = await runtime.preloadBattleModels([6929], { imageLoader: loader })
-    expect(loader).toHaveBeenCalledTimes(4) // 仅第一次 2 URL，各 bounded retry 一次
+    expect(loader).toHaveBeenCalledTimes(4)
     expect(second.failed.has('maus')).toBe(true)
   })
 })

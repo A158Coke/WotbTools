@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Inspect scene-level switch/state visibility semantics for one battle map.
 
 This tool exists because RenderBatch LOD/switch selection alone is insufficient

@@ -1,4 +1,3 @@
-/* ProfilePage 局部样式（随拆分自 ProfilePage.vue，scoped 原样）。 */
 /* stylelint-disable -- ProfilePage.vue 在 stylelint.legacy.json 旧基线；豁免随文件迁移，样式逐字未改 */
 .profile-page { max-width: 1280px; margin: 0 auto; padding: 24px 20px 64px; }
 .profile-card { background: var(--showcase-tactical); border: 1px solid var(--showcase-tactical-border); border-radius: 8px; box-shadow: var(--surface-shadow); }
@@ -85,8 +84,6 @@
 .hundred-rejected-text { margin: 2px 0 0; font-size: .78rem; color: #9aa09c; line-height: 1.4; }
 
 @media (width < 768px) {
-  /* .profile-body 的移动端形态由 showcase.css 全局规则（display:block !important）
-     唯一拥有，此处不再声明对 block 容器无效的 flex-direction。 */
   .profile-right { width: 100%; }
   .profile-hero { flex-direction: column; gap: 12px; align-items: flex-start; }
 }

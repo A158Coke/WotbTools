@@ -94,7 +94,6 @@ export async function supportsTournamentCsvImport(signal?: AbortSignal): Promise
   const response = await request(base, true, { method: 'HEAD', signal })
   return response.headers.get('X-Tournament-Csv-Import') === '1'
 }
-/** Probe the existing list route: old backends can turn unknown routes into generic 500 errors. */
 async function supportsTournamentDefaultRules(signal?: AbortSignal): Promise<boolean> {
   const response = await request(base, true, { method: 'HEAD', signal })
   return response.headers.get('X-Tournament-Default-Rules') === '1'
@@ -144,7 +143,6 @@ export function importTournamentCsv(id: number, file: File, value: TournamentCsv
   for (const key of ['expectedEventVersion', 'sourceSha256', 'confirm', 'idempotencyKey'] as const) data.append(key, String(value[key]))
   return json(`${eventPath(id)}/csv-import`, 'TournamentCsvImportPreview', true, { method: 'POST', body: data, signal })
 }
-/** A previous backend has no state endpoint; ordinary day management keeps its original wire format. */
 export async function getTournamentHistoricalState(id: number, round: number, day: number, signal?: AbortSignal): Promise<TournamentHistoricalState | null> {
   try {
     return await json(`${eventPath(id)}/historical-import?roundNumber=${round}&dayNumber=${day}`, 'TournamentHistoricalState', true, { signal })
@@ -172,7 +170,6 @@ export async function recognizeTournamentImage(id: number, round: number, day: n
   const imageBody = new FormData()
   imageBody.append('image', file)
   imageBody.append('permit', permit.permit)
-  // Multipart AI calls reuse the shared Bearer boundary without setting a JSON content type.
   const result = await json('/api/ai/tournament-groups/recognize', 'TournamentRecognitionResult', true, { method: 'POST', body: imageBody, signal })
   if (result.imageHash !== permit.imageHash) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return { result, evidenceId: permit.evidenceId }

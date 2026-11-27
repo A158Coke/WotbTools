@@ -19,7 +19,6 @@ export async function runShellOverlayScenario(env, scenario) {
   await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `localStorage.setItem('wotb-lang','ru');localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)})`,
   }, sessionId)
-  // 仅替换本页面的外部服务边界；生产外壳、路由、更多页面/面板和样式全部真实运行。
   env.chrome.client.on('Fetch.requestPaused', async (event, session) => {
     if (session !== sessionId) return
     const body = new URL(event.request.url).pathname === '/api/health'
@@ -37,7 +36,6 @@ export async function runShellOverlayScenario(env, scenario) {
 
   async function tap(selector) {
     await page.callWith((sel) => document.querySelector(sel).scrollIntoView({ block: 'center', inline: 'nearest' }), selector)
-    // 顶栏随滚动收起 / 出现（L5）在下一帧才开始过渡：先等两帧，再等过渡落定
     await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     await page.animationsSettled()
     const reach = await measureReachability(page, { options: [selector], touch: scenario.touch })
@@ -52,10 +50,8 @@ export async function runShellOverlayScenario(env, scenario) {
   const viewIs = (view) => page.waitForValue('new URL(location.href).searchParams.get("view")', value => value === view, { label: `view=${view}` })
   const isCurrent = (selector) => page.waitForValue(`document.querySelector(${JSON.stringify(selector)})?.getAttribute('aria-current')`, value => value === 'page', { label: `${selector} current` })
 
-  /** 能力矩阵：PRIMARY_NAV 的每个入口都按真实点击到达，并断言路由与当前栏目。 */
   async function assertNavigationMatrix() {
     try { await walkNavigation() } finally {
-      // 夹具不提供百科与科技树的资产数据，矩阵只判导航；其余 console.error 仍算失败。
       page.consoleErrors = page.consoleErrors.filter(message => !/(tech tree|tank cache|tankopedia) load failed/.test(message))
     }
   }
@@ -70,7 +66,6 @@ export async function runShellOverlayScenario(env, scenario) {
       }
       return
     }
-    // 抽屉外壳：每个栏目都经「菜单 → 抽屉 → 栏目」真实点击到达，导航后抽屉关闭、焦点回到菜单按钮
     const panel = '[data-testid=nav-drawer-panel]'
     for (const item of primaryNavItems('127.0.0.1')) {
       await tap('[data-testid=nav-menu]')
@@ -95,7 +90,6 @@ export async function runShellOverlayScenario(env, scenario) {
     await page.goto(`${env.origin}/?view=more&ws-auth=0`)
     await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
     if (scenario.touch) {
-      // 页脚备案号是法定文字链接（WCAG 2.5.8 inline 例外），不是任务控件
       const touch = await measureTouchTargets(page, { exclude: ['footer'] })
       check(touch.scanned > 0, 'shell touch sweep must not be empty')
       failures.push(...touch.failures)
@@ -116,7 +110,6 @@ export async function runShellOverlayScenario(env, scenario) {
       const reach = await measureReachability(page, { options: [last], touch: true })
       check(reach.sampled > 0, 'bottom support link not sampled')
       failures.push(...reach.failures)
-      // 返回页内链接使用真实路由。
       await tap('[data-testid=more-link-history]')
       await page.waitForValue('new URL(location.href).searchParams.get("view")', v => v === 'history')
       await assertNavigationMatrix()
@@ -132,7 +125,6 @@ export async function runShellOverlayScenario(env, scenario) {
         check(reach.sampled > 0, `${selector}: not sampled`)
         failures.push(...reach.failures)
       }
-      // 独立负向对照：透明遮挡也必须被探针识别，移除后恢复真实选择路径。
       await page.evaluate(`(() => { const blocker=document.createElement('div');blocker.id='overlay-negative';blocker.style.cssText='position:fixed;inset:0;z-index:2147483647';document.body.append(blocker) })()`)
       const negative = await measureReachability(page, { options: [options.at(-1)] })
       check(negative.sampled > 0 && negative.results.some(value => value.occludedAt.length > 0), 'transparent occlusion negative control did not fail')
@@ -159,11 +151,6 @@ export async function runShellOverlayScenario(env, scenario) {
   return { name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` }
 }
 
-/**
- * 小屏五视口（design-language §9 L6）：Android 360×740 / 412×839、iPhone Safari 390×664 / 375×553、
- * iPhone 横屏 844×340，各自带设备安全区。逐页从顶到底滚动扫查，0 遮挡、0 安全区违规、无横向溢出。
- * 工作台（回放 / 装甲查看器 / 科技树 / 地图）各自的门禁另外覆盖它们的场景几何。
- */
 export const MOBILE_VIEWPORTS = Object.freeze([
   { id: 'android-360', width: 360, height: 740, insets: { bottom: 24 } },
   { id: 'android-412', width: 412, height: 839, insets: { bottom: 24 } },

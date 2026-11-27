@@ -34,19 +34,12 @@ public record AiReviewDonePayload(
         teamPlayers = teamPlayers == null ? List.of() : List.copyOf(teamPlayers);
     }
 
-    /**
-     * AI Review capability（与 prompt planner battleStart 判定一致；前端本地化）。
-     * <p>wire enum 只有 AVAILABLE / AVAILABLE_WITH_LIMITED_TIMELINE 由 producer 产出；
-     * {@code UNAVAILABLE} 保留在 contract 中（N12：不改 wire shape）——时间线不可用由
-     * {@code AI_TIMELINE_UNUSABLE} 错误路径表达，{@code done} payload 内不出现该值。</p>
-     */
     public enum Capability {
         AVAILABLE,
         AVAILABLE_WITH_LIMITED_TIMELINE,
         UNAVAILABLE
     }
 
-    /** 与 openapi {@code TeamAiPlayerIdentity} 一致（playerKey / displayName / tankName）。 */
     public record TeamPlayer(String playerKey, String displayName, String tankName) {
     }
 }

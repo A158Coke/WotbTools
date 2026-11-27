@@ -12,33 +12,18 @@ const props = defineProps({
   selectedState: { type: Object, default: null },
   selectedPortraitUrl: { type: String, default: null },
   selLastKnownSec: { type: Number, default: null },
-  /** Optional authoritative subset; missing counters do not mean zero. */
   selCurStats: { type: Object, default: null },
-  /** Common subset health for renderers without the richer V2 track inspector. */
   health: { type: Object, default: null },
   phoneForm: { type: Boolean, default: false },
   selectedTrack: { type: Object, default: null },
   currentTime: { type: Number, default: 0 },
   selDamageLog: { type: Array, default: () => [] },
   formatClock: { type: Function, required: true },
-  /**
-   * 呈现方式（**同一个组件**，不复制第二份详情）：
-   *   'floating'  workspace 顶层的可拖动浮窗（宽档 / 横屏）
-   *   'inline'    纵向流里的普通内容块（手机竖屏，排在传输控件之后）
-   */
   presentation: { type: String, default: 'floating' },
-  /** 浮窗宿主 = **整个战场 workspace**（2D 的 `.pb-main`、3D 的 `.pb-root`：Team 1 / Stage /
-      Team 2 三栏共同的定位祖先）。浮窗是它的直接子元素，`left/top`、夹紧与拖动都在同一个
-      坐标系里计算；inline 形态不需要。 */
   dragHost: { type: Object, default: null },
-  /** 受保护区域（传输控件）：浮窗下缘不得越过它。 */
   dragBounds: { type: Object, default: null },
-  /** 浮窗初始落位偏好：点左侧名册 → 'right'，点右侧名册 → 'left'，点场景里的车 → 屏幕上
-      与它相对的一侧。只在用户还没亲手拖过时生效。 */
   initialSide: { type: String, default: 'right' },
-  /** 初始纵向落位（透传 placement）：'top' 默认（2D）；3D 传 'bottom' 贴底避免盖名册。 */
   initialVertical: { type: String, default: 'top' },
-  /** 当前选中对象的身份（accountId / eid）。同一次打开内换车时据此重新落位（未拖过时）。 */
   selectionKey: { type: null, default: null },
 })
 
@@ -49,9 +34,6 @@ const hpPercentage = computed(() => currentHp.value == null || maxHp.value == nu
 
 const panelEl = ref(null)
 const floating = computed(() => props.presentation !== 'inline')
-/* 宿主与保护区是 props（父组件传进来的模板 ref）。这里必须把它们**摊平成普通 ref**：
-   composable 只认「一个带 `.value` 的 ref」，把 `computed(() => props.dragHost)` 传进去
-   得到的是 ref-in-ref，`boundsEl.value` 会是 computed 本身而不是元素，边界检查静默失效。 */
 const dragHost = ref(null)
 const dragBounds = ref(null)
 watch(() => props.dragHost, (el) => { dragHost.value = el || null }, { immediate: true })
@@ -65,9 +47,6 @@ const { pos, maxPanelHeight, maxPanelWidth, onPointerDown, onSelectionChange } =
   initialVertical: computed(() => props.initialVertical),
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
-/* 流内形态（竖屏 / 手机）：详情块插在名单之前。点名单里的车时用户正看着名单，浏览器的
-   scroll anchoring 会让名单保持原位，新出现的详情落到视野外——看起来点了没反应。
-   选中车辆变化时把详情块滚进视野（nearest：已可见就不动）。浮窗形态由拖动/落位逻辑负责。 */
 watch(() => props.selectedState?.vehicle?.accountId ?? null, async (accountId) => {
   if (floating.value || accountId == null) return
   await nextTick()
@@ -78,7 +57,6 @@ const floatingStyle = computed(() => (floating.value && pos.value
       left: `${pos.value.left}px`,
       top: `${pos.value.top}px`,
       maxHeight: `${maxPanelHeight.value}px`,
-      // 初始落位避让中心栏时的宽度上限（侧边名册比浮窗窄时）
       ...(maxPanelWidth.value != null ? { maxWidth: `${maxPanelWidth.value}px` } : {}),
     }
   : null))
@@ -96,8 +74,6 @@ const floatingStyle = computed(() => (floating.value && pos.value
     :aria-label="$t('recon.map.playback.detail')"
   >
     <div class="pb-sb-head">
-      <!-- 拖动柄：浮窗形态下整个头部都可以拖（标题 + 柄）。inline 形态没有柄——
-           纵向流里的内容块没有「位置」可拖，画一个柄等于承诺一个不存在的操作。 -->
       <span
         v-if="floating"
         class="pb-sb-drag"
@@ -190,10 +166,6 @@ const floatingStyle = computed(() => (floating.value && pos.value
 
 <style scoped>
 .pb-sidebar { width: calc(var(--sidebar-full-w) + var(--space-5)); max-width: 100%; min-width: 0; flex-shrink: 0; align-self: stretch; font-size: var(--font-size-caption); line-height: var(--line-height-caption); color: var(--color-text-primary); background: var(--color-surface-1); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: var(--space-2); overflow-y: auto; max-height: 72dvh; }
-/* 浮窗形态：workspace 顶层的一块面。位置由 usePlaybackDetailsPlacement 写 left/top
-   （未定位的首帧落在左上角，随后立即被夹进宿主）。
-   宽度固定一档：它不属于任何一个列，宿主里也没有列宽 token 可借。
-   这里只负责「它是一块浮起来的卡片」，不负责它在哪——位置与边界是 JS 的所有权。 */
 .pb-sidebar.pb-floating {
   position: absolute;
   inset-block-start: 0;
@@ -203,7 +175,6 @@ const floatingStyle = computed(() => (floating.value && pos.value
   max-height: min(60dvh, 520px);
   box-shadow: var(--elevation-3);
 }
-/* inline 形态（手机竖屏）：纵向流里的普通内容块，跟着页面滚，不设自己的高度上限。 */
 .pb-sidebar.pb-inline { width: 100%; max-height: none; margin-top: var(--space-2); }
 .pb-sb-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-1); }
 .pb-sb-drag { display: flex; align-items: flex-start; gap: var(--space-2); flex: 1 1 auto; min-width: 0; cursor: grab; touch-action: none; user-select: none; }

@@ -16,7 +16,6 @@ describe('地形网格生成几何与表面一致性', () => {
   const build = (field, n, span, cam) =>
     buildAdaptiveTerrain({ field, n, span, cam, fovY: FOV, aspect: ASPECT })
 
-  /** 网格在 (x,z) 的表面高度区间（覆盖三角形取 min/max；未被覆盖 = null） */
   const surfaceAt = (m, x, z) => {
     const pos = m.positions, idx = m.indices
     let lo = null, hi = null
@@ -36,12 +35,6 @@ describe('地形网格生成几何与表面一致性', () => {
     return lo === null ? null : [lo, hi]
   }
 
-  // ---- 缩小版参考对照（2026-10-11 PR 评审遗留项）----
-  // 按引擎 `LandscapeSubdivision` 语义**独立**重写细分判定（不复用模块的补片表/递归），与
-  // `buildAdaptiveTerrain` 的终止补片集逐补片对比——锁定三处逐行对齐修复（子树误差聚合 /
-  // 包围盒聚合 / 反对角平均）不被后续改动悄悄破坏。只对照"判定"，morph 不在内。
-  // 仅收规整四叉树（每层 perAxis 恰为 2 倍，n=64/128 即此）；非整倍 n 的夹取口径由既有
-  // 行为用例（无空洞 / 混排无裂缝）看护。
   const refTerminatedPatches = (field, n, span, cam, fovY, aspect) => {
     const H = (i, j) => field[Math.min(i, n - 1) * n + Math.min(j, n - 1)]
     const wx = (j) => (j / n - 0.5) * span
@@ -57,7 +50,6 @@ describe('地形网格生成几何与表面一致性', () => {
         step: patchSize / PATCH_QUADS, err: [], pos: [], box: [],
       })
     }
-    // ① 各层 own 采样：8×8 四边形 × 5 样本（引擎 UpdatePatchInfo；最细层不采样 ⇒ 0）
     for (let L = 0; L < K; L++) {
       const lv = levels[L], deepest = L === K - 1, step = lv.step, h = step >> 1
       for (let iy = 0; iy < lv.perAxis; iy++) {
@@ -87,7 +79,7 @@ describe('地形网格生成几何与表面一致性', () => {
                 for (const [qi, qj, ap] of [
                   [ci, cj + h, (p00 + p01) / 2],
                   [ci + h, cj, (p00 + p10) / 2],
-                  [ci + h, cj + h, (p00 + p11) / 2],   // 双奇对角 = 反对角两点（p00/p11）
+                  [ci + h, cj + h, (p00 + p11) / 2],
                   [ci + step, cj + h, (p10 + p11) / 2],
                   [ci + h, cj + step, (p01 + p11) / 2],
                 ]) {
@@ -103,7 +95,6 @@ describe('地形网格生成几何与表面一致性', () => {
         }
       }
     }
-    // ② 自底向上：子的误差（含其子树）与包围盒并入父（子索引 = 2×父 + 象限）
     for (let L = K - 2; L >= 0; L--) {
       const lv = levels[L], ch = levels[L + 1]
       for (let iy = 0; iy < lv.perAxis; iy++) {
@@ -120,7 +111,6 @@ describe('地形网格生成几何与表面一致性', () => {
         }
       }
     }
-    // ③ 三条判据（半径 / 屏幕高度 / 绝对 3 m）+ 递归
     const out = []
     const rec = (i0, j0, step, level) => {
       let subdivide = false
@@ -161,13 +151,13 @@ describe('地形网格生成几何与表面一致性', () => {
     const near = build(flat, n, 600, { x: 0, y: 15, z: 0 })
     const far = build(flat, n, 600, { x: 0, y: 500, z: 0 })
     expect(near.quads).toBeGreaterThan(far.quads)
-    expect(far.quads).toBeLessThan((n * n) / 4)    // 平地远处不无脑铺满
+    expect(far.quads).toBeLessThan((n * n) / 4)
     for (let k = 0; k < near.positions.length; k += 3) expect(near.positions[k + 1]).toBeCloseTo(20, 6)
   })
 
   it('陡坎（超 3 m 绝对容差）细化；高度只作抽样/沿边内插，不外扩', () => {
     const n = 128
-    const field = make(n, 20, (_i, j) => (j >= 64 ? 30 : 20))   // 10 m 台阶
+    const field = make(n, 20, (_i, j) => (j >= 64 ? 30 : 20))
     const m = build(field, n, 600, { x: 0, y: 300, z: 0 })
     const flat = build(make(n, 20), n, 600, { x: 0, y: 300, z: 0 })
     expect(m.quads).toBeGreaterThan(flat.quads)
@@ -181,10 +171,6 @@ describe('地形网格生成几何与表面一致性', () => {
   })
 
   it('贴地薄板不被地形盖住：凹谷内平整场坪上的 0.27 m 板，网格不得高过板顶', () => {
-    // 铁轨类构件的净空只有 0.2~0.3 m（forgecity 实测板面 22.30–22.60、地形真值 22.33）。
-    // 本用例守"平整场坪内部被精确复现、网格不拱起"（抽样口径 + 补片内部 8×8 网格的后果）；
-    // **本次回归的判定性锁**是上一条「单元格边长 ≤ 0.08·视距」——实测旧口径模拟（判据放松 ⇒
-    // 75 m 整格）在该条上比值 3.61 判失败，现状 0.46 通过。
     const n = 256, span = 600
     const tex = span / n
     const field = new Float32Array(n * n)
@@ -194,11 +180,10 @@ describe('地形网格生成几何与表面一致性', () => {
         field[i * n + j] = 20 - 3 * Math.cos(x / 60) * Math.cos(z / 60)
       }
     }
-    const i0 = 80, i1 = 176, j0 = 80, j1 = 176            // 场坪：225×225 m（谷底）
+    const i0 = 80, i1 = 176, j0 = 80, j1 = 176
     for (let i = i0; i < i1; i++) for (let j = j0; j < j1; j++) field[i * n + j] = 17.27
     const cam = { x: 0, y: 250, z: -140 }
     const m = build(field, n, span, cam)
-    // 局部最大单元格（用于把采样点退到"至少一格"以内，避开合法的边界过渡带）
     const pos = m.positions, idx = m.indices
     const xa = ((j0 / n) - 0.5) * span, xb = ((j1 / n) - 0.5) * span
     const za = ((i0 / n) - 0.5) * span, zb = ((i1 / n) - 0.5) * span
@@ -212,9 +197,7 @@ describe('地形网格生成几何与表面一致性', () => {
         Math.abs(pos[A + 2] - pos[B + 2]), Math.abs(pos[A + 2] - pos[C + 2]))
     }
     expect(maxCell).toBeGreaterThan(0)
-    expect(maxCell).toBeLessThan(0.08 * 250 + 2 * tex)     // 半径判据的世界空间后果
-    // 退界取 4 个最大格步长：客户端 morph 会把场坪**边界一圈**（±1 格步长）拉向谷坡（实测 +0.25 m），
-    // 这是客户端自身行为；此处只验"场坪内部被精确复现"。
+    expect(maxCell).toBeLessThan(0.08 * 250 + 2 * tex)
     const inset = 4 * maxCell + tex
     let worst = -Infinity, samples = 0
     for (let x = xa + inset; x <= xb - inset; x += tex) {
@@ -230,10 +213,6 @@ describe('地形网格生成几何与表面一致性', () => {
   })
 
   it('细分判据只有客户端三条：传"岸线标高表"不再改变 tessellation（第四条判据已删，2026-10-11 评审）', () => {
-    // 背景：2026-10-10 曾加过第四条"岸线特征"判据（与水面标高相交的补片强制细分到底）。
-    // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条——"纯客户端三判据"的目标不允许自研
-    // 判据 ⇒ 已删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。本用例锁定删除：
-    // 传入额外的 `shores` 字段（旧 API 形状）必须被忽略，几何与不传时逐字节一致。
     const n = 96, span = 96
     const field = make(n, 10, (i, j) => 10 + 0.03 * j)
     const far = { x: 0, y: 400, z: 0 }
@@ -245,20 +224,17 @@ describe('地形网格生成几何与表面一致性', () => {
     expect(Array.from(withShores.sizeAt)).toEqual(Array.from(base.sizeAt))
     expect(withShores.quads).toBe(base.quads)
     const mid = Math.floor(n / 2)
-    const jCross = Math.ceil((12.25 - 10) / 0.03)      // ≈ 75：旧判据曾在此细到 1 texel
-    expect(withShores.sizeAt[mid * n + jCross]).toBeGreaterThan(1)   // 三判据下合法地给粗格
+    const jCross = Math.ceil((12.25 - 10) / 0.03)
+    expect(withShores.sizeAt[mid * n + jCross]).toBeGreaterThan(1)
   })
 
   it('无裂缝：相邻四边形混排尺寸（含跨级 LOD）+ 交界两侧逐点同高（几何检查）', () => {
-    // 回归（2026-10-09 用户"这次引入了横竖条纹"）：共享边两侧顶点密度不同 ⇒ T 型接缝。
-    // 口径：顶点高度 = 该处最粗相邻四边形所在层级的**边界直线**值（端点递归）⇒ 同一 (i,j) 恒同高、
-    // 细侧折线落在粗侧直线上 ⇒ 无需 2:1 平衡也**无裂缝**。
     const n = 128, span = 600
     const field = make(n, 20, (i, j) => 20 + 8 * Math.sin(i / 5) * Math.cos(j / 5) + (j > 80 ? 6 : 0))
     const m = build(field, n, span, { x: 0, y: 240, z: 60 })
     const S = m.sizeAt
     const sizes = new Set(Array.from(S).filter(Boolean))
-    expect(sizes.size).toBeGreaterThan(1)          // 混排（含跨级）⇒ 连续性检查非空转
+    expect(sizes.size).toBeGreaterThan(1)
     const step = span / n
     const boundaries = new Set()
     for (let i = 0; i < n; i++) {
@@ -281,12 +257,9 @@ describe('地形网格生成几何与表面一致性', () => {
       }
     }
     expect(samples).toBeGreaterThan(50)
-    // 阈值 1e-4 m：顶点以 float32 存储，30 m 高度处 1 ulp ≈ 2e-6 m
     expect(maxGap).toBeLessThanOrEqual(1e-4)
   })
 
-  // 超时放宽：本用例刻意铺满整张 128×128 混排层级地图（覆盖/法线逐采样点复查），
-  // 本机 ~2 s，但共享 CI runner 曾超 5 s 默认值（2026-10-10 `gh run` 38043907258 计时超时）。
   it('无空洞且全朝上：采样点必被覆盖、三角形法线恒 +y（混排层级下网格仍是完整地图）', { timeout: 30000 }, () => {
     const n = 128, span = 600
     const field = make(n, 20, (i, j) => 20 + 8 * Math.sin(i / 5) * Math.cos(j / 5) + (j > 80 ? 6 : 0))
@@ -329,7 +302,7 @@ describe('地形网格生成几何与表面一致性', () => {
     const x = -150, z = -150
     const oracle = surfaceAt(mesh, x, z)
     expect(oracle).not.toBeNull()
-    expect(oracle[0]).toBeCloseTo(21.2, 4) // 非共面格中心落在两个高顶点构成的反对角边上。
+    expect(oracle[0]).toBeCloseTo(21.2, 4)
     expect(terrainSurfaceHeightAt({ ...mesh, n, span }, x, z)).toBeCloseTo(oracle[0], 5)
     expect(terrainSurfaceHeightAt({ ...mesh, n, span }, span / 2, z)).toBeNull()
 
@@ -358,18 +331,15 @@ describe('地形网格生成几何与表面一致性', () => {
       return { cell: i * n + j, sampled }
     }
 
-    // n=101 且远距离相机使正边保留 step=8；emitter 在 i=96 处将边格裁为 step=5。
     const edge = query(98, 50)
     expect(mesh.originIAt[edge.cell]).toBe(96)
     expect(mesh.sizeAt[edge.cell]).toBe(5)
 
-    // 正 X + 正 Z 同时裁剪；查询仍命中实际发射的 [96,101) 角 quad。
     const corner = query(98, 98)
     expect(mesh.originIAt[corner.cell]).toBe(96)
     expect(mesh.originJAt[corner.cell]).toBe(96)
     expect(mesh.sizeAt[corner.cell]).toBe(5)
 
-    // 标准对齐尺寸和现有非共面三角面回归继续覆盖常规路径。
     const alignedN = 64
     const aligned = build(make(alignedN, 20), alignedN, span, { x: 0, y: 100, z: 0 })
     const alignedX = 0, alignedZ = 0
@@ -378,10 +348,6 @@ describe('地形网格生成几何与表面一致性', () => {
   })
 
   it('参考对照（引擎语义独立重写）：终止补片集逐补片一致——锁定三处转写修复不被改坏', () => {
-    // 2026-10-11 PR 评审遗留项：原验证（Python 参考移植逐补片比较）在仓外、无法持续复现 ⇒
-    // 固化一个**缩小版**参照：同一判据按引擎语义独立重写（5 样本 / 四叉树自底向上聚合 /
-    // 三条判据），与实现逐补片对比。若未来有人改坏子树误差聚合 / 包围盒聚合 / 反对角平均
-    // （或把自研判据塞回递归），本用例先于行为用例翻红。
     const cases = [
       { n: 64, span: 600, cam: { x: 0, y: 240, z: 60 }, gen: (i, j) => 20 + 8 * Math.sin(i / 5) * Math.cos(j / 5) },
       { n: 64, span: 600, cam: { x: 200, y: 500, z: -150 }, gen: (i, j) => 20 + 0.4 * j + (i > 32 ? 4 : 0) },
@@ -391,11 +357,11 @@ describe('地形网格生成几何与表面一致性', () => {
     for (const c of cases) {
       const field = make(c.n, 0, c.gen)
       const m = build(field, c.n, c.span, c.cam)
-      expect(m.overBudget).toBe(false)              // 预算未触顶 ⇒ 递归口径与参考一致
+      expect(m.overBudget).toBe(false)
       const key = (p) => `${p[0]}:${p[1]}:${p[2]}`
       const got = m.patches.map((p) => [p.i0, p.j0, p.step]).map(key).sort()
       const want = refTerminatedPatches(field, c.n, c.span, c.cam, FOV, ASPECT).map(key).sort()
-      expect(got.length).toBeGreaterThan(8)         // 非空转：确有终止补片参与比较
+      expect(got.length).toBeGreaterThan(8)
       expect(got).toEqual(want)
     }
   })

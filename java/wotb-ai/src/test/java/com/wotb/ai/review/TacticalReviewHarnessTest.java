@@ -81,7 +81,6 @@ class TacticalReviewHarnessTest {
         return new RecordingGateway(preBattleReply, preBattleAdvance);
     }
 
-    /** 可记录请求、可在 Call #1 返回前推进假时钟的测试网关。 */
     private static final class RecordingGateway implements AiChatGateway {
         private final String preBattleReply;
         private final Runnable preBattleAdvance;
@@ -164,7 +163,6 @@ class TacticalReviewHarnessTest {
                 0x12345678L, new byte[8], "h", "v", 15);
         final ReplayCoverage coverage = new ReplayCoverage(2, 2, 0, 0, 0, 1.0, Map.of());
         final ReplayStreamDiagnostics diag = new ReplayStreamDiagnostics(0, 0, 0f, 0f, 0, Map.of());
-        // 事件流必须足以构建 canonical timeline：映射 + 位置 + 血量 + 伤害
         final List<com.wotb.core.replay.event.ReplayEvent> events = List.of(
                 new ParticipantMappingEvent(
                         0, new ReplayTimestamp(1000f, 0f), 8, DecodeConfidence.EXACT, 1, 1001),
@@ -225,7 +223,6 @@ class TacticalReviewHarnessTest {
 
     @Test
     void noReconstructionRejectsWithTimelineUnusable() {
-        // 无 canonical timeline → 拒绝 AI Review（不走 settlement-only fallback）
         final com.wotb.ai.review.AiTimelineUnusableException e = assertThrows(
                 com.wotb.ai.review.AiTimelineUnusableException.class,
                 () -> harness(gateway(PRIOR_JSON)).analyzeWithPrior(battle(), null, AllowedLanguage.ZH, AiReviewStreamListener.NOOP).result());
@@ -291,7 +288,6 @@ class TacticalReviewHarnessTest {
     @Test
     void call1ConsumingNearlyAllBudgetDoesNotStartFallback() {
         final AtomicLong clock = new AtomicLong(0L);
-        // Call #1 消耗 270s：剩余 45s < FALLBACK_MIN_REMAINING_SEC，禁止再启动最长 315s 的 fallback
         final RecordingGateway gateway = recordingGateway(
                 "not a json object", () -> clock.addAndGet(270_000_000_000L));
         final TacticalReviewHarness harness = harness(gateway, clock::get);
@@ -306,8 +302,6 @@ class TacticalReviewHarnessTest {
 
     @Test
     void exhaustedOverallDeadlineFailsFastBeforeAnyAiCall() {
-        // 模拟 worker 包装器：提交时计算的整体 deadline 已过期（排队吃光预算），
-        // worker 启动后必须在任何 AI 调用前干净失败为 AI_TIMEOUT。
         final RecordingGateway gateway = recordingGateway(PRIOR_JSON, null);
         final TacticalReviewHarness harness = harness(gateway, System::nanoTime);
         AiRequestContext.setOverallDeadline(System.nanoTime() - 1_000_000_000L);
@@ -325,15 +319,12 @@ class TacticalReviewHarnessTest {
 
     @Test
     void sequentialTheoreticalTimeoutNeverExceedsEndpointDeadline() {
-        // Call #1(45s) + 旧路径 fallback(≤315s) 的理论最坏值必须低于前端/后端/nginx 的 1100s
         assertTrue(PreBattleStrategicService.PRE_BATTLE_CALL_TIMEOUT_SEC + config().callTimeoutSec()
                 < TacticalReviewHarness.ENDPOINT_DEADLINE_SEC);
     }
 
     @Test
     void playerCall2IsNotLimitedByTeamReviewCap() {
-        // Team cap（teamReviewMaxOutputTokens）只作用于 Team Call #2；
-        // Player Call #2（TacticalReviewHarness）必须保持 global cap，不被 Team cap 无意限制。
         final int globalMaxOutput = 32_768;
         final int teamCap = 4_096;
         final AiReplayAnalysisConfig cfg = new AiReplayAnalysisConfig(

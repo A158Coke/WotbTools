@@ -1,13 +1,3 @@
-// 场景 GLB 装配（2026-10-24 自 loadMapImage 闭包出仓，拆分计划见 #820
-// Step A3；代码与搬移前逐字一致，仅闭包读数改经 ctx、闭包写回改经返回的 writes）。
-// 覆盖：变体裁剪 → extras 贴图/材质分派 → 水面海岸线资源 → 走廊掩码 → 实例化合批 →
-// 遮挡候选格 → 可破坏物槽位装配 → 静态子树矩阵冻结。
-//
-// ctx 契约（调用时刻快照/回调）：DATA/Q/DEBUG/camera/renderer/scene/controls/terrainMesh/
-// groundLayers/heightField/heightMeta/terrainSpan 为当值；stale()/disposeObject3D/
-// noteAsset/sampleHeight/onRefineMaskBuilt/destructDocPromise 为回调或 Promise。
-// 返回 { stale, writes }：stale=true 表示装配中途会话过期（调用方先落已完成的
-// writes 再 return，与原闭包逐段赋值 + 中途 return 的语义一致）；writes 只含已推进到的字段。
 import * as THREE from 'three'
 import type { Group, InstancedMesh, Mesh, Object3D, ShaderMaterial, Texture } from 'three'
 import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from '../sceneryAssemblyRules.js'
@@ -30,26 +20,17 @@ import type { DestructibleArea, DestructibleEvent, DestructibleFoldState, Destru
 import type { MeshOwnerValue, PickMeshEntry } from '../pickDebug.js'
 import type { InstanceBatch, InstanceEntry } from '../sceneryInstancing.js'
 
-// 标签遮挡候选格边长（16m，见 occlusionCells/occlusionFootprintCells 注释）
 const OCCL_CELL = 16;
 
-/** 走廊掩码取样的场景网格清单条目（onMesh 钩子收集；water = 任一材质带 extras.water）。 */
 interface SceneryMeshSample {
   o: Mesh
   water: boolean
 }
 
-/** 装配后的实例槽位（分派阶段把 batch/idx 回填进 collectInstanceEntries 的 entry）。 */
 type SlottedEntry = InstanceEntry & { batch?: InstanceBatch; idx?: number; hidden?: boolean }
-/** 已建 InstancedMesh 的批次（assembleMapScenery 装配段回填 mesh）。 */
 type BuiltBatch = InstanceBatch & { mesh: InstancedMesh }
-/** 已完成合批归属的 entry（batch/idx 回填之后；findMeshes / 槽位装配消费）。 */
 export type BatchedEntry = InstanceEntry & { batch: BuiltBatch; idx: number; hidden?: boolean }
 
-/**
- * assembleMapScenery 的会话上下文（调用时刻快照/回调；宿主 = playbackScene 的
- * loadMapImage 闭包）。字段语义见文件头注释。
- */
 export interface MapAssemblyContext {
   DATA: {
     meta: { map_id: number | string }
@@ -58,18 +39,15 @@ export interface MapAssemblyContext {
   }
   Q: { anisotropy: number }
   DEBUG: boolean
-  /** 运行时逐图地表分层（贴花 cm/lm）；烘焙/缺失传 null */
   groundLayers: GroundLayersField | null
   camera: { near: number; far: number } | null
   renderer: { capabilities: { getMaxAnisotropy(): number }; getContext?: () => WebGLRenderingContext | null }
   scene: Object3D
   controls?: unknown
   terrainMesh?: unknown
-  /** 地形高度场（真值；世界系引擎顶点网格，与地面 pass 同一份） */
   heightField: Float32Array | null
   heightMeta?: { size?: number; span?: number } | null
   terrainSpan: number
-  /** 会话过期判定（装配中各 await 返回点复查） */
   stale(): boolean
   disposeObject3D(o: Object3D): void
   noteAsset(key: string, status: string, detail?: string): void
@@ -79,20 +57,14 @@ export interface MapAssemblyContext {
   destructDocPromise: Promise<{ instances?: DestructibleInstance[] } | null | undefined>
 }
 
-/** 装配产出（宿主按 `'key' in w` 逐字段发布；stale 中途返回时只含已推进字段）。 */
 export interface MapAssemblyWrites {
-  /** 水面海岸线高度纹理（会话 teardown 释放） */
   waterTexDispose?: Texture | null
   animLayerMats?: ShaderMaterial[]
-  /** 当前地图 id 对应的场景变体标签（nt1/am2/...；无变体为 null） */
   variantLabel?: string | null
-  /** 合并后的水面网格（反射 pass 期间临时隐藏；会话 teardown 清空） */
   waterMeshes?: THREE.Mesh[]
-  /** 水面高度（客户端 z / 世界 y；无水面为 null） */
   waterLevel?: number | null
   mapScenery?: Group
   terrainRefineMask?: unknown
-  /** 遮挡检测候选表（旧会话的由 teardown 置 null） */
   occlGrid?: Map<string, Mesh[]>
   annotationSurfaceGrid?: unknown
   destructPickList?: DestructibleInstance[] | null
@@ -103,66 +75,38 @@ export interface MapAssemblyWrites {
 export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').ParsedGltf, ctx: MapAssemblyContext): Promise<{ stale: boolean; writes: MapAssemblyWrites }> {
   const { DATA, Q, DEBUG, groundLayers } = ctx;
   const writes: MapAssemblyWrites = {};
-  // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
-  // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
   const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
   const variantMappingIncomplete = gltf.scene.userData?.variantMappingIncomplete === true;
-  // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
-  // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
-  // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
-  // 节点标签由导出器随 GLB extras 下发；有变体节点但没有可用映射时
-  // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
-  // gltf.scene 是真实 Object3D；VariantPruneNode 是它的最小结构面
   const variantPrune = pruneForeignVariantsDetailed(gltf.scene as Object3D & import('../variantFilter.js').VariantPruneNode, DATA.meta.map_id);
   const prunedVariants = variantPrune.removed;
-  // 当前激活的变体标签（nt1/am2/...）：基地点位也按变体取（mapBases[key].variants[label]）
   const activeVariant = activeVariantOf(
     (gltf.scene as { userData?: { variantByMapId?: unknown } }).userData?.variantByMapId,
     DATA.meta.map_id,
   );
   if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
   if (DEBUG) {
-    // 边界变体验证探针：裁剪后仍在本图的 MapBorder 节点（应只剩本变体那条）
     const borderNames: string[] = [];
     gltf.scene.traverse((o) => { const n = (o as { name?: string }).name || ''; if (n.startsWith('MapBorder')) borderNames.push(n); });
     window.__mapBorderNodes = borderNames;
   }
   if (variantMappingIncomplete || variantPrune.failClosed) {
-    // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
-    // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
     ctx.noteAsset('scenery', 'variant-fail-closed', variantMappingIncomplete
       ? '导出器标记变体映射不完整，已 fail-closed 隐藏带标记节点'
       : '变体映射缺失/未知，已隐藏全部带标记节点');
   }
-  // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf);
   if (ctx.stale()) { ctx.disposeObject3D(gltf.scene); return { stale: true, writes }; }
   const strictSurfaces = strictSurfacesOf(gltf.scene);
   const isWaterNode = (name: string, mat: import('../sceneryAssemblyRules.js').SurfaceMaterial | null | undefined) =>
     isWaterNodeRule(name, mat, { strictSurfaces });
-  // 材质→贴图解析器（键 = gltf.parser.associations 的材质下标）：装配模块同源的
-  // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
     makeTexResolvers(gltf, sceneryExtras);
-  // 退化几何隔离（旧版导出器撕裂批次）已删除：按 (三角形/顶点) 比率逐网格
-  // 判废是内容统计启发式，无法区分"旧导出器损坏"与合法高比率网格，且会静默
-  // 删掉数据。树批次撕裂已由导出器修正；若未来再出现几何损坏，应由导出器写
-  // 语义标记或 fail-closed 报错，不得在消费端按比率猜。
-  // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
-  // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
-  // 见 terrainRefineMask 声明处的方案说明。
   const sceneryMeshes: SceneryMeshSample[] = [];
-  // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
-  // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
-  // 资源构造在共享模块 groundPass.makeWaterCoast（俯视烘焙同一份）；本处只探测
-  // 深度位深（上下文实测）与相机 near/far，并登记会话 teardown 释放。
   let waterCoast: WaterCoastField | null = null;
   if (ctx.heightField && ctx.heightMeta) {
     try {
       const hn = ctx.heightMeta.size || 512;
       if (ctx.heightField.length === hn * hn) {
-        // 深度分辨率（海岸线淡出阈值的量纲）：由**上下文实测**的深度位深推 ulp，
-        // near/far 取相机实际值（本渲染器 0.5/4000）——阈值全程无手调常数。
         let depthBits = 24;
         try {
           const glc = ctx.renderer && ctx.renderer.getContext && ctx.renderer.getContext();
@@ -175,17 +119,11 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
           far: ctx.camera && Number.isFinite(ctx.camera.far) ? ctx.camera.far : 4000,
           depthBits,
         });
-        writes.waterTexDispose = waterCoast.heightTex;    // 会话 teardown 释放
-        // 诊断钩子（同一 ?debug 惯例）：确认"水面用的高度场/跨度"真的下发到了水面材质——
-        // 用于把"画面没变化"区分为"页面跑的是旧包"与"另因"（控制台可读，不需目视）。
+        writes.waterTexDispose = waterCoast.heightTex;
         if (DEBUG) window.__waterCoast = { present: true, span: waterCoast.mapSpan, materials: 0 };
       }
     } catch (e) { console.warn('水面海岸线高度场创建失败（按不淡出继续）:', e); }
   }
-  // ---- 逐节点材质分派（SSOT：src/scene/sceneryAssembly.js，与俯视烘焙同一份）----
-  // 内含：水面片收集/underWater 判据 → 天空穹（材质标记先于名字）→ 水/贴花/光照图
-  // （+env+detail）/混合层掩码/水下/convMat → 水面深度修整；onMesh 钩子即走廊掩码取样
-  // （必须在实例化合批前，本函数正处该阶段）。
   const { animLayerMats: assembledAnimMats } = assembleSceneryMaterials(gltf, {
     strictSurfaces,
     masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
@@ -194,17 +132,11 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     skyFlagsAvailable,
   });
 
-  // 共面水面合并/显示去重（2026-11-17 用户"远处移动视角水面闪烁"）：客户端同一水面
-  // 可能存成多套三角化（batch0/batch1，导出按原样保留），显示端只画覆盖超集；其余同材质
-  // 互不包含的水面合成一个 draw（索引顺序固定，不再随相机距离翻转）。
   const waterMerge = mergeCoincidentWaterMeshes(gltf.scene);
   if (DEBUG && (waterMerge.merged || waterMerge.dropped)) {
     window.__waterMerged = waterMerge;
   }
 
-  // 水面反射（HIGH/ULTRA 动态平面反射）：合并后的水面网格 + 水面高度。
-  // 高度取水面网格在**客户端坐标系**的 bbox.max.z（mapScenery 的 qFrame 把它旋到世界 y）；
-  // 网格列表用于反射 pass 期间临时隐藏水面本身（否则镜像相机看到自己的背面）。
   {
     const waterMeshes: THREE.Mesh[] = [];
     let waterLevel: number | null = null;
@@ -222,12 +154,9 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     writes.waterLevel = waterLevel;
   }
 
-  // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
   writes.animLayerMats = assembledAnimMats;
   if (DEBUG) window.__animLayerMats = assembledAnimMats.length;
   if (DEBUG) {
-    // 水面动画诊断：直接读材质 uniform（uTime 是否推进、滚动速率/UV 基是否非零），
-    // 用来区分"时钟没走"与"法线贡献被压平"两类不同的"水面不动"。
     const waterMats: THREE.ShaderMaterial[] = [];
     gltf.scene.traverse((node) => {
       const mesh = node as THREE.Mesh;
@@ -241,8 +170,6 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     window.__waterMats = waterMats;
   }
 
-  // 场景 GLB 贴图各向异性：地面（分层地表）早按画质档设了，场景侧此前漏设 ——
-  // 掠射角下建筑/道路贴图发糊并随镜头闪烁。逐纹理设一次（同贴图跨材质共享）。
   const aniso = Math.min(Q.anisotropy, ctx.renderer.capabilities.getMaxAnisotropy());
   const anisoTextures = applyMaterialTextureAnisotropy(gltf.scene, aniso);
   if (DEBUG) window.__sceneryAniso = { value: aniso, textures: anisoTextures };
@@ -253,16 +180,8 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   mapScenery.add(gltf.scene);
   ctx.scene.add(mapScenery);
   writes.mapScenery = mapScenery;
-  // 挂载即归属当前会话（评审 P1 复核）：group/水面纹理在 destructibles 悬挂期间也必须
-  // 被 teardownSession 认领（宿主绑定立即拿到引用，恢复原闭包「装配即赋值」语义）——
-  // 否则 reset/切场时这些资源无人释放，直到（可能永不）resolve 的请求返回。
   ctx.onSceneryMounted(mapScenery, waterCoast ? (waterCoast.heightTex ?? null) : null);
 
-  // ---- 贴地薄构件走廊掩码（B：走廊强制细分）----
-  // 实现（类判据/足迹取样/掩码生成）在共享模块 groundPass.buildCorridorRefineMask——
-  // 俯视烘焙同一份（2026-10-14 用户报"轨道被下方地形遮挡"：烘焙此前未接入本机制）。
-  // 必须在"实例化合批"之前做（合批会换掉逐节点 Mesh）；掩码只影响细分层级、不改高度值；
-  // GLB 先于/后于地形加载都成立（后到时重建时取用）。
   if (sceneryMeshes.length && ctx.heightField) try {
     mapScenery.updateMatrixWorld(true);
     const built = buildCorridorRefineMask({
@@ -272,47 +191,23 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
       if (built) {
         writes.terrainRefineMask = built.mask;
         if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
-        // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）。
-        // mask 经回调参数交给宿主**先写入 terrainRefineMask 再重建**（评审 P2：宿主绑定
-        // 仍为 null 时重建会拿到空掩码，且 terrainLodPrev 置当前后不再失效——走廊细分丢失）
         if (ctx.terrainMesh && ctx.camera && ctx.controls) ctx.onRefineMaskBuilt(built.mask);
       }
   } catch (e) { console.warn('走廊掩码构建失败（地形保持客户端口径）:', e); }
 
-  // 天穹在材质转换段已换成 makeSkyMaterial 的无限远实现（此前整节点隐藏 →
-  // 背景纯色 0x11161d）。草地仍无：导出器不生成草系统网格（GLB 内只有
-  // dec_*_grass 静态装饰），见审计文档 P2。
 
-  // ---- 实例化合批（场景侧减负主刀）----
-  // 导出器把每个实例导成独立节点，但**节点级共享 mesh/几何**（实测 malinovka
-  // 3096 节点 / 142 唯一几何，~21× 复用）。GLTFLoader 逐节点建 Mesh → 每帧
-  // draw call ≈ 节点数、场景图双遍历（updateMatrixWorld + projectObject）同量级，
-  // 是中/高档场景侧最大的 CPU 开销。按 (geometry, material) 合并为 InstancedMesh：
-  // 几何**零拷贝**复用，draw call 与场景图规模一起降到批次数。
-  // 天空与水体不参与：天穹每图只有 1–2 个节点、无复用收益，且它已关视锥剔除
-  // （顶点被当方向、包围球只是 ~10m 小球），入批只让剔除语义更绕；水面是全场
-  // 唯一真透明物，保持独立节点让 three 按相机距离做透明排序（合批会把整批
-  // 退化成一个排序单位）。
   gltf.scene.updateMatrixWorld(true);
-  // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
-  // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
-  // frustumCulled=false 的无限远语义。
   const allEntries: SlottedEntry[] = canonicalizeEntryMaterials(collectInstanceEntries(gltf.scene));
-  // 材质规整（见 canonicalizeEntryMaterials）：导出器逐节点建材质对象，同配置不同
-  // 对象会把分组键撕开——规整必须在 batchable 过滤（transparent 进签名）与分组之前。
   const batchable = (e: SlottedEntry) =>
     !(e.node.userData && e.node.userData.isSky)
       && !isWaterNode(e.name, e.material)
       && !hasTransparentMaterial(e.material);
   const entries = allEntries.filter(batchable);
-  // 透明材质保留独立排序单位；其中带逐节点光照图变换的用单实例 InstancedMesh，
-  // 以保留 aLm 变换（普通 Mesh 的非实例分支会按原始 uv1 采错 atlas 区域）。
   buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
     !batchable(e)
       && hasTransparentMaterial(e.material)
       && !(e.node.userData && e.node.userData.isSky)
       && !isWaterNode(e.name, e.material)), gltf.scene);
-  // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
   const meshGrid = new Map<string, BatchedEntry[]>();
   const gridKey = (x: number, y: number): string => `${Math.round(x / 2)},${Math.round(y / 2)}`;
   for (const e of entries as BatchedEntry[]) {
@@ -320,36 +215,16 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     const list = meshGrid.get(k) ?? meshGrid.set(k, []).get(k)!
     list.push(e);
   }
-  // 宫格分块：8×8（600m 图 → 75m/格）——整批跨全图的包围球会失去逐实例
-  // 视锥剔除（镜头看半张图，视野外的实例也全量提交；林荫图极致档实测卡顿
-  // 的主因）。分片后每片包围球局部化，剔除恢复到格粒度。
-  // span 取地形 sidecar（地面段已装载）；缺失回退 600（与 python 管线一致）
   const cellSize = Math.max(75, (ctx.heightMeta?.span || 600) / 8);
   const batches = groupInstanceBatches(entries as InstanceEntry[], cellSize) as BuiltBatch[];
   for (const b of batches) (b.items as BatchedEntry[]).forEach((e, i) => { e.batch = b; e.idx = i; });
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
-  // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
   for (const e of entries) e.node.removeFromParent();
-  // D_ 损毁态实例初始隐藏：实例化后没有逐实例 visible，用「远处 + 微缩」矩阵
-  // （精确零矩阵是奇异矩阵，raycast 求逆走 NaN 路径，见 writeHiddenInstance）。
   for (const e of entries as BatchedEntry[]) {
     if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
   }
-  // 隐藏槽位落位后重算批次球：可见实例用当前矩阵、隐藏的 D_ 槽位用 base
-  // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
-  // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
-  // （评审二轮/五轮两次指出的两个方向）
   const initiallyHidden = (e: InstanceEntry) => (e as BatchedEntry).hidden === true;
   for (const b of batches) refreshBatchSphere(b.mesh, b, initiallyHidden);
-  // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
-  // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
-  // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
-  // hidden 实例在 y=-1e6，不得参与，否则足印撑爆全图）。无名字的 mesh 与旧行为
-  // 一致：可渲染但既不匹配可破坏物、也不当遮挡候选。
-  // 匹配半径 **2cm**（导出器把同一实例的全部批次放在同一坐标上：实测 99.8% 实例
-  // 的完好网格在 1cm 内、成对 D_ 网格在 5mm 内）——早期用 1.5m 半径会把**邻近实例**
-  // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
-  // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
   const MESH_MATCH_R = 0.02;
   const occGrid = new Map<string, InstancedMesh[]>();
   for (const b of batches) {
@@ -365,13 +240,8 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
       }
     }
   }
-  writes.occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
-  // 3D annotation 的可绘制表面候选格：与 occlGrid 同粒度/同足印，但登记**所有**可见 batch
-  // （不要求节点名），只按共享材质语义跳过非 3D 表面（水/天/植被/贴花/混合层/水下）。
-  // 批次 item 坐标是 gltf 局部系（x/y 水平、z 上），而 pick 的 camera/target 是 mapScenery
-  // 世界系（局部 x → 世界 −x、局部 y → 世界 z）：必须投影后再登记格，否则候选格整体镜像。
+  writes.occlGrid = occGrid;
   mapScenery.updateMatrixWorld(true);
-  // item 坐标相对 gltf.scene（装配根），故用 gltf.scene.matrixWorld 一次性投到世界 XZ。
   const surfaceMatrix = gltf.scene.matrixWorld.elements;
   writes.annotationSurfaceGrid = buildAnnotationSurfaceGrid(batches, {
     cell: OCCL_CELL,
@@ -392,14 +262,7 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
     return out;
   };
   const destructDoc = await ctx.destructDocPromise;
-  // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
-  //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
   if (ctx.stale()) {
-    // 中途过期（评审 P1 复核）：挂载时已通过 onSceneryMounted **无条件归属宿主**，
-    // 此后生命周期（含释放）只由宿主 teardown 负责——这里不得自行摘除/释放。
-    // 反例（评审给出的实际回归）：A 的 destructibles 悬挂期间开始加载 B（epoch 前进），
-    // A 返回时被判 stale；若 B 随后解析失败，宿主不会 teardown（A 仍是当前会话），
-    // 自行摘除会让 A 的布景消失而地形/其它对象仍在。stale 只丢弃结果、不碰资源。
     return { stale: true, writes: {} };
   }
   if (DEBUG) window.__destructStage = destructDoc
@@ -409,17 +272,13 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
   let destructPickList: DestructibleInstance[] | null = null;
   let meshOwner: Map<string, MeshOwnerValue> | null = null;
   if (destructDoc && Array.isArray(destructDoc.instances)) {
-    destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
+    destructPickList = destructDoc.instances;
     meshOwner = buildMeshOwnerMap(destructPickList, (px, py, wantDestroyed): Iterable<PickMeshEntry> => findMeshes(px, py, wantDestroyed));
   }
   let volatileBatches: ReadonlySet<InstancedMesh> | undefined;
   if (destructDoc && Array.isArray(DATA.destructible_events)) {
-    // 槽位装配（foldDestructibleStates + 树倒/换模槽位 + 动态批次包围球扩张）自
-    // 2026-11-21 起出仓 ./mapAssetsDestructibles.ts（#LOC 结构拆分，代码逐字一致）。
     const assembled = assembleDestructibleSlots(DATA, destructDoc, findMeshes, ctx);
     destruct = assembled.destruct;
-    // 可破坏物批次实例矩阵运行期会变（树倒 / 换模翻转），refreshBatchSphere 按构建位姿算的
-    // 批次 AABB 不再保守——置 null 回退包围球（树批次的球已被扩张到覆盖倒伏触及）。
     volatileBatches = assembled.volatileBatches;
     for (const mesh of volatileBatches) mesh.userData.occluderBox = null;
     const readyDestruct = destruct;
@@ -434,22 +293,15 @@ export async function assembleMapScenery(gltf: import('../sceneryAssembly.js').P
       });
     }
   }
-  // 纯损毁外观批次若在整场都没有换模事件，所有实例始终隐藏；省去每帧的空绘制。
   for (const b of batches) {
     if (!volatileBatches?.has(b.mesh) && b.items.every(initiallyHidden)) b.mesh.visible = false;
   }
   writes.destructPickList = destructPickList;
   writes.meshOwner = meshOwner;
   writes.destruct = destruct;
-  // ---- 静态子树矩阵冻结 ----
-  // 场景 GLB 至此全部定型（合批 + 可破坏槽位装配完成）：先 bake 一遍世界矩阵，再关
-  // 全树 matrixAutoUpdate（three 对 autoUpdate 节点每帧**无条件**重 compose）。批次
-  // 自身变换恒为单位阵；运行期唯一的变换写入是实例矩阵（树倒/换模翻转），它不走
-  // 节点 matrix 路径、不受冻结影响（instanceMatrix.needsUpdate 局部上传）。
   mapScenery.updateMatrixWorld(true);
   gltf.scene.traverse((o) => { o.matrixAutoUpdate = false; });
-  mapScenery.matrixAutoUpdate = false;   // 根组旋转已 bake，永不再变；保持 true 会让
-                                         // 每帧置脏 + force 传播把冻结整个击穿
+  mapScenery.matrixAutoUpdate = false;
   writes.variantLabel = activeVariant;
   return { stale: false, writes };
 }

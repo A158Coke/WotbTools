@@ -22,8 +22,6 @@ const snapshot = (revision = 1, state: AndroidUpdateSnapshot['download']['state'
 
 type Request = { id: number, method: string, params: Record<string, unknown> }
 
-// Only the Native port and Gecko compartment cloning are simulated. The content script,
-// page RPC transport, updater controller and rendered update panel are production code.
 function connect(page: object, onRequest: (request: Request) => void = () => {}) {
   let receive!: (message: unknown) => void
   const scriptWindow = { wrappedJSObject: page, top: null as unknown }
@@ -165,7 +163,7 @@ describe('Gecko update status event', () => {
     native.current = snapshot(3, 'installRequested')
     port.emit('wotbtoolsOnUpdateStatusChanged')
     await vi.advanceTimersByTimeAsync(0)
-    expect(update.acting.value).toBe(true) // Native snapshot displays progress; the live RPC still owns this attempt.
+    expect(update.acting.value).toBe(true)
     expect(update.error.value).toBe('confirming')
     expect(wrapper.text()).toContain(en.androidUpdate.downloadState.installRequested)
     expect(installs()).toHaveLength(1)
@@ -194,7 +192,6 @@ describe('Gecko update status event', () => {
     expect(update.error.value).toBe('confirming')
     await update.install()
     expect(installs()).toHaveLength(1)
-    // An unrelated RPC reply cannot settle the install attempt.
     port.reply(installs()[0]!.id + 10_000, result)
     await vi.advanceTimersByTimeAsync(0)
     expect(settled).toBe(false)
@@ -219,8 +216,6 @@ describe('Gecko update status event', () => {
     }, { flush: 'sync' })
     native.current = snapshot(2, 'installRequestFailed')
     native.current.download.failureReason = 'installerUnavailable'
-    // A malformed reply ends transport certainty; its terminal read unlocks and starts a new
-    // action synchronously before the older action reaches its finally block.
     port.reply(installs()[0]!.id, null)
     await vi.advanceTimersByTimeAsync(0)
     await older

@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * 车型资产 CLI validator。
- *
- * 资产放回仓库后，ChatGPT/开发者可本地自检：
- *   node frontend/scripts/validate-vehicle-models.mjs
- *
- * 与 CI（frontend/src/vehicle-models/coverage.test.js + validate.test.js）同一套
- * validate.js 逻辑；输出 PASS/FAIL，存在任何 error 时退出码 1。
- */
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import tankopedia from '../../common/tankopedia-tier10.json' with { type: 'json' }

@@ -6,7 +6,6 @@ import {
 } from './canonicalRuntime'
 import type { CanonicalMessage, CanonicalRequest } from './canonicalWorkerProtocol'
 
-/** 假 Worker：记录请求、按脚本回包（不跑真解析） */
 class FakeWorker {
   onmessage: ((e: MessageEvent<CanonicalMessage>) => void) | null = null
   onerror: ((e: unknown) => void) | null = null
@@ -52,7 +51,7 @@ describe('canonicalRuntime：规范投影线程化（Worker 优先）', () => {
     const [ra, rb] = await Promise.all([a, b])
     const ids = fake.requests.map((r) => r.id)
     expect(ids).toHaveLength(2)
-    expect(ids[0]).not.toBe(ids[1])   // 不串包：两次请求 id 不同
+    expect(ids[0]).not.toBe(ids[1])
     expect(ra).toBe(fake.reply)
     expect(rb).toBe(fake.reply)
   })
@@ -66,22 +65,19 @@ describe('canonicalRuntime：规范投影线程化（Worker 优先）', () => {
 
   it('Worker 构造失败 → 退回主线程解析（fail-open，功能不丢）', async () => {
     __setCanonicalWorkerFactory(() => { throw new Error('no worker support') })
-    // 主线程兜底走真解析：空字节会解析失败 → 只能是"解析错误"，不可能是"没有 Worker"类错误
     await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
   })
 
   it('postMessage 同步抛错 → inflight 立即清理 + 回退主线程（不泄漏 stale handler）', async () => {
     const fake = new FakeWorker()
-    fake.mode = 'silent'   // 不回包；postMessage 本身正常 → 只有后续崩溃才清理
+    fake.mode = 'silent'
     let throwOnPost = true
     const throwingWorker = new FakeWorker()
     Object.defineProperty(throwingWorker, 'postMessage', {
       value: () => { if (throwOnPost) throw new Error('clone failed') },
     })
     __setCanonicalWorkerFactory(() => throwingWorker as unknown as Worker)
-    // 同步抛错 → 回退主线程（测试环境无真 WASM → 报解析错误而非挂起）
     await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
-    // inflight 无泄漏：内部 Map 无法直接断言，用行为锁——之后 Worker 正常回包仍按 id 工作
     throwOnPost = false
     fake.mode = 'done'
     __setCanonicalWorkerFactory(() => fake as unknown as Worker)
@@ -104,9 +100,7 @@ describe('canonicalRuntime：规范投影线程化（Worker 优先）', () => {
     fake.mode = 'crash'
     let calls = 0
     __setCanonicalWorkerFactory(() => { calls++; return fake as unknown as Worker })
-    // 崩溃 → 回退主线程；测试环境无真 WASM/身份指纹，因此必然以错误结束（但路径是回退）
     await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
-    // 坏实例已清（worker=null）：下一次调用重新构造
     await expect(parseLocalPlaybackOffThread(new ArrayBuffer(8))).rejects.toThrow()
     expect(calls).toBeGreaterThanOrEqual(2)
   })

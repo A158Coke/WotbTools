@@ -45,7 +45,6 @@ class Snapshot:
                 self.ready = 1
                 self.last_success = time.time()
         except Exception:
-            # No exception text: upstream content, credentials and URLs cannot enter logs.
             with self.lock:
                 self.errors += 1
             logging.warning('GitHub snapshot refresh failed; retaining previous data')
@@ -100,7 +99,7 @@ def main():
     if any(not valid_override(value) for value in overrides.values()):
         raise ValueError('invalid historical area overrides')
     client = GitHubClient(os.environ.get('DEV_METRICS_GITHUB_TOKEN_FILE', '/run/secrets/github-dev-metrics-token'))
-    cache = {}  # Aggregate contributions only; rebuilt from GitHub after restart.
+    cache = {}
     state = Snapshot(lambda: collect(client, repository, overrides, cache=cache), client)
     registry = CollectorRegistry()
     registry.register(state)
@@ -108,7 +107,6 @@ def main():
     def scheduler():
         while not stop.is_set():
             state.update()
-            # Quota exhaustion cannot spin; retry only after reset and normal cadence.
             delay = max(900, client.reset - time.time() if 0 <= client.remaining < 20 else 0)
             stop.wait(delay)
     threading.Thread(target=scheduler, daemon=True).start()

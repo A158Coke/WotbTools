@@ -12,10 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 锁定「提交 worker 之前」的失败必须返回契约的 {@code ApiError} envelope 与稳定 {@code errorCode}，
- * 而不是 Spring 默认错误体；并锁定 503 准入饱和是唯一可重试类别。
- */
 class AiReviewExceptionHandlerTest {
 
     private final AiReviewExceptionHandler handler = new AiReviewExceptionHandler();

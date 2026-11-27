@@ -162,7 +162,7 @@ class DeltaUpdateCoordinatorTest {
         lateinit var coordinator: UpdateCoordinator
         var applied = false
         val updater = ApkUpdater(context) { _, _, output, _ ->
-            state.drain() // 发布真实 verifyDelta 的 applyingDelta，再检查通知。
+            state.drain()
             assertEquals("applyingDelta", coordinator.status.download.state)
             assertTrue(notifications.activeNotifications.isEmpty())
             output.writeBytes(target)

@@ -23,7 +23,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** 统一 HP timeline（B4）：多 surface 合并 + settlement cross-check。 */
 class ReplayHpTimelineTest {
 
     private static PlayerResult player(final long accountId) {
@@ -85,7 +84,7 @@ class ReplayHpTimelineTest {
 
         final PlayerResult dead = player(1002L);
         dead.damageReceived = 2600;
-        dead.raw = Map.of(1, List.of(-3)); // terminal sentinel → final HP 0
+        dead.raw = Map.of(1, List.of(-3));
         assertEquals(2600, ReplayHpTimeline.settlementInitialHp(dead));
 
         final PlayerResult noRaw = player(1003L);

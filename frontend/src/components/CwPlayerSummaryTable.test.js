@@ -29,7 +29,6 @@ const LEAGUE_COLUMNS = [
   { key: 'league_shooting_score', max: 100, fixed: false },
 ]
 
-// B6：身份是结构化 accountId（不再是 cells.account_id）
 const ROWS = [
   { team: 1, accountId: 1001, league: { accountId: 1001 }, cells: { nickname: 'A', battles: 3, earned_avg: 80, win_rate: 66.7, league_rating: 850.4, league_damage_score: 342.1, mvp_count: 2 } },
   { team: 2, accountId: 2001, league: null, cells: { nickname: 'B', battles: 2, earned_avg: 40, win_rate: 50, league_rating: null, league_damage_score: null, mvp_count: null } },
@@ -49,11 +48,9 @@ describe('CwPlayerSummaryTable', () => {
   it('renders rating cells with score/max percentage format', () => {
     const wrapper = mountTable()
     const text = wrapper.text()
-    // 总 Rating 在展示层保留 1 位小数，不显示 /1000 冗余完成度
     expect(text).toContain('850.4')
     expect(text).not.toContain('850 ·')
     expect(text).not.toContain('85% ·')
-    // 七维仍显示「342 / 400 · 85.5%」
     expect(text).toContain('342 / 400 · 85.5%')
   })
 
@@ -63,7 +60,6 @@ describe('CwPlayerSummaryTable', () => {
     expect(rows).toHaveLength(2)
     const second = rows[1]
     expect(second.text()).toContain('--')
-    // 基础 facts 仍在
     expect(second.text()).toContain('40')
     expect(second.text()).toContain('B')
   })
@@ -95,12 +91,12 @@ describe('CwPlayerSummaryTable', () => {
       ]
     })
     const th = wrapper.findAll('th').find(t => t.text().includes('earned_avg'))
-    await th.trigger('click') // ASC: 40 80 --(missing last)
+    await th.trigger('click')
     let rows = wrapper.findAll('tbody tr')
     expect(rows.at(0).text()).toContain('40')
     expect(rows.at(1).text()).toContain('80')
     expect(rows.at(2).text()).toContain('C')
-    await th.trigger('click') // DESC: 80 40 --(still last)
+    await th.trigger('click')
     rows = wrapper.findAll('tbody tr')
     expect(rows.at(0).text()).toContain('80')
     expect(rows.at(1).text()).toContain('40')
@@ -112,7 +108,6 @@ describe('CwPlayerSummaryTable', () => {
     const th = wrapper.findAll('th').find(t => t.text().includes('league_rating'))
     await th.trigger('click')
     const rows = wrapper.findAll('tbody tr')
-    // A=850.4 rated, B=null → A first, B missing last
     expect(rows.at(0).text()).toContain('850')
     expect(rows.at(1).text()).toContain('--')
   })
@@ -155,7 +150,6 @@ describe('CwPlayerSummaryTable', () => {
       ],
     })
     const text = wrapper.text()
-    // 组件不再有派生 % 展示；missing 仍是 '--'（不冒充 0）
     expect(text).not.toContain('22.4%')
     expect(text).not.toContain('151.2%')
     expect(text).toContain('22.4')
@@ -184,8 +178,8 @@ describe('CwPlayerSummaryTable selected row highlight', () => {
   it('selected 判定按 accountId（禁止 row index）', () => {
     const wrapper = mountTable({ selectedAccountId: 2001 })
     const rows = wrapper.findAll('tbody tr')
-    expect(rows[0].classes()).not.toContain('selected') // 1001 未选中
-    expect(rows[1].classes()).toContain('selected')     // 2001 选中（index 1）
+    expect(rows[0].classes()).not.toContain('selected')
+    expect(rows[1].classes()).toContain('selected')
   })
 
   it('selectedAccountId 为 null 时不加 highlight（Drawer 关闭 → 清除）', () => {
@@ -197,12 +191,10 @@ describe('CwPlayerSummaryTable selected row highlight', () => {
 
   it('排序后 highlight 跟随同一 accountId（index 变化不脱靶）', async () => {
     const wrapper = mountTable({ selectedAccountId: 2001 })
-    // 排序前 B（2001）在第二行
     expect(wrapper.findAll('tbody tr')[1].classes()).toContain('selected')
-    // nickname DESC → B 第一行；highlight 仍跟随 B（index 0）
     const th = wrapper.findAll('th').find(t => t.text().includes('nickname'))
-    await th.trigger('click') // ASC: A, B
-    await th.trigger('click') // DESC: B, A
+    await th.trigger('click')
+    await th.trigger('click')
     const rows = wrapper.findAll('tbody tr')
     expect(rows[0].text()).toContain('B')
     expect(rows[0].classes()).toContain('selected')
@@ -211,7 +203,6 @@ describe('CwPlayerSummaryTable selected row highlight', () => {
 })
 
 describe('CwPlayerSummaryTable sticky core pair', () => {
-  // happy-dom 无真实布局：getBoundingClientRect 宽度由测试 stub 控制
   function stubNickWidth(wrapper, width) {
     const nickTh = wrapper.findAll('th').find(t => t.text().includes('nickname'))
     nickTh.element.getBoundingClientRect = () => ({ width, height: 24, top: 0, left: 0, right: width, bottom: 24 })

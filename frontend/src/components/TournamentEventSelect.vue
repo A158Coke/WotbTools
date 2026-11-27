@@ -4,7 +4,6 @@ import type { TournamentEvent } from '../api/tournament-points.js'
 import { useI18n } from 'vue-i18n'
 import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
 import SegmentedControl from './SegmentedControl.vue'
-// compact：管理页页头的单个「赛事」选择器（年份 + 区服 + 季赛合成一项）；公开榜单仍用逐级筛选。
 const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean; includeGlobal?: boolean; globalSelected?: boolean; compact?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number | null]; 'select-global': [] }>()
 const { t } = useI18n()
@@ -12,7 +11,6 @@ const year = ref('')
 const region = ref('')
 const season = ref('')
 const years = computed(() => [...new Set(props.events.map(event => event.year))].sort((a, b) => b - a))
-// 地区域固定 4 项（DC-SEL-01）：选项不随年份增减，当年没有赛事的地区置灰。
 const regionOptions = computed(() => TOURNAMENT_REGIONS.map(value => ({
   value,
   label: t(`tournament.regions.${value}`),
@@ -52,8 +50,6 @@ function select(level: 'year' | 'region' | 'season') {
   if (level === 'year') { region.value = ''; season.value = '' }
   if (level === 'region') season.value = ''
   const value = props.events.find(event => event.year === Number(year.value) && event.region === region.value && event.season === season.value)?.id ?? null
-  // A local year/region change clears the selected event before the remaining
-  // filters are chosen. Only that immediate parent echo preserves these filters.
   preservePartialSelection = value === null && (props.modelValue !== null || !!props.globalSelected)
   emit('update:modelValue', value)
   void nextTick(() => { preservePartialSelection = false })

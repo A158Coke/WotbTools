@@ -2,7 +2,6 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
-# Stage/publish evidence roundtrip against APK bytes, with independent corruption cases.
 python3 - "$ROOT" "$TMP" <<'PY'
 import contextlib
 import copy

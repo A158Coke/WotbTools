@@ -14,33 +14,22 @@ export type AiReviewBattle = components['schemas']['AiReviewBattle']
 export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
 export type AiReviewLocale = AiReviewRequest['locale']
 
-/**
- * AI 复盘输入：结算事实（`battle`）+ client canonical AI projection（`projection`，
- * `replay-local/ai`）。均由本机 WASM 解析产出；服务端不解析回放。
- */
 export interface AiReviewProjection {
   battle: AiReviewBattle
   projection: ClientAiReviewProjection
 }
 
-/** 契约 locale 白名单（`AiReviewRequestV1.locale` enum 的运行时镜像）。 */
 export const AI_REVIEW_LOCALES: readonly AiReviewLocale[] = ['zh-CN', 'en-US', 'ru-RU']
 
-/** 把 UI locale 收敛到契约 enum；未知值回退 zh-CN，与后端 UNKNOWN_LOCALE 防线一致。 */
 export function toAiReviewLocale(value: unknown): AiReviewLocale {
   return AI_REVIEW_LOCALES.includes(value as AiReviewLocale) ? (value as AiReviewLocale) : 'zh-CN'
 }
 
 export interface AiReviewResult {
-  /** Text path retained for player reviews and older deployed backends. */
   analysis?: string | null
-  /** Older SSE payloads omit this field when the pre-battle call is unavailable. */
   preBattleSection?: string | null
-  /** The current SSE writer may omit capability; AiReviewDonePayload still owns its contract. */
   capability?: AiReviewCapability
-  /** Structured Team Review. */
   teamReview?: TeamAiReviewResult
-  /** Authoritative playerKey → nickname/tank display mapping. */
   teamPlayers?: TeamAiPlayerIdentity[]
 }
 
@@ -53,36 +42,19 @@ export interface AiReviewRunState {
   timedOut: boolean
 }
 
-/**
- * AI 复盘失败态归类（design-language §10：每个失败必须说清发生了什么 + 下一步）。
- *
- * 界面只消费这个稳定归类，不直接渲染服务端 message / 异常字符串。
- * 「登录 / 权限」不在这里：登录门禁属于宿主（`AiReviewWorkspacePane`），已登录但缺 realm role
- * 是**前置权限态**（渲染前就确定，不是一次 run 的失败），两者都不经过本归类。
- */
 export type AiFailureKind =
-  /** AI 服务当前并发/队列已满 */
   | 'busy'
-  /** 服务端未配置 provider */
   | 'not_configured'
-  /** 整体或单次调用超时 */
   | 'timeout'
-  /** 上游/provider 失败、网络不可达 */
   | 'upstream'
-  /** 返回体不符合契约（schema / 空结果 / 断流） */
   | 'malformed'
-  /** 用户主动取消（不是错误） */
   | 'cancelled'
-  /** 其它客户端侧失败 */
   | 'client'
 
 export interface AiFailure {
   kind: AiFailureKind
-  /** 稳定错误码（服务端契约）；无则为空串 */
   code: string
-  /** 诊断 ID（服务端 ApiError id 或 correlationId） */
   id: string
-  /** 已本地化的用户可读文案 */
   message: string
 }
 
@@ -102,7 +74,6 @@ export interface AiReviewDoneEvent {
 
 export interface AiReviewErrorEvent {
   type: 'error'
-  /** Canonical diagnostic id; for SSE AI failures this is the request correlation id. */
   id: string | null
   code: ServerErrorCode
   errorMsg: string | null
@@ -114,12 +85,10 @@ export type AiReviewEvent =
   | AiReviewDoneEvent
   | AiReviewErrorEvent
 
-/** Runtime boundary for the stable capability values emitted by AiReviewDonePayload. */
 export function isAiReviewCapability(value: unknown): value is AiReviewCapability {
   return value === 'AVAILABLE'
     || value === 'AVAILABLE_WITH_LIMITED_TIMELINE'
     || value === 'UNAVAILABLE'
 }
 
-/** Keep the imported API error shape available to callers without coupling SSE payloads to it. */
 export type AiReviewApiError = ApiErrorApplicationModel

@@ -19,7 +19,6 @@ import java.util.HexFormat;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-/** Executes reviewed broadcast localization against real PostgreSQL and protects administrator-owned data. */
 @Testcontainers(disabledWithoutDocker = true)
 class BroadcastLocalizationMigrationTest {
     @Container static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18-alpine")
@@ -111,7 +110,6 @@ class BroadcastLocalizationMigrationTest {
         jdbc.execute(localizationSql());
         assertEquals(seasons,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
         assertEquals(replays,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
-        // A custom cover does not alter title facts and must survive a valid text-only correction.
         final long covered = createLocalizationFixture(points,points.get("oldReplay").get("url").asText(),"EU",2026);
         jdbc.update("insert into tournament_broadcast_cover(id,object_key,status,content_type,size,hash,created_at) values ('11111111-1111-4111-8111-111111111111','local-test-cover','READY','image/png',1,?,now())","a".repeat(64));
         jdbc.update("update tournament_broadcast_replay set cover_id='11111111-1111-4111-8111-111111111111' where id=?",covered);

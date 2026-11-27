@@ -11,10 +11,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
-/**
- * [AgentAssetProxy] 纯函数的纯 JVM 测试（缓存键稳定性 / MIME 归一化 / LRU 淘汰选择）。
- * 网络与文件胶水刻意不在此覆盖——那部分依赖 Android framework，属于真机验收范畴。
- */
 class AgentAssetProxyTest {
 
     @Test
@@ -22,20 +18,15 @@ class AgentAssetProxyTest {
         val key = AgentAssetProxy.cacheKey("/agent-assets/glb/1/model.glb")
         assertEquals(64, key.length)
         assertEquals(key, AgentAssetProxy.cacheKey("/agent-assets/glb/1/model.glb"))
-        // 逻辑路径不同 → 键不同（路径是唯一身份，不得互相覆盖）
         assertNotEquals(key, AgentAssetProxy.cacheKey("/agent-assets/glb/2/model.glb"))
         assertNotEquals(AgentAssetProxy.cacheKey("/agent-assets/a"), AgentAssetProxy.cacheKey("/agent-assets/ab"))
     }
 
     @Test
     fun upstreamPathStripsLocalPrefixAndKeepsRootSlash() {
-        // 资产包在 origin 根目录：本机路由前缀 /agent-assets 必须剥掉，且保留根路径斜杠——
-        // 否则冷缓存请求会打到上游的 /agent-assets/... 而 404
         assertEquals("/index.json", AgentAssetProxy.upstreamPath("/agent-assets/index.json"))
         assertEquals("/glb/1/model.glb", AgentAssetProxy.upstreamPath("/agent-assets/glb/1/model.glb"))
         assertEquals("/", AgentAssetProxy.upstreamPath("/agent-assets/"))
-        // 缓存键仍用完整本机路径（与上游 key 语义不同，不得混用）：
-        // 前缀剥离只影响上游 URL，不影响缓存身份
         assertNotEquals(
             AgentAssetProxy.upstreamPath("/agent-assets/index.json"),
             AgentAssetProxy.cacheKey("/agent-assets/index.json")
@@ -59,7 +50,6 @@ class AgentAssetProxyTest {
 
     @Test
     fun trimSelectionDropsOldestFirstUntilWithinBudget() {
-        // total 120；预算 50 → 依次淘汰 lastModified 最早的 b(30)、c(30)、a(60)
         val entries = listOf(
             Triple("a.body", 60L, 3L),
             Triple("b.body", 30L, 1L),

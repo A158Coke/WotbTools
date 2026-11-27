@@ -68,7 +68,6 @@ describe('shared broadcast catalogue rendering', () => {
     state.category.mockResolvedValue({ ...detail, categories: [detail.category, quarter, semi], nodes: [...detail.nodes,
       { id: 31, categoryId: 21, roundNumber: null, format: 'KNOCKOUT', replays: [] }] })
     const { wrapper } = await page()
-    // 第一个赛段默认选中；空赛段只对管理员显示成页签
     expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
     expect(wrapper.find('[data-testid=broadcast-stage-21]').exists()).toBe(admin)
     expect(wrapper.find('[data-testid=broadcast-stage-22]').exists()).toBe(admin)

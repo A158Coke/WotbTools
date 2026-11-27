@@ -1,4 +1,3 @@
-/** Java 语义原语：golden 覆盖不到的边界（-0、指数记法、BigDecimal 求和、CI 排序、Java trim/hasText）。 */
 
 import { describe, expect, it } from 'vitest'
 

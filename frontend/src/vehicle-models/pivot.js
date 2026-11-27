@@ -1,24 +1,3 @@
-/**
- * 车型图层旋转数学（admin preview 与未来 production VehicleMarker 共用）。
- *
- * 契约（docs/assets/tier-x-models/svg-generation-spec.md）：
- * - hull.webp 与 turret.webp（turreted）都是 Source-faithful 俯视资产：
- *   model +Y（车头/炮管 forward）→ 图片 top（0° = 12 点），hull 与 turret 同一 orientation；
- * - hull 绕画布中心（viewBox 中心，车辆几何中心 C）旋转 hullWorldDeg；
- * - turret 是「随 hull 移动的装配」：OFF_CENTER_TURRET_HULL_COMPOSITION 修复——
- *   P = metadata.turretPivot（viewBox 绝对坐标），H = hull world rotation；
- *   hull 旋转后炮塔座圈的屏幕位置 P' = C + rotate(P - C, H)，不是固定不动点；
- * - 最终 turret world yaw = authoritative turretWorldDeg（hull + 相对转角）。
- *
- * 实现用嵌套 transform（无 translate 平移近似，与旧单层 transform-origin 方案同构）：
- *   1) turret assembly 父层：rotate(hullWorldDeg) around C（与 hull 层同数学）——
- *      座圈随车体围绕 C 移动（P → P'）；
- *   2) turret image 子层：rotate(turretWorldDeg - hullWorldDeg) around image-local pivot
- *      （raster.pivotX/pivotY）——子层旋转抵消父层 hull 分量后，最终 world yaw = T。
- *
- * rotate 以 transform-origin 为不动点；img 与 320×320 viewBox 1:1 对齐
- * （局部坐标 == viewBox 坐标），origin 直接用 viewBox 像素值 × renderScale。
- */
 import { VIEWBOX } from './types.js'
 
 /**
@@ -57,16 +36,6 @@ export function turretImageTransform({ hullDeg, turretWorldDeg, pivot, renderSca
   }
 }
 
-/**
- * —— Battle Playback marker 专用（标记盒尺寸由 CSS 控制，28px/22px，无固定 renderScale）——
- * 百分比换算（Blocker 1 修复，与 Battle Playback 生产 marker 的 px 数学严格同构）：
- * - left/top/width/height：**相对 marker 盒**（containing block）——marker-global logical
- *   坐标（logicalMinX/Y、pixelWidth/2、pixelHeight/2）除以 320 logical viewBox；
- * - transform-origin：**相对 turret image 自身盒**——turretRaster.pivotX/pivotY 是
- *   image-local logical pivot，必须除以 image 自身 logical 尺寸（pixelWidth/2 × pixelHeight/2），
- *   等价于 QA 页的 origin = pivot * renderScale / 盒宽 = (pixelWidth/2) * renderScale。
- *   错误做法（除以 320）会把 pivot 当成 marker-global 坐标，炮塔绕错误原点旋转。
- */
 
 /**
  * turret assembly 父层（marker 内）：绕 marker 盒中心旋转 hullWorldDeg。
@@ -84,10 +53,7 @@ export function markerTurretAssemblyTransform({ hullDeg }) {
  */
 export function markerTurretImageTransform({ hullDeg, turretWorldDeg, raster }) {
   const { logicalMinX, logicalMinY, pixelWidth, pixelHeight, pivotX, pivotY } = raster
-  // 相对 marker 盒（containing block）：marker-global logical 坐标 / 320 viewBox
   const boxPct = (v) => (v / VIEWBOX.width) * 100
-  // image-local pivot（pivotX/pivotY）必须相对 turret image 自身盒：
-  // origin% = pivot / (pixelWidth/2) * 100（同构于 QA 页 origin = pivot * renderScale）
   const imgW = pixelWidth / 2
   const imgH = pixelHeight / 2
   const originPct = (v, size) => (size > 0 ? (v / size) * 100 : 0)

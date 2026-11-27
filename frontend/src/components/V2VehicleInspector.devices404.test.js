@@ -43,11 +43,9 @@ describe('V2VehicleInspector equipment directory failure', () => {
     })
     const chips = () => w.findAll('[data-test="v2-inspector-equipment"] .v2-inspector-chip')
     expect(chips()).toHaveLength(2)
-    // 目录加载中：实线中性占位，不是空槽虚线
     expect(chips()[0].classes()).toContain('is-loading')
     expect(chips()[0].classes()).not.toContain('is-empty')
     await flushPromises()
-    // 加载失败后：已装装备仍是“缺图/未知”态，而不是“未装备”
     for (const chip of chips()) {
       expect(chip.classes()).toContain('is-unknown')
       expect(chip.classes()).not.toContain('is-empty')

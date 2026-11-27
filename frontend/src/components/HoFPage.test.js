@@ -113,7 +113,6 @@ describe('HoFPage', () => {
     expect(wrapper.text()).not.toContain('connectivityNotice.')
     for (const call of Object.values(lbApi)) expect(call).not.toHaveBeenCalled()
 
-    // 首次检测 ONLINE：现有可用性 watcher 自动恢复加载（不需要用户重试）。
     connectivityState.settled.value = true
     connectivityState.state.value = 'online'
     await flushPromises()
@@ -129,7 +128,6 @@ describe('HoFPage', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="hof-connectivity"]').exists()).toBe(false)
 
-    // 连通性值不变（UNKNOWN → UNKNOWN），仅 settled 变化也必须驱动 UI。
     connectivityState.settled.value = true
     await flushPromises()
     expect(wrapper.get('[data-testid="hof-connectivity"]').text()).toContain('connectivityNotice.unknown')
@@ -186,7 +184,6 @@ describe('HoFPage', () => {
     expect(badges[1].classes()).toContain('bt-random')
   })
 
-  // 审计 BZ-17：版本列格式化 + 分页显示总数
 
   it('formats the game version column and shows total records with page numbers', async () => {
     lbApi.hofList.mockResolvedValue({
@@ -198,7 +195,6 @@ describe('HoFPage', () => {
     const versions = wrapper.findAll('.lb-version').map(cell => cell.text())
     expect(versions).toEqual(['10.6.0', '-'])
     expect(wrapper.find('[data-testid="hof-pager"]').text()).toContain('hofPager.summary')
-    // 上一页 / 前往 / 下一页：三个按钮（跳页输入在 totalPages > 1 时出现）
     expect(wrapper.find('[data-testid="hof-pager"]').findAll('button')).toHaveLength(3)
   })
 
@@ -211,7 +207,6 @@ describe('HoFPage', () => {
     expect(pager.findAll('button')).toHaveLength(0)
   })
 
-  // 审计 PG-07：翻页回到表格顶部；加载期间保留旧行并变暗
 
   it('scrolls the active board back into view on page change and keeps stale rows while loading', async () => {
     lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 60, totalPages: 2 })
@@ -227,7 +222,6 @@ describe('HoFPage', () => {
     await wrapper.find('[data-testid="hof-pager"] > button:last-child').trigger('click')
     await flushPromises()
     expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }))
-    // 新一页还没回来：旧行仍在，只是变暗
     expect(wrapper.find('[data-hof-pane="single"] .tablewrap').classes()).toContain('is-stale')
     expect(wrapper.findAll('[data-hof-pane="single"] tbody tr')).toHaveLength(1)
     resolveNext({ items: [makeRow({ id: 3 })], page: 2, size: 50, totalItems: 60, totalPages: 2 })
@@ -235,7 +229,6 @@ describe('HoFPage', () => {
     expect(wrapper.find('[data-hof-pane="single"] .tablewrap').classes()).not.toContain('is-stale')
   })
 
-  // 指定页跳转：一次直达目标页（不加载中间页），非法值与当前页都不发请求
 
   it('jumps straight to the requested page from the single-board pager', async () => {
     lbApi.hofList.mockResolvedValue({ items: [makeRow()], page: 1, size: 50, totalItems: 6000, totalPages: 120 })
@@ -268,13 +261,11 @@ describe('HoFPage', () => {
       expect(lbApi.hofList).toHaveBeenCalledTimes(1)
     }
 
-    // 当前页：不重复请求
     await input.setValue('1')
     await input.trigger('keydown.enter')
     await flushPromises()
     expect(lbApi.hofList).toHaveBeenCalledTimes(1)
 
-    // 回车提交合法页码
     await input.setValue('7')
     await input.trigger('keydown.enter')
     await flushPromises()
@@ -344,5 +335,4 @@ describe('HoFPage', () => {
     }
   })
 
-  // 审计 BZ-18：弹窗写明上榜规则；没有当前纪录时说明是第一条纪录，不提示「须高于当前纪录」
 })

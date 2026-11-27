@@ -22,8 +22,6 @@ describe('consumableRuntimeAt input shapes', () => {
   })
 })
 
-// 只做编译期证明，从不运行。48110a4ca 的缺陷是把 3D 的 facet 事件当 canonical 读字段，
-// 字段名不匹配导致徽标永远为空；这些写法现在都必须编译失败。
 export function consumableTypeProofs(input: ConsumableInput, canonical: ConsumableTransition) {
   // @ts-expect-error facet 事件没有 canonical 的 timeSec
   void facetEvent.timeSec

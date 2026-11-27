@@ -4,7 +4,6 @@ import tools.jackson.databind.JsonNode;
 
 import java.util.Set;
 
-/** Shared shape and text checks used by Team AI result parsing owners. */
 final class TeamAiReviewParserSupport {
 
     static final int MAX_ID_CHARS = 64;

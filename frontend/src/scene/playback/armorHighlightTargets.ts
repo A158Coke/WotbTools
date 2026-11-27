@@ -1,6 +1,3 @@
-// 装甲着色目标生命周期（buildTarget / targetArmor / syncPose / syncUniforms /
-// disposeTarget）——自 armorHighlight.ts 出仓（2026-11-21 #LOC 结构拆分：代码与搬移前
-// 逐字一致；工厂闭包读数改经 ctx 注入，GPU/模板缓存 owner 仍在宿主工厂）。
 import * as THREE from 'three'
 import type { Material, Mesh, Object3D, PerspectiveCamera, Scene } from 'three'
 import {
@@ -14,7 +11,6 @@ import { armorPosePart, armorWorldMatrix, shellUniforms } from './armorHighlight
 import type { AimedVehicleCandidate } from './armorHighlightPick.js'
 import type { ArmorHighlightFrame } from './armorHighlightTypes.js'
 
-/** 工厂闭包注入（getter 快照；owner = createArmorHighlight）。 */
 export interface ArmorTargetsCtx {
   shaders: {
     externalMaterial: (...args: never[]) => Material
@@ -30,7 +26,6 @@ export interface ArmorTargetsCtx {
   templateRetry: { allowed(key: number): boolean; succeed(key: number): void; fail(key: number): void }
   isDisposed(): boolean
   loadTemplate(tankId: number, url: string): Promise<Object3D | null>
-  /** 零分配暂存（owner = 宿主工厂；syncPose/syncUniforms 消费）。 */
   identity: THREE.Matrix4
   clipNormal: THREE.Vector3
   clipPoint: THREE.Vector3
@@ -38,7 +33,6 @@ export interface ArmorTargetsCtx {
   world: THREE.Vector3
 }
 
-/** 已构建的目标（三个辅助场景 + 克隆清单 + gun_mask 裁切面）。 */
 export interface BuiltTarget {
   state: Scene
   thickness: Scene
@@ -94,21 +88,19 @@ export function buildTarget(ctx: ArmorTargetsCtx, template: Object3D, vehicle: A
   }
 
 
-/** 目标生命周期闭包（宿主工厂按 ctx 一次性装配；原闭包函数逐字迁入）。 */
 export function createArmorTargets(ctx: ArmorTargetsCtx) {
-  /** 目标 armor 就绪则返回，否则懒加载（完成后 `onReady` 让场景补一帧）并返回 null。 */
   function targetArmor(vehicle: ArmorHighlightFrame['vehicle'], tankData: ArmorHighlightFrame['tankData'], cfg: import('../viewer/armorPlateModel.js').TankArmorConfig | null | undefined, onReady: () => void): BuiltTarget | null {
     const eid = vehicle.def.eid
     const known = ctx.targets.get(eid)
     if (known && known.glb === vehicle.glb) return known.armor
-    if (known) { disposeTarget(known.armor); ctx.targets.delete(eid) }   // GLB 重建后外部模块引用已失效
+    if (known) { disposeTarget(known.armor); ctx.targets.delete(eid) }
     const tankId = vehicle.def.tank_id
     if (tankId == null || ctx.pending.has(eid) || !tankData.model_url || !ctx.templateRetry.allowed(tankId)) return null
     ctx.pending.add(eid)
     ctx.loadTemplate(tankId, tankData.model_url).then((template) => {
       ctx.pending.delete(eid)
       if (ctx.isDisposed() || !vehicle.glb || !template) return
-      ctx.targets.set(eid, { glb: vehicle.glb, armor: buildTarget(ctx, template, vehicle, tankData, cfg as TankArmorConfig) })  // cfg 形状由 armorHighlightBlock 验证在场
+      ctx.targets.set(eid, { glb: vehicle.glb, armor: buildTarget(ctx, template, vehicle, tankData, cfg as TankArmorConfig) })
       onReady()
     })
     return null
@@ -149,7 +141,7 @@ export function createArmorTargets(ctx: ArmorTargetsCtx) {
       if (u.canSplash) u.canSplash.value = s.isHE
       if (u.damage) u.damage.value = (shell as { damage?: number }).damage || 0
       if (u.explosionRadius) u.explosionRadius.value = (shell as { explosion_radius?: number }).explosion_radius || 0
-      if (u.heatmapMask) u.heatmapMask.value = true   // 没有点击爆点：HE 只显示可直穿像素
+      if (u.heatmapMask) u.heatmapMask.value = true
     }
   }
   function disposeTarget(target: BuiltTarget | null): void {

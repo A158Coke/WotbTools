@@ -28,10 +28,6 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * 实际 Activity / Gecko / DownloadManager 验证，不替换下载器或 installer wiring。
- * 只在测试内替换 manifest 发现结果；当前身份读取实际已安装 APK 的 PackageInfo。
- */
 class UpdateExperienceDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
@@ -51,13 +47,11 @@ class UpdateExperienceDeviceTest {
     private val monitors = mutableListOf<Instrumentation.ActivityMonitor>()
 
     @Before fun setUp() {
-        // 不接管设备中与本测试无关的既有下载。
         val existing = updater.loadTask()
         val restoreToken = InstrumentationRegistry.getArguments().getString("restoreTaskToken")
         if (restoreToken == null) {
             assertNull("Device already owns an update task; use a dedicated test device", existing)
         } else {
-            // 外部 adb 明确 SIGKILL 后，只允许恢复同一个测试夹具任务，不接受任意设备任务。
             assertEquals(restoreToken, existing?.token)
             val deltaUrl = InstrumentationRegistry.getArguments().getString("deltaPatchUrl")
             if (InstrumentationRegistry.getArguments().getString("restoreReadyNotification") == "true") {
@@ -92,7 +86,6 @@ class UpdateExperienceDeviceTest {
         if (::coordinator.isInitialized) coordinator.setForeground(false)
         instrumentation.waitForIdleSync()
         try {
-            // 等待已开始的 hash 与串行回调退出后，才清本测试的精确任务。
             repeat(2) {
                 ioExecutor.submit {}.get(45, TimeUnit.SECONDS)
                 stateExecutor.submit {}.get(45, TimeUnit.SECONDS)
@@ -106,8 +99,6 @@ class UpdateExperienceDeviceTest {
             val editor = context.getSharedPreferences("android-updates", Context.MODE_PRIVATE).edit().clear()
             if (dismissedWasPresent) editor.putInt("dismissedLatestVersionCode", originalDismissed)
             assertTrue(editor.commit())
-            // Android14 撤销 REQUEST_INSTALL_PACKAGES 会杀目标进程；由 host 在 runner 外恢复，
-            // 不可在此撤权而把一个已完成的真实权限往返误报为 instrumentation crash。
         }
     }
 
@@ -195,8 +186,6 @@ class UpdateExperienceDeviceTest {
                 val bounds = android.graphics.Rect()
                 val title = context.getString(R.string.update_notification_title)
                 val roots = listOfNotNull(automation.rootInActiveWindow) + automation.windows.mapNotNull { it.root }
-                // Search notification body, not a status-bar icon whose content description
-                // also contains the title. The fixture version identifies this task's row.
                 fun findBody(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
                     if (node.viewIdResourceName == "android:id/text" &&
                         node.text?.toString()?.contains("WotBTools ${task.versionName}") == true) {
@@ -223,7 +212,6 @@ class UpdateExperienceDeviceTest {
             waitUntil("notification reopens MainActivity", 30_000) {
                 focusedWindowLine().contains("com.wotbtools.app/com.wotbtools.app.MainActivity")
             }
-            // singleTask may deliver onNewIntent to the existing Activity instead of creating one.
             val notifiedActivity = (monitor.waitForActivityWithTimeout(1_000) as? MainActivity)
                 ?: first.also { assertFalse("cold start must create an Activity", coldStart) }
             opened = notifiedActivity
@@ -240,7 +228,6 @@ class UpdateExperienceDeviceTest {
     }
 
     @Test fun readyInstallWaitsForBlockedReconcileWithoutSecondClick() {
-        // 使用系统安装 intent 监控器阻止真正安装；下载和文件校验均为真实执行。
         assertTrue("Grant REQUEST_INSTALL_PACKAGES app-op before running this test",
             context.packageManager.canRequestPackageInstalls())
         val installer = installerMonitor()
@@ -254,7 +241,6 @@ class UpdateExperienceDeviceTest {
         val replied = CountDownLatch(1)
         val accepted = AtomicReference<Boolean>()
         try {
-            // 队列屏障让 reconcile 真正进入 busy，再由 UI 发出一次安装请求。
             ioExecutor.execute {
                 entered.countDown()
                 check(release.await(45, TimeUnit.SECONDS))
@@ -349,8 +335,6 @@ class UpdateExperienceDeviceTest {
         }
         assertFalse("More foreground alone must not satisfy the panel oracle", updatePanelVisible(onActivityValue { it }))
         onActivity { activity ->
-            // ActivityScenario 1.7.0 的 lifecycle observer 按 launch intent 的 action/categories 匹配。
-            // 复制 launcher identity，仍通过真实 singleTask onNewIntent 递交打开面板的 extra。
             activity.startActivity(Intent(activity.intent)
                 .setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra(UpdateCoordinator.OPEN_UPDATE_PANEL, true))
@@ -367,7 +351,6 @@ class UpdateExperienceDeviceTest {
         assertEquals(task.token, updater.loadTask()?.token)
         assertEquals(task.downloadId, updater.loadTask()?.downloadId)
         Log.i(TAG, "manual_panel_safe api=${android.os.Build.VERSION.SDK_INT} notification_denied=${android.os.Build.VERSION.SDK_INT >= 33} marker_consumed=true mandatory_gate=true verified_file=true")
-        // 显式结束本测试 Activity，并断言 DESTROYED，避免遗留任务污染下一条测试。
         onActivity { it.finish() }
         waitUntil("manual panel Activity destroyed") { scenario!!.state == Lifecycle.State.DESTROYED }
     }
@@ -394,7 +377,6 @@ class UpdateExperienceDeviceTest {
         assertEquals(0, installer.hits)
         Log.i(TAG, "ready_notification_recovery pid=${android.os.Process.myPid()} restored=${restoredToken != null} token=${task.token} id=${task.downloadId} exact_sha=true no_installer")
         if (args.getString("killAfterReady") == "true") {
-            // Host 将这个已持久化的精确 identity 传入新 instrumentation；进程退出本身不是 PASS。
             android.os.Process.killProcess(android.os.Process.myPid())
             fail("Process did not terminate")
         }
@@ -554,12 +536,10 @@ class UpdateExperienceDeviceTest {
     }
 
     @Test fun realLargeSystemDownloadSurvivesBackgroundAndActivityRecreation() {
-        // 固定不可变生产 APK 仅作为下载夹具；不尝试安装版本低于测试 APK 的产物。
         launch(manifest(url = LARGE_URL, sha = LARGE_SHA))
         if (InstrumentationRegistry.getArguments().getString("restoreTaskToken") == null) {
             assertTrue(awaitReply<Boolean> { coordinator.beginDownload(latestCode, it) })
         } else {
-            // 外部 SIGKILL 后，恢复只 query，不再次执行用户下载动作。
             coordinator.reconcile()
         }
         waitUntil("large task has real bytes", 120_000) {
@@ -638,7 +618,6 @@ class UpdateExperienceDeviceTest {
             addDataScheme("content")
             addDataType("application/vnd.android.package-archive")
         }
-        // 拦截只模拟系统安装页取消；测试不安装任何 APK，也不把拦截冒充真实 installer UI。
         return instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
             .also(monitors::add)
     }
@@ -659,8 +638,6 @@ class UpdateExperienceDeviceTest {
             }
             return (0 until node.childCount).any { index -> node.getChild(index)?.let(::visiblePanel) == true }
         }
-        // Gecko virtual descendants need traversal; release notes may be outside the sheet viewport.
-        // A transiently unavailable accessibility tree is not evidence of a visible panel.
         return try {
             val automation = instrumentation.uiAutomation
             val info = automation.serviceInfo
@@ -723,7 +700,6 @@ class UpdateExperienceDeviceTest {
         .firstOrNull { it.contains("mCurrentFocus=") }.orEmpty()
 
     private fun waitForSettingsWindow() {
-        // Activity resumed 早于窗口真正可接收按键；系统 ANR 覆盖层不能冒充设置页。
         waitUntil("settings window focused: ${focusedWindowLine()}", 45_000) {
             focusedWindowLine().contains("com.android.settings")
         }
@@ -734,7 +710,6 @@ class UpdateExperienceDeviceTest {
     }
 
     private fun returnFromSettings() {
-        // API34 设置页可经 ManageExternalSources → SpaActivity 跳转，按真实 Back 栈返回。
         repeat(3) {
             if (scenario!!.state == Lifecycle.State.RESUMED) return
             waitForSettingsWindow()

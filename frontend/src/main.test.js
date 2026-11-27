@@ -8,13 +8,11 @@ vi.mock('keycloak-js', () => ({
     async init(options) {
       scenario.calls++
       scenario.received = { search: location.search, hash: location.hash }
-      // The adapter owns callback consumption; the application must not rewrite it first.
       const url = new URL(location.href)
       const fragmentCallback = new URLSearchParams(url.hash.slice(1)).has('state')
       if (fragmentCallback) url.hash = ''
       history.replaceState(history.state, '', url)
       this.authenticated = await scenario.init()
-      // Default fragment-mode SDK falls through to onLoad for a query-looking return.
       if (!this.authenticated && !fragmentCallback && url.searchParams.has('state') && options.onLoad) this.login()
     }
   },
@@ -80,8 +78,6 @@ describe('application startup preserves the authentication callback', () => {
     expect(location.search).toContain(`view=${legacy}`)
     expect(shell()).toBeNull()
     pending.resolve(true)
-    // bootstrap intentionally defers router/App imports until the callback settles.
-    // Await those modules, rather than treating their cold-transform time as an auth SLA.
     await vi.dynamicImportSettled()
     await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('authenticated'))
     const { default: router } = await import('./app/router.js')
@@ -189,7 +185,6 @@ describe('application startup preserves the authentication callback', () => {
         else reply()
       },
     }
-    // Even a callback-looking URL in WebView must stay with the Native auth owner.
     history.replaceState(null, '', '/?view=extended#state=fixture-state&code=fixture-code')
     await import('./main.js')
     await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('initializing'))

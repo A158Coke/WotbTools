@@ -1,6 +1,5 @@
 export interface GuideRect { left: number; top: number; width: number; height: number }
 
-/** Clip real target geometry to the currently visible viewport, including browser zoom. */
 export function guideCutout(rect: GuideRect, viewport: GuideRect, padding: number): GuideRect | null {
   const left = Math.max(viewport.left, rect.left - padding)
   const top = Math.max(viewport.top, rect.top - padding)
@@ -10,7 +9,6 @@ export function guideCutout(rect: GuideRect, viewport: GuideRect, padding: numbe
   return { left, top, width: right - left, height: bottom - top }
 }
 
-/** Keep the card away from the real control whenever there is usable room. */
 export function guideCardPosition(target: GuideRect | null, viewport: GuideRect, card: { width: number; height: number }, gap: number, compact: boolean) {
   const width = Math.min(card.width, Math.max(0, viewport.width - gap * 2))
   const height = Math.min(card.height, Math.max(0, viewport.height - gap * 2))
@@ -19,11 +17,9 @@ export function guideCardPosition(target: GuideRect | null, viewport: GuideRect,
   const clampY = (y: number) => Math.max(viewport.top + gap, Math.min(y, viewport.top + viewport.height - height - gap))
   if (compact || !target) {
     let top = clampY(viewport.top + viewport.height - height - gap)
-    // Fullscreen phone controls can sit at the bottom without any page scroll available.
     if (target && target.top < top + height && target.top + target.height > top) {
       const above = Math.max(0, target.top - viewport.top - gap * 2)
       const below = Math.max(0, viewport.top + viewport.height - target.top - target.height - gap * 2)
-      // Keep a usable header/actions region; long copy scrolls within the remaining space.
       if (above >= below && above >= gap * 8) return { left: clampX(viewport.left + (viewport.width - width) / 2), top: target.top - gap - Math.min(height, above), width, maxHeight: above }
       if (below >= gap * 8) return { left: clampX(viewport.left + (viewport.width - width) / 2), top: target.top + target.height + gap, width, maxHeight: below }
     }

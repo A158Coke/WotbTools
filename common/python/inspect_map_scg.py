@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Inspect one map's SCG geometry sidecar and cross-check SC2 RenderBatch ids.
 
 The report verifies the actual SCPG payload, summarizes PolygonGroup geometry,

@@ -33,7 +33,6 @@ function page() {
   const i18n = createI18n({ legacy: false, locale: 'zh', messages: messages as Record<string, any> })
   const wrapper = mount(TournamentPointsAdminPage, { global: { plugins: [i18n], provide: { [DIALOG_INLINE_KEY as symbol]: true }, stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
   const select = async () => { await flushPromises(); wrapper.findComponent(TournamentEventSelect).vm.$emit('update:modelValue', 7); await flushPromises() }
-  // 「更多」菜单：先点开触发按钮，再点菜单项（项目内联渲染在测试宿主里）。
   const more = async (testid: string) => {
     await wrapper.get('[data-testid="tournament-admin-more"]').trigger('click'); await flushPromises()
     await wrapper.get(`[data-testid="${testid}"]`).trigger('click'); await flushPromises()
@@ -44,7 +43,6 @@ function page() {
     Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
     await input.trigger('change'); await flushPromises()
   }
-  // 导入面板本身也是对话框；确认对话框叠在其上，取最上层一个。
   const topDialog = () => wrapper.findAll('[role="dialog"]').at(-1)!
   return { wrapper, i18n, select, file, more, topDialog }
 }

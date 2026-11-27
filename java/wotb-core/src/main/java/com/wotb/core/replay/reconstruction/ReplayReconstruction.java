@@ -39,7 +39,6 @@ public record ReplayReconstruction(
         ReplayCoverage coverage,
         ReplayStreamDiagnostics diagnostics
 ) {
-    /** 原始流观测到的最大 raw clock（reada 允许时钟回退并单独计数；非战斗时长）。 */
     public float streamMaxRawClockSec() {
         return diagnostics == null ? Float.NaN : diagnostics.maxObservedRawClockSec();
     }

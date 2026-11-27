@@ -23,7 +23,6 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.Locale;
 
-/** Byte-based validation and bounded thumbnails; no storage or API policy. */
 public final class ImageValidation {
     public static final int MAX_BYTES = 10 * 1024 * 1024;
 
@@ -35,7 +34,6 @@ public final class ImageValidation {
         return validate(input.readNBytes(MAX_BYTES + 1));
     }
 
-    /** Original evidence/cover path retains complete decoding and the original bytes. */
     public static Image validate(final byte[] bytes) throws IOException {
         requireBytes(bytes);
         try (final ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
@@ -49,7 +47,6 @@ public final class ImageValidation {
         }
     }
 
-    /** Decode at most about twice the requested edge before resizing; discard source metadata. */
     public static Image thumbnail(final InputStream input, final int maxEdge, final int maxOutputBytes) throws IOException {
         if (maxEdge < 1 || maxEdge > 8192 || maxOutputBytes < 1 || maxOutputBytes > MAX_BYTES) {
             throw new IllegalArgumentException("Invalid thumbnail bounds");
@@ -159,7 +156,6 @@ public final class ImageValidation {
         };
     }
 
-    /** Only JPEG APP1 EXIF IFD0 orientation is read; all offsets stay within that bounded segment. */
     private static int jpegOrientation(final byte[] bytes) {
         int position = 2;
         while (position + 3 < bytes.length && (bytes[position] & 0xff) == 0xff) {

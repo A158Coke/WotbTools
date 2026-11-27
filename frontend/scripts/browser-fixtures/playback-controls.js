@@ -1,8 +1,6 @@
 import { createApp, h, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 
-// 与 src/main.js 完全相同的样式加载顺序：三档 form + fullscreen contract 的相对顺序
-// 本身就是被验证的契约之一，fixture 不得另起一套顺序。
 import '../../src/styles/tokens/scale.css'
 import '../../src/styles/tokens/color.css'
 import '../../src/styles/tokens.css'
@@ -23,21 +21,10 @@ import { messages } from '../../src/locales/messages.js'
 import BattlePlayback from '../../src/components/BattlePlayback.vue'
 import { makeBattlePlaybackDataset } from '../../src/test/playbackV2TestUtil.js'
 
-/**
- * 浏览器级入口：以固定 dataset 直接挂载**生产**
- * `BattlePlayback`，用于验证播放控件在真实浏览器/真实设备形态下可交互。
- * `?duration=<sec>` 指定时间线长度；`duration=0` 用来复现「duration<=0 时播放按钮
- * 看起来可用但 silent no-op」这一类不可用态。
- */
 const params = new URLSearchParams(window.location.search)
 const dataset = makeBattlePlaybackDataset()
 if (params.has('duration')) dataset.durationSec = Number(params.get('duration'))
 
-/**
- * `?players=7`：每队 N 台车（正常 7v7 名册几何），全程可见、各自在地图不同位置。
- * `?recorder=2`：录像者属于 Team 2——friendly 标志随之翻转，物理队伍（team）不变，
- * 用来证明名册左右只看物理队伍、HUD 仍按录像者视角。
- */
 const players = Number(params.get('players') || 0)
 if (players > 0) {
   const vehicle = (team, index) => {
@@ -47,7 +34,6 @@ if (players > 0) {
     const maxHp = 1950 - index * 50
     const currentHp = index === 0 ? 0 : maxHp - index * 120
     return {
-      // Stress min-content sizing with long CJK and unbroken Latin labels on both sides.
       accountId, playerName: index === 0 ? `T${team}_连续中文昵称LongUnbrokenPlayerNameForRosterRegression` : `T${team}_Player_${index + 1}`, tankId: 10 + index,
       tankName: ['Panzerkampfwagen超级征服者长车型名称', 'SPHT', 'Chieftain Mk. 6', 'Maus', 'IS-7', 'T-62A', 'E 100'][index % 7],
       tankClass: '', tankTier: null, team, friendly: false, loadout: null,
@@ -68,8 +54,6 @@ if (players > 0) {
   dataset.events = []
   dataset.recorderAccountId = 1002
 }
-// `?hud=exact|mixed`：宽度竞争压力夹具——非空四基地、完整 5 位 HP 数字，
-// mixed 再叠加 PARTIAL / UNKNOWN 队伍状态。只驱动现有生产 HUD，不另造布局。
 const hudStress = params.get('hud')
 if (hudStress) {
   const exactHp = (hp = 12600) => ({ timeSec: 0, currentHp: hp, knowledge: 'CURRENT', displayCapacityHp: 12600, relativeFull: true, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' })
@@ -93,8 +77,6 @@ if (hudStress) {
     captureProgress: 25 + index * 15,
   }))
 }
-// `?shell=immersive`：与 AppShell 的沉浸态同一份契约（根元素属性 + scale.css 把外壳高度 token 归零），
-// 夹具没有真实顶栏 / Tab 栏，所以用它复现「手机横屏回放把外壳让出来」后的高度预算。
 if (params.get('shell') === 'immersive') document.documentElement.dataset.shellChrome = 'immersive'
 const recorderTeam = Number(params.get('recorder') || 1)
 dataset.friendlyTeam = recorderTeam
@@ -107,17 +89,13 @@ const i18n = createI18n({
   messages,
 })
 
-// Opt-in Gun Marks facts travel beside the wire dataset, matching the production panel.
 const result = params.get('marks') === '1' ? {
   players: dataset.vehicles.map((vehicle, index) => ({ account_id: vehicle.accountId, gun_marks: index % 4 })),
 } : null
 
-// 能力切走模拟：工作台用 v-show 缓存能力面板，切走时组件不卸载、只收到 active=false。
 const active = ref(true)
 window.__pbFixture = { setActive: (value) => { active.value = !!value } }
 
-// `?ticks=1`：给 2D 时间轴提供炮击 / 击毁 facet；`?markers=1`：打开统一事件信息开关。
-// 两个参数分开，才能证明“有数据但默认关闭”和“开启后渲染”是两种状态。
 const tickFacets = params.get('ticks') === '1' ? {
   facetShots: [{ t_fire: 10, is_author: true, shooter_eid: 1 }],
   facetKills: [{ t: 20 }],

@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { shotViewerQuery, fetchShotTankData } from './agentData.js'
 import { assetProvider } from './assetProvider.js'
 
-// 射击检视搭载输入自 2026-10-15 起取资产包 tank/{id}.json（内嵌快照已退役）：
-// shotViewerQuery / fetchShotTankData 经 assetProvider 取数，这里按路径桩定。
 vi.mock('./assetProvider.js', () => ({
   assetProvider: { json: vi.fn(async (path) => {
     if (path === '/tank/101.json') {

@@ -1,16 +1,4 @@
 <script setup>
-/**
- * 射击分析能力面板（回放工作台内，Master–Detail）。
- *
- * 数据面：目标回放在本机解析（上游 Rust Core WASM `parseShotReplays`，文件不出本机）→
- * 射击总览 / 射击者筛选 / 射击列表（master）+ 射击检视（detail）。
- * 文件与 session identity 由工作台唯一持有：本面板从不自己要求文件，也没有第二份 session。
- *
- * Master–Detail（design-language §9）按**容器宽度**分档，不按视口：
- * 宽档常驻右栏；中档选中后成推开式侧栏（列表让位不遮盖）；窄档整屏面板 + 遮罩，
- * 焦点在打开时进入面板、Esc / 关闭后回到触发它的那一行。
- * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
- */
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
@@ -41,15 +29,10 @@ import SegmentedControl from './SegmentedControl.vue'
 defineOptions({ name: 'ReplayShotsPane' })
 
 const props = defineProps({
-  /** 工作台派生的目标回放文件；null = 还没选（面板只显示提示） */
   file: { type: Object, default: null },
-  /** 当前能力是否激活：false 时不解码（已在列表里的结果保留） */
   active: { type: Boolean, default: false },
-  /** 工作台给出的不可用原因（多文件未选场次等）；非空时不解析 */
   blockedReason: { type: String, default: '' },
-  /** 工作台注入的导航（router owner 不变）：在 3D 装甲查看器里打开这一发 */
   navigate: { type: Function, default: null },
-  /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
   autoFullscreenToken: { type: Number, default: 0 },
 })
 const { t } = useI18n()
@@ -96,19 +79,13 @@ const guideShot = computed(() => (isOfficialDemo(props.file)
 
 
 const paneRoot = ref(null)
-/** KeepAlive 停用（切到别的页面）时同样视为不可见：挂起的全屏请求迟到完成也必须交还 */
 const lifecycleVisible = ref(true)
 const viewerActive = () => props.active && lifecycleVisible.value
 const { isPhone } = usePlaybackPhoneForm()
-/**
- * 全屏目标是本面板根：筛选 / 选中 / 详情都是本组件状态，全屏只换容器尺寸，不重解析、不重置。
- * 全屏事实源仍是 usePlaybackFullscreen（document.fullscreenElement），无第二套状态。
- */
 const { isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen } = usePlaybackFullscreen({
   target: () => paneRoot.value,
   isPhone,
   isActive: viewerActive,
-  // 成功就绪 = 当前文件已解析完成、无错误、至少一发射击（空结果只是空态）；解析中 / 终态错误 / 被阻断都不触发。
   auto: () => ({ token: props.autoFullscreenToken, key: props.file, active: viewerActive(), ready: !!props.file && !props.blockedReason && !parsing.value && !err.value && parsedFileNow() === props.file && shots.value.length > 0 }),
 })
 const releaseFullscreen = () => { unlockOrientation(); exitOwnedFullscreen() }
@@ -118,20 +95,11 @@ onActivated(() => { lifecycleVisible.value = true })
 
 
 
-/**
- * 解码时机 = 能力激活（首次进入射击分析）：一个 watcher 同时覆盖"初始就激活"（深链直达）
- * 与"之后才激活"，也覆盖激活期间换了目标回放。同一文件不重复解码；切走不解码、保留结果。
- */
 watch([() => props.active, () => props.file, () => props.blockedReason], ([active, file, blocked]) => {
   beginDecode(active, file, blocked)
 }, { immediate: true })
 
 
-/**
- * 在 3D 装甲查看器里复现这一发：装甲查看器属于坦克百科侧（独立页面），
- * 工作台只把发射数据交出去（本地交接通道，无服务端），导航仍走 router。
- * 返回是否真的发起了导航（compact 直达据此决定清选择还是退回本地检视面板）。
- */
 const {
   layout, guideLayout, directOpening, detailOpen, isOverlay,
   detailPane, guideInset, setGuideInset,
@@ -149,19 +117,11 @@ async function openInViewer(s) {
   const shooterTank = s.shooter_tank_id || 0
   const tank = s.target_tank_id || shooterTank || 0
   if (!tank) return false
-  // **点击时刻的射击快照**贯穿交接与导航（评审 P2）：storeShotsForViewer 在调用时
-  // 同步序列化（点击时版本），而 shotViewerQuery 的 await 期间后台配置注解可能就地
-  // 修改 live 对象——继续读 live 会得到「交接 JSON 按点击时配置装配模型/炮口、URL
-  // scfg 按注解后配置选弹表」的错位组合。快照后两处消费同一版本；未注解字段在
-  // shotViewerQuery / tankViewer 内各自走既有回退，语义一致。
-  // s 是 reactive proxy（selectedShot 派生），structuredClone 不可克隆 → JSON 往返
-  // （shot facet 全为可 JSON 值，与 storeShotsForViewer 的序列化口径一致）。
   s = JSON.parse(JSON.stringify(s))
   const sequence = parseSeqNow()
   storeShotsForViewer(JSON.parse(JSON.stringify(filteredShots.value.filter(rowHas3d))), { battleStartRaw: battleStartRaw.value })
   const query = await shotViewerQuery(s)
   if (sequence !== parseSeqNow() || selectedIndex.value !== s.index || !props.active || !query || !requireFeature(Feature.PLAYBACK_3D)) return false
-  // Routing remains owned by the workspace. Both entry and viewer navigation share one config resolver.
   if (!props.navigate) return false
   props.navigate({ query })
   return true
@@ -169,25 +129,18 @@ async function openInViewer(s) {
 </script>
 
 <template>
-  <!-- data-pane-ready：解析中不置位（工作台自动居中要等真实内容）。 -->
   <div ref="paneRoot" class="shots-pane" data-testid="replay-shots-pane" :data-pane-ready="parsing ? undefined : 'true'" @keydown="onDetailKeydown">
     <Scene3DStatus v-if="parsing" mode="loading" :message="$t('agentShots.parsing')" />
-    <!-- 解析期间不显示"没选文件 / 被阻断 / 解析失败"：那些是解析**结果**，不是进行中的状态 -->
     <p v-else-if="blockedReason" class="shots-note" data-testid="shots-blocked">{{ blockedReason }}</p>
     <p v-else-if="!file" class="shots-note" data-testid="shots-empty">{{ $t('workspace.capability_upload_hint') }}</p>
     <Banner v-else-if="err" tone="danger" data-testid="shots-error">
       <p>{{ err }}</p>
     </Banner>
     <template v-else>
-      <!-- 作者严格路径 fail-visible（契约 v0.1.9 核心目标）：独立于列表 / 空态状态链——
-           author_path=error 且他人宽松路径 0 发时，警示与空态并存，
-           绝不允许只显示"没有射击"把作者链失败伪装成正常空结果 -->
       <Banner v-if="authorError" tone="warning" data-testid="shots-author-error">
         <p>{{ $t('agentShots.author_path_error') }}</p>
         <p class="shots-cause">{{ authorError.slice(0, 160) }}</p>
       </Banner>
-      <!-- 他人宽松路径 fail-visible（上游 v0.4.20）：others 缺失而 others_error 在场 =
-           内部不变量破坏（代码缺陷），不是"没有其他玩家射击"——绝不静默当全 0 统计 -->
       <Banner v-if="othersError" tone="warning" data-testid="shots-others-error">
         <p>{{ $t('agentShots.others_error') }}</p>
         <p class="shots-cause">{{ othersError.slice(0, 160) }}</p>
@@ -206,7 +159,6 @@ async function openInViewer(s) {
           data-testid="shots-fullscreen"
           @toggle="toggleFullscreen()"
         />
-        <!-- compact：射击者先给两项分段（我的 / 全部），按玩家筛选保留在下方下拉里 -->
         <SegmentedControl
           v-if="layout === 'compact'"
           class="shots-scope-switch"
@@ -292,7 +244,6 @@ async function openInViewer(s) {
           <header class="shot-detail-head">
             <div><h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3><p class="shot-detail-position">{{ $t('agentShots.shot_position', { current: selectedPosition + 1, total: filteredShots.length }) }} · {{ shotClock(selectedShot) }}</p></div>
             <div class="shot-detail-nav">
-              <!-- 滑动是快捷方式，按钮是可发现 / 可键盘操作的等价路径（首尾各自 disabled，不循环） -->
               <button
                 type="button"
                 class="shot-nav-btn"

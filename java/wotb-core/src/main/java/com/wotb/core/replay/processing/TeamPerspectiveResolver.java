@@ -14,10 +14,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * 统一解析训练房/联赛回放的 {@code perspectiveTeam}。
- * 权威结算优先，重建数据只补充录像者身份和实体映射；证据冲突时拒绝猜测。
- */
 public final class TeamPerspectiveResolver {
 
     private TeamPerspectiveResolver() {

@@ -59,7 +59,6 @@ export function createHoFPageTestHelpers({ HoFPage, DIALOG_INLINE_KEY, vi }) {
     await flushPromises()
   }
 
-  /** 通过真实的 combobox 交互选车：点开输入框 → 点击对应选项。 */
   async function pickVehicle(wrapper, selector, id) {
     await wrapper.find(`${selector} input[role="combobox"]`).trigger('click')
     await wrapper.find(`${selector} [role="option"][data-id="${id}"]`).trigger('click')

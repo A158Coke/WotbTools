@@ -12,13 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * 名人堂 / 百场 / 三环信任模型（产品决策，docs/features/hall-of-fame.md「信任模型」）：
- * <b>client facts are intentionally untrusted; server validates structure, not authenticity.</b>
- *
- * <p>服务器没有 parser：不重新解析回放、不比对回放与 facts、不做密码学证明或抽样解析。原始回放只作存档 /
- * 人工审核材料，防伪造靠管理员审核。本测试锁住这条边界，防止以后被「修复」成服务端验真。</p>
- */
 class ClientReplayFactsTrustModelTest {
 
     private static final String WELL_FORMED = """
@@ -30,7 +23,6 @@ class ClientReplayFactsTrustModelTest {
 
     @Test
     void structurallyValidButFabricatedFactsAreAcceptedBecauseAuthenticityIsNotTheServersJob() {
-        // 99999 伤害在真实对局里不可能出现：服务端照样接受——真伪由管理员对照回放附件审核
         final Battle battle = ClientReplayFacts.read(WELL_FORMED);
         assertEquals("123456789", battle.arenaId);
         assertEquals(99999, battle.players.getFirst().damageDealt);
@@ -38,7 +30,6 @@ class ClientReplayFactsTrustModelTest {
 
     @Test
     void theFactsReaderNeverSeesReplayBytes() {
-        // 结构校验的唯一输入是 facts JSON：没有任何接受回放字节 / 文件的入口（服务器不读、不比对回放）
         final List<Method> api = Arrays.stream(ClientReplayFacts.class.getDeclaredMethods())
                 .filter(m -> Modifier.isPublic(m.getModifiers()))
                 .toList();

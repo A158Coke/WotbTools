@@ -8,13 +8,6 @@ const kcUpdateToken = vi.fn(() => Promise.resolve(false))
 const kcInit = vi.fn()
 const kcInstances = []
 
-/**
- * keycloak-js 替身 scenario：
- * - `initResult` 同时决定 init() 的 resolve 值与落定后的 `adapter.authenticated`
- *   （真实 keycloak-js 中两者同源：check-sso 命中 → true + tokenParsed）；
- * - `initImpl` 覆盖 init 返回的 promise，用于悬挂 / reject 场景；
- * - `tokenParsed` 是 check-sso 命中时 adapter 上的 claims。
- */
 const kcScenario = {
   initResult: false,
   tokenParsed: null,
@@ -36,7 +29,6 @@ vi.mock('keycloak-js', () => ({
       const settle = (value) => {
         this.authenticated = value === true
         this.tokenParsed = value === true ? kcScenario.tokenParsed : null
-        // A query-looking return cannot match the SDK's default fragment callback.
         if (!this.authenticated && options.onLoad && returnUrl.searchParams.has('state')
           && !new URLSearchParams(returnUrl.hash.slice(1)).has('state')) this.login()
         return value
@@ -109,7 +101,6 @@ describe('useAuth — init recovery', () => {
     const auth = useAuth()
 
     const oldInit = auth.retryAuth()
-    // provider 解析本身是异步的一步：先让上一代真正进入 init，否则它会在 init 之前就被放弃。
     await Promise.resolve()
     expect(kcInit).toHaveBeenCalledTimes(1)
 
@@ -132,7 +123,6 @@ describe('useAuth — init recovery', () => {
     const abandonedAdapter = kcInstances.at(-1)
     await oldInit
 
-    // 被放弃的一代晚到，而且带着「已登录」的 adapter 状态。
     abandonedAdapter.authenticated = true
     abandonedAdapter.tokenParsed = { displayName: 'stale' }
     kcScenario.initImpl = null
@@ -171,8 +161,6 @@ describe('useAuth — init recovery', () => {
   })
 
   it('存在"远端登出未收敛"标记时，首屏 init 走 login-recovery（不做 check-sso 静默复登）', async () => {
-    // 真实路径是"页面加载后第一次 initAuth"（每个 useAuth 模块实例只发生一次）：
-    // 用 resetModules 复现首屏，而不是在同一模块态里再 init 一次。
     window.localStorage.setItem('wotb-auth-pending-remote-logout', '1')
     try {
       kcScenario.initResult = true
@@ -183,11 +171,9 @@ describe('useAuth — init recovery', () => {
       const auth = fresh.useAuth()
       await auth.initPromise
 
-      // login-recovery 模式的 init 选项：无 check-sso（不带 onLoad/silentCheckSsoRedirectUri）
       const lastOptions = kcInit.mock.calls.at(-1)[0]
       expect(lastOptions).not.toHaveProperty('onLoad')
       expect(lastOptions).not.toHaveProperty('silentCheckSsoRedirectUri')
-      // 且标记仍然在（用户显式登录才会清）
       expect(auth.hasPendingRemoteLogout()).toBe(true)
     } finally {
       window.localStorage.removeItem('wotb-auth-pending-remote-logout')

@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# List the tags of one application image repository for the "reuse the immutable
-# image" release gate.
-#
-# A repository that does not exist yet is NOT a registry failure: the first
-# publish of a brand-new application repository must fall through to
-# build + push. Every other failure (401/403/5xx/network/DNS) stays fatal so a
-# broken or unauthorised registry can never be mistaken for an empty repository.
 set -euo pipefail
 
 REPOSITORY="${1:?usage: list-image-tags.sh <registry-repository>}"
@@ -24,8 +17,6 @@ if [ "$status" -eq 0 ]; then
 fi
 
 if grep -Fq 'NAME_UNKNOWN' "$error_file"; then
-  # The registry explicitly reports the repository as unknown, so this is the
-  # first publish. Emit nothing; the caller takes the build path.
   exit 0
 fi
 

@@ -17,7 +17,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 百场公开排行榜查询；排名在查询时派生，不改变持久化成绩。 */
 @Service
 public class HundredLeaderboardService {
     private static final int DEFAULT_PAGE_SIZE = 50;
@@ -35,11 +34,6 @@ public class HundredLeaderboardService {
         this.mapper = mapper;
     }
 
-    /**
-     * 公开排行榜：vehicleId / nation / vehicleType 按交集处理。
-     * 全部为空走全站 Top 10；仅分类条件走候选车辆集合内 Top 10；具体车辆保持独立分页。
-     * rank query-time 派生不落库，且始终基于与结果集完全相同的筛选上下文。
-     */
     @Transactional(readOnly = true)
     public HundredLeaderboardPageDto leaderboard(final Long vehicleId,
                                                   final String nation,
@@ -70,7 +64,6 @@ public class HundredLeaderboardService {
         return mapper.toLeaderboardPage(rows, vehicleId, vehicle.name(), page, effectiveSize, rankMap(vehicleId));
     }
 
-    /** 分类筛选视图：由 CURRENT 的权威 Tier X vehicleId 派生候选集合，固定返回该上下文 Top 10。 */
     private HundredLeaderboardPageDto categoryLeaderboard(final String nation, final String vehicleType) {
         final List<Long> vehicleIds = repository.findDistinctCurrentVehicleIds().stream()
                 .filter(id -> matchesCategory(tankopedia.info(id), nation, vehicleType))
@@ -84,7 +77,6 @@ public class HundredLeaderboardService {
                 rankMap(repository.countCurrentGroupedByDamageForVehicles(vehicleIds)));
     }
 
-    /** 未筛选车辆时的默认视图：全站 CURRENT 伤害最高十条，固定首屏且不翻页。 */
     private HundredLeaderboardPageDto defaultLeaderboard() {
         final List<HundredBattleSubmission> rows = repository
                 .findTop10ByStatusAndApprovedAverageDamageIsNotNullOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
@@ -93,7 +85,6 @@ public class HundredLeaderboardService {
                 rankMap(repository.countAllCurrentGroupedByDamage()));
     }
 
-    /** 全部 CURRENT 按伤害分组计数 → 前缀和 → damage → rank（跨页并列也全局正确）。 */
     private Map<Integer, Integer> rankMap(final long vehicleId) {
         return rankMap(repository.countCurrentGroupedByDamage(vehicleId));
     }

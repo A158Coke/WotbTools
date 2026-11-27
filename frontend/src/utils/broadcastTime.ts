@@ -1,5 +1,3 @@
-// Viewer uses IANA zones (including historical DST); editor uses explicit offsets
-// so a repeated or missing local hour never silently changes the entered instant.
 export const BROADCAST_DISPLAY_ZONES = ['Asia/Shanghai', 'UTC', 'America/Los_Angeles', 'Europe/Berlin', 'Europe/Moscow'] as const
 export const BROADCAST_INPUT_OFFSETS = [480, 0, -480, -420, 60, 120, 180] as const
 export const BROADCAST_ADMIN_OFFSET = 480
@@ -34,7 +32,6 @@ export function broadcastInputFields(matchDate: string, startsAt: string | null,
   return { matchDate: local.slice(0, 10), time: local.slice(11, 23).replace(/\.000$/, '') }
 }
 
-/** null is date-only; undefined is an invalid wall time/date, never a guessed time. */
 export function broadcastInputInstant(date: string, time: string, offset: number): string | null | undefined {
   if (!time) return null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?$/.test(time)

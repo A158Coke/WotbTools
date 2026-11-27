@@ -7,10 +7,10 @@ const UP = { x: 0, y: 1, z: 0 }
 describe('planarShadowMatrix', () => {
   it('点沿光线传播方向落到平面上（不是沿反方向）', () => {
     const light = new THREE.Vector3(1, -1, 0).normalize()
-    const m = planarShadowMatrix(UP, -0.04, light, new THREE.Matrix4())   // 平面 y = 0.04
+    const m = planarShadowMatrix(UP, -0.04, light, new THREE.Matrix4())
     const p = new THREE.Vector3(1, 3, 2).applyMatrix4(m)
     expect(p.y).toBeCloseTo(0.04, 6)
-    expect(p.x).toBeCloseTo(1 + (3 - 0.04), 6)   // 高 2.96 m、45° 光 ⇒ 向 +X 落 2.96 m
+    expect(p.x).toBeCloseTo(1 + (3 - 0.04), 6)
     expect(p.z).toBeCloseTo(2, 6)
   })
 
@@ -48,7 +48,7 @@ describe('createSilhouetteShadow', () => {
     const hull = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 6)); hull.position.y = 1
     const turretPivot = new THREE.Group(); turretPivot.position.y = 2
     const turret = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 3)); turretPivot.add(turret)
-    const variant = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 3)); variant.visible = false   // 未搭载的炮塔变体
+    const variant = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 3)); variant.visible = false
     root.add(hull, turretPivot, variant)
     return { root, hull, turret, turretPivot }
   }

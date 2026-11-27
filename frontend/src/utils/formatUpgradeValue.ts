@@ -4,7 +4,6 @@ import { HIT_TRIGGER_ATTRIBUTES } from '../replay-local/compute/tankUpgrades'
 
 type Translate = (key: string, params?: Record<string, string>) => string
 
-// Units for XI values in the client hangar and the vehicle's upgrade attributes.
 const units: Record<string, string> = {
   ATTRIBUTE_NAME_GUN_RELOAD_TIME: 'SECOND',
   AUX_PENETRATION: 'MILLIMETER',
@@ -36,7 +35,6 @@ export function formatUpgradeValue(
 ): string {
   if (value == null) return '—'
   if (typeof value === 'boolean') {
-    // 命中触发二态属性走共享枚举（SSOT = tankUpgrades.ts），新增属性名只改一处。
     if (HIT_TRIGGER_ATTRIBUTES.has(name)) {
       return t(`agentTanks.configurator.upgrade_trigger_${value ? 'hit' : 'damage'}`)
     }

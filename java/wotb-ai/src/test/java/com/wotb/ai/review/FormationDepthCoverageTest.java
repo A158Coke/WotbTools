@@ -32,12 +32,10 @@ import static com.wotb.ai.review.FormationDepthEvidenceTestSupport.player;
 import static com.wotb.ai.review.FormationDepthEvidenceTestSupport.pos;
 import static com.wotb.ai.review.FormationDepthEvidenceTestSupport.reconWithPositions;
 
-/** Formation depth Coveragetests */
 class FormationDepthCoverageTest {
 
     @Test
     void regionCoverageEmitsPresenceCountsNotControlTags() {
-        // 本队 HEAVY+TD 在左侧区域有位置样本，敌方在右侧 → ownPositionPresence > 0
         final String section = FormationDepthEvidence.renderSection(battle(), reconWithPositions(20f), 1, MAP);
         assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
         assertTrue(section.contains("ownPositionPresence="), "必须输出本方位置存在数");
@@ -48,7 +46,6 @@ class FormationDepthCoverageTest {
 
     @Test
     void regionCoverageStillEmittedWhenAllBacklineType() {
-        // 本队全 TD：无重甲车辆 → 覆盖测量照常输出（火力权重即能力近似）
         final Battle battle = battle();
         battle.players = List.of(
                 player(1001L, 1, "AllyA", 9297L),
@@ -62,7 +59,6 @@ class FormationDepthCoverageTest {
 
     @Test
     void controlRegionsContestedWhenSymmetric() {
-        // 双方同区对称（本队 2 HEAVY vs 敌方 2 HEAVY，位置对称）→ 火力接近 → contested
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 10, 1001L));
@@ -72,14 +68,12 @@ class FormationDepthCoverageTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        // 双方都在同一区域附近（x=-100 与 x=-90 交错），本队 1001/1002 与敌方 2001/2002 对称
         events.add(pos(10, 40f, 10, -100f, 0f));
         events.add(pos(12, 40f, 11, -95f, 0f));
         events.add(pos(20, 40f, 20, -105f, 5f));
         events.add(pos(21, 40f, 21, -90f, 5f));
-        // 无交火 → opening=[0,100]；敌方 phase 末保持 CURRENT（对称火力对比才成立）
-        events.add(pos(22, 120f, 20, -105f, 5f));  // 2001 t=100
-        events.add(pos(23, 120f, 21, -90f, 5f));   // 2002 t=100
+        events.add(pos(22, 120f, 20, -105f, 5f));
+        events.add(pos(23, 120f, 21, -90f, 5f));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
         final Battle battle = battle();
@@ -96,13 +90,12 @@ class FormationDepthCoverageTest {
 
     @Test
     void postDeathPositionsExcludedFromControlFireCoverage() {
-        // 1001 阵亡后（deathSec=10）只有 post-death 位置 → 不进入 tracks → 不贡献 fireCoverage/controlRegions
         final Battle battle = battle();
         battle.durationS = 100d;
         for (final PlayerResult pl : battle.players) {
             if (pl.accountId == 1001L) {
                 pl.survived = false;
-                pl.deathTimeMillis = 10_000L; // deathSec = 10
+                pl.deathTimeMillis = 10_000L;
                 pl.settlementLifeTimeSec = 10;
             }
         }
@@ -115,22 +108,19 @@ class FormationDepthCoverageTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        events.add(pos(10, 40f, 10, -100f, 0f));   // 1001 t=20（阵亡后，应过滤）
-        events.add(pos(11, 40f, 11, -200f, 0f));   // 1002 t=20
-        events.add(pos(20, 40f, 20, 200f, 0f));    // 2001
-        events.add(pos(21, 40f, 21, 230f, 50f));   // 2002
+        events.add(pos(10, 40f, 10, -100f, 0f));
+        events.add(pos(11, 40f, 11, -200f, 0f));
+        events.add(pos(20, 40f, 20, 200f, 0f));
+        events.add(pos(21, 40f, 21, 230f, 50f));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
         final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
         assertFalse(section.contains("account:1001"), "阵亡车辆不得进入阵型/覆盖测量, got: " + section);
-        // 本队存活 1002 有位置、敌方 2001/2002 有位置 → 参考完整，REGION_COVERAGE_MEASUREMENTS 正常输出
         assertTrue(section.contains("REGION_COVERAGE_MEASUREMENTS"), section);
     }
 
     @Test
     void carriedFriendlyCountsInRegionPresence() {
-        // carry-forward 的己方车辆（phase 内无新位置）仍计 1 到其区域的 ownPositionPresence
-        // （presence 基于 resolved 车辆位置 state，不是位置包数量）。
         final Battle battle = battle();
         battle.durationS = 40d;
         final List<ReplayEvent> events = new ArrayList<>();
@@ -142,14 +132,12 @@ class FormationDepthCoverageTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        // 己方位置只在 t=10（mid 内 carry-forward）；敌方 mid 内新鲜（t=24）→ mid CURRENT 完整
-        // 1001 在 (-100,0)（region 4）、1002 在 (100,-200)（region 9）：两辆分属不同区域
-        events.add(pos(10, 30f, 10, -100f, 0f));   // 1001 t=10
-        events.add(pos(11, 30f, 11, 100f, -200f)); // 1002 t=10
-        events.add(pos(12, 28f, 20, 200f, 0f));    // 2001 t=8
-        events.add(pos(13, 28f, 21, 230f, 50f));   // 2002 t=8
-        events.add(pos(14, 44f, 20, 200f, 0f));    // 2001 t=24
-        events.add(pos(15, 44f, 21, 230f, 50f));   // 2002 t=24
+        events.add(pos(10, 30f, 10, -100f, 0f));
+        events.add(pos(11, 30f, 11, 100f, -200f));
+        events.add(pos(12, 28f, 20, 200f, 0f));
+        events.add(pos(13, 28f, 21, 230f, 50f));
+        events.add(pos(14, 44f, 20, 200f, 0f));
+        events.add(pos(15, 44f, 21, 230f, 50f));
         events.add(new com.wotb.core.replay.event.DamageEvent(30, new ReplayTimestamp(20.5f, null), 8,
                 DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
@@ -158,7 +146,6 @@ class FormationDepthCoverageTest {
         final String mid = midBlock(section);
         assertTrue(mid.contains("REGION_COVERAGE_MEASUREMENTS"), mid);
         assertTrue(mid.contains("coverageCompleteness=ownRef=2/2 enemyRef=2/2"), mid);
-        // 己方 2 辆（含 carry-forward）→ 每区 presence 按车辆计 1（不是各自 2 个包），合计 2
         int ownPresenceTotal = 0;
         for (final String line : mid.split("\n")) {
             if (!line.contains("ownPositionPresence=")) {
@@ -175,7 +162,6 @@ class FormationDepthCoverageTest {
 
     @Test
     void regionPresenceCountsVehiclesNotPositionPackets() {
-        // 同一车辆 phase 内 100 个 PositionChanged → presence 仍是 1（不是 100）。
         final Battle battle = battle();
         battle.durationS = 60d;
         final List<ReplayEvent> events = new ArrayList<>();
@@ -187,22 +173,20 @@ class FormationDepthCoverageTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        // 本队 1001 在同一区域高频发包（100 次）→ presence 仍 1；1002 在另一区域静止单点；敌方保持新鲜
         int seq = 10;
         for (int i = 0; i < 100; i++) {
             events.add(pos(seq++, 40f + i * 0.1f, 10, -100f, 0f));
         }
-        events.add(pos(seq++, 40f, 11, 100f, -200f)); // 1002（region 9，与 1001 的 region 4 不同）
+        events.add(pos(seq++, 40f, 11, 100f, -200f));
         events.add(pos(seq++, 40f, 20, 200f, 0f));
         events.add(pos(seq++, 40f, 21, 230f, 50f));
-        events.add(pos(seq++, 80f, 20, 200f, 0f));   // 2001 t=60（phase 末新鲜）
-        events.add(pos(seq++, 80f, 21, 230f, 50f));  // 2002 t=60
+        events.add(pos(seq++, 80f, 20, 200f, 0f));
+        events.add(pos(seq++, 80f, 21, 230f, 50f));
         events.add(new com.wotb.core.replay.event.DamageEvent(seq, new ReplayTimestamp(30f, null), 8,
                 DecodeConfidence.EXACT, 11, 20, null, null, 200, false));
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);
         final String section = FormationDepthEvidence.renderSection(battle, recon, 1, MAP);
-        // 交火 t=10 → opening [0,25] / mid [25,45] / late [45,60]；1001 的 100 个包都在 opening
         assertTrue(section.contains("ownPositionPresence="), section);
         for (final String line : section.split("\n")) {
             if (!line.contains("coverageCompleteness=ownRef=2/2") || !line.contains("ownPositionPresence=")) {
@@ -218,8 +202,6 @@ class FormationDepthCoverageTest {
 
     @Test
     void spectatorDoesNotAffectCoverage() {
-        // 非 #301（spectator/observer/camera/静态实体）位置不得影响战术位置覆盖：
-        // coverageCompleteness 仍按 #301 actual combatants 计算，输出不得出现 spectator 账号。
         final Battle battle = battle();
         battle.durationS = 100d;
         final List<ReplayEvent> events = new ArrayList<>();
@@ -231,17 +213,16 @@ class FormationDepthCoverageTest {
                 DecodeConfidence.EXACT, 20, 2001L));
         events.add(new ParticipantMappingEvent(4, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 21, 2002L));
-        // spectator（非 #301）：mapping 到 accountId=9999，整场大量位置
         events.add(new ParticipantMappingEvent(5, new ReplayTimestamp(20f, null), 8,
                 DecodeConfidence.EXACT, 50, 9999L));
         events.add(pos(20, 40f, 10, -100f, 0f));
         events.add(pos(21, 40f, 11, -200f, 0f));
         events.add(pos(22, 40f, 20, 200f, 0f));
         events.add(pos(23, 40f, 21, 230f, 50f));
-        events.add(pos(24, 120f, 20, 210f, 0f));   // 2001 t=100
-        events.add(pos(25, 120f, 21, 235f, 50f));  // 2002 t=100
+        events.add(pos(24, 120f, 20, 210f, 0f));
+        events.add(pos(25, 120f, 21, 235f, 50f));
         for (int i = 0; i < 50; i++) {
-            events.add(pos(30 + i, 40f + i * 0.5f, 50, 0f, 0f)); // spectator 位置
+            events.add(pos(30 + i, 40f + i * 0.5f, 50, 0f, 0f));
         }
         final ReplayReconstruction recon = new ReplayReconstruction(null, null, 100f, 20f, List.of(),
                 events, List.of(), null, null, null);

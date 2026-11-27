@@ -12,26 +12,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 将 Team Context 压缩为确定性、长度受限的 AI 输入。
- * 不接收或输出原始 ReplayEvent/逐帧位置流。
- * <p>
- * 使用 AiTokenEstimator 进行 token 预算管理，不再使用固定字符限制或固定数量截断。
- * </p>
- * <p><b>Canonical Timeline 契约（PR #102）</b>：本类<b>不</b>构建
- * {@link BattleTimeline}——build+validation 的唯一入口在
- * {@link TeamReplayAnalysisService} orchestration 层（任何 LLM 调用之前，一次 build
- * 一次 validation）；本类只做确定性渲染。production Team Call #2 通过带
- * {@code BattleTimeline} 的 {@link #single(SingleTeamBattleAnalysisContext, List,
- * PreBattleStrategicPrior, AiTokenEstimator, int, BattleTimeline)} 重载接收已验证
- * timeline 并注入 TACTICAL TIMELINE 段；无 timeline 的兼容/测试重载不渲染该段。</p>
- */
 public final class TeamAiPromptBuilder {
 
     private TeamAiPromptBuilder() {
     }
 
-    // Package compatibility forwarders; structured roster facts live in TeamRosterFormatter.
 
     static String structuredTankFacts(final long tankId) {
         return TeamRosterFormatter.structuredTankFacts(tankId);
@@ -41,13 +26,11 @@ public final class TeamAiPromptBuilder {
         return TeamRosterFormatter.extraInfoFact(extraInfo);
     }
 
-    // ---- 向后兼容的重载（无 token 估算，适用于测试等） ----
 
     public static PromptInput single(final SingleTeamBattleAnalysisContext context) {
         return single(context, List.of(), null, null, Integer.MAX_VALUE);
     }
 
-    // ---- 主入口（带 token 预算） ----
 
     public static PromptInput single(
             final SingleTeamBattleAnalysisContext context,
@@ -59,13 +42,6 @@ public final class TeamAiPromptBuilder {
         return single(context, extraLimitations, prior, estimator, maxInputTokens, (String) null);
     }
 
-    /**
-     * production Team Call #2 入口：接收 orchestration 层已 build+validate 的 canonical
-     * {@link BattleTimeline}（PR #102 ）——一次 build、一次 validation 后下传，
-     * 本方法只渲染（绝不再次 build / 绝不 catch 后降级）；validated timeline 渲染为空是
-     * 编程错误 → fail loud。timeline 为 null 只允许出现在兼容/测试入口（本方法不接收 null
-     * 语义：production 必然非 null，若调用方传入 null 等价于无 timeline 段）。
-     */
     public static PromptInput single(
             final SingleTeamBattleAnalysisContext context,
             final List<String> extraLimitations,
@@ -88,9 +64,6 @@ public final class TeamAiPromptBuilder {
     ) {
         final Set<String> limitations = collectLimitations(context, extraLimitations);
 
-        // 先构建 HPF：对方阵容属权威结算且体量很小（≤7 行），与本队事实同为 mandatory，
-        // 不能被 optional 预算裁掉。构建结果决定是否需要补 OPPOSING_LINEUP_UNAVAILABLE，
-        // 因此必须在 header 写出 unitLimitations 之前完成。
         final TeamPromptBudgetWriter hpfTemp = new TeamPromptBudgetWriter();
         final Map<Long, PlayerResult> playersByAccount = new HashMap<>();
         if (context.battle() != null && context.battle().players != null) {
@@ -104,7 +77,6 @@ public final class TeamAiPromptBuilder {
                 hpfTemp, context.features(), context.analysisUnitId(), List.copyOf(limitations),
                 playersByAccount);
         if (!TeamRosterFormatter.appendOpposingTeam(hpfTemp, context.battle(), context.perspectiveTeam())) {
-            // prompt 要求逐车分析对方；拿不到对方名册时必须显式告知，避免 AI 跳过或编造
             limitations.add("OPPOSING_LINEUP_UNAVAILABLE");
         }
         final String hpfBlock = hpfTemp.content();
@@ -114,7 +86,6 @@ public final class TeamAiPromptBuilder {
                         ? TeamRosterFormatter.resolveDisplayLabel(context.battle().players, context.perspectiveTeam())
                         : "");
 
-        // 构建 header
         final StringBuilder headerBuf = new StringBuilder();
         headerBuf.append("=== SINGLE_TEAM_CONTEXT ===\n");
         headerBuf.append("analysisUnitId=").append(TeamEvidenceFormatter.quoteData(context.analysisUnitId())).append("\n");
@@ -122,14 +93,10 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("battleIdentity=").append(TeamEvidenceFormatter.quoteData(context.battleId())).append("\n");
         headerBuf.append("category=").append(context.battleCategory()).append("\n");
         if (context.battle() != null) {
-            // user-facing 名称只使用 backend display labels；
-            // 无可靠 clan（无 clan / 平票 / 非多数）时为空串，prompt 规则要求 fallback「我方/对方」。
             final String teamLabel = TeamRosterFormatter.resolveDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
             final String opponentLabel = TeamRosterFormatter.resolveOpponentDisplayLabel(
                     context.battle().players, context.perspectiveTeam());
-            // display label：无可靠 clan 时输出 (none)，prompt 规则要求正文称「我方/对方」；
-            // 不使用 quoteData 的 UNKNOWN fallback（避免把机器标签当队名泄漏给 LLM/用户）
             headerBuf.append("teamDisplayLabel=").append(
                     StringUtils.hasText(teamLabel) ? TeamEvidenceFormatter.quoteData(teamLabel) : "(none)").append("\n");
             headerBuf.append("opponentDisplayLabel=").append(
@@ -145,17 +112,13 @@ public final class TeamAiPromptBuilder {
         headerBuf.append("unitLimitations=").append(limitations).append("\n");
         final String headerBlock = headerBuf.toString();
 
-        // Canonical Timeline 时间线段（团队视角·双方对称）：由 orchestration 层 build+validate
-        // 后传入（timelineBlock 参数），本方法只做确定性渲染/预算裁剪，绝不在此 build。
         String optBlock = buildOptionalBlock(context, limitations, true, timelineBlock);
 
-        // 如果 mandatory（header + HPF + prior）超出 token 预算，直接抛出异常
         if (estimator != null) {
             final String mandatoryContent = headerBlock + priorBlock + hpfBlock;
             if (estimator.estimateTextTokens(mandatoryContent) > maxInputTokens) {
                 throw new AiPromptBudgetExceededException();
             }
-            // 超预算时整个 POINTS_SITUATION 区块移除（不留半截正文再追加 AI_INPUT_TRUNCATED）
             if (estimator.estimateTextTokens(mandatoryContent + optBlock) > maxInputTokens) {
                 final String optNoPoints = buildOptionalBlock(context, limitations, false, timelineBlock);
                 if (!optNoPoints.equals(optBlock)) {
@@ -164,7 +127,6 @@ public final class TeamAiPromptBuilder {
             }
         }
 
-        // 写入所有内容
         final TeamPromptBudgetWriter writer = new TeamPromptBudgetWriter();
         writer.appendRequired(headerBlock);
         writer.appendRequired(priorBlock);
@@ -176,7 +138,6 @@ public final class TeamAiPromptBuilder {
                 Map.of(context.analysisUnitId(), List.copyOf(limitations)));
     }
 
-    /** 构建 optional 证据正文：includePointsSituation=false 时点数局势段整体不输出（预算裁剪用）。 */
     private static String buildOptionalBlock(
             final SingleTeamBattleAnalysisContext context,
             final Set<String> limitations,
@@ -190,20 +151,17 @@ public final class TeamAiPromptBuilder {
         TeamBattleEvidenceFormatter.appendOptionalDetails(optTemp, context.features(), context.analysisUnitId(),
                 context.battle() == null ? null : context.battle().mapName,
                 context.battle(), context.perspectiveTeam(), List.copyOf(limitations));
-        // 敌方最后已知位置（观测子集）：与其它 optional 证据同级，超预算时整体被裁剪
         final String enemyPositions = EnemyLastKnownPositionsSection.renderTeamSection(
                 context.reconstruction(), context.battle(), context.perspectiveTeam());
         if (!enemyPositions.isEmpty()) {
             optTemp.append("\n" + enemyPositions);
         }
-        // 逐成员掉血窗口（事件流观测子集）：与 OBSERVED 聚合同一覆盖率口径
         TeamBattleEvidenceFormatter.appendMemberDamageReceivedWindows(
                 optTemp,
                 context.battle(),
                 context.features() == null ? List.of() : context.features().members(),
                 context.reconstruction(),
                 limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
-        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：完整区块，超预算时整体移除
         if (includePointsSituation) {
             TeamOutcomeFormatter.appendPointsSituation(
                     optTemp,
@@ -212,7 +170,6 @@ public final class TeamAiPromptBuilder {
                     context.perspectiveTeam(),
                     limitations.contains("OBSERVED_DAMAGE_IS_PARTIAL"));
         }
-        // 阵型深度（前后排）与区域覆盖测量（确定性，仅团队路径）：小段，随 optional 预算裁剪
         final String formationDepth = FormationDepthEvidence.renderSection(
                 context.battle(),
                 context.reconstruction(),
@@ -221,7 +178,6 @@ public final class TeamAiPromptBuilder {
         if (!formationDepth.isEmpty()) {
             optTemp.append(formationDepth);
         }
-        // 身后血量/位置优势测量（确定性）：小段，随 optional 预算裁剪
         final String behindLine = RelativeDepthHpEvidence.renderTeamSection(
                 context.battle(),
                 context.reconstruction(),
@@ -233,14 +189,6 @@ public final class TeamAiPromptBuilder {
         return optTemp.content();
     }
 
-    /**
-     * 渲染已验证 canonical timeline 的 TACTICAL TIMELINE 段（确定性；只渲染，不 build、
-     * 不 catch、不静默降级）。
-     * <p>PR #102 ：timeline 由 orchestration 层在 LLM 调用之前构建并验证后传入，
-     * 此处只消费；{@code timeline == null}（兼容/测试入口未提供 validated timeline）时不
-     * 渲染任何段；非 null 却渲染为空是编程错误 → fail loud，不得降级为「无 timeline 的
-     * AI Review」。</p>
-     */
     static String renderTimelineBlock(final BattleTimeline timeline, final int perspectiveTeam) {
         if (timeline == null) {
             return "";
@@ -250,8 +198,6 @@ public final class TeamAiPromptBuilder {
             throw new IllegalStateException(
                     "validated team timeline rendered blank TACTICAL TIMELINE: map=" + timeline.mapCode());
         }
-        // Focus Window 段（确定性）：与 TACTICAL TIMELINE 同一已验证 timeline 渲染，
-        // 只输出 1-3 个信息密度最高的决策窗口；无窗口时省略该段。
         final String focusWindows = TeamAiContextCompiler.renderFocusWindowsSection(timeline, perspectiveTeam);
         final String objectiveState = TeamAiContextCompiler.renderObjectiveStateSection(timeline, perspectiveTeam);
         return "\n=== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ===\n" + section

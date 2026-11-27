@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Android release regression suite entry point. Tests use only isolated fixtures.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

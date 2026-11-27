@@ -11,10 +11,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * 架构规则 mutation/negative 测试：直接导入夹具包并执行真实 {@code ArchRule}，
- * 证明规则确实会拒绝违规结构（防止规则空转 / 语义反转回归）。
- */
 class WebArchitectureRuleMutationTest {
 
     private static JavaClasses importFixtures(final String... packages) {

@@ -2,13 +2,21 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 
-const props = defineProps({ open: Boolean, portrait: Boolean, anchor: Object, host: Object })
+const props = defineProps({
+  open: Boolean,
+  portrait: Boolean,
+  anchor: Object,
+  host: Object,
+  panelTestid: { type: String, default: 'display-panel' },
+  ariaLabelKey: { type: String, default: 'recon.map.playback.panel_display' },
+  closeTestid: { type: String, default: 'display-close' },
+  tourId: { type: String, default: 'playback-display-options' },
+})
 const emit = defineEmits(['close'])
 const panel = ref(null)
 const placement = ref({})
 let observer
 
-/** 最近的 `overflow: hidden/clip` 祖先链的上下界：它们会真的裁掉内容（可滚动祖先不算，那是可滚动触达）。 */
 function clipBounds(element) {
   let top = -Infinity
   let bottom = Infinity
@@ -35,18 +43,11 @@ function measure() {
   const paddingLeft = parseFloat(style.paddingLeft) || 0
   const paddingTop = parseFloat(style.paddingTop) || 0
   const paddingRight = parseFloat(style.paddingRight) || 0
-  // 可用区不只被视口限制，还被**裁剪祖先**限制：工作台根是 `overflow: hidden`，宿主内容比它高时
-  // （全屏横屏 844×390 实测如此）面板即使落在视口内也会被根的 overflow 切掉下半部分，
-  // 里面的选项看得见却点不到。所以先把裁剪链的上下界并进来。
   const clip = clipBounds(props.host)
   const viewportTop = Math.max(host.top, clip.top, 0)
   const viewportBottom = Math.min(host.bottom, clip.bottom, window.innerHeight)
-  // 锚点也要先夹进可见交集：宿主整块位于视口之外时（矮横屏把工作台推到首屏下方就是这样），
-  // 锚点本身在视口外，按它算「可用空间」会得出一个屏幕外的答案（实测 above=300 而可见只有 111）。
   const anchorTop = Math.min(Math.max(anchor.top, viewportTop), Math.max(viewportTop, viewportBottom))
   const anchorBottom = Math.min(Math.max(anchor.bottom, anchorTop), Math.max(viewportTop, viewportBottom))
-  // 紧凑横屏的传输条是全宽常驻条：Display 锚在条内 gear 上，必须整块停在条的上沿之外，
-  // 否则会盖住传输条顶部（844×390 实测 8px 重叠）。其它形态保持原有锚定行为。
   const compactLandscape = typeof window.matchMedia === 'function'
     && window.matchMedia('(pointer: coarse) and (orientation: landscape) and (height <= 520px)').matches
   const transport = compactLandscape ? props.anchor.closest?.('.pb-transport-slot') : null
@@ -55,17 +56,12 @@ function measure() {
     : anchorTop
   const above = Math.max(0, aboveAnchorTop - viewportTop - edge - gap)
   const below = Math.max(0, viewportBottom - anchorBottom - edge - gap)
-  // 可见高度不足时 selected 侧会压到 0，此时保留一个下限，避免 max-height 把面板压成不可用。
   const minimumPane = 96
   const abovePane = Math.max(above, Math.min(minimumPane, viewportBottom - viewportTop))
   const belowPane = Math.max(below, Math.min(minimumPane, viewportBottom - viewportTop))
   const abovePreferred = panel.value.scrollHeight <= abovePane || abovePane >= belowPane
   const available = abovePreferred ? abovePane : belowPane
   const width = Math.min(panel.value.offsetWidth, hostWidth - paddingLeft - paddingRight - edge * 2)
-  // 面板自身高度也按可见交集收口，保证它始终落在**可见**范围内（而不是宿主范围内）。
-  // max-height 是 border-box（全局 `box-sizing: border-box`），上下边框会吃掉内容高度：
-  // 内容恰好等于 available 时 clientHeight 少 2px，面板出现无意义滚动条（1600×900 实测 644>642）。
-  // 边框是面板外框的一部分，把 borderY 计入可用高度，内容可放下时就不再被压着滚。
   const borderY = Math.max(0, panel.value.offsetHeight - panel.value.clientHeight)
   const outerAvailable = available + borderY
   const height = Math.min(panel.value.scrollHeight + borderY, outerAvailable, Math.max(0, viewportBottom - viewportTop))
@@ -74,7 +70,6 @@ function measure() {
   const aboveTop = aboveAnchorTop - originTop - gap - height
   const rawTop = abovePreferred ? aboveTop : anchorBottom - originTop + gap
   placement.value = {
-    // 面板以 host 的内边距盒为定位基准，故先扣掉左侧内边距再夹到 host 内。
     left: `${Math.max(paddingLeft + edge, Math.min(anchor.right - originLeft - width, hostWidth - paddingRight - width - edge))}px`,
     top: `${Math.min(Math.max(rawTop, topMin), topMax)}px`,
     maxHeight: `${outerAvailable}px`,
@@ -86,34 +81,16 @@ function dismiss(event) {
   if (!panel.value?.contains(event.target) && !props.anchor?.contains(event.target)) emit('close')
 }
 
-/**
- * 只在元素真的可聚焦时动焦点，并且以「焦点确实落上去了」为准（focus() 对不可聚焦元素是静默 no-op）。
- *
- * 两个关键点：
- *
- * 1. **`preventScroll: true`**。默认的 `focus()` 会把元素滚进视口，而这是一个锚定在 gear 上的
- *    非 modal 浮面：打开它不该改变页面滚动位置。少了这一项，打开 Display 会连带整页滚动一次、
- *    把 `.pb-root` 推出视口，浮面的可用高度随之变化（矮横屏 844×390 上直接表现为浮面落到可见区
- *    之外）。这不是"修 race"，是这次焦点转移本来就不该有的副作用。
- * 2. 可见性用 `getClientRects().length` 判断（不依赖布局引擎，也不需要量尺寸）：gear 在部分
- *    形态下会被隐藏，把焦点丢给一个看不见的按钮会让键盘用户彻底失去落点。
- */
 function focusIfPossible(element) {
   if (!element || typeof element.focus !== 'function' || element === document.activeElement) return false
   if (element.getClientRects && element.getClientRects().length === 0) return false
   element.focus({ preventScroll: true })
   return document.activeElement === element
 }
-/**
- * 非 modal 的锚定设置面也要有键盘落点：打开时进入面内（优先关闭按钮），关闭时把焦点还给 gear。
- * 只记录「这一轮是不是我们把焦点搬进面里的」，所以面不是自己打开的就不还回去；
- * gear 不可见（宽度/高度为 0）时 focusIfPossible 返回 false，此时不把焦点搬出去 —— 不给键盘用户
- * 一个看不见的落点。
- */
 let focusMovedIn = false
 function syncFocus(open) {
   if (open) {
-    focusMovedIn = focusIfPossible(panel.value?.querySelector('[data-testid="display-close"]'))
+    focusMovedIn = focusIfPossible(panel.value?.querySelector(`[data-testid="${props.closeTestid}"]`))
       || focusIfPossible(panel.value)
     return
   }
@@ -128,13 +105,11 @@ watch(() => [props.open, props.portrait, props.host, props.anchor], async () => 
   }
   measure()
 }, { flush: 'post' })
-// 焦点与定位分开：定位走上面那个（量完就写），焦点只在开合那一刻动一次。
 watch(() => props.open, (open) => syncFocus(open), { flush: 'post' })
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined') observer = new ResizeObserver(measure)
   nextTick(() => {
     if (props.open && observer) for (const el of [props.host, props.anchor, panel.value]) if (el) observer.observe(el)
-    // 挂载时就已经是打开状态（宿主 v-if 挂载即打开）不会触发上面的 watch，这里补一次落点。
     if (props.open) syncFocus(true)
     measure()
   })
@@ -149,15 +124,12 @@ useEventListener(() => document, 'keydown', dismiss)
 </script>
 
 <template>
-  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" data-tour="playback-display-options" @pointerdown.stop @click.stop>
+  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t(props.ariaLabelKey)" :data-testid="props.panelTestid" :data-tour="props.tourId" @pointerdown.stop @click.stop>
     <slot />
   </section>
 </template>
 
 <style scoped>
-/* 工作台内最高层（§5 瞬态优先）：既要压过常驻控制条，也要压过可拖拽的车辆详情面板。
-   Display 在外点时即关闭，所以它和详情面板同时可见时一定是更晚打开的那个——被详情面板
-   盖住就是"刚打开的面看不见"（实测宽档 / 横屏下显示开关整块被遮）。层序由 token 阶梯保证，不靠加大数值。 */
 .pb-display-surface {
   position: absolute;
   z-index: var(--pb-z-modal);
@@ -165,9 +137,6 @@ useEventListener(() => document, 'keydown', dismiss)
   flex-direction: column;
   gap: var(--space-1);
   inline-size: min(100% - var(--space-4), clamp(18rem, 32cqw, 28rem));
-  /* 高度必须收在宿主工作台内：工作台是 `overflow: hidden`，面一旦更高，下半部分的选项会被
-     直接裁掉（实测全屏横屏 844×390：HP 档位 / 防遮 / 重置视图 / 事件 / 隐藏 UI 五项不可达）。
-     收住高度后由自身 `overflow: auto` 承接，变成"可滚动触达"。 */
   max-block-size: calc(100% - var(--space-4));
   padding: var(--space-3);
   overflow: auto;
@@ -176,15 +145,8 @@ useEventListener(() => document, 'keydown', dismiss)
   background: var(--color-surface-2);
   box-shadow: var(--elevation-3);
 }
-/* 竖屏是流内的一块面，顺序由宿主自己决定：2D 的 `.pb-main` 竖屏下就是普通文档流
-   （源码顺序已把 Display 排在传输控件之后），3D 的 `.portrait-flow` 才有显式 order 阶梯。
-   这里**不能**统一写死 order —— 那会把 2D 的面推到竖屏里很高的详情 / 名册块之后，
-   变成「点了 gear 却什么都不发生」。 */
 .pb-display-portrait { position: static; inline-size: 100%; max-block-size: 60dvh; }
-/* tabindex="-1" 只是给键盘落点用的（打开时焦点进入面内），程序化聚焦不画焦点环 */
 .pb-display-surface:focus { outline: none; }
-/* 场景短视口横屏：选项行 40px、滚动口高度受传输条限制，9px 内边距会让最后一行
-   恰好被滚动口裁掉 2px（667×375 实测）。再收一档到 6px，让可见行完整落在滚动口内。 */
 @media (pointer: coarse) and (orientation: landscape) and (height <= 520px) {
   .pb-display-surface { padding: var(--space-2); }
 }

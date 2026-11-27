@@ -1,20 +1,4 @@
 <script setup>
-/**
- * 首页 = 纯展示页（2026-10-18 重排）。它**不承担导航**。
- *
- * 依据：`AppSidebar.vue`（桌面 / 平板）与 `AppNavDrawer.vue`（手机抽屉）已经覆盖
- * `app/navigation.js:PRIMARY_NAV` 的全部功能入口，三档都在。首页再摆一排功能卡就是把
- * 侧边栏抄一遍，所以这里只留一个功能入口（Replay Workspace / 上传回放）和 Web 侧边栏没有的
- * 非功能 / 转化入口：Android 下载（只在 Web 首屏）、赞助、反馈。
- *
- * 另一条硬约束：`app/viewRegistry.js` 的 `replay` / `battle-playback` / `ai-review` /
- * `agent-replay` / `agent-shots` 五个 view 落在同一个 `ReplayWorkspace`，只是初始 capability
- * tab 不同。它们不是独立目的地，整页只能有 Hero 那一个回放入口。
- *
- * 分段（4.0）：① 整屏 Hero（当前主题主视觉：大屏横版、小屏竖版；数据带、赞助卡、反馈都在首屏）
- * ② 能力展示（**无链接**，纯视觉：两段整幅截图 + 叠字、两张卡片）。小屏与 Android App 用同一套首页。
- * ② 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含用户的私有数据。
- */
 import { computed, inject, ref, watch } from 'vue'
 import * as api from '../api/hall-of-fame.js'
 import { ArrowRight, Heart, MessageSquare, Smartphone } from 'lucide-vue-next'
@@ -35,30 +19,23 @@ import { useUiProfile } from '../composables/useUiProfile.js'
 
 const onboarding = inject(ONBOARDING_KEY, null)
 const openFeedback = inject(FEEDBACK_KEY, null)
-// 地图名走 common/map_names.json 的三语表（与 Playback / Workspace 同一个 mapLabel），
-// 不把 `savanna` 这种原始 key 直接摆在 hero 上。
 const { locale } = useI18n()
-// Android App 内已经有应用本身，「下载 Android 版」不出现（平台判断复用 usePlatformBridge 的唯一实现）。
 const androidApp = isAndroidApp()
-// kicker 跟随当前主题名（春 · 青山 …）；主视觉由主题 token 提供
 const { uiProfile } = useUiProfile()
 
 const topRecord = ref(null)
 const recordTotal = ref(null)
 
-/** 数字格式跟随当前 locale（design-language §4）；Intl 自己决定千分位，不写死 ASCII 空格。 */
 const countFormatter = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }))
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
   return Number.isFinite(damage) ? formatCount(damage) : '--'
 })
 const recordTotalDisplay = computed(() => {
-  // `?? NaN` 是必需的：Number(null) === 0，缺失的总数会伪装成「收录 0 条」这个事实。
   const total = Number(recordTotal.value ?? NaN)
   return Number.isFinite(total) ? formatCount(total) : '--'
 })
 
-/** ② 能力展示：纯视觉，没有链接。截图尺寸写死在模板里以免加载时抖版。前两段整幅 + 叠字，后两段卡片。 */
 const featured = [
   { id: 'playback-3d', image: shotPlayback3dImg, w: 1600, h: 798, titleKey: 'home.showcasePlaybackTitle', descKey: 'home.showcasePlaybackDesc' },
   { id: 'armor', image: shotArmorImg, w: 1600, h: 1043, titleKey: 'home.showcaseArmorTitle', descKey: 'home.showcaseArmorDesc', callouts: ['home.calloutRicochet', 'home.calloutPenetration', 'home.calloutChance'] },
@@ -68,8 +45,6 @@ const cards = [
   { id: 'tankopedia', image: shotTankopediaImg, w: 1600, h: 1165, titleKey: 'home.showcaseTankopediaTitle', descKey: 'home.showcaseTankopediaDesc' },
 ]
 
-// 首次连通性检测完成前 HoF 门禁按设计 fail-closed（useFeatureGate.requireFeature）：
-// 冷启动时 onMounted 直接请求会被拒绝，必须等名人堂真正可用再加载（与 HoFPage 同一模式）。
 const { availability } = useFeatureGate()
 watch(() => availability(Feature.HALL_OF_FAME).available, (available) => {
   if (available && !topRecord.value) loadTopDamageRecord()
@@ -77,7 +52,6 @@ watch(() => availability(Feature.HALL_OF_FAME).available, (available) => {
 
 async function loadTopDamageRecord() {
   try {
-    // 同一响应同时给出榜首记录与收录总数（HallOfFamePageDto.totalItems），数据带不额外发请求。
     const res = await api.hofList({ page: 1, size: 1 })
     topRecord.value = res?.items?.[0] ?? null
     recordTotal.value = res?.totalItems ?? null
@@ -91,9 +65,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 
 <template>
   <main class="home-stage">
-    <!-- ① 整屏 Hero：主视觉、标题、主按钮、数据带；赞助卡与反馈在首屏（大屏右下，小屏紧接其后） -->
     <section class="home-hero" data-testid="home-hero">
-      <!-- 装饰层放在内容**之前**：两者都定位，后出现的内容自然压在上面，不需要 z-index。 -->
       <div class="home-hero-decor" aria-hidden="true"></div>
       <div class="home-hero-inner">
         <p class="home-hero-kicker">WOTBTOOLS · {{ $t(`uiProfile.${uiProfile}`) }}</p>
@@ -101,8 +73,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
           <span class="home-hero-line">{{ $t('home.heroLine1') }}</span>
           <span class="home-hero-line is-accent">{{ $t('home.heroLine2') }}</span>
         </h1>
-        <!-- 副标题 + 按钮在左，瞄准框在右列：放进布局流而不是绝对定位，它只能占标题与数据带之间的空白，
-             任何视口、任何语言下都不会压到文字和按钮（之前按百分比定位，会盖住新手教程 / 赞助卡） -->
         <div class="home-hero-mid">
         <div class="home-hero-lead">
         <p class="home-hero-subtitle">{{ $t('home.heroSubtitle') }}</p>
@@ -118,7 +88,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
         </div>
 
         <div class="home-hero-foot">
-          <!-- 实时数据带：两个数字同源于一次 /api/hof 响应 -->
           <dl class="home-stats">
             <div class="home-stat">
               <dt>{{ $t('home.highestDamageRecord') }}</dt>
@@ -153,7 +122,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
       </div>
     </section>
 
-    <!-- ② 能力展示：没有一个链接，导航由侧边栏 / 抽屉承担 -->
     <section class="home-showcase" aria-labelledby="home-showcase-title">
       <h2 id="home-showcase-title" class="visually-hidden">{{ $t('home.showcaseTitle') }}</h2>
       <article v-for="(item, index) in featured" :key="item.id" class="home-feature" :class="`is-${item.id}`">
@@ -191,11 +159,9 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 <style scoped>
 .home-stage { display: grid; color: var(--color-text-primary); }
 
-/* ① Hero —— 整屏：主视觉跟随主题（design-language §2 装饰插槽 1），文字落在主题遮罩压出的纯色区（WCAG 1.4.3） */
 .home-hero {
   position: relative;
   display: grid;
-  /* 抽屉外壳的顶栏浮在主视觉上：Hero 向上伸进 ViewHost 为顶栏让出的空间（桌面 --header-block 为 0） */
   min-height: 100dvh;
   margin-block-start: calc(-1 * (var(--header-block) + env(safe-area-inset-top)));
   overflow: hidden;
@@ -211,10 +177,8 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
     var(--theme-hero-image) right center / cover;
 }
 
-/* 中段：左列副标题 + 按钮，右列瞄准框；中段吃掉标题与数据带之间的剩余高度，瞄准框随之伸缩 */
 .home-hero-mid { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); flex: 1 0 auto; gap: var(--space-12); }
 .home-hero-lead { min-width: 0; }
-/* 瞄准框装饰：四角 + 十字，纯装饰；太窄 / 太矮时不画（min 尺寸之下装饰没有意义） */
 .home-hero-reticle { position: relative; align-self: stretch; min-block-size: calc(var(--space-12) * 3); margin-block: var(--space-10) var(--space-6); pointer-events: none; }
 .home-hero-reticle span { position: absolute; inline-size: var(--space-10); block-size: var(--space-10); border: 0 solid var(--color-accent); }
 .home-hero-reticle span:nth-child(1) { inset-block-start: 0; inset-inline-start: 0; border-block-start-width: 2px; border-inline-start-width: 2px; }
@@ -236,23 +200,15 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-hero-inner { position: relative; display: flex; flex-direction: column; padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-12)) var(--space-12) var(--space-10); }
 
 .home-hero-kicker { margin: 0 0 var(--space-5); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; letter-spacing: .22em; }
-/* F-01（仅冬季）：冬季遮罩是浅色且末端高透，kicker 段落同时跨亮遮罩与照片纹理
-   （实测 median 4.06:1 / worst 1.09:1，mobile 3.52:1），任何单一文字色都无法两头达标；
-   按 .home-callouts 的 canvas 衬底先例垫同色底板 + 环形 box-shadow（纯绘制，不产生布局位移），
-   强调色文字保留。其余主题遮罩厚，实测达标，不加（不改无关主题）。
-   #1d63b8 × winter canvas #eef3f8 = 实测 5.33:1 ≥ 4.5（AA）。 */
 [data-ui-profile='winter'] .home-hero-kicker { align-self: flex-start; background: var(--color-canvas); box-shadow: 0 0 0 var(--space-2) var(--color-canvas); }
 .home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-showcase); letter-spacing: -0.03em; }
-/* 中文不收字距：负字距会让「一」贴到下一个字上，看起来像破折号（「—站式」） */
 .home-hero h1:lang(zh) { letter-spacing: 0; }
 .home-hero h1:lang(zh) .home-hero-line + .home-hero-line { margin-block-start: var(--space-2); }
 .home-hero-line { display: block; }
 .home-hero-line.is-accent { color: var(--color-accent-text); }
 
-/* 渐变文字 + 一次性扫光；background-clip 不被支持时回落到纯强调色（不会变透明） */
 @supports (((background-clip: text) or (-webkit-background-clip: text)) and (color: color-mix(in oklab, red, blue))) {
   .home-hero-line.is-accent {
-    /* 高光带放在前 45%：入场时从 0 扫到 100%，停下后可见区域（后 55%）是统一的强调色，不会有几个字发白 */
     background-image: linear-gradient(100deg, var(--color-accent-text) 0%, var(--color-accent-text) 18%, color-mix(in oklab, var(--color-accent-text) 42%, var(--color-text-primary)) 30%, var(--color-accent-text) 42%, var(--color-accent-text) 100%);
     background-size: 220% 100%;
     background-position: 100% 0;
@@ -270,7 +226,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-cta-ghost { min-height: var(--control-h-lg); padding: 0 var(--space-2); border: 0; background: none; color: var(--color-text-primary); font: var(--type-body); cursor: pointer; }
 .home-cta-ghost:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* 首屏底部：数据带 + 赞助 / 反馈同一行 */
 .home-hero-foot { display: flex; align-items: flex-end; gap: var(--space-12); flex-wrap: wrap; margin-top: auto; padding-top: var(--space-10); }
 .home-stats { display: flex; gap: var(--space-12); flex-wrap: wrap; margin: 0; }
 .home-stat { min-width: 0; }
@@ -297,9 +252,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-sponsor-text { display: grid; flex: 1 1 auto; gap: var(--space-1); min-width: 0; }
 .home-sponsor-text strong { font: var(--type-h3); }
 .home-sponsor-text span { color: var(--color-text-secondary); font: var(--type-caption); }
-/* F-02 主次层级：Replay 是唯一 Primary（实心 accent）；Sponsor 降为设计语言 secondary
-   （surface-1 底 + border-strong 描边 + 正文色），不再与 Replay 竞争同等视觉权重，
-   描边 + 卡片内位置保持可发现性（AppButton .is-secondary 同一 token 组合） */
 .home-sponsor-cta { display: inline-flex; flex: none; align-items: center; min-height: var(--control-h-md); padding: 0 var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .home-feedback {
   display: flex;
@@ -322,7 +274,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 .home-sponsor:focus-visible,
 .home-feedback:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* ② 能力展示 */
 .home-showcase { display: grid; }
 .home-feature { position: relative; overflow: hidden; min-height: calc(var(--space-12) * 12); }
 .home-feature-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -353,7 +304,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   .home-feedback:hover { border-color: var(--color-accent); }
 }
 
-/* 位移 / 缩放 / 光晕都属于动效：reduce 用户连声明都拿不到 */
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .home-cta svg { transition: transform var(--duration-base) var(--ease-standard); }
   .home-cta { transition: box-shadow var(--duration-base) var(--ease-standard); }
@@ -363,7 +313,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   .home-card:hover .home-card-figure img { transform: scale(var(--home-hover-zoom)); }
 }
 
-/* 进场动效：只动位移、不动透明度（不绘制的标签页里动画卡在第一帧时内容仍可见） */
 @keyframes home-rise { from { transform: translateY(var(--home-rise-travel)); } }
 @media (prefers-reduced-motion: no-preference) {
   .home-hero-line { animation: home-rise var(--home-enter-duration) var(--ease-standard) backwards; }
@@ -377,7 +326,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   }
 }
 
-/* 首屏以下逐块进场（滚动驱动）；不支持时内容照常可见 */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     .home-feature-copy, .home-card { animation: home-reveal linear both; animation-timeline: view(); animation-range: entry 8% cover 34%; }
@@ -385,7 +333,6 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 }
 @keyframes home-reveal { from { opacity: 0; transform: translateY(var(--home-reveal-travel)) scale(var(--home-reveal-scale)); } }
 
-/* 主视觉视差：随滚动缓慢下沉（小屏关闭）。显式绑定 root 滚动（.home-hero 自己 overflow: hidden） */
 @supports (animation-timeline: scroll()) {
   @media (prefers-reduced-motion: no-preference) and (width >= 768px) {
     .home-hero-decor { animation: home-parallax linear both; animation-timeline: scroll(root block); animation-range: 0 var(--home-parallax-range); }
@@ -404,15 +351,12 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
   .home-cards { padding: var(--space-8) var(--space-10); }
 }
 
-/* 小屏与 Android App：同一套首页（2026-11-07 用户），整屏竖版主视觉、遮罩自下而上；
-   赞助卡是主视觉下方第一块（实心按钮），反馈是第二块 */
 @media (width < 768px) {
   .home-hero-decor { background: var(--theme-hero-scrim-portrait), var(--theme-hero-image-portrait) center 72% / cover; }
   .home-hero-mid { display: block; flex: none; }
   .home-hero-reticle { display: none; }
   .home-hero-inner { justify-content: flex-end; padding: calc(var(--header-block) + env(safe-area-inset-top) + var(--space-6)) var(--gutter) var(--space-8); }
   .home-hero-kicker { margin-bottom: var(--space-3); }
-  /* 小屏优先缩字号与占用，而不是改布局（2026-11-08 用户）；34px 仍是首屏最大的字 */
   .home-hero h1 { font-size: var(--home-hero-title-size-compact); }
   .home-hero-subtitle { margin-top: var(--space-4); font-size: var(--font-size-body); }
   .home-hero-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-5); }

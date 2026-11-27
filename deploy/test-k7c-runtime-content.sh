@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# K7C runtime-content 契约 + staging evidence 的存续不变量。
-#
-# 接线部分锁定输入/输出面、影子栈挂载与顺序；行为部分用**真实脚本跑真实流程**：整树替换后
-# 「已 stage、未发布」版本的证据必须还在（2026-10-09 的发布故障：Replica 换树把它删掉，公开
-# URL 变成按 origin 掷硬币，publish 404 fail closed），证据安装器必须与宿主部署锁互斥。
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sync="$ROOT/deploy/tx/k7c-sync-runtime-content.sh"
@@ -17,18 +12,14 @@ for path in "$sync" "$installer" "$compose" "$replica" "$release"; do
   [ -f "$path" ] || fail "missing required file: $path"
 done
 
-# ============================ 接线（静态） ============================
 
 grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$sync"
 grep -Fq 'http://10.20.0.1:8081' "$sync"
 grep -Fq '/opt/wotb-tx2/runtime-content' "$sync"
 grep -Fq 'apkUrl' "$sync"
 ! grep -Eq 'rsync|scp|ssh' "$sync"
-# Sponsor QR 内容已迁到对象存储资产面，不再是 host runtime content：同步脚本里再出现它即失败。
 ! grep -Fq 'sponsor-config.json' "$sync"
 
-# staging evidence 的例外必须保持窄：树里只延续身份记录，不累积历史 APK（当前 APK 仍按
-# version.json 现拉），且复制点必须早于整树替换——晚于 swap 等于没做。
 grep -Fq '*.staging.json' "$sync"
 ! grep -Fq '"$RUNTIME_ROOT"/android-release/*.apk' "$sync"
 carry_line="$(grep -nF 'for evidence in "$RUNTIME_ROOT"/android-release/*.staging.json' "$sync" | head -n1 | cut -d: -f1 || true)"
@@ -37,8 +28,6 @@ if [ -z "$carry_line" ] || [ -z "$swap_line" ] || [ "$carry_line" -ge "$swap_lin
   fail "staging evidence must be carried over before the runtime tree swap"
 fi
 
-# 互斥的 Replica 侧：取 TX2 宿主锁与执行 sync 必须在**同一段远程脚本**里，且锁在前——
-# 「安装不会落在扫描与换树之间」的唯一依据就是这个锁覆盖了 scan + swap。
 replica_step="$(awk '
   /^      - name: Pull TCR artifact and reconcile TX2$/ { inside = 1 }
   inside && /^      - name: / && !/Pull TCR artifact and reconcile TX2/ { inside = 0 }
@@ -57,8 +46,6 @@ if [ -z "$lock_ln" ] || [ -z "$sync_ln" ] || [ "$lock_ln" -ge "$sync_ln" ]; then
   fail "the host deploy lock must be taken before the runtime sync runs"
 fi
 
-# 互斥的另一侧：stage 必须经安装器在宿主锁下落位，而不是直接 scp 进被服务目录。
-# 发布协议已拆成 orchestrator + workflow_call + 外部 step 脚本，契约读逻辑模型而不是 wrapper 文本。
 python3 - "$ROOT" <<'PY'
 import sys
 from pathlib import Path
@@ -91,10 +78,8 @@ print(f"served-tree uploads are manifest-only: {len(straight)} step(s)")
 PY
 
 grep -Fq '/opt/wotb-tx2/runtime-content/android-release:/usr/share/nginx/html/download/android:ro' "$compose"
-# 赞助内容不再由影子栈挂载（资产面对象，见 docs/operations/agent-asset-origin.md）。
 ! grep -Fiq 'sponsor' "$compose"
 
-# ============================ 行为（真实执行） ============================
 
 for cmd in curl flock python3 sha256sum; do command -v "$cmd" >/dev/null || fail "missing command: $cmd"; done
 sudo -n true 2>/dev/null || fail "passwordless sudo is required (the runtime sync mutates its root through sudo)"
@@ -105,7 +90,6 @@ fixture_pids=''
 cleanup(){ [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true; [ -z "$fixture_pids" ] || kill $fixture_pids 2>/dev/null || true; rm -rf "$work"; }
 trap cleanup EXIT
 
-# 同步只消费本机 HTTP fixture；禁止测试探测真实公开 APK。
 mkdir -p "$work/sync-bin"
 export REAL_CURL="$(command -v curl)"
 cat > "$work/sync-bin/curl" <<'CURL'
@@ -115,7 +99,6 @@ exec "$REAL_CURL" "$@"
 CURL
 chmod +x "$work/sync-bin/curl"
 
-# --- 1) sync 脚本 E2E：整树替换必须带走未发布版本的证据（原故障回归），历史 APK 仍不带走 ---
 source_root="$work/source"; live_root="$work/runtime-content"
 mkdir -p "$source_root/download/android" "$live_root/android-release"
 printf 'fixture-apk-bytes\n' > "$source_root/download/android/wotbtools-android-v2.1.18.apk"
@@ -172,7 +155,6 @@ PATH="$work/sync-bin:$PATH" K7C_RUNTIME_SOURCE_BASE="http://127.0.0.1:$port" K7C
 [ -L "$live_root/android-release/wotbtools-android-v4.0.1.staging.json" ] || fail 'invalid evidence must not disappear during a rebuild'
 rm "$live_root/android-release/wotbtools-android-v4.0.1.staging.json"
 
-# --- 2) 安装器：宿主锁下原子落位；锁被占住时不可见、不落位；缺锁/缺目录/非证据文件 fail closed ---
 lock_dir="$work/lock"; incoming="$work/incoming"; served="$work/served"
 mkdir -p "$lock_dir" "$incoming" "$served"
 : > "$lock_dir/.deploy.lock"
@@ -198,21 +180,20 @@ installed="$served/wotbtools-android-v2.1.19.staging.json"
   || fail "the installed evidence must keep its exact bytes"
 [ "$(stat -c '%a' "$installed")" = '644' ] || fail "the installed evidence must be world-readable for nginx"
 
-# --- 2b) 目录空窗（评审 P2）：Replica 两次 mv 之间服务目录短暂不存在，安装器必须等锁而不是当场退出 ---
 gap_lock_dir="$work/lock-gap"; gap_served="$work/served-gap"
 mkdir -p "$gap_lock_dir" "$gap_served"; : > "$gap_lock_dir/.deploy.lock"
 printf '{"versionName":"2.1.21","versionCode":2001021}\n' > "$incoming/wotbtools-android-v2.1.21.staging.json"
 flock "$gap_lock_dir/.deploy.lock" -c 'sleep 6' &
 gap_holder=$!
 sleep 0.5
-mv "$gap_served" "$gap_served.previous"   # 换树第一步：整棵树（含被服务目录）被移走
+mv "$gap_served" "$gap_served.previous"
 bash "$installer" --source "$incoming/wotbtools-android-v2.1.21.staging.json" \
   --dest-dir "$gap_served" --lock "$gap_lock_dir/.deploy.lock" > "$work/gap-install.log" 2>&1 &
 gap_installer=$!
 sleep 1.5
 kill -0 "$gap_installer" 2>/dev/null \
   || { cat "$work/gap-install.log" >&2; fail "the installer must wait for the lock even while the served tree is swapped away (directory gap)"; }
-mkdir -p "$gap_served"                    # 换树第二步：新树就位
+mkdir -p "$gap_served"
 wait "$gap_installer" || { cat "$work/gap-install.log" >&2; fail "the installer must land the evidence once the swap finishes and the lock is released"; }
 wait "$gap_holder" 2>/dev/null || true
 [ -f "$gap_served/wotbtools-android-v2.1.21.staging.json" ] \
@@ -230,7 +211,6 @@ bash "$installer" --source "$incoming/random.txt" --dest-dir "$served" --lock "$
   && fail "the installer must refuse to install a non-evidence file"
 [ ! -e "$served/random.txt" ] || fail "a refused install must leave the served tree untouched"
 
-# Delta installs are idempotent and cannot overwrite an existing name.
 cp "$work/delta" "$incoming/$delta_name"
 bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null
 cp "$work/delta" "$incoming/$delta_name"
@@ -241,7 +221,6 @@ bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "
 [ "$(cat "$served/$delta_name")" = conflict ] || fail "delta conflict must not overwrite existing bytes"
 printf 'bad\n' > "$incoming/$delta_name"
 bash "$installer" --source "$incoming/$delta_name" --dest-dir "$served" --lock "$lock_dir/.deploy.lock" >/dev/null 2>&1 && fail "delta with incorrect content-addressed hash must fail"
-# 稀疏文件模拟达到保留上限：新补丁不得落位，既有内容不得删除。
 truncate -s 1073741824 "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff"
 printf 'another delta\n' > "$work/new-delta"
 new_sha="$(sha256sum "$work/new-delta" | awk '{print $1}')"
@@ -251,7 +230,6 @@ bash "$installer" --source "$incoming/$new_name" --dest-dir "$served" --lock "$l
 [ ! -e "$served/$new_name" ] || fail "over-budget delta must not be installed"
 [ -f "$served/wotbtools-android-delta-4001000-4002000-cap.vcdiff" ] || fail "storage cap must not delete existing files"
 
-# Exercise origin classification over the real locked reader with a local SSH transport.
 origin="$work/origins"; mkdir -p "$origin/tx1" "$origin/tx2" "$origin/bin"
 : > "$origin/tx1.lock"; : > "$origin/tx2.lock"
 cat > "$origin/bin/ssh" <<'SH'
@@ -293,7 +271,6 @@ UNREACHABLE_NODE=tx2 collect collect >/dev/null 2>&1 && fail 'unreachable origin
 printf 'invalid' > "$origin/tx2/$EVIDENCE_TEST_NAME"
 collect collect >/dev/null 2>&1 && fail 'invalid evidence must fail closed'
 
-# Two concurrent installs of the same filename: equal bytes succeed, unequal bytes never clobber.
 concurrent="$work/concurrent"; mkdir -p "$concurrent/a" "$concurrent/b" "$concurrent/served"
 : > "$concurrent/lock"
 name=wotbtools-android-v4.0.2.staging.json
@@ -315,7 +292,6 @@ if wait "$p2"; then successes=$((successes+1)); fi
 python3 -c 'import json,sys; assert json.load(open(sys.argv[1])) in ({"patches": [1]}, {"patches": []})' "$concurrent/served/$name" || fail 'concurrent winner must be complete JSON'
 
 
-# 安装中的复制允许中断，但公开文件不得出现半截 JSON；失败必须保留输入并清理临时文件。
 copy_test="$work/copy-failure"; mkdir -p "$copy_test/bin" "$copy_test/incoming" "$copy_test/served"
 : > "$copy_test/lock"
 export REAL_CP="$(command -v cp)" COPY_TEST_ROOT="$copy_test"
@@ -349,18 +325,15 @@ for failure in 1 0; do
   fi
   [ -z "$(find "$copy_test/served" -name '.android-evidence.*' -print -quit)" ] || fail 'installer leaked a partial scratch file'
 done
-# 中转文件误指向线上文件或其硬链接，不得成功后把线上产物删除。
 bash "$installer" --source "$copy_test/served/$name" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'served source must not be consumed'
 ln "$copy_test/served/$name" "$copy_test/incoming/$name"
 bash "$installer" --source "$copy_test/incoming/$name" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'served hard-link alias must not be consumed'
 [ -f "$copy_test/served/$name" ] || fail 'scratch alias removed served evidence'
 rm "$copy_test/incoming/$name"
-# 目标即便是目录，也不可被 ln 当作目标目录写入。
 mkdir "$copy_test/served/dir.staging.json"
 printf '{}\n' > "$copy_test/incoming/dir.staging.json"
 bash "$installer" --source "$copy_test/incoming/dir.staging.json" --dest-dir "$copy_test/served" --lock "$copy_test/lock" >/dev/null 2>&1 && fail 'destination directory must fail closed'
 [ -z "$(find "$copy_test/served/dir.staging.json" -mindepth 1 -print -quit)" ] || fail 'invalid directory destination was mutated'
-# Linux CI 的 /dev/shm 与默认 /tmp 通常位于不同文件系统；可用时实际跨文件系统安装。
 if [ -d /dev/shm ] && [ -w /dev/shm ] && [ "$(stat -c %d /dev/shm)" != "$(stat -c %d "$work")" ]; then
   cross="$(mktemp -d /dev/shm/android-evidence-test.XXXXXXXX)"
   printf '{"crossFilesystem":true}\n' > "$cross/$name"
@@ -376,10 +349,7 @@ fi
 
 
 
-# ============================ APK 续传 / 换源 / 完整性（Frontend Replica #361/#362 回归） ============================
 
-# 210MB APK 在 120s 上限下只能拿到约 53MB：默认必须给大文件更长的单次窗口，但总预算仍须
-# 明显小于 Frontend Replica 的 35 分钟 job timeout（4×120s 小文件重试 + APK 总预算）。
 python3 - "$sync" <<'PY'
 import re
 import sys
@@ -526,7 +496,6 @@ with socket.socket() as sock:
 PY
 }
 
-# 每个 fixture 服务独立 root/日志/端口；fixture_pids 由 cleanup 统一回收。
 start_fixture(){
   local root="$1" log="$2" port="$3"
   shift 3
@@ -585,7 +554,6 @@ PY
 
 sha_of(){ sha256sum "$1" | awk '{print $1}'; }
 
-# 公共 URL 只做主机重写：仍走 sync 的“公开源 → 内网源”回退路径，但不访问真实网络。
 public_bin="$apk_fixtures/public-bin"
 mkdir -p "$public_bin"
 cat > "$public_bin/curl" <<'CURL'
@@ -602,7 +570,6 @@ exec "$REAL_CURL" "${args[@]}"
 CURL
 chmod +x "$public_bin/curl"
 
-# 1) 同一来源中断后，下一次请求必须带非零 Range 并从断点续传；最终字节/SHA 精确一致。
 resume_src="$apk_fixtures/resume-src"
 resume_live="$apk_fixtures/resume-live"
 resume_name=wotbtools-android-v9.1.0.apk
@@ -647,7 +614,6 @@ assert offsets == sorted(offsets), offsets
 print(f"resume offsets: {offsets}")
 PY
 
-# 2) 公开源持续中断后切到内网源：公开部分绝不能拼到内网下载里；内网必须从 0 开始。
 switch_src="$apk_fixtures/switch-src"
 switch_public="$apk_fixtures/switch-public"
 switch_live="$apk_fixtures/switch-live"
@@ -698,7 +664,6 @@ assert internal and all(offset == 0 for offset in internal), internal
 print(f"source switch offsets: public={public} internal={internal}")
 PY
 
-# 2b) 公网探测成功但实际传输持续卡住、拖到公网预算上限：内网回退仍必须从 0 开始并通过 SHA。
 stall_src="$apk_fixtures/stall-src"
 stall_public="$apk_fixtures/stall-public"
 stall_live="$apk_fixtures/stall-live"
@@ -754,8 +719,6 @@ assert internal and all(offset == 0 for offset in internal), internal
 print(f"public stall offsets: public={public} internal={internal}")
 PY
 
-# 2c) 只缩小总预算、未设置公网预算：公网 deadline 仍必须被“总预算 - 内网预留”约束，
-# 内网保留至少一个单次窗口，从 0 下载并通过 SHA（复审 P2 的配置边界）。
 custom_src="$apk_fixtures/custom-budget-src"
 custom_public="$apk_fixtures/custom-budget-public"
 custom_live="$apk_fixtures/custom-budget-live"
@@ -808,7 +771,6 @@ assert internal and all(offset == 0 for offset in internal), internal
 print(f"custom budget offsets: public={public} internal={internal}")
 PY
 
-# 2d) 总预算小于内网预留：必须在任何下载前明确拒绝，不能静默耗尽内网窗口。
 invalid_live="$apk_fixtures/invalid-budget-live"
 mkdir -p "$invalid_live/android-release"
 if K7C_RUNTIME_ROOT="$invalid_live" K7C_APK_MAX_TIME_SEC=600 K7C_APK_TOTAL_BUDGET_SEC=300 \
@@ -818,8 +780,6 @@ fi
 grep -Fq 'must exceed internal reserve' "$apk_fixtures/invalid-budget-sync.log" || fail 'invalid budget configuration was not explained'
 grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/invalid-budget-sync.log" && fail 'invalid budget configuration reported PASS'
 
-# 2e) 前导零预算必须在任何 I/O 前拒绝：Bash 算术会把它当八进制，校验与计算
-# 必须使用同一种十进制格式，不能等请求了 manifest 才在算术阶段失败。
 for budget in 08 0600; do
   zero_live="$apk_fixtures/leading-zero-$budget-live"
   zero_log="$apk_fixtures/leading-zero-$budget.log"
@@ -832,7 +792,6 @@ for budget in 08 0600; do
   grep -Fq 'cannot fetch Android version.json' "$zero_log" && fail "leading-zero budget $budget failed after network I/O"
 done
 
-# 3) 公开源完整但校验失败：回退内网时必须从零下载，且日志明确记录 mismatch。
 wrong_src="$apk_fixtures/wrong-src"
 wrong_public="$apk_fixtures/wrong-public"
 wrong_live="$apk_fixtures/wrong-live"
@@ -883,7 +842,6 @@ assert internal and all(offset == 0 for offset in internal), internal
 print(f"checksum fallback offsets: public={public} internal={internal}")
 PY
 
-# 4) 唯一来源校验失败：必须 fail closed，既有 runtime tree 原样保留，不留下 incoming stage。
 mismatch_src="$apk_fixtures/mismatch-src"
 mismatch_live="$apk_fixtures/mismatch-live"
 mismatch_name=wotbtools-android-v9.4.0.apk
@@ -911,7 +869,6 @@ grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$apk_fixtures/mismatch-sync.log" && f
 [ "$(cat "$mismatch_live/android-release/version.json")" = '{"old":true}' ] || fail 'failed sync replaced existing manifest'
 [ -z "$(find "$apk_fixtures" -maxdepth 1 -name 'mismatch-live.incoming.*' -print -quit)" ] || fail 'failed sync left an incoming stage'
 
-# 5) 缺少 sha256：在任何 APK 请求前失败，绝不安装未校验 APK。
 missing_src="$apk_fixtures/missing-src"
 missing_live="$apk_fixtures/missing-live"
 missing_name=wotbtools-android-v9.5.0.apk

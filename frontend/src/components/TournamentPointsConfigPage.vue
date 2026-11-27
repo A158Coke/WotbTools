@@ -37,7 +37,6 @@ function roundBadge(number: number) {
   return t(roundComplete(number) ? 'tournament.ready' : 'tournament.incomplete')
 }
 const blank = (value: unknown) => value == null || String(value).trim() === ''
-// 必填空格：第 1–4 名为空即标出；第 5 名选填不标。只读当前输入，不改变保存规则（tournamentRulesFromInputs 仍是唯一校验）。
 const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i) => i + 1)
   .map(day => ({ day, ranks: [1, 2, 3, 4].filter(rank => blank(ruleInputs.value[day - 1]?.[rank - 1])) }))
   .filter(item => item.ranks.length))

@@ -28,26 +28,8 @@ import winterMalinovkaImg from '../assets/maps/winter-malinovka.webp'
 import yamatoHarborImg from '../assets/maps/yamato-harbor.webp'
 import yukonImg from '../assets/maps/yukon.webp'
 
-/**
- * 地图图片对应的世界坐标范围（米）。
- * 来源：各图 `common/map-semantics/*.semantic.json` 的 `coordinateSystem.worldBounds`。
- * 底图是完整世界坐标截图，渲染必须用该范围，不能用分析用的 `playableBounds`
- * （否则越靠近地图边缘，路线/出生点/网格越被向外放大推移）。
- * 当前 29 张已登记图均为 -300..300；新图以各自语义 JSON 为准，
- * 范围不同时给该图单独写对象，勿改共享常量。
- * 地图预览的资产包 ground.webp 底图同框复用它（±300 契约框，X-Map-Meta 缺失时
- * 3D 内核的恒等回退与之一致）。
- */
 export const WORLD_BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
 
-/**
- * 地图鸟瞰素材注册表（唯一权威，素材开关）：mapCode（meta.json 的 mapName）→ 图片资源与尺寸。
- * 文件命名约定：游戏英文展示名小写中划线（如 Normandy → normandy.webp，Middleburg → middleburg.webp）；
- * 内部 code 与展示名的完整映射见 docs/reference/maps.md。
- * 新增素材流程：已验收的底图按英文展示名放入 assets/maps；2D Local 消费该 canonical 资源。
- * 本文件加一行（含 coordinateBounds，来源见 docs/features/battle-playback.md）。未登记地图整块不渲染。
- * width/height 是 SVG 逻辑渲染尺寸，不是 WebP 物理像素；切换素材时保留坐标与交互尺度。
- */
 export const mapImages = {
   amigosville: { src: fallsCreekImg, width: 768, height: 765, coordinateBounds: WORLD_BOUNDS_300 },
   canal: { src: canalImg, width: 778, height: 772, coordinateBounds: WORLD_BOUNDS_300 },

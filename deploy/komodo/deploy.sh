@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Promote the staged Komodo Compose runtime onto the Yecao host.
-#
-# Owns the Docker Compose half of the controller transaction: staged-runtime
-# validation, image pull, live Compose promotion, and the Compose mutation.
-# `reconcile.sh` owns the OpenTofu half and calls this under the host lock.
 set -Eeuo pipefail
 umask 077
 
@@ -34,8 +29,6 @@ for command_name in docker ip; do
 done
 docker compose version >/dev/null
 
-# Fail closed when Yecao does not own the WireGuard address: publishing Core on a
-# missing address would either fail or land on a different interface.
 ip -4 addr show | grep -F "$wireguard_address/" >/dev/null || {
   echo "Yecao WireGuard address $wireguard_address is unavailable." >&2
   exit 1
@@ -43,9 +36,6 @@ ip -4 addr show | grep -F "$wireguard_address/" >/dev/null || {
 
 require_real_dir "$root"
 
-# The controller lock spans Compose promotion and the whole OpenTofu
-# transaction. `reconcile.sh` acquires it once and passes the descriptor down so
-# the two halves can never interleave with another controller mutation.
 if [[ -n "${KOMODO_DEPLOY_LOCK_FD:-}" ]]; then
   [[ "$KOMODO_DEPLOY_LOCK_FD" == 9 ]] || { echo 'Unsupported inherited Komodo lock fd.' >&2; exit 2; }
   { true >&9; } 2>/dev/null || { echo 'Inherited Komodo lock fd is unavailable.' >&2; exit 1; }
@@ -56,8 +46,6 @@ flock -n 9 || { echo 'Another Komodo controller mutation is running.' >&2; exit 
 
 require_real_dir "$root/backups"
 
-# Validate and pull before touching the live runtime, so a broken rendering or an
-# unavailable image can never replace the running controller configuration.
 docker compose -p komodo -f "$STAGED_RUNTIME/compose.yml" config --quiet
 docker compose -p komodo -f "$STAGED_RUNTIME/compose.yml" pull
 

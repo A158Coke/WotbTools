@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Real Keycloak production runtime smoke.
-# Builds the repository image, runs it against PostgreSQL, and verifies that
-# the image exposes only the application/OIDC interface.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,9 +33,6 @@ if grep -Eq -- '--(health-enabled|metrics-enabled)|KC_HTTP_(MANAGEMENT|METRICS)'
   fail "Keycloak management health/metrics configuration must be removed"
 fi
 
-# Only the approved provider modules may be built into the image. The retired
-# aggregated-QQ provider must stay out of both the build and the final jar set;
-# the assembly below enforces the jar set itself (stronger than a Dockerfile grep).
 retired_provider="keycloak-""juhe-qq-provider"
 if grep -Fq "$retired_provider" "$ROOT/docker/Dockerfile.keycloak"; then
   fail "the retired aggregated-QQ provider must not be built into the Keycloak image"
@@ -137,11 +131,6 @@ fi
 if docker logs "$KC_NAME" 2>&1 | grep -Eiq 'Quarkus augmentation'; then
   fail "runtime startup performed Quarkus augmentation"
 fi
-# The runtime contract is that startup reports exactly the build commit baked
-# into the image it is running: `runtime-contract` for the disposable image this
-# script builds, or the frozen source SHA for a published production image.
-# Deriving the expectation from the running container keeps the assertion true
-# for both paths instead of pinning one of them as a literal.
 expected_build="$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$KC_NAME" \
   | sed -n 's/^WOTBTOOLS_BUILD_COMMIT=//p' | head -n 1)"
 [[ "$expected_build" =~ ^([0-9a-f]{40}|runtime-contract)$ ]] \

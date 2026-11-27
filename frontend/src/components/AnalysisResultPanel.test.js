@@ -76,7 +76,6 @@ describe('AnalysisResultPanel preBattleSection', () => {
       global: { mocks: { $t: i18n.t } }
     })
 
-    // 区块标题 + 内容默认展开可见
     expect(wrapper.text()).toContain('recon.prebattle.title')
     expect(wrapper.text()).toContain('recon.prebattle.collapse')
     expect(wrapper.text()).toContain('重坦正面推进')
@@ -108,13 +107,11 @@ describe('AnalysisResultPanel preBattleSection', () => {
     const toggle = wrapper.get('.prebattle-toggle')
     expect(wrapper.find('.prebattle-content').exists()).toBe(true)
 
-    // 折叠：内容隐藏，状态文案切换
     await toggle.trigger('click')
     expect(wrapper.find('.prebattle-content').exists()).toBe(false)
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.text()).toContain('recon.prebattle.expand')
 
-    // 展开：内容恢复可见
     await toggle.trigger('click')
     expect(wrapper.find('.prebattle-content').exists()).toBe(true)
     expect(toggle.attributes('aria-expanded')).toBe('true')
@@ -136,7 +133,6 @@ describe('AnalysisResultPanel preBattleSection', () => {
     await flushPromises()
 
     expect(writeText).toHaveBeenCalledTimes(1)
-    // 复制内容 = 复盘正文 + 末尾宣传 footer（recon.copy_footer，三语；i18n mock 对 copy_footer 返回真实文案）
     expect(writeText).toHaveBeenCalledWith('## 正文\n\n战术复盘内容\n由 WotBTools 生成 · https://wotbtools.com')
     expect(writeText.mock.calls[0][0]).toContain('由 WotBTools 生成')
     expect(writeText.mock.calls[0][0]).toContain('https://wotbtools.com')

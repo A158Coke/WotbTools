@@ -23,10 +23,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 名人堂 REST API (只做 HTTP 映射, 业务在 HallOfFameService)。
- * 公开查询 GET /api/hof；上传 POST /api/hof/upload（登录）；下载 GET /api/hof/{id}/replay（登录）。
- */
 @RestController
 @RequestMapping(ApiPaths.HOF)
 public class HallOfFameController {
@@ -41,14 +37,12 @@ public class HallOfFameController {
         this.uploadService = uploadService;
     }
 
-    /** 上传单场回放，写入名人堂。 */
     @PostMapping("/upload")
     public Map<String, Object> upload(@RequestParam(name = "file") final MultipartFile file,
                                       @RequestParam(name = "facts") final String facts) throws Exception {
         return uploadService.upload(file, facts);
     }
 
-    /** 统一公开查询：车辆分类条件 nation / vehicleType / tier 可独立使用并按交集处理。 */
     @GetMapping
     public HallOfFamePageDto list(
             @RequestParam(name = "battleType", required = false) final String battleType,
@@ -62,16 +56,11 @@ public class HallOfFameController {
         return service.search(battleType, tankId, nation, vehicleType, tier, nickname, page, size);
     }
 
-    /** 公开车辆筛选选项：只返回当前名人堂已有车辆及稳定英文属性。 */
     @GetMapping("/vehicle-options")
     public List<HofVehicleOptionDto> vehicleOptions() {
         return service.vehicleOptions();
     }
 
-    /**
-     * 下载指定名人堂记录的回放文件（需登录）。原始文件名只进 Content-Disposition
-     * （UTF-8 安全编码），绝不参与文件路径。
-     */
     @GetMapping("/{id}/replay")
     public ResponseEntity<byte[]> downloadReplay(@PathVariable final long id) {
         final ReplayDownload download = service.downloadReplay(id);

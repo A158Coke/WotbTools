@@ -35,15 +35,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * PR #102 ：Team AI Canonical Timeline hard gate（真实 Team production
- * orchestration path，非 Mockito）。
- * <p>通过 {@link TeamReplayAnalysisService#analyzeTeam}（Team AI 唯一 production 编排
- * 入口）验证：timeline invalid / reconstruction 缺失 → {@link AiTimelineUnusableException}
- * 且 AI Gateway requests = 0（Call #1 / Call #2 均不执行）；valid timeline →
- * Call #2 prompt 必含 TACTICAL TIMELINE 与确定性 battle-relative 事实；
- * {@link TeamAiPromptBuilder} 不引用 {@code BattleTimelineBuilder}（build 唯一入口在 orchestration）。</p>
- */
 class TeamReplayAnalysisServiceTimelineGateTest {
 
     private static final float START_RAW = 1000f;
@@ -65,8 +56,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     @Test
     void timelineInvalidClockUnresolvedRejectsBeforeAnyLlmCall() {
-        // Team features 可形成（battle roster + perspective 解析成功），但 canonical timeline
-        // 时钟不可解析（无 battle start、无 BattleEndedEvent）→ TIMELINE_CLOCK_UNRESOLVED。
         final TeamCase teamCase = teamResult(
                 "arena-clock", "Ally", 1001L, 1, clockUnresolvedRecon());
 
@@ -105,7 +94,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 AllowedLanguage.ZH, AiReviewStreamListener.NOOP);
 
         assertNotNull(result.analysis());
-        // Call #2（SINGLE_TEAM_BATTLE）prompt 必须包含 TACTICAL TIMELINE 与确定性事实
         final AiChatRequest call2 = gateway.requests.stream()
                 .filter(r -> "SINGLE_TEAM_BATTLE".equals(r.analysisMode()))
                 .findFirst()
@@ -114,9 +102,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         assertTrue(body.contains("TACTICAL TIMELINE"), body);
         assertTrue(body.contains("EPISODE 1"), body);
         assertTrue(body.contains("战斗总时长: "), body);
-        // Natural Coach 轮：Call #2 输入必须携带确定性 GROUNDING FACTS（供 structured claims 引用）
         assertTrue(body.contains("=== GROUNDING FACTS"), "Call #2 输入必须注入 GROUNDING FACTS: " + body);
-        // valid path 不 gate 拒绝：Call #1 与 Call #2 都真实发生
         assertTrue(gateway.requests.stream()
                 .anyMatch(r -> "PRE_BATTLE_STRATEGIC_PRIOR".equals(r.analysisMode())),
                 "Call #1 must run when timeline is valid: " + gateway.requests);
@@ -124,8 +110,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
 
     @Test
     void teamPromptBuilderDoesNotBuildTimelineItself() throws Exception {
-        // 结构契约（PR #102 ）：build+validation 唯一入口在 orchestration 层；
-        // TeamAiPromptBuilder 不得再引用 BattleTimelineBuilder（避免二次 build / 静默降级）。
         final Path classFile = Path.of(TeamAiPromptBuilder.class.getResource(
                 "TeamAiPromptBuilder.class").toURI());
         final String classText = new String(Files.readAllBytes(classFile), StandardCharsets.ISO_8859_1);
@@ -133,9 +117,7 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 "TeamAiPromptBuilder must not reference BattleTimelineBuilder (build happens once in orchestration)");
     }
 
-    // ---- helpers ----
 
-    /** 团队 AI 入口的领域事实夹具（旧 ReplayProcessingResult 包装已删除）。 */
     private record TeamCase(Battle battle, ReplayReconstruction recon) {
     }
 
@@ -178,7 +160,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         return new TeamCase(battle, recon);
     }
 
-    /** 有效团队 fixture：battle-relative 时钟 IDENTIFIED + 双方实体位置/血量 + 首次接敌。 */
     private static ReplayReconstruction validRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
@@ -198,14 +179,12 @@ class TeamReplayAnalysisServiceTimelineGateTest {
         events.add(health(9, 2, 0, 1800, true));
         events.add(health(10, 3, 0, 1500, true));
         events.add(health(11, 4, 0, 1500, true));
-        // 首次接敌（battle-relative 5s）
         events.add(new DamageEvent(12, new ReplayTimestamp(START_RAW + 5f, null), 8,
                 DecodeConfidence.EXACT, 1, 3, null, null, 420, false));
         return new ReplayReconstruction(meta, header, 120f, START_RAW, List.of(),
                 events, List.of(), BattleStateSnapshot.empty(), coverage, diag);
     }
 
-    /** 时钟不可解析 fixture：无 battle start、无 BattleEndedEvent → TIMELINE_CLOCK_UNRESOLVED。 */
     private static ReplayReconstruction clockUnresolvedRecon() {
         final ReplayMetadata meta = new ReplayMetadata(
                 "arena", "team_map", "1", "1", 2, "rec1", "", 120.0, 0L);
@@ -235,7 +214,6 @@ class TeamReplayAnalysisServiceTimelineGateTest {
                 DecodeConfidence.EXACT, eid, hp, null, alive);
     }
 
-    /** 记录全部 gateway 请求的替身（从不发起真实 HTTP）。 */
     private static final class FakeAiChatGateway implements AiChatGateway {
         final List<AiChatRequest> requests = new CopyOnWriteArrayList<>();
         volatile boolean configured = true;

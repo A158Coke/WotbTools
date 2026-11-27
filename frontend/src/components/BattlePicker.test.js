@@ -7,8 +7,6 @@ import BattlePicker from './BattlePicker.vue'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, locale: { value: 'en' } }) }))
 
-// useBreakpoint 在模块级共享 matchMedia 监听：用一个可控 viewport 模拟 compact / expanded，
-// 不重载模块（桌面 Popover / 手机 AppSheet 的判定直接消费同一份 tier）。
 let viewportWidth = 1280
 const mediaListeners = []
 function setViewportWidth(width) {
@@ -109,7 +107,6 @@ describe('BattlePicker', () => {
   it('键盘：方向键移动高亮，Enter 选中并关闭、焦点回到触发按钮', async () => {
     mountPicker({ options: options(8), modelValue: 'r2' })
     await open()
-    // 打开时高亮当前项
     expect(searchInput().getAttribute('aria-activedescendant')).toBe(documentOptions()[2].id)
     await pressKey(searchInput(), 'ArrowDown')
     await pressKey(searchInput(), 'ArrowDown')
@@ -166,7 +163,6 @@ describe('BattlePicker', () => {
   it('点击组件外部关闭', async () => {
     mountPicker({ options: options(3), modelValue: 'r0' })
     await open()
-    // Reka 在下一个宏任务才注册 document 级 outside 监听
     await new Promise(resolve => setTimeout(resolve, 10))
     document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
     await flushPromises()
@@ -204,7 +200,6 @@ describe('BattlePicker', () => {
       expect.stringContaining('Battle 1'),
       expect.stringContaining('Battle 2'),
     ])
-    // sheet 内 option 的 pointerdown 不能被当成外部点击
     documentOptions()[1].dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
     expect(panelElement()).not.toBeNull()
@@ -225,8 +220,6 @@ describe('BattlePicker', () => {
 
   it('KeepAlive 停用（离开 Replay 页面）时关闭 teleported sheet', async () => {
     setViewportWidth(390)
-    // 模拟真实层级：KeepAlive 缓存的是 ReplayWorkspace，BattlePicker 是其后代（不是缓存根）；
-    // 切换 currentView 触发 deactivate，而不是卸载整棵子树。
     const unmounted = []
     const WorkspaceLike = defineComponent({
       name: 'WorkspaceLike',

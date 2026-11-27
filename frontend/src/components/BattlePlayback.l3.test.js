@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 
-/** L3：2D 回放不抢页面的滚轮与快捷键（审计 PB-04 / PB-05）。独立文件：避免其他套件残留实例的 window 监听干扰。 */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -31,7 +30,6 @@ vi.mock('../data/mapImages', () => ({
       src: 'malinovka.png', width: 766, height: 769,
       coordinateBounds: { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
     },
-    // 有底图但 mapBases 未收录几何——新地图上线到基地坐标补齐之间的真实状态。
     map_without_base_geometry: {
       src: 'no-bases.webp',
       width: 766,
@@ -75,7 +73,6 @@ function mountPlayback(overview = makeOverview(), seekTo = null, dataset = undef
   return mountBattlePlayback({ overview, seekTo, playbackV2: finalDataset })
 }
 
-// 二级面统一由传输控件上的 Display（⚙）打开，面板内容再由 pb-panel-* 行切换。
 async function openPanel(wrapper, name) {
   const entry = wrapper.get('[data-test="pb-secondary-entry"]')
   if (entry.attributes('aria-expanded') !== 'true') await entry.trigger('click')
@@ -116,7 +113,6 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
     await map.trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     expect(scaleOf(wrapper)).toBeGreaterThan(before)
 
-    // 指针离开地图 → 交互结束；再次按下后普通滚轮也能缩放
     map.element.dispatchEvent(new Event('pointerleave'))
     const zoomed = scaleOf(wrapper)
     await wrapper.find('[data-test="pb-viewport"]').trigger('pointerdown', { pointerId: 7, clientX: 400, clientY: 300 })
@@ -144,7 +140,6 @@ describe('L3：滚轮与快捷键不抢页面（审计 PB-04 / PB-05）', () => 
 describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形 Stage 契约）', () => {
   afterEach(() => { mountedWrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
-  /** 录像者属于 Team 2 的同一份数据：friendly 标志翻转，物理队伍（team）不变。 */
   function recorderOnTeam2() {
     const dataset = makePlaybackV2()
     dataset.friendlyTeam = 2
@@ -163,28 +158,22 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     expect(laneIds(wrapper, 'right')).toEqual([2001, 2002])
     expect(wrapper.get('[data-test="pb-team-lane-left"]').find('.pb-roster-team1').exists()).toBe(true)
     expect(wrapper.get('[data-test="pb-team-lane-right"]').find('.pb-roster-team2').exists()).toBe(true)
-    // 物理车道不再用录像者视角的 friendly / enemy 分组
     expect(wrapper.find('.pb-roster-friendly').exists()).toBe(false)
     expect(wrapper.find('.pb-roster-enemy').exists()).toBe(false)
-    // 三段式标记：根类由「名册开着 且 非手机竖屏」独占
     expect(wrapper.get('[data-test="battle-playback"]').classes()).toContain('pb-roster-lanes')
 
     await wrapper.get('[data-test="pb-team-lane-left"] [data-test="pb-roster-row"]').trigger('click')
     await flushPromises()
-    // 选中不再把名册换掉：详情是 workspace 顶层的浮窗，名册**两条车道都还在**
     expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(true)
     const details = wrapper.get('[data-test="pb-info"]')
     expect(details.attributes('data-presentation')).toBe('floating')
-    // 浮窗挂在**整个战场 workspace（.pb-main）**下，不在 Stage 里
     expect(details.element.parentElement).toBe(wrapper.get('[data-test="pb-main"]').element)
-    // 三段式下右侧详情列**整列不存在**：详情是 workspace 顶层的浮窗、名册在两侧车道。
     expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-details-column')
   })
 
   it('录像者属于 Team 2：己方 Team 2 在左、敌方 Team 1 在右，HUD 同视角', async () => {
     stubRaf()
-    // HUD 是录像者视角：录像者在 Team 1 时 friendly 总血量 = Team 1（1500）
     const recorderTeam1 = mountPlayback()
     await flushPromises()
     expect(recorderTeam1.get('[data-test="pb-hp-value-friendly"]').text()).toContain('1500')
@@ -193,12 +182,9 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
 
     const recorderTeam2 = mountPlayback(makeOverview(), null, recorderOnTeam2())
     await flushPromises()
-    // 车道位置跟随 Recorder 视角，物理队伍身份不变
     expect(laneIds(recorderTeam2, 'left')).toEqual([2001, 2002])
     expect(laneIds(recorderTeam2, 'right')).toEqual([1001])
-    // 录像者换到 Team 2：friendly 总血量跟着换成 Team 2（1200），名册左右不动
     expect(recorderTeam2.get('[data-test="pb-hp-value-friendly"]').text()).toContain('1200')
-    // 详情里的关系文案仍按录像者视角给出（右车道 Team 2 的车对 Team 2 录像者是己方）
     await recorderTeam2.setProps({ seekTo: 15 })
     await flushPromises()
     await recorderTeam2.get('[data-test="pb-roster-row"][data-account-id="2001"]').trigger('click')
@@ -211,7 +197,6 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     stubRaf()
     const wrapper = mountPlayback()
     await flushPromises()
-    // EnemyA 在 10–20s 才有位置：先 seek 到它可见的时刻
     await wrapper.setProps({ seekTo: 15 })
     await flushPromises()
     const rowOf = id => wrapper.get(`[data-test="pb-roster-row"][data-account-id="${id}"]`)
@@ -223,19 +208,15 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(false)
-    // 选中还在：行仍是 aria-pressed / selected
     expect(rowOf(2001).attributes('aria-pressed')).toBe('true')
     expect(rowOf(2001).classes()).toContain('is-selected')
     expect(wrapper.get('[data-test="pb-time"]').text()).toBe(timeBefore)
-    // 名册两条车道都还在
     expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(true)
 
-    // 再点同一台：同一个窗重新打开
     await rowOf(2001).trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-test="pb-info"]')).toHaveLength(1)
     expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('EnemyA')
-    // 点另一台：仍是唯一一个窗，内容换成新车
     await rowOf(1001).trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-test="pb-info"]')).toHaveLength(1)
@@ -258,10 +239,8 @@ describe('L3：名册是常驻的两侧车道（审计 BZ-13 / PB-03 + 正方形
     expect(wrapper.find('[data-test="pb-team-lane-left"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-team-lane-right"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="battle-playback"]').classes()).not.toContain('pb-roster-lanes')
-    // 详情不依赖名册：仍开着、仍是同一台车
     expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('EnemyA')
 
-    // 显示分页仍开着（同一个开关），直接打开名册
     await wrapper.get('[data-test="pb-show-roster"]').setValue(true)
     await flushPromises()
     expect(wrapper.get('[data-test="pb-roster-row"][data-account-id="2001"]').attributes('aria-pressed')).toBe('true')

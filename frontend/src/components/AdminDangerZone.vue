@@ -1,26 +1,16 @@
 <script setup lang="ts">
-// 详情抽屉底部的危险操作（管理列表模板）：先点「删除…」展开确认，再点确认才发出 confirm。
-// 传 keyword 时还要求原样输入该关键字（用户管理：DELETE）；页面在自己的处理函数里做门禁与请求，
-// 本组件只负责两段式确认的交互，不知道删除的是什么。默认插槽放结果 / 警告（确认展开时显示）。
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from './AppButton.vue'
 
 const props = withDefaults(defineProps<{
-  /** 起始按钮文案，例如「删除用户」 */
   actionLabel: string
-  /** 确认按钮文案；缺省同 actionLabel */
   confirmLabel?: string
-  /** 起始态的说明（例如「删除前需输入 DELETE 确认」） */
   hint?: string
-  /** 确认态的说明 */
   message?: string
-  /** 需要原样输入的关键字；缺省时只要求再点一次确认 */
   keyword?: string
-  /** 关键字输入框的标签 */
   keywordLabel?: string
   busy?: boolean
-  /** 只禁用起始按钮；已展开的确认不受它影响，最终的联网门禁由页面的确认处理函数在 API 边界判定 */
   disabled?: boolean
 }>(), { confirmLabel: '', hint: '', message: '', keyword: '', keywordLabel: '', busy: false, disabled: false })
 const emit = defineEmits<{ confirm: [] }>()

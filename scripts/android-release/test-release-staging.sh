@@ -2,7 +2,6 @@
 set -euo pipefail
 source "$ROOT/scripts/android-release/test-release-common.sh"
 
-# 执行真实 delta/staging step；只替换 SSH/HTTP 传输，身份校验、分支与产物处理不 mock。
 if command -v jq >/dev/null && command -v flock >/dev/null; then
 python3 - "$ROOT" "$TMP" <<'PYFLOW'
 import hashlib, importlib.util, json, os, re, shutil, subprocess, sys

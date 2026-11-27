@@ -26,7 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** ShotLifecycle（C1）：recorder 过滤、ammo join、method38 配对。 */
 class ShotLifecycleTest {
 
     private static ReplayTimestamp ts(final float raw) {
@@ -101,7 +100,6 @@ class ShotLifecycleTest {
 
     @Test
     void rapidFireSameClockPairsPerShot() {
-        // 3 条 recorder launch 同一 rawClock + 3 条 method38 同一 rawClock → 按 sequence 顺序逐发关联
         final long recorderAccount = 1001L;
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, ts(1f), 8, DecodeConfidence.EXACT,
@@ -131,7 +129,6 @@ class ShotLifecycleTest {
 
     @Test
     void qubyControlledEquivalentPairsAllThirty() {
-        // Quby→Maus 等价：30 recorder launch 与 30 method38 各在相同 rawClock（30/30 same-clock pairs）
         final long recorderAccount = 1001L;
         final List<ReplayEvent> events = new ArrayList<>();
         events.add(new ParticipantMappingEvent(1, ts(1f), 8, DecodeConfidence.EXACT,
@@ -186,7 +183,6 @@ class ShotLifecycleTest {
                 10, recorderAccount, "rec", 1));
         events.add(new ParticipantMappingEvent(2, ts(1f), 8, DecodeConfidence.EXACT,
                 20, 2001L, "enemy", 2));
-        // enemy method29（shooter=20）与 recorder-local method38 result 同刻 → 也绝不消费
         events.add(new ProjectileLaunchedEvent(3, ts(10f), 8, DecodeConfidence.EXACT,
                 20, 9002, 0, new Vector3(1f, 2f, 3f), new Vector3(100f, 0f, 0f), 0f));
         events.add(new ShotResultEvent(4, ts(10f), 8, DecodeConfidence.EXACT,

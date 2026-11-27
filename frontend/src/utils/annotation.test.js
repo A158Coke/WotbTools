@@ -27,11 +27,9 @@ describe('annotation constants', () => {
 
 describe('screenToSemantic', () => {
   it('converts screen to semantic coords at scale 1', () => {
-    // toX(0)=500, toY(0)=250（bounds 中点）
     expect(screenToSemantic({ scale: 1, tx: 0, ty: 0 }, mapView, 500, 250)).toEqual({ x: 0, y: 0 })
   })
   it('converts correctly under translate and scale', () => {
-    // view: tx=100, ty=50, scale=2 → svgX=(600-100)/2=250 → x=-150；svgY=(250-50)/2=100 → y=120
     const p = screenToSemantic({ scale: 2, tx: 100, ty: 50 }, mapView, 600, 250)
     expect(p.x).toBeCloseTo(-150, 9)
     expect(p.y).toBeCloseTo(120, 9)
@@ -44,7 +42,6 @@ describe('screenToSemantic', () => {
 })
 
 describe('CSS ↔ SVG ↔ semantic conversion (rendered size)', () => {
-  // Holland 同款：viewBox W=766 H=769，语义 ±300
   const holland = createMapView({
     width: 766,
     height: 769,
@@ -53,11 +50,9 @@ describe('CSS ↔ SVG ↔ semantic conversion (rendered size)', () => {
   const identity = { scale: 1, tx: 0, ty: 0 }
 
   it('desktop responsive: rendered map center (300,301) → semantic 0,0 (CSS px ≠ SVG unit)', () => {
-    // 渲染尺寸 600×602（.pb-map clientWidth/clientHeight），点击中心
     const p = screenToSemantic(identity, holland, 300, 301, 600, 602)
     expect(p.x).toBeCloseTo(0, 6)
     expect(p.y).toBeCloseTo(0, 6)
-    // 对应 SVG viewBox 坐标 ≈ 383, 384.5（300×766/600、301×769/602）
     const svg = screenToSvg(identity, holland, 300, 301, 600, 602)
     expect(svg.x).toBeCloseTo(383, 6)
     expect(svg.y).toBeCloseTo(384.5, 6)
@@ -66,7 +61,7 @@ describe('CSS ↔ SVG ↔ semantic conversion (rendered size)', () => {
   it('mobile: rendered width 360 — center click semantic x = 0 (fromX(180) 回归防护)', () => {
     const p = screenToSemantic(identity, holland, 180, 181, 360, 361)
     expect(p.x).toBeCloseTo(0, 6)
-    expect(Math.abs(p.y)).toBeLessThan(1) // 渲染高 361 取整，y 允许 ±1
+    expect(Math.abs(p.y)).toBeLessThan(1)
   })
 
   it('screenToSvg ↔ svgToScreen round-trip at scale 1', () => {
@@ -84,7 +79,6 @@ describe('CSS ↔ SVG ↔ semantic conversion (rendered size)', () => {
     const back = svgToScreen(holland, view, svg.x, svg.y, 600, 602)
     expect(back.x).toBeCloseTo(css.x, 9)
     expect(back.y).toBeCloseTo(css.y, 9)
-    // 完整语义往返：screen → semantic → toX/toY → screen
     const sem = screenToSemantic(view, holland, css.x, css.y, 600, 602)
     const round = svgToScreen(holland, view, holland.toX(sem.x), holland.toY(sem.y), 600, 602)
     expect(round.x).toBeCloseTo(css.x, 6)
@@ -120,7 +114,6 @@ describe('geometry normalization', () => {
     expect(s.split(' ')).toHaveLength(3)
   })
   it('polylinePoints maps semantic to SVG via toX/toY', () => {
-    // toY(-100) = (200-(-100))/400*500 = 375
     expect(polylinePoints([{ x: 0, y: 0 }, { x: 100, y: -100 }], mapView.toX, mapView.toY))
       .toBe('500.00,250.00 666.67,375.00')
   })
@@ -157,7 +150,7 @@ describe('snapshot undo/redo', () => {
   it('cannot undo at the initial snapshot and cannot redo at the tail', () => {
     expect(canUndo(0)).toBe(false)
     expect(canRedo([[], [{ type: 'pen', color: '#fff', width: 3, points: [{ x: 0, y: 0 }] }]], 1)).toBe(false)
-    expect(canRedo([[], []], 0)).toBe(true) // 快照 1 已提交，可从 0 前进到 1
+    expect(canRedo([[], []], 0)).toBe(true)
     expect(canRedo([[], []], 1)).toBe(false)
   })
 

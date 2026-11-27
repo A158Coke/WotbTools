@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
-/** 匿名 HTTP 聚合边界；不读取认证上下文。 */
 @RestController
 public class BattleDataController {
     private final BattleDataService service;

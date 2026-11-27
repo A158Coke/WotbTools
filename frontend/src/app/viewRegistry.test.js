@@ -1,14 +1,10 @@
 // @vitest-environment happy-dom
-// #845 View transition 边界的语义锁定：defineLazyView 的 delay / latest-wins / error /
-// timer 清理全部走真实 defineAsyncComponent（Vue 3.5 runtime semantics），受控 deferred
-// loader 只替身动态 import 本身。ViewHost 级 gate precedence 见 ViewHost.transition.test.ts。
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { KeepAlive, defineComponent, h, onMounted, shallowRef } from 'vue'
 import ReplayWorkspace from '../components/ReplayWorkspace.vue'
 import { defineLazyView, VIEW_COMPONENTS, VIEW_LOAD_FEEDBACK_DELAY_MS } from './viewRegistry.js'
 
-/** 与 ViewHost 相同的宿主形态：KeepAlive include + 动态组件位。 */
 function mountHost(initial) {
   const current = shallowRef(initial)
   const Host = defineComponent({
@@ -20,7 +16,6 @@ function mountHost(initial) {
   return { wrapper, show: view => { current.value = view } }
 }
 
-/** 受控 lazy view：每次 load 生成新 deferred，测试按名字 settle。 */
 const defs = {}
 function controlledView(name) {
   return defineLazyView(() => {
@@ -54,7 +49,6 @@ describe('defineLazyView transition semantics', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(wrapper.find('[data-testid="view-fast"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="view-loading"]').exists()).toBe(false)
-    // 不存在「loader 至少显示一段时间」的人为等待：resolve 后跨过阈值也不闪 loader
     await vi.advanceTimersByTimeAsync(VIEW_LOAD_FEEDBACK_DELAY_MS * 2)
     expect(wrapper.find('[data-testid="view-loading"]').exists()).toBe(false)
     wrapper.unmount()
@@ -89,7 +83,6 @@ describe('defineLazyView transition semantics', () => {
     resolveView('c')
     await vi.advanceTimersByTimeAsync(0)
     expect(wrapper.find('[data-testid="view-c"]').exists()).toBe(true)
-    // B 在被 C 取代之后才 resolve（甚至跨过自己的阈值）——不能重新渲染、不能出现 B 的 loader
     resolveView('b')
     await vi.advanceTimersByTimeAsync(VIEW_LOAD_FEEDBACK_DELAY_MS * 3)
     expect(wrapper.find('[data-testid="view-c"]').exists()).toBe(true)
@@ -108,7 +101,6 @@ describe('defineLazyView transition semantics', () => {
     resolveView('c')
     await vi.advanceTimersByTimeAsync(0)
     expect(wrapper.find('[data-testid="view-c"]').exists()).toBe(true)
-    // B 的 delay timer 已被 unmount 清理：跨过阈值也不出现 B 的 loader
     await vi.advanceTimersByTimeAsync(VIEW_LOAD_FEEDBACK_DELAY_MS * 3)
     expect(wrapper.find('[data-testid="view-loading"]').exists()).toBe(false)
     wrapper.unmount()
@@ -135,7 +127,6 @@ describe('defineLazyView transition semantics', () => {
     await vi.advanceTimersByTimeAsync(0)
     rejectView('broken')
     await vi.advanceTimersByTimeAsync(0)
-    // click event 不得作为首参转发（reloadForFreshBundle 的首参是 beforeReload 回调）
     await wrapper.get('[data-testid="view-load-reload"]').trigger('click')
     expect(reload).toHaveBeenCalledTimes(1)
     reload.mockRestore()
@@ -185,7 +176,6 @@ describe('VIEW_COMPONENTS registry contract', () => {
   })
 
   it('keeps ReplayWorkspace instances cached by KeepAlive across view switches', async () => {
-    // 生产中 ReplayWorkspace 同步加载且被 <KeepAlive include> 缓存；用同名 stub 锁定该语义不被边界破坏。
     let mounts = 0
     const ReplayStub = defineComponent({
       name: 'ReplayWorkspace',

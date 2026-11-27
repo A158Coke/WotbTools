@@ -1,4 +1,3 @@
-/** `terrain.json` / `X-Terrain-Meta` 的 `terrainLayout`：当前唯一认可的数据布局。 */
 export const TERRAIN_LAYOUT_ENGINE_VERTEX = 2
 
 export interface TerrainMeta {
@@ -10,23 +9,17 @@ export interface TerrainMeta {
   terrainBinSha256?: string | null
 }
 
-/** 高度场解码所需的元字段必须齐全；缺一项就 fail-closed（不能拿缺省 layout/zmax 猜）。 */
 export function terrainFieldMetaValid(meta: TerrainMeta | null): boolean {
   if (!meta || typeof meta !== 'object') return false;
   const n = Number(meta.size);
-  // size=1 会被解码成单点场，但 buildAdaptiveTerrain 要求 n>=2 会抛错——提前 fail-closed。
   if (!Number.isInteger(n) || n < 2) return false;
   const layout = meta.terrainLayout;
   if (layout !== 1 && layout !== TERRAIN_LAYOUT_ENGINE_VERTEX) return false;
-  // 必须先是真正的 number：null / '' / false 经 Number() 会变成 0，会被误认为合法高度范围。
   const zmin = meta.zmin, zmax = meta.zmax;
   if (typeof zmin !== 'number' || typeof zmax !== 'number') return false;
-  // 允许 zmax === zmin（完全平坦的地图，k=0）；只拒绝缺失/倒置范围
   return Number.isFinite(zmin) && Number.isFinite(zmax) && zmax >= zmin;
 }
 
-/** 当前地形消费口径只支持居中、正方形 worldBounds（±300 契约）；非零中心/非方形 fail-closed。
- *  worldBounds 缺失（旧包）不在此判定，由调用方的 span 校验兜底。 */
 export function terrainBoundsOk(meta: TerrainMeta | null): boolean {
   const wb = meta && meta.worldBounds;
   if (!wb) return true;
@@ -60,8 +53,6 @@ export function terrainBoundsOk(meta: TerrainMeta | null): boolean {
  * @returns Float32Array(n*n) | null（尺寸不符 / 未知布局）
  */
 export function decodeTerrainField(buf: ArrayBuffer | null, meta: TerrainMeta = {}): Float32Array | null {
-  // 缺 terrain.json / 缺 layout/size/zmax 时**不得**用缺省值猜：layout 1 vs 2 差一列、
-  // zmax 缺省会让高度整体缩放错误。旧包没有 layout 标记 ⇒ 同样回退 2D（fail-closed）。
   if (!terrainFieldMetaValid(meta)) return null;
   const n = Number(meta.size);
   if (!buf || buf.byteLength !== n * n * 2) return null;
@@ -78,31 +69,17 @@ export function decodeTerrainField(buf: ArrayBuffer | null, meta: TerrainMeta = 
   return field;
 }
 
-/**
- * json/bin 配对（PR #615 review P2）：`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两次
- * 独立请求，布局标记只对同一次发布的 bin 成立——发布切换期"新 json + 浏览器缓存的旧 bin"会跳过补正，
- * "旧 json + 新 bin"会对已修正数据再平移一列。上游 `terrain.json` 带 `terrainBinSha256`（bin 的逐文件
- * sha256，与 manifest 同源）：
- *   · `pairedTerrainBinUrl`：以 sha 作 bin 的缓存键（浏览器 HTTP 缓存按完整 URL 区分；对象存储忽略该
- *     查询参数、Android 原生资产代理按 path 取并逐次 ETag 复验）⇒ 不会复用上一次发布缓存的旧 bin；
- *   · `terrainBinMatchesMeta`：解码前核对字节 sha256 ⇒ 发布进行中（json/bin 尚未同批）fail-closed。
- * 无 `terrainBinSha256` 的旧包：无从配对，沿用原行为；**有 sha 但 WebCrypto 不可用**
- * （非安全上下文/旧 WebView）⇒ fail-closed，不能假装配对成功。
- */
 function terrainBinSha(meta: TerrainMeta | null): string | null {
   const s = meta && meta.terrainBinSha256;
   return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s) ? s : null;
 }
 
-/** bin URL 附 `sha256=<terrainBinSha256>` 作缓存键；meta 无合法 sha 时原样返回。 */
 export function pairedTerrainBinUrl(url: string | null | undefined, meta: TerrainMeta | null): string | null | undefined {
   const sha = terrainBinSha(meta);
   if (!url || !sha) return url;
   return `${url}${url.includes('?') ? '&' : '?'}sha256=${sha}`;
 }
 
-/** bin 字节与 meta 声明的 sha256 是否一致。
- *  无 sha（旧包）⇒ true（无从校验）；有 sha 但无 WebCrypto/buf ⇒ false（fail-closed）。 */
 export async function terrainBinMatchesMeta(buf: ArrayBuffer | null, meta: TerrainMeta | null, subtle: SubtleCrypto | undefined = globalThis.crypto?.subtle): Promise<boolean> {
   const sha = terrainBinSha(meta);
   if (!sha) return true;

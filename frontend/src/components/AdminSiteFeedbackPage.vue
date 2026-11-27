@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// 站点反馈管理（列表模板，docs/frontend/ui-system.md「管理后台列表模板」）：
-// 页头 → 原因筛选 → 表格（小屏卡片）→ 分页；点行在右侧抽屉看原文，删除在抽屉底部（两段式确认）。
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { siteFeedbackReasons, feedbackStatuses, listSiteFeedback, getSiteFeedback, deleteSiteFeedback, updateSiteFeedbackStatus, type FeedbackStatus, type SiteFeedbackReason } from '../api/site-feedback.js'
@@ -28,7 +26,6 @@ const selected = ref<FeedbackItem | null>(null), detail = ref<FeedbackDetail | n
 const returnFocus = ref<HTMLElement | null>(null)
 const dangerZone = ref<InstanceType<typeof AdminDangerZone> | null>(null)
 const loaded = ref(false), savingStatus = ref<Record<string, boolean>>({})
-// 该记录的详情 GET 正在途中（PATCH 确认作废时据此重启读取，抽屉不停在「加载中」）
 const pendingDetailId = ref<FeedbackItem['id'] | null>(null)
 let hasLoadedOnce = false
 let blockedInitialLoad = false
@@ -38,13 +35,11 @@ let statusEpoch = 0
 const confirmedStatuses = new Map<string, { status: FeedbackStatus; epoch: number }>()
 const detailVersions = new Map<string, number>()
 
-/** 4xx means the server explicitly rejected the write; anything else may have committed. */
 function isDefiniteStatusRejection(cause: unknown): boolean {
   const status = normalizeApiError(cause).status
   return status !== null && status >= 400 && status < 500
 }
 
-/** Discard only in-flight detail reads for the record whose status just changed. */
 function invalidateDetailRequests(id: string): void {
   detailVersions.set(id, (detailVersions.get(id) ?? 0) + 1)
 }
@@ -99,17 +94,14 @@ function reasonChips() {
 
 function applyStatus(id: string, status: FeedbackStatus): void {
   statusEpoch++
-  // A detail GET for this record started before confirmation may still deliver the old status.
   invalidateDetailRequests(id)
   confirmedStatuses.set(id, { status, epoch: statusEpoch })
   const target = items.value.find(entry => entry.id === id)
   if (target) target.status = status
   if (selected.value && selected.value.id === id) selected.value = { ...selected.value, status }
   if (detail.value && detail.value.id === id) detail.value = { ...detail.value, status }
-  // PATCH 确认作废了在途详情读取：详情仍在加载时重启读取，抽屉不能停在「加载中」
   else if (pendingDetailId.value === id && selected.value?.id === id) void loadDetail(id)
 }
-/** 行内状态下拉（行内控件，不触发整行打开）：成功即确认；4xx 回退；其它失败回读服务器状态。 */
 async function changeStatus(item: FeedbackItem, event: Event): Promise<void> {
   const select = event.target as HTMLSelectElement
   const next = select.value as FeedbackStatus
@@ -145,8 +137,6 @@ async function reconcileStatus(item: FeedbackItem, select: HTMLSelectElement, pr
   }
 }
 
-/** 点行 / 主列按钮：抽屉立即打开显示列表字段，原文随后由详情请求补上。 */
-/** 详情读取：版本与状态纪元守卫（陈旧/被接管的响应静默丢弃）；在途标记见 pendingDetailId。 */
 async function loadDetail(id: FeedbackItem['id']): Promise<void> {
   const current = ++detailGeneration
   const detailVersion = detailVersions.get(id) ?? 0
@@ -246,7 +236,6 @@ onBeforeUnmount(() => { generation++; detailGeneration++; pendingDetailId.value 
         </section>
         <p v-if="!detail && !error" class="admin-list-muted" role="status">{{ $t('siteFeedback.loading') }}</p>
         <template v-if="detail">
-          <!-- 状态只取详情响应（已按确认状态校正）；被作废的旧详情不会显示过期状态 -->
           <p class="admin-list-muted" data-testid="feedback-detail-status">{{ $t('siteFeedback.statusLabel') }}: {{ $t('siteFeedback.status.' + detail.status) }}</p>
           <section class="admin-list-section"><h3 class="admin-list-section-title">{{ $t('siteFeedback.comment') }}</h3><pre class="admin-list-pre">{{ detail.feedbackText || '—' }}</pre></section>
         </template>

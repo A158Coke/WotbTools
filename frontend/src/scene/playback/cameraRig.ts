@@ -1,18 +1,13 @@
-// 录像者相机的纯数学：不依赖 Three，scene 负责接线。
-// 回放只证明瞄准方向、开镜时机与缩放 raw 值；第三人称机位和准星绝对尺寸都是重建。
 import type { AgentRecorderCamera } from '../../api/agent-replay-facets.js'
 
-/** 录像者相机 facet（wire owner：agent-replay-facets.ts 的 AgentRecorderCamera）。 */
 export type RecorderCameraFacet = AgentRecorderCamera
 
-/** sampleRecorderCamera / 几何写入器的三维输出面（Vector3-like 裸对象即可）。 */
 export interface CameraVec3 {
   x: number
   y: number
   z: number
 }
 
-/** 回放时刻 t 的录像者相机采样（out 对象逐帧复用；无内部游标）。 */
 export interface RecorderCameraSample {
   rawMode: number
   mode: string
@@ -27,14 +22,12 @@ export interface RecorderCameraSample {
 
 export const CAMERA_MODE = Object.freeze({ ARCADE: 'ARCADE', SNIPER: 'SNIPER', UNKNOWN: 'UNKNOWN' })
 
-/** 渲染默认 FOV（度），与 playback/renderer.js 的相机同值。 */
 export const BASE_FOV_DEG = 55
 const MODE_BLEND_SEC = 0.25
 export const ARCADE_BOOM_M = 14
 const ARCADE_HEIGHT_M = 4
 export const ANCHOR_HEIGHT_M = 2.2
 export const BACKWARD_ZOOM_SCALE = 1.35
-/** 视野穿透半径（米）：Arcade 要盖住相机到本车这一段，两者都是校准值。 */
 export const FOLIAGE_CLIP_SCOPED_M = 25
 export const FOLIAGE_CLIP_ARCADE_M = ARCADE_BOOM_M + 6
 const BACKWARD_ZOOM_TAU_SEC = 0.25
@@ -45,14 +38,12 @@ const ZOOM_RAW_MIN = 6.75
 const ZOOM_RAW_MAX = 54
 const MODE_DEFAULT_RAW = 1
 const MODE_CODE_MASK = 0x7fffffff
-/** Type31 相对 session 边界的时钟容差，与上游结构校验同值。 */
 const ZOOM_SESSION_SLACK_SEC = 0.02
 
 const RETICLE_BASE_RAD = 0.01
 const RETICLE_MIN_PX = 10
 const RETICLE_MAX_VIEWPORT = 0.2
 
-/** `values` 中最后一个 ≤ t 的下标；全部大于 t 时返回 -1。 */
 function lastIndexAtOrBefore(values: ArrayLike<number>, t: number): number {
   let lo = 0
   let hi = values.length - 1
@@ -71,16 +62,11 @@ function modeOf(raw: number): string {
   return CAMERA_MODE.UNKNOWN
 }
 
-/** 回放时刻 t 的 Type23 模式，供可用性门控逐帧读取。 */
 export function recorderModeAt(facet: RecorderCameraFacet, t: number): string {
   const index = lastIndexAtOrBefore(facet.mode.t, t)
   return modeOf(index >= 0 ? facet.mode.raw[index] : MODE_DEFAULT_RAW)
 }
 
-/**
- * Type31 只在当前开镜 session 内取最近样本：连续流的保持误差约 8ms，而稀疏流线性插值
- * 会凭空造出数秒的缓变。session 刚开始还没有样本时取本 session 的第一个样本。
- */
 function zoomInSession(zoom: RecorderCameraFacet['zoom'], sessionStart: number, sessionEnd: number, t: number): number | null {
   const floor = sessionStart - ZOOM_SESSION_SLACK_SEC
   const index = lastIndexAtOrBefore(zoom.t, t)
@@ -89,7 +75,6 @@ function zoomInSession(zoom: RecorderCameraFacet['zoom'], sessionStart: number, 
   return next < zoom.t.length && zoom.t[next] <= sessionEnd ? zoom.raw[next] : null
 }
 
-/** 回放时刻 t 的录像者相机状态；无内部游标，seek 与顺播结果一致。 */
 export function sampleRecorderCamera(facet: RecorderCameraFacet, t: number, out: RecorderCameraSample = {} as RecorderCameraSample): RecorderCameraSample {
   const modeIndex = lastIndexAtOrBefore(facet.mode.t, t)
   const rawMode = modeIndex >= 0 ? facet.mode.raw[modeIndex] : MODE_DEFAULT_RAW
@@ -119,7 +104,6 @@ export function sampleRecorderCamera(facet: RecorderCameraFacet, t: number, out:
   return out
 }
 
-/** 游戏系瞄准角 → 场景系单位方向（场景系 = 游戏系 x 取负）。 */
 export function aimDirectionScene(yaw: number, pitch: number, out: CameraVec3 = {} as CameraVec3): CameraVec3 {
   const horizontal = Math.cos(pitch)
   out.x = -Math.sin(yaw) * horizontal
@@ -128,7 +112,6 @@ export function aimDirectionScene(yaw: number, pitch: number, out: CameraVec3 = 
   return out
 }
 
-/** Arcade 机位：从车辆锚点沿瞄准水平方向后退并抬高。 */
 export function arcadeCameraPosition(anchor: CameraVec3, direction: CameraVec3, boom: number, out: CameraVec3 = {} as CameraVec3): CameraVec3 {
   const length = Math.hypot(direction.x, direction.z) || 1
   out.x = anchor.x - (direction.x / length) * boom
@@ -137,29 +120,22 @@ export function arcadeCameraPosition(anchor: CameraVec3, direction: CameraVec3, 
   return out
 }
 
-/** 倒车判定：比较最近一段位移与车体前向，无内部状态，seek 后立即正确。 */
 export function isReversing(previous: CameraVec3, current: CameraVec3, hullYaw: number): boolean {
   const along = (current.x - previous.x) * Math.sin(hullYaw) + (current.z - previous.z) * Math.cos(hullYaw)
   return along / REVERSE_WINDOW_SEC < -REVERSE_MIN_SPEED_MPS
 }
 export const REVERSE_SAMPLE_OFFSET_SEC = REVERSE_WINDOW_SEC
 
-/** 倒车拉远的呈现平滑；这一段是重建，不是回放数据。 */
 export function backwardZoomScale(current: number, reversing: boolean, dt: number): number {
   const target = reversing ? BACKWARD_ZOOM_SCALE : 1
   return target + (current - target) * Math.exp(-Math.max(0, dt) / BACKWARD_ZOOM_TAU_SEC)
 }
 
-/**
- * raw → 渲染垂直 FOV 的唯一映射点。这是校准映射，不是单位结论：
- * Type31 的物理单位未闭合，以原客户端对照结果为准。
- */
 export function fovFromZoomRaw(raw: number): number {
   if (!Number.isFinite(raw)) return BASE_FOV_DEG
   return Math.max(ZOOM_RAW_MIN, Math.min(ZOOM_RAW_MAX, raw))
 }
 
-/** 扩散圆像素半径：bloom 视为角半径按当前 FOV 投影，绝对尺寸是校准值，不是协议结论。 */
 export function reticleRadiusPx({ bloomRaw, fovDeg, viewportH }: { bloomRaw: number | null; fovDeg: number; viewportH: number }): number {
   const bloom = typeof bloomRaw === 'number' && Number.isFinite(bloomRaw) ? bloomRaw : 1
   const halfFov = (fovDeg * Math.PI) / 360
@@ -167,7 +143,6 @@ export function reticleRadiusPx({ bloomRaw, fovDeg, viewportH }: { bloomRaw: num
   return Math.max(RETICLE_MIN_PX, Math.min(viewportH * RETICLE_MAX_VIEWPORT, radius))
 }
 
-/** 模式切换的呈现缓动进度。 */
 export function blendProgress(elapsedSec: number): number {
   const ratio = Math.max(0, Math.min(1, elapsedSec / MODE_BLEND_SEC))
   return ratio * ratio * (3 - 2 * ratio)

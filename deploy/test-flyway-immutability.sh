@@ -41,12 +41,6 @@ expect_fail() {
   grep -q "$expected" <<<"$output" || fail "$label missing '$expected': $output"
 }
 
-# The production hotfix uses the one explicitly approved historical restore pair. It is
-# reproduced hermetically: the pre-restore bytes are a hash-pinned fixture, because the
-# commit they came from (`8d94a24c`) is no longer reachable on the remote after the history
-# rewrite (release tags were re-pointed at the new commit graph), so no checkout — not even
-# a full tag fetch — can resolve it. The real record is still asserted: the shipped V18 must
-# be the authoritative historical blob, and the fixture must still be the drifted blob.
 readonly V18_REL_PATH="$MIGRATION_DIR/V18__create_hundred_battle_submission.sql"
 readonly V18_PRE_RESTORE_REL="deploy/fixtures/flyway/V18__create_hundred_battle_submission.pre_restore.sql"
 readonly V18_DRIFTED_BLOB="212635ebf5c04198476af52f4913dbfd2a9f0e4e"

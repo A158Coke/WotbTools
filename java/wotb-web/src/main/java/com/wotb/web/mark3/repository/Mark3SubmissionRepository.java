@@ -13,11 +13,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * 三环 submission 仓库；终态迁移采用行锁。
- * canonical owner = (wotb_server, wotb_account_id)；V22 的单个组合 partial unique index 保证
- * 同一 (区服, 账号) + vehicle 在 PENDING/CURRENT 中最多一条 active 记录。
- */
 public interface Mark3SubmissionRepository extends JpaRepository<Mark3Submission, Long> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

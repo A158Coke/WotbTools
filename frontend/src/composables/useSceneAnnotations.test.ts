@@ -10,7 +10,6 @@ function sceneApi() {
   return { setAnnotations: vi.fn(), setAnnotationInteraction: vi.fn(), setAnnotationsVisible: vi.fn() }
 }
 
-/** 宿主替身：与 Replay3DPane / MapPreview3DPane 同一模板接线（v-bind props + v-on handlers）。 */
 function mountHost(options: { canOpen?: () => boolean; onOpen?: () => void } = {}) {
   const api = sceneApi()
   const store = reactive({ ready: true })
@@ -27,7 +26,6 @@ function mountHost(options: { canOpen?: () => boolean; onOpen?: () => void } = {
   return { wrapper, api, store, session: () => session }
 }
 
-/** 等价于模板 `v-on="obj"`：事件名 → onXxx 键（Vue toHandlers 同一规则）。 */
 function toHandlers(handlers: Record<string, (...args: never[]) => unknown>) {
   return Object.fromEntries(Object.entries(handlers).map(([event, fn]) => [`on${event[0].toUpperCase()}${event.slice(1)}`, fn]))
 }

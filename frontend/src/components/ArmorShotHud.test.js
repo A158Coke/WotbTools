@@ -212,7 +212,6 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     let resolveStock
     data.fetchTankData.mockReturnValueOnce(new Promise(resolve => { resolveStock = resolve }))
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1 } })
-    // 缺省（无 upgrade prop）= XI top；首个在途响应仍是 top 请求。
     expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'top', abilities: null })
     const upgraded = structuredClone(TANK)
     upgraded.configs[1].shells[0].penetration = 330
@@ -237,7 +236,6 @@ describe('ArmorShotHud（右上角弹种 + 装备图标）', () => {
     const wrapper = mount(ArmorShotHud, { props: { shooterId: 1, upgrade: 'custom', abilities: '1' } })
     await flushPromises()
     expect(data.fetchTankData).toHaveBeenLastCalledWith(1, { upgrade: 'custom', abilities: '1' })
-    // 场景按部分研发算 400 伤害；HUD 若折叠 top 会读满级 430。
     const partial = structuredClone(TANK)
     partial.configs[0].shells[0].damage = 400
     data.fetchTankData.mockResolvedValueOnce(partial)

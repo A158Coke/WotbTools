@@ -55,7 +55,6 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     const armorValues = () => wrapper.findAll('.tp-armor-table .tp-param-value').map(value => value.text())
     const topArmor = armorValues()
     const topPitch = JSON.parse(JSON.stringify(wrapper.findComponent(GunArcDiagram).props('pitchLimits')))
-    // 缺省 = 顶级：top 单选选中，stock 未选中。
     expect(wrapper.find('[data-testid="tank-upgrade-top"]').attributes('aria-checked')).toBe('true')
     expect(wrapper.find('[data-testid="tank-upgrade-stock"]').attributes('aria-checked')).toBe('false')
     expect(wrapper.findAll('[data-testid^="tank-ability-"]')).toHaveLength(3)
@@ -63,14 +62,14 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     const choices = fixture.modules.upgradeProgression.alternativeGroups[0].choices
     await wrapper.find(`[data-testid="tank-ability-${choices[2]}"]`).trigger('click')
     await flushPromises()
-    expect(hp()).toBe(topHp) // 技能选择不改变静态满级数值。
+    expect(hp()).toBe(topHp)
     expect(router.currentRoute.value.query.abilities).toBe(String(choices[2]))
     await wrapper.find('[data-testid="tank-upgrade-stock"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toMatchObject({ upgrade: 'stock', config: '0', abilities: String(choices[2]) })
     expect(hp()).not.toBe(topHp)
     if ([27905, 30241, 30497].includes(fixture.modules.tankId)) expect(armorValues()).not.toEqual(topArmor)
-    else expect(armorValues()).toEqual(topArmor) // BZ-79/KR-1 没有装甲升级节点。
+    else expect(armorValues()).toEqual(topArmor)
     const stockPitch = wrapper.findComponent(GunArcDiagram).props('pitchLimits')
     expect(stockPitch.max).toBeLessThan(topPitch.max)
     await wrapper.find('[data-testid="tank-upgrade-top"]').trigger('click')
@@ -130,7 +129,6 @@ describe('AgentTankopedia — XI 两端升级（真实客户端模块，受控�
     })
     await opened.wrapper.find('[data-testid="tank-open-research"]').trigger('click')
     await flushPromises()
-    // 投影规范化为每组第一项；树必须与投影一致，不能把三项都标成已研发
     for (const [index, id] of choices.entries()) {
       expect(opened.wrapper.find(`[data-testid="tank-augment-sector-${id}"]`).attributes('aria-pressed'))
         .toBe(String(index === 0))

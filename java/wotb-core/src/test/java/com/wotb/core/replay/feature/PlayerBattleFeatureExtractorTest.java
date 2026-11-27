@@ -17,12 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 18.5: PlayerBattleFeatureExtractor 测试。
- * - 只处理 recorder entity
- * - damage dealt/received 正确区分
- * - MovementSegment 压缩
- */
 class PlayerBattleFeatureExtractorTest {
 
     private final DefaultPlayerBattleFeatureExtractor extractor = new DefaultPlayerBattleFeatureExtractor();
@@ -54,14 +48,12 @@ class PlayerBattleFeatureExtractorTest {
         final var events = List.of(
                 pos(1, 10f, RECORDER_EID, 0, 0),
                 pos(2, 11f, RECORDER_EID, 10, 10),
-                pos(3, 12f, OTHER_EID, 100, 100)     // 不应进入 recorder feature
+                pos(3, 12f, OTHER_EID, 100, 100)
         );
         final var recon = buildRecon(events, RECORDER_EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, RECORDER_EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping, null);
-        // 移动段不应包含 OTHER_EID 的位置
         for (final MovementSegment seg : fs.movements()) {
-            // 所有段的坐标范围应在 0-10 之间（recorder 轨迹）
             assertTrue(seg.rawStartPosition().x() <= 10 || seg.rawStartPosition().x() == 0);
         }
     }
@@ -74,12 +66,12 @@ class PlayerBattleFeatureExtractorTest {
                 map(0, RECORDER_EID, 1000L),
                 map(0, ENEMY_EID, 2000L),
                 map(0, 99, 999L),
-                dmg(1, 20f, RECORDER_EID, ENEMY_EID, 200),  // recorder 造成 200
-                dmg(2, 25f, ENEMY_EID, RECORDER_EID, 150),  // recorder 承受 150
-                dmg(3, 30f, RECORDER_EID, 99, 100),         // recorder 造成 100
-                hp(4, 19f, ENEMY_EID, 500), hp(5, 20f, ENEMY_EID, 300),       // 掉血 200
-                hp(6, 24f, RECORDER_EID, 500), hp(7, 25f, RECORDER_EID, 350), // 掉血 150
-                hp(8, 29f, 99, 400), hp(9, 30f, 99, 300)                      // 掉血 100
+                dmg(1, 20f, RECORDER_EID, ENEMY_EID, 200),
+                dmg(2, 25f, ENEMY_EID, RECORDER_EID, 150),
+                dmg(3, 30f, RECORDER_EID, 99, 100),
+                hp(4, 19f, ENEMY_EID, 500), hp(5, 20f, ENEMY_EID, 300),
+                hp(6, 24f, RECORDER_EID, 500), hp(7, 25f, RECORDER_EID, 350),
+                hp(8, 29f, 99, 400), hp(9, 30f, 99, 300)
         );
         final var recon = buildRecon(events, RECORDER_EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, RECORDER_EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
@@ -99,17 +91,15 @@ class PlayerBattleFeatureExtractorTest {
         final int EID = 10;
         final var events = List.of(
                 pos(1, 10f, EID, 0, 0),
-                pos(2, 10.1f, EID, 0.1f, 0.1f),    // 几乎不动 → STATIONARY
-                pos(3, 15f, EID, 50, 0),             // 移动 → MOVING
+                pos(2, 10.1f, EID, 0.1f, 0.1f),
+                pos(3, 15f, EID, 50, 0),
                 pos(4, 15.1f, EID, 52, 0),
-                pos(5, 20f, EID, 52, 0)              // 停了 → STATIONARY
+                pos(5, 20f, EID, 52, 0)
         );
         final var recon = buildRecon(events, EID);
         final var mapping = new RecorderEntityMapping(1000L, 1, EID, "Recorder", 1, 0, DecodeConfidence.EXACT);
         final PlayerBattleFeatureSet fs = extractor.extract(recon, mapping, null);
-        // 至少有一个 movement segment
         assertFalse(fs.movements().isEmpty());
-        // 段数量应远少于位置事件数（压缩有效）
         assertTrue(fs.movements().size() < events.size());
     }
 
@@ -123,7 +113,6 @@ class PlayerBattleFeatureExtractorTest {
         assertTrue(fs.limitations().contains("recorder") || fs.movements().isEmpty());
     }
 
-    // ---- 辅助 ----
 
     private static ReplayReconstruction buildRecon(List<? extends com.wotb.core.replay.event.ReplayEvent> events, int recorderEid) {
         final var state = BattleStateSnapshot.empty();

@@ -37,10 +37,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Call #2 prompt 时间线化：提供 canonical timeline 时必须注入 TACTICAL TIMELINE 段，
- * 且书签段（SNAPSHOT/PRIOR/TASK）保持完整。
- */
 class TacticalReviewPromptBuilderTimelineTest {
 
     private static final AiTokenEstimator ESTIMATOR = new ConservativeDeepSeekTokenEstimator();
@@ -93,14 +89,12 @@ class TacticalReviewPromptBuilderTimelineTest {
                 DecodeConfidence.EXACT, 1, 1800, null, true));
         events.add(new HealthChangedEvent(5, new ReplayTimestamp(1000f, 0f), 7,
                 DecodeConfidence.EXACT, 4, 1600, null, true));
-        // 首次接敌 + 敌方掉血：产生 episode 信号
         events.add(new DamageEvent(6, new ReplayTimestamp(1010f, 10f), 8,
                 DecodeConfidence.EXACT, 1, 4, null, null, 420, false));
         events.add(new HealthChangedEvent(7, new ReplayTimestamp(1011f, 11f), 7,
                 DecodeConfidence.EXACT, 4, 1180, null, true));
         events.add(new PositionChangedEvent(8, new ReplayTimestamp(1011f, 11f), 10,
                 DecodeConfidence.EXACT, 4, 0, 0, -22f, 0f, -22f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
-        // 敌方阵亡于 90s
         events.add(new HealthChangedEvent(9, new ReplayTimestamp(1090f, 90f), 7,
                 DecodeConfidence.EXACT, 4, 0, null, false));
         final BattleStateCheckpoint cp = new BattleStateCheckpoint(1000f, 0,
@@ -148,11 +142,9 @@ class TacticalReviewPromptBuilderTimelineTest {
         assertTrue(content.contains("首次接敌"), "Episode 必须表达首次接敌（FIRST_CONTACT）");
         assertTrue(content.contains("信息空窗期损失约") || content.contains("HP"),
                 "Episode 必须表达 HP 变化语义");
-        // 书签段保持
         assertTrue(content.contains("BATTLE SNAPSHOT"));
         assertTrue(content.contains("PRE-BATTLE STRATEGIC PRIOR"));
         assertTrue(content.contains("======================== TASK"));
-        // 顺序：SNAPSHOT → PRIOR → TIMELINE → TASK
         assertTrue(content.indexOf("TACTICAL TIMELINE") > content.indexOf("PRE-BATTLE STRATEGIC PRIOR"));
         assertTrue(content.indexOf("======================== TASK") > content.indexOf("TACTICAL TIMELINE"));
     }

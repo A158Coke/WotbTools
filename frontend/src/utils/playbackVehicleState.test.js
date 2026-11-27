@@ -40,12 +40,11 @@ describe('projectVehicleState', () => {
   })
 
   it('位姿通道优先：位置/朝向取 pose，可信度仍取 canonical（含最后观测时刻）', () => {
-    // canonical 原始观测位于 (100,60) 之间，位姿通道给出 (7,-4)：标记必须落在位姿通道值上
     const state = project(5, undefined, { x: 7, y: -4, yawRad: Math.PI / 2, turretRelRad: 0 })
     expect(state.pos).toEqual(expect.objectContaining({ x: 7, y: -4 }))
-    expect(state.hullScreenDeg).toBeCloseTo(90, 9)          // π/2 rad → 90°
+    expect(state.hullScreenDeg).toBeCloseTo(90, 9)
     expect(state.turretScreenDeg).toBeCloseTo(90, 9)
-    expect(state.covered).toBe(true)                        // canonical 观测窗口内
+    expect(state.covered).toBe(true)
     expect(state.lastKnown).toBe(false)
   })
 
@@ -56,7 +55,6 @@ describe('projectVehicleState', () => {
       ] }],
       { x: 1, y: 2, yawRad: Math.PI / 4, turretRelRad: -Math.PI / 6 })
     expect(state.hullScreenDeg).toBeCloseTo(45, 9)
-    // 45° + (−30°) = 15°：炮塔朝向来自位姿通道（上游保证 turret_yaw 与车体同长）
     expect(state.turretScreenDeg).toBeCloseTo(15, 9)
   })
 
@@ -77,9 +75,9 @@ describe('projectVehicleState', () => {
       { x: -3, y: 8, yawRad: 0, turretRelRad: 0 },
       [{ startSec: 0, endSec: 4, knowledge: 'LAST_KNOWN', samples: [{ timeSec: 0, x: 5, y: 5 }] }],
     )
-    expect(state.lastKnown).toBe(true)   // canonical 观测区间（失察）
-    expect(state.pos.timeSec).toBe(0)    // 最后观测时刻（canonical 权威）
-    expect(state.pos.x).toBe(-3)         // 位置值来自位姿通道
+    expect(state.lastKnown).toBe(true)
+    expect(state.pos.timeSec).toBe(0)
+    expect(state.pos.x).toBe(-3)
   })
 
   it('returns null before the first observed canonical position', () => {

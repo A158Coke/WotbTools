@@ -15,11 +15,6 @@ export function loadMapGrass(deps: MapWorldDeps, ctx: {
 }) {
   const { grassBudget, resolvedKey, stale, scene, sampleHeight, hasHeightField, publish, noteAsset } = ctx
   const DEBUG = deps.debug
-    // 草层（上游 grass.{json,bin,glb}，2026-11-17 审计 H1）：可选资产，实例预算来自
-    // 画质档语义表（QUALITY_FEATURES.grass.instances；低/均衡 = 0，高清/极致 = 60k）——
-    // 低/均衡档走俯视烘焙底图，立体草与俯视观感冲突。
-    // 实例是客户端世界系（z 上）；高度经 heightAt 采样渲染用地形（scene 坐标 ↔ 客户端
-    // 坐标 = (−x, y) 的 qFrame 逆映射）。
     const grassStage = (s: string) => { if (DEBUG) window.__grassStage = s; };
     try {
       grassStage('start');
@@ -56,7 +51,6 @@ export function loadMapGrass(deps: MapWorldDeps, ctx: {
                 const built = buildGrassMeshes(gdoc, instances, geometries, {
                   albedo,
                   maxInstances: grassBudget,
-                  // 客户端 (x, y) → 渲染 scene (x=−clientX, z=clientY) 的地形高度
                   heightAt: heightAtProbe,
                 });
                 scene.add(built.group);
@@ -65,15 +59,12 @@ export function loadMapGrass(deps: MapWorldDeps, ctx: {
                   window.__grass = {
                     instances: instances.length, meshes: built.group.children.length,
                     variations: geometries.length,
-                    // 原型顶点/索引数：低档 60k 是 27/7/7/3 顶点稀疏三角，高档 500 档
-                    // 才是 38/39/26/5（54–81 索引）的完整草簇——用于确认加载的是哪一档
                     prototypeVerts: geometries.map((g) => g.getAttribute('position')?.count ?? 0),
                     prototypeTris: geometries.map((g) => Math.floor((g.getIndex()?.count ?? 0) / 3)),
                     colorSample: [Math.round(instances[0].r * 255), Math.round(instances[0].g * 255),
                                   Math.round(instances[0].b * 255)],
                     firstInstanceScene: (() => {
                       const i0 = instances[0];
-                      // qFrame：scene = (−x, z, y)；heightAt 已按同一映射取样
                       return [-i0.x, heightAtProbe(i0.x, i0.y), i0.y];
                     })(),
                     groupAttached: built.group.parent !== null,

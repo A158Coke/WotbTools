@@ -25,10 +25,6 @@ resource "postgresql_database" "wotb" {
   }
 }
 
-# Flyway runs as the database owner, which already holds schema-level DDL
-# privileges. This grant is the explicit runtime contract for the future
-# Control API connection; it deliberately grants no schema or table objects,
-# because Flyway remains the single owner of the application schema.
 resource "postgresql_grant" "control_api_database_access" {
   database    = postgresql_database.wotb.name
   role        = postgresql_role.control_api.name

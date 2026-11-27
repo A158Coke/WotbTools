@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Deterministic combat and damage evidence rendering. */
 final class PlayerCombatEvidenceFormatter {
     private PlayerCombatEvidenceFormatter() {
     }
@@ -341,10 +340,6 @@ final class PlayerCombatEvidenceFormatter {
         for (final PlayerResult p : battle.players) {
             byAccount.putIfAbsent(p.accountId, p);
         }
-        // killer identity derives ONLY from canonical terminal evidence
-        // (PlaybackCombatReconstruction.destroyed: timeSec + victimAccountId + reliable killerAccountId).
-        // The stale PlayerResult.killVictims (damage-threshold heuristic) is removed; a terminal with no
-        // reliably attributed killer is reported as UNKNOWN, never guessed from cumulative damage.
         final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Result combat = combat(battle, recon);
         for (final com.wotb.core.replay.feature.PlaybackCombatReconstruction.Destroyed destroyed
                 : combat.destroyed()) {
@@ -359,7 +354,6 @@ final class PlayerCombatEvidenceFormatter {
                     killersOfRecorder.add(killerLabel + (suppressObservedNumbers ? ""
                             : " 致死前对你累计造成" + lethalTotal + "点伤害"));
                 } else {
-                    // canonical terminal without reliable attacker attribution: honest UNKNOWN
                     killersOfRecorder.add(killerLabel);
                 }
             } else if (destroyed.killerAccountId() != null

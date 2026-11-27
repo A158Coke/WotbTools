@@ -2,7 +2,6 @@ package com.wotb.ai.review;
 
 import com.wotb.ai.prompt.AiPromptLibrary;
 
-/** 提示词资源入口；规则正文由三语 Markdown 资源维护。 */
 final class PlayerPromptRules {
 
     private PlayerPromptRules() {

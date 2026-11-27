@@ -24,7 +24,6 @@ vi.mock('vue-i18n', () => ({
   })
 }))
 
-/** 角色由测试改写：`tokenParsed` 是 ref，组件只读 `realm_access.roles`。 */
 const authToken = ref({ realm_access: { roles: ['wotbtools-user'] } })
 
 vi.mock('../composables/useAuth.js', () => ({
@@ -38,7 +37,6 @@ vi.mock('../composables/useAuth.js', () => ({
 
 const mountPanel = (props = {}) => mountAiReviewPanel(mount, AiReviewPanel, props)
 
-// ---- 失败态归类（design-language §10）：每个失败必须说清发生了什么 + 下一步 ----
 
 describe('AiReviewPanel failure states', () => {
   it.each([
@@ -117,17 +115,14 @@ describe('AiReviewPanel failure states', () => {
       controller: new AbortController(), correlationId: 'corr-raw', startedAt: Date.now(),
       timeoutTimer: null, cancelRequested: false, timedOut: false,
     }
-    // 直接覆盖兜底分支：任何不属于契约错误码的原始异常都必须先归类，绝不能把 message 交给用户。
     const failure = wrapper.vm.__classify(new Error('Component is missing template or render function'), run)
 
     expect(failure.kind).toBe('client')
     expect(failure.message).toBe('recon.errors.AI_CLIENT_ERROR')
     expect(failure.message).not.toContain('missing template')
-    // 原始 Error 不带契约诊断信息 → 不编造 ID；有 id 时才展示
     expect(failure.id).toBe('')
     expect(warn).toHaveBeenCalled()
 
-    // 该文案真实渲染到 Banner，且不出现原始异常文本
     wrapper.vm.failure = failure
     await nextTick()
     const banner = wrapper.find('[data-test="ai-error"]')
@@ -149,7 +144,6 @@ describe('AiReviewPanel failure states', () => {
     expect(wrapper.find('.ai-action-row').exists()).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
 
-    // 权限恢复后必须立刻可用（不是被永久藏起来）
     authToken.value = { realm_access: { roles: ['wotbtools-admin'] } }
     await nextTick()
     expect(wrapper.find('.ai-action-row').exists()).toBe(true)
@@ -174,7 +168,6 @@ describe('AiReviewPanel failure states', () => {
   })
 
   it('完成后只保留格式化报告，不再并列显示原始流正文', async () => {
-    // #679 回归：done 之后 partialAnalysis 仍非空，曾把原始 Markdown 与格式化报告同时展示。
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseFromFrames(
       sseFrame('call2_token', { delta: '## 复盘\n**关键转折**' }),
       sseFrame('done', { analysis: '## 复盘\n**关键转折**', preBattleSection: '' }),

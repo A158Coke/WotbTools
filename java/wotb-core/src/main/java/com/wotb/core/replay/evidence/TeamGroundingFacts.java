@@ -19,18 +19,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Team Review Grounding Facts（确定性，Backend 唯一事实源投影，docs/features/team-ai-review.md
- * Natural Coach 轮）。
- * <p>从权威结算 + 已验证 canonical {@link BattleTimeline} 提取<b>带稳定证据编号</b>的
- * 事实清单，作为 prompt 的 GROUNDING FACTS 段输入（LLM 的战术表述只能使用这些
- * 带编号事实支撑的内容）。</p>
- * <p>事实类型：PLAYER_DESTROYED（阵亡）/ ALIVE_COUNT_TRANSITION（存活变化）/
- * FOCUS_WINDOW（关注窗口）/ POSITION_REGION（位置区域快照）/
- * ENEMY_POSITION_KNOWN（敌方位置知识 CURRENT / LAST_KNOWN）。</p>
- * <p>边界：只输出确定性事实与确定性派生测量，不做战术裁决；timeline 为 null
- * 时只输出 canonical death/result 可推导事实（阵亡/存活变化），位置/窗口类事实缺失。</p>
- */
 public final class TeamGroundingFacts {
 
     public static final String TYPE_PLAYER_DESTROYED = "PLAYER_DESTROYED";
@@ -114,20 +102,12 @@ public final class TeamGroundingFacts {
         }
     }
 
-    /**
-     * Production 入口。{@link PlayerResultFormat#deathSec(PlayerResult)} 已经是 canonical
-     * battle-relative 秒，不得再减 battleStartRawClockSec。
-     */
     public static GroundingFacts build(final Battle battle,
                                        final BattleTimeline timeline,
                                        final int perspectiveTeam) {
         return buildInternal(battle, timeline, perspectiveTeam);
     }
 
-    /**
-     * Compat 入口。保留 {@code battleStartRawClockSec} 参数仅为调用兼容；PR147 production contract
-     * 已统一 deathSec 为 battle-relative，因此此参数不得再次用于死亡时钟换算。
-     */
     public static GroundingFacts build(final Battle battle,
                                        final Double battleStartRawClockSec,
                                        final int perspectiveTeam) {
@@ -142,7 +122,6 @@ public final class TeamGroundingFacts {
         final List<RegionSnapshot> snapshots = new ArrayList<>();
         final List<EnemyPositionSample> enemyPositions = new ArrayList<>();
 
-        // 1) 阵亡：Battle-aware canonical deathSec 已是 battle-relative。
         final List<PlayerResult> players = battle == null || battle.players == null
                 ? List.of() : battle.players;
         final List<PlayerResult> dead = players.stream()
@@ -157,7 +136,6 @@ public final class TeamGroundingFacts {
                     rel, rel, p.accountId, p.nickname, p.tankName, Map.of()));
         }
 
-        // 2) 存活变化：timeline 帧 WorldSummary 优先，否则由 canonical 已知阵亡推导。
         if (timeline != null && timeline.frames() != null && !timeline.frames().isEmpty()) {
             WorldSummary prev = null;
             for (final BattleFrame frame : timeline.frames()) {

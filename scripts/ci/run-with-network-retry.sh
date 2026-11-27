@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run one CI command with a small, fail-closed retry budget for transport-only
-# failures. The command's original exit status is preserved for non-retryable
-# failures and after the final retry.
-#
-# Optional per-attempt bound: when NETWORK_RETRY_TIMEOUT_SECONDS is set, every
-# attempt runs under `timeout --kill-after=${NETWORK_RETRY_KILL_AFTER_SECONDS:-30}s`
-# and a timeout kill (124/137) counts as a retryable transport failure. Without
-# that variable the helper behaves exactly as before, so existing callers keep
-# their current semantics. The command must be an executable in that mode:
-# `timeout` cannot run a shell function.
 
 network_retry_is_transport_failure() {
   local output="$1"
@@ -20,12 +10,6 @@ network_retry_is_transport_failure() {
     <<<"$output"
 }
 
-# 124 = the per-attempt `timeout` expired; 137 = SIGKILL delivered by --kill-after.
-# A stalled transfer is transient against a content-addressed registry: the next
-# attempt only re-uploads the blobs the previous attempt did not finish.
-# $1 = the configured per-attempt bound (empty when unset), $2 = the command's status.
-# Only a bounded caller can receive 124/137 from `timeout`; without a bound those
-# statuses must stay fail-closed exactly as before this option existed.
 network_retry_is_timeout_kill() {
   [[ -n "$1" && ( "$2" == 124 || "$2" == 137 ) ]]
 }

@@ -1,24 +1,4 @@
 #!/usr/bin/env bash
-# Production-worker reconcile for one reviewed target (K7A).
-#
-# Owner boundary: this lifecycle prepares a host to run a *future* Komodo
-# workload. It owns the Docker Compose capability, the reviewed Docker daemon
-# registry mirror, and the registry credential of the execution context that
-# Komodo/Periphery actually uses (root). It never creates, adopts, starts, or
-# migrates a workload, never touches Komodo Core or its resources, and never
-# touches Periphery's identity, config, or systemd unit.
-#
-# Order: target profile -> privilege -> preflight -> staging re-proof -> host lock
-# -> Compose -> Docker daemon mirror -> root registry credential -> authenticated
-# private-image access -> "no workload was created" self-check. The lock is held
-# across every mutation, so no other mutation of this host can interleave.
-#
-# Privilege model, from the target profile:
-#   root -> the SSH account already is root; this runs in place.
-#   sudo -> the SSH account is not root; this re-executes itself through
-#           non-interactive sudo, preserving ONLY the registry credential this
-#           phase owns (through the environment, never through argv, disk, or a
-#           log).
 set -Eeuo pipefail
 umask 077
 
@@ -36,17 +16,9 @@ load_target_profile "$TARGET" "$runtime"
 if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   command -v sudo >/dev/null 2>&1 \
     || fail "sudo is required to reconcile target $WORKER_TARGET from a non-root account."
-  # Fail closed when privilege escalation needs a human: a workflow cannot type a
-  # password, and a half-privileged run is worse than no run.
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to reconcile target $WORKER_TARGET."
   sudo_args=(-n)
-  # Preserve only the reviewed registry contract that this phase owns, and only
-  # when each input is present. This includes the non-secret desired-state inputs:
-  # dropping them at the sudo boundary would make the privileged half validate a
-  # different contract from the workflow that invoked it. --preserve-env hands
-  # values over in the environment; secrets never appear in argv, on disk, or in
-  # a log, and `set -x` is never enabled.
   preserve=()
   for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
     if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
@@ -54,7 +26,6 @@ if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
   if (( ${#preserve[@]} > 0 )); then
     sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
   fi
-  # A deterministic PATH for the privileged half, independent of sudoers/sshd.
   exec sudo "${sudo_args[@]}" env \
     PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
     bash "$0" "$@"
@@ -75,13 +46,8 @@ for staged in "$runtime/lib.sh" "$runtime/staging-root.sh" "$runtime/install.sh"
     || fail "Staged production-worker input is missing or unsafe: $staged"
 done
 
-# Re-prove the staging root the workflow handed over: the SHA directory and both
-# of its parents must still be real directories, never symlinks.
 bash "$runtime/staging-root.sh" verify "$SOURCE_SHA" "$WORKER_STAGING_ROOT"
 
-# Take this host's mutation lock for the whole transaction and pass the descriptor
-# down. The lock and its root belong to the host's deploy owner: this owner never
-# creates them, and it never introduces a second, worker-only lock.
 require_host_lock
 if [[ -n "${WORKER_DEPLOY_LOCK_FD:-}" ]]; then
   [[ "$WORKER_DEPLOY_LOCK_FD" == 9 ]] || fail 'Unsupported inherited production-worker lock fd.'
@@ -92,14 +58,10 @@ else
 fi
 export WORKER_DEPLOY_LOCK_FD=9
 
-# K7A must not create a workload. Snapshot the running set now, record it for the
-# verification layer, and re-prove it at the end: any container that appeared
-# during this reconcile is a scope violation.
 containers_before="$(running_container_ids)"
 install -d -m 700 -o root -g root "$worker_state_dir"
 printf '%s\n' "$containers_before" | atomic_write "$worker_state_dir/containers.before" 600
 
-## --- 1. Docker Compose v2 -----------------------------------------------------
 
 compose_available() {
   "$docker_bin" compose version >/dev/null 2>&1
@@ -116,21 +78,16 @@ else
     || fail "Installing $WORKER_COMPOSE_PACKAGE failed on $WORKER_TARGET."
 fi
 compose_available || fail "Docker Compose v2 is unusable on $WORKER_TARGET after reconciliation."
-# `docker compose ls` is the Komodo runtime operation itself, so it also proves
-# the Docker daemon is answering plugin commands (not just that a binary exists).
 "$docker_bin" compose ls --all --format json >/dev/null 2>&1 \
   || fail "docker compose ls failed on $WORKER_TARGET; the Compose plugin is not usable."
 pass docker-compose-v2
 
-## --- 2. Docker daemon registry mirror ----------------------------------------
 
 daemon_config="$(docker_daemon_config_path)"
 require_real_dir "$docker_daemon_dir" "the $WORKER_TARGET Docker daemon configuration directory"
 if [[ -e "$daemon_config" || -L "$daemon_config" ]]; then
   [[ -f "$daemon_config" && ! -L "$daemon_config" ]] \
     || fail "The Docker daemon configuration is not a real file: $daemon_config"
-  # Fail closed on a malformed file or on any setting this owner does not own,
-  # before a single byte is replaced.
   assert_supported_daemon_config "$daemon_config"
 fi
 
@@ -150,11 +107,6 @@ daemon_config_matches "$daemon_config" \
   || fail "The Docker daemon configuration must be mode 644."
 
 if (( restart_required )); then
-  # Docker only reads daemon.json at start; the mirror is therefore applied by a
-  # restart, and only when the reviewed file actually changed. Restarting may
-  # restart containers that opt into a restart policy, so the impact is recorded
-  # before it happens: K7A is the reviewed moment for this prerequisite because
-  # TX2 hosts no production WotBTools workload yet.
   affected="$(printf '%s' "$containers_before" | grep -c . || true)"
   echo "docker-hub-mirror: restarting $docker_bin (running containers visible before restart: $affected)"
   "$systemctl_bin" restart docker || fail "Restarting the Docker daemon failed on $WORKER_TARGET."
@@ -168,12 +120,6 @@ assert_active_mirror "$WORKER_DOCKER_HUB_MIRROR" \
   || fail "The reviewed Docker Hub mirror is not active on $WORKER_TARGET."
 pass docker-hub-mirror
 
-## --- 3. Registry credential for the root Docker context ----------------------
-#
-# Komodo/Periphery operates Docker as root, so the credential must live in root's
-# Docker configuration. It is materialised from the protected production
-# environment, never copied from another host, never committed, and never placed
-# in a Compose file, a Komodo resource, or the Periphery config.
 
 [[ -n "${TCR_USERNAME:-}" ]] || fail 'TCR_USERNAME is required to authenticate the root Docker context.'
 [[ -n "${TCR_PASSWORD:-}" ]] || fail 'TCR_PASSWORD is required to authenticate the root Docker context.'
@@ -182,9 +128,6 @@ validate_registry_prefix "${TCR_REGISTRY:?TCR_REGISTRY is required}" "${TCR_NAME
 image_ref="$registry_prefix/$WORKER_VERIFY_IMAGE_REPOSITORY:$WORKER_VERIFY_IMAGE_TAG"
 applied_version="$(applied_credential_version)"
 
-# The credential file is secret material: prove nobody else can read it, and refuse a
-# file that carries credentials this owner does not manage. An unsafe *existing* file is
-# an incident, not drift, so it stops the run instead of being silently replaced.
 credential_file_safe() {
   local path="$1"
   python3 - "$path" "${TCR_REGISTRY:?}" <<'PY'
@@ -227,9 +170,6 @@ authenticated_image_access() {
     "$docker_bin" manifest inspect "$image_ref" >/dev/null 2>&1
 }
 
-# Desired-state convergence is driven by the reviewed generation, not by whether the
-# current credential happens to work: during a rotation the old credential stays valid
-# for a while, so authentication alone would silently keep the host on the old secret.
 if (( have_credential )) && [[ "$applied_version" == "$credential_version" ]] \
     && authenticated_image_access; then
   echo "tcr-root-auth: generation $credential_version already applied and authenticating (no rewrite)"
@@ -246,14 +186,12 @@ else
     rm -f -- "$backup_config"
   }
   trap cleanup_credential_material EXIT
-  # The password reaches docker only through stdin: it is never an argument.
   printf '%s' "$TCR_PASSWORD" \
     | DOCKER_CONFIG="$credential_dir" "$docker_bin" login "$TCR_REGISTRY" \
         --username "$TCR_USERNAME" --password-stdin >/dev/null 2>&1 \
     || fail "Registry authentication failed for $TCR_REGISTRY."
   [[ -f "$credential_dir/config.json" && ! -L "$credential_dir/config.json" ]] \
     || fail 'Registry authentication produced no Docker credential file.'
-  # Validate the produced document before it can become the host credential.
   credential_file_safe "$credential_dir/config.json" \
     || fail 'Registry authentication produced an unsupported Docker credential file.'
   install -d -m 700 -o root -g root "$root_docker_config_dir"
@@ -263,9 +201,6 @@ else
   fi
   atomic_write "$root_config" 600 < "$credential_dir/config.json"
   rm -rf -- "$credential_dir"
-  # The generation marker advances only after the installed credential is proven. A
-  # failure here restores the previous credential and leaves the marker untouched, so
-  # the host never reports ready for a generation it has not verified.
   if ! authenticated_image_access; then
     if (( have_credential )); then
       atomic_write "$root_config" 600 < "$backup_config" \
@@ -291,7 +226,6 @@ authenticated_image_access \
   || fail "The root Docker context cannot resolve the private production image $image_ref."
 pass tcr-root-auth
 
-## --- 4. No workload was created ----------------------------------------------
 
 containers_after="$(running_container_ids)"
 [[ "$containers_before" == "$containers_after" ]] \

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Agent WASM Release 附件的 ingest + fail-closed 校验（唯一实现）。
 
 产物形状是 **commit-addressed 目录**，两个来源（Release 直取 / 源码自建）必须一致：
@@ -26,12 +25,10 @@ import shutil
 import sys
 import zipfile
 
-# 产物文件名是前端 loader 与 nginx location 共同依赖的契约
 JS_NAME = "wotb_replay_wasm.js"
 WASM_NAME = "wotb_replay_wasm_bg.wasm"
 FINGERPRINT_NAME = "fingerprint.json"
 
-# dest 由 ref 拼出：只接受完整 SHA，杜绝 `..`/空白等路径注入
 REF_RE = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -115,7 +112,6 @@ def ingest(archive: pathlib.Path, ref: str, release: str, dest: pathlib.Path) ->
     if not release:
         raise IngestError("source.json artifact.release 为空")
 
-    # 旧清单先删：解压失败或产物缺清单时，不得沿用上一版的 fingerprint 通过校验
     fingerprint_path = dest / FINGERPRINT_NAME
     fingerprint_path.unlink(missing_ok=True)
     dest.mkdir(parents=True, exist_ok=True)
@@ -140,7 +136,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
     workdir.mkdir(parents=True, exist_ok=True)
     expect_commit = "a" * 40
     expect_tag = "v0.0.1"
-    # 落位根目录固定为 <workdir>/wasm/，与真实 `common/assets/wasm/` 同构
     wasm_root = workdir / "wasm"
     synthetic = workdir / "synthetic.zip"
     with zipfile.ZipFile(synthetic, "w") as z:
@@ -151,7 +146,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
             json.dumps({"upstream_commit": expect_commit, "tag": expect_tag, "bindgen": "wasm-bindgen 0.0.0"}),
         )
 
-    # 1) 匹配 fingerprint → PASS，且落位是 commit-addressed 目录
     dest = wasm_root / expect_commit
     ingest(synthetic, expect_commit, expect_tag, dest)
     for name in (JS_NAME, WASM_NAME, FINGERPRINT_NAME):
@@ -159,7 +153,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
     assert dest.parent == wasm_root, "self-test: 落位目录必须是 wasm/<ref>/"
     print(f"self-test PASS 落位: wasm/{expect_commit}/")
 
-    # 2) 同一 ZIP + 期望 commit 不同 → FAIL（commit 不一致）
     try:
         ingest(synthetic, "b" * 40, expect_tag, wasm_root / ("b" * 40))
     except IngestError as exc:
@@ -167,7 +160,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
     else:
         raise AssertionError("self-test: commit 不一致未被拒绝")
 
-    # 3) 同一 ZIP + 期望 release 不同 → FAIL（release 不一致）
     try:
         ingest(synthetic, expect_commit, "v9.9.9", wasm_root / "release-mismatch")
     except IngestError as exc:
@@ -175,7 +167,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
     else:
         raise AssertionError("self-test: release 不一致未被拒绝")
 
-    # 4) 真实 ZIP（任意非本 pin 期望值必然不一致）→ FAIL，证明校验真的在看产物清单
     real_commit, real_tag = "c" * 40, "v0.0.2"
     if archive.resolve() != synthetic.resolve():
         try:
@@ -185,7 +176,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
         else:
             raise AssertionError("self-test: 真实产物清单不匹配未被拒绝")
 
-    # 5) 清单缺失 / 非 JSON / 非对象 → FAIL（不得沿用旧清单）
     cases = (("missing", None), ("malformed", b"{not json"), ("not-object", b"[1, 2]"))
     for index, (label, content) in enumerate(cases):
         target = workdir / f"{label}-{'d' * 39}{index}"
@@ -200,7 +190,6 @@ def self_test(archive: pathlib.Path, workdir: pathlib.Path) -> None:
         else:
             raise AssertionError(f"self-test: {label} fingerprint 未被拒绝")
 
-    # 6) ZIP 条目逃出目标目录 → FAIL（zip slip；不依赖调用方做路径消毒）
     escape_root = workdir / "escape"
     escape_root.mkdir(parents=True, exist_ok=True)
     escape_zip = workdir / "escape.zip"

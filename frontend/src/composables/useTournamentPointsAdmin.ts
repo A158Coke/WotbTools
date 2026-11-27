@@ -6,7 +6,6 @@ import { parseTournamentHistoricalFile } from '../utils/tournamentHistoricalImpo
 import type { KeycloakTokenParsed } from 'keycloak-js'
 import type { TournamentConfig, TournamentDayView, TournamentDraftRequest, TournamentIncomingGroup, TournamentRecognitionResult, TournamentAudit, TournamentEvent } from '../api/tournament-points.js'
 
-/** Local review state is deliberately incomplete until the administrator checks the original. */
 export interface TournamentImageReview {
   file: File
   url: string
@@ -39,16 +38,12 @@ export function tournamentGroupReviewError(review: TournamentImageReview, config
   return null
 }
 
-/** 核对卡片的展示状态与排序：有疑点 → 新军团 → 待核对 → 已核对。只读现有识别结果，不改变保存校验。 */
 export type TournamentReviewState = 'issue' | 'newClan' | 'pending' | 'reviewed'
 export const TOURNAMENT_REVIEW_ORDER: TournamentReviewState[] = ['issue', 'newClan', 'pending', 'reviewed']
 export function tournamentReviewState(review: TournamentImageReview, config: TournamentConfig, round: number, day: number, duplicate: boolean): TournamentReviewState {
   if (review.duplicateAction === 'SKIP') return 'reviewed'
   if (review.error || !review.result || (duplicate && review.duplicateAction === 'ERROR')) return 'issue'
   const groupError = tournamentGroupReviewError(review, config, round, day)
-  // 识别警告（缺组号 / 军团或名次不清）在管理员改正并确认后即视为已处理：result.issues 是识别时的原始记录，
-  // 不会被清空，只看它会让改正过的卡片永远停在「有疑点」。整图结构问题（多组 / 不完整）仍由 groupError 拦住。
-  // 「新军团未确认」单独归入 newClan，不算作未改正的识别问题。
   const corrected = review.complete && (!groupError || groupError === 'unreviewed')
   if (review.result.issues.length && !corrected) return 'issue'
   const tags = review.teams.map(team => normalizeTournamentClan(team.clanTag)).filter(Boolean)
@@ -136,8 +131,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     stale.value = (value as { errorCode?: string })?.errorCode === 'TOURNAMENT_VERSION_CONFLICT'
   }
   function applyDay(value: TournamentDayView) {
-    // Only owned successful responses reach this transition. A correction is a new
-    // publication; an uncertain/failed publication retry keeps its existing key.
     if (dayState.value?.status === 'FINALIZED' && value.status === 'CORRECTION') publicationKey = crypto.randomUUID()
     dayState.value = value
     previewState.value = null
@@ -208,7 +201,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     error.value = null
     notice.value = ''
     clearCsvPreview()
-    // A full 10,000-row matrix fits this bounded file budget; reads never block UI navigation.
     if (file.size > 2 * 1024 * 1024) { historicalFileIssue.value = 'historicalTooLarge'; return }
     if (!file.name.toLowerCase().endsWith('.json')) { historicalFileIssue.value = 'historicalInvalid'; return }
     busy.value = true
@@ -299,7 +291,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     const selected = new Map<number | TournamentImageReview, { review: TournamentImageReview; duplicate: boolean }>()
     for (const review of reviews.value) {
       if (review.duplicateAction === 'SKIP') continue
-      // Unidentified images remain separate until the administrator supplies a group.
       const key = Number.isInteger(review.groupNumber) && Number(review.groupNumber) > 0 ? review.groupNumber! : review
       selected.set(key, { review, duplicate: selected.has(key) && review.duplicateAction === 'ERROR' })
     }
@@ -358,10 +349,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
-  /**
-   * 本次识别正在处理的那张卡：取消时据此区分「本次新建的占位卡」（移除）与「复用的已有卡」（恢复原错误，保留可重试）。
-   * 不按 result / error 字段推断：重试开始时旧错误已被清空，推断会把可重试的失败卡当成孤儿删掉。
-   */
   let inFlightReview: { review: TournamentImageReview, created: boolean, previousError: unknown } | null = null
   async function recognize(files: File[], retry?: TournamentImageReview) {
     if (!canUpload.value) return
@@ -404,8 +391,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     controller.abort()
     controller = new AbortController()
     recognizing.value = false
-    // 只处理被取消的那张在途卡：本次新建的占位卡移除（不留孤儿审核卡）；
-    // 复用的已有卡（重试）恢复原来的错误，仍可重试。其它卡（已有结果 / 已报错 / 排队未开始）不动。
     const pending = inFlightReview
     inFlightReview = null
     if (!pending) return
@@ -439,8 +424,6 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   })
   async function finalize() {
     if (!canFinalize.value) return
-    // Both visible actions work from a reviewed preview: confirmation first persists the
-    // shared draft, then publishes that version. Public results change only on publication.
     if (reviews.value.length && !await saveDraft()) return
     return write(signal => transport.finalizeTournamentDay(eventId.value!, round.value, day.value, {
       expectedEventVersion: dayState.value!.eventVersion, expectedDayVersion: dayState.value!.version,

@@ -1,16 +1,9 @@
 <script setup>
-/**
- * 装备 id 徽标行（回放装配 → 客户端图标）：消费 Type5 配件串（`shooter_equipment.raw` /
- * `vehicles[].equipment`，0=空槽垫底、空槽省略）。图标/名称唯一反查源是资产包
- * devices.json（loadDevices 轻加载器）；未知 id **不猜名**——渲染带 id 的占位徽标并
- * 标注「未知」（fail-closed），目录缺失时整组降级为文本。
- */
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.js'
 
 const props = defineProps({
-  /** 装备 id 集合（0=空槽；自动过滤；位置不承载槽位语义） */
   ids: { type: Array, default: null },
 })
 
@@ -25,7 +18,6 @@ onMounted(async () => {
   }
 })
 
-/** 客户端物品名只有 en / zh-Hans 两套；ru 回退 en（数据文档已记录）。 */
 const lang = computed(() => (locale.value === 'zh' ? 'zh-Hans' : 'en'))
 
 const badges = computed(() => {

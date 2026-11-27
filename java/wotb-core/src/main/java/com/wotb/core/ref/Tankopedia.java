@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 10 个 tier 文件）。 */
 public final class Tankopedia {
 
     private static final String[] TIER_RESOURCES = {
@@ -40,18 +39,10 @@ public final class Tankopedia {
         this.names = Set.copyOf(knownNames);
     }
 
-    /**
-     * Compatibility entry point. Application code should prefer
-     * {@link TankopediaReferenceData#tankopedia()} explicitly.
-     *
-     * <p>This method no longer reloads classpath resources: every caller receives the same
-     * application-level immutable reference-data instance.</p>
-     */
     public static Tankopedia load() {
         return TankopediaReferenceData.tankopedia();
     }
 
-    /** Package-private bootstrap used exactly once by {@link TankopediaReferenceData}. */
     static Tankopedia loadFromResources() {
         final Map<Long, JsonNode> map = new HashMap<>();
         for (final String resource : TIER_RESOURCES) {
@@ -68,7 +59,6 @@ public final class Tankopedia {
                     }
                 }
             } catch (Exception ignored) {
-                // 缺库时降级为只显示车辆ID
             }
         }
         return new Tankopedia(map);
@@ -83,9 +73,6 @@ public final class Tankopedia {
         final Object tier = vehicle.hasNonNull("tier") ? vehicle.get("tier").asInt() : "";
         final String type = vehicle.hasNonNull("class") ? vehicle.get("class").asText() : "";
         final String nation = vehicle.hasNonNull("nation") ? vehicle.get("nation").asText() : "";
-        // 权威炮伤只在数据层有唯一依据时输出（单炮车 / 1-9 顶配炮）；
-        // 10 级多炮车不输出 vehicle 级 alphaDamage，这里返回 null，
-        // AI structured facts 会省略炮伤，而不是把不确定值伪装成本场实际炮伤。
         final Integer alphaDamage = firstInt(vehicle, "alphaDamage");
         final Integer maxHp = firstInt(vehicle, "hp");
         final String extraInfo = vehicle.hasNonNull("extraInfo")
@@ -104,11 +91,6 @@ public final class Tankopedia {
         return vehicles.size();
     }
 
-    /**
-     * 全部已知坦克名（tier1-10 词表，与 {@link #info} 同源）。
-     * <p>供 AI 复盘正文的车名校验使用：判断正文中出现的车名是否属于已知车辆、
-     * 是否属于本场 roster。名称本身仍是权威专有名词，不得由名称推断属性。</p>
-     */
     public Set<String> names() {
         return names;
     }

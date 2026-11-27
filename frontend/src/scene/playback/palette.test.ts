@@ -1,4 +1,3 @@
-// palette.teamColorOf：数值 adapter 必须从 PLAYBACK_ROLES 派生，并保持视角语义。
 import { describe, expect, it } from 'vitest'
 import { COLOR_ENEMY, COLOR_FRIENDLY, COLOR_UNKNOWN, TRACER_ENEMY, TRACER_FRIENDLY, teamColorOf } from './palette.js'
 import { PLAYBACK_ROLES } from '../../data/mapTeamColors.js'

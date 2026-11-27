@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Sync equipment from one stable BlitzKit definition set.
 
 The updater is forward-compatible by design: new game versions and changed
@@ -71,9 +70,6 @@ def main(argv=None):
 
     ue.sync_upstream_metadata(payload, equipment_pb, tanks_pb)
 
-    # Locked equipment needs a narrower guard than a whole-file fingerprint.
-    # Log each complete definition hash so reviewed item-level locks can be updated
-    # without blocking unrelated new vehicles, presets, equipment, or game builds.
     for code, definition_hash in sorted(locked_definition_hashes(payload, equipment_pb).items()):
         print("locked_definition_sha256 %s=%s" % (code, definition_hash))
 

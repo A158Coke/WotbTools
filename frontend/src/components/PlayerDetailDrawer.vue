@@ -21,33 +21,11 @@ import {
 } from '../utils/radarGeometry.js'
 import { sanitizeFilename, downloadBlob } from '../utils/exportReplayPng.js'
 
-/**
- * 选手详情 Side Drawer（design-language §7 Drawer / §9 Master–Detail）。
- * - 桌面（≥1200）：推开式侧栏，可拖宽；平板（768–1199）：固定宽度的推开式侧栏；
- *   两者都通过 --pd-drawer-offset 让工作台让出右侧空间，不遮挡表格。
- * - 手机（<768）：全屏 sheet（modal），左右滑动切换上一位 / 下一位玩家。
- * - 打开时 focus 关闭按钮；Escape / × / backdrop 关闭；关闭后 focus 回到触发行。
- * - selection identity = accountId：排序/刷新后由父组件按 accountId 重新 resolve 数据。
- * - scope 语义：summary = 当前批次（V6 Rating + Observed Mean + Rated Battles 头部；
- *   Radar 用 dimensionMeans → Global Average）；battle = 本场表现（V4.1 单场 Rating +
- *   本场七维 dimensionScores → Battle Average；禁止使用 dimensionMeans/Medians）。
- * - Radar：默认七维（仅 League 维度，§8），用户可自定义 3–7 个指标/顺序（presentation-only，
- *   独立于 Table ColumnPicker，独立 localStorage）；axis 缺失 → 整图 unavailable（§24）。
- *   League bounded 几何使用 player raw / reference raw / resp.league.columns max；max 同时解释 raw 明细，
- *   缺失/非法时整轴 fail-closed。
- * - 参考多边形（Battle/Global Average）由 utils/radarReference.js 纯函数计算；V6 聚合 Rating
- *   不修改七维 raw 或 Radar 几何。
- */
 const props = defineProps({
-  /** 当前选中上下文；null = 关闭。 */
   context: { type: Object, default: null },
-  /** Drawer 标题区域数据（父组件已按 context 解析好当前行）。 */
   player: { type: Object, default: null },
-  /** League Rating 列满分元数据（resp.league.columns：key → max）。 */
   leagueColumns: { type: Array, default: () => [] },
-  /** 当前 scope 的玩家集合（summary=unifiedRows，battle=本场 players），用于参考平均。 */
   scopePlayers: { type: Array, default: () => [] },
-  /** 前后导航可用性（父组件按当前可见表格顺序决定，§29/§31）。 */
   hasPrev: { type: Boolean, default: false },
   hasNext: { type: Boolean, default: false },
 })
@@ -78,8 +56,6 @@ function num(v) {
   return (v == null || v === '' || !Number.isFinite(Number(v))) ? '--' : String(Math.round(Number(v) * 10) / 10)
 }
 
-/** 顶部 Rating 信息：缺失 → '--'；总 Rating 格式化统一走 helpers.ratingTotalText。
- *  rating 语义由父组件按 scope 提供：summary = V6 Batch Player Rating，battle = V4.1 单场。 */
 function ratingLine() {
   const p = props.player
   if (!p) return { rating: '--' }
@@ -88,10 +64,6 @@ function ratingLine() {
 
 const maxByKey = computed(() => leagueMaxByKey(props.leagueColumns))
 
-/** player 雷达原始轴（顺序 = 用户偏好；league 维度按 scope 取数：
- *  summary → dimensionMeans[i]（rated-battle 算术平均），battle → dimensionScores[i]
- *  （本场七维）；V6 几何由当前 reference=75、权威维度 max=150 的 bounded scale 生成。禁止 battle 复用跨场聚合字段、
- *  禁止 summary 用 median 冒充 mean。 */
 const rawRadarMetrics = computed(() => {
   const p = props.player
   if (!p) return []
@@ -107,7 +79,6 @@ const rawRadarMetrics = computed(() => {
     .filter(Boolean)
 })
 
-/** 参考多边形（Battle/Global Average）：不依赖选中玩家，只依赖 scope（§61）。 */
 const rawReferenceSeries = computed(() => {
   const ref = isSummary.value
     ? globalAverage(props.scopePlayers, { dimKeys: radarOrder.value })
@@ -128,12 +99,10 @@ const referenceSeries = computed(() => scaledRadarSeries.value.reference)
 const referenceLabel = computed(() =>
   isSummary.value ? t('league.drawer.global_average') : t('league.drawer.battle_average'))
 
-/** D2 缺维契约：player 缺任一所选维 → 整图 unavailable（§24）。 */
 const playerUnavailable = computed(() =>
   radarMetrics.value.length > 0 && radarMetrics.value.some(m => !m.available))
 
 
-// ---- 比赛事实（scope 语义）；Observed Mean / Rated Battles 已移入头部（§6），不在此重复 ----
 const facts = computed(() => {
   const p = props.player
   if (!p) return []
@@ -164,8 +133,6 @@ const facts = computed(() => {
   return rows
 })
 
-// ---- 坦克展示（Summary=当前批次最常使用；Battle=本场坦克）----
-// 可靠坦克名：非空、非占位名（Tankopedia 对未知 ID 返回 "#<tankId>"）；不满足则视为无可靠车辆。
 const isReliableTankName = (name) => {
   const s = (name || '').trim()
   return !!s && !s.startsWith('#')
@@ -196,8 +163,6 @@ const vehicle = computed(() => {
   }
 })
 
-// 懒加载坦克贴图：动态 import 保持 vehicle-portraits/runtime.js 独立 lazy chunk；
-// token 防止快速切换选手时旧异步结果覆盖新选手。
 const vehiclePortrait = ref(null)
 const vehiclePortraitToken = ref(0)
 let portraitRuntimePromise = null
@@ -219,12 +184,10 @@ watch(vehicle, async (v) => {
   vehiclePortrait.value = url
 }, { immediate: true })
 
-// ---- 前后导航（方向驱动切换动画）----
 const navDir = ref('next')
 function onPrev() { navDir.value = 'prev'; emit('prev') }
 function onNext() { navDir.value = 'next'; emit('next') }
 
-// ---- 关闭 slide-out（§34）----
 const closing = ref(false)
 function requestClose() {
   if (closing.value) return
@@ -232,7 +195,6 @@ function requestClose() {
   setTimeout(() => { closing.value = false; emit('close') }, 170)
 }
 
-// ---- 键盘导航（§32）：Esc 关闭；←/→ 切玩家；避开输入控件 ----
 function isEditable(el) {
   return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)
 }
@@ -262,7 +224,6 @@ watch(open, (v) => {
   if (v) nextTick(() => closeBtn.value?.focus?.())
 })
 
-// ---- 手机全屏 sheet：左右滑动切换玩家（水平位移足够大且明显大于垂直位移，避免与纵向滚动冲突） ----
 const SWIPE_MIN_PX = 60
 let touchStart = null
 function onTouchStart(e) {
@@ -320,7 +281,6 @@ onBeforeUnmount(() => {
               </div>
             </header>
 
-            <!-- Stat（design-language §7）：标签 caption + 数值 h2 等宽数字 -->
             <div class="pd-rating">
               <span class="pd-rating-label">{{ t('league.drawer.rating_label') }}</span>
               <span class="pd-rating-value" data-testid="drawer-rating">{{ ratingLine().rating }}</span>
@@ -330,7 +290,6 @@ onBeforeUnmount(() => {
               <span class="pd-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ player?.cells?.rated_battles ?? '--' }}</b></span>
             </div>
 
-            <!-- 坦克展示（Summary=最常使用；Battle=本场坦克；缺图时仅文字降级） -->
             <div v-if="vehicle" class="pd-vehicle" data-testid="player-vehicle">
               <div class="pd-vehicle-label">{{ vehicle.label }}</div>
               <div class="pd-vehicle-body">
@@ -347,7 +306,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <!-- 七维 / 自定义 Radar -->
             <div class="pd-section-row">
               <h3 class="pd-section">{{ isSummary ? t('league.drawer.radar_title_summary') : t('league.drawer.radar_title_battle') }}</h3>
               <div class="pd-section-actions">
@@ -387,9 +345,7 @@ onBeforeUnmount(() => {
             <PlayerRatingRadar v-else-if="radarMetrics.length" :metrics="radarMetrics" :reference="referenceSeries"
                                :reference-label="referenceLabel" :player-label="player?.nickname || ''" />
 
-            <!-- 比赛事实（scope 语义） -->
             <h3 class="pd-section">{{ isSummary ? t('league.drawer.facts_title_summary') : t('league.drawer.facts_title_battle') }}</h3>
-            <!-- Stat grid：每项一格（标签在上、数值在下），两列；手机同样两列 -->
             <dl class="pd-facts" data-testid="player-facts">
               <div v-for="(f, i) in facts" :key="i" class="pd-fact">
                 <dt>{{ f[0] }}</dt>
@@ -414,8 +370,6 @@ onBeforeUnmount(() => {
     </div>
   </Teleport>
 
-  <!-- 导出专用 Rating Profile 卡（offscreen 不可变快照；只用实色语义 token，不用 color-mix，规避导出库兼容问题）。
-       SVG 刻度 / 分数字号写成展示属性：与 RADAR 几何里的徽章宽度、刻度宽度估算绑定，不跟随界面字号阶梯。 -->
   <Teleport to="body">
     <div v-if="exportingProfile" class="rp-export" ref="exportCardRef">
       <div class="rp-card">
@@ -431,7 +385,6 @@ onBeforeUnmount(() => {
             <span class="rp-extra">{{ t('league.drawer.rated_battles') }}: <b>{{ snapRatedBattles ?? '--' }}</b></span>
           </div>
         </div>
-        <!-- 导出卡坦克区（消费快照；缺图时文字版，不阻塞 PNG） -->
         <div v-if="snapVehicle" class="rp-vehicle">
           <div class="rp-vehicle-label">{{ snapVehicle.label }}</div>
           <div class="rp-vehicle-body">

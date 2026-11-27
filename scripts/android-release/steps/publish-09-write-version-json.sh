@@ -11,7 +11,6 @@ printf '{\n  "schemaVersion": 1,\n  "latestVersionCode": %s,\n  "latestVersionNa
   "$STEP_STAGEDREF_APKNAME" \
   "$STEP_STAGED_APKSHA" \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "release-staging/version.json"
-# 兼容旧 staged evidence：没有 target size 的旧候选不生成新字段。
 jq --slurpfile delta "$RUNNER_TEMP/delta-publish.json" \
   'if $delta[0].apkSizeBytes == null then . else . + {apkSizeBytes: $delta[0].apkSizeBytes, patches: $delta[0].patches} end' \
   "release-staging/version.json" > "release-staging/version.json.tmp"

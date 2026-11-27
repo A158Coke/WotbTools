@@ -38,7 +38,6 @@ describe('pointsAt（争霸点数的阵营映射）', () => {
   it('回归：无采样（普通战）也返回结果对象——调用方无条件写入，不留上一场残值', () => {
     expect(pointsAt(undefined, 25, 1)).toEqual({ friend: null, enemy: null })
     expect(pointsAt([], 25, 1)).toEqual({ friend: null, enemy: null })
-    // Supremacy → Regular 会话切换：同一调用形态必须得到 null，而不是上一场的 720/540
     const supremacy = pointsAt(samples, 25, 1)
     const regular = pointsAt(undefined, 25, 1)
     expect(supremacy.friend).toBe(720)
@@ -51,7 +50,6 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
   const tick = src.slice(src.indexOf('function tick()'), src.indexOf('function tick()') + 4000)
 
   it('teardown 显式归零 HUD 点数字段（clearBases 释放行为见 playback/bases.tracers.behavior.test.ts）', () => {
-    // pointsFriend/pointsEnemy 的归零闭合在 teardownSession 闭包，无可注入 seam（保留源码守卫）
     const td = src.slice(src.indexOf('function teardownSession'))
     expect(td).toMatch(/store\.pointsFriend = null; store\.pointsEnemy = null;/)
   })

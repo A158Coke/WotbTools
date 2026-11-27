@@ -13,13 +13,11 @@ describe('techTreeGrid（车辆科技树网格）', () => {
     nodes: [
       { stem: 'T-26', tankId: 1, tier: 1, x: 1, y: 5 },
       { stem: 'MT25', tankId: 2, tier: 6, x: 6, y: 9 },
-      // other 树式特例：列≠tier（同列两车 tier 不同 → 该列 tier 标注留空）
       { stem: 'Odd_A', tankId: 3, tier: 4, x: 7, y: 4 },
       { stem: 'Odd_B', tankId: 4, tier: 5, x: 7, y: 5 },
     ],
     edges: [
       { from: 'T-26', to: 'MT25', cost: { xp: 31000 }, sourceModule: 'gun' },
-      // from 车不在树上（如 ussr:MS-1）→ 保留数据但不画线
       { from: 'MS-1', to: 'T-26', cost: { xp: 0 }, sourceModule: 'gun' },
       { from: 'MT25', to: 'MT25', cost: { xp: 1 }, sourceModule: 'gun' },
     ],
@@ -32,8 +30,8 @@ describe('techTreeGrid（车辆科技树网格）', () => {
     expect(grid.rows).toEqual([4, 5, 9])
     expect(grid.colIndex.get(11)).toBe(3)
     expect(grid.tierByColumn.get(1)).toBe(1)
-    expect(grid.tierByColumn.get(7)).toBeNull() // 4/5 混列 → 不猜
-    expect(grid.tierByColumn.get(11)).toBeNull() // pending 列不是车辆事实
+    expect(grid.tierByColumn.get(7)).toBeNull()
+    expect(grid.tierByColumn.get(11)).toBeNull()
     expect(grid.premiumRows).toBe(2)
   })
 
@@ -81,13 +79,6 @@ describe('techTreeGrid（车辆科技树网格）', () => {
   })
 })
 
-/**
- * 模块研发图夹具（客户端截图口径）：
- * - 炮链 L11 → F34 → ZiS4（F34 解锁车辆 MT25）
- * - 炮塔 t0（挂 L11/F34）；t1 挂 L11/ZiS4
- * - 发动机 eng0；履带 track0 → track1
- * 期望行：火炮行0 / 炮塔行1 / 发动机行2 / 履带行3（与 KV-1 实机截图一致）
- */
 const gun = (stem, level, unlocks) => ({ stem, localId: null, level, unlocks, stats: {} })
 const modules = {
   hasTurret: true,
@@ -160,7 +151,6 @@ describe('moduleTreeLayout（客户端分行规则）', () => {
     }
     const layout = moduleTreeLayout(su, null, { nextVehicles: [{ stem: 'SU-101', name: 'SU-101', tankId: 12850 }] })
     const at = key => layout.nodes.find(n => n.key === key)
-    // 无炮塔车：客户端不显示炮塔行（SU-100M1 截图只有 炮/发动机/履带）
     expect(at('turret:fake')).toBeUndefined()
     expect([at('gun:g0').row, at('gun:g1').row, at('gun:g2').row]).toEqual([0, 0, 0])
     const vehicle = at('vehicle:SU-101')
@@ -192,7 +182,6 @@ describe('moduleTreeLayout（客户端分行规则）', () => {
           gun('g2', 2, []),
         ] },
         { stem: 't1', level: 1, unlocks: [], guns: [
-          // 同一门炮的另一炮塔副本：候选 (g0 -> g2) 重复
           gun('g0', 1, [{ kind: 'gun', stem: 'g2', cost: { xp: 100 } }]),
         ] },
       ],
@@ -216,7 +205,6 @@ describe('moduleTreeLayout（客户端分行规则）', () => {
     expect(edge.from).toBe('gun:F34')
     const source = layout.nodes.find(n => n.key === edge.from)
     expect(vehicle.col).toBe(source.col + 1)
-    // 主链（F34 的 gun 子节点）优先占本行 → 车辆落在下一行
     expect(vehicle.row).toBe(source.row + 1)
   })
 

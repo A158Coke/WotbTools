@@ -1,6 +1,4 @@
-/* ReplayWorkspace 局部样式（随拆分自 ReplayWorkspace.vue，scoped 原样）。 */
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
-/* 竖屏旋转提示盖在顶栏之下的整块可视区上（回放面板保持挂载，横过来即继续） */
 .workspace-rotate-prompt { position: fixed; inset: calc(var(--header-block) + env(safe-area-inset-top)) 0 0; z-index: var(--z-sticky); background: var(--color-canvas); }
 .workspace-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 .workspace-head > .showcase-hero-host { margin-block-end: 0; }
@@ -8,17 +6,12 @@
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .workspace-demo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }
-/* 自动居中用 scrollIntoView 定位 pane 本身：`block: 'start'` 会贴到视口顶端，
-   必须让出固定顶栏 + 刘海，否则高 pane 的顶部内容被压在 AppTopBar 下面。 */
 .capability-pane { margin-top: var(--space-1); scroll-margin-top: calc(var(--header-h, 0px) + env(safe-area-inset-top)); }
-/* 文件控件平时只有隐藏 input；有拖放区或校验提示时才占位。 */
 .workspace-file-controls:has(.dropzone, .banner) { margin-bottom: var(--space-4); }
-/* A single compact session row serves every single-battle capability. */
 .workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
 .single-battle-picker { flex: 1; min-width: 0; }
 @media (width < 768px) {
   .single-battle-picker { flex-basis: 100%; }
   .workspace-toolbar { justify-content: flex-start; }
-  /* 手机：能力切换独占一整行，帮助与管理回放排在下一行。 */
   .workspace-capabilities { flex-basis: 100%; order: -1; }
 }

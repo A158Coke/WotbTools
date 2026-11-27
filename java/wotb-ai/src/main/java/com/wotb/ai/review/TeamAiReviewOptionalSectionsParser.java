@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** Parses Team Review sections whose invalid references can be dropped locally. */
 final class TeamAiReviewOptionalSectionsParser {
 
     private static final int MAX_REASON_CHARS = 2_000;

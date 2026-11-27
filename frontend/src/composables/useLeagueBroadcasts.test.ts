@@ -21,7 +21,6 @@ async function setup(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbC
     getBroadcastDeletionPreview: vi.fn(async () => ({ seasonId: 10, expectedVersion: 4, rootCount: 1, replayCount: 2 })),
     deleteBroadcastResource: vi.fn(async () => undefined), ...overrides }
   const confirm = vi.fn(async (_value: any) => true)
-  // useRoute returns a stable reactive projection, unlike currentRoute.value. Bridge that contract for this owner test.
   const liveScope = effectScope()
   const route = { get query() { return router.currentRoute.value.query }, get hash() { return router.currentRoute.value.hash } }
   const live = liveScope.run(() => useLeagueBroadcasts(route as any, router, {

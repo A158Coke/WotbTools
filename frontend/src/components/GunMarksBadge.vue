@@ -5,7 +5,6 @@ import { gunMarksCount } from '../utils/gunMarks.js'
 
 const props = defineProps({ marks: { default: null }, showCount: Boolean })
 const count = computed(() => gunMarksCount(props.marks))
-// Center each opaque badge inside a common viewport, preserving its natural height and scale.
 const CELL_LEFT = [173, 898, 1589]
 const CELL_TOP = [175.5, 134, 94]
 const ATLAS_WIDTH = 2172

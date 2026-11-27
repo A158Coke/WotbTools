@@ -10,14 +10,6 @@ import com.wotb.core.util.PlayerResultFormat;
 
 import java.util.Locale;
 
-/**
- * 敌方最后已知位置 prompt 段渲染（观测子集）。
- * <p>团队复盘（single）与随机战（harness / fallback / 完整特征）共用同一个核心
- * {@link EnemyLastKnownPositionResolver}，本类只区分行风格：随机战行以「敌方」开头
- * （第二人称语境，不出现「录像者」），团队行沿用 OPPOSING_TEAM_LINEUP 的 opponent
- * 机器键风格。段头明确标注「观测子集」，禁止把观察子集伪装成全知；时间一律
- * X分XX秒，不出现裸秒数；不输出 raw team 编号。</p>
- */
 final class EnemyLastKnownPositionsSection {
 
     private EnemyLastKnownPositionsSection() {
@@ -69,7 +61,6 @@ final class EnemyLastKnownPositionsSection {
         return sb.toString();
     }
 
-    /** 随机战行：以「敌方」标识，无 OBSERVED 记录时显式 UNKNOWN。 */
     private static void appendPlayerRow(final StringBuilder sb, final EnemyLastKnownPosition v) {
         sb.append("敌方 ").append(PlayerResultFormat.quoteForPrompt(v.nickname()))
                 .append(" 坦克: ").append(PlayerResultFormat.quoteForPrompt(v.tankName()));
@@ -85,7 +76,6 @@ final class EnemyLastKnownPositionsSection {
                 .append('\n');
     }
 
-    /** 团队行：与 OPPOSING_TEAM_LINEUP 相同的 opponent 机器键风格。 */
     private static void appendTeamRow(final StringBuilder sb, final EnemyLastKnownPosition v) {
         sb.append("opponent accountId=").append(v.accountId())
                 .append(" nickname=").append(PlayerResultFormat.quoteForPrompt(v.nickname()))

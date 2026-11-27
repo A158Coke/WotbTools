@@ -1,9 +1,5 @@
 // @vitest-environment happy-dom
 
-// 端到端：ReplayPage 挂载真实 useReplay + useColumns（仅 mock 本机解析 / 计算边界、i18n、重型子组件）。
-// 验证本机分析 READY 后**同一提交周期内**：resp、League 模式、aggregate 可见性与 activeTab
-// 一致，正确结果 panel 第一帧即渲染——不需要用户再点 tab、不需要重新分析、
-// 不需要等待 column preference 初始化。
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -25,7 +21,6 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-// 服务器没有 parser：分析 = 本机 Worker 解析 + 批次计算。只 mock 这两个边界。
 const local = vi.hoisted(() => ({
   parseReplayFiles: vi.fn(),
   analyzeReplayBatch: vi.fn(),
@@ -62,7 +57,6 @@ const league = { mode: 'LEAGUE_RATING', columns: [], playerSummaries: [], teamSu
 
 const TEST_FILES = [new File(['x'], 'a.wotbreplay'), new File(['y'], 'b.wotbreplay')]
 
-/** Workspace 角色：持有唯一 useReplay，并把它显式传给嵌入的 ReplayPage */
 let replay
 const Host = defineComponent({
   setup() {
@@ -100,7 +94,6 @@ function mountPage() {
 
 describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即可见）', () => {
   beforeEach(() => {
-    // 列偏好存在 localStorage 里：每个用例从干净的存档开始，避免互相影响
     localStorage.clear()
     vi.clearAllMocks()
   })
@@ -113,15 +106,13 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     replay.updateFiles(TEST_FILES)
     await flushPromises()
     await expect(replay.analyze()).resolves.toEqual({ completed: true })
-    await flushPromises() // Vue 渲染 flush：同一提交周期内结果 panel 立即可见
+    await flushPromises()
     return wrapper
   }
 
   it('多场 + aggregate 空 + 无 league：READY 后 Battle #1 立即可见（无点击、无重新分析、不空白）', async () => {
     const wrapper = await runReadyFlow(baseResp({ battles: twoBattles, aggregate: [] }))
-    // 不需要用户点击 tab：b0 面板已可见
     expect(wrapper.find('.battle-table-stub').element.parentElement.style.display).not.toBe('none')
-    // aggregate 空 → AggregateTable 不渲染（v-if 由 resp.aggregate 驱动）
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()
@@ -141,14 +132,12 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
       ],
     }))
 
-    // READY response is already authoritative before the first Data sub-view click.
     expect(wrapper.find('[data-testid="agg-col-damage_avg"]').exists()).toBe(true)
     await wrapper.find('[data-testid="data-view-single"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="battle-col-damage_dealt"]').exists()).toBe(true)
     expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
 
-    // No parse/tab refresh is required to keep the hydrated presentation.
     await flushPromises()
     expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
     wrapper.unmount()
@@ -156,10 +145,8 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
 
   it('league 批次（aggregate 空 + leagueMode=true、summaries 全空）：READY 后 League 明确空态可见', async () => {
     const wrapper = await runReadyFlow(baseResp({ battles: twoBattles, aggregate: [], league, leagueMode: true }))
-    // league summaries 全空 → 区块显示 neutral 空态，不渲染 LeagueSummaryTable
     expect(wrapper.find('[data-testid="league-summary-empty"]').exists()).toBe(true)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
-    // v-if 挂载口径（2026-10-31 批量优化）：汇总视图下战斗表不进 DOM（此前 v-show 挂载后 display:none）
     expect(wrapper.find('.battle-table-stub').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -170,14 +157,12 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
     }))
     expect(wrapper.find('.agg-table-stub').element.parentElement.style.display).not.toBe('none')
-    // v-if 挂载口径：汇总视图下战斗表不进 DOM
     expect(wrapper.find('.battle-table-stub').exists()).toBe(false)
     expect(wrapper.find('.league-summary-stub').exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('league 批次 + aggregate 有数据（partial）：统一玩家表可见，基础 AggregateTable 与 League 玩家表都不得出现', async () => {
-    // Case C：partial League（aggregate 非空 + playerSummaries 非空）→ 统一玩家表 + 独立战队表
     const wrapper = await runReadyFlow(baseResp({
       battles: twoBattles,
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],
@@ -192,13 +177,11 @@ describe('ReplayPage READY 第一帧渲染（同一提交周期内结果立即�
     }))
     expect(wrapper.find('.cw-player-summary-stub').element.parentElement.style.display).not.toBe('none')
     expect(wrapper.find('.agg-table-stub').exists()).toBe(false)
-    // 战队表独立存在；League 玩家表不再单独出现（已并入统一表）
     expect(wrapper.find('.league-summary-stub').exists()).toBe(true)
     wrapper.unmount()
   })
 
   it('league 批次 0/30（aggregate 非空 + playerSummaries 空）：统一玩家表仍可见（缺失 League 补 --）+ 战队空态', async () => {
-    // Case A：30 parsed / 0 rated → 统一玩家表正常显示 aggregate 玩家，战队区块显示明确空态
     const wrapper = await runReadyFlow(baseResp({
       battles: twoBattles,
       aggregate: [{ cells: { nickname: 'P1', damage_dealt: 5000 } }],

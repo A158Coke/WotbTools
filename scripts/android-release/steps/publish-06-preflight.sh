@@ -3,13 +3,10 @@
 # Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
 . scripts/android-release/check-release-guards.sh
-# 候选身份全部来自 staged 步骤（= 显式版本的 tag target），没有一项来自当前 main 的版本。
 VERSION_CODE="$STEP_STAGED_VERSIONCODE"
 VERSION_NAME="$STEP_STAGED_VERSIONNAME"
 APK_NAME="$STEP_STAGEDREF_APKNAME"
 BRIDGE_VERSION="$STEP_STAGED_NATIVEBRIDGEVERSION"
-# version.json 的 sourceSha 记录的是 **APK 的 source**（= staged release source），
-# 不是当前 main HEAD：stage 完成后两者完全可能不同，而 immutable 的只有前者。
 SOURCE_SHA="$STEP_STAGED_STAGEDSOURCE"
 PROD_JSON="$RUNNER_TEMP/prod-version.json"
 URL="https://wotbtools.com/download/android/version.json"
@@ -31,7 +28,6 @@ case "$CODE" in
     ;;
 esac
 
-# 强制更新门槛：只有真的覆盖了 breaking bridge cutover 才允许广播 manifest。
 guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
 guard_local_first_cutover "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
 FE_VERSIONS="$(python3 - <<'PY'
@@ -50,7 +46,6 @@ case "$PROD_STATE" in
     echo "publishAction=publish" >> "$GITHUB_OUTPUT"
     ;;
   prod_equal_ok)
-    # 同一版本的 manifest 已经发布且元数据一致：验证过 immutable APK 后安全 no-op。
     PUBLISHED_SHA="$(jq -r '.sha256' "$PROD_JSON")"
     if [ "$PUBLISHED_SHA" != "$STEP_STAGED_APKSHA" ]; then
       echo "::error::Published manifest sha256=$PUBLISHED_SHA does not match the staged APK; refusing." >&2

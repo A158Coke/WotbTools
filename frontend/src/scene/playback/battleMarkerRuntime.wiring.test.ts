@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// battleMarkerRuntime 接线与帧行为单测：attack_enemy 账号联册、生产接线守卫、
-// 指令时刻 sender 解析，以及暂停按需重绘的标记帧顺序（恢复合并时删除的
-// playbackSceneP3.markerFrame 行为回归——不是源码字符串断言）。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { PLAYBACK_SCENE_SOURCE } from '../playbackScene.test.source.js'
@@ -33,20 +30,14 @@ describe('attack_enemy 的账号联册（换 eid 后的活动实体）', () => {
   })
 })
 
-// 生产接线守卫（playbackScene 源码级，treadMarks.test.js 同风格）：单测 harness 自备
-// getPoseAt，覆盖不到 src/scene/playbackScene.js 的真实传参形状。Codex P1 回归：
-// createBattleMarkerHost 未注入 visibleAt 时，求援类指令窗口内 spawn→getPoseAt 每帧抛
-// TypeError（渲染/HUD 中断，seek 进窗口同样失败）。
 describe('生产接线守卫（playbackScene 源码级）', () => {
   const sceneSrc = PLAYBACK_SCENE_SOURCE
 
   it('createBattleMarkerHost 必须注入 visibleAt（help 类历史位姿门）', () => {
-    // 合并后源码全集包含 battleMarkerHost.ts 的定义与 sceneAssembly.ts 的构造；必须取构造调用。
     const at = sceneSrc.indexOf('S.battleMarkers = createBattleMarkerHost(')
     expect(at).toBeGreaterThan(-1)
     const call = sceneSrc.slice(at, sceneSrc.indexOf('});', at))
     expect(call).toMatch(/visibleAt:\s*\(v,\s*t\)\s*=>\s*(?:S\.)?visibleAt\(v,\s*t\)/)
-    // 账号兜底的活动实体解析（攻击目标换 eid）：注入身份接管判据
     expect(call).toMatch(/replacedAt:\s*\(eid,\s*t\)\s*=>\s*(?:S\.)?replacedAt\(eid,\s*t\)/)
   })
 })
@@ -69,9 +60,6 @@ describe('resolveActiveSender（指令时刻在场解析）', () => {
   })
 })
 
-// 历史 playbackSceneP3.markerFrame.test.ts 在合并时被删除；这里用真实 renderLoop +
-// 真实 markerRuntime + 真实 labelsRuntime（覆盖层只做观察桩）恢复行为级回归：
-// 暂停态按需重绘必须先重算标记，再做来源卡投影；位姿迟到/缺失同帧生效；空闲不再重绘。
 describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回归）', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -187,7 +175,7 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
       clampCameraTarget: () => {},
       labels,
       updateBases: vi.fn(),
-      battle: { isActive: () => false, transients: { updateNow: () => {} }, updateBattleFx: () => {}, advanceWreckClock: () => {} },
+      battle: { isActive: () => false, transients: { updateNow: () => {} }, updateBattleFx: () => {}, updateGunfire: () => {}, advanceWreckClock: () => {} },
       battleMarkers: markerRuntime,
       vehicles: { frameTiming: () => {}, getVehicles: () => [] },
       session: { isReadySession: () => false, tryMarkFirstReadyFrame: () => {} },
@@ -207,7 +195,6 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
 
     setDirty(true)
     animate()
-    // 每个脏帧都必须真正走 renderer.render（防止渲染被删而测试仍假绿）。
     expect(render).toHaveBeenCalledTimes(1)
     expect(ring().visible).toBe(true)
     expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(1, 5)
@@ -220,7 +207,6 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     animate()
     expect(render).toHaveBeenCalledTimes(2)
     expect(ring().geometry.boundingSphere!.center.x).toBeCloseTo(40, 5)
-    // 真实 labelsRuntime 投影：来源卡与目标环同一帧跟随新位姿（不是只验 marker 本体）。
     expect(lastTargetAnchor().x).not.toBeCloseTo(firstX, 3)
     expect(lastTargetAnchor().visible).toBe(true)
     expect(labelRows.at(-1)).toMatchObject([{ key: '0', kind: 'target' }])
@@ -234,7 +220,6 @@ describe('暂停按需重绘的标记帧顺序（恢复被删的 markerFrame 回
     const anchorsBeforeIdle = anchorCalls.length
     const rendersBeforeIdle = render.mock.calls.length
 
-    // 空闲帧（无脏标记、无在飞特效）不得再投影标签或重绘。
     animate()
     animate()
     expect(anchorCalls.length).toBe(anchorsBeforeIdle)

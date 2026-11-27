@@ -27,7 +27,6 @@ describe('Replay capability API ownership', () => {
   })
 
   it('keeps AI Review on its own transport boundary and out of the dataset era', () => {
-    // 旧 dataset-backed /api/replay/analyze 已随破坏性迁移删除（wotb-web SecurityConfigTest 为负向 oracle）。
     expect(read('src/api/replay-capabilities.ts')).not.toContain('/api/replay/analyze')
 
     const ai = read('src/api/ai-review.ts')

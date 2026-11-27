@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Print the conclusion of the stage job for an Android release run.
 
 GitHub reports a reusable-workflow job as '<caller job name> / <called job

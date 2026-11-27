@@ -37,11 +37,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 录像者匹配 + 去重 + replay metadata 原子状态机单元测试 (mock repository, 无数据库, 任何环境可跑)。
- * 状态机：新建 → SAVED；已有 hash NULL → 原子 conditional UPDATE attach（唯一 winner，败者 re-read 分类）；
- * 同 hash → IDEMPOTENT；异 hash → SKIPPED_HASH_CONFLICT（绝不覆盖）；insert unique race 后 re-read 分类。
- */
 class HallOfFameServiceTest {
 
     private static final String SHA_1 = "a".repeat(64);
@@ -88,7 +83,7 @@ class HallOfFameServiceTest {
     void vehicleOptionsUseReadableMetadataAndKeepUnknownLegacyVehicles() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
         final HofVehicleProjection known = mock(HofVehicleProjection.class);
-        when(known.getTankId()).thenReturn(385L); // Progetto 65, Tier X European medium
+        when(known.getTankId()).thenReturn(385L);
         when(known.getTankName()).thenReturn("Progetto 65");
         final HofVehicleProjection unknown = mock(HofVehicleProjection.class);
         when(unknown.getTankId()).thenReturn(999_999L);
@@ -128,7 +123,6 @@ class HallOfFameServiceTest {
         verify(repo, never()).search(any(), any(), any(), any(Pageable.class));
     }
 
-    // ── eligibility / preflight（P1：写文件前确定 SKIPPED）────────────────────
 
     @Test
     void eligibilityFlagsUnsupportedBattleTypeAndUnknownRecorder() {
@@ -141,14 +135,12 @@ class HallOfFameServiceTest {
                 service.eligibility(unknownRecorder()));
         assertEquals(RecordOutcome.SAVED,
                 service.eligibility(battle("arenaA", "Recorder1", 111L)));
-        // Rating=7 与 Random 同为支持的战斗模式
         final Battle rating = battle("arena-rating", "Recorder1", 111L);
         rating.arenaBonusType = 7;
         assertEquals(RecordOutcome.SAVED, service.eligibility(rating));
         verify(repo, never()).findByArenaIdAndAccountId(any(), anyLong());
     }
 
-    /** eligibility 对不支持模式（训练房/联赛/Mad Games/未知）一律 SKIPPED_UNSUPPORTED_BATTLE_TYPE。 */
     @Test
     void eligibilityRejectsUnsupportedBattleTypes() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
@@ -162,11 +154,6 @@ class HallOfFameServiceTest {
         }
     }
 
-    /**
-     * 单一事实源 policy：RANDOM(1) 与 RATING(7) 支持（Rating=7 依据 Jylpah/blitz-tools
-     * BattleCategorizationList._battle_modes 外部证据，与 1/2/4 真实样本映射一致）；
-     * 训练房(2)/联赛(4)/快速锦标赛(5)/Mad Games(8)/未知(null/0/999) 一律不支持。
-     */
     @Test
     void supportedBattleTypesPolicyAcceptsRandomAndRating() {
         assertTrue(HallOfFameBattleTypePolicy.isSupported(1));
@@ -206,7 +193,6 @@ class HallOfFameServiceTest {
                 service.preflightReplay(battle("arenaC", "Recorder1", 111L), meta(SHA_1)));
     }
 
-    // ── 新建 ────────────────────────────────────────────────────────────────
 
     @Test
     void savesOnlyRecorderWhenNew() {
@@ -254,7 +240,6 @@ class HallOfFameServiceTest {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
         final HallOfFameService service = service(repo);
 
-        // 训练房(2)、联赛/锦标赛(3/4)、快速锦标赛(5)、Mad Games(8)、未知(null/22/999) 一律不入库
         for (final Integer bonus : new Integer[]{null, 2, 3, 4, 5, 8, 22, 999}) {
             final Battle b = battle("arena-" + bonus, "Recorder1", 111L);
             b.arenaBonusType = bonus;
@@ -266,7 +251,6 @@ class HallOfFameServiceTest {
         verify(repo, never()).saveAndFlush(any());
     }
 
-    /** recordRecorder 最终 DB gate 与 eligibility 同一 policy：随机战(1) 正常入库。 */
     @Test
     void recordRecorderAcceptsRandomBattleType() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
@@ -277,7 +261,6 @@ class HallOfFameServiceTest {
                 service.recordRecorder(battle("arenaA", "Recorder1", 111L), tankopedia, meta(SHA_1)));
     }
 
-    /** recordRecorder 最终 DB gate 不得再次拒绝 Rating(7)：与 eligibility 共用同一 policy。 */
     @Test
     void recordRecorderFinalGateAllowsRatingBattleType() {
         final HallOfFameRecordRepository repo = mock(HallOfFameRecordRepository.class);
@@ -349,7 +332,6 @@ class HallOfFameServiceTest {
         assertNull(captor.getValue().getReplayHash());
     }
 
-    // ── 已有记录：attach / idempotent / conflict（DB 原子）────────────────────
 
     @Test
     void attachesWhenExistingRecordHasNoHash() {
@@ -400,12 +382,10 @@ class HallOfFameServiceTest {
 
         verify(repo, never()).attachReplayMetadata(anyLong(), anyString(), anyString(), anyLong(), anyString());
         verify(repo, never()).saveAndFlush(any());
-        // 绝不覆盖已有 hash / 文件名
         assertEquals(SHA_1, existing.getReplayHash());
         assertEquals("old.wotbreplay", existing.getReplayFileName());
     }
 
-    // ── 并发竞态：attach 败者 / insert 败者 re-read 后重新分类 ────────────────
 
     @Test
     void attachRaceLoserConflictWhenOtherHashWon() {

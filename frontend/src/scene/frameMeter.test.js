@@ -27,7 +27,7 @@ describe('createFrameMeter 实时帧率窗口（只统计渲染帧）', () => {
   })
 
   it('默认配置下持续 300ms/帧：按真实性能统计（≈3.3 FPS），不被当空闲丢弃', () => {
-    const m = createFrameMeter()          // 默认 windowMs=500，无空闲自动重起
+    const m = createFrameMeter()
     const out = []
     for (let i = 0; i <= 6; i++) out.push(m.sample(i * 300))
     const published = out.filter(Boolean)

@@ -127,7 +127,6 @@ class IntegrityGateTest(unittest.TestCase):
             ut.validate_integrity(new, old)
 
     def test_per_tier_drop_fails(self):
-        # 总量 100 -> 80（允许），但 tier7 50 -> 30（跌破 0.8 阈值）必须失败
         old = {str(i): self.vehicle(i, tier=7) for i in range(1, 51)}
         old.update({str(i): self.vehicle(i, tier=8) for i in range(51, 101)})
         new = {str(i): self.vehicle(i, tier=7) for i in range(1, 31)}
@@ -137,5 +136,5 @@ class IntegrityGateTest(unittest.TestCase):
 
     def test_normal_and_small_real_deletion_pass(self):
         old = {str(i): self.vehicle(i) for i in range(1, 101)}
-        new = {str(i): self.vehicle(i) for i in range(1, 91)}  # 10% 真实删除可接受
+        new = {str(i): self.vehicle(i) for i in range(1, 91)}
         self.assertTrue(ut.validate_integrity(new, old))

@@ -1,8 +1,3 @@
-// 场景 GLB 材质管线行为测试（#827 接替 sceneryMaterials.test.js 的
-// :98/:107/:115/:128/:233/:282/:317/:374/:404/:457/:657/:860/:866/:919/:1356 源码守卫）：
-// 材质工厂与装配分派（sceneryMaterials.ts / sceneryAssembly.ts）按真实 THREE 对象验证——
-// 缓存键分流、伪透明裁切、blendLayer 软 alpha、LM/detail/water/blendByAngle/sky 路由、
-// 各向异性去重、Lambert 曝光。
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import * as THREE from 'three'
@@ -70,15 +65,12 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const mMasked = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), masked)
     root.add(mPseudo, mTruly, mMasked)
     assembleSceneryMaterials({ scene: root } as never, { strictSurfaces: true, masks: masks() })
-    // 伪透明（BLEND 且 opacity≈1、无标记）→ 不透明 + 裁切
     const pm = mPseudo.material as unknown as THREE.MeshLambertMaterial
     expect(pm.transparent).toBe(false)
     expect(pm.alphaTest).toBeGreaterThanOrEqual(0.33)
-    // 真透明 → 保持混合、不写深度
     const tm = mTruly.material as unknown as THREE.MeshLambertMaterial
     expect(tm.transparent).toBe(true)
     expect(tm.depthWrite).toBe(false)
-    // 镂空：GLTFLoader 解析的 alphaTest 原样继承（MASK 不裁 = 整片方片照绘）
     const km = mMasked.material as unknown as THREE.MeshLambertMaterial
     expect(km.alphaTest).toBeCloseTo(0.4)
   })
@@ -96,13 +88,10 @@ describe('装配分派（assembleSceneryMaterials）', () => {
       strictSurfaces: true, masks: masks({ maskTexOf: () => maskTex }),
     })
     const mat = mesh.material as unknown as THREE.ShaderMaterial
-    // 软混合：混合队列 + 不写深度（掩码 alpha 是软渐变，裁切会削成硬边卡片）
     expect(mat.transparent).toBe(true)
     expect(mat.depthWrite).toBe(false)
-    // 带回放时钟的材质被装配登记（宿主 tick 消费 animLayerMats 推进 uTime）
     expect(asm.animLayerMats).toContain(mat)
     expect(mat.uniforms.uTime).toBeTruthy()
-    // 缓存键含 alphaBlend 标记（软混合走 convMat 时）：标记不同 ⇒ 不同实例（不串用）
     const softTex = new THREE.Texture()
     const mkSoft = (marked: boolean, name: string) => {
       const mm = new THREE.MeshStandardMaterial({ name, transparent: true, opacity: 0.5 })
@@ -116,8 +105,8 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const s2 = mkSoft(true, 'fade_a')
     const s3 = mkSoft(false, 'fade_a')
     assembleSceneryMaterials({ scene: root } as never, { strictSurfaces: true, masks: masks() })
-    expect(s2.material).toBe(s1.material)   // 同输入 → 缓存命中（同实例）
-    expect(s3.material).not.toBe(s1.material) // 无标记（会被伪透明分流）→ 不同实例
+    expect(s2.material).toBe(s1.material)
+    expect(s3.material).not.toBe(s1.material)
   })
 
   it(':233 water extras（对象）→ makeWaterMaterial 专用材质（透明 + 写深度 + 双面）', () => {
@@ -134,7 +123,7 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const mat = mesh.material as unknown as unknown as THREE.ShaderMaterial
     expect(mat.isShaderMaterial).toBe(true)
     expect(mat.transparent).toBe(true)
-    expect(mat.depthWrite).toBe(true)   // 水面不写深度会与地形逐像素闪
+    expect(mat.depthWrite).toBe(true)
     expect(mat.side).toBe(THREE.DoubleSide)
     expect(mat.uniforms.normalmap.value).toBe(normalTex)
     expect(mat.uniforms.cubemap.value).toBe(cubeTex)
@@ -154,11 +143,9 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     })
     const mat = mesh.material as unknown as THREE.ShaderMaterial
     expect(mat.isShaderMaterial).toBe(true)
-    // 不受光：烘焙结果是静态的，着色器里没有任何光照项
     expect(mat.fragmentShader).not.toMatch(/lambert|lights_/i)
     expect(mat.uniforms.lightmap.value).toBe(atlas)
     expect(mat.uniforms.map.value).toBe(lmMat.map)
-    // 逐实例 UV 变换走 aLm 实例属性（材质无关）：顶点着色器声明 aLm 属性
     expect(mat.vertexShader).toMatch(/attribute vec4 aLm;/)
     expect(mat.vertexShader).toMatch(/vLmUv = uv1 \* aLm\.xy \+ aLm\.zw;/)
   })
@@ -166,7 +153,6 @@ describe('装配分派（assembleSceneryMaterials）', () => {
   it(':1356 LM 材质按输入指纹缓存：共享同一图集+同一 glTF 材质的两个网格拿到同一实例', () => {
     const root = new THREE.Group()
     const atlas = new THREE.Texture()
-    // 真实 GLB 里多个节点共享同一份 glTF 材质（LM 缓存键含 m.uuid）
     const sharedMat = new THREE.MeshStandardMaterial({ name: 'lm_shared' })
     sharedMat.map = new THREE.Texture()
     ;(sharedMat.userData as Record<string, unknown>).lightmap = { uvScale: [1, 1], uvOffset: [0, 0] }
@@ -183,8 +169,6 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     })
     expect(a.material).toBe(b.material)
     expect(a.material).not.toBe(sharedMat)
-    // 逐 mesh 新建会把 (几何,材质) 合批拆成单实例批：缓存命中 = 同一实例
-    //（缓存键 = LM#m.uuid#atlas.uuid；真 GLB 多节点共享同一份 glTF 材质）
     const root2 = new THREE.Group()
     const c = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), sharedMat)
     addUv1(c)
@@ -204,7 +188,6 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     ;(lmMat.userData as Record<string, unknown>).detail = { scale: [4, 4] }
     const lmMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), lmMat)
     addUv1(lmMesh)
-    // 无光照图的 Lambert 分支：detail 走 onBeforeCompile 补丁
     const plainMat = new THREE.MeshStandardMaterial({ name: 'plain_detail' })
     plainMat.map = new THREE.Texture()
     ;(plainMat.userData as Record<string, unknown>).detail = { scale: [8, 8] }
@@ -217,10 +200,8 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const lm = lmMesh.material as unknown as unknown as THREE.ShaderMaterial
     expect(lm.uniforms.uDetailTex.value).toBe(detailTex)
     expect((lm.uniforms.uDetailScale.value as THREE.Vector2).x).toBe(4)
-    // Lambert 补丁：program 缓存键带标记（与坦克补丁同法，防串用未打补丁程序）
     const plain = plainMesh.material as unknown as unknown as THREE.MeshLambertMaterial
     expect(plain.customProgramCacheKey?.()).toContain('|scenery-detail')
-    // 同键缓存：同 detail 身份（同一 glTF 材质共享）再装配 → 同一 LM 实例
     const root2 = new THREE.Group()
     const lmMesh2 = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), lmMat)
     addUv1(lmMesh2)
@@ -243,7 +224,7 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const mat = mesh.material as unknown as unknown as THREE.ShaderMaterial
     expect(mat.isShaderMaterial).toBe(true)
     expect(mat.transparent).toBe(true)
-    expect(mat.depthWrite).toBe(false)   // 客户端 AlphaBlend 预设
+    expect(mat.depthWrite).toBe(false)
     const bounds = mat.uniforms.uBounds.value as THREE.Vector2
     expect(bounds.x).toBeCloseTo(0.1)
     expect(bounds.y).toBeCloseTo(0.9)
@@ -256,7 +237,6 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const skyMat = new THREE.MeshStandardMaterial({ name: 'skyobject_mat' })
     ;(skyMat.userData as Record<string, unknown>).sky = true
     const sky = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), skyMat)
-    // NewBay SkySeaSurface：名字含 sky，但材质是 extras.water → 必须走水面路径（曾为用户 bug）
     const seaMat = new THREE.MeshStandardMaterial({ name: 'sea', transparent: true })
     ;(seaMat.userData as Record<string, unknown>).water = { props: {} }
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), seaMat)
@@ -275,7 +255,6 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     expect(skyM.fog).toBe(false)
     expect(skyM.side).toBe(THREE.DoubleSide)
     expect(asm.skyMeshes).toBe(1)
-    // 海面：名字命中 /sky/ 也不走天空路径（水材质优先）
     expect((sea.material as unknown as unknown as THREE.ShaderMaterial).uniforms.cubemap).toBeTruthy()
     expect(sea.userData.isSky).toBeUndefined()
   })
@@ -298,14 +277,14 @@ describe('装配分派（assembleSceneryMaterials）', () => {
     const m = new THREE.MeshStandardMaterial({ name: 'env_ma_water', transparent: true, opacity: 0.9 })
     m.map = new THREE.Texture()
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), m)
-    mesh.name = 'env_ma_water'   // 旧包名字启发式（无 surfaceFlags 标记的包）
+    mesh.name = 'env_ma_water'
     root.add(mesh)
     assembleSceneryMaterials({ scene: root } as never, { strictSurfaces: false, masks: masks() })
     const mat = mesh.material as unknown as unknown as THREE.MeshLambertMaterial
     expect(mat.transparent).toBe(true)
     expect(mat.depthWrite).toBe(true)
     expect(mat.side).toBe(THREE.DoubleSide)
-    expect(mesh.renderOrder).toBe(10)  // 固定顺序：透明队列不再按相机距离翻转（共面水面闪烁修复）
+    expect(mesh.renderOrder).toBe(10)
   })
 })
 
@@ -319,7 +298,7 @@ describe('坦克环境光隔离（patchTankMaterial）', () => {
     expect(firstKey).toContain('|tank-noambient')
     const again = patchTankMaterial(m)
     expect(again).toBe(m)
-    expect(m.customProgramCacheKey?.()).toBe(firstKey)   // 幂等：program 键不叠标记
+    expect(m.customProgramCacheKey?.()).toBe(firstKey)
     expect((m.userData as Record<string, unknown>).__tankAmbientFixed).toBe(true)
   })
 })
@@ -339,7 +318,6 @@ describe(':919 场景贴图各向异性（applyMaterialTextureAnisotropy）', ()
     expect(tex.anisotropy).toBe(8)
     expect(shared.anisotropy).toBe(8)
     expect(n).toBeGreaterThan(0)
-    // ShaderMaterial 的贴图挂在 uniforms 上：人工构造后枚举不漏
     const shaderMat = new THREE.ShaderMaterial({ uniforms: { map: { value: tex } } })
     const c = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), shaderMat)
     root.add(c)
@@ -351,12 +329,10 @@ describe(':919 场景贴图各向异性（applyMaterialTextureAnisotropy）', ()
 
 describe(':457 采样空间（显示内容 vs 原样采样）', () => {
   it('自定义材质一律原样采样（NoColorSpace）；基地标记画布是显示内容（SRGB）', async () => {
-    // 自定义材质侧：叶卡贴图强制 NoColorSpace（伽马直采直写）
     const m = new THREE.MeshStandardMaterial({ name: 'leaf' })
     m.map = new THREE.Texture()
     makeBillboardMaterial(m as never)
     expect(m.map.colorSpace).toBe(THREE.NoColorSpace)
-    // 显示内容侧：基地标记画布 → CanvasTexture SRGB（createBaseMarkers）
     const { createBaseMarkers } = await import('./playback/bases.js')
     const scene = new THREE.Scene()
     const store = { baseViews: [] as unknown[] } as never
@@ -378,12 +354,6 @@ describe(':457 采样空间（显示内容 vs 原样采样）', () => {
   })
 })
 
-/**
- * PR #957 评审 P2：上面的材质用例都用 `masks()` 注入**已解析**贴图，绕过了生产路径的
- * `resolveSceneryExtras`（parser.getDependency）与 `makeTexResolvers`（associations→材质下标）。
- * 这里用真实 parser 形状走完整链路——预解析若不再登记 mask/lightmap/detail/water/env，
- * 材质会落到回落分支，下面的断言即变红。
- */
 describe('extras 真实解析链路（resolveSceneryExtras → makeTexResolvers → 装配）', () => {
   const addUv1 = (mesh: THREE.Mesh) => mesh.geometry.setAttribute('uv1', new THREE.BufferAttribute(
     new Float32Array(mesh.geometry.attributes.position.count * 2), 2,
@@ -413,7 +383,7 @@ describe('extras 真实解析链路（resolveSceneryExtras → makeTexResolvers 
     addUv1(lmMesh)
     lmMesh.position.x = 10
     const waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), waterMat)
-    waterMesh.position.set(100, 100, 0)   // 与其它件不重叠：避免 underWater 分流
+    waterMesh.position.set(100, 100, 0)
     root.add(maskMesh, lmMesh, waterMesh)
     const gltf = {
       scene: root,
@@ -438,7 +408,6 @@ describe('extras 真实解析链路（resolveSceneryExtras → makeTexResolvers 
   it(':98/:282/:333 预解析登记 mask/lightmap/detail/water/env，装配材质实际挂上对应贴图', async () => {
     const f = fixture()
     const maps = await resolveSceneryExtras(f.gltf as never)
-    // 每个 extras 贴图下标都必须被 getDependency 请求（不再登记 = 后续材质回落）
     expect([...f.deps].sort((a, b) => a - b)).toEqual([10, 11, 12, 13, 14, 15, 16])
     expect(maps.maskTexByMatIndex.get(0)).toBe(f.textures.get(10))
     expect(maps.lmTexByMatIndex.get(1)).toBe(f.textures.get(11))
@@ -481,7 +450,6 @@ describe('extras 真实解析链路（resolveSceneryExtras → makeTexResolvers 
       isMeshLambertMaterial?: boolean
       uniforms?: unknown
     }
-    // 掩码未登记 → 不再进入 blendLayer 分支，回落到普通 Lambert（无 uniforms.mask）
     expect(maskOut.isShaderMaterial ?? false).toBe(false)
     expect(maskOut.isMeshLambertMaterial).toBe(true)
     expect(maskOut.uniforms).toBeUndefined()

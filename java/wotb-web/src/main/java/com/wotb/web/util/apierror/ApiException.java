@@ -3,7 +3,6 @@ package com.wotb.web.util.apierror;
 import java.util.Map;
 import java.util.UUID;
 
-/** Typed exception for new API error paths; legacy domain exceptions remain compatible during migration. */
 public class ApiException extends RuntimeException {
 
     private final String id;
@@ -36,7 +35,6 @@ public class ApiException extends RuntimeException {
         return errorMsg;
     }
 
-    /** Safe backend diagnostic text: explicit message when supplied, otherwise this exception's ID. */
     public String diagnosticMessage() {
         return errorMsg == null || errorMsg.isBlank() ? id : errorMsg;
     }

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exercise the strict source LOC gate with disposable, isolated Git repositories.
 
 Every case runs the REAL scanner (check-source-lines.py) against real Git
@@ -48,7 +47,6 @@ class SourceLineGateTest(unittest.TestCase):
         return subprocess.run([sys.executable, str(CHECK), '--base', base, '--head', head, *options],
                               cwd=cwd or self.root, env=env, text=True, capture_output=True)
 
-    # --- F4 core budget matrix ---------------------------------------------
 
     def test_new_production_file_500_passes_and_501_fails(self):
         self.write('frontend/src/Ok.vue', 500, final_newline=False)
@@ -79,8 +77,6 @@ class SourceLineGateTest(unittest.TestCase):
         legacy = self.commit('historical over-budget production file')
         self.write('README.md', 2)
         unchanged = self.commit('PR touches an unrelated file')
-        # Grandfathering is gone: the over-limit blob fails even when byte-for-byte
-        # identical to the base commit.
         result = self.check(legacy, unchanged)
         self.assertEqual(result.returncode, 1)
         self.assertIn('Legacy.java: 501 physical lines (limit 500, production)', result.stderr)
@@ -100,8 +96,6 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('legacy_test.py: 1501 physical lines (limit 1500, test)', result.stderr)
 
     def test_per_file_exception_attempts_cannot_pass(self):
-        # The allowlist mechanism was deleted: recreating the file, any variant
-        # name, or a policy-side extra category must not shield over-limit source.
         self.write('frontend/src/oversized.js', 501)
         self.write('scripts/ci/source-line-allowlist.txt', 1)
         (self.root / 'scripts/ci/source-line-allowlist.txt').write_text(
@@ -123,7 +117,6 @@ class SourceLineGateTest(unittest.TestCase):
         shutil.copy(CHECK, sandbox / 'scripts/ci/check-source-lines.py')
         return sandbox
 
-    # --- fail-closed evidence requirements ----------------------------------
 
     def test_missing_policy_fails_closed(self):
         sandbox = self.make_sandbox('sandbox')
@@ -166,13 +159,10 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('Source LOC check failed', result.stderr)
         result = self.check('not-a-commit', head)
         self.assertEqual(result.returncode, 2)
-        # On Windows, launching CPython with a deliberately empty PATH also
-        # removes its runtime DLL lookup; the process fails before scanner code.
         if os.name != 'nt':
             env = dict(os.environ, PATH=str(self.root))
             self.assertEqual(self.check(self.base, head, env=env).returncode, 2)
 
-    # --- exclusions: generated, vendored, immutable history -----------------
 
     def test_valid_generated_and_vendored_artifacts_pass(self):
         self.write('frontend/src/api/generated/contract.ts', 2000)
@@ -212,11 +202,7 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('V1folder/helper__maintained.sql: 501 physical lines', result.stderr)
 
     def test_maintained_source_in_an_excluded_looking_path_does_not_bypass(self):
-        # Plural "migrations" is not the Flyway convention: classification stays
-        # structural, and this maintained SQL-like path stays in the budget.
         self.write('java/wotb-web/src/main/resources/db/migrations/seed.sql', 501)
-        # A nested migration path under an extra directory still matches the
-        # immutable-history pattern... unless it leaves the java tree entirely.
         self.write('deploy/db/migration/V1__huge.sql', 501)
         head = self.commit('maintained source in excluded-looking paths')
         result = self.check(self.base, head)
@@ -224,7 +210,6 @@ class SourceLineGateTest(unittest.TestCase):
         self.assertIn('db/migrations/seed.sql: 501 physical lines', result.stderr)
         self.assertIn('deploy/db/migration/V1__huge.sql: 501 physical lines', result.stderr)
 
-    # --- CI tooling is production, extension coverage -----------------------
 
     def test_ci_gate_tools_use_the_test_budget(self):
         self.write('scripts/ci/check-repository-hygiene.sh', POLICY['limits']['test'])

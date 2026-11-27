@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 名人堂单场榜前三名领奖台（4.0 设计探索「名人堂」页）：第 1 名居中加高、强调色描边，
-// 大号名次水印 + 地图封面背景 + 车辆图。只是表格前三行的视觉强调，表格本身仍完整列出前三名（不改数据与分页）。
-// 小屏只显示第 1 名。车辆图缺失时隐藏，不显示破图标。
 import { computed } from 'vue'
 import { tankImageUrl } from '../scene/agentData.js'
 import { mapCoverUrl } from '../scene/replaySource.js'
@@ -20,20 +17,17 @@ interface PodiumRow {
 
 const props = defineProps<{ rows: PodiumRow[], compact?: boolean, locale: string }>()
 
-/** 大屏按 2 · 1 · 3 排列（第 1 名居中）；小屏只留第 1 名。 */
 const ordered = computed(() => {
   const [first, second, third] = props.rows
   if (props.compact) return first ? [first] : []
   return [second, first, third].filter((row): row is PodiumRow => Boolean(row))
 })
 
-/** 资产源未配置时 tankImageUrl 会抛错：领奖台只是装饰，退化为不显示车辆图。 */
 function tankImage(row: PodiumRow) {
   if (row.tankId == null) return null
   try { return tankImageUrl(Number(row.tankId)) } catch { return null }
 }
 
-/** 卡片背景：该记录的地图封面（资源服务器 cover.webp），不可用时回退打包地图图；都没有就不画。 */
 function mapBackground(row: PodiumRow) {
   if (!row.mapName) return null
   try {
@@ -108,7 +102,6 @@ function hideBrokenImage(event: Event) {
   object-fit: cover;
   opacity: .55;
 }
-/* 遮罩：左下是文字区，压成接近卡片底色；右上让地图透出来 */
 .hof-podium-scrim {
   position: absolute;
   inset: 0;
@@ -119,7 +112,6 @@ function hideBrokenImage(event: Event) {
   inset-block-start: var(--space-2);
   inset-inline-end: var(--space-3);
   color: color-mix(in srgb, var(--color-text-primary) 18%, transparent);
-  /* 展示字阶（--type-display-showcase）只给 Showcase Hero（DC-TYP-03），水印用数据区最大字阶 */
   font: var(--type-display-hero);
   font-weight: 700;
   letter-spacing: -0.04em;

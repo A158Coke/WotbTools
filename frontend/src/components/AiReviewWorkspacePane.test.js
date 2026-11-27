@@ -1,11 +1,4 @@
 // @vitest-environment happy-dom
-/**
- * AI 复盘 pane 的错误归属：Agent 产物身份不一致必须是**独立**文案
- * （`workspace.ai_engine_version_mismatch`），不能被通用
- * 「引擎加载失败 / 解析失败」吞掉——用户按提示刷新即可拿到与本 build
- * 同 identity 的 Agent 产物。stale WASM 的原始症状是 AI Review 报
- * `ai_review.poses 缺失`，本测试锁定它不再走到那一步。
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -16,7 +9,6 @@ import AiReviewWorkspacePane from './AiReviewWorkspacePane.vue'
 
 const buildLocalAiReviewInput = vi.fn()
 
-// 连通性替身（分支侧：AI / 3D 入口先过 capability 门禁）。
 const connectivityState = vi.hoisted(() => ({ state: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
   const { ref } = await import('vue')
@@ -25,7 +17,6 @@ vi.mock('../composables/useConnectivity.js', async () => {
   return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
 })
 
-// 认证替身（main 侧：退出登录会使在途投影失效，重新登录后重建）。
 const auth = vi.hoisted(() => ({ authenticated: null, login: vi.fn() }))
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
@@ -33,7 +24,6 @@ vi.mock('../composables/useAuth.js', async () => {
   return { useAuth: () => auth }
 })
 
-// pane 用 useI18n().t 解析 errorKey；组件本体不挂 i18n 插件，这里返回 key 本身
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key) => key, te: () => true, locale: { value: 'zh' } }),
 }))
@@ -160,7 +150,6 @@ describe('AiReviewWorkspacePane 错误归属', () => {
       reason: 'upstream_commit 与 build 期 pin 不一致',
     })
     expect(await projectionErrorFor(mismatch)).toBe('workspace.ai_engine_version_mismatch')
-    // 错误对象必须携带可诊断的四个字段（日志/排障用）
     expect(mismatch.expectedRelease).toBe('v0.3.9')
     expect(mismatch.expectedCommit).toBe('b4e50e13581b8383b1332fbc7ba7b402116533bd')
     expect(mismatch.actualRelease).toBe('v0.3.8')

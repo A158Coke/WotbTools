@@ -1,12 +1,3 @@
-/**
- * 2D「地图鸟瞰」MapOverview（服务端 map-overview artifact 同形状）的本地投影：
- * 地图档案取仓库 `common/map-semantics/*.semantic.json`（Java `MapGridRegistry` 同源），
- * 三语名取 `common/map_names.json`（Java `MapNames` 同源），热力/路线/阶段由
- * `toBattlePlaybackDataset` 的输出聚合（Java `MapOverviewBuilder` 同规则）。
- *
- * 与 Java 的口径差异：Java 的驻留热力/路线按原始 Type10 位置包计数；这里按回放数据集的
- * OBSERVED 位置样本（等间隔）计数——绝对值不同，前端按层内 max 归一化后可比（golden 量化）。
- */
 
 import MAP_NAMES from '../../../../common/map_names.json'
 import type { BattlePlaybackDataset, VehiclePlaybackTrack } from '../../types/playback-v2.js'
@@ -30,7 +21,6 @@ export interface MapRoute {
   deathSec: number | null
 }
 
-/** 服务端 `MapOverview` record 的 JSON 形状（`java/wotb-playback/.../dto/MapOverview.java`）。 */
 export interface LocalMapOverview {
   mapCode: string
   displayName: string
@@ -47,15 +37,12 @@ export interface LocalMapOverview {
   recorderAccountId: number | null
 }
 
-/** Java `MapGridProfile`：语义文件中 overview 需要的部分。 */
 export interface MapGridProfile {
   displayName: string
-  /** 语义文件标注的战斗变体（如 nt0）；缺省 = 未标注/单变体档案。 */
   battleVariant?: string
   playableBounds: MapBounds
   gridCells: MapGridCell[]
   spawnPoints: MapSpawnPoint[]
-  /** 只消费已核验的 canonical 方向；不进入地图 overview wire。 */
   physicalSpawns?: { side: components['schemas']['BattleDataSpawn']; points: { x: number; y: number }[] }[]
 }
 
@@ -67,7 +54,6 @@ const bounds = (v: unknown): MapBounds | null =>
     ? { xMin: v.xMin as number, xMax: v.xMax as number, yMin: v.yMin as number, yMax: v.yMax as number }
     : null
 
-/** Java `MapGridRegistry.parse`：缺边界/无有效网格 → null。 */
 export function parseMapGridProfile(semantic: unknown): MapGridProfile | null {
   if (!isObj(semantic) || typeof semantic.mapId !== 'string' || !semantic.mapId) return null
   const playable = bounds(semantic.playableBoundsMeters)
@@ -121,7 +107,6 @@ export function parseMapGridProfile(semantic: unknown): MapGridProfile | null {
   }
 }
 
-/** Java `MapGridRegistry.load`：按 mapId 与 mapCodes（小写）建索引，先到先得。 */
 export function indexMapGridProfiles(semantics: readonly unknown[]): Map<string, MapGridProfile> {
   const out = new Map<string, MapGridProfile>()
   for (const s of semantics) {
@@ -136,7 +121,6 @@ export function indexMapGridProfiles(semantics: readonly unknown[]): Map<string,
   return out
 }
 
-/** Java `MapGridProfile.cellAt`：首个包含点的格子（闭区间）。 */
 function cellIndexAt(profile: MapGridProfile, x: number, y: number): number {
   return profile.gridCells.findIndex((c) => x >= c.bounds.xMin && x <= c.bounds.xMax && y >= c.bounds.yMin && y <= c.bounds.yMax)
 }
@@ -160,14 +144,12 @@ function observedPositions(track: VehiclePlaybackTrack): Pos[] {
   return out.sort((a, b) => a.t - b.t)
 }
 
-/** Java `PlayerResultFormat.deathSec`：非存活且结算存活时长 > 0。 */
 function settlementDeathSec(result: AgentBattleResult | null | undefined, accountId: number): number | null {
   const p = result?.players.find((x) => x.account_id === accountId)
   if (!p || p.survived !== false) return null
   return typeof p.life_time_secs === 'number' && p.life_time_secs > 0 ? p.life_time_secs : null
 }
 
-/** Java `BattlePhaseSummary.buildRelativePhases` + `MapOverviewBuilder.buildPhases`。 */
 function phases(dataset: BattlePlaybackDataset): MapPhase[] {
   const OPENING = 45, FIRST_CONTACT = 10, LATE_WINDOW = 15
   const end = dataset.durationSec
@@ -186,10 +168,6 @@ function phases(dataset: BattlePlaybackDataset): MapPhase[] {
   return out
 }
 
-/**
- * 投影入口。地图未收录（无语义网格）/ 视角未解析 / 无位置 → null（与服务端 204 同义，
- * BattlePlaybackPanel 的 `mapOverview = null` 分支）。
- */
 export function toMapOverview(
   dataset: BattlePlaybackDataset,
   profiles: ReadonlyMap<string, MapGridProfile>,
@@ -214,7 +192,6 @@ export function toMapOverview(
       const i = cellIndexAt(profile, p.x, p.y)
       if (i >= 0) side.dwell[i]++
     }
-    // 伤害按受击方位置落格（±3 s 内最近位置）
     for (const loss of track.damageLosses) {
       let best: Pos | null = null
       for (const p of positions) if (!best || Math.abs(p.t - loss.toSec) < Math.abs(best.t - loss.toSec)) best = p

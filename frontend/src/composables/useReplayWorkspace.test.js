@@ -32,7 +32,6 @@ function makeFiles(n) {
   return Array.from({ length: n }, (_, i) => new File(['x'], `f${i}.wotbreplay`))
 }
 
-/** BattleDto 投影：sourceId = r<sourceIndex>（唯一权威 identity）。 */
 function battle(sourceId, mapName = 'Lagoon') {
   return { sourceId, mapName, players: [] }
 }
@@ -82,8 +81,6 @@ describe('useReplayWorkspace', () => {
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(1)
-    // 规范投影现在经 canonicalRuntime 线程外入口（Worker 优先）：测试环境无 Worker →
-    // 回退主线程解析，入参是原始字节；尚未就绪的 scene 不阻塞本地投影。
     expect(parser.project.mock.calls[0][0]).toBeInstanceOf(Uint8Array)
     finish({ dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null })
     expect(await canonical).toBe(state.canonical)
@@ -261,14 +258,12 @@ describe('useReplayWorkspace', () => {
 
     ws.setDataViewMode('SUMMARY')
     await nextTick()
-    // 汇总是数据页的视图，不是换场：回到单场能力仍是原来那一场。
     expect(ws.currentBattleId.value).toBe('r1')
     expect(ws.dataViewMode.value).toBe('SUMMARY')
     expect(ws.currentTargetBattleId.value).toBe('r1')
   })
 
   it('READY 初始化用 resp.battles[0].sourceId（禁止硬编码 r0）', async () => {
-    // r0 缺失（failed/duplicate 移除），有效 battle 从 r3 开始。
     holder.state.files.value = makeFiles(4)
     holder.state.resp.value = { leagueMode: false, aggregate: [], battles: [battle('r3')] }
     const ws = useReplayWorkspace('data')
@@ -281,7 +276,6 @@ describe('useReplayWorkspace', () => {
 
   it('单 replay（即使 aggregate 有数据）默认 dataViewMode=SINGLE，直接单场结果', async () => {
     holder.state.files.value = makeFiles(1)
-    // 单独上传一场：后端仍产出 aggregate（14 名选手），但默认必须是单场视图。
     holder.state.resp.value = { leagueMode: false, aggregate: [{ a: 1 }], battles: [battle('r0')] }
     const ws = useReplayWorkspace('data')
     await nextTick()
@@ -313,11 +307,9 @@ describe('useReplayWorkspace', () => {
     }
     const ws = useReplayWorkspace('data')
     await nextTick()
-    // 第一场有效 battle = r1（不是 r0）。
     expect(ws.currentBattleId.value).toBe('r1')
     expect(ws.currentBattle.value?.sourceId).toBe('r1')
     expect(ws.currentBattleIndex.value).toBe(0)
-    // sourceId r1 → files[1]（source index），不是数组下标 0。
     expect(ws.currentTargetFile.value).toBe(holder.state.files.value[1])
   })
 
@@ -336,7 +328,6 @@ describe('useReplayWorkspace', () => {
     ws.selectBattle('r2')
     await nextTick()
     expect(ws.currentBattleId.value).toBe('r2')
-    // parsedBattles = [r0, r2] → r2 在数组 index 1；但 source index = 2 → files[2]。
     expect(ws.currentBattleIndex.value).toBe(1)
     expect(ws.currentBattle.value?.sourceId).toBe('r2')
     expect(ws.currentTargetFile.value).toBe(holder.state.files.value[2])
@@ -392,7 +383,6 @@ describe('useReplayWorkspace', () => {
     ws.selectBattle('r2')
     ws.setDataViewMode('SUMMARY')
     expect(ws.currentBattleId.value).toBe('r2')
-    // 无选中时 SINGLE 回退第一场有效 battle 的 sourceId（r0）。
     ws.currentBattleId.value = null
     ws.setDataViewMode('SINGLE')
     expect(ws.currentBattleId.value).toBe('r0')

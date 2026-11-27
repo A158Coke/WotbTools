@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import ColumnPicker from './ColumnPicker.vue'
 
-// 固定列（League 模式 nickname/league_rating 语义）+ 三个可移动列。
 const ORDER = ['nickname', 'league_rating', 'damage', 'wins', 'kills']
 const FIXED = ['nickname', 'league_rating']
 
@@ -18,14 +17,12 @@ function mountPicker(props = {}) {
 
 describe('ColumnPicker 上下移按钮（触屏/键盘重排序）', () => {
   it('下移按钮与 HTML5 drop 产生完全一致的 reorder 数组（同一 move 逻辑）', async () => {
-    // 按钮路径：damage(idx 2) 下移一位 → idx 3
     const viaButton = mountPicker()
     const damageDown = viaButton.findAll('.collist li')[2].findAll('.colmove-btn')[1]
     await damageDown.trigger('click')
     const buttonOrder = viaButton.emitted('reorder')?.[0]?.[0]
     expect(buttonOrder).toEqual(['nickname', 'league_rating', 'wins', 'damage', 'kills'])
 
-    // 拖拽路径：从 idx 2 drop 到 idx 3 —— 结果必须逐键相同
     const viaDrop = mountPicker()
     const lis = viaDrop.findAll('.collist li')
     await lis[2].trigger('dragstart')
@@ -98,7 +95,6 @@ async function openFrom(trigger) {
 
 describe('ColumnPicker 浮层键盘契约（非模态对话框）', () => {
   it('role=dialog；打开即取焦点；Esc 关闭并 emit close', async () => {
-    // #669 回归：浮层若既无 role 也不处理 Esc，引导会把 Esc 当成“退出教程”，面板反而留在原地。
     const wrapper = mount(ColumnPicker, {
       attachTo: document.body,
       props: { scope: 'player', order: ORDER, visible: ORDER, fixedKeys: FIXED },
@@ -148,14 +144,12 @@ describe('ColumnPicker fixedKeys 固定区域契约（按钮与拖拽同一套 l
   })
 
   it('drag/drop 不能跨过或插入 fixedKeys 固定区域', async () => {
-    // damage(2) drop 到 nickname(0)：会把 nickname 挤到 1 → 非法
     const ontoFixed = mountPicker()
     let lis = ontoFixed.findAll('.collist li')
     await lis[2].trigger('dragstart')
     await lis[0].trigger('drop')
     expect(ontoFixed.emitted('reorder')).toBeFalsy()
 
-    // kills(4) drop 到 league_rating(1)：会把 league_rating 挤到 2 → 非法
     const acrossFixed = mountPicker()
     lis = acrossFixed.findAll('.collist li')
     await lis[4].trigger('dragstart')
@@ -166,8 +160,8 @@ describe('ColumnPicker fixedKeys 固定区域契约（按钮与拖拽同一套 l
   it('所有合法移动的 emit 结果都保持 fixedKeys 顺序与位置（nickname@0, league_rating@1）', async () => {
     const wrapper = mountPicker()
     const lis = wrapper.findAll('.collist li')
-    await lis[2].findAll('.colmove-btn')[1].trigger('click') // damage 下移
-    await lis[4].findAll('.colmove-btn')[0].trigger('click') // kills 上移
+    await lis[2].findAll('.colmove-btn')[1].trigger('click')
+    await lis[4].findAll('.colmove-btn')[0].trigger('click')
     const emitted = wrapper.emitted('reorder') ?? []
     expect(emitted.length).toBeGreaterThan(0)
     for (const [next] of emitted) {
@@ -177,7 +171,6 @@ describe('ColumnPicker fixedKeys 固定区域契约（按钮与拖拽同一套 l
   })
 
   it('非 fixed 列之间仍可正常上下移动与拖拽（含跨多行 drop）', async () => {
-    // damage(2) drop 到 kills(4)：不触碰固定区 → 合法
     const wrapper = mountPicker()
     const lis = wrapper.findAll('.collist li')
     await lis[2].trigger('dragstart')

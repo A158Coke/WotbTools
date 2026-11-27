@@ -1,8 +1,3 @@
-/**
- * 录像者相机消费边界（上游 v0.4.21 `parseRecorderCamera`）：合法返回只有 `null` 或严格对象，
- * 形状漂移一律 fail closed，由调用方按「此回放不支持」处理。真实 pinned 产物的
- * replay fixture 校验在 `replay-local/agent-wasm-smoke.test.ts`。
- */
 import { describe, expect, it } from 'vitest'
 
 import { validateAgentRecorderCamera, type AgentRecorderCamera } from './agent-replay-facets.js'

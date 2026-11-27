@@ -1,9 +1,6 @@
 import * as THREE from 'three'
 import type { ShaderMaterial, Texture } from 'three'
 import type { GltfSceneMaterial } from './sceneryMaterialTypes.js'
-/** 逐图太阳（供环境反射/水面高光项）：playbackScene.applyMapLighting 每次换图更新。
- *  uSunDirScene = 阳光**传播**方向（场景系，单位向量）；uSunColor = 客户端 color × intensity；
- *  uSunSpecColor = color × DEFAULT_SUN_INTENSITY（已按查看器曝光归一，避免高光过曝）。 */
 export const sunUniforms: {
   uSunDirScene: { value: THREE.Vector3 }
   uSunColor: { value: THREE.Vector3 }
@@ -14,22 +11,6 @@ export const sunUniforms: {
   uSunSpecColor: { value: new THREE.Vector3(1, 1, 1) },
 };
 
-// 烘焙光照图（客户端 `materials-fp.sl` 的 MATERIAL_LIGHTMAP 静态路径）：
-//   `color = albedo(texCoord0) × lightmap(texCoord1) × 2.0`
-//   `varTexCoord1 = uvScale * texcoord1 + uvOffset`（**逐材质实例**的变换）；
-//   `× 2` 来自 VIEW_ALBEDO 分支（`common.slh` 兜底同时置 VIEW_DIFFUSE/VIEW_ALBEDO=1）。
-//   着色器里没有任何光照项——静态场景在客户端就是**不受光**的烘焙结果（太阳/环境色只
-//   作用于 Textured / lit / SpeedTree / 坦克），故本材质也不吃场景灯光。
-// 数据：导出器把**图集贴图**挂材质（`extras.lightmap`）、**逐实例 UV 变换**挂节点
-//（`extras.lm = [sx, sy, ox, oy]`）→ `sceneryInstancing` 汇成实例属性 `aLm`。
-// 口径：伽马直采直写（与叶卡/ST|/混合层同口径；线性口径待 C3 的 sRGB 项一并定，见上游
-// `docs/map-render-align-audit.md`）。
-// 细节层（客户端 `MATERIAL_DETAIL`；B1）：`varDetailTexCoord = uv0 × detailTileCoordScale`、
-// DRAW PHASE 末尾 `color *= detailTextureColor.rgb * 2.0`（在光照图/环境反射**之后**——
-// 与拼花砖 TILED_DECAL_MASK 同段，本材质尚无拼花砖，故紧跟环境反射）。detail 贴图是
-// 平铺的砖缝/岩面细节，×2 把均值 ~0.5 的贴图拉回 1.0 附近（客户端同式）。实测 36 图
-// 453 实例 / 10 图（forgecity 121、rift 103、skit 63、fort 50、holland 39、lumber 28…）。
-/** 环境反射 props（extras.env 的消费字段）。 */
 export interface EnvReflectionProps {
   reflectionSpecParamGloss?: number
   reflectionMetalFresnelReflectance?: number[]
@@ -51,7 +32,6 @@ export interface EnvReflectionInput {
 
 export interface DetailLayerInput {
   tex: Texture
-  /** 平铺倍率 [sx, sy]（缺省 [1, 1]） */
   scale?: ArrayLike<number> | null
 }
 
@@ -69,9 +49,7 @@ export function makeLightmappedMaterial(m: GltfSceneMaterial, atlasTex: Texture 
   return new THREE.ShaderMaterial({
     uniforms: Object.assign(
       env ? {
-        // 环境反射的高光项要逐图太阳（uSunDirScene/uSunColor，见下方 ENV_REFLECTION 分支）
         ...sunUniforms,
-        // 环境反射（客户端 ENVIRONMENT_MAPPING）：遮罩(UV0) × 菲涅尔 × 天空立方图（等距柱状）
         envMask: { value: env.maskTex },
         envCube: { value: env.cubeTex },
         uEnvOn: { value: 1 },
@@ -226,26 +204,8 @@ export function makeLightmappedMaterial(m: GltfSceneMaterial, atlasTex: Texture 
   });
 }
 
-// 贴花（客户端 `MATERIAL_DECAL`，材质文件 `Decal.material`；
-// `materials-vp.sl:473-483` + `materials-fp.sl:183/447-493/539-607` 逐分支核对）：
-//   · 顶点期 `varTexCoord1 = texcoord1`（**无 uvScale/uvOffset**）⇒ 片元用**原始 UV1** 采 decal 槽；
-//   · decal 槽 = **地图 colormap**（`landscape/<map>_colormap.tex`）——客户端注释原文
-//     "objects colored with landscape" 即此；
-//   · `decalTextureFetch = tex2D(decal, varTexCoord1)`；GLOBAL_TINT 时按
-//     `materialLightmapAdjustment` 做 `pow(gamma) → (x−0.5)·contrast+0.5 → +brightness`；
-//   · `LANDSCAPE_SEPARATE_LIGHTMAP_CHANNEL`（**逐实例 define**，导出器随
-//     `extras.decalSeparateLm` 下发布尔）⇒ `shadowColor *= .a`（decal 槽图 alpha；
-//     地表色图类在本包 = `ground/lm.webp` 的 R 通道）；
-//   · DRAW PHASE `color = albedo(UV0) × shadowColor × 2.0` —— **全程无光照项 ⇒ 不受光**。
-// 若落到受光材质（Lambert）会比客户端亮一档（2026-10-10 用户"铁轨贴图看起来太亮"报障：
-// forgecity `env_fs_rails_00X` / `env_fs_border_*`，fxName = `Decal.material`）。
-// 数据：导出器把 `extras.decal = true` 挂材质、并**随导 TEXCOORD_1**（同 albedo 的 UV0 管线，
-// 无需翻转——实测铁轨顶点 UV1 与地面着色器的世界→UV 公式同空间：样例 (0.4219, 0.2775) vs
-// 公式 (0.422, 0.2767)）。
 export interface DecalMaterialOpts {
-  /** LSC 逐实例 define（extras.decalSeparateLm 显式布尔，旧包回退逐图） */
   separateLm?: unknown
-  /** materialLightmapAdjustment = [brightness, contrast, gamma] */
   lmAdjust?: number[] | null
   globalTint?: boolean
 }

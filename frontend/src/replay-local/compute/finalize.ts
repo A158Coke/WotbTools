@@ -1,7 +1,3 @@
-/**
- * 批次收尾（Java `ReplayBatchFinalizer.finalizeBatch` + `LeagueReplays.finalize` +
- * `Replays.dedupe`）：模式判定 → 去重/冲突 → League 校验与评分 → 批次汇总 → 指标 enrich。
- */
 
 import { aggregateLeagueBatch, type LeagueRatingBatch } from './league-batch.js'
 import {
@@ -18,10 +14,8 @@ import type { Battle, ParsedEntry } from './model.js'
 import { populateBattle } from './performance.js'
 import type { Tankopedia } from './tankopedia.js'
 
-/** 混合批次（普通 + 训练赛/联赛）不聚合 League Rating 时的稳定提示码。 */
 export const MIXED_LEAGUE_AND_STANDARD_REPLAYS = 'MIXED_LEAGUE_AND_STANDARD_REPLAYS'
 
-/** 去重/聚合后 0 场有效回放（Java `NoValidReplaysException`，终态 NO_VALID_REPLAYS）。 */
 export class NoValidReplaysError extends Error {
   readonly code = 'NO_VALID_REPLAYS'
 
@@ -31,19 +25,13 @@ export class NoValidReplaysError extends Error {
   }
 }
 
-/** 已处理回放数据集（Java `ProcessedDataset`）：battles 已 enrich 恰好一次。 */
 export interface ProcessedDataset {
   battles: Battle[]
   battleSourceNames: string[]
-  /** 与 battles 对齐的稳定 sourceId（`r{sourceIndex}`）。 */
   battleSourceIds: string[]
-  /** [文件名, arenaId] */
   duplicates: [string, string][]
-  /** [文件名, 错误] */
   failures: [string, string][]
-  /** 仅 LEAGUE_RATING 批次非 null。 */
   league: LeagueRatingBatch | null
-  /** 混合批次 = MIXED_LEAGUE_AND_STANDARD_REPLAYS；其余 null。 */
   leagueUnavailableCode: string | null
 }
 
@@ -61,7 +49,6 @@ function failed(entry: ParsedEntry): boolean {
   return entry.failureMessage !== null
 }
 
-/** 按 arenaId 去重（first-wins；Java `Replays.dedupe`）。 */
 function dedupe(entries: readonly ParsedEntry[], mode: LeagueRatingMode): Collected {
   const res: Collected = { mode, battles: [], battleSourceNames: [], battleSourceIds: [], duplicates: [], failures: [], leagueBatch: null }
   const seen = new Set<string>()
@@ -83,7 +70,6 @@ function dedupe(entries: readonly ParsedEntry[], mode: LeagueRatingMode): Collec
   return res
 }
 
-/** league 分支：同 arena 副本一致 → 保留第一份；不一致 → 全部副本 CONFLICTING；再逐场校验与评分。 */
 function collectLeague(entries: readonly ParsedEntry[]): Collected {
   const byArena = new Map<string, ParsedEntry[]>()
   for (const e of entries) {

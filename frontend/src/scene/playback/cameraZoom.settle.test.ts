@@ -1,6 +1,3 @@
-// 滚轮平滑收口（review 4664519753）：HIGH 档反射隔帧时，缩放预算耗尽的最后一帧
-// 只 invalidate 会把倒影永久留在上一姿态。预算归零且真正改了相机时补一次刷新，
-// 移动中仍保持隔帧；无姿态变化或已收口后不得重复刷新。
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import { createCameraZoom } from './cameraZoom.ts'

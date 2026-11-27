@@ -10,7 +10,6 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key })
 }))
 
-/** 构造展示轴对象（组件消费 visualValue/normalized，不负责任何业务公式）。 */
 function metric(key, label, rawValue, normalized, displayValue, available = true, tip = '') {
   return { key, label, rawValue, normalized, visualValue: normalized * 150, displayValue, available, tip }
 }
@@ -62,7 +61,7 @@ describe('PlayerRatingRadar', () => {
   it('reference: dashed no-fill no-dots (class present); player gets dots', () => {
     const wrapper = mountRadar(SEVEN, REF)
     expect(wrapper.find('.radar-ref').exists()).toBe(true)
-    expect(wrapper.findAll('.radar-dot')).toHaveLength(7) // 仅 player 有点
+    expect(wrapper.findAll('.radar-dot')).toHaveLength(7)
   })
 
   it('grid scale labels: single side 25/50/75/100', () => {
@@ -84,7 +83,6 @@ describe('PlayerRatingRadar', () => {
     const wrapper = mountRadar(SEVEN, REF)
     const labelText = wrapper.findAll('.radar-label').map(n => n.text()).join(',')
     expect(labelText).not.toMatch(/\d/)
-    // RC 短标签 + native title 提示全称
     expect(labelText).toContain('RC')
     expect(labelText).toContain('Survival/Trade tip')
   })
@@ -116,7 +114,6 @@ describe('PlayerRatingRadar', () => {
     expect(wrapper.find('.radar-ref').exists()).toBe(false)
     const rows = wrapper.findAll('.radar-detail tbody tr')
     expect(rows).toHaveLength(2)
-    // 参考列（第二个数据列）显示 --
     const cells = rows[1].findAll('td')
     expect(cells[2].text()).toBe('--')
   })
@@ -173,7 +170,6 @@ describe('PlayerRatingRadar', () => {
     const comp = readFileSync(resolve(process.cwd(), 'src/components/PlayerRatingRadar.vue'), 'utf8')
     expect(comp).toContain('var(--border-light-strong)')
     const tokens = readFileSync(resolve(process.cwd(), 'src/styles/tokens.css'), 'utf8')
-    // 旧变量只在 tokens.css 定义一次，并投影到当前主题的语义 token（四季主题自动跟随）
     expect(tokens).toContain('--border-light-strong: var(--color-border-strong)')
   })
 })

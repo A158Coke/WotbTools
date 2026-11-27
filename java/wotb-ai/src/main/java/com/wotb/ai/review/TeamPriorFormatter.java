@@ -4,7 +4,6 @@ import org.springframework.util.StringUtils;
 
 import static com.wotb.ai.review.TeamEvidenceFormatter.quoteData;
 
-/** Pre-battle prior and hypothesis text rendering. */
 final class TeamPriorFormatter {
     private TeamPriorFormatter() {
     }

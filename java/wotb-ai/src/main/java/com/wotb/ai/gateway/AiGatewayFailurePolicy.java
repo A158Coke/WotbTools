@@ -13,7 +13,6 @@ import java.util.function.LongSupplier;
 
 import static com.wotb.ai.gateway.AiGatewayRuntimeState.PROVIDER_NAME;
 
-/** Stable provider error classification and redacted gateway event logging. */
 final class AiGatewayFailurePolicy {
     private static final long NANOS_PER_MILLI = 1_000_000L;
     private final Logger logger;
@@ -35,7 +34,6 @@ final class AiGatewayFailurePolicy {
         return new AiUpstreamException(code, status, correlationId);
     }
 
-    /** Cancellation or total-budget expiry takes precedence over a provider failure. */
     AiUpstreamException resolveStopped(final AiUpstreamException failure,
                                                       final AttemptBudgetContext context,
                                                       final String correlationId) {
@@ -49,9 +47,6 @@ final class AiGatewayFailurePolicy {
     }
 
 
-    /**
-     * Maps Spring AI / OpenAI SDK exceptions to stable error codes.
-     */
     static String classify(final OpenAIException error) {
         if (error instanceof OpenAIServiceException serviceError) {
             return classifyHttpError(serviceError.statusCode(), errorBody(serviceError));
@@ -107,13 +102,6 @@ final class AiGatewayFailurePolicy {
                 ? serviceError.statusCode() : null;
     }
 
-    /**
-     * Recovers the provider HTTP status from an {@link OpenAIServiceException}
-     * wrapped by Spring AI / the SDK in a generic runtime exception. Deliberately
-     * scoped to the generic adapter boundary: {@link AiUpstreamException} keeps
-     * explicit status semantics so terminal AI_TIMEOUT / AI_CANCELLED
-     * reclassification never inherits an earlier provider response.
-     */
     Integer nestedProviderStatus(final Throwable error) {
         Throwable current = error;
         while (current != null) {
@@ -158,7 +146,6 @@ final class AiGatewayFailurePolicy {
                 AiSecretRedactor.redact(summary));
     }
 
-    // ===== AI Review 全链路事件日志 =====
 
     void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,
@@ -174,11 +161,6 @@ final class AiGatewayFailurePolicy {
                 "remainingBudgetSec", nanosToSec(remainingNanos)));
     }
 
-    /**
-     * 上游调用成功：不记录 providerStatus=200 这类硬编码常量——Spring AI
-     * 成功响应不暴露 HTTP status metadata，伪 observation 会误导排障；真实 provider status
-     * 只在失败事件（ai_upstream_call_failed）从异常元数据中提取。
-     */
     void logUpstreamCompleted(final String correlationId, final int attempt,
                                       final long attemptStartNanos,
                                       final AiChatResponse result) {
@@ -191,15 +173,6 @@ final class AiGatewayFailurePolicy {
                 "totalTokens", result.totalTokens()));
     }
 
-    /**
-     * Transport retry（与业务层的 contract recovery 区分）：上游 429/5xx/连接失败后的退避重试。
-     * 由 Gateway 单点执行；业务层的 contract recovery 记 {@code ai_review_contract_failed} /
-     * {@code ai_review_recovery_triggered} / {@code ai_review_recovery_failed} 事件
-     * （原 {@code ai_validation_retry} 已随 2026-10 legacy 契约收敛删除）。
-     * <p>字段语义：{@code retryNumber} = 本次退避重试的 1 基序号
-     * （retryNumber=1 表示第一次重试，其后的下一次上游调用是 {@code attempt=2}）；
-     * 不使用易歧义的 {@code transportAttempt}（该值常被误读为刚失败的 attempt 号）。</p>
-     */
     void logTransportRetry(final AiChatRequest request, final String correlationId,
                                    final int retryNumber,
                                    final AiUpstreamException failure,
@@ -212,7 +185,6 @@ final class AiGatewayFailurePolicy {
                 "backoffMs", backoffMillis));
     }
 
-    /** 终态失败事件：attempt 为已执行的尝试数（含失败这一次）。 */
     void logUpstreamFailed(final AiChatRequest request,
                                    final AiUpstreamException failure,
                                    final int attempt) {
@@ -226,7 +198,6 @@ final class AiGatewayFailurePolicy {
                 "retryable", retryPolicy.isRetryable(failure)));
     }
 
-    /** analysisMode → 稳定 stage 标签（低基数口径）。 */
     private static String stageOf(final String analysisMode) {
         return switch (analysisMode == null ? "" : analysisMode) {
             case "SINGLE_TEAM_BATTLE" -> "TEAM_CALL_2";

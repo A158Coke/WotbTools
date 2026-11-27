@@ -64,13 +64,8 @@ export TF_VAR_keycloak_admin_client_secret="$KEYCLOAK_ADMIN_CLIENT_SECRET"
 export TF_VAR_keycloak_admin_client_secret_version="$KEYCLOAK_ADMIN_CLIENT_SECRET_VERSION"
 export TF_VAR_e2e_client_secret="$KEYCLOAK_E2E_CLIENT_SECRET"
 export TF_VAR_e2e_client_secret_version="$KEYCLOAK_E2E_CLIENT_SECRET_VERSION"
-# The Wargaming application ID is the same secret the Keycloak runtime already
-# receives; OpenTofu only owns the ASIA/EU/NA IdP representation's client_id.
-# It is passed as a sensitive TF_VAR and never echoed.
 export TF_VAR_wargaming_application_id="$WG_APPLICATION_ID"
 export TF_VAR_qq_client_id="$TX_QQ_CLIENT_ID"
-# Plain sensitive desired state (no rotation version): the injected value is what
-# idp-qq must converge to on every apply.
 export TF_VAR_qq_client_secret="$TX_QQ_CLIENT_SECRET"
 
 TOFU_CLI_CONFIG="${TF_CLI_CONFIG_FILE:-/opt/wotb-tx/tofurc}"

@@ -1,25 +1,15 @@
 <script setup>
-// 车辆选择器（design-language §7 SearchSelect，单选；审计 BZ-17）：可编辑 combobox + listbox（WAI-ARIA APG combobox 模式）。
-// 焦点始终留在输入框：输入即按车名模糊过滤（复用坦克百科的 tankFuzzyScore），方向键移动高亮项，
-// Enter 选中，Esc 关闭并恢复显示当前选择，Tab / 点外部关闭。
-// 当前值不在选项里（例如深链 ?tank= 指向的车辆当前筛选下不存在）时仍显示为已选：优先 fallbackLabel，否则 `#id`。
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, X } from 'lucide-vue-next'
 import { tankFuzzyScore } from '../scene/tankMeta.js'
 
 const props = defineProps({
-  /** 当前车辆 id；null 表示未选 / 全部车辆。 */
   modelValue: { type: Number, default: null },
-  /** [{ id, label, hint?, search? }]：label 车名，hint 次要信息（等级 / 国家 / 车种），search 额外检索文本。 */
   options: { type: Array, required: true },
-  /** 提供时列表首项为「全部 / 默认」选项（值为 null），并显示清除按钮。 */
   nullLabel: { type: String, default: '' },
-  /** 未选择时的占位文字；默认使用 nullLabel 或通用提示。 */
   placeholder: { type: String, default: '' },
-  /** 当前值不在 options 里时显示的名称。 */
   fallbackLabel: { type: String, default: '' },
-  /** 输入框 id，供外部 <label for> 关联。 */
   inputId: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
 })
@@ -41,7 +31,6 @@ const selectedOption = computed(() => (props.modelValue == null
   ? null
   : props.options.find(option => option.id === props.modelValue) || null))
 
-/** 输入框在非编辑状态下显示的文字。 */
 const displayLabel = computed(() => {
   if (props.modelValue == null) return ''
   return selectedOption.value?.label || props.fallbackLabel || `#${props.modelValue}`
@@ -116,7 +105,6 @@ function onKeydown(event) {
     if (item) choose(item)
   } else if (event.key === 'Escape') {
     if (!open.value) return
-    // 只关闭列表，不让 Esc 冒泡到外层弹窗 / sheet 把它们一并关掉
     event.preventDefault()
     event.stopPropagation()
     closeList()
@@ -140,7 +128,6 @@ function onFocusOut(event) {
   if (!root.value?.contains(event.relatedTarget)) closeList()
 }
 
-// 选项集合变化（外层筛选收窄）时高亮项可能越界
 watch(() => props.options, () => {
   if (activeIndex.value >= items.value.length) activeIndex.value = items.value.length ? 0 : -1
 })
@@ -305,7 +292,6 @@ watch(() => props.options, () => {
   cursor: pointer;
 }
 
-/* activedescendant 模式：焦点留在输入框，高亮项需要可见的焦点指示 */
 .vp-option.is-active { background: var(--color-surface-2); outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 .vp-option[aria-selected="true"] { border-inline-start-color: var(--color-accent); }
 .vp-option[aria-selected="true"] .vp-label { color: var(--color-accent-text); font-weight: 600; }

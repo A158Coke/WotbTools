@@ -1,17 +1,7 @@
 package com.wotb.ai.review;
 
-/**
- * AI 复盘流式进度监听器：编排层（Harness / Team / Player Service）在执行期间
- * 通过此接口向调用方（Controller 的 SSE 发送器）广播阶段事件与主复盘 token 增量。
- * <p>事件命名约定（SSE 协议）：{@code call1_start} / {@code call1_done} /
- * {@code evidence_done} / {@code call2_token}；{@code done} 事件由调用方在拿到最终
- * {@code AiReviewDonePayload} 后自行发送。</p>
- * <p>所有回调与发起调用同线程、单线程顺序；回调抛出的异常会中断当前阶段
- * （token 回调抛出时等价于断流）。</p>
- */
 public interface AiReviewStreamListener {
 
-    /** 空实现：同步路径（无需进度广播）时使用，行为与改造前完全一致。 */
     AiReviewStreamListener NOOP = new AiReviewStreamListener() {
     };
 

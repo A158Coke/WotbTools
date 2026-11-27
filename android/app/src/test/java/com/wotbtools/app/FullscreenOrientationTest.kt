@@ -16,7 +16,6 @@ class FullscreenOrientationTest {
         val state = FullscreenOrientation()
         assertEquals(landscape, state.enter(portrait, phone = true))
         assertTrue(state.fullscreen)
-        // 退出按钮、Android Back、系统手势都经 exit()：手持横屏时也回竖屏
         assertEquals(portrait, state.exit())
         assertFalse(state.fullscreen)
     }

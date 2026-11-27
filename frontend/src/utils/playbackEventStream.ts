@@ -1,30 +1,3 @@
-// 统一事件流（借鉴 blitzinfo 的战斗日志）：把 Playback facet 的各事件源合并成
-// 单一时间轴流。**纯函数、无场景依赖**——合并/过滤/排序全部可单测；
-// 判别器一律是 facet 字段语义（t_fire/t/clock/时刻数组），禁止按内容统计推断
-// （上游 AGENTS.md 禁令）。
-//
-// 事件源与 kind（过滤器 chip 按此分组）：
-//   shot        shots[].t_fire            炮击（含命中/未命中/跳弹，verdict 取 game_hit_result 位图）
-//   kill        kills[].t                 击毁（killfeed 同源）
-//   chat        chat_events[].kind=message（0x2f 战斗聊天）/ chat_messages[]（0x2b 另域）
-//   command     chat_events[].kind=command 非地图类快捷指令
-//   marker      chat_events[].kind=command 的地图标记（attention_to_cell / moving_here /
-//               catch_point / defend_point）；独立过滤片，避免与聊天文本混在一起
-//   presence    chat_events[].kind=join/leave/channel_created
-//   notice      notifications[].t         单发通知（语义未定；subject 仅按名册联表）
-//   module      module_crew_states[].?    模块/乘员状态（recorder-only 数据）
-//   consumable  consumables[].clock       消耗品生命周期
-//   death       vehicles[].death_times    死亡（≥2 次死亡的车才有数组；单次死亡用 kills/death_t）
-//   revive      vehicles[].resurrection_times  复活
-// 身份：vehicles[] 是唯一 eid 名册；tankNames 选项（tank_cache）补真实车型名；
-// 指令 target / 通知 subject 同时接受 eid 与 accountId 两域。
-//
-// 字段命名与 agent-replay-facets.ts 的 TS 类型一一对应；新增事件源在这里追加并同步 filter 组。
-//
-// 2026-11-21 #LOC 结构拆分（本文件为公共入口 façade，导入方零改动）：
-// - 名册身份解析（eid/accountId/昵称/频道/阵营）→ ./playbackEventStreamIdentity.ts；
-// - 逐源收集器（炮击合并/聊天/占领/状态类）→ ./playbackEventStreamSources.ts。
-// 公共 API 与拆分前逐符号一致。
 
 import type { AgentPlaybackFacet, AgentPlaybackShot } from '../api/agent-replay-facets'
 import { SHOT_RESULT, shotResultClass } from './shotResultClass.js'
@@ -64,7 +37,6 @@ export type EventFilterKey =
 
 export type ShotVerdict = 'kill' | 'ricochet' | 'blocked' | 'penetrated' | 'he'
 
-/** 一行归一化事件（可选字段按 kind 填充；shot 事件附 raw facet 行供装甲检视交接）。 */
 export interface PlaybackEventRow {
   kind: EventKind
   filter: EventFilterKey
@@ -81,60 +53,35 @@ export interface PlaybackEventRow {
   state?: number | string
   slot?: number
   component?: string
-  /** 快捷指令码（kind=command；语义未闭合原样透传） */
   command?: number
-  /** 指令目标（kind=command；语义未闭合原样透传） */
   commandTarget?: number
-  /** 原始事件码（kind=presence/chat 的 0x2f 类别证据） */
   rawType?: number
-  /** 掉血量（kind=damage；0 = 未掉血事件） */
   damage?: number
-  /** 伤害来源（kind=damage；0 = 未归属/环境） */
   sourceEid?: number
-  /** 基地编号（kind=capture；0..3 = A..D / 单基地） */
   baseId?: number
-  /** 占领阵营（kind=capture：owner 或正在占领的队伍） */
   team?: number
-  /** 占领状态（kind=capture：'captured' | 'invading' | 'neutralized'） */
   captureState?: 'captured' | 'invading' | 'neutralized'
-  /** 占领进度 0..100（kind=capture；单基地 assault 时有效） */
   progress?: number
-  /** 行为者身份（炮击射手 / 掉血来源 / 击杀者 / 被点亮车 / 模块受击者 / 消耗品使用者） */
   actor?: ActorInfo
-  /** 受害者/目标身份（炮击目标 / 掉血受害 / 被击杀者） */
   target?: ActorInfo
-  /** 合并后的事实行（炮击/掉血/击毁合并为一条时）：本发总伤害 */
   shotDamage?: number
-  /** 合并后的事实行：本发是否造成击毁 */
   shotKill?: boolean
-  /** 聊天/指令的频道名（common/team；来自 chat_channels） */
   channelName?: string
-  /** true = 来自 0x2b 另域（与 0x2f 战斗聊天无协议等价证据，呈现时如实区分） */
   otherDomain?: boolean
-  /** 在场事件的具体动作（join/leave/channel_created；保留上游已给的方向区别） */
   action?: 'join' | 'leave' | 'channel_created'
-  /** 指令语义名（客户端权威表；缺省 = 未映射） */
   commandName?: string
-  /** 指令扇区号（attention_to_cell；1..9） */
   cell?: number
-  /** 扇区显示标签（1..9 → A1..C3；域外不生成，保留 cell 原值） */
   cellLabel?: string
-  /** 0x2e 标记类型（kind=marker；1/4/5 语义已证，其余原样保留） */
   markerType?: number
-  /** 聊天/指令/在场的发送者昵称（0x2f 前缀名；旧 0x2b 聊天无署名） */
   sender?: string
-  /** 通知主体原始 id（kind=notice；上游语义未定，仅作名册联表证据） */
   subject?: number
-  /** 占领阵营的玩家视角（kind=capture；friendly/enemy 由 meta.friendly_team 判定） */
   faction?: 'friendly' | 'enemy'
 }
 
-/** 构建选项：车型名表（tank_cache `{id: name}`）；缺省时回退 facet `tank_name`（可能为 tank_<id> 占位）。 */
 export interface EventStreamOptions {
   tankNames?: Readonly<Record<number, string>>
 }
 
-/** eid → 名册身份（昵称/车名/队伍；缺失字段省略） */
 export interface ActorInfo {
   eid: number
   name?: string
@@ -157,14 +104,14 @@ export const EVENT_FILTERS: ReadonlyArray<{ key: EventFilterKey; labelKey: strin
 
 const FILTER_OF_KIND: Record<EventKind, EventFilterKey> = {
   shot: 'shot',
-  kill: 'shot', // 击毁与炮击合并呈现（同一条战斗行）
+  kill: 'shot',
   chat: 'chat',
-  command: 'chat', // 非地图类快捷指令与聊天同一过滤片（blitzinfo 同族）
-  marker: 'marker', // 地图标记（attention_to_cell / moving_here / catch_point / defend_point）
-  presence: 'chat', // 成员进出
+  command: 'chat',
+  marker: 'marker',
+  presence: 'chat',
   module: 'module',
-  moduleDamage: 'module', // method38 逐模块损伤与 method16 状态同片
-  damage: 'damage', // 未并入炮击的掉血单独成片（撞击/火焰/环境/未记录射击）
+  moduleDamage: 'module',
+  damage: 'damage',
   capture: 'capture',
   observed: 'observed',
   destructible: 'other',
@@ -174,38 +121,19 @@ const FILTER_OF_KIND: Record<EventKind, EventFilterKey> = {
   revive: 'other',
 }
 
-/**
- * 炮击呈现语义：**不是**位图分类。
- *
- * `game_hit_result` 是结果枚举（0=无 1=未穿 2=间隙止 3=有伤害 4=raw 255=未获取），
- * 不是 method38 的 hit_flags 位图——位运算会把未穿(1)/有伤害(3)/未知(255) 全判成击杀。
- * 击杀与跳弹取 shot 的显式布尔 `is_kill` / `ricochet`；其余复用仓库既有权威语义
- * `shotResultClass`（作者 hit_flags 位图优先，否则枚举降级；4 保持未定不猜）。
- */
 export function shotVerdict(shot: AgentPlaybackShot | null | undefined): ShotVerdict | null {
   if (!shot) return null
   if (shot.is_kill === true) return 'kill'
-  // 显式布尔优先于枚举派生（枚举 0/255 时 shotResultClass 只能给 HIT，跳弹事实在布尔上）
   if (shot.ricochet === true) return 'ricochet'
   switch (shotResultClass(shot)) {
     case SHOT_RESULT.PENETRATION: return 'penetrated'
     case SHOT_RESULT.RICOCHET: return 'ricochet'
     case SHOT_RESULT.NO_PENETRATION: return 'blocked'
     case SHOT_RESULT.HE_BLAST: return 'he'
-    default: return null // MISS / HIT / UNVERIFIED：不伪造语义
+    default: return null
   }
 }
 
-/**
- * 客户端 3×3 扇区编号 → 地图格标签（1..9 → A1..C3）。
- *
- * 权威证据：`attention_to_cell` 的载荷是 1..9 的扇区号（客户端
- * `chatCommand/attention_to_cell` 的 `%(cell)` 参数）；同一场 BZT-70 回放
- * payload=6 与战斗日志「Attention to sector B3」逐条对应。列优先：
- * `A1,A2,A3,B1,...,C3` 不是此编码；客户端/BlitzInfo 的既有映射为
- * `letter = 65 + floor((n-1)/3)`、`number = (n-1)%3 + 1`（6 → B3）。
- * 域外值不生成标签（调用方保留原始 cell，禁猜）。
- */
 export function sectorLabel(cell: number | null | undefined): string | undefined {
   if (typeof cell !== 'number' || !Number.isInteger(cell) || cell < 1 || cell > 9) {
     return undefined
@@ -213,7 +141,6 @@ export function sectorLabel(cell: number | null | undefined): string | undefined
   return String.fromCharCode(65 + Math.floor((cell - 1) / 3)) + ((cell - 1) % 3 + 1)
 }
 
-/** 归一化事件行：{ kind, filter, t, … }。t 升序稳定排序。 */
 export function buildEventStream(
   facet: AgentPlaybackFacet | null | undefined,
   options: EventStreamOptions = {},
@@ -227,7 +154,7 @@ export function buildEventStream(
     filterOverride?: EventFilterKey,
   ): void => {
     const time = Number(t)
-    if (!Number.isFinite(time)) return // 非法时刻 fail-closed 丢弃该条
+    if (!Number.isFinite(time)) return
     out.push({ kind, filter: filterOverride ?? FILTER_OF_KIND[kind], t: time, ...extra })
   }
   const identity = createEventIdentity(facet, options)
@@ -240,7 +167,6 @@ export function buildEventStream(
   return out
 }
 
-/** 过滤（'all' 直通）；未知过滤键 fail-closed 返回空。 */
 export function filterEvents(
   events: ReadonlyArray<PlaybackEventRow>,
   filter: string,
@@ -250,10 +176,6 @@ export function filterEvents(
   return events.filter((e) => e.filter === filter)
 }
 
-/**
- * 找当前时刻之后/之前最近的一条（供「下一事件」导航）；
- * dir=1 之后、-1 之前；无更多返回 null。
- */
 export function nearestEventTime(
   events: ReadonlyArray<{ t: number }>,
   t: unknown,
@@ -271,11 +193,6 @@ export function nearestEventTime(
 }
 
 
-/**
- * 3D 快捷指令/聊天滚动流与事件流 pane 共用的行文案：同一套 i18n 键与身份纪律
- * （玩家 · 车名；缺一回退「未知玩家」，不显示裸 eid）。t 由调用方注入
- * （pane 与 3D 覆盖层各自持有 vue-i18n 实例）。
- */
 export type EventRowTranslate = (key: string, params?: Record<string, unknown>) => string
 
 function eventActorText(a?: { eid: number; name?: string; tank?: string }, t?: EventRowTranslate): string {
@@ -295,7 +212,6 @@ function eventVerdictText(ev: PlaybackEventRow, t: EventRowTranslate): string {
   }
 }
 
-/** 事件行的主文本（ReplayEventStreamPane.eventTitle 的唯一事实源；3D 滚动流同消费）。 */
 export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): string {
   const actorText = (a?: { eid: number; name?: string; tank?: string }) => eventActorText(a, t)
   switch (ev.kind) {
@@ -320,8 +236,6 @@ export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): strin
       const ch = ev.channelName ? ` · ${ev.channelName}` : ''
       const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       if (ev.commandName) {
-        // 客户端权威语义（未映射 id 保留 raw）；玩家目标按 eid/account 两域联表，
-        // 查不到时给「未知目标」而不是裸数字（原始值在 tooltip）。
         return t(`eventStream.cmd_${ev.commandName}`, {
           who,
           target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
@@ -350,8 +264,6 @@ export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): strin
         }) + ch
       }
       if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
-        // payload 域上游未闭合：不把它写成「据点 N」，只按原始目标值呈现
-        // （评审 5935348769 P2；专用 *_raw 文案保留“指令（目标 N）”的中性语义）。
         return t(`eventStream.cmd_${ev.commandName}_raw`, {
           who,
           target: ev.commandTarget ?? '?',
@@ -366,7 +278,6 @@ export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): strin
       }) + ch
     }
     case 'presence': {
-      // 未知动作（上游 other/未观测 code）不得冒充进入频道——中性提示 + 原始码
       const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'
       const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       return t(key, { who, channel: ev.channelName || '-', raw: ev.rawType ?? '?' })

@@ -6,10 +6,6 @@ import type { CellStyle, RowSpec, WorkbookSpec } from '../shared/tabular/xlsx/in
 import printStyles from '../styles/tokens/tournament-print.css?inline'
 import tournamentMessages from '../locales/tournament-messages.json'
 
-/**
- * 「小组赛 / 决赛圈」预设在创建赛事时按**当时的界面语言**落库（TournamentPointsConfigPage.chooseNaming）。
- * 显示 / 导出时把任一语言的预设文本识别回预设，再按当前语言重新翻译；管理员自定义的名称原样保留。
- */
 const STAGE_PRESET_KEYS = ['groupStage', 'finalStage'] as const
 const STAGE_PRESETS = new Map<string, (typeof STAGE_PRESET_KEYS)[number]>(
   Object.values(tournamentMessages)
@@ -37,7 +33,6 @@ export interface TournamentTableProjection {
   rows: readonly { clanTag: string; cells: readonly Cell[] }[]
 }
 
-/** Canonical re-importable data projection; display labels and derived ranks are intentionally absent. */
 export function projectTournamentCsv(standings: TournamentStandings): CsvDocument {
   const { roundCount, daysPerRound } = standings.event
   const headers = ['军团标签']
@@ -61,7 +56,6 @@ export function projectTournamentCsv(standings: TournamentStandings): CsvDocumen
   return Object.freeze({ headers: Object.freeze(headers), rows: Object.freeze(rows) })
 }
 
-/** Build canonical bytes without locale-dependent labels or spreadsheet-specific rewriting. */
 export function createTournamentPointsCsv(standings: TournamentStandings): { blob: Blob; filename: string } {
   const bytes = encodeCsv(projectTournamentCsv(standings), { includeBom: false })
   const blobBytes = Uint8Array.from(bytes)
@@ -72,13 +66,11 @@ export function createTournamentPointsCsv(standings: TournamentStandings): { blo
   }
 }
 
-/** Shared display/export projection: labels and server scores are copied synchronously. */
 export function projectTournamentPoints(standings: TournamentStandings, locale: string, t: Translate): TournamentTableProjection {
   const event = standings.event
   const seasonLabel = t('tournament.seasons.' + event.season)
   const identity = `${event.year} · ${t('tournament.regions.' + event.region)} · ${seasonLabel}`
   const localizedSheetName = `${event.year}_${event.region}_${seasonLabel}`.replace(/[\\/*?:\[\]\x00-\x1f]/g, '_').replace(/'$/g, '_')
-  // Excel's 31-character cap must not erase the season from a long localized identity.
   const sheetName = localizedSheetName.length <= 31 ? localizedSheetName : `${event.year}_${event.region}_${event.season}`
   const columns: Column[] = [
     { key: 'rank', label: t('tournament.rank'), kind: 'rank' },
@@ -110,11 +102,9 @@ export function projectTournamentPoints(standings: TournamentStandings, locale: 
   })
 }
 
-/** No formulas or score recalculation: all numbers are the public API's finalized values. */
 function buildTournamentWorkbook(table: TournamentTableProjection): WorkbookSpec {
   const columnStyles = table.columns.map((column): CellStyle => ({
     alignment: { horizontal: column.kind === 'clan' ? 'left' : 'right', vertical: 'middle', wrapText: true },
-    // Text formatting keeps clan tags literal; all score and rank cells remain numeric.
     numberFormat: column.kind === 'clan' ? '@' : '0',
   }))
   const headerStyle: CellStyle = {
@@ -169,7 +159,6 @@ export async function createTournamentPointsXlsx(table: TournamentTableProjectio
   }
 }
 
-/** Standalone paper document; no application navigation, backgrounds or draft controls. */
 export function renderTournamentPointsPrintDocument(doc: Document, table: TournamentTableProjection): void {
   doc.documentElement.lang = table.locale
   doc.head.replaceChildren()
@@ -180,7 +169,6 @@ export function renderTournamentPointsPrintDocument(doc: Document, table: Tourna
   doc.head.append(charset, style)
   doc.title = table.title
   doc.body.replaceChildren()
-  // Three days need wider paper so the full 4–5 round matrix remains readable.
   doc.body.className = table.columns.length > 18 ? 'wide-paper' : ''
   const element = doc.createElement('table')
   element.setAttribute('data-testid', 'tournament-print-table')
@@ -223,7 +211,6 @@ export function renderTournamentPointsPrintDocument(doc: Document, table: Tourna
   doc.body.append(element)
 }
 
-/** Open during the click turn, then print the frozen document after fonts are ready. */
 export async function printTournamentPoints(table: TournamentTableProjection): Promise<void> {
   const target = window.open('', '_blank')
   if (!target) throw new Error('PRINT_WINDOW_BLOCKED')

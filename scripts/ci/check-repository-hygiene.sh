@@ -7,10 +7,6 @@ ALLOWLIST_FILE="${LARGE_FILE_ALLOWLIST_FILE:-scripts/ci/large-file-allowlist.txt
 BASE_SHA="${BASE_SHA:-}"
 HEAD_SHA="${HEAD_SHA:-HEAD}"
 
-# Limits feed Bash integer arithmetic. Accept only canonical bounded decimals:
-# leading-zero forms such as 08 would be parsed as octal at the comparison
-# (where set -e does not abort from an if condition), and values beyond intmax_t
-# would wrap silently. Either case must abort the gate instead of disabling it.
 validate_decimal_limit() {
   local name="$1"
   local raw="$2"
@@ -52,9 +48,6 @@ is_forbidden_path() {
   esac
 }
 
-# Lifecycle rule (document lifecycle): Git history is the
-# archive. History-parking directories are banned outright, in the tracked tree
-# and in any commit tree introduced by the event range.
 is_history_parking_path() {
   local path="$1"
   case "$path" in
@@ -67,12 +60,6 @@ is_history_parking_path() {
   esac
 }
 
-# Lifecycle-plan reference gate: permanent
-# source/config/docs must not cite docs/current-plan.md as an authority. The
-# allowlist is structural, by path role, never by content: lifecycle
-# skills/playbooks, the guard workflows and the governance docs own the
-# plan-carrier mechanism itself; the hygiene scripts embed the detection
-# pattern; applied Flyway migrations are an explicit rule exception.
 is_current_plan_allowlisted() {
   local path="$1"
   case "$path" in
@@ -127,9 +114,6 @@ report_large_file() {
   echo "       If this is a deliberate source-of-truth asset, add the exact path to $ALLOWLIST_FILE with PR justification." >&2
 }
 
-# Resolve the exact event range when CI did not pass one explicitly. PR runs
-# use the real base/head rather than GitHub's synthetic merge ref; push runs use
-# before/after so bypass pushes to main are still audited after the fact.
 if [[ -z "$BASE_SHA" && -f "${GITHUB_EVENT_PATH:-}" ]]; then
   case "${GITHUB_EVENT_NAME:-}" in
     pull_request)
@@ -165,8 +149,6 @@ PY
   esac
 fi
 
-# workflow_dispatch and local full-history runs do not necessarily have a PR
-# payload. When origin/main is available, use the merge-base as the boundary.
 if [[ -z "$BASE_SHA" ]] && git show-ref --verify --quiet refs/remotes/origin/main; then
   resolved_head=$(git rev-parse "$HEAD_SHA")
   BASE_SHA=$(git merge-base "$resolved_head" refs/remotes/origin/main)
@@ -178,10 +160,6 @@ checked=0
 ignore_work=$(mktemp -d)
 trap 'rm -rf "$ignore_work"' EXIT
 
-# Ask Git itself which paths the repository ignore policy rejects. --no-index is
-# required because the whole point is to catch files that were force-added even
-# though .gitignore says they are local/generated. NUL input/output keeps valid
-# Git pathnames with whitespace/newlines safe.
 load_ignored_paths() {
   local source_kind="$1"
   local source_ref="$2"
@@ -208,8 +186,6 @@ load_ignored_paths() {
   done < "$ignore_work/output"
 }
 
-# Guard the final tracked tree. This catches generated paths even when every
-# individual file is small enough to stay below the size threshold.
 if [[ -n "$BASE_SHA" ]]; then
   python3 "$SCRIPT_DIR/check-source-lines.py" --base "$BASE_SHA" --head "$HEAD_SHA"
 fi
@@ -247,12 +223,6 @@ while IFS= read -r -d '' path; do
 
 done < <(git ls-files -z)
 
-## Inspect every tree state introduced by commits in the event range. `git ls-tree
-# -z` is NUL-delimited, so valid Git paths containing newlines, tabs, quotes, or
-# other unusual bytes cannot escape either the size or generated-path policy.
-# This also catches a large/generated file that is committed and then deleted in
-# a later commit: the violating path/blob is still present in the intermediate
-# commit tree and would otherwise remain reachable from main history.
 if [[ -n "$BASE_SHA" ]]; then
   git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || {
     echo "BASE_SHA is not an available commit: $BASE_SHA" >&2
@@ -322,13 +292,6 @@ if [[ -n "$BASE_SHA" ]]; then
 
   echo "Repository history hygiene checked $history_checked unique blob/path pair(s) across $history_commits commit tree(s) in ${BASE_SHA}..${HEAD_SHA}."
 
-  # Lifecycle-plan reference gate: newly or modified permanent files in the event
-  # range must not cite the ephemeral planning artifact as an authority. Legacy
-  # references in untouched files stay a documented governance debt; touching the
-  # file is exactly when the rule forces the migration, so the gate checks the
-  # working-tree content of changed paths. Transient references that appear and
-  # disappear inside the range are accepted noise — the harm is a lingering
-  # reference in the final tree, not a transient one.
   mapfile -d '' changed_paths < <(git diff -z --name-only "$BASE_SHA" "$HEAD_SHA")
   plan_reference_checked=0
   plan_reference_violations=0
@@ -336,9 +299,6 @@ if [[ -n "$BASE_SHA" ]]; then
     [[ -f "$changed_path" ]] || continue
     is_current_plan_allowlisted "$changed_path" && continue
     plan_reference_checked=$((plan_reference_checked + 1))
-    # `--` keeps filenames that parse as options (e.g. a root-level `-notes.md`)
-    # from being eaten as grep flags; exit 1 is "no match", but any other status
-    # is a tool failure and must fail closed instead of reading as a clean file.
     grep_status=0
     grep -I -q -E 'docs/current-plan|current-plan\.md' -- "$changed_path" || grep_status=$?
     if (( grep_status > 1 )); then
@@ -365,8 +325,6 @@ fi
 
 echo "Repository hygiene check passed: $checked tracked files checked; limit=$MAX_TRACKED_FILE_BYTES bytes."
 
-# Keep the bypass scenarios executable in the same required CI path without
-# recursing when the regression fixture invokes this checker in disposable repos.
 if [[ "${CI:-}" == "true" && "${REPOSITORY_HYGIENE_TEST_CHILD:-0}" != "1" ]]; then
   bash scripts/ci/test-repository-hygiene.sh
 fi

@@ -1,12 +1,8 @@
 <script setup>
-// 一行关键数字（design-language §7 Stat：caption 标签 + 等宽数值 + 可选补充值）。
-// 保留旧的 mcards / mc / k / v class：PNG 导出的离屏样式（ReplayPage .replay-export-root）按这些 class 着色。
 defineProps({
-  /** [{ key, label, value, sub?, tone? }]；sub = 数值下方的补充（如 12/34），tone = 数值语义色 */
   stats: { type: Array, required: true },
 })
 
-/** 语义色只用状态 token（design-language §3.2）；未知 tone 回落正文色 */
 const TONE_CLASS = Object.freeze({
   success: 'is-success',
   danger: 'is-danger',

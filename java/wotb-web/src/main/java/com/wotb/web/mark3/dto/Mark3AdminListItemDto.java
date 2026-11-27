@@ -3,7 +3,6 @@ package com.wotb.web.mark3.dto;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
-/** 管理后台三环列表行；截图仅详情接口按需返回。 */
 public record Mark3AdminListItemDto(
         Long id,
         String status,

@@ -7,12 +7,10 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** MovementSegment 派生事实：km/h、forward/reverse、vertical、yaw rate。 */
 class MovementSegmentTest {
 
     @Test
     void forwardSegmentDerivesKmhAndForwardState() {
-        // 1 unit ≈ 1 m；2s 内前进 30m → 15 m/s = 54 km/h；yaw=0（forwardZ=cos(0)=1 方向）
         final MovementSegment seg = MovementSegment.derived(
                 10f, 12f, MovementType.MOVING,
                 new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 30f),
@@ -26,7 +24,6 @@ class MovementSegmentTest {
 
     @Test
     void reverseSegmentDerivesReverseState() {
-        // yaw=π（车头朝 -Z），位移沿 +Z（倒车）→ signed speed 为负 → REVERSE
         final MovementSegment seg = MovementSegment.derived(
                 10f, 12f, MovementType.MOVING,
                 new Vector3(0f, 0f, 0f), new Vector3(0f, 0f, 30f),
@@ -36,7 +33,6 @@ class MovementSegmentTest {
 
     @Test
     void turningSegmentDerivesYawRate() {
-        // 2s 内转 90° → yaw rate ≈ π/2 / 2 ≈ 0.785 rad/s；平面位移小 → TURNING
         final MovementSegment seg = MovementSegment.derived(
                 10f, 12f, MovementType.MOVING,
                 new Vector3(0f, 0f, 0f), new Vector3(0.1f, 0f, 0.1f),
@@ -63,7 +59,7 @@ class MovementSegmentTest {
                 new Vector3(0f, 0f, 0f), new Vector3(10f, 0f, 0f),
                 10f, 5f, DecodeConfidence.EXACT, Float.NaN, Float.NaN);
         assertTrue(Float.isNaN(seg.hullYawRateRadS()), "yaw 缺失 → yaw rate 必须 UNKNOWN(NaN)，不得当 0");
-        assertEquals(0f, seg.verticalSpeedMps(), 1e-6f); // vertical speed 无 yaw 依赖，仍可派生
+        assertEquals(0f, seg.verticalSpeedMps(), 1e-6f);
     }
 
     @Test

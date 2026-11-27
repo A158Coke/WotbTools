@@ -9,10 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MapRegionResolverTest {
 
-    // Region layout:
-    // 1 | 2 | 3  (top, Z > 333)
-    // 4 | 5 | 6  (middle, 167 < Z <= 333)
-    // 7 | 8 | 9  (bottom, Z <= 167)
 
     @Test void region1_topLeft() { assertEquals(1, MapRegionResolver.resolveRegion(50, 450)); }
     @Test void region2_topCenter() { assertEquals(2, MapRegionResolver.resolveRegion(200, 450)); }
@@ -105,7 +101,6 @@ class MapRegionResolverTest {
         assertEquals(9, MapRegionResolver.resolve(250, -250).region());
     }
 
-    // === MapCoordinateResolution VALID/CLAMPED/INVALID ===
 
     @Test void validPosition() {
         final MapCoordinateResolution r = MapRegionResolver.resolve(0, 0);
@@ -168,27 +163,23 @@ class MapRegionResolverTest {
         assertEquals(0, MapRegionResolver.resolve(Float.NaN, 0).region());
     }
 
-    // === Active-profile propagation tests ===
 
     @Test
     void convenienceMethodsUseActiveProfile() {
         final MapCoordinateProfile original = MapRegionResolver.activeProfile();
         try {
-            // halfExtent=500: raw ±500 maps to canonical 0-500
             MapRegionResolver.configure(new MapCoordinateProfile(500f, 25f));
             MapCoordinateResolution r = MapRegionResolver.resolve(0f, 0f);
             assertEquals(MapCoordinateResolution.Status.VALID, r.status());
             assertEquals(250f, r.position().x(), 0.01f);
             assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0f, 0f));
 
-            // halfExtent=1000: raw ±1000 maps to canonical 0-500
             MapRegionResolver.configure(new MapCoordinateProfile(1000f, 50f));
             r = MapRegionResolver.resolve(0f, 0f);
             assertEquals(MapCoordinateResolution.Status.VALID, r.status());
             assertEquals(250f, r.position().x(), 0.01f);
             assertEquals(5, MapRegionResolver.resolveRegionFromRaw(0f, 0f));
 
-            // canonicalDistanceMeters also uses active profile
             MapRegionResolver.configure(new MapCoordinateProfile(250f, 12.5f));
             assertEquals(100f, MapRegionResolver.canonicalDistanceMeters(0f, 0f, 100f, 0f), 0.01f);
         } finally {
@@ -200,23 +191,16 @@ class MapRegionResolverTest {
     void activeProfileChangesCanonicalScale() {
         final MapCoordinateProfile original = MapRegionResolver.activeProfile();
         try {
-            // halfExtent=1000 → scale = 500/2000 = 0.25
-            // raw = +400 → canonical = (400+1000)*0.25 = 350
             MapRegionResolver.configure(new MapCoordinateProfile(1000f, 50f));
             MapCoordinateResolution r = MapRegionResolver.resolve(400f, 400f);
             assertEquals(MapCoordinateResolution.Status.VALID, r.status());
             assertEquals(350f, r.position().x(), 0.01f);
             assertEquals(350f, r.position().z(), 0.01f);
 
-            // halfExtent=250 → scale = 500/500 = 1.0
-            // raw = +400 → canonical = 400+250 = 650 → clamped to 500
             MapRegionResolver.configure(new MapCoordinateProfile(250f, 12.5f));
             r = MapRegionResolver.resolve(400f, 400f);
-            // 400 > 262.5 → INVALID (beyond clamp tolerance)
             assertEquals(MapCoordinateResolution.Status.INVALID, r.status());
 
-            // halfExtent=500 → scale = 500/1000 = 0.5
-            // raw = +400 → canonical = (400+500)*0.5 = 450
             MapRegionResolver.configure(new MapCoordinateProfile(500f, 25f));
             r = MapRegionResolver.resolve(400f, 400f);
             assertEquals(MapCoordinateResolution.Status.VALID, r.status());
@@ -227,10 +211,6 @@ class MapRegionResolverTest {
         }
     }
 
-    // === Nine-region grid from canonical coordinates ===
-    // X: 0→500 (left→right), Z: 0→500 (bottom→top)
-    // Grid:  1|2|3 top, 4|5|6 middle, 7|8|9 bottom
-    // Each cell = 166.66... wide × 166.66... tall
 
     @Test void assertRegion1() { assertEquals(1, MapRegionResolver.resolveRegion(0f, 500f)); }
     @Test void assertRegion2() { assertEquals(2, MapRegionResolver.resolveRegion(250f, 500f)); }
@@ -242,7 +222,6 @@ class MapRegionResolverTest {
     @Test void assertRegion8() { assertEquals(8, MapRegionResolver.resolveRegion(250f, 0f)); }
     @Test void assertRegion9() { assertEquals(9, MapRegionResolver.resolveRegion(500f, 0f)); }
 
-    // === Raw → region: nine canonical positions from raw ±250 ===
 
     @Test void rawRegion1() { assertEquals(1, MapRegionResolver.resolveRegionFromRaw(-250f, 250f)); }
     @Test void rawRegion2() { assertEquals(2, MapRegionResolver.resolveRegionFromRaw(0f, 250f)); }
@@ -254,9 +233,6 @@ class MapRegionResolverTest {
     @Test void rawRegion8() { assertEquals(8, MapRegionResolver.resolveRegionFromRaw(0f, -250f)); }
     @Test void rawRegion9() { assertEquals(9, MapRegionResolver.resolveRegionFromRaw(250f, -250f)); }
 
-    // === Route regression: near right edge moving down ===
-    // User observed: start near right edge in region 6, move down to region 9
-    // Raw X ≈ +230 (canonical ≈ 480), raw Z from 0 (canonical 250) → -230 (canonical 20)
 
     @Test void routeStartRegion6() {
         assertEquals(6, MapRegionResolver.resolveRegionFromRaw(230f, 0f));
@@ -271,22 +247,18 @@ class MapRegionResolverTest {
     }
 
     @Test void routeFullRawResolution() {
-        // Start: raw (+230, 0) → canonical (480, 250) → region 6
         MapCoordinateResolution res = MapRegionResolver.resolve(230f, 0f);
         assertEquals(MapCoordinateResolution.Status.VALID, res.status());
         assertEquals(6, res.region(), "Right edge at mid-height must be region 6");
 
-        // End: raw (+230, -230) → canonical (480, 20) → region 9
         res = MapRegionResolver.resolve(230f, -230f);
         assertEquals(MapCoordinateResolution.Status.VALID, res.status());
         assertEquals(9, res.region(), "Right edge near bottom must be region 9, not 5");
     }
 
-    // === Per-map profile: asymmetric maps must not be clamped by the +/-250 default ===
 
     @Test
     void perMapNeptuneUsesCenteredProfile() {
-        // neptune playableBounds x[-287.0,274.0] y[-275.4,276.6]
         final MapCoordinateResolution res = MapRegionResolver.resolve(-280f, -270f, "neptune");
         assertTrue(res.usable(), "neptune left edge (-280) must be in-range with per-map profile");
         final MapCoordinateResolution def = MapRegionResolver.resolve(-280f, -270f, "no_such_map");

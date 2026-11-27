@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Komodo DNS plan guard.
-#
-# This root owns exactly one resource: the public DNSPod A record for the
-# controller hostname pointing at the TX ingress address. A create, update, or
-# no-op is accepted only when the resulting record matches every intended field
-# (domain, sub_domain, record_type, record_line, value, ttl, status, remark).
-# Anything else - an extra resource, a delete, a replacement, or a record that
-# differs in any locked field - is rejected before `tofu apply` is allowed to run.
-#
-# The expected record values intentionally repeat `dns.tf`, so the guard is an
-# independent statement of intent rather than a restatement of whatever the
-# configuration happens to plan.
 set -Eeuo pipefail
 
 PLAN="${1:?usage: validate-plan.sh <plan.tfplan> [--require-no-changes]}"

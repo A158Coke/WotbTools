@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** Image-only namespace, isolated from replay-specific file formats and retention. */
 @Service
 public class TournamentEvidenceStorage {
     private final Path root;
@@ -55,7 +54,7 @@ public class TournamentEvidenceStorage {
         } catch (final IOException e) { throw new ApiException(ApiErrorCode.TOURNAMENT_STORAGE_ERROR); }
         finally {
             if (temporary != null) {
-                try { Files.deleteIfExists(temporary); } catch (final IOException ignored) { /* 24h orphan cleanup */ }
+                try { Files.deleteIfExists(temporary); } catch (final IOException ignored) { }
             }
         }
     }

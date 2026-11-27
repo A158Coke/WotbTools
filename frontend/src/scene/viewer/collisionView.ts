@@ -1,6 +1,3 @@
-// 装甲视图状态（#820 Agent A 出仓）：碰撞（厚度）视图样式、装甲分类过滤、
-// 点击高亮与动态装甲（armorsStatesController）状态应用。
-// 原 tankViewer.js 闭包内对应块整体平移；视图语义与状态机保持原样。
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
 import { hasGunMask } from './armorPlateModel.js'
@@ -10,7 +7,6 @@ import type { ModelReferences } from './modelLifecycle.js'
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { TankData } from './viewerContracts.js'
 
-/** 热力图 owner 中被本模块消费的句柄子集。 */
 export interface CollisionHeatmapHandle {
     applyArmorStateToHeatmapClones(activeSet: ReadonlySet<string>): void
     rebuildRicochetPack(): void
@@ -19,7 +15,6 @@ export interface CollisionHeatmapHandle {
     getPrimaryArmorScene(): THREE.Scene | null
 }
 
-/** 炮塔 rig owner 中被本模块消费的句柄子集。 */
 export interface CollisionRigHandle {
     applyConfigVisible(model: THREE.Object3D, gunIndex: number, turretIndex: number): void
     updateTurretGun(turretDeg: number, gunDeg: number): void
@@ -28,7 +23,6 @@ export interface CollisionRigHandle {
     getLastAppliedGunDeg(): number
 }
 
-/** 模型生命周期 owner 中被本模块消费的句柄子集。 */
 export interface CollisionModelLifecycleHandle {
     retagSpacedSections(root: THREE.Object3D): void
 }
@@ -36,20 +30,16 @@ export interface CollisionModelLifecycleHandle {
 export interface CollisionViewDeps {
     models: ModelReferences
     getModuleMeshes: () => THREE.Object3D[]
-    /** 热力图管线（deferred：组合根完成装配前不会调用）。 */
     hmRef: () => CollisionHeatmapHandle
     rig: CollisionRigHandle
     ml: CollisionModelLifecycleHandle
     getTankData: () => TankData
     getCurrentConfig: () => TankArmorConfig | null
     getActiveGunNumber: () => number | null
-    /** 击穿（热力图）视图模式。 */
     getPenetrationMode: () => boolean
-    /** 碰撞（厚度）视图模式。 */
     getCollisionMode: () => boolean
     getPlateThickness: (section: string, plateId: string) => number | null
     thicknessToColor: (thickness: number | null | undefined) => number
-    /** 有效可见性（judgment 口径，与点击判定一致）。 */
     isEffectivelyVisible: (node: THREE.Object3D) => boolean
 }
 
@@ -75,7 +65,6 @@ export interface CollisionViewHandle {
 }
 
 type ArmorStateDeclRaw = NonNullable<ReturnType<typeof dynamicDeclarationByTankId>>
-/** armorStates.js 的 JSDoc 只声明 states: object[]；本模块只消费 id/default。 */
 interface ArmorStateEntry {
     id: number
     default?: boolean
@@ -109,7 +98,6 @@ export function createCollisionView(deps: CollisionViewDeps): CollisionViewHandl
 
         let armorStateDecl: ArmorStateDeclRaw | null = null, armorStateCurrent: number | null = null;
 
-        /** armorStates.js 的 states 元素在 JSDoc 层是 object；本模块消费的字段在此收窄。 */
         const stateEntries = (decl: ArmorStateDeclRaw): ArmorStateEntry[] => decl.states as ArmorStateEntry[];
 
 function baseNodeVisible(node: THREE.Object3D): boolean {
@@ -156,10 +144,6 @@ function applyCategoryFilters(): void {
                     mesh.visible = baseNodeVisible(mesh) && !(category && hiddenCategories[category]);
                 });
             }
-            // BlitzKit 的“mask 无值 → 外部模块只取精确 gun_0X”规则只属于**装甲厚度视图**
-            // 的外部模块：厚度视图把炮管/履带画成实心碰撞体，炮盾（gun_XX_mask）在无 mask
-            // 值的车上不属于外部模块，需随外部模块口径隐藏；普通/击穿视图的视觉模型仍渲染
-            // 全部部件（2026-10-28 用户报障：视觉模型缺件；厚度模式要求裁剪隐藏）。
             const cfg = getCurrentConfig();
             const hasMask = hasGunMask(cfg);
             const hideMaskPart = getCollisionMode() && !hasMask;
@@ -197,7 +181,6 @@ function applyArmorMaterialState(m: THREE.Material, transparent: boolean, opacit
 
 function resetArmorHighlight(): void {
             highlightedArmorNode = null;
-            // 普通/击穿视图的装甲材质是“透明覆盖层”，不能套用碰撞视图的透明度复位
             if (!getCollisionMode() || !models.armorModel) return;
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
             for (const node of collectHighlightMeshes()) {
@@ -215,8 +198,6 @@ function applyArmorHighlight(selected: THREE.Object3D | null): void {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
                 if (node === selected) {
-                    // 高亮只靠"选中板保持不透明、其余压暗"：不改厚度色相（用户 2026-10-28
-                    // 报障：金色自发光让被点板颜色与点击前不一致）。
                     applyArmorMaterialState(m, true, 1, true);
                     const em = m as THREE.MeshStandardMaterial;
                     if (em.emissive) { em.emissive.setHex(0x000000); em.emissiveIntensity = 0; }
@@ -242,7 +223,7 @@ function syncModuleClipPlanes(): void {
                 const hadClip = !!(mat.clippingPlanes && mat.clippingPlanes.length);
                 if (hadClip !== !!clipPlanes) {
                     mat.clippingPlanes = clipPlanes;
-                    mat.needsUpdate = true;   // 裁剪面有无切换会换 shader 变体
+                    mat.needsUpdate = true;
                 }
             }
         }
@@ -253,7 +234,6 @@ function applyModuleCollisionMaterial(on: boolean): void {
                 if (on) {
                     if (!moduleOriginalMaterials.has(mesh)) moduleOriginalMaterials.set(mesh, mesh.material);
                     const t = Number(mesh.userData.armorThickness);
-                    // 缺失厚度（NaN）= 未知灰；不再折成 0mm 的薄板绿。
                     const color = thicknessToColor(t);
                     const side = node.userData.moduleDoubleSided ? THREE.DoubleSide : THREE.FrontSide;
                     let mat = mesh.userData.collisionSolidMaterial as THREE.MeshStandardMaterial | undefined;
@@ -263,11 +243,7 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     } else {
                         mat.color.set(color);
                     }
-                    // 双面模块（履带）保留客户端的双面口径：厚度视图里上表面仍可见
                     mat.side = side;
-                    // 复用缓存材质时恢复高亮可能改过的透明/深度状态：离开厚度视图会先
-                    // 清 getCollisionMode()，resetArmorHighlight 提前返回；不恢复的话再次进入
-                    // 时外部模块仍是半透明且不写深度。
                     mat.transparent = false;
                     mat.opacity = 1;
                     mat.depthWrite = true;
@@ -280,23 +256,14 @@ function applyModuleCollisionMaterial(on: boolean): void {
                     moduleOriginalMaterials.delete(mesh);
                 }
             }
-            // 厚度视图的炮管外部模块按 gun_mask 平面裁剪（与热力图外部模块 clone 同一
-            // 口径）：掩体平面之后的炮尾/炮根段不显示，避免整根炮管插进炮塔。
             if (on) syncModuleClipPlanes();
         }
 
 function applyArmorViewStyle(collision: boolean): void {
-            // visual 与 armor 两个 GLB 独立完成；getCollisionMode() 可能在 armor 就绪前已开启。
-            // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
             if (!models.armorModel) return;
-            // 厚度视图的炮管实心体按当前配置的 gun_mask 平面裁剪：与热力图外部模块 clone
-            // 同一实现，进视图/换配置时先重算平面
             if (collision) hmRef().computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
             if (collision) {
-                // 碰撞视图保留外部模块（炮管/履带）的碰撞体，隐藏其余视觉网格。
-                // 用逐节点标记而不是一次性数组：切配置会重复调用本函数，数组清空后会丢掉
-                // 已经隐藏的节点，退出碰撞视图时坦克就再也显示不回来（用户 2026-10-28 报障）。
                 if (models.tankModel) {
                     models.tankModel.visible = true;
                     const keep = new Set(getModuleMeshes());
@@ -317,7 +284,6 @@ function applyArmorViewStyle(collision: boolean): void {
                         node.userData.collisionHidden = false;
                         mesh.visible = true;
                     });
-                    // 碰撞视图期间可能换过炮塔/炮：按当前配置重置视觉部件可见性
                     const cfg = getCurrentConfig();
                     applyConfigVisibleFn(models.tankModel, cfg ? cfg.gun_index ?? 0 : 0, cfg ? cfg.turret_index ?? 0 : 0);
                 }
@@ -330,7 +296,6 @@ function applyArmorViewStyle(collision: boolean): void {
                     ? new THREE.MeshStandardMaterial({
                         color: thicknessToColor(mesh.userData.armorThickness), metalness: 0.4, roughness: 0.6,
                         transparent: true, opacity: 0.95, depthWrite: true,
-                        // 间隙甲双面：厚度视图下从背面看/点也可见（与判定/高亮口径一致）
                         side: node.userData.armorSection === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
                     })
                     : new THREE.MeshStandardMaterial({
@@ -367,7 +332,7 @@ function updateArmorStateControl(): void {
 
 function applyArmorStateToModel(): void {
             if (!models.armorModel || !armorStateDecl || armorStateCurrent == null) return;
-            ml.retagSpacedSections(models.armorModel);   // 常驻板整体还原（含 spaced 重判）；可控板由下方接管
+            ml.retagSpacedSections(models.armorModel);
             const active = activePlateSet(armorStateDecl, armorStateCurrent);
             const controllable = controllablePlateSet(armorStateDecl);
             const am = getTankData().armor_model || {};
@@ -380,9 +345,6 @@ function applyArmorStateToModel(): void {
             models.armorModel.traverse(function(node: THREE.Object3D) {
                 const mesh = node as THREE.Mesh;
                 if (!mesh.isMesh) return;
-                // 可控板按**网格名**识别（含 state_XX 前缀命名，如 hull_state_01_armor_10）——
-                // 这类网格被 tagArmorPlates 的 /state_01/ 规则打成 deco 且无 armorSectionOrig/
-                // thickness=0，依赖 orig 的过滤会漏掉它们（切态后永不被点亮，实测踩坑）。
                 const m = (mesh.name || '').match(/(hull|turret|gun)_\w*?_?armor_(\d+)/);
                 if (!m || !m[1] || !m[2]) return;
                 const section = m[1] as ArmorStateSection;
@@ -398,15 +360,7 @@ function applyArmorStateToModel(): void {
                     colorOf: thicknessToColor,
                 });
             });
-            // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
-            // state_XX 段）——厚度/orig 就位后统一重装。随后**必须重放当前姿态**：
-            // installPivot 的 mesh.updateMatrix() 按 position 组合矩阵，会清掉
-            // updateTurretGun 写入的炮塔/炮管旋转（板为 matrixAutoUpdate=false、姿态
-            // 全在 .matrix 里）——不清回来就是「炮塔回默认位」（热力图 clones 经
-            // syncCloneMatrices 如实镜像该错误姿态，即击穿视图闪烁后回默认的现象）。
             alignArmorModulesFn();
-            // 重放**最近实际应用**的姿态（回放弹着态会设非零炮塔/炮管角——
-            // currentTurretDeg 只跟踪手动瞄准/URL，用它会把回放姿态打回 0°，review P2-1）
             updateTurretGunFn(getLastAppliedTurretDegFn(), getLastAppliedGunDegFn());
         }
 
@@ -416,9 +370,6 @@ function setArmorState(stateId: number): void {
             armorStateCurrent = stateId;
             applyArmorStateToModel();
             applyCategoryFilters();
-            // 板集变了 → 翻可控板 clone 可见性（零重建：无材质/着色器编译 → 无闪烁）+
-            // 重建跳弹几何（纯几何：源网格 deco 口径已随态更新，无编译开销）。
-            // 机械存在（击穿视图或默认视图 HE 渐变）时都要跟进，否则渐变停在旧板集。
             if ((getPenetrationMode() || hmRef().getPrimaryArmorScene()) && models.armorModel) {
                 applyArmorStateToHeatmapClonesFn(activePlateSet(armorStateDecl, stateId));
                 rebuildRicochetPackFn();

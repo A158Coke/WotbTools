@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
-/** 百场实体 ↔ DTO 集中转换（禁止 Service/Entity 手写 toXxx）。 */
 @Service
 public class HundredBattleMapper implements Mapper<HundredBattleSubmission, HundredSubmissionSummaryDto> {
 
@@ -24,7 +23,6 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
         return toSummary(s);
     }
 
-    /** 个人中心摘要。 */
     public HundredSubmissionSummaryDto toSummary(final HundredBattleSubmission s) {
         return new HundredSubmissionSummaryDto(
                 s.getId(), s.getVehicleId(), s.getVehicleName(), s.getStatus(),
@@ -33,7 +31,6 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getRejectReasonText());
     }
 
-    /** 公开排行榜行；rank 为 query-time 派生的 competition ranking（无上下文时传 null）。 */
     public HundredLeaderboardItemDto toLeaderboardItem(final HundredBattleSubmission s, final Integer rank) {
         return new HundredLeaderboardItemDto(
                 s.getId(), rank, s.getVehicleId(), s.getVehicleName(), s.getNicknameSnapshot(),
@@ -42,7 +39,6 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getApprovedAt());
     }
 
-    /** 管理后台列表行只展示认证后的数值；申报值仅在详情接口保留。 */
     public HundredAdminListItemDto toAdminListItem(final HundredBattleSubmission s) {
         return new HundredAdminListItemDto(
                 s.getId(), s.getStatus(), s.getVehicleId(), s.getVehicleName(),
@@ -54,14 +50,12 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getSubmittedAt(), s.getApprovedAt(), s.getRejectReason(), s.getDeleteReason());
     }
 
-    /** 管理后台回放证据 metadata（admin-only；不含文件内容）。 */
     public HundredReplayEvidenceDto toReplayEvidenceDto(final HundredBattleReplayEvidence e) {
         return new HundredReplayEvidenceDto(
                 e.getId(), e.getSlot(), e.getOriginalFilename(),
                 e.getFileSize(), e.getArenaId(), e.getSha256(), e.getCreatedAt());
     }
 
-    /** 管理后台详情；proofScreenshot 仅 PENDING 可能对外。 */
     public HundredAdminDetailDto toAdminDetail(final HundredBattleSubmission s) {
         final boolean pending = "PENDING".equals(s.getStatus());
         return new HundredAdminDetailDto(
@@ -78,11 +72,6 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 s.getDeletedAt(), s.getDeletedBy(), s.getDeleteReason(), s.getDeleteReasonText());
     }
 
-    /**
-     * 公开分页 + competition ranking（1,2,2,4；同分并列，下一名跳号）。
-     * rankByDamage 由服务端对「全部 CURRENT 按伤害分组计数」做前缀和得到，
-     * 保证跨页并列（tie 横跨分页边界）时排名依然全局正确。
-     */
     public HundredLeaderboardPageDto toLeaderboardPage(
             final Page<HundredBattleSubmission> page,
             final Long vehicleId,
@@ -95,7 +84,6 @@ public class HundredBattleMapper implements Mapper<HundredBattleSubmission, Hund
                 pageNumber, pageSize, page.getTotalElements(), page.getTotalPages());
     }
 
-    /** 未选择具体车辆时的 Top 10（全站或分类交集），固定首屏且不提供翻页。 */
     public HundredLeaderboardPageDto toTopLeaderboardPage(
             final List<HundredBattleSubmission> submissions,
             final int displaySize,

@@ -59,7 +59,6 @@ describe('AgentTankopedia', () => {
     expect(img.attributes('loading')).toBe('lazy')
     expect(img.attributes('width')).toBeTruthy()
     expect(img.attributes('height')).toBeTruthy()
-    // 卡片是按钮：键盘可聚焦（审计 3D-18）
     expect(cards[0].element.tagName).toBe('BUTTON')
     await wrapper.find('[data-testid="tank-load-more"]').trigger('click')
     expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
@@ -76,7 +75,6 @@ describe('AgentTankopedia', () => {
   })
 
   it('封面图按内容框数据做展示裁剪；数据缺失时回退原始 contain', async () => {
-    // 有内容框：卡片与详情 hero 都带 transform（数据驱动展示裁剪，见 utils/tankIconCrop.js）
     data.loadTankIconCrops.mockResolvedValue({
       1: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 141, h: 101 },
       999: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 148, h: 101 },
@@ -85,11 +83,9 @@ describe('AgentTankopedia', () => {
     const hero = wrapper.find('.tp-media-lg > img')
     expect(hero.attributes('style')).toContain('translate(')
     expect(hero.attributes('style')).toContain('scale(')
-    // 详情封面同列表卡片一样用国籍布旗作整幅背景（TankCoverNation）
     expect(wrapper.find('.tp-media-lg [data-testid="tank-cover-nation"]').exists()).toBe(true)
     wrapper.unmount()
 
-    // 数据缺失（旧包/资产源未配置）：无 transform，保持原 contain 展示
     data.loadTankIconCrops.mockResolvedValue(null)
     const { wrapper: w2 } = await mountAt({ tank: '999' })
     const hero2 = w2.find('.tp-media-lg > img')
@@ -102,7 +98,6 @@ describe('AgentTankopedia', () => {
     const names = wrapper.findAll('[data-testid="tank-card"]')
     expect(names.length).toBeGreaterThan(0)
     expect(wrapper.find('#tp-nation [data-value="germany"]').attributes('aria-checked')).toBe('true')
-    // 显示名走 i18n，不直接显示原始枚举值
     expect(wrapper.find('[data-testid="filter-nation"]').text()).toContain('agentTanks.nations.ussr')
 
     const replace = vi.spyOn(router, 'replace')
@@ -165,11 +160,9 @@ describe('AgentTankopedia', () => {
   it('别名搜索命中目标车辆；卡片与详情标题都显示正式车名', async () => {
     vi.useFakeTimers()
     const { wrapper, router } = await mountAt()
-    // 车名里没有「大白兔」，只有 alias 有：命中说明 alias 进了召回链。
     await wrapper.find('[data-testid="tank-search"]').setValue('大白兔')
     const cards = wrapper.findAll('[data-testid="tank-card"]')
     expect(cards.map(card => card.find('.tp-card-name').text())).toEqual(['IS-7'])
-    // ?q= 机制不变：alias 和正式车名一样写进 URL（刷新后别名搜索重新执行）。
     vi.advanceTimersByTime(300)
     await flushPromises()
     expect(router.currentRoute.value.query.q).toBe('大白兔')
@@ -181,7 +174,6 @@ describe('AgentTankopedia', () => {
     expect(wrapper.text()).not.toContain('大白兔')
     wrapper.unmount()
 
-    // 刷新/分享链接：?q= 恢复后别名搜索重新执行（没有新增 alias= 参数）。
     const { wrapper: restored } = await mountAt({ q: '大白兔' })
     expect(restored.findAll('[data-testid="tank-card"]').map(card => card.find('.tp-card-name').text()))
       .toEqual(['IS-7'])
@@ -215,7 +207,6 @@ describe('AgentTankopedia', () => {
     expect(data.fetchTankData).toHaveBeenCalledWith(999)
     expect(wrapper.find('h1').text()).toBe('IS-7')
 
-    // 默认顶级配置（末位）；切换后写进 URL
     const config = wrapper.find('[data-testid="tank-config"]')
     expect(config.element.value).toBe('1')
     await config.setValue('0')
@@ -250,7 +241,6 @@ describe('AgentTankopedia', () => {
     await flushPromises()
     expect(router.currentRoute.value.query.tank).toBe('999')
     expect(router.currentRoute.value.query.q).toBeUndefined()
-    // 列表保持挂载：250ms 防抖在详情态继续提交 q，不会因组件卸载清掉 timer。
     vi.advanceTimersByTime(300)
     await flushPromises()
     expect(router.currentRoute.value.query.q).toBe('is7')
@@ -268,8 +258,6 @@ describe('AgentTankopedia', () => {
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia', nation: 'ussr' })
     expect(wrapper.findAll('[data-testid="tank-card"]').length).toBeGreaterThan(0)
 
-    // The in-app back replaces the detail entry instead of pushing another list entry.
-    // Browser Back must therefore not resurrect the detail that was just closed.
     router.back()
     await flushPromises()
     expect(router.currentRoute.value.query.tank).toBeUndefined()
@@ -296,7 +284,6 @@ describe('AgentTankopedia', () => {
   })
 
   it('俯仰角与弹种数值按紧凑小数呈现，不直出 f32 扩宽尾数', async () => {
-    // 上游 per-tank JSON 把 f32 以 f64 直出：2.3f32 → 2.299999952316284
     data.fetchTankData.mockResolvedValue({
       name: 'SU-100M1', tier: 7, nation: 'ussr', type: 'AT-SPG', hp: 1150,
       speed_forward: 50, speed_reverse: 14,

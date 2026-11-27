@@ -8,15 +8,12 @@ import { CW_DIM_KEYS } from '../utils/playerSummaryMerge.js'
 const props = defineProps({
   title: String,
   rows: { type: Array, default: () => [] },
-  /** ColumnDef 列表（key + num） */
   columns: { type: Array, default: () => [] },
-  /** 批次战队 identity 覆盖 {teamKey: name}（不得反向改单场 {arenaId:team}）。 */
   teamNames: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['update-summary-team-name'])
 const { t, locale } = useI18n()
 
-// ---- 全列 ASC/DESC（所有可见列可排序；missing-last；raw sort） ----
 const sortKey = ref('')
 const sortReverse = ref(false)
 
@@ -29,8 +26,6 @@ const sortedRows = computed(() => {
     direction: sortReverse.value ? -1 : 1,
     num: isTeamName ? false : !!col?.num,
     locale: locale.value,
-    // 行是 TeamLeagueSummary（rating / observedMean / dimensionMeans 字段，无 cells）；
-    // 列 key → 行字段映射，否则 league_rating 排序会全读到 undefined（stable 假通过）
     valueGetter: isTeamName ? teamDisplayName : (row) => summarySortValue(row, sortKey.value),
     tiebreakGetter: row => row.teamKey,
   })
@@ -73,7 +68,6 @@ function displayValue(value) {
   return String(value)
 }
 
-/** 列 key → 战队汇总行字段（排序用 raw mean/维度值）。 */
 function summarySortValue(row, key) {
   if (key === 'league_rating') return row.rating
   if (key === 'league_observed_mean') return row.observedMean
@@ -91,7 +85,6 @@ function teamDisplayName(row) {
   return row.autoName || t('league.team_name_pending')
 }
 
-/** 批次战队名称编辑：只改 {teamKey} → 名，绝不批量覆盖所有 {arenaId:team}。 */
 function onTeamNameInput(row, event) {
   emit('update-summary-team-name', { teamKey: row.teamKey, name: event.target.value })
 }
@@ -121,7 +114,6 @@ function onTeamNameInput(row, event) {
               <template v-else>{{ displayValue(cellValue(row, c.key)) }}</template>
             </td>
           </tr>
-          <!-- League Rating 空态：明确 neutral 文案，而不是只有 "--" -->
           <tr v-if="!rows.length"><td :colspan="Math.max(columns.length, 1)" class="league-summary-empty">{{ $t('league.summary.no_rateable') }}</td></tr>
         </tbody>
       </table>

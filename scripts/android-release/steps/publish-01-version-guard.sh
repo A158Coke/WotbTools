@@ -2,8 +2,6 @@
 # Extracted from .github/workflows/android-release.yml (publish step 1: Guard: publish requires an explicit staged version).
 # Behavior is preserved; edit this script, not the workflow YAML.
 set -euo pipefail
-# GitHub 的 workflow_dispatch schema 不能表达「mode=publish 时 required」，
-# 因此这里 fail closed：没有显式版本就绝不猜、绝不从当前 main 推导候选。
 if [ -z "${REQUESTED_VERSION// /}" ]; then
   echo "::error::mode=publish requires an explicit version input (the immutable staged version, e.g. 2.0.1). Refusing to derive the publish candidate from current main." >&2
   exit 1

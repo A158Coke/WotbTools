@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 强制横屏页面在竖屏时的整块提示（design-language §9「强制横屏」）：只在 useForcedLandscape().blocked 时渲染。
-// iPhone Safari 无法锁定方向，靠这里引导旋转；Android 手机 App 会自动锁横屏，提示只在切换瞬间出现。
-// 可选的退出动作（如「看赛后数据」）由页面给出，保证竖屏时主要数据能力仍可达。
 import type { ForcedLandscapeDevice } from '../platform/screenForm.js'
 
 defineProps<{ device: ForcedLandscapeDevice, actionLabel?: string }>()

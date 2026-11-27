@@ -99,7 +99,6 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
   it('keeps the official sample loading across Next so the advanced step can use it', async () => {
-    // #668：示例下载不再被“下一步”取消，否则播放步骤会等一个永远不会就绪的示例。
     const h = harness()
     const pending = deferred<void>()
     h.loadDemo.mockImplementation(async () => {
@@ -199,7 +198,6 @@ describe('real lesson lifecycle', () => {
     await h.controller.begin()
     expect(h.controller.issue.value).toBe('unavailable')
 
-    // Retry 的示例加载仍在进行时切换到非回放支线（名人堂），旧 promise 随后才拒绝。
     const pending = deferred<void>()
     h.loadDemo.mockImplementation(() => pending.promise)
     void h.controller.retry()
@@ -222,7 +220,6 @@ describe('real lesson lifecycle', () => {
     const h = harness()
     h.controller.start()
     const beginning = h.controller.begin()
-    // 示例加载仍在等待 ensureReplayView() 的导航续体时就退出教程。
     h.controller.skip()
     await beginning
     await flushPromises()
@@ -273,7 +270,6 @@ describe('real lesson lifecycle', () => {
     ready.value = true
     await nextTick()
     expect(h.controller.currentStage.value.anchor).toBe('replay3d-camera')
-    // 自动推进也要跑 prepare：紧凑控制条下镜头在 Display 面里，不打开就没有目标
     expect(startScene).toHaveBeenCalledTimes(1)
     failed.value = true
     await nextTick()
@@ -285,8 +281,6 @@ describe('real lesson lifecycle', () => {
   })
 
   it('waits for the Display surface before preparing the declutter step', async () => {
-    // 冷启动恢复到防遮这一步时，回放视图可能还没挂上：此时 prepare 打开 Display 会落空，
-    // 之后也不会再重试，锚点永远出不来。必须等 display surface ready 之后再 prepare。
     const h = harness()
     const ready = ref(false), openDisplay = vi.fn()
     h.controller.registerSurface('display', { ready: () => ready.value, prepare: openDisplay })
@@ -355,7 +349,6 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.mode.value).toBe('idle')
     expect(JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')?.guide)
       .toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
-    // Android: the RPC returns before the external user-agent reports success.
     boundary.auth.loginInFlight.value = false
     await nextTick()
     expect(JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')?.guide)

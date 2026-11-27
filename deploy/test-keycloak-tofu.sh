@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Fresh-realm Keycloak OpenTofu and least-privilege Admin API smoke.
-# This deliberately starts with an empty PostgreSQL database and never imports
-# a realm JSON file. Test credentials are local-only fixtures.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,8 +67,6 @@ expect_tofu_input_failure() {
     || fail "$label did not report $expected"
 }
 
-# Exercise the TX runner's fail-closed Wargaming/QQ boundary before building an
-# image or creating disposable infrastructure. These are deliberately fixtures only.
 mkdir -p "$WORK/input-policy-root"
 expect_tofu_input_failure "missing-wg-application-id" 'WG_APPLICATION_ID is required.' \
   env -u WG_APPLICATION_ID
@@ -118,9 +113,6 @@ for attempt in $(seq 1 "$RETRIES"); do
   [ "$attempt" -eq "$RETRIES" ] && fail "fresh PostgreSQL did not become ready"
 done
 
-# 事件 logger 级别的唯一事实源是生产 compose：在这里复制一份字面量，就等于让这个 smoke
-# 在生产改了之后继续"通过"。Keycloak 对成功事件（含全部 admin event）默认只记到 DEBUG，
-# 所以这个值直接决定下面的 stdout 断言能不能成立。
 KC_LOG_LEVEL_VALUE="$(sed -n 's/^[[:space:]]*KC_LOG_LEVEL:[[:space:]]*\(.*\)$/\1/p' \
   "$ROOT/deploy/tx/keycloak.compose.yml" | head -n1)"
 [ -n "$KC_LOG_LEVEL_VALUE" ] \
@@ -170,9 +162,6 @@ TOFU_WORK_ROOT="$WORK/tofu-root"
 mkdir -p "$TOFU_WORK_ROOT"
 cp -a "$TOFU_ROOT/." "$TOFU_WORK_ROOT/"
 cd "$TOFU_WORK_ROOT"
-# The production root declares the TX persistent local backend. A fresh CI
-# realm must use disposable test state, so remove only that declaration in this
-# temporary copy; the committed backend contract is checked separately.
 rm -f -- backend.tf
 "$TOFU" init -backend=false -input=false >/dev/null
 "$TOFU" validate
@@ -187,14 +176,6 @@ if jq -e 'any(.resource_changes[]?; ((.change.actions // []) | any(. != "no-op")
 fi
 echo "PASS: fresh realm apply and second plan no-op"
 
-# The QQ App Key is plain desired state, so a rotated injected value must converge
-# idp-qq on the very next apply with no rotation version involved: the plan has to
-# show the IdP update, the apply has to push it, and the plan after it must be a
-# no-op again. This is the regression guard against re-introducing a version,
-# counter or hash as the owner of "did the QQ secret change?". The stored value
-# cannot be read back to assert it: Keycloak masks an IdP client secret as
-# `**********` in every Admin API representation, so the convergence boundary this
-# checks is plan -> apply, exactly where the mechanism under test lives.
 export TF_VAR_qq_client_secret="$QQ_CLIENT_SECRET_ROTATED"
 "$TOFU" plan -input=false -no-color -out="$WORK/rotation-plan.tfplan"
 bash ./validate-plan.sh "$WORK/rotation-plan.tfplan"
@@ -275,9 +256,6 @@ echo "PASS: ordinary realm role add/remove"
 api 204 DELETE "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID" "$SERVICE_TOKEN" "$WORK/delete-user.json"
 echo "PASS: delete user"
 
-# --- controlled security event logging (public-security self-assessment) -----
-# 两层证明，缺一不可：先证明 IaC 真的落到了 realm 上，再证明事件真的出现在容器 stdout
-# ——TX Alloy 只能采它看得见的东西，所以 stdout 才是这条合规链路真正的起点。
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/events/config" "$BOOTSTRAP_TOKEN" "$WORK/events-config.json"
 jq -e '
   .eventsEnabled == true and
@@ -291,10 +269,6 @@ jq -e '
   || fail "the applied realm does not carry the reviewed security event logging configuration: $(jq -c . "$WORK/events-config.json" 2>/dev/null || tr -d '\n' < "$WORK/events-config.json")"
 echo "PASS: applied realm security event logging configuration"
 
-# 上面的 create/delete user 是真实的 admin 动作，而 admin event 只记到 DEBUG，所以这条
-# 断言同时证明三件事：jboss-logging listener 在工作、KC_LOG_LEVEL 真的把
-# org.keycloak.events 抬到了 debug、以及 details = false 让完整 resource representation
-# 留在了日志之外。少了第二件，190 天留存里就只有登录失败、没有任何成功操作证据。
 admin_event_line=""
 for attempt in $(seq 1 "$RETRIES"); do
   admin_event_line="$(docker logs "$KC_NAME" 2>&1 \
@@ -383,9 +357,6 @@ jq -e 'any(.[]; .name == "wotbtools-user")' "$WORK/default-roles.json" >/dev/nul
   || fail "default-roles-wotbtools does not include wotbtools-user"
 echo "PASS: default wotbtools-user role"
 
-# The runtime E2E identity must be a confidential service-account-only
-# client whose token carries exactly the user-facing realm role, so the check can
-# drive the real business chain and must still be rejected by admin endpoints.
 E2E_CLIENT_ID="$(client_id wotbtools-e2e "$WORK/e2e-client.json")"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$E2E_CLIENT_ID" \
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-client.json"
@@ -420,9 +391,6 @@ E2E_SERVICE_ACCOUNT_ID="$(api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/user
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-service-account.json" >/dev/null; jq -er '.[0].id' "$WORK/e2e-service-account.json")"
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/users/$E2E_SERVICE_ACCOUNT_ID/role-mappings/realm" \
   "$BOOTSTRAP_TOKEN" "$WORK/e2e-realm-roles.json"
-# Keycloak always adds the realm default composite (`default-roles-wotbtools`) to a
-# service account, so the direct mapping set is that composite plus the explicit
-# `wotbtools-user` grant. What must never appear is any privileged realm role.
 jq -e '([.[].name] - ["wotbtools-user", "default-roles-wotbtools"]) | length == 0' \
   "$WORK/e2e-realm-roles.json" >/dev/null \
   || fail "runtime E2E service account holds an unexpected realm role"
@@ -443,12 +411,6 @@ api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients/$WEB_CLIENT_ID/protoco
 jq -e '([.[].name] | sort) == ["display-name-mapper", "wotb-account-id-mapper", "wotb-nickname-mapper", "wotb-region-mapper", "wotb-verified-mapper"]' \
   "$WORK/mappers.json" >/dev/null || fail "wotbtools-web mapper set is incomplete"
 
-# Android 2.0 authenticates natively (OIDC Authorization Code + PKCE S256, external
-# user-agent) as a PUBLIC client of its own. This asserts the applied realm, not the
-# plan text: `?clientId=` matching exactly once proves there is no second client
-# sharing the id, and the runtime representation below is what Keycloak actually
-# enforces for the app - the class of setting a browser-only client would silently
-# accept (wildcard redirect, implicit flow, direct access grants, no PKCE).
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/clients?clientId=wotbtools-android" \
   "$BOOTSTRAP_TOKEN" "$WORK/android-clients.json"
 jq -e 'length == 1' "$WORK/android-clients.json" >/dev/null \
@@ -486,8 +448,6 @@ jq -e '([.[].name] | sort) == ["display-name-mapper", "wotb-account-id-mapper", 
 echo "PASS: applied wotbtools-android client is public, PKCE S256, standard-flow-only, exact-redirect, with the five native token claims"
 
 api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/identity-provider/instances" "$BOOTSTRAP_TOKEN" "$WORK/idps.json"
-# Exact-set equality above already forbids every other alias, including any
-# legacy broker alias; no second denylist is needed.
 jq -e '([.[].alias] | sort) == ["idp-qq", "wargaming-asia", "wargaming-eu", "wargaming-na"]' "$WORK/idps.json" >/dev/null \
   || fail "fresh realm IdP aliases are not the approved TX set"
 jq -e --arg qq_client_id "$QQ_CLIENT_ID" --arg wg_application_id "$WG_APPLICATION_ID" '

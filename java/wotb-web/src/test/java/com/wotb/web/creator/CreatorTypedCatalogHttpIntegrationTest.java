@@ -27,7 +27,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Real PostgreSQL proves UID uniqueness, catalog write serialization and dictionary references. */
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -124,7 +123,6 @@ class CreatorTypedCatalogHttpIntegrationTest extends CreatorIntegrationTestSuppo
         mvc.perform(get("/api/recommendations?type=BAD")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(wrongAdmin)).andExpect(status().isForbidden());
-        // The tournament domain never authorizes content management, not even as a fallback.
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(tournamentAdmin)).andExpect(status().isForbidden());
         mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload)).with(tournamentAdmin)).andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(admin)).andExpect(status().isOk())

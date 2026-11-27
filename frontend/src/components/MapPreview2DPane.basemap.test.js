@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-// 底图解析的请求代际契约（review P2 回归锁）：快速切图 A→B 时旧请求只清理自己
-// 创建的资源，绝不撤销新代已发布的 URL；解码尺寸必须与 manifest 一致（漂移
-// fail-visible）。resolver 与 Image 全部受控，完成顺序由测试驱动。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -21,7 +18,6 @@ vi.mock('./BattleMap.vue', () => ({
   },
 }))
 
-/** resolver 受控：每个用例替换 current 实现，返回值/时序由测试驱动。 */
 const resolver = vi.hoisted(() => ({ current: vi.fn() }))
 vi.mock('../scene/replaySource.js', () => ({
   resolveMap2dBasemap: (...args) => resolver.current(...args),
@@ -29,7 +25,6 @@ vi.mock('../scene/replaySource.js', () => ({
 
 import MapPreview2DPane from './MapPreview2DPane.vue'
 
-// ---- 受控环境：URL blob 桩 + 手动解码的 Image 桩 ----
 let blobSeq = 0
 const revoked = []
 const imageRequests = []
@@ -47,7 +42,6 @@ function stubEnv() {
     get src() { return this._src }
   })
 }
-/** 手动完成第 i 个解码请求（happy-dom 的 Image 不触发 onload，这里由测试驱动）。 */
 function decodeAt(i, width = 1254, height = 1254, fail = false) {
   const img = imageRequests[i]
   if (fail) img.onerror(new Error('decode'))
@@ -75,18 +69,16 @@ describe('MapPreview2DPane 底图解析代际（review P2 回归锁）', () => {
     stubEnv()
     let releaseA
     const gateA = new Promise((resolve) => { releaseA = resolve })
-    resolver.current.mockImplementationOnce(() => gateA)                       // A 先发，挂起
+    resolver.current.mockImplementationOnce(() => gateA)
     const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon' })
     await flushPromises()
-    // 切图 B：新代请求发出并立即返回（A 仍在挂起）
     resolver.current.mockImplementationOnce(async () => MANIFEST)
     await wrapper.setProps({ basemap: { kind: 'map2d', mapKey: 'moon' } })
     await flushPromises()
-    expect(imageRequests).toHaveLength(1)   // B 的解码请求（A 仍在挂起）
-    decodeAt(0)                              // B 解码完成 → B 发布
+    expect(imageRequests).toHaveLength(1)
+    decodeAt(0)
     await flushPromises()
     expect(wrapper.find('.bm-stub').attributes('data-src')).toBe('blob:mock-1')
-    // A 迟到返回：代际已过期 → 在创建任何资源之前直接退出（不碰 B 的 blob:mock-1）
     releaseA(MANIFEST)
     await flushPromises()
     expect(revoked).toEqual([])
@@ -99,27 +91,24 @@ describe('MapPreview2DPane 底图解析代际（review P2 回归锁）', () => {
     resolver.current.mockImplementationOnce(async () => MANIFEST)
     const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon' })
     await flushPromises()
-    expect(imageRequests).toHaveLength(1)    // 解码挂起中（blob:mock-1 已创建）
-    wrapper.unmount()                        // 卸载使在途请求过期
-    decodeAt(0)                              // 迟到解码完成
+    expect(imageRequests).toHaveLength(1)
+    wrapper.unmount()
+    decodeAt(0)
     await flushPromises()
-    expect(revoked).toEqual(['blob:mock-1']) // 自己创建、自己释放；无泄漏
+    expect(revoked).toEqual(['blob:mock-1'])
   })
 
   it('旧 A 迟到解码尺寸不符 + 新 B 已正常发布 → B 的 src 与错误状态都不受影响（交叉时序）', async () => {
     stubEnv()
-    resolver.current.mockImplementationOnce(async () => MANIFEST)   // A：正常返回，解码挂起
+    resolver.current.mockImplementationOnce(async () => MANIFEST)
     const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon' })
     await flushPromises()
-    // 切图 B：resolver 返回并解码发布（A 的解码仍挂起）
     resolver.current.mockImplementationOnce(async () => MANIFEST)
     await wrapper.setProps({ basemap: { kind: 'map2d', mapKey: 'moon' } })
     await flushPromises()
-    decodeAt(1)                              // B 解码发布（imageRequests[1] = B）
+    decodeAt(1)
     await flushPromises()
     expect(wrapper.find('.bm-stub').attributes('data-src')).toBe('blob:mock-2')
-    // A 迟到解码且尺寸不符（900² ≠ manifest 1254²）：代际过期 → 只清自己的 URL，
-    // 不得把 basemapError 置到已发布的 B 上（否则错误提示与有效底图并存）
     decodeAt(0, 900, 900)
     await flushPromises()
     expect(revoked).toEqual(['blob:mock-1'])
@@ -129,14 +118,14 @@ describe('MapPreview2DPane 底图解析代际（review P2 回归锁）', () => {
 
   it('解码尺寸与 manifest 不一致 → fail-visible，不静默按解码尺寸渲染', async () => {
     stubEnv()
-    resolver.current.mockImplementationOnce(async () => MANIFEST)   // manifest 声明 1254²
+    resolver.current.mockImplementationOnce(async () => MANIFEST)
     const wrapper = mountPane({ kind: 'map2d', mapKey: 'moon' })
     await flushPromises()
-    decodeAt(0, 900, 900)                    // 解码 900² ≠ 1254²（发布漂移）
+    decodeAt(0, 900, 900)
     await flushPromises()
     expect(wrapper.find('[data-testid="map-2d-basemap-error"]').exists()).toBe(true)
     expect(wrapper.find('.bm-stub').exists()).toBe(false)
-    expect(revoked).toEqual(['blob:mock-1']) // 未发布的资源也释放
+    expect(revoked).toEqual(['blob:mock-1'])
   })
 
   it('解码失败：revoke 自己的 URL 并 fail-visible', async () => {

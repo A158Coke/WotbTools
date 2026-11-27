@@ -20,14 +20,12 @@ const props = defineProps({
   files: Array,
   loading: Boolean,
   disabled: Boolean,
-  /** Shared picker supports screenshots without changing the default replay preflight. */
   purpose: { type: String, default: 'replay', validator: v => ['replay', 'image'].includes(v) },
   imageSingle: { type: Boolean, default: false },
   imageLabel: { type: String, default: '' },
   imageHint: { type: String, default: '' },
 })
 const dragging = ref(false)
-/** preflight 结果（{offending, tooMany, totalTooLarge, alreadyListed}；非空时 selection 保持不变）。 */
 const validation = ref(null)
 const imageError = ref(false)
 const nativeFolderAvailable = ref(false)
@@ -50,7 +48,6 @@ const { t } = useI18n()
 const maxReplayFiles = MAX_REPLAY_FILES
 const maxReplayTotal = formatReplaySize(MAX_REPLAY_TOTAL_BYTES)
 
-/** 原生 file input 视觉隐藏，由真正的按钮触发，保证键盘可达（WS-07）。 */
 const filesInput = ref(null)
 const folderInput = ref(null)
 function openPicker(input) {
@@ -86,22 +83,12 @@ async function openFolderPicker(input) {
   }
 }
 
-// 父级已更新 files（remove/clear/替换）→ 清除过期的 preflight 拒绝信息（被拒的 add
-// 不会触发 update:files，因此错误会保留直到下一次成功 add 或 files 变化）。
 watch(() => props.files, () => {
-  // A newer import owns this selection; a late folder result must not reset its parsed output.
   folderReadController?.abort()
   validation.value = null
   folderError.value = ''
 })
 
-/**
- * 统一的候选入口（选择文件 / 选择文件夹 / add files / drag-drop 全部走这里）：
- * 批量/folder 交互<b>先过滤 .wotbreplay</b>，非回放文件不参与 100 上限 /
- * 200 MiB 总量、不得让合法 replay 整批失败；再对「现有 selection + 过滤后的新候选」
- * 合并集合做 preflight。任一违规 → 不更新 active files、不触发 Processing Job，
- * 保留之前合法 selection，一次展示所有 offending。
- */
 function addFiles(list) {
   if (props.loading || props.disabled || pickingFolder.value) return
   const picked = Array.from(list || [])
@@ -124,11 +111,6 @@ function addFiles(list) {
   if (prepared) emit('update:files', prepared.prospective)
 }
 
-/**
- * One preflight for Web files, Native metadata and fully-read Native files.
- * 已在列表里的文件保持原实例与原位置，新文件追加到尾部：sourceId 是 files 下标，
- * 现有结果在后台加载期间必须继续对得上。
- */
 function prepareReplayFiles(picked) {
   const replays = picked.filter(f => isReplayFileName(f?.name))
   if (replays.length === 0) {
@@ -222,11 +204,9 @@ defineExpose({
 
     <Banner v-if="folderError" tone="danger" data-testid="folder-read-error">{{ $t(folderError) }}</Banner>
 
-    <!-- 原生 input：视觉隐藏、不进 Tab 序列，由下方按钮触发 -->
     <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple accept=".wotbreplay" data-testid="select-files-input" @change="onPick" />
     <input v-if="showFolderPicker && !isAndroidApp()" ref="folderInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple webkitdirectory data-testid="select-folder-input" @change="onPick" />
 
-    <!-- 只有空列表才有上传面；有回放后入口在工作台的「管理回放」，这里只留 input 与校验提示 -->
     <div v-if="!files.length" class="dropzone surface-glass-1" data-testid="file-uploader-empty">
       <CloudUpload class="dropzone-icon" :size="40" aria-hidden="true" />
       <p class="dropzone-title">{{ $t('upload.drop_hint') }}</p>

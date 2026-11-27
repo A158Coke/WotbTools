@@ -1,9 +1,6 @@
 <script setup>
-// 短文本徽章（design-language §7 Badge：中性 / 状态 / 阵营，≤ 6 个字）。
-// 只承载一个词的结论（击穿 / 未穿 / APCR…），细节与解释放在可悬停的标题或检视面板里。
 defineProps({
   text: { type: String, required: true },
-  /** neutral | success | danger | warning | info */
   tone: { type: String, default: 'neutral' },
 })
 

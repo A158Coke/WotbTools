@@ -9,7 +9,6 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "tournament_broadcast_cover")
-// PUT/cleanup lock only this row. Updating status must not reacquire a parent-season FK lock.
 @DynamicUpdate
 public class BroadcastCover {
     @Id @Column(length = 36)

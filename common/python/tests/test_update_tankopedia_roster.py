@@ -32,7 +32,6 @@ class RosterTest(unittest.TestCase):
     def test_records_snapshot_provenance(self):
         payload = self.payload(game_version="11.21.0", source_hashes={"tanks": "abc123", "game": "zzz"})
         self.assertEqual(payload["meta"]["source_game_version"], "11.21.0")
-        # 只记录 tanks.pb 的哈希：名册的唯一输入就是它
         self.assertEqual(payload["meta"]["source_hashes"], {"tanks": "abc123"})
 
     def test_drops_entries_without_usable_id_or_name(self):
@@ -55,7 +54,6 @@ class RosterTest(unittest.TestCase):
         old = roster(100)
         with self.assertRaisesRegex(RuntimeError, "TANK_ROSTER_COUNT_DROP"):
             ut.validate_roster(roster(70), old)
-        # 正常新增与少量真实删除放行（MIN_TIER_COUNT_RATIO 同口径）
         self.assertTrue(ut.validate_roster(roster(85), old))
         self.assertTrue(ut.validate_roster(roster(120), old))
 
@@ -74,5 +72,4 @@ class RosterTest(unittest.TestCase):
                         roster.get(str(vehicle["id"])), vehicle["name"],
                         "roster name drifted for tank_id=%s" % vehicle["id"],
                     )
-        # 名册可以与全等级 tier 文件相等，也可来自更新的快照。
         self.assertGreaterEqual(len(roster), len(tier_ids))

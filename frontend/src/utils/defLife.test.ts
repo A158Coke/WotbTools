@@ -1,12 +1,9 @@
 import { expect, it } from 'vitest'
 import { defLifeAt } from './battlePlaybackV2.ts'
 
-// def 层生命状态（issue #622）：复活字段缺省 = 死亡终态（行为与既往逐位一致）；
-// 字段在场 = 死亡/复活交替，最后一次 ≤t 的事件决定状态。
 
 it('无复活字段时保持死亡终态语义', () => {
   const def = { death_t: 20, killer_eid: 7 }
-  // 既往形态：终态路径 ALIVE 也携带 death（消费方先判 lifeState，兼容旧结构）
   expect(defLifeAt(def, 19)).toEqual({ lifeState: 'ALIVE', destroyedKnownAtSec: 20 })
   expect(defLifeAt(def, 20)).toEqual({ lifeState: 'DESTROYED', destroyedKnownAtSec: 20 })
   expect(defLifeAt(def, 999)).toEqual({ lifeState: 'DESTROYED', destroyedKnownAtSec: 20 })

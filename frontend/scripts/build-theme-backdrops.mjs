@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * 四季全站背景构建：art-source / 原图 → src/assets/theme/backdrop-*.webp
- *
- * 原图规格（frontend/art-source/backdrops/README.md）：
- * - wide 1672×941，车队在中部到右侧，左侧干净；
- * - portrait 941×1672，车队在中上部，下半部干净。
- *
- * 输出按「横版铺满宽屏 / 竖版铺满手机」各放大一档。放大用 Lanczos，
- * 随后轻度锐化，WebP quality 以 80 起步；如果单张仍超过 300KB，
- * 逐档降低 quality 直到预算内（并打印实际值），保证背景不会拖垮首屏。
- */
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,8 +37,6 @@ async function buildOne(season, variant) {
   let quality = START_QUALITY
   let buffer = await render(input, variant.width, quality)
   while (buffer.byteLength > MAX_BYTES && quality > MIN_QUALITY) {
-    // 按体积比例估算下一档 quality（WebP 体积近似随 quality 超线性增长），
-    // 再用 QUALITY_STEP 兜底，避免从 80 每 2 点一档跑满二十多次。
     const estimate = Math.floor(quality * Math.sqrt(MAX_BYTES / buffer.byteLength) * 0.97)
     const next = Math.max(MIN_QUALITY, Math.min(quality - QUALITY_STEP, estimate))
     quality = next
@@ -60,8 +47,6 @@ async function buildOne(season, variant) {
   }
 
   const outMeta = await sharp(buffer).metadata()
-  // 直接写编码后的 buffer：再次交给 sharp().toFile() 会以默认 quality 重新编码，
-  // 体积回到 400KB+，预算检查就失去意义。
   await writeFile(output, buffer)
   const { size } = await stat(output)
   console.log(

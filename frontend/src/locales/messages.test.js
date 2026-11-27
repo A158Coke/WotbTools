@@ -11,7 +11,6 @@ describe('locale message composition', () => {
     expect(messages.ru.aiFeedback.model).toBe('Модель')
   })
   it('keeps catch/defend raw-target event copy in all locales', () => {
-    // payload 语义未闭合：UI 用专用 raw 文案展示原始目标，不得断言为据点编号。
     for (const locale of ['zh', 'en', 'ru']) {
       for (const key of ['cmd_catch_point_raw', 'cmd_defend_point_raw']) {
         const message = messages[locale].eventStream[key]
@@ -24,9 +23,6 @@ describe('locale message composition', () => {
     expect(messages.zh.eventStream.cmd_defend_point_raw).toContain('防守据点指令')
   })
   it('compiles every message in every locale', () => {
-    // vue-i18n 在渲染时才编译消息；未转义的 `@`（linked message）/非法 `|` 会在
-    // 切语言后抛 SyntaxError，表现为整块 UI 消失（2026-10-27 英文 pen_far 事故）。
-    // 逐条过官方 compiler，别等浏览器里第一次渲染才发现。
     const failures = []
     for (const locale of ['zh', 'en', 'ru']) {
       const walk = (node, prefix) => {
@@ -55,7 +51,6 @@ describe('locale message composition', () => {
     }
   })
   it('labels every league team-summary column key in all locales', () => {
-    // #671 回归：表头由 `league.summary.<column key>` 拼出，缺 key 就会把内部 key 直接显示给用户。
     for (const locale of ['zh', 'en', 'ru']) {
       for (const key of ['rated_battles', 'league_observed_mean']) {
         expect(messages[locale].league.summary[key], `${locale} league.summary.${key}`).toBeTruthy()
@@ -75,7 +70,6 @@ describe('locale message composition', () => {
     }
   })
   it('merges nested feature namespaces without dropping base translations', () => {
-    // league 同时存在于 base 与 feature-messages：base 独有键保留，feature 键追加
     expect(messages.zh.league.title).toBe(zhBase.league.title)
     for (const locale of ['zh', 'en', 'ru']) {
       expect(messages[locale].league.title).toBeTruthy()
@@ -141,9 +135,6 @@ describe('locale message composition', () => {
   })
 
   it('ships offline-requirement copy for every capability-gated feature in all locales', () => {
-    // capability 模型给 ONLINE_REQUIRED 功能发 `featureOffline.<feature>`、给 ONLINE_OPTIONAL 发
-    // `featureOffline.syncPaused`：这里把「模型里的每个 key 都有译文」变成 CI 断言，
-    // 新增联网功能却忘了文案会直接失败，而不是在界面上显示原始 key。
     for (const locale of ['zh', 'en', 'ru']) {
       const offline = messages[locale].featureOffline
       expect(offline, `${locale} featureOffline`).toBeTruthy()
@@ -154,7 +145,6 @@ describe('locale message composition', () => {
   })
 
   it('ships distinct connectivity copy for unknown / degraded / service-unavailable', () => {
-    // review P1：这三种状态**不能**复用 offline 文案，否则用户会被错误告知「你现在离线」。
     for (const locale of ['zh', 'en', 'ru']) {
       const notice = messages[locale].connectivityNotice
       expect(notice, `${locale} connectivityNotice`).toBeTruthy()
@@ -162,7 +152,6 @@ describe('locale message composition', () => {
         'serviceUnavailableTitle', 'serviceUnavailable', 'retry']) {
         expect(notice[key], `${locale} connectivityNotice.${key}`).toBeTruthy()
       }
-      // 三种状态三套文案，且都不得与 offline 标题重复。
       expect(new Set([notice.unknown, notice.degraded, notice.serviceUnavailable]).size, `${locale} bodies`).toBe(3)
       const titles = new Set([notice.unknownTitle, notice.degradedTitle, notice.serviceUnavailableTitle])
       expect(titles.size, `${locale} titles`).toBe(3)
@@ -171,7 +160,6 @@ describe('locale message composition', () => {
   })
 
   it('keeps every tank parameter label in all locales', () => {
-    // 配置器参数/俯仰表按 key 直出；缺 key 会把内部 key 显示给用户（新增键曾漏 en/ru）。
     for (const locale of ['en', 'ru']) {
       for (const key of Object.keys(zhBase.agentTanks.params)) {
         expect(messages[locale].agentTanks.params[key], `${locale} agentTanks.params.${key}`).toBeTruthy()
@@ -180,7 +168,6 @@ describe('locale message composition', () => {
   })
 
   it('describes parameter deltas against the previous rendered values', () => {
-    // BK useDelta：delta 不是相对空装备初始配置；文案必须与 AgentTankopedia 的 previous 基线一致。
     expect(messages.zh.agentTanks.params.baseline_note).toContain('上一次')
     expect(messages.en.agentTanks.params.baseline_note.toLowerCase()).toContain('previously')
     expect(messages.ru.agentTanks.params.baseline_note.toLowerCase()).toContain('предыдущими')

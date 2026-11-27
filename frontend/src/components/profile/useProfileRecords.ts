@@ -1,6 +1,3 @@
-/**
- * ProfilePage —— HoF 对局记录（拆分自 ProfilePage.vue，行为原样）。
- */
 import { ref } from 'vue'
 import { getUserHofRecords } from '../../api/hall-of-fame.js'
 

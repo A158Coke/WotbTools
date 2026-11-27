@@ -32,7 +32,5 @@ if ! flock -n 9; then
   exit 1
 fi
 
-# deploy/tx/deploy.sh validates inherited descriptor 9 before mutating production.
-# The descriptor belongs to this wrapper process tree, never to the caller's shell.
 export WOTB_DEPLOY_LOCK_FD=9
 exec "$@"

@@ -10,7 +10,6 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 
-/** Writes the canonical envelope from filter-layer handlers without hand-built JSON. */
 @Component
 public class ApiErrorWriter {
 

@@ -1,7 +1,5 @@
 // @vitest-environment happy-dom
 
-// 战局回放地图标注回归测试：工具栏渲染（三语）、画笔绘制/撤回/重做/清空、
-// 橡皮擦点擦、文字标注、overview 切换重置。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import BattlePlayback from './BattlePlayback.vue'
@@ -36,7 +34,6 @@ vi.mock('../vehicle-models/runtime.js', () => ({
 
 const { makeOverview, mountAnnot, dispatchPointer, setMapLayout, openAnnotations } = createBattlePlaybackAnnotTestHarness(BattlePlayback)
 
-/** 从 viewport style 解析当前 view 变换（translate(tx,ty) + layout width scale）。 */
 function viewTransformOf(wrapper) {
   const style = wrapper.find('[data-test="pb-viewport"]').attributes('style')
   const translate = style.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/)
@@ -45,10 +42,6 @@ function viewTransformOf(wrapper) {
   return { tx: Number(translate[1]), ty: Number(translate[2]), scale: Number(width[1]) / 100 }
 }
 
-/**
- * 测试侧独立逆公式：SVG viewBox 点 → 地图容器 CSS px。
- * 不调用组件/生产代码，独立验证组件换算结果落回真实指针位置。
- */
 function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
   return {
     x: (sx / W) * rw * view.scale + view.tx,
@@ -56,10 +49,8 @@ function svgToCssInverse(sx, sy, view, W, H, rw, rh) {
   }
 }
 
-/** 在战局回放地图上画一条折线：pen 工具 → down/move/up。 */
 async function drawStroke(wrapper, points) {
   await openAnnotations(wrapper)
-  // 绘图是显式操作；进入标记默认选择工具。
   const pen = wrapper.find('[data-test="pb-annot-pen"]')
   if (!pen.classes().includes('active')) await pen.trigger('click')
   const viewport = wrapper.find('[data-test="pb-viewport"]')
@@ -99,7 +90,6 @@ describe('BattlePlayback annotations', () => {
     await openAnnotations(wrapper)
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
 
-    // 渲染尺寸 600×602 ≠ viewBox 766×769：1 CSS px ≠ 1 SVG unit
     setMapLayout(wrapper, 600, 602)
     const clicks = [[300, 301], [360, 301], [420, 301]]
     await drawStroke(wrapper, clicks)
@@ -111,7 +101,6 @@ describe('BattlePlayback annotations', () => {
     const view = viewTransformOf(wrapper)
     const pts = polyline.attributes('points').split(' ')
     expect(pts).toHaveLength(3)
-    // 每个 SVG 点 = CSS px × (viewBox/渲染尺寸)，且经独立逆公式必须回到原点击位置
     pts.forEach((pair, i) => {
       const [sx, sy] = pair.split(',').map(Number)
       expect(sx).toBeCloseTo(clicks[i][0] * (W / 600), 2)
@@ -121,7 +110,6 @@ describe('BattlePlayback annotations', () => {
       expect(back.y).toBeCloseTo(clicks[i][1], 4)
     })
 
-    // undo / redo 仍正常
     await wrapper.find('[data-test="pb-annot-undo"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="pb-annotations"] polyline').exists()).toBe(false)
@@ -147,11 +135,9 @@ describe('BattlePlayback annotations', () => {
     pts.forEach((pair, i) => {
       const [sx, sy] = pair.split(',').map(Number)
       const back = svgToCssInverse(sx, sy, view, W, H, 360, 361)
-      // toFixed(2) 存储引入亚像素误差（<0.005px），容差 0.005
       expect(back.x).toBeCloseTo(clicks[i][0], 2)
       expect(back.y).toBeCloseTo(clicks[i][1], 2)
     })
-    // 中心点击的语义 x 必须为 0（旧实现 fromX(180) ≈ -159 的回归防护）
     const [sx] = pts[0].split(',').map(Number)
     expect(-300 + (sx / W) * 600).toBeCloseTo(0, 6)
   })
@@ -159,9 +145,7 @@ describe('BattlePlayback annotations', () => {
   it('zoom + pan round-trip: stroke and text input land on the pointer', async () => {
     const wrapper = mountAnnot()
     await flushPromises()
-    // 先缩放平移再开标注，随后显式选择画笔。
     setMapLayout(wrapper, 600, 602)
-    // 滚轮在 (100,100) 放大 ×1.2 → tx=ty=-20；拖拽 (100,100)→(140,130) 平移 +40/+30
     await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, clientX: 100, clientY: 100, deltaY: -100 })
     const viewport = wrapper.find('[data-test="pb-viewport"]')
     await viewport.trigger('pointerdown', { pointerId: 1, clientX: 100, clientY: 100 })
@@ -171,7 +155,6 @@ describe('BattlePlayback annotations', () => {
     const view = viewTransformOf(wrapper)
     expect(view.scale).toBe(1.2)
 
-    // 缩放平移后绘制：每个 SVG 点 round-trip 回原 CSS 点击位置
     const clicks = [[200, 250], [260, 280]]
     await drawStroke(wrapper, clicks)
     const pts = wrapper.find('[data-test="pb-annotations"] polyline').attributes('points').split(' ')
@@ -179,12 +162,10 @@ describe('BattlePlayback annotations', () => {
     pts.forEach((pair, i) => {
       const [sx, sy] = pair.split(',').map(Number)
       const back = svgToCssInverse(sx, sy, view, 766, 769, 600, 602)
-      // toFixed(2) 存储引入亚像素误差（<0.005px），容差 0.005
       expect(back.x).toBeCloseTo(clicks[i][0], 2)
       expect(back.y).toBeCloseTo(clicks[i][1], 2)
     })
 
-    // 文字输入框 left/top 必须落在点击位置（SVG unit → CSS px → view 变换）
     await wrapper.find('[data-test="pb-annot-text"]').trigger('click')
     await viewport.trigger('pointerdown', { pointerId: 2, clientX: 200, clientY: 250 })
     await flushPromises()
@@ -246,7 +227,6 @@ describe('BattlePlayback annotations', () => {
     await flushPromises()
     const input = wrapper.find('[data-test="pb-text-input"]')
     expect(input.exists()).toBe(true)
-    // 临时输入框必须出现在点击位置（SVG unit 经渲染尺寸比例 + view 变换）
     const style = input.attributes('style')
     expect(Number(style.match(/left: (-?[\d.]+)px/)[1])).toBeCloseTo(200, 3)
     expect(Number(style.match(/top: (-?[\d.]+)px/)[1])).toBeCloseTo(150, 3)

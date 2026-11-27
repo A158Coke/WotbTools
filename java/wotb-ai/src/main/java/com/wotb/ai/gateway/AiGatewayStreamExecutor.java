@@ -10,7 +10,6 @@ import org.springframework.util.StringUtils;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicReference;
-/** Owns stream draining, consumer delivery, chunking, and response aggregation. */
 final class AiGatewayStreamExecutor {
     private final AiGatewayRuntimeState state;
     private final AiGatewayMetrics metrics;
@@ -37,8 +36,6 @@ final class AiGatewayStreamExecutor {
                 ? request.correlationId()
                 : (StringUtils.hasText(AiRequestContext.correlationId())
                         ? AiRequestContext.correlationId() : UUID.randomUUID().toString());
-        // Optional external cancellation (client abort): cancels the in-flight
-        // upstream stream and ends the flow with AI_CANCELLED.
         final AiCancellationToken cancellation = AiRequestContext.cancellationToken();
         final String model = StringUtils.hasText(request.model()) ? request.model() : state.defaultModel;
         final boolean metricsEnabled = state.meterRegistry != null;
@@ -48,8 +45,6 @@ final class AiGatewayStreamExecutor {
                 ? Math.min(request.callTimeoutSec() * 1_000_000_000L, state.callTimeoutNanos)
                 : state.callTimeoutNanos;
         final long deadlineNanos = state.nanoTimeSource.getAsLong() + requestCallTimeoutNanos;
-        // Streaming is a single attempt by design: no in-stream retry, a failure
-        // ends the stream and keeps whatever has already been emitted.
         int retryCount = 0;
         try {
             final long remainingNanos = deadlineNanos - state.nanoTimeSource.getAsLong();
@@ -59,8 +54,6 @@ final class AiGatewayStreamExecutor {
                         retryCount, request, failurePolicy);
             }
             if (cancellation != null && cancellation.isCancelled()) {
-                // Client aborted before the stream started: do not send a new
-                // upstream request at all.
                 throw metrics.finishFailure(
                         new AiUpstreamException("AI_CANCELLED", null, correlationId),
                         retryCount, request, failurePolicy);
@@ -103,8 +96,6 @@ final class AiGatewayStreamExecutor {
                                 try {
                                     if (delta.length() > AiGatewayStreamChunker.CHUNK_SPLIT_THRESHOLD) {
                                         for (final String piece : AiGatewayStreamChunker.splitChunks(delta, AiGatewayStreamChunker.CHUNK_MAX_PIECE)) {
-                                            // 分块转发期间同样遵守取消/超时语义：超大块切分可能耗时数秒，
-                                            // 不能在等待期间无视客户端取消或总预算。
                                             if (context.isExpired()
                                                     || state.nanoTimeSource.getAsLong() >= deadlineNanos) {
                                                 throw new StreamInterruptedMarker("AI_TIMEOUT");
@@ -119,9 +110,6 @@ final class AiGatewayStreamExecutor {
                                         consumer.onDelta(delta);
                                     }
                                 } catch (final StreamInterruptedMarker marker) {
-                                    // Gateway 自己产生的取消/超时标记：原样向外传播到控制流
-                                    // catch，转换为 AI_CANCELLED / AI_TIMEOUT 稳定错误码，
-                                    // 不得被当成 consumer/sink 异常包装成 ConsumerAbortException。
                                     throw marker;
                                 } catch (final RuntimeException sinkError) {
                                     throw new ConsumerAbortException(sinkError);
@@ -131,12 +119,9 @@ final class AiGatewayStreamExecutor {
                         })
                         .blockLast();
                 if (context.isExpired() || state.nanoTimeSource.getAsLong() >= deadlineNanos) {
-                    // Deadline passed while the stream was being drained: never
-                    // report success, never record success metrics, end as AI_TIMEOUT.
                     throw new AiUpstreamException("AI_TIMEOUT", null, correlationId);
                 }
                 if (context.isCancelled()) {
-                    // Client aborted while the stream was being drained.
                     throw new AiUpstreamException("AI_CANCELLED", null, correlationId);
                 }
                 if (text.isEmpty()) {
@@ -159,8 +144,6 @@ final class AiGatewayStreamExecutor {
                 throw metrics.finishFailure(new AiUpstreamException(
                         marker.code, null, correlationId, marker), retryCount, request, failurePolicy);
             } catch (final ConsumerAbortException abort) {
-                // The consumer (SSE sink) aborted the stream: propagate its
-                // exception untouched so the caller can react to it.
                 throw abort.getCause();
             } catch (final OpenAIException e) {
                 final AiUpstreamException failure = new AiUpstreamException(
@@ -198,11 +181,6 @@ final class AiGatewayStreamExecutor {
         }
     }
 
-    /**
-     * Internal signal raised inside the stream drain loop when the total budget
-     * expired or the client cancelled mid-stream, so the stream terminates
-     * immediately instead of waiting for the next upstream chunk.
-     */
     private static final class StreamInterruptedMarker extends RuntimeException {
         private final String code;
 
@@ -212,10 +190,6 @@ final class AiGatewayStreamExecutor {
         }
     }
 
-    /**
-     * Wraps an exception thrown by the {@link StreamConsumer} so the stream
-     * drain loop can distinguish "caller aborted" from upstream failures.
-     */
     private static final class ConsumerAbortException extends RuntimeException {
         ConsumerAbortException(final RuntimeException cause) {
             super(cause);

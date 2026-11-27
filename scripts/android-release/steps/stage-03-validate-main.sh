@@ -16,8 +16,6 @@ if [ "$BUILD_SHA" != "$ORIGIN_MAIN" ]; then
   echo "::error::Release must run from origin/main HEAD (checked out $BUILD_SHA != origin/main $ORIGIN_MAIN)." >&2
   exit 1
 fi
-# mode=stage 的版本权威永远是当前 main 的 android/gradle.properties：
-# version 输入只在 mode=publish 有意义，这里显式忽略（重复 dispatch 时不会静默改变行为）。
 if [ -n "$INPUT_VERSION" ]; then
   echo "::notice::version input '$INPUT_VERSION' is ignored for mode=stage; staging uses the committed android/gradle.properties."
 fi

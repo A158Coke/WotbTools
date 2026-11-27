@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# latest publication: publish from current main, or from an older main whose
-# service inputs are unchanged; otherwise report "superseded" (exit 10) instead of failing.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
@@ -28,7 +26,6 @@ expect() {
 
 expect 0 'current main'
 
-# main advances without touching this service → still publish
 printf 'b\n' > other/file
 git commit -qam unrelated
 git push -q origin main
@@ -36,7 +33,6 @@ git checkout -q "$old"
 expect 0 'main advanced, inputs unchanged'
 grep -Fq "inputs are unchanged" "$WORK/output"
 
-# main advances and changes this service's inputs → superseded, not a failure
 git checkout -q main
 printf 'b\n' > service/input
 git commit -qam related
@@ -45,7 +41,6 @@ git checkout -q "$old"
 expect 10 'main advanced, inputs changed'
 grep -Fq 'Skipping latest publication' "$WORK/output"
 
-# without declared inputs any advance counts as superseded
 PRODUCTION_INPUT_PATHS='' expect 10 'no input paths declared'
 
 echo 'latest publication publishes fresh inputs and skips superseded builds: PASS'

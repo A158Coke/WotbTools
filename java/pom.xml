@@ -74,8 +74,6 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
                     <configuration>
-                        <!-- 保留方法参数名: Spring MVC 的 @RequestParam/@PathVariable 隐式命名依赖它
-                             (本父 pom 未继承 spring-boot-starter-parent, 否则默认即开)。 -->
                         <parameters>true</parameters>
                     </configuration>
                 </plugin>
@@ -102,9 +100,6 @@
                                     <version>[3.9.0,4.0.0-alpha)</version>
                                 </requireMavenVersion>
                                 <banDuplicatePomDependencyVersions/>
-                                <!-- 不可变模型用 record，可变模型用公有字段 POJO；
-                                     Lombok 注解是 SOURCE retention（编译后不留字节码），依赖声明层拦截
-                                     是唯一可靠的机械门禁，覆盖 wotb-core / wotb-web / wotb-ai 全部 scope。 -->
                                 <bannedDependencies>
                                     <excludes>
                                         <exclude>org.projectlombok:lombok</exclude>
@@ -155,10 +150,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- #821 negative fixture：证明 bannedDependencies 的 Lombok 禁令真的会红。
-                 src/it/lombok-ban 声明 org.projectlombok:lombok，invoker 以
-                 invoker.buildResult=failure 断言子构建失败，verify.groovy 断言
-                 enforcer 的预期报错文案。只在 parent 自身运行（inherited=false）。 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-invoker-plugin</artifactId>

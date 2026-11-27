@@ -6,7 +6,6 @@ import OnboardingHost from '../components/OnboardingHost.vue'
 import { ONBOARDING_GUIDES } from '../composables/useOnboarding.js'
 import { messages } from '../locales/messages.js'
 
-/** Register a fresh onboarding harness and DOM cleanup for one test file. */
 export function createOnboardingHostTestHarness({ getWrappers, setWrappers }) {
   let originalFullscreen
   let originalExitFullscreen

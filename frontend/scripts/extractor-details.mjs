@@ -31,10 +31,8 @@ export function buildFeatureAudit(args) {
     }
     return minX === 1e9 ? { min: [-2, -5], max: [2, 5] } : { min: [minX, minY], max: [maxX, maxY] }
   }
-  // bounds 优先来自调用方（真实投影计算）；否则从 source 几何推断——无车型专属硬编码
   const hb = hullBounds || inferBounds(sourceHull)
   const tb = turretBounds || inferBounds(sourceTurret)
-  // hull/turret 相对位置（模型坐标 y：+y 前、-y 后；通用比例 0.6 分带）
   const hullLen = hb.max[1] - hb.min[1]
   const hullPos = (cy) => (cy > hb.min[1] + hullLen * 0.6 ? 'front' : cy < hb.max[1] - hullLen * 0.6 ? 'rear' : 'center')
   const turLen = tb.max[1] - tb.min[1]
@@ -123,7 +121,6 @@ export function extractMajorEdges(triangles3d, opts = {}) {
   const heightDeltaM = opts.heightDeltaM ?? 0.15
   const normalDeltaCos = opts.normalDeltaCos ?? 0.995
   const minEdgeLenM = opts.minEdgeLenM ?? 1.0
-  // 三角形索引 → 法线/重心 z/投影边
   const tris = triangles3d.map((tri) => {
     const n = triangleNormal(tri[0], tri[1], tri[2])
     const len = Math.hypot(n[0], n[1], n[2])
@@ -140,7 +137,6 @@ export function extractMajorEdges(triangles3d, opts = {}) {
       ],
     }
   })
-  // 边表（按 3D 顶点坐标归一化 key）
   const keyOf = (a, b) => {
     const pa = a.map((v) => v.toFixed(6)).join(',')
     const pb = b.map((v) => v.toFixed(6)).join(',')
@@ -156,18 +152,13 @@ export function extractMajorEdges(triangles3d, opts = {}) {
   }
   const out = []
   for (const { a, b, tris: owners } of edgeMap.values()) {
-    if (owners.length < 2) continue // 外轮廓边交给 Layer A
+    if (owners.length < 2) continue
     const lenM = Math.hypot(a[0] - b[0], a[1] - b[1])
     if (lenM < minEdgeLenM) continue
-    // 按 top-facing / 非 top-facing 邻居分组（一条边可被 >2 个三角形共享）
     const topOwners = owners.filter((i) => tris[i].nz > topFacingCos)
     const nonTopOwners = owners.filter((i) => tris[i].nz <= topFacingCos)
     let reason = null
     if (topOwners.length >= 1 && nonTopOwners.length >= 1) {
-      // 顶面边缘边：顶面 + 垂直壁邻居 → 平台/甲板边缘。
-      // 壁高（非 top-facing 邻居的顶点 z 跨度）必须显著（> heightDeltaM）：
-      // 低模斜面网格的面片台阶壁（~0.05-0.1m）是 tessellation，不输出；
-      // 用顶点 z 跨度而非三角形重心（重心会把壁高低估一半）。
       const wallDelta = Math.max(
         ...nonTopOwners.map((i) => {
           const zs = tris[i].edges.flat().map((p) => p[2])
@@ -180,8 +171,6 @@ export function extractMajorEdges(triangles3d, opts = {}) {
       const t2 = tris[topOwners[1]]
       const heightDelta = Math.abs(t1.z - t2.z)
       const dot = t1.normal[0] * t2.normal[0] + t1.normal[1] * t2.normal[1] + t1.normal[2] * t2.normal[2]
-      // 高度差驱动（主判据）；法线突变仅在伴随显著高度差时辅助触发。
-      // normalDeltaCos 收紧（~5°）：同一平滑曲面内的面片法线微小差异不算 feature。
       if (heightDelta > heightDeltaM) reason = 'height'
       else if (heightDelta > heightDeltaM * 0.6 && dot < normalDeltaCos) reason = 'normal'
     }
@@ -271,9 +260,6 @@ export function classifyDetail(detail, opts = {}) {
   return 'vehicle-secondary'
 }
 
-/**
- * top surfaces → SVG fill paths（每层一个区域 path，含 holes）。
- */
 export function surfacesToSvgPaths(surfaces, fit, fill) {
   const paths = []
   for (const s of surfaces) {
@@ -282,9 +268,6 @@ export function surfacesToSvgPaths(surfaces, fit, fill) {
   return paths
 }
 
-/**
- * major edges → SVG stroke path（合并为一条 d，多 M 段）。
- */
 export function edgesToSvgPath(edges, fit, stroke) {
   if (edges.length === 0) return null
   const d = edges

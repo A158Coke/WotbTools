@@ -55,7 +55,6 @@ describe('aiReviewSse runtime guards', () => {
     expect(isAiReviewResult(event.result)).toBe(true)
     expect(isAiReviewEvent(event)).toBe(true)
 
-    // Current ReplaySseWriter omits capability and old responses may omit both optional fields.
     expect(parseAiReviewEvent('done', { analysis: '兼容结果' })).toEqual({
       type: 'done',
       result: { analysis: '兼容结果', preBattleSection: undefined },

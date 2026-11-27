@@ -1,4 +1,3 @@
-// Pure fixture factories for penetration tests; each call returns fresh mutable values.
 export function hit(section, thickness, point, extra = {}) {
   return {
     section,

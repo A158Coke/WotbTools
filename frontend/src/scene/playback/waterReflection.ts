@@ -1,47 +1,25 @@
-// 水面 HIGH/ULTRA 档：动态平面反射（客户端 `REAL_REFLECTION` 的查看器实现）。
-//
-// 客户端 HIGH = `PIXEL_LIT + REAL_REFLECTION + FRESNEL_TO_ALPHA`：反射来自**当帧场景**
-// （water-fp.sl 采样 dynamicReflection，投影坐标 + 波法线 × reflectionDistortion）。
-// 本模块用镜像相机把场景渲进半分辨率 RT，水面着色时按屏幕 UV 取样；MEDIUM 档仍用
-// 逐图 cubemap（uUseReflection=0，行为不变）。
-//
-// 边界：水面自身在反射 pass 中隐藏（否则镜像相机会看到背面）；斜裁剪面只保留水面
-// 以上几何（防止水下地形/倒影穿帮）。未启用/无水面/相机在水下时跳过，不产生 RT。
 import * as THREE from 'three'
 
-/** RT 相对主画面尺寸（客户端 HIGH 档用半分辨率）。 */
 export const WATER_REFLECTION_SCALE = 0.5
-/** 斜裁剪面深度偏置（防共面漏光）。 */
 const CLIP_BIAS = 0.003
 
 export interface WaterReflectionOptions {
   getWaterMeshes: () => THREE.Object3D[] | null | undefined
   getWaterLevel: () => number | null | undefined
-  /** RT 相对主画面比例（画质档表；缺省 0.5） */
   scale?: number
-  /** 反射 pass 更新间隔帧数（1 = 每帧；≤0 按 1 处理） */
   intervalFrames?: number
-  /** 反射 pass 期间隐藏的覆盖层根（草/战斗特效/标注；缺省无） */
   getExcludedRoots?: () => Array<THREE.Object3D | null | undefined> | null | undefined
 }
 
 export interface WaterReflection {
-  /** 每帧主渲染前调用；内部负责 resize / 镜像渲染 / uniform 回填。 */
   update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, timer?: { begin(pass: string): boolean; end(): void } | null): void
   setEnabled(on: boolean): void
-  /** 请求下一帧强制刷新一次（seek / 按需渲染的单次 dirty frame；不受隔帧间隔限制）。 */
   requestRefresh(): void
-  /** 运行时按画质档调整 RT 比例/更新间隔（RT 尺寸在下一帧按新比例惰性重建）。 */
   configure(options: { scale?: number; intervalFrames?: number }): void
-  /** 诊断/单测：当前反射 RT（未创建时为 null）。 */
   debugTarget(): THREE.WebGLRenderTarget | null
   dispose(): void
 }
 
-/**
- * 水平镜面（世界 y=level）的镜像相机（纯函数，单测锚点）。
- * 相机在水面以下 / 与水面重合时返回 false（不产生无效反射）。
- */
 export function mirrorCameraForPlane(
   camera: THREE.PerspectiveCamera,
   level: number,
@@ -52,12 +30,9 @@ export function mirrorCameraForPlane(
   const forward = new THREE.Vector3()
   camera.getWorldDirection(forward)
   forward.y *= -1
-  // up 必须取**相机实际朝向基**（matrixWorld 的 Y 列），不能取 `camera.up` 配置值：
-  // 正俯视时配置值仍是 (0,1,0)，与反射后的 forward 共线 ⇒ lookAt NaN。Reflector 同式。
   const rotation = new THREE.Matrix4().extractRotation(camera.matrixWorld)
   const up = new THREE.Vector3(0, 1, 0).applyMatrix4(rotation)
   up.y *= -1
-  // 真正的退化（反射后 up 与 forward 共线）才 fail-closed；正常正俯视不会命中。
   if (Math.abs(up.dot(forward)) > 0.9999) return false
   out.up.copy(up)
   out.lookAt(out.position.clone().add(forward))
@@ -69,7 +44,6 @@ export function mirrorCameraForPlane(
   out.updateMatrixWorld(true)
   out.matrixWorldInverse.copy(out.matrixWorld).invert()
 
-  // 斜近裁剪面：把 near plane 贴到水面上（Reflector 同式），只保留水面上方几何。
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -level)
   plane.applyMatrix4(out.matrixWorldInverse)
   const clip = new THREE.Vector4(plane.normal.x, plane.normal.y, plane.normal.z, plane.constant)
@@ -107,18 +81,14 @@ export function createWaterReflection({
   let targetW = 0
   let targetH = 0
   const virtualCamera = new THREE.PerspectiveCamera()
-  // bias × 镜像相机 VP：把世界坐标投到反射 RT 的 [0,1] 纹理坐标（Reflector 同式）
   const reflectionMatrix = new THREE.Matrix4()
   const materials = new Set<THREE.ShaderMaterial>()
   const lastReflectionTex: { value: unknown } = { value: null }
-  // 水面世界包围体（保守可见性剔除）：水面按地图静态，按 meshes 数组引用缓存；
-  // 换图/重建会换新数组 → 自动重算。任何几何/包围体异常都 fail-open（照常绘制）。
   const waterBounds = new THREE.Box3()
   const frustum = new THREE.Frustum()
   const projScreen = new THREE.Matrix4()
   let boundsKey: THREE.Object3D[] | null = null
   let boundsValid = false
-  // 上一帧水面是否在主相机视锥内：用于把「不可见 → 可见」当成一次本帧刷新事件。
   let lastWaterVisible = true
 
   function collectMaterials(meshes: THREE.Object3D[]): void {
@@ -156,7 +126,6 @@ export function createWaterReflection({
     boundsValid = true
   }
 
-  /** 主相机视锥与水面世界包围体相交 = 可能可见；不确定（无几何/包围体异常）一律返回 true。 */
   function waterProbablyVisible(camera: THREE.PerspectiveCamera, meshes: THREE.Object3D[]): boolean {
     camera.updateMatrixWorld()
     refreshWaterBounds(meshes)
@@ -180,7 +149,6 @@ export function createWaterReflection({
       depthBuffer: true,
       stencilBuffer: false,
     })
-    // 与主画面同一个输出色彩空间（否则倒影会整体偏亮/偏暗）
     target.texture.colorSpace = THREE.SRGBColorSpace
     targetW = w
     targetH = h
@@ -192,9 +160,6 @@ export function createWaterReflection({
     update(renderer, scene, camera, timer) {
       if (!enabled) return
       frame++
-      // 画质档可把反射降为隔帧更新（W3）：跳过帧保留上一张 RT/uniform，不重建。
-      // 但按需渲染的 seek/相机静止场景只有一次 dirty frame，不能吞掉——requestRefresh
-      // 让该帧无条件刷新；否则反射会停在 seek 前的车辆位置（下一次 rAF 也不再画）。
       const scheduled = forceRefresh || updateInterval <= 1 || (frame - 1) % updateInterval === 0
       const level = getWaterLevel()
       const meshes = getWaterMeshes()
@@ -206,20 +171,14 @@ export function createWaterReflection({
         }
         return
       }
-      // 可见性转移本身也是刷新事件：隔帧档从视锥外重入时，不能等到下一个到期帧，
-      // 否则主画面已经出现水面、倒影却仍是离开前的旧 RT（Recorder 开/退镜同理，
-      // 那里另有显式 requestRefresh）。可见性每帧判断，代价只是一次包围体视锥测试。
       const visible = waterProbablyVisible(camera, meshes)
       const reentered = visible && !lastWaterVisible
       lastWaterVisible = visible
       if (!scheduled && !reentered) return
-      // 保守剔除：水面完全不在主相机视锥内时跳过整个镜像 pass（含 RT 重建/场景二次绘制）。
-      // 不确定可见时照旧绘制；被剔除的帧不吃掉 requestRefresh，等真正可见的帧再强制刷新。
       if (!visible) return
       forceRefresh = false
       collectMaterials(meshes)
       if (!mirrorCameraForPlane(camera, level, virtualCamera)) {
-        // 相机在水下/正俯视：本帧回退 cubemap，避免采样上一帧的旧 RT。
         for (const mat of materials) mat.uniforms.uUseReflection.value = 0
         return
       }
@@ -234,8 +193,6 @@ export function createWaterReflection({
       ensureTarget(renderer)
       if (!target) return
 
-      // 反射 pass 的覆盖层剔除（W3）：草/战斗特效/标注原本直接进镜像 RT，
-      // 既抬高填充成本，也让贴地标注在水里出现镜像副本；渲染期临时隐藏、随后恢复。
       const excluded = (getExcludedRoots?.() || []).filter((o): o is THREE.Object3D => !!o)
       const prevVisible = meshes.map((m) => m.visible)
       for (const m of meshes) m.visible = false
@@ -264,7 +221,6 @@ export function createWaterReflection({
     setEnabled(on) {
       enabled = on
       if (!on) {
-        // 关档即释放 RT（W3 验收：切档后无残留 RT）；再开档在下一帧按当前比例重建。
         for (const mat of materials) {
           mat.uniforms.uUseReflection.value = 0
           if (mat.uniforms.uReflectionTex) mat.uniforms.uReflectionTex.value = null

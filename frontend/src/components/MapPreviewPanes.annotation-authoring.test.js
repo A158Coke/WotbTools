@@ -23,7 +23,6 @@ vi.mock('vue-i18n', () => ({
   }),
 }))
 
-/** BattleMap 打桩为渲染数量探针：标注列表经 renderedAnnotations、基地经 bases 进入展示层。 */
 vi.mock('./BattleMap.vue', () => ({
   default: {
     name: 'BattleMap',
@@ -124,7 +123,6 @@ describe('MapPreview2DPane 完整 tactical annotation', () => {
     await wrapper.find('[data-test="pb-annot-route"]').trigger('click')
     await pointer(wrapper, 'pointerdown', 100, 100)
     await pointer(wrapper, 'pointerup', 100, 100)
-    // 单点 route 仍只是未提交 draft；Finish 前不得进入 history/可见路径。
     expect(rendered(wrapper).filter(a => a.type === 'route' && a.points.length >= 2)).toHaveLength(0)
     await pointer(wrapper, 'pointerdown', 200, 160)
     await pointer(wrapper, 'pointerup', 200, 160)

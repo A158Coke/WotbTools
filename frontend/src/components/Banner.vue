@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { CircleAlert, Info, TriangleAlert } from 'lucide-vue-next'
 
-// 页面级状态提示（design-language §7 / §10）：失败必须可见，不静默。
 const props = defineProps({
   tone: { type: String, default: 'info', validator: v => ['info', 'warning', 'danger'].includes(v) },
 })

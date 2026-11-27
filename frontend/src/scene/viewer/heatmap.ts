@@ -1,6 +1,3 @@
-// 穿透热力图 / 装甲渲染管线（#820 Agent A 出仓）：RT 机械、间隙甲/主装甲/状态通道
-// 场景、跳弹续飞网格、HE 溅射可视化与逐帧渲染 pass 的唯一 owner。
-// 原 tankViewer.js 闭包内对应函数整体平移；材质语义注释见 viewer/armorShaders.ts。
 import * as THREE from 'three'
 import {
     shellTypeOf, shellAngles,
@@ -72,16 +69,13 @@ export function createHeatmapPipeline(deps: HeatmapDeps) {
         equipmentCoeffs, resolveCaliberFor, applyArmorViewStyle,
         applyCategoryFilters: applyCategoryFiltersFn,
     } = deps
-    // 穿透材质族的**每实例**运行态（分辨率/跳弹 uniforms/占位纹理 + 绑定它们的材质工厂）。
-    // 不能是模块单例：两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 的 uniforms
-    //（评审 P1）。解构命名与拆分前一致，消费点零改动。
     const armorShaders = createArmorShaderContext();
     const {
         rcUniforms,
         penetrationMaterial, externalMaterial, spacedMaterial, spacedStateMaterial, moduleStateMaterial,
         emptySpacedTexture,
     } = armorShaders;
-    let heHeatmapCenter: THREE.Vector3 | null = null;    // HE 爆点（世界系）；null = 热力图 HE 分支透明
+    let heHeatmapCenter: THREE.Vector3 | null = null;
     const { disposeSceneMaterials } = createHeatmapMaterialDisposal(emptySpacedTexture)
     const heVisual = createHeSplashVisual(deps)
     const { disposeHeSplashVisual, updateHeSplashVisual } = heVisual
@@ -93,12 +87,10 @@ export function createHeatmapPipeline(deps: HeatmapDeps) {
     const _gunClipMatrix = new THREE.Matrix4();
     let spacedArmorScene: THREE.Scene | null = null;
     let primaryArmorScene: THREE.Scene | null = null;
-    // 状态通道场景/目标（RT1）：只有最近间隙板能写状态（不可累加）——见 SPACED_STATE_FRAG
     let spacedStateScene: THREE.Scene | null = null;
     const ricochet = createHeatmapRicochet(deps, rcUniforms)
     const { rebuildRicochetPack, prepareRicochetFrame, updateCollisionWorldMatrices, syncRicochetEnabled, collectRicochetEntries } = ricochet
     const omitMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: true, depthWrite: true });
-    // 间隙甲深度占位也必须双面：背面命中的间隙屏要参与遮挡/深度（与着色双面一致）。
     const spacedOmitMaterial = new THREE.MeshBasicMaterial({
         colorWrite: false, depthTest: true, depthWrite: true, side: THREE.DoubleSide,
     });
@@ -131,10 +123,6 @@ function ensurePenetrationRT() {
             const rtType = spacedRTFloatCapable() ? THREE.HalfFloatType : THREE.UnsignedByteType;
             if (!penetrationRT) {
                 const c = getRenderer().domElement;
-                // stencilBuffer：开放间隙板 front 写/back 测的同板去重位（厚度通道按
-                // 去重键每射线只计一次；spacedStateRT 状态通道深度独占，不需要）。
-                // 深度纹理由 createDepthStencilTexture 统一构造（DepthStencilFormat，
-                // 首建与 resize 重建同源）；spacedStateRT 不需要 stencil。
                 penetrationRT = new THREE.WebGLRenderTarget(c.width, c.height, {
                     type: rtType,
                     depthTexture: createDepthStencilTexture(c.width, c.height),
@@ -163,8 +151,6 @@ function syncPenetrationRT() {
             const rt = ensurePenetrationRT();
             const c = getRenderer().domElement;
             const w = c.width, h = c.height;
-            // resize 重建深度纹理必须走同一工厂（DepthStencilFormat + stencilBuffer），
-            // 否则首次 resize 后 stencil 附件消失、去重静默失效（review P1，2026-11-06）。
             if (!rt.depthTexture || rt.depthTexture.width !== w || rt.depthTexture.height !== h) {
                 if (rt.depthTexture) rt.depthTexture.dispose();
                 rt.depthTexture = createDepthStencilTexture(w, h);
@@ -187,10 +173,6 @@ function computeGunClipPlane() {
             if (!models.tankModel) return;
             const maskOriginModel = gunMaskOriginModel(getTankData(), cfg);
             if (maskOriginModel == null) return;
-            // BlitzKit 同式：裁切面定义在枪管局部系（模型系）——法线 = 模型前向 +Y，过模型
-            // 原点前方 maskOriginModel 处；再乘炮塔/炮管姿态矩阵（绕各自枢轴）与模型根变换
-            // 进世界系。不能只取「模型原点 + 当前炮口方向 × 距离」：转炮塔/俯仰后平面应绕
-            // 枢轴旋转，否则裁切位置会随姿态漂移（与 BlitzKit 不一致）。
             models.tankModel.updateMatrixWorld(true);
             const plane = _gunClipPlaneObj.setFromNormalAndCoplanarPoint(
                 new THREE.Vector3(0, 1, 0),
@@ -210,7 +192,7 @@ function collectPenetrationMeshes() {
 
 function updateHeatmapThickness() {
             const { thickMul } = equipmentCoeffs();
-            rcUniforms.rcThickMul.value = thickMul;   // 续飞层链厚度系数与主图同源
+            rcUniforms.rcThickMul.value = thickMul;
             const apply = function(obj: THREE.Object3D | null) {
                 if (!obj) return;
                 obj.traverse(function(node){
@@ -330,9 +312,6 @@ function disposePenetrationResources() {
             disposeSceneMaterials(primaryArmorScene);
             disposeSceneMaterials(spacedArmorScene);
             disposeSceneMaterials(spacedStateScene);
-            // 三个 Scene 清空后必须一并置 null：调用方（syncHeatOverlay / animate /
-            // 模式往返重建）都以引用是否为 null 判断「叠加层是否可用」。留着空 Scene，
-            // 释放后再需要渐变时只会去更新一个空场景的 uniform，重建永不发生（评审 P2）。
             primaryArmorScene = null;
             spacedArmorScene = null;
             spacedStateScene = null;
@@ -386,16 +365,9 @@ function applyPenetrationMode(on: boolean) {
             if (!on) {
                 if (heVisual.getGroup()) heVisual.getGroup()!.visible = false;
                 models.armorModel.visible = true;
-                // 回到进入热力图前的视图样式（getCollisionMode() 仍开启则恢复碰撞视图）。
-                // 不触碰模块网格可见性：热力图开启路径从不隐藏它们；此前在这里按
-                // "mask 无值→隐藏 gunMaskPart" 重写视觉模型，会把 gun_XX_mask 炮盾视觉
-                // 永久藏掉（有 mask 值的车则反向把 hide_elements 拆件点亮）——该规则只属于
-                // collectPenetrationMeshes 的热力图外层网格选取
                 applyArmorViewStyle(getCollisionMode());
                 getRenderer().autoClear = true;
                 getRenderer().setRenderTarget(null);
-                // HE 渐变仍需叠加层（默认视图 + HE + 爆点）→ 保留机械并切渐变语义；
-                // 否则照旧释放。保留/释放统一由 syncHeatOverlay 裁决。
                 syncHeatOverlay();
                 return;
             }
@@ -411,9 +383,6 @@ function updatePenetrationUniforms(sh: ShellSpec) {
             const t = shellTypeOf(sh);
             const isHE = t === 'he';
             const isExplosive = isHE || t === 'heat';
-            // 深度遮罩对所有弹种保持开启：热力图只给相机可见的首层主装甲上色。
-            // HE 也不能例外——否则后层主装甲的颜色会穿透前板叠到画面上，
-            // 看起来像“着色落在主装甲上”，实际取的是后层板的伤害。
             excludeMaterial.visible = true;
             syncRicochetEnabled(sh);
             const cal = resolveCaliberFor(sh);
@@ -438,14 +407,11 @@ function updatePenetrationUniforms(sh: ShellSpec) {
                 if (u.heCenter && heHeatmapCenter) u.heCenter.value.copy(heHeatmapCenter);
             };
             if (primaryArmorScene) primaryArmorScene.traverse(function(node){ if ((node as THREE.Mesh).isMesh) applyTo(node); });
-            // 切到非 HE 时清掉旧爆点/采样可视化；切回 HE 时保留到下一次点击。
             if (!isHE) {
                 heHeatmapCenter = null;
                 disposeHeSplashVisual();
                 updateHeHeatmapUniforms();
             } else {
-                // 切换 HE/HESH 弹种时爆炸半径会变：旧球的 SphereGeometry 半径必须重建，
-                // 否则球面与当前热力图不一致（评审 P2）。爆点保留到下一次点击。
                 const nextRadius = sh.explosion_radius || 0;
                 if (heVisual.getGroup() && heHeatmapCenter && nextRadius > 0
                     && heVisual.getGroup()!.userData.radius !== nextRadius) {

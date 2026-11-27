@@ -26,12 +26,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 阶段时间线（阶段边界 + 双方存活人数）prompt 契约（阶段 2）。
- * <p>断言四入口（团队 single + 随机战 harness/fallback/完整特征）均注入阶段时间线段：
- * 人数正确（案例：我方死 2、敌方死 3 的时段输出 5 打 4 而非 5 打 7）、X分XX秒、
- * 无 raw team、无裸秒数、人数不可算写未知、预算超限可省略且书签段完好。</p>
- */
 class BattlePhaseTimelineEvidenceTest {
 
     @Test
@@ -45,8 +39,6 @@ class BattlePhaseTimelineEvidenceTest {
     private static final String TEAM_SECTION_HEADER = "=== BATTLE_PHASES ===";
     private static final String HARNESS_SECTION_MARKER = "BATTLE PHASE SUMMARY";
 
-    // ---- fixture：7v7（录像者 1 队）。我方阵亡 60s/70s，敌方阵亡 62s/64s/66s，战局 180s ----
-    // 中期 [60,180]：我方死 2 → 存活 5；敌方死 3 → 存活 4（5 打 4）
 
     private static Battle battle() {
         final Battle b = new Battle();
@@ -99,7 +91,6 @@ class BattlePhaseTimelineEvidenceTest {
                 BattlePhaseSummary.SurvivalTimeline.fromBattleResults(battleWithUnknownEnemyDeath(), 1));
     }
 
-    /** 敌方 2006 阵亡但死亡时刻缺失 → 敌方存活人数不可算（UNKNOWN），我方不受影响。 */
     private static Battle battleWithUnknownEnemyDeath() {
         final Battle b = battle();
         final List<PlayerResult> players = new ArrayList<>(b.players);
@@ -121,7 +112,6 @@ class BattlePhaseTimelineEvidenceTest {
         return next < 0 ? rest : rest.substring(0, next);
     }
 
-    /** 从 fromHeader 截取到 toMarker（不含）之间的内容。 */
     private static String between(final String content, final String fromHeader, final String toMarker) {
         final int start = content.indexOf(fromHeader);
         assertTrue(start >= 0, "content must contain section header [" + fromHeader + "]:\n" + content);
@@ -129,7 +119,6 @@ class BattlePhaseTimelineEvidenceTest {
         return end < 0 ? content.substring(start) : content.substring(start, end);
     }
 
-    // ---- 团队 single ----
 
     private static String teamSingleContent(final List<BattlePhaseSummary> phases) {
         final TeamBattleFeatureSet features = new TeamBattleFeatureSet(
@@ -146,17 +135,14 @@ class BattlePhaseTimelineEvidenceTest {
     void teamSingleInjectsPhaseTimelineWithFiveVsFour() {
         final String section = betweenHeaders(teamSingleContent(phasesWithSurvival()), TEAM_SECTION_HEADER);
 
-        // 中期 [1分00秒-3分00秒]：我方死 2 → 5、敌方死 3 → 4（5 打 4）
         assertTrue(section.contains("phase[1分00秒-3分00秒]"), section);
         assertTrue(section.contains("type=中期"), section);
         assertTrue(section.contains("阶段末friendlyAlive=5"), section);
         assertTrue(section.contains("阶段末enemyAlive=4"), section);
         assertTrue(section.contains("denseKills=true"), "密集击杀段必须标注：" + section);
-        // 开局 [0分00秒-0分45秒]：7 打 7
         assertTrue(section.contains("phase[0分00秒-0分45秒]"), section);
         assertTrue(section.contains("阶段末friendlyAlive=7"), section);
         assertTrue(section.contains("阶段末enemyAlive=7"), section);
-        // 权威口径
         assertTrue(section.contains("不得猜测"), section);
     }
 
@@ -182,7 +168,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertFalse(section.contains("enemyAlive=4"), section);
     }
 
-    // ---- 随机战 harness（Call #2） ----
 
     private static TacticalReviewPromptBuilder.PreparedHarnessPrompt prepareHarness(
             final List<BattlePhaseSummary> phases, final int contextWindow) {
@@ -232,7 +217,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(content.contains("======================== TASK"), "书签段不得被裁剪");
     }
 
-    // ---- fallback（随机战旧路径） ----
 
     @Test
     void fallbackInjectsPhaseTimelineWithSurvival() {
@@ -240,7 +224,6 @@ class BattlePhaseTimelineEvidenceTest {
         final String content = prepared.userPrompt();
         final String section = betweenHeaders(content, PLAYER_SECTION_HEADER);
 
-        // fallback 无首次接敌：阶段为 开局[0,45] / 中期[45,180] / 残局[180,180]
         assertTrue(section.contains("[0分45秒-3分00秒] 中期"), section);
         assertTrue(section.contains("至阶段末 我方存活 5"), section);
         assertTrue(section.contains("我方存活 5 敌方存活 4"), section);
@@ -288,7 +271,6 @@ class BattlePhaseTimelineEvidenceTest {
         assertTrue(content.contains("地图"), "fallback 其余内容不受影响");
     }
 
-    // ---- 完整特征路径（prepareFull） ----
 
     @Test
     void fullPathInjectsPhaseTimelineWithSurvival() {
@@ -300,7 +282,6 @@ class BattlePhaseTimelineEvidenceTest {
         final PreparedAiPrompt prepared = PlayerReplayPromptBuilder.prepareFull(
                 ctx, null, ESTIMATOR, 100_000, 131_072, 8192, 1000);
         final String content = prepared.userPrompt();
-        // 完整特征路径中阶段段之后还有「覆盖: 1.0」等后续行，截取到该标记为止
         final String section = between(content, PLAYER_SECTION_HEADER, "\n覆盖:");
 
         assertTrue(section.contains("[1分00秒-3分00秒] 中期"), section);

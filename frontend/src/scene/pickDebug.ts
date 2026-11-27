@@ -1,14 +1,6 @@
-// 场景拾取调试（?admin=1 / ?debug=1 且 dev 构建生效）：点击 3D 场景 → 报告被点物体的
-// 节点名 / 游戏场景系坐标 / destructibles.json 实例（id、serverId cell+slot、类别）等，
-// 供「玩家指认 → 开发者定位」的排障回路使用。本文件只放纯函数（可单测）；
-// 射线拾取、标记与面板接线在 playbackScene.js。
-//
-// 坐标约定与 destructibles.js 一致：游戏场景系 = gltf.scene 局部系（x/y 水平、z 上），
-// 即 destructibles.json `pos` 与 scenery.glb 节点位置所用坐标系（直接对应回放 x/z）。
 import type { Object3D } from 'three'
 import type { DestructibleInstance } from './destructibles.js'
 
-/** 节点 → 命名祖先链（自底向上，只收集有 name 的层级；到 stopAt 为止不含 stopAt） */
 export function nameChainOf(object: Object3D | null | undefined, stopAt: Object3D | null = null): string[] {
   const out: string[] = []
   let o = object
@@ -19,18 +11,11 @@ export function nameChainOf(object: Object3D | null | undefined, stopAt: Object3
   return out
 }
 
-/** 可见性链检查的最小节点面（three Object3D 与 playback/annotationSurface 的结构化替身都兼容）。 */
 export interface VisibilityChainNode {
   visible?: boolean
   parent?: VisibilityChainNode | null
 }
 
-/**
- * 命中对象 → 整条祖先链是否可见（Raycaster 不按 Object3D.visible 过滤：
- * 隐藏的 D_ 损毁替换网格、sky、隐藏父节点下的车辆都会被 intersect 命中，
- * 拾取前必须按链上可见性筛选，否则报告指向画面里不存在的模型）。
- * stopAt 及其祖先不计入（如场景根）。
- */
 export function chainVisible(
   object: VisibilityChainNode | Object3D | null | undefined,
   stopAt: VisibilityChainNode | Object3D | null = null,
@@ -43,11 +28,6 @@ export function chainVisible(
   return true
 }
 
-/**
- * 点击位置 → 完整清单里最近的实例（destructibles.json 的 instances 全集，
- * 与本局是否发生过破坏事件无关——事件状态表只含被撞过的物体）。
- * 超出 radiusM / 空列表 → null（调用方按「非可破坏物」呈现）。
- */
 export function nearestInstance(
   instances: readonly (DestructibleInstance | null | undefined)[] | null,
   sx: number,
@@ -69,23 +49,10 @@ export function nearestInstance(
   return best
 }
 
-/**
- * 全量实例 × findMeshes → mesh → 实例 精确归属表（拾取主路径）。
- * 树梢等远离实例锚点的命中点按「命中网格属于哪棵树」归属——距离查询会把
- * 6m 倒树的树梢错联到旁边更近的邻树（评审实测 id=7→id=8）。
- * D_ 损毁态网格一并归属（倒下后点击同样能报 id）。
- */
-/**
- * 实例化槽位模型（perf 分支）：场景网格合批为 InstancedMesh，射线命中携带
- * `hit.object`（批次 mesh）+ `hit.instanceId`（槽位下标）——归属表与查询都用
- * `mesh.uuid#instanceId` 复合键。值携带 `{ inst, name }`：inst 供状态关联，
- * name 保留原节点名（合批后原 Mesh 已摘除，报告仍能报出真实物体名）。
- */
 export function meshOwnerKey(mesh: { uuid: string }, instanceId: number | null | undefined): string {
   return `${mesh.uuid}#${instanceId}`
 }
 
-/** findMeshes 的命中条目（场景侧实例化批次装配的投影）。 */
 export interface PickMeshEntry {
   batch: { mesh: { uuid: string } }
   idx: number
@@ -114,18 +81,9 @@ export function buildMeshOwnerMap(
 
 
 
-/**
- * 命中状态 → 当前视觉状态标签（读装配层的实时对象图，非回放指针推断）：
- * - prop=3（树倒）：pivot 带非恒定四元数 = 已倒/倒伏中；
- * - prop=1/2（换模）：损毁态网格可见且完好态不可见 = destroyed。
- * 无状态对象图时 label 恒 'intact'（fail-open，只影响展示不影响拾取）。
- */
-/** 装配层的实例状态对象图（stateVisualLabel 消费；prop=3 为树倒）。 */
 export interface PickInstanceState {
   prop?: number
-  /** 树倒：倒伏四元数的 w（w≈1 直立/未触发，其余 = 倒伏中或已倒） */
   fallQuat?: { w: number } | null
-  /** 建筑/switcher：损毁态已激活（完好槽隐藏、损毁槽显示） */
   applied?: boolean
 }
 
@@ -137,20 +95,16 @@ export interface PickStateVisual {
 export function stateVisualLabel(st: PickInstanceState | null | undefined): PickStateVisual | null {
   if (!st) return null
   if (st.prop === 3) {
-    // 实例化槽位模型：倒伏状态写 fallQuat（w = cos(倒角/2)）——w≈1 直立/未触发，
-    // 其余 = 倒伏中或已倒；倒带复位后 w 回 1
     const w = st.fallQuat?.w
     const fallen = Number.isFinite(w) && Math.abs(1 - (w as number)) > 1e-3
     return { prop: 3, label: fallen ? 'fallen/falling' : 'standing' }
   }
-  // 建筑/switcher：applied = 损毁态已激活（完好槽隐藏、损毁槽显示）
   const destroyed = st.applied === true
   return { prop: st.prop as number, label: destroyed ? 'destroyed' : 'intact' }
 }
 
 const PROP_LABEL: Record<number, string> = { 0: 'modules', 1: 'fragiles', 2: 'pole', 3: 'tree-fall' }
 
-/** 地形诊断块（2026-10-11 塌陷排查工具）。 */
 export interface PickTerrainDiagnostics {
   truth: number
   meshH?: number | null
@@ -160,13 +114,11 @@ export interface PickTerrainDiagnostics {
   overBudget?: number | null
 }
 
-/** 渲染身份块（2026-10-11 "表面可拾取但不可见"排查）。 */
 export interface PickRenderDiagnostics {
   type: string
   name?: string | null
   matName?: string | null
   matType?: string | null
-  /** 多材质网格按 join(',') 拼接（诊断文本，非布尔） */
   matVisible?: string | null
   transparent?: string | null
   opacity?: string | null
@@ -180,7 +132,6 @@ export interface PickRenderDiagnostics {
   sphere?: { c: unknown; r: unknown } | null
 }
 
-/** 拾取报告（formatPickReport 与面板/console/window.__pbPickText 三渠道共享）。 */
 export interface PickReport {
   clock?: number
   kind?: string
@@ -192,17 +143,12 @@ export interface PickReport {
   scene?: number[] | null
   material?: string | null
   inst?: DestructibleInstance | null
-  /** 命中实例的 serverId 是否在 destructibles.json 登记过（面板诊断） */
   serverIdKnown?: boolean
   vis?: PickStateVisual | null
   terrain?: PickTerrainDiagnostics | null
   render?: PickRenderDiagnostics | null
 }
 
-/**
- * 拾取报告 → 单文本（面板显示 / console / window.__pbPickText 三渠道同一份）。
- * 坐标一律保留 1 位小数；scene 为游戏场景系（destructibles pos 同系）。
- */
 export function formatPickReport(r: PickReport): string {
   const L: string[] = []
   L.push(`[scene-pick] t=${typeof r.clock === 'number' && Number.isFinite(r.clock) ? r.clock.toFixed(2) : '?'}s kind=${r.kind}`)
@@ -221,10 +167,6 @@ export function formatPickReport(r: PickReport): string {
     if (pl) L.push(`  state:${pl}`)
     if (r.inst.pos) L.push(`  inst.pos: (${r.inst.pos.map((v) => Number(v).toFixed(1)).join(', ')})`)
   }
-  // 地形诊断（2026-10-11 塌陷排查工具；**出现本行 = 跑的是带诊断的报告器**）：
-  // truth = 真值高度场，mesh = 命中点正下方的渲染网格高度（Δ = mesh − truth），
-  // size = 发射四边形顶点间距(texel)，morph = subdivMorph（未整形），
-  // quads/overB = 本次地形构建规模。Δ 大而 truth 正常 ⇒ 渲染侧问题；truth 本身异常 ⇒ 数据侧。
   if (r.terrain) {
     const t = r.terrain
     const d = (t.meshH != null && Number.isFinite(t.truth)) ? ` Δ=${(t.meshH - t.truth).toFixed(3)}` : ''
@@ -233,8 +175,6 @@ export function formatPickReport(r: PickReport): string {
       + ` size=${t.sizeAt ?? '?'} morph=${t.morph != null ? t.morph.toFixed(2) : '?'}`
       + ` quads=${t.quads ?? '?'} overB=${t.overBudget ?? '?'}`)
   }
-  // 渲染身份（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
-  // 射线拾取只查对象可见链 ⇒ "可拾取但不可见"的差异在材质/实例矩阵/剔除里现形。
   if (r.render) {
     const d = r.render
     L.push(`  render: ${d.type}(${d.name ?? '?'}) mat=${d.matName ?? '?'}[${d.matType}]`

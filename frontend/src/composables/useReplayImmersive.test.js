@@ -4,7 +4,6 @@ import { defineComponent, h, provide, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { SHELL_CHROME_KEY } from '../shared/shellChrome.js'
 
-// 设备形态输入用真实 ref 驱动；强制横屏只记录调用参数（行为由 useForcedLandscape 自己覆盖）。
 const env = vi.hoisted(() => ({ isPhone: null, isPortrait: null, coarse: null, forced: [] }))
 vi.mock('./usePlaybackPhoneForm.ts', async () => {
   const { ref: r } = await import('vue')
@@ -65,7 +64,6 @@ describe('useReplayImmersive — events 深链与 2D 回放同一设备语义', 
     expect(h.api().wantsImmersive.value).toBe(true)
     expect(h.request).toHaveBeenCalledTimes(1)
     expect(h.request.mock.calls[0][1]).toBe(true)
-    // 进入查看器即递增自动全屏序号（events 复用 2D pane）。
     expect(h.api().autoFullscreenToken.value).toBe(1)
     const forced = env.forced.at(-1)
     expect(forced.active.value).toBe(true)
@@ -79,11 +77,10 @@ describe('useReplayImmersive — events 深链与 2D 回放同一设备语义', 
     expect(h.api().autoFullscreenToken.value).toBe(1)
     h.activeCapability.value = 'events'
     await h.wrapper.vm.$nextTick()
-    expect(h.api().autoFullscreenToken.value).toBe(1)   // 同一 2D pane，不算新进入
+    expect(h.api().autoFullscreenToken.value).toBe(1)
     h.activeCapability.value = 'playback'
     await h.wrapper.vm.$nextTick()
     expect(h.api().autoFullscreenToken.value).toBe(1)
-    // 外部进入 2D 仍是新机会；真正切到 3D 也为新机会。
     h.activeCapability.value = 'data'
     await h.wrapper.vm.$nextTick()
     h.activeCapability.value = 'events'
@@ -109,7 +106,6 @@ describe('useReplayImmersive — events 深链与 2D 回放同一设备语义', 
     const forced = env.forced.at(-1)
     expect(forced.active.value).toBe(false)
     expect(forced.opts.androidActive.value).toBe(false)
-    // shell 请求：进入 true 后离开 false，且 owner 稳定。
     expect(h.request.mock.calls.map((call) => call[1])).toEqual([true, false])
     expect(h.request.mock.calls[0][0]).toBe(h.request.mock.calls[1][0])
     h.wrapper.unmount()

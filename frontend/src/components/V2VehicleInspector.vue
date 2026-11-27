@@ -15,10 +15,6 @@ import { deviceById, itemIconUrl, loadDevices } from '../utils/researchCatalog.j
 import { consumableIconUrl, provisionIconUrl } from '../utils/loadoutIcons.js'
 import { romanLevel } from '../utils/tierFormat.js'
 
-/**
- * V2 车辆检查器：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
- * 只消费 canonical facts / knowledge / provenance，前端不再做 HP/AoI/death/loadout 推理。
- */
 const props = defineProps({
   track: { type: Object, required: true },
   timeSec: { type: Number, required: true },
@@ -28,11 +24,7 @@ const props = defineProps({
 const { t, te, locale } = useI18n()
 const router = useRouter()
 
-// 装备图标反查（资产包 devices.json，loadDevices 轻加载）：**名称权威仍是
-// loadoutItemLabel**（未知 id 走通用未知文案、raw id 不进 UI，既有门禁）；图标只是
-// 美术层增强——目录不可达或 id 无法对号时不渲染图标，文本不变（fail-soft）。
 const devices = ref(null)
-// 目录加载状态与图标未知分开：目录 404 时装备仍实际存在，不能退回空槽虚线。
 const devicesState = ref('loading')
 onMounted(async () => {
   try {
@@ -48,7 +40,6 @@ function equipmentIcon(id) {
   return device ? itemIconUrl('devices', device.icon) : null
 }
 
-/** 「在配置器中打开」：装备 id 原值经 ?eq= 透传，由配置器反解槽位（歧义 fail-closed）。 */
 const equipmentIdList = computed(() => (props.track.loadout?.equipmentIds || []).filter(id => Number.isInteger(id) && id > 0))
 function openInConfigurator() {
   if (!(props.track.tankId > 0)) return
@@ -66,10 +57,6 @@ const health = computed(() => healthDisplayAt(props.track, props.timeSec))
 const covered = computed(() => positionCoveredAtV2(props.track.positionSegments, props.timeSec))
 const loadout = computed(() => props.track.loadout || null)
 
-/**
- * loadout 条目显示名：优先本地化名称；未知/未映射走通用 i18n fallback。
- * raw wire/id 仍由后端保留，但不进入普通用户界面。
- */
 function itemLabel(scope, id) {
   const name = loadoutItemLabel(scope, id, locale.value)
   if (name) return name
@@ -79,17 +66,12 @@ function itemLabel(scope, id) {
   return t(key)
 }
 
-/**
- * consumable runtime state 本地化（plan Major）：不裸显 internal enum。
- * UNKNOWN 保持现有隐藏/未知语义；未知/未映射 state 走 localized fallback。
- */
 function consumableStateLabel(state) {
   if (!state || state === 'UNKNOWN') return ''
   const key = `recon.map.playback.consumable_state.${state}`
   return te(key) ? t(key) : t('recon.map.playback.consumable_state.UNKNOWN')
 }
 
-// consumable runtime：hidden interval → UNKNOWN，绝不显示 READY
 const consumables = computed(() => {
   if (!loadout.value) return []
   const wireCodes = loadout.value.consumableWireCodes || []
@@ -135,9 +117,6 @@ const provisionLabels = computed(() => {
 
 const equipmentLabels = computed(() => {
   if (!loadout.value) return []
-  // 装备串是**紧凑线序**（空槽省略、尾部补 0），数组位置不是语义槽位：
-  // 不能把第 N 个 id 当成第 N 格，也不能把尾部 0 说成某个具体槽「未装备」。
-  // inspector 只展示实际装上的装备（图标 + 无障碍名称），不伪造槽位/空槽。
   return (loadout.value.equipmentIds || [])
     .filter(id => Number.isInteger(id) && id > 0)
     .map((id, index) => ({
@@ -152,7 +131,6 @@ const modules = computed(() => moduleCrewStatesAt(props.track.moduleCrewTransiti
 
 const stateLabel = computed(() => {
   if (life.value?.lifeState === 'DESTROYED') return t('recon.map.playback.state_destroyed')
-  // AoI/position coverage ≠ 点亮：CURRENT observation 表达「当前观测」，不用 Detected/已发现。
   if (covered.value) return t('recon.map.playback.state_current_observation')
   if (valueSeen.value) return t('recon.map.playback.state_last_known')
   return t('recon.map.playback.unknown')
@@ -160,7 +138,6 @@ const stateLabel = computed(() => {
 
 const valueSeen = computed(() => health.value != null || loadout.value != null)
 
-/** tankClass 为 canonical 英文 class（Heavy tank/Medium tank/...）；UI 用已有三语翻译，不裸显英文。 */
 const VEHICLE_CLASS_KEYS = {
   'Heavy tank': 'recon.map.playback.vehicle_class_heavy',
   'Medium tank': 'recon.map.playback.vehicle_class_medium',
@@ -191,8 +168,6 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-hp">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.current_hp') }}</span>
       <span class="v2-inspector-val">
-        <!-- §21：已击毁状态明确显示「已击毁」，不重点展示 0 HP / 空血条；
-             但 伤害历史/击杀/承受伤害/最后位置 等 authoritative facts 仍正常展示。 -->
         <template v-if="health?.destroyed">{{ $t('recon.map.playback.state_destroyed') }}</template>
         <template v-else>
           {{ health?.currentHp ?? '—' }}
@@ -245,6 +220,7 @@ function moduleStateLabel(state) {
         >
           <img v-if="c.icon" class="v2-chip-icon" :src="c.icon" alt="" width="32" height="32" loading="lazy">
           <span v-else class="v2-chip-placeholder"></span>
+          <span class="v2-chip-name">{{ c.label }}</span>
         </div>
           </div>
         </div>
@@ -263,6 +239,7 @@ function moduleStateLabel(state) {
         >
           <img v-if="p.icon" class="v2-chip-icon" :src="p.icon" alt="" width="32" height="32" loading="lazy">
           <span v-else class="v2-chip-placeholder"></span>
+          <span class="v2-chip-name">{{ p.label }}</span>
         </div>
           </div>
         </div>
@@ -281,6 +258,7 @@ function moduleStateLabel(state) {
             >
               <img v-if="e.icon" class="v2-chip-icon" :src="e.icon" alt="" width="32" height="32" loading="lazy">
               <span v-else class="v2-chip-placeholder"></span>
+              <span class="v2-chip-name">{{ e.label }}</span>
             </div>
           </div>
           <button
@@ -337,19 +315,13 @@ function moduleStateLabel(state) {
 .v2-loadout-group { display: flex; flex-direction: column; gap: 4px; }
 .v2-loadout-group-title { color: var(--pb-dim, #9aa); font-size: 10px; }
 .v2-loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.v2-equipment-row { display: block; }
 .v2-inspector-chip {
   display: flex; flex-direction: column; gap: 2px; padding: 4px 6px;
   border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 11px;
 }
-.v2-chip-state { color: var(--pb-dim, #9aa); font-size: 9px; }
 @media (width < 768px) {
   .v2-loadout-grid { grid-template-columns: repeat(3, minmax(92px, 1fr)); overflow-x: auto; }
-  .v2-equipment-row { display: block; }
 }
-.v2-chip-type { color: var(--pb-dim, #9aa); font-size: 9px; text-transform: uppercase; }
-.v2-chip-item { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.v2-chip-item img { flex: none; inline-size: 24px; block-size: 24px; object-fit: contain; }
 .v2-configurator-link {
   margin-block-start: var(--space-1);
   align-self: flex-start;
@@ -365,22 +337,21 @@ function moduleStateLabel(state) {
 .v2-configurator-link:hover { border-color: var(--color-border-strong); }
 .v2-configurator-link:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
-/* 未装备槽：与「未知装备」区分——空槽是已知事实，不是解析失败 */
-.v2-inspector-chip.is-empty .v2-chip-item { color: var(--color-text-tertiary); font-style: italic; }
-.v2-inspector-chip.is-empty .v2-chip-type { opacity: .7; }
-
-/* 装载区图形化：只显示图标，名称进 title / aria-label；空槽为虚线占位 */
 .v2-inspector-chip .v2-chip-icon { width: 32px; height: 32px; object-fit: contain; }
+.v2-chip-name {
+  display: block; max-width: 100%; text-align: center;
+  white-space: normal; overflow-wrap: anywhere;
+  color: var(--color-text-secondary); font: var(--type-caption);
+}
+.v2-inspector-chip.is-empty .v2-chip-name { color: var(--color-text-tertiary); }
 .v2-inspector-chip .v2-chip-placeholder {
   width: 32px; height: 32px; border-radius: var(--radius-sm);
   border: 1px dashed var(--color-border-subtle); opacity: .5;
 }
-/* 未知/缺图不是「未装备」：实线警示框 + 斜杠，避免空槽虚线掩盖已装备事实 */
 .v2-inspector-chip.is-unknown .v2-chip-placeholder {
   position: relative; opacity: 1; border-style: solid;
   border-color: var(--color-warning);
 }
-/* 目录加载中：实线中性框，既不等同空槽虚线，也不提前报未知 */
 .v2-inspector-chip.is-loading .v2-chip-placeholder {
   opacity: .75; border-style: solid;
   border-color: var(--color-border-strong);

@@ -9,7 +9,6 @@ test -s "$APK" || { echo "::error::APK is empty" >&2; exit 1; }
 APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)"
 "$APKSIGNER" verify --verbose --print-certs "$APK"
 
-# 提取 signer 证书 SHA-256（归一化为大写、去冒号）。指纹属公开证书信息，可输出。
 CERT_FP="$( "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
   | grep -i 'SHA-256 digest' \
   | head -n1 \

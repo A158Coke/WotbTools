@@ -26,19 +26,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Admin Users 列表分页与合并数据源的单元测试（mock，无 DB / 无 Keycloak）。
- *
- * <p>核心回归点：分页权威在数据源侧，不再有「取 200 条再本地切」的伪造分页，
- * 因此第 101 个及之后的用户可以通过翻页访问。</p>
- */
 class AdminUserPaginationTest {
 
     private final UserProfiles userProfileService = mock(UserProfiles.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
-    /** 使用真实 mapper，锁定合并视图的字段映射语义。 */
     private final AdminUserMapper mapper = new AdminUserMapper();
 
     private AdminUserService service() {
@@ -58,7 +51,6 @@ class AdminUserPaginationTest {
 
         final AdminUserPageDto result = service().searchUsers(null, null, null, 4, 25);
 
-        // 第 5 页（0-based page=4）→ Keycloak first=100，即第 101 个用户起
         verify(keycloakAdminUserService).searchUsers(null, 100, 25);
         assertEquals(4, result.page());
         assertEquals(25, result.size());
@@ -68,7 +60,6 @@ class AdminUserPaginationTest {
         assertEquals("kc-101", result.items().get(0).keycloakUserId());
         assertTrue(result.items().get(0).hasLocalProfile(), "本地有资料必须标记");
         assertFalse(result.items().get(0).keycloakUserMissing());
-        // Keycloak-only 用户同样出现在结果里（历史第三方 IdP 用户清理的前提）
         assertEquals("kc-125", result.items().get(24).keycloakUserId());
         assertFalse(result.items().get(24).hasLocalProfile());
     }

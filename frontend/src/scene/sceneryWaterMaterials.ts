@@ -3,7 +3,6 @@ import type { ShaderMaterial, Texture } from 'three'
 import type { GltfSceneMaterial } from './sceneryMaterialTypes.js'
 import { sunUniforms } from './sceneryLightingMaterials.js'
 
-/** 地图边界视觉参数（上游 MapBorderComponent 逐字段，见 export_map_glb 的 collect_map_border）。 */
 export interface MapBorderVisual {
   color?: number[]
   height?: number
@@ -19,15 +18,6 @@ export interface MapBorderVisual {
   rect?: number[] | null
 }
 
-/**
- * 地图边界（客户端 `MapBorderRenderObject`，材质 id = 0 引擎内置、不可得）。
- *
- * 几何 = 作者三角形带竖带（scg，导出器已转三角形列表并按世界变换烘焙）；视觉 = 组件
- * `mbc.*` 字段：`visualColor`（本机实测 (0.55,0.14,0.14) / (1,0.156,0.156)，红）、
- * `visualMinZ..MaxZ`（世界 z 可见区间）、`visualZFadeWidth`（区间边缘淡出宽度）、
- * `visualZOffset`、距离淡出（组件 `visualDistanceFade*` / 渲染对象 `mro.distanceNearFarSq`）。
- * 不受光（引擎边界视觉不是场景光照管线的一部分），半透明 + 双面。
- */
 export function makeMapBorderMaterial(_m: GltfSceneMaterial, v: MapBorderVisual): ShaderMaterial {
   const color = Array.isArray(v.color) && v.color.length >= 3 ? v.color : [1, 0, 0, 1];
   const num = (x: unknown, d: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : d);
@@ -44,7 +34,6 @@ export function makeMapBorderMaterial(_m: GltfSceneMaterial, v: MapBorderVisual)
       uFadeEnable: { value: (v.distanceFadeEnabledRo || v.distanceFadeEnabled) ? 1 : 0 },
       uNearSq: { value: nearSq[0] },
       uFarSq: { value: nearSq[1] },
-      // 高亮呼吸（地图预览/回放共用时钟；作者色只作底，展示端提亮）
       uTime: { value: 0 },
     },
     vertexShader: `
@@ -102,38 +91,6 @@ export function makeMapBorderMaterial(_m: GltfSceneMaterial, v: MapBorderVisual)
   });
 }
 
-// 水面（客户端 `water-fp.sl` 的 **!REAL_REFLECTION 分支** = MEDIUM 档，材质文件
-// `WaterPerPixelCubemapAlphablend.material`：WaterRenderLayer + blend、alpha = 菲涅尔）：
-//   uv0 = uv × normal0Scale + frac(normal0ShiftPerSecond × t)
-//   uv1 = (uv.x+uv.y, uv.y−uv.x) × normal1Scale + frac(normal1ShiftPerSecond × t)   ← 45° 旋转层
-//   normal = normalize(n0 + n1 − 1)                       // UDN 相加（客户端同式）
-//   fresnel = FresnelShlickCustom(dot(−V, normal), fresnelBias, fresnelPow)
-//   R = reflect(V, normal); R.z=|R.z|（切线空间）⇔ 世界系 R.y=|R.y|（防穿透水面）
-//   outColor = (texCUBE(cubemap, R) × reflectionTintColor, alpha = fresnel)
-// 切线基在片元用**导数**建（cotangent frame）——我们不发 TANGENT 属性，水面是水平面，够用。
-// 朝向：cubemap 已转等距柱状（内嵌图 flipY=false ⇒ v=0 = 首行 = 天，同 B2 环境反射）。
-// 档位沿革（2026-10-09）：曾按用户选择改采 LOW 档（`!PIXEL_LIT`：不透明、无法线 ⇒ 反射是
-// 平面镜、零波浪扰动），实看被判"不好"后按用户裁示**回到 MEDIUM**。已知固有观感（非 bug）：
-// ① 反射取**预烘探针**而非当帧场景（客户端 HIGH/ULTRA 的屏幕空间反射才照得出建筑）；
-// ② 探针亮度偏高的高度带在俯视角下读作"亮面"（2026-10-09 报障即此）——要压可调
-// `uReflTint`/探针强度这一项，要"照出建筑"得上镜像平面反射（均未做，见 docs/index.md F1）。
-/** 水面材质（客户端 `water-fp.sl` 的 MEDIUM 档 `!REAL_REFLECTION` 分支：双层滚动法线 + UDN +
- *  菲涅尔 alpha + 逐图 cubemap×色调）。
- *
- *  **海岸线** `coastLine`（客户端 `water-fp.sl` 的 `RETRIEVE_FRAG_DEPTH_AVAILABLE` 分支同构）：
- *    客户端：`adjustedDifference = 2·|ndcZ_片元 − ndcZ_背后表面| / ndcZ_片元`，saturate 即 coastLine，
- *    随后 `fresnel *= coastLine`（背后表面取自深度预通道 `dynamicDepthPrepass`）——它掩盖的是
- *    **深度差小到缓冲分不开**的那条岸线带（`ndcZ` 的空间口径由客户端运行时 `ndcToZMapping` 注入，
- *    绝对值不可移植）。我们没有深度预通道，改用**本渲染器自己的深度分辨率**做同一件事：
- *      `dNdcZ = |∂ndcZ/∂z|·Δz_沿视线`（`∂ndcZ/∂z = 2·f·n/((f−n)·z²)`，Δz_沿视线 = 高差/|视线.y|）
- *      `coastLine = saturate(dNdcZ / (2·uDepthUlp))`，`uDepthUlp = 2/2^depthBits`（缓冲 1 ulp 的 NDC 值）
- *    ⇒ **淡出带 = 该视距下深度抢胜带（2 ulp）**：岸线带内反射 → 0（水面在那里与地形分不开，
- *    让位给地形/冰面 ⇒ 无硬边、无逐像素翻转），**深水（远大于精度）任何角度都满反射**（含俯视）。
- *    ⚠️ 曾用 `2·(水面高−地形高)/(相机高−水面高)`（由客户端等式反推）：相机越高分母越大 ⇒
- *    **俯视时深水也被压成透明**（2026-10-10 用户"从上往下看水面基本都是透明的，只有视角接近
- *    水面才反射"）——该口径已废，勿回退。地形高取高度场（真值一份到底；让位掩码已撤销）；缺则 fail-open。
- *    `coast = { heightTex, mapSpan, near, far, depthUlp }`。 */
-/** 水面 props（extras.water.props 的消费字段）。 */
 export interface WaterProps {
   normal0Scale?: number
   normal1Scale?: number
@@ -142,7 +99,6 @@ export interface WaterProps {
   fresnelBias?: number
   fresnelPow?: number
   reflectionTintColor?: number[]
-  /** HIGH/ULTRA 动态反射扰动（屏幕 UV 偏移比例）与距离衰减平方 */
   reflectionDistortion?: number
   distortionFallSquareDist?: number
   inGlossiness?: number
@@ -151,27 +107,20 @@ export interface WaterProps {
   [key: string]: unknown
 }
 
-/** 海岸线高度场字段（运行时 waterCoast；烘焙传 null）。 */
 export interface WaterCoastField {
   heightTex?: Texture | null
   mapSpan?: number
   near?: number
   far?: number
   depthUlp?: number
-  /** 岸线世界空间最小淡出带（米；粗高度场 + smoothstep，远处稳定） */
   coastFade?: number
 }
 
-/** WaterRenderObject 水体的 UV 基（上游 extras.water.texCoordTransform0 / .inputTangent）。
- *  键只对 WaterRenderObject 类下发（2026-11-17 上游审计 F2）：该类网格客户端**不读 UV 流**，
- *  UV = (dot(localPosition.xy, tct.xz), dot(localPosition.xy, tct.yw)) 程序化推导、
- *  法线恒 (0,0,1)、切线 = inputTangent 属性（water-vp.sl WATER_RENDER_OBJECT 分支）。 */
 export interface WroWaterUv {
   texCoordTransform0?: number[] | null
   inputTangent?: number[] | null
 }
 
-/** 动态反射未启用时的兜底采样纹理（1×1 黑；避免 sampler 为空导致驱动告警）。 */
 const EMPTY_REFLECTION_TEX = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1)
 EMPTY_REFLECTION_TEX.needsUpdate = true
 
@@ -193,7 +142,7 @@ export function makeWaterMaterial(m: GltfSceneMaterial, { normalTex, cubeTex, pr
     uniforms: {
       normalmap: { value: normalTex || map },
       cubemap: { value: cubeTex || map },
-      uTime: { value: 0 },                     // 回放秒数（playbackScene 每帧写）
+      uTime: { value: 0 },
       uN0Scale: { value: num(p.normal0Scale, 1) },
       uN1Scale: { value: num(p.normal1Scale, 1) },
       uShift0: { value: v2(p.normal0ShiftPerSecond, [0, 0]) },
@@ -201,42 +150,28 @@ export function makeWaterMaterial(m: GltfSceneMaterial, { normalTex, cubeTex, pr
       uFresnelBias: { value: num(p.fresnelBias, 0) },
       uFresnelPow: { value: num(p.fresnelPow, 0) },
       uReflTint: { value: new THREE.Vector3(...((Array.isArray(p.reflectionTintColor) ? p.reflectionTintColor : [1, 1, 1]) as number[])) },
-      // 动态平面反射（HIGH/ULTRA）：反射 RT 由 playback/waterReflection.ts 每帧写入；
-      // 未启用时 uUseReflection=0，shader 继续用逐图 cubemap（MEDIUM 档行为不变）。
       uReflectionTex: { value: EMPTY_REFLECTION_TEX },
       uReflectionMatrix: { value: new THREE.Matrix4() },
       uUseReflection: { value: 0 },
       uReflectionDistortion: { value: num(p.reflectionDistortion, 0.04) },
       uDistFallSq: { value: num(p.distortionFallSquareDist, 100) },
-      // HIGH/ULTRA 太阳高光（客户端 SPECULAR 分支；lighting.slh BlinnPhong 公式）
       uSunDirScene: sunUniforms.uSunDirScene,
       uSunSpecColor: sunUniforms.uSunSpecColor,
       uGlossiness: { value: num(p.inGlossiness, 0.5) },
       uSpecularity: { value: num(p.inSpecularity, 0.5) },
       uReflectanceColor: { value: new THREE.Vector3(...((Array.isArray(p.reflectanceColor) && p.reflectanceColor.length >= 3 ? p.reflectanceColor : [0.5, 0.5, 0.5]) as number[])) },
-      // 海岸线用：渲染用高度场（R = 世界高度，米）。sampler 不能判空/取分量 ⇒ 用浮点开关 +
-      // 兜底绑定一张在用贴图（缺高度场时分支不采样）。
       uHeightmap: { value: (coast && coast.heightTex) || map || normalTex || null },
       uHasHeightmap: { value: coast && coast.heightTex ? 1 : 0 },
       uMapSpan: { value: coast && typeof coast.mapSpan === 'number' && Number.isFinite(coast.mapSpan) ? coast.mapSpan : 600 },
-      // 高度纹理 1 texel 的 UV 宽（1/n）：顶点 j 在 `j/n`（corner 口径），GPU 纹素中心在 `(j+0.5)/n`
-      // ⇒ 采样须加半个纹素，否则岸线高度沿 x/z 各偏半格（与地形网格错位）
       uHmTexel: { value: (() => {
         const img = coast?.heightTex?.image as { width?: number } | null | undefined
         return img && typeof img.width === 'number' && img.width > 0 ? 1 / img.width : 0
       })() },
       uNear: { value: coast && typeof coast.near === 'number' && Number.isFinite(coast.near) ? coast.near : 0.5 },
       uFar: { value: coast && typeof coast.far === 'number' && Number.isFinite(coast.far) ? coast.far : 4000 },
-      // 正俯视可见度下限：客户端相机贴地，菲涅尔 alpha 在掠射角外约 1；但查看器的
-      // 地图预览/回放默认是 595m 正俯视 —— fresnel≈bias(0.05) ⇒ 水面等于透明（只剩海床）。
-      // 这不是客户端行为（客户端不会俯视看水），是**查看器工具视角的可见性补偿**：
-      // alpha 取 max(菲涅尔, 下限)，岸线 coastLine 照常相乘（岸线外仍不画）。
       uMinAlpha: { value: 0.32 },
       uCoastFade: { value: coast && typeof coast.coastFade === 'number' && Number.isFinite(coast.coastFade) ? coast.coastFade : 0.35 },
-      // 深度缓冲 1 ulp 的 NDC 值（= 2/2^depthBits，由 renderer 上下文实测传入；缺省 24bit）
       uDepthUlp: { value: coast && typeof coast.depthUlp === 'number' && Number.isFinite(coast.depthUlp) ? coast.depthUlp : 2 / 16777216 },
-      // WaterRenderObject UV 基（USE_WRO_UV 时消费）：texCoordTransform0 = (a,b,c,d)，
-      // uv = (a·x + c·y, b·x + d·y)（客户端 water-vp.sl:208-209 逐字）；inputTangent = 切线基
       uTct: { value: new THREE.Vector4(...((Array.isArray(wro?.texCoordTransform0) && wro.texCoordTransform0.length === 4 ? wro.texCoordTransform0 : [1, 0, 0, 1]) as number[])) },
       uTangentLocal: { value: new THREE.Vector3(...((Array.isArray(wro?.inputTangent) && wro.inputTangent.length === 3 ? wro.inputTangent : [1, 0, 0]) as number[])) },
     },
@@ -403,15 +338,12 @@ export function makeWaterMaterial(m: GltfSceneMaterial, { normalTex, cubeTex, pr
         gl_FragColor = vec4(refl, clamp(alpha, 0.0, 1.0));
       }`,
     transparent: true,
-    depthWrite: true,   // 实测（erlenberg）水面必须写深度：极简大三角面不写深度会与地形逐像素交替闪
-    // 与地形近平面的深度抢胜稳定化：把水面往视点拉 1 个深度单位，使"水/地共面"
-    // 区域固定由水面赢得比较（再由 coastLine 淡出），不再随相机移动逐像素翻转。
+    depthWrite: true,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
     side: THREE.DoubleSide,
   });
-  // 语义标记：水面材质（"共面水面合并"按它归组；见 playback/waterMerge.ts）
   waterMat.userData.water = true;
   return waterMat;
 }

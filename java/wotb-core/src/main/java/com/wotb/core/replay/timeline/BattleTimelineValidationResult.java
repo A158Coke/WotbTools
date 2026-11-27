@@ -2,9 +2,6 @@ package com.wotb.core.replay.timeline;
 
 import java.util.List;
 
-/**
- * Timeline 校验结果：valid=false 时携带错误码（用于拒绝 AI Review，禁止 settlement-only fallback）。
- */
 public record BattleTimelineValidationResult(
         boolean valid,
         List<TimelineError> errors,

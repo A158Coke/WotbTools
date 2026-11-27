@@ -1,12 +1,8 @@
-/** Agent 回放数据契约 —— HoF 投影（WotBTools 产品域；上游不再提供 HofFacet）。
- *  拆分自 agent-replay-facets.ts；公共入口仍为 `../agent-replay-facets.ts`。 */
 
 import type { AgentBattleResult } from './resultTypes.js'
 import { CONTRACT_VERSION } from './validation.js'
 
-// ---------- HoF 投影（WotBTools 产品域；上游不再提供 HofFacet） ----------
 
-/** HoF 单场提交行（原上游 HofFacet 投影语义；字段缺失按 undefined 透传） */
 export interface HoFEntry {
   account_id: number
   nickname: string
@@ -45,18 +41,11 @@ export interface HoFSubmission {
     map_name: string
     room_type: string
     winner: number
-    /** 结算口径整秒时长；上游 root5 未解码恒 null（宁缺勿冒充） */
     duration_secs: null
   }
   entries: HoFEntry[]
 }
 
-/**
- * HoF 提交 = BattleResult 的纯投影（上游 HofFacet.from_settlement 同一映射，
- * 职责移入消费方——评审 P0-1：Agent 不感知 WotBTools 的 HoF 产品域）。
- * 纯函数，不触碰时序数据；提交仍可携带 original .wotbreplay（Business API 侧
- * replay 是 evidence/storage，不做 server-side replay verification）。
- */
 export function projectHoF(result: AgentBattleResult): HoFSubmission {
   const entries: HoFEntry[] = result.players.map((p) => ({
     account_id: p.account_id,

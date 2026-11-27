@@ -1,7 +1,4 @@
 <script setup lang="ts">
-// 管理列表模板的详情抽屉：点行在右侧打开（AppSheet side="end"：焦点陷阱、Esc、遮罩、右滑关闭、安全区），
-// 不再弹模态框。头部是标题 + 关闭，主体独立滚动（overscroll 不传到背景，DC-RSP-09），
-// footer 插槽固定在底部，放危险操作（AdminDangerZone）。
 import { X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import AppSheet from './AppSheet.vue'
@@ -9,7 +6,6 @@ import AppSheet from './AppSheet.vue'
 defineProps<{
   open: boolean
   title: string
-  /** 关闭后焦点回到的元素；缺省回到打开前的焦点元素（点行时为该行的打开按钮） */
   returnFocusTo?: HTMLElement | null
 }>()
 const emit = defineEmits<{ close: [] }>()

@@ -2,27 +2,11 @@ import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 
-/**
- * 首页 reduced-motion 浏览器门禁。
- *
- * 为什么必须是真实浏览器：reduce 下「动画没跑」不是源码里有没有 animation 字符串，
- * 而是媒体查询命中后 computed animation/transition 是否归零、hover 是否真的不产生
- * transform。happy-dom / 正则源码断言看不到媒体查询与真实层叠。
- *
- * 复用 browser-page.mjs（CDP 页面壳）与 fixture-server.mjs（真实 Vite 应用 + auth stub），
- * 不另起浏览器框架；只替换 /api/hof 为确定性的空页，避免首页数据带请求真实后端。
- *
- * 桌面 hover 能力必须由 fixture 显式建立：hosted headless Chrome 不保证
- * `matchMedia('(hover: hover)')` 为 true，而共享 Page.emulate() 的 device metrics /
- * touch 覆盖会重新决定 pointer capability。这里用 Blink settings 固定 fine pointer + hover，
- * 用 --window-size 固定桌面视口（> 1200 断点），并在测试开始时断言 media capability 真的成立。
- */
 
 const DESKTOP_WINDOW = '--window-size=1440,900'
 const DESKTOP_POINTER = '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'
 const HOME_READY = `document.querySelectorAll('.home-feature, .home-card').length >= 4 && !!document.querySelector('.home-hero-line')`
 
-/** 跨进程序列化执行：返回首页关键元素在真实浏览器里的 computed motion 状态。 */
 function homeMotionProbe() {
   const read = (selector) => {
     const element = document.querySelector(selector)
@@ -77,13 +61,9 @@ async function openHome(env, motion) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   await page.enable()
-  // 不调用 Page.emulate()：桌面 viewport 由 --window-size 固定，pointer capability 由
-  // --blink-settings 固定；device metrics / touch 覆盖会重新决定 (hover: hover)。
   await setMotionPreference(env.chrome, sessionId, motion)
   await page.goto(`${env.origin}/`)
   await page.waitForValue(HOME_READY, (ready) => ready === true, { label: 'homepage showcase ready' })
-  // 图片加载完成后再测 hover，避免布局在 hover 坐标采集中变化。
-  // 卡片截图是 lazy 且位于第二屏之后：先滚到卡片区触发加载，再回到顶部。
   await page.waitForValue(
     `(() => { document.querySelector('.home-cards')?.scrollIntoView({ block: 'center' }); return [...document.querySelectorAll('.home-card-figure img')].every((img) => img.complete) })()`,
     (ready) => ready === true,
@@ -94,8 +74,6 @@ async function openHome(env, motion) {
 }
 
 async function hover(page, selector) {
-  // 滚动回首屏后，进场动画（document timeline，位移 --home-rise-travel）可能重新开始或仍在跑：
-  // 先等这些有限动画结束、目标位置稳定，再取中心点；否则鼠标落在动画前的位置，:hover 打不中。
   const point = await page.evaluate(`(async () => {
     const element = document.querySelector(${JSON.stringify(selector)})
     if (!element) return null
@@ -198,14 +176,7 @@ async function runMotionEnabled(env) {
   return failures
 }
 
-/* ---------------------------------------------------- glass accessibility */
 
-/**
- * F-05 玻璃表面可访问性门禁：prefers-reduced-transparency / prefers-contrast
- * 必须在真实浏览器里验证——源码正则看不到媒体查询命中与真实层叠，
- * 且必须区分「浏览器不支持该 feature」（matchMedia 为 false）与
- * 「偏好已启用但 CSS 未生效」两种失败，不能把不支持误判为通过。
- */
 
 const THEMES = ['summer', 'spring', 'autumn', 'winter']
 
@@ -213,7 +184,6 @@ function glassProbe() {
   const card = document.querySelector('.home-card')
   if (!card) return null
   const style = getComputedStyle(card)
-  // 用临时元素把 token 解析成 computed 颜色，与卡片背景逐值比较。
   const resolveToken = (token) => {
     const probe = document.createElement('div')
     probe.style.display = 'none'
@@ -237,8 +207,6 @@ function glassProbe() {
     opaque2: resolveToken('--color-surface-2'),
     opaque3: resolveToken('--color-surface-3'),
     borderStrong: resolveToken('--color-border-strong'),
-    // 三个玻璃档位逐一探测（app-shell.css 是全局样式，合成元素即可命中真实层叠）：
-    // reduce/contrast 降级块按档位映射 --color-surface-1/2/3 与 --color-border-strong。
     glass: [1, 2, 3].map((tier) => {
       const probe = document.createElement('div')
       probe.className = `surface-glass-${tier}`
@@ -254,7 +222,7 @@ function glassProbe() {
 
 const rgbaAlpha = (rgb) => {
   const match = /rgba\(([^)]+)\)/.exec(rgb || '')
-  if (!match) return 1 // rgb() 形态即完全不透明
+  if (!match) return 1
   return Number(match[1].trim().split(/\s+/)[3] ?? 1)
 }
 
@@ -270,7 +238,6 @@ async function runGlassAccessibility(env) {
   try {
     const P = (name, value) => [{ name, value }]
 
-    // 1) Default：玻璃必须保持原样——半透明 + blur，未开启任何偏好。
     await setPreferences(env.chrome, page.sessionId, [])
     let state = await probe()
     gate(state.media.reducedTransparency === false && state.media.contrastMore === false, 'default: emulation did not clear preferences')
@@ -278,21 +245,18 @@ async function runGlassAccessibility(env) {
     gate(state.backdrop.includes('blur(16px)'), `default: glass must keep backdrop blur (got ${state.backdrop})`)
     const defaultSummer = state
 
-    // 2) Reduced transparency：不透明语义表面 + blur 归零（不是只降模糊）。
     await setPreferences(env.chrome, page.sessionId, P('prefers-reduced-transparency', 'reduce'))
     state = await probe()
     gate(state.media.supportedTransparency, 'prefers-reduced-transparency unsupported in this browser: scenario UNVERIFIED, cannot gate')
     gate(state.media.reducedTransparency === true, 'emulation did not enable prefers-reduced-transparency: reduce')
     gate(state.backdrop === 'none', `reduce-transparency: backdrop-filter must be off (got ${state.backdrop})`)
     gate(state.background === state.opaque1, `reduce-transparency: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
-    // 每个玻璃档位各自退化到对应的不透明表面 token（F-05，接替 glass-accessibility.test.js 的 computed 半句）。
     for (const tier of [1, 2, 3]) {
       const glass = state.glass[tier - 1]
       gate(glass.backdrop === 'none', `reduce-transparency: glass tier ${tier} backdrop-filter must be off (got ${glass.backdrop})`)
       gate(glass.background === state[`opaque${tier}`], `reduce-transparency: glass tier ${tier} background must equal --color-surface-${tier} (got ${glass.background}, want ${state[`opaque${tier}`]})`)
     }
 
-    // 3) More contrast：不透明表面 + strong 边界，默认视觉关闭。
     await setPreferences(env.chrome, page.sessionId, P('prefers-contrast', 'more'))
     state = await probe()
     gate(state.media.supportedContrast, 'prefers-contrast unsupported in this browser: scenario UNVERIFIED, cannot gate')
@@ -306,7 +270,6 @@ async function runGlassAccessibility(env) {
       gate(glass.border === state.borderStrong, `contrast-more: glass tier ${tier} border must equal --color-border-strong (got ${glass.border}, want ${state.borderStrong})`)
     }
 
-    // 4) Combined：reduce + contrast 同时开启，更强规则胜出且无 blur。
     await setPreferences(env.chrome, page.sessionId, [
       { name: 'prefers-reduced-transparency', value: 'reduce' },
       { name: 'prefers-contrast', value: 'more' },
@@ -316,7 +279,6 @@ async function runGlassAccessibility(env) {
     gate(state.background === state.opaque1, `combined: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
     gate(state.border === state.borderStrong, `combined: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
 
-    // 5) Reduced motion + contrast：玻璃规则只受 contrast 影响，不得互相踩踏。
     await setPreferences(env.chrome, page.sessionId, [
       { name: 'prefers-reduced-motion', value: 'reduce' },
       { name: 'prefers-contrast', value: 'more' },
@@ -326,7 +288,6 @@ async function runGlassAccessibility(env) {
     gate(state.background === state.opaque1, `motion+contrast: background must equal --color-surface-1 (got ${state.background}, want ${state.opaque1})`)
     gate(state.border === state.borderStrong, `motion+contrast: border must equal --color-border-strong (got ${state.border}, want ${state.borderStrong})`)
 
-    // 6) 四主题回归：default 保持玻璃、reduce 退化为该主题的纯色表面。
     await setPreferences(env.chrome, page.sessionId, [])
     for (const theme of THEMES) {
       await page.callWith((value) => {
@@ -355,7 +316,6 @@ async function runGlassAccessibility(env) {
   return failures
 }
 
-/* ------------------------------------------------------------------ main */
 
 const chromeBinary = findChrome()
 const hofMiddleware = (request, response, next) => {

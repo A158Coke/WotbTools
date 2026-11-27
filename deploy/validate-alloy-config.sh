@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Validate the production Alloy config before a staged deployment is promoted.
 set -euo pipefail
 
 CONFIG_FILE="${1:?usage: validate-alloy-config.sh <config.alloy>}"
@@ -8,10 +7,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   exit 1
 fi
 
-# Loki's match selector has its own LogQL string parser.  A backslash-escaped
-# dot is rejected there, even though the same spelling is valid in the later
-# regex stage.  Keep the selector's dot as a character class and reject the
-# production failure spelling explicitly.
 required_selector='selector            = "{container_name=\"wotb-frontend\"} !~ \"GET /download/android/[^ ]+[.]apk\""'
 legacy_selector='GET /download/android/[^ ]+\\.apk'
 
@@ -24,13 +19,8 @@ if grep -Fq "$legacy_selector" "$CONFIG_FILE"; then
   exit 1
 fi
 
-# --- TX compliance split (public-security self-assessment log retention) ------
-# 只有 TX 车道采 Keycloak 与 Caddy，所以合规分流契约是 TX 配置专属的；Yecao 配置只服务
-# 部署 canary，不承担这条链路。按路径判定而不是「配置里有没有 compliance」——后者是自我
-# 实现的断言，删掉整个分支就自动通过了。
 case "$CONFIG_FILE" in
 */deploy/tx/alloy/config.alloy)
-  # alloy_block <declaration-first-line>: 该组件块的正文，按花括号配平截断。
   alloy_block() {
     awk -v head="$1" '
       !inside && index($0, head) == 1 { inside = 1 }
@@ -53,8 +43,6 @@ case "$CONFIG_FILE" in
     exit 1
   }
 
-  # 两条安全日志源必须经过这个 processor，否则它们的行永远拿不到 compliance 标签，
-  # Loki 会在 7 天后把登录与 API 访问证据删掉。
   for security_source in keycloak caddy; do
     grep -Fq 'forward_to = [loki.process.compliance.receiver]' \
       <<<"$(alloy_block "loki.source.docker \"$security_source\" {")" || {

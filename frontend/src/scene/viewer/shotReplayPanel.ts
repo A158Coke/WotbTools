@@ -1,6 +1,3 @@
-// 射击复现（world 模式）面板与滑块 UI（自 runShotReplay 闭包原样平移）：
-// tick 位移标注、弹种自动匹配、World View 面板 HTML、相对/世界视角切换与
-// 连续时间滑块插值管线。闭包依赖经 ctx 注入；数值行为与 DOM 契约不变。
 import * as THREE from 'three'
 import { poseFromYPR } from '../glbRig.js'
 import { shotResultClass } from '../../utils/shotResultClass.js'
@@ -11,7 +8,6 @@ import type {
 } from './viewerContracts.js'
 import type { TurretRigHandle } from './turretRig.js'
 
-/** 面板/滑块安装函数共享的宿主上下文（原 runShotReplay 闭包捕获面）。 */
 export interface ShotReplayPanelCtx {
     s: ReplayShot
     QP: URLSearchParams
@@ -36,11 +32,6 @@ export interface ShotReplayPanelCtx {
     fmt3(x: number, y: number, z: number): string
 }
 
-/** ===== tick 位移方向标注（默认开启，"移动方向"复选框可关）=====
- * 车体底部平面（type10 高度 +0.1m）：青线 = 相邻 tick 位移路径；同一基点并排
- * 两支箭头（消除透视视差）：青 = 位移方向，绿/橙/黄 = 履带朝向（按位移方向着色）。
- * 三者均取真实 3D 方向（含俯仰）——只做水平投影会与倾斜模型出现视角差；
- * 前进/倒车/转向分类仍用水平方位角（atan2(dx,dz) vs yaw）。 */
 export function buildMoveAnnotation(
     ctx: Pick<ShotReplayPanelCtx, 's' | 'tPos' | 'cx' | 'cy' | 'cz' | 'getScene'>,
 ): void {
@@ -69,32 +60,28 @@ export function buildMoveAnnotation(
         arr.renderOrder = 996;
         return arr;
     };
-    const moveArrow = mkMoveArrow(3.0, 0xffdd33);        // 履带朝向
-    const moveVecArrow = mkMoveArrow(2.2, 0x00ccff);     // 位移方向
+    const moveArrow = mkMoveArrow(3.0, 0xffdd33);
+    const moveVecArrow = mkMoveArrow(2.2, 0x00ccff);
     window.__moveArrow = moveArrow;
     window.__moveVecArrow = moveVecArrow;
     moveAnno.add(moveArrow);
     moveAnno.add(moveVecArrow);
-    // 两支箭头跟随视觉模型：同基点（车底右侧 3m）并排、间隔 0.9m
     window.updateMoveArrow = function(idx: number): void {
         if (!tksD[idx]) return;
         const ts = tksD[idx];
         const q = poseFromYPR(ts.yaw, ts.pitch ?? 0, ts.roll);
         const fwd = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
         if (fwd.lengthSq() < 0.01) return;
-        fwd.normalize();   // 真实 3D 履带朝向（含俯仰），与模型姿态一致
-        // 沿车体横向右移 ~3m：箭头放在视觉模型旁边而非车体内部
+        fwd.normalize();
         const side = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
         side.y = 0;
         if (side.lengthSq() > 0.01) side.normalize();
-        // 场景为中心化坐标系（原点 = 双车中点）——位置必须减 cx/cy/cz
         const base = new THREE.Vector3(
             ts.pos[0]+tPos[0]-cx, ts.pos[1]+tPos[1]-cy+0.10, ts.pos[2]+tPos[2]-cz);
         moveArrow.position.copy(base).addScaledVector(side, 0.9);
         moveVecArrow.position.copy(base).addScaledVector(side, -0.9);
         moveArrow.setDirection(fwd);
         moveArrow.setColor(moveDirColor(idx));
-        // 位移方向箭头 = 进入当前 tick 的线段方向（真实 3D，含爬坡升降）
         if (idx > 0) {
             const p0 = tksD[idx-1];
             const mv = new THREE.Vector3(
@@ -112,7 +99,6 @@ export function buildMoveAnnotation(
     tksD.forEach((ts: PoseTickSample, i: number): void => {
         if (i === 0) return;
         const p0 = tksD[i-1];
-        // 中心化坐标系（原点=双车中点）+ 真实 3D 路径（各点取自身 type10 高度）——坡地不失真
         const geo = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(p0.pos[0]+tPos[0]-cx, p0.pos[1]+tPos[1]-cy+0.10, p0.pos[2]+tPos[2]-cz),
             new THREE.Vector3(ts.pos[0]+tPos[0]-cx, ts.pos[1]+tPos[1]-cy+0.10, ts.pos[2]+tPos[2]-cz),
@@ -138,9 +124,8 @@ export function buildMoveAnnotation(
                 (ts.dt ?? 0).toFixed(3), (ts.yaw*180/Math.PI).toFixed(1));
         }
     });
-    window.updateMoveArrow(tksD.length - 1);   // 初始 = 命中锚点 tick
+    window.updateMoveArrow(tksD.length - 1);
     getScene().add(moveAnno);
-    // 面板数字摘要：当前窗口内 位移vs朝向 偏差（中位/最大，排除倒车段）
     {
         const errs: number[] = [];
         for (let i = 1; i < tksD.length; i++) {
@@ -158,12 +143,6 @@ export function buildMoveAnnotation(
     }
 }
 
-/** 弹种自动匹配：按回放数据推断本发实际弹种并切换选择器（修正
- * BLOCKED vs SPLASH 类差异）。优先级：① hit_flags 0x1000(HE 爆炸)
- * → explosion_radius>0 的弹；② shell_id ↔ 射手配置弹表
- * shell_global_ids 精确匹配（确定性别名，FV215b shot6 竞态实测）；
- * ③ 仅当 shell_id 未知时才槽位兜底（有 shell_id 而匹配失败 = 数据
- * 不全，保持当前选择，不回退槽位以免盖掉正确弹种）。 */
 export function autoSelectReplayShell(
     ctx: Pick<ShotReplayPanelCtx, 's' | 'QP'> & {
         getShooterShells(): ShellSpec[]
@@ -191,9 +170,6 @@ export function autoSelectReplayShell(
                 shellTypeOf(sh) === 'he' || (sh && (sh.explosion_radius || 0) > 0));
         }
         if (want < 0 && window.__worldShellId) {
-            // 射手配置弹表全局 id：configs[].shell_global_ids（与弹表
-            // 同源同序）。优先 &scfg=（射手实际搭载配置，下拉表即其
-            // shells，下标同域）；未命中再全配置扫（顶级偏好）
             const shooterData = ctx.getShooterData();
             const cfgArr = (shooterData && shooterData.configs) || null;
             const scfg = parseInt(QP.get('scfg') || '', 10);
@@ -213,7 +189,6 @@ export function autoSelectReplayShell(
                 }
             }
         }
-        // 槽位兜底仅在完全无 shell_id 时使用
         if (want < 0 && window.__worldShellId == null) {
             want = window.__worldShellSlot ?? -1;
         }
@@ -230,7 +205,6 @@ export function autoSelectReplayShell(
     }
 }
 
-/** World View 面板 HTML（原 st.innerHTML 拼接式原样平移）。 */
 export function buildWorldPanelHtml(
     ctx: Pick<ShotReplayPanelCtx, 's'> & {
         shotErrorHtml(): string
@@ -288,9 +262,7 @@ export function buildWorldPanelHtml(
         (s.target_render ? '<div class="ctrl-row" style="font-size:10px;color:var(--blue);">渲染锚点(游戏画面): 滞后 ' +
             s.target_render.latency.toFixed(3) + 's · 渲染-判定偏差 ' +
             s.target_render.dist_to_judgment.toFixed(2) + 'm</div>' : '') +
-        // ===== 连续时间滑块（拖动平滑控制双模型位置/姿态） =====
         (function() {
-            // 滑块范围纳入滤波时间线（−3~+2s 扩展窗口，含命中后）
             const tlDt = (s.target_render_timeline || []).map(t => t.dt ?? NaN);
             const sTlDt = (s.shooter_render_timeline || []).map(t => t.dt ?? NaN);
             const allDt: number[] = ([] as number[]).concat(
@@ -328,9 +300,6 @@ export function buildWorldPanelHtml(
         '<span id="move-err" style="font-size:10px;color:var(--blue);margin-left:8px;"></span></div>';
 }
 
-/** 相对视角按钮：相机 = 当前位姿的弦命中点沿入射反方向回退 15m（与
- * showTrajectory 轨迹原点回退距离同语义），看向命中点；弦未命中当前位姿
- * 时看向车体中心。「双方位置」恢复全景。判定/标注不受影响（弦判定与相机无关）。 */
 export function installViewSwitch(
     ctx: Pick<ShotReplayPanelCtx, 'QP' | 'L' | 'tankModel' | 'armorModel' | 'getCamera' | 'getControls'> & {
         setWorldOverviewMode(on: boolean): void
@@ -372,7 +341,6 @@ export function installViewSwitch(
             getCamera().position.copy(savedOverview.pos);
             getControls().target.copy(savedOverview.target);
         }
-        // 相对命中视角 = 单车取景（15m/18.75° 标定）；双方位置恢复 50° 总览。
         ctx.setWorldOverviewMode(!on);
         getControls().update();
         impactViewOn = on;
@@ -381,20 +349,15 @@ export function installViewSwitch(
     }
     relBtn.setAttribute('aria-pressed', 'false');
     worldBtn.setAttribute('aria-pressed', 'true');
-    // MISS 没有命中点可聚焦：相对视角按钮禁用，保持 world 总览。
     relBtn.disabled = !window.__shotIsHit || !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
     relBtn.onclick = () => setImpactView(true);
     worldBtn.onclick = () => setImpactView(false);
     viewSwitch.append(relBtn, worldBtn);
     (document.getElementById('corner-br') || document.body).appendChild(viewSwitch);
-    // 命中弹默认进入命中点相对视角（15m/18.75° 标定，与装甲查看器
-    // 一致）；MISS 没有命中点，保持双方位置 world 总览（原生 50°）。
-    // 用户可随时用「双方位置 / 相对视角」切换，切换时同步 FOV 模式。
     if (window.__shotIsHit) setImpactView(true);
     else setImpactView(false);
 }
 
-/** 移动方向标注开关（面板 HTML 内 #move-toggle 的 change 接线）。 */
 export function installMoveToggle(): void {
     const mt2 = document.getElementById('move-toggle') as HTMLInputElement | null;
     if (mt2) mt2.onchange = function() {

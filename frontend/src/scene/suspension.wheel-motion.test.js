@@ -1,14 +1,3 @@
-/**
- * 悬挂求解纯函数单测（客户端同构；公式出处 = 上游 docs/tank-suspension-client-re.md §六）。
- *
- * 锁的都是"少一行就退化成另一个东西"的口径：
- *  · 行程夹紧/限速/首帧吸附（客户端 `copysign(min(|Δ|, rate·dt), Δ)` + `[−b, +a]`）
- *  · 自转方向与半径换算（θ += −Δs/r，绕局部 X）
- *  · 花纹滚动 = 逐带实测 dV/ds（见 treadScrollStep 勘误；textureScale/chunkLength 不可用）
- *  · 链路解算三步顺序（逐轮偏移 → 垂弧 → 铺地）与**方向性**：
- *    铺地只抬不压（地面在下方时履带悬空）、垂弧向下、包轮只约束轮顶以上
- *  · 顶点 → 链路的映射与位移方向（网格带旋转时沿局部等效轴）
- */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import { applyWheelSpin, clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep, groundDropLocal, sideTravel, parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment, measureBeltUvSlope, chainBottomRunDir, SUSP_FALLBACK } from './suspension.ts'
@@ -16,7 +5,6 @@ import { applyWheelSpin, clampTravel, rateLimitTravel, spinStep, wrapSpin, tread
 
 
 describe('轮自转位姿：枢轴补偿（导出的轮节点在原点，几何烘进顶点）', () => {
-  // 复现真实导出形态：节点在原点、identity 旋转；轮心在父空间 (0, 3, 0.4)，半径 0.37
   const restPos = new THREE.Vector3(0, 0, 0)
   const restQuat = new THREE.Quaternion()
   const pivot = new THREE.Vector3(0, 3, 0.4)
@@ -37,10 +25,8 @@ describe('轮自转位姿：枢轴补偿（导出的轮节点在原点，几何�
       const node = mkNode()
       const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), ang)
       applyWheelSpin(node, restPos, restQuat, pivot, restPivotRot, spin, travelAxis, 0)
-      // 轮心在节点变换后的位置
       const c = pivot.clone().applyQuaternion(node.quaternion).add(node.position)
       expect(c.distanceTo(pivot)).toBeLessThan(1e-6)
-      // 无补偿（旧写法）：只写旋转不补位置 ⇒ 轮心漂 2·|pivot|·sin(θ/2)（0.3 rad 即 0.9 m）
       const bad = pivot.clone().applyQuaternion(spin)
       expect(bad.distanceTo(pivot)).toBeCloseTo(2 * pivot.length() * Math.sin(ang / 2), 6)
     }
@@ -50,10 +36,9 @@ describe('轮自转位姿：枢轴补偿（导出的轮节点在原点，几何�
     const node = mkNode()
     const spin = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)
     applyWheelSpin(node, restPos, restQuat, pivot, restPivotRot, spin, travelAxis, 0)
-    // 轮心相对节点的偏移：旋转后 (0, y, z) → 位置补偿量 = pivot − R·pivot
     const rot = pivot.clone().applyQuaternion(spin)
     expect(rot.x).toBeCloseTo(0, 9)
-    expect(rot.y).toBeCloseTo(-0.4, 9)     // (y,z) = (3, 0.4) → (−0.4, 3)
+    expect(rot.y).toBeCloseTo(-0.4, 9)
     expect(rot.z).toBeCloseTo(3, 9)
   })
 })
@@ -64,7 +49,7 @@ describe('节点名解析与几何口径（数据 ↔ 模型的绑定契约）',
   it('轮节点：chassis_wheel_{L,R}_NN → 侧 + 1 基编号（= yaml wheels 下标 + 1）', () => {
     expect(parseWheelNodeName('chassis_wheel_L_01')).toEqual({ side: 'L', index: 1 })
     expect(parseWheelNodeName('chassis_wheel_R_22')).toEqual({ side: 'R', index: 22 })
-    expect(parseWheelNodeName('chassis_wheel_L_1')).toBe(null)     // 客户端格式串是 %.2d
+    expect(parseWheelNodeName('chassis_wheel_L_1')).toBe(null)
     expect(parseWheelNodeName('chassis_wheels_L')).toBe(null)
     expect(parseWheelNodeName('hull')).toBe(null)
   })
@@ -78,13 +63,13 @@ describe('节点名解析与几何口径（数据 ↔ 模型的绑定契约）',
   })
 
   it('轮半径：纵剖面半跨均值；退化输入回落 0.3', () => {
-    expect(wheelRadiusFromExtents(0.666, 0.666)).toBeCloseTo(0.333, 6)   // 圆柱轮胎（如实测 SPHT）
+    expect(wheelRadiusFromExtents(0.666, 0.666)).toBeCloseTo(0.333, 6)
     expect(wheelRadiusFromExtents(0, 0)).toBe(0.3)
     expect(wheelRadiusFromExtents(NaN, NaN)).toBe(0.3)
   })
 
   it('chunkLength = 链路平均段长；退化输入回落 0.25', () => {
-    expect(chainAverageSegment([[0, 0], [3, 4]])).toBeCloseTo(5, 9)      // 一段：3-4-5
+    expect(chainAverageSegment([[0, 0], [3, 4]])).toBeCloseTo(5, 9)
     expect(chainAverageSegment([[0, 0], [2, 0], [2, 1]])).toBeCloseTo(1.5, 9)
     expect(chainAverageSegment([])).toBe(0.25)
     expect(chainAverageSegment([[0, 0], [0, 0]])).toBe(0.25)
@@ -103,12 +88,11 @@ describe('行程：夹紧 / 限速 / 首帧吸附（客户端 [pz−b, pz+a] + w
   })
 
   it('限速：每帧最多走 rate·dt；到达即停；snap/dt≤0 直接吸附', () => {
-    // rate 1 m/s、dt 0.1s ⇒ 每帧 0.1 m
     expect(rateLimitTravel(0, 0.5, 1, 0.1, false)).toBeCloseTo(0.1, 12)
     expect(rateLimitTravel(0, -0.5, 1, 0.1, false)).toBeCloseTo(-0.1, 12)
-    expect(rateLimitTravel(0.09, 0.1, 1, 0.1, false)).toBeCloseTo(0.1, 12)   // 差量小于步长 ⇒ 直接到
-    expect(rateLimitTravel(0.3, 0.5, 1, 0.1, true)).toBe(0.5)               // 首帧吸附
-    expect(rateLimitTravel(0.3, 0.5, 1, 0, false)).toBe(0.5)                // seek：dt=0
+    expect(rateLimitTravel(0.09, 0.1, 1, 0.1, false)).toBeCloseTo(0.1, 12)
+    expect(rateLimitTravel(0.3, 0.5, 1, 0.1, true)).toBe(0.5)
+    expect(rateLimitTravel(0.3, 0.5, 1, 0, false)).toBe(0.5)
   })
 })
 
@@ -116,9 +100,9 @@ describe('行程：夹紧 / 限速 / 首帧吸附（客户端 [pz−b, pz+a] + w
 
 describe('自转：θ += −Δs/r，绕局部 X（前滚 ⇒ 顶部随车向前）', () => {
   it('前进行驶使角度单调减小、且按半径换算', () => {
-    const t1 = spinStep(0, 1.0, 0.5)          // 走 1 m、半径 0.5 m ⇒ Δθ = −2 rad
+    const t1 = spinStep(0, 1.0, 0.5)
     expect(t1).toBeCloseTo(-2, 12)
-    expect(spinStep(t1, 1.0, 0.5)).toBeCloseTo(-4 + Math.PI * 2, 6)   // 折叠进 ±π
+    expect(spinStep(t1, 1.0, 0.5)).toBeCloseTo(-4 + Math.PI * 2, 6)
   })
 
   it('倒车反向；半径非法时不动（fail-safe）', () => {
@@ -143,24 +127,20 @@ describe('花纹滚动：每米 V = 网格实测 dV/ds（≠ 客户端形式常�
   })
 
   it('沿带斜率测量：幅值 = |斜率| 中位（符号由底段走向 chainBottomRunDir 定）；图集换行与双行反向都不污染', () => {
-    // 2026-10-24 语义更新（Grille 15 样本 19217）：图集双行的 V 推进方向相反
-    // （下行 +1.24 / 上行 −1.25 V/m），带符号中位互相抵消 = 0 ⇒ 恒停滚。
-    // 幅值中位对两族相等（同一物理滚动速度）⇒ 取 |斜率| 中位，方向交给调用方。
     const lin = [];
-    for (let s = 0; s < 15; s += 0.2) lin.push([s, -0.6 * s]);            // dV/ds = −0.6
+    for (let s = 0; s < 15; s += 0.2) lin.push([s, -0.6 * s]);
     expect(measureBeltUvSlope(lin).slope).toBeCloseTo(0.6, 6)
     expect(measureBeltUvSlope(lin).ok).toBe(true)
     const wrap = [];
     for (let s = 0; s < 15; s += 0.2) {
       const v = -0.6 * s;
-      wrap.push([s, v - Math.floor(v / 9) * 9]);                          // 每 9 V 换行
+      wrap.push([s, v - Math.floor(v / 9) * 9]);
     }
     expect(measureBeltUvSlope(wrap).slope).toBeCloseTo(0.6, 6)
-    // 双行反向（图集两行对称铺设）：幅值仍 = 0.6（任一行物理速度相同）
     const dual = [];
     for (let s = 0; s < 15; s += 0.2) {
-      dual.push([s, (-0.6 * s) - Math.floor((-0.6 * s) / 9) * 9]);        // 行 A
-      dual.push([s, (0.6 * s) - Math.floor((0.6 * s) / 9) * 9]);          // 行 B（反向）
+      dual.push([s, (-0.6 * s) - Math.floor((-0.6 * s) / 9) * 9]);
+      dual.push([s, (0.6 * s) - Math.floor((0.6 * s) / 9) * 9]);
     }
     expect(measureBeltUvSlope(dual).slope).toBeCloseTo(0.6, 6)
     expect(measureBeltUvSlope(dual).ok).toBe(true)
@@ -170,7 +150,7 @@ describe('花纹滚动：每米 V = 网格实测 dV/ds（≠ 客户端形式常�
     const rows = [];
     for (let s = 0; s < 6; s += 0.25) { for (const _ of [0, 1, 2]) rows.push([s, -0.5 * s]); }
     expect(measureBeltUvSlope(rows).slope).toBeCloseTo(0.5, 6)
-    expect(measureBeltUvSlope([[0, 0], [1, -0.5]]).ok).toBe(false)        // 样本太少
+    expect(measureBeltUvSlope([[0, 0], [1, -0.5]]).ok).toBe(false)
   })
 
   it('底段走向：点序"车尾→车头" = +1；反向 = −1（决定滚动符号）', () => {
@@ -193,7 +173,6 @@ describe('地形折算与侧位移', () => {
   it('sideTravel：带符号的纵向投影（倒车为负）', () => {
     expect(sideTravel(0, 0, 1, 0, 1, 0)).toBeCloseTo(1, 12)
     expect(sideTravel(0, 0, -1, 0, 1, 0)).toBeCloseTo(-1, 12)
-    // 侧向位移不计入（前向 = +x）
     expect(sideTravel(0, 0, 0, 5, 1, 0)).toBeCloseTo(0, 12)
   })
 })

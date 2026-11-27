@@ -15,19 +15,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 直接对生产端生成的证据文本断言，不经过 HTTP。
- * <p>{@link PlayerReplayAnalysisServiceTest} 走 Service → Gateway 装配（含 mock server 场景），
- * 在部分开发机上无法执行；本类覆盖同一批契约（人称、阵容归属、事件类型中文化），
- * 让这些回归在本地也能被抓住。</p>
- */
 class PlayerEvidenceContractTest {
 
     private static final long YOU = 1001L;
     private static final long MATE = 1002L;
     private static final long FOE = 2001L;
 
-    // ---- 完整特征集路径 ----
 
     @Test
     void fullFeaturePathAddressesThePlayerInSecondPerson() {
@@ -69,7 +62,6 @@ class PlayerEvidenceContractTest {
 
         assertTrue(evidence.contains("YOU_AUTHORITATIVE"), evidence);
         assertTrue(evidence.contains("TEAMMATE_LINEUP_AUTHORITATIVE"), evidence);
-        // 队友段（到敌方段之前）不得出现玩家本人
         final String teammateSection = evidence.substring(
                 evidence.indexOf("TEAMMATE_LINEUP_AUTHORITATIVE"),
                 evidence.indexOf("ENEMY_LINEUP_AUTHORITATIVE"));
@@ -97,7 +89,6 @@ class PlayerEvidenceContractTest {
         assertFalse(evidence.contains("PLAYER_DESTROYED"), evidence);
     }
 
-    // ---- 降级路径（无特征集） ----
 
     @Test
     void fallbackPathKeepsThePlayerOutOfTheTeammateRoster() {
@@ -129,7 +120,6 @@ class PlayerEvidenceContractTest {
         assertFalse(teammateSection.contains("You"), teammateSection);
     }
 
-    // ---- 战斗时间统一为 X分XX秒 ----
 
     @Test
     void fullFeaturePromptCarriesNoRawSecondClocks() {
@@ -161,10 +151,6 @@ battle.players.get(2).settlementLifeTimeSec = 123;
         assertFalse(evidence.contains("阵亡@123.0s"), evidence);
     }
 
-    /**
-     * Prompt 里不得出现裸秒数：{@code 123.0s}、{@code [10.0-20.0s]}、{@code 阵亡@123.0s}。
-     * 距离与速度的 m / m/s 不属于战斗时刻，故只匹配以 s 结尾的秒数写法。
-     */
     private static void assertNoRawSecondClocks(final String evidence) {
         assertFalse(evidence.matches("(?s).*\\d+\\.\\ds\\b.*"),
                 "prompt must not contain raw second clocks like 123.0s, got: " + evidence);
@@ -174,7 +160,6 @@ battle.players.get(2).settlementLifeTimeSec = 123;
                 "time ranges must use [X分XX秒-X分XX秒], got: " + evidence);
     }
 
-    // ---- fixtures ----
 
     private static String fullFeatureEvidence(final int recorderTeam) {
         return fullFeatureEvidence(recorderTeam, List.of());
@@ -193,7 +178,6 @@ battle.players.get(2).settlementLifeTimeSec = 123;
         return PlayerReplayPromptBuilder.buildPlayerContextSummary(ctx);
     }
 
-    /** 名册：你（recorderTeam）+ 同队 Mate + 对方 Foe。 */
     private static Battle battle(final int recorderTeam) {
         final int enemyTeam = recorderTeam == 1 ? 2 : 1;
         final Battle battle = new Battle();
@@ -214,7 +198,7 @@ battle.players.get(2).settlementLifeTimeSec = 123;
         p.accountId = accountId;
         p.nickname = nickname;
         p.team = team;
-        p.tankId = 513L;   // IS
+        p.tankId = 513L;
         p.damageDealt = 1_000;
         p.survived = true;
         return p;

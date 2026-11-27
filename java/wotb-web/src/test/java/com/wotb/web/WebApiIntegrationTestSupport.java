@@ -82,7 +82,6 @@ abstract class WebApiIntegrationTestSupport {
         registry.add("wotb.hof.replay-min-free-bytes", () -> "0");
     }
 
-    /** 集成测试专用回放存储目录（每次 JVM 唯一，避免串扰）。 */
     static final Path REPLAY_DIR = Path.of(
             System.getProperty("java.io.tmpdir"), "wotb-it-replays-" + UUID.randomUUID());
 
@@ -107,8 +106,6 @@ abstract class WebApiIntegrationTestSupport {
     final ObjectMapper om = JsonMapper.builder().build();
 
     MockMvc mvc() {
-        // 必须挂 springSecurity()：with(jwt()) 依赖 Security filter 填充 SecurityContext，
-        // 否则需登录端点（hof upload/download）的 requireUserId 会拿到空上下文直接 401。
         return MockMvcBuilders.webAppContextSetup(ctx).apply(springSecurity()).build();
     }
 
@@ -144,7 +141,6 @@ abstract class WebApiIntegrationTestSupport {
                 "application/octet-stream", Files.readAllBytes(p));
     }
 
-    /** CW 训练房夹具（arenaBonusType=2），HoF 必须以 UNSUPPORTED_BATTLE_TYPE 拒绝。 */
     static Path trainingRoomFixture() throws Exception {
         final Path p = Path.of(System.getProperty("user.dir"), "..", "..",
                 "common", "fixtures", "replays", "cw-training-15-14-example.wotbreplay").normalize();
@@ -152,11 +148,6 @@ abstract class WebApiIntegrationTestSupport {
         return p;
     }
 
-    /**
-     * HoF/标准导出场景使用的随机战 fixture（random-battle-example，arenaBonusType=1）。
-     * 不依赖 replays() 排序——fixtures/replays 现含 CW 训练房（arenaBonusType=2），
-     * HoF 上传会以 UNSUPPORTED_BATTLE_TYPE 拒绝，必须显式选随机战样本。
-     */
     static Path standardRandomFixture() throws Exception {
         for (final Path p : replays()) {
             if (p.getFileName().toString().contains("random-battle-example")) {
@@ -173,7 +164,6 @@ abstract class WebApiIntegrationTestSupport {
                 "application/octet-stream", Files.readAllBytes(p));
     }
 
-    /** 浏览器随回放一并提交的 facts：与夹具同源的冻结客户端投影（服务器没有 parser）。 */
     static String facts(final Path replay) {
         final String name = replay.getFileName().toString();
         return ReplayFactsJson.fixture(name.substring(0, name.length() - ".wotbreplay".length()));
@@ -188,10 +178,6 @@ abstract class WebApiIntegrationTestSupport {
                 .andReturn().getResponse().getContentAsString();
     }
 
-    /**
-     * 本类测试共享同一个数据库且不按方法清理：先删掉该夹具回放（按 replay hash）已有的单场记录，
-     * 否则方法执行顺序会把「首次上传」变成重复上传（重复上传返回 already_recorded）。
-     */
     void clearHofRecordsOf(final Path replay) throws Exception {
         final String hash = HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(replay)));

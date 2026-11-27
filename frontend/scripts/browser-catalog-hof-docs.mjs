@@ -15,7 +15,6 @@ export const CATALOG_HOF_DOC_SCENARIOS = ['summer', 'winter'].flatMap(profile =>
   ...size, profile, mode, name: `tankopedia-${mode}-${profile}-${size.width}x${size.height}`,
 })))))
 
-/** 真实组件/DOM/CSS 与原始输入；仅外部 HTTP 榜单及静态图片使用确定性夹具。 */
 export async function runCatalogHofDocScenario(env, scenario) {
   const { sessionId, targetId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
@@ -120,13 +119,11 @@ export async function runCatalogHofDocScenario(env, scenario) {
       await page.waitForValue('document.querySelectorAll(".tp-skill-btn").length', value => value === 20)
       await tap('[data-testid=tank-skills-max]')
       await page.waitForValue('document.querySelectorAll(".tp-skill-btn.is-on").length', value => value === 20)
-      // 整个关联label是触控目标，原生复选框只负责绘制小型勾选符号。
       await tap('[data-testid=tank-skill-trigger-control]')
       await page.waitForValue('document.querySelector("[data-testid=tank-skill-triggers]").checked', Boolean)
       const overflow = await page.evaluate('[...document.querySelectorAll(".tp-skill-group")].some(el => el.scrollWidth > el.clientWidth + 1)')
       assert.equal(overflow, false, '实际配置列中的技能组不得横溢出')
     } else if (scenario.mode === 'dialog') {
-      // 选择器在 dialog 上下文内展开：列表不得被 dialog 的内容裁掉，选项要真实可点。
       await tap('#dialog-vehicle')
       await page.waitForValue('!!document.querySelector(".vp-option")', Boolean)
       await reachableControls('.vp-option')
@@ -148,10 +145,6 @@ export async function runCatalogHofDocScenario(env, scenario) {
       await page.waitForValue('!document.querySelector("[data-testid=filter-chip][data-key=tier]")', Boolean)
       await tap('[data-tank-id="9002"]')
       await page.waitForValue('document.querySelector("[data-testid=catalog-selected]").textContent', value => value === '9002')
-      // 收藏车 / 金币车语义底色 precedence（agent-theme-css.test.js E 的 computed 接替）：
-      // 卡片按 `category` 取 `.is-premium` / `.is-collector:not(.is-premium)` 的语义底色；
-      // normalizeTankCache 对双 true 行给 premium，因此双标卡片必须与纯金币车同底色。
-      // 注意：卡片边框不随 category 变色（只有 sel/hover 改边框），这里断言 backgroundColor。
       const cards = await page.evaluate(`(() => {
         const bg = (id) => getComputedStyle(document.querySelector('.tp-card[data-tank-id="' + id + '"]')).backgroundColor
         return { premium: bg(9001), collector: bg(9002), both: bg(9003) }

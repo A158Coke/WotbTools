@@ -3,7 +3,6 @@ import type { Ref } from 'vue'
 import { isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import type { EventTargetLike } from '../composables/usePlaybackTransport.js'
 
-/** C 段读取的跨段共享状态（结构性最小集；运行时实体在 SFC 里逐个赋值）。 */
 export interface BpCParts {
   wideLayoutQuery: MediaQueryList | null
   wideLayout: Ref<boolean>
@@ -45,8 +44,6 @@ export interface BpCProps {
 
 export function bpC(S: BpCParts, props: BpCProps): void {
   onMounted(() => {
-    // pointermove/up 兜底在 usePlaybackMapGestures、fullscreenchange 在 usePlaybackFullscreen；
-    // §3：大桌面三列布局以 matchMedia 为事实源，监听宽度跨 1200px 边界。
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
       const query = window.matchMedia('(min-width: 1200px)')
       S.wideLayoutQuery = query
@@ -59,7 +56,6 @@ export function bpC(S: BpCParts, props: BpCProps): void {
     window.addEventListener('resize', S.writeSquareAvailHeight)
   })
 
-  /** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
   function dragStart(): void {
     transport.scrubStart()
   }
@@ -68,15 +64,12 @@ export function bpC(S: BpCParts, props: BpCProps): void {
     transport.scrubEnd()
   }
 
-  // 能力切换或 KeepAlive 停用时暂停并退出本回放拥有的全屏。
   onDeactivated(() => { S.lifecycleVisible.value = false; S.pause(); S.exitOwnedFullscreen() })
   onActivated(() => { S.lifecycleVisible.value = true })
   watch(() => props.active, (value) => { if (!value) { S.pause(); S.exitOwnedFullscreen() } })
 
-  // 共享播放键位/拖动语义；键盘监听由本组件挂卸，避免重复注册。
   const transport = usePlaybackTransport({
     isPlaying: () => S.playing.value,
-    // 播放时钟在下方解构（声明顺序晚于本调用）——惰性闭包避免 TDZ；事件期才求值。
     play: () => S.play(),
     pause: () => S.pause(),
     step: (delta: number) => S.step(delta),
@@ -117,8 +110,6 @@ export function bpC(S: BpCParts, props: BpCProps): void {
       S.stageResizeObserver = null
     }
     if (typeof document !== 'undefined') {
-      // fullscreenchange 的移除归 usePlaybackFullscreen（onScopeDispose 内完成；它同时负责解锁方向）
-      // 组件在 fullscreen 中被卸载 → 主动退出（浏览器通常会自动退出，这里兜底）
       if (S.pbRoot.value && S.pbRoot.value === document.fullscreenElement && typeof document.exitFullscreen === 'function') {
         try {
           const exitResult = document.exitFullscreen()
@@ -128,7 +119,6 @@ export function bpC(S: BpCParts, props: BpCProps): void {
         }
       }
     }
-    // §3：清理大桌面三列布局的 matchMedia 监听。
     if (S.wideLayoutQuery && typeof S.wideLayoutQuery.removeEventListener === 'function') {
       S.wideLayoutQuery.removeEventListener('change', S.onWideLayoutChange)
     }

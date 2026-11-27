@@ -5,10 +5,6 @@ import en from '../locales/en.json'
 import ru from '../locales/ru.json'
 import { makeBattlePlaybackDataset } from './playbackV2TestUtil.js'
 
-/**
- * Shared, state-free helpers for the annotation suites.
- * Each suite keeps its own vi.mock declarations and passes in its mocked component import.
- */
 export function createBattlePlaybackAnnotTestHarness(BattlePlayback) {
   function makeOverview() {
     return {

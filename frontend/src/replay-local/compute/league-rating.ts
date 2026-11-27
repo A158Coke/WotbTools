@@ -1,10 +1,3 @@
-/**
- * 单场 League Rating（V4.1）：模式判定 / 完整性校验 / 副本冲突指纹 / 归一化 / 评分 / 战队命名。
- *
- * 逐一移植 Java `com.wotb.core.rating` 的 LeagueRatingMode、LeagueRatingValidator、
- * LeagueRatingConflictDetector、LeagueRatingNormalizer、LeagueRatingCalculator、
- * LeagueTeamNamer 与 `replay.facts.TradeFacts`。浮点运算保持 Java 的运算顺序（逐位一致）。
- */
 
 import { compareNumbers, doubleCompare, hasText, javaDoubleKey, maxBy } from './java.js'
 import type { Battle, PlayerResult } from './model.js'
@@ -12,7 +5,6 @@ import { TOTAL_PLAYERS } from './league-validation.js'
 export { LEAGUE_FAILURE_CODE, validateLeagueBattle } from './league-validation.js'
 export type { LeagueFailure } from './league-validation.js'
 
-// ---------- 模式（LeagueRatingMode） ----------
 
 export type LeagueRatingMode = 'STANDARD_REPLAY' | 'LEAGUE_RATING' | 'MIXED_UNSUPPORTED'
 
@@ -24,7 +16,6 @@ export function isLeagueBattle(battle: Battle | null): boolean {
   return t !== null && (t === ARENA_BONUS_TYPE_TRAINING || t === ARENA_BONUS_TYPE_TOURNAMENT)
 }
 
-/** 只看成功解析的回放：全 LEAGUE → LEAGUE_RATING；全普通 → STANDARD；混合 → MIXED_UNSUPPORTED。 */
 export function classifyMode(battles: readonly Battle[]): LeagueRatingMode {
   let hasLeague = false
   let hasStandard = false
@@ -36,9 +27,7 @@ export function classifyMode(battles: readonly Battle[]): LeagueRatingMode {
   return hasLeague ? 'LEAGUE_RATING' : 'STANDARD_REPLAY'
 }
 
-// ---------- 结果 DTO（records） ----------
 
-/** 维度满分（V4.1 冻结，合计 1000）。 */
 export const MAX_DAMAGE = 365
 export const MAX_ASSIST = 110
 export const MAX_KILL = 110
@@ -72,7 +61,6 @@ export interface PlayerLeagueRating {
   teamBest: boolean
 }
 
-/** 七维分数唯一有序表示（顺序 = LeagueColumns.DIM_KEYS）。 */
 export function dimensionScores(p: PlayerLeagueRating): number[] {
   return [p.damageScore, p.assistScore, p.killScore, p.exchangeScore,
     p.blockedScore, p.survivalTradeScore, p.shootingScore]
@@ -97,17 +85,14 @@ export interface LeagueRatingResult {
   rated: boolean
 }
 
-// ---------- TradeFacts / deathSec ----------
 
 const TRADE_AFTER_DEATH_WINDOW_SEC = 5.0
 
-/** 业务死亡时刻（秒）：settlement lifeTime 唯一 authority；存活/非法 → 0。 */
 export function deathSec(p: PlayerResult): number {
   if (p.survived) return 0
   return Number.isFinite(p.settlementLifeTimeSec) && p.settlementLifeTimeSec > 0 ? p.settlementLifeTimeSec : 0
 }
 
-/** 玩家死亡后 [0, +5]s（含边界）内的敌方死亡数。 */
 export function tradedDeaths(player: PlayerResult, players: readonly PlayerResult[]): number {
   if (player.survived || players.length === 0) return 0
   const playerDeathSec = deathSec(player)
@@ -123,7 +108,6 @@ export function tradedDeaths(player: PlayerResult, players: readonly PlayerResul
   return Math.max(0, enemyDeaths)
 }
 
-// ---------- 归一化（LeagueRatingNormalizer） ----------
 
 const WILSON_Z = 1.96
 
@@ -164,9 +148,7 @@ function wilsonLowerBound(successes: number, trials: number, z: number = WILSON_
   return Math.max(0.0, center - margin)
 }
 
-// ---------- 副本冲突（LeagueRatingConflictDetector） ----------
 
-/** settlement-only 指纹：等价于 Java StringBuilder 串的相等性（玩家按 accountId 升序，重复账号后者覆盖）。 */
 function fingerprint(battle: Battle): string {
   const parts = [`w=${battle.winnerTeam}`, `t=${battle.arenaBonusType}`, `d=${javaDoubleKey(battle.durationS)}`]
   if (battle.players != null) {
@@ -184,7 +166,6 @@ function fingerprint(battle: Battle): string {
   return parts.join(';')
 }
 
-/** 同 arenaId 的全部副本与第一份 canonical 指纹一致 → true（重复）；否则冲突。 */
 export function copiesConsistent(copies: readonly Battle[]): boolean {
   if (copies.length === 0) return false
   const canonical = fingerprint(copies[0])
@@ -194,7 +175,6 @@ export function copiesConsistent(copies: readonly Battle[]): boolean {
   return true
 }
 
-// ---------- 战队命名（LeagueTeamNamer） ----------
 
 const MAJORITY_THRESHOLD = 4
 export const NAME_SOURCE_CLAN_MAJORITY = 'CLAN_MAJORITY'
@@ -215,9 +195,7 @@ function autoName(players: readonly PlayerLeagueRating[]): string | null {
   return majority
 }
 
-// ---------- 评分（LeagueRatingCalculator） ----------
 
-/** [teamWeight, globalWeight]：伤害/助攻/击杀/换血/阻挡。 */
 const DIM_WEIGHTS: ReadonlyArray<readonly [number, number]> = [
   [0.60, 0.40],
   [0.70, 0.30],
@@ -261,7 +239,6 @@ function teamAverages(players: readonly PlayerResult[], getter: (p: PlayerResult
   return [0, counts[1] === 0 ? 0 : sums[1] / counts[1], counts[2] === 0 ? 0 : sums[2] / counts[2]]
 }
 
-/** MVP/队内最佳排序：finalRating → 胜方优先 → damage → assist → kills → accountId。 */
 function mvpComparator(winnerTeam: number): (a: PlayerLeagueRating, b: PlayerLeagueRating) => number {
   return (a, b) => {
     let c = doubleCompare(a.finalRating, b.finalRating)
@@ -302,7 +279,6 @@ function teamRating(team: number, players: readonly PlayerLeagueRating[], winner
   }
 }
 
-/** 计算一场已通过校验的 7v7 battle 的完整 League Rating。 */
 export function calculateLeagueRating(battle: Battle): LeagueRatingResult {
   const players = battle.players
   const n = players.length

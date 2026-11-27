@@ -13,9 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Timeline validation（docs/architecture/battle-timeline.md §4）：关键条件缺失 → 拒绝，不进入 AI Review。
- */
 class BattleTimelineValidationTest {
 
     @Test
@@ -56,7 +53,6 @@ class BattleTimelineValidationTest {
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final List<ReplayEvent> events = new ArrayList<>(TimelineTestFixtures.standardEvents());
         final ReplayReconstruction base = TimelineTestFixtures.recon(60.0, events);
-        // 无 battle start、无 BattleEndedEvent、无 duration → 时钟无法建立
         final ReplayReconstruction noClock = new ReplayReconstruction(
                 base.metadata(), base.streamHeader(), base.battleDurationSec(), null,
                 base.participants(), base.events(), base.checkpoints(),
@@ -101,12 +97,9 @@ class BattleTimelineValidationTest {
 
     @Test
     void mixedClockDomainsRejectZeroBaselineAndMarkLimitation() {
-        // 同一 stream 部分事件带 battleClockSec、部分 raw-only → 时钟域混合，
-        // 不得用 0 基准（IDENTIFIED）；走 ESTIMATED 并标记 MIXED_CLOCK_DOMAINS。
         final Battle battle = TimelineTestFixtures.battle(60.0);
         final java.util.List<com.wotb.core.replay.event.ReplayEvent> events =
                 new java.util.ArrayList<>(TimelineTestFixtures.standardEvents());
-        // 一个事件带 battleClockSec（另一时钟域）
         events.add(new com.wotb.core.replay.event.HealthChangedEvent(
                 900, new com.wotb.core.replay.event.ReplayTimestamp(1005f, 5f), 7,
                 com.wotb.core.replay.event.DecodeConfidence.EXACT,

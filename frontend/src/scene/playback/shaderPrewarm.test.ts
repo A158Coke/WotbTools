@@ -1,6 +1,3 @@
-// shaderPrewarm 工厂行为测试：compile 走 ensureBattleFx().prewarm 恰一次、
-// 装甲预热按偏好触发（评审 P2——依赖键名错配会让装甲预热被 catch 吞掉、归零）、
-// 异常被吞（best-effort 语义）。
 import { describe, expect, it, vi } from 'vitest'
 import { createShaderPrewarm, type ShaderPrewarmDeps } from './shaderPrewarm.js'
 

@@ -1,22 +1,14 @@
-/**
- * 主线程入口：把选中的回放文件交给解析 Worker，逐文件回报进度，返回与输入同序的解析结果。
- *
- * 服务器没有 parser：解析失败只会是「该文件解析失败」或「WASM 不可用」，不存在回退到服务端。
- */
 import type { ParseMessage, ParsedReplayFile } from './parseWorkerProtocol.js'
 import { tryCollect } from './battle-data/collector.js'
 
 export type { ParsedReplayFile }
 
 export interface ParseReplaysOptions {
-  /** 每完成一个文件回调一次（done = 已完成个数） */
   onProgress?: (done: number, total: number) => void
-  /** Lifecycle observer, using the original input index even when worker messages arrive out of order. */
   onFile?: (index: number, file: ParsedReplayFile) => void
   signal?: AbortSignal
 }
 
-/** WASM 装载失败（产物缺失 / 浏览器不支持）：整批不可用，与单文件解析失败区分 */
 export class ReplayEngineUnavailableError extends Error {
   constructor(message: string) {
     super(message)
@@ -31,7 +23,6 @@ const defaultWorkerFactory: WorkerFactory = () =>
 
 let workerFactory: WorkerFactory = defaultWorkerFactory
 
-/** 测试注入点：以桩 Worker 替换真实 Worker；传 null 复位。生产代码不调用。 */
 export function __setParseWorkerFactoryForTest(factory: WorkerFactory | null): void {
   workerFactory = factory ?? defaultWorkerFactory
 }

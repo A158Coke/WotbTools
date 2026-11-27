@@ -3,7 +3,6 @@ import {
   pathPointsOf, legSecsOf, legEndTimes, pointAt, legArcEnds, arcAtTime, pointAtArc,
 } from './shotPath.ts'
 
-// 跳弹样本（20260821_1917 Intotherainy/KRV）：炮口 → 受击方装甲处（跳弹点）→ 服务器终点（天上）
 const ricochet = {
   from: [109.65, 32.33, 135.39],
   via: [[131.92, 30.58, 72.5]],
@@ -22,7 +21,6 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     expect(legSecsOf(ricochet, 0.5)).toEqual([0.097, 0.977])
     expect(legSecsOf(straight, 0.42)).toEqual([0.42])
     expect(legSecsOf({ from: [0, 0, 0], to: [1, 0, 0], via: [[0.5, 0, 0]], leg_secs: [0.1] }, 0.42)).toEqual([0.42])
-    // 非法段值（0/负/NaN）同样退化，不产生零长段
     expect(legSecsOf({ from: [0, 0, 0], to: [1, 0, 0], via: [[0.5, 0, 0]], leg_secs: [0, 0.2] }, 0.42)).toEqual([0.42])
   })
 
@@ -32,12 +30,10 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     expect(pts).toEqual([[0, 0, 0], [30, 0, 0]])
     const legs = legSecsOf(shot, 0.3)
     const ends = legEndTimes(legs, 1)
-    // 段内中点是 lerp 计算值：1.15-1 的 FP 减法误差 (~1e-14) 会进 f，按分量容差断言
     const mid = pointAt(pts, ends, 1.15, 1)
     expect(mid[0]).toBeCloseTo(15, 6)
     expect(mid[1]).toBeCloseTo(0, 6)
     expect(mid[2]).toBeCloseTo(0, 6)
-    // 终点走 t >= legEnds 末端的恒等返回，精确相等
     expect(pointAt(pts, ends, 1.3, 1)).toEqual([30, 0, 0])
 
     const malformed = { ...shot, leg_secs: [0, 0.1, 0.1] }
@@ -49,20 +45,15 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     const pts = pathPointsOf(ricochet)
     const ends = legEndTimes(ricochet.leg_secs, 71.219)
     expect(ends[0]).toBeCloseTo(71.316, 6)
-    // 段 0 起点 = 炮口
     expect(pointAt(pts, ends, 71.219, 71.219)).toEqual(ricochet.from)
-    // 段 0 中点 ≈ 炮口与跳弹点之间
     const mid = pointAt(pts, ends, 71.219 + 0.097 / 2, 71.219)
     expect(mid[0]).toBeCloseTo((109.65 + 131.92) / 2, 3)
-    // 拐点：段 1 起点 == 段 0 终点（连续）
     const corner = pointAt(pts, ends, 71.316, 71.219)
     expect(corner[0]).toBeCloseTo(131.92, 6)
     expect(corner[2]).toBeCloseTo(72.5, 6)
-    // 段 1 内前进（朝服务器终点方向）
     const later = pointAt(pts, ends, 71.316 + 0.5, 71.219)
     expect(later[1]).toBeGreaterThan(30.58)
     expect(later[2]).toBeLessThan(72.5)
-    // 超出末端 → 服务器终点（**在服务器终点处中止**）
     expect(pointAt(pts, ends, 999, 71.219)).toEqual(ricochet.to)
   })
 
@@ -72,14 +63,11 @@ describe('shotPath：折线弹道求值（跳弹/穿透续段）', () => {
     const l0 = Math.hypot(131.92 - 109.65, 30.58 - 32.33, 72.5 - 135.39)
     expect(arc[0]).toBeCloseTo(l0, 6)
     expect(arc[1]).toBeGreaterThan(arc[0])
-    // 弧长 0 → from；超过总长 → to
     expect(pointAtArc(pts, arc, 0)).toEqual(ricochet.from)
     expect(pointAtArc(pts, arc, arc[1] + 10)).toEqual(ricochet.to)
-    // 头部在拐点时刻的弧长 = 段 0 全长
     const ends = legEndTimes(ricochet.leg_secs, 0)
     const sCorner = arcAtTime(pts, ends, arc, ends[0], 0)
     expect(sCorner).toBeCloseTo(l0, 6)
-    // 尾部 = 头部回退 9m：仍在段 0 上（跳弹点距炮口 > 9m）
     const tail = pointAtArc(pts, arc, sCorner - 9)
     const dFrom = Math.hypot(tail[0] - ricochet.from[0], tail[1] - ricochet.from[1], tail[2] - ricochet.from[2])
     expect(dFrom).toBeCloseTo(l0 - 9, 6)
@@ -96,21 +84,18 @@ describe('Into 变体输出契约（评审 P1 回归锁）', () => {
   it('out 为 THREE.Vector3 时写入 x/y/z（仅数组下标会让炮弹停在原点）', async () => {
     const THREE = await import('three')
     const { pointAtInto, pointAtArcInto } = await import('./shotPath.ts')
-    // 评审用例形状：from=[10,0,10] → to=[60,0,30]，flight 1s，t−t0 = 0.5
     const points = [[10, 0, 10], [60, 0, 30]]
-    const legEnds = [1]           // 单段，段末 t0+1
+    const legEnds = [1]
     const out = new THREE.Vector3()
     pointAtInto(points, legEnds, 0.5, 0, out)
     expect(out.x).toBeCloseTo(35, 6)
     expect(out.z).toBeCloseTo(20, 6)
-    expect(out.x + out.y + out.z).not.toBe(0)   // 绝不是原点
-    // 弧长变体同契约
+    expect(out.x + out.y + out.z).not.toBe(0)
     const arcEnds = [Math.hypot(50, 20)]
     const out2 = new THREE.Vector3()
     pointAtArcInto(points, arcEnds, arcEnds[0] * 0.25, out2)
     expect(out2.x).toBeGreaterThan(10)
     expect(out2.length()).toBeGreaterThan(0)
-    // 数组输出仍然工作（两种契约并存）
     const arr = [0, 0, 0]
     pointAtInto(points, legEnds, 0.5, 0, arr)
     expect(arr[0]).toBeCloseTo(35, 6)

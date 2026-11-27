@@ -1,9 +1,4 @@
 <script setup lang="ts">
-/**
- * 装甲查看器左上角「参数」面板（拆分自 AgentArmorView.vue 模板，行为原样）。
- * 场景静态 DOM 契约（info-panel / config-row / shooter-select / target-select /
- * tank-selection-status 等静态 id）原样保留；装配改动经事件回宿主写 URL 并驱动场景。
- */
 import { useRoute } from 'vue-router'
 import { SlidersHorizontal, X } from 'lucide-vue-next'
 import ArmorSideConfig from '../ArmorSideConfig.vue'
@@ -45,7 +40,6 @@ function tankIdValue(value: string | number | null): number | undefined {
         <div class="stat"><span class="label">{{ $t('armor.type') }}</span><span class="value" id="tank-type"></span></div>
         <div class="stat"><span class="label">{{ $t('armor.nation') }}</span><span class="value" id="tank-nation"></span></div>
     </div>
-    <!-- 「参数」开关：展开 / 收起装备、射击方、目标、配置；桌面与手机均默认收起 -->
     <button
         v-if="!cleanQuery"
         type="button"
@@ -78,7 +72,6 @@ function tankIdValue(value: string | number | null): number | undefined {
             <label v-show="pitchDeviceAvailable" class="eq-opt" id="pitch-device-opt"><input type="checkbox" id="eq-pitch-device"> <span class="eq-opt-label">{{ $t('armor.pitch_device') }}</span></label>
             <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
         </div>
-        <!-- 射击方 / 受击方：坦克切换 + 模块选择同一张卡，模块默认收起。 -->
         <div class="armor-side-cards" data-testid="armor-side-configs">
             <ArmorSideCard
                 :role-label="$t('armor.loadout_shooter')"

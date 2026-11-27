@@ -15,8 +15,6 @@ describe('App routing', () => {
     vi.clearAllMocks()
   })
 
-  // ALLOWED_VIEWS 与 VIEW_COMPONENTS 漂移曾让 ?view=history 静默回退到默认视图（回主页），
-  // 两条清单必须始终是同一个视图集合。
   it('keeps the navigable view allowlist equal to the registered view components', () => {
     expect([...ALLOWED_VIEWS].sort()).toEqual(Object.keys(VIEW_COMPONENTS).sort())
   })
@@ -68,7 +66,6 @@ describe('App routing', () => {
       expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
       expect(authState.login).not.toHaveBeenCalled()
-      // 场景参数原样保留：查看器读的就是 URL 里这一份
       expect(router.currentRoute.value.query).toEqual({
         view: 'agent-armor', tank: '13825', shooter: '19969', config: '1', scfg: '0',
         shell: '0', shot: '2', world: '1', heatmap: '1', az: '45', h: '6', d: '12',
@@ -184,7 +181,6 @@ describe('App routing', () => {
         view: 'agent-armor', tank: '13825', shooter: '19969', shot: '2',
         shell: '0', scfg: '0', config: '1', world: '1', heatmap: '1',
       })
-      // 落地的是装甲查看器（不是被收敛回工作台），参数就得是它读的那一份
       expect(wrapper.find('[data-test="view-agent-armor"]').exists()).toBe(true)
     } finally {
       setAuthState('unauthenticated', false)
@@ -197,11 +193,9 @@ describe('App routing', () => {
       const { wrapper, router } = await mountApp('/?view=profile')
       expect(router.currentRoute.value.query.view).toBe('profile')
 
-      // 登出：useAuth 把 authenticated 落回 false（local-first，不等网络）
       authState.authenticatedRef.value = false
       await settle()
 
-      // happy-dom 的 localhost 与 Android 一样以 Replay 为默认落点。
       expect(router.currentRoute.value.query.view).toBe('replay')
       expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
       wrapper.unmount()

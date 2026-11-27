@@ -25,10 +25,6 @@ esac
 guard_min_supported "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
 guard_local_first_cutover "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
 
-# 一个前端已不再支持的 bridge 版本必须靠 minSupportedVersionCode 强制更新：
-# 否则发布出去的是一个「看起来兼容」的 manifest，而线上旧客户端继续用一个本
-# 前端已经无法服务的 wire contract（version.json 的 nativeBridgeVersion 就是
-# 线上客户端当前使用的 bridge 世代）。
 PROD_BRIDGE=""
 if [ -s "$PROD_JSON" ]; then
   PROD_BRIDGE="$(jq -r '.nativeBridgeVersion // empty' "$PROD_JSON" 2>/dev/null || true)"
@@ -44,9 +40,6 @@ guard_bridge_covered "$PROD_BRIDGE" "$STEP_VERSION_NATIVEBRIDGEVERSION" \
   "$FE_VERSIONS" "$ANDROID_MIN_SUPPORTED_VERSION_CODE" "$VERSION_CODE"
 echo "Frontend-supported bridge versions: ${FE_VERSIONS:-none}; production bridge: ${PROD_BRIDGE:-none}"
 
-# Reject an immutable release-tag conflict before expensive builds or any
-# production APK mutation. A retry is allowed only when the tag is absent
-# or already points at this exact source commit.
 TAG="$STEP_VERSION_TAGNAME"
 COMMIT_SHA="$STEP_VERSION_COMMIT"
 REFS="$(git ls-remote --tags origin "refs/tags/$TAG")"
@@ -64,8 +57,6 @@ case "$PROD_STATE" in
     echo "releaseAction=publish" >> "$GITHUB_OUTPUT"
     ;;
   prod_equal_ok)
-    # Same version & metadata coherent is NOT auto-success: verify the
-    # already-published artifacts are still valid before no-op success.
     echo "Same version & metadata coherent; verifying existing release."
     PUBLISHED_SHA="$PROD_PUBLISHED_SHA"
     APK_URL="https://wotbtools.com/download/android/$APK_NAME"

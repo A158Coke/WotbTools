@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-// ReplayEventStreamPane 组件测试：数据装载（缓存通道）、过滤 chips、seek 转发、
-// 装甲检视交接（现有射击复现入口，不自建 viewer 契约）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
@@ -11,7 +9,6 @@ const { storeShotsForViewer, shotViewerQuery } = vi.hoisted(() => ({
 vi.mock('../scene/agentData.js', () => ({
   storeShotsForViewer,
   shotViewerQuery,
-  // 事件流车型名表（tank_cache）与真实 annotateMountedConfigs 读取的资产面。
   fetchTankEncyclopedia: vi.fn(async () => ({})),
   assetProvider: { json: vi.fn() },
   fetchShotTankData: vi.fn(),
@@ -33,8 +30,6 @@ const handoff = vi.hoisted(() => ({
   buildPitchLimits: vi.fn(async () => ({ Alpha: { dep: 15, ele: 7 } })),
   annotateMountedConfigs: vi.fn(),
 }))
-// 只替换俯仰锚定（避免真实资产请求）；搭载配置富化走真实实现，让交接快照的
-// config_idx 由生产代码写入，而不是被 mock 掉（评审 4597024398）。
 vi.mock('../scene/shotHandoff.ts', async (importOriginal) => {
   const actual = await importOriginal()
   handoff.annotateMountedConfigs.mockImplementation(actual.annotateMountedConfigs)
@@ -47,7 +42,6 @@ vi.mock('../scene/shotHandoff.ts', async (importOriginal) => {
 
 const i18n = vi.hoisted(() => ({ t: vi.fn((key, params) => {
   if (!params || typeof params !== 'object') return key
-  // 简单插值：{name} → 参数值（与 vue-i18n 同语义，够本测试断言身份文本）
   return `${key}(${Object.entries(params).map(([k, v]) => `${k}=${v}`).join(',')})`
 }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: i18n.t }) }))
@@ -84,7 +78,6 @@ function mountPane({ session = makeSession(), navigate = vi.fn(), active = true 
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // 逐车资产/车型名实现只属于设置它的用例，避免跨用例残留。
   assetProvider.json.mockReset()
   fetchTankEncyclopedia.mockReset()
   fetchTankEncyclopedia.mockResolvedValue({})
@@ -97,7 +90,7 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     expect(session.loadScene).toHaveBeenCalledTimes(1)
     const rows = w.findAll('.es-row')
-    expect(rows.length).toBe(3) // merged shot 30 / chat 22 / notice 21（kill 已并入炮击行）
+    expect(rows.length).toBe(3)
     expect(w.find('[data-testid="event-list"]').exists()).toBe(true)
   })
 
@@ -121,7 +114,7 @@ describe('ReplayEventStreamPane', () => {
     expect(w.findAll('.es-row')).toHaveLength(1)
     expect(w.find('[data-kind="chat"]').exists()).toBe(true)
     expect(w.find('[data-kind="chat"]').text()).toContain('[team]')
-    expect(session.loadScene).toHaveBeenCalledTimes(1) // 不重复解析
+    expect(session.loadScene).toHaveBeenCalledTimes(1)
   })
 
   it('emits seek with event time on click（由统一回放面板转交给当前 2D/3D 视图）', async () => {
@@ -141,7 +134,6 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
     await flushPromises()
-    // 交接 = storeShotsForViewer（本地点对点通道）+ shotViewerQuery + navigate（路由归工作台）
     expect(storeShotsForViewer).toHaveBeenCalledTimes(1)
     expect(shotViewerQuery).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith({ query: { shooter: '10005', shot: '0' } })
@@ -285,7 +277,6 @@ describe('ReplayEventStreamPane', () => {
     expect(titles.some((x) => x.includes('marker_moving') && x.includes('who=Alpha · T-62A'))).toBe(true)
     expect(titles.some((x) => x.includes('marker_retreat') && x.includes('who=Alpha · T-62A') && x.includes('target=Bravo · E 100'))).toBe(true)
     expect(titles.some((x) => x.includes('marker_attack') && x.includes('target=Bravo · E 100'))).toBe(true)
-    // 未知 markerType 显示原始类型号（不伪造语义）
     const facetUnknown = {
       ...FACET,
       markers: [{ t: 29, entity_id: 1, account_id: 1001, marker_type: 6 }],
@@ -372,7 +363,6 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
     await flushPromises()
-    // 交接数组包含全部两行（都带 config 证据），而非只有选中行
     expect(handoff.annotateMountedConfigs.mock.calls[0][0]).toHaveLength(2)
   })
 
@@ -397,7 +387,6 @@ describe('ReplayEventStreamPane', () => {
     assetProvider.json.mockImplementation((url) => {
       if (url === '/tank/100.json') return Promise.resolve({ configs: [{ turret_local: 5, gun_local: 'gun_a' }] })
       if (url === '/tank/200.json') return Promise.resolve({ configs: [{ turret_local: 6, gun_local: 'gun_b' }] })
-      // 无关车型永久挂起：不得抹掉 100/200 已就绪的证据
       if (url === '/tank/300.json') return new Promise(() => {})
       return Promise.resolve(null)
     })
@@ -409,7 +398,6 @@ describe('ReplayEventStreamPane', () => {
     expect(storeShotsForViewer).toHaveBeenCalledTimes(1)
     const rows = storeShotsForViewer.mock.calls[0][0]
     expect(rows).toHaveLength(3)
-    // 逐车增量提交：首发/下一发拿到 100→200 的实际配置，300 只影响它自己的目标字段
     expect([rows[0].shooter_config_idx, rows[0].target_config_idx]).toEqual([0, 0])
     expect([rows[1].shooter_config_idx, rows[1].target_config_idx]).toEqual([0, 0])
     expect(rows[2].shooter_config_idx).toBe(0)
@@ -443,7 +431,7 @@ describe('ReplayEventStreamPane', () => {
     const w = mountPane({ session: makeSession(facet) })
     await flushPromises()
     const chats = w.findAll('[data-kind="chat"]')
-    expect(chats).toHaveLength(2) // 两条来源明确的原始记录都保留
+    expect(chats).toHaveLength(2)
   })
 
   it('无关车型慢请求不阻塞所选射击的导航（评审 4595675888）', async () => {
@@ -454,7 +442,6 @@ describe('ReplayEventStreamPane', () => {
     const w = mountPane({ navigate })
     await flushPromises()
     await w.find('[data-kind="shot"]').trigger('click')
-    // 不等待 annotate 的有界 race（1500ms）自然结束——这里只验证导航在超时后发生
     await new Promise((r) => setTimeout(r, 1700))
     await flushPromises()
     resolveQuery({ shooter: '10005', shot: '0' })
@@ -472,7 +459,6 @@ describe('ReplayEventStreamPane', () => {
     }
     const sessionA = makeSession2(FACET)
     const w = mountPane({ session: sessionA })
-    // A 尚未返回时切到 B：旧结果必须被丢弃
     const fileB = new File(['y'], 'b.wotbreplay')
     sessions[0].resolveFn(FACET)
     await flushPromises()
@@ -480,7 +466,6 @@ describe('ReplayEventStreamPane', () => {
     const sessionB = makeSession2({ shots: [{ t_fire: 5, shooter_eid: 9 }] })
     await w.setProps({ file: fileB, playbackSession: sessionB })
     await flushPromises()
-    // 切文件即清空（不得继续展示 A 的事件）
     expect(w.findAll('.es-row').length).toBe(0)
     expect(sessionB.loadScene).toHaveBeenCalledTimes(1)
     sessions[1].resolveFn({ shots: [{ t_fire: 5, shooter_eid: 9 }] })
@@ -500,10 +485,8 @@ describe('ReplayEventStreamPane', () => {
     await flushPromises()
     expect(handoff.buildPitchLimits).toHaveBeenCalledTimes(1)
     expect(handoff.annotateMountedConfigs).toHaveBeenCalledTimes(1)
-    // 俯仰锚定表作为第二参数传入解析（与射击分析入口同一实现，不再永久降级）
     expect(parseAgentShotsFromBytes.mock.calls[0][1]).toEqual({ Alpha: { dep: 15, ele: 7 } })
     expect(enrichShotsFromRoster).toHaveBeenCalledTimes(1)
-    // 开战原点来自 playback facet 的 resolveReplayClock（不再是固定 0）
     expect(storeShotsForViewer.mock.calls[0][1]).toEqual({ battleStartRaw: 14 })
     expect(navigate).toHaveBeenCalled()
   })
@@ -522,7 +505,6 @@ describe('ReplayEventStreamPane', () => {
     await new Promise((r) => setTimeout(r, 1600))
     await flushPromises()
     expect(shotViewerQuery).toHaveBeenCalledTimes(1)
-    // 用户离开事件流（切到其他能力）：在途交接作废
     await w.setProps({ active: false })
     resolveQuery({ shooter: '10005', shot: '0' })
     await flushPromises()
@@ -543,7 +525,6 @@ describe('ReplayEventStreamPane', () => {
     await new Promise((r) => setTimeout(r, 1600))
     await flushPromises()
     expect(shotViewerQuery).toHaveBeenCalledTimes(1)
-    // query 未返回时切到 B 场：旧请求不得把用户带进 A 的装甲检视
     await w.setProps({ file: new File(['y'], 'b.wotbreplay'), playbackSession: makeSession() })
     await flushPromises()
     resolveQuery({ shooter: '10005', shot: '0' })

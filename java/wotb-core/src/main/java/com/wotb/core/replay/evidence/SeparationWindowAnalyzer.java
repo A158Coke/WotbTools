@@ -12,7 +12,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Builds deterministic spans from consecutive formation windows and their local measurements. */
 final class SeparationWindowAnalyzer {
     static final int MAIN_CLUSTER_DOMINANCE = 2;
     static final float SPAN_CONTINUITY_EPSILON_SEC = 0.01f;
@@ -20,7 +19,6 @@ final class SeparationWindowAnalyzer {
     private SeparationWindowAnalyzer() {
     }
 
-    /** Every member is evaluated against the globally dominant, sufficiently observed cluster. */
     static List<SeparationSpan> separationSpans(final TeamMemberFeatureSet member,
                                                 final List<TeamFormationPhase> phases,
                                                 final List<TeamMemberFeatureSet> allMembers) {
@@ -49,7 +47,6 @@ final class SeparationWindowAnalyzer {
         return spans;
     }
 
-    /** Global dominant cluster; ties remain ambiguous and return null. */
     static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase) {
         if (phase == null || phase.clusters() == null || phase.clusters().isEmpty()) {
             return null;
@@ -71,7 +68,6 @@ final class SeparationWindowAnalyzer {
         return main;
     }
 
-    /** A dominant cluster is accepted only when observation covers expected live members. */
     static TeamFormationCluster mainClusterOf(final TeamFormationPhase phase,
                                               final int expectedAliveMembers) {
         if (expectedAliveMembers <= 0 || phase == null
@@ -113,7 +109,6 @@ final class SeparationWindowAnalyzer {
                 main.centroidX(), main.centroidZ());
     }
 
-    /** Members with unknown death times are considered alive at the phase start. */
     private static int expectedAliveMembers(final List<TeamMemberFeatureSet> members,
                                             final TeamFormationPhase phase) {
         int alive = 0;
@@ -127,7 +122,6 @@ final class SeparationWindowAnalyzer {
         return alive;
     }
 
-    /** Stationary share over covered movement time; insufficient coverage remains unknown. */
     static Double stationaryRatio(final TeamMemberFeatureSet member,
                                   final SeparationSpan span) {
         float covered = 0f;
@@ -153,7 +147,6 @@ final class SeparationWindowAnalyzer {
         return (double) stationary / covered;
     }
 
-    /** Other teammates' activity wholly contained by the current span: deaths, engagements, damage. */
     static int[] otherFriendlyActivity(final List<TeamMemberFeatureSet> members,
                                        final SeparationSpan span,
                                        final TeamMemberFeatureSet soloMember) {
@@ -211,7 +204,6 @@ final class SeparationWindowAnalyzer {
         return engagement.startTime() <= endSec && engagement.endTime() >= startSec;
     }
 
-    /** Aggregates consecutive windows without crossing a gap, preserving measured geometry. */
     static final class SeparationSpan {
         private final TeamMemberFeatureSet member;
         private final float startSec;

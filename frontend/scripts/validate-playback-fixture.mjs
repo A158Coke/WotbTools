@@ -17,7 +17,6 @@ if (!validate(fixture)) {
 }
 console.log('Playback V2 contract fixture: OK')
 
-// 同一固定样本由 ApiContractTest 与真实 Java DTO/mapper 序列化结果逐字段比较。
 const businessBoundaries = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8'))
 for (const { schema, value } of businessBoundaries) {
   const check = ajv.compile(document.components.schemas[schema])
@@ -68,7 +67,6 @@ if (!validateTimed(timedBroadcast)) throw new Error(JSON.stringify(validateTimed
 const noGroup = structuredClone(timedBroadcast)
 noGroup.data.nodes[0].replays[0].groupNumber = null
 if (!validateTimed(noGroup)) throw new Error('Optional broadcast group rejected')
-// Days and points groups are independent of round and knockout group bounds.
 for (const mutate of [
   value => { delete value.data.season.startDate },
   value => { value.data.season.server = 'UNKNOWN' },
@@ -111,7 +109,6 @@ for (const invalid of [
 }
 console.log('Broadcast contract envelope, nested business boundaries, optional groups and explicit time precision: OK')
 
-// Collector结构与跨字段约束由OpenAPI独立验证。
 const battle = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/battle-data.json', import.meta.url), 'utf8'))
 const checkBattle = ajv.compile(document.components.schemas.BattleDataRequest)
 if (!checkBattle(battle)) throw new Error(JSON.stringify(checkBattle.errors))
@@ -134,7 +131,6 @@ for (const mutate of [
   if (checkBattle(invalid)) throw new Error('Invalid Collector contract fixture accepted')
 }
 console.log('Battle data request contract fixtures: OK')
-// Admin read shapes: empty database, uint64 arena and bigint id remain lossless strings.
 const adminBattle = { id: '9223372036854775807', arenaId: '18446744073709551615', schemaVersion: 1, arenaBonusType: 1, mapId: 42, mapKey: 'rift', clientVersion: '11.18', winnerTeam: 0, team1Spawn: 'NORTH', team2Spawn: 'SOUTH', receivedAt: '2026-10-29T00:00:00Z' }
 const adminEmpty = { asOf: '2026-10-29T00:00:00Z', totalBattles: 0, last24Hours: 0, last7Days: 0, last30Days: 0, windowBattles: 0, latestReceivedAt: null, distinctMaps: 0, distinctClientVersions: 0, modes: [], winnerTeams: [], schemaVersions: [], daily: [], maps: [], clientVersions: [], spawnStats: [] }
 for (const [schema, valid, invalid] of [

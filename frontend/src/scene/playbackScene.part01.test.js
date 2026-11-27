@@ -1,33 +1,5 @@
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 // @vitest-environment happy-dom
-/**
- * `playbackScene` 的会话状态所有权契约。
- *
- * PR #465 review 的两条合并阻塞竞态，都必须在**场景层**修（组件层镜像状态会制造第二 owner）：
- *
- * 1. 被销毁/被取代的实例不得再写共享 store。注意 `loadGeneration` 是 `initPlayback` 实例内
- *    闭包：跨实例（destroy A → init B，同一个 store）时 A 的计数器不变，只看它就等于
- *    「被销毁的实例仍把自己评为最新代」。归属判定必须同时覆盖 `destroyed` 与加载令牌。
- * 2. `startPlayback()` 的资产阶段有多个 await，被取代后不得继续走完
- *    buildVehicles / buildRoster / setPlaying / tick / writeHud 并把自己标成 ready。
- *
- * 这里驱动**真实** `initPlayback` + `loadData`（只 mock 数据源与资产面），
- * 锁定的是生产代数逻辑，而不是测试自己手写的状态机。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { watchEffect } from 'vue'
@@ -70,10 +42,6 @@ vi.mock('./replaySource.js', () => ({
 }))
 
 
-/**
- * probe_map / probe_multi 只为本文件的基地环用例存在（真实 mapBases 不含测试键）。
- * probe_multi.assault = 2 条 candidate：静态会话 fail-closed 判据（几何不唯一不画）的输入。
- */
 vi.mock('../data/mapBases.js', async (importOriginal) => {
   const actual = await importOriginal()
   return {
@@ -97,16 +65,11 @@ vi.mock('../data/mapBases.js', async (importOriginal) => {
 })
 
 
-/**
- * 渲染器 stub：happy-dom 没有 WebGL，`initScene()` 里的 `new THREE.WebGLRenderer()` 必然抛错，
- * 于是 `startPlayback()` 在**第一个写入之前**就失败——资产阶段竞态根本无法在测试里触发。
- * 只替换 WebGLRenderer，其余 three 保持真实实现（OrbitControls / Scene / 贴图 loader 照旧）。
- */
 vi.mock('three', async (importOriginal) => {
   const actual = await importOriginal()
   class StubWebGLRenderer {
     constructor(params = {}) {
-      this.params = params   // 上下文级参数（logdepth / stencil）的装配证据
+      this.params = params
       this.domElement = document.createElement('canvas')
       this.toneMapping = 0
       this.toneMappingExposure = 1
@@ -129,10 +92,6 @@ vi.mock('three', async (importOriginal) => {
 })
 
 
-/**
- * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
- * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
- */
 const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
 
 vi.mock('./battleFx.ts', async (importOriginal) => {
@@ -155,9 +114,6 @@ import { ANNOTATION_LIFT } from './playback/annotation3d.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.ts'
 
 
-/** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
- *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
- *  继续跑了 DATA 派生状态写入」的可观测探针（无 WebGL 时 hasData 不具区分度）。 */
 function minimalData(tStart = 42, mapName = 'probe_map') {
   return {
     meta: { map_id: 1, map_name: mapName, t_start: tStart, friendly_team: 1 },
@@ -175,7 +131,6 @@ function deferred() {
 }
 
 
-/** 场景内核需要一个容器元素；渲染器在数据就位后才惰性创建，这里给空节点即可。 */
 function mountContainer() {
   const el = document.createElement('div')
   document.body.appendChild(el)
@@ -185,11 +140,8 @@ function mountContainer() {
 
 let api = null
 
-/** 本用例创建过的全部实例（含被取代的 A）：每个实例都有自己的渲染器与事件监听，
- *  只销毁最后一个会让前面的实例继续跑，串到下个用例。 */
 let created = []
 
-/** 仍挂起的 defer：afterEach 兜底结算，避免悬挂 promise 把在途续体泄漏到下个用例。 */
 let pending = []
 
 
@@ -200,11 +152,6 @@ function track(d) {
 
 
 beforeEach(() => {
-  // 单元测试必须**无网**：happy-dom 的 fetch 会真发请求，而开发机常带 `.env.local`
-  // （`VITE_ASSET_BASE_URL=http://127.0.0.1:8123`），高档位
-  // `forceGlb: true` 的用例于是真的去下载 `/glb/<id>/model.glb` 与履带/悬挂资产 ⇒ 5 s 预算内
-  // 必超时（CI 无 .env.local ⇒ 相对地址快速失败 ⇒ 绿）——这就是 "wreck smoke …" 用例长期
-  // 「本机红 / CI 绿」的根因。默认钉成无网：需要资产的用例各自 `vi.stubGlobal('fetch', …)` 覆盖。
   vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('unit tests run without network'))))
   vi.spyOn(assetProvider, 'fetch').mockImplementation((...args) => fetch(...args))
   source.loadPlaybackData.mockReset()
@@ -259,7 +206,6 @@ function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 
 }
 
 
-/** 手动驱动 rAF：双指判定一帧一次，测试用 frame() 表示这一帧结束。 */
 function stubFrames() {
   const frames = []
   vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -268,11 +214,6 @@ function stubFrames() {
 }
 
 
-/** 滚轮缩放平滑（#835）的确定性收敛泵（recorder 视图 manualFrames + Clock 假 dt 同款）：
- *  派发 wheel 时动画循环还挂在**真实 rAF** 上——首次调用装 stubFrames，让出一个真实
- *  macrotask 供循环自转一帧（其内部下一帧注册落进 stub，此后不再有自发帧），随后按
- *  假 dt=0.1s 泵 17 帧：预算每帧释放 ~67%，5 帧内收敛。同一用例多次调用复用同一
- *  stub（循环的下一帧始终在既有 stub 队列里）；跨用例由 unstubAllGlobals 检测失效重建。 */
 let zoomPump = null
 
 async function settleZoomFrames() {
@@ -280,13 +221,12 @@ async function settleZoomFrames() {
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
     const frame = stubFrames()
     zoomPump = { stub: globalThis.requestAnimationFrame, frame }
-    await new Promise((r) => setTimeout(r, 25))   // 循环自转一帧并迁入 stub
+    await new Promise((r) => setTimeout(r, 25))
   }
   for (let i = 0; i < 17; i++) zoomPump.frame()
 }
 
 
-/** 指定 dt 的滚轮收敛泵（帧率无关性回归用）：与 settleZoomFrames 同一 stub 复用逻辑。 */
 async function pumpZoomAt(dt, frames) {
   vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(dt)
   if (!zoomPump || globalThis.requestAnimationFrame !== zoomPump.stub) {
@@ -298,7 +238,6 @@ async function pumpZoomAt(dt, frames) {
 }
 
 
-/** happy-dom 没有 2d canvas：基地圆盘贴图（drawBaseDecal）需要可写的 getContext('2d')。 */
 function stubCanvas2d() {
   const ctx = new Proxy({}, { get: () => () => {} })
   return vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
@@ -313,7 +252,6 @@ function createScene(existingStore = null) {
 }
 
 
-/** 每次 initPlayback 一个独立实例（跨实例竞态测试要同时持有 A 与 B） */
 function createInstance(store) {
   const instance = initPlayback(mountContainer(), store)
   created.push(instance)
@@ -327,9 +265,6 @@ describe('opt-in profiler ownership', () => {
   })
 
   it('stops the ?perf watchdog through the host destroy path', () => {
-    // 看门狗由 createPerfProbe 在 ?perf 下启动（50ms setInterval）；销毁必须清表，
-    // 否则每个已销毁实例永久空转。这里走真实 initPlayback().destroy()，不是直接调
-    // probe.stopWatchdog()——验证宿主接线（playbackScene 销毁段）而不是清理函数自身。
     window.history.replaceState(null, '', '/?perf&q=low')
     const setSpy = vi.spyOn(window, 'setInterval').mockImplementation(() => 777)
     const clearSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
@@ -382,7 +317,6 @@ describe('opt-in profiler ownership', () => {
     frame()
     const snapshot = window.__pbPerf.snapshot()
     expect(snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')).toHaveLength(1)
-    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
     for (const e of snapshot.events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')) {
       expect(typeof e.durationMs).toBe('number')
       expect(Number.isFinite(e.durationMs)).toBe(true)
@@ -414,7 +348,6 @@ describe('opt-in profiler ownership', () => {
     frame()
     const readyEvents = window.__pbPerf.snapshot().events.filter(e => e.stage === 'firstReadyFrameSubmittedMs')
     expect(readyEvents).toHaveLength(1)
-    // #913 review P2：计时必须传入提交时刻（performance.now()）——durationMs 有限且非负
     expect(typeof readyEvents[0].durationMs).toBe('number')
     expect(Number.isFinite(readyEvents[0].durationMs)).toBe(true)
     expect(readyEvents[0].durationMs).toBeGreaterThanOrEqual(0)
@@ -577,7 +510,6 @@ describe('playbackScene 会话代数契约', () => {
     const data = {
       ...base,
       meta: { ...base.meta, duration: 320 },
-      // 准备（42）→ 倒计时（45）→ 开战（55）→ 战后（300）
       periods: [{ clock: 42, period: 1 }, { clock: 45, period: 2 }, { clock: 55, period: 3 }, { clock: 300, period: 4 }],
     }
     const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null, canonicalState: 'idle' }) }
@@ -709,9 +641,7 @@ describe('playbackScene 会话代数契约', () => {
     data.vehicles = [{ eid: 1, account_id: 77, team: 1, is_author: true, nickname: 'Recorder', tank_name: 'Maus', max_hp: 3074,
       pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
       hp: [[42, 2048]], coverage: [42, 100], death_t: null }]
-    // AoI 两段：离开期间状态未知；重入不得复活离开前的激活
     data.visibility = [{ eid: 1, t_in: 42, t_out: 60 }, { eid: 1, t_in: 65, t_out: 100 }]
-    // Playback facet 原始形状：snake_case + 数字 state；3D 的 T 与 clock 同 base。
     data.consumables = [
       { clock: 50, eid: 1, wire_code: 9, state: 2, state_name: 'ACTIVATED',
         duration_s: 20, ends_at: 70, ever_activated: true, slot: 0, logical_item_id: 'ADRENALINE' },
@@ -726,7 +656,6 @@ describe('playbackScene 会话代数契约', () => {
       slot: 0, logicalItemId: 'ADRENALINE', wireCode: 9, remainingSec: 15, durationSec: 20,
     }])
     api.seekTime(66)
-    // 重入（65）后：离开前的激活（50–70）不得复活；新的激活（70）尚未发生
     expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([])
     api.seekTime(75)
     expect(overlay.setLabels.mock.calls.at(-1)[0][0].consumables).toEqual([{
@@ -837,14 +766,12 @@ describe('playbackScene 会话代数契约', () => {
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
     api.setPlaying(false)
-    // 客户端槽位模型：环 50 槽/侧（**含活戳**，覆写最老）+ 固定绘制窗口
-    // （TRAIL_SLOTS = 50×2 = 100 个四边形，无效槽由显式隐藏处理）
     const readTrail = () => {
       const v = window.__pbV[0]
       const col = v.treadMesh ? v.treadMesh.geometry.getAttribute('color').array : null
       return {
         builtT: v.trail.builtT, total: v.trail.L.total, rTotal: v.trail.R.total,
-        live: v.trail.L.segs.length,       // 环内活戳数 = min(total, 50)
+        live: v.trail.L.segs.length,
         quads: v.treadMesh ? v.treadMesh.geometry.drawRange.count / 6 : 0,
         youngAlpha: (col && v.trail.L.total > 0) ? +col[((v.trail.L.total - 1) % 50) * 32 + 3].toFixed(2) : 'none',
         oldAlpha: (col && v.trail.L.total > 0) ? +col[3].toFixed(2) : 'none',
@@ -852,17 +779,16 @@ describe('playbackScene 会话代数契约', () => {
     }
     api.seekTime(t0 + 18)
     let r = readTrail()
-    // 落锚每 1 m 一戳（0.2 s/戳）：18 s → 90 戳；环只保留最近 50
     expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, live: 50, quads: 100 })
-    expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
+    expect(r.youngAlpha).toBeCloseTo(1)
     api.seekTime(t0 + 8)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, live: 40, quads: 100 })
     api.seekTime(t0 + 28)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, live: 50, quads: 100 })
-    expect(r.oldAlpha).toBe(0)          // 环里最老戳（出生 20 s 前）早已出淡出窗（≤7.62 s）
-    expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
+    expect(r.oldAlpha).toBe(0)
+    expect(r.youngAlpha).toBeCloseTo(1)
     api.seekTime(t0 + 55)
     r = readTrail()
     expect(r.builtT).toBe(t0 + 55)
@@ -903,22 +829,18 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 11)
     const r = read()
     expect(r.total).toBeGreaterThan(before.total)
-    expect(r.segs.slice(0, before.total)).toEqual(before.segs)   // 历史段逐值保留
-    // 空洞本身零出戳（跨空洞不连铺的最小不变量：没有任何戳出生在洞内）
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)
     expect(r.segs.every((sg) => !(sg.t > gapStart && sg.t < gapEnd))).toBe(true)
-    // ⚠️ 洞前尾巴（seek 目标 t0+4 → 空洞起点 t0+5 之间仍可见的 1 s）也出生在空洞之前，
-    // 不能按 `slice(before.total)` 计数切进"洞后"桶——before 是在 t0+4 取的，尾巴在它之后
-    // 才铺出来。按**出生时刻**过滤：< gapEnd = 洞前（含尾巴），≥ gapEnd = 洞后新锚段。
     const tail = r.segs.slice(before.total).filter((sg) => sg.t < gapEnd)
     const postGap = r.segs.slice(before.total).filter((sg) => sg.t >= gapEnd)
-    expect(tail.length).toBeGreaterThanOrEqual(4)               // t0+4→t0+5 的 5 m ≈ 5 戳
+    expect(tail.length).toBeGreaterThanOrEqual(4)
     expect(tail.length).toBeLessThanOrEqual(6)
     const tailAbs = tail.map((sg) => Math.abs(sg.x0))
-    expect(Math.min(...tailAbs)).toBeGreaterThan(19)            // 路径 21~25 m（L 带 +0.9 横偏）
+    expect(Math.min(...tailAbs)).toBeGreaterThan(19)
     expect(Math.max(...tailAbs)).toBeLessThan(25)
-    expect(postGap.length).toBeGreaterThanOrEqual(3)            // 洞后 1 s：锚点 + ~5 戳
+    expect(postGap.length).toBeGreaterThanOrEqual(3)
     expect(postGap.length).toBeLessThanOrEqual(8)
-    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)   // 无长桥接戳
+    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
     for (const sg of postGap) expect(Math.abs(sg.x0)).toBeGreaterThan(45)
     const minPostGapAbs = Math.min(...postGap.map((sg) => Math.abs(sg.x0)))
     expect(minPostGapAbs).toBeLessThan(51)
@@ -928,9 +850,7 @@ describe('playbackScene 会话代数契约', () => {
   it('履带印阵亡期断链：复活落在新位置时不与死前锚连铺（3.1.0 review P2，issue #622）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const { api } = createScene()
-    const t0 = 42, n = 150          // 15 s；步长 0.5 m/0.1 s
-    // 阵亡期（t0+5 → t0+10）位姿仍在缓慢移动（渐进复活迁移）：每步 0.5 m 走不出大步断链阈值，
-    // 若阵亡期只是跳过出戳而不复位锚点，复活后的首个接地点会与死前锚连铺出一条跨 25 m 的印记。
+    const t0 = 42, n = 150
     const pos = new Array(n * 3)
     for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
     const data = minimalData(t0)
@@ -959,15 +879,13 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 11)
     const r = read()
     expect(r.total).toBeGreaterThan(before.total)
-    expect(r.segs.slice(0, before.total)).toEqual(before.segs)   // 历史段逐值保留
-    // 阵亡期零出戳（没有任何戳出生在阵亡区间内）
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)
     expect(r.segs.every((sg) => !(sg.t > t0 + 5 && sg.t < t0 + 10))).toBe(true)
-    // 无跨阵亡期桥接：死前锚在 x≈25、复活首点在 x≈50 —— 有 bug 时这里会出现一条 25 m 长戳
     for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
     const post = r.segs.slice(before.total).filter((sg) => sg.t >= t0 + 10)
-    expect(post.length).toBeGreaterThanOrEqual(3)                // 复活后 1 s：锚点 + ~5 戳
+    expect(post.length).toBeGreaterThanOrEqual(3)
     expect(post.length).toBeLessThanOrEqual(8)
-    expect(Math.min(...post.map((sg) => Math.abs(sg.x0)))).toBeGreaterThan(48.5)   // 新锚从复活位姿开始
+    expect(Math.min(...post.map((sg) => Math.abs(sg.x0)))).toBeGreaterThan(48.5)
   })
 
   describe('履带印 review 回归', () => {
@@ -1027,9 +945,6 @@ describe('playbackScene 会话代数契约', () => {
     })
 
     it('转弯：左右弧长不同（L≠R）各自独立；固定绘制窗口 + 环外空槽显式隐藏（客户端槽位模型）', async () => {
-      // 圆轨迹半径 5 m、ω=1 rad/s（中心 5 m/s）：外侧履带 5.9 m/s、内侧 4.1 m/s ⇒ 18 s 后
-      // 两侧落锚数差 ≈32（左右弧长不同是常态：不能假设成对，也不按 min/max 互相截断——
-      // 绘制窗口现为固定全槽位 + 无效槽显式隐藏）。
       const n = 580
       const pos = new Array(n * 3), yaw = new Array(n)
       for (let i = 0; i < n; i++) {
@@ -1041,21 +956,17 @@ describe('playbackScene 会话代数契约', () => {
       const colArr = () => v.treadMesh.geometry.getAttribute('color').array
       api.seekTime(42 + 18)
       const L18 = v.trail.L.total, R18 = v.trail.R.total
-      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)          // 弧长差 ⇒ 落锚数不同
-      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(100)     // TRAIL_SLOTS（50×2，含活戳）
-      // 两侧最新戳都在窗口内且可见（固定窗口不再互相截断）
+      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)
+      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(100)
       expect(colArr()[((L18 - 1) % 50) * 32 + 0 + 3]).toBeGreaterThan(0)
       expect(colArr()[((R18 - 1) % 50) * 32 + 16 + 3]).toBeGreaterThan(0)
-      // 先跑更长一轮（环写满），再 seek 后退全量重建：环外空槽（k ∈ [total, 50)）里残留的
-      // 旧戳必须被显式清零——不靠"位置全零即退化"的偶然
       api.seekTime(42 + 40)
       expect(v.trail.L.total).toBeGreaterThan(50)
       expect(v.trail.R.total).toBeGreaterThan(50)
       api.seekTime(42 + 2)
-      expect(v.trail.L.total).toBeLessThan(50)                       // 环未满：存在"应清空"的槽
+      expect(v.trail.L.total).toBeLessThan(50)
       for (const [st, quad] of [[v.trail.L, 0], [v.trail.R, 1]]) {
         for (let k = st.total; k < 50; k++) {
-          // 活戳槽（= total % 50）可能持有正在拉伸的活戳（alpha>0）——跳过
           if (k === st.total % 50) continue
           expect(colArr()[(k % 50) * 32 + quad * 16 + 3]).toBe(0)
         }
@@ -1069,13 +980,11 @@ describe('playbackScene 会话代数契约', () => {
       const posAttr = v.treadMesh.geometry.getAttribute('position').array
       const col = v.treadMesh.geometry.getAttribute('color').array
       const g = v.group.position
-      // L 活戳槽 = write 槽（total % 50，交错槽：L 偶）位置偏移 = (total%50)*24
       const o = (v.trail.L.total % 50) * 24
-      const midX = (posAttr[o + 2 * 3] + posAttr[o + 3 * 3]) / 2      // 远端横截面两点中点
+      const midX = (posAttr[o + 2 * 3] + posAttr[o + 3 * 3]) / 2
       const midZ = (posAttr[o + 2 * 3 + 2] + posAttr[o + 3 * 3 + 2]) / 2
-      // yaw=π/2 ⇒ 前向 = −x、L 横向 = +z（trailHalfGauge 回落 0.9）
       expect(Math.hypot(midX - g.x, midZ - (g.z + 0.9))).toBeLessThanOrEqual(0.55)
-      expect(col[(v.trail.L.total % 50) * 32 + 3]).toBeGreaterThan(0) // 活戳可见（新鲜）
+      expect(col[(v.trail.L.total % 50) * 32 + 3]).toBeGreaterThan(0)
     })
 
     it('关断重开：路径态与游标一起复位——同 T 的段数不翻倍（review P2 2026-10-11）', async () => {
@@ -1133,9 +1042,6 @@ describe('playbackScene 会话代数契约', () => {
     })
 
     it('环满边界：open 未激活时 write 槽继续显示最老 committed（review 七轮 P2）', async () => {
-      // 12 m/s：0.1 s 网格片走 1.2 m（子步 0.6 m），每片落 1 戳；5.0 s 恰好 50 戳。
-      // 此时最老戳 age≈4.9 s < 5.45 s，alpha 必须仍为满值——避免旧测试在 5 m/s 下
-      // oldest 已 >7.62 s、正确自然淡出和错误 hideQuads 都等于 0 的假绿。
       const n = 580
       const pos = new Array(n * 3)
       for (let i = 0; i < n; i++) {
@@ -1147,21 +1053,16 @@ describe('playbackScene 会话代数契约', () => {
       const alphaAt = (slot) => v.treadMesh.geometry.getAttribute('color').array[slot * 32 + 3]
       const freshAlpha = () => Math.fround(v.tread.texScale || 1)
 
-      // 第 50 次提交后：ring 满、下一 active 尚未激活，slot0 仍属于最老 committed。
       api.seekTime(42 + 5.0)
       expect(v.trail.L.total).toBe(50)
       expect(v.trail.L.open).toBeNull()
       expect(alphaAt(0)).toBe(freshAlpha())
 
-      // 不足完整 0.1 s 网格片：状态不推进，ownership 也不能提前切走。
       api.seekTime(42 + 5.05)
       expect(v.trail.L.total).toBe(50)
       expect(v.trail.L.open).toBeNull()
       expect(alphaAt(0)).toBe(freshAlpha())
 
-      // 下一完整网格片内 active 先激活、随后第 51 次落锚；落锚后 write=slot1、open=null。
-      // slot1 此时是新的最老 committed，必须继续显示；旧实现的尾部 else hideQuads
-      // 会把它清成 0，正好由这一断言抓住。
       api.seekTime(42 + 5.1)
       expect(v.trail.L.total).toBe(51)
       expect(v.trail.L.open).toBeNull()

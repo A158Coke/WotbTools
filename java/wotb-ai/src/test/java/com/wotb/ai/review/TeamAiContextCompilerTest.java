@@ -32,9 +32,6 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * TeamAiContextCompiler：团队视角 Episode 化上下文必须双方对称（我方/敌方），不以录像者为中心。
- */
 class TeamAiContextCompilerTest {
 
     private static Battle battle() {
@@ -84,7 +81,6 @@ class TeamAiContextCompilerTest {
                 DecodeConfidence.EXACT, 1, 1800, null, true));
         events.add(new HealthChangedEvent(9, new ReplayTimestamp(1000f, 0f), 7,
                 DecodeConfidence.EXACT, 3, 1600, null, true));
-        // 首次接敌 12s + 敌方掉血
         events.add(new DamageEvent(10, new ReplayTimestamp(1012f, 12f), 8,
                 DecodeConfidence.EXACT, 1, 3, null, null, 420, false));
         events.add(new HealthChangedEvent(11, new ReplayTimestamp(1013f, 13f), 7,
@@ -110,24 +106,18 @@ class TeamAiContextCompilerTest {
         assertTrue(section.contains("敌方_alive="), "必须包含敌方存活（对称）");
         assertTrue(section.contains("敌方_unknown="), "必须包含敌方未知数");
         assertTrue(section.contains("首次接敌"), "必须表达首次接敌");
-        // 不以录像者为中心：不得出现 YOU 个人标注
         assertTrue(!section.contains("YOU hp="), "团队视角不得以录像者为中心");
-        // 确定性
         assertTrue(TeamAiContextCompiler.renderTimelineSection(timeline, 1).equals(section));
     }
 
     @Test
     void renderTimelineBlockInjectsValidatedTimelineSection() {
-        // PR #102 ：PromptBuilder 不再内部 build —— 由 orchestration 层验证后
-        // 传入 timeline，renderTimelineBlock 只做确定性渲染。
         final BattleTimeline timeline = BattleTimelineBuilder.build(
                 battle(), recon(), TimelinePerspective.team(1)).timeline();
         final String block = TeamAiPromptBuilder.renderTimelineBlock(timeline, 1);
         assertTrue(block.contains("TACTICAL TIMELINE"), "团队 prompt 必须注入 timeline 段");
         assertTrue(block.contains("EPISODE 1"));
-        // 确定性
         assertTrue(block.equals(TeamAiPromptBuilder.renderTimelineBlock(timeline, 1)));
-        // null（兼容/测试入口未提供 validated timeline）→ 不渲染任何段
         assertTrue(TeamAiPromptBuilder.renderTimelineBlock(null, 1).isEmpty());
     }
 

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// Catalog-only presentation. State belongs to TankCatalogMenu, keyboard semantics to existing primitives.
 import { computed, ref, watch } from 'vue'
 import { SelectRoot, SelectTrigger, SelectContent, SelectViewport, SelectItem, SelectItemText, SelectItemIndicator } from 'reka-ui'
 import { Check, ChevronDown } from 'lucide-vue-next'
@@ -21,7 +20,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 defineOptions({ inheritAttrs: false })
 const menuOpen = ref(false)
 watch(() => props.mode, () => { menuOpen.value = false })
-const ALL = '__all__' // Reka reserves the empty item value.
+const ALL = '__all__'
 const selected = computed(() => props.options.find(option => option.value === props.modelValue) ?? props.options[0])
 const value = computed({ get: () => props.modelValue || ALL, set: next => emit('update:modelValue', next === ALL ? '' : next) })
 </script>

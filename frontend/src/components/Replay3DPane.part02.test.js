@@ -25,7 +25,6 @@ describe('Replay3DPane', () => {
     const badge = wrapper.get('[data-testid="replay3d-fps"]')
     expect(badge.text()).toBe('59.8 FPS · 16.7/16.9 ms')
     expect(badge.classes()).not.toContain('pb-fps-low')
-    // 平均仍高、但窗口内最差一帧 > 2.5× 平均：顿挫可见（色变）
     store.framePeakMs = 52
     await flush()
     expect(wrapper.get('[data-testid="replay3d-fps"]').classes()).toContain('pb-fps-low')
@@ -82,7 +81,7 @@ describe('Replay3DPane', () => {
     const wrapper = mountPane()
     await start(wrapper)
     const store = playback.api.store
-    store.time = 54 // canonical 12; never subtract the render-grid startTime instead
+    store.time = 54
     store.startTime = 0
     store.roster = { team1: [{ eid: 7, accountId: 1001, tankId: 1, team: 1, nick: 'Scene name', tank: 'Scene tank', hp: 999, maxHp: 999 }], team2: [], unknown: [] }
     await flush()
@@ -235,7 +234,6 @@ describe('Replay3DPane', () => {
     expect(playback.init).toHaveBeenCalledTimes(2)
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.find('[data-test="replay3d-pending"]').exists()).toBe(true)
-    // 待开播是最终界面（视口 + 画质选择已渲染），不是加载中：工作台自动居中据此就绪
     expect(wrapper.get('[data-pane-ready]').attributes('data-pane-ready')).toBe('true')
     await start(wrapper)
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
@@ -288,10 +286,8 @@ describe('Replay3DPane', () => {
     const wrapper = mountPane({ file })
     await flush()
     expect(playback.init).toHaveBeenCalledTimes(1)
-    // 待开播：画质尚未定型，所以既不解析也不拉资产
     expect(playback.api.loadData).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="replay3d-pending"]').text()).toContain('battle.wotbreplay')
-    // 性能选项不折叠：三个开关不用展开就能看到
     const perf = wrapper.get('[data-test="replay3d-perf-options"]')
     expect(perf.element.closest('details')).toBeNull()
     for (const id of ['perf-logdepth', 'perf-dynres', 'perf-armor-highlight', 'perf-contact-shadows']) {
@@ -337,19 +333,16 @@ describe('Replay3DPane', () => {
     const firstSignal = playback.api.loadData.mock.calls[0][0].signal
     expect(firstSignal.aborted).toBe(false)
 
-    // 换文件：reset 撤下旧场景的同时，旧解析任务必须被 abort（不再占 Worker 队列）
     const next = mkFile('b2.wotbreplay')
     await wrapper.setProps({ file: next })
     await flush()
     expect(firstSignal.aborted).toBe(true)
 
-    // 按「开始」→ 新解析拿到**新** signal（未 abort）
     await start(wrapper)
     const secondSignal = playback.api.loadData.mock.calls[1][0].signal
     expect(secondSignal).not.toBe(firstSignal)
     expect(secondSignal.aborted).toBe(false)
 
-    // 卸载：在途解析一并撤下
     wrapper.unmount()
     expect(secondSignal.aborted).toBe(true)
   })
@@ -365,7 +358,6 @@ describe('Replay3DPane', () => {
     const next = mkFile('b2.wotbreplay')
     await wrapper.setProps({ file: next })
     await flush()
-    // 撤下旧场景：否则旧场景继续呈现，还会压住待开播面板（用户永远看着上一场）
     expect(playback.api.reset).toHaveBeenCalledTimes(1)
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
     expect(playback.api.store.hasData).toBe(false)
@@ -420,13 +412,11 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
 
     let finish
-    // 首次解析（按「开始」触发的这一次）保持挂起：加载状态由场景层拥有，
-    // 所以 mock 也要按场景契约翻转 loading / hasData。
     playback.api.loadData.mockImplementationOnce(() => {
       store.hasData = false
       store.loading = true
       return new Promise((resolve) => { finish = resolve })
-        .finally(() => { store.loading = false })   // 场景契约：加载结束必落下 loading
+        .finally(() => { store.loading = false })
     })
     await start(wrapper)
     expect(playback.api.loadData).toHaveBeenCalledTimes(1)
@@ -464,7 +454,6 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
     store.hasData = true
     store.friendlyTeam = 2
-    // 名册条目的真实形状来自 playbackScene 的 buildRoster（身份字段 + 当前时刻的 hp/maxHp）
     store.roster = {
       team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T-62A', hp: 975, maxHp: 1950, dead: false, followed: false }],
       team2: [{ eid: 2, team: 2, nick: 'B', tank: 'Maus', hp: 1500, maxHp: 3000, dead: false, followed: false }],
@@ -472,12 +461,9 @@ describe('Replay3DPane', () => {
     }
     document.documentElement.style.setProperty('--color-team-1', 'rgb(1, 2, 3)')
     document.documentElement.style.setProperty('--color-team-2', 'rgb(4, 5, 6)')
-    // ally / enemy 是**记录者视角**别名：把两者设成完全不同的值，
-    // 名册若（错误地）按视角取色就会立刻显形
     document.documentElement.style.setProperty('--color-team-ally', 'rgb(9, 9, 9)')
     document.documentElement.style.setProperty('--color-team-enemy', 'rgb(8, 8, 8)')
     await nextTick()
-    // root 内联变量覆盖 documentElement 的任意主题值：3D 取色不依赖页面根作用域。
     const rootStyle = wrapper.get('[data-testid="replay3d-root"]').attributes('style')
     expect(rootStyle).toContain(`--color-team-ally: ${PLAYBACK_ROLES.friendly.base}`)
     expect(rootStyle).toContain(`--color-team-enemy: ${PLAYBACK_ROLES.enemy.base}`)
@@ -485,17 +471,14 @@ describe('Replay3DPane', () => {
     expect(wrapper.get('.side-right .team1').exists()).toBe(true)
     expect(wrapper.get('.side-left .pl').attributes('style')).toContain('--color-team-ally')
     expect(wrapper.get('.side-right .pl').attributes('style')).toContain('--color-team-enemy')
-    // 车道结构下 DOM 顺序是 team1 → unknown → team2：按各自面板取点，不依赖全局序
     const dots = (sel) => wrapper.findAll(`${sel} .pl .dot`)
     expect(dots('.team1')).toHaveLength(1)
     expect(dots('.team1')[0].attributes('style')).toContain('--color-team-enemy')
     expect(dots('.team2')).toHaveLength(1)
     expect(dots('.team2')[0].attributes('style')).toContain('--color-team-ally')
-    // 未知阵营既不并入队伍 1 也不并入队伍 2（用中性色）
     expect(dots('.team-unknown')).toHaveLength(1)
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(1, 2, 3)')
     expect(dots('.team-unknown')[0].attributes('style')).not.toContain('rgb(4, 5, 6)')
-    // 分组标题三语（未知阵营独立一段）
     expect(wrapper.findAll('.team h3').map(h => h.text())).toEqual([
       'recon.map.team_friendly', 'agentReplay.teamUnknown', 'recon.map.team_enemy',
     ])
@@ -520,17 +503,13 @@ describe('Replay3DPane', () => {
     }
     await nextTick()
     const nums = (sel) => wrapper.findAll(`${sel} [data-test="roster-hp"]`).map(n => n.attributes('aria-label'))
-    // exact 呈现：条内只写 `current / max`，不再重复百分比后缀
     expect(nums('.team1')).toEqual(['1950 / 1950', '824 / 1950'])
-    // 阵亡行读作 `0 / max`（有量程时信息更完整），不保留“最后一个非零 HP”
     expect(nums('.team2')).toEqual(['0 / 2000'])
 
-    // 状态在时刻：store 投影变化后行内数值同步（HP 不只有血条）
     store.roster.team1[0].hp = 1200
     await nextTick()
     expect(nums('.team1')).toEqual(['1200 / 1950', '824 / 1950'])
 
-    // 无可信上限 → unknown（`—`，unknown ≠ 0），不是 0%
     store.roster.team1[1].maxHp = 0
     await nextTick()
     expect(nums('.team1')[1]).toBe('—')
@@ -549,15 +528,11 @@ describe('Replay3DPane', () => {
       unknown: [],
     }
     await nextTick()
-    // 两条车道都是 pb-root 直接子级；面板在车道**内部**（车道定界，面板不再各自绝对定位散挂）
     const lanes = wrapper.findAll('.roster-surface > .team-lane')
     expect(lanes.map(l => l.classes())).toEqual([['team-lane', 'side-left'], ['team-lane', 'side-right']])
     const left = lanes[0]
     const team1 = wrapper.get('.team1')
     const team2 = wrapper.get('.team2')
-    // 行由 2D / 3D 共用的 PlaybackRoster 渲染：名册容器是车道的**直接子级**，队伍面板
-    // 挂在名册容器里——同一个组件同时服务 2D 的三段式车道与 3D 的物理队伍车道。
-    // （用结构断言而不是节点同一性：happy-dom 下 Wrapper 的节点身份比较与布局契约无关。）
     expect(left.element.firstElementChild.dataset.test).toBe('pb-shell-roster')
     expect(lanes[1].element.firstElementChild.dataset.test).toBe('pb-shell-roster')
     for (const team of [team1, team2]) {
@@ -565,17 +540,14 @@ describe('Replay3DPane', () => {
     }
     expect(team1.text()).toContain('A')
     expect(team2.text()).toContain('B')
-    // unknown 非空才渲染，且渲染在**左车道**里（team1 之后）——绝不进中央 / 右车道
     expect(wrapper.find('.team-unknown').exists()).toBe(false)
     store.roster.unknown = [{ eid: 3, team: null, nick: 'C', tank: '', hp: 100, maxHp: 100, dead: false, followed: false }]
     await nextTick()
     const unknown = wrapper.get('.team-unknown')
-    // unknown 与 team1 同属左车道的那一个名册容器，且排在 team1 之后
     expect(unknown.element.parentElement.classList.contains('pb-roster')).toBe(true)
     expect(unknown.element.parentElement).toBe(team1.element.parentElement)
     expect(unknown.text()).toContain('C')
 
-    // 未就绪时车道与面板都不渲染（与 HUD 其余部分同口径）
     store.hasData = false
     await nextTick()
     expect(wrapper.findAll('.team-lane')).toHaveLength(0)
@@ -592,7 +564,6 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-speed-current"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-time"]').exists()).toBe(true)
-    // Renderer-specific tools live exclusively in the shared Display surface.
     expect(wrapper.find('[data-testid="replay3d-toolbar"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -602,7 +573,6 @@ describe('Replay3DPane', () => {
     const wrapper = mountPane()
     const store = playback.api.store
     store.hasData = true
-    // 引擎发布的战斗时间轴：开战在原始 11.0s，结束在 293.0s（打了 282s）
     store.startTime = 11
     store.duration = 293
     store.time = 272.9
@@ -610,11 +580,9 @@ describe('Replay3DPane', () => {
     const transport = wrapper.getComponent({ name: 'PlaybackTransport' })
     expect(transport.props('startTime')).toBe(11)
     expect(transport.props('duration')).toBe(293)
-    // 与 2D 同一个读数：已播放 = 原始时间 − 开战（261.9s → 04:22），总长 = 282s（04:42）
     expect(wrapper.get('[data-test="pb-time"]').text()).toBe('04:22 / 04:42')
     expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
 
-    // canonical 就绪：clock 交给引擎（引擎是播放 / seek / 自动停止的唯一权威），面板随引擎发布的原点更新
     const clock = { startRaw: 11.3, durationSec: 282 }
     store.playbackSession = shallowReactive({ canonical: { dataset: null, clock, reloadTelemetry: null } })
     await nextTick()
@@ -622,7 +590,6 @@ describe('Replay3DPane', () => {
     expect(transport.props('startTime')).toBe(11.3)
     expect(wrapper.get('[data-test="pb-hud-time"]').text()).toBe('04:22')
 
-    // canonical 撤下（失败 / 换会话）：通知引擎回到自己推出的时钟
     store.playbackSession = null
     await nextTick()
     expect(playback.api.setBattleClock).toHaveBeenLastCalledWith(null)
@@ -696,16 +663,34 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('旧持久化 2D classIcons:true 不隐藏 3D 车模；3D 面板开关只写 classIcons3d', async () => {
+    localStorage.setItem('wotb.pb.marker-prefs', JSON.stringify({ classIcons: true, showStatus: true, battleMarkers: true }))
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await flush()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false }))
+    playback.api.store.hasData = true
+    await nextTick()
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    const box = wrapper.get('[data-testid="disp-class-icons"]')
+    expect(box.element.checked).toBe(false)
+    await box.setValue(true)
+    await nextTick()
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: true }))
+    await box.setValue(false)
+    await nextTick()
+    expect(JSON.parse(localStorage.getItem('wotb.pb.marker-prefs'))).toMatchObject({ classIcons: true, classIcons3d: false })
+    wrapper.unmount()
+  })
+
   it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     await flush()
-    // 建场景时补推一次（内核在 initPlayback 之后才有 setLabelPrefs）
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: true, showReload: true,
       classIcons: false, showStatus: true, lastKnown: true,
     })
-    // 工具条只在 HUD 有数据时渲染
     playback.api.store.hasData = true
     await nextTick()
     await wrapper.get('[data-testid="display-toggle"]').trigger('click')
@@ -736,7 +721,6 @@ describe('Replay3DPane', () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     await flush()
-    // 建场景时补推一次（偏好唯一 owner = usePlaybackPreferences.markerPrefs.battleMarkers）
     expect(playback.api.setBattleMarkers).toHaveBeenLastCalledWith(true)
     playback.api.store.hasData = true
     await nextTick()
@@ -745,11 +729,9 @@ describe('Replay3DPane', () => {
     await wrapper.get('[data-testid="disp-battle-markers"]').setValue(false)
     await nextTick()
     expect(playback.api.setBattleMarkers).toHaveBeenLastCalledWith(false)
-    // 收尾恢复默认开（共享偏好单例跨用例存活；持久化同步还原）
     await wrapper.get('[data-testid="disp-battle-markers"]').setValue(true)
     await nextTick()
     expect(playback.api.setBattleMarkers).toHaveBeenLastCalledWith(true)
-    // 「隐藏全部 UI」同步隐藏标记本体与来源卡（评审 P2）；恢复后按当前 T 确定性重现
     await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
     await nextTick()
     expect(playback.api.setBattleMarkers).toHaveBeenLastCalledWith(false)
@@ -763,17 +745,14 @@ describe('Replay3DPane', () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ pendingSeek: { id: 1, sec: 20 } })
     await flush()
-    // 场景就绪（hasData 翻转）后执行一次
     playback.api.store.hasData = true
     await nextTick()
     expect(playback.api.seekTime).toHaveBeenCalledWith(20)
     playback.api.seekTime.mockClear()
-    // 切走再切回：旧请求已消费，不得把播放位置拉回事件时刻
     await wrapper.setProps({ active: false })
     await wrapper.setProps({ active: true })
     await nextTick()
     expect(playback.api.seekTime).not.toHaveBeenCalled()
-    // 新请求（id 递增）才执行
     await wrapper.setProps({ pendingSeek: { id: 2, sec: 35 } })
     await nextTick()
     expect(playback.api.seekTime).toHaveBeenCalledWith(35)
@@ -787,7 +766,6 @@ describe('Replay3DPane', () => {
     const { store } = playback.api
     store.hasData = true
     Object.assign(store, { startTime: 5, duration: 100, time: 5, cam: 'follow' })
-    // 真实契约：seekTime 同步把回放时钟写回 store（场景每 tick 发布）
     playback.api.seekTime.mockImplementation((v) => { store.time = v })
     const workspaceState = wrapper.props('playbackSession').getState(wrapper.props('file'))
     workspaceState.scenePlayback = {
@@ -841,7 +819,6 @@ describe('Replay3DPane', () => {
     window.dispatchEvent(new Event('resize'))
     await nextTick()
     const rows = wrapper.get('[data-test="replay3d-killfeed"]').findAll('.kf').map((row) => row.text())
-    // 断言 DOM 里的条数：旧消息要真的没渲染，不是被 overflow 裁掉
     expect(rows).toHaveLength(expected.length)
     expected.forEach((killer, index) => expect(rows[index]).toContain(killer))
     wrapper.unmount()
@@ -876,7 +853,6 @@ describe('Replay3DPane', () => {
     expect(wrapper.find('.killfeed').exists()).toBe(false)
     expect(wrapper.find('.base-status').exists()).toBe(false)
     expect(wrapper.find('.team-lane').exists()).toBe(false)
-    // 底部传输控件不属于"战场 UI"分块：仍可操作
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
     wrapper.unmount()
   })

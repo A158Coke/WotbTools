@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Product-specific ownership and semantics; runtime smoke validates the Grafana API. */
 class ObservabilityDashboardContractTest {
     private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final Set<String> UIDS = Set.of("wotbtools-active-users", "wotbtools-feature-usage",

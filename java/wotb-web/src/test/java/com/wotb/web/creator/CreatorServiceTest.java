@@ -37,8 +37,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Unit-level write oracles for the recommendation catalog: version contract, duplicate ownership,
- * category/level reference integrity and avatar ledger consistency. No database or Docker required. */
 class CreatorServiceTest {
     private final CreatorRepository creators = mock(CreatorRepository.class);
     private final CreatorCategoryRepository categories = mock(CreatorCategoryRepository.class);
@@ -137,7 +135,6 @@ class CreatorServiceTest {
         category(1, "UP");
         final Creator creator = existingUp();
         creator.version = 0;
-        // Version 0 is the legitimate first published revision; <= 0 would wrongly reject it.
         assertEquals(1, service.updateRecommendation(creator.id, save(0L), null).version());
         final ApiException error = assertThrows(ApiException.class,
                 () -> service.updateRecommendation(creator.id, save(-1L), null));
@@ -207,7 +204,6 @@ class CreatorServiceTest {
     void updateWithOwnExternalIdDoesNotFalselyConflict() {
         category(1, "UP");
         final Creator creator = existingUp();
-        // 提交当前 creator 自己的 externalId：只有 IdNot 自排除正确时更新才能成功。
         final RecommendationDtos.Detail detail = service.updateRecommendation(creator.id,
                 new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(1L), null, 3, "KEEP", 5L), null);
         assertEquals(6, detail.version());
@@ -258,7 +254,6 @@ class CreatorServiceTest {
 
     @Test
     void missingLevelIsAConfigConflict() {
-        // category 存在且类型正确，使 missing-level 守卫成为唯一会拒绝该请求的分支。
         final Creator creator = existingUp();
         category(1, "UP");
         final ApiException error = assertThrows(ApiException.class,
@@ -427,7 +422,6 @@ class CreatorServiceTest {
         assertEquals(maxName, detail.name());
         assertEquals(maxDescription, detail.description());
         assertEquals(1L, detail.levelId());
-        // stars 1 and 5 are the inclusive wire contract; 0 and 6 are outside it.
         assertEquals(1, service.updateRecommendation(creator.id,
                 new RecommendationDtos.SaveRequest("UP", "100", "Creator", null, List.of(1L), null, 1, "KEEP", 6L), null).stars());
         assertEquals(ApiErrorCode.CREATOR_INVALID_REQUEST, assertThrows(ApiException.class, () -> service.updateRecommendation(creator.id,

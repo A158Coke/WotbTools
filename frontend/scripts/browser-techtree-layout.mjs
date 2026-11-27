@@ -1,20 +1,3 @@
-/**
- * 科技树 / 车辆目录布局门禁（真实浏览器几何和输入）。
- *
- * 锁定的 invariant：
- * - 竖屏手机按等级从高到低一行一级（无等级标尺），分区主视觉紧凑横幅（88–112px），国别页签单行横滑；
- * - 矮横屏隐藏分区主视觉，让树保留约两行视口；
- * - 外壳没有底部常驻栏（L1）：科技树滚动区与吸底等级条都停在视口底边之内；
- * - 矮横屏树视口至少约两行；平板 / 桌面等级条保持在滚动视口内；
- * - 任何形态都没有页面级横向溢出。
- * - 目录类别与国家/等级组合保持 URL 和结果一致；横排、下拉、sheet 以及旋转共享筛选状态。
- * - 客户端与 CN 图标成功加载，透明边缘裁剪保留原始比例。
- *
- * 负向对照：在手机场景注入固定高度实现 `max-block-size: calc(100dvh + 120px)`，断言探针
- * 必须抓到「等级条落到视口外」——防止断言在旧 bug 上仍然变绿。
- *
- * 数据面用确定性夹具资产包（科技树 JSON + tank_cache + crops），不依赖真实资产。
- */
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
@@ -30,7 +13,6 @@ const NODE_H = 96
 const ROWS = 10
 const COLS = 4
 
-/** 确定性科技树：10 行 × 4 列，行内串联研发边；内容高度 960px，足以让各档都产生纵向滚动。 */
 function fixtureTechTree() {
   const nodes = []
   const edges = []
@@ -48,7 +30,6 @@ function fixtureTechTree() {
       if (x > 1) edges.push({ from: `Fixture_${y}_${x - 1}`, to: stem, cost: { xp: 1000 * x } })
     }
   }
-  // 目录需要同时覆盖客户端旗标和用户提供的 CN 图片；这辆车不参与科技树节点布局。
   tankCache[9200] = { id: 9200, name: 'Fixture China', tier: 8, nation: 'china', type: 'heavyTank', is_premium: false, is_collector: true }
   return {
     tree: { meta: { nation: NATION, premiumRows: 1 }, nodes, pending: [], edges },
@@ -78,7 +59,6 @@ async function catalogState(page, category, ids) {
   await page.waitForValue(`Array.from(document.querySelectorAll('[data-testid="tank-card"]'), card => card.dataset.tankId)`, value => JSON.stringify(value) === JSON.stringify(ids), { label: `catalog results ${ids}` })
 }
 
-/** Verify loaded source images and visible crop geometry without relying on a screenshot assertion. */
 async function assertCatalogIcons(page) {
   await page.waitFor(() => [...document.querySelectorAll('.catalog-icon img')].every(image => image.complete && image.naturalWidth > 0), { label: 'catalog icon images loaded' })
   const icons = await page.probe(() => [...document.querySelectorAll('.catalog-icon-crop')].map(crop => {
@@ -148,8 +128,6 @@ async function assertCatalogMenu(page, trigger) {
 }
 
 async function assertCatalogControls(page, label) {
-  // Shared-layout indicators may temporarily extend beyond their destination button.
-  // Geometry belongs to the settled controls, after both native and projection animations.
   await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))')
   await page.animationsSettled()
   await page.waitFor(() => [...document.querySelectorAll('.tank-catalog-menu .segmented-indicator')]
@@ -234,7 +212,6 @@ async function catalogScenario(page, scenario) {
   }
 }
 
-/** 页面内几何探针（Page.probe 会序列化，不能引用模块作用域）。 */
 function layoutProbe() {
   const rect = (element) => {
     if (!element) return null
@@ -301,7 +278,6 @@ function assertScenario(scenario, layout) {
     `${label}: 树滚动区伸到视口外（scroll.bottom=${layout.scroll.bottom}, viewport=${layout.viewport.height}）`,
   )
   if (scenario.portrait) {
-    // 竖屏手机：按等级从高到低一行一级，不渲染会压住节点的等级标尺；国家页签单行横滑 + 车种分段在滚动区之上
     assert.equal(layout.ruler, null, `${label}: 竖屏不得渲染等级标尺`)
     assert.equal(layout.tierRows, ROWS, `${label}: 每个等级一行（rows=${layout.tierRows}）`)
     assert.equal(layout.tabRows, 1, `${label}: 国别页签必须单行横滑（rows=${layout.tabRows}）`)
@@ -335,8 +311,6 @@ function assertScenario(scenario, layout) {
 
 const { server, origin } = await startFixtureServer()
 const topVehicle = tree.nodes.find(node => node.stem === 'Fixture_10_1')
-// 客户端旗帜/类别/车种图标改走资产 origin 的 `/ui/**`（2026-11-25 去重）：
-// 夹具按 sources.json 的 canvas 尺寸生成同比例 SVG，保持图标裁剪与加载断言可执行。
 const catalogSources = JSON.parse(readFileSync(
   fileURLToPath(new URL('../src/assets/tank-catalog/sources.json', import.meta.url)), 'utf8'))
 const catalogRoutes = {}
@@ -392,7 +366,6 @@ try {
         tierRows: layout.tierRows,
       })}`)
 
-      // 负向对照：注入旧实现，探针必须能抓到等级条被底栏遮住。
       if (scenario.name === 'phone-landscape-740x360') {
         await page.evaluate(`(() => {
           const style = document.createElement('style')

@@ -1,25 +1,10 @@
 // @vitest-environment happy-dom
-/**
- * Vehicle label 的垂直信息层级与两个 combat indicator 的尺寸 ownership。
- *
- * Contract（固定，不得重排）：
- *
- *   PlayerName → TankName → HP → Reload
- *
- * HP 是主要 combat state（更厚），reload 是最下方次级瞬时状态（等宽、更细）。
- * 2D 与 3D 共用本组件，所以这里锁的就是两个 renderer 的共同呈现。
- *
- * 为什么用 `?raw` 源码断言量尺寸：happy-dom 不跑布局，`getComputedStyle` 拿不到
- * token 解析后的像素值。尺寸的单一事实源是 token + `var()` 引用，直接在源码上断言
- * 「谁引用哪个 token」既确定又不会因为环境差异变成假绿。
- */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { mount } from '@vue/test-utils'
 import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
 import labelSource from './PlaybackVehicleLabel.vue?raw'
-// CSS 走 fs 而不是 `?raw`：vitest 的 CSS 处理链会把 stylesheet 的 `?raw` 变成空串。
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const scaleTokens = read('../styles/tokens/scale.css')
 
@@ -38,18 +23,15 @@ const mountLabel = (props = {}) => mount(PlaybackVehicleLabel, {
   },
 })
 
-/** 组件源码里某条**独立**规则块的正则（选择器必须自成一行的开头，避免误配共享规则）。 */
 const ruleBody = (selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const match = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(labelSource)
   return match ? match[1] : null
 }
-/** tokens/scale.css 里某个自定义属性的声明值。 */
 const tokenValue = (name) => {
   const match = new RegExp(`${name}:\\s*([^;]+);`).exec(scaleTokens)
   return match ? match[1].trim() : null
 }
-/** 把 `var(--space-1)` / `calc(var(--space-1) * 2)` 这类表达式解析成 px。 */
 const SPACE_PX = { '--space-0': 0, '--space-1': 4, '--space-2': 8, '--space-3': 12, '--space-4': 16 }
 function resolvePx(expression) {
   if (!expression) return null
@@ -81,7 +63,6 @@ describe('PlaybackVehicleLabel lost HP ghost', () => {
     expect(ghostEl(mountLabel({ hpGhost: ghost({ prevPct, nextPct }) })).exists()).toBe(false)
   })
 
-  // 2D 调用方只传 { prevPct, nextPct }：重启动画是组件自身契约，不依赖调用方提供身份
   it('同一次受击的 rerender 复用节点，新一次受击换节点重启动画', async () => {
     const wrapper = mountLabel({ hpGhost: { prevPct: 50, nextPct: 30 } })
     const original = ghostEl(wrapper).element
@@ -104,10 +85,8 @@ describe('PlaybackVehicleLabel 垂直层级', () => {
   it('HP 与 Reload 同属 combat-state 块，且 reload 在 HP 之后', () => {
     const wrapper = mountLabel()
     const block = wrapper.get('.pb-combat-state')
-    // 只看块的直接子级，忽略 HP 内部更深层的 pb-hp-num / pb-hp-bar 等
     const ids = [...block.element.children].map(el => el.getAttribute('data-test'))
     expect(ids).toEqual(['pb-hp-hud', 'pb-reload'])
-    // 身份两行不在 combat block 里：它们是独立的信息层级
     expect(block.find('[data-test="pb-label-player"]').exists()).toBe(false)
     expect(block.find('[data-test="pb-label-tank"]').exists()).toBe(false)
   })
@@ -125,7 +104,6 @@ describe('PlaybackVehicleLabel 垂直层级', () => {
     expect(mountLabel({ showReload: false }).find('[data-test="pb-reload"]').exists()).toBe(false)
     expect(mountLabel({ showPlayerName: false }).find('[data-test="pb-label-player"]').exists()).toBe(false)
     expect(mountLabel({ showTankName: false }).find('[data-test="pb-label-tank"]').exists()).toBe(false)
-    // 身份两行都关掉时 .pb-labels 整块不存在，但 combat 块仍在
     const bare = mountLabel({ showPlayerName: false, showTankName: false })
     expect(bare.find('.pb-labels').exists()).toBe(false)
     expect(bare.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
@@ -143,7 +121,6 @@ describe('PlaybackVehicleLabel 垂直层级', () => {
   it('last-known：只弱化文字与 HP 块，不做整块 opacity', () => {
     const lastKnown = mountLabel({ lastKnown: true })
     expect(lastKnown.classes()).toContain('label-last-known')
-    // 整块 opacity 会把背景一起淡化——那条契约被重写过一次，这里继续锁住
     expect(labelSource).not.toMatch(/\.label-last-known \.vehicle-label \{[^}]*opacity/)
     expect(labelSource).toMatch(/\.label-last-known \.pb-label-tank,\s*\.label-last-known \.pb-label-player \{ opacity: \.65; \}/)
     expect(labelSource).toMatch(/\.label-last-known \.pb-hp-hud \{ opacity: \.55; \}/)
@@ -163,7 +140,6 @@ describe('PlaybackVehicleLabel indicator 尺寸 ownership', () => {
     const reloadBar = ruleBody('.reload-bar')
     expect(hpBar).toContain('width: var(--pb-label-hp-bar-width)')
     expect(reloadBar).toContain('width: var(--pb-label-hp-bar-width)')
-    // 通用 token 已废除：组件里不得再出现
     expect(labelSource).not.toContain('--pb-label-bar-width')
     expect(scaleTokens).not.toContain('--pb-label-bar-width')
   })
@@ -186,7 +162,6 @@ describe('PlaybackVehicleLabel indicator 尺寸 ownership', () => {
   it('两个 token 都是语义 token，组件里没有散落的硬编码尺寸', () => {
     expect(tokenValue('--pb-label-hp-bar-width')).toMatch(/px$/)
     expect(tokenValue('--pb-label-reload-bar-height')).toMatch(/px$/)
-    // 组件只允许通过 token 表达尺寸：不得出现 width/height 的裸 px
     expect(labelSource).not.toMatch(/\.reload-bar \{[^}]*height:\s*\d+px/)
     expect(labelSource).not.toMatch(/\.pb-hp-bar \{[^}]*width:\s*\d+px/)
   })

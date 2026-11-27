@@ -36,11 +36,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * PlayerSeparationEvidenceSkill — Backend Evidence Boundary 回归测试。
- * <p>只输出中性空间分离结构事实（kind=OPENING_SPREAD / SEPARATION_WINDOW + 确定性测量），
- * 不输出 SOLO_DELAY / SOLO_DETACHED / 单走拖延 / 单走脱节 / 无掩护等战术 verdict。</p>
- */
 class PlayerSeparationEvidenceSkillTest {
 
     @Test
@@ -65,7 +60,6 @@ class PlayerSeparationEvidenceSkillTest {
 
     @Test
     void stationaryHoldWithPressureEmitsNeutralSeparationWindow() {
-        // 旧逻辑输出 SOLO_DELAY；现在只输出中性 SEPARATION_WINDOW 事实
         final EvidenceSkillContext ctx = context(200, true, 0,
                 List.of(stationary(60, 75, 200, 200)),
                 List.of(engagement(60, 75, 200)),
@@ -88,7 +82,6 @@ class PlayerSeparationEvidenceSkillTest {
 
     @Test
     void movingPushWithDamageEmitsNeutralSeparationWindow() {
-        // 旧逻辑输出 SOLO_DETACHED；现在只输出中性 SEPARATION_WINDOW 事实
         final EvidenceSkillContext ctx = context(1800, true, 0,
                 List.of(move(60, 75, 200, 200, 240, 240, 5f)),
                 List.of(engagement(60, 75, 1800)),
@@ -109,7 +102,6 @@ class PlayerSeparationEvidenceSkillTest {
 
     @Test
     void partiallyOverlappingEngagementSuppressesHardConclusion() {
-        // 部分重叠交火：窗口内信号无法可靠归属 → 不硬出
         final EvidenceSkillContext ctx = context(0, true, 0,
                 List.of(stationary(60, 90, 200, 200)),
                 List.of(engagement(40, 75, 1000)),
@@ -134,7 +126,6 @@ class PlayerSeparationEvidenceSkillTest {
 
         final List<AiEvidence> evidence = PlayerSeparationEvidenceSkill.detect(ctx);
 
-        // 覆盖不足 → movementState=UNKNOWN（不得按 MOVING 下结论），但分离窗口事实仍输出
         assertFalse(evidence.isEmpty(), "separation window facts must still be emitted");
         for (final AiEvidence e : evidence) {
             assertEquals("UNKNOWN", e.labels().get("movementState"), e.summary());
@@ -161,7 +152,6 @@ class PlayerSeparationEvidenceSkillTest {
         }
     }
 
-    // ===== helpers（与原测试一致） =====
 
     private static EvidenceSkillContext context(
             final int recorderDamageReceived,
@@ -286,7 +276,6 @@ class PlayerSeparationEvidenceSkillTest {
 
     private static EngagementSummary engagement(final float start, final float end,
                                                 final int damageReceived) {
-        // 生产形态：DefaultPlayerBattleFeatureExtractor 构造的 player engagement 敌我 account 列表为空
         return new EngagementSummary(start, end, List.of(), List.of(),
                 300, damageReceived, new Vector3(200f, 0f, 200f), new Vector3(200f, 0f, 200f),
                 DecodeConfidence.PARTIAL);

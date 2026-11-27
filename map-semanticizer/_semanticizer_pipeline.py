@@ -165,7 +165,6 @@ def semanticize(
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{map_id}.semantic.json"
     text_path = output_dir / f"{map_id}.semantic.txt"
-    # 目标文件可提供已审校方向；其它人工修正仍不合并，禁止重跑已核验地图。
     if reviewed_semantics is None and json_path.exists():
         reviewed_semantics = json.loads(json_path.read_text(encoding="utf-8"))
     if reviewed_semantics is not None:

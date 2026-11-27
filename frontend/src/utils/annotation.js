@@ -1,48 +1,22 @@
 import { clipPenByEraser } from './annotationStrokeClipping.js'
 
-/**
- * 战局回放地图标注（Battle Playback Annotation）纯工具：
- * 色板/线宽常量、屏幕→语义坐标换算、橡皮擦点擦、快照式 undo/redo。
- * 全部为纯函数，供 BattlePlayback.vue / MapPreview2DPane.vue 与单测使用。
- *
- * 标注对象契约（几何一律存语义坐标 x=回放 x，y=回放 z，渲染时经 createMapView 的 toX/toY 换算）：
- * - pen:    { type:'pen',    color, width, points:[{x,y,surfaceY?},...] }（自由笔迹，多段；
- *           surfaceY 只由 3D 场景写入，是可选 session-local 表面锚点，2D 不消费）
- * - arrow:  { type:'arrow',  color, width, x1,y1,x2,y2 }
- * - line:   { type:'line',   color, width, x1,y1,x2,y2 }
- * - rect:   { type:'rect',   color, width, x, y, w, h }
- * - circle: { type:'circle', color, width, cx, cy, r }
- * - text:   { type:'text',   color, x, y, text }
- * - unit:   { type:'unit', color, x, y, tankClass:'LT'|'MT'|'HT'|'TD', radius, label }
- * - route:  { type:'route', color, width, points:[{x,y},...], label }
- */
 
-/** 标注颜色固定色板（含纯黑，供亮色地图与标注对比）。 */
 export const ANNOT_COLORS = [
   '#ff4d4f', '#ffd166', '#ffffff', '#000000',
   '#40c4ff', '#69f0ae', '#ff7eb6', '#ff9f43', '#9c88ff'
 ]
 
-// The palette and actual vehicles share one game-domain symbol definition.
 import { TANK_CLASS_ICONS } from './tankClassIcon.js'
 export { TANK_CLASS_ICONS as ANNOT_TANK_CLASSES }
 
-/** 粗细滑块范围与默认值（SVG 单位，随地图缩放）。 */
 export const ANNOT_WIDTH_MIN = 1
 export const ANNOT_WIDTH_MAX = 12
 export const ANNOT_WIDTH_DEFAULT = 3
 
-/** 3D 橡皮擦 visual radius（CSS/logical px；pen width 与 eraser radius 分离）。 */
 export const ANNOT_ERASER_RADIUS_MIN = 6
 export const ANNOT_ERASER_RADIUS_MAX = 40
 export const ANNOT_ERASER_RADIUS_DEFAULT = 16
 
-/**
- * Toolbar logical width → canonical map-space semantic width.
- * 2D 调用：semanticSpan = renderBounds.xMax−xMin，logicalSpan = mapView.W；
- * 3D 调用：semanticSpan = map coordinateBounds span，logicalSpan = mapImages[key].width。
- * 不读取 camera / viewport scale；span 不可用时 1:1 回退，保持有限且稳定。
- */
 export function semanticWidthFromSlider(sliderValue, { semanticSpan, logicalSpan } = {}) {
   const value = Number(sliderValue)
   if (!Number.isFinite(value) || value <= 0) return 0
@@ -52,18 +26,10 @@ export function semanticWidthFromSlider(sliderValue, { semanticSpan, logicalSpan
   return value * (semantic / logical)
 }
 
-/** 文字标注字号（SVG 单位，随地图缩放）。 */
 export const ANNOT_FONT_SIZE = 20
 
-/** undo/redo 快照上限（步）。 */
 export const UNDO_LIMIT = 100
 
-/**
- * 解析 CSS 渲染尺寸：真实未缩放地图布局尺寸（.pb-map clientWidth/clientHeight）缺失（≤0，
- * 如测试无布局）时按 1:1 回退到 viewBox 尺寸。
- * 背景：.pb-map 宽度为容器 66.7%（移动端 100%），CSS 渲染尺寸 ≠ viewBox W/H，
- * 1 CSS px ≠ 1 SVG viewBox unit——屏幕↔语义换算必须带渲染尺寸比例，禁止把 CSS px 当 SVG unit。
- */
 function renderedSize(mapView, renderedW, renderedH) {
   return {
     rw: Number.isFinite(renderedW) && renderedW > 0 ? renderedW : mapView.W,
@@ -71,11 +37,6 @@ function renderedSize(mapView, renderedW, renderedH) {
   }
 }
 
-/**
- * 屏幕坐标（相对地图容器的 CSS px，见 BattlePlayback.screenPoint 契约）→ SVG viewBox 坐标。
- * 链：screen CSS px → 撤销 viewport translate/scale → 未缩放地图 CSS px → ×(viewBox/渲染尺寸) → SVG unit。
- * view = { scale, tx, ty }（单位 CSS px）；mapView 来自 createMapView（W/H = viewBox 尺寸）。
- */
 export function screenToSvg(view, mapView, screenX, screenY, renderedW, renderedH) {
   if (!view || !mapView || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return null
   const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
@@ -88,7 +49,6 @@ export function screenToSvg(view, mapView, screenX, screenY, renderedW, rendered
   }
 }
 
-/** SVG viewBox 坐标 → 屏幕坐标（相对地图容器的 CSS px）；与 screenToSvg 互逆（svgToScreen(screenToSvg(p)) ≈ p）。 */
 export function svgToScreen(mapView, view, svgX, svgY, renderedW, renderedH) {
   if (!mapView || !view || !Number.isFinite(svgX) || !Number.isFinite(svgY)) return null
   const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
@@ -101,10 +61,6 @@ export function svgToScreen(mapView, view, svgX, svgY, renderedW, renderedH) {
   }
 }
 
-/**
- * 屏幕坐标（相对地图容器的 CSS px）→ 语义坐标（x=回放 x，y=回放 z）。
- * 完整链：CSS px → 撤销 viewport 变换 → CSS px→SVG unit 比例 → fromX/fromY。换算失败返回 null。
- */
 export function screenToSemantic(view, mapView, screenX, screenY, renderedW, renderedH) {
   if (!view || !mapView || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return null
   const svg = screenToSvg(view, mapView, screenX, screenY, renderedW, renderedH)
@@ -115,7 +71,6 @@ export function screenToSemantic(view, mapView, screenX, screenY, renderedW, ren
   return { x, y }
 }
 
-/** rect 两角点 → { x, y, w, h }（x 左、y 语义下边界；SVG 投影用 y+h 取上边界）。 */
 export function rectFromCorners(a, b) {
   return {
     x: Math.min(a.x, b.x),
@@ -125,7 +80,6 @@ export function rectFromCorners(a, b) {
   }
 }
 
-/** circle 两角点（对角）→ { cx, cy, r }（外接圆）。 */
 export function circleFromCorners(a, b) {
   return {
     cx: (a.x + b.x) / 2,
@@ -134,7 +88,6 @@ export function circleFromCorners(a, b) {
   }
 }
 
-/** 箭头头部三角点（SVG 空间，"x,y x,y x,y" 字符串，随线段方向）。 */
 export function arrowHeadPoints(x1, y1, x2, y2, size = 14) {
   const angle = Math.atan2(y2 - y1, x2 - x1)
   const spread = Math.PI / 6
@@ -145,13 +98,11 @@ export function arrowHeadPoints(x1, y1, x2, y2, size = 14) {
   return `${x2.toFixed(2)},${y2.toFixed(2)} ${p1x.toFixed(2)},${p1y.toFixed(2)} ${p2x.toFixed(2)},${p2y.toFixed(2)}`
 }
 
-/** 笔迹（语义坐标）→ SVG points 字符串（经 toX/toY 换算）。 */
 export function polylinePoints(points, toX, toY) {
   if (!Array.isArray(points) || points.length === 0) return ''
   return points.map(p => `${toX(p.x).toFixed(2)},${toY(p.y).toFixed(2)}`).join(' ')
 }
 
-/** 点到线段最短距离。 */
 function pointSegmentDistance(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1
   const dy = y2 - y1
@@ -162,7 +113,6 @@ function pointSegmentDistance(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 }
 
-/** 点到标注几何的最短距离（形状/文字命中判定；pen 不走此路径）。 */
 function distanceToShape(ann, px, py) {
   switch (ann.type) {
     case 'pen':
@@ -193,7 +143,6 @@ function distanceToShape(ann, px, py) {
   }
 }
 
-/** Select topmost geometry in semantic coordinates; callers supply a screen-sized tolerance. */
 export function hitTestAnnotation(annotations, point, tolerance) {
   for (let i = annotations.length - 1; i >= 0; i--) {
     if (distanceToShape(annotations[i], point.x, point.y) <= tolerance) return i
@@ -201,9 +150,7 @@ export function hitTestAnnotation(annotations, point, tolerance) {
   return -1
 }
 
-/** Immutable translation keeps undo snapshots independent, including polyline vertices. */
 export function translateAnnotation(annotation, dx, dy) {
-  // 只平移 semantic XZ；未知字段（如 3D surfaceY）原样保留，避免编辑动作丢锚点。
   if (annotation.points) return { ...annotation, points: annotation.points.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })) }
   const next = { ...annotation }
   for (const key of ['x', 'cx', 'x1', 'x2']) if (Number.isFinite(next[key])) next[key] += dx
@@ -211,13 +158,6 @@ export function translateAnnotation(annotation, dx, dy) {
   return next
 }
 
-/**
- * 橡皮擦应用（不可变，返回新数组）：
- * - pen 笔迹：eraser 路径作为 capsule 扫过 semantic 平面，按子段裁剪并断段；
- *   不足 2 点的段丢弃（整笔被擦净则整笔消失）；
- * - 形状/文字：橡皮路径任一点距其几何 ≤ radius + 线宽（文字为字号）时整件删除。
- * 未命中任何内容时返回原数组引用，调用方不产生无效 undo 快照。
- */
 export function applyEraser(annotations, eraserPoints, radius) {
   if (!Array.isArray(annotations) || !Array.isArray(eraserPoints) || eraserPoints.length === 0) {
     return annotations
@@ -251,10 +191,6 @@ export function applyEraser(annotations, eraserPoints, radius) {
   return changed ? result : annotations
 }
 
-/**
- * 导出/导入边界的 3D 锚点剥离：文件 schema 保持 {x,y}，surfaceY 不落盘。
- * 非点列标注原样返回；点列标注返回新对象，不改输入。
- */
 export function stripSurfaceAnchors(annotations) {
   if (!Array.isArray(annotations)) return []
   return annotations.map((ann) => {
@@ -264,10 +200,6 @@ export function stripSurfaceAnchors(annotations) {
 }
 
 
-/**
- * 快照式提交：next 成为新历史项；若当前不在栈尾（已撤回过），丢弃 redo 侧。
- * history 为不可变快照数组，index 指向当前快照；上限 UNDO_LIMIT（超限丢最旧）。
- */
 export function commit(history, index, next) {
   const base = history.slice(0, index + 1)
   base.push(next)
@@ -293,10 +225,6 @@ export function redo(history, index) {
   return { history, index: index + 1 }
 }
 
-/**
- * 由 tool + 两个语义点生成进行中的 shape draft；不是 shape tool 时返回 null。
- * 只产出 schema geometry；颜色/宽度由宿主提供。
- */
 export function annotationDraftFromTool(tool, start, end, { color, width } = {}) {
   switch (tool) {
     case 'arrow':
@@ -311,7 +239,6 @@ export function annotationDraftFromTool(tool, start, end, { color, width } = {})
   }
 }
 
-/** 零长度/零面积 draft 不进入 history。 */
 export function isDegenerateAnnotation(annotation) {
   if (!annotation) return true
   if (annotation.type === 'rect') return !(annotation.w > 1e-9 && annotation.h > 1e-9)
@@ -322,11 +249,6 @@ export function isDegenerateAnnotation(annotation) {
   return false
 }
 
-/**
- * 语义 annotation → BattleMap 期望的 SVG 呈现字段（唯一投影实现，Playback 与 Map Preview 共用）。
- * toX/toY 负责世界→SVG；invX/invY 是「每 SVG unit 的语义量」，用于宽度/半径/矩形尺寸。
- * 地形 relief 的屏幕投影仍由 BattleMap 负责；本 helper 只产出地图空间几何。
- */
 export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 1, widthFallback = ANNOT_WIDTH_DEFAULT } = {}) {
   const widthSvg = (annotation.width || widthFallback) * invX
   const out = { ...annotation, widthSvg }
@@ -338,14 +260,12 @@ export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 
     out.x2 = toX(annotation.x2)
     out.y2 = toY(annotation.y2)
     if (annotation.type === 'arrow') {
-      // 宽箭头的 head 必须随线宽增长，否则视觉上会变成圆头团块；短箭头再按线长收敛。
       const length = Math.hypot(out.x2 - out.x1, out.y2 - out.y1)
       const headSize = Math.max(10, Math.min(Math.max(14, widthSvg * 2.8), length * 0.45 || 10))
       out.head = arrowHeadPoints(out.x1, out.y1, out.x2, out.y2, headSize)
     }
   } else if (annotation.type === 'rect') {
     out.x = toX(annotation.x)
-    // y 存储的是语义下边界（rectFromCorners 的 min y；屏幕底边），SVG 的 rect.y 需要上边界。
     out.y = toY(annotation.y + annotation.h)
     out.w = annotation.w * invX
     out.h = annotation.h * invY
@@ -360,7 +280,6 @@ export function projectAnnotationToSvg(annotation, { toX, toY, invX = 1, invY = 
   return out
 }
 
-/** 完整 annotation schema 的 fail-closed 校验；不信任未知字段/type。 */
 export function isValidAnnotation(annotation) {
   if (!annotation || typeof annotation !== 'object' || Array.isArray(annotation)) return false
   if (typeof annotation.color !== 'string' || annotation.color.length === 0) return false

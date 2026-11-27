@@ -3,7 +3,6 @@ import type { ReplayCapability } from '../types/workspace.js'
 
 export type OnboardingTopic = 'core' | 'data' | 'playback' | 'annotations' | '3d' | 'shots' | 'ai' | 'tankopedia' | 'hof' | 'tournament' | 'settings'
 
-/** The real workspace retains ownership of files, analysis and capability navigation. */
 export interface OnboardingWorkspace {
   hasFiles(): boolean
   busy(): boolean
@@ -13,20 +12,17 @@ export interface OnboardingWorkspace {
   chooseOwnReplay(): Promise<void> | void
 }
 
-/** Commands remain owned by the active real pane; the guide only requests them. */
 export interface OnboardingSurface {
   ready(): boolean
   failed?(): boolean
   prepare?(): Promise<void> | void
   cleanup?(): void
-  /** Reserve viewport space for the guide without covering a real inspector. */
   setGuideInset?(pixels: number): void
 }
 
 export type OnboardingSurfaceId = 'playback' | 'annotations' | 'display' | '3d' | 'shots' | 'armor'
 
 export interface OnboardingContext {
-  /** 教学进行中：工作台据此保留教学要高亮的入口。 */
   guideActive: ComputedRef<boolean>
   start(topic?: OnboardingTopic): void
   openDirectory(): void
@@ -37,5 +33,4 @@ export interface OnboardingContext {
 
 export const ONBOARDING_KEY: InjectionKey<OnboardingContext> = Symbol('wotbtools.onboarding')
 
-/** 工作区的「替换当前回放」确认被用户拒绝时 loadDemo 抛出的错误名：不是加载失败，教程应直接结束。 */
 export const REPLACE_DECLINED = 'ReplaceDeclinedError'

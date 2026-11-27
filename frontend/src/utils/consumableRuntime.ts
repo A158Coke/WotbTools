@@ -1,20 +1,7 @@
-/**
- * 回放消耗品运行时：把消耗品 lifecycle 折叠成「此刻正在生效的主动消耗品」。
- *
- * 只输出**定时主动消耗品在激活窗口内**的状态（`ACTIVATED` 且 `durationSec > 0`）：
- * - 瞬发消耗品（修理箱/急救包等，激活 duration=0）不进入 HUD。
- * - 冷却（`ACTIVE_ENDED_OR_COOLDOWN`）、未使用/已就绪（`INITIALIZED`）、
- *   `TEARDOWN`/`UNKNOWN` 一律不展示——HUD 只表达「现在正在生效」。
- * - `remainingSec` 由 `endsAt` 计算；旧产物缺 `endsAt` 时回退 `timeSec + durationSec`。
- * - `invalidation === true`（AoI 关闭/未知段）清空该车全部槽位，绝不把旧状态留在屏幕上。
- *
- * 纯函数，无 Vue/场景依赖；2D 与 3D 共用同一份状态语义。
- */
 import type { AgentConsumableEvent } from '../api/agent-replay-facets.js'
 import type { ConsumableTransition } from '../types/playback-v2.js'
 import { isFiniteNumber } from '../types/primitive-guards.js'
 
-/** 两种输入形状不能互相当作对方读取字段，只有下面的归一化视图同时看到两套字段名。 */
 export type ConsumableInput = ConsumableTransition | AgentConsumableEvent
 
 type ConsumableFields = {
@@ -46,14 +33,9 @@ type ActiveSlot = {
 }
 
 const EPS = 1e-6
-// Agent 把 consumable.clock 序列化为 2 位小数（playback.rs `r2`），而 visibility.t_in
-// 保留原始 f32（如 120.0039978）。观测窗口下界必须归一到与事件相同的 0.01s 网格，
-// 否则「同一 tick 内、紧贴重入点」的新激活（120.00）会被误判为窗口前旧事件而整条丢失。
-// 这是与 producer 序列化精度一致的规范化，不是放宽容差。
 const CLOCK_QUANTUM = 0.01
 const quantizeClock = (v: number) => Math.round(v / CLOCK_QUANTUM) * CLOCK_QUANTUM
 
-/** 事件时刻：canonical `timeSec` 或 facet 原始 `clock`（同 base，不做 origin 变换）。 */
 function eventTime(tr: ConsumableFields | null | undefined) {
   if (!tr) return null
   if (isFiniteNumber(tr.timeSec)) return tr.timeSec
@@ -65,7 +47,6 @@ function firstFinite(...values: unknown[]) {
   return null
 }
 
-/** 单个槽位在 t 时刻是否处于激活窗口，以及剩余秒数。 */
 function slotBadge(slot: ActiveSlot, t: number) {
   if (!slot || !Number.isFinite(t)) return null
   if (slot.state !== 'ACTIVATED') return null
@@ -142,7 +123,6 @@ export function consumableRuntimeAt(
   return out.sort((a, b) => a.slot - b.slot)
 }
 
-/** 按 eid 建一次索引，返回 `(eid, t, since?) => badge[]`（3D 10Hz 名牌快照用）。 */
 export function createConsumableStateResolver(telemetry: { consumables?: AgentConsumableEvent[] | null } | null | undefined) {
   const byEid = new Map<number, AgentConsumableEvent[]>()
   for (const tr of telemetry?.consumables ?? []) {

@@ -9,7 +9,6 @@ import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.List;
 
-/** The permanent singleton row is also the lock when the default is disabled. */
 @Entity
 @Table(name = "tournament_default_rules")
 public class TournamentDefaultRules {

@@ -1,10 +1,3 @@
-// 地形 LOD 宿主复查回归（PR #954 评审 F3/F4）：
-// 「暂停/停手 → 在途任务构建期间移动相机 → 停下 → Worker 结果换装 → 节流到期」
-// 必须再唤醒一帧并按最终相机提交一次；异步失败必须唤醒同步回退。
-//
-// 这里用真实的 scheduler / terrainLodPoseReason / terrainLodStaleReason / terrainLodWake，
-// 只把宿主的 rAF 循环与 dirty 标记压成一个显式 frame()（与 playbackScene.animate 的
-// `!busy` 提前返回同口径：不脏就不进 maybeRebuildTerrainLod）。
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTerrainLodScheduler } from './terrainLodScheduler.ts'
 import type { TerrainWorkerIn, TerrainWorkerLike, TerrainWorkerOut } from './terrainLodScheduler.ts'
@@ -46,23 +39,19 @@ function host() {
     onSwap: (_data, job) => {
       prev = job.snapshot
       prevAt = now
-      // 生产 applyTerrainSwap：换装快照与当前相机不一致时，节流到期唤醒一帧。
       if (terrainLodPoseReason(job.snapshot, state())) wake.scheduleElapsed(now - prevAt)
       else wake.cancel()
     },
     onWorkerLost: () => {
-      // 生产 mapWorld.onWorkerLost 的同一条唤醒（deps.invalidate()）：异步失败也要有同步回退的帧。
       scheduler = null
       invalidate()
     },
     onDiscard: () => {
-      // 生产 mapWorld.onDiscard 的同一条唤醒：作废的在途结果返回后没有「下一帧」。
       invalidate()
     },
   })
   scheduler.setSource(SRC)
 
-  /** 一帧宿主循环：dirty 才进入 maybeRebuildTerrainLod（与 playbackScene 的 !busy 早退同口径）。 */
   function frame() {
     if (!dirty) return false
     dirty = false
@@ -84,7 +73,6 @@ function host() {
 
   return {
     camera, worker, wake, frame, invalidate,
-    /** 生产 onRefineMaskBuilt：terrainLodPrev=null + invalidate + scheduler.setMask。 */
     setMask(mask: unknown) { prev = null; invalidate(); scheduler?.setMask(mask) },
     get builds() { return builds },
     get syncBuilds() { return syncBuilds },
@@ -100,19 +88,17 @@ describe('地形 LOD 换装后的最终姿态复查', () => {
     vi.useFakeTimers()
     const h = host()
     h.invalidate()
-    expect(h.frame()).toBe(true)                       // 首帧请求 d=100
+    expect(h.frame()).toBe(true)
     expect(h.builds).toEqual([100])
     expect(h.worker.builds()).toHaveLength(1)
     const first = h.worker.builds()[0].id
 
-    // 在途期间相机拉近到 40 后停手；宿主没有播放 / 相机输入，不再有帧。
     h.camera.position.z = 40
     h.advance(200)
-    h.worker.reply(first)                              // 旧快照（d=100）此刻换上
+    h.worker.reply(first)
     expect(h.builds).toEqual([100])
     expect(h.wake.pending).toBe(true)
 
-    // 节流窗口内绝不提交；到期后必须唤醒并提交最终姿态。
     h.advance(119)
     expect(h.dirty).toBe(false)
     expect(h.frame()).toBe(false)
@@ -123,7 +109,6 @@ describe('地形 LOD 换装后的最终姿态复查', () => {
     expect(h.worker.builds()).toHaveLength(2)
     expect(h.worker.builds()[1].cam.z).toBe(40)
 
-    // 新结果与当前相机一致：不再安排下一次唤醒。
     h.worker.reply(h.worker.builds()[1].id)
     expect(h.wake.pending).toBe(false)
   })
@@ -134,11 +119,9 @@ describe('地形 LOD 换装后的最终姿态复查', () => {
     h.invalidate()
     expect(h.frame()).toBe(true)
     const first = h.worker.builds()[0].id
-    // 构建期间走廊掩码完成：setMask 作废旧代号；宿主立刻请求仍被 busy 忽略。
     h.setMask(new Uint8Array(1))
     expect(h.frame()).toBe(true)
     expect(h.worker.builds()).toHaveLength(1)
-    // 旧结果返回：不换装，但 onDiscard 必须唤醒宿主（停手时没有「下一帧」）。
     h.worker.reply(first)
     expect(h.dirty).toBe(true)
     expect(h.frame()).toBe(true)
@@ -153,7 +136,7 @@ describe('地形 LOD 换装后的最终姿态复查', () => {
     const h = host()
     h.invalidate()
     expect(h.frame()).toBe(true)
-    h.worker.onerror?.({})                             // 停手后的异步失败
+    h.worker.onerror?.({})
     expect(h.dirty).toBe(true)
     expect(h.frame()).toBe(true)
     expect(h.syncBuilds).toBe(1)
@@ -185,7 +168,7 @@ describe('createTerrainLodWake', () => {
 
     wake.scheduleElapsed(0)
     vi.advanceTimersByTime(60)
-    wake.scheduleElapsed(0)                            // 换装更晚：重新计 120ms
+    wake.scheduleElapsed(0)
     vi.advanceTimersByTime(119)
     expect(seen).toEqual([1])
     vi.advanceTimersByTime(1)

@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
-# Runtime verification for the private Komodo controller.
-#
-# Proves the K1 boundary: only `mongo` and `core` exist in the `komodo` project,
-# MongoDB publishes no host port, Core publishes the Yecao WireGuard address
-# alone, and the pinned Core answers on that address. Nothing here touches
-# unrelated WotBTools workloads, TX, or DNS.
 set -Eeuo pipefail
 
 root=/opt/komodo
 compose_file="$root/compose.yml"
 controller_bind=10.20.0.2:9120
-# Bumping the Core digest in `compose.yml` requires bumping this value in the
-# same change. The digest currently pinned is the official GHCR multi-arch index
-# resolved from the `2.3.3` tag, so `/version` must report exactly this.
 pinned_core_version=2.3.3
 
 [[ -f "$compose_file" && ! -L "$compose_file" ]] || { echo 'Komodo live Compose file is unavailable.' >&2; exit 1; }
@@ -33,9 +24,6 @@ for service in mongo core; do
   }
 done
 
-# Only the two controller services may exist in the `komodo` project, stopped
-# containers included: a Periphery agent or an adopted workload is out of scope
-# for this bootstrap phase.
 project_services="$(docker ps -a --filter 'label=com.docker.compose.project=komodo' \
   --format '{{.Label "com.docker.compose.service"}}' | sort -u | tr '\n' ' ')"
 [[ "$project_services" == "core mongo " ]] || {
@@ -56,9 +44,6 @@ listen="$(docker port "$core_id" 9120/tcp)"
   exit 1
 }
 
-# No container on this host may publish 9120 on a wildcard address, and no host
-# listener may exist outside the WireGuard bind. An empty `ss` result is
-# accepted: Docker can publish through iptables without a userland listener.
 host_ports="$(docker ps --format '{{.Names}} {{.Ports}}')"
 if grep -Eq '(0\.0\.0\.0|\[::\]|:::):9120' <<<"$host_ports"; then
   grep -E ':9120' <<<"$host_ports" >&2
@@ -75,10 +60,6 @@ if command -v ss >/dev/null; then
   done < <(ss -H -ltn 'sport = :9120' | awk '{print $4}')
 fi
 
-# `/version` is unauthenticated and returns the Core release, so it proves both
-# reachability over WireGuard and that the pinned release is what is running.
-# A restarting container can look `running` between crashes, so bound the retries
-# and fail instead of treating a crash loop as healthy.
 reported_version=
 for attempt in $(seq 1 60); do
   if reported_version="$(curl --fail --silent --show-error --max-time 5 \
@@ -94,7 +75,6 @@ done
   exit 1
 }
 
-# The UI surface that TX Caddy will proxy in K2 must already answer privately.
 curl --fail --silent --show-error --max-time 10 -o /dev/null "http://$controller_bind/" || {
   compose logs --tail 160 core >&2 || true
   echo 'Komodo Core did not serve its frontend on the Yecao WireGuard bind.' >&2

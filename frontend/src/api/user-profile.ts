@@ -1,5 +1,4 @@
 import type { components } from './generated/http-contract.js'
-// 用户域 transport（profile / wotb-account）。
 import { userProfileValidator } from './generated/contract-validators.js'
 import { useAuth } from '../composables/useAuth.js'
 import { ApiError, apiErrorFromResponse, apiFetch } from '../utils/http.js'
@@ -39,7 +38,6 @@ export async function getUserProfile(): Promise<components['schemas']['UserProfi
   return userProfileResponse(await apiFetch('/api/users/profile', { headers: await userJsonHeaders() }))
 }
 
-/** canonical owner 是全局 business bootstrap（useBusinessUserBootstrap），页面不自行调用。 */
 export async function ensureUserProfile(): Promise<components['schemas']['UserProfile'] | null> {
   return userProfileResponse(await apiFetch('/api/users/profile', { method: 'PUT', headers: await userJsonHeaders() }))
 }

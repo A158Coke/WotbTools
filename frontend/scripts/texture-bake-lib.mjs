@@ -1,16 +1,3 @@
-/**
- * Texture-Baked Top-View prototype（Phase B，Maus-only developer 路线）——
- * 纯函数库（vitest 与 bake CLI 共用）。
- *
- * 确定性软件 bake：GLB 真实几何 + UV + 材质 + 纹理 → 正交俯视 RGBA。
- * - z-buffer：每像素取最上方可见 surface（面内双线性 z 插值）；
- * - UV：barycentric 插值 → 确定性纹理采样（wrap + bilinear）；
- * - alpha test：MASK 材质 alpha < cutoff 的片元丢弃（不写 z）；
- * - 中性化（B8）：真实纹理采样 → luminance / restrained desaturation，
- *   保留局部对比（grille/panel/AO/relief）——不制造阵营色；
- * - 无 dynamic light / shadow / reflection / gloss / outline / fake bevel。
- * 所有视觉信息来自 BlitzKit model.glb + 内嵌材质/纹理，确定性生成。
- */
 import { deflateSync } from 'node:zlib'
 
 /**
@@ -45,10 +32,6 @@ export function sampleTexture(tex, w, h, u, v) {
   return out
 }
 
-/**
- * UV barycentric 插值（确定性）：给定三角形 3 顶点 UV 与重心坐标 → UV。
- * 纯函数（B16 #9）。
- */
 export function interpolateUV(uvs, w0, w1, w2) {
   return [
     w0 * uvs[0] + w1 * uvs[2] + w2 * uvs[4],
@@ -109,9 +92,8 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
     const a = [tri.p[0], tri.p[1], tri.p[2]]
     const b = [tri.p[3], tri.p[4], tri.p[5]]
     const c = [tri.p[6], tri.p[7], tri.p[8]]
-    // 投影 bbox（栅格）
     const ax = (a[0] - bounds.minX) * scale
-    const ay = (bounds.maxY - a[1]) * scale // Y flip：model +Y → raster top（screen up）
+    const ay = (bounds.maxY - a[1]) * scale
     const bx = (b[0] - bounds.minX) * scale
     const by = (bounds.maxY - b[1]) * scale
     const cx = (c[0] - bounds.minX) * scale
@@ -139,7 +121,6 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
         const z = w0 * a[2] + w1 * b[2] + w2 * c[2]
         const idx = row + x
         if (z <= zbuf[idx]) continue
-        // MASK alpha test（在 z 写入前——失败片元不遮挡下层）
         let alpha = 255
         if (mat && mat.alphaMode === 'MASK' && tri.uv && baseTex) {
           const [u, v] = interpolateUV(tri.uv, w0, w1, w2)
@@ -147,7 +128,6 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
           if (alpha < (mat.alphaCutoff ?? 0.05) * 255) continue
         }
         zbuf[idx] = z
-        // 颜色：baseColor × occlusion × normal-z relief
         let r = 255
         let g = 255
         let b2 = 255
@@ -167,7 +147,7 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
           }
           if (nrmTex) {
             const n = sampleTexture(nrmTex, textures[mat.normal].width, textures[mat.normal].height, u, v)
-            const nz = n[2] / 255 // 起伏 relief（不做夸张 3D 光照）
+            const nz = n[2] / 255
             const relief = 0.6 + 0.4 * nz
             r *= relief
             g *= relief
@@ -190,7 +170,6 @@ export function bakeTopView({ triangles, textures, materials, bounds, resolution
   return { rgba: out, width: W, height: H, covered: cnt }
 }
 
-// —— PNG 编码（确定性，Node 内置 zlib；无外部依赖）——
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256)
   for (let n = 0; n < 256; n++) {
@@ -214,17 +193,13 @@ function chunk(type, data) {
   return Buffer.concat([len, body, crc])
 }
 
-/**
- * RGBA → PNG（确定性编码，B16 #16 stable hash 用）。
- */
 export function encodePng(rgba, width, height) {
   const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
   const ihdr = Buffer.alloc(13)
   ihdr.writeUInt32BE(width, 0)
   ihdr.writeUInt32BE(height, 4)
-  ihdr[8] = 8 // bit depth
-  ihdr[9] = 6 // color type RGBA
-  // raw scanlines with filter byte 0
+  ihdr[8] = 8
+  ihdr[9] = 6
   const raw = Buffer.alloc(height * (width * 4 + 1))
   for (let y = 0; y < height; y++) {
     raw[y * (width * 4 + 1)] = 0

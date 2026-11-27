@@ -11,21 +11,13 @@ const { canonical, playback, layout, connectivityState } = testState
 installPaneTestLifecycle()
 
 describe('Replay3DPane mobile / fullscreen / roster', () => {
-  /**
-   * 手机竖屏呈现（真机 blocker）：常驻控件只能占「时间轴 + 一行高频按钮」。
-   *
-   * 这些用例断言**行为 / 不变量**，不锁像素：
-   *   · 工具条整行在紧凑档不常驻（`display:none` 由 CSS 承担，DOM 仍在但不可见）；
-   *   · 二级控件（相机 / 阵容 / 画质）改在「显示」面板里，且可开可关；
-   *   · 开关面板**不重建场景**（同一 sceneApi 实例，session 不重置）。
-   */
   describe('手机竖屏：二级控件收进「显示」面板', () => {
     const roster = {
       team1: [{ eid: 1, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2, dead: false, followed: false }],
       team2: [], unknown: [],
     }
 
-    it('紧凑档与宽档共享 Display 相机设置；两档都没有「打开名册」按钮', async () => {
+    it('紧凑档与宽档镜头都在控制条；两档都没有「打开名册」按钮', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       layout.portrait = true
@@ -34,11 +26,9 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       compactStore.hasData = true
       compactStore.roster = roster
       await nextTick()
-      // 镜头挡位**直接陈列**在控制条（2026-10-05：从 Gear 面板移出）
       expect(compactPane.find('[data-testid="replay3d-camera"]').exists()).toBe(true)
       await compactPane.get('[data-testid="display-toggle"]').trigger('click')
       expect(compactPane.find('[data-testid="display-panel"] .dp-camera').exists()).toBe(false)
-      // 名册没有临时面入口：唯一开关是 disp-roster 呈现偏好
       expect(compactPane.find('[data-testid="disp-roster"]').exists()).toBe(true)
       compactPane.unmount()
 
@@ -50,7 +40,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       wideStore.roster = roster
       await nextTick()
       await widePane.get('[data-testid="display-toggle"]').trigger('click')
-      // Wide form 同为直接陈列（两档同一入口）
       expect(widePane.find('[data-testid="replay3d-camera"]').exists()).toBe(true)
       expect(widePane.find('[data-testid="roster-toggle-compact"]').exists()).toBe(false)
       expect(widePane.find('[data-testid="roster-toggle"]').exists()).toBe(false)
@@ -70,7 +59,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       await nextTick()
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
       expect(wrapper.get('[data-testid="display-close"]').exists()).toBe(true)
-      // 面板只是覆盖层：不改变 playback session 身份，也不重建场景
       expect(playback.api).toBe(apiAfterStart)
       expect(playback.init).toHaveBeenCalledTimes(1)
       expect(playback.api.reset).not.toHaveBeenCalled()
@@ -93,7 +81,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       store.hasData = true
       store.roster = roster
       await nextTick()
-      // 折叠状态也可切换（不依赖 Display 面板）；默认已是 top，先切到 free 再点 top
       store.cam = 'free'
       await nextTick()
       await wrapper.get('[data-testid="replay3d-top-view"]').trigger('click')
@@ -102,7 +89,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       layout.portrait = false
     })
 
-    it('手机横屏：控制条只留传输，镜头进 Display，且不新建第二份相机状态', async () => {
+    it('手机横屏：镜头行常驻控制条，不被收进 Display，且不新建第二份相机状态', async () => {
       mockWebGL('webgl2')
       layout.compact = true
       const wrapper = mountPane()
@@ -111,11 +98,12 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       store.roster = roster
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-root"]').classes()).toContain('compact-bar')
-      expect(wrapper.find('[data-testid="replay3d-camera"]').exists()).toBe(false)
+      expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('.controls .controls-content > .tool-row').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('tool-row')).toBe(true)
       await wrapper.get('[data-testid="display-toggle"]').trigger('click')
-      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-drawing-entry"]').exists()).toBe(false)
-      expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('controls')).toBe(true)
       expect(wrapper.get('[data-testid="replay3d-toolrow"] label').text()).toContain('agentReplay.glb')
       store.cam = 'free'
       await nextTick()
@@ -141,16 +129,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     })
   })
 
-  /**
-   * 3D 全屏：与 2D 同一套产品语义（composables/usePlaybackFullscreen），
-   * 且**纯呈现 / 生命周期切换**——场景、解析、时间、倍速、相机、跟随目标、偏好都不重置。
-   */
   describe('3D 全屏（与 2D 同语义）', () => {
-    /**
-     * Fullscreen 能力桩：happy-dom **不提供** `requestFullscreen`，而能力探测读的是
-     * 真实元素上的方法。所以任何期望看到全屏按钮的用例都必须先装上它——以前靠
-     * `v-if="fullscreenSupported"`（函数对象恒真）侥幸通过，现在探测正确了，就必须显式声明能力。
-     */
     const withRequestFullscreen = (available, fn) => {
       fullscreenCalls.request = 0
       Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
@@ -185,7 +164,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         store.hasData = true
         await nextTick()
         const btn = wrapper.get('[data-testid="playback-fullscreen"]')
-        // 它必须在面板**之外**（面板是二级设置，不允许把全屏藏进去）
         await wrapper.get('[data-testid="display-toggle"]').trigger('click')
         expect(wrapper.get('[data-testid="display-panel"]').element.contains(btn.element)).toBe(false)
         expect(btn.attributes('aria-pressed')).toBe('false')
@@ -193,15 +171,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       })
     })
 
-    /**
-     * BLOCKER 2A：这条用例以前是**假阳**——它写的是 `playback.api.hasData = true`，
-     * 而真实响应式状态在 `playback.api.store.hasData`。于是 `.controls` 从未渲染，
-     * 全屏按钮无论如何都不存在，用例对错误的实现（`v-if="fullscreenSupported"`，
-     * 函数对象恒真）也照样通过。
-     *
-     * 现在两条都**先证明控件确实渲染**（`[data-test=pb-controls]` / `pb-play` 存在），
-     * 再只对全屏动作做断言。不支持的那条对错误实现必然失败：函数对象为真 → 按钮仍会渲染。
-     */
     describe('全屏能力探测（控件确实渲染后才断言）', () => {
       const mountReady = async () => {
         mockWebGL('webgl2')
@@ -214,7 +183,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       it('requestFullscreen 可用 → 控件渲染且全屏动作存在', async () => {
         await withRequestFullscreen(true, async () => {
           const wrapper = await mountReady()
-          // 先证明控件确实渲染（否则下面的断言什么都证明不了）
           expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
           expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
           expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(true)
@@ -225,7 +193,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       it('requestFullscreen 不可用 → 控件照常渲染，但全屏动作不存在（不画假按钮）', async () => {
         await withRequestFullscreen(false, async () => {
           const wrapper = await mountReady()
-          // 关键：控件**确实渲染了**，所以"没有全屏按钮"只能归因于能力探测
           expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
           expect(wrapper.find('[data-test="pb-play"]').exists()).toBe(true)
           expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
@@ -237,7 +204,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         await withRequestFullscreen(false, async () => {
           const wrapper = await mountReady()
           expect(wrapper.find('[data-testid="playback-fullscreen"]').exists()).toBe(false)
-          // 运行中恢复能力（等价于探测读到的元素变了）→ 重新渲染后按钮出现
           const proto = Object.getPrototypeOf(document.createElement('div'))
           Object.defineProperty(proto, 'requestFullscreen', {
             value: function requestFullscreen() { return Promise.resolve() },
@@ -252,7 +218,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     })
 
     it('进入 / 退出全屏不重建场景、不重解析、不重置时间·倍速·相机·偏好', async () => {
-      // 能力必须在**挂载前**就位：探测在渲染时求值，之后才装上的按钮不会出现
       await withRequestFullscreen(true, async () => {
         mockWebGL('webgl2')
         const wrapper = mountPane()
@@ -274,20 +239,17 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         })
         await nextTick()
         const initCallsBefore = playback.init.mock.calls.length
-        // start() 之后解析已经发生一次（那是播放器启动，不是全屏造成的）；全屏往返不得再增
         const loadCallsBefore = api.loadData.mock.calls.length
         await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
         await nextTick()
         expect(fullscreenCalls.request).toBe(1)
         expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('true')
-        // 会话原封不动
         expect(playback.init.mock.calls.length).toBe(initCallsBefore)
         expect(api.reset).not.toHaveBeenCalled()
         expect(api.loadData.mock.calls.length).toBe(loadCallsBefore)
         expect(store.time).toBe(42)
         expect(store.speed).toBe(4)
         expect(store.cam).toBe('follow')
-        // 退出：同一会话继续，状态依旧
         await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
         await nextTick()
         expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('false')
@@ -306,7 +268,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         const wrapper = mountPane({ autoFullscreenToken: 1 })
         const { store } = playback.api
         await flush()
-        // 待开播（用户未按开始）、尚无数据：不触发
         expect(fullscreenCalls.request).toBe(0)
         await start(wrapper)
         store.time = 42
@@ -350,7 +311,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         await wrapper.get('[data-testid="playback-fullscreen"]').trigger('click')
         await nextTick()
         expect(wrapper.get('[data-testid="playback-fullscreen"]').attributes('aria-pressed')).toBe('true')
-        // 外部退出：不经过我们的 toggle
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
         document.dispatchEvent(new Event('fullscreenchange'))
         await nextTick()
@@ -361,8 +321,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
 
     it('全屏入口三态：竖屏浮动、横屏内联、隐藏 UI 只有一个可达入口', async () => {
       await withRequestFullscreen(true, async () => {
-        // 布局 mock 是普通对象（只在挂载时读取），因此三态各挂载一次；真实旋转
-        // 由 browser harness 的 portrait-to-landscape 场景独立验证。
         const mountAt = async ({ compact, portrait }) => {
           layout.compact = compact
           layout.portrait = portrait
@@ -372,20 +330,17 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
           await nextTick()
           return wrapper
         }
-        // 手机竖屏：原契约——右上浮动，传输条不重复渲染。
         let wrapper = await mountAt({ compact: true, portrait: true })
         let entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
         expect(entries()).toHaveLength(1)
         expect(entries()[0].classes()).toContain('floating')
         expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(false)
         wrapper.unmount()
-        // 手机横屏：入口变成传输条内联，浮钮消失。
         wrapper = await mountAt({ compact: true, portrait: false })
         entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
         expect(entries()).toHaveLength(1)
         expect(entries()[0].classes()).not.toContain('floating')
         expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(true)
-        // 横屏隐藏全部 UI：浮钮是唯一入口，恢复 UI 后回到内联，仍不重复。
         await wrapper.get('[data-testid="display-toggle"]').trigger('click')
         await wrapper.get('[data-testid="hide-all-ui"]').trigger('click')
         await nextTick()
@@ -398,7 +353,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         expect(entries()[0].classes()).not.toContain('floating')
         expect(wrapper.find('.controls [data-test="pb-fullscreen"]').exists()).toBe(true)
         wrapper.unmount()
-        // 桌面：保持既有内联行为（isPhone=false 不触发 floatingFullscreen）。
         wrapper = await mountAt({ compact: false, portrait: false })
         entries = () => wrapper.findAll('[data-test="pb-fullscreen"]')
         expect(entries()).toHaveLength(1)
@@ -409,11 +363,33 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
         layout.portrait = false
       })
     })
+
+    it('桌面矮工作台：进入全屏不切换控制条档位，工具栏内容保持一致', async () => {
+      await withRequestFullscreen(true, async () => {
+        const height = vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(640)
+        mockWebGL('webgl2')
+        const wrapper = mountPane()
+        playback.api.store.hasData = true
+        await flush()
+        const root = wrapper.get('[data-testid="replay3d-root"]')
+        expect(root.classes()).toContain('compact-bar')
+        expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
+        await wrapper.get('[data-test="pb-fullscreen"]').trigger('click')
+        await flush()
+        height.mockReturnValue(900)
+        window.dispatchEvent(new Event('resize'))
+        await flush()
+        expect(document.fullscreenElement).not.toBeNull()
+        expect(root.classes()).toContain('compact-bar')
+        expect(wrapper.find('.controls [data-testid="replay3d-camera"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="display-panel"] [data-testid="replay3d-camera"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="replay3d-drawing-entry"]').element.parentElement.classList.contains('tool-row')).toBe(true)
+        wrapper.unmount()
+      })
+    })
   })
 
-  /**
-   * 需求 13：名册**不得**是嵌套滚动盒；行点击 = 跟随 + 选中 + 详情。
-   */
   describe('名册：无嵌套滚动 + 行点击语义', () => {
     const roster = {
       team1: [
@@ -425,31 +401,24 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     }
 
     it('队面板不得是独立滚动容器（常规名册必须一屏看全）', () => {
-      // Replay3DPane.vue 只保留 <style scoped src="./replay3dPane.css">；必须校验它实际引用的
-      // 活跃样式，而不是旁边同名未引用的 replay3d-pane.css。选择器缺失时测试必须失败。
       const paneVue = readFileSync(resolve(here, 'Replay3DPane.vue'), 'utf8')
       const activeCss = /<style\s+scoped\s+src="\.\/([^"]+\.css)"\s*(?:\/>|><\/style>)/.exec(paneVue)?.[1]
       expect(activeCss).toBeTruthy()
       const paneCss = readFileSync(resolve(here, activeCss), 'utf8')
 
-      // 车道基础规则不是滚动盒；三段式里的 overflow 只是病态数据的兜底，
-      // 正常 7v7 不出现滚动条由浏览器门禁（roster-geometry-*）在真实布局里断言。
       const laneBlock = /^\.team-lane \{([^}]*)\}/m.exec(paneCss)?.[1]
       expect(laneBlock).toBeTruthy()
       expect(laneBlock).not.toContain('overflow')
 
-      // 名册容器规则在 PlaybackRoster.vue 的 scoped style，不写死宽度、不是独立滚动区。
       const rosterVue = readFileSync(resolve(here, 'PlaybackRoster.vue'), 'utf8')
       const rosterBlock = /^\.pb-roster \{([^}]*)\}/m.exec(rosterVue)?.[1]
       expect(rosterBlock).toBeTruthy()
       expect(rosterBlock).not.toContain('overflow')
 
-      // 每队面板本身也不得成为独立滚动盒（原回归目标就是 PlaybackRoster.vue 的 .pb-roster-team）。
       const teamBlock = /^\.pb-roster-team \{([^}]*)\}/m.exec(rosterVue)?.[1]
       expect(teamBlock).toBeTruthy()
       expect(teamBlock).not.toContain('overflow')
 
-      // 临时名册面整套规则已不存在
       expect(paneCss + rosterVue).not.toMatch(/\.roster-surface\.transient|rosterTransient|rosterConstrained/)
     })
 
@@ -463,13 +432,9 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows.length).toBe(3)
       await rows[0].trigger('click')
-      // 跟随（相机动作）：setFollow 独占，由内核同时切 follow 档
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
-      // 选中（行状态高亮）
       expect(rows[0].classes()).toContain('selected')
-      // 详情窗**不**打开（原绑定已删除）
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
-      // 再点另一行（Enemy, eid=21）：跟随目标切换（重新查询行——上一行点击触发了重渲染）
       const enemyRow = wrapper.findAll('.team-lane .pl').find((r) => r.text().includes('Enemy'))
       await enemyRow.trigger('click')
       expect(api.setFollow).toHaveBeenLastCalledWith(21)
@@ -489,7 +454,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       await nextTick()
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
-      // 镜头挡位直接陈列在控制条（2026-10-05：从 Display 面板移出），不经菜单
       expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
       api.store.cam = 'free'
       await nextTick()
@@ -499,7 +463,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       await nextTick()
       expect(wrapper.get('[data-testid="replay3d-camera"] [data-value="free"]').attributes('aria-checked')).toBe('true')
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
-      // 跟随没有档位：只由点车或点名单触发，radio 仍选中自由，再点一次退出
       expect(wrapper.find('[data-testid="replay3d-camera"] [data-value="follow"]').exists()).toBe(false)
       onVehicleSelect(21)
       await nextTick()
@@ -511,7 +474,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       expect(free.attributes('aria-checked')).toBe('true')
       await free.trigger('click')
       expect(api.setCam).toHaveBeenLastCalledWith('free')
-      // 点场景空处（eid=null）→ 详情窗隐藏，跟随不变
       onVehicleSelect(null)
       await nextTick()
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
@@ -528,8 +490,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       await nextTick()
       const onVehicleSelect = playback.init.mock.calls.at(-1)[3].onVehicleSelect
       const root = wrapper.get('[data-testid="replay3d-root"]').element
-      // 场景 canvas 上的一次真实点选：事件由 playbackScene 透传，target 既不是左车道也不是右车道，
-      // 落位只能按 clientX 相对 workspace 的位置判定（这条路径曾引用未定义变量而在真实点击时抛错）。
       const canvas = document.createElement('canvas')
       root.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 600, right: 1000, bottom: 600 })
       onVehicleSelect(21, { target: canvas, clientX: 900 })
@@ -554,16 +514,13 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       const root = wrapper.get('.pb-root')
       expect(root.classes()).toEqual(expect.arrayContaining(['phone-form', 'roster-side']))
       expect(root.classes()).not.toContain('portrait-flow')
-      // 两条物理车道直接可见：左 = Team 1，右 = Team 2
       expect(wrapper.get('[data-testid="replay3d-lane-left"]').find('.team1').exists()).toBe(true)
       expect(wrapper.get('[data-testid="replay3d-lane-right"]').find('.team2').exists()).toBe(true)
       expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
-      // 紧凑行：信息不减
       const row = wrapper.get('[data-testid="replay3d-lane-left"] .pl')
       expect(wrapper.get('[data-testid="replay3d-lane-left"] [data-test="pb-shell-roster"]').classes()).toContain('pb-roster-compact')
       expect(row.get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
       expect(row.get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
-      // 传输控件照常存在（名册与控件不互斥）
       expect(wrapper.find('.controls').exists()).toBe(true)
       wrapper.unmount()
       layout.compact = false
@@ -581,17 +538,14 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       const root = wrapper.get('.pb-root')
       expect(root.classes()).toContain('portrait-flow')
       expect(root.classes()).not.toContain('roster-side')
-      // 名册直接在流里（不是 transient 浮层），行仍是完整信息
       expect(wrapper.get('.roster-surface').isVisible()).toBe(true)
       expect(wrapper.find('.roster-surface.transient').exists()).toBe(false)
       const rows = wrapper.findAll('.team-lane .pl')
       expect(rows).toHaveLength(3)
       expect(rows[0].get('[data-test="pb-roster-tank"]').text()).toBe('Kranvagn')
       expect(rows[0].get('[data-test="roster-hp"]').attributes('aria-label')).toBe('1800 / 1950')
-      // 竖屏名册不是紧凑密度（纵向空间够用），也不做纵向铺满
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-compact')
       expect(wrapper.get('[data-test="pb-shell-roster"]').classes()).not.toContain('pb-roster-fill')
-      // 详情是同一个共享组件的 inline 呈现（经**场景点选**打开；名册点击=跟随）
       await openDetailsViaScene(roster.team1[0].eid)
       const details = wrapper.get('[data-testid="replay3d-details"]')
       expect(details.attributes('data-presentation')).toBe('inline')
@@ -641,20 +595,17 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Alpha')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
-      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)   // 只来自点车，关详情不再调用
+      expect(api.setFollow).toHaveBeenCalledExactlyOnceWith(11)
       expect(api.setCam).not.toHaveBeenCalled()
       expect(api.store.time).toBe(30)
-      // 名册与详情互不影响：两条车道一直都在
       expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
       await openDetailsViaScene(11)
       expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
-      // 场景点另一台（Team 2）：同一个窗换内容，Team 2 车道仍在
       await openDetailsViaScene(21)
       expect(wrapper.findAll('[data-testid="replay3d-details"]')).toHaveLength(1)
       expect(wrapper.get('[data-test="pb-sb-player"]').text()).toBe('Enemy')
       expect(wrapper.find('[data-testid="replay3d-lane-right"]').exists()).toBe(true)
       expect(rowOf('Enemy').classes()).toContain('followed')
-      // 场景点选不改名册高亮（selected 只由名册点击设置）
       expect(rowOf('Alpha').classes()).not.toContain('selected')
       wrapper.unmount()
     })
@@ -667,11 +618,9 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       api.store.roster = roster
       await nextTick()
       const rows = wrapper.findAll('.team-lane .pl')
-      // 敌军队那行本来就是 followed（相机跟随），且未被选中
       const enemy = rows.find((r) => r.text().includes('Enemy'))
       expect(enemy.classes()).toContain('followed')
       expect(enemy.classes()).not.toContain('selected')
-      // 选中另一行：选中变化不改变既有 followed 状态
       await rows[0].trigger('click')
       expect(rows[0].classes()).toContain('selected')
       expect(enemy.classes()).toContain('followed')
@@ -685,7 +634,7 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
       api.store.hasData = true
       api.store.roster = roster
       await nextTick()
-      await openDetailsViaScene(roster.team1[1].eid)   // Bravo（dead，eid=12）
+      await openDetailsViaScene(roster.team1[1].eid)
       expect(wrapper.get('[data-test="pb-sb-state"]').text()).toBe('recon.map.playback.state_destroyed')
       await wrapper.get('[data-test="pb-sb-close"]').trigger('click')
       expect(wrapper.find('[data-testid="replay3d-details"]').exists()).toBe(false)
@@ -719,9 +668,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     wrapper.unmount()
   })
 
-  // 时间轴刻度 / 跳炮击 / 数字键骑乘（借鉴 blitzinfo）的面板接线：
-  // 事件面来自 AgentPlaybackFacet（工作台状态 scenePlayback），刻度位置与跳炮击共用
-  // utils/playbackShortcuts.js 纯函数；数字键冲突消解 = 自由飞行激活时归飞行速率。
   it('timeline ticks render from the facet and `,`/`.`/digits seek-jump and ride', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane({ showEventMarkers: true })
@@ -748,20 +694,16 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     }
     await flush()
     expect(wrapper.findAll('.pb-tick-shot')).toHaveLength(3)
-    expect(wrapper.findAll('.pb-tick-shot-highlight')).toHaveLength(1)   // is_author
+    expect(wrapper.findAll('.pb-tick-shot-highlight')).toHaveLength(1)
     expect(wrapper.findAll('.pb-tick-kill')).toHaveLength(1)
 
-    // `.` → time=110 之后最近的一发（120）；`,` → 之前最近的一发（100）
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Period', key: '.', bubbles: true }))
     await nextTick()
-    // 跳到目标发**之前**一小步：seekTo 用 firstIndexAfter(严格晚于 T) 定位游标，
-    // 精确 t_fire 会把该发排除（炮线/炮声不出现）
     expect(playback.api.seekTime).toHaveBeenLastCalledWith(119.95)
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', bubbles: true }))
     await nextTick()
     expect(playback.api.seekTime).toHaveBeenLastCalledWith(99.95)
 
-    // 数字键骑乘（非飞行模式）：2 → 己方第 2 辆；Shift+1 → 敌方第 1 辆
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit2', key: '2', bubbles: true }))
     await nextTick()
     expect(playback.api.setFollow).toHaveBeenLastCalledWith(12)
@@ -769,7 +711,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     await nextTick()
     expect(playback.api.setFollow).toHaveBeenLastCalledWith(21)
 
-    // 冲突消解：自由飞行激活（cam=free）→ 数字键归飞行速率，骑乘不触发
     store.cam = 'free'
     await nextTick()
     window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', key: '1', bubbles: true }))
@@ -868,17 +809,14 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     expect(wrapper.find('.team-lane').exists()).toBe(false)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="display-toggle"]').exists()).toBe(false)
-    // 标签整层关掉（场景侧 enabled:false）
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
 
-    // 常驻恢复入口
     const restore = wrapper.get('[data-testid="show-all-ui"]')
     await restore.trigger('click')
     await nextTick()
     expect(wrapper.find('.topbar').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-controls"]').exists()).toBe(true)
 
-    // H 键等效（window 级监听）
     const pane = wrapper.findComponent(paneComponent())
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
     await nextTick()
@@ -887,8 +825,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
 
-    // 输入控件聚焦时不劫持：happy-dom 的合成 KeyboardEvent 不带 target，
-    // 所以直接按真实形状（target = INPUT）驱动同一个处理函数。
     const keyEvent = (target, key = 'h') => ({ key, target, preventDefault: vi.fn() })
     const before = wrapper.find('[data-testid="show-all-ui"]').exists()
     pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'INPUT', isContentEditable: false }))
@@ -898,7 +834,6 @@ describe('Replay3DPane mobile / fullscreen / roster', () => {
     pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: true }))
     await nextTick()
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(before)
-    // 普通元素上仍然生效
     pane.vm.onUiToggleKeydown(keyEvent({ tagName: 'DIV', isContentEditable: false }))
     await nextTick()
     expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(!before)

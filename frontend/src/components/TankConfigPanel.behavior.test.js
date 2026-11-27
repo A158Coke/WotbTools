@@ -310,11 +310,9 @@ describe('XI 技能选择卡与效果反馈', () => {
     const patch = wrapper.emitted('update').at(-1)[0]
     const abilities = new Set(patch.abilities)
     expect(abilities.has(group.choices[0])).toBe(true)
-    // 三条组前置链全部补齐（不再出现“缺前置却生效”的非法状态）
     const byTech = new Map(modules.upgradeProgression.nodes.map(node => [node.techName, node.id]))
     for (const req of group.requiredNodes) expect(abilities.has(byTech.get(req))).toBe(true)
     await wrapper.setProps({ selection: { ...wrapper.props('selection'), ...patch } })
-    // 部分研发状态不再显示“未生效”
     expect(wrapper.get('[data-testid="tank-mechanic-effects"]').text()).toContain('部分研发')
     wrapper.unmount()
   })

@@ -1,33 +1,14 @@
-/**
- * 科技树 / 单车研发图的确定性布局（纯函数，UI 只消费不二次解析）。
- *
- * 数据面 = 资产包 `research/tech_tree/{nation}.json`（上游 --with-research-graph 导出）：
- * - 车辆科技树：`nodes[].x/y` 是客户端 yaml 的原始网格坐标（x=列、y=行，**列≠tier**：
- *   other 树列 1..7 而 tier 4..10），tier 一律读节点自带字段；`premiumRows` 的位置语义
- *   由数据证实（premium 车放最小 y 行 = 树顶部）。
- * - 整车研发边：`edges[]`（from/to 为车辆 stem）。from 车可能不在树里（如 ussr:MS-1
- *   解锁 T-26 但自身不是树节点）——只有两端都能解析才画线。
- * - 单车模块研发图：见 moduleTreeLayout。
- */
 
 const NATION_ORDER = ['ussr', 'germany', 'usa', 'china', 'france', 'uk', 'japan', 'other', 'european']
 
-/** 科技树页签的国别顺序（与上游导出器 NATIONS 同序）。 */
 export function techTreeNations() {
   return [...NATION_ORDER]
 }
 
-/**
- * 车辆科技树网格：列/行取节点坐标的并集（压缩空洞），等级锚点按列判定——
- * 列内全部已定义节点 tier 一致时该列可标注 tier，否则 null（other 树之外不应出现，
- * 出现即如实留空，不猜）。
- */
 export function techTreeGrid(tree) {
   const nodes = Array.isArray(tree?.nodes) ? tree.nodes : []
   const edges = Array.isArray(tree?.edges) ? tree.edges : []
   const defined = nodes.filter(n => n && n.stem && Number.isFinite(n.x) && Number.isFinite(n.y))
-  // pending（已登记未实装的 XI 展示位）不是车辆事实，但它的网格坐标必须进入列/行轴：
-  // 否则 pending 所在列缺失时 colIndex.get(x) 为 undefined，UI 会得到 NaN gridColumn。
   const pending = Array.isArray(tree?.pending) ? tree.pending : []
   const pendingCoords = pending.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y))
   const columns = [...new Set([...defined.map(n => n.x), ...pendingCoords.map(p => p.x)])].sort((a, b) => a - b)
@@ -41,7 +22,6 @@ export function techTreeGrid(tree) {
     tierByColumn.set(x, tiers.size === 1 ? [...tiers][0] : null)
   }
 
-  /** key = `${x},${y}` → 节点（同格冲突 = 数据异常，保留首个并记录，不静默覆盖）。 */
   const cells = new Map()
   const conflicts = []
   for (const node of defined) {
@@ -52,12 +32,10 @@ export function techTreeGrid(tree) {
 
   const byStem = new Map(defined.map(n => [n.stem, n]))
 
-  /** 等级锚点窗口（客户端 LevelCell 的可见区间：cells.minLevel..maxLevel；XI 预览=11）。 */
   const tiers = defined.map(n => n.tier).filter(t => Number.isFinite(t) && t > 0)
   const minTier = tiers.length ? Math.min(...tiers) : null
   const maxTier = tiers.length ? Math.max(...tiers) : null
 
-  /** 只保留两端都可解析的边（from 车不在树上时无法画线，但数据保留给消费方）。 */
   const drawnEdges = []
   for (const edge of edges) {
     const from = byStem.get(edge?.from)
@@ -90,22 +68,6 @@ export function techTreeGrid(tree) {
   }
 }
 
-/**
- * 单车模块研发图布局 —— 按客户端 Modules 界面截图对齐（2026-10-27，KV-1 与 SU-100M1
- * 实机截图）：
- *
- * - **每条「无研发父」的初始模块起一条横向链**，链自上而下按 火炮 → 炮塔 → 发动机 →
- *   履带 排列（KV-1：ZiS-5 线 / Turret_1 线 / M-17T 线 / Chassis_KV1 线）。
- * - 列 = 链上的研发步进；同链下一步右移一列。
- * - **一个节点有多个子分支时，主链留在本行、其余分支向下另起一行**
- *   （SU-100M1：炮2 → {炮 IX 向右继续 / SU-101 坦克落到下一行}）。父节点与第一个子
- *   节点同行，不出现向上斜的箭头。
- * - **下一级坦克也是树里的子节点**（模块 `<unlocks><vehicle>`），排在模块子节点之后。
- * - 模块名与等级都在节点上显示（用户 2026-10-27：名字保留，只优化排布）。
- *
- * 客户端精确网格坐标由 `TankModulesTreeModel` 运行时计算（census §4.4），数据里没有；
- * 这里按上述确定性规则推导。环 = 数据异常，显式抛出。
- */
 /** @param {unknown} modules @param {import('../replay-local/compute/tankSetup').SetupSelection | null} selection @param {object} options */
 export function moduleTreeLayout(modules, selection = null, options = {}) {
   if (!modules || typeof modules !== 'object') return null
@@ -118,11 +80,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
   }
   push('chassis', modules.chassis)
   const gunOccurrences = new Map()
-  /**
-   * 无炮塔车（客户端 `<hull><fakeTurrets>` ⇒ `hasTurret=false`，固定战斗室）：
-   * 客户端研发界面**不显示炮塔行**（SU-100M1 实机截图只有 火炮/发动机/履带 三行），
-   * 但炮塔条目仍要留在数据里给 `pickGun` 对号——所以只跳过节点登记。
-   */
   const showTurrets = modules.hasTurret !== false
   turrets.forEach((turret, turretIndex) => {
     if (turret?.stem && showTurrets) entries.push({ key: `turret:${turret.stem}`, module: turret, kind: 'turret', index: turretIndex })
@@ -139,18 +96,11 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
   for (const entry of entries) {
     if (entry.kind === 'gun') entry.occurrences = gunOccurrences.get(entry.module.stem) || []
   }
-  // 电台 / 油箱不是客户端 ModulesTree 的研发模块（只为整车重量等参数保留）。
 
   const byKey = new Map(entries.map(e => [e.key, e]))
   const vehicleByStem = new Map((Array.isArray(options.nextVehicles) ? options.nextVehicles : [])
     .map(v => [v.stem, v]))
 
-  /**
-   * 候选父边只来自研发边（unlocks）。同一 (from,to) 可能由同一门炮的多个炮塔副本
-   * 重复产生；同一目标也可能有多个研发父。先按 (from,to) 去重，再为每个非根节点
-   * 选唯一父：成本低者优先，成本相同用 from key 确定性排序。挂载关系（turret.guns）
-   * 不画父线——初始模块各自起一条链，与客户端截图一致。
-   */
   const edgeCostRank = (cost) => {
     const xp = Number(cost?.xp)
     if (Number.isFinite(xp)) return [0, xp]
@@ -208,7 +158,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     }
   }
 
-  // 列 = 研发深度（最长父链）；环显式失败。
   const depth = new Map()
   const visiting = new Set()
   const depthOf = (key) => {
@@ -225,10 +174,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
 
   const installed = installedKeys(modules, selection)
 
-  /**
-   * 行 = 每条初始模块一条链；根按 火炮 → 炮塔 → 发动机 → 履带 排序。
-   * 子节点排序：模块优先（主链留本行），车辆最后（自然落到下一行）。
-   */
   const KIND_ORDER = { gun: 0, turret: 1, engine: 2, chassis: 3, vehicle: 9 }
   const keyKind = key => key.split(':')[0]
   const sortKeys = (a, b) => {
@@ -244,7 +189,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     .sort(sortKeys)
 
   const row = new Map()
-  /** 子树根放在 top 行；返回占用行数（行不重叠 ⇒ 连线不相交）。 */
   const placeSubtree = (key, top) => {
     const kids = (childrenOf.get(key) || [])
       .filter(k => byKey.has(k) || (k.startsWith('vehicle:') && vehicleByStem.has(k.slice('vehicle:'.length))))
@@ -253,7 +197,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
       row.set(key, top)
       return 1
     }
-    // 第一个子节点（模块优先）与本节点同行；其余子分支依次向下铺
     row.set(key, top)
     let cursor = placeSubtree(kids[0], top)
     for (const kid of kids.slice(1)) cursor += placeSubtree(kid, top + cursor)
@@ -266,7 +209,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     if (row.has(rootKey)) branchRows.push({ rootKey, row: row.get(rootKey), height })
     cursorRow += height
   }
-  // 未被任何根覆盖的节点（异常数据兜底）：各自补一行，不丢节点
   for (const entry of entries) if (!row.has(entry.key)) row.set(entry.key, cursorRow++)
 
   const nodes = entries.map((entry) => ({
@@ -286,7 +228,6 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     module: entry.module,
   }))
 
-  // 车辆节点：已作为子节点参与排布，这里补展示事实（未声明的目标不造孤儿节点）。
   const vehicleKeys = [...new Set(edges.filter(e => e.to.startsWith('vehicle:')).map(e => e.to))]
   for (const key of vehicleKeys) {
     if (nodes.some(n => n.key === key)) continue
@@ -319,19 +260,16 @@ export function moduleTreeLayout(modules, selection = null, options = {}) {
     rows,
     nodes,
     edges: finalEdges,
-    /** 每条链（根行）：面板据此画左侧竖干 + 一行一个分叉箭头（客户端同构）。 */
     branches: branchRows,
     nextVehicles: [...new Map(vehicleTargets.map(t => {
       const [sourceKind, sourceModule] = t.sourceKey.split(':')
       return [t.stem, { stem: t.stem, cost: t.cost, sourceModule, sourceKind }]
     })).values()],
-    /** 研发边 > 0 ⇔ 有研发链；XI 超测车每族单模块、零成本，只有初始模块。 */
     hasChain: finalEdges.length > 0,
     derived: true, // 布局为复刻推导（数据文件没有客户端网格坐标）
   }
 }
 
-/** 当前搭载（resolveSetup 结果）实际选中的模块 key。 */
 function installedKeys(modules, selection) {
   const set = new Set()
   if (!selection?.canConfigure) return set
@@ -346,10 +284,6 @@ function installedKeys(modules, selection) {
   return set
 }
 
-/**
- * 「无研发链」注记的 i18n 键：零解锁边只说明“无研发链”，不等于 XI 超测车
- * （如 X 级 Leopard 1 同样零边）；只有等级确为 XI 才用超测措辞。
- */
 export function noChainNoteKey(tier) {
   return Number(tier) === 11 ? 'research.no_chain_note' : 'research.no_chain_note_generic'
 }

@@ -41,7 +41,6 @@ public record MaterializationEvent(
         VehicleBattleLoadout loadout
 ) implements ReplayEvent {
 
-    /** 兼容旧 9 参构造：loadout 未解析时为 null（仅 MaterializationDecoder 生产 semantic loadout）。 */
     public MaterializationEvent(
             int sequence,
             ReplayTimestamp timestamp,

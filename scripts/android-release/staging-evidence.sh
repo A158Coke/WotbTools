@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Read each origin under its deploy lock; HTTP load balancing is not an identity oracle.
 set -Eeuo pipefail
 
 if [ "${1:-}" = read ] || [ "${1:-}" = read-patch ]; then
@@ -57,7 +56,6 @@ if [ -f "$tmp/tx1" ] && [ -f "$tmp/tx2" ]; then
   cmp -s "$tmp/tx1" "$tmp/tx2" || { echo 'CONFLICT: origin staging evidence differs' >&2; exit 1; }
 fi
 if [ "$mode" = collect-required ]; then
-  # Revalidate every referenced immutable patch on both origins, not only the public replica.
   python3 - "$tmp/tx1" > "$tmp/patches" <<'PY'
 import json, re, sys
 data = json.load(open(sys.argv[1], encoding='utf-8'))

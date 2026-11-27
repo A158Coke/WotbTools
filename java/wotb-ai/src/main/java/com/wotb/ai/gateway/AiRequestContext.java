@@ -1,17 +1,5 @@
 package com.wotb.ai.gateway;
 
-/**
- * Thread-local request context for the synchronous AI Review request thread:
- * the correlation id chosen by the controller and the cancellation token wired
- * to the cancel endpoint.
- *
- * <p>Set by {@code ReconstructionController} around the whole analyze call and
- * cleared in a {@code finally} block, so the gateway can reuse the correlation
- * id (instead of generating a fresh one) and abort the upstream call when the
- * client cancels. Direct gateway tests that do not set the context keep the
- * previous behavior (gateway-generated correlation id, no external
- * cancellation).</p>
- */
 public final class AiRequestContext {
 
     private static final ThreadLocal<String> CORRELATION_ID = new ThreadLocal<>();
@@ -43,7 +31,6 @@ public final class AiRequestContext {
         return CANCELLATION.get();
     }
 
-    /** Request-local totals include every transport attempt, including failed attempts. */
     public static UsageTotals usageTotals() {
         return USAGE.get();
     }
@@ -64,11 +51,6 @@ public final class AiRequestContext {
         }
     }
 
-    /**
-     * Sets the request overall deadline (nanos) computed at submission time.
-     * The AI review worker wrapper sets it around the task; the services then
-     * count queue wait against the shared budget.
-     */
     public static void setOverallDeadline(final long overallDeadlineNanos) {
         OVERALL_DEADLINE.set(overallDeadlineNanos);
     }
@@ -77,7 +59,6 @@ public final class AiRequestContext {
         OVERALL_DEADLINE.remove();
     }
 
-    /** Overall deadline (nanos) or {@code null} when not set (e.g. direct service calls). */
     public static Long overallDeadlineNanos() {
         return OVERALL_DEADLINE.get();
     }

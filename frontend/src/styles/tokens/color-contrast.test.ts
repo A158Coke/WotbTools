@@ -4,18 +4,7 @@ import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
-/**
- * 四季主题对比度（design-language §2 / §3，WCAG 2.2 AA）：直接读取 tokens/color.css 的主题块，
- * 每个文字 / UI 色在该主题各层表面上的**最差**对比度都必须达标。改 token 而不满足 AA 即失败。
- *
- * 全站环境背景上线后，页面级面板使用半透明玻璃表面。这里除了玻璃色与 canvas 的等效混合，
- * 还对实际提交的 wide / portrait 背景图逐像素合成当前使用的玻璃表面，取合成后亮度的
- * 最小 / 最大像素参与最差值计算；因此背景图或遮罩改动后，这个测试会重新计算而不是沿用旧数值。
- * 目前只有 surface-1-glass 实际用于页面级面板；2/3 档位未应用，仍校验 alpha 与 canvas 混合。
- */
 const HERE = dirname(fileURLToPath(import.meta.url))
-// Windows 工作副本按 autocrlf 检出为 CRLF，而 THEMES.summer 的多行选择器用字面 \n
-// 匹配——读取时统一成 LF，避免同一份内容在 CI（LF）与本地（CRLF）结论不同。
 const css = readFileSync(resolve(HERE, 'color.css'), 'utf8').replace(/\r\n/g, '\n')
 const BACKDROP_DIR = resolve(HERE, '../../assets/theme')
 
@@ -54,7 +43,6 @@ function compositeChannels(glass: Rgba, backdrop: Rgb): Rgb {
   return [glass.r, glass.g, glass.b].map((fg, index) => Math.round(fg * glass.a + backdrop[index] * (1 - glass.a))) as Rgb
 }
 
-/** 半透明表面按 alpha 叠在 canvas 上，得到不依赖图片内容的等效不透明色。 */
 function composite(glass: Rgba, canvas: string): string {
   return rgbToHex(compositeChannels(glass, channels(canvas)))
 }
@@ -79,10 +67,6 @@ function scrimStops(selector: string): Rgba[] {
   }))
 }
 
-/**
- * 实际背景图逐像素与遮罩、玻璃色合成后的亮度极值。wide 与 portrait 都取，保证横竖屏构图
- * 不同、坦克/天空位置不同时，最差像素仍被覆盖。
- */
 async function glassBackdropExtrema(season: string, glass: Rgba, canvas: Rgb, scrims: Rgba[]): Promise<[string, string]> {
   let min: Rgb = [0, 0, 0]
   let max: Rgb = [0, 0, 0]
@@ -93,7 +77,6 @@ async function glassBackdropExtrema(season: string, glass: Rgba, canvas: Rgb, sc
     const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true })
     for (let offset = 0; offset < data.length; offset += info.channels) {
       const image: Rgb = [data[offset], data[offset + 1], data[offset + 2]]
-      // 遮罩渐变两端的 alpha 是实际可能取到的边界；逐端合成后再叠玻璃，取整段渐变的最坏值。
       for (const scrim of scrims) {
         const scrimmed = image.map((channel, index) => channel * (1 - scrim.a) + canvas[index] * scrim.a) as Rgb
         const composed = compositeChannels(glass, scrimmed)
@@ -117,8 +100,6 @@ function ratio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/* CSS color-mix(in oklab, …) 的等效实现（CSS Color 4）：卡片高级/收藏底色用语义色对
-   surface-1 做 Oklab 混色，组合对比度必须在测试里复算而不是只在浏览器里目测。 */
 function srgbToLinear(channel: number): number {
   const value = channel / 255
   return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
@@ -158,7 +139,6 @@ function oklabToRgb([L, a, b]: [number, number, number]): Rgb {
   ]
 }
 
-/** color-mix(in oklab, fg alpha%, bg) —— alpha 为 fg 占比（0–1）。 */
 function oklabMix(fg: string, bg: string, alpha: number): string {
   const [l1, a1, b1] = oklabOf(channels(fg))
   const [l2, a2, b2] = oklabOf(channels(bg))
@@ -174,8 +154,6 @@ const TEXT = ['--color-text-primary', '--color-text-secondary', '--color-text-te
 const UI = ['--color-border-strong', '--color-accent', '--color-team-enemy-cb']
 const SURFACES = ['--color-canvas', '--color-surface-1', '--color-surface-2', '--color-surface-3']
 const GLASS_SURFACES = ['--color-surface-1-glass', '--color-surface-2-glass', '--color-surface-3-glass']
-// 目前实际应用的只有页面级 .surface-glass-1（见 app-shell.css 与各页面 class）；
-// 2/3 档位保留但未落到元素上，不参与真实背景图的逐像素最差值。
 const ACTIVE_GLASS_SURFACES = ['--color-surface-1-glass']
 
 const THEMES = {
@@ -216,11 +194,6 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     }, 30_000)
   }
 
-  /**
-   * 出生侧胜率分段条门禁（BattleDataAdminPage .spawn-bar，物理出生侧语义四季固定）：
-   * 先手侧 danger 红 / 平局 border-strong 灰 / 后手侧 info 蓝，每个 fill 对 track（surface-3）≥ 3:1，
-   * 1px ring（border-strong）对行底色（surface-1）≥ 3:1。三段是三个不同 token，靠同一断言防主题漂移。
-   */
   it('四季出生侧分段条：danger / border-strong / info 对 track ≥ 3、ring 对行底 ≥ 3', () => {
     const failures: string[] = []
     for (const [name, selector] of Object.entries(THEMES)) {
@@ -239,17 +212,11 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     expect(failures).toEqual([])
   })
 
-  // 组件映射契约（first=danger / draw=border-strong / second=info）的 computed 严格包含
-  // 由 scripts/browser-battle-data-spawn-bar.mjs 四季门禁逐 token 比对接管（#827），
-  // 源码正则形态不再重复维护。
 
   it('寒冬是唯一的浅色主题，场景外壳在寒冬下仍是深色玻璃且同样达标', () => {
     expect(css).toMatch(/:root\[data-ui-profile="winter"\] \{\s*color-scheme: light;/)
     for (const name of ['spring', 'autumn']) expect(css).toMatch(new RegExp(`:root\\[data-ui-profile="${name}"\\] \\{\\s*color-scheme: dark;`))
     const scene = block(':root[data-ui-profile="winter"] [data-scene-surface]')
-    // 场景子树的文字色必须在场景根落定：页面层已按浅色主题把 computed color 写成深蓝，
-    // 缺这行时未显式设置 color 的后代（Display 面板选项行等）继承它落在暗色表面上
-    // （实测对比度 1.03:1，2026-11-10 反馈）。变量换成暗色值不够——继承的是祖先的 computed color。
     expect(css).toMatch(/:root\[data-ui-profile="winter"\] \[data-scene-surface\] \{[\s\S]*?color-scheme: dark;[\s\S]*?color: var\(--color-text-primary\);/)
     const sceneGlass = glassTokens(':root[data-ui-profile="winter"] [data-scene-surface]')
     const glassSurfaces = GLASS_SURFACES.map(token => composite(sceneGlass[token], scene['--color-canvas']))
@@ -259,41 +226,18 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     }
   })
 
-  /**
-   * 坦克卡片高级/收藏底色（TankCatalogMenu .tp-card.is-*，2026-11-14 评审 / 用户裁示）：
-   * 整卡底色 = 语义色 36%（hover 46%）对 surface-1 的 Oklab 混色。
-   *
-   * **车名门槛 = 3.0（DC-CLR-01 例外 E1，2026-11-14 用户裁示）**：车名是 14–15px/600
-   * 正文，不适用大字/UI 图形口径；保留语义色（90% 语义 + 10% text-primary 的 Oklab
-   * 混色）以维持高级/收藏辨识度，对同源混色底实测 3.27–3.89，低于正文 4.5。
-   * 该偏离已按仓库流程登记在 `docs/frontend/design-language.md` §3.0.1（DC-CLR-01
-   * 例外 E1，含授权来源），这里只是执行门槛：比例或 token 漂移导致再降时仍然
-   * fail-closed（规则形态与混色比例进映射契约）。
-   *
-   * 属性标签在染色卡上覆写为 text-primary（常态卡仍用 tertiary，由上方主测试覆盖），
-   * 该组仍按 4.5 复算。车名与标签的 token/比例全部从组件实际规则提取（映射契约），
-   * 按全部主题 × 语义 × 常态/hover 复算。
-   */
   it('坦克卡片高级/收藏底色：车名对 36%/46% 语义底 ≥ 3（用户裁示例外）、属性标签 ≥ 4.5、语义 pill 对自绘 16% 底 ≥ 4.5', () => {
     const component = readFileSync(resolve(HERE, '../../components/TankCatalogMenu.vue'), 'utf8')
     const style = component.slice(component.indexOf('<style'))
-    // 映射契约：车名色必须来自**恰好两条**染色卡规则，且形态固定为
-    // color-mix(in oklab, var(--color-<语义>) <比例>%, var(--color-text-primary))。
-    // 比例从组件实际规则读取后参与复算——改成不达标的比例/换 token 都会在这里失败。
     const nameRules = [...style.matchAll(
       /\.tp-card\.is-(premium|collector(?::not\(\.is-premium\))?) \.tp-card-name[^{]*\{[^}]*color:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*(\d+(?:\.\d+)?)%,\s*var\(--color-text-primary\)\)/g,
     )].map(match => ({ card: match[1], semantic: match[2], mix: Number(match[3]) / 100 }))
     expect(nameRules.map(rule => rule.semantic).sort(), '车名语义色规则缺失或形态漂移')
       .toEqual(['--color-info', '--color-warning'])
     for (const rule of nameRules) expect(rule.mix, '车名语义混色比例').toBeGreaterThan(0)
-    // 不允许存在绕过上面的其它 .tp-card-name 颜色声明（第二处 color 覆盖会让复算失真）
     const nameColorDecls = [...style.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
       .filter(match => match[1].includes('.tp-card-name') && /(?:^|[^-])color\s*:/.test(match[2]))
     expect(nameColorDecls.length, '.tp-card-name 颜色声明数量（应为 2 条染色卡规则）').toBe(2)
-    // 属性标签：染色卡（is-premium / is-collector:not(.is-premium)）必须覆写颜色，
-    // token 从实际规则提取——评审二轮指出 tertiary 在混色底上 1.96–3.53，secondary
-    // 亦不达标（2.85–5.26），当前方案为 text-primary。
-    // 两条染色卡选择器共用一个声明块（分组规则），正则按声明块提取出一份 token。
     const labelTokens = [...style.matchAll(/\.tp-card\.is-(?:premium|collector(?::not\(\.is-premium\))?) \.tp-stat-label[^{]*\{[^}]*color:\s*var\((--color-[\w-]+)\)/g)].map(match => match[1])
     expect(labelTokens, '染色卡属性标签覆写规则缺失').toEqual(['--color-text-primary'])
     const failures: string[] = []
@@ -303,10 +247,9 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
         for (const alpha of [0.36, 0.46]) {
           const bg = oklabMix(tokens[semantic], tokens['--color-surface-1'], alpha)
           const rule = nameRules.find(candidate => candidate.semantic === semantic)
-          if (!rule) continue   // 另一条语义规则缺失已由映射契约断言覆盖
+          if (!rule) continue
           const nameColor = oklabMix(tokens[semantic], tokens['--color-text-primary'], rule.mix)
           const name_ = ratio(nameColor, bg)
-          // 车名门槛 3.0：用户裁示的语义色例外（见本用例文档注释）
           if (name_ < 3) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${name_.toFixed(2)}`)
           for (const labelToken of labelTokens) {
             const value = ratio(tokens[labelToken], bg)
@@ -315,8 +258,6 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
         }
       }
     }
-    // 语义 pill（is-tier/is-premium/t-light/t-medium/t-heavy）自绘 16% 语义底，
-    // 与卡片底色无关；组合同样从组件实际规则提取，防止比例或 token 漂移。
     const pillCombos = [...style.matchAll(/\.tp-pill[\w.:-]*\s*\{[^}]*background:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*16%,\s*var\(--color-surface-1\)\);\s*color:\s*var\((--color-[\w-]+)\);/g)]
       .map(match => [match[2], match[1]] as const)
     expect(pillCombos.length, '语义 pill 组合提取数量').toBeGreaterThanOrEqual(4)

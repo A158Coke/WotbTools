@@ -1,31 +1,11 @@
-/**
- * Radar Metric Registry：
- * 选手画像雷达图只允许 League Rating 七维（B6 后 contribution/kast/impact 已退役，
- * 更不存在进入 Radar 的可能）。
- * 每个 League 维度保留 score/max 解释值；V6 Radar 几何由当前 reference=75、权威 max=150 的
- * bounded scale 生成。
- * PlayerDetailDrawer 只消费本 registry + resolveRadarMetric，组件不硬编码业务公式。
- *
- * 架构边界：
- * - Radar selection 是 presentation-only 的 visualization preference；
- *   永远不能改变 final Rating（七维 League Rating 算法固定）。
- * - Table ColumnPicker 与 Radar Metric Picker 是两套完全独立的偏好。
- * - 禁止复制后端 domain max 常量：League 维度满分由后端 resp.league.columns 提供，
- *   同时负责 score/max 明细与 V6 bounded geometry；max 缺失/非法时整轴 fail-closed。
- * - V6 pooled Rating 只作用于 Batch Player Rating，不改 Radar 的 raw dimensionMeans；
- *   最终 bounded geometry 由 radarScale 独立生成。
- */
 
 import { CW_DIM_KEYS } from './playerSummaryMerge.js'
 
-/** Radar 轴数量约束：min 3 / max 7。 */
 export const RADAR_MIN_AXES = 3
 export const RADAR_MAX_AXES = 7
 
-/** Radar 偏好 localStorage key（独立于 table column preference）。 */
 const RADAR_PREF_KEY = 'wotb-radar-metric-order'
 
-/** 七维在 Radar 上的 presentation-only 短标签（RC 短标签 + tip）。 */
 const DIM_LABEL_KEY = {
   league_damage_score: 'radar_labels.league_damage_score',
   league_assist_score: 'radar_labels.league_assist_score',
@@ -36,14 +16,6 @@ const DIM_LABEL_KEY = {
   league_shooting_score: 'radar_labels.league_shooting_score',
 }
 
-/**
- * 指标定义（仅 League 七维）：
- * - key: 数据 key（League 维度）
- * - labelKey: Radar 短标签 i18n key（radar_labels.*）
- * - source: 'league'（scope-aware：summary → player.dimensionMeans[i]，
- *   battle → player.dimensionScores[i]；禁止 battle 复用跨场字段）
- * - tipKey（仅 RC）：解释 RC 全称 Surivival/Trade，native title/tooltip，不占用 SVG 空间。
- */
 export const RADAR_METRIC_DEFS = Object.freeze(
   Object.fromEntries(CW_DIM_KEYS.map(key => [key, {
     key,
@@ -55,8 +27,6 @@ export const RADAR_METRIC_DEFS = Object.freeze(
   }]))
 )
 
-/** 默认 Radar 顺序：Damage / Shooting / Kill / RC / Blocked / Exchange / Assist。
- *  仅 presentation order，不修改后端 canonical dimension 顺序。 */
 export const RADAR_DEFAULT_ORDER = [
   'league_damage_score',
   'league_shooting_score',
@@ -67,7 +37,6 @@ export const RADAR_DEFAULT_ORDER = [
   'league_assist_score',
 ]
 
-/** 全部可选的 Radar 指标 key（picker 显示；仅 League 七维）。 */
 export const RADAR_AVAILABLE_KEYS = [...CW_DIM_KEYS]
 
 function readStoredList() {
@@ -81,10 +50,6 @@ function readStoredList() {
   }
 }
 
-/**
- * 加载并净化 Radar 偏好：过滤无效/已移除 key（contribution/kast/impact 等旧值被静默淘汰，
- *）；过滤后不足 min → fallback 默认七维。
- */
 export function loadRadarPreference() {
   const stored = readStoredList()
   if (!stored) return [...RADAR_DEFAULT_ORDER]
@@ -135,7 +100,6 @@ export function resolveRadarMetric(key, raw, maxByKey = {}) {
     label,
     rawValue: v,
     normalized: null,
-    // §20：detail 只显示 score / max，不追加百分比。
     displayValue: Math.round(v) + ' / ' + max,
     available: true,
   }

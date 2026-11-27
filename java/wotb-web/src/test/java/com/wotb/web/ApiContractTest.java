@@ -61,14 +61,12 @@ class ApiContractTest {
 
     private final ObjectMapper objectMapper = JsonMapper.builder().findAndAddModules().build();
 
-    /** 固定匿名样本同时由前端 api:fixture 对照 OpenAPI 校验，避免两侧各自维护假形状。 */
     @Test
     void businessBoundaryFixturesShouldMatchRealProducerSerialization() throws Exception {
         final UserProfile profile = new UserProfile();
         profile.setId(7L);
         profile.setKeycloakUserId("fixture-user");
         profile.setUsername("fixture-login");
-        // 整分钟也必须保留秒，避免 OffsetDateTime.toString() 输出不符合 RFC 3339 的分钟精度。
         ReflectionTestUtils.setField(profile, "createdAt", OffsetDateTime.parse("2026-10-01T12:00:00Z"));
         final UserProfileSnapshot profileSnapshot = new UserProfileSnapshot(
                 7L, "fixture-user", null, null, null, "CN",

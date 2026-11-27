@@ -1,24 +1,19 @@
 <script setup>
-// 下拉菜单（design-language §7 Menu）：WAI-ARIA menu button。
-// 方向键 / Home / End / 字符检索、Esc 关闭并还焦点、点外部关闭、portal 与碰撞定位由 Reka DropdownMenu 提供；
-// 这里只拥有 items 数据契约与视觉 token。
 import { inject } from 'vue'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import { ChevronDown } from 'lucide-vue-next'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
-// data-testid 等属性落在触发按钮上，而不是外层容器
 defineOptions({ inheritAttrs: false })
 
 defineProps({
   label: { type: String, required: true },
-  items: { type: Array, required: true }, // [{ key, label, disabled?, testid? }]
+  items: { type: Array, required: true },
   variant: { type: String, default: 'secondary', validator: v => ['secondary', 'ghost'].includes(v) },
   disabled: { type: Boolean, default: false },
   icon: { type: [Object, Function], default: null },
 })
 const emit = defineEmits(['select'])
-// 菜单默认 portal 到 body（逃出局部层叠上下文）；DIALOG_INLINE_KEY 时原地渲染（组件测试 / fullscreen 宿主）
 const inline = inject(DIALOG_INLINE_KEY, false)
 </script>
 
@@ -73,7 +68,6 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 .menu-trigger:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .menu-trigger:disabled { cursor: not-allowed; opacity: .5; }
 
-/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
 :deep(.menu) {
   z-index: var(--z-menu);
   display: grid;
@@ -114,7 +108,6 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 }
 </style>
 
-<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会；退场不加 CSS 动画——Reka Presence 会等 animationend，没有退场动画时才立即卸载 -->
 <style>
 @keyframes wotb-menu-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
 </style>

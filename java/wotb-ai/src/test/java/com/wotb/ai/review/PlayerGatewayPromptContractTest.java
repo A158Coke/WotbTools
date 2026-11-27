@@ -27,12 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Gateway 输入契约测试：捕获传给 {@link AiChatGateway} 的完整
- * {@link AiChatRequest}（system / user / model options / analysis mode），
- * 验证 Player Replay 各路径将稳定 Prompt 与确定性证据正确送达 Gateway，
- * 且不泄露 raw team label、裸秒数、对玩家本人的「录像者」指代，也不将被注入昵称。
- */
 class PlayerGatewayPromptContractTest {
 
     static final class CapturingGateway implements AiChatGateway {
@@ -143,7 +137,6 @@ class PlayerGatewayPromptContractTest {
         }
     }
 
-    // ===== fallback =====
 
     @Test
     void fallbackSendsSystemFallbackPromptAndSummaryMode() {
@@ -160,7 +153,6 @@ class PlayerGatewayPromptContractTest {
         assertNoRecorderSelfReference(body);
     }
 
-    // ===== full feature path =====
 
     @ParameterizedTest
     @ValueSource(ints = {1, 2})
@@ -258,7 +250,6 @@ class PlayerGatewayPromptContractTest {
         assertFalse(body.contains("PLAYER_DESTROYED"));
     }
 
-    // ===== shared contract helpers =====
 
     private static void assertModelOptions(final AiChatRequest req) {
         assertEquals("test-model", req.model(), "model option must be forwarded to the gateway");
@@ -283,7 +274,6 @@ class PlayerGatewayPromptContractTest {
     }
 
     private static void assertNoRecorderSelfReference(final String body) {
-        // 玩家本人只能称「你」，证据正文内不得出现指代玩家本人的「录像者」
         assertFalse(body.contains("录像者\""), "evidence must not refer to the player as 录像者");
         assertFalse(body.contains("录像者，"), "evidence must not refer to the player as 录像者");
         assertFalse(body.contains("录像者。"), "evidence must not refer to the player as 录像者");

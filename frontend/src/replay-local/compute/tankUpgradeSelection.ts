@@ -6,9 +6,8 @@ function emptySelection(mode: UpgradeMode): UpgradeSelection {
     mechanicsAttributes: {}, unsupported: [], nodes: [], groups: [], attributeDefinitions: {} }
 }
 
-/** 只接受客户端定义过的静态脚本及参数；新增未知脚本须显式适配。 */
 function supports(def: UpgradeDefinition): boolean {
-  if (!def.script) return true // 客户端无静态 script 的字段属于战斗机械技能。
+  if (!def.script) return true
   const p = def.params || {}
   switch (def.script) {
     case 'MaxHealthUpgrade': case 'EnginePowerUpgrade': case 'FireStartChangeUpgrade':
@@ -30,7 +29,6 @@ function supports(def: UpgradeDefinition): boolean {
     case 'ShellPiercingPowerUpgrade':
       return def.modifier === 'MODIFIER_ADD' && /^[012]$/.test(p.slotIndex || '') && ['100', '500'].includes(p.distance || '')
     case 'DeviceAttributeUpgrade':
-      // 模块耐久属于内部设备，不是炮塔承载的整车生命值 stats.maxHealth。
       return def.modifier === 'MODIFIER_MULTIPLY' && p.attrName === 'modulesMaxHpFactors'
         && ['engineHealth', 'ammoBayHealth', 'fuelTankHealth', 'gunHealth', 'surveyingDeviceHealth',
           'leftTrackHealth rightTrackHealth', 'turretRotatorHealth'].includes(p.devicesExtra || '')
@@ -38,10 +36,6 @@ function supports(def: UpgradeDefinition): boolean {
   }
 }
 
-/**
- * XI 缺省 top（产品口径：坦克卡片/详情/装甲查看器默认顶级）；显式 stock 仍可回退，
- * 非法值按 stock 处理（旧链接兼容）。满级只选择每个备选组的一项，绝不叠加互斥技能。
- */
 export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputChoices?: unknown): UpgradeSelection {
   const absent = mode == null || mode === ''
   const explicit = mode === 'top' ? 'top' : mode === 'stock' ? 'stock' : mode === 'custom' ? 'custom' : null
@@ -111,17 +105,10 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     requested = /^\d+(?:,\d+){0,63}$/.test(requested) ? requested.split(',').map(Number) : []
   }
   const custom = result.mode === 'custom'
-  // custom：abilities = 已研发节点 id 表，投影边界统一规范化为两类不变量：
-  // 1) 前置闭包——客户端不存在“节点已研发但前置未研发”的状态。深链/手写 URL 只给
-  //    部分节点时，前置由“已研发”这一事实蕴含，按同一规则补齐（不是逐例判断）；
-  //    前置不可解析（数据缺失）的节点整颗拒绝（fail-closed），不做部分接受。
-  // 2) 组互斥——每组只保留组定义顺序的首个已研发备选，其余同组备选不写入结果、
-  //    不参与聚合；手工构造的 URL（如 abilities=22,23,24）不能叠出互斥效果。
   let researched: Set<number> | null = null
   if (custom) {
     const nodesByTech = new Map(result.nodes.map(node => [node.techName, node]))
     const nodesById = new Map(result.nodes.map(node => [node.id, node]))
-    /** 该节点 + 全部直接/间接前置；任一前置不可解析返回 null（整颗拒绝）。 */
     const prerequisiteClosure = (id: number): Set<number> | null => {
       const start = nodesById.get(id)
       if (!start) return null
@@ -148,7 +135,6 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     }
     for (const group of result.groups) {
       if (!group.choices.some(id => set.has(id))) continue
-      // 组级 requiredNodes 同样属于闭包；不可解析时整组不激活（清掉该组备选）
       let resolvable = true
       for (const req of Array.isArray(group.requiredNodes) ? (group.requiredNodes as string[]) : []) {
         const up = nodesByTech.get(req)
@@ -165,14 +151,10 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   }
   for (const group of result.groups) {
     if (custom) {
-      // 组内已研发的备选即选中（可未选）：未研发/未选时不写 choices/abilities
-      // （机制不生效，面板显示基础值）
       const candidate = group.choices.find(id => researched!.has(id))
       if (candidate != null) { result.choices[group.id] = candidate; result.abilities.push(candidate) }
       continue
     }
-    // custom→top/stock 切换时 abilities 是完整已研发表（至多 64 项），备选可能排在
-    // 前置节点之后；按全表找已选备选，避免晚于第 8 位的选择被重置成默认项。
     const candidate = Array.isArray(requested)
       ? requested.find(id => group.choices.includes(id))
       : record(requested) ? requested[group.id] : undefined
@@ -180,14 +162,11 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
     result.choices[group.id] = chosen; result.abilities.push(chosen)
   }
   if (custom) {
-    // custom（部分研发）：abilities 携带归一化后的完整已研发表——resolveSetup 往返、
-    // 配置栏/研发树联动都依赖它（互斥归一化在上面完成，写回的 URL 不含同组多选）
     result.abilities = researched ? [...researched] : []
   }
   if (!result.supported || result.mode === 'stock') return result
   const active = custom && researched ? researched : new Set(result.abilities)
   for (const node of result.nodes) {
-    // custom（部分研发）：只聚合已研发节点；top：全部普通/机制节点 + 已选备选
     if (custom ? !active.has(node.id)
       : node.type === 'NODETYPE_ALTERNATIVE_MECHANIC' && !active.has(node.id)) continue
     for (const { name, value } of node.attributes) {
@@ -205,7 +184,6 @@ export function resolveUpgradeSelection(modules: unknown, mode?: unknown, inputC
   return result
 }
 
-/** Cost from stock to full research. The validated selection owns node identities and group membership. */
 export function fullResearchXp(selection: UpgradeSelection): number | null {
   if (!selection.available || !selection.supported) return null
   const required = new Map(selection.nodes.map(node => [node.techName, node]))

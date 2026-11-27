@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-/** Explicit HTTP shapes; persisted snapshots are separate domain records. */
 public final class TournamentDtos {
     private TournamentDtos() { }
     public record Event(

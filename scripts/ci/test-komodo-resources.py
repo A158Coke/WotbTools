@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Contract test for the declarative Komodo resource root (K4.1).
 
 Validates `infra/komodo/resources/**/*.toml` structurally (never by grepping
@@ -36,18 +35,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RESOURCE_ROOT = REPO_ROOT / "infra" / "komodo" / "resources"
 RESOURCE_PATH_VALUE = "infra/komodo/resources"
 
-# K4.1 declares exactly these resource types. Komodo also accepts plural aliases
-# (`[[servers]]`), which are deliberately rejected here so the reviewed files stay
-# in one canonical form.
 ALLOWED_TABLES = ("server", "resource_sync", "stack")
 FORBIDDEN_TABLES = (
     "deployment", "build", "repo", "procedure", "action", "builder",
     "swarm", "alerter", "variable", "user_group",
 )
-# Metadata keys Komodo understands on a declared resource. Anything else is either a
-# typo (silently ignored by Komodo's serde defaults) or an unreviewed addition.
 ALLOWED_RESOURCE_KEYS = ("name", "description", "template", "tags", "deploy", "after", "config")
-# Credential-shaped keys that must never appear anywhere in this tree.
 FORBIDDEN_KEY_NAMES = (
     "password", "secret", "token", "private_key", "onboarding_key", "git_account",
     "webhook_secret", "access_key", "api_key",
@@ -55,8 +48,6 @@ FORBIDDEN_KEY_NAMES = (
 FORBIDDEN_KEY_SUFFIXES = ("_password", "_secret", "_token", "_private_key", "_onboarding_key")
 
 SERVER_NAMES = ("yecao", "tx1", "tx2", "ali-sh-asset-01")
-# Every field of the v2.3.3 ServerConfig, declared explicitly so the first sync diff
-# cannot silently reset a production value through the partial->default conversion.
 SERVER_CONFIG_FIELDS = {
     "address": "",
     "insecure_tls": True,
@@ -82,11 +73,6 @@ SERVER_CONFIG_FIELDS = {
     "disk_critical": 95.0,
     "maintenance_windows": [],
 }
-# Metadata Komodo compares and applies for every resource type (`ResourceMetaUpdate`
-# in v2.3.3 `sync/execute.rs`): an omitted `tags`/`template` asserts the default, it
-# does not leave the live value alone. Both are therefore declared explicitly on every
-# resource, and Git owns them. `description` is managed the same way and is required to
-# be present by `check_metadata` — its content is intentionally not pinned.
 MANAGED_METADATA = {"tags": [], "template": False}
 RESOURCE_SYNC_CONFIG = {
     "git_provider": "github.com",
@@ -102,20 +88,16 @@ RESOURCE_SYNC_CONFIG = {
     "include_user_groups": False,
     "pending_alert": True,
 }
-# Every ResourceSyncConfig key K4.1 may declare. Anything outside this set is rejected
-# outright (fail-closed), so an unreviewed setting cannot be introduced silently.
 RESOURCE_SYNC_ALLOWED_KEYS = frozenset(RESOURCE_SYNC_CONFIG) | {
     "files_on_host", "linked_repo", "commit", "match_tags", "file_contents",
 }
-# Keys allowed only at their inert value, so a stray value can never take effect.
 RESOURCE_SYNC_INERT_KEYS = {
-    "files_on_host": False,   # a Git-backed sync, never local files on the Core host
-    "linked_repo": "",        # source straight from Git, not through a Komodo Repo
-    "commit": "",             # track the branch, not a pinned commit
-    "match_tags": [],         # no tag filtering
-    "file_contents": "",      # database-backed file contents are not used
+    "files_on_host": False,
+    "linked_repo": "",
+    "commit": "",
+    "match_tags": [],
+    "file_contents": "",
 }
-# Forbidden even when empty: these carry credentials for a private repository.
 RESOURCE_SYNC_FORBIDDEN_KEYS = ("git_account", "webhook_secret")
 
 K7B_STACK_NAME = "wotbtools-frontend-shadow"
@@ -169,8 +151,6 @@ ASSET_STACK_CONFIG = {
     "git_provider": "gitee.com",
     "git_https": True,
     "repo": "A158Coke/Wotbtools",
-    # The asset-owned transport ref. Shared Gitee main is moved by the Frontend /
-    # Business API mirrors, so it can never be this Stack's deploy source.
     "branch": "asset-origin",
     "commit": "",
     "clone_path": "",
@@ -185,9 +165,6 @@ ASSET_STACK_CONFIG = {
     "send_alerts": True,
     "registry_provider": "",
     "registry_account": "",
-    # A normal Komodo deploy runs `docker compose up -d`; force-recreate makes a
-    # Caddyfile-only change take effect. No Compose wrapper/host lock is declared:
-    # this PR runs no GitHub-owned mutation on the Alibaba host.
     "extra_args": ["--force-recreate"],
     "build_extra_args": [],
     "compose_cmd_wrapper": "",
@@ -320,7 +297,6 @@ def check_resource_sync(entries: dict[str, dict]) -> None:
     for key, expected in RESOURCE_SYNC_CONFIG.items():
         if config.get(key) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
-    # Fail-closed allowlist: an unreviewed config key must never be able to take effect.
     for key in sorted(config):
         if key in RESOURCE_SYNC_FORBIDDEN_KEYS:
             fail(f"resource_sync '{name}': '{key}' is forbidden even when empty (public repository)")
@@ -329,7 +305,6 @@ def check_resource_sync(entries: dict[str, dict]) -> None:
     for key, expected in RESOURCE_SYNC_INERT_KEYS.items():
         if config.get(key, expected) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
-    # The sync must read the directory that holds its own declaration.
     if config.get("resource_path") != [RESOURCE_PATH_VALUE]:
         fail(f"resource_sync '{name}': resource_path must be exactly ['{RESOURCE_PATH_VALUE}']")
 
@@ -339,8 +314,6 @@ def check_servers(entries: dict[str, dict]) -> None:
         fail(f"K4.1 declares exactly {sorted(SERVER_NAMES)}, found {sorted(entries)}")
     for name, declaration in sorted(entries.items()):
         context = f"server '{name}'"
-        # Tags/template are reviewed metadata: an omitted tag set would assert the
-        # empty set against live tags, so it must be declared on purpose.
         check_metadata("server", name, declaration)
         if declaration.get("deploy", False) is not False:
             fail(f"{context}: must not declare deploy = true")
@@ -362,8 +335,6 @@ def check_servers(entries: dict[str, dict]) -> None:
                 continue
             found = config[key]
             if isinstance(expected, float):
-                # Komodo deserializes these as f32/f64; a TOML integer is rejected by
-                # serde, so the declaration must use an explicit float.
                 if not isinstance(found, float) or found != expected:
                     fail(f"{context}: {key} must be the TOML float {expected}, found {found!r}")
             elif isinstance(expected, bool):
@@ -374,7 +345,6 @@ def check_servers(entries: dict[str, dict]) -> None:
                     fail(f"{context}: {key} must be {expected}, found {found!r}")
             elif found != expected:
                 fail(f"{context}: {key} must be {expected!r}, found {found!r}")
-        # The outbound invariant, stated twice on purpose: empty address, no passkey.
         if config.get("address") != "":
             fail(f"{context}: address must stay empty so Periphery keeps connecting outbound")
         if config.get("passkey", "") != "":
@@ -410,8 +380,6 @@ def check_stacks(entries: dict[str, dict]) -> None:
         if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
             fail(f"stack '{name}' must never auto-deploy from webhook or image polling")
     asset = entries[ASSET_STACK_NAME]["config"]
-    # The dedicated transport ref is the whole point of the asset Stack: shared Gitee
-    # main is owned by other mirror owners and must never be its deploy source.
     if asset.get("branch") != "asset-origin":
         fail(f"stack '{ASSET_STACK_NAME}': branch must be 'asset-origin', "
              f"found {asset.get('branch')!r}")

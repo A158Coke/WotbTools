@@ -82,7 +82,6 @@ describe('SponsorPage', () => {
     await wrapper.findAll('img')[0].trigger('error')
     await flushPromises()
 
-    // 单张失败只隐藏该方式：另一张仍在，且不出现「暂未配置」兜底。
     const remaining = wrapper.findAll('img')
     expect(remaining).toHaveLength(1)
     expect(remaining[0].attributes('src')).toBe('/sponsor-assets/wechat.webp')

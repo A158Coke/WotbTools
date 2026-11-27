@@ -11,18 +11,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 团队队形/区域提取器：按固定窗口聚合成员位置，生成 TeamFormationPhase（质心/离散度/
- * 结构化 TeamFormationCluster），并负责位置证据的空间门禁（可解析/越界/钳制判定）。
- * <p>从 {@link DefaultTeamBattleFeatureExtractor} 拆出，纯静态工具类，不做编排。</p>
- */
 final class TeamFormationExtractor {
 
     private TeamFormationExtractor() {
     }
 
     static final float FORMATION_WINDOW_SEC = 15f;
-    static final float FORMATION_CLUSTER_DISTANCE_METERS = 100f; // canonical meters
+    static final float FORMATION_CLUSTER_DISTANCE_METERS = 100f;
     static final float MAX_ABSOLUTE_ELEVATION = 200f;
 
     static List<TeamFormationPhase> buildFormationPhases(
@@ -87,7 +82,6 @@ final class TeamFormationExtractor {
                 .map(PositionChangedEvent::confidence)
                 .reduce(DecodeConfidence.EXACT, DefaultTeamBattleFeatureExtractor::lowerConfidence);
 
-        // Build structured clusters
         final float windowStart = window * FORMATION_WINDOW_SEC;
         final float windowEnd = (window + 1) * FORMATION_WINDOW_SEC;
         final List<TeamFormationCluster> clusters = buildClusters(sorted, windowStart, windowEnd, mapCode);
@@ -102,9 +96,6 @@ final class TeamFormationExtractor {
                 clusters);
     }
 
-    /**
-     * Build structured clusters from sorted (identityKey, position) entries using BFS.
-     */
     static List<TeamFormationCluster> buildClusters(
             final List<Map.Entry<String, PositionChangedEvent>> sorted,
             final float startTime,
@@ -137,10 +128,6 @@ final class TeamFormationExtractor {
                 }
             }
 
-            // Resolve/clamp EACH member position to canonical FIRST, then average in canonical
-            // space. Averaging raw coordinates before conversion would misplace clusters whose
-            // members are out-of-range-but-valid (clamped) — e.g. raw X {1050, 649.9} must map
-            // to canonical {500, 412.475} → centroid 456.2375, not resolve(mean(raw)).
             final List<MapCoordinateResolution> memberResolutions = clusterIndices.stream()
                     .map(i -> sorted.get(i).getValue())
                     .map(pos -> MapRegionResolver.resolve(pos.x(), pos.z(), mapCode))
@@ -158,7 +145,6 @@ final class TeamFormationExtractor {
             final int clampedPosCount = (int) memberResolutions.stream()
                     .filter(res -> res.status() == MapCoordinateResolution.Status.CLAMPED)
                     .count();
-            // The centroid inherits CLAMPED whenever it is derived from any clamped member.
             final MapCoordinateResolution.Status centroidStatus = clampedPosCount > 0
                     ? MapCoordinateResolution.Status.CLAMPED
                     : MapCoordinateResolution.Status.VALID;
@@ -174,7 +160,6 @@ final class TeamFormationExtractor {
                     startTime, endTime, canon, centroidStatus, region, clampedPosCount, identities, clusterConfidence));
         }
 
-        // Sort by startTime, region, centroidX, centroidZ, then member identities
         result.sort(Comparator.comparingInt(TeamFormationCluster::region)
                 .thenComparingDouble(TeamFormationCluster::centroidX)
                 .thenComparingDouble(TeamFormationCluster::centroidZ));
@@ -192,11 +177,6 @@ final class TeamFormationExtractor {
         return (float) Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
     }
 
-    /**
-     * Canonical distance in meters for cluster connectivity. Delegates to the single shared
-     * {@link MapRegionResolver#canonicalDistanceMeters} helper; unresolvable endpoints map to
-     * {@link Float#MAX_VALUE} so they can never join a cluster.
-     */
     static float canonicalDistance(
             final float rawX1, final float rawZ1,
             final float rawX2, final float rawZ2,
@@ -206,11 +186,6 @@ final class TeamFormationExtractor {
         return meters < 0f ? Float.MAX_VALUE : meters;
     }
 
-    /**
-     * Evidence-quality + spatial gate for positions (time is already gated by
-     * {@link BattleStartResolution#tryRelative}): confidence must be usable and the coordinate must be within
-     * bounds / clampable.
-     */
     static boolean usableSpatialEvidence(
             final PositionChangedEvent position,
             final String mapCode

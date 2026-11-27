@@ -17,10 +17,6 @@ class AiUpstreamExceptionTest {
         assertEquals(402, error.providerStatus());
     }
 
-    /**
-     * 终态 AI_TIMEOUT / AI_CANCELLED 重新分类时显式传 null：不得从 cause chain
-     * 继承之前的 provider response，否则会把旧 402/500 误标成最终失败状态。
-     */
     @Test
     void doesNotInferProviderStatusFromCauseChain() {
         final UnexpectedStatusCodeException providerError = UnexpectedStatusCodeException.builder()

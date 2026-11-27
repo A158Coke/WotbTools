@@ -1,6 +1,5 @@
 package com.wotb.core.replay.facts;
 
-/** Canonical recorder-shot targeting facts joined from method36 + Type31 + Type39. */
 public record TargetingShotPair(
         int shotId,
         Double turretYawBeforeShotRad,
@@ -16,7 +15,6 @@ public record TargetingShotPair(
         Float aimRayPointY,
         Float aimRayPointZ
 ) {
-    /** Backward-compatible constructor for tests/callers that only model method36. */
     public TargetingShotPair(
             final int shotId,
             final Double turretYawBeforeShotRad,

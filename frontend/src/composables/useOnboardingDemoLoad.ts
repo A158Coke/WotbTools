@@ -1,8 +1,3 @@
-/**
- * 引导的官方示例装载控制器（拆分自 useOnboarding.ts，行为原样）。
- * 拥有 demoAbort/demoGeneration/demoLoad 生命周期：离开引导即 cancel；
- * prepareStep 用 awaitDemoLoad 等待当前装载，retry 用 demoGeneration 判定归属。
- */
 import type { Ref } from 'vue'
 import { watch } from 'vue'
 
@@ -14,7 +9,6 @@ export interface OnboardingDemoLoadCtx {
   ensureReplayView: () => Promise<void>
 }
 
-/** 通用「读值就绪」等待：轮询改为同步 watch，10s 上限，AbortSignal 可中断。 */
 export function waitForValue<T>(read: () => T | null, signal: AbortSignal): Promise<T> {
   const initial = read()
   if (initial) return Promise.resolve(initial)
@@ -37,10 +31,8 @@ export function waitForValue<T>(read: () => T | null, signal: AbortSignal): Prom
 export function createOnboardingDemoLoad(ctx: OnboardingDemoLoadCtx) {
   let demoAbort = new AbortController()
   let demoLoad: Promise<void> | null = null
-  /** Sample-load ownership: only stopRun()/a newer load invalidates a continuation (step changes do not). */
   let demoGeneration = 0
 
-  /** 离开引导 / 开始新教程：作废在飞装载（原 stopRun 内联逻辑）。 */
   function cancelDemoLoad() {
     ++demoGeneration
     demoAbort.abort()
@@ -48,18 +40,11 @@ export function createOnboardingDemoLoad(ctx: OnboardingDemoLoadCtx) {
     demoLoad = null
   }
 
-  /**
-   * Official-sample loading owns its own lifecycle: only leaving the guide cancels it.
-   * Sharing the step's AbortController cancelled the download on Next, so the playback step
-   * waited for a sample that would never arrive and Retry could not recover (#668).
-   */
   function beginDemoLoad() {
     demoAbort.abort()
     demoAbort = new AbortController()
     const generation = ++demoGeneration
     const signal = demoAbort.signal
-    // A late continuation after skip/interrupt must never call loadDemo(): its ready fast path
-    // could still switch capability after the guide is gone.
     const owns = () => generation === demoGeneration && ctx.mode.value === 'tour' && !signal.aborted
     const promise = (async () => {
       await ctx.ensureReplayView()

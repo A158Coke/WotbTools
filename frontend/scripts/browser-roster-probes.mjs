@@ -1,4 +1,3 @@
-/** 阵容车道的真实几何断言（getBoundingClientRect，0.5px 容差吸收亚像素舍入）。 */
 function rosterGeometryProbe() {
   const rect = (el) => (el ? el.getBoundingClientRect() : null)
   const root = document.querySelector('.pb-root')
@@ -14,7 +13,6 @@ function rosterGeometryProbe() {
   out.side = root.classList.contains('roster-side')
   out.phone = root.classList.contains('phone-form')
   out.viewport = { width: innerWidth, height: innerHeight }
-  // 竖屏全屏的根固定为一屏，纵向流比视口高：根必须自己可滚动，内容才可达。
   const rootStyle = getComputedStyle(root)
   const portraitScrolls = /auto|scroll/.test(rootStyle.overflowY)
     && root.scrollHeight > root.clientHeight + 1
@@ -28,15 +26,12 @@ function rosterGeometryProbe() {
   out.square = square ? { w: square.width, h: square.height, l: square.left, r: square.right, t: square.top, b: square.bottom } : null
   if (!square || (out.portrait && Math.abs(square.width - square.height) > 1)) out.errors.push(`3D Stage is not square: ${JSON.stringify(out.square)}`)
   const stage = root.querySelector('.pb-stage')?.getBoundingClientRect()
-  // 竖屏的 Stage 必须在流里真正包住正方形画布；全屏高度受限时曾被 flex 压成 0，
-  // 画布溢出到控制条下面（遮挡探针同时报 99% 中心遮挡）。
   if (out.portrait && stage && square && stage.height < square.height - 1) {
     out.errors.push(`portrait Stage collapses around its square: stage=${stage.height}, square=${square.height}`)
   }
   const hud = root.querySelector('.hud')?.getBoundingClientRect()
   const transport = root.querySelector('.controls')?.getBoundingClientRect()
   const hudPanel = root.querySelector('.hud .pb-hud')
-  // 2026-10-05 恢复的浮层布局：3D HUD 面板随内容收缩并在容器内居中（不再强制撑满列宽）。
   const FLOATING_LAYOUT = root.classList.contains('roster-side') || root.classList.contains('portrait-flow')
   if (!FLOATING_LAYOUT && hudPanel && hud && Math.abs(hudPanel.getBoundingClientRect().width - hud.width) > 1) out.errors.push('HUD panel must span its center column')
   if (innerWidth >= 1200 && hudPanel && parseFloat(getComputedStyle(hudPanel.querySelector('.pb-hud-value')).fontSize) < 16) out.errors.push('desktop HUD values must use the enlarged type scale')
@@ -50,11 +45,7 @@ function rosterGeometryProbe() {
     }
   }
   if (stage && square) {
-    // 2026-10-05 布局恢复为「场景铺满 + 浮层」（名册顶部绝对定位、HUD 顶中、传输底中）：
-    // Stage 不再是 center 列里的受限方块、HUD/传输与 Stage 的堆叠关系由 z-index 表达。
-    // 旧堆叠网格断言整体停用，待按新布局重写（覆盖缺口记录于 PR #537）。
     const LEGACY_STACKED_GRID = false
-    // Budget comes from the workspace and chrome, never the content-sized Stage itself.
     const style = getComputedStyle(root)
     const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
     const border = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0)
@@ -73,12 +64,8 @@ function rosterGeometryProbe() {
       }
     }
 
-    // —— 浮层布局契约（2026-10-05 起）：场景铺满 + 名册/HUD/传输浮层 ——
-    // 注意：本探针在**未滚动**的初始布局上取值（roster-geometry 的点击滚动发生在
-    // probe 之后），lane/transport 的 rect 反映真实浮层位置。
     const FLOATING = out.side || out.portrait
     if (FLOATING) {
-      // ① Stage（场景画布容器）铺满工作区（浮层布局的核心语义）
       const stageBox = root.querySelector('.pb-stage')?.getBoundingClientRect()
       const rr = root.getBoundingClientRect()
       if (stageBox) {
@@ -90,15 +77,11 @@ function rosterGeometryProbe() {
       } else {
         out.errors.push('floating: .pb-stage missing')
       }
-      // 距离滑条与 FPS 角标都曾停右下角；手机横屏把 FPS 让到左下，二者不得互相遮挡。
       const fpsBox = root.querySelector('[data-testid="replay3d-fps"]')?.getBoundingClientRect()
       const distBox = root.querySelector('[data-testid="scene-distance-slider"]')?.getBoundingClientRect()
       if (fpsBox && distBox && fpsBox.left < distBox.right && distBox.left < fpsBox.right && fpsBox.top < distBox.bottom && distBox.top < fpsBox.bottom) {
         out.errors.push('floating: FPS badge overlaps the distance slider')
       }
-      // ② 名册车道必须落在 **root 工作区**内（root 系坐标，与页面滚动无关——
-      //    workspace 场景本身可被页面滚过标题栏），且不与对侧重叠
-      // 竖屏全屏的根是滚动容器：内容可以在视口下方，但不能超出滚动内容高度。
       const contentBottom = rr.top + Math.max(root.scrollHeight, root.clientHeight)
       const inRoot = (b) => b.left >= rr.left - 0.5 && b.right <= rr.right + 0.5 && b.top >= rr.top - 0.5
         && (b.bottom <= rr.bottom + 0.5 || (out.portraitScroll.scrolls && b.bottom <= contentBottom + 0.5))
@@ -113,7 +96,6 @@ function rosterGeometryProbe() {
           out.errors.push(`floating: ${name} lane overlaps the opposite lane`)
         }
       }
-      // ③ HUD 与左右 lane 的分离（侧浮层 = x 分离；纵向流 = y 流，按序断言）
       const hudBox = root.querySelector('.hud')?.getBoundingClientRect()
       if (out.side) {
         for (const [name, sel] of [['left', '.side-left'], ['right', '.side-right']]) {
@@ -124,22 +106,17 @@ function rosterGeometryProbe() {
           }
         }
       } else {
-        // 纵向流：HUD → transport → lanes 从上到下（order 已由旧断言锁定，这里锁
-        // HUD 在任一 lane 之上——HUD.bottom ≤ 第一条 lane 顶部）
         const firstLane = root.querySelector('.side-left, .side-right')?.getBoundingClientRect()
         if (hudBox && firstLane && hudBox.bottom > firstLane.top + 0.5) {
           out.errors.push(`floating portrait: HUD must sit above the lanes (hud.bottom=${Math.round(hudBox.bottom)} > lane.top=${Math.round(firstLane.top)})`)
         }
       }
-      // ④ 传输控件存在且**落在 root 工作区内**（root 系）
       const controls = root.querySelector('.controls')?.getBoundingClientRect()
       if (!controls) {
         out.errors.push('floating: transport controls missing')
       } else if (!inRoot(controls)) {
         out.errors.push(`floating: transport controls outside the workspace: ${JSON.stringify([Math.round(controls.left - rr.left), Math.round(controls.top - rr.top), Math.round(controls.width), Math.round(controls.height)])}`)
       }
-      // ⑤ 手机横屏：3D 工作台根必须去边框/圆角并横向贴边（safe-area 由共享规则负责）。
-      //    页面 .wrap 的 gutter 不能留在场景两侧，否则“沉浸态”仍浪费一圈像素。
       if (out.phone && out.side && !transient) {
         const cs = getComputedStyle(root)
         const borders = ['borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth']
@@ -152,12 +129,9 @@ function rosterGeometryProbe() {
           out.errors.push(`phone landscape: scene must reach viewport edges, got ${Math.round(rr.left)}..${Math.round(rr.right)} of ${window.innerWidth}`)
         }
       }
-      // ⑥ 全屏语义：root 即全屏元素（由 usePlaybackFullscreen 保证 enter/exit 不重建）
       out.floatingChecked = true
     }
   }
-  // 手机横屏：全屏入口内联在传输条（旧版右上浮动按钮会压住敌方第一行 / 血量数字）。
-  // 手机竖屏：恢复右上浮动入口，传输条只有 5 个主控件；桌面仍是 6 个。
   const portraitRoot = root.classList.contains('portrait-flow')
   const primaryIds = out.phone && portraitRoot
     ? ['pb-back5', 'pb-play', 'pb-fwd5', 'pb-speed-current', 'pb-secondary-entry']
@@ -167,8 +141,6 @@ function rosterGeometryProbe() {
   if (primary.some((element) => !element)) out.errors.push('shared primary controls must be present in transport')
   else {
     const boxes = primary.map((element) => element.getBoundingClientRect())
-    // 移动端工作台常高于视口（667×375 时控制条在 y≈526），elementFromPoint 只接受视口坐标；
-    // 先滚到控制条再测，否则整块都在视口外、所有采样点都会返回 null。
     const scrollY = window.scrollY
     transportControls.scrollIntoView({ block: 'center' })
     const hitProbe = (element) => {
@@ -198,7 +170,6 @@ function rosterGeometryProbe() {
   if (out.phone) {
     const inline = transportControls && transportControls.querySelector('[data-test="pb-fullscreen"]')
     const floating = root.querySelector('.scene-fs-btn.floating')
-    // 横屏内联、竖屏浮动；两种形态互斥，同一时刻只允许一个可见全屏入口。
     if (portraitRoot) {
       if (inline && inline.getClientRects().length > 0) out.errors.push('phone portrait: fullscreen entry must not be inline in transport')
       if (!floating || floating.getClientRects().length === 0) out.errors.push('phone portrait: floating fullscreen entry missing')
@@ -210,11 +181,8 @@ function rosterGeometryProbe() {
     if (entries.length !== 1) out.errors.push(`phone: expected exactly one fullscreen entry, got ${entries.length}`)
   }
   out.laneWidths = ['.side-left', '.side-right'].map((selector) => root.querySelector(selector)?.getBoundingClientRect().width ?? 0)
-  // center 列宽：HUD 占满整列，直接量它的盒。
   out.centerWidth = root.querySelector('.hud')?.getBoundingClientRect().width ?? null
   out.laneIds = ['.side-left', '.side-right'].map((sel) => [...root.querySelectorAll(`${sel} .pl`)].map((el) => el.textContent.trim().split(/\s+/)[0]))
-  // 行内契约 = 玩家/车型（textContent）+ HP 条存在且 aria-label 非空：
-  // 条内数值只是视觉呈现（aria-hidden），可访问名称以 aria-label 为准。
   out.rowsComplete = [...root.querySelectorAll('.team-lane .pl')].every((row) => {
     const bar = row.querySelector('[data-test="roster-hp"]')
     return ['pb-roster-player', 'pb-roster-tank']
@@ -246,7 +214,6 @@ function rosterGeometryProbe() {
       out.errors.push('transient roster surface is outside pb-root')
     }
   }
-  // A secondary surface may overlay HUD while open, but must stay above the controls.
   const hudBoxes = transient ? [] : [...document.querySelectorAll('.hud > *')].map(rect).filter(Boolean)
   for (const [name, b] of Object.entries(panels)) {
     hudBoxes.forEach((h, i) => {
@@ -254,8 +221,6 @@ function rosterGeometryProbe() {
     })
   }
   const controls = rect(document.querySelector('.controls'))
-  // 浮层布局下名册车道悬浮于场景之上，与传输控件的投影重叠是**设计预期**（2D 网格布局
-  // 仍保持互斥）。其余面板（详情/注记）依旧不得压住传输控件。
   if (controls && !FLOATING_LAYOUT) {
     for (const [name, b] of Object.entries(panels)) {
       if (overlap(b, controls)) out.errors.push(`${name} overlaps controls (${JSON.stringify(controls)})`)
@@ -265,8 +230,6 @@ function rosterGeometryProbe() {
   for (const [a, c] of pairs) {
     if (panels[a] && panels[c] && overlap(panels[a], panels[c])) out.errors.push(`${a} overlaps ${c}`)
   }
-  // 名册行的 HP 数值经 **aria-label** 保留（2026-10-05 名册回归原版：条内无文字节点）：
-  // exact 写 `current / max`、relative 写 `pct%`、unknown 写 `—`，都不带多余后缀。
   const hpBars = [...document.querySelectorAll('.pl [data-test="roster-hp"]')]
   out.hpCells = hpBars.length
   for (const bar of hpBars) {
@@ -277,7 +240,6 @@ function rosterGeometryProbe() {
       out.errors.push(`roster HP bar is not visible: ${JSON.stringify({ text, w: bar.clientWidth, h: bar.clientHeight })}`)
     }
   }
-  // 每个可见名册行都必须有 HP 条（数值 / 百分比收进 aria-label）
   const rows = [...document.querySelectorAll('.roster-surface .pl')].filter((el) => el.getClientRects().length > 0)
   out.rows = rows.length
   for (const row of rows) {
@@ -285,7 +247,6 @@ function rosterGeometryProbe() {
     if (!bar || !(bar.getAttribute('aria-label') || '').trim()) {
       out.errors.push(`roster row without HP bar: ${JSON.stringify(row.textContent)}`)
     }
-    // reload 若出现，必须与 HP 条等宽且更细（次级瞬时状态不得抢 HP 权重）
     const reload = row.querySelector('[data-test="roster-reload"]')
     if (bar && reload) {
       const bb = bar.getBoundingClientRect()
@@ -303,8 +264,6 @@ function rosterGeometryProbe() {
     }
   }
 
-  // —— 纵向铺满（宽档侧车道，7v7）：header 固定顶部 + 列表吃满 section 剩余高度 + 行均匀分布 ——
-  // 用比例 / 几何关系断言，不锁死每行具体 px（正常高度由 `1fr` 连续决定）。
   if (!transient && out.rows >= 5) {
     const sections = [...root.querySelectorAll('.roster-surface .pb-roster-team')]
       .filter((el) => el.getClientRects().length > 0)
@@ -318,15 +277,11 @@ function rosterGeometryProbe() {
       const lr = list.getBoundingClientRect()
       const first = sectionRows[0].getBoundingClientRect()
       const last = sectionRows[sectionRows.length - 1].getBoundingClientRect()
-      // header 在上、列表在 header 之下
       if (hr.bottom > lr.top + 1) out.errors.push('roster header must sit above the list')
-      // 列表吃满 section 剩余高度（不是只占内容高、下面空着）
       const listShare = lr.height / Math.max(1, sr.height)
       if (listShare < 0.6) out.errors.push(`roster list must consume the section's remaining height: ${JSON.stringify({ listShare: +listShare.toFixed(3), section: sr.height, list: lr.height })}`)
-      // 首行贴近列表顶、末行贴近列表底 → 行没有全部挤在顶部
       if (first.top - lr.top > Math.max(6, lr.height * 0.06)) out.errors.push(`first roster row must start near the list top: ${JSON.stringify({ gap: +(first.top - lr.top).toFixed(1) })}`)
       if (lr.bottom - last.bottom > Math.max(6, lr.height * 0.06)) out.errors.push(`last roster row must end near the list bottom: ${JSON.stringify({ gap: +(lr.bottom - last.bottom).toFixed(1) })}`)
-      // 行间距大致均匀：相邻间距的最大 / 最小不要差太多
       const gaps = []
       for (let i = 1; i < sectionRows.length; i++) {
         gaps.push(sectionRows[i].getBoundingClientRect().top - sectionRows[i - 1].getBoundingClientRect().bottom)
@@ -359,21 +314,16 @@ function rosterGeometryProbe() {
       && surface.scrollHeight > surface.clientHeight + 1) out.errors.push('normal wide roster requires scrolling')
   }
 
-  // —— 手机竖屏：常驻控件不得吃掉战场（真机 blocker 的不变量）——
-  // 紧凑档（< 768）要求：工具条整行不常驻、速度档位不铺开、常驻控件高度受控、
-  // 战场（.pb-root 总高 - 常驻控件高）仍占主导。断言语义而非像素。
   if (out.phone && !transient) {
     const box = (el) => (el && el.getClientRects().length ? el.getBoundingClientRect() : null)
     const toolbar = box(document.querySelector('.toolbar'))
     const controlsBox = box(document.querySelector('.controls'))
     const rootH = rr.height
-    // 紧凑档工具条只允许保留「显示」入口（其余项在面板里）；相机分档与画质徽标不得常驻。
     const toolbarEl = document.querySelector('.toolbar')
     const toolbarChildren = toolbarEl
       ? [...toolbarEl.children]
         .filter((el) => el.getClientRects().length > 0)
         .map((el) => ({
-          // 「显示」入口是 .display-wrap 包着 display-toggle；其余项按类名/标签识别
           label: el.querySelector('[data-testid="display-toggle"]')
             ? 'display'
             : (el.dataset.testid || el.className || el.tagName).toString(),
@@ -383,7 +333,6 @@ function rosterGeometryProbe() {
     out.compact = {
       rootH: +rootH.toFixed(1),
       controlsH: controlsBox ? +controlsBox.height.toFixed(1) : null,
-      // 分段高度：定位"控件为什么这么高"（时间轴 / 按钮行 / 内边距与间隙）
       parts: controlsBox ? (() => {
         const controlsEl = document.querySelector('.controls')
         const part = (sel) => {
@@ -406,9 +355,7 @@ function rosterGeometryProbe() {
       speedPicker: !!box(document.querySelector('[data-test="pb-speed-current"]')),
       displayEntry: !!box(document.querySelector('[data-testid="display-toggle"]')),
     }
-    // 「显示」入口必须常驻可点（唯一的二级控件入口）
     if (!out.compact.displayEntry) out.errors.push('compact: display entry point is not visible')
-    // 常驻工具条项只允许「显示」这一个（相机 / 阵容 / 画质都进面板）
     const extra = toolbarChildren.filter((c) => c.label !== 'display').map((c) => c.label)
     if (extra.length) out.errors.push(`compact: secondary controls still permanent on the toolbar: ${extra.join(', ')}`)
     if (document.querySelectorAll('.pb-speed .pb-btn').length > 0) {
@@ -416,9 +363,6 @@ function rosterGeometryProbe() {
     }
     if (!out.compact.speedPicker) out.errors.push('compact: current-speed control is missing')
     if (controlsBox) {
-      // 常驻控件（时间轴 + 一行按钮）不得吃掉战场。2D 网格布局（非浮层）下战场 =
-      // rootH − controls；浮层布局（3D，场景铺满、控件悬浮其上）下战场**始终占满** root，
-      // 控件只是投影覆盖，这条维度不适用（Scene ≥ 55% 由场景自身铺满保证）。
       if (!FLOATING_LAYOUT) {
         const sceneH = rootH - controlsBox.height
         out.compact.sceneH = +sceneH.toFixed(1)
@@ -433,7 +377,6 @@ function rosterGeometryProbe() {
   return out
 }
 
-/** 3D 右下距离滑条与 7v7 名册的真实几何：标签/轨道/整盒、最后三行、命中与内部滚动。 */
 function sceneDistanceProbe() {
   const root = document.querySelector('.pb-root')
   const slider = root && root.querySelector('[data-testid="scene-distance-slider"]')
@@ -508,7 +451,6 @@ const DISTANCE_LABELS = {
   ru: ['Ближе', 'Дальше'],
 }
 
-/** 距离滑条与右侧 7v7 名册的几何契约；返回所有违规项而不是首个。 */
 function sceneDistanceViolations(dist, scenario, viewport) {
   const errors = []
   if (!dist.present || !dist.root) return ['distance slider missing']
@@ -534,7 +476,6 @@ function sceneDistanceViolations(dist, scenario, viewport) {
   return errors
 }
 
-/** 「显示」面板：全部开关可用、面板不越界、隐藏全部 UI 可恢复（真实点击）。 */
 function displayPanelProbe() {
   const root = document.querySelector('.pb-root')
   const out = { root: !!root, errors: [], panel: null }
@@ -545,7 +486,6 @@ function displayPanelProbe() {
   const pb = panel.getBoundingClientRect()
   out.panel = { l: +pb.left.toFixed(1), t: +pb.top.toFixed(1), r: +pb.right.toFixed(1), b: +pb.bottom.toFixed(1) }
   if (root.classList.contains('portrait-flow')) {
-    // 竖屏纵向流：「显示」面板是传输控件之后的流内内容块（页面滚动），不是盖在 Stage 上的浮层。
     const controls = document.querySelector('.controls')?.getBoundingClientRect()
     const square = document.querySelector('.stage-square')?.getBoundingClientRect()
     if (getComputedStyle(panel).position !== 'static') out.errors.push('portrait display panel must be an in-flow block')
@@ -556,11 +496,8 @@ function displayPanelProbe() {
     }
     return out
   }
-  // 可见范围 = .pb-root 与视口的交集（工作台在矮窗口里可能把 .pb-root 顶部推到视口外，
-  // 那时"超出视口"并不等于面板不可用；真正的要求是面板落在**可见的面板区域**内）。
   const visTop = Math.max(rr.top, 0)
   const visBottom = Math.min(rr.bottom, document.documentElement.clientHeight)
-  // 所有形态均是根内浮层，必须位于可见区域且不遮场景中心。
   if (pb.left < -0.5 || pb.top < visTop - 0.5
     || pb.right > document.documentElement.clientWidth + 0.5 || pb.bottom > visBottom + 0.5) {
     out.errors.push(`display panel outside visible pane: ${JSON.stringify(out.panel)} visible=[${visTop.toFixed(1)},${visBottom.toFixed(1)}]`)
@@ -585,7 +522,6 @@ function displayPanelProbe() {
   for (const id of ['disp-topbar', 'disp-roster', 'disp-killfeed', 'disp-base', 'disp-player', 'disp-tank', 'disp-hp', 'disp-reload', 'disp-glb', 'hide-all-ui']) {
     const el = document.querySelector(`[data-testid="${id}"]`)
     if (!el) { out.errors.push(`display panel control missing: ${id}`); continue }
-    // 开关的真实命中区是包住 checkbox 的 <label>（方框本身只有 13px）
     const hit = id === 'hide-all-ui' ? el : el.closest('label')
     if (!hit) { out.errors.push(`display panel control has no label hit area: ${id}`); continue }
     const r = hit.getBoundingClientRect()
@@ -596,12 +532,6 @@ function displayPanelProbe() {
   return out
 }
 
-/**
- * 横向空间归属探针：bounded roster | fluid center | bounded roster。
- *
- * 量的是**真实应用**的 grid 结果（不是 file:// fixture），所以「center 吃掉全部剩余宽度」
- * 与「HUD 属于整个 center column」是实测结论而不是 CSS 推断。
- */
 function workspaceColumnsProbe() {
   const root = document.querySelector('.pb-root')
   if (!root) return { root: false }
@@ -621,12 +551,10 @@ function workspaceColumnsProbe() {
   const controls = box(root.querySelector('.controls'))
   const rootBox = box(root)
   const mainBox = box(main)
-  // 列宽用的是 grid 容器（root）的**内边距盒**：root 自身有 padding，边框盒会多算进去。
   const cs = getComputedStyle(root)
   const padL = parseFloat(cs.paddingLeft) || 0
   const padR = parseFloat(cs.paddingRight) || 0
   const contentW = +(root.clientWidth - padL - padR).toFixed(1)
-  // center column 的宽度：grid 里 stage/hud/controls 都占 center 列，用 HUD 的盒直接量它。
   const centerW = hud ? hud.w : null
   const laneGutter = left && hud ? +(hud.left - left.right).toFixed(1) : null
   return {
@@ -641,14 +569,6 @@ function workspaceColumnsProbe() {
   }
 }
 
-/**
- * 等名册布局**稳定**（连续两次读到的几何签名一致）。
- *
- * 为什么不能只 sleep 一个常数：`Replay3DPane` 的 ResizeObserver 会把实测高度写回
- * `--pb-workspace-h`，每写一次都重排一次根元素、车道与传输控件。抢在重排中间读，
- * 拿到的是「上一轮布局 + 这一轮变量」的混合几何 —— 那是假失败（实测 1024×768 有时过、
- * 有时不过，差别只在读的时机）。
- */
 function rosterLayoutSignature() {
   const root = document.querySelector('.pb-root')
   if (!root) return null

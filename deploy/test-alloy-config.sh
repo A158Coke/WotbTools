@@ -11,8 +11,6 @@ VALIDATOR="$ROOT/deploy/validate-alloy-config.sh"
 for CONFIG in "${CONFIGS[@]}"; do
   [ -f "$CONFIG" ] || { echo "FAIL: missing Alloy config: $CONFIG" >&2; exit 1; }
   if ! bash "$VALIDATOR" "$CONFIG"; then
-    # When the validator rejects a production config, print the canonical
-    # formatting diff so the fix is mechanical instead of guesswork.
     echo "== alloy fmt -d diff for $CONFIG ==" >&2
     docker run --rm --entrypoint alloy \
       -v "$CONFIG:/etc/alloy/config.alloy:ro" \

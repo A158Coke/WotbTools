@@ -1,12 +1,7 @@
-// 名人堂管理分区共用的小工具：表格选择集、去重排序、战斗类型标签。不持有任何业务状态。
 import { computed, ref, type Ref } from 'vue'
 
 type Translate = (key: string) => string
 
-/**
- * 每个表格自己的「全选当前页」选择集；三个分区共用同一份规则，只有 owner（rows ref）不同。
- * 「全选当前页」= 只作用于当前页可见行；每次加载后用 prune() 收敛，不留不可见的选择项。
- */
 export function createSelection(rowsRef: Ref<readonly { id: number }[]>) {
   const selected = ref<number[]>([])
   const selectedSet = computed(() => new Set(selected.value))
@@ -30,12 +25,10 @@ export function createSelection(rowsRef: Ref<readonly { id: number }[]>) {
       }
       selected.value = [...next]
     },
-    /** 每次加载后把选择集收敛到当前列表：翻页/换筛选条件不会留下不可见的选择项。 */
     prune() {
       if (!selected.value.length) return
       selected.value = selected.value.filter(id => rowsRef.value.some(row => row.id === id))
     },
-    /** partial success：只保留仍失败的项，便于重试。 */
     keepOnly(ids: readonly number[]) { selected.value = [...ids] },
     clear() { selected.value = [] },
   }
@@ -51,7 +44,6 @@ export function battleTypeLabel(t: Translate, tp: string | null | undefined) {
   return tp || '-'
 }
 
-/** 复选框 change 事件的勾选值。 */
 export function eventChecked(event: Event) {
   return (event.target as HTMLInputElement).checked
 }

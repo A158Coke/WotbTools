@@ -1,5 +1,3 @@
-/* Standalone paper tokens. Points/mm and A4/A3 describe the exported document,
- * not application viewport density; this stylesheet is never applied to the app. */
 :root {
   --color-canvas: #fff;
   --color-text-primary: #1b1e1c;

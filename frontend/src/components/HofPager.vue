@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// 名人堂榜单分页条：上一页 / 页码摘要 / 直接跳页 / 下一页。页码本身归所属榜单，这里只持有跳页输入草稿。
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -21,7 +20,6 @@ function pagerLabel() {
   return t('hofPager.page', { page })
 }
 
-/** 跳页目标：只有 1..totalPages 的整数合法；非法值 / 当前页不发请求，也不清空输入。 */
 function goJumpPage() {
   const value = Number(jumpPage.value)
   const valid = Number.isInteger(value) && value >= 1 && value <= props.totalPages

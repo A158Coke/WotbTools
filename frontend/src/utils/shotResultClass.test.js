@@ -13,7 +13,6 @@ const shot = (over = {}) => ({
 describe('shotResultClass · 服务器结果枚举', () => {
   it('result=4 = raw（语义未定），不映射跳弹/履带/击穿', () => {
     expect(shotResultClass(shot({ game_hit_result: 4, damage: 0 }))).toBe('UNVERIFIED')
-    // 带伤也不能仅凭 damage>0 伪造成击穿；4 的语义仍未被证伪/证实
     expect(shotResultClass(shot({ game_hit_result: 4, damage: 569 }))).toBe('UNVERIFIED')
   })
 

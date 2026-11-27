@@ -25,7 +25,6 @@ function stubNative(results) {
   }
 }
 
-/** 重置连通性单例与提示状态（避免测试之间互相污染）。 */
 function reset() {
   useConnectivity().stop()
   useConnectivityNotice().close()
@@ -43,7 +42,6 @@ describe('feature gate (pure)', () => {
   })
 
   it('ONLINE_REQUIRED features fail fast and notify with the reason-specific availability', () => {
-    // offline：功能专属文案（「需要联网」）
     const offlineNotify = vi.fn()
     expect(evaluateFeatureGate(Feature.AI_REVIEW, ConnectivityState.OFFLINE, offlineNotify)).toBe(false)
     expect(offlineNotify).toHaveBeenCalledTimes(1)
@@ -54,7 +52,6 @@ describe('feature gate (pure)', () => {
       reason: ConnectivityState.OFFLINE,
     })
 
-    // unknown / degraded / service-unavailable：**不得**说成「你离线」
     const cases = [
       [Feature.HALL_OF_FAME, ConnectivityState.UNKNOWN, 'connectivityNotice.unknown', 'connectivityNotice.unknownTitle'],
       [Feature.PLAYBACK_3D, ConnectivityState.DEGRADED, 'connectivityNotice.degraded', 'connectivityNotice.degradedTitle'],
@@ -121,13 +118,11 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     await useConnectivity().start()
     expect(requireFeature(Feature.AI_REVIEW)).toBe(false)
 
-    // 网络恢复：Native 推送 → 页面回读（事件不带 payload）→ capability 立即更新，无需重启。
     nativeState = 'online'
     await window.wotbtoolsOnConnectivityChanged()
     expect(availability(Feature.AI_REVIEW).available).toBe(true)
     expect(availability(Feature.AI_REVIEW).online).toBe(true)
 
-    // 再断开：本地功能不受影响，联网功能立刻回到提示路径。
     nativeState = 'offline'
     await window.wotbtoolsOnConnectivityChanged()
     expect(requireFeature(Feature.AI_REVIEW)).toBe(false)
@@ -135,7 +130,6 @@ describe('feature gate (wired to the connectivity singleton)', () => {
   })
 
   it('defers the verdict until the first detection settles (deep-link mount race)', async () => {
-    // 子组件先于 AppShell 挂载：门禁在 start() 之前被调用，此时 UNKNOWN 只是占位。
     Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
     const { requireFeature } = useFeatureGate()
     const notice = useConnectivityNotice()
@@ -144,7 +138,6 @@ describe('feature gate (wired to the connectivity singleton)', () => {
 
     await useConnectivity().start()
     await Promise.resolve()
-    // 实际在线：不得误报「暂时无法确认网络状态」。
     expect(notice.visible.value).toBe(false)
     expect(requireFeature(Feature.AI_REVIEW)).toBe(true)
   })
@@ -166,12 +159,10 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     expect(availability(Feature.AI_REVIEW)).toMatchObject({ available: false, pending: true })
     expect(availability(Feature.REPLAY_RESULT)).toMatchObject({ available: true, pending: false })
     expect(availability(Feature.RATING)).toMatchObject({ available: true, pending: false })
-    // ONLINE_OPTIONAL：本地动作照常（available 不变），pending 只告诉 UI 先别下结论。
     expect(availability(Feature.TELEMETRY_UPLOAD)).toMatchObject({ available: true, pending: true })
   })
 
   it('requireFeature agrees with availability before the first detection: LOCAL / ONLINE_OPTIONAL pass, ONLINE_REQUIRED fail-closed', () => {
-    // 冷启动：connectivity = UNKNOWN、settled = false（未 start）。
     const { requireFeature, availability } = useFeatureGate()
     const notice = useConnectivityNotice()
     expect(useConnectivity().settled.value).toBe(false)
@@ -198,7 +189,6 @@ describe('feature gate (wired to the connectivity singleton)', () => {
 
     await useConnectivity().start()
     await nextTick()
-    // 连通性值始终是 UNKNOWN：只有 settled false → true 能让缓存的 computed 重算。
     expect(useConnectivity().connectivity.value).toBe(ConnectivityState.UNKNOWN)
     expect(ai.value).toMatchObject({
       pending: false,
@@ -230,7 +220,6 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     await useConnectivity().start()
     await nextTick()
     expect(observed).toEqual([[true, ConnectivityState.ONLINE]])
-    // 重连补加载类副作用在 watch(connectivity) 里调门禁：此刻必须已视为测过并放行。
     expect(gateInWatcher).toBe(true)
     stopObserved()
     stopGate()
@@ -248,7 +237,6 @@ describe('feature gate (wired to the connectivity singleton)', () => {
     stubNative({ getCapabilities: ['native-auth'], connectivityGetState: 'offline' })
     Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
     await useConnectivity().start()
-    // 老客户端（bridge v2 无 connectivity 能力）：退化为 navigator.onLine，而不是永久离线。
     expect(useConnectivity().connectivity.value).toBe(ConnectivityState.OFFLINE)
     Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
   })

@@ -1,4 +1,3 @@
-/* Replay result tables: one scroll owner, opaque sticky cells in both profiles. */
 .layout-data-workspace { padding-right: var(--pd-drawer-offset, 0px); }
 .layout-data-workspace .tablewrap { position: relative; isolation: isolate; overflow: auto; max-width: 100%; }
 .layout-data-workspace table { width: max-content; min-width: 100%; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }

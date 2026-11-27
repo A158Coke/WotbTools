@@ -185,11 +185,9 @@ describe('foldDestructibleStates', () => {
     state.settled = true
     expect(state.settled).toBe(true)
 
-    // seek 到事件前：场景会 quaternion.identity()；缓存必须自动失效
     state.pivot.quaternion.w = 1
     expect(state.settled).toBe(false)
 
-    // seek 回动画中间：仍不能误判终态；到 stopRad 后才再次视为 settled
     state.pivot.quaternion.w = Math.cos(Math.PI / 8)
     expect(state.settled).toBe(false)
     state.pivot.quaternion.w = Math.cos(Math.PI / 4)
@@ -207,11 +205,11 @@ describe('treeFrame（场景每帧树推进决策；锁定倒带序列）', () =
   it('未激活 / 事件前 → null；动画帧 = 恒定角速度旋转并标 animating', () => {
     const st = mkState()
     expect(treeFrame(st, false, 50)).toBeNull()
-    expect(treeFrame(st, true, 5)).toBeNull()          // active 但 elapsed < 0：不写终态
+    expect(treeFrame(st, true, 5)).toBeNull()
     const dur = fallDurationS(15)
     const mid = treeFrame(st, true, 10 + dur * 0.5)
     expect(mid.animating).toBe(true)
-    expect(mid.angle).toBeCloseTo(0.6, 9)              // stop·u，恒定角速度
+    expect(mid.angle).toBeCloseTo(0.6, 9)
     expect(mid.axis).toEqual(fallRotation(0, dur, 15, 1.2).axis)
   })
 
@@ -220,7 +218,7 @@ describe('treeFrame（场景每帧树推进决策；锁定倒带序列）', () =
     const dur = fallDurationS(15)
     const fin = treeFrame(st, true, 10 + dur + 1)
     expect(fin.animating).toBe(false)
-    expect(fin.angle).toBe(1.2)                        // 停止角精确写入
+    expect(fin.angle).toBe(1.2)
     expect(st.settled).toBe(true)
     expect(treeFrame(st, true, 10 + dur + 2)).toBeNull()
   })
@@ -228,18 +226,14 @@ describe('treeFrame（场景每帧树推进决策；锁定倒带序列）', () =
   it('倒带序列（评审 P0 回归）：终态 → 事件前 → 动画中 → 终态，最终旋转必须重写', () => {
     const st = mkState()
     const dur = fallDurationS(15)
-    // ① 播过倒伏终点：终态落盘
     const t1 = treeFrame(st, true, 10 + dur + 1)
     expect(t1.angle).toBe(1.2)
     expect(st.settled).toBe(true)
-    // ② seek 回事件前：场景 rewind 分支清 settled + pivot 归 identity（未激活 → null）
     st.settled = false
     expect(treeFrame(st, false, 5)).toBeNull()
-    // ③ 重播：动画中帧正常推进
     const mid = treeFrame(st, true, 10 + dur * 0.5)
     expect(mid.animating).toBe(true)
     expect(mid.angle).toBeLessThan(1.2)
-    // ④ 再次越过终点：终态旋转**再次精确写入**（settled 未重置时这里会是 null）
     const t2 = treeFrame(st, true, 10 + dur + 1)
     expect(t2.animating).toBe(false)
     expect(t2.angle).toBe(1.2)
@@ -254,8 +248,8 @@ describe('treeFrame（场景每帧树推进决策；锁定倒带序列）', () =
     ], areas, idx)
     state.stopRad = 1.2
     state.settled = true
-    expect(state.settled).toBe(true)     // pivot 缺失 → getter 回落存储值
-    state.settled = false                // 场景 rewind 分支的显式清零（走 setter）
+    expect(state.settled).toBe(true)
+    state.settled = false
     expect(state.settled).toBe(false)
     expect(treeFrame(state, true, 10 + fallDurationS(15) + 1).angle).toBe(1.2)
   })

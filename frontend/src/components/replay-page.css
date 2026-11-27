@@ -1,4 +1,3 @@
-/* ReplayPage 全局样式（随拆分自 ReplayPage.vue，原样迁移）。 */
 /* stylelint-disable -- ReplayPage.vue 在 stylelint.legacy.json 旧基线；豁免随文件迁移，样式逐字未改 */
 .replay-section-title {
   margin: 18px 0 8px;
@@ -142,7 +141,6 @@
 .replay-export-root .league-summary-title {
   color: var(--exp-text);
 }
-/* StatStrip 的 scoped 规则与这里同特异性，导出样式多带一层 .mcards 以确定性胜出 */
 .replay-export-root .mcards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

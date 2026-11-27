@@ -1,9 +1,4 @@
-// Wave C（#741）C3 批次的编译期负向证明：async asset / resource ownership 边界。
-// 锁定：assetProvider 的 logical path 契约、untrusted JSON 必须显式声明期望形状、
 // 渲染器装配参数完整（漏容器/回调编译失败）。@ts-expect-error 仅限本文件。
-//
-// assetProvider 模块整体 mock：不依赖 .env.local / ?assets= / localStorage，
-// 不发起真实 HTTP。类型定义仍来自 production 模块（vi.mock 不影响 TS 编译期类型）。
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
 
@@ -24,7 +19,6 @@ import { buildPitchLimits } from './pitchLimits.js'
 
 describe('C3 async asset / resource ownership 的编译期负向证明', () => {
   it('assetProvider.json：untrusted JSON 必须显式声明期望形状才能读字段', async () => {
-    // mock 后 json() reject → catch 返回 null；编译期形状仍由泛型参数锁定
     const doc = await assetProvider.json<{ configs?: Array<{ pitch_limits?: { max?: number } | null }> | null }>(
       '/tank/1.json',
     ).catch(() => null)
@@ -42,7 +36,6 @@ describe('C3 async asset / resource ownership 的编译期负向证明', () => {
   })
 
   it('pitchLimits：资产包 tank JSON 的期望形状在调用点声明（缺 pitch_limits 判空跳过）', async () => {
-    // json mock reject → buildPitchLimits 的 per-tank catch 独立 fail-soft → 空表
     const limits = await buildPitchLimits([{ nickname: 'a', tank_id: 1 }])
     expect(limits).toEqual({})
     // @ts-expect-error — negative compile proof: 名册条目缺 tank_id 编译失败（WASM 解码按车型查极限）

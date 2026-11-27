@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-// 统一回放面板：2D/3D 两个 pane 都挂载、面板内切换；事件流默认隐藏（v-show 保持挂载），
-// 由头部「显示事件信息」开关恢复；`--pb-viewer-reserve` 只预留面板头部。
 import { defineComponent, h, nextTick, onMounted } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
@@ -53,7 +51,6 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('ReplayViewerPanel 统一回放面板', () => {
   it('2D/3D 两个 pane 都挂载，仅 v-show 切换；模式切换只发事件（路由归工作台）', async () => {
     const wrapper = mountPanel({ mode: '2d' })
-    // 两个 slot 内容始终存在（切模式不销毁、不重新解析）
     expect(wrapper.find('[data-test="pane-2d"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pane-3d"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="ws-playback"]').element.style.display).toBe('')
@@ -66,7 +63,6 @@ describe('ReplayViewerPanel 统一回放面板', () => {
 
     await wrapper.get('[data-testid="viewer-mode-2d"]').trigger('click')
     expect(wrapper.emitted('update:mode')?.at(-1)).toEqual(['2d'])
-    // 受控组件：父级回写 mode 后才轮到另一侧再发事件
     await wrapper.setProps({ mode: '2d' })
     await wrapper.get('[data-testid="viewer-mode-3d"]').trigger('click')
     expect(wrapper.emitted('update:mode')?.at(-1)).toEqual(['3d'])
@@ -78,7 +74,6 @@ describe('ReplayViewerPanel 统一回放面板', () => {
     expect(eventsButton(wrapper).attributes('role')).toBe('switch')
     expect(eventsButton(wrapper).attributes('aria-checked')).toBe('false')
     expect(section.element.style.display).toBe('none')
-    // 仅 v-show：事件流 slot 仍挂载
     expect(wrapper.get('.viewer-events-body').find('[data-test="pane-events"]').exists()).toBe(true)
 
     await eventsButton(wrapper).trigger('click')
@@ -109,13 +104,11 @@ describe('ReplayViewerPanel 统一回放面板', () => {
     expect(eventsButton(wrapper).attributes('aria-checked')).toBe('true')
     expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('')
 
-    // 用户主动关闭：父级仍为 true，不得被 watch 自动重开
     await eventsButton(wrapper).trigger('click')
     expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('none')
     await wrapper.setProps({ eventsFocused: true })
     expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('none')
 
-    // 下一次真实的 false→true 再打开
     await wrapper.setProps({ eventsFocused: false })
     await wrapper.setProps({ eventsFocused: true })
     expect(wrapper.get('[data-testid="ws-events"]').element.style.display).toBe('')
@@ -163,10 +156,8 @@ describe('ReplayViewerPanel 统一回放面板', () => {
     const root = wrapper.get('[data-testid="ws-replay-viewer"]').element
     const reserve = root.style.getPropertyValue('--pb-viewer-reserve')
     expect(reserve).toMatch(/^\d+px$/)
-    // 事件流开启且高 200px，但不进入预算：reserve 只有面板头
     expect(parseFloat(reserve)).toBeLessThan(120)
 
-    // 窄屏不扣 pane 高度（保持现有地图最小尺寸），reserve 归零
     form.isPhone.value = true
     await nextTick()
     await nextTick()

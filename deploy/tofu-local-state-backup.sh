@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Back up the host's fixed local OpenTofu states without exposing state contents.
 set -Eeuo pipefail
 umask 077
 
@@ -22,10 +21,6 @@ case "${1:-}" in
     bootstrap_markers=(grafana-tofu-state/bootstrap-complete)
     ;;
   komodo)
-    # The Komodo controller state is its own owner root under /opt/komodo, so it
-    # is backed up as a third target instead of being pretended into /opt/wotb.
-    # Taking /opt/komodo/.deploy.lock means a controller mutation and its backup
-    # can never overlap.
     host_root=/opt/komodo
     state_paths=(tofu-state/terraform.tfstate)
     bootstrap_markers=(tofu-state/bootstrap-complete)

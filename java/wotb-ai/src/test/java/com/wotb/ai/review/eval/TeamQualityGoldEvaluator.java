@@ -7,10 +7,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/**
- * Cheap report-only gold preflight. It reports lexical hits/misses for the
- * human benchmark report; it is not a semantic tactical judge.
- */
 public final class TeamQualityGoldEvaluator {
 
     private static final Map<String, Pattern> NOTICE_RULES = rules(

@@ -1,4 +1,3 @@
-/** Deterministic parse boundary for the browser shots → armor handoff. */
 import * as real from '/src/api/agent-replay-facets.ts'
 export * from '/src/api/agent-replay-facets.ts'
 

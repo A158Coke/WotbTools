@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# 提取 GitHub workflow 的内联 bash `run: |` 块，逐块跑 bash -n 语法门禁。
-# 背景：2026-10-06 android-release.yml 的 origin_sha 引号失配（bash -n 可查）未被
-# 任何门禁拦截——CI 只检查既有 .sh 文件，workflow 内联块是盲区，真实 stage 才炸。
-# `${{ ... }}` GitHub 表达式在 bash 里非语法（解析期即 bad substitution），替换为
-# 占位符后再检查；`name: |` 等其它块标量不检查。
 set -euo pipefail
 for cmd in python3 bash; do command -v "$cmd" >/dev/null || { echo "missing command: $cmd" >&2; exit 1; }; done
 

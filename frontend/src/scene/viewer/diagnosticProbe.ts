@@ -1,6 +1,3 @@
-// 诊断探针（#820 Agent A 出仓）：window.__armorRicochet 全量只读诊断面 +
-// readArmorPixels 逐像素回读。原 tankViewer.js 闭包内对应块整体平移；
-// 契约（方法名/返回形状）保持不变——浏览器门禁与控制台对拍依赖它。
 import * as THREE from 'three'
 import { simulateContinuation, raycastPackAll, packPoseChanged, RC } from '../armorCollisionPack.js'
 import { shellTypeOf, hasGunMask } from './armorPlateModel.js'
@@ -86,7 +83,6 @@ export interface DiagnosticProbeDeps {
     aimPartAt: (clientX: number, clientY: number) => 'gun' | 'turret' | null
     getCameraMotion: () => ProbeCameraMotion
     getRcLastClick: () => ProbePointerClick | null
-    /** 最近一次相机预设的炮轴基准点（pose.target；未应用过预设时 null）。 */
     getLastPresetTarget?: () => { x: number; y: number; z: number } | null
     setRcLastClick: (v: ProbePointerClick | null) => void
 }
@@ -124,8 +120,6 @@ const probe = {
                     poseMatchesGrid: !!pack && !packPoseChanged(pack, hm.getRicochetPoseSnapshot()),
                     reason: hm.getRicochetPackReason(),
                     judgments: jc.getJudgmentCount(),
-                    // 相机/视图诊断：门禁据此断言 dolly 补偿门控（world 总览——命中/脱靶
-                    // 同规则——必须保持原生 50°；静态单车检视才允许补偿）
                     view: {
                         fov: getCamera().fov,
                         near: getCamera().near,
@@ -141,7 +135,6 @@ const probe = {
                 const sh = getSelectedShell();
                 if (!pack || !sh) return null;
                 const pen = (sh.penetration || 0) * shellPenMul(sh);
-                // 入参容错：控制台/CDP 传普通 {x,y,z}（结构化克隆不带 THREE 类）
                 const p = bouncePos.isVector3 ? (bouncePos as THREE.Vector3) : new THREE.Vector3(bouncePos.x, bouncePos.y, bouncePos.z);
                 const d = reflDir.isVector3 ? (reflDir as THREE.Vector3) : new THREE.Vector3(reflDir.x, reflDir.y, reflDir.z);
                 return simulateContinuation(pack, p, d, {
@@ -152,7 +145,6 @@ const probe = {
                     clipPlane: hm.getGunClipPlane(),
                 });
             },
-            // GLSL 侧 uniform 当前值（布局对照用）
             __uniforms() {
                 const grid = hm.getRicochetGrid();
                 return {
@@ -162,9 +154,6 @@ const probe = {
                     clipEnabled: hm.rcUniforms.rcClipEnabled.value, clipPlane: (hm.rcUniforms.rcClipPlane.value as THREE.Vector4).toArray(),
                 };
             },
-            // CPU 侧逐像素预测类通道（差分测试参照）：RT 像素坐标（左下原点）→
-            // 相机射线 → 首命中为主装甲且满足跳弹判据 → 反射 + JS 参考续飞 → cls。
-            // skip=true 的像素（首命中非主装甲/不跳弹/无命中）不在比对范围。
             predict(px: number, py: number) {
                 hm.prepareRicochetFrame();
                 hm.updatePenetrationDistanceUniforms();
@@ -200,7 +189,7 @@ const probe = {
                 const th = first.thickness * thickMul;
                 const angle = Math.acos(Math.min(Math.abs(first.normal.dot(dir)), 1));
                 const rico = (sh.ricochet != null ? sh.ricochet : 70) * Math.PI / 180;
-                const threeCal = caliber > th * 3.0;   // underSpaced=false（首命中即主装甲）
+                const threeCal = caliber > th * 3.0;
                 if (threeCal || angle < rico) return { skip: true, why: threeCal ? 'threeCal' : 'angle<' + (rico * 180 / Math.PI).toFixed(0), angleDeg: +(angle * 180 / Math.PI).toFixed(1), camHits };
                 const r = dir.clone().sub(first.normal.clone().multiplyScalar(2 * dir.dot(first.normal))).normalize();
                 const sim = simulateContinuation(pack, first.point, r, {
@@ -222,11 +211,7 @@ const probe = {
                     },
                 };
             },
-            // 诊断：部位判定探针（client 坐标 → 'gun'|'turret'|null）
             __aimPart(clientX: number, clientY: number) { return aimPartAt(clientX, clientY); },
-            // 诊断：瞄准交互状态（浏览器门禁断言「画布外释放不卡死相机」「双指缩放不被
-            // 瞄准吃掉」用；cameraDistance = 相机到轨道中心距离，pinch dolly 的可观测面；
-            // session = 指针会话内部态，失败时能直接看出是"会话没开"还是"会话没清"）
             aimingState() {
                 const controls = getControls();
                 return {
@@ -235,14 +220,11 @@ const probe = {
                     controlsEnabled: controls ? controls.enabled : null,
                     cameraDistance: (controls && controls.target)
                         ? +getCamera().position.distanceTo(controls.target).toFixed(4) : null,
-                    // 视图静止度（门禁按像素采样部位前必须等它稳定，见 trackCameraMotion）
                     cameraSettledMs: getCameraMotion().cameraMovedAt ? Math.round(performance.now() - getCameraMotion().cameraMovedAt) : 0,
                     frameIntervalMs: Math.round(getCameraMotion().frameIntervalMs),
                     session: getAimSession().session,
                 };
             },
-            // 诊断：炮塔/炮管 rig 的实际姿态（门禁验证“模型真的动了”，不只读 UI 角度；
-            // 无炮塔车辆的 turret 必须为 null、guns 非空——固定战斗室回归）。
             rigState() {
                 const turret = rig.getTurretNode();
                 const pivotTurret = rig.getArmorPivotTurret();
@@ -266,13 +248,9 @@ const probe = {
                         turret: pivotTurret ? pivotTurret.toArray() : null,
                         gun: pivotGun ? pivotGun.toArray() : null,
                     },
-                    // 最近一次相机预设的炮轴基准点（pose.target）：门禁量"炮管指向镜头"
-                    // 用它作基准——armorPivots 的模型系常量枢轴在带 initial_turret_rotation
-                    // 的车上与 pose 时的真实炮线枢轴差一个枪架视差（Minotauro 实测 0.019°）。
                     presetTarget: getLastPresetTarget?.() ?? null,
                 };
             },
-            // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
             __clones() {
                 const primaryScene = hm.getPrimaryArmorScene();
                 if (!primaryScene) return null;
@@ -286,7 +264,6 @@ const probe = {
                 });
                 return out;
             },
-            // 诊断：材质实际编译的着色器源码片段（版本核对）
             __shaderPeek() {
                 let m: THREE.Material | null = null;
                 const primaryScene = hm.getPrimaryArmorScene();
@@ -305,7 +282,6 @@ const probe = {
                     tail: src.slice(-160),
                 };
             },
-            // 诊断：网格原始数据（页面内 JS DDA 镜像对照用；引用直通，勿序列化）
             __gridDebug() {
                 const grid = hm.getRicochetGrid();
                 return grid
@@ -313,7 +289,6 @@ const probe = {
                         cellsData: grid.cellsData, entriesData: grid.entriesData, worldTrisData: grid.worldTrisData }
                     : null;
             },
-            // 诊断：当前判定口径（弹参 + 装备系数）
             shell() {
                 const sh = getSelectedShell();
                 if (!sh) return null;
@@ -324,7 +299,6 @@ const probe = {
                     remIn: (sh.penetration || 0) * penMul * RC.RICO_REMAIN_MUL,
                 };
             },
-            // 诊断：点击链同款求交（含可见性/configHidden 标注）
             __raytrace(px: number, py: number) {
                 const c = getRenderer().domElement;
                 const rect = c.getBoundingClientRect();
@@ -353,7 +327,6 @@ const probe = {
                     };
                 });
             },
-            // 最后一次点击的对照：真实点击链结果（DOM 文本）vs CPU 逐像素预测
             probe() {
                 const lastClick = getRcLastClick();
                 if (!lastClick) return { error: '还没有点击记录：先在装甲上点一下目标位置' };
@@ -369,7 +342,6 @@ const probe = {
                     state: window.__armorRicochet ? window.__armorRicochet.info() : null,
                 };
             },
-            // 调试：各打包单元的世界包围盒（定位异常矩阵用）
             units() {
                 const pack = hm.getRicochetPack();
                 if (!pack) return null;
@@ -383,7 +355,6 @@ const probe = {
                 });
             },
         };
-    // 差分对拍钩子：挂载点与契约保持拆分前一致（window 全局，浏览器门禁消费）
     window.__armorRicochet = probe;
     return probe;
 }

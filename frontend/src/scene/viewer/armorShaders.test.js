@@ -2,9 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createArmorShaderContext, createDepthStencilTexture } from './armorShaders.ts'
 
-// 评审 P1：穿透材质族的运行态（分辨率/跳弹 uniforms/占位纹理）必须**每个 viewer 一份**。
-// 拆分前它们位于 initTankViewer 闭包；出仓时不得提升为模块单例——两个 viewer 生命周期
-// 重叠时，A 的更新/重建/清理会直接改到 B 正在使用的 uniforms。
 describe('armorShaders per-viewer context（评审 P1）', () => {
   it('两个 context 的 uniforms / 占位纹理互不共享', () => {
     const a = createArmorShaderContext()
@@ -43,12 +40,10 @@ describe('armorShaders per-viewer context（评审 P1）', () => {
     a.dispose()
     expect(spy).toHaveBeenCalledTimes(1)
     expect(tb.image).toBeTruthy()
-    expect(a.emptySpacedTexture()).not.toBe(ta)   // 再取会新建，不复用已释放对象
+    expect(a.emptySpacedTexture()).not.toBe(ta)
   })
 })
 
-// 厚度通道 RT 的深度纹理工厂（review P1，2026-11-06）：首建与 resize 重建必须同源，
-// 否则重建退回 DepthFormat → stencil 附件消失 → 同板去重静默失效。
 describe('createDepthStencilTexture（厚度通道深度纹理）', () => {
   it('返回 DepthStencilFormat + UnsignedInt248Type 的 DepthTexture', () => {
     const tex = createDepthStencilTexture(320, 180)

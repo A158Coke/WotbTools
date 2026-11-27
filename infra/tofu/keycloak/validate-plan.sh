@@ -61,30 +61,7 @@ if [[ "$identity_provider_deletion" == true ]]; then
   exit 1
 fi
 
-# No realm-role deletion rule lives here on purpose. Role membership is desired
-# state, so removing a role from `roles.tf` is a reviewed change that the plan
-# itself must expose (and is never exempted per role name). The rules above and
-# below own identity destruction (realm, clients, identity providers) and
-# unexpected mass replacement instead.
 
-# --- Android client contract, evaluated from the plan JSON only ---------------
-# `keycloak_openid_client.android` is a NEW resource: the first production plan
-# has no prior state for it, so its change is create-only and must pass. The gate
-# fails on delete or replace (["delete"], ["delete","create"], ["create","delete"]):
-# recreating the client would rotate its internal Keycloak id and orphan every
-# Android session and its mappers.
-# Create-vs-no-op asymmetry, stated explicitly because it is the whole point:
-# `resource_changes` is NOT a diff-only list - it carries `["no-op"]` entries too
-# (see `deploy/tx/keycloak-tofu.sh`, whose green second plan is `all(... | all(. == "no-op"))`,
-# and the `boost-role-retirement` fixture in scripts/ci/test-keycloak-tofu-contract.sh).
-# So a settled Android client legitimately appears here as a no-op with its full
-# `change.after`, and this gate MUST stay green for that plan: the frozen field
-# checks below therefore apply to the resource's desired state whatever the action
-# is (create / update / no-op all carry `change.after`), and only delete and
-# replace are rejected. Never require a create or a non-no-op action here: doing so
-# would fail the post-apply second plan and block every future Keycloak deploy.
-# An absent android client is equally fine - a plan that does not touch the client
-# (an unrelated change, a first plan before the resource exists) stays green.
 android_client_changes="$(jq -r '
   [.resource_changes[]? | select(.address == "keycloak_openid_client.android")] | length
 ' <<< "$plan_json")" || {
@@ -147,18 +124,6 @@ else
   fi
 fi
 
-# Reuse the same `local.protocol_mappers` map as the web client, so the five
-# claim names are the android client's protocol mappers floor: losing one drops a
-# claim the Android app reads. Same create-vs-no-op asymmetry as the client rule
-# above: an all-no-op plan still lists every mapper with its full `change.after`,
-# so the presence loop passes there, while a delete or replace of any mapper fails
-# - hence the loop only requires that the mapper is planned at all (`no-op`
-# included) and that its entry is not a deletion. The rule is plan-shaped for the
-# same reason as the client contract: it is evaluated only when the plan actually
-# touches the Android surface, so a no-op plan, the QQ rotation plan, or any plan
-# that does not carry the Android client stays green. Only presence is pinned per
-# name (`startswith` and the mapper's own `name`), never the full address, so no
-# for_each key syntax is baked into this gate.
 if [ "$android_client_changes" -gt 0 ] || [ "$android_mapper_changes" -gt 0 ]; then
   android_mapper_violations="$(jq -r '
     [.resource_changes[]? | select((.address | startswith("keycloak_openid_user_attribute_protocol_mapper.wotbtools_android")))]
@@ -192,14 +157,6 @@ if [ "$android_client_changes" -gt 0 ] || [ "$android_mapper_changes" -gt 0 ]; t
   done
 fi
 
-# --- controlled security event logging, evaluated from the plan JSON only -----
-# 合规开关不能只在仓库文本里正确：plan 是「生产 desired state」的权威视图，所以把
-# events / admin events 关掉、把 admin event details 打开、摘掉 jboss-logging listener、
-# 或者直接删掉这份声明，都必须在 apply 之前被拦下。
-# 与 Android client 规则同样的 create-vs-no-op 不对称：`resource_changes` 不是 diff-only
-# 列表，已落定的资源会以 `["no-op"]` 携带完整 `change.after` 出现，所以字段检查对
-# create / update / no-op 一律适用，只有 delete / replace 被拒绝；plan 完全不碰这份资源
-# 时（例如资源尚不存在的首个 plan）保持绿色。
 realm_events_changes="$(jq -r '
   [.resource_changes[]? | select(.address == "keycloak_realm_events.wotbtools")] | length
 ' <<< "$plan_json")" || {

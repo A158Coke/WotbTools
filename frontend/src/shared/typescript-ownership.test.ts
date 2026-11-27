@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import { stylelintBaselineViolations } from '../../scripts/check-typescript-baseline.mjs'
 import legacy from '../../typescript.legacy.json'
 
-// typescript.legacy.json 必须等于当前源码；只减不增由 scripts/check-typescript-baseline.mjs 在 CI 中比较 base 与 head。
 const FRONTEND = fileURLToPath(new URL('../../', import.meta.url))
 const SRC = join(FRONTEND, 'src')
 
@@ -26,7 +25,6 @@ const isTest = (path: string) => /\.test\./.test(path) || path.startsWith('src/t
 const production = files.filter(file => !isTest(file.path))
 const typedProduction = production.filter(file => file.path.endsWith('.ts') || /<script\b[^>]*\blang="ts"/i.test(file.source))
 
-// 按 AST 计数：覆盖全部 any 语法，一行多处都算，注释与字符串不算。SFC 只解析 <script>。
 function escapeHatches(path: string, source: string) {
   const code = path.endsWith('.vue')
     ? [...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:[ \t\n\r\f/][^>]*)?>/gi)].map(match => match[1]).join('\n')
@@ -92,8 +90,6 @@ describe('TypeScript migration baseline', () => {
 })
 
 describe('stylelint legacy baseline', () => {
-  // 这两个用例锁定 check-typescript-baseline.mjs 的 stylelintBaselineViolations：
-  // 名单只减不增——新增豁免必须红，删除与持平必须绿（故意违规的合成输入，不依赖仓库现状）。
   it('rejects a path added to the legacy list', () => {
     const base = { files: ['src/App.vue'] }
     const head = { files: ['src/App.vue', 'src/components/NewThing.vue'] }

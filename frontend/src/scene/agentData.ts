@@ -1,12 +1,3 @@
-// Agent 坦克/装甲/射击数据源（评审 P0-3：**client-only**，纯静态资产平面）。
-//
-// WotBTools Playback 拓扑无 Agent 自托管服务端——tank 数据/GLB/封面/名册全部来自
-// `?assets=` 资产平面（dump-tank-data 物化的 tank/{id}.json 与 /api/tank/{id} 同一
-// 形状；打包器 data/tank_cache.json；tank_images/{id}.webp），经 assetProvider 访问。
-// 击穿判定为 penetration.js 客户端移植（上游 Rust calculate 同源单测）。
-// 射击复现数据：本地 WASM parseShotReplays 产出，经 localStorage/sessionStorage
-// 在"射击复现表 → 3D 查看器（新窗口）"间交接——无 /api/replay_shot 回退。
-// 资产基址未配置时显式抛错（错误信息指导配置），不做静默降级。
 import { assetProvider } from './assetProvider.js'
 
 export { assetProvider }
@@ -25,19 +16,11 @@ export type ShotViewerInput = {
   is_author?: boolean | null
 }
 
-// ---------- per-tank 数据（dump-tank-data 物化 → /api/tank/{id} 同形状） ----------
 
-// 同坦克 JSON 的 in-flight 合并（key = tankId，**settle 即清槽**）：同车检视一次会
-// 并发触发 loadTarget / loadShooter / fetchShells / fetchShotTankData / 侧配置卡
-// ≈5 路同一份 MB 级 JSON 请求，合并为 1。只在飞行中去重——settle 后删除，顺序重选
-// 按契约重发请求（browser gate browser-armor-shot-readiness 锁定逐选择请求语义，
-// 含失败/重试路径），失败也不缓存（重试必发新请求）。
 const tankDataInflight = new Map()
 
-/** 只把“该资产包确实没有 module catalog”识别为可兼容降级；500/网络/解析错误必须上抛。 */
 function isMissingTankModules(error: unknown, nation: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
-  // 用分段拼接而非字面路径，避免触发 data-version-wiring 的“资产路径必须交给 provider”守卫。
   const modulePath = ['', 'research', 'modules', `${nation}.json`].join('/')
   return typeof nation === 'string'
     && message.includes(modulePath)
@@ -55,14 +38,10 @@ function fetchRawTankData(id: TankId) {
   return req
 }
 
-/** 显式升级选择只作用于这次读取；原始请求缓存仍按车型合并，不污染回放和另一侧。 */
 export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
   const raw = fetchRawTankData(id)
-  // top 与 custom 都走投影（custom = 部分研发，abilities 携带已研发表）。stock 与
-  // 无键保持原始数据；把 custom 当 stock 会静默丢掉用户已研发节点的效果。
   if (options.upgrade !== 'top' && options.upgrade !== 'custom') return raw
   return raw.then(async (detail: Record<string, unknown>) => {
-    // 普通车辆/旧链接保持原来的数据与请求路径。
     if (Number(detail?.tier) !== 11) return detail
     const [{ loadTankModules }, { findTankModules }, { projectTankUpgrades }] = await Promise.all([
       import('../utils/researchCatalog.js'),
@@ -73,12 +52,10 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
     try {
       modules = findTankModules(await loadTankModules(detail.nation), Number(id))
     } catch (error) {
-      // 只有 404 缺目录才兼容旧包；500/网络/JSON 解析失败继续走失败/重试路径。
       if (!isMissingTankModules(error, detail.nation)) throw error
       return detail
     }
     const projected = projectTankUpgrades(detail, modules, options.upgrade, options.abilities)
-    // 目录存在但该车没有 upgradeProgression：同样保持原始数据。
     if (!projected.selection.available) return detail
     if (!projected.selection.supported) {
       throw new Error(`XI upgrade data unavailable: ${projected.selection.unsupported.join(', ') || id}`)
@@ -87,10 +64,6 @@ export function fetchTankData(id: TankId, options: TankUpgradeOptions = {}) {
   })
 }
 
-/** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：
- *  与装甲查看器同源取资产包 tank/{id}.json，按射击链所需字段投影——内嵌快照已退役
- *  （2026-10-15，随上游 shellKinds 一并改为 COS 获取，数据随包更新不再依赖前端发版）。
- *  未知/超测车型由 assetProvider 抛 HTTP 404，调用方按各自降级语义处理。 */
 export async function fetchShotTankData(id: TankId) {
   const data = await fetchTankData(id)
   const configs = (Array.isArray(data?.configs) ? data.configs : []).map((config: Record<string, unknown>): ShotTankConfig => {
@@ -103,11 +76,9 @@ export async function fetchShotTankData(id: TankId) {
   return { configs }
 }
 
-// ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
 
 let tankCachePromise: ReturnType<typeof assetProvider.json> | null = null
 
-/** 静态 tank_cache.json（一次装载；坦克百科与 3D 选车共用同一原始缓存） */
 function fetchTankCacheStatic() {
   if (!tankCachePromise) {
     tankCachePromise = assetProvider.json('/data/tank_cache.json')
@@ -119,15 +90,10 @@ function fetchTankCacheStatic() {
   return tankCachePromise
 }
 
-/**
- * 坦克百科全量卡（含 armor 六面/shells/hp/机动/视野/俯仰）：静态 tank_cache.json 原样
- *（{id: info} 映射，字段透传）。
- */
 export function fetchTankEncyclopedia() {
   return fetchTankCacheStatic()
 }
 
-// ---------- 封面图（tank_images/{id}.webp） ----------
 
 export function tankImageUrl(id: TankId) {
   return assetProvider.url(`/tank_images/${id}.webp`)
@@ -135,11 +101,6 @@ export function tankImageUrl(id: TankId) {
 
 let tankIconCropsPromise: ReturnType<typeof assetProvider.json> | null = null
 
-/**
- * 逐车封面图内容框（`tank_images/crops.json`，alpha>0 紧裁，canvas 像素坐标）。
- * 客户端图标是原始画布（右侧/底部留白近半），展示层据此缩放定位以对齐旧紧裁口径
- * （换算见 utils/tankIconCrop.js）。资产源缺该文件时返回 null——展示回退原始 contain。
- */
 export function loadTankIconCrops() {
   if (!tankIconCropsPromise) {
     tankIconCropsPromise = assetProvider
@@ -150,22 +111,14 @@ export function loadTankIconCrops() {
   return tankIconCropsPromise
 }
 
-// ---------- 弹表（tank JSON configs 客户端构建） ----------
 
-/**
- * 服务端 /api/shells/{id} 的客户端等价：顶级配置（configs 末位 = 默认顶级变体）的
- * 弹链 + caliber + 全局弹种 id（shell_global_ids 与 configs[].shells 同序）。
- */
 export async function fetchShells(id: TankId, options: TankUpgradeOptions = {}) {
   const data = await fetchTankData(id, options)
   const cfgs = data.configs || []
   const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
   const shells = (cfg && cfg.shells ? cfg.shells : data.shells || []).map((s: Record<string, unknown>, i: number) => ({
-    // 判定字段（type_id / normalization / ricochet / penetration_far / caliber）必须原样保留：
-    // 这里曾只挑显示字段，导致走该回退路径的弹体丢失转正角/弹种 id，判定只能 fail-closed。
     ...s,
     type: s.type,
-    // 全局弹种 id（与回放 shell_id 同域）：射击复现按 shell_id 反查槽位弹种用
     global_id: (cfg && cfg.shell_global_ids && cfg.shell_global_ids[i]) ?? null,
     name: s.name || '',
     penetration: s.penetration,
@@ -173,19 +126,15 @@ export async function fetchShells(id: TankId, options: TankUpgradeOptions = {}) 
     module_damage: s.module_damage,
     explosion_radius: s.explosion_radius,
   }))
-  // 口径缺失返回 0（调用方 fail-closed），不再静默用 120mm。
   const caliber = (cfg && Number.isFinite(cfg.caliber) && cfg.caliber > 0)
     ? cfg.caliber
     : ((Number.isFinite(data.caliber) && data.caliber > 0) ? data.caliber : 0)
   return { caliber, shells }
 }
 
-// ---------- 击穿判定（客户端移植；wire 形状与 /api/penetrate 响应一致） ----------
 
-/** 判定命中输入（viewer → penetration.calculate；字段与 /api/penetrate hits 同形）。 */
 export interface PenetrationHit {
   section: string
-  /** 客户端 raycast 可能给出字符串 plate id（与既有运行时一致）。 */
   plate_id: number | string
   thickness: number
   normal: number[]
@@ -197,7 +146,6 @@ export interface PenetrationHit {
   contact_part_name?: string | null
 }
 
-/** 判定请求（penetration.calculate 入参；wire 形状的单点契约）。 */
 export interface PenetrationRequest {
   shell_type: string | null
   shell_type_id?: number | null
@@ -219,7 +167,6 @@ export interface PenetrationRequest {
   hits: PenetrationHit[]
 }
 
-/** 判定层（penetration.calculate 输出的确定性/概率层；扩展字段保留给调试消费方）。 */
 export interface PenetrationLayer {
   part_name: string
   contact_part_name: string | null
@@ -236,7 +183,6 @@ export interface PenetrationLayer {
   [key: string]: unknown
 }
 
-/** HE 采样最佳样本（heSplash.sampleHeSplash 输出）。 */
 export interface HeSplashBestLayer {
   section?: string | null
   armor?: number | null
@@ -252,7 +198,6 @@ export interface HeSplashBest {
   layers: HeSplashBestLayer[]
 }
 
-/** HE 溅射采样数据（判定结果 he 字段；unavailable/reason 表示采样器跑不了）。 */
 export interface HeSplashData {
   splash_min: number
   splash_max: number
@@ -269,7 +214,6 @@ export interface HeSplashData {
   [key: string]: unknown
 }
 
-/** 判定结果（penetration.calculate 输出；wire 形状与 /api/penetrate 响应一致）。 */
 export interface PenetrationResult {
   result: string
   blocked_no_primary: boolean
@@ -290,12 +234,10 @@ export async function judgePenetration(req: PenetrationRequest): Promise<Penetra
   return result
 }
 
-// ---------- 射击复现数据交接（射击复现表 → 3D 查看器新窗口；无服务端通道） ----------
 
 const SHOTS_KEY = 'wotb_agent_shots'
 const SHOTS_TTL_MS = 30 * 60 * 1000
 
-/** Both the shot list and viewer navigation must resolve the same mounted gun / shell pair. */
 export async function shotViewerQuery(shot: ShotViewerInput) {
   const shooterTank = shot.shooter_tank_id || 0
   const tank = shot.target_tank_id || shooterTank
@@ -326,18 +268,6 @@ export async function shotViewerQuery(shot: ShotViewerInput) {
   }
 }
 
-/**
- * 射击复现表把 parseShotReplays 的 shots 数组存入本地交接通道。
- * localStorage 为主（跨窗口同源共享，新开查看器窗口必定可取）；
- * sessionStorage 镜像为辅（部分环境的新窗口会继承 opener 的会话存储）。
- * 30 分钟 TTL：过期条目视同不存在，防止陈旧数据渗入后续查看。
- */
-/**
- * 服务器解码弹道长度（米）：`ball_a → via… → ball_b` 折线总长（跳弹/穿透续段逐段计入，
- * 与飞行顺序一致）。射击复现的"交战距离"以此为准（实弹飞行到命中点所走的距离，
- * 而非相机到命中点的直线距离——用户裁定 2026-10-13）。字段缺失/非法返回 0，
- * 调用方回退相机距离。
- */
 export function shotBallisticLength(shot: { ball_a?: unknown; via?: unknown; ball_b?: unknown } | null | undefined) {
   if (!shot) return 0
   const pts = [shot.ball_a, ...(Array.isArray(shot.via) ? shot.via : []), shot.ball_b] as number[][]
@@ -352,7 +282,6 @@ export function shotBallisticLength(shot: { ball_a?: unknown; via?: unknown; bal
 }
 
 export function storeShotsForViewer(shots: unknown, meta: { battleStartRaw?: number } = {}) {
-  // battleStartRaw：开战原始时钟，查看器据此把 time_s 换算成与射击分析一致的开战相对时间
   const payload = JSON.stringify({ at: Date.now(), shots, battleStartRaw: meta.battleStartRaw ?? 0 })
   try {
     localStorage.setItem(SHOTS_KEY, payload)
@@ -362,11 +291,6 @@ export function storeShotsForViewer(shots: unknown, meta: { battleStartRaw?: num
   } catch { /* 同上 */ }
 }
 
-/**
- * 查看器取射击数据（client-only：仅本地交接通道）。
- * 无交接（直接打开带 shot= 的 URL 而未经射击复现表）→ 显式报错指导入口，
- * 不静默回退任何服务端。返回形状固定 {shots:[...]}（tankViewer 消费端 d.shots || d）。
- */
 export async function fetchReplayShots() {
   for (const store of [localStorage, sessionStorage]) {
     try {

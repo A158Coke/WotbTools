@@ -6,7 +6,6 @@ import {
   createReloadStateResolver, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
-// 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
 const clip = (clock, eid, d) => ({ clock, eid, phase: PHASE_START, duration_s: d, count: null })
 const gap = (clock, eid, d, count = null) => ({ clock, eid, phase: PHASE_MAG_INTERVAL, duration_s: d, count })
 const drum = (clock, eid, d, count = null) => ({ clock, eid, phase: PHASE_DRUM_SHELL, duration_s: d, count })
@@ -48,8 +47,8 @@ describe('shared Playback reloadStateAt resolver', () => {
     const raw = telemetry({ shots: [{ shooter_eid: 9, t_fire: 11 }], reloads: [clip(10, 8, 4)] })
     const at = createReloadStateResolver(raw)
     expect(at(7, 12)).toBeNull()
-    expect(at(9, 12)).toBeNull() // firing cannot supply absent reload telemetry
-    expect(at(8, 12)).toBeNull() // even malformed enemy telemetry is gated
+    expect(at(9, 12)).toBeNull()
+    expect(at(8, 12)).toBeNull()
     expect(at(7, NaN)).toBeNull()
     expect(createReloadStateResolver({ ...telemetry(), friendlyTeam: null })(7, 12)).toBeNull()
   })
@@ -71,7 +70,6 @@ describe('shared Playback reloadStateAt resolver', () => {
       shots: [{ shooter_eid: 7, t_fire: 10 }],
     })
     const at = createReloadStateResolver(raw)
-    // 默认 N = facet burst_size（4，实际搭载配置）：f4 快照 2 + f2=6 补槽 B 在第 3 格
     expect(at(7, 15)).toEqual([
       { state: 'full', progress: 1 }, { state: 'full', progress: 1 },
       { state: 'loading', progress: 0.5 }, { state: 'locked', progress: 0 },
@@ -133,10 +131,7 @@ describe('reloadBar · 弹容 N = facet 实际搭载配置 burst_size（2026-10-
   })
 
   it('多炮坦克：弹容随实际搭载炮走——跨配置取最大/剩余弹数+1 都是被禁的错误口径', () => {
-    // T69（14625）：4 发/3 发双弹夹炮。装 3 发炮 → facet burst_size=3，
-    // 旧口径会给出「全配置最大 4」或「f4 剩余+1 推断」，均错格
     expect(magazineSizeOfVehicle({ burst_size: 3, config_idx: 1 })).toBe(3)
-    // AC Wedge（13169）：单发炮搭载 → burst_size=0，不得按未搭载的 6 发弹夹顶配画格
     expect(magazineSizeOfVehicle({ burst_size: 0, config_idx: 0 })).toBe(1)
   })
 
@@ -146,7 +141,6 @@ describe('reloadBar · 弹容 N = facet 实际搭载配置 burst_size（2026-10-
 })
 
 describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMountedConfig）', () => {
-  // T69（14625）形状：两门弹夹炮 4 发/3 发（turret 同、gun_local 不同）
   const T69_CONFIGS = [
     { turret_local: 4, gun_local: 10, burst_size: 4, hull_hp: 11500, turret_health: 100, shell_global_ids: [101, 102, 103] },
     { turret_local: 4, gun_local: 20, burst_size: 3, hull_hp: 11500, turret_health: 200, shell_global_ids: [201, 202] },
@@ -156,8 +150,7 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
   it('证据 0：comp locals 确定性对号（turret_local + gun_local）', () => {
     expect(resolveMountedConfig({ turret_local: 4, gun_local: 20 }, T69)).toBe(T69_CONFIGS[1])
     expect(resolveMountedConfig({ turret_local: 4, gun_local: 10 }, T69)).toBe(T69_CONFIGS[0])
-    // 局部 id 无命中 → 落后续证据
-    expect(resolveMountedConfig({ turret_local: 9, gun_local: 9 }, T69)).toBe(T69_CONFIGS[1]) // hp 区分
+    expect(resolveMountedConfig({ turret_local: 9, gun_local: 9 }, T69)).toBe(T69_CONFIGS[1])
   })
 
   it('精确解析只认唯一配置或 locals 命中，不走弹种/血量/顶级推断', () => {
@@ -171,14 +164,12 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
   it('证据 1：发射弹种 ⊆ 配置弹表（shell_global_ids）', () => {
     expect(resolveMountedConfig({ shell_ids: [201] }, T69)).toBe(T69_CONFIGS[1])
     expect(resolveMountedConfig({ shell_ids: [101, 103] }, T69)).toBe(T69_CONFIGS[0])
-    // 空弹表（数据不全）不以此排除：两配置都过 → 多匹配取最后一档
   })
 
   it('证据 2：max_hp vs 车体+炮塔 health（×1.125 改进耐久，±2）', () => {
-    // config1 base = 11700（boosted 13162.5→13163）；config0 base = 11600
     expect(resolveMountedConfig({ max_hp: 11700 }, T69)).toBe(T69_CONFIGS[1])
     expect(resolveMountedConfig({ max_hp: 11601 }, T69)).toBe(T69_CONFIGS[0])
-    expect(resolveMountedConfig({ max_hp: 13163 }, T69)).toBe(T69_CONFIGS[1])   // 改进耐久档
+    expect(resolveMountedConfig({ max_hp: 13163 }, T69)).toBe(T69_CONFIGS[1])
   })
 
   it('多匹配取最后一档（顶级偏好）；全无证据 → 顶级（与上游 resolve_config_index 同语义）', () => {
@@ -193,9 +184,7 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
   it('magazineSizeForVehicle：证据链命中配置的 burst_size；回退 facet burst_size；再回退 1', () => {
     expect(magazineSizeForVehicle({ turret_local: 4, gun_local: 20 }, T69)).toBe(3)
     expect(magazineSizeForVehicle({ turret_local: 4, gun_local: 10 }, T69)).toBe(4)
-    // 无证据可联表 → facet burst_size（服务器路径产物）
     expect(magazineSizeForVehicle({ burst_size: 2 }, null)).toBe(2)
-    // 都没有 → 1（不猜）
     expect(magazineSizeForVehicle({}, null)).toBe(1)
   })
 
@@ -210,9 +199,7 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
       shots: [],
       mountedConfigs: mounted,
     })
-    // facet burst_size=4（服务器未钉定时的顶级缺省），证据链修正为实际搭载的 3 发
     expect(at(7, 20)).toHaveLength(3)
-    // 无 mountedConfigs：回退 facet burst_size=4
     const atNoConfigs = createReloadStateResolver({
       friendlyTeam: 1,
       vehicles: [vehicle],
@@ -226,11 +213,11 @@ describe('reloadBar · 客户端证据链解析实际搭载配置（resolveMount
 
 describe('reloadBar · f2=1 = 剩余弹数更新（权威计数）', () => {
   it('无开火事件也能靠 f2=1 得到正确的在膛发数（实测该码 16/16 与开火同刻）', () => {
-    const ev = [ammo(33.62, 7, 5), ammo(33.81, 7, 4), ammo(39.33, 7, 2), ammo(39.52, 7, 1)]   // 6 发弹夹
+    const ev = [ammo(33.62, 7, 5), ammo(33.81, 7, 4), ammo(39.33, 7, 2), ammo(39.52, 7, 1)]
     const full = (k) => Array.from({ length: 6 }, (_, i) => (i < k ? 'full' : 'empty'))
-    expect(states(shellStatesAt(ev, [], 33.7, 6))).toEqual(full(5))   // 首条计数 5
-    expect(states(shellStatesAt(ev, [], 33.9, 6))).toEqual(full(4))   // 次条计数 4
-    expect(states(shellStatesAt(ev, [], 39.6, 6))).toEqual(full(1))   // 最后一条计数 1
+    expect(states(shellStatesAt(ev, [], 33.7, 6))).toEqual(full(5))
+    expect(states(shellStatesAt(ev, [], 33.9, 6))).toEqual(full(4))
+    expect(states(shellStatesAt(ev, [], 39.6, 6))).toEqual(full(1))
   })
 
   it('计数优先于推导（开火漏报时以协议计数为准）', () => {
@@ -256,24 +243,21 @@ describe('reloadBar · 空槽两态：弹鼓 locked(.69) vs 弹夹 used(.25)', (
 
   it('弹鼓（有 f2=6）：f2=6 补的是空槽那格；空闲时空槽 = locked', () => {
     const ev = [drum(10, 7, 5), drum(30, 7, 5)]
-    // 打一发（9s，loaded→2）→ f2=6（10~15s）补空槽：B 在第 3 格 → A|A|B
     expect(states(shellStatesAt(ev, [9], 11, 3))).toEqual(['full', 'full', 'loading'])
-    // 开火打断 f2=6 → 不结算：空闲分割，空槽 = locked(.69)
     expect(states(shellStatesAt(ev, [9, 12], 16, 3))).toEqual(['full', 'locked', 'locked'])
   })
 })
 
 describe('reloadBar · 方法 35（权威有效装填时长）驱动进度', () => {
   it('装填起点采用权威时长（与相位自带时长不同时以 35 为准）', () => {
-    const ev = [clip(10, 7, 4)]                      // 相位自带 4s
-    const dur = [{ clock: 0, eid: 7, duration_s: 8 }] // 权威 8s
-    expect(shellStatesAt(ev, [], 12, 1, dur)[0].progress).toBeCloseTo(0.25, 6)   // (12−10)/8
-    expect(shellStatesAt(ev, [], 12, 1)[0].progress).toBeCloseTo(0.5, 6)          // 无 35 时用相位 4s
+    const ev = [clip(10, 7, 4)]
+    const dur = [{ clock: 0, eid: 7, duration_s: 8 }]
+    expect(shellStatesAt(ev, [], 12, 1, dur)[0].progress).toBeCloseTo(0.25, 6)
+    expect(shellStatesAt(ev, [], 12, 1)[0].progress).toBeCloseTo(0.5, 6)
   })
   it('中途 method 35 缩短时长 → end mark 同步提前，到新 ready 立即完成', () => {
     const ev = [clip(10, 7, 8)]
     const dur = [{ clock: 0, eid: 7, duration_s: 8 }, { clock: 14, eid: 7, duration_s: 4 }]
-    // 原 ready=18；14s 时剩余 4s × (4/8)=2s → 新 ready=16。
     expect(shellStatesAt(ev, [], 15, 3, dur)[0].progress).toBeCloseTo(0.75, 6)
     expect(states(shellStatesAt(ev, [], 16, 3, dur))).toEqual(['full', 'full', 'full'])
     expect(states(shellStatesAt(ev, [], 16.5, 3, dur))).toEqual(['full', 'full', 'full'])
@@ -281,7 +265,6 @@ describe('reloadBar · 方法 35（权威有效装填时长）驱动进度', () 
   it('中途 method 35 延长时长 → 旧 ready 不得提前结算，直到新 ready 才完成', () => {
     const ev = [clip(10, 7, 8)]
     const dur = [{ clock: 0, eid: 7, duration_s: 8 }, { clock: 14, eid: 7, duration_s: 16 }]
-    // 原 ready=18；14s 时剩余 4s × (16/8)=8s → 新 ready=22。
     const mid = shellStatesAt(ev, [], 18.5, 3, dur)
     expect(states(mid)).toEqual(['loading'])
     expect(mid[0].progress).toBeCloseTo(1 - (22 - 18.5) / 16, 6)
@@ -292,15 +275,13 @@ describe('reloadBar · 方法 35（权威有效装填时长）驱动进度', () 
 describe('reloadBar · 方法 35 只作用于整夹装填（回归：小装填不得套用长装填刻度）', () => {
   it('f2=7 期间进度按相位时长走，即使存在更长的方法 35 值', () => {
     const ev = [gap(99.72, 7, 2.5, 2), clip(103.72, 7, 15.63)]
-    const dur = [{ clock: 0, eid: 7, duration_s: 15.63 }]   // 方法 35 = 长装填 15.63s
-    // t=100.97（f2=7 中点）：按 2.5s 走 → 50%（旧 bug：按 15.63s 走 → 只 8%）
+    const dur = [{ clock: 0, eid: 7, duration_s: 15.63 }]
     expect(shellStatesAt(ev, [99.62], 100.97, 3, dur)[1].progress).toBeCloseTo(0.5, 4)
-    // 同一场的 f2=3 整夹装填：仍用方法 35 的 15.63s 刻度
     expect(shellStatesAt(ev, [99.62, 103.62], 111.5, 3, dur)[0].progress).toBeCloseTo((111.5 - 103.72) / 15.63, 4)
   })
   it('f2=6（弹鼓逐发）同样只用相位时长', () => {
     const ev = [gap(39.97, 7, 2.63, 2), drum(42.56, 7, 6.56, 2)]
-    const dur = [{ clock: 0, eid: 7, duration_s: 31 }]      // 方法 35 = 整鼓时长 31s
+    const dur = [{ clock: 0, eid: 7, duration_s: 31 }]
     const st = shellStatesAt(ev, [39.86], 46.0, 3, dur)
     expect(st[2].progress).toBeCloseTo((46.0 - 42.56) / 6.56, 4)
   })
@@ -308,7 +289,7 @@ describe('reloadBar · 方法 35 只作用于整夹装填（回归：小装填�
 
 describe('reloadBar · 服务器剩余发数快照（任意相位的 f4 纠开火延迟漂移）', () => {
   it('f2=7 携带的 f4 直接覆盖推导：开火事件缺失时仍正确', () => {
-    const ev = [gap(99.72, 7, 2.5, 2)]                     // 无开火事件，服务器计数 2
+    const ev = [gap(99.72, 7, 2.5, 2)]
     expect(states(shellStatesAt(ev, [], 100.5, 3))).toEqual(['full', 'loading', 'empty'])
   })
   it('计数纠正开火推导的漂移（推导以为剩 2，服务器说 1）', () => {
@@ -331,67 +312,51 @@ describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive�
     const ev = [clip(10, 7, 4), clip(30, 7, 4)]
     expect(shellStatesAt(ev, [], 10, 1)).toEqual([{ state: 'loading', progress: 0 }])
     expect(shellStatesAt(ev, [], 12, 1)[0].progress).toBeCloseTo(0.5, 6)
-    expect(states(shellStatesAt(ev, [], 14, 1))).toEqual(['full'])          // 相位走完 = 已就绪
-    expect(states(shellStatesAt(ev, [], 5, 1))).toEqual(['full'])           // 第一条相位之前
+    expect(states(shellStatesAt(ev, [], 14, 1))).toEqual(['full'])
+    expect(states(shellStatesAt(ev, [], 5, 1))).toEqual(['full'])
   })
 
   it('弹夹整夹装填（f2=3）：期间**不分割**（一整条按进度延长），装完才分割 A|A|A', () => {
     const ev = [clip(10, 7, 4)]
     const half = shellStatesAt(ev, [], 12, 3)
-    expect(states(half)).toEqual(['loading'])          // 整夹装填 = 一根完整条（弹夹装完才能射击）
+    expect(states(half)).toEqual(['loading'])
     expect(half[0].progress).toBeCloseTo(0.5, 6)
     expect(states(shellStatesAt(ev, [], 14, 3))).toEqual(['full', 'full', 'full'])
   })
 
   it('弹夹（N=3）完整序列：A|A|A → A|B|C → A|A|C → B|C|C → A|C|C → 整条B → A|A|A', () => {
-    // 真实形态（tank 11073）：f2=7 @99.72 (2.5s)；f2=3 整夹 @103.72 (15.63s)
     const ev = [gap(99.72, 7, 2.5, 2), clip(103.72, 7, 15.63)]
-    // 开局满弹 → 分割 A|A|A
     expect(states(shellStatesAt(ev, [], 99.0, 3))).toEqual(['full', 'full', 'full'])
-    // 打第 1 发（99.62）：f2=7 推弹上膛期间 → A|B|C（B = 正推上膛那格）
     const d = shellStatesAt(ev, [99.62], 100.5, 3)
     expect(states(d)).toEqual(['full', 'loading', 'empty'])
     expect(d[1].progress).toBeCloseTo((100.5 - 99.72) / 2.5, 4)
-    // 小装填完成 → A|A|C（**不补弹**：3 发夹打掉 1 发 = 2 在膛 + 1 空）
     expect(states(shellStatesAt(ev, [99.62], 102.6, 3))).toEqual(['full', 'full', 'empty'])
-    // 打第 2 发（101.5，打断 f2=7 的结算）→ 空档：1 在膛 → A|C|C
     expect(states(shellStatesAt(ev, [99.62, 101.5], 102.0, 3))).toEqual(['full', 'empty', 'empty'])
-    // 打空第 3 发（103.6）→ f2=3 整夹装填：**一整条不分割**
     const mid = shellStatesAt(ev, [99.62, 101.5, 103.6], 111.5, 3)
     expect(states(mid)).toEqual(['loading'])
     expect(mid[0].progress).toBeCloseTo((111.5 - 103.72) / 15.63, 4)
-    // 整夹装完 → 恢复分割 A|A|A
     expect(states(shellStatesAt(ev, [99.62, 101.5, 103.6], 120.0, 3))).toEqual(['full', 'full', 'full'])
   })
 
   it('弹鼓（N=3）：打一发 A|B|C → f2=6 补空槽 A|A|B → 满 A|A|A', () => {
-    // 真实序列（tank 4481）：开火 39.86（f4=2）→ f2=7 2.63s → f2=6 6.56s（补第 3 槽）
     const ev = [gap(39.97, 7, 2.63, 2), drum(42.56, 7, 6.56, 2)]
-    // f2=7 推弹期间 → A|B|C（与弹夹同形；弹鼓的空槽档是 locked(.69)）
     expect(states(shellStatesAt(ev, [39.86], 41.0, 3))).toEqual(['full', 'loading', 'locked'])
-    // f2=6（42.56~49.12）补空槽：B 在第 3 格 → A|A|B
     const mid = shellStatesAt(ev, [39.86], 46.0, 3)
     expect(states(mid)).toEqual(['full', 'full', 'loading'])
     expect(mid[2].progress).toBeCloseTo((46.0 - 42.56) / 6.56, 6)
-    // f2=6 完成 → 该槽补回 → A|A|A
     expect(states(shellStatesAt(ev, [39.86], 49.3, 3))).toEqual(['full', 'full', 'full'])
   })
 
   it('装填被开火打断 → 不结算（那发没到位）', () => {
     const ev = [drum(10, 7, 5)]
-    // 12s 时开火打断；15s（原定结束）之后也不该把打出的那发算回来（弹鼓空槽 = locked）
     expect(states(shellStatesAt(ev, [12], 16, 3))).toEqual(['full', 'full', 'locked'])
   })
 
   it('整夹装填中途时长变更（f2=4）→ **按比例缩放剩余时间**（不是重置基准）', () => {
-    // f2=4 给的是"新生效的完整配置时长"（实测每车仅少数几档）。硬约束检验「开火不得早于就绪」：
-    // 重置基准 9/120 违例、缩放剩余 1/120，故采用后者。
-    const ev = [clip(40, 7, 8), chg(44, 7, 4)]      // 原就绪 48；44s 时改为 4s 档（比例 0.5）
-    // 剩余 (48−44)=4s × 0.5 = 2s → 新就绪 46 → t=45 时进度 = 1 − 1/4 = 0.75（重置基准只会给 0.25）
-    expect(shellStatesAt(ev, [], 45, 2).map((s) => s.progress)).toEqual([0.75])   // 不分割：单格
-    expect(shellStatesAt(ev, [], 43, 2).map((s) => s.progress)).toEqual([0.375])   // 变更前仍按原 8s 档
-    expect(shellStatesAt(ev, [], 46, 2).map((s) => s.progress)).toEqual([1, 1])   // 装完 → 恢复分割
-    // 变长方向同理：改为 16s 档（比例 2）→ 剩余 4s×2 = 8s → 新就绪 52 → t=48 进度 = 1 − 4/16 = 0.75
+    const ev = [clip(40, 7, 8), chg(44, 7, 4)]
+    expect(shellStatesAt(ev, [], 45, 2).map((s) => s.progress)).toEqual([0.75])
+    expect(shellStatesAt(ev, [], 43, 2).map((s) => s.progress)).toEqual([0.375])
+    expect(shellStatesAt(ev, [], 46, 2).map((s) => s.progress)).toEqual([1, 1])
     const ev2 = [clip(40, 7, 8), chg(44, 7, 16)]
     expect(shellStatesAt(ev2, [], 48, 2).map((s) => s.progress)).toEqual([0.75])
   })
@@ -399,7 +364,7 @@ describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive�
   it('手动重装（打掉两发后整夹重装）：静置如实显示空位；重装期间整夹锁住一起填', () => {
     const ev = [clip(10, 7, 4), clip(40, 7, 8)]
     expect(states(shellStatesAt(ev, [15, 25], 30, 3))).toEqual(['full', 'empty', 'empty'])
-    const mid = shellStatesAt(ev, [15, 25], 42, 3)     // 整夹装填期间不分割：单格按进度
+    const mid = shellStatesAt(ev, [15, 25], 42, 3)
     expect(states(mid)).toEqual(['loading'])
     expect(mid[0].progress).toBeCloseTo(0.25, 6)
     expect(states(shellStatesAt(ev, [15, 25], 50, 3))).toEqual(['full', 'full', 'full'])
@@ -422,23 +387,15 @@ describe('reloadBar · 逐发状态（对齐客户端 Full / Active / Inactive�
     expect(fillOf(shellStatesAt(ev, [], 50, 3))).toBe(1)
     expect(fillOf(shellStatesAt(ev, [15], 30, 3))).toBeCloseTo(2 / 3, 6)
     expect(fillOf(shellStatesAt(ev, [15, 25], 30, 3))).toBeCloseTo(1 / 3, 6)
-    expect(fillOf(shellStatesAt(ev, [], 12, 3))).toBeCloseTo(0.5, 6)   // 整夹一起装填：聚合 = 进度
+    expect(fillOf(shellStatesAt(ev, [], 12, 3))).toBeCloseTo(0.5, 6)
   })
 })
 
-/**
- * fake-full 回归（2026-10-02 线上故障）：**absence of evidence ≠ full ammo**。
- *
- * 症状：`reloads = 0`（错版 WASM）时旧实现 `if (!events.length) return full()`，
- * 于是每台车都画出一根**永远不动的白条**；同一份 replay 装上 v0.3.10 后
- * `reloads = 121`——即"没有遥测"与"确实满弹"曾被混为一谈。
- */
 describe('reloadBar · 无遥测不得伪造满弹（fake-full 回归）', () => {
   it('events = [] 且 fires = [] → null（不可绘制），不是满弹', () => {
     expect(hasReloadTelemetry([])).toBe(false)
     expect(shellStatesAt([], [], 100, 1)).toBeNull()
     expect(shellStatesAt([], [], 100, 3)).toBeNull()
-    // 无遥测的聚合 fill 口径（仅显示域）：fillOf(null) = 1
     expect(fillOf(null)).toBe(1)
   })
 
@@ -447,16 +404,13 @@ describe('reloadBar · 无遥测不得伪造满弹（fake-full 回归）', () =>
   })
 
   it('有真实遥测且当前确实满弹 → 仍正常显示 full（不误伤）', () => {
-    // 真实整夹装填走完 + 服务器计数确认满夹：这是"有证据的满"，必须画
     const ev = [clip(10, 7, 4), ammo(14, 7, 3)]
     expect(hasReloadTelemetry(ev)).toBe(true)
     expect(states(shellStatesAt(ev, [], 20, 3))).toEqual(['full', 'full', 'full'])
-    // 单发车同理：相位走完 = 已就绪
     expect(states(shellStatesAt([clip(10, 7, 4)], [], 14, 1))).toEqual(['full'])
   })
 
   it('只有敌方车没有遥测（本方全队广播）→ 不画；敌方永远拿不到 full 条', () => {
-    // 敌方 = producer 不广播 → events 为空 → null（渲染侧 friendly 门禁也会跳过）
     expect(shellStatesAt([], [5, 15], 60, 3)).toBeNull()
   })
 

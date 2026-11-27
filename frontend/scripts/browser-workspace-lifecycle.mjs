@@ -8,10 +8,8 @@ const LIFECYCLE_SCENARIOS = [
   { name: 'parse-lifecycle-a-clear-b-740x360-coarse', width: 740, height: 360, touch: true },
 ]
 
-/** 在 fixture server 上传入 main world 的 Worker stub 入口（`.mjs` 不是应用源码） */
 const PARSE_WORKER_STUB_URL = '/scripts/browser-fixtures/playback-parse-worker-stub.mjs'
 
-/** 页面内辅助（main world）：真实 File 选择 */
 const PARSE_LIFECYCLE_BRIDGE = `(() => {
   window.__pbSelect = (name, bytes) => {
     const input = document.querySelector('[data-testid="select-files-input"]')
@@ -25,7 +23,6 @@ const PARSE_LIFECYCLE_BRIDGE = `(() => {
   return true
 })()`
 
-/** 打开回放列表并返回第一行移除按钮的命中中心（含按钮盒，供事后证明真实 click 的落点）。 */
 async function openCollectionRemove(page, scenario) {
   const trigger = await page.waitForValue(clickCenterExpression('[data-testid="collection-trigger"]'), Boolean, { label: 'collection trigger' })
   await page.tap({ ...trigger, touch: scenario.touch })
@@ -46,7 +43,6 @@ async function confirmCollectionRemove(page, scenario) {
   await page.tap({ ...confirm, touch: scenario.touch })
 }
 
-/** 可点击中心点（hit-test 通过才返回；与其它场景同一口径） */
 function clickCenterExpression(selector) {
   return `(() => {
     const element = document.querySelector(${JSON.stringify(selector)})
@@ -60,7 +56,6 @@ function clickCenterExpression(selector) {
   })()`
 }
 
-/** fixture Worker 状态（页面内）：请求 id / terminate 次数 / 迟到回包无人认领数 */
 const PARSE_WORKER_STATE = `(() => {
   const fixture = window.__pbWorkerFixture
   const workers = fixture ? fixture.workers : []
@@ -76,7 +71,6 @@ const PARSE_WORKER_STATE = `(() => {
   }
 })()`
 
-/** 放行全部已登记请求 + 清零「无人认领」计数（之后新增的条目 = 本次放行里的迟到回包） */
 const RELEASE_WORKER_RESPONSES = `(() => {
   const fixture = window.__pbWorkerFixture
   for (const worker of fixture.workers) { worker.unclaimed.length = 0; worker.releaseResponses() }
@@ -95,7 +89,6 @@ async function runParseLifecycleScenario(env, scenario) {
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="3d"]'), { label: 'capability tabs' })
   await page.evaluate(PARSE_LIFECYCLE_BRIDGE)
 
-  // —— A：选文件 → 3D 能力页（惰性 chunk 挂载）→ 注入闸门 Worker → 真实点击「开始」 ——
   await page.evaluate('window.__pbSelect("lifecycle-a.wotbreplay", [1, 2, 3, 4])')
   const tabCenter = await page.evaluate(clickCenterExpression('[data-testid="ws-tab"][data-cap="3d"]'))
   check(failures, !!tabCenter, '3D capability tab not hit-testable')
@@ -107,7 +100,6 @@ async function runParseLifecycleScenario(env, scenario) {
   await page.tap({ ...tabCenter, touch: scenario.touch })
   await page.waitFor(() => !!document.querySelector('.pb-root'), { label: '3D pane root' })
 
-  // 闸门 Worker 必须在**任何解析请求之前**注入：3D chunk（含 replaySource）此时已装载
   const injected = await page.evaluate(`(async () => {
     const stub = await import(${JSON.stringify(PARSE_WORKER_STUB_URL)})
     const source = window.__pbReplaySource
@@ -126,8 +118,6 @@ async function runParseLifecycleScenario(env, scenario) {
   }
   await page.tap({ ...startA, touch: scenario.touch })
 
-  // A 必须真的停在 in-flight（闸门 Worker 不回包）：请求已到 Worker，且内核仍在 loading、
-  // 既没有 err 也没有 hasData —— 这正是线上「A 正在解析」的那一刻。
   const inFlight = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.requests >= 1, {
       timeout: 15_000,
@@ -140,7 +130,6 @@ async function runParseLifecycleScenario(env, scenario) {
   check(failures, inFlight?.paneStore?.err === '' && inFlight?.paneStore?.hasData === false,
     `battle A must still be pending (no err / no data) at clear time (state=${JSON.stringify(inFlight)})`)
 
-  // —— clear A：打开回放列表 → 真实点击移除 → 确认 ——
   const chipCenter = await openCollectionRemove(page, scenario)
   check(failures, !!chipCenter, 'collection remove button must be hit-testable')
   if (!chipCenter) {
@@ -148,7 +137,6 @@ async function runParseLifecycleScenario(env, scenario) {
     results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
     return
   }
-  // Dragging over the remove button is a scroll gesture: it must leave A selected and its parse alive.
   await page.installInputTrace()
   await dragPointer(page, chipCenter, { x: chipCenter.x - 24, y: chipCenter.y - 24 }, { touch: scenario.touch })
   const dragInput = await page.inputTrace()
@@ -156,7 +144,6 @@ async function runParseLifecycleScenario(env, scenario) {
   check(failures, await page.evaluate(`!!document.querySelector('[data-testid="collection-remove"]') && !!window.__pbPane?.store.loading`),
     'remove-button drag cleared selection or stopped battle A parse')
   await page.resetInputTrace()
-  // 真实输入事件必须落在移除按钮上：用页面内记录的真实 click 目标 + 坐标证明
   await page.tap({ ...chipCenter, touch: scenario.touch })
   const clearInput = await page.inputTrace()
   const click = clearInput?.click
@@ -173,7 +160,6 @@ async function runParseLifecycleScenario(env, scenario) {
   await confirmCollectionRemove(page, scenario)
   await page.waitFor(() => !document.querySelector('.pb-root'), { label: '3D pane torn down after clear' })
 
-  // clear 必须**真的撤下** A 的解析：生产代码在 abort 时整体 terminate 当前 Worker
   const aborted = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.terminations >= 1, {
       timeout: 10_000,
@@ -183,7 +169,6 @@ async function runParseLifecycleScenario(env, scenario) {
   check(failures, aborted !== null,
     `clearing battle A did not abort the in-flight parse (worker never terminated): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
 
-  // —— B：选文件 → 真实点击「开始」 ——
   await page.evaluate('window.__pbSelect("lifecycle-b.wotbreplay", [5, 6, 7, 8])')
   await page.waitFor(() => !!document.querySelector('[data-test="replay3d-start"]'), { label: 'pre-start for battle B' })
   const startB = await page.evaluate(clickCenterExpression('[data-test="replay3d-start"]'))
@@ -203,15 +188,11 @@ async function runParseLifecycleScenario(env, scenario) {
     .catch(() => null)
   check(failures, bRequest !== null,
     `battle B parse never reached the worker (stuck behind the abandoned A request?): ${await page.evaluate(PARSE_WORKER_STATE).then(JSON.stringify).catch(String)}`)
-  // A 的解析被撤下时必须整体放弃那个 Worker（terminate）→ B 只能在**重建后的** Worker 上跑。
-  // 若 abort 没有真的让位（旧请求仍占着旧 Worker 的队列），B 会排在 A 后面而不是新 Worker。
   check(failures, bRequest !== null && bRequest.workers >= 2 && bRequest.ids?.[1]?.length === 1,
     `battle B must parse on a re-created worker (abort must release the old queue): ${JSON.stringify(bRequest)}`)
 
-  // —— 放行闸门：A 的迟到回包 + B 的正常回包（同一次放行；顺序 = 请求顺序） ——
   await page.evaluate(RELEASE_WORKER_RESPONSES)
 
-  // B 必须自己收敛：旧解析不再占队列，B 的解析跑完并落到就绪态
   const settledB = await page
     .waitForValue(PARSE_WORKER_STATE, (state) => state.paneStore !== null && state.paneStore.loading === false
       && (state.paneStore.hasData === true || state.paneStore.err !== ''), {
@@ -224,7 +205,6 @@ async function runParseLifecycleScenario(env, scenario) {
   check(failures, settledB?.paneStore?.hasData === true && settledB?.paneStore?.err === '',
     `battle B must settle ready (old parse must not own the new session): ${JSON.stringify(settledB?.paneStore)}`)
 
-  // A 的迟到回包必须无人认领（旧解析已经被 abort 结算，不得再写任何会话）
   const lateSettlement = await page.evaluate(`(async () => {
     const store = window.__pbPane && window.__pbPane.store
     const snapshot = () => (store ? { hasData: store.hasData, err: store.err, loading: store.loading } : null)
@@ -243,10 +223,6 @@ async function runParseLifecycleScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}`, xfail: scenario.xfail })
 }
 
-/** B13: real local parser/UI with every business HTTP attempt intercepted and counted.
- * Local fixture resources remain available, as the APK-bundled local origin does in airplane mode.
- * This checks state and requests only; it never inspects or captures a 3D scene.
- */
 async function runOfflineWorkspaceScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -266,14 +242,8 @@ async function runOfflineWorkspaceScenario(env) {
   env.chrome.client.on('Fetch.requestPaused', async (params, session) => {
     if (session !== sessionId) return
     const url = new URL(params.request.url)
-    // 资产通道（打包器布局 /glb /map /tank /tank_images /data）不是业务 API：离线时同样
-    // 以 InternetDisconnected 失败（应用按设计 fail-soft 降级），但**不计入**业务违规——
-    // 俯仰锚定两阶段解析会拉 /tank/{id}.json 与 /data/tank_cache.json（资产源）。
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
-    // Foreground activity is intentionally reported when connectivity recovers.
-    // Telemetry and read-only capability/content discovery are accepted only online;
-    // offline telemetry and all automatic business submissions still fail below.
     const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
       && params.request.method === 'POST'
     if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
@@ -306,7 +276,6 @@ async function runOfflineWorkspaceScenario(env) {
       await env.chrome.client.send(business ? 'Fetch.failRequest' : 'Fetch.continueRequest',
         business ? { requestId: params.requestId, errorReason: 'InternetDisconnected' } : { requestId: params.requestId }, sessionId)
     } catch (error) {
-      // Navigation cancels intercepted old-document requests before CDP can continue them.
       if (!closing && !error.message.includes('Invalid InterceptionId')) interceptionErrors.push(error.message)
     }
   })
@@ -323,7 +292,6 @@ async function runOfflineWorkspaceScenario(env) {
     await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`, Boolean, { label: `offline deep link ${view}` })
     check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, `${view} started login offline`)
   }
-  // Cold start and restart both initialize the ordinary local data workspace.
   for (let restart = 0; restart < 2; restart++) {
     await page.goto(`${env.origin}/?view=replay${params}`)
     await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'offline shell/restart' })
@@ -350,7 +318,6 @@ async function runOfflineWorkspaceScenario(env) {
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="ai"]').click()`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'offline AI gate' })
   check(failures, await page.evaluate('window.__wsAuth.loginCalls.length') === 0, 'AI started login offline')
-  // Recovering connectivity may prepare local AI projection but must never submit it.
   await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
   await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
   await page.waitFor(() => !!document.querySelector('[data-testid="nav-creators"]'), { label: 'read-only backend capability probe completed' })
@@ -368,10 +335,6 @@ async function runOfflineWorkspaceScenario(env) {
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
 }
 
-/**
- * 回放集合管理（真实 WASM）：加文件不打断当前场次，部分失败可继续用其余回放，
- * 键盘可完成管理，三档视口内容起点达标。只查状态与几何，不做 3D 画面验收。
- */
 async function runReplayCollectionScenario(env) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
@@ -392,7 +355,6 @@ async function runReplayCollectionScenario(env) {
     const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
     await page.tap({ ...point, touch: false })
   }
-  // 切能力后的自动居中是异步滚动：量到的坐标可能在点击前失效，所以以弹层真的出现为准。
   const openList = async () => {
     for (let attempt = 0; attempt < 3; attempt++) {
       await hit('[data-testid="collection-trigger"]')
@@ -403,14 +365,11 @@ async function runReplayCollectionScenario(env) {
   }
   const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
   const contentTop = `(() => { window.scrollTo(0, 0); return Math.round(document.querySelector('.workspace-content').getBoundingClientRect().top) })()`
-  // 分区主视觉是页面标题区的一部分：密度预算只放行这段紧凑横幅本身，
-  // 不允许标题区在横幅之外再长出额外高度。旧基线与当前实测的差值必须只等于横幅高度。
   const heroHeight = `Math.round(document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect().height ?? 0)`
   const trigger = `document.querySelector('[data-testid="collection-trigger"]')?.textContent ?? ''`
   try {
     await page.enable()
     await page.emulate({ width: 1440, height: 900, touch: false })
-    // 从工作台之外进入：结尾用浏览器后退验证 KeepAlive 不会把弹层留在目标页上。
     await page.goto(`${env.origin}/?view=agent-tankopedia&ws-auth=1`)
     await hit('[data-testid="nav-replay"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="file-uploader-empty"]'), { label: 'empty workspace' })
@@ -423,15 +382,9 @@ async function runReplayCollectionScenario(env) {
     check(failures, !await page.evaluate(`!!document.querySelector('[data-testid="file-uploader-empty"]')`), 'Ready must not keep the upload card')
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="playback-battle-picker"]:not(button)')`), 'a single replay shows static battle context')
     const singleHero = await page.evaluate(heroHeight)
-    // Replay 紧凑横幅是密度预算的唯一例外（design-language §2）：桌面放宽到 clamp(132px, min(20vw, 42vh), 384px)，
-    // 1440×900 实测 288px——~43% 可见带容纳坦克整体；其余 compact 页保持 132px 密度。
     check(failures, singleHero >= 240 && singleHero <= 400, `replay compact hero must stay 240-400px at 1440: ${singleHero}`)
     const toolbarClearance = `(() => { const t = document.querySelector('.workspace-toolbar')?.getBoundingClientRect(); const h = document.querySelector('.workspace-head .showcase-hero')?.getBoundingClientRect(); return t && h ? Math.round(t.top - h.bottom) : -1 })()`
     check(failures, await page.evaluate(`${toolbarClearance} >= -2 && ${toolbarClearance} <= 24`), `replay toolbar must sit right below the taller hero: ${await page.evaluate(toolbarClearance)}`)
-    // ReplayWorkspace.centerReplayPane() intentionally scrolls the ready pane into view.
-    // Check the toolbar's document-relative position: it must fit the initial viewport
-    // when entering from the page top, even if pane auto-centering has already scrolled it away.
-    // Unlike resetting scrollY, this does not interfere with the product scroll contract.
     const toolbarAtDocumentTop = await page.evaluate(`(() => {
       const rect = document.querySelector('.workspace-toolbar')?.getBoundingClientRect()
       if (!rect) return null
@@ -449,14 +402,12 @@ async function runReplayCollectionScenario(env) {
     const singleTop = await page.evaluate(contentTop)
     check(failures, singleTop <= 175 + singleHero, `single-battle content must start within 175px + hero at 1440: ${singleTop} (hero ${singleHero})`)
 
-    // 矮桌面窗口降级：height < 700px 回退默认密度，横幅让出工作区空间，收集入口仍可直接点到。
     await page.emulate({ width: 1920, height: 540, touch: false })
     const shortHero = await page.evaluate(heroHeight)
     check(failures, shortHero >= 120 && shortHero <= 140, `replay hero must fall back to compact density in short windows: ${shortHero}`)
     check(failures, await page.evaluate(`(() => { const t = document.querySelector('[data-testid="collection-trigger"]')?.getBoundingClientRect(); return !!t && t.top >= 0 && t.bottom <= innerHeight })()`), 'collection trigger must stay visible in short windows')
     await page.emulate({ width: 1440, height: 900, touch: false })
 
-    // 看第一场时加入两份新回放 + 一个损坏文件：内容不换场，也不重建面板。
     const broken = join(tempDir, 'broken.wotbreplay')
     await writeFile(broken, Buffer.alloc(64, 7))
     await page.evaluate(`(window.__collectionPane = document.querySelector('[data-test="battle-playback"]'), true)`)
@@ -471,7 +422,6 @@ async function runReplayCollectionScenario(env) {
     await page.waitFor(() => !document.querySelector('[data-testid="workspace-partial-failure"]'), { label: 'warning acknowledged' })
     check(failures, /1/.test((await page.evaluate(trigger)).replace(/.*·/, '').replace(/^\s*4/, '')), `acknowledged failure stays on the trigger: ${await page.evaluate(trigger)}`)
 
-    // 键盘：触发按钮 → Enter 打开 → Esc 关闭 → 焦点回到触发按钮。
     await page.evaluate(`document.querySelector('[data-testid="collection-trigger"]').focus()`)
     await press('Enter', 13)
     await page.waitFor(() => !!document.querySelector('[data-testid="collection-row"]'), { label: 'keyboard opens the list' })
@@ -482,7 +432,6 @@ async function runReplayCollectionScenario(env) {
     await press('Escape', 27)
     await page.waitForValue(`document.activeElement?.dataset?.testid`, value => value === 'collection-trigger', { label: 'focus returns to the trigger' })
 
-    // 移除失败文件：先关列表再确认，确认后当前场次不变，焦点回到触发按钮。
     await openList()
     await page.waitFor(() => document.querySelectorAll('[data-testid="collection-remove"]').length === 4, { label: 'remove buttons' })
     await page.evaluate(`document.querySelector('[data-testid="collection-row"][data-status="failed"] [data-testid="collection-remove"]').click()`)
@@ -495,7 +444,6 @@ async function runReplayCollectionScenario(env) {
       await page.emulate({ width, height, touch })
       await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="data"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="data-toolbar"]'), { label: 'Data capability' })
-      // 从单回放追加：赛后数据留在原来那一场，汇总由用户切换。
       await page.evaluate(`document.querySelector('[data-testid="data-view-summary"]').click()`)
       await page.waitFor(() => !!document.querySelector('[data-testid="series-overview"]'), { label: 'Data summary' })
       const hero = await page.evaluate(heroHeight)
@@ -543,13 +491,6 @@ async function runReplayCollectionScenario(env) {
   results.push({ name: 'replay-collection', failures, viewport: '1440x900 → 768x1024 → 390x844' })
 }
 
-/** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
-/**
- * 强制横屏（design-language §9「强制横屏」）：判定只看设备，不看视口。真实应用 + 真实回放：
- * - iPhone Safari 竖屏：2D 回放上出现旋转提示，提示里的「看赛后数据」回到数据能力；
- * - iPad（含竖屏）与缩窄的桌面浏览器：同样的视口不出提示；
- * - iPhone 横屏 844×340：没有提示，外壳沉浸、左上菜单可达并能打开抽屉。
- */
 
 return { LIFECYCLE_SCENARIOS, PARSE_LIFECYCLE_BRIDGE, openCollectionRemove, confirmCollectionRemove, clickCenterExpression, runParseLifecycleScenario, runOfflineWorkspaceScenario, runReplayCollectionScenario }
 }

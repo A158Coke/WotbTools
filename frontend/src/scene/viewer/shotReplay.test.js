@@ -1,8 +1,4 @@
 // @vitest-environment happy-dom
-// 射击复现分支回归（#820 review P1-C / P2-F）：
-// hit = 目标可见 + 射手模型只加载一次；miss = 目标隐藏 + 走脱靶分支；
-// 脱靶异步回调必须读取 ctx.currentShot（不是 deps 上不存在的字段），
-// 过期响应不得继续摆位。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { runShotReplay } from './shotReplay.js'
@@ -236,8 +232,6 @@ describe('runShotReplay branch dispatch (P1-C)', () => {
   })
 })
 
-// 状态装甲网格（turret_01_state_00_armor_11）不匹配普通炮塔板正则
-// /^turret_\d+_armor/，turret-pivot 解码必须走 rig 枢轴 fallback；review P2 回归。
 function addStateArmorMesh(armorModel) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(2, 2, 2),
@@ -384,7 +378,6 @@ describe('renderMissShotAnnotation async guard (P2-F)', () => {
       resolveLoad = resolve
     }))
     const poseShooterTurretGun = vi.fn()
-    // 旧实现读 deps.currentShot()（undefined → TypeError）；正确实现读 ctx.currentShot()。
     renderMissShotAnnotation(deps, {
       s,
       currentShot: () => false,

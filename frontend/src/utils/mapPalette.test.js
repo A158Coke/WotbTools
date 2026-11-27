@@ -35,16 +35,12 @@ describe('mapPalette', () => {
   })
 })
 
-// ---------- luminanceOfImage（issue #861 补口：此前零测试） ----------
-// happy-dom 的 drawImage 不做真缩放：用受控像素 canvas stub 保持「读 64×64」
-// 的采样路径语义不被测试改写；环境 pragma 在文件头。
 describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
   afterEach(() => {
     vi.restoreAllMocks()
-    vi.unstubAllGlobals()   // review P3：vi.stubGlobal 不受 restoreAllMocks 影响
+    vi.unstubAllGlobals()
   })
 
-  /** happy-dom 的 Image 不触发 onload：src 赋值后异步回 onload（失败用例单独 stub onerror）。 */
   function stubLoadedImage() {
     class LoadedImage {
       set src(_v) { setTimeout(() => this.onload?.(), 0) }
@@ -52,10 +48,6 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
     vi.stubGlobal('Image', LoadedImage)
   }
 
-  /** 铺受控像素的 canvas stub：happy-dom 的 canvas 无 2D 后端（node-canvas 缺席），
-   *  直接返回受控 ImageData 的 2D context——**记录** canvas 尺寸、drawImage 与
-   *  getImageData 的实参，供 64×64 采样契约断言（review P2：no-op stub 会让生产
-   *  代码把采样尺寸改错也照样通过）。getImageData 按传入的 w×h 生成整面单色。 */
   function stubCanvasPixels(r, g, b) {
     const calls = { canvasSizes: [], drawImage: [], getImageData: [] }
     const realCreateElement = document.createElement.bind(document)
@@ -66,8 +58,6 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
           if (kind !== '2d') return null
           return {
             drawImage: (_img, dx, dy, w, h) => {
-              // review R2 P2：记录**实际画布 el.width/el.height**（生产代码在 drawImage
-              // 前设 canvas.width=64——只改画布尺寸而保留绘制参数时仍会被抓红）
               calls.canvasSizes.push({ w: el.width, h: el.height })
               calls.drawImage.push({ dx, dy, w, h })
             },
@@ -90,10 +80,6 @@ describe('luminanceOfImage（64×64 降采样亮度，issue #861）', () => {
     return calls
   }
 
-  /** 64×64 采样契约断言（#861 / review P2）：采样路径必须逐字保持。
-   *  canvasSizes 断言的是 **实际画布 el.width/el.height**（createElement 时记录），
-   *  独立于 drawImage/getImageData 形参——生产代码只改画布尺寸而保留绘制参数
-   *  时仍会被抓红（review R2 P2）。 */
   function expectSamplingContract(calls) {
     expect(calls.canvasSizes).toEqual([{ w: 64, h: 64 }])
     expect(calls.drawImage).toEqual([{ dx: 0, dy: 0, w: 64, h: 64 }])

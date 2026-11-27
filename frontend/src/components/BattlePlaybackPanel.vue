@@ -1,7 +1,3 @@
-<!--
-  战局回放能力面板：目标回放在本机解析（上游 Rust Core WASM → BattlePlaybackDataset + MapOverview，
-  replay-local/playback），服务器没有 parser。本组件只维护解析生命周期、竞态序号与显式 UI 状态机。
--->
 <script setup lang="ts">
 import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -16,28 +12,20 @@ import BattlePlayback from './BattlePlayback.vue'
 const BattleMap3D = defineAsyncComponent(() => import('./BattleMap3D.vue'))
 
 const props = defineProps({
-  /** 目标回放文件：本地解析（上游 Rust Core WASM），文件不出本机 */
   file: { type: Object, default: null },
   playbackSession: { type: Object, default: null },
   active: { type: Boolean, default: false },
   seekTo: { type: Number, default: null },
-  /** 2D/3D 切换同步请求：{ id, sec, playing, speed }；视图就绪后一次性应用。 */
   seekRequest: { type: Object, default: null },
-  /** 2D 时间轴刻度源（与 3D 同一份 scenePlayback facet）。 */
   facetShots: { type: Array, default: null },
   facetKills: { type: Array, default: null },
-  /** 是否渲染时间轴事件刻度层（回放面板统一开关；默认关闭）。 */
   showEventMarkers: { type: Boolean, default: false },
-  /** 工作台给出的不可用原因（如多文件未选场次）；非空时不解析 */
   blockedReason: { type: String, default: '' },
-  /** 工作台的「进入查看器」事件序号（Android 手机 App 自动全屏的边沿触发身份）。 */
   autoFullscreenToken: { type: Number, default: 0 },
 })
 
 const mapOverview = ref<Record<string, any> | null>(null)
-/** 2D 位姿通道（playback facet 位姿列投影；见 replay-local/pose/vehiclePose.ts） */
 const poseFacet = ref<Record<string, any> | null>(null)
-/** battle-relative → 回放时钟域偏移（canonical clock.startRaw） */
 const clockOffset = ref<number | null>(null)
 const onboarding = inject(ONBOARDING_KEY, null)
 const playbackView = ref<InstanceType<typeof BattlePlayback> | null>(null)
@@ -46,13 +34,10 @@ let guideOpenedDisplay = false
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
 const result = ref<AgentBattleResult | null>(null)
-/** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
 const playbackV2State = ref('LOADING')
-/** 视窗是否已过加载阶段（内容就绪或终态）；工作台自动居中只等这个信号。 */
 const paneReady = computed(() => !props.file || !!props.blockedReason || playbackV2State.value !== 'LOADING')
 const playbackV2Error = ref('')
 
-/** V2 是 playback 核心事实源；MapOverview 只补 optional overlay。 */
 const pbOverview = computed(() => {
   const v2 = mapPlaybackV2.value
   if (!v2) return null
@@ -68,9 +53,7 @@ const pbOverview = computed(() => {
 
 const panelView = ref('playback')
 const mapSeek = ref<number | null>(null)
-/** 在途解析的认领序号：文件切换 / 卸载后迟到的结果一律丢弃 */
 let parseSeq = 0
-/** 已完成（或正在）解析的文件：同一文件不重复解析 */
 let parsedFile: unknown = null
 
 function reset() {
@@ -104,13 +87,11 @@ async function load() {
     mapPlaybackV2.value = dataset
     reloadTelemetry.value = telemetry
     mapOverview.value = overview as Record<string, any> | null
-    // 位姿通道：与 3D 场景同源同插值；offset 缺失（clock 不可得）时组件回退 canonical 观测
     poseFacet.value = (canonical.poseFacet as Record<string, any> | null) ?? null
     clockOffset.value = Number.isFinite(canonical.clock?.startRaw) ? (canonical.clock as { startRaw: number }).startRaw : null
     playbackV2State.value = !dataset ? 'UNAVAILABLE' : dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
   } catch (e) {
     if (seq !== parseSeq) return
-    // 服务器没有 parser：解析失败只显示原因，不回退服务端
     console.warn('[playback-local] parse failed', e)
     parsedFile = null
     mapPlaybackV2.value = null
@@ -141,21 +122,15 @@ watch(() => props.active, (active) => {
   if (active) load()
 }, { immediate: true })
 
-// immediate：「在 2D 中查看」可能在本面板（懒加载）挂载前就给出了秒数，挂载时也要接住
 watch(() => props.seekTo, async (sec) => {
   if (!Number.isFinite(sec)) return
-  // 外部定位（AI 复盘「在 2D 中查看」）总是落在回放子视图：用户之前停在「地图」子视图时也要切回来
   panelView.value = 'playback'
   mapSeek.value = null
   await nextTick()
   mapSeek.value = sec
 }, { immediate: true })
 
-/** 2D/3D 切换：视图就绪后一次完成 seek + 恢复播放状态/倍速（与 AI/事件的纯 seekTo 分开）。 */
 let appliedSeekRequest = 0
-// 只在面板激活时消费：3D→2D 后立刻切走时解析仍会完成，若此时消费会把播放态/倍速
-// 施加到隐藏面板（其当前 active 已是 false，暂停 watcher 不会再触发）→ 后台自行推进。
-// 未激活时保留请求（不记录已消费 id），等下次激活再一次性应用。
 watch([() => props.seekRequest, playbackView, () => props.active], ([req, view, active]) => {
   if (!req || !view || !active || req.id === appliedSeekRequest) return
   appliedSeekRequest = req.id
@@ -182,8 +157,6 @@ onMounted(() => {
       }
     },
   })
-  // 「一键防遮」等呈现开关住在 Display 面里（#727 之后地图上不再放常驻控件），
-  // 所以指向它们的教程阶段必须先把那块面打开，anchor 才解析得到。
   onboarding?.registerSurface('display', {
     ready: () => props.active && !!mapPlaybackV2.value && !!playbackView.value,
     failed: () => ['ERROR', 'UNAVAILABLE'].includes(playbackV2State.value) || !!props.blockedReason,
@@ -212,8 +185,6 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- data-pane-ready：工作台据此判断"视窗已就绪"（加载中不定位）。
-       终态（无文件 / 阻断 / 不可用 / 失败）同样视为就绪——那不是加载中。 -->
   <div :data-pane-ready="paneReady ? 'true' : undefined">
     <p v-if="blockedReason" class="ws-note map-dataset-error" data-test="map-dataset-status">{{ blockedReason }}</p>
     <p v-else-if="!file" class="ws-note">{{ $t('workspace.playback_empty') }}</p>
@@ -246,9 +217,6 @@ onMounted(() => {
             :auto-fullscreen="{ token: autoFullscreenToken, key: file }"
           />
 
-          <!-- 2.5D directly upgrades the map background. BattleMap still owns all
-               replay overlays/time/state; if local height data is unavailable the
-               original raster simply remains visible as a technical fallback. -->
           <Teleport
             v-if="pbOverview"
             defer
@@ -296,8 +264,6 @@ onMounted(() => {
 }
 @keyframes map-status-spin { to { transform: rotate(360deg); } }
 .map-dataset-status .map-dataset-error { color: var(--error); }
-/* 统一回放面板里不再给整页套卡片：窗口卡片由 `.pb-map-stage` 承担，
-   播放条在卡片外（下方通栏）。 */
 .map-panel { margin-top: 0; color: var(--text); }
 .map-panel-head {
   display: flex;

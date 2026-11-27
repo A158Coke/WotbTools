@@ -1,18 +1,10 @@
-/* WotBTools Showcase — cross-page regression guards.
- * Keep this file last in main.js: these selectors intentionally reconcile legacy
- * component-scoped layout with the V2 Showcase shell. No theme state lives here. */
 
-/* HoF admin：页面容器宽度；Tab 由 HoFAdminPage.vue、表格滚动 / 吸顶由 HoFAdminShared.css（分区 scoped 引用）定义（design-language）。 */
 .hof-admin {
   width: min(1760px, calc(100% - 48px)) !important;
   max-width: 1760px !important;
 }
 
-/* Public Hall of Fame: only the primary tab strip is sticky. A second fixed offset
- * for filters breaks as soon as translated labels change the tabs' real height.
- * .lb-toolbar 的 position/z-index 已收敛到 showcase-cohesion.css（唯一 owner），不再在此重复。 */
 
-/* AI review header sits below the actual Showcase topbar (60px). */
 @media (min-width: 1081px) {
   .analysis-panel .panel-head {
     top: var(--header-h) !important;

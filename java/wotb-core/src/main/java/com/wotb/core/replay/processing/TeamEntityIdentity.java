@@ -3,9 +3,6 @@ package com.wotb.core.replay.processing;
 import com.wotb.core.replay.event.DecodeConfidence;
 import org.springframework.util.StringUtils;
 
-/**
- * 一个回放实体映射到的参战玩家身份。
- */
 public record TeamEntityIdentity(
         int entityId,
         long accountId,

@@ -1,10 +1,4 @@
 <script setup>
-/**
- * 装甲查看器一侧（射击方 / 受击方）的**模块选择**：与坦克百科详情页**同一个
- * `TankConfigPanel`**（模块矩阵与 XI 升级状态共用；装备/消耗品/补给/乘员/涂装在装甲页隐藏）。
- * 选择态来自这一侧的 URL 键（射击方 scfg/sengine/strack/sdev，受击方
- * config/engine/track/dev），改动经 `apply` 交给宿主写 URL 并驱动场景。
- */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchTankData } from '../scene/agentData.js'
@@ -61,8 +55,6 @@ async function load(tankId) {
 watch(() => props.tankId, id => load(id), { immediate: true })
 
 const urlIndex = value => {
-  // 缺省（null/空串）必须保持“未选择”，交给 resolveSetup 回落到最后一档；
-  // Number(null) === 0 会把默认选型错误地钉在 stock 发动机/履带。
   if (value == null || value === '') return null
   const n = Number(value)
   return Number.isInteger(n) && n >= 0 ? n : null
@@ -86,21 +78,16 @@ const selection = computed(() => {
     catalog: catalog.value,
   })
 })
-/** 只有替换编辑器实际可配置（炮塔/炮对号成立）时才允许宿主隐藏原生配置回退。 */
 const canConfigure = computed(() => selection.value?.canConfigure === true)
-// XI 没有普通模块矩阵，升级选择直接露出，不再藏在第二层折叠里。
 const showConfiguration = computed(() => props.expanded || Number(detail.value?.tier) === 11)
 watch(canConfigure, value => { emit('ready', value) }, { immediate: true })
 
-/** 输出这一侧的 URL 载荷（模块/装备四项；设备串按 tankSetup 的编码）。 */
 function apply(patch) {
   const sel = selection.value
   if (!sel?.canConfigure || !patch) return
   const next = { ...sel, ...patch }
   emit('apply', {
     config: next.config,
-    // 与解析后的当前配置比较：url.config 缺省时 resolveSetup 会给出有效默认值，
-    // 直接用原始 URL 键比较会把“只换发动机/履带”误判成换炮。
     configChanged: next.config !== sel.config,
     engine: next.engine,
     track: next.track,
@@ -130,7 +117,6 @@ function resetAll() {
     engine: last(modules.value?.engines),
     track: last(modules.value?.chassis),
     devices: [],
-    // 重置 = 默认配置（XI 顶级）；显式「初始」preset 才写 stock。
     ...(sel.upgrade != null ? { upgrade: 'top', abilities: [] } : {}),
   })
 }

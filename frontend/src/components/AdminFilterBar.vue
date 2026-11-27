@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// 管理列表模板的搜索与筛选条（design-language §9 筛选 / DC-ARC-03）：
-// expanded / medium 行内一行（复用 app-shell 的 .control-bar）；compact 把默认插槽的筛选控件收进
-// 「筛选（数量）」按钮打开的底部 AppSheet，已生效条件以 FilterChips 显示，点 chip 移除。
-// search 插槽始终行内可见；actions 插槽推到行尾。筛选控件只渲染一份（行内或 sheet 内），状态由页面持有。
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
@@ -11,9 +7,7 @@ import AppSheet from './AppSheet.vue'
 import FilterChips from './FilterChips.vue'
 
 withDefaults(defineProps<{
-  /** 已生效的筛选：[{ key, label }]（只在 compact 显示为 chip） */
   chips?: { key: string; label: string }[]
-  /** sheet 底部的「完成」按钮；筛选需要显式「应用」的页面关掉它，在自己的应用按钮里调用插槽的 close() */
   doneButton?: boolean
 }>(), { chips: () => [], doneButton: true })
 const emit = defineEmits<{ remove: [key: string] }>()

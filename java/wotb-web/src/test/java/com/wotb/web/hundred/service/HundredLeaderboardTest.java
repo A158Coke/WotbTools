@@ -20,11 +20,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 百场 submission 业务契约测试（Mockito，无 DB，任何环境可跑）。
- * 覆盖：submission 校验矩阵 / CURRENT 门槛 / snapshot /
- * approval / terminal transition 竞争 / delete / rank / files。
- */
 @ExtendWith(MockitoExtension.class)
 class HundredLeaderboardTest extends HundredSubmissionTestSupport {
 
@@ -51,7 +46,6 @@ class HundredLeaderboardTest extends HundredSubmissionTestSupport {
 
     @Test
     void userStatusQueriesByBoundServerNotOnlyByAccountId() {
-        // 同一账号在另一区服：查询必须带区服维度，否则 (CN, 111) 的记录会串到 (EU, 111) 名下
         final HundredBattleSubmission euCurrent = currentSubmission(4200);
         euCurrent.setWotbServer(OTHER_SERVER);
         when(userProfileService.currentWotbIdentity(USER))
@@ -65,16 +59,13 @@ class HundredLeaderboardTest extends HundredSubmissionTestSupport {
 
         final var status = service.userStatus(USER);
 
-        // 绑定 (EU, 111) 时看到的是 EU 那条记录
         assertThat(status.current()).extracting("status").containsExactly("CURRENT");
         assertThat(status.pending()).isEmpty();
         assertThat(status.rejected()).isEmpty();
-        // 三个查询全部带绑定身份的区服；从不按另一区服（CN）或仅账号 ID 查询
         verify(repository, never()).findByWotbServerAndWotbAccountIdAndStatusInOrderBySubmittedAtDesc(
                 eq(WOTB_SERVER), anyLong(), any());
     }
 
-    // ── Rank：competition ranking ────────────────────────────────────────
 
     @Test
     void leaderboardComputesCompetitionRanking() {
@@ -108,7 +99,6 @@ class HundredLeaderboardTest extends HundredSubmissionTestSupport {
         s4200a.setId(2L);
         final HundredBattleSubmission s4200b = currentSubmission(4200);
         s4200b.setId(3L);
-        // 页面只含同分两行（tie 从上一页延续），4300 组在页外
         when(repository.findByVehicleIdAndStatusOrderByApprovedAverageDamageDescApprovedAtAscIdAsc(
                 eq(TIER10_VEHICLE), eq("CURRENT"), any()))
                 .thenReturn(new PageImpl<>(List.of(s4200a, s4200b)));

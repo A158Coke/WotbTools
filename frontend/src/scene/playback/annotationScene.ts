@@ -1,12 +1,3 @@
-// 3D annotation 场景层 owner（#820 结构拆分，2026-11-06 自 initPlayback 闭包出仓；
-// 2026-11-21 #LOC 结构拆分为宿主接线 façade + 三个 owner 模块，代码与拆分前逐字一致）：
-// - GPU 图层（committed/draft mesh + 橡皮 ring + 派生投影缓存）→ ./annotationLayer.ts；
-// - 地表拾取（独立 raycaster + semantic 坐标换算 + 诊断拾取）→ ./annotationSurfacePicker.ts；
-// - pointer 手势状态机（begin/append/finish/cancel + 监听收口）→ ./annotationGesture.ts。
-// 闭包读数改经 deps 注入（getter 快照）：相机/共享 raycaster/OrbitControls 来自宿主渲染器
-// 核心，地表采样与候选格 owner = mapWorld（经 handle 消费）。committed annotation 的权威
-// owner 是 Replay3DPane；本模块只保存最后一次 projection 引用作为 terrain rebuild 的派生
-// 缓存。draft/GPU 资源归 annotationLayer，绝不回写 history。
 import * as THREE from 'three'
 import type { AnnotationHitLike } from './annotationSurface.ts'
 import { chooseAnnotationHit } from './annotationSurface.ts'
@@ -28,7 +19,6 @@ export interface AnnotationInteractionConfig {
   enabled?: boolean
   tool?: 'pen' | 'eraser' | null
   color?: string
-  /** CSS px 视觉宽度（工具条滑条值；换算 owner = surfacePicker.annotationSemanticWidth）。 */
   width?: number
   eraserWidth?: number
 }
@@ -101,7 +91,6 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
     enabled: false, tool: null, color: '#ff4d4f', width: 3, eraserWidth: 16,
   }
 
-  // 地表拾取 owner（独立 raycaster 生命周期 = attachListeners 每次渲染器装配重建）。
   const picker: AnnotationSurfacePicker = createAnnotationSurfacePicker({
     container,
     getCamera: () => deps.getCamera(),
@@ -111,7 +100,6 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
     annotationSurfaceHeightAt: (x, z) => deps.annotationSurfaceHeightAt(x, z),
   })
 
-  // GPU 图层 owner（committed/draft/ring + 派生投影缓存 + 会话清空/释放）。
   const layer: AnnotationLayerHandle = createAnnotationLayer({
     getScene: () => deps.getScene(),
     invalidate: () => deps.invalidate(),
@@ -131,7 +119,6 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
     }),
   })
 
-  // pointer 手势状态机 owner（指针表/抑制标志/touch 模式）。
   const gesture: AnnotationGestureHandle = createAnnotationGesture({
     container,
     invalidate: () => deps.invalidate(),
@@ -152,10 +139,6 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
     return annotationInteraction.enabled && !!annotationInteraction.tool
   }
 
-  /**
-   * client px -> semantic surface point. terrain 走既有 raycast；scenery 表面只在更近时胜出。
-   * Width/radius 不使用 camera scale。
-   */
   function pickAnnotationSurface(clientX: number, clientY: number) {
     if (!annotationToolActive() || !layer.visible()) return null
     const PERF = deps.perfEnabled()
@@ -210,7 +193,6 @@ export function createAnnotationScene(deps: AnnotationSceneDeps): AnnotationScen
       gesture.applyAnnotationTouchMode()
       deps.invalidate()
     },
-    /** 3D 标注根（反射 pass 剔除；尚未建立为 null） */
     annotationRoot: () => layer.annotationRoot(),
     setAnnotationsVisible: (visible) => layer.setAnnotationsVisible(visible),
     stats: () => annotationStats,

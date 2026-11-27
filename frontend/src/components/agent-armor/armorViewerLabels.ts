@@ -1,8 +1,3 @@
-/**
- * Agent 装甲查看器 —— tankViewer 场景文案注入表（拆分自 AgentArmorView.vue，行为原样）。
- * 职责：审计 3D-16 —— 场景脚本写入的文案与枚举值按当前语言提供；本表只做翻译映射，
- * 不持有状态。
- */
 import { armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../../scene/tankMeta.js'
 import type { useI18n } from 'vue-i18n'
 

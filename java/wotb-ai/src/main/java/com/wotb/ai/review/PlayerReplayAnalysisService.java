@@ -19,13 +19,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 单玩家/多场趋势 AI 复盘编排。
- * <p>职责仅限：接收 Player 业务上下文 → 调 {@link PlayerReplayPromptBuilder}
- * 产出 {@link PreparedAiPrompt} → 通过 {@link AiPromptBudgetGuard} 复核预算
- * → 调 {@link AiChatGateway} → 组装 {@link AnalyzeResult}。</p>
- * <p>不构建 Prompt 文本、不发送 HTTP、不处理 Provider DTO、不含团队编排。</p>
- */
 @Service
 public class PlayerReplayAnalysisService {
 
@@ -44,9 +37,6 @@ public class PlayerReplayAnalysisService {
         return gateway.isConfigured();
     }
 
-    /**
-     * 基于结算数据（权威）生成单场战术复盘（fallback 路径）。
-     */
     public AnalyzeResult analyze(final Battle battle, final ReplayReconstruction recon) {
         return analyze(battle, recon, AllowedLanguage.ZH);
     }
@@ -67,20 +57,10 @@ public class PlayerReplayAnalysisService {
         return new AnalyzeResult(chat(prepared, listener));
     }
 
-    /**
-     * 基于完整 battle + reconstruction + feature set 生成单场个人复盘。
-     * <p><b>非 production AI Review entrypoint（PR #102 顺手检查）</b>：本组
-     * {@code analyzePlayerContext(ctx[, recon], ...)} 重载只被历史测试/兼容 API 使用；
-     * production 个人复盘必须走 {@link #analyzePlayerOrFallback}（其中无重建 / 录像者未解析 /
-     * canonical timeline 不可用 → {@code AiTimelineUnusableException} hard reject，见
-     * canonical timeline 不可用即硬拒绝）。若未来出现 production caller，必须先执行 canonical
-     * Timeline hard gate，否则构成 hard-gate bypass。</p>
-     */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx) {
         return analyzePlayerContext(ctx, AllowedLanguage.ZH);
     }
 
-    /** 见 {@link #analyzePlayerContext(SinglePlayerBattleAnalysisContext)}：非 production entrypoint。 */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                               final AllowedLanguage language) {
         if (!isConfigured()) throw new AiNotConfiguredException();
@@ -91,9 +71,6 @@ public class PlayerReplayAnalysisService {
         return new AnalyzeResult(chat(prepared, AiReviewStreamListener.NOOP));
     }
 
-    /**
-     * 基于完整 battle + reconstruction + feature set 生成单场个人复盘（含重建）。
-     */
     public AnalyzeResult analyzePlayerContext(final SinglePlayerBattleAnalysisContext ctx,
                                              final ReplayReconstruction recon) {
         return analyzePlayerContext(ctx, recon, AllowedLanguage.ZH);
@@ -126,17 +103,11 @@ public class PlayerReplayAnalysisService {
         return new AnalyzeResult(chat(prepared, listener));
     }
 
-    /**
-     * 单场分析：先尝试完整特征分析，不满足条件时降级到结算分析。
-     * <p>fallback 是延迟执行的控制流，不提前调用 AI。</p>
-     */
     public AnalyzeResult analyzePlayerOrFallback(final Battle battle,
                                                  final ReplayReconstruction reconstruction,
                                                  final AllowedLanguage language,
                                                  final AiReviewStreamListener listener) {
         if (battle == null) throw new IllegalArgumentException("NO_BATTLE_DATA");
-        // 无法构建 canonical BattleTimeline → 拒绝 AI Review，
-        // 禁止 settlement-only fallback 仍然调用 AI。
         if (reconstruction == null) {
             throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
         }
@@ -145,7 +116,6 @@ public class PlayerReplayAnalysisService {
         if (!recorder.resolved()) {
             throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
         }
-        // 个人复盘 Timeline 门禁：recorder 身份可用后立即构建 canonical timeline
         final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
                 battle, reconstruction,
                 TimelinePerspective.personal(recorder.accountId(), recorder.team()));
@@ -172,11 +142,6 @@ public class PlayerReplayAnalysisService {
                 reconstruction, language, listener);
     }
 
-    /**
-     * 通过 {@link AiChatGateway} 发送 {@link PreparedAiPrompt}，返回 completion 文本。
-     * <p>Builder 内部已做一次预算检查；此处再由 {@link AiPromptBudgetGuard} 复核一次，
-     * 保证任何路径在 Gateway 调用前都被守一次。</p>
-     */
     private String chat(final PreparedAiPrompt prepared,
                         final AiReviewStreamListener listener) {
         final List<Map<String, Object>> messages = List.of(

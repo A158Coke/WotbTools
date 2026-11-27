@@ -1,8 +1,4 @@
 <script setup>
-// 赞助（4.0「赞助与下载」稿）：主题主视觉 Hero + 三条理由 + 扫码卡。
-// 大屏两种方式并排；小屏做成页签，一次显示一张大二维码，并说明「手机没法扫自己的屏幕，先保存再到相册里扫」。
-// 「保存二维码」在 Web 上是带 download 的链接；Android App 内 WebView 是否支持下载 / 长按存图未验证，
-// 所以 App 内只给长按提示、不渲染保存按钮。图片加载失败的方式隐藏，全部失败显示「赞助方式暂未配置」。
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Download, HandCoins, Server } from 'lucide-vue-next'
@@ -25,7 +21,6 @@ const reasons = [
   { key: 'reasonServers', icon: Server },
 ]
 
-// 当前页签的方式加载失败（或配置变化）时回落到第一个可用方式
 watch(visibleMethods, (list) => {
   if (!list.some(method => method.type === activeType.value)) activeType.value = list[0]?.type ?? ''
 }, { immediate: true })

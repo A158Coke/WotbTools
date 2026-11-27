@@ -62,7 +62,6 @@ it('shows details and deletes after confirmation', async () => {
   expect(drawer.attributes('role')).toBe('dialog')
   expect(api.getSiteFeedback).toHaveBeenCalledWith('1')
   expect(drawer.get('pre').text()).toBe('feedback')
-  // 删除在抽屉底部两段式确认：第一步只展开确认，不发请求
   await drawer.get('[data-testid="admin-danger-start"]').trigger('click')
   expect(api.deleteSiteFeedback).not.toHaveBeenCalled()
   await drawer.get('[data-testid="admin-danger-confirm"]').trigger('click')
@@ -71,7 +70,6 @@ it('shows details and deletes after confirmation', async () => {
   expect(api.listSiteFeedback).toHaveBeenCalledTimes(2)
 })
 
-// --- #923 管理员可维护状态（行内状态下拉；详情抽屉只显示服务器确认的状态）---
 it('does not send a status update when the admin feedback feature is unavailable', async () => {
   const wrapper = mountPage()
   await flushPromises()
@@ -179,7 +177,6 @@ it('ignores a stale detail response that predates a confirmed status', async () 
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
   expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
   expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -199,7 +196,6 @@ it('does not let a pre-update detail response overwrite the status after a list 
   resolveDetail({ ...row, status: 'PENDING' })
   await flushPromises()
   expect(wrapper.get('.status-select').element.value).toBe('FIXED')
-  // 被作废的在途读取会自动重发：陈旧响应不得展示，重发的新详情应渲染（状态取确认值）
   expect(detailStatusText(wrapper)).toContain('siteFeedback.status.FIXED')
   expect(wrapper.get('[data-testid="admin-detail-drawer"] .admin-list-pre').text()).toBe('feedback')
   expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -268,7 +264,6 @@ it('关闭抽屉后迟到的 PATCH 不再为已关闭详情重发读取，也不
   await wrapper.get('[data-testid="feedback-row-open"]').trigger('click')
   await flushPromises()
   expect(api.getSiteFeedback).toHaveBeenCalledTimes(1)
-  // PATCH 完成前关闭抽屉：确认后不得为已关闭的详情重发 GET
   await wrapper.get('[data-testid="admin-drawer-close"]').trigger('click')
   resolveUpdate()
   resolveDetail({ ...row, status: 'PENDING' })

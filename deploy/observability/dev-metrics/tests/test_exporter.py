@@ -127,7 +127,6 @@ class CollectionTests(unittest.TestCase):
         result = collect(Client(), 'A158Coke/WotbTools',
                          {'1': {'areas': ['docs'], 'headRefOid': head}}, NOW)
         self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
-        # A stale head binding and a list-only history entry are both rejected.
         with self.assertRaises(GitHubError):
             collect(Client(), 'A158Coke/WotbTools',
                     {'1': {'areas': ['docs'], 'headRefOid': 'b' * 40}}, NOW)
@@ -175,24 +174,18 @@ class CollectionTests(unittest.TestCase):
 
 class ClassificationTests(unittest.TestCase):
     def test_priority_and_multi_area(self):
-        # Only a frozen historical override of a merged/closed PR precedes changed paths.
         self.assertEqual(classify_area(pr(state='closed'), ['android/a'], {'1': ['infra']}), {'infra'})
         self.assertEqual(classify_area(pr(), ['deploy/observability/a']), {'infra', 'observability'})
         self.assertEqual(classify_area(pr(title='Replay parser and 3D playback')), {'replay', 'playback'})
         self.assertEqual(classify_area(pr()), {'unclassified'})
 
     def test_path_classification_cases(self):
-        # A: frontend path -> frontend.
         self.assertEqual(classify_area(pr(), ['frontend/src/App.vue']), {'frontend'})
-        # B: java/wotb-ai keeps the implementation layer and the product area.
         self.assertEqual(classify_area(pr(), ['java/wotb-ai/README.md']), {'backend', 'ai'})
-        # C: Keycloak provider -> auth.
         self.assertEqual(classify_area(pr(), ['keycloak-wargaming-provider/pom.xml']), {'auth'})
-        # Repository-owned workflow, governance and CI paths keep their area without a label.
         self.assertEqual(classify_area(pr(title='Bump checkout action'), ['.github/workflows/ci-gate.yml']), {'infra'})
         self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
         self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
-        # Root and GitHub maintainer documents are documentation even with a generic title.
         for path in ('README.md', 'AGENTS.md', 'HISTORY.md', '.github/AGENTS.md',
                      '.github/pull_request_template.md'):
             self.assertEqual(classify_area(pr(title='Update contributor guidance'), [path]), {'docs'}, path)
@@ -205,13 +198,10 @@ class ClassificationTests(unittest.TestCase):
                          {'infra', 'observability'})
 
     def test_semantic_fallback_only_without_path_evidence(self):
-        # D: no path rule matches; the stable semantic fallback classifies.
         self.assertEqual(classify_area(pr(title='Fix replay parser regression'), ['scripts/tool.py']), {'replay'})
-        # E: no path and no semantic evidence.
         self.assertEqual(classify_area(pr(title='Adjust wording'), ['scripts/tool.py']), {'unclassified'})
 
     def test_manual_area_label_never_overrides_changed_paths(self):
-        # F: an old area/* label is not an input unless the PR is a frozen historical one.
         labeled = pr(labels=[{'name': 'area/auth'}], title='frontend layout fix')
         self.assertEqual(classify_area(labeled, ['frontend/src/App.vue']), {'frontend'})
         self.assertEqual(classify_area(pr(number=1, state='closed', labels=[{'name': 'area/auth'}]),
@@ -220,13 +210,11 @@ class ClassificationTests(unittest.TestCase):
     def test_historical_frozen_overrides_are_stable(self):
         data = json.loads((Path(__file__).resolve().parents[1] / 'historical-area-overrides.json').read_text(encoding='utf-8-sig'))
         self.assertTrue({'635', '673', '709'} <= set(data))
-        # Merged/closed PRs keep their recorded area sets regardless of current labels/paths.
         self.assertEqual(classify_area(pr(number=635, state='closed', labels=[{'name': 'area/frontend'}]),
                                        ['frontend/changed.vue'], data), {'docs', 'infra', 'observability'})
         self.assertEqual(classify_area(pr(number=673, state='closed'), ['.github/workflows/ci-gate.yml'], data),
                          {'android', 'docs', 'frontend', 'playback', 'replay'})
         self.assertEqual(classify_area(pr(number=709, state='closed'), ['frontend/src/App.vue'], data), {'docs'})
-        # Open/reopened PRs use current paths even when a frozen record exists.
         self.assertEqual(classify_area(pr(number=709), ['frontend/src/App.vue'], data), {'frontend'})
 
     def test_feature_paths_preserve_cross_cutting_areas(self):
@@ -326,7 +314,7 @@ class SnapshotTests(unittest.TestCase):
             self.assertIn('# TYPE wotb_dev_pull_requests_total gauge', body)
             for forbidden in ('PRIVATE_SENTINEL', 'user@example.com', 'GITHUB_TOKEN', 'pr_number=', 'author='):
                 self.assertNotIn(forbidden, body)
-            self.assertEqual(state.errors, 1)  # HTTP did not call failing refresh.
+            self.assertEqual(state.errors, 1)
         finally:
             server.shutdown()
             worker.join()

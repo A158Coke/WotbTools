@@ -3,11 +3,6 @@ package com.wotb.ai.review;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Call #1（Pre-Battle Strategic Prior）的结构化输出契约。
- * <p>由 LLM 在完全不知道比赛结果的情况下产出；Backend 只负责解析与传输，
- * 不修改其中任何战术内容。字段缺失时解析器用空值兜底。</p>
- */
 public record PreBattleStrategicPrior(
         TeamProfile teamA,
         TeamProfile teamB,
@@ -30,7 +25,6 @@ public record PreBattleStrategicPrior(
                 || !hypotheses.isEmpty();
     }
 
-    /** 单方阵容战术画像。 */
     public record TeamProfile(
             Map<String, String> composition,
             List<String> strengths,
@@ -50,14 +44,12 @@ public record PreBattleStrategicPrior(
         }
     }
 
-    /** 关键区域对阵优劣势。area 在 V1 只能是 GRID_REGION_N 或抽象描述。 */
     public record KeyMatchup(String area, String advantage, String reason) {
     }
 
     public record StrategicWinCondition(String team, String condition) {
     }
 
-    /** 战略假设：团队复盘在 Call #2 中与实际情况对照（预期 vs 实际，考虑一波流等特殊战局）；随机战 harness 仍支持逐条状态判定。 */
     public record StrategicHypothesis(String id, String claim, String reason) {
     }
 }

@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# TX Keycloak PostgreSQL backup. The Keycloak database is authoritative identity
-# state. This script only reads it, validates the archive, and records a SHA-256
-# sidecar; it never drops, truncates, or deletes the source database or rows.
 set -Eeuo pipefail
 
 umask 077

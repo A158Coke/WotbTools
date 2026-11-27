@@ -22,16 +22,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Call #2（Tactical Review）Priority Bookends Prompt 构造器。
- * <p>前部建立注意力索引（TOP PIVOTAL WINDOWS），尾部提供完整关键窗口证据
- * （Controlled Redundancy）；预算不足时按相关性从低到高裁剪，保证
- * SNAPSHOT / PRIOR / TASK 三个书签段始终完整。</p>
- */
 public final class TacticalReviewPromptBuilder {
 
-    // 940k input budget 下窗口上限可以远高于 3：把关键决策窗口/对炮明细尽量喂全，
-    // 由 effectiveLimit 兜底裁剪（实际用量远低于预算时不会触发）。
     static final int MAX_TOP_WINDOWS = 8;
     static final int MAX_WINDOW_DETAIL = 8;
 
@@ -42,7 +34,6 @@ public final class TacticalReviewPromptBuilder {
     private TacticalReviewPromptBuilder() {
     }
 
-    /** 最终产物：system + user（含裁剪状态 + 各 context section 的 token 估算，供可观测性）。 */
     public record PreparedHarnessPrompt(
             String systemPrompt,
             String userContent,
@@ -80,9 +71,6 @@ public final class TacticalReviewPromptBuilder {
                 promptSafetyMarginTokens);
     }
 
-    /**
-     * 带 canonical timeline 的 Call #2 构建（时间线化主叙事；timeline 可为 null 时省略该段）。
-     */
     public static PreparedHarnessPrompt prepare(
             final PreBattleStrategicPrior prior,
             final EvidenceSkillResult evidence,
@@ -104,11 +92,8 @@ public final class TacticalReviewPromptBuilder {
         final String baseContent = sb.toString();
         final List<AiEvidence> rawEvidence = evidence != null ? evidence.evidence() : List.of();
         final List<AiEvidence> rawWindows = evidence != null ? evidence.criticalWindows() : List.of();
-        // 录像者掉血窗口：与 fallback 同格式/同口径；OBSERVED_DAMAGE_IS_PARTIAL 时抑制数字
         final boolean damagePartial = features != null && features.limitations() != null
                 && features.limitations().contains("OBSERVED_DAMAGE_IS_PARTIAL");
-        // 覆盖不全时防御性过滤：换血（ENGAGEMENT_TRADE）的摘要/数字与依赖它们的窗口
-        // 一律不得进入 LLM（即使调用方传入未过滤的 EvidenceSkillResult）。
         final List<AiEvidence> evidenceForPrompt = damagePartial
                 ? rawEvidence.stream()
                         .filter(e -> e.type() != EvidenceType.ENGAGEMENT_TRADE)
@@ -126,7 +111,6 @@ public final class TacticalReviewPromptBuilder {
         final String enemyPositionsSection =
                 EnemyLastKnownPositionsSection.renderPlayerSection(battle, recon);
         boolean includeEnemyPositions = !enemyPositionsSection.isEmpty();
-        // 覆盖不全时逐条交火数字同样是事件流伤害数字：一并抑制（与 fallback 交火段口径一致）
         if (damagePartial) {
             includeEngagements = false;
         }
@@ -136,7 +120,6 @@ public final class TacticalReviewPromptBuilder {
                 : "";
         boolean includeDamageWindows = !damageWindowsSection.isEmpty();
         boolean includePhases = features != null && features.phases() != null && !features.phases().isEmpty();
-        // 点数局势（击杀夺分时间线/占领点存在/进入控制点区域窗口）：录像者队伍视角
         final String pointsSituationSection = recorder != null && recorder.team() != null
                 ? PointsSituationEvidence.renderSection(
                         battle, recon, recorder.team(), damagePartial, "你的队伍", "敌方")
@@ -144,7 +127,6 @@ public final class TacticalReviewPromptBuilder {
         boolean includePointsSituation = !pointsSituationSection.isEmpty();
         boolean includeTop = !windows.isEmpty();
         boolean includeWindowDetail = !windows.isEmpty();
-        // Canonical Timeline 时间线段（Episode 化主叙事；timeline 不可用时省略）
         final String timelineSection = PersonalAiContextCompiler.renderTimelineSection(
                 timeline, recorder != null ? recorder.accountId() : null);
         boolean includeTimeline = !timelineSection.isBlank();
@@ -163,7 +145,6 @@ public final class TacticalReviewPromptBuilder {
         int estimated = estimate(estimator, TACTICAL_SYSTEM_PROMPT, content);
         boolean truncated = false;
 
-        // 相关性裁剪阶梯：先删细节，再删整段，最后删索引；书签段永不裁剪
         while (estimated > effectiveLimit) {
             if (windowDetail > Math.min(1, windows.size())) {
                 windowDetail = Math.min(1, windows.size());
@@ -209,10 +190,6 @@ public final class TacticalReviewPromptBuilder {
                 TACTICAL_SYSTEM_PROMPT, content, estimated, truncated, budgetSummary, sectionTokens);
     }
 
-    /**
-     * 低基数 context section token 估算：system / battle_context /
-     * prior / timeline / task。不含 battleId/accountId 等高基数字段。
-     */
     private static java.util.Map<String, Integer> sectionTokenEstimates(
             final AiTokenEstimator estimator,
             final Battle battle,
@@ -254,7 +231,6 @@ public final class TacticalReviewPromptBuilder {
     ) {
         final StringBuilder sb = new StringBuilder(baseContent);
         if (includeTimeline && !timelineSection.isBlank()) {
-            // 时间有序主叙事：PRIOR 之后立即给出整场章节
             sb.append("\n======================== TACTICAL TIMELINE（时间有序战局章节·battle-relative 确定性） ========================\n");
             sb.append(timelineSection);
         }
@@ -295,9 +271,6 @@ public final class TacticalReviewPromptBuilder {
         }
         if (includeEvidence && !evidenceForPrompt.isEmpty()) {
             sb.append("\n======================== TACTICAL EVIDENCE（Backend 确定性证据） ========================\n");
-            // 注意：raw momentumSeries（逐采样点的可观察 HP 差）观察集合可能不同，
-            // 直接展示会把 observation membership change 伪装成 HP momentum。
-            // 这里只输出 HpMomentumSkill.detect() 安全比较后生成的 HP_MOMENTUM AiEvidence。
             final String sections = TacticalEvidenceFormatter.renderEvidenceSections(evidenceForPrompt);
             if (!sections.isBlank()) {
                 sb.append(sections);
@@ -311,12 +284,10 @@ public final class TacticalReviewPromptBuilder {
                         .append(TacticalEvidenceFormatter.renderWindow(windows.get(i), true));
             }
         }
-        // TASK 必须是 user prompt 最后一个业务 section：证据之后再给最终推理指令
         sb.append("\n\n").append(taskSection());
         return sb.toString();
     }
 
-    /** 关键窗口是否携带换血伤害数字（覆盖不全时防御性剔除，避免未来调用方传入未过滤结果）。 */
     private static boolean windowCarriesTradeDamage(final AiEvidence window) {
         final Map<String, Double> numbers = window.numbers();
         return numbers != null
@@ -324,7 +295,6 @@ public final class TacticalReviewPromptBuilder {
                         || numbers.containsKey("recorderDamageReceived"));
     }
 
-    /** 对炮明细的对方玩家：优先昵称，缺失时回退 accountId。 */
     private static String opponentNames(final List<Long> accountIds, final Battle battle) {
         if (accountIds == null || accountIds.isEmpty()) {
             return "未知";
@@ -356,7 +326,6 @@ public final class TacticalReviewPromptBuilder {
         sb.append(PlayerReplayPromptBuilder.buildSummary(
                 battle, recon,
                 features != null && features.keyEvents() != null ? features.keyEvents() : List.of()));
-        // 走位/区域时间线（RECORDER_REGION_TIMELINE + 压缩移动段）：fallback 有、Harness 之前缺失
         if (features != null) {
             PlayerReplayPromptBuilder.appendRecorderMovementEvidence(
                     sb, features.movements(), battle.mapName);

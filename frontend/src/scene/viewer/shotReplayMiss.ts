@@ -1,12 +1,9 @@
-// 射击复现·脱靶分支可视化（#820 Agent A 出仓）：terrain_impact 落点/弹跳标注、
-// 射手模型摆放与脱靶信息面板。原 shotReplay 命中/脱靶分支共享上下文经 ctx 注入。
 import * as THREE from 'three'
 import { createScreenSpacePolyline, disposeOverlayObject } from './overlayStroke.js'
 import { ANNOTATION_COLORS, cssHex } from './shotResultPalette.js'
 import { poseFromYPR } from '../glbRig.js'
 import type { EquipmentSpec, PoseTickSample, ReplayShot, TankData, Vec3 } from './viewerContracts.js'
 
-/** 脱靶分支需要的 host 依赖（runShotReplay deps 的结构子集）。 */
 interface MissShotDeps {
   ml: { models: { tankModel: THREE.Object3D; armorModel: THREE.Object3D } }
   QP: { get(name: string): string | null }
@@ -23,14 +20,12 @@ interface MissShotDeps {
   setupShotDebug(refresh: ((on: boolean) => void) | null): void
 }
 
-/** loadShooterModel 解析结果。 */
 interface LoadedShooter {
   sd: TankData | null
   sModel: THREE.Object3D
   breechGunLocal: THREE.Vector3 | null
 }
 
-/** 脱靶渲染上下文（由 shotReplay.runShotReplay 注入）。 */
 interface MissShotCtx {
   s: ReplayShot
   QP: { get(name: string): string | null }
@@ -39,12 +34,9 @@ interface MissShotCtx {
   poseShooterTurretGun(sModel: THREE.Object3D | null, sd: TankData | null, turretYaw: number | null | undefined, launchVelocity: Vec3 | null | undefined, yaw: number, pitch: number, roll: number, gunPitch: number | null, gunYawRel: number, configIdx: number | null | undefined): void
 }
 
-/** 渲染脱靶弹道标注、射手模型与信息面板。 */
 export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): void {
     const { s, currentShot, loadShooterModel, poseShooterTurretGun } = ctx
 
-                        // 脱靶同样是 world 总览：dolly 补偿必须关闭（review：此前只在命中
-                        // 路径置 __worldPenMode，MISS 提前返回漏置 → 远距落点裁出视锥）
                         deps.setWorldOverviewMode(true);
                         const sTS2 = s.shooter_tick_samples || [];
                         let sHit2: PoseTickSample | null = null;
@@ -56,12 +48,9 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                         const ba = s.ball_a || null, bb = s.ball_b || null;
                         if (!ba || !bb || !(ba[0] || ba[1] || ba[2])) { deps.showShotError('脱靶弹缺少弹道数据（ball_a/ball_b）'); return; }
                         deps.dbgReset();
-                        // 场景中心 = 弹道弦中点（模型为参照物的最小摆放）
                         const mcx = (ba[0] + bb[0]) / 2, mcy = (ba[1] + bb[1]) / 2, mcz = (ba[2] + bb[2]) / 2;
-                        // 目标模型加载但隐藏：viewer 主流程依赖 deps.ml.models.tankModel/deps.ml.models.armorModel 存在
                         deps.ml.models.tankModel.visible = false;
                         deps.ml.models.armorModel.visible = false;
-                        // 射手模型：复用命中分支的加载/放置逻辑（loadShooterModel 工厂）
                         const shooterTid2 = parseInt(deps.QP.get('shooter') ?? '', 10);
                         if (shooterTid2 > 0) {
                             loadShooterModel(shooterTid2, {
@@ -70,23 +59,18 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                     const sYaw2 = sHit2 ? sHit2.yaw : 0;
                                     sModel.quaternion.copy(poseFromYPR(sYaw2, sHit2?.pitch ?? 0, sHit2 ? sHit2.roll : 0));
                                     sModel.position.set(shooterPos2[0] - mcx, shooterPos2[1] - mcy, shooterPos2[2] - mcz);
-                                    // 锚点 = type10 记录位置,不做 ball_a 对齐平移（原因见命中分支注释）
                                     window.__shooterFix = new THREE.Vector3(0, 0, 0);
                                 },
                             }).then(function(res: LoadedShooter | null) {
                                 if (!res || !currentShot()) return;
                                 const sd = res.sd, sModel = res.sModel, breechGunLocal2 = res.breechGunLocal;
                                 const sYaw2 = sHit2 ? sHit2.yaw : 0;
-                                // 脱靶分支同命中分支：显式 rel（镜像系相减还原 −rel）；prop2
-                                // frac 俯仰直用，回退时弹速反解
                                 const sgp2 = (s.quality && s.quality.gun_pitch_degraded &&
                                     s.quality.gun_pitch_degraded.indexOf('shooter') >= 0)
                                     ? null : (s.shooter_gun_pitch != null ? s.shooter_gun_pitch : null);
                                 const sRel2 = (s.shooter_turret_yaw || 0) - (s.shooter_ang ? s.shooter_ang[0] : 0);
                                 poseShooterTurretGun(sModel, sd, s.shooter_turret_yaw, s.launch_velocity, sYaw2,
                                     sHit2?.pitch ?? 0, sHit2 ? sHit2.roll : 0, sgp2, sRel2, s.shooter_config_idx);
-                                // 基准点标记（调试模式）：type10 记录位置锚点，坐标写入调试信息窗口。
-                                // 脱靶分支无 tick 切换，模型静态——标记挂 __worldAnno 随调试开关显隐。
                                 if (window.__worldAnno) {
                                     const amk2 = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10),
                                         new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.shooterAnchor, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
@@ -96,8 +80,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                     deps.dbgInfo('dbg-anchor-shooter', cssHex(ANNOTATION_COLORS.shooterAnchor), '基准点·射手',
                                         deps.fmt3(sModel.position.x + mcx, sModel.position.y + mcy, sModel.position.z + mcz));
                                 }
-                                // 炮闩标注（脱靶分支，镜像命中分支）:位置随炮塔/炮管 bake
-                                // 变换，标签附回放世界系坐标；对照线连服务器发射点 ball_a
                                 try {
                                     if (breechGunLocal2 && window.__worldAnno) {
                                         const gunNodes2: THREE.Object3D[] = [];
@@ -129,7 +111,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                 } catch (e) { console.warn('[world-miss] muzzle marker failed:', e); }
                             });
                         }
-                        // 标注组
                         if (window.__worldAnno) {
                             deps.getScene().remove(window.__worldAnno);
                             disposeOverlayObject(window.__worldAnno);
@@ -137,7 +118,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                         window.__worldImpactMk = null;
                         window.__worldAnno = new THREE.Group();
                         const chordM = Math.sqrt((bb[0]-ba[0])**2 + (bb[1]-ba[1])**2 + (bb[2]-ba[2])**2);
-                        // 屏幕空间弹道弦（2px 核心 + 4px 深色描边）：500m 总览也保持可见。
                         const trajLine2 = createScreenSpacePolyline([
                             new THREE.Vector3(ba[0]-mcx, ba[1]-mcy, ba[2]-mcz),
                             new THREE.Vector3(bb[0]-mcx, bb[1]-mcy, bb[2]-mcz),
@@ -179,7 +159,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                             });
                             if (vl2) window.__worldAnno.add(vl2);
                         }
-                        // 落点标记（黄）= method20 终点；terrain_impact 附加末段起点（弹跳点）与材质标签
                         const emk2 = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10),
                             new THREE.MeshBasicMaterial({ color: ANNOTATION_COLORS.endpoint, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false }));
                         emk2.position.set(bb[0]-mcx, bb[1]-mcy, bb[2]-mcz);
@@ -188,9 +167,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                         deps.dbgInfo('dbg-end', cssHex(ANNOTATION_COLORS.endpoint), '落点',
                             deps.fmt3(bb[0], bb[1], bb[2]) + (s.terrain_impact ? ' · 材质' + s.terrain_impact.material : ''));
                         if (s.terrain_impact) {
-                            // terminal_dir = 弹道末段速度方向向量（P1-B1 裁决：非位置点）。
-                            // 从落点画一条沿出射方向的方向线（固定 8m 长，单位化后缩放）+
-                            // 落点标记；与"发射点→落点"弦的偏角即弹跳/减速诊断。
                             const td = s.terrain_impact.terminal_dir;
                             const tdn = Math.sqrt(td[0]*td[0] + td[1]*td[1] + td[2]*td[2]) || 1;
                             const dirEnd = [
@@ -207,12 +183,11 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                                 opacity: 0.95,
                                 renderOrder: 997,
                             });
-                            if (segLn) window.__worldAnno.add(segLn);   // 随调试开关收纳(原 deps.getScene() 直挂漏显)
+                            if (segLn) window.__worldAnno.add(segLn);
                             deps.dbgInfo('dbg-ricochet', cssHex(ANNOTATION_COLORS.bounce), '落点出射方向',
                                 deps.fmt3(td[0], td[1], td[2]));
                         }
                         deps.getScene().add(window.__worldAnno);
-                        // 相机 = 射手侧弹道 3/4 视角（与命中分支同构：侧偏 + 上抬）
                         const dirT2 = new THREE.Vector3(bb[0]-ba[0], 0, bb[2]-ba[2]);
                         const lenH2 = dirT2.length();
                         if (lenH2 > 1) {
@@ -226,7 +201,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                         }
                         deps.getControls().target.set((ba[0]+bb[0])/2 - mcx, (ba[1]+bb[1])/2 - mcy, (ba[2]+bb[2])/2 - mcz);
                         deps.getControls().update();
-                        // 信息面板：落点/材质 + 弹种
                         const st2 = document.getElementById('turret-controls');
                         const flgM = s.hit_flags || 0;
                         if (st2) { st2.innerHTML = deps.shotErrorHtml() + '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
@@ -239,7 +213,6 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                             '<div class="ctrl-row">DMG 0 · MISS · 弦长 ' + chordM.toFixed(0) + 'm</div>' +
                             (s.terrain_impact ? '<div class="ctrl-row" style="font-size:10px;color:var(--blue);">落点材质类: ' +
                                 s.terrain_impact.material + (function() {
-                                    // 出射方向 vs（发射点→落点）弦的偏角：>2° 提示弹跳/末段减速
                                     const td = s.terrain_impact.terminal_dir;
                                     const ch = [bb[0]-ba[0], bb[1]-ba[1], bb[2]-ba[2]];
                                     const dn = Math.sqrt(td[0]*td[0]+td[1]*td[1]+td[2]*td[2]) || 1;
@@ -259,9 +232,7 @@ export function renderMissShotAnnotation(deps: MissShotDeps, ctx: MissShotCtx): 
                             (s.shell_kind ? ' (' + s.shell_kind + ')' : '') +
                             (s.quality && s.quality.shell_from_terrain ? ' · <span style="color:var(--blue);">弹种来自 0x1b 地形广播</span>' : '') +
                             '</div>'; }
-                        // 脱靶弹分支同样受调试开关收纳:默认隐藏面板与标注
                         deps.setupShotDebug(null);
-                        // URL debug=1 自动开启（与命中分支同语义）
                         window.__debugSetVisible?.(deps.QP.get('debug') === '1');
                         return;
 }

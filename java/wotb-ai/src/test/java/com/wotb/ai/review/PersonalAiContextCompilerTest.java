@@ -15,9 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * PersonalAiContextCompiler：真实随机战夹具 → canonical timeline → Episode 化 compact 上下文。
- */
 class PersonalAiContextCompilerTest {
 
     @Test
@@ -31,10 +28,6 @@ class PersonalAiContextCompilerTest {
         final BattleTimelineResult result = BattleTimelineBuilder.build(
                 battle, recon, TimelinePerspective.personal(
                         recorder.accountId > 0 ? recorder.accountId : null, recorder.team));
-        // PR162/P0-2+：该真实随机战夹具实际存在 subtype48 wrapper=3 ARENA_PERIOD 的 BATTLE 锚点
-        // （field3 为嵌套消息，其 field1=period=3）。旧 decoder 只认 Number → 误判「无 battle-start 权威」
-        // → fail-closed；修正后权威锚点可解码 → battleStart 非 null（绝非 max clock - duration 伪造）
-        // → timeline 可构建。
         assertNotNull(recon.battleStartRawClockSec(), "明确 BATTLE 锚点必须被解码，而非 fail-closed 成 null");
         assertTrue(result.usable(), "有权威 BATTLE 锚点时 timeline 必须可构建: " + result.validation().errors());
     }
@@ -46,8 +39,6 @@ class PersonalAiContextCompilerTest {
 
     @Test
     void hpChangesRenderCorrectSideLabels() {
-        // 己方 HP 变化不得被渲染成“敌方 HP”；
-        // recorder → 「你」，friendly 队友 → 「队友」，enemy → 「敌方」（side 来自 delta 属性）。
         final com.wotb.core.model.PlayerResult rec = new com.wotb.core.model.PlayerResult();
         rec.accountId = 1001;
         rec.team = 1;
@@ -92,14 +83,12 @@ class PersonalAiContextCompilerTest {
                     com.wotb.core.replay.event.DecodeConfidence.EXACT, eid, 0, 0,
                     eid * 10f, 0f, eid * 10f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         }
-        // 位置流持续到 t=14（HP 变化前一帧仍 active → HP_CHANGE 而非 HP_GAP_DELTA）
         for (final int eid : new int[]{1, 2, 3}) {
             events.add(new com.wotb.core.replay.event.PositionChangedEvent(30 + eid,
                     new com.wotb.core.replay.event.ReplayTimestamp(1014f, null), 10,
                     com.wotb.core.replay.event.DecodeConfidence.EXACT, eid, 0, 0,
                     eid * 10f + 1f, 0f, eid * 10f + 1f, 0f, 0f, 0f, 0f, 0f, 0f, (byte) 0));
         }
-        // HP：t=5 全满，t=15 各自掉血（产生 HP_CHANGE delta）
         events.add(new com.wotb.core.replay.event.HealthChangedEvent(20,
                 new com.wotb.core.replay.event.ReplayTimestamp(1005f, null), 7,
                 com.wotb.core.replay.event.DecodeConfidence.EXACT, 1, 2000, null, true));
@@ -144,17 +133,14 @@ class PersonalAiContextCompilerTest {
 
     @Test
     void episodeSelectionKeepsHeadAndTailForLongBattles() {
-        // 超长战斗保留首尾 Episode（残局不丢），中间折叠
         final java.util.List<Integer> selected = PersonalAiContextCompiler.selectedEpisodeIndices(20, 14);
         assertEquals(14, selected.size());
         assertEquals(Integer.valueOf(0), selected.getFirst(), "必须保留首个 Episode");
         assertEquals(Integer.valueOf(19), selected.getLast(), "必须保留最后（残局）Episode");
         assertTrue(new java.util.HashSet<>(selected).size() == selected.size(), "选区不得重复");
-        // 升序
         for (int i = 1; i < selected.size(); i++) {
             assertTrue(selected.get(i) > selected.get(i - 1));
         }
-        // 不超限时全选
         assertEquals(10, PersonalAiContextCompiler.selectedEpisodeIndices(10, 14).size());
     }
 }
