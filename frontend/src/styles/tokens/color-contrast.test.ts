@@ -258,7 +258,8 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
         }
       }
     }
-    const pillCombos = [...style.matchAll(/\.tp-pill[\w.:-]*\s*\{[^}]*background:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*16%,\s*var\(--color-surface-1\)\);\s*color:\s*var\((--color-[\w-]+)\);/g)]
+    const identityStyle = readFileSync(resolve(HERE, '../../components/tank-catalog-identity.css'), 'utf8')
+    const pillCombos = [...identityStyle.matchAll(/\.tp-pill[\w.:-]*\s*\{[^}]*background:\s*color-mix\(in oklab,\s*var\((--color-[\w-]+)\)\s*16%,\s*var\(--color-surface-1\)\);\s*color:\s*var\((--color-[\w-]+)\);/g)]
       .map(match => [match[2], match[1]] as const)
     expect(pillCombos.length, '语义 pill 组合提取数量').toBeGreaterThanOrEqual(4)
     for (const [textToken, bgToken] of pillCombos) {

@@ -328,8 +328,6 @@ function choose(tank) {
   white-space: nowrap;
 }
 
-.tp-pill { display: inline-flex; align-items: center; gap: var(--space-1); }
-
 .tp-results { min-block-size: 0; }
 .tp-results.is-dialog-results {
   flex: 1;
@@ -378,57 +376,6 @@ function choose(tank) {
   .tp-card.is-collector:not(.is-premium):hover { background: color-mix(in oklab, var(--color-info) 46%, var(--color-surface-1)); }
 }
 
-.tp-media {
-  position: relative;
-  display: grid;
-  place-items: center;
-  aspect-ratio: 8 / 5;
-  inline-size: 100%;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: transparent;
-}
-
-.tp-media img {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
-}
-
-.tp-card-name {
-  display: -webkit-box;
-  min-block-size: calc(var(--line-height-body) * 2);
-  overflow: hidden;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.tp-badges { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-
-.tp-pill {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  corner-shape: round;
-  background: var(--color-surface-3);
-  color: var(--color-text-secondary);
-  font: var(--type-caption);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.tp-pill.is-tier,
-.tp-pill.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
-.tp-pill.t-light { background: color-mix(in oklab, var(--color-success) 16%, var(--color-surface-1)); color: var(--color-success); }
-.tp-pill.t-medium { background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-1)); color: var(--color-accent-text); }
-.tp-pill.t-heavy { background: color-mix(in oklab, var(--color-danger) 16%, var(--color-surface-1)); color: var(--color-danger); }
-.tp-pill.t-td { background: color-mix(in oklab, var(--color-info) 16%, var(--color-surface-1)); color: var(--color-info); }
-.tp-pill.is-shell { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
-.tp-pill.is-shell.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
-
 .tp-card-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -454,3 +401,5 @@ function choose(tank) {
   .tp-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 }
 </style>
+
+<style scoped src="./tank-catalog-identity.css"></style>

@@ -14,6 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'home', 'replay', 'hof', 'more', 'hof-admin',
   'profile', 'admin-users', 'admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-events', 'agent-tankopedia', 'agent-mobility', 'agent-armor', 'agent-shots', 'agent-techtree',
+  'agent-version-diff',
   'map-preview',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
   'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
@@ -32,6 +33,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof', group: 'battle' }),
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia', group: 'reference' }),
   Object.freeze({ id: 'techtree', view: 'agent-techtree', labelKey: 'research.title', group: 'reference' }),
+  Object.freeze({ id: 'version-diff', view: 'agent-version-diff', labelKey: 'nav.versionChanges', group: 'reference' }),
   Object.freeze({ id: 'maps', view: 'map-preview', labelKey: 'nav.maps', group: 'reference' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title', group: 'events' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle', group: 'events' }),
@@ -63,6 +65,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-mobility': 'tankopedia',
   'agent-armor': 'tankopedia',
   'agent-techtree': 'techtree',
+  'agent-version-diff': 'version-diff',
   'map-preview': 'maps',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
@@ -132,6 +135,7 @@ const ARMOR_SCENE_QUERY_KEYS = [
 ]
 const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
 const MAP_PREVIEW_QUERY_KEYS = ['map', 'mode', 'bases']
+const VERSION_DIFF_QUERY_KEYS = ['from', 'to']
 
 export function locationForView(view, route) {
   const query = { ...route.query }
@@ -156,6 +160,9 @@ export function locationForView(view, route) {
   }
   if (route.query?.view === 'map-preview' && view !== 'map-preview') {
     for (const key of MAP_PREVIEW_QUERY_KEYS) delete query[key]
+  }
+  if (route.query?.view === 'agent-version-diff' && view !== 'agent-version-diff') {
+    for (const key of VERSION_DIFF_QUERY_KEYS) delete query[key]
   }
   if (view === 'home' || view === 'android' || view === 'sponsor') delete query.view
   else query.view = view
