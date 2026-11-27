@@ -72,6 +72,7 @@ export interface ShotResultCardInput {
   chancePen: number
   dmgVal: number
   distVal: number
+  damageFactor?: number | null
   dmgDealt: number
   resultRole: ShotResultRole
   layerRoles?: ReadonlyArray<ShotResultRole>
@@ -115,7 +116,7 @@ export function createPartialChanceResolver(
 export function renderShotResultCardHtml(input: ShotResultCardInput): string {
   const {
     result, layers, partialChainLayers, chancePen,
-    dmgVal, distVal, dmgDealt, resultRole, layerRoles,
+    dmgVal, distVal, damageFactor = null, dmgDealt, resultRole, layerRoles,
     cardChance, heInfo, heChance, heDirectHit,
     probabilityMode, overallChance, hasChance, chancePartial, blockedNoPrimary,
     fragValidated = null,
@@ -147,7 +148,11 @@ export function renderShotResultCardHtml(input: ShotResultCardInput): string {
   let html = `<div style="background:var(--tooltip-bg);border-radius:${cardMetrics.radius}px;border-left:${cardMetrics.borderWidth}px solid ${cardBorder};padding:${cardMetrics.padding};font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
   if (distVal > 0 || Number.isFinite(chancePen)) {
     const top = [];
-    if (distVal > 0) top.push(`${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}`);
+    if (distVal > 0) {
+      const factorPct = typeof damageFactor === 'number' && Number.isFinite(damageFactor)
+        ? Math.round(damageFactor * 100) : null;
+      top.push(`${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}${factorPct == null ? '' : ` · ×${factorPct}%`}`);
+    }
     if (Number.isFinite(chancePen)) top.push(`${escapeText(L.effectivePenetration)}: ${fmtNum(chancePen)}mm`);
     if (heInfo && Number.isFinite(heInfo.explosion_radius) && heInfo.explosion_radius > 0) {
       top.push(`${escapeText(L.heRadius)}: ${fmtNum(heInfo.explosion_radius)} ${escapeText(L.distanceUnit)}`);
