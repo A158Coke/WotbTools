@@ -143,6 +143,53 @@ describe('collisionView dynamic armor state (P1-B)', () => {
     expect(inactive.material.color.getHex()).toBe(0x123456)
     expect(activeDefault.visible).toBe(false)
   })
+
+  it('keeps the selected fixed plate highlighted across dynamic state changes', () => {
+    const fixed = makeArmorMesh('hull_armor_12', 'hull', 80)
+    fixed.userData.armorPlateId = '12'
+    const activeDefault = makeArmorMesh('hull_state_01_armor_13')
+    const inactive = makeArmorMesh('hull_state_01_armor_14')
+    const { cvs, armorModel, setCollisionMode } = makeView()
+    armorModel.add(fixed, activeDefault, inactive)
+    cvs.resolveArmorStateDecl(8305)
+    cvs.applyArmorStateToModel()
+
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+    cvs.applyArmorHighlight(fixed)
+    expect(fixed.material.opacity).toBe(1)
+
+    cvs.setArmorState(1)
+
+    // 新激活的板必须重新进入“未选中”态，不能以默认不透明材质盖住当前选中板。
+    expect(inactive.visible).toBe(true)
+    expect(inactive.material.opacity).toBe(0.18)
+    expect(inactive.material.transparent).toBe(true)
+    expect(inactive.material.depthWrite).toBe(false)
+    expect(inactive.children.find(child => child.isLineSegments).visible).toBe(false)
+    expect(fixed.material.opacity).toBe(1)
+    expect(fixed.children.find(child => child.isLineSegments).visible).toBe(true)
+  })
+
+  it('clears the selection when a dynamic state hides the selected plate', () => {
+    const activeDefault = makeArmorMesh('hull_state_01_armor_13')
+    const inactive = makeArmorMesh('hull_state_01_armor_14')
+    const { cvs, armorModel, setCollisionMode } = makeView()
+    armorModel.add(activeDefault, inactive)
+    cvs.resolveArmorStateDecl(8305)
+    cvs.applyArmorStateToModel()
+
+    setCollisionMode(true)
+    cvs.applyArmorViewStyle(true)
+    cvs.applyArmorHighlight(activeDefault)
+
+    cvs.setArmorState(1)
+
+    expect(cvs.getHighlightedArmorNode()).toBeNull()
+    expect(clickInfoCard().style.display).toBe('none')
+    expect(inactive.material.opacity).toBe(1)
+    expect(inactive.children.find(child => child.isLineSegments).visible).toBe(true)
+  })
 })
 
 describe('collisionView deferred heatmap operations (P2-A)', () => {

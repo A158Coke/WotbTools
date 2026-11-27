@@ -524,6 +524,10 @@ function setArmorState(stateId: number): void {
             armorStateCurrent = stateId;
             applyArmorStateToModel();
             applyCategoryFilters();
+            // 切态会给新激活的板换回默认不透明材质；若当前选中仍有效，重放高亮，
+            // 否则 applyCategoryFilters 已经清掉失效选中。这样新激活的未选中板保持
+            // 0.18 / 不写深度 / 无勾线，不会把真正选中的板遮住。
+            if (getCollisionMode() && highlightedArmorNode) applyArmorHighlight(highlightedArmorNode);
             if ((getPenetrationMode() || hmRef().getPrimaryArmorScene()) && models.armorModel) {
                 applyArmorStateToHeatmapClonesFn(activePlateSet(armorStateDecl, stateId));
                 rebuildRicochetPackFn();
