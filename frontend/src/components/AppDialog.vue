@@ -10,6 +10,7 @@ const props = defineProps({
   title: { type: String, required: true },
   size: { type: String, default: 'md', validator: v => ['sm', 'md', 'lg', 'xl', 'viewport'].includes(v) },
   closeOnScrim: { type: Boolean, default: true },
+  returnFocusTo: { type: Object, default: null },
   tone: { type: String, default: 'default', validator: v => ['default', 'danger'].includes(v) },
   keepMounted: { type: Boolean, default: false },
   scrimClass: { type: String, default: '' },
@@ -57,7 +58,7 @@ function syncLayer(open) {
 
 watch(() => props.open, (open) => {
   syncLayer(open)
-  if (open) opener = document.activeElement
+  if (open) opener = props.returnFocusTo ?? document.activeElement
   else if (props.keepMounted) nextTick(() => restoreOpener())
 }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => syncLayer(false))

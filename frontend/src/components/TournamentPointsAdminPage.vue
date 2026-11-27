@@ -18,6 +18,8 @@ import AppDialog from './AppDialog.vue'
 import MenuButton from './MenuButton.vue'
 import FileDrop from './FileDrop.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
+import SearchableSelect from './SearchableSelect.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import TournamentPointsTable from './TournamentPointsTable.vue'
 import TournamentGroupReview from './TournamentGroupReview.vue'
 import { createTournamentPointsCsv, localizedDayLabel } from '../utils/tournamentPointsExport.js'
@@ -35,8 +37,16 @@ const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
 watch(() => network.value.available, value => { owner.networkAvailable.value = value }, { immediate: true })
 const files = ref<File[]>([]), expected = ref<number | string>(''), reason = ref(''), correctionCount = ref(1)
 const clearClan = ref(''), clearDay = ref<number | null>(null), restore = ref(false)
+const clearClanOptions = computed(() => (config.value?.clans ?? []).map(value => ({ value, label: value })))
+const clearScopeOptions = computed(() => [
+  { value: 'round', label: t('tournament.wholeRound'), disabled: busy.value },
+  ...Array.from({ length: config.value?.event.daysPerRound ?? 0 }, (_, i) => ({
+    value: String(i + 1), label: t('tournament.day', { number: i + 1 }), disabled: busy.value,
+  })),
+])
 const dialog = ref<'' | 'finalize' | 'correction' | 'clear' | 'discard'>('')
 const panel = ref<'' | 'csv' | 'historical' | 'audit'>('')
+const moreMenu = ref<InstanceType<typeof MenuButton> | null>(null)
 const historicalConfirm = ref(false)
 const csvConfirm = ref(false)
 const exportingCsv = ref(false)
@@ -215,6 +225,8 @@ const moreItems = computed(() => [
   ...(config.value ? [{ key: 'audit', label: t('tournament.audit'), testid: 'tournament-admin-audit' }] : []),
 ])
 function selectMore(key: string) {
+  if (['correction', 'clear', 'csv', 'historical', 'audit'].includes(key)) moreMenu.value?.focus()
+  if (key === 'clear' || key === 'correction') reason.value = ''
   if (key === 'refresh') { void owner.loadSelection(); void owner.loadEvents() }
   else if (key === 'export-csv') void exportCanonicalCsv()
   else if (key === 'correction') dialog.value = 'correction'
@@ -229,7 +241,7 @@ onScopeDispose(clearLocal)
       <TournamentEventSelect v-if="allowed" v-model="eventId" compact :events="events" :disabled="busy || recognizing || eventsLoading" />
       <RouterLink class="tournament-header-link" :to="{ path: '/', query: { view: 'tournament-points' } }">{{ $t('tournament.publicBoard') }}</RouterLink>
       <RouterLink class="tournament-header-link" :to="{ path: '/', query: { view: 'tournament-points-config' } }">{{ $t('tournament.configure') }}</RouterLink>
-      <MenuButton v-if="allowed" :label="$t('tournament.more')" :items="moreItems" data-testid="tournament-admin-more" @select="selectMore" />
+      <MenuButton v-if="allowed" ref="moreMenu" :label="$t('tournament.more')" :items="moreItems" data-testid="tournament-admin-more" @select="selectMore" />
     </template></ShowcaseHero>
     <Banner v-if="!allowed" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
     <template v-else>
@@ -371,20 +383,25 @@ onScopeDispose(clearLocal)
       <p v-if="historicalPreview">{{ historicalPreview.standings.event.year }} · {{ $t('tournament.regions.' + historicalPreview.standings.event.region) }} · {{ $t('tournament.seasons.' + historicalPreview.standings.event.season) }}</p>
       <template #actions><AppButton :disabled="busy" @click="historicalConfirm = false">{{ $t('tournament.cancel') }}</AppButton><AppButton variant="primary" :disabled="!canImportHistorical || !historicalPreview" @click="confirmHistorical">{{ $t('tournament.historicalPublish') }}</AppButton></template>
     </AppDialog>
-    <AppDialog :open="!!dialog" :title="$t(dialog === 'finalize' ? 'tournament.finalizeTitle' : dialog === 'correction' ? 'tournament.correctionTitle' : dialog === 'clear' ? 'tournament.clearTitle' : 'tournament.discard')" :tone="dialog === 'clear' || dialog === 'discard' ? 'danger' : 'default'" @close="!busy && (dialog = '')">
+    <AppDialog :open="!!dialog" :close-on-scrim="dialog !== 'clear' && dialog !== 'correction'" :title="$t(dialog === 'finalize' ? 'tournament.finalizeTitle' : dialog === 'correction' ? 'tournament.correctionTitle' : dialog === 'clear' ? 'tournament.clearTitle' : 'tournament.discard')" :tone="dialog === 'clear' || dialog === 'discard' ? 'danger' : 'default'" @close="!busy && (dialog = '')">
       <p>{{ $t(dialog === 'finalize' ? 'tournament.finalizeHint' : dialog === 'correction' ? 'tournament.correctionHint' : dialog === 'clear' ? 'tournament.clearHint' : 'tournament.discardHint') }}</p>
       <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>
       <div class="tournament-stack">
         <label v-if="dialog === 'correction'" class="tournament-field"><span>{{ $t('tournament.expectedGroups') }}</span><input v-model.number="correctionCount" type="number" inputmode="numeric" min="1" max="10000" /></label>
         <template v-if="dialog === 'clear'">
-          <label class="tournament-field"><span>{{ $t('tournament.clan') }}</span><select v-model="clearClan"><option v-for="tag in config?.clans" :key="tag" :value="tag">{{ tag }}</option></select></label>
-          <label class="tournament-field"><span>{{ $t('tournament.clearScope') }}</span><select v-model="clearDay"><option :value="null">{{ $t('tournament.wholeRound') }}</option><option v-for="value in config?.event.daysPerRound" :key="value" :value="value">{{ $t('tournament.day', { number: value }) }}</option></select></label>
+          <div class="tournament-field"><label for="clear-clan">{{ $t('tournament.clan') }}</label>
+            <SearchableSelect v-model="clearClan" input-id="clear-clan" :label="$t('tournament.clan')" :options="clearClanOptions" :disabled="busy" inline />
+          </div>
+          <div class="tournament-field"><span>{{ $t('tournament.clearScope') }}</span>
+            <SegmentedControl :model-value="clearDay === null ? 'round' : String(clearDay)" :options="clearScopeOptions"
+              :ariaLabel="$t('tournament.clearScope')" presentation="chips" @update:model-value="clearDay = $event === 'round' ? null : Number($event)" />
+          </div>
           <label class="tournament-check"><input v-model="restore" type="checkbox" />{{ $t('tournament.restore') }}</label>
         </template>
         <label v-if="dialog === 'correction' || dialog === 'clear'" class="tournament-field"><span>{{ $t('tournament.reason') }}</span><textarea v-model="reason" maxlength="500" required /></label>
       </div>
       <template #actions><AppButton :disabled="busy" @click="dialog = ''">{{ $t('tournament.cancel') }}</AppButton>
-        <AppButton :variant="dialog === 'clear' || dialog === 'discard' ? 'danger' : 'primary'" :disabled="busy || (dialog === 'finalize' && !canFinalize) || (['correction', 'clear'].includes(dialog) && !reason.trim()) || (dialog === 'correction' && (!Number.isInteger(correctionCount) || correctionCount < 1 || correctionCount > 10000))" @click="confirm">
+        <AppButton :variant="dialog === 'clear' || dialog === 'discard' ? 'danger' : 'primary'" :disabled="busy || (dialog === 'clear' && !clearClan) || (dialog === 'finalize' && !canFinalize) || (['correction', 'clear'].includes(dialog) && !reason.trim()) || (dialog === 'correction' && (!Number.isInteger(correctionCount) || correctionCount < 1 || correctionCount > 10000))" @click="confirm">
           {{ $t(dialog === 'finalize' ? 'tournament.finalize' : dialog === 'correction' ? 'tournament.startCorrection' : dialog === 'clear' ? 'tournament.clearConfirm' : 'tournament.discard') }}
         </AppButton>
       </template>

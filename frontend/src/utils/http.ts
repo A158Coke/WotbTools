@@ -229,14 +229,16 @@ export function featureForApiPath(pathname: string): string | null {
   return null
 }
 
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, gateMode: 'interactive' | 'silent' = 'interactive'): Promise<Response> {
   try {
     const resolved = resolveApiUrl(input)
     if (isAndroidRuntime()) {
       const url = new URL(typeof resolved === 'string' ? resolved : resolved instanceof URL ? resolved.href : resolved.url, window.location.href)
       const feature = featureForApiPath(url.pathname)
-      if (feature && !useFeatureGate().requireFeature(feature)) {
-        throw new ApiError({ code: 'NETWORK_ERROR', retryable: true })
+      if (feature) {
+        const gate = useFeatureGate()
+        const allowed = gateMode === 'silent' ? gate.availability(feature) : { available: gate.requireFeature(feature), pending: false }
+        if (allowed.pending || !allowed.available) throw new ApiError({ code: 'NETWORK_ERROR', retryable: true })
       }
     }
     return isAndroidRuntime()

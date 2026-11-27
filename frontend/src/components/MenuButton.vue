@@ -1,5 +1,5 @@
 <script setup>
-import { inject } from 'vue'
+import { inject, ref } from 'vue'
 import { DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import { ChevronDown } from 'lucide-vue-next'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -15,12 +15,15 @@ defineProps({
 })
 const emit = defineEmits(['select'])
 const inline = inject(DIALOG_INLINE_KEY, false)
+const trigger = ref(null)
+defineExpose({ focus: () => trigger.value?.focus({ preventScroll: true }) })
 </script>
 
 <template>
   <DropdownMenuRoot :modal="false">
     <DropdownMenuTrigger as-child :disabled="disabled">
       <button
+        ref="trigger"
         type="button"
         class="menu-trigger"
         :class="`is-${variant}`"

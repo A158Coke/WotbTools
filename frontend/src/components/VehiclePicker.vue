@@ -10,8 +10,10 @@ const props = defineProps({
   nullLabel: { type: String, default: '' },
   placeholder: { type: String, default: '' },
   fallbackLabel: { type: String, default: '' },
+  inputLabel: { type: String, default: undefined },
   inputId: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
+  inline: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue', 'change'])
 const { t } = useI18n()
@@ -94,6 +96,7 @@ function moveActive(step) {
 }
 
 function onKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault()
     if (!open.value) return openList()
@@ -134,50 +137,53 @@ watch(() => props.options, () => {
 </script>
 
 <template>
-  <div ref="root" class="vehicle-picker" :class="{ 'is-open': open }" @focusout="onFocusOut">
-    <input
-      :id="resolvedInputId"
-      ref="input"
-      class="vp-input"
-      type="text"
-      role="combobox"
-      autocomplete="off"
-      spellcheck="false"
-      aria-autocomplete="list"
-      :aria-expanded="open"
-      :aria-controls="listId"
-      :aria-activedescendant="activeDescendant"
-      :value="open ? query : displayLabel"
-      :placeholder="open ? (displayLabel || t('vehiclePicker.placeholder')) : placeholderText"
-      :disabled="disabled"
-      :data-value="modelValue ?? ''"
-      @click="openList"
-      @input="onInput"
-      @keydown="onKeydown"
-    />
-    <span class="vp-actions">
-      <button
-        v-if="nullLabel && modelValue != null && !disabled"
-        type="button"
-        class="vp-btn"
-        tabindex="-1"
-        :aria-label="t('vehiclePicker.clear')"
-        :title="t('vehiclePicker.clear')"
-        @mousedown.prevent
-        @click="clearSelection"
-      ><X :size="16" aria-hidden="true" /></button>
-      <button
-        type="button"
-        class="vp-btn"
-        tabindex="-1"
-        :disabled="disabled"
-        :aria-label="t('vehiclePicker.toggle')"
+  <div ref="root" class="vehicle-picker" :class="{ 'is-open': open, 'is-inline': inline }" @focusout="onFocusOut">
+    <div class="vp-control">
+      <input
+        :id="resolvedInputId"
+        ref="input"
+        class="vp-input"
+        type="text"
+        role="combobox"
+        autocomplete="off"
+        spellcheck="false"
+        :aria-label="inputLabel"
+        aria-autocomplete="list"
         :aria-expanded="open"
         :aria-controls="listId"
-        @mousedown.prevent
-        @click="toggleList"
-      ><ChevronDown :size="16" aria-hidden="true" /></button>
-    </span>
+        :aria-activedescendant="activeDescendant"
+        :value="open ? query : displayLabel"
+        :placeholder="open ? (displayLabel || t('vehiclePicker.placeholder')) : placeholderText"
+        :disabled="disabled"
+        :data-value="modelValue ?? ''"
+        @click="openList"
+        @input="onInput"
+        @keydown="onKeydown"
+      />
+      <span class="vp-actions">
+        <button
+          v-if="nullLabel && modelValue != null && !disabled"
+          type="button"
+          class="vp-btn"
+          tabindex="-1"
+          :aria-label="t('vehiclePicker.clear')"
+          :title="t('vehiclePicker.clear')"
+          @mousedown.prevent
+          @click="clearSelection"
+        ><X :size="16" aria-hidden="true" /></button>
+        <button
+          type="button"
+          class="vp-btn"
+          tabindex="-1"
+          :disabled="disabled"
+          :aria-label="t('vehiclePicker.toggle')"
+          :aria-expanded="open"
+          :aria-controls="listId"
+          @mousedown.prevent
+          @click="toggleList"
+        ><ChevronDown :size="16" aria-hidden="true" /></button>
+      </span>
+    </div>
     <ul
       v-show="open"
       :id="listId"
@@ -210,15 +216,24 @@ watch(() => props.options, () => {
 <style scoped>
 .vehicle-picker { position: relative; min-width: 0; }
 
+.vp-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-1);
+}
+
 .vp-input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   min-height: var(--control-h-md);
-  padding: 0 calc(var(--control-h-sm) * 2 + var(--space-2)) 0 var(--space-3);
-  border: 1px solid var(--color-border-strong);
+  padding: 0 var(--space-3);
+  border: 0;
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: transparent;
   color: var(--color-text-primary);
   font: var(--type-body);
   text-overflow: ellipsis;
@@ -228,11 +243,10 @@ watch(() => props.options, () => {
 .vp-input:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .vp-input:disabled { cursor: not-allowed; opacity: .55; }
 
+.is-inline .vp-list { position: static; margin-top: var(--space-1); }
+
 .vp-actions {
-  position: absolute;
-  top: 0;
-  right: var(--space-1);
-  bottom: 0;
+  padding-inline-end: var(--space-1);
   display: flex;
   align-items: center;
   gap: var(--space-0);
