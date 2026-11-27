@@ -149,6 +149,21 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
             <div v-if="selectedShell.maxAmmo != null"><dt>{{ t('agentTanks.configurator.shell_capacity') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.maxAmmo, 0) }}</span></dd></div>
             <div v-if="selectedShell.explosionRadius > 0"><dt>{{ t('agentTanks.configurator.explosion_radius') }}</dt><dd><span class="tp-param-value">{{ fmtNum(selectedShell.explosionRadius, 2) }}</span><span class="tp-param-unit">{{ t('agentTanks.units.METER') }}</span></dd></div>
           </dl>
+          <div v-if="selectedShell.damageByDistance?.length" class="tp-shell-tray" data-testid="tank-shell-tray">
+            <p class="tp-shell-tray-title">{{ t('agentTanks.mechanics.tray_shell_damage') }}</p>
+            <ul class="tp-shell-tray-list">
+              <li
+                v-for="(row, i) in selectedShell.damageByDistance"
+                :key="i"
+                class="tp-shell-tray-row"
+                :data-testid="`tank-shell-tray-${i}`"
+              >
+                <span class="tp-shell-tray-range">{{ row.label }}</span>
+                <span class="tp-shell-tray-damage">{{ fmtNum(row.damage, 0) }}</span>
+                <span class="tp-shell-tray-mul">{{ t('agentTanks.mechanics.multiplier', { percent: row.percent }) }}</span>
+              </li>
+            </ul>
+          </div>
         </div>
 
         <dl class="tp-param-list">
@@ -218,6 +233,13 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
 .tp-shell-stats > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding: var(--space-1) 0 var(--space-1) var(--space-3); }
 .tp-shell-stats dt { color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 .tp-shell-stats dd { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tp-shell-tray { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.tp-shell-tray-title { margin: 0; color: var(--color-text-primary); font: var(--type-caption); font-weight: 600; }
+.tp-shell-tray-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.tp-shell-tray-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content; align-items: baseline; gap: var(--space-2); padding-block: var(--space-1); font: var(--type-caption); }
+.tp-shell-tray-range { color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.tp-shell-tray-damage { color: var(--color-text-primary); font-weight: 600; font-variant-numeric: tabular-nums; text-align: end; }
+.tp-shell-tray-mul { color: var(--color-warning); font-variant-numeric: tabular-nums; text-align: end; }
 .tp-param-list { display: grid; margin: 0; }
 .tp-param-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); padding-block: var(--space-2); }
 .tp-param-row + .tp-param-row { border-block-start: 1px solid var(--color-border-subtle); }

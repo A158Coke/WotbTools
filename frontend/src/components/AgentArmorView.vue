@@ -91,6 +91,7 @@ const {
 let viewer = null
 const viewerReady = ref(false)
 const distanceState = ref(null)
+const shotState = ref(null)
 const webgl = detectWebGL()
 const load = ref({ state: 'loading', progress: null, message: '' })
 const shellChrome = inject(SHELL_CHROME_KEY, null)
@@ -170,6 +171,7 @@ watch(pitchDeviceBonusValue, value => { viewer?.setPitchDeviceBonus?.(value) })
 
 function startViewer(preserveSelection = false) {
     distanceState.value = null
+    shotState.value = null
     const seq = currentNavSeq()
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
@@ -201,6 +203,7 @@ function startViewer(preserveSelection = false) {
             selectedTargetId.value = selection.target
         },
         onDistanceChange: state => { if (isSeqCurrent(seq)) distanceState.value = state },
+        onJudgmentDistance: state => { if (isSeqCurrent(seq)) shotState.value = state },
         onConfigSelection: index => syncNativeTargetConfig(index),
         onShellSelection: index => syncNativeShell(index),
         onEquipmentSelection: (kind, value) => syncNativeEquipment(kind, value),
@@ -336,6 +339,7 @@ onBeforeUnmount(() => {
             <ArmorShotHud
                 :shooter-id="shooterSetupId"
                 :distance-state="load.state === 'ready' ? distanceState : null"
+                :shot-state="load.state === 'ready' ? shotState : null"
                 @distance="value => viewer?.setDistance?.(value)"
                 :scfg="shooterConfigValue"
                 :upgrade="armorUpgrade(route.query.supgrade)"

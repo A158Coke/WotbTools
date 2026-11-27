@@ -28,16 +28,18 @@ function bindPreset(camera, controls) {
     };
     const eqs = { effectivePitchDevice: () => false, getPitchDeviceBonusValue: () => 0 };
     const tc = { tidyTrajectory: () => {} };
+    let invalidated = 0;
+    const invalidateJudgment = () => { invalidated++; };
     let currentTurretDeg = 0, currentGunDeg = 0;
     const pitchAtBearing = () => ({ down: -20, up: 20 });
     const currentConfig = () => ({ pitch_limits: { down: -20, up: 20 } });
     const S = {
       destroyed: false, contextLost: false, ARMOR_REF_DIST: 15, QP: new URLSearchParams(),
-      ml, rig, eqs, tc, camera, controls, currentConfig,
+      ml, rig, eqs, tc, camera, controls, currentConfig, invalidateJudgment,
       currentTurretDeg: 0, currentGunDeg: 0,
     };
     ${presetSource}
-    return { setCameraPreset: (kind, opts) => setCameraPreset(S, kind, opts), pose: () => ({ turretDeg: S.currentTurretDeg, gunDeg: S.currentGunDeg }) };
+    return { setCameraPreset: (kind, opts) => setCameraPreset(S, kind, opts), pose: () => ({ turretDeg: S.currentTurretDeg, gunDeg: S.currentGunDeg }), invalidatedCount: () => invalidated };
   `)(THREE, camera, controls, armorPresetGunPitch, armorCameraPreset, armorPresetViewPlacement)
 }
 
@@ -146,6 +148,20 @@ describe('装甲相机预设保留用户取景（preserveView）', () => {
       expect(preset.setCameraPreset('front')).toBe(true)
       expect(controls.target.toArray()).toEqual([0, 0, 2])
       expect(camera.position.distanceTo(controls.target)).toBeCloseTo(15, 8)
+    } finally {
+      canvas.remove()
+      document.getElementById('turret-val')?.remove()
+      document.getElementById('gun-val')?.remove()
+      controls.dispose()
+    }
+  })
+
+  it('姿态预设切换使当前判定失效', () => {
+    const { canvas, camera, controls } = makeScene()
+    const preset = bindPreset(camera, controls)
+    try {
+      expect(preset.setCameraPreset('front')).toBe(true)
+      expect(preset.invalidatedCount()).toBe(1)
     } finally {
       canvas.remove()
       document.getElementById('turret-val')?.remove()

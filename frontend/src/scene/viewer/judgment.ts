@@ -7,6 +7,7 @@ import { createJudgmentHits, type JudgmentHit } from './judgmentHits.js'
 import { createScreenSpaceDot, disposeHitMarker } from './overlayStroke.js'
 import { OVERLAY_METRICS } from './shotResultPalette.js'
 import { shellTypeOf } from './armorPlateModel.js'
+import { damageFactorAt, trayShellDamage, trayShellFor, type TankMechanic } from '../tankMechanics'
 import type { TankArmorConfig } from './armorPlateModel.js'
 import type { ModelReferences } from './modelLifecycle.js'
 import type { TrajectoryCardHandle } from './trajectoryCard.js'
@@ -37,7 +38,7 @@ export interface JudgmentDeps {
     getSelectedShell: () => ShellSpec | null
     getShooterShells: () => ShellSpec[]
     getShooterCaliber: () => number | null
-    getShooterData: () => { caliber?: number | null } | null
+    getShooterData: () => { caliber?: number | null; mechanics?: TankMechanic[] | null } | null
     isDestroyed: () => boolean
     isShooterLoading: () => boolean
     isShotReplay: () => boolean
@@ -51,6 +52,7 @@ export interface JudgmentDeps {
     shellPenMul: (shell: ShellSpec | null) => number
     L: { partName?: (name: string) => string; shellUnavailable: string }
     showShotError: (msg: string) => void
+    onJudgmentDistance?: (state: { exactDistance: number; distance: number; factor: number | null } | null) => void
 }
 
 export function faceAngleAndEffective(
@@ -77,7 +79,7 @@ export function createJudgment(deps: JudgmentDeps) {
         isDestroyed, isShooterLoading, armorDebug,
         getModuleMeshes, getWorldMetersPerUnit,
         equipmentCoeffs, effectiveCalibrated, effectiveEnhanced, shellPenMul,
-        L, showShotError,
+        L, showShotError, onJudgmentDistance,
     } = deps
     let __shotRayOrigin: THREE.Vector3 | null = null;
     let __shotRayTarget: THREE.Vector3 | null = null;
@@ -121,6 +123,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
             hm.updateCollisionWorldMatrices();
             judgmentCount++;
             const penSeq = ++__penCheckSeq;
+            const launchPoint = getCamera().position.clone();
 
             models.armorModel!.traverse(function(node) {
                 if (!(node as THREE.Mesh).isMesh) return;
@@ -163,6 +166,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 document.getElementById('traj-info')!.style.display = 'none';
                 tc.clearTrajInfoPos();
                 tc.clearTrajGroup()
+                onJudgmentDistance?.(null);
                 return;
             }
 
@@ -170,6 +174,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 console.warn('[shot-replay] check: 0 armor hits, intersects=' + intersects.length);
                 tc.tidyTrajectory();
                 disposeHitMarker(getFxScene());
+                onJudgmentDistance?.(null);
                 if (window.__shotIsHit) {
                     if (window.__worldPenMode) {
                         const div = document.getElementById('traj-info');
@@ -226,11 +231,22 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 ? shotBallisticLength(window.__shotCtx.shot) * (getWorldMetersPerUnit() || 1) : 0;
             const dist = shotLenForDist > 0
                 ? shotLenForDist
-                : point.distanceTo(getCamera().position) * (getWorldMetersPerUnit() || 1);
+                : point.distanceTo(launchPoint) * (getWorldMetersPerUnit() || 1);
 
             const shellType = shellTypeOf(getSelectedShell()!);
             const pen = getSelectedShell() ? (getSelectedShell()!.penetration || 0) : 0;
-            const dmg = getSelectedShell() ? (getSelectedShell()!.damage || 0) : 0;
+            const trayShell = trayShellFor(getShooterData()?.mechanics, getSelectedShell());
+            const trayFactor = trayShell ? damageFactorAt(trayShell.sectors, dist) : null;
+            const dmg = trayShellDamage(
+                getSelectedShell() ? (getSelectedShell()!.damage || 0) : 0,
+                trayShell?.sectors,
+                dist,
+            ) || 0;
+            onJudgmentDistance?.({
+                exactDistance: dist,
+                distance: Math.round(dist),
+                factor: trayFactor,
+            });
             const modDmg = getSelectedShell() ? (getSelectedShell()!.module_damage || 0) : 0;
             const caliber = resolveShotCaliber();
             const isHE = shellType === 'he';
@@ -341,7 +357,7 @@ function doPenetrationCheck(ndcX: number, ndcY: number): void {
                 getWorldOverviewMode, getPenetrationMode, isStale: () => isDestroyed() || penSeq !== __penCheckSeq,
                 hitsForCheck, point, isHE, pen, dmg, first, heRadius, eqCal, eqEnh, dist, viewDir, incomingDirection,
                 intersectArmorDoubleSidedSpaced, collectJudgmentHits, objects, shellType, shellNormDeg, shellRicoDeg,
-                requirePrimary, mpu, penDisp, modDmg, shotRayO, caliber, ndcX, ndcY,
+                requirePrimary, mpu, penDisp, modDmg, shotRayO, caliber, ndcX, ndcY, trayFactor, launchPoint,
             })).catch(err => {
                 if (isDestroyed() || penSeq !== __penCheckSeq) return;
                 console.error('Penetration API error:', err);

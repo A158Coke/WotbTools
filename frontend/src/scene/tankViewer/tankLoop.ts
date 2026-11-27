@@ -1,6 +1,7 @@
 import { defaultStateId } from '../../data/armorStates.js'
 import { dollyZoomFov } from '../viewer/viewerMath.js'
-import { disposeHitMarker, updateOverlayResolution } from '../viewer/overlayStroke.js'
+import { updateOverlayResolution } from '../viewer/overlayStroke.js'
+import { invalidateJudgment } from './judgmentInvalidation.js'
 import { resetViewerGlobals } from './viewerGlobals.js'
 import type { Host } from '../tankViewer.js'
 import { bind } from '../hostBind.ts'
@@ -26,9 +27,7 @@ function refreshEquipmentEffects(S: Host) {
             }
             S.hm.updateHeatmapThickness();
             if (!S.QP.get('shot') && (S.jc.getLastClickNdc() || S.hm.getHeHeatmapCenter())) {
-                S.tc.tidyTrajectory();
-                disposeHitMarker(S.fxScene);
-                S.jc.clearLastClickNdc();
+                S.invalidateJudgment();
             }
             if (S.penetrationMode || S.hm.getPrimaryArmorScene()) {
                 const sh = S.selectedShell || (S.dl.getShooterShells()[0]) || null;
@@ -57,9 +56,7 @@ function setupEventHandlers(S: Host) {
                     if (S.QP.get('shot')) {
                         if (!S.rerunAuthoritativeShotCheck()) S.jc.doPenetrationCheck(0, 0);
                     } else if (S.jc.getLastClickNdc() || S.hm.getHeHeatmapCenter()) {
-                        S.tc.tidyTrajectory();
-                        disposeHitMarker(S.fxScene);
-                        S.jc.clearLastClickNdc();
+                        S.invalidateJudgment();
                     }
                     S.hm.syncHeatOverlay();
                     S.onShellSelection?.(idx);
@@ -292,6 +289,7 @@ export function bindTankShotCheck(S: Host) {
   Object.assign(S, {
     rerunAuthoritativeShotCheck: bind(S, rerunAuthoritativeShotCheck),
     refreshEquipmentEffects: bind(S, refreshEquipmentEffects),
+    invalidateJudgment: bind(S, invalidateJudgment),
     setupEventHandlers: bind(S, setupEventHandlers),
     init: bind(S, init),
     retry: bind(S, retry),
