@@ -18,12 +18,10 @@ function reportDistance(S: Host) {
             const raw = recorded
                 ? (shot ? shotBallisticLength(shot) * (S.ml.getWorldMetersPerUnit() || 1) : NaN)
                 : S.camera.position.distanceTo(S.controls.target) * (S.ml.getWorldMetersPerUnit() || 1);
-            // exactDistance 保留弹道长度原值供分段/穿深计算；distance 只用于显示。
-            // 二者都进去重键：整数相同但小数跨界（50.4 → 50.6）时仍需刷新。
             const exactDistance = S.ml.models.tankModel && S.ml.models.armorModel && !S.contextLost && Number.isFinite(raw) && raw > 0
                 ? raw : null;
             const distance = exactDistance == null ? null : Math.round(exactDistance);
-            const distanceKey = exactDistance == null ? 'null' : `${distance}:${exactDistance.toFixed(3)}`;
+            const distanceKey = exactDistance == null ? 'null' : `${distance}:${exactDistance}`;
             if (distanceKey === S.lastReportedDistance) return;
             S.lastReportedDistance = distanceKey;
             S.onDistanceChange?.(exactDistance == null ? null : {

@@ -27,7 +27,6 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }: Deta
   const modules = ref<ReturnType<typeof findTankModules> | null>(null)
   const catalog = ref<Awaited<ReturnType<typeof loadResearchCatalog>> | null>(null)
   const techTree = ref<Awaited<ReturnType<typeof loadTechTree>> | null>(null)
-  /** 全局机制文案（data/tankMechanics.json；一次装载，按车 mechanics 联表）。 */
   const mechanicsCatalog = ref<TankMechanicsTable | null>(null)
   let modulesRequest = 0
 
@@ -77,8 +76,6 @@ export function useTankopediaDetailData({ urlState, detailId, writeState }: Deta
     modules.value = null
     modulesRequest += 1
     try {
-      // 机制文案是全局表（一次装载）；失败不拖垮详情（机制区显示“说明不可用”），
-      // 但成功时与详情并行，避免详情就绪后再补一轮网络等待。
       const [data, mechanics] = await Promise.all([
         fetchTankData(id),
         loadTankMechanics().catch(() => null),

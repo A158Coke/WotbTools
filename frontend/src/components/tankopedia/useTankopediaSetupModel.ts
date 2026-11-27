@@ -23,8 +23,6 @@ import {
  *  route: object,
  *  VIEW: string,
  *  locale: import('vue').Ref<string>,
- *  t: (key: string, params?: unknown) => string,
- *  te: (key: string) => boolean,
  * }} ctx */
 type TreeNode = { stem: string; tankId: number; tier?: number }
 type GraphNode = { install?: { kind: string; index: number; occurrences: { turret: number; gun: number }[] } }
@@ -201,9 +199,6 @@ export function useTankopediaSetupModel({ detailId, writeState, data, cache, rou
     const farRaw = shell.penetration_far == null ? null : shell.penetration_far * penetrationCoefficientValue
     const falloff = characteristics.value?._farPenetrationFalloffFactor ?? 1
     const tunedDamage = (shell.damage ?? 0) * (characteristics.value?._damageCoeff ?? 1)
-    // 突击弹（TrayShell）逐段期望伤害：倍率乘在配置器算出的平均伤害上；只对 kinds
-    // 内的弹种生效（APCR）。段标签按客户端文案语义：首段“≤d”，中段“a–b”，末段“≥a”
-    // （末段的 distance 是最大射程，不是文案边界）。
     const tray = trayShellFor(detail.value?.mechanics, shell)
     const traySectors = tray?.sectors ?? null
     const damageByDistance = traySectors

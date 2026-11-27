@@ -172,7 +172,6 @@ export interface TankData extends TankArmorData {
   type?: string
   nation?: string
   configs?: TankConfig[]
-  /** 车级机制清单（客户端 `3d/Tanks/Parameters` 的 mechanics；无机制省略）。 */
   mechanics?: TankMechanic[] | null
   model_url?: string | null
   visual_model_url: string

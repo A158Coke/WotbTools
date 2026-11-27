@@ -25,7 +25,6 @@ function bindSetter(camera, controls) {
     return (value) => setDistance(S, value);
   `)(THREE, camera, controls, new URLSearchParams())
 }
-/** 只执行真实 reportDistance；静态检视路径不需要 shot 夹具。 */
 function bindReporter(camera, controls, states) {
   return new Function('THREE', 'camera', 'controls', 'states', `
     const tankModel = {}, armorModel = {};
@@ -95,7 +94,7 @@ describe('距离上报保留未取整值（HUD 分段与 judgment 同源）', ()
     controls.minDistance = 3
     controls.maxDistance = 500
     controls.target.set(0, 0, 0)
-    camera.position.set(0, 0, 50.4)
+    camera.position.set(0, 0, 50)
     controls.update()
     const states = []
     const report = bindReporter(camera, controls, states)
@@ -103,21 +102,24 @@ describe('距离上报保留未取整值（HUD 分段与 judgment 同源）', ()
       report()
       expect(states).toHaveLength(1)
       expect(states[0].distance).toBe(50)
-      expect(states[0].exactDistance).toBeCloseTo(50.4, 6)
-      // 同一整数距离：重复上报被去重。
+      expect(states[0].exactDistance).toBeCloseTo(50, 6)
       report()
       expect(states).toHaveLength(1)
-      // 仍是 50m 显示，但真实弹道已越过 50m 分段边界，必须刷新。
-      camera.position.set(0, 0, 50.49)
+      camera.position.set(0, 0, 50.0004)
       report()
       expect(states).toHaveLength(2)
       expect(states[1].distance).toBe(50)
-      expect(states[1].exactDistance).toBeCloseTo(50.49, 6)
-      camera.position.set(0, 0, 50.6)
+      expect(states[1].exactDistance).toBeCloseTo(50.0004, 6)
+      camera.position.set(0, 0, 50.49)
       report()
       expect(states).toHaveLength(3)
-      expect(states[2].distance).toBe(51)
-      expect(states[2].exactDistance).toBeCloseTo(50.6, 6)
+      expect(states[2].distance).toBe(50)
+      expect(states[2].exactDistance).toBeCloseTo(50.49, 6)
+      camera.position.set(0, 0, 50.6)
+      report()
+      expect(states).toHaveLength(4)
+      expect(states[3].distance).toBe(51)
+      expect(states[3].exactDistance).toBeCloseTo(50.6, 6)
     } finally {
       controls.dispose()
       canvas.remove()

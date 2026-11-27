@@ -1,9 +1,4 @@
 <script setup lang="ts">
-/**
- * 详情头卡（坦克等级/国籍/种类 + 研发入口）里的车级机制标签。
- * 默认只显示游戏内机制名（客户端 TankMechanics 标题）；点击打开小窗口显示原文说明。
- * 文案来源与占位符替换见 scene/tankMechanics.ts（缺文案时显式提示，不显示裸 key）。
- */
 import { ref } from 'vue'
 import type { PropType } from 'vue'
 import { useI18n } from 'vue-i18n'

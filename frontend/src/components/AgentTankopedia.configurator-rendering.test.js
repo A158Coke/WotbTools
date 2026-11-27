@@ -87,7 +87,6 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
       },
     })
     const { wrapper } = await mountAt({ tank: '999' })
-    // 头卡（等级/国籍/种类 + 研发入口所在的卡片）内只显示机制名
     const strip = wrapper.get('.tp-detail-head [data-testid="tank-mechanics"]')
     expect(strip.text()).toContain('突击弹')
     expect(strip.text()).not.toContain('距离 50 米')

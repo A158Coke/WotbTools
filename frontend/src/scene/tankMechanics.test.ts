@@ -35,7 +35,6 @@ describe('tankMechanics：弹种与机制匹配', () => {
     expect(shellMechanicKind({ type: 'ap_cr_premium', type_id: 1 })).toBe('ARMOR_PIERCING_CR')
     expect(shellMechanicKind({ type: 'ap' })).toBe('ARMOR_PIERCING')
     expect(shellMechanicKind({ type: 'he' })).toBe('HIGH_EXPLOSIVE')
-    // type_id 优先于 icon token（客户端 field9 权威）
     expect(shellMechanicKind({ type: 'ap', type_id: 1 })).toBe('ARMOR_PIERCING_CR')
     expect(shellMechanicKind({ type: 'unknown' })).toBeNull()
   })
@@ -75,7 +74,6 @@ describe('tankMechanics：距离倍率', () => {
     expect(trayShellDamage(310, SECTORS, 100)).toBe(372)
     expect(trayShellDamage(310, SECTORS, 150)).toBe(310)
     expect(trayShellDamage(310, SECTORS, 500)).toBe(248)
-    // 无分段/非法距离 → 基础伤害，不伪造倍率
     expect(trayShellDamage(310, null, 30)).toBe(310)
     expect(trayShellDamage(310, SECTORS, null)).toBe(310)
     expect(trayShellDamage(null, SECTORS, 30)).toBeNull()
