@@ -53,9 +53,11 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 
 每场必须：14 个结算记录、14 个唯一非零 accountId、队伍只能为 1/2、两队各 7 人、
 14 名玩家非零 tankId、`winnerTeam` 明确为 1/2（平局/未知不评分）、统计字段无负值且不
-违反真实字段关系（命中≤射击、击穿≤命中；关系比较分别在 `nShots > 0`、`nHitsDealt > 0`
-时执行）。普通统计字段未单独做有限值校验：`-Infinity` 被非负校验拒绝，可参与关系比较
-字段的 `+Infinity` 被关系校验拒绝，NaN 因比较恒假可通过（评分内 clamp 兜底为 0）。
+违反真实字段关系（命中≤射击、击穿≤命中；关系比较按分子超分母，分别在 `nShots > 0`、
+`nHitsDealt > 0` 时启用）。普通统计字段未单独做有限值校验：`-Infinity` 被非负校验拒绝；
+分子为 `+Infinity` 且分母为有限正数时被关系校验拒绝，而分母为非有限值（如
+`nShots = +Infinity`）或比较未启用（如 `nShots = 0` 时的 `nHitsDealt`）时不拒绝；
+NaN 因比较恒假全部通过。通过校验的非有限值由评分层 clamp 兜底为 0。
 League Rating 以 **#301 的 14 settled combatants 为 authority**；#201 仅用于
 nickname/clan/rank/prebattle metadata enrichment，缺失/extra 不得阻塞评分（`Battle.rosterComplete`
 保留给 SURVIVOR_SETTLEMENT / annihilation 等 AI/reconstruction 推断，不参与 League Rating）。
@@ -302,8 +304,10 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   换血、Soft Wilson、存活状态、trade 边界、胜方 ×1.05 与 1000 封顶、MVP 排序、V6 汇总公式）、
   同文件重复回放去重与损坏文件失败披露；另有 export golden/roundtrip 与 radarScale 单测。
 - 已知限制（无直接测试覆盖的门槛分支）：重复账号、缺 tankId、非法数值关系、arenaId 冲突、
-  阵亡者 settlementLifeTimeSec 缺失/非正（解析失败路径）与 NaN/超时长拒绝等完整性分支
-  当前没有直接单测或 golden 批次覆盖，回归只能靠人工构造夹具或端到端验证发现。
+  阵亡者 settlementLifeTimeSec 非正（解析失败路径）与 NaN/超时长拒绝（`LEAGUE_INVALID_STAT_FACTS`
+  分支）当前没有直接单测或 golden 批次覆盖；缺失结算寿命已有 facts 层直接测试
+  （`battleFacts.test.ts` 删除阵亡玩家 `life_time_secs` 断言抛错）。回归只能靠人工构造
+  夹具或端到端验证发现。
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
   与 Tournament+评级 为 `MIXED_UNSUPPORTED`，保留普通分析结果但不聚合 League、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
