@@ -50,10 +50,19 @@ onMounted(() => {
 
 onBeforeUnmount(() => observer?.disconnect())
 
+// 当前 3D 配置应使用的隔离键：文字行的选中属于别的配置时不能沿用（板号可能相同）。
+function choiceIsolationKeys() {
+  if (!props.isolateKeys?.length) return null
+  if (props.isolateConfigKey && props.isolateConfigKey !== choiceKey.value) return null
+  return props.isolateKeys
+}
+
 function displayChoice() {
   if (!choice.value || !viewer) return
   try {
     matched.value = viewer.setChoice(choice.value)
+    // setChoice 重建图层时会沿用一个配置的隔离键；切换后按当前配置重新应用。
+    viewer.setIsolated(choiceIsolationKeys())
     status.value = 'ready'
   } catch {
     status.value = 'error'
@@ -121,13 +130,13 @@ function onDividerKey(event: KeyboardEvent) {
 
 watch(choiceKey, displayChoice)
 watch([() => props.isolateKeys, () => props.isolateConfigKey], ([keys, configKey]) => {
-  // 配置级行来自别的配置：先切 3D 配置（重建后 mount 会重新应用 isolateKeys），再隔离。
+  // 配置级行来自别的配置：先切 3D 配置；displayChoice 在重建后按新配置应用隔离键。
   if (keys && keys.length && configKey && configKey !== choiceKey.value
     && choices.value.some(entry => entry.key === configKey)) {
     choiceKey.value = configKey
     return
   }
-  viewer?.setIsolated(keys ?? null)
+  viewer?.setIsolated(choiceIsolationKeys())
 })
 watch([active, attempt], async ([enabled], _, onCleanup) => {
   if (!enabled) return

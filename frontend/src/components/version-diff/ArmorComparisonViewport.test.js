@@ -37,9 +37,52 @@ vi.mock('../../scene/viewer/armorComparisonScene.js', () => ({
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  mocks.mount.mockClear()
+  mocks.fetchTank.mockClear()
+  mocks.destroy.mockClear()
+  mocks.compare.mockClear()
+  mocks.select.mockClear()
   mocks.isolate.mockClear()
+  mocks.mount.mockClear()
+  mocks.loadModels.mockClear()
+  mocks.disposeModels.mockClear()
   mocks.onIsolateRequest = null
+})
+
+it('switches the 3D configuration and applies that configuration isolation keys', async () => {
+  vi.stubGlobal('IntersectionObserver', undefined)
+  mocks.select.mockClear()
+  mocks.isolate.mockClear()
+  mocks.fetchTank.mockResolvedValue({
+    model_url: '/glb/42/collision.glb',
+    configs: [
+      { turret_local: 1, gun_local: 9, turret_name: 'Turret A', label: 'Gun X' },
+      { turret_local: 2, gun_local: 9, turret_name: 'Turret B', label: 'Gun X' },
+    ],
+  })
+  const wrapper = mount(ArmorComparisonViewport, { props: {
+    tankId: 42,
+    tankName: 'Test tank',
+    pair: { from: { dataset: '11.21.0_1' }, to: { dataset: '11.22.0' } },
+    verification: 'verified',
+    loadDetail: async () => ({}),
+  } })
+  await vi.waitFor(() => expect(wrapper.find('select.vd-select').exists()).toBe(true))
+  // 先显式停在 2/9，避免依赖 choices 的默认排序。
+  await wrapper.get('select').setValue('2/9')
+  await flushPromises()
+  expect(mocks.select).toHaveBeenLastCalledWith(expect.objectContaining({ key: '2/9' }))
+  // 点另一配置（1/9）的板件行：查看器必须切到 1/9，并用 1/9 的隔离键重设图层
+  // （setChoice 重建图层时沿用的是旧配置的 isolatedKeys）。
+  await wrapper.setProps({ isolateKeys: ['gun:5'], isolateConfigKey: '1/9' })
+  await flushPromises()
+  expect(mocks.select).toHaveBeenLastCalledWith(expect.objectContaining({ key: '1/9' }))
+  expect(mocks.isolate).toHaveBeenLastCalledWith(['gun:5'])
+  // 再切回 2/9：1/9 的隔离键不能留在 2/9 的图层上。
+  await wrapper.get('select').setValue('2/9')
+  await flushPromises()
+  expect(mocks.select).toHaveBeenLastCalledWith(expect.objectContaining({ key: '2/9' }))
+  expect(mocks.isolate).toHaveBeenLastCalledWith(null)
+  wrapper.unmount()
 })
 
 it('shows both verified versions in one inline comparison and releases the viewer on unmount', async () => {
