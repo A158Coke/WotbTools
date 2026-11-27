@@ -12,6 +12,7 @@ import AdminFilterBar from './AdminFilterBar.vue'
 import AppButton from './AppButton.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import SegmentedControl from './SegmentedControl.vue'
+import SearchableSelect from './SearchableSelect.vue'
 import { isRowControlClick, rowOpenTarget } from './adminListRow'
 import './admin-list.css'
 
@@ -27,7 +28,9 @@ const returnFocus = ref<HTMLElement | null>(null)
 const range = ref('7d')
 const spawnMode = ref<SpawnMode>('ALL')
 const filters = ref({ arenaId: '', mapKey: '', arenaBonusType: '', clientVersion: '', winnerTeam: '', from: '', to: '' })
-const applied = ref<api.Query>({})
+type FilterDraft = typeof filters.value
+type AppliedSnapshot = { filters: FilterDraft; baseInterval: api.Query; query: api.Query }
+const applied = ref<AppliedSnapshot | null>(null)
 const currentInterval = ref<api.Query>({})
 const summaryInterval = ref<api.Query>({})
 const refreshed = ref<string | null>(null)
@@ -66,10 +69,18 @@ const modeFilter = computed({
   get: () => filters.value.arenaBonusType || 'all',
   set: (value: string) => { filters.value.arenaBonusType = value === 'all' ? '' : value },
 })
+const winnerOptions = computed(() => [
+  { value: 'all', label: t('battleDataAdmin.all') },
+  ...[0, 1, 2].map(n => ({ value: String(n), label: winner(n) })),
+])
+const winnerFilter = computed({
+  get: () => filters.value.winnerTeam || 'all',
+  set: (value: string) => { filters.value.winnerTeam = value === 'all' ? '' : value },
+})
 const mapOptions = computed(() => {
   const keys = new Set([...coverage.value.reviewed, ...coverage.value.other].map(row => row.key))
   if (filters.value.mapKey) keys.add(filters.value.mapKey)
-  return [...keys].sort((a, b) => mapName(a).localeCompare(mapName(b), locale.value))
+  return [...keys].map(value => ({ value, label: mapName(value) })).sort((a, b) => a.label.localeCompare(b.label, locale.value))
 })
 const reviewedZeroCount = computed(() => coverage.value.reviewed.filter(row => row.count === 0).length)
 const trendRows = computed(() => {
@@ -107,7 +118,8 @@ const versionRows = computed(() => {
   return rest.length ? [...head, { key: t('battleDataAdmin.otherVersions'), count: rest.reduce((sum, row) => sum + row.count, 0), latest: null }] : head
 })
 const filterChips = computed(() => {
-  const f = filters.value
+  const f = applied.value?.filters
+  if (!f) return []
   const chips: { key: string; label: string }[] = []
   if (f.mapKey) chips.push({ key: 'mapKey', label: `${t('battleDataAdmin.map')}: ${mapName(f.mapKey)}` })
   if (f.arenaBonusType) chips.push({ key: 'arenaBonusType', label: `${t('battleDataAdmin.mode')}: ${mode(Number(f.arenaBonusType))}` })
@@ -128,10 +140,16 @@ function rangeQuery() {
   const now = Date.now()
   return { from: new Date(now - days * 86400000).toISOString(), to: new Date(now).toISOString() }
 }
-function filterQuery(base: api.Query) {
-  return { ...base, arenaId: filters.value.arenaId.trim(), mapKey: filters.value.mapKey.trim(),
-    arenaBonusType: filters.value.arenaBonusType, clientVersion: filters.value.clientVersion.trim(), winnerTeam: filters.value.winnerTeam,
-    ...(filters.value.from ? { from: utc(filters.value.from) } : {}), ...(filters.value.to ? { to: utc(filters.value.to) } : {}) }
+function snapshot(draft: FilterDraft, interval: api.Query): AppliedSnapshot {
+  const query = { ...interval, arenaId: draft.arenaId.trim(), mapKey: draft.mapKey.trim(),
+    arenaBonusType: draft.arenaBonusType, clientVersion: draft.clientVersion.trim(), winnerTeam: draft.winnerTeam,
+    ...(draft.from ? { from: utc(draft.from) } : {}), ...(draft.to ? { to: utc(draft.to) } : {}) }
+  return { filters: { ...draft }, baseInterval: { ...interval }, query }
+}
+function acceptList(next: AppliedSnapshot, page: api.BattlePage) {
+  applied.value = next
+  battles.value = page.items
+  nextCursor.value = page.nextCursor
 }
 async function refresh() {
   if (!gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
@@ -139,16 +157,16 @@ async function refresh() {
   const currentListGeneration = ++listGeneration
   loading.value = true; moreLoading.value = false; summaryError.value = ''; listError.value = ''
   nextCursor.value = null
-  applied.value = {}
   const interval = rangeQuery()
   currentInterval.value = interval
-  let query: api.Query
-  try { query = filterQuery(interval) } catch { listError.value = t('battleDataAdmin.error'); loading.value = false; return }
-  const [a, b] = await Promise.allSettled([api.getSummary(interval), api.getBattles(query)])
+  let next: AppliedSnapshot
+  try { next = snapshot(filters.value, interval) } catch { listError.value = t('battleDataAdmin.error'); loading.value = false; return }
+  const [a, b] = await Promise.allSettled([api.getSummary(interval), api.getBattles(next.query)])
   if (generation !== summaryGeneration) return
   if (a.status === 'fulfilled') { summary.value = a.value; summaryInterval.value = interval; refreshed.value = new Date().toISOString() } else summaryError.value = explain(a.reason)
   if (currentListGeneration === listGeneration) {
-    if (b.status === 'fulfilled') { applied.value = query; battles.value = b.value.items; nextCursor.value = b.value.nextCursor } else listError.value = explain(b.reason)
+    if (b.status === 'fulfilled') acceptList(next, b.value)
+    else listError.value = explain(b.reason)
   }
   loading.value = false
 }
@@ -157,28 +175,31 @@ function onRangeChange(value: string) {
   range.value = value
   void refresh()
 }
-async function applyFilters() {
+async function applyFilters(draft: FilterDraft = filters.value, interval: api.Query = currentInterval.value) {
   if (!gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
   const generation = ++listGeneration
   listError.value = ''; moreLoading.value = true
   try {
-    const next = filterQuery(currentInterval.value)
-    const page = await api.getBattles(next)
+    const next = snapshot(draft, interval)
+    const page = await api.getBattles(next.query)
     if (generation !== listGeneration) return
-    applied.value = next; battles.value = page.items; nextCursor.value = page.nextCursor
+    acceptList(next, page)
   } catch (error) { if (generation === listGeneration) listError.value = explain(error) }
   finally { if (generation === listGeneration) moreLoading.value = false }
 }
+const removeDisabled = computed(() => !applied.value || loading.value || moreLoading.value || !availability.value.available)
 function removeFilterChip(key: string) {
-  if (key in filters.value) filters.value[key as keyof typeof filters.value] = ''
-  void applyFilters()
+  const last = applied.value
+  if (removeDisabled.value || !last || !Object.hasOwn(last.filters, key)) return
+  filters.value[key as keyof FilterDraft] = ''
+  void applyFilters({ ...last.filters, [key]: '' }, last.baseInterval)
 }
 async function loadMore() {
-  if (!nextCursor.value || loading.value || moreLoading.value || !gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
+  if (!applied.value || !nextCursor.value || loading.value || moreLoading.value || !gate.requireFeature(Feature.ADMIN_BATTLE_DATA)) return
   const generation = ++listGeneration
   moreLoading.value = true; listError.value = ''
   try {
-    const page = await api.getBattles({ ...applied.value, cursor: nextCursor.value })
+    const page = await api.getBattles({ ...applied.value.query, cursor: nextCursor.value })
     if (generation !== listGeneration) return
     battles.value = [...battles.value, ...page.items]; nextCursor.value = page.nextCursor
   } catch (error) { if (generation === listGeneration) listError.value = explain(error) }
@@ -324,19 +345,20 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
     </template>
 
     <h2 class="battle-h2">{{ t('battleDataAdmin.recent') }}</h2>
-    <form class="filters" @submit.prevent="applyFilters">
-      <AdminFilterBar :chips="filterChips" :done-button="false" @remove="removeFilterChip">
+    <form class="filters" @submit.prevent="applyFilters()">
+      <AdminFilterBar :chips="filterChips" :remove-disabled="removeDisabled" :done-button="false" @remove="removeFilterChip">
         <template #default="{ close, compact }">
-          <label class="admin-list-field">{{ t('battleDataAdmin.map') }}
-            <select v-model="filters.mapKey" class="admin-list-input" data-testid="map-filter"><option value="">{{ t('battleDataAdmin.allMaps') }}</option><option v-for="key in mapOptions" :key="key" :value="key">{{ mapName(key) }}</option></select>
-          </label>
+          <div class="admin-list-field"><label for="map-filter">{{ t('battleDataAdmin.map') }}</label>
+            <SearchableSelect v-model="filters.mapKey" input-id="map-filter" :label="t('battleDataAdmin.map')"
+              :options="mapOptions" :empty-label="t('battleDataAdmin.allMaps')" :inline="compact" />
+          </div>
           <div class="admin-list-field"><span>{{ t('battleDataAdmin.mode') }}</span>
             <SegmentedControl v-model="modeFilter" :options="modeFilterOptions" :ariaLabel="t('battleDataAdmin.mode')" />
           </div>
-          <label class="admin-list-field">{{ t('battleDataAdmin.version') }}<input v-model="filters.clientVersion" class="admin-list-input" /></label>
-          <label class="admin-list-field">{{ t('battleDataAdmin.winner') }}
-            <select v-model="filters.winnerTeam" class="admin-list-input"><option value="">{{ t('battleDataAdmin.all') }}</option><option value="0">{{ winner(0) }}</option><option value="1">{{ winner(1) }}</option><option value="2">{{ winner(2) }}</option></select>
-          </label>
+          <label class="admin-list-field">{{ t('battleDataAdmin.version') }}<input v-model="filters.clientVersion" class="admin-list-input" data-testid="version-filter" /></label>
+          <div class="admin-list-field"><span>{{ t('battleDataAdmin.winner') }}</span>
+            <SegmentedControl v-model="winnerFilter" :options="winnerOptions" :ariaLabel="t('battleDataAdmin.winner')" wrap data-testid="winner-filter" />
+          </div>
           <details class="filters-advanced"><summary>{{ t('battleDataAdmin.advanced') }}</summary>
             <div class="filters-advanced-fields">
               <label class="admin-list-field">{{ t('battleDataAdmin.arenaId') }}<input v-model="filters.arenaId" class="admin-list-input" /></label>
@@ -344,7 +366,7 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
               <label class="admin-list-field">{{ t('battleDataAdmin.to') }}<input v-model="filters.to" type="datetime-local" class="admin-list-input" /></label>
             </div>
           </details>
-          <AppButton v-if="compact" variant="primary" block type="button" :disabled="!availability.available || moreLoading" @click="applyFilters(); close()">{{ t('battleDataAdmin.apply') }}</AppButton>
+          <AppButton v-if="compact" variant="primary" block type="button" data-testid="battle-sheet-apply" :disabled="!availability.available || moreLoading" @click="applyFilters(); close()">{{ t('battleDataAdmin.apply') }}</AppButton>
         </template>
         <template #actions>
           <AppButton variant="primary" type="submit" data-testid="battle-apply" :disabled="!availability.available || moreLoading">{{ t('battleDataAdmin.apply') }}</AppButton>

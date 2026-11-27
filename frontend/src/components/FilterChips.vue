@@ -7,6 +7,7 @@ import { motionTransition } from '../shared/motion/motionPolicy'
 defineProps({
   chips: { type: Array, default: () => [] },
   open: { type: Boolean, default: false },
+  removeDisabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['toggle', 'remove'])
 const { t } = useI18n()
@@ -42,6 +43,7 @@ const { t } = useI18n()
           class="chip"
           data-testid="filter-chip"
           :data-key="chip.key"
+          :disabled="removeDisabled"
           :aria-label="t('filters.remove', { label: chip.label })"
           @click="emit('remove', chip.key)"
         >
@@ -102,4 +104,5 @@ const { t } = useI18n()
 
 .filter-toggle:focus-visible,
 .chip:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.chip:disabled { color: var(--color-text-tertiary); cursor: not-allowed; }
 </style>
