@@ -129,6 +129,13 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
       S.CONTACT_SHADOWS_PREF = nextContactPref;
       S.store.contactShadowsPref = nextContactPref;
       persistBoolPref('pb_contact_shadows', nextContactPref);
+      try {
+        const url = new URL(location.href);
+        if (url.searchParams.has('contactshadows')) {
+          url.searchParams.delete('contactshadows');
+          window.history.replaceState(window.history.state, '', url);
+        }
+      } catch (e) {}
     }
     if (logdepthChanged) {
       S.LOGDEPTH = !!patch.logdepth;
@@ -148,6 +155,7 @@ export function installSceneState(S: Host, contactShadowOverride?: boolean) {
     if (!needsReload) return false;
     if (S.perf) S.perf.interrupt('render-settings-change');
     const patchForUrl: RenderSettingsPatch = {};
+    if (contactPrefChanged) patchForUrl.contactShadows = nextContactPref;
     if (qualityChanged && quality) {
       S.QKEY = quality;
       S.Q = QUALITY_PRESETS[quality];

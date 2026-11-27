@@ -116,6 +116,54 @@ describe('sceneState.applyRenderSettings 重载参数', () => {
     expect(url.searchParams.has('shadows')).toBe(false)
   })
 
+  it('保存开启接地阴影时清掉旧的 ?contactshadows=0 覆盖，刷新后仍为新偏好', async () => {
+    const S = installAt('?q=high&contactshadows=0')
+    S.stageReloadReplay = vi.fn()
+    expect(S.CONTACT_SHADOWS_PREF).toBe(false)
+
+    expect(await S.applyRenderSettings({ contactShadows: true })).toBe(true)
+    expect(S.stageReloadReplay).toHaveBeenCalledWith(true)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
+    const url = lastUrl()
+    expect(url.searchParams.has('contactshadows')).toBe(false)
+
+    const next = installAt(url.search, undefined, false)
+    expect(next.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(next.store.contactShadows).toBe(true)
+  })
+
+  it('保存关闭接地阴影时清掉旧的 ?contactshadows=1 覆盖', async () => {
+    const S = installAt('?q=high&contactshadows=1')
+    S.stageReloadReplay = vi.fn()
+    expect(S.CONTACT_SHADOWS_PREF).toBe(true)
+
+    expect(await S.applyRenderSettings({ contactShadows: false })).toBe(true)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('0')
+    expect(lastUrl().searchParams.has('contactshadows')).toBe(false)
+  })
+
+  it('低画质改接地阴影偏好也清掉 URL 覆盖，不依赖本次重载', async () => {
+    const S = installAt('?q=low&contactshadows=0')
+    S.stageReloadReplay = vi.fn()
+
+    expect(await S.applyRenderSettings({ contactShadows: true })).toBe(false)
+    expect(S.stageReloadReplay).not.toHaveBeenCalled()
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
+    expect(new URL(window.location.href).searchParams.has('contactshadows')).toBe(false)
+
+    const next = installAt(window.location.search, undefined, false)
+    expect(next.CONTACT_SHADOWS_PREF).toBe(true)
+    expect(next.store.contactShadows).toBe(false)
+  })
+
+  it('只改其他渲染项时保留 URL 显式接地阴影覆盖', async () => {
+    const S = installAt('?q=high&logdepth=0&contactshadows=1')
+    S.stageReloadReplay = vi.fn()
+
+    expect(await S.applyRenderSettings({ logdepth: true })).toBe(true)
+    expect(lastUrl().searchParams.get('contactshadows')).toBe('1')
+  })
+
   it('只改 Log Depth 时保留当前已开启的接地阴影目标', async () => {
     const S = installAt('?q=high&logdepth=0', true)
     S.stageReloadReplay = vi.fn()

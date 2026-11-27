@@ -68,21 +68,12 @@ describe('buildRenderSettingsReloadUrl', () => {
     expect(url.searchParams.has('q')).toBe(false)
   })
 
-  it('接地阴影不进重载 URL，并清掉旧 ?shadows= 与保存时的 ?contactshadows= 覆盖', () => {
+  it('接地阴影不进重载 URL，并清掉旧 ?shadows= 参数', () => {
     expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=1', { contactShadows: true })
       .searchParams.has('shadows')).toBe(false)
     expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=0', { contactShadows: false })
       .searchParams.has('shadows')).toBe(false)
     expect(buildRenderSettingsReloadUrl('https://x.test/replay?shadows=1', { logdepth: true })
       .searchParams.has('shadows')).toBe(false)
-    expect(buildRenderSettingsReloadUrl('https://x.test/replay?contactshadows=1', { contactShadows: false })
-      .searchParams.has('contactshadows')).toBe(false)
-    expect(buildRenderSettingsReloadUrl('https://x.test/replay?contactshadows=0', { contactShadows: true })
-      .searchParams.has('contactshadows')).toBe(false)
-  })
-
-  it('未改接地阴影时保留 URL 显式覆盖，不把一次设置保存变成永久覆盖', () => {
-    const url = buildRenderSettingsReloadUrl('https://x.test/replay?contactshadows=1', { logdepth: true })
-    expect(url.searchParams.get('contactshadows')).toBe('1')
   })
 })
