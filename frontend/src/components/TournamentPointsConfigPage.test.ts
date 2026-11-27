@@ -6,6 +6,7 @@ import { messages } from '../locales/messages.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import TournamentPointsConfigPage from './TournamentPointsConfigPage.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
+import SearchableSelect from './SearchableSelect.vue'
 
 const state = vi.hoisted(() => ({ list: vi.fn(), config: vi.fn(), defaults: vi.fn(), source: vi.fn(), set: vi.fn(), clear: vi.fn(), saveGlobal: vi.fn(), create: vi.fn(), update: vi.fn() }))
 vi.mock('../api/tournament-points.js', async original => ({ ...await original<object>(),
@@ -84,8 +85,8 @@ describe('default rules administrator controls', () => {
 describe('global configuration editor', () => {
   it('locks the lower season field, edits every round, and saves globally without creating an event', async () => {
     const wrapper = await page(false)
-    await wrapper.get('[data-testid="event-compact"]').setValue('GLOBAL'); await flushPromises()
-    expect(wrapper.get('[data-testid="config-season"]').attributes('disabled')).toBeDefined()
+    wrapper.getComponent(SearchableSelect).vm.$emit('update:modelValue', 'GLOBAL'); await flushPromises()
+    expect(wrapper.find('select[data-testid="config-season"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="config-season"]').text()).toBe('全局默认配置')
     expect(wrapper.find('[data-testid="config-year"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('当前默认来源')
@@ -108,8 +109,8 @@ describe('global configuration editor', () => {
   })
   it('exits global mode through the compact event selector', async () => {
     const wrapper = await page(false)
-    await wrapper.get('[data-testid="event-compact"]').setValue('GLOBAL'); await flushPromises()
-    await wrapper.get('[data-testid="event-compact"]').setValue('7'); await flushPromises()
+    wrapper.getComponent(SearchableSelect).vm.$emit('update:modelValue', 'GLOBAL'); await flushPromises()
+    wrapper.getComponent(SearchableSelect).vm.$emit('update:modelValue', '7'); await flushPromises()
     expect((wrapper.get('[data-testid="config-season"]').element as HTMLSelectElement).value).toBe('SUMMER')
     expect(wrapper.get('[data-testid="config-season"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-testid="save-round-rules"]').text()).toBe('保存本轮规则')
