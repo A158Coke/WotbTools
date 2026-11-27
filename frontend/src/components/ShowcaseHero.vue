@@ -166,4 +166,20 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
     --hero-text-surface: var(--color-hero-photo-scrim);
   }
 }
+@media (width >= 768px) {
+  .admin-users-hero .showcase-hero.is-compact[data-section='admin'] {
+    display: grid;
+    align-items: center;
+    min-block-size: clamp(132px, min(36vw, 54svh), 480px);
+    background: linear-gradient(100deg, var(--color-surface-1) 10%, var(--color-surface-2) 30%, var(--color-hero-photo-scrim) 72%), var(--color-surface-1);
+  }
+  .admin-users-hero .showcase-hero.is-compact .showcase-hero-content {
+    --title-fade: clamp(var(--space-12), 12vw, 12rem);
+    min-block-size: 0;
+    align-self: stretch;
+    padding-inline: var(--gutter) var(--title-fade);
+    background: linear-gradient(to right, var(--color-surface-1) calc(100% - var(--title-fade)), transparent);
+  }
+  .admin-users-hero .showcase-hero.is-compact .showcase-hero-title { font: var(--type-display-hero); }
+}
 </style>

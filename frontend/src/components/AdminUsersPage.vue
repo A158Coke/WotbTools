@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="admin-page admin-users">
-    <ShowcaseHero compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">
+    <ShowcaseHero class="admin-users-hero" compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">
       <template #actions>
         <SegmentedControl
           :model-value="segment"
@@ -284,7 +284,7 @@ onBeforeUnmount(() => {
           />
           <AppButton size="sm" class="admin-page-go" :disabled="!adminAvailability.available" @click="goJumpPage">{{ $t('admin.jumpGo') }}</AppButton>
         </span>
-        <div class="admin-list-field">
+        <div class="admin-page-size-field">
           <span>{{ $t('admin.size') }}</span>
           <SegmentedControl :model-value="String(size)" :options="pageSizeOptions" :aria-label="$t('admin.size')"
             data-testid="admin-page-size" @update:model-value="onSizeChange" />
@@ -413,7 +413,10 @@ onBeforeUnmount(() => {
 .admin-idp-field { min-width: var(--form-field-min); }
 .admin-filter-hint { margin: 0; }
 .admin-kc-email { display: block; }
-.admin-page-jump { display: inline-flex; align-items: center; gap: var(--space-2); }
+.admin-pagination .admin-list-pagination-controls,
+.admin-page-jump { align-items: stretch; }
+.admin-page-jump, .admin-page-size-field { display: inline-flex; gap: var(--space-2); }
+.admin-page-size-field { align-items: center; color: var(--color-text-secondary); font: var(--type-caption); }
 
 .admin-user-identity { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-5); }
 .admin-user-avatar {

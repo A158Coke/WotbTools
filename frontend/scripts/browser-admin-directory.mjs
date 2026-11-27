@@ -109,6 +109,16 @@ try {
         const isUsers = view === 'admin-users'
         await exists(page, isUsers ? userRow : feedbackRow)
         assert.equal(await page.evaluate('document.documentElement.dataset.uiProfile'), theme)
+        if (isUsers && !touch) {
+          const boxes = await page.probe(() => Array.from(document.querySelectorAll(
+            '.admin-page-prev, .admin-page-next, .admin-page-jump input, .admin-page-go, [data-testid=admin-page-size]'),
+            el => { const r = el.getBoundingClientRect(); return [r.top, r.bottom] }))
+          assert.equal(boxes.length, 5)
+          for (const [top, bottom] of boxes) {
+            assert.ok(Math.abs(top - boxes[0][0]) <= 1 && Math.abs(bottom - boxes[0][1]) <= 1,
+              'pagination controls must share top and bottom edges: ' + JSON.stringify(boxes))
+          }
+        }
         await capture(page, view + '-' + theme + '-' + width, isUsers ? '.admin-list-pagination' : feedbackRow)
         if ((theme === 'summer' && width === 1280) || (theme === 'winter' && width === 390)) {
           if (isUsers) await exerciseUsers(page, fixture, touch)
