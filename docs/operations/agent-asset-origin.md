@@ -178,7 +178,7 @@ Frontend 镜像的发布由 TX 本机构建脚本 `deploy/tx/build-frontend-from
   GitHub 侧只把 TX builder 脚本、轻量 Agent WASM archive（`deploy/agent/source.json` 锁定）
   与可选 pinned Sponsor bundle 暂存到 TX。
 - `deploy/tx/build-frontend-from-gitee.sh` 复用 production Gitee clone 上的 host build lock
-  （与 TX1 Business API 缓存及锁分离）；`materialize_source` 只从 Gitee main 历史取得
+  （与 TX1 Business API 缓存及锁分离）；source 物化只从 Gitee main 历史取得
   requested exact SHA：保留 12 次 × 15 秒等待模型，等待耗尽即 fail closed，
   不使用源码 bundle 或 TX→GitHub 后备。
 - 随后创建 exact-SHA worktree、用 SHA256 验证 WASM、构建镜像，并在任何 registry 写入前
