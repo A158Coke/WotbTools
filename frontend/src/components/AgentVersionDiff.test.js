@@ -379,6 +379,21 @@ describe('AgentVersionDiff', () => {
     expect(wrapper.find('.vd-tank #vd-config').exists()).toBe(false)
   })
 
+  it('hides map version actions until the side identities are loaded', async () => {
+    let release
+    mocks.fetchMapDiff.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const { wrapper } = await openAt()
+    const row = wrapper.findAll('.vd-map-row').find(item => item.text().includes('Rockfield'))
+    await row.trigger('click')
+    await flushPromises()
+    // 详情未到时 openMapVersion 只能回退到 summary 的单侧 key，目标可能错版：先不提供入口。
+    expect(wrapper.text()).not.toContain('versionDiff.map.openOld')
+    release(MAP_DETAIL)
+    await flushPromises()
+    expect(wrapper.text()).toContain('versionDiff.map.openOld')
+    expect(wrapper.text()).toContain('versionDiff.map.openNew')
+  })
+
   it('opens the map dialog and fetches the map detail', async () => {
     const { wrapper } = await openAt()
     const row = wrapper.findAll('.vd-map-row').find(item => item.text().includes('Rockfield'))

@@ -395,24 +395,30 @@ export function armorRows(armor: unknown, detail: unknown = null): ArmorRow[] {
   }
   for (const item of model.chassis || []) rows.push({ kind: 'chassis', ...item })
   // 配置级装甲（gun_plates/turret_plates/*_spaced）：多炮车的炮塔/火炮板件变化只在配置 diff
-  // 里出现。model 级行只代表装甲模型自身的那一次变化：仅当配置级行与它「同一块板且新旧值完全相同」
-  // 时才去重；同板号但数值不同的配置行必须保留（带配置身份），否则会被一条无配置的 model 行吞掉。
+  // 里出现。model 级行只代表装甲模型自身的那一次变化，且多配置 3D 不能用 model 炮/塔行定位配置：
+  // - 单配置车：配置行与 model 行「同板同值」时并到 model 行，避免文字版重复；
+  // - 多配置车：配置身份不能丢——配置行全部保留；与之完全同值的 model 炮/塔行移除（否则同一条
+  //   改动既有一条无配置行、又有配置行，且 model 行无法点选到具体配置）。
   const armorSignature = (oldValue: unknown, newValue: unknown): string => {
     const value = (input: unknown): string => (input === null || input === undefined ? '' : String(input))
     return `${value(oldValue)}|${value(newValue)}`
   }
-  const covered = new Set<string>()
-  for (const row of rows) {
-    if (row.kind === 'plate') {
-      covered.add(`${row.module}:${row.plate}:${armorSignature(row.old, row.new)}`)
-    } else if (row.kind === 'addedPlate') {
-      covered.add(`${row.module}:${row.plate}:${armorSignature(null, row.thickness)}`)
-    } else if (row.kind === 'removedPlate') {
-      covered.add(`${row.module}:${row.plate}:${armorSignature(row.thickness, null)}`)
-    }
+  const modelSignature = (row: ArmorRow): string => {
+    if (row.kind === 'addedPlate') return armorSignature(null, row.thickness)
+    if (row.kind === 'removedPlate') return armorSignature(row.thickness, null)
+    return armorSignature(row.old, row.new)
   }
+  const coverageKeys = (row: ArmorRow): string =>
+    `${row.module}:${row.plate}:${modelSignature(row)}`
+  const covered = new Set(rows
+    .filter(row => row.kind != null && ['plate', 'addedPlate', 'removedPlate'].includes(row.kind))
+    .map(coverageKeys))
   const detailSource = (detail ?? {}) as { configs?: { configs?: Array<{ key?: DiffConfigKey; changes?: DiffChange[] }> } }
-  for (const config of detailSource.configs?.configs || []) {
+  const configEntries = detailSource.configs?.configs || []
+  const multiConfig = configEntries.length > 1
+  const configModelRows: ArmorRow[] = []
+  const configArmorRows: ArmorRow[] = []
+  for (const config of configEntries) {
     for (const change of config.changes || []) {
       const match = CONFIG_ARMOR_PATH.exec(change.path || '')
       if (!match) continue
@@ -435,20 +441,33 @@ export function armorRows(armor: unknown, detail: unknown = null): ArmorRow[] {
           const oldValue = oldPlates[plate] ?? null
           const newValue = newPlates[plate] ?? null
           if (oldValue === newValue) continue
-          if (covered.has(`${module}:${plate}:${armorSignature(oldValue, newValue)}`)) continue
-          rows.push({
+          const row: ArmorRow = {
             kind: 'configPlate', module, plate,
             configKey: configIdentity.key,
             ...(configIdentity.label ? { configLabel: configIdentity.label } : {}),
             old: oldValue, new: newValue,
-          })
+          }
+          if (!multiConfig && covered.has(coverageKeys(row))) continue
+          configModelRows.push(row)
         }
       } else {
-        rows.push(...spacedChangeRows(module, change.old, change.new, 'configSpaced', configIdentity))
+        configArmorRows.push(...spacedChangeRows(module, change.old, change.new, 'configSpaced', configIdentity))
       }
     }
   }
-  return rows
+  if (multiConfig) {
+    // model 行只在与其完全同值的配置行已存在时移除；保留 hull/chassis 等配置无关行。
+    const configSignatures = new Set(configModelRows.map(coverageKeys))
+    return [
+      ...rows.filter(row => !(row.kind != null
+        && ['plate', 'addedPlate', 'removedPlate'].includes(row.kind)
+        && ['gun', 'turret'].includes(String(row.module))
+        && configSignatures.has(coverageKeys(row)))),
+      ...configModelRows,
+      ...configArmorRows,
+    ]
+  }
+  return [...rows, ...configModelRows, ...configArmorRows]
 }
 
 export function tankMatchesFilter(row: { status?: string; categories?: string[] }, filter?: string | null): boolean {

@@ -238,10 +238,10 @@ function positionText(item: { position?: unknown }): string {
     <template #actions>
       <AppButton variant="secondary" @click="emit('close')">{{ t('app.close') }}</AppButton>
       <AppButton v-if="error" variant="primary" @click="emit('retry')">{{ t('versionDiff.retry') }}</AppButton>
-      <AppButton v-if="showOld" variant="secondary" @click="openMap(pair?.from?.dataset ?? '')">
+      <AppButton v-if="showOld && detail" variant="secondary" @click="openMap(pair?.from?.dataset ?? '')">
         {{ t('versionDiff.map.openOld') }}
       </AppButton>
-      <AppButton v-if="showNew" variant="primary" @click="openMap(pair?.to?.dataset ?? '')">
+      <AppButton v-if="showNew && detail" variant="primary" @click="openMap(pair?.to?.dataset ?? '')">
         {{ t('versionDiff.map.openNew') }}
       </AppButton>
     </template>

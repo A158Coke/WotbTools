@@ -241,30 +241,27 @@ describe('versionDiffFormat rows', () => {
     expect(rows.some(row => row.plate === '6' && row.kind === 'configPlate')).toBe(false)
   })
 
-  it('keeps configuration rows whose values differ from the model row', () => {
-    // model 级行只代表装甲模型自身那一次变化；同板号但数值不同的配置行必须保留并带配置身份。
-    const rows = armorRows(
-      {
-        summary: {},
-        model: {
-          plates: [{ module: 'gun', plate: '5', old: 50, new: 60 }],
-          addedPlates: [], removedPlates: [], primary: [], spaced: [], chassis: [], changed: true,
-        },
-      },
-      { configs: { configs: [
-        {
-          key: { gun: 'Gun X', turretLocal: 1, gunLocal: 9 },
-          changes: [{ path: 'gun_plates', category: 'armor', old: { '5': 50 }, new: { '5': 60 } }],
-        },
-        {
-          key: { gun: 'Gun X', turretLocal: 2, gunLocal: 9 },
-          changes: [{ path: 'gun_plates', category: 'armor', old: { '5': 70 }, new: { '5': 80 } }],
-        },
-      ] } },
-    )
+  it('keeps every configuration row and drops the duplicate model row in multi-config tanks', () => {
+    // 多配置车的 model 炮/塔行没有配置身份（3D 也不能用它定位配置）：同值的配置行必须保留，
+    // model 行移除；数值不同的配置行同样保留。
+    const model = {
+      plates: [{ module: 'gun', plate: '5', old: 50, new: 60 }],
+      addedPlates: [], removedPlates: [], primary: [], spaced: [], chassis: [], changed: true,
+    }
+    const config = (turretLocal, oldValue, newValue) => ({
+      key: { gun: 'Gun X', turretLocal, gunLocal: 9 },
+      changes: [{ path: 'gun_plates', category: 'armor', old: { '5': oldValue }, new: { '5': newValue } }],
+    })
+    const rows = armorRows({ summary: {}, model }, { configs: { configs: [config(1, 50, 60), config(2, 70, 80)] } })
+    expect(rows.filter(row => row.kind === 'plate')).toEqual([])
     expect(rows.filter(row => row.kind === 'configPlate')).toEqual([
+      { kind: 'configPlate', module: 'gun', plate: '5', configKey: '1/9', configLabel: '#1 / Gun X', old: 50, new: 60 },
       { kind: 'configPlate', module: 'gun', plate: '5', configKey: '2/9', configLabel: '#2 / Gun X', old: 70, new: 80 },
     ])
+    // 同数值、不同配置：两条配置行都要保留，不能只剩一条无配置的 model 行。
+    const same = armorRows({ summary: {}, model }, { configs: { configs: [config(1, 50, 60), config(2, 50, 60)] } })
+    expect(same.filter(row => row.kind === 'plate')).toEqual([])
+    expect(same.filter(row => row.kind === 'configPlate').map(row => row.configKey)).toEqual(['1/9', '2/9'])
   })
 
   it('filters tanks by status, category and model-only rows', () => {
