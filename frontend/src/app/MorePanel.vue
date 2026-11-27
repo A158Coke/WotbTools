@@ -136,6 +136,8 @@ watch(() => props.open, async (open) => {
   width: min(340px, calc(100dvw - var(--sidebar-w) - var(--space-6)));
   max-height: calc(100dvh - var(--space-6));
   overflow-y: auto;
+  /* 全站滚动条视觉规范：隐藏指示器、保留滚动能力 */
+  scrollbar-width: none;
   padding: var(--space-4);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
