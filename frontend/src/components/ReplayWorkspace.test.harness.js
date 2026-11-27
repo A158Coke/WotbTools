@@ -92,7 +92,8 @@ export function paneMock(name, testid) {
     __esModule: true,
     default: {
       name,
-      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken', 'seekTo', 'seekRequest', 'pendingSeek', 'showEventMarkers', 'autoStartUserId'],
+      props: ['file', 'active', 'blockedReason', 'navigate', 'playbackSession', 'autoFullscreenToken', 'seekTo', 'seekRequest', 'pendingSeek', 'showEventMarkers', 'autoStartUserId', 'settingsRequest', 'resumeRequest', 'replayFiles', 'selectionRevision', 'shadowRequest', 'demo'],
+      emits: ['settings-open', 'resume-consumed'],
       template: `<div data-test="${testid}" data-testid="${testid}" data-pane-ready="true" :data-show-event-markers="String(showEventMarkers)" :data-auto-start-user-id="autoStartUserId">{{ file && file.name }}|{{ blockedReason }}|{{ active }}</div>`,
     },
   }

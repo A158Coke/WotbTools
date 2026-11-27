@@ -233,49 +233,47 @@ export function eventRowTitle(ev: PlaybackEventRow, t: EventRowTranslate): strin
       return `${ch}${who}${ev.text || ''}`
     }
     case 'command': {
-      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
       const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       if (ev.commandName) {
         return t(`eventStream.cmd_${ev.commandName}`, {
           who,
           target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
           cell: ev.cell ?? '?',
-        }) + ch
+        })
       }
-      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' }) + ch
+      return t('eventStream.command_line', { sender: who, code: ev.command ?? '?' })
     }
     case 'marker': {
-      const ch = ev.channelName ? ` · ${ev.channelName}` : ''
       const who = ev.actor ? actorText(ev.actor) : (ev.sender || '?')
       if (ev.commandName === 'attention_to_cell') {
         const cell = ev.cellLabel ?? (ev.cell != null ? `#${ev.cell}` : '?')
-        return t('eventStream.marker_cell', { who, cell }) + ch
+        return t('eventStream.marker_cell', { who, cell })
       }
       if (ev.commandName === 'attack') {
         return t('eventStream.marker_attack', {
           who,
           target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
-        }) + ch
+        })
       }
       if (ev.commandName === 'ally_retreat') {
         return t('eventStream.marker_retreat', {
           who,
           target: ev.target ? actorText(ev.target) : t('eventStream.unknown_target'),
-        }) + ch
+        })
       }
       if (ev.commandName === 'catch_point' || ev.commandName === 'defend_point') {
         return t(`eventStream.cmd_${ev.commandName}_raw`, {
           who,
           target: ev.commandTarget ?? '?',
-        }) + ch
+        })
       }
       if (ev.commandName === 'moving_here') {
-        return t('eventStream.marker_moving', { who }) + ch
+        return t('eventStream.marker_moving', { who })
       }
       return t('eventStream.marker_unknown', {
         who,
         type: ev.markerType ?? ev.command ?? '?',
-      }) + ch
+      })
     }
     case 'presence': {
       const key = ev.action ? `eventStream.presence_${ev.action}` : 'eventStream.presence_unknown'

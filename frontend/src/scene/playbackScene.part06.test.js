@@ -748,6 +748,7 @@ describe('3D annotation pointer ownership', () => {
 describe('坦克接地阴影（High / Ultra opt-in）', () => {
   const shadowMeshes = () => (window.__scene?.children ?? []).filter((o) => o.name === 'tankContactShadow')
   const N = 120
+  beforeEach(() => { localStorage.clear() })
   function movingData() {
     const data = minimalData(42)
     data.meta.samples = N
@@ -778,20 +779,20 @@ describe('坦克接地阴影（High / Ultra opt-in）', () => {
     expect(store.contactShadows).toBe(false)
   })
 
-  it('高清 / 极致：默认 OFF、可开；降档清零，再升档不自动恢复；不写 localStorage', () => {
+  it('高清 / 极致：默认 OFF、可开；降档只关闭有效效果，升档恢复；偏好写入 localStorage', () => {
     window.history.replaceState(null, '', '/?debug&q=high')
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const { store, api } = createScene()
     expect(store.contactShadows).toBe(false)
     api.setContactShadows(true)
     expect(store.contactShadows).toBe(true)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
     api.setQuality('ultra')
     expect(store.contactShadows).toBe(true)
     api.setQuality('mid')
     expect(store.contactShadows).toBe(false)
+    expect(localStorage.getItem('pb_contact_shadows')).toBe('1')
     api.setQuality('high')
-    expect(store.contactShadows).toBe(false)
-    expect(setItem.mock.calls.map(([k]) => k).filter((k) => /shadow/i.test(k))).toEqual([])
+    expect(store.contactShadows).toBe(true)
   })
 
   it('OFF：开播后场景里没有任何阴影对象', async () => {
