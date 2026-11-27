@@ -135,7 +135,17 @@ jobs:
           set -euo pipefail
           exec 9>/opt/wotb-tx2/.deploy.lock
           tx2_lock_wait="${WOTB_TX_DEPLOY_LOCK_WAIT_SEC:-900}"
-          flock -w "$tx2_lock_wait" 9 || { echo "Another TX2 production deployment is running (waited ${tx2_lock_wait}s)." >&2; exit 1; }
+          flock -w "$tx2_lock_wait" 9 || {
+            echo "Another TX2 production deployment is running (waited ${tx2_lock_wait}s)." >&2
+            if command -v lsof >/dev/null 2>&1; then
+              echo "Current lock file holders:" >&2
+              lsof /opt/wotb-tx2/.deploy.lock >&2 || true
+            elif command -v fuser >/dev/null 2>&1; then
+              echo "Current lock file holders:" >&2
+              fuser -v /opt/wotb-tx2/.deploy.lock >&2 || true
+            fi
+            exit 1
+          }
 
           docker_cmd() {
             if docker info >/dev/null 2>&1; then

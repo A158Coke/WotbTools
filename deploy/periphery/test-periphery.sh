@@ -732,8 +732,10 @@ fi
 reconcile_script="$ROOT/reconcile.sh"
 grep -Fq 'sudo -n true' "$reconcile_script" \
   || die 'reconcile.sh must fail closed when non-interactive sudo is unavailable'
-grep -Fq -- '--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY' "$reconcile_script" \
-  || die 'reconcile.sh must preserve only the generic credential through the environment'
+grep -Fq -- '--preserve-env="$(IFS=,; echo "${preserve[*]}")"' "$reconcile_script" \
+  || die 'reconcile.sh must preserve only the explicitly listed variables through sudo'
+grep -Fq -- 'for name in KOMODO_PERIPHERY_ONBOARDING_KEY PERIPHERY_LOCK_WAIT_SEC; do' "$reconcile_script" \
+  || die 'reconcile.sh must preserve only the generic credential and the lock wait budget'
 grep -Fq 'PERIPHERY_PRIVILEGE' "$ROOT/lib.sh" || die 'lib.sh must read the privilege model'
 for script in lib.sh install.sh verify.sh reconcile.sh; do
   if grep -q 'KOMODO_PERIPHERY_ONBOARDING_KEY=' "$ROOT/$script"; then

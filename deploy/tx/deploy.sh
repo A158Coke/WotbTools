@@ -289,7 +289,15 @@ acquire_deploy_lock() {
     lock_wait="${WOTB_TX_DEPLOY_LOCK_WAIT_SEC:-900}"
     exec 9>"$WOTB_DIR/.deploy.lock"
     if ! flock -w "$lock_wait" 9; then
-      die "another TX deployment is still running after waiting ${lock_wait}s; lock: $WOTB_DIR/.deploy.lock"
+      echo "another TX deployment is still running after waiting ${lock_wait}s; lock: $WOTB_DIR/.deploy.lock" >&2
+      if command -v lsof >/dev/null 2>&1; then
+        echo "Current lock file holders:" >&2
+        lsof "$WOTB_DIR/.deploy.lock" >&2 || true
+      elif command -v fuser >/dev/null 2>&1; then
+        echo "Current lock file holders:" >&2
+        fuser -v "$WOTB_DIR/.deploy.lock" >&2 || true
+      fi
+      die "the TX deployment lock was not released within ${lock_wait}s."
     fi
   fi
 }

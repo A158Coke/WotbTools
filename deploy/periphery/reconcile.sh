@@ -20,8 +20,12 @@ if [[ "$periphery_privilege" == sudo && "$(id -u)" != 0 ]]; then
   sudo -n true >/dev/null 2>&1 \
     || fail "non-interactive (passwordless) sudo is required to reconcile target $periphery_target."
   sudo_args=(-n)
-  if [[ -n "${KOMODO_PERIPHERY_ONBOARDING_KEY:-}" ]]; then
-    sudo_args+=(--preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY)
+  preserve=()
+  for name in KOMODO_PERIPHERY_ONBOARDING_KEY PERIPHERY_LOCK_WAIT_SEC; do
+    if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
+  done
+  if (( ${#preserve[@]} > 0 )); then
+    sudo_args+=(--preserve-env="$(IFS=,; echo "${preserve[*]}")")
   fi
   exec sudo "${sudo_args[@]}" env \
     PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
