@@ -2,8 +2,12 @@ import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
 import { hasGunMask } from './armorPlateModel.js'
 import {
-    thicknessDepthWrite, thicknessOutlineColor, thicknessSurfaceOpacity, type ThicknessClass,
+    thicknessDepthWrite, thicknessSurfaceOpacity, type ThicknessClass,
 } from './armorThicknessPalette.js'
+import {
+    clearThicknessOutlines, collectArmorMeshes, outlineOf, setOutlineVisible,
+    syncThicknessOutlines as syncThicknessOutlineMeshes,
+} from './armorThicknessOutline.js'
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../../data/armorStates.js'
 import type { ArmorStateSection } from './armorMeshState.js'
 import type { ModelReferences } from './modelLifecycle.js'
@@ -162,22 +166,6 @@ function applyCategoryFilters(): void {
             }
         }
 
-function collectHighlightMeshes(): THREE.Mesh[] {
-            const list: THREE.Mesh[] = [];
-            if (models.armorModel) {
-                models.armorModel.traverse(function(node: THREE.Object3D) {
-                    const mesh = node as THREE.Mesh;
-                    if (!mesh.isMesh || mesh.userData.armorSection === 'deco') return;
-                    list.push(mesh);
-                });
-            }
-            for (const node of getModuleMeshes()) list.push(node as THREE.Mesh);
-            return list;
-        }
-
-const OUTLINE_ANGLE = 45;
-const OUTLINE_RENDER_ORDER = 1;
-
 /** 厚度视图类别：模块碰撞体统一 external，装甲板按 spaced/primary 分。 */
 function thicknessClassForMesh(mesh: THREE.Mesh, modules: ReadonlySet<THREE.Object3D>): ThicknessClass {
             if (modules.has(mesh)) return 'external';
@@ -198,75 +186,6 @@ function createThicknessMaterial(mesh: THREE.Mesh, kind: ThicknessClass): THREE.
             });
         }
 
-function outlineOf(mesh: THREE.Mesh): THREE.LineSegments | null {
-            return (mesh.userData.collisionOutline as THREE.LineSegments | undefined) ?? null;
-        }
-
-function setOutlineVisible(mesh: THREE.Mesh, visible: boolean): void {
-            const line = outlineOf(mesh);
-            if (line) line.visible = visible;
-        }
-
-/** 每块板/模块一条 45° 硬边勾线；重复调用只更新颜色，不重建几何。 */
-function ensureThicknessOutline(mesh: THREE.Mesh, kind: ThicknessClass): void {
-            if (!mesh.geometry) return;
-            let line = outlineOf(mesh);
-            if (!line) {
-                line = new THREE.LineSegments(
-                    new THREE.EdgesGeometry(mesh.geometry, OUTLINE_ANGLE),
-                    new THREE.LineBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false }),
-                );
-                // 勾线是纯视觉轮廓，必须从 intersectObjects 的装甲/模块拾取链里消失；
-                // Line 命中沿父网格仍能读到 armorSection，漏掉会污染厚度点选与判定。
-                line.raycast = () => {};
-                line.renderOrder = OUTLINE_RENDER_ORDER;
-                mesh.add(line);
-                mesh.userData.collisionOutline = line;
-            }
-            const surface = mesh.material;
-            const baseColor = !Array.isArray(surface) && surface && (surface as THREE.MeshBasicMaterial).color
-                ? (surface as THREE.MeshBasicMaterial).color.getHex()
-                : thicknessToColor(mesh.userData.armorThickness);
-            const material = line.material as THREE.LineBasicMaterial;
-            const color = thicknessOutlineColor(kind, baseColor);
-            if (material.color.getHex() !== color) material.color.setHex(color);
-            // 炮管勾线与实体共用 gun_mask 裁剪面；其余模块清空，避免重进厚度视图时残留旧平面。
-            const solid = mesh.userData.collisionSolidMaterial as THREE.MeshBasicMaterial | undefined;
-            const clipPlanes = kind === 'external' && mesh.userData.armorSection === 'gunBarrel' && solid
-                ? (solid.clippingPlanes ?? null)
-                : null;
-            const hadClip = !!(material.clippingPlanes && material.clippingPlanes.length);
-            if (hadClip !== !!clipPlanes) {
-                material.clippingPlanes = clipPlanes;
-                material.needsUpdate = true;
-            } else if (clipPlanes) {
-                material.clippingPlanes = clipPlanes;
-            }
-        }
-
-function disposeThicknessOutline(mesh: THREE.Mesh): void {
-            const line = outlineOf(mesh);
-            if (!line) return;
-            mesh.remove(line);
-            line.geometry.dispose();
-            const material = line.material;
-            if (Array.isArray(material)) material.forEach(item => item.dispose());
-            else material.dispose();
-            delete mesh.userData.collisionOutline;
-        }
-
-function clearThicknessOutlines(): void {
-            const roots: THREE.Object3D[] = [];
-            if (models.armorModel) roots.push(models.armorModel);
-            roots.push(...getModuleMeshes());
-            for (const root of roots) {
-                root.traverse(function(node: THREE.Object3D) {
-                    const mesh = node as THREE.Mesh;
-                    if (mesh.isMesh) disposeThicknessOutline(mesh);
-                });
-            }
-        }
-
 /** 选中集合：单侧履带/负重轮按 armorPlateId 整组，其余只选被点网格。 */
 function highlightSelection(selected: THREE.Object3D | null, modules: ReadonlySet<THREE.Object3D>): Set<THREE.Object3D> {
             const selectedSet = new Set<THREE.Object3D>();
@@ -285,21 +204,12 @@ function highlightSelection(selected: THREE.Object3D | null, modules: ReadonlySe
 
 function syncThicknessOutlines(): void {
             if (!getCollisionMode() || !models.armorModel) return;
-            models.armorModel.traverse(function(node: THREE.Object3D) {
-                const mesh = node as THREE.Mesh;
-                if (!mesh.isMesh || mesh.userData.armorSection === 'deco') return;
-                ensureThicknessOutline(mesh, mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary');
-            });
-            for (const node of getModuleMeshes()) {
-                const mesh = node as THREE.Mesh;
-                if (!mesh.isMesh) continue;
-                ensureThicknessOutline(mesh, 'external');
-            }
-            const modules = new Set<THREE.Object3D>(getModuleMeshes());
+            const moduleMeshes = getModuleMeshes();
+            const modules = new Set<THREE.Object3D>(moduleMeshes);
             const selectedSet = highlightSelection(highlightedArmorNode, modules);
-            for (const mesh of collectHighlightMeshes()) {
-                setOutlineVisible(mesh, !highlightedArmorNode || selectedSet.has(mesh));
-            }
+            syncThicknessOutlineMeshes(
+                models.armorModel, moduleMeshes, highlightedArmorNode, selectedSet, thicknessToColor,
+            );
         }
 
 function applyArmorMaterialState(m: THREE.Material, transparent: boolean, opacity: number, depthWrite: boolean): void {
@@ -313,7 +223,7 @@ function resetArmorHighlight(): void {
             highlightedArmorNode = null;
             if (!getCollisionMode() || !models.armorModel) return;
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
-            for (const node of collectHighlightMeshes()) {
+            for (const node of collectArmorMeshes(models.armorModel, getModuleMeshes())) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
                 const kind = thicknessClassForMesh(node, modules);
@@ -326,7 +236,7 @@ function resetArmorHighlight(): void {
 function applyArmorHighlight(selected: THREE.Object3D | null): void {
             const modules = new Set<THREE.Object3D>(getModuleMeshes());
             const selectedSet = highlightSelection(selected, modules);
-            for (const node of collectHighlightMeshes()) {
+            for (const node of collectArmorMeshes(models.armorModel, getModuleMeshes())) {
                 const m = node.material;
                 if (!m || Array.isArray(m)) continue;
                 if (selectedSet.has(node)) {
@@ -414,7 +324,7 @@ function applyModuleCollisionMaterial(on: boolean): void {
 
 function applyArmorViewStyle(collision: boolean): void {
             // 退出厚度视图先摘勾线：armor 尚未就绪时也必须把模块上的轮廓清掉。
-            if (!collision) clearThicknessOutlines();
+            if (!collision) clearThicknessOutlines(models.armorModel, getModuleMeshes());
             if (!models.armorModel) return;
             if (collision) hmRef().computeGunClipPlane();
             applyModuleCollisionMaterial(collision);
