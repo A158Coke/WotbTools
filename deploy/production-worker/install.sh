@@ -20,7 +20,7 @@ if [[ "$WORKER_PRIVILEGE" == sudo && "$(id -u)" != 0 ]]; then
     || fail "non-interactive (passwordless) sudo is required to reconcile target $WORKER_TARGET."
   sudo_args=(-n)
   preserve=()
-  for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD; do
+  for name in TCR_REGISTRY TCR_NAMESPACE TCR_CREDENTIAL_VERSION TCR_USERNAME TCR_PASSWORD WORKER_LOCK_WAIT_SEC; do
     if [[ -n "${!name:-}" ]]; then preserve+=("$name"); fi
   done
   if (( ${#preserve[@]} > 0 )); then
