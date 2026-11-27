@@ -124,9 +124,9 @@ Yecao 暂存根 `/opt/komodo/incoming/<SHA>` 及其两级父目录必须先经
 - **TX1** and **TX2** do not assume root. The same generic `PERIPHERY_PRIVILEGE=sudo`
   path applies to both: `reconcile.sh` re-executes itself through
   **non-interactive sudo** (`sudo -n`) and requires that to be available, failing
-  closed otherwise. Only the generic onboarding variable is preserved
-  (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential travels
-  in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
+  closed otherwise. Only the generic onboarding variable and the lock wait budget
+  are preserved (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY,PERIPHERY_LOCK_WAIT_SEC`),
+  so they travel in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
   is set for the privileged half. There is no per-host sudo implementation.
 
 ## Binary pin
