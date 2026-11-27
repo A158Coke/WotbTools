@@ -62,7 +62,7 @@ postgres / Komodo owner；反之 workload 改动也不会触发 worker reconcile
 | Docker Hub mirror | `/etc/docker/daemon.json` **恰好**包含 `registry-mirrors: ["https://mirror.ccs.tencentyun.com"]`（root:root, 0644, 原子写入） | 文件损坏/未知 key ⇒ fail closed；值漂移 ⇒ 纠正 |
 | TCR pull 凭据 | root 的 Docker 凭据存储（`/root/.docker/config.json`, root:root, 0600；目录 0700），只含 `vars.TCR_REGISTRY` 一个 registry | 缺失/不安全权限/外来 registry ⇒ fail closed |
 | 私有镜像可拉取 | 用当前 main 约定的私有镜像 `wotbtools-frontend:latest` 做 manifest 解析 **与真实 pull** | 任一失败 ⇒ fail closed |
-| 主机锁 | 复用 `/opt/wotb-tx2/.deploy.lock`（TX2 deploy owner 拥有，不新建 worker 专用锁） | 缺失/被占用 ⇒ fail closed |
+| 主机锁 | 复用 `/opt/wotb-tx2/.deploy.lock`（TX2 deploy owner 拥有，不新建 worker 专用锁） | 缺失 ⇒ fail closed；被占用 ⇒ 有界等待（`WORKER_LOCK_WAIT_SEC`，默认 900s）后带持锁者诊断失败，永不创建锁文件 |
 | Periphery 回归 | unit active/enabled、有出站 Core 连接、**没有** `:8120` 监听、身份/信任/配置文件仍在 | 任一失败 ⇒ fail closed |
 | WireGuard 回归 | 期望地址仍在、当前 service-plane endpoint 可达（`10.20.0.1:8087`、`10.20.0.1:8080`、`10.20.0.2:8089`） | 任一失败 ⇒ fail closed |
 | 不创建 workload | reconcile 前后运行中的容器集合必须完全一致 | 变化 ⇒ fail closed |

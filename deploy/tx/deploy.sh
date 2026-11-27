@@ -286,8 +286,19 @@ acquire_deploy_lock() {
     { true >&9; } 2>/dev/null || die "inherited TX deployment lock descriptor is unavailable."
     flock -n 9 || die "another TX deployment is already running."
   else
+    lock_wait="${WOTB_TX_DEPLOY_LOCK_WAIT_SEC:-900}"
     exec 9>"$WOTB_DIR/.deploy.lock"
-    flock -n 9 || die "another TX deployment is already running."
+    if ! flock -w "$lock_wait" 9; then
+      echo "another TX deployment is still running after waiting ${lock_wait}s; lock: $WOTB_DIR/.deploy.lock" >&2
+      if command -v lsof >/dev/null 2>&1; then
+        echo "Current lock file holders:" >&2
+        lsof "$WOTB_DIR/.deploy.lock" >&2 || true
+      elif command -v fuser >/dev/null 2>&1; then
+        echo "Current lock file holders:" >&2
+        fuser -v "$WOTB_DIR/.deploy.lock" >&2 || true
+      fi
+      die "the TX deployment lock was not released within ${lock_wait}s."
+    fi
   fi
 }
 
