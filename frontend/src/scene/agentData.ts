@@ -94,6 +94,18 @@ export function fetchTankEncyclopedia() {
   return fetchTankCacheStatic()
 }
 
+export function loadTankMechanics() {
+  if (!tankMechanicsPromise) {
+    tankMechanicsPromise = assetProvider.json('/data/tankMechanics.json')
+      .catch((e) => {
+        tankMechanicsPromise = null
+        throw e
+      })
+  }
+  return tankMechanicsPromise
+}
+
+let tankMechanicsPromise: ReturnType<typeof assetProvider.json> | null = null
 
 export function tankImageUrl(id: TankId) {
   return assetProvider.url(`/tank_images/${id}.webp`)

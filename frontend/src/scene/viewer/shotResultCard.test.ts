@@ -386,6 +386,13 @@ describe('shotResultCard · labels 三语与 HTML escaping', () => {
     expect(html).toContain('шанс пробития: 100%')
     expect(html).toContain('Дистанция боя: 15 м')
   })
+  it('命中距离行单列 TrayShell 倍率，无倍率时不追加', () => {
+    const html = renderShotResultCardHtml({ ...baseInput(), distVal: 48.4, damageFactor: 1.4 })
+    expect(html).toContain('Engagement distance: 48.4 m · ×140%')
+    const plain = renderShotResultCardHtml({ ...baseInput(), distVal: 48.4 })
+    expect(plain).toContain('Engagement distance: 48.4 m')
+    expect(plain).not.toContain('· ×')
+  })
 })
 
 describe('shotResultCard · 卡片尺寸与 HTML 语义', () => {

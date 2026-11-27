@@ -8,6 +8,7 @@ import AgentTankopedia from './AgentTankopedia.vue'
 const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
   fetchTankData: vi.fn(),
+  loadTankMechanics: vi.fn(async () => null),
   tankImageUrl: vi.fn(id => `https://assets.test/tank_images/${id}.webp`),
   loadTankIconCrops: vi.fn(async () => null),
 }))
@@ -54,6 +55,49 @@ describe('AgentTankopedia — 整合配置器（客户端模块数据）', () =>
     const { wrapper } = await mountAt({ tank: '999' })
     expect(wrapper.get('.tp-summary').text()).not.toContain('#usa_vehicles:')
     expect(wrapper.get('.tp-summary').text()).toContain('Turret 2 Test')
+    wrapper.unmount()
+  })
+
+  it('详情头卡显示机制名称，点击后弹窗显示官方原文说明', async () => {
+    data.fetchTankData.mockResolvedValueOnce({
+      tank_id: 999, name: 'KV-4 KTTS', tier: 8, nation: 'ussr', type: 'AT-SPG',
+      configs: configFixture(),
+      mechanics: [{
+        name: 'TrayShell',
+        kinds: ['ARMOR_PIERCING_CR'],
+        sectors: [
+          { distance: 50, factor: 1.4 },
+          { distance: 120, factor: 1.2 },
+          { distance: 200, factor: 1.0 },
+          { distance: 720, factor: 0.8 },
+        ],
+        localizationValues: {
+          ParamName1: '50', ParamName2: '140', ParamName3: '50', ParamName4: '120',
+          ParamName5: '120', ParamName6: '120', ParamName7: '200', ParamName8: '100',
+          ParamName9: '200', ParamName10: '80',
+        },
+      }],
+    })
+    data.loadTankMechanics.mockResolvedValueOnce({
+      mechanics: {
+        TrayShell: {
+          title: { 'zh-Hans': '突击弹' },
+          description: { 'zh-Hans': '距离 %(ParamName1) 米或以内：平均伤害 x %(ParamName2)%' },
+        },
+      },
+    })
+    const { wrapper } = await mountAt({ tank: '999' })
+    const strip = wrapper.get('.tp-detail-head [data-testid="tank-mechanics"]')
+    expect(strip.text()).toContain('突击弹')
+    expect(strip.text()).not.toContain('距离 50 米')
+    expect(wrapper.find('[data-testid="tank-mechanic-dialog"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="tank-mechanic-TrayShell"]').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.get('[data-testid="tank-mechanic-dialog"]')
+    expect(dialog.text()).toContain('突击弹')
+    expect(dialog.text()).toContain('距离 50 米或以内：平均伤害 x 140%')
+    expect(dialog.text()).not.toContain('%(ParamName')
     wrapper.unmount()
   })
 

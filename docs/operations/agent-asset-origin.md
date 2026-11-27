@@ -90,7 +90,7 @@ OTA）解析**；禁止直接读 `ANDROID_ASSET_BASE` / `VITE_ASSET_BASE_URL`，
 
 跟随 dataset 切换：
 
-- `tank/{id}.json`、`data/tank_cache.json`、`data/shellKinds.json`
+- `tank/{id}.json`（含车级 `mechanics`）、`data/tank_cache.json`、`data/shellKinds.json`、`data/tankMechanics.json`（机制三语文案）
 - `glb/{id}/*.glb`（3D 回放 / 坦克查看器 / 装甲查看器）与 `suspension/`、`tread/`
 - `map/{key}/**`（scenery / terrain / ground / lighting / IBL）
 - `cover/`、`tank_images/`（含 `crops.json`）
@@ -250,7 +250,7 @@ python scripts/export_asset_pack.py --map-index map_index.json   # 产物 releas
 index.json                     # 数字 id → key/space/display（前端一次性装载）
 glb/{tank_id}/{model,collision}.glb
 tank_images/{id}.webp
-data/{tanks.pb,models.pb,tank_cache.json,data_version.json}
+data/{tanks.pb,models.pb,tank_cache.json,data_version.json,tankMechanics.json}
 map/{key}/{ground,mini}.webp  terrain.u16.bin  terrain.json
 map/{key}/{scenery.glb,ground.layers.json}  map/{key}/ground/*.webp
 ```

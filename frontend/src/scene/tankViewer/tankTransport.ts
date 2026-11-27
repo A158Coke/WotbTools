@@ -18,12 +18,14 @@ function reportDistance(S: Host) {
             const raw = recorded
                 ? (shot ? shotBallisticLength(shot) * (S.ml.getWorldMetersPerUnit() || 1) : NaN)
                 : S.camera.position.distanceTo(S.controls.target) * (S.ml.getWorldMetersPerUnit() || 1);
-            const distance = S.ml.models.tankModel && S.ml.models.armorModel && !S.contextLost && Number.isFinite(raw) && raw > 0
-                ? Math.round(raw) : null;
-            if (distance === S.lastReportedDistance) return;
-            S.lastReportedDistance = distance;
-            S.onDistanceChange?.(distance == null ? null : {
-                distance, min: S.controls.minDistance, max: S.controls.maxDistance, readOnly: recorded,
+            const exactDistance = S.ml.models.tankModel && S.ml.models.armorModel && !S.contextLost && Number.isFinite(raw) && raw > 0
+                ? raw : null;
+            const distance = exactDistance == null ? null : Math.round(exactDistance);
+            const distanceKey = exactDistance == null ? 'null' : `${distance}:${exactDistance}`;
+            if (distanceKey === S.lastReportedDistance) return;
+            S.lastReportedDistance = distanceKey;
+            S.onDistanceChange?.(exactDistance == null ? null : {
+                distance, exactDistance, min: S.controls.minDistance, max: S.controls.maxDistance, readOnly: recorded,
             });
         }
 
@@ -74,7 +76,7 @@ function setCameraPreset(S: Host, kind: 'front' | 'hull_down', { preserveView = 
             S.controls.enableDamping = damping;
             byId('turret-val').textContent = '0°';
             byId('gun-val').textContent = S.currentGunDeg.toFixed(0) + '°';
-            S.tc.tidyTrajectory();
+            S.invalidateJudgment();
             return true;
         }
 
