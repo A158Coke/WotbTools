@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { Plus } from 'lucide-vue-next'
@@ -17,6 +17,25 @@ import '../styles/tournament-points.css'
 const { t, te } = useI18n()
 const { globalMode, selectGlobal, selectEvent, roundComplete, defaultEnabled, defaults, ruleSource, defaultConfirmation, dirty, isDefaultSource, canSetDefault, missingDefaultDays, requestDefault, cancelDefault, confirmDefault, events, eventId, config, form, round, ruleInputs, rule, ruleDays, busy, error, stale, notice, allowed, refresh, saveConfig, saveRules, removeEvent, newEvent } = useTournamentPointsConfig()
 const naming = ref('DAY'), deleteOpen = ref(false)
+const defaultOpener = ref<HTMLElement | null>(null)
+const ruleSourceHeading = ref<HTMLElement | null>(null)
+async function publishDefault() {
+  const opener = defaultOpener.value
+  const heading = ruleSourceHeading.value
+  await confirmDefault()
+  await nextTick()
+  if (!heading?.isConnected || defaultConfirmation.value || document.activeElement !== document.body) return
+  const target = opener?.isConnected && !opener.matches(':disabled') ? opener : heading
+  target?.focus({ preventScroll: true })
+}
+function openDefault(action: 'set' | 'clear', event: MouseEvent) {
+  defaultOpener.value = event.currentTarget as HTMLElement
+  void requestDefault(action)
+}
+function saveRoundRules(event: SubmitEvent) {
+  if (globalMode.value) defaultOpener.value = event.submitter ?? (document.activeElement as HTMLElement | null)
+  void saveRules()
+}
 watch(config, value => { naming.value = value?.event.dayLabels.slice(0, 2).every(label => /^Day \d+$/.test(label)) === false ? 'STAGE' : 'DAY' })
 function chooseNaming(value: string) {
   naming.value = value
@@ -25,6 +44,9 @@ function chooseNaming(value: string) {
 }
 async function deleteConfirmed() { await removeEvent(); deleteOpen.value = false }
 const structureLocked = computed(() => busy.value || !!config.value?.event.configLocked)
+const regionOptions = computed(() => TOURNAMENT_REGIONS.map(value => ({
+  value, label: t('tournament.regions.' + value), disabled: structureLocked.value,
+})))
 const roundCountOptions = computed(() => [4, 5].map(value => ({ value: String(value), label: String(value), disabled: structureLocked.value, testid: `config-round-count-${value}` })))
 const dayCountOptions = computed(() => [2, 3].map(value => ({ value: String(value), label: String(value), disabled: structureLocked.value, testid: `config-day-count-${value}` })))
 const namingOptions = computed(() => [{ value: 'DAY', label: t('tournament.dayMode') }, { value: 'STAGE', label: t('tournament.stageMode') }]
@@ -68,8 +90,11 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
             <p class="tournament-muted">{{ $t(globalMode ? 'tournament.globalEditHint' : 'tournament.identity') }}</p>
             <div class="tournament-config-fields">
               <label v-if="!globalMode" class="tournament-field"><span>{{ $t('tournament.year') }}</span><input v-model.number="form.year" type="number" inputmode="numeric" min="2000" max="2100" required :disabled="busy || config?.event.configLocked" data-testid="config-year" /></label>
-              <label v-if="!globalMode" class="tournament-field"><span>{{ $t('tournament.region') }}</span><select v-model="form.region" :disabled="busy || config?.event.configLocked"><option v-for="value in TOURNAMENT_REGIONS" :key="value" :value="value">{{ $t('tournament.regions.' + value) }}</option></select></label>
-              <label class="tournament-field"><span>{{ $t('tournament.season') }}</span><select v-if="globalMode" value="GLOBAL" disabled data-testid="config-season"><option value="GLOBAL">{{ $t('tournament.globalConfiguration') }}</option></select><select v-else v-model="form.season" data-testid="config-season" :disabled="busy || config?.event.configLocked"><option v-for="value in TOURNAMENT_SEASONS" :key="value" :value="value">{{ $t('tournament.seasons.' + value) }}</option></select></label>
+              <div v-if="!globalMode" class="tournament-field"><span>{{ $t('tournament.region') }}</span>
+                <SegmentedControl v-model="form.region" :options="regionOptions" :ariaLabel="$t('tournament.region')" presentation="chips" />
+              </div>
+              <div v-if="globalMode" class="tournament-field"><span>{{ $t('tournament.season') }}</span><strong data-testid="config-season">{{ $t('tournament.globalConfiguration') }}</strong></div>
+              <label v-else class="tournament-field"><span>{{ $t('tournament.season') }}</span><select v-model="form.season" data-testid="config-season" :disabled="busy || config?.event.configLocked"><option v-for="value in TOURNAMENT_SEASONS" :key="value" :value="value">{{ $t('tournament.seasons.' + value) }}</option></select></label>
               <div class="tournament-field"><span id="config-round-count-label">{{ $t('tournament.rounds') }}</span>
                 <SegmentedControl :model-value="String(form.roundCount)" :options="roundCountOptions" :ariaLabel="$t('tournament.rounds')" data-testid="config-round-count" @update:model-value="form.roundCount = Number($event)" />
               </div>
@@ -89,12 +114,12 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
           </form>
           <section v-if="defaults" class="tournament-card tournament-default" aria-labelledby="default-rules-heading">
             <div class="tournament-default-heading">
-              <h2 id="default-rules-heading">{{ $t('tournament.ruleSourceTitle') }}</h2>
+              <h2 id="default-rules-heading" ref="ruleSourceHeading" tabindex="-1">{{ $t('tournament.ruleSourceTitle') }}</h2>
             </div>
             <p v-if="ruleSource" class="tournament-config-source">{{ $t('tournament.ruleSources.' + ruleSource.source) }}</p>
             <button type="button" role="switch" class="tournament-default-switch" :aria-checked="defaultEnabled"
               :aria-label="$t('tournament.setDefault')" :disabled="busy || stale || (defaultEnabled ? (!globalMode && dirty) : !canSetDefault)"
-              data-testid="default-rules-switch" @click="requestDefault(defaultEnabled ? 'clear' : 'set')">
+              data-testid="default-rules-switch" @click="openDefault(defaultEnabled ? 'clear' : 'set', $event)">
               <span class="tournament-default-track" aria-hidden="true"><span class="tournament-default-thumb" /></span>
               <span>{{ $t('tournament.setDefault') }}</span>
             </button>
@@ -109,13 +134,13 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
             <div class="tournament-actions">
               <template v-if="isDefaultSource && ruleSource?.defaultOutdated">
                 <span>{{ $t('tournament.defaultOutdated') }}</span>
-                <AppButton :disabled="!canSetDefault" data-testid="update-default-rules" @click="requestDefault('set')">{{ $t('tournament.defaultUpdate') }}</AppButton>
+                <AppButton :disabled="!canSetDefault" data-testid="update-default-rules" @click="openDefault('set', $event)">{{ $t('tournament.defaultUpdate') }}</AppButton>
               </template>
-              <AppButton v-if="defaults.active && !isDefaultSource && !globalMode" :disabled="busy || stale || (dirty && !!config)" data-testid="clear-default-rules" @click="requestDefault('clear')">{{ $t('tournament.defaultClear') }}</AppButton>
+              <AppButton v-if="defaults.active && !isDefaultSource && !globalMode" :disabled="busy || stale || (dirty && !!config)" data-testid="clear-default-rules" @click="openDefault('clear', $event)">{{ $t('tournament.defaultClear') }}</AppButton>
             </div>
           </section>
         </div>
-        <form v-if="config || (globalMode && defaults)" class="tournament-card tournament-rules-form" aria-labelledby="rules-heading" @submit.prevent="saveRules">
+        <form v-if="config || (globalMode && defaults)" class="tournament-card tournament-rules-form" aria-labelledby="rules-heading" @submit.prevent="saveRoundRules">
           <h2 id="rules-heading" class="tournament-rules-title">{{ $t('tournament.roundRules') }}</h2>
           <div class="tournament-round-tabs" role="tablist" :aria-label="$t('tournament.rounds')">
             <button v-for="value in roundTotal" :key="value" type="button" role="tab" class="tournament-round-tab" :class="{ 'is-incomplete': !roundComplete(value) }"
@@ -154,13 +179,13 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
         </form>
       </div>
     </template>
-    <AppDialog :open="!!defaultConfirmation" :title="$t(defaultConfirmation?.action === 'clear' ? 'tournament.defaultClear' : 'tournament.defaultUpdate')" @close="cancelDefault" data-testid="default-rules-dialog">
+    <AppDialog :open="!!defaultConfirmation" :return-focus-to="defaultOpener ?? undefined" :title="$t(defaultConfirmation?.action === 'clear' ? 'tournament.defaultClear' : 'tournament.defaultUpdate')" @close="cancelDefault" data-testid="default-rules-dialog">
       <p>{{ $t(defaultConfirmation?.action === 'clear' ? 'tournament.defaultClearConfirm' : 'tournament.defaultReplaceConfirm') }}</p>
       <p v-if="defaultConfirmation?.action !== 'clear'">{{ $t(globalMode ? 'tournament.globalSaveEffect' : 'tournament.defaultReplaceEffect') }}</p>
       <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>
       <template #actions>
         <AppButton :disabled="busy" data-testid="cancel-default-rules" @click="cancelDefault">{{ $t('tournament.cancel') }}</AppButton>
-        <AppButton variant="primary" :disabled="busy || stale || (dirty && !!config)" data-testid="confirm-default-rules" @click="confirmDefault">{{ $t(defaultConfirmation?.action === 'clear' ? 'tournament.defaultClearYes' : 'tournament.defaultReplaceYes') }}</AppButton>
+        <AppButton variant="primary" :disabled="busy || stale || (dirty && !!config)" data-testid="confirm-default-rules" @click="publishDefault">{{ $t(defaultConfirmation?.action === 'clear' ? 'tournament.defaultClearYes' : 'tournament.defaultReplaceYes') }}</AppButton>
       </template>
     </AppDialog>
     <AppDialog :open="deleteOpen" :title="$t('tournament.deleteEvent')" tone="danger" @close="!busy && (deleteOpen = false)">
