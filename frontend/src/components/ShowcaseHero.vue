@@ -96,6 +96,15 @@ const artStyle = computed(() => (props.section ? sectionHeroStyle(props.section)
   padding: var(--space-4) var(--space-6);
 }
 @media (width >= 768px) {
+  .showcase-hero.is-compact[data-section='admin'] {
+    background: linear-gradient(to right, var(--color-surface-1), var(--color-surface-3));
+  }
+  .showcase-hero.is-compact[data-section='admin'] .showcase-hero-art {
+    inset-inline-start: auto;
+    aspect-ratio: 16 / 9;
+    background: var(--hero-image) right center / contain no-repeat;
+    mask-image: linear-gradient(to right, transparent, currentColor 32%);
+  }
   .showcase-hero.is-compact[data-section='replay'] .showcase-hero-content {
     min-block-size: clamp(132px, 20vw, 384px);
   }
