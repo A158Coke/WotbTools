@@ -89,7 +89,7 @@ function assertDesktopCompact(hero, { section, position }) {
   assert.ok(hero.compact, `desktop ${section} must render compact`)
   assert.match(hero.backgroundImage, section === 'admin' ? /url\(/ : /linear-gradient/, `desktop ${section} scrim must be the section scrim gradient`)
   assert.equal(hero.imagePosition, position, `desktop ${section} compact focus must be ${position}`)
-  assert.equal(hero.backgroundSize, section === 'admin' ? 'contain' : 'cover', 'desktop image sizing for ' + section)
+  assert.equal(hero.backgroundSize, 'cover', 'desktop image sizing for ' + section)
   assert.ok(hero.titleBottom <= hero.heroBottom, `desktop ${section} title must stay inside the banner`)
 }
 
@@ -128,7 +128,7 @@ try {
   for (const [view, extraAuth, section, position] of [
     ['replay', '', 'replay', '50% 50%'],
     ['agent-techtree', '', 'techtree', '50% 58%'],
-    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '100% 50%'],
+    ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '50% 45%'],
   ]) {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
@@ -152,14 +152,14 @@ try {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
       const desktop = await page.probe(heroProbe)
-      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '100% 50%' })
+      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '50% 45%' })
       if (section === 'admin') {
         for (const width of [900, 1280, 1890]) {
           await page.emulate({ width, height: 900, touch: false, deviceScaleFactor: 1 })
           const hero = await page.probe(heroProbe)
-          assertDesktopCompact(hero, { section, position: '100% 50%' })
+          assertDesktopCompact(hero, { section, position: '50% 45%' })
           assert.ok(hero.height >= Math.min(280, width * 0.28), 'users section must expand on desktop at ' + width)
-          assert.ok(hero.artWidth >= hero.width / 2, 'the complete image must occupy at least half of this desktop section')
+          assert.ok(Math.abs(hero.artWidth - hero.width) <= 2, 'the background image must span the whole users section')
           const firstRow = await page.waitForValue('document.querySelector("[data-testid=admin-row-open]")?.getBoundingClientRect().top', Number.isFinite)
           assert.ok(firstRow < 900, 'first user row must remain in the initial viewport')
           const edges = await page.probe(() => ['.showcase-hero', '.admin-filter-bar', '.admin-list-table-wrap'].map(
