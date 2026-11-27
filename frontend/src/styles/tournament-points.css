@@ -3,12 +3,12 @@
 .tournament-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
 .tournament-field { display: grid; gap: var(--space-1); min-width: 0; flex: 1 1 var(--form-field-min); }
 .tournament-field > span, .tournament-field > label { font: var(--type-caption); color: var(--color-text-secondary); }
-.tournament-field input, .tournament-field select, .tournament-field textarea {
+.tournament-field > input, .tournament-field > select, .tournament-field > textarea {
   box-sizing: border-box; width: 100%; min-height: var(--control-h-md);
   border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
   padding: var(--space-1) var(--space-2); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body);
 }
-.tournament-field input:focus-visible, .tournament-field select:focus-visible, .tournament-field textarea:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.tournament-field > input:focus-visible, .tournament-field > select:focus-visible, .tournament-field > textarea:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .tournament-card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
 .tournament-card h2 { margin: 0; font: var(--type-h2); }
 .tournament-card h3 { margin: 0; font: var(--type-h3); }
@@ -121,7 +121,7 @@
 
 .tournament-config-layout { display: grid; grid-template-columns: minmax(0, calc(var(--form-field-min) * 2)) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
 .tournament-config-side { display: grid; gap: var(--space-4); min-width: 0; }
-.tournament-config-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.tournament-config-fields { display: grid; align-items: start; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .tournament-config-fields .tournament-field-wide { grid-column: 1 / -1; }
 .tournament-config-event { font: var(--type-h3); overflow-wrap: anywhere; }
 .tournament-config-source { color: var(--color-text-primary); }

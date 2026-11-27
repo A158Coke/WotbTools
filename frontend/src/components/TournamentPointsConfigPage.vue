@@ -90,11 +90,11 @@ const missingCells = computed(() => Array.from({ length: dayTotal.value }, (_, i
             <p class="tournament-muted">{{ $t(globalMode ? 'tournament.globalEditHint' : 'tournament.identity') }}</p>
             <div class="tournament-config-fields">
               <label v-if="!globalMode" class="tournament-field"><span>{{ $t('tournament.year') }}</span><input v-model.number="form.year" type="number" inputmode="numeric" min="2000" max="2100" required :disabled="busy || config?.event.configLocked" data-testid="config-year" /></label>
-              <div v-if="!globalMode" class="tournament-field"><span>{{ $t('tournament.region') }}</span>
-                <SegmentedControl v-model="form.region" :options="regionOptions" :ariaLabel="$t('tournament.region')" presentation="chips" />
-              </div>
               <div v-if="globalMode" class="tournament-field"><span>{{ $t('tournament.season') }}</span><strong data-testid="config-season">{{ $t('tournament.globalConfiguration') }}</strong></div>
               <label v-else class="tournament-field"><span>{{ $t('tournament.season') }}</span><select v-model="form.season" data-testid="config-season" :disabled="busy || config?.event.configLocked"><option v-for="value in TOURNAMENT_SEASONS" :key="value" :value="value">{{ $t('tournament.seasons.' + value) }}</option></select></label>
+              <div v-if="!globalMode" class="tournament-field tournament-field-wide"><span>{{ $t('tournament.region') }}</span>
+                <SegmentedControl v-model="form.region" data-testid="config-region" :options="regionOptions" :ariaLabel="$t('tournament.region')" presentation="chips" />
+              </div>
               <div class="tournament-field"><span id="config-round-count-label">{{ $t('tournament.rounds') }}</span>
                 <SegmentedControl :model-value="String(form.roundCount)" :options="roundCountOptions" :ariaLabel="$t('tournament.rounds')" data-testid="config-round-count" @update:model-value="form.roundCount = Number($event)" />
               </div>

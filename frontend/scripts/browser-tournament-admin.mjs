@@ -16,7 +16,17 @@ async function key(page, keyName, code) {
 }
 const eventInput = '[data-testid=event-compact] [role=combobox]'
 async function search(page, selector, query, expectedCount, touch) {
+  await page.tapSelector(selector + ' ~ button:last-child', touch)
+  await page.waitForValue('document.activeElement?.matches(' + JSON.stringify(selector) + ') && document.activeElement.getAttribute("aria-expanded") === "true"', Boolean)
+  await key(page, 'Escape', 27)
   await page.tapSelector(selector, touch)
+  await key(page, 'ArrowDown', 40)
+  const rings = await page.callWith(sel => {
+    const input = document.querySelector(sel)
+    return { inner: getComputedStyle(input).outlineStyle, group: getComputedStyle(input.closest('.select-field')).outlineStyle }
+  }, selector)
+  assert.equal(rings.inner, 'none', selector + ' must use the composite focus ring')
+  assert.notEqual(rings.group, 'none', selector + ' needs a visible focus ring')
   await page.waitForValue('document.querySelectorAll("[role=listbox] [role=option]").length', count => count === expectedCount)
   await page.client.send('Input.insertText', { text: query }, page.sessionId)
   await page.waitForValue('document.querySelectorAll("[role=listbox] [role=option]").length', count => count === 1)
@@ -55,7 +65,10 @@ async function auditAdmin(page, touch, name) {
   await page.waitForValue('!!document.querySelector("[data-testid=tournament-day-actions]")', Boolean)
   const start = writes.length
   await clearDialog(page, touch)
+  await page.callWith(sel => document.querySelector(sel).focus(), '#clear-clan')
+  await key(page, 'ArrowDown', 40)
   await screenshot(page, name)
+  await key(page, 'Escape', 27)
   await search(page, '#clear-clan', 'clan-12', 12, touch)
   await page.tapSelector('[role=dialog] [data-value=round]', touch)
   await page.tapSelector('[role=dialog] textarea', touch)
@@ -106,6 +119,19 @@ async function auditAdmin(page, touch, name) {
 async function auditConfig(page, touch, name) {
   const test = id => '[data-testid=' + id + ']'
   await page.waitForValue('!!document.querySelector("[data-testid=rule-1-1]")', Boolean)
+  const fields = await page.probe(() => {
+    const rect = id => document.querySelector('[data-testid=' + id + ']').getBoundingClientRect()
+    const year = rect('config-year'), season = rect('config-season'), region = rect('config-region')
+    const grid = document.querySelector('.tournament-config-fields').getBoundingClientRect()
+    const labelGap = id => {
+      const control = document.querySelector('[data-testid=' + id + ']')
+      return control.getBoundingClientRect().top - control.previousElementSibling.getBoundingClientRect().bottom
+    }
+    return { gapDiff: Math.abs(labelGap('config-year') - labelGap('config-season')), heightDiff: Math.abs(year.height - season.height), regionWidth: region.width, gridWidth: grid.width,
+      afterYear: region.top >= year.bottom, afterSeason: region.top >= season.bottom }
+  })
+  assert.ok(fields.gapDiff <= 1 && fields.heightDiff <= 1 && fields.afterYear && fields.afterSeason && Math.abs(fields.regionWidth - fields.gridWidth) <= 1, JSON.stringify(fields))
+  await page.callWith(sel => document.querySelector(sel).scrollIntoView({ block: 'center' }), '[data-testid=config-region]')
   await screenshot(page, name)
   const start = writes.length
   await page.tapSelector(test('default-rules-switch'), touch)
@@ -143,6 +169,12 @@ try {
   const layouts = [
     { id: 'desktop', width: 1280, height: 850, profile: 'summer', touch: false },
     { id: 'phone', width: 390, height: 850, profile: 'winter', touch: true },
+    { id: 'desktop-winter', width: 1280, height: 850, profile: 'winter', touch: false },
+    { id: 'phone-summer', width: 390, height: 850, profile: 'summer', touch: true },
+    { id: 'ru-desktop-summer', width: 1280, height: 850, profile: 'summer', touch: false, locale: 'ru' },
+    { id: 'ru-phone-winter', width: 390, height: 850, profile: 'winter', touch: true, locale: 'ru' },
+    { id: 'ru-desktop', width: 1280, height: 850, profile: 'winter', touch: false, locale: 'ru' },
+    { id: 'ru-phone', width: 390, height: 850, profile: 'summer', touch: true, locale: 'ru' },
     { id: 'tablet', width: 900, height: 850, profile: 'spring', touch: false },
     ...MOBILE_VIEWPORTS.map((size, i) => ({
       ...size, profile: ['autumn', 'spring', 'winter', 'autumn', 'winter'][i],
@@ -164,7 +196,7 @@ try {
       for (const view of ['tournament-points-admin', 'tournament-points-config']) {
         reset()
         const admin = view.endsWith('admin')
-        const name = view + '-' + width + 'x' + height + '-' + profile
+        const name = view + '-' + width + 'x' + height + '-' + profile + '-' + locale
         await page.goto(origin + '/?view=' + view + '&ws-roles=tournament-admin')
         await page.waitForValue('!!document.querySelector("[data-testid=event-compact] input:not(:disabled)")', Boolean)
         assert.equal(await page.evaluate('document.documentElement.dataset.uiProfile'), profile)
