@@ -133,7 +133,7 @@ describe('armor shell and readiness ownership', () => {
     expect(kernel).toMatch(/else if \(jc\.getLastClickNdc\(\) \|\| hm\.getHeHeatmapCenter\(\)\) \{[\s\S]*?tc\.tidyTrajectory\(\);/)
   })
   it('目标配置切换清空旧结果并使在途判定失效', () => {
-    expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*jcRef\(\)\.bumpPenSeq\(\);\s*tcRef\(\)\.tidyTrajectory\(\);[\s\S]*?jcRef\(\)\.clearLastClickNdc\(\);\s*\} else \{\s*rerunAuthoritativeShotCheckFn\(\);/)
+    expect(kernel).toMatch(/if \(!QP\.get\('shot'\)\) \{\s*jcRef\(\)\.bumpPenSeq\(\);\s*tcRef\(\)\.tidyTrajectory\(\);[\s\S]*?jcRef\(\)\.clearLastClickNdc\(\);\s*clearShotState\?\.\(\);\s*\} else \{\s*rerunAuthoritativeShotCheckFn\(\);/)
   })
   it('射手数据未就绪时排队换炮，不拿上一辆车的 shooterData 重载', () => {
     expect(kernel).toMatch(/let pendingShooterConfig(?:: [A-Za-z]+ \| null)? = null;/)

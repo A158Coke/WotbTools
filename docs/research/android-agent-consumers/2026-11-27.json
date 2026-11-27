@@ -1,0 +1,415 @@
+{
+  "observedDate": "2026-11-27",
+  "timeZone": "Asia/Hong_Kong",
+  "codeBaseline": "614f3ef201a215f329f5948b653b115996944640",
+  "productionManifest": {
+    "schemaVersion": 1,
+    "latestVersionCode": 5007002,
+    "latestVersionName": "5.7.2",
+    "minSupportedVersionCode": 5004001,
+    "nativeBridgeVersion": 4,
+    "sourceSha": "ea4063d3581bf898bbb3239b38bea4224dbd0976",
+    "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v5.7.2.apk",
+    "sha256": "ccf34ee63c6cc4cd4f101e07d3e4d1775ee36a9c75bec43a3927733151b48c9f",
+    "publishedAt": "2026-11-25T15:37:46Z",
+    "releaseNotes": "",
+    "apkSizeBytes": 210171637,
+    "patches": []
+  },
+  "rows": [
+    {
+      "version": "3.17.0",
+      "versionCode": 3017000,
+      "tagCommit": "01283ec3363513d18c091bada9e3c7575e6219f9",
+      "sourceSha": "4e8acd2e1d1837e4336348fbed32fde2a15dda56",
+      "tagMatchesStaging": false,
+      "apkSha256": "ef069b047e559a21bf1f5c58646cf46a2c4219483e5cc6b5d0ee2d88d943d8fa",
+      "apkSizeBytes": 202078845,
+      "bundleManifestSha256": "cf5baa4f11d21b175940111f76b48c037a861f425ed2877b91529c5b3aaac962",
+      "bundleFileCount": 511,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com",
+      "dexOriginLiteral": "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com",
+      "stagedAt": "2026-10-21T02:42:43Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v3.17.0.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/39543923043/job/119037692924",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "below-floor"
+    },
+    {
+      "version": "5.4.1",
+      "versionCode": 5004001,
+      "tagCommit": "c55e44ed9fc891ed7fc692e17dff8b9a4fe14b4f",
+      "sourceSha": "c55e44ed9fc891ed7fc692e17dff8b9a4fe14b4f",
+      "tagMatchesStaging": true,
+      "apkSha256": "1b9f1047204e47221ca5248cf1a58631f0c583a7ede381b92c20df7ddb90307c",
+      "apkSizeBytes": 210118990,
+      "bundleManifestSha256": "6712808e2491e95102c6da24c76b03b78d0879c60d3c6867c5de2bbf8ab05a8e",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-14T14:49:34Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.4.1.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43608259558/job/132487563202",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.4.2",
+      "versionCode": 5004002,
+      "tagCommit": "ea5d07ad1b3d0877d5ac859e74513e3dac166380",
+      "sourceSha": "ea5d07ad1b3d0877d5ac859e74513e3dac166380",
+      "tagMatchesStaging": true,
+      "apkSha256": "f0af207ede676f9b1fd830a6bf620ca894b915139eb08744a4c78453b7bc9a9f",
+      "apkSizeBytes": 210119370,
+      "bundleManifestSha256": "7d8b91f18a0c552db6fdd2fe598b84bba98c20d74466c24b630e57c4b0271c10",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-14T15:39:09Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.4.2.staging.json",
+      "publishedReadbackJob": null,
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older",
+      "otherPublishEvidence": "https://github.com/A158Coke/WotbTools/actions/runs/43613092015/job/132508070123"
+    },
+    {
+      "version": "5.5.0",
+      "versionCode": 5005000,
+      "tagCommit": "485d8c11f4b358d9f567b4f7de87fb677152b8cc",
+      "sourceSha": "485d8c11f4b358d9f567b4f7de87fb677152b8cc",
+      "tagMatchesStaging": true,
+      "apkSha256": "a1e17323945b6bf31083de97a6f56e63efb5ad5547076392bd6997ca71596b65",
+      "apkSizeBytes": 210121542,
+      "bundleManifestSha256": "be4d7d4d324bc6b796cb8fc3cc8e3bb3876e87cbec1ee34af502bb14f9d54562",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-14T16:04:29Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.5.0.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43615040368/job/132508178439",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.5.1",
+      "versionCode": 5005001,
+      "tagCommit": "e20f72f1de7887ad9541349711dc04145fc5f801",
+      "sourceSha": "e20f72f1de7887ad9541349711dc04145fc5f801",
+      "tagMatchesStaging": true,
+      "apkSha256": "d3976e793527449aed399ea6f69a565a54832d023fb1e941821a8bac1f503687",
+      "apkSizeBytes": 210126302,
+      "bundleManifestSha256": "2e083d08917336cf9a692f7ade4b1d8300e0e3a8681242732c52b1ea792b5646",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-14T19:26:45Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.5.1.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43633371650/job/132564787265",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.5.2",
+      "versionCode": 5005002,
+      "tagCommit": "cffd097fcdba75882f5fc08a2ed3cacb4bafc078",
+      "sourceSha": "cffd097fcdba75882f5fc08a2ed3cacb4bafc078",
+      "tagMatchesStaging": true,
+      "apkSha256": "5499aeee23dba4c0aec11848aa12eb9d65a16603067aa0b0252e9173bbd77c7b",
+      "apkSizeBytes": 210128434,
+      "bundleManifestSha256": "ea2373e1d57ebd49245bc5aa3b4b56d8e333bc6fc33d9f71afdc44e7a6d93eee",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-15T13:23:07Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.5.2.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43720011961/job/132829784904",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.5.3",
+      "versionCode": 5005003,
+      "tagCommit": "3e801732e8579ec1708a26b384aad564cf8233e3",
+      "sourceSha": "3e801732e8579ec1708a26b384aad564cf8233e3",
+      "tagMatchesStaging": true,
+      "apkSha256": "c4084137fdbfa38b9e0b2ad1848e1d3bd4d9480d35570eccd275b03f9fff26c7",
+      "apkSizeBytes": 210129458,
+      "bundleManifestSha256": "6315d50b2a0fcc75b8aeffb6269db6c8c830a58f92ef442b73c1c340a91c98e3",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-15T15:55:39Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.5.3.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43734262964/job/132873312761",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.5.4",
+      "versionCode": 5005004,
+      "tagCommit": "36d88dd35838d1059eb776fb65c6d521a8b9f335",
+      "sourceSha": "36d88dd35838d1059eb776fb65c6d521a8b9f335",
+      "tagMatchesStaging": true,
+      "apkSha256": "337af6a32a8a315e9751607279f381245f3d49a5279b3f301ab9142a408d8b85",
+      "apkSizeBytes": 210130034,
+      "bundleManifestSha256": "1a7e77a3a7719b693c5468ec399790e601bf7c40adb1d13da624c296acb060fe",
+      "bundleFileCount": 754,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-15T22:15:32Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.5.4.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43769873252/job/132983217532",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.6.0",
+      "versionCode": 5006000,
+      "tagCommit": "878a19e10f6b7307f7e4fa60f52f4ab88e296ca7",
+      "sourceSha": "878a19e10f6b7307f7e4fa60f52f4ab88e296ca7",
+      "tagMatchesStaging": true,
+      "apkSha256": "a469cfea6aa2b3d2b7d6b6f19073ad68dcff3eb94dddbdd10482c8c374db73b7",
+      "apkSizeBytes": 210138643,
+      "bundleManifestSha256": "6c40dccf50ca0ed8aec4d745f821f2252cb14f15e520d4386f02a921b19e8523",
+      "bundleFileCount": 755,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-16T09:35:06Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.6.0.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/43843517906/job/133217933650",
+      "publicFullGet": "html-7220-bytes",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.6.1",
+      "versionCode": 5006001,
+      "tagCommit": "b16d880928d571f38e7110728338d015fb857c7b",
+      "sourceSha": "b16d880928d571f38e7110728338d015fb857c7b",
+      "tagMatchesStaging": true,
+      "apkSha256": "d72e4ef170701803d15361a29a161608256ea374b96ec4e548c8650d9c3f3cf8",
+      "apkSizeBytes": 210230768,
+      "bundleManifestSha256": "6a2e499df51f2e3bd33497f4e2420f59e70cd31c7838b10633b996de58583d24",
+      "bundleFileCount": 768,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-18T22:19:42Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.6.1.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/44413172551/job/135186546820",
+      "publicFullGet": "verified-apk",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.7.0",
+      "versionCode": 5007000,
+      "tagCommit": "fc94ccb2ea8c5ded19a54113efcea029937fbdbd",
+      "sourceSha": "fc94ccb2ea8c5ded19a54113efcea029937fbdbd",
+      "tagMatchesStaging": true,
+      "apkSha256": "9071055d84742b1f7e67e92600105fbac584d7df8ca1083ba0a9349aea7da282",
+      "apkSizeBytes": 210271937,
+      "bundleManifestSha256": "07564c1d9155ccb31f3c2549184ec966f077994090f258ba8d67135dd6c8cbb8",
+      "bundleFileCount": 773,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-22T23:05:10Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.7.0.staging.json",
+      "publishedReadbackJob": null,
+      "publicFullGet": "verified-apk",
+      "policyAtObservation": "supported-older",
+      "otherPublishEvidence": "https://github.com/A158Coke/WotbTools/actions/runs/45082928807/job/137394976496"
+    },
+    {
+      "version": "5.7.1",
+      "versionCode": 5007001,
+      "tagCommit": "319aa87929af1d48f36d05cefbda88edb8145518",
+      "sourceSha": "319aa87929af1d48f36d05cefbda88edb8145518",
+      "tagMatchesStaging": true,
+      "apkSha256": "2c52316618cc2f448d6f1e98d70cff4343dcb8b0088dd9d5583869b8b9d08594",
+      "apkSizeBytes": 210283773,
+      "bundleManifestSha256": "5b8d58d463e7a54a93f8662e192b4f394c1c1ed15d417ce925f2496f363faffb",
+      "bundleFileCount": 773,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-25T11:00:40Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.7.1.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/45605126276/job/139174005869",
+      "publicFullGet": "verified-apk",
+      "policyAtObservation": "supported-older"
+    },
+    {
+      "version": "5.7.2",
+      "versionCode": 5007002,
+      "tagCommit": "ea4063d3581bf898bbb3239b38bea4224dbd0976",
+      "sourceSha": "ea4063d3581bf898bbb3239b38bea4224dbd0976",
+      "tagMatchesStaging": true,
+      "apkSha256": "ccf34ee63c6cc4cd4f101e07d3e4d1775ee36a9c75bec43a3927733151b48c9f",
+      "apkSizeBytes": 210171637,
+      "bundleManifestSha256": "09ae7f636e2b0feb72ba249b0727ad39ccde69f3b3247260d660ead63f4907ee",
+      "bundleFileCount": 751,
+      "bundleAssetOrigin": "/agent-assets",
+      "tagOrigin": "https://assets.wotbtools.com",
+      "dexOriginLiteral": "https://assets.wotbtools.com",
+      "stagedAt": "2026-11-25T15:23:14Z",
+      "stagingRecord": "https://wotbtools.com/download/android/wotbtools-android-v5.7.2.staging.json",
+      "publishedReadbackJob": "https://github.com/A158Coke/WotbTools/actions/runs/45647100552/job/139321102261",
+      "publicFullGet": "verified-apk",
+      "policyAtObservation": "current"
+    }
+  ],
+  "isolatedRuntime": {
+    "device": "Android Emulator, Google APIs API 30 x86_64, KVM, armeabi-v7a translation",
+    "scope": "Production release APKs. HTTP requests to the running app local Agent proxy; GUI rendering is a separate check.",
+    "network": "Validated test network, CONNECT relay with COS and manifest-host rules, direct HTTP/S egress disabled in the disposable guest",
+    "cold": "Clear app data then relaunch",
+    "warm": "Force-stop and relaunch preserving app data",
+    "scenarios": [
+      {
+        "scenario": "3.17.0 cold; manifest blocked; COS available",
+        "mandatoryDialogVisible": false,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 200,
+            "bodyBytes": 4061,
+            "jsonVerified": true
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 200,
+            "bodyBytes": 1036747,
+            "jsonVerified": true
+          }
+        },
+        "agentAndManifestConnections": [
+          "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com forward",
+          "wotbtools.com deny"
+        ]
+      },
+      {
+        "scenario": "3.17.0 warm; manifest and COS blocked",
+        "mandatoryDialogVisible": false,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 200,
+            "bodyBytes": 4061,
+            "jsonVerified": true
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 200,
+            "bodyBytes": 1036747,
+            "jsonVerified": true
+          }
+        },
+        "agentAndManifestConnections": [
+          "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com deny",
+          "wotbtools.com deny"
+        ]
+      },
+      {
+        "scenario": "3.17.0 cold; manifest and COS blocked",
+        "mandatoryDialogVisible": false,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 502,
+            "bodyBytes": 0,
+            "jsonVerified": false
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 502,
+            "bodyBytes": 0,
+            "jsonVerified": false
+          }
+        },
+        "agentAndManifestConnections": [
+          "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com deny",
+          "wotbtools.com deny"
+        ]
+      },
+      {
+        "scenario": "3.17.0 cold; manifest available; COS blocked",
+        "mandatoryDialogVisible": true,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 502,
+            "bodyBytes": 0,
+            "jsonVerified": false
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 502,
+            "bodyBytes": 0,
+            "jsonVerified": false
+          }
+        },
+        "agentAndManifestConnections": [
+          "wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com deny",
+          "wotbtools.com forward"
+        ]
+      },
+      {
+        "scenario": "5.7.2 cold; COS blocked",
+        "mandatoryDialogVisible": false,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 200,
+            "bodyBytes": 6392,
+            "jsonVerified": true
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 200,
+            "bodyBytes": 1042553,
+            "jsonVerified": true
+          }
+        },
+        "agentAndManifestConnections": [
+          "assets.wotbtools.com forward",
+          "wotbtools.com forward"
+        ]
+      },
+      {
+        "scenario": "5.7.2 warm; COS blocked",
+        "mandatoryDialogVisible": false,
+        "localAssetResponses": {
+          "index.json": {
+            "httpStatus": 200,
+            "bodyBytes": 6392,
+            "jsonVerified": true
+          },
+          "data/tank_cache.json": {
+            "httpStatus": 200,
+            "bodyBytes": 1042553,
+            "jsonVerified": true
+          }
+        },
+        "agentAndManifestConnections": [
+          "assets.wotbtools.com forward",
+          "wotbtools.com forward"
+        ]
+      }
+    ],
+    "inAppUpdate": {
+      "from": "3.17.0",
+      "to": "5.7.2",
+      "cosBlocked": true,
+      "usedNativeUpdateButton": true,
+      "confirmedAndroidPackageInstaller": true,
+      "installedVersionCode": 5007002,
+      "installedBaseApkSha256": "ccf34ee63c6cc4cd4f101e07d3e4d1775ee36a9c75bec43a3927733151b48c9f",
+      "apkSigningCertificateSha256": "bd1b669d799351a4e596bc116b8fae084329ac747af78def619748fcb42806ce"
+    },
+    "additionalCurrentAssetRead": {
+      "path": "/agent-assets/map/karelia/terrain.json",
+      "bodyBytes": 1047,
+      "jsonMapMetadataVerified": true
+    },
+    "replayUi": "ACTION_VIEW delivered and replay workbench displayed; complete sample replay parsing and 3D frame not verified"
+  }
+}
