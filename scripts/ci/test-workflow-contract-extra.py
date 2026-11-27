@@ -80,11 +80,15 @@ for lock_path in ("deploy/production-worker/install.sh", "deploy/production-work
     lock_script = (root / lock_path).read_text(encoding="utf-8")
     assert "require_host_lock" in lock_script, lock_path
     assert 'exec 9>"$WORKER_LOCK_ROOT/.deploy.lock"' in lock_script, lock_path
-    assert "flock -n 9" in lock_script, lock_path
+    # Host lock contention waits a bounded time (default 900s) before failing with
+    # holder diagnostics; the worker never creates or replaces the lock file.
+    assert "WORKER_LOCK_WAIT_SEC:-900" in lock_script, lock_path
+    assert 'flock -w "$worker_lock_wait" 9' in lock_script, lock_path
     for forbidden in ('mkdir -p "$WORKER_LOCK_ROOT', 'touch "$WORKER_LOCK_ROOT',
                       'install -d "$WORKER_LOCK_ROOT', ' > "$WORKER_LOCK_ROOT/.deploy.lock'):
         assert forbidden not in lock_script, (lock_path, forbidden)
-    assert lock_script.count(".deploy.lock") <= 2, lock_path
+    # exec 9> plus the lsof/fuser holder diagnostics each reference the lock once.
+    assert lock_script.count(".deploy.lock") <= 4, lock_path
 for tracked in sorted(root.rglob("*")):
     if not tracked.is_file() or ".git" in tracked.parts:
         continue
