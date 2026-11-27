@@ -703,23 +703,19 @@ export async function runOnboardingScenario(env, scenario) {
     if (!skippedInFullscreen) {
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-replay', { label: '3D guide destination' })
       if (scenario.fullscreenTransition) {
-        await page.waitFor(() => !!document.querySelector('[data-tour="replay3d-start"]'), { label: 'real 3D start controls mounted' })
-        const handoff = await page.evaluate(`(() => {
-          const start=document.querySelector('[data-tour="replay3d-start"]'),root=document.fullscreenElement;
-          return {fullscreen:!!root,fullscreenOwner:root?.dataset.tour,
-            startInsideOwner:!root||root.contains(start),startWidth:start.getBoundingClientRect().width,
-            guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
-        })()`)
-        if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
-        const startPoint = await page.evaluate(`(() => {
-          const button = document.querySelector('[data-test="replay3d-start"]')
-          const r = button.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
-          return { x, y, onButton: button.contains(document.elementFromPoint(x, y)) }
-        })()`)
-        check(failures, startPoint.onButton, `3D start must be reachable beside the guide card: ${JSON.stringify(startPoint)}`)
-        await page.tap({ ...startPoint, touch: scenario.touch })
+        // 匿名 3D 已自动开播，guide 的 replay3d-start 阶段会按 advanceOnReady 直接跳到相机阶段。
         await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor', value => value === 'replay3d-camera',
-          { timeout: 60_000, label: 'guide auto-advances to the camera stage' })
+          { timeout: 60_000, label: 'auto-start guide advances to the camera stage' })
+        const handoff = await page.evaluate(`(() => {
+          const camera=document.querySelector('.pb-root.compact-bar .controls [data-tour="replay3d-camera"]'),root=document.fullscreenElement;
+          return {fullscreen:!!root,cameraInsideOwner:!root||root.contains(camera),
+            cameraWidth:camera?.getBoundingClientRect().width??0,
+            guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width??0,
+            startPresent:!!document.querySelector('[data-tour="replay3d-start"]')};
+        })()`)
+        if (!handoff.cameraInsideOwner || !handoff.cameraWidth || !handoff.guideWidth || handoff.startPresent) {
+          throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
+        }
         await page.waitFor(() => {
           const el = document.querySelector('.pb-root.compact-bar .controls [data-tour="replay3d-camera"]')
           const r = el?.getBoundingClientRect()

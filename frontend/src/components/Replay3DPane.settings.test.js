@@ -16,8 +16,10 @@ beforeEach(() => {
   cache.discard.mockReset().mockResolvedValue(undefined)
 })
 
+let settingsRequestSeq = 0
 async function openSettings(wrapper) {
-  await wrapper.get('[data-testid="replay3d-settings-toggle"]').trigger('click')
+  settingsRequestSeq += 1
+  await wrapper.setProps({ settingsRequest: { id: settingsRequestSeq, open: true, anchor: null } })
   await nextTick()
 }
 
@@ -38,9 +40,8 @@ function feedback() {
 }
 
 describe('Replay3DPane 回放设置（Draft / Save）', () => {
-  it('开播后入口仍在：打开显示当前生效配置，关闭即丢弃', async () => {
+  it('开播后可打开设置：打开显示当前生效配置，关闭即丢弃', async () => {
     const { wrapper } = await startedPane()
-    expect(wrapper.find('[data-testid="replay3d-settings-toggle"]').exists()).toBe(true)
     await openSettings(wrapper)
     const panel = wrapper.get('[data-testid="replay3d-settings"]')
     expect(panel.attributes('aria-label')).toBe('agentReplay.settings_title')
@@ -54,6 +55,54 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(false)
     expect(playback.api.applyRenderSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('原生全屏时工具条保留设置入口，复用同一面板且关闭后不用退出全屏', async () => {
+    const { wrapper } = await startedPane()
+    const root = wrapper.get('[data-testid="replay3d-root"]').element
+    Object.defineProperty(document, 'fullscreenElement', { value: root, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+    const entry = wrapper.get('[data-testid="replay3d-settings-entry-fullscreen"]')
+    expect(entry.attributes('aria-expanded')).toBe('false')
+    await entry.trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
+    expect(entry.attributes('aria-expanded')).toBe('true')
+    await wrapper.get('[data-testid="replay3d-settings-cancel"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-settings-entry-fullscreen"]').exists()).toBe(true)
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-settings-entry-fullscreen"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('隐藏场景 UI 后从顶部入口打开设置会恢复 UI', async () => {
+    const { wrapper } = await startedPane()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(true)
+    await openSettings(wrapper)
+    expect(wrapper.find('[data-testid="show-all-ui"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('挂载前已存在的设置请求在挂载后立即打开，关闭请求也生效', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane({ settingsRequest: { id: 1, open: true, anchor: null } })
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
+    expect(wrapper.emitted('settings-open').at(-1)).toEqual([true])
+
+    await wrapper.setProps({ settingsRequest: { id: 2, open: false, anchor: null } })
+    await flush()
+    expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(false)
+    expect(wrapper.emitted('settings-open').at(-1)).toEqual([false])
     wrapper.unmount()
   })
 
@@ -169,17 +218,23 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     wrapper.unmount()
   })
 
-  it('重载暂存本次接地阴影目标：显式 false 不能被当前 store 的 true 覆盖', async () => {
+  it('重载暂存接地阴影偏好：默认取偏好而不是当前有效状态', async () => {
     const fileA = mkFile('a.wotbreplay')
     mockWebGL('webgl2')
     const wrapper = mountPane({ file: fileA })
     await start(wrapper)
     const stage = playback.init.mock.calls.at(-1)?.[3]?.stageReloadReplay
     playback.api.store.contactShadows = true
+    playback.api.store.contactShadowsPref = false
     await stage(false)
     expect(cache.stage).toHaveBeenLastCalledWith({
       files: [fileA], currentIndex: 0, demo: false, contactShadows: false,
     })
+    await stage()
+    expect(cache.stage).toHaveBeenLastCalledWith({
+      files: [fileA], currentIndex: 0, demo: false, contactShadows: false,
+    })
+    playback.api.store.contactShadowsPref = true
     await stage()
     expect(cache.stage).toHaveBeenLastCalledWith({
       files: [fileA], currentIndex: 0, demo: false, contactShadows: true,
@@ -234,8 +289,7 @@ describe('Replay3DPane 回放设置（Draft / Save）', () => {
     await nextTick()
     expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="replay3d-settings-toggle"]').trigger('click')
-    await nextTick()
+    await openSettings(wrapper)
     expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="replay3d-settings"]').exists()).toBe(true)
     wrapper.unmount()

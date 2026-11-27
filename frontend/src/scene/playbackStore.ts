@@ -47,6 +47,7 @@ export function createPlaybackStore() {
     dynres: true,
     armorHighlight: false,
     contactShadows: false,
+    contactShadowsPref: false,
     banner: null as { text?: string; color?: string; outcome?: string } | null,
     killfeed: [],
     friendlyTeam: null as number | null,

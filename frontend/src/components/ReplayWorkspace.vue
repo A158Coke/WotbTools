@@ -35,6 +35,7 @@ import { notify } from '../composables/useNotifications.js'
 import ReplayCollectionManager from './ReplayCollectionManager.vue'
 import ReplayCapabilityAuthGate from './ReplayCapabilityAuthGate.vue'
 import AppButton from './AppButton.vue'
+import Replay3DSettingsEntry from './Replay3DSettingsEntry.vue'
 import Banner from './Banner.vue'
 import ShowcaseHero from './ShowcaseHero.vue'
 import BattlePicker from './BattlePicker.vue'
@@ -118,6 +119,39 @@ useReplayReloadRestore({
 watch(targetFile, (file) => {
   if (replayShadowRequest.value && replayShadowRequest.value.file !== file) replayShadowRequest.value = null
   if (replayResumeRequest.value && replayResumeRequest.value.file !== file) replayResumeRequest.value = null
+})
+
+const settingsRequest = shallowRef(null)
+let settingsRequestSeq = 0
+const settingsOpen = ref(false)
+const show3dSettingsEntry = computed(() => (
+  viewerMode.value === '3d'
+  && activeCapability.value === '3d'
+  && threeAvailability.value.available
+  && canUseDemoCapabilities.value
+  && threeMounted.value
+  && !threeLoadError.value
+))
+
+function request3dSettings(open, anchor = null) {
+  settingsRequestSeq += 1
+  settingsRequest.value = { id: settingsRequestSeq, open, anchor }
+}
+
+function toggle3dSettings(event) {
+  const anchor = event?.currentTarget
+  if (!anchor) return
+  request3dSettings(!settingsOpen.value, anchor)
+}
+
+function on3dSettingsOpen(open) {
+  settingsOpen.value = !!open
+}
+
+watch(show3dSettingsEntry, (visible) => {
+  if (visible) return
+  settingsOpen.value = false
+  request3dSettings(false)
 })
 
 const confirmRemove = () => workspace.replay.confirmRemove()
@@ -301,6 +335,10 @@ watch(() => props.initialCapability, (val) => {
           :events-focused="activeCapability === 'events'"
           @update:mode="setViewerMode"
         >
+          <template #viewer-actions>
+            <Replay3DSettingsEntry v-if="show3dSettingsEntry" :open="settingsOpen" @toggle="toggle3dSettings"
+              data-testid="replay3d-settings-entry" data-test="pb-settings-entry" data-tour="playback-settings" />
+          </template>
           <template #viewer-2d="{ showEventMarkers }">
             <Banner v-if="playbackLoadError" tone="danger" data-testid="ws-playback-load-error">
               <p>{{ $t(playbackLoadError) }}</p>
@@ -343,6 +381,7 @@ watch(() => props.initialCapability, (val) => {
             </Banner>
             <Replay3DPane
               v-if="canUseDemoCapabilities && threeMounted && !threeLoadError"
+              :settings-request="settingsRequest"
               :playback-session="workspace.playbackSession"
               :file="targetFile"
               :active="pageActive && viewerActive && viewerMode === '3d' && threeAvailability.available"
@@ -355,6 +394,7 @@ watch(() => props.initialCapability, (val) => {
               :replay-files="files" :selection-revision="selectionRevision" :shadow-request="replayShadowRequest"
               :resume-request="replayResumeRequest"
               @resume-consumed="replayResumeRequest = null"
+              @settings-open="on3dSettingsOpen"
             />
           </template>
           <template #events>
