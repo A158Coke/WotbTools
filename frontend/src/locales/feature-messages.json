@@ -227,6 +227,12 @@
       "done": "完成",
       "remove": "移除筛选：{label}"
     },
+    "searchableSelect": {
+      "search": "输入关键词搜索",
+      "noResults": "没有匹配项",
+      "clear": "清除{label}",
+      "toggle": "展开或收起{label}选项"
+    },
     "hofHowTo": {
       "hundred": "成为第一个上榜的人：点击「{action}」，上传该车百场战绩截图与回放，审核通过后显示在这里。",
       "mark3": "成为第一个上榜的人：点击「{action}」，上传三环截图，审核通过后显示在这里。"
@@ -1253,6 +1259,12 @@
       "done": "Done",
       "remove": "Remove filter: {label}"
     },
+    "searchableSelect": {
+      "search": "Type to search",
+      "noResults": "No matching options",
+      "clear": "Clear {label}",
+      "toggle": "Toggle {label} options"
+    },
     "hofHowTo": {
       "hundred": "Be the first: tap “{action}”, upload the stats screenshot and replays for that vehicle, and it appears here once approved.",
       "mark3": "Be the first: tap “{action}”, upload the mark screenshot, and it appears here once approved."
@@ -2278,6 +2290,12 @@
       "title": "Фильтры",
       "done": "Готово",
       "remove": "Убрать фильтр: {label}"
+    },
+    "searchableSelect": {
+      "search": "Введите текст для поиска",
+      "noResults": "Совпадений нет",
+      "clear": "Очистить выбор в поле «{label}»",
+      "toggle": "Развернуть или свернуть список «{label}»"
     },
     "hofHowTo": {
       "hundred": "Станьте первым: нажмите «{action}», загрузите скриншот статистики и реплеи для этой техники — после проверки запись появится здесь.",

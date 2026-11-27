@@ -8,6 +8,7 @@ import FilterChips from './FilterChips.vue'
 
 withDefaults(defineProps<{
   chips?: { key: string; label: string }[]
+  removeDisabled?: boolean
   doneButton?: boolean
 }>(), { chips: () => [], doneButton: true })
 const emit = defineEmits<{ remove: [key: string] }>()
@@ -21,7 +22,7 @@ function close() { sheetOpen.value = false }
   <div class="control-bar admin-filter-bar" data-testid="admin-filter-bar">
     <div v-if="$slots.search" class="admin-filter-search"><slot name="search" /></div>
     <template v-if="$slots.default">
-      <FilterChips v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="sheetOpen = !sheetOpen" @remove="(key: string) => emit('remove', key)" />
+      <FilterChips v-if="isCompact" :chips="chips" :open="sheetOpen" :remove-disabled="removeDisabled" @toggle="sheetOpen = !sheetOpen" @remove="(key: string) => emit('remove', key)" />
       <div v-else class="admin-filter-fields"><slot :close="close" :compact="false" /></div>
     </template>
     <div v-if="$slots.actions" class="control-bar-end admin-filter-actions"><slot name="actions" /></div>
