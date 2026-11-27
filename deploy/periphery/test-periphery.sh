@@ -897,7 +897,7 @@ for attempt in $(seq 1 20); do
   flock -n "$case_lock_file" -c true 2>/dev/null || break
   sleep 0.2
 done
-if run_install; then
+if PERIPHERY_LOCK_WAIT_SEC=1 run_install; then
   kill "$lock_pid" 2>/dev/null || true
   die 'a reconcile must refuse to run while the host lock is held'
 fi
@@ -905,6 +905,22 @@ kill "$lock_pid" 2>/dev/null || true
 wait "$lock_pid" 2>/dev/null || true
 grep -q 'Another yecao host mutation is running' "$case_dir/install.log" \
   || { cat "$case_dir/install.log" >&2; die 'the held-lock failure was not reported'; }
+grep -q 'waited 1s' "$case_dir/install.log" \
+  || { cat "$case_dir/install.log" >&2; die 'the bounded-wait timeout was not reported'; }
+flock -n "$case_lock_file" -c 'sleep 2' &
+lock_pid=$!
+for attempt in $(seq 1 20); do
+  flock -n "$case_lock_file" -c true 2>/dev/null || break
+  sleep 0.2
+done
+if ! PERIPHERY_LOCK_WAIT_SEC=30 run_install; then
+  cat "$case_dir/install.log" >&2
+  kill "$lock_pid" 2>/dev/null || true
+  die 'a reconcile must ride out a short-lived host lock holder'
+fi
+kill "$lock_pid" 2>/dev/null || true
+wait "$lock_pid" 2>/dev/null || true
+pass 'a bounded host-lock wait rides out a short-lived holder'
 rm -f "$case_lock_file"
 if run_install; then
   die 'a missing host mutation lock must fail closed instead of being created'

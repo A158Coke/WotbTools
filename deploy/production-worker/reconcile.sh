@@ -48,7 +48,18 @@ bash "$runtime/staging-root.sh" verify "$SOURCE_SHA" "$WORKER_STAGING_ROOT"
 
 require_host_lock
 exec 9>"$WORKER_LOCK_ROOT/.deploy.lock"
-flock -n 9 || fail "Another $WORKER_TARGET host mutation is running."
+worker_lock_wait="${WORKER_LOCK_WAIT_SEC:-900}"
+if ! flock -w "$worker_lock_wait" 9; then
+  echo "Another $WORKER_TARGET host mutation is running (waited ${worker_lock_wait}s)." >&2
+  if command -v lsof >/dev/null 2>&1; then
+    echo "Current lock file holders:" >&2
+    lsof "$WORKER_LOCK_ROOT/.deploy.lock" >&2 || true
+  elif command -v fuser >/dev/null 2>&1; then
+    echo "Current lock file holders:" >&2
+    fuser -v "$WORKER_LOCK_ROOT/.deploy.lock" >&2 || true
+  fi
+  fail "the $WORKER_TARGET host mutation lock was not released within ${worker_lock_wait}s."
+fi
 export WORKER_DEPLOY_LOCK_FD=9
 
 bash "$runtime/install.sh" "$TARGET" "$SOURCE_SHA" "$stage"

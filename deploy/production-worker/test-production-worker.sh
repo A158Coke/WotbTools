@@ -364,6 +364,34 @@ mv "$lock_root/.deploy.lock.hidden" "$lock_root/.deploy.lock"
 pass 'the TX2 host lock must already exist (owned by the deploy owner)'
 
 
+flock -n "$lock_root/.deploy.lock" -c 'sleep 10' &
+lock_pid=$!
+for attempt in $(seq 1 20); do
+  flock -n "$lock_root/.deploy.lock" -c true 2>/dev/null || break
+  sleep 0.2
+done
+expect_fail 'a held host lock times out with diagnostics' 'host mutation is running' \
+  reconcile_cmd WORKER_LOCK_WAIT_SEC=1
+kill "$lock_pid" 2>/dev/null || true
+wait "$lock_pid" 2>/dev/null || true
+pass 'a held host lock times out instead of failing fast or hanging'
+
+flock -n "$lock_root/.deploy.lock" -c 'sleep 2' &
+lock_pid=$!
+for attempt in $(seq 1 20); do
+  flock -n "$lock_root/.deploy.lock" -c true 2>/dev/null || break
+  sleep 0.2
+done
+rm -f "$state/compose_present" "$state/auth" "$daemon_config" "$root_config" \
+  "$host/var/lib/wotbtools-production-worker/tcr-credential-version" "$state/valid_auth"
+: > "$state/restarts"
+expect_ok 'a short-lived host lock holder is waited out' "$work/lockwait.log" \
+  reconcile_cmd WORKER_LOCK_WAIT_SEC=30
+kill "$lock_pid" 2>/dev/null || true
+wait "$lock_pid" 2>/dev/null || true
+pass 'a bounded host-lock wait rides out a short-lived holder'
+
+
 rm -f "$state/compose_present" "$state/auth" "$daemon_config" "$root_config" \
   "$host/var/lib/wotbtools-production-worker/tcr-credential-version" "$state/valid_auth"
 : > "$state/restarts"

@@ -104,7 +104,11 @@ The lock root and its lock file belong to the host's deploy owner, so the reconc
 **requires them to already exist** and fails closed if they do not. Creating the
 file as root would leave a root-only lock that the host's own non-root deploy user
 could no longer take. Each target's lock root is distinct, and the contract tests
-assert that no two targets share one.
+assert that no two targets share one. When the lock is already held by another
+legitimate mutation (a concurrent workflow, Komodo, or manual operation), the
+reconcile waits a bounded time (`PERIPHERY_LOCK_WAIT_SEC`, default 900s) before
+failing with current-holder diagnostics; it never creates or replaces the lock
+file.
 
 ## Staging root（Yecao 暂存根）
 

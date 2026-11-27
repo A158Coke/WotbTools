@@ -54,7 +54,18 @@ if [[ -n "${WORKER_DEPLOY_LOCK_FD:-}" ]]; then
   { true >&9; } 2>/dev/null || fail 'Inherited production-worker lock fd is unavailable.'
 else
   exec 9>"$WORKER_LOCK_ROOT/.deploy.lock"
-  flock -n 9 || fail "Another $WORKER_TARGET host mutation is running."
+  worker_lock_wait="${WORKER_LOCK_WAIT_SEC:-900}"
+  if ! flock -w "$worker_lock_wait" 9; then
+    echo "Another $WORKER_TARGET host mutation is running (waited ${worker_lock_wait}s)." >&2
+    if command -v lsof >/dev/null 2>&1; then
+      echo "Current lock file holders:" >&2
+      lsof "$WORKER_LOCK_ROOT/.deploy.lock" >&2 || true
+    elif command -v fuser >/dev/null 2>&1; then
+      echo "Current lock file holders:" >&2
+      fuser -v "$WORKER_LOCK_ROOT/.deploy.lock" >&2 || true
+    fi
+    fail "the $WORKER_TARGET host mutation lock was not released within ${worker_lock_wait}s."
+  fi
 fi
 export WORKER_DEPLOY_LOCK_FD=9
 
