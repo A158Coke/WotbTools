@@ -19,7 +19,7 @@
   回放字节）。
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
-- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
+- **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V50__create_hundred_admin_log.sql`（百场删除审计快照表，无 FK 指向 submission）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
 - **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的附件可供客户端重新解析核验，但当前无修改 replay-derived facts 的接口；需要纠正时走审核治理/删除重提流程）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
@@ -76,7 +76,7 @@
 
 ## 业务模型
 
-- **单表生命周期**：`hundred_battle_submission` 承载完整生命周期（PENDING / CURRENT / SUPERSEDED / REJECTED / CANCELLED / DELETED，VARCHAR+CHECK）。一条 submission 审核通过即成为 CURRENT；被更高纪录替代 → SUPERSEDED；管理员删除 → DELETED。
+- **单表生命周期**：`hundred_battle_submission` 承载完整生命周期（PENDING / CURRENT / SUPERSEDED / REJECTED / CANCELLED / DELETED，VARCHAR+CHECK）。一条 submission 审核通过即成为 CURRENT；被更高纪录替代 → SUPERSEDED；管理员删除（V50 起）为**状态无关的物理删除**：任意状态（含历史 DELETED 软删墓碑）的行连同回放证据元数据一起从数据库消失，不再产生新的 DELETED 行；V50 之前产生的 DELETED 墓碑行在被管理员选中删除前仍真实存在，此后该状态筛选只会命中存量墓碑。
 - **数据库不变量**（Flyway `V18__create_hundred_battle_submission.sql` 建立、`V22` 改界，partial unique index）：**区服 + WotB 账号 + vehicle** 最多一个 active PENDING（`uk_hundred_battle_pending_account_vehicle`，`(wotb_server, wotb_account_id, vehicle_id) where status='PENDING'`）、最多一个 CURRENT（`uk_hundred_battle_current_account_vehicle`，`(wotb_server, wotb_account_id, vehicle_id) where status='CURRENT'`）；查询索引 `idx_hundred_battle_submission_account (wotb_server, wotb_account_id, status, submitted_at desc)`；rank 永不落库。两个唯一索引是**独立的 partial index**，因此同账号同车允许同时存在一条 PENDING 与一条 CURRENT。
 - **ownership（V22 起）**：百场 submission 的 canonical owner 是创建瞬间绑定的 **`(wotb_server, wotb_account_id)`**，不是 Keycloak 用户身份，也不是单独的账号 ID。区服是业务身份的一部分而非可省略的展示字段：`(CN, 123456)` 与 `(EU, 123456)` 是两个不同账号，只按账号 ID 归属会造成跨服 ownership / authorization 串号；该组合与 `user_profile` 的 `UNIQUE (wotb_server, wotb_account_id)` 完全一致。归属解析的唯一入口是 `UserProfileService.currentWotbIdentity(keycloakUserId)` → `Optional<WotbAccountIdentity(server, accountId)>`；`cancelSubmission` 同时比较**区服与账号**，任一不符或未绑定账号 → 403 `HUNDRED_FORBIDDEN`。`GET /api/users/hundred/status` 同样按 `(区服, 账号)` 查询，未绑定账号时三个列表均为空。记录创建后用户改绑到别的区服或账号时，记录仍属于原 `(区服, 账号)`，因此不可再取消。
 - **快照冻结**：创建瞬间冻结 canonical owner `(wotb_server, wotb_account_id)` 与 `nickname_snapshot`（`wotb_server` 为 V22 新增的 `varchar(16) NOT NULL` 快照列，取值 `CN|ASIA|EU|NA`，CHECK 约束 `ck_hundred_wotb_server`；`wotb_account_id` 在 V22 前列名为 `game_account_id_snapshot`；Profile 后续修改 gameId/nickname/区服不影响历史 submission）；排行榜只读取审核通过的 `approvedAverageDamage` / `approvedBattleCount`。APPROVE 不接收成绩，只使用创建时冻结的 MANUAL `claimed*`，管理员不能改写成绩。
@@ -101,8 +101,8 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 
 - `findByIdForUpdate`（PESSIMISTIC_WRITE 行锁）使 APPROVE / REJECT / CANCEL 从 PENDING → terminal **只成功一次**；败者得 `HUNDRED_SUBMISSION_NOT_PENDING`（409）。
 - APPROVE 事务内重新读取 CURRENT（行锁），以 MANUAL 的冻结申报场均比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。审批端点没有成绩请求体。
-- REJECT / 删除 CURRENT 原因强制（分类 + OTHER 必填文本）。
-- **proof 生命周期**：截图以 base64 存 DB，5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）**内容寻址持久化**（复用 `HallOfFameReplayStorage`，`{HOF_REPLAY_DIR}/{sha256}.wotbreplay`，幂等/原子/防路径穿越）。文件证据仅服务 PENDING；APPROVE / REJECT / CANCEL / DELETE 终态事务内清空截图、删除 evidence 行，commit 后按跨表引用计数 best-effort 清理无引用物理文件。
+- REJECT 原因强制（分类 + OTHER 必填文本）；管理员删除任意状态的百场记录均要求原因（分类 + OTHER 必填文本，V50 起状态无关物理删除）。
+- **proof 生命周期**：截图以 base64 存 DB，5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）**内容寻址持久化**（复用 `HallOfFameReplayStorage`，`{HOF_REPLAY_DIR}/{sha256}.wotbreplay`，幂等/原子/防路径穿越）。文件证据仅服务 PENDING；APPROVE / REJECT / CANCEL 终态事务内清空截图、删除 evidence 行，commit 后按跨表引用计数 best-effort 清理无引用物理文件。DELETE 不再做终态改写：管理员删除（V50 起）在同一事务内持久化 `hundred_admin_log` 审计快照、删除 evidence 行并物理删除 submission 行（截图随行消失），commit 后同样走引用计数物理文件清理。
 
 ## 回放审核证据（admin-only）
 
@@ -125,8 +125,8 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | `GET /api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}` | 同上 | 下载单个原始 .wotbreplay（ownership 校验 + UTF-8 filename） |
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过；无请求体，使用原申报值 |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
-| `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 删除 CURRENT（原因强制，不恢复 SUPERSEDED） |
-| `POST /api/admin/hof/hundred/submissions/bulk-delete` | 同上 | 批量删除 CURRENT（body `{ids, reason, reasonText}`）；逐条复用单条删除语义、每条独立事务，单批去重后上限 100（超出 400 `BULK_LIMIT_EXCEEDED`），非 CURRENT / 不存在逐条以 `HUNDRED_NOT_CURRENT` / `HUNDRED_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录 |
+| `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 状态无关物理删除（原因强制，补充说明 trim 后 ≤500；任意状态含 DELETED 墓碑均删除；写独立审计快照；不恢复 SUPERSEDED，不改其它记录） |
+| `POST /api/admin/hof/hundred/submissions/bulk-delete` | 同上 | 批量物理删除任意状态（body `{ids, reason, reasonText}`）；逐条复用单条删除语义、每条独立事务，单批去重后上限 100（超出 400 `BULK_LIMIT_EXCEEDED`），不存在的 id 逐条以 `HUNDRED_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录 |
 
 百场 admin 列表与详情 DTO（`HundredAdminListItemDto` / `HundredAdminDetailDto`）在 V22 后都带 `wotbServer`，与 `wotbAccountId` 一起构成本域的业务身份；管理页详情视图渲染为 `wotbServer·wotbAccountId`（`HoFAdminModeration.vue` 共享代码同时服务百场与三环详情，列表页不渲染该复合身份），避免只显示账号 ID 时把跨服同号看成同一个账号。
 
@@ -201,7 +201,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 域 | 语义 | 结果 | 请求体 | 证据 / 物理文件处理 |
 |---|---|---|---|---|
 | 单场 `hall_of_fame_record` | **hard delete**（真删行，无 tombstone / blocklist） | 行消失，同一回放日后可重新上传 | 无 reason | 单事务 audit snapshot(`DELETE_ENTRY`) + 删行；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
-| 百场 `hundred_battle_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | `reason` 强制，`OTHER` 必填 `reasonText` | 终态事务内清空 proof 截图、删除 replay evidence 行；commit 后 best-effort 清理无引用物理文件 |
+| 百场 `hundred_battle_submission` | **hard delete**（V50 起，状态无关；无 tombstone） | 行消失，连同回放证据元数据；独立审计快照 `hundred_admin_log` 存活 | `reason` 强制，`OTHER` 必填 `reasonText`（trim 后 ≤500） | 同一事务：审计快照（删除前原始状态；V50 之前的 DELETED 墓碑另存 `previous_deleted_*` / `previous_delete_reason*` 四列，原软删事件操作者/时间/原因独立留存可追溯，与本次物理删除事件字段分开）+ 删 replay evidence 行（FK RESTRICT，先删证据）+ 删 submission 行（截图随行消失）；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
 | 三环 `mark3_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | 同上 | 同上（三环 evidence 在独立命名空间，不与单场/百场共用引用计数） |
 
 **bulk delete == 逐条重复权威单条删除语义**，没有第二套删除规则、状态机或 tombstone：
@@ -212,7 +212,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | `POST /api/admin/hof/hundred/submissions/bulk-delete` | `{ids, reason, reasonText}` | 去重后 100 |
 | `POST /api/admin/hof/mark3/submissions/bulk-delete` | `{ids, reason, reasonText}` | 去重后 100 |
 
-共同契约：每条目标跑在**独立事务**中（`TransactionTemplate`，避免 `@Transactional` 自调用被 Spring 代理绕过），因此允许 **partial success**——某个 id 失败不回滚其他 id 已完成的删除；响应为 `{requested, deleted, failed, results:[{id, deleted, errorCode}]}`。去重后超过 100 个 id → 整批 400 `BULK_LIMIT_EXCEEDED`。百场/三环的 reason 是**批次级参数**，先整体校验一次（参数错误整批 400，不表现为「每条都失败」）；非 CURRENT 的记录逐条失败于既有错误码（`HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT`）而不阻塞其他记录。单场批量中不存在的 id 以 `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续。
+共同契约：每条目标跑在**独立事务**中（`TransactionTemplate`，避免 `@Transactional` 自调用被 Spring 代理绕过），因此允许 **partial success**——某个 id 失败不回滚其他 id 已完成的删除；响应为 `{requested, deleted, failed, results:[{id, deleted, errorCode}]}`。去重后超过 100 个 id → 整批 400 `BULK_LIMIT_EXCEEDED`。百场/三环的 reason 是**批次级参数**，先整体校验一次（参数错误整批 400，不表现为「每条都失败」）；三环非 CURRENT 的记录逐条失败于既有错误码（`MARK3_NOT_CURRENT`）而不阻塞其他记录；百场（V50 起状态无关）与单场没有状态门，不存在的 id 分别以 `HUNDRED_SUBMISSION_NOT_FOUND` / `HOF_ENTRY_NOT_FOUND` 逐条失败，其余继续。
 
 ## IAM ≠ HoF 不变量
 

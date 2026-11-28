@@ -47,6 +47,8 @@ class HofBulkDeleteTest {
 
     private final HundredBattleSubmissionRepository hundredRepository =
             mock(HundredBattleSubmissionRepository.class);
+    private final com.wotb.web.hundred.repository.HundredAdminLogRepository hundredAuditRepository =
+            mock(com.wotb.web.hundred.repository.HundredAdminLogRepository.class);
     private final HundredBattleMapper hundredMapper = mock(HundredBattleMapper.class);
     private final HundredReplayEvidenceService hundredEvidence = mock(HundredReplayEvidenceService.class);
     private final UserProfiles userProfileService = mock(UserProfiles.class);
@@ -74,40 +76,56 @@ class HofBulkDeleteTest {
 
     @Test
     void hundredBulkDeleteRepeatsSingleRecordSemanticsPerId() {
+        // 百场删除已状态无关：CURRENT 与非 CURRENT（含软删 DELETED 墓碑）全部物理删除
         final HundredBattleSubmission current = hundredSubmission(1L, "CURRENT");
-        final HundredBattleSubmission pending = hundredSubmission(2L, "PENDING");
+        final HundredBattleSubmission tombstone = hundredSubmission(2L, "DELETED");
         when(hundredRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
-        when(hundredRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(pending));
+        when(hundredRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(tombstone));
         when(hundredRepository.findByIdForUpdate(3L)).thenReturn(Optional.empty());
-        when(hundredRepository.save(any(HundredBattleSubmission.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
 
-        final com.wotb.web.hundred.dto.BulkDeleteResultDto result = hundredModerationService().bulkDeleteCurrent(
-                ADMIN_SUB, List.of(1L, 2L, 3L), "ADMIN_CORRECTION", null);
+        final com.wotb.web.hundred.dto.BulkDeleteResultDto result = hundredModerationService().bulkDeleteSubmissions(
+                ADMIN_SUB, null, List.of(1L, 2L, 3L), "ADMIN_CORRECTION", null);
 
         assertEquals(3, result.requested());
-        assertEquals(1, result.deleted());
-        assertEquals(2, result.failed());
-        assertEquals(List.of(true, false, false),
+        assertEquals(2, result.deleted());
+        assertEquals(1, result.failed());
+        assertEquals(List.of(true, true, false),
                 result.results().stream().map(com.wotb.web.hundred.dto.BulkDeleteItemResult::deleted).toList());
 
-        assertEquals("DELETED", current.getStatus());
-        assertEquals(ADMIN_SUB, current.getDeletedBy());
-        assertEquals("ADMIN_CORRECTION", current.getDeleteReason());
-        verify(hundredEvidence).discardForSubmission(1L);
-
-        assertEquals("PENDING", pending.getStatus());
-        assertEquals("HUNDRED_NOT_CURRENT", result.results().get(1).errorCode());
         assertEquals("HUNDRED_SUBMISSION_NOT_FOUND", result.results().get(2).errorCode());
-        verify(hundredEvidence, never()).discardForSubmission(2L);
+        verify(hundredEvidence).discardForSubmission(1L);
+        verify(hundredEvidence).discardForSubmission(2L);
+        verify(hundredRepository).delete(current);
+        verify(hundredRepository).delete(tombstone);
+        verify(hundredAuditRepository, org.mockito.Mockito.times(2)).save(any());
     }
 
     @Test
     void hundredBulkDeleteValidatesReasonOnceForTheWholeBatch() {
         assertThrows(IllegalArgumentException.class,
-                () -> hundredModerationService().bulkDeleteCurrent(
-                        ADMIN_SUB, List.of(1L), "NOT_A_CATEGORY", null));
+                () -> hundredModerationService().bulkDeleteSubmissions(
+                        ADMIN_SUB, null, List.of(1L), "NOT_A_CATEGORY", null));
         verify(hundredRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    @Test
+    void hundredBulkDeleteRejectsOversizedReasonTextBeforeAnyDeletion() {
+        assertThrows(IllegalArgumentException.class,
+                () -> hundredModerationService().bulkDeleteSubmissions(
+                        ADMIN_SUB, null, List.of(1L, 2L), "ADMIN_CORRECTION", "x".repeat(501)));
+        verify(hundredRepository, never()).findByIdForUpdate(anyLong());
+        verify(hundredEvidence, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void hundredBulkDeleteRequestNormalizesIdsAndEnforcesLimit() {
+        final var request = new com.wotb.web.hundred.dto.BulkDeleteModerationRequest(
+                java.util.Arrays.asList(1L, 2L, 1L, null), "ADMIN_CORRECTION", null);
+        assertEquals(List.of(1L, 2L), request.normalizedIds());
+        assertThrows(IllegalArgumentException.class,
+                () -> new com.wotb.web.hundred.dto.BulkDeleteModerationRequest(
+                        java.util.stream.LongStream.rangeClosed(1, 101).boxed().toList(),
+                        "ADMIN_CORRECTION", null).normalizedIds());
     }
 
     @Test
@@ -148,7 +166,8 @@ class HofBulkDeleteTest {
     }
 
     private HundredModerationService hundredModerationService() {
-        return new HundredModerationService(hundredRepository, hundredMapper, hundredEvidence, txManager);
+        return new HundredModerationService(hundredRepository, hundredAuditRepository,
+                hundredMapper, hundredEvidence, txManager);
     }
 
     private Mark3ModerationService mark3ModerationService() {

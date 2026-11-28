@@ -45,6 +45,8 @@ const emit = defineEmits<{
 
 const inline = inject(DIALOG_INLINE_KEY, false)
 const pending = computed(() => props.status === 'PENDING')
+// 百场删除已状态无关（hard delete）；三环仍仅 CURRENT 可删
+const canDelete = computed(() => props.prefix === 'hundredAdmin' || props.status === 'CURRENT')
 const confirmedHeader = computed(() => pending.value ? 'hofAdmin.reviewAfterApprove' : 'hofAdmin.reviewConfirmed')
 
 const root = ref<HTMLElement | null>(null)
@@ -196,6 +198,8 @@ function trapTab(event: KeyboardEvent) {
           </select>
           <button type="button" class="btn-sm danger" :disabled="busy" @click="emit('askReject')">{{ $t(prefix + '.reject') }}</button>
           <button type="button" class="btn-sm ok" :disabled="busy || !evidenceComplete" :title="evidenceComplete ? '' : $t(prefix + '.approveDisabledHint')" @click="emit('askApprove')">{{ $t(prefix + '.approve') }}</button>
+          <!-- 百场删除状态无关：PENDING 详情同样提供删除入口；三环不显示 -->
+          <button v-if="prefix === 'hundredAdmin'" type="button" class="btn-sm danger" :disabled="busy" @click="emit('askDelete')">{{ $t(prefix + '.delete') }}</button>
         </div>
 
         <div v-else-if="pending && phase === 'approve-confirm'" class="hundred-action-area">
@@ -220,11 +224,11 @@ function trapTab(event: KeyboardEvent) {
           </div>
         </div>
 
-        <div v-else-if="status === 'CURRENT' && phase === 'view'" class="modal-actions">
+        <div v-else-if="canDelete && phase === 'view'" class="modal-actions">
           <button type="button" class="btn-sm danger" :disabled="busy" @click="emit('askDelete')">{{ $t(prefix + '.delete') }}</button>
         </div>
 
-        <div v-else-if="status === 'CURRENT' && phase === 'delete-form'" class="hundred-action-area">
+        <div v-else-if="canDelete && phase === 'delete-form'" class="hundred-action-area">
           <label class="hundred-reason-label">{{ $t(prefix + '.deleteReason') }}</label>
           <select v-model="deleteReason" :aria-label="$t(prefix + '.deleteReason')">
             <option value="">{{ $t(prefix + '.deleteReasonRequired') }}</option>

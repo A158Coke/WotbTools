@@ -4,6 +4,7 @@ import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.user.api.UserProfiles;
 import com.wotb.web.user.api.WotbAccountIdentity;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -378,53 +379,126 @@ class HundredSubmissionLifecycleTest extends HundredSubmissionTestSupport {
     }
 
     @Test
-    void deleteCurrentMovesToDeletedWithReason() {
-        final HundredBattleSubmission s = currentSubmission(4120);
-        s.setProofScreenshot("data:image/png;base64,AAAA");
-        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+    void deleteIsStatusIndependentAndPhysicallyRemovesEveryState() {
+        for (final String status : List.of("PENDING", "CURRENT", "SUPERSEDED", "REJECTED", "CANCELLED", "DELETED")) {
+            final HundredBattleSubmission s = currentSubmission(4120);
+            s.setStatus(status);
+            s.setProofScreenshot("data:image/png;base64,AAAA");
+            if ("DELETED".equals(status)) {
+                // 完整的 V50 之前软删除墓碑：旧软删事件必须随审计快照独立留存
+                s.setDeletedAt(OffsetDateTime.parse("2026-10-01T00:00:00Z"));
+                s.setDeletedBy("old-admin");
+                s.setDeleteReason("WRONG_REVIEW");
+                s.setDeleteReasonText("legacy tombstone");
+            }
+            when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        final HundredSubmissionSummaryDto result =
-                moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+            final HundredSubmissionSummaryDto result =
+                    moderationService.deleteSubmission(ADMIN, "admin-user", 10L, "CHEATING_FORGERY", "  spam  ");
 
-        assertThat(result.status()).isEqualTo("DELETED");
-        assertThat(s.getDeletedBy()).isEqualTo(ADMIN);
-        assertThat(s.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
-        assertThat(s.getDeletedAt()).isNotNull();
-        assertThat(s.getProofScreenshot()).isNull();
-        verify(evidenceService).discardForSubmission(10L);
+            // 响应为删除前快照
+            assertThat(result.status()).as("pre-delete status of %s", status).isEqualTo(status);
+            // 审计快照记录删除前原始状态与原因，同一事务落库
+            final var audit = org.mockito.ArgumentCaptor.forClass(
+                    com.wotb.web.hundred.entity.HundredAdminLog.class);
+            verify(auditRepository).save(audit.capture());
+            final com.wotb.web.hundred.entity.HundredAdminLog log = audit.getValue();
+            assertThat(log.getOriginalStatus()).as("audit status of %s", status).isEqualTo(status);
+            assertThat(log.getSubmissionId()).isEqualTo(10L);
+            assertThat(log.getWotbServer()).isEqualTo(WOTB_SERVER);
+            assertThat(log.getWotbAccountId()).isEqualTo(GAME_ID);
+            assertThat(log.getVehicleId()).isEqualTo(TIER10_VEHICLE);
+            assertThat(log.getVehicleName()).isEqualTo("Progetto 65");
+            assertThat(log.getNicknameSnapshot()).isEqualTo("PlayerOne");
+            assertThat(log.getClaimedAverageDamage()).isEqualTo(4200);
+            assertThat(log.getApprovedAverageDamage()).isEqualTo(4120);
+            assertThat(log.isHadProofScreenshot()).isTrue();
+            assertThat(log.getAdminKeycloakUserId()).isEqualTo(ADMIN);
+            assertThat(log.getAdminUsername()).isEqualTo("admin-user");
+            assertThat(log.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
+            assertThat(log.getDeleteReasonText()).isEqualTo("spam");
+            if ("DELETED".equals(status)) {
+                assertThat(log.getPreviousDeletedAt()).isEqualTo(OffsetDateTime.parse("2026-10-01T00:00:00Z"));
+                assertThat(log.getPreviousDeletedBy()).isEqualTo("old-admin");
+                assertThat(log.getPreviousDeleteReason()).isEqualTo("WRONG_REVIEW");
+                assertThat(log.getPreviousDeleteReasonText()).isEqualTo("legacy tombstone");
+            } else {
+                assertThat(log.getPreviousDeletedAt()).isNull();
+                assertThat(log.getPreviousDeletedBy()).isNull();
+                assertThat(log.getPreviousDeleteReason()).isNull();
+                assertThat(log.getPreviousDeleteReasonText()).isNull();
+            }
+            // 回放证据清理与物理删除（FK RESTRICT：先删证据行）
+            verify(evidenceService).discardForSubmission(10L);
+            verify(repository).delete(s);
+            verify(repository).flush();
+            org.mockito.Mockito.clearInvocations(auditRepository, repository, evidenceService);
+        }
     }
 
     @Test
     void deleteRequiresReason() {
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, null, null))
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_REQUIRED");
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "OTHER", null))
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "OTHER", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_TEXT_REQUIRED");
+        verify(repository, never()).delete(any(HundredBattleSubmission.class));
+        verify(auditRepository, never()).save(any());
     }
 
     @Test
-    void deleteOnlyFromCurrent() {
-        final HundredBattleSubmission s = pendingSubmission();
+    void deleteRejectsOversizedReasonTextWithoutAnySideEffect() {
+        // V50 审计列 delete_reason_text varchar(500)：超长说明必须在进入删除事务前被拒绝，
+        // 不得以数据库异常形式泄漏、也不得留下半完成的删除/审计
+        final String oversized = "x".repeat(501);
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "ADMIN_CORRECTION", oversized))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_DELETE_REASON_TEXT_TOO_LONG");
+        verify(repository, never()).findByIdForUpdate(anyLong());
+        verify(repository, never()).delete(any(HundredBattleSubmission.class));
+        verify(auditRepository, never()).save(any());
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void deleteAcceptsReasonTextAtMaxLengthBoundary() {
+        final HundredBattleSubmission s = currentSubmission(4120);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        final String maxText = "x".repeat(500);
 
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("HUNDRED_NOT_CURRENT");
+        moderationService.deleteSubmission(ADMIN, null, 10L, "ADMIN_CORRECTION", "  " + maxText + "  ");
+
+        final var audit = org.mockito.ArgumentCaptor.forClass(
+                com.wotb.web.hundred.entity.HundredAdminLog.class);
+        verify(auditRepository).save(audit.capture());
+        assertThat(audit.getValue().getDeleteReasonText()).isEqualTo(maxText);
+        verify(repository).delete(s);
     }
 
     @Test
-    void deleteCurrentDoesNotTouchSupersededHistory() {
+    void deleteMissingSubmissionReturnsNotFound() {
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "CHEATING_FORGERY", null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verify(auditRepository, never()).save(any());
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void deleteDoesNotTouchSupersededHistory() {
         final HundredBattleSubmission s = currentSubmission(4120);
         final HundredBattleSubmission superseded = currentSubmission(3900);
         superseded.setStatus("SUPERSEDED");
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+        moderationService.deleteSubmission(ADMIN, null, 10L, "CHEATING_FORGERY", null);
 
-        verify(repository).save(s);
+        // 删 CURRENT 不复活/不改写其它记录（含 SUPERSEDED）
         verify(repository, never()).save(superseded);
+        verify(repository, never()).delete(superseded);
         assertThat(superseded.getStatus()).isEqualTo("SUPERSEDED");
     }
 

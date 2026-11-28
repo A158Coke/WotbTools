@@ -37,6 +37,9 @@ abstract class HundredSubmissionTestSupport {
     HundredBattleSubmissionRepository repository;
 
     @Mock
+    com.wotb.web.hundred.repository.HundredAdminLogRepository auditRepository;
+
+    @Mock
     UserProfiles userProfileService;
 
     @Mock
@@ -64,7 +67,9 @@ abstract class HundredSubmissionTestSupport {
         leaderboardService = new HundredLeaderboardService(repository, new HundredBattleMapper());
         adminQueryService = new HundredAdminQueryService(repository, new HundredBattleMapper());
         moderationService = new HundredModerationService(
-                repository, new HundredBattleMapper(), evidenceService, transactionManager);
+                repository, auditRepository, new HundredBattleMapper(), evidenceService, transactionManager);
+        org.mockito.Mockito.lenient().when(auditRepository.save(any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         org.mockito.Mockito.lenient().when(repository.saveAndFlush(any())).thenAnswer(inv -> {
             final HundredBattleSubmission s = inv.getArgument(0);

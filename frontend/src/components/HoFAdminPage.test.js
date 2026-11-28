@@ -675,7 +675,61 @@ describe('HoFAdminPage', () => {
     expect(modal.text()).toContain('截图只显示总伤害，无法证明场均。')
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.approve')
     expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.reject')
-    expect(modal.findAll('button').map(button => button.text())).not.toContain('hundredAdmin.delete')
+    // 百场删除状态无关：非 CURRENT 详情也提供删除入口
+    expect(modal.findAll('button').map(button => button.text())).toContain('hundredAdmin.delete')
+  })
+
+  it('hundred single-record delete flow opens and submits for every status', async () => {
+    for (const status of ['PENDING', 'CURRENT', 'SUPERSEDED', 'REJECTED', 'CANCELLED', 'DELETED']) {
+      hofAdminApi.hofAdminHundredDelete.mockClear()
+      hofAdminApi.hofAdminHundredList.mockResolvedValue({
+        items: [currentItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+      })
+      hofAdminApi.hofAdminHundredDetail.mockResolvedValue({ ...currentDetail, status })
+      const wrapper = mountPage()
+      await flushPromises()
+      await switchToHundred(wrapper)
+
+      await wrapper.find('.hof-hundred [data-testid="hof-queue-open"]').trigger('click')
+      await flushPromises()
+      const pane = wrapper.find('.hof-review-pane')
+      // 六种状态均提供单条删除入口（PENDING 保留 approve/reject，不替换）
+      expect(pane.findAll('button').map(b => b.text())).toContain('hundredAdmin.delete')
+
+      await pane.findAll('button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+      await flushPromises()
+      const form = wrapper.find('.hof-review-pane .hundred-action-area')
+      expect(form.exists()).toBe(true)
+      const select = form.find('select')
+      const values = select.findAll('option').map(o => o.attributes('value'))
+      expect(values).toEqual(['', 'CHEATING_FORGERY', 'WRONG_REVIEW', 'PLAYER_IDENTITY_ISSUE', 'DATA_ERROR', 'ADMIN_CORRECTION', 'OTHER'])
+      await select.setValue('ADMIN_CORRECTION')
+      await form.find('textarea').setValue('cleanup')
+      await form.findAll('.modal-actions button').find(b => b.text() === 'hundredAdmin.delete').trigger('click')
+      await flushPromises()
+      expect(hofAdminApi.hofAdminHundredDelete).toHaveBeenCalledWith(12, { deleteReason: 'ADMIN_CORRECTION', deleteReasonText: 'cleanup' })
+      wrapper.unmount()
+    }
+  })
+
+  it('mark3 non-current detail keeps delete hidden while hundred non-current exposes it', async () => {
+    hofAdminApi.hofAdminMark3List.mockResolvedValue({
+      items: [mark3PendingItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminMark3Detail.mockResolvedValue({ ...mark3PendingDetail, status: 'REJECTED' })
+    hofAdminApi.hofAdminHundredList.mockResolvedValue({
+      items: [rejectedItem], page: 1, size: 50, totalItems: 1, totalPages: 1
+    })
+    hofAdminApi.hofAdminHundredDetail.mockResolvedValue(rejectedDetail)
+
+    const wrapper = mountPage()
+    await flushPromises()
+    await switchToMark3(wrapper)
+    await wrapper.find('.hof-mark3 [data-testid="hof-queue-open"]').trigger('click')
+    await flushPromises()
+    // 三环仍仅 CURRENT 可删
+    expect(wrapper.findAll('.hof-review-pane button').map(b => b.text()))
+      .not.toContain('mark3Admin.delete')
   })
 
   const replayEvidence = [
@@ -956,7 +1010,7 @@ describe('HoFAdminPage', () => {
       failed: 1,
       results: [
         { id: 12, deleted: true },
-        { id: 11, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }
+        { id: 11, deleted: false, errorCode: 'HUNDRED_SUBMISSION_NOT_FOUND' }
       ]
     })
     const wrapper = mountPage()
@@ -987,7 +1041,7 @@ describe('HoFAdminPage', () => {
     await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminBulkDeleteHundred).toHaveBeenCalledWith([11, 12], { reason: 'ADMIN_CORRECTION', reasonText: 'cleanup' })
-    expect(modal.text()).toContain('code:HUNDRED_NOT_CURRENT')
+    expect(modal.text()).toContain('code:HUNDRED_SUBMISSION_NOT_FOUND')
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
   })
 
