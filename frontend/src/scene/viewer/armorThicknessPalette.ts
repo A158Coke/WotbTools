@@ -39,22 +39,57 @@ export function thicknessOutlineColor(kind: ThicknessClass, color: number): numb
   return (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }
 
-export const THICKNESS_BANDS = Object.freeze([
-  { minMm: 200, color: 0xb8322a },
-  { minMm: 100, color: SCENE_RESULT_COLORS.BLOCKED },
-  { minMm: 60, color: SCENE_RESULT_COLORS.SPLASH },
-  { minMm: 30, color: SCENE_RESULT_COLORS.MAY_PENETRATE },
-  { minMm: Number.NEGATIVE_INFINITY, color: SCENE_RESULT_COLORS.PENETRATION }, // <30：标定绿
+/**
+ * 厚度视图的连续渐变标尺（2026-11-28：替代原 5 档固定色）。
+ *
+ * 锚点沿用击穿结果的语义色与同一组阈值（30/60/100/200mm），相邻锚点之间做线性
+ * RGB 插值——不再出现档位色块，厚度差一点颜色就连着变一点。两端保持语义平段：
+ * <30mm 维持"标定绿"（校准口径），≥320mm 维持深红（远超口径）。
+ * 标尺是**绝对域**：同一厚度在任何坦克、版本对比的两侧都映射到同一颜色，
+ * 版本对比视图因此可以直接共用这份着色。
+ */
+export const THICKNESS_STOPS = Object.freeze([
+  { minMm: 30, color: SCENE_RESULT_COLORS.PENETRATION },
+  { minMm: 60, color: SCENE_RESULT_COLORS.MAY_PENETRATE },
+  { minMm: 100, color: SCENE_RESULT_COLORS.SPLASH },
+  { minMm: 200, color: SCENE_RESULT_COLORS.BLOCKED },
+  { minMm: 320, color: 0xb8322a },
 ] as const)
 
+function hexToRgb(hex: number): [number, number, number] {
+  return [(hex >> 16) & 0xff, (hex >> 8) & 0xff, hex & 0xff]
+}
+
+function rgbToHex(rgb: [number, number, number]): number {
+  const clamp = (value: number) => Math.max(0, Math.min(255, Math.round(value)))
+  const [r, g, b] = rgb.map(clamp) as [number, number, number]
+  return (r << 16) | (g << 8) | b
+}
+
+function lerpColor(a: number, b: number, ratio: number): number {
+  const ca = hexToRgb(a)
+  const cb = hexToRgb(b)
+  return rgbToHex([
+    ca[0] + (cb[0] - ca[0]) * ratio,
+    ca[1] + (cb[1] - ca[1]) * ratio,
+    ca[2] + (cb[2] - ca[2]) * ratio,
+  ])
+}
+
 /**
- * 名义厚度（mm）→ 厚度视图材质色。
+ * 名义厚度（mm）→ 厚度视图材质色（连续渐变）。
  * @param t 名义厚度；null/undefined/NaN 返回中性灰。
  */
 export function thicknessToColor(t: number | null | undefined): number {
   if (t == null || !Number.isFinite(t)) return THICKNESS_UNKNOWN_COLOR
-  for (const band of THICKNESS_BANDS) {
-    if (t >= band.minMm) return band.color
+  if (t < THICKNESS_STOPS[0].minMm) return THICKNESS_STOPS[0].color
+  for (let i = 0; i < THICKNESS_STOPS.length - 1; i += 1) {
+    const low = THICKNESS_STOPS[i]
+    const high = THICKNESS_STOPS[i + 1]
+    if (t < high.minMm) {
+      const ratio = (t - low.minMm) / (high.minMm - low.minMm)
+      return lerpColor(low.color, high.color, ratio)
+    }
   }
-  return THICKNESS_UNKNOWN_COLOR
+  return THICKNESS_STOPS[THICKNESS_STOPS.length - 1].color
 }

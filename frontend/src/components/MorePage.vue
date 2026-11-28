@@ -116,9 +116,9 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
   gap: var(--space-3);
   min-height: var(--row-h);
   padding: var(--space-4);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   color: var(--color-text-primary);
   font: var(--type-body);
   text-align: start;
@@ -146,9 +146,9 @@ const helpLinks = computed(() => aboutLinks.value.filter(link => link.view !== '
 
 .more-card {
   overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   box-shadow: var(--elevation-1);
 }
 

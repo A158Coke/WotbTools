@@ -107,10 +107,10 @@ const { t } = useI18n()
   gap: var(--space-2);
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-inline-start: 3px solid var(--color-border-strong);
   border-radius: var(--radius-md);
-  background: var(--color-surface-1);
+  background: var(--color-card);
   color: var(--color-text-primary);
   font: var(--type-body);
   text-align: start;

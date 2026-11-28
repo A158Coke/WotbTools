@@ -50,6 +50,9 @@ if [ "$TAG_STATE" = "tag_conflict" ]; then
 fi
 echo "Release tag preflight: $TAG_STATE"
 
+# 5.8.0+ bundled frontend 依赖生产 origin 的 /diffs 通道：在创建任何不可变候选之前 fail-closed。
+bash scripts/android-release/steps/check-agent-diffs-ready.sh "https://assets.wotbtools.com" "$VERSION_NAME"
+
 echo "Production state: $PROD_STATE"
 case "$PROD_STATE" in
   prod_absent|prod_older)

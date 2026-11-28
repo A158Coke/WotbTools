@@ -105,9 +105,9 @@ onMounted(loadManifest)
 .android-page :deep(.showcase-hero) { margin-block-end: 0; }
 .download-card, .installed-banner, .unavailable {
   padding: var(--space-6);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-card-border);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  background: var(--color-card);
 }
 .download-card h2 { margin: 0 0 var(--space-3); font: var(--type-h3); }
 .installed-banner p, .unavailable p { margin: 0; }

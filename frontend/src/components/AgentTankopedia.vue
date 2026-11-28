@@ -233,16 +233,9 @@ onMounted(() => {
       </EmptyState>
 
       <template v-else-if="detail">
-        <ShowcaseHero
-          compact
-          section="tankopedia"
-          :kicker="t('nav.groups.reference')"
-          :title="detail.name"
-        />
-
         <Motion
           tag="header"
-          class="tp-detail-head surface-glass-1"
+          class="tp-detail-head ui-card"
           :initial="{ opacity: 0, y: 4 }"
           :animate="{ opacity: 1, y: 0 }"
           :transition="motionTransition('fast')"
@@ -252,6 +245,7 @@ onMounted(() => {
             <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
           <div class="tp-detail-title">
+            <h1 class="tp-detail-name">{{ detail.name }}</h1>
             <div class="tp-badges">
               <span class="tp-pill is-tier">{{ tierLabel(detail.tier) }}</span>
               <span class="tp-pill">{{ nationLabel(detail.nation) }}</span>
@@ -270,7 +264,7 @@ onMounted(() => {
 
         <div class="tp-workbench">
           <div class="tp-workbench-left">
-          <section class="tp-card-section tp-model-card surface-glass-1" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
+          <section class="tp-card-section tp-model-card ui-card" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
             <div class="tp-model-card-heading">
               <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
               <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
@@ -357,7 +351,7 @@ onMounted(() => {
           @select-shell="selectShell"
         />
 
-        <section v-else class="tp-card-section surface-glass-1">
+        <section v-else class="tp-card-section ui-card">
           <h2 class="tp-section-title">{{ t('agentTanks.mobility') }}</h2>
           <dl class="tp-stats">
             <div><dt>{{ t('agentTanks.hp') }}</dt><dd>{{ fmtNum(upgradeProjection.detail?.hp ?? detail.hp, 0) }}</dd></div>
@@ -381,7 +375,7 @@ onMounted(() => {
 
         </div>
 
-        <section v-if="!characteristics" class="tp-card-section surface-glass-1">
+        <section v-if="!characteristics" class="tp-card-section ui-card">
           <h2 class="tp-section-title">{{ t('agentTanks.shells') }}</h2>
           <div class="tp-table-wrap">
             <table class="tp-table">
