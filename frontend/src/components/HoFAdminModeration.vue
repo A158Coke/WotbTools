@@ -23,7 +23,7 @@ import { createFilterState, createSelection, PAGE_SIZES, uniqueValues } from './
 const props = defineProps<{ kind: ModerationKind; size: number; capturePendingSettlement?: () => () => void }>()
 const emit = defineEmits<{ 'update:size': [size: number] }>()
 
-const { t, te, tm } = useI18n()
+const { t, te, tm, locale } = useI18n()
 const { requireFeature } = useFeatureGate()
 const { isExpanded } = useBreakpoint()
 const domain = MODERATION_DOMAINS[props.kind]
@@ -316,7 +316,7 @@ const evidenceComplete = computed(() => detail.value?.status === 'PENDING'
   && !evidenceError.value)
 
 const queue = computed(() => rows.value.map((row) => {
-  const damage = formatNumber(domain.queueDamage(row))
+  const damage = formatNumber(domain.queueDamage(row), locale.value)
   return {
     id: row.id, title: row.nicknameSnapshot || '-', status: String(row.status), statusLabel: statusLabel(row.status),
     sub: damage === '-' ? row.vehicleName : t('hofAdmin.reviewAvg', { vehicle: row.vehicleName, value: damage }),
@@ -353,11 +353,11 @@ const pane = computed(() => {
   return {
     prefix, title: d ? `${d.nicknameSnapshot} · ${d.vehicleName}` : '', status: String(d?.status ?? ''), statusLabel: statusLabel(d?.status),
     meta, loading: reviewLoading.value, phase: phase.value, busy: busy.value, message: msg.value,
-    compare: d ? domain.compare(t, d, confirmed) : [],
+    compare: d ? domain.compare(t, d, confirmed, locale.value) : [],
     checks: d ? REPLAY_CHECKS.map(([field, key]) => ({ ok: !!d[field], label: t(`${prefix}.${key}`) })) : [],
     evidenceLoading: evidenceLoading.value, evidenceError: evidenceError.value, evidenceComplete: evidenceComplete.value,
     screenshots: screenshots.value,
-    replays: evidence.value.map(ev => ({ id: ev.id, slot: ev.slot, name: ev.originalFilename, sizeLabel: fmtSize(ev.fileSize), raw: ev })),
+    replays: evidence.value.map(ev => ({ id: ev.id, slot: ev.slot, name: ev.originalFilename, sizeLabel: fmtSize(ev.fileSize, locale.value), raw: ev })),
     position: position.value, total: rows.value.length, compact: !isExpanded.value,
     rejectReasons: reasonOptions('reject'), deleteReasons: reasonOptions('delete'),
   }

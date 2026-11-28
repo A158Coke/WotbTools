@@ -1,0 +1,393 @@
+2026-11-28 · #1115 合并后 · main 3bfb6831b269a7350a6f26c57560c5fff74bdb8b
+实现 4fd3b55db3ffacc17e6ff64bbcefd5742d58f3e6 · Windows Chrome 158
+
+probe-scrollport rows 1 failures 0 []
+role-anonymous rows 10 failures 0 []
+role-member rows 10 failures 0 []
+role-site rows 10 failures 0 []
+role-hof rows 10 failures 0 []
+role-tournament rows 10 failures 0 []
+role-content rows 10 failures 0 []
+role-combined rows 10 failures 0 []
+theme-spring rows 8 failures 0 []
+theme-summer rows 8 failures 0 []
+theme-autumn rows 8 failures 0 []
+theme-winter rows 8 failures 0 []
+layout-android-360 rows 8 failures 0 []
+layout-android-412 rows 8 failures 0 []
+layout-iphone-390 rows 8 failures 0 []
+layout-iphone-se rows 8 failures 0 []
+layout-iphone-land rows 8 failures 0 []
+layout-tablet rows 8 failures 0 []
+layout-desktop rows 8 failures 0 []
+backdrop-desktop rows 1 failures 0 []
+render-1280-spring rows 8 failures 0 []
+render-1280-summer rows 8 failures 0 []
+render-1280-autumn rows 8 failures 0 []
+render-1280-winter rows 8 failures 0 []
+backdrop-mobile rows 1 failures 0 []
+render-390-spring rows 8 failures 0 []
+render-390-summer rows 8 failures 0 []
+render-390-autumn rows 8 failures 0 []
+render-390-winter rows 8 failures 0 []
+render-1280-autumn: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-spring: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-summer: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-1280-winter: routes=8, fields=20, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-autumn: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-spring: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-summer: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+render-390-winter: routes=8, fields=12, canceledPaste=0, heroMotion=0, fontRequests=0, fontFaces=0
+主题、权限与解码的首轮实测在 8039e2717；后续 4fd3b55db 仅调整手机胜率条排布并增加卡片边界断言。七组布局、战斗数据专项及交付的八页桌面/手机截图均在修复后补跑。
+CI 初次报告 360px 视口文档宽 363px。同字体同夹具负对照 363px，修复后 360px；另测 330/350/360 × Windows 系统字体/DejaVu Sans/Ubuntu Sans，9/9 与视口等宽。
+常规宽屏背景淡入 0.3s；减少动效竖屏 0s；两种场景均延迟解码并在等待时切换主题。
+
+2026-11-28 · Windows Chrome 158 · 实现 0eb3ba36f1e7cbcaa2a6a9a2416209f2f4c10bda
+
+combo-matrix
+probe-scrollport rows 1 failures 0 []
+role-anonymous rows 10 failures 0 []
+role-member rows 10 failures 0 []
+role-site rows 10 failures 0 []
+role-hof rows 10 failures 0 []
+role-tournament rows 10 failures 0 []
+role-content rows 10 failures 0 []
+role-combined rows 10 failures 0 []
+layout-android-360 rows 8 failures 0 []
+layout-android-412 rows 8 failures 0 []
+layout-iphone-390 rows 8 failures 0 []
+layout-iphone-se rows 8 failures 0 []
+layout-iphone-land rows 8 failures 0 []
+layout-tablet rows 8 failures 0 []
+layout-desktop rows 8 failures 0 []
+theme-spring rows 8 failures 0 []
+theme-summer rows 8 failures 0 []
+theme-autumn rows 8 failures 0 []
+theme-winter rows 8 failures 0 []
+
+combo-hof
+[hof-review] hundred 1600 900 {"problems":[],"gap":8,"columns":2,"paneWidth":958}
+[hof-review] mark3 1600 900 {"problems":[],"gap":8,"columns":2,"paneWidth":958}
+[hof-review] hundred 1280 720 {"problems":[],"gap":8,"columns":1,"paneWidth":648}
+[hof-review] mark3 1280 720 {"problems":[],"gap":8,"columns":1,"paneWidth":648}
+[hof-review] hundred 1200 600 {"problems":[],"gap":8,"columns":1,"paneWidth":571}
+[hof-review] mark3 1200 600 {"problems":[],"gap":8,"columns":1,"paneWidth":571}
+[hof-review] hundred 1199 800 {"problems":[],"gap":-194,"columns":2,"paneWidth":1199}
+[hof-review] mark3 1199 800 {"problems":[],"gap":-194,"columns":2,"paneWidth":1199}
+[hof-review] hundred 900 740 {"problems":[],"gap":-164,"columns":2,"paneWidth":900}
+[hof-review] mark3 900 740 {"problems":[],"gap":-164,"columns":2,"paneWidth":900}
+[hof-review] hundred 390 844 {"problems":[],"gap":-218,"columns":1,"paneWidth":390}
+[hof-review] mark3 390 844 {"problems":[],"gap":-218,"columns":1,"paneWidth":390}
+[hof-review] hundred 360 640 {"problems":[],"gap":-116,"columns":1,"paneWidth":360}
+[hof-review] mark3 360 640 {"problems":[],"gap":-116,"columns":1,"paneWidth":360}
+[hof-review] hundred 844 390 {"problems":[],"gap":11,"columns":2,"paneWidth":844}
+[hof-review] mark3 844 390 {"problems":[],"gap":11,"columns":2,"paneWidth":844}
+[browser-hof-admin-tabs] hof-admin-tabs-sticky OK
+[browser-hof-admin-tabs] hof-admin-tabs-narrow-scrollable OK
+[browser-hof-admin-tabs] hof-admin-vehicles-summer-1280 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-winter-390 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-spring-900 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-autumn-360 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-winter-1280 OK
+[browser-hof-admin-tabs] hof-admin-vehicles-summer-390 OK
+[browser-hof-admin-tabs] hof-review-detail-1600-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-1600-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-1280-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-1280-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-1200-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-1200-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-1199-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-1199-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-900-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-900-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-390-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-390-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-360-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-360-mark3 OK
+[browser-hof-admin-tabs] hof-review-detail-844-hundred OK
+[browser-hof-admin-tabs] hof-review-detail-844-mark3 OK
+[browser-hof-admin-tabs] all 24 scenarios passed
+
+combo-pending
+[hof-pending] 1280 850 summer PASS
+[hof-pending] 900 850 winter PASS
+[hof-pending] 390 664 spring PASS
+[hof-pending] 360 740 autumn PASS
+[hof-pending] 844 340 winter PASS
+
+combo-directory
+PASS admin-users summer 1280
+PASS admin-users winter 390
+PASS admin-users spring 900
+PASS admin-users autumn 360
+PASS admin-users winter 1280
+PASS admin-users summer 390
+PASS admin-ai-review-feedback summer 1280
+PASS admin-ai-review-feedback winter 390
+PASS admin-ai-review-feedback spring 900
+PASS admin-ai-review-feedback autumn 360
+PASS admin-ai-review-feedback winter 1280
+PASS admin-ai-review-feedback summer 390
+PASS admin-site-feedback summer 1280
+PASS admin-site-feedback winter 390
+PASS admin-site-feedback spring 900
+PASS admin-site-feedback autumn 360
+PASS admin-site-feedback winter 1280
+PASS admin-site-feedback summer 390
+PASS admin-users-footer-en-summer-1280-850
+PASS admin-users-footer-en-winter-1280-850
+PASS admin-users-footer-en-summer-390-850
+PASS admin-users-footer-en-winter-390-850
+PASS admin-users-footer-zh-summer-1280-850
+PASS admin-users-footer-zh-winter-1280-850
+PASS admin-users-footer-zh-summer-390-850
+PASS admin-users-footer-zh-winter-390-850
+PASS admin-users-footer-ru-summer-1280-850
+PASS admin-users-footer-ru-winter-1280-850
+PASS admin-users-footer-ru-summer-390-850
+PASS admin-users-footer-ru-winter-390-850
+PASS admin-users-first-row-en-winter-900-600
+PASS admin-users-first-row-en-winter-1280-600
+PASS admin-users-first-row-en-winter-1440-650
+PASS admin-ai-review-feedback-status-ru-winter-320-800
+PASS admin-ai-review-feedback-status-ru-winter-390-800
+PASS admin-site-feedback-status-ru-winter-320-800
+PASS admin-site-feedback-status-ru-winter-390-800
+
+combo-tournament
+[browser-tournament-admin] tournament-points-admin-1280x850-summer-en OK
+[browser-tournament-admin] tournament-points-config-1280x850-summer-en OK
+[browser-tournament-admin] tournament-points-admin-390x850-winter-en OK
+[browser-tournament-admin] tournament-points-config-390x850-winter-en OK
+[browser-tournament-admin] tournament-points-admin-1280x850-winter-en OK
+[browser-tournament-admin] tournament-points-config-1280x850-winter-en OK
+[browser-tournament-admin] tournament-points-admin-390x850-summer-en OK
+[browser-tournament-admin] tournament-points-config-390x850-summer-en OK
+[browser-tournament-admin] tournament-points-admin-1280x850-summer-ru OK
+[browser-tournament-admin] tournament-points-config-1280x850-summer-ru OK
+[browser-tournament-admin] tournament-points-admin-390x850-winter-ru OK
+[browser-tournament-admin] tournament-points-config-390x850-winter-ru OK
+[browser-tournament-admin] tournament-points-admin-1280x850-winter-ru OK
+[browser-tournament-admin] tournament-points-config-1280x850-winter-ru OK
+[browser-tournament-admin] tournament-points-admin-390x850-summer-ru OK
+[browser-tournament-admin] tournament-points-config-390x850-summer-ru OK
+[browser-tournament-admin] tournament-points-admin-900x850-spring-en OK
+[browser-tournament-admin] tournament-points-config-900x850-spring-en OK
+[browser-tournament-admin] tournament-points-admin-360x740-autumn-en OK
+[browser-tournament-admin] tournament-points-config-360x740-autumn-en OK
+[browser-tournament-admin] tournament-points-admin-412x839-spring-zh OK
+[browser-tournament-admin] tournament-points-config-412x839-spring-zh OK
+[browser-tournament-admin] tournament-points-admin-390x664-winter-en OK
+[browser-tournament-admin] tournament-points-config-390x664-winter-en OK
+[browser-tournament-admin] tournament-points-admin-375x553-autumn-ru OK
+[browser-tournament-admin] tournament-points-config-375x553-autumn-ru OK
+[browser-tournament-admin] tournament-points-admin-844x340-winter-en OK
+[browser-tournament-admin] tournament-points-config-844x340-winter-en OK
+[browser-tournament-admin] reduced-motion tournament-points-admin 1280x850 summer OK
+[browser-tournament-admin] reduced-motion tournament-points-config 1280x850 summer OK
+[browser-tournament-admin] reduced-motion tournament-points-admin 390x850 winter OK
+[browser-tournament-admin] reduced-motion tournament-points-config 390x850 winter OK
+
+combo-hero
+[browser-showcase-hero] agent-tankopedia desktop and mobile passed
+[browser-showcase-hero] agent-tankopedia&tank=9001 desktop and mobile passed
+[browser-showcase-hero] agent-techtree desktop and mobile passed
+[browser-showcase-hero] map-preview desktop and mobile passed
+[browser-showcase-hero] recommendations desktop and mobile passed
+[browser-showcase-hero] creators desktop and mobile passed
+[browser-showcase-hero] recommended-videos desktop and mobile passed
+[browser-showcase-hero] contact desktop and mobile passed
+[browser-showcase-hero] more desktop and mobile passed
+[browser-showcase-hero] android desktop and mobile passed
+[browser-showcase-hero] sponsor desktop and mobile passed
+[browser-showcase-hero] admin-battle-data desktop and mobile passed
+[browser-showcase-hero] admin-ai-review-feedback desktop and mobile passed
+[browser-showcase-hero] admin-site-feedback desktop and mobile passed
+[browser-showcase-hero] admin-users desktop and mobile passed
+[browser-showcase-hero] creators-config desktop and mobile passed
+[browser-showcase-hero] hof-admin desktop and mobile passed
+[browser-showcase-hero] tournament-points-admin desktop and mobile passed
+[browser-showcase-hero] tournament-points-config desktop and mobile passed
+[browser-showcase-hero] replay desktop and mobile passed
+[browser-showcase-hero] hof desktop and mobile passed
+[browser-showcase-hero] hof&tab=hundred desktop and mobile passed
+[browser-showcase-hero] hof&tab=mark3 desktop and mobile passed
+[browser-showcase-hero] history desktop and mobile passed
+[browser-showcase-hero] technical-evolution desktop and mobile passed
+[browser-showcase-hero] rating-docs desktop and mobile passed
+[browser-showcase-hero] league-broadcasts desktop and mobile passed
+[browser-showcase-hero] tournament-points desktop and mobile passed
+[browser-showcase-hero] profile desktop and mobile passed
+[browser-showcase-hero] breakpoint replay: desktop pos=50% 50% → mobile pos=45% 50% height=99, winter scrim stops ok passed
+[browser-showcase-hero] breakpoint techtree: desktop pos=50% 58% → mobile pos=42% 50% height=99, winter scrim stops ok passed
+[browser-showcase-hero] breakpoint admin: desktop pos=50% 45% → mobile pos=40% 50% height=99, winter scrim stops ok passed
+[browser-showcase-hero] short-window replay: height=135 at 1920x540 passed
+[browser-showcase-hero] full-hero height league-broadcasts: desktop=480 short=123 mobile=115 kicker=16 title=76 desc=null passed
+[browser-showcase-hero] full-hero height hof: desktop=480 short=249 mobile=249 kicker=16 title=76 desc=20 passed
+[browser-showcase-hero] full-hero height tournament-points: desktop=480 short=203 mobile=231 kicker=16 title=76 desc=20 passed
+[browser-showcase-hero] winter full hero (contact 390x844): description light + median 13.75:1 + 100.0% area passed
+[browser-showcase-hero] winter full hero (hof 390x844): stat label color=rgb(216, 230, 244) passed
+[browser-showcase-hero] all scenarios passed
+
+combo-battle
+[browser-battle-data] filters-summer-1280 OK
+[browser-battle-data] filters-winter-390 OK
+[browser-battle-data] filters-winter-1280 OK
+[browser-battle-data] filters-summer-390 OK
+[browser-battle-data] filters-spring-900 OK
+[browser-battle-data] filters-autumn-360 OK
+[browser-battle-data] spring OK
+[browser-battle-data] summer OK
+[browser-battle-data] autumn OK
+[browser-battle-data] winter OK
+[browser-battle-data] winter-ru OK
+[browser-battle-data] all 11 scenarios passed
+
+八个入口主内容区五点采样次数（滚动后可重复命中同一控件）
+layout-android-360: admin-users=99, admin-battle-data=14, admin-ai-review-feedback=121, admin-site-feedback=121, hof-admin=20, tournament-points-config=41, tournament-points-admin=8, creators-config=21
+layout-android-412: admin-users=98, admin-battle-data=14, admin-ai-review-feedback=119, admin-site-feedback=119, hof-admin=22, tournament-points-config=54, tournament-points-admin=8, creators-config=25
+layout-desktop: admin-users=97, admin-battle-data=24, admin-ai-review-feedback=122, admin-site-feedback=122, hof-admin=51, tournament-points-config=76, tournament-points-admin=24, creators-config=26
+layout-iphone-390: admin-users=82, admin-battle-data=17, admin-ai-review-feedback=111, admin-site-feedback=111, hof-admin=17, tournament-points-config=44, tournament-points-admin=8, creators-config=21
+layout-iphone-land: admin-users=94, admin-battle-data=33, admin-ai-review-feedback=118, admin-site-feedback=118, hof-admin=38, tournament-points-config=51, tournament-points-admin=15, creators-config=26
+layout-iphone-se: admin-users=97, admin-battle-data=17, admin-ai-review-feedback=122, admin-site-feedback=122, hof-admin=14, tournament-points-config=44, tournament-points-admin=10, creators-config=22
+layout-tablet: admin-users=89, admin-battle-data=33, admin-ai-review-feedback=154, admin-site-feedback=154, hof-admin=57, tournament-points-config=70, tournament-points-admin=16, creators-config=24
+
+实测标题与短标签最差像素比值（末列为门槛）
+admin-users spring 390 .showcase-hero-title 15.850 4.5
+admin-users spring 390 .showcase-hero-kicker 9.053 4.5
+admin-users spring 1280 .showcase-hero-title 11.383 3
+admin-users spring 1280 .showcase-hero-kicker 11.412 4.5
+admin-users summer 390 .showcase-hero-title 16.065 4.5
+admin-users summer 390 .showcase-hero-kicker 9.920 4.5
+admin-users summer 1280 .showcase-hero-title 11.491 3
+admin-users summer 1280 .showcase-hero-kicker 12.588 4.5
+admin-users autumn 390 .showcase-hero-title 15.478 4.5
+admin-users autumn 390 .showcase-hero-kicker 7.245 4.5
+admin-users autumn 1280 .showcase-hero-title 11.064 3
+admin-users autumn 1280 .showcase-hero-kicker 9.080 4.5
+admin-users winter 390 .showcase-hero-title 14.704 4.5
+admin-users winter 390 .showcase-hero-kicker 6.946 4.5
+admin-users winter 1280 .showcase-hero-title 12.201 3
+admin-users winter 1280 .showcase-hero-kicker 13.794 4.5
+admin-battle-data spring 390 .showcase-hero-title 16.372 4.5
+admin-battle-data spring 390 .showcase-hero-kicker 9.053 4.5
+admin-battle-data spring 1280 .showcase-hero-title 12.902 3
+admin-battle-data spring 1280 .showcase-hero-kicker 11.499 4.5
+admin-battle-data summer 390 .showcase-hero-title 16.561 4.5
+admin-battle-data summer 390 .showcase-hero-kicker 9.920 4.5
+admin-battle-data summer 1280 .showcase-hero-title 13.024 3
+admin-battle-data summer 1280 .showcase-hero-kicker 12.685 4.5
+admin-battle-data autumn 390 .showcase-hero-title 15.957 4.5
+admin-battle-data autumn 390 .showcase-hero-kicker 7.245 4.5
+admin-battle-data autumn 1280 .showcase-hero-title 12.541 3
+admin-battle-data autumn 1280 .showcase-hero-kicker 9.149 4.5
+admin-battle-data winter 390 .showcase-hero-title 17.195 4.5
+admin-battle-data winter 390 .showcase-hero-kicker 6.946 4.5
+admin-battle-data winter 1280 .showcase-hero-title 13.829 3
+admin-battle-data winter 1280 .showcase-hero-kicker 13.900 4.5
+admin-site-feedback spring 390 .showcase-hero-title 16.372 4.5
+admin-site-feedback spring 390 .showcase-hero-kicker 9.053 4.5
+admin-site-feedback spring 1280 .showcase-hero-title 11.946 3
+admin-site-feedback spring 1280 .showcase-hero-kicker 11.499 4.5
+admin-site-feedback summer 390 .showcase-hero-title 16.561 4.5
+admin-site-feedback summer 390 .showcase-hero-kicker 9.920 4.5
+admin-site-feedback summer 1280 .showcase-hero-title 12.059 3
+admin-site-feedback summer 1280 .showcase-hero-kicker 12.685 4.5
+admin-site-feedback autumn 390 .showcase-hero-title 15.957 4.5
+admin-site-feedback autumn 390 .showcase-hero-kicker 7.245 4.5
+admin-site-feedback autumn 1280 .showcase-hero-title 11.611 3
+admin-site-feedback autumn 1280 .showcase-hero-kicker 9.149 4.5
+admin-site-feedback winter 390 .showcase-hero-title 17.195 4.5
+admin-site-feedback winter 390 .showcase-hero-kicker 6.946 4.5
+admin-site-feedback winter 1280 .showcase-hero-title 12.804 3
+admin-site-feedback winter 1280 .showcase-hero-kicker 13.900 4.5
+admin-ai-review-feedback spring 390 .showcase-hero-title 15.850 4.5
+admin-ai-review-feedback spring 390 .showcase-hero-kicker 9.053 4.5
+admin-ai-review-feedback spring 1280 .showcase-hero-title 15.810 3
+admin-ai-review-feedback spring 1280 .showcase-hero-kicker 11.412 4.5
+admin-ai-review-feedback summer 390 .showcase-hero-title 16.065 4.5
+admin-ai-review-feedback summer 390 .showcase-hero-kicker 9.920 4.5
+admin-ai-review-feedback summer 1280 .showcase-hero-title 15.960 3
+admin-ai-review-feedback summer 1280 .showcase-hero-kicker 12.588 4.5
+admin-ai-review-feedback autumn 390 .showcase-hero-title 15.478 4.5
+admin-ai-review-feedback autumn 390 .showcase-hero-kicker 7.245 4.5
+admin-ai-review-feedback autumn 1280 .showcase-hero-title 15.367 3
+admin-ai-review-feedback autumn 1280 .showcase-hero-kicker 9.080 4.5
+admin-ai-review-feedback winter 390 .showcase-hero-title 14.704 4.5
+admin-ai-review-feedback winter 390 .showcase-hero-kicker 6.946 4.5
+admin-ai-review-feedback winter 1280 .showcase-hero-title 16.945 3
+admin-ai-review-feedback winter 1280 .showcase-hero-kicker 13.794 4.5
+hof-admin spring 390 .showcase-hero-title 15.987 4.5
+hof-admin spring 390 .showcase-hero-kicker 11.787 4.5
+hof-admin spring 1280 .showcase-hero-title 11.327 3
+hof-admin spring 1280 .showcase-hero-kicker 11.575 4.5
+hof-admin summer 390 .showcase-hero-title 16.100 4.5
+hof-admin summer 390 .showcase-hero-kicker 12.973 4.5
+hof-admin summer 1280 .showcase-hero-title 11.435 3
+hof-admin summer 1280 .showcase-hero-kicker 12.768 4.5
+hof-admin autumn 390 .showcase-hero-title 15.589 4.5
+hof-admin autumn 390 .showcase-hero-kicker 9.363 4.5
+hof-admin autumn 1280 .showcase-hero-title 11.010 3
+hof-admin autumn 1280 .showcase-hero-kicker 9.209 4.5
+hof-admin winter 390 .showcase-hero-title 15.205 4.5
+hof-admin winter 390 .showcase-hero-kicker 13.503 4.5
+hof-admin winter 1280 .showcase-hero-title 12.141 3
+hof-admin winter 1280 .showcase-hero-kicker 13.991 4.5
+creators-config spring 390 .showcase-hero-title 15.072 4.5
+creators-config spring 390 .showcase-hero-kicker 11.787 4.5
+creators-config spring 1280 .showcase-hero-title 7.768 3
+creators-config spring 1280 .showcase-hero-kicker 11.489 4.5
+creators-config summer 390 .showcase-hero-title 15.243 4.5
+creators-config summer 390 .showcase-hero-kicker 12.973 4.5
+creators-config summer 1280 .showcase-hero-title 7.842 3
+creators-config summer 1280 .showcase-hero-kicker 12.674 4.5
+creators-config autumn 390 .showcase-hero-title 14.697 4.5
+creators-config autumn 390 .showcase-hero-kicker 9.363 4.5
+creators-config autumn 1280 .showcase-hero-title 7.550 3
+creators-config autumn 1280 .showcase-hero-kicker 9.141 4.5
+creators-config winter 390 .showcase-hero-title 9.529 4.5
+creators-config winter 390 .showcase-hero-kicker 13.503 4.5
+creators-config winter 1280 .showcase-hero-title 8.326 3
+creators-config winter 1280 .showcase-hero-kicker 13.888 4.5
+tournament-points-admin spring 390 .showcase-hero-title 15.850 4.5
+tournament-points-admin spring 390 .showcase-hero-kicker 11.787 4.5
+tournament-points-admin spring 1280 .showcase-hero-title 11.505 3
+tournament-points-admin spring 1280 .showcase-hero-kicker 11.575 4.5
+tournament-points-admin summer 390 .showcase-hero-title 16.065 4.5
+tournament-points-admin summer 390 .showcase-hero-kicker 12.973 4.5
+tournament-points-admin summer 1280 .showcase-hero-title 11.614 3
+tournament-points-admin summer 1280 .showcase-hero-kicker 12.768 4.5
+tournament-points-admin autumn 390 .showcase-hero-title 15.478 4.5
+tournament-points-admin autumn 390 .showcase-hero-kicker 9.363 4.5
+tournament-points-admin autumn 1280 .showcase-hero-title 11.183 3
+tournament-points-admin autumn 1280 .showcase-hero-kicker 9.209 4.5
+tournament-points-admin winter 390 .showcase-hero-title 14.704 4.5
+tournament-points-admin winter 390 .showcase-hero-kicker 13.503 4.5
+tournament-points-admin winter 1280 .showcase-hero-title 12.332 3
+tournament-points-admin winter 1280 .showcase-hero-kicker 13.991 4.5
+tournament-points-config spring 390 .showcase-hero-title 15.197 4.5
+tournament-points-config spring 390 .showcase-hero-kicker 11.787 4.5
+tournament-points-config spring 1280 .showcase-hero-title 7.768 3
+tournament-points-config spring 1280 .showcase-hero-kicker 11.499 4.5
+tournament-points-config summer 390 .showcase-hero-title 15.275 4.5
+tournament-points-config summer 390 .showcase-hero-kicker 12.973 4.5
+tournament-points-config summer 1280 .showcase-hero-title 7.842 3
+tournament-points-config summer 1280 .showcase-hero-kicker 12.685 4.5
+tournament-points-config autumn 390 .showcase-hero-title 14.834 4.5
+tournament-points-config autumn 390 .showcase-hero-kicker 9.363 4.5
+tournament-points-config autumn 1280 .showcase-hero-title 7.550 3
+tournament-points-config autumn 1280 .showcase-hero-kicker 9.149 4.5
+tournament-points-config winter 390 .showcase-hero-title 9.688 4.5
+tournament-points-config winter 390 .showcase-hero-kicker 13.503 4.5
+tournament-points-config winter 1280 .showcase-hero-title 8.326 3
+tournament-points-config winter 1280 .showcase-hero-kicker 13.900 4.5
+64 combinations passed
+
+2026-11-28 · 双层吸顶与分栏复验 · 整合 7886f67fb0b7116d615b3426d31bc21d773713d4
+[hof-review] sticky hundred 1200 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":215,"top":8,"height":50,"parentBottom":2305},{"selector":".hof-review-pane","position":"sticky","naturalTop":357,"top":66,"height":518,"parentBottom":2211}],"thresholds":[207,291],"maxScroll":1778,"target":389,"scrollTop":389,"actual":[{"top":8,"parentClearance":1858},{"top":66,"parentClearance":1238}],"gap":8}
+[hof-review] sticky hundred 1280 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":468.796875,"top":8,"height":50,"parentBottom":2558.796875},{"selector":".hof-review-pane","position":"sticky","naturalTop":610.796875,"top":66,"height":638,"parentBottom":2464.796875}],"thresholds":[460.796875,544.796875],"maxScroll":1912,"target":643,"scrollTop":643,"actual":[{"top":8,"parentClearance":1857.796875},{"top":66,"parentClearance":1117.796875}],"gap":8}
+[hof-review] sticky hundred 1600 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":560,"top":8,"height":50,"parentBottom":2650},{"selector":".hof-review-pane","position":"sticky","naturalTop":702,"top":66,"height":818,"parentBottom":2556}],"thresholds":[552,636],"maxScroll":1823,"target":734,"scrollTop":734,"actual":[{"top":8,"parentClearance":1858},{"top":66,"parentClearance":938}],"gap":8}
+[hof-review] sticky mark3 1200 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":215,"top":8,"height":50,"parentBottom":2305},{"selector":".hof-review-pane","position":"sticky","naturalTop":357,"top":66,"height":518,"parentBottom":2211}],"thresholds":[207,291],"maxScroll":1778,"target":389,"scrollTop":389,"actual":[{"top":8,"parentClearance":1858},{"top":66,"parentClearance":1238}],"gap":8}
+[hof-review] sticky mark3 1280 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":468.796875,"top":8,"height":50,"parentBottom":2558.796875},{"selector":".hof-review-pane","position":"sticky","naturalTop":610.796875,"top":66,"height":638,"parentBottom":2464.796875}],"thresholds":[460.796875,544.796875],"maxScroll":1912,"target":643,"scrollTop":643,"actual":[{"top":8,"parentClearance":1857.796875},{"top":66,"parentClearance":1117.796875}],"gap":8}
+[hof-review] sticky mark3 1600 {"boxes":[{"selector":".hof-admin-tabs","position":"sticky","naturalTop":560,"top":8,"height":50,"parentBottom":2650},{"selector":".hof-review-pane","position":"sticky","naturalTop":702,"top":66,"height":818,"parentBottom":2556}],"thresholds":[552,636],"maxScroll":1823,"target":734,"scrollTop":734,"actual":[{"top":8,"parentClearance":1858},{"top":66,"parentClearance":938}],"gap":8}
+3 个分片各 8/8；共 24/24。

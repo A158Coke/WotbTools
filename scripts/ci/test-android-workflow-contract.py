@@ -195,6 +195,13 @@ def main(root: Path) -> None:
                 path = root / with_["script_path"]
                 assert path.is_file(), f"{job_id} remote script missing: {path}"
                 referenced.add(path)
+    # Both workflow steps delegate the same asset readiness check to a helper.
+    readiness = Path("scripts/android-release/steps/check-agent-diffs-ready.sh")
+    for name in ("stage-04-preflight.sh", "publish-08-api-readiness.sh"):
+        caller = root / readiness.with_name(name)
+        assert caller in referenced
+        assert any(line.startswith(f"bash {readiness.as_posix()} ") for line in caller.read_text(encoding="utf-8").splitlines()), name
+    referenced.add(root / readiness)
     all_scripts = set((root / "scripts" / "android-release" / "steps").glob("*.sh"))
     assert referenced == all_scripts, \
         "step script inventory mismatch: " \

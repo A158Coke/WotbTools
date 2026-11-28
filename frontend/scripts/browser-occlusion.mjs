@@ -419,11 +419,28 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       }
       return null
     }
+    // 普通流里的控件只有完整滚进每层滚动容器，才参与本轮五点命中。
+    // hidden/clip 造成的不可达，以及定位元素或吸顶层的遮挡，仍交给原探针报告。
+    function outsideScrollport(el, rect, pinned) {
+      for (let child = el; child.parentElement && child.parentElement !== document.body; child = child.parentElement) {
+        if (child === pinned || getComputedStyle(child).position === 'absolute') return false
+        const port = child.parentElement
+        const style = getComputedStyle(port)
+        const scrollsX = /^(auto|scroll)$/.test(style.overflowX) && port.scrollWidth > port.clientWidth + tol
+        const scrollsY = /^(auto|scroll)$/.test(style.overflowY) && port.scrollHeight > port.clientHeight + tol
+        if (!scrollsX && !scrollsY) continue
+        const bounds = port.getBoundingClientRect()
+        const left = bounds.left + port.clientLeft, top = bounds.top + port.clientTop
+        if (scrollsX && (rect.left < left - tol || rect.right > left + port.clientWidth + tol)) return true
+        if (scrollsY && (rect.top < top - tol || rect.bottom > top + port.clientHeight + tol)) return true
+      }
+      return false
+    }
     const name = (el) => el.getAttribute('data-test') || el.getAttribute('data-testid')
       || `${el.tagName.toLowerCase()}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}「${(el.getAttribute('aria-label') || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 20)}」`
     const describe = (el) => el ? `${el.tagName.toLowerCase()}${el.dataset?.testid ? `[${el.dataset.testid}]` : ''}.${(el.className || '').toString().trim().split(/\s+/)[0] || '?'}` : 'null'
     const failures = []
-    let checked = 0
+    let checked = 0, mainChecked = 0
     for (const node of document.querySelectorAll(input.interactive)) {
       const el = node.matches('input[type=checkbox],input[type=radio]') ? node.closest('label') || node : node
       const s = getComputedStyle(el)
@@ -433,15 +450,21 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       if (r.width < 2 || r.height < 2) continue
       const owner = pinnedOwner(el)
       const isChrome = chromeEls.some((c) => c.contains(el))
-      const top = owner ? 0 : chromeBottom
-      if (!owner && (r.top < top - tol || r.bottom > vh - safe.bottom + tol || r.left < -tol || r.right > vw + tol)) continue
+      const style = owner && getComputedStyle(owner)
+      // A sticky action column follows the row vertically; only its inline position is pinned.
+      const pinnedY = style && (style.position === 'fixed' || style.top !== 'auto' || style.bottom !== 'auto')
+      const pinnedX = style && (style.position === 'fixed' || style.left !== 'auto' || style.right !== 'auto')
+      if (!pinnedY && (r.top < chromeBottom - tol || r.bottom > vh - safe.bottom + tol)) continue
+      if (!pinnedX && (r.left < -tol || r.right > vw + tol)) continue
+      if (outsideScrollport(el, r, owner)) continue
       if (owner && (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw)) continue
       checked += 1
+      if (el.closest('main')) mainChecked += 1
       if (r.top < safe.top - tol || r.bottom > vh - safe.bottom + tol || r.left < safe.left - tol || r.right > vw - safe.right + tol) {
         failures.push(`${name(el)} 落入安全区（rect=${[r.left, r.top, r.width, r.height].map(Math.round).join(',')} safe=${JSON.stringify(safe)}）`)
         continue
       }
-      if (!isChrome && owner && r.top < chromeBottom - tol && !chromeEls.some((c) => c.contains(owner))) {
+      if (!isChrome && pinnedY && r.top < chromeBottom - tol && !chromeEls.some((c) => c.contains(owner))) {
         failures.push(`${name(el)} 停在顶栏下面（top=${Math.round(r.top)} < ${Math.round(chromeBottom)}）`)
         continue
       }
@@ -452,10 +475,10 @@ export async function measureViewportSafety(page, { insets, chrome = [] }) {
       let blocker = null
       for (const [x, y] of samples) {
         const hit = document.elementFromPoint(x, y)
-        if (!hit || !(hit === el || el.contains(hit) || hit.contains(el))) { blocker = hit; break }
+        if (!hit || !(hit === el || el.contains(hit) || hit.contains(el))) { blocker = describe(hit); break }
       }
-      if (blocker) failures.push(`${name(el)} 被 ${describe(blocker)} 盖住`)
+      if (blocker) failures.push(`${name(el)} 被 ${blocker} 盖住`)
     }
-    return { checked, failures: [...new Set(failures)], scrollWidth: document.documentElement.scrollWidth, viewport: vw }
+    return { checked, mainChecked, failures: [...new Set(failures)], scrollWidth: document.documentElement.scrollWidth, viewport: vw }
   })
 }

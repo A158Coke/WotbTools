@@ -164,14 +164,14 @@ describe('AdminUsersPage', () => {
     expect(api.searchUsers).toHaveBeenLastCalledWith('', {
       segment: 'keycloak', idpAlias: '', page: 19, size: 25,
     })
-    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=20,total=120,items=6000)')
+    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=20,total=120,items=6,000)')
     expect(input.element.value).toBe('')
 
     await input.setValue('1')
     await wrapper.find('.admin-page-go').trigger('click')
     await flushPromises()
     expect(api.searchUsers).toHaveBeenLastCalledWith('', expect.objectContaining({ page: 0 }))
-    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=1,total=120,items=6000)')
+    expect(wrapper.find('.admin-page-info').text()).toBe('admin.pageInfo(page=1,total=120,items=6,000)')
   })
 
   it('ignores blank / out-of-range / non-integer / current-page jump input', async () => {
