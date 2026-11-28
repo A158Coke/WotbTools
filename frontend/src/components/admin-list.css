@@ -127,6 +127,7 @@
 .admin-list-badge.is-warning { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
 
 .admin-list-pagination {
+  font-variant-numeric: tabular-nums;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

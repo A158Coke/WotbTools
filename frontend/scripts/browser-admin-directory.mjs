@@ -160,6 +160,8 @@ try {
       assert.equal(await page.evaluate('document.documentElement.lang.split("-")[0]'), locale)
       assert.equal(await page.evaluate('document.documentElement.dataset.uiProfile'), theme)
       if (mode === 'footer') {
+        const summary = await page.evaluate("document.querySelector('.admin-page-info').textContent")
+        for (const count of [25001, 1001]) assert.ok(summary.includes(count.toLocaleString(locale)), summary)
         const input = '#admin-jump-page'
         await page.tapSelector(input, width < 768)
         await page.client.send('Input.insertText', { text: '1001' }, sessionId)

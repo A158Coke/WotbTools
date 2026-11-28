@@ -199,7 +199,7 @@ async function layout(size, page, rows) {
   for (const view of Object.keys(views)) {
     const actor = actors.find(a => a.allowed.includes(view))
     const problems = new Set()
-    let steps = 0, checked = 0
+    let steps = 0, checked = 0, mainChecked = 0
     try {
       await visit(page, view, actor)
       await waitElement(page, views[view])
@@ -220,25 +220,25 @@ async function layout(size, page, rows) {
       if (state.profile !== size.profile) problems.add('expected profile ' + size.profile + ', got ' + state.profile)
       if (Boolean(size.insets) !== state.drawer) problems.add('unexpected shell navigation topology')
       if (state.width > size.width + 1) problems.add('document overflow ' + state.width + ' > ' + size.width)
-      if (size.insets) {
-        for (let done = false; !done && steps < 120; steps++) {
-          await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-          await page.animationsSettled()
-          const probe = await measureViewportSafety(page, { insets, chrome: ['[data-testid=app-top-bar]'] })
-          for (const error of probe.failures) problems.add(error)
-          checked += probe.checked
-          done = await page.evaluate('(() => { const old = scrollY; scrollBy(0, Math.round(innerHeight * 0.6)); return old === scrollY })()')
-          if (!done && steps === 119) problems.add('scan did not reach the end')
-        }
-        if (!checked) problems.add('no visible controls sampled')
+      for (let done = false; !done && steps < 120; steps++) {
+        await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        await page.animationsSettled()
+        const probe = await measureViewportSafety(page, { insets, chrome: ['[data-testid=app-top-bar]'] })
+        for (const error of probe.failures) problems.add(error)
+        checked += probe.checked
+        mainChecked += probe.mainChecked
+        done = await page.evaluate('(() => { const old = scrollY; scrollBy(0, Math.round(innerHeight * 0.6)); return old === scrollY })()')
+        if (!done && steps === 119) problems.add('scan did not reach the end')
       }
-      rows.push({ view, actor: actor.name, ...state, steps, checked, errors: [...problems] })
+      if (!mainChecked) problems.add('no controls sampled inside main')
+      rows.push({ view, actor: actor.name, ...state, steps, checked, mainChecked, errors: [...problems] })
     } catch (error) { rows.push({ view, actor: actor.name, errors: [error.message] }) }
   }
 }
 try {
   await scenario('probe-scrollport', sizes[0], async (page, rows) => {
     await page.evaluate(`document.body.innerHTML = '<div id="port" style="width:180px;height:60px;overflow:auto"><div style="height:100px"></div><button data-testid="nested-button" style="width:100px;height:40px">Fixture</button></div><div id="cover" style="height:160px;background:white"></div>'`)
+    await page.evaluate("document.querySelector('#port').style.position = 'fixed'")
     const check = () => measureViewportSafety(page, { insets: {} })
     let probe = await check()
     assert.equal(probe.checked, 0, 'button outside its scrollport is not visible yet')
@@ -247,7 +247,7 @@ try {
     probe = await check()
     assert.equal(probe.checked, 1, 'scrolling the same button into view enables hit testing')
     assert.deepEqual(probe.failures, [])
-    await page.evaluate('document.querySelector("#cover").style.cssText="position:fixed;inset:0;background:white"')
+    await page.evaluate('document.querySelector("#cover").style.cssText="position:fixed;inset:0;background:white;z-index:1"')
     probe = await check()
     assert.equal(probe.checked, 1)
     assert.ok(probe.failures.some(message => message.includes('nested-button')), 'real overlay remains a failure')

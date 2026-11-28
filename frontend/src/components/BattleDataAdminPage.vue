@@ -17,6 +17,8 @@ import { isRowControlClick, rowOpenTarget } from './adminListRow'
 import './admin-list.css'
 
 const { t, te, locale } = useI18n()
+const countFormat = computed(() => new Intl.NumberFormat(locale.value))
+const percentFormat = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }))
 const gate = useFeatureGate()
 const availability = computed(() => gate.availability(Feature.ADMIN_BATTLE_DATA))
 const summary = ref<api.Summary | null>(null)
@@ -230,12 +232,12 @@ function time(value: string | null | undefined) {
   const relative = new Intl.RelativeTimeFormat(locale.value, { numeric: 'auto' }).format(amount, unit)
   return `${absolute} UTC (${relative})`
 }
-function share(count: number) { return summary.value?.windowBattles ? `${(100 * count / summary.value.windowBattles).toFixed(1)}%` : '0%' }
+function share(count: number) { return summary.value?.windowBattles ? percentFormat.value.format(count / summary.value.windowBattles) : percentFormat.value.format(0) }
 function sharePct(count: number) { return summary.value?.windowBattles ? `${Math.min(100, 100 * count / summary.value.windowBattles)}%` : '0%' }
 function mode(n: number) { return t(n === 1 ? 'battleDataAdmin.random' : 'battleDataAdmin.rating') }
 function mapName(key: string) { return mapLabel(key, locale.value) }
 function sideName(side: api.Summary['spawnStats'][number]['side']) { return t(`battleDataAdmin.side.${spawnSideKey(side)}`) }
-function rate(count: number, battles: number) { return battles ? `${(100 * count / battles).toFixed(1)}%` : '—' }
+function rate(count: number, battles: number) { return battles ? percentFormat.value.format(count / battles) : '—' }
 function winner(n: number) {
   if (n === 0) return t('battleDataAdmin.draw')
   if (n === 1) return t('battleDataAdmin.team1')
@@ -277,16 +279,16 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
     <template v-if="summary">
       <h2 class="battle-h2">{{ t('battleDataAdmin.overview') }}</h2>
       <div class="kpis">
-        <div v-for="item in kpis" :key="item.label" class="kpi"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+        <div v-for="item in kpis" :key="item.label" class="kpi"><span>{{ item.label }}</span><strong>{{ countFormat.format(item.value) }}</strong></div>
       </div>
-      <p class="admin-list-muted battle-meta">{{ t('battleDataAdmin.window') }}: {{ summary.windowBattles }} · {{ t('battleDataAdmin.latest') }}: {{ time(summary.latestReceivedAt) }}<template v-if="refreshed"> · {{ t('battleDataAdmin.lastRefresh') }}: {{ time(refreshed) }}</template></p>
+      <p class="admin-list-muted battle-meta">{{ t('battleDataAdmin.window') }}: {{ countFormat.format(summary.windowBattles) }} · {{ t('battleDataAdmin.latest') }}: {{ time(summary.latestReceivedAt) }}<template v-if="refreshed"> · {{ t('battleDataAdmin.lastRefresh') }}: {{ time(refreshed) }}</template></p>
       <p v-if="summary.totalBattles === 0" class="admin-list-empty">{{ t('battleDataAdmin.empty') }}</p>
       <div class="insights">
         <section class="battle-card">
           <h2 class="battle-h2">{{ t('battleDataAdmin.trend') }}</h2>
           <ul class="trend" data-testid="battle-trend">
             <li v-for="row in trendRows" :key="row.key" class="trend-col">
-              <span class="trend-count">{{ row.count }}</span>
+              <span class="trend-count">{{ countFormat.format(row.count) }}</span>
               <span class="trend-track"><span class="bar" :style="{ '--bar-share': `${100 * row.count / trendMax}%` }" /></span>
               <span class="trend-date" aria-hidden="true">{{ row.key.slice(5) }}</span>
               <span class="battle-visually-hidden">{{ row.key }}</span>
@@ -296,25 +298,25 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
         <div class="distributions">
           <section class="battle-card">
             <h2 class="battle-h2">{{ t('battleDataAdmin.modes') }}</h2>
-            <p v-for="row in modeRows" :key="row.key" class="share-row"><span>{{ mode(row.key) }}: {{ row.count }} ({{ share(row.count) }})</span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
+            <p v-for="row in modeRows" :key="row.key" class="share-row"><span>{{ mode(row.key) }}: {{ countFormat.format(row.count) }} ({{ share(row.count) }})</span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
           </section>
           <section class="battle-card">
             <h2 class="battle-h2">{{ t('battleDataAdmin.winners') }}</h2>
-            <p v-for="row in winnerRows" :key="row.key" class="share-row"><span>{{ winner(row.key) }}: {{ row.count }} ({{ share(row.count) }})</span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
+            <p v-for="row in winnerRows" :key="row.key" class="share-row"><span>{{ winner(row.key) }}: {{ countFormat.format(row.count) }} ({{ share(row.count) }})</span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
           </section>
           <section class="battle-card">
             <h2 class="battle-h2">{{ t('battleDataAdmin.schema') }}</h2>
-            <p v-for="row in summary.schemaVersions" :key="row.key" class="share-row"><span>v{{ row.key }}: {{ row.count }}</span></p>
+            <p v-for="row in summary.schemaVersions" :key="row.key" class="share-row"><span>v{{ row.key }}: {{ countFormat.format(row.count) }}</span></p>
           </section>
           <section class="battle-card">
             <h2 class="battle-h2">{{ t('battleDataAdmin.versions') }}</h2>
-            <p v-for="row in versionRows" :key="row.key" class="share-row"><span>{{ row.key }}: {{ row.count }} ({{ share(row.count) }})<template v-if="row.latest"> · {{ time(row.latest) }}</template></span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
+            <p v-for="row in versionRows" :key="row.key" class="share-row"><span>{{ row.key }}: {{ countFormat.format(row.count) }} ({{ share(row.count) }})<template v-if="row.latest"> · {{ time(row.latest) }}</template></span><span class="share-track" aria-hidden="true"><span class="share-fill" :style="{ '--share': sharePct(row.count) }" /></span></p>
           </section>
         </div>
       </div>
       <div class="section-head"><h2 class="battle-h2">{{ t('battleDataAdmin.spawnStats') }}</h2><SegmentedControl v-model="spawnMode" :options="spawnModes" :ariaLabel="t('battleDataAdmin.mode')" /></div>
       <p class="admin-list-muted battle-meta">{{ t('battleDataAdmin.spawnRateNote') }}</p>
-      <p class="admin-list-muted battle-meta">{{ t('battleDataAdmin.reviewedMaps') }}: {{ coverage.reviewed.length }} · {{ t('battleDataAdmin.mapsObserved') }}: {{ observedMapCount }} · {{ t('battleDataAdmin.reviewedZero') }}: {{ reviewedZeroCount }}</p>
+      <p class="admin-list-muted battle-meta">{{ t('battleDataAdmin.reviewedMaps') }}: {{ countFormat.format(coverage.reviewed.length) }} · {{ t('battleDataAdmin.mapsObserved') }}: {{ countFormat.format(observedMapCount) }} · {{ t('battleDataAdmin.reviewedZero') }}: {{ countFormat.format(reviewedZeroCount) }}</p>
       <div v-for="table in spawnGroups" :key="table.axis[0]" class="admin-list-table-wrap battle-table-gap">
         <table class="admin-list-table" data-testid="spawn-stats">
           <thead><tr>
@@ -326,8 +328,8 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
           <tbody>
             <tr v-for="row in table.rows" :key="row.key">
               <td class="cell-primary is-wrap"><span class="map-name">{{ mapName(row.key) }}</span><small class="raw-key">{{ row.key }}<template v-if="row.observedOnly"> · {{ t('battleDataAdmin.observedOnly') }}</template></small></td>
-              <td class="is-num" :data-label="t('battleDataAdmin.sample')">{{ row.battles }}</td>
-              <td v-for="(side, index) in row.sides" :key="side.side" class="is-num" :data-label="t('battleDataAdmin.sideWinRate', { side: sideName(table.axis[index]) })" :title="t('battleDataAdmin.outcomes', { wins: side.wins, draws: side.draws, losses: side.losses })">{{ side.battles ? `${rate(side.wins, side.battles)} · ${side.wins}/${side.battles}` : '—' }}</td>
+              <td class="is-num" :data-label="t('battleDataAdmin.sample')">{{ countFormat.format(row.battles) }}</td>
+              <td v-for="(side, index) in row.sides" :key="side.side" class="is-num" :data-label="t('battleDataAdmin.sideWinRate', { side: sideName(table.axis[index]) })" :title="t('battleDataAdmin.outcomes', { wins: countFormat.format(side.wins), draws: countFormat.format(side.draws), losses: countFormat.format(side.losses) })">{{ side.battles ? `${rate(side.wins, side.battles)} · ${countFormat.format(side.wins)}/${countFormat.format(side.battles)}` : '—' }}</td>
               <td class="is-num" :data-label="t('battleDataAdmin.drawRate')">{{ rate(row.draws, row.battles) }}</td>
               <td :data-label="t('battleDataAdmin.latestData')">{{ time(row.latest) }}</td>
               <td class="spawn-cell" :data-label="t('battleDataAdmin.spawnSides', { first: sideName(table.axis[0]), second: sideName(table.axis[1]) })">
@@ -417,6 +419,7 @@ onBeforeUnmount(() => { ++summaryGeneration; ++listGeneration; ++detailGeneratio
 <style scoped>
 .battle-admin { max-inline-size: var(--content-max); margin-inline: auto; }
 .battle-h2 { margin: var(--space-5) 0 var(--space-2); font: var(--type-h3); }
+.battle-meta, .share-row { font-variant-numeric: tabular-nums; }
 .battle-meta { margin: 0 0 var(--space-3); }
 .battle-visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .battle-table-gap + .battle-table-gap { margin-block-start: var(--space-4); }
