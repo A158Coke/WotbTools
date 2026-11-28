@@ -2,22 +2,34 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { routeLocationKey, stringifyQuery } from 'vue-router'
 import HomePage from './HomePage.vue'
-import { VIEW_COMPONENTS } from '../app/viewRegistry.js'
+import { loadVersionDiffCatalog, versionDiffCatalogState } from '../composables/useVersionDiff.js'
 import { FEEDBACK_KEY } from '../shared/feedback.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { messages } from '../locales/messages.js'
 
-const api = vi.hoisted(() => ({
-  hofList: vi.fn(() => Promise.resolve({ items: [] }))
-}))
 const platform = vi.hoisted(() => ({ android: false }))
-const i18n = vi.hoisted(() => ({ locale: null }))
 
-vi.mock('../api/hall-of-fame.js', () => api)
 vi.mock('../composables/usePlatformBridge.js', async importOriginal => ({
   ...await importOriginal(),
   isAndroidApp: () => platform.android,
 }))
+
+vi.mock('../composables/useVersionDiff.js', async () => {
+  const { ref } = await import('vue')
+  return {
+    versionDiffCatalogState: ref({ status: 'idle', pairs: [] }),
+    loadVersionDiffCatalog: vi.fn(),
+  }
+})
+
+const api = vi.hoisted(() => ({
+  hofList: vi.fn(() => Promise.resolve({ items: [] }))
+}))
+const i18n = vi.hoisted(() => ({ locale: null }))
+
+vi.mock('../api/hall-of-fame.js', () => api)
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
   i18n.locale = ref('en')
@@ -32,257 +44,143 @@ vi.mock('../composables/useConnectivity.js', async () => {
   return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
 })
 
-function mountPage(onboarding = null, openFeedback = null) {
+function mountPage({ onboarding = null, openFeedback = null } = {}) {
   return mount(HomePage, {
     global: {
       mocks: { $t: key => key },
-      provide: { [ONBOARDING_KEY]: onboarding, [FEEDBACK_KEY]: openFeedback },
+      provide: {
+        [ONBOARDING_KEY]: onboarding,
+        [FEEDBACK_KEY]: openFeedback,
+        [routeLocationKey]: { query: { view: 'home', data: '11.22.0' } },
+      },
       stubs: {
         RouterLink: {
           props: ['to'],
-          template: '<a :href="typeof to === \'string\' ? to : to.path"><slot /></a>'
-        }
-      }
-    }
+          methods: {
+            href(to) {
+              return typeof to === 'string' ? to : `${to.path}?${stringifyQuery(to.query)}`
+            },
+          },
+          template: '<a :href="href(to)"><slot /></a>',
+        },
+      },
+    },
   })
 }
 
-const stat = (wrapper, index) => wrapper.findAll('.home-stats .home-stat')[index]
-const hrefsOf = wrapper => wrapper.findAll('a').map(a => a.attributes('href')).filter(Boolean)
-
-function destinationOf(href) {
-  const view = /^\/\?view=([\w-]+)$/.exec(href || '')?.[1]
-  if (!view) return href
-  return VIEW_COMPONENTS[view] ?? href
+function queryOf(link) {
+  return new URL(link.attributes('href'), 'https://wotbtools.com').searchParams
 }
 
-describe('HomePage is a showcase, not a navigation surface', () => {
-  beforeEach(() => {
-    api.hofList.mockReset()
-    api.hofList.mockResolvedValue({ items: [], totalItems: 0 })
-    platform.android = false
-    i18n.locale.value = 'en'
-  })
+function comparison(from, to) {
+  return { from: { dataset: from }, to: { dataset: to } }
+}
 
-  it('treats the replay workspace as the only functional navigation entry', () => {
-    const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
-    const replayLinks = hrefsOf(wrapper).filter(href => destinationOf(href) === VIEW_COMPONENTS.replay)
-    expect(replayLinks).toEqual(['/?view=replay'])
-    wrapper.unmount()
-  })
+beforeEach(() => {
+  platform.android = false
+  api.hofList.mockClear()
+  versionDiffCatalogState.value = { status: 'idle', pairs: [] }
+  loadVersionDiffCatalog.mockClear()
+})
 
-  it('lifts sponsorship and feedback into the hero, and the old take-it section and footer are gone', () => {
+describe('home version changes', () => {
+  it('links to the mainline endpoint regardless of the catalog array order', async () => {
     const wrapper = mountPage()
-    const hero = wrapper.get('[data-testid="home-hero"]')
-    expect(hero.get('[data-testid="home-sponsor"]').attributes('href')).toBe('/sponsor')
-    expect(hero.find('[data-testid="home-feedback"]').exists()).toBe(true)
-    for (const selector of ['.home-take', '.home-footer-bar', '.home-take-phone']) {
-      expect(wrapper.find(selector).exists(), selector).toBe(false)
+    expect(loadVersionDiffCatalog).toHaveBeenCalledTimes(1)
+    versionDiffCatalogState.value = {
+      status: 'ready',
+      pairs: [comparison('11.21.0_1', '11.22.0'), comparison('11.21.0', '11.21.0_1')],
     }
+    await flushPromises()
+    const update = wrapper.get('.home-update')
+    expect(wrapper.get('[data-testid="home-hero"]').element.nextElementSibling).toBe(update.element)
+    expect(update.get('[data-testid="home-update-versions"]').text()).toBe('11.21.0_1 → 11.22.0')
+    const link = update.get('[data-testid="home-version-diff"]')
+    expect(Object.fromEntries(queryOf(link))).toEqual({
+      view: 'agent-version-diff', data: '11.22.0', from: '11.21.0_1', to: '11.22.0',
+    })
+    expect(wrapper.findAll('a[href*="view=agent-version-diff"]')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('opens in-app feedback from the hero instead of linking to an external site', async () => {
+  it('keeps the version viewer reachable when the catalog has two endpoints', () => {
+    versionDiffCatalogState.value = {
+      status: 'ready',
+      pairs: [comparison('11.21.0_1', '11.22.0'), comparison('11.21.0_1', '11.22.1')],
+    }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="home-update-versions"]').exists()).toBe(false)
+    expect(Object.fromEntries(queryOf(wrapper.get('[data-testid="home-version-diff"]')))).toEqual({
+      view: 'agent-version-diff', data: '11.22.0',
+    })
+    wrapper.unmount()
+  })
+
+  it.each(['loading', 'error', 'ready'])('keeps the version viewer reachable with a %s catalog and no pairs', status => {
+    versionDiffCatalogState.value = { status, pairs: [] }
+    const wrapper = mountPage()
+    expect(wrapper.find('[data-testid="home-update-versions"]').exists()).toBe(false)
+    expect(Object.fromEntries(queryOf(wrapper.get('[data-testid="home-version-diff"]')))).toEqual({
+      view: 'agent-version-diff', data: '11.22.0',
+    })
+    wrapper.unmount()
+  })
+})
+
+describe('home layout and support', () => {
+  it('ends the home content with version changes', () => {
+    const wrapper = mountPage()
+    const main = wrapper.get('main').element
+    expect([...main.children].map(child => child.classList[0])).toEqual(['home-hero', 'home-update'])
+    wrapper.unmount()
+  })
+
+  it('keeps Android download, sponsorship and feedback on the first screen', async () => {
     const openFeedback = vi.fn()
-    const wrapper = mountPage(null, openFeedback)
-    await wrapper.get('[data-testid="home-feedback"]').trigger('click')
+    const wrapper = mountPage({ openFeedback })
+    const hero = wrapper.get('[data-testid="home-hero"]')
+    expect(hero.findAll('h1').map(heading => heading.text())).toEqual(['WotbTools home.heroTitle'])
+    const support = hero.get('.home-hero-actions')
+    expect(hero.find('a[href*="view=replay"]').exists()).toBe(false)
+    expect(support.get('[data-testid="home-android"]').classes()).toContain('is-primary')
+    expect(support.get('[data-testid="home-android"]').attributes('href')).toBe('/download/android')
+    expect(support.get('[data-testid="home-sponsor"]').attributes('href')).toBe('/sponsor')
+    await support.get('[data-testid="home-feedback"]').trigger('click')
     expect(openFeedback).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
-  it('places a secondary Android download button in the hero on the web', () => {
-    const wrapper = mountPage()
-    const heroLink = wrapper.get('.home-hero a[href="/download/android"]')
-    expect(heroLink.classes()).toContain('is-secondary')
-    expect(heroLink.text()).toContain('android.nav')
-    expect(wrapper.findAll('a[href="/download/android"]')).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it('omits the Android download inside the Android app but keeps sponsorship', () => {
+  it('hides the download on Android while keeping the support links', () => {
     platform.android = true
     const wrapper = mountPage()
-    expect(wrapper.find('a[href="/download/android"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-android"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-sponsor"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-feedback"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('the kicker names the active seasonal theme', () => {
-    const wrapper = mountPage()
-    expect(wrapper.get('.home-hero-kicker').text()).toMatch(/^WOTBTOOLS · uiProfile\.(spring|summer|autumn|winter)$/)
+  it('opens the feature guide from the hero', async () => {
+    const openDirectory = vi.fn()
+    const wrapper = mountPage({ onboarding: { openDirectory } })
+    await wrapper.get('[data-testid="home-onboarding"]').trigger('click')
+    expect(openDirectory).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
-  it('the showcase section carries no links at all', () => {
-    const wrapper = mountPage()
-    const section = wrapper.get('.home-showcase')
-    expect(section.findAll('a')).toHaveLength(0)
-    expect(section.findAll('button')).toHaveLength(0)
-    expect(section.findAll('.home-feature, .home-card').length).toBeGreaterThanOrEqual(4)
-    wrapper.unmount()
-  })
-
-  it('no replay capability tab is surfaced as its own entry', () => {
-    const wrapper = mountPage()
-    for (const view of ['ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
-      expect(wrapper.find(`a[href="/?view=${view}"]`).exists(), view).toBe(false)
-    }
-    wrapper.unmount()
-  })
-
-  it('no destination is duplicated, counted by component not by href', () => {
-    const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
-    const intentionalConversionDuplicates = new Set()
-    const seen = new Map()
-    const duplicated = []
-    for (const href of hrefsOf(wrapper)) {
-      const destination = destinationOf(href)
-      if (seen.has(destination)) {
-        if (!intentionalConversionDuplicates.has(destination)) {
-          duplicated.push(`${href} (same destination as ${seen.get(destination)})`)
-        }
-      } else {
-        seen.set(destination, href)
+  it('resolves all home labels and descriptions in the three locales', async () => {
+    const { default: source } = await import('./HomePage.vue?raw')
+    const literals = [...source.matchAll(/\$t\('([\w.]+)'\)/g)].map(match => match[1])
+    for (const [locale, translations] of Object.entries(messages)) {
+      for (const key of literals) {
+        const value = key.split('.').reduce((node, part) => node?.[part], translations)
+        expect(value, `${locale}:${key}`).toEqual(expect.any(String))
+        expect(value, `${locale}:${key}`).not.toBe('')
       }
     }
-    expect(duplicated, duplicated.join('; ')).toEqual([])
-    wrapper.unmount()
-  })
-
-  it('the five replay views really are one component', () => {
-    for (const view of ['ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
-      expect(VIEW_COMPONENTS[view], view).toBe(VIEW_COMPONENTS.replay)
-    }
-  })
-
-  it('the single CTA is the replay workspace', () => {
-    const wrapper = mountPage()
-    const cta = wrapper.get('.home-cta')
-    expect(cta.text()).toBe('home.replayParse')
-    expect(cta.attributes('href')).toBe('/?view=replay')
-    expect(cta.classes()).toContain('is-primary')
-    expect(wrapper.findAll('.is-primary')).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it('opens the feature directory from the hero tutorial button', async () => {
-    const start = vi.fn()
-    const openDirectory = vi.fn()
-    const wrapper = mountPage({ start, openDirectory })
-    const tutorial = wrapper.get('[data-testid="home-onboarding"]')
-    expect(tutorial.text()).toBe('onboarding.newbie')
-    await tutorial.trigger('click')
-    expect(openDirectory).toHaveBeenCalledTimes(1)
-    expect(start).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('only the first showcase image loads eagerly; the rest stay lazy', () => {
-    const wrapper = mountPage()
-    const imgs = wrapper.findAll('.home-showcase img')
-    expect(imgs.length).toBeGreaterThanOrEqual(4)
-    expect(imgs[0].attributes('loading')).toBe('eager')
-    expect(imgs.slice(1).every(img => img.attributes('loading') === 'lazy')).toBe(true)
-    expect(imgs.every(img => img.attributes('width') && img.attributes('height'))).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('content visibility does not depend on any JS-applied class', () => {
-    const wrapper = mountPage()
-    expect(wrapper.get('.home-stage').classes()).not.toContain('is-revealed')
-    expect(wrapper.html()).not.toContain('is-revealed')
-    wrapper.unmount()
-  })
-
-  it('the panels of the previous homepage are all gone', () => {
-    const wrapper = mountPage()
-    for (const selector of ['.replay-panel', '.analysis-panel', '.quick-panel', '.feature-card', '.record-card', '.home-core-card', '.home-feature-card', '.home-feature-lead']) {
-      expect(wrapper.find(selector).exists(), selector).toBe(false)
-    }
-    wrapper.unmount()
   })
 })
 
-const SHOWCASE_KEYS = [
-  'home.showcasePlaybackTitle', 'home.showcasePlaybackDesc',
-  'home.showcaseArmorTitle', 'home.showcaseArmorDesc',
-  'home.showcaseRatingTitle', 'home.showcaseRatingDesc',
-  'home.showcaseTankopediaTitle', 'home.showcaseTankopediaDesc',
-]
-
-function missingKeys(keys, messages) {
-  const missing = []
-  for (const locale of ['zh', 'en', 'ru']) {
-    for (const key of keys) {
-      const value = key.split('.').reduce((node, part) => (node == null ? node : node[part]), messages[locale])
-      if (typeof value !== 'string' || !value) missing.push(`${locale}:${key}`)
-    }
-  }
-  return missing
-}
-
-describe('HomePage i18n keys all resolve', () => {
-  it('every literal key the template references exists in all three locales', async () => {
-    const [{ default: source }, { messages }] = await Promise.all([
-      import('./HomePage.vue?raw'), import('../locales/messages.js'),
-    ])
-    const keys = [...new Set([...source.matchAll(/\$t\('([\w.]+)'\)/g)].map(m => m[1]))]
-    expect(keys.length).toBeGreaterThan(10)
-    expect(missingKeys(keys, messages), 'literal keys must resolve in zh / en / ru').toEqual([])
-  })
-
-  it('every dynamic showcase key exists in all three locales', async () => {
-    const { messages } = await import('../locales/messages.js')
-    const missing = missingKeys(SHOWCASE_KEYS, messages)
-    expect(missing, `unresolved showcase keys: ${missing.join(', ')}`).toEqual([])
-  })
-})
-
-describe('HomePage accent gradient capability fallback', () => {
-  it('only makes the accent line transparent when background-clip and color-mix are both supported', async () => {
-    const { default: source } = await import('./HomePage.vue?raw')
-    const style = source.slice(source.indexOf('<style scoped>') + '<style scoped>'.length, source.indexOf('</style>'))
-    const transparentAt = style.indexOf('color: transparent;')
-    expect(transparentAt).toBeGreaterThan(-1)
-    const supportsAt = style.lastIndexOf('@supports', transparentAt)
-    expect(supportsAt).toBeGreaterThan(-1)
-    const prelude = style.slice(supportsAt, style.indexOf('{', supportsAt))
-    expect(prelude).toContain('background-clip: text')
-    expect(prelude).toContain('color-mix')
-  })
-})
-
-describe('HomePage winter kicker backing and CTA hierarchy', () => {
-  const styleOf = async () => {
-    const { default: source } = await import('./HomePage.vue?raw')
-    return source.slice(source.indexOf('<style scoped>') + '<style scoped>'.length, source.indexOf('</style>'))
-  }
-
-  it('winter hero kicker keeps its semantic-token canvas backing (F-01)', async () => {
-    const style = await styleOf()
-    const rule = style.match(/\[data-ui-profile='winter'\] \.home-hero-kicker \{[^}]*\}/)
-    expect(rule, 'winter kicker backing rule must exist').toBeTruthy()
-    expect(rule[0]).toContain('background: var(--color-canvas)')
-    expect(rule[0]).not.toMatch(/#[0-9a-fA-F]{3,8}/)
-    expect(rule[0]).toContain('align-self: flex-start')
-    expect(style.match(/\[data-ui-profile='winter'\] \.home-hero-kicker/g)).toHaveLength(1)
-  })
-
-  it('sponsor CTA stays secondary while Replay keeps the only primary (F-02)', async () => {
-    const { default: source } = await import('./HomePage.vue?raw')
-    const style = await styleOf()
-    const rule = style.match(/\.home-sponsor-cta \{[^}]*\}/)
-    expect(rule, 'sponsor cta rule must exist').toBeTruthy()
-    expect(rule[0]).toContain('background: var(--color-surface-1)')
-    expect(rule[0]).toContain('color: var(--color-text-primary)')
-    expect(rule[0]).toContain('var(--color-border-strong)')
-    expect(rule[0]).not.toContain('var(--color-accent)')
-    const primaryVariants = [...source.matchAll(/variant="primary"/g)]
-    expect(primaryVariants).toHaveLength(1)
-    expect(source).toContain('class="home-cta" variant="primary"')
-    expect(source).toContain('data-testid="home-sponsor"')
-  })
-})
+const stat = (wrapper, index) => wrapper.findAll('.home-stats .home-stat')[index]
 
 describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
