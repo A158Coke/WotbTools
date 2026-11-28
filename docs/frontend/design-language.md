@@ -130,7 +130,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
 | `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
 
-科技树使用单行标题栏，百科详情将标题放在车辆信息卡，两者直接展示工作区。
+科技树使用单行标题栏，百科详情将标题放在车辆信息卡，两者直接展示工作区。首页内容卡使用统一的季节卡片底色与磨砂表面，减少透明度时切换为实色，高对比模式使用强边框。
 
 **配图与文字：** 分区配图等比铺满整个横幅。标题、说明、统计和操作所在区域使用随内容宽度渐隐的深色遮罩（`--color-hero-photo-scrim`）。寒冬使用浅色标题和正文，右侧保留原图色彩。手机沿用各分区的竖屏焦点和季节遮罩。
 
