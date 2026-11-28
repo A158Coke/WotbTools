@@ -91,7 +91,7 @@ watch(() => props.open, async (open) => {
   box-sizing: content-box;
   transform: translateX(var(--drawer-swipe-movement-x, 0px));
 }
-.sheet.is-start .sheet-body { padding-inline-end: 0; overflow-y: auto; }
+.sheet.is-start .sheet-body { padding-inline-end: 0; overflow-y: auto; /* 全站滚动条视觉规范：隐藏指示器、保留滚动能力 */ scrollbar-width: none; }
 .sheet.is-end {
   top: 0;
   left: auto;

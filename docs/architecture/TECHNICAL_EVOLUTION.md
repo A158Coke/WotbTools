@@ -863,6 +863,14 @@ llvmpipe；无 debug 扩展时的掩码串 `"WebKit WebGL"` **不是**软渲染�
 
 边界：真机（OnePlus Ace Pro 的反馈）是否同因、换装延迟的视觉可接受性，需要用户本人验证，见研究报告与 PR 说明。
 
+## 37. 2026-11-15～11-27 — 第一方源码 500 行预算收口：#820 三宿主拆分完成
+
+§28 记录的「1500 行 + exact allowlist」门禁在本轮收口为更严格的机制：`scripts/ci/source-line-policy.json` 规定 first-party 生产源码单文件 500 物理行硬上限、测试 1500 行，per-path allowlist 机制整体删除，历史超限文件不再豁免，检查对缺失/畸形策略与缺失 git 历史 fail-closed。§28 点名的超限文件随之全部清零：`tankViewer.js`（6102 行）收敛为 68 行 composition root，由 `scene/tankViewer/` 组合层（sceneHost/tankStatus/tankScene/tankArmor/tankTransport/tankRuntime/tankLoop/tankApi）绑定既有 `scene/viewer/` owner 模块；`playbackScene.js`（5597 行）收敛为 45 行 façade，由 `scene/playback/` 的 sceneHost 与安装器（installSceneState/installSceneAssembly/installRenderLoop/installTransport/installSessionRuntime/installPerfProbe，会话与公开 API 由 createPlaybackSession/createPlaybackApi 承载）装配既有 owner 模块；`BattlePlayback.vue`（2585 行）收敛为 390 行 orchestration root，跨组件回归测试分片为 integration part01–03 与 hud 套件。其间为过 500 行预算引入的 playbackSceneP1..P5 闭包分段是过渡形态，已被上述安装器结构取代；`agent-replay-facets.ts`（1863 行）拆分后余 9 行 re-export，`HoFPage.vue` 2250→351、`HoFAdminPage.vue` 2112→152。#820 的目标升级为「全面模块化：目标 300 行、硬上限 500 行」，issue 保持 OPEN。
+
+上游 Agent release pin 同期演进到 v0.5.4（`deploy/agent/source.json`），延续 §13 的锁定纪律。
+
+边界：本节只记录已合并的门禁机制与拆分事实；300 行目标尚未完成，#820 保持 OPEN。
+
 ## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。

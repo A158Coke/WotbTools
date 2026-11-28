@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div class="admin-page admin-users">
-    <ShowcaseHero class="admin-users-hero" compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">
+    <ShowcaseHero compact section="admin" :kicker="$t('admin.kicker')" :title="$t('admin.title')">
       <template #actions>
         <SegmentedControl
           :model-value="segment"

@@ -170,7 +170,7 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 ```text
  wotb-core     model（Battle / PlayerResult 事实形状）/ ref（Tankopedia）/ util /
-               replay/{event,facts,feature,evidence,map,processing,reconstruction,timeline}（AI 复盘的客户端投影解码与分析）
+               replay/{event,evidence,facts,feature,map,processing,projection,reconstruction,timeline}（AI 复盘的客户端投影解码与分析）
        ↓
  wotb-ai       独立 ai-service（AI 复盘，消费客户端投影）
  wotb-web      single Spring Boot composition root：controller → feature service → mapper → dto
@@ -198,7 +198,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 必须不存在且由测试/构建/发布三处断言**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [`architecture/replay-pipeline.md`](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
-- **独立炮塔**：可选 `PlaybackData.detached_turrets` 由上游 class-8 实体初始化和 Type10 产出权威 owner、AoI 区间及完整三轴位姿。本仓只校验和呈现：原模型炮塔/炮管以枢轴重心化，独立世界位姿按回放时钟插值；缺字段保持旧行为，不按 HP 推断，也不增加二进制解析器。当前正式 pin 为上游 v0.4.23（`deploy/agent/source.json`），见 [`features/battle-playback.md`](features/battle-playback.md)。
+- **独立炮塔**：可选 `PlaybackData.detached_turrets` 由上游 class-8 实体初始化和 Type10 产出权威 owner、AoI 区间及完整三轴位姿。本仓只校验和呈现：原模型炮塔/炮管以枢轴重心化，独立世界位姿按回放时钟插值；缺字段保持旧行为，不按 HP 推断，也不增加二进制解析器。当前正式 pin 以 `deploy/agent/source.json` 为准，见 [`features/battle-playback.md`](features/battle-playback.md)。
 - **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（APK 自带 GeckoView 运行同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，个人回放的 3D / 射击分析与复现 / AI 登录后使用；已验证的官方示例开放匿名 3D/射击；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 固定客户端全链路的逐字段输出，CI 常驻断言解析/批次计算/导出/2D 投影与 golden 一致（2D 时序按文档化容差）；上游升级后重新导出 `wasm-*` 再跑同一组测试。
 - **缺字段**：一律向上游要（改上游 → 发版 → 升级 `source.json`），不在客户端启发式推导，也不在服务端解析。
@@ -332,7 +332,7 @@ frontend/src/locales/en.json
 frontend/src/locales/ru.json
 ```
 
-按功能追加的消息使用 `feature-messages.json`、`tournament-messages.json`、`creator-messages.json`，由 `messages.js` 非破坏性 deep merge 基础 JSON。禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象；已有 key（例如 `replay.processing_job.mixed_league_standard`）必须保留。`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化；Vue i18n 是唯一 reactive locale owner，显示 helper 通过参数接收 locale，不能隐式读取 browser storage。
+按功能追加的消息使用 `feature-messages.json`、`tournament-messages.json`、`creator-messages.json`，由 `messages.js` 非破坏性 deep merge 基础 JSON。禁止在 `main.js` 或组件初始化阶段直接修改 imported locale 对象；已有 key（例如 `workspace.single_replay_required`）必须保留。`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化；Vue i18n 是唯一 reactive locale owner，显示 helper 通过参数接收 locale，不能隐式读取 browser storage。
 
 ### Layout primitives
 
@@ -377,7 +377,7 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 **能力解耦**：AI 与 Playback 不做跨 capability 状态 handoff；tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection/分析结果不丢，只恢复 activeCapability。
 **车辆环线**：已有 WASM `parseResult.players[].gun_marks` → `battleFacts.gunMarks` → 单场 `gun_marks` 列/中文 Excel；缺失和非法保留未知。专用标志共用于数据表、手机卡片、详情、2D/3D 名册与车型标签，回放读取 owner 的 `LocalPlayback.result` 按账号匹配，generic HTTP dataset 不增加字段。实体重入的活动身份选择与场景共用 canonical 首次观测映射（LocalPlayback 内部 sidecar），按时间而非 eid 排序；环线 SVG 显式内联图集以保留 PNG 导出。成就不按玩家跨车汇总，不推断精确百分位或获得时刻；3D 炮管贴花暂未实现。详见 [`字段字典`](reference/replay-parsed-fields.md#车辆环线gun-marks)。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
-**组件所有权**：Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由 `PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于 Display 面并通过 root command 执行 seek + pause；当前车辆详情仍由 `VehicleDetailsPanel.vue` 渲染。车辆状态投影与时钟推进的纯函数由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供；相机（MapRenderRect SSoT）、手势、标注编辑、选中/详情、回放数据/位姿、播放时钟与车辆呈现投影的状态 owner 分别是 `composables/usePlaybackCamera.ts`、`usePlaybackMapGestures.ts`、`usePlaybackAnnotationEditor.ts`、`usePlaybackVehicleSelection.ts`、`usePlaybackReplayData.ts`、`usePlaybackClock.ts` 与 `usePlaybackVehicleProjection.ts`，组件只保留 props/顶层 wiring、模板组合与页面级生命周期。对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused suite，共享 fixture 位于 testing-only `playbackTestHarness.js`；`BattlePlayback.test.js` 与 `BattlePlayback.integration.test.js` 只验证无法由单组件证明的跨组件协作与回归。
+**组件所有权**：Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由 `PlaybackControls.vue`/`AnnotationToolbar.vue` 渲染。`PlaybackTimeline.vue` 是纯 seek bar，事件列表位于 Display 面并通过 root command 执行 seek + pause；当前车辆详情仍由 `VehicleDetailsPanel.vue` 渲染。车辆状态投影与时钟推进的纯函数由 `utils/playbackVehicleState.ts`、`utils/playbackClock.ts` 提供；相机（MapRenderRect SSoT）、手势、标注编辑、选中/详情、回放数据/位姿、播放时钟与车辆呈现投影的状态 owner 分别是 `composables/usePlaybackCamera.ts`、`usePlaybackMapGestures.ts`、`usePlaybackAnnotationEditor.ts`、`usePlaybackVehicleSelection.ts`、`usePlaybackReplayData.ts`、`usePlaybackClock.ts` 与 `usePlaybackVehicleProjection.ts`，组件只保留 props/顶层 wiring、模板组合与页面级生命周期。对应测试按 ownership 分层：地图/标记/手势、控制、时间线、详情面板及时钟/车辆投影各有 focused suite，共享 fixture 位于 testing-only `playbackTestHarness.js`；`BattlePlayback.test.js` 与 `BattlePlayback.integration` 套件（part01–03 / hud，共享 harness）只验证无法由单组件证明的跨组件协作与回归。
 
 基地 runtime state、Assault/Supremacy 字段判据、2D/3D presentation 与地图语义契约见 [`features/battle-playback.md`](features/battle-playback.md)；AI 双 Call、Team Review、Evidence/Validator 契约见 [`architecture/ai-review.md`](architecture/ai-review.md) 与 [`features/team-ai-review.md`](features/team-ai-review.md)。
 
@@ -456,7 +456,7 @@ Admin DTO 在百场/三环的列表与详情携带 `wotbServer` + `wotbAccountId
 
 **Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看/搜索/筛选/下载/删除/审计，禁止人工修改 replay-derived authoritative facts。删除语义与 IAM≠HoF 不变量见 [`features/hall-of-fame.md`](features/hall-of-fame.md)。
 
-Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，仅覆盖 `template.ftl`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 [`auth/keycloak-login-theme.md`](auth/keycloak-login-theme.md)）。
+Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深色登录卡局部毛玻璃 dark-only、浅色无 blur、IdP 动态渲染、`registrationAllowed:false`）；主题文件在 `docker/keycloak/themes/wotbtools/login/`，覆盖 `login.ftl`、`template.ftl`、`background-rotation.ftl` 与 `messages/`、`resources/`（其余认证页经 `registrationLayout` 共享），生产 realm 需手动设 `loginTheme=wotbtools` 并关闭 Registration（见 [`auth/keycloak-login-theme.md`](auth/keycloak-login-theme.md)）。
 
 ---
 
@@ -466,7 +466,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
-站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者；其 Controller / Repository / DTO / 前端通知面板与三语文案已一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
+站内通知的 Boost 服务端子系统已随域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者；其 Controller / Repository / DTO 与数据表由 forward-only `V26__drop_user_notification.sql` 永久删除。5.0 起前端另以本机通知中心形态提供通知能力（`composables/useNotifications.ts` + `app/NotificationPanel.vue`，storage `wotb-notifications`、上限 20 条、不做服务端推送，文案走三语 `notifications.*`），与已删除的 Boost 服务端通知不是同一子系统。
 
 ---
 
@@ -630,7 +630,7 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   TCR 是生产 image transport。独立 `gitee-mirror.yml` 在 main push/manual 时 checkout event SHA，
   只通过普通 push 创建或 fast-forward 更新 Gitee `refs/heads/main`，并复验远端等于该 SHA；不推 tags/其他分支，
   不 prune，不触碰 asset-origin。旧事件被拒绝；既有分叉或竞争导致的非 fast-forward 更新均 fail closed，不自动改写历史。
-  两应用 run 不依赖 mirror job graph；`materialize_source` 只等待 Gitee main 历史包含 requested SHA，
+  两应用 run 不依赖 mirror job graph；构建侧的 source 物化只等待 Gitee main 历史包含 requested SHA（`deploy/tx/build-frontend-from-gitee.sh` / `build-business-api-from-gitee.sh`），
   保留 `GITEE_WAIT_ATTEMPTS=12` / `GITEE_WAIT_INTERVAL_SECONDS=15`，随后创建 exact-SHA worktree。
   等待耗尽即失败，不使用 runner 源码包或 TX→GitHub fallback；日志记录
   `gitee_sync result=PASS` / `source_transport=gitee-mirror`。Git fetch 本身另有 timeout，
@@ -707,7 +707,7 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
 runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
 
-**Flyway 迁移不可变**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
+**Flyway 迁移不可变**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI 在 `ci-deployment.yml` 的「Deployment and infrastructure contracts」job 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
@@ -719,7 +719,8 @@ TX builders 还共用 host build lock；production mutation 另由各宿主 depl
 应用 lane 在 mutation 前执行 current-main/freshness 校验，固定基础设施仍使用各自 maintenance 契约。
 TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`
 （源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell
-直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。这不是 distributed lock。
+直接 `exec 9>` 持锁；冲突时 wrapper 先有界等待（`WOTB_TX_DEPLOY_LOCK_WAIT_SEC`，默认 900s），
+超时后输出当前 holder 诊断并失败。这不是 distributed lock。
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 

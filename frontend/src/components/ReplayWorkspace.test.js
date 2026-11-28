@@ -367,6 +367,29 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
+  it('shows the 3D settings entry in the viewer header and removes it in 2D', async () => {
+    withBattles(1)
+    const wrapper = mountWorkspace('3d')
+    await flushPromises()
+    const entry = wrapper.get('[data-testid="replay3d-settings-entry"]')
+    expect(entry.attributes('data-test')).toBe('pb-settings-entry')
+    expect(entry.attributes('aria-haspopup')).toBe('dialog')
+    expect(entry.attributes('aria-expanded')).toBe('false')
+    const pane = wrapper.getComponent({ name: 'Replay3DPaneMock' })
+    await entry.trigger('click')
+    const opened = pane.props('settingsRequest')
+    expect(opened.open).toBe(true)
+    expect(opened.anchor).toBe(entry.element)
+    await pane.vm.$emit('settings-open', true)
+    await flushPromises()
+    expect(entry.attributes('aria-expanded')).toBe('true')
+    await entry.trigger('click')
+    expect(pane.props('settingsRequest').open).toBe(false)
+    await switchTo(wrapper, 'playback')
+    expect(wrapper.find('[data-testid="replay3d-settings-entry"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['ai', '3d'])('cold-start deep link to %s shows no connectivity verdict until detection settles ONLINE', async (cap) => {
     connectivityState.state.value = 'unknown'
     connectivityState.settled.value = false

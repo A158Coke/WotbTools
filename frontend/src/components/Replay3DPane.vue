@@ -12,6 +12,7 @@ import SceneDistanceSlider from './SceneDistanceSlider.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
 import RecorderReticle from './RecorderReticle.vue'
 import ReplayCameraTools from './ReplayCameraTools.vue'
+import Replay3DSettingsEntry from './Replay3DSettingsEntry.vue'
 import PlaybackVehicleLabels3D from './PlaybackVehicleLabels3D.vue'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 import PlaybackRoster from './PlaybackRoster.vue'
@@ -41,8 +42,9 @@ const props = defineProps({
   selectionRevision: { type: Number, default: 0 },
   shadowRequest: { type: Object, default: null },
   resumeRequest: { type: Object, default: null },
+  settingsRequest: { type: Object, default: null },
 })
-const emit = defineEmits(['resume-consumed'])
+const emit = defineEmits(['resume-consumed', 'settings-open'])
 
 const playbackTeamCssVars = teamCssVars('')
 
@@ -88,6 +90,13 @@ const {
   measurePresentationBounds, observeLaneBounds, isFullscreen, fullscreenSupported, toggleFullscreen, unlockOrientation, exitOwnedFullscreen, onViewportResize,
   shellChrome,
 } = S
+
+watch(settingsOpen, (open) => emit('settings-open', Boolean(open)))
+watch(() => props.settingsRequest, (request) => {
+  if (!request) return
+  if (request.open) toggleSettings(request.anchor ?? null)
+  else closeSettings()
+}, { immediate: true })
 </script>
 
 <template>
@@ -214,6 +223,8 @@ const {
             >
               <PencilRuler :size="16" aria-hidden="true" /> {{ t('recon.map.playback.annot.mode') }}
             </button>
+            <Replay3DSettingsEntry v-if="isFullscreen" compact :open="settingsOpen" @toggle="toggleSettings($event.currentTarget)"
+              data-testid="replay3d-settings-entry-fullscreen" data-test="pb-settings-entry-fullscreen" />
           </ReplayCameraTools>
           <PlaybackTransport
             :fullscreen-supported="fullscreenSupported"
@@ -221,11 +232,8 @@ const {
             :floating-fullscreen="isPhone && isPortrait"
             :display-open="displayOpen"
             display-enabled
-            :settings-open="settingsOpen"
-            settings-enabled
             @toggle-fullscreen="toggleFullscreen()"
             @toggle-display="toggleDisplay"
-            @toggle-settings="toggleSettings"
             :playing="store.playing"
             :speed="store.speed"
             :speeds="PLAYBACK_SPEEDS"
@@ -365,7 +373,7 @@ const {
               <input type="checkbox" data-testid="perf-armor-highlight" :checked="store.armorHighlight" @change="sceneApi.setArmorHighlight($event.target.checked)"> {{ t('agentReplay.perf_armor_highlight') }}
             </label>
             <label class="toggle" :title="t('agentReplay.perf_contact_shadows_hint')">
-              <input type="checkbox" data-testid="perf-contact-shadows" :disabled="!shadowQualityEligible(store.qualityKey)" :checked="store.contactShadows" @change="sceneApi.setContactShadows($event.target.checked)"> {{ t('agentReplay.perf_contact_shadows') }}
+              <input type="checkbox" data-testid="perf-contact-shadows" :disabled="!shadowQualityEligible(store.qualityKey)" :checked="store.contactShadowsPref" @change="sceneApi.setContactShadows($event.target.checked)"> {{ t('agentReplay.perf_contact_shadows') }}
             </label>
             </div>
             <p class="pre-start-perf-note">{{ t('agentReplay.perf_load_note') }}</p>

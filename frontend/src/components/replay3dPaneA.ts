@@ -11,7 +11,6 @@ import type { EventTargetLike } from '../composables/usePlaybackTransport.js'
 import type { Ref } from 'vue'
 import { createPlaybackStore } from '../scene/playbackStore.js'
 import { feedbackPrefs, setFeedbackPref } from '../composables/useFeedbackPrefs.js'
-import { shadowQualityEligible } from '../scene/playback/quality.js'
 import { replaySettingsDiff, type Replay3DSettings } from '../scene/playback/renderSettings.js'
 import { discardReloadReplay, stageReplayForReload } from '../replay-local/replayReloadCache.js'
 import { showToast } from '../composables/useToast.js'
@@ -84,12 +83,13 @@ function currentSettings(): Replay3DSettings {
     logdepth: S.store.logdepth,
     dynres: S.store.dynres,
     armorHighlight: S.store.armorHighlight,
-    contactShadows: S.store.contactShadows,
+    contactShadows: S.store.contactShadowsPref ?? false,
     battleSound: feedbackPrefs.value.battleSound,
   }
 }
 function toggleSettings(anchor: HTMLElement | null): void {
   if (settingsOpen.value) { settingsOpen.value = false; return }
+  if (uiHidden.value) setUiHidden(false)
   displayOpen.value = false
   S.closeAnnotation()
   settingsDraft.value = currentSettings()
@@ -101,7 +101,6 @@ function setDraftQuality(key: Replay3DSettings['qualityKey']): void {
   settingsDraft.value = {
     ...settingsDraft.value,
     qualityKey: key,
-    contactShadows: shadowQualityEligible(key) ? settingsDraft.value.contactShadows : false,
   }
 }
 async function saveSettings(): Promise<void> {
@@ -122,7 +121,7 @@ async function stageReloadReplay(contactShadows?: boolean): Promise<void> {
   const capturedFiles = (props.replayFiles ?? []).filter((item): item is File => item instanceof File)
   const files = capturedFiles.includes(file) ? capturedFiles : [file, ...capturedFiles]
   const selectionRevision = props.selectionRevision
-  const shadowTarget = contactShadows ?? S.store.contactShadows
+  const shadowTarget = contactShadows ?? S.store.contactShadowsPref ?? false
   let reloadId: string | null = null
   try {
     reloadId = await stageReplayForReload({
@@ -218,7 +217,6 @@ watch(() => props.file, () => {
   controlsDocked.value = false
   settingsOpen.value = false
   S.resetAnnotationState()
-  S.sceneApi?.setContactShadows?.(false)
 })
 const { isPhone } = usePlaybackPhoneForm()
 const { isPortrait } = usePlaybackPortraitViewport()

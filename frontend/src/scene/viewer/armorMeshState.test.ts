@@ -67,10 +67,24 @@ describe('applyArmorStateToMesh — 激活板', () => {
     it('碰撞模式材质：按声明厚度着色（colorOf 输出）', () => {
         const node = meshNamed('hull_state_01_armor_10')
         applyArmorStateToMesh(node, params({ collisionMode: true }))
-        const mat = node.material as THREE.MeshStandardMaterial
+        const mat = node.material as THREE.MeshBasicMaterial
+        expect(mat.isMeshBasicMaterial).toBe(true)
+        expect(mat.toneMapped).toBe(false)
         expect(mat.color.getHex()).toBe(SCENE_RESULT_COLORS.BLOCKED)
-        expect(mat.opacity).toBe(0.95)
+        expect(mat.opacity).toBe(1)
+        expect(mat.transparent).toBe(false)
         expect(mat.depthWrite).toBe(true)
+    })
+
+    it('碰撞模式间隙甲：厚度决定半透明，保持双面与深度写入', () => {
+        const node = meshNamed('hull_state_01_armor_11')
+        applyArmorStateToMesh(node, params({ collisionMode: true, spaced: true, key: 'hull:11', plateId: '11' }))
+        const mat = node.material as THREE.MeshBasicMaterial
+        expect(mat.isMeshBasicMaterial).toBe(true)
+        expect(mat.opacity).toBeCloseTo(0.725)
+        expect(mat.transparent).toBe(true)
+        expect(mat.depthWrite).toBe(true)
+        expect(mat.side).toBe(THREE.DoubleSide)
     })
 
     it('state_XX 前缀命名网格与普通网格同路径（key/plateId 直通）', () => {
@@ -132,7 +146,7 @@ describe('反复切态与材质所有权', () => {
         const firstSpy = vi.spyOn(first, 'dispose')
         applyArmorStateToMesh(node, params({ collisionMode: true }))
         expect(firstSpy).toHaveBeenCalledTimes(1)
-        expect((node.material as THREE.MeshStandardMaterial).opacity).toBe(0.95)
+        expect((node.material as THREE.MeshBasicMaterial).opacity).toBe(1)
         replaceArmorMaterial(node, gltf)
         expect(gltfSpy).not.toHaveBeenCalled()
         expect(node.material).toBe(gltf)

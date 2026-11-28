@@ -31,10 +31,22 @@ require_existing_lock_file "$periphery_lock_file"
 if [[ -n "${PERIPHERY_DEPLOY_LOCK_FD:-}" ]]; then
   [[ "$PERIPHERY_DEPLOY_LOCK_FD" == 9 ]] || fail 'Unsupported inherited Periphery lock fd.'
   { true >&9; } 2>/dev/null || fail 'Inherited Periphery lock fd is unavailable.'
+  flock -n 9 || fail "Another $periphery_target host mutation is running."
 else
   exec 9>"$periphery_lock_file"
+  periphery_lock_wait="${PERIPHERY_LOCK_WAIT_SEC:-900}"
+  if ! flock -w "$periphery_lock_wait" 9; then
+    echo "Another $periphery_target host mutation is running (waited ${periphery_lock_wait}s)." >&2
+    if command -v lsof >/dev/null 2>&1; then
+      echo "Current lock file holders:" >&2
+      lsof "$periphery_lock_file" >&2 || true
+    elif command -v fuser >/dev/null 2>&1; then
+      echo "Current lock file holders:" >&2
+      fuser -v "$periphery_lock_file" >&2 || true
+    fi
+    fail "the $periphery_target host mutation lock was not released within ${periphery_lock_wait}s."
+  fi
 fi
-flock -n 9 || fail "Another $periphery_target host mutation is running."
 
 artifact_sha="$(sha256sum "$artifact" | awk '{print $1}')"
 [[ "$artifact_sha" == "$PERIPHERY_SHA256" ]] || fail \

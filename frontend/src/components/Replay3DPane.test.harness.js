@@ -28,6 +28,7 @@ vi.mock('../composables/useConnectivity.js', async () => {
 vi.mock('../scene/playbackScene.js', () => {
   playback.init = vi.fn((container, store, _labelOverlay, options = {}) => {
     store.contactShadows = options.contactShadowOverride === true
+    store.contactShadowsPref = options.contactShadowOverride === true
     let generation = 0
     const api = {
       store,
@@ -65,7 +66,7 @@ vi.mock('../scene/playbackScene.js', () => {
       setLabelPrefs: vi.fn(),
       setBattleMarkers: vi.fn(),
       setQuality: vi.fn(),
-      setContactShadows: vi.fn((on) => { store.contactShadows = !!on }),
+      setContactShadows: vi.fn((on) => { store.contactShadows = !!on; store.contactShadowsPref = !!on }),
       applyRenderSettings: vi.fn(),
       setArmorHighlight: vi.fn((on) => { store.armorHighlight = !!on }),
       setPaused: vi.fn(),
@@ -135,6 +136,10 @@ export async function openDetailsViaScene(eid) {
 }
 
 export function mountPane(props = {}) {
+  const manualAutoStart = !Object.prototype.hasOwnProperty.call(props, 'autoStartUserId')
+  if (manualAutoStart) {
+    try { localStorage.setItem('wotb.pb.3d-auto-start:manual-test', '0') } catch (e) {}
+  }
   const states = new WeakMap()
   const getState = file => {
     if (!states.has(file)) states.set(file, shallowReactive({ canonical: null, sceneState: 'idle' }))
@@ -149,7 +154,7 @@ export function mountPane(props = {}) {
     },
   }
   return mount(Replay3DPane, {
-    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...props },
+    props: { file: mkFile('battle.wotbreplay'), active: true, playbackSession, ...(manualAutoStart ? { autoStartUserId: 'manual-test' } : {}), ...props },
     global: { mocks: { $t: translate } },
   })
 }

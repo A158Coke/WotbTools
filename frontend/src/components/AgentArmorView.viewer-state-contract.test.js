@@ -172,7 +172,8 @@ describe('spaced armor surface selection', () => {
     expect(flips).toHaveLength(3)
   })
   it('厚度视图间隙甲材质 DoubleSide，主装甲保持 FrontSide', () => {
-    expect(kernel).toMatch(/side: node\.userData\.armorSection === 'spaced' \? THREE\.DoubleSide : THREE\.FrontSide,/)
+    expect(kernel).toMatch(/function createThicknessMaterial\(mesh: THREE\.Mesh, kind: ThicknessClass\): THREE\.MeshBasicMaterial \{/)
+    expect(kernel).toMatch(/side: kind === 'spaced' \? THREE\.DoubleSide : THREE\.FrontSide,/)
   })
 })
 

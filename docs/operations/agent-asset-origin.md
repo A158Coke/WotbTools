@@ -96,9 +96,10 @@ OTA）解析**；禁止直接读 `ANDROID_ASSET_BASE` / `VITE_ASSET_BASE_URL`，
 - `cover/`、`tank_images/`（含 `crops.json`）
 - `research/**`（配置器 / 科技树 / 模块）
 - `ui/**`：客户端 UI 单图元素（国家旗帜 / 勋章 / 技能图标 / 锦标赛 / 大厅图标，2026-11-25 起）。
-  坦克目录 34 条素材（22 图标 + 9 张 `flag_tutor-tank_*` 封面布旗 + 3 张 USA/Germany/China
-  filter 补全）经 `/ui/flags/**`、`/ui/lobby-icons/**` 取用；封面用布旗作整幅背景（位于坦克图
-  下层），筛选统一 `flag_filter_*`；bundle 内不再保留 `tank-catalog` 图片。
+  坦克目录 25 条素材（9 条 `flag_tank-tree_*@2x` 国籍筛选/页签旗 + 9 张 `flag_tutor-tank_*`
+  封面布旗 + 7 条类别/车种图标）经 `/ui/flags/**`、`/ui/lobby-icons/**` 取用；封面用布旗作
+  整幅背景（位于坦克图下层，科技树节点卡同用），筛选与科技树国别页签统一 `flag_tank-tree_*`
+  （2026-11-27 起；origin 文件集不变）；bundle 内不再保留 `tank-catalog` 图片。
 - `map2d/`：Web 地图预览在显式选择 dataset 时 dataset 优先、bundled 兜底；Android OTA
   overlay 走 `/agent-assets/v/<id>/map2d/`
 
@@ -177,7 +178,7 @@ Frontend 镜像的发布由 TX 本机构建脚本 `deploy/tx/build-frontend-from
   GitHub 侧只把 TX builder 脚本、轻量 Agent WASM archive（`deploy/agent/source.json` 锁定）
   与可选 pinned Sponsor bundle 暂存到 TX。
 - `deploy/tx/build-frontend-from-gitee.sh` 复用 production Gitee clone 上的 host build lock
-  （与 TX1 Business API 缓存及锁分离）；`materialize_source` 只从 Gitee main 历史取得
+  （与 TX1 Business API 缓存及锁分离）；source 物化只从 Gitee main 历史取得
   requested exact SHA：保留 12 次 × 15 秒等待模型，等待耗尽即 fail closed，
   不使用源码 bundle 或 TX→GitHub 后备。
 - 随后创建 exact-SHA worktree、用 SHA256 验证 WASM、构建镜像，并在任何 registry 写入前

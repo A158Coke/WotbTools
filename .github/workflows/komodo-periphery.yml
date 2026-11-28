@@ -158,7 +158,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 15m
+          command_timeout: 25m
           envs: SOURCE_SHA,PERIPHERY_TARGET
           script: |
             set -Eeuo pipefail
@@ -304,7 +304,7 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 15m
+          command_timeout: 25m
           envs: SOURCE_SHA,PERIPHERY_TARGET,KOMODO_PERIPHERY_ONBOARDING_KEY
           script: |
             set -Eeuo pipefail
@@ -452,7 +452,7 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          command_timeout: 15m
+          command_timeout: 25m
           envs: SOURCE_SHA,PERIPHERY_TARGET,KOMODO_PERIPHERY_ONBOARDING_KEY
           script: |
             set -Eeuo pipefail
