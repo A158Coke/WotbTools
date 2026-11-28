@@ -1,0 +1,5 @@
+.tp-param-value { grid-column: 1; text-align: end; white-space: nowrap; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
+.tp-param-unit { grid-column: 2; text-align: start; color: var(--color-text-secondary); font: var(--type-caption); }
+.tp-param-delta { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-1); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
+.tp-param-delta.is-good { color: var(--color-success); }
+.tp-param-delta.is-bad { color: var(--color-danger); }

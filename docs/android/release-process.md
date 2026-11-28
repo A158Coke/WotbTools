@@ -15,7 +15,7 @@ Stage 在主包回读、建 tag 和 staging 身份核验后，按作业启动时
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本由显式 `version` 输入决定：自动续跑传入 stage 解析出的同一版本，手动 recovery 由操作者显式给出（见下节）。
-当前源码版本：**5.7.5 / 5007005**（见 [5.7.5](releases/5.7.5.md)）。Native Bridge v4；最低支持版本由仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 决定（当前 5004001，5.4.1 起已在 production 生效），后续 patch 不抬门槛。
+当前源码版本：**5.8.0 / 5008000**（见 [5.8.0](releases/5.8.0.md)）。Native Bridge v4；最低支持版本由仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 决定（当前 5004001，5.4.1 起已在 production 生效），后续 patch 不抬门槛。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
 Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
@@ -89,6 +89,15 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - 现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选 versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同。
 - **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ stage 成功即由 `Android Auto Publish` 自动请求 guarded publish（显式 `version=<候选>`、`auto_publish=true`）；它**不等待**基础设施 workflow → ⑤ publish 的 runtime readiness 是真正的 gate：基础设施未就绪时 fail-closed、不写 `version.json` → ⑥ 基础设施成功后对同一 immutable candidate 做 recovery publish，并回读 production `version.json`。真机测试不是这一步的审批门：stage 的技术门与 publish 现有守卫才是发布条件，真机冒烟 / 回归按「Rollout 与验证」在 rollout 之后执行。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
 - **发布说明**：继承门槛的 minor/patch 候选，`Minimum supported version` 行写 `raised to X000000 (X.0.0 floor, inherited from unpublished X.0.0)`。
+
+## Agent `/diffs` 数据通道门禁（5.8.0+）
+
+5.8.0 起 bundled frontend 含「版本变更」页，依赖资产 origin 的 `/diffs` 静态通道。为避免「文档写了前置、CI 不拦」：
+
+- `android-stage` 在 preflight 分类之后、构建/签名/落位之前执行 `scripts/android-release/steps/check-agent-diffs-ready.sh <origin> <wotbVersion>`；
+- publish readiness（`publish-08-api-readiness.sh`）对 staged 版本再执行一次；
+- 检查内容：`/diffs/index.json`（HTTP 200 / schema 1 / pair 非空）→ 每个 pair 的 `summary.json`（schema 1，且自带的 `pair.from/to` 的 `dataset`/`release` 必须与 index 逐项一致——旧 summary 放在新路径下同样失败）→ pair 两端 `/v/<dataset>/version.json` 的 `release` 与 pair 元数据一致（pair 的 `release` 必须是两端的非空字符串，缺字段/空值/错类型同样失败）；任一失败即 `exit 1`（stage 不会产生不可变候选）；前端 `fetchPairSummary` 也做同一身份校验，不一致直接进入错误态；
+- `wotbVersion < 5.8.0` 跳过（页面尚未随包）。通道发布后门禁自动放行，无需改代码。
 
 ## 两阶段发布（stage → publish）
 

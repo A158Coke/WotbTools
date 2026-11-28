@@ -8,6 +8,7 @@ const SRC = fileURLToPath(new URL('../', import.meta.url))
 const OWNERS: Record<string, string[]> = {
   'reka-ui': [
     'components/AppDialog.vue',
+    'components/AppSelectMenu.vue',
     'components/AppSheet.vue',
     'components/AppTooltip.vue',
     'components/BattlePicker.vue',

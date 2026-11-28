@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { applyArmorStateToMesh, replaceArmorMaterial } from './armorMeshState.js'
 import { thicknessToColor } from './armorThicknessPalette.js'
-import { SCENE_RESULT_COLORS } from './shotResultPalette.js'
 import type { ArmorMeshStateParams } from './armorMeshState.js'
 
 const THICKNESS: Record<string, number> = { 'hull:10': 100, 'hull:11': 45, 'turret:2': 250, 'gun:3': 30 }
@@ -70,7 +69,8 @@ describe('applyArmorStateToMesh — 激活板', () => {
         const mat = node.material as THREE.MeshBasicMaterial
         expect(mat.isMeshBasicMaterial).toBe(true)
         expect(mat.toneMapped).toBe(false)
-        expect(mat.color.getHex()).toBe(SCENE_RESULT_COLORS.BLOCKED)
+        // 调色板已连续渐变化；这里只锁"材质色来自 colorOf"的接线（100mm = SPLASH 锚点）。
+        expect(mat.color.getHex()).toBe(thicknessToColor(100))
         expect(mat.opacity).toBe(1)
         expect(mat.transparent).toBe(false)
         expect(mat.depthWrite).toBe(true)

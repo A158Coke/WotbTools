@@ -20,6 +20,8 @@
     --pb-reticle-ink: #33ff33;
     --pb-reticle-outline: rgb(0 0 0 / .7);
     --color-qr-surface: #ffffff;
+    --color-armor-note-ink: #f8fbff;
+    --color-armor-note-base: #102033;
     --theme-preview-spring-canvas: #08140f;
     --theme-preview-spring-accent: #f2b450;
     --theme-preview-spring-image: url("../../assets/theme/theme-spring-wide.webp");
@@ -47,6 +49,10 @@
     --color-surface-2: #2f2311;
     --color-surface-3: #3e2f18;
     --color-surface-1-glass: rgb(35 26 9 / .88);
+    --color-card-fill: rgb(35 26 9 / .94);
+    --color-card-section: rgb(35 26 9 / .40);
+    --color-card-border: rgb(250 209 135 / .26);
+    --color-tree-connector: #aa9063;
     --color-surface-2-glass: rgb(47 35 17 / .86);
     --color-surface-3-glass: rgb(62 47 24 / .84);
 
@@ -109,6 +115,10 @@
     --color-surface-2: #14271f;
     --color-surface-3: #1b3228;
     --color-surface-1-glass: rgb(14 29 23 / .88);
+    --color-card-fill: rgb(14 29 23 / .94);
+    --color-card-section: rgb(14 29 23 / .40);
+    --color-card-border: rgb(172 224 197 / .26);
+    --color-tree-connector: #779d8d;
     --color-surface-2-glass: rgb(20 39 31 / .86);
     --color-surface-3-glass: rgb(27 50 40 / .84);
 
@@ -171,6 +181,10 @@
     --color-surface-2: #2a1d10;
     --color-surface-3: #362516;
     --color-surface-1-glass: rgb(32 22 12 / .88);
+    --color-card-fill: rgb(32 22 12 / .94);
+    --color-card-section: rgb(32 22 12 / .40);
+    --color-card-border: rgb(248 188 146 / .26);
+    --color-tree-connector: #a88d78;
     --color-surface-2-glass: rgb(42 29 16 / .86);
     --color-surface-3-glass: rgb(54 37 22 / .84);
 
@@ -233,6 +247,10 @@
     --color-surface-2: #f5f8fc;
     --color-surface-3: #e2ebf5;
     --color-surface-1-glass: rgb(255 255 255 / .88);
+    --color-card-fill: rgb(255 255 255 / .94);
+    --color-card-section: rgb(255 255 255 / .40);
+    --color-card-border: rgb(255 255 255 / .80);
+    --color-tree-connector: #425870;
     --color-surface-2-glass: rgb(245 248 252 / .86);
     --color-surface-3-glass: rgb(226 235 245 / .84);
 
@@ -321,7 +339,20 @@
     --elevation-3: 0 12px 32px rgb(0 0 0 / .5);
     --theme-glass: rgb(11 15 17 / .72);
     --color-surface-1-glass: rgb(17 23 26 / .88);
+    --color-card-fill: rgb(17 23 26 / .94);
+    --color-card-section: rgb(17 23 26 / .40);
+    --color-card-border: rgb(161 189 206 / .26);
+    --color-tree-connector: #819aaf;
     --color-surface-2-glass: rgb(23 32 36 / .86);
     --color-surface-3-glass: rgb(30 41 46 / .84);
+  }
+  :root, [data-scene-surface] {
+    --color-card: var(--color-card-fill);
+  }
+
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    :root, [data-scene-surface] {
+      --color-card: var(--color-surface-1);
+    }
   }
 }
