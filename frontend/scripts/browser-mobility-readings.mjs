@@ -84,6 +84,8 @@ try {
     results.push({ profile, width, geometry })
   }
   await page.emulate({ width: 1280, height: 900, touch: false, deviceScaleFactor: 1 })
+  // 从 375px 回到 1280px 时 --sidebar-w 会过渡；等内容区稳定后再量 range 并派发原生拖拽。
+  await page.animationsSettled()
   if (evidence) {
     browser.client.on('Page.screencastFrame', (params, session) => {
       if (session !== sessionId) return
