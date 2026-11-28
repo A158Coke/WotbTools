@@ -54,6 +54,7 @@
 - `tokens.css` 保留现有 layout class；它们从 `tokens/scale.css` 读取 `--layout-content-max` / `--layout-wide-max` / `--layout-workspace-max` 与 `--gutter`。当前最大宽度分别为 1420 / 1720 / 1760px；文本阅读区另用 `--reading-measure`，不限制表格宽度。
 - Showcase 页面层位于 `showcase.css`、`showcase-pages.css`、`showcase-rankings.css`、`showcase-cohesion.css` 和 `showcase-regressions.css`；Profile / HoF 的局部装饰也在这层，颜色全部取语义 token。
 - 页面底色由语义 token 提供，首页插图由首页组件的独立图片区域拥有；Home / Contact / 回放的通用按钮与表格由语义 token 提供，不按主题另写覆盖。
+- 页面环境背景由 `AppShell.vue` 管理。首屏及切换主题或横竖屏时先显示画布底色，当前背景图解码成功后淡入。减少动效时直接显示。旧主题的解码结果不能覆盖当前主题，图片解码失败时沿用画布底色。
 - Showcase Hero（`ShowcaseHero.vue`，design-language DC-THM-03…06、DC-THM-12）按导航分区使用固定 key visual（`src/shared/sectionHeroes.ts` 是唯一映射表）：名人堂三个榜（单场 / 百场 / 三环）、坦克百科列表 / 详情、回放工作台、科技树、地图预览、赛事、社区、账户、文档与后台页；名人堂、社区、赛事等完整档保留 stats / actions，工具页与后台用 compact 档。名人堂单场榜第 1 页在 Hero 之下另有 `HofPodium.vue` 前三名领奖台（大屏 2 · 1 · 3，小屏只显示第 1 名；车辆图缺失或资产源未配置时只隐藏图片），表格仍完整列出前三名。
 - 回放赛后数据的联赛概览（`BattleTable.vue` 的 `.league-overview`）是比分主视觉：复用 `replay` 分区图（`hero-replay.webp`）+ **均匀**遮罩（`--color-canvas` 86%，两队文字左右分布，不用 Hero 的左深右浅遮罩），队伍 Rating 用 `--type-display-hero`，胜方强调色。
 - 首页（`HomePage.vue`，**纯展示页**）**不承担导航**：`AppSidebar.vue`（桌面 / 平板）与 `AppNavDrawer.vue`（手机抽屉）已覆盖 `PRIMARY_NAV` 的全部入口，首页再摆功能卡就是抄侧边栏。功能导航只有 Replay Workspace 一个。此外首页保留 Android 下载（仅 Web 首屏按钮；Android App 内不渲染）、赞助、站内反馈等非功能 / 转化入口，三者都在首屏。由 `HomePage.test.js` 按语义锁定，不写死「恰好 N 个链接」。分段为 ① 整屏 Hero（主视觉、标题、主按钮、数据带；大屏右下为赞助卡 + 反馈行，小屏紧接主视觉之后依次是赞助卡、反馈）② 能力展示（两段整幅截图 + 叠字，装甲段带跳弹 / 穿深 / 击穿概率标注；两张卡片；**整节无任何链接**）。旧的「带走它」转化节与页脚已删除。小屏与 Android App 用同一套首页。

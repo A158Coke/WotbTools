@@ -40,8 +40,10 @@ const sizes = [
   { id: 'tablet', width: 900, height: 900, profile: 'autumn', touch: true },
   { id: 'desktop', width: 1280, height: 850, profile: 'summer', touch: false },
 ]
+const renderingSizes = [sizes.find(size => size.width === 390), sizes.at(-1)]
+const renderingCases = renderingSizes.flatMap(size => seasons.map(profile => ({ ...size, profile, key: 'render-' + size.width + '-' + profile })))
 const only = process.argv.slice(2)
-const scenarioNames = ['probe-scrollport', ...actors.map(a => 'role-' + a.name), ...sizes.map(s => 'layout-' + s.id), ...seasons.map(p => 'theme-' + p)]
+const scenarioNames = ['probe-scrollport', 'backdrop-desktop', 'backdrop-mobile', ...actors.map(a => 'role-' + a.name), ...sizes.map(s => 'layout-' + s.id), ...seasons.map(p => 'theme-' + p), ...renderingCases.map(c => c.key)]
 for (const prefix of only) assert.ok(scenarioNames.some(name => name.startsWith(prefix)), 'Unknown scenario prefix: ' + prefix)
 const output = fileURLToPath(new URL('../../tmp/admin-contract/', import.meta.url))
 const domains = [
@@ -193,6 +195,99 @@ async function themes(profile, page, rows) {
     rows.push({ view, actor: actor.name, ...facts, controls: controlShape.length, errors })
   }
 }
+async function backdrop(size, page, rows) {
+  const reduced = size.touch
+  await page.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduced ? 'reduce' : 'no-preference' }] }, page.sessionId)
+  await page.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    const decode = HTMLImageElement.prototype.decode
+    window.backdropDecodes = {}
+    HTMLImageElement.prototype.decode = function () {
+      const match = this.src.match(/backdrop-(spring|summer|autumn|winter)-(wide|portrait)/)
+      if (!match) return decode.call(this)
+      return decode.call(this).then(() => new Promise(resolve => { window.backdropDecodes[match[1]] = resolve }))
+    }` }, page.sessionId)
+  await visit(page, 'more', actors[1])
+  await waitElement(page, '[data-testid=theme-winter]')
+  const ready = "document.querySelector('.app-backdrop').classList.contains('is-ready')"
+  const waitDecode = theme => page.waitForValue('typeof window.backdropDecodes[' + JSON.stringify(theme) + ']', type => type === 'function', { timeout: 5000, label: theme + ' backdrop decode' })
+  const release = theme => page.callWith(name => window.backdropDecodes[name](), theme)
+  const hidden = async () => {
+    assert.equal(await page.evaluate(ready), false, 'background must wait for the current decode')
+    assert.equal(await page.evaluate("getComputedStyle(document.querySelector('.app-backdrop')).opacity"), '0')
+  }
+  await waitDecode(size.profile)
+  await hidden()
+  await page.tapSelector('[data-testid=theme-winter]', size.touch)
+  await waitDecode('winter')
+  await release(size.profile)
+  await hidden()
+  await release('winter')
+  await page.waitForValue(ready, Boolean)
+  const style = await page.probe(() => {
+    const s = getComputedStyle(document.querySelector('.app-backdrop'))
+    return { opacity: s.opacity, duration: parseFloat(s.transitionDuration), property: s.transitionProperty, image: s.backgroundImage }
+  })
+  assert.ok(style.image.includes('backdrop-winter-' + (size.touch ? 'portrait' : 'wide')))
+  assert.equal(style.duration === 0, reduced)
+  if (reduced) assert.equal(style.opacity, '1')
+  else assert.equal(style.property, 'opacity')
+  rows.push({ theme: 'winter', reduced, duration: style.duration, errors: [] })
+}
+
+function inspectRendering() {
+  const hero = document.querySelector('.showcase-hero')
+  const fields = [...document.querySelectorAll('#main input:not([type]), #main input:is([type=text],[type=search],[type=number]), #main textarea')]
+    .filter(el => !el.disabled && !el.readOnly && el.getClientRects().length)
+  const clipboardData = new DataTransfer()
+  clipboardData.setData('text/plain', '12345')
+  const blockedPaste = fields.filter(el => !el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData })))
+    .map(el => el.id || el.name || el.tagName)
+  return {
+    reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    profile: document.documentElement.dataset.uiProfile,
+    heroMotion: [...window.heroMotion, ...hero.getAnimations({ subtree: true }).map(a => a.constructor.name)],
+    fonts: [...document.fonts].map(face => face.family),
+    fields: fields.length, blockedPaste,
+  }
+}
+
+async function rendering(size, page, rows) {
+  const fontRequests = []
+  await page.client.send('Network.enable', {}, page.sessionId)
+  page.client.on('Network.requestWillBeSent', (event, session) => {
+    if (session === page.sessionId && event.type === 'Font') fontRequests.push(event.request.url)
+  })
+  await page.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, page.sessionId)
+  await page.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `
+    window.heroMotion = []
+    for (const type of ['animationstart', 'transitionrun']) {
+      document.addEventListener(type, event => {
+        if (event.target.closest?.('.showcase-hero')) window.heroMotion.push(event.animationName || event.propertyName)
+      }, true)
+    }` }, page.sessionId)
+  for (const [view, selector] of Object.entries(views)) {
+    fontRequests.length = 0
+    const actor = actors.find(a => a.allowed.includes(view))
+    await visit(page, view, actor)
+    await waitElement(page, selector)
+    await waitElement(page, '.app-backdrop.is-ready')
+    await page.evaluate('document.fonts.ready')
+    await page.animationsSettled()
+    const state = await page.probe(inspectRendering)
+    const errors = []
+    if (!state.reduced || state.profile !== size.profile) errors.push('unexpected motion preference or theme')
+    if (state.heroMotion.length) errors.push('hero moved with reduced motion')
+    if (fontRequests.length || state.fonts.length) errors.push('downloadable fonts present')
+    if (state.blockedPaste.length) errors.push('paste canceled')
+    rows.push({ view, ...state, fontRequests: [...fontRequests], errors })
+    if (size.profile === 'summer' || size.profile === 'winter') {
+      const shot = await page.client.send('Page.captureScreenshot', { format: 'webp', quality: 82 }, page.sessionId)
+      await writeFile(resolve(output, size.key + '-' + view + '.webp'), Buffer.from(shot.data, 'base64'))
+    }
+  }
+  if (!rows.some(row => row.fields > 0)) throw new Error('no editable fields tested')
+}
+
 async function layout(size, page, rows) {
   const insets = { top: 0, right: 0, bottom: 0, left: 0, ...size.insets }
   await chrome.client.send('Emulation.setSafeAreaInsetsOverride', { insets }, page.sessionId)
@@ -253,9 +348,13 @@ try {
     assert.ok(probe.failures.some(message => message.includes('nested-button')), 'real overlay remains a failure')
     rows.push({ errors: [] })
   })
+  for (const size of [{ ...sizes.at(-1), profile: 'summer' }, { ...renderingSizes[0], profile: 'spring' }]) {
+    await scenario(size.touch ? 'backdrop-mobile' : 'backdrop-desktop', size, (page, rows) => backdrop(size, page, rows))
+  }
   for (const actor of actors) await scenario('role-' + actor.name, sizes.at(-1), (page, rows) => roleMatrix(actor, page, rows))
   for (const size of sizes) await scenario('layout-' + size.id, size, (page, rows) => layout(size, page, rows))
   for (const profile of seasons) await scenario('theme-' + profile, { ...sizes.at(-1), profile }, (page, rows) => themes(profile, page, rows))
+  for (const size of renderingCases) await scenario(size.key, size, (page, rows) => rendering(size, page, rows))
 } finally {
   await chrome.close()
   await server.close()
