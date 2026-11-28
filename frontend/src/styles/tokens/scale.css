@@ -1,5 +1,13 @@
 @layer tokens;
 
+/* 桌面侧栏宽度需要可插值，才能让折叠/展开随 --duration-base 平滑过渡。
+   注册为长度后，所有 --sidebar-w 消费方自动跟随同一个值，保持单一 SSOT。 */
+@property --sidebar-w {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
 @layer tokens {
   :root {
     --font-size-playback-feed: 17px;
@@ -149,6 +157,8 @@
     --duration-base: 200ms;
     --duration-slow: 300ms;
     --ease-standard: cubic-bezier(.2, 0, 0, 1);
+
+    transition: --sidebar-w var(--duration-base) var(--ease-standard);
 
     --focus-outline: 2px solid var(--color-accent);
     --focus-outline-offset: 2px;
