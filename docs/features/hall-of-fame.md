@@ -101,7 +101,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 
 - `findByIdForUpdate`（PESSIMISTIC_WRITE 行锁）使 APPROVE / REJECT / CANCEL 从 PENDING → terminal **只成功一次**；败者得 `HUNDRED_SUBMISSION_NOT_PENDING`（409）。
 - APPROVE 事务内重新读取 CURRENT（行锁），以 MANUAL 的冻结申报场均比较（`HUNDRED_APPROVE_STALE`，409）；旧 CURRENT → SUPERSEDED，新 submission → CURRENT。审批端点没有成绩请求体。
-- REJECT / 删除 CURRENT 原因强制（分类 + OTHER 必填文本）。
+- REJECT 原因强制（分类 + OTHER 必填文本）；管理员删除任意状态的百场记录均要求原因（分类 + OTHER 必填文本，V50 起状态无关物理删除）。
 - **proof 生命周期**：截图以 base64 存 DB，5 个原始 replay 由 `hundred_battle_replay_evidence`（Flyway V19）**内容寻址持久化**（复用 `HallOfFameReplayStorage`，`{HOF_REPLAY_DIR}/{sha256}.wotbreplay`，幂等/原子/防路径穿越）。文件证据仅服务 PENDING；APPROVE / REJECT / CANCEL 终态事务内清空截图、删除 evidence 行，commit 后按跨表引用计数 best-effort 清理无引用物理文件。DELETE 不再做终态改写：管理员删除（V50 起）在同一事务内持久化 `hundred_admin_log` 审计快照、删除 evidence 行并物理删除 submission 行（截图随行消失），commit 后同样走引用计数物理文件清理。
 
 ## 回放审核证据（admin-only）
