@@ -853,7 +853,7 @@ describe('HoFAdminPage', () => {
       failed: 1,
       results: [
         { id: 12, deleted: true },
-        { id: 11, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }
+        { id: 11, deleted: false, errorCode: 'HUNDRED_SUBMISSION_NOT_FOUND' }
       ]
     })
     const wrapper = mountPage()
@@ -884,7 +884,7 @@ describe('HoFAdminPage', () => {
     await modal.findAll('button').find(button => button.text() === 'hofAdmin.bulkDelete').trigger('click')
     await flushPromises()
     expect(hofAdminApi.hofAdminBulkDeleteHundred).toHaveBeenCalledWith([11, 12], { reason: 'ADMIN_CORRECTION', reasonText: 'cleanup' })
-    expect(modal.text()).toContain('code:HUNDRED_NOT_CURRENT')
+    expect(modal.text()).toContain('code:HUNDRED_SUBMISSION_NOT_FOUND')
     expect(hofAdminApi.hofAdminHundredList).toHaveBeenCalledTimes(2)
   })
 

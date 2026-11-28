@@ -95,13 +95,13 @@ public class HundredBattleAdminController {
     @PostMapping("/submissions/{id}/delete")
     public HundredSubmissionSummaryDto delete(@PathVariable final long id,
                                               @RequestBody final HundredDeleteRequest body) {
-        return moderationService.deleteCurrent(JwtUtil.requireUserId(), id,
+        return moderationService.deleteSubmission(JwtUtil.requireUserId(), JwtUtil.currentUsername(), id,
                 body.deleteReason(), body.deleteReasonText());
     }
 
     @PostMapping("/submissions/bulk-delete")
     public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteModerationRequest body) {
-        return moderationService.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
-                body.reason(), body.reasonText());
+        return moderationService.bulkDeleteSubmissions(JwtUtil.requireUserId(), JwtUtil.currentUsername(),
+                body.normalizedIds(), body.reason(), body.reasonText());
     }
 }

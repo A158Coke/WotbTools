@@ -1,8 +1,10 @@
 package com.wotb.web.hundred;
 
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
+import com.wotb.web.hundred.entity.HundredAdminLog;
 import com.wotb.web.hundred.entity.HundredBattleReplayEvidence;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
+import com.wotb.web.hundred.repository.HundredAdminLogRepository;
 import com.wotb.web.hundred.repository.HundredBattleReplayEvidenceRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.hundred.service.HundredBattleSubmissionService;
@@ -69,6 +71,9 @@ class HundredBattleSubmissionIntegrationTest {
     HundredBattleSubmissionRepository repository;
 
     @Autowired
+    HundredAdminLogRepository auditRepository;
+
+    @Autowired
     HundredBattleReplayEvidenceRepository evidenceRepository;
 
     @Autowired
@@ -84,6 +89,7 @@ class HundredBattleSubmissionIntegrationTest {
     void clean() {
         evidenceRepository.deleteAll();
         repository.deleteAll();
+        auditRepository.deleteAll();
         repository.flush();
     }
 
@@ -288,6 +294,71 @@ class HundredBattleSubmissionIntegrationTest {
             assertFalse(Files.exists(storageDir.resolve(r.sha256() + ".wotbreplay")),
                     "approve 后无引用物理证据应清理: " + r.sha256());
         }
+    }
+
+    @Test
+    void hardDeleteIsStatusIndependentAndRemovesRowEvidenceButKeepsAudit() throws Exception {
+        final Path storageDir = Path.of("data/replays-it");
+        for (final String status : List.of("SUPERSEDED", "DELETED")) {
+            final HundredBattleSubmission s = insertRow(status, 4200, 150);
+            s.setProofScreenshot("data:image/png;base64,AAAA");
+            repository.saveAndFlush(s);
+            attachCompleteEvidence(s.getId());
+            assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
+
+            moderationService.deleteSubmission("admin-sub", "admin-user", s.getId(), "ADMIN_CORRECTION", "cleanup");
+
+            // 业务行与证据行物理消失（FK RESTRICT 满足：先删证据行再删 submission 行）
+            assertTrue(repository.findById(s.getId()).isEmpty(),
+                    status + " submission 行必须物理删除");
+            assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty(),
+                    status + " 回放证据元数据必须物理删除");
+            for (final HundredBattleReplayEvidence row : evidenceRepository.findAll()) {
+                assertFalse(Files.exists(storageDir.resolve(row.getSha256() + ".wotbreplay")));
+            }
+            // 审计快照独立存活，记录删除前原始状态
+            final List<HundredAdminLog> logs =
+                    auditRepository.findBySubmissionIdOrderByIdAsc(s.getId());
+            assertEquals(1, logs.size(), status + " 必须留下恰好一条审计快照");
+            final HundredAdminLog log = logs.get(0);
+            assertEquals(status, log.getOriginalStatus());
+            assertEquals(WOTB_SERVER, log.getWotbServer());
+            assertEquals(WOTB_ACCOUNT_ID, log.getWotbAccountId());
+            assertEquals("ADMIN_CORRECTION", log.getDeleteReason());
+            assertEquals("cleanup", log.getDeleteReasonText());
+            assertEquals("admin-sub", log.getAdminKeycloakUserId());
+            assertEquals("admin-user", log.getAdminUsername());
+        }
+    }
+
+    @Test
+    void hardDeleteOfCurrentDoesNotRestoreOrTouchSupersededHistory() {
+        final HundredBattleSubmission superseded = insertRow("CURRENT", 4000, 150);
+        superseded.setStatus("SUPERSEDED");
+        repository.saveAndFlush(superseded);
+        final HundredBattleSubmission current = insertRow("CURRENT", 4100, 150);
+
+        moderationService.deleteSubmission("admin-sub", null, current.getId(), "CHEATING_FORGERY", null);
+
+        assertTrue(repository.findById(current.getId()).isEmpty(), "CURRENT 行必须物理删除");
+        final HundredBattleSubmission oldRow = repository.findById(superseded.getId()).orElseThrow();
+        assertEquals("SUPERSEDED", oldRow.getStatus(), "删除 CURRENT 不得复活或改写 SUPERSEDED 历史");
+    }
+
+    @Test
+    void hardDeleteMissingRowReturnsNotFoundAndWritesNoAudit() {
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> moderationService.deleteSubmission("admin-sub", null, 999999L, "ADMIN_CORRECTION", null));
+        assertTrue(auditRepository.findAll().isEmpty(), "不存在的 id 不得留下假审计");
+    }
+
+    @Test
+    void hardDeleteFailureWithMissingReasonRollsBackEverything() {
+        final HundredBattleSubmission s = insertRow("CURRENT", 4000, 150);
+        assertThrows(IllegalArgumentException.class,
+                () -> moderationService.deleteSubmission("admin-sub", null, s.getId(), null, null));
+        assertTrue(repository.findById(s.getId()).isPresent(), "reason 校验失败不得删除行");
+        assertTrue(auditRepository.findAll().isEmpty(), "reason 校验失败不得留下审计");
     }
 
 }

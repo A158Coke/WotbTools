@@ -378,53 +378,79 @@ class HundredSubmissionLifecycleTest extends HundredSubmissionTestSupport {
     }
 
     @Test
-    void deleteCurrentMovesToDeletedWithReason() {
-        final HundredBattleSubmission s = currentSubmission(4120);
-        s.setProofScreenshot("data:image/png;base64,AAAA");
-        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+    void deleteIsStatusIndependentAndPhysicallyRemovesEveryState() {
+        for (final String status : List.of("PENDING", "CURRENT", "SUPERSEDED", "REJECTED", "CANCELLED", "DELETED")) {
+            final HundredBattleSubmission s = currentSubmission(4120);
+            s.setStatus(status);
+            s.setProofScreenshot("data:image/png;base64,AAAA");
+            when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        final HundredSubmissionSummaryDto result =
-                moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+            final HundredSubmissionSummaryDto result =
+                    moderationService.deleteSubmission(ADMIN, "admin-user", 10L, "CHEATING_FORGERY", "  spam  ");
 
-        assertThat(result.status()).isEqualTo("DELETED");
-        assertThat(s.getDeletedBy()).isEqualTo(ADMIN);
-        assertThat(s.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
-        assertThat(s.getDeletedAt()).isNotNull();
-        assertThat(s.getProofScreenshot()).isNull();
-        verify(evidenceService).discardForSubmission(10L);
+            // 响应为删除前快照
+            assertThat(result.status()).as("pre-delete status of %s", status).isEqualTo(status);
+            // 审计快照记录删除前原始状态与原因，同一事务落库
+            final var audit = org.mockito.ArgumentCaptor.forClass(
+                    com.wotb.web.hundred.entity.HundredAdminLog.class);
+            verify(auditRepository).save(audit.capture());
+            final com.wotb.web.hundred.entity.HundredAdminLog log = audit.getValue();
+            assertThat(log.getOriginalStatus()).as("audit status of %s", status).isEqualTo(status);
+            assertThat(log.getSubmissionId()).isEqualTo(10L);
+            assertThat(log.getWotbServer()).isEqualTo(WOTB_SERVER);
+            assertThat(log.getWotbAccountId()).isEqualTo(GAME_ID);
+            assertThat(log.getVehicleId()).isEqualTo(TIER10_VEHICLE);
+            assertThat(log.getVehicleName()).isEqualTo("Progetto 65");
+            assertThat(log.getNicknameSnapshot()).isEqualTo("PlayerOne");
+            assertThat(log.getClaimedAverageDamage()).isEqualTo(4200);
+            assertThat(log.getApprovedAverageDamage()).isEqualTo(4120);
+            assertThat(log.isHadProofScreenshot()).isTrue();
+            assertThat(log.getAdminKeycloakUserId()).isEqualTo(ADMIN);
+            assertThat(log.getAdminUsername()).isEqualTo("admin-user");
+            assertThat(log.getDeleteReason()).isEqualTo("CHEATING_FORGERY");
+            assertThat(log.getDeleteReasonText()).isEqualTo("spam");
+            // 回放证据清理与物理删除（FK RESTRICT：先删证据行）
+            verify(evidenceService).discardForSubmission(10L);
+            verify(repository).delete(s);
+            verify(repository).flush();
+            org.mockito.Mockito.clearInvocations(auditRepository, repository, evidenceService);
+        }
     }
 
     @Test
     void deleteRequiresReason() {
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, null, null))
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_REQUIRED");
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "OTHER", null))
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "OTHER", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("HUNDRED_DELETE_REASON_TEXT_REQUIRED");
+        verify(repository, never()).delete(any(HundredBattleSubmission.class));
+        verify(auditRepository, never()).save(any());
     }
 
     @Test
-    void deleteOnlyFromCurrent() {
-        final HundredBattleSubmission s = pendingSubmission();
-        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+    void deleteMissingSubmissionReturnsNotFound() {
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("HUNDRED_NOT_CURRENT");
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "CHEATING_FORGERY", null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verify(auditRepository, never()).save(any());
+        verify(evidenceService, never()).discardForSubmission(anyLong());
     }
 
     @Test
-    void deleteCurrentDoesNotTouchSupersededHistory() {
+    void deleteDoesNotTouchSupersededHistory() {
         final HundredBattleSubmission s = currentSubmission(4120);
         final HundredBattleSubmission superseded = currentSubmission(3900);
         superseded.setStatus("SUPERSEDED");
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
 
-        moderationService.deleteCurrent(ADMIN, 10L, "CHEATING_FORGERY", null);
+        moderationService.deleteSubmission(ADMIN, null, 10L, "CHEATING_FORGERY", null);
 
-        verify(repository).save(s);
+        // 删 CURRENT 不复活/不改写其它记录（含 SUPERSEDED）
         verify(repository, never()).save(superseded);
+        verify(repository, never()).delete(superseded);
         assertThat(superseded.getStatus()).isEqualTo("SUPERSEDED");
     }
 

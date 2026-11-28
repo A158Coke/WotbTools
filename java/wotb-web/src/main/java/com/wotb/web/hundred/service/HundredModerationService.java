@@ -3,8 +3,10 @@ package com.wotb.web.hundred.service;
 import com.wotb.web.hundred.dto.BulkDeleteItemResult;
 import com.wotb.web.hundred.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
+import com.wotb.web.hundred.entity.HundredAdminLog;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.enums.HundredBattleStatus;
+import com.wotb.web.hundred.repository.HundredAdminLogRepository;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,16 +23,19 @@ import java.util.List;
 @Service
 public class HundredModerationService {
     private final HundredBattleSubmissionRepository repository;
+    private final HundredAdminLogRepository auditRepository;
     private final HundredBattleMapper mapper;
     private final HundredReplayEvidenceService evidenceService;
     private final TransactionTemplate transactionTemplate;
 
     public HundredModerationService(
             final HundredBattleSubmissionRepository repository,
+            final HundredAdminLogRepository auditRepository,
             final HundredBattleMapper mapper,
             final HundredReplayEvidenceService evidenceService,
             final PlatformTransactionManager transactionManager) {
         this.repository = repository;
+        this.auditRepository = auditRepository;
         this.mapper = mapper;
         this.evidenceService = evidenceService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -76,16 +81,21 @@ public class HundredModerationService {
         return result;
     }
 
+    /**
+     * 状态无关的管理员删除：任意状态（含 DELETED 软删墓碑）一律物理删除。
+     * 审计快照与删除同一事务；回放证据元数据先删（FK RESTRICT），物理回放文件
+     * 由 discardForSubmission 的 after-commit 引用计数清理处理。
+     */
     @Transactional
-    public HundredSubmissionSummaryDto deleteCurrent(
-            final String adminUserId, final long submissionId,
+    public HundredSubmissionSummaryDto deleteSubmission(
+            final String adminUserId, final String adminUsername, final long submissionId,
             final String deleteReason, final String deleteReasonText) {
-        return deleteCurrentInternal(adminUserId, submissionId,
+        return deleteInternal(adminUserId, adminUsername, submissionId,
                 requireDeleteReason(deleteReason, deleteReasonText), deleteReasonText);
     }
 
-    public BulkDeleteResultDto bulkDeleteCurrent(
-            final String adminUserId, final List<Long> ids,
+    public BulkDeleteResultDto bulkDeleteSubmissions(
+            final String adminUserId, final String adminUsername, final List<Long> ids,
             final String deleteReason, final String deleteReasonText) {
         final String reason = requireDeleteReason(deleteReason, deleteReasonText);
         final List<BulkDeleteItemResult> results = new ArrayList<>(ids.size());
@@ -93,7 +103,7 @@ public class HundredModerationService {
         for (final long id : ids) {
             try {
                 transactionTemplate.executeWithoutResult(status ->
-                        deleteCurrentInternal(adminUserId, id, reason, deleteReasonText));
+                        deleteInternal(adminUserId, adminUsername, id, reason, deleteReasonText));
                 results.add(new BulkDeleteItemResult(id, true, null));
                 deleted++;
             } catch (final ResponseStatusException e) {
@@ -114,19 +124,21 @@ public class HundredModerationService {
         return reason;
     }
 
-    private HundredSubmissionSummaryDto deleteCurrentInternal(
-            final String adminUserId, final long submissionId, final String reason, final String deleteReasonText) {
+    private HundredSubmissionSummaryDto deleteInternal(
+            final String adminUserId, final String adminUsername, final long submissionId,
+            final String reason, final String deleteReasonText) {
         final HundredBattleSubmission submission = repository.findByIdForUpdate(submissionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "HUNDRED_SUBMISSION_NOT_FOUND"));
-        if (!"CURRENT".equals(submission.getStatus())) throw new IllegalStateException("HUNDRED_NOT_CURRENT");
-        submission.setStatus(HundredBattleStatus.DELETED.name());
-        submission.setDeletedAt(OffsetDateTime.now());
-        submission.setDeletedBy(adminUserId);
-        submission.setDeleteReason(reason);
-        submission.setDeleteReasonText(StringUtils.hasText(deleteReasonText) ? deleteReasonText.trim() : null);
-        submission.setProofScreenshot(null);
-        final HundredSubmissionSummaryDto result = mapper.toSummary(repository.save(submission));
+        final String trimmedText = StringUtils.hasText(deleteReasonText) ? deleteReasonText.trim() : null;
+        // 审计快照记录删除前的原始状态；与删除同一事务：audit 失败 → 不删，删除失败 → 无假审计
+        auditRepository.save(HundredAdminLog.deleteSubmission(
+                submission, adminUserId, adminUsername, reason, trimmedText));
+        // 响应取删除前快照（行即将物理删除）
+        final HundredSubmissionSummaryDto result = mapper.toSummary(submission);
+        // FK RESTRICT：先删回放证据元数据行，才能物理删除 submission 行
         evidenceService.discardForSubmission(submission.getId());
+        repository.delete(submission);
+        repository.flush();
         return result;
     }
 

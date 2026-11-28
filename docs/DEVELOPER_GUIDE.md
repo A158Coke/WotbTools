@@ -290,7 +290,7 @@ League Rating 的适用范围、完整性门槛、公式、批次汇总与导出
 | `POST /api/admin/hof/hundred/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
 | `POST /api/admin/hof/mark3/submissions/bulk-delete` | `{ids, reason, reasonText}` | 同上 |
 
-共同语义：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），因此允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍是 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍是 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
+共同语义：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），因此允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍是 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），三环仍是 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；百场自 V50 起改为**状态无关 hard delete**（同事务 `hundred_admin_log` 审计快照（删除前原始状态）+ 删 evidence 行（FK RESTRICT）+ 真删 submission 行 + commit 后引用计数清理物理文件）；三环非 CURRENT 逐条失败于 `MARK3_NOT_CURRENT` 而不阻塞其他记录，百场无状态门、不存在的 id 以 `HUNDRED_SUBMISSION_NOT_FOUND` 逐条失败。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
 
 新增错误码（`util/ErrorCode.java`）：`BULK_LIMIT_EXCEEDED`、`INVALID_USER_SEGMENT`、`IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`。
 
@@ -450,7 +450,7 @@ Keycloak 认证成功
 
 Admin DTO 在百场/三环的列表与详情携带 `wotbServer` + `wotbAccountId` 表示归属身份，避免把跨服同号看成同一个账号。`wotbServer` 的取值域是 `CN|ASIA|EU|NA`（DB CHECK 约束）。
 
-**批量删除契约（三个域共用形状，partial success）**：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），百场/三环仍 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；非 CURRENT 逐条失败于 `HUNDRED_NOT_CURRENT` / `MARK3_NOT_CURRENT` 而不阻塞其他记录。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
+**批量删除契约（三个域共用形状，partial success）**：每个目标跑在**独立事务**中（`TransactionTemplate`，禁止 `this.method()` 自调用绕过 Spring 代理），允许 partial success；单批去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`。用户批量删除的 `confirm` 缺失/false → 整批 400 `CONFIRMATION_REQUIRED`，且逐用户复用 `deleteOneInternal` 的全部业务保护（self-delete 保护、打手依赖阻断、先删本地 profile 再删 Keycloak、审计日志）。HoF 批量删除**逐条复用权威单条删除语义**：单场仍 hard delete（audit 快照 + 真删行 + commit 后引用计数清理物理文件），三环仍 soft delete（仅 CURRENT 可删，`CURRENT` → `DELETED`）；百场自 V50 起改为**状态无关 hard delete**（同事务 `hundred_admin_log` 审计快照（删除前原始状态）+ 删 evidence 行（FK RESTRICT）+ 真删 submission 行 + commit 后引用计数清理物理文件）；三环非 CURRENT 逐条失败于 `MARK3_NOT_CURRENT` 而不阻塞其他记录，百场无状态门、不存在的 id 以 `HUNDRED_SUBMISSION_NOT_FOUND` 逐条失败。百场/三环的 reason 是批次级参数，先整体校验一次（参数错误整批 400，不表现为逐条失败）。
 
 当前 OpenAPI 覆盖 `GET/DELETE /api/admin/users`、单场/百场/三环的管理列表、详情、操作与 bulk-delete，以及对应 JSON schema。生成产物 `frontend/src/api/generated/*` 由 `pnpm run api:generate` 重建，禁止手改。
 

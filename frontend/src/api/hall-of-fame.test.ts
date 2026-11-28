@@ -57,7 +57,7 @@ const detail = {
   replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
 }
 const evidence = { id: 7, slot: 1, originalFilename: 'battle.wotbreplay', fileSize: 123, arenaId: 'arena', sha256: 'a'.repeat(64), createdAt: null }
-const bulk = { requested: 2, deleted: 1, failed: 1, results: [{ id: 1, deleted: true }, { id: 2, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }] }
+const bulk = { requested: 2, deleted: 1, failed: 1, results: [{ id: 1, deleted: true }, { id: 2, deleted: false, errorCode: 'HUNDRED_SUBMISSION_NOT_FOUND' }] }
 const producerCases = JSON.parse(readFileSync(new URL('../../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8')) as { schema: string, value: any }[]
 function producer(schema: string) {
   return structuredClone(producerCases.find(entry => entry.schema === schema)!.value)
