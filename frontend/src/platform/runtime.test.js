@@ -5,9 +5,12 @@ import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { apiFetch } from '../utils/http.js'
 
-const gate = vi.hoisted(() => ({ available: true }))
-vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ requireFeature: () => gate.available }) }))
-afterEach(() => { gate.available = true; vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+const gate = vi.hoisted(() => ({ available: true, pending: false, interactive: vi.fn() }))
+vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({
+  requireFeature: () => { gate.interactive(); return gate.available },
+  availability: () => gate,
+}) }))
+afterEach(() => { gate.available = true; gate.pending = false; gate.interactive.mockClear(); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
 describe('Android local resource / remote service boundary', () => {
   it('preserves Web same-origin requests', () => {
     vi.stubEnv('MODE', 'production')
@@ -42,6 +45,24 @@ describe('Android local resource / remote service boundary', () => {
     }
     expect(() => assetProvider.fetch(url)).toThrow('NETWORK_ERROR')
     expect(fetch).not.toHaveBeenCalled()
+    expect(gate.interactive).toHaveBeenCalled()
+  })
+
+  it('后台读取保留 Android URL、凭证和门禁，离线或未就绪时静默', async () => {
+    vi.stubEnv('MODE', 'android')
+    const fetch = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetch)
+    const path = '/api/admin/hof/hundred/submissions'
+    gate.available = false
+    await expect(apiFetch(path, undefined, 'silent')).rejects.toMatchObject({ errorCode: 'NETWORK_ERROR' })
+    gate.available = true
+    gate.pending = true
+    await expect(apiFetch(path, undefined, 'silent')).rejects.toMatchObject({ errorCode: 'NETWORK_ERROR' })
+    expect(fetch).not.toHaveBeenCalled()
+    gate.pending = false
+    await apiFetch(path, { credentials: 'include' }, 'silent')
+    expect(fetch).toHaveBeenCalledWith(PRODUCTION_API_ORIGIN + path, { credentials: 'omit' })
+    expect(gate.interactive).not.toHaveBeenCalled()
   })
 
 })

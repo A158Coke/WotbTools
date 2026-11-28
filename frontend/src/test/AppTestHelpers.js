@@ -64,6 +64,7 @@ authState.isContentAdminRef = ref(false)
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: authState.initPromise,
+    initialized: { value: true },
     authenticated: authState.authenticatedRef,
     authInitState: authState.authInitState,
     authEpoch: () => authState.epoch,

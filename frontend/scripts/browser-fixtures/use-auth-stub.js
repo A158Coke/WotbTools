@@ -1,10 +1,10 @@
 import { computed, ref } from 'vue'
 
 const params = new URLSearchParams(window.location.search)
-const fixtureUserId = 'fixture-user'
 // Scenarios that must inspect/click the pre-start 3D card opt into a signed-in
 // fixture user whose real auto-start preference is off.
 const manualStart3d = params.get('ws-3d-manual-start') === '1'
+const fixtureUserId = manualStart3d ? 'manual-start-fixture' : 'fixture-user'
 if (manualStart3d) {
   try {
     localStorage.setItem('wotb.pb.3d-auto-start:' + encodeURIComponent(fixtureUserId), '0')
@@ -34,7 +34,7 @@ const initFailureReason = ref(null)
 const loginInFlight = ref(false)
 const tokenParsed = ref({
   preferred_username: fixtureUserId,
-  ...(manualStart3d ? { sub: fixtureUserId } : {}),
+  sub: fixtureUserId,
   realm_access: { roles: String(params.get('ws-roles') || '').split(',').filter(Boolean) },
 })
 

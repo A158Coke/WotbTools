@@ -48,6 +48,8 @@ const pending = computed(() => props.status === 'PENDING')
 const confirmedHeader = computed(() => pending.value ? 'hofAdmin.reviewAfterApprove' : 'hofAdmin.reviewConfirmed')
 
 const root = ref<HTMLElement | null>(null)
+const failedPhotos = ref(new Set<number>())
+const body = ref<HTMLElement | null>(null)
 const back = ref<HTMLButtonElement | null>(null)
 let returnFocus: HTMLElement | null = null
 let inertTarget: HTMLElement | null = null
@@ -67,6 +69,26 @@ watch(modal, async (on) => {
   ;(back.value ?? root.value)?.focus()
 }, { immediate: true, flush: 'post' })
 onBeforeUnmount(release)
+
+watch(() => props.position, () => {
+  failedPhotos.value.clear()
+  if (body.value) body.value.scrollTop = 0
+  if (root.value) root.value.scrollTop = 0
+}, { flush: 'post' })
+
+watch(() => props.phase, (phase, previous) => {
+  if (props.loading) return
+  const selector = phase === 'view'
+    ? (previous === 'approve-confirm' ? '.modal-actions .ok' : '.modal-actions .danger')
+    : (phase === 'approve-confirm' ? '.hundred-action-area button' : '.hundred-action-area select')
+  root.value?.querySelector<HTMLElement>('.hof-review-decision ' + selector)?.focus()
+}, { flush: 'post' })
+
+function revealFocus(event: FocusEvent) {
+  if (event.target instanceof HTMLElement && event.target.matches(':focus-visible')) {
+    event.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+  }
+}
 
 function trapTab(event: KeyboardEvent) {
   if (!modal.value || !root.value) return
@@ -91,6 +113,7 @@ function trapTab(event: KeyboardEvent) {
       data-testid="hof-review-pane"
       @keydown.esc="emit('close')"
       @keydown.tab="trapTab"
+      @focusin="revealFocus"
     >
       <header class="hof-review-top">
         <button ref="back" type="button" class="btn-sm hof-review-back" data-testid="hof-review-back" :disabled="busy" @click="emit('close')"><ChevronLeft :size="16" aria-hidden="true" />{{ $t('hofAdmin.reviewBack') }}</button>
@@ -101,7 +124,7 @@ function trapTab(event: KeyboardEvent) {
         </span>
       </header>
 
-      <div class="hof-review-body">
+      <div ref="body" class="hof-review-body">
         <p v-if="loading" class="muted">{{ $t(prefix + '.loading') }}</p>
         <template v-else-if="title">
           <div class="hof-review-evidence">
@@ -109,7 +132,10 @@ function trapTab(event: KeyboardEvent) {
             <template v-if="pending">
               <div class="mark3-admin-screenshots">
                 <div v-for="(src, index) in screenshots" :key="index" class="hundred-proof-row">
-                  <img class="hundred-proof" :src="src" :alt="$t(prefix + '.screenshot', { number: index + 1 })" @click="emit('zoom', index)" />
+                  <span v-if="failedPhotos.has(index)" class="error" role="status">{{ $t('hofAdmin.proofLoadError', { number: index + 1 }) }}</span>
+                  <button v-else type="button" class="hof-zoom-proof" @click="emit('zoom', index)">
+                    <img class="hundred-proof" :src="src" @error="failedPhotos.add(index)" :alt="$t(prefix + '.screenshot', { number: index + 1 })" />
+                  </button>
                   <button type="button" class="btn-sm" @click="emit('downloadScreenshot', index)">{{ $t(prefix + '.downloadScreenshot') }}</button>
                 </div>
               </div>
@@ -123,7 +149,7 @@ function trapTab(event: KeyboardEvent) {
                   <ul class="replay-evidence-list">
                     <li v-for="ev in replays" :key="ev.id" class="replay-evidence-item">
                       <span class="replay-slot">#{{ ev.slot }}</span>
-                      <span class="replay-name" :title="ev.name">{{ ev.name }}</span>
+                      <span class="replay-name">{{ ev.name }}</span>
                       <span class="replay-size">{{ ev.sizeLabel }}</span>
                       <button type="button" class="btn-sm btn-icon" :title="$t(prefix + '.replayDownload')" :aria-label="$t(prefix + '.replayDownload')" @click="emit('downloadReplay', ev.raw)"><Download :size="16" aria-hidden="true" /></button>
                     </li>
@@ -182,11 +208,11 @@ function trapTab(event: KeyboardEvent) {
 
         <div v-else-if="pending && phase === 'reject-form'" class="hundred-action-area">
           <label class="hundred-reason-label">{{ $t(prefix + '.rejectReason') }}</label>
-          <select v-model="rejectReason">
+          <select v-model="rejectReason" :aria-label="$t(prefix + '.rejectReason')">
             <option value="">{{ $t(prefix + '.rejectReasonRequired') }}</option>
             <option v-for="(label, key) in rejectReasons" :key="key" :value="key">{{ label }}</option>
           </select>
-          <textarea v-model="rejectText" rows="2" maxlength="500" :placeholder="$t(prefix + '.rejectReasonPlaceholder')"></textarea>
+          <textarea v-model="rejectText" :aria-label="$t(prefix + '.rejectReasonPlaceholder')" rows="2" maxlength="500" :placeholder="$t(prefix + '.rejectReasonPlaceholder')"></textarea>
           <p class="hundred-confirm">{{ $t(prefix + '.rejectConfirm') }}</p>
           <div class="modal-actions">
             <button type="button" class="btn-sm" :disabled="busy" @click="emit('cancel')">{{ $t(prefix + '.cancel') }}</button>
@@ -200,11 +226,11 @@ function trapTab(event: KeyboardEvent) {
 
         <div v-else-if="status === 'CURRENT' && phase === 'delete-form'" class="hundred-action-area">
           <label class="hundred-reason-label">{{ $t(prefix + '.deleteReason') }}</label>
-          <select v-model="deleteReason">
+          <select v-model="deleteReason" :aria-label="$t(prefix + '.deleteReason')">
             <option value="">{{ $t(prefix + '.deleteReasonRequired') }}</option>
             <option v-for="(label, key) in deleteReasons" :key="key" :value="key">{{ label }}</option>
           </select>
-          <textarea v-model="deleteText" rows="2" maxlength="500" :placeholder="$t(prefix + '.deleteReasonPlaceholder')"></textarea>
+          <textarea v-model="deleteText" :aria-label="$t(prefix + '.deleteReasonPlaceholder')" rows="2" maxlength="500" :placeholder="$t(prefix + '.deleteReasonPlaceholder')"></textarea>
           <p class="hundred-confirm">{{ $t(prefix + '.deleteConfirm') }}</p>
           <div class="modal-actions">
             <button type="button" class="btn-sm" :disabled="busy" @click="emit('cancel')">{{ $t(prefix + '.cancel') }}</button>
@@ -219,16 +245,14 @@ function trapTab(event: KeyboardEvent) {
 <style scoped>
 .hof-review-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
 .hof-review-pane.is-overlay { position: fixed; inset: 0; z-index: var(--z-dialog); border: 0; border-radius: 0; background: var(--color-canvas); }
-.hof-review-top { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border-subtle); }
-.hof-review-back { display: none; }
-.is-overlay .hof-review-back { display: inline-flex; }
+.hof-review-top { flex: none; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border-subtle); }
 .hof-review-position { flex: 1; color: var(--color-text-secondary); font: var(--type-caption); }
 .hof-review-step { display: inline-flex; gap: var(--space-1); margin-inline-start: auto; }
-.hof-review-body { display: grid; flex: 1; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: var(--space-5); align-content: start; padding: var(--space-5); overflow-y: auto; }
+.hof-review-body { display: grid; flex: 1 1 auto; min-height: 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: var(--space-5); align-content: start; padding: var(--space-5); overflow-y: auto; }
 .hof-review-body > .muted { grid-column: 1 / -1; }
-.hof-review-evidence, .hof-review-facts { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+.hof-review-evidence, .hof-review-facts { display: grid; gap: var(--space-3); align-content: start; grid-template-columns: minmax(0, 1fr); min-width: 0; overflow-wrap: anywhere; }
 .hof-review-pane h2 { margin: 0; font: var(--type-h3); overflow-wrap: anywhere; }
-.hof-review-compare { display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); }
+.hof-review-compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; padding: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-2); }
 .hof-review-compare dt { color: var(--color-text-secondary); }
 .hof-review-compare dd { margin: 0; text-align: end; font-weight: 700; font-variant-numeric: tabular-nums; }
 .hof-review-compare .hof-review-col { color: var(--color-text-secondary); font: var(--type-caption); }
@@ -236,20 +260,22 @@ function trapTab(event: KeyboardEvent) {
 .hof-review-meta { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: var(--space-1) var(--space-3); margin: 0; color: var(--color-text-secondary); }
 .hof-review-meta dd { margin: 0; color: var(--color-text-primary); overflow-wrap: anywhere; }
 .hof-review-meta .dmg { color: var(--color-accent-text); font-weight: 600; }
-.hof-review-decision { position: sticky; bottom: 0; padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border-subtle); background: var(--color-surface-2); }
+.hof-review-decision { flex: none; max-height: 45dvh; overflow-y: auto; padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border-subtle); background: var(--color-surface-2); }
 .modal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .hof-review-note { flex: 1 1 var(--form-field-min); color: var(--color-text-secondary); }
 .hundred-reason-label, .hundred-review-label { display: block; margin: 0 0 var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); font-weight: 600; }
 .hundred-confirm, .hundred-legacy-warn { margin: var(--space-2) 0; color: var(--color-warning); }
-.hundred-proof { display: block; max-width: 100%; max-height: 320px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); cursor: zoom-in; }
+.hof-zoom-proof { max-width: 100%; min-width: 0; min-height: var(--hit-min); padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; cursor: zoom-in; }
+.hof-zoom-proof:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.hundred-proof { display: block; max-width: 100%; width: auto; height: auto; max-height: 320px; object-fit: contain; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); cursor: zoom-in; }
 .hundred-proof-empty, .muted { color: var(--color-text-tertiary); }
-.hundred-proof-row { display: flex; align-items: flex-start; gap: var(--space-3); }
-.hundred-proof-row .btn-sm { flex: none; white-space: nowrap; }
+.hundred-proof-row { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: var(--space-3); }
+.hundred-proof-row .btn-sm { max-width: 100%; white-space: normal; }
 .mark3-admin-screenshots { display: grid; gap: var(--space-3); }
 .replay-evidence-list, .val-list { margin: 0; padding: 0; list-style: none; }
-.replay-evidence-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; }
+.replay-evidence-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; }
 .replay-slot { min-width: 2.2em; color: var(--color-text-secondary); font-weight: 600; }
-.replay-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replay-name { overflow-wrap: anywhere; }
 .replay-size { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .val-list li { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
 .val-mark { flex: none; }
@@ -266,11 +292,15 @@ function trapTab(event: KeyboardEvent) {
 .btn-sm.ok { border-color: var(--color-success); color: var(--color-success); }
 .btn-sm:disabled { opacity: .5; cursor: not-allowed; }
 .btn-sm:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.hof-review-pane select, .hof-review-pane textarea { box-sizing: border-box; min-width: 0; min-height: var(--control-h-md); padding: var(--space-1) var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
+.hof-review-pane select, .hof-review-pane textarea { box-sizing: border-box; max-width: 100%; min-width: 0; min-height: var(--control-h-md); padding: var(--space-1) var(--space-3); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); }
 .hundred-action-area select, .hundred-action-area textarea { display: block; width: 100%; margin: var(--space-1) 0 var(--space-2); }
 .hundred-action-area textarea { min-height: auto; padding-block: var(--space-2); }
 @media (hover: hover) { .btn-sm:hover:not(:disabled) { background: var(--color-surface-2); } }
-@media (width < 1200px) { .hof-review-body { grid-template-columns: minmax(0, 1fr); } }
+@media (height <= 640px) {
+  .hof-review-pane { overflow-y: auto; }
+  .hof-review-body { flex: none; overflow: visible; }
+  .hof-review-decision { max-height: none; overflow: visible; }
+}
 @media (width < 768px) {
   .hof-review-body { padding: var(--space-4); }
   .hof-review-decision .modal-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

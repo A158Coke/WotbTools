@@ -12,6 +12,7 @@ import { provideCreatorAvailability } from '../composables/useCreatorAvailabilit
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
 import { useUiProfile } from '../composables/useUiProfile.js'
+import { provideHofPendingCount } from '../composables/useHofPendingCount.js'
 import { useSiteFeedback } from '../composables/useSiteFeedback.js'
 import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
@@ -49,6 +50,10 @@ const { error: globalError, showError: showGlobalError, close: closeGlobalError 
 const { notice: connectivityNotice } = useConnectivityNotice()
 const { isDrawerShell } = useBreakpoint()
 const navDrawerOpen = ref(false)
+provideHofPendingCount(computed(() => viewFromRoute(route)), navDrawerOpen, async signal => {
+  const { getHofPendingTotals } = await import('../api/hall-of-fame.js')
+  return getHofPendingTotals(signal)
+})
 const topBar = ref(null)
 const immersiveMenu = ref(null)
 const fullscreenRoot = ref(typeof document === 'undefined' ? null : document.fullscreenElement)

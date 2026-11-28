@@ -1,15 +1,12 @@
-
-
 .hof-admin {
-  width: min(1760px, calc(100% - var(--showcase-gutter) * 2)) !important;
-  max-width: none !important;
-  margin-inline: auto !important;
-  padding: 24px 0 64px !important;
+  width: min(var(--layout-workspace-max), calc(100% - var(--showcase-gutter) * 2));
+  margin-inline: auto;
 }
 
 @media (width < 768px) {
   .hof-admin {
-    width: calc(100% - 16px) !important;
-    padding: 12px 0 42px !important;
+    box-sizing: border-box;
+    width: 100%;
+    padding-inline: max(var(--space-3), env(safe-area-inset-left)) max(var(--space-3), env(safe-area-inset-right));
   }
 }

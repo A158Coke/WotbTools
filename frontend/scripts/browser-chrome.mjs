@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -158,6 +158,9 @@ export async function launchChromeForCdp(chrome, { extraArgs = [], gpu = false }
 
     const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
     client = await CdpClient.connect(version.webSocketDebuggerUrl)
+    const downloadPath = join(userDataDir, 'downloads')
+    mkdirSync(downloadPath)
+    await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath })
 
     return {
       client,
