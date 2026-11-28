@@ -173,7 +173,7 @@
         {
           "id": 12,
           "deleted": false,
-          "errorCode": "HUNDRED_NOT_CURRENT"
+          "errorCode": "HUNDRED_SUBMISSION_NOT_FOUND"
         }
       ]
     }

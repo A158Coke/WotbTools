@@ -110,7 +110,7 @@ class ApiContractTest {
                 new WireCase("HundredAdminDetail", hundred.toAdminDetail(submission)),
                 new WireCase("BulkDeleteResult", new BulkDeleteResultDto(2, 1, 1, List.of(
                         new BulkDeleteItemResult(11L, true, null),
-                        new BulkDeleteItemResult(12L, false, "HUNDRED_NOT_CURRENT"))))));
+                        new BulkDeleteItemResult(12L, false, "HUNDRED_SUBMISSION_NOT_FOUND"))))));
         cases.addAll(hofAndMark3Cases());
         final Instant created = Instant.parse("2026-10-01T12:00:00Z");
         final var reasons = List.of(FeedbackReason.FACT_ERROR);
@@ -140,7 +140,7 @@ class ApiContractTest {
                 .map(item -> item.get("value")).findFirst().orElseThrow();
         final var hundredResult = new com.wotb.web.hundred.dto.BulkDeleteResultDto(2, 1, 1, List.of(
                 new com.wotb.web.hundred.dto.BulkDeleteItemResult(11L, true, null),
-                new com.wotb.web.hundred.dto.BulkDeleteItemResult(12L, false, "HUNDRED_NOT_CURRENT")));
+                new com.wotb.web.hundred.dto.BulkDeleteItemResult(12L, false, "HUNDRED_SUBMISSION_NOT_FOUND")));
         final var mark3Result = new com.wotb.web.mark3.dto.BulkDeleteResultDto(2, 1, 1, List.of(
                 new com.wotb.web.mark3.dto.BulkDeleteItemResult(11L, true, null),
                 new com.wotb.web.mark3.dto.BulkDeleteItemResult(12L, false, "MARK3_NOT_CURRENT")));

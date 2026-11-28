@@ -1276,7 +1276,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Delete a current Hundred submission */
+        /** Delete a Hundred submission regardless of its current status */
         post: operations["deleteHundredSubmission"];
         delete?: never;
         options?: never;
@@ -1294,8 +1294,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Delete several current Hundred submissions in one request
-         * @description Each id repeats the authoritative single-record delete semantics in its own transaction, so the batch allows partial success. Ids that are not CURRENT fail individually with HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+         * Physically delete several Hundred submissions in one request
+         * @description Each id repeats the authoritative single-record delete semantics in its own transaction, so the batch allows partial success. Deletion is status-independent: every existing state (PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED) is physically removed together with its replay evidence metadata, and an independent deletion audit snapshot is persisted in the same transaction. Physical replay files are cleaned after commit only when no remaining references exist. Unknown ids fail individually with HUNDRED_SUBMISSION_NOT_FOUND and never block the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
          */
         post: operations["bulkDeleteHundredSubmissions"];
         delete?: never;

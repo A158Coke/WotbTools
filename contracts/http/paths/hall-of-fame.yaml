@@ -283,7 +283,7 @@
 /api/admin/hof/hundred/submissions/{id}/delete:
   post:
     operationId: deleteHundredSubmission
-    summary: Delete a current Hundred submission
+    summary: Delete a Hundred submission regardless of its current status
     security: [{ bearerAuth: [] }]
     parameters: [{ name: id, in: path, required: true, schema: { type: integer, format: int64 } }]
     requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/HundredDeleteRequest' } } } }
@@ -292,12 +292,15 @@
 /api/admin/hof/hundred/submissions/bulk-delete:
   post:
     operationId: bulkDeleteHundredSubmissions
-    summary: Delete several current Hundred submissions in one request
+    summary: Physically delete several Hundred submissions in one request
     description: >-
       Each id repeats the authoritative single-record delete semantics in its own transaction,
-      so the batch allows partial success. Ids that are not CURRENT fail individually with
-      HUNDRED_NOT_CURRENT / HUNDRED_SUBMISSION_NOT_FOUND and never block the others.
-      More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
+      so the batch allows partial success. Deletion is status-independent: every existing state
+      (PENDING/CURRENT/SUPERSEDED/REJECTED/CANCELLED/DELETED) is physically removed together with
+      its replay evidence metadata, and an independent deletion audit snapshot is persisted in the
+      same transaction. Physical replay files are cleaned after commit only when no remaining
+      references exist. Unknown ids fail individually with HUNDRED_SUBMISSION_NOT_FOUND and never
+      block the others. More than 100 ids in one request is rejected with 400 BULK_LIMIT_EXCEEDED.
     security: [{ bearerAuth: [] }]
     requestBody: { required: true, content: { application/json: { schema: { $ref: '../openapi.yaml#/components/schemas/BulkDeleteModerationRequest' } } } }
     responses:
