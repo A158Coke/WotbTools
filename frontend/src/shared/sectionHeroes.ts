@@ -8,14 +8,12 @@ import heroMark3 from '../assets/theme/hero-mark3.webp'
 import heroProfile from '../assets/theme/hero-profile.webp'
 import heroReplay from '../assets/theme/hero-replay.webp'
 import heroTankopedia from '../assets/theme/hero-tankopedia.webp'
-import heroTechtree from '../assets/theme/hero-techtree.webp'
 
 export const SECTION_HERO_IDS = [
   'hof',
   'mark3',
   'replay',
   'tankopedia',
-  'techtree',
   'maps',
   'events',
   'community',
@@ -38,7 +36,6 @@ export const SECTION_HEROES: Record<SectionHeroId, SectionHero> = {
   mark3: { image: heroMark3, position: 'center 45%', mobilePosition: '18% center' },
   replay: { image: heroReplay, position: 'center 48%', mobilePosition: '45% center', compactPosition: 'center 50%' },
   tankopedia: { image: heroTankopedia, position: 'center 45%', mobilePosition: '18% center' },
-  techtree: { image: heroTechtree, position: 'center 45%', mobilePosition: '42% center', compactPosition: 'center 58%' },
   maps: { image: heroMaps, position: 'center 45%', mobilePosition: '22% center' },
   events: { image: heroEvents, position: 'center 45%', mobilePosition: '40% center' },
   community: { image: heroCommunity, position: 'center 45%', mobilePosition: '45% center' },

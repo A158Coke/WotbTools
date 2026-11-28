@@ -29,10 +29,12 @@ describe('shot impact view first-frame pose propagation', () => {
 
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   const menu = read('./TankCatalogMenu.vue')
+  const identity = read('./tank-catalog-identity.css')
 
   it('卡片盒是固定 8:5 比例、无固定高度尺寸', () => {
-    expect(menu).toMatch(/\.tp-media[^}]*aspect-ratio:\s*8\s*\/\s*5/)
-    expect(menu).not.toMatch(/\.tp-media[^}]*block-size:\s*[0-9.]+rem/)
+    expect(menu).toContain('src="./tank-catalog-identity.css"')
+    expect(identity).toMatch(/\.tp-media[^}]*aspect-ratio:\s*8\s*\/\s*5/)
+    expect(identity).not.toMatch(/\.tp-media[^}]*block-size:\s*[0-9.]+rem/)
   })
   it('共享菜单以同一比例常数应用内容框变换，并驱动迟到表补样式', () => {
     expect(menu).toMatch(/const ICON_BOX_ASPECT = 8 \/ 5/)

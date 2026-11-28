@@ -249,12 +249,9 @@ const selectedShell = computed(() => props.shells.find(shell => shell.selected) 
 .tp-param-row .tp-param-unit, .tp-shell-stats .tp-param-unit { grid-column: 3; grid-row: 1; padding-inline-end: var(--space-3); text-align: end; }
 .tp-param-row .tp-param-delta { grid-column: 2; grid-row: 1; }
 .tp-param-reading { display: grid; grid-template-columns: max-content var(--space-12); justify-content: end; align-items: baseline; gap: var(--space-1); }
-.tp-param-value { grid-column: 1; text-align: end; white-space: nowrap; color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
-.tp-param-unit { grid-column: 2; text-align: start; color: var(--color-text-secondary); font: var(--type-caption); }
-.tp-param-delta { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-1); font: var(--type-caption); font-weight: 600; white-space: nowrap; }
-.tp-param-delta.is-good { color: var(--color-success); }
-.tp-param-delta.is-bad { color: var(--color-danger); }
 .tp-params-note { padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); }
 @media (hover: hover) { .tp-shell-btn:hover { border-color: var(--color-border-strong); } .tp-param-row:hover { background: var(--color-surface-2); } }
 @media (width < 768px) { .tp-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tp-params { padding: var(--space-3); } }
 </style>
+
+<style scoped src="./tank-param-readings.css"></style>

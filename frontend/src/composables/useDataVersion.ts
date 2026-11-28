@@ -95,6 +95,24 @@ function requestedDatasetId(): string {
   return origin === base ? dataVersionId() ?? '' : base.slice(origin.length + '/v/'.length)
 }
 
+/**
+ * 目标 URL + dataset 选择。`href` 允许是 router 产出的根相对路径（createWebHistory 的
+ * `router.resolve().href` 就是这种形式），按 base（默认当前页面）解析成绝对 URL。
+ */
+export function datasetNavigationUrl(href: string, id: string, base: string = location.href): string {
+  return dataVersionUrl(new URL(href, base).toString(), id)
+}
+
+/**
+ * 跨 dataset 跳转：持久化选择并整页导航。
+ * assetBase 在页面生命周期内按加载时的 dataset 缓存，单靠 router.push 改 query 不会切换数据源。
+ */
+export function navigateToDataset(id: string, href: string): void {
+  const value = id && DATASET_ID_RE.test(id) ? id : ''
+  persistDataset(value)
+  location.assign(datasetNavigationUrl(href, value))
+}
+
 function persistDataset(value: string): void {
   if (value) localStorage.setItem(DATA_VERSION_STORAGE, value)
   else localStorage.removeItem(DATA_VERSION_STORAGE)

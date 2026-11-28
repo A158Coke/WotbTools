@@ -1,8 +1,9 @@
 import {
-  BookOpen, Database, CircleUser, Clapperboard, House, Map, Menu, MessageSquare, Network, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
+  BookOpen, Database, CircleUser, Clapperboard, FileDiff, House, Map, Menu, MessageSquare, Network, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 
 export const PRIMARY_NAV_ICONS = Object.freeze({
+  'version-diff': FileDiff,
   home: House,
   replay: Clapperboard,
   hof: Trophy,

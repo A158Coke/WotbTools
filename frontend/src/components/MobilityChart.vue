@@ -271,7 +271,7 @@ const marks = computed(() => {
 </script>
 
 <template>
-  <section class="mob-chart surface-glass-1">
+  <section class="mob-chart ui-card">
     <header class="mob-tools">
       <h2>{{ t('mobility.chart') }}</h2>
       <slot />

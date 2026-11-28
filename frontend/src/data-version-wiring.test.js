@@ -71,7 +71,12 @@ describe('data version selector wiring', () => {
 
   it('all literal asset paths are handed to assetProvider', () => {
     const ASSET_PATH_RE = /["'`]\/(?:glb|tank|tank_images|map|cover|research|data|map2d|tread|suspension)\//
-    const allowed = new Set(['scene/treadMarks.ts'])
+    const allowed = new Set([
+      'scene/treadMarks.ts',
+      // 版本对比按「被对比的那个 dataset」显式构造 /v/<id>/...；不能走当前选中
+      // dataset 的 assetProvider（同一页面要同时取两版图标/底图/封面）。
+      'composables/useVersionDiff.ts',
+    ])
     const offenders = []
     for (const path of sourceFiles(srcRoot)) {
       const rel = path.slice(srcRoot.length + 1).replace(/\\/g, '/')

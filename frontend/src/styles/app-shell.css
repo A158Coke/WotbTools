@@ -45,6 +45,28 @@ body { margin: 0; background: transparent; color: var(--color-text-primary); fon
     border-color: var(--color-border-strong);
   }
 }
+.ui-card, .ui-section {
+  min-inline-size: 0;
+  border: var(--border-width) solid var(--color-card-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-1);
+}
+
+.ui-card { background: var(--color-card); }
+
+.ui-section {
+  background: var(--color-card-section);
+  backdrop-filter: blur(14px);
+}
+
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .ui-card, .ui-section {
+    background: var(--color-surface-1);
+    border-color: var(--color-border-strong);
+    backdrop-filter: none;
+  }
+}
+
 a { color: var(--color-accent-text); text-decoration: none; }
 button, input, select, textarea { font-family: inherit; }
 button { user-select: none; }

@@ -30,6 +30,7 @@ const MorePage = defineLazyView(() => import('../components/MorePage.vue'))
 const AgentTankopediaPage = defineLazyView(() => import('../components/AgentTankopedia.vue'))
 const AgentArmorViewPage = defineLazyView(() => import('../components/AgentArmorView.vue'))
 const AgentTechTreePage = defineLazyView(() => import('../components/AgentTechTree.vue'))
+const AgentVersionDiffPage = defineLazyView(() => import('../components/AgentVersionDiff.vue'))
 const MapPreviewPage = defineLazyView(() => import('../components/MapPreviewPage.vue'))
 const RatingDocsPage = defineLazyView(() => import('../components/RatingDocsPage.vue'))
 const TournamentPointsPage = defineLazyView(() => import('../components/TournamentPointsPage.vue'))
@@ -51,6 +52,7 @@ export const VIEW_COMPONENTS = Object.freeze({
   'agent-mobility': defineLazyView(() => import('../components/AgentMobility.vue')),
   'agent-armor': AgentArmorViewPage,
   'agent-techtree': AgentTechTreePage,
+  'agent-version-diff': AgentVersionDiffPage,
   'map-preview': MapPreviewPage,
   hof: HoFPage,
   more: MorePage,

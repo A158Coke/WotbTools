@@ -44,6 +44,7 @@ const SCENARIOS = [
   { name: 'phone-360x640', width: 360, height: 640, touch: true, portrait: true },
   { name: 'phone-landscape-740x360', width: 740, height: 360, touch: true, compact: false, landscape: true },
   { name: 'tablet-768x1024', width: 768, height: 1024, touch: true, compact: false },
+  { name: 'mouse-850x760', width: 850, height: 760, touch: false, compact: false },
   { name: 'desktop-1440x900', width: 1440, height: 900, touch: false, compact: false },
 ]
 
@@ -228,8 +229,7 @@ function layoutProbe() {
   const q = selector => document.querySelector(selector)
   const scroll = q('.tt-scroll') || q('.tt-tiers')
   const ruler = q('.tt-ruler')
-  const header = q('.techtree .showcase-hero.is-compact')
-  const legacyHeader = q('.techtree .page-header')
+  const header = q('.tt-header')
   const tabs = q('.tt-tabs')
   // 竖屏卡片与网格节点共用 .tt-cell + data-testid（前者多一个 .tt-tier-cell），
   // 单一选择器同时覆盖两种形态；两种形态都必须看到封面布旗层。
@@ -242,11 +242,12 @@ function layoutProbe() {
       clientWidth: document.documentElement.clientWidth,
     },
     header: rect(header),
-    legacyHeader: rect(legacyHeader),
-    tankopedia: rect(q('.techtree .showcase-hero-toolbar [data-testid="techtree-tankopedia"]')),
+    banner: !!q('.techtree .showcase-hero'),
+    title: rect(header?.querySelector('h1')),
+    tankopedia: rect(header?.querySelector('[data-testid="techtree-tankopedia"]')),
     tabs: rect(tabs),
     tabRows: tabs ? new Set([...tabs.children].map((element) => Math.round(element.getBoundingClientRect().top))).size : null,
-    scroll: scroll ? { ...rect(scroll), clientHeight: scroll.clientHeight, scrollHeight: scroll.scrollHeight } : null,
+    scroll: scroll ? { ...rect(scroll), clientTop: scroll.clientTop, clientHeight: scroll.clientHeight, scrollHeight: scroll.scrollHeight } : null,
     ruler: rect(ruler),
     tabBar: !!q('[data-testid="app-tab-bar"]'),
     cells: document.querySelectorAll('.tt-cell').length,
@@ -263,24 +264,23 @@ function layoutProbe() {
 function assertScenario(scenario, layout) {
   const label = scenario.name
   assert.ok(layout.cells >= ROWS * COLS, `${label}: 科技树未完整渲染（cells=${layout.cells}）`)
-  if (scenario.landscape) {
-    assert.equal(layout.header.height, 0, `${label}: 矮横屏应隐藏分区主视觉（height=${layout.header.height}）`)
-    assert.ok(
-      layout.tankopedia && layout.tankopedia.height > 0,
-      `${label}: 隐藏横幅后仍须保留「坦克百科」操作`,
-    )
-  } else {
-    assert.ok(layout.header, `${label}: 缺少分区主视觉紧凑横幅`)
-  }
+  assert.equal(layout.banner, false, `${label}: 科技树不渲染装饰横幅`)
+  assert.ok(layout.header.height <= 60, `${label}: 标题栏应为单行（height=${layout.header.height}）`)
+  assert.ok(layout.title && layout.tankopedia && layout.title.right <= layout.tankopedia.left,
+    `${label}: 标题与百科入口应并排且互不重叠`)
   assert.ok(layout.scroll, `${label}: 缺少树滚动区`)
+  const visibleHeight = Math.min(layout.scroll.bottom, layout.viewport.height) - layout.scroll.top
+  assert.ok(visibleHeight >= layout.viewport.height * .52,
+    `${label}: 首屏树图可见高度不足（height=${visibleHeight}）`)
+  if (!scenario.landscape) {
+    const minimum = layout.viewport.height * (scenario.portrait ? 0.5 : 0.65)
+    assert.ok(layout.scroll.height >= minimum,
+      `${label}: 树滚动区只有 ${layout.scroll.height}px（应至少 ${minimum}px）`)
+  }
   assert.equal(layout.tabBar, false, `${label}: 外壳不得渲染底部 Tab 栏（L1）`)
   assert.ok(
     layout.document.scrollWidth <= layout.viewport.width,
     `${label}: 页面横向溢出（scrollWidth=${layout.document.scrollWidth} > ${layout.viewport.width}）`,
-  )
-  assert.ok(
-    layout.scroll.bottom <= layout.viewport.height + 1,
-    `${label}: 树滚动区伸到视口外（scroll.bottom=${layout.scroll.bottom}, viewport=${layout.viewport.height}）`,
   )
   if (scenario.portrait) {
     assert.equal(layout.ruler, null, `${label}: 竖屏不得渲染等级标尺`)
@@ -289,11 +289,6 @@ function assertScenario(scenario, layout) {
     assert.ok(layout.typeFilter && layout.typeFilter.bottom <= layout.scroll.top + 1, `${label}: 车种分段必须在等级列表之上`)
     assert.ok(layout.smallestCell >= 44, `${label}: 坦克卡片触控尺寸不足（${layout.smallestCell}px）`)
     assert.deepEqual(layout.iconImage, layout.iconFrame, `${label}: 无裁剪变换的封面图应恰好填满自己的图标盒`)
-    assert.ok(
-      layout.header.height >= 88 && layout.header.height <= 112,
-      `${label}: compact 横幅 ${layout.header.height}px 不在 88–112px 区间`,
-    )
-    assert.equal(layout.legacyHeader, null, `${label}: 不应再渲染 PageHeader`)
     return
   }
   assert.ok(layout.ruler, `${label}: 缺少等级条`)
@@ -305,13 +300,52 @@ function assertScenario(scenario, layout) {
     layout.ruler.top >= layout.scroll.top - 1,
     `${label}: 等级条跑到滚动视口上方（ruler.top=${layout.ruler.top}, scroll.top=${layout.scroll.top}）`,
   )
-  assert.ok(layout.ruler.bottom <= layout.viewport.height, `${label}: 等级条落到视口外（ruler.bottom=${layout.ruler.bottom}）`)
+  const visibleBottom = layout.scroll.top + layout.scroll.clientTop + layout.scroll.clientHeight
+  assert.ok(Math.abs(layout.ruler.bottom - visibleBottom) <= 1,
+    `${label}: 等级条应贴合树视口底部（${layout.ruler.bottom} ≠ ${visibleBottom}）`)
   if (scenario.landscape) {
     assert.ok(
       layout.scroll.height >= NODE_H * 2,
       `${label}: 矮横屏树视口只有 ${layout.scroll.height}px（应至少 ${NODE_H * 2}px）`,
     )
   }
+}
+
+async function assertMousePan(page) {
+  const point = await page.probe(() => {
+    const grid = document.querySelector('.tt-scroll')
+    grid.scrollIntoView({ block: 'start' })
+    const cell = grid.querySelector('button.tt-cell').getBoundingClientRect()
+    return { x: cell.x + cell.width / 2, y: cell.y + cell.height / 2 }
+  })
+  const send = (type, x, y, buttons) => page.client.send('Input.dispatchMouseEvent',
+    { type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', buttons, clickCount: 1 }, page.sessionId)
+  await send('mousePressed', point.x, point.y, 1)
+  await send('mouseMoved', point.x - 80, point.y - 40, 1)
+  await page.waitFor(() => document.querySelector('.tt-scroll.is-panning')?.scrollLeft > 0
+    && document.querySelector('.tt-scroll').scrollTop > 0)
+  await send('mouseReleased', point.x - 80, point.y - 40, 0)
+  assert.equal(await page.evaluate("new URLSearchParams(location.search).get('view')"), 'agent-techtree')
+  await page.tapSelector('[data-testid="techtree-cell-Fixture_1_1"]', false)
+  await page.waitFor(() => new URLSearchParams(location.search).get('view') === 'agent-tankopedia')
+}
+
+async function assertShortTreeCentered(page, origin, assets) {
+  await page.goto(`${origin}/?view=agent-techtree&nation=china&assets=${encodeURIComponent(assets)}`)
+  await page.waitFor(() => document.querySelectorAll('.tt-body .tt-cell').length === 1)
+  const layout = await page.probe(() => {
+    const viewport = document.querySelector('.tt-scroll').getBoundingClientRect()
+    const body = document.querySelector('.tt-body').getBoundingClientRect()
+    const ruler = document.querySelector('.tt-ruler').getBoundingClientRect()
+    const level = document.querySelector('.tt-ruler-cell').getBoundingClientRect()
+    return {
+      horizontal: (body.left + body.right - viewport.left - viewport.right) / 2,
+      vertical: (body.top + body.bottom - viewport.top - ruler.top) / 2,
+      aligned: Math.abs((body.left + body.right - level.left - level.right) / 2),
+      footer: viewport.bottom - ruler.bottom,
+    }
+  })
+  assert.ok(Object.values(layout).every(value => Math.abs(value) <= 1), JSON.stringify(layout))
 }
 
 const { server, origin } = await startFixtureServer()
@@ -332,6 +366,9 @@ const assets = await startFixtureAssetPack({
   extraRoutes: {
     ...catalogRoutes,
     [`/research/tech_tree/${NATION}.json`]: { type: 'application/json', body: JSON.stringify(tree) },
+    '/research/tech_tree/china.json': { type: 'application/json', body: JSON.stringify({
+      meta: { nation: 'china' }, nodes: [{ stem: 'Fixture_China', tankId: 9200, tier: 1, x: 1, y: 1 }], pending: [], edges: [],
+    }) },
     '/tank_images/crops.json': { type: 'application/json', body: '{}' },
     [`/tank_images/${topVehicle.tankId}.webp`]: {
       type: 'image/svg+xml',
@@ -369,6 +406,8 @@ try {
       const layout = await page.probe(layoutProbe)
       assertScenario(scenario, layout)
       if (scenario.name === 'phone-390x844') await nationKeyboardNavigation(page)
+      if (scenario.name === 'mouse-850x760') await assertMousePan(page)
+      if (scenario.name === 'desktop-1440x900') await assertShortTreeCentered(page, origin, assets.origin)
       console.log(`[browser-techtree-layout] ${scenario.name} PASS ${JSON.stringify({
         header: layout.header.height,
         tabs: layout.tabRows,
@@ -377,21 +416,7 @@ try {
         tierRows: layout.tierRows,
       })}`)
 
-      if (scenario.name === 'phone-landscape-740x360') {
-        await page.evaluate(`(() => {
-          const style = document.createElement('style')
-          style.id = 'techtree-negative-control'
-          style.textContent = '.tt-scroll { flex: none !important; max-block-size: calc(100dvh + 120px) !important; }'
-          document.head.append(style)
-        })()`)
-        const broken = await page.probe(layoutProbe)
-        assert.ok(
-          broken.ruler.bottom > broken.viewport.height,
-          `negative control: 固定 max-block-size 未被识别（ruler.bottom=${broken.ruler.bottom}, viewport=${broken.viewport.height}）`,
-        )
-        await page.evaluate(`document.getElementById('techtree-negative-control')?.remove()`)
-        console.log(`[browser-techtree-layout] negative control PASS（ruler.bottom=${broken.ruler.bottom} > viewport=${broken.viewport.height}）`)
-      }
+
     } catch (error) {
       failures.push(`${scenario.name}: ${error.message}; ${(await page.diagnose()).join('; ')}`)
     } finally {

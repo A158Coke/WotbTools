@@ -9,7 +9,7 @@
   padding: var(--space-1) var(--space-2); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body);
 }
 .tournament-field > input:focus-visible, .tournament-field > select:focus-visible, .tournament-field > textarea:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tournament-card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); }
+.tournament-card { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); border: 1px solid var(--color-card-border); border-radius: var(--radius-lg); background: var(--color-card); }
 .tournament-card h2 { margin: 0; font: var(--type-h2); }
 .tournament-card h3 { margin: 0; font: var(--type-h3); }
 .tournament-muted { margin: 0; color: var(--color-text-secondary); }
