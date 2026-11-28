@@ -363,7 +363,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 `--z-base: 0` · `--z-sticky: 100` · `--z-header: 200` · `--z-drawer: 300` · `--z-sheet: 400` · `--z-menu: 500` · `--z-dialog: 600` · `--z-tooltip: 650` · `--z-toast: 700`
 
-**当前动效实现基线**：`--duration-fast: 120ms`、`--duration-base: 200ms`、`--duration-slow: 300ms`、`--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 目前令三个时长归零，JS 侧（motion-v）通过 `shared/motion/motionPolicy.ts` 读取这些 token；overlay 进出场沿用现有 CSS keyframes。这描述**已实现行为**，不再禁止未来有证据支持的 Spring Physics、手势中断、velocity handoff 或回放表现层动效。扩展时必须沿用单一 motion ownership，并以真实设备、回放事实一致性及性能回归作为 Outside Judge。
+**当前动效实现基线**：`--duration-fast: 120ms`、`--duration-base: 200ms`、`--duration-slow: 300ms`、`--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 目前令三个时长归零，JS 侧（motion-v）通过 `shared/motion/motionPolicy.ts` 读取这些 token；overlay 进出场沿用现有 CSS keyframes。桌面侧栏折叠/展开由 `--sidebar-w`（`@property` 注册为可插值 `<length>`）过渡，所有消费方同步；过渡只在 `:root[data-sidebar-motion]` 上生效，由 `useSidebar.toggle()` 的手动切换添加并在结束后移除，视口 / 指针 / 方向换档直接跳到断点值、不产生过渡；reduced-motion 下瞬时。这描述**已实现行为**，不再禁止未来有证据支持的 Spring Physics、手势中断、velocity handoff 或回放表现层动效。扩展时必须沿用单一 motion ownership，并以真实设备、回放事实一致性及性能回归作为 Outside Judge。
 
 场景型工作台（2D / 3D 回放、装甲查看器）内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。**隔离必须真的写出来**：`position: relative` 与 `overflow: hidden` 都不建立层叠上下文，少了 `isolation: isolate` 时局部的 1–9 会和页面里任何裸 z-index 在外壳的上下文里裸比大小，"局部刻度"只是错觉。当前隔离点：`.playback-workspace`（工作台根）与 `.pb-map`（2D 场景）。
 

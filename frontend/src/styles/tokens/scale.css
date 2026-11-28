@@ -1,5 +1,14 @@
 @layer tokens;
 
+/* --sidebar-w 注册为可插值长度，让所有消费方共用同一个有效宽度。过渡只在用户
+   点击折叠开关时由 useSidebar 加 data-sidebar-motion 才生效；视口 / 指针 / 方向
+   换档不带该属性，--sidebar-w 直接跳到 0 / 72px，不会短暂保留侧栏占位。 */
+@property --sidebar-w {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
 @layer tokens {
   :root {
     --font-size-playback-feed: 17px;
@@ -143,6 +152,10 @@
 
     --focus-outline: 2px solid var(--color-accent);
     --focus-outline-offset: 2px;
+  }
+
+  :root[data-sidebar-motion] {
+    transition: --sidebar-w var(--duration-base) var(--ease-standard);
   }
 
   @supports (corner-shape: squircle) {
