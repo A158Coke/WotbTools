@@ -275,7 +275,8 @@
     "job_failed": "Не удалось выполнить задачу.",
     "diagnostic_id": "ID диагностики: {id}",
     "copy_diagnostic_id": "Копировать ID",
-    "diagnostic_id_copied": "Скопировано"
+    "diagnostic_id_copied": "Скопировано",
+    "HUNDRED_DELETE_REASON_TEXT_TOO_LONG": "Пояснение к причине удаления не может превышать 500 символов"
   },
   "upload": {
     "already_listed": "Эти реплеи уже в списке.",

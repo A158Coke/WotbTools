@@ -123,7 +123,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | `GET /api/admin/hof/hundred/submissions/{submissionId}/replays/{replayId}` | 同上 | 下载单个原始 .wotbreplay（ownership 校验 + UTF-8 filename） |
 | `POST /api/admin/hof/hundred/submissions/{id}/approve` | 同上 | 通过；无请求体，使用原申报值 |
 | `POST /api/admin/hof/hundred/submissions/{id}/reject` | 同上 | 拒绝（原因强制） |
-| `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 状态无关物理删除（原因强制；任意状态含 DELETED 墓碑均删除；写独立审计快照；不恢复 SUPERSEDED，不改其它记录） |
+| `POST /api/admin/hof/hundred/submissions/{id}/delete` | 同上 | 状态无关物理删除（原因强制，补充说明 trim 后 ≤500；任意状态含 DELETED 墓碑均删除；写独立审计快照；不恢复 SUPERSEDED，不改其它记录） |
 | `POST /api/admin/hof/hundred/submissions/bulk-delete` | 同上 | 批量物理删除任意状态（body `{ids, reason, reasonText}`）；逐条复用单条删除语义、每条独立事务，单批去重后上限 100（超出 400 `BULK_LIMIT_EXCEEDED`），不存在的 id 逐条以 `HUNDRED_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录 |
 
 百场 admin 列表与详情 DTO（`HundredAdminListItemDto` / `HundredAdminDetailDto`）在 V22 后都带 `wotbServer`，与 `wotbAccountId` 一起构成本域的业务身份；管理页详情视图渲染为 `wotbServer·wotbAccountId`（`HoFAdminModeration.vue` 共享代码同时服务百场与三环详情，列表页不渲染该复合身份），避免只显示账号 ID 时把跨服同号看成同一个账号。
@@ -199,7 +199,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 域 | 语义 | 结果 | 请求体 | 证据 / 物理文件处理 |
 |---|---|---|---|---|
 | 单场 `hall_of_fame_record` | **hard delete**（真删行，无 tombstone / blocklist） | 行消失，同一回放日后可重新上传 | 无 reason | 单事务 audit snapshot(`DELETE_ENTRY`) + 删行；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
-| 百场 `hundred_battle_submission` | **hard delete**（V50 起，状态无关；无 tombstone） | 行消失，连同回放证据元数据；独立审计快照 `hundred_admin_log` 存活 | `reason` 强制，`OTHER` 必填 `reasonText` | 同一事务：审计快照（删除前原始状态）+ 删 replay evidence 行（FK RESTRICT，先删证据）+ 删 submission 行（截图随行消失）；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
+| 百场 `hundred_battle_submission` | **hard delete**（V50 起，状态无关；无 tombstone） | 行消失，连同回放证据元数据；独立审计快照 `hundred_admin_log` 存活 | `reason` 强制，`OTHER` 必填 `reasonText`（trim 后 ≤500） | 同一事务：审计快照（删除前原始状态）+ 删 replay evidence 行（FK RESTRICT，先删证据）+ 删 submission 行（截图随行消失）；commit 后**跨域引用计数为 0** 才删 `{sha256}.wotbreplay`，清理失败仅 WARN（orphan 保留） |
 | 三环 `mark3_submission` | **soft delete**，仅 CURRENT 可删 | `CURRENT` → `DELETED` | 同上 | 同上（三环 evidence 在独立命名空间，不与单场/百场共用引用计数） |
 
 **bulk delete == 逐条重复权威单条删除语义**，没有第二套删除规则、状态机或 tombstone：

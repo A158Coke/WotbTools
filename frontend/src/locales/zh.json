@@ -275,7 +275,8 @@
     "job_failed": "任务执行失败。",
     "diagnostic_id": "诊断 ID：{id}",
     "copy_diagnostic_id": "复制 ID",
-    "diagnostic_id_copied": "已复制"
+    "diagnostic_id_copied": "已复制",
+    "HUNDRED_DELETE_REASON_TEXT_TOO_LONG": "删除补充说明不能超过 500 个字符"
   },
   "upload": {
     "already_listed": "这些回放已在列表中。",

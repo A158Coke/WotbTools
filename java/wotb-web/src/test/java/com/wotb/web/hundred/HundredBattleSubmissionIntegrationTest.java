@@ -305,6 +305,9 @@ class HundredBattleSubmissionIntegrationTest {
             repository.saveAndFlush(s);
             attachCompleteEvidence(s.getId());
             assertEquals(5, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size());
+            final List<String> beforeHashes = evidenceRepository
+                    .findBySubmissionIdOrderBySlotAsc(s.getId()).stream()
+                    .map(HundredBattleReplayEvidence::getSha256).distinct().toList();
 
             moderationService.deleteSubmission("admin-sub", "admin-user", s.getId(), "ADMIN_CORRECTION", "cleanup");
 
@@ -313,8 +316,11 @@ class HundredBattleSubmissionIntegrationTest {
                     status + " submission 行必须物理删除");
             assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).isEmpty(),
                     status + " 回放证据元数据必须物理删除");
-            for (final HundredBattleReplayEvidence row : evidenceRepository.findAll()) {
-                assertFalse(Files.exists(storageDir.resolve(row.getSha256() + ".wotbreplay")));
+            // 删除前取到的 5 个 hash：无引用物理文件必须实际消失（空循环会掩盖文件泄漏）
+            assertEquals(5, beforeHashes.size(), status + " 删除前必须有 5 个证据 hash");
+            for (final String hash : beforeHashes) {
+                assertFalse(Files.exists(storageDir.resolve(hash + ".wotbreplay")),
+                        status + " 无引用物理证据应清理: " + hash);
             }
             // 审计快照独立存活，记录删除前原始状态
             final List<HundredAdminLog> logs =
@@ -359,6 +365,55 @@ class HundredBattleSubmissionIntegrationTest {
                 () -> moderationService.deleteSubmission("admin-sub", null, s.getId(), null, null));
         assertTrue(repository.findById(s.getId()).isPresent(), "reason 校验失败不得删除行");
         assertTrue(auditRepository.findAll().isEmpty(), "reason 校验失败不得留下审计");
+    }
+
+    @Test
+    void hardDeleteKeepsSharedReplayFileUntilLastReferenceIsDeleted() throws Exception {
+        final Path storageDir = Path.of("data/replays-it");
+        // 两条 submission 共享同一内容寻址回放（同 sha256）
+        final byte[] data = ("shared-replay-" + UUID.randomUUID()).getBytes();
+        final String hash = sha256(data);
+        final HundredReplayEvidenceService.PendingReplay replay =
+                new HundredReplayEvidenceService.PendingReplay(1, "shared.wotbreplay", hash, data.length, "arena-1", data);
+        evidenceService.storeAll(List.of(replay));
+        final HundredBattleSubmission s1 = insertRow("PENDING", 4200, 150);
+        final HundredBattleSubmission s2 = insertRow("PENDING", 4300, 150);
+        evidenceService.attach(s1.getId(), List.of(replay));
+        evidenceService.attach(s2.getId(), List.of(replay));
+        final Path file = storageDir.resolve(hash + ".wotbreplay");
+        assertTrue(Files.exists(file), "共享物理文件必须存在");
+
+        moderationService.deleteSubmission("admin-sub", null, s1.getId(), "ADMIN_CORRECTION", null);
+        assertTrue(repository.findById(s1.getId()).isEmpty());
+        assertTrue(evidenceRepository.findBySubmissionIdOrderBySlotAsc(s1.getId()).isEmpty());
+        assertTrue(Files.exists(file), "共享 hash 仍被另一 submission 引用，物理文件必须保留");
+
+        moderationService.deleteSubmission("admin-sub", null, s2.getId(), "ADMIN_CORRECTION", null);
+        assertTrue(repository.findById(s2.getId()).isEmpty());
+        assertFalse(Files.exists(file), "最后一个引用删除后无引用物理文件应清理: " + hash);
+    }
+
+    @Test
+    void hardDeleteRejectsOversizedReasonTextWithoutSideEffects() {
+        final HundredBattleSubmission s = insertRow("CURRENT", 4000, 150);
+        final HundredBattleReplayEvidence evidence = new HundredBattleReplayEvidence();
+        evidence.setSubmissionId(s.getId());
+        evidence.setSlot(1);
+        evidence.setOriginalFilename("a.wotbreplay");
+        evidence.setSha256("0".repeat(64));
+        evidence.setFileSize(1L);
+        evidence.setArenaId("arena-1");
+        evidenceRepository.save(evidence);
+        evidenceRepository.flush();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> moderationService.deleteSubmission("admin-sub", null, s.getId(),
+                        "ADMIN_CORRECTION", "x".repeat(501)));
+
+        assertTrue(repository.findById(s.getId()).isPresent(), "超长说明不得删除行");
+        assertEquals(1, evidenceRepository.findBySubmissionIdOrderBySlotAsc(s.getId()).size(),
+                "超长说明不得删除证据行");
+        assertTrue(auditRepository.findAll().isEmpty(), "超长说明不得留下审计");
     }
 
 }

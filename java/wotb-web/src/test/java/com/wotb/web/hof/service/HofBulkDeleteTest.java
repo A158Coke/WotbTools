@@ -109,6 +109,15 @@ class HofBulkDeleteTest {
     }
 
     @Test
+    void hundredBulkDeleteRejectsOversizedReasonTextBeforeAnyDeletion() {
+        assertThrows(IllegalArgumentException.class,
+                () -> hundredModerationService().bulkDeleteSubmissions(
+                        ADMIN_SUB, null, List.of(1L, 2L), "ADMIN_CORRECTION", "x".repeat(501)));
+        verify(hundredRepository, never()).findByIdForUpdate(anyLong());
+        verify(hundredEvidence, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
     void hundredBulkDeleteRequestNormalizesIdsAndEnforcesLimit() {
         final var request = new com.wotb.web.hundred.dto.BulkDeleteModerationRequest(
                 java.util.Arrays.asList(1L, 2L, 1L, null), "ADMIN_CORRECTION", null);

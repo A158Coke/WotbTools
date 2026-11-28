@@ -22,6 +22,10 @@ import java.util.List;
 
 @Service
 public class HundredModerationService {
+
+    /** 与 V50 hundred_admin_log.delete_reason_text varchar(500) 对齐的补充说明长度上限（trim 后）。 */
+    static final int DELETE_REASON_TEXT_MAX_LENGTH = 500;
+
     private final HundredBattleSubmissionRepository repository;
     private final HundredAdminLogRepository auditRepository;
     private final HundredBattleMapper mapper;
@@ -115,11 +119,15 @@ public class HundredModerationService {
         return new BulkDeleteResultDto(ids.size(), deleted, ids.size() - deleted, results);
     }
 
+    /** reason/text 边界在进入任何删除事务前统一校验（单条与批量同一入口），超长说明不得触达审计落库。 */
     private static String requireDeleteReason(final String value, final String text) {
         final String reason = HundredBattleSubmissionService.requireCategory(
                 value, "HUNDRED_DELETE_REASON_REQUIRED", HundredBattleSubmissionService.DELETE_CATEGORIES);
         if ("OTHER".equals(reason) && !StringUtils.hasText(text)) {
             throw new IllegalArgumentException("HUNDRED_DELETE_REASON_TEXT_REQUIRED");
+        }
+        if (StringUtils.hasText(text) && text.trim().length() > DELETE_REASON_TEXT_MAX_LENGTH) {
+            throw new IllegalArgumentException("HUNDRED_DELETE_REASON_TEXT_TOO_LONG");
         }
         return reason;
     }

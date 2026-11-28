@@ -430,6 +430,35 @@ class HundredSubmissionLifecycleTest extends HundredSubmissionTestSupport {
     }
 
     @Test
+    void deleteRejectsOversizedReasonTextWithoutAnySideEffect() {
+        // V50 审计列 delete_reason_text varchar(500)：超长说明必须在进入删除事务前被拒绝，
+        // 不得以数据库异常形式泄漏、也不得留下半完成的删除/审计
+        final String oversized = "x".repeat(501);
+        assertThatThrownBy(() -> moderationService.deleteSubmission(ADMIN, null, 10L, "ADMIN_CORRECTION", oversized))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("HUNDRED_DELETE_REASON_TEXT_TOO_LONG");
+        verify(repository, never()).findByIdForUpdate(anyLong());
+        verify(repository, never()).delete(any(HundredBattleSubmission.class));
+        verify(auditRepository, never()).save(any());
+        verify(evidenceService, never()).discardForSubmission(anyLong());
+    }
+
+    @Test
+    void deleteAcceptsReasonTextAtMaxLengthBoundary() {
+        final HundredBattleSubmission s = currentSubmission(4120);
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(s));
+        final String maxText = "x".repeat(500);
+
+        moderationService.deleteSubmission(ADMIN, null, 10L, "ADMIN_CORRECTION", "  " + maxText + "  ");
+
+        final var audit = org.mockito.ArgumentCaptor.forClass(
+                com.wotb.web.hundred.entity.HundredAdminLog.class);
+        verify(auditRepository).save(audit.capture());
+        assertThat(audit.getValue().getDeleteReasonText()).isEqualTo(maxText);
+        verify(repository).delete(s);
+    }
+
+    @Test
     void deleteMissingSubmissionReturnsNotFound() {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.empty());
 
