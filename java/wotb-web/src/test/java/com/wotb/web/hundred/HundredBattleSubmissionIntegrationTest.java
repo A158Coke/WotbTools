@@ -377,7 +377,9 @@ class HundredBattleSubmissionIntegrationTest {
                 new HundredReplayEvidenceService.PendingReplay(1, "shared.wotbreplay", hash, data.length, "arena-1", data);
         evidenceService.storeAll(List.of(replay));
         final HundredBattleSubmission s1 = insertRow("PENDING", 4200, 150);
-        final HundredBattleSubmission s2 = insertRow("PENDING", 4300, 150);
+        // uk_hundred_battle_pending_account_vehicle：同 (server, account, vehicle) 不允许第二条 active PENDING，
+        // 共享引用改用跨服另一账号身份
+        final HundredBattleSubmission s2 = insertRow(OTHER_SERVER, "PENDING", 4300, 150);
         evidenceService.attach(s1.getId(), List.of(replay));
         evidenceService.attach(s2.getId(), List.of(replay));
         final Path file = storageDir.resolve(hash + ".wotbreplay");
