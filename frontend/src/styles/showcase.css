@@ -7,9 +7,9 @@
   --showcase-surface: var(--color-surface-1);
   --showcase-surface-2: var(--color-surface-2);
   --showcase-line: color-mix(in srgb, var(--border) 76%, var(--accent) 24%);
-  --showcase-tactical: linear-gradient(160deg, var(--color-surface-2) 0%, var(--color-surface-1) 100%);
+  --showcase-tactical: var(--color-card);
   --showcase-tactical-2: linear-gradient(165deg, var(--color-surface-2) 0%, var(--color-canvas) 100%);
-  --showcase-tactical-border: var(--color-border-subtle);
+  --showcase-tactical-border: var(--color-card-border);
   --showcase-tactical-border-strong: color-mix(in srgb, var(--color-accent) 38%, transparent);
   --showcase-tactical-heading: var(--color-text-primary);
   --showcase-tactical-text: var(--color-text-secondary);

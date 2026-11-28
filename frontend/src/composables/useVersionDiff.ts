@@ -136,6 +136,11 @@ export function fetchPairSummary(pair: DiffPair): Promise<Record<string, unknown
   })
 }
 
+export function fetchDatasetParamsFormat(datasetId: string): Promise<Record<string, unknown> | null> {
+  return fetchJson(datasetAssetUrl(datasetId, '/research/params/format.json'))
+    .then(data => isRecord(data) && isRecord(data.params) ? data.params : null)
+}
+
 export function fetchDatasetTankCrops(datasetId: string): Promise<Record<string, unknown>> {
   return fetchJson(datasetAssetUrl(datasetId, '/tank_images/crops.json'))
     .then(data => (isRecord(data) && isRecord(data.icons) ? data.icons : {}))

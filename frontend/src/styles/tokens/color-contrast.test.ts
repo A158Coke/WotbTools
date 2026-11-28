@@ -164,6 +164,11 @@ const THEMES = {
 }
 
 describe('theme token contrast (WCAG 2.2 AA)', () => {
+  it('keeps full-opacity armor notes and leader strokes at or above 4.5:1', () => {
+    const tokens = block(':root')
+    expect(ratio(tokens['--color-armor-note-ink'], tokens['--color-armor-note-base'])).toBeGreaterThanOrEqual(4.5)
+  })
+
   for (const [name, selector] of Object.entries(THEMES)) {
     it(`${name}: 文字 ≥ 4.5、UI ≥ 3、强调色上的文字 ≥ 4.5（含真实背景图上的玻璃表面）`, async () => {
       const tokens = block(selector)
@@ -226,7 +231,7 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     }
   })
 
-  it('坦克卡片高级/收藏底色：车名对 36%/46% 语义底 ≥ 3（用户裁示例外）、属性标签 ≥ 4.5、语义 pill 对自绘 16% 底 ≥ 4.5', () => {
+  it('金币车与收藏车使用共同卡片底色，车名、属性标签与语义 pill 对比度均 ≥ 4.5', () => {
     const component = readFileSync(resolve(HERE, '../../components/TankCatalogMenu.vue'), 'utf8')
     const style = component.slice(component.indexOf('<style'))
     const nameRules = [...style.matchAll(
@@ -240,21 +245,26 @@ describe('theme token contrast (WCAG 2.2 AA)', () => {
     expect(nameColorDecls.length, '.tp-card-name 颜色声明数量（应为 2 条染色卡规则）').toBe(2)
     const labelTokens = [...style.matchAll(/\.tp-card\.is-(?:premium|collector(?::not\(\.is-premium\))?) \.tp-stat-label[^{]*\{[^}]*color:\s*var\((--color-[\w-]+)\)/g)].map(match => match[1])
     expect(labelTokens, '染色卡属性标签覆写规则缺失').toEqual(['--color-text-primary'])
+    expect(style).toMatch(/\.tp-card \{[^}]*background: var\(--color-card\)/)
     const failures: string[] = []
     for (const [name, selector] of Object.entries(THEMES)) {
       const tokens = block(selector)
-      for (const semantic of ['--color-warning', '--color-info']) {
-        for (const alpha of [0.36, 0.46]) {
-          const bg = oklabMix(tokens[semantic], tokens['--color-surface-1'], alpha)
-          const rule = nameRules.find(candidate => candidate.semantic === semantic)
-          if (!rule) continue
-          const nameColor = oklabMix(tokens[semantic], tokens['--color-text-primary'], rule.mix)
-          const name_ = ratio(nameColor, bg)
-          if (name_ < 3) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% name ${name_.toFixed(2)}`)
-          for (const labelToken of labelTokens) {
-            const value = ratio(tokens[labelToken], bg)
-            if (value < 4.5) failures.push(`${name} ${semantic} ${Math.round(alpha * 100)}% ${labelToken} ${value.toFixed(2)}`)
-          }
+      const glass = glassTokens(selector)
+      const fill = glass['--color-card-fill']
+      expect(fill.a).toBeGreaterThanOrEqual(0.9)
+      expect(fill.a).toBeLessThanOrEqual(0.95)
+      expect(glass['--color-card-section'].a).toBe(0.4)
+      if (name === 'winter') expect([fill.r, fill.g, fill.b]).toEqual([255, 255, 255])
+      for (const backdrop of ['#000000', '#ffffff']) {
+        const bg = composite(fill, backdrop)
+        for (const rule of nameRules) {
+          const nameColor = oklabMix(tokens[rule.semantic], tokens['--color-text-primary'], rule.mix)
+          const value = ratio(nameColor, bg)
+          if (value < 4.5) failures.push(`${name} ${rule.semantic} name ${value.toFixed(2)}`)
+        }
+        for (const token of labelTokens) {
+          const value = ratio(tokens[token], bg)
+          if (value < 4.5) failures.push(`${name} ${token} ${value.toFixed(2)}`)
         }
       }
     }

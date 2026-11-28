@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { BoxGeometry, Group, LineSegments, Mesh } from 'three'
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial } from 'three'
+import { applyArmorComparisonFocus } from './armorComparisonLayer.js'
 import { armorComparisonChoices, armorCompareWidth } from './armorComparisonModel.js'
 import { createArmorThicknessScene } from './armorComparisonScene.js'
 
@@ -52,7 +53,7 @@ describe('armor version comparison', () => {
       .toEqual({ module: 'turret', plate: '6', left: null, right: null, kind: 'spaced' })
   })
 
-  it('outlines only matched collision meshes and preserves both end stops', () => {
+  it('fills changed plate surfaces and restores them after a single-plate selection', () => {
     const tank = {
       armor_model: { hull: { plates: { '1': 90, '2': 100 } } },
       model_origins: { track: [0, 0, 0], turret: [0, 0, 1] },
@@ -77,13 +78,17 @@ describe('armor version comparison', () => {
     expect(model.anchors[0].kind).toBe('thickness')
     expect(model.anchors[0].plate).toBe('2')
     expect(model.scene.children[0].children).toHaveLength(2)
-    // 每块板一条查看器同款 45° 勾线；改动板额外一条白色 0° 轮廓（只标改动板）。
-    const lines = model.scene.children[0].children
-      .flatMap(mesh => mesh.children)
-      .filter(child => (child as LineSegments).isLineSegments) as LineSegments[]
-    expect(lines).toHaveLength(3)
-    const white = lines.filter(line => ((line.material as { color?: { getHex(): number } }).color?.getHex()) === 0xffffff)
-    expect(white).toHaveLength(1)
+    const [unchanged, changed] = model.plates as Mesh<BoxGeometry, MeshBasicMaterial>[]
+    expect(model.plates.every(mesh => mesh.children.length === 0)).toBe(true)
+    const focus = (plate: typeof changed) => [plate.material.opacity, plate.material.depthWrite, plate.material.transparent]
+    expect(focus(changed)).toEqual([1, true, false])
+    expect(focus(unchanged)).toEqual([0.18, false, true])
+    applyArmorComparisonFocus(model.plates, new Set(['hull:1']))
+    expect(focus(changed)).toEqual([0.18, false, true])
+    expect(focus(unchanged)).toEqual([1, true, false])
+    applyArmorComparisonFocus(model.plates, null)
+    expect(focus(changed)).toEqual([1, true, false])
+    expect(focus(unchanged)).toEqual([0.18, false, true])
     model.dispose()
     expect([0, 50, 100].map(percent => armorCompareWidth(401, percent))).toEqual([0, 201, 401])
   })

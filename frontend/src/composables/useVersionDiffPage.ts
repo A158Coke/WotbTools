@@ -6,10 +6,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navigateToDataset } from './useDataVersion.js'
 import {
-  datasetAssetUrl, fetchDatasetTank, fetchDatasetTankCrops, fetchMapDiff, fetchPairSummary,
+  datasetAssetUrl, fetchDatasetParamsFormat, fetchDatasetTank, fetchDatasetTankCrops, fetchMapDiff, fetchPairSummary,
   fetchTankDiff, loadVersionDiffCatalog, versionDiffCatalogState,
 } from './useVersionDiff.js'
 import type { DiffPair } from './useVersionDiff.js'
+import { matchingTopConfig, needsTopConfig, onlyPairedConfig } from '../components/version-diff/versionDiffFormat.js'
 import type { DiffChange } from '../components/version-diff/versionDiffFormat.js'
 import type { ArmorDiffDetail } from '../scene/viewer/armorComparisonModel.js'
 
@@ -71,6 +72,8 @@ export interface DiffSummary {
 }
 
 export interface TankProfileConfig {
+  turret_local?: number
+  gun_local?: number
   shells?: Array<{ damage?: number; penetration?: number; [key: string]: unknown }>
   reload?: number
   dpm?: number
@@ -92,6 +95,8 @@ export interface DiffTankDetail extends ArmorDiffDetail {
   configs?: ArmorDiffDetail['configs'] & {
     added?: Array<{ gun?: string; turret?: string; gunLocal?: number; turretLocal?: number; [key: string]: unknown }>
     removed?: Array<{ gun?: string; turret?: string; gunLocal?: number; turretLocal?: number; [key: string]: unknown }>
+    unpairedOld?: unknown[]
+    unpairedNew?: unknown[]
   }
   research?: {
     changes?: DiffChange[]
@@ -116,7 +121,9 @@ export function useVersionDiffPage() {
   const summaryError = ref('')
   const releaseMismatch = ref<Array<{ side: 'from' | 'to'; expected?: string; actual?: string | null }>>([])
   const armorVerification = ref<'pending' | 'verified' | 'mismatch'>('pending')
+  const paramFormat = ref<Record<string, unknown> | null>(null)
   const statDetails = ref<Record<string, DiffTankDetail>>({})
+  const topConfigs = ref<Record<string, string>>({})
   const coverCrops = ref<Record<string, Record<string, unknown>>>({})
   const tankProfiles = ref<Record<string, TankProfile | null>>({})
   const tankRequests = new Map()
@@ -232,7 +239,9 @@ export function useVersionDiffPage() {
     summary.value = null
     releaseMismatch.value = []
     armorVerification.value = 'pending'
+    paramFormat.value = null
     statDetails.value = {}
+    topConfigs.value = {}
     tankProfiles.value = {}
     coverCrops.value = {}
     mapQuery.value = ''
@@ -244,6 +253,11 @@ export function useVersionDiffPage() {
       summaryState.value = 'ready'
       await checkReleases(next, request)
       if (request !== loadSummary.seq) return
+      if (changedTanks.value.length && !releaseMismatch.value.some(identity => identity.side === 'to')) {
+        void fetchDatasetParamsFormat(next.to.dataset).then(format => {
+          if (request === loadSummary.seq) paramFormat.value = format
+        }).catch(() => {})
+      }
       const sides: Array<'from' | 'to'> = ['from', 'to']
       for (const side of sides) {
         if (!releaseMismatch.value.some(identity => identity.side === side)) {
@@ -253,7 +267,13 @@ export function useVersionDiffPage() {
       for (const row of statTanks.value) {
         if (!row.detail) continue
         void tankDetail(next, row).then(detail => {
-          if (request === loadSummary.seq) statDetails.value[row.id] = detail
+          if (request !== loadSummary.seq) return
+          statDetails.value[row.id] = detail
+          const onlyConfig = onlyPairedConfig(detail.configs)
+          if (onlyConfig) topConfigs.value[row.id] = onlyConfig
+          else if (armorVerification.value === 'verified' && needsTopConfig(detail)) {
+            void loadTopConfig(next, row.id, request)
+          }
         }).catch(() => {})
       }
       // 装甲章节的文字版要展示完整 diff（含配置级板件），与对比器共用同一份缓存请求。
@@ -335,6 +355,19 @@ export function useVersionDiffPage() {
     }
   }
 
+  async function loadTopConfig(activePair: DiffPair, tankId: number, request: number) {
+    try {
+      const [before, after] = await Promise.all([
+        fetchDatasetTank(activePair.from.dataset, tankId),
+        fetchDatasetTank(activePair.to.dataset, tankId),
+      ]) as [TankProfile | null, TankProfile | null]
+      const identity = matchingTopConfig(before?.configs, after?.configs)
+      if (request === loadSummary.seq && identity) topConfigs.value[tankId] = identity
+    } catch {
+      // Without both exported configurations, keep the summary and configuration rows.
+    }
+  }
+
   function tankDataset(row: DiffTankRow, activePair: DiffPair | null = pair.value): string {
     if (!activePair) return ''
     return row.status === 'removed' ? activePair.from.dataset : activePair.to.dataset
@@ -402,20 +435,11 @@ export function useVersionDiffPage() {
       })
   }
 
-  function toggleArmorSelection(row: DiffTankRow, selection: { configKey?: string; keys: string[] }) {
+  function setArmorSelection(row: DiffTankRow, selection: { configKey?: string; keys: string[] }) {
     const keys = selection.keys
-    const configKey = selection.configKey || ''
-    const current = armorSelection.value
-    if (!keys.length) {
-      armorSelection.value = { tankId: null, configKey: '', keys: [] }
-      return
-    }
-    const same = current.tankId === row.id && current.configKey === configKey
-      && keys.length === current.keys.length
-      && keys.every(key => current.keys.includes(key))
-    armorSelection.value = same
-      ? { tankId: null, configKey: '', keys: [] }
-      : { tankId: row.id, configKey, keys: [...keys] }
+    armorSelection.value = keys.length
+      ? { tankId: row.id, configKey: selection.configKey || '', keys: [...keys] }
+      : { tankId: null, configKey: '', keys: [] }
   }
 
   function armorSelectionKeys(row: DiffTankRow) {
@@ -471,13 +495,13 @@ export function useVersionDiffPage() {
 
   return {
     catalog, selectedPairId, summary, summaryState, summaryError, releaseMismatch, armorVerification,
-    statDetails, coverCrops, tankProfiles, mapQuery,
+    paramFormat, statDetails, topConfigs, coverCrops, tankProfiles, mapQuery,
     tankDialog, armorDialog, armorSelection, mapDialog,
     pair, tankRows, changedTanks, armorTanks, lineup, statTanks, otherTanks, synopsis,
     allMaps, mapRows, itemFiles, techTree, schemaCounts, presentation, artifacts, unresolved,
     gameplayItems, techTreeChanged, itemSchemas, hasData,
     selectPair, tankDataset, loadSummary, tankDetail, armorDetailFor, openTank, openArmor, openMap,
-    toggleArmorSelection, armorSelectionKeys, armorSelectionConfigKey, openVersion, openArmorViewer, openMapVersion,
+    setArmorSelection, armorSelectionKeys, armorSelectionConfigKey, openVersion, openArmorViewer, openMapVersion,
     retryCatalog, schemaEntries,
   }
 }

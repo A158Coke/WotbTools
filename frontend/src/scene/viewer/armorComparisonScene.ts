@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { armorCompareWidth } from './armorComparisonModel.js'
 import type { ArmorComparisonChoice, ComparisonSide } from './armorComparisonModel.js'
-import { createArmorThicknessScene, loadArmorComparisonModels, disposeArmorComparisonModels } from './armorComparisonLayer.js'
+import { applyArmorComparisonFocus, createArmorThicknessScene, loadArmorComparisonModels, disposeArmorComparisonModels } from './armorComparisonLayer.js'
 import type { ComparisonLayer, Models, Source, SurfaceSample } from './armorComparisonLayer.js'
 
 export { createArmorThicknessScene, loadArmorComparisonModels, disposeArmorComparisonModels }
@@ -38,6 +38,48 @@ function traceChip(context: CanvasRenderingContext2D, x: number, y: number, w: n
   context.closePath()
 }
 
+const ANNOTATION_ROW_HEIGHT = 20
+const FADED_ANNOTATION_OPACITY = 0.3
+
+type Annotation = {
+  text: string; x: number; y: number; w: number; lineX: number
+  attach: { x: number; y: number }
+  selected: boolean
+}
+
+function paintAnnotations(context: CanvasRenderingContext2D, annotations: Annotation[], ink: string, base: string) {
+  // A dark casing around the light center keeps leaders visible over both light and dark armor.
+  context.lineCap = 'round'
+  for (const { lineX, y, attach } of annotations) {
+    context.beginPath()
+    context.moveTo(lineX, y + ANNOTATION_ROW_HEIGHT / 2)
+    context.lineTo(attach.x, attach.y)
+    context.lineWidth = 4
+    context.strokeStyle = base
+    context.stroke()
+    context.lineWidth = 1.5
+    context.strokeStyle = ink
+    context.stroke()
+    context.beginPath()
+    context.arc(attach.x, attach.y, 3, 0, Math.PI * 2)
+    context.fillStyle = ink
+    context.fill()
+    context.strokeStyle = base
+    context.stroke()
+  }
+  context.font = '600 11px system-ui, sans-serif'
+  for (const { x, y, w, text } of annotations) {
+    traceChip(context, x, y, w, ANNOTATION_ROW_HEIGHT - 2, 4)
+    context.fillStyle = base
+    context.fill()
+    context.lineWidth = 1
+    context.strokeStyle = ink
+    context.stroke()
+    context.fillStyle = ink
+    context.fillText(text, x + 6, y + 14, w - 12)
+  }
+}
+
 export function mountArmorComparison(
   host: HTMLDivElement,
   sources: [Source, Source],
@@ -45,7 +87,7 @@ export function mountArmorComparison(
   contextLost: () => void,
   onInspect: (plate: { side: ComparisonSide; thickness: number } | null) => void,
   formatLabel: (label: ArmorComparisonLabel) => string = label => `#${label.plate}`,
-  onIsolateRequest: (key: string) => void = () => {},
+  onIsolateRequest: (key: string | null) => void = () => {},
 ) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   const canvas = renderer.domElement
@@ -72,6 +114,7 @@ export function mountArmorComparison(
 
   // 旁注画布：与 WebGL 同一帧内同步绘制（旋转/缩放零延迟），DOM 只承载版本角标与悬停读数。
   const overlay = document.createElement('canvas')
+  const fadedOverlay = document.createElement('canvas')
   overlay.className = 'vd-armor-annotation'
   overlay.setAttribute('aria-hidden', 'true')
   overlay.style.position = 'absolute'
@@ -79,11 +122,6 @@ export function mountArmorComparison(
   overlay.style.inlineSize = '100%'
   overlay.style.blockSize = '100%'
   overlay.style.pointerEvents = 'none'
-
-  function themeColor(name: string, fallback: string): string {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-    return raw || fallback
-  }
 
   function attachAnchor(anchor: ComparisonLayer['anchors'][number]): { x: number; y: number } {
     // 朝向相机的表面采样点里取离相机最近的——保证引线端点钉在板件可见表面上。
@@ -122,29 +160,27 @@ export function mountArmorComparison(
     }
     // 同一块板在两个版本里投影到几乎同一屏幕位置：按 key 合并成一条旁注，
     // 文案同时带修改前后数值；引线端点取"当前分割下可见的那一侧"的板件。
+    const split = armorCompareWidth(width, percent)
     const byKey = new Map<string, Candidate>()
     layers.forEach((layer, index) => {
       const side = index as ComparisonSide
+      if ((side === 0 && split === 0) || (side === 1 && split === width)) return
       for (const anchor of layer.anchors) {
         const attach = attachAnchor(anchor)
-        const fits = side === 0 ? attach.x <= armorCompareWidth(width, percent) : attach.x >= armorCompareWidth(width, percent)
+        const fits = side === 0 ? attach.x <= split : attach.x >= split
         const prev = byKey.get(anchor.key)
         if (!prev || (!prev.fits && fits)) byKey.set(anchor.key, { side, anchor, attach, fits })
       }
     })
     if (!byKey.size) return
-    const lineColor = themeColor('--color-accent', '#3d8bff')
-    const chipBackground = themeColor('--color-surface-1', '#ffffff')
-    const chipBorder = themeColor('--color-border-strong', '#8a8f98')
-    const textColor = themeColor('--color-text-primary', '#222')
-    // 隔离激活时：选中板件的旁注保持全亮，其余板件的旁注/引线淡出。
-    const active = isolatedKeys && isolatedKeys.length ? new Set(isolatedKeys) : null
-    const rowHeight = 20
-    const columnWidth = 112
+    const theme = getComputedStyle(document.documentElement)
+    const ink = theme.getPropertyValue('--color-armor-note-ink').trim()
+    const base = theme.getPropertyValue('--color-armor-note-base').trim()
+    const active = isolatedKeys?.length ? new Set(isolatedKeys) : null
+    const rowHeight = ANNOTATION_ROW_HEIGHT
+    const columnWidth = Math.min(128, width / 2)
+    const annotations: Annotation[] = []
     context.font = '600 11px system-ui, sans-serif'
-    context.lineWidth = 1
-    context.strokeStyle = lineColor
-    context.fillStyle = lineColor
     for (const side of [0, 1] as const) {
       const items = [...byKey.values()]
         .filter(candidate => candidate.side === side)
@@ -165,31 +201,34 @@ export function mountArmorComparison(
         const chipX = side === 0 ? 4 : width - 4 - chipWidth
         const chipY = labelY
         chipRects.push({ key: item.anchor.key, x: chipX, y: chipY, w: chipWidth, h: rowHeight - 2 })
-        const lineStartX = side === 0 ? 4 + chipWidth : chipX
-        const lineStartY = chipY + rowHeight / 2
-        const selected = !active || active.has(item.anchor.key)
-        context.globalAlpha = selected ? 1 : 0.3
-        context.beginPath()
-        context.moveTo(lineStartX, lineStartY)
-        context.lineTo(item.attach.x, item.attach.y)
-        context.stroke()
-        context.beginPath()
-        context.arc(item.attach.x, item.attach.y, 2.5, 0, Math.PI * 2)
-        context.fill()
-        traceChip(context, chipX, chipY, chipWidth, rowHeight - 2, 4)
-        context.globalAlpha = (selected ? 1 : 0.3) * 0.92
-        context.fillStyle = chipBackground
-        context.fill()
-        context.globalAlpha = selected ? 1 : 0.3
-        context.strokeStyle = chipBorder
-        context.stroke()
-        context.fillStyle = textColor
-        context.fillText(text, chipX + 6, chipY + 13)
-        context.globalAlpha = 1
-        context.strokeStyle = lineColor
-        context.fillStyle = lineColor
+        annotations.push({
+          text, x: chipX, y: chipY, w: chipWidth,
+          lineX: side === 0 ? chipX + chipWidth : chipX,
+          attach: item.attach, selected: !active || active.has(item.anchor.key),
+        })
       })
     }
+
+    if (active) {
+      const faded = annotations.filter(annotation => !annotation.selected)
+      if (faded.length) {
+        if (fadedOverlay.width !== overlay.width) fadedOverlay.width = overlay.width
+        if (fadedOverlay.height !== overlay.height) fadedOverlay.height = overlay.height
+        const fadedContext = fadedOverlay.getContext('2d')
+        if (fadedContext) {
+          fadedContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+          fadedContext.clearRect(0, 0, width, height)
+          paintAnnotations(fadedContext, faded, ink, base)
+          // Fade the composed layer once so overlapping strokes, chips and text stay translucent.
+          context.save()
+          context.resetTransform()
+          context.globalAlpha = FADED_ANNOTATION_OPACITY
+          context.drawImage(fadedOverlay, 0, 0)
+          context.restore()
+        }
+      }
+    }
+    paintAnnotations(context, annotations.filter(annotation => annotation.selected), ink, base)
   }
 
   function draw() {
@@ -210,41 +249,9 @@ export function mountArmorComparison(
     drawAnnotations()
   }
 
-  // 隔离效果 = 装甲查看器厚度模式点击板件（applyArmorHighlight）的同一套数值：
-  // 选中板 opacity 1；其余装甲板 0.18、模块网格（炮管/履带）0.15，且不写深度（几乎透明）。
   function applyIsolation() {
-    const active = isolatedKeys && isolatedKeys.length ? new Set(isolatedKeys) : null
-    layers?.forEach(layer => {
-      for (const plate of layer.plates) {
-        const mesh = plate as THREE.Mesh
-        const material = mesh.material as THREE.MeshBasicMaterial
-        const key = String(mesh.userData.armorKey || '')
-        const isModule = key.startsWith('chassis:') || key.startsWith('gunBarrel:')
-        let opacity: number
-        let depthWrite: boolean
-        if (!active) {
-          opacity = Number(material.userData.baseOpacity ?? 1)
-          depthWrite = Boolean(material.userData.baseDepthWrite ?? true)
-        } else if (active.has(key)) {
-          opacity = 1
-          depthWrite = true
-        } else {
-          opacity = isModule ? 0.15 : 0.18
-          depthWrite = false
-        }
-        const transparent = opacity < 1
-        if (material.transparent !== transparent || material.depthWrite !== depthWrite
-          || material.opacity !== opacity) {
-          material.transparent = transparent
-          material.opacity = opacity
-          material.depthWrite = depthWrite
-          material.needsUpdate = true
-        }
-        for (const child of mesh.children) {
-          if ((child as THREE.LineSegments).isLineSegments) child.visible = !active || active.has(key)
-        }
-      }
-    })
+    const active = isolatedKeys?.length ? new Set(isolatedKeys) : null
+    layers?.forEach(layer => applyArmorComparisonFocus(layer.plates, active))
     draw()
   }
 
@@ -284,6 +291,7 @@ export function mountArmorComparison(
   }
 
   function inspect(event: PointerEvent) {
+    if (pointerDown?.id === event.pointerId && movedSinceDown(event) > 5) cancelPick()
     if (!layers || !width || !height) return
     const rect = canvas.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width
@@ -297,7 +305,7 @@ export function mountArmorComparison(
     // 悬停在旁注芯片上时提示可点击（其余区域维持旋转光标）。
     const overChip = chipRects.some(r => (event.clientX - rect.left) >= r.x && (event.clientX - rect.left) <= r.x + r.w
       && (event.clientY - rect.top) >= r.y && (event.clientY - rect.top) <= r.y + r.h)
-    canvas.style.cursor = overChip ? 'pointer' : '' 
+    canvas.style.cursor = overChip ? 'pointer' : ''
   }
 
   function leave() { onInspect(null) }
@@ -307,21 +315,33 @@ export function mountArmorComparison(
     contextLost()
   }
 
-  // 点击旁注芯片 = 点选对应文字行：透明化其它装甲、突出该板（拖拽超过 5px 视为旋转，不触发）。
-  let pointerDown: { x: number; y: number } | null = null
-  function onPointerDown(event: PointerEvent) {
-    pointerDown = { x: event.clientX, y: event.clientY }
+  // Only a tap changes selection. A drag or pinch belongs to OrbitControls.
+  let pointerDown: { id: number; x: number; y: number } | null = null
+  function cancelPick() { pointerDown = null }
+
+  function movedSinceDown(event: PointerEvent) {
+    return pointerDown ? Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) : Infinity
   }
+
+  function onPointerDown(event: PointerEvent) {
+    if (!event.isPrimary || event.button !== 0) {
+      cancelPick()
+      return
+    }
+    pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY }
+  }
+
   function onPointerUp(event: PointerEvent) {
-    if (!pointerDown) return
-    const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y)
-    pointerDown = null
+    if (pointerDown?.id !== event.pointerId) return
+    const moved = movedSinceDown(event)
+    cancelPick()
     if (moved > 5) return
     const rect = canvas.getBoundingClientRect()
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
+    if (x < 0 || x > rect.width || y < 0 || y > rect.height) return
     const chip = chipRects.find(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)
-    if (chip) onIsolateRequest(chip.key)
+    onIsolateRequest(chip?.key ?? null)
   }
 
   renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -333,6 +353,7 @@ export function mountArmorComparison(
   canvas.addEventListener('pointermove', inspect)
   canvas.addEventListener('pointerleave', leave)
   canvas.addEventListener('pointerdown', onPointerDown)
+  canvas.addEventListener('pointercancel', cancelPick)
   canvas.addEventListener('pointerup', onPointerUp)
   host.appendChild(canvas)
   host.appendChild(overlay)
@@ -362,7 +383,7 @@ export function mountArmorComparison(
       fit()
       return old.matched + next.matched
     },
-    /** 文字行点击 → 隔离对应板件：目标保持原样，其余装甲整体淡化。传 null/[] 复原。 */
+    /** 选择指定板件。空选择恢复默认的变更板件高亮。 */
     setIsolated(keys: string[] | null) {
       isolatedKeys = keys && keys.length ? [...keys] : null
       applyIsolation()
@@ -373,6 +394,7 @@ export function mountArmorComparison(
       canvas.removeEventListener('pointermove', inspect)
       canvas.removeEventListener('pointerleave', leave)
       canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointercancel', cancelPick)
       canvas.removeEventListener('pointerup', onPointerUp)
       controls.removeEventListener('change', draw)
       controls.dispose()

@@ -66,8 +66,6 @@ function linkAttrs(id) {
       </button>
     </div>
 
-    <SidebarDataVersion :rail="rail" />
-
     <span
       v-if="showDevEnvironmentNotice"
       class="sidebar-dev-notice"
@@ -75,6 +73,8 @@ function linkAttrs(id) {
       role="status"
       :title="$t(devEnvironmentNoticeKey)"
     >{{ $t('environment.label') }}<template v-if="!rail"> · {{ $t(devEnvironmentNoticeKey) }}</template></span>
+
+    <SidebarDataVersion :rail="rail" />
 
     <nav class="sidebar-nav" :aria-label="$t('nav.primary')">
       <template v-for="group in sectionGroups" :key="group.id">
@@ -236,7 +236,6 @@ function linkAttrs(id) {
 }
 .sidebar-close:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
-.is-drawer .sidebar-nav { margin-top: var(--space-2); }
 .is-drawer .sidebar-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .sidebar-brand {
@@ -268,7 +267,7 @@ function linkAttrs(id) {
   white-space: nowrap;
 }
 
-.sidebar-nav { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-4); }
+.sidebar-nav { display: flex; flex-direction: column; gap: var(--space-1); }
 .sidebar-list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 
 .sidebar-group-title {

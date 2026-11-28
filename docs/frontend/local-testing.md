@@ -263,6 +263,12 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 - 其余按需：`pnpm run typecheck`、`pnpm run build`、`pnpm run verify:agent-wasm`（build 后核对
   `/wasm/<ref>/` 与 pin 一致）、`pnpm run lint:css`。
 
+### 版本变更页的视口与主题回归
+
+从 Agent 仓根目录在 8129 端口启动同时提供 `release/datasets` 与 `release/diffs` 的资产服务，再按 §4.1 启用免登录测试页并在 5199 端口运行 WotbTools。执行 `node scripts/browser-version-diff-mobile.mjs`。可通过 `WOTB_VERSION_DIFF_URL` 和 `WOTB_VERSION_DIFF_ASSETS` 指定这两个服务地址。
+
+检查使用 `11.21.0_1 → 11.22.0` 的真实本地资源，覆盖 320 × 667、390 × 844、844 × 390 和 1280 × 800，以及冬、春、秋、夏四个主题。检查数据版本下的首条导航及文件差异图标、卡片底色、版本对切换、装甲卡片跳转、分界线手柄位置与触摸范围、点选板件和点击空白处恢复、标注和引线的全亮绘制与未选标注整层 30% 不透明度，以及 Lorraine、M47 和 TVP VTU 实际参数行（含俯角改善的绿色和装填变慢／穿深下降的红色）。门禁同时检查 Donnola 的金币车 → 收藏车。科技树单行标题栏、首屏树图空间、独立滚动区、鼠标双向拖曳、单车居中和等级标尺贴底由 `node scripts/browser-techtree-layout.mjs` 检查。
+
 ### 单发击穿判定的加载回归
 
 `cd frontend && pnpm run test:browser-armor-shot-readiness`：复用浏览器门禁的应用/资产夹具，

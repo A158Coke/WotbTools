@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  armorFaceLabel, armorRows, categoryLabel, deltaDiffValue, diffPathLabel, faceLabel,
+  armorFaceLabel, armorRows, categoryLabel, deltaDiffValue, diffPathLabel, diffStatValues, faceLabel,
   fieldLabel, fmtDiffValue, mapMatchesFilter, moduleLabel, pairLabel, statusLabel,
-  tankMatchesFilter, tankRows,
+  matchingTopConfig, needsTopConfig, onlyPairedConfig, parameterRows, tankMatchesFilter, tankRows,
 } from './versionDiffFormat.js'
 
 const MESSAGES = {
@@ -30,6 +30,11 @@ const MESSAGES = {
   'agentTanks.params.weight': 'Weight',
   'versionDiff.fields.bbox': 'Bounding box',
   'versionDiff.fields.pitchLimits': 'Pitch limits',
+  'versionDiff.fields.hullHealth': 'Hull HP',
+  'versionDiff.fields.pitchSectorSpan': 'Sector span',
+  'versionDiff.faces.rear': 'Rear',
+  'agentTanks.params.gunPitchUpLimit': 'Elevation',
+  'agentTanks.params.gunPitchDownLimit': 'Depression',
   'versionDiff.fields.tags': 'Tags',
   'versionDiff.modules.hull': 'Hull',
   'versionDiff.modules.chassis': 'Chassis',
@@ -107,6 +112,7 @@ describe('versionDiffFormat change paths', () => {
     expect(diffPathLabel('engines.V-12-6B.power', t, te, shellLabelFn))
       .toBe('Engine V-12-6B · Engine power')
     expect(diffPathLabel('hp', t, te, shellLabelFn)).toBe('Hit points')
+    expect(diffPathLabel('hull_hp', t, te, shellLabelFn)).toBe('Hull HP')
     expect(diffPathLabel('mechanics', t, te, shellLabelFn)).toBe('Mechanics')
   })
 
@@ -126,7 +132,7 @@ describe('versionDiffFormat change paths', () => {
     expect(diffPathLabel('research.hull.hp', t, te, shellLabelFn)).toBe('Research · Hull · Hit points')
     expect(diffPathLabel('research.bbox.chassis.max', t, te, shellLabelFn)).toBe('Research · Chassis · Bounding box (max)')
     expect(diffPathLabel('research.gun:Lorraine 120/105 mm 105F:9.stats.pitchLimits.back.max', t, te, shellLabelFn))
-      .toBe('Research · Gun Lorraine 120/105 mm 105F · Pitch limits (back.max)')
+      .toBe('Research · Gun Lorraine 120/105 mm 105F · Rear · Depression')
     expect(diffPathLabel('research.invisibility.moving', t, te, shellLabelFn))
       .toBe('Research · Moving concealment')
     expect(diffPathLabel('research.tags', t, te, shellLabelFn)).toBe('Research · Tags')
@@ -151,6 +157,23 @@ describe('versionDiffFormat rows', () => {
       changes: [{ path: 'modules.gun_2.research_cost', old: 10000, new: 9000 }],
     },
   }
+
+  it('combines rarity flags into a single vehicle category transition', () => {
+    const changes = [
+      { path: 'is_premium', category: 'identity', old: true, new: false },
+      { path: 'is_collector', category: 'identity', old: false, new: true },
+    ]
+    expect(tankRows({ changes })).toEqual([{
+      path: 'vehicle_category', displayPath: 'vehicle_category', scope: 'summary',
+      category: 'identity', old: 'premium', new: 'collector',
+    }])
+    const oneFlag = [changes[0]]
+    const completeSchema = { added: {}, removed: {} }
+    expect(tankRows({ changes: oneFlag, schema: completeSchema }, { collector: false })[0])
+      .toMatchObject({ path: 'vehicle_category', old: 'premium', new: 'regular' })
+    expect(tankRows({ changes: oneFlag, schema: { added: { is_collector: 1 }, removed: {} } }, { collector: false })[0].path)
+      .toBe('is_premium')
+  })
 
   it('merges summary, config and research changes without decoding the gun name into the path', () => {
     const rows = tankRows(detail)
@@ -271,5 +294,118 @@ describe('versionDiffFormat rows', () => {
     expect(tankMatchesFilter({ status: 'modelOnly', categories: ['model'] }, 'modelOnly')).toBe(true)
     expect(mapMatchesFilter({ categories: ['scenery'] }, 'scenery')).toBe(true)
     expect(mapMatchesFilter({ categories: ['scenery'] }, 'lighting')).toBe(false)
+  })
+})
+describe('parameterRows', () => {
+  const change = (path, old, next) => ({ path, old, new: next, category: 'firepower' })
+  const penetration = change('shells.ap.penetration', 225, 205)
+  const engine = change('engines.Ford GAA.power', 490, 520)
+
+  it('uses the shared top identity across versions, retains different configs and keeps far penetration', () => {
+    const stock = { turret_local: 63, gun_local: 46 }
+    const top = { turret_local: 64, gun_local: 8 }
+    const detail = {
+      changes: [penetration],
+      configs: { configs: [
+        { key: { turretLocal: 64, gunLocal: 8 }, changes: [penetration, change('shells.ap.penetration_far', 195, 185), engine] },
+        { key: { turretLocal: 63, gunLocal: 46 }, changes: [penetration, engine] },
+      ] },
+    }
+    expect(needsTopConfig(detail)).toBe(true)
+    const topId = matchingTopConfig([stock, top], [stock, top])
+    expect(topId).toBe('64/8')
+    expect(matchingTopConfig([stock, top], [top, stock])).toBeUndefined()
+    expect(matchingTopConfig([stock, top, top], [stock, top])).toBeUndefined()
+    const rows = parameterRows(tankRows(detail), topId)
+    expect(rows.filter(row => row.path === penetration.path).map(row => row.config.gunLocal)).toEqual([8, 46])
+    expect(rows.filter(row => row.path === 'shells.ap.penetration_far')).toHaveLength(1)
+    expect(rows.filter(row => row.path === engine.path)).toMatchObject([{ scope: 'vehicle' }])
+    expect(parameterRows(tankRows(detail)).filter(row => row.path === penetration.path)).toHaveLength(3)
+    expect(onlyPairedConfig({ configs: [detail.configs.configs[0]], unpairedOld: [stock] })).toBeUndefined()
+  })
+
+  it('shows each changed pitch limit once and suppresses the derived AP damage field', () => {
+    const detail = {
+      changes: [change('gun_depression', 7, 10), change('shells.ap.damage', 135, 130)],
+      configs: { configs: [{
+        key: { turretLocal: 121, gunLocal: 117 },
+        changes: [
+          change('pitch_limits', { min: -20, max: 7, back: { min: -18, max: 3, range: 35 } },
+            { min: -20, max: 10, back: { min: -18, max: 2, range: 30 } }),
+          change('standard_damage', 135, 130),
+          change('shells.ap.damage', 135, 130),
+        ],
+      }] },
+    }
+    const rows = parameterRows(tankRows(detail), onlyPairedConfig(detail.configs))
+    expect(rows.map(row => row.displayPath)).toEqual([
+      'pitch_limits.max', 'shells.ap.damage', 'pitch_limits.back.max', 'pitch_limits.back.range',
+    ])
+    expect(rows.filter(isPitch => isPitch.displayPath.startsWith('pitch_limits.'))
+      .map(row => diffPathLabel(row.displayPath, t, te))).toEqual(['Depression', 'Rear · Depression', 'Rear · Sector span'])
+  })
+})
+
+describe('diffStatValues', () => {
+  const translate = (key, params) => {
+    if (key.endsWith('upgrade_percentage_points')) return params.value + ' pp'
+    return key.slice(key.lastIndexOf('.') + 1)
+  }
+  it('formats identity fields as localized before and after values', () => {
+    const translate = key => ({
+      'versionDiff.fields.isPremium': 'Premium vehicle',
+      'versionDiff.fields.isCollector': 'Collector vehicle',
+      'agentTanks.nations.usa': 'USA',
+      'agentTanks.types.light': 'Light tank',
+    }[key] || key)
+    expect(diffStatValues('vehicle_category', 'premium', 'collector', translate))
+      .toMatchObject({ old: 'Premium vehicle', new: 'Collector vehicle', delta: '', good: null })
+    expect(diffStatValues('tier', 8, 9, translate))
+      .toMatchObject({ old: 'VIII', new: 'IX', delta: '', good: null })
+    expect(diffStatValues('type', 'lightTank', 'heavyTank', translate, null, key => key === 'agentTanks.types.light').old)
+      .toBe('Light tank')
+    expect(diffStatValues('nation', 'usa', 'european', translate, null, key => key === 'agentTanks.nations.usa').old).toBe('USA')
+  })
+
+  it('uses schema units for shell, config and research fields including dotted names', () => {
+    expect(diffStatValues('shells.ap.penetration', 258, 248, translate)).toEqual({
+      old: '258', new: '248', delta: '-10', unit: 'MILLIMETER', good: null,
+    })
+    expect(diffStatValues('engines.Ford GAA.power', 490, 520, translate).unit).toBe('HORSE_POWER')
+    expect(diffStatValues('research.gun:Turm-Panther/7,5 cm Kw.K. L/100:8.stats.reloadTime', 5.129, 4.92, translate))
+      .toEqual({ old: '5.129', new: '4.92', delta: '-0.209', unit: 'SECOND', good: null })
+  })
+  it('expresses gun pitch and the delta in the same direction as the encyclopedia', () => {
+    expect(diffStatValues('pitch_limits.min', -18, -20, translate))
+      .toEqual({ old: '18', new: '20', delta: '+2', unit: 'DEGREE', good: null })
+    expect(diffStatValues('pitch_limits.max', 7, 10, translate))
+      .toEqual({ old: '7', new: '10', delta: '+3', unit: 'DEGREE', good: null })
+    expect(diffStatValues('research.gun:M47 Chevalier/105 mm CN-105-F1:10.stats.pitchLimits.back.range', 35, 30, translate))
+      .toEqual({ old: '35', new: '30', delta: '-5', unit: 'DEGREE', good: null })
+  })
+  it('uses the encyclopedia rules for positive, inverted and neutral deltas', () => {
+    const format = {
+      gunShellReloadTime: { biggerIsBetter: false },
+      gunPitchUpLimit: {},
+      baseShellAvgPiercingPower: {},
+      gunCommonDamagePerMin: {},
+    }
+    const good = (path, old, next) => diffStatValues(path, old, next, translate, format).good
+    expect(good('reload_time', 5, 4)).toBe(true)
+    expect(good('reload_time', 4, 5)).toBe(false)
+    expect(good('research.gun:Gun Name:7.stats.reloadTime', 5, 4)).toBe(true)
+    expect(good('pitch_limits.min', -18, -20)).toBe(true)
+    expect(good('shells.ap.penetration', 225, 205)).toBe(false)
+    expect(good('dpm', 1500, 1600)).toBe(true)
+    expect(good('pitch_limits.back.range', 35, 30)).toBeNull()
+    expect(good('unknown', 6, 7)).toBeNull()
+    expect(good('reload_time', 5, 5)).toBeNull()
+  })
+  it('converts kilograms and fractions uniformly, and keeps unknown paths unitless', () => {
+    expect(diffStatValues('research.hull.weight', 35000, 35004, translate))
+      .toEqual({ old: '35', new: '35.004', delta: '+0.004', unit: 'TON', good: null })
+    expect(diffStatValues('research.invisibility.moving', 0.12, 0.14, translate))
+      .toEqual({ old: '12', new: '14', delta: '+2 pp', unit: 'PERCENT', good: null })
+    expect(diffStatValues('modded.power', 490, 520, translate).unit).toBe('')
   })
 })

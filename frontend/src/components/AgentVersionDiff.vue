@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, RefreshCw, Search } from 'lucide-vue-next'
+import { ArrowRight, Check, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-vue-next'
+import { SelectContent, SelectItem, SelectItemIndicator, SelectItemText, SelectPortal, SelectRoot, SelectTrigger, SelectViewport } from 'reka-ui'
 import AppButton from './AppButton.vue'
+import VersionDiffReading from './version-diff/VersionDiffReading.vue'
 import VersionDiffVehicle from './version-diff/VersionDiffVehicle.vue'
 import TankDiffDialog from './version-diff/TankDiffDialog.vue'
 import ArmorDiffDialog from './version-diff/ArmorDiffDialog.vue'
@@ -12,7 +14,7 @@ import { datasetTankImageUrl } from '../composables/useVersionDiff.js'
 import { useVersionDiffPage } from '../composables/useVersionDiffPage.js'
 import type { DiffMapRow, DiffTankRow } from '../composables/useVersionDiffPage.js'
 import {
-  deltaDiffValue, diffPathLabel, fmtDiffValue, pairLabel, statusLabel, tankRows as detailRows,
+  diffPathLabel, diffStatValues, fmtDiffValue, isPitchChange, pairLabel, parameterRows, statusLabel, tankRows as detailRows,
 } from './version-diff/versionDiffFormat.js'
 import type { DiffConfigKey } from './version-diff/versionDiffFormat.js'
 import { shellLabel } from '../scene/tankMeta.js'
@@ -24,11 +26,11 @@ import './version-diff/version-diff.css'
 const { t, te } = useI18n()
 const {
   catalog, selectedPairId, summary, summaryState, summaryError, releaseMismatch, armorVerification,
-  statDetails, coverCrops, tankProfiles, mapQuery, tankDialog, armorDialog, mapDialog,
+  paramFormat, statDetails, topConfigs, coverCrops, tankProfiles, mapQuery, tankDialog, armorDialog, mapDialog,
   pair, lineup, armorTanks, statTanks, otherTanks, synopsis, allMaps, mapRows,
   techTree, presentation, artifacts, unresolved, gameplayItems, techTreeChanged, itemSchemas, hasData,
   selectPair, tankDataset, loadSummary, armorDetailFor, openTank, openArmor, openMap,
-  toggleArmorSelection, armorSelectionKeys, armorSelectionConfigKey, openVersion, openArmorViewer, openMapVersion,
+  setArmorSelection, armorSelectionKeys, armorSelectionConfigKey, openVersion, openArmorViewer, openMapVersion,
   retryCatalog, schemaEntries,
 } = useVersionDiffPage()
 
@@ -80,30 +82,29 @@ function configName(config?: DiffConfigKey | null): string {
 interface CompareGroup {
   key: string
   name: string
-  changes: Array<{ path: string; old: unknown; new: unknown; delta: string }>
+  changes: Array<{ path: string } & ReturnType<typeof diffStatValues>>
 }
 
 function compareGroups(row: DiffTankRow): CompareGroup[] {
   const detail = statDetails.value[row.id]
-  const changes = detail ? detailRows(detail) : row.chips || []
+  const changes = parameterRows(detail ? detailRows(detail, row) : row.chips || [], topConfigs.value[row.id])
   const groups = new Map<string, CompareGroup>()
   const visible = changes.filter(change => {
     if (change.scope === 'research' || (change.category != null && ['geometry', 'armor'].includes(change.category))) return false
     if (change.path?.startsWith('armor.') || change.path?.startsWith('armorModel.')) return false
     return change.old !== 'changed' || change.new !== 'changed'
-  }).slice(0, 4)
-  for (const change of visible) {
+  })
+  const identity = visible.filter(change => change.category === 'identity')
+  const pitch = visible.filter(isPitchChange)
+  const featured = [...identity, ...pitch, ...visible.filter(change => change.category !== 'identity' && !isPitchChange(change))].slice(0, 4)
+  for (const change of featured) {
     const config = change.config
     const key = config ? JSON.stringify([
       config.turretLocal ?? config.turret, config.gunLocal ?? config.gun,
     ]) : ''
     if (!groups.has(key)) groups.set(key, { key, name: configName(config), changes: [] })
-    groups.get(key)!.changes.push({
-      path: change.displayPath || change.changePath || change.path || '',
-      old: change.old,
-      new: change.new,
-      delta: deltaDiffValue(change.old, change.new),
-    })
+    const path = change.displayPath || change.changePath || change.path || ''
+    groups.get(key)!.changes.push({ path, ...diffStatValues(path, change.old, change.new, t, paramFormat.value, te) })
   }
   return [...groups.values()]
 }
@@ -137,14 +138,14 @@ function profileStats(row: DiffTankRow): Array<{ key: string; value: unknown; un
     ? calculateGunDamageRate(cycle, cycle.reload, shell.damage, true, 1, cycle.intraClip, 1).dpm
     : config?.dpm
   const stats = [
-    { key: 'agentTanks.hp', value: data?.hp },
-    { key: 'agentTanks.dpm', value: dpm },
-    { key: 'agentTanks.pen', value: shell?.penetration, unit: 'mm' },
+    { key: 'agentTanks.hp', value: data?.hp, unit: 'HIT_POINTS' },
+    { key: 'agentTanks.params.gunCommonDamagePerMin', value: dpm },
+    { key: 'agentTanks.pen', value: shell?.penetration, unit: 'MILLIMETER' },
     { key: 'versionDiff.log.hullArmor', value: hull && [hull.front, hull.sides, hull.rear].every(Number.isFinite)
-      ? [hull.front, hull.sides, hull.rear].join(' / ') : null, unit: 'mm' },
+      ? [hull.front, hull.sides, hull.rear].join(' / ') : null, unit: 'MILLIMETER' },
     { key: 'versionDiff.log.speed', value: data?.speed_forward != null && data?.speed_reverse != null
-      ? [data.speed_forward, data.speed_reverse].join(' / ') : null },
-    { key: 'agentTanks.view_range', value: config?.view_range, unit: 'm' },
+      ? [data.speed_forward, data.speed_reverse].join(' / ') : null, unit: 'KILOMETER_PER_HOUR' },
+    { key: 'agentTanks.view_range', value: config?.view_range, unit: 'METER' },
   ]
   return stats.filter(stat => stat.value != null)
 }
@@ -156,66 +157,85 @@ function itemFileLabel(name: string): string {
 
 <template>
   <main class="vd-page">
-    <header class="vd-hero">
+    <header class="vd-hero ui-card">
       <div>
         <h1 class="vd-title">{{ pair ? t('versionDiff.log.title', { version: pair.to.dataset }) : t('versionDiff.title') }}</h1>
-        <p v-if="pair" class="vd-subtitle">{{ pairLabel(pair) }}</p>
       </div>
-      <div v-if="catalog.status === 'ready' && catalog.pairs.length" class="vd-pair-picker">
-        <label class="vd-muted" for="vd-pair">{{ t('versionDiff.pair') }}</label>
-        <select id="vd-pair" v-model="selectedPairId" class="vd-select" @change="selectPair(pair)">
-          <option v-for="item in catalog.pairs" :key="item.id" :value="item.id">{{ pairLabel(item) }}</option>
-        </select>
+      <div v-if="pair" class="vd-pair-picker">
+        <span id="vd-pair-label" class="vd-pair-label">{{ t('versionDiff.pair') }}</span>
+        <SelectRoot
+          :model-value="selectedPairId"
+          @update:model-value="id => selectPair(catalog.pairs.find(item => item.id === id) ?? null)"
+        >
+          <SelectTrigger class="vd-pair-trigger" aria-labelledby="vd-pair-label vd-pair-value">
+            <span id="vd-pair-value" class="vd-pair-versions">
+              <span>{{ pair.from.dataset }}</span>
+              <ArrowRight :size="16" aria-hidden="true" />
+              <strong>{{ pair.to.dataset }}</strong>
+            </span>
+            <ChevronDown :size="16" aria-hidden="true" />
+          </SelectTrigger>
+          <SelectPortal>
+            <SelectContent class="vd-pair-menu" position="popper" align="end" :side-offset="6" :collision-padding="12">
+              <SelectViewport>
+                <SelectItem v-for="item in [...catalog.pairs].reverse()" :key="item.id" :value="item.id" class="vd-pair-option">
+                  <SelectItemText>{{ pairLabel(item) }}</SelectItemText>
+                  <SelectItemIndicator><Check :size="16" aria-hidden="true" /></SelectItemIndicator>
+                </SelectItem>
+              </SelectViewport>
+            </SelectContent>
+          </SelectPortal>
+        </SelectRoot>
       </div>
     </header>
 
-    <section v-if="catalog.status === 'loading'" class="vd-state">
+    <section v-if="catalog.status === 'loading'" class="vd-state ui-card">
       <p class="vd-muted">{{ t('versionDiff.loading') }}</p>
     </section>
-    <section v-else-if="catalog.status === 'error'" class="vd-state">
+    <section v-else-if="catalog.status === 'error'" class="vd-state ui-card">
       <p class="vd-error">{{ t('versionDiff.loadFailed') }}</p>
       <p class="vd-muted">{{ catalog.error }}</p>
       <AppButton variant="secondary" @click="retryCatalog"><RefreshCw :size="16" />{{ t('versionDiff.retry') }}</AppButton>
     </section>
-    <section v-else-if="!catalog.pairs.length" class="vd-state">
+    <section v-else-if="!catalog.pairs.length" class="vd-state ui-card">
       <p class="vd-muted">{{ t('versionDiff.empty') }}</p>
     </section>
 
     <template v-else-if="pair">
-      <p v-if="releaseMismatch.length" class="vd-warning" role="status">
+      <p v-if="releaseMismatch.length" class="vd-warning ui-card" role="status">
         {{ t('versionDiff.releaseMismatch') }}
         <span v-for="identity in releaseMismatch" :key="identity.side"> · {{ pair[identity.side].dataset }}</span>
       </p>
-      <p v-if="summaryState === 'loading'" class="vd-muted" role="status">{{ t('versionDiff.loading') }}</p>
-      <div v-else-if="summaryState === 'error'" class="vd-state">
+      <p v-if="summaryState === 'loading'" class="vd-muted vd-state ui-card" role="status">{{ t('versionDiff.loading') }}</p>
+      <div v-else-if="summaryState === 'error'" class="vd-state ui-card">
         <p class="vd-error">{{ summaryError }}</p>
         <AppButton variant="secondary" @click="loadSummary(pair)">{{ t('versionDiff.retry') }}</AppButton>
       </div>
 
-      <p v-else-if="summary && !synopsis.length && !hasData" class="vd-muted">{{ t('versionDiff.empty') }}</p>
+      <p v-else-if="summary && !synopsis.length && !hasData" class="vd-muted vd-state ui-card">{{ t('versionDiff.empty') }}</p>
       <div v-else-if="summary" :key="pair.path" class="vd-changes">
-        <p v-if="synopsis.length" class="vd-synopsis">
+        <p v-if="synopsis.length" class="vd-synopsis ui-card">
           {{ synopsis.map(item => t(item.key) + ' ' + item.count).join(' · ') }}
         </p>
 
-        <section v-for="section in lineup" :id="'vd-section-' + section.id" :key="section.id" class="vd-panel">
+        <section v-for="section in lineup" :id="'vd-section-' + section.id" :key="section.id" class="vd-panel ui-section">
           <h2 class="vd-section-title">{{ t(section.title) }} <small>{{ section.rows.length }}</small></h2>
           <div class="vd-lineup">
-            <article v-for="row in section.rows" :key="row.id" class="vd-lineup-card">
+            <article v-for="row in section.rows" :key="row.id" class="vd-lineup-card ui-card">
               <button type="button" class="vd-identity-action vd-lineup-action" @click="openVersion(tankDataset(row), row)">
                 <VersionDiffVehicle v-bind="vehicleIdentity(row)" compact />
                 <ChevronRight :size="16" class="vd-lineup-arrow" aria-hidden="true" />
               </button>
               <dl v-if="tankProfiles[row.id]" class="vd-stats">
                 <div v-for="{ key, value, unit } in profileStats(row)" :key="key">
-                  <dt>{{ t(key) }}</dt><dd>{{ fmtDiffValue(value) + (unit ? ' ' + unit : '') }}</dd>
+                  <dt>{{ t(key) }}</dt><dd><VersionDiffReading :value="fmtDiffValue(value)" :unit="unit ? t('agentTanks.units.' + unit) : undefined" /></dd>
                 </div>
               </dl>
             </article>
           </div>
         </section>
 
-        <details v-if="allMaps.length" id="vd-section-maps" class="vd-disclosure">
+        <details v-if="allMaps.length" id="vd-section-maps" class="vd-disclosure ui-card">
           <summary>
             <span>{{ t('versionDiff.summary.mapsChanged') }} <small>{{ allMaps.length }}</small></span>
             <ChevronRight :size="16" aria-hidden="true" />
@@ -242,25 +262,14 @@ function itemFileLabel(name: string): string {
           </div>
         </details>
 
-        <section v-if="armorTanks.length" id="vd-section-armor" class="vd-panel">
+        <section v-if="armorTanks.length" id="vd-section-armor" class="vd-panel ui-section">
           <h2 class="vd-section-title">{{ t('versionDiff.summary.armorChanged') }} <small>{{ armorTanks.length }}</small></h2>
           <div class="vd-armor-previews">
-            <article v-for="row in armorTanks" :key="row.id" class="vd-armor-preview">
-              <header>
+            <article v-for="row in armorTanks" :key="row.id" class="vd-armor-preview ui-card">
+              <button type="button" class="vd-identity-action vd-armor-action" @click="openVersion(tankDataset(row), row)">
                 <VersionDiffVehicle v-bind="vehicleIdentity(row)" compact />
-                <details v-if="statDetails[row.id]" class="vd-armor-changes">
-                  <summary>{{ t('versionDiff.armor.detail') }}</summary>
-                  <ArmorChangeList
-                    :armor="statDetails[row.id]?.armor"
-                    :detail="statDetails[row.id]"
-                    :pair="pair"
-                    selectable
-                    :selected-keys="armorSelectionKeys(row)"
-                    :selected-config-key="armorSelectionConfigKey(row)"
-                    @select="selection => toggleArmorSelection(row, selection)"
-                  />
-                </details>
-              </header>
+                <ChevronRight :size="16" aria-hidden="true" />
+              </button>
               <ArmorComparisonViewport
                 :tank-id="row.id"
                 :tank-name="row.name"
@@ -268,16 +277,28 @@ function itemFileLabel(name: string): string {
                 :verification="armorVerification"
                 :load-detail="() => armorDetailFor(row)"
                 :isolate-keys="armorSelectionKeys(row)" :isolate-config-key="armorSelectionConfigKey(row)"
-                @select="keys => toggleArmorSelection(row, keys)"
+                @select="keys => setArmorSelection(row, keys)"
               />
+              <details v-if="statDetails[row.id]" class="vd-armor-changes">
+                <summary>{{ t('versionDiff.armor.detail') }}</summary>
+                <ArmorChangeList
+                  :armor="statDetails[row.id]?.armor"
+                  :detail="statDetails[row.id]"
+                  :pair="pair"
+                  selectable
+                  :selected-keys="armorSelectionKeys(row)"
+                  :selected-config-key="armorSelectionConfigKey(row)"
+                  @select="selection => setArmorSelection(row, selection)"
+                />
+              </details>
             </article>
           </div>
         </section>
 
-        <section v-if="statTanks.length" id="vd-section-tanks" class="vd-panel">
+        <section v-if="statTanks.length" id="vd-section-tanks" class="vd-panel ui-section">
           <h2 class="vd-section-title">{{ t('versionDiff.log.stats') }} <small>{{ statTanks.length }}</small></h2>
           <div class="vd-stat-grid">
-            <article v-for="row in statTanks" :key="row.id" class="vd-vehicle">
+            <article v-for="row in statTanks" :key="row.id" class="vd-vehicle ui-card">
               <button type="button" class="vd-identity-action" @click="openTank(row)">
                 <VersionDiffVehicle v-bind="vehicleIdentity(row)" compact />
                 <ChevronRight :size="16" aria-hidden="true" />
@@ -287,12 +308,7 @@ function itemFileLabel(name: string): string {
                 <dl class="vd-comparison">
                   <div v-for="change in group.changes" :key="change.path">
                     <dt>{{ fieldName(change.path) }}</dt>
-                    <dd>
-                      <span>{{ fmtDiffValue(change.old) }}</span>
-                      <span aria-hidden="true"> → </span>
-                      <strong>{{ fmtDiffValue(change.new) }}</strong>
-                      <small v-if="change.delta" class="vd-stat-delta">{{ change.delta }}</small>
-                    </dd>
+                    <dd><VersionDiffReading :before="change.old" :value="change.new" :unit="change.unit" :delta="change.delta" :good="change.good" /></dd>
                   </div>
                 </dl>
               </div>
@@ -301,7 +317,7 @@ function itemFileLabel(name: string): string {
           </div>
         </section>
 
-        <details v-if="hasData" class="vd-disclosure">
+        <details v-if="hasData" class="vd-disclosure ui-card">
           <summary><span>{{ t('versionDiff.log.moreChanges') }}</span><ChevronRight :size="16" aria-hidden="true" /></summary>
           <div class="vd-data-body">
             <section v-if="otherTanks.length" class="vd-block">
@@ -384,6 +400,8 @@ function itemFileLabel(name: string): string {
       :open="tankDialog.open"
       :row="tankDialog.row"
       :detail="tankDialog.detail"
+      :param-format="paramFormat"
+      :top-config="tankDialog.row ? topConfigs[tankDialog.row.id] : undefined"
       :pair="pair"
       :icon-url="tankDialog.row ? tankIcon(tankDialog.row) : ''"
       :crop-style="tankDialog.row ? iconCropStyle(tankDialog.row) : null"

@@ -6,6 +6,7 @@ import { armorComparisonChoices } from '../../scene/viewer/armorComparisonModel.
 import type { ArmorDiffDetail, ComparisonTank } from '../../scene/viewer/armorComparisonModel.js'
 import type { ArmorComparisonLabel, mountArmorComparison, loadArmorComparisonModels } from '../../scene/viewer/armorComparisonScene.js'
 import AppButton from '../AppButton.vue'
+import VersionCompareDivider from './VersionCompareDivider.vue'
 
 const emit = defineEmits(['select'])
 const props = defineProps<{
@@ -74,62 +75,20 @@ function setCompare(position: number) {
   viewer?.setCompare(position)
 }
 
-// 旁注芯片点击与文字行点击同一语义：切换该板的隔离（其余装甲透明化）。
-// 只有 键 + 配置 都与当前选中一致时才算"取消"——手动切到另一配置后，
-// 同名板号（gun:5）在该配置里仍是未选中，首次点击应当选中而不是清空。
-function handleIsolateRequest(key: string) {
-  const current = props.isolateKeys ?? []
-  const configKey = choice.value?.key ?? ''
-  const sameConfig = !props.isolateConfigKey || props.isolateConfigKey === configKey
-  emit('select', { configKey, keys: sameConfig && current.includes(key) ? [] : [key] })
+function handleIsolateRequest(key: string | null) {
+  emit('select', { configKey: key ? choiceKey.value : '', keys: key ? [key] : [] })
 }
 
 // 旁注文案：每块改动装甲一条，同时带修改前后数值（绘制在场景的 2D 叠加画布上，
 // 与 WebGL 同帧同步，旋转/缩放零延迟）。
 function formatLabel(item: ArmorComparisonLabel) {
-  // 只标注厚度变化，不带板号：`120 → 135 mm`；单侧存在标 `+新值` / `−旧值`。
-  if (item.left != null && item.right != null) return `${item.left} → ${item.right} mm`
-  if (item.right != null) return `+${item.right} mm`
-  if (item.left != null) return `−${item.left} mm`
+  const unit = t('agentTanks.units.MILLIMETER')
+  // 只标注厚度变化，不带板号：`120 → 135 ${unit}`；单侧存在标 `+新值` / `−旧值`。
+  if (item.left != null && item.right != null) return `${item.left} → ${item.right} ${unit}`
+  if (item.right != null) return `+${item.right} ${unit}`
+  if (item.left != null) return `−${item.left} ${unit}`
   if (item.kind === 'spaced') return t('versionDiff.armor.spaced')
   return '±'
-}
-
-// 分割线手柄：拖拽 + 键盘（←/→ 步进 2%；值 = 左侧旧版的可见宽度百分比，
-// Home=0 只显示新版，End=100 只显示旧版）。
-let drag: { pointerId: number; startX: number; startCompare: number } | null = null
-
-function startDrag(event: PointerEvent) {
-  const handle = event.currentTarget as HTMLElement
-  drag = { pointerId: event.pointerId, startX: event.clientX, startCompare: compare.value }
-  handle.setPointerCapture?.(event.pointerId)
-}
-
-function moveDrag(event: PointerEvent) {
-  if (!drag || !host.value) return
-  const rect = host.value.getBoundingClientRect()
-  const delta = ((event.clientX - drag.startX) / Math.max(1, rect.width)) * 100
-  setCompare(Math.min(100, Math.max(0, Math.round(drag.startCompare + delta))))
-}
-
-function endDrag(event: PointerEvent) {
-  ;(event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId)
-  drag = null
-}
-
-function onDividerKey(event: KeyboardEvent) {
-  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-    event.preventDefault()
-    setCompare(Math.min(100, Math.max(0, compare.value + (event.key === 'ArrowLeft' ? -2 : 2))))
-    return
-  }
-  if (event.key === 'Home') {
-    event.preventDefault()
-    setCompare(0)
-  } else if (event.key === 'End') {
-    event.preventDefault()
-    setCompare(100)
-  }
 }
 
 watch(choiceKey, displayChoice)
@@ -206,31 +165,19 @@ watch([active, attempt], async ([enabled], _, onCleanup) => {
 
 <template>
   <div class="vd-armor-comparison">
-    <div class="vd-armor-viewport">
+    <div class="vd-armor-viewport vd-compare-frame">
       <div ref="host" class="vd-armor-canvas" aria-hidden="true"></div>
       <template v-if="status === 'ready' && active">
-        <button type="button" class="vd-map-tag vd-version-stop" @click="setCompare(100)">{{ versions[0] }}</button>
-        <button type="button" class="vd-map-tag vd-version-stop is-new" @click="setCompare(0)">{{ versions[1] }}</button>
         <output v-if="inspected" class="vd-armor-thickness">
-          {{ versions[inspected.side] }} · {{ inspected.thickness }} mm
+          {{ versions[inspected.side] }} · {{ inspected.thickness }} {{ t('agentTanks.units.MILLIMETER') }}
         </output>
-        <span class="vd-armor-divider" :style="{ left: compare + '%' }">
-          <button
-            type="button"
-            class="vd-armor-divider-handle"
-            role="slider"
-            :aria-label="t('versionDiff.armor.compareSlider', { tank: tankName })"
-            :aria-valuemin="0"
-            :aria-valuemax="100"
-            :aria-valuenow="compare"
-            :aria-valuetext="t('versionDiff.armor.compareShare', { n: compare, version: versions[0] })"
-            @pointerdown="startDrag"
-            @pointermove="moveDrag"
-            @pointerup="endDrag"
-            @pointercancel="endDrag"
-            @keydown="onDividerKey"
-          ></button>
-        </span>
+        <VersionCompareDivider
+          :model-value="compare"
+          :from="versions[0]"
+          :to="versions[1]"
+          :label="t('versionDiff.armor.compareSlider', { tank: tankName })"
+          @update:model-value="setCompare"
+        />
       </template>
       <div v-else class="vd-armor-status" role="status">
         <template v-if="verification === 'mismatch'">{{ t('versionDiff.armor.compareMismatch') }}</template>
@@ -244,7 +191,7 @@ watch([active, attempt], async ([enabled], _, onCleanup) => {
     </div>
 
     <div v-if="status === 'ready' && active" class="vd-armor-compare-meta">
-      <span class="vd-muted">{{ t(matched ? 'versionDiff.armor.compareHighlight' : 'versionDiff.armor.compareNoPlate') }}</span>
+      <span class="vd-muted">{{ t(choiceIsolationKeys() ? 'versionDiff.armor.compareSelected' : matched ? 'versionDiff.armor.compareHighlight' : 'versionDiff.armor.compareNoPlate') }}</span>
       <select v-if="choices.length > 1" v-model="choiceKey" class="vd-select" :aria-label="t('versionDiff.tank.config')">
         <option v-for="item in choices" :key="item.key" :value="item.key">{{ item.label || item.key }}</option>
       </select>

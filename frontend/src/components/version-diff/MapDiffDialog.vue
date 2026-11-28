@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppDialog from '../AppDialog.vue'
 import AppButton from '../AppButton.vue'
+import VersionCompareDivider from './VersionCompareDivider.vue'
+import VersionDiffReading from './VersionDiffReading.vue'
 import { datasetMap2dUrl } from '../../composables/useVersionDiff.js'
 import type { DiffPair } from '../../composables/useVersionDiff.js'
 import type { DiffMapRow } from '../../composables/useVersionDiffPage.js'
@@ -44,6 +46,8 @@ const props = withDefaults(defineProps<MapDiffDialogProps>(), {
 const emit = defineEmits<{ close: []; retry: []; 'open-map': [dataset: string] }>()
 const { t } = useI18n()
 const split = ref(50)
+const fromLabel = computed(() => props.pair?.from.dataset || t('versionDiff.old'))
+const toLabel = computed(() => props.pair?.to.dataset || t('versionDiff.new'))
 const oldFailed = ref(false)
 const newFailed = ref(false)
 
@@ -133,75 +137,76 @@ function positionText(item: { position?: unknown }): string {
       <p v-if="loading" class="vd-muted">{{ t('versionDiff.loading') }}</p>
       <p v-else-if="error" class="vd-error">{{ error }}</p>
       <template v-else>
-        <div class="vd-map-compare" :class="{ 'is-single': !showOld || !showNew }">
-          <div v-if="showNew" class="vd-map-layer">
-            <img
-              v-if="newUrl && !newFailed"
-              class="vd-map-image"
-              :src="newUrl"
-              :alt="`${row?.display || ''} ${t('versionDiff.new')}`"
-              @error="newFailed = true"
-            >
-            <div v-else class="vd-map-missing">{{ t('versionDiff.map.imageUnavailable') }}</div>
-            <span class="vd-map-tag is-new">{{ pair?.to.dataset || t('versionDiff.new') }}</span>
+        <div class="vd-map-overview">
+          <div v-if="showOld || showNew" class="vd-map-compare vd-compare-frame">
+            <div v-if="showNew" class="vd-map-layer">
+              <img
+                v-if="newUrl && !newFailed"
+                class="vd-map-image"
+                :src="newUrl"
+                :alt="`${row?.display || ''} ${t('versionDiff.new')}`"
+                @error="newFailed = true"
+              >
+              <div v-else class="vd-map-missing">{{ t('versionDiff.map.imageUnavailable') }}</div>
+            </div>
+            <div v-if="showOld" class="vd-map-layer" :class="{ 'is-overlay': showNew }"
+              :style="showNew ? { clipPath: `inset(0 ${100 - split}% 0 0)` } : null">
+              <img
+                v-if="oldUrl && !oldFailed"
+                class="vd-map-image"
+                :src="oldUrl"
+                :alt="`${row?.display || ''} ${t('versionDiff.old')}`"
+                @error="oldFailed = true"
+              >
+              <div v-else class="vd-map-missing">{{ t('versionDiff.map.imageUnavailable') }}</div>
+            </div>
+            <VersionCompareDivider
+              v-if="showOld && showNew"
+              v-model="split"
+              :from="fromLabel"
+              :to="toLabel"
+              :label="t('versionDiff.map.compare')"
+            />
+            <span v-else class="vd-map-tag">{{ showOld ? fromLabel : toLabel }}</span>
           </div>
-          <div v-if="showOld" class="vd-map-layer" :class="{ 'is-overlay': showNew }" :style="showNew ? { clipPath: `inset(0 ${100 - split}% 0 0)` } : null">
-            <img
-              v-if="oldUrl && !oldFailed"
-              class="vd-map-image"
-              :src="oldUrl"
-              :alt="`${row?.display || ''} ${t('versionDiff.old')}`"
-              @error="oldFailed = true"
-            >
-            <div v-else class="vd-map-missing">{{ t('versionDiff.map.imageUnavailable') }}</div>
-            <span class="vd-map-tag">{{ pair?.from.dataset || t('versionDiff.old') }}</span>
-          </div>
-          <input
-            v-if="showOld && showNew"
-            v-model.number="split"
-            class="vd-map-slider"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            :aria-label="t('versionDiff.map.compare')"
-          >
-        </div>
 
-        <div class="vd-block">
-          <h3 class="vd-block-title">{{ t('versionDiff.map.changes') }}</h3>
-          <p v-if="status === 'added'" class="vd-muted">{{ t('versionDiff.map.addedHint') }}</p>
-          <p v-else-if="status === 'removed'" class="vd-muted">{{ t('versionDiff.map.removedHint') }}</p>
-          <p v-else-if="!changedFamilies.length" class="vd-muted">{{ t('versionDiff.map.noChanges') }}</p>
-          <div v-else class="vd-chips">
-            <span v-for="item in changedFamilies" :key="item.key" class="vd-chip is-warn">{{ item.label }}</span>
-          </div>
-          <p v-if="unchangedFamilies.length" class="vd-muted">
-            {{ t('versionDiff.map.unchanged') }}: {{ unchangedFamilies.join(' · ') }}
-          </p>
-          <p v-if="presentation.length" class="vd-muted">
-            {{ t('versionDiff.map.presentation') }}: {{ presentation.join(' · ') }}
-          </p>
-        </div>
+          <div class="vd-map-summary">
+            <div class="vd-block">
+              <h3 class="vd-block-title">{{ t('versionDiff.map.changes') }}</h3>
+              <p v-if="status === 'added'" class="vd-muted">{{ t('versionDiff.map.addedHint') }}</p>
+              <p v-else-if="status === 'removed'" class="vd-muted">{{ t('versionDiff.map.removedHint') }}</p>
+              <p v-else-if="!changedFamilies.length" class="vd-muted">{{ t('versionDiff.map.noChanges') }}</p>
+              <div v-else class="vd-chips">
+                <span v-for="item in changedFamilies" :key="item.key" class="vd-chip is-warn">{{ item.label }}</span>
+              </div>
+              <p v-if="unchangedFamilies.length" class="vd-muted">
+                {{ t('versionDiff.map.unchanged') }}: {{ unchangedFamilies.join(' · ') }}
+              </p>
+              <p v-if="presentation.length" class="vd-muted">
+                {{ t('versionDiff.map.presentation') }}: {{ presentation.join(' · ') }}
+              </p>
+            </div>
 
-        <div v-if="scenery?.old != null || grass?.old != null" class="vd-block">
-          <h3 class="vd-block-title">{{ t('versionDiff.map.instanceTitle') }}</h3>
-          <div class="vd-chips">
-            <span v-if="scenery?.old != null" class="vd-chip">
-              {{ t('versionDiff.map.sceneryChange', { old: scenery.old, new: scenery.new }) }}
-              <b v-if="sceneryDelta">{{ t('versionDiff.map.sceneryDelta', { added: sceneryAddedTotal, removed: sceneryRemovedTotal }) }}</b>
-            </span>
-            <span v-if="grass?.old != null" class="vd-chip">
-              {{ t('versionDiff.map.grassChange', { old: grass.old, new: grass.new }) }}
-            </span>
-          </div>
-          <div v-if="sceneryAddedNames.length || sceneryRemovedNames.length" class="vd-chips">
-            <span v-for="item in sceneryAddedNames" :key="`sa-${item.name}`" class="vd-chip">
-              {{ item.name }} <b>+{{ item.count }}</b>
-            </span>
-            <span v-for="item in sceneryRemovedNames" :key="`sr-${item.name}`" class="vd-chip is-warn">
-              {{ item.name }} <b>−{{ item.count }}</b>
-            </span>
+            <div v-if="scenery?.old != null || grass?.old != null" class="vd-block">
+              <h3 class="vd-block-title">{{ t('versionDiff.map.instanceTitle') }}</h3>
+              <div class="vd-chips">
+                <span v-if="scenery?.old != null" class="vd-chip">
+                  {{ t('versionDiff.map.sceneryChange', { old: scenery.old, new: scenery.new }) }}
+                  <b v-if="sceneryDelta">{{ t('versionDiff.map.sceneryDelta', { added: sceneryAddedTotal, removed: sceneryRemovedTotal }) }}</b>
+                </span>
+                <span v-if="grass?.old != null" class="vd-chip">
+                  {{ t('versionDiff.map.grassChange', { old: grass.old, new: grass.new }) }}
+                </span>
+              </div>
+              <div v-if="sceneryAddedNames.length || sceneryRemovedNames.length" class="vd-chips">
+                <span v-for="item in sceneryAddedNames" :key="`sa-${item.name}`" class="vd-chip">
+                  {{ item.name }} <b>+{{ item.count }}</b>
+                </span>
+                <span v-for="item in sceneryRemovedNames" :key="`sr-${item.name}`" class="vd-chip is-warn">
+                  {{ item.name }} <b>−{{ item.count }}</b>
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -217,16 +222,14 @@ function positionText(item: { position?: unknown }): string {
                 <tr>
                   <th>{{ t('versionDiff.map.position') }}</th>
                   <th>{{ t('versionDiff.map.field') }}</th>
-                  <th class="is-num">{{ pair?.from.dataset || t('versionDiff.old') }}</th>
-                  <th class="is-num">{{ pair?.to.dataset || t('versionDiff.new') }}</th>
+                  <th class="is-num">{{ fromLabel }} → {{ toLabel }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="item in healthChanges" :key="`${item.id}-${item.field}`">
                   <td>{{ positionText(item) }}</td>
                   <td>{{ item.field }}</td>
-                  <td class="is-num">{{ fmtDiffValue(item.old) }}</td>
-                  <td class="is-num is-new">{{ fmtDiffValue(item.new) }}</td>
+                  <td class="is-num"><VersionDiffReading :before="fmtDiffValue(item.old)" :value="fmtDiffValue(item.new)" :unit="t('agentTanks.units.HIT_POINTS')" /></td>
                 </tr>
               </tbody>
             </table>

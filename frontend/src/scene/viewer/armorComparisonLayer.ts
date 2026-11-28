@@ -6,11 +6,7 @@ import {
   hasGunMask, partitionArmorMeshes, retagSpacedSections, tagArmorPlates, tagModuleMeshes,
   plateThickness, useFaceNormals,
 } from './armorPlateModel.js'
-import {
-  thicknessDepthWrite, thicknessSurfaceOpacity, thicknessToColor,
-} from './armorThicknessPalette.js'
-import type { ThicknessClass } from './armorThicknessPalette.js'
-import { disposeThicknessOutline, ensureThicknessOutline } from './armorThicknessOutline.js'
+import { thicknessToColor } from './armorThicknessPalette.js'
 import { armorPlateKey } from './armorComparisonModel.js'
 import type { ArmorComparisonChoice, ComparisonSide, ComparisonTank } from './armorComparisonModel.js'
 
@@ -37,7 +33,7 @@ function convertFaceNormals(node: THREE.Object3D, owned: THREE.BufferGeometry[])
   })
 }
 export type ComparisonLayer = ReturnType<typeof createArmorThicknessScene>
-export 
+
 async function readModel(url: string, signal: AbortSignal) {
   const response = await fetch(url, { signal })
   if (!response.ok) throw new Error('Armor mesh HTTP ' + response.status)
@@ -109,6 +105,23 @@ function sampleSurfacePoints(mesh: THREE.Mesh, matrixWorld: THREE.Matrix4, limit
     if (samples.length >= limit) break
   }
   return samples
+}
+
+/** Show marked plate surfaces at full strength and keep the rest as faint context. */
+export function applyArmorComparisonFocus(plates: readonly THREE.Object3D[], selected: ReadonlySet<string> | null) {
+  for (const plate of plates) {
+    const mesh = plate as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+    const key: string = mesh.userData.armorKey
+    const emphasized = selected ? selected.has(key) : mesh.userData.armorChanged === true
+    const material = mesh.material
+    const transparent = !emphasized
+    if (material.transparent !== transparent) {
+      material.transparent = transparent
+      material.needsUpdate = true
+    }
+    material.opacity = emphasized ? 1 : mesh.userData.armorModule ? 0.15 : 0.18
+    material.depthWrite = emphasized
+  }
 }
 
 export function createArmorThicknessScene(source: Source, models: Models, choice: ArmorComparisonChoice, side: ComparisonSide) {
@@ -185,9 +198,6 @@ export function createArmorThicknessScene(source: Source, models: Models, choice
   const scene = new THREE.Scene()
   const objects = new THREE.Group()
   const materials: THREE.Material[] = []
-  const outlines: THREE.EdgesGeometry[] = []
-  const outlineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff })
-  materials.push(outlineMaterial)
 
   let matched = 0
   const anchors: Array<{
@@ -196,9 +206,7 @@ export function createArmorThicknessScene(source: Source, models: Models, choice
     kind: string | null; plate: string; module: string
   }> = []
   for (const mesh of meshes) {
-    // 与装甲查看器厚度模式（5.7.5 BlitzKit 外观）同管线：平涂 MeshBasicMaterial
-    // （toneMapped:false）+ 共享渐变调色板 + 类别透明度/深度写入 + 45° 勾线。
-    // 不按"是否有改动"压暗板件：同一厚度在查看器与对比器必须同色（绝对域）。
+    // 直接突出板面，厚度仍由同一套调色板表达。
     const sourceGeometry = mesh.geometry
     useFaceNormals(mesh)
     if (mesh.geometry !== sourceGeometry) ownedGeometries.push(mesh.geometry)
@@ -206,29 +214,20 @@ export function createArmorThicknessScene(source: Source, models: Models, choice
     const key = armorPlateKey(section, mesh.userData.armorPlateId)
     const marked = choice.highlights[side].has(key)
     const isModule = !mesh.userData.armorSectionOrig
-    const kind: ThicknessClass = isModule
-      ? 'external'
-      : mesh.userData.armorSection === 'spaced' ? 'spaced' : 'primary'
-    const opacity = thicknessSurfaceOpacity(kind, mesh.userData.armorThickness)
     const material = new THREE.MeshBasicMaterial({
       color: thicknessToColor(mesh.userData.armorThickness),
       toneMapped: false,
-      transparent: opacity < 1,
-      opacity,
-      depthWrite: thicknessDepthWrite(kind),
-      side: kind === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
-      polygonOffset: marked, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+      side: mesh.userData.armorSection === 'spaced' ? THREE.DoubleSide : THREE.FrontSide,
     })
-    material.userData.baseOpacity = opacity
-    material.userData.baseDepthWrite = thicknessDepthWrite(kind)
     materials.push(material)
     const plate = new THREE.Mesh(mesh.geometry, material)
     plate.userData.armorThickness = mesh.userData.armorThickness
     plate.userData.armorKey = key
+    plate.userData.armorChanged = marked
+    plate.userData.armorModule = isModule
     plate.userData.armorSection = mesh.userData.armorSection
     plate.userData.armorSectionOrig = mesh.userData.armorSectionOrig
     plate.userData.armorPlateId = mesh.userData.armorPlateId
-    ensureThicknessOutline(plate, kind, thicknessToColor)
     plate.matrix.copy(mesh.matrixWorld)
     plate.matrixAutoUpdate = false
     objects.add(plate)
@@ -245,20 +244,14 @@ export function createArmorThicknessScene(source: Source, models: Models, choice
       plate: String(mesh.userData.armorPlateId),
       module: String(section),
     })
-    const edge = new THREE.EdgesGeometry(mesh.geometry)
-    outlines.push(edge)
-    const outline = new THREE.LineSegments(edge, outlineMaterial)
-    outline.renderOrder = 1
-    plate.add(outline)
   }
   scene.add(objects)
+  applyArmorComparisonFocus(objects.children, null)
   return {
     scene, plates: objects.children, bounds: new THREE.Box3().setFromObject(objects), matched, anchors,
     gunLine: pivots.gun.z,
     dispose() {
-      for (const plate of objects.children) disposeThicknessOutline(plate as THREE.Mesh)
       for (const geometry of ownedGeometries) geometry.dispose()
-      for (const edge of outlines) edge.dispose()
       for (const material of materials) material.dispose()
     },
   }

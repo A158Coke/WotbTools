@@ -126,6 +126,11 @@ function roundDigits(value: number, digits: number) {
   return Math.round(value * factor) / factor
 }
 
+export function paramDeltaGood(delta: number | null, biggerIsBetter = true): boolean | null {
+  if (delta == null || delta === 0 || !Number.isFinite(delta)) return null
+  return biggerIsBetter ? delta > 0 : delta < 0
+}
+
 export function paramGroups(current: Record<string, any>, base: Record<string, any>, format: any): ParamGroup[] {
   const groups: ParamGroup[] = []
   const byGroup = new Map<string, ParamRow[]>()
@@ -141,7 +146,7 @@ export function paramGroups(current: Record<string, any>, base: Record<string, a
     const baseValue = base?.[spec.key]
     const delta = typeof baseValue === 'number' ? roundDigits(value - baseValue, digits) : null
     const biggerIsBetter = fmt.biggerIsBetter !== false
-    const good = delta == null || delta === 0 ? null : biggerIsBetter ? delta > 0 : delta < 0
+    const good = paramDeltaGood(delta, biggerIsBetter)
     const row: ParamRow = {
       key: spec.key,
       value,
@@ -186,7 +191,7 @@ export function armorRows(current: Record<string, any>, base: Record<string, any
     if (value == null || typeof value !== 'number') return { value: null, delta: null, good: null }
     const baseValue = base?.[key]
     const delta = typeof baseValue === 'number' ? Math.round((value - baseValue) * 100) / 100 : null
-    return { value, delta, good: delta == null || delta === 0 ? null : delta > 0 }
+    return { value, delta, good: paramDeltaGood(delta) }
   }
   const cap = (part: string) => part[0].toUpperCase() + part.slice(1)
   return (['front', 'side', 'rear'] as const).map(part => ({

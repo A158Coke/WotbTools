@@ -116,6 +116,12 @@ const mocks = vi.hoisted(() => ({
   fetchPairSummary: vi.fn(),
   fetchTankDiff: vi.fn(),
   fetchMapDiff: vi.fn(),
+  navigateToDataset: vi.fn(),
+}))
+
+vi.mock('../composables/useDataVersion.js', async importOriginal => ({
+  ...await importOriginal(),
+  navigateToDataset: mocks.navigateToDataset,
 }))
 
 vi.mock('../composables/useVersionDiff.js', async () => {
@@ -131,6 +137,7 @@ vi.mock('../composables/useVersionDiff.js', async () => {
     fetchPairSummary: mocks.fetchPairSummary,
     fetchTankDiff: mocks.fetchTankDiff,
     fetchMapDiff: mocks.fetchMapDiff,
+    fetchDatasetParamsFormat: vi.fn(async () => ({ maxHealth: {}, gunShellReloadTime: { biggerIsBetter: false } })),
     fetchDatasetTank: vi.fn(async () => ({
       hp: 2050, speed_forward: 40, speed_reverse: 14,
       armor: { hull: { front: 125, sides: 70, rear: 50 } },
@@ -182,6 +189,7 @@ beforeEach(() => {
   mocks.fetchPairSummary.mockClear()
   mocks.fetchTankDiff.mockClear()
   mocks.fetchMapDiff.mockClear()
+  mocks.navigateToDataset.mockClear()
   mocks.state.value = { status: 'ready', pairs: [PAIR], error: null }
   vi.stubGlobal('fetch', vi.fn(async (url) => ({
     ok: true,
@@ -199,18 +207,20 @@ describe('AgentVersionDiff', () => {
   it('shows stat changes and uses the encyclopedia identity on new vehicles', async () => {
     const { wrapper } = await openAt()
     expect(wrapper.get('.vd-title').text()).toContain('11.22.0')
-    expect(wrapper.get('.vd-subtitle').text()).toBe('11.21.0_1 → 11.22.0')
+    expect(wrapper.get('.vd-pair-versions > span').text()).toBe('11.21.0_1')
+    expect(wrapper.get('.vd-pair-versions > strong').text()).toBe('11.22.0')
     expect(wrapper.get('#vd-section-added').text()).toContain('TBT')
     expect(wrapper.get('#vd-section-added').text()).toContain('2050')
     expect(wrapper.find('#vd-section-removed').exists()).toBe(false)
     expect(wrapper.get('.vd-comparison').text()).toContain('1100')
+    expect(wrapper.get('.vd-comparison .tp-param-delta[aria-label="+100"]').classes()).toContain('is-good')
     expect(wrapper.get('#vd-section-added .tp-card-name').text()).toBe('TBT')
     const image = wrapper.get('#vd-section-added .tp-media > img')
     expect(image.attributes('src')).toContain('/v/11.22.0/tank_images/23681.webp')
     expect(image.attributes('style')).toContain('scale(')
     // 金币/收藏身份与百科同一套配色（车名颜色 + 卡片底色）。
     expect(wrapper.get('#vd-section-added .vd-identity').classes()).toContain('is-premium')
-    expect(wrapper.get('#vd-section-added').text()).toContain('242 mm')
+    expect(wrapper.get('#vd-section-added .vd-stats').text()).toContain('agentTanks.units.MILLIMETER')
     expect(wrapper.get('#vd-section-added').text()).toContain('1875')
     expect(wrapper.get('.vd-disclosure:last-child').element.open).toBe(false)
     expect(wrapper.get('.vd-data-body').text()).toContain('T32')
@@ -218,6 +228,19 @@ describe('AgentVersionDiff', () => {
     expect(mocks.fetchTankDiff).not.toHaveBeenCalledWith(PAIR, 4449)
     expect(mocks.fetchMapDiff).not.toHaveBeenCalled()
     expect(wrapper.find('.vd-warning').exists()).toBe(false)
+  })
+
+  it('opens the new dataset tankopedia detail from an armor card', async () => {
+    const { wrapper } = await openAt({ assets: 'https://assets.test', localuser: '1' })
+    await wrapper.get('#vd-section-armor .vd-armor-action').trigger('click')
+    expect(mocks.navigateToDataset).toHaveBeenCalledOnce()
+    const [dataset, href] = mocks.navigateToDataset.mock.calls[0]
+    expect(dataset).toBe(PAIR.to.dataset)
+    const query = new URL(href, 'https://app.test').searchParams
+    expect(query.get('view')).toBe('agent-tankopedia')
+    expect(query.get('tank')).toBe(String(TANK_ROW.id))
+    expect(query.get('assets')).toBe('https://assets.test')
+    expect(query.get('localuser')).toBe('1')
   })
 
   it('restores the pair from from/to query keys', async () => {

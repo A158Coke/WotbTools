@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import VersionDiffReading from './VersionDiffReading.vue'
 import {
   armorFaceLabel, armorRows, deltaDiffValue, faceLabel, fmtDiffValue, moduleLabel,
 } from './versionDiffFormat.js'
@@ -79,11 +80,19 @@ function rowKey(row: ArmorRow): string {
 }
 
 function plateSection(row: ArmorRow) {
-  return row.section ? faceLabel(row.section.split('/')[0], t, te) : '—'
+  return row.section ? row.section.split('/').map(face => faceLabel(face, t, te)).join(' / ') : ''
 }
 
 function chassisLabel(field?: string) {
   return field === 'left_track' ? t('versionDiff.chassis.leftTrack') : t('versionDiff.chassis.rightTrack')
+}
+
+function structureLabel(row: ArmorRow): string {
+  const part = moduleLabel(row.module ?? '', t, te)
+  const area = row.kind === 'primary'
+    ? faceLabel(row.side ?? '', t, te)
+    : t('versionDiff.armor.spaced') + ' #' + row.plate
+  return part + ' · ' + area
 }
 
 function sideValue(row: ArmorRow, side: 0 | 1): unknown {
@@ -115,15 +124,13 @@ function rowDelta(row: ArmorRow): string {
 
     <section v-if="directionRows.length" class="vd-block">
       <h4 class="vd-block-title">{{ t('versionDiff.armor.directions') }}</h4>
-      <div class="vd-armor-grid">
-        <div v-for="row in directionRows" :key="row.path" class="vd-armor-cell">
-          <span class="vd-armor-name">{{ armorFaceLabel((row.path || '').slice(6), t, te) }}</span>
-          <span class="vd-value">{{ fmtDiffValue(row.old) }}</span>
-          <span class="vd-arrow">→</span>
-          <span class="vd-value is-new">{{ fmtDiffValue(row.new) }}</span>
-          <span class="vd-delta">{{ deltaDiffValue(row.old, row.new) }}</span>
+      <dl class="vd-param-list">
+        <div v-for="row in directionRows" :key="row.path">
+          <dt>{{ armorFaceLabel((row.path || '').slice(6), t, te) }}</dt>
+          <dd><VersionDiffReading :before="fmtDiffValue(row.old)" :value="fmtDiffValue(row.new)"
+            :unit="t('agentTanks.units.MILLIMETER')" :delta="deltaDiffValue(row.old, row.new)" /></dd>
         </div>
-      </div>
+      </dl>
     </section>
 
     <section v-if="plateRows.length" class="vd-block">
@@ -132,12 +139,8 @@ function rowDelta(row: ArmorRow): string {
         <table class="vd-table">
           <thead>
             <tr>
-              <th>{{ t('versionDiff.armor.module') }}</th>
-              <th>{{ t('versionDiff.armor.section') }}</th>
-              <th>{{ t('versionDiff.armor.plate') }}</th>
-              <th class="is-num">{{ pair?.from.dataset || t('versionDiff.old') }}</th>
-              <th class="is-num">{{ pair?.to.dataset || t('versionDiff.new') }}</th>
-              <th class="is-num">{{ t('versionDiff.delta') }}</th>
+              <th scope="col">{{ t('versionDiff.armor.plate') }}</th>
+              <th scope="col" class="is-num">{{ pair?.from.dataset || t('versionDiff.old') }} → {{ pair?.to.dataset || t('versionDiff.new') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -147,12 +150,20 @@ function rowDelta(row: ArmorRow): string {
               :class="{ 'is-selectable': selectable && rowKeys(row).length, 'is-active': rowActive(row) }"
               @click="selectRow(row)"
             >
-              <td>{{ moduleLabel(row.module ?? '', t, te) }}<span v-if="row.configLabel" class="vd-muted"> · {{ row.configLabel }}</span></td>
-              <td>{{ plateSection(row) }}</td>
-              <td>#{{ row.plate }}</td>
-              <td class="is-num">{{ sideText(row, 0) }}</td>
-              <td class="is-num">{{ sideText(row, 1) }}</td>
-              <td class="is-num vd-delta">{{ rowDelta(row) }}</td>
+              <td>
+                <button v-if="selectable && rowKeys(row).length" type="button" class="vd-text-link vd-plate-select"
+                  :aria-pressed="rowActive(row)" @click.stop="selectRow(row)">
+                  {{ moduleLabel(row.module ?? '', t, te) }} #{{ row.plate }}
+                </button>
+                <span v-else>{{ moduleLabel(row.module ?? '', t, te) }} #{{ row.plate }}</span>
+                <span v-if="plateSection(row) || row.configLabel" class="vd-muted vd-param-context">
+                  {{ [plateSection(row), row.configLabel].filter(Boolean).join(' · ') }}
+                </span>
+              </td>
+              <td class="is-num">
+                <VersionDiffReading :before="sideText(row, 0)" :value="sideText(row, 1)"
+                  :unit="t('agentTanks.units.MILLIMETER')" :delta="rowDelta(row)" />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -161,40 +172,38 @@ function rowDelta(row: ArmorRow): string {
 
     <section v-if="structureRows.length" class="vd-block">
       <h4 class="vd-block-title">{{ t('versionDiff.armor.structure') }}</h4>
-      <ul class="vd-list">
-        <li
-          v-for="row in structureRows.filter(item => item.kind === 'primary')"
-          :key="`primary-${row.module}-${row.side}`"
+      <dl class="vd-param-list">
+        <div v-for="row in structureRows" :key="rowKey(row)"
           :class="{ 'is-selectable': selectable && rowKeys(row).length, 'is-active': rowActive(row) }"
-          @click="selectRow(row)"
-        >
-          {{ moduleLabel(row.module ?? '', t, te) }}<span v-if="row.configLabel" class="vd-muted"> · {{ row.configLabel }}</span> · {{ faceLabel(row.side ?? '', t, te) }}:
-          {{ fmtDiffValue(row.old) }} → {{ fmtDiffValue(row.new) }}
-        </li>
-        <li
-          v-for="row in structureRows.filter(item => item.kind === 'configSpaced')"
-          :key="rowKey(row)"
-          :class="{ 'is-selectable': selectable && rowKeys(row).length, 'is-active': rowActive(row) }"
-          @click="selectRow(row)"
-        >
-          {{ moduleLabel(row.module ?? '', t, te) }}<span v-if="row.configLabel" class="vd-muted"> · {{ row.configLabel }}</span> · {{ t('versionDiff.armor.spaced') }} #{{ row.plate }}:
-          {{ row.added ? t('versionDiff.added') : t('versionDiff.removed') }}
-        </li>
-      </ul>
+          @click="selectRow(row)">
+          <dt>
+            <button v-if="selectable && rowKeys(row).length" type="button" class="vd-text-link vd-plate-select"
+              :aria-pressed="rowActive(row)" @click.stop="selectRow(row)">{{ structureLabel(row) }}</button>
+            <template v-else>{{ structureLabel(row) }}</template>
+            <small v-if="row.configLabel" class="vd-muted vd-param-context">{{ row.configLabel }}</small>
+          </dt>
+          <dd>
+            <VersionDiffReading v-if="row.kind === 'primary'" :before="fmtDiffValue(row.old)" :value="fmtDiffValue(row.new)" />
+            <span v-else>{{ row.added ? t('versionDiff.added') : t('versionDiff.removed') }}</span>
+          </dd>
+        </div>
+      </dl>
     </section>
 
     <section v-if="chassisRows.length" class="vd-block">
       <h4 class="vd-block-title">{{ t('versionDiff.modules.chassis') }}</h4>
-      <ul class="vd-list">
-        <li
-          v-for="row in chassisRows"
-          :key="`chassis-${row.field}`"
-          :class="{ 'is-selectable': selectable && rowKeys(row).length, 'is-active': rowActive(row) }"
-          @click="selectRow(row)"
-        >
-          {{ chassisLabel(row.field) }}: {{ fmtDiffValue(row.old) }} → {{ fmtDiffValue(row.new) }}
-        </li>
-      </ul>
+      <dl class="vd-param-list">
+        <div v-for="row in chassisRows" :key="row.field"
+          :class="{ 'is-selectable': selectable, 'is-active': rowActive(row) }" @click="selectRow(row)">
+          <dt>
+            <button v-if="selectable" type="button" class="vd-text-link vd-plate-select"
+              :aria-pressed="rowActive(row)" @click.stop="selectRow(row)">{{ chassisLabel(row.field) }}</button>
+            <template v-else>{{ chassisLabel(row.field) }}</template>
+          </dt>
+          <dd><VersionDiffReading :before="fmtDiffValue(row.old)" :value="fmtDiffValue(row.new)"
+            :unit="t('agentTanks.units.MILLIMETER')" :delta="deltaDiffValue(row.old, row.new)" /></dd>
+        </div>
+      </dl>
     </section>
   </div>
 </template>

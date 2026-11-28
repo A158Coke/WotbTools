@@ -93,24 +93,24 @@ describe('primary navigation', () => {
     }
   })
 
-  it('places every section except Home and More in one sidebar group', () => {
+  it('groups secondary entries and keeps Version Changes, Home and More ungrouped', () => {
     const groups = NAV_GROUPS.map(group => group.id)
     for (const item of PRIMARY_NAV) {
-      if (['home', 'more'].includes(item.id)) expect(item.group).toBeUndefined()
+      if (['version-diff', 'home', 'more'].includes(item.id)) expect(item.group).toBeUndefined()
       else expect(groups).toContain(item.group)
     }
-    expect(NAV_GROUPS.map(group => PRIMARY_NAV.filter(item => item.group === group.id).length)).toEqual([2, 4, 2, 1])
+    expect(NAV_GROUPS.map(group => PRIMARY_NAV.filter(item => item.group === group.id).length)).toEqual([2, 3, 2, 1])
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'techtree', 'version-diff', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'techtree', 'version-diff', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['version-diff', 'home', 'replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['version-diff', 'replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'techtree', 'version-diff', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more']
+      const expected = ['version-diff', 'replay', 'hof', 'tankopedia', 'techtree', 'maps', 'tournament-points', 'league-broadcasts', 'creators', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')
@@ -119,26 +119,23 @@ describe('primary navigation', () => {
     } finally { vi.unstubAllEnvs() }
   })
 
-  it('places the map preview after the version diff reference page', () => {
+  it('places the map preview after the tech tree', () => {
     expect(viewFromRoute({ path: '/', query: { view: 'map-preview' } })).toBe('map-preview')
     expect(primarySection('map-preview')).toBe('maps')
     expect(sectionTitleKey('map-preview')).toBe('nav.maps')
     expect(PRIMARY_NAV.findIndex(item => item.id === 'maps'))
-      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'version-diff') + 1)
+      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'techtree') + 1)
     expect(PRIMARY_NAV.find(item => item.id === 'maps').view).toBe('map-preview')
     const leaving = { path: '/', query: { view: 'map-preview', map: 'erlenberg', mode: '3d', lang: 'ru' } }
     expect(locationForView('replay', leaving).query).toEqual({ view: 'replay', lang: 'ru' })
     expect(locationForView('map-preview', leaving).query).toEqual(leaving.query)
   })
 
-  it('places version changes between the tech tree and maps and owns its pair keys', () => {
+  it('places Version Changes first and owns its pair keys', () => {
     expect(viewFromRoute({ path: '/', query: { view: 'agent-version-diff' } })).toBe('agent-version-diff')
     expect(primarySection('agent-version-diff')).toBe('version-diff')
     expect(sectionTitleKey('agent-version-diff')).toBe('nav.versionChanges')
-    expect(PRIMARY_NAV.findIndex(item => item.id === 'version-diff'))
-      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'techtree') + 1)
-    expect(PRIMARY_NAV.findIndex(item => item.id === 'maps'))
-      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'version-diff') + 1)
+    expect(PRIMARY_NAV[0].id).toBe('version-diff')
     const staying = { path: '/', query: { view: 'agent-version-diff', from: '11.21.0_1', to: '11.22.0', lang: 'zh' } }
     expect(locationForView('agent-version-diff', staying).query).toEqual(staying.query)
     expect(locationForView('replay', staying).query).toEqual({ view: 'replay', lang: 'zh' })

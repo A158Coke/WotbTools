@@ -4,11 +4,12 @@ import { useI18n } from 'vue-i18n'
 import AppDialog from '../AppDialog.vue'
 import AppButton from '../AppButton.vue'
 import {
-  armorFaceLabel, armorRows, deltaDiffValue, diffPathLabel, fmtDiffValue,
-  statusLabel, tankRows,
+  armorFaceLabel, armorRows, deltaDiffValue, diffPathLabel, diffStatValues, fmtDiffValue,
+  diffConfigIdentity, parameterRows, statusLabel, tankRows,
 } from './versionDiffFormat.js'
 import type { DiffChange } from './versionDiffFormat.js'
 import { shellLabel } from '../../scene/tankMeta.js'
+import VersionDiffReading from './VersionDiffReading.vue'
 import VersionDiffVehicle from './VersionDiffVehicle.vue'
 import type { DiffPair } from '../../composables/useVersionDiff.js'
 import type { DiffTankDetail, DiffTankRow } from '../../composables/useVersionDiffPage.js'
@@ -18,6 +19,8 @@ interface TankDiffDialogProps {
   open?: boolean
   row?: DiffTankRow | null
   detail?: DiffTankDetail | null
+  topConfig?: string
+  paramFormat?: Record<string, unknown> | null
   pair?: DiffPair | null
   iconUrl?: string
   cropStyle?: { transform: string } | null
@@ -38,7 +41,7 @@ const { t, te } = useI18n()
 
 const tabs = ['summary', 'firepower', 'mobility', 'survivability', 'armor', 'research']
 const tab = ref('summary')
-const configIndex = ref(0)
+const chosenConfig = ref<number | null>(null)
 
 const configs = computed(() => props.detail?.configs?.configs || [])
 watch(() => props.detail, (detail) => {
@@ -46,11 +49,19 @@ watch(() => props.detail, (detail) => {
   tab.value = hasSummary ? 'summary'
     : detail?.research?.changed ? 'research'
       : detail?.armor?.model?.changed ? 'armor' : 'summary'
-  configIndex.value = Math.max(0, (detail?.configs?.configs?.length || 1) - 1)
+  chosenConfig.value = null
 }, { immediate: true })
 
+const configIndex = computed({
+  get: () => {
+    if (chosenConfig.value !== null) return chosenConfig.value
+    const top = props.topConfig ? configs.value.findIndex(config => diffConfigIdentity(config.key) === props.topConfig) : -1
+    return top >= 0 ? top : Math.max(0, configs.value.length - 1)
+  },
+  set: (index: number) => { chosenConfig.value = index },
+})
 const selectedConfig = computed(() => configs.value[configIndex.value] || null)
-const allRows = computed(() => tankRows(props.detail))
+const allRows = computed(() => tankRows(props.detail, props.row ?? undefined))
 const armor = computed(() => props.detail?.armor || null)
 const armorSummaryRows = computed(() => armorRows(armor.value).filter(row => row.kind === 'direction'))
 const identity = computed(() => (props.row || props.detail?.identity || {}) as { name?: string; nation?: string; tier?: number; type?: string })
@@ -62,32 +73,14 @@ const configOptions = computed(() => configs.value.map((config, index) => ({
   label: config.key?.gun || config.key?.turret || `#${index + 1}`,
 })))
 
-function configRows(config: { key?: { gun?: string; turret?: string; [key: string]: unknown }; changes?: DiffChange[] } | null): DiffChange[] {
-  if (!config) return []
-  const configLabel = config.key?.gun || config.key?.turret || ''
-  return (config.changes || []).map(change => ({
-    ...change,
-    scope: 'config',
-    configLabel,
-    displayPath: change.path,
-  }))
-}
-
 const tabRows = computed(() => {
-  if (!props.detail) return []
-  const rows = allRows.value.filter(row => row.scope === 'summary')
-  const selected = configRows(selectedConfig.value)
-  if (tab.value === 'summary') {
-    return rows
-  }
-  if (tab.value === 'research') {
-    return props.detail.research?.changes || []
-  }
-  if (tab.value === 'armor') return []
-  return [...rows.filter(row => row.category === tab.value), ...selected.filter(row => row.category === tab.value)]
+  if (tab.value === 'summary') return allRows.value.filter(row => row.scope === 'summary')
+  if (tab.value === 'research' || tab.value === 'armor') return []
+  return parameterRows(allRows.value, props.topConfig).filter(row =>
+    row.category === tab.value && (row.scope !== 'config' || row.config === selectedConfig.value?.key))
 })
 
-const researchChanges = computed(() => props.detail?.research?.changes || [])
+const researchChanges = computed(() => allRows.value.filter(row => row.scope === 'research'))
 const researchAdded = computed(() => props.detail?.research?.modulesAdded || [])
 const researchRemoved = computed(() => props.detail?.research?.modulesRemoved || [])
 const researchUnpaired = computed(() => props.detail?.research?.unpaired || [])
@@ -108,8 +101,11 @@ function rowLabel(row: DiffChange): string {
 }
 
 function rowValues(row: DiffChange) {
-  return { old: fmtDiffValue(row.old), new: fmtDiffValue(row.new), delta: deltaDiffValue(row.old, row.new) }
+  return diffStatValues(row.displayPath || row.changePath || row.path || '', row.old, row.new, t, props.paramFormat, te)
 }
+
+const formattedTabRows = computed(() => tabRows.value.map(row => ({ row, diff: rowValues(row) })))
+const formattedResearch = computed(() => researchChanges.value.map(row => ({ row, diff: rowValues(row) })))
 
 function openVersion(dataset: string) {
   emit('open-version', dataset)
@@ -169,15 +165,13 @@ function openVersion(dataset: string) {
         </div>
 
         <div v-if="tab === 'armor'" class="vd-block">
-          <div v-if="armorSummaryRows.length" class="vd-armor-grid">
-            <div v-for="row in armorSummaryRows" :key="row.path" class="vd-armor-cell">
-              <span class="vd-armor-name">{{ armorFaceLabel((row.path || '').slice(6), t, te) }}</span>
-              <span class="vd-value">{{ fmtDiffValue(row.old) }}</span>
-              <span class="vd-arrow">→</span>
-              <span class="vd-value is-new">{{ fmtDiffValue(row.new) }}</span>
-              <span class="vd-delta">{{ deltaDiffValue(row.old, row.new) }}</span>
+          <dl v-if="armorSummaryRows.length" class="vd-param-list">
+            <div v-for="row in armorSummaryRows" :key="row.path">
+              <dt>{{ armorFaceLabel((row.path || '').slice(6), t, te) }}</dt>
+              <dd><VersionDiffReading :before="fmtDiffValue(row.old)" :value="fmtDiffValue(row.new)"
+                :unit="t('agentTanks.units.MILLIMETER')" :delta="deltaDiffValue(row.old, row.new)" /></dd>
             </div>
-          </div>
+          </dl>
           <p v-else class="vd-muted">{{ t('versionDiff.armor.noDirections') }}</p>
           <div v-if="armor" class="vd-inline-actions">
             <AppButton variant="secondary" @click="emit('open-armor')">
@@ -191,11 +185,13 @@ function openVersion(dataset: string) {
           <p v-if="!researchChanges.length && !researchAdded.length && !researchRemoved.length" class="vd-muted">
             {{ t('versionDiff.tank.noResearchChanges') }}
           </p>
-          <ul v-else class="vd-list">
-            <li v-for="(change, index) in researchChanges" :key="`rc-${index}`">
-              <strong>{{ rowLabel({ displayPath: `research.${change.path}` }) }}</strong>:
-              {{ fmtDiffValue(change.old) }} → {{ fmtDiffValue(change.new) }}
-            </li>
+          <dl v-if="formattedResearch.length" class="vd-param-list">
+            <div v-for="({ row, diff }, index) in formattedResearch" :key="index">
+              <dt>{{ rowLabel(row) }}</dt>
+              <dd><VersionDiffReading :before="diff.old" :value="diff.new" :unit="diff.unit" :delta="diff.delta" :good="diff.good" /></dd>
+            </div>
+          </dl>
+          <ul v-if="researchAdded.length || researchRemoved.length" class="vd-list">
             <li v-for="item in researchAdded" :key="`ra-${item}`">
               {{ t('versionDiff.tank.moduleAdded') }}: {{ item }}
             </li>
@@ -210,29 +206,15 @@ function openVersion(dataset: string) {
 
         <div v-else class="vd-block">
           <p v-if="!tabRows.length" class="vd-muted">{{ t('versionDiff.tank.noChanges') }}</p>
-          <div v-else class="vd-table-wrap">
-            <table class="vd-table">
-              <thead>
-                <tr>
-                  <th>{{ t('versionDiff.tank.parameter') }}</th>
-                  <th class="is-num">{{ t('versionDiff.old') }}</th>
-                  <th class="is-num">{{ t('versionDiff.new') }}</th>
-                  <th class="is-num">{{ t('versionDiff.delta') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, index) in tabRows" :key="`${row.displayPath}-${index}`">
-                  <td>
-                    {{ rowLabel(row) }}
-                    <span v-if="row.configLabel" class="vd-muted"> · {{ row.configLabel }}</span>
-                  </td>
-                  <td class="is-num">{{ rowValues(row).old }}</td>
-                  <td class="is-num is-new">{{ rowValues(row).new }}</td>
-                  <td class="is-num vd-delta">{{ rowValues(row).delta }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <dl v-else class="vd-param-list">
+            <div v-for="({ row, diff }, index) in formattedTabRows" :key="index">
+              <dt>
+                {{ rowLabel(row) }}
+                <span v-if="row.configLabel" class="vd-muted vd-param-context">{{ row.configLabel }}</span>
+              </dt>
+              <dd><VersionDiffReading :before="diff.old" :value="diff.new" :unit="diff.unit" :delta="diff.delta" :good="diff.good" /></dd>
+            </div>
+          </dl>
         </div>
 
         <p v-if="unresolved.length" class="vd-warning">

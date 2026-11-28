@@ -28,12 +28,12 @@ export const NAV_GROUPS = Object.freeze([
 ])
 
 export const PRIMARY_NAV = Object.freeze([
+  Object.freeze({ id: 'version-diff', view: 'agent-version-diff', labelKey: 'nav.versionChanges' }),
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
   Object.freeze({ id: 'replay', view: 'replay', labelKey: 'nav.replay', group: 'battle' }),
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof', group: 'battle' }),
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia', group: 'reference' }),
   Object.freeze({ id: 'techtree', view: 'agent-techtree', labelKey: 'research.title', group: 'reference' }),
-  Object.freeze({ id: 'version-diff', view: 'agent-version-diff', labelKey: 'nav.versionChanges', group: 'reference' }),
   Object.freeze({ id: 'maps', view: 'map-preview', labelKey: 'nav.maps', group: 'reference' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title', group: 'events' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle', group: 'events' }),

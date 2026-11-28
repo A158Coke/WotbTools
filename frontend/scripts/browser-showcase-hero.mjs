@@ -124,7 +124,7 @@ let chrome
 try {
   chrome = await launchChromeForCdp(findChrome())
 
-  async function openAppPage({ width, height = 900, profile = 'summer', view, extraAuth = '', locale = 'zh' }) {
+  async function openAppPage({ width, height = 900, profile = 'summer', view, extraAuth = '', locale = 'zh', readySelector = '[data-testid="showcase-hero"]' }) {
     const { targetId, sessionId } = await chrome.openPage()
     const page = new Page(chrome.client, sessionId)
     await page.enable()
@@ -136,14 +136,13 @@ try {
     }, sessionId)
     await chrome.client.send('Page.navigate', { url: `${origin}/?view=${view}${extraAuth}` }, sessionId)
     await page.waitForValue('document.readyState', value => value === 'complete', { timeout: 90_000, label: 'application modules loaded' })
-    await page.waitForValue(`!!document.querySelector('[data-testid="showcase-hero"]')`, value => value === true, { timeout: 90_000, label: `showcase hero on ${view}` })
+    await page.waitForValue(`!!document.querySelector(${JSON.stringify(readySelector)})`, Boolean, { timeout: 90_000, label: `${readySelector} on ${view}` })
     return { targetId, page }
   }
 
   // Exercise the real routes so a page-specific thumbnail or missing gutter fails here.
   for (const [section, views] of Object.entries({
-    tankopedia: ['agent-tankopedia', 'agent-tankopedia&tank=' + FIXTURE_TANK_ID],
-    techtree: ['agent-techtree'],
+    tankopedia: ['agent-tankopedia'],
     maps: ['map-preview'],
     community: ['recommendations', 'creators', 'recommended-videos', 'contact', 'more', 'android', 'sponsor'],
     admin: ['admin-battle-data', 'admin-ai-review-feedback', 'admin-site-feedback', 'admin-users', 'creators-config', 'hof-admin', 'tournament-points-admin', 'tournament-points-config'],
@@ -187,15 +186,52 @@ try {
     }
   }
 
+  {
+    const { targetId, page } = await openAppPage({
+      width: 1440,
+      view: 'agent-tankopedia&tank=' + FIXTURE_TANK_ID,
+      extraAuth: '&assets=' + encodeURIComponent(origin + '/fixture-assets'),
+      readySelector: '.tp-detail-head h1',
+    })
+    const assertTankDetailHeader = async () => {
+      const detail = await page.probe(() => {
+        const root = document.querySelector('[data-testid="tankopedia"]')
+        const head = root.querySelector('.tp-detail-head')
+        return {
+          titles: [...root.querySelectorAll('h1')].filter(node => node.getClientRects().length).map(node => node.textContent),
+          bannerVisible: !!root.querySelector('.showcase-hero')?.getClientRects().length,
+          cover: !!head.querySelector('.tp-media > img'),
+          bottom: head.getBoundingClientRect().bottom,
+          viewport: innerHeight,
+        }
+      })
+      assert.deepEqual(detail.titles, [FIXTURE_TANK_DATA.name])
+      assert.equal(detail.bannerVisible, false)
+      assert.ok(detail.cover && detail.bottom < detail.viewport / 2, JSON.stringify(detail))
+    }
+    try {
+      await page.animationsSettled()
+      await assertTankDetailHeader()
+      await page.emulate({ width: 390, height: 844, touch: true })
+      await assertTankDetailHeader()
+      await page.tapSelector('[data-testid="tank-back"]', true)
+      await page.waitFor(() => !!document.querySelector('.showcase-hero')?.getClientRects().length)
+      await page.tapSelector('[data-testid="tank-card"][data-tank-id="' + FIXTURE_TANK_ID + '"]', true)
+      await page.waitFor(() => !!document.querySelector('.tp-detail-head h1'))
+      await page.animationsSettled()
+      await assertTankDetailHeader()
+      console.log('[browser-showcase-hero] tank detail header on deep link and list navigation passed')
+    } finally { await chrome.client.send('Target.closeTarget', { targetId }) }
+  }
+
   for (const [view, extraAuth, section, mobilePosition, heightLo, heightHi] of [
     ['replay', '', 'replay', '45% 50%', 88, 112],
-    ['agent-techtree', '', 'techtree', '42% 50%', 88, 112],
     ['admin-users', '&ws-auth=1&ws-roles=wotbtools-admin', 'admin', '40% 50%', 88, 112],
   ]) {
     const { targetId, page } = await openAppPage({ width: 1440, view, extraAuth })
     try {
       const desktop = await page.probe(heroProbe)
-      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : section === 'techtree' ? '50% 58%' : '50% 45%' })
+      assertDesktopCompact(desktop, { section, position: section === 'replay' ? '50% 50%' : '50% 45%' })
       if (section === 'admin') {
         for (const width of [900, 1280, 1890]) {
           await page.emulate({ width, height: 900, touch: false, deviceScaleFactor: 1 })

@@ -122,14 +122,15 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 | `hof` | `HoFPage` 单场 / 百场 tab | `hero-hof.webp` | `center 45%` | `22% center` |
 | `mark3` | `HoFPage` 三环 tab | `hero-mark3.webp` | `center 45%` | `18% center` |
 | `replay` | `ReplayWorkspace`、`BattleTable` league 概览 | `hero-replay.webp` | `center 48%` | `45% center` |
-| `tankopedia` | `AgentTankopedia` 列表 / 详情 | `hero-tankopedia.webp` | `center 45%` | `18% center` |
-| `techtree` | `AgentTechTree` | `hero-techtree.webp` | `center 45%` | `42% center` |
+| `tankopedia` | `AgentTankopedia` 列表 | `hero-tankopedia.webp` | `center 45%` | `18% center` |
 | `maps` | `MapPreviewPage` 选择态 | `hero-maps.webp` | `center 45%` | `22% center` |
 | `events` | `TournamentPointsPage`、`LeagueBroadcastsPage` | `hero-events.webp` | `center 45%` | `40% center` |
 | `community` | `CreatorsPage`、`ContactPage`、`MorePage`、`AndroidDownloadPage`、`SponsorPage` | `hero-community.webp` | `center 45%` | `45% center` |
 | `profile` | `ProfilePage` | `hero-profile.webp` | `center 45%` | `45% center` |
 | `docs` | `HistoryPage`、`TechnicalEvolutionPage`、`RatingDocsPage` | `hero-docs.webp` | `center 45%` | `42% center` |
 | `admin` | 全部后台页（用户、战斗数据、反馈、名人堂、赛事积分、创作者配置） | `hero-admin.webp` | `center 45%` | `40% center` |
+
+科技树使用单行标题栏，百科详情将标题放在车辆信息卡，两者直接展示工作区。
 
 **配图与文字：** 分区配图等比铺满整个横幅。标题、说明、统计和操作所在区域使用随内容宽度渐隐的深色遮罩（`--color-hero-photo-scrim`）。寒冬使用浅色标题和正文，右侧保留原图色彩。手机沿用各分区的竖屏焦点和季节遮罩。
 
