@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref, watch, watchEffect } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { Menu } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
@@ -154,7 +154,6 @@ provide(FEEDBACK_KEY, siteFeedback.request)
 
 const { uiProfile } = useUiProfile()
 const backdropReady = ref(false)
-const loadedBackdrops = new Set()
 let backdropLoadToken = 0
 const portraitBackdropQuery = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   ? window.matchMedia('(orientation: portrait) and (width < 768px)')
@@ -168,30 +167,21 @@ function currentBackdropSource() {
   return match ? match[2] : ''
 }
 
-function preloadBackdrop(url) {
-  if (!url || typeof Image === 'undefined') {
-    backdropReady.value = true
-    return
-  }
-  if (loadedBackdrops.has(url)) {
-    backdropReady.value = true
-    return
-  }
+async function syncBackdrop() {
   const token = ++backdropLoadToken
+  const url = currentBackdropSource()
+  backdropReady.value = !url
+  if (backdropReady.value || typeof Image === 'undefined') return
+
   const image = new Image()
   image.decoding = 'async'
-  const finish = (loaded) => {
-    if (loaded) loadedBackdrops.add(url)
-    if (token === backdropLoadToken) backdropReady.value = true
-  }
-  image.onload = () => finish(true)
-  image.onerror = () => finish(false)
   image.src = url
-}
-
-function syncBackdrop() {
-  backdropReady.value = false
-  preloadBackdrop(currentBackdropSource())
+  try {
+    await image.decode()
+    if (token === backdropLoadToken) backdropReady.value = true
+  } catch {
+    // Keep the canvas color when the selected image cannot be decoded.
+  }
 }
 
 onMounted(() => {
@@ -199,13 +189,10 @@ onMounted(() => {
   portraitBackdropQuery?.addEventListener?.('change', syncBackdrop)
 })
 onUnmounted(() => {
+  ++backdropLoadToken
   portraitBackdropQuery?.removeEventListener?.('change', syncBackdrop)
 })
-watch(uiProfile, async () => {
-  backdropReady.value = false
-  await nextTick()
-  syncBackdrop()
-})
+watch(uiProfile, syncBackdrop, { flush: 'post' })
 </script>
 
 <template>
@@ -300,10 +287,9 @@ watch(uiProfile, async () => {
     var(--theme-backdrop-image) var(--theme-backdrop-position) / cover,
     var(--color-canvas);
   opacity: 0;
-  transition: opacity 480ms ease;
 }
 
-.app-backdrop.is-ready { opacity: 1; }
+.app-backdrop.is-ready { opacity: 1; transition: opacity var(--duration-slow) var(--ease-standard); }
 
 @media (orientation: portrait) and (width < 768px) {
   .app-backdrop {
@@ -317,7 +303,7 @@ watch(uiProfile, async () => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-backdrop { transition: none; }
+  .app-backdrop.is-ready { transition: none; }
 }
 
 .app-footer {
